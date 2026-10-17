@@ -2115,11 +2115,12 @@ const MENU_W: Pixels = px(200.);
 /// The view keeps whether it is open, where, and which item is active. It
 /// draws the menu as the modal of a [`modal_overlay`](crate::modal_overlay)
 /// over the page, whose `on_dismiss` (a press outside, Escape) closes it,
-/// and hands it the keyboard as it opens (`window.focus(id)`). The keys
-/// never reach an item's element, the menu holds them: `on_press` runs
-/// what the active item's click runs.
+/// and hands it the keyboard as it opens (`window.focus(id)`). Each item's
+/// `click` is all it does: a press on it runs it, and so do Enter and
+/// Space while it is active, with a keyboard `ClickEvent` (Enter's, its
+/// `bounds` zero: the view lays nothing out).
 /// `modal_overlay("menu-overlay", "Actions", page, Some(design::menu("menu",
-/// "Actions", at, &theme).active(view.active).on_move(..).on_press(..)
+/// "Actions", at, &theme).active(view.active).on_move(..)
 /// .item(design::menu_item("menu/open", "Open", &ladder, &theme, open)
 /// .icon("folder-open"))))`.
 pub fn menu(
@@ -2159,11 +2160,6 @@ impl Menu {
         self.composite = self.composite.on_move(f);
         self
     }
-    /// Enter or Space on the active item, `index`.
-    pub fn on_press(mut self, f: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
-        self.composite = self.composite.on_press(f);
-        self
-    }
     /// An item, under those given before it.
     pub fn item(mut self, item: MenuItem) -> Self {
         self.items.push(item);
@@ -2183,12 +2179,21 @@ impl IntoElement for Menu {
         } = self;
         let count = items.len();
         let active = active.min(count.saturating_sub(1));
+        let clicks: Vec<_> = items.iter().map(|item| item.click.clone()).collect();
+        let press = move |index: usize, window: &mut Window, app: &mut App| {
+            let key = ClickEvent::Keyboard(gpui::KeyboardClickEvent {
+                button: gpui::KeyboardButton::Enter,
+                bounds: Bounds::default(),
+            });
+            clicks[index](&key, window, app)
+        };
         let items = items
             .into_iter()
             .enumerate()
             .map(|(index, item)| item.drawn(index == active));
         let frame = composite
             .active(active, count)
+            .on_press(press)
             .children(items)
             .build()
             .min_w(MENU_W)
@@ -2227,9 +2232,12 @@ pub fn menu_item(
         danger: false,
         ladder: *ladder,
         theme: *theme,
-        click: Box::new(click),
+        click: std::rc::Rc::new(click),
     }
 }
+
+/// A [`menu_item`]'s press, which its menu's Enter runs too.
+type Press = std::rc::Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 
 /// A [`menu_item`] being built.
 pub struct MenuItem {
@@ -2239,7 +2247,7 @@ pub struct MenuItem {
     danger: bool,
     ladder: Ladder,
     theme: Theme,
-    click: crate::interactivity::EventListener<ClickEvent>,
+    click: Press,
 }
 
 impl gpui::prelude::FluentBuilder for MenuItem {}
@@ -2279,7 +2287,7 @@ impl MenuItem {
             .hover(move |style| style.bg(theme.surface_raised))
             .active(move |style| style.bg(theme.accent_soft))
             .when(active, |row| row.bg(theme.surface_raised))
-            .on_click(self.click)
+            .on_click(move |event, window, app| (self.click)(event, window, app))
             .children(
                 self.icon
                     .map(|name| icon(&name, ladder.icon).text_color(glyph)),
@@ -2752,7 +2760,6 @@ mod tests {
             menu("menu", "Actions", gpui::point(px(40.), px(60.)), &theme)
                 .active(1)
                 .on_move(|_, _, _| {})
-                .on_press(|_, _, _| {})
                 .item(item("open", "Open").icon("folder-open"))
                 .item(item("remove", "Remove").icon("trash").danger()),
         );

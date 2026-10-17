@@ -26,18 +26,13 @@ pub(super) fn over(view: &Files, screen: impl IntoElement, cx: Cx, k: &Kit) -> A
 /// The menu at its place; none while its row has not said where it is.
 fn popup(view: &Files, menu: &Menu, cx: Cx, k: &Kit) -> Option<design::Menu> {
     let at = menu.at?;
-    let items = view.items(&menu.on);
-    let pressed = items.clone();
     let popup = design::menu(MENU, words::ACTIONS, at, &k.theme)
         .active(menu.active)
-        .on_move(cx.processor(|view: &mut Files, index: usize, _, cx| view.move_in_menu(index, cx)))
-        .on_press(
-            cx.processor(move |view: &mut Files, index: usize, window, cx| {
-                view.run(pressed[index].clone(), window, cx)
-            }),
+        .on_move(
+            cx.processor(|view: &mut Files, index: usize, _, cx| view.move_in_menu(index, cx)),
         );
     Some(
-        items
+        view.items(&menu.on)
             .into_iter()
             .fold(popup, |popup, item| popup.item(menu_item(item, cx, k))),
     )
@@ -83,7 +78,7 @@ pub(super) fn row(row: Stateful<Div>, path: &str, view: &Files, cx: Cx) -> State
         view.open_menu(asked.clone(), None, window, cx)
     });
     let waits = matches!(
-        view.sheet_shown(),
+        &view.sheet,
         Some(Sheet::Menu(Menu { on: waiting, at: None, .. })) if *waiting == on
     );
     let placed = cx.listener(|view: &mut Files, bounds: &Bounds<Pixels>, window, cx| {
