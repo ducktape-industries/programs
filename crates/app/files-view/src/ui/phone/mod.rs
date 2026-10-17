@@ -40,7 +40,8 @@ pub(crate) fn render(view: &Files, cx: Cx) -> AnyElement {
     let sheet = match view.sheet_shown() {
         Some(Sheet::Actions) => sheets::actions(view, cx, k),
         Some(Sheet::Write(form)) => Some(sheets::form(form, cx, k)),
-        None => None,
+        // a desktop's right press opens it; a finger has none
+        Some(Sheet::Menu(_)) | None => None,
     };
     // Back undoes what is drawn: the sheet on screen, else the page over
     // the places; with neither, the host leaves the program

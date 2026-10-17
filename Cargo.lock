@@ -2009,6 +2009,7 @@ name = "files-view"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "ducklink",
  "files",
  "identity",
  "serde",

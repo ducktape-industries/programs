@@ -1,13 +1,15 @@
 //! A folder: the path as crumbs, the writes the reader may make here, then
 //! its entries, each opening its folder or file; with room, in columns (a
-//! name, what it holds, how big). Split, the folder a file is in is
-//! listed beside the file, the file's row marked. Reads the folder; writes
-//! the route and opens a write's form.
+//! name, what it holds, how big). A right press on a row opens its menu,
+//! on the room the rows leave the folder's (`menu.rs`). Split, the folder
+//! a file is in is listed beside the file, the file's row marked. Reads
+//! the folder; writes the route and opens a write's form or a menu.
 use files::EntryInfo;
 use view::{Div, Stateful};
 
 use super::*;
-use crate::state::{entry_glyph, name_of, parent_of};
+use crate::menu::{On, entry_key};
+use crate::state::{Folder, entry_glyph, name_of, parent_of};
 
 /// A column's width in a wide list: what an entry holds, how big it is.
 const KIND_W: Pixels = px(96.);
@@ -51,17 +53,18 @@ pub(super) fn beside(view: &Files, path: &str, cx: Cx, k: &Kit) -> AnyElement {
 }
 
 fn listed(view: &Files, path: &str, listing: Listing, cx: Cx, k: &Kit) -> AnyElement {
+    // as tall as the pane at least: the entries' empty room reaches its foot
     let page = div()
         .id("files-folder")
+        .min_h_full()
         .flex()
         .flex_col()
         .child(crumbs(listing.crumbs, cx, k));
     if let Some(folder) = view.folder_at(path) {
-        let writable = view.reader.writes(&folder.children());
         let writes = listing.writes.then(|| writes(view, cx, k)).flatten();
         return page
             .children(writes)
-            .child(entries(&folder.entries, writable, &listing, cx, k))
+            .child(entries(view, folder, &listing, cx, k))
             .into_any_element();
     }
     let waiting = match view.folder.failed() {
@@ -71,41 +74,39 @@ fn listed(view: &Files, path: &str, listing: Listing, cx: Cx, k: &Kit) -> AnyEle
     page.child(waiting).into_any_element()
 }
 
-fn entries(
-    entries: &[EntryInfo],
-    writable: bool,
-    listing: &Listing,
-    cx: Cx,
-    k: &Kit,
-) -> AnyElement {
-    if entries.is_empty() {
-        let detail = words::empty_folder(writable);
-        return design::empty_state(
+/// The folder's entries, down to the pane's foot: a right press on the
+/// room under them opens the folder's menu, what is made in it.
+fn entries(view: &Files, folder: &Folder, listing: &Listing, cx: Cx, k: &Kit) -> Stateful<Div> {
+    let list = div()
+        .id("files-entries")
+        .flex_1()
+        .flex()
+        .flex_col()
+        .role(Role::Group)
+        .aria_label(words::ENTRIES);
+    let list = menu::pointed(list, On::Folder(folder.path.clone()), cx);
+    if folder.entries.is_empty() {
+        let detail = words::empty_folder(view.reader.writes(&folder.children()));
+        return list.child(design::empty_state(
             "files-empty",
             "folder-open",
             words::EMPTY_FOLDER,
             detail,
             &k.ladder,
             &k.theme,
-        )
-        .into_any_element();
+        ));
     }
     // ponytail: every entry is drawn; a uniform_list once folders hold
     // more than a screenful of hundreds
-    let rows = entries.iter().map(|entry| {
+    let rows = folder.entries.iter().map(|entry| {
         let marked = listing.marked == Some(entry.path.as_str());
-        entry_row(entry, listing.columns, marked, cx, k)
+        entry_row(view, entry, listing.columns, marked, cx, k)
     });
-    div()
-        .id("files-entries")
-        .mt_2()
+    list.mt_2()
         .border_t_1()
         .border_color(k.theme.border)
-        .flex()
-        .flex_col()
         .children(listing.columns.then(|| heads(k)))
         .children(rows)
-        .into_any_element()
 }
 
 /// The columns' names, over the rows.
@@ -135,7 +136,14 @@ fn cells(kind: &'static str, size: String) -> Div {
         .child(div().w(SIZE_W).truncate().child(size))
 }
 
-fn entry_row(entry: &EntryInfo, columns: bool, marked: bool, cx: Cx, k: &Kit) -> Stateful<Div> {
+fn entry_row(
+    view: &Files,
+    entry: &EntryInfo,
+    columns: bool,
+    marked: bool,
+    cx: Cx,
+    k: &Kit,
+) -> Stateful<Div> {
     let route = Route::of(entry);
     let open =
         cx.listener(move |view: &mut Files, _: &ClickEvent, _, cx| view.open(route.clone(), cx));
@@ -145,12 +153,12 @@ fn entry_row(entry: &EntryInfo, columns: bool, marked: bool, cx: Cx, k: &Kit) ->
         false => words::entry_caption(&entry.node).into_any_element(),
     };
     let row = row(
-        format!("files/entry/{name}"),
+        entry_key(&entry.path),
         entry_glyph(entry),
         name,
         aside,
         k,
         open,
     );
-    mark(row, marked, k)
+    mark(menu::row(row, &entry.path, view, cx), marked, k)
 }
