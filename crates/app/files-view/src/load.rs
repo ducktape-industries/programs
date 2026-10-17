@@ -106,8 +106,13 @@ impl Files {
         cx.load(self, read, |view| &mut view.reader.name);
     }
 
-    /// A session: another account reads, or the same one again.
+    /// A session: the chain links are minted in, and another account
+    /// reads, or the same one again.
     pub(crate) fn session_changed(&mut self, session: Session, cx: &mut Context<Self>) {
+        if session.chain_id != self.chain {
+            self.chain = session.chain_id;
+            cx.notify();
+        }
         if session.account == self.reader.account {
             return;
         }
