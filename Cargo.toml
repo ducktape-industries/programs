@@ -186,6 +186,17 @@ opt-level = 3
 [profile.release.package.gpui-pre]
 opt-level = 3
 
+# `WASM_PROFILE=fast` (`make dev`, a view's `--example live`): the release
+# profile without what makes a release slow to build, one fat-LTO link of
+# one codegen unit per artifact; wasm-opt skips its bytes too
+# (`tools/view-gate.sh`). The opt-levels above stay, so a view's fuel stays
+# close to what ships. Its own output dir; nothing ships from it: a release,
+# a founding and a network's code are the release profile's.
+[profile.fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+
 # `make wasm-why`: the release bytes with their names, so twiggy can say
 # whose they are. Its own output dir; nothing ships from it.
 [profile.why]

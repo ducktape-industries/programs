@@ -582,7 +582,8 @@ make dev P=poll            # the program's wasm, its native tests
 make dev P=poll V=poll-view   # and the view's wasm, gated
 ```
 
-`make dev` rebuilds what cargo finds stale, one line per artifact
+`make dev` rebuilds what cargo finds stale with the fast profile (the
+README's Building), one line per artifact
 (`poll  165,724 B` or `unchanged`), gates a rebuilt view (ABI) and runs the
 native tests of the crates whose test binaries cargo rebuilt. A program
 that fails to build for wasm32 fails here; the usual cause is a dependency

@@ -35,7 +35,8 @@ jobs:
       - run: cargo clippy --locked --workspace --tests --no-deps -- -D warnings
       - run: make program-wasm-check CARGO="cargo --locked"
       - run: make view-wasm-check CARGO="cargo --locked"
-      - run: make wasm-views CARGO="cargo --locked"
+      # the views fast (no wasm-opt) for the ABI; wasm-reproducible below builds, optimizes and gates the bytes that ship
+      - run: make wasm-views CARGO="cargo --locked" WASM_PROFILE=fast
       # unlocked: the scaffold adds workspace members, so Cargo.lock changes
       - run: make scaffold-check
       - run: make wasm-reproducible CARGO="cargo --locked"

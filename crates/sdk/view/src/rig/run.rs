@@ -1,6 +1,8 @@
 //! `cargo run -p <view> --example live`: the view built for wasm32, every
 //! seated program's describe module built, each packed into its code
-//! blob, the fake node served, and the app opened on it.
+//! blob, the fake node served, and the app opened on it. Both build with
+//! the workspace's `fast` profile, as `make dev` does;
+//! `WASM_PROFILE=release` builds them as a release does (without wasm-opt).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -82,13 +84,15 @@ pub fn run(entry: &str, seed: impl FnOnce(&Network) -> Result<(), Error>) {
     }
 }
 
-/// Where cargo put us: the view crate, its workspace, its target dir.
+/// Where cargo put us: the view crate, its workspace, its target dir, and
+/// the profile the wasm builds with.
 struct Workspace {
     cargo: String,
     crate_name: String,
     crate_dir: PathBuf,
     root: PathBuf,
     target: PathBuf,
+    profile: String,
 }
 
 impl Workspace {
@@ -108,6 +112,7 @@ impl Workspace {
             crate_dir,
             root: PathBuf::from(metadata.get("workspace_root")?.as_str()?),
             target: PathBuf::from(metadata.get("target_directory")?.as_str()?),
+            profile: std::env::var("WASM_PROFILE").unwrap_or_else(|_| "fast".into()),
         })
     }
 
@@ -117,18 +122,16 @@ impl Workspace {
         cargo
     }
 
-    /// The view for wasm32, as `make wasm-views` builds it (release).
+    /// The view for wasm32, as `make wasm-views` builds it, before wasm-opt.
     fn build_view(&self) -> Vec<u8> {
-        say(format!("building {} for wasm32", self.crate_name));
+        say(format!(
+            "building {} for wasm32 ({})",
+            self.crate_name, self.profile
+        ));
         let built = self
             .cargo()
-            .args([
-                "build",
-                "--release",
-                "--target",
-                "wasm32-unknown-unknown",
-                "-p",
-            ])
+            .args(["build", "--profile", &self.profile])
+            .args(["--target", "wasm32-unknown-unknown", "-p"])
             .arg(&self.crate_name)
             .arg("--target-dir")
             .arg(&self.target)
@@ -139,7 +142,8 @@ impl Workspace {
         }
         let artifact = self
             .target
-            .join("wasm32-unknown-unknown/release")
+            .join("wasm32-unknown-unknown")
+            .join(&self.profile)
             .join(format!("{}.wasm", self.crate_name.replace('-', "_")));
         match std::fs::read(&artifact) {
             Ok(bytes) => bytes,
@@ -158,13 +162,8 @@ impl Workspace {
         say(format!("building {program}'s describe module"));
         let built = self
             .cargo()
-            .args([
-                "build",
-                "--release",
-                "--target",
-                "wasm32-unknown-unknown",
-                "-p",
-            ])
+            .args(["build", "--profile", &self.profile])
+            .args(["--target", "wasm32-unknown-unknown", "-p"])
             .arg(program)
             .args(["--features", "describe", "--target-dir"])
             .arg(&target)
@@ -176,7 +175,8 @@ impl Workspace {
             return None;
         }
         let artifact = target
-            .join("wasm32-unknown-unknown/release")
+            .join("wasm32-unknown-unknown")
+            .join(&self.profile)
             .join(format!("{}.wasm", program.replace('-', "_")));
         std::fs::read(artifact).ok()
     }

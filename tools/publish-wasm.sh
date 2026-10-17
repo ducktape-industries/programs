@@ -6,6 +6,7 @@ set -eu
 fail() { echo "wasm-publish: $*" >&2; exit 1; }
 host=$(rustc -vV | sed -n 's/^host: //p')
 [ "$host" = x86_64-unknown-linux-gnu ] || fail "the reference host is x86_64-unknown-linux-gnu, this is $host"
+[ "$WASM_PROFILE" = release ] || fail "a release is the release profile's bytes, not WASM_PROFILE=$WASM_PROFILE's"
 [ -z "$(git status --porcelain --untracked-files=no)" ] || fail "the checkout has uncommitted changes"
 commit=$(git rev-parse HEAD)
 [ -n "$(git branch --remotes --contains "$commit")" ] || fail "$commit is on no branch of origin"
@@ -14,8 +15,8 @@ tag="wasm-$commit"
 "${MAKE:-make}" wasm-modules
 out="$BUILD_TARGET/publish"
 rm -rf "$out" && mkdir -p "$out"
-(cd "$RELEASE" && sha256sum "$@" > "$out/SHA256SUMS" && tar czf "$out/programs-wasm.tar.gz" "$@" -C "$out" SHA256SUMS)
-"${CARGO:-cargo}" run --locked --release -p founding -- "$RELEASE" "$out/founding"
+(cd "$WASM_OUT" && sha256sum "$@" > "$out/SHA256SUMS" && tar czf "$out/programs-wasm.tar.gz" "$@" -C "$out" SHA256SUMS)
+"${CARGO:-cargo}" run --locked --release -p founding -- "$WASM_OUT" "$out/founding"
 # every file the bundle wrote into its fresh directory, which is every file the founding names
 # and founding.toml (the founding crate's bundle test holds the two equal)
 (cd "$out/founding" && set -- * && sha256sum "$@" > SHA256SUMS)

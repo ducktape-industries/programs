@@ -138,8 +138,8 @@ The tree vocabulary, manifests, and five-function Wasm ABI are unchanged.
 ## Loop
 
 1. Edit a program or a view.
-2. `make dev`: rebuilds what cargo finds stale (one line per artifact:
-   `name  1,181,498 B` or `unchanged`), gates the rebuilt
+2. `make dev`: rebuilds what cargo finds stale with the fast profile (one
+   line per artifact: `name  1,181,498 B` or `unchanged`), gates the rebuilt
    views (ABI) and runs the native tests of the crates cargo rebuilt.
    `P=forge` / `V=forge-view` narrow it to one.
 3. Push the branch and `make wasm-publish` (below); then in qa,
@@ -161,8 +161,13 @@ wasm-programs` itself), clippy, `make program-wasm-check`,
 
 Every wasm artifact is a build output: `make wasm-modules` builds every
 program and every view, and writes every program's schema, under `$CARGO_TARGET_DIR/wasm32-unknown-unknown/release/`;
-nothing built is committed. `make wasm-reproducible` proves the
-bytes do not depend on the checkout. They do depend on the host triple (the
+nothing built is committed. `make dev` and a view's `--example live` build
+with the `fast` profile instead (`Cargo.toml`): no fat LTO, sixteen codegen
+units and no wasm-opt, into `wasm32-unknown-unknown/fast/`, for the edit
+loop only. `WASM_PROFILE=fast` on a wasm target's command line asks for it
+(`make dev WASM_PROFILE=release` for the bytes that ship), and in the
+environment of an `--example live` it picks the rig's profile.
+`make wasm-reproducible` proves the bytes do not depend on the checkout. They do depend on the host triple (the
 Makefile says why at `WASM_RUSTFLAGS`), and the reference host is Linux x86_64:
 a founding or a release is packed from a build made there, and a Mac's build
 is a development build.
@@ -180,8 +185,8 @@ publishes needs the wasm tools below and `gh`. Each
 time `main` moves, the self-hosted runner fabrics-1 publishes it
 (`.github/workflows/release.yml`).
 
-`make dev`'s view gate and view releases require `wasm-tools`, Python 3, and
-[Binaryen wasm-opt 132](https://github.com/WebAssembly/binaryen/releases/tag/version_132).
+`make dev`'s view gate requires `wasm-tools` and Python 3; view releases
+also need [Binaryen wasm-opt 132](https://github.com/WebAssembly/binaryen/releases/tag/version_132).
 `make wasm-views` builds, optimizes, and checks the exact view ABI, printing
 `name  bytes`. The bytes before wasm-opt stay beside each
 artifact as `<name>.wasm.unoptimized`. `WASM_OPT=/path/to/wasm-opt` can

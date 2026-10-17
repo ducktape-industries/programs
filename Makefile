@@ -47,7 +47,15 @@ VIEW_FORBIDDEN := blst commonware-cryptography wasm-bindgen js-sys web-sys
 
 # Cargo uses this directory for both workspaces.
 BUILD_TARGET := $(abspath $(or $(CARGO_TARGET_DIR),target))
-RELEASE := $(BUILD_TARGET)/wasm32-unknown-unknown/release
+# The Cargo.toml profile every wasm build below comes out of: `release`, the
+# bytes that ship (a release, a founding, a network's code), or `fast`, the
+# edit loop's (`make dev` builds with it; `make wasm-views WASM_PROFILE=fast`
+# anywhere), whose views wasm-opt skips. Each profile has its own output dir,
+# so fast bytes are never where release bytes are read from. Only the command
+# line sets it, never the environment: a shell that exports it must not turn
+# the next founding's code into fast bytes.
+WASM_PROFILE = release
+WASM_OUT = $(BUILD_TARGET)/wasm32-unknown-unknown/$(WASM_PROFILE)
 # The artifacts wasm-modules leaves there (the target dir may hold others).
 ARTIFACTS := $(foreach a,$(PROGRAMS) $(VIEWS),$(subst -,_,$(a)).wasm) $(foreach p,$(PROGRAMS),$(subst -,_,$(p)).describe.wasm) $(foreach p,$(PROGRAMS),$(p).schema) $(foreach v,$(NOTIFIERS),$(subst -,_,$(v)).notify.wasm)
 
@@ -67,20 +75,23 @@ SYSROOT := $(shell rustc --print sysroot)
 RUSTC_COMMIT := $(shell rustc -vV | sed -n 's/^commit-hash: //p')
 WASM_RUSTFLAGS := --remap-path-prefix=$(CURDIR)=/build --remap-path-prefix=$(CARGO_HOME_DIR)=/cargo --remap-path-prefix=$(SYSROOT)=/rustc --remap-path-prefix=$(SYSROOT)/lib/rustlib/src/rust=/rustc/$(RUSTC_COMMIT)
 WASM_CARGO := RUSTFLAGS="$(WASM_RUSTFLAGS)" $(CARGO) build --target wasm32-unknown-unknown
-WASM_BUILD := $(WASM_CARGO) --release
+WASM_BUILD = $(WASM_CARGO) --profile $(WASM_PROFILE)
+# The view gate: wasm-opt, then the ABI check; `--fast` skips wasm-opt for
+# any profile but release (tools/view-gate.sh).
+VIEW_GATE = tools/view-gate.sh $(if $(filter release,$(WASM_PROFILE)),,--fast)
 
 # A workspace member with a cdylib crate type gets no metadata hash in its
 # output name, so `chat` built with `program` (the program, a root) and `chat`
 # built without it (a dependency of chat-view, or of forge's program) are one
 # unit to cargo's fingerprint and rebuild each other on every invocation.
 # Each program therefore builds in its own target dir, where its crate only
-# ever appears with `program` on, and its artifact is copied into $(RELEASE)
+# ever appears with `program` on, and its artifact is copied into $(WASM_OUT)
 # beside the views (which build in $(BUILD_TARGET) itself: every view links
 # the program crates with `program` off, one unit).
 PROGRAM_TARGET = $(BUILD_TARGET)/programs/$1
-program_artifact = $(call PROGRAM_TARGET,$1)/wasm32-unknown-unknown/release/$(subst -,_,$1).wasm
+program_artifact = $(call PROGRAM_TARGET,$1)/wasm32-unknown-unknown/$(WASM_PROFILE)/$(subst -,_,$1).wasm
 program_build = $(WASM_BUILD) --target-dir $(call PROGRAM_TARGET,$1) -p $1 --features program
-export CARGO BUILD_TARGET RELEASE WASM_BUILD WASM_OPT
+export CARGO BUILD_TARGET WASM_PROFILE WASM_OUT WASM_BUILD WASM_OPT
 
 .PHONY: dev wasm-why new-program new-view scaffold-check
 .PHONY: program-wasm-check wasm-programs probe-fixture wasm-views wasm-notifiers view-wasm-check test
@@ -91,8 +102,10 @@ DEV_VIEWS = $(if $(or $P,$V),$V,$(VIEWS))
 
 ## the edit loop: runs the native tests of the crates whose test binaries
 ## cargo rebuilt, then rebuilds the programs and views cargo finds stale and
-## gates the rebuilt views (ABI: Binaryen wasm-opt 132, wasm-tools,
-## python3); one line per artifact.
+## gates the rebuilt views (ABI: wasm-tools, python3); one line per artifact.
+## It builds with the fast profile; `make dev WASM_PROFILE=release` builds
+## and gates the bytes that ship (Binaryen wasm-opt 132 too).
+dev: WASM_PROFILE = fast
 dev:
 	@tools/dev.sh "$(DEV_PROGRAMS)" "$(DEV_VIEWS)"
 
@@ -130,11 +143,11 @@ program-wasm-check:
 	done; \
 	echo "abi, program and store build for wasm32"
 
-## builds every program (with `program` on) into $(RELEASE)/<name>.wasm. The
+## builds every program (with `program` on) into $(WASM_OUT)/<name>.wasm. The
 ## founding suite reads the boot set from there.
 wasm-programs:
-	@mkdir -p $(RELEASE)
-	@$(foreach p,$(PROGRAMS),$(call program_build,$(p)) && cp $(call program_artifact,$(p)) $(RELEASE)/ || exit 1;)
+	@mkdir -p $(WASM_OUT)
+	@$(foreach p,$(PROGRAMS),$(call program_build,$(p)) && cp $(call program_artifact,$(p)) $(WASM_OUT)/ || exit 1;)
 
 ## the whole suite; the founding suite runs `make wasm-programs` itself.
 test:
@@ -146,31 +159,31 @@ test:
 # reason `PROGRAM_TARGET` gives: the crate with `describe` on is another unit.
 DESCRIBE_TARGET = $(BUILD_TARGET)/describe/$1
 describe_build = $(WASM_BUILD) --target-dir $(call DESCRIBE_TARGET,$1) -p $1 --features describe
-describe_artifact = $(call DESCRIBE_TARGET,$1)/wasm32-unknown-unknown/release/$(subst -,_,$1).wasm
+describe_artifact = $(call DESCRIBE_TARGET,$1)/wasm32-unknown-unknown/$(WASM_PROFILE)/$(subst -,_,$1).wasm
 
 ## builds every program's describe module (its crate with `describe` on: the
 ## `alloc`/`describe` exports over its `describe` fn, no imports) into
-## $(RELEASE)/<name>.describe.wasm, ABI-checked. qa's pack embeds each as
+## $(WASM_OUT)/<name>.describe.wasm, ABI-checked. qa's pack embeds each as
 ## the `ducktape.describe` section of its program.
 wasm-describes:
-	@mkdir -p $(RELEASE)
-	@$(foreach p,$(PROGRAMS),$(call describe_build,$(p)) && cp $(call describe_artifact,$(p)) $(RELEASE)/$(subst -,_,$(p)).describe.wasm && python3 tools/check-describe-abi.py $(RELEASE)/$(subst -,_,$(p)).describe.wasm || exit 1;)
+	@mkdir -p $(WASM_OUT)
+	@$(foreach p,$(PROGRAMS),$(call describe_build,$(p)) && cp $(call describe_artifact,$(p)) $(WASM_OUT)/$(subst -,_,$(p)).describe.wasm && python3 tools/check-describe-abi.py $(WASM_OUT)/$(subst -,_,$(p)).describe.wasm || exit 1;)
 
 .PHONY: wasm-schemas
 
 ## writes every program's schema (its Op, Query and Reply as one borsh schema
-## container, from its crate linked natively) into $(RELEASE)/<name>.schema.
+## container, from its crate linked natively) into $(WASM_OUT)/<name>.schema.
 ## A founding packs each as the `ducktape.schema` section of its program.
 wasm-schemas:
-	@mkdir -p $(RELEASE)
-	@$(CARGO) run --locked -p founding --bin schemas -- $(RELEASE) $(PROGRAMS)
+	@mkdir -p $(WASM_OUT)
+	@$(CARGO) run --locked -p founding --bin schemas -- $(WASM_OUT) $(PROGRAMS)
 
 .PHONY: wasm-modules wasm-reproducible wasm-publish
 
 ## builds every program, its describe module and schema, every view and every
-## notifier under $(RELEASE)/, unpacked.
+## notifier under $(WASM_OUT)/, unpacked.
 wasm-modules: wasm-programs wasm-describes wasm-schemas wasm-views wasm-notifiers
-	@cd $(RELEASE) && ls -l $(ARTIFACTS)
+	@cd $(WASM_OUT) && ls -l $(ARTIFACTS)
 
 wasm-publish:
 	@tools/publish-wasm.sh $(ARTIFACTS)
@@ -180,11 +193,11 @@ wasm-publish:
 ## this checkout, this home or this toolchain's own sources inside any of them.
 wasm-reproducible:
 	$(MAKE) wasm-modules
-	@cd $(RELEASE) && sha256sum $(ARTIFACTS) > first.sha256 && cat first.sha256
+	@cd $(WASM_OUT) && sha256sum $(ARTIFACTS) > first.sha256 && cat first.sha256
 	$(MAKE) wasm-modules CARGO_TARGET_DIR=$(BUILD_TARGET)/repro
-	@cd $(BUILD_TARGET)/repro/wasm32-unknown-unknown/release && sha256sum $(ARTIFACTS) > second.sha256 && cat second.sha256
-	@diff $(RELEASE)/first.sha256 $(BUILD_TARGET)/repro/wasm32-unknown-unknown/release/second.sha256 && echo "every program and view rebuilds to the same bytes"
-	@for a in $(ARTIFACTS); do f=$(RELEASE)/$$a; \
+	@cd $(BUILD_TARGET)/repro/wasm32-unknown-unknown/$(WASM_PROFILE) && sha256sum $(ARTIFACTS) > second.sha256 && cat second.sha256
+	@diff $(WASM_OUT)/first.sha256 $(BUILD_TARGET)/repro/wasm32-unknown-unknown/$(WASM_PROFILE)/second.sha256 && echo "every program and view rebuilds to the same bytes"
+	@for a in $(ARTIFACTS); do f=$(WASM_OUT)/$$a; \
 	  if strings $$f | grep -qE "$(CURDIR)|$(HOME)|/rustc/lib/"; then echo "$$f embeds a path of this machine"; strings $$f | grep -E "$(CURDIR)|$(HOME)|/rustc/lib/" | head -3; exit 1; fi; \
 	done; echo "no program or view embeds a path of this checkout, home or toolchain"
 
@@ -195,23 +208,23 @@ wasm-reproducible:
 probe-fixture:
 	cp $(DUCKTAPE)/crates/kernel/fixtures/wasm/fixture_probe.wasm crates/system/programs/tests/
 
-## builds every view for wasm32 under $(RELEASE)/, optimized (the bytes
-## before wasm-opt stay beside it as <name>.wasm.unoptimized), ABI-checked
-## and its size printed: `name  bytes`.
+## builds every view for wasm32 under $(WASM_OUT)/, optimized (the bytes
+## before wasm-opt stay beside it as <name>.wasm.unoptimized; a fast build
+## is not optimized), ABI-checked and its size printed: `name  bytes`.
 wasm-views:
-	@$(foreach v,$(VIEWS),$(WASM_BUILD) --target-dir $(BUILD_TARGET) -p $(v) && tools/view-gate.sh $(v) $(RELEASE)/$(subst -,_,$(v)).wasm || exit 1;)
+	@$(foreach v,$(VIEWS),$(WASM_BUILD) --target-dir $(BUILD_TARGET) -p $(v) && $(VIEW_GATE) $(v) $(WASM_OUT)/$(subst -,_,$(v)).wasm || exit 1;)
 
 # Each notifier builds in a target dir of its own, for the reason
 # `PROGRAM_TARGET` gives: the view crate with `notifier` on is another unit.
 NOTIFY_TARGET = $(BUILD_TARGET)/notify/$1
 notifier_build = $(WASM_BUILD) --target-dir $(call NOTIFY_TARGET,$1) -p $1 --features notifier
-notifier_artifact = $(call NOTIFY_TARGET,$1)/wasm32-unknown-unknown/release/$(subst -,_,$1).wasm
+notifier_artifact = $(call NOTIFY_TARGET,$1)/wasm32-unknown-unknown/$(WASM_PROFILE)/$(subst -,_,$1).wasm
 
-## builds every notifier into $(RELEASE)/<view>.notify.wasm, optimized,
-## ABI-checked (alloc/init/tick) and its size printed.
+## builds every notifier into $(WASM_OUT)/<view>.notify.wasm, optimized as
+## a view is, ABI-checked (alloc/init/tick) and its size printed.
 wasm-notifiers:
-	@mkdir -p $(RELEASE)
-	@$(foreach v,$(NOTIFIERS),$(call notifier_build,$(v)) && cp $(call notifier_artifact,$(v)) $(RELEASE)/$(subst -,_,$(v)).notify.wasm && tools/view-gate.sh $(v).notify $(RELEASE)/$(subst -,_,$(v)).notify.wasm notifier || exit 1;)
+	@mkdir -p $(WASM_OUT)
+	@$(foreach v,$(NOTIFIERS),$(call notifier_build,$(v)) && cp $(call notifier_artifact,$(v)) $(WASM_OUT)/$(subst -,_,$(v)).notify.wasm && $(VIEW_GATE) $(v).notify $(WASM_OUT)/$(subst -,_,$(v)).notify.wasm notifier || exit 1;)
 
 ## builds every VIEW_LINKABLE crate for wasm32-unknown-unknown, plus the
 ## exported view probe of view, the example view and every notifier, then fails
