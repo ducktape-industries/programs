@@ -167,7 +167,9 @@ pub(super) fn refused(name: &str, refusal: &Error, cx: Cx, k: &Kit) -> AnyElemen
 }
 
 /// The page's writes behind one control in its title row, when it has
-/// any (Expo `Header` right `Hit` with `MoreHorizontal`).
+/// any (Expo `Header` right `Hit`). They are a mix (new, edit, rename,
+/// remove), so it draws `ellipsis-vertical`: the host's capsule beside
+/// it draws `ellipsis` ([`design::Page::trailing`]).
 fn actions_control(view: &Files, cx: Cx, k: &Kit) -> Option<AnyElement> {
     if view.offered().is_empty() {
         return None;
@@ -176,7 +178,7 @@ fn actions_control(view: &Files, cx: Cx, k: &Kit) -> Option<AnyElement> {
     Some(
         design::icon_button(
             "files/actions",
-            design::icon("ellipsis", k.ladder.icon),
+            design::icon("ellipsis-vertical", k.ladder.icon),
             words::ACTIONS,
             &k.ladder,
             &k.theme,

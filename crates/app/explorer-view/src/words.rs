@@ -70,6 +70,9 @@ pub(crate) const VOTE_ONLY: &str = "no account: the validators' vote only";
 pub(crate) const EVERY_PROGRAM: &str = "every-program maintainers";
 /// A change the validators' vote makes.
 pub(crate) const BY_VOTE: &str = "by vote";
+/// The Programs page's control and sheet of what the reader may add: a
+/// program by grant, a grant by vote.
+pub(crate) const ADD: &str = "Add";
 /// What a Copy put on the clipboard, as its note names it.
 pub(crate) const CODE_ID: &str = "the code id";
 pub(crate) const LINK: &str = "the link";

@@ -44,7 +44,7 @@ impl Explorer {
         cx.notify();
     }
 
-    /// Back over a drawn sheet: More, a program's sheet or a form closes.
+    /// Back over a drawn sheet: Add, a program's sheet or a form closes.
     pub(crate) fn close_sheet(&mut self, cx: &mut Context<Self>) {
         self.sheet = None;
         self.acting.form = None;

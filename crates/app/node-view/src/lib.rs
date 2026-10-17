@@ -53,7 +53,7 @@ pub struct Nodes {
     pub(crate) recent: Recent,
     /// the member whose page is open over the list on the phone
     pub(crate) open: Option<Vec<u8>>,
-    /// the door's sheet is up (the phone's `⋯`)
+    /// the door's sheet is up (the phone's door control)
     #[serde(skip)]
     pub(crate) door: bool,
     /// the chain the host session is on, once it says

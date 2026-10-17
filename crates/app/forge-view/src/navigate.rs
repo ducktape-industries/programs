@@ -92,7 +92,7 @@ impl Forge {
     }
 
     /// The sheet closes, and a Close it was asking about again with it:
-    /// the next More opens on its actions.
+    /// the next Actions opens on its list.
     pub(crate) fn close_sheet(&mut self, cx: &mut Context<Self>) {
         self.sheet = None;
         self.closing = None;

@@ -71,7 +71,7 @@ pub(crate) fn render(view: &Explorer, cx: Cx) -> AnyElement {
         | Route::Programs => explorer::root(view, cx, k),
     });
     let sheet = match &view.sheet {
-        Some(Sheet::More) => Some(programs::more_sheet(view, cx, k)),
+        Some(Sheet::Add) => Some(programs::add_sheet(view, cx, k)),
         Some(Sheet::Program(name)) => programs::program_sheet(view, name, cx, k),
         None => form::sheet(view, cx, k),
     };
