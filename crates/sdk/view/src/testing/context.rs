@@ -1298,19 +1298,27 @@ fn consumed_at(chain: &[&Node], keystroke: &gpui::Keystroke) -> Option<(usize, O
 
 /// Where a pointer's click on the last node of `chain` stops going out, as
 /// the host stops it: at the deepest node that consumes it
-/// (`consumes_click`) or occludes what is behind it, or at the top of an
-/// open overlay's layer, whose content keeps the press from what is under
-/// the overlay. Answers the first node of the chain that still hears it.
+/// (`consumes_click`) or blocks the pointer from what is behind it, or at
+/// the top of an open overlay's layer, whose content keeps the press from
+/// what is under the overlay. Answers the first node of the chain that
+/// still hears it.
 fn click_stops_at(chain: &[&Node]) -> usize {
-    stops_at(chain, |i| i.consumes_click || i.occlude)
+    stops_at(chain, |i| i.consumes_click || blocks(i))
 }
 
 /// Where a press on the last node of `chain` stops going out: at the
-/// deepest node that occludes what is behind it, or at the top of an open
-/// overlay's layer. A click's `consumes_click` stops the click, not the
-/// press under it.
+/// deepest node that blocks the pointer from what is behind it, or at the
+/// top of an open overlay's layer. A click's `consumes_click` stops the
+/// click, not the press under it.
 fn press_stops_at(chain: &[&Node]) -> usize {
-    stops_at(chain, |i| i.occlude)
+    stops_at(chain, blocks)
+}
+
+/// Whether a node keeps the pointer from what is behind it, the nodes
+/// around it included: it occludes them, or blocks all but their scroll.
+/// gpui's hit test leaves those unhovered, so none of them hears a press.
+fn blocks(i: &Interactivity) -> bool {
+    i.occlude || i.block_mouse_except_scroll
 }
 
 fn stops_at(chain: &[&Node], stops: fn(&Interactivity) -> bool) -> usize {

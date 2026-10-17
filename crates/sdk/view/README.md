@@ -101,6 +101,7 @@ with these; the rest of this page is reference.
 | `cx.processor(\|view, item, window, cx\| ..)` | 5/6 | `cx.listener` for a callback that returns a value: a list's row builder. gpui's. |
 | `design::button(id, label, &ladder, &theme, click).enabled(..)` | 3/6 | A button with its role, Tab stop and disabled state done; `.busy(..)` while its write is in flight, `.small()` for the Expo kit's small one. |
 | `cx.new(..)`, child entities | 1/6 | State and a render of its own inside a view ("Child entities"). |
+| `design::menu(id, label, at, &theme)` of `design::menu_item(..)`s, the modal of a `modal_overlay(..).on_dismiss(..)` | 1/6 | A menu at the pointer: a right press's (`on_mouse_down(MouseButton::Right, ..)`, its `position`), or the Menu key's on a focused row. |
 
 A phone page is built from the `design` kit: each piece draws as the Expo
 app's kit does under a finger and as the desktop always has under a

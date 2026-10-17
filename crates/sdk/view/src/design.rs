@@ -3,14 +3,14 @@
 //! (`text`, `size`, `space`), and the empty state, refused-with-retry
 //! screen, quiet line, heading and mono run views used to copy between
 //! them, and the controls: buttons, tabs, the segmented choice, the switch
-//! and the row it sits in, the pane divider and the link. The number and
-//! time formatters (`format.rs`) sit beside them for the same reason. The
-//! phone's shapes sit here too: the width class a view lays out by
-//! ([`width_class`]), the size ladder it picks by the session's pointer
-//! ([`ladder`]), the page stack ([`Pages`]) and the page frame ([`page`])
-//! a Compact layout is made of, and the sheet ([`sheet`]). The words
-//! every view says of a refusal and of a write that did not land
-//! ([`sentence`], [`failure`]) sit here too.
+//! and the row it sits in, the pane divider, the link and the menu at the
+//! pointer ([`menu`]). The number and time formatters (`format.rs`) sit
+//! beside them for the same reason. The phone's shapes sit here too: the
+//! width class a view lays out by ([`width_class`]), the size ladder it
+//! picks by the session's pointer ([`ladder`]), the page stack ([`Pages`])
+//! and the page frame ([`page`]) a Compact layout is made of, and the sheet
+//! ([`sheet`]). The words every view says of a refusal and of a write that
+//! did not land ([`sentence`], [`failure`]) sit here too.
 //!
 //! The kit a phone page reaches for, each piece as the Expo app's kit
 //! draws it under a finger and as the desktop always has under a pointer
@@ -2100,6 +2100,195 @@ pub fn item(mut element: Stateful<Div>, role: Role, active: bool) -> Stateful<Di
         .when(active, |item| item.aria_active_descendant())
 }
 
+/// The least a [`menu`] is wide: an item's words widen it past this.
+const MENU_W: Pixels = px(200.);
+
+/// A menu at a point in the window, as a right press, the Menu key or
+/// Shift+F10 opens one over a page: a row's actions, a folder's writes.
+/// One Tab stop ([`composite`], [`Role::Menu`]) whose ↑ ↓ walk its
+/// [`menu_item`]s and whose Enter or Space presses the active one, in a
+/// raised frame at `at` (in the window's pixels, a mouse event's
+/// `position`) that the host keeps inside the pane, on the other side of
+/// `at` where it does not fit. The frame takes the press: nothing under it
+/// hears one.
+///
+/// The view keeps whether it is open, where, and which item is active. It
+/// draws the menu as the modal of a [`modal_overlay`](crate::modal_overlay)
+/// over the page, whose `on_dismiss` (a press outside, Escape) closes it,
+/// and hands it the keyboard as it opens (`window.focus(id)`). The keys
+/// never reach an item's element, the menu holds them: `on_press` runs
+/// what the active item's click runs.
+/// `modal_overlay("menu-overlay", "Actions", page, Some(design::menu("menu",
+/// "Actions", at, &theme).active(view.active).on_move(..).on_press(..)
+/// .item(design::menu_item("menu/open", "Open", &ladder, &theme, open)
+/// .icon("folder-open"))))`.
+pub fn menu(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    at: gpui::Point<Pixels>,
+    theme: &Theme,
+) -> Menu {
+    Menu {
+        composite: composite(id, Role::Menu, label),
+        at,
+        theme: *theme,
+        items: Vec::new(),
+        active: 0,
+    }
+}
+
+/// A [`menu`] being built.
+pub struct Menu {
+    composite: Composite,
+    at: gpui::Point<Pixels>,
+    theme: Theme,
+    items: Vec<MenuItem>,
+    active: usize,
+}
+
+impl Menu {
+    /// The item the arrows are on, among those given; past the last, the
+    /// last.
+    pub fn active(mut self, index: usize) -> Self {
+        self.active = index;
+        self
+    }
+    /// An arrow, Home or End picked item `index`: the view stores it and
+    /// renders it active.
+    pub fn on_move(mut self, f: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
+        self.composite = self.composite.on_move(f);
+        self
+    }
+    /// Enter or Space on the active item, `index`.
+    pub fn on_press(mut self, f: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
+        self.composite = self.composite.on_press(f);
+        self
+    }
+    /// An item, under those given before it.
+    pub fn item(mut self, item: MenuItem) -> Self {
+        self.items.push(item);
+        self
+    }
+}
+
+impl IntoElement for Menu {
+    type Element = crate::Anchored;
+    fn into_element(self) -> crate::Anchored {
+        let Self {
+            composite,
+            at,
+            theme,
+            items,
+            active,
+        } = self;
+        let count = items.len();
+        let active = active.min(count.saturating_sub(1));
+        let items = items
+            .into_iter()
+            .enumerate()
+            .map(|(index, item)| item.drawn(index == active));
+        let frame = composite
+            .active(active, count)
+            .children(items)
+            .build()
+            .min_w(MENU_W)
+            .flex()
+            .flex_col()
+            .gap(px(::design::spacing::HAIR as f32))
+            .p(space::XXS)
+            .border_1()
+            .border_color(theme.border)
+            .bg(theme.background)
+            .shadow_lg()
+            .occlude();
+        crate::anchored()
+            .position(at)
+            .snap_to_window_with_margin(gpui::Edges::all(space::SM))
+            .child(focus_shown(frame, &theme, |style| style.shadow_lg()))
+    }
+}
+
+/// One item of a [`menu`]: `label` in body text on one line, the whole row
+/// the press (`click`), [`Ladder::control`] tall; [`MenuItem::icon`] leads
+/// it with a glyph, and [`MenuItem::danger`] marks one that destroys:
+/// `design::menu_item("menu/remove", "Remove", &ladder, &theme, remove)
+/// .icon("trash").danger()`.
+pub fn menu_item(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    ladder: &Ladder,
+    theme: &Theme,
+    click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> MenuItem {
+    MenuItem {
+        id: id.into(),
+        label: label.into(),
+        icon: None,
+        danger: false,
+        ladder: *ladder,
+        theme: *theme,
+        click: Box::new(click),
+    }
+}
+
+/// A [`menu_item`] being built.
+pub struct MenuItem {
+    id: ElementId,
+    label: SharedString,
+    icon: Option<SharedString>,
+    danger: bool,
+    ladder: Ladder,
+    theme: Theme,
+    click: crate::interactivity::EventListener<ClickEvent>,
+}
+
+impl gpui::prelude::FluentBuilder for MenuItem {}
+
+impl MenuItem {
+    /// A Lucide glyph before the label (`icons/<name>.svg`), at
+    /// [`Ladder::icon`], muted.
+    pub fn icon(mut self, name: impl Into<SharedString>) -> Self {
+        self.icon = Some(name.into());
+        self
+    }
+    /// The item destroys something (Remove, Delete): its glyph and its
+    /// label wear the danger tone.
+    pub fn danger(mut self) -> Self {
+        self.danger = true;
+        self
+    }
+    /// The item as its menu draws it, `active` where the arrows are.
+    fn drawn(self, active: bool) -> Stateful<Div> {
+        let (ladder, theme) = (self.ladder, self.theme);
+        let (glyph, words) = match self.danger {
+            true => (theme.danger, theme.danger),
+            false => (theme.muted, theme.foreground),
+        };
+        let row = div()
+            .id(self.id)
+            .w_full()
+            .h(ladder.control)
+            .flex()
+            .items_center()
+            .gap(space::SM)
+            .px(space::SM)
+            .text_type(ladder.body)
+            .text_color(words)
+            .whitespace_nowrap()
+            .cursor_pointer()
+            .hover(move |style| style.bg(theme.surface_raised))
+            .active(move |style| style.bg(theme.accent_soft))
+            .when(active, |row| row.bg(theme.surface_raised))
+            .on_click(self.click)
+            .children(
+                self.icon
+                    .map(|name| icon(&name, ladder.icon).text_color(glyph)),
+            )
+            .child(self.label);
+        item(row, Role::MenuItem, active)
+    }
+}
+
 /// A few choices side by side in one box, the picked one ink-filled: a
 /// state filter, an object format, an invite's lifetime. `label` names the
 /// choice, `choices` are each segment's id and label, `picked` the one
@@ -2549,6 +2738,49 @@ mod tests {
             (style.min_size.width, style.min_size.height),
             (floor, floor)
         );
+    }
+
+    /// A menu is one Tab stop at its point, which the arrows hold: its
+    /// items take no focus, and the active one claims the menu's.
+    #[test]
+    fn a_menu_is_one_tab_stop_at_its_point_whose_active_item_claims_it() {
+        let theme = Theme::light();
+        let item = |id: &'static str, label: &'static str| {
+            menu_item(id, label, &POINTER, &theme, |_, _, _| {})
+        };
+        let node = lower(
+            menu("menu", "Actions", gpui::point(px(40.), px(60.)), &theme)
+                .active(1)
+                .on_move(|_, _, _| {})
+                .on_press(|_, _, _| {})
+                .item(item("open", "Open").icon("folder-open"))
+                .item(item("remove", "Remove").icon("trash").danger()),
+        );
+        let wire::Node::Anchored {
+            position, children, ..
+        } = &node
+        else {
+            panic!("a popup at a point: {node:?}");
+        };
+        assert_eq!(*position, Some([40., 60.]));
+        let [frame] = children.as_slice() else {
+            panic!("one frame: {children:?}");
+        };
+        let held = interactivity(frame);
+        assert_eq!(held.role, Some(Role::Menu));
+        assert!(held.focusable && held.on_key_down.is_some());
+        let claims: Vec<bool> = frame
+            .children()
+            .iter()
+            .map(|item| {
+                let item = interactivity(item);
+                assert_eq!(item.role, Some(Role::MenuItem));
+                assert!(!item.focusable && item.on_click.is_some());
+                item.aria.active_descendant
+            })
+            .collect();
+        assert_eq!(claims, [false, true]);
+        assert_eq!(faults(&node), []);
     }
 
     /// An eyebrow crosses as the words were written, marked for the host to
