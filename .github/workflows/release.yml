@@ -1,29 +1,108 @@
-# Each time `main` moves, the self-hosted runner fabrics-1 (the reference host) runs
-# `make wasm-publish`, so kit can found any commit on `main` from its release wasm-<commit>.
+# The self-hosted runner fabrics-1 (the reference host) builds the wasm of each commit
+# `dev` and `main` move to, and the job `upload` publishes it at
+# https://dl.ducktape.industries/programs/<channel>/ (tools/publish-dl.py: the version is
+# the commit's first-parent count):
+# - dev: the fast profile's bytes. A newer push cancels the run of an older one.
+# - main: the release profile's bytes, the one build dl and the GitHub release
+#   wasm-<commit> kit founds from (`make wasm-publish`) both publish. Every commit main
+#   moves to is published; none is cancelled. Neither publication waits on the other:
+#   the GitHub release goes out when dl's stage fails, and the upload runs when the
+#   release fails. A rerun of the upload skips what dl already holds, while wasm-publish
+#   refuses a commit it published.
+# A dispatch publishes the GitHub release of its ref, and nothing to dl.
+# fabrics-1 stages each file and the manifest (`make dl-stage`) and hands them to the job
+# `upload` as an artifact. That job, on GitHub's Ubuntu (which has `aws`), is the only one
+# that reads the bucket's secrets: R2_ACCOUNT_ID, R2_BUCKET, and the organization's
+# R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY.
 name: release
 
 on:
   push:
-    branches: [main]
+    branches: [dev, main]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.sha }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.ref_name == 'dev' && 'dev' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref_name == 'dev' }}
 
 env:
   CARGO_TERM_COLOR: always
   CARGO_TARGET_DIR: ${{ github.workspace }}/../target
 
 jobs:
-  wasm:
+  dev:
+    if: github.event_name == 'push' && github.ref_name == 'dev'
     runs-on: [self-hosted, fabrics-1]
     timeout-minutes: 60
+    outputs:
+      staged: ${{ steps.handoff.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
-      - run: make wasm-publish
+        with:
+          fetch-depth: 0 # the version counts the whole first-parent history
+      - run: make dl-stage CHANNEL=dev WASM_PROFILE=fast DL_OUT="$RUNNER_TEMP/dl"
+      - id: handoff
+        uses: actions/upload-artifact@v4
+        with:
+          name: dl
+          path: ${{ runner.temp }}/dl
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true # a rerun of the build replaces its earlier attempt's stage
+
+  main:
+    if: github.event_name != 'push' || github.ref_name == 'main'
+    runs-on: [self-hosted, fabrics-1]
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    outputs:
+      staged: ${{ steps.handoff.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the version counts the whole first-parent history
+      - id: build
+        run: make wasm-founding
+      - if: github.event_name == 'push'
+        run: make dl-stage CHANNEL=main DL_OUT="$RUNNER_TEMP/dl" -o wasm-founding
+      - if: github.event_name == 'push'
+        id: handoff
+        uses: actions/upload-artifact@v4
+        with:
+          name: dl
+          path: ${{ runner.temp }}/dl
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true # a rerun of the build replaces its earlier attempt's stage
+      - if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: make wasm-publish -o wasm-founding
         env:
           GH_TOKEN: ${{ github.token }}
+
+  upload:
+    needs: [dev, main]
+    if: ${{ !cancelled() && (needs.dev.outputs.staged || needs.main.outputs.staged) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # one upload of a channel at a time, so latest.json is read and written by one run
+    concurrency:
+      group: ${{ github.workflow }}-upload-${{ github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      # tools/publish-dl.py at the built commit
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dl
+          path: stage
+      - run: tools/publish-dl.py upload stage
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
