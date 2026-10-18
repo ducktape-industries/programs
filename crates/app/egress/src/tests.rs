@@ -13,6 +13,8 @@ use valset::{Genesis, Member, Valset};
 
 use crate::*;
 
+mod order;
+
 const ADA: [u8; 32] = [1; 32];
 const BO: [u8; 32] = [2; 32];
 const STRANGER: [u8; 32] = [9; 32];
@@ -782,10 +784,8 @@ fn an_http_call_answers_a_response_whether_its_reply_came_whole_or_as_events() {
     assert_eq!(decoded, [limited, streamed]);
 }
 
-/// An event the requester refuses refuses its frame: the expiry stays where it was, nothing is
-/// heard, and the next event is taken. A repeated `seq` and one back at 0 pass through.
 #[test]
-fn a_refused_event_moves_nothing_and_the_next_one_is_heard() {
+fn an_event_the_requester_refuses_is_passed_over_and_the_next_one_is_heard() {
     let chain = chain();
     serve(&chain, ADA, &[HTTP]).unwrap();
     stream(&chain, http_request(HTTP, MESSAGES, Vec::new()), Some(5));
@@ -796,27 +796,17 @@ fn a_refused_event_moves_nothing_and_the_next_one_is_heard() {
         seq,
         data: data.to_vec(),
     };
-    let refused = submit(&chain, &ADA, &Op::Events(vec![event(0, REFUSED_EVENT)])).unwrap_err();
-    assert_eq!(
-        (refused.code.as_str(), refused.message.as_str()),
-        (code::INVALID_INPUT, "the asker refuses this event")
-    );
-    assert_eq!(request_row(&chain, 1).unwrap().expiry, before);
-    assert_eq!(entry(&chain, before).unwrap().height, 1 + 5);
+    submit(&chain, &ADA, &Op::Events(vec![event(0, REFUSED_EVENT)])).unwrap();
+    let moved = request_row(&chain, 1).unwrap().expiry;
+    assert_eq!(entry(&chain, before), None);
+    assert_eq!(entry(&chain, moved).unwrap().height, 2 + 5);
     assert!(heard(&chain).is_empty());
-    // the next event, a repeat, its successor, then the node calling again from 0
-    let sent = [
-        (3, 0, b"one"),
-        (4, 0, b"one"),
-        (5, 1, b"two"),
-        (6, 0, b"new"),
-    ];
+    let sent = [(3, 1, b"two"), (4, 1, b"two"), (5, 0, b"new")];
     for (height, seq, data) in sent {
         chain.at(height, 0);
         submit(&chain, &ADA, &Op::Events(vec![event(seq, data)])).unwrap();
     }
-    let seqs: Vec<u64> = heard(&chain).iter().map(|event| event.seq).collect();
-    assert_eq!(seqs, [0, 0, 1, 0]);
+    assert_eq!(heard(&chain), [event(1, b"two"), event(0, b"new")]);
 }
 
 /// A relay is answered whole: asking it as events is refused.

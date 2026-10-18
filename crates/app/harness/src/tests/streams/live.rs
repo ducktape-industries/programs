@@ -318,7 +318,7 @@ fn a_reply_that_starts_over_takes_back_what_the_old_one_posted_and_posts_once() 
     assert!(message(chain, &old).is_some());
     let second = post_events("toolu_b", &[r#"{"channel":"general","text":"Final"}"#]);
     from(chain, &request, &second, 0);
-    end(chain, &request, (first.len() + second.len()) as u64);
+    end(chain, &request, second.len() as u64);
     assert!(message(chain, &old).unwrap().deleted);
     assert_eq!(
         call_state(chain, thread, "toolu_a"),
@@ -360,7 +360,7 @@ fn a_reply_that_starts_over_after_a_call_ran_says_so_and_a_post_it_made_is_taken
     ]
     .concat();
     from(chain, &request, &second, 0);
-    end(chain, &request, (6 + second.len()) as u64);
+    end(chain, &request, second.len() as u64);
     assert!(message(chain, &old).unwrap().deleted);
     assert!(posts_by(chain, world.agent).is_empty());
     assert!(
@@ -383,7 +383,9 @@ fn a_stream_that_breaks_while_a_post_forms_takes_the_post_back() {
     through(chain, &request, &events, 5);
     let id = format!("harness-{thread}-toolu_p");
     assert_eq!(text_of(&message(chain, &id).unwrap()), "Half");
-    stream(chain, &request, &events, &[6, 7]);
+    let mut broken = events.clone();
+    broken[5] = b"event: content_block_delta\r\ndata: not json".to_vec();
+    stream(chain, &request, &broken, &[5, 6, 7]);
     end(chain, &request, 8);
     assert!(message(chain, &id).unwrap().deleted);
     let said = notices(chain, thread);

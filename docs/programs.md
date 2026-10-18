@@ -455,8 +455,10 @@ event by event instead ([roles.md](roles.md), the egress row). harness asks
 a model's turn this way: `deliver` is `harness::streamed_as(thread)`, the
 encoding of its `Op::Streamed { thread, event }` up to the event, so each
 event arrives as that op. It checks the sender is the program bound to the
-egress role, and checks `seq` itself, because egress does not. The call's
-answer, an empty-bodied `http::Response`, says the stream ended.
+egress role. Egress hands it each `seq` once and in order, and a `seq` back
+at 0 means the node called the model again. The call's answer, an
+empty-bodied `http::Response`, comes after the last event and says the
+stream ended.
 
 **A run for a later block.** `ctx.schedule(height, target, &op).await`
 asks the program bound to the scheduler role to run `target` with `op` at
