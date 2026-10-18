@@ -1,16 +1,19 @@
 //! What each op checks and writes: an account registering a service and assigning the nodes
 //! that may serve it (its key's list in the access program decides who assigns), a member node serving, a program's call and the chain electing its node,
-//! the node answering it (whole, or as events and then the stream's end), and the request's own
-//! scheduled run expiring it.
+//! the node answering it (whole, or as events the requester hears once each in `seq` order, then
+//! the stream's end), and the request's own scheduled run expiring it.
 use ::program::kernel::error_from;
 use ::program::{
-    BlobId, Cause, Ctx, Error, ExecCtx, Need, Origin, Ownership, Party, QueryCtx, Resource, code,
-    invalid, not_found, unauthorized, unexpected_reply, wrong_state,
+    BlobId, Cause, Ctx, Error, ExecCtx, Need, Origin, Ownership, Party, QueryCtx, Reply, Resource,
+    code, invalid, not_found, unauthorized, unexpected_reply, wrong_state,
 };
 use abi::role::validators;
 use store::{PageRequest, PageResponse};
 
-use crate::state::{ASSIGNED, COUNT, NODES, REQUESTS, SERVICES, SERVING, Stored, TURNS};
+use crate::state::{
+    ASSIGNED, COUNT, EARLY, Ending, NODES, REQUESTS, SERVICES, SERVING, STREAMS, Stored, Stream,
+    TURNS,
+};
 use crate::{
     Answer, DEFAULT_WAIT, Delivery, Event, HTTP, NodeRow, Op, PROGRAM, RELAY, RESERVED, Request,
     RequestRow, ServiceRow, StreamEnd, http,
@@ -284,7 +287,16 @@ fn close(ctx: &ExecCtx, stored: Stored, answer: Result<Vec<u8>, Error>) -> Resul
     let row = stored.row;
     REQUESTS.remove(ctx, &row.id);
     ASSIGNED.remove(ctx, &(row.node.clone(), row.id));
+    STREAMS.remove(ctx, &row.id);
+    drop_early(ctx, row.id)?;
     ctx.resolve(stored.ticket, answer)?;
+    Ok(())
+}
+
+fn drop_early(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
+    for (key, _) in EARLY.scan(ctx, EARLY.prefix_of(&id))? {
+        EARLY.remove(ctx, &key);
+    }
     Ok(())
 }
 
@@ -328,12 +340,6 @@ pub(crate) async fn answer(ctx: &Ctx, id: u64, answer: Answer) -> Result<(), Err
     close(ctx, stored, answered)
 }
 
-/// `seq` is passed through as the node sent it, never checked: it counts from 0 per call the
-/// node makes, so a repeated `seq` is a repeat (a frame sent again beside the one already
-/// relayed) and a `seq` back at 0 is the node calling the service again after a restart, which
-/// voids what came before. Only the requester can act on either; a check here would hide them
-/// (a strict next-`seq` wedges the stream after one refused event, a rising one splices a
-/// restarted call onto the old one's prefix).
 pub(crate) async fn events(ctx: &Ctx, events: Vec<Event>) -> Result<(), Error> {
     if events.is_empty() {
         return Err(invalid("an Events op carries at least one event"));
@@ -343,28 +349,108 @@ pub(crate) async fn events(ctx: &Ctx, events: Vec<Event>) -> Result<(), Error> {
         let id = first.id;
         let mut stored = from_its_node(ctx, id)?;
         let deliver = streamed(&stored)?.to_vec();
-        let expires = expiry_height(ctx.env().height, stored.wait)?;
-        ctx.cancel(stored.row.expiry).await?;
-        stored.row.expiry = ctx.schedule(expires, PROGRAM, &Op::Expire { id }).await?;
+        let mut stream = STREAMS.get(ctx, &id)?.unwrap_or_default();
+        let height = ctx.env().height;
+        let unmoved = stream.moved != height;
+        if unmoved {
+            let expires = expiry_height(height, stored.wait)?;
+            ctx.cancel(stored.row.expiry).await?;
+            stored.row.expiry = ctx.schedule(expires, PROGRAM, &Op::Expire { id }).await?;
+            stream.moved = height;
+            REQUESTS.put(ctx, &id, &stored);
+        }
         let same_request = std::iter::once(first).chain(std::iter::from_fn(|| {
             events.next_if(|event| event.id == id)
         }));
         for event in same_request {
-            ctx.emit_raw(
-                stored.row.requester.clone(),
-                event.payload(&deliver),
-                ::program::Reply::None,
-            );
+            hear(ctx, &stored.row, &deliver, &mut stream, event)?;
         }
-        REQUESTS.put(ctx, &id, &stored);
+        let heard_out = stream
+            .ending
+            .clone()
+            .filter(|ending| stream.next >= ending.events);
+        match heard_out {
+            Some(ending) => finish(ctx, stored, ending).await?,
+            None => STREAMS.put(ctx, &id, &stream),
+        }
     }
     Ok(())
 }
 
-/// An events request's stream ended: its call answers `Complete` as the encoded
-/// `http::Response` with the stream's status and headers and an empty body (the events were the
-/// body), so an `Http` request's call answers one type whether its reply came whole or as
-/// events; a cut answers the service's failure.
+enum Arrival {
+    Restart,
+    Repeat,
+    Due,
+    Early,
+}
+
+fn arrival(next: u64, seq: u64) -> Arrival {
+    let restarted = seq == 0 && next > 0;
+    if restarted {
+        return Arrival::Restart;
+    }
+    match seq.cmp(&next) {
+        std::cmp::Ordering::Less => Arrival::Repeat,
+        std::cmp::Ordering::Equal => Arrival::Due,
+        std::cmp::Ordering::Greater => Arrival::Early,
+    }
+}
+
+fn hear(
+    ctx: &ExecCtx,
+    row: &RequestRow,
+    deliver: &[u8],
+    stream: &mut Stream,
+    event: Event,
+) -> Result<(), Error> {
+    match arrival(stream.next, event.seq) {
+        Arrival::Restart => restart(ctx, row, deliver, stream, event),
+        Arrival::Repeat => Ok(()),
+        Arrival::Due => due(ctx, row, deliver, stream, event),
+        Arrival::Early => {
+            EARLY.put(ctx, &(row.id, event.seq), &event.data);
+            Ok(())
+        }
+    }
+}
+
+fn restart(
+    ctx: &ExecCtx,
+    row: &RequestRow,
+    deliver: &[u8],
+    stream: &mut Stream,
+    event: Event,
+) -> Result<(), Error> {
+    drop_early(ctx, row.id)?;
+    stream.next = 0;
+    stream.ending = None;
+    due(ctx, row, deliver, stream, event)
+}
+
+fn due(
+    ctx: &ExecCtx,
+    row: &RequestRow,
+    deliver: &[u8],
+    stream: &mut Stream,
+    event: Event,
+) -> Result<(), Error> {
+    let mut event = event;
+    loop {
+        ctx.emit_raw(row.requester.clone(), event.payload(deliver), Reply::Wanted);
+        stream.next = event.seq + 1;
+        let following = (row.id, stream.next);
+        let Some(data) = EARLY.get(ctx, &following)? else {
+            return Ok(());
+        };
+        EARLY.remove(ctx, &following);
+        event = Event {
+            id: row.id,
+            seq: stream.next,
+            data,
+        };
+    }
+}
+
 pub(crate) async fn end_stream(
     ctx: &Ctx,
     id: u64,
@@ -373,7 +459,24 @@ pub(crate) async fn end_stream(
 ) -> Result<(), Error> {
     let stored = from_its_node(ctx, id)?;
     streamed(&stored)?;
+    let mut stream = STREAMS.get(ctx, &id)?.unwrap_or_default();
+    let ending = Ending { events, end };
+    let unheard = stream.next < events;
+    if unheard {
+        stream.ending = Some(ending);
+        STREAMS.put(ctx, &id, &stream);
+        return Ok(());
+    }
+    finish(ctx, stored, ending).await
+}
+
+/// An events request's stream ended: its call answers `Complete` as the encoded
+/// `http::Response` with the stream's status and headers and an empty body (the events were the
+/// body), so an `Http` request's call answers one type whether its reply came whole or as
+/// events; a cut answers the service's failure.
+async fn finish(ctx: &Ctx, stored: Stored, ending: Ending) -> Result<(), Error> {
     ctx.cancel(stored.row.expiry).await?;
+    let Ending { events, end } = ending;
     let ended = match &end {
         StreamEnd::Complete { status, headers } => Ok(abi::encode(&http::Response {
             status: *status,

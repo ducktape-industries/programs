@@ -1,5 +1,5 @@
 //! The program: every op and every query, each handed to its rule.
-use ::program::{Awaiting, Ctx, Error, Program, QueryCtx};
+use ::program::{Awaiting, Ctx, Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::rules::{
     answer, assign, assigned, end_stream, events, expire, node, nodes, register, request,
@@ -21,6 +21,10 @@ impl Program for Egress {
 
     fn resource(ctx: &QueryCtx, key: &str) -> Result<::program::Resource, Error> {
         crate::rules::resource(ctx, key)
+    }
+
+    fn reply(_: &ExecCtx, _: &MessageId, _: &Outcome) -> Result<(), Error> {
+        Ok(())
     }
 
     fn query(ctx: &QueryCtx, query: Query) -> Result<Reply, Error> {

@@ -16,6 +16,20 @@ fn stream(chain: &MockChain, request: &RequestRow, events: &[Vec<u8>], seqs: &[u
     }
 }
 
+fn handed(chain: &MockChain, thread: u64, request: &RequestRow, events: &[Vec<u8>], seqs: &[u64]) {
+    for &seq in seqs {
+        let event = egress::Event {
+            id: request.id,
+            seq,
+            data: events[seq as usize].clone(),
+        };
+        let streamed = Op::Streamed { thread, event };
+        chain
+            .submit(Origin::Program(egress::PROGRAM.into()), PROGRAM, &streamed)
+            .unwrap();
+    }
+}
+
 fn end(chain: &MockChain, request: &RequestRow, events: u64) {
     let ended = egress::Op::EndStream {
         id: request.id,
@@ -113,7 +127,8 @@ fn repeats_are_dropped_and_a_restart_at_zero_starts_the_reply_over() {
     let chain = &world.chain;
     let (thread, request) = asked(&world);
     let events = events(TEXT);
-    stream(chain, &request, &events, &[0, 1, 2, 3, 4, 4, 3]);
+    stream(chain, &request, &events, &[0, 1, 2, 3, 4]);
+    handed(chain, thread, &request, &events, &[4, 3]);
     assert_eq!(
         partial(chain, thread).unwrap().said,
         [Said::Text("Hello, world".into())]
@@ -124,7 +139,7 @@ fn repeats_are_dropped_and_a_restart_at_zero_starts_the_reply_over() {
         [Said::Text("Hello".into())]
     );
     stream(chain, &request, &events, &[4, 5, 6, 7]);
-    end(chain, &request, 12);
+    end(chain, &request, 8);
     let [Body::Turn { said, .. }] = &turns(chain, thread)[..] else {
         panic!("one turn");
     };
@@ -137,8 +152,10 @@ fn a_gap_in_the_stream_is_noticed_once_and_the_thread_goes_idle() {
     let chain = &world.chain;
     let (thread, request) = asked(&world);
     let events = events(TEXT);
-    stream(chain, &request, &events, &[0, 1, 3, 4, 5, 6, 7]);
-    end(chain, &request, 7);
+    stream(chain, &request, &events, &[0, 1]);
+    handed(chain, thread, &request, &events, &[3]);
+    stream(chain, &request, &events, &[2, 3, 4, 5, 6, 7]);
+    end(chain, &request, 8);
     assert!(turns(chain, thread).is_empty());
     assert_eq!(
         notices(chain, thread),
