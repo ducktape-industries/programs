@@ -1292,6 +1292,11 @@
     "reply": null
   },
   {
+    "kind": "link.window",
+    "request": "duck://chat/room",
+    "reply": null
+  },
+  {
     "kind": "host.route",
     "request": null,
     "reply": "tx/00ff"
