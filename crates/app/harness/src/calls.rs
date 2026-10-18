@@ -527,7 +527,10 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
             Ok(match written(ctx, owner.agent, writes).await {
                 Ok(output) => {
                     keep_shown(ctx, id, call, entry, &row.input);
-                    ((entry.render)(&output).to_string(), false)
+                    match (entry.render)(&output) {
+                        Ok(value) => (value.to_string(), false),
+                        Err(refused) => (refusal(&refused), true),
+                    }
                 }
                 Err(error) => (refusal(&error), true),
             })

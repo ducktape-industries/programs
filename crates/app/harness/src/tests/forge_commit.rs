@@ -1,6 +1,7 @@
 //! `forge_commit` with forge seated: an agent's commit creates the repository it names, the
 //! agent's, and the next one goes on top; a stale base, a repository someone else owns and a
-//! commit over forge's bounds are refused in the tool's words.
+//! commit over forge's bounds are refused in the tool's words, and a new repository's first
+//! commit over them in forge's.
 use ::program::{Ownership, Party};
 use forge::{Bounds, CommitInfo, Revision, TreeInfo};
 
@@ -99,6 +100,7 @@ fn an_agent_commits_to_a_repository_it_creates_and_then_on_top_of_its_commit() {
         "files": [
             file("README.md", "# Notes\n"),
             { "path": "bin/run.sh", "content": "echo ok\n", "executable": true },
+            file("src/main.rs", "fn main() {}\n"),
         ],
         "message": "Start the notes",
     });
@@ -138,7 +140,8 @@ fn an_agent_commits_to_a_repository_it_creates_and_then_on_top_of_its_commit() {
         names(chain, "notes", &started.oid, ""),
         [
             ("README.md".to_owned(), File),
-            ("bin".to_owned(), Directory)
+            ("bin".to_owned(), Directory),
+            ("src".to_owned(), Directory)
         ]
     );
     assert_eq!(
@@ -172,6 +175,10 @@ fn an_agent_commits_to_a_repository_it_creates_and_then_on_top_of_its_commit() {
             ("README.md".to_owned(), File),
             ("src".to_owned(), Directory)
         ]
+    );
+    assert_eq!(
+        names(chain, "notes", &second.oid, "src"),
+        [("lib.rs".to_owned(), File), ("main.rs".to_owned(), File)]
     );
     let (text, failed) = result_of(chain, thread, "c3");
     assert!(failed && text.starts_with(code::STALE), "{text}");
@@ -220,4 +227,35 @@ fn a_commit_over_forges_bounds_is_refused_in_the_tools_words() {
     assert!(failed && text.starts_with(code::CAPACITY), "{text}");
     assert!(text.contains("at most 4"), "{text}");
     assert_eq!(log(chain, "notes").len(), 1);
+}
+
+/// A new repository's bounds are unknown until it exists, so only forge's push checks its first
+/// commit: over them, the call fails in forge's words, and the repository stays, the agent's and
+/// empty.
+#[test]
+fn a_first_commit_over_forges_bounds_fails_and_leaves_its_new_repository_empty() {
+    let world = forged(4);
+    let chain = &world.chain;
+    let thread = world.opened("m1", "write a lot", Some(WINDOW));
+    let three = json!({
+        "repo": "notes",
+        "files": [file("a.md", "a"), file("b.md", "b"), file("c.md", "c")],
+        "message": "three",
+    });
+    turn(chain, 3, &[("c1", three)]);
+    let (text, failed) = result_of(chain, thread, "c1");
+    assert!(failed && text.starts_with(code::CAPACITY), "{text}");
+    assert!(text.contains("too many objects"), "{text}");
+    let forge::Reply::Repo { repo, .. } = ask(
+        chain,
+        forge::Query::Repo {
+            repo: "notes".into(),
+        },
+    ) else {
+        panic!()
+    };
+    assert_eq!(
+        (repo.repo.owner, repo.repo.refs_count),
+        (Principal::Account(world.agent), 0)
+    );
 }

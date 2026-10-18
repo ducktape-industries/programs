@@ -24,7 +24,7 @@ pub(crate) struct Agent {
     pub path: String,
 }
 
-fn profile(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<Profile>, Error> {
+pub(crate) fn profile(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<Profile>, Error> {
     use abi::role::identity::{Query, Reply};
     let identity = &ctx.env().role(abi::role::IDENTITY)?.clone();
     match ctx.query::<Query, Reply>(identity, &Query::Profile(number))? {

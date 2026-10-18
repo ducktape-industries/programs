@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ::program::{Error, ExecCtx, HashKind, capacity, code, invalid, not_found, stale};
-use abi::role::identity::{self as role, AccountNumber};
+use abi::role::identity::AccountNumber;
 use forge::{Bounds, EntryKind, Query, Reply, Repo, Settings};
 use gitcore::wire::pktline::{self, Pkt};
 use gitcore::{Hash, Kind, Mode, Object, Oid, Signature, Tree, TreeEntry, pack};
@@ -16,6 +16,7 @@ use serde_json::{Value, json};
 use store::{PageRequest, PageResponse};
 
 use super::ask;
+use crate::agents::profile;
 use crate::tools::{Run, Seat, Tool, Write, object, unexpected};
 
 /// The objects a commit adds, by id: two files of the same bytes are one blob.
@@ -225,12 +226,8 @@ fn rebuilt(
 /// it (git's `<` and `>` and control characters left out), at an address no mail reaches (its
 /// number at the network), at the block's time.
 fn signature(ctx: &ExecCtx, agent: AccountNumber) -> Result<Signature, Error> {
-    let identity = ctx.env().role(abi::role::IDENTITY)?.clone();
-    let named = match ctx.query(identity, &role::Query::Profile(agent))? {
-        role::Reply::Profile(profile) => profile.map(|profile| profile.name),
-        other => return Err(unexpected("identity", "Profile", &other)),
-    };
-    let name: String = named
+    let name: String = profile(ctx, agent)?
+        .map(|profile| profile.name)
         .unwrap_or_default()
         .chars()
         .filter(|c| !matches!(c, '<' | '>') && !c.is_control())
@@ -318,7 +315,7 @@ pub(crate) struct Commit;
 
 impl Tool for Commit {
     const NAME: &'static str = "forge_commit";
-    const DESCRIPTION: &'static str = "Commit files to a forge repository as one git commit on a branch, as your account, and push it. Each file is written whole; remove deletes paths (a directory with everything in it). Paths are inside the repository, like src/main.rs. A repository that does not exist yet is created, owned by you. An existing one takes the push only if its write list in the access program allows your account or harness: its owner alone unless the owner lists others, and a refusal says unauthorized. The commit goes on top of the branch's newest commit, and a new branch starts from the default branch; with base, only while the branch is still at base. Forge takes a bounded number of objects (each file and each changed directory is one) and of bytes per file in one push; a larger commit is refused, so split it. forge_log shows the commit.";
+    const DESCRIPTION: &'static str = "Commit files to a forge repository as one git commit on a branch, as your account, and push it. Each file is written whole; remove deletes paths (a directory with everything in it). Paths are inside the repository, like src/main.rs. A repository that does not exist yet is created, owned by you, and stays even if forge refuses the commit. An existing one takes the push only if its write list in the access program allows your account or harness: its owner alone unless the owner lists others, and a refusal says unauthorized. The commit goes on top of the branch's newest commit, and a new branch starts from the default branch; with base, only while the branch is still at base. Forge takes a bounded number of objects (each file and each changed directory is one) and of bytes per file in one push; a larger commit is refused, so split it. forge_log shows the commit.";
     const WRITES: bool = true;
     type Args = CommitArgs;
 
@@ -448,20 +445,33 @@ impl Tool for Commit {
         Ok(Run::Write(writes))
     }
 
-    /// Git's report of the push: the branch it moved, or why forge did not take it.
-    fn render(output: &[u8]) -> Value {
+    /// Git's report of the push: the branch it moved. A report that refuses it fails the call
+    /// in forge's words: objects forge did not take (a commit over its bounds, which a new
+    /// repository's first commit cannot be checked against before the repository exists) or
+    /// a branch it did not move.
+    fn render(output: &[u8]) -> Result<Value, Error> {
         let lines = pktline::Reader::new(output).filter_map(|pkt| match pkt {
             Ok(Pkt::Data(data)) => Some(String::from_utf8_lossy(pktline::strip_newline(data))),
             _ => None,
         });
-        let mut pushed = None;
         for line in lines {
-            match line.strip_prefix("ok ") {
-                Some(branch) => pushed = Some(branch.to_owned()),
-                None if line == "unpack ok" => {}
-                None => return json!({ "ok": false, "refused": line }),
+            if let Some(branch) = line.strip_prefix("ok ") {
+                return Ok(json!({ "ok": true, "pushed": branch }));
+            }
+            match line.strip_prefix("unpack ") {
+                Some("ok") => {}
+                Some(refused) => {
+                    return Err(capacity(format!(
+                        "forge took none of the commit: {refused}; commit fewer or smaller files at a time"
+                    )));
+                }
+                None => return Err(stale(format!("forge did not move the branch: {line}"))),
             }
         }
-        json!({ "ok": pushed.is_some(), "pushed": pushed })
+        Err(unexpected(
+            forge::PROGRAM,
+            "Push",
+            &String::from_utf8_lossy(output),
+        ))
     }
 }
