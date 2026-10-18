@@ -203,15 +203,13 @@ pub fn dm_pick(
         )
         .child(field)
         .child(choices_list(chat, &choices, at, cx, theme, ladder))
-        .child(
-            div().flex().child(div().flex_1()).child(design::button(
-                "chat-dm-pick-cancel",
-                words::CANCEL,
-                ladder,
-                theme,
-                cancel,
-            )),
-        );
+        .child(div().flex().child(div().flex_1()).child(design::button(
+            "chat-dm-pick-cancel",
+            words::CANCEL,
+            ladder,
+            theme,
+            cancel,
+        )));
     Some(card.into_any_element())
 }
 

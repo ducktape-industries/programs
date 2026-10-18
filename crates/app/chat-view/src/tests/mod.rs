@@ -160,7 +160,9 @@ fn chat_reply(query: Query) -> Reply {
         } else {
             Vec::new()
         })),
-        Query::MessagesAround { channel_id, seq, .. } => Reply::Messages(vec![MsgRow {
+        Query::MessagesAround {
+            channel_id, seq, ..
+        } => Reply::Messages(vec![MsgRow {
             channel_id,
             ..row(seq, 8, "**hi** there")
         }]),
