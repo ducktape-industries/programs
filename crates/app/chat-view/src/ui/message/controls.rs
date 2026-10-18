@@ -12,7 +12,7 @@ const STRIP_BUTTON_HEIGHT: f32 = 24.;
 const REACTION_HEIGHT: f32 = 24.;
 /// The thread button's height under a root.
 const REPLIES_HEIGHT: f32 = 24.;
-/// A reaction tooltip's widest line, before its names wrap.
+// A reaction tooltip's widest line, before its names wrap.
 const REACTORS_WIDTH: f32 = 280.;
 
 /// `active`: the grid's arrows are on this button (it is never a Tab stop
@@ -59,8 +59,8 @@ pub(super) fn action_button(
     }
 }
 
-/// What a reaction button shows: an emoji and how many chose it, named on
-/// hover (`who`, empty until read), or the `+` that opens the picker.
+// What a reaction button shows: an emoji and how many chose it, named on
+// hover (`who`, empty until read), or the `+` that opens the picker.
 pub(super) enum Face<'a> {
     Emoji {
         emoji: &'a str,
@@ -150,7 +150,7 @@ pub(super) fn reaction_button(
     }
 }
 
-/// `chip` names who chose it on hover.
+// `chip` names who chose it on hover.
 fn reactors_tip<E: StatefulInteractiveElement>(chip: E, who: SharedString, theme: &Theme) -> E {
     let theme = *theme;
     chip.tooltip(move |_, cx| {
@@ -162,7 +162,7 @@ fn reactors_tip<E: StatefulInteractiveElement>(chip: E, who: SharedString, theme
     })
 }
 
-/// A reaction's tooltip: who chose it.
+// A reaction's tooltip: who chose it.
 struct WhoChose {
     who: SharedString,
     theme: Theme,

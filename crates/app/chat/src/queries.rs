@@ -281,9 +281,9 @@ fn rows_at(
     })
 }
 
-/// Who chose each reaction on the messages at `seqs`, each message once
-/// and in seq order however `seqs` names them: a message's emoji in order,
-/// each with its principals in key order.
+// Who chose each reaction on the messages at `seqs`, each message once
+// and in seq order however `seqs` names them: a message's emoji in order,
+// each with its principals in key order.
 pub(crate) fn reactors(
     ctx: &QueryCtx,
     channel_id: String,

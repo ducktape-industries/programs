@@ -67,7 +67,7 @@ pub(crate) async fn ownerships(
         .collect())
 }
 
-/// Who chose each reaction on the rows at `seqs`.
+// Who chose each reaction on the rows at `seqs`.
 pub(crate) async fn reactors(
     host: Host,
     channel_id: String,

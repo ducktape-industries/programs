@@ -260,16 +260,16 @@ pub struct Room {
     /// the rows read again while the ones on screen stay
     #[serde(skip)]
     pub(crate) rereading: Option<view::Task<()>>,
-    /// who chose each reaction on the rows shown, room and thread, by seq
-    /// and emoji: what a chip's tooltip names
+    // who chose each reaction on the rows shown, room and thread, by seq
+    // and emoji: what a chip's tooltip names
     #[serde(skip)]
     pub(crate) reactors: Reactors,
-    /// the read of who chose them, until it lands
+    // the read of who chose them, until it lands
     #[serde(skip)]
     pub(crate) reading_reactors: Option<view::Task<()>>,
 }
 
-/// Who chose each reaction, by message seq and emoji.
+// Who chose each reaction, by message seq and emoji.
 pub(crate) type Reactors = BTreeMap<u64, BTreeMap<String, Vec<Principal>>>;
 
 #[derive(Serialize, Deserialize, Default)]

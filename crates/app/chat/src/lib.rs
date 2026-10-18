@@ -236,8 +236,8 @@ pub enum Query {
     /// view follows apart.
     #[ask(Reply::Accounts(PageResponse<Profile>))]
     Accounts { page: PageRequest },
-    /// Who chose each reaction on the messages at `seqs`: one entry per
-    /// message and emoji, each in key order.
+    // Who chose each reaction on the messages at `seqs`: one entry per
+    // message and emoji, each in key order.
     #[ask(Reply::Reactors(Vec<ReactedBy>))]
     #[reads(state::REACTIONS)]
     Reactors { channel_id: String, seqs: Vec<u64> },
@@ -437,7 +437,7 @@ pub struct Reaction {
     pub reacted_by_me: bool,
 }
 
-/// Who chose one emoji on one message.
+// Who chose one emoji on one message.
 #[derive(
     BorshSerialize,
     BorshDeserialize,

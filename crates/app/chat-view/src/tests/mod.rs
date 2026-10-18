@@ -107,8 +107,8 @@ fn marked_row(seq: u64) -> MsgRow {
     row
 }
 
-/// Who chose the 👍 on each of `seqs`, as a marked row wears it: eddy and
-/// ada.
+// Who chose the 👍 on each of `seqs`, as a marked row wears it: eddy and
+// ada.
 fn reactors(seqs: Vec<u64>) -> Reply {
     let by = vec![Principal::Account(7), Principal::Account(10)];
     Reply::Reactors(

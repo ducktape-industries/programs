@@ -203,8 +203,8 @@ fn a_reaction_chip_is_named_by_its_emoji_whether_toggled_or_not() {
     );
 }
 
-/// A chip names who chose it, as read from the program once rows land:
-/// a tooltip on hover, and the same names beside the count for the door.
+// A chip names who chose it, as read from the program once rows land:
+// a tooltip on hover, and the same names beside the count for the door.
 #[test]
 fn a_reaction_chip_names_who_chose_it() {
     let (mut cx, view) = opened();
@@ -232,9 +232,9 @@ fn a_reaction_chip_names_who_chose_it() {
     assert!(chip.tooltip.is_some(), "the names show on hover");
 }
 
-/// Rows that land with a reaction read who chose it, and a block where
-/// one drops it and another chooses it (the count unmoved, the rows landing
-/// as they were) reads them again.
+// Rows that land with a reaction read who chose it, and a block where
+// one drops it and another chooses it (the count unmoved, the rows landing
+// as they were) reads them again.
 #[test]
 fn landed_rows_read_who_reacted_and_a_block_reads_them_again() {
     let who = Rc::new(RefCell::new(vec![Principal::Account(7)]));

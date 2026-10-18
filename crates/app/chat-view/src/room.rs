@@ -779,8 +779,8 @@ impl Room {
         self.read_reactors(cx);
     }
 
-    /// Who chose each reaction on the rows shown, room and thread: read
-    /// again each time rows land, kept until the next read lands.
+    // Who chose each reaction on the rows shown, room and thread: read
+    // again each time rows land, kept until the next read lands.
     pub(crate) fn read_reactors(&mut self, cx: &mut Context<Chat>) {
         let replies = self
             .thread

@@ -69,8 +69,8 @@ fn a_reaction_needs_an_emoji_a_standing_message_and_a_seat() {
     }
 }
 
-/// A chip's tooltip names who chose it: each message's emoji in order,
-/// each with its principals, and one who drops it leaves the list.
+// A chip's tooltip names who chose it: each message's emoji in order,
+// each with its principals, and one who drops it leaves the list.
 #[test]
 fn reactors_name_who_chose_each_emoji() {
     let mut chat = Chat::with_channel(PostPolicy::Open);
