@@ -141,18 +141,22 @@ fn create_names_an_owner_and_refuses_bad_or_taken_names() {
 }
 
 #[test]
-fn only_the_owner_and_granted_writers_push() {
+fn anyone_pushes_until_the_owner_lists_writers() {
     let sandbox = founded();
     create(&sandbox, "project", HashKind::Sha1);
     let mut source = MemoryObjects::new(Hash::Sha1);
     let tip = file_commit(&mut source, &[], 1, &[("a", b"1")]);
     let zero = Hash::Sha1.zero();
     let pack_bytes = pack_of(&source, &all_ids(&source));
+    let open = [(zero, tip, "refs/heads/open")];
     let commands = [(zero, tip, "refs/heads/main")];
 
+    let unlisted = push(&sandbox, STRANGER, "project", &open, &pack_bytes).unwrap();
+    assert_eq!(unlisted, ["unpack ok", "ok refs/heads/open"]);
+
+    sandbox.list_writers(OWNER, "project", &[]).unwrap();
     let stranger = push(&sandbox, STRANGER, "project", &commands, &pack_bytes);
     assert_eq!(stranger.unwrap_err().code, code::UNAUTHORIZED);
-    assert_eq!(sandbox.blob_count(), 0);
 
     let listed_by_stranger = sandbox.list_writers(STRANGER, "project", &[person(WRITER)]);
     assert_eq!(listed_by_stranger.unwrap_err().code, code::UNAUTHORIZED);
@@ -572,16 +576,19 @@ fn a_push_and_a_stage_read_only_a_held_pack() {
 }
 
 #[test]
-fn only_the_owner_and_granted_writers_stage() {
+fn anyone_stages_until_the_owner_lists_writers() {
     let sandbox = founded();
     create(&sandbox, "project", HashKind::Sha1);
     let mut source = MemoryObjects::new(Hash::Sha1);
     file_commit(&mut source, &[], 1, &[("a", b"1")]);
     let everything = pack_of(&source, &all_ids(&source));
 
+    stage(&sandbox, STRANGER, everything.clone()).unwrap();
+    assert_eq!(sandbox.blob_count(), source.count());
+
+    sandbox.list_writers(OWNER, "project", &[]).unwrap();
     let stranger = stage(&sandbox, STRANGER, everything.clone());
     assert_eq!(stranger.unwrap_err().code, code::UNAUTHORIZED);
-    assert_eq!(sandbox.blob_count(), 0);
 
     sandbox
         .list_writers(OWNER, "project", &[person(WRITER)])
