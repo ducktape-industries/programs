@@ -35,7 +35,6 @@ pub(crate) struct Work<'a> {
 pub(crate) struct Call<'a> {
     pub id: &'a str,
     pub tool: &'a str,
-    pub input: &'a str,
 }
 
 pub(crate) fn entries(frames: &[Frame]) -> Vec<Entry<'_>> {
@@ -101,12 +100,31 @@ impl<'a> Work<'a> {
             .iter()
             .flat_map(|turn| said(turn))
             .filter_map(|said| match said {
-                Said::ToolUse { id, name, input } => Some(Call {
-                    id,
-                    tool: name,
-                    input,
-                }),
-                Said::Text(_) | Said::Thinking { .. } | Said::RedactedThinking(_) => None,
+                Said::ToolUse { id, name, .. } => Some(Call { id, tool: name }),
+                Said::Text(_)
+                | Said::Thinking { .. }
+                | Said::RedactedThinking(_)
+                | Said::ServerToolUse { .. }
+                | Said::ServerToolResult(_)
+                | Said::Cited { .. } => None,
+            })
+    }
+
+    // every call the burst's turns made, harness's and the model vendor's, in order: its tool
+    // and its input
+    fn uses(&self) -> impl Iterator<Item = (&'a str, &'a str)> + '_ {
+        self.turns
+            .iter()
+            .flat_map(|turn| said(turn))
+            .filter_map(|said| match said {
+                Said::ToolUse { name, input, .. } | Said::ServerToolUse { name, input, .. } => {
+                    Some((name.as_str(), input.as_str()))
+                }
+                Said::Text(_)
+                | Said::Thinking { .. }
+                | Said::RedactedThinking(_)
+                | Said::ServerToolResult(_)
+                | Said::Cited { .. } => None,
             })
     }
 
@@ -139,15 +157,15 @@ impl<'a> Work<'a> {
     /// name and how often it ran, "network_call ×2".
     pub fn summary(&self) -> String {
         let mut done: Vec<(Option<String>, &str, u64)> = Vec::new();
-        for call in self.calls() {
-            let verb = verb(call.tool, call.input);
-            let same = |(said, tool, _): &&mut (Option<String>, &str, u64)| match &verb {
+        for (tool, input) in self.uses() {
+            let verb = verb(tool, input);
+            let same = |(said, named, _): &&mut (Option<String>, &str, u64)| match &verb {
                 Some(_) => *said == verb,
-                None => said.is_none() && *tool == call.tool,
+                None => said.is_none() && *named == tool,
             };
             match done.iter_mut().find(same) {
                 Some((_, _, count)) => *count += 1,
-                None => done.push((verb, call.tool, 1)),
+                None => done.push((verb, tool, 1)),
             }
         }
         let words: Vec<String> = done
@@ -155,6 +173,8 @@ impl<'a> Work<'a> {
             .map(|(verb, tool, count)| match (verb, count) {
                 (Some(verb), 1) if verb == FILES_READ => "read a file".to_owned(),
                 (Some(verb), count) if verb == FILES_READ => format!("read {count} files"),
+                (Some(verb), 1) if verb == WEB_FETCHED => "fetched a page".to_owned(),
+                (Some(verb), count) if verb == WEB_FETCHED => format!("fetched {count} pages"),
                 (Some(verb), _) => verb,
                 (None, 1) => tool.to_owned(),
                 (None, count) => format!("{tool} ×{count}"),
@@ -174,6 +194,9 @@ fn said(turn: &Frame) -> &[Said] {
 /// files_read's verb, counted apart from the rest.
 const FILES_READ: &str = "read files";
 
+// web_fetch's verb, counted apart from the rest
+const WEB_FETCHED: &str = "fetched pages";
+
 /// What one call did, as a verb a person reads; none for a tool this table lacks.
 fn verb(tool: &str, input: &str) -> Option<String> {
     Some(match tool {
@@ -188,6 +211,8 @@ fn verb(tool: &str, input: &str) -> Option<String> {
         "files_list" | "files_find" | "files_grep" => "searched files".into(),
         "files_history" => "looked at file history".into(),
         "thread_topic" => "set its topic".into(),
+        "web_search" => "searched the web".into(),
+        "web_fetch" => WEB_FETCHED.into(),
         tool if tool.starts_with("forge_") => "looked at forge".into(),
         _ => return None,
     })
@@ -198,6 +223,112 @@ fn written(input: &str) -> Option<String> {
     let input: serde_json::Value = serde_json::from_str(input).ok()?;
     let path = input.get("path")?.as_str()?;
     path.rsplit('/').next().map(str::to_owned)
+}
+
+// a server tool call as its line says it: "Searched the web: <query>", "Fetched <url>"; as it
+// forms, "Searching the web: <query>"
+pub(crate) fn server_head(name: &str, input: &str, forming: bool) -> String {
+    let asked = |key: &str| {
+        serde_json::from_str::<serde_json::Value>(input)
+            .ok()
+            .and_then(|input| input.get(key)?.as_str().map(str::to_owned))
+            .unwrap_or_else(|| input.to_owned())
+    };
+    match (name, forming) {
+        ("web_search", false) => format!("Searched the web: {}", asked("query")),
+        ("web_search", true) => format!("Searching the web: {}", asked("query")),
+        ("web_fetch", false) => format!("Fetched {}", asked("url")),
+        ("web_fetch", true) => format!("Fetching {}", asked("url")),
+        _ => format!("{name} {input}"),
+    }
+}
+
+// what a server tool's result block says: how many results, or the page's title, or the error
+// the vendor names; and each source by its title and url
+pub(crate) struct Outcome {
+    pub words: String,
+    pub failed: bool,
+    pub sources: Vec<(String, String)>,
+}
+
+pub(crate) fn server_outcome(block: &str) -> Outcome {
+    let block: serde_json::Value = serde_json::from_str(block).unwrap_or_default();
+    let content = &block["content"];
+    let field =
+        |value: &serde_json::Value, key: &str| value[key].as_str().unwrap_or_default().to_owned();
+    if let Some(code) = content["error_code"].as_str() {
+        return Outcome {
+            words: format!("failed: {code}"),
+            failed: true,
+            sources: Vec::new(),
+        };
+    }
+    if let Some(results) = content.as_array() {
+        let sources: Vec<(String, String)> = results
+            .iter()
+            .map(|result| (field(result, "title"), field(result, "url")))
+            .collect();
+        let words = match sources.len() {
+            1 => "1 result".to_owned(),
+            count => format!("{count} results"),
+        };
+        return Outcome {
+            words,
+            failed: false,
+            sources,
+        };
+    }
+    let title = field(&content["content"], "title");
+    let url = field(content, "url");
+    let words = match title.is_empty() {
+        true => url.clone(),
+        false => format!("“{title}”"),
+    };
+    Outcome {
+        words,
+        failed: false,
+        sources: vec![(title, url)],
+    }
+}
+
+// the call a server tool's result block answers
+pub(crate) fn result_of(block: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(block)
+        .ok()
+        .and_then(|block| block["tool_use_id"].as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+// the result block server tool call `id` came back as, in any turn of `frames`: in the turn
+// that made it, or a later one when the vendor ran it beside harness's calls
+pub(crate) fn server_result<'a>(frames: &'a [Frame], id: &str) -> Option<&'a str> {
+    frames.iter().flat_map(said).find_map(|said| match said {
+        Said::ServerToolResult(block) if result_of(block) == id => Some(block.as_str()),
+        _ => None,
+    })
+}
+
+// whether server tool call `id` is among `frames`
+pub(crate) fn server_use_in(frames: &[Frame], id: &str) -> bool {
+    frames
+        .iter()
+        .flat_map(said)
+        .any(|said| matches!(said, Said::ServerToolUse { id: used, .. } if used == id))
+}
+
+// the sources a cited text names, each once, by its title, else its document's, else its url
+pub(crate) fn cited_sources(citations: &[String]) -> Vec<String> {
+    let mut sources: Vec<String> = Vec::new();
+    for citation in citations {
+        let citation: serde_json::Value = serde_json::from_str(citation).unwrap_or_default();
+        let named = ["title", "document_title", "url"]
+            .iter()
+            .find_map(|key| citation[*key].as_str().filter(|name| !name.is_empty()));
+        if let Some(named) = named.filter(|named| !sources.iter().any(|source| source == named)) {
+            sources.push(named.to_owned());
+        }
+    }
+    sources
 }
 
 /// A span of milliseconds as a person reads it: `40 s`, `2 min`, `3 h`.

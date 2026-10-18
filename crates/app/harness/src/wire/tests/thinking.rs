@@ -7,6 +7,7 @@ fn sent(thinking: Option<Thinking>) -> Value {
         name: "claude-test",
         max_tokens: 64,
         thinking,
+        server_tools: &[],
         system: &system,
     };
     let mut text = super::header(Wire::AnthropicMessages, &header);

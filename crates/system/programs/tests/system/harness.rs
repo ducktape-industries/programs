@@ -227,6 +227,7 @@ async fn mentioned(net: &mut Net) -> Scout {
         max_tokens: 512,
         wait: None,
         thinking: None,
+        server_tools: Vec::new(),
         system: "Keep notes in /shared.".into(),
     };
     let commit = files::Op::Commit {
@@ -312,6 +313,7 @@ fn an_agents_configuration_is_its_managers_to_change_whoever_takes_the_managers_
             max_tokens: 512,
             wait: None,
             thinking: None,
+            server_tools: Vec::new(),
             system: "Mine.".into(),
         };
         let commit = |base, changes| files::Op::Commit {

@@ -250,7 +250,12 @@ fn answered(frames: &[Frame]) -> usize {
         .collect();
     let every_call_back = said.iter().all(|said| match said {
         Said::ToolUse { id, .. } => results.contains(&id.as_str()),
-        Said::Text(_) | Said::Thinking { .. } | Said::RedactedThinking(_) => true,
+        Said::Text(_)
+        | Said::Thinking { .. }
+        | Said::RedactedThinking(_)
+        | Said::ServerToolUse { .. }
+        | Said::ServerToolResult(_)
+        | Said::Cited { .. } => true,
     });
     match every_call_back {
         true => frames.len(),

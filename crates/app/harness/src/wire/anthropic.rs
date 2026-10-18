@@ -6,10 +6,14 @@ use abi::role::egress::http::{Head, Method, Response};
 use serde_json::{Map, Value, json};
 
 use super::{Answered, Header, Reply, Summarized, Summary};
-use crate::{Body, Flow, Forming, Frame, Partial, Role, Said, Stop, Thinking, Usage, tools};
+use crate::{
+    Body, Flow, Forming, Frame, Partial, Role, Said, ServerTool, Stop, Thinking, Usage, tools,
+};
 
 pub(crate) const VERSION: &str = "2023-06-01";
 pub(crate) const COMPACTION_BETA: &str = "compact-2026-09-04";
+pub(crate) const WEB_SEARCH: &str = "web_search_20250305";
+pub(crate) const WEB_FETCH: &str = "web_fetch_20250910";
 pub(crate) const CLOSE: &str = r#"],"stream":true}"#;
 pub(crate) const SUMMARIZE: &str = r#"],"compaction":{"type":"summarize"}}"#;
 
@@ -57,8 +61,17 @@ fn definitions() -> Vec<Value> {
         .collect()
 }
 
+fn server_definition(tool: ServerTool) -> Value {
+    let kind = match tool {
+        ServerTool::WebSearch => WEB_SEARCH,
+        ServerTool::WebFetch => WEB_FETCH,
+    };
+    json!({ "type": kind, "name": tool.word() })
+}
+
 pub(crate) fn header(header: &Header) -> String {
     let mut tools = definitions();
+    tools.extend(header.server_tools.iter().copied().map(server_definition));
     if let Some(Value::Object(last)) = tools.last_mut() {
         last.insert("cache_control".into(), cached());
     }
@@ -134,6 +147,18 @@ fn said_block(said: &Said) -> Option<Value> {
             let input: Value = serde_json::from_str(input).unwrap_or_else(|_| json!({}));
             Some(json!({ "type": "tool_use", "id": id, "name": name, "input": input }))
         }
+        Said::ServerToolUse { id, name, input } => {
+            let input: Value = serde_json::from_str(input).unwrap_or_else(|_| json!({}));
+            Some(json!({ "type": "server_tool_use", "id": id, "name": name, "input": input }))
+        }
+        Said::ServerToolResult(block) => serde_json::from_str(block).ok(),
+        Said::Cited { text, citations } => {
+            let citations: Vec<Value> = citations
+                .iter()
+                .filter_map(|citation| serde_json::from_str(citation).ok())
+                .collect();
+            Some(json!({ "type": "text", "text": text, "citations": citations }))
+        }
     }
 }
 
@@ -192,7 +217,7 @@ fn text_of(value: &Value, key: &str) -> String {
 
 fn read_said(block: &Value) -> Option<Said> {
     match block["type"].as_str()? {
-        "text" => Some(Said::Text(text_of(block, "text"))),
+        "text" => Some(text_said(block)),
         "thinking" => Some(Said::Thinking {
             text: text_of(block, "thinking"),
             signature: text_of(block, "signature"),
@@ -203,7 +228,29 @@ fn read_said(block: &Value) -> Option<Said> {
             name: text_of(block, "name"),
             input: block["input"].to_string(),
         }),
+        "server_tool_use" => Some(Said::ServerToolUse {
+            id: text_of(block, "id"),
+            name: text_of(block, "name"),
+            input: block["input"].to_string(),
+        }),
+        result if result.ends_with("_tool_result") => {
+            Some(Said::ServerToolResult(block.to_string()))
+        }
         _ => None,
+    }
+}
+
+fn text_said(block: &Value) -> Said {
+    let text = text_of(block, "text");
+    let citations: Vec<String> = block["citations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(Value::to_string)
+        .collect();
+    match citations.is_empty() {
+        true => Said::Text(text),
+        false => Said::Cited { text, citations },
     }
 }
 
@@ -281,7 +328,7 @@ fn block_started(partial: &mut Partial, event: &Value) {
         partial.forming = Forming::Skipped { index };
         return;
     };
-    if let Said::ToolUse { input, .. } = &mut said {
+    if let Said::ToolUse { input, .. } | Said::ServerToolUse { input, .. } = &mut said {
         input.clear();
     }
     partial.said.push(said);
@@ -338,15 +385,35 @@ enum Applied {
 }
 
 fn applied(said: &mut Said, kind: &str, delta: &Value) -> Applied {
+    if kind == "citations_delta" {
+        return cited(said, &delta["citation"]);
+    }
     let (grown, key) = match (kind, said) {
-        ("text_delta", Said::Text(text)) => (text, "text"),
+        ("text_delta", Said::Text(text) | Said::Cited { text, .. }) => (text, "text"),
         ("thinking_delta", Said::Thinking { text, .. }) => (text, "thinking"),
         ("signature_delta", Said::Thinking { signature, .. }) => (signature, "signature"),
-        ("input_json_delta", Said::ToolUse { input, .. }) => (input, "partial_json"),
-        ("citations_delta", Said::Text(_)) => return Applied::Fits,
+        ("input_json_delta", Said::ToolUse { input, .. } | Said::ServerToolUse { input, .. }) => {
+            (input, "partial_json")
+        }
         (_, _) => return Applied::DoesNotFit,
     };
     grown.push_str(delta[key].as_str().unwrap_or_default());
+    Applied::Fits
+}
+
+fn cited(said: &mut Said, citation: &Value) -> Applied {
+    let citation = citation.to_string();
+    match said {
+        Said::Text(text) => {
+            let text = std::mem::take(text);
+            *said = Said::Cited {
+                text,
+                citations: vec![citation],
+            };
+        }
+        Said::Cited { citations, .. } => citations.push(citation),
+        _ => return Applied::DoesNotFit,
+    }
     Applied::Fits
 }
 
@@ -360,7 +427,9 @@ fn block_stopped(partial: &mut Partial, event: &Value) {
             return broken(partial, reason);
         }
     }
-    let Some(Said::ToolUse { id, input, .. }) = partial.said.last_mut() else {
+    let Some(Said::ToolUse { id, input, .. } | Said::ServerToolUse { id, input, .. }) =
+        partial.said.last_mut()
+    else {
         return;
     };
     let written = match input.is_empty() {

@@ -1,6 +1,7 @@
 //! Each wire's streamed reply folded event by event, against the whole reply of the same
 //! content: recorded Anthropic streams of text, thinking with its signature, a tool call whose
 //! input arrives in pieces, and an error part way.
+mod server_tools;
 mod thinking;
 
 use serde_json::{Value, json};
@@ -12,6 +13,7 @@ pub(crate) const TEXT: &str = include_str!("fixtures/text.jsonl");
 pub(crate) const THINKING: &str = include_str!("fixtures/thinking.jsonl");
 pub(crate) const TOOL_USE: &str = include_str!("fixtures/tool_use.jsonl");
 pub(crate) const ERROR: &str = include_str!("fixtures/error.jsonl");
+pub(crate) const SERVER_TOOLS: &str = include_str!("fixtures/server_tools.jsonl");
 
 pub(crate) fn events(fixture: &str) -> Vec<Vec<u8>> {
     fixture

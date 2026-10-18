@@ -345,7 +345,15 @@ fn said_at(ctx: &ExecCtx, id: u64, index: u64) -> Result<Option<(String, String,
         .and_then(|index| partial.said.get(index).cloned());
     Ok(match said {
         Some(Said::ToolUse { id, name, input }) => Some((id, name, input)),
-        Some(Said::Text(_) | Said::Thinking { .. } | Said::RedactedThinking(_)) | None => None,
+        Some(
+            Said::Text(_)
+            | Said::Thinking { .. }
+            | Said::RedactedThinking(_)
+            | Said::ServerToolUse { .. }
+            | Said::ServerToolResult(_)
+            | Said::Cited { .. },
+        )
+        | None => None,
     })
 }
 

@@ -15,6 +15,7 @@ pub struct Config {
     pub max_tokens: u32,
     pub wait: Option<u64>,
     pub thinking: Option<Thinking>,
+    pub server_tools: Vec<ServerTool>,
     pub system: String,
 }
 
@@ -59,6 +60,35 @@ impl Thinking {
     }
 }
 
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ServerTool {
+    WebSearch,
+    WebFetch,
+}
+
+impl ServerTool {
+    pub const ALL: &'static [ServerTool] = &[ServerTool::WebSearch, ServerTool::WebFetch];
+
+    pub fn word(self) -> &'static str {
+        match self {
+            ServerTool::WebSearch => "web_search",
+            ServerTool::WebFetch => "web_fetch",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum Malformed {
     NotText,
@@ -96,6 +126,8 @@ struct FrontMatter {
     max_tokens: u32,
     wait: Option<u64>,
     thinking: Option<Thinking>,
+    #[serde(default)]
+    server_tools: Vec<ServerTool>,
 }
 
 fn fence(line: &str) -> bool {
@@ -123,11 +155,18 @@ impl Config {
         if matter.wait == Some(0) {
             return Err(Malformed::NoWait);
         }
+        let mut server_tools: Vec<ServerTool> = Vec::new();
+        for tool in matter.server_tools {
+            if !server_tools.contains(&tool) {
+                server_tools.push(tool);
+            }
+        }
         Ok(Config {
             model: matter.model,
             max_tokens: matter.max_tokens,
             wait: matter.wait,
             thinking: matter.thinking,
+            server_tools,
             system: after[close + 1..].concat().trim().to_owned(),
         })
     }
@@ -154,6 +193,14 @@ impl Config {
         }
         if let Some(thinking) = self.thinking {
             front.push_str(&format!("thinking = \"{}\"\n", thinking.word()));
+        }
+        if !self.server_tools.is_empty() {
+            let words: Vec<String> = self
+                .server_tools
+                .iter()
+                .map(|tool| format!("\"{}\"", tool.word()))
+                .collect();
+            front.push_str(&format!("server_tools = [{}]\n", words.join(", ")));
         }
         format!("{FENCE}\n{front}{FENCE}\n{}\n", self.system)
     }

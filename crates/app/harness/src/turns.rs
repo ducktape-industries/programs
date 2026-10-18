@@ -466,6 +466,7 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         name: &model.name,
         max_tokens: config.max_tokens,
         thinking: config.thinking,
+        server_tools: &config.server_tools,
         system: &system,
     };
     let header = put_part(ctx, wire::header(model.wire, &header))?;
@@ -854,7 +855,12 @@ fn record(
             Said::ToolUse { id, name, input } => {
                 Some((index, id.clone(), name.clone(), input.clone()))
             }
-            Said::Text(_) | Said::Thinking { .. } | Said::RedactedThinking(_) => None,
+            Said::Text(_)
+            | Said::Thinking { .. }
+            | Said::RedactedThinking(_)
+            | Said::ServerToolUse { .. }
+            | Said::ServerToolResult(_)
+            | Said::Cited { .. } => None,
         })
         .collect();
     let turn = Body::Turn {

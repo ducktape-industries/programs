@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use view::methods::{BlobBody, NewBlob, OpPut, PutBlobs};
 use view::prelude::*;
 
-use harness::{AgentSetup, BlobId, Config, Configured, Thinking};
+use harness::{AgentSetup, BlobId, Config, Configured, ServerTool, Thinking};
 use identity::{Identity, Ownership, Party, Script};
 use program::Writers;
 
@@ -29,6 +29,9 @@ pub(crate) struct Draft {
     pub max_tokens: TextField,
     pub wait: TextField,
     pub thinking: Option<Thinking>,
+    // what the configuration lists; the form shows no control for it and writes it back
+    #[serde(default)]
+    pub server_tools: Vec<ServerTool>,
     pub system: TextField,
     pub answers: Answers,
     pub listed: TextField,
@@ -203,6 +206,7 @@ impl Draft {
                 max_tokens,
                 wait,
                 thinking: self.thinking,
+                server_tools: self.server_tools.clone(),
                 system: self.system.text().trim().to_owned(),
             },
             ownership,
@@ -288,6 +292,10 @@ impl Draft {
                     .map(|wait| wait.to_string()),
             ),
             thinking: config.as_ref().and_then(|config| config.thinking),
+            server_tools: config
+                .as_ref()
+                .map(|config| config.server_tools.clone())
+                .unwrap_or_default(),
             system: field(config.as_ref().map(|config| config.system.clone())),
             answers,
             listed: TextField::new(listed),

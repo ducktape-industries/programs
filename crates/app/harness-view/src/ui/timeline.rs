@@ -365,7 +365,7 @@ fn worked(
             _ => &[],
         })
         .filter_map(|said| match said {
-            Said::Text(text) => Some(text.clone()),
+            Said::Text(text) | Said::Cited { text, .. } => Some(text.clone()),
             _ => None,
         })
         .collect();
@@ -382,7 +382,7 @@ fn worked(
                 continue;
             };
             for (index, said) in said.iter().enumerate() {
-                if let Said::Text(_) = said {
+                if let Said::Text(_) | Said::Cited { .. } = said {
                     continue;
                 }
                 calls = calls.child(said_block(
@@ -444,7 +444,110 @@ fn said_block(
             }
             call_box(view, (id, name, input), call, shown, cx, theme, ladder).into_any_element()
         }
+        Said::Cited { text, citations } => {
+            let sources = timeline::cited_sources(citations);
+            let named = (!sources.is_empty())
+                .then(|| small(format!("Sources: {}", sources.join(", ")), theme, ladder));
+            div()
+                .flex()
+                .flex_col()
+                .child(div().child(text.clone()))
+                .children(named)
+                .into_any_element()
+        }
+        Said::ServerToolUse { id, name, input } => {
+            let result = timeline::server_result(&shown.frames, id);
+            server_box(view, (id, name, input), result, cx, theme, ladder).into_any_element()
+        }
+        Said::ServerToolResult(block) => {
+            let call = timeline::result_of(block);
+            match timeline::server_use_in(&shown.frames, &call) {
+                // its call's line draws it
+                true => div().into_any_element(),
+                false => {
+                    let words = timeline::server_outcome(block).words;
+                    small(format!("Result of {call} · {words}"), theme, ladder).into_any_element()
+                }
+            }
+        }
     }
+}
+
+// a call the model vendor ran (web search, web fetch): what it did and what came back, and,
+// opened, each source; harness neither runs it nor keeps a row for it
+fn server_box(
+    view: &Agents,
+    (id, name, input): (&str, &str, &str),
+    result: Option<&str>,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> impl IntoElement + use<> {
+    let key = format!("server-{id}");
+    let open = view.open.contains(&key);
+    let outcome = result.map(timeline::server_outcome);
+    let (words, colour) = match &outcome {
+        None => ("not run yet".to_owned(), theme.muted),
+        Some(outcome) if outcome.failed => (outcome.words.clone(), theme.danger),
+        Some(outcome) => (outcome.words.clone(), theme.muted),
+    };
+    let sources = match (open, outcome) {
+        (true, Some(outcome)) => outcome.sources,
+        _ => Vec::new(),
+    };
+    let header = div()
+        .id(SharedString::from(key.clone()))
+        .flex()
+        .items_center()
+        .gap(space::SM)
+        .px(space::SM)
+        .min_h(match ladder.touch {
+            true => ladder.hit,
+            false => px(CALL_HEADER),
+        })
+        .cursor_pointer()
+        .role(Role::Button)
+        .aria_expanded(open)
+        .focusable()
+        .on_click(toggler(key, cx))
+        .map(|header| design::pressed(header, ladder))
+        .child(
+            div()
+                .text_type(ladder.caption)
+                .text_color(theme.faint)
+                .child(if open { "▾" } else { "▸" }),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.))
+                .overflow_hidden()
+                .font_weight(FontWeight::MEDIUM)
+                .child(timeline::server_head(name, input, false)),
+        )
+        .child(small(words, theme, ladder).text_color(colour));
+    let listed = sources
+        .into_iter()
+        .map(|(title, url)| small(format!("{title} · {url}"), theme, ladder));
+    div()
+        .flex()
+        .flex_col()
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.background)
+        .child(header)
+        .when(open, |server| {
+            server.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(space::XS)
+                    .p(space::SM)
+                    .border_t_1()
+                    .border_color(theme.border)
+                    .children(listed),
+            )
+        })
 }
 
 /// A tool call: its name, its input on one line and how far it got; opened, its whole input,
@@ -733,10 +836,20 @@ fn partial_block(
     ladder: &Ladder,
 ) -> AnyElement {
     match said {
-        Said::Text(text) => div()
+        Said::Text(text) | Said::Cited { text, .. } => div()
             .id(SharedString::from(key))
             .child(text.clone())
             .into_any_element(),
+        Said::ServerToolUse { name, input, .. } => {
+            small(timeline::server_head(name, input, true), theme, ladder)
+                .id(SharedString::from(key))
+                .into_any_element()
+        }
+        Said::ServerToolResult(block) => {
+            small(timeline::server_outcome(block).words, theme, ladder)
+                .id(SharedString::from(key))
+                .into_any_element()
+        }
         Said::Thinking { text, .. } => div()
             .id(SharedString::from(key))
             .flex()

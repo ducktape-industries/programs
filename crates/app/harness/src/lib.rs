@@ -30,7 +30,7 @@ pub use ::program::{BlobId, Principal};
 pub use abi::role::egress::Event;
 pub use abi::role::identity::{AccountNumber, Standing};
 pub use attribution::Change;
-pub use config::{Config, Malformed, Thinking};
+pub use config::{Config, Malformed, ServerTool, Thinking};
 pub use program::Harness;
 pub use store::{PageRequest, PageResponse};
 
@@ -302,8 +302,13 @@ impl Body {
 impl Said {
     fn text(&self) -> Option<String> {
         match self {
-            Said::Text(text) | Said::Thinking { text, .. } => Some(text.clone()),
-            Said::ToolUse { name, input, .. } => Some(format!("{name} {input}")),
+            Said::Text(text) | Said::Thinking { text, .. } | Said::Cited { text, .. } => {
+                Some(text.clone())
+            }
+            Said::ToolUse { name, input, .. } | Said::ServerToolUse { name, input, .. } => {
+                Some(format!("{name} {input}"))
+            }
+            Said::ServerToolResult(block) => Some(block.clone()),
             Said::RedactedThinking(_) => None,
         }
     }
@@ -321,6 +326,16 @@ pub enum Said {
         id: String,
         name: String,
         input: String,
+    },
+    ServerToolUse {
+        id: String,
+        name: String,
+        input: String,
+    },
+    ServerToolResult(String),
+    Cited {
+        text: String,
+        citations: Vec<String>,
     },
 }
 

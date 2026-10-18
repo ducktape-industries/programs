@@ -13,6 +13,7 @@ mod network;
 mod reads;
 mod resume;
 mod schedule;
+mod server_tools;
 mod streams;
 mod thinking;
 mod workspace;
@@ -66,6 +67,7 @@ fn scout() -> Config {
         max_tokens: 1024,
         wait: None,
         thinking: None,
+        server_tools: Vec::new(),
         system: "Keep notes in /shared.".into(),
     }
 }

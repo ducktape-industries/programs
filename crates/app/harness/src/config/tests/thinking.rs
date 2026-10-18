@@ -33,6 +33,7 @@ fn every_thinking_level_writes_and_parses_back() {
         max_tokens: 64,
         wait: Some(9),
         thinking: None,
+        server_tools: Vec::new(),
         system: "Think.".into(),
     };
     assert!(!plain.write().contains("thinking"));

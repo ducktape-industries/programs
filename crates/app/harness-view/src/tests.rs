@@ -2,6 +2,7 @@ mod conversations;
 mod live_calls;
 mod phone;
 mod reads;
+mod server_tools;
 mod thinking;
 
 use std::cell::RefCell;
@@ -103,6 +104,7 @@ fn config_of(name: &str) -> Config {
         max_tokens: 4096,
         wait: None,
         thinking: None,
+        server_tools: Vec::new(),
         system: format!("You are {name}."),
     }
 }
@@ -991,6 +993,7 @@ fn rover() -> Config {
         max_tokens: 8192,
         wait: None,
         thinking: None,
+        server_tools: Vec::new(),
         system: "Answer about deploys.".into(),
     }
 }
