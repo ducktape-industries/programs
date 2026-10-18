@@ -569,6 +569,7 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
             vec![[0x11; 32], [0x22; 32]],
         ),
         exchange::<LinkOpen>("duck://chat/room".into(), ()),
+        exchange::<LinkWindow>("duck://chat/room".into(), ()),
         exchange::<HostRoute>((), "tx/00ff".into()),
         exchange::<HostId>("msg".into(), "msg-1".into()),
         exchange::<ClockTicks>(1000, ()),

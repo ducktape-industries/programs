@@ -1005,6 +1005,14 @@ methods! {
     /// (`malformed_request`). Only a person's press or key in the view
     /// opens one: a request without one is refused `needs_gesture`.
     LinkOpen, "link.open", String, ();
+    /// `link.window`: a link as [`LinkOpen`] takes it, the same schemes
+    /// and the same press rule (`needs_gesture`), but a `duck://` link's
+    /// view opens in a window of its own; the window an earlier
+    /// `link.window` opened for the same link comes forward instead. A
+    /// host with one window (a phone) and an `https://` link open it as
+    /// `link.open` does. A host older than this method refuses it
+    /// `unknown_request`.
+    LinkWindow, "link.window", String, ();
     /// `host.route`: a subscription, one item per `duck://` link opened into
     /// this view: the path after the view's own segment (`tx/<hash>` of
     /// `duck://<chain>/explorer/tx/<hash>`). The route is delivered DECODED:

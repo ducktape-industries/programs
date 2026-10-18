@@ -472,6 +472,7 @@ pub(super) fn shapes() -> (BTreeMap<&'static str, Shape>, Definitions) {
         borsh::<FilePick>(d),
         borsh::<OpPut>(d),
         borsh::<LinkOpen>(d),
+        borsh::<LinkWindow>(d),
         borsh::<HostRoute>(d),
         borsh::<HostId>(d),
         borsh::<ClockTicks>(d),

@@ -28,6 +28,7 @@ host.visible None () -> bool
 host.widget None TypeName("WidgetCommand") -> Unit tree
 invite.create None CreateInvite -> Invite
 link.open None String -> ()
+link.window None String -> ()
 live.publish None LivePublish -> Publishing
 live.send None LiveSend -> ()
 live.subscribe None LiveSubscribe -> LiveItem
