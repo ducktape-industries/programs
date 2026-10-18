@@ -37,6 +37,10 @@ pub(super) fn legacy_is_empty(chat: &Chat) -> bool {
         && CHANNEL_TAGS.all(&reads).unwrap().is_empty()
 }
 
+fn some(limit: u64) -> Op {
+    Op::MigrateSome { limit }
+}
+
 pub(super) fn migrate(channel: &str) -> Op {
     Op::Migrate {
         channel_id: channel.into(),
@@ -208,8 +212,50 @@ fn a_half_migrated_channel_reads_what_its_messages_hold() {
 }
 
 #[test]
+fn some_channels_migrate_in_one_op_in_the_order_unmigrated_lists_them() {
+    let mut chat = busy();
+    let before = answers(&chat);
+    age(&chat);
+    let aged = chat.store.borrow().state.clone();
+    chat.ok(&CY, some(0));
+    assert_eq!(
+        chat.store.borrow().state,
+        aged,
+        "a limit of none moves none"
+    );
+    chat.ok(&CY, some(1));
+    assert_eq!(unmigrated(&chat), ["ops"]);
+    assert_eq!(answers(&chat), before);
+    chat.ok(&BO, some(u64::MAX));
+    assert!(unmigrated(&chat).is_empty());
+    assert_eq!(answers(&chat), before);
+    assert!(legacy_is_empty(&chat));
+    let done = chat.store.borrow().state.clone();
+    chat.ok(&ADA, some(5));
+    assert_eq!(
+        chat.store.borrow().state,
+        done,
+        "once none is left a run writes nothing"
+    );
+}
+
+#[test]
+fn migrating_all_at_once_is_migrating_each() {
+    let (mut each, mut all) = (busy(), busy());
+    age(&each);
+    age(&all);
+    each.ok(&ADA, migrate("general"));
+    each.ok(&ADA, migrate("ops"));
+    all.ok(&ADA, some(2));
+    assert_eq!(all.store.borrow().state, each.store.borrow().state);
+}
+
+#[test]
 fn any_account_migrates_and_the_op_names_its_channel() {
     assert!(crate::gate::needs(&migrate("general")).is_empty());
+    assert!(crate::gate::needs(&some(3)).is_empty());
+    let said = crate::describe(&some(3));
+    assert_eq!(said.title, "Migrate channels");
     let said = crate::describe(&migrate("general"));
     assert_eq!(said.title, "Migrate channel · #general");
 }

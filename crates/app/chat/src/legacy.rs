@@ -1,6 +1,6 @@
 //! The layout chat kept before [`Stored`](crate::state::Stored): each message row whole, with its
 //! search and tag postings beside it. A read falls back to an old row until its channel is
-//! migrated (`Op::Migrate`); this file goes once `Query::Unmigrated` lists no channel.
+//! migrated (`Op::Migrate`, `Op::MigrateSome`); this file goes once `Query::Unmigrated` lists no channel.
 use std::collections::BTreeSet;
 
 use ::program::{Error, ExecCtx, QueryCtx};
@@ -68,6 +68,17 @@ pub(crate) fn migrate(ctx: &ExecCtx, channel_id: &str) -> Result<(), Error> {
     let old = OLD_MESSAGES.prefix_of(&channel_id.to_owned());
     for (_, row) in OLD_MESSAGES.scan(ctx, old)? {
         put_message(ctx, &row)?;
+    }
+    Ok(())
+}
+
+// the first `limit` channels that still hold an old row, each migrated; every channel is
+// looked at before any moves, so what one migration writes decides nothing about the next
+pub(crate) fn migrate_some(ctx: &ExecCtx, limit: u64) -> Result<(), Error> {
+    let left = unmigrated(ctx, &PageRequest::default())?.items;
+    let some = usize::try_from(limit).unwrap_or(usize::MAX);
+    for channel_id in left.iter().take(some) {
+        migrate(ctx, channel_id)?;
     }
     Ok(())
 }

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
-use crate::legacy::{migrate, unmigrated};
+use crate::legacy::{migrate, migrate_some, unmigrated};
 use crate::listen::{listen, listened};
 use crate::ops::{
     create_channel, delete, edit, open_dm, post, react, remove_meta, rename, set_archived,
@@ -87,6 +87,7 @@ impl Program for Chat {
                 channel_id,
                 listening,
             } => listen(ctx, &channel_id, listening),
+            Op::MigrateSome { limit } => migrate_some(ctx, limit),
         }
     }
 

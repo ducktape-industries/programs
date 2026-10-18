@@ -151,6 +151,11 @@ pub enum Op {
         channel_id: String,
         listening: bool,
     },
+    // migrates, as `Migrate` does each, the first `limit` channels `Query::Unmigrated` lists:
+    // the rest wait for the next run, and a run once none is left writes nothing
+    MigrateSome {
+        limit: u64,
+    },
 }
 
 /// A read. `viewer` is the reader's principals: they decide
@@ -555,6 +560,7 @@ fn op_variants_only_append() {
             "RemoveChannelMeta",
             "Migrate",
             "Listen",
+            "MigrateSome",
         ]
     );
 }

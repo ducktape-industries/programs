@@ -28,6 +28,7 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::AddReaction { .. }
         | Op::RemoveReaction { .. }
         | Op::Migrate { .. }
+        | Op::MigrateSome { .. }
         | Op::Listen { .. } => Vec::new(),
     }
 }
