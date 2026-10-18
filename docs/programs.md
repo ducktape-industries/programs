@@ -622,7 +622,18 @@ nothing built is committed.
 
 `crates/sdk/founding` packs each program with its view, describe module and schema,
 and `make wasm-publish` releases the result as `founding.tar.gz`, which
-`ducktape init` founds once its `founding.toml` is filled. To add poll to it:
+`ducktape init` founds once its `founding.toml` is filled. Each time `dev` or
+`main` moves, it is also published with every module unpacked at
+`https://dl.ducktape.industries/programs/<channel>/<version>/`, where
+`dev` is the fast profile's build and `main` the release profile's, and
+`programs/<channel>/latest.json` names the newest version, its commit and each
+file's sha256 (the README's Building):
+
+```sh
+curl -fsS https://dl.ducktape.industries/programs/main/latest.json | jq '{display, commit, wire_id}'
+```
+
+To add poll to it:
 
 1. `crates/sdk/founding/src/lib.rs`: `("poll", "poll_view")` in `PROGRAMS`,
    or `"poll"` in `UNVIEWED` for a program with no screen of its own.

@@ -178,15 +178,63 @@ wasm-schemas:
 	@mkdir -p $(WASM_OUT)
 	@$(CARGO) run --locked -p founding --bin schemas -- $(WASM_OUT) $(PROGRAMS)
 
-.PHONY: wasm-modules wasm-reproducible wasm-publish
+.PHONY: wasm-modules wasm-reproducible wasm-founding wasm-publish dl-stage dl-publish-check
 
 ## builds every program, its describe module and schema, every view and every
 ## notifier under $(WASM_OUT)/, unpacked.
 wasm-modules: wasm-programs wasm-describes wasm-schemas wasm-views wasm-notifiers
 	@cd $(WASM_OUT) && ls -l $(ARTIFACTS)
 
-wasm-publish:
+## packs what wasm-modules built as a founding (crates/sdk/founding):
+## founding.toml and every file it names, under $(WASM_OUT)/founding/ and as
+## $(WASM_OUT)/founding.tar.gz. Its SHA256SUMS lists every file the bundle
+## wrote into its fresh directory, which is every file the founding names and
+## founding.toml (the founding crate's bundle test holds the two equal). The
+## archive is the same bytes each time the same modules are packed at the
+## same commit (names sorted, owner 0, each file dated at the commit), so a
+## second publish of it finds it unchanged.
+wasm-founding: wasm-modules
+	@rm -rf $(WASM_OUT)/founding $(WASM_OUT)/founding.tar.gz
+	@$(CARGO) run --locked --release -p founding -- $(WASM_OUT) $(WASM_OUT)/founding
+	@cd $(WASM_OUT)/founding && sha256sum * > SHA256SUMS
+	@tar --sort=name --format=gnu --owner=0 --group=0 --numeric-owner --mtime=@$$(git show -s --format=%ct HEAD) \
+	  -cf $(WASM_OUT)/founding.tar -C $(WASM_OUT) founding && gzip -n $(WASM_OUT)/founding.tar
+	@echo "founding.tar.gz  $$(wc -c < $(WASM_OUT)/founding.tar.gz)"
+
+# `make dl-stage` without a channel stops here, before its build
+ifneq ($(filter dl-stage,$(MAKECMDGOALS)),)
+ifeq ($(filter dev main,$(CHANNEL)),)
+$(error usage: make dl-stage CHANNEL=dev|main [WASM_PROFILE=fast] [DL_OUT=dir])
+endif
+endif
+
+# The two targets below take what wasm-founding builds, their prerequisite.
+# A caller that has just built runs the second with `-o wasm-founding` (make
+# builds nothing then): the release workflow builds main once for both.
+
+## builds and publishes this commit's release modules and founding as the
+## GitHub release wasm-<commit> (tools/publish-wasm.sh).
+wasm-publish: wasm-founding
 	@tools/publish-wasm.sh $(ARTIFACTS)
+
+# Where dl-stage writes the stage.
+DL_OUT = $(BUILD_TARGET)/dl/$(CHANNEL)
+
+## builds this commit's modules and founding and stages them for
+## https://dl.ducktape.industries/programs/$(CHANNEL)/ (tools/publish-dl.py
+## stage): `make dl-stage CHANNEL=dev WASM_PROFILE=fast`, or `CHANNEL=main` for
+## the release profile. $(DL_OUT) then holds each file and the manifest, and
+## the upload order is printed; this needs no credentials. The release
+## workflow's upload job uploads the stage (`tools/publish-dl.py upload`).
+dl-stage: wasm-founding
+	@tools/publish-dl.py stage $(CHANNEL) $(WASM_PROFILE) $(DL_OUT) \
+	  $(addprefix $(WASM_OUT)/,$(ARTIFACTS)) $(WASM_OUT)/founding.tar.gz
+
+## runs tools/publish-dl.py against a scratch repository and a stand-in for
+## `aws` (tools/publish-dl-check.py): the version, the manifest, the upload
+## order, and the refusal of a stage or a version's file with other bytes.
+dl-publish-check:
+	@tools/publish-dl-check.py
 
 ## builds every program and view twice, the second time from a fresh target
 ## directory, and requires the same sha256 for every artifact and no path of

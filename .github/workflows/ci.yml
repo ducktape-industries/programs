@@ -40,3 +40,4 @@ jobs:
       # unlocked: the scaffold adds workspace members, so Cargo.lock changes
       - run: make scaffold-check
       - run: make wasm-reproducible CARGO="cargo --locked"
+      - run: make dl-publish-check
