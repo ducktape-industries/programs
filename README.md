@@ -177,10 +177,10 @@ with the `fast` profile instead (`Cargo.toml`): no fat LTO, sixteen codegen
 units and no wasm-opt, into `wasm32-unknown-unknown/fast/`, for the edit
 loop and for garage, the network that runs dev; a release, and every
 program a hosted network (duckpond) runs, is always the release profile's
-bytes. A hosted network never runs a release: its pods service builds a
-commit on the network's forge `dev` and puts it as a blob. A release founds
-a local network (qa's kit). `WASM_PROFILE=fast` on a
-wasm target's command line asks for it
+bytes. A hosted network never runs a release: its pods service, or
+eddy-claude (account 24), builds a commit on the network's forge `dev`, and
+the builder puts it as a blob. A release founds a local network (qa's kit).
+`WASM_PROFILE=fast` on a wasm target's command line asks for it
 (`make dev WASM_PROFILE=release` for the bytes that ship), and in the
 environment of an `--example live` it picks the rig's profile.
 `make wasm-reproducible` proves the bytes do not depend on the checkout. They do depend on the host triple (the
