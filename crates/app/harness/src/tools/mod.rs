@@ -1,12 +1,13 @@
 //! The tools a thread's model may call, each over one program of the network: its schema, the
 //! check a call's input passes, the run once its input is whole, what it shows while its input
-//! arrives, and how what it showed or did is taken back.
+//! arrives, how what it showed or did is taken back, and what its stream says, for one that streams.
 mod blob;
 mod chat;
 mod files;
 mod forge;
 mod interface;
 mod network;
+mod pods;
 pub(crate) mod prefix;
 mod schedule;
 mod thread;
@@ -14,6 +15,7 @@ mod thread;
 pub(crate) use chat::shown_by;
 
 use ::program::{BlobId, Error, ExecCtx, Principal, ProgramId, invalid, unexpected_reply};
+use abi::role::egress;
 use abi::role::identity::AccountNumber;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -35,10 +37,25 @@ pub(crate) struct Write {
 
 pub(crate) type Reading = Box<dyn FnOnce(&[u8]) -> Result<Value, Error>>;
 
+pub(crate) type Following = Box<dyn FnOnce(&[u8]) -> Result<Run, Error>>;
+
+// what a call does: answer at once, write and read the last write's output, write and choose the
+// next run from it, or answer that it streams and wake its conversation when the stream ends
 pub(crate) enum Run {
     Done(Value),
     Write(Vec<Write>),
-    Read { writes: Vec<Write>, read: Reading },
+    Read {
+        writes: Vec<Write>,
+        read: Reading,
+    },
+    Then {
+        writes: Vec<Write>,
+        then: Following,
+    },
+    Stream {
+        request: egress::Request,
+        about: String,
+    },
 }
 
 pub(crate) fn write(target: impl Into<ProgramId>, payload: Vec<u8>) -> Run {
@@ -76,6 +93,11 @@ pub(crate) trait Tool {
     fn void(_ctx: &ExecCtx, _seat: &Seat) -> Result<Undo, Error> {
         Ok(Undo::Stays)
     }
+    // what one event of the call's stream says once it says the stream's end; a heartbeat says
+    // nothing
+    fn heard(_data: &[u8]) -> Result<Option<Value>, Error> {
+        Ok(None)
+    }
 }
 
 pub(crate) struct Entry {
@@ -88,6 +110,7 @@ pub(crate) struct Entry {
     pub render: fn(&[u8]) -> Result<Value, Error>,
     pub show: fn(&ExecCtx, &Seat, &str) -> Result<Show, Error>,
     pub void: fn(&ExecCtx, &Seat) -> Result<Undo, Error>,
+    pub heard: fn(&[u8]) -> Result<Option<Value>, Error>,
 }
 
 fn check<T: Tool>(input: &Value) -> Result<(), String> {
@@ -112,6 +135,7 @@ const fn entry<T: Tool>() -> Entry {
         render: T::render,
         show: T::show,
         void: T::void,
+        heard: T::heard,
     }
 }
 
@@ -146,6 +170,9 @@ pub(crate) const CATALOG: &[Entry] = &[
     entry::<interface::Query>(),
     entry::<interface::Call>(),
     entry::<blob::Put>(),
+    entry::<pods::Exec>(),
+    entry::<pods::Read>(),
+    entry::<pods::Push>(),
     entry::<thread::Search>(),
     entry::<thread::Read>(),
     entry::<thread::Topic>(),

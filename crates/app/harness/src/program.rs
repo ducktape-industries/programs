@@ -108,6 +108,8 @@ impl Awaiting for Harness {
             Op::Resume { thread } => resume::resume(ctx, thread).await,
             Op::Report { manager } => resume::report(ctx, manager).await,
             Op::Settle { thread } => due(ctx, thread).await,
+            Op::Watch { watch } => crate::watches::watch(ctx, watch).await,
+            Op::Heard { watch, event } => crate::watches::heard(&ctx, watch, event).await,
         }
     }
 }

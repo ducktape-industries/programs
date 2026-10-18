@@ -255,6 +255,9 @@ pub(crate) fn manual(agent: &Agent, title: &str, bound: Option<&Place>) -> Strin
          - Chat: chat_post posts to a channel; reply_to puts the post in a thread.\n\
          - Forge: forge_commit commits files to a git repository and pushes them as account \
          {number}, creating the repository if it does not exist.\n\
+         - Pods: pod_exec runs a command in a pod (with every, it answers at once and this \
+         conversation hears when the command ends), pod_read reads a file out of a pod, and \
+         pod_push pushes a commit a pod made to forge as account {number}.\n\
          - Programs: network_schema gives any program's op, query and reply shapes; \
          network_query asks it a query and network_call sends it an op as account {number}.",
         name = agent.name,

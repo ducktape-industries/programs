@@ -148,7 +148,7 @@ pub(crate) async fn run_booked(ctx: &Ctx) -> Result<(), Error> {
     let text = report(&booking, &ran);
     booking.ran = Some(ran);
     BOOKINGS.put(ctx, &entry, &booking);
-    tell(ctx, &booking, text).await
+    tell(ctx, booking.agent, booking.thread, text).await
 }
 
 fn applied(output: &[u8]) -> String {
@@ -178,19 +178,30 @@ fn report(booking: &Booking, ran: &Ran) -> String {
     }
 }
 
-fn told(ctx: &QueryCtx, booking: &Booking) -> Result<Option<ThreadRow>, Error> {
-    let from = match booking.thread {
+fn told(
+    ctx: &QueryCtx,
+    agent: AccountNumber,
+    thread: Option<u64>,
+) -> Result<Option<ThreadRow>, Error> {
+    let from = match thread {
         Some(id) => THREADS.get(ctx, &id)?.filter(|row| !row.closed),
         None => None,
     };
     match from {
         Some(row) => Ok(Some(row)),
-        None => current(ctx, booking.agent),
+        None => current(ctx, agent),
     }
 }
 
-async fn tell(ctx: &Ctx, booking: &Booking, text: String) -> Result<(), Error> {
-    let Some(mut row) = told(ctx, booking)? else {
+// a line from the network in the conversation `thread` names, else the agent's current one,
+// which wakes it
+pub(crate) async fn tell(
+    ctx: &Ctx,
+    agent: AccountNumber,
+    thread: Option<u64>,
+    text: String,
+) -> Result<(), Error> {
+    let Some(mut row) = told(ctx, agent, thread)? else {
         return Ok(());
     };
     let author = Principal::Root;

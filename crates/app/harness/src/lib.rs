@@ -26,6 +26,7 @@ mod tests;
 mod tools;
 mod turns;
 mod waiting;
+mod watches;
 mod wire;
 
 pub use ::program::{BlobId, Principal};
@@ -91,6 +92,13 @@ pub enum Op {
     },
     Settle {
         thread: u64,
+    },
+    Watch {
+        watch: u64,
+    },
+    Heard {
+        watch: u64,
+        event: Event,
     },
 }
 
@@ -678,6 +686,13 @@ pub fn streamed_as(thread: u64) -> Vec<u8> {
     deliver
 }
 
+// the prefix each event of a watched tool call's stream comes back under: `Op::Heard`
+pub fn heard_as(watch: u64) -> Vec<u8> {
+    let mut deliver = vec![15];
+    deliver.extend(watch.to_le_bytes());
+    deliver
+}
+
 // what one of harness's own egress requests waits for, read back from the request alone: a
 // turn's streamed reply, a model's window, a thread's summary, a tool call's relay
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -779,6 +794,14 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("End thread {thread}'s settle window once it is due"),
             vec![field("thread", Value::count(*thread))],
         ),
+        Op::Watch { watch } => (
+            format!("Open the stream of watched call {watch}"),
+            vec![field("watch", Value::count(*watch))],
+        ),
+        Op::Heard { watch, event } => (
+            format!("Event {} of watched call {watch}'s stream", event.seq),
+            vec![field("data", Value::count(event.data.len() as u64))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -804,6 +827,8 @@ fn op_variants_only_append() {
             "Resume",
             "Report",
             "Settle",
+            "Watch",
+            "Heard",
         ]
     );
 }
@@ -862,6 +887,19 @@ fn the_delivery_prefix_decodes_as_attributed() {
     assert_eq!(
         abi::decode::<Op>(&delivered).unwrap(),
         Op::Attributed(Box::new(change))
+    );
+}
+
+#[test]
+fn the_watch_prefix_decodes_as_heard() {
+    let event = Event {
+        id: 5,
+        seq: 1,
+        data: b"event: alive".to_vec(),
+    };
+    assert_eq!(
+        abi::decode::<Op>(&event.payload(&heard_as(3))).unwrap(),
+        Op::Heard { watch: 3, event }
     );
 }
 

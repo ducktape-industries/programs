@@ -1,6 +1,6 @@
 //! Everything harness keeps: models, threads by agent, current and bound threads, each place's
-//! last thread, frames, held input, sealed parts, tool calls and live calls, withheld frames,
-//! streaming replies, each thread's topic and tally, booked runs, what a written key belongs to.
+//! last thread, frames, held input, sealed parts, tool and live calls, withheld frames, streaming
+//! replies, each thread's topic and tally, booked runs, watched streams, what a written key names.
 use ::program::{BlobId, EntryId};
 use abi::role::identity::AccountNumber;
 use attribution::{Change, Source};
@@ -41,6 +41,8 @@ pub const USAGE: Map<String, UsageWindow> = Map::new("usage/");
 // a thread whose general input waits out its agent's `settle`, and the wake-up that ends it
 pub const SETTLING: Map<u64, SettleWindow> = Map::new("settling/");
 pub const COUNT: Item<u64> = Item::new("count");
+pub const WATCHES: Map<u64, Watching> = Map::new("watch/");
+pub const WATCH_COUNT: Item<u64> = Item::new("watch-count");
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Live {
@@ -75,6 +77,18 @@ pub struct Retry {
     pub since: u64,
     pub since_time: u64,
     pub entry: Option<EntryId>,
+}
+
+// a tool call whose stream harness opens and hears for its agent: the egress request, and
+// the call and conversation it wakes once the stream says its end
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Watching {
+    pub thread: u64,
+    pub agent: AccountNumber,
+    pub call: String,
+    pub tool: String,
+    pub about: String,
+    pub request: abi::role::egress::Request,
 }
 
 pub(crate) fn newest_first(id: u64) -> u64 {

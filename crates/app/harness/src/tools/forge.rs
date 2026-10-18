@@ -2,7 +2,7 @@
 //! contents and changes under review, read, and the commits the agent pushes (`commit.rs`).
 mod commit;
 
-pub(crate) use commit::Commit;
+pub(crate) use commit::{Commit, branch_ref, found, oid, request as push_request};
 
 use ::program::{Error, ExecCtx, invalid};
 use forge::{ChangeFilter, ChangeState, Query, Reply, Revision};

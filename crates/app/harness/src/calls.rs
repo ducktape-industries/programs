@@ -11,6 +11,7 @@ use crate::agents::{running, thread};
 use crate::state::{CALLS, DEFERRED, LIVE, Live, PARTIALS, SHOWN, THREADS};
 use crate::tools::{self, Entry, Run, Seat, Show, Undo, Write};
 use crate::turns::{append, request, serves, settle};
+use crate::watches;
 use crate::{Asking, Body, CallRow, CallState, Op, PROGRAM, Said, ThreadRow};
 
 pub(crate) fn refusal(error: &Error) -> String {
@@ -174,7 +175,11 @@ pub(crate) fn relayable(ctx: &QueryCtx, target: &str, payload: &[u8]) -> Result<
 fn harness_own(payload: &[u8]) -> bool {
     matches!(
         abi::decode::<Op>(payload),
-        Ok(Op::Attributed(_) | Op::Streamed { .. } | Op::RunBooked)
+        Ok(Op::Attributed(_)
+            | Op::Streamed { .. }
+            | Op::RunBooked
+            | Op::Watch { .. }
+            | Op::Heard { .. })
     )
 }
 
@@ -590,24 +595,46 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
         call,
         shown: before.as_ref(),
     };
-    let (writes, read) = match (entry.run)(ctx, &seat, input) {
-        Ok(Run::Done(value)) => return Ok((value.to_string(), false)),
-        Ok(Run::Write(writes)) => (writes, Box::new(entry.render) as tools::Reading),
-        Ok(Run::Read { writes, read }) => (writes, read),
-        Err(error) => return Ok((refusal(&error), true)),
-    };
-    mark(ctx, id, call, CallState::Writing)?;
-    Ok(match written(ctx, owner.agent, writes).await {
-        Ok(output) => {
-            // what it did is kept until its turn is recorded, for a reply that starts over
-            SHOWN.put(ctx, &(id, call.to_owned()), &row.input);
-            match read(&output) {
-                Ok(value) => (value.to_string(), false),
-                Err(refused) => (refusal(&refused), true),
+    let mut next = (entry.run)(ctx, &seat, input);
+    loop {
+        let (writes, after) = match next {
+            Ok(Run::Done(value)) => return Ok((value.to_string(), false)),
+            Ok(Run::Stream { request, about }) => {
+                let opened = watches::open(ctx, &owner, call, &row.tool, request, about).await;
+                return Ok(match opened {
+                    Ok(value) => (value.to_string(), false),
+                    Err(error) => (refusal(&error), true),
+                });
             }
+            Ok(Run::Write(writes)) => (writes, After::Read(Box::new(entry.render))),
+            Ok(Run::Read { writes, read }) => (writes, After::Read(read)),
+            Ok(Run::Then { writes, then }) => (writes, After::Then(then)),
+            Err(error) => return Ok((refusal(&error), true)),
+        };
+        mark(ctx, id, call, CallState::Writing)?;
+        let output = match written(ctx, owner.agent, writes).await {
+            Ok(output) => output,
+            Err(error) => return Ok((refusal(&error), true)),
+        };
+        // what it did is kept until its turn is recorded, for a reply that starts over
+        SHOWN.put(ctx, &(id, call.to_owned()), &row.input);
+        match after {
+            After::Read(read) => {
+                return Ok(match read(&output) {
+                    Ok(value) => (value.to_string(), false),
+                    Err(refused) => (refusal(&refused), true),
+                });
+            }
+            After::Then(then) => next = then(&output),
         }
-        Err(error) => (refusal(&error), true),
-    })
+    }
+}
+
+// what follows a run's writes: the call's result read from the last one's output, or the run the
+// output leads to
+enum After {
+    Read(tools::Reading),
+    Then(tools::Following),
 }
 
 fn finish(

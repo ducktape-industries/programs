@@ -33,13 +33,13 @@ fn kept(objects: &mut Objects, hash: Hash, kind: Kind, body: Vec<u8>) -> Result<
     Ok(id)
 }
 
-fn oid(hash: Hash, hex: &str) -> Result<Oid, Error> {
+pub(crate) fn oid(hash: Hash, hex: &str) -> Result<Oid, Error> {
     Oid::from_hex(hash, hex)
         .map_err(|_| invalid(format!("{hex} is not an object id of this repository")))
 }
 
 /// The repository named `name` and forge's bounds, or `None` while no repository is named so.
-fn found(ctx: &ExecCtx, name: &str) -> Result<Option<(Repo, Bounds)>, Error> {
+pub(crate) fn found(ctx: &ExecCtx, name: &str) -> Result<Option<(Repo, Bounds)>, Error> {
     match ask(ctx, Query::Repo { repo: name.into() }) {
         Ok(Reply::Repo { repo, bounds, .. }) => Ok(Some((repo.repo, bounds))),
         Ok(other) => Err(unexpected(forge::PROGRAM, "Repo", &other)),
@@ -248,7 +248,7 @@ fn signature(ctx: &ExecCtx, agent: AccountNumber) -> Result<Signature, Error> {
 }
 
 /// Git's receive-pack request moving `branch` from `old` to `new`, asking for git's report.
-fn request(old: Oid, new: Oid, branch: &[u8]) -> Vec<u8> {
+pub(crate) fn request(old: Oid, new: Oid, branch: &[u8]) -> Vec<u8> {
     let mut line = format!("{old} {new} ").into_bytes();
     line.extend_from_slice(branch);
     line.extend_from_slice(b"\0report-status");
@@ -259,7 +259,7 @@ fn request(old: Oid, new: Oid, branch: &[u8]) -> Vec<u8> {
 }
 
 /// `branch` as the ref it names: `main` is `refs/heads/main`; omitted, the default branch.
-fn branch_ref(branch: Option<&str>, default: &[u8]) -> Result<Vec<u8>, Error> {
+pub(crate) fn branch_ref(branch: Option<&str>, default: &[u8]) -> Result<Vec<u8>, Error> {
     let Some(branch) = branch else {
         return Ok(default.to_vec());
     };
