@@ -1,12 +1,20 @@
-//! An agent's conversation: the one current thread that every input to the agent continues,
-//! from any person and any place. Its manager opens a fresh one (`NewThread`) or forks the
-//! current one (`ForkThread`); a thread no longer current closes once its loop is idle.
-use ::program::{Error, ExecCtx, QueryCtx, not_found};
+//! An agent's conversations: one canonical thread that every input continues, from any person
+//! and any place, unless its place is bound to another; and the threads anyone opens bound to a
+//! chat channel or a chat thread (`OpenThread`), which hear only that place until they close.
+//! Its manager starts the canonical one afresh (`NewThread`) or forks it (`ForkThread`); a
+//! canonical thread no longer current closes once its loop is idle.
+use ::program::{
+    Error, ExecCtx, Principal, QueryCtx, already_exists, not_found, unexpected_reply,
+};
 use abi::role::identity::AccountNumber;
+use store::PageRequest;
 
-use crate::agents::{Agent, managed, thread};
-use crate::state::{BY_AGENT, COUNT, CURRENT, FRAMES, THREADS, TOPICS, WITHHELD, newest_first};
-use crate::{Asking, Body, Context, Frame, Role, Said, ThreadRow};
+use crate::agents::{Agent, agent_named, managed, thread};
+use crate::state::{
+    BOUND, BY_AGENT, Binding, COUNT, CURRENT, FRAMES, PLACES, THREADS, TOPICS, WITHHELD,
+    newest_first,
+};
+use crate::{Asking, Body, Context, Frame, Place, Role, Said, ThreadRow};
 
 pub(crate) fn current(ctx: &QueryCtx, agent: AccountNumber) -> Result<Option<ThreadRow>, Error> {
     let Some(id) = CURRENT.get(ctx, &agent)? else {
@@ -16,15 +24,23 @@ pub(crate) fn current(ctx: &QueryCtx, agent: AccountNumber) -> Result<Option<Thr
     Ok((!row.closed).then_some(row))
 }
 
+pub(crate) fn binding(ctx: &QueryCtx, row: &ThreadRow) -> Result<Option<Place>, Error> {
+    let bound = BOUND.get(ctx, &(row.agent, row.place.clone()))?;
+    Ok(bound
+        .filter(|bound| bound.thread == row.id)
+        .map(|bound| bound.place))
+}
+
 fn adopted(ctx: &QueryCtx, agent: AccountNumber) -> Result<Option<ThreadRow>, Error> {
     let mut newest: Option<ThreadRow> = None;
     for (_, key) in BY_AGENT.scan(ctx, BY_AGENT.prefix_of(&agent))? {
         let row = thread(ctx, u64::MAX - key)?;
+        let canonical = binding(ctx, &row)?.is_none();
         let open_and_idle = !row.closed && row.asking == Asking::Idle;
         let later = newest
             .as_ref()
             .is_none_or(|newest| row.last_height > newest.last_height);
-        if open_and_idle && later {
+        if canonical && open_and_idle && later {
             newest = Some(row);
         }
     }
@@ -37,20 +53,46 @@ pub(crate) fn conversation(ctx: &ExecCtx, agent: &Agent, place: &str) -> Result<
             CURRENT.put(ctx, &agent.number, &row.id);
             Ok(row)
         }
-        None => open(ctx, agent, place.to_owned(), Opening::Fresh),
+        None => open(ctx, agent, place.to_owned(), &Opening::Fresh),
     }
+}
+
+pub(crate) fn route(
+    ctx: &ExecCtx,
+    agent: &Agent,
+    places: &[String],
+    place: String,
+) -> Result<(ThreadRow, String), Error> {
+    for key in places {
+        let Some(bound) = BOUND.get(ctx, &(agent.number, key.clone()))? else {
+            continue;
+        };
+        let row = thread(ctx, bound.thread)?;
+        if !row.closed {
+            return Ok((row, key.clone()));
+        }
+    }
+    let row = conversation(ctx, agent, &place)?;
+    Ok((row, place))
 }
 
 enum Opening {
     Fresh,
     Fork { from: u64 },
+    Bound(Place),
 }
 
-fn open(ctx: &ExecCtx, agent: &Agent, place: String, opening: Opening) -> Result<ThreadRow, Error> {
+fn open(
+    ctx: &ExecCtx,
+    agent: &Agent,
+    place: String,
+    opening: &Opening,
+) -> Result<ThreadRow, Error> {
     let id = COUNT.get(ctx)?.unwrap_or(0) + 1;
     let title = match opening {
         Opening::Fresh => format!("conversation {id}"),
         Opening::Fork { from } => format!("conversation {id}, forked from conversation {from}"),
+        Opening::Bound(bound) => format!("conversation {id}, bound to {}", bound.words()),
     };
     let row = ThreadRow {
         id,
@@ -78,12 +120,24 @@ fn open(ctx: &ExecCtx, agent: &Agent, place: String, opening: Opening) -> Result
     };
     COUNT.put(ctx, &id);
     BY_AGENT.insert(ctx, &(agent.number, newest_first(id)));
-    CURRENT.put(ctx, &agent.number, &id);
+    match opening {
+        Opening::Fresh | Opening::Fork { .. } => CURRENT.put(ctx, &agent.number, &id),
+        Opening::Bound(bound) => {
+            let binding = Binding {
+                thread: id,
+                place: bound.clone(),
+            };
+            BOUND.put(ctx, &(agent.number, bound.key()), &binding);
+        }
+    }
     Ok(row)
 }
 
 pub(crate) fn retire(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     let mut row = thread(ctx, id)?;
+    if binding(ctx, &row)?.is_some() {
+        return Ok(());
+    }
     let superseded = CURRENT.get(ctx, &row.agent)? != Some(id);
     let idle = row.asking == Asking::Idle;
     if superseded && idle && !row.closed {
@@ -96,7 +150,7 @@ pub(crate) fn retire(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
 pub(crate) fn new_thread(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
     let agent = managed(ctx, number)?;
     let previous = current(ctx, number)?;
-    let row = open(ctx, &agent, String::new(), Opening::Fresh)?;
+    let row = open(ctx, &agent, String::new(), &Opening::Fresh)?;
     THREADS.put(ctx, &row.id, &row);
     if let Some(previous) = previous {
         retire(ctx, previous.id)?;
@@ -113,11 +167,63 @@ pub(crate) fn fork_thread(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Er
         )));
     };
     let opening = Opening::Fork { from: from.id };
-    let mut row = open(ctx, &agent, from.place.clone(), opening)?;
+    let mut row = open(ctx, &agent, from.place.clone(), &opening)?;
     copied(ctx, &from, &mut row)?;
     THREADS.put(ctx, &row.id, &row);
     retire(ctx, from.id)?;
     ctx.set_return_data(abi::encode(&row.id));
+    Ok(())
+}
+
+pub(crate) fn open_thread(ctx: &ExecCtx, number: AccountNumber, place: Place) -> Result<(), Error> {
+    let agent = agent_named(ctx, number)?;
+    located(ctx, &agent, &place)?;
+    let key = place.key();
+    if let Some(bound) = BOUND.get(ctx, &(number, key.clone()))? {
+        return Err(already_exists(format!(
+            "agent {number} already has conversation {} open in {}; close it first",
+            bound.thread,
+            place.words()
+        )));
+    }
+    let row = open(ctx, &agent, key.clone(), &Opening::Bound(place))?;
+    THREADS.put(ctx, &row.id, &row);
+    PLACES.put(ctx, &(number, key), &row.id);
+    ctx.set_return_data(abi::encode(&row.id));
+    Ok(())
+}
+
+fn located(ctx: &QueryCtx, agent: &Agent, place: &Place) -> Result<(), Error> {
+    let channel = place.channel().to_owned();
+    let asked = chat::Query::Channel {
+        channel_id: channel.clone(),
+    };
+    let found = match ctx.query(chat::PROGRAM, &asked)? {
+        chat::Reply::Channel(found) => found,
+        other => return Err(unexpected_reply(chat::PROGRAM, "Channel", &other)),
+    };
+    if found.is_none() {
+        return Err(not_found(format!("there is no chat channel {channel}")));
+    }
+    let Place::Thread { root, .. } = place else {
+        return Ok(());
+    };
+    let asked = chat::Query::Thread {
+        channel_id: channel.clone(),
+        root_seq: *root,
+        viewer: vec![Principal::Account(agent.number)],
+        page: PageRequest::default(),
+    };
+    let opened = match ctx.query(chat::PROGRAM, &asked)? {
+        chat::Reply::Thread { root, .. } => root,
+        other => return Err(unexpected_reply(chat::PROGRAM, "Thread", &other)),
+    };
+    let is_root = opened.is_some_and(|row| row.thread.is_none());
+    if !is_root {
+        return Err(not_found(format!(
+            "message {root} is no thread's first message in chat channel {channel}"
+        )));
+    }
     Ok(())
 }
 
