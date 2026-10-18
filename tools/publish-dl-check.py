@@ -4,7 +4,8 @@ artifacts, against a stand-in for `aws` that keeps the bucket in a directory and
 upload: the version is the first-parent count, the manifest has its shape, the upload order
 ends with the version's manifest and then latest.json, a rerun skips what is there, a stage
 whose file differs from its manifest or a version's file with other bytes stops the upload
-before any upload, and latest.json never moves back.
+before any upload, and latest.json never moves back. A stage refuses views of two wires and a
+directory that is no earlier stage.
    publish-dl-check.py   (run by `make dl-publish-check`)"""
 
 import hashlib
@@ -56,9 +57,9 @@ def leb128(value):
             return bytes(out)
 
 
-def view(name):
+def view(name, wire=WIRE):
     """A wasm module whose only section is a view manifest (`view_wire::manifest`)."""
-    text = f"ducktape.view.manifest\n{name}\nA view\nop,\n320\n{WIRE}\nchat,\n\nnone".encode()
+    text = f"ducktape.view.manifest\n{name}\nA view\nop,\n320\n{wire}\nchat,\n\nnone".encode()
     section = leb128(len(b"ducktape.view.manifest")) + b"ducktape.view.manifest" + text
     return b"\0asm\x01\0\0\0" + b"\0" + leb128(len(section)) + section
 
@@ -116,10 +117,10 @@ def main():
 
         stage_dir = scratch / "stage"
 
-        def publish(*args):
+        def publish(*args, into=stage_dir):
             command = [sys.executable, str(PUBLISH), *args]
             if args[0] == "stage":
-                command += [str(stage_dir), *(str(build / name) for name in files)]
+                command += [str(into), *(str(build / name) for name in files)]
             return subprocess.run(command, cwd=repo, env=env, capture_output=True, text=True)
 
         def log():
@@ -152,6 +153,15 @@ def main():
         check(list(manifest["artifacts"]) == sorted(files), "the artifacts are sorted by name")
         check(publish("stage", "main", "fast").returncode != 0, "main refuses the fast profile's bytes")
         check(publish("stage", "dev", "release").returncode != 0, "dev refuses the release profile's bytes")
+        (build / "chat_view.notify.wasm").write_bytes(view("Chat notices", "fedcba9876543210"))
+        run = publish("stage", "dev", "fast")
+        check(run.returncode != 0 and "one wire" in run.stderr, f"views of two wires are refused: {run.stderr}")
+        (build / "chat_view.notify.wasm").write_bytes(files["chat_view.notify.wasm"])
+        elsewhere = scratch / "elsewhere"
+        elsewhere.mkdir()
+        (elsewhere / "notes").write_text("mine")
+        run = publish("stage", "dev", "fast", into=elsewhere)
+        check(run.returncode != 0 and (elsewhere / "notes").exists(), f"a directory that is no stage: {run.stderr}")
         check(publish("stage", "dev", "fast").returncode == 0, "the stage is written again")
 
         run = publish("upload", str(stage_dir))

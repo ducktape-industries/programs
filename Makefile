@@ -178,7 +178,7 @@ wasm-schemas:
 	@mkdir -p $(WASM_OUT)
 	@$(CARGO) run --locked -p founding --bin schemas -- $(WASM_OUT) $(PROGRAMS)
 
-.PHONY: wasm-modules wasm-reproducible wasm-founding wasm-publish dl-stage dl-publish-check
+.PHONY: wasm-modules wasm-reproducible wasm-founding wasm-publish wasm-publish-check dl-stage dl-publish-check
 
 ## builds every program, its describe module and schema, every view and every
 ## notifier under $(WASM_OUT)/, unpacked.
@@ -208,14 +208,20 @@ $(error usage: make dl-stage CHANNEL=dev|main [WASM_PROFILE=fast] [DL_OUT=dir])
 endif
 endif
 
-# The two targets below take what wasm-founding builds, their prerequisite.
-# A caller that has just built runs the second with `-o wasm-founding` (make
-# builds nothing then): the release workflow builds main once for both.
+# wasm-publish and dl-stage take what wasm-founding builds, their
+# prerequisite. A caller that has just built runs them with `-o wasm-founding`
+# (make builds nothing then): the release workflow builds main once for both.
 
 ## builds and publishes this commit's release modules and founding as the
-## GitHub release wasm-<commit> (tools/publish-wasm.sh).
-wasm-publish: wasm-founding
+## GitHub release wasm-<commit> (tools/publish-wasm.sh). Its refusals (not
+## the reference host, not the release profile, uncommitted changes, a commit
+## on no branch of origin, a commit published already) come before the build,
+## and again before the release.
+wasm-publish: wasm-publish-check wasm-founding
 	@tools/publish-wasm.sh $(ARTIFACTS)
+
+wasm-publish-check:
+	@tools/publish-wasm.sh check
 
 # Where dl-stage writes the stage.
 DL_OUT = $(BUILD_TARGET)/dl/$(CHANNEL)

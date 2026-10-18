@@ -130,6 +130,9 @@ def stage(channel, profile, out, files):
         fail("the checkout has uncommitted changes")
     files = sorted((pathlib.Path(file) for file in files), key=lambda path: path.name)
     published = manifest(channel, profile, files)
+    # only an earlier stage is replaced: a mistyped <stage> must not empty a directory that holds other files
+    if out.exists() and any(out.iterdir()) and not (out / "manifest.json").exists():
+        fail(f"{out} holds files and no manifest.json, so it is no stage: name a fresh directory")
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
     for path in files:
@@ -155,7 +158,7 @@ class Bucket:
         return subprocess.run(["aws", *args, "--endpoint-url", self.endpoint], capture_output=True)
 
     def sha256(self, key):
-        """The sha256 the object at key was uploaded with ('' for none), or None when there is none."""
+        """The sha256 the object at key was uploaded with: '' when it carries none, None when there is no object."""
         run = self.aws("s3api", "head-object", "--bucket", self.name, "--key", key, "--output", "json")
         if run.returncode:
             if b"(404)" in run.stderr:

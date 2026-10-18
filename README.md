@@ -197,19 +197,35 @@ time `main` moves, the self-hosted runner fabrics-1 publishes it
 (`.github/workflows/release.yml`).
 
 Each time `dev` or `main` moves, its build is also published to
-https://dl.ducktape.industries/programs/: fabrics-1 builds and stages it
-(`make dl-stage`), and a job on GitHub's Ubuntu, the only one that holds the
-bucket's keys, uploads the stage (`tools/publish-dl.py`). A branch is a channel: `dev`
+https://dl.ducktape.industries/programs/. A branch is a channel: `dev`
 publishes the fast profile's bytes, `main` the release profile's (the same
 build as its GitHub release). A version is the commit's first-parent count
 (`git rev-list --count --first-parent HEAD`), shown as `dev-1234` or
 `main-87`. `programs/<channel>/<version>/` holds every artifact `make
-wasm-modules` builds, unpacked, and `founding.tar.gz`, none of them ever
-replaced, and `manifest.json`: `repo`, `channel`, `version`, `display`,
-`commit`, `profile`, `built_at` (the commit's committer time, UTC), `wire_id`
-(the `WIRE_ID` the views speak) and `artifacts`, each file's `sha256` and
-`bytes`. `programs/<channel>/latest.json` is the newest version's manifest,
-cached for a minute and written after every file it names:
+wasm-modules` builds, unpacked, `founding.tar.gz` and `manifest.json`, and
+nothing in it is ever replaced. `programs/<channel>/latest.json` is a copy of
+the newest version's manifest, cached for a minute and written after every
+file it names. `built_at` is the commit's committer time and `wire_id` the
+`WIRE_ID` the views speak; `artifacts` has one entry per file:
+
+```json
+{
+  "repo": "programs",
+  "channel": "dev",
+  "version": 660,
+  "display": "dev-660",
+  "commit": "41affe2c50df0a4fb280934f7f3e1e7d861345d9",
+  "profile": "fast",
+  "built_at": "2026-10-18T01:26:17Z",
+  "wire_id": "967e0ea397677413",
+  "artifacts": {
+    "chat_view.wasm": {
+      "sha256": "f2b278b1aed0587d1771f2bcf705d792f840df1ff9d5586f2acbd2d405d7e9e9",
+      "bytes": 3312535
+    }
+  }
+}
+```
 
 ```sh
 dl=https://dl.ducktape.industries/programs/dev
@@ -219,10 +235,13 @@ jq -r '.artifacts["founding.tar.gz"].sha256' latest.json   # sha256sum founding.
 ```
 
 A file is checked by the manifest's sha256, fetched over HTTPS; nothing is
-signed yet, since nothing verifies a signature. `make dl-stage CHANNEL=dev
-WASM_PROFILE=fast` is the dry run: it builds, writes the stage and its
-manifest under `$CARGO_TARGET_DIR/dl/dev/`, and prints the upload order,
-without credentials. `make dl-publish-check` checks the script.
+signed yet, since nothing verifies a signature. fabrics-1 builds and stages
+each version (`make dl-stage`), and a job on GitHub's Ubuntu, the only one
+that holds the bucket's keys, uploads the stage (`tools/publish-dl.py`).
+`make dl-stage CHANNEL=dev WASM_PROFILE=fast` is the dry run: it builds,
+writes the stage and its manifest under `$CARGO_TARGET_DIR/dl/dev/`, and
+prints the upload order, without credentials. `make dl-publish-check` checks
+the script.
 
 `make dev`'s view gate requires `wasm-tools` and Python 3; view releases
 also need [Binaryen wasm-opt 132](https://github.com/WebAssembly/binaryen/releases/tag/version_132).

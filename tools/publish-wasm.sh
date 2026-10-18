@@ -2,6 +2,7 @@
 # Publishes this commit's programs, describe modules, schemas and views, as `make wasm-founding`
 # built them, as the GitHub release wasm-<commit>: unpacked and as the founding bundle `ducktape
 # init` reads.
+#   tools/publish-wasm.sh check           (run by `make wasm-publish` before its build: the refusals only)
 #   tools/publish-wasm.sh <artifact>...   (run by `make wasm-publish`, after wasm-founding)
 set -eu
 fail() { echo "wasm-publish: $*" >&2; exit 1; }
@@ -13,6 +14,7 @@ commit=$(git rev-parse HEAD)
 [ -n "$(git branch --remotes --contains "$commit")" ] || fail "$commit is on no branch of origin"
 tag="wasm-$commit"
 ! gh release view "$tag" >/dev/null 2>&1 || fail "$tag is published already"
+[ "${1-}" != check ] || exit 0
 out="$BUILD_TARGET/publish"
 rm -rf "$out" && mkdir -p "$out"
 (cd "$WASM_OUT" && sha256sum "$@" > "$out/SHA256SUMS" && tar czf "$out/programs-wasm.tar.gz" "$@" -C "$out" SHA256SUMS)

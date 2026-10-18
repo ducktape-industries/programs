@@ -5,9 +5,10 @@
 # - dev: the fast profile's bytes. A newer push cancels the run of an older one.
 # - main: the release profile's bytes, the one build dl and the GitHub release
 #   wasm-<commit> kit founds from (`make wasm-publish`) both publish. Every commit main
-#   moves to is published; none is cancelled. The upload runs once the build is staged,
-#   whether or not the GitHub release went through: a rerun of the upload skips what dl
-#   already holds, while wasm-publish refuses a commit it published.
+#   moves to is published; none is cancelled. Neither publication waits on the other:
+#   the GitHub release goes out when dl's stage fails, and the upload runs when the
+#   release fails. A rerun of the upload skips what dl already holds, while wasm-publish
+#   refuses a commit it published.
 # A dispatch publishes the GitHub release of its ref, and nothing to dl.
 # fabrics-1 stages each file and the manifest (`make dl-stage`) and hands them to the job
 # `upload` as an artifact. That job, on GitHub's Ubuntu (which has `aws`), is the only one
@@ -64,7 +65,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # the version counts the whole first-parent history
-      - run: make wasm-founding
+      - id: build
+        run: make wasm-founding
       - if: github.event_name == 'push'
         run: make dl-stage CHANNEL=main DL_OUT="$RUNNER_TEMP/dl" -o wasm-founding
       - if: github.event_name == 'push'
@@ -76,7 +78,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           overwrite: true # a rerun of the build replaces its earlier attempt's stage
-      - run: make wasm-publish -o wasm-founding
+      - if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: make wasm-publish -o wasm-founding
         env:
           GH_TOKEN: ${{ github.token }}
 
