@@ -5,16 +5,21 @@ use ::program::{BlobId, EntryId};
 use abi::role::identity::AccountNumber;
 use attribution::{Change, Source};
 use borsh::{BorshDeserialize, BorshSerialize};
-use store::{Item, KeyCodec, Map, Set};
+use store::{Item, KeyCodec, Kind, Map, Owned, Set};
 
 use crate::{
     Body, Booking, CallRow, Frame, ModelRow, Partial, Place, Sealed, SettleWindow, Tally,
     ThreadRow, UsageWindow, WaitRow, Window, Wire,
 };
 
-pub const MODELS: Map<String, StoredModel> = Map::new("model/").shared();
-// a model's `compact_at` default, beside its record
+// Each model record is its owner's, of the kind `harness.model`: only its owner's ops write it.
+pub const MODELS: Map<String, Owned<StoredModel>> = Map::new("model/");
+// a model's `compact_at` default, beside its record; `SetCompactAt` rewrites the record too, so
+// the record's policy governs it
 pub const COMPACT_AT: Map<String, u64> = Map::new("compact/").shared();
+// the context window a thread's turn learned for a model: any agent's turn writes it, so it lives
+// beside the owned record (a record stored before it still carries the window it had)
+pub const WINDOWS: Map<String, Window> = Map::new("model-window/").shared();
 pub const LAST: Map<AccountNumber, (Source, u64)> = Map::new("last/").shared();
 pub const THREADS: Map<u64, ThreadRow> = Map::new("thread/").shared();
 pub const BY_AGENT: Set<(AccountNumber, u64)> = Set::new("by-agent/").shared();
@@ -81,6 +86,10 @@ pub struct StoredModel {
     pub service: String,
     pub name: String,
     pub window: Window,
+}
+
+impl Kind for StoredModel {
+    const KIND: &'static str = "harness.model";
 }
 
 impl StoredModel {
@@ -290,15 +299,16 @@ pub fn written(key: &[u8]) -> Option<Written> {
     if budget.iter().any(|prefix| key.starts_with(prefix)) {
         return Some(Written::Budget);
     }
-    let models = [MODELS.key(&()), COMPACT_AT.key(&())];
+    let models = [MODELS.key(&()), COMPACT_AT.key(&()), WINDOWS.key(&())];
     let model = models.iter().any(|prefix| key.starts_with(prefix));
     model.then_some(Written::Model)
 }
 
-// Every table here is general data: only this program's code governs it.
+// Every table here but MODELS is general data: only this program's code governs it.
 pub(crate) const TABLES: &[::program::Table] = &[
     MODELS.table(),
     COMPACT_AT.table(),
+    WINDOWS.table(),
     LAST.table(),
     THREADS.table(),
     BY_AGENT.table(),

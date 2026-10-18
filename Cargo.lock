@@ -2762,6 +2762,7 @@ dependencies = [
  "gitcore",
  "halo",
  "identity",
+ "ownership",
  "program",
  "programs",
  "scheduler",

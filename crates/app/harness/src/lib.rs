@@ -752,10 +752,10 @@ pub enum Query {
     #[reads(state::PLACES, state::THREADS)]
     ThreadAt { agent: AccountNumber, place: String },
     #[ask(Reply::Model(Option<ModelRow>))]
-    #[reads(state::MODELS, state::COMPACT_AT)]
+    #[reads(state::MODELS, state::COMPACT_AT, state::WINDOWS)]
     Model { id: String },
     #[ask(Reply::Models(PageResponse<ModelRow>))]
-    #[reads(state::MODELS, state::COMPACT_AT)]
+    #[reads(state::MODELS, state::COMPACT_AT, state::WINDOWS)]
     Models { page: PageRequest },
     #[ask(Reply::Withheld(Vec<WithheldFrame>))]
     #[reads(state::WITHHELD, state::FRAMES)]
