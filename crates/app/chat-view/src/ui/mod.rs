@@ -69,7 +69,8 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> impl IntoElement {
         })
         .into_any_element();
     let screen = with_menu(chat, screen, cx, &theme, ladder);
-    with_create(chat, screen, cx, &theme, ladder)
+    let screen = with_create(chat, screen, cx, &theme, ladder);
+    with_dm_pick(chat, screen, cx, &theme, ladder)
 }
 
 /// The screen under the open message menu, if any.
@@ -131,6 +132,28 @@ fn with_create(
         true => overlay.into_any_element(),
         false => overlay.on_dismiss(dismiss).into_any_element(),
     }
+}
+
+fn with_dm_pick(
+    chat: &Chat,
+    screen: AnyElement,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    let dismiss = cx.listener(|chat, _: &(), _window, cx| {
+        chat.dm_pick = None;
+        cx.notify();
+    });
+    let pick = dialogs::dm_pick(chat, cx, theme, ladder);
+    modal_overlay("chat-dm-pick-overlay", words::NEW_MESSAGE, screen, pick)
+        .flex()
+        .items_center()
+        .justify_center()
+        .p(dialogs::INSET)
+        .backdrop(hsla(0., 0., 0., 0.55))
+        .on_dismiss(dismiss)
+        .into_any_element()
 }
 
 fn connected(

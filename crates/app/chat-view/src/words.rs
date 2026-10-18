@@ -36,6 +36,12 @@ pub(crate) const SEARCH_MESSAGES: &str = "Search messages";
 /// What an agent's badge says.
 pub(crate) const AGENT: &str = "Agent";
 
+pub(crate) const FIND_SOMEONE: &str = "Find a person or agent";
+pub(crate) const SEARCH_PEOPLE: &str = "Search by name or number";
+pub(crate) const NO_ONE_MATCHES: &str = "Nobody matches that name or number";
+pub(crate) const LOADING_PEOPLE: &str = "Loading people…";
+pub(crate) const DM_NEEDS_ACCOUNT: &str = "Create an account to message someone";
+
 /// Who may post in a channel, as its caption, its chip and its details say.
 pub(crate) const OPEN: &str = "Open";
 pub(crate) const MEMBERS_ONLY: &str = "Members only";
