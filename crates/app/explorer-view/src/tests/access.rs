@@ -150,7 +150,11 @@ fn every_account_changes_a_program_that_fills_no_role_and_a_voter_proposes_a_rol
     assert!(cx.find("explorer-remove-identity").is_none());
     cx.simulate_click("explorer-upgrade-identity");
     cx.run_until_parked();
-    assert!(cx.has_text("Propose upgrade · identity"), "{:?}", cx.texts());
+    assert!(
+        cx.has_text("Propose upgrade · identity"),
+        "{:?}",
+        cx.texts()
+    );
 }
 
 #[test]
