@@ -1,19 +1,20 @@
 //! Everything harness keeps: model records, threads by agent, current threads, the thread each
-//! place last reached, frames, held input, sealed request parts, tool calls and the calls of the
-//! reply streaming in, frames left out of the model's view, each streaming reply, and the line
-//! each thread's agent says it is about.
+//! place last reached, the conversation bound to each place, frames, held input, sealed request
+//! parts, tool calls and the calls of the reply streaming in, frames left out of the model's view,
+//! each streaming reply, and the line each thread's agent says it is about.
 use abi::role::identity::AccountNumber;
 use attribution::{Change, Source};
 use borsh::{BorshDeserialize, BorshSerialize};
 use store::{Item, Map, Set};
 
-use crate::{Body, CallRow, Frame, ModelRow, Partial, Sealed, ThreadRow};
+use crate::{Body, CallRow, Frame, ModelRow, Partial, Place, Sealed, ThreadRow};
 
 pub const MODELS: Map<String, ModelRow> = Map::new("model/");
 pub const LAST: Map<AccountNumber, (Source, u64)> = Map::new("last/");
 pub const THREADS: Map<u64, ThreadRow> = Map::new("thread/");
 pub const BY_AGENT: Set<(AccountNumber, u64)> = Set::new("by-agent/");
 pub const PLACES: Map<(AccountNumber, String), u64> = Map::new("place/");
+pub const BOUND: Map<(AccountNumber, String), Binding> = Map::new("bound/");
 pub const CURRENT: Map<AccountNumber, u64> = Map::new("current/");
 pub const FRAMES: Map<(u64, u64), Frame> = Map::new("frame/");
 pub const HELD: Map<(u64, u64), Body> = Map::new("held/");
@@ -32,6 +33,12 @@ pub const COUNT: Item<u64> = Item::new("count");
 pub struct Live {
     pub call: String,
     pub outcome: Option<Body>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Binding {
+    pub thread: u64,
+    pub place: Place,
 }
 
 pub(crate) fn newest_first(id: u64) -> u64 {
