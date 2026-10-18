@@ -100,7 +100,7 @@ impl Failure {
     }
 }
 
-fn header<'a>(response: &'a http::Response, name: &str) -> Option<&'a str> {
+pub(crate) fn header<'a>(response: &'a http::Response, name: &str) -> Option<&'a str> {
     let found = response
         .headers
         .iter()
@@ -111,6 +111,7 @@ fn header<'a>(response: &'a http::Response, name: &str) -> Option<&'a str> {
 // every answer names how much of the model's usage window is spent and when it resets: the last
 // one stands, for whatever paces turns by it
 pub(crate) fn window_seen(ctx: &ExecCtx, service: &str, response: &http::Response) {
+    crate::budget::seen(ctx, service, response);
     let utilization = header(response, UTILIZATION);
     let reset = header(response, RESET).and_then(|value| value.parse().ok());
     let (Some(utilization), Some(reset)) = (utilization, reset) else {

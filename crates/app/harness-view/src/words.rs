@@ -1,7 +1,9 @@
 //! The words both trees read a screen by: a state, a place, a conversation, an agent's setup,
 //! a context and its usage. Each takes what the reads hold and gives a sentence or a few words;
 //! the screens decide where they go.
-use harness::Awaited;
+use harness::{
+    AccountBudget, Awaited, BudgetReport, StatusOutcome, StatusRead, WHOLE_WINDOW, WindowOutlook,
+};
 use harness::{
     AgentSetup, Asking, Body, CallRow, CallState, Configured, Flow, Frame, Partial, Stop, Thinking,
     ThreadRow, Usage, Window,
@@ -12,6 +14,7 @@ use view::prelude::*;
 
 use crate::read::{self, Card, Detail, Roster, Transcript, Wait};
 use crate::timeline::{self, Work};
+use crate::ui::budget::ended;
 use crate::{Agents, State, agent_state, links, thread_state};
 
 /// What a thread is doing, in words.
@@ -921,4 +924,114 @@ pub(crate) fn compacts_line(threshold: Option<harness::Threshold>) -> String {
 // a model's own default, short: `compacts at 650K`
 pub(crate) fn compact_short(compact_at: Option<u64>) -> Option<String> {
     compact_at.map(|tokens| format!("compacts at {}", short(tokens)))
+}
+
+// a usage window as people say it: Anthropic's 5h and 7d, else by the name the model gives it
+pub(crate) fn budget_window_words(name: &str) -> String {
+    match name {
+        "5h" => "5-hour window".into(),
+        "7d" => "weekly window".into(),
+        other => format!("{other} window"),
+    }
+}
+
+// whose windows a budget row holds: ccs's name for the account, else the model's id for it
+pub(crate) fn budget_account(row: &AccountBudget) -> String {
+    let named = match (&row.label, &row.organization) {
+        (Some(label), _) => format!("Account {label}"),
+        (None, Some(id)) => format!("Account {id}"),
+        (None, None) => "An account the model did not name".to_owned(),
+    };
+    format!("{named} · {}", row.service)
+}
+
+// a word as the model or ccs writes it ("allowed_warning"), as people read it
+fn spaced(word: &str) -> String {
+    word.replace('_', " ")
+}
+
+// what the model last said of the account: its status and its fallback
+pub(crate) fn budget_state(row: &AccountBudget) -> Option<String> {
+    let status = row
+        .status
+        .as_deref()
+        .map(|s| format!("Status {}", spaced(s)));
+    let fallback = row
+        .fallback
+        .as_deref()
+        .map(|f| format!("fallback {}", spaced(f)));
+    match (status, fallback) {
+        (Some(status), Some(fallback)) => Some(format!("{status} · {fallback}")),
+        (status, fallback) => status.or(fallback),
+    }
+}
+
+// why ccs could not read the account, when it could not
+pub(crate) fn budget_error(row: &AccountBudget) -> Option<String> {
+    let error = row.error.as_deref()?;
+    Some(format!(
+        "ccs could not read this account: {}",
+        spaced(error)
+    ))
+}
+
+// a service's last status reading; one that keeps no status says so and no more
+pub(crate) fn budget_read(read: &StatusRead, now: u64) -> String {
+    let service = &read.service;
+    match &read.outcome {
+        StatusOutcome::Read { accounts } => format!(
+            "{service} status read at {} · {}",
+            clock_from(now, read.time),
+            design::plural(*accounts, "account", "accounts")
+        ),
+        StatusOutcome::Unavailable => format!("{service} status unavailable"),
+        StatusOutcome::Failed(why) => format!("Couldn’t read {service}’s status: {why}"),
+    }
+}
+
+// a time in milliseconds as the reader's clock, with its day when that is not today
+fn clock_from(now: u64, then: u64) -> String {
+    match design::day(now) == design::day(then) {
+        true => design::clock(then),
+        false => format!("{}, {}", design::day(then), design::clock(then)),
+    }
+}
+
+// the budget's first line: how hard the network is calling its models now
+pub(crate) fn budget_calls(report: &BudgetReport) -> String {
+    let calls = report.services.iter().map(|pace| pace.last_minute).sum();
+    format!(
+        "Model budget · {} in the last minute · {} in flight",
+        design::plural(calls, "call", "calls"),
+        design::plural(report.turns, "turn", "turns")
+    )
+}
+
+// how much of a window is used and when it resets, or that it reset since its last answer
+pub(crate) fn budget_used(window: &WindowOutlook, now: u64) -> String {
+    let name = budget_window_words(&window.name);
+    let reset = clock_from(now, window.reset.saturating_mul(1000));
+    match ended(window, now) {
+        true => format!("{name} · reset at {reset}, no answer since"),
+        false => format!("{}% of the {name} · resets {reset}", window.used / 10_000),
+    }
+}
+
+// when a window runs out at the pace it climbed at, beside its reset
+pub(crate) fn budget_outlook(window: &WindowOutlook, now: u64) -> Option<String> {
+    if ended(window, now) {
+        return None;
+    }
+    if window.used >= WHOLE_WINDOW {
+        return Some("Spent until it resets".into());
+    }
+    let reset = window.reset.saturating_mul(1000);
+    Some(match window.runs_out {
+        Some(out) if out < reset => format!(
+            "At this pace it runs out at {}, before it resets",
+            clock_from(now, out)
+        ),
+        Some(_) => "At this pace it lasts until it resets".into(),
+        None => "No climb seen yet".into(),
+    })
 }

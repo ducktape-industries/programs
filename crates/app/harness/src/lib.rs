@@ -7,6 +7,7 @@
 //! call runs in a later block, as the agent.
 mod agents;
 mod bookings;
+mod budget;
 mod calls;
 mod codec;
 pub mod config;
@@ -103,6 +104,9 @@ pub enum Op {
     SetCompactAt {
         id: String,
         compact_at: Option<u64>,
+    },
+    ReadBudget {
+        service: String,
     },
 }
 
@@ -585,6 +589,80 @@ pub struct UsageWindow {
     pub height: u64,
 }
 
+// a whole usage window, in the millionths `WindowOutlook::used` counts
+pub const WHOLE_WINDOW: u64 = 1_000_000;
+
+// the model budget: each model account's windows, each service's calls in the last whole minute
+// and in this one so far, the turns with a model call or relays out, each service's last status
+// reading, and `time`, the newest block's (ms)
+#[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct BudgetReport {
+    pub time: u64,
+    pub turns: u64,
+    pub services: Vec<ServicePace>,
+    pub accounts: Vec<AccountBudget>,
+    pub reads: Vec<StatusRead>,
+}
+
+// the last time `ReadBudget` read a service's status of every account it holds (ccs's
+// `/ccs/status`), and what came of it
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct StatusRead {
+    pub service: String,
+    pub height: u64,
+    pub time: u64,
+    pub outcome: StatusOutcome,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum StatusOutcome {
+    // it named this many accounts, each now on its row
+    Read { accounts: u64 },
+    // the service keeps no status to read (it answered 404)
+    Unavailable,
+    // why it could not be read
+    Failed(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct ServicePace {
+    pub service: String,
+    pub last_minute: u64,
+    pub this_minute: u64,
+}
+
+// one model account as its last answer or status reading put it: `account` is ccs's name for it
+// (`label`) once ccs names it, else the model's id for it (`organization`), empty when neither
+// is known; `status` and `fallback` are the model's words for it, `error` ccs's when it could
+// not read the account
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct AccountBudget {
+    pub service: String,
+    pub account: String,
+    pub label: Option<String>,
+    pub organization: Option<String>,
+    pub status: Option<String>,
+    pub fallback: Option<String>,
+    pub error: Option<String>,
+    pub height: u64,
+    pub time: u64,
+    pub windows: Vec<WindowOutlook>,
+}
+
+// one usage window: used as sent and in millionths, its reset (seconds since the epoch), when
+// harness first saw this window (ms), and when it reaches all of its budget at the pace it
+// climbed at since (ms); none while it has not climbed or once its reset has passed
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct WindowOutlook {
+    pub name: String,
+    pub utilization: String,
+    pub used: u64,
+    pub reset: u64,
+    pub status: Option<String>,
+    pub since: u64,
+    pub runs_out: Option<u64>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Booking {
     pub entry: u64,
@@ -684,6 +762,9 @@ pub enum Query {
     #[ask(Reply::Settling(Option<SettleWindow>))]
     #[reads(state::SETTLING)]
     Settling { thread: u64 },
+    #[ask(Reply::Budget(BudgetReport))]
+    #[reads(state::BUDGETS, state::PACES, state::FLIGHTS, state::READS)]
+    Budget,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -706,6 +787,7 @@ pub enum Reply {
     Booking(Option<Booking>),
     UsageWindow(Option<UsageWindow>),
     Settling(Option<SettleWindow>),
+    Budget(BudgetReport),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -847,6 +929,10 @@ pub fn describe(op: &Op) -> describe::Description {
                 ],
             )
         }
+        Op::ReadBudget { service } => (
+            format!("Read {service}'s status of every model account it holds"),
+            vec![field("service", Value::text(service))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -875,6 +961,7 @@ fn op_variants_only_append() {
             "Watch",
             "Heard",
             "SetCompactAt",
+            "ReadBudget",
         ]
     );
 }
@@ -904,7 +991,8 @@ fn query_variants_only_append() {
             "Bookings",
             "Booking",
             "UsageWindow",
-            "Settling"
+            "Settling",
+            "Budget"
         ]
     );
 }

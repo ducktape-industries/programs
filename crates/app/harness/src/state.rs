@@ -42,6 +42,9 @@ pub const REPORTING: Set<AccountNumber> = Set::new("reporting/");
 pub const USAGE: Map<String, UsageWindow> = Map::new("usage/");
 // a thread whose general input waits out its agent's `settle`, and the wake-up that ends it
 pub const SETTLING: Map<u64, SettleWindow> = Map::new("settling/");
+pub const BUDGETS: Map<(String, String), Budget> = Map::new("budget/");
+pub const PACES: Map<String, Pace> = Map::new("pace/");
+pub const READS: Map<String, crate::StatusRead> = Map::new("status/");
 pub const COUNT: Item<u64> = Item::new("count");
 pub const WATCHES: Map<u64, Watching> = Map::new("watch/");
 pub const WATCH_COUNT: Item<u64> = Item::new("watch-count");
@@ -118,6 +121,46 @@ pub struct Watching {
     pub request: abi::role::egress::Request,
 }
 
+// one model account's usage windows, as its last answer or status reading named them, at
+// (service, ccs's name for the account, else the model's id for it)
+#[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Budget {
+    pub label: Option<String>,
+    pub organization: Option<String>,
+    pub status: Option<String>,
+    pub fallback: Option<String>,
+    pub error: Option<String>,
+    pub windows: Vec<BudgetWindow>,
+    pub height: u64,
+    pub time: u64,
+}
+
+// a usage window: used as sent and in millionths, its reset in seconds since the epoch, and
+// where harness first saw it before that reset, which its pace is measured from
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct BudgetWindow {
+    pub name: String,
+    pub utilization: String,
+    pub used: u64,
+    pub reset: u64,
+    pub status: Option<String>,
+    pub since: Seen,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Seen {
+    pub used: u64,
+    pub time: u64,
+}
+
+// a service's answers in clock minute `minute` (block time / 60 s), and in the minute before it
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Pace {
+    pub minute: u64,
+    pub calls: u64,
+    pub before: u64,
+}
+
 pub(crate) fn newest_first(id: u64) -> u64 {
     u64::MAX - id
 }
@@ -135,6 +178,7 @@ pub enum Written {
     Settling(u64),
     Agent(AccountNumber),
     Model,
+    Budget,
 }
 
 impl Written {
@@ -149,7 +193,7 @@ impl Written {
             | Written::Settling(thread)
             | Written::Frame { thread, .. }
             | Written::Call { thread, .. } => Some(*thread),
-            Written::Agent(_) | Written::Model => None,
+            Written::Agent(_) | Written::Model | Written::Budget => None,
         }
     }
 
@@ -167,6 +211,7 @@ impl Written {
             Written::Settling(thread) => SETTLING.key(thread),
             Written::Agent(agent) => CURRENT.key(agent),
             Written::Model => MODELS.key(&()),
+            Written::Budget => BUDGETS.key(&()),
         }
     }
 }
@@ -211,6 +256,15 @@ pub fn written(key: &[u8]) -> Option<Written> {
         if let Some(agent) = under::<AccountNumber>(&prefix, key) {
             return Some(Written::Agent(agent));
         }
+    }
+    let budget = [
+        BUDGETS.key(&()),
+        PACES.key(&()),
+        FLIGHTS.key(&()),
+        READS.key(&()),
+    ];
+    if budget.iter().any(|prefix| key.starts_with(prefix)) {
+        return Some(Written::Budget);
     }
     let models = [MODELS.key(&()), COMPACT_AT.key(&())];
     let model = models.iter().any(|prefix| key.starts_with(prefix));

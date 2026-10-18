@@ -31,7 +31,11 @@ pub(super) fn page(
     };
     super::page(PAGE, "Agents", view, cx, theme, ladder)
         .caption(caption)
-        .child(scroller("agents-list").child(body))
+        .child(
+            scroller("agents-list")
+                .children(crate::ui::budget::strip(view, cx, theme, ladder))
+                .child(body),
+        )
         .into_any_element()
 }
 

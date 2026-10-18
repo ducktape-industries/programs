@@ -5,6 +5,7 @@
 //! or one streamed event at a time, and every tool call runs once its relay comes back, as the
 //! agent.
 mod blob_put;
+mod budget;
 mod compact_at;
 mod config;
 mod conversations;

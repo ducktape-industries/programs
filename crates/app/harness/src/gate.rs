@@ -53,7 +53,8 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::Report { .. }
         | Op::Settle { .. }
         | Op::Watch { .. }
-        | Op::Heard { .. } => Vec::new(),
+        | Op::Heard { .. }
+        | Op::ReadBudget { .. } => Vec::new(),
     })
 }
 

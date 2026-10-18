@@ -4,6 +4,7 @@
 //! other's; the words they say are `words`'. Colour is kept for what it says: an agent's tint,
 //! and a state's badge.
 mod agent;
+pub(crate) mod budget;
 mod create;
 mod list;
 mod models;

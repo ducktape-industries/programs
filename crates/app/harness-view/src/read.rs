@@ -174,6 +174,11 @@ pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error>
     })
 }
 
+// the model budget, as harness keeps it
+pub(crate) async fn budget(host: &Host) -> Result<harness::BudgetReport, Error> {
+    host.query(harness::ask::Budget).await
+}
+
 /// How many member nodes the chain would elect for `service` now.
 async fn served(host: &Host, service: &str) -> Result<usize, Error> {
     let asked = egress::ask::Serving {

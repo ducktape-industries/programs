@@ -52,6 +52,8 @@ pub struct Agents {
     #[serde(skip)]
     roster: Loadable<Roster>,
     #[serde(skip)]
+    budget: Loadable<harness::BudgetReport>,
+    #[serde(skip)]
     detail: Loadable<Detail>,
     #[serde(skip)]
     transcript: Loadable<Option<Transcript>>,
@@ -69,6 +71,9 @@ pub struct Agents {
     doing: Option<String>,
     #[serde(skip)]
     routing: Option<Task<()>>,
+    // the status reads a Refresh press sent, while they land
+    #[serde(skip)]
+    reading: Option<Task<()>>,
     #[serde(skip)]
     title: Option<String>,
     // a change heard while the roster or the agent is read reads it once more when it lands
@@ -96,6 +101,7 @@ pub struct Agents {
 struct Again {
     roster: Rc<Cell<bool>>,
     detail: Rc<Cell<bool>>,
+    budget: Rc<Cell<bool>>,
 }
 
 #[derive(Default)]
@@ -237,7 +243,8 @@ fn moves_detail(detail: &Loadable<Detail>, agent: u64, wrote: &Written) -> bool 
         | Written::Held(_)
         | Written::Withheld(_)
         | Written::Partial(_)
-        | Written::Settling(_) => false,
+        | Written::Settling(_)
+        | Written::Budget => false,
     }
 }
 
@@ -261,6 +268,7 @@ fn touched_of(thread: u64, agent: Option<u64>, written: &[Written]) -> Touched {
             Written::Settling(id) => touched.settling |= *id == thread,
             Written::Agent(number) => touched.setup |= agent == Some(*number),
             Written::Model => touched.setup = true,
+            Written::Budget => {}
         }
     }
     touched
@@ -368,6 +376,7 @@ impl Agents {
     /// Everything on screen read again: the roster, and what the screen reads besides.
     fn refresh(&mut self, cx: &mut Context<Self>) {
         self.read_roster(cx);
+        self.read_budget(cx);
         self.read_screen(cx);
     }
 
@@ -387,6 +396,9 @@ impl Agents {
         });
         if roster {
             self.read_roster(cx);
+        }
+        if written.contains(&Written::Budget) {
+            self.read_budget(cx);
         }
         match self.screen {
             Screen::Agent(agent) | Screen::Part(agent, _) => {
@@ -446,6 +458,24 @@ impl Agents {
             }
         };
         cx.load(self, read, |view| &mut view.roster);
+    }
+
+    fn read_budget(&mut self, cx: &mut Context<Self>) {
+        if busy(&self.budget) {
+            self.again.budget.set(true);
+            return;
+        }
+        let (host, again) = (cx.host(), self.again.budget.clone());
+        let read = async move {
+            loop {
+                again.set(false);
+                let budget = read::budget(&host).await;
+                if !again.get() {
+                    return budget;
+                }
+            }
+        };
+        cx.load(self, read, |view| &mut view.budget);
     }
 
     fn read_detail(&mut self, agent: u64, cx: &mut Context<Self>) {
@@ -768,6 +798,32 @@ impl Agents {
             }
         };
         self.acting = Some(task);
+        cx.notify();
+    }
+
+    // each service's status of its model accounts, read on a press
+    pub(crate) fn read_status(&mut self, cx: &mut Context<Self>) {
+        if self.reading.is_some() {
+            return;
+        }
+        let services = self.budget.ready().map(ui::budget::services);
+        let host = cx.host();
+        let reads = async move {
+            for service in services.into_iter().flatten() {
+                let op = harness::Op::ReadBudget { service };
+                if let Err(problem) = applied(host.ask::<Submit<harness::Harness>>(op).await) {
+                    return Ok::<_, Error>(Some(problem));
+                }
+            }
+            Ok(None)
+        };
+        self.reading = Some(cx.land(reads, |view, read, cx| {
+            view.reading = None;
+            if let Ok(Some(problem)) = read {
+                view.notice = Some(problem);
+            }
+            cx.notify();
+        }));
         cx.notify();
     }
 
