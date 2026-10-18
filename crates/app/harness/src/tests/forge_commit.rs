@@ -186,7 +186,8 @@ fn an_agent_commits_to_a_repository_it_creates_and_then_on_top_of_its_commit() {
 }
 
 #[test]
-fn a_repository_someone_else_owns_takes_the_agents_commit_once_its_list_allows_harness() {
+fn a_repository_someone_else_owns_takes_the_agents_commit_while_it_has_no_list_or_its_list_allows_harness()
+ {
     let world = forged(10_000);
     let chain = &world.chain;
     let create = forge::Op::Create {
@@ -196,17 +197,31 @@ fn a_repository_someone_else_owns_takes_the_agents_commit_once_its_list_allows_h
     chain.submit(signed(ADA), forge::PROGRAM, &create).unwrap();
     let thread = world.opened("m1", "write to ada", Some(WINDOW));
     let commit = |message: &str| json!({ "repo": "ada", "files": [file("notes.md", message)], "message": message });
-    turn(chain, 3, &[("c1", commit("not yet"))]);
+    turn(chain, 3, &[("c1", commit("open"))]);
     let (text, failed) = result_of(chain, thread, "c1");
+    assert!(!failed, "{text}");
+
+    set_list(
+        chain,
+        ADA,
+        forge::PROGRAM,
+        forge::repo_key("ada"),
+        Ownership::Owner,
+    );
+    turn(chain, 5, &[("c2", commit("not now"))]);
+    let (text, failed) = result_of(chain, thread, "c2");
     assert!(failed && text.starts_with(code::UNAUTHORIZED), "{text}");
 
     let harness = Ownership::Listed(vec![Party::Program(PROGRAM.into())]);
     set_list(chain, ADA, forge::PROGRAM, forge::repo_key("ada"), harness);
-    turn(chain, 5, &[("c2", commit("now"))]);
-    let (text, failed) = result_of(chain, thread, "c2");
+    turn(chain, 7, &[("c3", commit("now"))]);
+    let (text, failed) = result_of(chain, thread, "c3");
     assert!(!failed, "{text}");
-    let [commit] = log(chain, "ada").try_into().unwrap();
-    assert_eq!(commit.message, b"now\n");
+    let messages: Vec<Vec<u8>> = log(chain, "ada")
+        .into_iter()
+        .map(|commit| commit.message)
+        .collect();
+    assert_eq!(messages, [b"now\n".to_vec(), b"open\n".to_vec()]);
 }
 
 #[test]
