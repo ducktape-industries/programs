@@ -1,11 +1,17 @@
 //! Tools over `files`, the network's filesystem: reads at the head or at a snapshot, and
 //! commits the agent makes, which files allows where it allows the agent's account or harness.
+//! `edit.rs` is `files_edit`. `stat`, `read_all` and `beneath` here serve it and `forge_commit`.
+mod edit;
+
+pub(crate) use edit::Edit;
+
 use std::collections::BTreeMap;
 
 use ::program::{BlobId, Error, ExecCtx, HashKind, invalid};
 use files::{Change, Content, EntryInfo, Node, Ownership, Party, Query, Reply};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use store::PageRequest;
 
 use super::{
     Run, Seat, Tool, blob, cursor_schema, next, object, page, principal, unexpected, write,
@@ -27,6 +33,92 @@ pub(super) fn snapshot_schema() -> Value {
 
 fn ask(ctx: &ExecCtx, query: Query) -> Result<Reply, Error> {
     ctx.query(files::PROGRAM, &query)
+}
+
+// The snapshot `at` names, or files' newest while none is named; `None` while files holds
+// nothing yet.
+pub(crate) fn resolved(ctx: &ExecCtx, at: Option<BlobId>) -> Result<Option<BlobId>, Error> {
+    if at.is_some() {
+        return Ok(at);
+    }
+    match ask(ctx, Query::Head)? {
+        Reply::Head(head) => Ok(head.map(|row| row.id)),
+        other => Err(unexpected(files::PROGRAM, "Head", &other)),
+    }
+}
+
+// What is at `path` in the snapshot `at`, or `None` while nothing is.
+pub(crate) fn stat(
+    ctx: &ExecCtx,
+    path: &str,
+    at: Option<&BlobId>,
+) -> Result<Option<EntryInfo>, Error> {
+    let asked = Query::Stat {
+        path: path.into(),
+        at: at.cloned(),
+    };
+    match ask(ctx, asked)? {
+        Reply::Stat { entry, .. } => Ok(entry),
+        other => Err(unexpected(files::PROGRAM, "Stat", &other)),
+    }
+}
+
+// Every byte of the file at `path` in the snapshot `at`: files answers a read as far as it
+// serves at once, and the next read goes on from there to the file's end.
+pub(crate) fn read_all(ctx: &ExecCtx, path: &str, at: Option<&BlobId>) -> Result<Vec<u8>, Error> {
+    let mut bytes = Vec::new();
+    loop {
+        let asked = Query::Read {
+            path: path.into(),
+            at: at.cloned(),
+            offset: bytes.len() as u64,
+            len: u64::MAX,
+        };
+        let Reply::Contents(contents) = ask(ctx, asked)? else {
+            return Err(invalid("files answered a read with something else"));
+        };
+        if !contents.eof && contents.bytes.is_empty() {
+            return Err(invalid(format!(
+                "files answered no bytes of {path} at offset {} before its end",
+                bytes.len()
+            )));
+        }
+        bytes.extend(contents.bytes);
+        if contents.eof {
+            return Ok(bytes);
+        }
+    }
+}
+
+// Every entry whose path starts with `prefix` in the snapshot `at`, every page of them.
+pub(crate) fn beneath(
+    ctx: &ExecCtx,
+    prefix: &str,
+    at: Option<&BlobId>,
+) -> Result<Vec<EntryInfo>, Error> {
+    let mut entries = Vec::new();
+    let mut request = PageRequest::default();
+    loop {
+        let asked = Query::Find {
+            prefix: prefix.into(),
+            at: at.cloned(),
+            page: request,
+        };
+        let listed = match ask(ctx, asked)? {
+            Reply::Listing {
+                entries: listed, ..
+            } => listed,
+            other => return Err(unexpected(files::PROGRAM, "Find", &other)),
+        };
+        entries.extend(listed.items);
+        let Some(after) = listed.next else {
+            return Ok(entries);
+        };
+        request = PageRequest {
+            after: Some(after),
+            ..PageRequest::default()
+        };
+    }
 }
 
 fn entry(entry: &EntryInfo) -> Value {
@@ -276,20 +368,9 @@ impl Tool for History {
     }
 }
 
-fn commit(
-    ctx: &ExecCtx,
-    seat: &Seat,
-    base: &Option<String>,
-    message: Option<String>,
-    changes: Vec<Change>,
-) -> Result<Run, Error> {
-    let base = match snapshot(base)? {
-        Some(base) => Some(base),
-        None => match ask(ctx, Query::Head)? {
-            Reply::Head(head) => head.map(|row| row.id),
-            other => return Err(unexpected(files::PROGRAM, "Head", &other)),
-        },
-    };
+// One files commit of `changes` on `base`, already resolved: files refuses it as stale if a
+// path it touches changed since.
+fn commit(seat: &Seat, base: Option<BlobId>, message: Option<String>, changes: Vec<Change>) -> Run {
     let message =
         message.unwrap_or_else(|| format!("harness thread {} call {}", seat.thread, seat.call));
     let op = files::Op::Commit {
@@ -297,7 +378,7 @@ fn commit(
         message,
         changes,
     };
-    Ok(write(files::PROGRAM, abi::encode(&op)))
+    write(files::PROGRAM, abi::encode(&op))
 }
 
 fn committed(output: &[u8]) -> Result<Value, Error> {
@@ -424,7 +505,7 @@ fn chunked(ctx: &ExecCtx, bytes: &[u8]) -> Result<Content, Error> {
 
 impl Tool for Write {
     const NAME: &'static str = "files_write";
-    const DESCRIPTION: &'static str = "Write a text file to the network's filesystem, creating its directories, in one commit. Anyone writes a path that no write list covers; where the path or a folder above it carries a write list, the nearest list decides: its owner alone, its owner and the accounts and programs it lists, or anyone. A program on a list allows every write harness makes, for any agent. A refusal names the list and whom it allows. /home, /shared and each /home/<name> folder itself are the network's; write inside them. Set a list with files_set_list.";
+    const DESCRIPTION: &'static str = "Write a text file to the network's filesystem, creating its directories, in one commit. A file already there keeps its meta, and its mode unless executable is given; files_edit changes part of a file without re-sending the rest. Anyone writes a path that no write list covers; where the path or a folder above it carries a write list, the nearest list decides: its owner alone, its owner and the accounts and programs it lists, or anyone. A program on a list allows every write harness makes, for any agent. A refusal names the list and whom it allows. /home, /shared and each /home/<name> folder itself are the network's; write inside them. Set a list with files_set_list.";
     const WRITES: bool = true;
     type Args = WriteArgs;
 
@@ -433,7 +514,7 @@ impl Tool for Write {
             json!({
                 "path": { "type": "string", "description": "an absolute file path" },
                 "content": { "type": "string", "description": "the whole file" },
-                "executable": { "type": "boolean" },
+                "executable": { "type": "boolean", "description": "whether the file is executable; omitted, a file already there keeps its mode and a new one is not" },
                 "write": write_list_schema(),
                 "base": base_schema(),
                 "message": message_schema(),
@@ -442,14 +523,25 @@ impl Tool for Write {
         )
     }
 
+    // A file already at the path keeps its meta, and its mode unless the call gives one: a
+    // rewrite changes the bytes, not what the file carries.
     fn run(ctx: &ExecCtx, seat: &Seat, args: WriteArgs) -> Result<Run, Error> {
+        let base = resolved(ctx, snapshot(&args.base)?)?;
+        let (exec, meta) = match stat(ctx, &args.path, base.as_ref())? {
+            Some(EntryInfo {
+                node: Node::File { exec, .. },
+                meta,
+                ..
+            }) => (args.executable.unwrap_or(exec), meta),
+            _ => (args.executable.unwrap_or(false), BTreeMap::new()),
+        };
         let put = Change::Put {
-            path: args.path.clone(),
-            exec: args.executable.unwrap_or(false),
-            meta: BTreeMap::new(),
+            path: args.path,
+            exec,
+            meta,
             content: chunked(ctx, args.content.as_bytes())?,
         };
-        commit(ctx, seat, &args.base, args.message, vec![put])
+        Ok(commit(seat, base, args.message, vec![put]))
     }
 
     fn render(output: &[u8]) -> Result<Value, Error> {
@@ -484,8 +576,9 @@ impl Tool for Remove {
     }
 
     fn run(ctx: &ExecCtx, seat: &Seat, args: RemoveArgs) -> Result<Run, Error> {
+        let base = resolved(ctx, snapshot(&args.base)?)?;
         let change = Change::Remove { path: args.path };
-        commit(ctx, seat, &args.base, args.message, vec![change])
+        Ok(commit(seat, base, args.message, vec![change]))
     }
 
     fn render(output: &[u8]) -> Result<Value, Error> {
@@ -522,11 +615,12 @@ impl Tool for Move {
     }
 
     fn run(ctx: &ExecCtx, seat: &Seat, args: MoveArgs) -> Result<Run, Error> {
+        let base = resolved(ctx, snapshot(&args.base)?)?;
         let change = Change::Move {
             from: args.from,
             to: args.to,
         };
-        commit(ctx, seat, &args.base, args.message, vec![change])
+        Ok(commit(seat, base, args.message, vec![change]))
     }
 
     fn render(output: &[u8]) -> Result<Value, Error> {

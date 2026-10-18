@@ -120,6 +120,7 @@ pub(crate) const CATALOG: &[Entry] = &[
     entry::<files::Grep>(),
     entry::<files::History>(),
     entry::<files::Write>(),
+    entry::<files::Edit>(),
     entry::<files::SetList>(),
     entry::<files::Remove>(),
     entry::<files::Move>(),

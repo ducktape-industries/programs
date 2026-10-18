@@ -6,8 +6,9 @@
 //! does not exist yet is created in the same write, the agent's.
 use std::collections::{BTreeMap, BTreeSet};
 
-use ::program::{Error, ExecCtx, HashKind, capacity, code, invalid, not_found, stale};
+use ::program::{BlobId, Error, ExecCtx, HashKind, capacity, code, invalid, not_found, stale};
 use abi::role::identity::AccountNumber;
+use files::{EntryInfo, Node};
 use forge::{Bounds, EntryKind, Query, Reply, Repo, Settings};
 use gitcore::wire::pktline::{self, Pkt};
 use gitcore::{Hash, Kind, Mode, Object, Oid, Signature, Tree, TreeEntry, pack};
@@ -17,6 +18,7 @@ use store::{PageRequest, PageResponse};
 
 use super::ask;
 use crate::agents::profile;
+use crate::tools::files::{beneath, read_all, resolved, snapshot, stat};
 use crate::tools::{Run, Seat, Tool, Write, object, unexpected};
 
 /// The objects a commit adds, by id: two files of the same bytes are one blob.
@@ -269,20 +271,148 @@ fn branch_ref(branch: Option<&str>, default: &[u8]) -> Result<Vec<u8>, Error> {
     Ok(reference)
 }
 
-/// The bounds forge checks a push's pack against, checked before the pack is made, so a commit
-/// over them is refused in the tool's words.
-fn within(bounds: &Bounds, files: &[FileArg], objects: usize) -> Result<(), Error> {
-    if let Some(file) = files
-        .iter()
-        .find(|file| file.content.len() as u64 > bounds.max_object_size)
-    {
-        return Err(capacity(format!(
-            "{} is {} bytes; forge takes files of at most {} bytes",
-            file.path,
-            file.content.len(),
-            bounds.max_object_size
-        )));
+// A file the commit writes: its path in the repository, its mode and its bytes.
+struct Put {
+    path: String,
+    mode: Mode,
+    bytes: Vec<u8>,
+}
+
+fn file_mode(executable: bool) -> Mode {
+    match executable {
+        true => Mode::Executable,
+        false => Mode::Regular,
     }
+}
+
+// `inside`, a path below a source directory, beneath the repository directory `dir`; `""` is
+// the repository's root.
+fn under(dir: &str, inside: &str) -> String {
+    match dir.trim_matches('/') {
+        "" => inside.to_owned(),
+        dir => format!("{dir}/{inside}"),
+    }
+}
+
+// What the files entry `entry` commits at `path`: a file's bytes in its files mode, or a
+// symlink's target; a directory commits nothing of its own, as git keeps no empty one.
+fn put_of(
+    ctx: &ExecCtx,
+    path: String,
+    entry: &EntryInfo,
+    at: Option<&BlobId>,
+) -> Result<Option<Put>, Error> {
+    let (mode, bytes) = match &entry.node {
+        Node::File { exec, .. } => (file_mode(*exec), read_all(ctx, &entry.path, at)?),
+        Node::Symlink { target } => (Mode::Symlink, target.clone().into_bytes()),
+        Node::Dir { .. } => return Ok(None),
+    };
+    Ok(Some(Put { path, mode, bytes }))
+}
+
+// The files the files path `source` holds at `at`, put at `path`: a file there, or every file
+// beneath a directory there at its place below `path`.
+fn sourced(
+    ctx: &ExecCtx,
+    path: &str,
+    source: &str,
+    at: Option<&BlobId>,
+) -> Result<Vec<Put>, Error> {
+    let source = match source.trim_end_matches('/') {
+        "" => "/",
+        trimmed => trimmed,
+    };
+    let Some(entry) = stat(ctx, source, at)? else {
+        let read = at.map_or("files holds nothing yet".to_owned(), |id| {
+            format!("at snapshot {}", abi::hex(id.digest()))
+        });
+        return Err(not_found(format!(
+            "there is no file or directory at {source} in files ({read})"
+        )));
+    };
+    if !matches!(entry.node, Node::Dir { .. }) {
+        return Ok(put_of(ctx, path.to_owned(), &entry, at)?
+            .into_iter()
+            .collect());
+    }
+    let prefix = match source {
+        "/" => "/".to_owned(),
+        dir => format!("{dir}/"),
+    };
+    let mut puts = Vec::new();
+    for entry in beneath(ctx, &prefix, at)? {
+        let Some(inside) = entry.path.strip_prefix(&prefix) else {
+            return Err(unexpected(files::PROGRAM, "Find", &entry.path));
+        };
+        if let Some(put) = put_of(ctx, under(path, inside), &entry, at)? {
+            puts.push(put);
+        }
+    }
+    Ok(puts)
+}
+
+// Every file the call writes, whole: inline content as given, and every source read from files
+// at the one snapshot the call names, or the newest.
+fn gathered(
+    ctx: &ExecCtx,
+    files: Vec<FileArg>,
+    snapshot_arg: &Option<String>,
+) -> Result<Vec<Put>, Error> {
+    let named = snapshot(snapshot_arg)?;
+    let at = match files.iter().any(|file| file.source.is_some()) {
+        true => resolved(ctx, named)?,
+        false => named,
+    };
+    let mut puts = Vec::new();
+    for file in files {
+        match (file.content, file.source) {
+            (Some(content), None) => puts.push(Put {
+                path: file.path,
+                mode: file_mode(file.executable.unwrap_or(false)),
+                bytes: content.into_bytes(),
+            }),
+            (None, Some(source)) => {
+                if file.executable.is_some() {
+                    return Err(invalid(format!(
+                        "{}: executable goes with content; a source keeps its mode in files",
+                        file.path
+                    )));
+                }
+                puts.extend(sourced(ctx, &file.path, &source, at.as_ref())?);
+            }
+            (Some(_), Some(_)) => {
+                return Err(invalid(format!(
+                    "{}: give content or source, not both",
+                    file.path
+                )));
+            }
+            (None, None) => {
+                return Err(invalid(format!("{}: give content or source", file.path)));
+            }
+        }
+    }
+    Ok(puts)
+}
+
+// Forge's bound on one file's size, checked before any object is made, so a file over it is
+// refused in the tool's words.
+fn sized(bounds: &Bounds, puts: &[Put]) -> Result<(), Error> {
+    match puts
+        .iter()
+        .find(|put| put.bytes.len() as u64 > bounds.max_object_size)
+    {
+        Some(put) => Err(capacity(format!(
+            "{} is {} bytes; forge takes files of at most {} bytes",
+            put.path,
+            put.bytes.len(),
+            bounds.max_object_size
+        ))),
+        None => Ok(()),
+    }
+}
+
+// Forge's bound on the objects one push carries, checked before the pack is made.
+fn counted(bounds: &Bounds, objects: usize) -> Result<(), Error> {
     if objects as u64 > bounds.max_objects {
         return Err(capacity(format!(
             "the commit makes {objects} git objects (a file or a changed directory is one each); forge takes at most {} in one push: commit fewer files at a time",
@@ -295,9 +425,9 @@ fn within(bounds: &Bounds, files: &[FileArg], objects: usize) -> Result<(), Erro
 #[derive(Deserialize)]
 pub(crate) struct FileArg {
     path: String,
-    content: String,
-    #[serde(default)]
-    executable: bool,
+    content: Option<String>,
+    source: Option<String>,
+    executable: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -309,33 +439,36 @@ pub(crate) struct CommitArgs {
     remove: Vec<String>,
     message: String,
     base: Option<String>,
+    snapshot: Option<String>,
 }
 
 pub(crate) struct Commit;
 
 impl Tool for Commit {
     const NAME: &'static str = "forge_commit";
-    const DESCRIPTION: &'static str = "Commit files to a forge repository as one git commit on a branch, as your account, and push it. Each file is written whole; remove deletes paths (a directory with everything in it). Paths are inside the repository, like src/main.rs. A repository that does not exist yet is created, owned by you, and stays even if forge refuses the commit. An existing one takes the push only if its write list in the access program allows your account or harness: its owner alone unless the owner lists others, and a refusal says unauthorized. The commit goes on top of the branch's newest commit, and a new branch starts from the default branch; with base, only while the branch is still at base. Forge takes a bounded number of objects (each file and each changed directory is one) and of bytes per file in one push; a larger commit is refused, so split it. forge_log shows the commit.";
+    const DESCRIPTION: &'static str = "Commit files to a forge repository as one git commit on a branch, as your account, and push it. Each item of files is written whole, from inline content or from a files source: a source file lands at its path, and a source directory lands under its path with every file beneath it, each in its files mode. Every source is read at one files snapshot, the newest if omitted, so a workspace kept in files commits without re-sending it. A source directory adds and replaces files and never deletes; remove deletes paths (a directory with everything in it). Paths are inside the repository, like src/main.rs. A repository that does not exist yet is created, owned by you, and stays even if forge refuses the commit. An existing one takes the push only if its write list in the access program allows your account or harness: its owner alone unless the owner lists others, and a refusal says unauthorized. The commit goes on top of the branch's newest commit, and a new branch starts from the default branch; with base, only while the branch is still at base. Forge takes a bounded number of objects (each file and each changed directory is one) and of bytes per file in one push; a larger commit is refused, so split it. forge_log shows the commit.";
     const WRITES: bool = true;
     type Args = CommitArgs;
 
     fn schema() -> Value {
         let file = object(
             json!({
-                "path": { "type": "string", "description": "a path inside the repository, like src/main.rs" },
-                "content": { "type": "string", "description": "the whole file" },
-                "executable": { "type": "boolean" },
+                "path": { "type": "string", "description": "where it lands in the repository, like src/main.rs; for a source directory, the directory its files land under, \"\" for the root" },
+                "content": { "type": "string", "description": "the whole file, inline" },
+                "source": { "type": "string", "description": "instead of content: an absolute files path, a file or a directory, read at snapshot" },
+                "executable": { "type": "boolean", "description": "with content only: whether the file is executable; a source keeps its files mode" },
             }),
-            &["path", "content"],
+            &["path"],
         );
         object(
             json!({
                 "repo": { "type": "string", "description": "a repository name, as forge_repos lists them; a new name creates it" },
                 "branch": { "type": "string", "description": "the branch to commit on, like main; the repository's default branch if omitted" },
-                "files": { "type": "array", "items": file, "description": "the files to write" },
+                "files": { "type": "array", "items": file, "description": "the files to write, each with content or a source" },
                 "remove": { "type": "array", "items": { "type": "string" }, "description": "paths to delete" },
                 "message": { "type": "string", "description": "the commit message" },
                 "base": { "type": "string", "description": "the commit id the branch must still be at, from forge_log; the commit is refused if the branch moved since. Omitted, it goes on top of the newest" },
+                "snapshot": { "type": "string", "description": "the files snapshot (64 hex digits) every source is read at, from a files read; omitted, the newest" },
             }),
             &["repo", "files", "message"],
         )
@@ -344,6 +477,12 @@ impl Tool for Commit {
     fn run(ctx: &ExecCtx, seat: &Seat, args: CommitArgs) -> Result<Run, Error> {
         if args.files.is_empty() && args.remove.is_empty() {
             return Err(invalid("a commit writes or removes at least one file"));
+        }
+        let puts = gathered(ctx, args.files, &args.snapshot)?;
+        if puts.is_empty() && args.remove.is_empty() {
+            return Err(invalid(
+                "the sources hold no files and nothing is removed, so the commit changes nothing",
+            ));
         }
         let held = found(ctx, &args.repo)?;
         let (kind, default) = match &held {
@@ -372,24 +511,22 @@ impl Tool for Commit {
             )));
         }
         let parent = head.or_else(|| refs.get(&default).copied());
+        if let Some((_, bounds)) = &held {
+            sized(bounds, &puts)?;
+        }
 
         let mut objects = Objects::new();
         let mut edits = Edits::default();
-        for file in &args.files {
-            let (dirs, name) = split(&file.path)?;
-            let mode = match file.executable {
-                true => Mode::Executable,
-                false => Mode::Regular,
-            };
-            let content = file.content.as_bytes().to_vec();
-            let blob = kept(&mut objects, hash, Kind::Blob, content)?;
+        for Put { path, mode, bytes } in puts {
+            let (dirs, name) = split(&path)?;
+            let blob = kept(&mut objects, hash, Kind::Blob, bytes)?;
             if edits
                 .at(&dirs)
                 .put
                 .insert(name.into(), (mode, blob))
                 .is_some()
             {
-                return Err(invalid(format!("{} is written twice", file.path)));
+                return Err(invalid(format!("{path} is written twice")));
             }
         }
         for path in &args.remove {
@@ -419,7 +556,7 @@ impl Tool for Commit {
         };
         let commit = kept(&mut objects, hash, Kind::Commit, commit.serialize())?;
         if let Some((_, bounds)) = &held {
-            within(bounds, &args.files, objects.len())?;
+            counted(bounds, objects.len())?;
         }
 
         let pack = pack::write(objects.into_values(), hash).map_err(|e| invalid(e.to_string()))?;

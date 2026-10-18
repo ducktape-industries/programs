@@ -27,7 +27,7 @@ fn bounds(max_objects: u64) -> Bounds {
     }
 }
 
-fn forged(max_objects: u64) -> World {
+pub(super) fn forged(max_objects: u64) -> World {
     let mut world = world();
     world.chain.seat::<forge::Forge>(forge::PROGRAM);
     world
@@ -60,7 +60,7 @@ fn ask(chain: &MockChain, query: forge::Query) -> forge::Reply {
     chain.query(forge::PROGRAM, &query).unwrap()
 }
 
-fn log(chain: &MockChain, repo: &str) -> Vec<CommitInfo> {
+pub(super) fn log(chain: &MockChain, repo: &str) -> Vec<CommitInfo> {
     let asked = forge::Query::Log {
         repo: repo.into(),
         from: Revision::Ref(b"refs/heads/main".to_vec()),
@@ -73,7 +73,12 @@ fn log(chain: &MockChain, repo: &str) -> Vec<CommitInfo> {
     page.items
 }
 
-fn names(chain: &MockChain, repo: &str, at: &str, path: &str) -> Vec<(String, forge::EntryKind)> {
+pub(super) fn names(
+    chain: &MockChain,
+    repo: &str,
+    at: &str,
+    path: &str,
+) -> Vec<(String, forge::EntryKind)> {
     let asked = forge::Query::Tree {
         repo: repo.into(),
         at: at.into(),

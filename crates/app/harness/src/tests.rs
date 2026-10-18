@@ -13,6 +13,7 @@ mod network;
 mod reads;
 mod streams;
 mod thinking;
+mod workspace;
 
 use ::program::{Error, MockChain, Origin, Principal, code};
 use egress::{Answer, Egress, RELAY, Request, RequestRow, http};
