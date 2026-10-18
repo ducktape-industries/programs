@@ -138,6 +138,7 @@ impl Render for Chat {
         if window.touch() {
             ui::phone::render(self, cx)
         } else {
+            self.settle_dm_heads(cx);
             ui::render(self, cx).into_any_element()
         }
     }
