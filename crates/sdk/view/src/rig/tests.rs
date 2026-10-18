@@ -63,8 +63,11 @@ fn an_agent_holds_a_key_its_consent_put_there() {
         account: vps,
         name: "renamed".into(),
     };
-    // the agent signs; only its manager renames it
-    let refused = net.submit(vps, identity::PROGRAM, &rename).unwrap_err();
+    // the agent signs as itself and renames its own account, as its
+    // manager may; an account that is neither is refused
+    net.submit(vps, identity::PROGRAM, &rename).unwrap();
+    let ada = net.person("ada");
+    let refused = net.submit(ada, identity::PROGRAM, &rename).unwrap_err();
     assert_eq!(refused.code, "unauthorized");
 }
 

@@ -2,6 +2,7 @@ use crate::*;
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod bin;
+mod variants;
 mod write;
 pub(crate) use write::SPARSE;
 
@@ -86,7 +87,7 @@ mod budget {
 /// `Node`'s derived shape (`#[serde(remote = "Self")]`).
 impl Serialize for Node {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        Node::serialize(self, serializer)
+        variants::serialize(self, serializer)
     }
 }
 
