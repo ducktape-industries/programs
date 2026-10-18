@@ -3,10 +3,9 @@
 //! first, the motions that wait, and the scheduled changes and who made
 //! each; the words for each motion.
 use super::*;
-use crate::queries::Names;
 use crate::voting::{said, words};
 use abi::role::halo;
-use programs::{Change, Entry, Grant, Programs, Scheduled, Scope};
+use programs::{Change, Entry, Programs, Scheduled};
 use valset::{Motion, Op, Pending, Voted};
 use view::methods::{HostSession, Session, Submit, Submitted};
 
@@ -329,12 +328,12 @@ fn a_scheduled_change_says_who_made_it_and_is_cancelled_by_a_vote() {
         change: Change::Remove("chat".into()),
         by: None,
     };
-    let granted = programs::Pending {
+    let by_account = programs::Pending {
         height: 4800,
         change: Change::Set(entry("chat", CODE)),
         by: Some(12),
     };
-    let mut cx = sheet(&THIS, 2, Vec::new(), vec![landed, ahead, granted]);
+    let mut cx = sheet(&THIS, 2, Vec::new(), vec![landed, ahead, by_account]);
     assert_eq!(
         texts_of(&cx, "nodes-scheduled-0"),
         [
@@ -386,32 +385,6 @@ fn a_scheduled_change_tells_no_wait_before_the_status_is_read() {
     let (cx, _) = sheet_over(cx, &THIS, 2, Vec::new(), changes);
     assert_eq!(texts_of(&cx, "nodes-scheduled-0")[1], "by vote");
     assert_eq!(texts_of(&cx, "nodes-scheduled-1")[1], "by account 12");
-}
-
-/// A grant to vote on reads with its account's name, as identity says it.
-#[test]
-fn a_grant_motion_names_its_account() {
-    let op = programs::Op::Grant(Grant {
-        scope: Scope::Program("trade".into()),
-        account: 12,
-    });
-    let waiting = Pending {
-        motion: Motion::Role {
-            role: abi::role::PROGRAMS.into(),
-            op: abi::encode(&op),
-        },
-        voters: vec![OTHER.to_vec()],
-    };
-    let carol = identity::Profile {
-        number: 12,
-        name: "carol".into(),
-        kind: identity::Kind::User,
-    };
-    let mut cx = TestAppContext::new();
-    node(&mut cx);
-    serve_identity(&cx, Vec::new(), vec![carol]);
-    let (cx, _) = sheet_over(cx, &THIS, 2, vec![waiting], Vec::new());
-    assert_eq!(texts_of(&cx, "nodes-motion-0")[0], "Grant carol trade");
 }
 
 #[test]
@@ -502,22 +475,6 @@ fn every_motion_reads_in_words() {
             "A program change this screen can't read",
         ),
         (
-            grant(false, Scope::Program("trade".into()), 12),
-            "Grant carol trade",
-        ),
-        (
-            grant(true, Scope::Program("chat".into()), 13),
-            "Revoke release-bot chat",
-        ),
-        (
-            grant(true, Scope::All, 13),
-            "Revoke release-bot every program",
-        ),
-        (
-            grant(false, Scope::All, 99),
-            "Grant account 99 every program",
-        ),
-        (
             lanes(halo::Op::Open {
                 name: "chat".into(),
                 cap: halo::Class::Member,
@@ -561,27 +518,14 @@ fn every_motion_reads_in_words() {
             "An op for the egress role",
         ),
     ];
-    let names = Names::from([(12, "carol".into()), (13, "release-bot".into())]);
     for (motion, said) in cases {
-        assert_eq!(words(&motion, &roster, &names), said);
+        assert_eq!(words(&motion, &roster), said);
     }
 }
 
 fn lanes(op: halo::Op) -> Motion {
     Motion::Role {
         role: abi::role::HALO.into(),
-        op: abi::encode(&op),
-    }
-}
-
-fn grant(revoke: bool, scope: Scope, account: u64) -> Motion {
-    let grant = Grant { scope, account };
-    let op = match revoke {
-        false => programs::Op::Grant(grant),
-        true => programs::Op::Revoke(grant),
-    };
-    Motion::Role {
-        role: abi::role::PROGRAMS.into(),
         op: abi::encode(&op),
     }
 }

@@ -1,7 +1,7 @@
 //! Expo `app/(tabs)/explorer/program/[name].tsx` (mobile dev 266633c):
 //! one program, or one view-only entry, over the root. Its hook and role,
 //! what its code's view asks of the host, the code and its size, the
-//! params, who maintains it, what the view declares, what is scheduled for
+//! params, who changes it, what the view declares, what is scheduled for
 //! it, the way to its transactions. The reader's presses stay on the
 //! Programs page's sheet. Reads the programs role, the code's manifest
 //! (`manifest`), the window; writes the route and the clipboard (Copy).
@@ -137,8 +137,6 @@ fn capabilities(view: &Explorer, listed: bool, cx: Cx, k: &Look) -> Vec<AnyEleme
         .collect()
 }
 
-/// The code and Copy, its size, the params, who maintains it, and what its
-/// view declares: name, min width, the programs it talks to, its wire.
 fn about(
     view: &Explorer,
     network: &Network,
@@ -168,9 +166,9 @@ fn about(
         entry.map(|entry| key_value("explorer-field-params", "Params", params(&entry.params), k)),
     );
     rows.push(key_value(
-        "explorer-field-maintained-by",
-        "Maintained by",
-        div().child(maintained_by(view, network, name)),
+        "explorer-field-changed-by",
+        "Changed by",
+        div().child(words::changed_by(network.fills_a_role(name))),
         k,
     ));
     rows.extend(declared.into_iter().flat_map(|manifest| {
@@ -248,34 +246,6 @@ fn params(params: &[u8]) -> Div {
         div().child(words::NO_PARAMS)
     } else {
         data(bytes_preview(params))
-    }
-}
-
-/// Who changes it (Expo `maintainedBy`): the validators' vote for a role's
-/// program; else each maintainer (you, an agent, marked so) and the
-/// every-program ones; else the vote alone.
-fn maintained_by(view: &Explorer, network: &Network, name: &str) -> String {
-    let Some(maintainers) = network.maintainers(name) else {
-        return words::VALIDATORS_VOTE.into();
-    };
-    let mut named: Vec<String> = maintainers
-        .named
-        .iter()
-        .map(|&number| {
-            words::holder(
-                &view.name_of(number),
-                view.acting.account == Some(number),
-                view.is_agent(number),
-            )
-        })
-        .collect();
-    if maintainers.every {
-        named.push(words::EVERY_PROGRAM.into());
-    }
-    if named.is_empty() {
-        words::VOTE_ONLY.into()
-    } else {
-        named.join(", ")
     }
 }
 

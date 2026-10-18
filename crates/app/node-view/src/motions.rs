@@ -207,10 +207,6 @@ fn pending(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme, ladder: &Ladder
         .children(lines)
 }
 
-/// The programs role's changes still to land, each with who made it and, for
-/// one a maintainer's grant made, how long the vote has to cancel it; and
-/// Propose cancel. One at or below the tip has landed and is not listed.
-/// Until the node's status is read, no wait is told.
 fn scheduled(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme, ladder: &Ladder) -> Div {
     let voting = &view.voting;
     let status = view.status.ready();

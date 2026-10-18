@@ -21,19 +21,10 @@ pub(crate) async fn validators(host: Host) -> Result<Vec<Vec<u8>>, Error> {
     host.query(valset::ask::Validators).await
 }
 
-/// What the programs role runs and lists at its height, and what it will
-/// after it; who may change it. A change keeps its place in the schedule
-/// until the programs role's next op folds it, landed or not, so one due by that
-/// height is left out: it is in the roster.
 pub(crate) async fn network(host: Host) -> Result<Network, Error> {
     let (height, programs, views) = host.query(programs::ask::Roster).await?;
     let hooks = host.query(programs::ask::Hooks(height)).await?;
     let roles = host.query(programs::ask::Roles).await?;
-    let grants = host
-        .query_all(|after| programs::ask::Grants {
-            page: programs::PageRequest { after, limit: None },
-        })
-        .await?;
     let mut changes = host
         .query_all(|after| programs::ask::Scheduled {
             page: programs::PageRequest { after, limit: None },
@@ -45,7 +36,6 @@ pub(crate) async fn network(host: Host) -> Result<Network, Error> {
         views,
         changes,
         hooks,
-        grants,
         roles: Some(roles),
     })
 }

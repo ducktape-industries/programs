@@ -2,15 +2,14 @@
 //! 266633c): the open form as a sheet over the Programs page or a program's
 //! page. Its title, the fields its edit reads, its notes, why it builds
 //! nothing, Close and Schedule or Propose. Reads the form (`acting.form`),
-//! the programs role, the accounts and the tip; writes the fields, the
+//! the programs role and the tip; writes the fields, the
 //! program or view choice (`add_view`), the send (`submit_form`) and Close
 //! (`close_form`).
 use view::Div;
 use view::design::space;
 use view::prelude::*;
 
-use crate::acting::{Asked, Edit, Form, FormField, Problem, Takes};
-use crate::words;
+use crate::acting::{Asked, Form, FormField, Problem, Takes};
 use crate::{Cx, Explorer};
 
 use super::Look;
@@ -19,15 +18,12 @@ pub(super) fn sheet(view: &Explorer, cx: Cx, k: &Look) -> Option<AnyElement> {
     let form = view.acting.form.as_ref()?;
     let network = view.network.ready()?;
     let tip = view.status.ready().map_or(0, |status| status.height);
-    let notes = account_note(view, form)
-        .into_iter()
-        .chain(form.notes(network, tip))
-        .map(|note| {
-            div()
-                .text_type(k.ladder.secondary)
-                .text_color(k.theme.muted)
-                .child(note)
-        });
+    let notes = form.notes(network, tip).into_iter().map(|note| {
+        div()
+            .text_type(k.ladder.secondary)
+            .text_color(k.theme.muted)
+            .child(note)
+    });
     let problem = form.problem.as_ref().map(|problem| {
         div()
             .id("explorer-form-problem")
@@ -65,21 +61,6 @@ pub(super) fn sheet(view: &Explorer, cx: Cx, k: &Look) -> Option<AnyElement> {
             )
             .into_any_element(),
     )
-}
-
-/// The account a grant names, as typed (Expo's first grant note): its
-/// number and name, or why there is none.
-fn account_note(view: &Explorer, form: &Form) -> Option<String> {
-    if form.edit != Edit::Grant {
-        return None;
-    }
-    Some(match form.account_number() {
-        None => words::TYPE_ACCOUNT.into(),
-        Some(number) => match view.account(number) {
-            Some(account) => format!("#{number} · {}", account.card.name),
-            None => words::no_account_numbered(number),
-        },
-    })
 }
 
 /// What its edit asks for, in the Expo form's order.

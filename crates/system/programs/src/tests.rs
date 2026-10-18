@@ -152,7 +152,7 @@ fn schedule(store: &MockHost, height: u64, change: Change) -> Result<(), ::progr
 }
 
 #[test]
-fn only_the_validators_vote_schedules_or_cancels() {
+fn a_frame_that_acts_as_no_account_never_schedules_or_cancels() {
     let (store, code) = founded();
     let scheduled = Scheduled {
         height: 5,

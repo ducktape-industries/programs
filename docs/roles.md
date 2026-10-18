@@ -181,7 +181,7 @@ What each program asks:
 | `harness` | `harness::agent_key(agent)`, `harness::conversation_key(agent)`, `harness::thread_key(thread)`, `harness::model_key(id)` | `NewThread` and `ForkThread` write the agent's conversation key; `Close` writes the thread; `SetModel` of a model that exists writes it, `RemoveModel` deletes it. No op needs the agent's key: its list says whom the agent answers | the agent's manager (agent, conversation, thread), the model's owner; default `Owner` |
 
 Keys, governance and signatures stay in their own programs: identity's
-keys, valset's votes and the programs role's grants.
+keys and valset's votes.
 
 ## Updating a program
 
@@ -248,28 +248,24 @@ Who may schedule or cancel (putting a blob is open to any account):
   "programs", op }`: the enacting vote emits `op` to the programs role in the
   same frame; a refusal there undoes the programs' writes, the vote stands,
   and the motion is gone.
-- A maintainer: a frame whose account holds a `Grant` of the id
-  (`Scope::Program(id)`, which may run nothing yet) or of every program
-  (`Scope::All`). It sets, publishes with an empty role list, removes and
-  cancels changes of the ids it covers, never the id of a program that
-  fills a role, and its change lands at least `NOTICE` (60)
-  blocks after the block it is made in, so the vote can cancel it first.
-  It may not change an id the vote has a change waiting on, nor claim an
-  id a maintainer's waiting removal frees (a program under a view being
-  removed, or the reverse) before that removal lands, and it cancels only a
-  grant's change.
+- Any account: a frame that acts as an account, through any origin. It
+  sets, publishes with an empty role list and removes any id, one that
+  runs nothing yet included, but never the id of a program that fills a
+  role, and its change lands at least `NOTICE` (60) blocks after the
+  block it is made in, so the vote can cancel it first. It may not change
+  an id the vote has a change waiting on, nor claim an id an account's
+  waiting removal frees (a program under a view being removed, or the
+  reverse) before that removal lands. It cancels any change an account
+  made to an id that fills no role, never one the vote made.
   `Scheduled` answers who made each change (`Pending.by`, `None` for the
   vote).
-- Hooks: a maintainer may replace a hook's code (`Set` of a hooked id).
+- Hooks: any account may replace a hook's code (`Set` of a hooked id).
   The hook keeps its status: it still cannot emit and runs on the kernel's
   capped hook fuel. Only the vote sets, unsets or removes a hook
   (`SetHook`, `RemoveHook`, `Remove` of a hooked id).
 
-Only the vote grants (`Op::Grant`, to any account identity profiles);
-`Op::Revoke` is the vote's or the holder's own, and drops every change the
-account made that it no longer covers. The vote wins: its change to an id takes every change a grant
-made to that id with it, and its removal of an id the id's `Program`
-grants too. The vote's removal of an id that holds nothing at its height
+The vote wins: its change to an id takes every change an account made to
+that id with it. The vote's removal of an id that holds nothing at its height
 takes those along and waits as no entry, and its cancel of a change
 already gone is no error, so a motion never sits one vote short of a
 done thing.

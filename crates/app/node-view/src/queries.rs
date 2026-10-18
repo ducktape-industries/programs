@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use identity::Kind;
 use programs::Entry;
 use serde::{Deserialize, Serialize};
-use valset::{Membership, Motion, PageRequest, Pending, Role, ask};
+use valset::{Membership, PageRequest, Pending, Role, ask};
 use view::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,21 +113,16 @@ pub(crate) async fn operator(host: &Host, key: &[u8]) -> Result<Option<String>, 
     Ok(Some(format!("operated by {manager} ({})", agent.name)))
 }
 
-/// The motions waiting for votes, how many votes pass one, and the name of
-/// each account a grant or a revoke among them names.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Motions {
     pub(crate) needed: u64,
     pub(crate) pending: Vec<Pending>,
-    pub(crate) names: Names,
 }
 
 /// Accounts by number, as identity names them; one it does not profile
 /// is left out, and reads as `account N`.
 pub(crate) type Names = BTreeMap<u64, String>;
 
-/// The programs role's changes still waiting, by height, and the name of each
-/// account whose grant made one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Schedule {
     pub(crate) changes: Vec<programs::Pending>,
@@ -169,21 +164,9 @@ pub(crate) async fn motions(host: Host) -> Result<Motions, Error> {
             },
         })
         .await?;
-    let named = page
-        .items
-        .iter()
-        .filter_map(|pending| match &pending.motion {
-            Motion::Role { role, op } if role == abi::role::PROGRAMS => match abi::decode(op) {
-                Ok(programs::Op::Grant(grant) | programs::Op::Revoke(grant)) => Some(grant.account),
-                _ => None,
-            },
-            _ => None,
-        });
-    let names = names(&host, named.collect::<Vec<_>>()).await?;
     Ok(Motions {
         needed,
         pending: page.items,
-        names,
     })
 }
 

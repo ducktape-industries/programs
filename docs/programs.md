@@ -296,9 +296,9 @@ answers).
 
 `Env::authority()` admits only a message from the program bound to the
 validators role, which sends one when its validators' vote passes a
-`Motion::Role` for the programs role; the programs role admits it, or a maintainer's frame
-by its grant ([roles.md](roles.md), "Updating a program"), before scheduling
-or cancelling a change.
+`Motion::Role` for the programs role; the programs role admits it, or any
+account's frame on a program that fills no role ([roles.md](roles.md),
+"Updating a program"), before scheduling or cancelling a change.
 
 A program the programs role lists as a hook ([roles.md](roles.md), "Hooks") is
 told of every frame a block carries through `Program::hook(ctx, record)`.

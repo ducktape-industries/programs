@@ -13,10 +13,6 @@ fn opened(row: &str) -> TestAppContext {
     cx
 }
 
-/// Pressing a program's row opens its page, the capabilities its view
-/// declares first, each in a line a person reads; then the code in full,
-/// its size, the params, who maintains it, what is scheduled for it, and
-/// the way to its transactions.
 #[test]
 fn a_program_row_opens_its_page_with_its_capabilities_first() {
     let cx = opened("explorer-program-chat");
@@ -57,10 +53,7 @@ fn a_program_row_opens_its_page_with_its_capabilities_first() {
         cx.has_text("Chat · Chat, as the suite plays it.") && cx.has_text("480 px"),
         "{texts:?}"
     );
-    assert!(
-        cx.has_text("no account: the validators' vote only"),
-        "no grant in the suite: {texts:?}"
-    );
+    assert!(cx.has_text("any account"), "chat fills no role: {texts:?}");
     assert!(
         cx.has_text("Nothing is scheduled for it.") && !cx.has_text("forge"),
         "forge's removal is another program's: {texts:?}"

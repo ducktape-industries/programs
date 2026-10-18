@@ -1,30 +1,14 @@
-//! What a reader changes on the Programs page: by its grant, the op goes to
-//! the programs role; by its voices, a motion goes to valset; with neither,
-//! nothing is pressable. The ops are read as the host receives them:
+//! What a reader changes on the Programs page: by its account, on a program
+//! that fills no role, the op goes to the programs role; by its voices, a
+//! motion goes to valset; with neither, nothing is pressable. The ops are read as the host receives them:
 //! `requests::<Submit<P>>` answers only an `op.submit` addressed to `P`,
 //! decoded from the bytes the view sent.
 use super::*;
 use crate::acting::{self, Edit, Form, Path};
-use programs::{Change, Grant, Pending, Scope};
+use programs::{Change, Pending};
 use valset::{Motion, Voted};
 use view::methods::Submit;
 
-/// Ada (account 3) maintains chat; Scout, her agent (5), every program.
-pub(super) fn grants() -> Vec<Grant> {
-    vec![
-        Grant {
-            scope: Scope::Program("chat".into()),
-            account: 3,
-        },
-        Grant {
-            scope: Scope::All,
-            account: 5,
-        },
-    ]
-}
-
-/// A change waiting: chat's at 700, made by Ada's grant, and forge's
-/// removal at 120, made by the vote.
 pub(super) fn waiting() -> Vec<Pending> {
     vec![
         Pending {
@@ -42,17 +26,13 @@ pub(super) fn waiting() -> Vec<Pending> {
 
 const CODE: [u8; 32] = [0x7e; 32];
 
-/// The Programs page for a reader whose key is `signer`, acting as
-/// `account`, voting for the validator when `votes`; the programs role holding
-/// `grants` and `scheduled`, chat a hook-free program, identity a role's.
 pub(super) fn reader(
     account: Option<u64>,
     signer: [u8; 32],
     votes: bool,
-    grants: Vec<Grant>,
     scheduled: Vec<Pending>,
 ) -> TestAppContext {
-    reader_on(account, signer, votes, grants, scheduled, Vec::new(), 1000)
+    reader_on(account, signer, votes, scheduled, Vec::new(), 1000)
 }
 
 /// [`reader`] on a node whose blocks come every `block_ms`, the programs role
@@ -61,7 +41,6 @@ fn reader_on(
     account: Option<u64>,
     signer: [u8; 32],
     votes: bool,
-    grants: Vec<Grant>,
     scheduled: Vec<Pending>,
     hooks: Vec<String>,
     block_ms: u64,
@@ -74,7 +53,7 @@ fn reader_on(
             ..status(12)
         })
     });
-    programs_granting(
+    programs_hooking(
         &cx,
         vec![entry("chat", 0xab), entry("identity", 0xcd)],
         vec![programs::View {
@@ -82,7 +61,6 @@ fn reader_on(
             view: BlobId::Sha256([0xef; 32]),
         }],
         scheduled,
-        grants,
         hooks,
     );
     cx.host().handle::<Query<Valset>>(move |query| {
@@ -118,8 +96,8 @@ fn reader_on(
     cx
 }
 
-fn maintainer() -> TestAppContext {
-    reader(Some(3), ADA, false, grants(), waiting())
+fn ada() -> TestAppContext {
+    reader(Some(3), ADA, false, waiting())
 }
 
 fn upgrade(height: u64) -> programs::Op {
@@ -132,11 +110,9 @@ fn upgrade(height: u64) -> programs::Op {
     })
 }
 
-/// The headline: a maintainer's Upgrade lands in the programs role with no vote,
-/// its params kept, at the tip + `NOTICE` + slack.
 #[test]
-fn a_maintainers_upgrade_goes_to_the_programs_as_it_was_typed() {
-    let mut cx = maintainer();
+fn an_accounts_upgrade_goes_to_the_programs_as_it_was_typed() {
+    let mut cx = ada();
     cx.simulate_click("explorer-upgrade-chat");
     cx.run_until_parked();
     assert!(
@@ -163,8 +139,23 @@ fn a_maintainers_upgrade_goes_to_the_programs_as_it_was_typed() {
 }
 
 #[test]
-fn a_reader_with_voices_and_no_grant_proposes_the_same_change_to_the_vote() {
-    let mut cx = reader(Some(3), ADA, true, Vec::new(), waiting());
+fn every_account_changes_a_program_that_fills_no_role_and_a_voter_proposes_a_roles() {
+    let cx = reader(Some(6), STRANGER, false, waiting());
+    assert!(cx.find("explorer-upgrade-chat").is_some());
+    assert!(cx.find("explorer-remove-chat").is_some());
+    assert!(cx.find("explorer-upgrade-identity").is_none());
+    let mut cx = reader(Some(3), ADA, true, waiting());
+    assert!(cx.has_text("Upgrade") && cx.has_text("Remove"));
+    assert!(cx.find("explorer-upgrade-identity").is_some());
+    assert!(cx.find("explorer-remove-identity").is_none());
+    cx.simulate_click("explorer-upgrade-identity");
+    cx.run_until_parked();
+    assert!(cx.has_text("Propose upgrade · identity"), "{:?}", cx.texts());
+}
+
+#[test]
+fn a_reader_with_voices_and_no_account_proposes_the_same_change_to_the_vote() {
+    let mut cx = reader(None, VALIDATOR, true, waiting());
     assert!(cx.has_text("Propose upgrade") && cx.has_text("Propose remove"));
     // a role's program is never removed
     assert!(cx.find("explorer-upgrade-identity").is_some());
@@ -189,8 +180,8 @@ fn a_reader_with_voices_and_no_grant_proposes_the_same_change_to_the_vote() {
 }
 
 #[test]
-fn a_reader_with_neither_a_grant_nor_voices_sees_who_and_presses_nothing() {
-    let cx = reader(Some(6), STRANGER, false, grants(), waiting());
+fn a_reader_with_neither_an_account_nor_voices_sees_who_and_presses_nothing() {
+    let cx = reader(None, STRANGER, false, waiting());
     for press in [
         "explorer-upgrade-chat",
         "explorer-remove-chat",
@@ -199,47 +190,30 @@ fn a_reader_with_neither_a_grant_nor_voices_sees_who_and_presses_nothing() {
         "explorer-add",
         "explorer-cancel-0",
         "explorer-cancel-1",
-        "explorer-propose-grant",
-        "explorer-revoke-0",
-        "explorer-revoke-1",
     ] {
         assert!(cx.find(press).is_none(), "{press}");
     }
     assert!(cx.has_text("validators' vote"), "identity is a role's");
+    assert!(cx.has_text("any account"), "chat fills no role");
     assert!(cx.has_text("by vote") && cx.has_text("by Ada"));
 }
 
 #[test]
-fn access_lists_every_grant_by_name_and_the_reader_steps_down_from_its_own() {
-    let mut cx = maintainer();
+fn access_says_any_account_changes_a_program_that_fills_no_role() {
+    let cx = ada();
     assert!(cx.has_text("Access"));
-    assert!(cx.has_text("changes by a maintainer wait 60 blocks (about 1 min)"));
-    assert!(cx.has_text("every program") && cx.has_text("Scout"));
-    assert!(cx.has_text("agent"), "Scout is an agent");
-    assert!(cx.has_text("Ada (you)"));
-    let every = cx
-        .texts()
-        .iter()
-        .filter(|text| *text == "every-program maintainers")
-        .count();
-    assert_eq!(
-        every, 2,
-        "beside chat's own maintainer, and explorer's none"
-    );
-    cx.simulate_click("explorer-revoke-0");
-    cx.run_until_parked();
-    assert_eq!(
-        cx.host().requests::<Submit<Programs>>(),
-        [programs::Op::Revoke(grants()[0].clone())]
-    );
+    assert!(cx.has_text("changes by an account wait 60 blocks (about 1 min)"));
+    assert!(cx.has_text(
+        "Any account changes a program that fills no role. Only the validators' vote changes a role's program."
+    ));
 }
 
 /// Minutes are the node's: 60 blocks at 2 s are about 2 min.
 #[test]
 fn the_waits_read_in_minutes_at_the_nodes_block_time() {
-    let cx = reader_on(Some(3), ADA, false, grants(), waiting(), Vec::new(), 2000);
+    let cx = reader_on(Some(3), ADA, false, waiting(), Vec::new(), 2000);
     assert!(
-        cx.has_text("changes by a maintainer wait 60 blocks (about 2 min)"),
+        cx.has_text("changes by an account wait 60 blocks (about 2 min)"),
         "{:?}",
         cx.texts()
     );
@@ -247,16 +221,14 @@ fn the_waits_read_in_minutes_at_the_nodes_block_time() {
     assert!(cx.has_text("validators can cancel for 23 min"));
 }
 
-/// A hook's code changes by grant; its removal is the vote's, which a
-/// maintainer with voices proposes and one without never sees.
 #[test]
-fn a_hook_is_upgraded_by_its_maintainer_and_removed_only_by_vote() {
+fn a_hook_is_upgraded_by_any_account_and_removed_only_by_vote() {
     let hooked = || vec!["chat".to_owned()];
-    let cx = reader_on(Some(3), ADA, false, grants(), waiting(), hooked(), 1000);
+    let cx = reader_on(Some(3), ADA, false, waiting(), hooked(), 1000);
     assert!(cx.find("explorer-hook-chat").is_some());
     assert!(cx.find("explorer-upgrade-chat").is_some());
     assert!(cx.find("explorer-remove-chat").is_none());
-    let mut cx = reader_on(Some(3), ADA, true, grants(), waiting(), hooked(), 1000);
+    let mut cx = reader_on(Some(3), ADA, true, waiting(), hooked(), 1000);
     assert!(cx.has_text("Upgrade") && cx.has_text("Propose remove"));
     cx.simulate_click("explorer-remove-chat");
     cx.run_until_parked();
@@ -278,39 +250,8 @@ fn a_hook_is_upgraded_by_its_maintainer_and_removed_only_by_vote() {
 }
 
 #[test]
-fn a_voter_proposes_a_grant_naming_the_account_as_it_is_typed() {
-    let mut cx = reader(None, VALIDATOR, true, Vec::new(), Vec::new());
-    assert!(cx.has_text(
-        "No account maintains a program: only the validators' vote changes the programs role."
-    ));
-    cx.simulate_click("explorer-propose-grant");
-    cx.run_until_parked();
-    cx.simulate_input("explorer-form-account", "5");
-    cx.run_until_parked();
-    assert!(
-        cx.has_text("#5 · Scout · Agent · managed by Ada · suspended"),
-        "{:?}",
-        cx.texts()
-    );
-    cx.simulate_input("explorer-form-scope", "trade");
-    cx.simulate_click("explorer-form-submit");
-    cx.run_until_parked();
-    let op = abi::encode(&programs::Op::Grant(Grant {
-        scope: Scope::Program("trade".into()),
-        account: 5,
-    }));
-    assert_eq!(
-        cx.host().requests::<Submit<Valset>>(),
-        [valset::Op::Vote(Motion::Role {
-            role: abi::role::PROGRAMS.into(),
-            op,
-        })]
-    );
-}
-
-#[test]
 fn a_refusal_shows_in_the_form_in_the_hosts_words() {
-    let mut cx = maintainer();
+    let mut cx = ada();
     // the host's own refusal: never sent (`design::failure`)
     let refusal = "Unlock a key first.";
     cx.host()
@@ -342,7 +283,7 @@ fn a_refusal_shows_in_the_form_in_the_hosts_words() {
 }
 
 #[test]
-fn a_scheduled_change_says_who_made_it_and_its_maintainer_cancels_it() {
+fn a_scheduled_change_says_who_made_it_and_any_account_cancels_it() {
     // the vote's change of chat, made after Ada's
     let mut scheduled = waiting();
     scheduled.push(Pending {
@@ -350,13 +291,13 @@ fn a_scheduled_change_says_who_made_it_and_its_maintainer_cancels_it() {
         change: Change::Set(entry("chat", 0x88)),
         by: None,
     });
-    let mut cx = reader(Some(3), ADA, false, grants(), scheduled);
+    let mut cx = reader(Some(6), STRANGER, false, scheduled);
     assert!(cx.has_text("by Ada") && cx.has_text("by vote"));
     // 688 blocks at 1 s
     assert!(cx.has_text("validators can cancel for 12 min"));
     assert!(
         cx.find("explorer-cancel-2").is_none(),
-        "the vote's change of chat is not its maintainer's to cancel"
+        "the vote's change of chat is not an account's to cancel"
     );
     cx.simulate_click("explorer-cancel-1");
     cx.run_until_parked();
@@ -367,7 +308,7 @@ fn a_scheduled_change_says_who_made_it_and_its_maintainer_cancels_it() {
             program: "chat".into(),
         }]
     );
-    let mut cx = reader(None, VALIDATOR, true, grants(), waiting());
+    let mut cx = reader(None, VALIDATOR, true, waiting());
     cx.simulate_click("explorer-cancel-0");
     cx.run_until_parked();
     let op = abi::encode(&programs::Op::Cancel {
@@ -384,16 +325,11 @@ fn a_scheduled_change_says_who_made_it_and_its_maintainer_cancels_it() {
 }
 
 #[test]
-fn every_program_and_an_unseated_program_let_their_maintainer_add() {
-    let cx = maintainer();
-    assert!(cx.find("explorer-add").is_none(), "chat runs already");
-    let trade = Grant {
-        scope: Scope::Program("trade".into()),
-        account: 3,
-    };
-    let cx = reader(Some(3), ADA, false, vec![trade], Vec::new());
+fn any_account_adds_a_program_and_a_reader_with_none_does_not() {
+    let cx = reader(Some(6), STRANGER, false, Vec::new());
     assert!(cx.find("explorer-add").is_some());
-    assert!(cx.has_text("runs nothing yet: Ada may add it"));
+    let cx = reader(None, VALIDATOR, true, Vec::new());
+    assert!(cx.find("explorer-add").is_none());
 }
 
 /// A form's op, built from what was typed: the code, the height, the
@@ -406,12 +342,11 @@ fn a_form_builds_its_op_or_says_why_not() {
     };
     let form = |edit: Edit, code: &str, height: &str| Form {
         edit,
-        path: Path::Grant,
+        path: Path::Account,
         code: TextField::new(code),
         height: TextField::new(height),
         name: TextField::new("trade"),
         params: TextField::new("0a0b"),
-        account: TextField::new("#7"),
         view: false,
         problem: None,
     };
@@ -471,14 +406,7 @@ fn a_form_builds_its_op_or_says_why_not() {
             }),
         })
     );
-    assert_eq!(
-        acting::built(&form(Edit::Grant, "", ""), &network, 12),
-        Ok(programs::Op::Grant(Grant {
-            scope: Scope::Program("trade".into()),
-            account: 7,
-        }))
-    );
-    assert_eq!(acting::default_height(Path::Grant, 12, 1000), 102);
+    assert_eq!(acting::default_height(Path::Account, 12, 1000), 102);
     assert_eq!(acting::default_height(Path::Vote, 12, 1000), 612);
     assert_eq!(acting::default_height(Path::Vote, 12, 2000), 312);
 }

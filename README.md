@@ -64,8 +64,8 @@ Membership changes only by a vote of the current validators, in `valset`;
 a stranger enrolls there as a resident, by invite or while the door is
 open. The same vote decides a program swap and the roles a program fills:
 `programs` schedules or cancels a change on a message from the program that
-fills the validators role (`program::Env::authority`), or from a maintainer
-the vote granted, who never changes a program that fills a role. An
+fills the validators role (`program::Env::authority`), or from any account,
+which never changes a program that fills a role. An
 update replaces a program's code under the same id. The system programs beyond the boot set are archived at
 `ducktape-industries/ducktape-system-modules-archive`.
 

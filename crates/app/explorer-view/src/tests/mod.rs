@@ -474,24 +474,20 @@ pub(crate) fn respond(cx: &mut TestAppContext) {
     );
 }
 
-/// The programs role answering what it runs, the views it lists and what is
-/// scheduled; no grants, no hooks.
 pub(crate) fn programs_with(
     cx: &TestAppContext,
     programs: Vec<programs::Entry>,
     views: Vec<programs::View>,
     scheduled: Vec<programs::Pending>,
 ) {
-    programs_granting(cx, programs, views, scheduled, Vec::new(), Vec::new());
+    programs_hooking(cx, programs, views, scheduled, Vec::new());
 }
 
-/// The programs role, its grants and its hooks too, under the suite's roles.
-pub(crate) fn programs_granting(
+pub(crate) fn programs_hooking(
     cx: &TestAppContext,
     programs: Vec<programs::Entry>,
     views: Vec<programs::View>,
     scheduled: Vec<programs::Pending>,
-    grants: Vec<programs::Grant>,
     hooks: Vec<String>,
 ) {
     fn whole<T>(items: Vec<T>) -> programs::PageResponse<T> {
@@ -512,7 +508,6 @@ pub(crate) fn programs_granting(
                 programs::Reply::Scheduled(whole(scheduled.clone()))
             }
             programs::Query::Hooks(_) => programs::Reply::Hooks(hooks.clone()),
-            programs::Query::Grants { .. } => programs::Reply::Grants(whole(grants.clone())),
             programs::Query::Roles => programs::Reply::Roles(abi::Roles::from_iter([
                 (abi::role::PROGRAMS, programs::PROGRAM),
                 (abi::role::VALIDATORS, valset::PROGRAM),

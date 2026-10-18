@@ -767,7 +767,10 @@ fn a_role_motion_is_counted_unread_and_refused_only_for_an_unbound_role() {
     // the block is at height 3
     assert_eq!(vote(&store, 1, schedule(2)).unwrap(), counted(1));
     assert_eq!(vote(&store, 1, cancel(1)).unwrap(), counted(1));
-    let bad = grant(programs::Scope::Program("valset".into()), BOB, false);
+    let bad = programs_role(&programs::Op::Schedule(Scheduled {
+        height: 9,
+        change: Change::Remove("valset".into()),
+    }));
     assert_eq!(vote(&store, 1, bad).unwrap(), counted(1));
     let garbage = Motion::Role {
         role: abi::role::PROGRAMS.into(),
@@ -871,16 +874,6 @@ fn motions_list_what_vote_stored_and_voices_are_the_set_vote_uses() {
     assert_eq!(voices(&store, 20), [key(1)]);
     assert_eq!(voices(&store, 1), [key(1)]);
     assert!(voices(&store, 21).is_empty());
-}
-
-/// A `programs` op granting `scope` to `account`, or revoking it.
-fn grant(scope: programs::Scope, account: AccountNumber, revoke: bool) -> Motion {
-    let grant = programs::Grant { scope, account };
-    let op = match revoke {
-        false => programs::Op::Grant(grant),
-        true => programs::Op::Revoke(grant),
-    };
-    programs_role(&op)
 }
 
 #[test]

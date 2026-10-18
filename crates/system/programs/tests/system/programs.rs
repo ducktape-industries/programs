@@ -254,7 +254,7 @@ fn schedule_pages_and_missing_programs_report_the_answering_height() {
 }
 
 #[test]
-fn a_schedule_from_a_key_or_another_program_is_refused() {
+fn a_schedule_from_a_key_with_no_account_or_under_the_notice_is_refused() {
     deterministic::Runner::default().start(|context| async move {
         let dir = tempfile::tempdir().unwrap();
         let mut net = Net::found(context, dir.path()).await;
@@ -269,10 +269,14 @@ fn a_schedule_from_a_key_or_another_program_is_refused() {
         });
         for signer in [public(1), public(7)] {
             let refused = net.refuse(&signer, programs::PROGRAM, &schedule).await;
-            assert_eq!(refused, reason::UNAUTHORIZED);
+            assert_eq!(refused, reason::UNAUTHORIZED, "a key with no account");
         }
         let by_program = net.as_anyone(programs::PROGRAM, &schedule).await;
-        assert_eq!(refusal_of(&by_program), reason::UNAUTHORIZED);
+        assert_eq!(
+            refusal_of(&by_program),
+            reason::INVALID_INPUT,
+            "a program's own account, under the notice"
+        );
         let programs::Reply::Scheduled(pending) = net
             .ask(
                 programs::PROGRAM,
@@ -289,11 +293,8 @@ fn a_schedule_from_a_key_or_another_program_is_refused() {
     });
 }
 
-/// The first grant, by the validators' vote; then the granted device's
-/// account schedules an upgrade with no vote, the schedule says whose it
-/// is, and it lands `NOTICE` blocks on.
 #[test]
-fn a_maintainer_the_vote_granted_upgrades_a_program_with_no_vote() {
+fn an_account_upgrades_a_program_that_fills_no_role_with_no_vote() {
     deterministic::Runner::default().start(|context| async move {
         let dir = tempfile::tempdir().unwrap();
         let mut net = Net::found(context, dir.path()).await;
@@ -314,19 +315,17 @@ fn a_maintainer_the_vote_granted_upgrades_a_program_with_no_vote() {
                 }),
             })
         };
-        // the frame lands in the next block
         let lands_at = net.height + 1 + programs::NOTICE;
-        let refused = net
-            .refuse(&public(7), programs::PROGRAM, &upgrade(lands_at))
-            .await;
-        assert_eq!(refused, reason::UNAUTHORIZED, "no grant yet");
-        let granted = net
-            .govern(&programs::Op::Grant(programs::Grant {
-                scope: programs::Scope::Program("probe".into()),
-                account: seven,
-            }))
-            .await;
-        output_of(&granted);
+        let a_role = programs::Op::Schedule(programs::Scheduled {
+            height: lands_at,
+            change: programs::Change::Set(programs::Entry {
+                program: identity::PROGRAM.into(),
+                code,
+                params: Vec::new(),
+            }),
+        });
+        let refused = net.refuse(&public(7), programs::PROGRAM, &a_role).await;
+        assert_eq!(refused, reason::UNAUTHORIZED, "a role's program");
         let lands_at = net.height + 1 + programs::NOTICE;
         net.apply(&public(7), programs::PROGRAM, &upgrade(lands_at))
             .await;
@@ -361,11 +360,8 @@ fn a_maintainer_the_vote_granted_upgrades_a_program_with_no_vote() {
     });
 }
 
-/// Through valset's enactment: the vote's change at the very key a
-/// maintainer's change holds takes that change along instead of failing
-/// the vote, and the vote's cancel of a change already gone is done.
 #[test]
-fn the_vote_overrules_a_maintainers_change_at_its_own_key() {
+fn the_vote_overrules_an_accounts_change_at_its_own_key() {
     deterministic::Runner::default().start(|context| async move {
         let dir = tempfile::tempdir().unwrap();
         let mut net = Net::found(context, dir.path()).await;
@@ -373,16 +369,8 @@ fn the_vote_overrules_a_maintainers_change_at_its_own_key() {
             name: "Seven".into(),
             scheme: Scheme::Ed25519,
         };
-        let output = net.apply(&public(7), identity::PROGRAM, &create).await;
-        let seven: AccountNumber = abi::decode(&output).unwrap();
+        net.apply(&public(7), identity::PROGRAM, &create).await;
         let code = net.hold(programs::CODE_KIND, &program("chat")).await;
-        let granted = net
-            .govern(&programs::Op::Grant(programs::Grant {
-                scope: programs::Scope::Program("probe".into()),
-                account: seven,
-            }))
-            .await;
-        output_of(&granted);
         let lands_at = net.height + 1 + programs::NOTICE;
         let change = programs::Change::Set(programs::Entry {
             program: "probe".into(),

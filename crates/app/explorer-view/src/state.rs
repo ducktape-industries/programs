@@ -190,14 +190,10 @@ pub struct Network {
     /// the view-only entries: a name and its view's code, no program behind it
     #[serde(with = "borsh_bytes")]
     pub views: Vec<programs::View>,
-    /// what the programs role will change after the height it answered, by
-    /// height, and whose grant made each (`None`: the vote)
     #[serde(with = "borsh_bytes")]
     pub changes: Vec<programs::Pending>,
     /// the programs the kernel tells of every frame
     pub hooks: Vec<String>,
-    #[serde(with = "borsh_bytes")]
-    pub grants: Vec<programs::Grant>,
     /// the programs bound to the roles the kernel calls
     #[serde(with = "borsh_bytes")]
     pub roles: Option<abi::Roles>,
@@ -334,7 +330,6 @@ pub struct Explorer {
 /// a form is [`Acting::form`], as on the desktop.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Sheet {
-    /// Add: add a program, propose a grant
     Add,
     /// one program's or view-only entry's sheet: its page, its
     /// transactions, the reader's presses on it
@@ -432,20 +427,6 @@ impl Explorer {
             || format!("account {number}"),
             |account| account.card.name.clone(),
         )
-    }
-
-    /// Whether account `number` is an agent: a program account its manager
-    /// declared one.
-    pub(crate) fn is_agent(&self, number: u64) -> bool {
-        self.account(number).is_some_and(|account| {
-            matches!(
-                account.kind(),
-                identity::Kind::Program {
-                    category: identity::Category::Agent,
-                    ..
-                }
-            )
-        })
     }
 
     /// The network's label: the session's chain id before its salt
