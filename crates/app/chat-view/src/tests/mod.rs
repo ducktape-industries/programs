@@ -26,6 +26,7 @@ mod reader;
 mod rich;
 mod room;
 mod scroll;
+mod widgets;
 mod writing;
 
 fn page<T>(items: Vec<T>) -> ::chat::PageResponse<T> {

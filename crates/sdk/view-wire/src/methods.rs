@@ -265,6 +265,52 @@ impl<P: Program> Method for Changes<P> {
     }
 }
 
+// `program.query` to a program the view knows by name only when it runs (a
+// chat widget's source): the envelope `Query<P>` sends, answered with the
+// program's reply bytes as they are, which the view reads by the program's
+// schema. The same kind and bytes on the wire as `Query<P>`.
+pub struct NamedQuery;
+impl sealed::Sealed for NamedQuery {}
+impl Method for NamedQuery {
+    const KIND: &'static str = "program.query";
+    type Request = Call;
+    type Reply = Vec<u8>;
+    fn encode_request(request: &Call) -> Vec<u8> {
+        encode(request)
+    }
+    fn decode_request(bytes: &[u8]) -> Result<Call, String> {
+        decode(bytes)
+    }
+    fn encode_reply(reply: &Vec<u8>) -> Vec<u8> {
+        reply.clone()
+    }
+    fn decode_reply(bytes: &[u8]) -> Result<Vec<u8>, String> {
+        Ok(bytes.to_vec())
+    }
+}
+
+// `program.changes` of a program named when the view runs: the request is
+// its name, as `Changes<P>` sends it, and the items are `Changes<P>`'s.
+pub struct NamedChanges;
+impl sealed::Sealed for NamedChanges {}
+impl Method for NamedChanges {
+    const KIND: &'static str = "program.changes";
+    type Request = String;
+    type Reply = Option<Change>;
+    fn encode_request(request: &String) -> Vec<u8> {
+        encode(request)
+    }
+    fn decode_request(bytes: &[u8]) -> Result<String, String> {
+        decode(bytes)
+    }
+    fn encode_reply(reply: &Option<Change>) -> Vec<u8> {
+        encode(reply)
+    }
+    fn decode_reply(bytes: &[u8]) -> Result<Option<Change>, String> {
+        decode(bytes)
+    }
+}
+
 #[derive(
     Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
 )]

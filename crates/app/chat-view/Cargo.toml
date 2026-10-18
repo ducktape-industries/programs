@@ -30,6 +30,12 @@ access.workspace = true
 harness.workspace = true
 program.workspace = true
 abi.workspace = true
+# widgets: a widget file's TOML, and any program's query and reply as JSON
+# by the schema its code carries
+toml.workspace = true
+borsh.workspace = true
+borsh-json.workspace = true
+programs.workspace = true
 
 [dev-dependencies]
 # `examples/live.rs` and the chain-backed tests: the fake node

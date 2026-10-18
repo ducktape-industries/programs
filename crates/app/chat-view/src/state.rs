@@ -93,6 +93,9 @@ pub struct Chat {
     // what each file a message carries is, once read, by path and snapshot
     #[serde(skip)]
     pub(crate) shown_files: BTreeMap<(String, [u8; 32]), crate::attach::Shown>,
+    // the widgets the open room names, what they show and what they read
+    #[serde(skip)]
+    pub(crate) widgets: crate::widget::Widgets,
 }
 
 /// A page of the view's [`Pages`]: the room list, search, the new-channel
@@ -579,6 +582,7 @@ impl Chat {
             Pane::Timeline if self.room.as_ref().is_some_and(|room| room.thread.is_some()) => {
                 layout.thread
             }
+            Pane::Timeline if self.widget_side_shown() => layout.details,
             Pane::Timeline => 0.,
         };
         let side = if side > 0. && layout.docks(side) {

@@ -37,6 +37,7 @@ pub fn render(
     pane.child(header(chat, room, cx, theme, ladder))
         .children(notice(chat, cx, theme, ladder))
         .children(confirmation(chat, cx, theme, ladder))
+        .children(super::widget::pinned(chat, cx, theme, ladder))
         .child(body)
         .child(compose(chat, room, cx, theme, ladder))
 }
@@ -252,8 +253,10 @@ fn header(
                 .flex_col()
                 .gap_1()
                 .child(title)
-                .children(unanswered),
+                .children(unanswered)
+                .children(super::widget::line(chat, theme, ladder)),
         )
+        .children(super::widget::side_button(chat, cx, theme, ladder))
         .child(button(
             "chat-room-details",
             if direct {

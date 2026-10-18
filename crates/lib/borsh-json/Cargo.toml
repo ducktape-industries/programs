@@ -1,0 +1,10 @@
+[package]
+name = "borsh-json"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+# hex, the JSON form of bytes
+abi = { workspace = true }
+borsh = { workspace = true }
+serde_json = { workspace = true }

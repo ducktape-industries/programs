@@ -547,6 +547,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "borsh-json"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "borsh",
+ "serde_json",
+]
+
+[[package]]
 name = "built"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -660,6 +669,8 @@ version = "0.1.0"
 dependencies = [
  "abi",
  "access",
+ "borsh",
+ "borsh-json",
  "chat",
  "ducklink",
  "files",
@@ -667,8 +678,10 @@ dependencies = [
  "harness",
  "identity",
  "program",
+ "programs",
  "serde",
  "serde_json",
+ "toml 1.1.6+spec-1.1.0",
  "unicode-normalization",
  "view",
 ]
@@ -2699,6 +2712,7 @@ dependencies = [
  "awaits",
  "blobs",
  "borsh",
+ "borsh-json",
  "chat",
  "describe",
  "egress",

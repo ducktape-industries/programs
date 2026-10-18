@@ -51,6 +51,8 @@ mod state;
 mod ui;
 #[cfg(not(feature = "notifier"))]
 mod watch;
+#[cfg(not(feature = "notifier"))]
+mod widget;
 mod words;
 
 pub use notifier::ChatNotices;
@@ -98,6 +100,9 @@ impl View for Chat {
         identity::PROGRAM,
         access::PROGRAM,
         files::PROGRAM,
+        // a widget's source, and where its schema is read from
+        "board",
+        programs::PROGRAM,
     ];
     // at 480 an agent message's head line is cut at the room's edge
     const MIN_WINDOW_WIDTH: u32 = 560;
@@ -147,6 +152,7 @@ impl Render for Chat {
         self.settle_showing(cx);
         self.settle_dm_heads(cx);
         self.settle_files(cx);
+        self.settle_widgets(cx);
         // the one pick: a phone draws the Expo app's own screens, every
         // other window the desktop's (STRUCTURE v2)
         if window.touch() {

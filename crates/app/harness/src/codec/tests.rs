@@ -1,31 +1,12 @@
-//! The codec over Rust types' own schemas: the JSON form of each borsh shape, and every program's
-//! ops, queries and replies read to JSON and written back to the same bytes.
-mod forms;
+//! Every program's ops, queries and replies read to JSON by the codec and written back to the
+//! same bytes.
 mod programs;
 
-use borsh::schema::{BorshSchemaContainer, Definition};
-use borsh::{BorshSchema, BorshSerialize};
+use borsh::BorshSerialize;
+use borsh::schema::BorshSchemaContainer;
 use serde_json::Value;
 
 use super::*;
-
-fn schema_of<T: BorshSchema>() -> BorshSchemaContainer {
-    BorshSchemaContainer::for_type::<T>()
-}
-
-fn json_of<T: BorshSchema + BorshSerialize>(value: &T) -> Value {
-    let schema = schema_of::<T>();
-    let bytes = borsh::to_vec(value).unwrap();
-    let json = decode(&schema, schema.declaration(), "value", &bytes).unwrap();
-    let again = encode(&schema, schema.declaration(), "value", &json).unwrap();
-    assert_eq!(again, bytes, "{json}");
-    json
-}
-
-fn bytes_of<T: BorshSchema>(json: Value) -> Result<Vec<u8>, Fault> {
-    let schema = schema_of::<T>();
-    encode(&schema, schema.declaration(), "value", &json)
-}
 
 struct Roots {
     schema: BorshSchemaContainer,

@@ -8,7 +8,7 @@ use serde_json::{Map, Value, json};
 use super::{Fault, Kind, Length, Variants, kind, payload, unit_variant};
 
 // Under `returns` (when given), each op that names what it returns, and that type's shape.
-pub(crate) fn shape(
+pub fn shape(
     schema: &BorshSchemaContainer,
     roots: &[(&str, &str)],
     returns: Option<&[(&str, &str)]>,

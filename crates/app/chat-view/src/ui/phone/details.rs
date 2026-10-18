@@ -52,6 +52,7 @@ pub(super) fn screen(
         .flex()
         .flex_col()
         .child(head(chat, info, theme, ladder))
+        .children(crate::ui::widget::section(chat, cx, theme, ladder))
         .children(members(chat, room, info, cx, theme, ladder))
         .children(owner_actions(chat, info, cx, theme, ladder));
     page.caption(format!("#{}", info.channel.name))

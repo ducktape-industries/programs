@@ -11,6 +11,7 @@ pub mod room_menu;
 pub mod side;
 pub mod sidebar;
 pub(crate) mod timeline;
+pub(crate) mod widget;
 
 pub(crate) use view::design::{badge, button, empty_state, quiet};
 use view::prelude::*;
@@ -192,24 +193,33 @@ fn connected(
     let details = chat.details.is_some() && chat.room.is_some();
     let thread = chat.room.as_ref().is_some_and(|room| room.thread.is_some());
     let layout = chat.layout.clamped();
-    let (pane, width) = match (details, thread) {
-        (true, _) => (side::details(chat, cx, theme, ladder), layout.details),
-        (false, true) => (side::thread(chat, cx, theme, ladder), layout.thread),
-        (false, false) => return panes,
+    let widget = chat.widget_side_shown();
+    let (pane, width) = match (details, thread, widget) {
+        (true, _, _) => (side::details(chat, cx, theme, ladder), layout.details),
+        (false, true, _) => (side::thread(chat, cx, theme, ladder), layout.thread),
+        (false, false, true) => (widget::side(chat, cx, theme, ladder), layout.details),
+        (false, false, false) => return panes,
     };
     // too narrow for the room beside it: the pane covers the whole screen
     if !layout.docks(width) {
         return panes.child(design::over("chat-side-over", pane, theme));
     }
-    let divider = match details {
-        true => design::divider(
+    let divider = match (details, thread) {
+        (false, false) => design::divider(
+            "chat-widget-resize",
+            "Resize the widget",
+            theme,
+            cx,
+            |chat, dx| chat.layout.drag_details(dx),
+        ),
+        (true, _) => design::divider(
             "chat-details-resize",
             "Resize channel details",
             theme,
             cx,
             |chat, dx| chat.layout.drag_details(dx),
         ),
-        false => design::divider(
+        (false, true) => design::divider(
             "chat-thread-resize",
             "Resize the thread",
             theme,

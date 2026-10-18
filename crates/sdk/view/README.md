@@ -271,6 +271,14 @@ again). Every refusal is the program SDK's `Error`
 (`src/root.rs`) hold an ask's states and snapshot `Loading`
 as `Idle`.
 
+A program the view knows only by name when it runs (a chat widget's source)
+is asked with `NamedQuery`, a `Call { target, body }` answered with the
+program's reply bytes as they are, and followed with `NamedChanges`, its
+name answered as `Changes<P>` is. They are the same two kinds and bytes on
+the wire, so the host answers them as it answers `Query<P>` and
+`Changes<P>`; the view writes and reads the bytes itself (chat-view does it
+by the program's schema, through `borsh-json`).
+
 A cursored listing is read one of two ways. `host.query_all(|after| ask)`
 follows it to its end: the closure is handed each page's cursor (`None`
 first) and puts it in the question, and the rows of every page come back as

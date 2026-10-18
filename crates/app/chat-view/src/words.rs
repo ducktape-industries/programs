@@ -208,3 +208,64 @@ pub(crate) fn size(bytes: u64) -> String {
         bytes => format!("{:.1} MB", bytes as f64 / MB as f64),
     }
 }
+
+// ---------- widgets ----------
+
+// what a widget is called until its file names it
+pub(crate) const WIDGET: &str = "Widget";
+pub(crate) const WIDGET_LOADING: &str = "Loading…";
+pub(crate) const WIDGET_EMPTY: &str = "Nothing to show.";
+pub(crate) const WIDGET_NOT_TEXT: &str = "The widget’s file is not text.";
+
+// what the host's log says a widget's follow of `program` was refused as
+pub(crate) fn widget_heads(program: &str) -> String {
+    format!("{program}'s live heads for a widget")
+}
+
+pub(crate) fn widget_not_a_file(path: &str) -> String {
+    format!("No widget file at {path}.")
+}
+
+pub(crate) fn widget_unreadable(why: &str) -> String {
+    format!("The widget’s file doesn’t read: {why}")
+}
+
+pub(crate) fn widget_reply(why: &str) -> String {
+    format!("The reply doesn’t read: {why}")
+}
+
+pub(crate) fn widget_not_a_list(path: &str) -> String {
+    format!("`{path}` is not a list")
+}
+
+pub(crate) fn widget_nothing_at(path: &str) -> String {
+    format!("there is nothing at `{path}`")
+}
+
+pub(crate) fn widget_no_program(program: &str) -> String {
+    format!("This network runs no program called {program}.")
+}
+
+pub(crate) fn widget_no_code(program: &str) -> String {
+    format!("This node doesn’t hold {program}’s code.")
+}
+
+pub(crate) fn widget_no_schema(program: &str) -> String {
+    format!("{program}’s code carries no schema, so a widget can’t read it.")
+}
+
+pub(crate) fn widget_bad_schema(program: &str) -> String {
+    format!("{program}’s schema doesn’t read.")
+}
+
+pub(crate) fn close_widget(title: &str) -> String {
+    format!("Close {title}")
+}
+
+// a checklist row as a screen reader says it
+pub(crate) fn checked(item: &str, done: bool) -> String {
+    match done {
+        true => format!("{item}, done"),
+        false => format!("{item}, not done"),
+    }
+}

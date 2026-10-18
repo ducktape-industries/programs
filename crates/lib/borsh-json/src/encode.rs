@@ -4,7 +4,7 @@ use serde_json::{Map, Value};
 
 use super::{At, Fault, Kind, Length, Variants, kind, payload, unit_variant};
 
-pub(crate) fn encode(
+pub fn encode(
     schema: &BorshSchemaContainer,
     declaration: &str,
     name: &str,

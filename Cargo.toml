@@ -20,7 +20,8 @@
 #                   feature), chat-view and forge-view (which link their
 #                   program crate with the feature off) and the system views
 #   crates/lib/     libraries a program links: gitcore (git objects, packs,
-#                   walks, diffs, the wire's server side)
+#                   walks, diffs, the wire's server side), borsh-json (a
+#                   program's values as JSON by the borsh schema it carries)
 #
 # A view links its program by path and reads its types; a view is a cdylib for
 # wasm32-unknown-unknown on `view`. The host that runs the programs
@@ -72,6 +73,7 @@ members = [
     "crates/app/harness",
     "crates/app/harness-view",
     "crates/lib/gitcore",
+    "crates/lib/borsh-json",
 ]
 
 [workspace.package]
@@ -85,6 +87,7 @@ error = { path = "crates/sdk/error" }
 program = { path = "crates/sdk/program" }
 store = { path = "crates/sdk/store" }
 gitcore = { path = "crates/lib/gitcore" }
+borsh-json = { path = "crates/lib/borsh-json" }
 ducklink = { path = "crates/sdk/ducklink" }
 design = { path = "crates/sdk/design" }
 view-wire = { path = "crates/sdk/view-wire" }
