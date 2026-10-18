@@ -6,7 +6,6 @@ use ::program::{Error, QueryCtx};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::origin::roster;
-use crate::view::picks;
 use crate::{AccountNumber, Block, Mark, Principal, Profile, Span};
 
 pub(crate) fn resolve_typed(ctx: &QueryCtx, blocks: Vec<Block>) -> Result<Vec<Block>, Error> {
@@ -33,7 +32,7 @@ pub(crate) fn holders(
     wanted: &BTreeSet<String>,
 ) -> BTreeMap<String, AccountNumber> {
     let mut holding: BTreeMap<String, Vec<AccountNumber>> = BTreeMap::new();
-    for profile in profiles.into_iter().filter(|profile| picks(&profile.kind)) {
+    for profile in profiles {
         let name = name_key(&profile.name);
         if wanted.contains(&name) {
             holding.entry(name).or_default().push(profile.number);

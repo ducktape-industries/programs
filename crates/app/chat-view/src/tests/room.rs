@@ -447,17 +447,20 @@ fn a_dm_row_is_named_by_its_peer_not_the_avatar() {
 
 /// Everyone the reader writes to has a row under Direct messages before
 /// their room exists, after the rooms already open: pressing it opens the
-/// room with them, which the first message then opens on chain. No program's
-/// account and not the reader.
+/// room with them, which the first message then opens on chain. Not the
+/// reader.
 #[test]
-fn every_person_has_a_dm_row_before_their_room_exists() {
+fn every_account_has_a_dm_row_before_their_room_exists() {
     let (mut cx, view) = opened();
     // ↓ from the channel: the open room with the agent, then ada
     for row in ["chat-sidebar-dm-8", "chat-sidebar-dm-10"] {
         cx.simulate_key_down("chat-sidebar-rooms-list", "down");
         assert!(claims(&cx, row), "{row} next");
     }
-    assert!(cx.find("chat-sidebar-dm-9").is_none(), "forge is no person");
+    assert!(
+        cx.find("chat-sidebar-dm-9").is_some(),
+        "forge's account too"
+    );
     assert!(cx.find("chat-sidebar-dm-7").is_none(), "nor is the reader");
     cx.simulate_click("chat-sidebar-dm-10");
     cx.run_until_parked();

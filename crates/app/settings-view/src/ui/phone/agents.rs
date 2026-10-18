@@ -1,5 +1,5 @@
 //! Expo `src/account/Agents.tsx`: the Agents pane and its sheets. The pane
-//! lists every agent this person manages, then the rows that open the two
+//! lists every agent this account manages, then the rows that open the two
 //! add sheets (create an agent, add a key to one). An agent's row opens its
 //! one sheet, in three modes: its actions, its rename, whom it answers.
 //!
@@ -33,7 +33,7 @@ const CREATE_NAME: &str = "settings/agents/create/name";
 /// Expo's one snap, 85% (`src/account/Agents.tsx:432`).
 const ANSWERS_DETENTS: [f32; 1] = [0.85];
 
-/// The Agents pane: every agent this person manages, then the rows that
+/// The Agents pane: every agent this account manages, then the rows that
 /// open the create and add-key sheets.
 pub(super) fn pane(
     view: &Settings,
@@ -42,7 +42,7 @@ pub(super) fn pane(
     theme: &Theme,
 ) -> AnyElement {
     let Some(Some(Seat::Account(account))) = view.account.ready() else {
-        // the strip lists Agents only for an account that manages them
+        // the strip lists Agents only for an account
         return div().into_any_element();
     };
     let rows: Vec<_> = account

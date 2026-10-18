@@ -75,26 +75,32 @@ fn a_dm_seats_both_accounts_opens_once_and_keeps_others_out() {
     );
     assert_eq!(chat.refused(&ADA, open_dm(1)), code::INVALID_INPUT);
     let program = Principal::Account(902);
-    assert_eq!(chat.refused(&program, open_dm(1)), code::UNAUTHORIZED);
+    chat.ok(&program, open_dm(1));
+    assert!(is_member(&chat, &dm_channel_id(1, 902), program));
 }
 
 #[test]
-fn a_dm_opens_only_to_a_user_or_a_program_account_that_acts() {
+fn an_agent_opens_a_dm_through_the_program_that_runs_it() {
     let mut chat = Chat::default();
-    chat.ok(&ADA, open_dm(2));
-    chat.ok(&ADA, open_dm(AGENT));
-    for (counterpart, refusal) in [
-        (900, code::INVALID_INPUT),
-        (SUSPENDED, code::WRONG_STATE),
-        (REVOKED, code::WRONG_STATE),
-        (404, code::INVALID_INPUT),
-    ] {
-        assert_eq!(
-            chat.refused(&ADA, open_dm(counterpart)),
-            refusal,
-            "{counterpart}"
-        );
+    chat.height += 1;
+    let run_by_harness = chat.env(
+        Origin::Program("harness".into()),
+        Some(Principal::Account(AGENT)),
+    );
+    let ctx = chat.store.exec(run_by_harness);
+    crate::Chat::execute(&ctx, open_dm(2)).unwrap();
+    let dm = dm_channel_id(2, AGENT);
+    assert!(is_member(&chat, &dm, Principal::Account(AGENT)));
+    assert!(is_member(&chat, &dm, BO));
+}
+
+#[test]
+fn a_dm_opens_to_any_account_that_exists() {
+    let mut chat = Chat::default();
+    for counterpart in [2, AGENT, 900, SUSPENDED, REVOKED] {
+        chat.ok(&ADA, open_dm(counterpart));
     }
+    assert_eq!(chat.refused(&ADA, open_dm(404)), code::INVALID_INPUT);
 }
 
 #[test]
@@ -112,7 +118,7 @@ fn a_dm_stays_open_once_its_counterpart_is_suspended() {
         }
     }
     chat.store.identity(roster);
-    assert_eq!(chat.refused(&CY, open_dm(AGENT)), code::WRONG_STATE);
+    chat.ok(&CY, open_dm(AGENT));
     chat.ok(&BO, open_dm(AGENT));
     assert!(is_member(&chat, &dm, Principal::Account(AGENT)));
     chat.ok(&BO, post(&dm, "m1", "still here", None));

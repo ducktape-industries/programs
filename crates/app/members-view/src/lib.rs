@@ -625,18 +625,14 @@ impl Members {
             .map_or(self.chain.as_str(), |(label, _)| label)
     }
 
-    /// Open DM's link to `row`: a person or an agent, never the reader nor
-    /// a program.
+    /// Open DM's link to `row`: any account but the reader.
     fn dm_link(&self, row: &Row) -> Option<String> {
         let me = self.me.filter(|me| *me != row.number)?;
-        match row.kind {
-            identity::Kind::User | identity::Kind::Program { .. } => ducklink::mint(
-                &self.chain,
-                chat::PROGRAM,
-                &[&chat::dm_channel_id(me, row.number)],
-            ),
-            identity::Kind::System(_) => None,
-        }
+        ducklink::mint(
+            &self.chain,
+            chat::PROGRAM,
+            &[&chat::dm_channel_id(me, row.number)],
+        )
     }
 
     /// The agents account `number` manages.

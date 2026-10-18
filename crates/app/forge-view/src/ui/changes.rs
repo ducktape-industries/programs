@@ -547,9 +547,8 @@ fn reviewers(
         .into_any_element()
 }
 
-/// The identity picker: the users and program accounts chat's mentions
-/// offer — no system account, none suspended
-/// ([`chat::view::Names::people`]) — whose name holds `needle`, each a
+/// The identity picker: the accounts chat's mentions offer
+/// ([`chat::view::Names::people`]) whose name holds `needle`, each a
 /// button `{key}-{number}` that `pick`s it.
 /// Nothing while the roster is still being read.
 #[allow(

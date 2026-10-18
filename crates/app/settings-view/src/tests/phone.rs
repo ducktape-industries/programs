@@ -98,7 +98,7 @@ fn a_person_reads_who_they_are_and_each_key() {
             "Validator",
         ],
     );
-    // a person who manages agents has the Agents pane
+    // an account has the Agents pane
     for pane in ["account", "agents", "invites"] {
         assert!(
             cx.find(&format!("settings/strip/{pane}")).is_some(),
@@ -107,6 +107,16 @@ fn a_person_reads_who_they_are_and_each_key() {
     }
     // the phone says what the Expo app says, not the desktop's `User`
     assert!(!cx.has_text("account 7 · User"));
+}
+
+#[test]
+fn an_agents_account_has_the_agents_pane() {
+    let mut cx = phone("scout");
+    assert!(cx.find("settings/strip/agents").is_some());
+    cx.simulate_click("settings/strip/agents");
+    cx.run_until_parked();
+    has_all(&cx, &["Relay"]);
+    assert!(cx.find("settings/agents/create/open").is_some());
 }
 
 #[test]

@@ -2,7 +2,7 @@
 //! agents answers (access), the account a typed name or number is, and
 //! whether each of its keys validates (valset). Rows keep what the programs said; they are
 //! worded only when drawn.
-use identity::{Control, Kind, Ownership, PageRequest, Party, Reference, Standing};
+use identity::{Kind, Ownership, PageRequest, Party, Reference, Standing};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use view::host::malformed;
@@ -30,8 +30,6 @@ pub struct Account {
     #[serde(with = "view::borsh_bytes")]
     pub kind: Kind,
     pub keys: Vec<Key>,
-    /// a user's account manages agents; a program or system account none
-    pub manages: bool,
     pub agents: Vec<Agent>,
 }
 
@@ -121,18 +119,12 @@ pub(crate) async fn account(
     for key in account.keys() {
         keys.push(read_key(&host, key.key.clone(), key.label.clone()).await?);
     }
-    let manages = matches!(account.control, Control::User { .. });
-    let agents = if manages {
-        agents(&host, number).await?
-    } else {
-        Vec::new()
-    };
+    let agents = agents(&host, number).await?;
     Ok(Some(Seat::Account(Account {
         number,
         kind: account.kind(),
         name: account.card.name,
         keys,
-        manages,
         agents,
     })))
 }

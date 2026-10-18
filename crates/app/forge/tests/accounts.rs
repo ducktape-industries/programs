@@ -266,12 +266,11 @@ fn opened(rig: &mut Rig, story: &Story) -> u64 {
     n
 }
 
-/// A program's account is never asked to review or write: identity's
-/// profile of it names its program.
 #[test]
-fn a_programs_account_is_neither_reviewer_nor_writer() {
+fn a_programs_account_is_asked_to_review_as_any_account_is() {
     let (mut rig, story) = story();
     let chat = Principal::Account(sandbox::PROGRAMS[1].1);
+    let nobody = Principal::Account(404);
     let Op::ChangeOpen {
         repo,
         from,
@@ -283,22 +282,36 @@ fn a_programs_account_is_neither_reviewer_nor_writer() {
     else {
         panic!()
     };
-    let open = Op::ChangeOpen {
-        repo,
-        from,
-        into,
-        title,
-        body,
-        reviewers: vec![Principal::Account(2), chat.clone()],
+    let open = |reviewers: Vec<Principal>| Op::ChangeOpen {
+        repo: repo.clone(),
+        from: from.clone(),
+        into: into.clone(),
+        title: title.clone(),
+        body: body.clone(),
+        reviewers,
     };
-    assert_eq!(rig.refused(&open).code, code::INVALID_INPUT);
-    let n = opened(&mut rig, &story);
-    let edit = Op::ChangeEdit {
+    assert_eq!(
+        rig.refused(&open(vec![nobody.clone()])).code,
+        code::INVALID_INPUT
+    );
+    let output = rig
+        .execute(&open(vec![Principal::Account(2), chat.clone()]))
+        .unwrap();
+    let OpReply::Change { n, .. } = abi::decode(&output).unwrap() else {
+        panic!()
+    };
+    assert_eq!(
+        record(&rig, n).0.reviewers,
+        [Principal::Account(2), chat.clone()]
+    );
+    let edit = |reviewers: Vec<Principal>| Op::ChangeEdit {
         repo: REPO.into(),
         n,
         title: None,
         body: None,
-        reviewers: Some(vec![chat.clone()]),
+        reviewers: Some(reviewers),
     };
-    assert_eq!(rig.refused(&edit).code, code::INVALID_INPUT);
+    assert_eq!(rig.refused(&edit(vec![nobody])).code, code::INVALID_INPUT);
+    rig.execute(&edit(vec![chat.clone()])).unwrap();
+    assert_eq!(record(&rig, n).0.reviewers, [chat]);
 }

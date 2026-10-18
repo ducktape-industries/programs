@@ -211,7 +211,7 @@ fn bio(row: &Row, ladder: &Ladder) -> Option<Stateful<Div>> {
     )
 }
 
-/// Open DM (a person or an agent, not the reader) and Explorer, as the
+/// Open DM (any account but the reader) and Explorer, as the
 /// kit's small outline buttons.
 fn actions(view: &Members, row: &Row, explorer: String, ladder: &Ladder, theme: &Theme) -> Div {
     let dm = view.dm_link(row);

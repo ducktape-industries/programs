@@ -493,25 +493,28 @@ fn an_account_page_shows_its_devices_the_programs_it_used_and_its_activity() {
 }
 
 /// Open DM opens chat on the reader's DM room, as members-view does: for
-/// another person or a program account, not for the reader nor for a
-/// program's own account.
+/// any other account, a program's own too, not for the reader.
 #[test]
 fn open_dm_opens_the_readers_room_with_another_account() {
     let mut cx = reader(Some(3), ADA, false, grants(), waiting());
     on_named_chain(&cx, 3, ADA);
     phone(&mut cx);
     click(&mut cx, "explorer-tab-accounts");
-    click(&mut cx, "explorer-account-5");
-    click(&mut cx, "explorer-open-dm");
+    for other in [5, 6] {
+        click(&mut cx, &format!("explorer-account-{other}"));
+        click(&mut cx, "explorer-open-dm");
+        back(&mut cx);
+    }
+    let room = |other: u64| {
+        let room = chat::dm_channel_id(3, other);
+        ducklink::mint(CHAIN, chat::PROGRAM, &[&room]).unwrap()
+    };
     assert_eq!(
         cx.host().requests::<view::methods::LinkOpen>(),
-        [ducklink::mint(CHAIN, chat::PROGRAM, &["dm-3-5"]).unwrap()]
+        [room(5), room(6)]
     );
-    for own in ["3", "6"] {
-        back(&mut cx);
-        click(&mut cx, &format!("explorer-account-{own}"));
-        assert!(cx.find("explorer-open-dm").is_none(), "account {own}");
-    }
+    click(&mut cx, "explorer-account-3");
+    assert!(cx.find("explorer-open-dm").is_none(), "the reader");
 }
 
 #[test]

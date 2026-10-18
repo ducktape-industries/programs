@@ -41,7 +41,7 @@ pub(crate) fn of_key(ctx: &QueryCtx, key: &Vec<u8>) -> Result<Option<AccountNumb
             life: Life::Active { .. },
             ..
         } => Ok(Some(number)),
-        Control::Program { .. } => Err(unauthorized(format!("account {number} is suspended"))),
+        Control::Program { .. } => Err(suspended(number)),
     }
 }
 
@@ -181,19 +181,8 @@ fn acting(ctx: &ExecCtx) -> Result<AccountNumber, Error> {
         .ok_or_else(|| unauthorized("the system acts as no account"))
 }
 
-/// `number`'s account, which must be a user's: the one kind that manages.
-fn user(ctx: &ExecCtx, number: AccountNumber) -> Result<Account, Error> {
-    let account = account(ctx, number)?;
-    match account.control {
-        Control::User { .. } => Ok(account),
-        Control::Program { .. } | Control::System { .. } => Err(unauthorized(format!(
-            "account {number} is not a user's: a program or system account manages no one"
-        ))),
-    }
-}
-
 pub(crate) fn create_agent(ctx: &ExecCtx, name: String) -> Result<(), Error> {
-    let manager = user(ctx, acting(ctx)?)?.number;
+    let manager = acting(ctx)?;
     let card = card(ctx, name)?;
     let number = next_number(ctx)?;
     let account = Account {
@@ -228,15 +217,14 @@ fn revoked(number: AccountNumber) -> Error {
     wrong_state(format!("account {number} is revoked for good"))
 }
 
+fn suspended(number: AccountNumber) -> Error {
+    unauthorized(format!("account {number} is suspended"))
+}
+
 fn not_managed(number: AccountNumber) -> Error {
     wrong_state(format!("account {number} is not a program account"))
 }
 
-/// A user's new key signs the frame and a key already on their account
-/// consents; a program account's manager signs the frame and the new key
-/// consents to itself. Either way the consent proves a key agreed to the
-/// admission. A system account holds no keys; a revoked program account
-/// takes none.
 pub(crate) fn add_key(
     ctx: &ExecCtx,
     scheme: Scheme,
@@ -245,23 +233,39 @@ pub(crate) fn add_key(
 ) -> Result<(), Error> {
     let env = ctx.env();
     let mut account = account(ctx, consent.account)?;
+    let consenting = |keys: &[Key]| {
+        keys.iter()
+            .find(|key| key.key == consent.key)
+            .map(|key| key.scheme)
+    };
     let (keys, key, consenting_scheme) = match &mut account.control {
         Control::User { keys } => {
-            let authorizer = keys
-                .iter()
-                .find(|key| key.key == consent.key)
+            let consenting_scheme = consenting(keys)
                 .ok_or_else(|| unauthorized("the consenting key is not on this account"))?;
-            let consenting_scheme = authorizer.scheme;
             (keys, env.signer()?, consenting_scheme)
         }
         Control::Program {
             manager,
-            life: Life::Active { keys } | Life::Suspended { keys },
+            life: Life::Active { keys },
             ..
-        } => {
-            managing(ctx, *manager, consent.account)?;
-            (keys, consent.key.clone(), scheme)
-        }
+        } => match consenting(keys) {
+            Some(consenting_scheme) => (keys, env.signer()?, consenting_scheme),
+            None => {
+                managing(ctx, *manager, consent.account)?;
+                (keys, consent.key.clone(), scheme)
+            }
+        },
+        Control::Program {
+            manager,
+            life: Life::Suspended { keys },
+            ..
+        } => match consenting(keys) {
+            Some(_) => return Err(suspended(consent.account)),
+            None => {
+                managing(ctx, *manager, consent.account)?;
+                (keys, consent.key.clone(), scheme)
+            }
+        },
         Control::Program {
             manager,
             life: Life::Revoked,
@@ -307,35 +311,60 @@ pub(crate) fn add_key(
     Ok(())
 }
 
-/// A user removes their own keys, never a senior one nor their last; a
-/// program account's manager removes any of its keys.
+fn remove_own(keys: &[Key], signer: &[u8], key: &[u8]) -> Result<(), Error> {
+    let held = |wanted: &[u8]| keys.iter().find(|held| held.key == wanted);
+    let removed = held(key).ok_or_else(|| not_found("that key is not on this account"))?;
+    let remover = held(signer).ok_or_else(|| unauthorized("the signer is not on this account"))?;
+    if keys.len() == 1 {
+        return Err(wrong_state("an account keeps its last key"));
+    }
+    if removed.added_at < remover.added_at {
+        return Err(unauthorized("a key removes only itself or a junior key"));
+    }
+    Ok(())
+}
+
+fn remove_managed(
+    ctx: &ExecCtx,
+    manager: AccountNumber,
+    number: AccountNumber,
+    keys: &[Key],
+    key: &[u8],
+) -> Result<(), Error> {
+    managing(ctx, manager, number)?;
+    if !keys.iter().any(|held| held.key == key) {
+        return Err(not_found("that key is not on this account"));
+    }
+    Ok(())
+}
+
 pub(crate) fn remove_key(ctx: &ExecCtx, number: AccountNumber, key: &Vec<u8>) -> Result<(), Error> {
     let env = ctx.env();
     let mut account = account(ctx, number)?;
     let keys = match &mut account.control {
         Control::User { keys } => {
-            let signer = env.signer()?;
-            let held = |wanted: &[u8]| keys.iter().find(|held| held.key == wanted);
-            let removed = held(key).ok_or_else(|| not_found("that key is not on this account"))?;
-            let remover =
-                held(&signer).ok_or_else(|| unauthorized("the signer is not on this account"))?;
-            if keys.len() == 1 {
-                return Err(wrong_state("an account keeps its last key"));
-            }
-            if removed.added_at < remover.added_at {
-                return Err(unauthorized("a key removes only itself or a junior key"));
+            remove_own(keys, &env.signer()?, key)?;
+            keys
+        }
+        Control::Program {
+            manager,
+            life: Life::Active { keys },
+            ..
+        } => {
+            let by_itself = acting(ctx)? == number;
+            if by_itself {
+                remove_own(keys, &env.signer()?, key)?;
+            } else {
+                remove_managed(ctx, *manager, number, keys, key)?;
             }
             keys
         }
         Control::Program {
             manager,
-            life: Life::Active { keys } | Life::Suspended { keys },
+            life: Life::Suspended { keys },
             ..
         } => {
-            managing(ctx, *manager, number)?;
-            if !keys.iter().any(|held| &held.key == key) {
-                return Err(not_found("that key is not on this account"));
-            }
+            remove_managed(ctx, *manager, number, keys, key)?;
             keys
         }
         Control::Program {
@@ -399,13 +428,15 @@ pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
     let Some(account) = ACCOUNTS.get(ctx, &number)? else {
         return Ok(Resource::default());
     };
-    let owner = match account.control {
-        Control::User { .. } | Control::System { .. } => number,
-        Control::Program { manager, .. } => manager,
+    let (owner, default) = match account.control {
+        Control::User { .. } | Control::System { .. } => (number, Ownership::Owner),
+        Control::Program { manager, .. } => {
+            (manager, Ownership::Listed(vec![Party::Account(number)]))
+        }
     };
     Ok(Resource {
         owner: Some(Party::Account(owner)),
-        default: Some(Ownership::Owner),
+        default: Some(default),
     })
 }
 
@@ -518,7 +549,7 @@ pub(crate) fn runs(
     }
     match life {
         Life::Active { .. } => Ok(Some(number)),
-        Life::Suspended { .. } => Err(unauthorized(format!("account {number} is suspended"))),
+        Life::Suspended { .. } => Err(suspended(number)),
         Life::Revoked => Err(revoked(number)),
     }
 }

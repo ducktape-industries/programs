@@ -330,12 +330,12 @@ mod tests {
     fn a_refusal_is_shown_where_it_happened() {
         let mut cx = seated();
         cx.host()
-            .refuse::<Submit<Identity>>("unauthorized", "Only a user manages agents.");
+            .refuse::<Submit<Identity>>("unauthorized", "account 7 is suspended");
         cx.simulate_input("name", "Rover");
         cx.simulate_submit("name");
         cx.run_until_parked();
         assert!(
-            cx.has_text("That didn’t go through: Only a user manages agents."),
+            cx.has_text("That didn’t go through: account 7 is suspended"),
             "{:?}",
             cx.texts()
         );

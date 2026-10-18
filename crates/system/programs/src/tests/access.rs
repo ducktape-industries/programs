@@ -233,11 +233,6 @@ fn a_maintainer_changes_only_what_its_grant_covers_and_never_a_role_or_a_hook() 
             set("chat", code),
         ),
         (
-            "a program's message, its account holding every program",
-            by(EVE).from_program("forge", Some(EVE)),
-            set("chat", code),
-        ),
-        (
             "a chain frame",
             Env {
                 sender: Some(Principal::Root),
@@ -264,6 +259,13 @@ fn a_maintainer_changes_only_what_its_grant_covers_and_never_a_role_or_a_hook() 
     )
     .unwrap();
     run(&store, by(CAROL), at(EARLIEST + 1, set("chat", code))).unwrap();
+    let through_a_program = by(EVE).from_program("forge", Some(EVE));
+    run(
+        &store,
+        through_a_program,
+        at(EARLIEST + 2, set("chat", code)),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -527,7 +529,7 @@ fn the_votes_change_clears_a_stale_maker() {
 }
 
 #[test]
-fn only_the_vote_grants_and_only_to_a_user_or_a_program_account_over_a_name_with_no_role() {
+fn only_the_vote_grants_and_to_any_account_over_a_name_with_no_role() {
     let (store, _) = seated();
     for env in [by(CAROL), by(EVE).from_program("forge", Some(EVE))] {
         assert_eq!(
@@ -539,7 +541,6 @@ fn only_the_vote_grants_and_only_to_a_user_or_a_program_account_over_a_name_with
         ("an id in another spelling", program("Chat"), CAROL),
         ("a role", program("identity"), CAROL),
         ("no such account", Scope::All, 99),
-        ("a program's account", program("chat"), FORGE),
     ] {
         assert_eq!(
             refused(&store, vote(), Op::Grant(grant(scope, account))),
@@ -548,11 +549,16 @@ fn only_the_vote_grants_and_only_to_a_user_or_a_program_account_over_a_name_with
         );
     }
     granted(&store, program("chat"), AGENT);
+    granted(&store, program("chat"), FORGE);
     granted(&store, program("chat"), CAROL);
     granted(&store, program("chat"), CAROL);
     assert_eq!(
         all_grants(&store),
-        [grant(program("chat"), CAROL), grant(program("chat"), AGENT)],
+        [
+            grant(program("chat"), CAROL),
+            grant(program("chat"), FORGE),
+            grant(program("chat"), AGENT)
+        ],
         "a grant held already is no second one"
     );
 }
@@ -562,13 +568,17 @@ fn the_vote_or_its_holder_revokes_a_grant_and_one_not_held_is_no_error() {
     let (store, _) = seated();
     granted(&store, program("chat"), CAROL);
     granted(&store, program("chat"), DAN);
-    for env in [by(DAN), by(CAROL).from_program("forge", Some(CAROL))] {
-        assert_eq!(
-            refused(&store, env, Op::Revoke(grant(program("chat"), CAROL))),
-            code::UNAUTHORIZED
-        );
-    }
-    run(&store, by(CAROL), Op::Revoke(grant(program("chat"), CAROL))).unwrap();
+    assert_eq!(
+        refused(&store, by(DAN), Op::Revoke(grant(program("chat"), CAROL))),
+        code::UNAUTHORIZED
+    );
+    let through_a_program = by(CAROL).from_program("forge", Some(CAROL));
+    run(
+        &store,
+        through_a_program,
+        Op::Revoke(grant(program("chat"), CAROL)),
+    )
+    .unwrap();
     run(&store, by(CAROL), Op::Revoke(grant(program("chat"), CAROL))).unwrap();
     run(&store, vote(), Op::Revoke(grant(program("chat"), CAROL))).unwrap();
     run(&store, vote(), Op::Revoke(grant(program("chat"), DAN))).unwrap();
