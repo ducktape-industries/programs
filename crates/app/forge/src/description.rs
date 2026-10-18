@@ -180,6 +180,7 @@ pub fn describe(op: &Op) -> Description {
             repo,
             vec![field("branch", text(branch))],
         ),
+        Op::Watch { deliver } => return watching(deliver),
         Op::ReviewSubmit { repo, n, review } => (
             "Review",
             repo,
@@ -207,6 +208,18 @@ pub fn describe(op: &Op) -> Description {
 }
 
 describe::export!(Op, describe);
+
+// A watch names no repository: forge tells the program of every one.
+fn watching(deliver: &[u8]) -> Description {
+    let title = match deliver.is_empty() {
+        true => "Stop watching forge",
+        false => "Watch forge",
+    };
+    Description {
+        title: title.to_owned(),
+        fields: vec![field("prefix", Value::count(deliver.len() as u64))],
+    }
+}
 
 /// A principal as a describe field shows it: an account, or the system.
 fn principal(principal: &Principal) -> Value {

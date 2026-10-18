@@ -127,7 +127,8 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::Grant { .. }
         | Op::Revoke { .. }
         | Op::ChangeOpen { .. }
-        | Op::ReviewSubmit { .. } => Vec::new(),
+        | Op::ReviewSubmit { .. }
+        | Op::Watch { .. } => Vec::new(),
     };
     Ok(needs)
 }
@@ -192,11 +193,11 @@ pub(crate) fn push(
                 if !refs.contains_key(reference) {
                     repo.refs_count += 1;
                 }
-                set_ref(ctx, name, reference, target);
+                set_ref(ctx, name, reference, target)?;
             }
             RefUpdate::Delete => {
                 repo.refs_count -= 1;
-                delete_ref(ctx, name, reference);
+                delete_ref(ctx, name, reference)?;
             }
         }
     }
@@ -238,7 +239,7 @@ pub(crate) fn delete_branch(
         )));
     }
     repo.refs_count -= 1;
-    delete_ref(ctx, name, branch);
+    delete_ref(ctx, name, branch)?;
     save_repo(ctx, name, &repo)
 }
 

@@ -3,7 +3,7 @@
 //! `queries.rs`, `reads.rs`, `change_queries.rs`).
 
 use ::program::schema::{Return, returns};
-use ::program::{Error, ExecCtx, Program, QueryCtx};
+use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::change_queries::{change, changes, judgment};
 use crate::changes::{
@@ -19,6 +19,7 @@ use crate::queries::{
 };
 use crate::reads::{blob, comparison, diff, log, tree};
 use crate::state::{load_bounds, load_repo};
+use crate::watchers::watch;
 
 pub struct Forge;
 
@@ -42,6 +43,11 @@ impl Program for Forge {
         init(ctx, params)
     }
 
+    // A watcher's refusal of what it heard is absorbed: it never fails forge's write.
+    fn reply(_ctx: &ExecCtx, _id: &MessageId, _outcome: &Outcome) -> Result<(), Error> {
+        Ok(())
+    }
+
     /// Runs one op as the account the host resolved
     /// ([`ExecCtx::sender_account`]): a signed frame's key's account, a
     /// program's own, or the agent a program runs and sends it for (as
@@ -49,9 +55,10 @@ impl Program for Forge {
     /// account. Every op names its repository; an accepted one marks it
     /// active.
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
-        let repo = op.repo().to_owned();
+        let repo = op.repo().map(str::to_owned);
         let actor = &Principal::Account(ctx.sender_account()?);
         let reply = match op {
+            Op::Watch { deliver } => return watch(ctx, deliver),
             Op::Create { repo, hash } => create(ctx, actor, &repo, hash).map(|()| None),
             Op::Configure { repo, settings } => configure(ctx, &repo, settings).map(|()| None),
             Op::Grant { .. } | Op::Revoke { .. } => Err(retired()),
@@ -162,7 +169,10 @@ impl Program for Forge {
         if let Some(reply) = reply {
             ctx.set_return_data(abi::encode(&reply));
         }
-        touch(ctx, &repo, ctx.env().height)
+        match repo {
+            Some(repo) => touch(ctx, &repo, ctx.env().height),
+            None => Ok(()),
+        }
     }
 
     /// Git's own wire: the ref advertisement and upload-pack answer with

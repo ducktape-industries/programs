@@ -155,10 +155,15 @@ pub enum Op {
         branch: Vec<u8>,
         protected: bool,
     },
+    // A program hears of every ref forge moves and every change it opens, each as
+    // `deliver ++ borsh(Watched)`; an empty `deliver` stops it.
+    Watch {
+        deliver: Vec<u8>,
+    },
 }
 
 impl Op {
-    pub fn repo(&self) -> &str {
+    pub fn repo(&self) -> Option<&str> {
         match self {
             Op::Create { repo, .. }
             | Op::Configure { repo, .. }
@@ -175,7 +180,8 @@ impl Op {
             | Op::Rebase { repo, .. }
             | Op::ChangeRepoint { repo, .. }
             | Op::DeleteBranch { repo, .. }
-            | Op::Protect { repo, .. } => repo,
+            | Op::Protect { repo, .. } => Some(repo),
+            Op::Watch { .. } => None,
         }
     }
 }
@@ -681,6 +687,27 @@ pub enum OpReply {
         height: u64,
         n: u64,
         oid: String,
+    },
+}
+
+// What a watcher hears (`Op::Watch`): a ref a push, a merge or a squash moved, `old` or `new`
+// None where it was made or deleted, and a change opened; each names who did it.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum Watched {
+    Moved {
+        repo: String,
+        reference: Vec<u8>,
+        old: Option<String>,
+        new: Option<String>,
+        by: Option<Principal>,
+    },
+    Opened {
+        repo: String,
+        n: u64,
+        from: Revision,
+        into: Vec<u8>,
+        head: String,
+        by: Principal,
     },
 }
 

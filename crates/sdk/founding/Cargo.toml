@@ -23,6 +23,8 @@ activity = { workspace = true }
 egress = { workspace = true }
 attribution = { workspace = true }
 harness = { workspace = true }
+actions-pods = { workspace = true }
+actions = { workspace = true }
 wasm-encoder = "0.251"
 wasmparser = "0.251"
 

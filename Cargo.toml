@@ -72,6 +72,8 @@ members = [
     "crates/app/attribution",
     "crates/app/harness",
     "crates/app/harness-view",
+    "crates/app/actions",
+    "crates/app/actions-pods",
     "crates/lib/gitcore",
     "crates/lib/borsh-json",
 ]
@@ -105,6 +107,8 @@ access = { path = "crates/system/access" }
 scheduler = { path = "crates/system/scheduler" }
 chat = { path = "crates/app/chat" }
 forge = { path = "crates/app/forge" }
+actions-pods = { path = "crates/app/actions-pods" }
+actions = { path = "crates/app/actions" }
 attribution = { path = "crates/app/attribution" }
 harness = { path = "crates/app/harness" }
 egress = { path = "crates/app/egress" }

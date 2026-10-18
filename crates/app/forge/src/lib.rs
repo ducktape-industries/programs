@@ -36,6 +36,7 @@ mod ops;
 mod queries;
 mod reads;
 mod state;
+mod watchers;
 
 mod program;
 
@@ -50,7 +51,7 @@ pub use program::Forge;
 pub mod tables {
     pub use crate::state::{
         ACTIVITY, AUTHORED, BOUNDS, CHANGES, INVOLVED, MESSAGES, NUMBERS, PROTECTED, REFS, REPOS,
-        REVIEWS, WRITES,
+        REVIEWS, WATCHERS, WRITES,
     };
 }
 
@@ -79,6 +80,7 @@ fn op_variants_only_append() {
             "ChangeRepoint",
             "DeleteBranch",
             "Protect",
+            "Watch",
         ]
     );
 }

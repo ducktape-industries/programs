@@ -25,6 +25,8 @@ pub fn schema(program: &str) -> Option<BorshSchemaContainer> {
         "egress" => interface::<egress::Egress>(),
         "attribution" => interface::<attribution::Attribution>(),
         "harness" => interface::<harness::Harness>(),
+        "actions" => interface::<actions::Actions>(),
+        "actions-pods" => interface::<actions_pods::ActionsPods>(),
         _ => return None,
     };
     Some(schema)

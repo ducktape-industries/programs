@@ -13,7 +13,7 @@ PROGRAM_LINKABLE := abi program store
 # One cargo invocation per program: forge links chat and identity links
 # programs, and `-p a -p b --features program` in one call would unify
 # `program` into the other's link (two `alloc`/`call`).
-PROGRAMS := programs valset identity blobs awaits halo scheduler access chat forge activity files egress attribution harness
+PROGRAMS := programs valset identity blobs awaits halo scheduler access chat forge activity files egress attribution harness actions actions-pods
 
 # Views are wasm32 cdylibs. Chat, Forge and Files ride their own programs;
 # Settings rides the programs role. These are the views that ship: `wasm-views`
@@ -36,7 +36,7 @@ NOTIFIERS := chat-view forge-view
 # read their contracts: `programs`'s signing deps are dev-only, and `-e
 # normal` below is what says so. Every program crate is linked with `program`
 # off, which is what a plain `-p` build below checks.
-VIEW_LINKABLE := ducklink program view-wire view design store programs valset identity settings-view chat forge activity files egress attribution harness
+VIEW_LINKABLE := ducklink program view-wire view design store programs valset identity settings-view chat forge activity files egress attribution harness actions actions-pods
 VIEW_FORBIDDEN := blst commonware-cryptography wasm-bindgen js-sys web-sys
 
 # Cargo uses this directory for both workspaces.

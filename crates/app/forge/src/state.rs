@@ -4,13 +4,13 @@
 
 use std::collections::BTreeMap;
 
-use ::program::{Error, code};
+use ::program::{Error, ProgramId, code};
 use ::program::{ExecCtx, QueryCtx, invalid, not_found};
 use gitcore::{Hash, Oid};
 use store::{Item, Map, Set};
 
 use crate::contract::{
-    Bounds, Change, ChangeState, Principal, Repo, Review, Revision, valid_repo_name,
+    Bounds, Change, ChangeState, Principal, Repo, Review, Revision, Watched, valid_repo_name,
 };
 use crate::objects::hash_of;
 
@@ -42,6 +42,8 @@ pub const MESSAGES: Item<u64> = Item::new("system-message-seq");
 // Each repository's protected branches besides its head, which always is: no rebase moves
 // one and no `DeleteBranch` deletes one.
 pub const PROTECTED: Set<(String, Vec<u8>)> = Set::new("b/");
+// The programs that watch forge, each with the prefix it hears events under.
+pub const WATCHERS: Map<ProgramId, Vec<u8>> = Map::new("w/");
 
 /// Stored state that is not what forge wrote: an operator's problem.
 pub(crate) fn storage(sentence: impl Into<String>) -> Error {
@@ -130,12 +132,38 @@ pub fn load_ref(
         .transpose()
 }
 
-pub fn set_ref(ctx: &ExecCtx, name: &str, reference: &[u8], target: &Oid) {
-    REFS.put(ctx, &ref_key(name, reference), &target.as_bytes().to_vec());
+pub fn set_ref(ctx: &ExecCtx, name: &str, reference: &[u8], target: &Oid) -> Result<(), Error> {
+    let key = ref_key(name, reference);
+    let old = REFS.get(ctx, &key)?;
+    REFS.put(ctx, &key, &target.as_bytes().to_vec());
+    moved(ctx, name, reference, old, Some(target.to_hex()))
 }
 
-pub fn delete_ref(ctx: &ExecCtx, name: &str, reference: &[u8]) {
-    REFS.remove(ctx, &ref_key(name, reference));
+pub fn delete_ref(ctx: &ExecCtx, name: &str, reference: &[u8]) -> Result<(), Error> {
+    let key = ref_key(name, reference);
+    let old = REFS.get(ctx, &key)?;
+    REFS.remove(ctx, &key);
+    moved(ctx, name, reference, old, None)
+}
+
+// Every ref move tells the watchers, whichever op made it.
+fn moved(
+    ctx: &ExecCtx,
+    name: &str,
+    reference: &[u8],
+    old: Option<Vec<u8>>,
+    new: Option<String>,
+) -> Result<(), Error> {
+    let hex =
+        |bytes: Vec<u8>| -> String { bytes.iter().map(|byte| format!("{byte:02x}")).collect() };
+    let event = Watched::Moved {
+        repo: name.to_owned(),
+        reference: reference.to_vec(),
+        old: old.map(hex),
+        new,
+        by: ctx.env().sender.clone(),
+    };
+    crate::watchers::tell(ctx, &event)
 }
 
 // Whether `branch` is protected in the repository `name`: its head always is.

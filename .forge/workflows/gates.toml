@@ -1,0 +1,25 @@
+# The programs gates (AGENTS.md): rustfmt, clippy -D warnings with the feature sets crates
+# build, and the workspace tests, run by /shared/tools/gates.sh in one pod (J-033).
+name = "gates"
+
+[on]
+push = ["dev", "main"]
+change = ["opened", "updated"]
+
+# #engineering hears when a push's check ends failed or errored
+[notify]
+channel = "channel-18df9127f1a3eef4-1792310773949584"
+
+[[jobs]]
+id = "gates"
+runs-on = ["pods"]
+image = "localhost:5000/toolchain:5ceec8835a16@sha256:b962dfd6e1faf42c1a39faf8c65d375c124811488ea83aa7d89b353e9a2393f9"
+steps = ["sh /tools/gates.sh /work/programs"]
+
+[jobs.env]
+FEATURE_SETS = "chat-view:notifier harness:program harness:describe"
+TEST_ARGS = "--workspace"
+
+[[jobs.inputs]]
+path = "/tools/gates.sh"
+files = "/shared/tools/gates.sh"

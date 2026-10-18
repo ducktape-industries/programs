@@ -33,6 +33,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "actions"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "access",
+ "borsh",
+ "chat",
+ "describe",
+ "forge",
+ "gitcore",
+ "program",
+ "serde",
+ "store",
+ "toml 1.1.6+spec-1.1.0",
+]
+
+[[package]]
+name = "actions-pods"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "access",
+ "actions",
+ "awaits",
+ "borsh",
+ "describe",
+ "egress",
+ "identity",
+ "program",
+ "scheduler",
+ "serde_json",
+ "store",
+ "valset",
+]
+
+[[package]]
 name = "activity"
 version = "0.1.0"
 dependencies = [
@@ -2212,6 +2248,8 @@ version = "0.1.0"
 dependencies = [
  "abi",
  "access",
+ "actions",
+ "actions-pods",
  "activity",
  "attribution",
  "awaits",

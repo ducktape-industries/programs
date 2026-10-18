@@ -46,6 +46,9 @@ pub const UNVIEWED: &[&str] = &[
     "egress",
     "attribution",
 ];
+// Programs `make wasm-program` packs that no founding holds: each is deployed to a network that
+// runs, as a new program (actions-pods needs the pods egress service and its runner labels).
+pub const UNFOUNDED: &[&str] = &["actions", "actions-pods"];
 pub const VIEWS: [&str; 1] = ["explorer_view"];
 /// The programs that ship a notifier, and the module `make wasm-notifiers`
 /// builds it as (`<view>.notify.wasm`).
@@ -116,7 +119,10 @@ pub fn modules(program: &str) -> Option<(Option<&'static str>, Option<&'static s
         .map(|(_, view)| *view);
     match PROGRAMS.iter().find(|(name, _)| *name == program) {
         Some((_, view)) => Some((Some(*view), notifier)),
-        None => UNVIEWED.contains(&program).then_some((None, notifier)),
+        None => {
+            let packed = UNVIEWED.contains(&program) || UNFOUNDED.contains(&program);
+            packed.then_some((None, notifier))
+        }
     }
 }
 
@@ -125,11 +131,14 @@ pub fn modules(program: &str) -> Option<(Option<&'static str>, Option<&'static s
 pub fn pack(release: &Path, program: &str) -> Result<Vec<u8>> {
     let (view, notifier) =
         modules(program).ok_or_else(|| format!("{program} is not a program a founding packs"))?;
-    let mut packed = read(release, program, "wasm")?;
+    // cargo names a crate's wasm with `_` for `-`, and wasm-describes names the describe
+    // module so; the schema keeps the program's own name
+    let stem = program.replace('-', "_");
+    let mut packed = read(release, &stem, "wasm")?;
     if let Some(view) = view {
         packed = embed(&packed, &read(release, view, "wasm")?)?;
     }
-    let describe = read(release, &format!("{program}.describe"), "wasm")?;
+    let describe = read(release, &format!("{stem}.describe"), "wasm")?;
     packed = embed_describe(&packed, &describe)?;
     packed = embed_schema(&packed, &read(release, program, "schema")?)?;
     if let Some(view) = notifier {

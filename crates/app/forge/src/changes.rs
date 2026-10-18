@@ -78,6 +78,15 @@ pub(crate) fn open(
     save_change(ctx, repo, &change)?;
     discussion::create(ctx, repo, &change);
     discussion::post(ctx, &change, message, Event::Opened);
+    let opened = Watched::Opened {
+        repo: repo.to_owned(),
+        n,
+        from: change.from.clone(),
+        into: change.into.clone(),
+        head: source.to_hex(),
+        by: actor.clone(),
+    };
+    crate::watchers::tell(ctx, &opened)?;
     Ok(OpReply::Change {
         height: env.height,
         n,
@@ -226,7 +235,7 @@ pub(crate) fn merge_heads(
         };
         merged(ctx, actor, repo, change, heads, &result)?;
     }
-    set_ref(ctx, repo, &merge.into, &result);
+    set_ref(ctx, repo, &merge.into, &result)?;
     Ok(OpReply::Merged {
         height: env.height,
         oid: result.to_hex(),
@@ -360,7 +369,7 @@ pub(crate) fn squash(
         };
         merged(ctx, actor, repo, change, heads, &id)?;
     }
-    set_ref(ctx, repo, &squash.into, &id);
+    set_ref(ctx, repo, &squash.into, &id)?;
     Ok(OpReply::Merged {
         height: env.height,
         oid: id.to_hex(),
@@ -490,7 +499,7 @@ pub(crate) fn rebase(
     };
     let id = write_squash(objects, &bounds, hash, made)?;
     match &change.from {
-        Revision::Ref(branch) => set_ref(ctx, repo, branch, &id),
+        Revision::Ref(branch) => set_ref(ctx, repo, branch, &id)?,
         Revision::Oid(_) => change.from = Revision::Oid(id.to_hex()),
     }
     touched(&mut change, &env);

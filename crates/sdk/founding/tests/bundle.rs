@@ -103,9 +103,11 @@ fn release(dir: &Path) {
         let describe = format!("{program}.describe");
         fs::write(dir.join(format!("{describe}.wasm")), module(&describe)).unwrap();
     }
-    for program in founding::UNVIEWED {
-        fs::write(dir.join(format!("{program}.wasm")), module(program)).unwrap();
-        let describe = format!("{program}.describe");
+    for program in founding::UNVIEWED.iter().chain(founding::UNFOUNDED) {
+        // as cargo and wasm-describes name them: `_` for `-`
+        let stem = program.replace('-', "_");
+        fs::write(dir.join(format!("{stem}.wasm")), module(program)).unwrap();
+        let describe = format!("{stem}.describe");
         fs::write(dir.join(format!("{describe}.wasm")), module(&describe)).unwrap();
     }
     for view in founding::VIEWS {
@@ -114,7 +116,8 @@ fn release(dir: &Path) {
     let programs = founding::PROGRAMS
         .iter()
         .map(|(program, _)| *program)
-        .chain(founding::UNVIEWED.iter().copied());
+        .chain(founding::UNVIEWED.iter().copied())
+        .chain(founding::UNFOUNDED.iter().copied());
     founding::write_schemas(dir, &programs.collect::<Vec<_>>()).unwrap();
 }
 
@@ -223,6 +226,13 @@ fn one_program_packs_to_the_bytes_the_bundle_holds_for_it() {
     );
     assert_eq!(founding::modules("files"), Some((Some("files_view"), None)));
     assert_eq!(founding::modules("egress"), Some((None, None)));
+    // a program deployed later packs as an unviewed one does, and the bundle holds none of it
+    for program in founding::UNFOUNDED {
+        assert_eq!(founding::modules(program), Some((None, None)));
+        let packed = founding::pack(built.path(), program).unwrap();
+        assert_eq!(section(&packed, "tag"), [program.as_bytes().to_vec()]);
+        assert!(!out.path().join(format!("{program}.wasm")).exists());
+    }
     // a standalone view rides no program, and nothing packs it
     assert_eq!(founding::modules("explorer_view"), None);
     assert!(founding::pack(built.path(), "explorer_view").is_err());
