@@ -10,7 +10,7 @@ use view::prelude::*;
 
 use super::agent::confirm_card;
 use super::parts::{actions, fact, notice, scroller};
-use crate::read::{self, Transcript};
+use crate::read::Transcript;
 use crate::timeline::{self, Entry};
 use crate::ui::{closed_badge, meter, state_badge, thread_gone, timeline as drawn, waiting};
 use crate::words::{
@@ -129,7 +129,10 @@ fn thread(
             .text_color(theme.muted)
             .child(quoted(topic))
     });
+    // the page's height, which the transcript's list fills under the strip
     div()
+        .flex_1()
+        .min_h(px(0.))
         .flex()
         .flex_col()
         .children(topic)
@@ -233,11 +236,7 @@ pub(super) fn usage(
         (None, Some(shown)) => {
             let row = &shown.thread;
             let window = shown.model().and_then(|model| model.window.tokens());
-            let summaries = shown
-                .frames
-                .iter()
-                .filter(|frame| matches!(frame.body, Body::Compaction { .. }))
-                .count() as u64;
+            let summaries = shown.tally.summaries;
             let turns = shown.frames.iter().filter_map(|frame| match &frame.body {
                 Body::Turn { usage, .. } => Some((frame, usage)),
                 _ => None,
@@ -260,7 +259,7 @@ pub(super) fn usage(
                 .child(fact(
                     "thread-usage",
                     "Tokens",
-                    usage_words(&read::usage(&shown.frames)),
+                    usage_words(&shown.tally.usage),
                     theme,
                     ladder,
                 ))
@@ -391,7 +390,7 @@ fn actions_sheet(
                 view.arming = Some(Arm::Close(id));
                 cx.notify();
             });
-            let total = all_tokens(&read::usage(&shown.frames));
+            let total = all_tokens(&shown.tally.usage);
             div()
                 .flex()
                 .flex_col()
@@ -465,7 +464,9 @@ fn facts_sheet(
     ladder: &Ladder,
 ) -> Option<AnyElement> {
     let entries = timeline::entries(&shown.frames);
-    let entry = entries.iter().find(|entry| first_seq(entry) == seq)?;
+    let entry = entries
+        .iter()
+        .find(|entry| drawn::first_seq(entry) == seq)?;
     let (title, facts) = facts(entry);
     let dismiss = cx.listener(|view: &mut Agents, _: &(), _, cx| view.show_sheet(None, cx));
     let rows = facts
@@ -498,18 +499,6 @@ fn facts_sheet(
             )
             .into_any_element(),
     )
-}
-
-/// The frame an entry begins with: what its row's key and its sheet name it by.
-fn first_seq(entry: &Entry) -> u64 {
-    match entry {
-        Entry::Worked(work) => work.first().seq,
-        Entry::Wrote(frame)
-        | Entry::Answered(frame)
-        | Entry::Summary(frame)
-        | Entry::Noted(frame)
-        | Entry::Stray(frame) => frame.seq,
-    }
 }
 
 /// An entry's facts, each a label and the words a press copies, under the entry's place.

@@ -8,7 +8,7 @@ use crate::agents::{attributed, close, setup};
 use crate::conversations::{fork_thread, new_thread, open_thread};
 use crate::models::{remove_model, set_model};
 use crate::streams::streamed;
-use crate::{Op, PROGRAM, Query, Reply, attributed_as, queries, tools};
+use crate::{Op, PROGRAM, Query, Reply, attributed_as, queries, tallies, tools};
 
 pub struct Harness;
 
@@ -56,6 +56,11 @@ impl Program for Harness {
             Query::Partial { thread } => Ok(Reply::Partial(queries::partial(ctx, thread)?)),
             Query::Topic { thread } => Ok(Reply::Topic(queries::topic(ctx, thread)?)),
             Query::Bound { agent, page } => Ok(Reply::Threads(queries::bound(ctx, agent, &page)?)),
+            Query::Tally { thread } => Ok(Reply::Tally(tallies::tally(ctx, thread)?)),
+            Query::FramesFrom { thread, from, page } => Ok(Reply::Frames(queries::frames_from(
+                ctx, thread, from, &page,
+            )?)),
+            Query::Call { thread, call } => Ok(Reply::Call(queries::call(ctx, thread, call)?)),
         }
     }
 }

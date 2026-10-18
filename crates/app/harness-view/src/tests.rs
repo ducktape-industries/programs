@@ -1,6 +1,7 @@
 mod conversations;
 mod live_calls;
 mod phone;
+mod reads;
 mod thinking;
 
 use std::cell::RefCell;
@@ -426,6 +427,35 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                     .cloned()
                     .collect(),
             )),
+            harness::Query::Tally { thread } => {
+                let mut tally = harness::Tally::default();
+                for (_, frame) in net.frames.iter().filter(|(id, _)| *id == thread) {
+                    tally.count(&frame.body);
+                }
+                harness::Reply::Tally(tally)
+            }
+            harness::Query::FramesFrom {
+                thread,
+                from,
+                page: asked,
+            } => {
+                let span = net
+                    .frames
+                    .iter()
+                    .filter(|(id, frame)| *id == thread && frame.seq >= from)
+                    .map(|(_, frame)| frame.clone());
+                let span: Vec<Frame> = match asked.limit {
+                    Some(limit) => span.take(limit as usize).collect(),
+                    None => span.collect(),
+                };
+                harness::Reply::Frames(page(span))
+            }
+            harness::Query::Call { thread, call } => harness::Reply::Call(
+                net.calls
+                    .iter()
+                    .find(|row| row.thread == thread && row.id == call)
+                    .cloned(),
+            ),
             harness::Query::Tools => harness::Reply::Tools(vec![
                 ToolInfo {
                     name: "forge_log".into(),
@@ -649,6 +679,7 @@ fn a_stuck_thread_shows_its_state_and_what_waits() {
 #[test]
 fn a_thread_shows_its_transcript_calls_and_usage() {
     let mut net = Net::default();
+    net.threads[0].frames = 5;
     net.frames.push((
         7,
         frame(
@@ -788,7 +819,7 @@ fn the_reply_the_model_is_streaming_grows_under_the_transcript() {
     shared.borrow_mut().partials = vec![(7, broken)];
     changes.send(Some(Change {
         height: 10,
-        keys: Vec::new(),
+        keys: vec![Written::Partial(7).key()],
     }));
     cx.run_until_parked();
     assert!(
@@ -799,7 +830,7 @@ fn the_reply_the_model_is_streaming_grows_under_the_transcript() {
     shared.borrow_mut().partials.clear();
     changes.send(Some(Change {
         height: 11,
-        keys: Vec::new(),
+        keys: vec![Written::Partial(7).key()],
     }));
     cx.run_until_parked();
     assert!(cx.find("thread-partial").is_none());

@@ -1,6 +1,6 @@
-//! Every read: an agent, a thread, an agent's threads and bound conversations, a transcript,
-//! held input, tool calls, the tool catalog, a place's last thread, the models, withheld frames
-//! with their size, a streaming reply and a thread's topic.
+//! Every read: an agent, a thread, an agent's threads and bound conversations, a transcript or a
+//! span of it from a frame on, held input, tool calls or one call, the tool catalog, a place's
+//! last thread, the models, withheld frames with their size, a streaming reply and a topic.
 use ::program::{Error, QueryCtx, corrupt};
 use abi::role::identity::AccountNumber;
 use store::{PageRequest, PageResponse};
@@ -68,12 +68,32 @@ pub(crate) fn frames(
     Ok(FRAMES.range_of(ctx, &thread, page)?.map(|(_, frame)| frame))
 }
 
+pub(crate) fn frames_from(
+    ctx: &QueryCtx,
+    thread: u64,
+    from: u64,
+    page: &PageRequest,
+) -> Result<PageResponse<Frame>, Error> {
+    let listing = page.listing(ctx, FRAMES.key(&thread))?;
+    let mut scan = listing.scan_ahead(&FRAMES.key(&thread));
+    scan.start = scan.start.max(FRAMES.key(&(thread, from)));
+    let rows = FRAMES
+        .scan(ctx, scan)?
+        .into_iter()
+        .map(|(key, frame)| (FRAMES.key(&key), frame));
+    Ok(listing.reply(rows))
+}
+
 pub(crate) fn calls(
     ctx: &QueryCtx,
     thread: u64,
     page: &PageRequest,
 ) -> Result<PageResponse<CallRow>, Error> {
     Ok(CALLS.range_of(ctx, &thread, page)?.map(|(_, call)| call))
+}
+
+pub(crate) fn call(ctx: &QueryCtx, thread: u64, call: String) -> Result<Option<CallRow>, Error> {
+    CALLS.get(ctx, &(thread, call))
 }
 
 pub(crate) fn thread_at(

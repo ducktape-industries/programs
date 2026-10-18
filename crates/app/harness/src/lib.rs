@@ -17,6 +17,7 @@ mod queries;
 mod schema;
 mod state;
 mod streams;
+mod tallies;
 #[cfg(test)]
 mod tests;
 mod tools;
@@ -34,6 +35,7 @@ pub use store::{PageRequest, PageResponse};
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
 pub use gate::{agent_key, conversation_key, model_key, thread_key};
+pub use state::{Written, written};
 
 pub const PROGRAM: &str = "harness";
 pub const PART: &str = "part";
@@ -324,6 +326,35 @@ pub struct Usage {
     pub cache_write: u64,
 }
 
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema,
+)]
+pub struct Tally {
+    pub usage: Usage,
+    pub summaries: u64,
+}
+
+impl Tally {
+    pub fn add(&mut self, usage: &Usage, summaries: u64) {
+        self.usage.input += usage.input;
+        self.usage.output += usage.output;
+        self.usage.cache_read += usage.cache_read;
+        self.usage.cache_write += usage.cache_write;
+        self.summaries += summaries;
+    }
+
+    pub fn count(&mut self, body: &Body) {
+        match body {
+            Body::Turn { usage, .. } => self.add(usage, 0),
+            Body::Compaction { .. } => self.add(&Usage::default(), 1),
+            Body::Post { .. }
+            | Body::Refused { .. }
+            | Body::Result { .. }
+            | Body::Notice { .. } => {}
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Partial {
     pub wire: Wire,
@@ -509,6 +540,19 @@ pub enum Query {
         agent: AccountNumber,
         page: PageRequest,
     },
+    #[ask(Reply::Tally(Tally))]
+    #[reads(state::TALLIES, state::FRAMES)]
+    Tally { thread: u64 },
+    #[ask(Reply::Frames(PageResponse<Frame>))]
+    #[reads(state::FRAMES)]
+    FramesFrom {
+        thread: u64,
+        from: u64,
+        page: PageRequest,
+    },
+    #[ask(Reply::Call(Option<CallRow>))]
+    #[reads(state::CALLS)]
+    Call { thread: u64, call: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -525,6 +569,8 @@ pub enum Reply {
     Withheld(Vec<WithheldFrame>),
     Partial(Option<Partial>),
     Topic(Option<String>),
+    Tally(Tally),
+    Call(Option<CallRow>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -613,8 +659,23 @@ fn query_variants_only_append() {
     assert_eq!(
         describe::variants::<Query>(),
         [
-            "Agent", "Thread", "Threads", "Frames", "Held", "Calls", "Tools", "ThreadAt", "Model",
-            "Models", "Withheld", "Partial", "Topic", "Bound"
+            "Agent",
+            "Thread",
+            "Threads",
+            "Frames",
+            "Held",
+            "Calls",
+            "Tools",
+            "ThreadAt",
+            "Model",
+            "Models",
+            "Withheld",
+            "Partial",
+            "Topic",
+            "Bound",
+            "Tally",
+            "FramesFrom",
+            "Call"
         ]
     );
 }

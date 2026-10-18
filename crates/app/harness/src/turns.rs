@@ -14,6 +14,7 @@ use crate::calls::{Placed, place, refusal, run_call, take_back_showing};
 use crate::conversations::{binding, retire};
 use crate::models::learned;
 use crate::state::{FRAMES, HELD, LIVE, Live, PARTIALS, SEALED, SHOWN, THREADS, WITHHELD};
+use crate::tallies;
 use crate::wire::{self, Answered, Header, Summarized, Summary};
 use crate::{
     Asking, Body, Configured, Context, Forming, Frame, ModelRow, PART, Partial, Role, Said, Sealed,
@@ -584,6 +585,7 @@ fn summarize(
 ) -> Result<(), Error> {
     let block = summary.block;
     append(ctx, thread, Body::Compaction { wire, block });
+    tallies::summarized(ctx, thread.id)?;
     thread.summary = Some(thread.frames);
     thread.context = Context::Measured(summary.tokens);
     thread.base = through + 1;
@@ -762,6 +764,7 @@ fn record(
         usage,
     };
     append(ctx, thread, turn);
+    tallies::turned(ctx, thread.id, &usage)?;
     let mut calls = Vec::new();
     for (index, call, tool, input) in asked {
         match LIVE.get(ctx, &(thread.id, index))? {

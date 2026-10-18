@@ -65,9 +65,16 @@ fn a_call_in_the_streaming_reply_reads_as_its_call_runs() {
             net.calls.retain(|row| row.id != "toolu_03");
             net.calls.push(call(state));
         }
+        let written = [
+            Written::Partial(7),
+            Written::Call {
+                thread: 7,
+                call: "toolu_03".into(),
+            },
+        ];
         changes.send(Some(Change {
             height,
-            keys: Vec::new(),
+            keys: written.iter().map(Written::key).collect(),
         }));
         cx.run_until_parked();
         assert!(cx.has_text(words), "{words}: {:?}", cx.texts());

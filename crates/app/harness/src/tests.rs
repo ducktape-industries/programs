@@ -10,6 +10,7 @@ mod conversations;
 mod forge_commit;
 mod models;
 mod network;
+mod reads;
 mod streams;
 mod thinking;
 

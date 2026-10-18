@@ -619,9 +619,8 @@ pub(crate) fn opened_words(shown: &Transcript, roster: Option<&Roster>) -> Strin
         |roster| roster.name(shown.thread.agent),
     );
     let day = shown
-        .frames
-        .first()
-        .map(|frame| format!(" {}", design::day(frame.time)))
+        .first
+        .map(|time| format!(" {}", design::day(time)))
         .unwrap_or_default();
     let asks = match shown.model() {
         Some(model) => model.id.clone(),

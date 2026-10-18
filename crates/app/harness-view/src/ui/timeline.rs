@@ -33,31 +33,86 @@ pub(crate) fn transcript(
     theme: &Theme,
     ladder: &Ladder,
 ) -> impl IntoElement + use<> {
-    let roster = view.roster.ready();
+    let (theme, ladder) = (*theme, *ladder);
+    // a row a frame: an entry draws on the row of the frame it begins with, the frames it holds
+    // draw nothing, and the row after the last is the reply the model is streaming back
+    let rows = view.rows_for(&shown.thread);
+    list(
+        "thread-transcript",
+        rows,
+        cx.processor(move |view, index: usize, _window, cx| {
+            let drawn = row(view, index as u64 + 1, cx, &theme, &ladder);
+            view.read_wanted(cx);
+            drawn
+        }),
+    )
+    .with_sizing_behavior(ListSizingBehavior::Auto)
+    .flex_1()
+    .min_h(px(0.))
+    .w_full()
+}
+
+/// The frame an entry begins with: what its row's key and its sheet name it by.
+pub(crate) fn first_seq(entry: &Entry) -> u64 {
+    match entry {
+        Entry::Worked(work) => work.first().seq,
+        Entry::Wrote(frame)
+        | Entry::Answered(frame)
+        | Entry::Summary(frame)
+        | Entry::Noted(frame)
+        | Entry::Stray(frame) => frame.seq,
+    }
+}
+
+// the list's row of frame `seq`, or past the last frame the streaming reply's; a frame above
+// those read asks for them
+fn row(
+    view: &Agents,
+    seq: u64,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    let Some(Some(shown)) = view.transcript.ready() else {
+        return div().into_any_element();
+    };
     let agent = view.agent_name(shown.thread.agent);
+    if seq > shown.thread.frames {
+        let Some(partial) = &shown.partial else {
+            return div().into_any_element();
+        };
+        for said in &partial.said {
+            if let Said::ToolUse { id, .. } = said {
+                view.want_call(id);
+            }
+        }
+        return partial_row(partial, &shown.calls, &agent, theme, ladder).into_any_element();
+    }
+    if seq < shown.from {
+        view.want_from(seq);
+        return reading(seq, theme, ladder);
+    }
+    if seq >= shown.next() {
+        return reading(seq, theme, ladder);
+    }
     let entries = timeline::entries(&shown.frames);
+    let Some(entry) = entries.iter().find(|entry| first_seq(entry) == seq) else {
+        return div().into_any_element();
+    };
     // the burst the loop is still in opens of itself
     let working = !shown.thread.closed && thread_state(&shown.thread) != State::Idle;
-    let newest = entries.len().saturating_sub(1);
-    let drawn: Vec<AnyElement> = entries
-        .iter()
-        .enumerate()
-        .map(|(index, entry)| {
-            let live = working && index == newest;
-            entry_row(view, entry, live, shown, roster, &agent, cx, theme, ladder)
-        })
-        .collect();
-    div()
-        .id("thread-transcript")
-        .flex()
-        .flex_col()
-        .children(drawn)
-        .children(
-            shown
-                .partial
-                .as_ref()
-                .map(|partial| partial_row(partial, &shown.calls, &agent, theme, ladder)),
-        )
+    let live = working && entries.last().map(first_seq) == Some(seq);
+    let roster = view.roster.ready();
+    entry_row(view, entry, live, shown, roster, &agent, cx, theme, ladder)
+}
+
+// a frame on its way: one muted line, so the list has a row to show while it is read
+fn reading(seq: u64, theme: &Theme, ladder: &Ladder) -> AnyElement {
+    small("Reading…", theme, ladder)
+        .id(SharedString::from(format!("entry-{seq}-reading")))
+        .px(space::SM)
+        .py(space::XS)
+        .into_any_element()
 }
 
 /// One muted line at the ladder's caption size.
@@ -383,6 +438,10 @@ fn said_block(
         Said::RedactedThinking(_) => small("Thinking, redacted", theme, ladder).into_any_element(),
         Said::ToolUse { id, name, input } => {
             let call = shown.calls.iter().find(|call| &call.id == id);
+            // a call drawn is read, once
+            if call.is_none() {
+                view.want_call(id);
+            }
             call_box(view, (id, name, input), call, shown, cx, theme, ladder).into_any_element()
         }
     }

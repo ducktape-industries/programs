@@ -3,7 +3,6 @@
 //! message, the agent's work (a burst of tool calls folded to one line, each call with its
 //! result inside it), its answer, and the reply the model is streaming back as it grows. Its
 //! manager closes it from here.
-use harness::Body;
 use view::FontWeight;
 use view::design::Ladder;
 use view::design::{space, text};
@@ -13,7 +12,7 @@ use super::{
     back, caption, closed_badge, current_badge, meter, no_node, opened, panel, state_badge,
     thread_gone, timeline, toggler, waiting,
 };
-use crate::read::{self, Roster, Transcript};
+use crate::read::{Roster, Transcript};
 use crate::words::{
     closes, context_short, context_words, conversation_label, first_line, held_author, mentions,
     open_label, opened_words, quoted, status, usage_words,
@@ -41,7 +40,10 @@ pub(super) fn render(
         (None, None) => thread_gone(id, theme, ladder).into_any_element(),
         (None, Some(shown)) => thread(view, shown, cx, theme, ladder),
     };
+    // the screen's height, which the transcript's list fills under the strip
     div()
+        .flex_1()
+        .min_h(px(0.))
         .flex()
         .flex_col()
         .gap(space::BLOCK)
@@ -131,6 +133,8 @@ fn thread(
         );
     let model = shown.model();
     div()
+        .flex_1()
+        .min_h(px(0.))
         .flex()
         .flex_col()
         .gap(space::BLOCK)
@@ -176,11 +180,7 @@ fn strip(
         None => closed_badge("thread-state", theme, ladder),
     };
     let usage_open = opened(view, "usage", false);
-    let summaries = shown
-        .frames
-        .iter()
-        .filter(|frame| matches!(frame.body, Body::Compaction { .. }))
-        .count() as u64;
+    let summaries = shown.tally.summaries;
     let usage = design::button(
         "thread-usage-toggle",
         if usage_open { "Usage ▾" } else { "Usage ▸" },
@@ -232,7 +232,7 @@ fn strip(
                     .pb(space::XS)
                     .text_size(text::CAPTION)
                     .text_color(theme.muted)
-                    .child(usage_words(&read::usage(&shown.frames)))
+                    .child(usage_words(&shown.tally.usage))
                     .child(design::plural(summaries, "summary", "summaries"))
                     .child(context_words(row.context, window)),
             )

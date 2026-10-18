@@ -117,10 +117,18 @@ pub(crate) fn place(
 fn mark(ctx: &ExecCtx, id: u64, call: &str, state: CallState) -> Result<(), Error> {
     let key = (id, call.to_owned());
     if let Some(mut row) = CALLS.get(ctx, &key)? {
+        if matches!(state, CallState::Done { .. } | CallState::Voided { .. }) {
+            ran(&mut row);
+        }
         row.state = state;
         CALLS.put(ctx, &key, &row);
     }
     Ok(())
+}
+
+// a call that ran, or never will, needs its input no more: it stays in its turn's frame alone
+fn ran(row: &mut CallRow) {
+    row.input.clear();
 }
 
 fn shown(ctx: &ExecCtx, id: u64, call: &str) -> Result<Option<Value>, Error> {
@@ -567,6 +575,7 @@ fn finish(
         height: ctx.env().height,
         failed,
     };
+    ran(&mut row);
     CALLS.put(ctx, &key, &row);
     let mut owner = thread(ctx, id)?;
     match owner.asking {

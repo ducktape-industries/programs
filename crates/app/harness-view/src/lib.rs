@@ -19,17 +19,20 @@ mod timeline;
 mod ui;
 mod words;
 
+use std::cell::{Cell, RefCell};
+use std::cmp::Ordering;
 use std::collections::BTreeSet;
+use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
 use view::methods::{ClipboardWrite, Submitted};
 use view::prelude::*;
 
 use create::Draft;
-use harness::{Asking, ThreadRow};
+use harness::{Asking, ThreadRow, Written};
 use identity::Identity;
 use models::ModelDraft;
-use read::{Detail, Model, Offer, Roster, Transcript};
+use read::{Detail, Model, Offer, Roster, Touched, Transcript};
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Agents {
@@ -68,6 +71,37 @@ pub struct Agents {
     routing: Option<Task<()>>,
     #[serde(skip)]
     title: Option<String>,
+    // a change heard while the roster or the agent is read reads it once more when it lands
+    #[serde(skip)]
+    again: Again,
+    // what blocks wrote to the open conversation since its last read of them, and that read
+    #[serde(skip)]
+    touched: Touched,
+    #[serde(skip)]
+    following: Option<Task<()>>,
+    // the conversation's frames above those read, and its calls on screen, being read
+    #[serde(skip)]
+    earlier: Option<Task<()>>,
+    #[serde(skip)]
+    calling: Option<Task<()>>,
+    // what the list asked for as it drew: the frames above those read, the calls it drew
+    #[serde(skip)]
+    wanted: RefCell<Wanted>,
+    // the open conversation's list: its thread and the rows it holds, a row a frame
+    #[serde(skip)]
+    rows: RefCell<Option<(u64, ListState)>>,
+}
+
+#[derive(Default)]
+struct Again {
+    roster: Rc<Cell<bool>>,
+    detail: Rc<Cell<bool>>,
+}
+
+#[derive(Default)]
+pub(crate) struct Wanted {
+    from: Option<u64>,
+    calls: BTreeSet<String>,
 }
 
 /// Where the reader is. The desktop draws each screen whole; the phone draws them as a stack of
@@ -178,6 +212,58 @@ pub(crate) fn agent_state(card: &read::Card, roster: &Roster) -> State {
     })
 }
 
+fn busy<T>(slot: &Loadable<T>) -> bool {
+    matches!(slot, Loadable::Loading(_) | Loadable::Reloading(..))
+}
+
+fn shown_mut(slot: &mut Loadable<Option<Transcript>>) -> Option<&mut Transcript> {
+    match slot {
+        Loadable::Ready(Some(shown)) | Loadable::Reloading(Some(shown), _) => Some(shown),
+        _ => None,
+    }
+}
+
+// whether a key a block wrote moves the agent screen of `agent`
+fn moves_detail(detail: &Loadable<Detail>, agent: u64, wrote: &Written) -> bool {
+    match wrote {
+        Written::Agent(number) => *number == agent,
+        Written::Model => true,
+        Written::Thread(id) | Written::Tally(id) | Written::Topic(id) => match detail.ready() {
+            Some(detail) => detail.threads.iter().any(|(thread, _)| thread.id == *id),
+            None => true,
+        },
+        Written::Frame { .. }
+        | Written::Call { .. }
+        | Written::Held(_)
+        | Written::Withheld(_)
+        | Written::Partial(_) => false,
+    }
+}
+
+// what the keys a block wrote touch of conversation `thread`, whose agent is `agent`
+fn touched_of(thread: u64, agent: Option<u64>, written: &[Written]) -> Touched {
+    let mut touched = Touched::default();
+    for wrote in written {
+        match wrote {
+            Written::Thread(id) => touched.row |= *id == thread,
+            Written::Frame { thread: id, .. } => touched.frames |= *id == thread,
+            Written::Call { thread: id, call } => {
+                if *id == thread {
+                    touched.calls.insert(call.clone());
+                }
+            }
+            Written::Held(id) => touched.held |= *id == thread,
+            Written::Withheld(id) => touched.withheld |= *id == thread,
+            Written::Partial(id) => touched.partial |= *id == thread,
+            Written::Topic(id) => touched.topic |= *id == thread,
+            Written::Tally(id) => touched.tally |= *id == thread,
+            Written::Agent(number) => touched.setup |= agent == Some(*number),
+            Written::Model => touched.setup = true,
+        }
+    }
+    touched
+}
+
 impl View for Agents {
     const NAME: &'static str = "Agents";
     const DESCRIPTION: &'static str =
@@ -212,6 +298,8 @@ impl View for Agents {
                     view.me = session.account;
                     view.chain = session.chain_id;
                     if reader {
+                        // another reader's roster: the one being read is the last one's
+                        view.roster = Loadable::Idle;
                         view.read_roster(cx);
                     }
                     cx.notify();
@@ -233,27 +321,28 @@ impl View for Agents {
         })
         .detach();
         cx.follow::<Changes<harness::Harness>>((), |view, change, cx| match change {
-            Ok(_) => view.refresh(cx),
+            Ok(Some(change)) => view.heard(&change, cx),
+            Ok(None) => view.refresh(cx),
             Err(refusal) => cx.log_refused("harness's live heads", &refusal),
         })
         .detach();
         cx.follow::<Changes<Identity>>((), |view, change, cx| match change {
-            Ok(_) => view.refresh(cx),
+            Ok(_) => view.elsewhere(cx),
             Err(refusal) => cx.log_refused("identity's live heads", &refusal),
         })
         .detach();
         cx.follow::<Changes<egress::Egress>>((), |view, change, cx| match change {
-            Ok(_) => view.refresh(cx),
+            Ok(_) => view.elsewhere(cx),
             Err(refusal) => cx.log_refused("egress's live heads", &refusal),
         })
         .detach();
         cx.follow::<Changes<files::Files>>((), |view, change, cx| match change {
-            Ok(_) => view.refresh(cx),
+            Ok(_) => view.elsewhere(cx),
             Err(refusal) => cx.log_refused("files's live heads", &refusal),
         })
         .detach();
         cx.follow::<Changes<access::Access>>((), |view, change, cx| match change {
-            Ok(_) => view.refresh(cx),
+            Ok(_) => view.elsewhere(cx),
             Err(refusal) => cx.log_refused("access's live heads", &refusal),
         })
         .detach();
@@ -280,10 +369,99 @@ impl Agents {
         self.read_screen(cx);
     }
 
-    fn read_roster(&mut self, cx: &mut Context<Self>) {
-        cx.load(self, read::roster(cx.host(), self.me), |view| {
-            &mut view.roster
+    // a block of harness: what it wrote is read again where the screen shows it, and nothing
+    // else is
+    fn heard(&mut self, change: &Change, cx: &mut Context<Self>) {
+        let written: Vec<Written> = change
+            .keys
+            .iter()
+            .filter_map(|key| harness::written(key.as_slice()))
+            .collect();
+        let roster = written.iter().any(|wrote| {
+            matches!(
+                wrote,
+                Written::Thread(_) | Written::Agent(_) | Written::Topic(_) | Written::Model
+            )
         });
+        if roster {
+            self.read_roster(cx);
+        }
+        match self.screen {
+            Screen::Agent(agent) | Screen::Part(agent, _) => {
+                let moved = written
+                    .iter()
+                    .any(|wrote| moves_detail(&self.detail, agent, wrote));
+                if moved {
+                    self.read_detail(agent, cx);
+                }
+            }
+            Screen::Thread(thread) | Screen::Usage(thread) => {
+                let agent = self
+                    .transcript
+                    .ready()
+                    .and_then(Option::as_ref)
+                    .map(|shown| shown.thread.agent);
+                self.follow_transcript(touched_of(thread, agent, &written), cx);
+            }
+            Screen::Create | Screen::Models | Screen::SetModel => {
+                if written.contains(&Written::Model) {
+                    self.read_screen(cx);
+                }
+            }
+            Screen::List => {}
+        }
+    }
+
+    // a block of another program the screens read: the roster, and the screen's reads besides
+    // the conversation's own frames and calls
+    fn elsewhere(&mut self, cx: &mut Context<Self>) {
+        self.read_roster(cx);
+        match self.screen {
+            Screen::Thread(_) | Screen::Usage(_) => {
+                let touched = Touched {
+                    setup: true,
+                    ..Touched::default()
+                };
+                self.follow_transcript(touched, cx);
+            }
+            _ => self.read_screen(cx),
+        }
+    }
+
+    fn read_roster(&mut self, cx: &mut Context<Self>) {
+        if busy(&self.roster) {
+            self.again.roster.set(true);
+            return;
+        }
+        let (host, me, again) = (cx.host(), self.me, self.again.roster.clone());
+        let read = async move {
+            loop {
+                again.set(false);
+                let roster = read::roster(host.clone(), me).await;
+                if !again.get() {
+                    return roster;
+                }
+            }
+        };
+        cx.load(self, read, |view| &mut view.roster);
+    }
+
+    fn read_detail(&mut self, agent: u64, cx: &mut Context<Self>) {
+        if busy(&self.detail) {
+            self.again.detail.set(true);
+            return;
+        }
+        let (host, again) = (cx.host(), self.again.detail.clone());
+        let read = async move {
+            loop {
+                again.set(false);
+                let detail = read::detail(host.clone(), agent).await;
+                if !again.get() {
+                    return detail;
+                }
+            }
+        };
+        cx.load(self, read, |view| &mut view.detail);
     }
 
     fn read_screen(&mut self, cx: &mut Context<Self>) {
@@ -296,15 +474,169 @@ impl Agents {
                 cx.load(self, read::offers(host), |view| &mut view.offers);
             }
             Screen::SetModel => cx.load(self, read::offers(host), |view| &mut view.offers),
-            Screen::Agent(agent) | Screen::Part(agent, _) => {
-                cx.load(self, read::detail(host, agent), |view| &mut view.detail)
-            }
-            Screen::Thread(thread) | Screen::Usage(thread) => {
-                cx.load(self, read::transcript(host, thread), |view| {
-                    &mut view.transcript
-                })
-            }
+            Screen::Agent(agent) | Screen::Part(agent, _) => self.read_detail(agent, cx),
+            Screen::Thread(thread) | Screen::Usage(thread) => self.open_transcript(thread, cx),
         }
+    }
+
+    // the conversation read anew, as far as its list held it; the phone's usage page holds
+    // every turn
+    fn open_transcript(&mut self, thread: u64, cx: &mut Context<Self>) {
+        let from = match self.screen {
+            Screen::Usage(_) => Some(1),
+            _ => self
+                .transcript
+                .ready()
+                .and_then(Option::as_ref)
+                .map(|shown| shown.from),
+        };
+        let open = read::transcript(cx.host(), thread, from);
+        let task = cx.land(open, |view, opened, cx| {
+            view.transcript = Loadable::from(opened);
+            view.read_delta(cx);
+            cx.notify();
+        });
+        self.transcript = match self.transcript.take() {
+            Loadable::Ready(shown) | Loadable::Reloading(shown, _) => {
+                Loadable::Reloading(shown, task)
+            }
+            Loadable::Idle | Loadable::Loading(_) | Loadable::Failed(_) => {
+                cx.notify();
+                Loadable::Loading(task)
+            }
+        };
+    }
+
+    fn follow_transcript(&mut self, touched: Touched, cx: &mut Context<Self>) {
+        self.touched.add(touched);
+        self.read_delta(cx);
+    }
+
+    // what blocks wrote to the open conversation since, read once the read before it lands
+    fn read_delta(&mut self, cx: &mut Context<Self>) {
+        if self.following.is_some() {
+            return;
+        }
+        let Some(Some(shown)) = self.transcript.ready() else {
+            return;
+        };
+        let (thread, agent, next) = (shown.thread.id, shown.thread.agent, shown.next());
+        let mut touched = std::mem::take(&mut self.touched);
+        touched.calls.retain(|call| shown.asked.contains(call));
+        if !touched.any() {
+            return;
+        }
+        let read = read::delta(cx.host(), thread, agent, next, touched);
+        self.following = Some(cx.land(read, |view, delta, cx| {
+            view.following = None;
+            match delta {
+                Ok(delta) => {
+                    if let Some(shown) = shown_mut(&mut view.transcript) {
+                        shown.moved(delta);
+                    }
+                    cx.notify();
+                }
+                Err(refusal) => cx.log_refused("the conversation's changes", &refusal),
+            }
+            view.read_delta(cx);
+        }));
+    }
+
+    // the list's row for frame `seq`, above the frames read: read from there on
+    pub(crate) fn want_from(&self, seq: u64) {
+        let mut wanted = self.wanted.borrow_mut();
+        wanted.from = Some(wanted.from.map_or(seq, |from| from.min(seq)));
+    }
+
+    pub(crate) fn want_call(&self, call: &str) {
+        self.wanted.borrow_mut().calls.insert(call.to_owned());
+    }
+
+    // what the list asked for as it drew, read
+    pub(crate) fn read_wanted(&mut self, cx: &mut Context<Self>) {
+        self.read_earlier(cx);
+        self.read_calls(cx);
+    }
+
+    fn read_earlier(&mut self, cx: &mut Context<Self>) {
+        if self.earlier.is_some() {
+            return;
+        }
+        let Some(Some(shown)) = self.transcript.ready() else {
+            return;
+        };
+        let (thread, before) = (shown.thread.id, shown.from);
+        let wanted = self.wanted.borrow_mut().from.take();
+        let Some(from) = wanted.filter(|from| *from < before) else {
+            return;
+        };
+        let read = read::earlier(cx.host(), thread, from, before);
+        self.earlier = Some(cx.land(read, |view, earlier, cx| {
+            view.earlier = None;
+            match earlier {
+                Ok(earlier) => {
+                    if let Some(shown) = shown_mut(&mut view.transcript) {
+                        shown.reached(earlier);
+                    }
+                    cx.notify();
+                }
+                Err(refusal) => cx.log_refused("the conversation's earlier frames", &refusal),
+            }
+            view.read_earlier(cx);
+        }));
+    }
+
+    fn read_calls(&mut self, cx: &mut Context<Self>) {
+        if self.calling.is_some() {
+            return;
+        }
+        let Some(Some(shown)) = self.transcript.ready() else {
+            return;
+        };
+        let thread = shown.thread.id;
+        let wanted = std::mem::take(&mut self.wanted.borrow_mut().calls);
+        let calls: Vec<String> = wanted
+            .into_iter()
+            .filter(|call| !shown.asked.contains(call))
+            .collect();
+        if calls.is_empty() {
+            return;
+        }
+        let read = read::calls(cx.host(), thread, calls);
+        self.calling = Some(cx.land(read, |view, calls, cx| {
+            view.calling = None;
+            match calls {
+                Ok(calls) => {
+                    if let Some(shown) = shown_mut(&mut view.transcript) {
+                        shown.called(calls);
+                    }
+                    cx.notify();
+                }
+                Err(refusal) => cx.log_refused("the conversation's calls", &refusal),
+            }
+            view.read_calls(cx);
+        }));
+    }
+
+    // the open conversation's list, a row a frame and one after them, kept as its frames grow
+    pub(crate) fn rows_for(&self, thread: &ThreadRow) -> ListState {
+        let count = thread.frames as usize + 1;
+        let mut rows = self.rows.borrow_mut();
+        if let Some((id, state)) = rows.as_ref()
+            && *id == thread.id
+        {
+            let held = state.item_count();
+            match held.cmp(&count) {
+                Ordering::Less => state.splice(held - 1..held - 1, count - held),
+                Ordering::Greater => state.reset(count),
+                Ordering::Equal => {}
+            }
+            return state.clone();
+        }
+        let state = ListState::new(count, ListAlignment::Bottom, px(0.));
+        state.set_follow_mode(FollowMode::Tail);
+        *rows = Some((thread.id, state.clone()));
+        state
     }
 
     pub(crate) fn go(&mut self, screen: Screen, cx: &mut Context<Self>) {
@@ -315,6 +647,12 @@ impl Agents {
         }
         if screen.thread() != self.screen.thread() {
             self.transcript = Loadable::Idle;
+            self.touched = Touched::default();
+            self.following = None;
+            self.earlier = None;
+            self.calling = None;
+            *self.wanted.borrow_mut() = Wanted::default();
+            *self.rows.borrow_mut() = None;
         }
         self.screen = screen;
         self.arming = None;

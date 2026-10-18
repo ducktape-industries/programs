@@ -1,11 +1,12 @@
 //! Every read the screens make: the roster (agents, their threads and topics, room names, nodes
-//! serving each service and relay, the time), one agent in full (access lists, topics, bound
-//! conversations), one transcript with its topic and streaming reply, the models and services.
-use std::collections::HashMap;
+//! serving each service and relay, the time), one agent in full (access lists, topics, tallies,
+//! bound conversations), one transcript as far as its list shows it, the models and services.
+use std::collections::{BTreeSet, HashMap};
 
 use egress::{RELAY, ServiceRow};
 use harness::{
-    AgentSetup, Body, CallRow, Frame, ModelRow, Partial, ThreadRow, ToolInfo, Usage, WithheldFrame,
+    AgentSetup, Body, CallRow, Frame, ModelRow, Partial, Tally, ThreadRow, ToolInfo, Usage,
+    WithheldFrame,
 };
 use identity::{Category, Kind, Ownership, PageRequest};
 use program::Writers;
@@ -186,20 +187,9 @@ async fn topic(host: &Host, thread: u64) -> Result<Option<String>, Error> {
     host.query(harness::ask::Topic { thread }).await
 }
 
-async fn frames(host: &Host, thread: u64) -> Result<Vec<Frame>, Error> {
-    host.query_all(|after| harness::ask::Frames {
-        thread,
-        page: page(after),
-    })
-    .await
-}
-
-/// Every turn's usage, added up.
-pub(crate) fn usage<'a>(frames: impl IntoIterator<Item = &'a Frame>) -> Usage {
-    sum(frames.into_iter().filter_map(|frame| match &frame.body {
-        Body::Turn { usage, .. } => Some(usage),
-        _ => None,
-    }))
+// what `thread`'s turns used and how often it was summarized, as harness keeps it
+async fn tally(host: &Host, thread: u64) -> Result<Tally, Error> {
+    host.query(harness::ask::Tally { thread }).await
 }
 
 pub(crate) fn sum<'a>(usages: impl IntoIterator<Item = &'a Usage>) -> Usage {
@@ -274,10 +264,8 @@ pub(crate) async fn detail(host: Host, agent: u64) -> Result<Detail, Error> {
         .collect();
     let mut used = Vec::new();
     let mut topics = HashMap::new();
-    // ponytail: the totals read every frame of every thread; a total kept on the thread row
-    // when transcripts run long
     for thread in threads {
-        let usage = usage(&frames(&host, thread.id).await?);
+        let usage = tally(&host, thread.id).await?.usage;
         if let Some(topic) = topic(&host, thread.id).await? {
             topics.insert(thread.id, topic);
         }
@@ -299,8 +287,14 @@ pub(crate) async fn detail(host: Host, agent: u64) -> Result<Detail, Error> {
 #[derive(PartialEq)]
 pub(crate) struct Transcript {
     pub thread: ThreadRow,
+    // the frames read, one run from frame `from` on: those the list showed, and every one since
     pub frames: Vec<Frame>,
+    pub from: u64,
+    // when the conversation's first frame was written: when it opened
+    pub first: Option<u64>,
+    // the calls the list drew, as each was read, and every call asked for, read or not placed
     pub calls: Vec<CallRow>,
+    pub asked: BTreeSet<String>,
     /// the input waiting behind the loop
     pub held: Vec<Body>,
     /// the frames left out of the model's view, which it reads in parts
@@ -310,6 +304,7 @@ pub(crate) struct Transcript {
     pub serving: Option<usize>,
     pub partial: Option<Partial>,
     pub topic: Option<String>,
+    pub tally: Tally,
 }
 
 impl Transcript {
@@ -318,45 +313,288 @@ impl Transcript {
             .as_ref()
             .and_then(|setup| setup.configured.model())
     }
+
+    // the frame after those read
+    pub fn next(&self) -> u64 {
+        self.from + self.frames.len() as u64
+    }
+
+    pub fn called(&mut self, calls: Vec<(String, Option<CallRow>)>) {
+        for (id, row) in calls {
+            self.calls.retain(|call| call.id != id);
+            self.calls.extend(row);
+            self.asked.insert(id);
+        }
+    }
+
+    // the frames just above those read, read as the list reached them
+    pub fn reached(&mut self, mut earlier: Vec<Frame>) {
+        earlier.retain(|frame| frame.seq < self.from);
+        let Some(top) = earlier.first() else {
+            return;
+        };
+        self.from = top.seq;
+        earlier.append(&mut self.frames);
+        self.frames = earlier;
+        self.opened();
+    }
+
+    pub fn moved(&mut self, delta: Delta) {
+        if let Some(thread) = delta.thread {
+            self.thread = thread;
+        }
+        let next = self.next();
+        let newer = delta.frames.into_iter().filter(|frame| frame.seq >= next);
+        self.frames.extend(newer);
+        self.opened();
+        self.called(delta.calls);
+        if let Some(held) = delta.held {
+            self.held = held;
+        }
+        if let Some(withheld) = delta.withheld {
+            self.withheld = withheld;
+        }
+        if let Some(partial) = delta.partial {
+            self.partial = partial;
+        }
+        if let Some(topic) = delta.topic {
+            self.topic = topic;
+        }
+        if let Some(tally) = delta.tally {
+            self.tally = tally;
+        }
+        if let Some((setup, serving)) = delta.setup {
+            self.setup = setup;
+            self.serving = serving;
+        }
+    }
+
+    fn opened(&mut self) {
+        if self.first.is_none() {
+            let first = self.frames.first().filter(|frame| frame.seq == 1);
+            self.first = first.map(|frame| frame.time);
+        }
+    }
 }
 
-pub(crate) async fn transcript(host: Host, id: u64) -> Result<Option<Transcript>, Error> {
-    let Some(thread) = host.query(harness::ask::Thread { thread: id }).await? else {
-        return Ok(None);
+// the frames of `thread` from frame `from` on, every one
+async fn frames_from(host: &Host, thread: u64, from: u64) -> Result<Vec<Frame>, Error> {
+    host.query_all(|after| harness::ask::FramesFrom {
+        thread,
+        from,
+        page: page(after),
+    })
+    .await
+}
+
+// when `thread`'s first frame was written
+async fn opened_at(host: &Host, thread: u64) -> Result<Option<u64>, Error> {
+    let first = PageRequest {
+        after: None,
+        limit: Some(1),
     };
-    // ponytail: the whole transcript again on each block that writes harness; a paged tail
-    // when threads run long
-    let frames = frames(&host, id).await?;
-    let calls = host
-        .query_all(|after| harness::ask::Calls {
-            thread: id,
-            page: page(after),
-        })
-        .await?;
-    let held = host.query(harness::ask::Held { thread: id }).await?;
-    let withheld = host.query(harness::ask::Withheld { thread: id }).await?;
-    let partial = host.query(harness::ask::Partial { thread: id }).await?;
-    let topic = topic(&host, id).await?;
-    let setup = setup(&host, thread.agent).await?;
+    let asked = harness::ask::FramesFrom {
+        thread,
+        from: 1,
+        page: first,
+    };
+    let opened = host.query(asked).await?;
+    Ok(opened.items.first().map(|frame| frame.time))
+}
+
+async fn served_setup(
+    host: &Host,
+    agent: u64,
+) -> Result<(Option<AgentSetup>, Option<usize>), Error> {
+    let setup = setup(host, agent).await?;
     let service = setup
         .as_ref()
         .and_then(|setup| setup.configured.model())
         .map(|model| model.service.clone());
     let serving = match service {
-        Some(service) => Some(served(&host, &service).await?),
+        Some(service) => Some(served(host, &service).await?),
         None => None,
     };
+    Ok((setup, serving))
+}
+
+// a conversation opened: its row, its frames from `from` on (from the frame after its last,
+// none, unless a read before held more), and all else its screen shows besides its calls
+pub(crate) async fn transcript(
+    host: Host,
+    id: u64,
+    from: Option<u64>,
+) -> Result<Option<Transcript>, Error> {
+    let Some(thread) = host.query(harness::ask::Thread { thread: id }).await? else {
+        return Ok(None);
+    };
+    let from = from.unwrap_or(thread.frames + 1);
+    let frames = frames_from(&host, id, from).await?;
+    let first = match frames.first().filter(|frame| frame.seq == 1) {
+        Some(frame) => Some(frame.time),
+        None => opened_at(&host, id).await?,
+    };
+    let held = host.query(harness::ask::Held { thread: id }).await?;
+    let withheld = host.query(harness::ask::Withheld { thread: id }).await?;
+    let partial = host.query(harness::ask::Partial { thread: id }).await?;
+    let topic = topic(&host, id).await?;
+    let tally = tally(&host, id).await?;
+    let (setup, serving) = served_setup(&host, thread.agent).await?;
     Ok(Some(Transcript {
         thread,
         frames,
-        calls,
+        from,
+        first,
+        calls: Vec::new(),
+        asked: BTreeSet::new(),
         held,
         withheld,
         setup,
         serving,
         partial,
         topic,
+        tally,
     }))
+}
+
+// what blocks wrote to the open conversation, gathered until it is read
+#[derive(Default)]
+pub(crate) struct Touched {
+    pub row: bool,
+    pub frames: bool,
+    pub calls: BTreeSet<String>,
+    pub held: bool,
+    pub withheld: bool,
+    pub partial: bool,
+    pub topic: bool,
+    pub tally: bool,
+    pub setup: bool,
+}
+
+impl Touched {
+    pub fn any(&self) -> bool {
+        self.row
+            || self.frames
+            || !self.calls.is_empty()
+            || self.held
+            || self.withheld
+            || self.partial
+            || self.topic
+            || self.tally
+            || self.setup
+    }
+
+    pub fn add(&mut self, more: Touched) {
+        self.row |= more.row;
+        self.frames |= more.frames;
+        self.calls.extend(more.calls);
+        self.held |= more.held;
+        self.withheld |= more.withheld;
+        self.partial |= more.partial;
+        self.topic |= more.topic;
+        self.tally |= more.tally;
+        self.setup |= more.setup;
+    }
+}
+
+// what a read of the touched parts brings: the row always, each other part when touched
+pub(crate) struct Delta {
+    pub thread: Option<ThreadRow>,
+    pub frames: Vec<Frame>,
+    pub calls: Vec<(String, Option<CallRow>)>,
+    pub held: Option<Vec<Body>>,
+    pub withheld: Option<Vec<WithheldFrame>>,
+    pub partial: Option<Option<Partial>>,
+    pub topic: Option<Option<String>>,
+    pub tally: Option<Tally>,
+    pub setup: Option<(Option<AgentSetup>, Option<usize>)>,
+}
+
+pub(crate) async fn delta(
+    host: Host,
+    id: u64,
+    agent: u64,
+    next: u64,
+    touched: Touched,
+) -> Result<Delta, Error> {
+    let thread = host.query(harness::ask::Thread { thread: id }).await?;
+    let frames = match touched.frames {
+        true => frames_from(&host, id, next).await?,
+        false => Vec::new(),
+    };
+    let calls = calls(host.clone(), id, touched.calls.into_iter().collect()).await?;
+    let held = match touched.held {
+        true => Some(host.query(harness::ask::Held { thread: id }).await?),
+        false => None,
+    };
+    let withheld = match touched.withheld {
+        true => Some(host.query(harness::ask::Withheld { thread: id }).await?),
+        false => None,
+    };
+    let partial = match touched.partial {
+        true => Some(host.query(harness::ask::Partial { thread: id }).await?),
+        false => None,
+    };
+    let topic = match touched.topic {
+        true => Some(topic(&host, id).await?),
+        false => None,
+    };
+    let tally = match touched.tally {
+        true => Some(tally(&host, id).await?),
+        false => None,
+    };
+    let setup = match touched.setup {
+        true => Some(served_setup(&host, agent).await?),
+        false => None,
+    };
+    Ok(Delta {
+        thread,
+        frames,
+        calls,
+        held,
+        withheld,
+        partial,
+        topic,
+        tally,
+        setup,
+    })
+}
+
+// the frames of `thread` from `from` up to the first one read, `before`
+pub(crate) async fn earlier(
+    host: Host,
+    thread: u64,
+    from: u64,
+    before: u64,
+) -> Result<Vec<Frame>, Error> {
+    let span = PageRequest {
+        after: None,
+        limit: Some(before - from),
+    };
+    let asked = harness::ask::FramesFrom {
+        thread,
+        from,
+        page: span,
+    };
+    Ok(host.query(asked).await?.items)
+}
+
+// each call the list drew, as harness keeps it, or none while it is not placed
+pub(crate) async fn calls(
+    host: Host,
+    thread: u64,
+    calls: Vec<String>,
+) -> Result<Vec<(String, Option<CallRow>)>, Error> {
+    let mut read = Vec::new();
+    for call in calls {
+        let asked = harness::ask::Call {
+            thread,
+            call: call.clone(),
+        };
+        let row = host.query(asked).await?;
+        read.push((call, row));
+    }
+    Ok(read)
 }
 
 #[derive(PartialEq)]
