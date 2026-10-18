@@ -6,6 +6,7 @@
 //! a turn's reply back one event at a time (`Streamed`, folded into a [`Partial`]). Every tool
 //! call runs in a later block, as the agent.
 mod agents;
+mod bookings;
 mod calls;
 mod codec;
 pub mod config;
@@ -69,6 +70,16 @@ pub enum Op {
         agent: AccountNumber,
         place: Place,
     },
+    Book {
+        height: u64,
+        target: String,
+        payload: Vec<u8>,
+        thread: Option<u64>,
+    },
+    Unbook {
+        entry: u64,
+    },
+    RunBooked,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -488,6 +499,25 @@ pub struct ToolInfo {
     pub writes: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Booking {
+    pub entry: u64,
+    pub agent: AccountNumber,
+    pub thread: Option<u64>,
+    pub booked: u64,
+    pub height: u64,
+    pub target: String,
+    pub payload: Vec<u8>,
+    pub ran: Option<Ran>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Ran {
+    pub height: u64,
+    pub failed: bool,
+    pub text: String,
+}
+
 #[derive(
     Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Ask,
 )]
@@ -553,6 +583,15 @@ pub enum Query {
     #[ask(Reply::Call(Option<CallRow>))]
     #[reads(state::CALLS)]
     Call { thread: u64, call: String },
+    #[ask(Reply::Bookings(PageResponse<Booking>))]
+    #[reads(state::BOOKED, state::BOOKINGS)]
+    Bookings {
+        agent: AccountNumber,
+        page: PageRequest,
+    },
+    #[ask(Reply::Booking(Option<Booking>))]
+    #[reads(state::BOOKINGS)]
+    Booking { entry: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -571,6 +610,8 @@ pub enum Reply {
     Topic(Option<String>),
     Tally(Tally),
     Call(Option<CallRow>),
+    Bookings(PageResponse<Booking>),
+    Booking(Option<Booking>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -631,6 +672,18 @@ pub fn describe(op: &Op) -> describe::Description {
                 field("place", Value::text(place.key())),
             ],
         ),
+        Op::Book { height, target, .. } => (
+            format!("Book a run of {target} at height {height}"),
+            vec![
+                field("height", Value::count(*height)),
+                field("program", Value::text(target)),
+            ],
+        ),
+        Op::Unbook { entry } => (
+            format!("Cancel booked run {entry}"),
+            vec![field("entry", Value::count(*entry))],
+        ),
+        Op::RunBooked => ("Run a booked run".to_owned(), Vec::new()),
     };
     describe::Description { title, fields }
 }
@@ -650,6 +703,9 @@ fn op_variants_only_append() {
             "NewThread",
             "ForkThread",
             "OpenThread",
+            "Book",
+            "Unbook",
+            "RunBooked",
         ]
     );
 }
@@ -675,7 +731,9 @@ fn query_variants_only_append() {
             "Bound",
             "Tally",
             "FramesFrom",
-            "Call"
+            "Call",
+            "Bookings",
+            "Booking"
         ]
     );
 }

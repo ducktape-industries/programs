@@ -43,7 +43,12 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
             Some(_) => vec![Need::write(conversation_key(*agent))],
             None => Vec::new(),
         },
-        Op::Attributed(_) | Op::Streamed { .. } | Op::OpenThread { .. } => Vec::new(),
+        Op::Attributed(_)
+        | Op::Streamed { .. }
+        | Op::OpenThread { .. }
+        | Op::Book { .. }
+        | Op::Unbook { .. }
+        | Op::RunBooked => Vec::new(),
     })
 }
 

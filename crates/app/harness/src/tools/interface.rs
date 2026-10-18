@@ -9,12 +9,17 @@ use super::{Reading, Run, Seat, Tool, Write, object};
 use crate::codec::{self, Fault};
 use crate::schema::schema_of;
 
-fn program_schema() -> Value {
+pub(crate) fn program_schema() -> Value {
     json!({ "type": "string", "description": "a program id, such as chat or files" })
 }
 
 fn refused(fault: Fault) -> Error {
     invalid(fault.to_string())
+}
+
+pub(crate) fn encoded(ctx: &ExecCtx, program: &str, op: &Value) -> Result<Vec<u8>, Error> {
+    let interface = schema_of(ctx, program)?;
+    codec::encode(&interface.schema, &interface.op, "op", op).map_err(refused)
 }
 
 #[derive(Deserialize)]
@@ -108,9 +113,7 @@ impl Tool for Call {
     }
 
     fn run(ctx: &ExecCtx, _: &Seat, args: CallArgs) -> Result<Run, Error> {
-        let interface = schema_of(ctx, &args.program)?;
-        let payload =
-            codec::encode(&interface.schema, &interface.op, "op", &args.op).map_err(refused)?;
+        let payload = encoded(ctx, &args.program, &args.op)?;
         let read: Reading = match answers_http(ctx, &args.program, &payload) {
             true => response,
             false => returned,

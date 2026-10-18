@@ -11,6 +11,7 @@ mod forge_commit;
 mod models;
 mod network;
 mod reads;
+mod schedule;
 mod streams;
 mod thinking;
 mod workspace;

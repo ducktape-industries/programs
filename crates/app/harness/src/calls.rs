@@ -1,7 +1,7 @@
 //! A tool call's life: placed and relayed once its block of the model's reply is whole, run as the
 //! agent when its relay comes back, its result held until its turn is recorded. A streamable call
 //! shows its input as it arrives; what it showed is taken back if its reply starts over or breaks.
-use ::program::{Ctx, Error, ExecCtx};
+use ::program::{Ctx, Error, ExecCtx, QueryCtx, unauthorized};
 use abi::role::egress::{self, RELAY};
 use attribution::Change;
 use serde_json::Value;
@@ -11,7 +11,7 @@ use crate::state::{CALLS, DEFERRED, LIVE, Live, PARTIALS, SHOWN, THREADS};
 use crate::tools::prefix::prefix;
 use crate::tools::{self, Entry, Run, Seat, Show, Write};
 use crate::turns::{append, request, serves, settle};
-use crate::{Asking, Body, CallRow, CallState, Said, ThreadRow};
+use crate::{Asking, Body, CallRow, CallState, Op, PROGRAM, Said, ThreadRow};
 
 pub(crate) fn refusal(error: &Error) -> String {
     format!("{}: {}", error.code, error.message)
@@ -139,9 +139,50 @@ fn shown(ctx: &ExecCtx, id: u64, call: &str) -> Result<Option<Value>, Error> {
 async fn written(ctx: &Ctx, agent: u64, writes: Vec<Write>) -> Result<Vec<u8>, Error> {
     let mut output = Vec::new();
     for write in writes {
+        relayable(ctx, &write.target, &write.payload)?;
         output = ctx.call_raw_as(agent, write.target, write.payload).await?;
     }
     Ok(output)
+}
+
+// each program here takes the program an op came from as who sent it, and an agent's write
+// reaches it from harness, so the agent would act as harness there
+pub(crate) fn relayable(ctx: &QueryCtx, target: &str, payload: &[u8]) -> Result<(), Error> {
+    let env = ctx.env();
+    let bound = |role: &str| env.roles.get(role).is_some_and(|program| program == target);
+    let why = if bound(abi::role::SCHEDULER) {
+        "the scheduler would run what it schedules as harness: book a run with schedule_run, list runs with schedule_list and cancel one with schedule_cancel"
+    } else if bound(abi::role::AWAITS) {
+        "awaits would take it as harness answering a call"
+    } else if target == attribution::PROGRAM {
+        "attribution would take it as harness's own registration or attribution"
+    } else if target == PROGRAM && harness_own(payload) {
+        "harness takes this op only from attribution, egress or the scheduler"
+    } else if bound(abi::role::EGRESS) && streams(payload) {
+        "egress would hand each event of the answer to harness: ask for the answer whole"
+    } else {
+        return Ok(());
+    };
+    Err(unauthorized(format!(
+        "harness does not send an agent's op to {target}: {why}"
+    )))
+}
+
+fn harness_own(payload: &[u8]) -> bool {
+    matches!(
+        abi::decode::<Op>(payload),
+        Ok(Op::Attributed(_) | Op::Streamed { .. } | Op::RunBooked)
+    )
+}
+
+fn streams(payload: &[u8]) -> bool {
+    matches!(
+        abi::decode::<egress::Op>(payload),
+        Ok(egress::Op::Request {
+            delivery: egress::Delivery::Events { .. },
+            ..
+        })
+    )
 }
 
 enum TakenBack {

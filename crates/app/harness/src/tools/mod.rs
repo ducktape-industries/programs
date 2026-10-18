@@ -8,6 +8,7 @@ mod forge;
 mod interface;
 mod network;
 pub(crate) mod prefix;
+mod schedule;
 mod thread;
 
 pub(crate) use chat::shown_by;
@@ -147,6 +148,9 @@ pub(crate) const CATALOG: &[Entry] = &[
     entry::<thread::Search>(),
     entry::<thread::Read>(),
     entry::<thread::Topic>(),
+    entry::<schedule::Book>(),
+    entry::<schedule::List>(),
+    entry::<schedule::Cancel>(),
 ];
 
 pub(crate) fn find(name: &str) -> Option<&'static Entry> {

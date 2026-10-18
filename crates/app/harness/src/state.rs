@@ -1,12 +1,12 @@
 //! Everything harness keeps: models, threads by agent, current and bound threads, each place's
 //! last thread, frames, held input, sealed parts, tool calls and live calls, withheld frames,
-//! streaming replies, each thread's topic and tally, and what a written key belongs to.
+//! streaming replies, each thread's topic and tally, booked runs, what a written key belongs to.
 use abi::role::identity::AccountNumber;
 use attribution::{Change, Source};
 use borsh::{BorshDeserialize, BorshSerialize};
 use store::{Item, KeyCodec, Map, Set};
 
-use crate::{Body, CallRow, Frame, ModelRow, Partial, Place, Sealed, Tally, ThreadRow};
+use crate::{Body, Booking, CallRow, Frame, ModelRow, Partial, Place, Sealed, Tally, ThreadRow};
 
 pub const MODELS: Map<String, ModelRow> = Map::new("model/");
 pub const LAST: Map<AccountNumber, (Source, u64)> = Map::new("last/");
@@ -27,6 +27,8 @@ pub const DEFERRED: Map<(u64, String, u64), Change> = Map::new("deferred/");
 /// a thread's topic: the one line its agent last set with `thread_topic`
 pub const TOPICS: Map<u64, String> = Map::new("topic/");
 pub const TALLIES: Map<u64, Tally> = Map::new("tally/");
+pub const BOOKINGS: Map<u64, Booking> = Map::new("booking/");
+pub const BOOKED: Set<(AccountNumber, u64)> = Set::new("booked/");
 pub const COUNT: Item<u64> = Item::new("count");
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
