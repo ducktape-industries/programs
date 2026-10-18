@@ -12,6 +12,8 @@ const STRIP_BUTTON_HEIGHT: f32 = 24.;
 const REACTION_HEIGHT: f32 = 24.;
 /// The thread button's height under a root.
 const REPLIES_HEIGHT: f32 = 24.;
+/// A reaction tooltip's widest line, before its names wrap.
+const REACTORS_WIDTH: f32 = 280.;
 
 /// `active`: the grid's arrows are on this button (it is never a Tab stop
 /// of its own; the pane's message list is).
@@ -57,10 +59,14 @@ pub(super) fn action_button(
     }
 }
 
-/// What a reaction button shows: an emoji and how many chose it, or the
-/// `+` that opens the picker.
+/// What a reaction button shows: an emoji and how many chose it, named on
+/// hover (`who`, empty until read), or the `+` that opens the picker.
 pub(super) enum Face<'a> {
-    Emoji { emoji: &'a str, count: u64 },
+    Emoji {
+        emoji: &'a str,
+        count: u64,
+        who: String,
+    },
     Add,
 }
 
@@ -101,18 +107,27 @@ pub(super) fn reaction_button(
         .text_size(design::text::SECONDARY);
     control = match face {
         // the count in the data face, as every count here is
-        Face::Emoji { emoji, count } => control
-            // one name whether it is yours or not: the toggle says which
-            .aria_label(format!("{emoji} reaction"))
-            .aria_description(count.to_string())
-            .aria_toggled(mine.into())
-            .child(emoji.to_owned())
-            .child(
-                div()
-                    .font_family(design::fonts::FAMILY_MONO)
-                    .text_size(design::text::CAPTION)
-                    .child(count.to_string()),
-            ),
+        Face::Emoji { emoji, count, who } => {
+            let control = control
+                // one name whether it is yours or not: the toggle says which
+                .aria_label(format!("{emoji} reaction"))
+                .aria_description(match who.is_empty() {
+                    true => count.to_string(),
+                    false => format!("{count}: {who}"),
+                })
+                .aria_toggled(mine.into())
+                .child(emoji.to_owned())
+                .child(
+                    div()
+                        .font_family(design::fonts::FAMILY_MONO)
+                        .text_size(design::text::CAPTION)
+                        .child(count.to_string()),
+                );
+            match who.is_empty() {
+                true => control,
+                false => reactors_tip(control, who.into(), theme),
+            }
+        }
         // `+` is the picker's method, not a toggle
         Face::Add => control.aria_label(words::ADD_REACTION).child("+"),
     };
@@ -132,6 +147,40 @@ pub(super) fn reaction_button(
         )
     } else {
         control
+    }
+}
+
+/// `chip` names who chose it on hover.
+fn reactors_tip<E: StatefulInteractiveElement>(chip: E, who: SharedString, theme: &Theme) -> E {
+    let theme = *theme;
+    chip.tooltip(move |_, cx| {
+        cx.new(|_| WhoChose {
+            who: who.clone(),
+            theme,
+        })
+        .into()
+    })
+}
+
+/// A reaction's tooltip: who chose it.
+struct WhoChose {
+    who: SharedString,
+    theme: Theme,
+}
+
+impl Render for WhoChose {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .id("chat-reactors")
+            .max_w(px(REACTORS_WIDTH))
+            .px(design::space::SM)
+            .py(design::space::XXS)
+            .border_1()
+            .border_color(self.theme.border_strong)
+            .bg(self.theme.background)
+            .text_color(self.theme.foreground)
+            .text_size(design::text::CAPTION)
+            .child(self.who.clone())
     }
 }
 

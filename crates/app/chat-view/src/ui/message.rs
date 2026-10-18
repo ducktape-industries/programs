@@ -657,6 +657,9 @@ fn reactions(
 ) -> AnyElement {
     let (seq, rev) = (message.seq, message.rev);
     let writable = chat.may_write();
+    let reactors = chat.room.as_ref().and_then(|room| room.reactors.get(&seq));
+    let empty = Names::empty();
+    let names = chat.names.ready().unwrap_or(&empty);
     let mut reactions = div()
         .id(format!("chat-message-{}-reactions", message.id))
         .flex()
@@ -669,9 +672,16 @@ fn reactions(
         };
         let active = writable && cells.push(control.clone());
         let id = format!("chat-message-{}-reaction-{}", message.id, reaction.emoji);
+        let who = reactors
+            .and_then(|reactors| reactors.get(&reaction.emoji))
+            .into_iter()
+            .flatten()
+            .map(|principal| names.author(principal))
+            .collect::<Vec<_>>();
         let face = Face::Emoji {
             emoji: &reaction.emoji,
             count: reaction.count,
+            who: who.join(", "),
         };
         let click = acts(pane, seq, rev, control, cx);
         let chip = reaction_button(

@@ -98,6 +98,7 @@ impl Chat {
                 }
                 room.messages = result.into();
                 room.settle();
+                room.read_reactors(cx);
                 if chat
                     .channels
                     .ready()
@@ -110,7 +111,8 @@ impl Chat {
             let rows = queries::roots(cx.host(), id, viewer, None, WINDOW);
             room.messages = Loadable::Loading(cx.land(rows, |chat, result, cx| {
                 cx.notify();
-                chat.rows_arrived(result)
+                chat.rows_arrived(result);
+                room_of(chat).read_reactors(cx);
             }));
         }
         cx.load(self, queries::members(cx.host(), members_id), |chat| {
@@ -316,6 +318,7 @@ impl Chat {
                         *rows = all;
                     }
                     room.settle();
+                    room.read_reactors(cx);
                 }
                 Err(refusal) => room.older_failed = Some(design::sentence(&refusal)),
             }
@@ -394,6 +397,7 @@ impl Chat {
                 }
             }
             room.extend(side, page);
+            room.read_reactors(cx);
         })
         .detach();
     }
@@ -483,6 +487,7 @@ impl Chat {
                         thread.has_more = next.is_some();
                         thread.next = next;
                         room_of(chat).settle();
+                        room_of(chat).read_reactors(cx);
                         if reply {
                             let key = Target::Post {
                                 channel: id,
@@ -530,6 +535,7 @@ impl Chat {
                         rows.extend(more);
                     }
                     room_of(chat).settle();
+                    room_of(chat).read_reactors(cx);
                 }
                 Err(refusal) => {
                     chat.notice =
@@ -767,6 +773,41 @@ impl Room {
         if moved || self.pending.len() != pending {
             cx.notify();
         }
+        // a reaction one dropped and another chose in one block moves no
+        // count: the rows land as they were, and who chose them is read
+        // again all the same
+        self.read_reactors(cx);
+    }
+
+    /// Who chose each reaction on the rows shown, room and thread: read
+    /// again each time rows land, kept until the next read lands.
+    pub(crate) fn read_reactors(&mut self, cx: &mut Context<Chat>) {
+        let replies = self
+            .thread
+            .as_ref()
+            .and_then(|thread| thread.replies.ready());
+        let seqs: Vec<u64> = (self.messages.ready().into_iter().chain(replies))
+            .flatten()
+            .filter(|row| !row.reactions.is_empty())
+            .map(|row| row.seq)
+            .collect();
+        if seqs.is_empty() {
+            self.reactors.clear();
+            self.reading_reactors = None;
+            return;
+        }
+        let read = queries::reactors(cx.host(), self.id.clone(), seqs);
+        self.reading_reactors = Some(cx.land(read, |chat, read, cx| {
+            let room = room_of(chat);
+            match read {
+                Ok(reactors) if reactors != room.reactors => {
+                    room.reactors = reactors;
+                    cx.notify();
+                }
+                Ok(_) => {}
+                Err(refusal) => cx.log_refused("who reacted", &refusal),
+            }
+        }));
     }
 }
 

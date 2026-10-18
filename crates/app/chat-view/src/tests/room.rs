@@ -217,6 +217,7 @@ fn a_full_room_renders_inside_the_frame_budget() {
             }
             Query::Roots { .. } => Reply::Roots(page(rows.clone())),
             Query::Members { .. } => Reply::Members(page(Vec::new())),
+            Query::Reactors { seqs, .. } => reactors(seqs),
             query => panic!("unexpected chat query: {query:?}"),
         })
     });

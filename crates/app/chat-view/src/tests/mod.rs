@@ -106,6 +106,21 @@ fn marked_row(seq: u64) -> MsgRow {
     row
 }
 
+/// Who chose the 👍 on each of `seqs`, as a marked row wears it: eddy and
+/// ada.
+fn reactors(seqs: Vec<u64>) -> Reply {
+    let by = vec![Principal::Account(7), Principal::Account(10)];
+    Reply::Reactors(
+        seqs.into_iter()
+            .map(|seq| chat::ReactedBy {
+                seq,
+                emoji: "👍".into(),
+                by: by.clone(),
+            })
+            .collect(),
+    )
+}
+
 /// The host methods chat only talks to, never hears back from here.
 fn quiet_methods(cx: &mut TestAppContext) {
     cx.host().handle::<view::methods::StoreGet>(|_| Ok(None));
@@ -189,6 +204,7 @@ fn chat_reply(query: Query) -> Reply {
                 capped: false,
             })
         }
+        Query::Reactors { seqs, .. } => reactors(seqs),
         query => panic!("unexpected chat query: {query:?}"),
     }
 }

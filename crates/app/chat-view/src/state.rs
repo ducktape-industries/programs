@@ -1,5 +1,5 @@
 //! State stored by the root view and its panes.
-use chat::{ChannelInfo, MemberRow, MsgRow};
+use chat::{ChannelInfo, MemberRow, MsgRow, Principal};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -254,7 +254,17 @@ pub struct Room {
     /// the rows read again while the ones on screen stay
     #[serde(skip)]
     pub(crate) rereading: Option<view::Task<()>>,
+    /// who chose each reaction on the rows shown, room and thread, by seq
+    /// and emoji: what a chip's tooltip names
+    #[serde(skip)]
+    pub(crate) reactors: Reactors,
+    /// the read of who chose them, until it lands
+    #[serde(skip)]
+    pub(crate) reading_reactors: Option<view::Task<()>>,
 }
+
+/// Who chose each reaction, by message seq and emoji.
+pub(crate) type Reactors = BTreeMap<u64, BTreeMap<String, Vec<Principal>>>;
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Thread {

@@ -1,4 +1,6 @@
 use super::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 use view::{StyleRefinement, Styled};
 
 /// The strip hangs half over the card's top edge (Slack's), and the
@@ -199,6 +201,92 @@ fn a_reaction_chip_is_named_by_its_emoji_whether_toggled_or_not() {
         aria("chat-message-m1-thumbs-up").label.as_deref(),
         Some("React with 👍")
     );
+}
+
+/// A chip names who chose it, as read from the program once rows land:
+/// a tooltip on hover, and the same names beside the count for the door.
+#[test]
+fn a_reaction_chip_names_who_chose_it() {
+    let (mut cx, view) = opened();
+    cx.update(&view, |chat, _, cx| {
+        let room = chat.room.as_mut().unwrap();
+        room.messages.ready_mut().unwrap()[0]
+            .reactions
+            .push(chat::Reaction {
+                emoji: "👍".into(),
+                count: 2,
+                reacted_by_me: true,
+            });
+        room.read_reactors(cx);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let Some(wire::Node::Container(view::wire::ContainerNode {
+        interactivity: Some(chip),
+        ..
+    })) = cx.find("chat-message-m1-reaction-👍")
+    else {
+        panic!("the chip is a container");
+    };
+    assert_eq!(chip.aria.description.as_deref(), Some("2: eddy, ada"));
+    assert!(chip.tooltip.is_some(), "the names show on hover");
+}
+
+/// Rows that land with a reaction read who chose it, and a block where
+/// one drops it and another chooses it (the count unmoved, the rows landing
+/// as they were) reads them again.
+#[test]
+fn landed_rows_read_who_reacted_and_a_block_reads_them_again() {
+    let who = Rc::new(RefCell::new(vec![Principal::Account(7)]));
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    let by = who.clone();
+    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
+        Ok(match query {
+            Query::Roots { channel_id, .. } if channel_id == "general" => {
+                let mut row = row(1, 7, "hello");
+                row.reactions = vec![chat::Reaction {
+                    emoji: "👍".into(),
+                    count: 1,
+                    reacted_by_me: false,
+                }];
+                Reply::Roots(page(vec![row]))
+            }
+            Query::Reactors { seqs, .. } => Reply::Reactors(
+                seqs.into_iter()
+                    .map(|seq| chat::ReactedBy {
+                        seq,
+                        emoji: "👍".into(),
+                        by: by.borrow().clone(),
+                    })
+                    .collect(),
+            ),
+            query => chat_reply(query),
+        })
+    });
+    cx.open::<Chat>();
+    seat(&mut cx);
+    cx.simulate_click("chat-sidebar-channel-general");
+    cx.run_until_parked();
+    let names = |cx: &TestAppContext| match cx.find("chat-message-m1-reaction-👍") {
+        Some(wire::Node::Container(view::wire::ContainerNode {
+            interactivity: Some(chip),
+            ..
+        })) => chip.aria.description.clone(),
+        _ => panic!("the chip is a container"),
+    };
+    assert_eq!(names(&cx).as_deref(), Some("1: eddy"));
+    *who.borrow_mut() = vec![Principal::Account(10)];
+    let general = "general".to_owned();
+    cx.host().stream::<Changes<::chat::Chat>>().send(block(
+        4,
+        vec![
+            chat::tables::MESSAGES.key(&(general.clone(), 1u64)),
+            chat::tables::REACTIONS.key(&(general, 1u64, "👍".to_owned(), Principal::Account(10))),
+        ],
+    ));
+    cx.run_until_parked();
+    assert_eq!(names(&cx).as_deref(), Some("1: ada"));
 }
 
 /// What a pointer presses on a message (its block link, a reaction chip,
