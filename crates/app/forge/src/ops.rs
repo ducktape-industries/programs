@@ -37,18 +37,6 @@ pub(crate) fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
-/// Forge is written by keys (a person's or an agent's account), never by a
-/// program or the system: the frame is signed, and acts as the account its
-/// key holds. The host rejects a frame whose key's account is not live
-/// before it gets here; [`ExecCtx::sender`](program::ExecCtx::sender) refuses
-/// a key that holds no account.
-pub(crate) fn signed_account(ctx: &ExecCtx) -> Result<Principal, Error> {
-    ctx.env()
-        .signer()
-        .map_err(|_| unauthorized("a repository op is signed by a key"))?;
-    ctx.sender()
-}
-
 /// Every accepted op marks its repository active at this height and counts
 /// as a write, which every listing cursor is pinned to.
 pub(crate) fn touch(ctx: &ExecCtx, name: &str, height: u64) -> Result<(), Error> {
