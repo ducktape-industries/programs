@@ -289,3 +289,60 @@ fn a_429_holds_until_the_usage_window_resets_and_the_window_is_kept() {
     world.mention("m3", "now?");
     assert_eq!(assigned(chain, SERVICE).len(), 1);
 }
+
+fn refused(chain: &MockChain) {
+    let (request, _) = open_request(chain);
+    let invalid =
+        json!({ "type": "error", "error": { "type": "invalid_request_error", "message": "bad" } });
+    answer(chain, request.id, Answer::Output(response(400, invalid)));
+}
+
+#[test]
+fn a_resume_someone_sends_asks_again_about_the_input_a_turn_gave_up_on() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "hello", Some(WINDOW));
+    chain.at(3, 0);
+    refused(chain);
+    assert!(
+        assigned(chain, SERVICE).is_empty(),
+        "a refusal ends the turn"
+    );
+    chain.at(4, 0);
+    let resume = Op::Resume { thread };
+    chain.submit(signed(ADA), PROGRAM, &resume).unwrap();
+    let (request, _) = open_request(chain);
+    let sent = body(chain, &request)["messages"].to_string();
+    assert!(sent.contains("hello"), "{sent}");
+    let told = notices(chain, thread);
+    let last = told.last().unwrap();
+    assert!(last.starts_with("re-asked by account "), "{last}");
+    assert!(last.ends_with(" after a turn that gave up"), "{last}");
+    chain.at(5, 0);
+    model_says(chain, hello(), "end_turn");
+    assert_eq!(turns(chain, thread), 1);
+    chain.at(6, 0);
+    chain.submit(signed(ADA), PROGRAM, &resume).unwrap();
+    assert!(
+        assigned(chain, SERVICE).is_empty(),
+        "an answered input is not asked again"
+    );
+    assert_eq!(notices(chain, thread).len(), told.len());
+}
+
+#[test]
+fn harness_own_wakes_never_ask_again_about_input_a_turn_gave_up_on() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "hello", Some(WINDOW));
+    chain.at(3, 0);
+    refused(chain);
+    let told = notices(chain, thread).len();
+    chain.at(3 + egress::DEFAULT_WAIT + 3, 0);
+    assert!(
+        assigned(chain, SERVICE).is_empty(),
+        "the watch asks nothing"
+    );
+    assert_eq!(notices(chain, thread).len(), told);
+    assert_eq!(thread_row(chain, thread).asking, Asking::Idle);
+}

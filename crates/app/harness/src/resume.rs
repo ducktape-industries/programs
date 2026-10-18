@@ -2,7 +2,7 @@
 //! and a run harness schedules past it records a reply that streamed whole, relays lost calls
 //! again or asks the model again; a failed call is asked again later, and its manager hears.
 use ::program::{BlobId, Cause, Ctx, EntryId, Error, ExecCtx, Principal, QueryCtx, all, code};
-use ::program::{unexpected_reply, wrong_state};
+use ::program::{Range, unexpected_reply, wrong_state};
 use abi::role::egress::{DEFAULT_WAIT, http};
 use abi::role::identity::AccountNumber;
 
@@ -10,7 +10,7 @@ use crate::agents::{configured, harnessed_agent, hear_again, running, thread};
 use crate::calls::{Settled, refusal, run_call};
 use crate::conversations::{binding, conversation};
 use crate::state::{
-    CALLS, FLIGHTS, Flight, PARTIALS, REPORTING, REPORTS, RETRIES, Retry, THREADS, USAGE,
+    CALLS, FLIGHTS, FRAMES, Flight, PARTIALS, REPORTING, REPORTS, RETRIES, Retry, THREADS, USAGE,
 };
 use crate::turns::{append, conclude, converse, give_up, say, settle};
 use crate::wire;
@@ -442,7 +442,40 @@ pub(crate) async fn resume(ctx: Ctx, id: u64) -> Result<(), Error> {
     thread(&ctx, id)?;
     rewatch(&ctx, id).await;
     repace(&ctx, id).await;
+    reask(&ctx, id)?;
     converse(&ctx, id).await;
+    Ok(())
+}
+
+// a Resume someone sends to an idle conversation whose newest input no turn answered, as a turn
+// gave up on it, asks the model about it again; harness's own wakes never do, so a refusal that
+// is final is not asked again on every wake
+fn reask(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
+    let env = ctx.env();
+    if matches!(env.cause, Cause::Scheduled { .. }) {
+        return Ok(());
+    }
+    let mut row = thread(ctx, id)?;
+    let idle = !row.closed && row.asking == Asking::Idle && row.last_input > 0;
+    if !idle || row.due() || RETRIES.get(ctx, &id)?.is_some() {
+        return Ok(());
+    }
+    let since = Range::new(FRAMES.key(&(id, row.last_input)), FRAMES.prefix_of(&id).end);
+    let answered = FRAMES
+        .scan(ctx, since)?
+        .into_iter()
+        .any(|(_, frame)| matches!(frame.body, Body::Turn { .. }));
+    if answered {
+        return Ok(());
+    }
+    let by = match &env.sender {
+        Some(Principal::Account(number)) => format!("account {number}"),
+        Some(Principal::Root) | None => "the network".to_owned(),
+    };
+    row.seen = row.last_input - 1;
+    let text = format!("re-asked by {by} after a turn that gave up");
+    append(ctx, &mut row, Body::Notice { text });
+    THREADS.put(ctx, &id, &row);
     Ok(())
 }
 
