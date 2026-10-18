@@ -1,8 +1,6 @@
-//! Every read: what harness resolves for an agent, a thread, an agent's threads newest first,
-//! a transcript in order, the input held while a thread's loop runs, a thread's tool calls, the
-//! tool catalog, the thread a place last reached, the conversations bound to an agent's places,
-//! the model records, the frames left out of the model's view with their size, the reply a
-//! thread's model call is streaming back, and the line a thread's agent says it is about.
+//! Every read: an agent, a thread, an agent's threads and bound conversations, a transcript,
+//! held input, tool calls, the tool catalog, a place's last thread, the models, withheld frames
+//! with their size, a streaming reply and a thread's topic.
 use ::program::{Error, QueryCtx, corrupt};
 use abi::role::identity::AccountNumber;
 use store::{PageRequest, PageResponse};

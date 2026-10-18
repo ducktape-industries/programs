@@ -1,7 +1,6 @@
-//! Everything harness keeps: model records, threads by agent, current threads, the thread each
-//! place last reached, the conversation bound to each place, frames, held input, sealed request
-//! parts, tool calls and the calls of the reply streaming in, frames left out of the model's view,
-//! each streaming reply, and the line each thread's agent says it is about.
+//! Everything harness keeps: models, threads by agent, current and bound threads, each place's
+//! last thread, frames, held input, sealed parts, tool calls and live calls, withheld frames,
+//! streaming replies and each thread's topic.
 use abi::role::identity::AccountNumber;
 use attribution::{Change, Source};
 use borsh::{BorshDeserialize, BorshSerialize};

@@ -1,8 +1,6 @@
-//! What each harness op needs of the access program, and who owns each key: an agent
-//! (`agents/<n>`), its conversation (`agents/<n>/conversation`) and its threads (`threads/<id>`)
-//! by the agent's manager, a model (`models/<id>`) by the account that set it. Each is its
-//! owner's alone unless it lists others. Closing a conversation bound to a place needs nothing,
-//! so anyone closes one; closing a canonical one writes its thread's key.
+//! What each harness op needs of the access program, and who owns each key: an agent, its
+//! conversation and its threads by its manager, a model by the account that set it.
+//! Close of a conversation bound to a place needs nothing; of a canonical one, its thread's key.
 use ::program::{Error, Need, Ownership, Party, QueryCtx, Resource, unexpected_reply};
 use abi::role::identity::{AccountNumber, Kind};
 
@@ -49,7 +47,6 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
     })
 }
 
-/// Whether `thread` is a conversation bound to a place, which anyone may close.
 fn bound(ctx: &QueryCtx, thread: u64) -> Result<bool, Error> {
     let Some(row) = THREADS.get(ctx, &thread)? else {
         return Ok(false);
