@@ -119,7 +119,7 @@ LiveStart__Next = Struct { fields: Empty }
 LiveSubscribe = Struct { fields: NamedFields([("track", "LiveTrack"), ("from", "LiveStart")]) }
 LiveTrack = Struct { fields: NamedFields([("room", "String"), ("name", "String")]) }
 Located = Struct { fields: NamedFields([("height", "u64"), ("position", "u32"), ("time", "u64"), ("tx", "Tx")]) }
-Manifest = Struct { fields: NamedFields([("wire_id", "String"), ("name", "String"), ("description", "String"), ("capabilities", "Vec<Capability>"), ("min_width", "u32"), ("targets", "Vec<String>"), ("icon", "String"), ("tint", "Tint")]) }
+Manifest = Struct { fields: NamedFields([("wire_id", "String"), ("name", "String"), ("description", "String"), ("capabilities", "Vec<Capability>"), ("min_width", "u32"), ("targets", "Vec<String>"), ("icon", "String"), ("tint", "Tint"), ("width", "Option<u32>")]) }
 Manifested = Struct { fields: NamedFields([("size", "u64"), ("view", "Option<CarriedView>")]) }
 NetworkStatus = Struct { fields: NamedFields([("height", "u64"), ("members", "Vec<Peer>")]) }
 NewBlob = Struct { fields: NamedFields([("kind", "String"), ("body", "BlobBody")]) }
@@ -138,6 +138,7 @@ Option<Manifested> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Som
 Option<Receipt> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "Receipt")] }
 Option<String> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "String")] }
 Option<Vec<u8>> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "Vec<u8>")] }
+Option<u32> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "u32")] }
 Option<u64> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "u64")] }
 Outcome = Enum { tag_width: 1, variants: [(0, "Applied", "Outcome__Applied"), (1, "Rejected", "Outcome__Rejected")] }
 Outcome__Applied = Struct { fields: NamedFields([("output", "Vec<u8>")]) }
@@ -1733,3 +1734,4 @@ wire_id
 targets
 icon
 tint
+width

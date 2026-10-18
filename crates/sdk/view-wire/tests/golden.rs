@@ -762,16 +762,21 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
         ),
     ]
     .into_iter()
-    // a view's manifest in every tint: the borsh rule samples each one
+    // a view's manifest in every tint, and once with a width: the borsh
+    // rule samples each tint and the width both present and absent
     .chain(
         Tint::ALL
-            .map(|tint| exchange::<BlobManifest>("sha256:00".into(), Some(carried_view(tint)))),
+            .map(|tint| carried_view(tint, None))
+            .into_iter()
+            .chain([carried_view(Tint::Blue, Some(1_200))])
+            .map(|view| exchange::<BlobManifest>("sha256:00".into(), Some(view))),
     )
     .collect()
 }
 
-/// A program's code carrying a view, its manifest in `tint`.
-fn carried_view(tint: Tint) -> methods::Manifested {
+/// A program's code carrying a view, its manifest in `tint` and opening
+/// desk windows `width` wide.
+fn carried_view(tint: Tint, width: Option<u32>) -> methods::Manifested {
     methods::Manifested {
         size: 2_048,
         view: Some(methods::CarriedView {
@@ -785,6 +790,7 @@ fn carried_view(tint: Tint) -> methods::Manifested {
                 targets: vec!["chat".into()],
                 icon: "icons/chat.svg".into(),
                 tint,
+                width,
             }),
         }),
     }

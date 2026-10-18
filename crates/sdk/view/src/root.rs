@@ -13,7 +13,8 @@ pub trait Render: 'static + Sized {
 /// A root view: everything the host reads about it (the manifest
 /// `export_view!` writes: [`NAME`](View::NAME), [`DESCRIPTION`](View::DESCRIPTION),
 /// [`CAPABILITIES`](View::CAPABILITIES), [`MIN_WINDOW_WIDTH`](View::MIN_WINDOW_WIDTH),
-/// [`TARGETS`](View::TARGETS), [`ICON`](View::ICON), [`TINT`](View::TINT)), how it is built
+/// [`WINDOW_WIDTH`](View::WINDOW_WIDTH), [`TARGETS`](View::TARGETS), [`ICON`](View::ICON),
+/// [`TINT`](View::TINT)), how it is built
 /// ([`new`](View::new)) and how it joins the host ([`attach`](View::attach)).
 pub trait View: Render + Serialize + DeserializeOwned + Default {
     /// The name on the tab and in the catalog, `1..=64` bytes.
@@ -109,6 +110,34 @@ pub trait View: Render + Serialize + DeserializeOwned + Default {
     /// # fn main() {}
     /// ```
     const MIN_WINDOW_WIDTH: u32 = 480;
+    /// The width, in logical px, a pointer window holding the view opens
+    /// at, for a view that wants more room than the app's own share of the
+    /// desk: a desk opens it at the wider of the two, never wider than the
+    /// desk itself, and leaves a window the person has moved or sized as
+    /// they left it. `None`, the default, is the app's share. Like
+    /// [`MIN_WINDOW_WIDTH`](View::MIN_WINDOW_WIDTH) it is not a phone's: a
+    /// touch screen seats the view at the screen's own width. It is never
+    /// under `MIN_WINDOW_WIDTH`, or it does not compile:
+    ///
+    /// ```compile_fail,E0080
+    /// # use serde::{Deserialize, Serialize};
+    /// # use view::{View, prelude::*};
+    /// #[derive(Default, Serialize, Deserialize)]
+    /// struct Cramped;
+    /// impl View for Cramped {
+    ///     const NAME: &'static str = "Cramped";
+    ///     const MIN_WINDOW_WIDTH: u32 = 640;
+    ///     const WINDOW_WIDTH: Option<u32> = Some(600);
+    /// }
+    /// # impl Render for Cramped {
+    /// #     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    /// #         div()
+    /// #     }
+    /// # }
+    /// view::export_view!(Cramped);
+    /// # fn main() {}
+    /// ```
+    const WINDOW_WIDTH: Option<u32> = None;
     /// The view's state on first mount, before it is attached. State only:
     /// what it follows and asks starts in [`attach`](View::attach).
     fn new(_window: &mut Window, _cx: &mut Context<Self>) -> Self {
