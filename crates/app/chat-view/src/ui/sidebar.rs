@@ -114,7 +114,7 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         ));
     }
     let open = chat.room.as_ref().map(|room| room.id.as_str());
-    let room_list = chat.room_list();
+    let room_list = chat.sidebar_rooms();
     // one Tab stop under the header: ↑ ↓ walk the channels and the direct
     // messages, Enter opens the active room
     let ids = room_list.ids();
@@ -141,29 +141,27 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         box_ = box_.child(row);
         index += 1;
     }
-    if !room_list.dms.is_empty() {
-        box_ = box_.child(section_header(
-            "chat-sidebar-dm-header",
-            words::DIRECT_MESSAGES,
-            div(),
+    box_ = box_.child(section_header(
+        "chat-sidebar-dm-header",
+        words::DIRECT_MESSAGES,
+        new_dm(cx, theme),
+        theme,
+    ));
+    for crate::room_list::DmEntry { info, peer, id } in room_list.dms {
+        let selected = open == Some(id.as_str());
+        let row = dm_button(
+            chat,
+            info,
+            peer,
+            id,
+            selected,
+            index == at,
+            cx,
             theme,
-        ));
-        for crate::room_list::DmEntry { info, peer, id } in room_list.dms {
-            let selected = open == Some(id.as_str());
-            let row = dm_button(
-                chat,
-                info,
-                peer,
-                id,
-                selected,
-                index == at,
-                cx,
-                theme,
-                ladder,
-            );
-            box_ = box_.child(row);
-            index += 1;
-        }
+            ladder,
+        );
+        box_ = box_.child(row);
+        index += 1;
     }
     list.child(box_)
 }
@@ -177,8 +175,36 @@ fn new_channel(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme) -> impl IntoE
         };
         cx.notify();
     });
+    let label = if chat.create.is_some() {
+        "✕ Close"
+    } else {
+        "+ New channel"
+    };
+    header_button("chat-sidebar-new-channel", label.to_owned(), toggle, theme)
+}
+
+fn new_dm(cx: &mut Context<Chat>, theme: &Theme) -> impl IntoElement {
+    let open = cx.listener(|chat, _: &ClickEvent, window, cx| {
+        chat.begin_dm();
+        window.focus(super::dialogs::DM_PICK_FIELD);
+        cx.notify();
+    });
+    header_button(
+        "chat-sidebar-new-dm",
+        format!("+ {}", words::NEW_MESSAGE),
+        open,
+        theme,
+    )
+}
+
+fn header_button(
+    id: &'static str,
+    label: String,
+    press: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    theme: &Theme,
+) -> impl IntoElement {
     div()
-        .id("chat-sidebar-new-channel")
+        .id(id)
         // the smallest box a pointer presses, each way (the door's AX-017)
         .min_w(px(24.))
         .min_h(px(24.))
@@ -189,12 +215,8 @@ fn new_channel(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme) -> impl IntoE
         .hover(|s| s.bg(theme.sidebar_raised))
         .role(view::Role::Button)
         .focusable()
-        .on_click(toggle)
-        .child(if chat.create.is_some() {
-            "✕ Close"
-        } else {
-            "+ New channel"
-        })
+        .on_click(press)
+        .child(label)
 }
 
 fn section_header(

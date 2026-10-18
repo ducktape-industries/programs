@@ -13,6 +13,7 @@ use view::methods::Query as Ask;
 use view::methods::{Changes, HostId, HostSession, HostVisible, Session, Submit};
 
 mod agents;
+mod dms;
 mod menus;
 mod message;
 mod notices;
@@ -159,6 +160,12 @@ fn chat_reply(query: Query) -> Reply {
         } else {
             Vec::new()
         })),
+        Query::MessagesAround {
+            channel_id, seq, ..
+        } => Reply::Messages(vec![MsgRow {
+            channel_id,
+            ..row(seq, 8, "**hi** there")
+        }]),
         Query::Members { .. } => Reply::Members(page(Vec::new())),
         Query::Thread { .. } => Reply::Thread {
             root: None,

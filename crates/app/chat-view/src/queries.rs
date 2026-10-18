@@ -85,6 +85,26 @@ pub(crate) async fn around(
     Ok(sorted(rows))
 }
 
+pub(crate) async fn newest(
+    host: Host,
+    channel_id: String,
+    seq: u64,
+    viewer: Vec<Principal>,
+) -> Result<Option<u64>, Error> {
+    let rows = host
+        .query(ask::MessagesAround {
+            channel_id,
+            seq,
+            viewer,
+            page: page(None, 1),
+        })
+        .await?;
+    Ok(rows
+        .into_iter()
+        .find(|row| row.seq == seq)
+        .map(|row| row.time))
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Side {
     Older,

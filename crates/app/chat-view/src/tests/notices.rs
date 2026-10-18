@@ -20,6 +20,7 @@ fn a_pane_posts_nothing_and_takes_a_read_rooms_notices_down() {
         Ok(match query {
             Query::Roots { .. } => Reply::Roots(page(Vec::new())),
             Query::Members { .. } => Reply::Members(page(Vec::new())),
+            query @ Query::MessagesAround { .. } => chat_reply(query),
             query => panic!("unexpected chat query: {query:?}"),
         })
     });
@@ -74,6 +75,7 @@ fn kept_cursors_bring_the_badge_back_after_a_relaunch() {
             ])),
             Query::Roots { .. } => Reply::Roots(page(Vec::new())),
             Query::Members { .. } => Reply::Members(page(Vec::new())),
+            query @ Query::MessagesAround { .. } => chat_reply(query),
             query => panic!("unexpected chat query: {query:?}"),
         })
     });
