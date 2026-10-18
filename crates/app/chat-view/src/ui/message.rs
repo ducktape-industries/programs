@@ -483,7 +483,7 @@ fn blocks(
     let blocks = message.blocks.iter().enumerate();
     blocks
         .map(|(index, block)| {
-            block_view(message, index, block, names, cx, theme).into_any_element()
+            block_view(chat, message, index, block, names, cx, theme).into_any_element()
         })
         .collect()
 }
@@ -713,6 +713,7 @@ fn reactions(
 }
 
 fn block_view(
+    chat: &Chat,
     message: &ChatMessage,
     index: usize,
     block: &Block,
@@ -760,6 +761,10 @@ fn block_view(
             .text_color(theme.muted)
             .child(rich_line(id, spans, names, cx, theme))
             .into_any_element(),
+        Block::Attachment(file) => {
+            let id = format!("chat-message-{}-block-{index}", message.id);
+            crate::ui::attachment::view(chat, id, file, cx, theme, &design::POINTER)
+        }
         Block::Paragraph(spans) => match chat::list_item(spans) {
             // a list item: its marker in a hanging gutter, the item beside it
             Some((marker, item)) => div()

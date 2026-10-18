@@ -41,3 +41,22 @@ fn the_namespace_roots_are_the_chains_and_a_home_names_its_holder() {
     assert_eq!(is_home(&change_path("/home/ada").unwrap()), Some("ada"));
     assert_eq!(is_home(&change_path("/home/ada/notes").unwrap()), None);
 }
+
+#[test]
+fn the_chat_folders_down_to_a_message_are_roots_and_its_files_are_not() {
+    for folder in ["/chat", "/chat/general", "/chat/general/m1"] {
+        let segments = change_path(folder).unwrap();
+        assert!(is_chat_folder(&segments), "{folder}");
+        assert_eq!(
+            beneath_the_roots(&segments).unwrap_err().code,
+            ::program::code::UNAUTHORIZED,
+            "{folder}"
+        );
+    }
+    for beneath in ["/chat/general/m1/a", "/chat/general/m1/a/b", "/chats/x"] {
+        let segments = change_path(beneath).unwrap();
+        assert!(!is_chat_folder(&segments), "{beneath}");
+        assert!(beneath_the_roots(&segments).is_ok(), "{beneath}");
+    }
+    assert!(!is_chat_folder(&change_path("/home/ada").unwrap()));
+}

@@ -158,3 +158,53 @@ pub(crate) const CATEGORY: &str = "Category";
 pub(crate) const NO_CATEGORY: &str = "No category";
 pub(crate) const SET_CATEGORY: &str = "Set category";
 pub(crate) const CLEAR_CATEGORY: &str = "Clear category";
+
+// ---------- a message's files ----------
+
+pub(crate) const ATTACH: &str = "Attach files";
+pub(crate) const SAVE: &str = "Save";
+pub(crate) const UPLOADING: &str = "Uploading…";
+// a put the host ended before the network held it
+pub(crate) const PUT_CLOSED: &str = "The upload stopped before the network held the file";
+// a file a message names that files does not answer for
+pub(crate) const NOT_THERE: &str = "The file isn’t there";
+
+// how far a file is up: the bytes the host sent of all it sends
+pub(crate) fn uploading((sent, all): (u64, u64)) -> String {
+    let percent = match all {
+        0 => 100,
+        all => sent.min(all) * 100 / all,
+    };
+    format!("Uploading {percent}%")
+}
+
+pub(crate) fn remove_file(name: &str) -> String {
+    format!("Remove {name}")
+}
+
+// the message of the commit that puts a draft's file
+pub(crate) fn attached(name: &str) -> String {
+    format!("Attach {name} to a chat message")
+}
+
+// the message of the commit that takes a draft's file out again
+pub(crate) fn unattached(name: &str) -> String {
+    format!("Take {name} out of a chat draft")
+}
+
+// a send handed back because one of its files did not go up
+pub(crate) fn not_up(name: &str, why: &str) -> String {
+    format!("{name} didn’t upload: {why}")
+}
+
+// a count of bytes, in the unit that reads best
+pub(crate) fn size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    match bytes {
+        1 => "1 byte".to_owned(),
+        bytes if bytes < KB => format!("{bytes} bytes"),
+        bytes if bytes < MB => format!("{:.1} KB", bytes as f64 / KB as f64),
+        bytes => format!("{:.1} MB", bytes as f64 / MB as f64),
+    }
+}

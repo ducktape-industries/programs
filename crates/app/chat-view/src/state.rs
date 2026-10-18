@@ -87,6 +87,12 @@ pub struct Chat {
     /// the channel list read again while the one on screen stays
     #[serde(skip)]
     pub(crate) rereading_channels: Option<view::Task<()>>,
+    // each draft file's put, by its draft and id: dropped, it stops
+    #[serde(skip)]
+    pub(crate) uploads: BTreeMap<(String, u64), view::Task<()>>,
+    // what each file a message carries is, once read, by path and snapshot
+    #[serde(skip)]
+    pub(crate) shown_files: BTreeMap<(String, [u8; 32]), crate::attach::Shown>,
 }
 
 /// A page of the view's [`Pages`]: the room list, search, the new-channel

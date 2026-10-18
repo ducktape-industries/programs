@@ -4,6 +4,7 @@ use crate::composer::{Draft, Event, MentionChoice, Outcome, Send, Target, pendin
 use crate::names::mention_token;
 use crate::{Chat, Mode, words};
 use chat::MsgRow;
+use chat::message::Attachment;
 use view::prelude::*;
 
 impl Chat {
@@ -44,12 +45,26 @@ impl Chat {
             return;
         };
         cx.notify();
-        if let Outcome::Action(tag) = draft.handle(event, &key, &choices, window)
-            && tag == "send"
-            && let Some(send) = draft.submitted.take()
-        {
-            draft.in_flight.push(send.clone());
-            self.send(key, send, target, cx);
+        if let Event::Dropped(files) = event {
+            return self.attach(&target, files, cx);
+        }
+        let Outcome::Action(tag) = draft.handle(event, &key, &choices, window) else {
+            return;
+        };
+        match tag.as_str() {
+            "send" => {
+                if let Some(send) = draft.submitted.take() {
+                    self.post_draft(target, send, cx);
+                }
+            }
+            "attach" => self.pick_files(target, cx),
+            "paste" => self.paste(target, cx),
+            tag => {
+                let removed = tag.strip_prefix("remove:").and_then(|id| id.parse().ok());
+                if let Some(id) = removed {
+                    self.remove_file(&target, id, cx);
+                }
+            }
         }
     }
 
@@ -88,14 +103,50 @@ impl Chat {
         })
     }
 
-    fn send(&mut self, key: String, send: Send, target: Target, cx: &mut Context<Self>) {
+    // A send waits while a file of its draft is still going up: it is
+    // posted once they are up, and handed back when one fails.
+    pub(crate) fn post_draft(&mut self, target: Target, send: Send, cx: &mut Context<Self>) {
+        let key = target.key();
+        let Some(draft) = self.drafts.get_mut(&key) else {
+            return;
+        };
+        if draft.uploading() {
+            match &mut draft.queued {
+                Some((queued, _)) => {
+                    if !queued.body.is_empty() && !send.body.is_empty() {
+                        queued.body.push('\n');
+                    }
+                    queued.body.push_str(&send.body);
+                }
+                None => draft.queued = Some((send, target)),
+            }
+            return;
+        }
+        let (files, message) = draft.take_files(&target);
+        draft.in_flight.push(send.clone());
+        self.send(key, send, files, message, target, cx);
+    }
+
+    fn send(
+        &mut self,
+        key: String,
+        send: Send,
+        files: Vec<Attachment>,
+        message: Option<String>,
+        target: Target,
+        cx: &mut Context<Self>,
+    ) {
         let me = self.me();
         let open_dm = self.dm_to_open(&target);
         cx.spawn(async move |this, cx| {
             let host = cx.host();
+            let filed = message.clone();
             let minted = async {
-                let id = host.ask::<HostId>("message".into()).await?;
-                crate::composer::op(id, &send, &target)
+                let id = match filed {
+                    Some(id) => id,
+                    None => host.ask::<HostId>("message".into()).await?,
+                };
+                crate::composer::op(id, &send, &files, &target)
             }
             .await;
             let held = minted
@@ -131,6 +182,7 @@ impl Chat {
                 draft.complete_send(&send);
                 match failed {
                     None => {
+                        draft.sent_files(&files);
                         draft.note.clear();
                         if let Target::Edit { seq, .. } = target
                             && chat
@@ -147,6 +199,7 @@ impl Chat {
                     Some(said) => {
                         draft.note = said;
                         draft.failed(send);
+                        draft.unsent_files(&files, message);
                         if let Some(row) = held {
                             chat.unhold(&row.message_id);
                         }
@@ -205,9 +258,11 @@ impl Chat {
 /// send, and shows what a new one would. For an edit that is whatever it
 /// holds: opening the edit seeds it with the message again.
 fn spent(key: &str, draft: &Draft) -> bool {
-    let unwritten = draft.field.text().is_empty() && draft.note.is_empty();
+    let unwritten =
+        draft.field.text().is_empty() && draft.note.is_empty() && draft.attachments.is_empty();
     (unwritten || Target::edits(key))
         && draft.failed_send.is_none()
         && draft.submitted.is_none()
         && draft.in_flight.is_empty()
+        && draft.queued.is_none()
 }

@@ -95,6 +95,16 @@ impl FakeHost {
         );
     }
 
+    pub fn ends<C: Method>(
+        &self,
+        mut handler: impl FnMut(C::Request) -> Result<C::Reply, Error> + 'static,
+    ) {
+        self.0.borrow_mut().refusals.insert(
+            key::<C>(),
+            answer::<C>(move |request| Some(handler(request))),
+        );
+    }
+
     /// The host never answers an ask of `C`: it stays pending.
     pub fn never<C: Method>(&self) {
         self.0
@@ -156,16 +166,22 @@ impl FakeHost {
         mut handler: impl FnMut(&[u8]) -> Result<Vec<u8>, Error> + 'static,
     ) {
         let key = (kind.to_owned(), target.map(str::to_owned));
-        self.0.borrow_mut().asks.insert(
-            key,
-            Box::new(move |request| {
-                Some(Event::Response {
-                    id: request.id,
-                    result: handler(&request.payload),
-                    done: true,
-                })
-            }),
+        let handler = Rc::new(RefCell::new(move |request: &Request| {
+            Some(Event::Response {
+                id: request.id,
+                result: handler(&request.payload),
+                done: true,
+            })
+        }));
+        let ends = handler.clone();
+        let mut state = self.0.borrow_mut();
+        state.asks.insert(
+            key.clone(),
+            Box::new(move |request| (handler.borrow_mut())(request)),
         );
+        state
+            .refusals
+            .insert(key, Box::new(move |request| (ends.borrow_mut())(request)));
     }
 
     /// One item, as bytes, to every open subscription to `kind` addressed

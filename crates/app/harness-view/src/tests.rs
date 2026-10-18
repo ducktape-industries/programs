@@ -16,7 +16,7 @@ use harness::{
 };
 use view::methods::{
     BlobBody, Block, BlockList, ChainBlocks, Change, Changes, ClipboardWrite, LinkOpen, OpPut,
-    Query, Session, Submitted,
+    Putting, Query, Session, Submitted,
 };
 use view::testing::TestAppContext;
 
@@ -326,15 +326,16 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
     let net = Rc::new(RefCell::new(net));
     let mut cx = TestAppContext::new();
     // every config goes up as one chunk, held as its bytes' stand-in id
-    cx.host().handle::<OpPut>(|ask| {
-        Ok(ask
-            .blobs
-            .iter()
-            .map(|blob| match &blob.body {
-                BlobBody::Bytes(bytes) if blob.kind == files::CHUNK => held_as(bytes),
-                _ => panic!("a config goes up as chunk bytes: {blob:?}"),
-            })
-            .collect())
+    cx.host().ends::<OpPut>(|ask| {
+        Ok(Putting::Held(
+            ask.blobs
+                .iter()
+                .map(|blob| match &blob.body {
+                    BlobBody::Bytes(bytes) if blob.kind == files::CHUNK => held_as(bytes),
+                    _ => panic!("a config goes up as chunk bytes: {blob:?}"),
+                })
+                .collect(),
+        ))
     });
     // an id or a link copied, which `requests` then lists
     cx.host().handle::<ClipboardWrite>(|_| Ok(()));

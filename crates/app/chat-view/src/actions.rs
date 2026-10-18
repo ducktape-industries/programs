@@ -124,10 +124,10 @@ impl Chat {
                 base_rev: rev,
             };
             let choices = self.mention_choices();
-            self.drafts
-                .entry(target.key())
-                .or_default()
-                .seed(&body, &choices);
+            let kept = self.kept_files(pane, seq);
+            let draft = self.drafts.entry(target.key()).or_default();
+            draft.seed(&body, &choices);
+            draft.kept = kept;
         }
         if mode == Mode::Reactions {
             self.picker = Default::default();

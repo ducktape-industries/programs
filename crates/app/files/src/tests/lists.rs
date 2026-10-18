@@ -190,6 +190,41 @@ fn a_home_is_owned_by_the_one_account_named_so_and_its_folder_is_the_chains() {
 }
 
 #[test]
+fn the_chat_folders_are_chats_and_each_file_in_them_its_uploaders() {
+    let chain = chain();
+    write(&chain, ADA, "/chat/general/m1/a").unwrap();
+    write(&chain, BO, "/chat/general/m2/b").unwrap();
+    let chat = Some(Party::Program("chat".into()));
+    for folder in ["/chat", "/chat/general", "/chat/general/m1"] {
+        assert_eq!(owner(&chain, folder), chat, "{folder}");
+        assert_eq!(
+            code_of(list(&chain, ADA, folder, Some(Ownership::Owner))),
+            code::UNAUTHORIZED,
+            "no uploader sets a list on {folder}"
+        );
+    }
+    assert_eq!(owner(&chain, "/chat/general/m1/a"), Some(Party::Account(1)));
+    list(&chain, BO, "/chat/general/m2/b", Some(Ownership::Owner)).unwrap();
+    let removed = |path: &str| vec![Change::Remove { path: path.into() }];
+    for (who, path) in [(ADA, "/chat/general/m2/b"), (BO, "/chat/general")] {
+        assert_eq!(
+            code_of(commit_as(&chain, signed(who), removed(path))),
+            code::UNAUTHORIZED,
+            "{path}"
+        );
+    }
+    let folder = vec![Change::Mkdir {
+        path: "/chat/random".into(),
+    }];
+    assert_eq!(
+        code_of(commit_as(&chain, signed(CY), folder)),
+        code::UNAUTHORIZED
+    );
+    commit_as(&chain, signed(BO), removed("/chat/general/m2/b")).unwrap();
+    commit_as(&chain, signed(ADA), removed("/chat/general/m1/a")).unwrap();
+}
+
+#[test]
 fn a_move_carries_the_lists_at_and_below_its_path_and_a_remove_drops_them() {
     let chain = chain();
     write(&chain, ADA, "/docs/a/x").unwrap();

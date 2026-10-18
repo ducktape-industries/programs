@@ -23,6 +23,8 @@ serde.workspace = true
 serde_json.workspace = true
 ducklink.workspace = true
 chat = { path = "../chat" }
+files.workspace = true
+unicode-normalization.workspace = true
 identity.workspace = true
 access.workspace = true
 harness.workspace = true

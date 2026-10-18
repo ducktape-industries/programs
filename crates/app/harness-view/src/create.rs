@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use view::methods::{BlobBody, NewBlob, OpPut, PutBlobs};
+use view::methods::{BlobBody, NewBlob, PutBlobs};
 use view::prelude::*;
 
 use harness::{AgentSetup, BlobId, Config, Configured, ServerTool, Thinking};
@@ -521,7 +521,7 @@ impl Agents {
             };
             return self.commit_put(agent, form, content, cx);
         }
-        let put = cx.host().ask::<OpPut>(PutBlobs { blobs });
+        let put = cx.host().put(PutBlobs { blobs });
         self.draft.sending = Some(cx.land(put, move |view, answer, cx| {
             view.draft.sending = None;
             match answer {

@@ -16,6 +16,8 @@
 #[cfg(not(feature = "notifier"))]
 mod actions;
 #[cfg(not(feature = "notifier"))]
+mod attach;
+#[cfg(not(feature = "notifier"))]
 mod compose;
 #[cfg(not(feature = "notifier"))]
 mod composer;
@@ -87,8 +89,16 @@ impl View for Chat {
         Capability::Clipboard,
         Capability::Notify,
         Capability::Store,
+        // a file object, read for the chunks Save hands the host
+        Capability::Blob,
+        Capability::File,
     ];
-    const TARGETS: &'static [&'static str] = &[chat::PROGRAM, identity::PROGRAM, access::PROGRAM];
+    const TARGETS: &'static [&'static str] = &[
+        chat::PROGRAM,
+        identity::PROGRAM,
+        access::PROGRAM,
+        files::PROGRAM,
+    ];
     // at 480 an agent message's head line is cut at the room's edge
     const MIN_WINDOW_WIDTH: u32 = 560;
     // the room list, the room and a thread open beside it, none squeezed
@@ -136,6 +146,7 @@ impl Render for Chat {
         self.settle_title(cx);
         self.settle_showing(cx);
         self.settle_dm_heads(cx);
+        self.settle_files(cx);
         // the one pick: a phone draws the Expo app's own screens, every
         // other window the desktop's (STRUCTURE v2)
         if window.touch() {

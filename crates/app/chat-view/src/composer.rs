@@ -2,15 +2,20 @@
 //! kept and focused under, and the chat op a committed draft becomes. The
 //! draft over the host's text field is `draft`; the tree that draws it,
 //! `binding`.
+pub(crate) mod attachments;
 mod binding;
 mod draft;
 
+pub use attachments::{Attaching, Upload};
 pub use binding::{Click, Event, Outcome, view};
-pub(crate) use binding::{Handle, Presses, editor, mention_popup, opening, picks, press, presses};
+pub(crate) use binding::{
+    Handle, Presses, chips, dropped, editor, mention_popup, opening, picks, press, presses,
+};
 pub use draft::{Draft, MentionChoice, Place, Send, focus};
 pub(crate) use draft::{editor_id, matching_choices};
 
-use chat::{MsgRow, Op, Principal, parse_message};
+use chat::message::Attachment;
+use chat::{Block, MsgRow, Op, Principal, parse_message};
 use serde::{Deserialize, Serialize};
 use view::host::Error;
 
@@ -56,12 +61,16 @@ impl Target {
 }
 
 /// The op a committed draft becomes, `id` naming a new message.
-pub fn op(id: String, send: &Send, target: &Target) -> Result<Op, Error> {
+pub fn op(id: String, send: &Send, files: &[Attachment], target: &Target) -> Result<Op, Error> {
     let body = &send.body;
-    if body.is_empty() {
+    if body.is_empty() && files.is_empty() {
         return Err(Error::new("invalid_body", "Message must not be empty"));
     }
-    let blocks = parse_message(body);
+    let mut blocks = match body.is_empty() {
+        true => Vec::new(),
+        false => parse_message(body),
+    };
+    blocks.extend(files.iter().cloned().map(Block::Attachment));
     Ok(match target.clone() {
         Target::Post { channel, thread } => Op::PostMessage {
             channel_id: channel,

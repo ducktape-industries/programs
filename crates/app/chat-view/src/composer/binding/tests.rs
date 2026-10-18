@@ -51,6 +51,7 @@ impl Render for ComposerView {
                     Event::Changed(_) => "changed".into(),
                     Event::Key(..) => "key".into(),
                     Event::Placed(_) => "placed".into(),
+                    Event::Dropped(_) => "dropped".into(),
                 });
                 let choices = view.choices.clone();
                 if let Outcome::Action(tag) = view.draft.handle(event, "c", &choices, window) {
@@ -249,8 +250,8 @@ fn every_mark_is_the_same_square_and_the_field_writes_at_body_size() {
     });
     assert_eq!(
         marks.len(),
-        4,
-        "bold, italic, code and quote are control-high squares"
+        5,
+        "attach, bold, italic, code and quote are control-high squares"
     );
     assert_eq!(body_size, Some(px(design::type_scale::BODY as f32).into()));
     // the field grows with what is written, between a floor and a ceiling

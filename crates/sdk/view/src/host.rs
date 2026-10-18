@@ -232,6 +232,23 @@ impl Host {
         subscription
             .map(|answer| answer.and_then(|bytes| D::decode_reply(&bytes).map_err(malformed)))
     }
+    pub fn put(
+        &self,
+        blobs: methods::PutBlobs,
+    ) -> impl Future<Output = Result<Vec<[u8; 32]>, Error>> + 'static + use<> {
+        let mut putting = self.subscribe::<methods::OpPut>(blobs);
+        async move {
+            while let Some(item) = putting.next().await {
+                if let methods::Putting::Held(digests) = item? {
+                    return Ok(digests);
+                }
+            }
+            Err(Error::new(
+                methods::refusal::REQUEST_CLOSED,
+                "the host closed the put before the network held it",
+            ))
+        }
+    }
     /// A request whose answer nobody waits for.
     pub fn notify<D: Method>(&self, request: D::Request) {
         let id = self
@@ -624,5 +641,24 @@ mod ask_tests {
         assert!(asked(ask::Open, Said::Open(true)).1.unwrap());
         let wrong = asked(ask::Open, Said::Price(3)).1.unwrap_err();
         assert_eq!(wrong.code, ::error::code::UNEXPECTED_REPLY);
+    }
+
+    #[test]
+    fn a_put_waits_past_its_progress_for_held() {
+        use crate::methods::{OpPut, PutBlobs, Putting};
+        let item = |putting: &Putting| Ok(OpPut::encode_reply(putting));
+        let host = Host::default();
+        let held = host.put(PutBlobs { blobs: Vec::new() });
+        let [request] = host.drain_outbox().try_into().unwrap();
+        assert_eq!(request.kind, "op.put");
+        host.fulfill(request.id, item(&Putting::Sent(3)), false);
+        host.fulfill(request.id, item(&Putting::Held(vec![[7; 32]])), true);
+        assert_eq!(futures::executor::block_on(held), Ok(vec![[7; 32]]));
+        let closed = host.put(PutBlobs { blobs: Vec::new() });
+        let [request] = host.drain_outbox().try_into().unwrap();
+        host.fulfill(request.id, item(&Putting::Sent(3)), false);
+        host.close_stream(request.id);
+        let refused = futures::executor::block_on(closed).unwrap_err();
+        assert_eq!(refused.code, crate::methods::refusal::REQUEST_CLOSED);
     }
 }

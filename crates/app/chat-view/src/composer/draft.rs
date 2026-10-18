@@ -3,7 +3,8 @@
 //! text, its undo and its clipboard; the draft follows it and asks for
 //! edits.
 
-use super::Outcome;
+use super::{Attaching, Outcome, Target, Upload};
+use chat::message::Attachment;
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
 use view::{
@@ -91,6 +92,22 @@ pub struct Draft {
     /// view's ask went with its queue.
     #[serde(skip)]
     pub cleared: Vec<wire::TextRange>,
+    // the message its files are filed under, minted with the first
+    #[serde(default)]
+    pub message_id: Option<String>,
+    #[serde(default)]
+    pub attachments: Vec<Attaching>,
+    // how many files were attached: the next one's id
+    #[serde(default)]
+    pub attached: u64,
+    // the files an edit's message carries, which the edit keeps
+    #[serde(default)]
+    pub kept: Vec<Attachment>,
+    // a send that waits for files still going up
+    #[serde(default)]
+    pub queued: Option<(Send, Target)>,
+    #[serde(skip)]
+    pub minting: bool,
 }
 
 /// What a formatting mark wraps its selection in.
@@ -207,7 +224,22 @@ impl Draft {
     }
 
     pub fn can_send(&self) -> bool {
-        !self.body().trim().is_empty()
+        let failed = self.attachments.iter().any(|file| file.failed().is_some());
+        let files = !self.kept.is_empty() || self.attachments.iter().any(|file| !file.sent);
+        !failed && (files || !self.body().trim().is_empty())
+    }
+
+    // the pasted `text` over the selection: one edit, which the host undoes
+    // as one
+    pub fn paste(&self, target: &str, text: &str) -> Option<wire::WidgetCommand> {
+        let text = text.replace("\r\n", "\n").replace('\r', "\n");
+        if text.is_empty() {
+            return None;
+        }
+        let range = self.field.selection();
+        let caret = range.start + text.len();
+        let target = ElementId::Name(target.to_owned().into());
+        Some(self.field.replace(target, range, text, None, caret))
     }
 
     /// The `@name` being typed at the caret, if any: its span and the name
@@ -276,7 +308,14 @@ impl Draft {
             claims.extend([Named::ArrowUp, Named::ArrowDown, Named::Escape].map(bare));
         }
         claims.extend(
-            [("b", false), ("i", false), ("c", true), ("9", true)].map(|(k, s)| chord(k, s)),
+            [
+                ("b", false),
+                ("i", false),
+                ("c", true),
+                ("9", true),
+                ("v", false),
+            ]
+            .map(|(k, s)| chord(k, s)),
         );
         claims
     }
@@ -292,6 +331,7 @@ impl Draft {
             return match (&key.key, key.modifiers.shift) {
                 (Key::Character(key), false) if key == "b" => Some("bold".into()),
                 (Key::Character(key), false) if key == "i" => Some("italic".into()),
+                (Key::Character(key), false) if key == "v" => Some("paste".into()),
                 (Key::Character(key), true) if key == "c" => Some("code".into()),
                 (Key::Character(key), true) if key == "9" => Some("quote".into()),
                 _ => None,
@@ -323,6 +363,10 @@ impl Draft {
         target: &str,
         choices: &[MentionChoice],
     ) -> (Vec<wire::WidgetCommand>, Outcome) {
+        // the view's to do: the host's picker, its clipboard, a file let go
+        if tag == "attach" || tag == "paste" || tag.starts_with("remove:") {
+            return (Vec::new(), Outcome::Action(tag.to_owned()));
+        }
         let last = self
             .menu(choices)
             .map_or(0, |(matches, _)| matches.len().saturating_sub(1));
@@ -351,6 +395,10 @@ impl Draft {
                 self.submitted = Some(Send {
                     body: self.body().trim().to_owned(),
                 });
+                // files alone: no text to clear
+                if len == 0 {
+                    return (Vec::new(), Outcome::Action("send".into()));
+                }
                 // the whole text is spoken for until the host's word shows
                 // the clear landed: a second Enter before then sends only
                 // what was typed since
@@ -459,6 +507,15 @@ impl Draft {
     }
 
     pub fn retire_device_requests(&mut self) {
+        if let Some((send, _)) = self.queued.take() {
+            self.in_flight.push(send);
+        }
+        for file in &mut self.attachments {
+            if file.landed().is_none() && file.failed().is_none() {
+                let cut = "The upload was cut off; remove the file and attach it again";
+                file.upload = Upload::Failed(cut.into());
+            }
+        }
         for send in std::mem::take(&mut self.in_flight) {
             self.failed(send);
             self.note = "A send was interrupted; check the conversation before restoring it".into();

@@ -662,12 +662,14 @@ dependencies = [
  "access",
  "chat",
  "ducklink",
+ "files",
  "futures",
  "harness",
  "identity",
  "program",
  "serde",
  "serde_json",
+ "unicode-normalization",
  "view",
 ]
 

@@ -777,7 +777,7 @@ fn sends(
     let puts = Rc::new(RefCell::new(Vec::new()));
     let asked = puts.clone();
     let chain = net.clone();
-    cx.host().handle::<OpPut>(move |ask| {
+    cx.host().ends::<OpPut>(move |ask| {
         asked.borrow_mut().push(ask.blobs.clone());
         if let Some(refusal) = answer(asked.borrow().len(), &ask) {
             return Err(refusal);

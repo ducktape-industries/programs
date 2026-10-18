@@ -1,8 +1,10 @@
-//! Paths as files spells them (NFC, absolute, `/`-separated), and the namespace roots
-//! (`/home`, `/shared`, each `/home/<name>`) that the chain alone writes. Who else writes a path
-//! is its write list in the access program.
+//! Paths as files spells them (NFC, absolute, `/`-separated), and the namespace roots the chain
+//! alone writes: `/home`, `/shared`, each `/home/<name>`, and `/chat` with each channel and message
+//! folder in it, which chat owns. Who else writes a path is its write list in the access program.
 use ::program::{Error, invalid, unauthorized};
 use unicode_normalization::UnicodeNormalization;
+
+pub const CHAT: &str = "chat";
 
 pub fn segments(path: &str) -> Result<Vec<String>, Error> {
     if !path.starts_with('/') {
@@ -37,14 +39,22 @@ pub fn join(segments: &[String]) -> String {
 
 pub fn is_namespace_root(segments: &[String]) -> bool {
     match segments {
-        [root] => root == "home" || root == "shared",
+        [root] => root == "home" || root == "shared" || root == CHAT,
         [folder @ .., _] => holds_namespace_roots(folder),
         [] => false,
     }
 }
 
 pub fn holds_namespace_roots(folder: &[String]) -> bool {
-    matches!(folder, [root] if root == "home")
+    match folder {
+        [root] => root == "home" || root == CHAT,
+        [root, _] => root == CHAT,
+        _ => false,
+    }
+}
+
+pub fn is_chat_folder(segments: &[String]) -> bool {
+    segments.first().is_some_and(|root| root == CHAT) && is_namespace_root(segments)
 }
 
 pub(crate) fn beneath_the_roots(segments: &[String]) -> Result<(), Error> {
@@ -52,8 +62,9 @@ pub(crate) fn beneath_the_roots(segments: &[String]) -> Result<(), Error> {
         return Ok(());
     }
     Err(unauthorized(format!(
-        "{} is a namespace root: /home, /shared and each /home/<name> are written by the \
-         chain alone, and anyone writes beneath them where no write list says otherwise",
+        "{} is a namespace root: /home, /shared, each /home/<name>, and /chat with its channel \
+         and message folders are written by the chain alone, and anyone writes beneath them \
+         where no write list says otherwise",
         join(segments)
     )))
 }

@@ -208,6 +208,7 @@ pub fn message_body(blocks: &[Block], names: &Names) -> String {
                 None => text.clone(),
             },
             Block::Divider => "────────".to_owned(),
+            Block::Attachment(file) => file.name.clone(),
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -218,6 +219,7 @@ pub fn message_body(blocks: &[Block], names: &Names) -> String {
 fn draft_body(blocks: &[Block]) -> String {
     blocks
         .iter()
+        .filter(|block| !matches!(block, Block::Attachment(_)))
         .map(|block| match block {
             Block::Paragraph(spans) => draft_spans(spans),
             Block::Quote(spans) => format!("> {}", draft_spans(spans)),
@@ -225,6 +227,7 @@ fn draft_body(blocks: &[Block]) -> String {
                 format!("```{}\n{text}\n```", lang.clone().unwrap_or_default())
             }
             Block::Divider => "---".to_owned(),
+            Block::Attachment(_) => String::new(),
         })
         .collect::<Vec<_>>()
         .join("\n")

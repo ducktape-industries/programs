@@ -425,13 +425,9 @@ fn the_rig_speaks_the_node_contract_core_speaks() {
     assert_eq!(wire::NODE_CONTRACT, 9);
 }
 
-/// A pick gives handles no pick gave before, one file unless `multiple`,
-/// and a cancelled pick keeps the latest; `op.put` reads only the latest
-/// pick's files, and what it put `blob.get` reads at once: it answers once
-/// the network holds it.
 #[test]
-fn a_put_reads_the_latest_pick_and_its_blob_is_held_at_once() {
-    use crate::methods::{BlobBody, NewBlob, Pick, Picked, PutBlobs};
+fn a_put_reads_a_held_file_and_its_blob_is_held_at_once() {
+    use crate::methods::{BlobBody, NewBlob, Pick, Picked, PutBlobs, Putting};
     let net = Network::new();
     net.device(&[("a.txt", b"first"), ("b.txt", b"second")]);
     let pick = |multiple| -> Vec<u64> {
@@ -457,13 +453,18 @@ fn a_put_reads_the_latest_pick_and_its_blob_is_held_at_once() {
     assert_eq!(pick(true), [2, 3]);
     net.device(&[]);
     assert!(pick(true).is_empty(), "cancelled");
+    assert!(put(1, 5).is_ok(), "a pick before the latest is still held");
+    let release = methods::encode(&Vec::from([1u64]));
+    net.answer("file.release", None, &release).unwrap();
     let refused = put(1, 5).unwrap_err();
     assert_eq!(
         refused.code,
         methods::refusal::MALFORMED_REQUEST,
-        "an older pick's"
+        "a released file's"
     );
-    let ids: Vec<[u8; 32]> = methods::decode(&put(3, 6).unwrap()).unwrap();
+    let Putting::Held(ids) = methods::decode(&put(3, 6).unwrap()).unwrap() else {
+        panic!("a put is held at once")
+    };
     let hex: String = ids[0].iter().map(|byte| format!("{byte:02x}")).collect();
     let id = methods::encode(&format!("sha256:{hex}"));
     let got: Option<Vec<u8>> =

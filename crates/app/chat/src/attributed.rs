@@ -18,7 +18,7 @@ fn mentioned(blocks: &[Block]) -> impl Iterator<Item = AccountNumber> + '_ {
         .iter()
         .flat_map(|block| match block {
             Block::Paragraph(spans) | Block::Quote(spans) => spans.as_slice(),
-            Block::Code { .. } | Block::Divider => &[],
+            Block::Code { .. } | Block::Divider | Block::Attachment(_) => &[],
         })
         .flat_map(|span| &span.marks)
         .filter_map(|mark| match mark {

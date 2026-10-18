@@ -100,6 +100,10 @@ pub(crate) fn sent(uploads: &[Upload]) -> Vec<&str> {
         .collect()
 }
 
+pub(crate) fn handles(uploads: &[Upload]) -> Vec<u64> {
+    uploads.iter().map(|upload| upload.file).collect()
+}
+
 /// What the upload's commit puts: each file it sends, with its content
 /// (`content(n)` for the `n`th); or why it puts nothing.
 pub(crate) fn puts(

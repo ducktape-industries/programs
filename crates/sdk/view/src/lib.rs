@@ -94,6 +94,7 @@ pub mod borsh_bytes;
 pub mod design;
 pub mod host;
 pub mod live;
+pub mod picture;
 #[cfg(feature = "rig")]
 pub mod rig;
 pub mod store;

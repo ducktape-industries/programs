@@ -8,10 +8,13 @@ chain.heads None () -> Head
 chain.network None () -> NetworkStatus
 chain.status None () -> NodeStatus
 chain.tx None TxAsk -> Option<Located>
+clipboard.files None () -> Pasted
 clipboard.read None () -> Clipboard
 clipboard.write None String -> ()
 clock.ticks None i64 -> ()
 file.pick None Pick -> Vec<Picked>
+file.release None Vec<u64> -> ()
+file.save None SaveFile -> bool
 host.badge None i64 -> ()
 host.float None Float -> Placement
 host.id None String -> String
@@ -37,7 +40,7 @@ microphone.chime None Option<String> -> ()
 microphone.devices None () -> AudioDevices
 notify.post None Notification -> Delivery
 notify.seen None String -> ()
-op.put None PutBlobs -> Vec<[u8; 32]>
+op.put None PutBlobs -> Putting
 op.submit Some("P") ProgramOp -> Submitted
 program.changes Some("P") () -> Option<Change>
 program.describe None (String, Vec<u8>) -> Option<Description>
@@ -144,6 +147,7 @@ Option<u64> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "u6
 Outcome = Enum { tag_width: 1, variants: [(0, "Applied", "Outcome__Applied"), (1, "Rejected", "Outcome__Rejected")] }
 Outcome__Applied = Struct { fields: NamedFields([("output", "Vec<u8>")]) }
 Outcome__Rejected = Struct { fields: UnnamedFields(["Error"]) }
+Pasted = Struct { fields: NamedFields([("files", "Vec<Picked>"), ("text", "String")]) }
 Peer = Struct { fields: NamedFields([("key", "Vec<u8>"), ("signed", "Option<u64>")]) }
 Pick = Struct { fields: NamedFields([("multiple", "bool")]) }
 Picked = Struct { fields: NamedFields([("name", "String"), ("size", "u64"), ("file", "u64")]) }
@@ -160,7 +164,11 @@ Publishing__Cut = Struct { fields: NamedFields([("group", "u64")]) }
 Publishing__Subscribers = Struct { fields: UnnamedFields(["u32"]) }
 Publishing__Waiting = Struct { fields: Empty }
 PutBlobs = Struct { fields: NamedFields([("blobs", "Vec<NewBlob>")]) }
+Putting = Enum { tag_width: 1, variants: [(0, "Sent", "Putting__Sent"), (1, "Held", "Putting__Held")] }
+Putting__Held = Struct { fields: UnnamedFields(["Vec<[u8; 32]>"]) }
+Putting__Sent = Struct { fields: UnnamedFields(["u64"]) }
 Receipt = Struct { fields: NamedFields([("program", "String"), ("outcome", "Outcome"), ("events", "Vec<Vec<u8>>"), ("nested", "Vec<Receipt>")]) }
+SaveFile = Struct { fields: NamedFields([("name", "String"), ("blobs", "Vec<[u8; 32]>")]) }
 Session = Struct { fields: NamedFields([("connected", "bool"), ("chain_id", "String"), ("signer", "String"), ("account", "Option<u64>"), ("endpoint", "String")]) }
 String = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "u8" }
 Submitted = Enum { tag_width: 1, variants: [(0, "Applied", "Submitted__Applied"), (1, "Refused", "Submitted__Refused"), (2, "InDoubt", "Submitted__InDoubt")] }
@@ -209,6 +217,7 @@ Vec<Tx> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "T
 Vec<Value> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Value" }
 Vec<Vec<u8>> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Vec<u8>" }
 Vec<[u8; 32]> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "[u8; 32]" }
+Vec<u64> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "u64" }
 Vec<u8> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "u8" }
 Watching = Enum { tag_width: 1, variants: [(0, "Waiting", "Watching__Waiting"), (1, "Announce", "Watching__Announce")] }
 Watching__Announce = Struct { fields: UnnamedFields(["LiveAnnounce"]) }

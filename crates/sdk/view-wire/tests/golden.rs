@@ -566,7 +566,42 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
                     },
                 ],
             },
-            vec![[0x11; 32], [0x22; 32]],
+            Putting::Held(vec![[0x11; 32], [0x22; 32]]),
+        ),
+        exchange::<OpPut>(
+            PutBlobs {
+                blobs: vec![NewBlob {
+                    kind: "chunk".into(),
+                    body: BlobBody::Bytes(b"tape".to_vec()),
+                }],
+            },
+            Putting::Sent(12),
+        ),
+        exchange::<FileRelease>(vec![1, 2], ()),
+        exchange::<FileSave>(
+            SaveFile {
+                name: "tape.png".into(),
+                blobs: vec![[0x11; 32]],
+            },
+            true,
+        ),
+        exchange::<FileSave>(
+            SaveFile {
+                name: "tape.png".into(),
+                blobs: Vec::new(),
+            },
+            false,
+        ),
+        exchange::<ClipboardFiles>(
+            (),
+            Pasted {
+                files: vec![Picked {
+                    name: "image.png".into(),
+                    size: 3,
+                    file: 3,
+                }],
+                text: String::new(),
+            },
         ),
         exchange::<LinkOpen>("duck://chat/room".into(), ()),
         exchange::<LinkWindow>("duck://chat/room".into(), ()),

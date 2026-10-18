@@ -12,7 +12,7 @@ use view::{Deferred, Div, Stateful};
 
 use super::parts::{self, NoticeKind, face};
 use crate::composer::{
-    Click, Draft, Event, Handle, MentionChoice, Presses, Target, editor, editor_id,
+    Click, Draft, Event, Handle, MentionChoice, Presses, Target, chips, dropped, editor, editor_id,
     matching_choices, mention_popup, opening, picks, press, presses,
 };
 use crate::words;
@@ -71,6 +71,14 @@ pub(super) fn band(
         cx,
     );
     let presses = presses(editable, &editor_id, &handle, cx);
+    let attach = match edits {
+        true => None,
+        false => {
+            let click = press(editable, "attach".into(), &editor_id, &handle, cx);
+            Some(attach_button(&key, click, theme, ladder))
+        }
+    };
+    let chips = chips(draft, &key, editable, &handle, cx, ladder);
     let restore =
         draft
             .failed_send
@@ -84,7 +92,8 @@ pub(super) fn band(
         .bg(theme.background)
         .children(mentions(chat, draft, &key, presses, theme, ladder))
         .children(original.map(|original| edit_bar(&key, original, cx, theme, ladder)))
-        .child(field_row(draft, field, send, edits, theme, ladder))
+        .children(chips)
+        .child(field_row(draft, field, attach, send, edits, theme, ladder))
         .children((!draft.note.is_empty()).then(|| {
             div()
                 .px(design::space::BLOCK)
@@ -106,6 +115,17 @@ pub(super) fn band(
                 ladder,
             )
         }));
+    let column = match edits {
+        true => column.into_any_element(),
+        false => {
+            let (edge, ground) = (theme.primary, theme.accent_soft);
+            column
+                .id(ElementId::Name(format!("{key}/drop").into()))
+                .on_file_drop(dropped(&handle, cx))
+                .file_drag_over(move |style| style.border_color(edge).bg(ground))
+                .into_any_element()
+        }
+    };
     let placed = handle.clone();
     sensor(ElementId::Name(key.into()), column)
         .on_bounds(
@@ -272,6 +292,7 @@ fn edit_bar(
 fn field_row(
     draft: &Draft,
     field: Textarea,
+    attach: Option<AnyElement>,
     send: Option<Click>,
     editing: bool,
     theme: &Theme,
@@ -317,6 +338,18 @@ fn field_row(
         .pl(design::space::BLOCK)
         .pr(design::space::LG)
         .py(design::space::SM)
+        .children(attach)
         .child(field)
         .child(send)
+}
+
+// The way to the host's picker, beside the field.
+fn attach_button(key: &str, click: Option<Click>, theme: &Theme, ladder: &Ladder) -> AnyElement {
+    let enabled = click.is_some();
+    let click: Click = click.unwrap_or_else(|| Box::new(|_, _, _| {}));
+    let glyph = design::icon("paperclip", ladder.icon);
+    let id = ElementId::Name(format!("{key}/attach").into());
+    design::icon_button(id, glyph, words::ATTACH, ladder, theme, click)
+        .enabled(enabled)
+        .into_any_element()
 }

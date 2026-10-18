@@ -75,6 +75,7 @@ pub enum Block {
     Code { lang: Option<String>, text: String },
     Quote(Vec<Span>),
     Divider,
+    Attachment(Attachment),
 }
 
 impl Block {
@@ -82,6 +83,26 @@ impl Block {
     pub fn paragraph(text: impl Into<String>) -> Self {
         Self::Paragraph(vec![Span::plain(text)])
     }
+}
+
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+#[serde(deny_unknown_fields)]
+pub struct Attachment {
+    pub path: String,
+    pub snapshot: [u8; 32],
+    pub name: String,
+    pub size: u64,
+    pub content_type: String,
 }
 
 /// A one-level list item's marker: `- ` / `* ` bullets and `1. ` numbers.

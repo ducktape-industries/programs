@@ -1,11 +1,11 @@
-//! What each files op needs of the access program, and who owns each key: a path is owned by
-//! the account that created it, each `/home/<name>` by the one account named `<name>`, and a
-//! pin (`pins/<name>`) by the account that made it, which alone drops it unless it lists others.
+//! What each files op needs of the access program, and who owns each key: a path by the account
+//! that created it, each `/home/<name>` by the one account named `<name>`, each `/chat` folder by
+//! chat, and a pin (`pins/<name>`) by the account that made it, which alone drops it unless listed.
 use ::program::{Error, Need, Ownership, Party, QueryCtx, Resource};
 use store::PageRequest;
 
 use crate::commit::needs as commit_needs;
-use crate::paths::{change_path, is_home};
+use crate::paths::{CHAT, change_path, is_chat_folder, is_home};
 use crate::state::{HEAD, PINS};
 use crate::tree::TreeEdit;
 use crate::{AccountNumber, Op};
@@ -36,11 +36,12 @@ pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
         return Ok(Resource::default());
     };
     let owner = match is_home(&segments) {
-        Some(name) => named(ctx, name)?,
-        None => created(ctx, &segments)?,
+        Some(name) => named(ctx, name)?.map(Party::Account),
+        None if is_chat_folder(&segments) => Some(Party::Program(CHAT.into())),
+        None => created(ctx, &segments)?.map(Party::Account),
     };
     Ok(Resource {
-        owner: owner.map(Party::Account),
+        owner,
         default: None,
     })
 }

@@ -47,12 +47,13 @@ pub(super) fn blocks(
         .enumerate()
         .map(|(index, block)| {
             let id = format!("chat-message-{}-block-{index}", message.id);
-            block_view(id, block, names, cx, theme, ladder)
+            block_view(chat, id, block, names, cx, theme, ladder)
         })
         .collect()
 }
 
 fn block_view(
+    chat: &Chat,
     id: String,
     block: &Block,
     names: &Names,
@@ -76,6 +77,7 @@ fn block_view(
             .text_color(theme.muted)
             .child(runs(id.into(), spans, names, cx, theme))
             .into_any_element(),
+        Block::Attachment(file) => crate::ui::attachment::view(chat, id, file, cx, theme, ladder),
         Block::Paragraph(spans) => match chat::list_item(spans) {
             Some((marker, item)) => div()
                 .id(format!("{id}-item"))

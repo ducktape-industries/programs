@@ -593,13 +593,32 @@ pub struct NewBlob {
 pub enum BlobBody {
     /// bytes the view holds
     Bytes(Vec<u8>),
-    /// `len` bytes from `offset` of a file of the view's latest pick
-    /// ([`Picked::file`]): they go from the file to the node, never through
-    /// the view
-    Picked { file: u64, offset: u64, len: u64 },
+    Picked {
+        file: u64,
+        offset: u64,
+        len: u64,
+    },
 }
 /// The most bytes one blob of an `op.put` holds.
 pub const BLOB_MOST: u64 = 1 << 20;
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub enum Putting {
+    Sent(u64),
+    Held(Vec<[u8; 32]>),
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub struct SaveFile {
+    pub name: String,
+    pub blobs: Vec<[u8; 32]>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub struct Pasted {
+    pub files: Vec<Picked>,
+    pub text: String,
+}
 /// One notice for the host to decide on: `notify.post`. The view asks; the
 /// host logs it in its notification centre and decides whether a banner
 /// reaches the screen (the person's per-view choice, focus, a burst limit).
@@ -1139,10 +1158,8 @@ methods! {
     MicrophoneChime, "microphone.chime", Option<String>, ();
     /// `file.pick`: the person picks files on this device in the system's
     /// own picker ([`Pick`]), answered with each one picked ([`Picked`]);
-    /// cancelled, none. The host holds the files picked open for the view's
-    /// `op.put` ([`BlobBody::Picked`]) until it picks files again (a
-    /// cancelled pick keeps them) or goes away. Only a press or key opens
-    /// the picker: a request without one is refused `needs_gesture`. A host
+    /// cancelled, none. Only a press or key opens the picker: a request
+    /// without one is refused `needs_gesture`. A host
     /// whose system has no picker, or a pick it cannot open (one that is
     /// not a file), is refused [`refusal::HOST_FAULT`], naming the file by
     /// its name alone.
@@ -1168,8 +1185,8 @@ methods! {
     /// anyone may read it by its id.
     ///
     /// Refused [`refusal::MALFORMED_REQUEST`]: no blob, a kind that is not
-    /// one word, a blob over [`BLOB_MOST`], a handle not of the latest
-    /// pick, or a slice past the file's size as picked.
+    /// one word, a blob over [`BLOB_MOST`], or a slice past the file's
+    /// size as picked.
     /// [`refusal::HOST_FAULT`]: a picked file that cannot be read, or whose
     /// size changed since the pick. [`refusal::SESSION_LOCKED`]: no key is
     /// unlocked to sign it. `anchor`: no block carried the put by the last
@@ -1179,7 +1196,10 @@ methods! {
     /// on as they came. To put again is safe: the same blobs are the same
     /// ids, in a bundle of their own. The answer waits as long as the
     /// network takes to hold the bundle.
-    OpPut, "op.put", PutBlobs, Vec<[u8; 32]>;
+    OpPut, "op.put", PutBlobs, Putting;
+    FileRelease, "file.release", Vec<u64>, ();
+    FileSave, "file.save", SaveFile, bool;
+    ClipboardFiles, "clipboard.files", (), Pasted;
 }
 
 /// The `<capability>` half of every kind in [`ALL`]: what a view's manifest

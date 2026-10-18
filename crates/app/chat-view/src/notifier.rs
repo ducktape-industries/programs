@@ -508,7 +508,7 @@ fn mentions(blocks: &[Block], me: u64) -> bool {
         Block::Paragraph(spans) | Block::Quote(spans) => spans
             .iter()
             .any(|span| span.marks.contains(&Mark::Mention(Principal::Account(me)))),
-        Block::Code { .. } | Block::Divider => false,
+        Block::Code { .. } | Block::Divider | Block::Attachment(_) => false,
     })
 }
 

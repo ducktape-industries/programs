@@ -5,9 +5,11 @@
 use super::draft::{Draft, MentionChoice, Place, matching_choices};
 use crate::words;
 use std::rc::Rc;
+use view::design::Ladder;
 use view::prelude::*;
 use view::{
-    Anchor, AnchoredPositionMode, Deferred, Div, Edges, FontWeight, Point, UniformList, wire,
+    Anchor, AnchoredPositionMode, Deferred, Div, Edges, FontWeight, Point, Stateful, UniformList,
+    wire,
 };
 
 /// What the composer hears: the host's text moved, a key it claimed went
@@ -19,6 +21,8 @@ pub enum Event {
     Key(wire::keyboard::KeyState, bool),
     Action(String),
     Placed(Place),
+    // files dropped on the composer, which the host holds
+    Dropped(Vec<Picked>),
 }
 
 /// What the view does after the draft handled an event: nothing more, or
@@ -58,6 +62,7 @@ impl Draft {
                 self.placed = Some(place);
                 return Outcome::Updated;
             }
+            Event::Dropped(_) => return Outcome::Updated,
         };
         let (edits, outcome) = self.act(&tag, &format!("{key}/editor"), choices);
         for edit in edits {
@@ -418,6 +423,9 @@ pub fn view<V: 'static, F: Fn(&mut V, Event, &mut Window, &mut Context<V>) + 'st
     let menu = mention_menu(draft, key, &editor_id, editable, choices, pane, &handle, cx);
     rows.extend(menu.map(IntoElement::into_any_element));
     rows.push(editor.into_any_element());
+    let attaches = !super::Target::edits(key);
+    let chips = chips(draft, key, editable, &handle, cx, &design::POINTER);
+    rows.extend(chips.map(IntoElement::into_any_element));
 
     if !draft.note.is_empty() {
         rows.push(
@@ -466,6 +474,10 @@ pub fn view<V: 'static, F: Fn(&mut V, Event, &mut Window, &mut Context<V>) + 'st
         }),
         ("“", "Quote", "quote", |sign| sign.text_size(px(16.))),
     ];
+    if attaches {
+        let attach = press(editable, "attach".into(), &editor_id, &handle, cx);
+        toolbar = toolbar.child(attach_control(key, attach, cx.global::<Theme>()));
+    }
     for (sign, label, tag, face) in faces {
         toolbar = toolbar.child(Mark {
             id: ElementId::Name(format!("{key}/{tag}").into()),
@@ -502,6 +514,15 @@ pub fn view<V: 'static, F: Fn(&mut V, Event, &mut Window, &mut Context<V>) + 'st
         .bg(cx.global::<Theme>().background)
         .pb(design::space::XXS)
         .children(rows);
+    let theme = *cx.global::<Theme>();
+    let column = match attaches {
+        true => column
+            .id(ElementId::Name(format!("{key}/drop").into()))
+            .on_file_drop(dropped(&handle, cx))
+            .file_drag_over(move |style| style.border_color(theme.primary).bg(theme.accent_soft))
+            .into_any_element(),
+        false => column.into_any_element(),
+    };
     let placed = handle.clone();
     sensor(ElementId::Name(key.into()), column).on_bounds(cx.listener(
         move |view, bounds: &Bounds<Pixels>, window, cx| {
@@ -509,6 +530,119 @@ pub fn view<V: 'static, F: Fn(&mut V, Event, &mut Window, &mut Context<V>) + 'st
             cx.notify();
         },
     ))
+}
+
+// Files the host holds, dropped on the composer, to `handle`.
+pub(crate) fn dropped<V: 'static>(
+    handle: &Handle<V>,
+    cx: &Context<V>,
+) -> impl Fn(&Vec<Picked>, &mut Window, &mut App) + 'static {
+    let handle = handle.clone();
+    cx.listener(move |view: &mut V, files: &Vec<Picked>, window, cx| {
+        handle(view, Event::Dropped(files.clone()), window, cx);
+        cx.notify();
+    })
+}
+
+// The toolbar's way to the host's picker.
+fn attach_control(key: &str, on_click: Option<Click>, theme: &Theme) -> Stateful<Div> {
+    let theme = *theme;
+    let mut control = div()
+        .id(ElementId::Name(format!("{key}/attach").into()))
+        .role(Role::Button)
+        .aria_label(words::ATTACH)
+        .aria_disabled(on_click.is_none())
+        .flex()
+        .items_center()
+        .justify_center()
+        .size(design::size::CONTROL)
+        .text_color(theme.muted)
+        .child(design::icon("paperclip", design::text::BODY));
+    if let Some(on_click) = on_click {
+        control = control
+            .hover(move |style| style.bg(theme.surface_raised).text_color(theme.foreground))
+            .focusable()
+            .on_click(on_click);
+    }
+    control
+}
+
+// The draft's files not sent yet, under the field: each one's name, how far
+// it is up or why it failed, and the way to take it out.
+pub(crate) fn chips<V: 'static>(
+    draft: &Draft,
+    key: &str,
+    editable: bool,
+    handle: &Handle<V>,
+    cx: &Context<V>,
+    ladder: &Ladder,
+) -> Option<Div> {
+    let files: Vec<_> = draft.attachments.iter().filter(|file| !file.sent).collect();
+    if files.is_empty() {
+        return None;
+    }
+    let theme = *cx.global::<Theme>();
+    let editor_id = super::draft::editor_id(key);
+    let presses = presses(editable, &editor_id, handle, cx);
+    let chips = files.into_iter().map(|file| {
+        let id = format!("{key}/file/{}", file.id);
+        let (status, tone) = match (file.failed(), file.progress()) {
+            (Some(why), _) => (why.to_owned(), theme.danger),
+            (None, Some(progress)) => (words::uploading(progress), theme.muted),
+            (None, None) if file.landed().is_some() => (words::size(file.size), theme.muted),
+            (None, None) => (words::UPLOADING.to_owned(), theme.muted),
+        };
+        let edge = match file.failed() {
+            Some(_) => theme.danger,
+            None => theme.border,
+        };
+        let tag = format!("remove:{}", file.id);
+        let remove = presses.as_ref().map(|presses| picks(presses, tag));
+        let removable = remove.is_some();
+        let remove: Click = remove.unwrap_or_else(|| Box::new(|_, _, _| {}));
+        let named = div()
+            .flex_1()
+            .min_w(px(0.))
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .truncate()
+                    .text_type(ladder.secondary)
+                    .child(file.name.clone()),
+            )
+            .child(
+                div()
+                    .id(ElementId::Name(format!("{id}/status").into()))
+                    .truncate()
+                    .text_type(ladder.caption)
+                    .text_color(tone)
+                    .child(status),
+            );
+        let remove = design::icon_button(
+            ElementId::Name(format!("{id}/remove").into()),
+            design::icon("x", ladder.icon),
+            words::remove_file(&file.name),
+            ladder,
+            &theme,
+            remove,
+        )
+        .enabled(removable);
+        div()
+            .id(ElementId::Name(id.into()))
+            .flex()
+            .items_center()
+            .gap(design::space::SM)
+            .max_w(px(280.))
+            .pl(design::space::SM)
+            .border_1()
+            .border_color(edge)
+            .bg(theme.surface)
+            .child(named)
+            .child(remove)
+    });
+    let row = div().flex().flex_wrap().gap(design::space::SM);
+    Some(row.px(design::space::MD).children(chips))
 }
 
 #[cfg(test)]

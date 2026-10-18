@@ -17,6 +17,7 @@ pub fn plain_text(blocks: &[Block]) -> String {
                 spans.iter().map(|s| s.text.as_str()).collect::<String>()
             }
             Block::Code { text, .. } => text.clone(),
+            Block::Attachment(file) => file.name.clone(),
             Block::Divider => continue,
         };
         if !out.is_empty() {
@@ -41,7 +42,7 @@ pub fn tokens(text: &str) -> BTreeSet<String> {
 pub fn tags(blocks: &[Block]) -> Vec<String> {
     let spans = blocks.iter().flat_map(|block| match block {
         Block::Paragraph(spans) | Block::Quote(spans) => spans.as_slice(),
-        Block::Code { .. } | Block::Divider => &[],
+        Block::Code { .. } | Block::Divider | Block::Attachment(_) => &[],
     });
     let mut out: Vec<String> = Vec::new();
     for span in spans.filter(|span| {

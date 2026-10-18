@@ -97,8 +97,6 @@ struct State {
     /// The files a person picks on this device ([`Network::device`]): each
     /// one's name and bytes.
     device: Vec<(String, Vec<u8>)>,
-    /// The latest pick's files by handle, and the last handle given: a pick
-    /// gives handles no pick gave before, so an older pick's name nothing.
     pick: Vec<(u64, Vec<u8>)>,
     handles: u64,
 }
@@ -490,6 +488,7 @@ impl Network {
             "invite.create",
             "program.describe",
             "file.pick",
+            "file.release",
             "op.put",
         ] {
             let net = self.clone();
@@ -518,8 +517,7 @@ impl Network {
 
     /// The files a person picks on this device, by name, in order:
     /// `file.pick` answers them (the first alone to a pick not `multiple`;
-    /// none, a cancelled pick, keeps the latest), and `op.put` reads a
-    /// picked body out of the latest pick only, as the host does.
+    /// none, a cancelled pick).
     pub fn device(&self, files: &[(&str, &[u8])]) {
         self.0.borrow_mut().device = files
             .iter()
@@ -527,8 +525,6 @@ impl Network {
             .collect();
     }
 
-    /// `len` bytes from `offset` of the latest pick's file `file`, if it
-    /// holds them.
     fn picked(&self, file: u64, offset: u64, len: u64) -> Option<Vec<u8>> {
         let state = self.0.borrow();
         let (_, bytes) = state.pick.iter().find(|(handle, _)| *handle == file)?;
@@ -685,7 +681,7 @@ impl Network {
                 if !files.is_empty() {
                     state.handles += files.len() as u64;
                     let bodies = files.iter().map(|(_, bytes)| bytes.clone());
-                    state.pick = (first..).zip(bodies).collect();
+                    state.pick.extend((first..).zip(bodies));
                 }
                 let picked: Vec<methods::Picked> = (files.into_iter().zip(first..))
                     .map(|((name, bytes), file)| methods::Picked {
@@ -695,6 +691,13 @@ impl Network {
                     })
                     .collect();
                 Ok(methods::encode(&picked))
+            }
+            "file.release" => {
+                let handles: Vec<u64> =
+                    methods::decode(payload).map_err(|error| malformed(&error))?;
+                let mut state = self.0.borrow_mut();
+                state.pick.retain(|(handle, _)| !handles.contains(handle));
+                Ok(methods::encode(&()))
             }
             "op.put" => {
                 // refused as the host refuses it
@@ -710,11 +713,9 @@ impl Network {
                 for blob in ask.blobs {
                     let body = match blob.body {
                         methods::BlobBody::Bytes(bytes) => bytes,
-                        methods::BlobBody::Picked { file, offset, len } => {
-                            self.picked(file, offset, len).ok_or_else(|| {
-                                malformed("no file of the latest pick holds that slice")
-                            })?
-                        }
+                        methods::BlobBody::Picked { file, offset, len } => self
+                            .picked(file, offset, len)
+                            .ok_or_else(|| malformed("no file the view holds holds that slice"))?,
                     };
                     if body.len() as u64 > methods::BLOB_MOST {
                         return Err(malformed("a blob holds at most BLOB_MOST bytes"));
@@ -728,7 +729,7 @@ impl Network {
                     };
                     ids.push(digest);
                 }
-                Ok(methods::encode(&ids))
+                Ok(methods::encode(&methods::Putting::Held(ids)))
             }
             "blob.get" => {
                 let body = self

@@ -14,7 +14,7 @@
 use std::collections::BTreeMap;
 
 use files::{BlobId, Change, Content, Node, Ownership, Party};
-use view::methods::{BlobBody, NewBlob, OpPut, PutBlobs, Submitted};
+use view::methods::{BlobBody, FileRelease, NewBlob, PutBlobs, Submitted};
 use view::prelude::*;
 
 use crate::state::{Note, Route, Sheet, child_of, is_namespace_root, parent_of};
@@ -396,6 +396,9 @@ impl Files {
         upload: Vec<Upload>,
         cx: &mut Context<Self>,
     ) {
+        if let Some(Sheet::Write(old)) = &self.sheet {
+            release(&old.upload, cx);
+        }
         self.forms += 1;
         self.sheet = Some(Sheet::Write(Box::new(Form {
             id: self.forms,
@@ -456,7 +459,7 @@ impl Files {
                 return self.send(cx);
             }
             let id = form.id;
-            let ask = cx.host().ask::<OpPut>(PutBlobs { blobs });
+            let ask = cx.host().put(PutBlobs { blobs });
             cx.land(ask, move |view, answer, cx| view.held(id, size, answer, cx))
                 .detach();
             cx.notify();
@@ -539,7 +542,8 @@ impl Files {
         };
         match (problem, form) {
             (None, form) => {
-                if form.is_some() {
+                if let Some(form) = form {
+                    release(&form.upload, cx);
                     self.sheet = None;
                 }
                 sent.changes.iter().for_each(|change| self.follow(change));
@@ -589,6 +593,13 @@ impl Files {
             }
             _ => {}
         }
+    }
+}
+
+fn release(uploads: &[Upload], cx: &mut Context<Files>) {
+    let handles = upload::handles(uploads);
+    if !handles.is_empty() {
+        cx.host().notify::<FileRelease>(handles);
     }
 }
 
