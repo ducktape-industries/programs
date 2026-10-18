@@ -171,7 +171,7 @@ fn header(
         |info| info.channel.name.clone(),
     );
     let details = cx.listener(|chat, _: &ClickEvent, _window, cx| {
-        chat.toggle_details();
+        chat.toggle_details(cx);
         cx.notify();
     });
     // a direct room is a person: their initials and name, no `#`, and no

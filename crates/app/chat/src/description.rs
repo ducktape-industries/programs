@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use describe::{Description, Field, Value, field};
 
-use crate::{Op, PostPolicy, Principal, dm_peers, plain_text};
+use crate::{Notices, Op, PostPolicy, Principal, dm_peers, plain_text};
 
 pub fn describe(op: &Op) -> Description {
     let seq = |seq: &u64| field("seq", Value::text(seq.to_string()));
@@ -151,6 +151,18 @@ pub fn describe(op: &Op) -> Description {
                 "Listen to channel"
             } else {
                 "Stop listening to channel"
+            },
+            channel_id,
+            vec![],
+        ),
+        Op::SetNotices {
+            channel_id,
+            notices,
+        } => (
+            match notices {
+                None => "Default notices for channel",
+                Some(Notices::Mentions) => "Notices of mentions only for channel",
+                Some(Notices::Off) => "Turn off notices for channel",
             },
             channel_id,
             vec![],

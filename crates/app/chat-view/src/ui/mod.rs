@@ -5,6 +5,7 @@ pub(crate) mod attachment;
 pub mod dialogs;
 pub mod menu;
 pub mod message;
+pub(crate) mod notices;
 pub(crate) mod phone;
 pub mod room;
 pub mod room_menu;

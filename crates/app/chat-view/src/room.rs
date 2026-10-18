@@ -151,6 +151,13 @@ impl Chat {
         if change.is_none_or(|change| change.touches::<chat::Chat, _>(&list)) {
             self.reread_channels(cx);
         }
+        // the reader's choices show in the details alone
+        if let Some(me) = self.my_account()
+            && self.details.is_some()
+            && change.is_none_or(|change| crate::notifier::choices_moved(change, me))
+        {
+            self.load_choices(cx);
+        }
         self.refresh_room(change, cx);
     }
 

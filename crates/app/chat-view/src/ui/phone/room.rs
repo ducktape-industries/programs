@@ -98,7 +98,7 @@ fn info(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> 
             ladder,
             theme,
             cx.listener(|chat, _: &ClickEvent, _window, cx| {
-                chat.toggle_details();
+                chat.toggle_details(cx);
                 cx.notify();
             }),
         )

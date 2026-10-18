@@ -1,7 +1,7 @@
 //! Chat's notifier against a fake host and a fake device store that outlives
 //! its runs, as the app keeps it between launches.
 use super::*;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use chat::{ChannelRow, PageResponse, PostPolicy, Query, Reply, Span};
@@ -26,7 +26,7 @@ fn room(id: &str, name: &str, head_seq: u64) -> ChannelInfo {
             name: name.into(),
             created_at: 0,
             post_policy: PostPolicy::Open,
-            owner: Principal::Account(7),
+            owner: Principal::Account(9),
             archived: false,
         },
         head_seq,
@@ -41,6 +41,14 @@ fn row(channel: &str, seq: u64, author: u64, blocks: Vec<Block>) -> MsgRow {
         message_id: format!("m{seq}"),
         blocks,
         ..MsgRow::by(Principal::Account(author))
+    }
+}
+
+/// A reply under `root`.
+fn reply(channel: &str, seq: u64, author: u64, root: u64, blocks: Vec<Block>) -> MsgRow {
+    MsgRow {
+        thread: Some(root),
+        ..row(channel, seq, author, blocks)
     }
 }
 
@@ -78,6 +86,14 @@ fn session() -> Session {
 struct World {
     rooms: Rc<RefCell<Vec<ChannelInfo>>>,
     rows: Rc<RefCell<Vec<MsgRow>>>,
+    /// Where the reader is in each room, as chat keeps it on chain.
+    followed: Rc<RefCell<BTreeMap<String, Followed>>>,
+    /// The roots each `Followed` read asked about, in order.
+    asked_roots: Rc<RefCell<Vec<Vec<u64>>>>,
+    /// Whether a `Followed` read is refused.
+    refuse_followed: Rc<Cell<bool>>,
+    /// What the reader chose, room by room, as chat keeps it on chain.
+    choices: Rc<RefCell<BTreeMap<String, Choice>>>,
     kept: Rc<RefCell<BTreeMap<String, Vec<u8>>>>,
 }
 
@@ -85,7 +101,7 @@ impl World {
     fn notifier(&self) -> TestNotifier<ChatNotices> {
         let notifier = TestNotifier::new();
         let host = notifier.host();
-        let (rooms, rows) = (self.rooms.clone(), self.rows.clone());
+        let world = self.clone();
         host.handle::<Ask<chat::Chat>>(move |query| {
             Ok(match query {
                 Query::Accounts { .. } => Reply::Accounts(page(
@@ -97,16 +113,52 @@ impl World {
                         })
                         .into(),
                 )),
-                Query::Channels { .. } => Reply::Channels(page(rooms.borrow().clone())),
+                Query::Channels { .. } => Reply::Channels(page(world.rooms.borrow().clone())),
+                // as the program pages it: half before `seq`, half from it
                 Query::MessagesAround {
-                    channel_id, seq, ..
-                } => Reply::Messages(
-                    rows.borrow()
-                        .iter()
-                        .filter(|row| row.channel_id == channel_id && row.seq <= seq)
-                        .cloned()
+                    channel_id,
+                    seq,
+                    page: asked,
+                    ..
+                } => {
+                    let half = asked.limit.unwrap_or(0) / 2;
+                    Reply::Messages(
+                        world
+                            .rows
+                            .borrow()
+                            .iter()
+                            .filter(|row| row.channel_id == channel_id)
+                            .filter(|row| row.seq + half >= seq && row.seq <= seq + half)
+                            .cloned()
+                            .collect(),
+                    )
+                }
+                Query::Followed {
+                    channel_id, roots, ..
+                } => {
+                    if world.refuse_followed.get() {
+                        return Err(view::host::Error::new("refused", "the node is busy"));
+                    }
+                    world.asked_roots.borrow_mut().push(roots.clone());
+                    let followed = world.followed.borrow();
+                    let mut followed = followed.get(&channel_id).cloned().unwrap_or_default();
+                    followed.threads.retain(|(root, _)| roots.contains(root));
+                    Reply::Followed(followed)
+                }
+                Query::Listening { .. } => Reply::Listening(page(
+                    (world.choices.borrow().iter())
+                        .filter(|(_, choice)| **choice == Choice::Every)
+                        .map(|(room, _)| room.clone())
                         .collect(),
-                ),
+                )),
+                Query::Notices { .. } => Reply::Notices(page(
+                    (world.choices.borrow().iter())
+                        .filter_map(|(room, choice)| match choice {
+                            Choice::Cut(notices) => Some((room.clone(), *notices)),
+                            Choice::Every | Choice::Default => None,
+                        })
+                        .collect(),
+                )),
                 query => panic!("unexpected chat query: {query:?}"),
             })
         });
@@ -161,6 +213,21 @@ impl World {
         }
         notifier.run_until_parked();
     }
+
+    /// The reader chose `choice` for `room`: a block that wrote what chat
+    /// keeps of it reaches the notifier.
+    fn choose(&self, notifier: &mut TestNotifier<ChatNotices>, room: &str, choice: Choice) {
+        self.choices.borrow_mut().insert(room.into(), choice);
+        let key = chat::tables::NOTICES.key(&(7_u64, room.to_owned()));
+        notifier
+            .host()
+            .stream::<Changes<chat::Chat>>()
+            .send(Some(Change {
+                height: 3,
+                keys: vec![key],
+            }));
+        notifier.run_until_parked();
+    }
 }
 
 fn posts(notifier: &TestNotifier<ChatNotices>) -> Vec<Notification> {
@@ -171,35 +238,100 @@ fn badge(notifier: &TestNotifier<ChatNotices>) -> Option<i64> {
     notifier.host().requests::<HostBadge>().last().copied()
 }
 
-/// A mention of me, or any word in my direct room, from someone else:
-/// a notice. A mention of another, my own words, or a plain message in
-/// a channel: none.
+/// Why a message from someone else is meant for me: my direct room, a
+/// mention of me, a thread I am in, a room's timeline I am in; the first
+/// that holds names the notice. My own words, a mention of another, a
+/// plain message in a room I am not in, one from before I came in, or a
+/// reply in a thread I am not in: none.
 #[test]
-fn only_a_mention_or_a_direct_message_to_me_is_a_notice() {
+fn what_is_meant_for_me_and_why() {
     let names = Names::default();
     let chain = "testnet-0a1b2c3d";
     let me = Mark::Mention(Principal::Account(3));
+    let nowhere = Followed::default();
+    let why = |row: &MsgRow, followed: &Followed| meant_for(row, 3, followed, Choice::Default);
+
     let mention = row("design", 7, 5, said("@me", vec![me.clone()]));
-    assert!(meant_for(&mention, 3));
-    let post = notice(&mention, 3, "design", chain, &names);
+    assert_eq!(why(&mention, &nowhere), Some(Why::Mention));
+    let post = notice(&mention, Why::Mention, 3, "design", chain, &names);
     assert_eq!(post.title, "account 5 mentioned you");
     assert_eq!(post.tag, "#design");
     assert_eq!(post.link, "duck://testnet-0a1b2c3d/chat/design/7");
 
     let other = Mark::Mention(Principal::Account(4));
-    let not_me = |row: MsgRow| !meant_for(&row, 3);
-    assert!(not_me(row("design", 7, 5, said("@x", vec![other]))));
-    assert!(not_me(row("design", 7, 5, said("hi", vec![]))));
-    assert!(not_me(row("design", 7, 3, said("@me", vec![me]))));
+    let plain = |seq| row("design", seq, 5, said("hi", vec![]));
+    assert_eq!(
+        why(&row("design", 7, 5, said("@x", vec![other])), &nowhere),
+        None
+    );
+    assert_eq!(
+        why(&row("design", 7, 3, said("@me", vec![me])), &nowhere),
+        None
+    );
+    assert_eq!(why(&plain(9), &nowhere), None);
 
     let direct = row("dm-3-5", 7, 5, said("hi", vec![]));
-    assert!(meant_for(&direct, 3));
-    let direct = notice(&direct, 3, "", chain, &names);
+    assert_eq!(why(&direct, &nowhere), Some(Why::Direct));
+    let direct = notice(&direct, Why::Direct, 3, "", chain, &names);
     assert_eq!(
         (direct.title.as_str(), direct.body.as_str()),
         ("account 5", "hi")
     );
-    assert!(not_me(row("dm-4-5", 7, 5, said("hi", vec![]))));
+    assert_eq!(
+        why(&row("dm-4-5", 7, 5, said("hi", vec![])), &nowhere),
+        None
+    );
+
+    // in the room since 8, and in thread 10 since 11
+    let there = Followed {
+        room: Some(8),
+        threads: vec![(10, 11)],
+    };
+    assert_eq!(why(&plain(9), &there), Some(Why::Room));
+    assert_eq!(why(&plain(8), &there), None, "from before I came in");
+    let post = notice(&plain(9), Why::Room, 3, "design", chain, &names);
+    assert_eq!(post.title, "account 5 in #design");
+
+    let answer = |seq, root| reply("design", seq, 5, root, said("done", vec![]));
+    assert_eq!(why(&answer(12, 10), &there), Some(Why::Thread));
+    assert_eq!(why(&answer(11, 10), &there), None);
+    assert_eq!(why(&answer(12, 4), &there), None, "a thread I am not in");
+    let post = notice(&answer(12, 10), Why::Thread, 3, "design", chain, &names);
+    assert_eq!(post.title, "account 5 replied in a thread");
+}
+
+/// What I chose for a room goes over where I am: every message, a reply in
+/// a stranger's thread too; mentions and my direct room only; or nothing.
+#[test]
+fn a_choice_goes_over_where_i_am() {
+    let me = Mark::Mention(Principal::Account(3));
+    let there = Followed {
+        room: Some(0),
+        threads: vec![(10, 10)],
+    };
+    let nowhere = Followed::default();
+    let plain = row("design", 12, 5, said("hi", vec![]));
+    let stranger = reply("design", 12, 5, 4, said("done", vec![]));
+    let mine = reply("design", 12, 5, 10, said("done", vec![]));
+    let mention = row("design", 12, 5, said("@me", vec![me]));
+    let direct = row("dm-3-5", 12, 5, said("hi", vec![]));
+    let why = |row: &MsgRow, followed: &Followed, choice| meant_for(row, 3, followed, choice);
+
+    let every = Choice::Every;
+    assert_eq!(why(&plain, &nowhere, every), Some(Why::Room));
+    assert_eq!(why(&stranger, &nowhere, every), Some(Why::Room));
+    assert_eq!(why(&mine, &there, every), Some(Why::Thread));
+
+    let mentions = Choice::Cut(Notices::Mentions);
+    assert_eq!(why(&plain, &there, mentions), None);
+    assert_eq!(why(&mine, &there, mentions), None);
+    assert_eq!(why(&mention, &there, mentions), Some(Why::Mention));
+    assert_eq!(why(&direct, &there, mentions), Some(Why::Direct));
+
+    let off = Choice::Cut(Notices::Off);
+    for row in [&plain, &mine, &mention, &direct] {
+        assert_eq!(why(row, &there, off), None, "{row:?}");
+    }
 }
 
 /// No pane is open: what was there at the first run is history, a mention
@@ -351,4 +483,138 @@ fn a_catch_up_reads_a_few_rooms_at_a_time() {
     assert_eq!(announced, ids.len());
     assert_eq!(posts(&notifier).len(), ids.len());
     assert_eq!(badge(&notifier), Some(ids.len() as i64));
+}
+
+fn titles(notifier: &TestNotifier<ChatNotices>) -> Vec<String> {
+    posts(notifier).into_iter().map(|post| post.title).collect()
+}
+
+/// A room I am in tells me of every message in its timeline after I came
+/// in, not of a reply in a thread I am not in; a room I am not in, of
+/// mentions only.
+#[test]
+fn a_room_i_am_in_tells_me_of_its_timeline() {
+    let world = World::default();
+    *world.rooms.borrow_mut() = vec![room("general", "General", 2), room("random", "Random", 1)];
+    world.rows.borrow_mut().extend([
+        row("general", 1, 8, said("hi", vec![])),
+        row("general", 2, 7, said("hello", vec![])),
+        row("random", 1, 8, said("hi", vec![])),
+    ]);
+    world.followed.borrow_mut().insert(
+        "general".into(),
+        Followed {
+            room: Some(2),
+            threads: Vec::new(),
+        },
+    );
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    world.post(
+        &mut notifier,
+        vec![
+            row("general", 3, 8, said("how are you", vec![])),
+            reply("general", 4, 8, 1, said("an aside", vec![])),
+            row("random", 2, 8, said("anyone?", vec![])),
+        ],
+    );
+    assert_eq!(titles(&notifier), ["reviewer in #General"]);
+    assert_eq!(posts(&notifier)[0].body, "how are you");
+    assert_eq!(badge(&notifier), Some(1));
+}
+
+/// A thread I am in tells me of every reply after I came in, though I am
+/// not in its room; a stranger's thread does not. Each read asks chat once
+/// where I am, about the threads its new messages reply in.
+#[test]
+fn a_thread_i_am_in_tells_me_of_every_reply() {
+    let world = World::default();
+    *world.rooms.borrow_mut() = vec![room("general", "General", 4)];
+    world.rows.borrow_mut().extend([
+        row("general", 1, 8, said("ship it?", vec![])),
+        reply("general", 2, 7, 1, said("not yet", vec![])),
+        mention("general", 3),
+        row("general", 4, 8, said("lunch?", vec![])),
+    ]);
+    world.followed.borrow_mut().insert(
+        "general".into(),
+        Followed {
+            room: None,
+            threads: vec![(1, 2), (3, 3)],
+        },
+    );
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    world.post(
+        &mut notifier,
+        vec![
+            reply("general", 5, 8, 1, said("why not?", vec![])),
+            reply("general", 6, 8, 3, said("see above", vec![])),
+            reply("general", 7, 8, 4, said("noodles", vec![])),
+            row("general", 8, 8, said("anyone?", vec![])),
+        ],
+    );
+    assert_eq!(
+        titles(&notifier),
+        [
+            "reviewer replied in a thread",
+            "reviewer replied in a thread"
+        ]
+    );
+    let links: Vec<String> = posts(&notifier).into_iter().map(|post| post.link).collect();
+    assert_eq!(
+        links,
+        [
+            "duck://testnet-0a1b2c3d/chat/general/5",
+            "duck://testnet-0a1b2c3d/chat/general/6"
+        ]
+    );
+    assert_eq!(badge(&notifier), Some(2));
+    let asked = world.asked_roots.borrow().clone();
+    assert!(asked.iter().all(|roots| roots.len() <= 3), "{asked:?}");
+    assert!(asked.contains(&vec![1, 3, 4]), "{asked:?}");
+}
+
+/// A choice made while the notifier runs counts the room again from the
+/// reader's cursor: a room cut to nothing leaves the badge, one opened to
+/// every message counts what came and tells of the next.
+#[test]
+fn a_choice_counts_its_room_again() {
+    let world = World::default();
+    *world.rooms.borrow_mut() = vec![room("general", "General", 1)];
+    world.rows.borrow_mut().push(row("general", 1, 8, say_hi()));
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    world.post(&mut notifier, vec![mention("general", 2)]);
+    assert_eq!(badge(&notifier), Some(1));
+
+    world.choose(&mut notifier, "general", Choice::Cut(Notices::Off));
+    assert_eq!(badge(&notifier), Some(0));
+    world.post(&mut notifier, vec![mention("general", 3)]);
+    assert_eq!(posts(&notifier).len(), 1, "nothing from a room cut off");
+
+    // counted again from the cursor, with no cursor kept (as on a server):
+    // both mentions count, and neither is posted again
+    world.choose(&mut notifier, "general", Choice::Every);
+    assert_eq!(badge(&notifier), Some(2));
+    assert_eq!(posts(&notifier).len(), 1);
+    world.post(&mut notifier, vec![row("general", 4, 8, say_hi())]);
+    assert_eq!(titles(&notifier)[1..], ["reviewer in #General"]);
+}
+
+/// Where I am will not read: what is meant for me whatever room it is in,
+/// a mention, is still told.
+#[test]
+fn a_mention_is_told_though_where_i_am_will_not_read() {
+    let world = World::default();
+    *world.rooms.borrow_mut() = vec![room("general", "General", 0)];
+    world.refuse_followed.set(true);
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    world.post(&mut notifier, vec![mention("general", 1)]);
+    assert_eq!(titles(&notifier), ["reviewer mentioned you"]);
+}
+
+fn say_hi() -> Vec<Block> {
+    said("hi", vec![])
 }

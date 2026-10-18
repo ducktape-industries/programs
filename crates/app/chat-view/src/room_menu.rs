@@ -105,7 +105,7 @@ impl Chat {
             RoomItem::Details => {
                 self.choose(room, cx);
                 if self.details.is_none() {
-                    self.toggle_details();
+                    self.toggle_details(cx);
                 }
             }
         }

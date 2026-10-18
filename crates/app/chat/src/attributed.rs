@@ -16,7 +16,7 @@ pub const THREAD: &str = "thread";
 // each account listening to the message's channel that it relates to in no other way
 pub const LISTEN: &str = "listen";
 
-fn mentioned(blocks: &[Block]) -> impl Iterator<Item = AccountNumber> + '_ {
+pub(crate) fn mentioned(blocks: &[Block]) -> impl Iterator<Item = AccountNumber> + '_ {
     blocks
         .iter()
         .flat_map(|block| match block {

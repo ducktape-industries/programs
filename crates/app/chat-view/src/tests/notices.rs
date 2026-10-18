@@ -139,3 +139,69 @@ fn a_refused_store_read_still_keeps_cursors() {
     let kept: BTreeMap<String, u64> = methods::decode(&kept.unwrap()).unwrap();
     assert_eq!(kept, BTreeMap::from([("general".into(), 3)]));
 }
+
+/// The room's details offer its notices as one radio group, read as they
+/// open: the reader's choice checked, the arrows moving among them, and
+/// each press, Enter or Space one op that makes it the room's.
+#[test]
+fn the_details_choose_a_rooms_notices() {
+    use view::methods::Submit;
+    let (mut cx, _view) = opened();
+    cx.host().handle::<Ask<::chat::Chat>>(|query| {
+        Ok(match query {
+            Query::Notices { .. } => {
+                Reply::Notices(page(vec![("general".into(), chat::Notices::Mentions)]))
+            }
+            query => chat_reply(query),
+        })
+    });
+    cx.simulate_click("chat-room-details");
+    cx.run_until_parked();
+    let group = cx.interactivity("chat-details-notices").role;
+    assert_eq!(group, Some(view::Role::RadioGroup));
+    let checked = |cx: &TestAppContext, slug| {
+        let id = format!("chat-details-notices-{slug}");
+        cx.interactivity(&id).aria.toggled
+    };
+    assert_eq!(checked(&cx, "mentions"), Some(view::Toggled::True));
+    assert_eq!(checked(&cx, "default"), Some(view::Toggled::False));
+    assert!(cx.has_text("All messages"));
+
+    // an arrow moves among them and writes nothing; Enter chooses
+    let sent = |cx: &TestAppContext| cx.host().requests::<Submit<::chat::Chat>>();
+    let before = sent(&cx).len();
+    cx.simulate_focus("chat-details-notices");
+    cx.simulate_key_down("chat-details-notices", "down");
+    cx.run_until_parked();
+    assert_eq!(sent(&cx).len(), before, "a step is no write");
+    let off = cx.interactivity("chat-details-notices-off");
+    assert!(off.aria.active_descendant);
+    assert_eq!(off.aria.toggled, Some(view::Toggled::False));
+    cx.simulate_key_down("chat-details-notices", "enter");
+    cx.run_until_parked();
+    assert_eq!(
+        sent(&cx).last(),
+        Some(&chat::Op::SetNotices {
+            channel_id: "general".into(),
+            notices: Some(chat::Notices::Off),
+        })
+    );
+
+    cx.simulate_click("chat-details-notices-every");
+    cx.simulate_click("chat-details-notices-off");
+    cx.run_until_parked();
+    let sent = sent(&cx);
+    assert_eq!(
+        sent[sent.len() - 2..],
+        [
+            chat::Op::Listen {
+                channel_id: "general".into(),
+                listening: true,
+            },
+            chat::Op::SetNotices {
+                channel_id: "general".into(),
+                notices: Some(chat::Notices::Off),
+            },
+        ]
+    );
+}

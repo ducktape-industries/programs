@@ -52,6 +52,20 @@ pub(super) fn screen(
         .flex()
         .flex_col()
         .child(head(chat, info, theme, ladder))
+        .child(design::section_head(
+            "chat-details-notices-head",
+            words::NOTIFICATIONS,
+            ladder,
+            theme,
+        ))
+        .child(crate::ui::notices::choices(
+            chat,
+            &info.channel.id,
+            chat::dm_peers(&info.channel.id).is_some(),
+            cx,
+            theme,
+            ladder,
+        ))
         .children(crate::ui::widget::section(chat, cx, theme, ladder))
         .children(members(chat, room, info, cx, theme, ladder))
         .children(owner_actions(chat, info, cx, theme, ladder));

@@ -5,8 +5,8 @@ use view::{Div, Stateful};
 
 use super::timeline;
 use crate::Chat;
-use crate::ui::room;
 use crate::ui::{button, empty_state};
+use crate::ui::{notices, room};
 use crate::words;
 use view::design::Ladder;
 
@@ -118,33 +118,50 @@ pub fn details(
         .gap_3()
         .p_3()
         .bg(theme.surface);
+    let notices = |pane: Stateful<Div>, cx: &mut Context<Chat>| {
+        pane.child(section(words::NOTIFICATIONS, theme))
+            .child(notices::choices(
+                chat,
+                &info.channel.id,
+                dm,
+                cx,
+                theme,
+                ladder,
+            ))
+            .child(rule(theme))
+    };
     // a dm is its two people alike: nothing to rename, archive or seat
     let pane = match dm {
-        true => pane
-            .child(details_header("Conversation details", cx, theme, ladder))
-            .child(rule(theme))
-            .child(section(words::PEOPLE, theme)),
-        false => pane
-            .child(details_header(words::CHANNEL_DETAILS, cx, theme, ladder))
-            .child(rule(theme))
-            .children(name_section(
-                &details.name_draft,
-                info.channel.archived,
-                cx,
-                theme,
-                ladder,
-            ))
-            .child(rule(theme))
-            .children(category_section(
-                &details.category_draft,
-                crate::room_list::category_of(info).is_some(),
-                cx,
-                theme,
-                ladder,
-            ))
-            .child(rule(theme))
-            .child(section(words::MEMBERS, theme))
-            .children(member_adder(&details.member_draft, cx, theme, ladder)),
+        true => {
+            let pane = pane
+                .child(details_header("Conversation details", cx, theme, ladder))
+                .child(rule(theme));
+            notices(pane, cx).child(section(words::PEOPLE, theme))
+        }
+        false => {
+            let pane = pane
+                .child(details_header(words::CHANNEL_DETAILS, cx, theme, ladder))
+                .child(rule(theme));
+            notices(pane, cx)
+                .children(name_section(
+                    &details.name_draft,
+                    info.channel.archived,
+                    cx,
+                    theme,
+                    ladder,
+                ))
+                .child(rule(theme))
+                .children(category_section(
+                    &details.category_draft,
+                    crate::room_list::category_of(info).is_some(),
+                    cx,
+                    theme,
+                    ladder,
+                ))
+                .child(rule(theme))
+                .child(section(words::MEMBERS, theme))
+                .children(member_adder(&details.member_draft, cx, theme, ladder))
+        }
     };
     pane.children(members(chat, !dm, cx, theme))
 }
@@ -156,7 +173,7 @@ fn details_header(
     ladder: &Ladder,
 ) -> impl IntoElement {
     let close = cx.listener(|chat, _: &ClickEvent, _window, cx| {
-        chat.toggle_details();
+        chat.toggle_details(cx);
         cx.notify();
     });
     div()

@@ -12,7 +12,8 @@ use store::{Map, Set};
 
 use crate::legacy;
 use crate::{
-    AccountNumber, Block, ChannelRow, MemberRow, MsgRow, Principal, Reaction, plain_text, tags,
+    AccountNumber, Block, ChannelRow, MemberRow, MsgRow, Notices, Principal, Reaction, plain_text,
+    tags,
 };
 
 type ChannelId = String;
@@ -43,6 +44,13 @@ pub const PARTICIPANTS: Map<(ChannelId, Seq, Principal), Seq> = Map::new("partic
 pub const LISTENERS: Map<(ChannelId, AccountNumber), u64> = Map::new("listener/").shared();
 // the channels each account listens to: `(account, channel)`
 pub const LISTENING: Set<(AccountNumber, ChannelId)> = Set::new("listening/").shared();
+// each principal's first message in each channel's timeline: `(channel, principal)` → its seq
+pub const POSTED: Map<(ChannelId, Principal), Seq> = Map::new("posted/").shared();
+// each principal's first mention in each thread's replies (its root says its own):
+// `(channel, root, principal)` → the seq of the reply that mentioned it
+pub const MENTIONED: Map<(ChannelId, Seq, Principal), Seq> = Map::new("mentioned/").shared();
+// what of each channel still tells an account that cut its notices: `(account, channel)`
+pub const NOTICES: Map<(AccountNumber, ChannelId), Notices> = Map::new("notices/").shared();
 
 // A message as chat keeps it: the [`MsgRow`] a read answers, less what a
 // read derives (its flat text and `#tags`, from `blocks`; whether the
@@ -233,6 +241,9 @@ pub(crate) const TABLES: &[::program::Table] = &[
     PARTICIPANTS.table(),
     LISTENERS.table(),
     LISTENING.table(),
+    NOTICES.table(),
+    POSTED.table(),
+    MENTIONED.table(),
     crate::legacy::OLD_MESSAGES.table(),
     crate::legacy::WORDS.table(),
     crate::legacy::TAGS.table(),

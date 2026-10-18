@@ -1,10 +1,25 @@
 //! What chat hands the host's notification centre, decided here and
-//! nowhere else: a message that mentions the reader, or any message in a
-//! direct room they are in, from someone else, landing in a room they are
-//! not looking at. Its title is the sender (`<sender> mentioned you` for a
-//! mention), its body the message, its tag the room (`@peer`, `#channel`),
-//! its link the message. The tab badge counts such messages in rooms the
-//! reader has not read.
+//! nowhere else: a message from someone else, landing in a room the reader
+//! is not looking at, that is meant for them ([`Why`]). It is meant for
+//! them when it is
+//!
+//! - in a direct room of theirs;
+//! - a mention of them, in any room;
+//! - a reply in a thread they are in: they wrote its root, replied in it,
+//!   or were mentioned in it, before this reply;
+//! - in the timeline of a room they are in: they wrote in it before, opened
+//!   it, or hold a seat in it, for a members-only room.
+//!
+//! Where the reader is in a room chat keeps on chain, so every device and
+//! every server that runs this notifier tells the same: each read of a
+//! room's new messages asks it (`Query::Followed`) for the room and the
+//! threads those messages reply in. What the reader chose for a room in
+//! its details ([`Choice`]) goes over all of that: every message there,
+//! mentions only, or nothing.
+//!
+//! Its title is the sender and why (`<sender> mentioned you`), its body the
+//! message, its tag the room (`@peer`, `#channel`), its link the message.
+//! The tab badge counts such messages in rooms the reader has not read.
 //!
 //! This is chat's NOTIFIER: the host runs it once per network, whether or
 //! not a chat pane is open, and the panes post nothing. The read cursors
@@ -23,7 +38,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use chat::view::Names;
-use chat::{Block, ChannelInfo, Mark, MsgRow, PageRequest, Principal};
+use chat::{Block, ChannelInfo, Followed, Mark, MsgRow, Notices, PageRequest, Principal};
 use identity::Identity;
 use view::prelude::*;
 use view::{Notifier, store};
@@ -71,6 +86,8 @@ pub struct ChatNotices {
     /// The seq announced up to in each room; `None` until read off the
     /// store, and `Some(None)` when nothing was ever kept on this device.
     announced: Option<Option<BTreeMap<String, u64>>>,
+    /// What the reader chose, room by room; `None` until read.
+    choices: Option<BTreeMap<String, Choice>>,
     /// Per room, the messages meant for the reader past their cursor.
     counted: BTreeMap<String, Count>,
     /// The rooms a read of new messages is under way for.
@@ -111,8 +128,14 @@ impl Notifier for ChatNotices {
                 let list = chat::ask::Channels {
                     page: PageRequest::default(),
                 };
+                let change = change.as_ref();
                 if change.is_none_or(|change| change.touches::<chat::Chat, _>(&list)) {
                     notices.load_rooms(cx);
+                }
+                if let Some(me) = notices.session.account
+                    && change.is_none_or(|change| choices_moved(change, me))
+                {
+                    notices.load_choices(cx);
                 }
             }
             Err(refusal) => log_refused(cx, "chat's live heads", &refusal),
@@ -176,6 +199,7 @@ impl ChatNotices {
         self.load_names(cx);
         self.load_reads(cx);
         self.load_announced(cx);
+        self.load_choices(cx);
         self.load_rooms(cx);
     }
 
@@ -248,6 +272,38 @@ impl ChatNotices {
         );
     }
 
+    fn load_choices(&mut self, cx: &mut Context<Self>) {
+        let Some(me) = self.session.account else {
+            return;
+        };
+        self.load(
+            choices(cx.host(), me),
+            |notices, choices, cx| {
+                // choices that will not load leave every room at its default
+                let choices = choices.unwrap_or_else(|refusal| {
+                    log_refused(cx, "the reader's choices", &refusal);
+                    BTreeMap::new()
+                });
+                // a room chosen otherwise is counted again from its cursor
+                let was = notices.choices.take().unwrap_or_default();
+                for room in was.keys().chain(choices.keys()) {
+                    if was.get(room) != choices.get(room)
+                        && let Some(count) = notices.counted.get_mut(room)
+                    {
+                        *count = Count {
+                            to: count.cursor,
+                            meant: 0,
+                            ..*count
+                        };
+                    }
+                }
+                notices.choices = Some(choices);
+                notices.settle(cx);
+            },
+            cx,
+        );
+    }
+
     fn load_rooms(&mut self, cx: &mut Context<Self>) {
         let host = cx.host();
         let rooms = async move {
@@ -289,9 +345,13 @@ impl ChatNotices {
         let Some(me) = self.session.account else {
             return self.settle_badge(cx);
         };
-        let (Some(_), Some(rooms), Some(reads), Some(kept)) =
-            (&self.names, &self.rooms, &self.reads, &self.announced)
-        else {
+        let (Some(_), Some(rooms), Some(reads), Some(kept), Some(_)) = (
+            &self.names,
+            &self.rooms,
+            &self.reads,
+            &self.announced,
+            &self.choices,
+        ) else {
             return;
         };
         // the first run on this device: every room as it stands is history
@@ -373,22 +433,43 @@ impl ChatNotices {
         cx: &mut Context<Self>,
     ) {
         let fresh = (head - from).min(READ_BACK);
-        let asked = cx.host().query(chat::ask::MessagesAround {
-            channel_id: room.clone(),
-            seq: head,
-            viewer: Principal::writer(Some(me)).into_iter().collect(),
-            page: PageRequest {
-                after: None,
-                limit: Some(fresh.saturating_mul(2)),
-            },
-        });
+        let host = cx.host();
+        let channel_id = room.clone();
+        // the new messages, then where the reader is in the room and in
+        // the threads they reply in
+        let asked = async move {
+            let rows = host
+                .query(chat::ask::MessagesAround {
+                    channel_id: channel_id.clone(),
+                    seq: head,
+                    viewer: Principal::writer(Some(me)).into_iter().collect(),
+                    page: PageRequest {
+                        after: None,
+                        limit: Some(fresh.saturating_mul(2)),
+                    },
+                })
+                .await?;
+            let roots: BTreeSet<u64> = rows
+                .iter()
+                .filter(|row| row.seq > from && row.seq <= head)
+                .filter_map(|row| row.thread)
+                .collect();
+            let followed = host
+                .query(chat::ask::Followed {
+                    channel_id,
+                    account: me,
+                    roots: roots.into_iter().collect(),
+                })
+                .await;
+            Ok((rows, followed))
+        };
         self.reading.insert(room.clone());
         self.load(
             asked,
-            move |notices, rows, cx| {
+            move |notices, read, cx| {
                 notices.reading.remove(&room);
-                let rows = match rows {
-                    Ok(rows) => rows,
+                let (rows, followed) = match read {
+                    Ok(read) => read,
                     Err(refusal) => {
                         log_refused(cx, "the new messages", &refusal);
                         // announced only as far as before: read again at the
@@ -399,6 +480,18 @@ impl ChatNotices {
                         return;
                     }
                 };
+                // where the reader is unknown: what is meant for them
+                // whatever room it is in still is
+                let followed = followed.unwrap_or_else(|refusal| {
+                    log_refused(cx, "where the reader is", &refusal);
+                    Followed::default()
+                });
+                let choice = notices
+                    .choices
+                    .iter()
+                    .flatten()
+                    .find_map(|(chosen, choice)| (*chosen == room).then_some(*choice))
+                    .unwrap_or_default();
                 let empty = Names::default();
                 let names = notices.names.as_ref().unwrap_or(&empty);
                 let name = notices
@@ -408,9 +501,10 @@ impl ChatNotices {
                     .find(|info| info.channel.id == room)
                     .map(|info| info.channel.name.clone())
                     .unwrap_or_default();
-                let meant: Vec<&MsgRow> = rows
+                let meant: Vec<(&MsgRow, Why)> = rows
                     .iter()
-                    .filter(|row| row.seq > from && row.seq <= head && meant_for(row, me))
+                    .filter(|row| row.seq > from && row.seq <= head)
+                    .filter_map(|row| Some((row, meant_for(row, me, &followed, choice)?)))
                     .collect();
                 // counted only onto the count it read past: one the reader
                 // reset meanwhile is counted again at the next settle
@@ -427,11 +521,11 @@ impl ChatNotices {
                 if !notices.screen.contains(&room) {
                     // a notice is made only for what is posted; the rest is
                     // only counted
-                    for row in meant
+                    for (row, why) in meant
                         .into_iter()
-                        .filter(|row| row.seq > news && row.seq > cursor)
+                        .filter(|(row, _)| row.seq > news && row.seq > cursor)
                     {
-                        let post = notice(row, me, &name, &notices.session.chain_id, names);
+                        let post = notice(row, why, me, &name, &notices.session.chain_id, names);
                         cx.host().notify::<NotifyPost>(post);
                     }
                 }
@@ -469,24 +563,62 @@ impl ChatNotices {
     }
 }
 
-/// Whether `row` is meant for account `me`: it mentions them, or it is in
-/// a direct room they are in. Their own never is.
-fn meant_for(row: &MsgRow, me: u64) -> bool {
-    !row.deleted
-        && row.author != Principal::Account(me)
-        && (dm_peer_of(me, &row.channel_id).is_some() || mentions(&row.blocks, me))
+/// Why a message is meant for the reader, the first that holds of these:
+/// what its notice's title says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Why {
+    /// It is in a direct room of theirs.
+    Direct,
+    /// It mentions them.
+    Mention,
+    /// It replies in a thread they are in.
+    Thread,
+    /// It is in a room they are in.
+    Room,
 }
 
-/// The notice a row [`meant_for`] account `me` makes.
-fn notice(row: &MsgRow, me: u64, name: &str, chain: &str, names: &Names) -> Notification {
+/// Why `row` is meant for account `me`, if it is: `followed` says where
+/// they are in its room, `choice` what they chose for it. Their own never
+/// is. A reply in a thread they are not in is meant for them only if they
+/// chose every message.
+fn meant_for(row: &MsgRow, me: u64, followed: &Followed, choice: Choice) -> Option<Why> {
+    let cut = |notices| choice == Choice::Cut(notices);
+    let after = |since: u64| row.seq > since;
+    let thread_since = |root| {
+        let mut threads = followed.threads.iter();
+        threads.find_map(|&(at, since)| (at == root).then_some(since))
+    };
+    if row.deleted || row.author == Principal::Account(me) || cut(Notices::Off) {
+        None
+    } else if dm_peer_of(me, &row.channel_id).is_some() {
+        Some(Why::Direct)
+    } else if mentions(&row.blocks, me) {
+        Some(Why::Mention)
+    } else if cut(Notices::Mentions) {
+        None
+    } else if row.thread.and_then(thread_since).is_some_and(after) {
+        Some(Why::Thread)
+    } else if choice == Choice::Every || (row.thread.is_none() && followed.room.is_some_and(after))
+    {
+        Some(Why::Room)
+    } else {
+        None
+    }
+}
+
+/// The notice a row meant for account `me`, for `why`, makes.
+fn notice(row: &MsgRow, why: Why, me: u64, name: &str, chain: &str, names: &Names) -> Notification {
     let sender = names.author(&row.author);
+    let tag = tag(me, &row.channel_id, name, names);
     Notification {
-        title: match dm_peer_of(me, &row.channel_id) {
-            Some(_) => sender,
-            None => format!("{sender} mentioned you"),
+        title: match why {
+            Why::Direct => sender,
+            Why::Mention => format!("{sender} mentioned you"),
+            Why::Thread => format!("{sender} replied in a thread"),
+            Why::Room => format!("{sender} in {tag}"),
         },
         body: message_body(&row.blocks, names),
-        tag: tag(me, &row.channel_id, name, names),
+        tag,
         // a notice without a link is one the centre cannot open, not a bad one
         link: links::channel_link(chain, &row.channel_id, Some(row.seq)).unwrap_or_default(),
         ..Notification::default()
@@ -500,6 +632,76 @@ pub(crate) fn tag(me: u64, room: &str, name: &str, names: &Names) -> String {
         Some(peer) => format!("@{}", names.author(&Principal::Account(peer))),
         None => format!("#{name}"),
     }
+}
+
+/// What of a room tells the reader, as they chose it in its details.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Choice {
+    /// Every message: they listen to it (`Op::Listen`).
+    // ponytail: chat keeps the height listening began, not a seq, so a
+    // catch-up just after the choice announces what came before it too
+    Every,
+    /// What [`Why`] says, chat's default.
+    #[default]
+    Default,
+    /// What they cut it to (`Op::SetNotices`).
+    Cut(Notices),
+}
+
+impl Choice {
+    /// The op that makes it `channel_id`'s.
+    pub(crate) fn op(self, channel_id: String) -> chat::Op {
+        match self {
+            Choice::Every => chat::Op::Listen {
+                channel_id,
+                listening: true,
+            },
+            Choice::Default => chat::Op::SetNotices {
+                channel_id,
+                notices: None,
+            },
+            Choice::Cut(notices) => chat::Op::SetNotices {
+                channel_id,
+                notices: Some(notices),
+            },
+        }
+    }
+}
+
+/// What account `me` chose, room by room: a room not named is at
+/// [`Choice::Default`].
+pub(crate) async fn choices(host: Host, me: u64) -> Result<BTreeMap<String, Choice>, Error> {
+    let page = |after| PageRequest { after, limit: None };
+    let every = host
+        .query_all(|after| chat::ask::Listening {
+            account: me,
+            page: page(after),
+        })
+        .await?;
+    let cut = host
+        .query_all(|after| chat::ask::Notices {
+            account: me,
+            page: page(after),
+        })
+        .await?;
+    let every = every.into_iter().map(|room| (room, Choice::Every));
+    let cut = cut
+        .into_iter()
+        .map(|(room, notices)| (room, Choice::Cut(notices)));
+    Ok(every.chain(cut).collect())
+}
+
+/// Whether `change` wrote to what [`choices`] reads of account `me`: its
+/// own rows, not another account's.
+pub(crate) fn choices_moved(change: &Change, me: u64) -> bool {
+    let mine = [
+        chat::tables::LISTENING.key(&me),
+        chat::tables::NOTICES.key(&me),
+    ];
+    change
+        .keys
+        .iter()
+        .any(|key| mine.iter().any(|head| key.starts_with(head)))
 }
 
 fn mentions(blocks: &[Block], me: u64) -> bool {

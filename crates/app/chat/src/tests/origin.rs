@@ -143,6 +143,10 @@ fn every_op() -> Vec<Op> {
             principal: Principal::Account(3),
             member: true,
         },
+        Op::SetNotices {
+            channel_id: general(),
+            notices: Some(crate::Notices::Off),
+        },
     ]
 }
 

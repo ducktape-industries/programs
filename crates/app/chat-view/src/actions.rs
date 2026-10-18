@@ -8,6 +8,7 @@ use view::prelude::*;
 
 use crate::composer::Target;
 use crate::message::{ChatMessage, chat_message, mark_message_groups, zone};
+use crate::notifier::Choice;
 use crate::room_list::{CATEGORY, category_of};
 use crate::{Chat, Control, CopyRange, Folded, Menu, Mode, Pane, links};
 use chat::view::Names;
@@ -388,6 +389,25 @@ impl Chat {
         );
     }
 
+    /// The open room's notices are `choice`, as its details pick it.
+    pub(crate) fn choose_notices(&mut self, choice: Choice, cx: &mut Context<Self>) {
+        let channel_id = self.room_id();
+        if channel_id.is_empty() {
+            return;
+        }
+        if let Some(details) = &mut self.details {
+            details.notices_at = None;
+        }
+        cx.notify();
+        self.submit(choice.op(channel_id), cx);
+    }
+
+    /// What the reader chose for `room`'s notices, once read.
+    pub(crate) fn choice(&self, room: &str) -> Option<Choice> {
+        let choices = self.choices.ready()?;
+        Some(choices.get(room).copied().unwrap_or_default())
+    }
+
     /// The member the details' field names, if what it holds is an
     /// account number.
     pub(crate) fn typed_member(&self) -> Option<Principal> {
@@ -446,7 +466,9 @@ impl Chat {
         );
     }
 
-    pub(crate) fn toggle_details(&mut self) {
+    /// The open room's details close, or open with the reader's choices
+    /// for its notices read.
+    pub(crate) fn toggle_details(&mut self, cx: &mut Context<Self>) {
         match self.details.take() {
             Some(_) => {}
             None => {
@@ -459,8 +481,10 @@ impl Chat {
                     name_draft: view::TextField::new(name),
                     category_draft: view::TextField::new(category),
                     member_draft: Default::default(),
+                    notices_at: None,
                     sheet: None,
                 });
+                self.load_choices(cx);
             }
         }
     }

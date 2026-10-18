@@ -207,6 +207,9 @@ fn chat_reply(query: Query) -> Reply {
             })
         }
         Query::Reactors { seqs, .. } => reactors(seqs),
+        // eddy chose nothing for any room
+        Query::Listening { .. } => Reply::Listening(page(Vec::new())),
+        Query::Notices { .. } => Reply::Notices(page(Vec::new())),
         query => panic!("unexpected chat query: {query:?}"),
     }
 }

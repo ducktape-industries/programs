@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::legacy::{migrate, migrate_some, unmigrated};
-use crate::listen::{listen, listened};
+use crate::listen::{followed, listen, listened, notices_cut, set_notices};
 use crate::ops::{
     create_channel, delete, edit, open_dm, post, react, remove_meta, rename, set_archived,
     set_membership, set_meta,
@@ -89,6 +89,10 @@ impl Program for Chat {
                 listening,
             } => listen(ctx, &channel_id, listening),
             Op::MigrateSome { limit } => migrate_some(ctx, limit),
+            Op::SetNotices {
+                channel_id,
+                notices,
+            } => set_notices(ctx, &channel_id, notices),
         }
     }
 
@@ -162,6 +166,17 @@ impl Program for Chat {
             Query::Listening { account, page } => {
                 (Reply::Listening(listened(ctx, account, &page)?), vec![])
             }
+            Query::Notices { account, page } => {
+                (Reply::Notices(notices_cut(ctx, account, &page)?), vec![])
+            }
+            Query::Followed {
+                channel_id,
+                account,
+                roots,
+            } => (
+                Reply::Followed(followed(ctx, channel_id, account, &roots)?),
+                vec![],
+            ),
         };
         seen_by(ctx, reply, viewer)
     }

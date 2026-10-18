@@ -8,7 +8,11 @@
 use chat::ChannelRow;
 
 #[cfg(not(feature = "notifier"))]
+use crate::notifier::Choice;
+#[cfg(not(feature = "notifier"))]
 use crate::session::Gate;
+#[cfg(not(feature = "notifier"))]
+use chat::Notices;
 
 // ---------- labels both trees type ----------
 
@@ -158,6 +162,23 @@ pub(crate) const CATEGORY: &str = "Category";
 pub(crate) const NO_CATEGORY: &str = "No category";
 pub(crate) const SET_CATEGORY: &str = "Set category";
 pub(crate) const CLEAR_CATEGORY: &str = "Clear category";
+pub(crate) const NOTIFICATIONS: &str = "Notifications";
+
+/// A room's notices choice as its details offer it: its name, and what it
+/// tells. A direct room's default is every message.
+#[cfg(not(feature = "notifier"))]
+pub(crate) fn choice(choice: Choice, dm: bool) -> (&'static str, &'static str) {
+    match choice {
+        Choice::Every => ("All messages", "Every new message, in every thread too"),
+        Choice::Default if dm => ("On", "Every message"),
+        Choice::Default => (
+            "Default",
+            "Mentions, threads you are in, and the room once you write in it, open it or sit in it",
+        ),
+        Choice::Cut(Notices::Mentions) => ("Mentions only", "Only what mentions you"),
+        Choice::Cut(Notices::Off) => ("Off", "Nothing from here"),
+    }
+}
 
 // ---------- a message's files ----------
 

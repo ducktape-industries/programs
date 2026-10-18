@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use ::program::{Error, ExecCtx, already_exists, invalid, wrong_state};
 
 use crate::attributed::report;
+use crate::listen::note;
 use crate::mentions::resolve_typed;
 use crate::rules;
 use crate::state::{
@@ -182,6 +183,7 @@ pub(crate) fn post(
         None => ROOTS.insert(ctx, &(channel_id.clone(), newest_first(seq))),
     }
     put_message(ctx, &row)?;
+    note(ctx, &row);
     report(ctx, sender, None, &row)?;
     MESSAGE_IDS.put(ctx, &message_id, &(channel_id.clone(), seq));
     HEADS.put(ctx, &channel_id, &seq);
@@ -249,6 +251,7 @@ pub(crate) fn edit(
         ..old.clone()
     };
     put_message(ctx, &row)?;
+    note(ctx, &row);
     report(ctx, sender, Some(&old), &row)?;
     Ok(())
 }

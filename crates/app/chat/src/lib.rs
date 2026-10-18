@@ -63,8 +63,8 @@ pub use text::{plain_text, tags};
 pub mod tables {
     pub use crate::legacy::{CHANNEL_TAGS, OLD_MESSAGES, TAGS, WORDS};
     pub use crate::state::{
-        ANSWERED, CHANNEL_META, CHANNELS, HEADS, LISTENERS, LISTENING, MEMBERS, MESSAGE_IDS,
-        MESSAGES, PARTICIPANTS, REACTIONS, REPLIES, ROOTS,
+        ANSWERED, CHANNEL_META, CHANNELS, HEADS, LISTENERS, LISTENING, MEMBERS, MENTIONED,
+        MESSAGE_IDS, MESSAGES, NOTICES, PARTICIPANTS, POSTED, REACTIONS, REPLIES, ROOTS,
     };
 }
 
@@ -155,6 +155,13 @@ pub enum Op {
     // the rest wait for the next run, and a run once none is left writes nothing
     MigrateSome {
         limit: u64,
+    },
+    /// What of `channel_id` still tells the sender (`None`: what chat tells
+    /// by default). It stops their listening there, as `Listen` takes this
+    /// off: the two are one choice.
+    SetNotices {
+        channel_id: String,
+        notices: Option<Notices>,
     },
 }
 
@@ -262,6 +269,30 @@ pub enum Query {
         account: AccountNumber,
         page: PageRequest,
     },
+    /// Where `account` is in `channel_id`, for its notices: the seq it came
+    /// into the room at, and into each thread of `roots` it is in.
+    #[ask(Reply::Followed(Followed))]
+    #[reads(
+        state::CHANNELS,
+        state::MEMBERS,
+        state::MESSAGES,
+        state::POSTED,
+        state::PARTICIPANTS,
+        state::MENTIONED
+    )]
+    Followed {
+        channel_id: String,
+        account: AccountNumber,
+        roots: Vec<u64>,
+    },
+    /// The rooms `account` cut the notices of (`Op::SetNotices`), each with
+    /// what still tells it, a page at a time.
+    #[ask(Reply::Notices(PageResponse<(String, Notices)>))]
+    #[reads(state::NOTICES)]
+    Notices {
+        account: AccountNumber,
+        page: PageRequest,
+    },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -283,6 +314,31 @@ pub enum Reply {
     Reactors(Vec<ReactedBy>),
     ChannelIds(PageResponse<String>),
     Listening(PageResponse<String>),
+    Notices(PageResponse<(String, Notices)>),
+    Followed(Followed),
+}
+
+/// Where an account is in a room ([`Query::Followed`]): what comes after the
+/// seq it came in at is meant for it.
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    Default,
+    PartialEq,
+    Eq,
+)]
+pub struct Followed {
+    /// In the room: its first message in the timeline, or 0 for a seat in a
+    /// members-only room or the room's opening.
+    pub room: Option<u64>,
+    /// Each thread asked about that it is in, by root: the first message it
+    /// wrote or was mentioned in there.
+    pub threads: Vec<(u64, u64)>,
 }
 
 #[derive(
@@ -300,6 +356,28 @@ pub enum Reply {
 pub enum PostPolicy {
     Open,
     MembersOnly,
+}
+
+/// What of a room still tells an account that cut its notices
+/// (`Op::SetNotices`); listening (`Op::Listen`) is the other way, every
+/// message.
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+)]
+pub enum Notices {
+    /// What mentions it, and what is written to it in a direct room.
+    Mentions,
+    /// Nothing.
+    Off,
 }
 
 #[derive(
@@ -561,6 +639,7 @@ fn op_variants_only_append() {
             "Migrate",
             "Listen",
             "MigrateSome",
+            "SetNotices",
         ]
     );
 }

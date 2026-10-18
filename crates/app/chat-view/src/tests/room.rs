@@ -510,6 +510,7 @@ fn a_room_lists_every_member_past_the_first_page() {
                 Some([1]) => page((257..=300).map(member).collect()),
                 Some(after) => panic!("a cursor no page named: {after:?}"),
             }),
+            query @ (Query::Listening { .. } | Query::Notices { .. }) => chat_reply(query),
             query => panic!("unexpected chat query: {query:?}"),
         })
     });

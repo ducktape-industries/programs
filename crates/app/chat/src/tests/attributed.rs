@@ -9,6 +9,7 @@ use attribution::{
 };
 
 use crate::attributed::{DIRECT, LISTEN, MESSAGE, THREAD};
+use crate::{Followed, Notices};
 
 const ADA: &[u8] = b"ada-key";
 const BO: &[u8] = b"bo-key";
@@ -317,6 +318,110 @@ fn a_listener_is_related_to_each_new_message_in_its_channel_it_relates_to_in_no_
         listen(&chain, BO, "nowhere", true),
         Err(code::NOT_FOUND.to_owned())
     );
+}
+
+fn set_notices(chain: &MockChain, key: &[u8], channel: &str, notices: Option<Notices>) {
+    let op = crate::Op::SetNotices {
+        channel_id: channel.into(),
+        notices,
+    };
+    chain.submit(signed(key), crate::PROGRAM, &op).unwrap();
+}
+
+fn notices_cut(chain: &MockChain, account: u64) -> Vec<(String, Notices)> {
+    let asked = crate::Query::Notices {
+        account,
+        page: PageRequest::default(),
+    };
+    let crate::Reply::Notices(page) = chain.query(crate::PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    page.items
+}
+
+// a room's notices are one choice per account: every message (listening), cut to mentions or
+// off, or chat's default; each takes the one before it off, and one account's is its own
+#[test]
+fn a_rooms_notices_are_one_choice_listening_among_them() {
+    let chain = chain();
+    open_general(&chain);
+    let general = |notices| vec![("general".to_owned(), notices)];
+    listen(&chain, BO, "general", true).unwrap();
+    set_notices(&chain, BO, "general", Some(Notices::Mentions));
+    assert_eq!(notices_cut(&chain, 2), general(Notices::Mentions));
+    assert!(listened(&chain, 2).is_empty(), "cut, Bo no longer listens");
+    set_notices(&chain, BO, "general", Some(Notices::Off));
+    assert_eq!(notices_cut(&chain, 2), general(Notices::Off));
+    assert!(notices_cut(&chain, 3).is_empty());
+
+    listen(&chain, BO, "general", true).unwrap();
+    assert!(
+        notices_cut(&chain, 2).is_empty(),
+        "listening takes the cut off"
+    );
+    assert_eq!(listened(&chain, 2), ["general"]);
+    set_notices(&chain, BO, "general", None);
+    assert!(notices_cut(&chain, 2).is_empty());
+    assert!(listened(&chain, 2).is_empty(), "the default is neither");
+}
+
+fn followed(chain: &MockChain, channel: &str, account: u64, roots: &[u64]) -> Followed {
+    let asked = crate::Query::Followed {
+        channel_id: channel.into(),
+        account,
+        roots: roots.to_vec(),
+    };
+    let crate::Reply::Followed(followed) = chain.query(crate::PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    followed
+}
+
+// an account is in a room from its first message in the timeline (a seat in a members-only room
+// or the room's opening from the start), and in a thread from the first message there it wrote or
+// was mentioned in
+#[test]
+fn where_an_account_is_comes_from_what_it_wrote_and_what_mentioned_it() {
+    let chain = chain();
+    open_general(&chain);
+    post(&chain, BO, "general", "m1", "a topic");
+    post_in(&chain, ADA, "general", "m2", "a reply", Some(1));
+    post_in(
+        &chain,
+        ADA,
+        "general",
+        "m3",
+        "what do you think, <@3>?",
+        Some(1),
+    );
+    post(&chain, CY, "general", "m4", "hello");
+    post(&chain, CY, "general", "m5", "again");
+    post(&chain, ADA, "general", "m6", "<@2> have a look");
+    post_in(&chain, CY, "general", "m7", "a reply", Some(6));
+    let at = |room, threads| Followed { room, threads };
+    let general = |account| followed(&chain, "general", account, &[1, 6]);
+    assert_eq!(
+        general(1),
+        at(Some(0), vec![(1, 2), (6, 6)]),
+        "Ada opened it"
+    );
+    assert_eq!(general(2), at(Some(1), vec![(1, 1), (6, 6)]));
+    assert_eq!(general(3), at(Some(4), vec![(1, 3), (6, 7)]));
+
+    let team = crate::Op::CreateChannel {
+        channel_id: "team".into(),
+        name: "team".into(),
+        post_policy: crate::PostPolicy::MembersOnly,
+    };
+    chain.submit(signed(ADA), crate::PROGRAM, &team).unwrap();
+    let seat = crate::Op::SetMembership {
+        channel_id: "team".into(),
+        principal: crate::Principal::Account(2),
+        member: true,
+    };
+    chain.submit(signed(ADA), crate::PROGRAM, &seat).unwrap();
+    assert_eq!(followed(&chain, "team", 2, &[]), at(Some(0), vec![]));
+    assert_eq!(followed(&chain, "team", 3, &[]), at(None, vec![]));
 }
 
 #[test]

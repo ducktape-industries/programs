@@ -4,6 +4,7 @@ use chat::Principal;
 use view::prelude::*;
 
 use crate::Chat;
+use crate::notifier::choices;
 use crate::queries::{channels, ownerships, roster};
 use futures::FutureExt;
 
@@ -29,6 +30,10 @@ impl Chat {
             || self.session.chain_id != prev.chain_id;
         if reader_changed {
             self.load_names(cx);
+            self.choices = Loadable::Idle;
+            if self.details.is_some() {
+                self.load_choices(cx);
+            }
         }
         if reader_changed || (prev.connected && !self.session.connected) {
             for draft in self.drafts.values_mut() {
@@ -72,6 +77,14 @@ impl Chat {
         cx.load(self, names.clone(), |chat| &mut chat.names);
         let answers = async move { ownerships(host, &names.await?).await };
         cx.load(self, answers, |chat| &mut chat.ownerships);
+    }
+
+    /// What the reader chose for each room's notices, read again.
+    pub(crate) fn load_choices(&mut self, cx: &mut Context<Self>) {
+        match self.my_account() {
+            Some(me) => cx.load(self, choices(cx.host(), me), |chat| &mut chat.choices),
+            None => self.choices = Loadable::Idle,
+        }
     }
 
     pub(crate) fn load_channels(&mut self, cx: &mut Context<Self>) {
