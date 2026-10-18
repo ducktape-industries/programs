@@ -25,7 +25,7 @@ fn pod_schema() -> Value {
 }
 
 fn container_schema() -> Value {
-    json!({ "type": "string", "description": "the container: run (the default), or out, which still answers after run ended and sees only /out" })
+    json!({ "type": "string", "description": "the container: run (the default), or out, which still answers after run ended and sees /out and the pod's inputs" })
 }
 
 fn named(pod: &str) -> Result<&str, Error> {
@@ -254,7 +254,7 @@ fn contents(path: &str, offset: u64, answer: &Value) -> Result<Value, Error> {
 
 impl Tool for Read {
     const NAME: &'static str = "pod_read";
-    const DESCRIPTION: &'static str = "Read a file straight out of a pod: its size, and its bytes from offset (0 if omitted), length of them or all the rest, as text, or as hex where they are not UTF-8; eof says whether the file goes on. The answer comes back whole only while it fits one block (BLOCK_BYTES, 16 MiB, the JSON around it included, and hex doubles bytes that are not UTF-8): a larger read fails with \"the answer is larger than a block carries\", so read a large file in parts with offset and length. A file in /out reads from container out too, after run ended.";
+    const DESCRIPTION: &'static str = "Read a file straight out of a pod: its size, and its bytes from offset (0 if omitted), length of them or all the rest, as text, or as hex where they are not UTF-8; eof says whether the file goes on. The answer comes back whole only while it fits one block (BLOCK_BYTES, 16 MiB, the JSON around it included, and hex doubles bytes that are not UTF-8): a larger read fails with \"the answer is larger than a block carries\", so read a large file in parts with offset and length. A file in /out or in one of the pod's inputs reads from container out too, after run ended.";
     const WRITES: bool = true;
     type Args = ReadArgs;
 
