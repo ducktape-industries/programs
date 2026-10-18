@@ -299,14 +299,6 @@ fn channel_button(
                 .child(words::MEMBERS_ONLY),
         );
     }
-    if info.channel.archived {
-        row = row.child(
-            div()
-                .text_size(design::text::CAPTION)
-                .text_color(theme.sidebar_muted)
-                .child(words::ARCHIVED),
-        );
-    }
     if unread {
         row = row.child(
             div()

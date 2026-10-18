@@ -13,6 +13,7 @@ use view::methods::Query as Ask;
 use view::methods::{Changes, HostId, HostSession, HostVisible, Session, Submit};
 
 mod agents;
+mod archived;
 mod dms;
 mod menus;
 mod message;

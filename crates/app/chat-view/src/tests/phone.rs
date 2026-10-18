@@ -137,14 +137,25 @@ fn an_unread_room_wears_its_dot_and_a_read_one_none() {
 }
 
 #[test]
-fn an_archived_members_only_channel_wears_both_and_a_muted_name() {
+fn a_members_only_channel_wears_its_chip() {
     let (mut cx, view) = phone();
     general_is(&mut cx, &view, |general| {
-        general.channel.archived = true;
         general.channel.post_policy = PostPolicy::MembersOnly;
     });
     assert!(cx.find("chat-rooms-channel-general-members-only").is_some());
-    assert!(cx.find("chat-rooms-channel-general-archived").is_some());
+}
+
+#[test]
+fn an_archived_channel_leaves_the_rooms_page_and_comes_back_unarchived() {
+    let (mut cx, view) = phone();
+    general_is(&mut cx, &view, |general| general.channel.archived = true);
+    assert!(cx.find("chat-rooms-channel-general").is_none());
+    assert!(
+        !cx.has_text("No rooms yet"),
+        "an archived channel is still the network's"
+    );
+    general_is(&mut cx, &view, |general| general.channel.archived = false);
+    assert!(cx.find("chat-rooms-channel-general").is_some());
 }
 
 #[test]

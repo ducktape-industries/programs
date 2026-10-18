@@ -104,6 +104,10 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     let (dms, people) = list.dms.split_at(opened);
     let count = |rows: usize| (rows > 0).then(|| rows.to_string());
     let loading = matches!(chat.channels, Loadable::Idle | Loadable::Loading(_));
+    // with every channel archived the network still holds channels: the
+    // empty state's words would be false
+    let empty = (!loading && list.channels.is_empty() && list.archived == 0)
+        .then(|| no_rooms(chat, cx, theme, ladder));
     div()
         .id("chat-rooms")
         .flex_1()
@@ -128,9 +132,7 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
                 ladder,
             ))
         })
-        .when(!loading && list.channels.is_empty(), |rooms| {
-            rooms.child(no_rooms(chat, cx, theme, ladder))
-        })
+        .children(empty)
         .when(!dms.is_empty(), |rooms| {
             rooms.child(
                 design::section_head("chat-rooms-dms-head", words::DIRECT_MESSAGES, ladder, theme)
@@ -154,9 +156,8 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         )
 }
 
-/// A channel's row: its hash (an archived room's box) muted in the lead
-/// column, the name (muted when archived), Members only and Archived, and
-/// the dot while it holds what the reader has not read.
+// A channel's row: its hash muted in the lead column, the name, Members
+// only, and the dot while it holds what the reader has not read.
 fn channel_row(
     chat: &Chat,
     info: &ChannelInfo,
@@ -166,28 +167,20 @@ fn channel_row(
 ) -> AnyElement {
     let channel = &info.channel;
     let id = format!("chat-rooms-channel-{}", channel.id);
-    let archived = channel.archived;
-    let glyph = design::icon(if archived { "archive" } else { "hash" }, ladder.icon_row)
-        .text_color(theme.muted);
-    let chip = |suffix: &str, label: &'static str| {
-        design::badge(
-            format!("{id}-{suffix}"),
-            label,
-            ladder,
-            theme.muted,
-            theme.surface_raised,
-        )
-    };
+    let hash = design::icon("hash", ladder.icon_row);
     let tail = div()
         .flex()
         .flex_none()
         .items_center()
         .gap(design::space::SM)
         .when(channel.members_only(), |tail| {
-            tail.child(chip("members-only", words::MEMBERS_ONLY))
-        })
-        .when(archived, |tail| {
-            tail.child(chip("archived", words::ARCHIVED))
+            tail.child(design::badge(
+                format!("{id}-members-only"),
+                words::MEMBERS_ONLY,
+                ladder,
+                theme.muted,
+                theme.surface_raised,
+            ))
         })
         .when(chat.unread(info), |tail| tail.child(dot(&id, theme)));
     row(
@@ -198,8 +191,8 @@ fn channel_row(
         theme,
         ladder,
     )
-    .child(design::lead(glyph))
-    .child(title(channel.name.clone(), archived, theme, ladder))
+    .child(design::lead(hash.text_color(theme.muted)))
+    .child(title(channel.name.clone(), theme, ladder))
     .child(tail)
     .into_any_element()
 }
@@ -239,7 +232,7 @@ fn person_row(
     row(&id, name.clone(), entry.id.clone(), cx, theme, ladder)
         .when(agent, |row| row.aria_description(words::AGENT))
         .child(design::lead(face(&name, agent, ladder.avatar, theme)))
-        .child(title(name, false, theme, ladder))
+        .child(title(name, theme, ladder))
         .child(tail)
         .into_any_element()
 }
@@ -264,15 +257,14 @@ fn row(
         .on_click(open)
 }
 
-/// A row's title (the kit `Row`'s): body text on one line, muted for an
-/// archived room.
-fn title(name: String, quiet: bool, theme: &Theme, ladder: &Ladder) -> Div {
+// A row's title (the kit `Row`'s): body text on one line.
+fn title(name: String, theme: &Theme, ladder: &Ladder) -> Div {
     div()
         .flex_1()
         .min_w(px(0.))
         .truncate()
         .text_type(ladder.body)
-        .text_color(if quiet { theme.muted } else { theme.foreground })
+        .text_color(theme.foreground)
         .child(name)
 }
 

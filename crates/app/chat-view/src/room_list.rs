@@ -22,6 +22,8 @@ pub(crate) struct DmEntry<'a> {
 pub(crate) struct RoomList<'a> {
     pub channels: Vec<&'a ChannelInfo>,
     pub dms: Vec<DmEntry<'a>>,
+    // the rooms left out because they are archived
+    pub archived: usize,
 }
 
 impl RoomList<'_> {
@@ -104,9 +106,16 @@ impl Chat {
         let mine = self.my_account();
         let mut channels = Vec::new();
         let mut dms = Vec::new();
+        let mut archived = 0;
         for info in self.channels.ready().into_iter().flatten() {
             let id = info.channel.id.as_str();
             if chat::namespace::program(id).is_some() {
+                continue;
+            }
+            // an archived room leaves the lists, as it is archived; a link
+            // or the open room still reaches it through `channels`
+            if info.channel.archived {
+                archived += 1;
                 continue;
             }
             if chat::dm_peers(id).is_none() {
@@ -122,7 +131,11 @@ impl Chat {
                     }),
             );
         }
-        RoomList { channels, dms }
+        RoomList {
+            channels,
+            dms,
+            archived,
+        }
     }
 
     pub(crate) fn settle_dm_heads(&mut self, cx: &mut Context<Self>) {
@@ -214,10 +227,28 @@ impl Chat {
     /// the open room, else the first.
     pub(crate) fn rooms_at(&self, ids: &[String]) -> usize {
         let open = self.room.as_ref().map(|room| room.id.as_str());
-        self.rooms_cursor
-            .as_deref()
-            .or(open)
-            .and_then(|id| ids.iter().position(|room| room == id))
-            .unwrap_or(0)
+        let Some(id) = self.rooms_cursor.as_deref().or(open) else {
+            return 0;
+        };
+        let at = |room: &str| ids.iter().position(|listed| listed == room);
+        at(id).or_else(|| self.in_place_of(id, &at)).unwrap_or(0)
+    }
+
+    // A room the list leaves out (an archived channel) hands its row to the
+    // next listed channel after it in the program's order, else to the last
+    // one before it.
+    fn in_place_of(&self, id: &str, at: &impl Fn(&str) -> Option<usize>) -> Option<usize> {
+        let channels: Vec<&str> = self
+            .channels
+            .ready()?
+            .iter()
+            .map(|info| info.channel.id.as_str())
+            .filter(|room| chat::dm_peers(room).is_none())
+            .collect();
+        let place = channels.iter().position(|room| *room == id)?;
+        let (before, after) = channels.split_at(place);
+        let next = after.iter().copied().find_map(at);
+        let last = || before.iter().rev().copied().find_map(at);
+        next.or_else(last)
     }
 }
