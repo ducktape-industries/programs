@@ -1,0 +1,7 @@
+{"type": "message_start", "message": {"id": "msg_1", "type": "message", "role": "assistant", "content": [], "model": "claude-sonnet-4-5", "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 10, "output_tokens": 1, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}}}
+{"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "forge_commit", "input": {}}}
+{"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "{\"repo\": \"demo\", \"branch\": \"main\", \"files\": [{\"path\": \"src/lib.rs\", \"content\": \"pub fn "}}
+{"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": "add(a: u32, b: u32) -> u32 {\\n    a + b\\n}\\n\\npub fn "}}
+{"type": "content_block_stop", "index": 0}
+{"type": "message_delta", "delta": {"stop_reason": "max_tokens", "stop_sequence": null}, "usage": {"output_tokens": 40}}
+{"type": "message_stop"}

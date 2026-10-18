@@ -1,6 +1,7 @@
 //! The words both trees read a screen by: a state, a place, a conversation, an agent's setup,
 //! a context and its usage. Each takes what the reads hold and gives a sentence or a few words;
 //! the screens decide where they go.
+use harness::Awaited;
 use harness::{
     AgentSetup, Asking, Body, CallRow, CallState, Configured, Flow, Frame, Partial, Stop, Thinking,
     ThreadRow, Usage, Window,
@@ -9,7 +10,7 @@ use identity::{Ownership, Party};
 use program::Writers;
 use view::prelude::*;
 
-use crate::read::{self, Card, Detail, Roster, Transcript};
+use crate::read::{self, Card, Detail, Roster, Transcript, Wait};
 use crate::timeline::{self, Work};
 use crate::{Agents, State, agent_state, links, thread_state};
 
@@ -427,20 +428,11 @@ pub(crate) fn prompt(configured: &Configured) -> Result<&str, &'static str> {
     }
 }
 
-/// How many characters of a prompt's first sentence the fold shows.
-const FIRST_WORDS: usize = 60;
-
-/// A prompt's first sentence, cut at [`FIRST_WORDS`].
+// a prompt's first sentence, whole: the row that shows it clips it to the room it has
 fn first_words(prompt: &str) -> String {
     let line = prompt.lines().next().unwrap_or_default();
     let sentence = line.find(['.', '!', '?']).map_or(line, |end| &line[..=end]);
-    match sentence.chars().count() > FIRST_WORDS {
-        true => format!(
-            "{}…",
-            sentence.chars().take(FIRST_WORDS).collect::<String>()
-        ),
-        false => sentence.to_owned(),
-    }
+    sentence.to_owned()
 }
 
 /// Every turn's usage in every conversation, added up: tokens, not money.
@@ -749,18 +741,6 @@ pub(crate) fn size_words(text: &str) -> String {
     )
 }
 
-/// How many lines of a result show before "Show all".
-pub(crate) const RESULT_LINES: usize = 12;
-
-/// A result's first [`RESULT_LINES`] lines, and whether more follow.
-pub(crate) fn result_head(text: &str) -> (String, bool) {
-    let lines: Vec<&str> = text.lines().collect();
-    match lines.len() > RESULT_LINES {
-        true => (lines[..RESULT_LINES].join("\n"), true),
-        false => (text.to_owned(), false),
-    }
-}
-
 /// What a compaction stands for: "the model sees frames 1–120 only as this summary".
 pub(crate) fn summary_words(frame: &Frame) -> String {
     format!(
@@ -837,4 +817,67 @@ pub(crate) fn no_node_words(serving: usize, relaying: usize) -> Option<&'static 
         ),
         _ => None,
     }
+}
+
+// an egress request as a wait names it: its id, its block, its node's key
+fn request_words(wait: &Wait) -> String {
+    let node: String = wait.node.iter().map(|byte| format!("{byte:02x}")).collect();
+    format!(
+        "egress request {} since block {} at node {node}",
+        wait.id,
+        design::grouped(wait.made)
+    )
+}
+
+// what an open conversation's turn, window or summary waits on at egress, under its strip;
+// true when it waits and no request is open for it, which nothing will answer
+pub(crate) fn waiting_words(shown: &Transcript) -> Option<(String, bool)> {
+    let row = &shown.thread;
+    let waiting = matches!(
+        row.asking,
+        Asking::Asked { .. } | Asking::Learning | Asking::Compacting { .. }
+    );
+    if row.closed || !waiting {
+        return None;
+    }
+    let name = shown.model().map(|model| model.name.as_str());
+    let open: Vec<&Wait> = shown
+        .waits
+        .iter()
+        .filter(|wait| match (&wait.on, row.asking) {
+            (Awaited::Reply { thread }, Asking::Asked { .. }) => *thread == row.id,
+            (Awaited::Window { name: asked }, Asking::Learning) => Some(asked.as_str()) == name,
+            (Awaited::Summary, Asking::Compacting { .. }) => true,
+            _ => false,
+        })
+        .collect();
+    Some(match &open[..] {
+        [] => (
+            format!(
+                "No egress request is open for it · it last moved at block {}",
+                design::grouped(row.last_height)
+            ),
+            true,
+        ),
+        [wait] => (format!("Waiting on {}", request_words(wait)), false),
+        some => (
+            format!("Waiting on one of {} egress requests like it", some.len()),
+            false,
+        ),
+    })
+}
+
+// what a relaying call waits on at egress, in its box after the blocks it ran at
+pub(crate) fn call_wait(call: &CallRow, waits: &[Wait]) -> Option<String> {
+    if call.state != CallState::Relaying {
+        return None;
+    }
+    let relay = waits.iter().find(|wait| match &wait.on {
+        Awaited::Relay { call: id } => *id == call.id,
+        _ => false,
+    });
+    Some(match relay {
+        Some(wait) => format!("relaying on {}", request_words(wait)),
+        None => "no egress relay is open for it".to_owned(),
+    })
 }

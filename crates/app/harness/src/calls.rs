@@ -1,6 +1,7 @@
 //! A tool call's life: placed and relayed once its block of the model's reply is whole, run as the
-//! agent when its relay comes back, its result held until its turn is recorded. A streamable call
-//! shows its input as it arrives; what it showed is taken back if its reply starts over or breaks.
+//! agent when its relay comes back, its result held until its turn is recorded. Each call's tool
+//! sees its input as it arrives and may show it; what it showed, or did, is taken back if its
+//! reply starts over or breaks, where its tool can take it back.
 use ::program::{Ctx, Error, ExecCtx, QueryCtx, unauthorized};
 use abi::role::egress::{self, RELAY};
 use attribution::Change;
@@ -8,8 +9,7 @@ use serde_json::Value;
 
 use crate::agents::{running, thread};
 use crate::state::{CALLS, DEFERRED, LIVE, Live, PARTIALS, SHOWN, THREADS};
-use crate::tools::prefix::prefix;
-use crate::tools::{self, Entry, Run, Seat, Show, Write};
+use crate::tools::{self, Entry, Run, Seat, Show, Undo, Write};
 use crate::turns::{append, request, serves, settle};
 use crate::{Asking, Body, CallRow, CallState, Op, PROGRAM, Said, ThreadRow};
 
@@ -56,8 +56,7 @@ fn planned(
         return Err(format!("call {call} was made before"));
     }
     let entry = tools::find(tool).ok_or_else(|| format!("there is no tool named {tool}"))?;
-    let input: Value =
-        serde_json::from_str(input).map_err(|error| format!("the input is not JSON: {error}"))?;
+    let input: Value = serde_json::from_str(input).map_err(|_| invalid_json(input))?;
     (entry.check)(&input)?;
     let relaying = serves(ctx, RELAY).map_err(|error| error.message)?;
     if !relaying {
@@ -66,6 +65,10 @@ fn planned(
         ));
     }
     Ok(())
+}
+
+fn invalid_json(input: &str) -> String {
+    serde_json::json!({ "INVALID_JSON": input }).to_string()
 }
 
 pub(crate) enum Placed {
@@ -187,25 +190,28 @@ fn streams(payload: &[u8]) -> bool {
 
 enum TakenBack {
     NothingShown,
+    Stays,
     Undone,
     Refused(Error),
 }
 
 async fn take_back(ctx: &Ctx, thread: &ThreadRow, row: &CallRow) -> Result<TakenBack, Error> {
-    let Some(entry) = tools::find(&row.tool).filter(|entry| entry.streams) else {
+    let Some(entry) = tools::find(&row.tool) else {
         return Ok(TakenBack::NothingShown);
     };
-    let Some(shown) = shown(ctx, thread.id, &row.id)? else {
+    let Some(kept) = shown(ctx, thread.id, &row.id)? else {
         return Ok(TakenBack::NothingShown);
     };
+    SHOWN.remove(ctx, &(thread.id, row.id.clone()));
     let seat = Seat {
         thread: thread.id,
         agent: thread.agent,
         call: &row.id,
-        shown: Some(&shown),
+        shown: Some(&kept),
     };
-    let writes = (entry.void)(ctx, &seat)?;
-    SHOWN.remove(ctx, &(thread.id, row.id.clone()));
+    let Undo::Writes(writes) = (entry.void)(ctx, &seat)? else {
+        return Ok(TakenBack::Stays);
+    };
     Ok(match written(ctx, thread.agent, writes).await {
         Ok(_) => TakenBack::Undone,
         Err(error) => TakenBack::Refused(error),
@@ -245,6 +251,7 @@ async fn taken_back(ctx: &Ctx, id: u64, call: &str, why: &str) -> Result<(), Err
     drop_hearings(ctx, id, call)?;
     let words = match take_back(ctx, &owner, &row).await? {
         TakenBack::NothingShown => "it did not run".to_owned(),
+        TakenBack::Stays => "what it showed stays".to_owned(),
         TakenBack::Undone => "what it showed was taken back".to_owned(),
         TakenBack::Refused(error) => {
             format!("taking back what it showed failed: {}", refusal(&error))
@@ -298,24 +305,30 @@ pub(crate) async fn void_reply(ctx: &Ctx, id: u64) -> Result<Settled, Error> {
             }
             CallState::Done { .. } => {
                 let result = live.outcome.map(|body| body.text()).unwrap_or_default();
-                let streams = tools::find(&row.tool).is_some_and(|entry| entry.streams);
-                match streams {
-                    true => taken_back(ctx, id, &row.id, why).await?,
-                    false => notice(
-                        ctx,
-                        id,
-                        format!(
-                            "{why} after {} call {} ran, and what it did stays: {result}",
-                            row.tool, row.id
-                        ),
-                    )?,
-                }
+                undo_ran(ctx, id, &row, why, &result).await?;
                 voided(ctx, id, &row.id)?;
             }
             CallState::Voided { .. } => {}
         }
     }
     Ok(settled)
+}
+
+async fn undo_ran(ctx: &Ctx, id: u64, row: &CallRow, why: &str, result: &str) -> Result<(), Error> {
+    let owner = thread(ctx, id)?;
+    let words = match take_back(ctx, &owner, row).await? {
+        TakenBack::NothingShown | TakenBack::Stays => format!("what it did stays: {result}"),
+        TakenBack::Undone => "what it did was taken back".to_owned(),
+        TakenBack::Refused(error) => {
+            format!("taking back what it did failed: {}", refusal(&error))
+        }
+    };
+    let (tool, call) = (&row.tool, &row.id);
+    notice(
+        ctx,
+        id,
+        format!("{why} after {tool} call {call} ran, and {words}"),
+    )
 }
 
 pub(crate) async fn take_back_showing(ctx: &Ctx, id: u64) -> Result<Settled, Error> {
@@ -378,14 +391,10 @@ pub(crate) async fn show(ctx: &Ctx, id: u64, index: u64) -> Result<Settled, Erro
     let Some((call, tool, input)) = said_at(ctx, id, index)? else {
         return Ok(Settled::default());
     };
-    let Some(entry) = tools::find(&tool).filter(|entry| entry.streams) else {
+    let Some(entry) = tools::find(&tool) else {
         return Ok(Settled::default());
     };
     let owner = thread(ctx, id)?;
-    let runs = running(ctx, owner.agent)?.is_some();
-    if owner.closed || !runs {
-        return Ok(Settled::default());
-    }
     let showable = showable(ctx, &owner, &call)?;
     if let Showable::Not = showable {
         return Ok(Settled::default());
@@ -397,9 +406,13 @@ pub(crate) async fn show(ctx: &Ctx, id: u64, index: u64) -> Result<Settled, Erro
         call: &call,
         shown: before.as_ref(),
     };
-    let Ok(Show::Write { writes, shown }) = (entry.show)(ctx, &seat, &prefix(&input)) else {
+    let Ok(Show::Write { writes, shown }) = (entry.show)(ctx, &seat, &input) else {
         return Ok(Settled::default());
     };
+    let runs = running(ctx, owner.agent)?.is_some();
+    if owner.closed || !runs {
+        return Ok(Settled::default());
+    }
     if let Showable::Fresh = showable {
         opened_showing(ctx, id, index, &call, &tool, &input)?;
     }
@@ -551,7 +564,7 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
     let entry = match ready(&owner, runs, &row.tool) {
         Ready::Closed => {
             let words = match take_back(ctx, &owner, &row).await? {
-                TakenBack::NothingShown => "",
+                TakenBack::NothingShown | TakenBack::Stays => "",
                 TakenBack::Undone => ", and what it showed was taken back",
                 TakenBack::Refused(_) => ", and taking back what it showed failed",
             };
@@ -586,7 +599,8 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
     mark(ctx, id, call, CallState::Writing)?;
     Ok(match written(ctx, owner.agent, writes).await {
         Ok(output) => {
-            keep_shown(ctx, id, call, entry, &row.input);
+            // what it did is kept until its turn is recorded, for a reply that starts over
+            SHOWN.put(ctx, &(id, call.to_owned()), &row.input);
             match read(&output) {
                 Ok(value) => (value.to_string(), false),
                 Err(refused) => (refusal(&refused), true),
@@ -594,12 +608,6 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
         }
         Err(error) => (refusal(&error), true),
     })
-}
-
-fn keep_shown(ctx: &ExecCtx, id: u64, call: &str, entry: &Entry, input: &str) {
-    if entry.streams {
-        SHOWN.put(ctx, &(id, call.to_owned()), &input.to_owned());
-    }
 }
 
 fn finish(

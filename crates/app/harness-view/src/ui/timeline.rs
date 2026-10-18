@@ -14,8 +14,8 @@ use super::{copy_chip, fold, opened, toggler};
 use crate::read::{Roster, Transcript};
 use crate::timeline::{self, Entry, Work};
 use crate::words::{
-    author, call_state, first_line, flow_failed, flow_words, frame_meta, mentions, ran,
-    result_head, size_words, stop_words, summary_words, usage_words, work_meta, work_size,
+    author, call_state, call_wait, first_line, flow_failed, flow_words, frame_meta, mentions, ran,
+    size_words, stop_words, summary_words, usage_words, work_meta, work_size,
 };
 use crate::{Agents, Sheet, State, thread_state};
 
@@ -639,6 +639,10 @@ fn call_box(
                     .items_center()
                     .gap(space::SM)
                     .children(call.map(|call| small(ran(call), theme, ladder)))
+                    .children(
+                        call.and_then(|call| call_wait(call, &shown.waits))
+                            .map(|words| small(words, theme, ladder)),
+                    )
                     .children(chip),
             )
     });
@@ -685,11 +689,40 @@ fn result_part(
         });
     let key = format!("all-{}", frame.seq);
     let whole = view.open.contains(&key);
-    let (head, more) = result_head(&text);
     let label = match refused {
         true => "Refused".to_owned(),
         false => format!("Result · {}", size_words(&text)),
     };
+    let mono = |words: &str| {
+        wrapped_mono(words, theme, ladder).when(failed, |words| words.text_color(theme.danger))
+    };
+    let body = match whole {
+        true => mono(&text).into_any_element(),
+        // one line, clipped by the room the box gives it; a press shows it whole
+        false => mono(&first_line(&text))
+            .id(SharedString::from(key.clone()))
+            .truncate()
+            .when(ladder.touch, |line| line.min_h(ladder.hit))
+            .cursor_pointer()
+            .role(Role::Button)
+            .aria_expanded(false)
+            .focusable()
+            .on_click(toggler(key.clone(), cx))
+            .map(|line| design::pressed(line, ladder))
+            .into_any_element(),
+    };
+    let less = whole.then(|| {
+        div().flex().child(
+            design::button(
+                SharedString::from(format!("{key}-less")),
+                "Show less",
+                ladder,
+                theme,
+                toggler(key.clone(), cx),
+            )
+            .kind(design::Kind::Quiet),
+        )
+    });
     div()
         .flex()
         .flex_col()
@@ -702,24 +735,8 @@ fn result_part(
                 .child(small(label, theme, ladder))
                 .children(withheld),
         )
-        .child(
-            wrapped_mono(if whole { &text } else { &head }, theme, ladder)
-                .when(failed, |text| text.text_color(theme.danger)),
-        )
-        .when(more, |result| {
-            result.child(
-                div().flex().child(
-                    design::button(
-                        SharedString::from(key.clone()),
-                        if whole { "Show less" } else { "Show all" },
-                        ladder,
-                        theme,
-                        toggler(key, cx),
-                    )
-                    .kind(design::Kind::Quiet),
-                ),
-            )
-        })
+        .child(body)
+        .children(less)
 }
 
 /// The divider a summary draws: the model sees what is above it only as the summary, which a

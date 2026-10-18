@@ -432,9 +432,13 @@ fn a_mention_by_its_manager_asks_the_model_in_the_agents_conversation() {
         "{manual}"
     );
     assert_eq!(system[1]["cache_control"]["type"], "ephemeral");
-    assert_eq!(
-        sent["tools"].as_array().unwrap().len(),
-        tools::CATALOG.len()
+    let defined = sent["tools"].as_array().unwrap();
+    assert_eq!(defined.len(), tools::CATALOG.len());
+    assert!(
+        defined
+            .iter()
+            .all(|tool| tool["eager_input_streaming"] == true),
+        "every tool's input streams as the model writes it: {defined:?}"
     );
     let text = sent["messages"][0]["content"][0]["text"].as_str().unwrap();
     assert!(

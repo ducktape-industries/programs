@@ -659,6 +659,35 @@ pub fn streamed_as(thread: u64) -> Vec<u8> {
     deliver
 }
 
+// what one of harness's own egress requests waits for, read back from the request alone: a
+// turn's streamed reply, a model's window, a thread's summary, a tool call's relay
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Awaited {
+    Reply { thread: u64 },
+    Window { name: String },
+    Summary,
+    Relay { call: String },
+}
+
+pub fn awaited(
+    request: &abi::role::egress::Request,
+    delivery: &abi::role::egress::Delivery,
+) -> Option<Awaited> {
+    use abi::role::egress::{Delivery, Request};
+    match (request, delivery) {
+        (Request::Relay { note }, _) => {
+            let call = String::from_utf8(note.clone()).ok()?;
+            Some(Awaited::Relay { call })
+        }
+        (Request::Http { .. }, Delivery::Events { deliver }) => {
+            let bytes: [u8; 8] = deliver.get(1..)?.try_into().ok()?;
+            let thread = u64::from_le_bytes(bytes);
+            (streamed_as(thread) == *deliver).then_some(Awaited::Reply { thread })
+        }
+        (Request::Http { head, .. }, Delivery::Whole) => wire::awaited(head),
+    }
+}
+
 pub fn describe(op: &Op) -> describe::Description {
     use describe::{Value, field};
     let (title, fields) = match op {

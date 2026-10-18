@@ -5,8 +5,8 @@ use std::collections::{BTreeSet, HashMap};
 
 use egress::{RELAY, ServiceRow};
 use harness::{
-    AgentSetup, Body, CallRow, Frame, ModelRow, Partial, Tally, ThreadRow, ToolInfo, Usage,
-    WithheldFrame,
+    AgentSetup, Asking, Awaited, Body, CallRow, Frame, ModelRow, Partial, Tally, ThreadRow,
+    ToolInfo, Usage, WithheldFrame,
 };
 use identity::{Category, Kind, Ownership, PageRequest};
 use program::Writers;
@@ -305,6 +305,8 @@ pub(crate) struct Transcript {
     pub partial: Option<Partial>,
     pub topic: Option<String>,
     pub tally: Tally,
+    // harness's egress requests still open that the conversation waits on
+    pub waits: Vec<Wait>,
 }
 
 impl Transcript {
@@ -362,6 +364,9 @@ impl Transcript {
         }
         if let Some(tally) = delta.tally {
             self.tally = tally;
+        }
+        if let Some(waits) = delta.waits {
+            self.waits = waits;
         }
         if let Some((setup, serving)) = delta.setup {
             self.setup = setup;
@@ -440,6 +445,7 @@ pub(crate) async fn transcript(
     let topic = topic(&host, id).await?;
     let tally = tally(&host, id).await?;
     let (setup, serving) = served_setup(&host, thread.agent).await?;
+    let waits = waits(&host, &thread).await?;
     Ok(Some(Transcript {
         thread,
         frames,
@@ -454,6 +460,7 @@ pub(crate) async fn transcript(
         partial,
         topic,
         tally,
+        waits,
     }))
 }
 
@@ -508,6 +515,7 @@ pub(crate) struct Delta {
     pub topic: Option<Option<String>>,
     pub tally: Option<Tally>,
     pub setup: Option<(Option<AgentSetup>, Option<usize>)>,
+    pub waits: Option<Vec<Wait>>,
 }
 
 pub(crate) async fn delta(
@@ -518,6 +526,13 @@ pub(crate) async fn delta(
     touched: Touched,
 ) -> Result<Delta, Error> {
     let thread = host.query(harness::ask::Thread { thread: id }).await?;
+    // a wait starts or ends only with a write to the row or to a call: egress's blocks alone
+    // move none
+    let moved = touched.row || !touched.calls.is_empty();
+    let waits = match (&thread, moved) {
+        (Some(row), true) => Some(waits(&host, row).await?),
+        _ => None,
+    };
     let frames = match touched.frames {
         true => frames_from(&host, id, next).await?,
         false => Vec::new(),
@@ -557,6 +572,7 @@ pub(crate) async fn delta(
         topic,
         tally,
         setup,
+        waits,
     })
 }
 
@@ -638,4 +654,50 @@ pub(crate) async fn offers(host: Host) -> Result<Vec<Offer>, Error> {
 pub(crate) async fn thread_at(host: Host, agent: u64, place: String) -> Result<Option<u64>, Error> {
     let asked = harness::ask::ThreadAt { agent, place };
     Ok(host.query(asked).await?.map(|thread| thread.id))
+}
+
+// one of harness's egress requests still open: what it waits for, at which node, since when
+#[derive(PartialEq)]
+pub(crate) struct Wait {
+    pub id: u64,
+    pub node: Vec<u8>,
+    pub made: u64,
+    pub on: Awaited,
+}
+
+// what `thread` and its calls wait on at egress, read only while it waits: every node's
+// assigned requests, harness's kept, another thread's reply left out
+pub(crate) async fn waits(host: &Host, thread: &ThreadRow) -> Result<Vec<Wait>, Error> {
+    let idle = thread.asking == Asking::Idle && thread.open_calls == 0;
+    if thread.closed || idle {
+        return Ok(Vec::new());
+    }
+    let nodes = host
+        .query_all(|after| egress::ask::Nodes { page: page(after) })
+        .await?;
+    let mut waits = Vec::new();
+    for node in nodes {
+        let assigned = host.query(egress::ask::Assigned { key: node.key }).await?;
+        for row in assigned {
+            if row.requester != harness::PROGRAM {
+                continue;
+            }
+            let Some(on) = harness::awaited(&row.request, &row.delivery) else {
+                continue;
+            };
+            let theirs = match &on {
+                Awaited::Reply { thread: id } => *id == thread.id,
+                Awaited::Window { .. } | Awaited::Summary | Awaited::Relay { .. } => true,
+            };
+            if theirs {
+                waits.push(Wait {
+                    id: row.id,
+                    node: row.node,
+                    made: row.made,
+                    on,
+                });
+            }
+        }
+    }
+    Ok(waits)
 }

@@ -16,7 +16,7 @@ use crate::ui::{closed_badge, meter, state_badge, thread_gone, timeline as drawn
 use crate::words::{
     all_tokens, asking_lower, closes, context_words, conversation_label, first_line, frame_meta,
     full, held_author, mentions, no_node_words, open_label, quoted, snapshot_words, status,
-    usage_words, work_meta,
+    usage_words, waiting_words, work_meta,
 };
 use crate::{Agents, Arm, Screen, Sheet, State, links, thread_state};
 
@@ -137,6 +137,10 @@ fn thread(
         .flex_col()
         .children(topic)
         .child(strip(shown, relaying, theme, ladder))
+        .children(
+            waiting_words(shown)
+                .map(|(words, lost)| notice("thread-wait", words, lost, theme, ladder)),
+        )
         .when(stuck, |page| {
             page.child(notice("thread-stuck", STUCK, false, theme, ladder))
         })

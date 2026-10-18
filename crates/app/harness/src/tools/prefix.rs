@@ -1,6 +1,6 @@
 //! A tool call's input as far as it has arrived: the longest valid JSON its text begins with,
 //! open strings closed and open objects and arrays closed, and the top-level fields already
-//! whole. A streamable tool reads it each time more input arrives.
+//! whole. A tool that shows its call reads it each time more input arrives.
 use serde_json::{Map, Value};
 
 #[derive(Debug, PartialEq)]

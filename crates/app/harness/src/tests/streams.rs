@@ -1,5 +1,5 @@
 use super::*;
-use crate::wire::tests::{ERROR, TEXT, events};
+use crate::wire::tests::{CUT_OFF, ERROR, FORGE_COMMIT, TEXT, events, pieces};
 
 fn node(chain: &MockChain, op: &egress::Op) -> Result<Vec<u8>, Error> {
     chain.submit(signed(&NODE), egress::PROGRAM, op)

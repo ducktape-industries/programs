@@ -468,3 +468,144 @@ fn a_mention_in_a_post_still_forming_is_heard_once_the_post_is_whole() {
     };
     assert!(post.contains("please check"), "{post}");
 }
+
+fn forming(chain: &MockChain, thread: u64) -> Option<String> {
+    let partial = partial(chain, thread)?;
+    match (partial.forming, partial.said.last()) {
+        (Forming::Kept { .. }, Some(Said::ToolUse { input, .. })) => Some(input.clone()),
+        _ => None,
+    }
+}
+
+#[test]
+fn a_commits_input_grows_in_the_reply_as_the_model_writes_it_and_the_call_is_placed_once_whole() {
+    let world = world();
+    let chain = &world.chain;
+    let (thread, request) = asked(&world);
+    let events = events(FORGE_COMMIT);
+    let pieces = pieces(FORGE_COMMIT);
+    through(chain, &request, &events, 2);
+    for count in 1..=pieces.len() {
+        stream(chain, &request, &events, &[count as u64 + 1]);
+        assert_eq!(forming(chain, thread), Some(pieces[..count].concat()));
+        assert_eq!(call_state(chain, thread, "toolu_1"), None);
+    }
+    stream(chain, &request, &events, &[pieces.len() as u64 + 2]);
+    assert_eq!(
+        call_state(chain, thread, "toolu_1"),
+        Some(CallState::Relaying)
+    );
+}
+
+#[test]
+fn a_call_cut_off_mid_input_is_refused_with_its_input_as_written_and_the_model_is_asked_again() {
+    let world = world();
+    let chain = &world.chain;
+    let (thread, request) = asked(&world);
+    let events = events(CUT_OFF);
+    from(chain, &request, &events, 0);
+    end(chain, &request, events.len() as u64);
+    let written = pieces(CUT_OFF).concat();
+    let refusal = json!({ "INVALID_JSON": written }).to_string();
+    let bodies = frames(chain, thread);
+    let [
+        ..,
+        Body::Turn { stop, .. },
+        Body::Refused {
+            call,
+            tool,
+            problem,
+        },
+    ] = &bodies[..]
+    else {
+        panic!("the turn, then its call refused: {bodies:?}");
+    };
+    assert_eq!(*stop, Stop::MaxTokens);
+    assert_eq!((call.as_str(), tool.as_str()), ("toolu_1", "forge_commit"));
+    assert_eq!(problem, &refusal);
+    assert!(notices(chain, thread).is_empty());
+    assert_eq!(
+        partial(chain, thread),
+        Some(Partial::new(Wire::AnthropicMessages))
+    );
+    assert!(assigned(chain, RELAY).is_empty());
+    let (next, head) = open_request(chain);
+    assert_eq!(path(&head), "/v1/messages");
+    let sent = body(chain, &next);
+    let messages = sent["messages"].as_array().unwrap();
+    let [.., said, answered] = &messages[..] else {
+        panic!("the turn and its refusal are sent: {messages:?}");
+    };
+    assert_eq!(said["content"][0]["type"], "tool_use");
+    assert_eq!(said["content"][0]["input"], json!({}));
+    assert_eq!(answered["content"][0]["type"], "tool_result");
+    assert_eq!(answered["content"][0]["is_error"], true);
+    assert_eq!(answered["content"][0]["content"], refusal);
+}
+
+fn call_row(chain: &MockChain, thread: u64, call: &str) -> CallRow {
+    let asked = Query::Call {
+        thread,
+        call: call.into(),
+    };
+    let Reply::Call(Some(row)) = chain.query(PROGRAM, &asked).unwrap() else {
+        panic!("call {call} is placed")
+    };
+    row
+}
+
+#[test]
+fn a_post_that_ran_is_taken_back_when_the_reply_starts_over_though_its_call_keeps_no_input() {
+    let world = world();
+    let chain = &world.chain;
+    let (thread, request) = asked(&world);
+    let first = post_events("toolu_a", &[r#"{"channel":"general","text":"Once"}"#]);
+    through(chain, &request, &first, 6);
+    ran(chain, "toolu_a");
+    let row = call_row(chain, thread, "toolu_a");
+    assert!(matches!(row.state, CallState::Done { failed: false, .. }));
+    assert_eq!(row.input, "", "a call that ran keeps no input of its own");
+    let old = format!("harness-{thread}-toolu_a");
+    assert!(!message(chain, &old).unwrap().deleted);
+    let again = post_events("toolu_b", &[r#"{"channel":"general","text":"Twice"}"#]);
+    stream(chain, &request, &again, &[0]);
+    assert!(
+        message(chain, &old).unwrap().deleted,
+        "what it did is still known, so it is taken back"
+    );
+    assert_eq!(
+        call_state(chain, thread, "toolu_a"),
+        Some(CallState::Voided { height: 4 })
+    );
+}
+
+#[test]
+fn a_stream_the_node_starts_again_mid_commit_places_its_call_once() {
+    let world = world();
+    let chain = &world.chain;
+    let (thread, request) = asked(&world);
+    let events = events(FORGE_COMMIT);
+    through(chain, &request, &events, 4);
+    assert!(forming(chain, thread).is_some(), "the commit is forming");
+    assert_eq!(call_state(chain, thread, "toolu_1"), None);
+    from(chain, &request, &events, 0);
+    end(chain, &request, events.len() as u64);
+    assert_eq!(
+        call_state(chain, thread, "toolu_1"),
+        Some(CallState::Relaying)
+    );
+    assert_eq!(assigned(chain, RELAY).len(), 1, "one relay, once");
+    let [Body::Turn { said, .. }] = &turns(chain, thread)[..] else {
+        panic!("one turn");
+    };
+    let calls: Vec<&str> = said
+        .iter()
+        .filter_map(|said| match said {
+            Said::ToolUse { id, .. } => Some(id.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(calls, ["toolu_1"]);
+    assert!(notices(chain, thread).is_empty());
+    assert_eq!(thread_row(chain, thread).asking, Asking::Running);
+}

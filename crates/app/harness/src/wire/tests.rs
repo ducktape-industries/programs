@@ -1,6 +1,7 @@
 //! Each wire's streamed reply folded event by event, against the whole reply of the same
 //! content: recorded Anthropic streams of text, thinking with its signature, a tool call whose
-//! input arrives in pieces, and an error part way.
+//! input arrives in pieces, a commit whose files arrive as the model writes them, a call cut off
+//! mid-input by max_tokens, and an error part way.
 mod server_tools;
 mod thinking;
 
@@ -14,6 +15,8 @@ pub(crate) const THINKING: &str = include_str!("fixtures/thinking.jsonl");
 pub(crate) const TOOL_USE: &str = include_str!("fixtures/tool_use.jsonl");
 pub(crate) const ERROR: &str = include_str!("fixtures/error.jsonl");
 pub(crate) const SERVER_TOOLS: &str = include_str!("fixtures/server_tools.jsonl");
+pub(crate) const FORGE_COMMIT: &str = include_str!("fixtures/forge_commit.jsonl");
+pub(crate) const CUT_OFF: &str = include_str!("fixtures/cut_off.jsonl");
 
 pub(crate) fn events(fixture: &str) -> Vec<Vec<u8>> {
     fixture
@@ -116,6 +119,65 @@ fn a_tool_call_forming_shows_the_input_so_far() {
     assert_eq!(partial.flow, Flow::Open);
 }
 
+pub(crate) fn pieces(fixture: &str) -> Vec<String> {
+    fixture
+        .lines()
+        .filter_map(|line| {
+            let event: Value = serde_json::from_str(line).ok()?;
+            event["delta"]["partial_json"].as_str().map(str::to_owned)
+        })
+        .collect()
+}
+
+fn forming_input(partial: &Partial) -> Option<&str> {
+    match (partial.forming, partial.said.last()) {
+        (Forming::Kept { .. }, Some(Said::ToolUse { input, .. })) => Some(input),
+        _ => None,
+    }
+}
+
+#[test]
+fn a_commits_files_grow_in_the_forming_call_as_each_piece_arrives() {
+    let pieces = pieces(FORGE_COMMIT);
+    let mut partial = Partial::new(Wire::AnthropicMessages);
+    let mut seen = Vec::new();
+    for data in &events(FORGE_COMMIT) {
+        fold(&mut partial, data);
+        if let Some(input) = forming_input(&partial) {
+            seen.push(input.to_owned());
+        }
+    }
+    let grown: Vec<String> = (0..=pieces.len())
+        .map(|count| pieces[..count].concat())
+        .collect();
+    assert_eq!(seen, grown);
+    assert!(seen[1].contains(r#""content": "pub fn "#), "{seen:?}");
+    let content = json!([{
+        "type": "tool_use",
+        "id": "toolu_1",
+        "name": "forge_commit",
+        "input": serde_json::from_str::<Value>(&pieces.concat()).unwrap(),
+    }]);
+    assert_eq!(folded_reply(FORGE_COMMIT), whole(content, "tool_use", 60));
+}
+
+#[test]
+fn a_call_cut_off_mid_input_keeps_its_input_as_written_and_the_reply_still_ends() {
+    let partial = streamed(CUT_OFF);
+    assert_eq!(partial.flow, Flow::Ended);
+    let reply = folded_reply(CUT_OFF);
+    assert_eq!(reply.stop, Stop::MaxTokens);
+    assert_eq!(
+        reply.said,
+        [Said::ToolUse {
+            id: "toolu_1".into(),
+            name: "forge_commit".into(),
+            input: pieces(CUT_OFF).concat(),
+        }]
+    );
+    assert!(serde_json::from_str::<Value>(&pieces(CUT_OFF).concat()).is_err());
+}
+
 #[test]
 fn an_error_event_fails_the_reply_with_what_the_model_said() {
     let partial = streamed(ERROR);
@@ -168,4 +230,41 @@ fn an_event_without_data_lines_changes_nothing() {
     let mut partial = Partial::new(Wire::AnthropicMessages);
     fold(&mut partial, b": keep-alive\n");
     assert_eq!(partial, Partial::new(Wire::AnthropicMessages));
+}
+
+#[test]
+fn each_request_harness_makes_reads_back_as_what_it_waits_for() {
+    use crate::{Awaited, Wire, attributed_as, awaited, streamed_as};
+    use abi::role::egress::{Delivery, Request};
+    let wire = Wire::AnthropicMessages;
+    let http = |head| Request::Http {
+        service: "anthropic".into(),
+        head,
+        body: Vec::new(),
+    };
+    let events = Delivery::Events {
+        deliver: streamed_as(7),
+    };
+    let turn = http(super::turn_head(wire, true));
+    assert_eq!(awaited(&turn, &events), Some(Awaited::Reply { thread: 7 }));
+    let window = http(super::model_head(wire, "claude-sonnet-5"));
+    let name = "claude-sonnet-5".to_owned();
+    let learning = Some(Awaited::Window { name });
+    assert_eq!(awaited(&window, &Delivery::Whole), learning);
+    let summary = http(super::summary_head(wire));
+    assert_eq!(awaited(&summary, &Delivery::Whole), Some(Awaited::Summary));
+    let relay = Request::Relay {
+        note: b"toolu_1".to_vec(),
+    };
+    let call = "toolu_1".to_owned();
+    assert_eq!(
+        awaited(&relay, &Delivery::Whole),
+        Some(Awaited::Relay { call })
+    );
+    let whole_turn = http(super::turn_head(wire, false));
+    assert_eq!(awaited(&whole_turn, &Delivery::Whole), None);
+    let attributed = Delivery::Events {
+        deliver: attributed_as(),
+    };
+    assert_eq!(awaited(&turn, &attributed), None);
 }

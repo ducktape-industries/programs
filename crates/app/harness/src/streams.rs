@@ -1,7 +1,7 @@
 //! A turn's reply as the model streams it: each event the egress role hands harness
 //! (`Op::Streamed`) is checked against the thread's model call and folded, in its wire, into
-//! the thread's [`Partial`]; a tool call starts once its block is whole, a streamable one shows
-//! its input as it arrives, and a reply that starts over takes back what the old one did.
+//! the thread's [`Partial`]; a tool call's tool sees its input as it arrives, the call starts
+//! once its block is whole, and a reply that starts over takes back what the old one did.
 use ::program::{Ctx, Error, unauthorized, wrong_state};
 
 use crate::agents::hear_again;

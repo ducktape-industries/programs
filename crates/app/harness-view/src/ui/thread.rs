@@ -15,7 +15,7 @@ use super::{
 use crate::read::{Roster, Transcript};
 use crate::words::{
     closes, context_short, context_words, conversation_label, first_line, held_author, mentions,
-    open_label, opened_words, quoted, status, usage_words,
+    open_label, opened_words, quoted, status, usage_words, waiting_words,
 };
 use crate::{Agents, Arm, State, links, thread_state};
 
@@ -175,6 +175,9 @@ fn strip(
     let window = shown.model().and_then(|model| model.window.tokens());
     let status = status(shown, relaying);
     let stuck = thread_state(row) == State::Stuck && !row.closed;
+    // what it waits on; a turn no request is open for wears the stuck one's ground
+    let wait = waiting_words(shown);
+    let lost = wait.as_ref().is_some_and(|(_, lost)| *lost);
     let badge = match status.state {
         Some(state) => state_badge("thread-state", state, theme, ladder),
         None => closed_badge("thread-state", theme, ladder),
@@ -216,12 +219,19 @@ fn strip(
         .py(space::XXS)
         .border_1()
         .border_color(theme.border)
-        .bg(if stuck {
+        .bg(if stuck || lost {
             theme.warning_soft
         } else {
             theme.surface
         })
         .child(line)
+        .children(wait.map(|(words, lost)| {
+            caption(words, theme)
+                .id("thread-wait")
+                .pb(space::XS)
+                .truncate()
+                .when(lost, |words| words.text_color(theme.warning))
+        }))
         .when(usage_open, |strip| {
             strip.child(
                 div()

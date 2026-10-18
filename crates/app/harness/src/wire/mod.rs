@@ -7,7 +7,7 @@ pub(crate) mod anthropic;
 
 use abi::role::egress::http::{Head, Response};
 
-use crate::{Flow, Frame, Partial, Role, Said, ServerTool, Stop, Thinking, Usage, Wire};
+use crate::{Awaited, Flow, Frame, Partial, Role, Said, ServerTool, Stop, Thinking, Usage, Wire};
 
 pub(crate) struct Header<'a> {
     pub name: &'a str,
@@ -96,6 +96,12 @@ pub(crate) fn model_head(wire: Wire, name: &str) -> Head {
     match wire {
         Wire::AnthropicMessages => anthropic::model(name),
     }
+}
+
+pub(crate) fn awaited(head: &Head) -> Option<Awaited> {
+    Wire::ALL.iter().find_map(|wire| match wire {
+        Wire::AnthropicMessages => anthropic::awaited(head),
+    })
 }
 
 pub(crate) fn answered(wire: Wire, response: &Response) -> Answered {

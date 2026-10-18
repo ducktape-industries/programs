@@ -7,7 +7,8 @@ use serde_json::{Map, Value, json};
 
 use super::{Answered, Header, Reply, Summarized, Summary};
 use crate::{
-    Body, Flow, Forming, Frame, Partial, Role, Said, ServerTool, Stop, Thinking, Usage, tools,
+    Awaited, Body, Flow, Forming, Frame, Partial, Role, Said, ServerTool, Stop, Thinking, Usage,
+    tools,
 };
 
 pub(crate) const VERSION: &str = "2023-06-01";
@@ -40,6 +41,19 @@ pub(crate) fn model(name: &str) -> Head {
     }
 }
 
+// what a whole request asks of the model, read back from its head: a model's window or a
+// thread's summary
+pub(crate) fn awaited(asked: &Head) -> Option<Awaited> {
+    if let Some(name) = asked.target.strip_prefix("/v1/models/")
+        && *asked == model(name)
+    {
+        return Some(Awaited::Window {
+            name: name.to_owned(),
+        });
+    }
+    (*asked == head(true)).then_some(Awaited::Summary)
+}
+
 fn cached() -> Value {
     json!({ "type": "ephemeral" })
 }
@@ -48,15 +62,12 @@ fn definitions() -> Vec<Value> {
     tools::CATALOG
         .iter()
         .map(|entry| {
-            let mut definition = json!({
+            json!({
                 "name": entry.name,
                 "description": entry.description,
                 "input_schema": (entry.schema)(),
-            });
-            if entry.streams {
-                definition["eager_input_streaming"] = json!(true);
-            }
-            definition
+                "eager_input_streaming": true,
+            })
         })
         .collect()
 }
@@ -427,7 +438,7 @@ fn block_stopped(partial: &mut Partial, event: &Value) {
             return broken(partial, reason);
         }
     }
-    let Some(Said::ToolUse { id, input, .. } | Said::ServerToolUse { id, input, .. }) =
+    let Some(Said::ToolUse { input, .. } | Said::ServerToolUse { input, .. }) =
         partial.said.last_mut()
     else {
         return;
@@ -436,12 +447,8 @@ fn block_stopped(partial: &mut Partial, event: &Value) {
         true => Ok(json!({})),
         false => serde_json::from_str::<Value>(input),
     };
-    match written {
-        Ok(value) => *input = value.to_string(),
-        Err(_) => {
-            let reason = format!("tool call {id}'s input is not JSON");
-            broken(partial, reason);
-        }
+    if let Ok(value) = written {
+        *input = value.to_string();
     }
 }
 

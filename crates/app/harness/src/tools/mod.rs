@@ -1,6 +1,6 @@
 //! The tools a thread's model may call, each over one program of the network: its schema, the
-//! check a call's input passes, the run once its input is whole, and for a streamable tool what
-//! it shows while its input arrives and how it takes that back.
+//! check a call's input passes, the run once its input is whole, what it shows while its input
+//! arrives, and how what it showed or did is taken back.
 mod blob;
 mod chat;
 mod files;
@@ -20,7 +20,6 @@ use serde_json::{Value, json};
 use store::PageRequest;
 
 use crate::ToolInfo;
-use prefix::Prefix;
 
 pub(crate) struct Seat<'a> {
     pub thread: u64,
@@ -54,11 +53,15 @@ pub(crate) enum Show {
     Write { writes: Vec<Write>, shown: Value },
 }
 
+pub(crate) enum Undo {
+    Stays,
+    Writes(Vec<Write>),
+}
+
 pub(crate) trait Tool {
     const NAME: &'static str;
     const DESCRIPTION: &'static str;
     const WRITES: bool = false;
-    const STREAMS: bool = false;
     type Args: DeserializeOwned;
     fn schema() -> Value;
     fn run(ctx: &ExecCtx, seat: &Seat, args: Self::Args) -> Result<Run, Error>;
@@ -67,11 +70,11 @@ pub(crate) trait Tool {
     fn render(_output: &[u8]) -> Result<Value, Error> {
         Ok(json!({ "ok": true }))
     }
-    fn show(_ctx: &ExecCtx, _seat: &Seat, _input: &Prefix) -> Result<Show, Error> {
+    fn show(_ctx: &ExecCtx, _seat: &Seat, _input: &str) -> Result<Show, Error> {
         Ok(Show::Wait)
     }
-    fn void(_ctx: &ExecCtx, _seat: &Seat) -> Result<Vec<Write>, Error> {
-        Ok(Vec::new())
+    fn void(_ctx: &ExecCtx, _seat: &Seat) -> Result<Undo, Error> {
+        Ok(Undo::Stays)
     }
 }
 
@@ -79,13 +82,12 @@ pub(crate) struct Entry {
     pub name: &'static str,
     pub description: &'static str,
     pub writes: bool,
-    pub streams: bool,
     pub schema: fn() -> Value,
     pub check: fn(&Value) -> Result<(), String>,
     pub run: fn(&ExecCtx, &Seat, Value) -> Result<Run, Error>,
     pub render: fn(&[u8]) -> Result<Value, Error>,
-    pub show: fn(&ExecCtx, &Seat, &Prefix) -> Result<Show, Error>,
-    pub void: fn(&ExecCtx, &Seat) -> Result<Vec<Write>, Error>,
+    pub show: fn(&ExecCtx, &Seat, &str) -> Result<Show, Error>,
+    pub void: fn(&ExecCtx, &Seat) -> Result<Undo, Error>,
 }
 
 fn check<T: Tool>(input: &Value) -> Result<(), String> {
@@ -104,7 +106,6 @@ const fn entry<T: Tool>() -> Entry {
         name: T::NAME,
         description: T::DESCRIPTION,
         writes: T::WRITES,
-        streams: T::STREAMS,
         schema: T::schema,
         check: check::<T>,
         run: run::<T>,

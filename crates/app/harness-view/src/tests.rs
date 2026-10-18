@@ -4,6 +4,7 @@ mod phone;
 mod reads;
 mod server_tools;
 mod thinking;
+mod waits;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -210,6 +211,45 @@ struct Net {
     /// each thread's topic, as its agent set it
     topics: Vec<(u64, String)>,
     bound: Vec<u64>,
+    // egress's open requests, each at its node
+    requests: Vec<egress::RequestRow>,
+}
+
+// The one node the fake egress lists.
+const NODE_KEY: [u8; 4] = [0xab; 4];
+
+// One of harness's egress requests, open at the node since block `made`.
+fn requested(
+    id: u64,
+    request: egress::Request,
+    delivery: egress::Delivery,
+    made: u64,
+) -> egress::RequestRow {
+    egress::RequestRow {
+        id,
+        requester: harness::PROGRAM.into(),
+        request,
+        delivery,
+        node: NODE_KEY.to_vec(),
+        made,
+        expiry: 0,
+    }
+}
+
+// Thread `thread`'s turn, asking for its reply as events.
+fn turn_request(id: u64, thread: u64, made: u64) -> egress::RequestRow {
+    let head = egress::http::Head {
+        method: egress::http::Method::Post,
+        target: "/v1/messages".into(),
+        headers: Vec::new(),
+    };
+    let request = egress::Request::Http {
+        service: "anthropic".into(),
+        head,
+        body: Vec::new(),
+    };
+    let deliver = harness::streamed_as(thread);
+    requested(id, request, egress::Delivery::Events { deliver }, made)
 }
 
 impl Default for Net {
@@ -315,6 +355,7 @@ impl Default for Net {
                 .into(),
             topics: Vec::new(),
             bound: Vec::new(),
+            requests: vec![turn_request(41, 7, 9001)],
         }
     }
 }
@@ -541,6 +582,18 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                 egress::Reply::Serving(vec![vec![1]; count])
             }
             egress::Query::Services { .. } => egress::Reply::Services(page(net.services.clone())),
+            egress::Query::Nodes { .. } => egress::Reply::Nodes(page(vec![egress::NodeRow {
+                key: NODE_KEY.to_vec(),
+                services: vec!["anthropic".into(), egress::RELAY.into()],
+                since: 1,
+            }])),
+            egress::Query::Assigned { key } => egress::Reply::Requests(
+                net.requests
+                    .iter()
+                    .filter(|row| row.node == key)
+                    .cloned()
+                    .collect(),
+            ),
             other => panic!("unexpected query: {other:?}"),
         })
     });

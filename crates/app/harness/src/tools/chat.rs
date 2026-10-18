@@ -8,9 +8,9 @@ use chat::{ChannelInfo, MsgRow, Query, Reply};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::prefix::Prefix;
+use super::prefix::{Prefix, prefix};
 use super::{
-    Run, Seat, Show, Tool, Write, cursor_schema, next, object, page, principal, unexpected,
+    Run, Seat, Show, Tool, Undo, Write, cursor_schema, next, object, page, principal, unexpected,
 };
 
 fn ask(ctx: &ExecCtx, query: Query) -> Result<Reply, Error> {
@@ -312,7 +312,6 @@ impl Tool for Post {
     const NAME: &'static str = "chat_post";
     const DESCRIPTION: &'static str = "Post a message to a chat channel, or a reply in a message's thread. Markdown works; `<@N>` mentions account N, and `@name` mentions the one account named so. The message is yours, and chat allows it where it allows your account. It appears as you write it, so give channel and reply_to before text.";
     const WRITES: bool = true;
-    const STREAMS: bool = true;
     type Args = PostArgs;
 
     fn schema() -> Value {
@@ -348,8 +347,8 @@ impl Tool for Post {
         }
     }
 
-    fn show(ctx: &ExecCtx, seat: &Seat, input: &Prefix) -> Result<Show, Error> {
-        let Some(posted) = arrived(input) else {
+    fn show(ctx: &ExecCtx, seat: &Seat, input: &str) -> Result<Show, Error> {
+        let Some(posted) = arrived(&prefix(input)) else {
             return Ok(Show::Wait);
         };
         let own = message_id(seat.thread, seat.call);
@@ -375,7 +374,7 @@ impl Tool for Post {
         })
     }
 
-    fn void(ctx: &ExecCtx, seat: &Seat) -> Result<Vec<Write>, Error> {
+    fn void(ctx: &ExecCtx, seat: &Seat) -> Result<Undo, Error> {
         let own = message_id(seat.thread, seat.call);
         let mut writes = Vec::new();
         for id in [moved_id(&own), own] {
@@ -383,7 +382,7 @@ impl Tool for Post {
                 writes.push(delete(&row));
             }
         }
-        Ok(writes)
+        Ok(Undo::Writes(writes))
     }
 }
 
@@ -420,7 +419,6 @@ impl Tool for React {
     const NAME: &'static str = "chat_react";
     const DESCRIPTION: &'static str = "React to a chat message with an emoji, as yourself.";
     const WRITES: bool = true;
-    const STREAMS: bool = true;
     type Args = ReactArgs;
 
     fn schema() -> Value {
@@ -445,7 +443,8 @@ impl Tool for React {
         }
     }
 
-    fn show(_: &ExecCtx, seat: &Seat, input: &Prefix) -> Result<Show, Error> {
+    fn show(_: &ExecCtx, seat: &Seat, input: &str) -> Result<Show, Error> {
+        let input = prefix(input);
         let settled = |key| input.settled(key).cloned();
         let (Some(channel), Some(seq), Some(emoji)) =
             (settled("channel"), settled("seq"), settled("emoji"))
@@ -465,10 +464,11 @@ impl Tool for React {
         })
     }
 
-    fn void(_: &ExecCtx, seat: &Seat) -> Result<Vec<Write>, Error> {
-        Ok(record::<ReactArgs>(seat)
+    fn void(_: &ExecCtx, seat: &Seat) -> Result<Undo, Error> {
+        let writes = record::<ReactArgs>(seat)
             .map(|shown| reaction(&shown, false))
             .into_iter()
-            .collect())
+            .collect();
+        Ok(Undo::Writes(writes))
     }
 }
