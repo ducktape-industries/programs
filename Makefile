@@ -258,15 +258,23 @@ wasm-views:
 
 # Each notifier builds in a target dir of its own, for the reason
 # `PROGRAM_TARGET` gives: the view crate with `notifier` on is another unit.
+# A notifier stays resident for every program on every network and runs on
+# an event, not per frame, so it is built for size whatever WASM_PROFILE
+# says: the `notify` profile, wasm-opt always, and a cdylib alone, since
+# cargo runs no LTO for a crate that is an rlib too. Its stack is 64 KiB,
+# not rustc's 1 MiB: chat's catch-up over 100 rooms and 5,600 notices
+# went 6 KiB deep.
 NOTIFY_TARGET = $(BUILD_TARGET)/notify/$1
-notifier_build = $(WASM_BUILD) --target-dir $(call NOTIFY_TARGET,$1) -p $1 --features notifier
-notifier_artifact = $(call NOTIFY_TARGET,$1)/wasm32-unknown-unknown/$(WASM_PROFILE)/$(subst -,_,$1).wasm
+NOTIFY_STACK = 65536
+notifier_build = RUSTFLAGS="$(WASM_RUSTFLAGS)" $(CARGO) rustc --target wasm32-unknown-unknown --profile notify \
+  --target-dir $(call NOTIFY_TARGET,$1) -p $1 --features notifier --lib --crate-type cdylib -- -C link-arg=-zstack-size=$(NOTIFY_STACK)
+notifier_artifact = $(call NOTIFY_TARGET,$1)/wasm32-unknown-unknown/notify/$(subst -,_,$1).wasm
 
-## builds every notifier into $(WASM_OUT)/<view>.notify.wasm, optimized as
-## a view is, ABI-checked (alloc/init/tick) and its size printed.
+## builds every notifier into $(WASM_OUT)/<view>.notify.wasm, optimized,
+## ABI-checked (alloc/init/tick) and its size printed.
 wasm-notifiers:
 	@mkdir -p $(WASM_OUT)
-	@$(foreach v,$(NOTIFIERS),$(call notifier_build,$(v)) && cp $(call notifier_artifact,$(v)) $(WASM_OUT)/$(subst -,_,$(v)).notify.wasm && $(VIEW_GATE) $(v).notify $(WASM_OUT)/$(subst -,_,$(v)).notify.wasm notifier || exit 1;)
+	@$(foreach v,$(NOTIFIERS),$(call notifier_build,$(v)) && cp $(call notifier_artifact,$(v)) $(WASM_OUT)/$(subst -,_,$(v)).notify.wasm && tools/view-gate.sh $(v).notify $(WASM_OUT)/$(subst -,_,$(v)).notify.wasm notifier || exit 1;)
 
 ## builds every VIEW_LINKABLE crate for wasm32-unknown-unknown, plus the
 ## exported view probe of view, the example view and every notifier, then fails

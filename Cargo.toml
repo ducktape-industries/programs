@@ -199,6 +199,27 @@ inherits = "release"
 lto = false
 codegen-units = 16
 
+# `make wasm-notifiers`: a notifier runs on an event, not per frame, and
+# stays resident for every program on every network, so its bytes count
+# and its fuel far less: the release profile, with the crates above that a
+# notifier links back at size. Its own output dir.
+[profile.notify]
+inherits = "release"
+[profile.notify.package.chat-view]
+opt-level = "z"
+[profile.notify.package.forge-view]
+opt-level = "z"
+[profile.notify.package.view]
+opt-level = "z"
+[profile.notify.package.view-wire]
+opt-level = "z"
+[profile.notify.package.forge]
+opt-level = "z"
+[profile.notify.package.gitcore]
+opt-level = "z"
+[profile.notify.package.gpui-pre]
+opt-level = "z"
+
 # `make wasm-why`: the release bytes with their names, so twiggy can say
 # whose they are. Its own output dir; nothing ships from it.
 [profile.why]
