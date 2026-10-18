@@ -39,6 +39,43 @@ pub fn query(
     })
 }
 
+// A `Diff` reply as `DiffStat` answers it: each file's path as text and its counts, no hunks.
+pub fn stat(reply: Reply) -> Result<Reply, Error> {
+    let Reply::Diff {
+        height,
+        base,
+        head,
+        total_files,
+        page,
+    } = reply
+    else {
+        return Err(invalid("a diff answers Diff"));
+    };
+    let page = page.map(|file| {
+        let path = file.new_path.as_ref().or(file.old_path.as_ref());
+        FileStat {
+            path: path.map_or_else(String::new, |path| {
+                String::from_utf8_lossy(path).into_owned()
+            }),
+            status: file.status,
+            old_kind: file.old_kind,
+            new_kind: file.new_kind,
+            old_size: file.old_size,
+            new_size: file.new_size,
+            content: file.content,
+            additions: file.additions,
+            deletions: file.deletions,
+        }
+    });
+    Ok(Reply::DiffStat {
+        height,
+        base,
+        head,
+        total_files,
+        page,
+    })
+}
+
 /// One side of a file change: its mode and blob.
 type Side = Option<(Mode, Oid)>;
 

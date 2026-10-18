@@ -47,6 +47,10 @@ only.
 `refs/heads/main`. OIDs are full hexadecimal IDs of the repo's hash algorithm;
 replies normalize them to lowercase. Paths, Git names, messages and source lines
 are byte vectors, never lossy UTF-8 conversions. Tree root is `[]`, not `/`.
+An agent writes them through harness's `network_call`/`network_query` as hex or
+as `{"utf8": "refs/heads/dev"}`, the same bytes (harness's codec takes that form
+for any bytes field); replies stay hex. `RefNames` and `DiffStat` answer names
+and paths as text for a reader that wants them so.
 
 `PageResponse<T> = { items: Vec<T>, next: Option<Cursor> }`. Pass `next` back unchanged.
 The cursor is bound to the original query arguments and height; changing only
@@ -73,10 +77,12 @@ and decode a `forge::Reply` from the concatenated `Respond` bytes.
 | `Repos { cursor: None, limit: 20 }` | `page<RepoInfo>`: name, hash, owner, settings, ref count, last activity |
 | `Repo { repo: r }` | repo record (its owner among it) and founded bounds; who else writes is the repository's list in the access program |
 | `Refs { repo: r, cursor: None, limit: 20 }` | `page<RefInfo>`: full ref name and target OID |
+| `RefNames { repo: r, prefix: "refs/heads/j-049/".into(), page }` | `page<RefName>`: the refs whose name starts with `prefix` (`""`: every ref), in byte-name order, each name as a `String` (a byte that is not UTF-8 reads as U+FFFD; `Refs` keeps the bytes) and its target OID; one key range, not a filter |
 | `Log { repo: r, from: feature, cursor: None, limit: 20 }` | resolved tip, `page<CommitInfo>`: OID, tree, all parents, full message, author and committer with time/timezone |
 | `Tree { repo: r, at: b, path: b"src".to_vec(), cursor: None, limit: 20 }` | resolved tree OID and `page<TreeInfo>`: name, OID, kind/mode; `at` accepts commit or tree |
 | `Blob { repo: r, oid: blob, range: Some(ByteRange { offset: 0, len: 100 }) }` | OID, total size, classification, actual byte range and bytes |
 | `Diff { repo: r, base: Some(a), head: b, path: None, cursor: None, limit: 20 }` | normalized endpoints, total matching file count, `page<FileDiff>` |
+| `DiffStat { repo: r, base: Some(a), head: b, page }` | what `Diff` with no path answers, less the hunks: `page<FileStat>`, each file's path as a `String` (its new path, or its old one for a delete), status, kinds, sizes, content class and line counts |
 | `Compare { repo: r, from: feature, into: main }` | resolved endpoints, merge base, ahead/behind, mergeability |
 | `Activity { repo: r }` | `last_height`: last successful forge operation in the repo |
 | `Changes { repo: r, filter: ChangeFilter { state: Some(ChangeState::Open), ..Default::default() }, cursor: None, limit: 20 }` | `page<ChangeSummary>` with author, endpoints, counts and historical verdict totals |

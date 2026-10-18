@@ -6,7 +6,7 @@ use ::program::{QueryCtx, invalid, stale};
 use gitcore::wire::receive::advertise_refs;
 use gitcore::wire::smart_http_service_header;
 use gitcore::wire::upload::{Command, capability_advertisement, ls_refs_response, parse_command};
-use store::Listing;
+use store::{KeyCodec, Listing};
 
 use gitcore::walk::{Closed, closure as close};
 
@@ -56,6 +56,38 @@ pub(crate) fn protected_branches(
     Ok(PROTECTED
         .page_of(ctx, &name.to_owned(), listing)?
         .map(|(_, branch)| branch))
+}
+
+// The refs of a repository whose name starts with `prefix`, in byte-name order: one key range
+// over `REFS`, since a name's key is its bytes escaped and the escape keeps a prefix a prefix.
+pub(crate) fn ref_names(
+    ctx: &QueryCtx,
+    name: &str,
+    prefix: &str,
+    listing: &Listing,
+) -> Result<PageResponse<RefName>, Error> {
+    let hash = repo_hash(&load_repo(ctx, name)?);
+    let mut start = REFS.key(&name.to_owned());
+    let escaped = prefix.as_bytes().to_vec().key_bytes();
+    start.extend_from_slice(&escaped[..escaped.len() - 2]);
+    let rows = ctx
+        .scan(listing.scan_ahead(&start))
+        .into_iter()
+        .map(|entry| {
+            let mut key = &entry.key[REFS.prefix().len()..];
+            let decoded = <(String, Vec<u8>)>::decode_key(&mut key)
+                .ok_or_else(|| storage("a ref's key does not decode"))?;
+            let bytes: Vec<u8> =
+                borsh::from_slice(&entry.value).map_err(|e| storage(e.to_string()))?;
+            let oid = gitcore::Oid::from_bytes(hash, &bytes).map_err(|e| storage(e.to_string()))?;
+            let named = RefName {
+                name: String::from_utf8_lossy(&decoded.1).into_owned(),
+                target: oid.to_hex(),
+            };
+            Ok((entry.key, named))
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
+    Ok(listing.reply(rows))
 }
 
 /// A forge listing is rewritten only by a forge op, so a cursor is pinned

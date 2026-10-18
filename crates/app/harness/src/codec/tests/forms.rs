@@ -241,7 +241,7 @@ fn json_that_does_not_fit_the_schema_says_where_and_why() {
     ));
     assert_eq!(
         bytes_of::<Vec<u8>>(json!([1])).map_err(|fault| fault.to_string()),
-        Err("at value: expected bytes as hex".to_owned())
+        Err("at value: expected bytes as hex, or {\"utf8\": text}".to_owned())
     );
 }
 
@@ -356,4 +356,40 @@ fn a_schema_whose_sequence_holds_itself_is_shaped_by_name() {
         decode(&schema, "Loop", "value", &[1, 0, 0, 0, 0, 0, 0, 0]).unwrap(),
         json!([[]])
     );
+}
+
+#[derive(BorshSerialize, BorshSchema)]
+struct Text {
+    name: Vec<u8>,
+    digest: [u8; 4],
+}
+
+#[test]
+fn bytes_written_as_utf8_text_are_the_bytes_their_hex_is() {
+    let by_hex = json!({ "name": "726566732f68656164732f646576", "digest": "64657621" });
+    let by_text = json!({ "name": { "utf8": "refs/heads/dev" }, "digest": { "utf8": "dev!" } });
+    let value = Text {
+        name: b"refs/heads/dev".to_vec(),
+        digest: *b"dev!",
+    };
+    assert_eq!(
+        bytes_of::<Text>(by_text).unwrap(),
+        borsh::to_vec(&value).unwrap()
+    );
+    assert_eq!(
+        bytes_of::<Text>(by_hex).unwrap(),
+        borsh::to_vec(&value).unwrap()
+    );
+    let short = json!({ "name": "", "digest": { "utf8": "dev" } });
+    assert!(matches!(bytes_of::<Text>(short), Err(Fault::Length { .. })));
+}
+
+#[test]
+fn every_wrong_field_of_a_value_is_named_in_one_refusal() {
+    let fault = bytes_of::<Named>(json!({ "count": "x", "extra": 1 })).unwrap_err();
+    let text = fault.to_string();
+    assert!(text.starts_with("3 problems: "), "{text}");
+    for named in ["no field extra", "at value.count", "field label is missing"] {
+        assert!(text.contains(named), "{text}");
+    }
 }

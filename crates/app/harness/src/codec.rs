@@ -30,6 +30,25 @@ pub(crate) enum Fault {
     NotANumber { at: String },
     Undefined { declaration: String },
     Unsupported { declaration: String },
+    Several(Vec<Fault>),
+}
+
+impl Fault {
+    // What a value's parts refused, together: nothing, one fault, or each of several in order.
+    fn all(faults: Vec<Fault>) -> Result<(), Fault> {
+        let mut flat = Vec::new();
+        for fault in faults {
+            match fault {
+                Fault::Several(inner) => flat.extend(inner),
+                fault => flat.push(fault),
+            }
+        }
+        match flat.len() {
+            0 => Ok(()),
+            1 => Err(flat.remove(0)),
+            _ => Err(Fault::Several(flat)),
+        }
+    }
 }
 
 impl fmt::Display for Fault {
@@ -60,6 +79,10 @@ impl fmt::Display for Fault {
             }
             Fault::Unsupported { declaration } => {
                 write!(f, "the schema's {declaration} has no JSON form")
+            }
+            Fault::Several(faults) => {
+                let each: Vec<String> = faults.iter().map(Fault::to_string).collect();
+                write!(f, "{} problems: {}", faults.len(), each.join("; "))
             }
         }
     }

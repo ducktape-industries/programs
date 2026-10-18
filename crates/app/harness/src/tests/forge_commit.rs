@@ -112,9 +112,14 @@ fn an_agent_commits_to_a_repository_it_creates_and_then_on_top_of_its_commit() {
     turn(chain, 3, &[("c1", start)]);
     let (text, failed) = result_of(chain, thread, "c1");
     assert!(!failed, "{text}");
+    let said: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(
-        serde_json::from_str::<Value>(&text).unwrap(),
-        json!({ "ok": true, "pushed": "refs/heads/main" })
+        (
+            said["ok"].clone(),
+            said["pushed"].clone(),
+            said["parent"].clone()
+        ),
+        (json!(true), json!("refs/heads/main"), Value::Null)
     );
     let forge::Reply::Repo { repo, .. } = ask(
         chain,
@@ -127,6 +132,7 @@ fn an_agent_commits_to_a_repository_it_creates_and_then_on_top_of_its_commit() {
     assert_eq!(repo.repo.owner, Principal::Account(world.agent));
     let [started] = log(chain, "notes").try_into().unwrap();
     assert_eq!(started.parents, Vec::<String>::new());
+    assert_eq!(said["commit"], json!(started.oid));
     assert_eq!(started.message, b"Start the notes\n");
     assert_eq!(started.author, started.committer);
     assert_eq!(

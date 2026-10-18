@@ -327,6 +327,21 @@ pub enum Query {
         repo: String,
         page: PageRequest,
     },
+    // the refs whose name starts with `prefix` ("" for every ref), byte-name order, names as text
+    #[reads(REFS)]
+    RefNames {
+        repo: String,
+        prefix: String,
+        page: PageRequest,
+    },
+    // what `Diff` answers less the hunks: each file's paths as text, kinds, sizes and line counts
+    #[reads(REFS)]
+    DiffStat {
+        repo: String,
+        base: Option<String>,
+        head: String,
+        page: PageRequest,
+    },
 }
 
 impl Query {
@@ -351,7 +366,9 @@ impl Query {
             | Query::Changes { page, .. }
             | Query::Change { page, .. }
             | Query::Judgment { page, .. }
-            | Query::Protected { page, .. } => Some(page),
+            | Query::Protected { page, .. }
+            | Query::RefNames { page, .. }
+            | Query::DiffStat { page, .. } => Some(page),
             Query::Advertise { .. }
             | Query::Upload { .. }
             | Query::Repo { .. }
@@ -373,7 +390,9 @@ impl Query {
             | Query::Changes { page, .. }
             | Query::Change { page, .. }
             | Query::Judgment { page, .. }
-            | Query::Protected { page, .. } => Some(page),
+            | Query::Protected { page, .. }
+            | Query::RefNames { page, .. }
+            | Query::DiffStat { page, .. } => Some(page),
             Query::Advertise { .. }
             | Query::Upload { .. }
             | Query::Repo { .. }
@@ -394,6 +413,27 @@ pub struct RepoInfo {
 pub struct RefInfo {
     pub name: Vec<u8>,
     pub target: String,
+}
+// A ref as `RefNames` answers it: its name as text (a byte that is not UTF-8 reads as U+FFFD;
+// `Refs` keeps the exact bytes).
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct RefName {
+    pub name: String,
+    pub target: String,
+}
+// One file of a `DiffStat`: its path as text (the new path, or the old one for a delete), and
+// what `FileDiff` says of it besides its hunks.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct FileStat {
+    pub path: String,
+    pub status: FileStatus,
+    pub old_kind: Option<EntryKind>,
+    pub new_kind: Option<EntryKind>,
+    pub old_size: u64,
+    pub new_size: u64,
+    pub content: Content,
+    pub additions: u64,
+    pub deletions: u64,
 }
 
 /// One read's answer. A reply is decoded once and read in place, so its
@@ -466,6 +506,17 @@ pub enum Reply {
     Protected {
         height: u64,
         page: PageResponse<Vec<u8>>,
+    },
+    RefNames {
+        height: u64,
+        page: PageResponse<RefName>,
+    },
+    DiffStat {
+        height: u64,
+        base: Option<String>,
+        head: String,
+        total_files: u64,
+        page: PageResponse<FileStat>,
     },
 }
 

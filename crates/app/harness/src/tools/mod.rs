@@ -3,6 +3,7 @@
 //! arrives, how what it showed or did is taken back, and what its stream says, for one that streams.
 mod blob;
 mod chat;
+mod edits;
 mod files;
 mod forge;
 mod interface;
@@ -160,9 +161,14 @@ pub(crate) const CATALOG: &[Entry] = &[
     entry::<forge::Log>(),
     entry::<forge::Tree>(),
     entry::<forge::Read>(),
+    entry::<forge::Find>(),
+    entry::<forge::Grep>(),
     entry::<forge::Changes>(),
     entry::<forge::Change>(),
     entry::<forge::Commit>(),
+    entry::<forge::ChangeOpen>(),
+    entry::<forge::ChangeComment>(),
+    entry::<forge::ChangeClose>(),
     entry::<network::Accounts>(),
     entry::<network::Account>(),
     entry::<network::Activity>(),

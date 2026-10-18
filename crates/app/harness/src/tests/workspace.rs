@@ -151,11 +151,17 @@ fn a_commit_takes_a_files_file_a_files_directory_and_inline_content_read_at_one_
     turn(chain, 3, &[("c1", "forge_commit", start)]);
     let (text, failed) = result_of(chain, thread, "c1");
     assert!(!failed, "{text}");
+    let said: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(
-        serde_json::from_str::<Value>(&text).unwrap(),
-        json!({ "ok": true, "pushed": "refs/heads/main" }),
-        "the result names the branch, never the contents"
+        (
+            said["ok"].clone(),
+            said["pushed"].clone(),
+            said["parent"].clone()
+        ),
+        (json!(true), json!("refs/heads/main"), Value::Null),
+        "the result names the branch and the commit, never the contents"
     );
+    assert!(said["commit"].is_string(), "{said}");
     let [first] = log(chain, "notes").try_into().unwrap();
     let top = [
         ("LICENSE".to_owned(), File),
@@ -262,7 +268,7 @@ fn a_missing_source_or_an_item_that_is_not_one_file_is_refused_and_nothing_is_co
         ("c2", "not both"),
         ("c3", "executable goes with content"),
         ("c4", "a.md is written twice"),
-        ("c5", "give content or source"),
+        ("c5", "give content, source or edits"),
     ] {
         let (text, failed) = result_of(chain, thread, call);
         assert!(failed && text.contains(says), "{call}: {text}");

@@ -1,23 +1,21 @@
-//! `forge_commit`, the agent's one write to forge: files written whole and paths removed, made
-//! one git commit on a branch and pushed as the agent's account. Git's objects are built here
-//! with `gitcore`: the trees on the paths the commit touches are rebuilt over its parent's, read
-//! through forge's queries, and every other tree is the parent's as is. The new objects go up as
-//! one pack blob the push names, so no file's bytes ride in the transaction. A repository that
-//! does not exist yet is created in the same write, the agent's.
+//! `forge_commit`, the agent's one write to forge: files written whole or edited by span and paths
+//! removed, as one git commit (objects built with `gitcore` over the parent's trees, read through
+//! forge) pushed as one pack blob as the agent's account; a repository not there yet is created.
 use std::collections::{BTreeMap, BTreeSet};
 
 use ::program::{BlobId, Error, ExecCtx, HashKind, capacity, code, invalid, not_found, stale};
 use abi::role::identity::AccountNumber;
 use files::{EntryInfo, Node};
+use forge::Content;
 use forge::{Bounds, EntryKind, Query, Reply, Repo, Settings};
 use gitcore::wire::pktline::{self, Pkt};
 use gitcore::{Hash, Kind, Mode, Object, Oid, Signature, Tree, TreeEntry, pack};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use store::{PageRequest, PageResponse};
 
-use super::ask;
+use super::{ask, commit_of, every, revision};
 use crate::agents::profile;
+use crate::tools::edits::{EditArg, applied, edit_schema, steps};
 use crate::tools::files::{beneath, read_all, resolved, snapshot, stat};
 use crate::tools::{Run, Seat, Tool, Write, object, unexpected};
 
@@ -45,25 +43,6 @@ pub(crate) fn found(ctx: &ExecCtx, name: &str) -> Result<Option<(Repo, Bounds)>,
         Ok(other) => Err(unexpected(forge::PROGRAM, "Repo", &other)),
         Err(missing) if missing.code == code::NOT_FOUND => Ok(None),
         Err(refused) => Err(refused),
-    }
-}
-
-/// Every item of a listing forge answers a page at a time.
-fn every<T>(
-    mut listed: impl FnMut(PageRequest) -> Result<PageResponse<T>, Error>,
-) -> Result<Vec<T>, Error> {
-    let mut items = Vec::new();
-    let mut page = PageRequest::default();
-    loop {
-        let answered = listed(page)?;
-        items.extend(answered.items);
-        let Some(after) = answered.next else {
-            return Ok(items);
-        };
-        page = PageRequest {
-            after: Some(after),
-            ..PageRequest::default()
-        };
     }
 }
 
@@ -123,6 +102,47 @@ impl Reading<'_> {
             .into_iter()
             .map(|entry| Ok((entry.name, (mode(entry.kind), oid(self.hash, &entry.oid)?))))
             .collect()
+    }
+
+    // The mode and blob of the file at `path` in the commit `at`.
+    fn file(&self, at: Oid, path: &str) -> Result<(Mode, Oid), Error> {
+        let (dirs, name) = split(path)?;
+        let missing = || not_found(format!("there is no file at {path} to edit"));
+        let mut entries = self.entries(at)?;
+        for dir in dirs {
+            entries = match entries.get(dir.as_bytes()) {
+                Some((Mode::Directory, tree)) => self.entries(*tree)?,
+                _ => return Err(missing()),
+            };
+        }
+        match entries.get(name.as_bytes()) {
+            Some((mode @ (Mode::Regular | Mode::Executable), blob)) => Ok((*mode, *blob)),
+            Some(_) => Err(invalid(format!("{path} is not a file"))),
+            None => Err(missing()),
+        }
+    }
+
+    // The text of the blob `id` at `path`, whole.
+    fn text(&self, id: Oid, path: &str) -> Result<String, Error> {
+        let asked = Query::Blob {
+            repo: self.repo.into(),
+            oid: id.to_hex(),
+            range: None,
+        };
+        let blob = match ask(self.ctx, asked)? {
+            Reply::Blob { blob, .. } => blob,
+            other => return Err(unexpected(forge::PROGRAM, "Blob", &other)),
+        };
+        match blob.content {
+            Content::Text if blob.bytes.len() as u64 == blob.size => {
+                String::from_utf8(blob.bytes).map_err(|_| invalid(format!("{path} is not text")))
+            }
+            Content::Text | Content::Oversize => Err(capacity(format!(
+                "{path} is {} bytes, more than forge serves in one read, so it can't be edited by span; write it whole",
+                blob.size
+            ))),
+            Content::Binary | Content::Gitlink => Err(invalid(format!("{path} is not text"))),
+        }
     }
 }
 
@@ -351,20 +371,44 @@ fn sourced(
     Ok(puts)
 }
 
+// A file the commit edits by span: its path and the edits, applied to it as the parent holds it.
+struct Edited {
+    path: String,
+    steps: Vec<crate::tools::edits::Step>,
+}
+
 // Every file the call writes, whole: inline content as given, and every source read from files
-// at the one snapshot the call names, or the newest.
+// at the one snapshot the call names, or the newest; and every file it edits, to be read at the
+// commit's parent.
 fn gathered(
     ctx: &ExecCtx,
     files: Vec<FileArg>,
     snapshot_arg: &Option<String>,
-) -> Result<Vec<Put>, Error> {
+) -> Result<(Vec<Put>, Vec<Edited>), Error> {
     let named = snapshot(snapshot_arg)?;
     let at = match files.iter().any(|file| file.source.is_some()) {
         true => resolved(ctx, named)?,
         false => named,
     };
     let mut puts = Vec::new();
+    let mut edited = Vec::new();
     for file in files {
+        if let Some(edits) = file.edits {
+            if file.content.is_some() || file.source.is_some() || file.executable.is_some() {
+                return Err(invalid(format!(
+                    "{}: edits go alone; the file keeps its mode",
+                    file.path
+                )));
+            }
+            if edits.is_empty() {
+                return Err(invalid(format!("{}: edits names no edit", file.path)));
+            }
+            edited.push(Edited {
+                path: file.path,
+                steps: steps(edits)?,
+            });
+            continue;
+        }
         match (file.content, file.source) {
             (Some(content), None) => puts.push(Put {
                 path: file.path,
@@ -387,11 +431,14 @@ fn gathered(
                 )));
             }
             (None, None) => {
-                return Err(invalid(format!("{}: give content or source", file.path)));
+                return Err(invalid(format!(
+                    "{}: give content, source or edits",
+                    file.path
+                )));
             }
         }
     }
-    Ok(puts)
+    Ok((puts, edited))
 }
 
 // Forge's bound on one file's size, checked before any object is made, so a file over it is
@@ -428,12 +475,14 @@ pub(crate) struct FileArg {
     content: Option<String>,
     source: Option<String>,
     executable: Option<bool>,
+    edits: Option<Vec<EditArg>>,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct CommitArgs {
     repo: String,
     branch: Option<String>,
+    from: Option<String>,
     files: Vec<FileArg>,
     #[serde(default)]
     remove: Vec<String>,
@@ -446,7 +495,7 @@ pub(crate) struct Commit;
 
 impl Tool for Commit {
     const NAME: &'static str = "forge_commit";
-    const DESCRIPTION: &'static str = "Commit files to a forge repository as one git commit on a branch, as your account, and push it. Each item of files is written whole, from inline content or from a files source: a source file lands at its path, and a source directory lands under its path with every file beneath it, each in its files mode. Every source is read at one files snapshot, the newest if omitted, so a workspace kept in files commits without re-sending it. A source directory adds and replaces files and never deletes; remove deletes paths (a directory with everything in it). Paths are inside the repository, like src/main.rs. A repository that does not exist yet is created, owned by you, and stays even if forge refuses the commit. An existing one takes the push only if its write list in the access program allows your account or harness: its owner alone unless the owner lists others, and a refusal says unauthorized. The commit goes on top of the branch's newest commit, and a new branch starts from the default branch; with base, only while the branch is still at base. Forge takes a bounded number of objects (each file and each changed directory is one) and of bytes per file in one push; a larger commit is refused, so split it. forge_log shows the commit.";
+    const DESCRIPTION: &'static str = "Commit files to a forge repository as one git commit on a branch, as your account, and push it. Each item of files is written whole, from inline content or from a files source, or edited by span: a source file lands at its path, and a source directory lands under its path with every file beneath it, each in its files mode; an item with edits changes part of a text file the branch holds (each span must occur exactly once in it, as in files_edit), keeps its mode, and is refused naming where a span occurs when it is not there once. Every source is read at one files snapshot, the newest if omitted, so a workspace kept in files commits without re-sending it. A source directory adds and replaces files and never deletes; remove deletes paths (a directory with everything in it). Paths are inside the repository, like src/main.rs. A repository that does not exist yet is created, owned by you, and stays even if forge refuses the commit. An existing one takes the push only if its write list in the access program allows your account or harness: its owner alone unless the owner lists others, and a refusal says unauthorized. The commit goes on top of the branch's newest commit, and a new branch starts from from (a branch, ref or commit id), or from the default branch; with base, only while the branch is still at base, and a branch that moved since the edits read it is refused, never overwritten. Forge takes a bounded number of objects (each file and each changed directory is one) and of bytes per file in one push; a larger commit is refused, so split it. The answer names the commit, which is the branch's head after the push, and its parent.";
     const WRITES: bool = true;
     type Args = CommitArgs;
 
@@ -457,6 +506,7 @@ impl Tool for Commit {
                 "content": { "type": "string", "description": "the whole file, inline" },
                 "source": { "type": "string", "description": "instead of content: an absolute files path, a file or a directory, read at snapshot" },
                 "executable": { "type": "boolean", "description": "with content only: whether the file is executable; a source keeps its files mode" },
+                "edits": { "type": "array", "items": edit_schema(), "description": "instead of content or source: edits of the text file the branch holds at path, applied in order" },
             }),
             &["path"],
         );
@@ -464,7 +514,8 @@ impl Tool for Commit {
             json!({
                 "repo": { "type": "string", "description": "a repository name, as forge_repos lists them; a new name creates it" },
                 "branch": { "type": "string", "description": "the branch to commit on, like main; the repository's default branch if omitted" },
-                "files": { "type": "array", "items": file, "description": "the files to write, each with content or a source" },
+                "from": { "type": "string", "description": "for a branch that does not exist yet: the branch (dev), ref or commit id it starts at; the default branch if omitted" },
+                "files": { "type": "array", "items": file, "description": "the files to write or edit, each with content, a source or edits" },
                 "remove": { "type": "array", "items": { "type": "string" }, "description": "paths to delete" },
                 "message": { "type": "string", "description": "the commit message" },
                 "base": { "type": "string", "description": "the commit id the branch must still be at, from forge_log; the commit is refused if the branch moved since. Omitted, it goes on top of the newest" },
@@ -478,8 +529,8 @@ impl Tool for Commit {
         if args.files.is_empty() && args.remove.is_empty() {
             return Err(invalid("a commit writes or removes at least one file"));
         }
-        let puts = gathered(ctx, args.files, &args.snapshot)?;
-        if puts.is_empty() && args.remove.is_empty() {
+        let (mut puts, edited) = gathered(ctx, args.files, &args.snapshot)?;
+        if puts.is_empty() && edited.is_empty() && args.remove.is_empty() {
             return Err(invalid(
                 "the sources hold no files and nothing is removed, so the commit changes nothing",
             ));
@@ -510,7 +561,37 @@ impl Tool for Commit {
                 String::from_utf8_lossy(&branch)
             )));
         }
-        let parent = head.or_else(|| refs.get(&default).copied());
+        let parent = match (&args.from, head) {
+            (None, _) => head.or_else(|| refs.get(&default).copied()),
+            (Some(_), Some(head)) => {
+                return Err(invalid(format!(
+                    "{} exists, at {head}; from only starts a new branch",
+                    String::from_utf8_lossy(&branch)
+                )));
+            }
+            (Some(from), None) if held.is_none() => {
+                return Err(not_found(format!(
+                    "there is no repository {} for {from} to be in",
+                    args.repo
+                )));
+            }
+            (Some(from), None) => {
+                let at = commit_of(ctx, &args.repo, revision(from))?;
+                Some(oid(hash, &at)?)
+            }
+        };
+        for Edited { path, steps } in edited {
+            let Some(parent) = parent else {
+                return Err(not_found(format!("there is no file at {path} to edit")));
+            };
+            let (mode, blob) = reading.file(parent, &path)?;
+            let text = applied(reading.text(blob, &path)?, steps, &path)?;
+            puts.push(Put {
+                path,
+                mode,
+                bytes: text.into_bytes(),
+            });
+        }
         if let Some((_, bounds)) = &held {
             sized(bounds, &puts)?;
         }
@@ -579,36 +660,38 @@ impl Tool for Commit {
                 payload: abi::encode(&op),
             })
             .collect();
-        Ok(Run::Write(writes))
+        let (commit, parent) = (commit.to_hex(), parent.map(|parent| parent.to_hex()));
+        let read = Box::new(move |output: &[u8]| reported(output, &commit, parent.as_deref()));
+        Ok(Run::Read { writes, read })
     }
+}
 
-    /// Git's report of the push: the branch it moved. A report that refuses it fails the call
-    /// in forge's words: objects forge did not take (a commit over its bounds, which a new
-    /// repository's first commit cannot be checked against before the repository exists) or
-    /// a branch it did not move.
-    fn render(output: &[u8]) -> Result<Value, Error> {
-        let lines = pktline::Reader::new(output).filter_map(|pkt| match pkt {
-            Ok(Pkt::Data(data)) => Some(String::from_utf8_lossy(pktline::strip_newline(data))),
-            _ => None,
-        });
-        for line in lines {
-            if let Some(branch) = line.strip_prefix("ok ") {
-                return Ok(json!({ "ok": true, "pushed": branch }));
-            }
-            match line.strip_prefix("unpack ") {
-                Some("ok") => {}
-                Some(refused) => {
-                    return Err(capacity(format!(
-                        "forge took none of the commit: {refused}; commit fewer or smaller files at a time"
-                    )));
-                }
-                None => return Err(stale(format!("forge did not move the branch: {line}"))),
-            }
+// Git's report of the push: the branch it moved, to `commit` on `parent`. A report that refuses
+// it fails the call in forge's words: objects forge did not take (a commit over its bounds, which
+// a new repository's first commit cannot be checked against before the repository exists) or a
+// branch it did not move.
+fn reported(output: &[u8], commit: &str, parent: Option<&str>) -> Result<Value, Error> {
+    let lines = pktline::Reader::new(output).filter_map(|pkt| match pkt {
+        Ok(Pkt::Data(data)) => Some(String::from_utf8_lossy(pktline::strip_newline(data))),
+        _ => None,
+    });
+    for line in lines {
+        if let Some(branch) = line.strip_prefix("ok ") {
+            return Ok(json!({ "ok": true, "pushed": branch, "commit": commit, "parent": parent }));
         }
-        Err(unexpected(
-            forge::PROGRAM,
-            "Push",
-            &String::from_utf8_lossy(output),
-        ))
+        match line.strip_prefix("unpack ") {
+            Some("ok") => {}
+            Some(refused) => {
+                return Err(capacity(format!(
+                    "forge took none of the commit: {refused}; commit fewer or smaller files at a time"
+                )));
+            }
+            None => return Err(stale(format!("forge did not move the branch: {line}"))),
+        }
     }
+    Err(unexpected(
+        forge::PROGRAM,
+        "Push",
+        &String::from_utf8_lossy(output),
+    ))
 }

@@ -14,7 +14,9 @@ use crate::contract::*;
 use crate::ops::{
     configure, create, delete_branch, init, needs, protect, push, resource, retired, stage, touch,
 };
-use crate::queries::{advertise, closure, listing, protected_branches, refs, repos, upload};
+use crate::queries::{
+    advertise, closure, listing, protected_branches, ref_names, refs, repos, upload,
+};
 use crate::reads::{blob, comparison, diff, log, tree};
 use crate::state::{load_bounds, load_repo};
 
@@ -269,6 +271,25 @@ impl Program for Forge {
                 height,
                 page: protected_branches(ctx, repo, &listing(page)?)?,
             },
+            Query::RefNames { repo, prefix, page } => Reply::RefNames {
+                height,
+                page: ref_names(ctx, repo, prefix, &listing(page)?)?,
+            },
+            Query::DiffStat {
+                repo,
+                base,
+                head,
+                page,
+            } => crate::diffs::stat(diff(
+                ctx,
+                height,
+                &bounds,
+                repo,
+                base,
+                head,
+                None,
+                &listing(page)?,
+            )?)?,
         })
     }
 }

@@ -103,10 +103,11 @@ impl<'s> Writer<'s> {
     }
 
     fn bytes(&mut self, length: Length, value: &Value, at: &At) -> Result<(), Fault> {
-        let bytes = value
-            .as_str()
-            .and_then(abi::unhex)
-            .ok_or_else(|| at.mismatch("bytes as hex"))?;
+        let bytes = match single(value, "utf8") {
+            Some(text) => text.as_str().map(|text| text.as_bytes().to_vec()),
+            None => value.as_str().and_then(abi::unhex),
+        }
+        .ok_or_else(|| at.mismatch("bytes as hex, or {\"utf8\": text}"))?;
         self.length(length, bytes.len(), at)?;
         self.out.extend_from_slice(&bytes);
         Ok(())
@@ -172,23 +173,24 @@ impl<'s> Writer<'s> {
         at: &At,
     ) -> Result<(), Fault> {
         let object = value.as_object().ok_or_else(|| at.mismatch("an object"))?;
-        let unknown = object
+        // every field is written, so one refusal names each field that is unknown, missing or wrong
+        let mut faults: Vec<Fault> = object
             .keys()
-            .find(|key| !named.iter().any(|(name, _)| name == *key));
-        if let Some(field) = unknown {
-            return Err(Fault::UnknownField {
+            .filter(|key| !named.iter().any(|(name, _)| name == *key))
+            .map(|field| Fault::UnknownField {
                 at: at.render(),
                 field: field.clone(),
-            });
-        }
+            })
+            .collect();
         for (name, declaration) in named {
             let here = at.field(name);
-            match object.get(name) {
-                Some(field) => self.value(declaration, field, &here)?,
-                None => self.absent(name, declaration, &here, at)?,
-            }
+            let written = match object.get(name) {
+                Some(field) => self.value(declaration, field, &here),
+                None => self.absent(name, declaration, &here, at),
+            };
+            faults.extend(written.err());
         }
-        Ok(())
+        Fault::all(faults)
     }
 
     fn absent(

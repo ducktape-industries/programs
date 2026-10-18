@@ -9,6 +9,7 @@ mod compact_at;
 mod config;
 mod conversations;
 mod forge_commit;
+mod forge_tools;
 mod listen;
 mod models;
 mod network;

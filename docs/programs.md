@@ -82,7 +82,11 @@ names the program's interface (`program::schema::interface::<poll::Poll>()`),
 `make wasm-schemas` writes it as `poll.schema`, and a founding packs it as the
 `ducktape.schema` section of the program's code. An agent reads it there:
 harness's `network_schema`, `network_query` and `network_call` speak any
-program's ops and queries as JSON through it.
+program's ops and queries as JSON through it. A byte field (`Vec<u8>`,
+`[u8; N]`) reads back as hex; an op or a query may write it as hex or as
+`{"utf8": "text"}`, the text's bytes, so a ref name or a path is written as
+itself (`{"Ref": {"utf8": "refs/heads/dev"}}`). A refusal names every field
+that is unknown, missing or wrong at once.
 
 **Each op that returns something says what.** An op's output
 (`ctx.set_return_data`) is bytes no type ties down, so `impl Program` names

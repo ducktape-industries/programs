@@ -1,14 +1,17 @@
-//! Tools over `forge`, the network's git server: repositories, history, trees, file
-//! contents and changes under review, read, and the commits the agent pushes (`commit.rs`).
+//! Tools over `forge`, the network's git server: repositories, history, trees and files read,
+//! found and searched, the commits the agent pushes (`commit.rs`) and the changes it opens,
+//! comments on and closes (`changes.rs`).
+mod changes;
 mod commit;
 
+pub(crate) use changes::{ChangeClose, ChangeComment, ChangeOpen};
 pub(crate) use commit::{Commit, branch_ref, found, oid, request as push_request};
 
-use ::program::{Error, ExecCtx, invalid};
-use forge::{ChangeFilter, ChangeState, Query, Reply, Revision};
+use ::program::{Error, ExecCtx, invalid, not_found};
+use forge::{ChangeFilter, ChangeState, Content, EntryKind, Query, Reply, Revision};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use store::PageRequest;
+use store::{PageRequest, PageResponse};
 
 use super::{Run, Seat, Tool, cursor_schema, next, object, page, principal, unexpected};
 
@@ -88,6 +91,105 @@ fn commit_of(ctx: &ExecCtx, repo: &str, rev: Revision) -> Result<String, Error> 
     }
 }
 
+// Every item of a listing forge answers a page at a time.
+fn every<T>(
+    mut listed: impl FnMut(PageRequest) -> Result<PageResponse<T>, Error>,
+) -> Result<Vec<T>, Error> {
+    let mut items = Vec::new();
+    let mut page = PageRequest::default();
+    loop {
+        let answered = listed(page)?;
+        items.extend(answered.items);
+        let Some(after) = answered.next else {
+            return Ok(items);
+        };
+        page = PageRequest {
+            after: Some(after),
+            ..PageRequest::default()
+        };
+    }
+}
+
+// `name` as the ref it names: a full ref as it is, a branch (`dev`) as `refs/heads/dev`.
+fn reference(name: &str) -> Vec<u8> {
+    match name.starts_with("refs/") {
+        true => name.as_bytes().to_vec(),
+        false => format!("refs/heads/{name}").into_bytes(),
+    }
+}
+
+// The entries of the directory `dir` ("" for the root) in the commit `at`: name, kind, id.
+fn listed(
+    ctx: &ExecCtx,
+    repo: &str,
+    at: &str,
+    dir: &str,
+) -> Result<Vec<(String, EntryKind, String)>, Error> {
+    let entries = every(|page| {
+        let asked = Query::Tree {
+            repo: repo.into(),
+            at: at.into(),
+            path: dir.as_bytes().to_vec(),
+            page,
+        };
+        match ask(ctx, asked)? {
+            Reply::Tree { page, .. } => Ok(page),
+            other => Err(unexpected(forge::PROGRAM, "Tree", &other)),
+        }
+    })?;
+    Ok(entries
+        .into_iter()
+        .map(|entry| {
+            let name = String::from_utf8_lossy(&entry.name).into_owned();
+            (name, entry.kind, entry.oid)
+        })
+        .collect())
+}
+
+// The kind and object id of what is at `path` in the commit `at`, or `None` while nothing is.
+fn entry_at(
+    ctx: &ExecCtx,
+    repo: &str,
+    at: &str,
+    path: &str,
+) -> Result<Option<(EntryKind, String)>, Error> {
+    let path = path.trim_matches('/');
+    let (dir, name) = path.rsplit_once('/').unwrap_or(("", path));
+    let found = match listed(ctx, repo, at, dir) {
+        Ok(entries) => entries,
+        Err(missing) if missing.code == ::program::code::NOT_FOUND => return Ok(None),
+        Err(refused) => return Err(refused),
+    };
+    Ok(found
+        .into_iter()
+        .find(|(entry, _, _)| entry == name)
+        .map(|(_, kind, id)| (kind, id)))
+}
+
+// The whole text of the blob `id`, or why it has none: forge serves a blob's bytes up to its
+// `blob_bytes` in one read, and none of a binary one.
+fn text_of(ctx: &ExecCtx, repo: &str, id: &str, path: &str) -> Result<String, Error> {
+    let asked = Query::Blob {
+        repo: repo.into(),
+        oid: id.into(),
+        range: None,
+    };
+    let blob = match ask(ctx, asked)? {
+        Reply::Blob { blob, .. } => blob,
+        other => return Err(unexpected(forge::PROGRAM, "Blob", &other)),
+    };
+    match blob.content {
+        Content::Text if blob.bytes.len() as u64 == blob.size => {
+            String::from_utf8(blob.bytes).map_err(|_| invalid(format!("{path} is not text")))
+        }
+        Content::Text | Content::Oversize => Err(::program::capacity(format!(
+            "{path} is {} bytes, more than forge serves in one read",
+            blob.size
+        ))),
+        Content::Binary | Content::Gitlink => Err(invalid(format!("{path} is not text"))),
+    }
+}
+
 fn state_name(state: ChangeState) -> &'static str {
     match state {
         ChangeState::Open => "open",
@@ -146,6 +248,7 @@ impl Tool for Repos {
 pub(crate) struct LogArgs {
     repo: String,
     rev: Option<String>,
+    limit: Option<u64>,
     cursor: Option<String>,
 }
 
@@ -158,17 +261,24 @@ impl Tool for Log {
 
     fn schema() -> Value {
         object(
-            json!({ "repo": repo_schema(), "rev": rev_schema(), "cursor": cursor_schema() }),
+            json!({
+                "repo": repo_schema(),
+                "rev": rev_schema(),
+                "limit": { "type": "integer", "minimum": 1, "description": "at most this many commits; as many as forge answers in one page if omitted" },
+                "cursor": cursor_schema(),
+            }),
             &["repo"],
         )
     }
 
     fn run(ctx: &ExecCtx, _: &Seat, args: LogArgs) -> Result<Run, Error> {
+        let mut page = page(&args.cursor)?;
+        page.limit = args.limit;
         let asked = Query::Log {
             from: chosen(ctx, &args.repo, &args.rev)?,
             repo: args.repo,
             exclude: None,
-            page: page(&args.cursor)?,
+            page,
         };
         match ask(ctx, asked)? {
             Reply::Log { tip, page, .. } => {
@@ -256,40 +366,102 @@ impl Tool for Tree {
 #[derive(Deserialize)]
 pub(crate) struct ReadArgs {
     repo: String,
-    id: String,
+    id: Option<String>,
+    rev: Option<String>,
+    path: Option<String>,
     offset: Option<u64>,
     length: Option<u64>,
+    lines: Option<(u64, u64)>,
+}
+
+// Lines `from` to `to` of `text`, counted from 1 and both included, as far as the text goes;
+// the line numbers read and how many lines the text has.
+fn lines_of(text: &str, from: u64, to: u64) -> Result<(String, u64, u64, u64), Error> {
+    if from == 0 || to < from {
+        return Err(invalid(
+            "lines is [from, to], counted from 1, with to at least from",
+        ));
+    }
+    let all: Vec<&str> = text.split_inclusive('\n').collect();
+    let total = all.len() as u64;
+    let first = from.min(total + 1);
+    let last = to.min(total);
+    let picked: String = all
+        .iter()
+        .skip(first as usize - 1)
+        .take((last + 1).saturating_sub(first) as usize)
+        .copied()
+        .collect();
+    Ok((picked, first, last, total))
 }
 
 pub(crate) struct Read;
 
 impl Tool for Read {
     const NAME: &'static str = "forge_read";
-    const DESCRIPTION: &'static str = "Read a file of a repository by its object id (from forge_tree) as text: the whole file, or a byte range of it. Forge refuses a range longer than it serves at once, and answers a file larger than that as oversize.";
+    const DESCRIPTION: &'static str = "Read a file of a repository as text, by its path at a branch or commit, or by its object id (from forge_tree): the whole file, some of its lines, or a byte range of it. Forge refuses a range longer than it serves at once, and answers a file larger than that as oversize.";
     type Args = ReadArgs;
 
     fn schema() -> Value {
         object(
             json!({
                 "repo": repo_schema(),
-                "id": { "type": "string", "description": "the file's object id" },
+                "path": { "type": "string", "description": "the file's path in the repository, like src/main.rs, read at rev; give this or id" },
+                "rev": rev_schema(),
+                "id": { "type": "string", "description": "instead of path: the file's object id" },
+                "lines": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "minItems": 2, "maxItems": 2, "description": "[from, to]: these lines only, counted from 1, both included" },
                 "offset": { "type": "integer", "minimum": 0, "description": "the first byte to read; give a length with it" },
                 "length": { "type": "integer", "minimum": 1, "description": "how many bytes; the whole file if both are omitted" },
             }),
-            &["repo", "id"],
+            &["repo"],
         )
     }
 
     fn run(ctx: &ExecCtx, _: &Seat, args: ReadArgs) -> Result<Run, Error> {
+        let (id, path) = match (args.id, args.path) {
+            (Some(id), None) => {
+                if args.rev.is_some() {
+                    return Err(invalid("rev goes with path; an id names one file already"));
+                }
+                (id, None)
+            }
+            (None, Some(path)) => {
+                let rev = chosen(ctx, &args.repo, &args.rev)?;
+                let at = commit_of(ctx, &args.repo, rev)?;
+                match entry_at(ctx, &args.repo, &at, &path)? {
+                    Some((EntryKind::File | EntryKind::Executable, id)) => (id, Some(path)),
+                    Some(_) => return Err(invalid(format!("{path} is not a file"))),
+                    None => return Err(not_found(format!("there is no {path} at {at}"))),
+                }
+            }
+            _ => return Err(invalid("give path or id, one of them")),
+        };
+        if let Some((from, to)) = args.lines {
+            if args.offset.is_some() || args.length.is_some() {
+                return Err(invalid("lines or a byte range, not both"));
+            }
+            let shown = path.clone().unwrap_or_else(|| id.clone());
+            let text = text_of(ctx, &args.repo, &id, &shown)?;
+            let (picked, first, last, total) = lines_of(&text, from, to)?;
+            return Ok(Run::Done(json!({
+                "id": id,
+                "path": path,
+                "size": text.len(),
+                "lines": [first, last],
+                "total_lines": total,
+                "text": picked,
+            })));
+        }
         let asked = Query::Blob {
             repo: args.repo,
-            oid: args.id,
+            oid: id,
             range: range(args.offset, args.length)?,
         };
         match ask(ctx, asked)? {
             Reply::Blob { blob, .. } => {
                 let mut value = json!({
                     "id": blob.oid,
+                    "path": path,
                     "size": blob.size,
                     "offset": blob.range.offset,
                     "content": format!("{:?}", blob.content).to_lowercase(),
@@ -434,5 +606,153 @@ impl Tool for Change {
             }
             other => Err(unexpected(forge::PROGRAM, "Change", &other)),
         }
+    }
+}
+
+// Every file and directory under `dir` in the commit `at` whose path starts with `prefix`, in
+// path order: a directory is walked only where a path in it can start with `prefix`.
+fn walked(
+    ctx: &ExecCtx,
+    repo: &str,
+    at: &str,
+    dir: &str,
+    prefix: &str,
+    found: &mut Vec<(String, EntryKind, String)>,
+) -> Result<(), Error> {
+    for (name, kind, id) in listed(ctx, repo, at, dir)? {
+        let path = match dir {
+            "" => name,
+            dir => format!("{dir}/{name}"),
+        };
+        let matches = path.starts_with(prefix);
+        let inside =
+            kind == EntryKind::Directory && (matches || prefix.starts_with(&format!("{path}/")));
+        if matches {
+            found.push((path.clone(), kind, id));
+        }
+        if inside {
+            walked(ctx, repo, at, &path, prefix, found)?;
+        }
+    }
+    Ok(())
+}
+
+// What `walked` finds from the deepest directory `prefix` names whole.
+fn under_prefix(
+    ctx: &ExecCtx,
+    repo: &str,
+    at: &str,
+    prefix: &str,
+) -> Result<Vec<(String, EntryKind, String)>, Error> {
+    let prefix = prefix.trim_start_matches('/');
+    let dir = prefix.rsplit_once('/').map_or("", |(dir, _)| dir);
+    let mut found = Vec::new();
+    match walked(ctx, repo, at, dir, prefix, &mut found) {
+        Err(missing) if missing.code == ::program::code::NOT_FOUND && found.is_empty() => Ok(found),
+        walk => walk.map(|()| found),
+    }
+}
+
+fn kind_name(kind: EntryKind) -> String {
+    format!("{kind:?}").to_lowercase()
+}
+
+fn prefix_schema() -> Value {
+    json!({ "type": "string", "description": "search only paths starting with this, like crates/app/forge/; the whole repository if omitted" })
+}
+
+#[derive(Deserialize)]
+pub(crate) struct FindArgs {
+    repo: String,
+    rev: Option<String>,
+    prefix: Option<String>,
+}
+
+pub(crate) struct Find;
+
+impl Tool for Find {
+    const NAME: &'static str = "forge_find";
+    const DESCRIPTION: &'static str = "Find every file and directory of a repository at a branch or commit whose path starts with a prefix, in path order: each one's path, kind and object id. The walk reads each directory it passes through, so a narrow prefix answers a large repository where the whole of it would be too much for one call.";
+    type Args = FindArgs;
+
+    fn schema() -> Value {
+        object(
+            json!({ "repo": repo_schema(), "rev": rev_schema(), "prefix": prefix_schema() }),
+            &["repo"],
+        )
+    }
+
+    fn run(ctx: &ExecCtx, _: &Seat, args: FindArgs) -> Result<Run, Error> {
+        let rev = chosen(ctx, &args.repo, &args.rev)?;
+        let at = commit_of(ctx, &args.repo, rev)?;
+        let prefix = args.prefix.unwrap_or_default();
+        let entries: Vec<Value> = under_prefix(ctx, &args.repo, &at, &prefix)?
+            .into_iter()
+            .map(|(path, kind, id)| json!({ "path": path, "kind": kind_name(kind), "id": id }))
+            .collect();
+        Ok(Run::Done(json!({ "commit": at, "entries": entries })))
+    }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct GrepArgs {
+    repo: String,
+    rev: Option<String>,
+    pattern: String,
+    prefix: Option<String>,
+}
+
+pub(crate) struct Grep;
+
+impl Tool for Grep {
+    const NAME: &'static str = "forge_grep";
+    const DESCRIPTION: &'static str = "Search the text files of a repository at a branch or commit for a literal string: each matching line with its path and line number, in path order. Files forge does not serve as text (binary, or larger than it serves in one read) are listed as skipped. It reads every file under the prefix, so narrow the prefix in a large repository.";
+    type Args = GrepArgs;
+
+    fn schema() -> Value {
+        object(
+            json!({
+                "repo": repo_schema(),
+                "rev": rev_schema(),
+                "pattern": { "type": "string", "description": "the literal text to find" },
+                "prefix": prefix_schema(),
+            }),
+            &["repo", "pattern"],
+        )
+    }
+
+    fn run(ctx: &ExecCtx, _: &Seat, args: GrepArgs) -> Result<Run, Error> {
+        if args.pattern.is_empty() {
+            return Err(invalid("forge_grep looks for a pattern that is not empty"));
+        }
+        let rev = chosen(ctx, &args.repo, &args.rev)?;
+        let at = commit_of(ctx, &args.repo, rev)?;
+        let prefix = args.prefix.unwrap_or_default();
+        let mut hits = Vec::new();
+        let mut skipped = Vec::new();
+        for (path, kind, id) in under_prefix(ctx, &args.repo, &at, &prefix)? {
+            if !matches!(kind, EntryKind::File | EntryKind::Executable) {
+                continue;
+            }
+            let text = match text_of(ctx, &args.repo, &id, &path) {
+                Ok(text) => text,
+                Err(unread)
+                    if unread.code == ::program::code::CAPACITY
+                        || unread.code == ::program::code::INVALID_INPUT =>
+                {
+                    skipped.push(path);
+                    continue;
+                }
+                Err(refused) => return Err(refused),
+            };
+            for (index, line) in text.lines().enumerate() {
+                if line.contains(&args.pattern) {
+                    hits.push(json!({ "path": path, "line": index + 1, "text": line }));
+                }
+            }
+        }
+        Ok(Run::Done(
+            json!({ "commit": at, "hits": hits, "skipped": skipped }),
+        ))
     }
 }
