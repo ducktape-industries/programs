@@ -137,6 +137,18 @@ pub fn describe(op: &Op) -> Description {
             vec![field("key", Value::text(key))],
         ),
         Op::Migrate { channel_id } => ("Migrate channel", channel_id, vec![]),
+        Op::Listen {
+            channel_id,
+            listening,
+        } => (
+            if *listening {
+                "Listen to channel"
+            } else {
+                "Stop listening to channel"
+            },
+            channel_id,
+            vec![],
+        ),
     };
     let mut all = place(channel);
     all.extend(fields);

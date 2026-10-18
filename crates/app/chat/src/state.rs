@@ -11,7 +11,9 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use store::{Map, Set};
 
 use crate::legacy;
-use crate::{Block, ChannelRow, MemberRow, MsgRow, Principal, Reaction, plain_text, tags};
+use crate::{
+    AccountNumber, Block, ChannelRow, MemberRow, MsgRow, Principal, Reaction, plain_text, tags,
+};
 
 type ChannelId = String;
 type Seq = u64;
@@ -36,6 +38,10 @@ pub const REPLIES: Set<(ChannelId, Seq, Seq)> = Set::new("reply/");
 /// `(channel, root author, newest_first(last reply))` → the root's seq.
 pub const ANSWERED: Map<(ChannelId, Principal, Seq), Seq> = Map::new("answered/");
 pub const PARTICIPANTS: Map<(ChannelId, Seq, Principal), Seq> = Map::new("participant/");
+// who listens to each channel, and the height each began: `(channel, account)` → height
+pub const LISTENERS: Map<(ChannelId, AccountNumber), u64> = Map::new("listener/");
+// the channels each account listens to: `(account, channel)`
+pub const LISTENING: Set<(AccountNumber, ChannelId)> = Set::new("listening/");
 
 // A message as chat keeps it: the [`MsgRow`] a read answers, less what a
 // read derives (its flat text and `#tags`, from `blocks`; whether the

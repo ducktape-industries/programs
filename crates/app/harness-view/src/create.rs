@@ -32,6 +32,12 @@ pub(crate) struct Draft {
     // what the configuration lists; the form shows no control for it and writes it back
     #[serde(default)]
     pub server_tools: Vec<ServerTool>,
+    // the channels it listens to and how long its general input settles, as its file names them:
+    // the form keeps both and edits neither
+    #[serde(default)]
+    pub listen: Vec<String>,
+    #[serde(default)]
+    pub settle: Option<u64>,
     pub system: TextField,
     pub answers: Answers,
     pub listed: TextField,
@@ -207,6 +213,8 @@ impl Draft {
                 wait,
                 thinking: self.thinking,
                 server_tools: self.server_tools.clone(),
+                listen: self.listen.clone(),
+                settle: self.settle,
                 system: self.system.text().trim().to_owned(),
             },
             ownership,
@@ -296,6 +304,11 @@ impl Draft {
                 .as_ref()
                 .map(|config| config.server_tools.clone())
                 .unwrap_or_default(),
+            listen: config
+                .as_ref()
+                .map(|config| config.listen.clone())
+                .unwrap_or_default(),
+            settle: config.as_ref().and_then(|config| config.settle),
             system: field(config.as_ref().map(|config| config.system.clone())),
             answers,
             listed: TextField::new(listed),

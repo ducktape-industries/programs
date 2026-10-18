@@ -585,10 +585,7 @@ pub(crate) fn status(shown: &Transcript, relaying: usize) -> Status {
             },
         ),
         State::Idle | State::NoNode | State::Unconfigured => (
-            row.last_stop.map_or_else(
-                || "Nothing asked yet".to_owned(),
-                |stop| upper_first(stop_words(stop)),
-            ),
+            idle_words(shown),
             format!(
                 "{frames} · last at {}, {}",
                 design::clock(row.last_time),
@@ -601,6 +598,21 @@ pub(crate) fn status(shown: &Transcript, relaying: usize) -> Status {
         words,
         caption,
     }
+}
+
+// an idle conversation: collecting general input in its settle window, else how its last turn
+// ended
+fn idle_words(shown: &Transcript) -> String {
+    if let Some(window) = &shown.settling {
+        return format!(
+            "Collecting messages since block {}",
+            design::grouped(window.opened)
+        );
+    }
+    shown.thread.last_stop.map_or_else(
+        || "Nothing asked yet".to_owned(),
+        |stop| upper_first(stop_words(stop)),
+    )
 }
 
 /// Who the conversation is with and where it began, after its heading: "Scout · opened 16 Oct

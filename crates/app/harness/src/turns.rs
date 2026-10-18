@@ -12,12 +12,14 @@ use abi::role::egress::{self, http};
 use crate::agents::{Agent, configured, hear_again, manual, running, thread};
 use crate::calls::{Placed, place, refusal, run_call, take_back_showing};
 use crate::conversations::{binding, retire};
+use crate::listening::mirror;
 use crate::models::learned;
 use crate::resume::{self, Failure};
 use crate::state::{
     FLIGHTS, FRAMES, HELD, LIVE, Live, PARTIALS, RETRIES, SEALED, SHOWN, THREADS, WITHHELD,
 };
 use crate::tallies;
+use crate::waiting::settling;
 use crate::wire::{self, Answered, Header, Summarized, Summary};
 use crate::{
     Asking, Body, Configured, Context, Forming, Frame, ModelRow, PART, Partial, Role, Said, Sealed,
@@ -411,7 +413,7 @@ fn may_ask(thread: &ThreadRow) -> bool {
 
 fn claim(ctx: &ExecCtx, id: u64) -> Result<Option<Step>, Error> {
     let mut thread = thread(ctx, id)?;
-    if !may_ask(&thread) || resume::waits(ctx, id)? {
+    if !may_ask(&thread) || resume::waits(ctx, id)? || settling(ctx, id) {
         return Ok(None);
     }
     let Some(agent) = running(ctx, thread.agent)? else {
@@ -437,6 +439,7 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
             return Ok(None);
         }
     };
+    mirror(ctx, thread, agent, &config.listen);
     if !serves(ctx, &model.service)? {
         let text = format!(
             "no member node serves {}: the model was not asked",

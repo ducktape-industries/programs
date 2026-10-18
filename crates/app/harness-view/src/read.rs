@@ -5,8 +5,8 @@ use std::collections::{BTreeSet, HashMap};
 
 use egress::{RELAY, ServiceRow};
 use harness::{
-    AgentSetup, Asking, Awaited, Body, CallRow, Frame, ModelRow, Partial, Tally, ThreadRow,
-    ToolInfo, Usage, WithheldFrame,
+    AgentSetup, Asking, Awaited, Body, CallRow, Frame, ModelRow, Partial, SettleWindow, Tally,
+    ThreadRow, ToolInfo, Usage, WithheldFrame,
 };
 use identity::{Category, Kind, Ownership, PageRequest};
 use program::Writers;
@@ -307,6 +307,8 @@ pub(crate) struct Transcript {
     pub tally: Tally,
     // harness's egress requests still open that the conversation waits on
     pub waits: Vec<Wait>,
+    // the window its general input waits out before a turn, while one is open
+    pub settling: Option<SettleWindow>,
 }
 
 impl Transcript {
@@ -367,6 +369,9 @@ impl Transcript {
         }
         if let Some(waits) = delta.waits {
             self.waits = waits;
+        }
+        if let Some(settling) = delta.settling {
+            self.settling = settling;
         }
         if let Some((setup, serving)) = delta.setup {
             self.setup = setup;
@@ -444,6 +449,7 @@ pub(crate) async fn transcript(
     let partial = host.query(harness::ask::Partial { thread: id }).await?;
     let topic = topic(&host, id).await?;
     let tally = tally(&host, id).await?;
+    let settling = host.query(harness::ask::Settling { thread: id }).await?;
     let (setup, serving) = served_setup(&host, thread.agent).await?;
     let waits = waits(&host, &thread).await?;
     Ok(Some(Transcript {
@@ -461,6 +467,7 @@ pub(crate) async fn transcript(
         topic,
         tally,
         waits,
+        settling,
     }))
 }
 
@@ -475,6 +482,7 @@ pub(crate) struct Touched {
     pub partial: bool,
     pub topic: bool,
     pub tally: bool,
+    pub settling: bool,
     pub setup: bool,
 }
 
@@ -488,6 +496,7 @@ impl Touched {
             || self.partial
             || self.topic
             || self.tally
+            || self.settling
             || self.setup
     }
 
@@ -500,6 +509,7 @@ impl Touched {
         self.partial |= more.partial;
         self.topic |= more.topic;
         self.tally |= more.tally;
+        self.settling |= more.settling;
         self.setup |= more.setup;
     }
 }
@@ -514,6 +524,7 @@ pub(crate) struct Delta {
     pub partial: Option<Option<Partial>>,
     pub topic: Option<Option<String>>,
     pub tally: Option<Tally>,
+    pub settling: Option<Option<SettleWindow>>,
     pub setup: Option<(Option<AgentSetup>, Option<usize>)>,
     pub waits: Option<Vec<Wait>>,
 }
@@ -558,6 +569,10 @@ pub(crate) async fn delta(
         true => Some(tally(&host, id).await?),
         false => None,
     };
+    let settling = match touched.settling {
+        true => Some(host.query(harness::ask::Settling { thread: id }).await?),
+        false => None,
+    };
     let setup = match touched.setup {
         true => Some(served_setup(&host, agent).await?),
         false => None,
@@ -571,6 +586,7 @@ pub(crate) async fn delta(
         partial,
         topic,
         tally,
+        settling,
         setup,
         waits,
     })

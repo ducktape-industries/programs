@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 
 pub const FENCE: &str = "+++";
 
+// `listen` names the chat channels the agent hears every message of, and `settle` how long, in
+// milliseconds, its general input waits for more before a turn
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Config {
     pub model: String,
@@ -16,6 +18,8 @@ pub struct Config {
     pub wait: Option<u64>,
     pub thinking: Option<Thinking>,
     pub server_tools: Vec<ServerTool>,
+    pub listen: Vec<String>,
+    pub settle: Option<u64>,
     pub system: String,
 }
 
@@ -97,6 +101,7 @@ pub enum Malformed {
     FrontMatter(String),
     NoTokens,
     NoWait,
+    NoSettle(String),
 }
 
 impl fmt::Display for Malformed {
@@ -115,6 +120,10 @@ impl fmt::Display for Malformed {
             Malformed::FrontMatter(reason) => write!(f, "its front matter is not valid: {reason}"),
             Malformed::NoTokens => f.write_str("max_tokens is at least 1"),
             Malformed::NoWait => f.write_str("wait, when given, is at least 1 block"),
+            Malformed::NoSettle(given) => write!(
+                f,
+                "settle, when given, is a whole number of ms, s or m above zero, like \"10s\", not {given:?}"
+            ),
         }
     }
 }
@@ -128,10 +137,33 @@ struct FrontMatter {
     thinking: Option<Thinking>,
     #[serde(default)]
     server_tools: Vec<ServerTool>,
+    #[serde(default)]
+    listen: Vec<String>,
+    settle: Option<String>,
 }
 
 fn fence(line: &str) -> bool {
     line.trim_end() == FENCE
+}
+
+const UNITS: [(&str, u64); 3] = [("ms", 1), ("s", 1_000), ("m", 60_000)];
+
+fn millis(text: &str) -> Option<u64> {
+    let (number, unit) = UNITS
+        .iter()
+        .find_map(|(suffix, unit)| Some((text.trim().strip_suffix(suffix)?, *unit)))?;
+    let millis = number.trim().parse::<u64>().ok()?.checked_mul(unit)?;
+    (millis > 0).then_some(millis)
+}
+
+fn duration(millis: u64) -> String {
+    let (suffix, unit) = UNITS
+        .iter()
+        .rev()
+        .find(|(_, unit)| millis.is_multiple_of(*unit))
+        .copied()
+        .unwrap_or(UNITS[0]);
+    format!("{}{suffix}", millis / unit)
 }
 
 impl Config {
@@ -161,12 +193,18 @@ impl Config {
                 server_tools.push(tool);
             }
         }
+        let settle = match matter.settle {
+            None => None,
+            Some(given) => Some(millis(&given).ok_or(Malformed::NoSettle(given))?),
+        };
         Ok(Config {
             model: matter.model,
             max_tokens: matter.max_tokens,
             wait: matter.wait,
             thinking: matter.thinking,
             server_tools,
+            listen: matter.listen,
+            settle,
             system: after[close + 1..].concat().trim().to_owned(),
         })
     }
@@ -201,6 +239,14 @@ impl Config {
                 .map(|tool| format!("\"{}\"", tool.word()))
                 .collect();
             front.push_str(&format!("server_tools = [{}]\n", words.join(", ")));
+        }
+        if !self.listen.is_empty() {
+            let channels = self.listen.iter().cloned().map(toml::Value::String);
+            let listen = toml::Value::Array(channels.collect());
+            front.push_str(&format!("listen = {listen}\n"));
+        }
+        if let Some(settle) = self.settle {
+            front.push_str(&format!("settle = \"{}\"\n", duration(settle)));
         }
         format!("{FENCE}\n{front}{FENCE}\n{}\n", self.system)
     }

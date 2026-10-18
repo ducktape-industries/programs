@@ -13,6 +13,7 @@ use crate::conversations::{binding, conversation, current, route};
 use crate::resume;
 use crate::state::{BOUND, LAST, MODELS, PLACES, THREADS};
 use crate::turns::{converse, say};
+use crate::waiting;
 use crate::{AgentSetup, Body, Config, Configured, Op, PROGRAM, Place, ThreadRow};
 
 pub(crate) struct Agent {
@@ -276,10 +277,22 @@ fn name_of(ctx: &QueryCtx, number: AccountNumber) -> String {
     }
 }
 
+#[derive(Clone, Copy)]
 enum Heard {
     Mention,
     Direct,
     Thread,
+    Listen,
+}
+
+impl Heard {
+    // a mention or a direct message starts a turn at once; the rest waits out the settle window
+    fn direct(self) -> bool {
+        match self {
+            Heard::Mention | Heard::Direct => true,
+            Heard::Thread | Heard::Listen => false,
+        }
+    }
 }
 
 fn heard_as(reason: &Reason) -> Option<Heard> {
@@ -288,6 +301,7 @@ fn heard_as(reason: &Reason) -> Option<Heard> {
         Reason::Defined(name) => match name.as_str() {
             chat::attributed::DIRECT => Some(Heard::Direct),
             chat::attributed::THREAD => Some(Heard::Thread),
+            chat::attributed::LISTEN => Some(Heard::Listen),
             _ => None,
         },
         Reason::Authorship
@@ -351,13 +365,18 @@ fn designation(
         Heard::Mention => "mentioned you",
         Heard::Direct => "wrote to you directly",
         Heard::Thread => "continued a thread with you",
+        Heard::Listen => "wrote",
+    };
+    let listened = match heard {
+        Heard::Listen => ", which you listen to",
+        Heard::Mention | Heard::Direct | Heard::Thread => "",
     };
     let in_thread = match row.thread {
         Some(root) => format!(", in the thread of message {root} (reply_to {root})"),
         None => format!(" (reply_to {} to answer in its thread)", row.seq),
     };
     let text = format!(
-        "{who} {verb} in chat channel {channel}, message {seq}{in_thread}:\n{body}",
+        "{who} {verb} in chat channel {channel}{listened}, message {seq}{in_thread}:\n{body}",
         channel = row.channel_id,
         seq = row.seq,
         body = row.text,
@@ -370,9 +389,17 @@ fn designation(
 }
 
 pub(crate) async fn attributed(ctx: Ctx, change: Change) -> Result<(), Error> {
-    let Some(thread) = heard(&ctx, change)? else {
+    let Some((thread, heard)) = heard(&ctx, change)? else {
         return Ok(());
     };
+    match heard.direct() {
+        true => waiting::end(&ctx, thread).await?,
+        false => {
+            if waiting::wait(&ctx, thread).await? {
+                return Ok(());
+            }
+        }
+    }
     converse(&ctx, thread).await;
     Ok(())
 }
@@ -384,7 +411,7 @@ pub(crate) fn hear_again(ctx: &ExecCtx, changes: Vec<Change>) {
     }
 }
 
-fn heard(ctx: &ExecCtx, change: Change) -> Result<Option<u64>, Error> {
+fn heard(ctx: &ExecCtx, change: Change) -> Result<Option<(u64, Heard)>, Error> {
     let from_attribution = ctx.env().sent_by(attribution::PROGRAM).is_ok();
     let held_back_by_harness = ctx.env().sent_by(PROGRAM).is_ok();
     if !(from_attribution || held_back_by_harness) {
@@ -432,7 +459,7 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Option<u64>, Error> {
     say(ctx, &mut thread, Body::Post { author, text });
     THREADS.put(ctx, &thread.id, &thread);
     resume::heard(ctx, thread.id)?;
-    Ok(Some(thread.id))
+    Ok(Some((thread.id, why)))
 }
 
 // who an agent answers is its list's to say; what it did not answer still leaves a trace
@@ -447,6 +474,9 @@ fn dropped(
         Heard::Mention => "a mention",
         Heard::Direct => "a direct message",
         Heard::Thread => "a thread reply",
+        // a channel it listens to is talk around the agent, not to it: what it does not answer
+        // there is left without a notice, or each such message would add one
+        Heard::Listen => return Ok(()),
     };
     let Source { program, object } = &change.source;
     let text = format!(

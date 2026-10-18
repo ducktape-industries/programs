@@ -90,3 +90,64 @@ fn only_the_manager_sees_the_thinking_picker() {
     assert!(cx.has_text("Model's default"), "{:?}", cx.texts());
     assert!(cx.find("agent-thinking-level").is_none());
 }
+
+#[test]
+fn an_edit_and_a_thinking_pick_keep_the_channels_it_listens_to_and_its_settle() {
+    let mut net = Net::default();
+    let Configured::Ready { config, .. } = &mut net.setups[0].configured else {
+        unreachable!()
+    };
+    config.listen = vec!["general".into()];
+    config.settle = Some(10_000);
+    let hears = config.clone();
+    let (mut cx, _) = seated(net, EDDY);
+    files_take(&cx);
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    cx.simulate_click("agent-thinking-level-2");
+    cx.run_until_parked();
+    let thinks = Config {
+        thinking: Some(Thinking::Low),
+        ..hears.clone()
+    };
+    let message = "Configure agent Scout (account 12)";
+    let path = "/home/Eddy/agents/scout.md";
+    assert_eq!(
+        cx.host().requests::<Submit<files::Files>>(),
+        [edit_of(path, &thinks, Some(SNAPSHOT), message.into())]
+    );
+    cx.simulate_click("agent-edit");
+    cx.run_until_parked();
+    cx.simulate_click("create-next");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.host().requests::<Submit<files::Files>>().last(),
+        Some(&edit_of(path, &hears, Some(SNAPSHOT), message.into())),
+    );
+}
+
+#[test]
+fn a_conversation_in_its_settle_window_says_since_which_block_it_collects() {
+    let mut net = Net::default();
+    net.threads[0].asking = Asking::Idle;
+    net.settling = vec![(
+        7,
+        harness::SettleWindow {
+            opened: 9_004,
+            opened_time: LAST_TIME,
+            until: LAST_TIME + 10_000,
+            entry: 3,
+        },
+    )];
+    let (mut cx, _) = seated(net, EDDY);
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    cx.simulate_click("thread-7");
+    cx.run_until_parked();
+    let collecting = "Collecting messages since block 9,004";
+    assert!(cx.has_text(collecting), "{:?}", cx.texts());
+    cx.simulate_touch(true);
+    cx.simulate_resize(390., 844.);
+    cx.run_until_parked();
+    assert!(cx.has_text(collecting), "{:?}", cx.texts());
+}

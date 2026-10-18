@@ -6,9 +6,10 @@ use abi::role::identity::AccountNumber;
 use store::{PageRequest, PageResponse};
 
 use crate::state::{
-    BOUND, BY_AGENT, CALLS, FRAMES, HELD, MODELS, PARTIALS, PLACES, THREADS, TOPICS, WITHHELD,
+    BOUND, BY_AGENT, CALLS, FRAMES, HELD, MODELS, PARTIALS, PLACES, SETTLING, THREADS, TOPICS,
+    WITHHELD,
 };
-use crate::{Body, CallRow, Frame, ModelRow, Partial, ThreadRow, WithheldFrame};
+use crate::{Body, CallRow, Frame, ModelRow, Partial, SettleWindow, ThreadRow, WithheldFrame};
 
 pub(crate) fn partial(ctx: &QueryCtx, thread: u64) -> Result<Option<Partial>, Error> {
     PARTIALS.get(ctx, &thread)
@@ -16,6 +17,11 @@ pub(crate) fn partial(ctx: &QueryCtx, thread: u64) -> Result<Option<Partial>, Er
 
 pub(crate) fn topic(ctx: &QueryCtx, thread: u64) -> Result<Option<String>, Error> {
     TOPICS.get(ctx, &thread)
+}
+
+// the settle window a thread's general input waits out, while one is open
+pub(crate) fn settling(ctx: &QueryCtx, thread: u64) -> Result<Option<SettleWindow>, Error> {
+    SETTLING.get(ctx, &thread)
 }
 
 pub(crate) fn model(ctx: &QueryCtx, id: String) -> Result<Option<ModelRow>, Error> {

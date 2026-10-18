@@ -106,6 +106,8 @@ fn config_of(name: &str) -> Config {
         wait: None,
         thinking: None,
         server_tools: Vec::new(),
+        listen: Vec::new(),
+        settle: None,
         system: format!("You are {name}."),
     }
 }
@@ -213,6 +215,8 @@ struct Net {
     bound: Vec<u64>,
     // egress's open requests, each at its node
     requests: Vec<egress::RequestRow>,
+    // each thread's open settle window
+    settling: Vec<(u64, harness::SettleWindow)>,
 }
 
 // The one node the fake egress lists.
@@ -356,6 +360,7 @@ impl Default for Net {
             topics: Vec::new(),
             bound: Vec::new(),
             requests: vec![turn_request(41, 7, 9001)],
+            settling: Vec::new(),
         }
     }
 }
@@ -518,6 +523,12 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                     writes: true,
                 },
             ]),
+            harness::Query::Settling { thread } => harness::Reply::Settling(
+                net.settling
+                    .iter()
+                    .find(|(id, _)| *id == thread)
+                    .map(|(_, window)| *window),
+            ),
         })
     });
     let shared = net.clone();
@@ -1048,6 +1059,8 @@ fn rover() -> Config {
         wait: None,
         thinking: None,
         server_tools: Vec::new(),
+        listen: Vec::new(),
+        settle: None,
         system: "Answer about deploys.".into(),
     }
 }

@@ -8,6 +8,7 @@ mod blob_put;
 mod config;
 mod conversations;
 mod forge_commit;
+mod listen;
 mod models;
 mod network;
 mod reads;
@@ -68,6 +69,8 @@ fn scout() -> Config {
         wait: None,
         thinking: None,
         server_tools: Vec::new(),
+        listen: Vec::new(),
+        settle: None,
         system: "Keep notes in /shared.".into(),
     }
 }

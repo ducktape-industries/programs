@@ -1,14 +1,14 @@
 //! What chat tells attribution, with attribution seated beside it on a `MockChain`: each
 //! message's mentions, a direct message's counterpart, and who took part in a thread before
 //! a reply.
-use ::program::{MockChain, Origin};
+use ::program::{MockChain, Origin, code};
 use abi::role::identity::{Kind, Profile};
 use attribution::{
     Actor, Attribution, Cause, Change, Kind as Changed, Object, PageRequest, Reason, Relations,
     Source,
 };
 
-use crate::attributed::{DIRECT, MESSAGE, THREAD};
+use crate::attributed::{DIRECT, LISTEN, MESSAGE, THREAD};
 
 const ADA: &[u8] = b"ada-key";
 const BO: &[u8] = b"bo-key";
@@ -113,6 +113,10 @@ fn direct() -> Reason {
 
 fn in_thread() -> Reason {
     Reason::Defined(THREAD.into())
+}
+
+fn listening() -> Reason {
+    Reason::Defined(LISTEN.into())
 }
 
 fn open_general(chain: &MockChain) {
@@ -234,6 +238,85 @@ fn a_thread_reply_relates_everyone_who_took_part_before_it() {
     );
     post(&chain, CY, "general", "elsewhere", "a new topic");
     assert_eq!(relations(&chain, chat_source("elsewhere")), None);
+}
+
+fn listen(chain: &MockChain, key: &[u8], channel: &str, listening: bool) -> Result<(), String> {
+    let op = crate::Op::Listen {
+        channel_id: channel.into(),
+        listening,
+    };
+    chain
+        .submit(signed(key), crate::PROGRAM, &op)
+        .map(drop)
+        .map_err(|refusal| refusal.code)
+}
+
+fn listened(chain: &MockChain, account: u64) -> Vec<String> {
+    let asked = crate::Query::Listening {
+        account,
+        page: PageRequest::default(),
+    };
+    let crate::Reply::Listening(page) = chain.query(crate::PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    page.items
+}
+
+// a listener hears each new message in its channel that relates to it in no other way, never its
+// own, and an edit of a message from before it listened reaches it not
+#[test]
+fn a_listener_is_related_to_each_new_message_in_its_channel_it_relates_to_in_no_other_way() {
+    let chain = chain();
+    open_general(&chain);
+    post(&chain, ADA, "general", "before", "before anyone listens");
+    chain.at(2, 0);
+    listen(&chain, BO, "general", true).unwrap();
+    listen(&chain, CY, "general", true).unwrap();
+    listen(&chain, CY, "general", true).unwrap();
+    assert_eq!(listened(&chain, 2), ["general"]);
+    assert!(listened(&chain, 1).is_empty());
+
+    post(&chain, ADA, "general", "m1", "a plain message");
+    assert_eq!(
+        held(&chain, chat_source("m1")),
+        [(2, listening()), (3, listening())]
+    );
+    post(&chain, BO, "general", "m2", "hi <@3>");
+    assert_eq!(
+        held(&chain, chat_source("m2")),
+        [(3, Reason::Mention)],
+        "a mention wins, and the author hears nothing of its own"
+    );
+    post_in(&chain, CY, "general", "m3", "a reply", Some(1));
+    assert_eq!(
+        held(&chain, chat_source("m3")),
+        [(1, in_thread()), (2, listening())]
+    );
+    let edit = crate::Op::EditMessage {
+        channel_id: "general".into(),
+        seq: 1,
+        blocks: crate::parse_message("before anyone listens, edited"),
+        base_rev: Some(0),
+    };
+    chain.submit(signed(ADA), crate::PROGRAM, &edit).unwrap();
+    assert_eq!(relations(&chain, chat_source("before")), None);
+
+    listen(&chain, BO, "general", false).unwrap();
+    assert!(listened(&chain, 2).is_empty());
+    post(&chain, ADA, "general", "m4", "after Bo stopped");
+    assert_eq!(held(&chain, chat_source("m4")), [(3, listening())]);
+    let random = crate::Op::CreateChannel {
+        channel_id: "random".into(),
+        name: "random".into(),
+        post_policy: crate::PostPolicy::Open,
+    };
+    chain.submit(signed(ADA), crate::PROGRAM, &random).unwrap();
+    post(&chain, ADA, "random", "r1", "nobody listens here");
+    assert_eq!(relations(&chain, chat_source("r1")), None);
+    assert_eq!(
+        listen(&chain, BO, "nowhere", true),
+        Err(code::NOT_FOUND.to_owned())
+    );
 }
 
 #[test]

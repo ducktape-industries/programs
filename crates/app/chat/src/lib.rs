@@ -28,6 +28,7 @@ pub mod attributed;
 mod description;
 mod gate;
 mod legacy;
+mod listen;
 mod mentions;
 pub mod message;
 mod ops;
@@ -62,8 +63,8 @@ pub use text::{plain_text, tags};
 pub mod tables {
     pub use crate::legacy::{CHANNEL_TAGS, OLD_MESSAGES, TAGS, WORDS};
     pub use crate::state::{
-        ANSWERED, CHANNEL_META, CHANNELS, HEADS, MEMBERS, MESSAGE_IDS, MESSAGES, PARTICIPANTS,
-        REACTIONS, REPLIES, ROOTS,
+        ANSWERED, CHANNEL_META, CHANNELS, HEADS, LISTENERS, LISTENING, MEMBERS, MESSAGE_IDS,
+        MESSAGES, PARTICIPANTS, REACTIONS, REPLIES, ROOTS,
     };
 }
 
@@ -145,6 +146,10 @@ pub enum Op {
     // search and tag postings: every read answers the same, and a second run writes nothing
     Migrate {
         channel_id: String,
+    },
+    Listen {
+        channel_id: String,
+        listening: bool,
     },
 }
 
@@ -246,6 +251,12 @@ pub enum Query {
     #[ask(Reply::ChannelIds(PageResponse<String>))]
     #[reads(state::CHANNELS, legacy::OLD_MESSAGES)]
     Unmigrated { page: PageRequest },
+    #[ask(Reply::Listening(PageResponse<String>))]
+    #[reads(state::LISTENING)]
+    Listening {
+        account: AccountNumber,
+        page: PageRequest,
+    },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -266,6 +277,7 @@ pub enum Reply {
     Accounts(PageResponse<Profile>),
     Reactors(Vec<ReactedBy>),
     ChannelIds(PageResponse<String>),
+    Listening(PageResponse<String>),
 }
 
 #[derive(
@@ -542,6 +554,7 @@ fn op_variants_only_append() {
             "SetChannelMeta",
             "RemoveChannelMeta",
             "Migrate",
+            "Listen",
         ]
     );
 }

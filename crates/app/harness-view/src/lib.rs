@@ -236,7 +236,8 @@ fn moves_detail(detail: &Loadable<Detail>, agent: u64, wrote: &Written) -> bool 
         | Written::Call { .. }
         | Written::Held(_)
         | Written::Withheld(_)
-        | Written::Partial(_) => false,
+        | Written::Partial(_)
+        | Written::Settling(_) => false,
     }
 }
 
@@ -257,6 +258,7 @@ fn touched_of(thread: u64, agent: Option<u64>, written: &[Written]) -> Touched {
             Written::Partial(id) => touched.partial |= *id == thread,
             Written::Topic(id) => touched.topic |= *id == thread,
             Written::Tally(id) => touched.tally |= *id == thread,
+            Written::Settling(id) => touched.settling |= *id == thread,
             Written::Agent(number) => touched.setup |= agent == Some(*number),
             Written::Model => touched.setup = true,
         }

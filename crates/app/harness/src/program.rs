@@ -10,6 +10,7 @@ use crate::bookings::{book, run_booked, unbook};
 use crate::conversations::{fork_thread, new_thread, open_thread};
 use crate::models::{remove_model, set_model};
 use crate::streams::streamed;
+use crate::waiting::due;
 use crate::{Op, PROGRAM, Query, Reply, attributed_as, bookings, queries, resume, tallies, tools};
 
 pub struct Harness;
@@ -75,6 +76,7 @@ impl Program for Harness {
             Query::UsageWindow { service } => {
                 Ok(Reply::UsageWindow(crate::state::USAGE.get(ctx, &service)?))
             }
+            Query::Settling { thread } => Ok(Reply::Settling(queries::settling(ctx, thread)?)),
         }
     }
 }
@@ -105,6 +107,7 @@ impl Awaiting for Harness {
             Op::RunBooked => run_booked(&ctx).await,
             Op::Resume { thread } => resume::resume(ctx, thread).await,
             Op::Report { manager } => resume::report(ctx, manager).await,
+            Op::Settle { thread } => due(ctx, thread).await,
         }
     }
 }

@@ -34,6 +34,8 @@ fn every_thinking_level_writes_and_parses_back() {
         wait: Some(9),
         thinking: None,
         server_tools: Vec::new(),
+        listen: Vec::new(),
+        settle: None,
         system: "Think.".into(),
     };
     assert!(!plain.write().contains("thinking"));

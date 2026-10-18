@@ -12,6 +12,7 @@ mod codec;
 pub mod config;
 mod conversations;
 mod gate;
+mod listening;
 mod models;
 mod program;
 mod queries;
@@ -24,6 +25,7 @@ mod tallies;
 mod tests;
 mod tools;
 mod turns;
+mod waiting;
 mod wire;
 
 pub use ::program::{BlobId, Principal};
@@ -86,6 +88,9 @@ pub enum Op {
     },
     Report {
         manager: AccountNumber,
+    },
+    Settle {
+        thread: u64,
     },
 }
 
@@ -494,6 +499,16 @@ pub struct WithheldFrame {
     pub size: u64,
 }
 
+// a thread's settle window: opened at a block and its time, it ends once a block's time reaches
+// `until`; `entry` is the scheduled wake-up that comes to see
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct SettleWindow {
+    pub opened: u64,
+    pub opened_time: u64,
+    pub until: u64,
+    pub entry: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum CallState {
     Relaying,
@@ -626,6 +641,9 @@ pub enum Query {
     #[ask(Reply::UsageWindow(Option<UsageWindow>))]
     #[reads(state::USAGE)]
     UsageWindow { service: String },
+    #[ask(Reply::Settling(Option<SettleWindow>))]
+    #[reads(state::SETTLING)]
+    Settling { thread: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -647,6 +665,7 @@ pub enum Reply {
     Bookings(PageResponse<Booking>),
     Booking(Option<Booking>),
     UsageWindow(Option<UsageWindow>),
+    Settling(Option<SettleWindow>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -756,6 +775,10 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Tell account {manager} which turns harness picked up"),
             vec![field("manager", Value::count(*manager))],
         ),
+        Op::Settle { thread } => (
+            format!("End thread {thread}'s settle window once it is due"),
+            vec![field("thread", Value::count(*thread))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -780,6 +803,7 @@ fn op_variants_only_append() {
             "RunBooked",
             "Resume",
             "Report",
+            "Settle",
         ]
     );
 }
@@ -808,7 +832,8 @@ fn query_variants_only_append() {
             "Call",
             "Bookings",
             "Booking",
-            "UsageWindow"
+            "UsageWindow",
+            "Settling"
         ]
     );
 }

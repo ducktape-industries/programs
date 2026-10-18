@@ -8,7 +8,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use store::{Item, KeyCodec, Map, Set};
 
 use crate::{
-    Body, Booking, CallRow, Frame, ModelRow, Partial, Place, Sealed, Tally, ThreadRow, UsageWindow,
+    Body, Booking, CallRow, Frame, ModelRow, Partial, Place, Sealed, SettleWindow, Tally,
+    ThreadRow, UsageWindow,
 };
 
 pub const MODELS: Map<String, ModelRow> = Map::new("model/");
@@ -37,6 +38,8 @@ pub const RETRIES: Map<u64, Retry> = Map::new("retry/");
 pub const REPORTS: Map<(AccountNumber, u64), String> = Map::new("report/");
 pub const REPORTING: Set<AccountNumber> = Set::new("reporting/");
 pub const USAGE: Map<String, UsageWindow> = Map::new("usage/");
+// a thread whose general input waits out its agent's `settle`, and the wake-up that ends it
+pub const SETTLING: Map<u64, SettleWindow> = Map::new("settling/");
 pub const COUNT: Item<u64> = Item::new("count");
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -88,6 +91,7 @@ pub enum Written {
     Partial(u64),
     Topic(u64),
     Tally(u64),
+    Settling(u64),
     Agent(AccountNumber),
     Model,
 }
@@ -101,6 +105,7 @@ impl Written {
             | Written::Partial(thread)
             | Written::Topic(thread)
             | Written::Tally(thread)
+            | Written::Settling(thread)
             | Written::Frame { thread, .. }
             | Written::Call { thread, .. } => Some(*thread),
             Written::Agent(_) | Written::Model => None,
@@ -118,6 +123,7 @@ impl Written {
             Written::Partial(thread) => PARTIALS.key(thread),
             Written::Topic(thread) => TOPICS.key(thread),
             Written::Tally(thread) => TALLIES.key(thread),
+            Written::Settling(thread) => SETTLING.key(thread),
             Written::Agent(agent) => CURRENT.key(agent),
             Written::Model => MODELS.key(&()),
         }
@@ -139,13 +145,14 @@ pub fn written(key: &[u8]) -> Option<Written> {
     if let Some((thread, call)) = under::<(u64, String)>(&CALLS.key(&()), key) {
         return Some(Written::Call { thread, call });
     }
-    let threads: [(Vec<u8>, OfThread); 6] = [
+    let threads: [(Vec<u8>, OfThread); 7] = [
         (THREADS.key(&()), Written::Thread),
         (HELD.key(&()), Written::Held),
         (WITHHELD.key(&()), Written::Withheld),
         (PARTIALS.key(&()), Written::Partial),
         (TOPICS.key(&()), Written::Topic),
         (TALLIES.key(&()), Written::Tally),
+        (SETTLING.key(&()), Written::Settling),
     ];
     for (prefix, wrote) in threads {
         if let Some(thread) = under::<u64>(&prefix, key) {

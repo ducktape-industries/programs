@@ -37,6 +37,8 @@ fn server_tools_write_and_parse_back() {
         wait: None,
         thinking: None,
         server_tools: Vec::new(),
+        listen: Vec::new(),
+        settle: None,
         system: "Search.".into(),
     };
     assert!(!plain.write().contains("server_tools"));
