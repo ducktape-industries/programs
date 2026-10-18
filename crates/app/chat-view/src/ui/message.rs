@@ -728,7 +728,15 @@ fn block_view(
                             chat::ListMarker::Ordered(number) => format!("{number}."),
                         }),
                 )
-                .child(rich_line(id, &item, names, cx, theme))
+                // the item takes what the gutter leaves of the row and wraps
+                // there: a line is as wide as its parent (`w_full`), and a
+                // flex item is no narrower than its unwrapped words unless
+                // its floor is 0
+                .child(
+                    rich_line(id, &item, names, cx, theme)
+                        .flex_1()
+                        .min_w(px(0.)),
+                )
                 .into_any_element(),
             None => rich_line(id, spans, names, cx, theme).into_any_element(),
         },
