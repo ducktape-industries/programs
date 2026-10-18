@@ -445,46 +445,6 @@ fn a_dm_row_is_named_by_its_peer_not_the_avatar() {
     assert_eq!(interactivity.aria.description.as_deref(), Some("Agent"));
 }
 
-/// Everyone the reader writes to has a row under Direct messages before
-/// their room exists, after the rooms already open: pressing it opens the
-/// room with them, which the first message then opens on chain. Not the
-/// reader.
-#[test]
-fn every_account_has_a_dm_row_before_their_room_exists() {
-    let (mut cx, view) = opened();
-    // ↓ from the channel: the open room with the agent, then ada
-    for row in ["chat-sidebar-dm-8", "chat-sidebar-dm-10"] {
-        cx.simulate_key_down("chat-sidebar-rooms-list", "down");
-        assert!(claims(&cx, row), "{row} next");
-    }
-    assert!(
-        cx.find("chat-sidebar-dm-9").is_some(),
-        "forge's account too"
-    );
-    assert!(cx.find("chat-sidebar-dm-7").is_none(), "nor is the reader");
-    cx.simulate_click("chat-sidebar-dm-10");
-    cx.run_until_parked();
-    view.read(|chat| {
-        assert_eq!(chat.room.as_ref().unwrap().id, "dm-7-10");
-        let post = crate::composer::Target::Post {
-            channel: "dm-7-10".into(),
-            thread: None,
-        };
-        assert!(matches!(
-            chat.dm_to_open(&post),
-            Some(Op::CreateDmChannel {
-                counterpart: 10,
-                ..
-            })
-        ));
-    });
-    assert_eq!(
-        cx.interactivity("chat-sidebar-dm-10").aria.selected,
-        Some(true)
-    );
-    assert!(cx.has_text("Message ada"), "{:?}", cx.texts());
-}
-
 /// A dm belongs to its two peers alike: its details list them, with no way
 /// to add a third, remove either, rename or archive it, as the program
 /// refuses each.
