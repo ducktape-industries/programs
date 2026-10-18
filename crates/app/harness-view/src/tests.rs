@@ -205,7 +205,6 @@ struct Net {
     rooms: Vec<(String, String)>,
     /// each thread's topic, as its agent set it
     topics: Vec<(u64, String)>,
-    /// the ids of the threads bound to a place
     bound: Vec<u64>,
 }
 
