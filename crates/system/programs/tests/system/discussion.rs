@@ -11,7 +11,7 @@ use gitcore::{
 const REPO: &str = "project";
 const AUTHOR: u64 = 1;
 
-fn bounds() -> forge::Bounds {
+pub(super) fn bounds() -> forge::Bounds {
     forge::Bounds {
         max_objects: 1_000_000,
         max_delta_depth: 64,

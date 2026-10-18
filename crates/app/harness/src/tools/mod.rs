@@ -129,6 +129,7 @@ pub(crate) const CATALOG: &[Entry] = &[
     entry::<forge::Read>(),
     entry::<forge::Changes>(),
     entry::<forge::Change>(),
+    entry::<forge::Commit>(),
     entry::<network::Accounts>(),
     entry::<network::Account>(),
     entry::<network::Activity>(),

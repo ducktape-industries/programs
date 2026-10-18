@@ -1,5 +1,9 @@
 //! Tools over `forge`, the network's git server: repositories, history, trees, file
-//! contents and changes under review, all read.
+//! contents and changes under review, read, and the commits the agent pushes (`commit.rs`).
+mod commit;
+
+pub(crate) use commit::Commit;
+
 use ::program::{Error, ExecCtx, invalid};
 use forge::{ChangeFilter, ChangeState, Query, Reply, Revision};
 use serde::Deserialize;

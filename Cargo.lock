@@ -2692,6 +2692,7 @@ dependencies = [
  "egress",
  "files",
  "forge",
+ "gitcore",
  "halo",
  "identity",
  "program",

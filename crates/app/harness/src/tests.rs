@@ -6,6 +6,7 @@
 //! agent.
 mod config;
 mod conversations;
+mod forge_commit;
 mod models;
 mod network;
 mod streams;
