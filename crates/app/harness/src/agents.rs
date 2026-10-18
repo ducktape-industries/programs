@@ -458,6 +458,7 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Option<(u64, Heard)>, Error> {
     } = designation(ctx, &change, actor, why)?;
     let (mut thread, reached) = route(ctx, &agent, &places, place)?;
     PLACES.put(ctx, &(agent.number, reached), &thread.id);
+    let text = text + &crate::waits::still_armed(ctx, thread.id)?;
     let author = Principal::Account(actor);
     say(ctx, &mut thread, Body::Post { author, text });
     THREADS.put(ctx, &thread.id, &thread);

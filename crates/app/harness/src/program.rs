@@ -11,8 +11,10 @@ use crate::conversations::{fork_thread, new_thread, open_thread};
 use crate::models::{remove_model, set_compact_at, set_model};
 use crate::streams::streamed;
 use crate::waiting::due;
+use crate::waits::{pod_event, pod_wait, unwait, wait, wait_due};
 use crate::{
     Op, PROGRAM, Query, Reply, attributed_as, bookings, budget, queries, resume, tallies, tools,
+    waits,
 };
 
 pub struct Harness;
@@ -27,6 +29,7 @@ impl Program for Harness {
         returns::<u64>("NewThread"),
         returns::<u64>("ForkThread"),
         returns::<u64>("OpenThread"),
+        returns::<u64>("Wait"),
     ];
 
     fn init(ctx: &ExecCtx, _params: &[u8]) -> Result<(), Error> {
@@ -81,6 +84,9 @@ impl Program for Harness {
             }
             Query::Settling { thread } => Ok(Reply::Settling(queries::settling(ctx, thread)?)),
             Query::Budget => Ok(Reply::Budget(budget::report(ctx)?)),
+            Query::Waits { agent, page } => Ok(Reply::Waits(waits::waits(ctx, agent, &page)?)),
+            Query::Wait { wait } => Ok(Reply::Wait(waits::wait_row(ctx, wait)?)),
+            Query::Armed { thread, page } => Ok(Reply::Waits(waits::armed(ctx, thread, &page)?)),
         }
     }
 }
@@ -116,6 +122,11 @@ impl Awaiting for Harness {
             Op::Watch { watch } => crate::watches::watch(ctx, watch).await,
             Op::Heard { watch, event } => crate::watches::heard(&ctx, watch, event).await,
             Op::ReadBudget { service } => budget::read(ctx, service).await,
+            Op::Wait { thread, event } => wait(&ctx, thread, event).await,
+            Op::Unwait { wait } => unwait(&ctx, wait).await,
+            Op::WaitDue => wait_due(&ctx).await,
+            Op::PodWait { wait } => pod_wait(&ctx, wait).await,
+            Op::PodEvent { wait, event } => pod_event(&ctx, wait, event).await,
         }
     }
 }

@@ -27,6 +27,7 @@ mod tests;
 mod tools;
 mod turns;
 mod waiting;
+mod waits;
 mod watches;
 mod wire;
 
@@ -107,6 +108,21 @@ pub enum Op {
     },
     ReadBudget {
         service: String,
+    },
+    Wait {
+        thread: u64,
+        event: WaitFor,
+    },
+    Unwait {
+        wait: u64,
+    },
+    WaitDue,
+    PodWait {
+        wait: u64,
+    },
+    PodEvent {
+        wait: u64,
+        event: Event,
     },
 }
 
@@ -682,6 +698,29 @@ pub struct Ran {
     pub text: String,
 }
 
+// what a wait (`wait_for`) waits for: a block's height, or a pod of the pods service to end
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum WaitFor {
+    Height { height: u64 },
+    Pod { name: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct WaitRow {
+    pub id: u64,
+    pub agent: AccountNumber,
+    pub thread: u64,
+    pub made: u64,
+    pub event: WaitFor,
+    pub ended: Option<Ended>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Ended {
+    pub height: u64,
+    pub text: String,
+}
+
 #[derive(
     Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Ask,
 )]
@@ -765,6 +804,18 @@ pub enum Query {
     #[ask(Reply::Budget(BudgetReport))]
     #[reads(state::BUDGETS, state::PACES, state::FLIGHTS, state::READS)]
     Budget,
+    #[ask(Reply::Waits(PageResponse<WaitRow>))]
+    #[reads(state::WAITING, state::WAITS)]
+    Waits {
+        agent: AccountNumber,
+        page: PageRequest,
+    },
+    #[ask(Reply::Wait(Option<WaitRow>))]
+    #[reads(state::WAITS)]
+    Wait { wait: u64 },
+    #[ask(Reply::Waits(PageResponse<WaitRow>))]
+    #[reads(state::ARMED, state::WAITS)]
+    Armed { thread: u64, page: PageRequest },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -788,6 +839,8 @@ pub enum Reply {
     UsageWindow(Option<UsageWindow>),
     Settling(Option<SettleWindow>),
     Budget(BudgetReport),
+    Waits(PageResponse<WaitRow>),
+    Wait(Option<WaitRow>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -804,6 +857,13 @@ pub fn streamed_as(thread: u64) -> Vec<u8> {
 pub fn heard_as(watch: u64) -> Vec<u8> {
     let mut deliver = vec![15];
     deliver.extend(watch.to_le_bytes());
+    deliver
+}
+
+// the prefix egress hands each event of a pod's wait stream under, read as `Op::PodEvent`
+pub fn pod_event_as(wait: u64) -> Vec<u8> {
+    let mut deliver = vec![22];
+    deliver.extend(wait.to_le_bytes());
     deliver
 }
 
@@ -933,6 +993,26 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Read {service}'s status of every model account it holds"),
             vec![field("service", Value::text(service))],
         ),
+        Op::Wait { thread, event } => (
+            format!(
+                "Wake conversation {thread} when it is time for {}",
+                waits::what(event)
+            ),
+            vec![field("thread", Value::count(*thread))],
+        ),
+        Op::Unwait { wait } => (
+            format!("Cancel wait {wait}"),
+            vec![field("wait", Value::count(*wait))],
+        ),
+        Op::WaitDue => ("A wait's block has come".to_owned(), Vec::new()),
+        Op::PodWait { wait } => (
+            format!("Hear wait {wait}'s pod end"),
+            vec![field("wait", Value::count(*wait))],
+        ),
+        Op::PodEvent { wait, event } => (
+            format!("Event {} of wait {wait}'s pod stream", event.seq),
+            vec![field("data", Value::count(event.data.len() as u64))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -962,6 +1042,11 @@ fn op_variants_only_append() {
             "Heard",
             "SetCompactAt",
             "ReadBudget",
+            "Wait",
+            "Unwait",
+            "WaitDue",
+            "PodWait",
+            "PodEvent",
         ]
     );
 }
@@ -992,7 +1077,10 @@ fn query_variants_only_append() {
             "Booking",
             "UsageWindow",
             "Settling",
-            "Budget"
+            "Budget",
+            "Waits",
+            "Wait",
+            "Armed"
         ]
     );
 }

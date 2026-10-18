@@ -14,8 +14,8 @@ use super::{
 };
 use crate::read::{Roster, Transcript};
 use crate::words::{
-    closes, context_short, context_words, conversation_label, first_line, held_author, mentions,
-    open_label, opened_words, quoted, status, usage_words, waiting_words,
+    armed_words, closes, context_short, context_words, conversation_label, first_line, held_author,
+    mentions, open_label, opened_words, quoted, status, usage_words, waiting_words,
 };
 use crate::{Agents, Arm, State, links, thread_state};
 
@@ -232,6 +232,12 @@ fn strip(
                 .pb(space::XS)
                 .truncate()
                 .when(lost, |words| words.text_color(theme.warning))
+        }))
+        .children(armed_words(shown).map(|words| {
+            caption(words, theme)
+                .id("thread-armed")
+                .pb(space::XS)
+                .truncate()
         }))
         .when(usage_open, |strip| {
             strip.child(

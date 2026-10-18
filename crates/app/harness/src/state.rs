@@ -9,7 +9,7 @@ use store::{Item, KeyCodec, Map, Set};
 
 use crate::{
     Body, Booking, CallRow, Frame, ModelRow, Partial, Place, Sealed, SettleWindow, Tally,
-    ThreadRow, UsageWindow, Window, Wire,
+    ThreadRow, UsageWindow, WaitRow, Window, Wire,
 };
 
 pub const MODELS: Map<String, StoredModel> = Map::new("model/").shared();
@@ -48,6 +48,17 @@ pub const READS: Map<String, crate::StatusRead> = Map::new("status/").shared();
 pub const COUNT: Item<u64> = Item::new("count").shared();
 pub const WATCHES: Map<u64, Watching> = Map::new("watch/").shared();
 pub const WATCH_COUNT: Item<u64> = Item::new("watch-count").shared();
+pub const WAITS: Map<u64, WaitRow> = Map::new("wait/").shared();
+pub const WAITING: Set<(AccountNumber, u64)> = Set::new("waiting/").shared();
+// each conversation's waits not over yet
+pub const ARMED: Set<(u64, u64)> = Set::new("armed/").shared();
+// a wait for a height by its scheduler entry, and the entry by its wait
+pub const WAIT_ENTRIES: Map<EntryId, u64> = Map::new("wait-entry/").shared();
+pub const SCHEDULED: Map<u64, EntryId> = Map::new("wait-scheduled/").shared();
+pub const POD_WAITS: Map<u64, PodWatch> = Map::new("pod-wait/").shared();
+// threads whose turn armed a wait: it ends once its calls are back
+pub const ENDING: Set<u64> = Set::new("ending/").shared();
+pub const WAIT_COUNT: Item<u64> = Item::new("wait-count").shared();
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Live {
@@ -161,6 +172,15 @@ pub struct Pace {
     pub before: u64,
 }
 
+// a pod wait's stream: the block and time its run was scheduled from, which measure the block
+// time, and the scheduled run, until it runs
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct PodWatch {
+    pub height: u64,
+    pub time: u64,
+    pub entry: Option<EntryId>,
+}
+
 pub(crate) fn newest_first(id: u64) -> u64 {
     u64::MAX - id
 }
@@ -179,6 +199,7 @@ pub enum Written {
     Agent(AccountNumber),
     Model,
     Budget,
+    Armed(u64),
 }
 
 impl Written {
@@ -191,6 +212,7 @@ impl Written {
             | Written::Topic(thread)
             | Written::Tally(thread)
             | Written::Settling(thread)
+            | Written::Armed(thread)
             | Written::Frame { thread, .. }
             | Written::Call { thread, .. } => Some(*thread),
             Written::Agent(_) | Written::Model | Written::Budget => None,
@@ -212,6 +234,7 @@ impl Written {
             Written::Agent(agent) => CURRENT.key(agent),
             Written::Model => MODELS.key(&()),
             Written::Budget => BUDGETS.key(&()),
+            Written::Armed(thread) => ARMED.key(thread),
         }
     }
 }
@@ -231,7 +254,7 @@ pub fn written(key: &[u8]) -> Option<Written> {
     if let Some((thread, call)) = under::<(u64, String)>(&CALLS.key(&()), key) {
         return Some(Written::Call { thread, call });
     }
-    let threads: [(Vec<u8>, OfThread); 7] = [
+    let threads: [(Vec<u8>, OfThread); 8] = [
         (THREADS.key(&()), Written::Thread),
         (HELD.key(&()), Written::Held),
         (WITHHELD.key(&()), Written::Withheld),
@@ -239,6 +262,7 @@ pub fn written(key: &[u8]) -> Option<Written> {
         (TOPICS.key(&()), Written::Topic),
         (TALLIES.key(&()), Written::Tally),
         (SETTLING.key(&()), Written::Settling),
+        (ARMED.key(&()), Written::Armed),
     ];
     for (prefix, wrote) in threads {
         if let Some(thread) = under::<u64>(&prefix, key) {
@@ -306,4 +330,12 @@ pub(crate) const TABLES: &[::program::Table] = &[
     COUNT.table(),
     WATCHES.table(),
     WATCH_COUNT.table(),
+    WAITS.table(),
+    WAITING.table(),
+    ARMED.table(),
+    WAIT_ENTRIES.table(),
+    SCHEDULED.table(),
+    POD_WAITS.table(),
+    ENDING.table(),
+    WAIT_COUNT.table(),
 ];

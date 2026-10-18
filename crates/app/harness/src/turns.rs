@@ -16,7 +16,7 @@ use crate::listening::mirror;
 use crate::models::learned;
 use crate::resume::{self, Failure};
 use crate::state::{
-    FLIGHTS, FRAMES, HELD, LIVE, Live, PARTIALS, RETRIES, SEALED, SHOWN, THREADS, WITHHELD,
+    ENDING, FLIGHTS, FRAMES, HELD, LIVE, Live, PARTIALS, RETRIES, SEALED, SHOWN, THREADS, WITHHELD,
 };
 use crate::tallies;
 use crate::waiting::settling;
@@ -68,6 +68,12 @@ pub(crate) fn say(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body) {
 }
 
 pub(crate) fn settle(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
+    // a turn that armed a wait ends here: what it saw needs no answer, input held behind it does
+    let armed_a_wait = ENDING.has(ctx, &thread.id);
+    if armed_a_wait && thread.asking == Asking::Running {
+        thread.seen = thread.frames;
+    }
+    ENDING.remove(ctx, &thread.id);
     for index in 0..thread.held {
         let key = (thread.id, index);
         if let Some(body) = HELD.get(ctx, &key)? {

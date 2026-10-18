@@ -882,6 +882,27 @@ pub(crate) fn waiting_words(shown: &Transcript) -> Option<(String, bool)> {
     })
 }
 
+// what the conversation's agent waits for (`wait_for`), each since the block it was made
+pub(crate) fn armed_words(shown: &Transcript) -> Option<String> {
+    if shown.thread.closed || shown.armed.is_empty() {
+        return None;
+    }
+    let each: Vec<String> = shown
+        .armed
+        .iter()
+        .map(|row| {
+            let what = match &row.event {
+                harness::WaitFor::Height { height } => {
+                    format!("block {}", design::grouped(*height))
+                }
+                harness::WaitFor::Pod { name } => format!("pod {name} to end"),
+            };
+            format!("{what} (since block {})", design::grouped(row.made))
+        })
+        .collect();
+    Some(format!("Waits for {}", each.join(" · ")))
+}
+
 // what a relaying call waits on at egress, in its box after the blocks it ran at
 pub(crate) fn call_wait(call: &CallRow, waits: &[Wait]) -> Option<String> {
     if call.state != CallState::Relaying {

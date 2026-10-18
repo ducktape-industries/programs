@@ -21,6 +21,7 @@ mod schedule;
 mod server_tools;
 mod streams;
 mod thinking;
+mod wait;
 mod workspace;
 
 use ::program::{Error, MockChain, Origin, Principal, code};

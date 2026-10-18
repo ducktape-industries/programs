@@ -179,7 +179,9 @@ fn harness_own(payload: &[u8]) -> bool {
             | Op::Streamed { .. }
             | Op::RunBooked
             | Op::Watch { .. }
-            | Op::Heard { .. })
+            | Op::Heard { .. }
+            | Op::WaitDue
+            | Op::PodEvent { .. })
     )
 }
 

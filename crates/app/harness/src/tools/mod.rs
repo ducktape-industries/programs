@@ -12,6 +12,7 @@ mod pods;
 pub(crate) mod prefix;
 mod schedule;
 mod thread;
+mod wait;
 
 pub(crate) use chat::shown_by;
 
@@ -185,6 +186,9 @@ pub(crate) const CATALOG: &[Entry] = &[
     entry::<schedule::Book>(),
     entry::<schedule::List>(),
     entry::<schedule::Cancel>(),
+    entry::<wait::For>(),
+    entry::<wait::List>(),
+    entry::<wait::Cancel>(),
 ];
 
 pub(crate) fn find(name: &str) -> Option<&'static Entry> {

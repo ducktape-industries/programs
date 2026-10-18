@@ -1,3 +1,4 @@
+mod armed;
 mod budget;
 mod compact_at;
 mod conversations;
@@ -222,6 +223,8 @@ struct Net {
     // each thread's open settle window
     settling: Vec<(u64, harness::SettleWindow)>,
     budget: harness::BudgetReport,
+    // the open thread's armed waits
+    armed: Vec<harness::WaitRow>,
 }
 
 // The one node the fake egress lists.
@@ -367,6 +370,7 @@ impl Default for Net {
             requests: vec![turn_request(41, 7, 9001)],
             settling: Vec::new(),
             budget: harness::BudgetReport::default(),
+            armed: Vec::new(),
         }
     }
 }
@@ -516,6 +520,15 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             harness::Query::Booking { .. } => harness::Reply::Booking(None),
             harness::Query::UsageWindow { .. } => harness::Reply::UsageWindow(None),
             harness::Query::Budget => harness::Reply::Budget(net.budget.clone()),
+            harness::Query::Waits { .. } => harness::Reply::Waits(page(Vec::new())),
+            harness::Query::Armed { thread, .. } => harness::Reply::Waits(page(
+                net.armed
+                    .iter()
+                    .filter(|row| row.thread == thread)
+                    .cloned()
+                    .collect(),
+            )),
+            harness::Query::Wait { .. } => harness::Reply::Wait(None),
             harness::Query::Tools => harness::Reply::Tools(vec![
                 ToolInfo {
                     name: "forge_log".into(),

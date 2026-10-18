@@ -5,7 +5,7 @@ use super::network::{Unsaid, head, http_answer, notes, pods_answer, pods_get, se
 use super::*;
 use crate::schema::tests::{code_with, listed, module};
 
-fn schemed() -> World {
+pub(super) fn schemed() -> World {
     schemed_with(code_with(&interface::<files::Files>()))
 }
 
@@ -32,7 +32,7 @@ fn schemed_with(files_code: Vec<u8>) -> World {
     world
 }
 
-fn turn(world: &World, at: u64, calls: &[(&str, &str, Value)]) {
+pub(super) fn turn(world: &World, at: u64, calls: &[(&str, &str, Value)]) {
     let chain = &world.chain;
     chain.at(at, 0);
     let uses: Vec<Value> = calls
@@ -46,13 +46,13 @@ fn turn(world: &World, at: u64, calls: &[(&str, &str, Value)]) {
     }
 }
 
-fn answered(chain: &MockChain, thread: u64, call: &str) -> Value {
+pub(super) fn answered(chain: &MockChain, thread: u64, call: &str) -> Value {
     let (text, failed) = result_of(chain, thread, call);
     assert!(!failed, "{call}: {text}");
     serde_json::from_str(&text).unwrap()
 }
 
-fn refused(chain: &MockChain, thread: u64, call: &str) -> String {
+pub(super) fn refused(chain: &MockChain, thread: u64, call: &str) -> String {
     let (text, failed) = result_of(chain, thread, call);
     assert!(failed, "{call}: {text}");
     text

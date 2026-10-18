@@ -278,5 +278,14 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
         ),
         ("schedule_list", vec![json!({}), json!({ "cursor": null })]),
         ("schedule_cancel", vec![json!({ "entry": 82013 })]),
+        (
+            "wait_for",
+            vec![
+                json!({ "event": { "height": 106505 } }),
+                json!({ "event": { "pod": { "name": "duckpond-32359" } } }),
+            ],
+        ),
+        ("wait_list", vec![json!({}), json!({ "cursor": null })]),
+        ("wait_cancel", vec![json!({ "wait": 3 })]),
     ]
 }
