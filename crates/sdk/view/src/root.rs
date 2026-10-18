@@ -10,12 +10,12 @@ use std::future::Future;
 pub trait Render: 'static + Sized {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement;
 }
-/// A root view: everything the host reads about it (the manifest
-/// `export_view!` writes: [`NAME`](View::NAME), [`DESCRIPTION`](View::DESCRIPTION),
-/// [`CAPABILITIES`](View::CAPABILITIES), [`MIN_WINDOW_WIDTH`](View::MIN_WINDOW_WIDTH),
-/// [`WINDOW_WIDTH`](View::WINDOW_WIDTH), [`TARGETS`](View::TARGETS), [`ICON`](View::ICON),
-/// [`TINT`](View::TINT)), how it is built
-/// ([`new`](View::new)) and how it joins the host ([`attach`](View::attach)).
+// A root view: everything the host reads about it (the manifest
+// `export_view!` writes: [`NAME`](View::NAME), [`DESCRIPTION`](View::DESCRIPTION),
+// [`CAPABILITIES`](View::CAPABILITIES), [`MIN_WINDOW_WIDTH`](View::MIN_WINDOW_WIDTH),
+// [`WINDOW_WIDTH`](View::WINDOW_WIDTH), [`ICON`](View::ICON),
+// [`TINT`](View::TINT)), how it is built
+// ([`new`](View::new)) and how it joins the host ([`attach`](View::attach)).
 pub trait View: Render + Serialize + DeserializeOwned + Default {
     /// The name on the tab and in the catalog, `1..=64` bytes.
     const NAME: &'static str;
@@ -57,14 +57,6 @@ pub trait View: Render + Serialize + DeserializeOwned + Default {
     /// capability is not here is refused `undeclared_capability`, by the
     /// app and by `TestAppContext` alike.
     const CAPABILITIES: &'static [crate::methods::Capability] = &[];
-    /// The programs this view addresses (`op.submit`, `program.query`,
-    /// `program.changes`), by the name each `Program` carries
-    /// (`&[chat::Chat::NAME, identity::Identity::NAME]`), and the only
-    /// ones the host signs or subscribes for it: a method naming another
-    /// is refused `undeclared_target`, by the app and by `TestAppContext`
-    /// alike. A view with the `op` or `program` capability names at least
-    /// one, or it does not compile.
-    const TARGETS: &'static [&'static str] = &[];
     /// The narrowest pointer window, in logical px, at which every
     /// essential element is visible and nothing is clipped: on a desk the
     /// app never lays the view out narrower, and never sizes a window
@@ -387,7 +379,6 @@ mod follow_tests {
     impl View for Heads {
         const NAME: &'static str = "Heads";
         const CAPABILITIES: &'static [Capability] = &[Capability::Program, Capability::Host];
-        const TARGETS: &'static [&'static str] = &[<Probe as Program>::NAME];
         fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
             cx.follow::<Changes<Probe>>((), |view: &mut Heads, change, cx| match change {
                 Ok(_) => {
@@ -442,7 +433,6 @@ mod follow_tests {
     impl View for Kept {
         const NAME: &'static str = "Kept";
         const CAPABILITIES: &'static [Capability] = &[Capability::Program];
-        const TARGETS: &'static [&'static str] = &[<Probe as Program>::NAME];
         fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
             self.live = Some(cx.follow::<Changes<Probe>>((), |view: &mut Kept, _, cx| {
                 view.seen += 1;
@@ -515,7 +505,6 @@ mod follow_tests {
     impl View for Count {
         const NAME: &'static str = "Count";
         const CAPABILITIES: &'static [Capability] = &[Capability::Program];
-        const TARGETS: &'static [&'static str] = &[Counter::NAME];
         fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
             self.live =
                 Some(cx.follow::<Changes<Counter>>((), |view: &mut Count, _, cx| view.read(cx)));

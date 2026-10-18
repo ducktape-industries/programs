@@ -34,9 +34,9 @@ pub struct Manifest {
     pub description: String,
     pub capabilities: Vec<Capability>,
     pub min_width: u32,
-    /// The programs the view may address with `op.submit`, `program.query`
-    /// and `program.changes`; a view with the `op` or `program` capability
-    /// names at least one.
+    // Line 7, read past and meaning nothing: a view addresses any
+    // program. Views built before J-054 listed programs there; one
+    // built since writes it empty.
     pub targets: Vec<String>,
     pub icon: String,
     pub tint: Tint,
@@ -114,19 +114,6 @@ impl Tint {
     }
 }
 
-/// Whether a view declaring `capabilities` must name targets: it may
-/// address a program only through `op` or `program`.
-pub const fn needs_targets(capabilities: &[Capability]) -> bool {
-    let mut i = 0;
-    while i < capabilities.len() {
-        if matches!(capabilities[i], Capability::Op | Capability::Program) {
-            return true;
-        }
-        i += 1;
-    }
-    false
-}
-
 pub const fn is_icon(icon: &str) -> bool {
     icon.is_empty() || (crate::safe_asset_path(icon) && !has_control(icon))
 }
@@ -176,19 +163,19 @@ pub fn read_manifest(bytes: &[u8]) -> Option<Manifest> {
 }
 
 impl Manifest {
-    /// Parses the strict ten-line ([`LINES`]) `ducktape.view.manifest`
-    /// text and its bounds. A capability this host does not know refuses
-    /// the whole manifest: a grant is never silently narrowed; so does a
-    /// view that could address a program (`op`, `program`) and names no
-    /// target, and an icon that is not an asset path ([`is_icon`]).
-    ///
-    /// The tint and the width alone are read leniently: a tint this host
-    /// does not know, a width that is not one in canonical decimal, or no
-    /// ninth or tenth line at all (a view built before them), reads as
-    /// [`Tint::None`], the neutral tile, and as no width, the app's own
-    /// share. A look grants nothing, so reading it as none narrows
-    /// nothing, and a view built against another wire still runs (a host
-    /// refuses a manifest, never a look).
+    // Parses the strict ten-line ([`LINES`]) `ducktape.view.manifest`
+    // text and its bounds. A capability this host does not know refuses
+    // the whole manifest: a grant is never silently narrowed; so does an
+    // icon that is not an asset path ([`is_icon`]). Line 7 is read as a
+    // list and given no meaning.
+    //
+    // The tint and the width alone are read leniently: a tint this host
+    // does not know, a width that is not one in canonical decimal, or no
+    // ninth or tenth line at all (a view built before them), reads as
+    // [`Tint::None`], the neutral tile, and as no width, the app's own
+    // share. A look grants nothing, so reading it as none narrows
+    // nothing, and a view built against another wire still runs (a host
+    // refuses a manifest, never a look).
     pub fn parse(text: &str) -> Option<Self> {
         if text.chars().any(|c| c.is_control() && c != '\n') {
             return None;
@@ -236,8 +223,6 @@ impl Manifest {
                 .wire_id
                 .bytes()
                 .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
-            && self.targets.iter().all(|target| program::is_name(target))
-            && (!self.targets.is_empty() || !needs_targets(&self.capabilities))
             && is_icon(&self.icon)
     }
 }
@@ -359,11 +344,12 @@ mod tests {
         );
     }
 
-    // Claim: line 7 names the programs the view may address, in the list
-    // grammar of line 4; a view that could address one (`op`, `program`)
-    // and names none is refused, so no view signs for "any program".
+    // Claim: line 7 is read past. A view built when it listed the programs
+    // the view addressed still loads, whatever it listed, and one that can
+    // address a program (`op`, `program`) loads with the line empty: a view
+    // addresses any program, and its manifest has no say in which.
     #[test]
-    fn a_manifest_names_its_targets_when_it_can_address_a_program() {
+    fn line_seven_is_read_and_grants_nothing() {
         let parse = |caps: &str, targets: &str| {
             Manifest::parse(&format!(
                 "ducktape.view.manifest\nApp\n\n{caps}\n480\n0123abcd\n{targets}\n\nnone\n"
@@ -373,25 +359,14 @@ mod tests {
             parse("op,program,", "chat,identity,").unwrap().targets,
             ["chat", "identity"]
         );
-        assert_eq!(parse("program,", "a-b_c9,").unwrap().targets, ["a-b_c9"]);
-        assert!(parse("clock,", "").unwrap().targets.is_empty());
-        assert!(
-            parse("", "chat,").is_some(),
-            "a target without op is only unused"
-        );
-        for (caps, targets) in [
-            ("op,", ""),       // could submit, names no program
-            ("program,", ""),  // could query, names no program
-            ("op,", "chat"),   // no trailing comma
-            ("op,", "chat,,"), // an empty name
-            ("op,", "a/b,"),   // not a program name
-            ("op,", &format!("{},", "x".repeat(65))),
-        ] {
-            assert!(
-                parse(caps, targets).is_none(),
-                "accepted {caps:?} {targets:?}"
-            );
+        for caps in ["op,", "program,", "op,program,", ""] {
+            assert!(parse(caps, "").unwrap().targets.is_empty(), "{caps:?}");
         }
+        assert!(
+            parse("op,", "a/b,").is_some(),
+            "line 7 names nothing to check"
+        );
+        assert!(parse("op,", "chat").is_none(), "a list ends in a comma");
     }
 
     #[test]

@@ -25,9 +25,6 @@ struct State {
     /// feeds the view's subscriptions from the frame's effects.
     after_frame: Vec<Hook>,
     declared: Option<&'static [methods::Capability]>,
-    /// The programs the view's `TARGETS` names; a node method naming
-    /// another fails the test, as the app refuses it.
-    targets: &'static [&'static str],
     /// The camera, microphone and remote pieces of the tree the host
     /// holds, as the app keeps them.
     pieces: Vec<Piece>,
@@ -254,14 +251,8 @@ impl FakeHost {
             }
         }
     }
-    pub(super) fn declare(
-        &self,
-        capabilities: &'static [methods::Capability],
-        targets: &'static [&'static str],
-    ) {
-        let mut state = self.0.borrow_mut();
-        state.declared = Some(capabilities);
-        state.targets = targets;
+    pub(super) fn declare(&self, capabilities: &'static [methods::Capability]) {
+        self.0.borrow_mut().declared = Some(capabilities);
     }
     /// Whether `other` is this host, not a copy of it.
     pub(super) fn same(&self, other: &FakeHost) -> bool {
@@ -351,19 +342,8 @@ impl FakeHost {
                     capability.as_str()
                 );
             }
-            // and a node method naming a program the manifest does not
-            // list (`undeclared_target`)
+            // a node method may name any program, as the app lets it
             let target = target_of(request);
-            if state.declared.is_some()
-                && let Some(target) = &target
-            {
-                assert!(
-                    state.targets.contains(&target.as_str()),
-                    "{}: `{}` names `{target}`, which this view's TARGETS does not list",
-                    methods::refusal::UNDECLARED_TARGET,
-                    request.kind,
-                );
-            }
             let (kind, target) = (request.kind.as_str(), target.as_deref());
             let shown = || {
                 host.diagnostic(request.id)

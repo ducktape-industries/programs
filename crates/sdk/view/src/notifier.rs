@@ -49,10 +49,10 @@ use crate::methods::Capability;
 use crate::wire::notifier::{Answer, Turn};
 use crate::{App, Context, Entity, executor};
 
-/// A program's notifier: everything the host reads about it (the manifest
-/// `export_notifier!` writes: [`NAME`](Notifier::NAME),
-/// [`CAPABILITIES`](Notifier::CAPABILITIES), [`TARGETS`](Notifier::TARGETS))
-/// and how it starts ([`new`](Notifier::new)).
+// A program's notifier: everything the host reads about it (the manifest
+// `export_notifier!` writes: [`NAME`](Notifier::NAME),
+// [`CAPABILITIES`](Notifier::CAPABILITIES))
+// and how it starts ([`new`](Notifier::new)).
 pub trait Notifier: 'static + Sized {
     /// The name its notices are logged under, as a view's tab is named:
     /// the view's own [`View::NAME`](crate::View::NAME), so the person
@@ -64,8 +64,6 @@ pub trait Notifier: 'static + Sized {
     /// or `web`: what runs with no one looking signs nothing and opens
     /// nothing.
     const CAPABILITIES: &'static [Capability] = &[];
-    /// The programs it addresses, as a view's [`View::TARGETS`](crate::View::TARGETS).
-    const TARGETS: &'static [&'static str] = &[];
     /// Starts it: its state, and every follower and read it keeps running.
     /// Called once per run; a new deployment, a reconnect or a relaunch
     /// starts a new one, which finds what it kept in its store.
@@ -172,7 +170,6 @@ mod tests {
     impl Notifier for Counter {
         const NAME: &'static str = "Counter";
         const CAPABILITIES: &'static [Capability] = &[Capability::Program, Capability::Notify];
-        const TARGETS: &'static [&'static str] = &["probe"];
         fn new(cx: &mut Context<Self>) -> Self {
             cx.follow::<Changes<crate::testing::Probe>>((), |counter, change, cx| {
                 if let Ok(Some(change)) = change {
@@ -253,8 +250,8 @@ mod tests {
         assert_eq!(cx.host().requests::<NotifyPost>(), [ring()]);
     }
 
-    /// The notifier's manifest is a view's: the host reads its name,
-    /// capabilities and targets with the same parser, at the wire it speaks.
+    // The notifier's manifest is a view's: the host reads its name,
+    // capabilities with the same parser, at the wire it speaks.
     #[test]
     fn a_notifiers_manifest_reads_as_a_views() {
         const LEN: usize = Manifested::of_notifier::<Counter>().encoded_len();
@@ -266,7 +263,7 @@ mod tests {
             manifest.capabilities,
             [Capability::Program, Capability::Notify]
         );
-        assert_eq!(manifest.targets, ["probe"]);
+        assert!(manifest.targets.is_empty());
         assert_eq!(manifest.wire_id, crate::wire::WIRE_ID);
         // it draws nothing: no tint and no window width, written as such
         assert!(text.ends_with("\nnone\n"), "{text:?}");

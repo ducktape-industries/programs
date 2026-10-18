@@ -18,7 +18,6 @@ impl View for Streams {
     const NAME: &'static str = "Streams";
     const CAPABILITIES: &'static [crate::methods::Capability] =
         &[crate::methods::Capability::Program];
-    const TARGETS: &'static [&'static str] = &["probe"];
     fn new(_: &mut Window, cx: &mut Context<Self>) -> Self {
         let mut stream = cx.host().subscribe::<Changes<Probe>>(());
         let task = cx.spawn(async move |this, cx| {

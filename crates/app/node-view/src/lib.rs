@@ -129,8 +129,6 @@ impl View for Nodes {
         Capability::Host,
         Capability::Clock,
     ];
-    const TARGETS: &'static [&'static str] =
-        &[valset::PROGRAM, programs::PROGRAM, identity::PROGRAM];
     // the set's table fits from 480 up
     const MIN_WINDOW_WIDTH: u32 = 480;
 

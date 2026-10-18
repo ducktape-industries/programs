@@ -64,12 +64,6 @@ impl View for Explorer {
         // an account page's Open DM opens chat on the reader's DM room
         Capability::Link,
     ];
-    const TARGETS: &'static [&'static str] = &[
-        identity::PROGRAM,
-        valset::PROGRAM,
-        programs::PROGRAM,
-        activity::PROGRAM,
-    ];
     // at 560 a block's hash is cut at the right edge
     const MIN_WINDOW_WIDTH: u32 = 640;
 

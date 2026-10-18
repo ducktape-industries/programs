@@ -754,7 +754,6 @@ fn the_manifest_bytes_are_what_the_view_trait_says() {
         const ICON: &'static str = "icons/hammer.svg";
         const TINT: Tint = Tint::Orange;
         const CAPABILITIES: &'static [Capability] = &[Capability::Clock, Capability::Program];
-        const TARGETS: &'static [&'static str] = &["chat", "identity"];
         const MIN_WINDOW_WIDTH: u32 = 560;
         const WINDOW_WIDTH: Option<u32> = Some(1180);
         fn new(_: &mut Window, _: &mut Context<Self>) -> Self {
@@ -770,7 +769,7 @@ fn the_manifest_bytes_are_what_the_view_trait_says() {
     assert_eq!(
         std::str::from_utf8(&bytes).unwrap(),
         format!(
-            "ducktape.view.manifest\nApp\nWords\nclock,program,\n560\n{}\nchat,identity,\nicons/hammer.svg\norange\n1180",
+            "ducktape.view.manifest\nApp\nWords\nclock,program,\n560\n{}\n\nicons/hammer.svg\norange\n1180",
             wire::WIRE_ID
         )
     );
@@ -778,7 +777,7 @@ fn the_manifest_bytes_are_what_the_view_trait_says() {
     assert_eq!(manifest.min_width, 560);
     assert_eq!(manifest.wire_id, wire::WIRE_ID);
     assert_eq!(manifest.capabilities, App::CAPABILITIES);
-    assert_eq!(manifest.targets, App::TARGETS);
+    assert!(manifest.targets.is_empty());
     assert_eq!(manifest.icon, App::ICON);
     assert_eq!(manifest.tint, Tint::Orange);
     assert_eq!(manifest.width, Some(1180));

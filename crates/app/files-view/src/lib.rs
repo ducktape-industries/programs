@@ -64,7 +64,6 @@ impl View for Files {
         // a row's Copy link
         Capability::Clipboard,
     ];
-    const TARGETS: &'static [&'static str] = &[files::PROGRAM, access::PROGRAM, identity::PROGRAM];
     /// The history's rows, a message beside who made it and when, fit
     /// here; a folder's crumbs wrap.
     const MIN_WINDOW_WIDTH: u32 = 480;

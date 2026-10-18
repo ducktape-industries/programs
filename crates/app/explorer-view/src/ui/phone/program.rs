@@ -185,14 +185,6 @@ fn about(
         } else {
             format!("{} · {}", manifest.name, manifest.description)
         };
-        let talks = (!manifest.targets.is_empty()).then(|| {
-            key_value(
-                "explorer-field-talks-to",
-                "Talks to",
-                data(manifest.targets.join(", ")),
-                k,
-            )
-        });
         [
             Some(key_value(
                 "explorer-field-declares",
@@ -206,7 +198,6 @@ fn about(
                 div().child(words::min_width(manifest.min_width)),
                 k,
             )),
-            talks,
             Some(key_value(
                 "explorer-field-wire",
                 "Wire",

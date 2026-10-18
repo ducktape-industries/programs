@@ -363,8 +363,6 @@ impl View for Members {
         Capability::Host,
         Capability::Link,
     ];
-    const TARGETS: &'static [&'static str] =
-        &[identity::PROGRAM, valset::PROGRAM, ::activity::PROGRAM];
     // the list and the detail fit at 320, the desk's smallest window
     const MIN_WINDOW_WIDTH: u32 = 320;
 

@@ -20,11 +20,6 @@
 //! a view's frame codec carries. There is no snapshot: what a notifier keeps
 //! across runs it keeps in its store (`store.set`), and a new deployment
 //! starts it again.
-//!
-//! Its manifest is a view's, the same `ducktape.view.manifest` section
-//! ([`crate::manifest`]): the name its notices are logged under, the
-//! capabilities and targets the host holds its requests to, and the wire it
-//! was built against.
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{Error, Request};

@@ -323,9 +323,6 @@ pub(super) fn program(
         }
         words
     });
-    let talks_to = manifest
-        .filter(|manifest| !manifest.targets.is_empty())
-        .map(|manifest| manifest.targets.join(", "));
     let blocks = view.chain.blocks.len() as u64;
     let sent = view.sent_to(name);
     // no window yet: the way to its transactions, without a count of nothing
@@ -379,7 +376,6 @@ pub(super) fn program(
                 theme,
             )
         }))
-        .children(talks_to.map(|targets| field("Talks to", mono(targets), theme)))
         .children(manifest.map(|manifest| {
             field(
                 "Wire",

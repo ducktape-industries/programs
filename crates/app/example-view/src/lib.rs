@@ -39,8 +39,8 @@ struct Agent {
     kind: Kind,
 }
 
-// What the host reads about the view. A method outside these capabilities,
-// or a program outside these targets, is refused.
+// What the host reads about the view. A method outside these capabilities
+// is refused; any program may be asked.
 impl View for Agents {
     const NAME: &'static str = "Agents";
     const DESCRIPTION: &'static str = "The agents your account manages.";
@@ -48,7 +48,6 @@ impl View for Agents {
     // `program.query` and `program.changes`, `op.submit`.
     const CAPABILITIES: &'static [Capability] =
         &[Capability::Host, Capability::Program, Capability::Op];
-    const TARGETS: &'static [&'static str] = &[identity::PROGRAM];
     // The app never lays the view out narrower than this, in px. Unset, 480.
     const MIN_WINDOW_WIDTH: u32 = 320;
 

@@ -75,9 +75,10 @@ program refuses, a reply that does not read: the widget says why in its own plac
 
 ## Which programs a widget can read
 
-Until J-054 lands, the app host answers a view only for the programs its manifest lists as
-targets. chat-view lists chat, identity, access, files, board and programs, so a widget over
-another program shows the host's refusal in its place.
+Any program. Since J-054 a view names no programs: the app host answers a view's
+`program.query` and `program.changes` for whatever program it names, and each program decides
+what it answers. An app host from before J-054 still refuses a program the view's manifest
+doesn't list, and refuses a chat-view built since J-054 outright (its manifest lists none).
 
 The code: `crates/app/chat-view/src/widget.rs` (the file, templates, filters),
 `widget/live.rs` (the data path), `ui/widget.rs` (drawing); the codec is `crates/lib/borsh-json`.

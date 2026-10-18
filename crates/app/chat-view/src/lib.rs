@@ -95,15 +95,6 @@ impl View for Chat {
         Capability::Blob,
         Capability::File,
     ];
-    const TARGETS: &'static [&'static str] = &[
-        chat::PROGRAM,
-        identity::PROGRAM,
-        access::PROGRAM,
-        files::PROGRAM,
-        // a widget's source, and where its schema is read from
-        "board",
-        programs::PROGRAM,
-    ];
     // at 480 an agent message's head line is cut at the room's edge
     const MIN_WINDOW_WIDTH: u32 = 560;
     // the room list, the room and a thread open beside it, none squeezed

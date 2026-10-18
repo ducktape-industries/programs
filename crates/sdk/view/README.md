@@ -82,7 +82,7 @@ with these; the rest of this page is reference.
 
 | A view writes | Views | What it is |
 |---|---|---|
-| `impl View`: `NAME`, `CAPABILITIES`, `TARGETS`, `attach` | 6/6 | What the host reads before the view runs, and where what it follows starts ("The `View` trait"). |
+| `impl View`: `NAME`, `CAPABILITIES`, `attach` | 6/6 | What the host reads before the view runs, and where what it follows starts ("The `View` trait"). |
 | `cx.follow::<D>(request, \|view, item, cx\| ..).detach()` | 6/6 | A host stream: the session, a program's blocks, the clock. One call a stream, in `attach`. |
 | `cx.log_refused(what, &refusal)` | 6/6 | A refusal nothing on screen waits for, to the host's log under the view's `NAME`. It asks `host.log`, so the view declares `Capability::Host`. |
 | `Loadable<T>`; `cx.load(self, work, \|view\| &mut view.slot)` | 6/6; 5/6 | An answer and its states, and the read that fills it. |
@@ -404,11 +404,10 @@ where the app lists it, a phone's Home: a `Tint` by name, `Tint::Blue`, whose
 light and dark values are the app's; `Tint::None` by default, the neutral
 tile), `CAPABILITIES` (the `methods::Capability`
 halves of the kinds it asks through, `&[]` by default: a method whose
-capability is not listed is refused `undeclared_capability`), `TARGETS` (the
-programs it addresses with `op.submit`, `program.query` and `program.changes`,
-by each `Program`'s `NAME`, `&[]` by default: a method naming another is
-refused `undeclared_target`, and a view with `op` or `program` that names
-none does not compile), `MIN_WINDOW_WIDTH` (the narrowest pointer window in px it works at,
+capability is not listed is refused `undeclared_capability`; a view lists no
+programs: it addresses any one by its `Program`'s `NAME` with `op.submit`,
+`program.query` and `program.changes`, and each program decides what it
+answers and admits), `MIN_WINDOW_WIDTH` (the narrowest pointer window in px it works at,
 default 480, at least 1 or it does not compile: on a desk the app never
 lays it out narrower, and a narrower window scrolls it sideways; a touch
 screen seats the view at its own width whatever this says, so it is not
@@ -450,9 +449,17 @@ A child is not a `View`: it logs with `cx.host().log(..)`.
 `export_view!(View)` (`src/lib.rs`) writes the five wasm exports and the
 manifest section `ducktape.view.manifest` from the trait's consts
 (`view-wire/src/manifest.rs`: header, `NAME`, `DESCRIPTION`,
-`CAPABILITIES`, `MIN_WINDOW_WIDTH` in decimal, `WIRE_ID`, `TARGETS`, `ICON`, `TINT`,
+`CAPABILITIES`, `MIN_WINDOW_WIDTH` in decimal, `WIRE_ID`, an empty line (views
+built before J-054 listed their targets there; a host reads it past), `ICON`, `TINT`,
 `WINDOW_WIDTH` in decimal or empty for none; the line list is
 `manifest::LINES`, part of `schema.txt` and so of `WIRE_ID`).
+
+**Deploy order (J-054).** A view built from this SDK that declares `op` or
+`program` writes line 7 empty, and an app host whose `view-wire` predates
+J-054 refuses such a manifest (it wanted a target there). So views built from programs at or after J-054's change need an app host
+whose `view-wire` pin (app `Cargo.toml`, the sdk-line rev) is at or
+after it too:
+deploy such a view only once that app release is out.
 
 The ABI gate (`view-wire/src/abi.rs`, `tools/check-view-abi.py`): exactly one
 import, `ducktape_view.panicked`, and exactly five function exports,
@@ -474,7 +481,7 @@ NOTIFIER (`src/notifier.rs`), not in its pane's view: the app runs one per
 program on the network in hand, whatever panes are open, so a notice is
 posted once however many panes there are, and with none.
 
-A notifier is a `Notifier` (`NAME`, `CAPABILITIES`, `TARGETS`, `new`)
+A notifier is a `Notifier` (`NAME`, `CAPABILITIES`, `new`)
 built with the view's own `Context`: it follows, lands, asks the host and
 keeps a store as a view does, and draws nothing. `export_notifier!(N)`
 writes its three exports (`alloc`/`init`/`tick`: borsh answers in, a borsh
@@ -549,13 +556,12 @@ when it changes; no object crosses. A piece its frame drops ends its track
 `testing::lower(build)` is the one path that is not: it lowers a single
 element with no host, sanitizer or audit, for a test of what that element
 carries (`testing::assert_accessible(&tree)` audits it when the test wants).
-It holds the view to its `View::CAPABILITIES` and `View::TARGETS` as the app
+It holds the view to its `View::CAPABILITIES` as the app
 does: a method whose capability the manifest leaves out, or a web, camera,
 microphone or remote piece from a view that does not declare `web`, `camera`,
 `microphone` or (for a piece on a live track) `live`, panics with
-`methods::refusal::UNDECLARED_CAPABILITY`, a node method naming a program
-the targets leave out with `methods::refusal::UNDECLARED_TARGET`, the codes
-the app refuses them with.
+`methods::refusal::UNDECLARED_CAPABILITY`, the code the app refuses them
+with. A node method may name any program, in a test as in the app.
 Screen export: a test gated on `*_SCREEN_EXPORT=1` (`FORGE_SCREEN_EXPORT`,
 `crates/app/forge-view/src/screen_tests.rs`; `CHAT_SCREEN_EXPORT`,
 `crates/app/chat-view/src/tests/mod.rs`) writes each screen's whole frame (its

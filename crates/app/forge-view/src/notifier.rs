@@ -61,7 +61,6 @@ impl Notifier for ForgeNotices {
         Capability::Notify,
         Capability::Store,
     ];
-    const TARGETS: &'static [&'static str] = &[forge::PROGRAM, chat::PROGRAM];
 
     fn new(cx: &mut Context<Self>) -> Self {
         cx.follow::<HostSession>((), |notices, session, cx| match session {

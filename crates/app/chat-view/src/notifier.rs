@@ -98,7 +98,6 @@ impl Notifier for ChatNotices {
         Capability::Notify,
         Capability::Store,
     ];
-    const TARGETS: &'static [&'static str] = &[chat::PROGRAM, identity::PROGRAM];
 
     fn new(cx: &mut Context<Self>) -> Self {
         cx.follow::<HostSession>((), |notices, session, cx| match session {

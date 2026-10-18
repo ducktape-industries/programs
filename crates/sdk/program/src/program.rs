@@ -123,11 +123,11 @@ pub trait Reads {
     fn touched_by(&self, program: &str, keys: &[Vec<u8>]) -> bool;
 }
 
-/// Whether `name` is a program id as the network spells one: `1..=64`
-/// bytes of lowercase ASCII letters, digits, `-` and `_`. One spelling per
-/// id, so no id reads as another (no capital, no look-alike letter, no
-/// bidi control). The one rule for a manifest's `targets`, a host's
-/// `Call.target` and an id the programs role lands.
+// Whether `name` is a program id as the network spells one: `1..=64`
+// bytes of lowercase ASCII letters, digits, `-` and `_`. One spelling per
+// id, so no id reads as another (no capital, no look-alike letter, no
+// bidi control). The one rule for a host's `Call.target` and an id the
+// programs role lands.
 pub const fn is_name(name: &str) -> bool {
     let bytes = name.as_bytes();
     if bytes.is_empty() || bytes.len() > 64 {

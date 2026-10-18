@@ -56,7 +56,6 @@ type Ask<T> = Rc<dyn Fn(Option<Vec<u8>>) -> LocalBoxFuture<'static, Result<Page<
 /// impl View for History {
 ///     const NAME: &'static str = "History";
 /// #   const CAPABILITIES: &'static [Capability] = &[Capability::Program];
-/// #   const TARGETS: &'static [&'static str] = &[Numbers::NAME];
 ///     fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
 ///         let host = cx.host();
 ///         // one page of the listing, from a cursor: its rows and the next cursor
@@ -287,7 +286,6 @@ mod tests {
     impl View for History {
         const NAME: &'static str = "History";
         const CAPABILITIES: &'static [Capability] = &[Capability::Program];
-        const TARGETS: &'static [&'static str] = &[Numbers::NAME];
         fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
             self.read(cx);
         }

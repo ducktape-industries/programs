@@ -1027,13 +1027,11 @@ methods! {
     /// `blob.get`: a blob by `sha256:<hex>` or `sha1:<hex>` id, unframed;
     /// `None` where the node holds no blob by that id.
     BlobGet, "blob.get", String, Option<Vec<u8>>;
-    /// `blob.manifest`: what the view in a code blob declares, by the
-    /// blob's `sha256:<hex>` or `sha1:<hex>` id: the host reads the manifest
-    /// as it would to seat the view, without fetching the bytes into the
-    /// view. Only code the programs role names is read (a listed program's,
-    /// a view-only entry's, or one a scheduled change brings); any other id
-    /// is refused `undeclared_target`. `None` where the node holds no blob
-    /// by that id.
+    // `blob.manifest`: what the view in a code blob declares, by the
+    // blob's `sha256:<hex>` or `sha1:<hex>` id: the host reads the manifest
+    // as it would to seat the view, without fetching the bytes into the
+    // view. Any blob may be named, as with `blob.get`. `None` where the
+    // node holds no blob by that id.
     BlobManifest, "blob.manifest", String, Option<Manifested>;
     /// `host.session`: a subscription to [`Session`], an item per change.
     HostSession, "host.session", (), Session;
@@ -1368,9 +1366,9 @@ pub mod refusal {
     pub const UNKNOWN_REQUEST: &str = "unknown_request";
     /// The kind's capability is not in the view's manifest.
     pub const UNDECLARED_CAPABILITY: &str = "undeclared_capability";
-    /// The node method names a program the view's manifest does not list
-    /// among its targets, or `blob.manifest` names code the programs role
-    /// does not.
+    // No host since J-054 refuses with it. A host before J-054 refused a
+    // node method naming a program its view's manifest did not list, and
+    // `blob.manifest` naming code the programs role did not.
     pub const UNDECLARED_TARGET: &str = "undeclared_target";
     /// The op needed the person's confirmation on the host and did not get
     /// it: cancelled, or another confirmation for this view still waits.

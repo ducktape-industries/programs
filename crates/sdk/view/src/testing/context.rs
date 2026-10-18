@@ -125,7 +125,7 @@ impl TestAppContext {
         self.host.clone()
     }
     pub fn open<V: View>(&mut self) -> Entity<V> {
-        self.host.declare(V::CAPABILITIES, V::TARGETS);
+        self.host.declare(V::CAPABILITIES);
         let driver = Driver::<V>::initialize_in(self.fresh_app(), None);
         let entity = driver.entity();
         self.mount(Box::new(driver));
@@ -137,7 +137,7 @@ impl TestAppContext {
     /// A redeploy: the view restored from `bytes` in a fresh instance, as
     /// the app swaps it in. The host keeps its focus where it was.
     pub fn restore<V: View>(&mut self, bytes: &[u8]) -> Result<Entity<V>, String> {
-        self.host.declare(V::CAPABILITIES, V::TARGETS);
+        self.host.declare(V::CAPABILITIES);
         let driver = Driver::<V>::from_snapshot_in(self.fresh_app(), bytes)?;
         let entity = driver.entity();
         self.mount(Box::new(driver));

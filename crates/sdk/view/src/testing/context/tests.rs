@@ -16,7 +16,6 @@ struct LiveView {
 impl View for LiveView {
     const NAME: &'static str = "LiveView";
     const CAPABILITIES: &'static [Capability] = &[Capability::Program];
-    const TARGETS: &'static [&'static str] = &[<Probe as crate::methods::Program>::NAME];
     // subscribes in `attach` alone: `new` is the default
     fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         let mut stream = cx.host().subscribe::<Changes<Probe>>(());
@@ -81,32 +80,6 @@ impl Render for Undeclared {
 #[should_panic(expected = "undeclared_capability")]
 fn a_method_the_manifest_leaves_out_fails_the_test() {
     TestAppContext::new().open::<Undeclared>();
-}
-
-/// Follows `Probe`, which its `TARGETS` does not name.
-#[derive(Default, Serialize, Deserialize)]
-struct Untargeted {
-    #[serde(skip)]
-    live: Option<Task<()>>,
-}
-impl View for Untargeted {
-    const NAME: &'static str = "Untargeted";
-    const CAPABILITIES: &'static [Capability] = &[Capability::Program];
-    const TARGETS: &'static [&'static str] = &["other"];
-    fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        self.live = Some(cx.follow::<Changes<Probe>>((), |_: &mut Self, _, _| {}));
-    }
-}
-impl Render for Untargeted {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl crate::IntoElement {
-        crate::div()
-    }
-}
-
-#[test]
-#[should_panic(expected = "undeclared_target")]
-fn a_program_the_targets_leave_out_fails_the_test() {
-    TestAppContext::new().open::<Untargeted>();
 }
 
 /// A button with nothing to say for itself.

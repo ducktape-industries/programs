@@ -35,7 +35,7 @@ impl<N: Notifier> TestNotifier<N> {
     /// connected (a run before it ended first), and ticks until it parks.
     pub fn start(&mut self) -> Entity<N> {
         self.stop();
-        self.host.declare(N::CAPABILITIES, N::TARGETS);
+        self.host.declare(N::CAPABILITIES);
         let driver = NotifierDriver::<N>::new();
         let entity = driver.entity.clone();
         self.driver = Some(driver);

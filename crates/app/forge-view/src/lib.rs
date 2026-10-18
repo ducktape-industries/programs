@@ -81,12 +81,6 @@ impl View for Forge {
         Capability::Link,
         Capability::Clipboard,
     ];
-    const TARGETS: &'static [&'static str] = &[
-        forge::PROGRAM,
-        chat::PROGRAM,
-        identity::PROGRAM,
-        access::PROGRAM,
-    ];
     // at 560 the repository tab bar's About toggle is past the right edge
     const MIN_WINDOW_WIDTH: u32 = 640;
 

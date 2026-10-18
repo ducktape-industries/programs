@@ -292,14 +292,6 @@ impl View for Agents {
         // an id or a link, copied
         Capability::Clipboard,
     ];
-    const TARGETS: &'static [&'static str] = &[
-        harness::PROGRAM,
-        identity::PROGRAM,
-        egress::PROGRAM,
-        files::PROGRAM,
-        access::PROGRAM,
-        chat::PROGRAM,
-    ];
     const MIN_WINDOW_WIDTH: u32 = 480;
 
     fn attach(&mut self, _window: &mut Window, cx: &mut Context<Self>) {

@@ -133,7 +133,6 @@ pub struct Manifested {
     pub description: &'static str,
     pub capabilities: &'static [crate::methods::Capability],
     pub min_width: u32,
-    pub targets: &'static [&'static str],
     pub icon: &'static str,
     pub tint: Tint,
     pub width: Option<u32>,
@@ -146,7 +145,6 @@ impl Manifested {
             description: V::DESCRIPTION,
             capabilities: V::CAPABILITIES,
             min_width: V::MIN_WINDOW_WIDTH,
-            targets: V::TARGETS,
             icon: V::ICON,
             tint: V::TINT,
             width: V::WINDOW_WIDTH,
@@ -159,7 +157,6 @@ impl Manifested {
             description: "",
             capabilities: N::CAPABILITIES,
             min_width: 1,
-            targets: N::TARGETS,
             icon: "",
             tint: Tint::None,
             width: None,
@@ -183,11 +180,6 @@ impl Manifested {
             i += 1;
         }
         len += 1;
-        let mut i = 0;
-        while i < self.targets.len() {
-            len += self.targets[i].len() + 1;
-            i += 1;
-        }
         len += 1 + self.icon.len() + 1 + self.tint.as_str().len() + 1;
         match self.width {
             Some(width) => len + digits(width),
@@ -195,30 +187,17 @@ impl Manifested {
         }
     }
 
-    /// The manifest text (`view_wire::manifest`: header, name, description,
-    /// capabilities, min width, [`wire::WIRE_ID`], targets, icon, tint,
-    /// width), at compile time: a window width under the min width, a
-    /// target that is not a program name, no target where the capabilities
-    /// could address a program, or an icon that is not an asset path
-    /// ([`wire::manifest::is_icon`]), fails the build.
+    // The manifest text (`view_wire::manifest`: header, name, description,
+    // capabilities, min width, [`wire::WIRE_ID`], an empty line 7, icon,
+    // tint, width), at compile time: a window width under the min width,
+    // or an icon that is not an asset path ([`wire::manifest::is_icon`]),
+    // fails the build.
     pub const fn bytes<const N: usize>(&self) -> [u8; N] {
         assert!(self.min_width >= 1, "MIN_WINDOW_WIDTH is at least 1");
         assert!(
             !matches!(self.width, Some(width) if width < self.min_width),
             "WINDOW_WIDTH is at least MIN_WINDOW_WIDTH"
         );
-        assert!(
-            !self.targets.is_empty() || !wire::manifest::needs_targets(self.capabilities),
-            "a view with the op or program capability names its TARGETS"
-        );
-        let mut i = 0;
-        while i < self.targets.len() {
-            assert!(
-                program::is_name(self.targets[i]),
-                "a target is a program id: 1..=64 of [a-z0-9_-]"
-            );
-            i += 1;
-        }
         assert!(
             wire::manifest::is_icon(self.icon),
             "ICON is empty or the path of an asset the app bundles (icons/hammer.svg)"
@@ -240,12 +219,7 @@ impl Manifested {
         at = put(&mut out, at, b"\n");
         at = put(&mut out, at, wire::WIRE_ID.as_bytes());
         at = put(&mut out, at, b"\n");
-        let mut i = 0;
-        while i < self.targets.len() {
-            at = put(&mut out, at, self.targets[i].as_bytes());
-            at = put(&mut out, at, b",");
-            i += 1;
-        }
+        // line 7, which views before J-054 listed their targets on
         at = put(&mut out, at, b"\n");
         at = put(&mut out, at, self.icon.as_bytes());
         at = put(&mut out, at, b"\n");
@@ -268,10 +242,10 @@ pub const fn manifest_len<V: View>() -> usize {
 // is added here and to `Manifest::parse` together
 const _: () = assert!(wire::manifest::LINES.len() == 10);
 
-/// The manifest text of a view ([`Manifested::bytes`]), from what its
-/// [`View`] impl says: [`View::NAME`], [`View::DESCRIPTION`],
-/// [`View::CAPABILITIES`], [`View::MIN_WINDOW_WIDTH`], [`View::TARGETS`],
-/// [`View::ICON`], [`View::TINT`], [`View::WINDOW_WIDTH`].
+// The manifest text of a view ([`Manifested::bytes`]), from what its
+// [`View`] impl says: [`View::NAME`], [`View::DESCRIPTION`],
+// [`View::CAPABILITIES`], [`View::MIN_WINDOW_WIDTH`],
+// [`View::ICON`], [`View::TINT`], [`View::WINDOW_WIDTH`].
 pub const fn manifest_bytes<V: View, const N: usize>() -> [u8; N] {
     Manifested::of_view::<V>().bytes()
 }

@@ -307,7 +307,6 @@ impl View for $title {
     const NAME: &'static str = "$title";
     const DESCRIPTION: &'static str = "The count the $program program keeps.";
     const CAPABILITIES: &'static [Capability] = &[Capability::Program];
-    const TARGETS: &'static [&'static str] = &[$program_snake::PROGRAM];
     const MIN_WINDOW_WIDTH: u32 = 480;
 
     /// Follows the program and reads the count: on the first mount and

@@ -33,7 +33,6 @@ impl View for Settings {
         Capability::Host,
         Capability::Clipboard,
     ];
-    const TARGETS: &'static [&'static str] = &[identity::PROGRAM, valset::PROGRAM, access::PROGRAM];
     // at 480 the Agents page's "Create agent" and "Add key" are cut
     const MIN_WINDOW_WIDTH: u32 = 560;
 
