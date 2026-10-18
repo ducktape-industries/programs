@@ -42,7 +42,7 @@ VIEW_FORBIDDEN := blst commonware-cryptography wasm-bindgen js-sys web-sys
 # Cargo uses this directory for both workspaces.
 BUILD_TARGET := $(abspath $(or $(CARGO_TARGET_DIR),target))
 # The Cargo.toml profile every wasm build below comes out of: `release`, the
-# bytes a release ships (`make wasm-publish`, duckpond's code), or `fast`,
+# bytes a release ships (`make wasm-publish`), or `fast`,
 # the edit loop's and garage's, the network that runs dev (`make dev` builds
 # with it; garage's code is `make wasm-modules WASM_PROFILE=fast`), whose
 # views wasm-opt skips. Each profile has its own output dir,
