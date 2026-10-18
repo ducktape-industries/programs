@@ -595,6 +595,9 @@ Event enum
   37 Media struct
     handler: U32
     state: TypeName("MediaState")
+  38 FileDrop struct
+    handler: U32
+    files: Seq(TypeName("Picked"))
 FontFallbacks NewTypeStruct(Seq(Str))
 FontStyle enum
   0 Normal: Unit
@@ -700,6 +703,8 @@ Interactivity struct
   tooltip: Option(TypeName("Tooltip"))
   on_back: Option(U32)
   page: Option(U32)
+  on_file_drop: Option(U32)
+  file_drag_over: Option(U32)
 Invalid enum
   0 true: Unit
   1 grammar: Unit
@@ -1074,6 +1079,10 @@ Patch enum
     to: U32
 Physical enum
   0 Unidentified: NewType(TypeName("NativeCode"))
+Picked struct
+  name: Str
+  size: U64
+  file: U64
 Pinch struct
   position: TypeName("Point")
   delta: F32

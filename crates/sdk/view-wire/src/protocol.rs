@@ -263,6 +263,10 @@ pub enum Event {
         handler: u32,
         state: crate::MediaState,
     },
+    FileDrop {
+        handler: u32,
+        files: Vec<crate::methods::Picked>,
+    },
 }
 
 /// Why a request failed, as the view gets it: the one [`Error`] — a stable

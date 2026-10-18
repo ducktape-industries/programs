@@ -100,6 +100,7 @@ impl Interactions {
             },
             group: self.group,
             hover: self.hover.map(|style| lowering.style(&style)),
+            file_drag_over: self.file_drag_over.map(|style| lowering.style(&style)),
             active: self.active.map(|style| lowering.style(&style)),
             group_hover: self
                 .group_hover
@@ -166,6 +167,7 @@ impl Interactions {
                 .on_hover
                 .map(|listener| lowering.route(Kind::Hover, listener)),
             on_file_drop_exit: route_plain(self.on_file_drop_exit, lowering, Kind::FileDropExit),
+            on_file_drop: route_plain(self.on_file_drop, lowering, Kind::FileDrop),
             tooltip,
             on_back: self
                 .on_back

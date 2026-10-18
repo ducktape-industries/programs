@@ -789,6 +789,10 @@ impl TestAppContext {
         });
         self.run(vec![Event::FileDropExit { handler }]);
     }
+    pub fn simulate_file_drop(&mut self, key: &str, files: Vec<crate::methods::Picked>) {
+        let handler = route(&self.chain(key), key, "file drop", |i| i.on_file_drop);
+        self.run(vec![Event::FileDrop { handler, files }]);
+    }
     /// The events down the chain to `key` and back up it.
     fn along_chain(
         &self,

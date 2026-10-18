@@ -161,6 +161,7 @@ impl<V: View> Driver<V> {
             wire::Event::FileDropExit { handler } => {
                 self.route(handler, &gpui::FileDropEvent::Exited)
             }
+            wire::Event::FileDrop { handler, files } => self.route(handler, &files),
             wire::Event::RichTextHover { handler, event } => self.route(handler, &event),
             wire::Event::ListScroll { handler, event } => self.route(handler, &event),
             wire::Event::ListRequest { handler, request } => self.route(handler, &request),

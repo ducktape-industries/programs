@@ -117,6 +117,10 @@ pub struct Interactivity {
     /// is the host's to draw; the view draws only the page on top.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_file_drop: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_drag_over: Option<StyleId>,
 }
 
 crate::codec::sparse!(Interactivity);
@@ -171,8 +175,6 @@ impl Interactivity {
         &NONE
     }
 
-    /// The seven conditional styles, each where it is set: every style
-    /// besides its own that a node names.
     pub(crate) fn style_slots(&mut self) -> impl Iterator<Item = &mut StyleId> {
         [
             &mut self.focus,
@@ -180,6 +182,7 @@ impl Interactivity {
             &mut self.focus_visible,
             &mut self.hover,
             &mut self.active,
+            &mut self.file_drag_over,
         ]
         .into_iter()
         .flatten()

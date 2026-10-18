@@ -65,6 +65,7 @@ pub(crate) enum Kind {
     ModifiersChanged,
     Hover,
     FileDropExit,
+    FileDrop,
     Tooltip,
     Action(gpui::accesskit::Action),
     Change,

@@ -387,6 +387,14 @@ pub fn every_event() -> Vec<Event> {
                 ..MediaState::default()
             },
         },
+        Event::FileDrop {
+            handler: 21,
+            files: vec![methods::Picked {
+                name: "photo.png".into(),
+                size: 3,
+                file: 1,
+            }],
+        },
     ]
 }
 
@@ -474,5 +482,6 @@ pub fn event_variant(event: &Event) -> &'static str {
         Event::Back { .. } => "Back",
         Event::Web { .. } => "Web",
         Event::Media { .. } => "Media",
+        Event::FileDrop { .. } => "FileDrop",
     }
 }

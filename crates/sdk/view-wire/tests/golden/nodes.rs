@@ -203,6 +203,8 @@ fn full_interactivity() -> Interactivity {
         }),
         on_back: Some(81),
         page: Some(2),
+        on_file_drop: Some(82),
+        file_drag_over: Some(style()),
     }
 }
 

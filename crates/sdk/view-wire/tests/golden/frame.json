@@ -1192,7 +1192,9 @@
                   "delay_ms": 300
                 },
                 "on_back": 81,
-                "page": 2
+                "page": 2,
+                "on_file_drop": 82,
+                "file_drag_over": 0
               },
               "children": [
                 {
@@ -2653,6 +2655,18 @@
             }
           }
         }
+      }
+    },
+    {
+      "FileDrop": {
+        "handler": 21,
+        "files": [
+          {
+            "name": "photo.png",
+            "size": 3,
+            "file": 1
+          }
+        ]
       }
     }
   ],

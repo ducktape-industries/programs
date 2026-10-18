@@ -44,7 +44,7 @@ const MESSAGE: &str =
 /// Bumped by hand with the enum: `node_variant` and `event_variant` fail to compile until
 /// the fixture names the new one, and this count keeps the fixture honest.
 const NODE_VARIANTS: usize = 20;
-const EVENT_VARIANTS: usize = 38;
+const EVENT_VARIANTS: usize = 39;
 
 fn golden(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

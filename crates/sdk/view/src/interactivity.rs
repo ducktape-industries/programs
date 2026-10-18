@@ -68,6 +68,7 @@ pub(crate) struct Interactions {
     scroll_handle: Option<ScrollHandle>,
     pub(crate) group: Option<SharedString>,
     pub(crate) hover: Option<Box<StyleRefinement>>,
+    pub(crate) file_drag_over: Option<Box<StyleRefinement>>,
     pub(crate) active: Option<Box<StyleRefinement>>,
     pub(crate) group_hover: Option<(SharedString, Box<StyleRefinement>)>,
     pub(crate) group_active: Option<(SharedString, Box<StyleRefinement>)>,
@@ -98,6 +99,7 @@ pub(crate) struct Interactions {
     pub(crate) on_back: Option<EventListener<BackEvent>>,
     hover_listener_mode: gpui::HoverListenerMode,
     on_file_drop_exit: Vec<EventListener<FileDropEvent>>,
+    on_file_drop: Vec<EventListener<Vec<wire::methods::Picked>>>,
     tooltip: Option<TooltipBuilder>,
     tooltip_show_delay: Option<Duration>,
     occlude: bool,
@@ -427,6 +429,23 @@ pub trait InteractiveElement: Sized {
             .interactions()
             .on_file_drop_exit
             .push(Box::new(listener));
+        self
+    }
+
+    fn on_file_drop(
+        mut self,
+        listener: impl Fn(&Vec<wire::methods::Picked>, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.interactivity()
+            .interactions()
+            .on_file_drop
+            .push(Box::new(listener));
+        self
+    }
+
+    fn file_drag_over(mut self, f: impl FnOnce(StyleRefinement) -> StyleRefinement) -> Self {
+        self.interactivity().interactions().file_drag_over =
+            Some(Box::new(f(StyleRefinement::default())));
         self
     }
 
