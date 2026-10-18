@@ -136,6 +136,7 @@ fn running(
                         "param bytes",
                     )),
             )
+            .children(stamp(network, &entry.program, theme))
             .child(mono(short(entry.code.digest())).text_color(theme.muted))
             .children(presses(view, network, &entry.program, false, cx, theme));
             list.row(route, row, theme)
@@ -172,6 +173,17 @@ fn listed(
         list.row(route, row, theme)
     });
     Some(list.build(cx))
+}
+
+// The commit a program's code was built from, on its row; nothing for
+// code that names none.
+fn stamp(network: &Network, name: &str, theme: &Theme) -> Option<AnyElement> {
+    let source @ ::programs::Provenance::Commit(_) = network.source_of(name)? else {
+        return None;
+    };
+    let built = mono(words::built_from(source)).text_color(theme.muted);
+    let id = SharedString::from(format!("explorer-built-{name}"));
+    Some(built.id(id).into_any_element())
 }
 
 fn named(network: &Network, name: &str, theme: &Theme, ladder: &Ladder) -> Div {
@@ -287,6 +299,10 @@ pub(super) fn program(
         )
         .child(copy);
     let sizes = blob.map(|blob| words::code_size(blob, listed));
+    let built = network.source_of(name).map(|source| match source {
+        ::programs::Provenance::Commit(_) => mono(words::built_from(source)).into_any_element(),
+        _ => muted(&words::built_from(source), theme),
+    });
     let params = entry.map(|entry| {
         if entry.params.is_empty() {
             muted(words::NO_PARAMS, theme)
@@ -351,6 +367,7 @@ pub(super) fn program(
         .children(capabilities(view, listed, cx, theme, ladder))
         .child(heading("explorer-about-header", "About", None, theme))
         .child(field("Code", code_field, theme))
+        .children(built.map(|built| field("Built from", built, theme)))
         .children(sizes.map(|sizes| field("Size", muted(&sizes, theme), theme)))
         .children(params.map(|params| field("Params", params, theme)))
         .child(field("Changed by", about, theme))

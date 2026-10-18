@@ -209,6 +209,16 @@ after it: the kernel asks `At(height)` for the block it applies, and a
 client (the app's rail, Explorer) asks `Roster`, the programs and views at
 the query's own height, with that height.
 
+What each running program was built from is `Sources`: per program its code
+and the `Provenance` that code carries, `Commit(Source { repo, commit })` from
+its `ducktape.source` section, `Unstamped` for code with none, or `Unread`
+with why (a blob not held here, a section that does not decode). A founding
+stamps the section as it packs a program (`crates/sdk/founding`), with the
+commit of the checkout it ran in while git sees no change there and nothing
+otherwise, so code built from uncommitted work never names a commit. The
+stamp is part of the code, so it cannot be mislabelled, and one commit packs
+to one set of bytes.
+
 `Change::Remove` drops a program and the roles it fills; `Cancel`
 withdraws a scheduled change. A role's program updates the same way: a
 `Set` swaps its code and leaves its roles alone.

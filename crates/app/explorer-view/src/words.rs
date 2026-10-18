@@ -35,6 +35,20 @@ pub(crate) const VIEW_ONLY: &str = "view only";
 /// A program that runs with no params.
 pub(crate) const NO_PARAMS: &str = "none";
 
+// Where a program's code was built from: `programs@4cd6980`, the
+// repository and the commit's first seven digits; else why it names none.
+pub(crate) fn built_from(source: &::programs::Provenance) -> String {
+    use ::programs::Provenance;
+    match source {
+        Provenance::Commit(source) => {
+            let commit = source.commit.get(..7).unwrap_or(&source.commit);
+            format!("{}@{commit}", source.repo)
+        }
+        Provenance::Unstamped => "its code names no commit".into(),
+        Provenance::Unread(why) => format!("not read: {why}"),
+    }
+}
+
 pub(crate) const ALL_BLOCKS: &str = "All blocks →";
 pub(crate) const ALL_TRANSACTIONS: &str = "All transactions →";
 

@@ -161,7 +161,12 @@ The tree vocabulary, manifests, and five-function Wasm ABI are unchanged.
    `kit new NAME --modules <branch> && kit up NAME` downloads the
    founding and founds it, and `kit app NAME` opens the app on them.
 4. Where a view's bytes go: `make wasm-why V=members-view` (`twiggy top`, `cargo install twiggy`).
-5. A new program: `make new-program NAME=x`, then `make new-view NAME=x-view`;
+5. Before an update lands, compare its interface with what runs:
+   `cargo run -p founding --bin schema-diff OLD NEW`, each a program's code or
+   a `.schema` `make wasm-schemas` wrote, prints each difference, `+` for an
+   enum that grew at its end (old bytes read the same) and `!` for one that
+   reads old bytes otherwise, and exits 1 on any `!`.
+6. A new program: `make new-program NAME=x`, then `make new-view NAME=x-view`;
    each prints what to do next, down to its place in `crates/sdk/founding`
    ([`docs/programs.md`](docs/programs.md) walks it).
    `make scaffold-check` proves both still build, gate and test. `make test`
@@ -197,7 +202,9 @@ is a development build.
 publishes them as the GitHub release `wasm-<commit>`, in two archives, each
 with its `SHA256SUMS`. `programs-wasm.tar.gz` holds every artifact unpacked.
 `founding.tar.gz` (`make wasm-founding`) holds a founding: each program with its describe module,
-its schema and any view embedded (`crates/sdk/founding`), `forge.params`, and a
+its schema and any view embedded (`crates/sdk/founding`), stamped with the commit it was built
+from (`ducktape.source`, which the programs role's `Sources` reads back; a checkout with changes
+git sees stamps none), `forge.params`, and a
 `founding.toml` that `ducktape init` reads once its network, time, key and
 address are filled. It runs only on the reference host, from a clean checkout
 whose commit is on origin, and never replaces a published commit. A founder

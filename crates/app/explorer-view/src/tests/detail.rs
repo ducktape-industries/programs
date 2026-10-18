@@ -310,3 +310,19 @@ fn a_page_opened_before_the_roster_asks_when_it_lands() {
         vec![CHAT_CODE.to_owned()]
     );
 }
+
+#[test]
+fn a_program_says_the_commit_its_code_was_built_from() {
+    let cx = opened("explorer-program-chat");
+    let texts = cx.texts();
+    assert!(cx.has_text("Built from"), "{texts:?}");
+    assert!(cx.has_text("programs@4cd6980"), "{texts:?}");
+    let cx = opened("explorer-program-identity");
+    assert!(cx.has_text("its code names no commit"), "{:?}", cx.texts());
+    let (mut cx, _) = ready();
+    cx.simulate_click("explorer-tab-programs");
+    cx.run_until_parked();
+    assert!(cx.find("explorer-built-chat").is_some(), "{:?}", cx.texts());
+    let unstamped = cx.find("explorer-built-identity");
+    assert!(unstamped.is_none(), "a row names only a commit");
+}

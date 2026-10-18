@@ -56,6 +56,8 @@ mod origin;
 mod program;
 pub mod refuse;
 pub mod schema;
+pub mod section;
+pub mod source;
 pub mod tables;
 
 pub use abi;

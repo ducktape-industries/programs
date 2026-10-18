@@ -4,7 +4,8 @@
 use ::program::{Error, ExecCtx, Program, QueryCtx, decoded};
 
 use crate::rules::{
-    BY, Roster, SCHEDULE, at, cancel, fold, hooks_at, init, roles_at, roster, schedule, views_at,
+    BY, Roster, SCHEDULE, at, cancel, fold, hooks_at, init, roles_at, roster, schedule, sources,
+    views_at,
 };
 use crate::{Genesis, Op, PROGRAM, PageResponse, Pending, Query, Reply};
 
@@ -76,6 +77,10 @@ impl Program for Programs {
                     views: views.into_values().collect(),
                 }
             }
+            Query::Sources => Reply::Sources {
+                height,
+                programs: sources(ctx, height)?,
+            },
         })
     }
 }

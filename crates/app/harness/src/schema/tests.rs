@@ -1,5 +1,6 @@
 use ::program::MockChain;
 use ::program::schema::interface;
+use ::program::section::{CUSTOM, MODULE};
 use programs::{Entry, Genesis, Programs};
 
 use super::*;

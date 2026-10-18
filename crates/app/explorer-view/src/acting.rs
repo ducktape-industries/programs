@@ -518,6 +518,13 @@ impl Network {
             .map(|(role, _)| role)
     }
 
+    // What the code `name` runs says it was built from; `None` where the
+    // programs role named no source for it.
+    pub(crate) fn source_of(&self, name: &str) -> Option<&programs::Provenance> {
+        let built = self.sources.iter().find(|built| built.program == name)?;
+        Some(&built.source)
+    }
+
     pub(crate) fn fills_a_role(&self, name: &str) -> bool {
         self.roles
             .as_ref()

@@ -448,6 +448,25 @@ pub(crate) const IDENTITY_CODE: &str =
 pub(crate) const EXPLORER_CODE: &str =
     "sha256:efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef";
 
+// The commit chat's code names; every other program's code names none.
+pub(crate) const STAMP: &str = "4cd69803b2faa3996ce1ddadbbc9b1d6e7641133";
+
+pub(crate) fn built(entries: &[programs::Entry]) -> Vec<programs::Built> {
+    let source = |program: &str| match program {
+        "chat" => programs::Provenance::Commit(programs::Source {
+            repo: "programs".into(),
+            commit: STAMP.into(),
+        }),
+        _ => programs::Provenance::Unstamped,
+    };
+    let built = entries.iter().map(|entry| programs::Built {
+        program: entry.program.clone(),
+        code: entry.code,
+        source: source(&entry.program),
+    });
+    built.collect()
+}
+
 pub(crate) fn entry(program: &str, code: u8) -> programs::Entry {
     programs::Entry {
         program: program.into(),
@@ -508,6 +527,10 @@ pub(crate) fn programs_hooking(
                 programs::Reply::Scheduled(whole(scheduled.clone()))
             }
             programs::Query::Hooks(_) => programs::Reply::Hooks(hooks.clone()),
+            programs::Query::Sources => programs::Reply::Sources {
+                height: 1,
+                programs: built(&programs),
+            },
             programs::Query::Roles => programs::Reply::Roles(abi::Roles::from_iter([
                 (abi::role::PROGRAMS, programs::PROGRAM),
                 (abi::role::VALIDATORS, valset::PROGRAM),

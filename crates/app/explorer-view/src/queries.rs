@@ -31,12 +31,16 @@ pub(crate) async fn network(host: Host) -> Result<Network, Error> {
         })
         .await?;
     changes.retain(|change| change.height > height);
+    // a programs role whose code predates `Sources` refuses it: its programs name no source
+    let sources = host.query(programs::ask::Sources).await;
+    let sources = sources.map(|(_, built)| built).unwrap_or_default();
     Ok(Network {
         programs,
         views,
         changes,
         hooks,
         roles: Some(roles),
+        sources,
     })
 }
 

@@ -13,7 +13,10 @@ use ::program::{
 };
 use store::{Item, KeyCodec, Map, Set};
 
-use crate::{CODE_KIND, Change, Entry, Genesis, NOTICE, Scheduled, View, role_bound};
+use crate::{
+    Built, CODE_KIND, Change, Entry, Genesis, NOTICE, Provenance, Scheduled, Source, View,
+    role_bound,
+};
 
 const PROGRAMS: Map<ProgramId, Entry> = Map::new("p/").shared();
 const VIEWS: Map<ProgramId, View> = Map::new("v/").shared();
@@ -411,6 +414,30 @@ fn due(ctx: &QueryCtx, height: u64) -> Result<Vec<(At, Change)>, Error> {
 
 pub(crate) fn at(ctx: &QueryCtx, height: u64) -> Result<Vec<Entry>, Error> {
     Ok(roster(ctx, height, &[])?.programs.into_values().collect())
+}
+
+// Each program that runs at `height`, with what its code says it was built from.
+pub(crate) fn sources(ctx: &QueryCtx, height: u64) -> Result<Vec<Built>, Error> {
+    let built = at(ctx, height)?.into_iter().map(|entry| Built {
+        source: provenance(ctx, entry.code),
+        program: entry.program,
+        code: entry.code,
+    });
+    Ok(built.collect())
+}
+
+fn provenance(ctx: &QueryCtx, code: BlobId) -> Provenance {
+    use ::program::source::SECTION;
+    match ::program::section::read(ctx, code, SECTION) {
+        Ok(Some(section)) => match abi::decode::<Source>(&section) {
+            Ok(source) => Provenance::Commit(source),
+            Err(_) => {
+                Provenance::Unread(format!("its {SECTION} section is no repository and commit"))
+            }
+        },
+        Ok(None) => Provenance::Unstamped,
+        Err(error) => Provenance::Unread(error.message),
+    }
 }
 
 pub(crate) fn views_at(ctx: &QueryCtx, height: u64) -> Result<Vec<View>, Error> {

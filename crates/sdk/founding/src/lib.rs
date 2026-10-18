@@ -2,6 +2,7 @@
 //! its schema, any view and any notifier embedded, forge's and halo's params, and a founding file
 //! `ducktape init` reads.
 
+mod diff;
 mod schema;
 
 use std::borrow::Cow;
@@ -15,6 +16,8 @@ use program::schema::roots;
 use wasm_encoder::{CustomSection, Encode, Section};
 use wasmparser::{Encoding, Parser, Payload, Validator};
 
+pub use diff::{Change, Difference, differences};
+pub use program::source::Source;
 pub use schema::{schema, write_schemas};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -25,6 +28,9 @@ pub const DESCRIBE_SECTION: &str = "ducktape.describe";
 /// once per network to post the program's notices (`view::Notifier`).
 pub const NOTIFY_SECTION: &str = "ducktape.notify";
 pub const SCHEMA_SECTION: &str = program::schema::SECTION;
+pub const SOURCE_SECTION: &str = program::source::SECTION;
+// The repository this packer is built in, which every program it stamps names.
+pub const REPO: &str = "programs";
 pub const FOUNDING: &str = include_str!("../founding.toml");
 
 pub const PROGRAMS: [(&str, &str); 7] = [
@@ -94,11 +100,12 @@ pub fn halo_lanes() -> Genesis {
     }
 }
 
-pub fn bundle(release: &Path, out: &Path) -> Result<()> {
+pub fn bundle(release: &Path, out: &Path, source: Option<&Source>) -> Result<()> {
     fs::create_dir_all(out)?;
     let viewed = PROGRAMS.iter().map(|(program, _)| *program);
     for program in viewed.chain(UNVIEWED.iter().copied()) {
-        fs::write(out.join(format!("{program}.wasm")), pack(release, program)?)?;
+        let packed = pack(release, program, source)?;
+        fs::write(out.join(format!("{program}.wasm")), packed)?;
     }
     for view in VIEWS {
         let bytes = read(release, view, "wasm")?;
@@ -128,8 +135,9 @@ pub fn modules(program: &str) -> Option<(Option<&'static str>, Option<&'static s
 }
 
 // One program's code as the bundle writes it: what `make wasm-modules` built for it under
-// `release`, with its view, describe module, schema and notifier embedded.
-pub fn pack(release: &Path, program: &str) -> Result<Vec<u8>> {
+// `release`, with its view, describe module, schema and notifier embedded, and stamped with
+// `source` when the build names the commit it ran at.
+pub fn pack(release: &Path, program: &str, source: Option<&Source>) -> Result<Vec<u8>> {
     let (view, notifier) =
         modules(program).ok_or_else(|| format!("{program} is not a program a founding packs"))?;
     // cargo names a crate's wasm with `_` for `-`, and wasm-describes names the describe
@@ -144,6 +152,9 @@ pub fn pack(release: &Path, program: &str) -> Result<Vec<u8>> {
     packed = embed_schema(&packed, &read(release, program, "schema")?)?;
     if let Some(view) = notifier {
         packed = embed_notify(&packed, &read(release, &format!("{view}.notify"), "wasm")?)?;
+    }
+    if let Some(source) = source {
+        packed = embed_source(&packed, source)?;
     }
     Ok(packed)
 }
@@ -220,6 +231,62 @@ pub fn embed_schema(program: &[u8], schema: &[u8]) -> Result<Vec<u8>> {
         return Err("a schema names an op, a query and a reply".into());
     }
     embed_section(program, SCHEMA_SECTION, schema)
+}
+
+// Stamps `program` as built from `source`: a full commit id, never a branch or a short id.
+pub fn embed_source(program: &[u8], source: &Source) -> Result<Vec<u8>> {
+    let commit = &source.commit;
+    let hex = commit
+        .bytes()
+        .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'));
+    if !(hex && matches!(commit.len(), 40 | 64)) {
+        return Err(
+            format!("{commit:?} is no full commit id: 40 or 64 lowercase hex digits").into(),
+        );
+    }
+    embed_section(program, SOURCE_SECTION, &abi::encode(source))
+}
+
+// The payload of the first custom section called `name` in `module`.
+pub fn section(module: &[u8], name: &str) -> Result<Option<Vec<u8>>> {
+    for payload in Parser::new(0).parse_all(module) {
+        if let Payload::CustomSection(custom) = payload?
+            && custom.name() == name
+        {
+            return Ok(Some(custom.data().to_vec()));
+        }
+    }
+    Ok(None)
+}
+
+// A program's interface and where its code was built from, read from its code (a module, by
+// its schema and source sections) or from a schema `make wasm-schemas` wrote.
+pub struct Interface {
+    pub schema: BorshSchemaContainer,
+    pub code: bool,
+    pub source: Option<Source>,
+}
+
+pub fn interface(bytes: &[u8]) -> Result<Interface> {
+    if !bytes.starts_with(b"\0asm") {
+        let schema = BorshSchemaContainer::try_from_slice(bytes)?;
+        return Ok(Interface {
+            schema,
+            code: false,
+            source: None,
+        });
+    }
+    let schema = section(bytes, SCHEMA_SECTION)?
+        .ok_or_else(|| format!("the code carries no {SCHEMA_SECTION} section"))?;
+    let source = match section(bytes, SOURCE_SECTION)? {
+        Some(stamp) => Some(abi::decode::<Source>(&stamp)?),
+        None => None,
+    };
+    Ok(Interface {
+        schema: BorshSchemaContainer::try_from_slice(&schema)?,
+        code: true,
+        source,
+    })
 }
 
 fn embed_section(program: &[u8], name: &str, payload: &[u8]) -> Result<Vec<u8>> {

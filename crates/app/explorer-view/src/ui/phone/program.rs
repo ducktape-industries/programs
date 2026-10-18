@@ -154,6 +154,14 @@ fn about(
         code_and_copy(code, cx, k),
         k,
     )];
+    rows.extend(network.source_of(name).map(|source| {
+        let built = words::built_from(source);
+        let built = match source {
+            ::programs::Provenance::Commit(_) => data(built),
+            _ => div().child(built),
+        };
+        key_value("explorer-field-built", "Built from", built, k)
+    }));
     rows.extend(blob.map(|blob| {
         key_value(
             "explorer-field-size",

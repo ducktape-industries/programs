@@ -204,6 +204,10 @@ fn a_change_reached_by_the_head_is_running_not_scheduled() {
                 })
             }
             programs::Query::Hooks(_) => programs::Reply::Hooks(Vec::new()),
+            programs::Query::Sources => programs::Reply::Sources {
+                height: 1,
+                programs: Vec::new(),
+            },
             programs::Query::Roles => programs::Reply::Roles(abi::Roles::from_iter([
                 (abi::role::PROGRAMS, programs::PROGRAM),
                 (abi::role::VALIDATORS, valset::PROGRAM),

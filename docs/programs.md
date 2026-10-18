@@ -712,6 +712,14 @@ To add poll to it:
 A hook is also named in both files' top-level `hooks = [...]`, as
 `activity` is.
 
+Each program a founding packs carries the commit it was built from as its
+`ducktape.source` section, and the programs role's `Sources` answers it for
+every program that runs, so a network says which commit each program's code
+came from. Before scheduling new code over a running program, `schema-diff`
+(`crates/sdk/founding`) compares its interface with the running code's: an op
+or query that only grew at its end is safe, anything marked `!` breaks the
+bytes clients and stored ops already hold.
+
 A program added to a running network goes through the programs role instead
 (`ducktape blob put --kind program --wait`, then `Schedule` at a height; [roles.md](roles.md), "Updating a
 program"): its `init` runs with the scheduled params when the height comes.

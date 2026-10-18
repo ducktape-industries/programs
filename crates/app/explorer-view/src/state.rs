@@ -197,6 +197,9 @@ pub struct Network {
     /// the programs bound to the roles the kernel calls
     #[serde(with = "borsh_bytes")]
     pub roles: Option<abi::Roles>,
+    // what each running program's code says it was built from
+    #[serde(default, with = "borsh_bytes")]
+    pub sources: Vec<programs::Built>,
 }
 
 impl Note {

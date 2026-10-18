@@ -24,6 +24,7 @@ pub use store::{PageRequest, PageResponse};
 use ::program::{AccountNumber, ProgramId, Roles};
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
+pub use ::program::source::Source;
 pub use abi::role::programs::{Entry, Genesis, View};
 
 pub const PROGRAM: &str = "programs";
@@ -131,6 +132,10 @@ pub enum Query {
     /// lands at its height whether or not an op has run here since.
     #[ask(Reply::Roster { height: u64, programs: Vec<Entry>, views: Vec<View> })]
     Roster,
+    // What each program that runs now was built from, as its code says, and the query's own
+    // height.
+    #[ask(Reply::Sources { height: u64, programs: Vec<Built> })]
+    Sources,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -149,6 +154,29 @@ pub enum Reply {
         programs: Vec<Entry>,
         views: Vec<View>,
     },
+    Sources {
+        height: u64,
+        programs: Vec<Built>,
+    },
+}
+
+// A program that runs, its code, and what that code says it was built from.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Built {
+    pub program: ProgramId,
+    pub code: abi::BlobId,
+    pub source: Provenance,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum Provenance {
+    // the repository and commit the code's `ducktape.source` section names
+    Commit(Source),
+    // code with no such section: packed before packers stamped one, or from a checkout with
+    // changes git sees
+    Unstamped,
+    // why the code was not read: its blob is not held here, or its section does not decode
+    Unread(String),
 }
 
 /// An op as a person reads it: a title and its fields. The source of the

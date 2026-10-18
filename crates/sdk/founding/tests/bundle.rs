@@ -130,7 +130,7 @@ fn the_bundle_names_every_file_it_holds_and_packs_each_program_with_its_own_view
     let built = tempfile::tempdir().unwrap();
     let out = tempfile::tempdir().unwrap();
     release(built.path());
-    founding::bundle(built.path(), out.path()).unwrap();
+    founding::bundle(built.path(), out.path(), None).unwrap();
 
     for (program, view) in founding::PROGRAMS {
         let packed = fs::read(out.path().join(format!("{program}.wasm"))).unwrap();
@@ -214,11 +214,13 @@ fn one_program_packs_to_the_bytes_the_bundle_holds_for_it() {
     let built = tempfile::tempdir().unwrap();
     let out = tempfile::tempdir().unwrap();
     release(built.path());
-    founding::bundle(built.path(), out.path()).unwrap();
+    let source = stamp(COMMIT);
+    founding::bundle(built.path(), out.path(), Some(&source)).unwrap();
     let viewed = founding::PROGRAMS.iter().map(|(program, _)| *program);
     for program in viewed.chain(founding::UNVIEWED.iter().copied()) {
         let bundled = fs::read(out.path().join(format!("{program}.wasm"))).unwrap();
-        assert_eq!(founding::pack(built.path(), program).unwrap(), bundled);
+        let packed = founding::pack(built.path(), program, Some(&source)).unwrap();
+        assert_eq!(packed, bundled);
     }
     assert_eq!(
         founding::modules("chat"),
@@ -229,11 +231,49 @@ fn one_program_packs_to_the_bytes_the_bundle_holds_for_it() {
     // a program deployed later packs as an unviewed one does, and the bundle holds none of it
     for program in founding::UNFOUNDED {
         assert_eq!(founding::modules(program), Some((None, None)));
-        let packed = founding::pack(built.path(), program).unwrap();
+        let packed = founding::pack(built.path(), program, None).unwrap();
         assert_eq!(section(&packed, "tag"), [program.as_bytes().to_vec()]);
         assert!(!out.path().join(format!("{program}.wasm")).exists());
     }
     // a standalone view rides no program, and nothing packs it
     assert_eq!(founding::modules("explorer_view"), None);
-    assert!(founding::pack(built.path(), "explorer_view").is_err());
+    assert!(founding::pack(built.path(), "explorer_view", None).is_err());
+}
+
+const COMMIT: &str = "4cd69803b2faa3996ce1ddadbbc9b1d6e7641133";
+
+fn stamp(commit: &str) -> founding::Source {
+    founding::Source {
+        repo: founding::REPO.into(),
+        commit: commit.into(),
+    }
+}
+
+#[test]
+fn a_stamp_names_the_commit_and_one_commit_packs_one_set_of_bytes() {
+    let built = tempfile::tempdir().unwrap();
+    release(built.path());
+    let at = |commit: &str| founding::pack(built.path(), "chat", Some(&stamp(commit))).unwrap();
+    let stamped = at(COMMIT);
+    assert_eq!(at(COMMIT), stamped);
+    assert_eq!(
+        section(&stamped, founding::SOURCE_SECTION),
+        [abi::encode(&stamp(COMMIT))]
+    );
+    let read = founding::interface(&stamped).unwrap();
+    assert_eq!((read.code, read.source), (true, Some(stamp(COMMIT))));
+    let unstamped = founding::pack(built.path(), "chat", None).unwrap();
+    assert!(section(&unstamped, founding::SOURCE_SECTION).is_empty());
+    assert_eq!(founding::interface(&unstamped).unwrap().source, None);
+    let other = at("1bb4744a329b8848e797b299687df15fc8cd76b7");
+    assert_ne!(other, stamped);
+    for code in [&stamped, &other] {
+        let stripped = founding::strip_section(code, founding::SOURCE_SECTION).unwrap();
+        assert_eq!(stripped, unstamped, "the stamp is the only difference");
+    }
+    let upper = COMMIT.to_uppercase();
+    for commit in ["4cd69803", "dev", upper.as_str(), ""] {
+        let refused = founding::embed_source(&unstamped, &stamp(commit));
+        assert!(refused.is_err(), "{commit:?}");
+    }
 }

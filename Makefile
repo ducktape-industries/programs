@@ -175,6 +175,12 @@ wasm-schemas:
 
 .PHONY: wasm-modules wasm-reproducible wasm-founding wasm-publish wasm-publish-check dl-stage dl-publish-check
 
+# The commit a founding stamps into each program it packs (its `ducktape.source` section, which
+# the programs role's `Sources` reads back): HEAD while git sees no change in the checkout, else
+# none, so code built from uncommitted work never names a commit it was not built from.
+SOURCE_COMMIT = $(shell test -z "$$(git status --porcelain 2>/dev/null)" && git rev-parse HEAD 2>/dev/null)
+STAMP = $(if $(SOURCE_COMMIT),--commit $(SOURCE_COMMIT))
+
 ## builds every program, its describe module and schema, every view and every
 ## notifier under $(WASM_OUT)/, unpacked.
 wasm-modules: wasm-programs wasm-describes wasm-schemas wasm-views wasm-notifiers
@@ -190,7 +196,8 @@ wasm-modules: wasm-programs wasm-describes wasm-schemas wasm-views wasm-notifier
 ## second publish of it finds it unchanged.
 wasm-founding: wasm-modules
 	@rm -rf $(WASM_OUT)/founding $(WASM_OUT)/founding.tar.gz
-	@$(CARGO) run --locked --release -p founding -- $(WASM_OUT) $(WASM_OUT)/founding
+	@echo "source: $(or $(SOURCE_COMMIT),none: the checkout has changes git sees)"
+	@$(CARGO) run --locked --release -p founding -- $(STAMP) $(WASM_OUT) $(WASM_OUT)/founding
 	@cd $(WASM_OUT)/founding && sha256sum * > SHA256SUMS
 	@tar --sort=name --format=gnu --owner=0 --group=0 --numeric-owner --mtime=@$$(git show -s --format=%ct HEAD) \
 	  -cf $(WASM_OUT)/founding.tar -C $(WASM_OUT) founding && gzip -n $(WASM_OUT)/founding.tar
@@ -209,7 +216,8 @@ wasm-program:
 	@test -n "$(P)" || { echo "usage: make wasm-program P=<program>"; exit 1; }
 	@modules=$$($(CARGO) run --locked -q -p founding --bin modules -- $(P)) && \
 	  $(MAKE) --no-print-directory wasm-programs wasm-describes wasm-schemas wasm-views wasm-notifiers PROGRAMS=$(P) $$modules
-	@$(CARGO) run --locked --release -p founding -- $(WASM_OUT) $(WASM_OUT)/program $(P)
+	@echo "source: $(or $(SOURCE_COMMIT),none: the checkout has changes git sees)"
+	@$(CARGO) run --locked --release -p founding -- $(STAMP) $(WASM_OUT) $(WASM_OUT)/program $(P)
 	@cd $(WASM_OUT)/program && sha256sum $(P).wasm
 
 # `make dl-stage` without a channel stops here, before its build
