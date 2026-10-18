@@ -50,6 +50,12 @@ const ROOMS: u64 = 64;
 // announces only its newest READ_BACK; page back if a badge must count more.
 const READ_BACK: u64 = 256;
 
+/// The most rooms read at once. The host gives each turn of a notifier a
+/// fixed fuel and ends one that runs out, and a turn lands every read
+/// answered since the last: so a turn lands at most this many rooms of
+/// READ_BACK messages, however many rooms a catch-up has.
+const READS: usize = 4;
+
 /// Chat's notifier: what it knows of the reader and the rooms, and what it
 /// has counted and announced.
 #[derive(Default)]
@@ -336,6 +342,10 @@ impl ChatNotices {
             if head <= count.to || self.reading.contains(&room) {
                 continue;
             }
+            if self.reading.len() + due.len() >= READS {
+                // read, and announced, once a read under way lands
+                continue;
+            }
             // announced up to the head now: a list landing before this
             // read reads past it, never this range again
             announced.insert(room.clone(), head);
@@ -399,13 +409,9 @@ impl ChatNotices {
                     .find(|info| info.channel.id == room)
                     .map(|info| info.channel.name.clone())
                     .unwrap_or_default();
-                let meant: Vec<(u64, Notification)> = rows
+                let meant: Vec<&MsgRow> = rows
                     .iter()
-                    .filter(|row| row.seq > from && row.seq <= head)
-                    .filter_map(|row| {
-                        notice(row, me, &name, &notices.session.chain_id, names)
-                            .map(|post| (row.seq, post))
-                    })
+                    .filter(|row| row.seq > from && row.seq <= head && meant_for(row, me))
                     .collect();
                 // counted only onto the count it read past: one the reader
                 // reset meanwhile is counted again at the next settle
@@ -420,10 +426,13 @@ impl ChatNotices {
                     .get(&room)
                     .map_or(news, |count| count.cursor);
                 if !notices.screen.contains(&room) {
-                    for (_, post) in meant
+                    // a notice is made only for what is posted; the rest is
+                    // only counted
+                    for row in meant
                         .into_iter()
-                        .filter(|(seq, _)| *seq > news && *seq > cursor)
+                        .filter(|row| row.seq > news && row.seq > cursor)
                     {
+                        let post = notice(row, me, &name, &notices.session.chain_id, names);
                         cx.host().notify::<NotifyPost>(post);
                     }
                 }
@@ -461,34 +470,28 @@ impl ChatNotices {
     }
 }
 
-/// The notice `row` makes for account `me`, if it is meant for them: it
-/// mentions them, or it is in a direct room they are in. Their own never is.
-pub(crate) fn notice(
-    row: &MsgRow,
-    me: u64,
-    name: &str,
-    chain: &str,
-    names: &Names,
-) -> Option<Notification> {
-    if row.deleted || row.author == Principal::Account(me) {
-        return None;
-    }
-    let direct = dm_peer_of(me, &row.channel_id).is_some();
-    if !direct && !mentions(&row.blocks, me) {
-        return None;
-    }
+/// Whether `row` is meant for account `me`: it mentions them, or it is in
+/// a direct room they are in. Their own never is.
+fn meant_for(row: &MsgRow, me: u64) -> bool {
+    !row.deleted
+        && row.author != Principal::Account(me)
+        && (dm_peer_of(me, &row.channel_id).is_some() || mentions(&row.blocks, me))
+}
+
+/// The notice a row [`meant_for`] account `me` makes.
+fn notice(row: &MsgRow, me: u64, name: &str, chain: &str, names: &Names) -> Notification {
     let sender = names.author(&row.author);
-    Some(Notification {
-        title: match direct {
-            true => sender,
-            false => format!("{sender} mentioned you"),
+    Notification {
+        title: match dm_peer_of(me, &row.channel_id) {
+            Some(_) => sender,
+            None => format!("{sender} mentioned you"),
         },
         body: message_body(&row.blocks, names),
         tag: tag(me, &row.channel_id, name, names),
         // a notice without a link is one the centre cannot open, not a bad one
         link: links::channel_link(chain, &row.channel_id, Some(row.seq)).unwrap_or_default(),
         ..Notification::default()
-    })
+    }
 }
 
 /// The tag a room's notices go under: `@peer` for a direct room, the
