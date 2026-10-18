@@ -165,6 +165,7 @@ fn room((id, name): &(String, String)) -> chat::ChannelInfo {
             archived: false,
         },
         head_seq: 0,
+        meta: Default::default(),
     }
 }
 

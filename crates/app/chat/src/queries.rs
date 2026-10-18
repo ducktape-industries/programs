@@ -6,8 +6,8 @@ use ::program::{Error, QueryCtx, invalid};
 use store::{PageRequest, PageResponse};
 
 use crate::state::{
-    ANSWERED, CHANNEL_TAGS, CHANNELS, HEADS, MESSAGE_IDS, MESSAGES, REACTIONS, REPLIES, ROOTS,
-    TAGS, WORDS, message, messages, newest_first,
+    ANSWERED, CHANNEL_META, CHANNEL_TAGS, CHANNELS, HEADS, MESSAGE_IDS, MESSAGES, REACTIONS,
+    REPLIES, ROOTS, TAGS, WORDS, message, messages, newest_first,
 };
 use crate::text::tag_label;
 use crate::{ChannelInfo, ChannelRow, MessageHits, MsgRow, Principal, Reply, tokens};
@@ -38,7 +38,12 @@ pub fn roots_below(channel_id: &str, seq: u64) -> Vec<u8> {
 
 fn info(ctx: &QueryCtx, channel: ChannelRow) -> Result<ChannelInfo, Error> {
     let head_seq = HEADS.get(ctx, &channel.id)?.unwrap_or(0);
-    Ok(ChannelInfo { channel, head_seq })
+    let meta = CHANNEL_META.get(ctx, &channel.id)?.unwrap_or_default();
+    Ok(ChannelInfo {
+        channel,
+        head_seq,
+        meta,
+    })
 }
 
 pub(crate) fn channels(

@@ -55,6 +55,21 @@ fn rename(name: &str) -> Op {
     }
 }
 
+fn set_meta(value: &str) -> Op {
+    Op::SetChannelMeta {
+        channel_id: "general".into(),
+        key: "category".into(),
+        value: value.into(),
+    }
+}
+
+fn remove_meta() -> Op {
+    Op::RemoveChannelMeta {
+        channel_id: "general".into(),
+        key: "category".into(),
+    }
+}
+
 fn edit(seq: u64) -> Op {
     Op::EditMessage {
         channel_id: "general".into(),
@@ -105,6 +120,31 @@ fn a_channel_is_its_openers_to_rename_archive_and_seat_until_it_lists_others() {
     list(&chain, ADA, "general".into(), bo).unwrap();
     run(&chain, BO, &rename("Bo's")).unwrap();
     run(&chain, BO, &seat).unwrap();
+}
+
+#[test]
+fn a_channels_meta_is_set_and_removed_by_whoever_may_rename_it() {
+    let chain = chain();
+    let unauthorized = Err(code::UNAUTHORIZED.to_owned());
+    for op in [rename("mine"), set_meta("Jobs"), remove_meta()] {
+        assert_eq!(run(&chain, BO, &op), unauthorized, "{op:?}");
+    }
+    for op in [rename("General"), set_meta("Jobs"), remove_meta()] {
+        run(&chain, ADA, &op).unwrap();
+    }
+    let bo = Ownership::Listed(vec![Party::Account(2)]);
+    list(&chain, ADA, "general".into(), bo).unwrap();
+    for op in [rename("Bo's"), set_meta("Teams"), remove_meta()] {
+        run(&chain, BO, &op).unwrap();
+        assert_eq!(run(&chain, CY, &op), unauthorized, "{op:?}");
+    }
+    let opened = Op::CreateChannelWithMeta {
+        channel_id: "bo".into(),
+        name: "bo".into(),
+        post_policy: PostPolicy::Open,
+        meta: [("category".to_owned(), "Jobs".to_owned())].into(),
+    };
+    run(&chain, CY, &opened).unwrap();
 }
 
 #[test]

@@ -47,13 +47,10 @@ pub fn channel_create(
                 .text_size(design::text::TITLE)
                 .child("Create a channel"),
         )
-        .child(
-            div()
-                .text_size(design::text::SECONDARY)
-                .text_color(theme.muted)
-                .child("Channel name"),
-        )
+        .child(caption("Channel name", theme))
         .child(name_field(create, can_submit, cx, theme))
+        .child(caption(words::CATEGORY, theme))
+        .child(category_field(create, can_submit, cx, theme))
         .children(notes(chat, create, theme))
         // one row, as the other views' dialogs: the option, then Cancel
         // beside the primary action
@@ -83,6 +80,13 @@ pub fn channel_create(
     Some(card.into_any_element())
 }
 
+fn caption(text: &'static str, theme: &Theme) -> impl IntoElement {
+    div()
+        .text_size(design::text::SECONDARY)
+        .text_color(theme.muted)
+        .child(text)
+}
+
 /// The name, typed; Enter creates where the dialog may.
 fn name_field(
     create: &ChannelCreate,
@@ -91,20 +95,42 @@ fn name_field(
     theme: &Theme,
 ) -> Input {
     let name = Input::new("chat-create-name", &create.name, "Name the new channel")
+        .placeholder("Channel name");
+    form_field(name, create, can_submit, cx, theme)
+}
+
+fn category_field(
+    create: &ChannelCreate,
+    can_submit: bool,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+) -> Input {
+    let category = Input::new("chat-create-category", &create.category, words::CATEGORY)
+        .placeholder(words::NO_CATEGORY);
+    form_field(category, create, can_submit, cx, theme)
+}
+
+fn form_field(
+    input: Input,
+    create: &ChannelCreate,
+    can_submit: bool,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+) -> Input {
+    let input = input
         .h(design::size::CONTROL)
         .px_2()
         .py_1()
         .border_1()
         .border_color(theme.border_strong)
         .bg(theme.surface)
-        .placeholder("Channel name")
         .disabled(create.busy);
     match can_submit {
-        true => name.on_submit(cx.listener(|chat, _: &(), _window, cx| {
+        true => input.on_submit(cx.listener(|chat, _: &(), _window, cx| {
             cx.notify();
             chat.create_channel(cx)
         })),
-        false => name,
+        false => input,
     }
 }
 

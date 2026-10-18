@@ -30,6 +30,7 @@ fn room(id: &str, name: &str, head_seq: u64) -> ChannelInfo {
             archived: false,
         },
         head_seq,
+        meta: Default::default(),
     }
 }
 

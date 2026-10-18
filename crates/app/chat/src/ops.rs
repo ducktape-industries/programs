@@ -1,14 +1,16 @@
 //! One function per [`Op`](crate::Op), each named by [`Chat::execute`](crate::Chat)'s
 //! match. Each checks first (`rules`), then writes, so a refused op leaves
 //! the store as it found it.
+use std::collections::BTreeMap;
+
 use ::program::{Error, ExecCtx, already_exists, invalid, wrong_state};
 
 use crate::attributed::report;
 use crate::mentions::resolve_typed;
 use crate::rules;
 use crate::state::{
-    ANSWERED, CHANNELS, HEADS, MEMBERS, MESSAGE_IDS, MESSAGES, PARTICIPANTS, REACTIONS, REPLIES,
-    ROOTS, channel, message, newest_first, replace_message, toggle,
+    ANSWERED, CHANNEL_META, CHANNELS, HEADS, MEMBERS, MESSAGE_IDS, MESSAGES, PARTICIPANTS,
+    REACTIONS, REPLIES, ROOTS, channel, message, newest_first, replace_message, toggle,
 };
 use crate::{
     AccountNumber, Block, ChannelRow, MemberRow, MsgRow, PostPolicy, Principal, Reaction,
@@ -23,6 +25,7 @@ pub(crate) fn create_channel(
     id: String,
     name: String,
     post_policy: PostPolicy,
+    meta: BTreeMap<String, String>,
 ) -> Result<(), Error> {
     rules::channel_id(&id, &ctx.env())?;
     rules::name(&name)?;
@@ -30,6 +33,9 @@ pub(crate) fn create_channel(
         return Err(already_exists(format!("channel {id} exists")));
     }
     CHANNELS.put(ctx, &id, &room(ctx, sender, &id, name, post_policy));
+    if !meta.is_empty() {
+        CHANNEL_META.put(ctx, &id, &meta);
+    }
     Ok(())
 }
 
@@ -91,6 +97,30 @@ pub(crate) fn set_archived(ctx: &ExecCtx, id: &str, archived: bool) -> Result<()
     rules::not_dm(&channel)?;
     channel.archived = archived;
     CHANNELS.put(ctx, &channel.id, &channel);
+    Ok(())
+}
+
+pub(crate) fn set_meta(ctx: &ExecCtx, id: &str, key: String, value: String) -> Result<(), Error> {
+    let channel = channel(ctx, id)?;
+    rules::not_dm(&channel)?;
+    let mut meta = CHANNEL_META.get(ctx, &channel.id)?.unwrap_or_default();
+    meta.insert(key, value);
+    CHANNEL_META.put(ctx, &channel.id, &meta);
+    Ok(())
+}
+
+pub(crate) fn remove_meta(ctx: &ExecCtx, id: &str, key: &str) -> Result<(), Error> {
+    let channel = channel(ctx, id)?;
+    rules::not_dm(&channel)?;
+    let mut meta = CHANNEL_META.get(ctx, &channel.id)?.unwrap_or_default();
+    if meta.remove(key).is_none() {
+        return Ok(());
+    }
+    if meta.is_empty() {
+        CHANNEL_META.remove(ctx, &channel.id);
+    } else {
+        CHANNEL_META.put(ctx, &channel.id, &meta);
+    }
     Ok(())
 }
 

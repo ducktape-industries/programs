@@ -38,6 +38,8 @@ mod tests;
 mod text;
 pub mod view;
 
+use std::collections::BTreeMap;
+
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
@@ -56,8 +58,8 @@ pub use text::{plain_text, tags, tokens};
 /// of `program.changes` plays back in a test to say which a block touched.
 pub mod tables {
     pub use crate::state::{
-        ANSWERED, CHANNEL_TAGS, CHANNELS, HEADS, MEMBERS, MESSAGE_IDS, MESSAGES, PARTICIPANTS,
-        REACTIONS, REPLIES, ROOTS, TAGS, WORDS,
+        ANSWERED, CHANNEL_META, CHANNEL_TAGS, CHANNELS, HEADS, MEMBERS, MESSAGE_IDS, MESSAGES,
+        PARTICIPANTS, REACTIONS, REPLIES, ROOTS, TAGS, WORDS,
     };
 }
 
@@ -120,6 +122,21 @@ pub enum Op {
         principal: Principal,
         member: bool,
     },
+    CreateChannelWithMeta {
+        channel_id: String,
+        name: String,
+        post_policy: PostPolicy,
+        meta: BTreeMap<String, String>,
+    },
+    SetChannelMeta {
+        channel_id: String,
+        key: String,
+        value: String,
+    },
+    RemoveChannelMeta {
+        channel_id: String,
+        key: String,
+    },
 }
 
 /// A read. `viewer` is the reader's principals: they decide
@@ -135,10 +152,10 @@ pub enum Op {
 #[ask(Chat)]
 pub enum Query {
     #[ask(Reply::Channels(PageResponse<ChannelInfo>))]
-    #[reads(state::CHANNELS, state::HEADS)]
+    #[reads(state::CHANNELS, state::HEADS, state::CHANNEL_META)]
     Channels { page: PageRequest },
     #[ask(Reply::Channel(Option<ChannelInfo>))]
-    #[reads(state::CHANNELS, state::HEADS)]
+    #[reads(state::CHANNELS, state::HEADS, state::CHANNEL_META)]
     Channel { channel_id: String },
     /// The message an emitted id names (forge finds its own posts so).
     #[ask(Reply::Message(Option<MsgRow>))]
@@ -291,6 +308,8 @@ impl ChannelRow {
 pub struct ChannelInfo {
     pub channel: ChannelRow,
     pub head_seq: u64,
+    #[serde(default)]
+    pub meta: BTreeMap<String, String>,
 }
 
 #[derive(
@@ -474,6 +493,9 @@ fn op_variants_only_append() {
             "AddReaction",
             "RemoveReaction",
             "SetMembership",
+            "CreateChannelWithMeta",
+            "SetChannelMeta",
+            "RemoveChannelMeta",
         ]
     );
 }

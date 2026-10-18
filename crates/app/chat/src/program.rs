@@ -1,10 +1,13 @@
 //! The program: the signer resolved to its principal, then every op and
 //! every query, each handed to its function in `ops.rs` or `queries.rs`.
 
+use std::collections::BTreeMap;
+
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::ops::{
-    create_channel, delete, edit, open_dm, post, react, rename, set_archived, set_membership,
+    create_channel, delete, edit, open_dm, post, react, remove_meta, rename, set_archived,
+    set_membership, set_meta,
 };
 use crate::queries::{
     around, attention, by_id, channel, channels, roots, search, seen_by, tagged, thread,
@@ -27,7 +30,10 @@ impl Program for Chat {
                 channel_id,
                 name,
                 post_policy,
-            } => create_channel(ctx, &sender, channel_id, name, post_policy),
+            } => {
+                let meta = BTreeMap::new();
+                create_channel(ctx, &sender, channel_id, name, post_policy, meta)
+            }
             Op::CreateDmChannel { counterpart, name } => open_dm(ctx, &sender, counterpart, name),
             Op::RenameChannel { channel_id, name } => rename(ctx, &channel_id, name),
             Op::SetChannelArchived {
@@ -62,6 +68,18 @@ impl Program for Chat {
                 principal,
                 member,
             } => set_membership(ctx, &channel_id, principal, member),
+            Op::CreateChannelWithMeta {
+                channel_id,
+                name,
+                post_policy,
+                meta,
+            } => create_channel(ctx, &sender, channel_id, name, post_policy, meta),
+            Op::SetChannelMeta {
+                channel_id,
+                key,
+                value,
+            } => set_meta(ctx, &channel_id, key, value),
+            Op::RemoveChannelMeta { channel_id, key } => remove_meta(ctx, &channel_id, &key),
         }
     }
 

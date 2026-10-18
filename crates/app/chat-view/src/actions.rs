@@ -1,11 +1,14 @@
 //! What a press does: the message menus, the writes (reactions, deletes,
 //! the channel's details, new channels), copying and links.
+use std::collections::BTreeMap;
+
 use chat::{MsgRow, Op, PostPolicy, Principal};
 use view::methods::Submitted;
 use view::prelude::*;
 
 use crate::composer::Target;
 use crate::message::{ChatMessage, chat_message, mark_message_groups, zone};
+use crate::room_list::{CATEGORY, category_of};
 use crate::{Chat, Control, CopyRange, Folded, Menu, Mode, Pane, links};
 use chat::view::Names;
 use std::rc::Rc;
@@ -337,6 +340,39 @@ impl Chat {
         self.submit(Op::RenameChannel { channel_id, name }, cx);
     }
 
+    pub(crate) fn set_category(&mut self, cx: &mut Context<Self>) {
+        let Some(details) = &self.details else { return };
+        let value = details.category_draft.text().trim().to_owned();
+        let channel_id = self.room_id();
+        let unchanged = self
+            .info(&channel_id)
+            .is_some_and(|info| category_of(info) == Some(value.as_str()));
+        if value.is_empty() || unchanged {
+            return;
+        }
+        let key = CATEGORY.to_owned();
+        self.submit(
+            Op::SetChannelMeta {
+                channel_id,
+                key,
+                value,
+            },
+            cx,
+        );
+    }
+
+    pub(crate) fn clear_category(&mut self, cx: &mut Context<Self>) {
+        let channel_id = self.room_id();
+        if channel_id.is_empty() {
+            return;
+        }
+        if let Some(details) = &mut self.details {
+            details.category_draft.reset("");
+        }
+        let key = CATEGORY.to_owned();
+        self.submit(Op::RemoveChannelMeta { channel_id, key }, cx);
+    }
+
     pub(crate) fn set_archived(&mut self, archived: bool, cx: &mut Context<Self>) {
         let channel_id = self.room_id();
         if channel_id.is_empty() {
@@ -413,12 +449,14 @@ impl Chat {
         match self.details.take() {
             Some(_) => {}
             None => {
-                let name = self
-                    .room_info()
+                let info = self.room_info();
+                let name = info
                     .map(|info| info.channel.name.clone())
                     .unwrap_or_default();
+                let category = info.and_then(category_of).unwrap_or_default().to_owned();
                 self.details = Some(crate::Details {
                     name_draft: view::TextField::new(name),
+                    category_draft: view::TextField::new(category),
                     member_draft: Default::default(),
                     sheet: None,
                 });
@@ -523,10 +561,11 @@ impl Chat {
         create.error.clear();
         create.busy = true;
         let members_only = create.members_only;
+        let category = create.category.text().trim().to_string();
         let host = cx.host();
         let created = async move {
             let channel_id = host.ask::<HostId>("channel".into()).await?;
-            let op = new_channel(channel_id.clone(), name, members_only);
+            let op = new_channel(channel_id.clone(), name, members_only, category);
             let submitted = host.ask::<Submit<::chat::Chat>>(op).await?;
             Ok::<_, Error>((channel_id, submitted))
         };
@@ -553,14 +592,22 @@ impl Chat {
     }
 }
 
-fn new_channel(channel_id: String, name: String, members_only: bool) -> Op {
+fn new_channel(channel_id: String, name: String, members_only: bool, category: String) -> Op {
     let post_policy = match members_only {
         true => PostPolicy::MembersOnly,
         false => PostPolicy::Open,
     };
-    Op::CreateChannel {
+    if category.is_empty() {
+        return Op::CreateChannel {
+            channel_id,
+            name,
+            post_policy,
+        };
+    }
+    Op::CreateChannelWithMeta {
         channel_id,
         name,
         post_policy,
+        meta: BTreeMap::from([(CATEGORY.to_owned(), category)]),
     }
 }

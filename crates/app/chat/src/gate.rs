@@ -14,12 +14,15 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
     match op {
         Op::RenameChannel { channel_id, .. }
         | Op::SetChannelArchived { channel_id, .. }
-        | Op::SetMembership { channel_id, .. } => vec![Need::write(channel_id.clone())],
+        | Op::SetMembership { channel_id, .. }
+        | Op::SetChannelMeta { channel_id, .. }
+        | Op::RemoveChannelMeta { channel_id, .. } => vec![Need::write(channel_id.clone())],
         Op::EditMessage {
             channel_id, seq, ..
         } => vec![Need::write(message_key(channel_id, *seq))],
         Op::DeleteMessage { channel_id, seq } => vec![Need::delete(message_key(channel_id, *seq))],
         Op::CreateChannel { .. }
+        | Op::CreateChannelWithMeta { .. }
         | Op::CreateDmChannel { .. }
         | Op::PostMessage { .. }
         | Op::AddReaction { .. }

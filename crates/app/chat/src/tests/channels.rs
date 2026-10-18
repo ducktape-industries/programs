@@ -1,16 +1,15 @@
-//! Channels: creating, dm rooms, renaming, archiving, membership.
+//! Channels: creating, dm rooms, renaming, archiving, membership, meta.
+use std::collections::BTreeMap;
+
 use super::*;
+use crate::state::CHANNEL_META;
 use crate::{ChannelInfo, dm_channel_id};
 
 #[test]
 fn a_channel_is_created_once_owned_by_its_creator() {
     let mut chat = Chat::with_channel(PostPolicy::Open);
-    let Reply::Channel(Some(ChannelInfo { channel, head_seq })) = chat.ask(Query::Channel {
-        channel_id: "general".into(),
-    }) else {
-        panic!("the channel reads back");
-    };
-    assert_eq!((channel.owner, head_seq), (ADA, 0));
+    let info = chat.ask_channel("general");
+    assert_eq!((info.channel.owner, info.head_seq), (ADA, 0));
     let again = chat.refused(&BO, create("general", PostPolicy::Open));
     assert_eq!(again, code::ALREADY_EXISTS);
 }
@@ -249,6 +248,92 @@ fn members_list_by_account_number_across_pages() {
     assert_eq!(listed, numbers);
 }
 
+#[test]
+fn a_channel_keeps_whatever_meta_it_is_given_and_reads_it_back() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    assert!(meta_of(&chat, "general").is_empty(), "made without meta");
+    chat.ok(&ADA, set_meta("category", "Jobs"));
+    chat.ok(&ADA, set_meta("", "any key, any value"));
+    chat.ok(&ADA, set_meta("category", "Teams"));
+    let held = meta(&[("", "any key, any value"), ("category", "Teams")]);
+    assert_eq!(meta_of(&chat, "general"), held);
+    let Reply::Channels(listed) = chat.ask(Query::Channels {
+        page: PageRequest::default(),
+    }) else {
+        panic!("channels answer channels");
+    };
+    assert_eq!(listed.items[0].meta, held);
+    chat.ok(&ADA, remove_meta("category"));
+    let left = meta(&[("", "any key, any value")]);
+    assert_eq!(meta_of(&chat, "general"), left);
+    chat.ok(&ADA, remove_meta(""));
+    assert!(
+        !CHANNEL_META.has(&chat.reads(), &"general".to_owned()),
+        "the last key takes its row"
+    );
+    let before = chat.store.borrow().state.clone();
+    chat.ok(&ADA, remove_meta("category"));
+    assert_eq!(
+        chat.store.borrow().state,
+        before,
+        "a key that is not there is no change"
+    );
+    chat.ok(&ADA, archive(true));
+    chat.ok(&ADA, set_meta("category", "Old"));
+    assert_eq!(meta_of(&chat, "general"), meta(&[("category", "Old")]));
+}
+
+#[test]
+fn a_channel_created_with_meta_holds_it_and_passes_every_create_check() {
+    let mut chat = Chat::default();
+    let jobs = || meta(&[("category", "Jobs")]);
+    chat.ok(&ADA, create_with_meta("j-020", jobs()));
+    assert_eq!(meta_of(&chat, "j-020"), jobs());
+    assert_eq!(chat.ask_channel("j-020").channel.owner, ADA);
+    chat.ok(&ADA, create_with_meta("plain", BTreeMap::new()));
+    assert!(meta_of(&chat, "plain").is_empty());
+    assert!(!CHANNEL_META.has(&chat.reads(), &"plain".to_owned()));
+    let dm = dm_channel_id(1, 2);
+    for (id, refusal) in [
+        ("j-020", code::ALREADY_EXISTS),
+        ("forge:repo:1", code::UNAUTHORIZED),
+        (dm.as_str(), code::UNAUTHORIZED),
+        ("a/b", code::INVALID_INPUT),
+    ] {
+        let refused = chat.refused(&BO, create_with_meta(id, jobs()));
+        assert_eq!(refused, refusal, "{id}");
+    }
+    let blank = Op::CreateChannelWithMeta {
+        channel_id: "blank".into(),
+        name: "  ".into(),
+        post_policy: PostPolicy::Open,
+        meta: jobs(),
+    };
+    assert_eq!(chat.refused(&ADA, blank), code::INVALID_INPUT);
+}
+
+#[test]
+fn meta_takes_a_channel_that_exists_and_no_dm_takes_any() {
+    let mut chat = Chat::default();
+    chat.ok(&ADA, open_dm(2));
+    let dm = dm_channel_id(1, 2);
+    let set = |channel: &str| Op::SetChannelMeta {
+        channel_id: channel.into(),
+        key: "category".into(),
+        value: "Jobs".into(),
+    };
+    let remove = |channel: &str| Op::RemoveChannelMeta {
+        channel_id: channel.into(),
+        key: "category".into(),
+    };
+    for who in [&ADA, &BO, &CY] {
+        assert_eq!(chat.refused(who, set(&dm)), code::UNAUTHORIZED);
+        assert_eq!(chat.refused(who, remove(&dm)), code::UNAUTHORIZED);
+    }
+    assert_eq!(chat.refused(&ADA, set("nowhere")), code::NOT_FOUND);
+    assert_eq!(chat.refused(&ADA, remove("nowhere")), code::NOT_FOUND);
+}
+
 pub(super) fn open_dm(counterpart: u64) -> Op {
     Op::CreateDmChannel {
         counterpart,
@@ -284,6 +369,52 @@ pub(super) fn edit(seq: u64, text: &str) -> Op {
         seq,
         blocks: parse_message(text),
         base_rev: None,
+    }
+}
+
+fn set_meta(key: &str, value: &str) -> Op {
+    Op::SetChannelMeta {
+        channel_id: "general".into(),
+        key: key.into(),
+        value: value.into(),
+    }
+}
+
+fn remove_meta(key: &str) -> Op {
+    Op::RemoveChannelMeta {
+        channel_id: "general".into(),
+        key: key.into(),
+    }
+}
+
+fn create_with_meta(id: &str, meta: BTreeMap<String, String>) -> Op {
+    Op::CreateChannelWithMeta {
+        channel_id: id.into(),
+        name: id.into(),
+        post_policy: PostPolicy::Open,
+        meta,
+    }
+}
+
+pub(super) fn meta(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .collect()
+}
+
+fn meta_of(chat: &Chat, id: &str) -> BTreeMap<String, String> {
+    chat.ask_channel(id).meta
+}
+
+impl Chat {
+    fn ask_channel(&self, id: &str) -> ChannelInfo {
+        let Reply::Channel(Some(info)) = self.ask(Query::Channel {
+            channel_id: id.into(),
+        }) else {
+            panic!("{id} reads back");
+        };
+        info
     }
 }
 

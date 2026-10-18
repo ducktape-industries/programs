@@ -1,6 +1,7 @@
 //! The channel and direct-message pane, authored as native GPUI elements.
 
 use view::prelude::*;
+use view::{Div, Stateful};
 
 use chat::{ChannelInfo, Principal};
 
@@ -82,7 +83,6 @@ fn search(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -
         })
 }
 
-/// The rooms in two sections: channels, direct messages.
 /// A program's own rooms (`forge:…` review threads) are its to show.
 fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> impl IntoElement {
     let mut list = div()
@@ -114,7 +114,7 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         ));
     }
     let open = chat.room.as_ref().map(|room| room.id.as_str());
-    let room_list = chat.room_list();
+    let room_list = chat.sidebar_rooms();
     // one Tab stop under the header: ↑ ↓ walk the channels and the direct
     // messages, Enter opens the active room
     let ids = room_list.ids();
@@ -140,6 +140,19 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         let row = channel_button(chat, info, open == Some(id), index == at, cx, theme);
         box_ = box_.child(row);
         index += 1;
+    }
+    for section in room_list.sections {
+        box_ = box_.child(section_title(
+            format!("chat-sidebar-category-{}", section.category),
+            section.category,
+            theme,
+        ));
+        for info in section.channels {
+            let id = info.channel.id.as_str();
+            let row = channel_button(chat, info, open == Some(id), index == at, cx, theme);
+            box_ = box_.child(row);
+            index += 1;
+        }
     }
     box_ = box_.child(section_header(
         "chat-sidebar-dm-header",
@@ -215,6 +228,10 @@ fn section_header(
     control: impl IntoElement,
     theme: &Theme,
 ) -> impl IntoElement {
+    section_title(id, label, theme).child(control)
+}
+
+fn section_title(id: impl Into<ElementId>, label: &str, theme: &Theme) -> Stateful<Div> {
     div()
         .id(id)
         .flex()
@@ -225,7 +242,6 @@ fn section_header(
         .text_size(design::text::CAPTION)
         .text_color(theme.sidebar_muted)
         .child(div().flex_1().child(label.to_owned()))
-        .child(control)
 }
 
 fn quiet(id: impl Into<ElementId>, text: impl Into<String>, theme: &Theme) -> impl IntoElement {

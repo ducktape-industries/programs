@@ -14,6 +14,7 @@ use view::methods::{Changes, HostId, HostSession, HostVisible, Session, Submit};
 
 mod agents;
 mod archived;
+mod categories;
 mod dms;
 mod menus;
 mod message;
@@ -44,6 +45,7 @@ fn channel(id: &str, name: &str, head_seq: u64) -> ChannelInfo {
             archived: false,
         },
         head_seq,
+        meta: Default::default(),
     }
 }
 

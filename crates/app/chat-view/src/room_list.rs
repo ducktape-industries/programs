@@ -11,14 +11,22 @@ use crate::Chat;
 use crate::names::dm_peer_of;
 use crate::queries;
 
+pub(crate) const CATEGORY: &str = "category";
+
 // A direct room in the list: the room and the other person.
 pub(crate) struct DmEntry<'a> {
     pub info: &'a ChannelInfo,
     pub peer: u64,
 }
 
+pub(crate) struct Section<'a> {
+    pub category: &'a str,
+    pub channels: Vec<&'a ChannelInfo>,
+}
+
 pub(crate) struct RoomList<'a> {
     pub channels: Vec<&'a ChannelInfo>,
+    pub sections: Vec<Section<'a>>,
     pub dms: Vec<DmEntry<'a>>,
     // the rooms left out because they are archived
     pub archived: usize,
@@ -27,11 +35,45 @@ pub(crate) struct RoomList<'a> {
 impl RoomList<'_> {
     /// Every room's id, in list order: what the arrows walk.
     pub(crate) fn ids(&self) -> Vec<String> {
-        let channels = self.channels.iter().map(|info| info.channel.id.clone());
+        let sectioned = self.sections.iter().flat_map(|section| &section.channels);
+        let channels = self
+            .channels
+            .iter()
+            .chain(sectioned)
+            .map(|info| info.channel.id.clone());
         channels
             .chain(self.dms.iter().map(|dm| dm.info.channel.id.clone()))
             .collect()
     }
+}
+
+pub(crate) fn category_of(info: &ChannelInfo) -> Option<&str> {
+    let category = info.meta.get(CATEGORY)?.trim();
+    (!category.is_empty()).then_some(category)
+}
+
+fn grouped(channels: Vec<&ChannelInfo>) -> (Vec<&ChannelInfo>, Vec<Section<'_>>) {
+    let mut plain = Vec::new();
+    let mut sections: Vec<Section<'_>> = Vec::new();
+    for info in channels {
+        let Some(category) = category_of(info) else {
+            plain.push(info);
+            continue;
+        };
+        match sections.iter_mut().find(|held| held.category == category) {
+            Some(section) => section.channels.push(info),
+            None => sections.push(Section {
+                category,
+                channels: vec![info],
+            }),
+        }
+    }
+    sections.sort_by_cached_key(section_order);
+    (plain, sections)
+}
+
+fn section_order<'a>(section: &Section<'a>) -> (String, &'a str) {
+    (section.category.to_lowercase(), section.category)
 }
 
 pub(crate) struct DmChoice {
@@ -66,6 +108,18 @@ impl Chat {
         let mut list = self.held_rooms();
         list.dms.sort_by_key(|dm| Reverse(self.recency(dm)));
         list
+    }
+
+    // the desktop's list: the same rooms, with each categorized channel
+    // filed under its section; the phone shows no categories
+    pub(crate) fn sidebar_rooms(&self) -> RoomList<'_> {
+        let list = self.room_list();
+        let (channels, sections) = grouped(list.channels);
+        RoomList {
+            channels,
+            sections,
+            ..list
+        }
     }
 
     fn recency(&self, dm: &DmEntry) -> u64 {
@@ -103,6 +157,7 @@ impl Chat {
         }
         RoomList {
             channels,
+            sections: Vec::new(),
             dms,
             archived,
         }

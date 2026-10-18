@@ -1,6 +1,8 @@
 //! [`describe`]: an op as a person reads it, a title and its fields. The
 //! source of the `ducktape.describe` module this program ships
 //! (`make wasm-describes`); the explorer shows it for every chat op.
+use std::collections::BTreeMap;
+
 use describe::{Description, Field, Value, field};
 
 use crate::{Op, PostPolicy, Principal, dm_peers, plain_text};
@@ -12,20 +14,7 @@ pub fn describe(op: &Op) -> Description {
             channel_id,
             name,
             post_policy,
-        } => (
-            "Create channel",
-            channel_id,
-            vec![
-                field("name", Value::text(name)),
-                field(
-                    "posting",
-                    Value::text(match post_policy {
-                        PostPolicy::Open => "open",
-                        PostPolicy::MembersOnly => "members only",
-                    }),
-                ),
-            ],
-        ),
+        } => ("Create channel", channel_id, created(name, post_policy)),
         Op::CreateDmChannel { counterpart, name } => {
             return Description {
                 title: "Open a DM".into(),
@@ -120,12 +109,41 @@ pub fn describe(op: &Op) -> Description {
             channel_id,
             vec![field("member", principal(who))],
         ),
+        Op::CreateChannelWithMeta {
+            channel_id,
+            name,
+            post_policy,
+            meta,
+        } => {
+            let mut fields = created(name, post_policy);
+            fields.push(field("meta", entries(meta)));
+            ("Create channel", channel_id, fields)
+        }
+        Op::SetChannelMeta {
+            channel_id,
+            key,
+            value,
+        } => (
+            "Set channel meta",
+            channel_id,
+            vec![
+                field("key", Value::text(key)),
+                field("value", Value::text(value)),
+            ],
+        ),
+        Op::RemoveChannelMeta { channel_id, key } => (
+            "Remove channel meta",
+            channel_id,
+            vec![field("key", Value::text(key))],
+        ),
     };
     let mut all = place(channel);
     all.extend(fields);
     // a created channel's id is opaque; its name is what a person picked
     let shown = match op {
-        Op::CreateChannel { name, .. } => format!("#{name}"),
+        Op::CreateChannel { name, .. } | Op::CreateChannelWithMeta { name, .. } => {
+            format!("#{name}")
+        }
         _ => room(channel),
     };
     Description {
@@ -135,6 +153,25 @@ pub fn describe(op: &Op) -> Description {
 }
 
 describe::export!(Op, describe);
+
+fn created(name: &str, post_policy: &PostPolicy) -> Vec<Field> {
+    let posting = match post_policy {
+        PostPolicy::Open => "open",
+        PostPolicy::MembersOnly => "members only",
+    };
+    vec![
+        field("name", Value::text(name)),
+        field("posting", Value::text(posting)),
+    ]
+}
+
+fn entries(meta: &BTreeMap<String, String>) -> Value {
+    Value::List(
+        meta.iter()
+            .map(|(key, value)| Value::text(format!("{key}: {value}")))
+            .collect(),
+    )
+}
 
 /// A channel as `describe` titles it: `#design`, or `DM` for a dm room,
 /// whose id is no name a person picked. Its two accounts are the

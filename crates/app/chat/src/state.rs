@@ -3,6 +3,8 @@
 //! typed (`store::KeyCodec`: integers big-endian, strings and principals
 //! NUL-terminated, so names list by name), values borsh. A tuple key scans by its leading
 //! elements, which is how every "in this channel" read works.
+use std::collections::BTreeMap;
+
 use ::program::{Error, ExecCtx, QueryCtx, not_found};
 use store::{Map, Set};
 
@@ -12,6 +14,7 @@ type ChannelId = String;
 type Seq = u64;
 
 pub const CHANNELS: Map<ChannelId, ChannelRow> = Map::new("channel/");
+pub const CHANNEL_META: Map<ChannelId, BTreeMap<String, String>> = Map::new("channel-meta/");
 /// The newest message's seq, per channel.
 pub const HEADS: Map<ChannelId, Seq> = Map::new("head/");
 pub const MESSAGES: Map<(ChannelId, Seq), MsgRow> = Map::new("message/");

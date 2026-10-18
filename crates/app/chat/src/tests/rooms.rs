@@ -1,5 +1,5 @@
 //! How an op reads in the explorer (`describe`).
-use super::channels::open_dm;
+use super::channels::{meta, open_dm};
 use super::*;
 use crate::{describe, dm_channel_id};
 
@@ -44,4 +44,33 @@ fn a_dm_title_names_no_account_numbers_and_its_accounts_are_fields() {
         describe(&post("design", "m", "hi", None)).title,
         "Post in #design"
     );
+}
+
+#[test]
+fn a_channels_meta_reads_as_its_keys_and_values() {
+    use describe::{Value, field};
+    let created = describe(&Op::CreateChannelWithMeta {
+        channel_id: "channel-1".into(),
+        name: "j-020".into(),
+        post_policy: PostPolicy::Open,
+        meta: meta(&[("category", "Jobs")]),
+    });
+    assert_eq!(created.title, "Create channel · #j-020");
+    let entries = field("meta", Value::List(vec![Value::text("category: Jobs")]));
+    assert!(created.fields.contains(&entries));
+    let set = describe(&Op::SetChannelMeta {
+        channel_id: "j-020".into(),
+        key: "category".into(),
+        value: "Jobs".into(),
+    });
+    assert_eq!(set.title, "Set channel meta · #j-020");
+    let value = field("value", Value::text("Jobs"));
+    assert!(set.fields.contains(&value));
+    let removed = describe(&Op::RemoveChannelMeta {
+        channel_id: "j-020".into(),
+        key: "category".into(),
+    });
+    assert_eq!(removed.title, "Remove channel meta · #j-020");
+    let key = field("key", Value::text("category"));
+    assert!(removed.fields.contains(&key));
 }
