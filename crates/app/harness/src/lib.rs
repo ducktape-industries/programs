@@ -503,7 +503,6 @@ pub enum Query {
     #[ask(Reply::Topic(Option<String>))]
     #[reads(state::TOPICS)]
     Topic { thread: u64 },
-    /// the agent's conversations bound to a place (`OpenThread`), by place
     #[ask(Reply::Threads(PageResponse<ThreadRow>))]
     #[reads(state::BOUND, state::THREADS)]
     Bound {
