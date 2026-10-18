@@ -7,6 +7,8 @@ use std::collections::HashMap;
 
 use harness::{Body, Frame, Said, Stop};
 
+use crate::words::upper_first;
+
 pub(crate) enum Entry<'a> {
     /// a person's message, or the chain's
     Wrote(&'a Frame),
@@ -158,7 +160,7 @@ impl<'a> Work<'a> {
                 (None, count) => format!("{tool} ×{count}"),
             })
             .collect();
-        capitalized(&words.join(", "))
+        upper_first(&words.join(", "))
     }
 }
 
@@ -195,14 +197,6 @@ fn written(input: &str) -> Option<String> {
     let input: serde_json::Value = serde_json::from_str(input).ok()?;
     let path = input.get("path")?.as_str()?;
     path.rsplit('/').next().map(str::to_owned)
-}
-
-fn capitalized(words: &str) -> String {
-    let mut chars = words.chars();
-    chars
-        .next()
-        .map(|first| first.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
 }
 
 /// A span of milliseconds as a person reads it: `40 s`, `2 min`, `3 h`.
