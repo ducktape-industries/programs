@@ -4,11 +4,17 @@
 use std::collections::BTreeSet;
 
 use ::program::Env;
-use ::program::{Error, ExecCtx, QueryCtx, capacity, invalid, stale, wrong_state};
+use ::program::{
+    AccountNumber, Error, ExecCtx, QueryCtx, capacity, invalid, stale, unexpected_reply,
+    wrong_state,
+};
+use gitcore::merge::{Clash, Conflict};
+use gitcore::{Commit, Hash, Kind, Object, Objects, Oid, Signature, WriteObjects};
 
 use crate::contract::*;
 use crate::discussion::{self, Event};
-use crate::ops::require_named;
+use crate::objects::{ObjectWriter, object_not_held};
+use crate::ops::{cap, refusal_of, require_named};
 use crate::state::{
     load_bounds, load_change, load_ref, load_repo, next, next_message, next_number, parse_oid,
     peek_message, repo_hash, resolve, save_change, save_review, set_ref,
@@ -207,37 +213,18 @@ pub(crate) fn merge_heads(
     let expected_into = parse_oid(hash, &merge.expected_into)?;
     let expected_from = parse_oid(hash, &merge.expected_from)?;
     let result = parse_oid(hash, &merge.result)?;
-    let heads_moved = load_ref(ctx, repo, &merge.into, hash)? != Some(expected_into)
-        || resolve(ctx, repo, &merge.from, hash)? != expected_from;
-    if heads_moved {
-        return Err(stale("source or target head moved; recompute the merge"));
-    }
+    let ends = (merge.into.as_slice(), &merge.from);
+    still_at(ctx, repo, hash, ends, (expected_into, expected_from))?;
     if result == expected_into || expected_from == expected_into {
         return Err(wrong_state("merge does not advance the target"));
     }
     if let Some(n) = merge.change {
-        let mut change = load_change(ctx, repo, n)?;
-        require_open(&change)?;
-        let same_source = match (&change.from, &merge.from) {
-            (Revision::Oid(a), Revision::Oid(b)) => parse_oid(hash, a)? == parse_oid(hash, b)?,
-            (a, b) => a == b,
-        };
-        if change.into != merge.into || !same_source {
-            return Err(invalid("merge endpoints differ from the change"));
-        }
-        change.state = ChangeState::Merged;
-        change.merge_oid = Some(result.to_hex());
-        change.merged_by = Some(actor.clone());
-        change.merged_heads = Some(MergedHeads {
+        let change = open_on(ctx, repo, hash, n, ends)?;
+        let heads = MergedHeads {
             source: expected_from.to_hex(),
             target: expected_into.to_hex(),
-        });
-        touched(&mut change, &env);
-        change.system_seq = next(change.system_seq)?;
-        fits(ctx, &change)?;
-        let message = next_message(ctx)?;
-        save_change(ctx, repo, &change)?;
-        discussion::post(ctx, &change, message, Event::Merged);
+        };
+        merged(ctx, actor, repo, change, heads, &result)?;
     }
     set_ref(ctx, repo, &merge.into, &result);
     Ok(OpReply::Merged {
@@ -245,6 +232,255 @@ pub(crate) fn merge_heads(
         oid: result.to_hex(),
         change: merge.change,
     })
+}
+
+// Both heads still where the merge read them: `into` at the first, `from` at the second.
+fn still_at(
+    ctx: &QueryCtx,
+    repo: &str,
+    hash: Hash,
+    (into, from): (&[u8], &Revision),
+    (expected_into, expected_from): (Oid, Oid),
+) -> Result<(), Error> {
+    let heads_moved = load_ref(ctx, repo, into, hash)? != Some(expected_into)
+        || resolve(ctx, repo, from, hash)? != expected_from;
+    if heads_moved {
+        return Err(stale("source or target head moved; recompute the merge"));
+    }
+    Ok(())
+}
+
+// Change `n`, open, on the merge's own endpoints.
+fn open_on(
+    ctx: &QueryCtx,
+    repo: &str,
+    hash: Hash,
+    n: u64,
+    (into, from): (&[u8], &Revision),
+) -> Result<Change, Error> {
+    let change = load_change(ctx, repo, n)?;
+    require_open(&change)?;
+    let same_source = match (&change.from, from) {
+        (Revision::Oid(a), Revision::Oid(b)) => parse_oid(hash, a)? == parse_oid(hash, b)?,
+        (a, b) => a == b,
+    };
+    if change.into != into || !same_source {
+        return Err(invalid("merge endpoints differ from the change"));
+    }
+    Ok(change)
+}
+
+// The change merged at `result` by `actor`, and its line in the change's channel.
+fn merged(
+    ctx: &ExecCtx,
+    actor: &Principal,
+    repo: &str,
+    mut change: Change,
+    heads: MergedHeads,
+    result: &Oid,
+) -> Result<(), Error> {
+    let env = ctx.env();
+    change.state = ChangeState::Merged;
+    change.merge_oid = Some(result.to_hex());
+    change.merged_by = Some(actor.clone());
+    change.merged_heads = Some(heads);
+    touched(&mut change, &env);
+    change.system_seq = next(change.system_seq)?;
+    fits(ctx, &change)?;
+    let message = next_message(ctx)?;
+    save_change(ctx, repo, &change)?;
+    discussion::post(ctx, &change, message, Event::Merged);
+    Ok(())
+}
+
+// What `SquashMerge` carries besides its repository.
+pub(crate) struct SquashRequest {
+    pub into: Vec<u8>,
+    pub from: Revision,
+    pub expected_into: String,
+    pub expected_from: String,
+    pub message: Option<String>,
+    pub change: Option<u64>,
+}
+
+// One squash commit forge builds itself: what `from` changed since its merge base with
+// `into`, merged onto `into`'s tree, with `into`'s head its one parent; then `into` moves to
+// it under `Merge`'s CAS. A conflict refuses it, naming every path, and writes nothing.
+pub(crate) fn squash(
+    ctx: &ExecCtx,
+    actor: &Principal,
+    repo: &str,
+    squash: SquashRequest,
+) -> Result<OpReply, Error> {
+    let env = ctx.env();
+    let record = load_repo(ctx, repo)?;
+    check_endpoints(&squash.into, &squash.from)?;
+    let hash = repo_hash(&record);
+    let expected_into = parse_oid(hash, &squash.expected_into)?;
+    let expected_from = parse_oid(hash, &squash.expected_from)?;
+    let ends = (squash.into.as_slice(), &squash.from);
+    still_at(ctx, repo, hash, ends, (expected_into, expected_from))?;
+    if expected_from == expected_into {
+        return Err(wrong_state("merge does not advance the target"));
+    }
+    let change = match squash.change {
+        Some(n) => Some(open_on(ctx, repo, hash, n, ends)?),
+        None => None,
+    };
+    let message = message_of(squash.message, change.as_ref())?;
+    let bounds = load_bounds(ctx)?;
+    let mut objects = ObjectWriter::new(ctx, hash);
+    let walk = cap(bounds.log_walk);
+    let base = gitcore::walk::merge_base(&objects, &expected_from, &expected_into, walk)
+        .map_err(refusal_of)?
+        .ok_or_else(|| {
+            wrong_state("the branches share no history: no merge base to squash from")
+        })?;
+    if base == expected_from {
+        return Err(wrong_state("merge does not advance the target"));
+    }
+    let base = root_tree(&objects, &base)?;
+    let ours = root_tree(&objects, &expected_into)?;
+    let theirs = root_tree(&objects, &expected_from)?;
+    let cost = cap(bounds.merge_cost);
+    let merge =
+        gitcore::merge::trees(&objects, Some(&base), &ours, &theirs, cost).map_err(refusal_of)?;
+    if !merge.conflicts.is_empty() {
+        return Err(wrong_state(conflicted(&merge.conflicts)));
+    }
+    let committer = signature(ctx, require_named(actor)?)?;
+    let author = match change.as_ref().and_then(|change| change.author.account()) {
+        Some(author) => signature(ctx, author)?,
+        None => committer.clone(),
+    };
+    let commit = Commit {
+        tree: merge.tree,
+        parents: vec![expected_into],
+        author,
+        committer,
+        extra: Vec::new(),
+        message,
+    };
+    let body = commit.serialize();
+    let id = gitcore::oid_of(hash, Kind::Commit, &body).map_err(refusal_of)?;
+    let made = merge
+        .objects
+        .into_iter()
+        .chain([(id, Object::new(Kind::Commit, body))]);
+    for (oid, object) in made {
+        if object.body.len() as u64 > bounds.max_object_size {
+            return Err(capacity(format!(
+                "the squash makes an object of {} bytes; forge takes at most {} (Bounds.max_object_size)",
+                object.body.len(),
+                bounds.max_object_size
+            )));
+        }
+        objects.keep(oid, object).map_err(refusal_of)?;
+    }
+    objects.flush()?;
+    if let Some(change) = change {
+        let heads = MergedHeads {
+            source: expected_from.to_hex(),
+            target: expected_into.to_hex(),
+        };
+        merged(ctx, actor, repo, change, heads, &id)?;
+    }
+    set_ref(ctx, repo, &squash.into, &id);
+    Ok(OpReply::Merged {
+        height: env.height,
+        oid: id.to_hex(),
+        change: squash.change,
+    })
+}
+
+// The root tree of the commit `id`.
+fn root_tree(objects: &impl Objects, id: &Oid) -> Result<Oid, Error> {
+    let object = objects
+        .get(id)
+        .map_err(refusal_of)?
+        .ok_or_else(|| object_not_held(id))?;
+    if object.kind != Kind::Commit {
+        return Err(invalid(format!("{id} is not a commit")));
+    }
+    Ok(Commit::parse(&object.body, id.hash())
+        .map_err(refusal_of)?
+        .tree)
+}
+
+// The squash's message: the one given, or the change's title and number, a blank line and
+// its body.
+fn message_of(given: Option<String>, change: Option<&Change>) -> Result<Vec<u8>, Error> {
+    let message = match (given, change) {
+        (Some(given), _) if given.trim().is_empty() => {
+            return Err(invalid("a squash's message is nonblank"));
+        }
+        (Some(given), _) => given,
+        (None, Some(change)) => match change.body.trim() {
+            "" => format!("{} (change {})", change.title.trim(), change.n),
+            body => format!("{} (change {})\n\n{body}", change.title.trim(), change.n),
+        },
+        (None, None) => {
+            return Err(invalid(
+                "a squash without a change needs a message to name it by",
+            ));
+        }
+    };
+    let mut message = message.into_bytes();
+    if !message.ends_with(b"\n") {
+        message.push(b'\n');
+    }
+    Ok(message)
+}
+
+// Who a squash names, as `forge_commit` signs an agent's commit: the account by its identity
+// name (git's `<`, `>` and control characters left out) at `<number>@<chain id>`, at the
+// block's time, so every validator writes the same bytes.
+fn signature(ctx: &QueryCtx, account: AccountNumber) -> Result<Signature, Error> {
+    use abi::role::identity::{Query, Reply};
+    let identity = &ctx.env().role(abi::role::IDENTITY)?.clone();
+    let profile = match ctx.query::<Query, Reply>(identity, &Query::Profile(account))? {
+        Reply::Profile(profile) => profile,
+        other => return Err(unexpected_reply(identity, "Profile", &other)),
+    };
+    let name: String = profile
+        .map(|profile| profile.name)
+        .unwrap_or_default()
+        .chars()
+        .filter(|c| !matches!(c, '<' | '>') && !c.is_control())
+        .collect();
+    let name = match name.trim() {
+        "" => format!("account {account}"),
+        name => name.to_owned(),
+    };
+    let env = ctx.env();
+    Ok(Signature {
+        name: name.into_bytes(),
+        email: format!("{account}@{}", String::from_utf8_lossy(&env.chain_id)).into_bytes(),
+        time: (env.time / 1000) as i64,
+        offset_minutes: 0,
+    })
+}
+
+// A conflict's refusal: every path, and why.
+fn conflicted(conflicts: &[Conflict]) -> String {
+    let named: Vec<String> = conflicts
+        .iter()
+        .map(|conflict| {
+            let why = match conflict.clash {
+                Clash::Lines => "both sides changed the same or adjacent lines",
+                Clash::Searched => "edits too interleaved to merge within Bounds.merge_cost",
+                Clash::Binary => "a binary file both sides changed",
+                Clash::Mode => "both sides changed its mode",
+                Clash::Deleted => "deleted on one side, changed on the other",
+                Clash::Kind => "changed on both sides, and not as two files",
+            };
+            format!("{} ({why})", String::from_utf8_lossy(&conflict.path))
+        })
+        .collect();
+    format!(
+        "the squash conflicts, so nothing was written: {}",
+        named.join("; ")
+    )
 }
 
 fn touched(change: &mut Change, env: &Env) {

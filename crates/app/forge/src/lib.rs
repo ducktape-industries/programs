@@ -74,6 +74,7 @@ fn op_variants_only_append() {
             "ChangeClose",
             "ReviewSubmit",
             "Stage",
+            "SquashMerge",
         ]
     );
 }

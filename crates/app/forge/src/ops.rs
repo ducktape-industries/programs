@@ -87,7 +87,10 @@ pub(crate) fn retired() -> Error {
 pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
     let needs = match op {
         Op::Configure { repo, .. } => vec![Need::write(settings_key(repo))],
-        Op::Push { repo, .. } | Op::Merge { repo, .. } | Op::Stage { repo, .. } => {
+        Op::Push { repo, .. }
+        | Op::Merge { repo, .. }
+        | Op::Stage { repo, .. }
+        | Op::SquashMerge { repo, .. } => {
             vec![Need::write(repo_key(repo))]
         }
         Op::ChangeClose { repo, n } => {

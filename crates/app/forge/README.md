@@ -9,10 +9,12 @@ only.
 
 - `gitcore` reads loose commit/tree/blob objects through the sandbox; queries never
   parse packs. No gix, host Git mirror, or forge-specific host storage is needed.
-- Reads run off consensus. Every change/review mutation is an operation. Merge
-  objects are computed and published by the client; `Merge` checks both endpoint
-  OIDs and atomically changes the target ref and optional change record. It does
-  not inspect locally held objects or enforce review verdicts.
+- Reads run off consensus. Every change/review mutation is an operation. `Merge`
+  lands a result the client computed and published: it checks both endpoint OIDs
+  and atomically changes the target ref and optional change record, without
+  inspecting objects. `SquashMerge` builds the result itself in consensus: one
+  squash commit on the target's head, under the same CAS. Neither enforces
+  review verdicts.
 - Changes keep their title, body, author account, and lifecycle on the forge record.
   A repository's number counter allocates the shared future issue/change number space.
 - Every table is declared once in `src/state.rs` as a typed `store::Map`/`Set`/`Item`:
@@ -141,8 +143,9 @@ line of a changed file. No text-patch parsing is needed in the view or host.
 `Compare` reports ancestry facts only: `UpToDate`, `FastForward`, `Diverged`
 or `Unrelated`, with the merge base (the deterministic lowest-OID choice among
 several) and ahead/behind counts. Whether diverged endpoints merge cleanly is
-the git client's to find out: it merges, pushes the result and the both-head
-CAS of `Merge` decides whether that result still applies. Approvals and
+found by merging: a git client merges, pushes the result and the both-head CAS
+of `Merge` decides whether it still applies, or `SquashMerge` merges in
+consensus and refuses a conflict. Approvals and
 requested changes never block that CAS.
 
 ## Operations and examples
@@ -173,6 +176,7 @@ Closing is terminal; there is no reopen operation.
 | `ChangeClose { repo: r, n: 1 }` | open to closed, queues system line; `OpReply::Change` |
 | `ReviewSubmit { repo: r, n: 1, review: ReviewDraft { commit_oid: b, base_oid: Some(a), verdict: Verdict::RequestChanges, body: "Please check this".into(), comments: vec![LineComment { path: b"src/lib.rs".to_vec(), side: Side::New, line: 12, body: "Check this bound".into() }] } }` | one immutable review and all comments, one chat root; `OpReply::Review { height, n, id }` |
 | `Merge { repo: r, into: b"refs/heads/main".to_vec(), from: feature, expected_into: a, expected_from: b, result: client_result_oid, change: Some(1) }` | both-head CAS and open to merged together; `OpReply::Merged { height, oid, change }` |
+| `SquashMerge { repo: r, into: b"refs/heads/main".to_vec(), from: feature, expected_into: a, expected_from: b, message: None, change: Some(1) }` | one squash commit built in consensus on `a`, the same CAS, open to merged together; `OpReply::Merged { height, oid, change }` |
 
 A push's objects never ride inside its frame. The client puts git's pack as a
 blob of kind `pack` (`forge::PACK_KIND`) with `ducktape blob put FILE --kind
@@ -194,7 +198,22 @@ A merge requires a nonzero result that advances the target, correct endpoint
 hash kinds, writer authority and matching current heads. It does not validate
 ancestry or possession of the client result; the writer is responsible for
 publishing it first (e.g. push a prepared result ref). `change: None` changes only
-the target ref. The prior message-only program-computed merge operation is removed.
+the target ref.
+
+`SquashMerge` makes the result itself, with the same CAS, endpoint and change
+checks. From the merge base of both heads (`log_walk` bounds the walk; no base is
+refused, `wrong_state`), gitcore's 3-way merge takes each path changed on one
+side from that side and merges a file changed on both line by line, held to
+`merge_cost` per file. Edits of the two sides that overlap or touch (adjacent
+lines, two insertions at one point), a binary file or a mode both changed, a
+change against a delete and a file against another kind are conflicts: the op
+is refused `wrong_state`, naming every path, and writes nothing. The commit has
+one parent, the target's head. Its message is `message`, or the change's
+`<title> (change N)`, a blank line and its body; without a change, `message` is
+required. The change's author is the commit's author and the caller its
+committer (the caller is both without a change), each by their identity name at
+`<account>@<chain id>`, at the block's time, so every validator makes the same
+commit id.
 
 Review OIDs and anchors receive syntactic validation, not object reads in
 consensus. Paths must be relative, lines positive, bodies nonblank, and anchors
@@ -254,8 +273,8 @@ version proves atomic record+queue and next-block delivery, including restart.
   Different anchors share a review root; include the anchor when composing a reply.
   Subscribe to both forge and chat state: a chat reply does not change forge's
   root, and newly opened channels become available after outbox delivery.
-- Supply a client-side Git merge/object publication path. `Compare` does not return
-  a merge pack, and forge never constructs the submitted merge in consensus.
+- `Compare` does not return a merge pack. A merge commit for `Merge` is the
+  client's to build and publish; a squash is forge's own (`SquashMerge`).
 - Keep pending drafts, viewed-file checks, unread heights/reply sequences and
   last-reviewed filtering in view state. Do not silently retarget draft anchors.
 - Deploy the matching chat adapter: it exposes `MessageById` and `ThreadAttention`

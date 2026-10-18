@@ -5,7 +5,9 @@
 use ::program::{Error, ExecCtx, Program, QueryCtx};
 
 use crate::change_queries::{change, changes, judgment};
-use crate::changes::{Draft, Edit, MergeRequest, close, edit, merge_heads, open, submit_review};
+use crate::changes::{
+    Draft, Edit, MergeRequest, SquashRequest, close, edit, merge_heads, open, squash, submit_review,
+};
 use crate::contract::*;
 use crate::ops::{configure, create, init, needs, push, resource, retired, stage, touch};
 use crate::queries::{advertise, closure, listing, refs, repos, upload};
@@ -97,6 +99,25 @@ impl Program for Forge {
                 submit_review(ctx, actor, &repo, n, review).map(Some)
             }
             Op::Stage { repo, pack } => stage(ctx, &repo, pack).map(|()| None),
+            Op::SquashMerge {
+                repo,
+                into,
+                from,
+                expected_into,
+                expected_from,
+                message,
+                change,
+            } => {
+                let request = SquashRequest {
+                    into,
+                    from,
+                    expected_into,
+                    expected_from,
+                    message,
+                    change,
+                };
+                squash(ctx, actor, &repo, request).map(Some)
+            }
         }?;
         if let Some(reply) = reply {
             ctx.set_return_data(abi::encode(&reply));

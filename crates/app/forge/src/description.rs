@@ -121,6 +121,22 @@ pub fn describe(op: &Op) -> Description {
             repo,
             vec![field("pack", Value::Hash(pack.digest().to_vec()))],
         ),
+        Op::SquashMerge {
+            repo,
+            into,
+            from,
+            change: n,
+            ..
+        } => (
+            "Squash merge",
+            repo,
+            vec![
+                field("from", revision(from)),
+                field("into", text(into)),
+                n.as_ref()
+                    .map_or_else(|| field("change", Value::text("—")), change),
+            ],
+        ),
         Op::ReviewSubmit { repo, n, review } => (
             "Review",
             repo,

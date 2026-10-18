@@ -120,6 +120,16 @@ pub enum Op {
         repo: String,
         pack: BlobId,
     },
+    // forge builds the merge itself: one squash commit on `into`'s head, under `Merge`'s CAS.
+    SquashMerge {
+        repo: String,
+        into: Vec<u8>,
+        from: Revision,
+        expected_into: String,
+        expected_from: String,
+        message: Option<String>,
+        change: Option<u64>,
+    },
 }
 
 impl Op {
@@ -135,7 +145,8 @@ impl Op {
             | Op::ChangeEdit { repo, .. }
             | Op::ChangeClose { repo, .. }
             | Op::ReviewSubmit { repo, .. }
-            | Op::Stage { repo, .. } => repo,
+            | Op::Stage { repo, .. }
+            | Op::SquashMerge { repo, .. } => repo,
         }
     }
 }
