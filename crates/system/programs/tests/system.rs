@@ -3,6 +3,7 @@ use abi::{BlobId, HostOp, Message, Origin, Outcome, Receipt, Scan, Scheme};
 use borsh::{BorshDeserialize, BorshSerialize};
 use commonware_cryptography::{Signer as _, ed25519};
 use commonware_runtime::{Runner as _, deterministic};
+use fixture_wasm::PROBE;
 use host::{
     Applied, Block, BlockId, Founding, FoundingView, Genesis, Host, Layer, Limits, PARKED,
     Submission, Tip,
@@ -45,17 +46,11 @@ fn program(name: &str) -> Vec<u8> {
     std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
-/// The kernel's probe fixture, copied from ducktape by `make probe-fixture`
-/// (it links the kernel's own `program` to compile for wasm32, which this
-/// workspace never does; only the built bytes come over).
-const PROBE: &[u8] = include_bytes!("fixture_probe.wasm");
-
 /// `crates/kernel/fixtures/probe`'s script type, mirrored byte-for-byte
 /// (same two borsh derives, same variant order) since the probe is bytes
-/// here, not a Cargo dependency: whoever next runs `make probe-fixture`
-/// checks this against `crates/kernel/fixtures/probe/src/lib.rs` at the
-/// new pin. Only `Op` is scripted by this suite; the rest round-trip
-/// through the derives so the discriminants still match the binary's.
+/// here, not a Cargo dependency. Only `Op` is scripted by this suite; the
+/// rest round-trip through the derives so the discriminants still match the
+/// binary's.
 #[derive(BorshSerialize, BorshDeserialize)]
 enum Step {
     Op(HostOp),
