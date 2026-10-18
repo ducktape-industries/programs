@@ -11,7 +11,8 @@ use super::agents::face;
 use super::parts::{actions, badged, fact, glyph, notice, opening_row, scroller, section};
 use crate::read::{self, Detail, Roster};
 use crate::ui::{
-    agent_gone, bound_badge, closed_badge, current_badge, state_badge, thinking_picker, waiting,
+    BOUND_WORDS, agent_gone, bound_badge, closed_badge, current_badge, state_badge, thinking_picker,
+    waiting,
 };
 use crate::words::{
     PROBLEM_CAPTION, agent_sentence, answers, conversation_label, file_link, lower, may_change,
@@ -250,6 +251,7 @@ fn threads(
                 ladder,
                 open,
             )
+            .when(detail.bound.contains(&id), |row| row.aria_description(BOUND_WORDS))
         })
         .collect();
     let empty = detail.threads.is_empty().then(|| {
