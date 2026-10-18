@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 use view::prelude::*;
 
-use crate::composer::Draft;
+use crate::composer::{Draft, Place};
 use crate::message::ChatMessage;
 use chat::view::Names;
 use view::design::Pages;
@@ -332,6 +332,8 @@ pub struct Layout {
     pub(crate) thread: f32,
     /// where the pointer last pressed: a menu opens there
     pub(crate) press: (f32, f32),
+    #[serde(default)]
+    pub(crate) pane: Option<Place>,
 }
 
 impl Default for Layout {
@@ -342,6 +344,7 @@ impl Default for Layout {
             details: 320.,
             thread: 330.,
             press: (0., 0.),
+            pane: None,
         }
     }
 }

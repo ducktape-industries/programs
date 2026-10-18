@@ -6,10 +6,13 @@ use view::testing::{self, TestAppContext};
 use view::{Keystroke, Modifiers};
 use wire::keyboard::{Key, Named};
 
+mod placement;
+
 #[derive(Default, Serialize, Deserialize)]
 struct ComposerView {
     draft: Draft,
     choices: Vec<MentionChoice>,
+    pane: Option<Place>,
     #[serde(skip)]
     events: Vec<String>,
 }
@@ -40,12 +43,14 @@ impl Render for ComposerView {
             None,
             true,
             &choices,
+            self.pane,
             cx,
             |view, event, window, cx| {
                 view.events.push(match &event {
                     Event::Action(tag) => format!("action:{tag}"),
                     Event::Changed(_) => "changed".into(),
                     Event::Key(..) => "key".into(),
+                    Event::Placed(_) => "placed".into(),
                 });
                 let choices = view.choices.clone();
                 if let Outcome::Action(tag) = view.draft.handle(event, "c", &choices, window) {
@@ -100,6 +105,7 @@ fn lowered_styled(
             None,
             true,
             choices,
+            Some(PANE),
             cx,
             |_: &mut ComposerView, _, _, _| {},
         )
@@ -145,10 +151,25 @@ fn roster() -> Vec<MentionChoice> {
 }
 
 fn caret(body: &str, at: usize) -> Draft {
-    let draft = Draft::from_body(body, &roster());
+    let mut draft = Draft::from_body(body, &roster());
     host::selects(&draft.field, at..at);
+    draft.placed = Some(COMPOSER);
     draft
 }
+
+const PANE: Place = Place {
+    x: 0.,
+    y: 0.,
+    width: 800.,
+    height: 600.,
+};
+
+const COMPOSER: Place = Place {
+    x: 20.,
+    y: 480.,
+    width: 760.,
+    height: 100.,
+};
 
 fn claimed(draft: &Draft) -> Vec<wire::KeyClaim> {
     // the key claims, with the menu open or shut
@@ -316,14 +337,12 @@ fn toolbar_mention_and_restore_actions_have_reachable_aria_routes() {
 #[test]
 fn the_mention_menu_is_not_yet_reachable() {
     use wire::FaultKind::{Orphan, Unreachable, UnreadState};
-    let at = |kind| wire::Fault {
-        path: vec!["c".into(), String::new(), "c/mention/<@1>".into()],
-        kind,
-    };
-    assert_eq!(
-        wire::audit(&lowered(&caret("@A", 2), "c", &roster())),
-        [at(UnreadState), at(Unreachable), at(Orphan)]
-    );
+    let faults: Vec<_> = wire::audit(&lowered(&caret("@A", 2), "c", &roster()))
+        .into_iter()
+        .map(|fault| (fault.path.last().cloned(), fault.kind))
+        .collect();
+    let at = |kind| (Some("c/mention/<@1>".to_owned()), kind);
+    assert_eq!(faults, [at(UnreadState), at(Unreachable), at(Orphan)]);
 }
 
 #[test]
@@ -366,6 +385,7 @@ fn no_claim_is_on_a_key_the_engine_owns() {
             None,
             false,
             &roster(),
+            None,
             cx,
             |_: &mut ComposerView, _, _, _| {},
         )
@@ -555,6 +575,7 @@ impl Render for LazyDraft {
             None,
             true,
             &[],
+            None,
             cx,
             |view: &mut LazyDraft, event, window, cx| {
                 let draft = view.draft.get_or_insert_default();

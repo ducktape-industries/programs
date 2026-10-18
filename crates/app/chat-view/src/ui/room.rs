@@ -535,6 +535,7 @@ pub fn composer(
         cancel,
         editable,
         &choices,
+        chat.layout.pane,
         cx,
         move |chat, event, window, cx| chat.composer(target.clone(), event, window, cx),
     )

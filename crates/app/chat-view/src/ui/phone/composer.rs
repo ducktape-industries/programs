@@ -8,17 +8,18 @@
 use std::rc::Rc;
 
 use view::prelude::*;
-use view::{Div, Stateful};
+use view::{Deferred, Div, Stateful};
 
 use super::parts::{self, NoticeKind, face};
-use crate::composer::{Click, Draft, Handle, MentionChoice, Target, editor, editor_id, press};
+use crate::composer::{
+    Click, Draft, Event, Handle, MentionChoice, Presses, Target, editor, editor_id,
+    matching_choices, mention_popup, opening, picks, press, presses,
+};
 use crate::words;
 use crate::{Chat, Pane};
 use view::FontWeight;
 use view::design::Ladder;
 
-/// The most people `@` offers (mobile `src/chat/Composer.tsx:85`).
-const MENTIONS: usize = 6;
 /// The field grows to five lines, then scrolls (mobile
 /// `src/chat/Composer.tsx:182`).
 const FIELD_LINES: f32 = 5.;
@@ -69,23 +70,19 @@ pub(super) fn band(
         &handle,
         cx,
     );
-    let picks = |token: &str| {
-        let tag = format!("mention:{token}");
-        press(editable, tag, &editor_id, &handle, cx)
-    };
+    let presses = presses(editable, &editor_id, &handle, cx);
     let restore =
         draft
             .failed_send
             .as_ref()
             .and(press(editable, "restore".into(), &editor_id, &handle, cx));
-    div()
-        .id(ElementId::Name(key.clone().into()))
+    let column = div()
         .flex()
         .flex_col()
         .border_t_1()
         .border_color(theme.border)
         .bg(theme.background)
-        .children(mentions(chat, draft, &key, picks, theme, ladder))
+        .children(mentions(chat, draft, &key, presses, theme, ladder))
         .children(original.map(|original| edit_bar(&key, original, cx, theme, ladder)))
         .child(field_row(draft, field, send, edits, theme, ladder))
         .children((!draft.note.is_empty()).then(|| {
@@ -108,7 +105,15 @@ pub(super) fn band(
                 theme,
                 ladder,
             )
-        }))
+        }));
+    let placed = handle.clone();
+    sensor(ElementId::Name(key.into()), column)
+        .on_bounds(
+            cx.listener(move |chat, bounds: &Bounds<Pixels>, window, cx| {
+                placed(chat, Event::Placed(bounds.into()), window, cx);
+                cx.notify();
+            }),
+        )
         .into_any_element()
 }
 
@@ -120,52 +125,62 @@ fn original(chat: &Chat, pane: Pane) -> Option<String> {
     Some(message.body.clone())
 }
 
-/// The people `@` offers while the cursor stands after one: a row each,
-/// their face, their name and their account; `picks` is a row's press.
 fn mentions(
     chat: &Chat,
     draft: &Draft,
     key: &str,
-    picks: impl Fn(&str) -> Option<Click>,
+    presses: Option<Presses>,
     theme: &Theme,
     ladder: &Ladder,
-) -> Option<Stateful<Div>> {
+) -> Option<Deferred> {
     let (_, partial) = draft.query()?;
+    let opening = opening(draft.placed?, chat.layout.pane?)?;
     let choices = chat.mention_choices();
-    let matches = crate::composer::matching_choices(&choices, &partial);
+    let names = chat.names.ready();
+    let matches: Rc<[(MentionChoice, bool)]> = matching_choices(&choices, &partial)
+        .into_iter()
+        .map(|choice| (choice.clone(), agent(names, choice)))
+        .collect();
     if matches.is_empty() {
         return None;
     }
-    let names = chat.names.ready();
-    let rows: Vec<_> = matches
-        .into_iter()
-        .take(MENTIONS)
-        .map(|choice| mention_row(key, choice, names, picks(&choice.token), theme, ladder))
-        .collect();
-    Some(
-        div()
-            .id(ElementId::Name(format!("{key}/mentions").into()))
-            .flex()
-            .flex_col()
-            .border_b_1()
-            .border_color(theme.border)
-            .children(rows),
+    let row_key = key.to_owned();
+    let (row_theme, row_ladder) = (*theme, *ladder);
+    let rows = uniform_list(
+        ElementId::Name(format!("{key}/mentions").into()),
+        matches.len(),
+        move |range, _, _| {
+            range
+                .map(|index| {
+                    let (choice, agent) = &matches[index];
+                    let tag = format!("mention:{}", choice.token);
+                    let pick = presses.as_ref().map(|presses| picks(presses, tag));
+                    mention_row(&row_key, choice, *agent, pick, &row_theme, &row_ladder)
+                })
+                .collect::<Vec<_>>()
+        },
     )
+    .track_scroll(&draft.menu_scroll.0);
+    Some(mention_popup(key, opening, rows, theme))
+}
+
+fn agent(names: Option<&chat::view::Names>, choice: &MentionChoice) -> bool {
+    let account = crate::names::mentioned(&choice.token);
+    names.zip(account).is_some_and(|(names, account)| {
+        crate::message::agent(names, &chat::Principal::Account(account))
+    })
 }
 
 /// One person `@` offers.
 fn mention_row(
     key: &str,
     choice: &MentionChoice,
-    names: Option<&chat::view::Names>,
+    agent: bool,
     pick: Option<Click>,
     theme: &Theme,
     ladder: &Ladder,
 ) -> Stateful<Div> {
     let account = crate::names::mentioned(&choice.token);
-    let agent = names.zip(account).is_some_and(|(names, account)| {
-        crate::message::agent(names, &chat::Principal::Account(account))
-    });
     let row = div()
         .id(ElementId::Name(
             format!("{key}/mention/{}", choice.token).into(),

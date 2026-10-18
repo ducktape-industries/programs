@@ -604,3 +604,16 @@ fn an_edit_cancelled_leaves_no_draft_and_opens_from_the_message_again() {
     cx.run_until_parked();
     view.read(|chat| assert!(chat.drafts.contains_key("edit-general-2")));
 }
+
+#[test]
+fn the_pane_says_where_it_is_for_the_mention_menu() {
+    let (mut cx, chat) = opened();
+    cx.simulate_bounds("chat-pane", (0., 28.), (766., 501.));
+    let pane = crate::composer::Place {
+        x: 0.,
+        y: 28.,
+        width: 766.,
+        height: 501.,
+    };
+    chat.read(|chat| assert_eq!(chat.layout.pane, Some(pane)));
+}

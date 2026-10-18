@@ -6,7 +6,10 @@
 use super::Outcome;
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
-use view::{ElementId, Modifiers, TextField, Window, wire};
+use view::{
+    Bounds, ElementId, Modifiers, Pixels, ScrollStrategy, TextField, UniformListScrollHandle,
+    Window, wire,
+};
 use wire::keyboard::{Key, Named};
 
 /// The id of the editor [`view`](super::view) draws for the draft `key`.
@@ -34,6 +37,40 @@ pub struct Send {
     pub body: String,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Place {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl From<&Bounds<Pixels>> for Place {
+    fn from(bounds: &Bounds<Pixels>) -> Self {
+        Self {
+            x: bounds.origin.x.into(),
+            y: bounds.origin.y.into(),
+            width: bounds.size.width.into(),
+            height: bounds.size.height.into(),
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct MenuScroll(pub(crate) UniformListScrollHandle);
+
+impl MenuScroll {
+    fn reveal(&self, index: usize) {
+        self.0.scroll_to_item(index, ScrollStrategy::Nearest);
+    }
+}
+
+impl std::fmt::Debug for MenuScroll {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("MenuScroll")
+    }
+}
+
 /// A mention is an atomic span of the field whose token is what it means.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Draft {
@@ -44,6 +81,10 @@ pub struct Draft {
     pub note: String,
     pub menu_index: usize,
     pub menu_dismissed: bool,
+    #[serde(default)]
+    pub placed: Option<Place>,
+    #[serde(skip)]
+    pub menu_scroll: MenuScroll,
     /// Bytes of the field a send asked the host to clear, where they now
     /// lie: spoken for, not the draft's to send again, until the host's word
     /// shows them gone. A replacement view starts with none: the old
@@ -156,6 +197,7 @@ impl Draft {
         if let Some(edit) = change.edit {
             self.menu_index = 0;
             self.menu_dismissed = false;
+            self.menu_scroll.reveal(0);
             self.cleared = self
                 .cleared
                 .iter()
@@ -281,16 +323,21 @@ impl Draft {
         target: &str,
         choices: &[MentionChoice],
     ) -> (Vec<wire::WidgetCommand>, Outcome) {
+        let last = self
+            .menu(choices)
+            .map_or(0, |(matches, _)| matches.len().saturating_sub(1));
         let target = ElementId::Name(target.to_owned().into());
         let field = &self.field;
         let len = field.text().len();
         let edits = match tag {
             "menu-next" => {
-                self.menu_index = self.menu_index.saturating_add(1);
+                self.menu_index = self.menu_index.saturating_add(1).min(last);
+                self.menu_scroll.reveal(self.menu_index);
                 Vec::new()
             }
             "menu-previous" => {
                 self.menu_index = self.menu_index.saturating_sub(1);
+                self.menu_scroll.reveal(self.menu_index);
                 Vec::new()
             }
             "menu-dismiss" => {

@@ -46,6 +46,10 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> AnyElement {
             cx.notify();
         })
     });
+    let placed = cx.listener(|chat, bounds: &Bounds<Pixels>, _window, cx| {
+        chat.layout.pane = Some(bounds.into());
+        cx.notify();
+    });
     let screen = div()
         .id("chat-root")
         .relative()
@@ -59,6 +63,12 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> AnyElement {
         .aria_label(words::CHAT)
         .child(screen(chat, page, cx, &theme, ladder))
         .children(sheet)
+        .child(
+            sensor("chat-pane", div().size_full())
+                .absolute()
+                .inset_0()
+                .on_bounds(placed),
+        )
         .into_any_element();
     let screen = actions::with_confirm(screen, confirm, cx, &theme);
     div()

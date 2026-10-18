@@ -2,11 +2,13 @@
 //! the Restore banner and the toolbar. Every press and key goes through
 //! [`Draft::handle`], which asks the host for the edits.
 
-use super::draft::{Draft, MentionChoice, matching_choices};
+use super::draft::{Draft, MentionChoice, Place, matching_choices};
 use crate::words;
 use std::rc::Rc;
 use view::prelude::*;
-use view::{Div, FontWeight, wire};
+use view::{
+    Anchor, AnchoredPositionMode, Deferred, Div, Edges, FontWeight, Point, UniformList, wire,
+};
 
 /// What the composer hears: the host's text moved, a key it claimed went
 /// down, or a control was pressed (`bold`, `italic`, `code`, `quote`,
@@ -16,6 +18,7 @@ pub enum Event {
     Changed(wire::TextChange),
     Key(wire::keyboard::KeyState, bool),
     Action(String),
+    Placed(Place),
 }
 
 /// What the view does after the draft handled an event: nothing more, or
@@ -29,6 +32,7 @@ pub enum Outcome {
 pub type Handle<V> = Rc<dyn Fn(&mut V, Event, &mut Window, &mut Context<V>)>;
 /// A press on a composer control.
 pub type Click = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
+pub(crate) type Presses = Rc<dyn Fn(&str, &mut Window, &mut App)>;
 
 impl Draft {
     /// Runs `event` on the draft under the composer `key`, asking the host
@@ -50,6 +54,10 @@ impl Draft {
                 None => return Outcome::Updated,
             },
             Event::Action(tag) => tag,
+            Event::Placed(place) => {
+                self.placed = Some(place);
+                return Outcome::Updated;
+            }
         };
         let (edits, outcome) = self.act(&tag, &format!("{key}/editor"), choices);
         for edit in edits {
@@ -209,15 +217,30 @@ pub(crate) fn press<V: 'static>(
     handle: &Handle<V>,
     cx: &Context<V>,
 ) -> Option<Click> {
+    let presses = presses(editable, editor, handle, cx)?;
+    Some(picks(&presses, tag))
+}
+
+pub(crate) fn picks(presses: &Presses, tag: String) -> Click {
+    let presses = presses.clone();
+    Box::new(move |_: &ClickEvent, window: &mut Window, cx: &mut App| presses(&tag, window, cx))
+}
+
+pub(crate) fn presses<V: 'static>(
+    editable: bool,
+    editor: &str,
+    handle: &Handle<V>,
+    cx: &Context<V>,
+) -> Option<Presses> {
     if !editable {
         return None;
     }
     let handle = handle.clone();
     let editor = ElementId::Name(editor.to_owned().into());
-    Some(Box::new(cx.listener(
-        move |view, _: &ClickEvent, window, cx| {
+    Some(Rc::new(cx.listener(
+        move |view: &mut V, tag: &str, window: &mut Window, cx: &mut Context<V>| {
             window.focus(editor.clone());
-            handle(view, Event::Action(tag.clone()), window, cx);
+            handle(view, Event::Action(tag.to_owned()), window, cx);
             cx.notify();
         },
     )))
@@ -257,6 +280,112 @@ pub(crate) fn editor<V: 'static>(
     area.w_full().whitespace_normal()
 }
 
+pub(crate) struct Opening {
+    at: Point<Pixels>,
+    anchor: Anchor,
+    width: Pixels,
+    room: Pixels,
+}
+
+pub(crate) fn opening(composer: Place, pane: Place) -> Option<Opening> {
+    let margin = f32::from(design::space::SM);
+    let above = composer.y - pane.y - margin;
+    let below = pane.y + pane.height - (composer.y + composer.height) - margin;
+    let upward = above >= below;
+    let (anchor, y, room) = match upward {
+        true => (Anchor::BottomLeft, composer.y, above),
+        false => (Anchor::TopLeft, composer.y + composer.height, below),
+    };
+    let fits = room > 0.;
+    fits.then(|| Opening {
+        at: Point {
+            x: px(composer.x),
+            y: px(y),
+        },
+        anchor,
+        width: px(composer.width),
+        room: px(room),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn mention_menu<V: 'static>(
+    draft: &Draft,
+    key: &str,
+    editor: &str,
+    editable: bool,
+    choices: &[MentionChoice],
+    pane: Option<Place>,
+    handle: &Handle<V>,
+    cx: &Context<V>,
+) -> Option<Deferred> {
+    let (_, partial) = draft.query()?;
+    let opening = opening(draft.placed?, pane?)?;
+    let matches: Rc<[MentionChoice]> = matching_choices(choices, &partial)
+        .into_iter()
+        .cloned()
+        .collect();
+    let count = matches.len();
+    let last = count.checked_sub(1)?;
+    let selected = draft.menu_index.min(last);
+    let presses = presses(editable, editor, handle, cx);
+    let menu_key = key.to_owned();
+    let rows = uniform_list(
+        ElementId::Name(format!("{key}/mentions").into()),
+        count,
+        move |range, _, _| {
+            range
+                .map(|index| {
+                    let choice = &matches[index];
+                    let tag = format!("mention:{}", choice.token);
+                    let on_click = presses.as_ref().map(|presses| picks(presses, tag));
+                    MentionItem {
+                        id: ElementId::Name(format!("{menu_key}/mention/{}", choice.token).into()),
+                        label: format!("@{}", choice.label).into(),
+                        hint: choice.hint.clone().map(Into::into),
+                        selected: index == selected,
+                        on_click,
+                    }
+                })
+                .collect::<Vec<_>>()
+        },
+    )
+    .track_scroll(&draft.menu_scroll.0);
+    Some(mention_popup(key, opening, rows, cx.global::<Theme>()))
+}
+
+pub(crate) fn mention_popup(
+    key: &str,
+    opening: Opening,
+    rows: UniformList,
+    theme: &Theme,
+) -> Deferred {
+    let rows = rows
+        .with_sizing_behavior(ListSizingBehavior::Infer)
+        .flex_shrink(1.)
+        .min_h(px(0.));
+    let frame = div()
+        .id(ElementId::Name(format!("{key}/mention-menu").into()))
+        .w(opening.width)
+        .max_h(opening.room)
+        .flex()
+        .flex_col()
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.background)
+        .shadow_lg()
+        .occlude()
+        .child(rows);
+    deferred(
+        anchored()
+            .position(opening.at)
+            .anchor(opening.anchor)
+            .position_mode(AnchoredPositionMode::Window)
+            .snap_to_window_with_margin(Edges::all(design::space::SM))
+            .child(frame),
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn view<V: 'static, F: Fn(&mut V, Event, &mut Window, &mut Context<V>) + 'static>(
     draft: &Draft,
@@ -273,6 +402,7 @@ pub fn view<V: 'static, F: Fn(&mut V, Event, &mut Window, &mut Context<V>) + 'st
     cancel: Option<Click>,
     editable: bool,
     choices: &[MentionChoice],
+    pane: Option<Place>,
     cx: &mut Context<V>,
     handle: F,
 ) -> impl IntoElement + use<V, F> {
@@ -285,37 +415,8 @@ pub fn view<V: 'static, F: Fn(&mut V, Event, &mut Window, &mut Context<V>) + 'st
         .text_size(design::text::BODY);
     let mut rows: Vec<AnyElement> = Vec::new();
 
-    if let Some((_, partial)) = draft.query() {
-        let matches = matching_choices(choices, &partial);
-        let selected = draft.menu_index.min(matches.len().saturating_sub(1));
-        let menu = matches
-            .into_iter()
-            .enumerate()
-            .map(|(index, choice)| MentionItem {
-                id: ElementId::Name(format!("{key}/mention/{}", choice.token).into()),
-                label: format!("@{}", choice.label).into(),
-                hint: choice.hint.clone().map(Into::into),
-                selected: index == selected,
-                on_click: press(
-                    editable,
-                    format!("mention:{}", choice.token),
-                    &editor_id,
-                    &handle,
-                    cx,
-                ),
-            })
-            .collect::<Vec<_>>();
-        if !menu.is_empty() {
-            rows.push(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .children(menu)
-                    .into_any_element(),
-            );
-        }
-    }
+    let menu = mention_menu(draft, key, &editor_id, editable, choices, pane, &handle, cx);
+    rows.extend(menu.map(IntoElement::into_any_element));
     rows.push(editor.into_any_element());
 
     if !draft.note.is_empty() {
@@ -392,8 +493,7 @@ pub fn view<V: 'static, F: Fn(&mut V, Event, &mut Window, &mut Context<V>) + 'st
     });
     rows.push(toolbar.into_any_element());
 
-    div()
-        .id(ElementId::Name(key.into()))
+    let column = div()
         .flex()
         .flex_col()
         .gap_1()
@@ -401,7 +501,14 @@ pub fn view<V: 'static, F: Fn(&mut V, Event, &mut Window, &mut Context<V>) + 'st
         .border_color(cx.global::<Theme>().border)
         .bg(cx.global::<Theme>().background)
         .pb(design::space::XXS)
-        .children(rows)
+        .children(rows);
+    let placed = handle.clone();
+    sensor(ElementId::Name(key.into()), column).on_bounds(cx.listener(
+        move |view, bounds: &Bounds<Pixels>, window, cx| {
+            placed(view, Event::Placed(Place::from(bounds)), window, cx);
+            cx.notify();
+        },
+    ))
 }
 
 #[cfg(test)]

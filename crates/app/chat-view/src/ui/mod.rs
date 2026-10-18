@@ -40,6 +40,10 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> impl IntoElement {
             cx.notify();
         }
     });
+    let placed = cx.listener(|chat, bounds: &Bounds<Pixels>, _window, cx| {
+        chat.layout.pane = Some(bounds.into());
+        cx.notify();
+    });
     let screen = div()
         .id("chat-root")
         .relative()
@@ -67,6 +71,12 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> impl IntoElement {
             )
             .into_any_element()
         })
+        .child(
+            sensor("chat-pane", div().size_full())
+                .absolute()
+                .inset_0()
+                .on_bounds(placed),
+        )
         .into_any_element();
     let screen = with_menu(chat, screen, cx, &theme, ladder);
     let screen = with_create(chat, screen, cx, &theme, ladder);

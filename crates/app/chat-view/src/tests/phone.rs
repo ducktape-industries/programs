@@ -613,6 +613,7 @@ fn a_post_on_its_way_shows_faded_until_it_lands() {
 #[test]
 fn at_offers_the_people_with_their_accounts() {
     let (mut cx, _) = in_general();
+    placed(&mut cx);
     cx.simulate_input("draft-general/editor", "@ad");
     assert!(
         cx.has_text("ada") && cx.has_text("account 10"),
@@ -1196,4 +1197,38 @@ fn parent<'a>(node: &'a wire::Node, key: &str) -> Option<&'a wire::Node> {
             true => Some(node),
             false => parent(child, key),
         })
+}
+
+fn placed(cx: &mut TestAppContext) {
+    cx.simulate_bounds("chat-pane", (0., 0.), (390., 844.));
+    cx.simulate_bounds("draft-general", (0., 700.), (390., 144.));
+}
+
+#[test]
+fn at_lists_every_match_in_the_room_above_the_band() {
+    let (mut cx, _) = in_general();
+    cx.host().handle::<Ask<::chat::Chat>>(|query| {
+        Ok(match query {
+            Query::Accounts { .. } => {
+                let people = (0..40).map(|n| person(100 + n, &format!("ann{n:02}")));
+                Reply::Accounts(page(people.collect()))
+            }
+            query => chat_reply(query),
+        })
+    });
+    cx.host()
+        .stream::<Changes<Identity>>()
+        .send(block(9, Vec::new()));
+    cx.run_until_parked();
+    placed(&mut cx);
+    cx.simulate_input("draft-general/editor", "@ann");
+    let Some(wire::Node::UniformList { count, .. }) = cx.find("draft-general/mentions") else {
+        panic!("the matches are a list: {:?}", cx.texts())
+    };
+    assert_eq!(*count, 40, "every match, not the first six");
+    let room = 700. - f32::from(design::space::SM);
+    let frame = cx.style("draft-general/mention-menu");
+    assert_eq!(frame.max_size.height, Some(px(room).into()));
+    let dense = cx.dense().to_vec();
+    view::testing::assert_fits(cx.root(), cx.styles(), &dense, 390., &design::TOUCH);
 }
