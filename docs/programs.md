@@ -343,10 +343,12 @@ const TABLES: &'static [Table] = &[VOTES.table(), POLLS.table()];
 owner, no policy, only the program's own code governs it, as for a counter
 or an index many accounts write. `Map<K, Owned<T>>` reads and writes `T`
 itself, the same bytes as `Map<K, T>`, and names its rows' kind (`T::KIND`),
-which a user's defaults and policies know them by. A plain table that is
+which a user's defaults and policies know them by. A row type another crate
+defines names its kind through a marker type of the program's own
+(`Map<String, Owned<ServiceRow, Service>>`, `impl Kind for Service`). A plain table that is
 neither is owned with no kind. This repo's programs declare their tables
 shared, and move each kind of owned item over one at a time (forge's reviews,
-`forge.review`, are the first).
+`forge.review`, and egress's services, `egress.service`, so far).
 
 Four rules hold for every owned table:
 

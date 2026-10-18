@@ -14,6 +14,7 @@ use valset::{Genesis, Member, Valset};
 use crate::*;
 
 mod order;
+mod owned;
 
 const ADA: [u8; 32] = [1; 32];
 const BO: [u8; 32] = [2; 32];

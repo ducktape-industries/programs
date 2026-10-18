@@ -1778,6 +1778,7 @@ dependencies = [
  "borsh",
  "describe",
  "identity",
+ "ownership",
  "program",
  "scheduler",
  "store",

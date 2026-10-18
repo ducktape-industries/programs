@@ -27,5 +27,6 @@ store = { workspace = true }
 access = { workspace = true }
 awaits = { workspace = true }
 identity = { workspace = true }
+ownership = { workspace = true }
 scheduler = { workspace = true }
 valset = { workspace = true }

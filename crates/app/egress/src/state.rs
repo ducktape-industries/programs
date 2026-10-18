@@ -2,7 +2,7 @@
 //! node serves which service, each service's next turn in the election, every open request with
 //! its ticket, wait and expiry by its node, and an events request's place in its stream.
 use borsh::{BorshDeserialize, BorshSerialize};
-use store::{Item, Map, Set};
+use store::{Item, Kind, Map, Owned, Set};
 
 use ::program::Ticket;
 
@@ -17,7 +17,15 @@ pub struct Stored {
     pub wait: u64,
 }
 
-pub const SERVICES: Map<String, ServiceRow> = Map::new("service/").shared();
+// The kind of a registered service (`egress.service`): each is its registrant's. Only `Register`
+// creates one and only `Assign` rewrites it; no op deletes one.
+pub struct Service;
+
+impl Kind for Service {
+    const KIND: &'static str = "egress.service";
+}
+
+pub const SERVICES: Map<String, Owned<ServiceRow, Service>> = Map::new("service/");
 pub const NODES: Map<Vec<u8>, NodeRow> = Map::new("node/").shared();
 pub const SERVING: Set<(String, Vec<u8>)> = Set::new("serving/").shared();
 pub const TURNS: Map<String, u64> = Map::new("turn/").shared();
@@ -41,7 +49,7 @@ pub struct Ending {
 pub const STREAMS: Map<u64, Stream> = Map::new("stream/").shared();
 pub const EARLY: Map<(u64, u64), Vec<u8>> = Map::new("early/").shared();
 
-// Every table here is general data: only this program's code governs it.
+// Every table here but SERVICES is general data: only this program's code governs it.
 pub(crate) const TABLES: &[::program::Table] = &[
     SERVICES.table(),
     NODES.table(),

@@ -39,12 +39,13 @@ pub trait Kind {
 }
 
 // The rows of a table of owned `T`s: `Map<K, Owned<T>>` reads and writes `T` itself, the same
-// bytes, and declares its prefix owned of `T`'s kind.
-pub struct Owned<T>(PhantomData<fn() -> T>);
+// bytes, and declares its prefix owned of `T`'s kind. A row type another crate defines (an abi
+// role's) names its kind through a marker of the program's own: `Owned<ServiceRow, Service>`.
+pub struct Owned<T, K = T>(PhantomData<fn() -> (T, K)>);
 
-impl<T: Kind + BorshSerialize + BorshDeserialize> Row for Owned<T> {
+impl<T: BorshSerialize + BorshDeserialize, K: Kind> Row for Owned<T, K> {
     type Value = T;
-    const KIND: Option<&'static str> = Some(T::KIND);
+    const KIND: Option<&'static str> = Some(K::KIND);
 }
 
 impl<K: KeyCodec, V: Row> Map<K, V> {
