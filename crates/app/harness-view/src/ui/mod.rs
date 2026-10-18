@@ -1,33 +1,39 @@
-//! The screens: the agents, one agent, one thread, the create form, the models. Colour is
-//! kept for what it says: an agent's tint, and a state's badge.
+//! The screens: the agents, one agent, one conversation, the create form, the models, the
+//! desktop's here and the phone's in `phone/`. Both trees draw with what this module holds
+//! (the badges, the folds, a conversation's timeline in `timeline`) and never with each
+//! other's; the words they say are `words`'. Colour is kept for what it says: an agent's tint,
+//! and a state's badge.
 mod agent;
 mod create;
 mod list;
 mod models;
+pub(crate) mod phone;
 mod thread;
+mod timeline;
 
-use harness::{Asking, Thinking, ThreadRow, Usage, Window};
+use harness::Thinking;
 use view::design::Ladder;
-use view::design::{space, text};
+use view::design::{fonts, space, text};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
 
-use crate::read::{Card, Roster};
-use crate::{Agents, Screen, State, thread_state};
+use crate::words::{thinking_short, thinking_words};
+use crate::{Agents, Screen, State};
 
-pub(crate) fn render(
-    view: &Agents,
-    touch: bool,
-    cx: &mut Context<Agents>,
-) -> impl IntoElement + use<> {
+/// The desktop's screens, under a pointer: what the last write left over the screen, then the
+/// screen whole.
+pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
     let theme = *cx.global::<Theme>();
-    let ladder = &design::ladder(touch);
+    let ladder = &design::POINTER;
     let screen = match view.screen {
         Screen::List => list::render(view, cx, &theme, ladder),
         Screen::Create => create::render(view, cx, &theme, ladder),
-        Screen::Agent(agent) => agent::render(view, agent, cx, &theme, ladder),
-        Screen::Thread(id) => thread::render(view, id, cx, &theme, ladder),
-        Screen::Models => models::render(view, cx, &theme, ladder),
+        // the phone's pages of an agent or a conversation are parts of the desktop's screen
+        Screen::Agent(agent) | Screen::Part(agent, _) => {
+            agent::render(view, agent, cx, &theme, ladder)
+        }
+        Screen::Thread(id) | Screen::Usage(id) => thread::render(view, id, cx, &theme, ladder),
+        Screen::Models | Screen::SetModel => models::render(view, cx, &theme, ladder),
     };
     div()
         .id("agents")
@@ -45,7 +51,13 @@ pub(crate) fn render(
                 .clone()
                 .map(|notice| panel("agents-notice", theme.warning_soft, &theme).child(notice)),
         )
+        .children(view.doing.clone().map(|doing| {
+            panel("agents-doing", theme.surface, &theme)
+                .child(format!("{doing}…"))
+                .child(caption("sent · waiting for the block", &theme))
+        }))
         .child(screen)
+        .into_any_element()
 }
 
 /// What a read in flight or refused shows in place of its screen.
@@ -60,6 +72,8 @@ pub(crate) fn waiting<T>(
         Loadable::Idle | Loadable::Loading(_) => Some(
             design::quiet("Reading…", theme)
                 .id(SharedString::from(format!("{name}-loading")))
+                // a phone's page runs edge to edge: its line sits in as its rows' words do
+                .when(ladder.touch, |quiet| quiet.p(space::BLOCK))
                 .into_any_element(),
         ),
         Loadable::Failed(refusal) => {
@@ -73,16 +87,16 @@ pub(crate) fn waiting<T>(
     }
 }
 
-/// A press back to `screen`.
+/// A press back to the screen this one was opened from, named for it.
 pub(crate) fn back(
     id: &'static str,
-    label: SharedString,
-    screen: Screen,
+    label: String,
     cx: &mut Context<Agents>,
     theme: &Theme,
     ladder: &Ladder,
 ) -> impl IntoElement + use<> {
-    let go = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.go(screen, cx));
+    let go = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.back(cx));
+    let label = format!("‹ {label}");
     design::button(id, label, ladder, theme, go).kind(design::Kind::Quiet)
 }
 
@@ -118,6 +132,7 @@ pub(crate) fn fact(label: &'static str, value: impl Into<SharedString>, theme: &
         .child(div().font_weight(FontWeight::MEDIUM).child(value.into()))
 }
 
+/// A state's badge: a dot in its colour, then its word.
 pub(crate) fn state_badge(
     id: impl Into<ElementId>,
     state: State,
@@ -131,83 +146,92 @@ pub(crate) fn state_badge(
         State::NoNode => ("No node", theme.danger, theme.danger_soft),
         State::Unconfigured => ("Not configured", theme.danger, theme.danger_soft),
     };
-    design::badge(id, label, ladder, foreground, background)
+    dotted(id, label, foreground, background, ladder)
 }
 
-/// An agent's state: its configuration and a node before anything, then the busiest of its
-/// open threads.
-pub(crate) fn agent_state(card: &Card, roster: &Roster) -> State {
-    let Some(serving) = card.serving else {
-        return State::Unconfigured;
-    };
-    if serving == 0 || roster.relaying == 0 {
-        return State::NoNode;
+/// How wide a badge's dot is.
+const DOT: Pixels = px(6.);
+
+/// `design::badge` with a dot before its word, at the badge's sizes.
+// SDK gap: a badge with a leading dot; `design::badge` holds its words alone
+fn dotted(
+    id: impl Into<ElementId>,
+    label: &'static str,
+    foreground: Hsla,
+    background: Hsla,
+    ladder: &Ladder,
+) -> Stateful<Div> {
+    let tag = div()
+        .id(id)
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(space::XXS)
+        .bg(background)
+        .text_color(foreground);
+    match ladder.touch {
+        true => tag
+            .h(px(design::height::touch::BADGE as f32))
+            .px(space::XS)
+            .text_type(ladder.tiny)
+            .font_weight(FontWeight::MEDIUM),
+        false => tag.px_1().py_0p5().text_type(ladder.caption),
     }
-    let states = card.threads.iter().map(thread_state);
-    states.fold(State::Idle, |state, next| match (state, next) {
-        (State::Stuck, _) | (_, State::Stuck) => State::Stuck,
-        (State::Working, _) | (_, State::Working) => State::Working,
-        _ => State::Idle,
-    })
+    .child(div().size(DOT).flex_none().rounded_full().bg(foreground))
+    .child(label)
 }
 
-/// What a thread is doing, in words.
-pub(crate) fn asking(asking: Asking) -> String {
-    match asking {
-        Asking::Idle => "Idle".into(),
-        Asking::Learning => "Learning the model’s context window".into(),
-        Asking::Compacting { through } => format!("Summarizing through frame {through}"),
-        Asking::Asked { .. } => "Waiting for the model".into(),
-        Asking::Running => "Running tool calls".into(),
-    }
+/// The agent's current conversation's badge, in the agent's tint.
+pub(crate) fn current_badge(
+    id: impl Into<ElementId>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Stateful<Div> {
+    design::badge(id, "Current", ladder, theme.agent, theme.agent_soft)
 }
 
-/// A conversation as people read it, by its number. Its title is what harness tells the model,
-/// and one opened before an agent kept one conversation names its room there by the room's id.
-pub(crate) fn conversation_label(thread: &ThreadRow) -> String {
-    format!("Conversation {}", thread.id)
+/// A closed conversation's badge: raised, no dot, as it does nothing more.
+pub(crate) fn closed_badge(
+    id: impl Into<ElementId>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Stateful<Div> {
+    design::badge(id, "Closed", ladder, theme.muted, theme.surface_raised)
 }
 
-pub(crate) fn began_words(thread: &ThreadRow, roster: Option<&Roster>) -> Option<String> {
-    let began = !thread.place.is_empty();
-    began.then(|| format!("began in {}", place_label(thread, roster)))
-}
-
-/// A thread's place as people read it: `#general` by the room's name in chat, `DM · Ada`, else
-/// the place as is.
-pub(crate) fn place_label(thread: &ThreadRow, roster: Option<&Roster>) -> String {
-    let Some(channel) = thread.place.strip_prefix("chat/") else {
-        return thread.place.clone();
-    };
-    match chat::dm_peers(channel) {
-        Some((a, b)) => {
-            let other = if a == thread.agent { b } else { a };
-            let name = roster.map_or_else(|| format!("account {other}"), |r| r.name(other));
-            format!("DM · {name}")
-        }
-        None => roster
-            .and_then(|roster| roster.rooms.get(channel))
-            .map_or_else(|| "a chat room".to_owned(), |name| format!("#{name}")),
-    }
-}
-
-/// What a thread's context holds, against its model's window once harness learned it.
-pub(crate) fn context_words(context: harness::Context, window: Option<u64>) -> String {
-    match (context, window) {
-        (harness::Context::Measured(tokens), Some(window)) if window > 0 => format!(
-            "{} / {} tokens · {}%",
-            design::grouped(tokens),
-            design::grouped(window),
-            tokens.saturating_mul(100) / window
+/// An account no script hands to harness any more.
+pub(crate) fn agent_gone(agent: u64, theme: &Theme, ladder: &Ladder) -> impl IntoElement + use<> {
+    design::empty_state(
+        "agent-gone",
+        "bot-off",
+        "Not run by harness",
+        format!(
+            "Account {agent} has no script that calls harness: its manager took it back, or never handed it over."
         ),
-        (harness::Context::Measured(tokens), _) => format!("{} tokens", design::grouped(tokens)),
-        (harness::Context::Overflowed, _) => "over the model’s window".to_owned(),
-    }
+        ladder,
+        theme,
+    )
 }
 
-/// The context against the window, as a bar: drawn only once the window is known.
-pub(crate) fn meter(context: harness::Context, window: Option<u64>, theme: &Theme) -> Option<Div> {
-    const WIDTH: f32 = 120.;
+/// A conversation harness does not hold.
+pub(crate) fn thread_gone(id: u64, theme: &Theme, ladder: &Ladder) -> impl IntoElement + use<> {
+    design::empty_state(
+        "thread-gone",
+        "message-square",
+        "No such conversation",
+        format!("Harness holds no conversation {id}."),
+        ladder,
+        theme,
+    )
+}
+
+/// The context against the window, as a bar `width` wide: drawn only once the window is known.
+pub(crate) fn meter(
+    context: harness::Context,
+    window: Option<u64>,
+    width: f32,
+    theme: &Theme,
+) -> Option<Div> {
     let window = window.filter(|window| *window > 0)?;
     let full = match context {
         harness::Context::Measured(tokens) => (tokens as f32 / window as f32).min(1.),
@@ -215,10 +239,11 @@ pub(crate) fn meter(context: harness::Context, window: Option<u64>, theme: &Them
     };
     Some(
         div()
-            .w(px(WIDTH))
+            .flex_none()
+            .w(px(width))
             .h(px(4.))
             .bg(theme.border)
-            .child(div().w(px(WIDTH * full)).h_full().bg(theme.foreground)),
+            .child(div().w(px(width * full)).h_full().bg(theme.foreground)),
     )
 }
 
@@ -226,17 +251,6 @@ pub(crate) fn thinking_choices() -> Vec<Option<Thinking>> {
     std::iter::once(None)
         .chain(Thinking::ALL.iter().copied().map(Some))
         .collect()
-}
-
-pub(crate) fn thinking_words(thinking: Option<Thinking>) -> &'static str {
-    match thinking {
-        None => "Model's default",
-        Some(Thinking::Off) => "Off",
-        Some(Thinking::Low) => "Low",
-        Some(Thinking::Medium) => "Medium",
-        Some(Thinking::High) => "High",
-        Some(Thinking::Max) => "Max",
-    }
 }
 
 pub(crate) fn thinking_picker(
@@ -254,7 +268,11 @@ pub(crate) fn thinking_picker(
         .map(|(index, choice)| {
             (
                 ElementId::Name(format!("{id}-{index}").into()),
-                SharedString::from(thinking_words(*choice)),
+                // a phone's six segments share its width: the levels in few letters
+                SharedString::from(match ladder.touch {
+                    true => thinking_short(*choice),
+                    false => thinking_words(*choice),
+                }),
             )
         })
         .collect();
@@ -266,36 +284,6 @@ pub(crate) fn thinking_picker(
         at,
         labels,
         move |index, window, app| on_pick(choices[index], window, app),
-    )
-}
-
-pub(crate) fn window_words(window: Window) -> String {
-    match window {
-        Window::Unasked => "not asked yet".to_owned(),
-        Window::Unreported => "not reported".to_owned(),
-        Window::Tokens(tokens) => format!("{} tokens", design::grouped(tokens)),
-    }
-}
-
-pub(crate) fn snapshot_words(snapshot: &harness::BlobId) -> String {
-    let short: String = snapshot
-        .digest()
-        .iter()
-        .take(6)
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    format!("snapshot {short}")
-}
-
-pub(crate) fn usage_words(usage: &Usage) -> String {
-    let all = usage.input + usage.output + usage.cache_read + usage.cache_write;
-    format!(
-        "input {} · output {} · cache read {} · cache write {} · all {}",
-        design::grouped(usage.input),
-        design::grouped(usage.output),
-        design::grouped(usage.cache_read),
-        design::grouped(usage.cache_write),
-        design::grouped(all),
     )
 }
 
@@ -333,4 +321,97 @@ pub(crate) fn no_node(
         _ => return None,
     };
     Some(shown)
+}
+
+/// Whether the fold under `key` is open: a key in `Agents.open` turns it from how it starts.
+pub(crate) fn opened(view: &Agents, key: &str, starts_open: bool) -> bool {
+    starts_open != view.open.contains(key)
+}
+
+/// A press that turns the fold under `key`.
+pub(crate) fn toggler(
+    key: String,
+    cx: &mut Context<Agents>,
+) -> impl Fn(&ClickEvent, &mut view::Window, &mut App) + 'static {
+    cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
+        if !view.open.remove(&key) {
+            view.open.insert(key.clone());
+        }
+        cx.notify();
+    })
+}
+
+/// A row that opens and closes what follows it: its triangle, its label, a caption after it.
+/// The caller adds what it holds, open.
+// SDK gap: a disclosure row; the kit has none yet
+pub(crate) fn fold(
+    key: String,
+    open: bool,
+    label: impl IntoElement,
+    caption: Option<String>,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Stateful<Div> {
+    let toggle = toggler(key.clone(), cx);
+    div()
+        .id(SharedString::from(key))
+        .flex()
+        .items_center()
+        .gap(space::SM)
+        .min_h(ladder.hit)
+        .cursor_pointer()
+        .role(Role::Button)
+        .aria_expanded(open)
+        .focusable()
+        .on_click(toggle)
+        .map(|row| design::pressed(row, ladder))
+        .child(
+            div()
+                .flex_none()
+                .text_type(ladder.caption)
+                .text_color(theme.faint)
+                .child(if open { "▾" } else { "▸" }),
+        )
+        .child(label)
+        .children(caption.map(|caption| {
+            div()
+                .min_w_0()
+                .truncate()
+                .text_type(ladder.caption)
+                .text_color(theme.muted)
+                .child(caption)
+        }))
+}
+
+/// An id in the data face that a press copies: a frame's place, a call's id.
+// SDK gap: a copyable id; the kit has none yet
+pub(crate) fn copy_chip(
+    id: impl Into<ElementId>,
+    words: String,
+    copied: String,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Stateful<Div> {
+    let theme = *theme;
+    let copy =
+        cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.copy(copied.clone(), cx));
+    div()
+        .id(id)
+        .flex_none()
+        .min_h(ladder.hit)
+        .flex()
+        .items_center()
+        .font_family(fonts::FAMILY_MONO)
+        .text_type(ladder.caption)
+        .text_color(theme.faint)
+        .whitespace_nowrap()
+        .cursor_pointer()
+        .hover(move |style| style.text_color(theme.muted))
+        .role(Role::Button)
+        .aria_label(format!("Copy {words}"))
+        .focusable()
+        .on_click(copy)
+        .child(words)
 }

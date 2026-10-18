@@ -26,7 +26,5 @@ chat.workspace = true
 # mints the `duck://<chain>/<program>/<place>` link "Open in chat" opens
 ducklink.workspace = true
 serde.workspace = true
-
-[dev-dependencies]
-# `HARNESS_SCREEN_EXPORT=1`: the screens as JSON for the app's renderer
+# a tool call's input is JSON: the file a files_write names
 serde_json.workspace = true
