@@ -893,3 +893,32 @@ pub(crate) fn call_wait(call: &CallRow, waits: &[Wait]) -> Option<String> {
         None => "no egress relay is open for it".to_owned(),
     })
 }
+
+// when a conversation starts compacting: at its threshold, else once its window fills
+pub(crate) fn compacts_words(threshold: Option<harness::Threshold>) -> String {
+    match threshold {
+        Some(threshold) => format!("{} tokens", design::grouped(threshold.tokens())),
+        None => "when the window fills".to_owned(),
+    }
+}
+
+// where the threshold in effect comes from
+pub(crate) fn threshold_source(threshold: Option<harness::Threshold>) -> Option<String> {
+    match threshold? {
+        harness::Threshold::Agent(_) => Some("the agent's configuration".to_owned()),
+        harness::Threshold::Model(_) => Some("the model's default".to_owned()),
+    }
+}
+
+// both on one line: `650,000 tokens · the agent's configuration`
+pub(crate) fn compacts_line(threshold: Option<harness::Threshold>) -> String {
+    match threshold_source(threshold) {
+        Some(source) => format!("{} · {source}", compacts_words(threshold)),
+        None => compacts_words(threshold),
+    }
+}
+
+// a model's own default, short: `compacts at 650K`
+pub(crate) fn compact_short(compact_at: Option<u64>) -> Option<String> {
+    compact_at.map(|tokens| format!("compacts at {}", short(tokens)))
+}

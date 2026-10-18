@@ -23,7 +23,7 @@ use crate::waiting::settling;
 use crate::wire::{self, Answered, Header, Summarized, Summary};
 use crate::{
     Asking, Body, Configured, Context, Forming, Frame, ModelRow, PART, Partial, Role, Said, Sealed,
-    Stop, ThreadRow, Window, Wire, streamed_as,
+    Stop, ThreadRow, Threshold, Window, Wire, streamed_as,
 };
 
 struct Asked {
@@ -473,13 +473,14 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         system: &system,
     };
     let header = put_part(ctx, wire::header(model.wire, &header))?;
+    let threshold = Threshold::of(&config, Some(&model)).map(Threshold::tokens);
     let turn = Turn {
         asked,
         model: model.id,
         max_tokens: config.max_tokens,
         header,
     };
-    match crowded(thread, window, turn.max_tokens) {
+    match crowded(thread, window, turn.max_tokens, threshold) {
         true => plan_summary(ctx, thread, turn),
         false => plan_turn(ctx, thread, turn),
     }
@@ -560,9 +561,17 @@ fn largest_unseen(ctx: &ExecCtx, thread: &ThreadRow, wire: Wire) -> Result<Optio
     Ok(sized.max_by_key(|(size, _)| *size).map(|(_, frame)| frame))
 }
 
-fn crowded(thread: &ThreadRow, window: Option<u64>, max_tokens: u32) -> bool {
+// compact once the context reaches the threshold in effect, or when the next answer would not
+// fit the window, which holds whatever the threshold
+fn crowded(
+    thread: &ThreadRow,
+    window: Option<u64>,
+    max_tokens: u32,
+    threshold: Option<u64>,
+) -> bool {
     match (thread.context, window) {
         (Context::Overflowed, _) => true,
+        (Context::Measured(tokens), _) if threshold.is_some_and(|at| tokens >= at) => true,
         (Context::Measured(_), None) => false,
         (Context::Measured(tokens), Some(window)) => {
             tokens.saturating_add(u64::from(max_tokens)) > window

@@ -31,7 +31,7 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
             true => Vec::new(),
             false => vec![Need::write(thread_key(*thread))],
         },
-        Op::SetModel { id, .. } => match MODELS.has(ctx, id) {
+        Op::SetModel { id, .. } | Op::SetCompactAt { id, .. } => match MODELS.has(ctx, id) {
             true => vec![Need::write(model_key(id))],
             false => Vec::new(),
         },

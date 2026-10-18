@@ -230,6 +230,7 @@ async fn mentioned(net: &mut Net) -> Scout {
         server_tools: Vec::new(),
         listen: Vec::new(),
         settle: None,
+        compact_at: None,
         system: "Keep notes in /shared.".into(),
     };
     let commit = files::Op::Commit {
@@ -318,6 +319,7 @@ fn an_agents_configuration_is_its_managers_to_change_whoever_takes_the_managers_
             server_tools: Vec::new(),
             listen: Vec::new(),
             settle: None,
+            compact_at: None,
             system: "Mine.".into(),
         };
         let commit = |base, changes| files::Op::Commit {

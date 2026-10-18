@@ -239,10 +239,21 @@ pub(crate) fn thread_gone(id: u64, theme: &Theme, ladder: &Ladder) -> impl IntoE
 pub(crate) fn meter(
     context: harness::Context,
     window: Option<u64>,
+    threshold: Option<u64>,
     width: f32,
     theme: &Theme,
 ) -> Option<Div> {
     let window = window.filter(|window| *window > 0)?;
+    // a tick where the conversation starts compacting, when that comes before the window's end
+    let mark = threshold.filter(|at| *at < window).map(|at| {
+        div()
+            .absolute()
+            .top_0()
+            .left(px(width * (at as f32 / window as f32)))
+            .w(space::HAIR)
+            .h_full()
+            .bg(theme.warning)
+    });
     let full = match context {
         harness::Context::Measured(tokens) => (tokens as f32 / window as f32).min(1.),
         harness::Context::Overflowed => 1.,
@@ -252,8 +263,10 @@ pub(crate) fn meter(
             .flex_none()
             .w(px(width))
             .h(px(4.))
+            .relative()
             .bg(theme.border)
-            .child(div().w(px(width * full)).h_full().bg(theme.foreground)),
+            .child(div().w(px(width * full)).h_full().bg(theme.foreground))
+            .children(mark),
     )
 }
 

@@ -161,6 +161,7 @@ fn strip(
 ) -> impl IntoElement + use<> {
     let row = &shown.thread;
     let window = shown.model().and_then(|model| model.window.tokens());
+    let threshold = shown.threshold();
     let status = status(shown, relaying);
     let stuck = !row.closed && thread_state(row) == State::Stuck;
     let badge = match status.state {
@@ -183,7 +184,7 @@ fn strip(
         ),
         false => (
             status.words,
-            meter(row.context, window, METER, theme),
+            meter(row.context, window, threshold, METER, theme),
             full(row.context, window).map(|pct| tail(format!("{pct}%"))),
         ),
     };
@@ -240,6 +241,7 @@ pub(super) fn usage(
         (None, Some(shown)) => {
             let row = &shown.thread;
             let window = shown.model().and_then(|model| model.window.tokens());
+            let threshold = shown.threshold();
             let summaries = shown.tally.summaries;
             let turns = shown.frames.iter().filter_map(|frame| match &frame.body {
                 Body::Turn { usage, .. } => Some((frame, usage)),
@@ -256,7 +258,7 @@ pub(super) fn usage(
                         .flex_col()
                         .gap(space::XS)
                         .child(context_words(row.context, window))
-                        .children(meter(row.context, window, METER * 2., theme)),
+                        .children(meter(row.context, window, threshold, METER * 2., theme)),
                     theme,
                     ladder,
                 ))

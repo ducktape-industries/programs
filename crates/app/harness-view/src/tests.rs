@@ -1,3 +1,4 @@
+mod compact_at;
 mod conversations;
 mod live_calls;
 mod phone;
@@ -96,6 +97,7 @@ fn model_row(window: Window) -> ModelRow {
         service: "anthropic".into(),
         name: "claude-sonnet-5-5".into(),
         window,
+        compact_at: None,
     }
 }
 
@@ -108,6 +110,7 @@ fn config_of(name: &str) -> Config {
         server_tools: Vec::new(),
         listen: Vec::new(),
         settle: None,
+        compact_at: None,
         system: format!("You are {name}."),
     }
 }
@@ -1061,6 +1064,7 @@ fn rover() -> Config {
         server_tools: Vec::new(),
         listen: Vec::new(),
         settle: None,
+        compact_at: None,
         system: "Answer about deploys.".into(),
     }
 }

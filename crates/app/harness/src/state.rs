@@ -9,10 +9,12 @@ use store::{Item, KeyCodec, Map, Set};
 
 use crate::{
     Body, Booking, CallRow, Frame, ModelRow, Partial, Place, Sealed, SettleWindow, Tally,
-    ThreadRow, UsageWindow,
+    ThreadRow, UsageWindow, Window, Wire,
 };
 
-pub const MODELS: Map<String, ModelRow> = Map::new("model/");
+pub const MODELS: Map<String, StoredModel> = Map::new("model/");
+// a model's `compact_at` default, beside its record
+pub const COMPACT_AT: Map<String, u64> = Map::new("compact/");
 pub const LAST: Map<AccountNumber, (Source, u64)> = Map::new("last/");
 pub const THREADS: Map<u64, ThreadRow> = Map::new("thread/");
 pub const BY_AGENT: Set<(AccountNumber, u64)> = Set::new("by-agent/");
@@ -54,6 +56,31 @@ pub struct Live {
 pub struct Binding {
     pub thread: u64,
     pub place: Place,
+}
+
+// a model's record as harness stored it before `compact_at`, which `COMPACT_AT` holds
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct StoredModel {
+    pub id: String,
+    pub owner: AccountNumber,
+    pub wire: Wire,
+    pub service: String,
+    pub name: String,
+    pub window: Window,
+}
+
+impl StoredModel {
+    pub fn row(self, compact_at: Option<u64>) -> ModelRow {
+        ModelRow {
+            id: self.id,
+            owner: self.owner,
+            wire: self.wire,
+            service: self.service,
+            name: self.name,
+            window: self.window,
+            compact_at,
+        }
+    }
 }
 
 // a model call in flight, or a turn's relays: egress answers it by its deadline, and `watch` is
@@ -185,5 +212,7 @@ pub fn written(key: &[u8]) -> Option<Written> {
             return Some(Written::Agent(agent));
         }
     }
-    key.starts_with(&MODELS.key(&())).then_some(Written::Model)
+    let models = [MODELS.key(&()), COMPACT_AT.key(&())];
+    let model = models.iter().any(|prefix| key.starts_with(prefix));
+    model.then_some(Written::Model)
 }

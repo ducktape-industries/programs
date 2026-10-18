@@ -173,6 +173,7 @@ fn strip(
 ) -> impl IntoElement + use<> {
     let row = &shown.thread;
     let window = shown.model().and_then(|model| model.window.tokens());
+    let threshold = shown.threshold();
     let status = status(shown, relaying);
     let stuck = thread_state(row) == State::Stuck && !row.closed;
     // what it waits on; a turn no request is open for wears the stuck one's ground
@@ -205,7 +206,7 @@ fn strip(
                 .child(status.words),
         )
         .child(caption(status.caption, theme).flex_1().min_w(px(120.)))
-        .children(meter(row.context, window, 96., theme))
+        .children(meter(row.context, window, threshold, 96., theme))
         .child(caption(context_short(row.context, window), theme))
         .child(usage);
     div()

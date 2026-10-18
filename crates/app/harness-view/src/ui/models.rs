@@ -12,7 +12,7 @@ use super::create::pickable;
 use super::list::{ROW, group, pressable};
 use super::{back, caption, panel, waiting};
 use crate::Agents;
-use crate::words::{serving_words, window_words};
+use crate::words::{compact_short, serving_words, window_words};
 
 pub(super) fn render(
     view: &Agents,
@@ -121,6 +121,10 @@ fn rows(
             caption(format!("window {}", window_words(row.window)), theme)
                 .flex_none()
                 .w(px(170.)),
+        )
+        .children(
+            compact_short(row.compact_at)
+                .map(|words| caption(words, theme).flex_none().w(px(140.))),
         )
         .child(
             div()

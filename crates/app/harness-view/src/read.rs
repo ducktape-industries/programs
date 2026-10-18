@@ -318,6 +318,11 @@ impl Transcript {
             .and_then(|setup| setup.configured.model())
     }
 
+    pub fn threshold(&self) -> Option<u64> {
+        let setup = self.setup.as_ref()?;
+        setup.configured.threshold().map(harness::Threshold::tokens)
+    }
+
     // the frame after those read
     pub fn next(&self) -> u64 {
         self.from + self.frames.len() as u64

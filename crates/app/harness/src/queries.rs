@@ -6,8 +6,7 @@ use abi::role::identity::AccountNumber;
 use store::{PageRequest, PageResponse};
 
 use crate::state::{
-    BOUND, BY_AGENT, CALLS, FRAMES, HELD, MODELS, PARTIALS, PLACES, SETTLING, THREADS, TOPICS,
-    WITHHELD,
+    BOUND, BY_AGENT, CALLS, FRAMES, HELD, PARTIALS, PLACES, SETTLING, THREADS, TOPICS, WITHHELD,
 };
 use crate::{Body, CallRow, Frame, ModelRow, Partial, SettleWindow, ThreadRow, WithheldFrame};
 
@@ -25,11 +24,11 @@ pub(crate) fn settling(ctx: &QueryCtx, thread: u64) -> Result<Option<SettleWindo
 }
 
 pub(crate) fn model(ctx: &QueryCtx, id: String) -> Result<Option<ModelRow>, Error> {
-    MODELS.get(ctx, &id)
+    crate::models::model(ctx, &id)
 }
 
 pub(crate) fn models(ctx: &QueryCtx, page: &PageRequest) -> Result<PageResponse<ModelRow>, Error> {
-    Ok(MODELS.range(ctx, page)?.map(|(_, row)| row))
+    crate::models::models(ctx, page)
 }
 
 pub(crate) fn thread(ctx: &QueryCtx, id: u64) -> Result<Option<ThreadRow>, Error> {

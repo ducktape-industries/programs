@@ -38,6 +38,9 @@ pub(crate) struct Draft {
     pub listen: Vec<String>,
     #[serde(default)]
     pub settle: Option<u64>,
+    // when its conversations start compacting, as the configuration names it; written back
+    #[serde(default)]
+    pub compact_at: Option<u64>,
     pub system: TextField,
     pub answers: Answers,
     pub listed: TextField,
@@ -215,6 +218,7 @@ impl Draft {
                 server_tools: self.server_tools.clone(),
                 listen: self.listen.clone(),
                 settle: self.settle,
+                compact_at: self.compact_at,
                 system: self.system.text().trim().to_owned(),
             },
             ownership,
@@ -309,6 +313,7 @@ impl Draft {
                 .map(|config| config.listen.clone())
                 .unwrap_or_default(),
             settle: config.as_ref().and_then(|config| config.settle),
+            compact_at: config.as_ref().and_then(|config| config.compact_at),
             system: field(config.as_ref().map(|config| config.system.clone())),
             answers,
             listed: TextField::new(listed),

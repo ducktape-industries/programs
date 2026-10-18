@@ -1,9 +1,10 @@
 //! The model records: an id the first account to set it owns, the wire the model speaks, the
-//! egress service that reaches it, the vendor's name for it, and the context window harness
-//! learns from the vendor. Only its owner changes or removes a record.
-use ::program::{Error, ExecCtx, invalid, not_found};
+//! egress service that reaches it, the vendor's name for it, the context window harness learns
+//! from the vendor, and its `compact_at` default. Only its owner changes or removes a record.
+use ::program::{Error, ExecCtx, QueryCtx, invalid, not_found};
+use store::{PageRequest, PageResponse};
 
-use crate::state::MODELS;
+use crate::state::{COMPACT_AT, MODELS, StoredModel};
 use crate::{ModelRow, Window, Wire};
 
 fn lowercase_name(text: &str) -> bool {
@@ -37,6 +38,19 @@ fn checked(id: &str, service: &str, name: &str) -> Result<(), Error> {
     Ok(())
 }
 
+pub(crate) fn model(ctx: &QueryCtx, id: &str) -> Result<Option<ModelRow>, Error> {
+    let id = id.to_owned();
+    let Some(stored) = MODELS.get(ctx, &id)? else {
+        return Ok(None);
+    };
+    Ok(Some(stored.row(COMPACT_AT.get(ctx, &id)?)))
+}
+
+pub(crate) fn models(ctx: &QueryCtx, page: &PageRequest) -> Result<PageResponse<ModelRow>, Error> {
+    let page = MODELS.range(ctx, page)?;
+    page.try_map(|(id, stored)| Ok(stored.row(COMPACT_AT.get(ctx, &id)?)))
+}
+
 pub(crate) fn set_model(
     ctx: &ExecCtx,
     id: String,
@@ -50,11 +64,11 @@ pub(crate) fn set_model(
         Some(row) => row.owner,
         None => ctx.sender_account()?,
     };
-    let same_model = |row: &ModelRow| row.wire == wire && row.name == name;
+    let same_model = |row: &StoredModel| row.wire == wire && row.name == name;
     let window = existing
         .filter(same_model)
         .map_or(Window::Unasked, |row| row.window);
-    let row = ModelRow {
+    let row = StoredModel {
         id: id.clone(),
         owner,
         wire,
@@ -71,6 +85,23 @@ pub(crate) fn remove_model(ctx: &ExecCtx, id: String) -> Result<(), Error> {
         return Err(not_found(format!("no model {id}")));
     }
     MODELS.remove(ctx, &id);
+    COMPACT_AT.remove(ctx, &id);
+    Ok(())
+}
+
+pub(crate) fn set_compact_at(
+    ctx: &ExecCtx,
+    id: String,
+    compact_at: Option<u64>,
+) -> Result<(), Error> {
+    if !MODELS.has(ctx, &id) {
+        return Err(not_found(format!("no model {id}")));
+    }
+    match compact_at {
+        Some(0) => return Err(invalid("compact_at, when given, is at least 1 token")),
+        Some(tokens) => COMPACT_AT.put(ctx, &id, &tokens),
+        None => COMPACT_AT.remove(ctx, &id),
+    }
     Ok(())
 }
 

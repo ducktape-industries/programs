@@ -5,6 +5,7 @@
 //! or one streamed event at a time, and every tool call runs once its relay comes back, as the
 //! agent.
 mod blob_put;
+mod compact_at;
 mod config;
 mod conversations;
 mod forge_commit;
@@ -72,6 +73,7 @@ fn scout() -> Config {
         server_tools: Vec::new(),
         listen: Vec::new(),
         settle: None,
+        compact_at: None,
         system: "Keep notes in /shared.".into(),
     }
 }

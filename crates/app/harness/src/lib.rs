@@ -100,6 +100,10 @@ pub enum Op {
         watch: u64,
         event: Event,
     },
+    SetCompactAt {
+        id: String,
+        compact_at: Option<u64>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -171,6 +175,29 @@ pub struct ModelRow {
     pub service: String,
     pub name: String,
     pub window: Window,
+    pub compact_at: Option<u64>,
+}
+
+// when a thread starts compacting: the agent's `compact_at`, else its model's
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Threshold {
+    Agent(u64),
+    Model(u64),
+}
+
+impl Threshold {
+    pub fn of(config: &Config, model: Option<&ModelRow>) -> Option<Threshold> {
+        let model = model
+            .and_then(|model| model.compact_at)
+            .map(Threshold::Model);
+        config.compact_at.map(Threshold::Agent).or(model)
+    }
+
+    pub fn tokens(self) -> u64 {
+        match self {
+            Threshold::Agent(tokens) | Threshold::Model(tokens) => tokens,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -228,6 +255,11 @@ impl Configured {
             } => Some((*snapshot, config)),
             Configured::Unreadable { .. } | Configured::Malformed { .. } => None,
         }
+    }
+
+    pub fn threshold(&self) -> Option<Threshold> {
+        let (_, config) = self.config()?;
+        Threshold::of(config, self.model())
     }
 
     pub fn model(&self) -> Option<&ModelRow> {
@@ -603,10 +635,10 @@ pub enum Query {
     #[reads(state::PLACES, state::THREADS)]
     ThreadAt { agent: AccountNumber, place: String },
     #[ask(Reply::Model(Option<ModelRow>))]
-    #[reads(state::MODELS)]
+    #[reads(state::MODELS, state::COMPACT_AT)]
     Model { id: String },
     #[ask(Reply::Models(PageResponse<ModelRow>))]
-    #[reads(state::MODELS)]
+    #[reads(state::MODELS, state::COMPACT_AT)]
     Models { page: PageRequest },
     #[ask(Reply::Withheld(Vec<WithheldFrame>))]
     #[reads(state::WITHHELD, state::FRAMES)]
@@ -802,6 +834,19 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Event {} of watched call {watch}'s stream", event.seq),
             vec![field("data", Value::count(event.data.len() as u64))],
         ),
+        Op::SetCompactAt { id, compact_at } => {
+            let at = match compact_at {
+                Some(tokens) => format!("{tokens} tokens"),
+                None => "when the window fills".to_owned(),
+            };
+            (
+                format!("Set when model {id} starts compacting"),
+                vec![
+                    field("model", Value::text(id)),
+                    field("compacts at", Value::text(at)),
+                ],
+            )
+        }
     };
     describe::Description { title, fields }
 }
@@ -829,6 +874,7 @@ fn op_variants_only_append() {
             "Settle",
             "Watch",
             "Heard",
+            "SetCompactAt",
         ]
     );
 }

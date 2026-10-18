@@ -15,10 +15,10 @@ use super::{
 };
 use crate::read::{self, Detail, Roster};
 use crate::words::{
-    PROBLEM_CAPTION, about, agent_sentence, ago, answers, context_short, conversation_label,
-    file_link, full, may_change, model_more, prompt, prompt_words, quoted, reach, read_at, removes,
-    starts, thinking_words, thread_words, tools_words, upper_first, usage_total, usage_words,
-    wait_words, window_words,
+    PROBLEM_CAPTION, about, agent_sentence, ago, answers, compacts_words, context_short,
+    conversation_label, file_link, full, may_change, model_more, prompt, prompt_words, quoted,
+    reach, read_at, removes, starts, thinking_words, thread_words, threshold_source, tools_words,
+    upper_first, usage_total, usage_words, wait_words, window_words,
 };
 use crate::{Agents, Arm, Screen, State, agent_state, thread_state};
 
@@ -251,6 +251,13 @@ fn setup_fold(
     if let Some(model) = setup.configured.model() {
         facts = facts.child(fact("Window", window_words(model.window), &theme).w(FACT));
     }
+    if setup.configured.config().is_some() {
+        let threshold = setup.configured.threshold();
+        let compacts = div()
+            .child(compacts_words(threshold))
+            .children(threshold_source(threshold).map(muted));
+        facts = facts.child(fact_of("Compacts at", compacts, &theme).w(px(240.)));
+    }
     div()
         .flex()
         .flex_col()
@@ -415,6 +422,11 @@ fn threads(
     ladder: &Ladder,
 ) -> impl IntoElement + use<> {
     let current = detail.setup.as_ref().and_then(|setup| setup.current);
+    let threshold = detail
+        .setup
+        .as_ref()
+        .and_then(|setup| setup.configured.threshold());
+    let threshold = threshold.map(harness::Threshold::tokens);
     let rows = detail.threads.iter().map(|(thread, _)| {
         let id = thread.id;
         let theme = *theme;
@@ -428,7 +440,7 @@ fn threads(
             ),
         };
         let fill = match (
-            meter(thread.context, window, 96., &theme),
+            meter(thread.context, window, threshold, 96., &theme),
             full(thread.context, window),
         ) {
             (Some(bar), Some(pct)) => div()

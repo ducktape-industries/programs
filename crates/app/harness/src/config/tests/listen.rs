@@ -60,6 +60,7 @@ fn listen_and_settle_write_and_parse_back() {
         server_tools: Vec::new(),
         listen: Vec::new(),
         settle: None,
+        compact_at: None,
         system: "Hear.".into(),
     };
     let written = plain.write();

@@ -11,7 +11,7 @@ use super::parts::{glyph, scroller, section};
 use crate::models::ModelDraft;
 use crate::read::Model;
 use crate::ui::waiting;
-use crate::words::{serving_words, window_short};
+use crate::words::{compact_short, serving_words, window_short};
 use crate::{Agents, Screen};
 
 pub(super) fn page(
@@ -119,7 +119,10 @@ fn row(
             div()
                 .min_w_0()
                 .truncate()
-                .child(format!(" · {}", window_short(row.window))),
+                .child(match compact_short(row.compact_at) {
+                    Some(compacts) => format!(" · {} · {compacts}", window_short(row.window)),
+                    None => format!(" · {}", window_short(row.window)),
+                }),
         );
     let line = design::row(format!("model-{}", row.id), ladder, theme)
         .min_h(ladder.row_tall)

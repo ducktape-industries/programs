@@ -1,3 +1,4 @@
+mod compact_at;
 mod listen;
 mod server_tools;
 mod thinking;
@@ -19,6 +20,7 @@ fn a_file_parses_into_its_front_matter_and_its_system_prompt() {
             server_tools: Vec::new(),
             listen: Vec::new(),
             settle: None,
+            compact_at: None,
             system: "You keep notes in /shared.".into(),
         })
     );
@@ -38,6 +40,7 @@ fn a_file_parses_into_its_front_matter_and_its_system_prompt() {
             server_tools: Vec::new(),
             listen: Vec::new(),
             settle: None,
+            compact_at: None,
             system: String::new(),
         })
     );
@@ -53,6 +56,7 @@ fn each_paragraph_of_the_system_prompt_is_one_block_in_order() {
         server_tools: Vec::new(),
         listen: Vec::new(),
         settle: None,
+        compact_at: None,
         system: "Who you are.\n\n\nWhat you do,\nline two.\n  \n- a list\r\n- of two".into(),
     };
     assert_eq!(
@@ -80,6 +84,7 @@ fn what_it_writes_parses_back_to_itself() {
         server_tools: Vec::new(),
         listen: Vec::new(),
         settle: None,
+        compact_at: None,
         system: "Line one.\n\n+++ is not a fence inside a line.".into(),
     };
     assert_eq!(Config::parse(config.write().as_bytes()), Ok(config.clone()));

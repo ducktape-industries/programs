@@ -1,7 +1,6 @@
 //! An agent's configuration file: Markdown whose TOML front matter, between `+++` lines, names
-//! the model id, `max_tokens`, the blocks egress waits (`wait`) and how hard the model thinks
-//! (`thinking`), and whose body is the system prompt. Harness parses it at each model call;
-//! harness-view writes it.
+//! the model, `max_tokens`, `wait`, `thinking`, `server_tools`, `listen`, `settle`, `compact_at`;
+//! its body is the system prompt. Harness parses it at each model call; harness-view writes it.
 use std::fmt;
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
@@ -10,7 +9,8 @@ use serde::{Deserialize, Serialize};
 pub const FENCE: &str = "+++";
 
 // `listen` names the chat channels the agent hears every message of, and `settle` how long, in
-// milliseconds, its general input waits for more before a turn
+// milliseconds, its general input waits for more before a turn, and `compact_at` the tokens of
+// context at which its conversations start compacting
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Config {
     pub model: String,
@@ -20,6 +20,7 @@ pub struct Config {
     pub server_tools: Vec<ServerTool>,
     pub listen: Vec<String>,
     pub settle: Option<u64>,
+    pub compact_at: Option<u64>,
     pub system: String,
 }
 
@@ -102,6 +103,7 @@ pub enum Malformed {
     NoTokens,
     NoWait,
     NoSettle(String),
+    NoCompactAt,
 }
 
 impl fmt::Display for Malformed {
@@ -124,6 +126,7 @@ impl fmt::Display for Malformed {
                 f,
                 "settle, when given, is a whole number of ms, s or m above zero, like \"10s\", not {given:?}"
             ),
+            Malformed::NoCompactAt => f.write_str("compact_at, when given, is at least 1 token"),
         }
     }
 }
@@ -140,6 +143,7 @@ struct FrontMatter {
     #[serde(default)]
     listen: Vec<String>,
     settle: Option<String>,
+    compact_at: Option<u64>,
 }
 
 fn fence(line: &str) -> bool {
@@ -187,6 +191,9 @@ impl Config {
         if matter.wait == Some(0) {
             return Err(Malformed::NoWait);
         }
+        if matter.compact_at == Some(0) {
+            return Err(Malformed::NoCompactAt);
+        }
         let mut server_tools: Vec<ServerTool> = Vec::new();
         for tool in matter.server_tools {
             if !server_tools.contains(&tool) {
@@ -205,6 +212,7 @@ impl Config {
             server_tools,
             listen: matter.listen,
             settle,
+            compact_at: matter.compact_at,
             system: after[close + 1..].concat().trim().to_owned(),
         })
     }
@@ -247,6 +255,9 @@ impl Config {
         }
         if let Some(settle) = self.settle {
             front.push_str(&format!("settle = \"{}\"\n", duration(settle)));
+        }
+        if let Some(compact_at) = self.compact_at {
+            front.push_str(&format!("compact_at = {compact_at}\n"));
         }
         format!("{FENCE}\n{front}{FENCE}\n{}\n", self.system)
     }

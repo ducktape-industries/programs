@@ -11,7 +11,7 @@ use attribution::{Actor, Change, Kind as Changed, Reason, Source};
 use crate::calls::deferred_while_shown;
 use crate::conversations::{binding, conversation, current, route};
 use crate::resume;
-use crate::state::{BOUND, LAST, MODELS, PLACES, THREADS};
+use crate::state::{BOUND, LAST, PLACES, THREADS};
 use crate::turns::{converse, say};
 use crate::waiting;
 use crate::{AgentSetup, Body, Config, Configured, Op, PROGRAM, Place, ThreadRow};
@@ -112,7 +112,7 @@ pub(crate) fn configured(ctx: &QueryCtx, path: &str) -> Result<Configured, Error
             });
         }
     };
-    Ok(match MODELS.get(ctx, &config.model)? {
+    Ok(match crate::models::model(ctx, &config.model)? {
         Some(model) => Configured::Ready {
             snapshot,
             config,

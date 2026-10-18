@@ -15,10 +15,10 @@ use crate::ui::{
     thinking_picker, waiting,
 };
 use crate::words::{
-    PROBLEM_CAPTION, agent_sentence, answers, conversation_label, file_link, lower, may_change,
-    model_more, no_node_words, prompt, prompt_words, quoted, reach, read_at, removes, starts,
-    thinking_words, thread_words, tools_words, upper_first, usage_total, usage_words, wait_words,
-    window_words,
+    PROBLEM_CAPTION, agent_sentence, answers, compacts_line, conversation_label, file_link, lower,
+    may_change, model_more, no_node_words, prompt, prompt_words, quoted, reach, read_at, removes,
+    starts, thinking_words, thread_words, tools_words, upper_first, usage_total, usage_words,
+    wait_words, window_words,
 };
 use crate::{Agents, Arm, Part, Screen, Sheet, State, agent_state, thread_state};
 
@@ -431,6 +431,15 @@ fn model_part(
             "part-window",
             "Window",
             window_words(model.window),
+            theme,
+            ladder,
+        ));
+    }
+    if setup.configured.config().is_some() {
+        facts = facts.child(fact(
+            "part-compacts",
+            "Compacts at",
+            compacts_line(setup.configured.threshold()),
             theme,
             ladder,
         ));
