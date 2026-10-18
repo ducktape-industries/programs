@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use super::{Reading, Run, Seat, Tool, Write, object};
 use crate::codec::{self, Fault};
-use crate::schema::schema_of;
+use crate::schema::{Interface, schema_of};
 
 pub(crate) fn program_schema() -> Value {
     json!({ "type": "string", "description": "a program id, such as chat or files" })
@@ -31,7 +31,7 @@ pub(crate) struct Schema;
 
 impl Tool for Schema {
     const NAME: &'static str = "network_schema";
-    const DESCRIPTION: &'static str = "The shapes of a program's ops, queries and replies, from the schema its code carries: write a query for network_query and an op for network_call in them. `op`, `query` and `reply` are shapes, and each type they name is under `types`. A shape is a type name; \"null\"; \"bool\"; \"string\"; an integer type such as \"u64\", written as a JSON number (u128 and i128 as decimal strings); \"hex\", bytes as hex ({\"hex\": N}: exactly N bytes); {\"option\": shape}, null or the value; {\"vec\": shape}, an array (with \"len\", exactly that many), and a map is a vec of [key, value] tuples; {\"tuple\": [shapes]}, an array; {\"struct\": {field: shape}}, an object, where a field that is an option may be left out; {\"enum\": {Variant: shape}}, one variant, written \"Variant\" when its shape is null and {\"Variant\": value} otherwise. network_query with program `programs` and query \"Roster\" lists the programs that run.";
+    const DESCRIPTION: &'static str = "The shapes of a program's ops, queries and replies, from the schema its code carries: write a query for network_query and an op for network_call in them. `op`, `query` and `reply` are shapes, `returns` (where the schema has it) gives, for each op that returns something, the shape of what it returns, and each type they name is under `types`. A shape is a type name; \"null\"; \"bool\"; \"string\"; an integer type such as \"u64\", written as a JSON number (u128 and i128 as decimal strings); \"hex\", bytes as hex ({\"hex\": N}: exactly N bytes); {\"option\": shape}, null or the value; {\"vec\": shape}, an array (with \"len\", exactly that many), and a map is a vec of [key, value] tuples; {\"tuple\": [shapes]}, an array; {\"struct\": {field: shape}}, an object, where a field that is an option may be left out; {\"enum\": {Variant: shape}}, one variant, written \"Variant\" when its shape is null and {\"Variant\": value} otherwise. network_query with program `programs` and query \"Roster\" lists the programs that run.";
     type Args = SchemaArgs;
 
     fn schema() -> Value {
@@ -45,7 +45,11 @@ impl Tool for Schema {
             ("query", interface.query.as_str()),
             ("reply", interface.reply.as_str()),
         ];
-        let mut shape = codec::shape(&interface.schema, &roots)
+        let returns: Option<Vec<(&str, &str)>> = interface.returns.as_ref().map(|returns| {
+            let named = returns.iter().map(|(op, of)| (op.as_str(), of.as_str()));
+            named.collect()
+        });
+        let mut shape = codec::shape(&interface.schema, &roots, returns.as_deref())
             .map_err(|fault| Error::new(code::CORRUPT, fault.to_string()))?;
         shape["program"] = json!(args.program);
         Ok(Run::Done(shape))
@@ -98,7 +102,7 @@ pub(crate) struct Call;
 
 impl Tool for Call {
     const NAME: &'static str = "network_call";
-    const DESCRIPTION: &'static str = "Send a program an op, written in the op shape network_schema gives for it, as your own account. The op is yours: the program applies it where it allows your account and refuses it otherwise, with its reason. An HTTP request the program bound to the egress role answers whole comes back as the answer's `status`, `headers` and `body`: JSON where the body parses as JSON, else text where it is UTF-8, else hex, as `body_as` says. Any other output comes back as hex in `returned`, and `unread` says why it reads as nothing more.";
+    const DESCRIPTION: &'static str = "Send a program an op, written in the op shape network_schema gives for it, as your own account. The op is yours: the program applies it where it allows your account and refuses it otherwise, with its reason. An HTTP request the program bound to the egress role answers whole comes back as the answer's `status`, `headers` and `body`: JSON where the body parses as JSON, else text where it is UTF-8, else hex, as `body_as` says. Any other output comes back in `returned`: as JSON in the shape network_schema's `returns` gives for the op, else as hex, and then `unread` says why it reads as nothing more.";
     const WRITES: bool = true;
     type Args = CallArgs;
 
@@ -115,8 +119,8 @@ impl Tool for Call {
     fn run(ctx: &ExecCtx, _: &Seat, args: CallArgs) -> Result<Run, Error> {
         let payload = encoded(ctx, &args.program, &args.op)?;
         let read: Reading = match answers_http(ctx, &args.program, &payload) {
-            true => response,
-            false => returned,
+            true => Box::new(response),
+            false => returned(&args.program, interface, &payload),
         };
         let writes = vec![Write {
             target: args.program,
@@ -125,9 +129,6 @@ impl Tool for Call {
         Ok(Run::Read { writes, read })
     }
 }
-
-const UNDESCRIBED: &str =
-    "a program's schema names no type for what its ops return, so this is the output's bytes";
 
 fn answers_http(ctx: &ExecCtx, program: &str, payload: &[u8]) -> bool {
     let to_egress = ctx
@@ -146,11 +147,53 @@ fn answers_http(ctx: &ExecCtx, program: &str, payload: &[u8]) -> bool {
         )
 }
 
-fn returned(output: &[u8]) -> Result<Value, Error> {
-    Ok(match output {
-        [] => json!({ "ok": true }),
-        returned => json!({ "ok": true, "returned": abi::hex(returned), "unread": UNDESCRIBED }),
+// What the op's output reads as: JSON in the type its program's schema names for the op, else
+// its bytes as hex and why.
+fn returned(program: &str, interface: Interface, payload: &[u8]) -> Reading {
+    let op = codec::variant(&interface.schema, &interface.op, payload);
+    let named = match &op {
+        Some(op) => format!("its op {op}"),
+        None => "this op".to_owned(),
+    };
+    let declared = match (&interface.returns, &op) {
+        (Some(returns), Some(op)) => returns
+            .iter()
+            .find(|(returning, _)| returning == op)
+            .map(|(_, of)| of.clone()),
+        _ => None,
+    };
+    let undeclared = match &interface.returns {
+        Some(_) => format!(
+            "the schema of program {program} names no type for what {named} returns, so this is the output's bytes"
+        ),
+        None => format!(
+            "the schema of program {program} names no type for what its ops return, so this is the output's bytes"
+        ),
+    };
+    let program = program.to_owned();
+    Box::new(move |output| {
+        if output.is_empty() {
+            return Ok(json!({ "ok": true }));
+        }
+        let Some(of) = declared else {
+            return Ok(unread(output, &undeclared));
+        };
+        Ok(
+            match codec::decode(&interface.schema, &of, "returned", output) {
+                Ok(value) => json!({ "ok": true, "returned": value }),
+                Err(fault) => {
+                    let why = format!(
+                        "the output does not read as {of}, the type the schema of program {program} names for {named}: {fault}"
+                    );
+                    unread(output, &why)
+                }
+            },
+        )
     })
+}
+
+fn unread(output: &[u8], why: &str) -> Value {
+    json!({ "ok": true, "returned": abi::hex(output), "unread": why })
 }
 
 fn response(output: &[u8]) -> Result<Value, Error> {

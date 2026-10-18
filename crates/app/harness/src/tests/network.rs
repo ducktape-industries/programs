@@ -1,15 +1,23 @@
-use ::program::schema::interface;
+use std::collections::BTreeMap;
+
+use ::program::schema::{Return, interface, returns, roots};
+use ::program::{Error, Program, QueryCtx, invalid};
+use borsh::schema::{BorshSchemaContainer, Definition, Fields};
 use programs::Programs;
 
 use super::*;
 use crate::schema::tests::{code_with, listed, module};
 
 fn schemed() -> World {
+    schemed_with(code_with(&interface::<files::Files>()))
+}
+
+fn schemed_with(files_code: Vec<u8>) -> World {
     let mut world = world();
     world.chain.seat::<Programs>(programs::PROGRAM);
     let codes = [
         (chat::PROGRAM, code_with(&interface::<chat::Chat>())),
-        (files::PROGRAM, code_with(&interface::<files::Files>())),
+        (files::PROGRAM, files_code),
         (egress::PROGRAM, code_with(&interface::<Egress>())),
         ("valset", module(&[])),
     ];
@@ -27,19 +35,23 @@ fn schemed() -> World {
 }
 
 fn called(world: &World, calls: &[(&str, &str, Value)]) -> u64 {
-    let chain = &world.chain;
     let thread = world.opened("m1", "use the network", Some(WINDOW));
-    chain.at(3, 0);
+    turn(&world.chain, 3, calls);
+    thread
+}
+
+// One model turn of `calls` at `height`, each run once its relay comes back, a block later.
+fn turn(chain: &MockChain, height: u64, calls: &[(&str, &str, Value)]) {
+    chain.at(height, 0);
     let uses: Vec<Value> = calls
         .iter()
         .map(|(id, tool, input)| tool_use(id, tool, input.clone()))
         .collect();
     model_says(chain, Value::Array(uses), "tool_use");
-    chain.at(4, 0);
+    chain.at(height + 1, 0);
     for (id, _, _) in calls {
         relay_back(chain, id);
     }
-    thread
 }
 
 fn json_result(chain: &MockChain, thread: u64, call: &str) -> Value {
@@ -156,10 +168,8 @@ fn an_op_is_the_agents_and_the_program_allows_or_refuses_it() {
     assert!(closed.starts_with(code::UNAUTHORIZED), "{closed}");
 
     let home = json_result(chain, thread, "c_home");
-    let snapshot = abi::decode::<BlobId>(&abi::unhex(home["returned"].as_str().unwrap()).unwrap());
-    assert_eq!(snapshot.unwrap(), head(chain));
-    let unread = home["unread"].as_str().unwrap();
-    assert!(unread.contains("schema names no type"), "{unread}");
+    let snapshot = json!({ "Sha256": abi::hex(head(chain).digest()) });
+    assert_eq!(home, json!({ "ok": true, "returned": snapshot }));
     let root = refusal(chain, thread, "c_root");
     assert!(root.starts_with(code::UNAUTHORIZED), "{root}");
 }
@@ -243,6 +253,187 @@ fn a_call_whose_input_is_not_an_object_of_its_fields_is_refused_before_it_runs()
         "{refused:?}"
     );
     assert!(assigned(chain, RELAY).is_empty());
+}
+
+// files' interface as a schema packed before interfaces named what ops return: op, query and
+// reply alone.
+fn before_returns(schema: BorshSchemaContainer) -> BorshSchemaContainer {
+    let roots = roots(&schema).unwrap();
+    let fields = [
+        ("op", roots.op),
+        ("query", roots.query),
+        ("reply", roots.reply),
+    ]
+    .map(|(field, declaration)| (field.to_owned(), declaration.to_owned()));
+    let mut definitions: BTreeMap<_, _> = schema
+        .definitions()
+        .map(|(declaration, definition)| (declaration.clone(), definition.clone()))
+        .collect();
+    let interface = Definition::Struct {
+        fields: Fields::NamedFields(fields.to_vec()),
+    };
+    definitions.insert("Interface".to_owned(), interface);
+    BorshSchemaContainer::new("Interface".to_owned(), definitions)
+}
+
+// files' op, query and reply, with what `RETURNS` says its ops return.
+struct Unsaid;
+
+impl Program for Unsaid {
+    const NAME: &'static str = files::PROGRAM;
+    type Op = files::Op;
+    type Query = files::Query;
+    type Reply = files::Reply;
+
+    fn query(_: &QueryCtx, _: files::Query) -> Result<files::Reply, Error> {
+        Err(invalid("only its schema is listed"))
+    }
+}
+
+struct Misread;
+
+impl Program for Misread {
+    const NAME: &'static str = files::PROGRAM;
+    type Op = files::Op;
+    type Query = files::Query;
+    type Reply = files::Reply;
+    const RETURNS: &'static [Return] = &[returns::<u8>("Commit")];
+
+    fn query(_: &QueryCtx, _: files::Query) -> Result<files::Reply, Error> {
+        Err(invalid("only its schema is listed"))
+    }
+}
+
+fn notes(chain: &MockChain) -> Value {
+    let base = json!({ "Sha256": abi::hex(head(chain).digest()) });
+    json!({ "program": "files", "op": { "Commit": {
+        "base": base,
+        "message": "notes",
+        "changes": [{ "Mkdir": { "path": "/home/Scout/notes" } }],
+    } } })
+}
+
+// What the files `Commit` the agent calls answers, beside files' shapes, with `files_code` listed
+// as files' code.
+fn committed(files_code: Vec<u8>) -> (Value, Value, BlobId) {
+    let world = schemed_with(files_code);
+    let chain = &world.chain;
+    let calls = [
+        ("c_notes", "network_call", notes(chain)),
+        ("s_files", "network_schema", json!({ "program": "files" })),
+    ];
+    let thread = called(&world, &calls);
+    let answer = json_result(chain, thread, "c_notes");
+    let shape = json_result(chain, thread, "s_files");
+    (answer, shape, head(chain))
+}
+
+fn returned_bytes(answer: &Value) -> BlobId {
+    let bytes = abi::unhex(answer["returned"].as_str().unwrap()).unwrap();
+    abi::decode(&bytes).unwrap()
+}
+
+#[test]
+fn an_output_a_schema_from_before_returns_names_no_type_for_stays_hex_and_says_why() {
+    let before = before_returns(interface::<files::Files>());
+    let (answer, shape, head) = committed(code_with(&before));
+    assert_eq!(returned_bytes(&answer), head);
+    let unread = answer["unread"].as_str().unwrap();
+    let why = "the schema of program files names no type for what its ops return";
+    assert!(unread.starts_with(why), "{unread}");
+    assert!(shape.get("returns").is_none(), "{shape}");
+}
+
+#[test]
+fn an_op_whose_program_names_no_return_for_it_answers_hex_and_names_the_op() {
+    let (answer, shape, head) = committed(code_with(&interface::<Unsaid>()));
+    assert_eq!(returned_bytes(&answer), head);
+    let unread = answer["unread"].as_str().unwrap();
+    assert!(
+        unread.contains("names no type for what its op Commit returns"),
+        "{unread}"
+    );
+    assert_eq!(shape["returns"], json!({}));
+}
+
+#[test]
+fn an_output_that_does_not_read_as_its_declared_type_falls_back_to_hex_and_says_why() {
+    let (answer, shape, head) = committed(code_with(&interface::<Misread>()));
+    assert_eq!(returned_bytes(&answer), head);
+    let unread = answer["unread"].as_str().unwrap();
+    let why = "the output does not read as u8, the type the schema of program files names for its op Commit: ";
+    assert!(
+        unread.starts_with(why) && unread.ends_with("bytes are left after the value"),
+        "{unread}"
+    );
+    assert_eq!(shape["returns"], json!({ "Commit": "u8" }));
+}
+
+fn branch_oids(chain: &MockChain, branch: &str) -> Vec<String> {
+    let asked = forge::Query::Log {
+        repo: "notes".into(),
+        from: forge::Revision::Ref(format!("refs/heads/{branch}").into_bytes()),
+        exclude: None,
+        page: PageRequest::first(16),
+    };
+    let forge::Reply::Log { page, .. } = chain.query(forge::PROGRAM, &asked).unwrap() else {
+        panic!("a log answers Log")
+    };
+    page.items.into_iter().map(|commit| commit.oid).collect()
+}
+
+#[test]
+fn a_forge_merge_reads_back_as_the_reply_forges_schema_names_for_it() {
+    let mut world = super::forge_commit::forged(10_000);
+    world.chain.seat::<Programs>(programs::PROGRAM);
+    let forge_code = code_with(&interface::<forge::Forge>());
+    listed(&world.chain, &[(forge::PROGRAM, forge_code)]);
+    let chain = &world.chain;
+    let thread = world.opened("m1", "merge a branch", Some(WINDOW));
+    let commit = |id: &'static str, branch: &str| {
+        let file = json!({ "path": format!("{id}.md"), "content": id });
+        let input = json!({ "repo": "notes", "branch": branch, "files": [file], "message": id });
+        (id, "forge_commit", input)
+    };
+    turn(chain, 3, &[commit("c_main", "main")]);
+    turn(chain, 5, &[commit("c_side", "side")]);
+    // both commits carry one time, so a log may list them in either order
+    let [main]: [String; 1] = branch_oids(chain, "main").try_into().unwrap();
+    let side = branch_oids(chain, "side")
+        .into_iter()
+        .find(|oid| *oid != main)
+        .unwrap();
+    let merge = json!({ "program": "forge", "op": { "Merge": {
+        "repo": "notes",
+        "into": abi::hex(b"refs/heads/main"),
+        "from": { "Ref": abi::hex(b"refs/heads/side") },
+        "expected_into": main,
+        "expected_from": side,
+        "result": side,
+        "change": null,
+    } } });
+    let calls = [
+        ("c_merge", "network_call", merge),
+        ("s_forge", "network_schema", json!({ "program": "forge" })),
+    ];
+    turn(chain, 7, &calls);
+
+    let merged = json_result(chain, thread, "c_merge");
+    let reply = &merged["returned"]["Merged"];
+    assert_eq!(reply["oid"], json!(side), "{merged}");
+    assert_eq!(reply["change"], json!(null), "{merged}");
+    assert!(reply["height"].is_u64(), "{merged}");
+    assert!(merged.get("unread").is_none(), "{merged}");
+    let merged_main = branch_oids(chain, "main");
+    assert!(
+        merged_main.len() == 2 && merged_main.contains(&side),
+        "{merged_main:?}"
+    );
+    let shape = json_result(chain, thread, "s_forge");
+    assert_eq!(shape["returns"]["Merge"], json!("OpReply"));
+    assert!(shape["returns"].get("Push").is_none(), "{shape}");
+    let reply_shape = &shape["types"]["OpReply"]["enum"]["Merged"];
+    assert!(reply_shape.is_object(), "{shape}");
 }
 
 const PODS: &str = "pods";

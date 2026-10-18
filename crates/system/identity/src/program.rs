@@ -1,6 +1,7 @@
 //! The program: every op and every query, each handed to its rule.
 
-use ::program::{Error, ExecCtx, Program, QueryCtx};
+use ::program::schema::{Return, returns};
+use ::program::{AccountNumber, Error, ExecCtx, Program, QueryCtx};
 
 use crate::rules::{
     ACCOUNTS, MANAGED, OF_PROGRAM, account, add_key, create, create_agent, generation, needs,
@@ -16,6 +17,10 @@ impl Program for Identity {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+    const RETURNS: &'static [Return] = &[
+        returns::<AccountNumber>("Create"),
+        returns::<AccountNumber>("CreateAgent"),
+    ];
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         match op {

@@ -1,5 +1,6 @@
 //! The program: every op and every query, each handed to its rule.
 
+use ::program::schema::{Return, returns};
 use ::program::{Error, ExecCtx, Program, QueryCtx};
 
 use crate::rules::{bundle, held, put, receipt};
@@ -12,6 +13,7 @@ impl Program for Blobs {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+    const RETURNS: &'static [Return] = &[returns::<u64>("Put")];
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         match op {

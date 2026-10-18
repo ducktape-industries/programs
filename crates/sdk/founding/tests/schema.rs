@@ -14,10 +14,16 @@ fn every_founded_program_has_a_valid_schema_of_its_op_query_and_reply() {
         schema
             .validate()
             .unwrap_or_else(|error| panic!("{program}: {error:?}"));
-        let Some(Roots { op, query, reply }) = roots(&schema) else {
-            panic!("{program}: the root names no op, query and reply");
+        let Some(Roots {
+            op,
+            query,
+            reply,
+            returns: Some(returns),
+        }) = roots(&schema)
+        else {
+            panic!("{program}: the root names no op, query, reply and returns");
         };
-        let rooted = [op, query, reply]
+        let rooted = [op, query, reply, returns]
             .iter()
             .all(|declaration| schema.get_definition(*declaration).is_some());
         assert!(rooted, "{program}");

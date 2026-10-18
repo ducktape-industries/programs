@@ -34,7 +34,7 @@ pub(crate) struct Write {
     pub payload: Vec<u8>,
 }
 
-pub(crate) type Reading = fn(&[u8]) -> Result<Value, Error>;
+pub(crate) type Reading = Box<dyn FnOnce(&[u8]) -> Result<Value, Error>>;
 
 pub(crate) enum Run {
     Done(Value),

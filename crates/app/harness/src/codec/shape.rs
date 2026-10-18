@@ -7,7 +7,12 @@ use serde_json::{Map, Value, json};
 
 use super::{Fault, Kind, Length, Variants, kind, payload, unit_variant};
 
-pub(crate) fn shape(schema: &BorshSchemaContainer, roots: &[(&str, &str)]) -> Result<Value, Fault> {
+// Under `returns` (when given), each op that names what it returns, and that type's shape.
+pub(crate) fn shape(
+    schema: &BorshSchemaContainer,
+    roots: &[(&str, &str)],
+    returns: Option<&[(&str, &str)]>,
+) -> Result<Value, Fault> {
     let mut shaper = Shaper {
         schema,
         named: BTreeMap::new(),
@@ -17,6 +22,13 @@ pub(crate) fn shape(schema: &BorshSchemaContainer, roots: &[(&str, &str)]) -> Re
     let mut out = Map::new();
     for (name, declaration) in roots {
         out.insert((*name).to_owned(), shaper.expr(declaration)?);
+    }
+    if let Some(returns) = returns {
+        let mut returned = Map::new();
+        for (op, declaration) in returns {
+            returned.insert((*op).to_owned(), shaper.expr(declaration)?);
+        }
+        out.insert("returns".to_owned(), Value::Object(returned));
     }
     while let Some(declaration) = shaper.pending.pop() {
         let defined = shaper.definition(declaration)?;

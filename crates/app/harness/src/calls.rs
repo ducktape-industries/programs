@@ -571,7 +571,7 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
     };
     let (writes, read) = match (entry.run)(ctx, &seat, input) {
         Ok(Run::Done(value)) => return Ok((value.to_string(), false)),
-        Ok(Run::Write(writes)) => (writes, entry.render),
+        Ok(Run::Write(writes)) => (writes, Box::new(entry.render) as tools::Reading),
         Ok(Run::Read { writes, read }) => (writes, read),
         Err(error) => return Ok((refusal(&error), true)),
     };

@@ -2,6 +2,7 @@
 //! query, each handed to its function (`ops.rs`, `changes.rs`,
 //! `queries.rs`, `reads.rs`, `change_queries.rs`).
 
+use ::program::schema::{Return, returns};
 use ::program::{Error, ExecCtx, Program, QueryCtx};
 
 use crate::change_queries::{change, changes, judgment};
@@ -21,6 +22,13 @@ impl Program for Forge {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+    const RETURNS: &'static [Return] = &[
+        returns::<OpReply>("Merge"),
+        returns::<OpReply>("ChangeOpen"),
+        returns::<OpReply>("ChangeEdit"),
+        returns::<OpReply>("ChangeClose"),
+        returns::<OpReply>("ReviewSubmit"),
+    ];
 
     fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
         init(ctx, params)

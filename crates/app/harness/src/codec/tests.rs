@@ -77,6 +77,6 @@ impl Roots {
             ("query", self.query.as_str()),
             ("reply", self.reply.as_str()),
         ];
-        shape(&self.schema, &roots).unwrap()
+        shape(&self.schema, &roots, None).unwrap()
     }
 }

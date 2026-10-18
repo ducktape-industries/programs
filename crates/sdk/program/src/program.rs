@@ -25,6 +25,10 @@ pub trait Program {
     type Query: BorshSerialize + BorshDeserialize + Debug;
     type Reply: BorshSerialize + BorshDeserialize;
 
+    // What each op variant's output is the borsh of, for whoever reads the program's schema
+    // (`schema::returns::<T>("Variant")`). An op left out returns bytes no schema names.
+    const RETURNS: &'static [crate::schema::Return] = &[];
+
     /// Genesis, with the params the network was founded with. Nothing by
     /// default; override only where genesis needs it.
     fn init(_ctx: &ExecCtx, _params: &[u8]) -> Result<(), Error> {

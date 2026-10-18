@@ -1,6 +1,7 @@
 //! The program: every op and every query, each handed to its rule.
 
-use ::program::{Error, ExecCtx, Program, QueryCtx};
+use ::program::schema::{Return, returns};
+use ::program::{EntryId, Error, ExecCtx, Program, QueryCtx};
 
 use crate::rules::{cancel, due, entry, ran, schedule};
 use crate::{Op, PROGRAM, Query, Reply};
@@ -12,6 +13,7 @@ impl Program for Scheduler {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+    const RETURNS: &'static [Return] = &[returns::<EntryId>("Schedule")];
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         match op {

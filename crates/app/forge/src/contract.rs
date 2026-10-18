@@ -569,7 +569,7 @@ pub enum ObjectKind {
     Tag,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum OpReply {
     Change {
         height: u64,

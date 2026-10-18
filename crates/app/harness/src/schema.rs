@@ -3,7 +3,7 @@
 #[cfg(test)]
 pub(crate) mod tests;
 
-use ::program::schema::{Roots, SECTION, roots};
+use ::program::schema::{SECTION, returned, roots};
 use ::program::{BlobId, Error, QueryCtx, code, is_name, not_found};
 use abi::role::programs as role;
 use borsh::schema::{BorshSchemaContainer, Declaration};
@@ -15,6 +15,7 @@ pub(crate) struct Interface {
     pub op: Declaration,
     pub query: Declaration,
     pub reply: Declaration,
+    pub returns: Option<Vec<(String, Declaration)>>,
 }
 
 pub(crate) fn schema_of(ctx: &QueryCtx, program: &str) -> Result<Interface, Error> {
@@ -36,7 +37,32 @@ pub(crate) fn schema_of(ctx: &QueryCtx, program: &str) -> Result<Interface, Erro
     schema
         .validate()
         .map_err(|_| unreadable("is no valid schema"))?;
-    interface(schema).ok_or_else(|| unreadable("names no op, query and reply"))
+    let Some(roots) = roots(&schema) else {
+        return Err(unreadable("names no op, query and reply"));
+    };
+    let returns = match roots.returns {
+        Some(returns) => {
+            let returned = returned(&schema, returns)
+                .ok_or_else(|| unreadable("names what its ops return in no struct of them"))?;
+            let owned = returned
+                .into_iter()
+                .map(|(op, of)| (op.to_owned(), of.to_owned()));
+            Some(owned.collect())
+        }
+        None => None,
+    };
+    let (op, query, reply) = (
+        roots.op.to_owned(),
+        roots.query.to_owned(),
+        roots.reply.to_owned(),
+    );
+    Ok(Interface {
+        schema,
+        op,
+        query,
+        reply,
+        returns,
+    })
 }
 
 fn code_of(ctx: &QueryCtx, program: &str) -> Result<BlobId, Error> {
@@ -60,17 +86,6 @@ fn code_of(ctx: &QueryCtx, program: &str) -> Result<BlobId, Error> {
         .find(|entry| entry.program == program)
         .map(|entry| entry.code)
         .ok_or_else(unknown)
-}
-
-fn interface(schema: BorshSchemaContainer) -> Option<Interface> {
-    let Roots { op, query, reply } = roots(&schema)?;
-    let (op, query, reply) = (op.to_owned(), query.to_owned(), reply.to_owned());
-    Some(Interface {
-        schema,
-        op,
-        query,
-        reply,
-    })
 }
 
 fn section(ctx: &QueryCtx, code: BlobId, name: &str) -> Result<Option<Vec<u8>>, Error> {

@@ -294,7 +294,7 @@ fn bytes_that_do_not_fit_the_schema_are_refused() {
 fn a_shape_names_structs_and_enums_and_writes_the_rest_inline() {
     let schema = schema_of::<Named>();
     assert_eq!(
-        shape(&schema, &[("value", schema.declaration())]).unwrap(),
+        shape(&schema, &[("value", schema.declaration())], None).unwrap(),
         json!({
             "value": "Named",
             "types": {
@@ -308,7 +308,7 @@ fn a_shape_names_structs_and_enums_and_writes_the_rest_inline() {
     );
     let schema = schema_of::<Shape>();
     assert_eq!(
-        shape(&schema, &[("value", schema.declaration())]).unwrap()["types"]["Shape"],
+        shape(&schema, &[("value", schema.declaration())], None).unwrap()["types"]["Shape"],
         json!({ "enum": {
             "Empty": null,
             "Point": { "struct": { "x": "i32", "y": "i32" } },
@@ -318,7 +318,7 @@ fn a_shape_names_structs_and_enums_and_writes_the_rest_inline() {
     );
     let schema = schema_of::<Raw>();
     assert_eq!(
-        shape(&schema, &[("value", schema.declaration())]).unwrap()["types"]["Raw"],
+        shape(&schema, &[("value", schema.declaration())], None).unwrap()["types"]["Raw"],
         json!({ "struct": {
             "bytes": "hex",
             "digest": { "hex": 4 },
@@ -331,7 +331,7 @@ fn a_shape_names_structs_and_enums_and_writes_the_rest_inline() {
     );
     let schema = schema_of::<Tree>();
     assert_eq!(
-        shape(&schema, &[("value", schema.declaration())]).unwrap()["types"]["Tree"],
+        shape(&schema, &[("value", schema.declaration())], None).unwrap()["types"]["Tree"],
         json!({ "enum": { "Leaf": "u8", "Node": { "vec": "Tree" } } })
     );
 }
@@ -349,7 +349,7 @@ fn a_schema_whose_sequence_holds_itself_is_shaped_by_name() {
     );
     let schema = BorshSchemaContainer::new("Loop".to_owned(), definitions);
     assert_eq!(
-        shape(&schema, &[("value", "Loop")]).unwrap(),
+        shape(&schema, &[("value", "Loop")], None).unwrap(),
         json!({ "value": { "vec": "Loop" }, "types": { "Loop": { "vec": "Loop" } } })
     );
     assert_eq!(

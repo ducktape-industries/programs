@@ -288,3 +288,26 @@ fn payload<'a>(schema: &'a BorshSchemaContainer, variant: &'a str) -> Option<&'a
 fn unit_variant(fields: Option<&Fields>) -> bool {
     matches!(fields, Some(Fields::Empty))
 }
+
+// The variant of enum `declaration` whose tag `bytes` start with.
+pub(crate) fn variant(
+    schema: &BorshSchemaContainer,
+    declaration: &str,
+    bytes: &[u8],
+) -> Option<String> {
+    let Ok(Kind::Enum {
+        tag_width,
+        variants,
+    }) = kind(schema, declaration)
+    else {
+        return None;
+    };
+    let width = usize::from(tag_width);
+    let mut le = [0u8; 8];
+    le.get_mut(..width)?.copy_from_slice(bytes.get(..width)?);
+    let tag = i64::from_le_bytes(le);
+    variants
+        .iter()
+        .find(|(discriminant, _, _)| *discriminant == tag)
+        .map(|(_, name, _)| name.clone())
+}

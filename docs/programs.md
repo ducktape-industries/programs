@@ -84,6 +84,15 @@ names the program's interface (`program::schema::interface::<poll::Poll>()`),
 harness's `network_schema`, `network_query` and `network_call` speak any
 program's ops and queries as JSON through it.
 
+**Each op that returns something says what.** An op's output
+(`ctx.set_return_data`) is bytes no type ties down, so `impl Program` names
+the type each op variant's output is the borsh of:
+`const RETURNS: &'static [Return] = &[returns::<u64>("Open")];`
+(`program::schema::{Return, returns}`). The interface carries them as its
+`returns`, a name that is no variant of `Op` fails it, and `network_call`
+reads such an op's output back as JSON. An op left out (or one whose output
+is no one borsh type) answers its bytes as hex.
+
 **The append-only rule.** Borsh encodes a variant by its index, and a host
 describes an op that landed at any height with the program's *current*
 code. So `Op` only grows at its end: append a variant, never insert,
