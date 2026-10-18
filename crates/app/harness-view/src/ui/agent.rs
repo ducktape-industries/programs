@@ -10,8 +10,8 @@ use view::prelude::*;
 
 use super::list::{ROW, pressable};
 use super::{
-    agent_gone, back, bound_badge, caption, closed_badge, current_badge, fact, fold, meter,
-    no_node, opened, panel, state_badge, thinking_picker, waiting,
+    agent_gone, back, bound_badge, caption, closed_badge, current_badge, fact, fold, meter, no_node,
+    opened, panel, state_badge, thinking_picker, waiting,
 };
 use crate::read::{self, Detail, Roster};
 use crate::words::{
