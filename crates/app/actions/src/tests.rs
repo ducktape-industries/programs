@@ -182,6 +182,16 @@ impl World {
     // A commit whose tree holds `.forge/workflows/<name>` for each workflow, and a file of its
     // own (`t<time>`), so two branches' commits merge cleanly.
     fn commit(&mut self, parents: &[Oid], workflows: &[(&str, &str)]) -> Oid {
+        self.commit_files(parents, workflows, &[])
+    }
+
+    // `commit`'s tree with each of `extra` at its path in the root.
+    fn commit_files(
+        &mut self,
+        parents: &[Oid],
+        workflows: &[(&str, &str)],
+        extra: &[(&str, &[u8])],
+    ) -> Oid {
         self.time += 1;
         let mut files = Vec::new();
         for (name, text) in workflows {
@@ -192,10 +202,20 @@ impl World {
         let forge_dir = self.tree(&[("workflows", Mode::Directory, workflows)]);
         let own = format!("t{}", self.time);
         let mark = self.store.put(Kind::Blob, b"x\n").unwrap();
-        let root = self.tree(&[
-            (".forge", Mode::Directory, forge_dir),
-            (own.as_str(), Mode::Regular, mark),
-        ]);
+        let mut entries = vec![
+            (".forge".to_owned(), Mode::Directory, forge_dir),
+            (own, Mode::Regular, mark),
+        ];
+        for (path, bytes) in extra {
+            let blob = self.store.put(Kind::Blob, bytes).unwrap();
+            entries.push((path.to_string(), Mode::Regular, blob));
+        }
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        let named: Vec<(&str, Mode, Oid)> = entries
+            .iter()
+            .map(|(name, mode, id)| (name.as_str(), *mode, *id))
+            .collect();
+        let root = self.tree(&named);
         let signature = Signature {
             name: b"Ada".to_vec(),
             email: b"ada@example.com".to_vec(),
@@ -587,4 +607,32 @@ fn the_programs_gates_workflow_reads() {
     assert!(gates.starts_on(&dev) && gates.starts_on(&Event::Updated { n: 1 }));
     assert!(gates.notify.is_some());
     assert_eq!(gates.jobs[0].steps, ["sh /tools/gates.sh /work/programs"]);
+}
+
+#[test]
+fn a_change_that_does_not_preview_makes_an_errored_run_that_says_why() {
+    let mut world = world();
+    let changes = [("changes.toml", CHANGES)];
+    let root = world.commit_files(&[], &changes, &[("a", b"1\n")]);
+    world.push(None, root, "main");
+    let feature = world.commit_files(&[root], &changes, &[("a", b"2\n")]);
+    world.push(None, feature, "feature");
+    let moved = world.commit_files(&[root], &changes, &[("a", b"3\n")]);
+    world.push(Some(root), moved, "main");
+    let open = forge::Op::ChangeOpen {
+        repo: REPO.into(),
+        from: forge::Revision::Ref(b"refs/heads/feature".to_vec()),
+        into: b"refs/heads/main".to_vec(),
+        title: "Feature".into(),
+        body: String::new(),
+        reviewers: Vec::new(),
+    };
+    world.forge(&open).unwrap();
+    let run = world.run(1);
+    assert_eq!(run.event, Event::Preview { n: 1 });
+    let ran = (run.commit.as_str(), run.workflow.as_str());
+    assert_eq!(ran, (feature.to_hex().as_str(), "refs/changes/1/merge"));
+    let error = run.error.unwrap();
+    assert!(error.starts_with("change 1 does not preview: "), "{error}");
+    assert!(world.checks(feature).is_empty());
 }

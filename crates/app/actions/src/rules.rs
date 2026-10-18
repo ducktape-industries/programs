@@ -2,14 +2,15 @@
 //! offers it to the runners whose labels cover it, and a check goes from queued to running to
 //! how its runner says it ended.
 use ::program::{
-    Error, ExecCtx, Principal, QueryCtx, Reply, code, corrupt, invalid, not_found,
-    unexpected_reply, wrong_state,
+    Error, ExecCtx, MessageId, Outcome, Principal, QueryCtx, Reply, code, corrupt, invalid,
+    not_found, unexpected_reply, wrong_state,
 };
 use forge::{ChangeState, CheckState, Content, EntryKind, Revision, Watched};
 use store::Item;
 
 use crate::state::{
-    BY_COMMIT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, QUEUED, RUNNERS, RUNS, SOURCES, TARGETS,
+    BY_COMMIT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, PREVIEWING, QUEUED, RUNNERS, RUNS, SOURCES,
+    TARGETS,
 };
 use crate::workflow;
 use crate::{
@@ -74,14 +75,53 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
 }
 
 // forge builds the change's Preview, the squash its merge would land, and says so with
-// `Previewed`; a refusal (a conflict, a change no longer open) is absorbed
-// (`Program::reply`), and the change runs no check until a Preview of it is made.
+// `Previewed`; one it refuses (a conflict) makes an errored run that says why (`replied`).
 fn preview(ctx: &ExecCtx, repo: &str, n: u64) {
     let op = forge::Op::Preview {
         repo: repo.to_owned(),
         n,
     };
-    ctx.emit(forge::PROGRAM, &op, Reply::Wanted);
+    let sent = ctx.emit(forge::PROGRAM, &op, Reply::Wanted);
+    PREVIEWING.put(ctx, &sent.seq, &(repo.to_owned(), n));
+}
+
+// forge's answer to what actions sent it: a Preview it refused makes a run on the change's head,
+// errored, that names why (a conflict names every path); any other answer changes nothing.
+pub(crate) fn replied(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), Error> {
+    let Some((repo, n)) = PREVIEWING.get(ctx, &id.seq)? else {
+        return Ok(());
+    };
+    PREVIEWING.remove(ctx, &id.seq);
+    let Outcome::Rejected(refused) = outcome else {
+        return Ok(());
+    };
+    let Some(head) = open_head(ctx, &repo, n)? else {
+        return Ok(());
+    };
+    let why = format!("change {n} does not preview: {}", refused.message);
+    let preview = format!("refs/changes/{n}/merge");
+    let started = started(&repo, &head, Event::Preview { n }, None);
+    record(ctx, &started, &preview, Named::default(), Some(why))?;
+    Ok(())
+}
+
+// An open change's head, as forge resolves its source now.
+fn open_head(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<String>, Error> {
+    let asked = forge::Query::Change {
+        repo: repo.to_owned(),
+        n,
+        page: PageRequest::first(1),
+    };
+    match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked) {
+        Ok(forge::Reply::Change {
+            change,
+            source_head,
+            ..
+        }) => Ok(source_head.filter(|_| change.state == ChangeState::Open)),
+        Ok(other) => Err(unexpected_reply(forge::PROGRAM, "Change", &other)),
+        Err(refused) if refused.code == code::NOT_FOUND => Ok(None),
+        Err(refused) => Err(refused),
+    }
 }
 
 // forge hears each check's state as its commit's status in `<workflow>#<job>`, which a branch's

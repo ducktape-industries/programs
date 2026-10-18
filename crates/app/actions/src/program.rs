@@ -3,7 +3,7 @@
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx, Reply as Wanted};
 
 use crate::rules::{
-    check, checks, claim, queued, register, report, rerun, run, runners, trigger, watched,
+    check, checks, claim, queued, register, replied, report, rerun, run, runners, trigger, watched,
 };
 use crate::{Op, PROGRAM, Query, Reply};
 
@@ -40,9 +40,10 @@ impl Program for Actions {
         }
     }
 
-    // A runner that refuses an offer leaves the check queued for another.
-    fn reply(_ctx: &ExecCtx, _id: &MessageId, _outcome: &Outcome) -> Result<(), Error> {
-        Ok(())
+    // A runner that refuses an offer leaves the check queued for another; a Preview forge
+    // refuses makes an errored run that says why (`rules::replied`).
+    fn reply(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), Error> {
+        replied(ctx, id, outcome)
     }
 
     fn query(ctx: &QueryCtx, query: Query) -> Result<Reply, Error> {

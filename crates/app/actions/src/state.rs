@@ -16,6 +16,9 @@ pub const QUEUED: Set<u64> = Set::new("q/").shared();
 pub const SOURCES: Map<(String, Vec<u8>), u64> = Map::new("o/").shared();
 // Index: the open changes into each branch, previewed again when it moves.
 pub const TARGETS: Set<(String, Vec<u8>, u64)> = Set::new("t/").shared();
+// The Previews actions asked forge for, by the message's seq, until forge answers in the
+// frame that asked.
+pub const PREVIEWING: Map<u64, (String, u64)> = Map::new("p/").shared();
 pub const RUNNERS: Map<AccountNumber, RunnerRow> = Map::new("u/").shared();
 pub const LAST_RUN: Item<u64> = Item::new("last-run").shared();
 pub const LAST_CHECK: Item<u64> = Item::new("last-check").shared();
@@ -29,6 +32,7 @@ pub(crate) const TABLES: &[::program::Table] = &[
     QUEUED.table(),
     SOURCES.table(),
     TARGETS.table(),
+    PREVIEWING.table(),
     RUNNERS.table(),
     LAST_RUN.table(),
     LAST_CHECK.table(),
