@@ -205,6 +205,8 @@ struct Net {
     rooms: Vec<(String, String)>,
     /// each thread's topic, as its agent set it
     topics: Vec<(u64, String)>,
+    /// the ids of the threads bound to a place
+    bound: Vec<u64>,
 }
 
 impl Default for Net {
@@ -309,6 +311,7 @@ impl Default for Net {
                 .map(|room| (room.to_owned(), room.to_owned()))
                 .into(),
             topics: Vec::new(),
+            bound: Vec::new(),
         }
     }
 }
@@ -417,6 +420,13 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                     .find(|(id, _)| *id == thread)
                     .map(|(_, topic)| topic.clone()),
             ),
+            harness::Query::Bound { agent, .. } => harness::Reply::Threads(page(
+                net.threads
+                    .iter()
+                    .filter(|row| row.agent == agent && net.bound.contains(&row.id))
+                    .cloned()
+                    .collect(),
+            )),
             harness::Query::Tools => harness::Reply::Tools(vec![
                 ToolInfo {
                     name: "forge_log".into(),
