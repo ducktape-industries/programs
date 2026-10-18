@@ -1,8 +1,6 @@
-//! An agent's conversations: one canonical thread that every input continues, from any person
-//! and any place, unless its place is bound to another; and the threads anyone opens bound to a
-//! chat channel or a chat thread (`OpenThread`), which hear only that place until they close.
-//! Its manager starts the canonical one afresh (`NewThread`) or forks it (`ForkThread`); a
-//! canonical thread no longer current closes once its loop is idle.
+//! An agent's conversations: a canonical thread that hears every input whose place no other is
+//! bound to, and threads anyone binds to a chat channel or thread (`OpenThread`). A canonical
+//! thread is renewed or forked by its manager, and closes once idle and no longer current.
 use ::program::{
     Error, ExecCtx, Principal, QueryCtx, already_exists, not_found, unexpected_reply,
 };

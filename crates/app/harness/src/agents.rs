@@ -1,10 +1,6 @@
-//! The agents harness runs: program accounts of the agent category whose script calls harness.
-//! An agent's setup is what identity says of it, its configuration file in `files` read at the
-//! head, and the model record that file names. A mention, a direct message or a reply in a chat
-//! thread it took part in, from someone it answers, goes to the conversation bound to its chat
-//! thread or its channel, else to its canonical conversation. Anyone closes a bound
-//! conversation; its manager closes the canonical one.
-//! Whom an agent answers is its key's list in the access program, its manager alone by default.
+//! The agents harness runs: an agent's setup (identity, its configuration file, its model), and
+//! what it hears from whom it answers, routed to the conversation bound to its chat thread or
+//! channel, else its canonical one; anyone closes a bound one, its manager the canonical one.
 use ::program::{
     BlobId, Ctx, Error, ExecCtx, Ownership, Party, Principal, QueryCtx, not_found, unauthorized,
     unexpected_reply,
