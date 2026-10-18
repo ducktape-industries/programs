@@ -6,7 +6,7 @@ use view::prelude::*;
 use super::parts::{badged, glyph, opening_row, scroller, section};
 use crate::read::{Card, Roster, Unscripted};
 use crate::ui::{state_badge, waiting};
-use crate::words::{agent_sentence, last_moved, network};
+use crate::words::{agent_sentence_topic, last_moved, network};
 use crate::{Agents, Screen, agent_state};
 
 /// How the root's page is named in its parts' keys.
@@ -128,7 +128,7 @@ fn row(
     let words = badged(
         design::row_title(card.name.clone(), ladder, theme),
         Some(badge),
-        Some(agent_sentence(card, roster)),
+        Some(agent_sentence_topic(card, roster)),
         theme,
         ladder,
     );

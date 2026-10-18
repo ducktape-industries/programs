@@ -16,9 +16,9 @@ use super::{
 use crate::read::{self, Detail, Roster};
 use crate::words::{
     PROBLEM_CAPTION, about, agent_sentence, ago, answers, context_short, conversation_label,
-    file_link, full, may_change, model_more, prompt, prompt_words, reach, read_at, removes, starts,
-    thinking_words, thread_words, tools_words, upper_first, usage_total, usage_words, wait_words,
-    window_words,
+    file_link, full, may_change, model_more, prompt, prompt_words, quoted, reach, read_at, removes,
+    starts, thinking_words, thread_words, tools_words, upper_first, usage_total, usage_words,
+    wait_words, window_words,
 };
 use crate::{Agents, Arm, Screen, State, agent_state, thread_state};
 
@@ -440,6 +440,12 @@ fn threads(
                 .into_any_element(),
             _ => caption(context_short(thread.context, window), &theme).into_any_element(),
         };
+        // the agent's own words on it, under its name
+        let topic = detail.topics.get(&id).map(|topic| {
+            caption(quoted(topic), &theme)
+                .id(SharedString::from(format!("thread-{id}-topic")))
+                .truncate()
+        });
         pressable(format!("thread-{id}"), &theme)
             .when(thread.closed, |row| row.text_color(theme.muted))
             .on_click(
@@ -452,24 +458,30 @@ fn threads(
                     .flex_none()
                     .w(px(220.))
                     .flex()
-                    .items_center()
-                    .gap(space::SM)
+                    .flex_col()
                     .child(
                         div()
-                            .min_w_0()
-                            .truncate()
-                            .when(!thread.closed, |label| {
-                                label.font_weight(FontWeight::MEDIUM)
-                            })
-                            .child(conversation_label(thread, Some(roster))),
+                            .flex()
+                            .items_center()
+                            .gap(space::SM)
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .when(!thread.closed, |label| {
+                                        label.font_weight(FontWeight::MEDIUM)
+                                    })
+                                    .child(conversation_label(thread, Some(roster))),
+                            )
+                            .when(current == Some(id), |label| {
+                                label.child(current_badge(
+                                    SharedString::from(format!("thread-{id}-current")),
+                                    &theme,
+                                    ladder,
+                                ))
+                            }),
                     )
-                    .when(current == Some(id), |label| {
-                        label.child(current_badge(
-                            SharedString::from(format!("thread-{id}-current")),
-                            &theme,
-                            ladder,
-                        ))
-                    }),
+                    .children(topic),
             )
             .child(
                 div()

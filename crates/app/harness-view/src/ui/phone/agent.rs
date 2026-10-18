@@ -13,7 +13,7 @@ use crate::read::{self, Detail, Roster};
 use crate::ui::{agent_gone, closed_badge, current_badge, state_badge, thinking_picker, waiting};
 use crate::words::{
     PROBLEM_CAPTION, agent_sentence, answers, conversation_label, file_link, lower, may_change,
-    model_more, no_node_words, prompt, prompt_words, reach, read_at, removes, starts,
+    model_more, no_node_words, prompt, prompt_words, quoted, reach, read_at, removes, starts,
     thinking_words, thread_words, tools_words, upper_first, usage_total, usage_words, wait_words,
     window_words,
 };
@@ -210,6 +210,8 @@ fn threads(
                     title.child(current_badge(format!("thread-{id}-current"), theme, ladder))
                 });
             let frames = design::plural(thread.frames, "frame", "frames");
+            // the agent's own words on it, where it set some, else what it is doing
+            let topic = detail.topics.get(&id).map(|topic| quoted(topic));
             let (badge, words) = match thread.closed {
                 true => (
                     closed_badge(format!("thread-{id}-state"), theme, ladder),
@@ -231,7 +233,13 @@ fn threads(
             opening_row(
                 format!("thread-{id}"),
                 glyph(lead, theme, ladder),
-                badged(title, Some(badge), Some(words), theme, ladder),
+                badged(
+                    title,
+                    Some(badge),
+                    Some(topic.unwrap_or(words)),
+                    theme,
+                    ladder,
+                ),
                 Some(design::ago(roster.now, thread.last_time)),
                 theme,
                 ladder,

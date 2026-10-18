@@ -7,7 +7,7 @@ use view::{FontWeight, Stateful};
 
 use super::{caption, state_badge, waiting};
 use crate::read::{Card, Roster, Unscripted};
-use crate::words::{agent_sentence, ago, last_moved};
+use crate::words::{agent_sentence_topic, ago, last_moved};
 use crate::{Agents, Screen, agent_state};
 
 /// How tall a row is at least.
@@ -253,7 +253,7 @@ fn row(
                     ladder,
                 ))
                 .child(
-                    caption(agent_sentence(card, roster), theme)
+                    caption(agent_sentence_topic(card, roster), theme)
                         .min_w_0()
                         .truncate(),
                 ),
