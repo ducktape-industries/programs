@@ -13,9 +13,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use store::PageRequest;
 
-use super::{
-    Run, Seat, Tool, blob, cursor_schema, next, object, page, principal, unexpected, write,
-};
+use super::{Run, Seat, Tool, blob, cursor_schema, next, object, page, principal, unexpected};
 
 pub(super) fn snapshot(text: &Option<String>) -> Result<Option<BlobId>, Error> {
     let Some(text) = text else {
@@ -371,6 +369,15 @@ impl Tool for History {
 // One files commit of `changes` on `base`, already resolved: files refuses it as stale if a
 // path it touches changed since.
 fn commit(seat: &Seat, base: Option<BlobId>, message: Option<String>, changes: Vec<Change>) -> Run {
+    Run::Write(vec![committing(seat, base, message, changes)])
+}
+
+fn committing(
+    seat: &Seat,
+    base: Option<BlobId>,
+    message: Option<String>,
+    changes: Vec<Change>,
+) -> super::Write {
     let message =
         message.unwrap_or_else(|| format!("harness thread {} call {}", seat.thread, seat.call));
     let op = files::Op::Commit {
@@ -378,7 +385,23 @@ fn commit(seat: &Seat, base: Option<BlobId>, message: Option<String>, changes: V
         message,
         changes,
     };
-    write(files::PROGRAM, abi::encode(&op))
+    super::Write {
+        target: files::PROGRAM.into(),
+        payload: abi::encode(&op),
+    }
+}
+
+// the access program's op that sets, or with no list clears, the write list on `path`
+fn list_set(ctx: &ExecCtx, path: String, list: Option<WriteList>) -> Result<super::Write, Error> {
+    let set = access::Op::Set {
+        program: files::PROGRAM.into(),
+        key: path,
+        list: list.map(Ownership::from),
+    };
+    Ok(super::Write {
+        target: ctx.env().role(abi::role::ACCESS)?.clone(),
+        payload: abi::encode(&set),
+    })
 }
 
 fn committed(output: &[u8]) -> Result<Value, Error> {
@@ -401,6 +424,7 @@ pub(crate) struct WriteArgs {
     path: String,
     content: String,
     executable: Option<bool>,
+    write: Option<WriteList>,
     base: Option<String>,
     message: Option<String>,
 }
@@ -478,15 +502,7 @@ impl Tool for SetList {
     }
 
     fn run(ctx: &ExecCtx, _seat: &Seat, args: SetListArgs) -> Result<Run, Error> {
-        let set = access::Op::Set {
-            program: files::PROGRAM.into(),
-            key: args.path,
-            list: args.write.map(Ownership::from),
-        };
-        Ok(Run::Write(vec![super::Write {
-            target: ctx.env().role(abi::role::ACCESS)?.clone(),
-            payload: abi::encode(&set),
-        }]))
+        Ok(Run::Write(vec![list_set(ctx, args.path, args.write)?]))
     }
 }
 
@@ -505,7 +521,7 @@ fn chunked(ctx: &ExecCtx, bytes: &[u8]) -> Result<Content, Error> {
 
 impl Tool for Write {
     const NAME: &'static str = "files_write";
-    const DESCRIPTION: &'static str = "Write a text file to the network's filesystem, creating its directories, in one commit. A file already there keeps its meta, and its mode unless executable is given; files_edit changes part of a file without re-sending the rest. Anyone writes a path that no write list covers; where the path or a folder above it carries a write list, the nearest list decides: its owner alone, its owner and the accounts and programs it lists, or anyone. A program on a list allows every write harness makes, for any agent. A refusal names the list and whom it allows. /home, /shared and each /home/<name> folder itself are the network's; write inside them. Set a list with files_set_list.";
+    const DESCRIPTION: &'static str = "Write a text file to the network's filesystem, creating its directories, in one commit. A file already there keeps its meta, and its mode unless executable is given; files_edit changes part of a file without re-sending the rest. Anyone writes a path that no write list covers; where the path or a folder above it carries a write list, the nearest list decides: its owner alone, its owner and the accounts and programs it lists, or anyone. A program on a list allows every write harness makes, for any agent. A refusal names the list and whom it allows. /home, /shared and each /home/<name> folder itself are the network's; write inside them. Give write to set the path's write list in the same call, as files_set_list does: the file is written first, then the list is set, so a list the access program refuses fails the call with the file already written.";
     const WRITES: bool = true;
     type Args = WriteArgs;
 
@@ -535,13 +551,32 @@ impl Tool for Write {
             }) => (args.executable.unwrap_or(exec), meta),
             _ => (args.executable.unwrap_or(false), BTreeMap::new()),
         };
+        let path = args.path.clone();
         let put = Change::Put {
             path: args.path,
             exec,
             meta,
             content: chunked(ctx, args.content.as_bytes())?,
         };
-        Ok(commit(seat, base, args.message, vec![put]))
+        let commit = committing(seat, base, args.message, vec![put]);
+        let Some(list) = args.write else {
+            return Ok(Run::Write(vec![commit]));
+        };
+        // the list is set once the commit has made the path, so a new file's creator sets it
+        let set = list_set(ctx, path, Some(list))?;
+        let then = move |output: &[u8]| {
+            let mut answer = committed(output)?;
+            answer["write"] = json!("set");
+            let read = move |_: &[u8]| Ok(answer);
+            Ok(Run::Read {
+                writes: vec![set],
+                read: Box::new(read),
+            })
+        };
+        Ok(Run::Then {
+            writes: vec![commit],
+            then: Box::new(then),
+        })
     }
 
     fn render(output: &[u8]) -> Result<Value, Error> {

@@ -437,3 +437,39 @@ fn a_rewrite_keeps_the_files_meta_and_its_mode_unless_the_call_gives_one() {
     assert!(!executable(&run), "a call that gives the mode sets it");
     assert_eq!(meta_of(&run), meta);
 }
+
+#[test]
+fn a_write_that_names_a_list_writes_the_file_then_sets_its_list() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "write and list", Some(WINDOW));
+    let listed = json!({ "who": "listed", "accounts": [world.bo], "programs": ["chat"] });
+    let input = json!({ "path": "/shared/listed.md", "content": "it's listed\n", "write": listed });
+    turn(chain, 3, &[("c1", "files_write", input)]);
+    let (text, failed) = result_of(chain, thread, "c1");
+    assert!(!failed, "{text}");
+    let answer: Value = serde_json::from_str(&text).unwrap();
+    assert!(answer["snapshot"].is_string(), "{answer}");
+    assert_eq!(answer["write"], "set");
+    assert_eq!(read_at(chain, "/shared/listed.md"), "it's listed\n");
+    let asked = access::Query::List {
+        program: files::PROGRAM.into(),
+        key: "/shared/listed.md".into(),
+    };
+    let access::Reply::List(list) = chain.query("access", &asked).unwrap() else {
+        panic!()
+    };
+    let parties = [
+        files::Party::Account(world.bo),
+        files::Party::Program("chat".into()),
+    ];
+    let set = files::Ownership::Listed(parties.into_iter().collect());
+    assert_eq!(list, Some(set));
+
+    let plain = json!({ "path": "/shared/listed.md", "content": "again\n" });
+    turn(chain, 5, &[("c2", "files_write", plain)]);
+    let (text, failed) = result_of(chain, thread, "c2");
+    assert!(!failed, "{text}");
+    let answer: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(answer["write"], Value::Null, "no list, no list set");
+}

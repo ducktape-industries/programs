@@ -259,7 +259,7 @@ fn the_agent_lists_its_runs_and_cancels_one_before_it_runs() {
         .iter()
         .map(|row| row["entry"].as_u64().unwrap())
         .collect();
-    assert_eq!(entries, [one.min(two), one.max(two)]);
+    assert_eq!(entries, [one.max(two), one.min(two)], "newest first");
     let first = &rows[0];
     assert_eq!(first["op"]["PostMessage"]["channel_id"], "general");
     assert_eq!(
@@ -484,4 +484,65 @@ fn a_run_booked_for_a_refused_program_is_never_booked() {
         json!({ "height": 50, "program": "scheduler", "op": cancel })
     });
     assert!(due(&world.chain, 50).is_empty(), "no run is booked");
+}
+
+fn entries(listed: &Value) -> Vec<u64> {
+    let rows = listed["runs"].as_array().unwrap();
+    rows.iter()
+        .map(|row| row["entry"].as_u64().unwrap())
+        .collect()
+}
+
+#[test]
+fn the_list_is_newest_first_a_page_at_a_time_and_leaves_out_what_ran_when_asked() {
+    let world = schemed();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "book four runs", Some(WINDOW));
+    let runs = [
+        ("b1", "schedule_run", book(20, "general", "one")),
+        ("b2", "schedule_run", book(20, "general", "two")),
+        ("b3", "schedule_run", book(20, "general", "three")),
+        ("b4", "schedule_run", book(6, "general", "four")),
+    ];
+    turn(&world, 3, &runs);
+    let calls = ["b1", "b2", "b3", "b4"];
+    let mut booked: Vec<u64> = calls
+        .iter()
+        .map(|call| entry_of(chain, thread, call))
+        .collect();
+    let ran = booked[3];
+    booked.sort_unstable_by(|a, b| b.cmp(a));
+    said(chain, 5, "Booked.");
+    chain.at(7, 0);
+    assert!(
+        booking(chain, ran).unwrap().ran.is_some(),
+        "the run at 6 ran"
+    );
+
+    turn(&world, 9, &[("l1", "schedule_list", json!({ "limit": 3 }))]);
+    let first = answered(chain, thread, "l1");
+    assert_eq!(entries(&first), booked[..3]);
+    let next = first["next"].clone();
+    assert!(next.is_string(), "{first}");
+    said(chain, 11, "Listed.");
+    world.mention("m2", "and the older ones?");
+
+    let rest = json!({ "limit": 3, "cursor": next });
+    turn(&world, 13, &[("l2", "schedule_list", rest)]);
+    let second = answered(chain, thread, "l2");
+    assert_eq!(entries(&second), booked[3..]);
+    assert_eq!(second["next"], Value::Null);
+    said(chain, 15, "Listed.");
+    world.mention("m3", "only the waiting ones");
+
+    let waiting = json!({ "pending_only": true });
+    turn(&world, 17, &[("l3", "schedule_list", waiting)]);
+    let pending: Vec<u64> = booked
+        .iter()
+        .copied()
+        .filter(|entry| *entry != ran)
+        .collect();
+    let third = answered(chain, thread, "l3");
+    assert_eq!(entries(&third), pending);
+    assert_eq!(third["next"], Value::Null);
 }

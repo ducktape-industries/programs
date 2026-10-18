@@ -2,7 +2,7 @@
 //! due, sends the booked op as that account; what it did is kept and told to the conversation it
 //! was booked from, which is how an agent wakes itself. Only who booked a run cancels it.
 use ::program::{
-    Cause, Ctx, Error, Principal, QueryCtx, corrupt, invalid, not_found, unauthorized,
+    Cause, Ctx, Error, Principal, QueryCtx, Range, corrupt, invalid, not_found, unauthorized,
     unexpected_reply, wrong_state,
 };
 use abi::role::identity::AccountNumber;
@@ -215,6 +215,52 @@ pub(crate) fn bookings(
             .get(ctx, &entry)?
             .ok_or_else(|| corrupt("booked", &entry.to_be_bytes(), "names a run that is gone"))
     })
+}
+
+// an account's runs newest first: `limit` of them booked before the run `below`, only those
+// still waiting where `pending` asks so; and the last run read where older ones follow it
+pub(crate) fn newest(
+    ctx: &QueryCtx,
+    agent: AccountNumber,
+    below: Option<u64>,
+    limit: u64,
+    pending: bool,
+) -> Result<(Vec<Booking>, Option<u64>), Error> {
+    let whole = BOOKED.prefix_of(&agent);
+    let before = |entry: Option<u64>| match entry {
+        Some(entry) => Some(BOOKED.key(&(agent, entry))),
+        None => whole.end.clone(),
+    };
+    let mut found = Vec::new();
+    let mut last = below;
+    loop {
+        let wanted = limit - found.len() as u64;
+        let scan = Range::new(whole.start.clone(), before(last));
+        let keys = BOOKED.scan(ctx, scan.reverse().limit(wanted))?;
+        for (_, entry) in &keys {
+            let booking = BOOKINGS.get(ctx, entry)?.ok_or_else(|| {
+                corrupt("booked", &entry.to_be_bytes(), "names a run that is gone")
+            })?;
+            if !pending || booking.ran.is_none() {
+                found.push(booking);
+            }
+        }
+        let Some((_, read)) = keys.last() else {
+            return Ok((found, None));
+        };
+        last = Some(*read);
+        if (keys.len() as u64) < wanted {
+            return Ok((found, None));
+        }
+        if found.len() as u64 == limit {
+            break;
+        }
+    }
+    let older = Range::new(whole.start.clone(), before(last))
+        .reverse()
+        .limit(1);
+    let more = !BOOKED.scan(ctx, older)?.is_empty();
+    Ok((found, last.filter(|_| more)))
 }
 
 pub(crate) fn booking(ctx: &QueryCtx, entry: u64) -> Result<Option<Booking>, Error> {
