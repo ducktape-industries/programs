@@ -5,7 +5,7 @@ use ::program::{Error, ExecCtx, QueryCtx, not_found};
 use abi::role::identity::AccountNumber;
 
 use crate::agents::{Agent, managed, thread};
-use crate::state::{BY_AGENT, COUNT, CURRENT, FRAMES, THREADS, WITHHELD, newest_first};
+use crate::state::{BY_AGENT, COUNT, CURRENT, FRAMES, THREADS, TOPICS, WITHHELD, newest_first};
 use crate::{Asking, Body, Context, Frame, Role, Said, ThreadRow};
 
 pub(crate) fn current(ctx: &QueryCtx, agent: AccountNumber) -> Result<Option<ThreadRow>, Error> {
@@ -177,6 +177,10 @@ fn copied(ctx: &ExecCtx, from: &ThreadRow, row: &mut ThreadRow) -> Result<(), Er
         | Body::Notice { .. }
         | Body::Compaction { .. } => None,
     });
+    // a fork goes on with what it was about, until its agent says otherwise
+    if let Some(topic) = TOPICS.get(ctx, &from.id)? {
+        TOPICS.put(ctx, &row.id, &topic);
+    }
     let summary = from.summary.filter(|seq| *seq <= cut);
     row.frames = cut;
     row.last_input = inputs.map(|frame| frame.seq).next_back().unwrap_or(0);

@@ -204,6 +204,8 @@ pub(crate) fn close(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
 }
 
 pub(crate) fn manual(agent: &Agent, title: &str) -> String {
+    // the topic itself stays out: the system prompt opens every request, and a line in it that
+    // changed would miss the prompt cache from there on
     format!(
         "ducktape resource manual\n\
          - Account: {name}, account {number}, managed by account {manager}.\n\
@@ -211,6 +213,8 @@ pub(crate) fn manual(agent: &Agent, title: &str) -> String {
          every person and every place (channels, direct messages, threads), arrives here and \
          names who wrote it and where. Answer each where it came from: chat_post to its \
          channel, with reply_to for its thread.\n\
+         - Topic: thread_topic sets one line on what this conversation is about and where it \
+         stands, which people read beside its name; set it again when that changes.\n\
          - Writes: everything written here is written as account {number}, sent by harness, \
          and the network allows only what it allows that account or harness.\n\
          - Tools: each tool call runs in a later block, and its result arrives before the next \
