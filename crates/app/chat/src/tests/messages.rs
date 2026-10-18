@@ -140,7 +140,7 @@ fn search_needs_every_word_and_tags_page_newest_first() {
     let empty = crate::Chat::query(
         &chat.reads(),
         Query::Search {
-            text: "!".into(),
+            text: " \t ".into(),
             viewer: vec![],
             channel_id: None,
             page: PageRequest::default(),
@@ -148,6 +148,168 @@ fn search_needs_every_word_and_tags_page_newest_first() {
     );
     assert_eq!(empty.unwrap_err().code, code::INVALID_INPUT);
     assert_eq!(tagged(&chat, "#WORLD"), [2, 1]);
+}
+
+#[test]
+fn search_finds_a_term_inside_a_word_and_needs_every_term() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    chat.post(&BO, "m1", "검색인덱스는 지웠다", None);
+    chat.post(&BO, "m2", "책 한 권", None);
+    chat.post(&BO, "m3", "the **CAFE\u{301}** opens", None);
+    chat.post(&BO, "m4", "검색 책", None);
+    assert_eq!(chat.search("검색"), [4, 1]);
+    assert_eq!(chat.search("책"), [4, 2]);
+    assert_eq!(chat.search("검색 책"), [4]);
+    assert_eq!(chat.search("인덱스 책"), Vec::<u64>::new());
+    assert_eq!(chat.search("café OPENS"), [3], "NFC and case folded");
+    assert_eq!(chat.search("the cafe"), Vec::<u64>::new());
+}
+
+#[test]
+fn search_is_newest_first_in_a_channel_and_across_them_and_keeps_its_limit() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    chat.ok(&ADA, create("random", PostPolicy::Open));
+    chat.post(&BO, "g1", "ship it", None);
+    chat.ok(&BO, post("random", "r1", "ship it", None));
+    chat.post(&BO, "g2", "nothing", None);
+    chat.ok(&BO, post("random", "r2", "ship that", None));
+    chat.post(&BO, "g3", "ship again", None);
+    let everywhere = [("general", 3), ("random", 2), ("random", 1), ("general", 1)];
+    assert_eq!(
+        hits(&chat, "ship", None, None),
+        (places(&everywhere), false)
+    );
+    let random = hits(&chat, "ship", Some("random"), None);
+    assert_eq!(random, (places(&everywhere[1..3]), false));
+    let first_two = hits(&chat, "ship", None, Some(2));
+    assert_eq!(first_two, (places(&everywhere[..2]), true));
+    assert_eq!(
+        hits(&chat, "ship", None, Some(4)),
+        (places(&everywhere), false)
+    );
+    let one = hits(&chat, "ship", Some("general"), Some(1));
+    assert_eq!(one, (places(&[("general", 3)]), true));
+}
+
+// A channel longer than one scan of its walk: the walk goes on below it,
+// newest first, to the channel's first message.
+#[test]
+fn search_walks_a_long_channel_to_its_first_message() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    chat.post(&BO, "m1", "needle", None);
+    for n in 2..=300 {
+        chat.post(&BO, &format!("m{n}"), "hay", None);
+    }
+    chat.post(&BO, "m301", "needle", None);
+    assert_eq!(chat.search("needle"), [301, 1]);
+    let newest_hay = places(&[("general", 300), ("general", 299), ("general", 298)]);
+    assert_eq!(hits(&chat, "hay", None, Some(3)), (newest_hay, true));
+    assert_eq!(chat.search("hay").len(), 299);
+}
+
+#[test]
+fn tags_page_newest_first_in_a_channel_and_across_them() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    chat.ok(&ADA, create("random", PostPolicy::Open));
+    chat.post(&BO, "g1", "#ship it", None);
+    chat.ok(&BO, post("random", "r1", "#Ship it", None));
+    chat.post(&BO, "g2", "#other", None);
+    chat.ok(&BO, post("random", "r2", "go #ship", None));
+    chat.post(&BO, "g3", "#ship again", None);
+    chat.post(&BO, "g4", "no tag: `#ship`", None);
+    let everywhere = [("general", 3), ("random", 2), ("random", 1), ("general", 1)];
+    let pages = [places(&everywhere[..3]), places(&everywhere[3..])];
+    assert_eq!(tag_pages(&chat, "#SHIP", None, 3), pages);
+    assert_eq!(
+        tag_pages(&chat, "ship", None, 1).concat(),
+        places(&everywhere)
+    );
+    let general = places(&[("general", 3), ("general", 1)]);
+    assert_eq!(
+        tag_pages(&chat, "ship", Some("general"), 1).concat(),
+        general
+    );
+    chat.ok(&BO, edit(3, "untagged"));
+    chat.ok(&BO, delete(1));
+    let left = places(&[("random", 2), ("random", 1)]);
+    assert_eq!(tag_pages(&chat, "ship", None, 2).concat(), left);
+    assert!(
+        tag_pages(&chat, "ship", Some("general"), 2)
+            .concat()
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_tag_page_cursor_stays_in_its_listing() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    chat.post(&BO, "m1", "#a #b", None);
+    chat.post(&BO, "m2", "#a #b", None);
+    let Reply::TagHits(first) = chat.ask(tag_search("a", None, PageRequest::first(1))) else {
+        panic!("a tag search answers tag hits");
+    };
+    let elsewhere = tag_search("b", None, PageRequest::resume(first.next, 1));
+    let refusal = crate::Chat::query(&chat.reads(), elsewhere).unwrap_err();
+    assert_eq!(refusal.code, code::STALE);
+}
+
+fn places(at: &[(&str, u64)]) -> Vec<(String, u64)> {
+    at.iter()
+        .map(|(channel, seq)| (channel.to_string(), *seq))
+        .collect()
+}
+
+// Where the hits of a search are, and whether it was capped.
+fn hits(
+    chat: &Chat,
+    text: &str,
+    channel: Option<&str>,
+    limit: Option<u64>,
+) -> (Vec<(String, u64)>, bool) {
+    let Reply::Hits(found) = chat.ask(Query::Search {
+        text: text.into(),
+        viewer: vec![],
+        channel_id: channel.map(str::to_owned),
+        page: PageRequest { after: None, limit },
+    }) else {
+        panic!("a search answers hits");
+    };
+    let at = found
+        .hits
+        .iter()
+        .map(|row| (row.channel_id.clone(), row.seq));
+    (at.collect(), found.capped)
+}
+
+fn tag_search(tag: &str, channel: Option<&str>, page: PageRequest) -> Query {
+    Query::TagSearch {
+        tag: tag.into(),
+        viewer: vec![],
+        channel_id: channel.map(str::to_owned),
+        page,
+    }
+}
+
+// Every page of a tag search, `limit` rows each, followed to its end.
+fn tag_pages(chat: &Chat, tag: &str, channel: Option<&str>, limit: u64) -> Vec<Vec<(String, u64)>> {
+    let (mut pages, mut after) = (Vec::new(), None);
+    loop {
+        let page = PageRequest::resume(after, limit);
+        let Reply::TagHits(page) = chat.ask(tag_search(tag, channel, page)) else {
+            panic!("a tag search answers tag hits");
+        };
+        pages.push(
+            page.items
+                .iter()
+                .map(|row| (row.channel_id.clone(), row.seq))
+                .collect(),
+        );
+        assert!(pages.len() <= 64, "the pages of a tag search end");
+        match page.next {
+            Some(next) => after = Some(next),
+            None => return pages,
+        }
+    }
 }
 
 fn seqs(rows: &[crate::MsgRow]) -> Vec<u64> {
@@ -165,7 +327,7 @@ fn attention(chat: &Chat, author: Principal) -> Option<crate::MsgRow> {
 }
 
 /// The seqs tagged `tag`, in the channel and across channels (the same).
-fn tagged(chat: &Chat, tag: &str) -> Vec<u64> {
+pub(super) fn tagged(chat: &Chat, tag: &str) -> Vec<u64> {
     let ask = |channel_id| {
         let Reply::TagHits(page) = chat.ask(Query::TagSearch {
             tag: tag.into(),

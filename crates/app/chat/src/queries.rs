@@ -1,17 +1,18 @@
 //! One function per [`Query`](crate::Query), each named by [`Chat::query`](crate::Chat)'s
 //! match and each a read of the tables in `state.rs`. Chat's listings only grow, so a page cursor from any height
 //! resumes where it left off.
-use ::program::Range;
 use ::program::{Error, QueryCtx, invalid};
 use std::collections::BTreeSet;
-use store::{PageRequest, PageResponse};
+use store::{KeyCodec, PageRequest, PageResponse};
 
 use crate::state::{
-    ANSWERED, CHANNEL_META, CHANNEL_TAGS, CHANNELS, HEADS, MESSAGE_IDS, MESSAGES, REACTIONS,
-    REPLIES, ROOTS, TAGS, WORDS, message, messages, newest_first,
+    ANSWERED, CHANNEL_META, CHANNELS, HEADS, MESSAGE_IDS, REACTIONS, REPLIES, ROOTS, Stored,
+    message, messages, newest_first, stored, stored_between,
 };
-use crate::text::tag_label;
-use crate::{ChannelInfo, ChannelRow, MessageHits, MsgRow, Principal, ReactedBy, Reply, tokens};
+use crate::text::{fold, tag_label};
+use crate::{
+    ChannelInfo, ChannelRow, MessageHits, MsgRow, Principal, ReactedBy, Reply, plain_text, tags,
+};
 
 /// `reply` as `viewer` reads it: each reaction learns whether one of
 /// `viewer` chose it.
@@ -105,7 +106,7 @@ pub(crate) fn thread(
 ) -> Result<Reply, Error> {
     let keys = REPLIES.range_of(ctx, &(channel_id.clone(), root), page)?;
     Ok(Reply::Thread {
-        root: MESSAGES.get(ctx, &(channel_id, root))?,
+        root: stored(ctx, &(channel_id, root))?.map(Stored::row),
         replies: rows_at(ctx, keys.map(|(channel_id, _, reply)| (channel_id, reply)))?,
     })
 }
@@ -118,44 +119,49 @@ pub(crate) fn around(
     page: &PageRequest,
 ) -> Result<Vec<MsgRow>, Error> {
     let half = page.limit() / 2;
-    let lo = MESSAGES.key(&(channel_id.clone(), seq.saturating_sub(half)));
-    let hi = MESSAGES.key(&(channel_id, seq.saturating_add(half + 1)));
-    let rows = MESSAGES.scan(ctx, Range::new(lo, Some(hi)))?;
-    Ok(rows.into_iter().map(|(_, row)| row).collect())
+    let (lo, hi) = (seq.saturating_sub(half), seq.saturating_add(half + 1));
+    let rows = stored_between(ctx, &channel_id, lo, hi)?;
+    Ok(rows.into_iter().map(Stored::row).collect())
 }
 
+// The messages holding every whitespace-separated term of `text` as a
+// substring of their flat text, both [`fold`]ed: newest first, at most
+// `page.limit`, `capped` when more matched. No index: each channel is
+// walked from its newest message until it has a page or reaches its first.
 pub(crate) fn search(
     ctx: &QueryCtx,
     text: &str,
     channel_id: Option<String>,
     page: &PageRequest,
 ) -> Result<MessageHits, Error> {
-    let wanted = tokens(text);
-    let Some(first) = wanted.first().cloned() else {
+    let text = fold(text);
+    let terms: Vec<&str> = text.split_whitespace().collect();
+    if terms.is_empty() {
         return Err(invalid("nothing to search for"));
+    }
+    let holds_every_term = |row: &Stored| {
+        let flat = fold(&plain_text(&row.blocks));
+        terms.iter().all(|term| flat.contains(term))
     };
-    // ponytail: one posting list scanned, the rest filtered on the row;
-    // intersect postings if search volume ever matters.
-    let postings = match channel_id {
-        Some(channel_id) => WORDS.prefix_of(&(first, channel_id)),
-        None => WORDS.prefix_of(&first),
-    };
-    let postings = WORDS.scan(ctx, postings)?;
-    let at = postings
-        .into_iter()
-        .map(|(_, channel_id, seq)| (channel_id, seq));
-    let mut hits: Vec<MsgRow> = messages(ctx, at)?
-        .into_iter()
-        .filter(|row| wanted.is_subset(&tokens(&row.text)))
-        .collect();
-    hits.sort_by(|a, b| b.time.cmp(&a.time).then(b.seq.cmp(&a.seq)));
-    let limit = page.limit() as usize;
+    let limit = usize::try_from(page.limit()).unwrap_or(usize::MAX);
+    let mut hits = newest(
+        ctx,
+        channel_id,
+        None,
+        limit.saturating_add(1),
+        holds_every_term,
+    )?;
     let capped = hits.len() > limit;
     hits.truncate(limit);
-    Ok(MessageHits { hits, capped })
+    Ok(MessageHits {
+        hits: hits.into_iter().map(Stored::row).collect(),
+        capped,
+    })
 }
 
-/// One page of the messages tagged `tag`, newest first.
+// One page of the messages tagged `tag`, newest first. No index: each
+// channel is walked from its newest message, or from below the page's
+// cursor.
 pub(crate) fn tagged(
     ctx: &QueryCtx,
     tag: &str,
@@ -163,15 +169,104 @@ pub(crate) fn tagged(
     page: &PageRequest,
 ) -> Result<PageResponse<MsgRow>, Error> {
     let label = tag_label(tag);
-    let keys = match channel_id {
-        Some(channel_id) => CHANNEL_TAGS
-            .range_of(ctx, &(channel_id, label), page)?
-            .map(|(channel_id, _, newest)| (channel_id, newest_first(newest))),
-        None => TAGS
-            .range_of(ctx, &label, page)?
-            .map(|(_, _, channel_id, seq)| (channel_id, seq)),
+    let scope = PageRequest::scope_of(&(&label, &channel_id));
+    let listing = page.listing(ctx, scope.clone())?;
+    let after = match page.open(&scope)? {
+        None => None,
+        Some(cursor) => Some(
+            Place::decode_key(&mut cursor.after.as_slice())
+                .ok_or_else(|| invalid("a tag page cursor does not decode"))?,
+        ),
     };
-    rows_at(ctx, keys)
+    let want = usize::try_from(listing.limit()).unwrap_or(usize::MAX);
+    let tagged = |row: &Stored| tags(&row.blocks).contains(&label);
+    let rows = newest(
+        ctx,
+        channel_id,
+        after.as_ref(),
+        want.saturating_add(1),
+        tagged,
+    )?;
+    Ok(listing.reply((rows.into_iter()).map(|row| (place(&row).key_bytes(), row.row()))))
+}
+
+// Where a row sorts in a newest-first listing across channels:
+// `(newest_first(time), newest_first(seq), channel)`. A block's time never
+// goes back, so one channel's rows newest first by seq are in this order.
+type Place = (u64, u64, String);
+
+fn place(row: &Stored) -> Place {
+    let channel_id = row.channel_id.clone();
+    (newest_first(row.time), newest_first(row.seq), channel_id)
+}
+
+// Up to `want` rows that `keep` admits and that sort after `after`, in
+// [`Place`] order: `channel_id`, or every channel that has a message,
+// each [`walk`]ed newest first.
+fn newest(
+    ctx: &QueryCtx,
+    channel_id: Option<String>,
+    after: Option<&Place>,
+    want: usize,
+    keep: impl Fn(&Stored) -> bool,
+) -> Result<Vec<Stored>, Error> {
+    let heads = match channel_id {
+        Some(id) => HEADS
+            .get(ctx, &id)?
+            .map(|head| (id, head))
+            .into_iter()
+            .collect(),
+        None => HEADS.all(ctx)?,
+    };
+    let mut found = Vec::new();
+    for (channel_id, head) in heads {
+        // ponytail: a page across channels walks every channel but the
+        // cursor's from its head again; find each one's place by a binary
+        // search on time if deep pages across channels ever matter.
+        let from = match after {
+            Some((_, seq, at)) if *at == channel_id => newest_first(*seq).saturating_sub(1),
+            _ => head,
+        };
+        let admitted = |row: &Result<Stored, Error>| match row {
+            Ok(row) => after.is_none_or(|after| place(row) > *after) && keep(row),
+            Err(_) => true,
+        };
+        let hits = walk(ctx, &channel_id, from).filter(admitted).take(want);
+        found.extend(hits.collect::<Result<Vec<_>, _>>()?);
+    }
+    found.sort_by_cached_key(place);
+    found.truncate(want);
+    Ok(found)
+}
+
+// How many seqs one scan of a [`walk`] reads: a batch, not a bound.
+const STRIDE: u64 = 128;
+
+// `channel_id`'s messages from seq `from` down to its first, newest
+// first. The store scans forward only, so the walk reads a [`STRIDE`] of
+// seqs at a time, each below the last.
+fn walk<'a>(
+    ctx: &'a QueryCtx,
+    channel_id: &'a str,
+    from: u64,
+) -> impl Iterator<Item = Result<Stored, Error>> + 'a {
+    let mut below = from.saturating_add(1);
+    let mut batch: Vec<Stored> = Vec::new();
+    std::iter::from_fn(move || {
+        while batch.is_empty() && below > 1 {
+            let lo = below.saturating_sub(STRIDE).max(1);
+            let rows = stored_between(ctx, channel_id, lo, below);
+            below = lo;
+            match rows {
+                Ok(rows) => batch = rows,
+                Err(fault) => {
+                    below = 0;
+                    return Some(Err(fault));
+                }
+            }
+        }
+        batch.pop().map(Ok)
+    })
 }
 
 /// A page of message addresses as the page of rows they name.
@@ -224,7 +319,8 @@ fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
         | Reply::Channel(_)
         | Reply::Members(_)
         | Reply::Accounts(_)
-        | Reply::Reactors(_) => vec![],
+        | Reply::Reactors(_)
+        | Reply::ChannelIds(_) => vec![],
     }
 }
 

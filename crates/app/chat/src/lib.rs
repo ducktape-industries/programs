@@ -8,12 +8,14 @@
 //! - `lib.rs` (here): the types on the wire and the rows they carry
 //! - `program.rs`: [`Chat`], the program: the signer resolved, then one match
 //!   over every op and one over every query
-//! - `state.rs`: every table and index the program keeps, declared once
+//! - `state.rs`: every table the program keeps, declared once, and how a
+//!   message row is stored
 //! - `rules.rs`: the checks an op passes before it writes
 //! - `ops.rs`: one short function per op
 //! - `origin.rs`: the identity role's roster
 //! - `queries.rs`: one short function per question
-//! - `text.rs`: what search and tags read out of a message
+//! - `text.rs`: what search and tags read out of a message, at read time
+//! - `legacy.rs`: the layout chat kept before `Stored`, read until each channel migrates
 //! - `mentions.rs`: a typed `@name` made the mention of the one account
 //!   that holds the name, as a message is posted or edited
 //! - `view.rs`: the reads a view makes of chat, folded into [`view::Names`]
@@ -25,6 +27,7 @@
 pub mod attributed;
 mod description;
 mod gate;
+mod legacy;
 mod mentions;
 pub mod message;
 mod ops;
@@ -52,14 +55,15 @@ pub use message::{Block, ListMarker, Mark, Span, list_item, parse_message};
 pub use program::Chat;
 pub use queries::roots_below;
 pub use store::{Cursor, PageRequest, PageResponse};
-pub use text::{plain_text, tags, tokens};
+pub use text::{plain_text, tags};
 
 /// Every table chat keeps, as a block's writes name them: what a follower
 /// of `program.changes` plays back in a test to say which a block touched.
 pub mod tables {
+    pub use crate::legacy::{CHANNEL_TAGS, OLD_MESSAGES, TAGS, WORDS};
     pub use crate::state::{
-        ANSWERED, CHANNEL_META, CHANNEL_TAGS, CHANNELS, HEADS, MEMBERS, MESSAGE_IDS, MESSAGES,
-        PARTICIPANTS, REACTIONS, REPLIES, ROOTS, TAGS, WORDS,
+        ANSWERED, CHANNEL_META, CHANNELS, HEADS, MEMBERS, MESSAGE_IDS, MESSAGES, PARTICIPANTS,
+        REACTIONS, REPLIES, ROOTS,
     };
 }
 
@@ -137,6 +141,11 @@ pub enum Op {
         channel_id: String,
         key: String,
     },
+    // moves `channel_id`'s messages from the layout chat kept before `Stored` and drops their
+    // search and tag postings: every read answers the same, and a second run writes nothing
+    Migrate {
+        channel_id: String,
+    },
 }
 
 /// A read. `viewer` is the reader's principals: they decide
@@ -200,17 +209,21 @@ pub enum Query {
         channel_id: String,
         page: PageRequest,
     },
-    /// Every token of `text`, newest first, at most `page.limit` hits.
+    // The messages holding every whitespace-separated term of `text` as
+    // a substring (NFC, case folded), newest first, at most `page.limit`
+    // hits. Answered by walking the messages: chat keeps no search index.
     #[ask(Reply::Hits(MessageHits))]
-    #[reads(state::WORDS, state::MESSAGES, state::REACTIONS)]
+    #[reads(state::HEADS, state::MESSAGES, state::REACTIONS)]
     Search {
         text: String,
         viewer: Vec<Principal>,
         channel_id: Option<String>,
         page: PageRequest,
     },
+    // One page of the messages whose `#tags` hold `tag`, newest first.
+    // Answered by walking the messages: chat keeps no tag index.
     #[ask(Reply::TagHits(PageResponse<MsgRow>))]
-    #[reads(state::TAGS, state::CHANNEL_TAGS, state::MESSAGES, state::REACTIONS)]
+    #[reads(state::HEADS, state::MESSAGES, state::REACTIONS)]
     TagSearch {
         tag: String,
         viewer: Vec<Principal>,
@@ -228,6 +241,11 @@ pub enum Query {
     #[ask(Reply::Reactors(Vec<ReactedBy>))]
     #[reads(state::REACTIONS)]
     Reactors { channel_id: String, seqs: Vec<u64> },
+    // the channels whose messages are not all migrated yet (`Op::Migrate`), a page of channels
+    // at a time: a page may name none and still lead to the next
+    #[ask(Reply::ChannelIds(PageResponse<String>))]
+    #[reads(state::CHANNELS, legacy::OLD_MESSAGES)]
+    Unmigrated { page: PageRequest },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -247,6 +265,7 @@ pub enum Reply {
     TagHits(PageResponse<MsgRow>),
     Accounts(PageResponse<Profile>),
     Reactors(Vec<ReactedBy>),
+    ChannelIds(PageResponse<String>),
 }
 
 #[derive(
@@ -354,7 +373,8 @@ pub struct MsgRow {
     pub height: u64,
     pub time: u64,
     pub blocks: Vec<Block>,
-    /// the flattened text search indexes; a tombstone's is empty
+    // the blocks as one line of text ([`plain_text`]), derived at read;
+    // a tombstone's is empty
     pub text: String,
     pub deleted: bool,
     pub edited: bool,
@@ -367,6 +387,7 @@ pub struct MsgRow {
     pub reply_count: u64,
     pub last_reply_seq: Option<u64>,
     pub reactions: Vec<Reaction>,
+    // the `#tags` in the blocks ([`tags`]), derived at read
     pub tags: Vec<String>,
 }
 
@@ -520,6 +541,7 @@ fn op_variants_only_append() {
             "CreateChannelWithMeta",
             "SetChannelMeta",
             "RemoveChannelMeta",
+            "Migrate",
         ]
     );
 }

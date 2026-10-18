@@ -4,7 +4,7 @@
 use ::program::{Error, Need, Ownership, Party, Principal, QueryCtx, Resource};
 
 use crate::Op;
-use crate::state::{CHANNELS, MESSAGES};
+use crate::state::{CHANNELS, stored};
 
 pub fn message_key(channel_id: &str, seq: u64) -> String {
     format!("{channel_id}/{seq}")
@@ -26,7 +26,8 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::CreateDmChannel { .. }
         | Op::PostMessage { .. }
         | Op::AddReaction { .. }
-        | Op::RemoveReaction { .. } => Vec::new(),
+        | Op::RemoveReaction { .. }
+        | Op::Migrate { .. } => Vec::new(),
     }
 }
 
@@ -51,7 +52,5 @@ pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
 }
 
 fn author(ctx: &QueryCtx, channel_id: &str, seq: u64) -> Result<Option<Principal>, Error> {
-    Ok(MESSAGES
-        .get(ctx, &(channel_id.to_owned(), seq))?
-        .map(|row| row.author))
+    Ok(stored(ctx, &(channel_id.to_owned(), seq))?.map(|row| row.author))
 }

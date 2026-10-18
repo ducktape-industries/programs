@@ -1,9 +1,12 @@
 //! Random walks of ops by three accounts: whatever order they come in, a
-//! refused op writes nothing and every index agrees with the messages.
+//! refused op writes nothing, the reactions agree with the messages, and
+//! search and tags find what the messages hold.
 use super::channels::edit;
+use super::legacy::{age, every_row, legacy_is_empty, migrate};
+use super::messages::tagged;
 use super::*;
-use crate::state::{HEADS, MESSAGES, PARTICIPANTS, REACTIONS, TAGS, WORDS};
-use crate::{MsgRow, tokens};
+use crate::MsgRow;
+use crate::state::{HEADS, PARTICIPANTS, REACTIONS};
 
 /// xorshift64*: the same seed walks the same way.
 struct Rng(u64);
@@ -25,11 +28,16 @@ const TEXTS: [&str; 4] = ["alpha beta", "beta #ship", "gamma #ship #it", "alpha"
 const EMOJI: [&str; 3] = ["👍", "🎉", "👀"];
 
 #[test]
-fn any_walk_keeps_every_index_in_step_with_the_messages() {
+fn any_walk_keeps_reactions_and_search_in_step_with_the_messages() {
     for seed in 1..=24 {
         let mut rng = Rng(seed);
         let mut chat = Chat::with_channel(PostPolicy::Open);
         for step in 0..80 {
+            match rng.below(12) {
+                0 => age(&chat),
+                1 => chat.ok(&CY, migrate("general")),
+                _ => {}
+            }
             let head = HEADS.get(&chat.reads(), &"general".into()).unwrap();
             let seq = 1 + rng.below(head.unwrap_or(0));
             let text = *rng.pick(&TEXTS);
@@ -51,16 +59,14 @@ fn any_walk_keeps_every_index_in_step_with_the_messages() {
             }
         }
         in_step(&chat, seed);
+        chat.ok(&BO, migrate("general"));
+        assert!(legacy_is_empty(&chat), "seed {seed}: migrated");
+        in_step(&chat, seed);
     }
 }
 
 fn in_step(chat: &Chat, seed: u64) {
-    let rows: Vec<MsgRow> = MESSAGES
-        .all(&chat.reads())
-        .unwrap()
-        .into_iter()
-        .map(|(_, row)| row)
-        .collect();
+    let rows: Vec<MsgRow> = every_row(chat);
     let reactions = REACTIONS.all(&chat.reads()).unwrap();
     for row in &rows {
         let chosen = |emoji: &str| {
@@ -87,17 +93,6 @@ fn in_step(chat: &Chat, seed: u64) {
         }
     }
     let row = |seq: u64| rows.iter().find(|row| row.seq == seq).unwrap();
-    let words = WORDS.all(&chat.reads()).unwrap();
-    for (word, _, seq) in &words {
-        assert!(
-            tokens(&row(*seq).text).contains(word),
-            "seed {seed}: a stale posting"
-        );
-    }
-    let tags = TAGS.all(&chat.reads()).unwrap();
-    for (tag, _, _, seq) in &tags {
-        assert!(row(*seq).tags.contains(tag), "seed {seed}: a stale tag");
-    }
     let participants = PARTICIPANTS.all(&chat.reads()).unwrap();
     for ((_, root, author), first) in &participants {
         let first_reply = row(*first);
@@ -119,13 +114,17 @@ fn in_step(chat: &Chat, seed: u64) {
             "seed {seed}: a reply whose author takes no part"
         );
     }
-    for row in rows.iter().filter(|row| !row.deleted) {
-        let posted = |word: &String| words.iter().any(|(w, _, s)| w == word && *s == row.seq);
-        assert!(
-            tokens(&row.text).iter().all(posted),
-            "seed {seed}: a missing posting"
-        );
-        let tagged = |tag: &String| tags.iter().any(|(t, _, _, s)| t == tag && *s == row.seq);
-        assert!(row.tags.iter().all(tagged), "seed {seed}: a missing tag");
+    let newest_first = |held: &dyn Fn(&MsgRow) -> bool| -> Vec<u64> {
+        rows.iter()
+            .rev()
+            .filter(|row| held(row))
+            .map(|row| row.seq)
+            .collect()
+    };
+    for word in ["alpha", "beta", "gamma", "ship"] {
+        let holding = newest_first(&|row| row.text.contains(word));
+        assert_eq!(chat.search(word), holding, "seed {seed}: search {word}");
     }
+    let shipped = newest_first(&|row| row.tags.iter().any(|tag| tag == "ship"));
+    assert_eq!(tagged(chat, "ship"), shipped, "seed {seed}: #ship");
 }

@@ -11,6 +11,7 @@ mod attachments;
 mod attributed;
 mod channels;
 mod gate;
+mod legacy;
 mod mentions;
 mod messages;
 mod origin;

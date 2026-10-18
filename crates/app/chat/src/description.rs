@@ -136,6 +136,7 @@ pub fn describe(op: &Op) -> Description {
             channel_id,
             vec![field("key", Value::text(key))],
         ),
+        Op::Migrate { channel_id } => ("Migrate channel", channel_id, vec![]),
     };
     let mut all = place(channel);
     all.extend(fields);

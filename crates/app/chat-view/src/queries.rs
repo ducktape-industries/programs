@@ -205,9 +205,9 @@ pub(crate) async fn thread(
     Ok((sorted(replies.items), replies.next))
 }
 
-/// A search: `#tag` pages through the tag index, anything else is a
-/// full-text search capped by the program. Returns the hits, whether the
-/// search was capped, and the cursor of the next tag page.
+// A search: `#tag` pages through the messages tagged so, anything else
+// is a substring search of every term, capped at one page. Returns the
+// hits, whether the search was capped, and the cursor of the next tag page.
 pub(crate) async fn search_hits(
     host: Host,
     text: String,

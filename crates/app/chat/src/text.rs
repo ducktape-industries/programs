@@ -1,7 +1,5 @@
-//! What search and tags read out of a message: its flat text, the words
-//! search indexes, and its `#tags`.
-use std::collections::BTreeSet;
-
+//! What search and tags read out of a message, at read time: its flat
+//! text and its `#tags`.
 use unicode_normalization::UnicodeNormalization;
 
 use crate::{Block, Mark};
@@ -28,15 +26,9 @@ pub fn plain_text(blocks: &[Block]) -> String {
     out
 }
 
-/// NFC lowercase alphanumeric runs of two or more chars.
-pub fn tokens(text: &str) -> BTreeSet<String> {
-    text.nfc()
-        .collect::<String>()
-        .to_lowercase()
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|t| t.chars().count() >= 2)
-        .map(str::to_string)
-        .collect()
+// Text as search and tags compare it: NFC, lowercase.
+pub(crate) fn fold(text: &str) -> String {
+    text.nfc().collect::<String>().to_lowercase()
 }
 
 pub fn tags(blocks: &[Block]) -> Vec<String> {
@@ -60,12 +52,9 @@ pub fn tags(blocks: &[Block]) -> Vec<String> {
     out
 }
 
-/// A tag as the index keys it: NFC, lowercase, no leading `#`.
+// A tag as it is matched: [`fold`]ed, no leading `#`.
 pub(crate) fn tag_label(text: &str) -> String {
-    text.trim_start_matches('#')
-        .nfc()
-        .collect::<String>()
-        .to_lowercase()
+    fold(text.trim_start_matches('#'))
 }
 
 /// The `#tags` in one run of text: `[alnum_-]` after a `#` that opens at a
@@ -101,9 +90,5 @@ mod tests {
         assert_eq!(tags(&blocks), ["ship", "café"]);
         let linked = parse_message("[#x](https://x) #y");
         assert_eq!(tags(&linked), ["y"]);
-        assert_eq!(
-            tokens("Hello, héllo — a HELLO"),
-            ["hello", "héllo"].map(String::from).into()
-        );
     }
 }

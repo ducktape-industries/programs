@@ -9,12 +9,12 @@ use crate::attributed::report;
 use crate::mentions::resolve_typed;
 use crate::rules;
 use crate::state::{
-    ANSWERED, CHANNEL_META, CHANNELS, HEADS, MEMBERS, MESSAGE_IDS, MESSAGES, PARTICIPANTS,
-    REACTIONS, REPLIES, ROOTS, channel, message, newest_first, replace_message, toggle,
+    ANSWERED, CHANNEL_META, CHANNELS, HEADS, MEMBERS, MESSAGE_IDS, PARTICIPANTS, REACTIONS,
+    REPLIES, ROOTS, channel, message, newest_first, put_message, toggle,
 };
 use crate::{
     AccountNumber, Block, ChannelRow, MemberRow, MsgRow, PostPolicy, Principal, Reaction,
-    dm_channel_id, plain_text, tags,
+    dm_channel_id,
 };
 
 // ── channels ────────────────────────────────────────────────────────────────
@@ -173,8 +173,6 @@ pub(crate) fn post(
         message_id: message_id.clone(),
         height: ctx.env().height,
         time: ctx.env().time,
-        text: plain_text(&blocks),
-        tags: tags(&blocks),
         blocks,
         thread,
         ..MsgRow::by(sender.clone())
@@ -183,7 +181,7 @@ pub(crate) fn post(
         Some(root) => answer(ctx, &channel_id, root, seq, sender)?,
         None => ROOTS.insert(ctx, &(channel_id.clone(), newest_first(seq))),
     }
-    replace_message(ctx, None, &row);
+    put_message(ctx, &row)?;
     report(ctx, sender, None, &row)?;
     MESSAGE_IDS.put(ctx, &message_id, &(channel_id.clone(), seq));
     HEADS.put(ctx, &channel_id, &seq);
@@ -214,7 +212,7 @@ fn answer(
     }
     row.reply_count += 1;
     row.last_reply_seq = Some(seq);
-    MESSAGES.put(ctx, &(channel_id, root), &row);
+    put_message(ctx, &row)?;
     Ok(())
 }
 
@@ -243,8 +241,6 @@ pub(crate) fn edit(
     rules::standing(&old)?;
     let blocks = resolve_typed(ctx, blocks)?;
     let row = MsgRow {
-        text: plain_text(&blocks),
-        tags: tags(&blocks),
         blocks,
         rev: old.rev + 1,
         edited: true,
@@ -252,7 +248,7 @@ pub(crate) fn edit(
         base_rev,
         ..old.clone()
     };
-    replace_message(ctx, Some(&old), &row);
+    put_message(ctx, &row)?;
     report(ctx, sender, Some(&old), &row)?;
     Ok(())
 }
@@ -275,13 +271,11 @@ pub(crate) fn delete(
     }
     let tombstone = MsgRow {
         blocks: Vec::new(),
-        text: String::new(),
-        tags: Vec::new(),
         reactions: Vec::new(),
         deleted: true,
         ..old.clone()
     };
-    replace_message(ctx, Some(&old), &tombstone);
+    put_message(ctx, &tombstone)?;
     report(ctx, sender, Some(&old), &tombstone)?;
     Ok(())
 }
@@ -314,7 +308,7 @@ pub(crate) fn react(
         count_out(&mut row.reactions, emoji);
     }
     toggle(ctx, &REACTIONS, &key, on);
-    MESSAGES.put(ctx, &(key.0, seq), &row);
+    put_message(ctx, &row)?;
     Ok(())
 }
 
