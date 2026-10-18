@@ -11,7 +11,7 @@ use super::{
     Run, Seat, Tool, blob, cursor_schema, next, object, page, principal, unexpected, write,
 };
 
-fn snapshot(text: &Option<String>) -> Result<Option<BlobId>, Error> {
+pub(super) fn snapshot(text: &Option<String>) -> Result<Option<BlobId>, Error> {
     let Some(text) = text else {
         return Ok(None);
     };
@@ -21,7 +21,7 @@ fn snapshot(text: &Option<String>) -> Result<Option<BlobId>, Error> {
     Ok(Some(BlobId::Sha256(digest)))
 }
 
-fn snapshot_schema() -> Value {
+pub(super) fn snapshot_schema() -> Value {
     json!({ "type": "string", "description": "a snapshot id (64 hex digits) to read at; omitted, the newest" })
 }
 

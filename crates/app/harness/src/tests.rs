@@ -4,6 +4,7 @@
 //! in reaches it, the node serving its model's egress service answers as the model would, whole
 //! or one streamed event at a time, and every tool call runs once its relay comes back, as the
 //! agent.
+mod blob_put;
 mod config;
 mod conversations;
 mod forge_commit;

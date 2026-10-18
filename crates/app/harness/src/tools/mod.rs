@@ -1,6 +1,7 @@
 //! The tools a thread's model may call, each over one program of the network: its schema, the
 //! check a call's input passes, the run once its input is whole, and for a streamable tool what
 //! it shows while its input arrives and how it takes that back.
+mod blob;
 mod chat;
 mod files;
 mod forge;
@@ -138,6 +139,7 @@ pub(crate) const CATALOG: &[Entry] = &[
     entry::<interface::Schema>(),
     entry::<interface::Query>(),
     entry::<interface::Call>(),
+    entry::<blob::Put>(),
     entry::<thread::Search>(),
     entry::<thread::Read>(),
     entry::<thread::Topic>(),
