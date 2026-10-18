@@ -96,7 +96,7 @@ pub(crate) enum Stage<'a, T = Reply> {
     Ready(&'a T),
 }
 
-const OWNER_ONLY: &Ownership = &Ownership::Owner;
+const UNLISTED: &Ownership = &Ownership::Anyone;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Writer {
@@ -233,7 +233,7 @@ impl Forge {
             .and_then(|repo| self.writers.get(repo));
         match slot {
             Some(Loadable::Ready(list) | Loadable::Reloading(list, _)) => {
-                Stage::Ready(list.as_ref().unwrap_or(OWNER_ONLY))
+                Stage::Ready(list.as_ref().unwrap_or(UNLISTED))
             }
             Some(Loadable::Failed(refusal)) => Stage::Failed(refusal),
             Some(Loadable::Idle | Loadable::Loading(_)) | None => Stage::Loading,

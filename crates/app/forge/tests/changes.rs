@@ -85,7 +85,7 @@ fn edit_reviewers(n: u64, reviewers: Vec<Principal>) -> Op {
 // ------------------------------------------------------------ repository
 
 #[test]
-fn configure_is_the_owners_and_takes_a_ref_for_head() {
+fn configure_follows_the_repositorys_writers_and_takes_a_ref_for_head() {
     let (mut rig, _) = story();
     let settings = |head: &[u8]| Op::Configure {
         repo: REPO.into(),
@@ -102,6 +102,7 @@ fn configure_is_the_owners_and_takes_a_ref_for_head() {
     assert_eq!(repo.repo.settings.head, b"refs/heads/feature");
     assert!(repo.repo.settings.allow_force);
 
+    rig.sandbox.list_writers(TESTER, REPO, &[]).unwrap();
     let stranger = refused_as(&mut rig, STRANGER, &settings(b"refs/heads/main"));
     assert_eq!(stranger, code::UNAUTHORIZED);
     assert_eq!(rig.refused(&settings(b"main")).code, code::INVALID_INPUT);
@@ -122,11 +123,7 @@ fn grant_and_revoke_are_retired_and_the_owner_lists_writers_in_access() {
     rig.sandbox
         .list_writers(TESTER, REPO, &[person(WRITER)])
         .unwrap();
-    assert_eq!(
-        refused_as(&mut rig, WRITER, &configure),
-        code::UNAUTHORIZED,
-        "a writer pushes, the owner configures"
-    );
+    signed(&mut rig, WRITER, &configure).expect("a writer configures as it pushes");
     assert_eq!(
         rig.sandbox
             .list_writers(WRITER, REPO, &[person(STRANGER)])
@@ -282,6 +279,7 @@ fn close_is_the_authors_or_a_writers_and_happens_once() {
         repo: REPO.into(),
         n,
     };
+    rig.sandbox.list_writers(TESTER, REPO, &[]).unwrap();
     assert_eq!(refused_as(&mut rig, STRANGER, &close), code::UNAUTHORIZED);
     rig.execute(&close).unwrap();
     let closed = record(&rig, n);
@@ -381,6 +379,7 @@ fn a_merge_lands_its_change_once_and_only_over_the_heads_it_read() {
         change: Some(n),
     };
     let merge = |expected_into: &str| merge_over(expected_into, &story.feature);
+    rig.sandbox.list_writers(TESTER, REPO, &[]).unwrap();
     assert_eq!(
         refused_as(&mut rig, STRANGER, &merge(&story.root)),
         code::UNAUTHORIZED

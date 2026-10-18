@@ -30,22 +30,23 @@ fn with_writer(list: &Ownership, party: Party) -> Option<Ownership> {
     }
 }
 
-fn without_writer(list: &Ownership, writer: &Writer) -> Option<Ownership> {
-    let Writer::Party(party) = writer else {
-        return None;
-    };
-    match list {
-        Ownership::Listed(parties) => {
+fn without_writer(list: &Ownership, writer: &Writer) -> Ownership {
+    match (list, writer) {
+        (Ownership::Anyone, Writer::Everyone) => Ownership::Owner,
+        (Ownership::Listed(parties), Writer::Party(party)) => {
             let rest: Vec<Party> = parties
                 .iter()
                 .filter(|listed| *listed != party)
                 .cloned()
                 .collect();
-            let emptied = rest.is_empty();
-            (!emptied).then_some(Ownership::Listed(rest))
+            match rest.is_empty() {
+                true => Ownership::Owner,
+                false => Ownership::Listed(rest),
+            }
         }
-        Ownership::Owner => None,
-        Ownership::Anyone => Some(Ownership::Anyone),
+        (Ownership::Anyone, Writer::Party(_))
+        | (Ownership::Listed(_), Writer::Everyone)
+        | (Ownership::Owner, _) => list.clone(),
     }
 }
 
@@ -420,7 +421,7 @@ impl Forge {
             cx.notify();
             return;
         };
-        self.set_writers(Some(list), "Granting write access", cx);
+        self.set_writers(list, "Granting write access", cx);
     }
 
     pub(crate) fn revoke(&mut self, writer: Writer, cx: &mut Context<Self>) {
@@ -433,11 +434,11 @@ impl Forge {
         self.set_writers(list, "Revoking write access", cx);
     }
 
-    fn set_writers(&mut self, list: Option<Ownership>, label: &str, cx: &mut Context<Self>) {
+    fn set_writers(&mut self, list: Ownership, label: &str, cx: &mut Context<Self>) {
         let op = access::Op::Set {
             program: forge::PROGRAM.to_owned(),
             key: forge::repo_key(&self.repo_name()),
-            list,
+            list: Some(list),
         };
         let id = self.issue("settings".into(), label, cx);
         let submit = cx.host().ask::<Submit<access::Access>>(op);

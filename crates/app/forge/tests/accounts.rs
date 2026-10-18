@@ -187,6 +187,7 @@ fn a_key_writes_only_once_it_holds_an_account() {
         assert_eq!(refusal.code, code::UNAUTHORIZED, "{op:?}");
     }
     rig.sandbox.hold(b"loose", 5);
+    rig.sandbox.list_writers(TESTER, REPO, &[]).unwrap();
     let close = Op::ChangeClose {
         repo: REPO.into(),
         n,
@@ -201,6 +202,20 @@ fn a_key_writes_only_once_it_holds_an_account() {
         .unwrap();
     rig.actor = b"loose".to_vec();
     rig.execute(&close).unwrap();
+    assert_eq!(record(&rig, n).0.closed_by, Some(Principal::Account(5)));
+}
+
+#[test]
+fn any_account_writes_a_repository_whose_owner_set_no_list() {
+    let (mut rig, story) = story();
+    let n = opened(&mut rig, &story);
+    rig.sandbox.hold(b"loose", 5);
+    rig.actor = b"loose".to_vec();
+    rig.execute(&Op::ChangeClose {
+        repo: REPO.into(),
+        n,
+    })
+    .unwrap();
     assert_eq!(record(&rig, n).0.closed_by, Some(Principal::Account(5)));
 }
 

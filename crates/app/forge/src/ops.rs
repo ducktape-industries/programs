@@ -116,15 +116,15 @@ pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
     if let Some((repo, n)) = change_of(key) {
         return change_resource(ctx, repo, n);
     }
-    let name = key.strip_suffix("/settings").unwrap_or(key);
+    let (name, default) = match key.strip_suffix("/settings") {
+        Some(name) => (name, None),
+        None => (key, Some(::program::Ownership::Anyone)),
+    };
     if !repo_exists(ctx, name) {
         return Ok(Resource::default());
     }
     let owner = load_repo(ctx, name)?.owner.account().map(Party::Account);
-    Ok(Resource {
-        owner,
-        default: Some(::program::Ownership::Owner),
-    })
+    Ok(Resource { owner, default })
 }
 
 /// A git receive-pack: once the pack unpacks, its objects land as blobs and
