@@ -60,8 +60,11 @@ pub(crate) fn running(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<Ag
     Ok(profile(ctx, number)?.as_ref().and_then(runs_here))
 }
 
-fn read(ctx: &QueryCtx, path: &str) -> Result<(BlobId, Vec<u8>), Error> {
-    let mut at = None;
+pub(crate) fn read(
+    ctx: &QueryCtx,
+    path: &str,
+    mut at: Option<BlobId>,
+) -> Result<(BlobId, Vec<u8>), Error> {
     let mut bytes = Vec::new();
     loop {
         let asked = files::Query::Read {
@@ -91,7 +94,7 @@ fn read(ctx: &QueryCtx, path: &str) -> Result<(BlobId, Vec<u8>), Error> {
 }
 
 pub(crate) fn configured(ctx: &QueryCtx, path: &str) -> Result<Configured, Error> {
-    let (snapshot, bytes) = match read(ctx, path) {
+    let (snapshot, bytes) = match read(ctx, path, None) {
         Ok(read) => read,
         Err(error) => {
             let reason = format!("{}: {}", error.code, error.message);
