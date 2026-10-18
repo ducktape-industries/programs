@@ -448,7 +448,9 @@ fn threads(
         });
         pressable(format!("thread-{id}"), &theme)
             .when(thread.closed, |row| row.text_color(theme.muted))
-            .when(detail.bound.contains(&id), |row| row.aria_description(BOUND_WORDS))
+            .when(detail.bound.contains(&id), |row| {
+                row.aria_description(BOUND_WORDS)
+            })
             .on_click(
                 cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
                     view.go(Screen::Thread(id), cx)

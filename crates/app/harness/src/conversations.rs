@@ -1,9 +1,7 @@
 //! An agent's conversations: a canonical thread that hears every input whose place no other is
 //! bound to, and threads anyone binds to a chat channel or thread (`OpenThread`). A canonical
 //! thread is renewed or forked by its manager, and closes once idle and no longer current.
-use ::program::{
-    Error, ExecCtx, Principal, QueryCtx, already_exists, not_found, unexpected_reply,
-};
+use ::program::{Error, ExecCtx, Principal, QueryCtx, already_exists, not_found, unexpected_reply};
 use abi::role::identity::AccountNumber;
 use store::PageRequest;
 

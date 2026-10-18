@@ -523,8 +523,7 @@ fn two_bound_conversations_run_at_once_and_keep_their_inputs_calls_and_context_a
 }
 
 #[test]
-fn an_input_goes_to_the_conversation_bound_to_its_thread_then_its_channel_else_the_canonical_one()
- {
+fn an_input_goes_to_the_conversation_bound_to_its_thread_then_its_channel_else_the_canonical_one() {
     let world = world();
     let chain = &world.chain;
     room(&world, "j-a");

@@ -576,10 +576,13 @@ pub fn describe(op: &Op) -> describe::Description {
             vec![field("data", Value::count(event.data.len() as u64))],
         ),
         Op::OpenThread { agent, place } => (
-            format!("Open a conversation with agent {agent} in {}", place.words()),
+            format!(
+                "Open a conversation with agent {agent} in {}",
+                place.words()
+            ),
             vec![
                 field("agent", Value::count(*agent)),
-                field("place", Value::text(&place.key())),
+                field("place", Value::text(place.key())),
             ],
         ),
     };

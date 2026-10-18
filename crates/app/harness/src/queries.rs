@@ -41,9 +41,9 @@ pub(crate) fn threads(
     agent: AccountNumber,
     page: &PageRequest,
 ) -> Result<PageResponse<ThreadRow>, Error> {
-    BY_AGENT.range_of(ctx, &agent, page)?.try_map(|(_, key)| {
-        named(ctx, u64::MAX - key, "an agent names a thread that is gone")
-    })
+    BY_AGENT
+        .range_of(ctx, &agent, page)?
+        .try_map(|(_, key)| named(ctx, u64::MAX - key, "an agent names a thread that is gone"))
 }
 
 pub(crate) fn bound(
@@ -52,7 +52,11 @@ pub(crate) fn bound(
     page: &PageRequest,
 ) -> Result<PageResponse<ThreadRow>, Error> {
     BOUND.range_of(ctx, &agent, page)?.try_map(|(_, binding)| {
-        named(ctx, binding.thread, "a bound place names a thread that is gone")
+        named(
+            ctx,
+            binding.thread,
+            "a bound place names a thread that is gone",
+        )
     })
 }
 
