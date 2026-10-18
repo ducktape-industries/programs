@@ -300,11 +300,11 @@ fn commit(
     Ok(write(files::PROGRAM, abi::encode(&op)))
 }
 
-fn committed(output: &[u8]) -> Value {
-    match abi::decode::<BlobId>(output) {
+fn committed(output: &[u8]) -> Result<Value, Error> {
+    Ok(match abi::decode::<BlobId>(output) {
         Ok(snapshot) => json!({ "snapshot": blob(&snapshot) }),
         Err(_) => json!({ "ok": true }),
-    }
+    })
 }
 
 fn base_schema() -> Value {
@@ -452,7 +452,7 @@ impl Tool for Write {
         commit(ctx, seat, &args.base, args.message, vec![put])
     }
 
-    fn render(output: &[u8]) -> Value {
+    fn render(output: &[u8]) -> Result<Value, Error> {
         committed(output)
     }
 }
@@ -488,7 +488,7 @@ impl Tool for Remove {
         commit(ctx, seat, &args.base, args.message, vec![change])
     }
 
-    fn render(output: &[u8]) -> Value {
+    fn render(output: &[u8]) -> Result<Value, Error> {
         committed(output)
     }
 }
@@ -529,7 +529,7 @@ impl Tool for Move {
         commit(ctx, seat, &args.base, args.message, vec![change])
     }
 
-    fn render(output: &[u8]) -> Value {
+    fn render(output: &[u8]) -> Result<Value, Error> {
         committed(output)
     }
 }

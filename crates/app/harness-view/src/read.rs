@@ -1,8 +1,11 @@
 //! Every read the screens make: the roster (the accounts whose script calls harness, what
-//! harness resolves for each, their threads, and how many member nodes serve each model's
-//! service and relay), one agent in full with who may change its configuration file and whom it
-//! answers, both read from access, one thread's transcript with the reply its model is
-//! streaming back, the model records, and the services the models form offers.
+//! harness resolves for each, their threads and the topic of the one its sentence names, the
+//! chat rooms' names, how many member nodes serve each model's service and relay, and the
+//! newest block's time), one agent in full with who may change its configuration file and whom
+//! it answers, both read from access, and each conversation's topic, one thread's transcript
+//! with its topic and the reply its model is streaming back, the model records, and the
+//! services the models form offers. A topic is the line the agent last set with
+//! `thread_topic`: its own words on what the conversation is about.
 use std::collections::HashMap;
 
 use egress::{RELAY, ServiceRow};
@@ -11,6 +14,7 @@ use harness::{
 };
 use identity::{Category, Kind, Ownership, PageRequest};
 use program::Writers;
+use view::methods::{BlockPage, ChainBlocks};
 use view::prelude::*;
 
 fn page(after: Option<Vec<u8>>) -> PageRequest {
@@ -23,8 +27,12 @@ pub(crate) struct Roster {
     /// the reader's agent accounts that no script hands to harness yet
     pub unscripted: Vec<Unscripted>,
     pub names: HashMap<u64, String>,
+    /// each chat room's name by its channel id, which a thread's place holds
+    pub rooms: HashMap<String, String>,
     /// member nodes that serve relay: no tool call runs without one
     pub relaying: usize,
+    /// the newest block's time, in milliseconds: now, as the chain tells it
+    pub now: u64,
 }
 
 /// One account whose script calls harness, as the list draws it.
@@ -38,6 +46,8 @@ pub(crate) struct Card {
     pub serving: Option<usize>,
     /// "suspended" or "revoked", for an agent that is
     pub note: Option<&'static str>,
+    /// the topic of the conversation its sentence names (`words::spoken_of`)
+    pub topic: Option<String>,
 }
 
 #[derive(PartialEq)]
@@ -87,6 +97,13 @@ pub(crate) async fn setup(host: &Host, agent: u64) -> Result<Option<AgentSetup>,
 }
 
 pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error> {
+    let tip = host
+        .ask::<ChainBlocks>(BlockPage {
+            before: None,
+            limit: 1,
+            most: 0,
+        })
+        .await?;
     let accounts = host
         .query_all(|after| identity::ask::List { page: page(after) })
         .await?;
@@ -118,12 +135,17 @@ pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error>
                 page: page(after),
             })
             .await?;
+        let topic = match crate::words::spoken_of(&threads) {
+            Some(thread) => topic(&host, thread.id).await?,
+            None => None,
+        };
         agents.push(Card {
             name: account.card.name.clone(),
             note: account.kind().note(),
             serving: count,
             threads,
             setup,
+            topic,
         });
     }
     let unscripted = accounts
@@ -134,6 +156,15 @@ pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error>
             name: account.card.name.clone(),
         })
         .collect();
+    // ponytail: every room, direct messages too, on each roster read, and a rename waits for
+    // the next one since chat's writes start none; one Channel read per room a thread names
+    // when networks hold many rooms
+    let rooms = host
+        .query_all(|after| chat::ask::Channels { page: page(after) })
+        .await?
+        .into_iter()
+        .map(|info| (info.channel.id, info.channel.name))
+        .collect();
     Ok(Roster {
         agents,
         unscripted,
@@ -141,7 +172,9 @@ pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error>
             .into_iter()
             .map(|account| (account.number, account.card.name))
             .collect(),
+        rooms,
         relaying: serving[RELAY],
+        now: tip.blocks.first().map_or(0, |block| block.time),
     })
 }
 
@@ -151,6 +184,11 @@ async fn served(host: &Host, service: &str) -> Result<usize, Error> {
         service: service.to_owned(),
     };
     Ok(host.query(asked).await?.len())
+}
+
+/// The line `thread`'s agent last set with `thread_topic`, if it set one.
+async fn topic(host: &Host, thread: u64) -> Result<Option<String>, Error> {
+    host.query(harness::ask::Topic { thread }).await
 }
 
 async fn frames(host: &Host, thread: u64) -> Result<Vec<Frame>, Error> {
@@ -189,6 +227,8 @@ pub(crate) struct Detail {
     pub conversation_writers: Option<Writers>,
     /// newest first, each with what its turns used
     pub threads: Vec<(ThreadRow, Usage)>,
+    /// each conversation's topic, by its id, for those whose agent set one
+    pub topics: HashMap<u64, String>,
     pub tools: Vec<ToolInfo>,
 }
 
@@ -228,10 +268,14 @@ pub(crate) async fn detail(host: Host, agent: u64) -> Result<Detail, Error> {
         })
         .await?;
     let mut used = Vec::new();
+    let mut topics = HashMap::new();
     // ponytail: the totals read every frame of every thread; a total kept on the thread row
     // when transcripts run long
     for thread in threads {
         let usage = usage(&frames(&host, thread.id).await?);
+        if let Some(topic) = topic(&host, thread.id).await? {
+            topics.insert(thread.id, topic);
+        }
         used.push((thread, usage));
     }
     let tools = host.query(harness::ask::Tools).await?;
@@ -241,6 +285,7 @@ pub(crate) async fn detail(host: Host, agent: u64) -> Result<Detail, Error> {
         config_writers,
         conversation_writers,
         threads: used,
+        topics,
         tools,
     })
 }
@@ -258,6 +303,7 @@ pub(crate) struct Transcript {
     /// member nodes that serve the agent's model's service, once it names one
     pub serving: Option<usize>,
     pub partial: Option<Partial>,
+    pub topic: Option<String>,
 }
 
 impl Transcript {
@@ -284,6 +330,7 @@ pub(crate) async fn transcript(host: Host, id: u64) -> Result<Option<Transcript>
     let held = host.query(harness::ask::Held { thread: id }).await?;
     let withheld = host.query(harness::ask::Withheld { thread: id }).await?;
     let partial = host.query(harness::ask::Partial { thread: id }).await?;
+    let topic = topic(&host, id).await?;
     let setup = setup(&host, thread.agent).await?;
     let service = setup
         .as_ref()
@@ -302,6 +349,7 @@ pub(crate) async fn transcript(host: Host, id: u64) -> Result<Option<Transcript>
         setup,
         serving,
         partial,
+        topic,
     }))
 }
 

@@ -13,7 +13,6 @@
 //!
 //! The types, rules and [`Programs`] program are always built; a view links
 //! them with `program` off. The `program` feature adds its wasm exports.
-mod migrate;
 mod program;
 mod rules;
 #[cfg(test)]
@@ -191,7 +190,6 @@ pub enum Op {
     Grant(Grant),
     /// The vote, or the holder stepping down from its own grant.
     Revoke(Grant),
-    Migrate,
 }
 
 #[derive(
@@ -287,7 +285,6 @@ pub fn describe(op: &Op) -> describe::Description {
         ),
         Op::Grant(grant) => (format!("Grant · {}", grant.scope), granted(grant)),
         Op::Revoke(grant) => (format!("Revoke · {}", grant.scope), granted(grant)),
-        Op::Migrate => ("Migrate · roles".to_owned(), vec![]),
     };
     describe::Description { title, fields }
 }
@@ -312,6 +309,6 @@ describe::export!(Op, describe);
 fn op_variants_only_append() {
     assert_eq!(
         describe::variants::<Op>(),
-        ["Schedule", "Cancel", "Grant", "Revoke", "Migrate"]
+        ["Schedule", "Cancel", "Grant", "Revoke"]
     );
 }

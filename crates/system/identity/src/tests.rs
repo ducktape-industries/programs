@@ -652,50 +652,20 @@ fn an_agents_key_consent_expires_and_is_not_replayed() {
     assert!(get(&store, agent).holds(BOT));
 }
 
-fn ownership_rows(store: &MockHost) -> usize {
-    let state = store.borrow();
-    state
-        .state
-        .keys()
-        .filter(|key| key.starts_with(b"u/"))
-        .count()
-}
-
 #[test]
-fn set_ownership_is_retired_and_the_votes_migrate_drops_the_old_lists() {
+fn set_ownership_is_retired() {
     let store = memory();
     create(&store, ALICE, "Alice");
     let bob = create(&store, BOB, "Bob");
     let agent = create_agent(&store, ALICE, "Scout");
-    let listed = Ownership::Listed(vec![Party::Account(bob)]);
     let retired = Op::SetOwnership {
         account: agent,
-        ownership: listed.clone(),
+        ownership: Ownership::Listed(vec![Party::Account(bob)]),
     };
     assert_eq!(
         refused(&store, &signed(&store, ALICE), retired).code,
         code::UNAUTHORIZED
     );
-    crate::migrate::OWNERSHIPS.put(
-        &store.exec(root()),
-        &agent,
-        &crate::migrate::Stored::Accounts(vec![bob]),
-    );
-    let asked = Query::Ownership { number: agent };
-    assert_eq!(query(&store, asked.clone()), Reply::Ownership(listed));
-    assert_eq!(
-        refused(&store, &signed(&store, ALICE), Op::Migrate).code,
-        code::UNAUTHORIZED
-    );
-    let vote = env(
-        Origin::Program(MockHost::role(abi::role::VALIDATORS)),
-        None,
-        100,
-    );
-    run(&store, &vote, Op::Migrate).unwrap();
-    run(&store, &vote, Op::Migrate).unwrap();
-    assert_eq!(ownership_rows(&store), 0);
-    assert_eq!(query(&store, asked), Reply::Ownership(Ownership::Owner));
 }
 
 fn runs(store: &MockHost, program: &str, account: u64) -> Result<Option<u64>, ::program::Error> {

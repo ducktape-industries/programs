@@ -1,6 +1,7 @@
-//! What Files follows while it is open: the session (who reads), and every
-//! block that wrote to `files`, access or identity. Every follower says what a
-//! refusal means to it; none ends on one.
+//! What Files follows while it is open: the session (who reads, on which
+//! chain), the links opened into it, and every block that wrote to `files`,
+//! access or identity. Every follower says what a refusal means to it; none
+//! ends on one.
 use identity::Identity;
 use view::prelude::*;
 
@@ -12,6 +13,12 @@ impl Files {
         cx.follow::<HostSession>((), |view, session, cx| match session {
             Ok(session) => view.session_changed(session, cx),
             Err(refusal) => cx.log_refused("the session", &refusal),
+        })
+        .detach();
+        // `duck://<chain>/files/<path>`: a link opened into this view
+        cx.follow::<HostRoute>((), |view, route, cx| match route {
+            Ok(route) => view.open_link(&route, cx),
+            Err(refusal) => cx.log_refused("the route", &refusal),
         })
         .detach();
         // a commit or a pin, by anyone: everything on screen reads again

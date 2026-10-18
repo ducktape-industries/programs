@@ -1,6 +1,7 @@
 //! Everything harness keeps: model records, threads by agent, current threads, the thread each
 //! place last reached, frames, held input, sealed request parts, tool calls and the calls of the
-//! reply streaming in, frames left out of the model's view, and each streaming reply.
+//! reply streaming in, frames left out of the model's view, each streaming reply, and the line
+//! each thread's agent says it is about.
 use abi::role::identity::AccountNumber;
 use attribution::{Change, Source};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -23,6 +24,8 @@ pub const PARTIALS: Map<u64, Partial> = Map::new("partial/");
 pub const LIVE: Map<(u64, u64), Live> = Map::new("live/");
 pub const SHOWN: Map<(u64, String), String> = Map::new("shown/");
 pub const DEFERRED: Map<(u64, String, u64), Change> = Map::new("deferred/");
+/// a thread's topic: the one line its agent last set with `thread_topic`
+pub const TOPICS: Map<u64, String> = Map::new("topic/");
 pub const COUNT: Item<u64> = Item::new("count");
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]

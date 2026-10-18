@@ -11,7 +11,6 @@
 //! op, queries and replies are the first variants of [`Op`], [`Query`] and
 //! [`Reply`]. Who may do what, op by op: `docs/roles.md` at the repository
 //! root.
-mod migrate;
 mod program;
 mod rules;
 #[cfg(test)]
@@ -223,7 +222,6 @@ pub enum Op {
         account: AccountNumber,
         script: Option<Script>,
     },
-    Migrate,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -270,8 +268,6 @@ pub enum Query {
         by: AccountNumber,
         page: PageRequest,
     },
-    #[ask(Reply::Ownership(Ownership))]
-    Ownership { number: AccountNumber },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -288,7 +284,6 @@ pub enum Reply {
     Generation(u64),
     Resolved(Vec<Option<AccountNumber>>),
     Accounts(PageResponse<Account>),
-    Ownership(Ownership),
 }
 
 /// An op as a person reads it: a title and its fields. The source of the
@@ -403,7 +398,6 @@ pub fn describe(op: &Op) -> describe::Description {
                 None => vec![account(number), field("script", Value::text("—"))],
             },
         ),
-        Op::Migrate => ("Migrate · who agents answer".into(), vec![]),
     };
     describe::Description { title, fields }
 }
@@ -429,7 +423,6 @@ fn op_variants_only_append() {
             "Revoke",
             "SetOwnership",
             "SetScript",
-            "Migrate",
         ]
     );
 }
@@ -449,7 +442,6 @@ fn query_and_reply_variants_only_append() {
             "Resolve",
             "List",
             "Managed",
-            "Ownership",
         ]
     );
     assert_eq!(
@@ -462,7 +454,6 @@ fn query_and_reply_variants_only_append() {
             "Generation",
             "Resolved",
             "Accounts",
-            "Ownership",
         ]
     );
 }

@@ -334,8 +334,8 @@ pub struct Explorer {
 /// a form is [`Acting::form`], as on the desktop.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Sheet {
-    /// More: add a program, propose a grant
-    More,
+    /// Add: add a program, propose a grant
+    Add,
     /// one program's or view-only entry's sheet: its page, its
     /// transactions, the reader's presses on it
     Program(String),

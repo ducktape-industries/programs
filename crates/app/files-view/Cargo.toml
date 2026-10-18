@@ -19,6 +19,8 @@ serde.workspace = true
 files.workspace = true
 # the reader's name, which names their home, and every author's
 identity.workspace = true
+# a row's `duck://` link
+ducklink.workspace = true
 
 [dev-dependencies]
 # `examples/live.rs` and the tests: the real `files` program on the fake node

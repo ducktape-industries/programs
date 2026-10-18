@@ -6,7 +6,7 @@ use view::prelude::*;
 
 use harness::{ModelRow, Wire};
 
-use crate::{Agents, applied};
+use crate::{Agents, Screen, applied};
 
 #[derive(Default, Serialize, Deserialize)]
 pub(crate) struct ModelDraft {
@@ -14,6 +14,8 @@ pub(crate) struct ModelDraft {
     pub wire: usize,
     pub service: Option<String>,
     pub name: TextField,
+    /// the desktop's form is open under the list
+    pub shown: bool,
     pub confirming: bool,
     pub problem: Option<String>,
     #[serde(skip)]
@@ -59,6 +61,7 @@ impl Agents {
                 .unwrap_or_default(),
             service: Some(row.service.clone()),
             name: TextField::new(row.name.clone()),
+            shown: true,
             ..ModelDraft::default()
         };
         cx.notify();
@@ -89,7 +92,11 @@ impl Agents {
             match applied(answer) {
                 Ok(_) => {
                     view.model_draft = ModelDraft::default();
-                    view.read_screen(cx);
+                    match view.screen {
+                        // the phone's form page goes back to the models it was opened over
+                        Screen::SetModel => view.go(Screen::Models, cx),
+                        _ => view.read_screen(cx),
+                    }
                 }
                 Err(problem) => view.model_draft.problem = Some(problem),
             }

@@ -304,9 +304,6 @@ pub(crate) fn words(motion: &Motion, roster: &[Entry], names: &Names) -> String 
             Ok(programs::Op::Revoke(grant)) => {
                 format!("Revoke {} {}", named(names, grant.account), grant.scope)
             }
-            Ok(programs::Op::Migrate) => {
-                "Copy the kernel's role table into the programs role".into()
-            }
             Err(_) => "A program change this screen can't read".into(),
         },
         Motion::Role { role, op } if role == abi::role::HALO => match abi::decode(op) {

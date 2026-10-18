@@ -120,7 +120,6 @@ Who may do what (the acting account is `ctx.sender()`):
 | `Suspend`, `Resume`, `Revoke` | a program account's, by whoever may write its key: its manager and the parties the manager lists |
 | `SetScript { account, script }` | a program account's, by whoever may write its key, not once revoked. `Some(Script { calls, config })` names in `calls` a program that has an account; that program then sends messages as the account (`Runs`) and reads `config`. `None` takes it back |
 | `SetOwnership { account, ownership }` | no one: always refused. Whom an agent answers is its list in the access program at `harness::agent_key(agent)` |
-| `Migrate` | the validators' vote: the one-time move of an older network, which drops the agents' old ownership rows; it is deleted once run. Until then `Query::Ownership` answers those rows |
 
 The role's queries, which views and other programs ask too, are
 `Account(key)`, `OfProgram(program)`, `Profile(number)`,
@@ -274,10 +273,6 @@ grants too. The vote's removal of an id that holds nothing at its height
 takes those along and waits as no entry, and its cancel of a change
 already gone is no error, so a motion never sits one vote short of a
 done thing.
-
-`Op::Migrate`, the vote's alone, is the one-time move of an older network:
-it copies the role table the kernel kept (`env.roles`) into the programs
-role's own, and it is deleted once run.
 
 ## Membership
 

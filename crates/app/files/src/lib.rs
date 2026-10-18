@@ -5,7 +5,6 @@
 mod commit;
 mod cursor;
 mod gate;
-mod migrate;
 mod objects;
 mod ops;
 pub mod paths;
@@ -50,7 +49,6 @@ pub enum Op {
     Unpin {
         name: String,
     },
-    Migrate,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -305,7 +303,6 @@ pub fn describe(op: &Op) -> describe::Description {
             vec![field("snapshot", hash(snapshot))],
         ),
         Op::Unpin { name } => (format!("Unpin {name}"), Vec::new()),
-        Op::Migrate => ("Migrate · write lists".to_owned(), Vec::new()),
     };
     describe::Description { title, fields }
 }
@@ -345,6 +342,6 @@ describe::export!(Op, describe);
 fn op_variants_only_append() {
     assert_eq!(
         describe::variants::<Op>(),
-        ["Stage", "Commit", "Pin", "Unpin", "Migrate"]
+        ["Stage", "Commit", "Pin", "Unpin"]
     );
 }

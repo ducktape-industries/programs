@@ -26,7 +26,6 @@ impl Program for Files {
             } => commit(ctx, writer, base, message, changes),
             Op::Pin { name, snapshot } => pin(ctx, writer, name, snapshot),
             Op::Unpin { name } => unpin(ctx, name),
-            Op::Migrate => crate::migrate::migrate(ctx),
         }
     }
 

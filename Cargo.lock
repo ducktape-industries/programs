@@ -2026,6 +2026,7 @@ version = "0.1.0"
 dependencies = [
  "abi",
  "access",
+ "ducklink",
  "files",
  "identity",
  "serde",
@@ -2691,6 +2692,7 @@ dependencies = [
  "egress",
  "files",
  "forge",
+ "gitcore",
  "halo",
  "identity",
  "program",

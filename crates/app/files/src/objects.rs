@@ -52,19 +52,11 @@ pub(crate) fn digest(id: &BlobId) -> Result<[u8; 32], Error> {
     }
 }
 
-pub(crate) fn put<T: BorshSerialize>(
-    ctx: &ExecCtx,
-    kind: &str,
-    object: &T,
-) -> Result<BlobId, Error> {
+fn put<T: BorshSerialize>(ctx: &ExecCtx, kind: &str, object: &T) -> Result<BlobId, Error> {
     ctx.blob_put(HashKind::Sha256, kind, abi::encode(object))
 }
 
-pub(crate) fn get<T: BorshDeserialize>(
-    ctx: &QueryCtx,
-    kind: &str,
-    id: &BlobId,
-) -> Result<T, Error> {
+fn get<T: BorshDeserialize>(ctx: &QueryCtx, kind: &str, id: &BlobId) -> Result<T, Error> {
     let blob = ctx
         .blob_get(*id)
         .ok_or_else(|| corrupt(kind, id.digest(), "the network holds no such blob"))?;

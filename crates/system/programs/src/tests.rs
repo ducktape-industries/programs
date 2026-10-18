@@ -556,37 +556,6 @@ fn no_change_leaves_a_required_role_unfilled_or_naming_a_program_that_does_not_r
 }
 
 #[test]
-fn the_votes_migrate_copies_the_kernels_table_and_nothing_else_runs_it() {
-    let store = MockHost::default();
-    crate::rules::init(
-        &store.exec(env(0, Origin::Root)),
-        Genesis {
-            programs: vec![entry("boot", BlobId::Sha256([1; 32]))],
-            views: vec![],
-            hooks: vec![],
-            roles: ::program::Roles::default(),
-        },
-    );
-    fold_to(&store, 1);
-    assert_eq!(roles(&store, 1), ::program::Roles::default());
-    for origin in [Origin::Root, Origin::Signed(vec![9])] {
-        let refused =
-            store.refused(|| Programs::execute(&store.exec(env(1, origin.clone())), Op::Migrate));
-        assert_eq!(refused.code, code::UNAUTHORIZED);
-    }
-    let unfilled = Env {
-        roles: ::program::Roles::from_iter([(abi::role::VALIDATORS, "valset")]),
-        ..authority(1)
-    };
-    let refused = store.refused(|| Programs::execute(&store.exec(unfilled), Op::Migrate));
-    assert_eq!(refused.code, code::INVALID_INPUT);
-    for _ in 0..2 {
-        Programs::execute(&store.exec(authority(1)), Op::Migrate).unwrap();
-    }
-    assert_eq!(roles(&store, 1), MockHost::roles());
-}
-
-#[test]
 fn an_id_lands_only_in_its_one_spelling() {
     let (store, code) = founded();
     let view = |name: &str| {

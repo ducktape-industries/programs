@@ -388,8 +388,7 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::CreateAgent { .. }
         | Op::AddKey { .. }
         | Op::RemoveKey { .. }
-        | Op::SetOwnership { .. }
-        | Op::Migrate => Vec::new(),
+        | Op::SetOwnership { .. } => Vec::new(),
     }
 }
 

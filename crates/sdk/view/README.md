@@ -101,6 +101,7 @@ with these; the rest of this page is reference.
 | `cx.processor(\|view, item, window, cx\| ..)` | 5/6 | `cx.listener` for a callback that returns a value: a list's row builder. gpui's. |
 | `design::button(id, label, &ladder, &theme, click).enabled(..)` | 3/6 | A button with its role, Tab stop and disabled state done; `.busy(..)` while its write is in flight, `.small()` for the Expo kit's small one. |
 | `cx.new(..)`, child entities | 1/6 | State and a render of its own inside a view ("Child entities"). |
+| `design::menu(id, label, at, &theme)` of `design::menu_item(..)`s, the modal of a `modal_overlay(..).on_dismiss(..)` | 1/6 | A menu at the pointer: a right press's (`on_mouse_down(MouseButton::Right, ..)`, its `position`), or the Menu key's on a focused row. |
 
 A phone page is built from the `design` kit: each piece draws as the Expo
 app's kit does under a finger and as the desktop always has under a
@@ -403,7 +404,12 @@ none does not compile), `MIN_WINDOW_WIDTH` (the narrowest pointer window in px i
 default 480, at least 1 or it does not compile: on a desk the app never
 lays it out narrower, and a narrower window scrolls it sideways; a touch
 screen seats the view at its own width whatever this says, so it is not
-lowered for phones), `new(window, cx)`, the state on
+lowered for phones), `WINDOW_WIDTH` (the width in px a desk window holding
+it opens at, for a view that wants more room than the app's share of the
+desk: `Some(1200)`, never past the desk, never under `MIN_WINDOW_WIDTH` or it
+does not compile; `None` by default, the app's share; a window the person
+moved or sized stays as they left it, and a phone ignores it),
+`new(window, cx)`, the state on
 first mount (`Default::default()` unless the view says otherwise), and
 `attach(window, cx)`, which runs on every mount, first or restored from a
 snapshot, and starts what the view follows and reads. Subscribe in `attach`,
@@ -436,8 +442,9 @@ A child is not a `View`: it logs with `cx.host().log(..)`.
 `export_view!(View)` (`src/lib.rs`) writes the five wasm exports and the
 manifest section `ducktape.view.manifest` from the trait's consts
 (`view-wire/src/manifest.rs`: header, `NAME`, `DESCRIPTION`,
-`CAPABILITIES`, `MIN_WINDOW_WIDTH` in decimal, `WIRE_ID`, `TARGETS`, `ICON`, `TINT`; the
-line list is `manifest::LINES`, part of `schema.txt` and so of `WIRE_ID`).
+`CAPABILITIES`, `MIN_WINDOW_WIDTH` in decimal, `WIRE_ID`, `TARGETS`, `ICON`, `TINT`,
+`WINDOW_WIDTH` in decimal or empty for none; the line list is
+`manifest::LINES`, part of `schema.txt` and so of `WIRE_ID`).
 
 The ABI gate (`view-wire/src/abi.rs`, `tools/check-view-abi.py`): exactly one
 import, `ducktape_view.panicked`, and exactly five function exports,

@@ -1,7 +1,7 @@
 //! Expo `src/network/explorer/programs.tsx` (mobile dev 266633c): the
 //! Programs page under the strip. What the programs role will change
 //! (Scheduled), runs (Running) and lists (Views), and who changes each name
-//! (Access); a program's sheet, and More. Reads the programs role, the
+//! (Access); a program's sheet, and Add. Reads the programs role, the
 //! accounts, the status and the reader's grants and voices (`acting`);
 //! writes a Cancel, a Step down or a revoke (`press`), which sheet is open
 //! (`sheet`) and the form a sheet opens (`open_form`).
@@ -58,21 +58,23 @@ pub(super) fn programs(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
         .into_any_element()
 }
 
-/// More on the root's title row while this page shows (Expo
-/// `ProgramsMenuHit`): there while the reader may add a program by grant
-/// or propose a grant by vote.
-pub(super) fn more(view: &Explorer, page: design::Page, cx: Cx, k: &Look) -> design::Page {
+/// Add on the root's title row while this page shows (Expo's
+/// `ProgramsMenuHit`, there an `Ellipsis` named More): there while the
+/// reader may add a program by grant or propose a grant by vote. Both add,
+/// so it draws `plus` and is named Add, not the capsule's `ellipsis` and
+/// More beside it ([`design::Page::trailing`]).
+pub(super) fn add(view: &Explorer, page: design::Page, cx: Cx, k: &Look) -> design::Page {
     if !(view.adds() || view.acting.votes()) {
         return page;
     }
     let open = cx.listener(|view: &mut Explorer, _: &ClickEvent, _, cx| {
-        view.sheet = Some(Sheet::More);
+        view.sheet = Some(Sheet::Add);
         cx.notify();
     });
     page.trailing(design::icon_button(
-        "explorer-more",
-        design::icon("ellipsis", k.ladder.icon),
-        "More",
+        "explorer-add-menu",
+        design::icon("plus", k.ladder.icon),
+        words::ADD,
         &k.ladder,
         &k.theme,
         open,
@@ -381,9 +383,9 @@ fn closes(cx: Cx) -> impl Fn(&(), &mut Window, &mut App) + 'static {
     })
 }
 
-/// More (Expo's programs `Sheet` of `SheetRow`s): Add a program by grant,
+/// Add (Expo's programs `Sheet` of `SheetRow`s): Add a program by grant,
 /// Propose a grant by vote.
-pub(super) fn more_sheet(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
+pub(super) fn add_sheet(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
     let add = view.adds().then(|| {
         let press = opens_form(Edit::Add, Path::Grant, cx);
         design::sheet_row(
@@ -406,11 +408,11 @@ pub(super) fn more_sheet(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
         )
         .hint(words::BY_VOTE)
     });
-    design::sheet("explorer-more-sheet", "More", &k.ladder, &k.theme)
+    design::sheet("explorer-add-menu-sheet", words::ADD, &k.ladder, &k.theme)
         .on_dismiss(closes(cx))
         .child(
             div()
-                .id("explorer-more-rows")
+                .id("explorer-add-menu-rows")
                 .flex()
                 .flex_col()
                 .children(add)

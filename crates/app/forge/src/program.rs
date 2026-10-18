@@ -1,5 +1,5 @@
-//! The program: the signer resolved to its principal, then every op and
-//! every query, each handed to its function (`ops.rs`, `changes.rs`,
+//! The program: the account the host resolved, then every op and every
+//! query, each handed to its function (`ops.rs`, `changes.rs`,
 //! `queries.rs`, `reads.rs`, `change_queries.rs`).
 
 use ::program::{Error, ExecCtx, Program, QueryCtx};
@@ -7,9 +7,7 @@ use ::program::{Error, ExecCtx, Program, QueryCtx};
 use crate::change_queries::{change, changes, judgment};
 use crate::changes::{Draft, Edit, MergeRequest, close, edit, merge_heads, open, submit_review};
 use crate::contract::*;
-use crate::ops::{
-    configure, create, init, needs, push, resource, retired, signed_account, stage, touch,
-};
+use crate::ops::{configure, create, init, needs, push, resource, retired, stage, touch};
 use crate::queries::{advertise, closure, listing, refs, repos, upload};
 use crate::reads::{blob, comparison, diff, log, tree};
 use crate::state::{load_bounds, load_repo};
@@ -26,18 +24,19 @@ impl Program for Forge {
         init(ctx, params)
     }
 
-    /// Runs one op as the signer's account (`ctx.sender()`).
-    /// Every op names its repository; an accepted one marks it active.
+    /// Runs one op as the account the host resolved
+    /// ([`ExecCtx::sender_account`]): a signed frame's key's account, a
+    /// program's own, or the agent a program runs and sends it for (as
+    /// harness does); never the chain itself, and never a key that holds no
+    /// account. Every op names its repository; an accepted one marks it
+    /// active.
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
-        let Some(repo) = op.repo().map(str::to_owned) else {
-            return crate::migrate::migrate(ctx);
-        };
-        let actor = &signed_account(ctx)?;
+        let repo = op.repo().to_owned();
+        let actor = &Principal::Account(ctx.sender_account()?);
         let reply = match op {
             Op::Create { repo, hash } => create(ctx, actor, &repo, hash).map(|()| None),
             Op::Configure { repo, settings } => configure(ctx, &repo, settings).map(|()| None),
             Op::Grant { .. } | Op::Revoke { .. } => Err(retired()),
-            Op::Migrate => crate::migrate::migrate(ctx).map(|()| None),
             Op::Push {
                 repo,
                 request,

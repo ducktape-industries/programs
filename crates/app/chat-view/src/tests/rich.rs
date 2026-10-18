@@ -189,9 +189,12 @@ fn a_header_tells_the_time_and_a_new_day_opens_under_a_divider() {
 }
 
 /// A line typed as `- x` or `1. x` renders as a list row: its marker in a
-/// gutter and the item, marks and all, beside it.
+/// gutter and the item, marks and all, beside it, wrapping in what the
+/// gutter leaves of the row. The room and the thread draw a message
+/// through one card, so this holds in both panes.
 #[test]
 fn list_lines_render_as_list_rows() {
+    use view::px;
     let (mut cx, view) = opened();
     cx.update(&view, |chat, _, cx| {
         let mut list = row(3, 7, "list");
@@ -213,6 +216,14 @@ fn list_lines_render_as_list_rows() {
         panic!("the item is one rich text node");
     };
     assert_eq!(text, "apples", "the marker leaves the item's text");
+    // as wide as the whole row (its `w_full`) beside the gutter, the item
+    // would run past the pane's right edge by the gutter's width
+    let item = cx.style("chat-message-list-block-0");
+    assert_eq!(
+        (item.flex_grow, item.min_size.width),
+        (Some(1.), Some(px(0.).into())),
+        "the item takes the row's rest and may wrap under its widest line"
+    );
     assert!(cx.find("chat-message-list-block-1-item").is_some());
     assert!(cx.has_text("2."));
     assert!(

@@ -3,13 +3,14 @@
 //! over `program::MockHost` (tests, fixtures); the `program` feature adds its
 //! wasm exports.
 //!
-//! A write is an [`Op`] run as a [`Principal`] (an account: the signer the
-//! host resolved, [`ExecCtx::sender`](program::ExecCtx::sender), which refuses a
-//! key that holds none), a read
-//! a [`Query`] answered by a [`Reply`]. The layout, in reading order:
+//! A write is an [`Op`] run as a [`Principal`] (the account the host
+//! resolved, [`ExecCtx::sender_account`](program::ExecCtx::sender_account):
+//! a key's, a program's own or the agent a program sends it for, never the
+//! chain's), a read a [`Query`] answered by a [`Reply`]. The layout, in
+//! reading order:
 //!
 //! - `contract.rs`, `read_contract.rs`, `review_contract.rs`: the wire
-//! - `program.rs`: [`Forge`], the program: the signer resolved, then one
+//! - `program.rs`: [`Forge`], the program: the account resolved, then one
 //!   match over every op and one over every query
 //! - `state.rs`: every table and index, declared once
 //! - `ops.rs`: the repository ops; `changes.rs` the change ops
@@ -30,7 +31,6 @@ mod changes;
 mod description;
 mod diffs;
 mod discussion;
-mod migrate;
 mod objects;
 mod ops;
 mod queries;
@@ -41,7 +41,7 @@ mod program;
 
 pub use contract::*;
 pub use description::describe;
-pub use objects::blob_id_of;
+pub use objects::{blob_id_of, hash_of};
 pub use ops::PROGRAM;
 pub use program::Forge;
 
@@ -74,7 +74,6 @@ fn op_variants_only_append() {
             "ChangeClose",
             "ReviewSubmit",
             "Stage",
-            "Migrate",
         ]
     );
 }

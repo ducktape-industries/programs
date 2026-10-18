@@ -51,7 +51,8 @@ impl Default for Settings {
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Repo {
     pub hash: HashKind,
-    /// The person who created the repository: an account.
+    /// The account that created the repository: a person's, a program's own
+    /// or an agent's.
     pub owner: Principal,
     pub settings: Settings,
     pub refs_count: u64,
@@ -119,12 +120,11 @@ pub enum Op {
         repo: String,
         pack: BlobId,
     },
-    Migrate,
 }
 
 impl Op {
-    pub fn repo(&self) -> Option<&str> {
-        let repo = match self {
+    pub fn repo(&self) -> &str {
+        match self {
             Op::Create { repo, .. }
             | Op::Configure { repo, .. }
             | Op::Grant { repo, .. }
@@ -136,9 +136,7 @@ impl Op {
             | Op::ChangeClose { repo, .. }
             | Op::ReviewSubmit { repo, .. }
             | Op::Stage { repo, .. } => repo,
-            Op::Migrate => return None,
-        };
-        Some(repo)
+        }
     }
 }
 

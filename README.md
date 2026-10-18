@@ -149,8 +149,8 @@ The tree vocabulary, manifests, and five-function Wasm ABI are unchanged.
 ## Loop
 
 1. Edit a program or a view.
-2. `make dev`: rebuilds what cargo finds stale (one line per artifact:
-   `name  1,181,498 B` or `unchanged`), gates the rebuilt
+2. `make dev`: rebuilds what cargo finds stale with the fast profile (one
+   line per artifact: `name  1,181,498 B` or `unchanged`), gates the rebuilt
    views (ABI) and runs the native tests of the crates cargo rebuilt.
    `P=forge` / `V=forge-view` narrow it to one.
 3. Push the branch and `make wasm-publish` (below); then in qa,
@@ -167,13 +167,20 @@ The tree vocabulary, manifests, and five-function Wasm ABI are unchanged.
 
 `make test` (`cargo test --workspace`; the founding suite runs `make
 wasm-programs` itself), clippy, `make program-wasm-check`,
-`make view-wasm-check`, `make wasm-views`, `make scaffold-check` and
-`make wasm-reproducible` are what CI runs. The toolchain is pinned in `rust-toolchain.toml`.
+`make view-wasm-check`, `make wasm-views`, `make scaffold-check`,
+`make wasm-reproducible` and `make dl-publish-check` are what CI runs. The toolchain is pinned in `rust-toolchain.toml`.
 
 Every wasm artifact is a build output: `make wasm-modules` builds every
 program and every view, and writes every program's schema, under `$CARGO_TARGET_DIR/wasm32-unknown-unknown/release/`;
-nothing built is committed. `make wasm-reproducible` proves the
-bytes do not depend on the checkout. They do depend on the host triple (the
+nothing built is committed. `make dev` and a view's `--example live` build
+with the `fast` profile instead (`Cargo.toml`): no fat LTO, sixteen codegen
+units and no wasm-opt, into `wasm32-unknown-unknown/fast/`, for the edit
+loop and for garage, the network that runs dev; a release, and so
+duckpond, is always the release profile's bytes. `WASM_PROFILE=fast` on a
+wasm target's command line asks for it
+(`make dev WASM_PROFILE=release` for the bytes that ship), and in the
+environment of an `--example live` it picks the rig's profile.
+`make wasm-reproducible` proves the bytes do not depend on the checkout. They do depend on the host triple (the
 Makefile says why at `WASM_RUSTFLAGS`), and the reference host is Linux x86_64:
 a founding or a release is packed from a build made there, and a Mac's build
 is a development build.
@@ -181,7 +188,7 @@ is a development build.
 `make wasm-publish` builds every artifact at the checked-out commit and
 publishes them as the GitHub release `wasm-<commit>`, in two archives, each
 with its `SHA256SUMS`. `programs-wasm.tar.gz` holds every artifact unpacked.
-`founding.tar.gz` holds a founding: each program with its describe module,
+`founding.tar.gz` (`make wasm-founding`) holds a founding: each program with its describe module,
 its schema and any view embedded (`crates/sdk/founding`), `forge.params`, and a
 `founding.toml` that `ducktape init` reads once its network, time, key and
 address are filled. It runs only on the reference host, from a clean checkout
@@ -191,8 +198,55 @@ publishes needs the wasm tools below and `gh`. Each
 time `main` moves, the self-hosted runner fabrics-1 publishes it
 (`.github/workflows/release.yml`).
 
-`make dev`'s view gate and view releases require `wasm-tools`, Python 3, and
-[Binaryen wasm-opt 132](https://github.com/WebAssembly/binaryen/releases/tag/version_132).
+Each time `dev` or `main` moves, its build is also published to
+https://dl.ducktape.industries/programs/. A branch is a channel: `dev`
+publishes the fast profile's bytes, `main` the release profile's (the same
+build as its GitHub release). A version is the commit's first-parent count
+(`git rev-list --count --first-parent HEAD`), shown as `dev-1234` or
+`main-87`. `programs/<channel>/<version>/` holds every artifact `make
+wasm-modules` builds, unpacked, `founding.tar.gz` and `manifest.json`, and
+nothing in it is ever replaced. `programs/<channel>/latest.json` is a copy of
+the newest version's manifest, cached for a minute and written after every
+file it names. `built_at` is the commit's committer time and `wire_id` the
+`WIRE_ID` the views speak; `artifacts` has one entry per file:
+
+```json
+{
+  "repo": "programs",
+  "channel": "dev",
+  "version": 660,
+  "display": "dev-660",
+  "commit": "41affe2c50df0a4fb280934f7f3e1e7d861345d9",
+  "profile": "fast",
+  "built_at": "2026-10-18T01:26:17Z",
+  "wire_id": "967e0ea397677413",
+  "artifacts": {
+    "chat_view.wasm": {
+      "sha256": "f2b278b1aed0587d1771f2bcf705d792f840df1ff9d5586f2acbd2d405d7e9e9",
+      "bytes": 3312535
+    }
+  }
+}
+```
+
+```sh
+dl=https://dl.ducktape.industries/programs/dev
+curl -fsS $dl/latest.json > latest.json
+curl -fsSO "$dl/$(jq -r .version latest.json)/founding.tar.gz"
+jq -r '.artifacts["founding.tar.gz"].sha256' latest.json   # sha256sum founding.tar.gz prints the same
+```
+
+A file is checked by the manifest's sha256, fetched over HTTPS; nothing is
+signed yet, since nothing verifies a signature. fabrics-1 builds and stages
+each version (`make dl-stage`), and a job on GitHub's Ubuntu, the only one
+that holds the bucket's keys, uploads the stage (`tools/publish-dl.py`).
+`make dl-stage CHANNEL=dev WASM_PROFILE=fast` is the dry run: it builds,
+writes the stage and its manifest under `$CARGO_TARGET_DIR/dl/dev/`, and
+prints the upload order, without credentials. `make dl-publish-check` checks
+the script.
+
+`make dev`'s view gate requires `wasm-tools` and Python 3; view releases
+also need [Binaryen wasm-opt 132](https://github.com/WebAssembly/binaryen/releases/tag/version_132).
 `make wasm-views` builds, optimizes, and checks the exact view ABI, printing
 `name  bytes`. The bytes before wasm-opt stay beside each
 artifact as `<name>.wasm.unoptimized`. `WASM_OPT=/path/to/wasm-opt` can

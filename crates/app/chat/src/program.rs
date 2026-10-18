@@ -21,9 +21,6 @@ impl Program for Chat {
     type Reply = Reply;
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
-        if let Op::Migrate = op {
-            return crate::migrate::migrate(ctx);
-        }
         let sender = ctx.sender()?;
         match op {
             Op::CreateChannel {
@@ -65,7 +62,6 @@ impl Program for Chat {
                 principal,
                 member,
             } => set_membership(ctx, &channel_id, principal, member),
-            Op::Migrate => crate::migrate::migrate(ctx),
         }
     }
 

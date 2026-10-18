@@ -429,7 +429,7 @@ EOF
 $dir/{Cargo.toml,src/lib.rs,src/tests.rs}, VIEWS and workspace members.
 Next:
   1. replace the screen in src/lib.rs with what the program's Query answers (it asks \`Query::Count\` until then)
-  2. \`make dev P=$program V=$name\` tests both natively, then builds them and gates the view (ABI), which needs Binaryen wasm-opt 132, wasm-tools and python3 on PATH
+  2. \`make dev P=$program V=$name\` tests both natively, then builds them and gates the view (ABI), which needs wasm-tools and python3 on PATH
   3. pack it into its program: ("$program_snake", "$snake") in PROGRAMS (crates/sdk/founding/src/lib.rs); then in qa \`kit up NAME\`
 EOF
 }

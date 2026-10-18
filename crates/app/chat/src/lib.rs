@@ -27,7 +27,6 @@ mod description;
 mod gate;
 mod mentions;
 pub mod message;
-mod migrate;
 mod ops;
 mod origin;
 mod program;
@@ -121,7 +120,6 @@ pub enum Op {
         principal: Principal,
         member: bool,
     },
-    Migrate,
 }
 
 /// A read. `viewer` is the reader's principals: they decide
@@ -476,7 +474,6 @@ fn op_variants_only_append() {
             "AddReaction",
             "RemoveReaction",
             "SetMembership",
-            "Migrate",
         ]
     );
 }

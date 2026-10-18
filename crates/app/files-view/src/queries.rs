@@ -57,6 +57,12 @@ async fn writers(host: &Host, path: &str) -> Result<Option<Writers>, Error> {
     .map(Some)
 }
 
+/// What is at `path` at the newest snapshot, if anything.
+pub(crate) async fn entry(host: Host, path: String) -> Result<Option<files::EntryInfo>, Error> {
+    let (_, entry) = host.query(files::ask::Stat { path, at: None }).await?;
+    Ok(entry)
+}
+
 /// What is at `path`, its first [`PREVIEW`] bytes (the whole of a
 /// picture the app draws), and who writes it. `kept` is the picture on
 /// screen and the content it was read from: while the file's content is

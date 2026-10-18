@@ -23,8 +23,7 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::CreateDmChannel { .. }
         | Op::PostMessage { .. }
         | Op::AddReaction { .. }
-        | Op::RemoveReaction { .. }
-        | Op::Migrate => Vec::new(),
+        | Op::RemoveReaction { .. } => Vec::new(),
     }
 }
 

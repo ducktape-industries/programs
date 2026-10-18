@@ -1869,7 +1869,8 @@
             "chat"
           ],
           "icon": "icons/chat.svg",
-          "tint": "None"
+          "tint": "None",
+          "width": null
         }
       }
     }
@@ -1908,7 +1909,8 @@
             "chat"
           ],
           "icon": "icons/chat.svg",
-          "tint": "Blue"
+          "tint": "Blue",
+          "width": null
         }
       }
     }
@@ -1947,7 +1949,8 @@
             "chat"
           ],
           "icon": "icons/chat.svg",
-          "tint": "Teal"
+          "tint": "Teal",
+          "width": null
         }
       }
     }
@@ -1986,7 +1989,8 @@
             "chat"
           ],
           "icon": "icons/chat.svg",
-          "tint": "Green"
+          "tint": "Green",
+          "width": null
         }
       }
     }
@@ -2025,7 +2029,8 @@
             "chat"
           ],
           "icon": "icons/chat.svg",
-          "tint": "Lime"
+          "tint": "Lime",
+          "width": null
         }
       }
     }
@@ -2064,7 +2069,8 @@
             "chat"
           ],
           "icon": "icons/chat.svg",
-          "tint": "Amber"
+          "tint": "Amber",
+          "width": null
         }
       }
     }
@@ -2103,7 +2109,8 @@
             "chat"
           ],
           "icon": "icons/chat.svg",
-          "tint": "Orange"
+          "tint": "Orange",
+          "width": null
         }
       }
     }
@@ -2142,7 +2149,8 @@
             "chat"
           ],
           "icon": "icons/chat.svg",
-          "tint": "Red"
+          "tint": "Red",
+          "width": null
         }
       }
     }
@@ -2181,7 +2189,8 @@
             "chat"
           ],
           "icon": "icons/chat.svg",
-          "tint": "Pink"
+          "tint": "Pink",
+          "width": null
         }
       }
     }
@@ -2220,7 +2229,48 @@
             "chat"
           ],
           "icon": "icons/chat.svg",
-          "tint": "Violet"
+          "tint": "Violet",
+          "width": null
+        }
+      }
+    }
+  },
+  {
+    "kind": "blob.manifest",
+    "request": "sha256:00",
+    "reply": {
+      "size": 2048,
+      "view": {
+        "size": 1024,
+        "manifest": {
+          "wire_id": "0123abcd",
+          "name": "Chat",
+          "description": "Rooms and threads.",
+          "capabilities": [
+            "Chain",
+            "Program",
+            "Op",
+            "Invite",
+            "Link",
+            "Blob",
+            "Host",
+            "Clock",
+            "Clipboard",
+            "Notify",
+            "Store",
+            "Web",
+            "Live",
+            "Camera",
+            "Microphone",
+            "File"
+          ],
+          "min_width": 480,
+          "targets": [
+            "chat"
+          ],
+          "icon": "icons/chat.svg",
+          "tint": "Blue",
+          "width": 1200
         }
       }
     }

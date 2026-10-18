@@ -18,7 +18,7 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
     match op {
         Op::Commit { changes, .. } => commit_needs(changes),
         Op::Unpin { name } => vec![Need::delete(pin_key(name))],
-        Op::Stage { .. } | Op::Pin { .. } | Op::Migrate => Vec::new(),
+        Op::Stage { .. } | Op::Pin { .. } => Vec::new(),
     }
 }
 

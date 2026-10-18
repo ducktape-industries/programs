@@ -40,7 +40,6 @@ impl Program for Identity {
             Op::SetOwnership { .. } => Err(::program::unauthorized(
                 "whom an agent answers is its list in the access program: set it there",
             )),
-            Op::Migrate => crate::migrate::migrate(ctx),
             Op::SetScript { account, script } => set_script(ctx, account, script),
         }
     }
@@ -78,9 +77,6 @@ impl Program for Identity {
                     .range_of(ctx, &by, &page)?
                     .try_map(|(_, number)| account(ctx, number))?,
             ),
-            Query::Ownership { number } => {
-                Reply::Ownership(crate::migrate::ownership(ctx, number)?)
-            }
         })
     }
 }

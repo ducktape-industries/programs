@@ -497,13 +497,6 @@ fn every_motion_reads_in_words() {
         (
             Motion::Role {
                 role: abi::role::PROGRAMS.into(),
-                op: abi::encode(&programs::Op::Migrate),
-            },
-            "Copy the kernel's role table into the programs role",
-        ),
-        (
-            Motion::Role {
-                role: abi::role::PROGRAMS.into(),
                 op: b"not an op".to_vec(),
             },
             "A program change this screen can't read",

@@ -1,6 +1,6 @@
 //! Expo `app/(tabs)/explorer/index.tsx`, board `09-explorer`: Explorer's
 //! root. The title row says "Explorer" over the network and the reader,
-//! with Search (and More on the Programs page); Search turns the row into
+//! with Search (and Add on the Programs page); Search turns the row into
 //! the field. Under it the five pages on a strip, the notice, and the
 //! page's list ([`pages::body`]). Reads the session, the root page and the
 //! search field; writes the root page (`go`), the search (`search`) and
@@ -65,7 +65,7 @@ fn network_and_me(view: &Explorer) -> Option<String> {
 }
 
 /// The title row: "Explorer", its caption, Search, and on the Programs
-/// page More ([`super::programs::more`]).
+/// page Add ([`super::programs::add`]).
 fn titled(view: &Explorer, cx: Cx, k: &Look) -> design::Page {
     let open = cx.listener(|view: &mut Explorer, _: &ClickEvent, window, cx| {
         view.searching = true;
@@ -94,7 +94,7 @@ fn titled(view: &Explorer, cx: Cx, k: &Look) -> design::Page {
         None => page,
     };
     match view.pages.first() {
-        Route::Programs => super::programs::more(view, page, cx, k),
+        Route::Programs => super::programs::add(view, page, cx, k),
         _ => page,
     }
 }

@@ -147,8 +147,10 @@ requested changes never block that CAS.
 
 ## Operations and examples
 
-Authors are always the account the signed frame acts as (`ctx.sender()`), never
-the payload; forge takes every op but the vote's `Migrate` from signed frames alone. Any account may open/review. The author edits title/body/review requests,
+Authors are always the account the frame acts as (`ctx.sender_account()`), never
+the payload: a signed frame's key's account, a program's own, or the agent a
+program sends the op for (harness, for the agents it runs); the chain itself and a key
+that holds no account are refused. Any account may open/review. The author edits title/body/review requests,
 or whoever the change's list at `forge::change_key(repo, n)` in the access
 program allows; the author, or a repository writer, closes; repository writers merge.
 A repository's writers are whoever its list in the access program allows, at
@@ -164,7 +166,6 @@ Closing is terminal; there is no reopen operation.
 | `Create { repo: r, hash: HashKind::Sha1 }` | actor owns a new repo; empty output |
 | `Configure { repo: r, settings: Settings::default() }` | owner configures default ref and force/delete policy; empty output |
 | `Grant { repo: r, principal: writer }`, `Revoke { .. }` | always refused: a repository's writers are its list in the access program |
-| `Migrate` | the validators' vote only: the one-time move of an older network, which turns each repository's old writers into its list at `repo_key`; deleted once run |
 | `Push { repo: r, request: receive_pack_commands, pack: Some(pack) }` | Git receive-pack: the ref commands in `request`, the objects in the held `pack`; Git's report |
 | `Stage { repo: r, pack }` | stores the held pack's objects and moves no ref; empty output |
 | `ChangeOpen { repo: r, from: feature, into: b"refs/heads/main".to_vec(), title: "Fix parser".into(), body: "Why this changes".into(), reviewers: vec![reviewer] }` | assigns `n`, stores body, queues channel/opened line; `OpReply::Change { height, n }` |

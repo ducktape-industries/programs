@@ -1,12 +1,13 @@
 //! Tools over the thread itself: every frame of its transcript stays whole in harness, so the
-//! model searches it and reads a frame in parts, an input left out of its context window included.
+//! model searches it and reads a frame in parts, an input left out of its context window included;
+//! and the thread's topic, the one line the agent says it is about, which people read beside it.
 use ::program::{Error, ExecCtx, invalid, not_found};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{Run, Seat, Tool, object};
 use crate::Frame;
-use crate::state::FRAMES;
+use crate::state::{FRAMES, TOPICS};
 
 fn frame(ctx: &ExecCtx, thread: u64, seq: u64) -> Result<Frame, Error> {
     FRAMES
@@ -159,5 +160,52 @@ impl Tool for Read {
             "text": &text[start..end],
             "rest": text.len() - end,
         })))
+    }
+}
+
+/// How many characters a topic holds at most: one line beside a conversation's name.
+pub(crate) const TOPIC_MAX: usize = 120;
+
+#[derive(Deserialize)]
+pub(crate) struct TopicArgs {
+    topic: String,
+}
+
+pub(crate) struct Topic;
+
+impl Tool for Topic {
+    const NAME: &'static str = "thread_topic";
+    const DESCRIPTION: &'static str = "Say in one line what this thread is about and where it stands, for the people who read it beside the thread's name: \"Finding why payments is slow; the timeout change looks like it\". It replaces the topic set before. It is not what the model sees in place of earlier frames.";
+    type Args = TopicArgs;
+
+    fn schema() -> Value {
+        object(
+            json!({
+                "topic": {
+                    "type": "string",
+                    "maxLength": TOPIC_MAX,
+                    "description": format!("one line, at most {TOPIC_MAX} characters"),
+                },
+            }),
+            &["topic"],
+        )
+    }
+
+    fn run(ctx: &ExecCtx, seat: &Seat, args: TopicArgs) -> Result<Run, Error> {
+        let topic = args.topic.trim();
+        if topic.is_empty() {
+            return Err(invalid("a topic is a line of words"));
+        }
+        if topic.contains(['\n', '\r']) {
+            return Err(invalid("a topic is one line"));
+        }
+        let length = topic.chars().count();
+        if length > TOPIC_MAX {
+            return Err(invalid(format!(
+                "a topic is at most {TOPIC_MAX} characters; this one is {length}"
+            )));
+        }
+        TOPICS.put(ctx, &seat.thread, &topic.to_owned());
+        Ok(Run::Done(json!({ "topic": topic })))
     }
 }

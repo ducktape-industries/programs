@@ -206,7 +206,6 @@ fn identity_round_trips() {
         }],
         next: None,
     });
-    identity.reply(&identity::Reply::Ownership(Ownership::Owner));
     identity.shapes();
 }
 

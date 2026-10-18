@@ -376,11 +376,28 @@ fn start_review_pins_a_review_and_opens_the_files() {
     assert!(cx.has_text("Tick a file once you have read it."));
 }
 
+/// The host's capsule beside the title row draws `ellipsis` and is named
+/// More: a change's own Actions draw `ellipsis-vertical` and say Actions.
 #[test]
-fn more_offers_edit_close_and_copy_link_and_close_asks_again() {
+fn a_changes_actions_are_not_drawn_as_the_capsules_more() {
+    let cx = change("default");
+    let row = format!("{:?}", cx.node("forge-page-change-title"));
+    assert!(!row.contains("icons/ellipsis.svg"), "{row}");
+    let actions = format!("{:?}", cx.node("forge-change-actions"));
+    assert!(actions.contains("icons/ellipsis-vertical.svg"), "{actions}");
+    let name = &cx.interactivity("forge-change-actions").aria.label;
+    assert_eq!(name.as_deref(), Some("Actions"));
+}
+
+#[test]
+fn actions_offer_edit_close_and_copy_link_and_close_asks_again() {
     let mut cx = change("default");
-    press(&mut cx, "forge-change-more");
-    assert!(cx.find("forge-change-actions").is_some());
+    press(&mut cx, "forge-change-actions");
+    assert!(
+        matches!(cx.node("forge-change-actions-sheet"),
+            view::wire::Node::Sheet { label: Some(label), .. } if label == "Actions"),
+        "the sheet is named as its control"
+    );
     assert!(cx.find("forge-change-edit").is_some());
     assert!(cx.find("forge-change-copy-link").is_some());
     press(&mut cx, "forge-change-close");
@@ -392,7 +409,7 @@ fn more_offers_edit_close_and_copy_link_and_close_asks_again() {
             .iter()
             .any(|op| matches!(op, forge::Op::ChangeClose { n: 1, .. }))
     );
-    assert!(cx.find("forge-change-actions").is_none());
+    assert!(cx.find("forge-change-actions-sheet").is_none());
 }
 
 #[test]
@@ -765,7 +782,7 @@ fn a_markdown_file_reads_as_its_document_until_source() {
 #[test]
 fn edit_opens_the_form_filled_and_save_sends_the_edit() {
     let mut cx = change("default");
-    press(&mut cx, "forge-change-more");
+    press(&mut cx, "forge-change-actions");
     press(&mut cx, "forge-change-edit");
     assert!(cx.find("forge-page-change-form").is_some());
     assert!(cx.has_text("Edit change #1"));
@@ -1064,18 +1081,18 @@ fn a_refused_reply_says_why_and_keeps_its_text() {
     assert!(!disabled(&cx, "forge-reply-send"), "it may be sent again");
 }
 
-/// Back on the close confirmation closes the sheet, and More opens on
-/// its actions again.
+/// Back on the close confirmation closes the sheet, and Actions opens on
+/// its list again.
 #[test]
-fn back_from_close_for_good_leaves_more_on_its_actions() {
+fn back_from_close_for_good_leaves_actions_on_its_list() {
     let mut cx = change("default");
-    press(&mut cx, "forge-change-more");
+    press(&mut cx, "forge-change-actions");
     press(&mut cx, "forge-change-close");
     assert!(cx.find("forge-close-confirm").is_some());
     cx.simulate_back();
     cx.run_until_parked();
-    assert!(cx.find("forge-change-actions").is_none());
-    press(&mut cx, "forge-change-more");
+    assert!(cx.find("forge-change-actions-sheet").is_none());
+    press(&mut cx, "forge-change-actions");
     for row in [
         "forge-change-edit",
         "forge-change-close",
@@ -1376,9 +1393,9 @@ fn forge_fits_every_phone() {
         cx.simulate_back();
         cx.run_until_parked();
         press(cx, "forge-change-project-1");
-        press(cx, "forge-change-more");
+        press(cx, "forge-change-actions");
         press(cx, "forge-change-close");
-        cx.simulate_dismiss("forge-change-actions");
+        cx.simulate_dismiss("forge-change-actions-sheet");
         for tab in ["commits", "details", "files"] {
             press(cx, &format!("forge-change-tab-{tab}"));
         }

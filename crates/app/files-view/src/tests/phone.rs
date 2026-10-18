@@ -106,6 +106,21 @@ fn the_actions_sheet_offers_the_folders_writes_and_back_closes_it() {
     );
 }
 
+/// The host's capsule beside the title row draws `ellipsis`: the page's
+/// own Actions draw `ellipsis-vertical`, so the two never read as one.
+#[test]
+fn the_actions_control_is_not_drawn_as_the_capsules_ellipsis() {
+    let net = seeded();
+    let mut cx = phone(&net);
+    tap(&mut cx, "files/place/home");
+    let row = format!("{:?}", cx.node("files-folder-title"));
+    assert!(!row.contains("icons/ellipsis.svg"), "{row}");
+    let actions = format!("{:?}", cx.node("files/actions"));
+    assert!(actions.contains("icons/ellipsis-vertical.svg"), "{actions}");
+    let name = &cx.interactivity("files/actions").aria.label;
+    assert_eq!(name.as_deref(), Some(words::ACTIONS));
+}
+
 #[test]
 fn a_folder_the_reader_cannot_write_has_no_actions() {
     let net = seeded();

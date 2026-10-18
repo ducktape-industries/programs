@@ -1,9 +1,21 @@
 mod common;
+use abi::role::identity::Standing;
 use common::*;
 use forge::Content;
 
+fn owner_of(sandbox: &MemorySandbox, repo: &str) -> Principal {
+    let asked = Query::Repo { repo: repo.into() };
+    let Reply::Repo { repo, .. } = abi::decode(&ask(sandbox, &asked).unwrap()).unwrap() else {
+        panic!("a repo answers Repo");
+    };
+    repo.repo.owner
+}
+
+/// An op acts as an account: a key's, or a program's own when the program
+/// sends it for itself. The chain and a key that holds no account act as
+/// none.
 #[test]
-fn founding_requires_bounds_and_ops_require_a_signer() {
+fn founding_requires_bounds_and_an_op_acts_as_an_account() {
     let sandbox = MemorySandbox::default();
     let unfounded = Forge::init(&sandbox.exec(1), b"").unwrap_err();
     assert_eq!(unfounded.code, code::INVALID_INPUT);
@@ -13,12 +25,51 @@ fn founding_requires_bounds_and_ops_require_a_signer() {
         repo: "r".into(),
         hash: HashKind::Sha1,
     };
-    for origin in [Origin::Root, Origin::Program("chat".into())] {
+    for origin in [Origin::Root, Origin::Signed(b"no-account".to_vec())] {
         let refusal = sandbox
             .forge
             .refused(|| sandbox.frame(origin, 1, TIME, &create));
         assert_eq!(refusal.code, code::UNAUTHORIZED);
     }
+    sandbox
+        .frame(Origin::Program("chat".into()), 1, TIME, &create)
+        .unwrap();
+    let chat = sandbox::PROGRAMS[1].1;
+    assert_eq!(owner_of(&sandbox, "r"), Principal::Account(chat));
+}
+
+/// An agent writes through the program that runs it, as harness sends an
+/// agent's writes: the frame comes from that program and acts as the
+/// agent's account, so the agent owns the repository it creates and pushes
+/// to it as its owner.
+#[test]
+fn an_agent_creates_and_pushes_through_the_program_that_runs_it() {
+    const AGENT: u64 = 20;
+    let sandbox = founded();
+    sandbox.agent(AGENT, Standing::Active);
+    let create = Op::Create {
+        repo: "notes".into(),
+        hash: HashKind::Sha1,
+    };
+    sandbox
+        .forge
+        .attempt(|| sandbox.run_for(AGENT, 1, create))
+        .unwrap();
+    assert_eq!(owner_of(&sandbox, "notes"), Principal::Account(AGENT));
+
+    let mut source = MemoryObjects::new(Hash::Sha1);
+    let tip = file_commit(&mut source, &[], 1, &[("README.md", b"# Notes\n")]);
+    let pack_bytes = pack_of(&source, &all_ids(&source));
+    let pushed = with_pack(&sandbox, &pack_bytes, |pack| {
+        let op = Op::Push {
+            repo: "notes".into(),
+            request: push_request(&[(Hash::Sha1.zero(), tip, "refs/heads/main")]),
+            pack,
+        };
+        sandbox.forge.attempt(|| sandbox.run_for(AGENT, 2, op))
+    });
+    pushed.unwrap();
+    assert_eq!(refs_of(&sandbox, "notes")["refs/heads/main"], tip.to_hex());
 }
 
 /// Git's two queries are `answer`'s, raw; `query` has no `Reply` for them.

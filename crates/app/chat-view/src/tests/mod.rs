@@ -66,6 +66,15 @@ fn the_root_tracks_the_shared_theme_and_is_accessible() {
     assert_eq!(style.text.color, Some(dark.foreground));
 }
 
+/// A desk opens chat wide enough for a thread beside the room: its
+/// manifest, as the host reads it, asks 1200 px.
+#[test]
+fn a_desk_window_opens_chat_at_its_width() {
+    let text = std::str::from_utf8(&MANIFEST_SECTION).unwrap();
+    let manifest = wire::manifest::Manifest::parse(text).unwrap();
+    assert_eq!(manifest.width, Some(1200));
+}
+
 fn row(seq: u64, author: u64, text: &str) -> MsgRow {
     MsgRow {
         channel_id: "general".into(),

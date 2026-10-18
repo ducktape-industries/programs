@@ -29,6 +29,8 @@ pub const TABS: &str = "Pages";
 pub const SIDE: &str = "Places and history";
 /// What a folder's or a file's crumbs are called to assistive tech.
 pub const PATH: &str = "Path";
+/// What a folder's list of entries is called to assistive tech.
+pub const ENTRIES: &str = "Entries";
 
 pub const SHARED_CAPTION: &str = "Any account writes here";
 pub const EVERYTHING_CAPTION: &str = "The whole tree";
@@ -89,6 +91,9 @@ pub const CANCEL: &str = "Cancel";
 pub const COMMIT: &str = "Commit";
 pub const COMMITTING: &str = "Committing…";
 pub const ACTIONS: &str = "Actions";
+pub const OPEN: &str = "Open";
+pub const COPY_LINK: &str = "Copy link";
+pub const LINK_COPIED: &str = "Link copied";
 
 pub const SIZE: &str = "Size";
 pub const KIND: &str = "Kind";
@@ -370,6 +375,7 @@ pub fn message_or_none(message: &str) -> &str {
 pub fn note(note: &Note) -> String {
     match note {
         Note::Committed(message) => format!("Committed: {message}"),
+        Note::Copied => LINK_COPIED.into(),
         Note::Refused(why) => why.clone(),
     }
 }

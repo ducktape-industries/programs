@@ -54,6 +54,7 @@ impl Program for Harness {
             Query::Models { page } => Ok(Reply::Models(queries::models(ctx, &page)?)),
             Query::Withheld { thread } => Ok(Reply::Withheld(queries::withheld(ctx, thread)?)),
             Query::Partial { thread } => Ok(Reply::Partial(queries::partial(ctx, thread)?)),
+            Query::Topic { thread } => Ok(Reply::Topic(queries::topic(ctx, thread)?)),
         }
     }
 }
@@ -73,7 +74,6 @@ impl Awaiting for Harness {
             Op::Streamed { thread, event } => streamed(&ctx, thread, event).await,
             Op::NewThread { agent } => new_thread(&ctx, agent),
             Op::ForkThread { agent } => fork_thread(&ctx, agent),
-            Op::Migrate => crate::migrate::migrate(&ctx),
         }
     }
 }

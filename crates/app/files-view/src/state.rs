@@ -11,6 +11,7 @@ use view::borsh_bytes;
 use view::design::Pages;
 use view::prelude::*;
 
+use crate::menu::Menu;
 use crate::write::Form;
 
 pub const SHARED_PATH: &str = "/shared";
@@ -376,12 +377,14 @@ impl Names {
     }
 }
 
-/// The line over the page: what the last write did, or, with no form
-/// open to show it in, why it did not land. Worded when drawn.
+/// The line over the page: what the last write or copy did, or, with no
+/// form open to show it in, why it did not land. Worded when drawn.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Note {
     /// the commit landed: its message
     Committed(String),
+    /// a link is on the clipboard
+    Copied,
     /// a write that did not land, in every view's words
     /// (`design::failure`)
     Refused(String),
@@ -392,6 +395,9 @@ pub enum Sheet {
     /// the page's writes as a list: a phone has no room for their
     /// buttons (a desktop draws them on the page and never opens this)
     Actions,
+    /// a menu at the pointer, on a row or a folder's empty room: a
+    /// desktop's right press (a phone never opens this)
+    Menu(Menu),
     /// one write being filled in
     Write(Box<Form>),
 }
@@ -407,6 +413,8 @@ pub struct Files {
     /// the snapshot on screen, or the last one read
     pub(crate) snapshot: Loadable<Snapshot>,
     pub(crate) names: Loadable<Names>,
+    /// the session's chain id (`<label>#<salt>`), which links are minted in
+    pub(crate) chain: String,
     pub(crate) note: Option<Note>,
     /// never kept: a restored view comes back with nothing half filled
     #[serde(skip)]
@@ -433,6 +441,7 @@ impl Default for Files {
             history: Loadable::Idle,
             snapshot: Loadable::Idle,
             names: Loadable::Idle,
+            chain: String::new(),
             note: None,
             sheet: None,
             forms: 0,
@@ -463,11 +472,12 @@ impl Files {
         self.snapshot.ready().filter(|snapshot| snapshot.id == id)
     }
 
-    /// The sheet on screen: the page's writes count only while the page
-    /// offers any, so Back never closes a sheet no one sees.
+    /// The sheet on screen: the page's writes, or a menu's items, count
+    /// only while there are any, so Back never closes a sheet no one sees.
     pub(crate) fn sheet_shown(&self) -> Option<&Sheet> {
         match &self.sheet {
             Some(Sheet::Actions) if self.offered().is_empty() => None,
+            Some(Sheet::Menu(menu)) if self.items(&menu.on).is_empty() => None,
             sheet => sheet.as_ref(),
         }
     }

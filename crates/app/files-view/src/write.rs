@@ -2,19 +2,22 @@
 //! message: a new folder, a new text file, files uploaded from the
 //! reader's device (`upload.rs`), a text file's new text, a rename or
 //! move, a removal. Which of them the page on screen offers is
-//! [`Files::offered`]; a form opens with [`Files::begin`], its changes are
-//! built by [`built`] (pure, unit tested), sent by [`Files::submit`] and
-//! settled by `landed`. A file's bytes never ride in the commit: each file
-//! it puts goes to the network first as `chunk` blobs (`op.put`, answered
-//! once the network holds them), and the commit names its chunks. The
-//! app's confirm card is the yes for every op; nothing here asks again.
+//! [`Files::offered`], made of what a folder takes in it
+//! ([`Files::made_in`]) and what a path takes itself ([`Files::own`]),
+//! which a row's menu offers too (`menu.rs`); a form opens with
+//! [`Files::begin`], its changes are built by [`built`] (pure, unit
+//! tested), sent by [`Files::submit`] and settled by `landed`. A file's
+//! bytes never ride in the commit: each file it puts goes to the network
+//! first as `chunk` blobs (`op.put`, answered once the network holds
+//! them), and the commit names its chunks. The app's confirm card is the
+//! yes for every op; nothing here asks again.
 use std::collections::BTreeMap;
 
 use files::{BlobId, Change, Content, Node, Ownership, Party};
 use view::methods::{BlobBody, NewBlob, OpPut, PutBlobs, Submitted};
 use view::prelude::*;
 
-use crate::state::{Note, Route, Sheet, child_of, is_namespace_root};
+use crate::state::{Note, Route, Sheet, child_of, is_namespace_root, parent_of};
 use crate::upload::{self, Upload};
 use crate::{Files, words};
 
@@ -76,6 +79,17 @@ pub(crate) enum Naming {
 }
 
 impl Write {
+    /// What it is made on: the folder a new one goes in, else the path it
+    /// changes.
+    pub(crate) fn on(&self) -> &str {
+        match self {
+            Write::NewFolder { folder } | Write::NewFile { folder } | Write::Upload { folder } => {
+                folder
+            }
+            Write::Edit { path, .. } | Write::Rename { path } | Write::Remove { path, .. } => path,
+        }
+    }
+
     /// What its form's first field holds, if it has one.
     pub(crate) fn naming(&self) -> Option<Naming> {
         match self {
@@ -238,90 +252,115 @@ impl Files {
     /// then the folder's own; on a file, its own. `files` decides again
     /// at the commit; this only leaves out what it would refuse.
     pub(crate) fn offered(&self) -> Vec<Write> {
-        let mut offered = Vec::new();
         match self.page() {
             Route::Folder(path) => {
-                let Some(folder) = self.folder_at(path) else {
-                    return offered;
-                };
-                let makes = self.reader.writes(&folder.children());
-                if makes && !folder.holds_namespace_roots() {
-                    offered.push(Write::NewFolder {
-                        folder: path.clone(),
-                    });
-                    offered.push(Write::NewFile {
-                        folder: path.clone(),
-                    });
-                    offered.push(Write::Upload {
-                        folder: path.clone(),
-                    });
-                }
-                let own = folder.writers.as_ref();
-                let moves = own.is_some_and(|own| self.reader.writes(own));
-                if moves && !is_namespace_root(path) {
-                    offered.push(Write::Rename { path: path.clone() });
-                    offered.push(Write::Remove {
-                        path: path.clone(),
-                        folder: true,
-                    });
-                }
+                let mut offered = self.made_in(path);
+                offered.extend(self.own(path));
+                offered
             }
-            Route::File(path) => {
-                let Some(file) = self.file_at(path) else {
-                    return offered;
-                };
-                let (Some(entry), Some(own)) = (file.file(), &file.writers) else {
-                    return offered;
-                };
-                let writes = self.reader.writes(own);
-                if !writes || is_namespace_root(path) {
-                    return offered;
-                }
-                if let (Node::File { exec, .. }, true) = (&entry.node, file.editable()) {
-                    offered.push(Write::Edit {
-                        path: path.clone(),
-                        exec: *exec,
-                        meta: entry.meta.clone(),
-                    });
-                }
-                offered.push(Write::Rename { path: path.clone() });
-                offered.push(Write::Remove {
-                    path: path.clone(),
-                    folder: false,
-                });
-            }
-            Route::Places | Route::History | Route::Snapshot(_) => {}
+            Route::File(path) => self.own(path),
+            Route::Places | Route::History | Route::Snapshot(_) => Vec::new(),
         }
-        offered
     }
 
-    /// Opens the form for `write`, based on the snapshot the page on
-    /// screen was read at; a rename starts from the path as it is, an
-    /// edit from the text as it is. An upload asks for its files first.
+    /// What the reader may make in the folder at `folder`, once it is
+    /// read: a folder, a text file, files from their device.
+    pub(crate) fn made_in(&self, folder: &str) -> Vec<Write> {
+        let Some(listed) = self.folder_at(folder) else {
+            return Vec::new();
+        };
+        if !self.reader.writes(&listed.children()) || listed.holds_namespace_roots() {
+            return Vec::new();
+        }
+        let folder = folder.to_owned();
+        vec![
+            Write::NewFolder {
+                folder: folder.clone(),
+            },
+            Write::NewFile {
+                folder: folder.clone(),
+            },
+            Write::Upload { folder },
+        ]
+    }
+
+    /// The writes the reader may make to what is at `path` itself, by
+    /// what is read of it: its file's page (an edit too, while its text is
+    /// held whole), its folder's page, else its row in the folder on
+    /// screen. A row is written by its folder's rule for what is moved or
+    /// removed in it ([`Folder::children`](crate::state::Folder::children)):
+    /// a listing does not say which entry has a write list of its own, so
+    /// `files` refuses at the commit what such a list keeps from the reader.
+    pub(crate) fn own(&self, path: &str) -> Vec<Write> {
+        if let Some(file) = self.file_at(path) {
+            let (Some(entry), Some(own)) = (file.file(), &file.writers) else {
+                return Vec::new();
+            };
+            if !self.reader.writes(own) || is_namespace_root(path) {
+                return Vec::new();
+            }
+            let mut writes = Vec::new();
+            if let (Node::File { exec, .. }, true) = (&entry.node, file.editable()) {
+                writes.push(Write::Edit {
+                    path: path.to_owned(),
+                    exec: *exec,
+                    meta: entry.meta.clone(),
+                });
+            }
+            writes.extend(moved(path, false));
+            return writes;
+        }
+        if let Some(folder) = self.folder_at(path) {
+            let own = folder.writers.as_ref();
+            let moves = own.is_some_and(|own| self.reader.writes(own));
+            return match moves && !is_namespace_root(path) {
+                true => moved(path, true),
+                false => Vec::new(),
+            };
+        }
+        let Some(listed) = self.folder_at(parent_of(path)) else {
+            return Vec::new();
+        };
+        let Some(entry) = listed.entries.iter().find(|entry| entry.path == path) else {
+            return Vec::new();
+        };
+        match self.reader.writes(&listed.children()) && !is_namespace_root(path) {
+            true => moved(path, matches!(entry.node, Node::Dir { .. })),
+            false => Vec::new(),
+        }
+    }
+
+    /// The snapshot what is at `path` was read at: its file's read, its
+    /// folder's, else the listing of the folder it is in. A write to it is
+    /// based on it, so `files` refuses the write as stale if what it
+    /// touches moved since.
+    fn read_at(&self, path: &str) -> Option<BlobId> {
+        match self.file_at(path) {
+            Some(file) => file.snapshot,
+            None => self
+                .folder_at(path)
+                .or_else(|| self.folder_at(parent_of(path)))
+                .and_then(|folder| folder.snapshot),
+        }
+    }
+
+    /// Opens the form for `write`, based on the snapshot what it is made
+    /// on was read at; a rename starts from the path as it is, an edit
+    /// from the text as it is. An upload asks for its files first.
     pub(crate) fn begin(&mut self, write: Write, cx: &mut Context<Self>) {
         if let Write::Upload { folder } = write {
             return self.pick(folder, cx);
         }
-        let (base, text) = match self.page() {
-            Route::File(path) => {
-                let file = self.file_at(path);
-                let text = file.and_then(|file| file.text()).unwrap_or_default();
-                (file.and_then(|file| file.snapshot), text.to_owned())
-            }
-            Route::Folder(path) => (
-                self.folder_at(path).and_then(|folder| folder.snapshot),
-                String::new(),
-            ),
-            Route::Places | Route::History | Route::Snapshot(_) => (None, String::new()),
-        };
+        let base = self.read_at(write.on());
         let name = match &write {
             Write::Rename { path } => path.clone(),
             _ => String::new(),
         };
         let text = match &write {
-            Write::Edit { .. } => text,
-            _ => String::new(),
+            Write::Edit { path, .. } => self.file_at(path).and_then(|file| file.text()),
+            _ => None,
         };
+        let text = text.unwrap_or_default().to_owned();
         self.forms += 1;
         self.sheet = Some(Sheet::Write(Box::new(Form {
             id: self.forms,
@@ -551,6 +590,20 @@ impl Files {
             _ => {}
         }
     }
+}
+
+/// What moves or removes what is at `path`, a folder or not: a rename,
+/// then a removal.
+fn moved(path: &str, folder: bool) -> Vec<Write> {
+    vec![
+        Write::Rename {
+            path: path.to_owned(),
+        },
+        Write::Remove {
+            path: path.to_owned(),
+            folder,
+        },
+    ]
 }
 
 /// The commit a form builds: its message (the typed one, else the

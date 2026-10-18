@@ -29,7 +29,6 @@ impl Program for Programs {
             Op::Cancel { height, program } => cancel(ctx, height, program),
             Op::Grant(granted) => grant(ctx, granted),
             Op::Revoke(granted) => revoke(ctx, granted),
-            Op::Migrate => crate::migrate::migrate(ctx),
         }
     }
 

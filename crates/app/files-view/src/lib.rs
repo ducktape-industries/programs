@@ -11,14 +11,16 @@
 //!
 //! The state is one struct (`state.rs`) and a stack of pages both designs
 //! draw. Reads are typed (`queries.rs`) and loaded in `load.rs`, read again
-//! on every commit `watch.rs` hears of; where the reader goes is
-//! `actions.rs`, what they write `write.rs`; every sentence is in
-//! `words.rs`. `ui/` draws the desktop's pages, `ui/phone/` the phone's
-//! screens: the root picks one, once, by the device. Element ids: a
-//! container is `files-<name>`, a control or a row `files/<what>/<key>`,
-//! or `files/<what>:<path>` where a path is the key.
+//! on every commit `watch.rs` hears of; where the reader goes (a link
+//! opened into Files too) is `actions.rs`, what they write `write.rs`,
+//! what a right press offers `menu.rs`; every sentence is in `words.rs`.
+//! `ui/` draws the desktop's pages, `ui/phone/` the phone's screens: the
+//! root picks one, once, by the device. Element ids: a container is
+//! `files-<name>`, a control or a row `files/<what>/<key>`, or
+//! `files/<what>:<path>` where a path is the key.
 mod actions;
 mod load;
+mod menu;
 mod queries;
 mod state;
 mod ui;
@@ -50,7 +52,8 @@ impl View for Files {
     const ICON: &'static str = "icons/folder.svg";
     const TINT: Tint = Tint::Amber;
     const CAPABILITIES: &'static [Capability] = &[
-        // the session: who reads, so which home is theirs
+        // the session (who reads, so which home is theirs) and the links
+        // opened into the view
         Capability::Host,
         // files' reads and live heads, and identity's names
         Capability::Program,
@@ -58,6 +61,8 @@ impl View for Files {
         Capability::Op,
         // the files an upload sends, as the reader picks them
         Capability::File,
+        // a row's Copy link
+        Capability::Clipboard,
     ];
     const TARGETS: &'static [&'static str] = &[files::PROGRAM, access::PROGRAM, identity::PROGRAM];
     /// The history's rows, a message beside who made it and when, fit

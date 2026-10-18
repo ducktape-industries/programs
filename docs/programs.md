@@ -601,7 +601,8 @@ make dev P=poll            # the program's wasm, its native tests
 make dev P=poll V=poll-view   # and the view's wasm, gated
 ```
 
-`make dev` rebuilds what cargo finds stale, one line per artifact
+`make dev` rebuilds what cargo finds stale with the fast profile (the
+README's Building), one line per artifact
 (`poll  165,724 B` or `unchanged`), gates a rebuilt view (ABI) and runs the
 native tests of the crates whose test binaries cargo rebuilt. A program
 that fails to build for wasm32 fails here; the usual cause is a dependency
@@ -621,7 +622,18 @@ nothing built is committed.
 
 `crates/sdk/founding` packs each program with its view, describe module and schema,
 and `make wasm-publish` releases the result as `founding.tar.gz`, which
-`ducktape init` founds once its `founding.toml` is filled. To add poll to it:
+`ducktape init` founds once its `founding.toml` is filled. Each time `dev` or
+`main` moves, it is also published with every module unpacked at
+`https://dl.ducktape.industries/programs/<channel>/<version>/`, where
+`dev` is the fast profile's build and `main` the release profile's, and
+`programs/<channel>/latest.json` names the newest version, its commit and each
+file's sha256 (the README's Building):
+
+```sh
+curl -fsS https://dl.ducktape.industries/programs/main/latest.json | jq '{display, commit, wire_id}'
+```
+
+To add poll to it:
 
 1. `crates/sdk/founding/src/lib.rs`: `("poll", "poll_view")` in `PROGRAMS`,
    or `"poll"` in `UNVIEWED` for a program with no screen of its own.

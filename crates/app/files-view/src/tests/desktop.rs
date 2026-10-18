@@ -5,12 +5,14 @@ use std::rc::Rc;
 
 use files::{BlobId, DiffKind, Node};
 use view::methods::{
-    self, BlobBody, FilePick, Method, NewBlob, OpPut, PutBlobs, Query as Ask, Submit,
+    self, BlobBody, ClipboardWrite, FilePick, HostRoute, Method, NewBlob, OpPut, PutBlobs,
+    Query as Ask, Submit,
 };
-use view::prelude::Error;
-use view::wire;
+use view::prelude::{Error, MouseButton, MouseDownEvent, Role, px};
+use view::{Point, wire};
 
 use super::*;
+use crate::menu::MENU;
 use crate::state::{Holds, SHOW_MOST};
 use crate::upload::UPLOAD_MOST;
 use crate::words;
@@ -811,7 +813,7 @@ fn carries_bytes(op: &files::Op) -> bool {
                 }
             )
         }),
-        files::Op::Pin { .. } | files::Op::Unpin { .. } | files::Op::Migrate => false,
+        files::Op::Pin { .. } | files::Op::Unpin { .. } => false,
     }
 }
 
@@ -998,4 +1000,374 @@ fn a_cancel_opens_nothing_and_a_refused_pick_says_why() {
         "{:?}",
         cx.texts()
     );
+}
+
+// The menu a right press opens.
+
+/// The session on a chain links are minted in: the rig's own, `live`, has
+/// no salt, so it names none.
+fn on_a_chain(net: &Network) -> Session {
+    Session {
+        chain_id: "live#0a1b2c3d".into(),
+        ..net.session()
+    }
+}
+
+/// The view over `net`, read by dev on a chain links are minted in.
+fn linked(net: &Network) -> TestAppContext {
+    opened_as(net, on_a_chain(net), false)
+}
+
+/// Where the pointer is pressed in the window.
+const PRESS: (f32, f32) = (240., 180.);
+
+/// A right press on `key`, at [`PRESS`].
+fn right_press(cx: &mut TestAppContext, key: &str) {
+    let event = MouseDownEvent {
+        button: MouseButton::Right,
+        position: Point {
+            x: px(PRESS.0),
+            y: px(PRESS.1),
+        },
+        modifiers: Default::default(),
+        click_count: 1,
+        first_mouse: false,
+    };
+    cx.simulate_mouse_down(key, event);
+    cx.run_until_parked();
+}
+
+/// The open menu: where it is, and its items by the slug of their keys
+/// (`files/menu/<slug>`), in order; `None` while none shows.
+fn menu(cx: &TestAppContext) -> Option<((f32, f32), Vec<String>)> {
+    fn find(node: &wire::Node) -> Option<((f32, f32), Vec<String>)> {
+        if let wire::Node::Anchored {
+            position: Some([x, y]),
+            children,
+            ..
+        } = node
+            && let Some(menu) = children.iter().find(|child| child.key() == Some(MENU))
+        {
+            let items = menu.children().iter().filter_map(|item| {
+                let slug = item.key()?.strip_prefix("files/menu/")?;
+                Some(slug.to_owned())
+            });
+            return Some(((*x, *y), items.collect()));
+        }
+        node.children().iter().find_map(find)
+    }
+    find(cx.root())
+}
+
+/// The open menu's items.
+fn items(cx: &TestAppContext) -> Vec<String> {
+    menu(cx).map(|(_, items)| items).unwrap_or_default()
+}
+
+fn focused(cx: &TestAppContext) -> Option<&str> {
+    cx.focused().and_then(wire::Node::key)
+}
+
+#[test]
+fn a_right_press_on_a_file_opens_its_menu_at_the_pointer() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    open_home(&mut cx);
+    assert_eq!(menu(&cx), None);
+    right_press(&mut cx, "files/entry/notes.txt");
+    assert_eq!(
+        menu(&cx),
+        Some((
+            PRESS,
+            vec![
+                "open".into(),
+                "copy-link".into(),
+                "rename".into(),
+                "remove".into()
+            ]
+        )),
+        "{:?}",
+        cx.texts()
+    );
+    assert!(cx.has_text(words::OPEN) && cx.has_text(words::COPY_LINK));
+    assert_eq!(cx.interactivity(MENU).role, Some(Role::Menu));
+    assert_eq!(focused(&cx), Some(MENU), "the menu takes the keys");
+}
+
+#[test]
+fn a_folders_row_offers_its_page_its_link_and_its_own_writes() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    open_home(&mut cx);
+    right_press(&mut cx, "files/entry/docs");
+    assert_eq!(items(&cx), ["open", "copy-link", "rename", "remove"]);
+    cx.simulate_click("files/menu/remove");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text(&words::removes("/home/dev/docs", true)),
+        "a folder's removal takes what it holds: {:?}",
+        cx.texts()
+    );
+    assert_eq!(menu(&cx), None, "the form opens in the menu's place");
+}
+
+#[test]
+fn a_row_another_account_writes_offers_its_page_and_its_link_only() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    cx.simulate_click("files/place/everything");
+    cx.run_until_parked();
+    cx.simulate_click("files/entry/home");
+    cx.run_until_parked();
+    cx.simulate_click("files/entry/ada");
+    cx.run_until_parked();
+    right_press(&mut cx, "files/entry/diary.txt");
+    assert_eq!(items(&cx), ["open", "copy-link"]);
+}
+
+#[test]
+fn copy_link_puts_the_rows_link_on_the_clipboard_and_says_so() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    let copied = Rc::new(RefCell::new(Vec::new()));
+    let held = copied.clone();
+    cx.host().handle::<ClipboardWrite>(move |text| {
+        held.borrow_mut().push(text);
+        Ok(())
+    });
+    open_home(&mut cx);
+    right_press(&mut cx, "files/entry/notes.txt");
+    cx.simulate_click("files/menu/copy-link");
+    cx.run_until_parked();
+    assert_eq!(
+        *copied.borrow(),
+        ["duck://live-0a1b2c3d/files/home/dev/notes.txt"]
+    );
+    assert!(cx.has_text(words::LINK_COPIED), "{:?}", cx.texts());
+    assert_eq!(menu(&cx), None);
+    assert_eq!(focused(&cx), Some("files/entry/notes.txt"));
+}
+
+#[test]
+fn a_refused_copy_says_why() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    cx.host()
+        .refuse::<ClipboardWrite>("host_fault", "the clipboard is locked");
+    open_home(&mut cx);
+    right_press(&mut cx, "files/entry/notes.txt");
+    cx.simulate_click("files/menu/copy-link");
+    cx.run_until_parked();
+    assert!(shows(&cx, "the clipboard is locked"), "{:?}", cx.texts());
+    assert!(!cx.has_text(words::LINK_COPIED));
+}
+
+#[test]
+fn before_the_session_names_a_chain_no_link_is_offered() {
+    let net = seeded();
+    // the rig's chain id, `live`, has no salt: no link names a place on it
+    let mut cx = desktop(&net);
+    open_home(&mut cx);
+    right_press(&mut cx, "files/entry/notes.txt");
+    assert_eq!(items(&cx), ["open", "rename", "remove"]);
+}
+
+#[test]
+fn open_from_the_menu_opens_the_rows_page() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    open_home(&mut cx);
+    right_press(&mut cx, "files/entry/notes.txt");
+    cx.simulate_click("files/menu/open");
+    cx.run_until_parked();
+    assert!(cx.has_text(NOTES), "{:?}", cx.texts());
+    assert_eq!(menu(&cx), None);
+}
+
+#[test]
+fn a_rename_from_a_rows_menu_moves_that_row() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    open_home(&mut cx);
+    right_press(&mut cx, "files/entry/notes.txt");
+    cx.simulate_click("files/menu/rename");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text(&words::form_title(&crate::write::Write::Rename {
+            path: "/home/dev/notes.txt".into()
+        })),
+        "the row's form, not the folder's: {:?}",
+        cx.texts()
+    );
+    cx.simulate_input("files/write/name", "/home/dev/todo.txt");
+    commit_form(&mut cx);
+    assert!(
+        cx.find("files/entry/todo.txt").is_some(),
+        "{:?}",
+        cx.texts()
+    );
+    assert!(cx.find("files/entry/notes.txt").is_none());
+    assert!(
+        cx.find("files/entry/docs").is_some(),
+        "the folder stays on screen"
+    );
+}
+
+#[test]
+fn split_the_row_of_the_file_open_beside_offers_its_edit() {
+    let net = seeded();
+    let mut cx = desktop_at(&net, 1440.);
+    cx.simulate_click("files/side/home");
+    cx.run_until_parked();
+    right_press(&mut cx, "files/entry/notes.txt");
+    assert!(
+        !items(&cx).contains(&"edit".to_owned()),
+        "a row's text is not read: no edit"
+    );
+    cx.simulate_dismiss("files-menu-overlay");
+    cx.simulate_click("files/entry/notes.txt");
+    cx.run_until_parked();
+    right_press(&mut cx, "files/entry/notes.txt");
+    assert_eq!(items(&cx), ["open", "edit", "rename", "remove"]);
+    cx.simulate_click("files/menu/edit");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text(NOTES),
+        "the edit starts from the text: {:?}",
+        cx.texts()
+    );
+}
+
+#[test]
+fn a_right_press_on_the_room_under_the_rows_offers_what_is_made_in_the_folder() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    open_home(&mut cx);
+    right_press(&mut cx, "files-entries");
+    assert_eq!(items(&cx), ["new-folder", "new-file", "upload"]);
+    net.device(&[("todo.txt", b"buy milk")]);
+    cx.simulate_click("files/menu/upload");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("todo.txt"),
+        "the upload's form: {:?}",
+        cx.texts()
+    );
+    assert_eq!(menu(&cx), None);
+}
+
+#[test]
+fn a_folder_the_reader_cannot_write_opens_no_menu_on_its_room() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    open_home(&mut cx);
+    cx.simulate_click("home");
+    cx.run_until_parked();
+    cx.simulate_click("files/entry/ada");
+    cx.run_until_parked();
+    right_press(&mut cx, "files-entries");
+    assert_eq!(menu(&cx), None, "{:?}", cx.texts());
+}
+
+#[test]
+fn a_home_in_the_folder_of_homes_opens_no_writes_and_its_room_no_menu() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    open_home(&mut cx);
+    cx.simulate_click("home");
+    cx.run_until_parked();
+    right_press(&mut cx, "files/entry/dev");
+    assert_eq!(items(&cx), ["open", "copy-link"], "{:?}", cx.texts());
+    cx.simulate_key_down(MENU, "escape");
+    right_press(&mut cx, "files-entries");
+    assert_eq!(menu(&cx), None, "{:?}", cx.texts());
+}
+
+#[test]
+fn escape_or_a_press_outside_closes_the_menu_and_the_keys_go_back_to_its_row() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    open_home(&mut cx);
+    right_press(&mut cx, "files/entry/notes.txt");
+    cx.simulate_key_down(MENU, "escape");
+    assert_eq!(menu(&cx), None);
+    assert_eq!(focused(&cx), Some("files/entry/notes.txt"));
+    right_press(&mut cx, "files/entry/docs");
+    cx.simulate_dismiss("files-menu-overlay");
+    assert_eq!(menu(&cx), None);
+    assert_eq!(focused(&cx), Some("files/entry/docs"));
+}
+
+/// The menu the keys open waits for its row to say where it is, then
+/// opens under it.
+fn opened_under_the_row(cx: &mut TestAppContext) {
+    assert_eq!(menu(cx), None, "not before the row says where it is");
+    cx.simulate_bounds("files-menu-anchor", (20., 300.), (600., 40.));
+    assert_eq!(menu(cx).map(|(at, _)| at), Some((20., 340.)));
+    assert_eq!(focused(cx), Some(MENU));
+}
+
+#[test]
+fn shift_f10_or_the_menu_key_opens_the_focused_rows_menu_under_it() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    open_home(&mut cx);
+    cx.simulate_focus("files/entry/notes.txt");
+    cx.simulate_key_down("files/entry/notes.txt", "shift-f10");
+    opened_under_the_row(&mut cx);
+    cx.simulate_key_down(MENU, "escape");
+    cx.simulate_key_down("files/entry/notes.txt", "menu");
+    opened_under_the_row(&mut cx);
+    // ↓ ↓ walks to Rename, Enter runs it
+    cx.simulate_key_down(MENU, "down");
+    cx.simulate_key_down(MENU, "down");
+    cx.simulate_key_down(MENU, "enter");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text(&words::form_title(&crate::write::Write::Rename {
+            path: "/home/dev/notes.txt".into()
+        })),
+        "{:?}",
+        cx.texts()
+    );
+}
+
+#[test]
+fn assistive_tech_opens_a_rows_menu_under_it() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    open_home(&mut cx);
+    cx.simulate_a11y_action(
+        "files/entry/notes.txt",
+        view::accesskit::Action::ShowContextMenu,
+        None,
+    );
+    opened_under_the_row(&mut cx);
+    assert_eq!(items(&cx), ["open", "copy-link", "rename", "remove"]);
+}
+
+#[test]
+fn a_link_opened_into_files_opens_what_is_at_its_path() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    let routes = cx.host().stream::<HostRoute>();
+    // the tail of the link a row's menu copies
+    let link = crate::actions::link(&on_a_chain(&net).chain_id, "/home/dev/notes.txt")
+        .expect("a link on a chain");
+    let tail = ducklink::Link::parse(&link)
+        .expect("a minted link parses")
+        .tail;
+    routes.send(tail.join("/"));
+    cx.run_until_parked();
+    assert!(cx.has_text(NOTES), "the file's page: {:?}", cx.texts());
+    routes.send("home/dev/docs".into());
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("plan.md"),
+        "the folder's page: {:?}",
+        cx.texts()
+    );
+    routes.send("home/dev/gone.txt".into());
+    cx.run_until_parked();
+    assert!(cx.has_text(words::GONE), "{:?}", cx.texts());
 }

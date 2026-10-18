@@ -377,6 +377,19 @@ fn a_vote_in_flight_greys_every_vote() {
     }
 }
 
+/// The host's capsule beside the title row draws `ellipsis`: the door's
+/// own control is a door, named The door.
+#[test]
+fn the_door_is_drawn_as_a_door_not_the_capsules_ellipsis() {
+    let cx = voter();
+    let row = format!("{:?}", cx.node("nodes-page-title"));
+    assert!(!row.contains("icons/ellipsis.svg"), "{row}");
+    let door = format!("{:?}", cx.node("nodes-door"));
+    assert!(door.contains("icons/door-open.svg"), "{door}");
+    let name = &cx.interactivity("nodes-door").aria.label;
+    assert_eq!(name.as_deref(), Some("The door"));
+}
+
 #[test]
 fn the_door_opens_as_a_sheet_and_back_closes_it_before_the_list() {
     let mut cx = voter();

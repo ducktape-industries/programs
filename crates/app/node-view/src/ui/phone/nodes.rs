@@ -3,11 +3,11 @@
 //! and block time as two facts, the epoch under them); every member as a
 //! row, validators then residents, each opening its page; and for a reader
 //! who votes, the motions that wait, the scheduled changes, and the door's
-//! `⋯`, which raises the door as a sheet.
+//! control, which raises the door as a sheet.
 //!
 //! Reads the node's status, the members, the network's votes as this node
 //! heard them, and the vote (`Nodes::voting`). Writes `Nodes::open` (a row
-//! opens its member's page), `Nodes::door` (the `⋯` and the sheet), the
+//! opens its member's page), `Nodes::door` (the control and the sheet), the
 //! read a Retry asks again, and a vote through `Nodes::press`.
 use abi::hex;
 use programs::Pending as Scheduled;
@@ -75,7 +75,9 @@ fn pulse(view: &Nodes) -> Option<String> {
     ))
 }
 
-/// The `⋯` that raises the door's sheet.
+/// The door's control, which raises its sheet: a door, named The door
+/// (Expo drew `Ellipsis`, the glyph of the capsule beside it now,
+/// [`Page::trailing`]).
 fn door_button(cx: &mut Context<Nodes>, theme: &Theme) -> impl IntoElement {
     let open = cx.listener(|view: &mut Nodes, _: &ClickEvent, _, cx| {
         view.door = true;
@@ -83,7 +85,7 @@ fn door_button(cx: &mut Context<Nodes>, theme: &Theme) -> impl IntoElement {
     });
     design::icon_button(
         "nodes-door",
-        design::icon("ellipsis", LADDER.icon),
+        design::icon("door-open", LADDER.icon),
         words::DOOR,
         &LADDER,
         theme,

@@ -113,10 +113,10 @@ impl Tool for Call {
         Ok(write(args.program, payload))
     }
 
-    fn render(output: &[u8]) -> Value {
-        match output {
+    fn render(output: &[u8]) -> Result<Value, Error> {
+        Ok(match output {
             [] => json!({ "ok": true }),
             returned => json!({ "ok": true, "returned": abi::hex(returned) }),
-        }
+        })
     }
 }

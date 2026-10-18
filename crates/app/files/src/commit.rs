@@ -241,7 +241,7 @@ fn apply(
     }
 }
 
-pub(crate) fn record(ctx: &ExecCtx, id: BlobId, snapshot: SnapshotObj) -> Result<(), Error> {
+fn record(ctx: &ExecCtx, id: BlobId, snapshot: SnapshotObj) -> Result<(), Error> {
     let seq = COUNT.get(ctx)?.unwrap_or(0) + 1;
     let row = SnapshotRow {
         id,

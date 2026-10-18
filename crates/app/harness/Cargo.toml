@@ -29,6 +29,8 @@ identity = { workspace = true }
 chat = { workspace = true }
 files = { workspace = true }
 forge = { workspace = true }
+# `forge_commit` builds a commit's git objects and pack
+gitcore = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }

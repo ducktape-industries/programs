@@ -16,7 +16,6 @@ program = []
 describe = []
 
 [dependencies]
-access = { workspace = true }
 abi = { workspace = true }
 describe = { workspace = true }
 program = { workspace = true, features = ["serde"] }
@@ -27,4 +26,5 @@ gitcore = { workspace = true }
 store = { workspace = true }
 
 [dev-dependencies]
+access = { workspace = true }
 sha2 = { version = "0.10", default-features = false }

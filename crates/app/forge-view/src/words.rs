@@ -58,6 +58,11 @@ pub(crate) fn hash_kind(hash: abi::HashKind) -> &'static str {
     }
 }
 
+/// A change's writes (Edit, Close, Copy link), a mix: its title row draws
+/// them behind `ellipsis-vertical`, and the control and its sheet are
+/// named Actions, not the More of the capsule beside them.
+pub(crate) const ACTIONS: &str = "Actions";
+
 // ---------------------------------------------------------------- reading
 
 pub(crate) const READING: &str = "Reading…";

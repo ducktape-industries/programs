@@ -40,7 +40,7 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
             Some(_) => vec![Need::write(conversation_key(*agent))],
             None => Vec::new(),
         },
-        Op::Attributed(_) | Op::Streamed { .. } | Op::Migrate => Vec::new(),
+        Op::Attributed(_) | Op::Streamed { .. } => Vec::new(),
     })
 }
 

@@ -20,6 +20,7 @@ mod file;
 mod folder;
 mod form;
 mod history;
+mod menu;
 pub(crate) mod phone;
 mod places;
 mod side;
@@ -97,7 +98,7 @@ pub(crate) fn render(view: &Files, cx: Cx) -> AnyElement {
         ),
     };
     let form = form::sheet(view, cx, k);
-    files.children(form).into_any_element()
+    menu::over(view, files.children(form), cx, k)
 }
 
 /// The page on top of the stack, alone.

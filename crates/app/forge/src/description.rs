@@ -15,12 +15,6 @@ pub fn describe(op: &Op) -> Description {
     };
     let change = |n: &u64| field("change", Value::Text(format!("#{n}")));
     let (verb, repo, fields) = match op {
-        Op::Migrate => {
-            return Description {
-                title: "Migrate · writers".into(),
-                fields: Vec::new(),
-            };
-        }
         Op::Create { repo, hash } => (
             "Create",
             repo,

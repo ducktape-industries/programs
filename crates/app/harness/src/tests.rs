@@ -6,6 +6,7 @@
 //! agent.
 mod config;
 mod conversations;
+mod forge_commit;
 mod models;
 mod network;
 mod streams;
@@ -1636,37 +1637,4 @@ fn every_tool_schema_is_an_object_and_names_its_required_fields() {
         assert_eq!(empty.is_ok(), required.is_empty(), "{}", entry.name);
         assert!(entry.name.len() <= 64 && !entry.description.is_empty());
     }
-}
-
-#[test]
-fn the_votes_migrate_copies_whom_each_agent_answers_from_identity_into_access() {
-    let world = world();
-    let chain = &world.chain;
-    #[derive(borsh::BorshSerialize, borsh::BorshDeserialize)]
-    enum Stored {
-        #[allow(dead_code)]
-        Owner,
-        Accounts(Vec<AccountNumber>),
-    }
-    let old: store::Map<AccountNumber, Stored> = store::Map::new("u/");
-    let ctx = chain
-        .host(identity::PROGRAM)
-        .exec(::program::MockHost::env(identity::PROGRAM));
-    let bo = ::program::Ownership::Listed(vec![::program::Party::Account(world.bo)]);
-    old.put(&ctx, &world.agent, &Stored::Accounts(vec![world.bo]));
-    world.post(BO, "general", "b1", &format!("<@{}> before?", world.agent));
-    assert!(world.threads().is_empty(), "the old list is no longer read");
-    let migrate = chain.submit(signed(ADA), PROGRAM, &Op::Migrate);
-    assert_eq!(migrate.unwrap_err().code, code::UNAUTHORIZED);
-    chain
-        .submit(Origin::Program("valset".into()), PROGRAM, &Op::Migrate)
-        .unwrap();
-    let asked = access::Query::List {
-        program: PROGRAM.into(),
-        key: crate::agent_key(world.agent),
-    };
-    let listed: access::Reply = chain.query("access", &asked).unwrap();
-    assert_eq!(listed, access::Reply::List(Some(bo)));
-    world.post(BO, "general", "b2", &format!("<@{}> now?", world.agent));
-    assert_eq!(world.threads().len(), 1);
 }
