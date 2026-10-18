@@ -217,3 +217,26 @@ fn the_agents_topic_shows_beside_its_conversation_and_never_in_place_of_its_name
     cx.run_until_parked();
     assert!(cx.has_text(&quoted), "{:?}", cx.texts());
 }
+
+#[test]
+fn a_conversation_bound_to_a_place_wears_a_bound_badge_on_desktop_and_phone() {
+    let mut net = Net::default();
+    let mut bound = thread(11, SCOUT, EDDY, "chat/deploys");
+    bound.title = "conversation 11, bound to chat channel deploys".into();
+    net.threads.push(bound);
+    net.bound = vec![11];
+    let (mut cx, _) = seated(net, EDDY);
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    assert!(cx.find("thread-11-bound").is_some(), "{:?}", cx.texts());
+    assert!(cx.has_text("Bound"), "{:?}", cx.texts());
+    assert!(cx.find("thread-11-current").is_none());
+    assert!(cx.find("thread-7-current").is_some());
+    assert!(cx.find("thread-7-bound").is_none());
+
+    cx.simulate_touch(true);
+    cx.simulate_resize(390., 844.);
+    cx.run_until_parked();
+    assert!(cx.find("thread-11-bound").is_some(), "{:?}", cx.texts());
+    assert!(cx.find("thread-7-bound").is_none());
+}

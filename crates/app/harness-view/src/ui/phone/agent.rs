@@ -10,7 +10,9 @@ use view::{FontWeight, Stateful};
 use super::agents::face;
 use super::parts::{actions, badged, fact, glyph, notice, opening_row, scroller, section};
 use crate::read::{self, Detail, Roster};
-use crate::ui::{agent_gone, closed_badge, current_badge, state_badge, thinking_picker, waiting};
+use crate::ui::{
+    agent_gone, bound_badge, closed_badge, current_badge, state_badge, thinking_picker, waiting,
+};
 use crate::words::{
     PROBLEM_CAPTION, agent_sentence, answers, conversation_label, file_link, lower, may_change,
     model_more, no_node_words, prompt, prompt_words, quoted, reach, read_at, removes, starts,
@@ -208,6 +210,9 @@ fn threads(
                 ))
                 .when(current == Some(id), |title| {
                     title.child(current_badge(format!("thread-{id}-current"), theme, ladder))
+                })
+                .when(detail.bound.contains(&id), |title| {
+                    title.child(bound_badge(format!("thread-{id}-bound"), theme, ladder))
                 });
             let frames = design::plural(thread.frames, "frame", "frames");
             // the agent's own words on it, where it set some, else what it is doing
