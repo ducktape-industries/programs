@@ -438,16 +438,20 @@ fn block_stopped(partial: &mut Partial, event: &Value) {
             return broken(partial, reason);
         }
     }
-    let Some(Said::ToolUse { input, .. } | Said::ServerToolUse { input, .. }) =
-        partial.said.last_mut()
-    else {
-        return;
+    let (tool, input) = match partial.said.last_mut() {
+        Some(Said::ToolUse { name, input, .. }) => (Some(name.as_str()), input),
+        Some(Said::ServerToolUse { input, .. }) => (None, input),
+        _ => return,
     };
     let written = match input.is_empty() {
         true => Ok(json!({})),
         false => serde_json::from_str::<Value>(input),
     };
-    if let Ok(value) = written {
+    if let Ok(mut value) = written {
+        // a field its tool gives no type streams as JSON text: it is read as the JSON it holds
+        if let Some(tool) = tool {
+            tools::untyped_read(tool, &mut value);
+        }
         *input = value.to_string();
     }
 }

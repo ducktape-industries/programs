@@ -268,3 +268,78 @@ fn each_request_harness_makes_reads_back_as_what_it_waits_for() {
     };
     assert_eq!(awaited(&turn, &attributed), None);
 }
+
+fn streamed_call(tool: &str, pieces: &[&str]) -> Value {
+    let started = json!({
+        "type": "message_start",
+        "message": {
+            "id": "msg_1", "type": "message", "role": "assistant", "content": [],
+            "model": "claude-sonnet-4-5", "stop_reason": null, "stop_sequence": null,
+            "usage": { "input_tokens": 10, "output_tokens": 1,
+                       "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0 }
+        }
+    });
+    let block = json!({
+        "type": "content_block_start", "index": 0,
+        "content_block": { "type": "tool_use", "id": "toolu_1", "name": tool, "input": {} }
+    });
+    let mut lines = vec![started, block];
+    lines.extend(pieces.iter().map(|piece| {
+        json!({
+            "type": "content_block_delta", "index": 0,
+            "delta": { "type": "input_json_delta", "partial_json": piece }
+        })
+    }));
+    lines.push(json!({ "type": "content_block_stop", "index": 0 }));
+    let fixture: String = lines.iter().map(|line| format!("{line}\n")).collect();
+    let partial = streamed(&fixture);
+    let [Said::ToolUse { input, .. }] = &partial.said[..] else {
+        panic!("one call: {:?}", partial.said);
+    };
+    serde_json::from_str(input).unwrap()
+}
+
+#[test]
+fn a_streamed_call_reads_its_untyped_op_and_query_as_objects() {
+    let pieces = [
+        r#"{"program": "chat", "op": {"Post"#,
+        r#"Message": {"channel_id": "general"}}}"#,
+    ];
+    let call = streamed_call("network_call", &pieces);
+    let op = json!({ "PostMessage": { "channel_id": "general" } });
+    assert_eq!(call["op"], op);
+    let pieces = [
+        r#"{"program": "chat", "query": {"Channel": "#,
+        r#"{"channel_id": "general"}}}"#,
+    ];
+    let asked = streamed_call("network_query", &pieces);
+    let query = json!({ "Channel": { "channel_id": "general" } });
+    assert_eq!(asked["query"], query);
+}
+
+#[test]
+fn a_streamed_untyped_field_written_as_json_text_is_read_as_the_json_it_holds() {
+    let op = json!({ "PostMessage": { "channel_id": "general" } });
+    let quoted = json!({ "program": "chat", "op": op.to_string() }).to_string();
+    let (head, tail) = quoted.split_at(quoted.len() / 2);
+    let call = streamed_call("network_call", &[head, tail]);
+    assert_eq!((&call["program"], &call["op"]), (&json!("chat"), &op));
+    let query = json!({ "Channel": { "channel_id": "general" } });
+    let quoted = json!({ "program": "chat", "query": query.to_string() }).to_string();
+    let asked = streamed_call("network_query", &[&quoted]);
+    assert_eq!(asked["query"], query);
+    let unit = streamed_call(
+        "network_query",
+        &[r#"{"program": "files", "query": "Head"}"#],
+    );
+    assert_eq!(
+        unit["query"], "Head",
+        "a variant's bare name is no JSON text"
+    );
+    let text = r#"{"path": "/a", "content": "{\"k\": 1}"}"#;
+    let written = streamed_call("files_write", &[text]);
+    assert_eq!(
+        written["content"], "{\"k\": 1}",
+        "a typed string stays text"
+    );
+}

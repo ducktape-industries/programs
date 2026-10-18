@@ -185,6 +185,35 @@ pub(crate) fn find(name: &str) -> Option<&'static Entry> {
     CATALOG.iter().find(|entry| entry.name == name)
 }
 
+// the JSON a value holds where it came as JSON text: an object, an array or a string written out
+// as a string, which a stream or a client may hand on for a field that names no type
+pub(crate) fn unquoted(value: &Value) -> Option<Value> {
+    let held: Value = serde_json::from_str(value.as_str()?).ok()?;
+    matches!(held, Value::Object(_) | Value::Array(_) | Value::String(_)).then_some(held)
+}
+
+// a call's input with each field its tool's schema gives no type read as the JSON it holds
+pub(crate) fn untyped_read(tool: &str, input: &mut Value) {
+    let Some(entry) = find(tool) else {
+        return;
+    };
+    let schema = (entry.schema)();
+    let (Some(properties), Some(fields)) =
+        (schema["properties"].as_object(), input.as_object_mut())
+    else {
+        return;
+    };
+    let typed = ["type", "enum", "const", "anyOf", "oneOf", "allOf", "$ref"];
+    for (name, field) in properties {
+        if typed.iter().any(|key| field.get(key).is_some()) {
+            continue;
+        }
+        if let Some(held) = fields.get(name).and_then(unquoted) {
+            fields.insert(name.clone(), held);
+        }
+    }
+}
+
 pub(crate) fn infos() -> Vec<ToolInfo> {
     CATALOG
         .iter()

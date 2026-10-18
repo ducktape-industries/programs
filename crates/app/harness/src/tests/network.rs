@@ -544,3 +544,48 @@ fn an_http_answer_egress_delivers_whole_reads_as_its_status_headers_and_body() {
         "{unread}"
     );
 }
+
+#[test]
+fn an_op_or_query_written_as_json_text_is_read_as_the_json_it_holds() {
+    let world = schemed();
+    let chain = &world.chain;
+    let query = json!({ "Channel": { "channel_id": "general" } }).to_string();
+    let op = json!({ "PostMessage": {
+        "channel_id": "general",
+        "message_id": "net-text",
+        "blocks": [{ "Paragraph": [{ "text": "hello", "marks": [] }] }],
+        "thread": null,
+    } })
+    .to_string();
+    let calls = [
+        (
+            "q_text",
+            "network_query",
+            json!({ "program": "chat", "query": query }),
+        ),
+        (
+            "c_text",
+            "network_call",
+            json!({ "program": "chat", "op": op }),
+        ),
+        (
+            "q_unit",
+            "network_query",
+            json!({ "program": "files", "query": "Head" }),
+        ),
+    ];
+    let thread = called(&world, &calls);
+
+    let channel = json_result(chain, thread, "q_text");
+    assert_eq!(channel["reply"]["Channel"]["channel"]["name"], "general");
+    assert_eq!(json_result(chain, thread, "c_text"), json!({ "ok": true }));
+    let asked = chat::Query::MessageById {
+        message_id: "net-text".into(),
+    };
+    let chat::Reply::Message(Some(posted)) = chain.query(chat::PROGRAM, &asked).unwrap() else {
+        panic!("the post landed")
+    };
+    assert_eq!(posted.text, "hello");
+    let head = json_result(chain, thread, "q_unit");
+    assert!(head["reply"]["Head"].is_object(), "{head}");
+}

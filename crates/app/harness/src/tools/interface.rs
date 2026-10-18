@@ -5,7 +5,7 @@ use abi::role::egress::{self, http};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{Reading, Run, Seat, Tool, Write, object};
+use super::{Reading, Run, Seat, Tool, Write, object, unquoted};
 use crate::codec::{self, Fault};
 use crate::schema::{Interface, schema_of};
 
@@ -19,7 +19,13 @@ fn refused(fault: Fault) -> Error {
 
 pub(crate) fn encoded(ctx: &ExecCtx, program: &str, op: &Value) -> Result<Vec<u8>, Error> {
     let interface = schema_of(ctx, program)?;
-    codec::encode(&interface.schema, &interface.op, "op", op).map_err(refused)
+    let op = spoken(op);
+    codec::encode(&interface.schema, &interface.op, "op", &op).map_err(refused)
+}
+
+// an op or a query as the agent meant it: JSON written out as a string is read as that JSON
+fn spoken(value: &Value) -> Value {
+    unquoted(value).unwrap_or_else(|| value.clone())
 }
 
 #[derive(Deserialize)]
@@ -81,8 +87,9 @@ impl Tool for Query {
 
     fn run(ctx: &ExecCtx, _: &Seat, args: QueryArgs) -> Result<Run, Error> {
         let interface = schema_of(ctx, &args.program)?;
-        let asked = codec::encode(&interface.schema, &interface.query, "query", &args.query)
-            .map_err(refused)?;
+        let query = spoken(&args.query);
+        let asked =
+            codec::encode(&interface.schema, &interface.query, "query", &query).map_err(refused)?;
         let answer = ctx.query_raw(args.program, asked)?;
         let read = codec::decode(&interface.schema, &interface.reply, "reply", &answer);
         Ok(Run::Done(match read {
@@ -118,8 +125,9 @@ impl Tool for Call {
 
     fn run(ctx: &ExecCtx, _: &Seat, args: CallArgs) -> Result<Run, Error> {
         let interface = schema_of(ctx, &args.program)?;
+        let op = spoken(&args.op);
         let payload =
-            codec::encode(&interface.schema, &interface.op, "op", &args.op).map_err(refused)?;
+            codec::encode(&interface.schema, &interface.op, "op", &op).map_err(refused)?;
         let read: Reading = match answers_http(ctx, &args.program, &payload) {
             true => Box::new(response),
             false => returned(&args.program, interface, &payload),
