@@ -76,8 +76,8 @@ fn the_agents_text_is_put_as_a_part_and_an_egress_request_names_it_as_its_body()
     assert_eq!(put["size"], text.len());
     assert_eq!(put["kind"], "part");
     assert_eq!(put["in_network_call"], json!({ "Sha256": digest }));
-    let held = &chain.host(egress::PROGRAM).borrow().blobs[&id];
-    assert_eq!((held.kind.as_str(), held.body.clone()), (PART, text.into_bytes()));
+    let held = chain.host(egress::PROGRAM).borrow().blobs[&id].clone();
+    assert_eq!((held.kind.as_str(), held.body), (PART, text.into_bytes()));
 
     let request = json!({ "program": "egress", "op": { "Request": {
         "request": { "Http": {
@@ -94,24 +94,21 @@ fn the_agents_text_is_put_as_a_part_and_an_egress_request_names_it_as_its_body()
     } } });
     ran(chain, 5, &[("c1", "network_call", request)]);
     let [row] = assigned(chain, PODS).try_into().expect("one pods request");
-    let Request::Http { head, body: parts, .. } = &row.request else {
+    assert_eq!(body(chain, &row), spec);
+    let Request::Http { head, body, .. } = &row.request else {
         panic!("pods is asked over http");
     };
     assert_eq!(
         (head.method, head.target.as_str()),
         (http::Method::Post, "/v1/pods")
     );
-    assert_eq!(*parts, [id]);
-    assert_eq!(body(chain, &row), spec);
+    assert_eq!(*body, [id]);
 
     chain.at(7, 0);
     let created = response(201, json!({ "pod": { "name": "duckpond-1" } }));
     answer(chain, row.id, Answer::Output(created.clone()));
-    let called = json_of(chain, thread, "c1");
-    assert_eq!(
-        called,
-        json!({ "ok": true, "returned": abi::hex(&created) })
-    );
+    let returned = json!({ "ok": true, "returned": abi::hex(&created) });
+    assert_eq!(json_of(chain, thread, "c1"), returned);
 }
 
 #[test]
@@ -147,7 +144,8 @@ fn a_file_is_put_whole_as_files_holds_it_at_a_snapshot_or_at_its_head() {
     );
     let named = |text: &str| format!("sha256:{}", abi::hex(part(text).digest()));
     let put = json_of(chain, thread, "s_at");
-    assert_eq!((&put["blob"], &put["size"]), (&json!(named(older)), &json!(older.len())));
+    assert_eq!(put["blob"], named(older));
+    assert_eq!(put["size"], older.len());
     assert_eq!(json_of(chain, thread, "s_head")["blob"], named(newer));
     let (missing, failed) = result_of(chain, thread, "s_none");
     assert!(failed && missing.starts_with(code::NOT_FOUND), "{missing}");
@@ -161,11 +159,27 @@ fn content_or_source_is_given_alone_and_the_hash_and_the_kind_are_the_networks()
     chain.at(3, 0);
     let snapshot = "00".repeat(32);
     let calls = json!([
-        tool_use("r_both", "blob_put", json!({ "kind": "part", "content": "{}", "source": CONFIG })),
+        tool_use(
+            "r_both",
+            "blob_put",
+            json!({ "kind": "part", "content": "{}", "source": CONFIG })
+        ),
         tool_use("r_neither", "blob_put", json!({ "kind": "part" })),
-        tool_use("r_at", "blob_put", json!({ "kind": "part", "content": "{}", "snapshot": snapshot })),
-        tool_use("p_sha1", "blob_put", json!({ "kind": "blob", "content": "hello\n", "hash": "sha1" })),
-        tool_use("p_words", "blob_put", json!({ "kind": "two words", "content": "x" })),
+        tool_use(
+            "r_at",
+            "blob_put",
+            json!({ "kind": "part", "content": "{}", "snapshot": snapshot })
+        ),
+        tool_use(
+            "p_sha1",
+            "blob_put",
+            json!({ "kind": "blob", "content": "hello\n", "hash": "sha1" })
+        ),
+        tool_use(
+            "p_words",
+            "blob_put",
+            json!({ "kind": "two words", "content": "x" })
+        ),
     ]);
     model_says(chain, calls, "tool_use");
     let refused: Vec<(String, String)> = frames(chain, thread)

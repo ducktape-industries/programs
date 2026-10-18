@@ -42,10 +42,7 @@ pub(crate) struct Given {
 
 pub(crate) enum Bytes {
     Content(String),
-    Source {
-        path: String,
-        snapshot: Option<String>,
-    },
+    Source { path: String, at: Option<String> },
 }
 
 pub(crate) enum Unsourced {
@@ -83,7 +80,7 @@ impl TryFrom<Given> for PutArgs {
             (None, None, _) => return Err(Unsourced::Neither),
             (Some(_), None, Some(_)) => return Err(Unsourced::SnapshotWithContent),
             (Some(content), None, None) => Bytes::Content(content),
-            (None, Some(path), snapshot) => Bytes::Source { path, snapshot },
+            (None, Some(path), at) => Bytes::Source { path, at },
         };
         Ok(PutArgs {
             kind: given.kind,
@@ -126,7 +123,7 @@ impl Tool for Put {
     fn run(ctx: &ExecCtx, _: &Seat, args: PutArgs) -> Result<Run, Error> {
         let body = match args.bytes {
             Bytes::Content(content) => content.into_bytes(),
-            Bytes::Source { path, snapshot: at } => read(ctx, &path, snapshot(&at)?)?.1,
+            Bytes::Source { path, at } => read(ctx, &path, snapshot(&at)?)?.1,
         };
         let size = body.len();
         let id = ctx.blob_put(args.hash.into(), args.kind.as_str(), body)?;
