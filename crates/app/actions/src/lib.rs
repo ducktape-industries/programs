@@ -99,6 +99,8 @@ pub enum Event {
     Opened { n: u64 },
     Updated { n: u64 },
     Manual,
+    // change `n`'s Preview: the squash a merge would land, built by forge
+    Preview { n: u64 },
 }
 
 // One workflow file run for one event; `error` says why it ran no job, and `notify` is the chat
@@ -198,6 +200,9 @@ pub fn describe(op: &Op) -> describe::Description {
         ),
         Op::Watched(forge::Watched::Opened { repo, n, .. }) => {
             (format!("Hear change {repo}#{n} open"), Vec::new())
+        }
+        Op::Watched(forge::Watched::Previewed { repo, n, .. }) => {
+            (format!("Hear change {repo}#{n} previewed"), Vec::new())
         }
         Op::Trigger { repo, commit } => (
             format!("Run the workflows of {repo}"),

@@ -2,7 +2,10 @@
 use ::program::{BlobId, HashKind};
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
-use crate::state::{ACTIVITY, AUTHORED, CHANGES, INVOLVED, PROTECTED, REFS, REPOS, REVIEWS};
+use crate::state::{
+    ACTIVITY, AUTHORED, CHANGES, INVOLVED, PREVIEWS, PROTECTED, REFS, REPOS, REQUIRED, REVIEWS,
+    STATUSES,
+};
 
 pub use crate::read_contract::*;
 pub use crate::review_contract::*;
@@ -167,6 +170,27 @@ pub enum Op {
         after: Option<u64>,
         limit: u64,
     },
+    // forge builds change `n`'s squash on its target's head, as `SquashMerge` would land it, and
+    // points `refs/changes/<n>/merge` at it: the commit a gated merge's checks run on.
+    Preview {
+        repo: String,
+        n: u64,
+    },
+    // The sender's status of a commit in one context (e.g. `gates.toml#gates`).
+    Status {
+        repo: String,
+        commit: String,
+        context: String,
+        state: CheckState,
+        url: Option<String>,
+    },
+    // `branch` moves only by a merge of a change whose Preview the reporter marks Passed in
+    // every context; None drops the requirement.
+    RequireChecks {
+        repo: String,
+        branch: Vec<u8>,
+        required: Option<Required>,
+    },
 }
 
 impl Op {
@@ -188,7 +212,10 @@ impl Op {
             | Op::ChangeRepoint { repo, .. }
             | Op::DeleteBranch { repo, .. }
             | Op::Protect { repo, .. }
-            | Op::ArchiveEnded { repo, .. } => Some(repo),
+            | Op::ArchiveEnded { repo, .. }
+            | Op::Preview { repo, .. }
+            | Op::Status { repo, .. }
+            | Op::RequireChecks { repo, .. } => Some(repo),
             Op::Watch { .. } => None,
         }
     }
@@ -356,6 +383,25 @@ pub enum Query {
         head: String,
         page: PageRequest,
     },
+    // change `n`'s latest Preview
+    #[reads(PREVIEWS)]
+    Preview {
+        repo: String,
+        n: u64,
+    },
+    // every status of a commit, by reporter, then context
+    #[reads(STATUSES)]
+    Statuses {
+        repo: String,
+        commit: String,
+        page: PageRequest,
+    },
+    // a repository's branches with required checks, in byte-name order
+    #[reads(REQUIRED)]
+    Required {
+        repo: String,
+        page: PageRequest,
+    },
 }
 
 impl Query {
@@ -382,14 +428,17 @@ impl Query {
             | Query::Judgment { page, .. }
             | Query::Protected { page, .. }
             | Query::RefNames { page, .. }
-            | Query::DiffStat { page, .. } => Some(page),
+            | Query::DiffStat { page, .. }
+            | Query::Statuses { page, .. }
+            | Query::Required { page, .. } => Some(page),
             Query::Advertise { .. }
             | Query::Upload { .. }
             | Query::Repo { .. }
             | Query::Blob { .. }
             | Query::Compare { .. }
             | Query::Activity { .. }
-            | Query::Closure { .. } => None,
+            | Query::Closure { .. }
+            | Query::Preview { .. } => None,
         }
     }
 
@@ -406,14 +455,17 @@ impl Query {
             | Query::Judgment { page, .. }
             | Query::Protected { page, .. }
             | Query::RefNames { page, .. }
-            | Query::DiffStat { page, .. } => Some(page),
+            | Query::DiffStat { page, .. }
+            | Query::Statuses { page, .. }
+            | Query::Required { page, .. } => Some(page),
             Query::Advertise { .. }
             | Query::Upload { .. }
             | Query::Repo { .. }
             | Query::Blob { .. }
             | Query::Compare { .. }
             | Query::Activity { .. }
-            | Query::Closure { .. } => None,
+            | Query::Closure { .. }
+            | Query::Preview { .. } => None,
         }
     }
 }
@@ -531,6 +583,18 @@ pub enum Reply {
         head: String,
         total_files: u64,
         page: PageResponse<FileStat>,
+    },
+    Preview {
+        height: u64,
+        preview: Option<PreviewInfo>,
+    },
+    Statuses {
+        height: u64,
+        page: PageResponse<CommitStatus>,
+    },
+    Required {
+        height: u64,
+        page: PageResponse<RequiredBranch>,
     },
 }
 
@@ -702,6 +766,11 @@ pub enum OpReply {
         archived: Vec<u64>,
         next: Option<u64>,
     },
+    Previewed {
+        height: u64,
+        n: u64,
+        oid: String,
+    },
 }
 
 // What a watcher hears (`Op::Watch`): a ref a push, a merge or a squash moved, `old` or `new`
@@ -723,6 +792,66 @@ pub enum Watched {
         head: String,
         by: Principal,
     },
+    // change `n`'s Preview made a new commit, `merge`
+    Previewed {
+        repo: String,
+        n: u64,
+        merge: String,
+        by: Principal,
+    },
+}
+
+// A commit's status in one context, as its reporter sees it; Errored means the checker or what
+// it runs on broke.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum CheckState {
+    Pending,
+    Passed,
+    Failed,
+    Errored,
+}
+
+impl CheckState {
+    pub fn word(self) -> &'static str {
+        match self {
+            CheckState::Pending => "pending",
+            CheckState::Passed => "passed",
+            CheckState::Failed => "failed",
+            CheckState::Errored => "errored",
+        }
+    }
+}
+
+// What a branch with required checks needs: `reporter`'s Passed in each context.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Required {
+    pub reporter: Principal,
+    pub contexts: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct RequiredBranch {
+    pub branch: Vec<u8>,
+    pub required: Required,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct CommitStatus {
+    pub reporter: Principal,
+    pub context: String,
+    pub state: CheckState,
+    pub url: Option<String>,
+    pub height: u64,
+}
+
+// A Preview: the two heads it read and the squash it made of them.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct PreviewInfo {
+    pub n: u64,
+    pub into_head: String,
+    pub from_head: String,
+    pub merge: String,
+    pub height: u64,
 }
 
 pub const PACK_KIND: &str = "pack";

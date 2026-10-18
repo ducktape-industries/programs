@@ -77,13 +77,16 @@ fn next_cursor(reply: &Reply) -> Option<&Vec<u8>> {
         Reply::Protected { page, .. } => page.next.as_ref(),
         Reply::RefNames { page, .. } => page.next.as_ref(),
         Reply::DiffStat { page, .. } => page.next.as_ref(),
+        Reply::Statuses { page, .. } => page.next.as_ref(),
+        Reply::Required { page, .. } => page.next.as_ref(),
         // a log is never read whole: `log_page`
         Reply::Log { .. }
         | Reply::Repo { .. }
         | Reply::Compare { .. }
         | Reply::Blob { .. }
         | Reply::Activity { .. }
-        | Reply::Closure { .. } => None,
+        | Reply::Closure { .. }
+        | Reply::Preview { .. } => None,
     }
 }
 

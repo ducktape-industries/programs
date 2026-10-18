@@ -16,7 +16,10 @@ only.
   squash commit on the target's head, under the same CAS. Neither enforces
   review verdicts. `Rebase` builds the same kind of commit for an open change on
   a newer base and moves the change's own source to it, so a change keeps its
-  number through a rebase.
+  number through a rebase. `Preview` builds, without moving the target, the squash
+  a change's merge would land on its target's current head; a branch with required
+  checks (`RequireChecks`) moves only by a merge of a change whose latest Preview
+  its reporter's `Status`es mark Passed.
 - Changes keep their title, body, author account, and lifecycle on the forge record.
   A repository's number counter allocates the shared future issue/change number space.
 - Every table is declared once in `src/state.rs` as a typed `store::Map`/`Set`/`Item`:
@@ -96,6 +99,9 @@ and decode a `forge::Reply` from the concatenated `Respond` bytes.
 | `Upload { repo: r, request: git_v2_ls_refs_bytes }` | raw Git protocol v2 `ls-refs` response |
 | `Closure { repo: r, walk: Walk::of(gitcore::walk::Walk::of(&wants, &haves)) }` | `listed`: the ids and kinds of the objects `wants` reach less what `haves` reach, and `next`, the walk to send back for the next page |
 | `Protected { repo: r, cursor: None, limit: 20 }` | `page<Vec<u8>>`: the protected branch names in byte order; the head is protected besides |
+| `Preview { repo: r, n: 1 }` | `Option<PreviewInfo>`: change 1's latest Preview, the target and source heads it read and the squash it made (`merge`) |
+| `Statuses { repo: r, commit: c, page }` | `page<CommitStatus>`: every status of `c`, by reporter then context, each with its state, url and height |
+| `Required { repo: r, page }` | `page<RequiredBranch>`: the branches with required checks, in byte-name order, each with its reporter and contexts |
 
 `Advertise` and `Upload` speak Git's own smart-HTTP framing, so they carry no
 Borsh height envelope. They are not UI list APIs. `Upload` answers `ls-refs`
@@ -173,9 +179,10 @@ change's key and the repository's; the author, or a repository writer, closes; r
 A repository's writers are whoever its list in the access program allows, at
 `forge::repo_key(repo)`: anyone unless the owner sets a list there
 (`access::Op::Set`). `Push`, `Merge`, `SquashMerge`, `Stage`, `DeleteBranch` and
-a `ChangeClose` by anyone but the change's author need that key; `Configure` and
-`Protect` need `forge::settings_key(repo)`, which follows the same list unless the
-owner sets one of its own.
+a `ChangeClose` by anyone but the change's author need that key; `Configure`,
+`Protect` and `RequireChecks` need `forge::settings_key(repo)`, which follows the same list unless the
+owner sets one of its own. `Preview` and `Status` need no key: anyone previews an open
+change, and anyone reports a status, under their own account.
 Reviews remain appendable on closed/merged changes.
 Closing is terminal; there is no reopen operation.
 
@@ -196,6 +203,9 @@ Closing is terminal; there is no reopen operation.
 | `ChangeRepoint { repo: r, n: 1, from: feature }` | the change's source becomes `from`; `OpReply::Change` |
 | `DeleteBranch { repo: r, branch: b"refs/heads/old".to_vec(), expected: a }` | deletes an unprotected branch at `a` that no open change names; empty output |
 | `Protect { repo: r, branch: b"refs/heads/dev".to_vec(), protected: true }` | adds (`false`: removes) a protected branch; empty output |
+| `Preview { repo: r, n: 1 }` | change 1's squash on its target's head, under `refs/changes/1/merge`; `OpReply::Previewed { height, n, oid }` |
+| `Status { repo: r, commit: c, context: "gates.toml#gates".into(), state: CheckState::Passed, url: Some(log) }` | the sender's status of `c` in that context; empty output |
+| `RequireChecks { repo: r, branch: b"refs/heads/dev".to_vec(), required: Some(Required { reporter, contexts }) }` | the branch moves only by a gated merge (`None` drops it); empty output |
 | `ArchiveEnded { repo: r, after: None, limit: 20 }` | archives the channels of ended changes numbered above `after`, `limit` numbers of them; `OpReply::ArchivedEnded { height, archived, next }` |
 
 A push's objects never ride inside its frame. The client puts git's pack as a
@@ -261,6 +271,25 @@ branch and no `DeleteBranch` deletes one. `DeleteBranch` deletes a branch still 
 its source, which the refusal lists. It ignores `allow_delete`, which governs only
 the deletions a git push asks for. The branch's objects stay, so it can be pushed
 again.
+
+`Preview { n }` builds open change `n`'s squash on its target's current head with
+`SquashMerge`'s machinery (the same merge base, 3-way merge, `merge_cost`, message,
+author and committer), points `refs/changes/<n>/merge` at it and records the two
+heads it read (`Query::Preview`); a conflict is refused `wrong_state`, naming every
+path, writing nothing. While both heads stay where they were, it answers the same
+commit and writes nothing; a watcher hears `Watched::Previewed` for each new one.
+`Status` records the sender's state of a commit (`Pending`, `Passed`, `Failed`,
+`Errored`) in a context, with a url: each reporter's own, so no one writes another's.
+`RequireChecks { branch, required }` names a reporter and its contexts for a branch.
+From then on a push that moves the branch is refused, and a `SquashMerge` or `Merge`
+into it is refused `wrong_state` unless it names its change, that change's latest
+Preview read the very heads being merged (else it is stale: preview again), and the
+reporter's status of the Preview's commit is `Passed` in every context. The refusal
+names each context that is pending, failed or errored, and says "no status from
+<reporter>" for one never reported (the checker is down, not the code). The squash a
+gated merge lands has the Preview's parent and tree, since the same merge runs on the
+same commits. The break-glass is the settings owner sending `RequireChecks` with
+`required: None`, one op on chain; the refusals say so.
 
 ### Archiving a change's channel
 

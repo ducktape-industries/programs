@@ -5,11 +5,11 @@ use ::program::{
     Error, ExecCtx, Principal, QueryCtx, Reply, code, corrupt, invalid, not_found,
     unexpected_reply, wrong_state,
 };
-use forge::{ChangeState, Content, EntryKind, Revision, Watched};
+use forge::{ChangeState, CheckState, Content, EntryKind, Revision, Watched};
 use store::Item;
 
 use crate::state::{
-    BY_COMMIT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, QUEUED, RUNNERS, RUNS, SOURCES,
+    BY_COMMIT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, QUEUED, RUNNERS, RUNS, SOURCES, TARGETS,
 };
 use crate::workflow;
 use crate::{
@@ -27,6 +27,8 @@ struct Started<'a> {
 pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
     ctx.env().sent_by(forge::PROGRAM)?;
     match event {
+        // a Preview's own ref: its checks start from `Previewed`
+        Watched::Moved { reference, .. } if reference.starts_with(b"refs/changes/") => Ok(()),
         Watched::Moved {
             repo,
             reference,
@@ -37,11 +39,15 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             let source = (repo.clone(), reference.clone());
             if let Some(n) = SOURCES.get(ctx, &source)? {
                 match still_open(ctx, &repo, n)? {
-                    true => {
-                        let event = Event::Updated { n };
-                        start(ctx, &started(&repo, &commit, event, by.clone()))?;
-                    }
+                    true => preview(ctx, &repo, n),
                     false => SOURCES.remove(ctx, &source),
+                }
+            }
+            let into = TARGETS.range_of(ctx, &source, &PageRequest::default())?;
+            for (_, _, n) in into.items {
+                match still_open(ctx, &repo, n)? {
+                    true => preview(ctx, &repo, n),
+                    false => TARGETS.remove(ctx, &(repo.clone(), reference.clone(), n)),
                 }
             }
             start(ctx, &started(&repo, &commit, Event::Push { reference }, by))
@@ -51,16 +57,50 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             repo,
             n,
             from,
-            head,
-            by,
+            into,
             ..
         } => {
             if let Revision::Ref(reference) = from {
                 SOURCES.put(ctx, &(repo.clone(), reference), &n);
             }
-            start(ctx, &started(&repo, &head, Event::Opened { n }, Some(by)))
+            TARGETS.insert(ctx, &(repo.clone(), into, n));
+            preview(ctx, &repo, n);
+            Ok(())
         }
+        Watched::Previewed {
+            repo, n, merge, by, ..
+        } => start(ctx, &started(&repo, &merge, Event::Preview { n }, Some(by))),
     }
+}
+
+// forge builds the change's Preview, the squash its merge would land, and says so with
+// `Previewed`; a refusal (a conflict, a change no longer open) is absorbed
+// (`Program::reply`), and the change runs no check until a Preview of it is made.
+fn preview(ctx: &ExecCtx, repo: &str, n: u64) {
+    let op = forge::Op::Preview {
+        repo: repo.to_owned(),
+        n,
+    };
+    ctx.emit(forge::PROGRAM, &op, Reply::Wanted);
+}
+
+// forge hears each check's state as its commit's status in `<workflow>#<job>`, which a branch's
+// required checks name.
+fn tell_forge(ctx: &ExecCtx, check: &CheckRow) {
+    let state = match check.state {
+        State::Queued | State::Running => CheckState::Pending,
+        State::Passed => CheckState::Passed,
+        State::Failed => CheckState::Failed,
+        State::Errored => CheckState::Errored,
+    };
+    let op = forge::Op::Status {
+        repo: check.repo.clone(),
+        commit: check.commit.clone(),
+        context: format!("{}#{}", check.workflow, check.job.id),
+        state,
+        url: check.log.clone(),
+    };
+    ctx.emit(forge::PROGRAM, &op, Reply::Wanted);
 }
 
 fn started<'a>(repo: &'a str, commit: &'a str, event: Event, by: Option<Principal>) -> Started<'a> {
@@ -211,6 +251,17 @@ fn record(
         notify: named.notify,
     };
     RUNS.put(ctx, &id, &run);
+    if run.error.is_some() {
+        // a workflow that does not read is its file's status, errored
+        let op = forge::Op::Status {
+            repo: run.repo.clone(),
+            commit: run.commit.clone(),
+            context: run.workflow.clone(),
+            state: CheckState::Errored,
+            url: None,
+        };
+        ctx.emit(forge::PROGRAM, &op, Reply::Wanted);
+    }
     Ok(run)
 }
 
@@ -247,6 +298,7 @@ fn queue(ctx: &ExecCtx, run: &RunRow, job: Job, attempt: u32) -> Result<(), Erro
     BY_COMMIT.insert(ctx, &(check.repo.clone(), check.commit.clone(), id));
     BY_RUN.insert(ctx, &(run.id, id));
     QUEUED.insert(ctx, &id);
+    tell_forge(ctx, &check);
     for (_, runner) in RUNNERS.all(ctx)? {
         offer(ctx, &runner, &check);
     }
@@ -304,6 +356,7 @@ pub(crate) fn claim(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     check.started = Some(ctx.env().height);
     QUEUED.remove(ctx, &id);
     CHECKS.put(ctx, &id, &check);
+    tell_forge(ctx, &check);
     Ok(())
 }
 
@@ -333,6 +386,7 @@ pub(crate) fn report(
     check.summary = summary;
     check.log = log;
     CHECKS.put(ctx, &id, &check);
+    tell_forge(ctx, &check);
     if matches!(state, State::Failed | State::Errored) {
         let run = RUNS
             .get(ctx, &check.run)?

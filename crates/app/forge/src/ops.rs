@@ -90,7 +90,7 @@ pub(crate) fn retired() -> Error {
 
 pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
     let needs = match op {
-        Op::Configure { repo, .. } | Op::Protect { repo, .. } => {
+        Op::Configure { repo, .. } | Op::Protect { repo, .. } | Op::RequireChecks { repo, .. } => {
             vec![Need::write(settings_key(repo))]
         }
         Op::Push { repo, .. }
@@ -129,7 +129,9 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::ChangeOpen { .. }
         | Op::ReviewSubmit { .. }
         | Op::Watch { .. }
-        | Op::ArchiveEnded { .. } => Vec::new(),
+        | Op::ArchiveEnded { .. }
+        | Op::Preview { .. }
+        | Op::Status { .. } => Vec::new(),
     };
     Ok(needs)
 }
@@ -187,6 +189,9 @@ pub(crate) fn push(
     .map_err(refusal_of)?;
     if outcome.unpack_error.is_none() {
         objects.flush()?;
+    }
+    for (reference, _) in &outcome.moves {
+        crate::checks::refuse_push(ctx, name, reference)?;
     }
     for (reference, update) in &outcome.moves {
         match update {

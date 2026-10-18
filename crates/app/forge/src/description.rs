@@ -195,6 +195,39 @@ pub fn describe(op: &Op) -> Description {
                 ],
             )
         }
+        Op::Preview { repo, n } => ("Preview change", repo, vec![change(n)]),
+        Op::Status {
+            repo,
+            commit,
+            context,
+            state,
+            ..
+        } => (
+            "Report status",
+            repo,
+            vec![
+                field("commit", Value::text(commit)),
+                field("context", Value::text(context)),
+                field("state", Value::text(state.word())),
+            ],
+        ),
+        Op::RequireChecks {
+            repo,
+            branch,
+            required,
+        } => {
+            let mut fields = vec![field("branch", text(branch))];
+            if let Some(required) = required {
+                fields.push(field("reporter", principal(&required.reporter)));
+                let contexts = required.contexts.iter().map(Value::text).collect();
+                fields.push(field("contexts", Value::List(contexts)));
+            }
+            let verb = match required {
+                Some(_) => "Require checks",
+                None => "Drop required checks",
+            };
+            (verb, repo, fields)
+        }
         Op::ReviewSubmit { repo, n, review } => (
             "Review",
             repo,

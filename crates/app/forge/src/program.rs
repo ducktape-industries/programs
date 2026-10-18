@@ -8,8 +8,9 @@ use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 use crate::change_queries::{change, changes, judgment};
 use crate::changes::{
     Draft, Edit, MergeRequest, RebaseRequest, SquashRequest, archive_ended, close, edit,
-    merge_heads, open, rebase, repoint, squash, submit_review,
+    merge_heads, open, preview, rebase, repoint, squash, submit_review,
 };
+use crate::checks::{Report, preview_of, require, required, status, statuses};
 use crate::contract::*;
 use crate::ops::{
     configure, create, delete_branch, init, needs, protect, push, resource, retired, stage, touch,
@@ -39,6 +40,7 @@ impl Program for Forge {
         returns::<OpReply>("Rebase"),
         returns::<OpReply>("ChangeRepoint"),
         returns::<OpReply>("ArchiveEnded"),
+        returns::<OpReply>("Preview"),
     ];
 
     fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
@@ -171,6 +173,27 @@ impl Program for Forge {
             Op::ArchiveEnded { repo, after, limit } => {
                 archive_ended(ctx, &repo, after, limit).map(Some)
             }
+            Op::Preview { repo, n } => preview(ctx, actor, &repo, n).map(Some),
+            Op::Status {
+                repo,
+                commit,
+                context,
+                state,
+                url,
+            } => {
+                let report = Report {
+                    commit,
+                    context,
+                    state,
+                    url,
+                };
+                status(ctx, actor, &repo, report).map(|()| None)
+            }
+            Op::RequireChecks {
+                repo,
+                branch,
+                required,
+            } => require(ctx, &repo, &branch, required).map(|()| None),
         }?;
         if let Some(reply) = reply {
             ctx.set_return_data(abi::encode(&reply));
@@ -306,6 +329,18 @@ impl Program for Forge {
                 None,
                 &listing(page)?,
             )?)?,
+            Query::Preview { repo, n } => Reply::Preview {
+                height,
+                preview: preview_of(ctx, repo, *n)?,
+            },
+            Query::Statuses { repo, commit, page } => Reply::Statuses {
+                height,
+                page: statuses(ctx, repo, commit, &listing(page)?)?,
+            },
+            Query::Required { repo, page } => Reply::Required {
+                height,
+                page: required(ctx, repo, &listing(page)?)?,
+            },
         })
     }
 }

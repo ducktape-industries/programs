@@ -10,7 +10,8 @@ use gitcore::{Hash, Oid};
 use store::{Item, Kind, Map, Owned, Set};
 
 use crate::contract::{
-    Bounds, Change, ChangeState, Principal, Repo, Review, Revision, Watched, valid_repo_name,
+    Bounds, Change, ChangeState, CommitStatus, PreviewInfo, Principal, Repo, Required, Review,
+    Revision, Watched, valid_repo_name,
 };
 use crate::objects::hash_of;
 
@@ -51,6 +52,13 @@ pub const ARCHIVING: Map<u64, (String, u64)> = Map::new("x/").shared();
 // The lines forge posted to say chat refused an archive, by the message's seq, until chat
 // answers them (in the same frame).
 pub const LOGGING: Set<u64> = Set::new("l/").shared();
+// Each change's latest Preview.
+pub const PREVIEWS: Map<(String, u64), PreviewInfo> = Map::new("m/").shared();
+// Every status a reporter gave a commit: by repository, commit, reporter and context.
+pub const STATUSES: Map<(String, String, Principal, String), CommitStatus> =
+    Map::new("s/").shared();
+// The branches that move only by a merge whose Preview is green.
+pub const REQUIRED: Map<(String, Vec<u8>), Required> = Map::new("q/").shared();
 
 /// Stored state that is not what forge wrote: an operator's problem.
 pub(crate) fn storage(sentence: impl Into<String>) -> Error {
@@ -332,4 +340,7 @@ pub(crate) const TABLES: &[::program::Table] = &[
     WATCHERS.table(),
     ARCHIVING.table(),
     LOGGING.table(),
+    PREVIEWS.table(),
+    STATUSES.table(),
+    REQUIRED.table(),
 ];

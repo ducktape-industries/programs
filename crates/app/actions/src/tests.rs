@@ -179,8 +179,8 @@ impl World {
         self.store.put(Kind::Tree, &tree.serialize()).unwrap()
     }
 
-    // A commit whose tree holds `.forge/workflows/<name>` for each workflow, and a README that
-    // makes each commit its own.
+    // A commit whose tree holds `.forge/workflows/<name>` for each workflow, and a file of its
+    // own (`t<time>`), so two branches' commits merge cleanly.
     fn commit(&mut self, parents: &[Oid], workflows: &[(&str, &str)]) -> Oid {
         self.time += 1;
         let mut files = Vec::new();
@@ -190,11 +190,11 @@ impl World {
         }
         let workflows = self.tree(&files);
         let forge_dir = self.tree(&[("workflows", Mode::Directory, workflows)]);
-        let readme = format!("{}\n", self.time);
-        let readme = self.store.put(Kind::Blob, readme.as_bytes()).unwrap();
+        let own = format!("t{}", self.time);
+        let mark = self.store.put(Kind::Blob, b"x\n").unwrap();
         let root = self.tree(&[
             (".forge", Mode::Directory, forge_dir),
-            ("README", Mode::Regular, readme),
+            (own.as_str(), Mode::Regular, mark),
         ]);
         let signature = Signature {
             name: b"Ada".to_vec(),
@@ -276,6 +276,42 @@ impl World {
         check
     }
 
+    // The commit change `n`'s latest Preview made.
+    fn preview(&self, n: u64) -> Oid {
+        let asked = forge::Query::Preview {
+            repo: REPO.into(),
+            n,
+        };
+        let reply = self.chain.query(forge::PROGRAM, &asked).unwrap();
+        let forge::Reply::Preview {
+            preview: Some(made),
+            ..
+        } = reply
+        else {
+            panic!("change {n} has no Preview: {reply:?}");
+        };
+        Oid::from_hex(Hash::Sha1, &made.merge).unwrap()
+    }
+
+    // What forge holds of a commit's statuses: each context and its state.
+    fn statuses(&self, commit: Oid) -> Vec<(String, forge::CheckState)> {
+        let asked = forge::Query::Statuses {
+            repo: REPO.into(),
+            commit: commit.to_hex(),
+            page: PageRequest::first(16),
+        };
+        let reply = self.chain.query(forge::PROGRAM, &asked).unwrap();
+        let forge::Reply::Statuses { page, .. } = reply else {
+            panic!("statuses answer Statuses: {reply:?}");
+        };
+        let actions = forge::Principal::Account(903);
+        assert!(page.items.iter().all(|status| status.reporter == actions));
+        page.items
+            .into_iter()
+            .map(|status| (status.context, status.state))
+            .collect()
+    }
+
     fn run(&self, id: u64) -> RunRow {
         let Reply::Run(Some(run)) = self.chain.query(PROGRAM, &Query::Run { id }).unwrap() else {
             panic!("no run {id}");
@@ -322,7 +358,7 @@ fn a_push_to_a_branch_a_workflow_names_queues_a_check_per_job_and_offers_it() {
 }
 
 #[test]
-fn a_change_opened_and_updated_runs_what_on_change_names_until_it_closes() {
+fn a_change_runs_what_on_change_names_on_its_preview_each_time_either_head_moves() {
     let mut world = world();
     let root = world.commit(&[], &[("changes.toml", CHANGES)]);
     world.push(None, root, "main");
@@ -338,13 +374,26 @@ fn a_change_opened_and_updated_runs_what_on_change_names_until_it_closes() {
         reviewers: Vec::new(),
     };
     world.forge(&open).unwrap();
-    let opened = world.checks(feature);
+    assert!(
+        world.checks(feature).is_empty(),
+        "checks run on the Preview, not the head"
+    );
+    let first = world.preview(1);
+    let opened = world.checks(first);
     assert_eq!(jobs(&opened), [("review", State::Queued)]);
-    assert_eq!(world.run(opened[0].run).event, Event::Opened { n: 1 });
+    assert_eq!(world.run(opened[0].run).event, Event::Preview { n: 1 });
+    let pending = ("changes.toml#review".to_owned(), forge::CheckState::Pending);
+    assert_eq!(world.statuses(first), [pending]);
     let later = world.commit(&[feature], &[("changes.toml", CHANGES)]);
     world.push(Some(feature), later, "feature");
-    let updated = world.checks(later);
-    assert_eq!(world.run(updated[0].run).event, Event::Updated { n: 1 });
+    let second = world.preview(1);
+    assert_ne!(second, first, "the source moved");
+    assert_eq!(jobs(&world.checks(second)), [("review", State::Queued)]);
+    let moved = world.commit(&[root], &[("changes.toml", CHANGES)]);
+    world.push(Some(root), moved, "main");
+    let third = world.preview(1);
+    assert_ne!(third, second, "the target moved");
+    assert_eq!(jobs(&world.checks(third)), [("review", State::Queued)]);
     let close = forge::Op::ChangeClose {
         repo: REPO.into(),
         n: 1,
@@ -352,7 +401,7 @@ fn a_change_opened_and_updated_runs_what_on_change_names_until_it_closes() {
     world.forge(&close).unwrap();
     let last = world.commit(&[later], &[("changes.toml", CHANGES)]);
     world.push(Some(later), last, "feature");
-    assert!(world.checks(last).is_empty(), "the change is closed");
+    assert_eq!(world.preview(1), third, "the change is closed");
 }
 
 #[test]
@@ -389,6 +438,11 @@ fn a_check_is_claimed_once_reported_once_and_rerun_as_its_next_attempt() {
     let unended = world.act(&report(State::Running)).unwrap_err();
     assert_eq!(unended.code, code::INVALID_INPUT);
     world.act(&report(State::Passed)).unwrap();
+    let told = [
+        ("gates.toml#gates".to_owned(), forge::CheckState::Passed),
+        ("gates.toml#render".to_owned(), forge::CheckState::Pending),
+    ];
+    assert_eq!(world.statuses(root), told);
     let passed = world.check(1);
     assert_eq!(passed.state, State::Passed);
     assert_eq!(

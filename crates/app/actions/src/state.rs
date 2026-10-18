@@ -14,6 +14,8 @@ pub const BY_RUN: Set<(u64, u64)> = Set::new("b/").shared();
 pub const QUEUED: Set<u64> = Set::new("q/").shared();
 // The open change whose source a repository's ref is.
 pub const SOURCES: Map<(String, Vec<u8>), u64> = Map::new("o/").shared();
+// Index: the open changes into each branch, previewed again when it moves.
+pub const TARGETS: Set<(String, Vec<u8>, u64)> = Set::new("t/").shared();
 pub const RUNNERS: Map<AccountNumber, RunnerRow> = Map::new("u/").shared();
 pub const LAST_RUN: Item<u64> = Item::new("last-run").shared();
 pub const LAST_CHECK: Item<u64> = Item::new("last-check").shared();
@@ -26,6 +28,7 @@ pub(crate) const TABLES: &[::program::Table] = &[
     BY_RUN.table(),
     QUEUED.table(),
     SOURCES.table(),
+    TARGETS.table(),
     RUNNERS.table(),
     LAST_RUN.table(),
     LAST_CHECK.table(),

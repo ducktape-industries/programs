@@ -226,6 +226,8 @@ pub(crate) fn merge_heads(
     let result = parse_oid(hash, &merge.result)?;
     let ends = (merge.into.as_slice(), &merge.from);
     still_at(ctx, repo, hash, ends, (expected_into, expected_from))?;
+    let heads = (&expected_into, &expected_from);
+    crate::checks::gate(ctx, repo, &merge.into, merge.change, heads)?;
     if result == expected_into || expected_from == expected_into {
         return Err(wrong_state("merge does not advance the target"));
     }
@@ -332,6 +334,8 @@ pub(crate) fn squash(
     let expected_from = parse_oid(hash, &squash.expected_from)?;
     let ends = (squash.into.as_slice(), &squash.from);
     still_at(ctx, repo, hash, ends, (expected_into, expected_from))?;
+    let heads = (&expected_into, &expected_from);
+    crate::checks::gate(ctx, repo, &squash.into, squash.change, heads)?;
     if expected_from == expected_into {
         return Err(wrong_state("merge does not advance the target"));
     }
@@ -434,6 +438,86 @@ fn write_squash(
     }
     objects.flush()?;
     Ok(id)
+}
+
+// Change `n`'s squash on its target's head, as `SquashMerge` would land it, under
+// `refs/changes/<n>/merge`; the same two heads answer the Preview already made.
+pub(crate) fn preview(
+    ctx: &ExecCtx,
+    actor: &Principal,
+    repo: &str,
+    n: u64,
+) -> Result<OpReply, Error> {
+    let env = ctx.env();
+    let mut record = load_repo(ctx, repo)?;
+    let hash = repo_hash(&record);
+    let change = load_change(ctx, repo, n)?;
+    require_open(&change)?;
+    let from = resolve(ctx, repo, &change.from, hash)?;
+    let into = resolve(ctx, repo, &Revision::Ref(change.into.clone()), hash)?;
+    let key = (repo.to_owned(), n);
+    if let Some(made) = crate::state::PREVIEWS.get(ctx, &key)?
+        && made.into_head == into.to_hex()
+        && made.from_head == from.to_hex()
+    {
+        return Ok(OpReply::Previewed {
+            height: env.height,
+            n,
+            oid: made.merge,
+        });
+    }
+    let message = message_of(None, Some(&change))?;
+    let bounds = load_bounds(ctx)?;
+    let objects = ObjectWriter::new(ctx, hash);
+    let walk = cap(bounds.log_walk);
+    let base = gitcore::walk::merge_base(&objects, &from, &into, walk)
+        .map_err(refusal_of)?
+        .ok_or_else(|| wrong_state("the change and its target share no history: no merge base"))?;
+    if base == from {
+        return Err(wrong_state(
+            "the target already holds the change: nothing to preview",
+        ));
+    }
+    let committer = signature(ctx, require_named(actor)?)?;
+    let author = match change.author.account() {
+        Some(author) => signature(ctx, author)?,
+        None => committer.clone(),
+    };
+    let made = Squashed {
+        base,
+        ours: into,
+        theirs: from,
+        author,
+        committer,
+        message,
+    };
+    let id = write_squash(objects, &bounds, hash, made)?;
+    let reference = format!("refs/changes/{n}/merge").into_bytes();
+    if !crate::state::REFS.has(ctx, &crate::state::ref_key(repo, &reference)) {
+        record.refs_count += 1;
+        crate::state::save_repo(ctx, repo, &record)?;
+    }
+    set_ref(ctx, repo, &reference, &id)?;
+    let made = PreviewInfo {
+        n,
+        into_head: into.to_hex(),
+        from_head: from.to_hex(),
+        merge: id.to_hex(),
+        height: env.height,
+    };
+    crate::state::PREVIEWS.put(ctx, &key, &made);
+    let previewed = Watched::Previewed {
+        repo: repo.to_owned(),
+        n,
+        merge: id.to_hex(),
+        by: actor.clone(),
+    };
+    crate::watchers::tell(ctx, &previewed)?;
+    Ok(OpReply::Previewed {
+        height: env.height,
+        n,
+        oid: id.to_hex(),
+    })
 }
 
 // What `Rebase` carries besides its repository.

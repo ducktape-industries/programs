@@ -28,6 +28,7 @@ mod review_contract;
 // The state and the rules over it.
 mod change_queries;
 mod changes;
+mod checks;
 mod description;
 mod diffs;
 mod discussion;
@@ -51,7 +52,7 @@ pub use program::Forge;
 pub mod tables {
     pub use crate::state::{
         ACTIVITY, ARCHIVING, AUTHORED, BOUNDS, CHANGES, INVOLVED, LOGGING, MESSAGES, NUMBERS,
-        PROTECTED, REFS, REPOS, REVIEWS, WATCHERS, WRITES,
+        PREVIEWS, PROTECTED, REFS, REPOS, REQUIRED, REVIEWS, STATUSES, WATCHERS, WRITES,
     };
 }
 
@@ -82,6 +83,9 @@ fn op_variants_only_append() {
             "Protect",
             "Watch",
             "ArchiveEnded",
+            "Preview",
+            "Status",
+            "RequireChecks",
         ]
     );
 }

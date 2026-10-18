@@ -1,6 +1,6 @@
 //! A workflow file, `.forge/workflows/<name>.toml`: the events that run it (`on.push` names
-//! branches, `on.change` takes "opened" and "updated"), its jobs, each run as one check, and
-//! the chat channel `notify.channel` told when a check of a push ends red.
+//! branches, `on.change` takes "opened" and "updated": either runs it on each Preview of a change),
+//! its jobs, each run as one check, and the chat channel `notify.channel` told of a push's red one.
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
@@ -116,6 +116,7 @@ impl Workflow {
             }
             Event::Opened { .. } => self.opened,
             Event::Updated { .. } => self.updated,
+            Event::Preview { .. } => self.opened || self.updated,
             Event::Manual => true,
         }
     }
