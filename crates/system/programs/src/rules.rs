@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ::program::{AccountNumber, BlobId, Env, Origin, Principal, ProgramId, Roles};
+use ::program::{AccountNumber, BlobId, Env, Principal, ProgramId, Roles};
 use ::program::{
     Error, ExecCtx, QueryCtx, already_exists, invalid, not_found, unauthorized, unexpected_reply,
     wrong_state,
@@ -95,19 +95,17 @@ fn held_code(ctx: &QueryCtx, code: BlobId) -> Result<(), Error> {
 }
 
 /// Who changes `name` in this frame: the validators' vote (`None`), or the
-/// account a signed frame acts as (`Some`), which still has to hold a grant.
-/// A program's message never acts by grant: its sender is its own account.
+/// account the frame acts as (`Some`), which still has to hold a grant.
 fn actor(env: &Env, name: &str) -> Result<Option<AccountNumber>, Error> {
     if env.authority().is_ok() {
         return Ok(None);
     }
-    let signed = matches!(env.origin, Origin::Signed(_));
-    match env.sender.as_ref().and_then(Principal::account) {
-        Some(account) if signed => Ok(Some(account)),
-        _ => Err(unauthorized(format!(
-            "only a signed frame of an account with a grant, or the validators' vote, may change {name}"
-        ))),
-    }
+    let Some(account) = env.sender.as_ref().and_then(Principal::account) else {
+        return Err(unauthorized(format!(
+            "only an account with a grant, or the validators' vote, may change {name}"
+        )));
+    };
+    Ok(Some(account))
 }
 
 /// Refused unless `account` maintains `name`: a grant of `name` or of every

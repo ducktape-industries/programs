@@ -1,6 +1,6 @@
 //! The `identity` program: accounts, and who acts as each. Everything that
 //! acts is an account: a user (the keys they hold), a program account (the
-//! keys its manager, a user, adds, and the script that runs its actions) and
+//! keys it or its manager adds, and the script that runs its actions) and
 //! a system account (the one the kernel registers as it admits a program). Who edits an
 //! account is its key's list in the access program, owned by the user, the program account's
 //! manager or the system account itself. The types, rules and [`Identity`] program are
@@ -62,8 +62,6 @@ pub struct Card {
 pub enum Control {
     /// A user: their own keys, which they add and remove.
     User { keys: Vec<Key> },
-    /// A program account: its `manager`, a user, adds its keys, declares
-    /// its `category`, sets its `script`, suspends, resumes and revokes it.
     Program {
         manager: AccountNumber,
         category: Category,
@@ -139,9 +137,7 @@ impl Account {
 }
 
 /// A key's consent to a new key joining an account: `proof` is `key`'s
-/// signature over the [`Admission`]. For a user, `key` is one already on
-/// the account and the new key signs the frame; for a program account,
-/// `key` is the new key itself and the manager signs the frame.
+/// signature over the [`Admission`].
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Consent {
     pub key: Vec<u8>,
@@ -178,8 +174,6 @@ pub enum Op {
         name: String,
         scheme: Scheme,
     },
-    /// A program account of the agent category that the signer's account
-    /// manages; it holds no key and no script yet.
     CreateAgent {
         name: String,
     },

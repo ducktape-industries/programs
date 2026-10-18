@@ -13,6 +13,7 @@ const ALICE: &[u8] = b"alice-key";
 const SECOND: &[u8] = b"alice-second-key";
 const BOB: &[u8] = b"bob";
 const BOT: &[u8] = b"bot-key";
+const SPARE: &[u8] = b"bot-spare-key";
 
 fn env(origin: Origin, sender: Option<Principal>, time: u64) -> Env {
     Env {
@@ -132,20 +133,24 @@ fn add_agent_key(
 /// `key`'s consent to joining `agent`, proved over its `generation`,
 /// expiring at 200.
 fn agent_key(agent: u64, key: &[u8], generation: u64) -> Op {
+    consented_by(key, agent, key, generation)
+}
+
+fn consented_by(consenting: &[u8], account: u64, key: &[u8], generation: u64) -> Op {
     let admission = Admission {
         network: b"net".to_vec(),
         scheme: Scheme::Ed25519,
         key: key.to_vec(),
         generation,
-        account: agent,
+        account,
         expires_at: 200,
     };
     Op::AddKey {
         scheme: Scheme::Ed25519,
         label: Some("sandbox".into()),
         consent: Consent {
-            key: key.to_vec(),
-            account: agent,
+            key: consenting.to_vec(),
+            account,
             expires_at: 200,
             proof: proof(CONSENT_NAMESPACE, &admission.preimage()),
         },
@@ -257,8 +262,6 @@ fn a_key_joins_by_consent_and_leaves_only_junior_to_its_remover() {
     assert_eq!(last.code, code::WRONG_STATE);
 }
 
-/// A user creates an agent and alone adds and removes its keys; the
-/// agent itself neither creates agents nor touches its own keys.
 #[test]
 fn a_user_manages_an_agent_and_its_keys() {
     let store = memory();
@@ -276,37 +279,229 @@ fn a_user_manages_an_agent_and_its_keys() {
         }
     );
 
-    // only the manager adds a key, and the key consents to joining
     let stranger = refused(&store, &signed(&store, BOB), agent_key(agent, BOT, 0));
     assert_eq!(stranger.code, code::UNAUTHORIZED);
     add_agent_key(&store, ALICE, agent, BOT).unwrap();
     assert_eq!(signed(&store, BOT).sender, Some(Principal::Account(agent)));
 
-    // an agent creates no agent
-    let nested = refused(
-        &store,
-        &signed(&store, BOT),
-        Op::CreateAgent { name: "x".into() },
-    );
-    assert_eq!(nested.code, code::UNAUTHORIZED);
-
-    // only the manager removes its key
     let remove = Op::RemoveKey {
         account: agent,
         key: BOT.to_vec(),
     };
-    let by_itself = refused(&store, &signed(&store, BOT), remove.clone());
-    assert_eq!(by_itself.code, code::UNAUTHORIZED);
     let by_stranger = refused(&store, &signed(&store, BOB), remove.clone());
     assert_eq!(by_stranger.code, code::UNAUTHORIZED);
     run(&store, &signed(&store, ALICE), remove).unwrap();
     assert_eq!(signed(&store, BOT).sender, None);
 }
 
-/// A card (name, avatar, bio) is a user's own, an agent's manager's alone
-/// (never the agent's own), and a system account's program's alone.
 #[test]
-fn a_card_is_edited_by_its_user_its_manager_or_its_program() {
+fn an_agent_adds_and_removes_its_own_keys_as_a_user_does() {
+    let store = memory();
+    create(&store, ALICE, "Alice");
+    let agent = create_agent(&store, ALICE, "Scout");
+    add_agent_key(&store, ALICE, agent, BOT).unwrap();
+    let spare = || signed_at(&store, SPARE, 150).unwrap();
+
+    let forged = Op::AddKey {
+        scheme: Scheme::Ed25519,
+        label: None,
+        consent: Consent {
+            key: BOT.to_vec(),
+            account: agent,
+            expires_at: 200,
+            proof: b"nope".to_vec(),
+        },
+    };
+    assert_eq!(refused(&store, &spare(), forged).code, code::UNAUTHORIZED);
+    run(&store, &spare(), consented_by(BOT, agent, SPARE, 0)).unwrap();
+    assert_eq!(keys_of(&get(&store, agent)), [BOT.to_vec(), SPARE.to_vec()]);
+    assert_eq!(spare().sender, Some(Principal::Account(agent)));
+
+    let remove = |key: &[u8]| Op::RemoveKey {
+        account: agent,
+        key: key.to_vec(),
+    };
+    let senior = refused(&store, &spare(), remove(BOT));
+    assert_eq!(senior.code, code::UNAUTHORIZED);
+    run(&store, &signed(&store, BOT), remove(SPARE)).unwrap();
+    let last = refused(&store, &signed(&store, BOT), remove(BOT));
+    assert_eq!(last.code, code::WRONG_STATE);
+
+    run(
+        &store,
+        &signed(&store, ALICE),
+        Op::Suspend { account: agent },
+    )
+    .unwrap();
+    let while_suspended = refused(&store, &spare(), consented_by(BOT, agent, SPARE, 1));
+    assert_eq!(while_suspended.code, code::UNAUTHORIZED);
+    assert_eq!(
+        while_suspended.message,
+        format!("account {agent} is suspended")
+    );
+    assert_eq!(keys_of(&get(&store, agent)), [BOT.to_vec()]);
+}
+
+#[test]
+fn an_agent_suspends_itself_and_its_manager_resumes_it() {
+    let store = memory();
+    create(&store, ALICE, "Alice");
+    let agent = create_agent(&store, ALICE, "Scout");
+    add_agent_key(&store, ALICE, agent, BOT).unwrap();
+    run(&store, &signed(&store, BOT), Op::Suspend { account: agent }).unwrap();
+    assert_eq!(get(&store, agent).kind().note(), Some("suspended"));
+    let its_key = signed_at(&store, BOT, 100).unwrap_err();
+    assert_eq!(its_key.code, code::UNAUTHORIZED);
+    run(
+        &store,
+        &signed(&store, ALICE),
+        Op::Resume { account: agent },
+    )
+    .unwrap();
+    assert_eq!(signed(&store, BOT).sender, Some(Principal::Account(agent)));
+}
+
+#[test]
+fn an_agent_creates_an_agent_it_manages() {
+    let store = memory();
+    create(&store, ALICE, "Alice");
+    let scout = create_agent(&store, ALICE, "Scout");
+    add_agent_key(&store, ALICE, scout, BOT).unwrap();
+    let helper = create_agent(&store, BOT, "Helper");
+    assert_eq!(
+        get(&store, helper).control,
+        Control::Program {
+            script: None,
+            manager: scout,
+            category: Category::Agent,
+            life: Life::Active { keys: Vec::new() },
+        }
+    );
+    assert_eq!(owner_of(&store, helper), Some(Party::Account(scout)));
+    let Reply::Accounts(managed) = query(
+        &store,
+        Query::Managed {
+            by: scout,
+            page: PageRequest::first(10),
+        },
+    ) else {
+        panic!("Managed answers accounts");
+    };
+    assert_eq!(
+        managed.items.iter().map(|a| a.number).collect::<Vec<_>>(),
+        [helper]
+    );
+
+    add_agent_key(&store, BOT, helper, SPARE).unwrap();
+    assert_eq!(
+        signed(&store, SPARE).sender,
+        Some(Principal::Account(helper))
+    );
+    run(
+        &store,
+        &signed(&store, BOT),
+        Op::Suspend { account: helper },
+    )
+    .unwrap();
+    assert_eq!(get(&store, helper).kind().note(), Some("suspended"));
+    run(&store, &signed(&store, BOT), Op::Resume { account: helper }).unwrap();
+    assert_eq!(get(&store, helper).kind().note(), None);
+    run(&store, &signed(&store, BOT), Op::Revoke { account: helper }).unwrap();
+    assert_eq!(get(&store, helper).kind().note(), Some("revoked"));
+}
+
+#[test]
+fn a_system_account_creates_an_agent_it_manages() {
+    let store = memory();
+    run(
+        &store,
+        &root(),
+        Op::RegisterProgram {
+            program: "forge".into(),
+        },
+    )
+    .unwrap();
+    let forge = from_program(&store, "forge");
+    let Some(Principal::Account(forge_account)) = forge.sender else {
+        panic!("forge acts as its account");
+    };
+    let agent = run(&store, &forge, Op::CreateAgent { name: "Bot".into() }).unwrap();
+    assert_eq!(
+        get(&store, agent).control,
+        Control::Program {
+            script: None,
+            manager: forge_account,
+            category: Category::Agent,
+            life: Life::Active { keys: Vec::new() },
+        }
+    );
+    run(&store, &forge, agent_key(agent, BOT, 0)).unwrap();
+    assert_eq!(signed(&store, BOT).sender, Some(Principal::Account(agent)));
+}
+
+#[test]
+fn a_suspended_or_revoked_agent_creates_no_agent() {
+    let store = memory();
+    create(&store, ALICE, "Alice");
+    run(
+        &store,
+        &root(),
+        Op::RegisterProgram {
+            program: "harness".into(),
+        },
+    )
+    .unwrap();
+    let agent = create_agent(&store, ALICE, "Scout");
+    add_agent_key(&store, ALICE, agent, BOT).unwrap();
+    run(
+        &store,
+        &signed(&store, ALICE),
+        run_by(agent, Some("harness")),
+    )
+    .unwrap();
+    assert_eq!(runs(&store, "harness", agent).unwrap(), Some(agent));
+
+    run(
+        &store,
+        &signed(&store, ALICE),
+        Op::Suspend { account: agent },
+    )
+    .unwrap();
+    let signed_frame = signed_at(&store, BOT, 100).unwrap_err();
+    assert_eq!(signed_frame.code, code::UNAUTHORIZED);
+    let run_frame = runs(&store, "harness", agent).unwrap_err();
+    assert_eq!(run_frame.code, code::UNAUTHORIZED);
+
+    run(
+        &store,
+        &signed(&store, ALICE),
+        Op::Revoke { account: agent },
+    )
+    .unwrap();
+    let by_its_old_key = refused(
+        &store,
+        &signed(&store, BOT),
+        Op::CreateAgent { name: "x".into() },
+    );
+    assert_eq!(by_its_old_key.code, code::UNAUTHORIZED);
+    let run_frame = runs(&store, "harness", agent).unwrap_err();
+    assert_eq!(run_frame.code, code::WRONG_STATE);
+    let Reply::Accounts(managed) = query(
+        &store,
+        Query::Managed {
+            by: agent,
+            page: PageRequest::first(10),
+        },
+    ) else {
+        panic!("Managed answers accounts");
+    };
+    assert!(managed.items.is_empty());
+}
+
+/// A card (name, avatar, bio) is a user's own, an agent's own and its
+/// manager's, and a system account's program's alone.
+#[test]
+fn a_card_is_edited_by_its_user_its_agent_its_manager_or_its_program() {
     let store = memory();
     create(&store, ALICE, "Alice");
     create(&store, BOB, "Bob");
@@ -344,6 +539,22 @@ fn a_card_is_edited_by_its_user_its_manager_or_its_program() {
     assert_eq!(get(&store, forge_account).card.name, "Forge");
     assert_eq!(owner_of(&store, 1), Some(Party::Account(1)));
     assert_eq!(owner_of(&store, agent), Some(Party::Account(1)));
+    let writers = |number| {
+        let ctx = store.query(env(Origin::Root, None, 100));
+        abi::role::access::writers::<::program::Error>(
+            &crate::account_key(number),
+            |_| Ok(None),
+            |at| Identity::resource(&ctx, at),
+        )
+        .unwrap()
+    };
+    let agents_card = writers(agent);
+    assert!(agents_card.allows(&[Party::Account(agent)]));
+    assert!(agents_card.allows(&[Party::Account(1)]));
+    assert!(!agents_card.allows(&[Party::Account(2)]));
+    assert!(!writers(1).allows(&[Party::Account(agent)]));
+    run(&store, &signed(&store, BOT), rename(agent, "Scout III")).unwrap();
+    assert_eq!(get(&store, agent).card.name, "Scout III");
     assert_eq!(
         owner_of(&store, forge_account),
         Some(Party::Account(forge_account))
@@ -490,9 +701,7 @@ fn the_system_registers_a_program_which_alone_names_its_account() {
     );
     assert!(account.keys().is_empty());
 
-    // a system account holds no keys and manages no one
-    let agent = refused(&store, &forge, Op::CreateAgent { name: "x".into() });
-    assert_eq!(agent.code, code::UNAUTHORIZED);
+    // a system account holds no keys
     let key = refused(&store, &signed(&store, ALICE), agent_key(2, BOT, 0));
     assert_eq!(key.code, code::WRONG_STATE);
     let key = refused(&store, &forge, agent_key(2, BOT, 0));

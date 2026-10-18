@@ -8,7 +8,7 @@ use std::future::Future;
 
 use ::program::Error;
 
-use crate::{Kind, MsgRow, PageRequest, PageResponse, Principal, Profile, Standing, ask};
+use crate::{Kind, MsgRow, PageRequest, PageResponse, Principal, Profile, ask};
 
 /// Every account's profile, every page of it, folded into [`Names`].
 pub async fn roster<F: Future<Output = Result<PageResponse<Profile>, Error>>>(
@@ -82,23 +82,12 @@ impl Names {
         names
     }
 
-    /// The accounts a person picks, as a reviewer or a mention: users and
-    /// program accounts that act, ascending. No system account, none
-    /// suspended or revoked.
     pub fn people(&self) -> impl Iterator<Item = u64> + '_ {
-        self.profiles
-            .values()
-            .filter(|profile| picks(&profile.kind))
-            .map(|profile| profile.number)
+        self.profiles.keys().copied()
     }
 
-    /// Whether a person picks `principal` ([`Names::people`]). An account
-    /// past the roster's read is picked by its number.
     pub fn pickable(&self, principal: &Principal) -> bool {
-        match self.kind(principal) {
-            Some(kind) => picks(kind),
-            None => principal.account().is_some(),
-        }
+        principal.account().is_some()
     }
 
     fn profile(&self, principal: &Principal) -> Option<&Profile> {
@@ -158,15 +147,6 @@ impl Names {
     pub fn badge(&self, principal: &Principal) -> Option<String> {
         self.kind(principal)?
             .badge(|manager| self.member(&Principal::Account(manager)))
-    }
-}
-
-/// A user picks a user or a program account that acts.
-pub(crate) fn picks(kind: &Kind) -> bool {
-    match kind {
-        Kind::User => true,
-        Kind::Program { standing, .. } => *standing == Standing::Active,
-        Kind::System(_) => false,
     }
 }
 

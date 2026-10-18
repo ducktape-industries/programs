@@ -345,14 +345,18 @@ fn an_agent_names_its_manager_its_standing_and_its_devices() {
 }
 
 #[test]
-fn a_program_has_no_devices_and_no_one_to_dm() {
+fn a_program_has_no_devices_and_is_dmed_as_any_account() {
     let (mut cx, _) = ready();
     cx.simulate_click("members-row-8");
     cx.run_until_parked();
     assert!(cx.has_text("Program") && !cx.has_text("Program · chat"));
     assert!(cx.has_text("No devices"));
     assert!(!cx.has_text("Recent activity") && !cx.has_text("1 device"));
-    assert!(cx.find("members-open-dm").is_none());
+    cx.simulate_click("members-open-dm");
+    assert_eq!(
+        cx.host().requests::<view::methods::LinkOpen>(),
+        vec![ducklink::mint("testnet#0a1b2c3d", "chat", &["dm-7-8"]).unwrap()]
+    );
     assert!(cx.find("members-explorer").is_some());
     assert!(cx.host().requests::<Query<Activity>>().is_empty());
 }
