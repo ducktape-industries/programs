@@ -1,10 +1,11 @@
 //! Tools over any program of the network by the schema its code carries: the shapes of its ops,
 //! queries and replies, a query asked and its reply read back, and an op sent as the agent.
 use ::program::{Error, ExecCtx, code, invalid};
+use abi::role::egress::{self, http};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{Run, Seat, Tool, object, write};
+use super::{Reading, Run, Seat, Tool, Write, object};
 use crate::codec::{self, Fault};
 use crate::schema::schema_of;
 
@@ -92,7 +93,7 @@ pub(crate) struct Call;
 
 impl Tool for Call {
     const NAME: &'static str = "network_call";
-    const DESCRIPTION: &'static str = "Send a program an op, written in the op shape network_schema gives for it, as your own account. The op is yours: the program applies it where it allows your account and refuses it otherwise, with its reason. What the op returns comes back as hex.";
+    const DESCRIPTION: &'static str = "Send a program an op, written in the op shape network_schema gives for it, as your own account. The op is yours: the program applies it where it allows your account and refuses it otherwise, with its reason. An HTTP request the program bound to the egress role answers whole comes back as the answer's `status`, `headers` and `body`: JSON where the body parses as JSON, else text where it is UTF-8, else hex, as `body_as` says. Any other output comes back as hex in `returned`, and `unread` says why it reads as nothing more.";
     const WRITES: bool = true;
     type Args = CallArgs;
 
@@ -110,13 +111,69 @@ impl Tool for Call {
         let interface = schema_of(ctx, &args.program)?;
         let payload =
             codec::encode(&interface.schema, &interface.op, "op", &args.op).map_err(refused)?;
-        Ok(write(args.program, payload))
+        let read: Reading = match answers_http(ctx, &args.program, &payload) {
+            true => response,
+            false => returned,
+        };
+        let writes = vec![Write {
+            target: args.program,
+            payload,
+        }];
+        Ok(Run::Read { writes, read })
     }
+}
 
-    fn render(output: &[u8]) -> Result<Value, Error> {
-        Ok(match output {
-            [] => json!({ "ok": true }),
-            returned => json!({ "ok": true, "returned": abi::hex(returned) }),
-        })
+const UNDESCRIBED: &str =
+    "a program's schema names no type for what its ops return, so this is the output's bytes";
+
+fn answers_http(ctx: &ExecCtx, program: &str, payload: &[u8]) -> bool {
+    let to_egress = ctx
+        .env()
+        .roles
+        .get(abi::role::EGRESS)
+        .is_some_and(|bound| bound == program);
+    to_egress
+        && matches!(
+            abi::decode::<egress::Op>(payload),
+            Ok(egress::Op::Request {
+                request: egress::Request::Http { .. },
+                delivery: egress::Delivery::Whole,
+                ..
+            })
+        )
+}
+
+fn returned(output: &[u8]) -> Result<Value, Error> {
+    Ok(match output {
+        [] => json!({ "ok": true }),
+        returned => json!({ "ok": true, "returned": abi::hex(returned), "unread": UNDESCRIBED }),
+    })
+}
+
+fn response(output: &[u8]) -> Result<Value, Error> {
+    let response = match abi::decode::<http::Response>(output) {
+        Ok(response) => response,
+        Err(fault) => {
+            let unread = format!("the answer is no HTTP response: {}", fault.sentence);
+            return Ok(json!({ "ok": true, "returned": abi::hex(output), "unread": unread }));
+        }
+    };
+    let (body_as, body) = body(response.body);
+    Ok(json!({
+        "ok": true,
+        "status": response.status,
+        "headers": response.headers,
+        "body": body,
+        "body_as": body_as,
+    }))
+}
+
+fn body(bytes: Vec<u8>) -> (&'static str, Value) {
+    if let Ok(value) = serde_json::from_slice(&bytes) {
+        return ("json", value);
+    }
+    match String::from_utf8(bytes) {
+        Ok(text) => ("text", json!(text)),
+        Err(fault) => ("hex", json!(abi::hex(fault.as_bytes()))),
     }
 }

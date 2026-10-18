@@ -528,23 +528,23 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
         call,
         shown: before.as_ref(),
     };
-    match (entry.run)(ctx, &seat, input) {
-        Ok(Run::Done(value)) => Ok((value.to_string(), false)),
-        Ok(Run::Write(writes)) => {
-            mark(ctx, id, call, CallState::Writing)?;
-            Ok(match written(ctx, owner.agent, writes).await {
-                Ok(output) => {
-                    keep_shown(ctx, id, call, entry, &row.input);
-                    match (entry.render)(&output) {
-                        Ok(value) => (value.to_string(), false),
-                        Err(refused) => (refusal(&refused), true),
-                    }
-                }
-                Err(error) => (refusal(&error), true),
-            })
+    let (writes, read) = match (entry.run)(ctx, &seat, input) {
+        Ok(Run::Done(value)) => return Ok((value.to_string(), false)),
+        Ok(Run::Write(writes)) => (writes, entry.render),
+        Ok(Run::Read { writes, read }) => (writes, read),
+        Err(error) => return Ok((refusal(&error), true)),
+    };
+    mark(ctx, id, call, CallState::Writing)?;
+    Ok(match written(ctx, owner.agent, writes).await {
+        Ok(output) => {
+            keep_shown(ctx, id, call, entry, &row.input);
+            match read(&output) {
+                Ok(value) => (value.to_string(), false),
+                Err(refused) => (refusal(&refused), true),
+            }
         }
-        Err(error) => Ok((refusal(&error), true)),
-    }
+        Err(error) => (refusal(&error), true),
+    })
 }
 
 fn keep_shown(ctx: &ExecCtx, id: u64, call: &str, entry: &Entry, input: &str) {

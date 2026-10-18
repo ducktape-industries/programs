@@ -106,8 +106,14 @@ fn the_agents_text_is_put_as_a_part_and_an_egress_request_names_it_as_its_body()
 
     chain.at(7, 0);
     let created = response(201, json!({ "pod": { "name": "duckpond-1" } }));
-    answer(chain, row.id, Answer::Output(created.clone()));
-    let returned = json!({ "ok": true, "returned": abi::hex(&created) });
+    answer(chain, row.id, Answer::Output(created));
+    let returned = json!({
+        "ok": true,
+        "status": 201,
+        "headers": [],
+        "body": { "pod": { "name": "duckpond-1" } },
+        "body_as": "json",
+    });
     assert_eq!(json_of(chain, thread, "c1"), returned);
 }
 

@@ -10,6 +10,7 @@ fn schemed() -> World {
     let codes = [
         (chat::PROGRAM, code_with(&interface::<chat::Chat>())),
         (files::PROGRAM, code_with(&interface::<files::Files>())),
+        (egress::PROGRAM, code_with(&interface::<Egress>())),
         ("valset", module(&[])),
     ];
     listed(&world.chain, &codes);
@@ -157,6 +158,8 @@ fn an_op_is_the_agents_and_the_program_allows_or_refuses_it() {
     let home = json_result(chain, thread, "c_home");
     let snapshot = abi::decode::<BlobId>(&abi::unhex(home["returned"].as_str().unwrap()).unwrap());
     assert_eq!(snapshot.unwrap(), head(chain));
+    let unread = home["unread"].as_str().unwrap();
+    assert!(unread.contains("schema names no type"), "{unread}");
     let root = refusal(chain, thread, "c_root");
     assert!(root.starts_with(code::UNAUTHORIZED), "{root}");
 }
@@ -240,4 +243,113 @@ fn a_call_whose_input_is_not_an_object_of_its_fields_is_refused_before_it_runs()
         "{refused:?}"
     );
     assert!(assigned(chain, RELAY).is_empty());
+}
+
+const PODS: &str = "pods";
+
+fn served(chain: &MockChain) {
+    let register = egress::Op::Register {
+        service: PODS.into(),
+    };
+    let assign = egress::Op::Assign {
+        service: PODS.into(),
+        nodes: vec![NODE.to_vec()],
+    };
+    for op in [register, assign] {
+        chain.submit(signed(ADA), egress::PROGRAM, &op).unwrap();
+    }
+    let serve = egress::Op::Serve {
+        services: vec![SERVICE.into(), RELAY.into(), PODS.into()],
+    };
+    chain
+        .submit(signed(&NODE), egress::PROGRAM, &serve)
+        .unwrap();
+}
+
+fn pods_get(target: &str) -> Value {
+    json!({ "program": "egress", "op": { "Request": {
+        "request": { "Http": {
+            "service": PODS,
+            "head": { "method": "Get", "target": target, "headers": [] },
+            "body": [],
+        } },
+        "delivery": "Whole",
+        "wait": null,
+    } } })
+}
+
+fn pods_answer(chain: &MockChain, target: &str, output: Vec<u8>) {
+    let asked = |row: &RequestRow| match &row.request {
+        Request::Http { head, .. } => head.target == target,
+        Request::Relay { .. } => false,
+    };
+    let rows = assigned(chain, PODS);
+    let row = rows.iter().find(|row| asked(row)).expect("pods is asked");
+    answer(chain, row.id, Answer::Output(output));
+}
+
+fn http_answer(status: u16, content_type: &str, body: &[u8]) -> Vec<u8> {
+    abi::encode(&http::Response {
+        status,
+        headers: vec![("content-type".into(), content_type.into())],
+        body: body.to_vec(),
+    })
+}
+
+#[test]
+fn an_http_answer_egress_delivers_whole_reads_as_its_status_headers_and_body() {
+    let world = schemed();
+    let chain = &world.chain;
+    served(chain);
+    let calls = [
+        ("h_json", "network_call", pods_get("/v1/pods")),
+        ("h_text", "network_call", pods_get("/v1/pods/p/logs")),
+        ("h_bytes", "network_call", pods_get("/v1/pods/p/blob")),
+        ("h_broken", "network_call", pods_get("/v1/usage")),
+    ];
+    let thread = called(&world, &calls);
+    chain.at(5, 0);
+    let pod = br#"{"pod": {"name": "duckpond-1"}}"#;
+    let created = http_answer(201, "application/json", pod);
+    let logs = http_answer(200, "text/plain", b"fetched\nbuilt\n");
+    let bytes = http_answer(200, "application/octet-stream", &[0xff, 0, 0xfe]);
+    pods_answer(chain, "/v1/pods", created);
+    pods_answer(chain, "/v1/pods/p/logs", logs);
+    pods_answer(chain, "/v1/pods/p/blob", bytes);
+    pods_answer(chain, "/v1/usage", b"no response".to_vec());
+
+    assert_eq!(
+        json_result(chain, thread, "h_json"),
+        json!({
+            "ok": true,
+            "status": 201,
+            "headers": [["content-type", "application/json"]],
+            "body": { "pod": { "name": "duckpond-1" } },
+            "body_as": "json",
+        })
+    );
+    assert_eq!(
+        json_result(chain, thread, "h_text"),
+        json!({
+            "ok": true,
+            "status": 200,
+            "headers": [["content-type", "text/plain"]],
+            "body": "fetched\nbuilt\n",
+            "body_as": "text",
+        })
+    );
+    let raw = json_result(chain, thread, "h_bytes");
+    assert_eq!(
+        (&raw["body"], &raw["body_as"]),
+        (&json!("ff00fe"), &json!("hex"))
+    );
+    assert!(raw.get("returned").is_none(), "{raw}");
+    let broken = json_result(chain, thread, "h_broken");
+    assert_eq!(broken["returned"], abi::hex(b"no response"));
+    assert!(broken.get("status").is_none(), "{broken}");
+    let unread = broken["unread"].as_str().unwrap();
+    assert!(
+        unread.starts_with("the answer is no HTTP response"),
+        "{unread}"
+    );
 }

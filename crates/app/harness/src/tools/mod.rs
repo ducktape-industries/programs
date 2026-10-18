@@ -33,9 +33,12 @@ pub(crate) struct Write {
     pub payload: Vec<u8>,
 }
 
+pub(crate) type Reading = fn(&[u8]) -> Result<Value, Error>;
+
 pub(crate) enum Run {
     Done(Value),
     Write(Vec<Write>),
+    Read { writes: Vec<Write>, read: Reading },
 }
 
 pub(crate) fn write(target: impl Into<ProgramId>, payload: Vec<u8>) -> Run {
