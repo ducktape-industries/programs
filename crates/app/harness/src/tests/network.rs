@@ -66,7 +66,7 @@ fn refusal(chain: &MockChain, thread: u64, call: &str) -> String {
     text
 }
 
-fn head(chain: &MockChain) -> BlobId {
+pub(super) fn head(chain: &MockChain) -> BlobId {
     let files::Reply::Head(Some(head)) = chain.query(files::PROGRAM, &files::Query::Head).unwrap()
     else {
         panic!("files has a head")
@@ -277,7 +277,7 @@ fn before_returns(schema: BorshSchemaContainer) -> BorshSchemaContainer {
 }
 
 // files' op, query and reply, with what `RETURNS` says its ops return.
-struct Unsaid;
+pub(super) struct Unsaid;
 
 impl Program for Unsaid {
     const NAME: &'static str = files::PROGRAM;
@@ -304,7 +304,7 @@ impl Program for Misread {
     }
 }
 
-fn notes(chain: &MockChain) -> Value {
+pub(super) fn notes(chain: &MockChain) -> Value {
     let base = json!({ "Sha256": abi::hex(head(chain).digest()) });
     json!({ "program": "files", "op": { "Commit": {
         "base": base,
@@ -438,7 +438,7 @@ fn a_forge_merge_reads_back_as_the_reply_forges_schema_names_for_it() {
 
 const PODS: &str = "pods";
 
-fn served(chain: &MockChain) {
+pub(super) fn served(chain: &MockChain) {
     let register = egress::Op::Register {
         service: PODS.into(),
     };
@@ -457,7 +457,7 @@ fn served(chain: &MockChain) {
         .unwrap();
 }
 
-fn pods_get(target: &str) -> Value {
+pub(super) fn pods_get(target: &str) -> Value {
     json!({ "program": "egress", "op": { "Request": {
         "request": { "Http": {
             "service": PODS,
@@ -469,7 +469,7 @@ fn pods_get(target: &str) -> Value {
     } } })
 }
 
-fn pods_answer(chain: &MockChain, target: &str, output: Vec<u8>) {
+pub(super) fn pods_answer(chain: &MockChain, target: &str, output: Vec<u8>) {
     let asked = |row: &RequestRow| match &row.request {
         Request::Http { head, .. } => head.target == target,
         Request::Relay { .. } => false,
@@ -479,7 +479,7 @@ fn pods_answer(chain: &MockChain, target: &str, output: Vec<u8>) {
     answer(chain, row.id, Answer::Output(output));
 }
 
-fn http_answer(status: u16, content_type: &str, body: &[u8]) -> Vec<u8> {
+pub(super) fn http_answer(status: u16, content_type: &str, body: &[u8]) -> Vec<u8> {
     abi::encode(&http::Response {
         status,
         headers: vec![("content-type".into(), content_type.into())],

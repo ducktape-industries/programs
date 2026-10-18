@@ -10,7 +10,7 @@ use super::{Run, Seat, Tool, cursor_schema, next, object, page, write};
 use crate::bookings::bookings;
 use crate::codec;
 use crate::schema::schema_of;
-use crate::{Booking, Op, PROGRAM};
+use crate::{Booking, Op, PROGRAM, Ran};
 
 #[derive(Deserialize)]
 pub(crate) struct BookArgs {
@@ -23,7 +23,7 @@ pub(crate) struct Book;
 
 impl Tool for Book {
     const NAME: &'static str = "schedule_run";
-    const DESCRIPTION: &'static str = "Book an op to run as your own account at a later block: a program and an op as network_call takes them, and the block's height. As that block ends, harness sends the op as you, and what it did, or why it was refused, arrives in this conversation as a message, so a run booked for a block wakes you then. A refused run is not tried again. Answers the run's entry number, which schedule_list shows and schedule_cancel takes.";
+    const DESCRIPTION: &'static str = "Book an op to run as your own account at a later block: a program and an op as network_call takes them, and the block's height. As that block ends, harness sends the op as you, and what it did, or why it was refused, arrives in this conversation as a message, so a run booked for a block wakes you then. What it did reads as network_call's answer does: an HTTP request the program bound to the egress role answers whole as `status`, `headers` and `body`, any other output in `returned` in the shape network_schema's `returns` gives for the op, else as hex with `unread` saying why. A refused run is not tried again. Answers the run's entry number, which schedule_list shows and schedule_cancel takes.";
     const WRITES: bool = true;
     type Args = BookArgs;
 
@@ -70,11 +70,18 @@ fn op_of(ctx: &ExecCtx, booking: &Booking) -> Value {
     read.unwrap_or_else(|| json!({ "hex": abi::hex(&booking.payload) }))
 }
 
+// a run that applied keeps its answer as JSON text and lists it as that JSON; a refusal, and a
+// run kept before answers were read, list as their text
+fn told(ran: &Ran) -> Value {
+    let answer = (!ran.failed).then(|| serde_json::from_str(&ran.text).ok());
+    answer.flatten().unwrap_or_else(|| json!(ran.text))
+}
+
 fn listed(ctx: &ExecCtx, booking: &Booking) -> Value {
     let ran = booking
         .ran
         .as_ref()
-        .map(|ran| json!({ "height": ran.height, "failed": ran.failed, "text": ran.text }));
+        .map(|ran| json!({ "height": ran.height, "failed": ran.failed, "text": told(ran) }));
     json!({
         "entry": booking.entry,
         "booked": booking.booked,
@@ -87,7 +94,7 @@ fn listed(ctx: &ExecCtx, booking: &Booking) -> Value {
 
 impl Tool for List {
     const NAME: &'static str = "schedule_list";
-    const DESCRIPTION: &'static str = "Your booked runs, in the order you booked them: each one's entry number, the block it was booked at and the block it runs at (`height`), its program and op, and once it ran, what it did (`ran`: its block, whether it was refused, and how it went), or null while it waits.";
+    const DESCRIPTION: &'static str = "Your booked runs, in the order you booked them: each one's entry number, the block it was booked at and the block it runs at (`height`), its program and op, and once it ran, what it did (`ran`: its block, whether it was refused, and `text`: what the op answered, read as network_call reads it, or why it was refused), or null while it waits.";
     type Args = ListArgs;
 
     fn schema() -> Value {

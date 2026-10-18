@@ -1,15 +1,20 @@
 use ::program::schema::interface;
 use programs::Programs;
 
+use super::network::{Unsaid, head, http_answer, notes, pods_answer, pods_get, served};
 use super::*;
 use crate::schema::tests::{code_with, listed, module};
 
 fn schemed() -> World {
+    schemed_with(code_with(&interface::<files::Files>()))
+}
+
+fn schemed_with(files_code: Vec<u8>) -> World {
     let mut world = world();
     world.chain.seat::<Programs>(programs::PROGRAM);
     let codes = [
         (chat::PROGRAM, code_with(&interface::<chat::Chat>())),
-        (files::PROGRAM, code_with(&interface::<files::Files>())),
+        (files::PROGRAM, files_code),
         (PROGRAM, code_with(&interface::<Harness>())),
         (
             scheduler::PROGRAM,
@@ -148,6 +153,91 @@ fn a_booked_run_posts_as_the_agent_at_its_block_and_wakes_its_conversation() {
         assigned(chain, SERVICE).len(),
         1,
         "the report asks the model"
+    );
+}
+
+// a booked run of `run` (a program and an op) at `height`
+fn at(height: u64, mut run: Value) -> Value {
+    run["height"] = json!(height);
+    run
+}
+
+// what the one run that ran answered, as the report in `thread` tells it and the booking keeps it
+fn answer_of(chain: &MockChain, thread: u64, program: &str, entry: u64) -> Value {
+    let ran = booking(chain, entry).unwrap().ran.expect("the run ran");
+    assert!(!ran.failed, "{}", ran.text);
+    let [report] = reports(chain, thread).try_into().expect("one report");
+    let told = format!("ran as you: {program} answered {}", ran.text);
+    assert!(report.ends_with(&told), "{report}");
+    serde_json::from_str(&ran.text).unwrap()
+}
+
+// books a files commit for block 10 in a new conversation and lets it run
+fn committed_at_10(world: &World) -> (u64, u64) {
+    let chain = &world.chain;
+    let thread = world.opened("m1", "commit notes at block 10", Some(WINDOW));
+    turn(world, 3, &[("b1", "schedule_run", at(10, notes(chain)))]);
+    let entry = entry_of(chain, thread, "b1");
+    said(chain, 5, "Booked.");
+    chain.at(11, 0);
+    (thread, entry)
+}
+
+#[test]
+fn a_booked_op_answers_in_the_type_its_programs_schema_names_and_lists_so() {
+    let world = schemed();
+    let chain = &world.chain;
+    let (thread, entry) = committed_at_10(&world);
+    let answer = answer_of(chain, thread, "files", entry);
+    let kept = json!({ "Sha256": abi::hex(head(chain).digest()) });
+    assert_eq!(answer, json!({ "ok": true, "returned": kept }));
+
+    turn(&world, 13, &[("l1", "schedule_list", json!({}))]);
+    let listed = answered(chain, thread, "l1");
+    let ran = &listed["runs"][0]["ran"];
+    assert_eq!((&ran["failed"], &ran["text"]), (&json!(false), &answer));
+}
+
+#[test]
+fn a_booked_op_its_schema_names_no_return_for_answers_hex_and_says_why() {
+    let world = schemed_with(code_with(&interface::<Unsaid>()));
+    let chain = &world.chain;
+    let (thread, entry) = committed_at_10(&world);
+    let answer = answer_of(chain, thread, "files", entry);
+    let bytes = abi::unhex(answer["returned"].as_str().unwrap()).unwrap();
+    assert_eq!(abi::decode::<BlobId>(&bytes).unwrap(), head(chain));
+    let unread = answer["unread"].as_str().unwrap();
+    let why = "names no type for what its op Commit returns";
+    assert!(unread.contains(why), "{unread}");
+}
+
+#[test]
+fn a_booked_http_request_answers_its_status_headers_and_body() {
+    let world = schemed();
+    let chain = &world.chain;
+    served(chain);
+    let thread = world.opened("m1", "check the pod at block 10", Some(WINDOW));
+    let check = at(10, pods_get("/v1/pods/p"));
+    turn(&world, 3, &[("b1", "schedule_run", check)]);
+    let entry = entry_of(chain, thread, "b1");
+    said(chain, 5, "Booked.");
+    chain.at(11, 0);
+    let waiting = booking(chain, entry).unwrap();
+    assert_eq!(waiting.ran, None, "it waits for its answer");
+
+    chain.at(12, 0);
+    let pod = br#"{"pod": {"name": "p"}}"#;
+    let ok = http_answer(200, "application/json", pod);
+    pods_answer(chain, "/v1/pods/p", ok);
+    assert_eq!(
+        answer_of(chain, thread, "egress", entry),
+        json!({
+            "ok": true,
+            "status": 200,
+            "headers": [["content-type", "application/json"]],
+            "body": { "pod": { "name": "p" } },
+            "body_as": "json",
+        })
     );
 }
 

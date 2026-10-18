@@ -6,7 +6,7 @@ mod chat;
 mod edits;
 mod files;
 mod forge;
-mod interface;
+pub(crate) mod interface;
 mod network;
 mod pods;
 pub(crate) mod prefix;

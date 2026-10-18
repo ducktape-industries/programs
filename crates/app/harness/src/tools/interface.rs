@@ -1,11 +1,12 @@
 //! Tools over any program of the network by the schema its code carries: the shapes of its ops,
 //! queries and replies, a query asked and its reply read back, and an op sent as the agent.
-use ::program::{Error, ExecCtx, code, invalid};
+use ::program::{Error, ExecCtx, QueryCtx, code, invalid};
 use abi::role::egress::{self, http};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{Reading, Run, Seat, Tool, Write, object, unquoted};
+use crate::calls::refusal;
 use crate::codec::{self, Fault};
 use crate::schema::{Interface, schema_of};
 
@@ -128,10 +129,7 @@ impl Tool for Call {
         let op = spoken(&args.op);
         let payload =
             codec::encode(&interface.schema, &interface.op, "op", &op).map_err(refused)?;
-        let read: Reading = match answers_http(ctx, &args.program, &payload) {
-            true => Box::new(response),
-            false => returned(&args.program, interface, &payload),
-        };
+        let read = reading(ctx, &args.program, interface, &payload);
         let writes = vec![Write {
             target: args.program,
             payload,
@@ -140,7 +138,33 @@ impl Tool for Call {
     }
 }
 
-fn answers_http(ctx: &ExecCtx, program: &str, payload: &[u8]) -> bool {
+// How the output of an op sent to `program` reads: an HTTP answer egress delivers whole as its
+// status, headers and body, any other output as `returned` says.
+pub(crate) fn reading(
+    ctx: &QueryCtx,
+    program: &str,
+    interface: Interface,
+    payload: &[u8],
+) -> Reading {
+    match answers_http(ctx, program, payload) {
+        true => Box::new(response),
+        false => returned(program, interface, payload),
+    }
+}
+
+// What an op sent outside a tool call (a booked run) answered, read as network_call reads it,
+// else its bytes as hex and why.
+pub(crate) fn answered(ctx: &QueryCtx, program: &str, payload: &[u8], output: &[u8]) -> Value {
+    let read = schema_of(ctx, program)
+        .and_then(|interface| reading(ctx, program, interface, payload)(output));
+    match read {
+        Ok(value) => value,
+        Err(_) if output.is_empty() => json!({ "ok": true }),
+        Err(error) => unread(output, &refusal(&error)),
+    }
+}
+
+fn answers_http(ctx: &QueryCtx, program: &str, payload: &[u8]) -> bool {
     let to_egress = ctx
         .env()
         .roles

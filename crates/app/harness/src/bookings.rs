@@ -12,6 +12,7 @@ use store::{PageRequest, PageResponse};
 use crate::calls::{refusal, relayable};
 use crate::conversations::current;
 use crate::state::{BOOKED, BOOKINGS, THREADS};
+use crate::tools::interface::answered;
 use crate::turns::{converse, say};
 use crate::{Body, Booking, Op, PROGRAM, Ran, ThreadRow};
 
@@ -136,7 +137,7 @@ pub(crate) async fn run_booked(ctx: &Ctx) -> Result<(), Error> {
         Ok(output) => Ran {
             height,
             failed: false,
-            text: applied(&output),
+            text: answered(ctx, &booking.target, &booking.payload, &output).to_string(),
         },
         Err(error) => Ran {
             height,
@@ -151,13 +152,6 @@ pub(crate) async fn run_booked(ctx: &Ctx) -> Result<(), Error> {
     tell(ctx, booking.agent, booking.thread, text).await
 }
 
-fn applied(output: &[u8]) -> String {
-    match output {
-        [] => "applied it".to_owned(),
-        returned => format!("applied it, returning {}", abi::hex(returned)),
-    }
-}
-
 fn report(booking: &Booking, ran: &Ran) -> String {
     let Booking {
         entry,
@@ -168,7 +162,7 @@ fn report(booking: &Booking, ran: &Ran) -> String {
     } = booking;
     match ran.failed {
         false => format!(
-            "Your run {entry}, booked at block {booked} for block {height}, ran as you: {target} {}.",
+            "Your run {entry}, booked at block {booked} for block {height}, ran as you: {target} answered {}",
             ran.text
         ),
         true => format!(
