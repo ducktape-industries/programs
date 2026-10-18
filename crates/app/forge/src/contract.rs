@@ -160,6 +160,13 @@ pub enum Op {
     Watch {
         deliver: Vec<u8>,
     },
+    // Archives the channels of `repo`'s merged and closed changes numbered above `after`,
+    // `limit` numbers of them, that chat still shows unarchived; open to anyone.
+    ArchiveEnded {
+        repo: String,
+        after: Option<u64>,
+        limit: u64,
+    },
 }
 
 impl Op {
@@ -180,7 +187,8 @@ impl Op {
             | Op::Rebase { repo, .. }
             | Op::ChangeRepoint { repo, .. }
             | Op::DeleteBranch { repo, .. }
-            | Op::Protect { repo, .. } => Some(repo),
+            | Op::Protect { repo, .. }
+            | Op::ArchiveEnded { repo, .. } => Some(repo),
             Op::Watch { .. } => None,
         }
     }
@@ -687,6 +695,12 @@ pub enum OpReply {
         height: u64,
         n: u64,
         oid: String,
+    },
+    // What `ArchiveEnded` archived, and the number to pass as `after` when more follow.
+    ArchivedEnded {
+        height: u64,
+        archived: Vec<u64>,
+        next: Option<u64>,
     },
 }
 

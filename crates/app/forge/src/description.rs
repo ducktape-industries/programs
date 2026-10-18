@@ -181,6 +181,20 @@ pub fn describe(op: &Op) -> Description {
             vec![field("branch", text(branch))],
         ),
         Op::Watch { deliver } => return watching(deliver),
+        Op::ArchiveEnded { repo, after, limit } => {
+            let after = match after {
+                Some(n) => format!("#{n}"),
+                None => "the first change".to_owned(),
+            };
+            (
+                "Archive ended changes' chats",
+                repo,
+                vec![
+                    field("after", Value::Text(after)),
+                    field("changes", Value::count(*limit)),
+                ],
+            )
+        }
         Op::ReviewSubmit { repo, n, review } => (
             "Review",
             repo,

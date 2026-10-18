@@ -50,8 +50,8 @@ pub use program::Forge;
 /// of `program.changes` plays back in a test to say which a block touched.
 pub mod tables {
     pub use crate::state::{
-        ACTIVITY, AUTHORED, BOUNDS, CHANGES, INVOLVED, MESSAGES, NUMBERS, PROTECTED, REFS, REPOS,
-        REVIEWS, WATCHERS, WRITES,
+        ACTIVITY, ARCHIVING, AUTHORED, BOUNDS, CHANGES, INVOLVED, LOGGING, MESSAGES, NUMBERS,
+        PROTECTED, REFS, REPOS, REVIEWS, WATCHERS, WRITES,
     };
 }
 
@@ -81,6 +81,7 @@ fn op_variants_only_append() {
             "DeleteBranch",
             "Protect",
             "Watch",
+            "ArchiveEnded",
         ]
     );
 }

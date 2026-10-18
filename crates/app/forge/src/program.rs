@@ -7,8 +7,8 @@ use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::change_queries::{change, changes, judgment};
 use crate::changes::{
-    Draft, Edit, MergeRequest, RebaseRequest, SquashRequest, close, edit, merge_heads, open,
-    rebase, repoint, squash, submit_review,
+    Draft, Edit, MergeRequest, RebaseRequest, SquashRequest, archive_ended, close, edit,
+    merge_heads, open, rebase, repoint, squash, submit_review,
 };
 use crate::contract::*;
 use crate::ops::{
@@ -37,15 +37,17 @@ impl Program for Forge {
         returns::<OpReply>("SquashMerge"),
         returns::<OpReply>("Rebase"),
         returns::<OpReply>("ChangeRepoint"),
+        returns::<OpReply>("ArchiveEnded"),
     ];
 
     fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
         init(ctx, params)
     }
 
-    // A watcher's refusal of what it heard is absorbed: it never fails forge's write.
-    fn reply(_ctx: &ExecCtx, _id: &MessageId, _outcome: &Outcome) -> Result<(), Error> {
-        Ok(())
+    // Every answer forge asks for is absorbed: neither a watcher's refusal of what it heard nor
+    // chat's refusal to archive a change's channel (said in that channel) fails forge's write.
+    fn reply(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), Error> {
+        crate::discussion::replied(ctx, id, outcome)
     }
 
     /// Runs one op as the account the host resolved
@@ -165,6 +167,9 @@ impl Program for Forge {
                 branch,
                 protected,
             } => protect(ctx, &repo, &branch, protected).map(|()| None),
+            Op::ArchiveEnded { repo, after, limit } => {
+                archive_ended(ctx, &repo, after, limit).map(Some)
+            }
         }?;
         if let Some(reply) = reply {
             ctx.set_return_data(abi::encode(&reply));

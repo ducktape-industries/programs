@@ -44,6 +44,12 @@ pub const MESSAGES: Item<u64> = Item::new("system-message-seq");
 pub const PROTECTED: Set<(String, Vec<u8>)> = Set::new("b/");
 // The programs that watch forge, each with the prefix it hears events under.
 pub const WATCHERS: Map<ProgramId, Vec<u8>> = Map::new("w/");
+// The archives forge asked chat for, by the message's seq, each naming its change. chat
+// answers in the frame that asked, which takes the row away again.
+pub const ARCHIVING: Map<u64, (String, u64)> = Map::new("x/");
+// The lines forge posted to say chat refused an archive, by the message's seq, until chat
+// answers them (in the same frame).
+pub const LOGGING: Set<u64> = Set::new("l/");
 
 /// Stored state that is not what forge wrote: an operator's problem.
 pub(crate) fn storage(sentence: impl Into<String>) -> Error {

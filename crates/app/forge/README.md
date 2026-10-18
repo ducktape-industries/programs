@@ -28,6 +28,9 @@ only.
   closing, merging, and submitting a review. Chat owns all conversation replies.
   The kernel runs each emission once the handler returns Ok, in the same frame,
   so the record and its channel land in one block or not at all.
+- A change that ends (`Merge` or `SquashMerge` naming it, `ChangeClose`) has its
+  channel archived: forge sends chat `SetChannelArchived` as itself, and a refusal
+  never fails the op (see "Archiving a change's channel").
 - A review is one immutable operation: verdict, body, pinned head and base, and
   its line comments. An anchor is `(path, side, line)`;
   `Old` addresses `base_oid`, `New` addresses `commit_oid`. Both are retained.
@@ -162,7 +165,7 @@ requested changes never block that CAS.
 Authors are always the account the frame acts as (`ctx.sender_account()`), never
 the payload: a signed frame's key's account, a program's own, or the agent a
 program sends the op for (harness, for the agents it runs); the chain itself and a key
-that holds no account are refused. Any account may open/review. The author edits title/body/review requests,
+that holds no account are refused. Any account may open/review and run `ArchiveEnded`. The author edits title/body/review requests,
 or whoever the change's list at `forge::change_key(repo, n)` in the access
 program allows, and so re-points it (`ChangeRepoint`); a `Rebase` needs the
 change's key and the repository's; the author, or a repository writer, closes; repository writers merge.
@@ -192,6 +195,7 @@ Closing is terminal; there is no reopen operation.
 | `ChangeRepoint { repo: r, n: 1, from: feature }` | the change's source becomes `from`; `OpReply::Change` |
 | `DeleteBranch { repo: r, branch: b"refs/heads/old".to_vec(), expected: a }` | deletes an unprotected branch at `a` that no open change names; empty output |
 | `Protect { repo: r, branch: b"refs/heads/dev".to_vec(), protected: true }` | adds (`false`: removes) a protected branch; empty output |
+| `ArchiveEnded { repo: r, after: None, limit: 20 }` | archives the channels of ended changes numbered above `after`, `limit` numbers of them; `OpReply::ArchivedEnded { height, archived, next }` |
 
 A push's objects never ride inside its frame. The client puts git's pack as a
 blob of kind `pack` (`forge::PACK_KIND`) with `ducktape blob put FILE --kind
@@ -256,6 +260,27 @@ branch and no `DeleteBranch` deletes one. `DeleteBranch` deletes a branch still 
 its source, which the refusal lists. It ignores `allow_delete`, which governs only
 the deletions a git push asks for. The branch's objects stay, so it can be pushed
 again.
+
+### Archiving a change's channel
+
+When a change merges (`Merge` or `SquashMerge` with `change: Some(n)`) or closes,
+forge sends chat `SetChannelArchived { channel_id, archived: true }` for its
+`forge:<repo>:<n>` channel, as forge's own account, which owns the channel and so
+is the one account chat lets archive it. It asks for chat's answer
+(`Reply::Wanted`): a refusal is absorbed, so the merge or close still lands, and
+forge posts a `forge` system line `archive refused: <reason>: <sentence>` into the
+channel; that line's own refusal (a channel that is gone) is absorbed too. Closing
+is terminal, so nothing un-archives a channel.
+
+`ArchiveEnded { repo, after, limit }` clears the channels changes left open before
+forge archived them. Anyone may run it. It looks at the change numbers above
+`after` (`None`: from the first), `limit` of them (`1..=Bounds.page_size`, else
+`invalid`), and archives the channel of each merged or closed one that chat holds
+and shows unarchived; open changes, archived channels and missing ones are left.
+`archived` lists the numbers it archived and `next` is the `after` of the next
+run, `None` once it reached the repository's last number. It takes its own
+`after`, not a listing cursor, because a cursor is pinned to forge's write count
+and the op is a write. A second run archives nothing.
 
 Review OIDs and anchors receive syntactic validation, not object reads in
 consensus. Paths must be relative, lines positive, bodies nonblank, and anchors
