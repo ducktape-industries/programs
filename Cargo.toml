@@ -110,12 +110,12 @@ files = { path = "crates/app/files" }
 
 # ---- the blobs contract the blobs program records and the programs that read
 # held blobs ask it by; the host the founding suite runs the boot set on and
-# the key schemes it signs with (dev-dependencies only); the probe fixture it seats is a prebuilt wasm binary, `make
-# probe-fixture`, not a Cargo dependency (its `Step` script type is mirrored
-# in the `programs` crate's test, next to the binary it scripts)
-host = { git = "https://github.com/ducktape-industries/ducktape", rev = "a99a325e6c494a5a6833d505743674c6418844ef" }
-blob = { git = "https://github.com/ducktape-industries/ducktape", rev = "a99a325e6c494a5a6833d505743674c6418844ef" }
-keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "a99a325e6c494a5a6833d505743674c6418844ef" }
+# the key schemes it signs with, and the probe fixture it seats
+# (dev-dependencies only)
+host = { git = "https://github.com/ducktape-industries/ducktape", rev = "7f72b1a49d4fa3078fab42de42b71d8d73402a42" }
+blob = { git = "https://github.com/ducktape-industries/ducktape", rev = "7f72b1a49d4fa3078fab42de42b71d8d73402a42" }
+keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "7f72b1a49d4fa3078fab42de42b71d8d73402a42" }
+fixture-wasm = { git = "https://github.com/ducktape-industries/ducktape", rev = "7f72b1a49d4fa3078fab42de42b71d8d73402a42" }
 commonware-cryptography = "2026.9.0"
 commonware-runtime = "2026.9.0"
 

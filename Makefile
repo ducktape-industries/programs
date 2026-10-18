@@ -6,12 +6,6 @@ WASM_OPT ?= wasm-opt
 # What a program links: abi, program and store build for wasm32 with nothing else.
 PROGRAM_LINKABLE := abi program store
 
-# The ducktape checkout the probe fixture the founding suite seats is copied
-# from (crates/kernel/fixtures, `make kernel-fixtures` there). The probe
-# links the kernel's own `program` to build for wasm32, which this workspace
-# never does; only its built bytes come over, as `probe-fixture` below.
-DUCKTAPE ?= ../core
-
 # Every program, system and app: root members whose program ABI (the SDK
 # glue, the `alloc`/`call` exports, the `ducktape.*` imports) sits behind their
 # `program` feature. Their views link the same crates with the feature off
@@ -95,7 +89,7 @@ program_build = $(WASM_BUILD) --target-dir $(call PROGRAM_TARGET,$1) -p $1 --fea
 export CARGO BUILD_TARGET WASM_PROFILE WASM_OUT WASM_BUILD WASM_OPT
 
 .PHONY: dev wasm-why new-program new-view scaffold-check
-.PHONY: program-wasm-check wasm-programs probe-fixture wasm-views wasm-notifiers view-wasm-check test
+.PHONY: program-wasm-check wasm-programs wasm-views wasm-notifiers view-wasm-check test
 
 # `make dev P=forge` / `V=forge-view` narrow the loop to one artifact.
 DEV_PROGRAMS = $(if $(or $P,$V),$P,$(PROGRAMS))
@@ -255,13 +249,6 @@ wasm-reproducible:
 	@for a in $(ARTIFACTS); do f=$(WASM_OUT)/$$a; \
 	  if strings $$f | grep -qE "$(CURDIR)|$(HOME)|/rustc/lib/"; then echo "$$f embeds a path of this machine"; strings $$f | grep -E "$(CURDIR)|$(HOME)|/rustc/lib/" | head -3; exit 1; fi; \
 	done; echo "no program or view embeds a path of this checkout, home or toolchain"
-
-## refreshes the probe fixture the founding suite seats as the authority,
-## from the ducktape checkout at $(DUCKTAPE). Its script type, `Step`, is
-## mirrored by hand next to the binary in system.rs: check it against
-## $(DUCKTAPE)/crates/kernel/fixtures/probe/src/lib.rs too.
-probe-fixture:
-	cp $(DUCKTAPE)/crates/kernel/fixtures/wasm/fixture_probe.wasm crates/system/programs/tests/
 
 ## builds every view for wasm32 under $(WASM_OUT)/, optimized (the bytes
 ## before wasm-opt stay beside it as <name>.wasm.unoptimized; a fast build
