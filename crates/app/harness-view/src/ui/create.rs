@@ -1,5 +1,5 @@
 //! The create form: the ops a new agent takes, each with how far it got, the configuration
-//! file it writes (where, the model from harness's records, max output, wait, thinking, the
+//! file it writes (where, the model from harness's records, thinking, max output, wait, the
 //! system prompt) and who it answers. Editing is the same form, its fields filled from the agent's
 //! file, saved as a new version of it.
 use view::design::Ladder;
@@ -184,6 +184,21 @@ fn fields(
         theme,
     ))
     .child(models(view, cx, theme, ladder))
+    .child(labelled(
+        "Thinking",
+        "How hard the model thinks before it answers.",
+        div().flex().child(thinking_picker(
+            "create-thinking",
+            draft.thinking,
+            ladder,
+            theme,
+            cx.processor(|view: &mut Agents, thinking: Option<Thinking>, _, cx| {
+                view.draft.thinking = thinking;
+                cx.notify();
+            }),
+        )),
+        theme,
+    ))
     .child(
         div()
             .flex()
@@ -213,21 +228,6 @@ fn fields(
                 .w(px(200.)),
             ),
     )
-    .child(labelled(
-        "Thinking",
-        "How hard the model thinks before it answers.",
-        div().flex().child(thinking_picker(
-            "create-thinking",
-            draft.thinking,
-            ladder,
-            theme,
-            cx.processor(|view: &mut Agents, thinking: Option<Thinking>, _, cx| {
-                view.draft.thinking = thinking;
-                cx.notify();
-            }),
-        )),
-        theme,
-    ))
     .child(labelled(
         "System prompt",
         "Each paragraph is its own system block; harness adds its ducktape manual after them.",
