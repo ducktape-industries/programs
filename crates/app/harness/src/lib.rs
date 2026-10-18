@@ -15,6 +15,7 @@ mod gate;
 mod models;
 mod program;
 mod queries;
+mod resume;
 mod schema;
 mod state;
 mod streams;
@@ -80,6 +81,12 @@ pub enum Op {
         entry: u64,
     },
     RunBooked,
+    Resume {
+        thread: u64,
+    },
+    Report {
+        manager: AccountNumber,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -499,6 +506,15 @@ pub struct ToolInfo {
     pub writes: bool,
 }
 
+// how much of a model service's usage window the last answer said is spent, and when the window
+// resets (seconds since the epoch), as its headers put them
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct UsageWindow {
+    pub utilization: String,
+    pub reset: u64,
+    pub height: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Booking {
     pub entry: u64,
@@ -592,6 +608,9 @@ pub enum Query {
     #[ask(Reply::Booking(Option<Booking>))]
     #[reads(state::BOOKINGS)]
     Booking { entry: u64 },
+    #[ask(Reply::UsageWindow(Option<UsageWindow>))]
+    #[reads(state::USAGE)]
+    UsageWindow { service: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -612,6 +631,7 @@ pub enum Reply {
     Call(Option<CallRow>),
     Bookings(PageResponse<Booking>),
     Booking(Option<Booking>),
+    UsageWindow(Option<UsageWindow>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -684,6 +704,14 @@ pub fn describe(op: &Op) -> describe::Description {
             vec![field("entry", Value::count(*entry))],
         ),
         Op::RunBooked => ("Run a booked run".to_owned(), Vec::new()),
+        Op::Resume { thread } => (
+            format!("Resume thread {thread}'s turn if a restart or an update cut it off"),
+            vec![field("thread", Value::count(*thread))],
+        ),
+        Op::Report { manager } => (
+            format!("Tell account {manager} which turns harness picked up"),
+            vec![field("manager", Value::count(*manager))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -706,6 +734,8 @@ fn op_variants_only_append() {
             "Book",
             "Unbook",
             "RunBooked",
+            "Resume",
+            "Report",
         ]
     );
 }
@@ -733,7 +763,8 @@ fn query_variants_only_append() {
             "FramesFrom",
             "Call",
             "Bookings",
-            "Booking"
+            "Booking",
+            "UsageWindow"
         ]
     );
 }

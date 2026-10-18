@@ -459,6 +459,7 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             ),
             harness::Query::Bookings { .. } => harness::Reply::Bookings(page(Vec::new())),
             harness::Query::Booking { .. } => harness::Reply::Booking(None),
+            harness::Query::UsageWindow { .. } => harness::Reply::UsageWindow(None),
             harness::Query::Tools => harness::Reply::Tools(vec![
                 ToolInfo {
                     name: "forge_log".into(),

@@ -9,7 +9,7 @@ use crate::bookings::{book, run_booked, unbook};
 use crate::conversations::{fork_thread, new_thread, open_thread};
 use crate::models::{remove_model, set_model};
 use crate::streams::streamed;
-use crate::{Op, PROGRAM, Query, Reply, attributed_as, bookings, queries, tallies, tools};
+use crate::{Op, PROGRAM, Query, Reply, attributed_as, bookings, queries, resume, tallies, tools};
 
 pub struct Harness;
 
@@ -66,6 +66,9 @@ impl Program for Harness {
                 Ok(Reply::Bookings(bookings::bookings(ctx, agent, &page)?))
             }
             Query::Booking { entry } => Ok(Reply::Booking(bookings::booking(ctx, entry)?)),
+            Query::UsageWindow { service } => {
+                Ok(Reply::UsageWindow(crate::state::USAGE.get(ctx, &service)?))
+            }
         }
     }
 }
@@ -94,6 +97,8 @@ impl Awaiting for Harness {
             } => book(&ctx, height, target, payload, thread).await,
             Op::Unbook { entry } => unbook(&ctx, entry).await,
             Op::RunBooked => run_booked(&ctx).await,
+            Op::Resume { thread } => resume::resume(ctx, thread).await,
+            Op::Report { manager } => resume::report(ctx, manager).await,
         }
     }
 }

@@ -11,6 +11,7 @@ mod forge_commit;
 mod models;
 mod network;
 mod reads;
+mod resume;
 mod schedule;
 mod streams;
 mod thinking;
@@ -486,7 +487,13 @@ fn a_direct_message_reaches_the_agent_and_only_those_it_answers_are_heard() {
         "b1",
         &format!("<@{}> do my bidding", world.agent),
     );
-    assert!(world.threads().is_empty(), "Scout does not answer Bo");
+    let [dropped]: [ThreadRow; 1] = world.threads().try_into().unwrap();
+    let [told]: [String; 1] = notices(chain, dropped.id).try_into().unwrap();
+    assert!(
+        told.starts_with("dropped a mention"),
+        "Scout does not answer Bo: {told}"
+    );
+    assert!(assigned(chain, SERVICE).is_empty(), "a notice asks nothing");
 
     let open = chat::Op::CreateDmChannel {
         counterpart: world.agent,
@@ -496,7 +503,11 @@ fn a_direct_message_reaches_the_agent_and_only_those_it_answers_are_heard() {
     let room = chat::dm_channel_id(world.ada, world.agent);
     world.post(ADA, &room, "d1", &format!("a word, <@{}>", world.agent));
     let [thread] = world.threads().try_into().unwrap();
-    assert_eq!(thread.place, format!("chat/{room}"));
+    assert_eq!(
+        (thread.id, thread.place.as_str()),
+        (dropped.id, "chat/general"),
+        "the one conversation opened where Bo's mention was dropped"
+    );
     let posts: Vec<String> = frames(chain, thread.id)
         .into_iter()
         .filter_map(|body| match body {
@@ -627,7 +638,9 @@ fn an_agent_that_answers_a_program_hears_what_that_program_posts_as_itself() {
     chain
         .submit(by_egress.clone(), chat::PROGRAM, &post("e1"))
         .unwrap();
-    assert!(world.threads().is_empty(), "Scout answers its manager only");
+    let [row]: [ThreadRow; 1] = world.threads().try_into().unwrap();
+    let told = notices(chain, row.id);
+    assert_eq!(told.len(), 1, "Scout answers its manager only");
     set_list(
         chain,
         ADA,
@@ -636,9 +649,15 @@ fn an_agent_that_answers_a_program_hears_what_that_program_posts_as_itself() {
         ::program::Ownership::Listed(vec![::program::Party::Program(egress::PROGRAM.into())]),
     );
     world.post(BO, "general", "b1", &format!("<@{}> me too?", world.agent));
-    assert!(world.threads().is_empty(), "a listed program is not Bo");
+    let told = notices(chain, row.id);
+    assert_eq!(told.len(), 2, "a listed program is not Bo");
     chain.submit(by_egress, chat::PROGRAM, &post("e2")).unwrap();
     assert_eq!(world.threads().len(), 1);
+    let heard = frames(chain, row.id)
+        .into_iter()
+        .filter(|body| matches!(body, Body::Post { .. }))
+        .count();
+    assert_eq!(heard, 1);
 }
 
 #[test]
@@ -1038,7 +1057,7 @@ fn a_failed_model_call_is_noticed_once_and_the_next_input_asks_again() {
     answer(chain, request.id, Answer::Output(response(529, overloaded)));
     assert!(
         assigned(chain, SERVICE).is_empty(),
-        "a failed call is not repeated"
+        "a failed call is asked again from the next block on"
     );
     let told = notices(chain, thread);
     assert_eq!(told.len(), 1);
@@ -1070,7 +1089,7 @@ fn a_model_call_waits_the_blocks_its_configuration_names_then_ends_with_the_expi
     chain.at(request.made + WAIT + 1, 0);
     assert!(
         assigned(chain, SERVICE).is_empty(),
-        "an expired call is not repeated"
+        "an expired call is asked again from the next block on"
     );
     let told = notices(chain, thread);
     let expired = format!("request {} expired after {WAIT} blocks", request.id);

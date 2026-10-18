@@ -13,7 +13,10 @@ use crate::agents::{Agent, configured, hear_again, manual, running, thread};
 use crate::calls::{Placed, place, refusal, run_call, take_back_showing};
 use crate::conversations::{binding, retire};
 use crate::models::learned;
-use crate::state::{FRAMES, HELD, LIVE, Live, PARTIALS, SEALED, SHOWN, THREADS, WITHHELD};
+use crate::resume::{self, Failure};
+use crate::state::{
+    FLIGHTS, FRAMES, HELD, LIVE, Live, PARTIALS, RETRIES, SEALED, SHOWN, THREADS, WITHHELD,
+};
 use crate::tallies;
 use crate::wire::{self, Answered, Header, Summarized, Summary};
 use crate::{
@@ -72,13 +75,15 @@ pub(crate) fn settle(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error>
     }
     thread.held = 0;
     thread.asking = Asking::Idle;
+    FLIGHTS.remove(ctx, &thread.id);
     Ok(())
 }
 
-fn give_up(ctx: &ExecCtx, thread: &mut ThreadRow, text: String) {
+pub(crate) fn give_up(ctx: &ExecCtx, thread: &mut ThreadRow, text: String) {
     append(ctx, thread, Body::Notice { text });
     thread.seen = thread.seen.max(thread.last_input);
     thread.last_stop = None;
+    RETRIES.remove(ctx, &thread.id);
 }
 
 pub(crate) fn bound(ctx: &QueryCtx) -> Result<ProgramId, Error> {
@@ -121,16 +126,18 @@ async fn call_model(
     head: http::Head,
     parts: Vec<BlobId>,
     delivery: egress::Delivery,
-) -> Result<http::Response, String> {
+) -> Result<http::Response, Failure> {
     let request_ = egress::Request::Http {
         service: asked.service.clone(),
         head,
         body: parts,
     };
     let answer = request(ctx, request_, delivery, asked.wait).await;
-    let bytes =
-        answer.map_err(|error| format!("the model was not reached: {}", refusal(&error)))?;
-    abi::decode(&bytes).map_err(|_| "the egress answer is not an HTTP response".to_owned())
+    let bytes = answer.map_err(|error| Failure::unreached(&error))?;
+    let response: http::Response = abi::decode(&bytes)
+        .map_err(|_| Failure::last("the egress answer is not an HTTP response"))?;
+    resume::window_seen(ctx, &asked.service, &response);
+    Ok(response)
 }
 
 fn put_part(ctx: &ExecCtx, text: String) -> Result<BlobId, Error> {
@@ -346,10 +353,26 @@ enum Step {
         summarized: bool,
         parts: Vec<BlobId>,
     },
+    Again(Failure),
+}
+
+impl Step {
+    fn asked(&self) -> Option<&Asked> {
+        match self {
+            Step::Learn { asked, .. } | Step::Compact { asked, .. } | Step::Ask { asked, .. } => {
+                Some(asked)
+            }
+            Step::Again(_) => None,
+        }
+    }
 }
 
 pub(crate) async fn converse(ctx: &Ctx, id: u64) {
-    if let Err(error) = drive(ctx, id).await {
+    let driven = match resume::recover(ctx, id).await {
+        Ok(()) => drive(ctx, id).await,
+        Err(error) => Err(error),
+    };
+    if let Err(error) = driven {
         stall(ctx, id, &error);
     }
     if let Err(error) = retire(ctx, id) {
@@ -359,6 +382,9 @@ pub(crate) async fn converse(ctx: &Ctx, id: u64) {
 
 async fn drive(ctx: &Ctx, id: u64) -> Result<(), Error> {
     while let Some(step) = claim(ctx, id)? {
+        if let Some(asked) = step.asked() {
+            resume::watch(ctx, id, asked.wait, Some(asked.config)).await;
+        }
         match step {
             Step::Learn { asked, model } => learn(ctx, id, asked, model).await?,
             Step::Compact {
@@ -372,6 +398,7 @@ async fn drive(ctx: &Ctx, id: u64) -> Result<(), Error> {
                 summarized,
                 parts,
             } => ask(ctx, id, asked, upto, summarized, parts).await?,
+            Step::Again(failure) => resume::again(ctx, id, failure).await?,
         }
     }
     Ok(())
@@ -384,7 +411,7 @@ fn may_ask(thread: &ThreadRow) -> bool {
 
 fn claim(ctx: &ExecCtx, id: u64) -> Result<Option<Step>, Error> {
     let mut thread = thread(ctx, id)?;
-    if !may_ask(&thread) {
+    if !may_ask(&thread) || resume::waits(ctx, id)? {
         return Ok(None);
     }
     let Some(agent) = running(ctx, thread.agent)? else {
@@ -415,8 +442,7 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
             "no member node serves {}: the model was not asked",
             model.service
         );
-        give_up(ctx, thread, text);
-        return Ok(None);
+        return Ok(Some(Step::Again(Failure::lost(text))));
     }
     let asked = Asked {
         wire: model.wire,
@@ -544,14 +570,44 @@ async fn learn(ctx: &Ctx, id: u64, asked: Asked, model: ModelRow) -> Result<(), 
     let head = wire::model_head(asked.wire, &model.name);
     let answer = call_model(ctx, &asked, head, Vec::new(), egress::Delivery::Whole).await;
     let mut thread = thread(ctx, id)?;
-    match answer.and_then(|response| wire::window(asked.wire, &response)) {
-        Ok(Some(tokens)) => learned(ctx, &model, Window::Tokens(tokens))?,
-        Ok(None) => learned(ctx, &model, Window::Unreported)?,
-        Err(text) => give_up(ctx, &mut thread, text),
-    }
+    let read = answer.and_then(|response| {
+        let window = wire::window(asked.wire, &response);
+        window.map_err(|text| Failure::answered(text, &response))
+    });
+    let again = match read {
+        Ok(Some(tokens)) => {
+            learned(ctx, &model, Window::Tokens(tokens))?;
+            None
+        }
+        Ok(None) => {
+            learned(ctx, &model, Window::Unreported)?;
+            None
+        }
+        Err(failure) => failed(ctx, &mut thread, failure),
+    };
     settle(ctx, &mut thread)?;
     THREADS.put(ctx, &id, &thread);
-    Ok(())
+    retried(ctx, id, again).await
+}
+
+// a failure worth asking again waits until the thread is settled; any other ends the turn here
+fn failed(ctx: &ExecCtx, thread: &mut ThreadRow, failure: Failure) -> Option<Failure> {
+    let again = failure.again.is_some() && !thread.closed;
+    if again {
+        return Some(failure);
+    }
+    give_up(ctx, thread, failure.text);
+    None
+}
+
+async fn retried(ctx: &Ctx, id: u64, again: Option<Failure>) -> Result<(), Error> {
+    match again {
+        Some(failure) => resume::again(ctx, id, failure).await,
+        None => {
+            resume::answered(ctx, id);
+            Ok(())
+        }
+    }
 }
 
 async fn compact(
@@ -564,16 +620,24 @@ async fn compact(
     let head = wire::summary_head(asked.wire);
     let answer = call_model(ctx, &asked, head, parts, egress::Delivery::Whole).await;
     let mut thread = thread(ctx, id)?;
-    match answer.map(|response| wire::summarized(asked.wire, &response)) {
-        Ok(Summarized::Summary(summary)) => {
-            summarize(ctx, &mut thread, asked.wire, through, summary)?
+    let read = answer.map(|response| (wire::summarized(asked.wire, &response), response));
+    let again = match read {
+        Ok((Summarized::Summary(summary), _)) => {
+            summarize(ctx, &mut thread, asked.wire, through, summary)?;
+            None
         }
-        Ok(Summarized::Overflow) => thread.compact_before = Some(through),
-        Ok(Summarized::Failed(text)) | Err(text) => give_up(ctx, &mut thread, text),
-    }
+        Ok((Summarized::Overflow, _)) => {
+            thread.compact_before = Some(through);
+            None
+        }
+        Ok((Summarized::Failed(text), response)) => {
+            failed(ctx, &mut thread, Failure::answered(text, &response))
+        }
+        Err(failure) => failed(ctx, &mut thread, failure),
+    };
     settle(ctx, &mut thread)?;
     THREADS.put(ctx, &id, &thread);
-    Ok(())
+    retried(ctx, id, again).await
 }
 
 fn summarize(
@@ -606,11 +670,29 @@ async fn ask(
         deliver: streamed_as(id),
     };
     let answer = call_model(ctx, &asked, head, parts, delivery).await;
+    let wire = asked.wire;
+    let read = |partial: Option<Partial>| {
+        answer.and_then(|response| read_answer(wire, &response, partial))
+    };
+    conclude(ctx, id, upto, asked.config, read).await
+}
+
+// what follows a model call's answer, or the answer harness found lost (`resume::recover`)
+pub(crate) async fn conclude(
+    ctx: &Ctx,
+    id: u64,
+    upto: u64,
+    config: BlobId,
+    read: impl FnOnce(Option<Partial>) -> Result<Answered, Failure>,
+) -> Result<(), Error> {
     let partial = PARTIALS.get(ctx, &id)?;
     PARTIALS.remove(ctx, &id);
     let mut settled = take_back_showing(ctx, id).await?;
-    let answered = answer.map(|response| read_answer(asked.wire, &response, partial.clone()));
-    let calls = turned(ctx, id, upto, asked.config, answered, partial)?;
+    let answered = read(partial.clone());
+    let Turned { calls, again } = turned(ctx, id, upto, config, answered, partial)?;
+    if thread(ctx, id)?.open_calls > 0 {
+        resume::watch(ctx, id, None, Some(config)).await;
+    }
     let runs = calls
         .into_iter()
         .map(|(index, call)| run_call(ctx, id, index, call));
@@ -624,15 +706,26 @@ async fn ask(
         THREADS.put(ctx, &id, &thread);
     }
     hear_again(ctx, settled.hearings);
-    Ok(())
+    retried(ctx, id, again).await
 }
 
-fn read_answer(wire: Wire, response: &http::Response, partial: Option<Partial>) -> Answered {
+fn read_answer(
+    wire: Wire,
+    response: &http::Response,
+    partial: Option<Partial>,
+) -> Result<Answered, Failure> {
     let stream_ended = response.status == 200 && response.body.is_empty();
     let streamed = partial.filter(|partial| stream_ended && partial.next_seq > 0);
+    // a stream that broke, stopped short or failed is the model's to answer again
     match streamed {
-        Some(partial) => wire::folded(partial),
-        None => wire::answered(wire, response),
+        Some(partial) => match wire::folded(partial) {
+            Answered::Failed(text) => Err(Failure::busy(text)),
+            answered => Ok(answered),
+        },
+        None => match wire::answered(wire, response) {
+            Answered::Failed(text) => Err(Failure::answered(text, response)),
+            answered => Ok(answered),
+        },
     }
 }
 
@@ -640,15 +733,16 @@ enum Ending {
     Closed,
     Reply(wire::Reply),
     Overflow,
-    Failed(String),
+    Failed(Failure),
 }
 
-fn ending(closed: bool, answered: Result<Answered, String>) -> Ending {
+fn ending(closed: bool, answered: Result<Answered, Failure>) -> Ending {
     match (closed, answered) {
         (true, _) => Ending::Closed,
         (false, Ok(Answered::Reply(reply))) => Ending::Reply(reply),
         (false, Ok(Answered::Overflow)) => Ending::Overflow,
-        (false, Ok(Answered::Failed(text)) | Err(text)) => Ending::Failed(text),
+        (false, Ok(Answered::Failed(text))) => Ending::Failed(Failure::last(text)),
+        (false, Err(failure)) => Ending::Failed(failure),
     }
 }
 
@@ -674,16 +768,22 @@ fn dispatched(
     Ok(partial.filter(|_| any).map(whole_blocks))
 }
 
+struct Turned {
+    calls: Vec<(u64, String)>,
+    again: Option<Failure>,
+}
+
 fn turned(
     ctx: &ExecCtx,
     id: u64,
     upto: u64,
     config: BlobId,
-    answered: Result<Answered, String>,
+    answered: Result<Answered, Failure>,
     partial: Option<Partial>,
-) -> Result<Vec<(u64, String)>, Error> {
+) -> Result<Turned, Error> {
     let mut thread = thread(ctx, id)?;
     thread.asking = Asking::Running;
+    let mut again = None;
     let calls = match ending(thread.closed, answered) {
         Ending::Closed => match dispatched(ctx, id, partial)? {
             Some(reply) => record(ctx, &mut thread, upto, config, reply)?,
@@ -698,14 +798,15 @@ fn turned(
             thread.context = Context::Overflowed;
             calls
         }
-        Ending::Failed(text) => match dispatched(ctx, id, partial)? {
+        Ending::Failed(failure) => match dispatched(ctx, id, partial)? {
             Some(reply) => {
                 let calls = record(ctx, &mut thread, upto, config, reply)?;
+                let text = failure.text;
                 append(ctx, &mut thread, Body::Notice { text });
                 calls
             }
             None => {
-                give_up(ctx, &mut thread, text);
+                again = failed(ctx, &mut thread, failure);
                 Vec::new()
             }
         },
@@ -717,7 +818,7 @@ fn turned(
         LIVE.remove(ctx, &key);
     }
     THREADS.put(ctx, &id, &thread);
-    Ok(calls)
+    Ok(Turned { calls, again })
 }
 
 fn stall(ctx: &ExecCtx, id: u64, error: &Error) {

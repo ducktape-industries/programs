@@ -159,7 +159,9 @@ fn a_gap_in_the_stream_is_noticed_once_and_the_thread_goes_idle() {
     assert!(turns(chain, thread).is_empty());
     assert_eq!(
         notices(chain, thread),
-        ["the model's streamed reply broke: event 3 arrived where event 2 was due"]
+        [
+            "the model's streamed reply broke: event 3 arrived where event 2 was due; harness asks the model again at block 4 (attempt 1)"
+        ]
     );
     assert_eq!(thread_row(chain, thread).asking, Asking::Idle);
     assert_eq!(partial(chain, thread), None);
@@ -176,7 +178,9 @@ fn an_error_event_is_noticed_once_and_the_next_input_asks_again() {
     end(chain, &request, 4);
     assert_eq!(
         notices(chain, thread),
-        ["the model's reply failed as it streamed, overloaded_error: Overloaded"]
+        [
+            "the model's reply failed as it streamed, overloaded_error: Overloaded; harness asks the model again at block 4 (attempt 1)"
+        ]
     );
     assert_eq!(thread_row(chain, thread).asking, Asking::Idle);
     world.mention("m2", "again");
@@ -194,7 +198,9 @@ fn a_whole_reply_to_a_streamed_request_is_read_as_today() {
     answer(chain, request.id, Answer::Output(response(429, limited)));
     assert_eq!(
         notices(chain, thread),
-        ["the model answered 429, rate_limit_error: Slow down"]
+        [
+            "the model answered 429, rate_limit_error: Slow down; harness asks the model again at block 4 (attempt 1)"
+        ]
     );
 }
 

@@ -290,6 +290,37 @@ impl MockChain {
         self.parked.borrow().len()
     }
 
+    // ends every frame `program` has parked as the kernel does when the program's code changes
+    // (`crates/kernel/host/src/parking.rs`, `cancel_parked`): each fails as cancelled, and what
+    // it waited on answers no one
+    pub fn cancel_parked(&self, program: &str) {
+        let frames: Vec<FrameId> = self
+            .parked
+            .borrow()
+            .iter()
+            .filter(|(_, parked)| parked.env.program == program)
+            .map(|(id, _)| *id)
+            .collect();
+        let (height, time) = self.clock.get();
+        for id in frames {
+            let Some(parked) = self.parked.borrow_mut().remove(&id) else {
+                continue;
+            };
+            let env = Env {
+                height,
+                time,
+                ..parked.env
+            };
+            let start = Start {
+                frame: Some(id),
+                waiter: parked.waiter,
+                checkpoint: self.checkpoint(),
+            };
+            let cancelled = crate::kernel::error_from(awaits::cancelled(program));
+            self.finish(&env, start, Err(cancelled), false, 0);
+        }
+    }
+
     fn seat_with<M: Program>(&mut self, program: ProgramId, execute: Execute) -> MockHost {
         let host = MockHost::default();
         let seat = Seat {

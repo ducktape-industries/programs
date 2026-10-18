@@ -9,7 +9,8 @@ use abi::role::identity::{AccountNumber, Category, Kind, Profile, Standing};
 use attribution::{Actor, Change, Kind as Changed, Reason, Source};
 
 use crate::calls::deferred_while_shown;
-use crate::conversations::{binding, current, route};
+use crate::conversations::{binding, conversation, current, route};
+use crate::resume;
 use crate::state::{BOUND, LAST, MODELS, PLACES, THREADS};
 use crate::turns::{converse, say};
 use crate::{AgentSetup, Body, Config, Configured, Op, PROGRAM, Place, ThreadRow};
@@ -412,6 +413,7 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Option<u64>, Error> {
         return Ok(None);
     };
     if !answers(ctx, &agent, actor)? {
+        dropped(ctx, &agent, actor, why, &change)?;
         return Ok(None);
     }
     LAST.put(
@@ -429,5 +431,31 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Option<u64>, Error> {
     let author = Principal::Account(actor);
     say(ctx, &mut thread, Body::Post { author, text });
     THREADS.put(ctx, &thread.id, &thread);
+    resume::heard(ctx, thread.id)?;
     Ok(Some(thread.id))
+}
+
+// who an agent answers is its list's to say; what it did not answer still leaves a trace
+fn dropped(
+    ctx: &ExecCtx,
+    agent: &Agent,
+    actor: AccountNumber,
+    heard: Heard,
+    change: &Change,
+) -> Result<(), Error> {
+    let what = match heard {
+        Heard::Mention => "a mention",
+        Heard::Direct => "a direct message",
+        Heard::Thread => "a thread reply",
+    };
+    let Source { program, object } = &change.source;
+    let text = format!(
+        "dropped {what} from account {actor} ({program} {} {}): it isn't on this agent's list",
+        object.kind, object.id
+    );
+    let Designation { place, .. } = designation(ctx, change, actor, heard)?;
+    let mut row = conversation(ctx, agent, &place)?;
+    say(ctx, &mut row, Body::Notice { text });
+    THREADS.put(ctx, &row.id, &row);
+    Ok(())
 }

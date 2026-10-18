@@ -1,12 +1,15 @@
 //! Everything harness keeps: models, threads by agent, current and bound threads, each place's
 //! last thread, frames, held input, sealed parts, tool calls and live calls, withheld frames,
 //! streaming replies, each thread's topic and tally, booked runs, what a written key belongs to.
+use ::program::{BlobId, EntryId};
 use abi::role::identity::AccountNumber;
 use attribution::{Change, Source};
 use borsh::{BorshDeserialize, BorshSerialize};
 use store::{Item, KeyCodec, Map, Set};
 
-use crate::{Body, Booking, CallRow, Frame, ModelRow, Partial, Place, Sealed, Tally, ThreadRow};
+use crate::{
+    Body, Booking, CallRow, Frame, ModelRow, Partial, Place, Sealed, Tally, ThreadRow, UsageWindow,
+};
 
 pub const MODELS: Map<String, ModelRow> = Map::new("model/");
 pub const LAST: Map<AccountNumber, (Source, u64)> = Map::new("last/");
@@ -29,6 +32,11 @@ pub const TOPICS: Map<u64, String> = Map::new("topic/");
 pub const TALLIES: Map<u64, Tally> = Map::new("tally/");
 pub const BOOKINGS: Map<u64, Booking> = Map::new("booking/");
 pub const BOOKED: Set<(AccountNumber, u64)> = Set::new("booked/");
+pub const FLIGHTS: Map<u64, Flight> = Map::new("flight/");
+pub const RETRIES: Map<u64, Retry> = Map::new("retry/");
+pub const REPORTS: Map<(AccountNumber, u64), String> = Map::new("report/");
+pub const REPORTING: Set<AccountNumber> = Set::new("reporting/");
+pub const USAGE: Map<String, UsageWindow> = Map::new("usage/");
 pub const COUNT: Item<u64> = Item::new("count");
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -41,6 +49,29 @@ pub struct Live {
 pub struct Binding {
     pub thread: u64,
     pub place: Place,
+}
+
+// a model call in flight, or a turn's relays: egress answers it by its deadline, and `watch` is
+// the run harness scheduled past that
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Flight {
+    pub made: u64,
+    pub moved: u64,
+    pub wait: u64,
+    pub config: Option<BlobId>,
+    pub watch: Option<EntryId>,
+}
+
+// a failed model call asked again: not before block `at`, nor before time `until` when the model
+// named one, paced from block `since` at `since_time`
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Retry {
+    pub attempt: u32,
+    pub at: u64,
+    pub until: Option<u64>,
+    pub since: u64,
+    pub since_time: u64,
+    pub entry: Option<EntryId>,
 }
 
 pub(crate) fn newest_first(id: u64) -> u64 {
