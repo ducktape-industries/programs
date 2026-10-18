@@ -5,11 +5,13 @@ their ids. Each founding program names the roles it fills, and the programs
 role keeps the table from then on; every call the kernel makes goes to the
 program that fills the role, speaking the role's interface in `crates/sdk/abi`
 (`abi::role::{programs, validators, identity, awaits, halo, scheduler,
-access}`) or, for blobs, ducktape's `blob::contract`. The programs in
+access, ownership}`) or, for blobs, ducktape's `blob::contract`. The programs in
 `crates/system/` are one implementation of each. The scheduler role
 (`abi::role::scheduler`) is optional: on a network that fills none,
 nothing scheduled runs. The egress role (`abi::role::egress`) is optional and
 the kernel never calls it: a node reads it, and `crates/app/egress` fills it.
+The ownership role (`abi::role::ownership`) is optional: on a network that
+fills none, no write is guarded.
 
 ## The roles
 
@@ -23,6 +25,7 @@ the kernel never calls it: a node reads it, and `crates/app/egress` fills it.
 | `egress` | `egress` | nothing: the node reads it. After each block a member node asks `Assigned { key }` with its own key and `Node { key }`; it calls each request elected to it, through the services its `egress.toml` names, and signs `Answer { id, answer }` (for a request that asks `Delivery::Events`, a `text/event-stream` response's events instead, as `Event { id, seq, data }` in frames sent as the events arrive, without waiting for a block to carry the frame before, then `EndStream { id, events, end }`), and `Serve { services }` while the role's record of it differs from its config. A program asks `Serving { service }` for the member nodes that would be elected, and calls the role with `Request { request, delivery, wait }`. An events request's requester hears each event as its own op, `deliver` followed by the encoded `Event`, and its call answers the stream's end: `Complete` as the encoded `http::Response` with the stream's status and headers and an empty body (what a whole `Http` reply answers too, so the call decodes one type either way), a cut as a refusal; each event moves the request's expiry `wait` blocks past it. `seq` counts from 0 per call the node makes, and the requester hears each `seq` once and in order whatever order the frames land in: egress keeps an event that lands before the one due until the gap fills, drops a repeated `seq`, and takes a `seq` back at 0 as the node calling the service again after a restart, which drops what waited and voids what came before. It holds an `EndStream` until the requester has heard every event the end counts. An event the requester refuses is passed over, and the next one is heard. A relay is answered whole, and asking one with `Delivery::Events` is refused. The egress program expires a request itself: it schedules its own `Expire { id }` through the scheduler role `wait` blocks on (`DEFAULT_WAIT`, 64, when `wait` is `None`) and cancels it when the answer comes; no node signs an expiry |
 | `blobs` | `blobs` | when a program reads a blob (`blob_get`) that no program put, and when the programs role admits code, asks `Held { blob }`: the blob is served only once a bundle naming it is held, which it is from the receipt that brings two thirds of the current validators. The node watches the role's writes: it gathers every bundle put, and a validator's node receipts a bundle once it holds every blob |
 | `access` | `access` | before every op it executes (`ProgramCall::Execute`; not a reply to a program's message and not a run by the chain itself), asks the target program `ProgramCall::Access(payload)`, which answers what the op needs: `Vec<Need>`, each `Need { key, action }` with `Action::Write` or `Action::Delete`. With any need, it runs the role's `Op::Check { program, actor, needs }` as the chain, in the same unit as the op: the check may send no message, and its refusal refuses the op. `actor` is the sender's account and, for a message from a program, that program too (`Party::Account(n)`, `Party::Program(id)`). "Who may write a key", below, has the rules |
+| `ownership` | `ownership` | once a run (an op, a resumed op, a reply) that wrote keys returns, and before anything it emitted runs, executes `Op::Guard { program, origin, sender, writes }` with the `System` origin: the frame's origin and sender, and each owned key the run wrote (`Write { key, kind, existed, kept }`, once each, in key order). A key is owned unless the program's code declares the table it falls in shared, in its `ducktape.tables` section (borsh `Vec<role::ownership::Table>`, the longest prefix deciding; `Program::TABLES`, which `export!` writes); a module with no section declares nothing, so every key it writes is owned. A run that wrote no owned key makes no call; the kernel's own runs, the validators' messages and the ownership program's own runs are never guarded. The guard may send no message, and its refusal undoes the run. `crates/system/ownership` records each new key's owner (the account the frame acts as, or the program when it acts as none) and the policy its owner's defaults choose (kind, then program, then everything, then the owner's open policy, which admits anyone), and admits a change or delete only where that policy admits the actor |
 | `halo` | `halo` | at founding, writes its params (`role::halo::Genesis`: the founding lanes, given ids in order from 0, each `Founded { name, cap, pinned }`); at boot and after any block that writes the role's state, the node asks `Lanes` and serves halo's lanes by that table: a lane's name to its wire id, the class its streams are served at most, whether it is served, and whether it is pinned. Only the validators' vote (`Motion::Role { role: "halo", op }`) changes it: `Open` lists a name at the next id, unpinned, `Set` changes its cap or pauses it, `Close` unlists it, and no id is handed out twice. A pinned lane is never paused or closed (`invalid_input`, refused as the vote enacts it): this repo's founding pins `ducktape/blobs`, over which a node fetches the blobs it needs to apply a block, so no vote can cut a node off from the block that would undo it |
 
 Each `[[programs]]` entry of the founding file names the roles its program
@@ -43,12 +46,12 @@ code = "chat.wasm"
 The roles are a table, not a fixed set of fields: `abi::Roles` maps a role's
 name to its program, and the names are constants in `abi::role` (`PROGRAMS`,
 `VALIDATORS`, `IDENTITY`, `BLOBS`, `AWAITS`, `HALO`, `EGRESS`, `SCHEDULER`,
-`ACCESS`). A new role is a new row. The programs role keeps the table (its
+`ACCESS`, `OWNERSHIP`). A new role is a new row. The programs role keeps the table (its
 `ROLES` map) and answers it with `Query::Roles`. The roles in
 `abi::role::REQUIRED` (programs, validators, identity, blobs, awaits, halo
 and access) are filled for the network's life: the kernel calls programs,
 validators, identity, blobs, awaits and access, and every node reads halo's
-lane table. Any other role, egress and scheduler here, is optional. Founding
+lane table. Any other role, egress, scheduler and ownership here, is optional. Founding
 refuses a role two programs name and a founding that leaves a required role
 unfilled, naming it; a node refuses a network that records no roles. Only
 the validators' vote changes the table, by publishing a program with the

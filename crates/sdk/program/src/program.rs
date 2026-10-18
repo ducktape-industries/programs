@@ -29,6 +29,11 @@ pub trait Program {
     // (`schema::returns::<T>("Variant")`). An op left out returns bytes no schema names.
     const RETURNS: &'static [crate::schema::Return] = &[];
 
+    // The tables its state holds, as the kernel's ownership guard reads them (each `store`
+    // table's `table()`); `export!` writes them as the `ducktape.tables` section. A key under no
+    // table is owned.
+    const TABLES: &'static [crate::Table] = &[];
+
     /// Genesis, with the params the network was founded with. Nothing by
     /// default; override only where genesis needs it.
     fn init(_ctx: &ExecCtx, _params: &[u8]) -> Result<(), Error> {
@@ -260,6 +265,8 @@ macro_rules! export {
         pub extern "C" fn call(ptr: u32, len: u32) -> u64 {
             $crate::exports::call::<$program>(ptr, len)
         }
+
+        $crate::tables_section!($program);
     };
 }
 

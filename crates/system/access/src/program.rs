@@ -12,6 +12,7 @@ impl Program for Access {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+    const TABLES: &'static [::program::Table] = crate::rules::TABLES;
 
     fn init(_: &ExecCtx, _: &[u8]) -> Result<(), Error> {
         Ok(())

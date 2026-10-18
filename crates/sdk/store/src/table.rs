@@ -4,7 +4,7 @@
 use std::marker::PhantomData;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use program::{Error, Range};
+use program::{Error, Held, Range, Table};
 use program::{ExecCtx, QueryCtx, corrupt};
 
 use crate::key::KeyCodec;
@@ -16,14 +16,63 @@ use crate::page::{Listing, PageRequest, PageResponse};
 /// (`"m/"` beside `"m/x/"` would read each other's rows).
 pub struct Map<K, V> {
     prefix: &'static str,
+    shared: bool,
     _types: PhantomData<fn() -> (K, V)>,
 }
 
-impl<K: KeyCodec, V: BorshSerialize + BorshDeserialize> Map<K, V> {
+// What a table's rows are: the value each holds, and the kind an owned row is of (none for a
+// plain value, whose table is owned of no kind unless it is `shared()`).
+pub trait Row {
+    type Value: BorshSerialize + BorshDeserialize;
+    const KIND: Option<&'static str>;
+}
+
+impl<V: BorshSerialize + BorshDeserialize> Row for V {
+    type Value = V;
+    const KIND: Option<&'static str> = None;
+}
+
+// A resource kind: the stable name a user's defaults and policies know a table's rows by
+// (`chat.message`).
+pub trait Kind {
+    const KIND: &'static str;
+}
+
+// The rows of a table of owned `T`s: `Map<K, Owned<T>>` reads and writes `T` itself, the same
+// bytes, and declares its prefix owned of `T`'s kind.
+pub struct Owned<T>(PhantomData<fn() -> T>);
+
+impl<T: Kind + BorshSerialize + BorshDeserialize> Row for Owned<T> {
+    type Value = T;
+    const KIND: Option<&'static str> = Some(T::KIND);
+}
+
+impl<K: KeyCodec, V: Row> Map<K, V> {
     pub const fn new(prefix: &'static str) -> Self {
         Map {
             prefix,
+            shared: false,
             _types: PhantomData,
+        }
+    }
+
+    // The table's rows are general data: no owner, no policy, and the kernel never guards them.
+    pub const fn shared(self) -> Self {
+        Map {
+            shared: true,
+            ..self
+        }
+    }
+
+    // The table as `Program::TABLES` lists it.
+    pub const fn table(&self) -> Table {
+        let held = match self.shared {
+            true => Held::Shared,
+            false => Held::Owned(V::KIND),
+        };
+        Table {
+            prefix: self.prefix,
+            held,
         }
     }
 
@@ -48,7 +97,7 @@ impl<K: KeyCodec, V: BorshSerialize + BorshDeserialize> Map<K, V> {
     }
 
     /// The row at `key`; a row that does not decode is `code::CORRUPT`.
-    pub fn get(&self, ctx: &QueryCtx, key: &K) -> Result<Option<V>, Error> {
+    pub fn get(&self, ctx: &QueryCtx, key: &K) -> Result<Option<V::Value>, Error> {
         let bytes = self.key(key);
         ctx.get(&bytes)
             .map(|value| decode_value(self.prefix, &bytes, &value))
@@ -61,7 +110,7 @@ impl<K: KeyCodec, V: BorshSerialize + BorshDeserialize> Map<K, V> {
     }
 
     /// Writes the row at `key`, replacing any.
-    pub fn put(&self, ctx: &ExecCtx, key: &K, value: &V) {
+    pub fn put(&self, ctx: &ExecCtx, key: &K, value: &V::Value) {
         ctx.set(self.key(key), abi::encode(value));
     }
 
@@ -72,7 +121,7 @@ impl<K: KeyCodec, V: BorshSerialize + BorshDeserialize> Map<K, V> {
 
     /// The rows a scan admits, keys decoded back. The scan comes from
     /// `prefix_of`, `below`, or `PageRequest::scan` over `self.prefix()`.
-    pub fn scan(&self, ctx: &QueryCtx, scan: Range) -> Result<Vec<(K, V)>, Error> {
+    pub fn scan(&self, ctx: &QueryCtx, scan: Range) -> Result<Vec<(K, V::Value)>, Error> {
         ctx.scan(scan)
             .into_iter()
             .map(|entry| {
@@ -85,13 +134,17 @@ impl<K: KeyCodec, V: BorshSerialize + BorshDeserialize> Map<K, V> {
 
     /// Every row, in key order. Unbounded: a query a client asks answers a
     /// page instead ([`Map::range`]).
-    pub fn all(&self, ctx: &QueryCtx) -> Result<Vec<(K, V)>, Error> {
+    pub fn all(&self, ctx: &QueryCtx) -> Result<Vec<(K, V::Value)>, Error> {
         self.scan(ctx, Range::prefix(self.prefix))
     }
 
     /// One page of the table in key order, resumable through
     /// `PageResponse::next`, answered at the ctx's height.
-    pub fn range(&self, ctx: &QueryCtx, page: &PageRequest) -> Result<PageResponse<(K, V)>, Error> {
+    pub fn range(
+        &self,
+        ctx: &QueryCtx,
+        page: &PageRequest,
+    ) -> Result<PageResponse<(K, V::Value)>, Error> {
         self.range_of(ctx, &(), page)
     }
 
@@ -101,7 +154,7 @@ impl<K: KeyCodec, V: BorshSerialize + BorshDeserialize> Map<K, V> {
         ctx: &QueryCtx,
         head: &H,
         page: &PageRequest,
-    ) -> Result<PageResponse<(K, V)>, Error> {
+    ) -> Result<PageResponse<(K, V::Value)>, Error> {
         let listing = page.listing(ctx, self.key(head))?;
         self.page_of(ctx, head, &listing)
     }
@@ -114,7 +167,7 @@ impl<K: KeyCodec, V: BorshSerialize + BorshDeserialize> Map<K, V> {
         ctx: &QueryCtx,
         head: &H,
         listing: &Listing,
-    ) -> Result<PageResponse<(K, V)>, Error> {
+    ) -> Result<PageResponse<(K, V::Value)>, Error> {
         let rows = ctx
             .scan(listing.scan_ahead(&self.key(head)))
             .into_iter()
@@ -147,6 +200,16 @@ impl<K: KeyCodec> Set<K> {
         Set {
             map: Map::new(prefix),
         }
+    }
+
+    pub const fn shared(self) -> Self {
+        Set {
+            map: self.map.shared(),
+        }
+    }
+
+    pub const fn table(&self) -> Table {
+        self.map.table()
     }
 
     pub fn key<H: KeyCodec>(&self, head: &H) -> Vec<u8> {
@@ -218,32 +281,57 @@ impl<K: KeyCodec> Set<K> {
 /// genesis gave.
 pub struct Item<T> {
     key: &'static str,
+    shared: bool,
     _type: PhantomData<fn() -> T>,
 }
 
-impl<T: BorshSerialize + BorshDeserialize> Item<T> {
+impl<T: Row> Item<T> {
     pub const fn new(key: &'static str) -> Self {
         Item {
             key,
+            shared: false,
             _type: PhantomData,
         }
     }
 
+    pub const fn shared(self) -> Self {
+        Item {
+            shared: true,
+            ..self
+        }
+    }
+
+    // The item as `Program::TABLES` lists it: its key is the table's prefix.
+    pub const fn table(&self) -> Table {
+        let held = match self.shared {
+            true => Held::Shared,
+            false => Held::Owned(T::KIND),
+        };
+        Table {
+            prefix: self.key,
+            held,
+        }
+    }
+
     /// The value, if one was put.
-    pub fn get(&self, ctx: &QueryCtx) -> Result<Option<T>, Error> {
+    pub fn get(&self, ctx: &QueryCtx) -> Result<Option<T::Value>, Error> {
         ctx.get(self.key)
             .map(|value| decode_value(self.key, b"", &value))
             .transpose()
     }
 
-    pub fn put(&self, ctx: &ExecCtx, value: &T) {
+    pub fn put(&self, ctx: &ExecCtx, value: &T::Value) {
         ctx.set(self.key.as_bytes().to_vec(), abi::encode(value));
     }
 
     /// Reads the value (or its default), lets `change` alter it, stores and returns it.
-    pub fn update(&self, ctx: &ExecCtx, change: impl FnOnce(&mut T)) -> Result<T, Error>
+    pub fn update(
+        &self,
+        ctx: &ExecCtx,
+        change: impl FnOnce(&mut T::Value),
+    ) -> Result<T::Value, Error>
     where
-        T: Default,
+        T::Value: Default,
     {
         let mut value = self.get(ctx)?.unwrap_or_default();
         change(&mut value);

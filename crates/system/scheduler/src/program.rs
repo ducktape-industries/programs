@@ -13,6 +13,7 @@ impl Program for Scheduler {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+    const TABLES: &'static [::program::Table] = crate::state::TABLES;
     const RETURNS: &'static [Return] = &[returns::<EntryId>("Schedule")];
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {

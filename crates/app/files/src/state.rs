@@ -6,11 +6,11 @@ use store::{Item, Map};
 use crate::objects::digest;
 use crate::{PinRow, SnapshotRow};
 
-pub const HEAD: Item<SnapshotRow> = Item::new("head");
-pub const HISTORY: Map<u64, SnapshotRow> = Map::new("history/");
-pub const SNAPSHOTS: Map<[u8; 32], u64> = Map::new("snapshot/");
-pub const PINS: Map<String, PinRow> = Map::new("pin/");
-pub const COUNT: Item<u64> = Item::new("count");
+pub const HEAD: Item<SnapshotRow> = Item::new("head").shared();
+pub const HISTORY: Map<u64, SnapshotRow> = Map::new("history/").shared();
+pub const SNAPSHOTS: Map<[u8; 32], u64> = Map::new("snapshot/").shared();
+pub const PINS: Map<String, PinRow> = Map::new("pin/").shared();
+pub const COUNT: Item<u64> = Item::new("count").shared();
 
 pub(crate) fn newest_first(seq: u64) -> u64 {
     u64::MAX - seq
@@ -33,3 +33,12 @@ pub(crate) fn resolve(ctx: &QueryCtx, at: Option<&BlobId>) -> Result<Option<Snap
         None => HEAD.get(ctx),
     }
 }
+
+// Every table here is general data: only this program's code governs it.
+pub(crate) const TABLES: &[::program::Table] = &[
+    HEAD.table(),
+    HISTORY.table(),
+    SNAPSHOTS.table(),
+    PINS.table(),
+    COUNT.table(),
+];

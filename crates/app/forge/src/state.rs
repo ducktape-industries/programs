@@ -15,41 +15,41 @@ use crate::contract::{
 use crate::objects::hash_of;
 
 /// The bounds forge was founded with.
-pub const BOUNDS: Item<Bounds> = Item::new("bounds");
+pub const BOUNDS: Item<Bounds> = Item::new("bounds").shared();
 /// How many ops forge has accepted. Every listing cursor is pinned to it:
 /// only a forge op rewrites a listing, and two ops in one block share a
 /// height but not a count.
-pub const WRITES: Item<u64> = Item::new("writes");
+pub const WRITES: Item<u64> = Item::new("writes").shared();
 /// One record per repository, by name.
-pub const REPOS: Map<String, Repo> = Map::new("p/");
+pub const REPOS: Map<String, Repo> = Map::new("p/").shared();
 /// Index: every repository by its last activity, newest first.
-pub const ACTIVITY: Set<(u64, String)> = Set::new("a/");
+pub const ACTIVITY: Set<(u64, String)> = Set::new("a/").shared();
 /// Each repository's refs and the oid bytes each points at.
-pub const REFS: Map<(String, Vec<u8>), Vec<u8>> = Map::new("r/");
+pub const REFS: Map<(String, Vec<u8>), Vec<u8>> = Map::new("r/").shared();
 /// The last change number each repository gave out.
-pub const NUMBERS: Map<String, u64> = Map::new("n/");
+pub const NUMBERS: Map<String, u64> = Map::new("n/").shared();
 /// Changes by repository and number; a scan across repositories lists them
 /// by name (Judgment pages this table whole).
-pub const CHANGES: Map<(String, u64), Change> = Map::new("c/");
+pub const CHANGES: Map<(String, u64), Change> = Map::new("c/").shared();
 /// Reviews by repository, change number and review id.
-pub const REVIEWS: Map<(String, u64, u64), Review> = Map::new("v/");
+pub const REVIEWS: Map<(String, u64, u64), Review> = Map::new("v/").shared();
 /// Index: the reviews one principal submitted on one change, oldest first.
-pub const AUTHORED: Set<(String, u64, Principal, u64)> = Set::new("u/");
+pub const AUTHORED: Set<(String, u64, Principal, u64)> = Set::new("u/").shared();
 /// Index: the changes a principal authored, is asked to review, or reviewed.
-pub const INVOLVED: Set<(Principal, String, u64)> = Set::new("i/");
+pub const INVOLVED: Set<(Principal, String, u64)> = Set::new("i/").shared();
 /// The last system message id forge posted into chat.
-pub const MESSAGES: Item<u64> = Item::new("system-message-seq");
+pub const MESSAGES: Item<u64> = Item::new("system-message-seq").shared();
 // Each repository's protected branches besides its head, which always is: no rebase moves
 // one and no `DeleteBranch` deletes one.
-pub const PROTECTED: Set<(String, Vec<u8>)> = Set::new("b/");
+pub const PROTECTED: Set<(String, Vec<u8>)> = Set::new("b/").shared();
 // The programs that watch forge, each with the prefix it hears events under.
-pub const WATCHERS: Map<ProgramId, Vec<u8>> = Map::new("w/");
+pub const WATCHERS: Map<ProgramId, Vec<u8>> = Map::new("w/").shared();
 // The archives forge asked chat for, by the message's seq, each naming its change. chat
 // answers in the frame that asked, which takes the row away again.
-pub const ARCHIVING: Map<u64, (String, u64)> = Map::new("x/");
+pub const ARCHIVING: Map<u64, (String, u64)> = Map::new("x/").shared();
 // The lines forge posted to say chat refused an archive, by the message's seq, until chat
 // answers them (in the same frame).
-pub const LOGGING: Set<u64> = Set::new("l/");
+pub const LOGGING: Set<u64> = Set::new("l/").shared();
 
 /// Stored state that is not what forge wrote: an operator's problem.
 pub(crate) fn storage(sentence: impl Into<String>) -> Error {
@@ -309,3 +309,22 @@ pub fn load_review(ctx: &QueryCtx, repo: &str, n: u64, id: u64) -> Result<Review
         .get(ctx, &(repo.to_owned(), n, id))?
         .ok_or_else(|| storage("authored review missing"))
 }
+
+// Every table here is general data: only this program's code governs it.
+pub(crate) const TABLES: &[::program::Table] = &[
+    BOUNDS.table(),
+    WRITES.table(),
+    REPOS.table(),
+    ACTIVITY.table(),
+    REFS.table(),
+    NUMBERS.table(),
+    CHANGES.table(),
+    REVIEWS.table(),
+    AUTHORED.table(),
+    INVOLVED.table(),
+    MESSAGES.table(),
+    PROTECTED.table(),
+    WATCHERS.table(),
+    ARCHIVING.table(),
+    LOGGING.table(),
+];

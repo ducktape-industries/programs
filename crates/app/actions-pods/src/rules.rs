@@ -13,10 +13,10 @@ use store::Map;
 use crate::{Op, PROGRAM, RunRow, SERVICE};
 
 // The block time each claimed check was offered at, until its run takes it.
-pub(crate) const OFFERED: Map<u64, u64> = Map::new("o/");
+pub(crate) const OFFERED: Map<u64, u64> = Map::new("o/").shared();
 // The data of each pod's `ended` event, until its run reads it.
-pub(crate) const ENDED: Map<String, Vec<u8>> = Map::new("e/");
-pub(crate) const RUNS: Map<u64, RunRow> = Map::new("r/");
+pub(crate) const ENDED: Map<String, Vec<u8>> = Map::new("e/").shared();
+pub(crate) const RUNS: Map<u64, RunRow> = Map::new("r/").shared();
 
 struct Ending {
     state: State,
@@ -347,3 +347,6 @@ fn waited_on(ctx: &QueryCtx, egress: &ProgramId, id: u64) -> Result<String, Erro
         .map(str::to_owned)
         .ok_or_else(|| wrong_state(format!("request {id} is not a pod's wait")))
 }
+
+// Every table here is general data: only this program's code governs it.
+pub(crate) const TABLES: &[::program::Table] = &[OFFERED.table(), ENDED.table(), RUNS.table()];

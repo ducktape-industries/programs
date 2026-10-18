@@ -18,30 +18,31 @@ use crate::{
 type ChannelId = String;
 type Seq = u64;
 
-pub const CHANNELS: Map<ChannelId, ChannelRow> = Map::new("channel/");
-pub const CHANNEL_META: Map<ChannelId, BTreeMap<String, String>> = Map::new("channel-meta/");
+pub const CHANNELS: Map<ChannelId, ChannelRow> = Map::new("channel/").shared();
+pub const CHANNEL_META: Map<ChannelId, BTreeMap<String, String>> =
+    Map::new("channel-meta/").shared();
 /// The newest message's seq, per channel.
-pub const HEADS: Map<ChannelId, Seq> = Map::new("head/");
+pub const HEADS: Map<ChannelId, Seq> = Map::new("head/").shared();
 // each message as chat keeps it; a channel not migrated yet still holds old rows (`legacy`)
-pub const MESSAGES: Map<(ChannelId, Seq), Stored> = Map::new("stored/");
+pub const MESSAGES: Map<(ChannelId, Seq), Stored> = Map::new("stored/").shared();
 /// Where each message id lives: ids are unique across channels.
-pub const MESSAGE_IDS: Map<String, (ChannelId, Seq)> = Map::new("message-id/");
-pub const MEMBERS: Map<(ChannelId, Principal), MemberRow> = Map::new("member/");
+pub const MESSAGE_IDS: Map<String, (ChannelId, Seq)> = Map::new("message-id/").shared();
+pub const MEMBERS: Map<(ChannelId, Principal), MemberRow> = Map::new("member/").shared();
 /// Who chose which emoji: `(channel, seq, emoji, principal)`.
-pub const REACTIONS: Set<(ChannelId, Seq, String, Principal)> = Set::new("reaction/");
+pub const REACTIONS: Set<(ChannelId, Seq, String, Principal)> = Set::new("reaction/").shared();
 
 /// Timeline roots, newest first: `(channel, newest_first(seq))`.
-pub const ROOTS: Set<(ChannelId, Seq)> = Set::new("root/");
+pub const ROOTS: Set<(ChannelId, Seq)> = Set::new("root/").shared();
 /// Thread replies in post order: `(channel, root, reply)`.
-pub const REPLIES: Set<(ChannelId, Seq, Seq)> = Set::new("reply/");
+pub const REPLIES: Set<(ChannelId, Seq, Seq)> = Set::new("reply/").shared();
 /// Each author's answered threads, newest answer first:
 /// `(channel, root author, newest_first(last reply))` → the root's seq.
-pub const ANSWERED: Map<(ChannelId, Principal, Seq), Seq> = Map::new("answered/");
-pub const PARTICIPANTS: Map<(ChannelId, Seq, Principal), Seq> = Map::new("participant/");
+pub const ANSWERED: Map<(ChannelId, Principal, Seq), Seq> = Map::new("answered/").shared();
+pub const PARTICIPANTS: Map<(ChannelId, Seq, Principal), Seq> = Map::new("participant/").shared();
 // who listens to each channel, and the height each began: `(channel, account)` → height
-pub const LISTENERS: Map<(ChannelId, AccountNumber), u64> = Map::new("listener/");
+pub const LISTENERS: Map<(ChannelId, AccountNumber), u64> = Map::new("listener/").shared();
 // the channels each account listens to: `(account, channel)`
-pub const LISTENING: Set<(AccountNumber, ChannelId)> = Set::new("listening/");
+pub const LISTENING: Set<(AccountNumber, ChannelId)> = Set::new("listening/").shared();
 
 // A message as chat keeps it: the [`MsgRow`] a read answers, less what a
 // read derives (its flat text and `#tags`, from `blocks`; whether the
@@ -216,3 +217,24 @@ pub(crate) fn toggle<K: store::KeyCodec>(ctx: &ExecCtx, set: &Set<K>, key: &K, o
         set.remove(ctx, key);
     }
 }
+
+// Every table here is general data: only this program's code governs it.
+pub(crate) const TABLES: &[::program::Table] = &[
+    CHANNELS.table(),
+    CHANNEL_META.table(),
+    HEADS.table(),
+    MESSAGES.table(),
+    MESSAGE_IDS.table(),
+    MEMBERS.table(),
+    REACTIONS.table(),
+    ROOTS.table(),
+    REPLIES.table(),
+    ANSWERED.table(),
+    PARTICIPANTS.table(),
+    LISTENERS.table(),
+    LISTENING.table(),
+    crate::legacy::OLD_MESSAGES.table(),
+    crate::legacy::WORDS.table(),
+    crate::legacy::TAGS.table(),
+    crate::legacy::CHANNEL_TAGS.table(),
+];

@@ -12,42 +12,42 @@ use crate::{
     ThreadRow, UsageWindow, Window, Wire,
 };
 
-pub const MODELS: Map<String, StoredModel> = Map::new("model/");
+pub const MODELS: Map<String, StoredModel> = Map::new("model/").shared();
 // a model's `compact_at` default, beside its record
-pub const COMPACT_AT: Map<String, u64> = Map::new("compact/");
-pub const LAST: Map<AccountNumber, (Source, u64)> = Map::new("last/");
-pub const THREADS: Map<u64, ThreadRow> = Map::new("thread/");
-pub const BY_AGENT: Set<(AccountNumber, u64)> = Set::new("by-agent/");
-pub const PLACES: Map<(AccountNumber, String), u64> = Map::new("place/");
-pub const BOUND: Map<(AccountNumber, String), Binding> = Map::new("bound/");
-pub const CURRENT: Map<AccountNumber, u64> = Map::new("current/");
-pub const FRAMES: Map<(u64, u64), Frame> = Map::new("frame/");
-pub const HELD: Map<(u64, u64), Body> = Map::new("held/");
-pub const SEALED: Map<(u64, u64), Sealed> = Map::new("sealed/");
-pub const CALLS: Map<(u64, String), CallRow> = Map::new("call/");
-pub const WITHHELD: Set<(u64, u64)> = Set::new("withheld/");
-pub const PARTIALS: Map<u64, Partial> = Map::new("partial/");
-pub const LIVE: Map<(u64, u64), Live> = Map::new("live/");
-pub const SHOWN: Map<(u64, String), String> = Map::new("shown/");
-pub const DEFERRED: Map<(u64, String, u64), Change> = Map::new("deferred/");
+pub const COMPACT_AT: Map<String, u64> = Map::new("compact/").shared();
+pub const LAST: Map<AccountNumber, (Source, u64)> = Map::new("last/").shared();
+pub const THREADS: Map<u64, ThreadRow> = Map::new("thread/").shared();
+pub const BY_AGENT: Set<(AccountNumber, u64)> = Set::new("by-agent/").shared();
+pub const PLACES: Map<(AccountNumber, String), u64> = Map::new("place/").shared();
+pub const BOUND: Map<(AccountNumber, String), Binding> = Map::new("bound/").shared();
+pub const CURRENT: Map<AccountNumber, u64> = Map::new("current/").shared();
+pub const FRAMES: Map<(u64, u64), Frame> = Map::new("frame/").shared();
+pub const HELD: Map<(u64, u64), Body> = Map::new("held/").shared();
+pub const SEALED: Map<(u64, u64), Sealed> = Map::new("sealed/").shared();
+pub const CALLS: Map<(u64, String), CallRow> = Map::new("call/").shared();
+pub const WITHHELD: Set<(u64, u64)> = Set::new("withheld/").shared();
+pub const PARTIALS: Map<u64, Partial> = Map::new("partial/").shared();
+pub const LIVE: Map<(u64, u64), Live> = Map::new("live/").shared();
+pub const SHOWN: Map<(u64, String), String> = Map::new("shown/").shared();
+pub const DEFERRED: Map<(u64, String, u64), Change> = Map::new("deferred/").shared();
 /// a thread's topic: the one line its agent last set with `thread_topic`
-pub const TOPICS: Map<u64, String> = Map::new("topic/");
-pub const TALLIES: Map<u64, Tally> = Map::new("tally/");
-pub const BOOKINGS: Map<u64, Booking> = Map::new("booking/");
-pub const BOOKED: Set<(AccountNumber, u64)> = Set::new("booked/");
-pub const FLIGHTS: Map<u64, Flight> = Map::new("flight/");
-pub const RETRIES: Map<u64, Retry> = Map::new("retry/");
-pub const REPORTS: Map<(AccountNumber, u64), String> = Map::new("report/");
-pub const REPORTING: Set<AccountNumber> = Set::new("reporting/");
-pub const USAGE: Map<String, UsageWindow> = Map::new("usage/");
+pub const TOPICS: Map<u64, String> = Map::new("topic/").shared();
+pub const TALLIES: Map<u64, Tally> = Map::new("tally/").shared();
+pub const BOOKINGS: Map<u64, Booking> = Map::new("booking/").shared();
+pub const BOOKED: Set<(AccountNumber, u64)> = Set::new("booked/").shared();
+pub const FLIGHTS: Map<u64, Flight> = Map::new("flight/").shared();
+pub const RETRIES: Map<u64, Retry> = Map::new("retry/").shared();
+pub const REPORTS: Map<(AccountNumber, u64), String> = Map::new("report/").shared();
+pub const REPORTING: Set<AccountNumber> = Set::new("reporting/").shared();
+pub const USAGE: Map<String, UsageWindow> = Map::new("usage/").shared();
 // a thread whose general input waits out its agent's `settle`, and the wake-up that ends it
-pub const SETTLING: Map<u64, SettleWindow> = Map::new("settling/");
-pub const BUDGETS: Map<(String, String), Budget> = Map::new("budget/");
-pub const PACES: Map<String, Pace> = Map::new("pace/");
-pub const READS: Map<String, crate::StatusRead> = Map::new("status/");
-pub const COUNT: Item<u64> = Item::new("count");
-pub const WATCHES: Map<u64, Watching> = Map::new("watch/");
-pub const WATCH_COUNT: Item<u64> = Item::new("watch-count");
+pub const SETTLING: Map<u64, SettleWindow> = Map::new("settling/").shared();
+pub const BUDGETS: Map<(String, String), Budget> = Map::new("budget/").shared();
+pub const PACES: Map<String, Pace> = Map::new("pace/").shared();
+pub const READS: Map<String, crate::StatusRead> = Map::new("status/").shared();
+pub const COUNT: Item<u64> = Item::new("count").shared();
+pub const WATCHES: Map<u64, Watching> = Map::new("watch/").shared();
+pub const WATCH_COUNT: Item<u64> = Item::new("watch-count").shared();
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Live {
@@ -270,3 +270,40 @@ pub fn written(key: &[u8]) -> Option<Written> {
     let model = models.iter().any(|prefix| key.starts_with(prefix));
     model.then_some(Written::Model)
 }
+
+// Every table here is general data: only this program's code governs it.
+pub(crate) const TABLES: &[::program::Table] = &[
+    MODELS.table(),
+    COMPACT_AT.table(),
+    LAST.table(),
+    THREADS.table(),
+    BY_AGENT.table(),
+    PLACES.table(),
+    BOUND.table(),
+    CURRENT.table(),
+    FRAMES.table(),
+    HELD.table(),
+    SEALED.table(),
+    CALLS.table(),
+    WITHHELD.table(),
+    PARTIALS.table(),
+    LIVE.table(),
+    SHOWN.table(),
+    DEFERRED.table(),
+    TOPICS.table(),
+    TALLIES.table(),
+    BOOKINGS.table(),
+    BOOKED.table(),
+    FLIGHTS.table(),
+    RETRIES.table(),
+    REPORTS.table(),
+    REPORTING.table(),
+    USAGE.table(),
+    SETTLING.table(),
+    BUDGETS.table(),
+    PACES.table(),
+    READS.table(),
+    COUNT.table(),
+    WATCHES.table(),
+    WATCH_COUNT.table(),
+];

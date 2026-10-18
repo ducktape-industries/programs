@@ -507,7 +507,7 @@ dependencies = [
 [[package]]
 name = "blob"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=7f72b1a49d4fa3078fab42de42b71d8d73402a42#7f72b1a49d4fa3078fab42de42b71d8d73402a42"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b5f164664d555ff054cd32559879abf8104e1c4a#b5f164664d555ff054cd32559879abf8104e1c4a"
 dependencies = [
  "abi",
  "borsh",
@@ -2105,7 +2105,7 @@ checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 [[package]]
 name = "fixture-wasm"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=7f72b1a49d4fa3078fab42de42b71d8d73402a42#7f72b1a49d4fa3078fab42de42b71d8d73402a42"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b5f164664d555ff054cd32559879abf8104e1c4a#b5f164664d555ff054cd32559879abf8104e1c4a"
 dependencies = [
  "serde",
  "serde_json",
@@ -2262,6 +2262,7 @@ dependencies = [
  "halo",
  "harness",
  "identity",
+ "ownership",
  "program",
  "programs",
  "scheduler",
@@ -2866,7 +2867,7 @@ dependencies = [
 [[package]]
 name = "host"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=7f72b1a49d4fa3078fab42de42b71d8d73402a42#7f72b1a49d4fa3078fab42de42b71d8d73402a42"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b5f164664d555ff054cd32559879abf8104e1c4a#b5f164664d555ff054cd32559879abf8104e1c4a"
 dependencies = [
  "abi",
  "async-trait",
@@ -3324,7 +3325,7 @@ dependencies = [
 [[package]]
 name = "keyscheme"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=7f72b1a49d4fa3078fab42de42b71d8d73402a42#7f72b1a49d4fa3078fab42de42b71d8d73402a42"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b5f164664d555ff054cd32559879abf8104e1c4a#b5f164664d555ff054cd32559879abf8104e1c4a"
 dependencies = [
  "abi",
  "base64 0.22.1",
@@ -3968,6 +3969,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ownership"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "borsh",
+ "describe",
+ "program",
+ "store",
+]
+
+[[package]]
 name = "p256"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4362,6 +4374,7 @@ dependencies = [
  "host",
  "identity",
  "keyscheme",
+ "ownership",
  "program",
  "scheduler",
  "serde_json",
@@ -4907,13 +4920,14 @@ dependencies = [
 [[package]]
 name = "runtime"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=7f72b1a49d4fa3078fab42de42b71d8d73402a42#7f72b1a49d4fa3078fab42de42b71d8d73402a42"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b5f164664d555ff054cd32559879abf8104e1c4a#b5f164664d555ff054cd32559879abf8104e1c4a"
 dependencies = [
  "abi",
  "async-trait",
  "borsh",
  "futures",
  "tokio",
+ "wasmparser 0.251.0",
  "wasmtime",
 ]
 
@@ -5435,7 +5449,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 [[package]]
 name = "state"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=7f72b1a49d4fa3078fab42de42b71d8d73402a42#7f72b1a49d4fa3078fab42de42b71d8d73402a42"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b5f164664d555ff054cd32559879abf8104e1c4a#b5f164664d555ff054cd32559879abf8104e1c4a"
 dependencies = [
  "abi",
  "borsh",

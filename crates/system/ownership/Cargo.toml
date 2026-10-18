@@ -1,0 +1,22 @@
+[package]
+name = "ownership"
+version.workspace = true
+edition.workspace = true
+
+# The types and the rules over `store` are always built; `program` adds the
+# wasm exports, which only its own wasm build turns on.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+program = []
+# `describe` makes this crate's wasm build the `ducktape.describe` module:
+# the `describe` export alone, no program, no imports.
+describe = []
+
+[dependencies]
+abi = { workspace = true }
+borsh = { workspace = true }
+describe = { workspace = true }
+program = { workspace = true }
+store = { workspace = true }

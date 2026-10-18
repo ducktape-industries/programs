@@ -12,7 +12,7 @@ use store::{KeyCodec, Map, PageRequest, PageResponse};
 
 use crate::Listed;
 
-const LISTS: Map<(ProgramId, String), Ownership> = Map::new("l/");
+const LISTS: Map<(ProgramId, String), Ownership> = Map::new("l/").shared();
 
 pub(crate) fn check(
     ctx: &ExecCtx,
@@ -240,3 +240,6 @@ pub(crate) fn lists(
         .range_of(ctx, program, page)?
         .map(|((_, key), list)| Listed { key, list }))
 }
+
+// Every table here is general data: only this program's code governs it.
+pub(crate) const TABLES: &[::program::Table] = &[LISTS.table()];

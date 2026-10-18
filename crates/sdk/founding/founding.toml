@@ -51,6 +51,11 @@ code = "access.wasm"
 roles = ["access"]
 
 [[programs]]
+id = "ownership"
+code = "ownership.wasm"
+roles = ["ownership"]
+
+[[programs]]
 id = "chat"
 code = "chat.wasm"
 

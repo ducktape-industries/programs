@@ -14,6 +14,7 @@ impl Program for Egress {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+    const TABLES: &'static [::program::Table] = crate::state::TABLES;
 
     fn access(_: &QueryCtx, op: &Op) -> Result<Vec<::program::Need>, Error> {
         Ok(crate::rules::needs(op))

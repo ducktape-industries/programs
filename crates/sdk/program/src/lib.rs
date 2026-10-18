@@ -56,6 +56,7 @@ mod origin;
 mod program;
 pub mod refuse;
 pub mod schema;
+pub mod tables;
 
 pub use abi;
 pub use abi::hook;
@@ -81,3 +82,4 @@ pub use refuse::{
     already_exists, capacity, corrupt, decoded, invalid, not_found, stale, unauthorized,
     unexpected_reply, wrong_state,
 };
+pub use tables::{Held, Table};

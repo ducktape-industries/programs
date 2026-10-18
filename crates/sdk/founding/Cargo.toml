@@ -15,6 +15,7 @@ blobs = { workspace = true }
 awaits = { workspace = true }
 halo = { workspace = true }
 access = { workspace = true }
+ownership = { workspace = true }
 scheduler = { workspace = true }
 chat = { workspace = true }
 forge = { workspace = true }

@@ -42,6 +42,7 @@ pub const UNVIEWED: &[&str] = &[
     "halo",
     "scheduler",
     "access",
+    "ownership",
     "activity",
     "egress",
     "attribution",

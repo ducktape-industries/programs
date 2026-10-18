@@ -18,6 +18,7 @@ pub fn schema(program: &str) -> Option<BorshSchemaContainer> {
         "halo" => interface::<halo::Halo>(),
         "scheduler" => interface::<scheduler::Scheduler>(),
         "access" => interface::<access::Access>(),
+        "ownership" => interface::<ownership::Ownership>(),
         "chat" => interface::<chat::Chat>(),
         "forge" => interface::<forge::Forge>(),
         "files" => interface::<files::Files>(),

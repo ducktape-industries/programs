@@ -15,16 +15,16 @@ use store::{Item, KeyCodec, Map, Set};
 
 use crate::{CODE_KIND, Change, Entry, Genesis, NOTICE, Scheduled, View, role_bound};
 
-const PROGRAMS: Map<ProgramId, Entry> = Map::new("p/");
-const VIEWS: Map<ProgramId, View> = Map::new("v/");
-const HOOKS: Set<ProgramId> = Set::new("h/");
-pub(crate) const ROLES: Map<String, ProgramId> = Map::new("r/");
+const PROGRAMS: Map<ProgramId, Entry> = Map::new("p/").shared();
+const VIEWS: Map<ProgramId, View> = Map::new("v/").shared();
+const HOOKS: Set<ProgramId> = Set::new("h/").shared();
+pub(crate) const ROLES: Map<String, ProgramId> = Map::new("r/").shared();
 type At = (u64, ProgramId);
 /// The value stays a bare `Change`, so a `programs` swapped in over pending
 /// entries still reads them; who made one is `BY`.
-pub(crate) const SCHEDULE: Map<At, Change> = Map::new("s/");
-const FOLDED: Item<u64> = Item::new("folded");
-pub(crate) const BY: Map<At, AccountNumber> = Map::new("b/");
+pub(crate) const SCHEDULE: Map<At, Change> = Map::new("s/").shared();
+const FOLDED: Item<u64> = Item::new("folded").shared();
+pub(crate) const BY: Map<At, AccountNumber> = Map::new("b/").shared();
 
 pub(crate) fn init(ctx: &ExecCtx, genesis: Genesis) {
     for entry in genesis.programs {
@@ -498,3 +498,14 @@ fn waits(
         .into_iter()
         .any(|(at, change)| at.1 == name && !overruled.contains(&at) && this(&change)))
 }
+
+// Every table here is general data: only this program's code governs it.
+pub(crate) const TABLES: &[::program::Table] = &[
+    PROGRAMS.table(),
+    VIEWS.table(),
+    HOOKS.table(),
+    ROLES.table(),
+    SCHEDULE.table(),
+    FOLDED.table(),
+    BY.table(),
+];

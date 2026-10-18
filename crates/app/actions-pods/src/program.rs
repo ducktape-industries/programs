@@ -11,6 +11,7 @@ impl Program for ActionsPods {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+    const TABLES: &'static [::program::Table] = crate::rules::TABLES;
 
     fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
         let config: Config = decoded(PROGRAM, "Config", params)?;

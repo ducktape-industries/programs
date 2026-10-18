@@ -65,6 +65,9 @@ pub type Verifier = Box<dyn Fn(Scheme, &[u8], &[u8], &[u8], &[u8]) -> bool>;
 #[derive(Default)]
 pub struct MockState {
     pub state: BTreeMap<Vec<u8>, Vec<u8>>,
+    // each key a run set or deleted, the first time it did, and whether it held a value then: what
+    // the kernel tells the ownership role (a `MockChain` clears it before each run)
+    pub touched: BTreeMap<Vec<u8>, bool>,
     pub blobs: BTreeMap<BlobId, Blob>,
     /// The last `set_return_data`.
     pub output: Vec<u8>,
@@ -124,6 +127,7 @@ impl MockHost {
             (role::HALO, "halo"),
             (role::SCHEDULER, "scheduler"),
             (role::ACCESS, "access"),
+            (role::OWNERSHIP, "ownership"),
         ])
     }
 
@@ -361,10 +365,12 @@ impl MockHost {
                 )),
             },
             HostOp::Set { key, value } => {
+                mock.touch(&key);
                 mock.state.insert(key, value);
                 HostReply::Done
             }
             HostOp::Delete(key) => {
+                mock.touch(&key);
                 mock.state.remove(&key);
                 HostReply::Done
             }
@@ -459,6 +465,13 @@ impl MockHost {
 }
 
 impl MockState {
+    fn touch(&mut self, key: &[u8]) {
+        if !self.touched.contains_key(key) {
+            let existed = self.state.contains_key(key);
+            self.touched.insert(key.to_vec(), existed);
+        }
+    }
+
     fn scan_state(&self, range: &Range) -> Vec<Entry> {
         let admitted =
             self.state

@@ -172,6 +172,7 @@ impl Net {
     ) -> Net {
         let apps = apps.into_iter().map(|app| match app.program.as_str() {
             egress::PROGRAM => filling(abi::role::EGRESS, app),
+            ownership::PROGRAM => filling(abi::role::OWNERSHIP, app),
             _ => app,
         });
         let genesis = Genesis {
@@ -496,6 +497,8 @@ mod founding_tests;
 mod harness_tests;
 #[path = "system/identity.rs"]
 mod identity_tests;
+#[path = "system/ownership.rs"]
+mod ownership_tests;
 #[path = "system/programs.rs"]
 mod program_programs_tests;
 #[path = "system/scheduler.rs"]

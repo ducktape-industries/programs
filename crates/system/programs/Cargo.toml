@@ -27,6 +27,7 @@ store = { workspace = true }
 # The founding suite (`tests/system.rs`) drives the built boot set on the host.
 [dev-dependencies]
 access = { workspace = true }
+ownership = { workspace = true }
 activity = { workspace = true }
 awaits = { workspace = true }
 halo = { workspace = true }

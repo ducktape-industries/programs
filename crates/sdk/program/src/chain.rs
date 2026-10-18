@@ -25,7 +25,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::Rc;
 
 use abi::role::identity::{Kind, Profile, Query, Reply, Standing};
-use abi::role::{self, awaits, scheduler};
+use abi::role::{self, awaits, ownership, scheduler};
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::awaiting::{self, Answer, Awaiting, Step, Suspended};
@@ -56,6 +56,7 @@ struct Seat {
     query: Entry<QueryCtx>,
     access: Entry<QueryCtx>,
     resource: Lookup,
+    tables: Vec<ownership::Table>,
 }
 
 enum Call<'a> {
@@ -330,6 +331,7 @@ impl MockChain {
             query: Rc::new(|ctx, request| crate::query::<M>(&ctx, request)),
             access: Rc::new(|ctx, payload| crate::access::<M>(&ctx, payload)),
             resource: Rc::new(|ctx, key| crate::resource::<M>(&ctx, key)),
+            tables: crate::tables::declared(M::TABLES),
         };
         let roster = self.roster.clone();
         if let Some(identity) = self.roles.get(role::IDENTITY) {
@@ -701,6 +703,8 @@ impl MockChain {
         let first = self.next_message.get();
         host.borrow_mut().next_message = first;
         host.borrow_mut().next_ticket = self.next_ticket.get();
+        host.borrow_mut().touched.clear();
+        let runs_an_op = !matches!(call, Call::Init(_));
         let step = match (suspended, call) {
             (Some(suspended), Call::Resume { ticket, answer }) => {
                 awaiting::resume(suspended, env.clone(), ticket, answer)
@@ -724,7 +728,8 @@ impl MockChain {
             Step::Done(done) => (done, None),
             Step::Parked(suspended) => (Ok(()), Some(suspended)),
         };
-        let delivered = ran.and_then(|()| self.deliver(env, emitted, first, depth));
+        let guarded = ran.and_then(|()| self.guard(env, seat, runs_an_op));
+        let delivered = guarded.and_then(|()| self.deliver(env, emitted, first, depth));
         if let Err(refusal) = delivered {
             self.restore(checkpoint);
             return Segment::finished(Err(refusal));
@@ -737,6 +742,73 @@ impl MockChain {
             calls,
             deferred,
             parked,
+        }
+    }
+
+    // The kernel's ownership guard (`crates/kernel/host/src/lib.rs`, `guard`): once a run that
+    // wrote owned keys returns, and before anything it emitted runs, one call to the program
+    // seated at the ownership role, as the chain. Not guarded: init, the chain's own runs, the
+    // validators' messages and the ownership program's own runs; with no program seated there,
+    // nothing is.
+    fn guard(&self, env: &Env, seat: &Seat, runs_an_op: bool) -> Result<(), Error> {
+        let touched = std::mem::take(&mut seat.host.borrow_mut().touched);
+        let Some(guardian) = self.roles.get(role::OWNERSHIP) else {
+            return Ok(());
+        };
+        let Ok(guarding) = self.seated(guardian) else {
+            return Ok(());
+        };
+        let voted = matches!(&env.origin, Origin::Program(sender) if self.roles.get(role::VALIDATORS) == Some(sender));
+        let by_the_chain = env.origin == Origin::Root;
+        if !runs_an_op || by_the_chain || voted || *guardian == env.program {
+            return Ok(());
+        }
+        let writes: Vec<ownership::Write> = {
+            let state = &seat.host.borrow().state;
+            touched
+                .into_iter()
+                .filter(|(key, _)| !ownership::shared(&seat.tables, key))
+                .filter_map(|(key, existed)| {
+                    let kept = state.contains_key(&key);
+                    let kind = ownership::kind_of(&seat.tables, &key);
+                    (existed || kept).then_some(ownership::Write {
+                        key,
+                        kind,
+                        existed,
+                        kept,
+                    })
+                })
+                .collect()
+        };
+        if writes.is_empty() {
+            return Ok(());
+        }
+        let guard = ownership::Op::Guard(ownership::Guard {
+            program: env.program.clone(),
+            origin: env.origin.clone().into(),
+            sender: env.sender.clone().map(Into::into),
+            writes,
+        });
+        let asked = Env {
+            program: guardian.clone(),
+            origin: Origin::Root,
+            sender: Some(Principal::Root),
+            cause: Cause::Direct,
+            ..env.clone()
+        };
+        let host = &guarding.host;
+        let step = (guarding.execute)(host.exec(asked), &abi::encode(&guard));
+        host.take_output();
+        let emitted = !host.take_emissions().is_empty();
+        let called = !host.take_calls().is_empty() || !host.take_resumes().is_empty();
+        let sent = emitted || called || host.take_deferred();
+        match (step, sent) {
+            (Step::Done(Err(refusal)), _) => Err(refusal),
+            (Step::Done(Ok(())), false) => Ok(()),
+            (Step::Done(Ok(())), true) | (Step::Parked(_), _) => Err(Error::new(
+                code::UNSUPPORTED,
+                format!("{guardian} sends no message while it guards"),
+            )),
         }
     }
 
@@ -1088,5 +1160,7 @@ impl Seat {
     }
 }
 
+#[cfg(test)]
+mod guarded;
 #[cfg(test)]
 mod tests;

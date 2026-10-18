@@ -319,6 +319,34 @@ told of every frame a block carries through `Program::hook(ctx, record)`.
 chain, `Root`); a program that does not override `hook` refuses the call.
 `activity` is the one this repo founds.
 
+Every key a program writes is **owned** unless the program declares the
+table it falls in **shared**: the kernel hands each run's owned writes to the
+ownership role, which records who created each key and refuses another
+account's change where the creator's policy says so ([roles.md](roles.md),
+the ownership row). A program lists its tables once, as
+`Program::TABLES`, and `export!` writes them into its code as the
+`ducktape.tables` section:
+
+```rust
+const VOTES: Map<(String, AccountNumber), u8> = Map::new("vote/").shared();
+const POLLS: Map<String, Owned<PollRow>> = Map::new("poll/");
+
+impl Kind for PollRow {
+    const KIND: &'static str = "poll.poll";
+}
+
+// in `impl Program for Poll`
+const TABLES: &'static [Table] = &[VOTES.table(), POLLS.table()];
+```
+
+`.shared()` (on `Map`, `Set` and `Item`) makes a table general data: no
+owner, no policy, only the program's own code governs it, as for a counter
+or an index many accounts write. `Map<K, Owned<T>>` reads and writes `T`
+itself, the same bytes as `Map<K, T>`, and names its rows' kind (`T::KIND`),
+which a user's defaults and policies know them by. A plain table that is
+neither is owned with no kind. Every table this repo's programs keep is
+declared shared for now; each program moves its owned kinds over on its own.
+
 ## 6. Talking to other programs
 
 **A query is a read.** `ctx.query::<Q, R>(program, &q)` runs the sibling's
@@ -586,7 +614,11 @@ then). `chain.init(program, &params)` runs `init` as the kernel admits a
 program: one frame, what it emits run after it, a refusal undoing it all.
 Before each op the chain asks the program's `access` as the kernel does, and
 when it answers needs, runs the access role's `Check` on the program seated
-there (seat `access::Access` under `"access"`);
+there (seat `access::Access` under `"access"`); and once a run that wrote
+keys outside its `TABLES`' shared ones returns, the chain asks the program
+seated at the ownership role, as the kernel does, before anything the run
+emitted runs (seat `ownership::Ownership` under `"ownership"`; with none
+seated, nothing is guarded);
 `chain.at(height, time)` moves the chain to another block. The two tests that matter
 for poll: the announcement lands in the frame that opened the poll, and a
 room that refuses the line still gets its poll while a refused closing

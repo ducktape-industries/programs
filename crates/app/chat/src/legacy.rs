@@ -14,13 +14,13 @@ type ChannelId = String;
 type Seq = u64;
 
 // a message as chat kept it before `Stored`
-pub const OLD_MESSAGES: Map<(ChannelId, Seq), MsgRow> = Map::new("message/");
+pub const OLD_MESSAGES: Map<(ChannelId, Seq), MsgRow> = Map::new("message/").shared();
 // search postings: `(word, channel, seq)`
-pub const WORDS: Set<(String, ChannelId, Seq)> = Set::new("word/");
+pub const WORDS: Set<(String, ChannelId, Seq)> = Set::new("word/").shared();
 // tag postings, newest first: `(tag, newest_first(time), channel, seq)`
-pub const TAGS: Set<(String, u64, ChannelId, Seq)> = Set::new("tag/");
+pub const TAGS: Set<(String, u64, ChannelId, Seq)> = Set::new("tag/").shared();
 // tag postings within a channel, newest first: `(channel, tag, newest_first(seq))`
-pub const CHANNEL_TAGS: Set<(ChannelId, String, Seq)> = Set::new("channel-tag/");
+pub const CHANNEL_TAGS: Set<(ChannelId, String, Seq)> = Set::new("channel-tag/").shared();
 
 // the old row at `key` and its postings go, as a new row takes its place
 pub(crate) fn forget(ctx: &ExecCtx, key: &(ChannelId, Seq)) -> Result<(), Error> {

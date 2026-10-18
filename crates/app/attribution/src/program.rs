@@ -12,6 +12,7 @@ impl Program for Attribution {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+    const TABLES: &'static [::program::Table] = crate::state::TABLES;
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         match op {

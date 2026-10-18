@@ -13,6 +13,7 @@ impl Program for Blobs {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+    const TABLES: &'static [::program::Table] = crate::rules::TABLES;
     const RETURNS: &'static [Return] = &[returns::<u64>("Put")];
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {

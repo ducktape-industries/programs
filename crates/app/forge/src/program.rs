@@ -28,6 +28,7 @@ impl Program for Forge {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+    const TABLES: &'static [::program::Table] = crate::state::TABLES;
     const RETURNS: &'static [Return] = &[
         returns::<OpReply>("Merge"),
         returns::<OpReply>("ChangeOpen"),

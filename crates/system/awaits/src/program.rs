@@ -12,6 +12,7 @@ impl Program for Awaits {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+    const TABLES: &'static [::program::Table] = crate::rules::TABLES;
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         match op {
