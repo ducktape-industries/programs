@@ -146,6 +146,20 @@ fn thread(id: u64, agent: u64, manager: u64, place: &str) -> ThreadRow {
 
 const LAST_TIME: u64 = 1_760_000_003_000;
 
+fn room((id, name): &(String, String)) -> chat::ChannelInfo {
+    chat::ChannelInfo {
+        channel: chat::ChannelRow {
+            id: id.clone(),
+            name: name.clone(),
+            created_at: 0,
+            post_policy: chat::PostPolicy::Open,
+            owner: Principal::Account(EDDY),
+            archived: false,
+        },
+        head_seq: 0,
+    }
+}
+
 fn frame(seq: u64, body: Body) -> Frame {
     Frame {
         seq,
@@ -180,6 +194,8 @@ struct Net {
     serving: Vec<(String, usize)>,
     services: Vec<egress::ServiceRow>,
     answers: Vec<(u64, identity::Ownership)>,
+    /// chat's rooms: (channel id, name)
+    rooms: Vec<(String, String)>,
 }
 
 impl Default for Net {
@@ -280,6 +296,9 @@ impl Default for Net {
                 registered: 5,
             }],
             answers: Vec::new(),
+            rooms: ["general", "release", "deploys"]
+                .map(|room| (room.to_owned(), room.to_owned()))
+                .into(),
         }
     }
 }
@@ -447,6 +466,16 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                 egress::Reply::Serving(vec![vec![1]; count])
             }
             egress::Query::Services { .. } => egress::Reply::Services(page(net.services.clone())),
+            other => panic!("unexpected query: {other:?}"),
+        })
+    });
+    let shared = net.clone();
+    cx.host().handle::<Query<chat::Chat>>(move |query| {
+        let net = shared.borrow();
+        Ok(match query {
+            chat::Query::Channels { .. } => {
+                chat::Reply::Channels(page(net.rooms.iter().map(room).collect()))
+            }
             other => panic!("unexpected query: {other:?}"),
         })
     });

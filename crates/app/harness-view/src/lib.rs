@@ -124,6 +124,7 @@ impl View for Agents {
         egress::PROGRAM,
         files::PROGRAM,
         access::PROGRAM,
+        chat::PROGRAM,
     ];
     const MIN_WINDOW_WIDTH: u32 = 480;
 
