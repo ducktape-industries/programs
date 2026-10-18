@@ -10,8 +10,8 @@ use view::prelude::*;
 
 use super::list::{ROW, pressable};
 use super::{
-    agent_gone, back, caption, closed_badge, current_badge, fact, fold, meter, no_node, opened,
-    panel, state_badge, thinking_picker, waiting,
+    BOUND_WORDS, agent_gone, back, bound_badge, caption, closed_badge, current_badge, fact, fold,
+    meter, no_node, opened, panel, state_badge, thinking_picker, waiting,
 };
 use crate::read::{self, Detail, Roster};
 use crate::words::{
@@ -448,6 +448,9 @@ fn threads(
         });
         pressable(format!("thread-{id}"), &theme)
             .when(thread.closed, |row| row.text_color(theme.muted))
+            .when(detail.bound.contains(&id), |row| {
+                row.aria_description(BOUND_WORDS)
+            })
             .on_click(
                 cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
                     view.go(Screen::Thread(id), cx)
@@ -476,6 +479,13 @@ fn threads(
                             .when(current == Some(id), |label| {
                                 label.child(current_badge(
                                     SharedString::from(format!("thread-{id}-current")),
+                                    &theme,
+                                    ladder,
+                                ))
+                            })
+                            .when(detail.bound.contains(&id), |label| {
+                                label.child(bound_badge(
+                                    SharedString::from(format!("thread-{id}-bound")),
                                     &theme,
                                     ladder,
                                 ))

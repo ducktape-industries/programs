@@ -1,11 +1,6 @@
-//! Every read the screens make: the roster (the accounts whose script calls harness, what
-//! harness resolves for each, their threads and the topic of the one its sentence names, the
-//! chat rooms' names, how many member nodes serve each model's service and relay, and the
-//! newest block's time), one agent in full with who may change its configuration file and whom
-//! it answers, both read from access, and each conversation's topic, one thread's transcript
-//! with its topic and the reply its model is streaming back, the model records, and the
-//! services the models form offers. A topic is the line the agent last set with
-//! `thread_topic`: its own words on what the conversation is about.
+//! Every read the screens make: the roster (agents, their threads and topics, room names, nodes
+//! serving each service and relay, the time), one agent in full (access lists, topics, bound
+//! conversations), one transcript with its topic and streaming reply, the models and services.
 use std::collections::HashMap;
 
 use egress::{RELAY, ServiceRow};
@@ -229,6 +224,7 @@ pub(crate) struct Detail {
     pub threads: Vec<(ThreadRow, Usage)>,
     /// each conversation's topic, by its id, for those whose agent set one
     pub topics: HashMap<u64, String>,
+    pub bound: Vec<u64>,
     pub tools: Vec<ToolInfo>,
 }
 
@@ -267,6 +263,15 @@ pub(crate) async fn detail(host: Host, agent: u64) -> Result<Detail, Error> {
             page: page(after),
         })
         .await?;
+    let bound = host
+        .query_all(|after| harness::ask::Bound {
+            agent,
+            page: page(after),
+        })
+        .await?
+        .into_iter()
+        .map(|thread| thread.id)
+        .collect();
     let mut used = Vec::new();
     let mut topics = HashMap::new();
     // ponytail: the totals read every frame of every thread; a total kept on the thread row
@@ -286,6 +291,7 @@ pub(crate) async fn detail(host: Host, agent: u64) -> Result<Detail, Error> {
         conversation_writers,
         threads: used,
         topics,
+        bound,
         tools,
     })
 }

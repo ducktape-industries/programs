@@ -1,14 +1,12 @@
-//! Every read: what harness resolves for an agent, a thread, an agent's threads newest first,
-//! a transcript in order, the input held while a thread's loop runs, a thread's tool calls, the
-//! tool catalog, the thread a place last reached, the model records, the frames left out of the
-//! model's view with their size, the reply a thread's model call is streaming back, and the line
-//! a thread's agent says it is about.
+//! Every read: an agent, a thread, an agent's threads and bound conversations, a transcript,
+//! held input, tool calls, the tool catalog, a place's last thread, the models, withheld frames
+//! with their size, a streaming reply and a thread's topic.
 use ::program::{Error, QueryCtx, corrupt};
 use abi::role::identity::AccountNumber;
 use store::{PageRequest, PageResponse};
 
 use crate::state::{
-    BY_AGENT, CALLS, FRAMES, HELD, MODELS, PARTIALS, PLACES, THREADS, TOPICS, WITHHELD,
+    BOUND, BY_AGENT, CALLS, FRAMES, HELD, MODELS, PARTIALS, PLACES, THREADS, TOPICS, WITHHELD,
 };
 use crate::{Body, CallRow, Frame, ModelRow, Partial, ThreadRow, WithheldFrame};
 
@@ -32,20 +30,33 @@ pub(crate) fn thread(ctx: &QueryCtx, id: u64) -> Result<Option<ThreadRow>, Error
     THREADS.get(ctx, &id)
 }
 
+fn named(ctx: &QueryCtx, id: u64, what: &str) -> Result<ThreadRow, Error> {
+    THREADS
+        .get(ctx, &id)?
+        .ok_or_else(|| corrupt("thread", &id.to_be_bytes(), what))
+}
+
 pub(crate) fn threads(
     ctx: &QueryCtx,
     agent: AccountNumber,
     page: &PageRequest,
 ) -> Result<PageResponse<ThreadRow>, Error> {
-    BY_AGENT.range_of(ctx, &agent, page)?.try_map(|(_, key)| {
-        let id = u64::MAX - key;
-        THREADS.get(ctx, &id)?.ok_or_else(|| {
-            corrupt(
-                "thread",
-                &id.to_be_bytes(),
-                "an agent names a thread that is gone",
-            )
-        })
+    BY_AGENT
+        .range_of(ctx, &agent, page)?
+        .try_map(|(_, key)| named(ctx, u64::MAX - key, "an agent names a thread that is gone"))
+}
+
+pub(crate) fn bound(
+    ctx: &QueryCtx,
+    agent: AccountNumber,
+    page: &PageRequest,
+) -> Result<PageResponse<ThreadRow>, Error> {
+    BOUND.range_of(ctx, &agent, page)?.try_map(|(_, binding)| {
+        named(
+            ctx,
+            binding.thread,
+            "a bound place names a thread that is gone",
+        )
     })
 }
 

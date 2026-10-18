@@ -54,8 +54,82 @@ fn asked_for(chain: &MockChain, thread: u64) -> RequestRow {
         .expect("the thread's model call is open")
 }
 
+fn room(world: &World, id: &str) {
+    let op = chat::Op::CreateChannel {
+        channel_id: id.into(),
+        name: id.into(),
+        post_policy: chat::PostPolicy::Open,
+    };
+    world.chain.submit(signed(ADA), chat::PROGRAM, &op).unwrap();
+}
+
+fn in_room(channel: &str) -> Place {
+    Place::Channel {
+        channel: channel.into(),
+    }
+}
+
+fn bind(world: &World, key: &[u8], place: Place) -> Result<u64, Error> {
+    let open = Op::OpenThread {
+        agent: world.agent,
+        place,
+    };
+    renewed(&world.chain, key, &open)
+}
+
+fn say_in(world: &World, channel: &str, id: &str, text: &str) {
+    world.post(ADA, channel, id, &format!("<@{}> {text}", world.agent));
+}
+
+fn reply_in(world: &World, channel: &str, id: &str, root: u64, text: &str) {
+    let op = chat::Op::PostMessage {
+        channel_id: channel.into(),
+        message_id: id.into(),
+        blocks: chat::parse_message(&format!("<@{}> {text}", world.agent)),
+        thread: Some(root),
+    };
+    world.chain.submit(signed(ADA), chat::PROGRAM, &op).unwrap();
+}
+
+fn posts(chain: &MockChain, thread: u64) -> Vec<String> {
+    frames(chain, thread)
+        .into_iter()
+        .chain(held(chain, thread))
+        .filter_map(|body| match body {
+            Body::Post { text, .. } => Some(text),
+            _ => None,
+        })
+        .collect()
+}
+
+fn bound(chain: &MockChain, agent: AccountNumber) -> Vec<u64> {
+    let asked = Query::Bound {
+        agent,
+        page: PageRequest::default(),
+    };
+    let Reply::Threads(page) = chain.query(PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    page.items.into_iter().map(|row| row.id).collect()
+}
+
+fn calls(chain: &MockChain, thread: u64) -> Vec<String> {
+    let asked = Query::Calls {
+        thread,
+        page: PageRequest::default(),
+    };
+    let Reply::Calls(page) = chain.query(PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    page.items.into_iter().map(|row| row.id).collect()
+}
+
+fn says(text: &str) -> Value {
+    json!([{ "type": "text", "text": text }])
+}
+
 #[test]
-fn every_person_and_every_place_continue_the_agents_one_conversation() {
+fn every_person_and_every_place_continue_the_agents_canonical_conversation() {
     let world = world();
     let chain = &world.chain;
     let thread = answered(&world, "m1", "hello from general");
@@ -105,10 +179,11 @@ fn every_person_and_every_place_continue_the_agents_one_conversation() {
         .to_owned();
     assert!(
         manual.contains(&format!(
-            "- Conversation: conversation {thread}. It is your one conversation"
+            "- Conversation: conversation {thread}. It is your canonical conversation: every message to you arrives here"
         )),
         "{manual}"
     );
+    assert!(bound(chain, world.agent).is_empty());
 }
 
 #[test]
@@ -370,4 +445,304 @@ fn the_agent_says_in_one_line_what_its_conversation_is_about_and_the_manual_name
     );
     let fork = renewed(chain, ADA, &Op::ForkThread { agent: world.agent }).unwrap();
     assert_eq!(topic(chain, fork), topic(chain, thread));
+}
+
+#[test]
+fn two_bound_conversations_run_at_once_and_keep_their_inputs_calls_and_context_apart() {
+    let world = world();
+    let chain = &world.chain;
+    let canonical = answered(&world, "m1", "hello from general");
+    let before = frames(chain, canonical);
+    room(&world, "j-a");
+    room(&world, "j-b");
+    let a = bind(&world, ADA, in_room("j-a")).unwrap();
+    let b = bind(&world, ADA, in_room("j-b")).unwrap();
+    assert_eq!(current(chain, world.agent), Some(canonical));
+    say_in(&world, "j-a", "a1", "list the root");
+    say_in(&world, "j-b", "b1", "say hi");
+    assert_eq!(
+        assigned(chain, SERVICE).len(),
+        2,
+        "both conversations ask at once"
+    );
+    let (to_a, to_b) = (asked_for(chain, a), asked_for(chain, b));
+    let manual = body(chain, &to_a)["system"][1]["text"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        manual.contains(&format!(
+            "- Conversation: conversation {a}, bound to chat channel j-a. It is one of several conversations you hold at once"
+        )),
+        "{manual}"
+    );
+    assert!(
+        manual.contains("Answer there: chat_post to channel j-a"),
+        "{manual}"
+    );
+    let to_b_said = texts(body(chain, &to_b)["messages"].as_array().unwrap());
+    assert!(
+        to_b_said.iter().all(|text| !text.contains("list the root")),
+        "{to_b_said:?}"
+    );
+
+    chain.at(4, 0);
+    let call = tool_use("toolu_a", "files_list", json!({ "path": "/" }));
+    answer(
+        chain,
+        to_a.id,
+        Answer::Output(reply(json!([call]), "tool_use", 10)),
+    );
+    answer(
+        chain,
+        to_b.id,
+        Answer::Output(reply(says("Hi."), "end_turn", 20)),
+    );
+    assert_eq!(calls(chain, a), ["toolu_a"]);
+    assert!(calls(chain, b).is_empty());
+    assert_eq!(thread_row(chain, a).context, Context::Measured(18));
+    assert_eq!(thread_row(chain, b).context, Context::Measured(28));
+    let idle = thread_row(chain, b);
+    assert_eq!((idle.asking, idle.closed), (Asking::Idle, false));
+
+    chain.at(5, 0);
+    relay_back(chain, "toolu_a");
+    let again = asked_for(chain, a);
+    let said = texts(body(chain, &again)["messages"].as_array().unwrap());
+    assert!(said[0].ends_with("list the root"), "{said:?}");
+    assert!(said.iter().all(|text| !text.contains("say hi")), "{said:?}");
+    let [heard_a] = &posts(chain, a)[..] else {
+        panic!("{:?}", posts(chain, a));
+    };
+    assert!(heard_a.ends_with("list the root"), "{heard_a}");
+    let [heard_b] = &posts(chain, b)[..] else {
+        panic!("{:?}", posts(chain, b));
+    };
+    assert!(heard_b.ends_with("say hi"), "{heard_b}");
+    assert_eq!(frames(chain, canonical), before);
+}
+
+#[test]
+fn an_input_goes_to_the_conversation_bound_to_its_thread_then_its_channel_else_the_canonical_one() {
+    let world = world();
+    let chain = &world.chain;
+    room(&world, "j-a");
+    say_in(&world, "j-a", "a1", "start a thread");
+    let canonical = current(chain, world.agent).expect("the first mention opens the canonical one");
+    let whole = bind(&world, ADA, in_room("j-a")).unwrap();
+    let within = Place::Thread {
+        channel: "j-a".into(),
+        root: 1,
+    };
+    let within = bind(&world, ADA, within).unwrap();
+    reply_in(&world, "j-a", "a2", 1, "in the thread");
+    say_in(&world, "j-a", "a3", "on top");
+    world.post(
+        ADA,
+        "general",
+        "g1",
+        &format!("<@{}> elsewhere", world.agent),
+    );
+
+    let [in_thread] = &posts(chain, within)[..] else {
+        panic!("{:?}", posts(chain, within));
+    };
+    assert!(in_thread.ends_with("in the thread"), "{in_thread}");
+    let [on_top] = &posts(chain, whole)[..] else {
+        panic!("{:?}", posts(chain, whole));
+    };
+    assert!(on_top.ends_with("on top"), "{on_top}");
+    let heard = posts(chain, canonical);
+    assert_eq!(heard.len(), 2, "{heard:?}");
+    assert!(heard[0].ends_with("start a thread"), "{heard:?}");
+    assert!(heard[1].ends_with("elsewhere"), "{heard:?}");
+    assert_eq!(current(chain, world.agent), Some(canonical));
+    let mut listed = bound(chain, world.agent);
+    listed.sort();
+    assert_eq!(listed, [whole, within]);
+    assert_eq!(thread_at(chain, world.agent, "chat/j-a/1"), Some(within));
+    assert_eq!(thread_at(chain, world.agent, "chat/j-a"), Some(whole));
+    assert_eq!(
+        thread_at(chain, world.agent, "chat/general"),
+        Some(canonical)
+    );
+    assert_eq!(
+        thread_row(chain, within).title,
+        format!("conversation {within}, bound to the thread of message 1 in chat channel j-a")
+    );
+}
+
+#[test]
+fn closing_a_bound_conversation_sends_its_place_back_to_the_canonical_one() {
+    let world = world();
+    let chain = &world.chain;
+    room(&world, "j-a");
+    let a = bind(&world, ADA, in_room("j-a")).unwrap();
+    say_in(&world, "j-a", "a1", "first");
+    assert_eq!(posts(chain, a).len(), 1);
+    assert_eq!(
+        current(chain, world.agent),
+        None,
+        "a bound conversation is never the canonical one"
+    );
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Close { thread: a })
+        .unwrap();
+    assert!(bound(chain, world.agent).is_empty());
+
+    say_in(&world, "j-a", "a2", "second");
+    let canonical = current(chain, world.agent).expect("the place's input opens the canonical one");
+    assert_ne!(canonical, a);
+    let [heard] = &posts(chain, canonical)[..] else {
+        panic!("{:?}", posts(chain, canonical));
+    };
+    assert!(heard.ends_with("second"), "{heard}");
+    assert_eq!(
+        posts(chain, a).len(),
+        1,
+        "the closed conversation hears nothing more"
+    );
+    assert_eq!(thread_at(chain, world.agent, "chat/j-a"), Some(canonical));
+    let again = bind(&world, ADA, in_room("j-a")).unwrap();
+    assert!(again != a && again != canonical);
+}
+
+#[test]
+fn a_message_to_one_running_conversation_is_held_there_and_the_other_never_sees_it() {
+    let world = world();
+    let chain = &world.chain;
+    answered(&world, "m1", "hello");
+    room(&world, "j-a");
+    room(&world, "j-b");
+    let a = bind(&world, ADA, in_room("j-a")).unwrap();
+    let b = bind(&world, ADA, in_room("j-b")).unwrap();
+    say_in(&world, "j-a", "a1", "task a");
+    say_in(&world, "j-b", "b1", "task b");
+    let (to_a, to_b) = (asked_for(chain, a), asked_for(chain, b));
+    say_in(&world, "j-a", "a2", "STEER: change course");
+    let [steer] = &held(chain, a)[..] else {
+        panic!("{:?}", held(chain, a));
+    };
+    assert!(steer.text().ends_with("STEER: change course"));
+    assert!(held(chain, b).is_empty());
+
+    chain.at(4, 0);
+    answer(
+        chain,
+        to_b.id,
+        Answer::Output(reply(says("Done with b."), "end_turn", 10)),
+    );
+    assert_eq!(
+        assigned(chain, SERVICE).len(),
+        1,
+        "b has nothing more to ask"
+    );
+    answer(
+        chain,
+        to_a.id,
+        Answer::Output(reply(says("On a."), "end_turn", 10)),
+    );
+    let next = asked_for(chain, a);
+    let said = texts(body(chain, &next)["messages"].as_array().unwrap());
+    assert!(
+        said.last().unwrap().ends_with("STEER: change course"),
+        "{said:?}"
+    );
+    let [only] = &posts(chain, b)[..] else {
+        panic!("{:?}", posts(chain, b));
+    };
+    assert!(only.ends_with("task b"), "{only}");
+}
+
+#[test]
+fn anyone_opens_a_conversation_once_at_a_place_that_exists() {
+    let world = world();
+    let chain = &world.chain;
+    room(&world, "j-a");
+    let a = bind(&world, BO, in_room("j-a")).unwrap();
+    let row = thread_row(chain, a);
+    assert_eq!((row.place.as_str(), row.manager), ("chat/j-a", world.ada));
+    assert_eq!(
+        row.title,
+        format!("conversation {a}, bound to chat channel j-a")
+    );
+    assert_eq!(
+        current(chain, world.agent),
+        None,
+        "opening one leaves the canonical conversation alone"
+    );
+
+    let twice = bind(&world, ADA, in_room("j-a")).unwrap_err();
+    assert_eq!(twice.code, code::ALREADY_EXISTS);
+    assert!(
+        twice.message.contains(&format!("conversation {a}")),
+        "{}",
+        twice.message
+    );
+    let nowhere = bind(&world, ADA, in_room("nowhere")).unwrap_err();
+    assert_eq!(nowhere.code, code::NOT_FOUND);
+    let rootless = Place::Thread {
+        channel: "j-a".into(),
+        root: 9,
+    };
+    assert_eq!(
+        bind(&world, ADA, rootless).unwrap_err().code,
+        code::NOT_FOUND
+    );
+    let no_agent = Op::OpenThread {
+        agent: world.bo,
+        place: in_room("j-a"),
+    };
+    assert_eq!(
+        renewed(chain, ADA, &no_agent).unwrap_err().code,
+        code::NOT_FOUND
+    );
+    assert_eq!(bound(chain, world.agent), [a]);
+}
+
+#[test]
+fn a_bound_conversation_never_becomes_the_canonical_one_after_a_swap() {
+    let world = world();
+    let chain = &world.chain;
+    let canonical = answered(&world, "m1", "hello");
+    room(&world, "j-a");
+    let a = bind(&world, ADA, in_room("j-a")).unwrap();
+    say_in(&world, "j-a", "a1", "work");
+    chain.at(4, 0);
+    let done = reply(says("Done."), "end_turn", 10);
+    answer(chain, asked_for(chain, a).id, Answer::Output(done));
+    let row = thread_row(chain, a);
+    assert_eq!((row.asking, row.closed), (Asking::Idle, false));
+    assert!(row.last_height > thread_row(chain, canonical).last_height);
+
+    let host = chain.host(PROGRAM);
+    let ctx = host.exec(chain.env(PROGRAM));
+    CURRENT.remove(&ctx, &world.agent);
+    assert_eq!(current(chain, world.agent), Some(canonical));
+}
+
+#[test]
+fn anyone_closes_a_bound_conversation_but_only_the_manager_the_canonical_one() {
+    let world = world();
+    let chain = &world.chain;
+    let canonical = answered(&world, "m1", "hello");
+    room(&world, "j-a");
+    let a = bind(&world, ADA, in_room("j-a")).unwrap();
+
+    let refused = chain
+        .submit(signed(BO), PROGRAM, &Op::Close { thread: canonical })
+        .unwrap_err();
+    assert_eq!(refused.code, code::UNAUTHORIZED);
+    assert!(!thread_row(chain, canonical).closed);
+
+    chain
+        .submit(signed(BO), PROGRAM, &Op::Close { thread: a })
+        .unwrap();
+    assert!(thread_row(chain, a).closed);
+    assert!(bound(chain, world.agent).is_empty());
+
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Close { thread: canonical })
+        .unwrap();
+    assert!(thread_row(chain, canonical).closed);
 }

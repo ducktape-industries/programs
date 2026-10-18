@@ -1,12 +1,12 @@
-//! What each harness op needs of the access program, and who owns each key: an agent
-//! (`agents/<n>`), its conversation (`agents/<n>/conversation`) and its threads (`threads/<id>`)
-//! by the agent's manager, a model (`models/<id>`) by the account that set it. Each is its
-//! owner's alone unless it lists others.
+//! What each harness op needs of the access program, and who owns each key: an agent, its
+//! conversation and its threads by its manager, a model by the account that set it.
+//! Close of a conversation bound to a place needs nothing; of a canonical one, its thread's key.
 use ::program::{Error, Need, Ownership, Party, QueryCtx, Resource, unexpected_reply};
 use abi::role::identity::{AccountNumber, Kind};
 
 use crate::Op;
 use crate::agents::harnessed_agent;
+use crate::conversations::binding;
 use crate::state::{MODELS, THREADS};
 
 pub fn agent_key(agent: AccountNumber) -> String {
@@ -27,7 +27,10 @@ pub fn model_key(id: &str) -> String {
 
 pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
     Ok(match op {
-        Op::Close { thread } => vec![Need::write(thread_key(*thread))],
+        Op::Close { thread } => match bound(ctx, *thread)? {
+            true => Vec::new(),
+            false => vec![Need::write(thread_key(*thread))],
+        },
         Op::SetModel { id, .. } => match MODELS.has(ctx, id) {
             true => vec![Need::write(model_key(id))],
             false => Vec::new(),
@@ -40,8 +43,15 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
             Some(_) => vec![Need::write(conversation_key(*agent))],
             None => Vec::new(),
         },
-        Op::Attributed(_) | Op::Streamed { .. } => Vec::new(),
+        Op::Attributed(_) | Op::Streamed { .. } | Op::OpenThread { .. } => Vec::new(),
     })
+}
+
+fn bound(ctx: &QueryCtx, thread: u64) -> Result<bool, Error> {
+    let Some(row) = THREADS.get(ctx, &thread)? else {
+        return Ok(false);
+    };
+    Ok(binding(ctx, &row)?.is_some())
 }
 
 pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {

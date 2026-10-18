@@ -5,7 +5,7 @@
 use ::program::{Awaiting, Ctx, Error, ExecCtx, Program, QueryCtx};
 
 use crate::agents::{attributed, close, setup};
-use crate::conversations::{fork_thread, new_thread};
+use crate::conversations::{fork_thread, new_thread, open_thread};
 use crate::models::{remove_model, set_model};
 use crate::streams::streamed;
 use crate::{Op, PROGRAM, Query, Reply, attributed_as, queries, tools};
@@ -55,6 +55,7 @@ impl Program for Harness {
             Query::Withheld { thread } => Ok(Reply::Withheld(queries::withheld(ctx, thread)?)),
             Query::Partial { thread } => Ok(Reply::Partial(queries::partial(ctx, thread)?)),
             Query::Topic { thread } => Ok(Reply::Topic(queries::topic(ctx, thread)?)),
+            Query::Bound { agent, page } => Ok(Reply::Threads(queries::bound(ctx, agent, &page)?)),
         }
     }
 }
@@ -74,6 +75,7 @@ impl Awaiting for Harness {
             Op::Streamed { thread, event } => streamed(&ctx, thread, event).await,
             Op::NewThread { agent } => new_thread(&ctx, agent),
             Op::ForkThread { agent } => fork_thread(&ctx, agent),
+            Op::OpenThread { agent, place } => open_thread(&ctx, agent, place),
         }
     }
 }

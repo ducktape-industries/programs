@@ -190,6 +190,16 @@ pub(crate) fn current_badge(
     design::badge(id, "Current", ladder, theme.agent, theme.agent_soft)
 }
 
+pub(crate) fn bound_badge(
+    id: impl Into<ElementId>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Stateful<Div> {
+    design::badge(id, "Bound", ladder, theme.agent, theme.agent_soft)
+}
+
+pub(crate) const BOUND_WORDS: &str = "Bound to a place: it hears only messages from there";
+
 /// A closed conversation's badge: raised, no dot, as it does nothing more.
 pub(crate) fn closed_badge(
     id: impl Into<ElementId>,
