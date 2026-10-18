@@ -16,6 +16,7 @@ use view::design::Ladder;
 mod actions;
 mod composer;
 mod details;
+mod dm_pick;
 mod message;
 mod new;
 mod parts;
@@ -94,6 +95,7 @@ fn screen(
         (Page::Thread, Some(room)) => thread::screen(chat, room, back, cx, theme, ladder),
         (Page::Details, Some(room)) => details::screen(chat, room, back, cx, theme, ladder),
         (Page::New, _) => new::screen(chat, back, cx, theme, ladder),
+        (Page::NewMessage, _) => dm_pick::screen(chat, back, cx, theme, ladder),
         (Page::Search, _) => search::screen(chat, back, cx, theme, ladder),
         _ => rooms::screen(chat, cx, theme, ladder),
     }

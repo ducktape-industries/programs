@@ -33,7 +33,7 @@ fn archiving(id: &str) -> Vec<Vec<u8>> {
 }
 
 fn listed(view: &Entity<Chat>) -> Vec<String> {
-    view.read(|chat| chat.sidebar_rooms().ids())
+    view.read(|chat| chat.room_list().ids())
 }
 
 #[test]

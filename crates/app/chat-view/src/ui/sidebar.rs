@@ -114,7 +114,7 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         ));
     }
     let open = chat.room.as_ref().map(|room| room.id.as_str());
-    let room_list = chat.sidebar_rooms();
+    let room_list = chat.room_list();
     // one Tab stop under the header: ↑ ↓ walk the channels and the direct
     // messages, Enter opens the active room
     let ids = room_list.ids();
@@ -147,19 +147,9 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         new_dm(cx, theme),
         theme,
     ));
-    for crate::room_list::DmEntry { info, peer, id } in room_list.dms {
-        let selected = open == Some(id.as_str());
-        let row = dm_button(
-            chat,
-            info,
-            peer,
-            id,
-            selected,
-            index == at,
-            cx,
-            theme,
-            ladder,
-        );
+    for crate::room_list::DmEntry { info, peer } in room_list.dms {
+        let selected = open == Some(info.channel.id.as_str());
+        let row = dm_button(chat, info, peer, selected, index == at, cx, theme, ladder);
         box_ = box_.child(row);
         index += 1;
     }
@@ -311,13 +301,12 @@ fn channel_button(
     design::item(row, Role::ListBoxOption, active).into_any_element()
 }
 
-/// A direct message's row: the room `id` with `peer`, `info` once it is open.
+// A direct message's row: the room `info` with `peer`.
 #[allow(clippy::too_many_arguments)]
 fn dm_button(
     chat: &Chat,
-    info: Option<&ChannelInfo>,
+    info: &ChannelInfo,
     peer: u64,
-    id: String,
     selected: bool,
     active: bool,
     cx: &mut Context<Chat>,
@@ -330,7 +319,8 @@ fn dm_button(
         |n| n.member(&Principal::Account(peer)),
     );
     let agent = names.is_some_and(|n| crate::message::agent(n, &Principal::Account(peer)));
-    let unread = info.is_some_and(|info| chat.unread(info)) && !selected;
+    let unread = chat.unread(info) && !selected;
+    let id = info.channel.id.clone();
     let click = cx.listener(move |chat, _: &ClickEvent, _, cx| {
         cx.notify();
         chat.choose(id.clone(), cx)

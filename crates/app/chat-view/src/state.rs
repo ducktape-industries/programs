@@ -93,6 +93,9 @@ pub enum Page {
     /// the create-channel form (the phone's own page; the desktop's
     /// dialog)
     New,
+    // New message, whom a direct message goes to (the phone's own page;
+    // the desktop's dialog)
+    NewMessage,
     Room,
     Thread,
     Details,
@@ -111,6 +114,9 @@ impl Chat {
         }
         if self.create.is_some() {
             pages.push(Page::New);
+        }
+        if self.dm_pick.is_some() {
+            pages.push(Page::NewMessage);
         }
         if let Some(room) = &self.room {
             pages.push(Page::Room);
@@ -157,7 +163,10 @@ impl Chat {
 
     /// The phone's Back: a dialog closes first, then the top page.
     pub(crate) fn back(&mut self) {
-        if self.menu.take().is_some() || self.create.take().is_some() {
+        if self.menu.take().is_some()
+            || self.create.take().is_some()
+            || self.dm_pick.take().is_some()
+        {
             return;
         }
         if let Some(details) = &mut self.details
@@ -171,7 +180,7 @@ impl Chat {
             Page::Room => self.close_room(),
             Page::Search => self.search_clear(),
             // a dialog above: closed first
-            Page::New | Page::Rooms => {}
+            Page::New | Page::NewMessage | Page::Rooms => {}
         }
     }
 

@@ -133,12 +133,12 @@ impl Render for Chat {
         // names land async: the frame is the one place that sees each
         self.settle_title(cx);
         self.settle_showing(cx);
+        self.settle_dm_heads(cx);
         // the one pick: a phone draws the Expo app's own screens, every
         // other window the desktop's (STRUCTURE v2)
         if window.touch() {
             ui::phone::render(self, cx)
         } else {
-            self.settle_dm_heads(cx);
             ui::render(self, cx).into_any_element()
         }
     }

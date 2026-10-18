@@ -1,6 +1,6 @@
-//! The rooms the reader can open: the channels, then the direct rooms held, newest first on
-//! the desktop; the phone adds everyone else, whose room opens on the first message
-//! ([`Chat::dm_to_open`]). A program's own rooms (`forge:…` review threads) are its to show.
+//! The rooms the reader can open, one list for both trees: the channels, then the direct rooms
+//! the reader holds, newest message first. A program's own rooms (`forge:…` review threads)
+//! are its to show.
 use std::cmp::Reverse;
 
 use chat::view::Names;
@@ -11,12 +11,10 @@ use crate::Chat;
 use crate::names::dm_peer_of;
 use crate::queries;
 
-/// A direct room in the list: the room, once it is open; the other
-/// person; the room's id.
+// A direct room in the list: the room and the other person.
 pub(crate) struct DmEntry<'a> {
-    pub info: Option<&'a ChannelInfo>,
+    pub info: &'a ChannelInfo,
     pub peer: u64,
-    pub id: String,
 }
 
 pub(crate) struct RoomList<'a> {
@@ -31,13 +29,8 @@ impl RoomList<'_> {
     pub(crate) fn ids(&self) -> Vec<String> {
         let channels = self.channels.iter().map(|info| info.channel.id.clone());
         channels
-            .chain(self.dms.iter().map(|dm| dm.id.clone()))
+            .chain(self.dms.iter().map(|dm| dm.info.channel.id.clone()))
             .collect()
-    }
-
-    /// The direct rooms already open (they lead the direct messages).
-    pub(crate) fn opened(&self) -> usize {
-        self.dms.iter().filter(|dm| dm.info.is_some()).count()
     }
 }
 
@@ -71,33 +64,14 @@ fn person_or_agent(names: &Names, peer: u64) -> bool {
 impl Chat {
     pub(crate) fn room_list(&self) -> RoomList<'_> {
         let mut list = self.held_rooms();
-        let (Some(mine), Some(names)) = (self.my_account(), self.names.ready()) else {
-            return list;
-        };
-        let mut rest: Vec<(String, u64)> = names
-            .people()
-            .filter(|peer| *peer != mine && !list.dms.iter().any(|dm| dm.peer == *peer))
-            .map(|peer| (names.member(&Principal::Account(peer)).to_lowercase(), peer))
-            .collect();
-        rest.sort();
-        list.dms.extend(rest.into_iter().map(|(_, peer)| DmEntry {
-            info: None,
-            peer,
-            id: chat::dm_channel_id(mine, peer),
-        }));
-        list
-    }
-
-    pub(crate) fn sidebar_rooms(&self) -> RoomList<'_> {
-        let mut list = self.held_rooms();
         list.dms.sort_by_key(|dm| Reverse(self.recency(dm)));
         list
     }
 
     fn recency(&self, dm: &DmEntry) -> u64 {
-        let created = dm.info.map_or(0, |info| info.channel.created_at);
+        let created = dm.info.channel.created_at;
         self.dm_heads
-            .get(&dm.id)
+            .get(&dm.info.channel.id)
             .and_then(|head| head.time)
             .unwrap_or(created)
     }
@@ -124,11 +98,7 @@ impl Chat {
             }
             dms.extend(
                 mine.and_then(|mine| dm_peer_of(mine, id))
-                    .map(|peer| DmEntry {
-                        info: Some(info),
-                        peer,
-                        id: info.channel.id.clone(),
-                    }),
+                    .map(|peer| DmEntry { info, peer }),
             );
         }
         RoomList {

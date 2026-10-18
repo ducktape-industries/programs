@@ -1,7 +1,7 @@
 //! The rooms, the chat's first page (Expo `app/(tabs)/chat/index.tsx`,
 //! boards 10-12): "Chat" over the network and the reader, Search and New
-//! channel in its title row; then the channels, the direct rooms already
-//! open and the people not yet written to, each section with its count,
+//! channel in its title row; then the channels and the direct rooms held,
+//! newest first, each section with its count, Direct messages' New message;
 //! each unread room with its dot. Reads the channel list, the roster and
 //! the read cursors; a row opens its room, the title row's buttons open
 //! the Search page and the new-channel form.
@@ -96,12 +96,10 @@ fn caption(chat: &Chat) -> String {
         .join(" · ")
 }
 
-/// The three sections: Channels always (its loading line or empty state
-/// under it), then Direct messages and People where they have rows.
+// The two sections: Channels always (its loading line or empty state
+// under it), then Direct messages always, New message at its head.
 fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
     let list = chat.room_list();
-    let opened = list.opened();
-    let (dms, people) = list.dms.split_at(opened);
     let count = |rows: usize| (rows > 0).then(|| rows.to_string());
     let loading = matches!(chat.channels, Loadable::Idle | Loadable::Loading(_));
     // with every channel archived the network still holds channels: the
@@ -133,27 +131,33 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
             ))
         })
         .children(empty)
-        .when(!dms.is_empty(), |rooms| {
-            rooms.child(
-                design::section_head("chat-rooms-dms-head", words::DIRECT_MESSAGES, ladder, theme)
-                    .children(count(dms.len())),
-            )
-        })
-        .children(
-            dms.iter()
-                .map(|dm| person_row(chat, dm, "dm", cx, theme, ladder)),
+        .child(
+            design::section_head("chat-rooms-dms-head", words::DIRECT_MESSAGES, ladder, theme)
+                .children(count(list.dms.len()))
+                .child(new_message(cx, theme, ladder)),
         )
-        .when(!people.is_empty(), |rooms| {
-            rooms.child(
-                design::section_head("chat-rooms-people-head", words::PEOPLE, ladder, theme)
-                    .children(count(people.len())),
-            )
-        })
         .children(
-            people
+            list.dms
                 .iter()
-                .map(|person| person_row(chat, person, "person", cx, theme, ladder)),
+                .map(|dm| dm_row(chat, dm, cx, theme, ladder)),
         )
+}
+
+// New message at the Direct messages head: the page of whom to write to.
+fn new_message(cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> impl IntoElement {
+    let open = cx.listener(|chat, _: &ClickEvent, window, cx| {
+        chat.begin_dm();
+        window.focus(crate::ui::dialogs::DM_PICK_FIELD);
+        cx.notify();
+    });
+    design::icon_button(
+        "chat-rooms-new-dm",
+        design::icon("plus", ladder.icon),
+        words::NEW_MESSAGE,
+        ladder,
+        theme,
+        open,
+    )
 }
 
 // A channel's row: its hash muted in the lead column, the name, Members
@@ -197,13 +201,11 @@ fn channel_row(
     .into_any_element()
 }
 
-/// A person's row: their face and name; an open direct room's also wears
-/// Agent for an agent and the unread dot. `kind` names the section in the
-/// row's id (`dm`, `person`).
-fn person_row(
+// A direct room's row: the other person's face and name, Agent for an
+// agent, and the unread dot.
+fn dm_row(
     chat: &Chat,
     entry: &DmEntry,
-    kind: &str,
     cx: &mut Context<Chat>,
     theme: &Theme,
     ladder: &Ladder,
@@ -212,14 +214,14 @@ fn person_row(
     let names = chat.names.ready();
     let name = names.map_or_else(|| words::account(entry.peer), |n| n.member(&peer));
     let agent = names.is_some_and(|names| crate::message::agent(names, &peer));
-    let id = format!("chat-rooms-{kind}-{}", entry.peer);
-    let unread = entry.info.is_some_and(|info| chat.unread(info));
+    let id = format!("chat-rooms-dm-{}", entry.peer);
+    let unread = chat.unread(entry.info);
     let tail = div()
         .flex()
         .flex_none()
         .items_center()
         .gap(design::space::SM)
-        .when(agent && entry.info.is_some(), |tail| {
+        .when(agent, |tail| {
             tail.child(design::badge(
                 format!("{id}-agent"),
                 words::AGENT,
@@ -229,7 +231,8 @@ fn person_row(
             ))
         })
         .when(unread, |tail| tail.child(dot(&id, theme)));
-    row(&id, name.clone(), entry.id.clone(), cx, theme, ladder)
+    let room = entry.info.channel.id.clone();
+    row(&id, name.clone(), room, cx, theme, ladder)
         .when(agent, |row| row.aria_description(words::AGENT))
         .child(design::lead(face(&name, agent, ladder.avatar, theme)))
         .child(title(name, theme, ladder))
@@ -292,7 +295,7 @@ fn no_rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder)
         network => network,
     };
     let detail = format!(
-        "Nobody has created a channel on {network}. Open one, or message a person from the list below."
+        "Nobody has created a channel on {network}. Open one, or start a direct message below."
     );
     let create = design::button(
         "chat-rooms-empty-new-channel",

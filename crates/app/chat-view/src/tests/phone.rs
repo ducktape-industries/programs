@@ -98,7 +98,7 @@ fn rows_are(cx: &mut TestAppContext, view: &Entity<Chat>, rows: Vec<MsgRow>) {
 // ---------- the rooms (`app/(tabs)/chat/index.tsx`) ----------
 
 #[test]
-fn the_rooms_page_lists_channels_direct_messages_and_people_with_their_counts() {
+fn the_rooms_page_lists_channels_and_direct_messages_with_their_counts() {
     let (cx, _) = phone();
     assert!(cx.find("chat-rooms-page").is_some());
     assert!(cx.has_text("Chat"));
@@ -112,7 +112,10 @@ fn the_rooms_page_lists_channels_direct_messages_and_people_with_their_counts() 
         cx.find("chat-rooms-dm-8-agent").is_some(),
         "an agent wears Agent"
     );
-    assert!(cx.has_text("People") && cx.find("chat-rooms-person-10").is_some());
+    assert!(
+        !cx.has_text("People") && cx.find("chat-rooms-person-10").is_none(),
+        "no People section"
+    );
     assert!(
         !cx.has_text("Review web#3"),
         "a program's rooms stay out of the list"
@@ -189,7 +192,7 @@ fn a_network_with_no_channels_says_so_and_offers_new_channel() {
     };
     assert!(cx.has_text("No rooms yet"));
     assert!(cx.has_text(
-        "Nobody has created a channel on testnet. Open one, or message a person from the list below."
+        "Nobody has created a channel on testnet. Open one, or start a direct message below."
     ));
     cx.simulate_click("chat-rooms-empty-new-channel");
     assert!(cx.find("chat-new-page").is_some());
@@ -1140,6 +1143,9 @@ fn every_screen_and_sheet_fits_a_phone() {
         cx.run_until_parked();
         cx.simulate_back();
         cx.simulate_click("New channel");
+        cx.simulate_back();
+        cx.simulate_click("chat-rooms-new-dm");
+        cx.simulate_input("chat-dm-pick-search", "ad");
         cx.simulate_back();
         cx.simulate_click("chat-rooms-channel-general");
         cx.run_until_parked();
