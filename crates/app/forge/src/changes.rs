@@ -8,7 +8,7 @@ use ::program::{Error, ExecCtx, QueryCtx, capacity, invalid, stale, wrong_state}
 
 use crate::contract::*;
 use crate::discussion::{self, Event};
-use crate::ops::require_user_or_program_account;
+use crate::ops::require_named;
 use crate::state::{
     load_bounds, load_change, load_ref, load_repo, next, next_message, next_number, parse_oid,
     peek_message, repo_hash, resolve, save_change, save_review, set_ref,
@@ -290,7 +290,7 @@ fn check_title(title: &str) -> Result<(), Error> {
 fn check_reviewers(ctx: &QueryCtx, reviewers: &[Principal]) -> Result<(), Error> {
     let mut seen = BTreeSet::new();
     for reviewer in reviewers {
-        require_user_or_program_account(ctx, reviewer)?;
+        ctx.require_account(require_named(reviewer)?)?;
         if !seen.insert(reviewer) {
             return Err(invalid("each reviewer is asked once"));
         }

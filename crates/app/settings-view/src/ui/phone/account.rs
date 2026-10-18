@@ -1,6 +1,6 @@
 //! Expo `app/account/index.tsx`: the Account screen. Its title row with the
-//! network under it, the strip of panes (Account; Agents, for a person who
-//! manages some; Invites), and the Account pane: who the seated key is and
+//! network under it, the strip of panes (Account; Agents, for an account;
+//! Invites), and the Account pane: who the seated key is and
 //! its keys, or what stands in for them.
 //!
 //! Reads the seat (`view.account`), the session (the network's name, this

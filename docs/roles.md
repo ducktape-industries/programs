@@ -82,8 +82,8 @@ A program reads it as `ctx.sender()`, which is `Principal::Account(number)`
 or `Principal::Root` and refuses a frame that acts as no one, so no row a
 program writes names a bare key. `Env::signer`, `sending_program` and
 `sent_by` check the raw origin instead, where a program needs the key or the
-program itself (forge requires a signed frame; chat's `:` namespace belongs to
-the program its prefix names).
+program itself (blobs takes a receipt from a validator's key; chat's `:`
+namespace belongs to the program its prefix names).
 
 ## Accounts
 
@@ -93,7 +93,8 @@ avatar, bio); the `Control` is who acts as it:
 
 - `User { keys }`: a person and the keys they hold.
 - `Program { manager, category, life, script }`: a program account. Its
-  manager, a user, declares its `category` (`Agent`), gives it keys, sets
+  manager, the account that created it (a user, another program account or
+  a system account), declares its `category` (`Agent`), gives it keys, sets
   its `script`, and decides its `Life`: `Active { keys }`,
   `Suspended { keys }` (keys kept, frames refused) or `Revoked` (keys
   dropped, final). A `Script { calls, config }` names the program that runs
@@ -113,11 +114,11 @@ Who may do what (the acting account is `ctx.sender()`):
 |---|---|
 | `RegisterProgram { program }` | the system (`Root` origin) alone; a program that has an account keeps it |
 | `Create { name, scheme }` | a key that holds no account; it becomes a user's first key |
-| `CreateAgent { name }` | a user; they become the manager of a new program account of the `Agent` category, with no key and no script |
-| `AddKey` | a user's account: the new key signs the frame and a key already on the account consents. A program account's: its manager signs and the new key consents to itself. Never a system account's or a revoked program account's |
-| `RemoveKey` | a user removes their own key or a junior one, never their last. A program account's manager removes any of its keys |
-| `SetName`, `SetProfile` | whoever may write the account's key in the access program, `identity::account_key(n)`: its owner (a user or a system account itself, a program account's manager) and the parties the owner lists there. Not on a revoked program account |
-| `Suspend`, `Resume`, `Revoke` | a program account's, by whoever may write its key: its manager and the parties the manager lists |
+| `CreateAgent { name }` | any account that acts; it becomes the manager of a new program account of the `Agent` category, with no key and no script |
+| `AddKey` | the account itself, a user's or an active program account's: the new key signs the frame and a key already on the account consents. A program account's manager too: the manager signs and the new key consents to itself. Never a system account's, a suspended program account's by its own key, or a revoked program account's |
+| `RemoveKey` | the account's own key removes itself or a junior one, never the last, on a user's or an active program account. A program account's manager removes any of its keys |
+| `SetName`, `SetProfile` | whoever may write the account's key in the access program, `identity::account_key(n)`: its owner (a user or a system account itself, a program account's manager) and the parties the owner lists there; with no list set, a program account itself too. Not on a revoked program account |
+| `Suspend`, `Resume`, `Revoke` | a program account's, by whoever may write its key: its manager and the parties the manager lists; with no list set, the program account itself too |
 | `SetScript { account, script }` | a program account's, by whoever may write its key, not once revoked. `Some(Script { calls, config })` names in `calls` a program that has an account; that program then sends messages as the account (`Runs`) and reads `config`. `None` takes it back |
 | `SetOwnership { account, ownership }` | no one: always refused. Whom an agent answers is its list in the access program at `harness::agent_key(agent)` |
 
@@ -173,8 +174,8 @@ What each program asks:
 | Program | Key | Ops that need it | Owner, default |
 |---|---|---|---|
 | `files` | the path; `files::pin_key(name)` for a pin | `Put`, `Mkdir`, `Symlink` write the path, `Remove` deletes it, `Move` writes both ends (and moves the lists with `access::Op::Move`); `Unpin` deletes the pin's key | the path's creator in the head tree, and for `/home/<name>` the one account named `<name>`; no default. A pin's owner is the account that made it, default `Owner` |
-| `forge` | `forge::repo_key(repo)`, `forge::settings_key(repo)`, `forge::change_key(repo, n)` | `Push`, `Merge`, `Stage`, and `ChangeClose` by anyone but the change's author, write the repository's key; `Configure` writes its settings key; `ChangeEdit` writes the change's key | the repository's owner, the change's author; default `Owner` |
-| `identity` | `identity::account_key(n)` | `SetName`, `SetProfile`, `Suspend`, `Resume`, `Revoke`, `SetScript` write it | a user or a system account itself, a program account's manager; default `Owner` |
+| `forge` | `forge::repo_key(repo)`, `forge::settings_key(repo)`, `forge::change_key(repo, n)` | `Push`, `Merge`, `Stage`, and `ChangeClose` by anyone but the change's author, write the repository's key; `Configure` writes its settings key; `ChangeEdit` writes the change's key | the repository's owner, the change's author; a repository's default `Anyone`, its settings key following the repository's list, a change's default `Owner` |
+| `identity` | `identity::account_key(n)` | `SetName`, `SetProfile`, `Suspend`, `Resume`, `Revoke`, `SetScript` write it | a user or a system account itself, a program account's manager; default `Owner`, for a program account `Listed` with the account itself |
 | `chat` | the channel id; `chat::message_key(channel, seq)` | `RenameChannel`, `SetChannelArchived`, `SetMembership` write the channel; `EditMessage` writes the message, `DeleteMessage` deletes it | the channel's owner, the message's author; default `Owner` |
 | `egress` | `egress::service_key(name)`, `services/<name>` | `Assign` writes it | the service's owner, default `Owner` |
 | `harness` | `harness::agent_key(agent)`, `harness::conversation_key(agent)`, `harness::thread_key(thread)`, `harness::model_key(id)` | `NewThread` and `ForkThread` write the agent's conversation key; `Close` writes the thread; `SetModel` of a model that exists writes it, `RemoveModel` deletes it. No op needs the agent's key: its list says whom the agent answers | the agent's manager (agent, conversation, thread), the model's owner; default `Owner` |
@@ -247,7 +248,7 @@ Who may schedule or cancel (putting a blob is open to any account):
   "programs", op }`: the enacting vote emits `op` to the programs role in the
   same frame; a refusal there undoes the programs' writes, the vote stands,
   and the motion is gone.
-- A maintainer: a signed frame whose account holds a `Grant` of the id
+- A maintainer: a frame whose account holds a `Grant` of the id
   (`Scope::Program(id)`, which may run nothing yet) or of every program
   (`Scope::All`). It sets, publishes with an empty role list, removes and
   cancels changes of the ids it covers, never the id of a program that
@@ -264,10 +265,9 @@ Who may schedule or cancel (putting a blob is open to any account):
   capped hook fuel. Only the vote sets, unsets or removes a hook
   (`SetHook`, `RemoveHook`, `Remove` of a hooked id).
 
-Only the vote grants (`Op::Grant`, to a user or a program account identity
-profiles, never a system account); `Op::Revoke` is the vote's or the
-holder's own, and drops every change the account made that it no longer
-covers. The vote wins: its change to an id takes every change a grant
+Only the vote grants (`Op::Grant`, to any account identity profiles);
+`Op::Revoke` is the vote's or the holder's own, and drops every change the
+account made that it no longer covers. The vote wins: its change to an id takes every change a grant
 made to that id with it, and its removal of an id the id's `Program`
 grants too. The vote's removal of an id that holds nothing at its height
 takes those along and waits as no entry, and its cancel of a change

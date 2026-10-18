@@ -1626,8 +1626,8 @@ fn settings_shows_only_what_the_contract_exposes_and_grants_by_account() {
     cx.run_until_parked();
     assert_eq!(
         set_lists(&cx)[2],
-        None,
-        "the last writer revoked clears the list"
+        Some(Ownership::Owner),
+        "the last writer revoked leaves the owner alone"
     );
 }
 

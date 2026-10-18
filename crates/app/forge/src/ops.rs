@@ -1,7 +1,7 @@
 //! The execute path: who acts, which op, what it needs of the access program, and the
 //! repository ops (create, configure, push, stage). Change ops live in `changes`.
 
-use ::program::{BlobId, Error, HashKind, Need, Party, Resource};
+use ::program::{AccountNumber, BlobId, Error, HashKind, Need, Party, Resource};
 use ::program::{
     ExecCtx, QueryCtx, already_exists, capacity, decoded, invalid, not_found, unauthorized,
 };
@@ -116,15 +116,15 @@ pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
     if let Some((repo, n)) = change_of(key) {
         return change_resource(ctx, repo, n);
     }
-    let name = key.strip_suffix("/settings").unwrap_or(key);
+    let (name, default) = match key.strip_suffix("/settings") {
+        Some(name) => (name, None),
+        None => (key, Some(::program::Ownership::Anyone)),
+    };
     if !repo_exists(ctx, name) {
         return Ok(Resource::default());
     }
     let owner = load_repo(ctx, name)?.owner.account().map(Party::Account);
-    Ok(Resource {
-        owner,
-        default: Some(::program::Ownership::Owner),
-    })
+    Ok(Resource { owner, default })
 }
 
 /// A git receive-pack: once the pack unpacks, its objects land as blobs and
@@ -214,23 +214,10 @@ fn held_pack(ctx: &ExecCtx, id: BlobId) -> Result<Vec<u8>, Error> {
 }
 
 /// Whom an op names (a writer, a reviewer): an account, never the system.
-pub(crate) fn require_named(principal: &Principal) -> Result<(), Error> {
-    if principal.account().is_none() {
-        return Err(invalid("only an account is named here"));
-    }
-    Ok(())
-}
-
-/// Whom a person asks to write or review: an account the identity role
-/// profiles as a user or a program account that acts.
-pub(crate) fn require_user_or_program_account(
-    ctx: &QueryCtx,
-    principal: &Principal,
-) -> Result<(), Error> {
-    let Some(number) = principal.account() else {
-        return Err(invalid("only an account is named here"));
-    };
-    ctx.require_user_or_program_account(number)
+pub(crate) fn require_named(principal: &Principal) -> Result<AccountNumber, Error> {
+    principal
+        .account()
+        .ok_or_else(|| invalid("only an account is named here"))
 }
 
 pub fn limits_of(bounds: &Bounds) -> Limits {

@@ -23,7 +23,7 @@ pub use rules::grantable;
 pub use store::{PageRequest, PageResponse};
 
 use ::program::{AccountNumber, ProgramId, Roles};
-use abi::role::identity::{Kind, Profile};
+use abi::role::identity::Profile;
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
 pub use abi::role::programs::{Entry, Genesis, View};
@@ -65,7 +65,7 @@ impl std::fmt::Display for Scope {
 }
 
 /// An account made a maintainer of `scope` by the validators' vote: its
-/// signed frames schedule and cancel changes to the names in it.
+/// frames schedule and cancel changes to the names in it.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Grant {
     pub scope: Scope,
@@ -97,8 +97,8 @@ pub fn covers(grants: &[Grant], roles: &Roles, account: AccountNumber, program: 
 
 /// Why the vote may not make `grant`, `None` when it may: a program id in
 /// its one spelling and bound to no role, given to an account identity
-/// profiles (`profile`) that is no system account. The rule and valset's first
-/// vote both ask it, so a bad grant is refused before it is voted on.
+/// profiles (`profile`). The rule and valset's first vote both ask it, so a
+/// bad grant is refused before it is voted on.
 pub fn grant_refused(grant: &Grant, roles: &Roles, profile: Option<&Profile>) -> Option<String> {
     if let Scope::Program(id) = &grant.scope {
         if !::program::is_name(id) {
@@ -111,12 +111,9 @@ pub fn grant_refused(grant: &Grant, roles: &Roles, profile: Option<&Profile>) ->
         }
     }
     let account = grant.account;
-    match profile.map(|profile| &profile.kind) {
+    match profile {
         None => Some(format!("there is no account {account}")),
-        Some(Kind::System(program)) => Some(format!(
-            "account {account} is program {program}'s own: a grant goes to a user or a program account"
-        )),
-        Some(Kind::User | Kind::Program { .. }) => None,
+        Some(_) => None,
     }
 }
 

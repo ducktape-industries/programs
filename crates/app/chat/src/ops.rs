@@ -1,7 +1,7 @@
 //! One function per [`Op`](crate::Op), each named by [`Chat::execute`](crate::Chat)'s
 //! match. Each checks first (`rules`), then writes, so a refused op leaves
 //! the store as it found it.
-use ::program::{Error, ExecCtx, Origin, already_exists, invalid, unauthorized, wrong_state};
+use ::program::{Error, ExecCtx, already_exists, invalid, wrong_state};
 
 use crate::attributed::report;
 use crate::mentions::resolve_typed;
@@ -52,17 +52,13 @@ fn room(
 }
 
 /// The members-only room of the actor's account and `counterpart`, both
-/// seated; the counterpart a user or a program account that acts. Opening
-/// it again changes nothing, even once the counterpart is suspended.
+/// seated. Opening it again changes nothing.
 pub(crate) fn open_dm(
     ctx: &ExecCtx,
     sender: &Principal,
     counterpart: AccountNumber,
     name: String,
 ) -> Result<(), Error> {
-    if !matches!(ctx.env().origin, Origin::Signed(_)) {
-        return Err(unauthorized("only a key opens a dm, not a program"));
-    }
     let me = ctx.sender_account()?;
     if me == counterpart {
         return Err(invalid("a dm needs two accounts"));
@@ -71,7 +67,7 @@ pub(crate) fn open_dm(
     if CHANNELS.has(ctx, &id) {
         return Ok(());
     }
-    ctx.require_user_or_program_account(counterpart)?;
+    ctx.require_account(counterpart)?;
     rules::name(&name)?;
     let channel = room(ctx, sender, &id, name, PostPolicy::MembersOnly);
     CHANNELS.put(ctx, &id, &channel);

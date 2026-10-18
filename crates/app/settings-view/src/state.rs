@@ -32,12 +32,11 @@ pub struct Settings {
 }
 
 impl Settings {
-    /// The panes there are: Agents only for an account that manages agents.
     pub(crate) fn sections(&self) -> Vec<Section> {
-        let manages = matches!(self.account.ready(), Some(Some(Seat::Account(a))) if a.manages);
+        let has_account = matches!(self.account.ready(), Some(Some(Seat::Account(_))));
         [Section::Account, Section::Agents, Section::Invites]
             .into_iter()
-            .filter(|section| *section != Section::Agents || manages)
+            .filter(|section| *section != Section::Agents || has_account)
             .collect()
     }
 

@@ -74,7 +74,7 @@ impl Program for Bot {
                     let seen: Option<Vec<u8>> = ctx.query(target, &key)?;
                     ctx.set(format!("peek:{key}"), seen.unwrap_or_default());
                 }
-                Step::Named(number) => ctx.require_user_or_program_account(number)?,
+                Step::Named(number) => ctx.require_account(number)?,
                 Step::Blob => {
                     ctx.blob_put(HashKind::Sha256, "text", b"body".to_vec())?;
                 }
@@ -546,17 +546,13 @@ fn the_roster_answers_programs_as_the_identity_role_does() {
             standing: Standing::Revoked,
         },
     });
-    chain.submit(ada(), "a", &vec![Step::Named(1)]).unwrap();
-    let refused = chain.submit(ada(), "a", &vec![Step::Named(6)]).unwrap_err();
-    assert_eq!(refused.code, code::WRONG_STATE);
+    for named in [1, 6, 100] {
+        chain.submit(ada(), "a", &vec![Step::Named(named)]).unwrap();
+    }
     let refused = chain
-        .submit(ada(), "a", &vec![Step::Named(100)])
+        .submit(ada(), "a", &vec![Step::Named(999)])
         .unwrap_err();
-    assert_eq!(
-        refused.code,
-        code::INVALID_INPUT,
-        "a system account is not named"
-    );
+    assert_eq!(refused.code, code::INVALID_INPUT, "no account 999");
     // the chain reads a program's account off its profile
     assert_eq!(
         chain

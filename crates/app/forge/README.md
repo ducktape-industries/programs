@@ -154,10 +154,10 @@ that holds no account are refused. Any account may open/review. The author edits
 or whoever the change's list at `forge::change_key(repo, n)` in the access
 program allows; the author, or a repository writer, closes; repository writers merge.
 A repository's writers are whoever its list in the access program allows, at
-`forge::repo_key(repo)`: its owner alone unless the owner lists others there
+`forge::repo_key(repo)`: anyone unless the owner sets a list there
 (`access::Op::Set`). `Push`, `Merge`, `Stage` and a `ChangeClose` by anyone but
 the change's author need that key; `Configure` needs `forge::settings_key(repo)`,
-the owner's alone unless it lists others.
+which follows the same list unless the owner sets one of its own.
 Reviews remain appendable on closed/merged changes.
 Closing is terminal; there is no reopen operation.
 

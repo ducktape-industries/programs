@@ -313,13 +313,13 @@ fn an_agent_opens_over_its_manager_and_its_manager_over_that() {
 }
 
 #[test]
-fn a_program_page_has_no_devices_and_no_one_to_dm() {
+fn a_program_page_has_no_devices_and_opens_a_dm() {
     let mut cx = phone();
     cx.simulate_click("members-row-8");
     cx.run_until_parked();
     assert!(cx.has_text("account 8 · Program") && cx.has_text("No devices"));
     assert!(!cx.has_text("Recent activity"));
-    assert!(cx.find("members-open-dm").is_none());
+    assert!(cx.find("members-open-dm").is_some());
 }
 
 #[test]

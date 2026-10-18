@@ -94,13 +94,13 @@ impl MemorySandbox {
             .map(program::Party::Account)
             .collect::<Vec<_>>();
         let list = match parties.is_empty() {
-            true => None,
-            false => Some(program::Ownership::Listed(parties)),
+            true => program::Ownership::Owner,
+            false => program::Ownership::Listed(parties),
         };
         let set = access::Op::Set {
             program: "forge".into(),
             key: key.to_owned(),
-            list,
+            list: Some(list),
         };
         self.chain
             .submit(Origin::Signed(owner.to_vec()), "access", &set)

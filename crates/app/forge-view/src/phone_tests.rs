@@ -938,7 +938,7 @@ fn revoke_takes_a_writer_away() {
     let mut cx = repository("default");
     press(&mut cx, "forge-tab-settings");
     press(&mut cx, "forge-revoke-Wren");
-    assert_eq!(set_lists(&cx), [None]);
+    assert_eq!(set_lists(&cx), [Some(Ownership::Owner)]);
 }
 
 /// Grant opens the people sheet without the owner and those who write;

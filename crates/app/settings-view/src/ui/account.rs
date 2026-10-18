@@ -217,7 +217,7 @@ fn create_account(
         .into_any_element()
 }
 
-/// The Agents pane: every agent this person manages, one row each, then
+/// The Agents pane: every agent this account manages, one row each, then
 /// the forms that create one and add a key to one.
 pub(super) fn agents_pane(
     view: &Settings,
@@ -226,9 +226,7 @@ pub(super) fn agents_pane(
     ladder: &Ladder,
 ) -> AnyElement {
     match view.account.ready() {
-        Some(Some(Seat::Account(account))) if account.manages => {
-            agents(view, account, cx, theme, ladder)
-        }
+        Some(Some(Seat::Account(account))) => agents(view, account, cx, theme, ladder),
         // the menu lists Agents only for such an account
         _ => div().into_any_element(),
     }

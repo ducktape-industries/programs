@@ -255,14 +255,13 @@ the chain too. No row a program writes ever names a bare key.
 
 The **origin** is the raw caller (`Origin::Signed(key)`, `Program(id)`,
 `Root`), for the few rules that need it rather than the account:
-`env.signer()` (forge takes repository ops from a signed frame only),
+`env.signer()` (blobs takes a receipt from a validator's key),
 `env.sending_program()`, `env.sent_by("forge")`. Chat's `poll:<name>` ids
 belong to the program the prefix names, checked on the origin.
 
-The **identity role** answers who an account is. `ctx.require_user_or_program_account(n)`
-asks it (`Profile(n)`) and refuses an absent account, a system account, or a
-program account that is suspended or revoked: poll's voters, chat's dm counterpart,
-forge's reviewers. Ask a role at the program that fills it,
+The **identity role** answers who an account is. `ctx.require_account(n)`
+asks it (`Profile(n)`) and refuses an account that does not exist: chat's dm
+counterpart, forge's reviewers. Ask a role at the program that fills it,
 `ctx.env().role(abi::role::IDENTITY)?`, never by a name you assume. The profiles
 themselves (`abi::role::identity::{Profile, Kind, Standing}`) are what a
 view shows beside a name.
@@ -297,7 +296,7 @@ answers).
 
 `Env::authority()` admits only a message from the program bound to the
 validators role, which sends one when its validators' vote passes a
-`Motion::Role` for the programs role; the programs role admits it, or a maintainer's signed frame
+`Motion::Role` for the programs role; the programs role admits it, or a maintainer's frame
 by its grant ([roles.md](roles.md), "Updating a program"), before scheduling
 or cancelling a change.
 

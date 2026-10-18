@@ -257,12 +257,38 @@ fn every_program_has_its_account_from_its_admission() {
 }
 
 #[test]
+fn a_programs_account_creates_and_manages_an_agent() {
+    deterministic::Runner::default().start(|context| async move {
+        let dir = tempfile::tempdir().unwrap();
+        let mut net = Net::found(context, dir.path()).await;
+        let probe = net.of_program("probe").await.unwrap();
+        let create = identity::Op::CreateAgent {
+            name: "Runner".into(),
+        };
+        let made = net.sent_by("probe", identity::PROGRAM, &create).await;
+        let agent: AccountNumber = abi::decode(output_of(&made)).unwrap();
+        assert_eq!(
+            net.account(agent).await.control,
+            identity::Control::Program {
+                script: None,
+                manager: probe,
+                category: identity::Category::Agent,
+                life: identity::Life::Active { keys: Vec::new() },
+            }
+        );
+        let suspend = identity::Op::Suspend { account: agent };
+        output_of(&net.sent_by("probe", identity::PROGRAM, &suspend).await);
+        assert_eq!(net.account(agent).await.kind().note(), Some("suspended"));
+    });
+}
+
+#[test]
 fn an_agent_acts_until_its_manager_suspends_it() {
     deterministic::Runner::default().start(|context| async move {
         let dir = tempfile::tempdir().unwrap();
         let mut net = Net::found(context, dir.path()).await;
         let alice = net.create(1, "Alice").await;
-        net.create(2, "Bob").await;
+        let bob = net.create(2, "Bob").await;
         let output = net
             .apply(
                 &public(1),
@@ -294,26 +320,100 @@ fn an_agent_acts_until_its_manager_suspends_it() {
         let stranger = net.refuse(&public(2), identity::PROGRAM, &add).await;
         assert_eq!(stranger, reason::UNAUTHORIZED);
         net.apply(&public(1), identity::PROGRAM, &add).await;
-        let nested = net
-            .refuse(
+
+        let spare_key = public(22);
+        let own = identity::Op::AddKey {
+            scheme: Scheme::Ed25519,
+            label: Some("spare".into()),
+            consent: consent(&bot, agent, &spare_key, 0, TIME + 600_000),
+        };
+        net.apply(&spare_key, identity::PROGRAM, &own).await;
+        assert!(net.account(agent).await.holds(&spare_key));
+        let remove_spare = identity::Op::RemoveKey {
+            account: agent,
+            key: spare_key.clone(),
+        };
+        net.apply(&bot_key, identity::PROGRAM, &remove_spare).await;
+
+        let made = net
+            .apply(
                 &bot_key,
                 identity::PROGRAM,
-                &identity::Op::CreateAgent { name: "x".into() },
+                &identity::Op::CreateAgent {
+                    name: "Relay".into(),
+                },
             )
             .await;
-        assert_eq!(nested, reason::UNAUTHORIZED);
+        let relay: AccountNumber = abi::decode(&made).unwrap();
+        let standing = |standing| identity::Kind::Program {
+            script: None,
+            manager: agent,
+            category: identity::Category::Agent,
+            standing,
+        };
+        assert_eq!(
+            net.account(relay).await.kind(),
+            standing(identity::Standing::Active)
+        );
+        let relay_ops = [
+            (
+                identity::Op::Suspend { account: relay },
+                identity::Standing::Suspended,
+            ),
+            (
+                identity::Op::Resume { account: relay },
+                identity::Standing::Active,
+            ),
+            (
+                identity::Op::Revoke { account: relay },
+                identity::Standing::Revoked,
+            ),
+        ];
+        for (op, after) in relay_ops {
+            let by_bob = net.refuse(&public(2), identity::PROGRAM, &op).await;
+            assert_eq!(by_bob, reason::UNAUTHORIZED);
+            net.apply(&bot_key, identity::PROGRAM, &op).await;
+            assert_eq!(net.account(relay).await.kind(), standing(after));
+        }
         // its key acts: a frame it signs runs (the probe's empty script)
         let idle = Vec::<Step>::new();
         output_of(&net.submit(&bot_key, "probe", &idle).await);
 
-        // the agent acts, as a member of chat would see; its card is its
-        // manager's alone
         let rename = |name: &str| identity::Op::SetName {
             account: agent,
             name: name.into(),
         };
-        let own_name = net.refuse(&bot_key, identity::PROGRAM, &rename("Me")).await;
-        assert_eq!(own_name, reason::UNAUTHORIZED);
+        net.apply(&bot_key, identity::PROGRAM, &rename("Me")).await;
+        assert_eq!(net.account(agent).await.card.name, "Me");
+        let by_bob = net
+            .refuse(&public(2), identity::PROGRAM, &rename("Bob's"))
+            .await;
+        assert_eq!(by_bob, reason::UNAUTHORIZED);
+        let take_its_card = access::Op::Set {
+            program: identity::PROGRAM.into(),
+            key: identity::account_key(agent),
+            list: Some(identity::Ownership::Owner),
+        };
+        let listed_sets_no_list = net.refuse(&bot_key, access::PROGRAM, &take_its_card).await;
+        assert_eq!(listed_sets_no_list, reason::UNAUTHORIZED);
+        let set_ownership = identity::Op::SetOwnership {
+            account: agent,
+            ownership: identity::Ownership::Owner,
+        };
+        let retired = net
+            .refuse(&bot_key, identity::PROGRAM, &set_ownership)
+            .await;
+        assert_eq!(retired, reason::UNAUTHORIZED);
+        let writers = access::Query::Writers {
+            program: identity::PROGRAM.into(),
+            key: identity::account_key(agent),
+        };
+        let access::Reply::Writers(writers) = net.ask(access::PROGRAM, &writers).await else {
+            panic!()
+        };
+        let parties = |number| [identity::Party::Account(number)];
+        assert!(writers.allows(&parties(agent)) && writers.allows(&parties(alice)));
+        assert!(!writers.allows(&parties(bob)));
         net.apply(&public(1), identity::PROGRAM, &rename("Scout 2"))
             .await;
         let identity::Reply::Profile(Some(profile)) = net
@@ -327,8 +427,19 @@ fn an_agent_acts_until_its_manager_suspends_it() {
         };
         assert_eq!(profile.name, "Scout 2");
 
-        // suspended, its every frame is refused before it runs
         let suspend = identity::Op::Suspend { account: agent };
+        net.apply(&bot_key, identity::PROGRAM, &suspend).await;
+        let suspended = net.refuse(&bot_key, "probe", &idle).await;
+        assert_eq!(suspended, reason::UNAUTHORIZED);
+        net.apply(
+            &public(1),
+            identity::PROGRAM,
+            &identity::Op::Resume { account: agent },
+        )
+        .await;
+        output_of(&net.submit(&bot_key, "probe", &idle).await);
+
+        // suspended, its every frame is refused before it runs
         let by_bob = net.refuse(&public(2), identity::PROGRAM, &suspend).await;
         assert_eq!(by_bob, reason::UNAUTHORIZED);
         net.apply(&public(1), identity::PROGRAM, &suspend).await;

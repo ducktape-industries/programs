@@ -130,6 +130,60 @@ fn respond(cx: &TestAppContext) {
         })
     });
 }
+fn scout_seated(cx: &TestAppContext) {
+    let keyed_scout = || {
+        let keys = vec![identity::Key {
+            scheme: abi::Scheme::Ed25519,
+            key: vec![0xab, 0xcd],
+            label: Some("Sandbox".into()),
+            added_at: 1,
+        }];
+        identity::Account {
+            control: identity::Control::Program {
+                script: None,
+                manager: 7,
+                category: identity::Category::Agent,
+                life: identity::Life::Active { keys },
+            },
+            ..scout()
+        }
+    };
+    let relay = || {
+        account(
+            13,
+            "Relay",
+            identity::Control::Program {
+                script: None,
+                manager: 12,
+                category: identity::Category::Agent,
+                life: identity::Life::Active { keys: Vec::new() },
+            },
+        )
+    };
+    cx.host().handle::<Query<Identity>>(move |q| {
+        Ok(match q {
+            identity::Query::Get { number: 12 } => identity::Reply::Account(Some(keyed_scout())),
+            identity::Query::Managed { by: 12, .. } => {
+                identity::Reply::Accounts(identity::PageResponse {
+                    height: 42,
+                    items: vec![relay()],
+                    next: None,
+                })
+            }
+            q => panic!("unexpected query: {q:?}"),
+        })
+    });
+    cx.host().handle::<Query<Access>>(|q| {
+        Ok(match q {
+            access::Query::List { program, key }
+                if program == harness::PROGRAM && key == harness::agent_key(13) =>
+            {
+                access::Reply::List(None)
+            }
+            q => panic!("unexpected query: {q:?}"),
+        })
+    });
+}
 fn fixture(state: &str, dark: bool) -> TestAppContext {
     seated(state, dark).0
 }
@@ -166,6 +220,7 @@ fn seated(state: &str, dark: bool) -> (TestAppContext, StreamSender<HostSession>
                 q => panic!("unexpected query: {q:?}"),
             })
         }),
+        "scout" => scout_seated(&cx),
         "loading" => {
             cx.host().never::<Query<Identity>>();
         }
@@ -183,7 +238,11 @@ fn seated(state: &str, dark: bool) -> (TestAppContext, StreamSender<HostSession>
         } else {
             "abcd".into()
         },
-        account: (!matches!(state, "empty" | "unregistered" | "suspended")).then_some(7),
+        account: match state {
+            "empty" | "unregistered" | "suspended" => None,
+            "scout" => Some(12),
+            _ => Some(7),
+        },
         endpoint: "http://127.0.0.1:19001".into(),
         ..Session::default()
     });
@@ -233,8 +292,8 @@ fn four_states_are_honest() {
     assert!(cx.find("settings/app/body").is_none());
 }
 
-/// The left menu lists Agents only for an account that manages agents,
-/// and each entry opens its pane.
+/// The left menu lists Agents only for an account, and each entry opens
+/// its pane.
 #[test]
 fn the_menu_opens_one_pane_at_a_time() {
     let mut cx = fixture("ready", false);
@@ -622,6 +681,27 @@ fn a_person_creates_an_agent_and_adds_its_key() {
     cx.run_until_parked();
     assert_eq!(cx.host().requests::<Submit<Identity>>().len(), 2);
     assert!(!cx.has_text("That isn’t a key request for one of your agents."));
+}
+
+#[test]
+fn an_agents_account_lists_its_agents_and_creates_one() {
+    let mut cx = fixture("scout", false);
+    cx.simulate_click("settings/nav/agents");
+    cx.run_until_parked();
+    for text in ["Relay", "account 13 · 0 keys"] {
+        assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
+    }
+    cx.host().handle::<Submit<Identity>>(|op| {
+        assert_eq!(op, identity::Op::CreateAgent { name: "Bot".into() });
+        Ok(view::testing::applied(Vec::new()))
+    });
+    cx.simulate_input("settings/agents/create/name", "Bot");
+    cx.simulate_click("settings/agents/create/submit");
+    cx.run_until_parked();
+    assert_eq!(
+        sent(&cx),
+        [identity::Op::CreateAgent { name: "Bot".into() }]
+    );
 }
 
 /// The manager alone renames, suspends, resumes and revokes an agent from

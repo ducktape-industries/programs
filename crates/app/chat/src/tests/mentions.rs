@@ -57,7 +57,7 @@ fn an_edit_resolves_a_typed_name_as_a_post_does() {
 }
 
 #[test]
-fn a_name_no_one_or_several_hold_and_an_account_no_one_picks_stay_text() {
+fn a_name_no_one_or_several_hold_stays_text_and_any_one_account_is_mentioned() {
     let mut chat = Chat::with_channel(PostPolicy::Open);
     let profile = |number, name: &str, kind| Profile {
         number,
@@ -78,11 +78,13 @@ fn a_name_no_one_or_several_hold_and_an_account_no_one_picks_stay_text() {
         profile(5, "forge", Kind::System("forge".into())),
         profile(6, "Zoe\u{308}", Kind::User),
     ]);
-    let plain = "@twin @sleeper @forge @nobody";
+    let plain = "@twin @nobody";
     chat.post(&ADA, "m1", plain, None);
     assert_eq!(chat.message(1).blocks, parse_message(plain));
     chat.post(&ADA, "m2", "@ada and @Zoë", None);
     assert_eq!(chat.message(2).blocks, parse_message("<@1> and <@6>"));
+    chat.post(&ADA, "m3", "@sleeper and @forge", None);
+    assert_eq!(chat.message(3).blocks, parse_message("<@4> and <@5>"));
 }
 
 #[test]
