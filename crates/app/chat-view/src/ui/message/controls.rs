@@ -154,7 +154,7 @@ pub(super) fn reaction_button(
 fn reactors_tip<E: StatefulInteractiveElement>(chip: E, who: SharedString, theme: &Theme) -> E {
     let theme = *theme;
     chip.tooltip(move |_, cx| {
-        cx.new(|_| Reactors {
+        cx.new(|_| WhoChose {
             who: who.clone(),
             theme,
         })
@@ -163,12 +163,12 @@ fn reactors_tip<E: StatefulInteractiveElement>(chip: E, who: SharedString, theme
 }
 
 /// A reaction's tooltip: who chose it.
-struct Reactors {
+struct WhoChose {
     who: SharedString,
     theme: Theme,
 }
 
-impl Render for Reactors {
+impl Render for WhoChose {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         div()
             .id("chat-reactors")

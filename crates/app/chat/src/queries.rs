@@ -3,6 +3,7 @@
 //! resumes where it left off.
 use ::program::Range;
 use ::program::{Error, QueryCtx, invalid};
+use std::collections::BTreeSet;
 use store::{PageRequest, PageResponse};
 
 use crate::state::{
@@ -180,15 +181,16 @@ fn rows_at(
     })
 }
 
-/// Who chose each reaction on the messages at `seqs`: a message's emoji
-/// in order, each with its principals in key order.
+/// Who chose each reaction on the messages at `seqs`, each message once
+/// and in seq order however `seqs` names them: a message's emoji in order,
+/// each with its principals in key order.
 pub(crate) fn reactors(
     ctx: &QueryCtx,
     channel_id: String,
     seqs: &[u64],
 ) -> Result<Vec<ReactedBy>, Error> {
     let mut reactors: Vec<ReactedBy> = Vec::new();
-    for &seq in seqs {
+    for seq in seqs.iter().copied().collect::<BTreeSet<_>>() {
         let chosen = REACTIONS.scan(ctx, REACTIONS.prefix_of(&(channel_id.clone(), seq)))?;
         for (_, _, emoji, principal) in chosen {
             match reactors.last_mut() {

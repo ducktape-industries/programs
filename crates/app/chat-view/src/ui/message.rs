@@ -6,7 +6,7 @@ use view::{FontStyle, FontWeight, HighlightStyle, UnderlineStyle};
 use crate::message::{ChatMessage, SpanStyle};
 use crate::ui::badge;
 use crate::{Chat, Control, Pane};
-use chat::view::{Names, unnamed};
+use chat::view::Names;
 use chat::{Block, Principal, Span};
 mod controls;
 pub(crate) mod rich;
@@ -623,7 +623,8 @@ fn reactions(
     let (seq, rev) = (message.seq, message.rev);
     let writable = chat.may_write();
     let reactors = chat.room.as_ref().and_then(|room| room.reactors.get(&seq));
-    let names = chat.names.ready();
+    let empty = Names::empty();
+    let names = chat.names.ready().unwrap_or(&empty);
     let mut reactions = div()
         .id(format!("chat-message-{}-reactions", message.id))
         .flex()
@@ -640,7 +641,7 @@ fn reactions(
             .and_then(|reactors| reactors.get(&reaction.emoji))
             .into_iter()
             .flatten()
-            .map(|principal| names.map_or_else(|| unnamed(principal), |n| n.author(principal)))
+            .map(|principal| names.author(principal))
             .collect::<Vec<_>>();
         let face = Face::Emoji {
             emoji: &reaction.emoji,

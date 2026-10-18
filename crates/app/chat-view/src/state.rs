@@ -242,6 +242,7 @@ pub struct Room {
     /// and emoji: what a chip's tooltip names
     #[serde(skip)]
     pub(crate) reactors: Reactors,
+    /// the read of who chose them, until it lands
     #[serde(skip)]
     pub(crate) reading_reactors: Option<view::Task<()>>,
 }

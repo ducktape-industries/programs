@@ -85,7 +85,8 @@ fn reactors_name_who_chose_each_emoji() {
     chat.ok(&ADA, react(2, "👀", true));
     let Reply::Reactors(reactors) = chat.ask(Query::Reactors {
         channel_id: "general".into(),
-        seqs: vec![1, 2, 3],
+        // a seq named twice, out of order, answers once and in order
+        seqs: vec![2, 1, 3, 2],
     }) else {
         panic!("reactors answer reactors");
     };
