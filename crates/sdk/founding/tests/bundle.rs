@@ -205,3 +205,25 @@ fn the_bundle_names_every_file_it_holds_and_packs_each_program_with_its_own_view
     held.sort();
     assert_eq!(named, held);
 }
+
+#[test]
+fn one_program_packs_to_the_bytes_the_bundle_holds_for_it() {
+    let built = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+    release(built.path());
+    founding::bundle(built.path(), out.path()).unwrap();
+    let viewed = founding::PROGRAMS.iter().map(|(program, _)| *program);
+    for program in viewed.chain(founding::UNVIEWED.iter().copied()) {
+        let bundled = fs::read(out.path().join(format!("{program}.wasm"))).unwrap();
+        assert_eq!(founding::pack(built.path(), program).unwrap(), bundled);
+    }
+    assert_eq!(
+        founding::modules("chat"),
+        Some((Some("chat_view"), Some("chat_view")))
+    );
+    assert_eq!(founding::modules("files"), Some((Some("files_view"), None)));
+    assert_eq!(founding::modules("egress"), Some((None, None)));
+    // a standalone view rides no program, and nothing packs it
+    assert_eq!(founding::modules("explorer_view"), None);
+    assert!(founding::pack(built.path(), "explorer_view").is_err());
+}

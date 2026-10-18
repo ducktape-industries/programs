@@ -196,6 +196,22 @@ wasm-founding: wasm-modules
 	  -cf $(WASM_OUT)/founding.tar -C $(WASM_OUT) founding && gzip -n $(WASM_OUT)/founding.tar
 	@echo "founding.tar.gz  $$(wc -c < $(WASM_OUT)/founding.tar.gz)"
 
+.PHONY: wasm-program
+
+## builds one program's code as wasm-founding packs it, into
+## $(WASM_OUT)/program/<P>.wasm: `make wasm-program P=chat`. It builds only what
+## that program carries (the program, its describe module and schema, and the
+## view and notifier `founding`'s `modules` names for it) with the recipes
+## wasm-modules runs, so its bytes are founding/<P>.wasm's. A deploy of one
+## program builds this, not the whole founding. A standalone view ships as
+## wasm-views builds it: `make wasm-views VIEWS=explorer-view`.
+wasm-program:
+	@test -n "$(P)" || { echo "usage: make wasm-program P=<program>"; exit 1; }
+	@modules=$$($(CARGO) run --locked -q -p founding --bin modules -- $(P)) && \
+	  $(MAKE) --no-print-directory wasm-programs wasm-describes wasm-schemas wasm-views wasm-notifiers PROGRAMS=$(P) $$modules
+	@$(CARGO) run --locked --release -p founding -- $(WASM_OUT) $(WASM_OUT)/program $(P)
+	@cd $(WASM_OUT)/program && sha256sum $(P).wasm
+
 # `make dl-stage` without a channel stops here, before its build
 ifneq ($(filter dl-stage,$(MAKECMDGOALS)),)
 ifeq ($(filter dev main,$(CHANNEL)),)

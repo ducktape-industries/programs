@@ -92,30 +92,12 @@ pub fn halo_lanes() -> Genesis {
 
 pub fn bundle(release: &Path, out: &Path) -> Result<()> {
     fs::create_dir_all(out)?;
-    let read = |name: &str| {
-        let path = release.join(format!("{name}.wasm"));
-        fs::read(&path).map_err(|error| format!("{}: {error}", path.display()))
-    };
-    let schema = |name: &str| {
-        let path = release.join(format!("{name}.schema"));
-        fs::read(&path).map_err(|error| format!("{}: {error}", path.display()))
-    };
-    for (program, view) in PROGRAMS {
-        let packed = embed(&read(program)?, &read(view)?)?;
-        let packed = embed_describe(&packed, &read(&format!("{program}.describe"))?)?;
-        let mut packed = embed_schema(&packed, &schema(program)?)?;
-        if let Some((_, view)) = NOTIFIERS.iter().find(|(name, _)| *name == program) {
-            packed = embed_notify(&packed, &read(&format!("{view}.notify"))?)?;
-        }
-        fs::write(out.join(format!("{program}.wasm")), packed)?;
-    }
-    for program in UNVIEWED {
-        let packed = embed_describe(&read(program)?, &read(&format!("{program}.describe"))?)?;
-        let packed = embed_schema(&packed, &schema(program)?)?;
-        fs::write(out.join(format!("{program}.wasm")), packed)?;
+    let viewed = PROGRAMS.iter().map(|(program, _)| *program);
+    for program in viewed.chain(UNVIEWED.iter().copied()) {
+        fs::write(out.join(format!("{program}.wasm")), pack(release, program)?)?;
     }
     for view in VIEWS {
-        let bytes = read(view)?;
+        let bytes = read(release, view, "wasm")?;
         validate(&bytes)?;
         fs::write(out.join(format!("{view}.wasm")), bytes)?;
     }
@@ -123,6 +105,42 @@ pub fn bundle(release: &Path, out: &Path) -> Result<()> {
     fs::write(out.join("halo.params"), abi::encode(&halo_lanes()))?;
     fs::write(out.join("founding.toml"), FOUNDING)?;
     Ok(())
+}
+
+// The view and the notifier a founding packs into `program`, by the module names
+// `make wasm-modules` builds them as; `None` for a program no founding holds.
+pub fn modules(program: &str) -> Option<(Option<&'static str>, Option<&'static str>)> {
+    let notifier = NOTIFIERS
+        .iter()
+        .find(|(name, _)| *name == program)
+        .map(|(_, view)| *view);
+    match PROGRAMS.iter().find(|(name, _)| *name == program) {
+        Some((_, view)) => Some((Some(*view), notifier)),
+        None => UNVIEWED.contains(&program).then_some((None, notifier)),
+    }
+}
+
+// One program's code as the bundle writes it: what `make wasm-modules` built for it under
+// `release`, with its view, describe module, schema and notifier embedded.
+pub fn pack(release: &Path, program: &str) -> Result<Vec<u8>> {
+    let (view, notifier) =
+        modules(program).ok_or_else(|| format!("{program} is not a program a founding packs"))?;
+    let mut packed = read(release, program, "wasm")?;
+    if let Some(view) = view {
+        packed = embed(&packed, &read(release, view, "wasm")?)?;
+    }
+    let describe = read(release, &format!("{program}.describe"), "wasm")?;
+    packed = embed_describe(&packed, &describe)?;
+    packed = embed_schema(&packed, &read(release, program, "schema")?)?;
+    if let Some(view) = notifier {
+        packed = embed_notify(&packed, &read(release, &format!("{view}.notify"), "wasm")?)?;
+    }
+    Ok(packed)
+}
+
+fn read(release: &Path, name: &str, extension: &str) -> Result<Vec<u8>> {
+    let path = release.join(format!("{name}.{extension}"));
+    Ok(fs::read(&path).map_err(|error| format!("{}: {error}", path.display()))?)
 }
 
 fn validate(bytes: &[u8]) -> Result<()> {
