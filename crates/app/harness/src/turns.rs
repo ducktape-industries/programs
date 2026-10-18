@@ -11,7 +11,7 @@ use abi::role::egress::{self, http};
 
 use crate::agents::{Agent, configured, hear_again, manual, running, thread};
 use crate::calls::{Placed, place, refusal, run_call, take_back_showing};
-use crate::conversations::retire;
+use crate::conversations::{binding, retire};
 use crate::models::learned;
 use crate::state::{FRAMES, HELD, LIVE, Live, PARTIALS, SEALED, SHOWN, THREADS, WITHHELD};
 use crate::wire::{self, Answered, Header, Summarized, Summary};
@@ -433,7 +433,8 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
     };
     reseal(ctx, thread, model.wire)?;
     let mut system = config.paragraphs();
-    system.push(manual(agent, &thread.title));
+    let bound = binding(ctx, thread)?;
+    system.push(manual(agent, &thread.title, bound.as_ref()));
     let header = Header {
         name: &model.name,
         max_tokens: config.max_tokens,
