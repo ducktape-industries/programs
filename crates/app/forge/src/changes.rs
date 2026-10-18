@@ -17,7 +17,7 @@ use crate::objects::{ObjectWriter, object_not_held};
 use crate::ops::{cap, refusal_of, require_named};
 use crate::state::{
     load_bounds, load_change, load_ref, load_repo, next, next_message, next_number, parse_oid,
-    peek_message, repo_hash, resolve, save_change, save_review, set_ref,
+    peek_message, protected, repo_hash, resolve, save_change, save_review, set_ref,
 };
 
 /// What `ChangeOpen` carries besides its repository.
@@ -329,7 +329,7 @@ pub(crate) fn squash(
     };
     let message = message_of(squash.message, change.as_ref())?;
     let bounds = load_bounds(ctx)?;
-    let mut objects = ObjectWriter::new(ctx, hash);
+    let objects = ObjectWriter::new(ctx, hash);
     let walk = cap(bounds.log_walk);
     let base = gitcore::walk::merge_base(&objects, &expected_from, &expected_into, walk)
         .map_err(refusal_of)?
@@ -339,27 +339,70 @@ pub(crate) fn squash(
     if base == expected_from {
         return Err(wrong_state("merge does not advance the target"));
     }
-    let base = root_tree(&objects, &base)?;
-    let ours = root_tree(&objects, &expected_into)?;
-    let theirs = root_tree(&objects, &expected_from)?;
+    let committer = signature(ctx, require_named(actor)?)?;
+    let author = match change.as_ref().and_then(|change| change.author.account()) {
+        Some(author) => signature(ctx, author)?,
+        None => committer.clone(),
+    };
+    let made = Squashed {
+        base,
+        ours: expected_into,
+        theirs: expected_from,
+        author,
+        committer,
+        message,
+    };
+    let id = write_squash(objects, &bounds, hash, made)?;
+    if let Some(change) = change {
+        let heads = MergedHeads {
+            source: expected_from.to_hex(),
+            target: expected_into.to_hex(),
+        };
+        merged(ctx, actor, repo, change, heads, &id)?;
+    }
+    set_ref(ctx, repo, &squash.into, &id);
+    Ok(OpReply::Merged {
+        height: env.height,
+        oid: id.to_hex(),
+        change: squash.change,
+    })
+}
+
+// What a squash commit is made of: the merge base, the head it lands on (`ours`, its one
+// parent), the head whose changes it carries (`theirs`), and whom it names.
+struct Squashed {
+    base: Oid,
+    ours: Oid,
+    theirs: Oid,
+    author: Signature,
+    committer: Signature,
+    message: Vec<u8>,
+}
+
+// Writes the squash commit: what `theirs` changed since `base`, merged onto `ours`' tree. A
+// conflict refuses it, naming every path, and writes nothing.
+fn write_squash(
+    mut objects: ObjectWriter<'_>,
+    bounds: &Bounds,
+    hash: Hash,
+    squash: Squashed,
+) -> Result<Oid, Error> {
+    let base = root_tree(&objects, &squash.base)?;
+    let ours = root_tree(&objects, &squash.ours)?;
+    let theirs = root_tree(&objects, &squash.theirs)?;
     let cost = cap(bounds.merge_cost);
     let merge =
         gitcore::merge::trees(&objects, Some(&base), &ours, &theirs, cost).map_err(refusal_of)?;
     if !merge.conflicts.is_empty() {
         return Err(wrong_state(conflicted(&merge.conflicts)));
     }
-    let committer = signature(ctx, require_named(actor)?)?;
-    let author = match change.as_ref().and_then(|change| change.author.account()) {
-        Some(author) => signature(ctx, author)?,
-        None => committer.clone(),
-    };
     let commit = Commit {
         tree: merge.tree,
-        parents: vec![expected_into],
-        author,
-        committer,
+        parents: vec![squash.ours],
+        author: squash.author,
+        committer: squash.committer,
         extra: Vec::new(),
-        message,
+        message: squash.message,
     };
     let body = commit.serialize();
     let id = gitcore::oid_of(hash, Kind::Commit, &body).map_err(refusal_of)?;
@@ -378,18 +421,122 @@ pub(crate) fn squash(
         objects.keep(oid, object).map_err(refusal_of)?;
     }
     objects.flush()?;
-    if let Some(change) = change {
-        let heads = MergedHeads {
-            source: expected_from.to_hex(),
-            target: expected_into.to_hex(),
-        };
-        merged(ctx, actor, repo, change, heads, &id)?;
+    Ok(id)
+}
+
+// What `Rebase` carries besides its repository.
+pub(crate) struct RebaseRequest {
+    pub n: u64,
+    pub onto: Revision,
+    pub expected_head: String,
+}
+
+// Change `n` rebuilt on `onto`: what its head changed since their merge base, merged onto
+// `onto`'s tree as one squash commit whose one parent is `onto`, and its source moved there
+// under a CAS on its head. Its number, reviews and channel stay.
+pub(crate) fn rebase(
+    ctx: &ExecCtx,
+    actor: &Principal,
+    repo: &str,
+    request: RebaseRequest,
+) -> Result<OpReply, Error> {
+    let env = ctx.env();
+    let record = load_repo(ctx, repo)?;
+    let hash = repo_hash(&record);
+    let mut change = load_change(ctx, repo, request.n)?;
+    require_open(&change)?;
+    let head = parse_oid(hash, &request.expected_head)?;
+    if resolve(ctx, repo, &change.from, hash)? != head {
+        return Err(stale("the change's head moved; read it again"));
     }
-    set_ref(ctx, repo, &squash.into, &id);
-    Ok(OpReply::Merged {
+    let moves_protected = match &change.from {
+        Revision::Ref(branch) => protected(ctx, repo, &record, branch),
+        Revision::Oid(_) => false,
+    };
+    if moves_protected {
+        return Err(wrong_state(
+            "the change's source is a protected branch, which no rebase moves",
+        ));
+    }
+    let onto = resolve(ctx, repo, &request.onto, hash)?;
+    let bounds = load_bounds(ctx)?;
+    let objects = ObjectWriter::new(ctx, hash);
+    let walk = cap(bounds.log_walk);
+    let base = gitcore::walk::merge_base(&objects, &head, &onto, walk)
+        .map_err(refusal_of)?
+        .ok_or_else(|| wrong_state("the change and onto share no history: no merge base"))?;
+    if base == head {
+        return Err(wrong_state(
+            "onto already holds the change: nothing to rebase",
+        ));
+    }
+    if base == onto {
+        return Err(wrong_state(
+            "the change already sits on onto: nothing to rebase",
+        ));
+    }
+    let committer = signature(ctx, require_named(actor)?)?;
+    let author = match change.author.account() {
+        Some(author) => signature(ctx, author)?,
+        None => committer.clone(),
+    };
+    let made = Squashed {
+        base,
+        ours: onto,
+        theirs: head,
+        author,
+        committer,
+        message: rebased_message(&change),
+    };
+    let id = write_squash(objects, &bounds, hash, made)?;
+    match &change.from {
+        Revision::Ref(branch) => set_ref(ctx, repo, branch, &id),
+        Revision::Oid(_) => change.from = Revision::Oid(id.to_hex()),
+    }
+    touched(&mut change, &env);
+    fits(ctx, &change)?;
+    save_change(ctx, repo, &change)?;
+    Ok(OpReply::Rebased {
         height: env.height,
+        n: request.n,
         oid: id.to_hex(),
-        change: squash.change,
+    })
+}
+
+// A rebase's message: the change's title, a blank line and its body.
+fn rebased_message(change: &Change) -> Vec<u8> {
+    let message = match change.body.trim() {
+        "" => change.title.trim().to_owned(),
+        body => format!("{}\n\n{body}", change.title.trim()),
+    };
+    let mut message = message.into_bytes();
+    message.push(b'\n');
+    message
+}
+
+// Change `n` takes `from` as its source, checked as `ChangeOpen` checks it.
+pub(crate) fn repoint(ctx: &ExecCtx, repo: &str, n: u64, from: Revision) -> Result<OpReply, Error> {
+    let env = ctx.env();
+    let record = load_repo(ctx, repo)?;
+    let mut change = load_change(ctx, repo, n)?;
+    require_open(&change)?;
+    check_endpoints(&change.into, &from)?;
+    let hash = repo_hash(&record);
+    let source = resolve(ctx, repo, &from, hash)?;
+    let target = resolve(ctx, repo, &Revision::Ref(change.into.clone()), hash)?;
+    if source == target {
+        return Err(wrong_state("source and target already agree"));
+    }
+    change.from = match from {
+        Revision::Oid(_) => Revision::Oid(source.to_hex()),
+        from => from,
+    };
+    touched(&mut change, &env);
+    fits(ctx, &change)?;
+    save_change(ctx, repo, &change)?;
+    Ok(OpReply::Change {
+        height: env.height,
+        n,
     })
 }
 
@@ -543,7 +690,7 @@ fn check_endpoints(into: &[u8], from: &Revision) -> Result<(), Error> {
     Ok(())
 }
 
-fn check_branch(name: &[u8]) -> Result<(), Error> {
+pub(crate) fn check_branch(name: &[u8]) -> Result<(), Error> {
     if !name.starts_with(b"refs/heads/") || !gitcore::server::valid_ref_name(name) {
         return Err(invalid(
             "change endpoints must name branches under refs/heads/",

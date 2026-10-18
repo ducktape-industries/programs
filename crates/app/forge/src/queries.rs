@@ -13,7 +13,9 @@ use gitcore::walk::{Closed, closure as close};
 use crate::contract::*;
 use crate::objects::ObjectStore;
 use crate::ops::{cap, refusal_of};
-use crate::state::{ACTIVITY, REFS, load_bounds, load_refs, load_repo, repo_hash, storage, writes};
+use crate::state::{
+    ACTIVITY, PROTECTED, REFS, load_bounds, load_refs, load_repo, repo_hash, storage, writes,
+};
 
 const AGENT: &[u8] = b"ducktape-forge";
 
@@ -42,6 +44,18 @@ pub(crate) fn refs(
                 target: oid.to_hex(),
             })
         })
+}
+
+// A repository's protected branches in byte-name order; its head is protected besides.
+pub(crate) fn protected_branches(
+    ctx: &QueryCtx,
+    name: &str,
+    listing: &Listing,
+) -> Result<PageResponse<Vec<u8>>, Error> {
+    load_repo(ctx, name)?;
+    Ok(PROTECTED
+        .page_of(ctx, &name.to_owned(), listing)?
+        .map(|(_, branch)| branch))
 }
 
 /// A forge listing is rewritten only by a forge op, so a cursor is pinned

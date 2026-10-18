@@ -137,6 +137,49 @@ pub fn describe(op: &Op) -> Description {
                     .map_or_else(|| field("change", Value::text("—")), change),
             ],
         ),
+        Op::Rebase {
+            repo,
+            n,
+            onto,
+            expected_head,
+        } => (
+            "Rebase change",
+            repo,
+            vec![
+                change(n),
+                field("onto", revision(onto)),
+                field("head", Value::text(expected_head)),
+            ],
+        ),
+        Op::ChangeRepoint { repo, n, from } => (
+            "Re-point change",
+            repo,
+            vec![change(n), field("from", revision(from))],
+        ),
+        Op::DeleteBranch {
+            repo,
+            branch,
+            expected,
+        } => (
+            "Delete branch",
+            repo,
+            vec![
+                field("branch", text(branch)),
+                field("at", Value::text(expected)),
+            ],
+        ),
+        Op::Protect {
+            repo,
+            branch,
+            protected,
+        } => (
+            match protected {
+                true => "Protect branch",
+                false => "Unprotect branch",
+            },
+            repo,
+            vec![field("branch", text(branch))],
+        ),
         Op::ReviewSubmit { repo, n, review } => (
             "Review",
             repo,

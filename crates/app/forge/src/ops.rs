@@ -1,21 +1,25 @@
 //! The execute path: who acts, which op, what it needs of the access program, and the
-//! repository ops (create, configure, push, stage). Change ops live in `changes`.
+//! repository ops (create, configure, push, stage, protect, delete a branch). Change ops live
+//! in `changes`.
 
 use ::program::{AccountNumber, BlobId, Error, HashKind, Need, Party, Resource};
 use ::program::{
-    ExecCtx, QueryCtx, already_exists, capacity, decoded, invalid, not_found, unauthorized,
+    ExecCtx, QueryCtx, already_exists, capacity, decoded, invalid, not_found, stale, unauthorized,
+    wrong_state,
 };
 use gitcore::server::{Policy, RefUpdate};
 use gitcore::{Error as GitError, Limits, server};
 
+use crate::changes::check_branch;
 use crate::contract::{
     Bounds, Op, PACK_KIND, Principal, Repo, Settings, change_key, repo_key, settings_key,
     valid_repo_name,
 };
 use crate::objects::{ObjectWriter, object_not_held};
 use crate::state::{
-    delete_ref, load_bounds, load_change, load_refs, load_repo, repo_exists, repo_hash,
-    save_bounds, save_repo, set_ref, storage,
+    PROTECTED, delete_ref, load_bounds, load_change, load_ref, load_refs, load_repo, parse_oid,
+    protected, ref_key, repo_exists, repo_hash, save_bounds, save_repo, set_ref, sourced_by,
+    storage,
 };
 
 pub const PROGRAM: &str = "forge";
@@ -86,11 +90,14 @@ pub(crate) fn retired() -> Error {
 
 pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
     let needs = match op {
-        Op::Configure { repo, .. } => vec![Need::write(settings_key(repo))],
+        Op::Configure { repo, .. } | Op::Protect { repo, .. } => {
+            vec![Need::write(settings_key(repo))]
+        }
         Op::Push { repo, .. }
         | Op::Merge { repo, .. }
         | Op::Stage { repo, .. }
-        | Op::SquashMerge { repo, .. } => {
+        | Op::SquashMerge { repo, .. }
+        | Op::DeleteBranch { repo, .. } => {
             vec![Need::write(repo_key(repo))]
         }
         Op::ChangeClose { repo, n } => {
@@ -102,10 +109,20 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
                 false => vec![Need::write(repo_key(repo))],
             }
         }
-        Op::ChangeEdit { repo, n, .. } => match load_change(ctx, repo, *n) {
-            Ok(_) => vec![Need::write(change_key(repo, *n))],
-            Err(_) => Vec::new(),
-        },
+        Op::ChangeEdit { repo, n, .. } | Op::ChangeRepoint { repo, n, .. } => {
+            match load_change(ctx, repo, *n) {
+                Ok(_) => vec![Need::write(change_key(repo, *n))],
+                Err(_) => Vec::new(),
+            }
+        }
+        // a rebase rewrites the change, as an edit does, and moves a ref, as a push does
+        Op::Rebase { repo, n, .. } => {
+            let mut needs = vec![Need::write(repo_key(repo))];
+            if load_change(ctx, repo, *n).is_ok() {
+                needs.insert(0, Need::write(change_key(repo, *n)));
+            }
+            needs
+        }
         Op::Create { .. }
         | Op::Grant { .. }
         | Op::Revoke { .. }
@@ -185,6 +202,64 @@ pub(crate) fn push(
     }
     save_repo(ctx, name, &repo)?;
     ctx.set_return_data(outcome.report);
+    Ok(())
+}
+
+// A branch goes when it is still at `expected`, no protection covers it and no open change
+// names it as its source; `allow_delete` governs only what a git push deletes. Its objects
+// stay, so it can be pushed again.
+pub(crate) fn delete_branch(
+    ctx: &ExecCtx,
+    name: &str,
+    branch: &[u8],
+    expected: &str,
+) -> Result<(), Error> {
+    let mut repo = load_repo(ctx, name)?;
+    check_branch(branch)?;
+    let hash = repo_hash(&repo);
+    let expected = parse_oid(hash, expected)?;
+    let shown = String::from_utf8_lossy(branch);
+    match load_ref(ctx, name, branch, hash)? {
+        None => return Err(not_found(format!("no branch {shown}"))),
+        Some(at) if at != expected => {
+            return Err(stale(format!("{shown} moved; read it again")));
+        }
+        Some(_) => {}
+    }
+    if protected(ctx, name, &repo, branch) {
+        return Err(wrong_state(format!("{shown} is protected")));
+    }
+    let named = sourced_by(ctx, name, branch)?;
+    if !named.is_empty() {
+        let changes: Vec<String> = named.iter().map(|n| format!("#{n}")).collect();
+        return Err(wrong_state(format!(
+            "open change {} names {shown} as its source",
+            changes.join(", ")
+        )));
+    }
+    repo.refs_count -= 1;
+    delete_ref(ctx, name, branch);
+    save_repo(ctx, name, &repo)
+}
+
+// Marks `branch` protected or not. The head is protected whatever the set holds, so it is
+// never unprotected.
+pub(crate) fn protect(
+    ctx: &ExecCtx,
+    name: &str,
+    branch: &[u8],
+    protected: bool,
+) -> Result<(), Error> {
+    let repo = load_repo(ctx, name)?;
+    check_branch(branch)?;
+    let key = ref_key(name, branch);
+    match protected {
+        true => PROTECTED.insert(ctx, &key),
+        false if repo.settings.head == branch => {
+            return Err(wrong_state("the repository's head is always protected"));
+        }
+        false => PROTECTED.remove(ctx, &key),
+    }
     Ok(())
 }
 

@@ -74,6 +74,7 @@ fn next_cursor(reply: &Reply) -> Option<&Vec<u8>> {
         Reply::Changes { page, .. } => page.next.as_ref(),
         Reply::Change { reviews, .. } => reviews.next.as_ref(),
         Reply::Judgment { page, .. } => page.next.as_ref(),
+        Reply::Protected { page, .. } => page.next.as_ref(),
         // a log is never read whole: `log_page`
         Reply::Log { .. }
         | Reply::Repo { .. }

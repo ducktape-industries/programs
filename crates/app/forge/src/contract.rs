@@ -2,7 +2,7 @@
 use ::program::{BlobId, HashKind};
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
-use crate::state::{ACTIVITY, AUTHORED, CHANGES, INVOLVED, REFS, REPOS, REVIEWS};
+use crate::state::{ACTIVITY, AUTHORED, CHANGES, INVOLVED, PROTECTED, REFS, REPOS, REVIEWS};
 
 pub use crate::read_contract::*;
 pub use crate::review_contract::*;
@@ -130,6 +130,31 @@ pub enum Op {
         message: Option<String>,
         change: Option<u64>,
     },
+    // forge rebuilds change `n` on `onto` as one squash commit, and the change's source moves
+    // to it, under a CAS on `expected_head`.
+    Rebase {
+        repo: String,
+        n: u64,
+        onto: Revision,
+        expected_head: String,
+    },
+    // Change `n` takes `from` as its source; its number, reviews and channel stay.
+    ChangeRepoint {
+        repo: String,
+        n: u64,
+        from: Revision,
+    },
+    // A branch still at `expected`, that no protection covers and no open change names, goes.
+    DeleteBranch {
+        repo: String,
+        branch: Vec<u8>,
+        expected: String,
+    },
+    Protect {
+        repo: String,
+        branch: Vec<u8>,
+        protected: bool,
+    },
 }
 
 impl Op {
@@ -146,7 +171,11 @@ impl Op {
             | Op::ChangeClose { repo, .. }
             | Op::ReviewSubmit { repo, .. }
             | Op::Stage { repo, .. }
-            | Op::SquashMerge { repo, .. } => repo,
+            | Op::SquashMerge { repo, .. }
+            | Op::Rebase { repo, .. }
+            | Op::ChangeRepoint { repo, .. }
+            | Op::DeleteBranch { repo, .. }
+            | Op::Protect { repo, .. } => repo,
         }
     }
 }
@@ -292,6 +321,12 @@ pub enum Query {
         repo: String,
         walk: Walk,
     },
+    // A repository's protected branches, in byte-name order; its head is protected besides.
+    #[reads(PROTECTED, REPOS)]
+    Protected {
+        repo: String,
+        page: PageRequest,
+    },
 }
 
 impl Query {
@@ -315,7 +350,8 @@ impl Query {
             | Query::Diff { page, .. }
             | Query::Changes { page, .. }
             | Query::Change { page, .. }
-            | Query::Judgment { page, .. } => Some(page),
+            | Query::Judgment { page, .. }
+            | Query::Protected { page, .. } => Some(page),
             Query::Advertise { .. }
             | Query::Upload { .. }
             | Query::Repo { .. }
@@ -336,7 +372,8 @@ impl Query {
             | Query::Diff { page, .. }
             | Query::Changes { page, .. }
             | Query::Change { page, .. }
-            | Query::Judgment { page, .. } => Some(page),
+            | Query::Judgment { page, .. }
+            | Query::Protected { page, .. } => Some(page),
             Query::Advertise { .. }
             | Query::Upload { .. }
             | Query::Repo { .. }
@@ -425,6 +462,10 @@ pub enum Reply {
         height: u64,
         listed: Vec<Listed>,
         next: Walk,
+    },
+    Protected {
+        height: u64,
+        page: PageResponse<Vec<u8>>,
     },
 }
 
@@ -584,6 +625,11 @@ pub enum OpReply {
         height: u64,
         oid: String,
         change: Option<u64>,
+    },
+    Rebased {
+        height: u64,
+        n: u64,
+        oid: String,
     },
 }
 

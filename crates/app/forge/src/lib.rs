@@ -49,8 +49,8 @@ pub use program::Forge;
 /// of `program.changes` plays back in a test to say which a block touched.
 pub mod tables {
     pub use crate::state::{
-        ACTIVITY, AUTHORED, BOUNDS, CHANGES, INVOLVED, MESSAGES, NUMBERS, REFS, REPOS, REVIEWS,
-        WRITES,
+        ACTIVITY, AUTHORED, BOUNDS, CHANGES, INVOLVED, MESSAGES, NUMBERS, PROTECTED, REFS, REPOS,
+        REVIEWS, WRITES,
     };
 }
 
@@ -75,6 +75,10 @@ fn op_variants_only_append() {
             "ReviewSubmit",
             "Stage",
             "SquashMerge",
+            "Rebase",
+            "ChangeRepoint",
+            "DeleteBranch",
+            "Protect",
         ]
     );
 }

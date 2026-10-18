@@ -14,7 +14,9 @@ only.
   and atomically changes the target ref and optional change record, without
   inspecting objects. `SquashMerge` builds the result itself in consensus: one
   squash commit on the target's head, under the same CAS. Neither enforces
-  review verdicts.
+  review verdicts. `Rebase` builds the same kind of commit for an open change on
+  a newer base and moves the change's own source to it, so a change keeps its
+  number through a rebase.
 - Changes keep their title, body, author account, and lifecycle on the forge record.
   A repository's number counter allocates the shared future issue/change number space.
 - Every table is declared once in `src/state.rs` as a typed `store::Map`/`Set`/`Item`:
@@ -83,6 +85,7 @@ and decode a `forge::Reply` from the concatenated `Respond` bytes.
 | `Advertise { repo: r, service: Service::UploadPack }` | raw Git protocol v2 advertisement |
 | `Upload { repo: r, request: git_v2_ls_refs_bytes }` | raw Git protocol v2 `ls-refs` response |
 | `Closure { repo: r, walk: Walk::of(gitcore::walk::Walk::of(&wants, &haves)) }` | `listed`: the ids and kinds of the objects `wants` reach less what `haves` reach, and `next`, the walk to send back for the next page |
+| `Protected { repo: r, cursor: None, limit: 20 }` | `page<Vec<u8>>`: the protected branch names in byte order; the head is protected besides |
 
 `Advertise` and `Upload` speak Git's own smart-HTTP framing, so they carry no
 Borsh height envelope. They are not UI list APIs. `Upload` answers `ls-refs`
@@ -155,12 +158,14 @@ the payload: a signed frame's key's account, a program's own, or the agent a
 program sends the op for (harness, for the agents it runs); the chain itself and a key
 that holds no account are refused. Any account may open/review. The author edits title/body/review requests,
 or whoever the change's list at `forge::change_key(repo, n)` in the access
-program allows; the author, or a repository writer, closes; repository writers merge.
+program allows, and so re-points it (`ChangeRepoint`); a `Rebase` needs the
+change's key and the repository's; the author, or a repository writer, closes; repository writers merge.
 A repository's writers are whoever its list in the access program allows, at
 `forge::repo_key(repo)`: anyone unless the owner sets a list there
-(`access::Op::Set`). `Push`, `Merge`, `Stage` and a `ChangeClose` by anyone but
-the change's author need that key; `Configure` needs `forge::settings_key(repo)`,
-which follows the same list unless the owner sets one of its own.
+(`access::Op::Set`). `Push`, `Merge`, `SquashMerge`, `Stage`, `DeleteBranch` and
+a `ChangeClose` by anyone but the change's author need that key; `Configure` and
+`Protect` need `forge::settings_key(repo)`, which follows the same list unless the
+owner sets one of its own.
 Reviews remain appendable on closed/merged changes.
 Closing is terminal; there is no reopen operation.
 
@@ -177,6 +182,10 @@ Closing is terminal; there is no reopen operation.
 | `ReviewSubmit { repo: r, n: 1, review: ReviewDraft { commit_oid: b, base_oid: Some(a), verdict: Verdict::RequestChanges, body: "Please check this".into(), comments: vec![LineComment { path: b"src/lib.rs".to_vec(), side: Side::New, line: 12, body: "Check this bound".into() }] } }` | one immutable review and all comments, one chat root; `OpReply::Review { height, n, id }` |
 | `Merge { repo: r, into: b"refs/heads/main".to_vec(), from: feature, expected_into: a, expected_from: b, result: client_result_oid, change: Some(1) }` | both-head CAS and open to merged together; `OpReply::Merged { height, oid, change }` |
 | `SquashMerge { repo: r, into: b"refs/heads/main".to_vec(), from: feature, expected_into: a, expected_from: b, message: None, change: Some(1) }` | one squash commit built in consensus on `a`, the same CAS, open to merged together; `OpReply::Merged { height, oid, change }` |
+| `Rebase { repo: r, n: 1, onto: main, expected_head: b }` | one squash commit of the change on `onto`, and the change's source moved to it under a CAS on `b`; `OpReply::Rebased { height, n, oid }` |
+| `ChangeRepoint { repo: r, n: 1, from: feature }` | the change's source becomes `from`; `OpReply::Change` |
+| `DeleteBranch { repo: r, branch: b"refs/heads/old".to_vec(), expected: a }` | deletes an unprotected branch at `a` that no open change names; empty output |
+| `Protect { repo: r, branch: b"refs/heads/dev".to_vec(), protected: true }` | adds (`false`: removes) a protected branch; empty output |
 
 A push's objects never ride inside its frame. The client puts git's pack as a
 blob of kind `pack` (`forge::PACK_KIND`) with `ducktape blob put FILE --kind
@@ -214,6 +223,33 @@ required. The change's author is the commit's author and the caller its
 committer (the caller is both without a change), each by their identity name at
 `<account>@<chain id>`, at the block's time, so every validator makes the same
 commit id.
+
+`Rebase` rebuilds an open change on `onto` (a branch or a commit, usually the
+change's target) with `SquashMerge`'s machinery: from the merge base of the
+change's head and `onto`, what the change's side changed is merged onto `onto`'s
+tree, held to `merge_cost` per file, and a conflict is refused `wrong_state`,
+naming every path, writing nothing. The result is one commit whose one parent is
+`onto`; its message is the change's title, a blank line and its body, its author
+the change's author and its committer the caller, each signed as a squash is, at
+the block's time. The change's source branch moves to it (a commit source takes
+the new id), under a CAS on `expected_head` (`stale` once the source moved). The
+move needs no `allow_force`: the change keeps its number, reviews and channel,
+and reviews pinned at the old head read as outdated, as after any push. A rebase
+is refused `wrong_state` when `onto` already holds the change, when the change
+already sits on `onto`, and when its source is a protected branch.
+
+`ChangeRepoint` points an open change at another source, a branch under
+`refs/heads/` or a commit, checked as `ChangeOpen` checks one (it exists and
+differs from the target's head); the number, reviews and channel stay.
+
+A repository's head (`Settings.head`) is always protected; `Protect { branch,
+protected }` adds or removes another protected branch (the head can't be
+unprotected), and `Query::Protected` lists them. No `Rebase` moves a protected
+branch and no `DeleteBranch` deletes one. `DeleteBranch` deletes a branch still at
+`expected` (`stale` otherwise) unless it is protected or an open change names it as
+its source, which the refusal lists. It ignores `allow_delete`, which governs only
+the deletions a git push asks for. The branch's objects stay, so it can be pushed
+again.
 
 Review OIDs and anchors receive syntactic validation, not object reads in
 consensus. Paths must be relative, lines positive, bodies nonblank, and anchors

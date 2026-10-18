@@ -7,11 +7,14 @@ use ::program::{Error, ExecCtx, Program, QueryCtx};
 
 use crate::change_queries::{change, changes, judgment};
 use crate::changes::{
-    Draft, Edit, MergeRequest, SquashRequest, close, edit, merge_heads, open, squash, submit_review,
+    Draft, Edit, MergeRequest, RebaseRequest, SquashRequest, close, edit, merge_heads, open,
+    rebase, repoint, squash, submit_review,
 };
 use crate::contract::*;
-use crate::ops::{configure, create, init, needs, push, resource, retired, stage, touch};
-use crate::queries::{advertise, closure, listing, refs, repos, upload};
+use crate::ops::{
+    configure, create, delete_branch, init, needs, protect, push, resource, retired, stage, touch,
+};
+use crate::queries::{advertise, closure, listing, protected_branches, refs, repos, upload};
 use crate::reads::{blob, comparison, diff, log, tree};
 use crate::state::{load_bounds, load_repo};
 
@@ -28,6 +31,9 @@ impl Program for Forge {
         returns::<OpReply>("ChangeEdit"),
         returns::<OpReply>("ChangeClose"),
         returns::<OpReply>("ReviewSubmit"),
+        returns::<OpReply>("SquashMerge"),
+        returns::<OpReply>("Rebase"),
+        returns::<OpReply>("ChangeRepoint"),
     ];
 
     fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
@@ -126,6 +132,30 @@ impl Program for Forge {
                 };
                 squash(ctx, actor, &repo, request).map(Some)
             }
+            Op::Rebase {
+                repo,
+                n,
+                onto,
+                expected_head,
+            } => {
+                let request = RebaseRequest {
+                    n,
+                    onto,
+                    expected_head,
+                };
+                rebase(ctx, actor, &repo, request).map(Some)
+            }
+            Op::ChangeRepoint { repo, n, from } => repoint(ctx, &repo, n, from).map(Some),
+            Op::DeleteBranch {
+                repo,
+                branch,
+                expected,
+            } => delete_branch(ctx, &repo, &branch, &expected).map(|()| None),
+            Op::Protect {
+                repo,
+                branch,
+                protected,
+            } => protect(ctx, &repo, &branch, protected).map(|()| None),
         }?;
         if let Some(reply) = reply {
             ctx.set_return_data(abi::encode(&reply));
@@ -235,6 +265,10 @@ impl Program for Forge {
                 page: judgment(ctx, principal, &listing(page)?)?,
             },
             Query::Closure { repo, walk } => closure(ctx, height, &bounds, repo, walk)?,
+            Query::Protected { repo, page } => Reply::Protected {
+                height,
+                page: protected_branches(ctx, repo, &listing(page)?)?,
+            },
         })
     }
 }

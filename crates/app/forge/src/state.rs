@@ -9,7 +9,9 @@ use ::program::{ExecCtx, QueryCtx, invalid, not_found};
 use gitcore::{Hash, Oid};
 use store::{Item, Map, Set};
 
-use crate::contract::{Bounds, Change, Principal, Repo, Review, Revision, valid_repo_name};
+use crate::contract::{
+    Bounds, Change, ChangeState, Principal, Repo, Review, Revision, valid_repo_name,
+};
 use crate::objects::hash_of;
 
 /// The bounds forge was founded with.
@@ -37,6 +39,9 @@ pub const AUTHORED: Set<(String, u64, Principal, u64)> = Set::new("u/");
 pub const INVOLVED: Set<(Principal, String, u64)> = Set::new("i/");
 /// The last system message id forge posted into chat.
 pub const MESSAGES: Item<u64> = Item::new("system-message-seq");
+// Each repository's protected branches besides its head, which always is: no rebase moves
+// one and no `DeleteBranch` deletes one.
+pub const PROTECTED: Set<(String, Vec<u8>)> = Set::new("b/");
 
 /// Stored state that is not what forge wrote: an operator's problem.
 pub(crate) fn storage(sentence: impl Into<String>) -> Error {
@@ -131,6 +136,22 @@ pub fn set_ref(ctx: &ExecCtx, name: &str, reference: &[u8], target: &Oid) {
 
 pub fn delete_ref(ctx: &ExecCtx, name: &str, reference: &[u8]) {
     REFS.remove(ctx, &ref_key(name, reference));
+}
+
+// Whether `branch` is protected in the repository `name`: its head always is.
+pub fn protected(ctx: &QueryCtx, name: &str, repo: &Repo, branch: &[u8]) -> bool {
+    repo.settings.head == branch || PROTECTED.has(ctx, &ref_key(name, branch))
+}
+
+// The open changes of the repository `name` whose source is `branch`.
+pub fn sourced_by(ctx: &QueryCtx, name: &str, branch: &[u8]) -> Result<Vec<u64>, Error> {
+    let source = Revision::Ref(branch.to_vec());
+    let changes = CHANGES.scan(ctx, CHANGES.prefix_of(&name.to_owned()))?;
+    Ok(changes
+        .into_iter()
+        .filter(|(_, change)| change.state == ChangeState::Open && change.from == source)
+        .map(|((_, n), _)| n)
+        .collect())
 }
 
 /// Resolving an op's endpoint reads consensus refs only, never objects.
