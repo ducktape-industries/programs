@@ -4,7 +4,7 @@
 mod common;
 
 use common::{fixture, git_binary, no_base, oid_list, oid_text, temp_dir};
-use gitcore::pack::{self, PackWriter};
+use gitcore::pack::{self, Deflate, PackWriter};
 use gitcore::{Commit, Error, Hash, Kind, Limits, MemoryObjects, Object, Objects, Oid};
 use std::collections::BTreeSet;
 
@@ -227,7 +227,12 @@ fn streaming_writer_matches_collected_writer() {
     let collected = pack::write(objects.clone(), Hash::Sha256).unwrap();
     let mut pieces: Vec<Vec<u8>> = Vec::new();
     let mut sink = |bytes: &[u8]| pieces.push(bytes.to_vec());
-    let mut writer = PackWriter::new(&mut sink, Hash::Sha256, objects.len() as u32);
+    let mut writer = PackWriter::new(
+        &mut sink,
+        Hash::Sha256,
+        objects.len() as u32,
+        Deflate::Small,
+    );
     for object in &objects {
         writer.add(object);
     }

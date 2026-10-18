@@ -6,18 +6,43 @@ use crate::object::Object;
 use crate::oid::{Hash, Hasher, Oid};
 use miniz_oxide::deflate::compress_to_vec_zlib;
 
-const COMPRESSION_LEVEL: u8 = 6;
+/// How hard each entry is deflated: the receiver keeps a pack as it was sent, so this trades
+/// its size against the time to write it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Deflate {
+    /// zlib level 6: a pack that is kept or sent on, such as a push.
+    Small,
+    /// zlib level 1: a fetch's answer, which git indexes as it comes. On core's history it
+    /// writes in half the time of `Small`, for a pack about a quarter larger.
+    Fast,
+}
+
+impl Deflate {
+    fn level(self) -> u8 {
+        match self {
+            Deflate::Small => 6,
+            Deflate::Fast => 1,
+        }
+    }
+}
 
 pub struct PackWriter<'a> {
     sink: &'a mut dyn FnMut(&[u8]),
     hasher: Hasher,
+    deflate: Deflate,
 }
 
 impl<'a> PackWriter<'a> {
-    pub fn new(sink: &'a mut dyn FnMut(&[u8]), hash: Hash, count: u32) -> PackWriter<'a> {
+    pub fn new(
+        sink: &'a mut dyn FnMut(&[u8]),
+        hash: Hash,
+        count: u32,
+        deflate: Deflate,
+    ) -> PackWriter<'a> {
         let mut writer = PackWriter {
             sink,
             hasher: Hasher::new(hash),
+            deflate,
         };
         let mut header = Vec::with_capacity(12);
         header.extend_from_slice(SIGNATURE);
@@ -29,7 +54,7 @@ impl<'a> PackWriter<'a> {
 
     pub fn add(&mut self, object: &Object) {
         self.emit(&entry_header(kind_code(object.kind), object.body.len()));
-        self.emit(&compress_to_vec_zlib(&object.body, COMPRESSION_LEVEL));
+        self.emit(&compress_to_vec_zlib(&object.body, self.deflate.level()));
     }
 
     pub fn finish(self) -> Result<Oid> {
@@ -66,7 +91,7 @@ where
     let count = u32::try_from(objects.len()).map_err(|_| Error::TooManyObjects)?;
     let mut out = Vec::new();
     let mut sink = |bytes: &[u8]| out.extend_from_slice(bytes);
-    let mut writer = PackWriter::new(&mut sink, hash, count);
+    let mut writer = PackWriter::new(&mut sink, hash, count, Deflate::Small);
     for object in objects {
         writer.add(&object);
     }

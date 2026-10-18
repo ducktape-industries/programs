@@ -4,7 +4,7 @@ use super::{pktline, sideband};
 use crate::error::{Error, Result};
 use crate::object::{Kind, Object, Tag};
 use crate::oid::{Hash, Oid};
-use crate::pack::PackWriter;
+use crate::pack::{Deflate, PackWriter};
 use crate::store::Objects;
 use std::collections::BTreeMap;
 
@@ -278,7 +278,7 @@ where
     let mut banded = sideband::Writer::new(sideband::Band::Pack, sink);
     {
         let mut write = |bytes: &[u8]| banded.write(bytes);
-        let mut writer = PackWriter::new(&mut write, hash, count);
+        let mut writer = PackWriter::new(&mut write, hash, count, Deflate::Fast);
         for object in objects {
             writer.add(&object?);
         }

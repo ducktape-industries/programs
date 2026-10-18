@@ -5,7 +5,7 @@ mod read;
 mod write;
 
 pub use read::read;
-pub use write::{PackWriter, write};
+pub use write::{Deflate, PackWriter, write};
 
 use crate::object::Kind;
 
