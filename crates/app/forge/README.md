@@ -147,8 +147,10 @@ requested changes never block that CAS.
 
 ## Operations and examples
 
-Authors are always the account the signed frame acts as (`ctx.sender()`), never
-the payload; forge takes signed frames alone. Any account may open/review. The author edits title/body/review requests,
+Authors are always the account the frame acts as (`ctx.sender_account()`), never
+the payload: a signed frame's key's account, a program's own, or the agent a
+program sends the op for (harness, for the agents it runs); the chain itself and a key
+that holds no account are refused. Any account may open/review. The author edits title/body/review requests,
 or whoever the change's list at `forge::change_key(repo, n)` in the access
 program allows; the author, or a repository writer, closes; repository writers merge.
 A repository's writers are whoever its list in the access program allows, at

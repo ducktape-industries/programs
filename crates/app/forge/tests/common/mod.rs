@@ -197,7 +197,12 @@ pub fn held_blob(sandbox: &MemorySandbox, kind: &str, body: &[u8]) -> BlobId {
 }
 
 pub fn forget(sandbox: &MemorySandbox, id: BlobId) {
-    for host in [&sandbox.forge, &sandbox.chat, &sandbox.access] {
+    for host in [
+        &sandbox.forge,
+        &sandbox.chat,
+        &sandbox.access,
+        &sandbox.runner,
+    ] {
         host.borrow_mut().blobs.remove(&id);
     }
 }

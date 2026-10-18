@@ -23,6 +23,17 @@ fn apps() -> Vec<Founding> {
         .collect()
 }
 
+fn with_forge() -> Vec<Founding> {
+    let mut apps = apps();
+    apps.push(Founding {
+        program: forge::PROGRAM.to_owned(),
+        code: program("forge"),
+        params: abi::encode(&super::discussion_tests::bounds()),
+        roles: Vec::new(),
+    });
+    apps
+}
+
 fn leb(mut value: usize) -> Vec<u8> {
     let mut out = Vec::new();
     loop {
@@ -572,6 +583,85 @@ fn an_agent_queries_and_calls_a_program_through_the_schema_its_code_carries() {
         assert_eq!(row.text, "hello");
         let (unschemed, failed) = result("toolu_f");
         assert!(failed && unschemed.starts_with(reason::UNSUPPORTED), "{unschemed}");
+    });
+}
+
+#[test]
+fn a_mentioned_agent_commits_files_to_forge_as_itself() {
+    deterministic::Runner::default().start(|context| async move {
+        let dir = tempfile::tempdir().unwrap();
+        let mut net =
+            Net::found_with(context, dir.path(), with_forge(), Vec::new(), MEMBER_CAP).await;
+        let Scout {
+            agent,
+            thread,
+            asked,
+            ..
+        } = mentioned(&mut net).await;
+        let commit = json!([{
+            "type": "tool_use",
+            "id": "toolu_1",
+            "name": "forge_commit",
+            "input": {
+                "repo": "notes",
+                "files": [{ "path": "status.md", "content": "up\n" }],
+                "message": "Status",
+            },
+        }]);
+        net.answer(asked.id, model_reply(commit, "tool_use")).await;
+        let [relay] = net.assigned(RELAY).await.try_into().unwrap();
+        net.answer(relay.id, Vec::new()).await;
+        let frames = net.frames(thread.id).await;
+        let Some(Body::Result { text, failed, .. }) = frames.last() else {
+            panic!("the call's result is the thread's last frame: {frames:?}");
+        };
+        assert!(!failed, "{text}");
+
+        let repo = forge::Query::Repo {
+            repo: "notes".into(),
+        };
+        let forge::Reply::Repo { repo, .. } = net.ask(forge::PROGRAM, &repo).await else {
+            panic!()
+        };
+        assert_eq!(
+            repo.repo.owner,
+            program::Principal::Account(agent),
+            "the agent owns the repository its commit created"
+        );
+        let log = forge::Query::Log {
+            repo: "notes".into(),
+            from: forge::Revision::Ref(b"refs/heads/main".to_vec()),
+            exclude: None,
+            page: forge::PageRequest::first(4),
+        };
+        let forge::Reply::Log { page, .. } = net.ask(forge::PROGRAM, &log).await else {
+            panic!()
+        };
+        let [commit] = page.items.try_into().unwrap();
+        assert_eq!(
+            (commit.author.name.as_slice(), commit.message.as_slice()),
+            (b"Scout".as_slice(), b"Status\n".as_slice())
+        );
+        let tree = forge::Query::Tree {
+            repo: "notes".into(),
+            at: commit.oid,
+            path: Vec::new(),
+            page: forge::PageRequest::first(4),
+        };
+        let forge::Reply::Tree { page, .. } = net.ask(forge::PROGRAM, &tree).await else {
+            panic!()
+        };
+        let [entry] = page.items.try_into().unwrap();
+        assert_eq!(entry.name, b"status.md");
+        let blob = forge::Query::Blob {
+            repo: "notes".into(),
+            oid: entry.oid,
+            range: None,
+        };
+        let forge::Reply::Blob { blob, .. } = net.ask(forge::PROGRAM, &blob).await else {
+            panic!()
+        };
+        assert_eq!(blob.bytes, b"up\n");
     });
 }
 

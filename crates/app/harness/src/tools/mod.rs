@@ -57,8 +57,10 @@ pub(crate) trait Tool {
     type Args: DeserializeOwned;
     fn schema() -> Value;
     fn run(ctx: &ExecCtx, seat: &Seat, args: Self::Args) -> Result<Run, Error>;
-    fn render(_output: &[u8]) -> Value {
-        json!({ "ok": true })
+    /// The call's result from its last write's output; an error fails the call, as a refused
+    /// write does.
+    fn render(_output: &[u8]) -> Result<Value, Error> {
+        Ok(json!({ "ok": true }))
     }
     fn show(_ctx: &ExecCtx, _seat: &Seat, _input: &Prefix) -> Result<Show, Error> {
         Ok(Show::Wait)
@@ -76,7 +78,7 @@ pub(crate) struct Entry {
     pub schema: fn() -> Value,
     pub check: fn(&Value) -> Result<(), String>,
     pub run: fn(&ExecCtx, &Seat, Value) -> Result<Run, Error>,
-    pub render: fn(&[u8]) -> Value,
+    pub render: fn(&[u8]) -> Result<Value, Error>,
     pub show: fn(&ExecCtx, &Seat, &Prefix) -> Result<Show, Error>,
     pub void: fn(&ExecCtx, &Seat) -> Result<Vec<Write>, Error>,
 }
@@ -129,6 +131,7 @@ pub(crate) const CATALOG: &[Entry] = &[
     entry::<forge::Read>(),
     entry::<forge::Changes>(),
     entry::<forge::Change>(),
+    entry::<forge::Commit>(),
     entry::<network::Accounts>(),
     entry::<network::Account>(),
     entry::<network::Activity>(),
