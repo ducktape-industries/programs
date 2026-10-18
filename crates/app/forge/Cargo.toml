@@ -27,4 +27,5 @@ store = { workspace = true }
 
 [dev-dependencies]
 access = { workspace = true }
+ownership = { workspace = true }
 sha2 = { version = "0.10", default-features = false }

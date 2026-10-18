@@ -344,8 +344,24 @@ owner, no policy, only the program's own code governs it, as for a counter
 or an index many accounts write. `Map<K, Owned<T>>` reads and writes `T`
 itself, the same bytes as `Map<K, T>`, and names its rows' kind (`T::KIND`),
 which a user's defaults and policies know them by. A plain table that is
-neither is owned with no kind. Every table this repo's programs keep is
-declared shared for now; each program moves its owned kinds over on its own.
+neither is owned with no kind. This repo's programs declare their tables
+shared, and move each kind of owned item over one at a time (forge's reviews,
+`forge.review`, are the first).
+
+Four rules hold for every owned table:
+
+- **The guard sees only the keys a run writes.** An op that acts on an owned
+  item must write that item's row, even when nothing in it changes (bump a
+  `rev` on it), or no policy governs the op.
+- **What other accounts write leaves the owned row.** A count, a tally or a
+  timestamp that another account's op updates (a reply count, reactions, a
+  repository's last activity) lives in a shared table keyed by the item, or
+  the owner's narrowed policy refuses those ops.
+- **A changed stored type is a new table.** Rows already stored keep
+  decoding under the old one until a migration moves them.
+- **Never delete an owned row to mean "empty".** A key's owner is whoever
+  created it, so a row deleted and written again belongs to its new writer.
+  Keep an empty value, or fold the row into the item's own.
 
 ## 6. Talking to other programs
 

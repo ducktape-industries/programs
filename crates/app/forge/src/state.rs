@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use ::program::{Error, ProgramId, code};
 use ::program::{ExecCtx, QueryCtx, invalid, not_found};
 use gitcore::{Hash, Oid};
-use store::{Item, Map, Set};
+use store::{Item, Kind, Map, Owned, Set};
 
 use crate::contract::{
     Bounds, Change, ChangeState, Principal, Repo, Review, Revision, Watched, valid_repo_name,
@@ -32,7 +32,8 @@ pub const NUMBERS: Map<String, u64> = Map::new("n/").shared();
 /// by name (Judgment pages this table whole).
 pub const CHANGES: Map<(String, u64), Change> = Map::new("c/").shared();
 /// Reviews by repository, change number and review id.
-pub const REVIEWS: Map<(String, u64, u64), Review> = Map::new("v/").shared();
+// Each review is its author's, of the kind `forge.review`: no op rewrites or deletes one.
+pub const REVIEWS: Map<(String, u64, u64), Owned<Review>> = Map::new("v/");
 /// Index: the reviews one principal submitted on one change, oldest first.
 pub const AUTHORED: Set<(String, u64, Principal, u64)> = Set::new("u/").shared();
 /// Index: the changes a principal authored, is asked to review, or reviewed.
@@ -310,7 +311,11 @@ pub fn load_review(ctx: &QueryCtx, repo: &str, n: u64, id: u64) -> Result<Review
         .ok_or_else(|| storage("authored review missing"))
 }
 
-// Every table here is general data: only this program's code governs it.
+impl Kind for Review {
+    const KIND: &'static str = "forge.review";
+}
+
+// Every table here but REVIEWS is general data: only this program's code governs it.
 pub(crate) const TABLES: &[::program::Table] = &[
     BOUNDS.table(),
     WRITES.table(),

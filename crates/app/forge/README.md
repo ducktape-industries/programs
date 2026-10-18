@@ -31,7 +31,8 @@ only.
 - A change that ends (`Merge` or `SquashMerge` naming it, `ChangeClose`) has its
   channel archived: forge sends chat `SetChannelArchived` as itself, and a refusal
   never fails the op (see "Archiving a change's channel").
-- A review is one immutable operation: verdict, body, pinned head and base, and
+- A review is owned by its author (`Owned<Review>`, kind `forge.review`): the
+  ownership role records it as theirs. A review is one immutable operation: verdict, body, pinned head and base, and
   its line comments. An anchor is `(path, side, line)`;
   `Old` addresses `base_oid`, `New` addresses `commit_oid`. Both are retained.
   Compare the review's head to `Change.source_head` to show outdated; never move
