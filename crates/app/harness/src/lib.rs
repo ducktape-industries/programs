@@ -63,6 +63,40 @@ pub enum Op {
     ForkThread {
         agent: AccountNumber,
     },
+    OpenThread {
+        agent: AccountNumber,
+        place: Place,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum Place {
+    Channel { channel: String },
+    Thread { channel: String, root: u64 },
+}
+
+impl Place {
+    pub fn key(&self) -> String {
+        match self {
+            Place::Channel { channel } => format!("{}/{channel}", chat::PROGRAM),
+            Place::Thread { channel, root } => format!("{}/{channel}/{root}", chat::PROGRAM),
+        }
+    }
+
+    pub fn channel(&self) -> &str {
+        match self {
+            Place::Channel { channel } | Place::Thread { channel, .. } => channel,
+        }
+    }
+
+    pub fn words(&self) -> String {
+        match self {
+            Place::Channel { channel } => format!("chat channel {channel}"),
+            Place::Thread { channel, root } => {
+                format!("the thread of message {root} in chat channel {channel}")
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -469,6 +503,13 @@ pub enum Query {
     #[ask(Reply::Topic(Option<String>))]
     #[reads(state::TOPICS)]
     Topic { thread: u64 },
+    /// the agent's conversations bound to a place (`OpenThread`), by place
+    #[ask(Reply::Threads(PageResponse<ThreadRow>))]
+    #[reads(state::BOUND, state::THREADS)]
+    Bound {
+        agent: AccountNumber,
+        page: PageRequest,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -524,7 +565,7 @@ pub fn describe(op: &Op) -> describe::Description {
             vec![field("model", Value::text(id))],
         ),
         Op::NewThread { agent } => (
-            format!("Start a new conversation with agent {agent}"),
+            format!("Start agent {agent}'s canonical conversation afresh"),
             vec![field("agent", Value::count(*agent))],
         ),
         Op::ForkThread { agent } => (
@@ -534,6 +575,13 @@ pub fn describe(op: &Op) -> describe::Description {
         Op::Streamed { thread, event } => (
             format!("Event {} of thread {thread}'s model reply", event.seq),
             vec![field("data", Value::count(event.data.len() as u64))],
+        ),
+        Op::OpenThread { agent, place } => (
+            format!("Open a conversation with agent {agent} in {}", place.words()),
+            vec![
+                field("agent", Value::count(*agent)),
+                field("place", Value::text(&place.key())),
+            ],
         ),
     };
     describe::Description { title, fields }
@@ -553,6 +601,7 @@ fn op_variants_only_append() {
             "Streamed",
             "NewThread",
             "ForkThread",
+            "OpenThread",
         ]
     );
 }
@@ -563,7 +612,7 @@ fn query_variants_only_append() {
         describe::variants::<Query>(),
         [
             "Agent", "Thread", "Threads", "Frames", "Held", "Calls", "Tools", "ThreadAt", "Model",
-            "Models", "Withheld", "Partial", "Topic"
+            "Models", "Withheld", "Partial", "Topic", "Bound"
         ]
     );
 }
