@@ -175,7 +175,9 @@ program and every view, and writes every program's schema, under `$CARGO_TARGET_
 nothing built is committed. `make dev` and a view's `--example live` build
 with the `fast` profile instead (`Cargo.toml`): no fat LTO, sixteen codegen
 units and no wasm-opt, into `wasm32-unknown-unknown/fast/`, for the edit
-loop only. `WASM_PROFILE=fast` on a wasm target's command line asks for it
+loop and for garage, the network that runs dev; a release, and so
+duckpond, is always the release profile's bytes. `WASM_PROFILE=fast` on a
+wasm target's command line asks for it
 (`make dev WASM_PROFILE=release` for the bytes that ship), and in the
 environment of an `--example live` it picks the rig's profile.
 `make wasm-reproducible` proves the bytes do not depend on the checkout. They do depend on the host triple (the
