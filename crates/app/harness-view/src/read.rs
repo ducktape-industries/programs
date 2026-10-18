@@ -1,8 +1,9 @@
 //! Every read the screens make: the roster (the accounts whose script calls harness, what
-//! harness resolves for each, their threads, and how many member nodes serve each model's
-//! service and relay), one agent in full with who may change its configuration file and whom it
-//! answers, both read from access, one thread's transcript with the reply its model is
-//! streaming back, the model records, and the services the models form offers.
+//! harness resolves for each, their threads, the chat rooms' names, and how many member nodes
+//! serve each model's service and relay), one agent in full with who may change its
+//! configuration file and whom it answers, both read from access, one thread's transcript with
+//! the reply its model is streaming back, the model records, and the services the models form
+//! offers.
 use std::collections::HashMap;
 
 use egress::{RELAY, ServiceRow};
@@ -23,6 +24,8 @@ pub(crate) struct Roster {
     /// the reader's agent accounts that no script hands to harness yet
     pub unscripted: Vec<Unscripted>,
     pub names: HashMap<u64, String>,
+    /// each chat room's name by its channel id, which a thread's place holds
+    pub rooms: HashMap<String, String>,
     /// member nodes that serve relay: no tool call runs without one
     pub relaying: usize,
 }
@@ -134,6 +137,15 @@ pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error>
             name: account.card.name.clone(),
         })
         .collect();
+    // ponytail: every room, direct messages too, on each roster read, and a rename waits for
+    // the next one since chat's writes start none; one Channel read per room a thread names
+    // when networks hold many rooms
+    let rooms = host
+        .query_all(|after| chat::ask::Channels { page: page(after) })
+        .await?
+        .into_iter()
+        .map(|info| (info.channel.id, info.channel.name))
+        .collect();
     Ok(Roster {
         agents,
         unscripted,
@@ -141,6 +153,7 @@ pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error>
             .into_iter()
             .map(|account| (account.number, account.card.name))
             .collect(),
+        rooms,
         relaying: serving[RELAY],
     })
 }

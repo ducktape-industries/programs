@@ -68,3 +68,42 @@ fn closing_a_conversation_says_whether_it_is_the_current_one() {
         cx.texts()
     );
 }
+
+#[test]
+fn a_conversation_reads_by_its_number_and_its_room_by_the_name_chat_gives_it() {
+    // a room's channel id says nothing to a person, and a conversation opened before an agent
+    // kept one conversation carries that id in its title
+    const ROOM: &str = "channel-18df5a416a71b5fa-1792250406982472";
+    let mut net = Net::default();
+    net.rooms.push((ROOM.to_owned(), "payments".to_owned()));
+    net.threads[0].place = format!("chat/{ROOM}");
+    net.threads[0].title = format!("chat channel {ROOM}");
+    let (mut cx, _) = seated(net, EDDY);
+    assert!(
+        cx.has_text("Conversation 7 · Waiting for the model"),
+        "{:?}",
+        cx.texts()
+    );
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    assert!(cx.has_text("began in #payments"), "{:?}", cx.texts());
+    cx.simulate_click("thread-7");
+    cx.run_until_parked();
+    assert!(cx.has_text("Conversation 7"), "{:?}", cx.texts());
+    assert!(
+        cx.texts()
+            .iter()
+            .any(|text| text.contains("began in #payments")),
+        "{:?}",
+        cx.texts()
+    );
+    assert!(
+        cx.texts().iter().all(|text| !text.contains(ROOM)),
+        "{:?}",
+        cx.texts()
+    );
+    assert_eq!(
+        cx.host().requests::<HostTitle>().last().map(String::as_str),
+        Some("Scout · Conversation 7")
+    );
+}

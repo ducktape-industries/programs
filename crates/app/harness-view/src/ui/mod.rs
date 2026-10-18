@@ -162,12 +162,10 @@ pub(crate) fn asking(asking: Asking) -> String {
     }
 }
 
+/// A conversation as people read it, by its number. Its title is what harness tells the model,
+/// and one opened before an agent kept one conversation names its room there by the room's id.
 pub(crate) fn conversation_label(thread: &ThreadRow) -> String {
-    let mut letters = thread.title.chars();
-    match letters.next() {
-        Some(first) => first.to_uppercase().chain(letters).collect(),
-        None => format!("Conversation {}", thread.id),
-    }
+    format!("Conversation {}", thread.id)
 }
 
 pub(crate) fn began_words(thread: &ThreadRow, roster: Option<&Roster>) -> Option<String> {
@@ -175,7 +173,8 @@ pub(crate) fn began_words(thread: &ThreadRow, roster: Option<&Roster>) -> Option
     began.then(|| format!("began in {}", place_label(thread, roster)))
 }
 
-/// A thread's place as people read it: `#general`, `DM · Ada`, else the place as is.
+/// A thread's place as people read it: `#general` by the room's name in chat, `DM · Ada`, else
+/// the place as is.
 pub(crate) fn place_label(thread: &ThreadRow, roster: Option<&Roster>) -> String {
     let Some(channel) = thread.place.strip_prefix("chat/") else {
         return thread.place.clone();
@@ -186,7 +185,9 @@ pub(crate) fn place_label(thread: &ThreadRow, roster: Option<&Roster>) -> String
             let name = roster.map_or_else(|| format!("account {other}"), |r| r.name(other));
             format!("DM · {name}")
         }
-        None => format!("#{channel}"),
+        None => roster
+            .and_then(|roster| roster.rooms.get(channel))
+            .map_or_else(|| "a chat room".to_owned(), |name| format!("#{name}")),
     }
 }
 
