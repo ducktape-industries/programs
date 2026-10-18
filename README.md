@@ -174,7 +174,8 @@ Every wasm artifact is a build output: `make wasm-modules` builds every
 program and every view, and writes every program's schema, under `$CARGO_TARGET_DIR/wasm32-unknown-unknown/release/`;
 nothing built is committed. `make dev` and a view's `--example live` build
 with the `fast` profile instead (`Cargo.toml`): no fat LTO, sixteen codegen
-units and no wasm-opt, into `wasm32-unknown-unknown/fast/`, for the edit
+units and no wasm-opt (a notifier is built for size, through wasm-opt,
+whatever the profile), into `wasm32-unknown-unknown/fast/`, for the edit
 loop and for garage, the network that runs dev; a release, and every
 program a hosted network (duckpond) runs, is always the release profile's
 bytes. A hosted network never runs a release: its pods service, or
@@ -248,8 +249,8 @@ writes the stage and its manifest under `$CARGO_TARGET_DIR/dl/dev/`, and
 prints the upload order, without credentials. `make dl-publish-check` checks
 the script.
 
-`make dev`'s view gate requires `wasm-tools` and Python 3; view releases
-also need [Binaryen wasm-opt 132](https://github.com/WebAssembly/binaryen/releases/tag/version_132).
+`make dev`'s view gate requires `wasm-tools` and Python 3; view releases,
+and every notifier build (`make wasm-modules`, `fast` too), also need [Binaryen wasm-opt 132](https://github.com/WebAssembly/binaryen/releases/tag/version_132).
 `make wasm-views` builds, optimizes, and checks the exact view ABI, printing
 `name  bytes`. The bytes before wasm-opt stay beside each
 artifact as `<name>.wasm.unoptimized`. `WASM_OPT=/path/to/wasm-opt` can

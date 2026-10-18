@@ -163,6 +163,7 @@ strip = true
 
 # A view's redraw is fuel per instruction, and a view redraws on every
 # event: the views and the SDK crates only they link are built for speed.
+# One a notifier links goes in `[profile.notify]` too, back at size.
 [profile.release.package.chat-view]
 opt-level = 3
 [profile.release.package.forge-view]

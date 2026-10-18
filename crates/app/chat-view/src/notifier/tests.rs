@@ -180,39 +180,26 @@ fn only_a_mention_or_a_direct_message_to_me_is_a_notice() {
     let chain = "testnet-0a1b2c3d";
     let me = Mark::Mention(Principal::Account(3));
     let mention = row("design", 7, 5, said("@me", vec![me.clone()]));
-    let post = notice(&mention, 3, "design", chain, &names).unwrap();
+    assert!(meant_for(&mention, 3));
+    let post = notice(&mention, 3, "design", chain, &names);
     assert_eq!(post.title, "account 5 mentioned you");
     assert_eq!(post.tag, "#design");
     assert_eq!(post.link, "duck://testnet-0a1b2c3d/chat/design/7");
 
     let other = Mark::Mention(Principal::Account(4));
-    let not_me = |row: MsgRow| notice(&row, 3, "design", chain, &names).is_none();
+    let not_me = |row: MsgRow| !meant_for(&row, 3);
     assert!(not_me(row("design", 7, 5, said("@x", vec![other]))));
     assert!(not_me(row("design", 7, 5, said("hi", vec![]))));
     assert!(not_me(row("design", 7, 3, said("@me", vec![me]))));
 
-    let direct = notice(
-        &row("dm-3-5", 7, 5, said("hi", vec![])),
-        3,
-        "",
-        chain,
-        &names,
-    )
-    .unwrap();
+    let direct = row("dm-3-5", 7, 5, said("hi", vec![]));
+    assert!(meant_for(&direct, 3));
+    let direct = notice(&direct, 3, "", chain, &names);
     assert_eq!(
         (direct.title.as_str(), direct.body.as_str()),
         ("account 5", "hi")
     );
-    assert!(
-        notice(
-            &row("dm-4-5", 7, 5, said("hi", vec![])),
-            3,
-            "",
-            chain,
-            &names
-        )
-        .is_none()
-    );
+    assert!(not_me(row("dm-4-5", 7, 5, said("hi", vec![]))));
 }
 
 /// No pane is open: what was there at the first run is history, a mention
@@ -327,4 +314,41 @@ fn a_room_on_screen_gets_no_notice() {
     world.post(&mut notifier, vec![mention("random", 1)]);
     assert_eq!(posts(&notifier).len(), 1);
     assert_eq!(badge(&notifier), Some(1));
+}
+
+/// A catch-up of more rooms than are read at once: no turn announces more
+/// rooms than it reads, so what lands in a turn stays small however many
+/// rooms the reader has, and every room is still announced, once.
+#[test]
+fn a_catch_up_reads_a_few_rooms_at_a_time() {
+    let world = World::default();
+    let ids: Vec<String> = (0..5 * READS).map(|n| format!("c{n}")).collect();
+    *world.rooms.borrow_mut() = ids.iter().map(|id| room(id, id, 1)).collect();
+    world
+        .rows
+        .borrow_mut()
+        .extend(ids.iter().map(|id| mention(id, 1)));
+    world.keep(
+        "notified/0102",
+        &ids.iter().map(|id| (id.clone(), 0)).collect(),
+    );
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+
+    let mut announced = 0;
+    for (key, value) in notifier.host().requests::<StoreSet>() {
+        if key != "notified/0102" {
+            continue;
+        }
+        let kept: BTreeMap<String, u64> = methods::decode(&value.unwrap()).unwrap();
+        let now = kept.values().filter(|seq| **seq == 1).count();
+        assert!(
+            now - announced <= READS,
+            "{now} announced after {announced}"
+        );
+        announced = now;
+    }
+    assert_eq!(announced, ids.len());
+    assert_eq!(posts(&notifier).len(), ids.len());
+    assert_eq!(badge(&notifier), Some(ids.len() as i64));
 }
