@@ -27,6 +27,7 @@ pub struct Chat {
     pub(crate) notice: String,
     pub(crate) search: Search,
     pub(crate) create: Option<ChannelCreate>,
+    pub(crate) dm_pick: Option<DmPick>,
     pub(crate) details: Option<Details>,
     pub(crate) layout: Layout,
     pub(crate) reads: Reads,
@@ -51,6 +52,8 @@ pub struct Chat {
     /// until they move.
     #[serde(skip)]
     pub(crate) rooms_cursor: Option<String>,
+    #[serde(skip)]
+    pub(crate) dm_heads: BTreeMap<String, DmHead>,
     /// The message the arrows are on in the room, and in the thread.
     #[serde(skip)]
     pub(crate) timeline_cursor: Cursor,
@@ -278,6 +281,19 @@ pub struct ChannelCreate {
     pub(crate) error: String,
     #[serde(skip)]
     pub(crate) busy: bool,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+pub struct DmPick {
+    pub(crate) query: TextField,
+    pub(crate) cursor: Option<u64>,
+}
+
+#[derive(Default)]
+pub struct DmHead {
+    pub(crate) seq: u64,
+    pub(crate) time: Option<u64>,
+    pub(crate) reading: Option<view::Task<()>>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
