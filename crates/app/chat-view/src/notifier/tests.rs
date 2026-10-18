@@ -26,7 +26,7 @@ fn room(id: &str, name: &str, head_seq: u64) -> ChannelInfo {
             name: name.into(),
             created_at: 0,
             post_policy: PostPolicy::Open,
-            owner: Principal::Account(7),
+            owner: Principal::Account(9),
             archived: false,
         },
         head_seq,
@@ -41,6 +41,14 @@ fn row(channel: &str, seq: u64, author: u64, blocks: Vec<Block>) -> MsgRow {
         message_id: format!("m{seq}"),
         blocks,
         ..MsgRow::by(Principal::Account(author))
+    }
+}
+
+/// A reply under `root`.
+fn reply(channel: &str, seq: u64, author: u64, root: u64, blocks: Vec<Block>) -> MsgRow {
+    MsgRow {
+        thread: Some(root),
+        ..row(channel, seq, author, blocks)
     }
 }
 
@@ -78,6 +86,8 @@ fn session() -> Session {
 struct World {
     rooms: Rc<RefCell<Vec<ChannelInfo>>>,
     rows: Rc<RefCell<Vec<MsgRow>>>,
+    /// Each room's member seats.
+    members: Rc<RefCell<Vec<(String, u64)>>>,
     kept: Rc<RefCell<BTreeMap<String, Vec<u8>>>>,
 }
 
@@ -85,7 +95,7 @@ impl World {
     fn notifier(&self) -> TestNotifier<ChatNotices> {
         let notifier = TestNotifier::new();
         let host = notifier.host();
-        let (rooms, rows) = (self.rooms.clone(), self.rows.clone());
+        let (rooms, rows, members) = (self.rooms.clone(), self.rows.clone(), self.members.clone());
         host.handle::<Ask<chat::Chat>>(move |query| {
             Ok(match query {
                 Query::Accounts { .. } => Reply::Accounts(page(
@@ -98,15 +108,57 @@ impl World {
                         .into(),
                 )),
                 Query::Channels { .. } => Reply::Channels(page(rooms.borrow().clone())),
+                // as the program pages it: half before `seq`, half from it
                 Query::MessagesAround {
-                    channel_id, seq, ..
-                } => Reply::Messages(
-                    rows.borrow()
+                    channel_id,
+                    seq,
+                    page: asked,
+                    ..
+                } => {
+                    let half = asked.limit.unwrap_or(0) / 2;
+                    Reply::Messages(
+                        rows.borrow()
+                            .iter()
+                            .filter(|row| row.channel_id == channel_id)
+                            .filter(|row| row.seq + half >= seq && row.seq <= seq + half)
+                            .cloned()
+                            .collect(),
+                    )
+                }
+                Query::Thread {
+                    channel_id,
+                    root_seq,
+                    ..
+                } => {
+                    let rows = rows.borrow();
+                    let at = |row: &&MsgRow| row.channel_id == channel_id;
+                    Reply::Thread {
+                        root: rows
+                            .iter()
+                            .filter(at)
+                            .find(|row| row.seq == root_seq)
+                            .cloned(),
+                        replies: page(
+                            rows.iter()
+                                .filter(at)
+                                .filter(|row| row.thread == Some(root_seq))
+                                .cloned()
+                                .collect(),
+                        ),
+                    }
+                }
+                Query::Members { channel_id, .. } => Reply::Members(page(
+                    members
+                        .borrow()
                         .iter()
-                        .filter(|row| row.channel_id == channel_id && row.seq <= seq)
-                        .cloned()
+                        .filter(|(room, _)| *room == channel_id)
+                        .map(|(_, account)| chat::MemberRow {
+                            principal: Principal::Account(*account),
+                            height: 1,
+                            time: 0,
+                        })
                         .collect(),
-                ),
+                )),
                 query => panic!("unexpected chat query: {query:?}"),
             })
         });
@@ -150,7 +202,15 @@ impl World {
                 }
             }
             let key = chat::tables::HEADS.key(&row.channel_id);
-            self.rows.borrow_mut().push(row);
+            let mut rows = self.rows.borrow_mut();
+            if let Some(root) = row.thread {
+                let root = rows
+                    .iter_mut()
+                    .find(|kept| kept.channel_id == row.channel_id && kept.seq == root);
+                root.expect("a reply's root is posted first").reply_count += 1;
+            }
+            rows.push(row);
+            drop(rows);
             notifier
                 .host()
                 .stream::<Changes<chat::Chat>>()
@@ -171,35 +231,79 @@ fn badge(notifier: &TestNotifier<ChatNotices>) -> Option<i64> {
     notifier.host().requests::<HostBadge>().last().copied()
 }
 
-/// A mention of me, or any word in my direct room, from someone else:
-/// a notice. A mention of another, my own words, or a plain message in
-/// a channel: none.
+/// Why a message from someone else is meant for me: my direct room, a
+/// mention of me, a thread I am in, a room I am in; the first that holds
+/// names the notice. My own words, a mention of another, a plain message
+/// in a room I am not in, or one from before I came in: none.
 #[test]
-fn only_a_mention_or_a_direct_message_to_me_is_a_notice() {
+fn what_is_meant_for_me_and_why() {
     let names = Names::default();
     let chain = "testnet-0a1b2c3d";
     let me = Mark::Mention(Principal::Account(3));
+    let mut following = Following::default();
+    let why = |row: &MsgRow, following: &Following| meant_for(row, 3, false, following);
+
     let mention = row("design", 7, 5, said("@me", vec![me.clone()]));
-    assert!(meant_for(&mention, 3));
-    let post = notice(&mention, 3, "design", chain, &names);
+    assert_eq!(why(&mention, &following), Some(Why::Mention));
+    let post = notice(&mention, Why::Mention, 3, "design", chain, &names);
     assert_eq!(post.title, "account 5 mentioned you");
     assert_eq!(post.tag, "#design");
     assert_eq!(post.link, "duck://testnet-0a1b2c3d/chat/design/7");
 
     let other = Mark::Mention(Principal::Account(4));
-    let not_me = |row: MsgRow| !meant_for(&row, 3);
-    assert!(not_me(row("design", 7, 5, said("@x", vec![other]))));
-    assert!(not_me(row("design", 7, 5, said("hi", vec![]))));
-    assert!(not_me(row("design", 7, 3, said("@me", vec![me]))));
+    assert_eq!(
+        why(&row("design", 7, 5, said("@x", vec![other])), &following),
+        None
+    );
+    assert_eq!(
+        why(&row("design", 7, 3, said("@me", vec![me])), &following),
+        None
+    );
 
     let direct = row("dm-3-5", 7, 5, said("hi", vec![]));
-    assert!(meant_for(&direct, 3));
-    let direct = notice(&direct, 3, "", chain, &names);
+    assert_eq!(why(&direct, &following), Some(Why::Direct));
+    let direct = notice(&direct, Why::Direct, 3, "", chain, &names);
     assert_eq!(
         (direct.title.as_str(), direct.body.as_str()),
         ("account 5", "hi")
     );
-    assert!(not_me(row("dm-4-5", 7, 5, said("hi", vec![]))));
+    assert_eq!(
+        why(&row("dm-4-5", 7, 5, said("hi", vec![])), &following),
+        None
+    );
+
+    // a plain message: meant for me once I wrote in its room, or opened it
+    let plain = row("design", 9, 5, said("hi", vec![]));
+    assert_eq!(why(&plain, &following), None);
+    assert_eq!(meant_for(&plain, 3, true, &following), Some(Why::Room));
+    assert!(following.learn(&row("design", 8, 3, said("me too", vec![])), 3));
+    assert_eq!(why(&plain, &following), Some(Why::Room));
+    assert_eq!(
+        why(&row("design", 6, 5, said("before", vec![])), &following),
+        None
+    );
+    let post = notice(&plain, Why::Room, 3, "design", chain, &names);
+    assert_eq!(post.title, "account 5 in #design");
+
+    // a reply: meant for me once I wrote in its thread, which puts me in
+    // that thread alone
+    let answer = reply("review", 12, 5, 10, said("done", vec![]));
+    assert_eq!(why(&answer, &following), None);
+    assert!(following.learn(&reply("review", 11, 3, 10, said("ok?", vec![])), 3));
+    assert_eq!(why(&answer, &following), Some(Why::Thread));
+    assert_eq!(
+        why(&row("review", 13, 5, said("hi", vec![])), &following),
+        None
+    );
+    assert_eq!(
+        why(
+            &reply("review", 12, 5, 4, said("other", vec![])),
+            &following
+        ),
+        None
+    );
+    let post = notice(&answer, Why::Thread, 3, "review", chain, &names);
+    assert_eq!(post.title, "account 5 replied in a thread");
 }
 
 /// No pane is open: what was there at the first run is history, a mention
@@ -351,4 +455,135 @@ fn a_catch_up_reads_a_few_rooms_at_a_time() {
     assert_eq!(announced, ids.len());
     assert_eq!(posts(&notifier).len(), ids.len());
     assert_eq!(badge(&notifier), Some(ids.len() as i64));
+}
+
+fn titles(notifier: &TestNotifier<ChatNotices>) -> Vec<String> {
+    posts(notifier).into_iter().map(|post| post.title).collect()
+}
+
+/// A room I wrote in tells me of every message after, and keeps telling at
+/// the next run; a room I never wrote in tells me of mentions only.
+#[test]
+fn a_room_i_wrote_in_tells_me_of_every_message() {
+    let world = World::default();
+    *world.rooms.borrow_mut() = vec![room("general", "General", 2), room("random", "Random", 1)];
+    world.rows.borrow_mut().extend([
+        row("general", 1, 8, said("hi", vec![])),
+        row("general", 2, 7, said("hello", vec![])),
+        row("random", 1, 8, said("hi", vec![])),
+    ]);
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    world.post(
+        &mut notifier,
+        vec![
+            row("general", 3, 8, said("how are you", vec![])),
+            row("random", 2, 8, said("anyone?", vec![])),
+        ],
+    );
+    assert_eq!(titles(&notifier), ["reviewer in #General"]);
+    assert_eq!(posts(&notifier)[0].body, "how are you");
+    assert_eq!(badge(&notifier), Some(1));
+
+    let kept = world.kept.borrow()["following/0102"].clone();
+    let kept: Following = methods::decode(&kept).unwrap();
+    assert_eq!(kept.rooms, BTreeMap::from([("general".into(), 2)]));
+}
+
+/// A thread I replied in, or was mentioned in, tells me of every reply
+/// after, though I never wrote in its room's timeline; a stranger's thread
+/// and the room's timeline do not.
+#[test]
+fn a_thread_i_am_in_tells_me_of_every_reply() {
+    let world = World::default();
+    *world.rooms.borrow_mut() = vec![room("general", "General", 4)];
+    world.rows.borrow_mut().extend([
+        MsgRow {
+            reply_count: 1,
+            ..row("general", 1, 8, said("ship it?", vec![]))
+        },
+        reply("general", 2, 7, 1, said("not yet", vec![])),
+        mention("general", 3),
+        row("general", 4, 8, said("lunch?", vec![])),
+    ]);
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    world.post(
+        &mut notifier,
+        vec![
+            reply("general", 5, 8, 1, said("why not?", vec![])),
+            reply("general", 6, 8, 3, said("see above", vec![])),
+            reply("general", 7, 8, 4, said("noodles", vec![])),
+            row("general", 8, 8, said("anyone?", vec![])),
+        ],
+    );
+    assert_eq!(
+        titles(&notifier),
+        [
+            "reviewer replied in a thread",
+            "reviewer replied in a thread"
+        ]
+    );
+    let links: Vec<String> = posts(&notifier).into_iter().map(|post| post.link).collect();
+    assert_eq!(
+        links,
+        [
+            "duck://testnet-0a1b2c3d/chat/general/5",
+            "duck://testnet-0a1b2c3d/chat/general/6"
+        ]
+    );
+    assert_eq!(badge(&notifier), Some(2));
+}
+
+/// What I write in the room on screen is never read by the notifier: once
+/// the room leaves the screen it is looked through again, and what comes
+/// after my words tells me.
+#[test]
+fn what_i_wrote_on_screen_puts_me_in_the_room() {
+    let world = World::default();
+    *world.rooms.borrow_mut() = vec![room("general", "General", 1)];
+    world.rows.borrow_mut().push(row("general", 1, 8, say_hi()));
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    // looked through once already, and I am not in it
+    world.post(&mut notifier, vec![row("general", 2, 8, say_hi())]);
+    assert!(posts(&notifier).is_empty());
+
+    let screen = notifier.host().stream::<HostScreen>();
+    screen.send(vec!["general".into()]);
+    notifier.run_until_parked();
+    world.post(&mut notifier, vec![row("general", 3, 7, say_hi())]);
+    screen.send(Vec::new());
+    notifier.run_until_parked();
+    world.post(&mut notifier, vec![row("general", 4, 8, say_hi())]);
+    assert_eq!(titles(&notifier), ["reviewer in #General"]);
+}
+
+/// A members-only room I sit in tells me of every message, though I never
+/// wrote there.
+#[test]
+fn a_seat_in_a_members_only_room_tells_me_of_every_message() {
+    let world = World::default();
+    let mut team = room("team", "Team", 1);
+    team.channel.post_policy = PostPolicy::MembersOnly;
+    *world.rooms.borrow_mut() = vec![team, room("open", "Open", 1)];
+    world
+        .rows
+        .borrow_mut()
+        .extend([row("team", 1, 8, say_hi()), row("open", 1, 8, say_hi())]);
+    world
+        .members
+        .borrow_mut()
+        .extend([("team".into(), 7), ("open".into(), 7)]);
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    world.post(
+        &mut notifier,
+        vec![row("team", 2, 8, say_hi()), row("open", 2, 8, say_hi())],
+    );
+    assert_eq!(titles(&notifier), ["reviewer in #Team"]);
+}
+
+fn say_hi() -> Vec<Block> {
+    said("hi", vec![])
 }
