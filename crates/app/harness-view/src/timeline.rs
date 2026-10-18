@@ -187,6 +187,7 @@ fn verb(tool: &str, input: &str) -> Option<String> {
         },
         "files_list" | "files_find" | "files_grep" => "searched files".into(),
         "files_history" => "looked at file history".into(),
+        "thread_topic" => "set its topic".into(),
         tool if tool.starts_with("forge_") => "looked at forge".into(),
         _ => return None,
     })
@@ -286,6 +287,7 @@ mod tests {
                     ("e", "files_grep", "{}"),
                     ("f", "network_call", "{}"),
                     ("g", "network_call", "{}"),
+                    ("h", "thread_topic", r#"{"topic":"payments"}"#),
                 ],
             ),
             result(7, "d"),
@@ -308,10 +310,10 @@ mod tests {
         };
         assert_eq!(work.turns.len(), 2);
         assert_eq!(work.results.len(), 5);
-        assert_eq!(work.calls().count(), 7);
+        assert_eq!(work.calls().count(), 8);
         assert_eq!(
             work.summary(),
-            "Posted in chat, read 2 files, wrote memory.md, searched files, network_call ×2"
+            "Posted in chat, read 2 files, wrote memory.md, searched files, network_call ×2, set its topic"
         );
         assert_eq!(took_words(work.took()), "3 min");
         assert!(matches!(entries[2], Entry::Answered(_)));

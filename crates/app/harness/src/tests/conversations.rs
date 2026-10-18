@@ -284,3 +284,90 @@ fn after_a_swap_the_agents_most_recently_active_open_idle_thread_becomes_current
     assert!(!thread_row(chain, release).closed);
     assert!(frames(chain, dead).is_empty());
 }
+
+fn topic(chain: &MockChain, thread: u64) -> Option<String> {
+    let Reply::Topic(topic) = chain.query(PROGRAM, &Query::Topic { thread }).unwrap() else {
+        panic!()
+    };
+    topic
+}
+
+fn manual(chain: &MockChain) -> String {
+    let (request, _) = open_request(chain);
+    body(chain, &request)["system"][1]["text"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[test]
+fn the_agent_says_in_one_line_what_its_conversation_is_about_and_the_manual_names_its_tool() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "why is payments slow?", Some(WINDOW));
+    let before = manual(chain);
+    assert!(
+        before.contains("- Topic: thread_topic sets one line on what this conversation is about"),
+        "{before}"
+    );
+    assert_eq!(topic(chain, thread), None);
+    chain.at(3, 0);
+    let calls = json!([
+        tool_use(
+            "toolu_t",
+            "thread_topic",
+            json!({ "topic": "  Finding why payments is slow " })
+        ),
+        tool_use("toolu_two", "thread_topic", json!({ "topic": "one\ntwo" })),
+        tool_use("toolu_blank", "thread_topic", json!({ "topic": "  " })),
+        tool_use(
+            "toolu_long",
+            "thread_topic",
+            json!({ "topic": "x".repeat(121) })
+        ),
+    ]);
+    model_says(chain, calls, "tool_use");
+    chain.at(4, 0);
+    for call in ["toolu_t", "toolu_two", "toolu_blank", "toolu_long"] {
+        relay_back(chain, call);
+    }
+    assert_eq!(
+        result_of(chain, thread, "toolu_t"),
+        (
+            r#"{"topic":"Finding why payments is slow"}"#.to_owned(),
+            false
+        )
+    );
+    let (two, failed) = result_of(chain, thread, "toolu_two");
+    assert!(failed && two.contains("a topic is one line"), "{two}");
+    let (blank, failed) = result_of(chain, thread, "toolu_blank");
+    assert!(
+        failed && blank.contains("a topic is a line of words"),
+        "{blank}"
+    );
+    let (long, failed) = result_of(chain, thread, "toolu_long");
+    assert!(
+        failed && long.contains("a topic is at most 120 characters; this one is 121"),
+        "{long}"
+    );
+    assert_eq!(
+        topic(chain, thread).as_deref(),
+        Some("Finding why payments is slow"),
+        "a refused topic keeps the one before"
+    );
+    assert_eq!(
+        manual(chain),
+        before,
+        "the system prompt stays as it was, so its cache holds"
+    );
+
+    // a fork goes on with what it was about
+    chain.at(5, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Found it." }]),
+        "end_turn",
+    );
+    let fork = renewed(chain, ADA, &Op::ForkThread { agent: world.agent }).unwrap();
+    assert_eq!(topic(chain, fork), topic(chain, thread));
+}

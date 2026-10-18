@@ -465,6 +465,10 @@ pub enum Query {
     #[ask(Reply::Partial(Option<Partial>))]
     #[reads(state::PARTIALS)]
     Partial { thread: u64 },
+    /// the line the thread's agent last set with `thread_topic`, if it set one
+    #[ask(Reply::Topic(Option<String>))]
+    #[reads(state::TOPICS)]
+    Topic { thread: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -480,6 +484,7 @@ pub enum Reply {
     Models(PageResponse<ModelRow>),
     Withheld(Vec<WithheldFrame>),
     Partial(Option<Partial>),
+    Topic(Option<String>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -558,7 +563,7 @@ fn query_variants_only_append() {
         describe::variants::<Query>(),
         [
             "Agent", "Thread", "Threads", "Frames", "Held", "Calls", "Tools", "ThreadAt", "Model",
-            "Models", "Withheld", "Partial"
+            "Models", "Withheld", "Partial", "Topic"
         ]
     );
 }

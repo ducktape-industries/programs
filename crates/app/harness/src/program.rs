@@ -54,6 +54,7 @@ impl Program for Harness {
             Query::Models { page } => Ok(Reply::Models(queries::models(ctx, &page)?)),
             Query::Withheld { thread } => Ok(Reply::Withheld(queries::withheld(ctx, thread)?)),
             Query::Partial { thread } => Ok(Reply::Partial(queries::partial(ctx, thread)?)),
+            Query::Topic { thread } => Ok(Reply::Topic(queries::topic(ctx, thread)?)),
         }
     }
 }

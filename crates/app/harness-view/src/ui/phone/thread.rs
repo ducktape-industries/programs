@@ -15,8 +15,8 @@ use crate::timeline::{self, Entry};
 use crate::ui::{closed_badge, meter, state_badge, thread_gone, timeline as drawn, waiting};
 use crate::words::{
     all_tokens, asking_lower, closes, context_words, conversation_label, first_line, frame_meta,
-    full, held_author, mentions, no_node_words, open_label, snapshot_words, status, usage_words,
-    work_meta,
+    full, held_author, mentions, no_node_words, open_label, quoted, snapshot_words, status,
+    usage_words, work_meta,
 };
 use crate::{Agents, Arm, Screen, Sheet, State, links, thread_state};
 
@@ -119,9 +119,20 @@ fn thread(
                     )
             }))
     });
+    // the agent's own words on what the conversation is about, never its name
+    let topic = shown.topic.as_ref().map(|topic| {
+        div()
+            .id("thread-topic")
+            .px(space::BLOCK)
+            .py(space::SM)
+            .text_type(ladder.secondary)
+            .text_color(theme.muted)
+            .child(quoted(topic))
+    });
     div()
         .flex()
         .flex_col()
+        .children(topic)
         .child(strip(shown, relaying, theme, ladder))
         .when(stuck, |page| {
             page.child(notice("thread-stuck", STUCK, false, theme, ladder))

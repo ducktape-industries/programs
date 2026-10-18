@@ -105,14 +105,7 @@ pub(crate) fn place_label(agent: u64, place: &str, roster: Option<&Roster>) -> S
 /// then its busiest open conversation and what it waits for, else where it last spoke.
 pub(crate) fn agent_sentence(card: &Card, roster: &Roster) -> String {
     let state = agent_state(card, roster);
-    let open = card.threads.iter().filter(|thread| !thread.closed);
-    let busiest = open
-        .clone()
-        .find(|thread| thread_state(thread) == State::Stuck)
-        .or_else(|| {
-            open.clone()
-                .find(|thread| thread_state(thread) == State::Working)
-        });
+    let busiest = busiest(&card.threads);
     let model = card.setup.configured.model();
     match (state, busiest, model) {
         (State::Unconfigured, _, _) => card
@@ -134,6 +127,41 @@ pub(crate) fn agent_sentence(card: &Card, roster: &Roster) -> String {
             None => "no conversation yet".to_owned(),
         },
     }
+}
+
+/// An agent's busiest open conversation: a stuck one, else one at work.
+fn busiest(threads: &[ThreadRow]) -> Option<&ThreadRow> {
+    let open = threads.iter().filter(|thread| !thread.closed);
+    open.clone()
+        .find(|thread| thread_state(thread) == State::Stuck)
+        .or_else(|| {
+            open.clone()
+                .find(|thread| thread_state(thread) == State::Working)
+        })
+}
+
+/// The conversation an agent's sentence names once it runs: its busiest, else its newest.
+pub(crate) fn spoken_of(threads: &[ThreadRow]) -> Option<&ThreadRow> {
+    busiest(threads).or_else(|| threads.first())
+}
+
+/// [`agent_sentence`] with the topic of the conversation it names, where it names one: the
+/// agent's own words, quoted, after the sentence.
+pub(crate) fn agent_sentence_topic(card: &Card, roster: &Roster) -> String {
+    let sentence = agent_sentence(card, roster);
+    let names = matches!(
+        agent_state(card, roster),
+        State::Idle | State::Working | State::Stuck
+    );
+    match (&card.topic, names) {
+        (Some(topic), true) => format!("{sentence} · {}", quoted(topic)),
+        _ => sentence,
+    }
+}
+
+/// An agent's topic as its own words, quoted: “Finding why payments is slow”.
+pub(crate) fn quoted(topic: &str) -> String {
+    format!("“{topic}”")
 }
 
 /// When the agent's newest conversation last moved.

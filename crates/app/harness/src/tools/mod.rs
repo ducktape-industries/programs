@@ -140,6 +140,7 @@ pub(crate) const CATALOG: &[Entry] = &[
     entry::<interface::Call>(),
     entry::<thread::Search>(),
     entry::<thread::Read>(),
+    entry::<thread::Topic>(),
 ];
 
 pub(crate) fn find(name: &str) -> Option<&'static Entry> {

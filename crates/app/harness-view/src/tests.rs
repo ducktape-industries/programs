@@ -203,6 +203,8 @@ struct Net {
     answers: Vec<(u64, identity::Ownership)>,
     /// chat's rooms: (channel id, name)
     rooms: Vec<(String, String)>,
+    /// each thread's topic, as its agent set it
+    topics: Vec<(u64, String)>,
 }
 
 impl Default for Net {
@@ -306,6 +308,7 @@ impl Default for Net {
             rooms: ["general", "release", "deploys"]
                 .map(|room| (room.to_owned(), room.to_owned()))
                 .into(),
+            topics: Vec::new(),
         }
     }
 }
@@ -407,6 +410,12 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                     .iter()
                     .find(|(id, _)| *id == thread)
                     .map(|(_, partial)| partial.clone()),
+            ),
+            harness::Query::Topic { thread } => harness::Reply::Topic(
+                net.topics
+                    .iter()
+                    .find(|(id, _)| *id == thread)
+                    .map(|(_, topic)| topic.clone()),
             ),
             harness::Query::Tools => harness::Reply::Tools(vec![
                 ToolInfo {

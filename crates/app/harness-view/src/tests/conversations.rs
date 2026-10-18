@@ -177,3 +177,43 @@ fn a_write_in_flight_says_what_it_does_until_its_block() {
         cx.texts()
     );
 }
+
+#[test]
+fn the_agents_topic_shows_beside_its_conversation_and_never_in_place_of_its_name() {
+    const TOPIC: &str = "Finding why payments is slow";
+    let net = Net {
+        topics: vec![(7, TOPIC.into())],
+        ..Net::default()
+    };
+    let quoted = format!("“{TOPIC}”");
+    let (mut cx, _) = seated(net, EDDY);
+    let sentence = format!("in #general · waiting for the model · {quoted}");
+    assert!(cx.has_text(&sentence), "{sentence}: {:?}", cx.texts());
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    assert!(cx.find("thread-7-topic").is_some(), "{:?}", cx.texts());
+    assert!(cx.has_text(&quoted), "{:?}", cx.texts());
+    assert!(
+        cx.find("thread-3-topic").is_none(),
+        "a thread with none shows none"
+    );
+    cx.simulate_click("thread-7");
+    cx.run_until_parked();
+    assert!(cx.has_text("#general · 7"), "{:?}", cx.texts());
+    assert!(cx.find("thread-topic").is_some(), "{:?}", cx.texts());
+    assert!(cx.has_text(&quoted), "{:?}", cx.texts());
+    assert_eq!(
+        cx.host().requests::<HostTitle>().last().map(String::as_str),
+        Some("Scout · #general · 7")
+    );
+
+    // a phone draws it in the row's caption and under the conversation's title row
+    cx.simulate_touch(true);
+    cx.simulate_resize(390., 844.);
+    cx.run_until_parked();
+    assert!(cx.find("thread-topic").is_some(), "{:?}", cx.texts());
+    assert!(cx.has_text("#general · 7"), "{:?}", cx.texts());
+    cx.simulate_back();
+    cx.run_until_parked();
+    assert!(cx.has_text(&quoted), "{:?}", cx.texts());
+}

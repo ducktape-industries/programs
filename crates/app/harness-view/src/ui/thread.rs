@@ -16,7 +16,7 @@ use super::{
 use crate::read::{self, Roster, Transcript};
 use crate::words::{
     closes, context_short, context_words, conversation_label, first_line, held_author, mentions,
-    open_label, opened_words, status, usage_words,
+    open_label, opened_words, quoted, status, usage_words,
 };
 use crate::{Agents, Arm, State, links, thread_state};
 
@@ -98,6 +98,13 @@ fn thread(
                             head.child(current_badge("thread-current", theme, ladder))
                         }),
                 )
+                // the agent's own words on what the conversation is about, never its name
+                .children(shown.topic.as_ref().map(|topic| {
+                    div()
+                        .id("thread-topic")
+                        .text_color(theme.muted)
+                        .child(quoted(topic))
+                }))
                 .child(caption(opened_words(shown, roster), theme)),
         )
         .child(
