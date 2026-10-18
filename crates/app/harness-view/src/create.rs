@@ -6,7 +6,8 @@
 //! access's `Set` of the agent's harness key when it answers more than its manager. A step that
 //! is refused keeps the steps before it, so pressing on resumes where it stopped. Editing an
 //! agent is the same form at its commit: a new version of its file, which keeps its list, and a
-//! new list and a new script when its path moves.
+//! new list and a new script when its path moves; who may change the file and whom the agent
+//! answers are the same two `Set`s, sent only when the form changes them.
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -15,7 +16,9 @@ use view::prelude::*;
 
 use harness::{AgentSetup, BlobId, Config, Configured, Thinking};
 use identity::{Identity, Ownership, Party, Script};
+use program::Writers;
 
+use crate::read::Detail;
 use crate::{Agents, Screen, applied};
 
 #[derive(Default, Serialize, Deserialize)]
@@ -29,6 +32,11 @@ pub(crate) struct Draft {
     pub system: TextField,
     pub answers: Answers,
     pub listed: TextField,
+    /// who may change the configuration file, as an edit picks it; none keeps its list
+    pub changers: Option<Changers>,
+    pub changers_listed: TextField,
+    /// the two lists as an edit opened with them: what it sends only when they change
+    pub was: Option<Lists>,
     pub created: Option<u64>,
     pub committed: bool,
     pub kept: bool,
@@ -51,10 +59,28 @@ pub(crate) enum Answers {
     Listed,
 }
 
+/// Who may change the configuration file besides its manager, as an edit picks it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum Changers {
+    Manager,
+    Listed,
+}
+
+/// Whom the agent answers and who may change its file, in the form's own words.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Lists {
+    pub answers: Answers,
+    pub listed: String,
+    pub changers: Option<Changers>,
+    pub changers_listed: String,
+}
+
 pub(crate) struct Form {
     pub path: String,
     pub config: Config,
     pub ownership: Ownership,
+    /// the file's own list, when an edit picks one
+    pub changers: Option<Ownership>,
 }
 
 #[derive(Clone, Copy)]
@@ -66,11 +92,16 @@ enum Listing {
 enum Next {
     Create(String),
     Commit(u64),
-    Keep(String),
+    Keep(String, Ownership),
     Script(u64),
     Answer(u64, Ownership),
     Done(u64),
 }
+
+/// What the form says it does, under its title.
+pub(crate) const CREATE_INTRO: &str = "A new account you manage, handed to harness.";
+pub(crate) const EDIT_INTRO: &str =
+    "Saving commits a new version of the configuration file; the next model call reads it.";
 
 pub(crate) fn proposed_path(home: Option<&str>, name: &str) -> Option<String> {
     let home = home?;
@@ -87,6 +118,26 @@ pub(crate) fn proposed_path(home: Option<&str>, name: &str) -> Option<String> {
 }
 
 impl Draft {
+    /// What the form's one press does next.
+    pub fn verb(&self) -> &'static str {
+        match (self.again, self.created) {
+            (true, _) => "Save",
+            (false, None) => "Create",
+            (false, Some(_)) => "Continue",
+        }
+    }
+
+    /// What a create sends, each step with whether it landed.
+    pub fn steps(&self) -> [(&'static str, bool); 5] {
+        [
+            ("Create the account", self.created.is_some()),
+            ("Write its configuration", self.committed),
+            ("Make it yours alone to change", self.kept),
+            ("Hand it to harness", self.scripted),
+            ("Who it answers, if more than you", self.answered),
+        ]
+    }
+
     pub fn path(&self, home: Option<&str>) -> Option<String> {
         let typed = self.path.text().trim().to_owned();
         match typed.is_empty() {
@@ -122,22 +173,28 @@ impl Draft {
         let ownership = match self.answers {
             Answers::Manager => Ownership::Owner,
             Answers::Anyone => Ownership::Anyone,
-            Answers::Listed => {
-                let parties: Vec<Party> = self
-                    .listed
-                    .text()
-                    .split([',', ' '])
-                    .filter(|word| !word.is_empty())
-                    .map(party)
-                    .collect();
-                if parties.is_empty() {
+            Answers::Listed => match parties(&self.listed.text()) {
+                Some(parties) => Ownership::Listed(parties),
+                None => {
                     return Err(
                         "List the account numbers and programs it answers, like 7, 12, forge."
                             .into(),
                     );
                 }
-                Ownership::Listed(parties)
-            }
+            },
+        };
+        let changers = match self.changers {
+            None => None,
+            Some(Changers::Manager) => Some(Ownership::Owner),
+            Some(Changers::Listed) => match parties(&self.changers_listed.text()) {
+                Some(parties) => Some(Ownership::Listed(parties)),
+                None => {
+                    return Err(
+                        "List the account numbers and programs that may change the configuration, like 7, 12."
+                            .into(),
+                    );
+                }
+            },
         };
         Ok(Form {
             path,
@@ -149,7 +206,18 @@ impl Draft {
                 system: self.system.text().trim().to_owned(),
             },
             ownership,
+            changers,
         })
+    }
+
+    /// The two lists as the form holds them now.
+    fn lists(&self) -> Lists {
+        Lists {
+            answers: self.answers,
+            listed: self.listed.text().trim().to_owned(),
+            changers: self.changers,
+            changers_listed: self.changers_listed.text().trim().to_owned(),
+        }
     }
 
     fn next(&self, form: &Form) -> Next {
@@ -160,14 +228,23 @@ impl Draft {
             return Next::Commit(agent);
         }
         let moved = self.script_path.as_deref() != Some(form.path.as_str());
-        if moved && !self.kept {
-            return Next::Keep(form.path.clone());
+        let (now, was) = (self.lists(), self.was.clone().unwrap_or_default());
+        // an edit sends a list only where it changes one; a new file is its manager's alone
+        let relisted = self.again
+            && now.changers.is_some()
+            && (now.changers, &now.changers_listed) != (was.changers, &was.changers_listed);
+        if (moved || relisted) && !self.kept {
+            let list = form.changers.clone().unwrap_or(Ownership::Owner);
+            return Next::Keep(form.path.clone(), list);
         }
         if moved && !self.scripted {
             return Next::Script(agent);
         }
-        let answers_more = !self.again && !self.answered && form.ownership != Ownership::Owner;
-        if answers_more {
+        let answers_more = match self.again {
+            true => (now.answers, &now.listed) != (was.answers, &was.listed),
+            false => form.ownership != Ownership::Owner,
+        };
+        if answers_more && !self.answered {
             return Next::Answer(agent, form.ownership.clone());
         }
         Next::Done(agent)
@@ -175,9 +252,30 @@ impl Draft {
 }
 
 impl Draft {
-    fn editing(setup: &AgentSetup, name: &str) -> Draft {
+    /// The form at an agent's configuration, whom it answers and who may change its file.
+    fn editing(detail: &Detail, setup: &AgentSetup, name: &str) -> Draft {
         let config = setup.configured.config().map(|(_, config)| config.clone());
         let field = |text: Option<String>| TextField::new(text.unwrap_or_default());
+        let (answers, listed) = match &detail.ownership {
+            Ownership::Owner => (Answers::Manager, String::new()),
+            Ownership::Anyone => (Answers::Anyone, String::new()),
+            Ownership::Listed(parties) => (Answers::Listed, words(parties)),
+        };
+        // the file's own list; one it inherits from a folder's is not the form's to show
+        let (changers, changers_listed) = match &detail.config_writers {
+            Some(Writers::Listed { at, list, .. }) if *at == setup.path => match list {
+                Ownership::Owner => (Some(Changers::Manager), String::new()),
+                Ownership::Listed(parties) => (Some(Changers::Listed), words(parties)),
+                Ownership::Anyone => (None, String::new()),
+            },
+            Some(_) | None => (None, String::new()),
+        };
+        let was = Lists {
+            answers,
+            listed: listed.clone(),
+            changers,
+            changers_listed: changers_listed.clone(),
+        };
         Draft {
             name: TextField::new(name),
             path: TextField::new(setup.path.clone()),
@@ -191,6 +289,11 @@ impl Draft {
             ),
             thinking: config.as_ref().and_then(|config| config.thinking),
             system: field(config.as_ref().map(|config| config.system.clone())),
+            answers,
+            listed: TextField::new(listed),
+            changers,
+            changers_listed: TextField::new(changers_listed),
+            was: Some(was),
             created: Some(setup.agent),
             again: true,
             base: base_of(&setup.configured),
@@ -205,6 +308,28 @@ fn party(word: &str) -> Party {
         Ok(number) => Party::Account(number),
         Err(_) => Party::Program(word.to_owned()),
     }
+}
+
+/// The parties a list field names, none when it names none.
+fn parties(listed: &str) -> Option<Vec<Party>> {
+    let parties: Vec<Party> = listed
+        .split([',', ' '])
+        .filter(|word| !word.is_empty())
+        .map(party)
+        .collect();
+    (!parties.is_empty()).then_some(parties)
+}
+
+/// A list's parties as a field writes them: `7, forge`.
+fn words(parties: &[Party]) -> String {
+    let words: Vec<String> = parties
+        .iter()
+        .map(|party| match party {
+            Party::Account(number) => number.to_string(),
+            Party::Program(program) => program.clone(),
+        })
+        .collect();
+    words.join(", ")
 }
 
 fn base_of(configured: &Configured) -> Option<[u8; 32]> {
@@ -235,14 +360,22 @@ impl Agents {
         self.go(Screen::Create, cx);
     }
 
-    pub(crate) fn edit(&mut self, setup: &AgentSetup, name: &str, cx: &mut Context<Self>) {
-        self.draft = Draft::editing(setup, name);
+    /// The form at the agent on screen, read in full.
+    fn editing(&self, name: &str) -> Option<Draft> {
+        let detail = self.detail.ready()?;
+        Some(Draft::editing(detail, detail.setup.as_ref()?, name))
+    }
+
+    pub(crate) fn edit(&mut self, name: &str, cx: &mut Context<Self>) {
+        let Some(draft) = self.editing(name) else {
+            return;
+        };
+        self.draft = draft;
         self.go(Screen::Create, cx);
     }
 
     pub(crate) fn rethink(
         &mut self,
-        setup: &AgentSetup,
         name: &str,
         thinking: Option<Thinking>,
         cx: &mut Context<Self>,
@@ -250,11 +383,15 @@ impl Agents {
         if self.draft.sending.is_some() {
             return;
         }
+        let Some(draft) = self.editing(name) else {
+            return;
+        };
         self.draft = Draft {
             thinking,
             rethink: true,
-            ..Draft::editing(setup, name)
+            ..draft
         };
+        cx.notify();
         self.advance(cx);
     }
 
@@ -280,11 +417,11 @@ impl Agents {
                 });
                 self.send(identity::Op::SetScript { account, script }, cx)
             }
-            Next::Keep(path) => {
+            Next::Keep(path, list) => {
                 let op = access::Op::Set {
                     program: files::PROGRAM.to_owned(),
                     key: path,
-                    list: Some(Ownership::Owner),
+                    list: Some(list),
                 };
                 self.set_list(op, Listing::Config, cx)
             }
@@ -297,8 +434,16 @@ impl Agents {
                 self.set_list(op, Listing::Answers, cx)
             }
             Next::Done(agent) => {
+                let rethought = self.draft.rethink;
                 self.draft = Draft::default();
-                self.go(Screen::Agent(agent), cx);
+                match rethought {
+                    // the thinking picker writes from the agent's page and stays there
+                    true => {
+                        self.read_screen(cx);
+                        cx.notify();
+                    }
+                    false => self.go(Screen::Agent(agent), cx),
+                }
             }
         }
     }

@@ -79,24 +79,20 @@ fn a_conversation_reads_by_its_number_and_its_room_by_the_name_chat_gives_it() {
     net.threads[0].place = format!("chat/{ROOM}");
     net.threads[0].title = format!("chat channel {ROOM}");
     let (mut cx, _) = seated(net, EDDY);
+    // the list's sentence names its room; the agent's rows, its heading and the window title
+    // add its number
     assert!(
-        cx.has_text("Conversation 7 · Waiting for the model"),
+        cx.has_text("in #payments · waiting for the model"),
         "{:?}",
         cx.texts()
     );
     cx.simulate_click("agent-12");
     cx.run_until_parked();
-    assert!(cx.has_text("began in #payments"), "{:?}", cx.texts());
+    assert!(cx.has_text("#payments · 7"), "{:?}", cx.texts());
     cx.simulate_click("thread-7");
     cx.run_until_parked();
-    assert!(cx.has_text("Conversation 7"), "{:?}", cx.texts());
-    assert!(
-        cx.texts()
-            .iter()
-            .any(|text| text.contains("began in #payments")),
-        "{:?}",
-        cx.texts()
-    );
+    assert!(cx.find("thread-place").is_some());
+    assert!(cx.has_text("#payments · 7"), "{:?}", cx.texts());
     assert!(
         cx.texts().iter().all(|text| !text.contains(ROOM)),
         "{:?}",
@@ -104,6 +100,80 @@ fn a_conversation_reads_by_its_number_and_its_room_by_the_name_chat_gives_it() {
     );
     assert_eq!(
         cx.host().requests::<HostTitle>().last().map(String::as_str),
-        Some("Scout · Conversation 7")
+        Some("Scout · #payments · 7")
+    );
+}
+
+#[test]
+fn a_conversation_with_no_place_yet_reads_by_its_number_in_the_agents_sentence() {
+    let mut net = Net::default();
+    net.threads[0].place = String::new();
+    net.threads[0].asking = Asking::Idle;
+    let (cx, _) = seated(net, EDDY);
+    assert!(cx.has_text("last in Conversation 7"), "{:?}", cx.texts());
+}
+
+#[test]
+fn the_strip_says_what_the_conversation_did_last_or_that_it_closed() {
+    let mut net = Net::default();
+    net.threads[0].asking = Asking::Idle;
+    net.threads[0].last_stop = Some(Stop::EndTurn);
+    let (mut cx, _) = seated(net, EDDY);
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    cx.simulate_click("thread-7");
+    cx.run_until_parked();
+    let last = format!(
+        "3 frames · last at {}, {}",
+        view::design::clock(LAST_TIME),
+        view::design::day(LAST_TIME)
+    );
+    for text in ["Idle", "Answered", last.as_str()] {
+        assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
+    }
+    cx.simulate_click("thread-back");
+    cx.run_until_parked();
+    cx.simulate_click("thread-3");
+    cx.run_until_parked();
+    for text in ["Closed", "0 frames · closed at block 9,003"] {
+        assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
+    }
+}
+
+#[test]
+fn where_an_entry_is_copies_on_a_press() {
+    let (mut cx, _) = seated(Net::default(), EDDY);
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    cx.simulate_click("thread-7");
+    cx.run_until_parked();
+    cx.simulate_click("meta-1");
+    cx.run_until_parked();
+    cx.simulate_click("meta-2");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.host().requests::<ClipboardWrite>(),
+        [
+            "#1 · block 9,001",
+            "#2–#3 · blocks 9,002–9,003 · snapshot abababababab"
+        ]
+    );
+}
+
+#[test]
+fn a_write_in_flight_says_what_it_does_until_its_block() {
+    let (mut cx, _) = seated(Net::default(), EDDY);
+    cx.host().never::<Submit<Identity>>();
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    cx.simulate_click("agent-remove");
+    cx.run_until_parked();
+    cx.simulate_click("agent-remove-confirm");
+    cx.run_until_parked();
+    assert!(cx.has_text("Taking Scout back…"), "{:?}", cx.texts());
+    assert!(
+        cx.has_text("sent · waiting for the block"),
+        "{:?}",
+        cx.texts()
     );
 }

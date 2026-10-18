@@ -83,6 +83,10 @@ fn only_the_manager_sees_the_thinking_picker() {
     let (mut cx, _) = seated(Net::default(), ADA);
     cx.simulate_click("agent-12");
     cx.run_until_parked();
+    // a visitor's setup is folded until a press opens it
+    assert!(!cx.has_text("Model's default"));
+    cx.simulate_click("setup");
+    cx.run_until_parked();
     assert!(cx.has_text("Model's default"), "{:?}", cx.texts());
     assert!(cx.find("agent-thinking-level").is_none());
 }

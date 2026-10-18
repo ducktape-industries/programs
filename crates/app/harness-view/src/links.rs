@@ -22,17 +22,18 @@ pub fn place_link(chain: &str, place: &str) -> Option<(String, String)> {
     Some((program.to_owned(), link))
 }
 
+/// The work-record link for agent `agent` at `place`, as chat mints it: what a conversation's
+/// Copy link copies. None without a chain.
+pub fn work_link(chain: &str, agent: u64, place: &str) -> Option<String> {
+    let agent = agent.to_string();
+    let mut tail = vec![agent.as_str()];
+    tail.extend(place.split('/').filter(|part| !part.is_empty()));
+    ducklink::mint(chain, harness::PROGRAM, &tail)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The work-record link for agent `agent` at `place`, as chat mints it.
-    fn work_link(chain: &str, agent: u64, place: &str) -> Option<String> {
-        let agent = agent.to_string();
-        let mut tail = vec![agent.as_str()];
-        tail.extend(place.split('/'));
-        ducklink::mint(chain, harness::PROGRAM, &tail)
-    }
 
     /// A work-record link round-trips through the app's route: the tail, decoded, joined.
     #[test]

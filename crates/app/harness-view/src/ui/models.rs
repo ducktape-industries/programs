@@ -1,15 +1,18 @@
-//! The models: every model record harness keeps (its id, wire, service, vendor's name, owner
-//! and the context window harness learned), and the form that sets one, its `SetModel` shown
-//! for the person's yes before it is sent.
+//! The models: every model record harness keeps (its id, the vendor's name when it is another,
+//! its wire, its service and how many nodes serve it, the context window harness learned, its
+//! owner), and the form that sets one, opened from the title, its `SetModel` shown for the
+//! person's yes before it is sent.
 use harness::Wire;
 use view::design::Ladder;
-use view::design::{size, space};
+use view::design::{size, space, text};
 use view::prelude::*;
 use view::{Div, FontWeight};
 
 use super::create::pickable;
-use super::{back, caption, panel, waiting, window_words};
-use crate::{Agents, Screen};
+use super::list::{ROW, group, pressable};
+use super::{back, caption, panel, waiting};
+use crate::Agents;
+use crate::words::{serving_words, window_words};
 
 pub(super) fn render(
     view: &Agents,
@@ -17,16 +20,13 @@ pub(super) fn render(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
-    let back = back(
-        "models-back",
-        "← Agents".into(),
-        Screen::List,
-        cx,
-        theme,
-        ladder,
-    );
+    let back = back("models-back", "Agents".into(), cx, theme, ladder);
     let list = waiting("models", &view.models, cx, theme, ladder)
-        .unwrap_or_else(|| rows(view, cx, theme).into_any_element());
+        .unwrap_or_else(|| rows(view, cx, theme, ladder).into_any_element());
+    let set = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| {
+        view.model_draft.shown = !view.model_draft.shown;
+        cx.notify();
+    });
     div()
         .flex()
         .flex_col()
@@ -35,20 +35,41 @@ pub(super) fn render(
         .child(
             div()
                 .flex()
-                .flex_col()
-                .gap(space::HAIR)
-                .child(design::heading("models-title", "Models", 1, theme))
-                .child(caption(
-                    "The models harness asks. An agent's configuration names one by its id; the first account to set an id owns it.",
-                    theme,
-                )),
+                .flex_wrap()
+                .items_start()
+                .gap(space::LG)
+                .child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .flex_col()
+                        .gap(space::HAIR)
+                        .child(design::heading("models-title", "Models", 1, theme))
+                        .child(caption(ABOUT, theme)),
+                )
+                .children(view.me.map(|_| {
+                    design::button("models-set", "Set a model…", ladder, theme, set)
+                        .kind(design::Kind::Primary)
+                })),
         )
         .child(list)
-        .children(view.me.map(|_| form(view, cx, theme, ladder)))
+        .children(
+            view.me
+                .filter(|_| view.model_draft.shown)
+                .map(|_| form(view, cx, theme, ladder)),
+        )
         .into_any_element()
 }
 
-fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme) -> impl IntoElement + use<> {
+/// What the models are, under their title.
+pub(crate) const ABOUT: &str = "What an agent’s configuration names. The first account to set an id owns the record and can change it.";
+
+fn rows(
+    view: &Agents,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> impl IntoElement + use<> {
     let models = view.models.ready().map_or(&[][..], Vec::as_slice);
     let roster = view.roster.ready();
     let rows = models.iter().map(|model| {
@@ -58,53 +79,68 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme) -> impl IntoElem
             || format!("account {}", row.owner),
             |roster| roster.name(row.owner),
         );
-        let now = match model.serving {
-            0 => "no member node serves it now".to_owned(),
-            serving => format!("{serving} serving now"),
-        };
+        let (serving, tone) = serving_words(model.serving, theme);
         let editing = row.clone();
-        div()
-            .id(SharedString::from(format!("model-{}", row.id)))
-            .flex()
-            .flex_wrap()
-            .items_center()
-            .gap(space::LG)
-            .py(space::SM)
-            .border_b_1()
-            .border_color(theme.border)
-            .child(
-                design::mono(row.id.clone())
-                    .w(px(160.))
-                    .font_weight(FontWeight::MEDIUM),
-            )
-            .child(div().w(px(160.)).child(row.wire.label()))
-            .child(caption(format!("{} · {now}", row.service), theme))
-            .child(design::mono(row.name.clone()))
-            .child(caption(
-                format!("window {}", window_words(row.window)),
-                theme,
-            ))
-            .child(caption(format!("owner {owner}"), theme))
-            .when(owned, |line| {
-                line.cursor_pointer()
-                    .role(Role::Button)
-                    .focusable()
-                    .on_click(
-                        cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
-                            view.edit_model(&editing, cx)
-                        }),
-                    )
-            })
+        let id = format!("model-{}", row.id);
+        let line = match owned {
+            true => pressable(id, theme).on_click(cx.listener(
+                move |view: &mut Agents, _: &ClickEvent, _, cx| view.edit_model(&editing, cx),
+            )),
+            false => div()
+                .id(SharedString::from(id))
+                .flex()
+                .items_center()
+                .gap(space::LG)
+                .min_h(ROW)
+                .px(space::SM)
+                .border_b_1()
+                .border_color(theme.border),
+        };
+        line.child(
+            div()
+                .flex_none()
+                .w(px(220.))
+                .flex()
+                .items_baseline()
+                .gap(space::SM)
+                .child(design::mono(row.id.clone()).font_weight(FontWeight::MEDIUM))
+                .when(row.name != row.id, |id| {
+                    id.child(design::mono(row.name.clone()).text_color(theme.muted))
+                }),
+        )
+        .child(div().flex_none().w(px(160.)).child(row.wire.label()))
+        .child(
+            div()
+                .flex_none()
+                .w(px(170.))
+                .flex()
+                .child(caption(format!("{} · ", row.service), theme))
+                .child(caption(serving, theme).text_color(tone)),
+        )
+        .child(
+            caption(format!("window {}", window_words(row.window)), theme)
+                .flex_none()
+                .w(px(170.)),
+        )
+        .child(
+            div()
+                .flex_1()
+                .flex()
+                .gap(space::XXS)
+                .text_size(text::CAPTION)
+                .text_color(theme.muted)
+                .child(owner)
+                .when(owned, |owner| owner.child("(you)")),
+        )
+        .when(owned, |line| line.child(design::chevron(ladder, theme)))
     });
-    div()
-        .flex()
-        .flex_col()
+    group("models-list", "Models", models.len(), theme)
         .children(rows)
         .when(models.is_empty(), |list| {
-            list.child(design::quiet(
+            list.child(div().py(space::SM).child(design::quiet(
                 "Harness keeps no model yet: set the first below.",
                 theme,
-            ))
+            )))
         })
 }
 

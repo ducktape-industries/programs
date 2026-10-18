@@ -1,6 +1,6 @@
 //! Every read the screens make: the roster (the accounts whose script calls harness, what
-//! harness resolves for each, their threads, the chat rooms' names, and how many member nodes
-//! serve each model's service and relay), one agent in full with who may change its
+//! harness resolves for each, their threads, the chat rooms' names, how many member nodes
+//! serve each model's service and relay, and the newest block's time), one agent in full with who may change its
 //! configuration file and whom it answers, both read from access, one thread's transcript with
 //! the reply its model is streaming back, the model records, and the services the models form
 //! offers.
@@ -12,6 +12,7 @@ use harness::{
 };
 use identity::{Category, Kind, Ownership, PageRequest};
 use program::Writers;
+use view::methods::{BlockPage, ChainBlocks};
 use view::prelude::*;
 
 fn page(after: Option<Vec<u8>>) -> PageRequest {
@@ -28,6 +29,8 @@ pub(crate) struct Roster {
     pub rooms: HashMap<String, String>,
     /// member nodes that serve relay: no tool call runs without one
     pub relaying: usize,
+    /// the newest block's time, in milliseconds: now, as the chain tells it
+    pub now: u64,
 }
 
 /// One account whose script calls harness, as the list draws it.
@@ -90,6 +93,13 @@ pub(crate) async fn setup(host: &Host, agent: u64) -> Result<Option<AgentSetup>,
 }
 
 pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error> {
+    let tip = host
+        .ask::<ChainBlocks>(BlockPage {
+            before: None,
+            limit: 1,
+            most: 0,
+        })
+        .await?;
     let accounts = host
         .query_all(|after| identity::ask::List { page: page(after) })
         .await?;
@@ -155,6 +165,7 @@ pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error>
             .collect(),
         rooms,
         relaying: serving[RELAY],
+        now: tip.blocks.first().map_or(0, |block| block.time),
     })
 }
 
