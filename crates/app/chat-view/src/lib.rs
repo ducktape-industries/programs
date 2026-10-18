@@ -89,6 +89,8 @@ impl View for Chat {
     const TARGETS: &'static [&'static str] = &[chat::PROGRAM, identity::PROGRAM, access::PROGRAM];
     // at 480 an agent message's head line is cut at the room's edge
     const MIN_WINDOW_WIDTH: u32 = 560;
+    // the room list, the room and a thread open beside it, none squeezed
+    const WINDOW_WIDTH: Option<u32> = Some(1200);
 
     /// Follows the host and reads what the screen shows: on a first mount,
     /// and again after a snapshot, whose in-flight work it parks.

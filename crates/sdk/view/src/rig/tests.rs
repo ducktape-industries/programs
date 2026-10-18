@@ -340,7 +340,8 @@ fn a_held_blob_is_put_receipted_by_the_dev_validator_and_served() {
 #[test]
 fn blob_manifest_answers_what_the_rosters_code_declares() {
     let net = Network::new();
-    let text = "ducktape.view.manifest\nChat\nRooms.\nchain,clipboard,\n480\n0123abcd\n\n\nblue";
+    let text =
+        "ducktape.view.manifest\nChat\nRooms.\nchain,clipboard,\n480\n0123abcd\n\n\nblue\n1200";
     let view = pack::wrapper(&[("ducktape.view.manifest", text.as_bytes())]);
     net.code("chat", &pack::wrapper(&[("ducktape.view", &view)]));
     net.code("quiet", &pack::wrapper(&[("ducktape.describe", b"d")]));

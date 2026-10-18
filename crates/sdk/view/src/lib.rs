@@ -124,8 +124,8 @@ const MANIFEST_HEADER: &str = "ducktape.view.manifest\n";
 
 /// What a manifest says, field by field: a view's from its [`View`] impl, a
 /// notifier's from its [`Notifier`] impl (no description, no icon, no
-/// tint, a width of 1: it draws nothing). One writer for both, so both read
-/// the same.
+/// tint, a min width of 1 and no window width: it draws nothing). One
+/// writer for both, so both read the same.
 #[doc(hidden)]
 pub struct Manifested {
     pub name: &'static str,
@@ -135,6 +135,7 @@ pub struct Manifested {
     pub targets: &'static [&'static str],
     pub icon: &'static str,
     pub tint: Tint,
+    pub width: Option<u32>,
 }
 
 impl Manifested {
@@ -147,6 +148,7 @@ impl Manifested {
             targets: V::TARGETS,
             icon: V::ICON,
             tint: V::TINT,
+            width: V::WINDOW_WIDTH,
         }
     }
 
@@ -159,6 +161,7 @@ impl Manifested {
             targets: N::TARGETS,
             icon: "",
             tint: Tint::None,
+            width: None,
         }
     }
 
@@ -184,16 +187,25 @@ impl Manifested {
             len += self.targets[i].len() + 1;
             i += 1;
         }
-        len + 1 + self.icon.len() + 1 + self.tint.as_str().len()
+        len += 1 + self.icon.len() + 1 + self.tint.as_str().len() + 1;
+        match self.width {
+            Some(width) => len + digits(width),
+            None => len,
+        }
     }
 
     /// The manifest text (`view_wire::manifest`: header, name, description,
-    /// capabilities, min width, [`wire::WIRE_ID`], targets, icon, tint), at compile
-    /// time: a target that is not a program name, no target where the
-    /// capabilities could address a program, or an icon that is not an
-    /// asset path ([`wire::manifest::is_icon`]), fails the build.
+    /// capabilities, min width, [`wire::WIRE_ID`], targets, icon, tint,
+    /// width), at compile time: a window width under the min width, a
+    /// target that is not a program name, no target where the capabilities
+    /// could address a program, or an icon that is not an asset path
+    /// ([`wire::manifest::is_icon`]), fails the build.
     pub const fn bytes<const N: usize>(&self) -> [u8; N] {
         assert!(self.min_width >= 1, "MIN_WINDOW_WIDTH is at least 1");
+        assert!(
+            !matches!(self.width, Some(width) if width < self.min_width),
+            "WINDOW_WIDTH is at least MIN_WINDOW_WIDTH"
+        );
         assert!(
             !self.targets.is_empty() || !wire::manifest::needs_targets(self.capabilities),
             "a view with the op or program capability names its TARGETS"
@@ -237,6 +249,10 @@ impl Manifested {
         at = put(&mut out, at, self.icon.as_bytes());
         at = put(&mut out, at, b"\n");
         at = put(&mut out, at, self.tint.as_str().as_bytes());
+        at = put(&mut out, at, b"\n");
+        if let Some(width) = self.width {
+            at = put_number(&mut out, at, width);
+        }
         assert!(at == N);
         out
     }
@@ -249,12 +265,12 @@ pub const fn manifest_len<V: View>() -> usize {
 
 // the lines written above, in this order: a line added to the manifest
 // is added here and to `Manifest::parse` together
-const _: () = assert!(wire::manifest::LINES.len() == 9);
+const _: () = assert!(wire::manifest::LINES.len() == 10);
 
 /// The manifest text of a view ([`Manifested::bytes`]), from what its
 /// [`View`] impl says: [`View::NAME`], [`View::DESCRIPTION`],
 /// [`View::CAPABILITIES`], [`View::MIN_WINDOW_WIDTH`], [`View::TARGETS`],
-/// [`View::ICON`], [`View::TINT`].
+/// [`View::ICON`], [`View::TINT`], [`View::WINDOW_WIDTH`].
 pub const fn manifest_bytes<V: View, const N: usize>() -> [u8; N] {
     Manifested::of_view::<V>().bytes()
 }
