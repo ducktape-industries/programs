@@ -10,7 +10,6 @@ use view::design::{date, grouped, plural};
 use crate::state::{
     Holds, Names, NoHome, Note, Opened, PREVIEW, Place, SHOW_MOST, holds_by_name, name_of,
 };
-use crate::upload::UPLOAD_MOST;
 use crate::write::{ListChoice, Naming, Write};
 
 pub const TITLE: &str = "Files";
@@ -306,15 +305,6 @@ pub fn uploads(names: &[&str]) -> String {
         [name] => format!("Upload {name}"),
         names => format!("Upload {}", plural(names.len() as u64, "file", "files")),
     }
-}
-
-/// What a file too big to upload says on its row.
-pub fn too_big_to_upload(size: u64) -> String {
-    format!(
-        "{}: only files of {} or less upload here",
-        self::size(size),
-        self::size(UPLOAD_MOST)
-    )
 }
 
 /// Why a picked file is left out: a folder or a link holds its name.

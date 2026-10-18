@@ -192,10 +192,10 @@ fn picked(form: &Form, k: &Kit) -> Option<Div> {
     }
     let rows = form.upload.iter().enumerate().map(|(index, file)| {
         let size = words::size(file.size);
-        let caption = match &file.path {
-            Err(why) => why.clone(),
-            Ok(_) if file.replaces => format!("{size} · {}", words::REPLACES),
-            Ok(_) => size,
+        let caption = match (&file.path, &file.refused) {
+            (Err(why), _) | (Ok(_), Some(why)) => why.clone(),
+            (Ok(_), None) if file.replaces => format!("{size} · {}", words::REPLACES),
+            (Ok(_), None) => size,
         };
         still_row(
             ElementId::Name(format!("files/upload/{index}").into()),

@@ -14,7 +14,6 @@ use view::{Point, wire};
 use super::*;
 use crate::menu::MENU;
 use crate::state::{Holds, SHOW_MOST};
-use crate::upload::UPLOAD_MOST;
 use crate::words;
 
 /// The place in the texts on screen of the first text containing `part`.
@@ -942,21 +941,46 @@ fn an_empty_text_file_puts_nothing_and_commits_no_chunks() {
 }
 
 #[test]
-fn a_file_too_big_is_left_out_and_said_why() {
+fn a_file_past_32_mib_goes_up_in_chunks_as_any_other_does() {
     let net = seeded();
     let mut cx = desktop(&net);
     open_home(&mut cx);
-    let huge = vec![0; UPLOAD_MOST as usize + 1];
+    // past the 32 MiB files-view once refused
+    let huge = film((32 << 20) + 1);
     net.device(&[("huge.iso", &huge), ("notes.txt", b"new")]);
+    let sends = sends(&cx, &net, |_, _| None);
     begin(&mut cx, "upload");
-    assert!(
-        shows(&cx, &words::too_big_to_upload(UPLOAD_MOST + 1)),
-        "{:?}",
-        cx.texts()
-    );
     assert!(shows(&cx, words::REPLACES), "notes.txt is there already");
     commit_form(&mut cx);
+    let chunks: Vec<usize> = sends.puts.borrow().iter().map(Vec::len).collect();
+    assert_eq!(chunks, [33, 1], "a chunk per CHUNK_SIZE, nothing left out");
+    assert_eq!(held(&net, "/home/dev/huge.iso"), huge);
     assert_eq!(held(&net, "/home/dev/notes.txt"), b"new");
+}
+
+#[test]
+fn a_refused_put_says_why_on_its_files_row_until_it_is_put_again() {
+    let net = seeded();
+    let mut cx = desktop(&net);
+    open_home(&mut cx);
+    net.device(&[("a.txt", b"a"), ("b.txt", b"b")]);
+    let refusal = "the node is away";
+    sends(&cx, &net, move |count, _| {
+        (count == 2).then(|| Error::new("unavailable", refusal))
+    });
+    begin(&mut cx, "upload");
+    commit_form(&mut cx);
+    let first = format!("{:?}", cx.node("files/upload/0"));
+    let second = format!("{:?}", cx.node("files/upload/1"));
+    assert!(second.contains(refusal), "{second}");
+    assert!(!first.contains(refusal), "{first}");
+    assert!(
+        cx.find("files/write/refused").is_none(),
+        "said once, on its row"
+    );
+    commit_form(&mut cx);
+    assert!(!shows(&cx, refusal), "{:?}", cx.texts());
+    assert_eq!(held(&net, "/home/dev/b.txt"), b"b");
 }
 
 #[test]

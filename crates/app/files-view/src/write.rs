@@ -429,6 +429,7 @@ impl Files {
         }
         form.problem = None;
         form.refused = None;
+        form.upload.iter_mut().for_each(|file| file.refused = None);
         // the text may have changed since it was put
         if form.write.takes_text() {
             form.contents.clear();
@@ -517,7 +518,14 @@ impl Files {
             }
             Err(refusal) => {
                 open.sending = false;
-                open.refused = Some(design::sentence(&refusal));
+                let why = design::sentence(&refusal);
+                // an upload's put is its file's: that file's row says why
+                let at = open.contents.len();
+                let mut going = open.upload.iter_mut().filter(|file| file.path.is_ok());
+                match going.nth(at) {
+                    Some(file) => file.refused = Some(why),
+                    None => open.refused = Some(why),
+                }
                 cx.notify();
             }
         }

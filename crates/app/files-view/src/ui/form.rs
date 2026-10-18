@@ -154,10 +154,12 @@ fn picked(form: &Form, k: &Kit) -> Option<Stateful<Div>> {
     }
     let rows = form.upload.iter().enumerate().map(|(index, file)| {
         let size = words::size(file.size);
-        let (aside, color) = match &file.path {
-            Err(why) => (why.clone(), k.theme.danger),
-            Ok(_) if file.replaces => (format!("{size} · {}", words::REPLACES), k.theme.muted),
-            Ok(_) => (size, k.theme.muted),
+        let (aside, color) = match (&file.path, &file.refused) {
+            (Err(why), _) | (Ok(_), Some(why)) => (why.clone(), k.theme.danger),
+            (Ok(_), None) if file.replaces => {
+                (format!("{size} · {}", words::REPLACES), k.theme.muted)
+            }
+            (Ok(_), None) => (size, k.theme.muted),
         };
         div()
             .id(ElementId::Name(format!("files/upload/{index}").into()))

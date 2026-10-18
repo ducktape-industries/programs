@@ -1,11 +1,6 @@
-//! An upload: files the reader picks on their device (`file.pick`), put in
-//! a folder by their own names in one commit. A file's bytes never ride in
-//! a transaction: each file goes to the network first as `chunk` blobs
-//! (`op.put`, the host reading them from the picked file, never through
-//! this view), and the commit names its chunks ([`Files::submit`]). A file
-//! larger than [`UPLOAD_MOST`], one whose name `files` takes no path from,
-//! one whose name a folder or a link holds there, or a second of one name
-//! is left out and says why. Opened by [`Files::pick`].
+//! An upload: files picked on the device (`file.pick`), each put as `chunk`
+//! blobs the host reads from it (`op.put`), then one commit into a folder by
+//! their names. A file no path takes is left out and says why on its row.
 use files::{Change, Content, EntryInfo, Node};
 use view::methods::{BlobBody, FilePick, NewBlob, Pick, Picked};
 use view::prelude::*;
@@ -13,9 +8,6 @@ use view::prelude::*;
 use crate::state::Note;
 use crate::write::{Write, path_in};
 use crate::{Files, words};
-
-/// The most a file may hold to be uploaded here.
-pub const UPLOAD_MOST: u64 = 32 << 20;
 
 /// One picked file, as the upload's form holds it.
 pub(crate) struct Upload {
@@ -28,6 +20,8 @@ pub(crate) struct Upload {
     pub(crate) path: Result<String, String>,
     /// a file of its name is in the folder: this one replaces it
     pub(crate) replaces: bool,
+    // why its put was refused, in the host's or the network's words
+    pub(crate) refused: Option<String>,
 }
 
 impl Upload {
@@ -57,10 +51,7 @@ pub(crate) fn uploads(folder: &str, picked: Vec<Picked>, listed: &[EntryInfo]) -
     picked
         .into_iter()
         .map(|picked| {
-            let path = match picked.size {
-                size if size > UPLOAD_MOST => Err(words::too_big_to_upload(size)),
-                _ => path_in(folder, &picked.name),
-            };
+            let path = path_in(folder, &picked.name);
             let there = path
                 .as_ref()
                 .ok()
@@ -80,6 +71,7 @@ pub(crate) fn uploads(folder: &str, picked: Vec<Picked>, listed: &[EntryInfo]) -
                 file: picked.file,
                 replaces: path.is_ok() && there.is_some(),
                 path,
+                refused: None,
             }
         })
         .collect()

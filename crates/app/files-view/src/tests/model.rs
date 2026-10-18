@@ -14,7 +14,7 @@ use crate::state::{
 };
 use crate::tests::{PNG, file};
 use crate::ui::Layout;
-use crate::upload::{UPLOAD_MOST, puts, sent, uploads};
+use crate::upload::{puts, sent, uploads};
 use crate::words;
 use crate::write::{Form, ListChoice, Write, built, files_of, write_list};
 use view::methods::{BlobBody, NewBlob, Picked};
@@ -452,7 +452,8 @@ fn an_upload_puts_each_file_it_sends_as_chunks_read_from_the_device() {
             picked("a.png", 700 << 10),
             picked("b.png", 700 << 10),
             picked("big.mov", 2 * chunk + 1),
-            picked("huge.mov", UPLOAD_MOST + 1),
+            // past the 32 MiB files-view once refused
+            picked("huge.mov", (32 << 20) + 1),
             picked("old.txt", 3),
             // a folder of its name is there: never written over
             picked("photos", 3),
@@ -463,11 +464,12 @@ fn an_upload_puts_each_file_it_sends_as_chunks_read_from_the_device() {
     );
     let paths: Vec<_> = uploads.iter().map(|upload| upload.path.clone()).collect();
     assert_eq!(paths[0], Ok("/shared/a.png".into()));
-    assert_eq!(paths[3], Err(words::too_big_to_upload(UPLOAD_MOST + 1)));
+    assert_eq!(paths[3], Ok("/shared/huge.mov".into()));
     assert_eq!(paths[5], Err(words::held_by(&listed[1].node)));
     assert_eq!(paths[6], Err(words::PICKED_TWICE.into()));
     assert!(uploads[4].replaces && !uploads[0].replaces && !uploads[5].replaces);
-    assert_eq!(sent(&uploads), ["a.png", "b.png", "big.mov", "old.txt"]);
+    let names = ["a.png", "b.png", "big.mov", "huge.mov", "old.txt"];
+    assert_eq!(sent(&uploads), names);
     let big = |offset: u64, len: u64| NewBlob {
         kind: files::CHUNK.into(),
         body: BlobBody::Picked {
@@ -495,7 +497,8 @@ fn an_upload_puts_each_file_it_sends_as_chunks_read_from_the_device() {
             ("/shared/a.png", one_chunk(0)),
             ("/shared/b.png", one_chunk(1)),
             ("/shared/big.mov", one_chunk(2)),
-            ("/shared/old.txt", one_chunk(3)),
+            ("/shared/huge.mov", one_chunk(3)),
+            ("/shared/old.txt", one_chunk(4)),
         ],
         "each file it sends, named by its own content"
     );
