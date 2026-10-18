@@ -10,7 +10,7 @@ use crate::state::{
     TAGS, WORDS, message, messages, newest_first,
 };
 use crate::text::tag_label;
-use crate::{ChannelInfo, ChannelRow, MessageHits, MsgRow, Principal, Reply, tokens};
+use crate::{ChannelInfo, ChannelRow, MessageHits, MsgRow, Principal, ReactedBy, Reply, tokens};
 
 /// `reply` as `viewer` reads it: each reaction learns whether one of
 /// `viewer` chose it.
@@ -180,6 +180,30 @@ fn rows_at(
     })
 }
 
+/// Who chose each reaction on the messages at `seqs`: a message's emoji
+/// in order, each with its principals in key order.
+pub(crate) fn reactors(
+    ctx: &QueryCtx,
+    channel_id: String,
+    seqs: &[u64],
+) -> Result<Vec<ReactedBy>, Error> {
+    let mut reactors: Vec<ReactedBy> = Vec::new();
+    for &seq in seqs {
+        let chosen = REACTIONS.scan(ctx, REACTIONS.prefix_of(&(channel_id.clone(), seq)))?;
+        for (_, _, emoji, principal) in chosen {
+            match reactors.last_mut() {
+                Some(last) if last.seq == seq && last.emoji == emoji => last.by.push(principal),
+                _ => reactors.push(ReactedBy {
+                    seq,
+                    emoji,
+                    by: vec![principal],
+                }),
+            }
+        }
+    }
+    Ok(reactors)
+}
+
 /// Every message row a reply carries.
 fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
     match reply {
@@ -189,7 +213,11 @@ fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
         }
         Reply::Thread { root, replies } => root.iter_mut().chain(&mut replies.items).collect(),
         Reply::Message(row) | Reply::Attention(row) => row.iter_mut().collect(),
-        Reply::Channels(_) | Reply::Channel(_) | Reply::Members(_) | Reply::Accounts(_) => vec![],
+        Reply::Channels(_)
+        | Reply::Channel(_)
+        | Reply::Members(_)
+        | Reply::Accounts(_)
+        | Reply::Reactors(_) => vec![],
     }
 }
 

@@ -206,6 +206,11 @@ pub enum Query {
     /// view follows apart.
     #[ask(Reply::Accounts(PageResponse<Profile>))]
     Accounts { page: PageRequest },
+    /// Who chose each reaction on the messages at `seqs`: one entry per
+    /// message and emoji, each in key order.
+    #[ask(Reply::Reactors(Vec<ReactedBy>))]
+    #[reads(state::REACTIONS)]
+    Reactors { channel_id: String, seqs: Vec<u64> },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -224,6 +229,7 @@ pub enum Reply {
     Hits(MessageHits),
     TagHits(PageResponse<MsgRow>),
     Accounts(PageResponse<Profile>),
+    Reactors(Vec<ReactedBy>),
 }
 
 #[derive(
@@ -389,6 +395,24 @@ pub struct Reaction {
     pub count: u64,
     /// filled per reader from the query's `viewer`
     pub reacted_by_me: bool,
+}
+
+/// Who chose one emoji on one message.
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+pub struct ReactedBy {
+    pub seq: u64,
+    pub emoji: String,
+    pub by: Vec<Principal>,
 }
 
 #[derive(

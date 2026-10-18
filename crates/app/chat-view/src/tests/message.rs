@@ -201,6 +201,35 @@ fn a_reaction_chip_is_named_by_its_emoji_whether_toggled_or_not() {
     );
 }
 
+/// A chip names who chose it, as read from the program once rows land:
+/// a tooltip on hover, and the same names beside the count for the door.
+#[test]
+fn a_reaction_chip_names_who_chose_it() {
+    let (mut cx, view) = opened();
+    cx.update(&view, |chat, _, cx| {
+        let room = chat.room.as_mut().unwrap();
+        room.messages.ready_mut().unwrap()[0]
+            .reactions
+            .push(chat::Reaction {
+                emoji: "👍".into(),
+                count: 2,
+                reacted_by_me: true,
+            });
+        room.read_reactors(cx);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let Some(wire::Node::Container(view::wire::ContainerNode {
+        interactivity: Some(chip),
+        ..
+    })) = cx.find("chat-message-m1-reaction-👍")
+    else {
+        panic!("the chip is a container");
+    };
+    assert_eq!(chip.aria.description.as_deref(), Some("2: eddy, ada"));
+    assert!(chip.tooltip.is_some(), "the names show on hover");
+}
+
 /// What a pointer presses on a message (its block link, a reaction chip,
 /// the `+`) and the sidebar's "+ New channel" are at least 24 px each way:
 /// the box's own floor, so the bounds the door's AX-017 reads cannot come

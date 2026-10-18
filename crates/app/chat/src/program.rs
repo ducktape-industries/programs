@@ -7,7 +7,7 @@ use crate::ops::{
     create_channel, delete, edit, open_dm, post, react, rename, set_archived, set_membership,
 };
 use crate::queries::{
-    around, attention, by_id, channel, channels, roots, search, seen_by, tagged, thread,
+    around, attention, by_id, channel, channels, reactors, roots, search, seen_by, tagged, thread,
 };
 use crate::state::MEMBERS;
 use crate::{Op, Query, Reply};
@@ -127,6 +127,9 @@ impl Program for Chat {
             ),
             Query::Accounts { page } => {
                 (Reply::Accounts(crate::origin::accounts(ctx, page)?), vec![])
+            }
+            Query::Reactors { channel_id, seqs } => {
+                (Reply::Reactors(reactors(ctx, channel_id, &seqs)?), vec![])
             }
         };
         seen_by(ctx, reply, viewer)

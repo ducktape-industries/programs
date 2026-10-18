@@ -46,6 +46,18 @@ fn main() {
             net.at(now_ms() - ago);
             post(net, who, "general", &format!("m{seq}"), text)?;
         }
+        // the welcome's 👍, three chose it: its chip names them on hover
+        for who in [ada, bob, me] {
+            net.submit(
+                who,
+                chat::PROGRAM,
+                &Op::AddReaction {
+                    channel_id: "general".into(),
+                    seq: 1,
+                    emoji: "👍".into(),
+                },
+            )?;
+        }
         net.at(now_ms() - 30 * 60 * 1000);
         net.submit(
             bob,

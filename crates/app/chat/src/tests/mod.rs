@@ -5,7 +5,7 @@
 use ::program::{Env, Origin, code};
 use ::program::{ExecCtx, MockHost, Program, QueryCtx};
 
-use crate::{Op, PageRequest, PostPolicy, Principal, Query, Reply, parse_message};
+use crate::{Op, PageRequest, PostPolicy, Principal, Query, ReactedBy, Reply, parse_message};
 
 mod attributed;
 mod channels;

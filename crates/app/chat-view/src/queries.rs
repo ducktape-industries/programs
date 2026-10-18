@@ -6,7 +6,7 @@ use identity::Ownership;
 use std::collections::BTreeMap;
 use view::prelude::*;
 
-use crate::{PAGE, SPAN, WINDOW};
+use crate::{PAGE, Reactors, SPAN, WINDOW};
 
 fn page(after: Option<Vec<u8>>, limit: usize) -> PageRequest {
     PageRequest {
@@ -65,6 +65,22 @@ pub(crate) async fn ownerships(
         .await?
         .into_iter()
         .collect())
+}
+
+/// Who chose each reaction on the rows at `seqs`.
+pub(crate) async fn reactors(
+    host: Host,
+    channel_id: String,
+    seqs: Vec<u64>,
+) -> Result<Reactors, Error> {
+    let mut reactors = Reactors::new();
+    for chosen in host.query(ask::Reactors { channel_id, seqs }).await? {
+        reactors
+            .entry(chosen.seq)
+            .or_default()
+            .insert(chosen.emoji, chosen.by);
+    }
+    Ok(reactors)
 }
 
 /// The rows around a landing seq, oldest first.

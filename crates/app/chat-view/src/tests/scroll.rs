@@ -63,6 +63,8 @@ fn full_room(newest: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
                 })
             }
             Query::Members { .. } => Reply::Members(page(Vec::new())),
+            // who reacted moves no row: named by nobody, no frame follows the rows'
+            Query::Reactors { .. } => Reply::Reactors(Vec::new()),
             query => panic!("unexpected chat query: {query:?}"),
         })
     });
@@ -129,6 +131,7 @@ fn an_older_page_lands_only_in_the_room_it_was_read_for() {
             }
             Query::Members { .. } => Reply::Members(page(Vec::new())),
             Query::Channels { .. } => Reply::Channels(page(Vec::new())),
+            Query::Reactors { .. } => Reply::Reactors(Vec::new()),
             query => panic!("unexpected chat query: {query:?}"),
         })
     });
@@ -287,6 +290,8 @@ fn long_room(head: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
                 next: Some(vec![1]),
             }),
             Query::Members { .. } => Reply::Members(page(Vec::new())),
+            // who reacted moves no row: named by nobody, no frame follows the rows'
+            Query::Reactors { .. } => Reply::Reactors(Vec::new()),
             query => panic!("unexpected chat query: {query:?}"),
         })
     });

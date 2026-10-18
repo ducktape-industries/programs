@@ -68,3 +68,38 @@ fn a_reaction_needs_an_emoji_a_standing_message_and_a_seat() {
         assert_eq!(chat.refused(&ADA, react(1, "👍", on)), code::WRONG_STATE);
     }
 }
+
+/// A chip's tooltip names who chose it: each message's emoji in order,
+/// each with its principals, and one who drops it leaves the list.
+#[test]
+fn reactors_name_who_chose_each_emoji() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    chat.post(&BO, "m1", "ship it", None);
+    chat.post(&BO, "m2", "and this", None);
+    chat.post(&BO, "m3", "nobody", None);
+    chat.ok(&BO, react(1, "👍", true));
+    chat.ok(&ADA, react(1, "👍", true));
+    chat.ok(&CY, react(1, "🎉", true));
+    chat.ok(&CY, react(2, "👀", true));
+    chat.ok(&CY, react(2, "👀", false));
+    chat.ok(&ADA, react(2, "👀", true));
+    let Reply::Reactors(reactors) = chat.ask(Query::Reactors {
+        channel_id: "general".into(),
+        seqs: vec![1, 2, 3],
+    }) else {
+        panic!("reactors answer reactors");
+    };
+    let by = |seq, emoji: &str, by: Vec<Principal>| ReactedBy {
+        seq,
+        emoji: emoji.into(),
+        by,
+    };
+    assert_eq!(
+        reactors,
+        vec![
+            by(1, "🎉", vec![CY]),
+            by(1, "👍", vec![ADA, BO]),
+            by(2, "👀", vec![ADA]),
+        ]
+    );
+}
