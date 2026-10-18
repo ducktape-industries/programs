@@ -7,7 +7,7 @@
 use view::accesskit::Action;
 
 use super::*;
-use crate::menu::{Item, MENU, Menu, On, asks_for_menu};
+use crate::menu::{Item, MENU, Menu, On};
 use crate::state::Sheet;
 use crate::write::Write;
 
@@ -66,10 +66,15 @@ pub(super) fn pointed(element: Stateful<Div>, on: On, cx: Cx) -> Stateful<Div> {
 /// to open there. The row keeps the pointer from the list around it, its
 /// scroll aside, so a press on a row is never the list's empty room.
 pub(super) fn row(row: Stateful<Div>, path: &str, view: &Files, cx: Cx) -> Stateful<Div> {
-    let on = On::Entry(path.to_owned());
+    opens(row, On::Entry(path.to_owned()), view, cx)
+}
+
+// A row that opens the menu of `on` as an entry's row opens its own
+// ([`row`]): a place's.
+pub(super) fn opens(row: Stateful<Div>, on: On, view: &Files, cx: Cx) -> Stateful<Div> {
     let keyed = on.clone();
     let keys = cx.listener(move |view: &mut Files, event: &KeyDownEvent, window, cx| {
-        if asks_for_menu(&event.keystroke) {
+        if design::asks_for_menu(&event.keystroke) {
             view.open_menu(keyed.clone(), None, window, cx)
         }
     });

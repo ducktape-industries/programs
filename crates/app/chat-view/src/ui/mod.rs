@@ -6,6 +6,7 @@ pub mod menu;
 pub mod message;
 pub(crate) mod phone;
 pub mod room;
+pub mod room_menu;
 pub mod side;
 pub mod sidebar;
 pub(crate) mod timeline;
@@ -79,6 +80,7 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> impl IntoElement {
         )
         .into_any_element();
     let screen = with_menu(chat, screen, cx, &theme, ladder);
+    let screen = room_menu::over(chat, screen, cx, &theme, ladder);
     let screen = with_create(chat, screen, cx, &theme, ladder);
     with_dm_pick(chat, screen, cx, &theme, ladder)
 }

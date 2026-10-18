@@ -129,6 +129,10 @@ pub(crate) const DELETE_MESSAGE: &str = "Delete message";
 pub(crate) const DELETE_QUESTION: &str = "Delete this message?";
 /// What the clipboard took, as the confirmation names it.
 pub(crate) const MESSAGE_LINK: &str = "message link";
+pub(crate) const COPY_TEXT: &str = "Copy text";
+pub(crate) const MESSAGE_TEXT: &str = "message text";
+pub(crate) const ROOM_ACTIONS: &str = "Room actions";
+pub(crate) const ROOM_LINK: &str = "room link";
 pub(crate) const EMOJI_CATEGORIES: &str = "Emoji categories";
 pub(crate) const FREQUENTLY_USED: &str = "Frequently used";
 pub(crate) const NO_EMOJI_MATCH: &str = "No emoji match";

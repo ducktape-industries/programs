@@ -7,6 +7,7 @@ use files::PinRow;
 use view::{Div, Stateful};
 
 use super::*;
+use crate::menu::On;
 use crate::state::{HISTORY_GLYPH, HOME_GLYPH, PIN_GLYPH, Place, SHARED_PATH};
 
 /// One thing the side opens.
@@ -37,6 +38,18 @@ impl Item<'_> {
             Item::History => "history".into(),
             Item::Pin(pin) => format!("pin/{}", pin.name),
         }
+    }
+
+    // What its row's menu is on: a place's folder, the keys going back
+    // to the list; none for the history or a pin.
+    fn on(&self) -> Option<On> {
+        let path = match self {
+            Item::Home(path) => path.clone(),
+            Item::Place(place) => place.path().to_owned(),
+            Item::History | Item::Pin(_) => return None,
+        };
+        let back = "files-side-list".to_owned();
+        Some(On::Place { path, back })
     }
 
     fn glyph(&self) -> &'static str {
@@ -114,21 +127,39 @@ pub(super) fn side(view: &Files, cx: Cx, k: &Kit) -> Stateful<Div> {
         .iter()
         .position(|item| matches!(item, Item::History))
         .unwrap_or(count);
-    let mut rows = items
-        .iter()
-        .enumerate()
-        .map(|(index, item)| row(item, here == Some(index), index == here.unwrap_or(0), cx, k));
+    let mut rows = items.iter().enumerate().map(|(index, item)| {
+        row(
+            view,
+            item,
+            here == Some(index),
+            index == here.unwrap_or(0),
+            cx,
+            k,
+        )
+    });
     let places =
         group("files-side-places", words::PLACES, k).children(rows.by_ref().take(history_at));
     let history = group("files-side-history", words::HISTORY, k)
         .mt_3()
         .children(rows);
+    // the Menu key or Shift+F10 opens the menu of the place the arrows
+    // are on, under its row
+    let asked = items.get(here.unwrap_or(0)).and_then(Item::on);
+    let keys = cx.listener(move |view: &mut Files, event: &KeyDownEvent, window, cx| {
+        if let Some(on) = asked
+            .clone()
+            .filter(|_| design::asks_for_menu(&event.keystroke))
+        {
+            view.open_menu(on, None, window, cx)
+        }
+    });
     let list = design::composite("files-side-list", Role::ListBox, words::SIDE)
         .wrap()
         .active(here.unwrap_or(0), count)
         .on_move(cx.processor(moved))
         .on_press(cx.processor(open))
         .build()
+        .on_key_down(keys)
         .flex()
         .flex_col()
         .child(places)
@@ -168,7 +199,7 @@ fn group(id: &'static str, label: &'static str, k: &Kit) -> Stateful<Div> {
 /// the arrows are on it.
 // ponytail: chat's sidebar row (`chat-view/src/ui/sidebar.rs`), copied;
 // a `design::` sidebar row once a third view draws one.
-fn row(item: &Item, picked: bool, active: bool, cx: Cx, k: &Kit) -> Stateful<Div> {
+fn row(view: &Files, item: &Item, picked: bool, active: bool, cx: Cx, k: &Kit) -> Stateful<Div> {
     let route = item.route();
     let open = cx.listener(move |view: &mut Files, _: &ClickEvent, _, cx| {
         view.open_from_places(route.clone(), cx)
@@ -191,5 +222,9 @@ fn row(item: &Item, picked: bool, active: bool, cx: Cx, k: &Kit) -> Stateful<Div
         .on_click(open)
         .child(design::icon(item.glyph(), k.ladder.icon_row).text_color(theme.sidebar_muted))
         .child(div().flex_1().min_w_0().truncate().child(item.label()));
+    let row = match item.on() {
+        Some(on) => menu::opens(row, on, view, cx),
+        None => row,
+    };
     design::item(row, Role::ListBoxOption, active)
 }

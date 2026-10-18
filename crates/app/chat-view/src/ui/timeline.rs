@@ -11,7 +11,7 @@ use crate::message::{ChatMessage, new_day};
 use crate::ui::room::selection_bar;
 use crate::ui::{message, quiet};
 use crate::words;
-use crate::{Chat, Pane};
+use crate::{Chat, Mode, Pane};
 use view::design::Ladder;
 use view::{Div, Stateful};
 
@@ -217,7 +217,21 @@ fn grid(
         }
     }))
     .build();
-    (grid, active_id, cell)
+    // the Menu key or Shift+F10 opens the active message's menu where
+    // Enter on its ⋯ does
+    let asked = messages
+        .get(at)
+        .filter(|message| !message.pending && !message.deleted)
+        .map(|message| (message.seq, message.rev));
+    let keys = cx.listener(move |chat, event: &KeyDownEvent, window, cx| {
+        let Some((seq, rev)) = asked.filter(|_| design::asks_for_menu(&event.keystroke)) else {
+            return;
+        };
+        chat.layout.press = chat.key_spot(pane);
+        chat.open_menu(pane, seq, rev, Mode::More, window, cx);
+        cx.notify();
+    });
+    (grid.on_key_down(keys), active_id, cell)
 }
 
 /// The native list: the room's intro first once its history is all here,

@@ -82,6 +82,7 @@ fn body(file: &Opened, node: &Node, k: &Kit) -> AnyElement {
         .child(
             div()
                 .id("files-text")
+                .cursor_text()
                 .p_3()
                 .border_1()
                 .border_color(k.theme.border)

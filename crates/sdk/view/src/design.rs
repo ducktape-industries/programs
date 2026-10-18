@@ -2297,6 +2297,18 @@ impl MenuItem {
     }
 }
 
+// Whether `keystroke` asks for the menu of what holds the keys, as a
+// right press asks for the one under the pointer: the Menu key, or
+// Shift+F10.
+pub fn asks_for_menu(keystroke: &gpui::Keystroke) -> bool {
+    let held = keystroke.modifiers;
+    match keystroke.key.as_str() {
+        "menu" => !held.modified(),
+        "f10" => held.shift && !(held.control || held.alt || held.platform || held.function),
+        _ => false,
+    }
+}
+
 /// A few choices side by side in one box, the picked one ink-filled: a
 /// state filter, an object format, an invite's lifetime. `label` names the
 /// choice, `choices` are each segment's id and label, `picked` the one
@@ -2788,6 +2800,16 @@ mod tests {
             .collect();
         assert_eq!(claims, [false, true]);
         assert_eq!(faults(&node), []);
+    }
+
+    // the Menu key alone, or Shift+F10 alone, asks for the menu
+    #[test]
+    fn the_menu_key_or_shift_f10_asks_for_the_menu() {
+        let asks = |key: &str| asks_for_menu(&gpui::Keystroke::parse(key).unwrap());
+        assert!(asks("menu") && asks("shift-f10"));
+        for key in ["f10", "ctrl-shift-f10", "shift-menu", "m"] {
+            assert!(!asks(key), "{key}");
+        }
     }
 
     /// An eyebrow crosses as the words were written, marked for the host to

@@ -6,9 +6,9 @@
 //! with [`Files::open_menu`], and an item runs with [`Files::run`]. Where
 //! the menu's Copy link leads, and how a link opened into Files is read
 //! back, is `actions.rs` ([`link`], [`Files::open_link`]).
+use view::Point;
 use view::methods::ClipboardWrite;
 use view::prelude::*;
-use view::{Keystroke, Point};
 
 use crate::actions::link;
 use crate::state::{Note, Route, Sheet, name_of, parent_of};
@@ -31,6 +31,12 @@ pub(crate) enum On {
     Entry(String),
     /// the room the folder's list leaves empty, by the folder's path
     Folder(String),
+    // a place (the reader's home, `/shared`, the whole tree), by its
+    // path, and the element the keys go back to as its menu closes
+    Place {
+        path: String,
+        back: String,
+    },
 }
 
 /// A menu open over the page.
@@ -51,6 +57,8 @@ pub(crate) enum Item {
     /// the entry's `duck://` link, onto the clipboard
     CopyLink(String),
     Write(Write),
+    // a place's folder, opened over the places as its row opens it
+    Place(String),
 }
 
 impl Files {
@@ -62,6 +70,11 @@ impl Files {
         let path = match on {
             On::Folder(folder) => {
                 return self.made_in(folder).into_iter().map(Item::Write).collect();
+            }
+            On::Place { path, .. } => {
+                let mut items = vec![Item::Place(path.clone())];
+                items.extend(link(&self.chain, path).map(Item::CopyLink));
+                return items;
             }
             On::Entry(path) => path,
         };
@@ -129,8 +142,13 @@ impl Files {
         let Some(Sheet::Menu(menu)) = &self.sheet else {
             return;
         };
-        if let On::Entry(path) = &menu.on {
-            window.focus(entry_key(path));
+        let back = match &menu.on {
+            On::Entry(path) => Some(entry_key(path)),
+            On::Place { back, .. } => Some(back.clone()),
+            On::Folder(_) => None,
+        };
+        if let Some(back) = back {
+            window.focus(back);
         }
         self.sheet = None;
         cx.notify();
@@ -142,6 +160,7 @@ impl Files {
     pub(crate) fn run(&mut self, item: Item, window: &mut Window, cx: &mut Context<Self>) {
         match item {
             Item::Open(route) => self.open(route, cx),
+            Item::Place(path) => self.open_from_places(Route::Folder(path), cx),
             Item::CopyLink(link) => {
                 self.close_menu(window, cx);
                 self.copy(link, cx);
@@ -167,22 +186,11 @@ impl Files {
     }
 }
 
-/// Whether `keystroke` asks for the focused row's menu: the Menu key, or
-/// Shift+F10.
-pub(crate) fn asks_for_menu(keystroke: &Keystroke) -> bool {
-    let held = keystroke.modifiers;
-    match keystroke.key.as_str() {
-        "menu" => !held.modified(),
-        "f10" => held.shift && !(held.control || held.alt || held.platform || held.function),
-        _ => false,
-    }
-}
-
 impl Item {
     /// What its element is keyed by: `files/menu/<slug>`.
     pub(crate) fn slug(&self) -> &'static str {
         match self {
-            Item::Open(_) => "open",
+            Item::Open(_) | Item::Place(_) => "open",
             Item::CopyLink(_) => "copy-link",
             Item::Write(write) => write.slug(),
         }
@@ -191,7 +199,7 @@ impl Item {
     /// What it is called.
     pub(crate) fn label(&self) -> &'static str {
         match self {
-            Item::Open(_) => words::OPEN,
+            Item::Open(_) | Item::Place(_) => words::OPEN,
             Item::CopyLink(_) => words::COPY_LINK,
             Item::Write(write) => words::verb(write),
         }
@@ -200,7 +208,7 @@ impl Item {
     /// The glyph (a Lucide name) it leads with.
     pub(crate) fn glyph(&self) -> &'static str {
         match self {
-            Item::Open(Route::Folder(_)) => "folder-open",
+            Item::Open(Route::Folder(_)) | Item::Place(_) => "folder-open",
             Item::Open(_) => "file",
             Item::CopyLink(_) => "link",
             Item::Write(write) => write.glyph(),

@@ -62,6 +62,13 @@ pub struct Chat {
     /// The item the arrows are on in the open message menu.
     #[serde(skip)]
     pub(crate) menu_cursor: usize,
+    // the open message menu came from a right press: it hangs from the
+    // press, not under the strip's ⋯
+    #[serde(skip)]
+    pub(crate) menu_at_pointer: bool,
+    // the menu of a room in the sidebar, while one is open
+    #[serde(skip)]
+    pub(crate) room_menu: Option<RoomMenu>,
     /// The line over the room saying a copy landed: not a refusal, so not
     /// the `notice` banner.
     #[serde(skip)]
@@ -453,6 +460,16 @@ pub struct Menu {
     pub(crate) rev: u32,
     pub(crate) mode: Mode,
     pub(crate) at: (f32, f32),
+}
+
+// A sidebar room's menu: the room, where it opens (the press; from the
+// keys, under the room's row once the row says where it is) and the item
+// the arrows are on.
+#[derive(Clone, Debug)]
+pub struct RoomMenu {
+    pub(crate) room: String,
+    pub(crate) at: Option<view::Point<Pixels>>,
+    pub(crate) active: usize,
 }
 
 /// The message the arrows are on in a pane's grid, and which of its cells:

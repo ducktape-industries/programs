@@ -15,6 +15,7 @@ use view::methods::{Changes, HostId, HostSession, HostVisible, Session, Submit};
 mod agents;
 mod archived;
 mod categories;
+mod context_menus;
 mod dms;
 mod menus;
 mod message;

@@ -1371,3 +1371,64 @@ fn a_link_opened_into_files_opens_what_is_at_its_path() {
     cx.run_until_parked();
     assert!(cx.has_text(words::GONE), "{:?}", cx.texts());
 }
+
+#[test]
+fn a_places_row_offers_its_folder_and_its_link() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    right_press(&mut cx, "files/place/shared");
+    assert_eq!(items(&cx), ["open", "copy-link"]);
+    assert_eq!(focused(&cx), Some(MENU));
+    cx.simulate_click("files/menu/open");
+    cx.run_until_parked();
+    assert_eq!(menu(&cx), None);
+    assert!(cx.find("files/crumb:/shared").is_some(), "{:?}", cx.texts());
+}
+
+#[test]
+fn the_keys_open_a_places_row_menu_and_give_the_keys_back() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    cx.simulate_focus("files/place/shared");
+    cx.simulate_key_down("files/place/shared", "shift-f10");
+    opened_under_the_row(&mut cx);
+    assert_eq!(items(&cx), ["open", "copy-link"]);
+    cx.simulate_key_down(MENU, "escape");
+    assert_eq!(menu(&cx), None);
+    assert_eq!(focused(&cx), Some("files/place/shared"));
+}
+
+#[test]
+fn a_place_down_the_side_opens_its_menu_and_the_history_none() {
+    let net = seeded();
+    // the rig's chain names no salt, so this session mints no link
+    let mut cx = desktop_at(&net, 1440.);
+    right_press(&mut cx, "files/side/shared");
+    assert_eq!(items(&cx), ["open"]);
+    cx.simulate_key_down(MENU, "escape");
+    assert_eq!(focused(&cx), Some("files-side-list"));
+    right_press(&mut cx, "files/side/history");
+    assert_eq!(menu(&cx), None);
+    cx.simulate_focus("files-side-list");
+    cx.simulate_key_down("files-side-list", "menu");
+    opened_under_the_row(&mut cx);
+    assert_eq!(items(&cx), ["open"]);
+}
+
+#[test]
+fn a_text_files_words_take_the_text_cursor() {
+    let net = seeded();
+    let mut cx = linked(&net);
+    open_home(&mut cx);
+    let pointing = Some(view::CursorStyle::PointingHand);
+    assert_eq!(cx.style("files/entry/notes.txt").mouse_cursor, pointing);
+    cx.simulate_click("files/entry/notes.txt");
+    cx.run_until_parked();
+    let text = Some(view::CursorStyle::IBeam);
+    assert_eq!(
+        cx.style("files-text").mouse_cursor,
+        text,
+        "{:?}",
+        cx.texts()
+    );
+}

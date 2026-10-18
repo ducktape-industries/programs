@@ -441,6 +441,7 @@ fn hit(chat: &Chat, row: &MsgRow, cx: &mut Context<Chat>, theme: &Theme) -> AnyE
         .gap_1()
         .p_2()
         .bg(theme.surface)
+        .cursor_pointer()
         .hover(|s| s.bg(theme.surface_raised))
         .role(view::Role::Button)
         .focusable()

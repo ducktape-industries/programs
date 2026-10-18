@@ -1,11 +1,12 @@
 //! Message cards and their native GPUI actions.
 
+use view::accesskit::Action;
 use view::prelude::*;
-use view::{FontStyle, FontWeight, HighlightStyle, UnderlineStyle};
+use view::{Div, FontStyle, FontWeight, HighlightStyle, Stateful, UnderlineStyle};
 
 use crate::message::{ChatMessage, SpanStyle};
 use crate::ui::badge;
-use crate::{Chat, Control, Pane};
+use crate::{Chat, Control, Mode, Pane};
 use chat::view::Names;
 use chat::{Block, Principal, Span};
 mod controls;
@@ -149,11 +150,44 @@ pub fn card(
         .aria_position_in_set(set.0)
         .aria_size_of_set(set.1)
         .child(card);
+    if !message.pending && !message.deleted && seq > 0 {
+        outer = pointed(outer, pane, seq, message.rev, cx);
+    }
     if !message.pending && !message.deleted && (chosen || chat.pointer_on(key)) {
         let strip = action_strip(chat, &message, pane, &mut cells, cx, theme);
         outer = outer.child(strip);
     }
     (outer.into_any_element(), cells.controls)
+}
+
+// A right press on the message's row opens its menu at the pointer, as
+// ⋯ opens it under the strip; assistive tech's "show menu" opens it where
+// the keys do ([`Chat::key_spot`]).
+fn pointed(
+    row: Stateful<Div>,
+    pane: Pane,
+    seq: u64,
+    rev: u32,
+    cx: &mut Context<Chat>,
+) -> Stateful<Div> {
+    let open = cx.listener(move |chat, event: &MouseDownEvent, window, cx| {
+        chat.layout.press = (event.position.x.into(), event.position.y.into());
+        chat.open_menu(pane, seq, rev, Mode::More, window, cx);
+        chat.menu_at_pointer = chat
+            .menu
+            .as_ref()
+            .is_some_and(|menu| menu.seq == seq && menu.mode == Mode::More);
+        cx.notify();
+    });
+    let show = cx.listener(move |chat, _: &(), window, cx| {
+        chat.layout.press = chat.key_spot(pane);
+        chat.open_menu(pane, seq, rev, Mode::More, window, cx);
+        cx.notify();
+    });
+    row.on_mouse_down(MouseButton::Right, open)
+        .on_a11y_action(Action::ShowContextMenu, move |_, window, app| {
+            show(&(), window, app)
+        })
 }
 
 /// The row's quiet above its card: a run's first message has one.
@@ -440,6 +474,7 @@ fn blocks(
     if message.blocks.is_empty() {
         let text = div()
             .id(format!("chat-message-{}-text", message.id))
+            .cursor_text()
             .child(message.body.clone());
         return vec![text.into_any_element()];
     }
@@ -690,7 +725,8 @@ fn block_view(
                 .flex_col()
                 .gap_1()
                 .p_2()
-                .bg(theme.surface);
+                .bg(theme.surface)
+                .cursor_text();
             if let Some(lang) = lang.as_ref().filter(|lang| !lang.is_empty()) {
                 code = code.child(
                     div()
@@ -710,6 +746,7 @@ fn block_view(
             .border_l_2()
             .border_color(theme.border_strong)
             .pl_2()
+            .cursor_text()
             .text_color(theme.muted)
             .child(rich_line(id, spans, names, cx, theme))
             .into_any_element(),
@@ -717,6 +754,7 @@ fn block_view(
             // a list item: its marker in a hanging gutter, the item beside it
             Some((marker, item)) => div()
                 .id(format!("chat-message-{}-block-{index}-item", message.id))
+                .cursor_text()
                 .flex()
                 .gap_2()
                 .child(
@@ -738,7 +776,9 @@ fn block_view(
                         .min_w(px(0.)),
                 )
                 .into_any_element(),
-            None => rich_line(id, spans, names, cx, theme).into_any_element(),
+            None => rich_line(id, spans, names, cx, theme)
+                .cursor_text()
+                .into_any_element(),
         },
     }
 }

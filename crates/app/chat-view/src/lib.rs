@@ -38,6 +38,8 @@ mod room;
 #[cfg(not(feature = "notifier"))]
 mod room_list;
 #[cfg(not(feature = "notifier"))]
+mod room_menu;
+#[cfg(not(feature = "notifier"))]
 mod search;
 #[cfg(not(feature = "notifier"))]
 mod session;

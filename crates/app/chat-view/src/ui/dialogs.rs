@@ -320,6 +320,7 @@ fn choice_row(
         .gap_2()
         .min_h(design::size::CONTROL)
         .px_1()
+        .cursor_pointer()
         .hover(|s| s.bg(theme.surface_raised))
         .when(active, |row| row.bg(theme.surface_raised))
         .aria_label(choice.name.clone())

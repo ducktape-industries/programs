@@ -4,6 +4,7 @@
 use view::{Div, Stateful};
 
 use super::*;
+use crate::menu::On;
 use crate::state::{HOME_GLYPH, Place};
 
 /// How many of the newest snapshots the page lists.
@@ -12,7 +13,7 @@ const LATEST: usize = 5;
 pub(super) fn places(view: &Files, cx: Cx, k: &Kit) -> AnyElement {
     let places = Place::ALL.map(|place| {
         let (title, caption) = words::place(place);
-        place_row(
+        let row = place_row(
             place.key(),
             place.glyph(),
             title,
@@ -20,7 +21,8 @@ pub(super) fn places(view: &Files, cx: Cx, k: &Kit) -> AnyElement {
             caption,
             cx,
             k,
-        )
+        );
+        place_menu(view, row, place.key(), place.path(), cx)
     });
     div()
         .id("files-places")
@@ -38,7 +40,10 @@ pub(super) fn places(view: &Files, cx: Cx, k: &Kit) -> AnyElement {
 /// else a row that says why there is none.
 fn home(view: &Files, cx: Cx, k: &Kit) -> Stateful<Div> {
     match view.reader.home() {
-        Ok(path) => place_row("home", HOME_GLYPH, words::HOME, &path, &path, cx, k),
+        Ok(path) => {
+            let row = place_row("home", HOME_GLYPH, words::HOME, &path, &path, cx, k);
+            place_menu(view, row, "home", &path, cx)
+        }
         Err(why) => row_look(
             "files/place/home".into(),
             HOME_GLYPH,
@@ -69,6 +74,16 @@ fn place_row(
         k,
         open,
     )
+}
+
+// The row of the place keyed `key` at `path` opens its menu (Open, Copy
+// link) as a folder's row opens its own; the keys go back to the row.
+fn place_menu(view: &Files, row: Stateful<Div>, key: &str, path: &str, cx: Cx) -> Stateful<Div> {
+    let on = On::Place {
+        path: path.to_owned(),
+        back: format!("files/place/{key}"),
+    };
+    menu::opens(row, on, view, cx)
 }
 
 /// The newest snapshots, each opening its page.

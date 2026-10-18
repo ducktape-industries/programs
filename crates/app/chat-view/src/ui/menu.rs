@@ -131,13 +131,14 @@ pub fn floating(
     let popup = match menu.mode {
         // More opens from the action strip: below the strip, right-aligned
         // to the press, or above it where the window ends; never over it
-        Mode::More => popup
+        Mode::More if !chat.menu_at_pointer => popup
             .anchor(Anchor::TopRight)
             // the host mirrors the offset when it flips the menu above
             .offset(Point {
                 x: px(0.),
                 y: px(STRIP_CLEAR),
             }),
+        // a right press's hangs from the press
         _ => popup.anchor(Anchor::TopLeft),
     };
     Some(popup.child(frame).into_any_element())
@@ -201,6 +202,7 @@ fn message_menu(
 enum Action {
     Reply,
     React,
+    CopyText,
     CopyLink,
     WorkRecord,
     Edit,
@@ -218,6 +220,7 @@ fn more_items(chat: &Chat, menu: &Menu) -> Vec<Action> {
     [
         (Action::Reply, pane == Pane::Timeline && !open),
         (Action::React, writable),
+        (Action::CopyText, text_of(chat, pane, seq).is_some()),
         (Action::CopyLink, chat.message_link(seq).is_some()),
         (Action::WorkRecord, work_record(chat, pane, seq).is_some()),
         (Action::Edit, writable && chat.wrote(pane, seq)),
@@ -278,6 +281,7 @@ fn action_item(
             press,
             *theme,
         ),
+        Action::CopyText => Item::new("chat-menu-copy-text", "📄", words::COPY_TEXT, press, *theme),
         Action::CopyLink => Item::new("chat-menu-copy-link", "🔗", words::COPY_LINK, press, *theme),
         Action::WorkRecord => Item::new(
             "chat-menu-work-record",
@@ -319,6 +323,13 @@ fn act(
         Action::React => chat.open_menu(pane, seq, rev, Mode::Reactions, window, cx),
         Action::Edit => chat.open_menu(pane, seq, rev, Mode::Editing, window, cx),
         Action::Delete => chat.open_menu(pane, seq, rev, Mode::Delete, window, cx),
+        Action::CopyText => {
+            let text = text_of(chat, pane, seq);
+            chat.close_menu();
+            if let Some(text) = text {
+                chat.copy_text(text, words::MESSAGE_TEXT, cx);
+            }
+        }
         Action::CopyLink => {
             let link = chat.message_link(seq);
             chat.close_menu();
@@ -335,6 +346,14 @@ fn act(
             }
         }
     }
+}
+
+// What the message at `seq` says, as its card shows it; none for a
+// message deleted or with nothing to say.
+fn text_of(chat: &Chat, pane: Pane, seq: u64) -> Option<String> {
+    let messages = chat.messages(pane);
+    let message = messages.iter().find(|message| message.seq == seq)?;
+    (!message.deleted && !message.body.is_empty()).then(|| message.body.clone())
 }
 
 /// Where the agent that wrote the message at `seq` shows its work in this
@@ -493,7 +512,8 @@ impl RenderOnce for Item {
         match (self.press, self.role) {
             // the menu holds the focus; its item claims when active
             (Some(press), Role::MenuItem) => design::item(
-                row.hover(|s| s.bg(self.theme.surface_raised))
+                row.cursor_pointer()
+                    .hover(|s| s.bg(self.theme.surface_raised))
                     .active(|s| s.bg(self.theme.accent_soft))
                     .on_click(press),
                 Role::MenuItem,
@@ -503,6 +523,7 @@ impl RenderOnce for Item {
             // a dialog's button: a stop of its own
             (Some(press), _) => row
                 .focusable()
+                .cursor_pointer()
                 .hover(|s| s.bg(self.theme.surface_raised))
                 .active(|s| s.bg(self.theme.accent_soft))
                 .on_click(press)

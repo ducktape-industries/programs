@@ -120,6 +120,16 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     let ids = room_list.ids();
     let at = chat.rooms_at(&ids);
     let picked = ids.clone();
+    // the Menu key or Shift+F10 opens the active room's menu, under its row
+    let asked = ids.get(at).cloned();
+    let keys = cx.listener(move |chat, event: &KeyDownEvent, window, cx| {
+        if let Some(room) = asked
+            .clone()
+            .filter(|_| design::asks_for_menu(&event.keystroke))
+        {
+            chat.open_room_menu(room, None, window, cx)
+        }
+    });
     let mut box_ = design::composite("chat-sidebar-rooms-list", Role::ListBox, "Rooms")
         .active(at, ids.len())
         .on_move(cx.processor(move |chat, index: usize, _, cx| {
@@ -131,6 +141,7 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
             chat.choose(picked[index].clone(), cx)
         }))
         .build()
+        .on_key_down(keys)
         .flex()
         .flex_col()
         .gap_1();
@@ -215,6 +226,7 @@ fn header_button(
         .items_center()
         .px_1()
         .py_0p5()
+        .cursor_pointer()
         .hover(|s| s.bg(theme.sidebar_raised))
         .role(view::Role::Button)
         .focusable()
@@ -281,6 +293,7 @@ fn channel_button(
         } else {
             theme.sidebar
         })
+        .cursor_pointer()
         .hover(|s| s.bg(theme.sidebar_raised))
         .when(active && !selected, |row| row.bg(theme.sidebar_raised))
         .aria_selected(selected)
@@ -314,6 +327,7 @@ fn channel_button(
                 .bg(theme.accent),
         );
     }
+    let row = super::room_menu::row(row, &info.channel.id, chat, cx);
     design::item(row, Role::ListBoxOption, active).into_any_element()
 }
 
@@ -337,6 +351,7 @@ fn dm_button(
     let agent = names.is_some_and(|n| crate::message::agent(n, &Principal::Account(peer)));
     let unread = chat.unread(info) && !selected;
     let id = info.channel.id.clone();
+    let room = id.clone();
     let click = cx.listener(move |chat, _: &ClickEvent, _, cx| {
         cx.notify();
         chat.choose(id.clone(), cx)
@@ -353,6 +368,7 @@ fn dm_button(
         } else {
             theme.sidebar
         })
+        .cursor_pointer()
         .hover(|s| s.bg(theme.sidebar_raised))
         .when(active && !selected, |row| row.bg(theme.sidebar_raised))
         // the peer's name, not the avatar's initial drawn before it
@@ -396,6 +412,7 @@ fn dm_button(
                 .bg(theme.accent),
         );
     }
+    let row = super::room_menu::row(row, &room, chat, cx);
     design::item(row, Role::ListBoxOption, active)
 }
 

@@ -140,6 +140,7 @@ impl Chat {
             at: self.layout.press,
         });
         self.menu_cursor = 0;
+        self.menu_at_pointer = false;
         true
     }
 
