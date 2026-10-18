@@ -1,5 +1,5 @@
 // The rules: the schedule folded at each block, then the ops and queries.
-// A change is made by the validators' vote or by a maintainer's grant
+// A change is made by the validators' vote or by an account
 // (`actor`); every cascade a change causes happens in its own op, after
 // its last check, never at `fold`: `At(h)` reads `roster` unfolded, so a
 // fold-time filter would make what the kernel runs disagree with the state.
@@ -11,13 +11,9 @@ use ::program::{
     Error, ExecCtx, QueryCtx, already_exists, invalid, not_found, unauthorized, unexpected_reply,
     wrong_state,
 };
-use abi::role::identity;
 use store::{Item, KeyCodec, Map, Set};
 
-use crate::{
-    CODE_KIND, Change, Entry, Genesis, Grant, NOTICE, Scheduled, Scope, View, grant_refused,
-    role_bound,
-};
+use crate::{CODE_KIND, Change, Entry, Genesis, NOTICE, Scheduled, View, role_bound};
 
 const PROGRAMS: Map<ProgramId, Entry> = Map::new("p/");
 const VIEWS: Map<ProgramId, View> = Map::new("v/");
@@ -28,34 +24,7 @@ type At = (u64, ProgramId);
 /// entries still reads them; who made one is `BY`.
 pub(crate) const SCHEDULE: Map<At, Change> = Map::new("s/");
 const FOLDED: Item<u64> = Item::new("folded");
-/// A grant as its table keys it: by scope, then account.
-type Held = (Scope, AccountNumber);
-pub(crate) const GRANTS: Set<Held> = Set::new("g/");
-/// The account whose grant made a pending change; none: the vote made it.
 pub(crate) const BY: Map<At, AccountNumber> = Map::new("b/");
-
-/// A scope in a table key: a tag byte, then a program's id; grants list by
-/// program name, then the ones of every program.
-impl KeyCodec for Scope {
-    fn encode_key(&self, out: &mut Vec<u8>) {
-        match self {
-            Scope::Program(id) => {
-                out.push(0);
-                id.encode_key(out);
-            }
-            Scope::All => out.push(1),
-        }
-    }
-    fn decode_key(bytes: &mut &[u8]) -> Option<Self> {
-        let (tag, rest) = bytes.split_first()?;
-        *bytes = rest;
-        match tag {
-            0 => ProgramId::decode_key(bytes).map(Scope::Program),
-            1 => Some(Scope::All),
-            _ => None,
-        }
-    }
-}
 
 pub(crate) fn init(ctx: &ExecCtx, genesis: Genesis) {
     for entry in genesis.programs {
@@ -94,40 +63,28 @@ fn held_code(ctx: &QueryCtx, code: BlobId) -> Result<(), Error> {
     Ok(())
 }
 
-/// Who changes `name` in this frame: the validators' vote (`None`), or the
-/// account the frame acts as (`Some`), which still has to hold a grant.
 fn actor(env: &Env, name: &str) -> Result<Option<AccountNumber>, Error> {
     if env.authority().is_ok() {
         return Ok(None);
     }
     let Some(account) = env.sender.as_ref().and_then(Principal::account) else {
         return Err(unauthorized(format!(
-            "only an account with a grant, or the validators' vote, may change {name}"
+            "only an account, or the validators' vote, may change {name}"
         )));
     };
     Ok(Some(account))
 }
 
-/// Refused unless `account` maintains `name`: a grant of `name` or of every
-/// program, and `name` fills no role.
-fn maintains(ctx: &QueryCtx, account: AccountNumber, name: &str) -> Result<(), Error> {
+fn fills_no_role(ctx: &QueryCtx, name: &str) -> Result<(), Error> {
     if role_bound(&roles_at(ctx, ctx.env().height)?, name) {
         return Err(unauthorized(format!(
             "{name} fills a role the kernel calls: only the validators' vote changes it"
         )));
     }
-    let held = [Scope::All, Scope::Program(name.to_owned())]
-        .into_iter()
-        .any(|scope| GRANTS.has(ctx, &(scope, account)));
-    if !held {
-        return Err(unauthorized(format!(
-            "account {account} may not change {name}: no grant, and not the validators' vote"
-        )));
-    }
     Ok(())
 }
 
-fn by_grant(ctx: &QueryCtx, account: AccountNumber, scheduled: &Scheduled) -> Result<(), Error> {
+fn by_account(ctx: &QueryCtx, scheduled: &Scheduled) -> Result<(), Error> {
     let name = scheduled.change.program();
     if matches!(scheduled.change, Change::SetHook(_) | Change::RemoveHook(_)) {
         return Err(unauthorized(format!(
@@ -140,12 +97,12 @@ fn by_grant(ctx: &QueryCtx, account: AccountNumber, scheduled: &Scheduled) -> Re
             "only the validators' vote publishes {name} to fill a role"
         )));
     }
-    maintains(ctx, account, name)?;
+    fills_no_role(ctx, name)?;
     let earliest = ctx.env().height.checked_add(NOTICE);
     if earliest.is_none_or(|earliest| scheduled.height < earliest) {
         let min = earliest.map_or_else(|| "past the last".into(), |h| h.to_string());
         return Err(invalid(format!(
-            "a change by a maintainer lands at block {min} or later"
+            "a change by an account lands at block {min} or later"
         )));
     }
     if let Some(height) = voted(ctx, name)? {
@@ -153,8 +110,6 @@ fn by_grant(ctx: &QueryCtx, account: AccountNumber, scheduled: &Scheduled) -> Re
             "the validators' vote changes {name} at {height}: wait until it lands or is cancelled"
         )));
     }
-    // a cascade drops a maintainer's removal with no guard, so a name it
-    // frees is claimed only once it lands: never a program and a view at once
     let frees: Option<fn(&Change) -> bool> = match scheduled.change {
         Change::Set(_) | Change::Publish { .. } => {
             Some(|change| matches!(change, Change::RemoveView(_)))
@@ -166,7 +121,7 @@ fn by_grant(ctx: &QueryCtx, account: AccountNumber, scheduled: &Scheduled) -> Re
         && waits(ctx, name, &[], frees)?
     {
         return Err(wrong_state(format!(
-            "{name} is held until a maintainer's removal lands: wait, or cancel it"
+            "{name} is held until an account's removal lands: wait, or cancel it"
         )));
     }
     Ok(())
@@ -185,15 +140,12 @@ fn voted(ctx: &QueryCtx, name: &str) -> Result<Option<u64>, Error> {
 pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error> {
     let env = ctx.env();
     let by = actor(&env, scheduled.change.program())?;
-    // the vote's change on a name takes every change a grant made to it
-    // along, and its removal the name's grants too: the checks below read
-    // the schedule without them, and they go once every check has passed
-    let (grants, changes) = match by {
-        Some(account) => {
-            by_grant(ctx, account, &scheduled)?;
-            (Vec::new(), Vec::new())
+    let changes = match by {
+        Some(_) => {
+            by_account(ctx, &scheduled)?;
+            Vec::new()
         }
-        None => overruled(ctx, &scheduled.change)?,
+        None => overruled(ctx, scheduled.change.program())?,
     };
     let in_the_future = scheduled.height > env.height;
     if !in_the_future {
@@ -230,8 +182,6 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
         hooks,
         ..
     } = before;
-    // the vote's removal of a name nothing holds by then has its goal met:
-    // it takes the name's grants along and waits as no entry
     let gone = by.is_none()
         && matches!(scheduled.change, Change::Remove(_) | Change::RemoveView(_))
         && !programs.contains_key(name)
@@ -275,8 +225,6 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
             "{name} already names a program or a view"
         )));
     }
-    // a removal by grant would drop the vote's hook for good: a program
-    // set again is no hook again
     let unhooks = matches!(scheduled.change, Change::Remove(_)) && hooks.contains(name);
     if by.is_some() && unhooks {
         return Err(unauthorized(format!(
@@ -291,7 +239,6 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
             key.1, key.0
         )));
     }
-    grants.iter().for_each(|grant| GRANTS.remove(ctx, grant));
     // first, so a maker left at this very key (a `programs` rolled back)
     // takes nothing of the vote's own entry along
     changes.iter().for_each(|at| drop_change(ctx, at));
@@ -305,23 +252,13 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
     Ok(())
 }
 
-/// What the vote's `change` takes along: every change a grant made to its
-/// name, and for a removal every `Program(name)` grant. Read before any write.
-fn overruled(ctx: &QueryCtx, change: &Change) -> Result<(Vec<Held>, Vec<At>), Error> {
-    let name = change.program();
-    let grants = match change {
-        Change::Remove(_) | Change::RemoveView(_) => {
-            GRANTS.scan(ctx, GRANTS.prefix_of(&Scope::Program(name.to_owned())))?
-        }
-        _ => Vec::new(),
-    };
-    let changes = BY
+fn overruled(ctx: &QueryCtx, name: &str) -> Result<Vec<At>, Error> {
+    Ok(BY
         .all(ctx)?
         .into_iter()
         .map(|(at, _)| at)
         .filter(|at| at.1 == name)
-        .collect();
-    Ok((grants, changes))
+        .collect())
 }
 
 /// A pending change gone, with who made it: directly, without `cancel`'s
@@ -331,64 +268,13 @@ fn drop_change(ctx: &ExecCtx, at: &At) {
     BY.remove(ctx, at);
 }
 
-/// The vote makes a grant, once identity profiles its account.
-pub(crate) fn grant(ctx: &ExecCtx, grant: Grant) -> Result<(), Error> {
-    ctx.env().authority()?;
-    grantable(ctx, &grant)?;
-    GRANTS.insert(ctx, &(grant.scope, grant.account));
-    Ok(())
-}
-
-/// Refused unless the vote may make `grant` ([`grant_refused`]), asking
-/// identity for its account's profile.
-pub fn grantable(ctx: &QueryCtx, grant: &Grant) -> Result<(), Error> {
-    let bound = &ctx.env().role(abi::role::IDENTITY)?.clone();
-    let asked = identity::Query::Profile(grant.account);
-    let profile = match ctx.query(bound, &asked)? {
-        identity::Reply::Profile(profile) => profile,
-        other => return Err(unexpected_reply(bound, "Profile", &other)),
-    };
-    match grant_refused(grant, &ctx.env().roles, profile.as_ref()) {
-        Some(refusal) => Err(invalid(refusal)),
-        None => Ok(()),
-    }
-}
-
-/// The vote takes a grant back, or its holder steps down: a grant not held
-/// is no error, so a vote never sits one short of a done thing. Every
-/// change the account made that it no longer maintains goes with it.
-pub(crate) fn revoke(ctx: &ExecCtx, grant: Grant) -> Result<(), Error> {
-    let env = ctx.env();
-    let account = grant.account;
-    if let Some(by) = actor(&env, &grant.scope.to_string())?
-        && by != account
-    {
-        return Err(unauthorized(format!(
-            "account {by} may step down only from its own grant, not account {account}'s"
-        )));
-    }
-    let made = BY.all(ctx)?;
-    GRANTS.remove(ctx, &(grant.scope, account));
-    for (at, by) in made {
-        let still = [Scope::All, Scope::Program(at.1.clone())]
-            .into_iter()
-            .any(|scope| GRANTS.has(ctx, &(scope, account)));
-        if by == account && !still {
-            drop_change(ctx, &at);
-        }
-    }
-    Ok(())
-}
-
-/// The vote cancels any change; a maintainer of the name, one a grant made.
 pub(crate) fn cancel(ctx: &ExecCtx, height: u64, program: ProgramId) -> Result<(), Error> {
     let by = actor(&ctx.env(), &program)?;
-    if let Some(account) = by {
-        maintains(ctx, account, &program)?;
+    if by.is_some() {
+        fills_no_role(ctx, &program)?;
     }
     let key = (height, program);
     let Some(change) = SCHEDULE.get(ctx, &key)? else {
-        // as with Revoke: a vote never sits one short of a done thing
         if by.is_none() {
             return Ok(());
         }

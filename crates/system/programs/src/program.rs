@@ -4,10 +4,9 @@
 use ::program::{Error, ExecCtx, Program, QueryCtx, decoded};
 
 use crate::rules::{
-    BY, GRANTS, Roster, SCHEDULE, at, cancel, fold, grant, hooks_at, init, revoke, roles_at,
-    roster, schedule, views_at,
+    BY, Roster, SCHEDULE, at, cancel, fold, hooks_at, init, roles_at, roster, schedule, views_at,
 };
-use crate::{Genesis, Grant, Op, PROGRAM, PageResponse, Pending, Query, Reply};
+use crate::{Genesis, Op, PROGRAM, PageResponse, Pending, Query, Reply};
 
 pub struct Programs;
 
@@ -27,8 +26,6 @@ impl Program for Programs {
         match op {
             Op::Schedule(scheduled) => schedule(ctx, scheduled),
             Op::Cancel { height, program } => cancel(ctx, height, program),
-            Op::Grant(granted) => grant(ctx, granted),
-            Op::Revoke(granted) => revoke(ctx, granted),
         }
     }
 
@@ -68,11 +65,6 @@ impl Program for Programs {
             },
             Query::Roles => Reply::Roles(roles_at(ctx, height)?),
             Query::Hooks(height) => Reply::Hooks(hooks_at(ctx, height)?),
-            Query::Grants { page } => Reply::Grants(
-                GRANTS
-                    .range(ctx, &page)?
-                    .map(|(scope, account)| Grant { scope, account }),
-            ),
             Query::Roster => {
                 let Roster {
                     programs, views, ..

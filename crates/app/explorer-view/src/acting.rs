@@ -1,9 +1,10 @@
-//! What the reader changes on the Programs page, and how: by a grant it
-//! holds (the op goes to the programs role), else by the validators' vote (the
-//! op goes to valset wrapped in a `Role` motion for the programs role), else not at all. The
+//! What the reader changes on the Programs page, and how: by its account on
+//! a program that fills no role (the op goes to the programs role), else by
+//! the validators' vote (the op goes to valset wrapped in a `Role` motion for
+//! the programs role), else not at all. The
 //! app's confirm card is the yes for every op; nothing here asks again.
 //! The forms' ops are built by pure functions, each a unit test.
-use programs::{Change, Grant, NOTICE, Pending, Programs, Scheduled, Scope};
+use programs::{Change, NOTICE, Pending, Programs, Scheduled};
 use valset::{Motion, Valset, Voted};
 use view::methods::Submitted;
 use view::prelude::*;
@@ -11,8 +12,6 @@ use view::prelude::*;
 use crate::Explorer;
 use crate::state::{Network, Note};
 
-/// Blocks past the earliest a maintainer's change may land that a form
-/// asks by default: the op lands a block or two after the press.
 const SLACK: u64 = 30;
 /// How far past the tip a vote's change lands by default: about ten minutes.
 const LEAD_MS: u64 = 10 * 60 * 1000;
@@ -20,8 +19,7 @@ const LEAD_MS: u64 = 10 * 60 * 1000;
 /// The way an op takes to the programs role.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Path {
-    /// the reader's grant: straight to the programs role
-    Grant,
+    Account,
     /// the validators' vote: a motion to valset
     Vote,
 }
@@ -30,7 +28,7 @@ impl Path {
     /// The press that opens an upgrade's form on this path.
     pub(crate) fn upgrade_word(self) -> &'static str {
         match self {
-            Path::Grant => "Upgrade",
+            Path::Account => "Upgrade",
             Path::Vote => "Propose upgrade",
         }
     }
@@ -38,7 +36,7 @@ impl Path {
     /// The press that opens a removal's form on this path.
     pub(crate) fn remove_word(self) -> &'static str {
         match self {
-            Path::Grant => "Remove",
+            Path::Account => "Remove",
             Path::Vote => "Propose remove",
         }
     }
@@ -46,17 +44,8 @@ impl Path {
     /// The press that cancels a scheduled change on this path.
     pub(crate) fn cancel_word(self) -> &'static str {
         match self {
-            Path::Grant => "Cancel",
+            Path::Account => "Cancel",
             Path::Vote => "Propose cancel",
-        }
-    }
-
-    /// The press that revokes a grant on this path: by its own grant, its
-    /// holder steps down.
-    pub(crate) fn revoke_word(self) -> &'static str {
-        match self {
-            Path::Grant => "Step down",
-            Path::Vote => "Propose revoke",
         }
     }
 }
@@ -88,8 +77,6 @@ pub(crate) enum Edit {
     },
     /// a name that runs nothing yet
     Add,
-    /// an account made a maintainer, by vote
-    Grant,
 }
 
 impl Edit {
@@ -99,7 +86,6 @@ impl Edit {
             Edit::Upgrade { name, .. } => format!("explorer-upgrade-{name}"),
             Edit::Remove { name, .. } => format!("explorer-remove-{name}"),
             Edit::Add => "explorer-add".into(),
-            Edit::Grant => "explorer-propose-grant".into(),
         }
     }
 }
@@ -118,12 +104,9 @@ pub(crate) struct Form {
     pub(crate) path: Path,
     pub(crate) code: TextField,
     pub(crate) height: TextField,
-    /// Add: the new id; Grant: the program, empty for every program
     pub(crate) name: TextField,
     /// Add: params as hex, empty for none
     pub(crate) params: TextField,
-    /// Grant: the account's number
-    pub(crate) account: TextField,
     /// Add: a view, not a program
     pub(crate) view: bool,
     /// why the last press built no op, or the host's refusal
@@ -174,10 +157,6 @@ pub(crate) enum Asked {
 pub(crate) enum FormField {
     /// an Add's new id
     Name,
-    /// a grant's account
-    Account,
-    /// a grant's program, empty for every program
-    Program,
     Code,
     Params,
     Height,
@@ -196,8 +175,6 @@ impl FormField {
     pub(crate) fn id(self) -> &'static str {
         match self {
             FormField::Name => "explorer-form-name",
-            FormField::Program => "explorer-form-scope",
-            FormField::Account => "explorer-form-account",
             FormField::Code => "explorer-form-code",
             FormField::Params => "explorer-form-params",
             FormField::Height => "explorer-form-height",
@@ -207,8 +184,6 @@ impl FormField {
     pub(crate) fn label(self) -> &'static str {
         match self {
             FormField::Name => "Name",
-            FormField::Account => "Account",
-            FormField::Program => "Program",
             FormField::Code => "Code id",
             FormField::Params => "Params",
             FormField::Height => "At block",
@@ -219,8 +194,6 @@ impl FormField {
     pub(crate) fn hint(self) -> &'static str {
         match self {
             FormField::Name => "program id",
-            FormField::Account => "account number",
-            FormField::Program => "a program, or empty for every program",
             FormField::Code => "sha256:… of the published code",
             FormField::Params => "params hex, or empty",
             FormField::Height => "block height",
@@ -229,23 +202,18 @@ impl FormField {
 
     pub(crate) fn takes(self) -> Takes {
         match self {
-            FormField::Account | FormField::Height => Takes::Number,
-            FormField::Name | FormField::Program | FormField::Code => Takes::Id,
+            FormField::Height => Takes::Number,
+            FormField::Name | FormField::Code => Takes::Id,
             FormField::Params => Takes::Hex,
         }
     }
 }
 
 impl Form {
-    /// What this form asks for, in order: an Add its name, what it adds,
-    /// its code, a program's params and the height; a grant its account
-    /// and program; an upgrade its code and the height; a removal the
-    /// height.
     pub(crate) fn asks(&self) -> Vec<Asked> {
         let field = Asked::Field;
         let mut asks = match self.edit {
             Edit::Add => vec![field(FormField::Name), Asked::Kind, field(FormField::Code)],
-            Edit::Grant => return vec![field(FormField::Account), field(FormField::Program)],
             Edit::Upgrade { .. } => vec![field(FormField::Code)],
             Edit::Remove { .. } => Vec::new(),
         };
@@ -259,54 +227,34 @@ impl Form {
     /// The text a field holds.
     pub(crate) fn text(&self, field: FormField) -> &TextField {
         match field {
-            FormField::Name | FormField::Program => &self.name,
-            FormField::Account => &self.account,
+            FormField::Name => &self.name,
             FormField::Code => &self.code,
             FormField::Params => &self.params,
             FormField::Height => &self.height,
         }
     }
 
-    /// The account a grant form names, as typed: a number, `#` allowed.
-    pub(crate) fn account_number(&self) -> Option<u64> {
-        self.account
-            .text()
-            .trim()
-            .trim_start_matches('#')
-            .parse()
-            .ok()
-    }
-
     /// What the form is titled: what it changes, and how.
     pub(crate) fn title(&self) -> String {
         match (&self.edit, self.path) {
-            (Edit::Upgrade { name, .. }, Path::Grant) => format!("Upgrade {name}"),
+            (Edit::Upgrade { name, .. }, Path::Account) => format!("Upgrade {name}"),
             (Edit::Upgrade { name, .. }, Path::Vote) => format!("Propose upgrade · {name}"),
-            (Edit::Remove { name, .. }, Path::Grant) => format!("Remove {name}"),
+            (Edit::Remove { name, .. }, Path::Account) => format!("Remove {name}"),
             (Edit::Remove { name, .. }, Path::Vote) => format!("Propose remove · {name}"),
             (Edit::Add, _) => "Add a program".into(),
-            (Edit::Grant, _) => "Propose a grant".into(),
         }
     }
 
-    /// Its send button's word: straight to the programs by grant, else a
-    /// proposal.
     pub(crate) fn verb(&self) -> &'static str {
         match self.path {
-            Path::Grant => "Schedule",
+            Path::Account => "Schedule",
             Path::Vote => "Propose",
         }
     }
 
-    /// What the form says under its fields at `tip`: when its change can
-    /// land, and the params an upgrade keeps; a grant, that it is a vote.
-    /// The account a grant names is each design's own line before these.
     pub(crate) fn notes(&self, network: &Network, tip: u64) -> Vec<String> {
-        if self.edit == Edit::Grant {
-            return vec!["This proposes a vote: the validators carry it in Nodes.".into()];
-        }
         let lands = match self.path {
-            Path::Grant => format!(
+            Path::Account => format!(
                 "Block {} or later: the validators get {NOTICE} blocks to look, and can cancel it by vote until it lands.",
                 design::grouped(earliest(tip))
             ),
@@ -336,19 +284,13 @@ impl Acting {
 }
 
 impl Explorer {
-    /// The way the reader changes `program`: by a grant that covers it,
-    /// else by vote, else none.
     pub(crate) fn path(&self, program: &str) -> Option<Path> {
-        if self.maintains(program) {
-            return Some(Path::Grant);
+        if self.account_changes(program) {
+            return Some(Path::Account);
         }
         self.acting.votes().then_some(Path::Vote)
     }
 
-    /// Upgrade and Remove on the reader's path to `name`: straight to the
-    /// programs by grant, proposed by vote, or none. A role's program is
-    /// never removed; a hook only by vote, which a maintainer with voices
-    /// proposes.
     pub(crate) fn edits(&self, network: &Network, name: &str, listed: bool) -> Vec<Offer> {
         let Some(path) = self.path(name) else {
             return Vec::new();
@@ -366,7 +308,7 @@ impl Explorer {
             word: path.upgrade_word(),
         }];
         let removes = match path {
-            Path::Grant if network.is_hook(name) => self.acting.votes().then_some(Path::Vote),
+            Path::Account if network.is_hook(name) => self.acting.votes().then_some(Path::Vote),
             path => Some(path),
         };
         if let Some(path) = removes.filter(|_| !bound) {
@@ -382,48 +324,22 @@ impl Explorer {
         out
     }
 
-    /// The way the reader cancels `pending`: by a grant covering its
-    /// program when a grant made it, else by the validators' vote; none.
     pub(crate) fn cancels(&self, pending: &Pending) -> Option<Path> {
         match pending.by {
-            Some(_) if self.maintains(pending.change.program()) => Some(Path::Grant),
+            Some(_) if self.account_changes(pending.change.program()) => Some(Path::Account),
             _ => self.acting.votes().then_some(Path::Vote),
         }
     }
 
-    /// The way the reader revokes `grant`: its holder steps down by it, a
-    /// reader with voices proposes it; none.
-    pub(crate) fn revokes(&self, grant: &Grant) -> Option<Path> {
-        if self.acting.account == Some(grant.account) {
-            return Some(Path::Grant);
-        }
-        self.acting.votes().then_some(Path::Vote)
-    }
-
-    /// Whether the reader's grants cover `program`, as the programs role reads them.
-    pub(crate) fn maintains(&self, program: &str) -> bool {
-        let (Some(network), Some(account)) = (self.network.ready(), self.acting.account) else {
+    pub(crate) fn account_changes(&self, program: &str) -> bool {
+        let (Some(network), Some(_)) = (self.network.ready(), self.acting.account) else {
             return false;
         };
-        network
-            .roles
-            .as_ref()
-            .is_some_and(|roles| programs::covers(&network.grants, roles, account, program))
+        network.roles.is_some() && !network.fills_a_role(program)
     }
 
-    /// Whether the reader may add a program by grant: it holds every program,
-    /// or a program that runs nothing yet.
     pub(crate) fn adds(&self) -> bool {
-        let (Some(network), Some(account)) = (self.network.ready(), self.acting.account) else {
-            return false;
-        };
-        network.grants.iter().any(|grant| {
-            grant.account == account
-                && match &grant.scope {
-                    Scope::All => true,
-                    Scope::Program(id) => !network.names(id),
-                }
-        })
+        self.network.ready().is_some() && self.acting.account.is_some()
     }
 
     pub(crate) fn session_changed(&mut self, session: Session, cx: &mut Context<Self>) {
@@ -480,7 +396,6 @@ impl Explorer {
             height: TextField::new(height),
             name: TextField::default(),
             params: TextField::default(),
-            account: TextField::default(),
             view: false,
             problem: None,
         });
@@ -519,7 +434,6 @@ impl Explorer {
         }
     }
 
-    /// A press with no form: a cancel, a revoke, stepping down.
     pub(crate) fn press(&mut self, path: Path, op: programs::Op, cx: &mut Context<Self>) {
         self.acting.form = None;
         self.send(path, op, cx);
@@ -537,7 +451,7 @@ impl Explorer {
                 view.landed(path, &title, answer, cx)
             };
         match path {
-            Path::Grant => {
+            Path::Account => {
                 let ask = cx.host().ask::<Submit<Programs>>(op);
                 cx.land(ask, landed).detach();
             }
@@ -593,12 +507,6 @@ impl Network {
         self.hooks.iter().any(|hook| hook == name)
     }
 
-    /// Whether `name` runs or is listed as a view.
-    pub(crate) fn names(&self, name: &str) -> bool {
-        self.programs.iter().any(|entry| entry.program == name)
-            || self.views.iter().any(|view| view.name == name)
-    }
-
     /// The role `name` fills for the kernel, in the kernel's word for it: the
     /// roles are the chain's own table, so a role it gains is named here as
     /// is.
@@ -610,39 +518,17 @@ impl Network {
             .map(|(role, _)| role)
     }
 
-    /// Who changes `name` by a grant: `None` for a role's program, which
-    /// only the validators' vote changes.
-    pub(crate) fn maintainers(&self, name: &str) -> Option<Maintainers> {
-        let bound = self
-            .roles
+    pub(crate) fn fills_a_role(&self, name: &str) -> bool {
+        self.roles
             .as_ref()
-            .is_some_and(|roles| programs::role_bound(roles, name));
-        if bound {
-            return None;
-        }
-        let named = self
-            .grants
-            .iter()
-            .filter(|grant| grant.scope == Scope::Program(name.to_owned()))
-            .map(|grant| grant.account)
-            .collect();
-        let every = self.grants.iter().any(|grant| grant.scope == Scope::All);
-        Some(Maintainers { named, every })
+            .is_some_and(|roles| programs::role_bound(roles, name))
     }
-}
-
-/// The accounts whose grants cover a name ([`Network::maintainers`]).
-pub(crate) struct Maintainers {
-    /// each account whose grant names it, in the grants' order
-    pub(crate) named: Vec<u64>,
-    /// some account holds every program
-    pub(crate) every: bool,
 }
 
 /// What an op that landed did, in words.
 fn sent(path: Path, output: &[u8], title: &str) -> String {
     match (path, abi::decode::<Voted>(output)) {
-        (Path::Grant, _) => format!("Sent to the programs role: {title}."),
+        (Path::Account, _) => format!("Sent to the programs role: {title}."),
         (Path::Vote, Ok(Voted::Enacted)) => format!("Enacted: {title}."),
         (Path::Vote, Ok(Voted::Counted { votes, needed })) => {
             format!("Vote counted, {votes} of {needed}: {title}.")
@@ -651,18 +537,13 @@ fn sent(path: Path, output: &[u8], title: &str) -> String {
     }
 }
 
-/// The block a form asks by default: on a grant, [`NOTICE`] past the tip
-/// and some slack, so the block the op lands in still leaves the notice;
-/// on a vote, about ten minutes.
 pub(crate) fn default_height(path: Path, tip: u64, block_time_ms: u64) -> u64 {
     match path {
-        Path::Grant => tip + NOTICE + SLACK,
+        Path::Account => tip + NOTICE + SLACK,
         Path::Vote => tip + LEAD_MS.div_ceil(block_time_ms.max(1)),
     }
 }
 
-/// The first block a maintainer's change pressed now may land at: the op
-/// lands in the next block, and waits [`NOTICE`] from there.
 pub(crate) fn earliest(tip: u64) -> u64 {
     tip + 1 + NOTICE
 }
@@ -719,18 +600,6 @@ pub(crate) fn built(form: &Form, network: &Network, tip: u64) -> Result<programs
                 })
             };
             at(height(form, tip)?, change)
-        }
-        Edit::Grant => {
-            let account = form
-                .account_number()
-                .ok_or_else(|| Problem::at(FormField::Account, "An account is its number."))?;
-            let program = form.name.text().trim().to_owned();
-            let scope = if program.is_empty() {
-                Scope::All
-            } else {
-                Scope::Program(program)
-            };
-            programs::Op::Grant(Grant { scope, account })
         }
     })
 }

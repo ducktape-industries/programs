@@ -2,8 +2,8 @@
 //! `Voices`): the motions that wait, the programs role's scheduled changes and
 //! who made each, and the presses that vote on them. A program is changed
 //! in Explorer's Programs; this list stays here, in valset's view, which
-//! only the vote changes, so a maintainer's change is seen where no
-//! maintainer can hide it. A press the reader's uncast voices would carry
+//! only the vote changes, so an account's change is seen where no
+//! account can hide it. A press the reader's uncast voices would carry
 //! to the quorum enacts, so it waits for a yes first
 //! ([`Voting::confirming`]). The words for a motion are here, pure, so
 //! each is a unit test.
@@ -84,8 +84,7 @@ impl Voting {
     }
 
     pub(crate) fn words(&self, motion: &Motion) -> String {
-        let names = self.motions.ready().map(|motions| &motions.names);
-        words(motion, self.entries(), names.unwrap_or(&Names::new()))
+        words(motion, self.entries())
     }
 }
 
@@ -281,7 +280,7 @@ pub(crate) fn named(names: &Names, account: u64) -> String {
         .unwrap_or_else(|| format!("account {account}"))
 }
 
-pub(crate) fn words(motion: &Motion, roster: &[Entry], names: &Names) -> String {
+pub(crate) fn words(motion: &Motion, roster: &[Entry]) -> String {
     match motion {
         Motion::Promote { key } => format!("Promote {} to validator", key_words(key)),
         Motion::Demote { key } => format!("Demote {} to resident", key_words(key)),
@@ -298,12 +297,6 @@ pub(crate) fn words(motion: &Motion, roster: &[Entry], names: &Names) -> String 
                 "Cancel {program}'s change at block {}",
                 design::grouped(height)
             ),
-            Ok(programs::Op::Grant(grant)) => {
-                format!("Grant {} {}", named(names, grant.account), grant.scope)
-            }
-            Ok(programs::Op::Revoke(grant)) => {
-                format!("Revoke {} {}", named(names, grant.account), grant.scope)
-            }
             Err(_) => "A program change this screen can't read".into(),
         },
         Motion::Role { role, op } if role == abi::role::HALO => match abi::decode(op) {

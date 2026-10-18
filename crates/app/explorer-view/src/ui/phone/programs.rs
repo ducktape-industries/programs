@@ -2,10 +2,10 @@
 //! Programs page under the strip. What the programs role will change
 //! (Scheduled), runs (Running) and lists (Views), and who changes each name
 //! (Access); a program's sheet, and Add. Reads the programs role, the
-//! accounts, the status and the reader's grants and voices (`acting`);
-//! writes a Cancel, a Step down or a revoke (`press`), which sheet is open
-//! (`sheet`) and the form a sheet opens (`open_form`).
-use ::programs::{Grant, NOTICE, Pending, Scope};
+//! accounts, the status and the reader's account and voices (`acting`);
+//! writes a Cancel (`press`), which sheet is open (`sheet`) and the form a
+//! sheet opens (`open_form`).
+use ::programs::{NOTICE, Pending};
 use view::design::{mono, space};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
@@ -22,8 +22,6 @@ use super::parts::{
     section, small, title_and_caption,
 };
 
-/// The block time Expo words a maintainer's wait in before the node's
-/// status is read (`programs.tsx:94`).
 const UNREAD_BLOCK_MS: u64 = 1000;
 
 pub(super) fn programs(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
@@ -39,8 +37,8 @@ pub(super) fn programs(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
     } else {
         [
             scheduled(view, network, cx, k),
-            running(view, network, cx, k),
-            views(view, network, cx, k),
+            running(network, cx, k),
+            views(network, cx, k),
         ]
         .into_iter()
         .flatten()
@@ -52,19 +50,14 @@ pub(super) fn programs(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
     scroller("explorer-page")
         .children(note(view, cx, k).filter(|_| outcome))
         .children(listed)
-        .children(access(view, network, cx, k))
+        .children(access(view, k))
         // Expo's own foot past the page's (`programs.tsx:243`)
         .child(div().flex_none().h(space::BLOCK))
         .into_any_element()
 }
 
-/// Add on the root's title row while this page shows (Expo's
-/// `ProgramsMenuHit`, there an `Ellipsis` named More): there while the
-/// reader may add a program by grant or propose a grant by vote. Both add,
-/// so it draws `plus` and is named Add, not the capsule's `ellipsis` and
-/// More beside it ([`design::Page::trailing`]).
 pub(super) fn add(view: &Explorer, page: design::Page, cx: Cx, k: &Look) -> design::Page {
-    if !(view.adds() || view.acting.votes()) {
+    if !view.adds() {
         return page;
     }
     let open = cx.listener(|view: &mut Explorer, _: &ClickEvent, _, cx| {
@@ -83,42 +76,13 @@ pub(super) fn add(view: &Explorer, page: design::Page, cx: Cx, k: &Look) -> desi
 
 // ---------- the words ----------
 
-/// An account by its name, the reader's marked "(you)" (Expo
-/// `holderName`).
-fn holder_name(view: &Explorer, number: u64) -> String {
-    words::holder(
-        &view.name_of(number),
-        view.acting.account == Some(number),
-        false,
-    )
-}
-
-/// Who changes `name` (Expo `changedBy`): the validators' vote for a
-/// role's program, else its maintainers and the every-program ones.
-fn changed_by(view: &Explorer, network: &Network, name: &str) -> String {
-    let Some(maintainers) = network.maintainers(name) else {
-        return words::changed_by(&[]);
-    };
-    let mut named: Vec<String> = maintainers
-        .named
-        .iter()
-        .map(|&number| holder_name(view, number))
-        .collect();
-    if maintainers.every {
-        named.push(words::EVERY_PROGRAM.into());
-    }
-    words::changed_by(&named)
-}
-
-/// Whose a scheduled change is (Expo `byWords`): the vote's, or a
-/// maintainer's grant and the blocks the validators have left to look.
 fn by_words(view: &Explorer, pending: &Pending) -> String {
     let Some(by) = pending.by else {
         return words::BY_VOTE.into();
     };
     let tip = view.status.ready().map_or(0, |status| status.height);
     format!(
-        "by {}'s grant · {} to look",
+        "by {} · {} to look",
         view.name_of(by),
         plural(pending.height.saturating_sub(tip), "block", "blocks")
     )
@@ -168,8 +132,6 @@ pub(super) fn scheduled_row(
     ))
 }
 
-/// Cancel by the grant that made it, or Propose cancel by vote; nothing
-/// where the reader has neither. Off while a write is out.
 fn cancel(view: &Explorer, pending: &Pending, cx: Cx, k: &Look) -> Option<AnyElement> {
     let path = view.cancels(pending)?;
     let label = path.cancel_word();
@@ -186,7 +148,7 @@ fn cancel(view: &Explorer, pending: &Pending, cx: Cx, k: &Look) -> Option<AnyEle
 }
 
 /// Each running program, under its head with their count (Expo's Running).
-fn running(view: &Explorer, network: &Network, cx: Cx, k: &Look) -> Vec<AnyElement> {
+fn running(network: &Network, cx: Cx, k: &Look) -> Vec<AnyElement> {
     let head = section(
         "explorer-running-header",
         "Running",
@@ -197,7 +159,7 @@ fn running(view: &Explorer, network: &Network, cx: Cx, k: &Look) -> Vec<AnyEleme
         let caption = format!(
             "{} · {}",
             words::code_words(&entry.code),
-            changed_by(view, network, &entry.program)
+            words::changed_by(network.fills_a_role(&entry.program))
         );
         entry_row(network, &entry.program, caption, cx, k)
     });
@@ -208,7 +170,7 @@ fn running(view: &Explorer, network: &Network, cx: Cx, k: &Look) -> Vec<AnyEleme
 }
 
 /// Each view-only entry, under its head; none, no section (Expo's Views).
-fn views(view: &Explorer, network: &Network, cx: Cx, k: &Look) -> Vec<AnyElement> {
+fn views(network: &Network, cx: Cx, k: &Look) -> Vec<AnyElement> {
     if network.views.is_empty() {
         return Vec::new();
     }
@@ -223,7 +185,7 @@ fn views(view: &Explorer, network: &Network, cx: Cx, k: &Look) -> Vec<AnyElement
             "{} · {} · {}",
             words::VIEW_ONLY,
             words::code_words(&listed.view),
-            changed_by(view, network, &listed.name)
+            words::changed_by(network.fills_a_role(&listed.name))
         );
         entry_row(network, &listed.name, caption, cx, k)
     });
@@ -275,85 +237,23 @@ fn entry_row(
         .child(chevron(k))
 }
 
-/// Every grant (Expo's Access), under how long a maintainer's change waits.
-fn access(view: &Explorer, network: &Network, cx: Cx, k: &Look) -> Vec<AnyElement> {
+fn access(view: &Explorer, k: &Look) -> Vec<AnyElement> {
     let block_time = view
         .status
         .ready()
         .map_or(UNREAD_BLOCK_MS, |status| status.block_time_ms);
-    let wait = words::maintainer_wait(Some(minutes(NOTICE, block_time)));
+    let wait = words::account_wait(Some(minutes(NOTICE, block_time)));
     let head = section("explorer-access-header", "Access", Some(aside(wait)), k);
-    let none = network
-        .grants
-        .is_empty()
-        .then(|| quiet("explorer-no-grants", words::NO_MAINTAINER, k));
-    let rows = network
-        .grants
-        .iter()
-        .map(|grant| grant_row(view, network, grant, cx, k));
-    std::iter::once(head.into_any_element())
-        .chain(none)
-        .chain(rows)
-        .collect()
-}
-
-/// One grant: what it covers, who holds it (an agent marked so, a program
-/// not run yet said so); the holder steps down, a reader with voices
-/// proposes the revoke.
-fn grant_row(view: &Explorer, network: &Network, grant: &Grant, cx: Cx, k: &Look) -> AnyElement {
-    let holder = words::holder(
-        &view.name_of(grant.account),
-        view.acting.account == Some(grant.account),
-        view.is_agent(grant.account),
-    );
-    let mut about = words::changed_by(&[holder]);
-    if matches!(&grant.scope, Scope::Program(id) if !network.names(id)) {
-        about = format!("{about} · {}", words::may_add(&view.name_of(grant.account)));
-    }
-    list_row(
-        SharedString::from(format!("explorer-grant-{}", grant_key(grant))),
-        k,
-    )
-    .child(title_and_caption(
-        mono(grant.scope.to_string())
-            .truncate()
-            .text_type(k.ladder.secondary),
-        caption(about, k),
-    ))
-    .children(revoke(view, grant, cx, k))
-    .into_any_element()
-}
-
-/// Step down from one's own grant, or Propose revoke by vote; nothing where
-/// the reader has neither. Off while a write is out.
-fn revoke(view: &Explorer, grant: &Grant, cx: Cx, k: &Look) -> Option<AnyElement> {
-    let path = view.revokes(grant)?;
-    let label = path.revoke_word();
-    let op = ::programs::Op::Revoke(grant.clone());
-    let press = (!view.acting.busy).then(|| -> Press {
-        Box::new(
-            cx.listener(move |view: &mut Explorer, _: &ClickEvent, _, cx| {
-                view.press(path, op.clone(), cx)
-            }),
-        )
-    });
-    let id = format!("explorer-revoke-{}", grant_key(grant));
-    Some(small(id, label, design::Kind::Quiet, press, k))
+    vec![
+        head.into_any_element(),
+        quiet("explorer-access-rule", words::OPEN_TO_ACCOUNTS, k),
+    ]
 }
 
 /// A scheduled change's key: its height and its program, as the chain's
 /// Cancel names it.
 fn change_key(pending: &Pending) -> String {
     format!("{}-{}", pending.height, pending.change.program())
-}
-
-/// A grant's key: its holder and what it covers, `all` for every program.
-fn grant_key(grant: &Grant) -> String {
-    let scope = match &grant.scope {
-        Scope::Program(program) => program.as_str(),
-        Scope::All => "all",
-    };
-    format!("{}-{scope}", grant.account)
 }
 
 // ---------- the sheets ----------
@@ -383,11 +283,9 @@ fn closes(cx: Cx) -> impl Fn(&(), &mut Window, &mut App) + 'static {
     })
 }
 
-/// Add (Expo's programs `Sheet` of `SheetRow`s): Add a program by grant,
-/// Propose a grant by vote.
 pub(super) fn add_sheet(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
     let add = view.adds().then(|| {
-        let press = opens_form(Edit::Add, Path::Grant, cx);
+        let press = opens_form(Edit::Add, Path::Account, cx);
         design::sheet_row(
             Edit::Add.press_id(),
             "Add a program",
@@ -395,18 +293,7 @@ pub(super) fn add_sheet(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
             &k.theme,
             press,
         )
-        .hint("by your grant")
-    });
-    let grant = view.acting.votes().then(|| {
-        let press = opens_form(Edit::Grant, Path::Vote, cx);
-        design::sheet_row(
-            Edit::Grant.press_id(),
-            "Propose a grant",
-            &k.ladder,
-            &k.theme,
-            press,
-        )
-        .hint(words::BY_VOTE)
+        .hint("by your account")
     });
     design::sheet("explorer-add-menu-sheet", words::ADD, &k.ladder, &k.theme)
         .on_dismiss(closes(cx))
@@ -415,8 +302,7 @@ pub(super) fn add_sheet(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
                 .id("explorer-add-menu-rows")
                 .flex()
                 .flex_col()
-                .children(add)
-                .children(grant),
+                .children(add),
         )
         .into_any_element()
 }

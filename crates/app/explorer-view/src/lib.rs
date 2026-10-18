@@ -21,7 +21,7 @@
 //! The state is one struct (`state.rs`) and the window (`chain.rs`). Reads
 //! are typed (`queries.rs`) and loaded in `load.rs`, re-read on the live
 //! heads `watch.rs` follows; where the reader goes lands in `actions.rs`;
-//! what the reader changes on the Programs page, by grant or by vote, in
+//! what the reader changes on the Programs page, by account or by vote, in
 //! `acting.rs`; the sentences both designs show, once, in `words.rs`. `ui/`
 //! draws the desktop's pages and `ui/phone/` the phone's screens, picked
 //! once in [`Explorer`]'s render.
@@ -55,7 +55,6 @@ impl View for Explorer {
     const CAPABILITIES: &'static [Capability] = &[
         Capability::Chain,
         Capability::Program,
-        // the programs role changed by grant, or by a motion to valset
         Capability::Op,
         // what a program's code declares, on its page (`blob.manifest`)
         Capability::Blob,

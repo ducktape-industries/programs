@@ -1,12 +1,10 @@
 //! `cargo run -p explorer-view --example live`: Explorer in the real app
-//! over a fake node whose blocks carry a few people and chat posts, and
-//! whose programs holds grants: the dev account maintains every program
-//! and, as the one validator, votes; ada maintains chat and has a change
-//! of it waiting, beside the vote's adding trade, which bob maintains.
-//! `READER=none` shows the same network to a reader with no grant and no
-//! vote.
+//! over a fake node whose blocks carry a few people and chat posts; the dev
+//! account, as the one validator, votes; ada has a change of chat waiting,
+//! beside the vote's adding trade. `READER=none` shows the same network to
+//! a reader whose key votes for no one.
 use chat::{Block, Op, PostPolicy};
-use programs::{Change, Grant, Scheduled, Scope};
+use programs::{Change, Scheduled};
 use valset::{Motion, Valset};
 use view::methods::Query;
 use view::rig;
@@ -52,12 +50,6 @@ fn main() {
             };
             net.submit(me, valset::PROGRAM, &valset::Op::Vote(motion))
         };
-        let grant = |scope: Scope, account| programs::Op::Grant(Grant { scope, account });
-        vote(&grant(Scope::Program("chat".into()), ada))?;
-        vote(&grant(Scope::Program("trade".into()), bob))?;
-        if !unprivileged {
-            vote(&grant(Scope::All, me))?;
-        }
         let kind = programs::CODE_KIND;
         let body = b"chat, the next release".to_vec();
         let code = net.hold(kind, &body)?;
@@ -69,8 +61,6 @@ fn main() {
                 params: Vec::new(),
             })
         };
-        // ada's change by her grant; the vote's on another name, since the
-        // vote's change to chat would take hers along
         net.submit(ada, programs::PROGRAM, &at(700, set(chat::PROGRAM)))?;
         vote(&at(900, set("trade")))?;
         if unprivileged {

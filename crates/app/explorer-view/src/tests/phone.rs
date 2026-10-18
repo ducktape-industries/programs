@@ -2,7 +2,7 @@
 //! Expo app's Explorer. Each screen's states (reading, refused, empty,
 //! full) and presses, by screen; then the sweep, every screen held to
 //! `assert_fits` at 360, 390 and 430.
-use super::access::{grants, reader, waiting};
+use super::access::{reader, waiting};
 use super::*;
 use view::methods::Submit;
 use view::testing::{self, StreamSender};
@@ -165,7 +165,7 @@ fn the_desktop_draws_its_own_pages_under_a_pointer() {
 /// goes at its Dismiss.
 #[test]
 fn copy_link_copies_the_pages_link_and_dismiss_clears_what_it_said() {
-    let mut cx = reader(Some(3), ADA, false, grants(), waiting());
+    let mut cx = reader(Some(3), ADA, false, waiting());
     on_named_chain(&cx, 3, ADA);
     let copied = clipboard(&cx);
     phone(&mut cx);
@@ -185,7 +185,7 @@ fn copy_link_copies_the_pages_link_and_dismiss_clears_what_it_said() {
 
 #[test]
 fn the_root_names_the_network_and_the_reader() {
-    let mut cx = reader(Some(3), ADA, false, grants(), waiting());
+    let mut cx = reader(Some(3), ADA, false, waiting());
     phone(&mut cx);
     shows(&cx, "Explorer");
     shows(&cx, "test · Ada");
@@ -496,7 +496,7 @@ fn an_account_page_shows_its_devices_the_programs_it_used_and_its_activity() {
 /// any other account, a program's own too, not for the reader.
 #[test]
 fn open_dm_opens_the_readers_room_with_another_account() {
-    let mut cx = reader(Some(3), ADA, false, grants(), waiting());
+    let mut cx = reader(Some(3), ADA, false, waiting());
     on_named_chain(&cx, 3, ADA);
     phone(&mut cx);
     click(&mut cx, "explorer-tab-accounts");
@@ -584,11 +584,11 @@ fn the_programs_page_lists_what_is_scheduled_runs_and_is_listed() {
     click(&mut cx, "explorer-tab-programs");
     shows(&cx, "Remove forge at block 120");
     shows(&cx, "by vote");
-    shows(&cx, "sha256:abababab…abab · Validators' vote");
-    shows(&cx, "view only · sha256:efefefef…efef · Validators' vote");
+    shows(&cx, "sha256:abababab…abab · Any account");
+    shows(&cx, "view only · sha256:efefefef…efef · Any account");
     shows(
         &cx,
-        "No account maintains a program: only the validators' vote changes the programs role.",
+        "Any account changes a program that fills no role. Only the validators' vote changes a role's program.",
     );
 }
 
@@ -606,7 +606,7 @@ fn a_running_program_opens_its_sheet_and_the_sheet_its_page() {
         "the sheet left"
     );
     shows(&cx, "reads and writes the clipboard");
-    shows(&cx, "Maintained by");
+    shows(&cx, "Changed by");
 }
 
 #[test]
@@ -672,20 +672,8 @@ fn a_name_the_programs_role_does_not_hold_says_so() {
 }
 
 #[test]
-fn add_offers_a_grant_to_a_reader_with_voices() {
-    let mut cx = reader(Some(3), ADA, true, grants(), waiting());
-    phone(&mut cx);
-    click(&mut cx, "explorer-add-menu");
-    shows(&cx, "Propose a grant");
-    assert!(
-        cx.find("explorer-add").is_none(),
-        "Ada's grant names a running program: nothing to add"
-    );
-}
-
-#[test]
-fn add_offers_a_program_to_a_holder_of_every_program() {
-    let mut cx = reader(Some(5), STRANGER, false, grants(), waiting());
+fn add_offers_a_program_to_any_account() {
+    let mut cx = reader(Some(6), STRANGER, false, waiting());
     phone(&mut cx);
     click(&mut cx, "explorer-add-menu");
     assert!(
@@ -694,14 +682,14 @@ fn add_offers_a_program_to_a_holder_of_every_program() {
         "the sheet is named as its control"
     );
     shows(&cx, "Add a program");
-    shows(&cx, "by your grant");
+    shows(&cx, "by your account");
 }
 
 /// The host's capsule beside the title row draws `ellipsis` and is named
 /// More: what the reader may add is a `plus` named Add.
 #[test]
 fn add_is_a_plus_not_the_capsules_more() {
-    let mut cx = reader(Some(5), STRANGER, true, grants(), waiting());
+    let mut cx = reader(Some(5), STRANGER, true, waiting());
     phone(&mut cx);
     let row = format!("{:?}", cx.node("explorer-root-title"));
     assert!(!row.contains("icons/ellipsis.svg"), "{row}");
@@ -712,26 +700,19 @@ fn add_is_a_plus_not_the_capsules_more() {
 }
 
 #[test]
-fn a_reader_with_no_grant_and_no_voice_has_no_add() {
-    let mut cx = reader(None, STRANGER, false, grants(), waiting());
-    phone(&mut cx);
-    assert!(cx.find("explorer-add-menu").is_none());
+fn a_reader_with_no_account_has_no_add() {
+    for (signer, votes) in [(STRANGER, false), (VALIDATOR, true)] {
+        let mut cx = reader(None, signer, votes, waiting());
+        phone(&mut cx);
+        assert!(cx.find("explorer-add-menu").is_none());
+    }
 }
 
 #[test]
-fn a_maintainer_cancels_a_change_their_grant_made() {
-    let mut cx = reader(Some(3), ADA, false, grants(), waiting());
+fn any_account_cancels_a_change_an_account_made() {
+    let mut cx = reader(Some(6), STRANGER, false, waiting());
     phone(&mut cx);
     click(&mut cx, "explorer-cancel-700-chat");
-    assert_eq!(cx.host().requests::<Submit<Programs>>().len(), 1);
-}
-
-#[test]
-fn the_holder_steps_down_from_their_own_grant() {
-    let mut cx = reader(Some(3), ADA, false, grants(), waiting());
-    phone(&mut cx);
-    shows(&cx, "Step down");
-    click(&mut cx, "explorer-revoke-3-chat");
     assert_eq!(cx.host().requests::<Submit<Programs>>().len(), 1);
 }
 
@@ -821,80 +802,55 @@ fn a_program_page_says_why_it_lists_no_capability() {
     }
 }
 
-/// By voices, a cancel and a revoke go to the vote as motions, never to
-/// the programs role.
 #[test]
-fn a_reader_with_voices_proposes_a_cancel_and_a_revoke_to_the_vote() {
-    let mut cx = reader(Some(6), STRANGER, true, grants(), waiting());
+fn a_reader_with_voices_proposes_a_cancel_of_the_votes_change_to_the_vote() {
+    let mut cx = reader(Some(6), STRANGER, true, waiting());
     phone(&mut cx);
     shows(&cx, "Propose cancel");
-    shows(&cx, "Propose revoke");
     click(&mut cx, "explorer-cancel-120-forge");
-    click(&mut cx, "explorer-revoke-5-all");
     let cancel = programs::Op::Cancel {
         height: 120,
         program: "forge".into(),
     };
-    let revoke = programs::Op::Revoke(programs::Grant {
-        scope: programs::Scope::All,
-        account: 5,
+    let motion = valset::Op::Vote(valset::Motion::Role {
+        role: abi::role::PROGRAMS.into(),
+        op: abi::encode(&cancel),
     });
-    let motions = [cancel, revoke].map(|op| {
-        valset::Op::Vote(valset::Motion::Role {
-            role: abi::role::PROGRAMS.into(),
-            op: abi::encode(&op),
-        })
-    });
-    assert_eq!(cx.host().requests::<Submit<Valset>>(), motions);
+    assert_eq!(cx.host().requests::<Submit<Valset>>(), [motion]);
     assert!(cx.host().requests::<Submit<Programs>>().is_empty());
-    shows(&cx, "Vote counted, 1 of 2: Revoke · every program.");
+    shows(&cx, "Vote counted, 1 of 2: Cancel · forge.");
 }
 
 /// One write at a time: while one is out, every press that writes is off.
 #[test]
 fn every_press_that_writes_is_off_while_a_write_is_out() {
-    let mut cx = reader(Some(3), ADA, false, grants(), waiting());
+    let mut cx = reader(Some(3), ADA, false, waiting());
     cx.host().never::<Submit<Programs>>();
     phone(&mut cx);
     click(&mut cx, "explorer-cancel-700-chat");
-    for press in ["explorer-cancel-700-chat", "explorer-revoke-3-chat"] {
-        assert!(cx.interactivity(press).on_click.is_none(), "{press}");
-    }
+    assert!(
+        cx.interactivity("explorer-cancel-700-chat")
+            .on_click
+            .is_none()
+    );
 }
 
 // ---------- the form (`form.rs`) ----------
 
-/// Ada with voices, the grant form open from Add.
-fn grant_form() -> TestAppContext {
-    let mut cx = reader(Some(3), ADA, true, grants(), waiting());
+fn add_form() -> TestAppContext {
+    let mut cx = reader(Some(3), ADA, false, waiting());
     phone(&mut cx);
     click(&mut cx, "explorer-add-menu");
-    click(&mut cx, "explorer-propose-grant");
+    click(&mut cx, "explorer-add");
     cx
 }
 
 #[test]
-fn a_grant_form_names_the_account_typed() {
-    let mut cx = grant_form();
-    shows(&cx, "Type the account's number.");
-    cx.simulate_input("explorer-form-account", "#3");
-    cx.run_until_parked();
-    shows(&cx, "#3 · Ada");
-    cx.simulate_input("explorer-form-account", "9");
-    cx.run_until_parked();
-    shows(&cx, "No account 9 here.");
-    shows(
-        &cx,
-        "This proposes a vote: the validators carry it in Nodes.",
-    );
-}
-
-#[test]
 fn a_form_that_builds_nothing_says_why_and_sends_nothing() {
-    let mut cx = grant_form();
+    let mut cx = add_form();
     click(&mut cx, "explorer-form-submit");
-    shows(&cx, "An account is its number.");
-    assert!(cx.host().requests::<Submit<Valset>>().is_empty());
+    shows(&cx, "Name the program.");
+    assert!(cx.host().requests::<Submit<Programs>>().is_empty());
 }
 
 /// Each of `ids` that tells assistive tech it is wrong, with why.
@@ -911,23 +867,20 @@ fn wrong<'a>(cx: &TestAppContext, ids: &[&'a str]) -> Vec<(&'a str, String)> {
 
 #[test]
 fn the_field_a_problem_is_about_tells_assistive_tech_it_is_wrong_and_why() {
-    let mut cx = grant_form();
+    let mut cx = add_form();
     click(&mut cx, "explorer-form-submit");
     assert_eq!(
-        wrong(&cx, &["explorer-form-account", "explorer-form-scope"]),
-        [(
-            "explorer-form-account",
-            "An account is its number.".to_owned()
-        )]
+        wrong(&cx, &["explorer-form-name", "explorer-form-code"]),
+        [("explorer-form-name", "Name the program.".to_owned())]
     );
 }
 
 #[test]
 fn a_problem_moves_to_the_field_it_is_about_and_a_refusal_marks_none() {
     let fields = ["explorer-form-code", "explorer-form-height"];
-    let mut cx = reader(Some(3), ADA, false, grants(), waiting());
+    let mut cx = reader(Some(3), ADA, false, waiting());
     cx.host()
-        .refuse::<Submit<Programs>>("unauthorized", "no grant covers chat");
+        .refuse::<Submit<Programs>>("unauthorized", "chat already changes at 5000");
     phone(&mut cx);
     click(&mut cx, "explorer-program-chat");
     click(&mut cx, "explorer-upgrade-chat");
@@ -952,20 +905,20 @@ fn a_problem_moves_to_the_field_it_is_about_and_a_refusal_marks_none() {
     cx.simulate_input("explorer-form-height", "5000");
     click(&mut cx, "explorer-form-submit");
     // the node's refusal, passed on by the host (`design::failure`)
-    shows(&cx, "That didn’t go through: no grant covers chat");
+    shows(&cx, "That didn’t go through: chat already changes at 5000");
     assert_eq!(wrong(&cx, &fields), [], "the refusal is the whole form's");
 }
 
 #[test]
 fn a_write_the_program_refuses_says_it_did_not_go_through() {
-    let mut cx = reader(Some(3), ADA, false, grants(), waiting());
+    let mut cx = reader(Some(3), ADA, false, waiting());
     cx.host().handle::<Submit<Programs>>(|_| {
         Ok(view::methods::Submitted::Refused {
             frame: [0; 32],
             until: 0,
             refusal: Error {
                 code: "unauthorized".into(),
-                message: "no grant covers chat".into(),
+                message: "chat already changes at 5000".into(),
             },
         })
     });
@@ -973,24 +926,21 @@ fn a_write_the_program_refuses_says_it_did_not_go_through() {
     click(&mut cx, "explorer-program-chat");
     click(&mut cx, "explorer-remove-chat");
     click(&mut cx, "explorer-form-submit");
-    shows(&cx, "That didn’t go through: no grant covers chat");
+    shows(&cx, "That didn’t go through: chat already changes at 5000");
 }
 
 #[test]
 fn back_closes_a_sheet_before_it_leaves_the_page() {
-    let mut cx = grant_form();
+    let mut cx = add_form();
     assert!(cx.find("explorer-form-sheet").is_some());
     back(&mut cx);
     assert!(cx.find("explorer-form-sheet").is_none());
     assert!(cx.back_handler().is_none(), "the root again");
 }
 
-/// Add, by a grant over every program: a program asks its params and a
-/// view none; a nameless one says so on its name; one that lands closes
-/// the form and says what was sent.
 #[test]
 fn the_add_form_asks_what_it_adds_and_lands_its_schedule() {
-    let mut cx = reader(Some(5), STRANGER, false, grants(), waiting());
+    let mut cx = reader(Some(6), STRANGER, false, waiting());
     phone(&mut cx);
     click(&mut cx, "explorer-add-menu");
     click(&mut cx, "explorer-add");
@@ -1027,8 +977,7 @@ fn the_add_form_asks_what_it_adds_and_lands_its_schedule() {
 
 #[test]
 fn every_screen_fits_a_phone() {
-    // voices and a grant over every program: Add offers a program and a grant
-    let mut cx = reader(Some(5), STRANGER, true, grants(), waiting());
+    let mut cx = reader(Some(5), STRANGER, true, waiting());
     testing::sweep(&mut cx, |cx| {
         // the strip is a finger's 44 (Expo `theme.ts:81` `size.strip`) and
         // scrolls sideways (Expo's `ScrollView horizontal`: Programs runs
@@ -1052,9 +1001,6 @@ fn every_screen_fits_a_phone() {
         click(cx, "explorer-tab-programs");
         click(cx, "explorer-add-menu");
         click(cx, "explorer-add");
-        back(cx);
-        click(cx, "explorer-add-menu");
-        click(cx, "explorer-propose-grant");
         back(cx);
         click(cx, "explorer-program-chat");
         click(cx, "explorer-program-about");

@@ -1,8 +1,8 @@
 //! The `programs` program: the roster of programs a network runs, and
 //! the scheduled changes to it, made by the validators' vote
-//! (`Env::authority`) or by a maintainer: an account the vote granted a
-//! [`Scope`], whose change lands at least [`NOTICE`] blocks after it is
-//! made, so the vote can cancel it first.
+//! (`Env::authority`) or by any account, whose change to a program that
+//! fills no role lands at least [`NOTICE`] blocks after it is made, so the
+//! vote can cancel it first.
 //! It fills the kernel's programs role: each block the kernel asks
 //! `Query::At(height)` and runs what it answers, and on a roster change
 //! `Query::Roles`, the role table the published programs declare. A client asks
@@ -19,11 +19,9 @@ mod rules;
 mod tests;
 
 pub use program::Programs;
-pub use rules::grantable;
 pub use store::{PageRequest, PageResponse};
 
 use ::program::{AccountNumber, ProgramId, Roles};
-use abi::role::identity::Profile;
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
 pub use abi::role::programs::{Entry, Genesis, View};
@@ -32,48 +30,8 @@ pub const PROGRAM: &str = "programs";
 
 pub const CODE_KIND: &str = "program";
 
-/// How many blocks a maintainer's change waits at least before it lands:
-/// about a minute at 1 s blocks, for the validators to see it and cancel
-/// it by vote. A constant: changing it is an upgrade of `programs`, which only the
-/// vote schedules.
 pub const NOTICE: u64 = 60;
 
-/// The names a grant covers: one id, which may run nothing yet (how a team
-/// adds a new program), or every id but those bound to a role the kernel calls.
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
-pub enum Scope {
-    Program(ProgramId),
-    All,
-}
-
-impl Scope {
-    pub fn includes(&self, program: &str) -> bool {
-        match self {
-            Scope::Program(id) => id == program,
-            Scope::All => true,
-        }
-    }
-}
-
-impl std::fmt::Display for Scope {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Scope::Program(id) => f.write_str(id),
-            Scope::All => f.write_str("every program"),
-        }
-    }
-}
-
-/// An account made a maintainer of `scope` by the validators' vote: its
-/// frames schedule and cancel changes to the names in it.
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
-pub struct Grant {
-    pub scope: Scope,
-    pub account: AccountNumber,
-}
-
-/// A change waiting in the schedule, and the account whose grant made it;
-/// `None`: the validators' vote made it.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Pending {
     pub height: u64,
@@ -83,38 +41,6 @@ pub struct Pending {
 
 pub fn role_bound(roles: &Roles, program: &str) -> bool {
     roles.iter().any(|(_, filled)| filled == program)
-}
-
-/// Whether `grants` make `account` a maintainer of `program`: it holds
-/// `Program(program)` or `All`, and `program` fills no role. What a view
-/// asks before it offers a press; the rule reads the same off its table.
-pub fn covers(grants: &[Grant], roles: &Roles, account: AccountNumber, program: &str) -> bool {
-    !role_bound(roles, program)
-        && grants
-            .iter()
-            .any(|grant| grant.account == account && grant.scope.includes(program))
-}
-
-/// Why the vote may not make `grant`, `None` when it may: a program id in
-/// its one spelling and bound to no role, given to an account identity
-/// profiles (`profile`). The rule and valset's first vote both ask it, so a
-/// bad grant is refused before it is voted on.
-pub fn grant_refused(grant: &Grant, roles: &Roles, profile: Option<&Profile>) -> Option<String> {
-    if let Scope::Program(id) = &grant.scope {
-        if !::program::is_name(id) {
-            return Some(format!("{id:?} is not a program id: 1..=64 of [a-z0-9_-]"));
-        }
-        if role_bound(roles, id) {
-            return Some(format!(
-                "{id} fills a role the kernel calls: only the validators' vote changes it"
-            ));
-        }
-    }
-    let account = grant.account;
-    match profile {
-        None => Some(format!("there is no account {account}")),
-        Some(_) => None,
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -179,14 +105,7 @@ pub struct Scheduled {
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum Op {
     Schedule(Scheduled),
-    Cancel {
-        height: u64,
-        program: ProgramId,
-    },
-    /// The vote only.
-    Grant(Grant),
-    /// The vote, or the holder stepping down from its own grant.
-    Revoke(Grant),
+    Cancel { height: u64, program: ProgramId },
 }
 
 #[derive(
@@ -207,9 +126,6 @@ pub enum Query {
     Roles,
     #[ask(Reply::Hooks(Vec<ProgramId>))]
     Hooks(u64),
-    /// Every grant, by scope then account. Tag 6: tag 5 is the role's `Hooks`.
-    #[ask(Reply::Grants(PageResponse<Grant>))]
-    Grants { page: PageRequest },
     /// What runs and what is listed now: the programs and the view-only
     /// entries at the query's own height, by name, and that height. A change
     /// lands at its height whether or not an op has run here since.
@@ -228,7 +144,6 @@ pub enum Reply {
     Views(Vec<View>),
     Roles(abi::Roles),
     Hooks(Vec<ProgramId>),
-    Grants(PageResponse<Grant>),
     Roster {
         height: u64,
         programs: Vec<Entry>,
@@ -280,22 +195,8 @@ pub fn describe(op: &Op) -> describe::Description {
                 height(at),
             ],
         ),
-        Op::Grant(grant) => (format!("Grant · {}", grant.scope), granted(grant)),
-        Op::Revoke(grant) => (format!("Revoke · {}", grant.scope), granted(grant)),
     };
     describe::Description { title, fields }
-}
-
-fn granted(grant: &Grant) -> Vec<describe::Field> {
-    use describe::{Value, field};
-    let scope = match &grant.scope {
-        Scope::Program(id) => Value::Program(id.clone()),
-        Scope::All => Value::text("every program"),
-    };
-    vec![
-        field("account", Value::Account(grant.account)),
-        field("scope", scope),
-    ]
 }
 
 describe::export!(Op, describe);
@@ -304,8 +205,5 @@ describe::export!(Op, describe);
 /// enum only grows at its end. Append a new variant here; never reorder.
 #[test]
 fn op_variants_only_append() {
-    assert_eq!(
-        describe::variants::<Op>(),
-        ["Schedule", "Cancel", "Grant", "Revoke"]
-    );
+    assert_eq!(describe::variants::<Op>(), ["Schedule", "Cancel"]);
 }

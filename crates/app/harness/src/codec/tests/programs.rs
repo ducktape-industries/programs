@@ -221,10 +221,10 @@ fn programs_round_trips() {
         height: 100,
         change: ::programs::Change::Set(entry.clone()),
     }));
-    programs.op(&::programs::Op::Grant(::programs::Grant {
-        scope: ::programs::Scope::All,
-        account: 2,
-    }));
+    programs.op(&::programs::Op::Cancel {
+        height: 100,
+        program: "chat".into(),
+    });
     assert_eq!(programs.query(&::programs::Query::Roster), json!("Roster"));
     programs.query(&::programs::Query::Program("chat".into()));
     programs.reply(&::programs::Reply::Roles(::program::MockHost::roles()));

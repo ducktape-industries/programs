@@ -32,8 +32,6 @@ pub(crate) const NO_VALUE: &str = "—";
 pub(crate) const NO_COUNT: &str = "–";
 /// A view-only entry: a view with no program behind it.
 pub(crate) const VIEW_ONLY: &str = "view only";
-/// What marks an agent among maintainers.
-pub(crate) const AGENT: &str = "agent";
 /// A program that runs with no params.
 pub(crate) const NO_PARAMS: &str = "none";
 
@@ -61,23 +59,15 @@ pub(crate) const NO_PROGRAM_HERE: &str = "The programs role runs and lists nothi
 pub(crate) const RUNS_NOTHING: &str = "The programs role of this network runs nothing yet.";
 pub(crate) const NOTHING_SCHEDULED: &str = "Nothing is scheduled against the programs role.";
 pub(crate) const NOTHING_SCHEDULED_FOR_IT: &str = "Nothing is scheduled for it.";
-pub(crate) const NO_MAINTAINER: &str =
-    "No account maintains a program: only the validators' vote changes the programs role.";
-/// Who changes a role's program, and a program no account maintains.
+pub(crate) const OPEN_TO_ACCOUNTS: &str = "Any account changes a program that fills no role. Only the validators' vote changes a role's program.";
 pub(crate) const VALIDATORS_VOTE: &str = "validators' vote";
-pub(crate) const VOTE_ONLY: &str = "no account: the validators' vote only";
-/// The accounts whose grant covers every program, named together.
-pub(crate) const EVERY_PROGRAM: &str = "every-program maintainers";
+pub(crate) const ANY_ACCOUNT: &str = "any account";
 /// A change the validators' vote makes.
 pub(crate) const BY_VOTE: &str = "by vote";
-/// The Programs page's control and sheet of what the reader may add: a
-/// program by grant, a grant by vote.
 pub(crate) const ADD: &str = "Add";
 /// What a Copy put on the clipboard, as its note names it.
 pub(crate) const CODE_ID: &str = "the code id";
 pub(crate) const LINK: &str = "the link";
-/// A grant form before its account is typed.
-pub(crate) const TYPE_ACCOUNT: &str = "Type the account's number.";
 
 /// What a programs role entry is: a program, or a view with none behind it.
 pub(crate) fn entry_kind(listed: bool) -> &'static str {
@@ -153,45 +143,19 @@ pub(crate) fn tx_recorded(accounts: u64) -> String {
     format!("{} · tx recorded", grouped(accounts))
 }
 
-/// How long a maintainer's change waits, in blocks and, at a known block
-/// time, about how many minutes.
-pub(crate) fn maintainer_wait(minutes: Option<u64>) -> String {
+pub(crate) fn account_wait(minutes: Option<u64>) -> String {
     match minutes {
         Some(minutes) => {
-            format!("changes by a maintainer wait {NOTICE} blocks (about {minutes} min)")
+            format!("changes by an account wait {NOTICE} blocks (about {minutes} min)")
         }
-        None => format!("changes by a maintainer wait {NOTICE} blocks"),
+        None => format!("changes by an account wait {NOTICE} blocks"),
     }
 }
 
-/// A grant on a name that runs nothing yet: who may add it.
-pub(crate) fn may_add(name: &str) -> String {
-    format!("runs nothing yet: {name} may add it")
-}
-
-/// The reader, marked so among accounts: `Ada (you)`.
-pub(crate) fn you(name: &str) -> String {
-    format!("{name} (you)")
-}
-
-/// A maintainer by its name, the reader and an agent marked so (Expo
-/// `holderName`, and `· agent` after it): `Ada (you) · agent`.
-pub(crate) fn holder(name: &str, reader: bool, agent: bool) -> String {
-    let name = if reader { you(name) } else { name.to_owned() };
-    if agent {
-        format!("{name} · {AGENT}")
-    } else {
-        name
-    }
-}
-
-/// Who changes a name, as its row says (Expo `changedBy`): its
-/// maintainers, else the validators' vote.
-pub(crate) fn changed_by(maintainers: &[String]) -> String {
-    if maintainers.is_empty() {
-        first_up(VALIDATORS_VOTE)
-    } else {
-        format!("Maintainer {}", maintainers.join(", "))
+pub(crate) fn changed_by(fills_a_role: bool) -> String {
+    match fills_a_role {
+        true => first_up(VALIDATORS_VOTE),
+        false => first_up(ANY_ACCOUNT),
     }
 }
 
@@ -249,11 +213,6 @@ pub(crate) fn no_transaction_at(height: u64, position: u32) -> String {
 
 pub(crate) fn no_account(number: u64) -> String {
     format!("No account #{number}")
-}
-
-/// A grant form's account, typed but held by no one.
-pub(crate) fn no_account_numbered(number: u64) -> String {
-    format!("No account {number} here.")
 }
 
 pub(crate) fn nothing_called(name: &str) -> String {
