@@ -6,14 +6,13 @@ use crate::object::Object;
 use crate::oid::{Hash, Hasher, Oid};
 use miniz_oxide::deflate::compress_to_vec_zlib;
 
-/// How hard each entry is deflated: the receiver keeps a pack as it was sent, so this trades
-/// its size against the time to write it.
+/// How hard each entry is deflated. The receiver keeps the pack as sent, so this trades kept
+/// bytes against write time.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Deflate {
-    /// zlib level 6: a pack that is kept or sent on, such as a push.
+    /// zlib level 6: a pack written once and held, such as a push's blob.
     Small,
-    /// zlib level 1: a fetch's answer, which git indexes as it comes. On core's history it
-    /// writes in half the time of `Small`, for a pack about a quarter larger.
+    /// zlib level 1: a fetch's answer, written while git waits.
     Fast,
 }
 
