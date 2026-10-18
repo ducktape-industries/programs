@@ -519,7 +519,7 @@ fn the_list_shows_each_agent_with_its_state() {
         "Eddy",
         "(you)",
         "Working",
-        "in #general · 7 · waiting for the model",
+        "in #general · waiting for the model",
         "1 open · 1 closed",
         // the newest block came five minutes after the threads last moved
         "5m ago",
@@ -528,7 +528,7 @@ fn the_list_shows_each_agent_with_its_state() {
         "Other agents",
         "Atlas",
         "Idle",
-        "last in #deploys · 9",
+        "last in #deploys",
         "1 relay node",
     ] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());

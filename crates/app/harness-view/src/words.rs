@@ -24,7 +24,7 @@ pub(crate) fn asking(asking: Asking) -> String {
     }
 }
 
-/// [`asking`] inside a sentence: "in #general · 7 · waiting for the model".
+/// [`asking`] inside a sentence: "in #general · waiting for the model".
 pub(crate) fn asking_lower(state: Asking) -> String {
     lower(&asking(state))
 }
@@ -74,6 +74,15 @@ pub(crate) fn conversation_label(thread: &ThreadRow, roster: Option<&Roster>) ->
     }
 }
 
+/// Where a conversation is, without its number: what an agent's sentence names, `#general`;
+/// one with no place yet keeps its heading, `Conversation 7`.
+fn conversation_place(thread: &ThreadRow, roster: &Roster) -> String {
+    match thread.place.is_empty() {
+        true => conversation_label(thread, Some(roster)),
+        false => place_label(thread.agent, &thread.place, Some(roster)),
+    }
+}
+
 /// A place of `agent`'s as people read it: `#general` by the room's name in chat, `DM · Ada`,
 /// else the place as is.
 pub(crate) fn place_label(agent: u64, place: &str, roster: Option<&Roster>) -> String {
@@ -117,11 +126,11 @@ pub(crate) fn agent_sentence(card: &Card, roster: &Roster) -> String {
         (State::NoNode, _, _) => "No member node serves relay".to_owned(),
         (_, Some(thread), _) => format!(
             "in {} · {}",
-            conversation_label(thread, Some(roster)),
+            conversation_place(thread, roster),
             asking_lower(thread.asking)
         ),
         (_, None, _) => match card.threads.first() {
-            Some(newest) => format!("last in {}", conversation_label(newest, Some(roster))),
+            Some(newest) => format!("last in {}", conversation_place(newest, roster)),
             None => "no conversation yet".to_owned(),
         },
     }

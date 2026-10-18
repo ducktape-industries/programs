@@ -79,9 +79,10 @@ fn a_conversation_reads_by_its_number_and_its_room_by_the_name_chat_gives_it() {
     net.threads[0].place = format!("chat/{ROOM}");
     net.threads[0].title = format!("chat channel {ROOM}");
     let (mut cx, _) = seated(net, EDDY);
-    // the same words name it on the list, the agent's rows, its heading and the window title
+    // the list's sentence names its room; the agent's rows, its heading and the window title
+    // add its number
     assert!(
-        cx.has_text("in #payments · 7 · waiting for the model"),
+        cx.has_text("in #payments · waiting for the model"),
         "{:?}",
         cx.texts()
     );
@@ -101,6 +102,15 @@ fn a_conversation_reads_by_its_number_and_its_room_by_the_name_chat_gives_it() {
         cx.host().requests::<HostTitle>().last().map(String::as_str),
         Some("Scout · #payments · 7")
     );
+}
+
+#[test]
+fn a_conversation_with_no_place_yet_reads_by_its_number_in_the_agents_sentence() {
+    let mut net = Net::default();
+    net.threads[0].place = String::new();
+    net.threads[0].asking = Asking::Idle;
+    let (cx, _) = seated(net, EDDY);
+    assert!(cx.has_text("last in Conversation 7"), "{:?}", cx.texts());
 }
 
 #[test]

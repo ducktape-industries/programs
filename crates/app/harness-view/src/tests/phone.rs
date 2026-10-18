@@ -52,7 +52,7 @@ fn the_root_lists_the_agents_with_their_state_then_what_else_the_view_holds() {
         "My agents",
         "Scout",
         "Working",
-        "in #general · 7 · waiting for the model",
+        "in #general · waiting for the model",
         // how long ago, in a phone's few letters
         "5m",
         "Pager",
@@ -101,7 +101,7 @@ fn an_agent_page_says_what_it_does_and_opens_each_part_of_its_setup() {
     tap(&mut cx, &["agent-12"]);
     for text in [
         "account 12 · managed by Eddy",
-        "In #general · 7 · waiting for the model",
+        "In #general · waiting for the model",
         "sonnet · 2 tools",
         "Send a DM",
         "Conversations",
