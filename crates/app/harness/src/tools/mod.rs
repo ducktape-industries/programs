@@ -272,3 +272,6 @@ pub(crate) fn blob(id: &BlobId) -> Value {
 pub(crate) fn unexpected(program: &str, asked: &str, reply: &impl std::fmt::Debug) -> Error {
     unexpected_reply(program, asked, reply)
 }
+
+#[cfg(test)]
+mod tests;
