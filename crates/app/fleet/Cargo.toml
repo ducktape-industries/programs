@@ -1,0 +1,30 @@
+[package]
+name = "fleet"
+version.workspace = true
+edition.workspace = true
+
+# The types and rules are always built; a client links them with `program`
+# off. `program` adds its wasm exports (`program::export!`), which only its
+# own wasm build turns on.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+program = []
+# `describe` makes this crate's wasm build the `ducktape.describe` module:
+# the `describe` export alone, no program, no imports.
+describe = []
+
+[dependencies]
+abi = { workspace = true }
+borsh = { workspace = true }
+describe = { workspace = true }
+program = { workspace = true }
+store = { workspace = true }
+# where a run's end is told
+chat = { workspace = true }
+# a run's claim policy, read before a run is assigned
+ownership = { workspace = true }
+
+[dev-dependencies]
+scheduler = { workspace = true }

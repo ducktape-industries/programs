@@ -39,6 +39,7 @@ fn interface(program: &str) -> Option<(BorshSchemaContainer, Tools)> {
         "harness" => of::<harness::Harness>(),
         "actions" => of::<actions::Actions>(),
         "actions-pods" => of::<actions_pods::ActionsPods>(),
+        "fleet" => of::<fleet::Fleet>(),
         _ => return None,
     };
     Some(interface)

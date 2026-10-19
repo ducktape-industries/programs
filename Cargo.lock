@@ -2134,6 +2134,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "fleet"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "borsh",
+ "chat",
+ "describe",
+ "ownership",
+ "program",
+ "scheduler",
+ "store",
+]
+
+[[package]]
 name = "float-cmp"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2272,6 +2286,7 @@ dependencies = [
  "chat",
  "egress",
  "files",
+ "fleet",
  "forge",
  "halo",
  "harness",
