@@ -1,12 +1,12 @@
 //! The rooms, the chat's first page (Expo `app/(tabs)/chat/index.tsx`, boards 10-12): the title
-//! row, the channels in their folders and the direct rooms newest first, each unread room with its
-//! dot; a row opens its room, a folder's row opens or closes the folder.
+//! row, the reader's own channels by category, their direct rooms newest first, then Work and All
+//! channels shut until opened, channels in their folders; a folder's row opens or closes it.
 use view::prelude::*;
 use view::{Div, Stateful};
 
 use super::parts::{face, quiet};
 use crate::Chat;
-use crate::room_list::{DmEntry, FolderLine, Line, label};
+use crate::room_list::{ALL, DmEntry, FolderLine, Line, WORK, label};
 use crate::words;
 use chat::{ChannelInfo, Principal};
 use view::design::Ladder;
@@ -92,16 +92,43 @@ fn caption(chat: &Chat) -> String {
         .join(" · ")
 }
 
-// The two sections: Channels always (its loading line or empty state
-// under it), then Direct messages always, New message at its head.
+// The reader's channels always (their loading line or empty state under
+// them), each category's, Direct messages always, then Work and All
+// channels where they hold a room.
 fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
-    let list = chat.room_list();
+    let list = chat.phone_rooms();
     let count = |rows: usize| (rows > 0).then(|| rows.to_string());
     let loading = matches!(chat.channels, Loadable::Idle | Loadable::Loading(_));
-    // with every channel archived the network still holds channels: the
-    // empty state's words would be false
-    let empty = (!loading && list.channels.is_empty() && list.archived == 0)
-        .then(|| no_rooms(chat, cx, theme, ladder));
+    // the empty state says the network holds no channel: keyed on every
+    // room, not the ones the reader is in, and none archived
+    let none = list.mine.is_empty()
+        && list.sections.is_empty()
+        && list.work.is_empty()
+        && list.rest.is_empty();
+    let empty = (!loading && none && list.archived == 0).then(|| no_rooms(chat, cx, theme, ladder));
+    let mine = lines(chat, &list.mine, cx, theme, ladder);
+    let mut sections = Vec::new();
+    for section in &list.sections {
+        let id = format!("chat-rooms-category-{}", section.category);
+        let head = design::section_head(id, section.category.to_owned(), ladder, theme)
+            .children(count(section.channels.len()));
+        sections.push(head.into_any_element());
+        sections.extend(lines(chat, &section.channels, cx, theme, ladder));
+    }
+    let mut dms = Vec::new();
+    for dm in &list.dms {
+        dms.push(dm_row(chat, dm, cx, theme, ladder));
+    }
+    let work = group(chat, WORK, words::WORK, &list.work, cx, theme, ladder);
+    let rest = group(
+        chat,
+        ALL,
+        words::ALL_CHANNELS,
+        &list.rest,
+        cx,
+        theme,
+        ladder,
+    );
     div()
         .id("chat-rooms")
         .flex_1()
@@ -111,16 +138,9 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         .flex_col()
         .child(
             design::section_head("chat-rooms-channels-head", words::CHANNELS, ladder, theme)
-                .children(count(list.channels.len())),
+                .children(count(list.mine.len())),
         )
-        .children(
-            chat.lines(&list.channels)
-                .into_iter()
-                .map(|line| match line {
-                    Line::Room { info, depth } => channel_row(chat, info, depth, cx, theme, ladder),
-                    Line::Folder(folder) => folder_row(chat, &folder, cx, theme, ladder),
-                }),
-        )
+        .children(mine)
         .when(loading, |rooms| {
             rooms.child(quiet(
                 "chat-rooms-loading",
@@ -130,16 +150,73 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
             ))
         })
         .children(empty)
+        .children(sections)
         .child(
             design::section_head("chat-rooms-dms-head", words::DIRECT_MESSAGES, ladder, theme)
                 .children(count(list.dms.len()))
                 .child(new_message(cx, theme, ladder)),
         )
-        .children(
-            list.dms
-                .iter()
-                .map(|dm| dm_row(chat, dm, cx, theme, ladder)),
-        )
+        .children(dms)
+        .children(work)
+        .children(rest)
+}
+
+// A group shut until the reader opens it: its head, a button, says how many
+// rooms it holds and opens or shuts it; its rooms show while it is open.
+// Nothing while it holds none.
+fn group(
+    chat: &Chat,
+    key: &'static str,
+    label: &'static str,
+    rooms: &[&ChannelInfo],
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Vec<AnyElement> {
+    if rooms.is_empty() {
+        return Vec::new();
+    }
+    let open = chat.open_groups.contains(key);
+    let toggle = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
+        if !chat.open_groups.remove(key) {
+            chat.open_groups.insert(key.to_owned());
+        }
+        cx.notify();
+    });
+    let chevron = match open {
+        true => "chevron-down",
+        false => "chevron-right",
+    };
+    let head = design::section_head(format!("chat-rooms-{key}"), label, ladder, theme)
+        .child(rooms.len().to_string())
+        .child(design::icon(chevron, ladder.icon_row).text_color(theme.muted))
+        .min_h(ladder.row)
+        .role(Role::Button)
+        .aria_expanded(open)
+        .focusable()
+        .on_click(toggle);
+    let mut group = vec![head.into_any_element()];
+    if open {
+        group.extend(lines(chat, rooms, cx, theme, ladder));
+    }
+    group
+}
+
+// `channels` as rows, each under the folders its name gives.
+fn lines(
+    chat: &Chat,
+    channels: &[&ChannelInfo],
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Vec<AnyElement> {
+    let lines = chat.lines(channels).into_iter();
+    lines
+        .map(|line| match line {
+            Line::Room { info, depth } => channel_row(chat, info, depth, cx, theme, ladder),
+            Line::Folder(folder) => folder_row(chat, &folder, cx, theme, ladder),
+        })
+        .collect()
 }
 
 // New message at the Direct messages head: the page of whom to write to.

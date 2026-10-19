@@ -48,6 +48,21 @@ pub struct Chat {
     /// The reader's reactions, newest first: the picker's frequent row.
     #[serde(default)]
     pub(crate) recent_emoji: Vec<String>,
+    // the rooms the reader opened on this device (`kept.rs`) and the ones
+    // they listen to: the phone lists both as theirs
+    #[serde(skip)]
+    pub(crate) opened: BTreeSet<String>,
+    #[serde(skip)]
+    pub(crate) opened_kept: Option<String>,
+    #[serde(skip)]
+    pub(crate) listening: BTreeSet<String>,
+    // the phone's list asked them this session: only its tree reads them
+    #[serde(skip)]
+    pub(crate) listening_asked: bool,
+    // the phone's groups of rooms the reader opened (`room_list::WORK`,
+    // `room_list::ALL`): shut until they do
+    #[serde(default)]
+    pub(crate) open_groups: BTreeSet<String>,
     // the room list's folders the reader closed, by path; kept on the device
     #[serde(default)]
     pub(crate) closed_folders: BTreeSet<String>,

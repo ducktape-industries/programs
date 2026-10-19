@@ -179,6 +179,15 @@ pub(crate) fn sorted(mut rows: Vec<MsgRow>) -> Vec<MsgRow> {
     rows
 }
 
+// The rooms `account` listens to.
+pub(crate) async fn listening(host: Host, account: u64) -> Result<Vec<String>, Error> {
+    host.query_all(|after| ask::Listening {
+        account,
+        page: page(after, PAGE),
+    })
+    .await
+}
+
 /// Every member of a room, in account order.
 pub(crate) async fn members(host: Host, channel_id: String) -> Result<Vec<MemberRow>, Error> {
     host.query_all(|after| ask::Members {

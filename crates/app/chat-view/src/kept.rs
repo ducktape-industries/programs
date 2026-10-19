@@ -1,6 +1,6 @@
 //! What chat keeps on this device between runs (`store`), per network by the host and per
-//! reader by the key: the read cursors (the unread dots after a relaunch, which the notifier
-//! counts from), the frequent reactions, and the room list's folders the reader closed.
+//! reader by the key: the read cursors (the unread dots, the notifier's counts), the frequent
+//! reactions, the room list's folders the reader closed, and the rooms opened here.
 use std::collections::{BTreeMap, BTreeSet};
 
 use view::prelude::*;
@@ -9,6 +9,7 @@ use view::store;
 use crate::Chat;
 
 const EMOJI: &str = "emoji";
+const OPENED: &str = "opened";
 const FOLDERS: &str = "folders";
 
 impl Chat {
@@ -49,7 +50,62 @@ impl Chat {
             Err(refusal) => cx.log_refused("the closed folders", &refusal),
         })
         .detach();
+        self.load_opened(cx);
         self.load_reads(key, cx);
+    }
+
+    // The key the rooms the reader opened here are kept under.
+    fn opened_key(&self) -> Option<String> {
+        self.reads_key().map(|key| format!("{key}/{OPENED}"))
+    }
+
+    // The rooms the reader opened on this device, off it. One opened before
+    // they land joins them, and the whole set is written back.
+    fn load_opened(&mut self, cx: &mut Context<Self>) {
+        self.opened.clear();
+        self.opened_kept = None;
+        let Some(key) = self.opened_key() else {
+            return;
+        };
+        let opened = store::get::<BTreeSet<String>>(&cx.host(), &key);
+        cx.land(opened, move |chat, opened, cx| {
+            if chat.opened_key().as_ref() != Some(&key) {
+                return;
+            }
+            let kept = opened.unwrap_or_else(|refusal| {
+                cx.log_refused("the rooms opened here", &refusal);
+                None
+            });
+            let kept = kept.unwrap_or_default();
+            let grew = chat.opened.iter().any(|room| !kept.contains(room));
+            chat.opened.extend(kept);
+            chat.opened_kept = Some(key);
+            if grew {
+                chat.save_opened(cx);
+            }
+            cx.notify();
+        })
+        .detach();
+    }
+
+    // The room on screen joins the rooms opened here: settled each frame,
+    // since the list, a link and a search all open rooms.
+    pub(crate) fn settle_opened(&mut self, cx: &mut Context<Self>) {
+        let Some(room) = &self.room else {
+            return;
+        };
+        if self.opened.insert(room.id.clone()) {
+            self.save_opened(cx);
+        }
+    }
+
+    fn save_opened(&mut self, cx: &mut Context<Self>) {
+        let key = self.opened_key();
+        if key.is_none() || key != self.opened_kept {
+            return;
+        }
+        let key = key.unwrap_or_default();
+        store::set(&cx.host(), &key, Some(&self.opened));
     }
 
     fn load_reads(&mut self, key: String, cx: &mut Context<Self>) {

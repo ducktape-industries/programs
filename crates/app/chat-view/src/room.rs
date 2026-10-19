@@ -209,6 +209,16 @@ impl Chat {
             self.load_choices(cx);
         }
         self.refresh_room(change, cx);
+        // the rooms the reader listens to, which the phone lists as theirs
+        if let Some(me) = self.my_account().filter(|_| self.listening_asked) {
+            let listening = ask::Listening {
+                account: me,
+                page: PageRequest::default(),
+            };
+            if change.is_none_or(|change| change.touches::<chat::Chat, _>(&listening)) {
+                self.load_listening(cx);
+            }
+        }
     }
 
     // every room read again, in place of a read under way

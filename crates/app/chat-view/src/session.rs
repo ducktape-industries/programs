@@ -100,6 +100,28 @@ impl Chat {
         // a link that came back: the sidebar says the rooms are loading
         self.channels = Loadable::Idle;
         cx.load(self, channels(cx.host()), |chat| &mut chat.channels);
+        // the phone's next frame asks again which rooms the reader listens to
+        self.listening_asked = false;
+    }
+
+    // The rooms the reader listens to, which the phone lists as theirs.
+    pub(crate) fn load_listening(&mut self, cx: &mut Context<Self>) {
+        let Some(me) = self.my_account() else {
+            return;
+        };
+        self.listening_asked = true;
+        let read = crate::queries::listening(cx.host(), me);
+        cx.land(read, |chat, read, cx| match read {
+            Ok(rooms) => {
+                let rooms: std::collections::BTreeSet<String> = rooms.into_iter().collect();
+                if rooms != chat.listening {
+                    chat.listening = rooms;
+                    cx.notify();
+                }
+            }
+            Err(refusal) => cx.log_refused("the rooms listened to", &refusal),
+        })
+        .detach();
     }
 
     /// The network the session is on, by its label (`<label>#<salt>`).

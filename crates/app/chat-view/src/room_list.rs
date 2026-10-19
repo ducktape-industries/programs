@@ -1,6 +1,6 @@
-//! The rooms the reader can open, one list for both trees: the channels, then the direct rooms
-//! the reader holds, newest message first. A program's own rooms (`forge:…` review threads)
-//! are its to show.
+//! The rooms the reader can open: the desktop's channels then direct rooms, newest first (a
+//! program's own `forge:…` rooms its to show); the phone's the reader's own by category, then
+//! Work (job and program rooms) and All channels, both shut until opened.
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -13,6 +13,28 @@ use crate::names::dm_peer_of;
 use crate::queries;
 
 pub(crate) const CATEGORY: &str = "category";
+// the phone's two groups shut until the reader opens them
+pub(crate) const WORK: &str = "work";
+pub(crate) const ALL: &str = "all";
+
+// The phone's list: the rooms the reader is in (opened on this device,
+// owned, listened to), plain and by category; their direct rooms; Work,
+// every job (`j-…`) and program (`forge:…`) room; and All channels, the
+// other rooms.
+pub(crate) struct PhoneRooms<'a> {
+    pub mine: Vec<&'a ChannelInfo>,
+    pub sections: Vec<Section<'a>>,
+    pub dms: Vec<DmEntry<'a>>,
+    pub work: Vec<&'a ChannelInfo>,
+    pub rest: Vec<&'a ChannelInfo>,
+    // the rooms left out because they are archived
+    pub archived: usize,
+}
+
+// A job's room or a program's own (a change's review): what Work holds.
+fn is_work(info: &ChannelInfo) -> bool {
+    chat::namespace::program(&info.channel.id).is_some() || info.channel.name.starts_with("j-")
+}
 
 // A direct room in the list: the room and the other person.
 pub(crate) struct DmEntry<'a> {
@@ -29,8 +51,6 @@ pub(crate) struct RoomList<'a> {
     pub channels: Vec<&'a ChannelInfo>,
     pub sections: Vec<Section<'a>>,
     pub dms: Vec<DmEntry<'a>>,
-    // the rooms left out because they are archived
-    pub archived: usize,
 }
 
 // A row of the desktop's list the arrows stand on: a room, or a folder,
@@ -308,8 +328,46 @@ impl Chat {
         list
     }
 
+    pub(crate) fn phone_rooms(&self) -> PhoneRooms<'_> {
+        let me = self.my_account();
+        let owner = me.map(Principal::Account);
+        let (mut mine, mut work, mut rest, mut dms) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        let mut archived = 0;
+        for info in self.channels.ready().into_iter().flatten() {
+            let id = info.channel.id.as_str();
+            if info.channel.archived {
+                archived += 1;
+                continue;
+            }
+            if chat::dm_peers(id).is_some() {
+                let peer = me.and_then(|me| dm_peer_of(me, id));
+                dms.extend(peer.map(|peer| DmEntry { info, peer }));
+                continue;
+            }
+            let held = self.opened.contains(id)
+                || self.listening.contains(id)
+                || owner.as_ref() == Some(&info.channel.owner);
+            match (is_work(info), held) {
+                (true, _) => work.push(info),
+                (false, true) => mine.push(info),
+                (false, false) => rest.push(info),
+            }
+        }
+        dms.sort_by_key(|dm| Reverse(self.recency(dm)));
+        let (mine, sections) = grouped(mine);
+        PhoneRooms {
+            mine,
+            sections,
+            dms,
+            work,
+            rest,
+            archived,
+        }
+    }
+
     // the desktop's list: the same rooms, with each categorized channel
-    // filed under its section; the phone shows no categories
+    // filed under its section
     pub(crate) fn sidebar_rooms(&self) -> RoomList<'_> {
         let list = self.room_list();
         let (channels, sections) = grouped(list.channels);
@@ -370,7 +428,6 @@ impl Chat {
         let mine = self.my_account();
         let mut channels = Vec::new();
         let mut dms = Vec::new();
-        let mut archived = 0;
         for info in self.channels.ready().into_iter().flatten() {
             let id = info.channel.id.as_str();
             if chat::namespace::program(id).is_some() {
@@ -379,7 +436,6 @@ impl Chat {
             // an archived room leaves the lists, as it is archived; a link
             // or the open room still reaches it through `channels`
             if info.channel.archived {
-                archived += 1;
                 continue;
             }
             if chat::dm_peers(id).is_none() {
@@ -395,7 +451,6 @@ impl Chat {
             channels,
             sections: Vec::new(),
             dms,
-            archived,
         }
     }
 

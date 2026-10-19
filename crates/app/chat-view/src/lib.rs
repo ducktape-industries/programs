@@ -142,6 +142,7 @@ impl Render for Chat {
         self.seat_drafts();
         // names land async: the frame is the one place that sees each
         self.settle_title(cx);
+        self.settle_opened(cx);
         self.settle_showing(cx);
         self.settle_dm_heads(cx);
         self.settle_files(cx);
@@ -150,6 +151,10 @@ impl Render for Chat {
         // the one pick: a phone draws the Expo app's own screens, every
         // other window the desktop's (STRUCTURE v2)
         if window.touch() {
+            // the rooms the reader listens to: the phone's list alone holds them
+            if !self.listening_asked {
+                self.load_listening(cx);
+            }
             ui::phone::render(self, cx)
         } else {
             ui::render(self, cx).into_any_element()

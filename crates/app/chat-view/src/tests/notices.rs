@@ -86,12 +86,12 @@ fn kept_cursors_bring_the_badge_back_after_a_relaunch() {
 
     cx.simulate_click("chat-sidebar-channel-general");
     cx.run_until_parked();
-    let (key, kept) = cx
+    let (_, kept) = cx
         .host()
         .requests::<StoreSet>()
-        .pop()
+        .into_iter()
+        .rfind(|(key, _)| key.as_str() == "reads/0102")
         .expect("the read is kept");
-    assert_eq!(key, "reads/0102");
     let kept: BTreeMap<String, u64> = methods::decode(&kept.unwrap()).unwrap();
     assert_eq!(
         kept,
