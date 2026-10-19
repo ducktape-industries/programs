@@ -6,6 +6,7 @@
 //! agent.
 mod blob_put;
 mod budget;
+mod chat_channels;
 mod compact_at;
 mod config;
 mod conversations;

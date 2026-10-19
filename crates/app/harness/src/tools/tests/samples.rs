@@ -81,7 +81,14 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             "files_move",
             vec![json!({ "from": "/a/\"b\"", "to": "/a/c's", "base": null, "message": PROSE })],
         ),
-        ("chat_channels", vec![json!({}), json!({ "cursor": "ab" })]),
+        (
+            "chat_channels",
+            vec![
+                json!({}),
+                json!({ "cursor": "ab" }),
+                json!({ "name": "j-071", "cursor": null }),
+            ],
+        ),
         (
             "chat_messages",
             vec![json!({ "channel": "channel-18df9127f1a3eef4-1792310773949584", "cursor": null })],

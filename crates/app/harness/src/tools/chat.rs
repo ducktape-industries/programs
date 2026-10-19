@@ -7,6 +7,7 @@ use chat::attributed::MESSAGE;
 use chat::{ChannelInfo, MsgRow, Query, Reply};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use store::PageRequest;
 
 use super::prefix::{Prefix, prefix};
 use super::{
@@ -63,33 +64,61 @@ fn channel_schema() -> Value {
 
 #[derive(Deserialize)]
 pub(crate) struct ChannelsArgs {
+    name: Option<String>,
     cursor: Option<String>,
+}
+
+fn channels(ctx: &ExecCtx, page: PageRequest) -> Result<chat::PageResponse<ChannelInfo>, Error> {
+    match ask(ctx, Query::Channels { page })? {
+        Reply::Channels(rows) => Ok(rows),
+        other => Err(unexpected(chat::PROGRAM, "Channels", &other)),
+    }
+}
+
+fn named(info: &ChannelInfo, wanted: &str) -> bool {
+    info.channel.name.to_lowercase().contains(wanted)
+        || info.channel.id.to_lowercase().contains(wanted)
 }
 
 pub(crate) struct Channels;
 
 impl Tool for Channels {
     const NAME: &'static str = "chat_channels";
-    const DESCRIPTION: &'static str = "List the network's chat channels: id, name, whether only members post, and the newest message's seq.";
+    const DESCRIPTION: &'static str = "List the network's chat channels: id, name, whether only members post, and the newest message's seq. With name, only the channels whose name or id holds it, from every page at once.";
     type Args = ChannelsArgs;
 
     fn schema() -> Value {
-        object(json!({ "cursor": cursor_schema() }), &[])
+        object(
+            json!({
+                "name": { "type": "string", "description": "only the channels whose name or id holds this text, in any case, like j-071 or engineering" },
+                "cursor": cursor_schema(),
+            }),
+            &[],
+        )
     }
 
     fn run(ctx: &ExecCtx, _: &Seat, args: ChannelsArgs) -> Result<Run, Error> {
-        match ask(
-            ctx,
-            Query::Channels {
-                page: page(&args.cursor)?,
-            },
-        )? {
-            Reply::Channels(rows) => Ok(Run::Done(json!({
+        let mut asked = page(&args.cursor)?;
+        let Some(name) = args.name else {
+            let rows = channels(ctx, asked)?;
+            return Ok(Run::Done(json!({
                 "channels": rows.items.iter().map(channel).collect::<Vec<_>>(),
                 "next": next(&rows.next),
-            }))),
-            other => Err(unexpected(chat::PROGRAM, "Channels", &other)),
+            })));
+        };
+        let wanted = name.to_lowercase();
+        let mut kept = Vec::new();
+        loop {
+            let rows = channels(ctx, asked)?;
+            let matching = rows.items.iter().filter(|info| named(info, &wanted));
+            kept.extend(matching.map(channel));
+            let Some(after) = rows.next else { break };
+            asked = PageRequest {
+                after: Some(after),
+                ..PageRequest::default()
+            };
         }
+        Ok(Run::Done(json!({ "channels": kept, "next": null })))
     }
 }
 
