@@ -6,12 +6,13 @@ use std::collections::BTreeSet;
 use store::{KeyCodec, PageRequest, PageResponse};
 
 use crate::state::{
-    ANSWERED, CHANNEL_META, CHANNELS, HEADS, MESSAGE_IDS, REACTIONS, REPLIES, ROOTS, Stored,
-    message, messages, newest_first, stored, stored_between,
+    ANSWERED, CHANNEL_META, CHANNELS, DRAFT_PIECES, DRAFTS, HEADS, MESSAGE_IDS, REACTIONS, REPLIES,
+    ROOTS, Stored, message, messages, newest_first, stored, stored_between,
 };
 use crate::text::{fold, tag_label};
 use crate::{
-    ChannelInfo, ChannelRow, MessageHits, MsgRow, Principal, ReactedBy, Reply, plain_text, tags,
+    ChannelInfo, ChannelRow, Draft, MessageHits, MsgRow, Principal, ReactedBy, Reply, plain_text,
+    tags,
 };
 
 /// `reply` as `viewer` reads it: each reaction learns whether one of
@@ -306,6 +307,25 @@ pub(crate) fn reactors(
     Ok(reactors)
 }
 
+// who is answering in `channel_id`, each draft's pieces folded into its text
+pub(crate) fn drafts(ctx: &QueryCtx, channel_id: &str) -> Result<Vec<Draft>, Error> {
+    let held = DRAFTS.scan(ctx, DRAFTS.prefix_of(&channel_id.to_owned()))?;
+    held.into_iter()
+        .map(|((channel_id, author), draft)| {
+            let under = DRAFT_PIECES.prefix_of(&(channel_id, author.clone()));
+            let pieces = DRAFT_PIECES.scan(ctx, under)?;
+            Ok(Draft {
+                author,
+                thread: draft.thread,
+                height: draft.height,
+                time: draft.time,
+                doing: draft.doing,
+                text: pieces.into_iter().map(|(_, piece)| piece).collect(),
+            })
+        })
+        .collect()
+}
+
 /// Every message row a reply carries.
 fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
     match reply {
@@ -325,7 +345,8 @@ fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
         | Reply::Notices(_)
         | Reply::Followed(_)
         | Reply::Watching(_)
-        | Reply::Chosen { .. } => vec![],
+        | Reply::Chosen { .. }
+        | Reply::Drafts(_) => vec![],
     }
 }
 

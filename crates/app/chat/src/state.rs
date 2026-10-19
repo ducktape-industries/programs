@@ -60,6 +60,10 @@ pub const NOTICES: Map<(AccountNumber, ChannelId), Notices> = Map::new("notices/
 pub const WATCHERS: Map<(ChannelId, AccountNumber), u64> = Map::new("watcher/");
 // the channels each account watches: `(account, channel)`
 pub const WATCHING: Set<(AccountNumber, ChannelId)> = Set::new("watching/");
+// each author's draft in each room (`Op::Drafting`): `(channel, author)`
+pub const DRAFTS: Map<(ChannelId, Principal), Drafted> = Map::new("draft/");
+// a draft's text, a row per piece, folded on read: a growing draft adds a row, never rewrites one
+pub const DRAFT_PIECES: Map<(ChannelId, Principal, u64), String> = Map::new("draft-piece/");
 
 // A message as chat keeps it: the [`MsgRow`] a read answers, less what a
 // read derives (its flat text and `#tags`, from `blocks`; whether the
@@ -234,4 +238,15 @@ impl Kind for Authored {
 
 impl Kind for ChannelRow {
     const KIND: &'static str = "chat.channel";
+}
+
+// A draft as chat keeps it beside its pieces: the thread root it answers under, the block and time
+// it opened, what its author says it is doing, and how many pieces its text has.
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct Drafted {
+    pub(crate) thread: Option<Seq>,
+    pub(crate) height: u64,
+    pub(crate) time: u64,
+    pub(crate) doing: String,
+    pub(crate) pieces: u64,
 }

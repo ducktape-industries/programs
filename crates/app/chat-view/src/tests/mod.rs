@@ -13,6 +13,7 @@ use view::methods::Query as Ask;
 use view::methods::{Changes, HostId, HostSession, HostVisible, Session, Submit};
 
 mod agents;
+mod answering;
 mod archived;
 mod attachments;
 mod context_menus;
@@ -267,6 +268,8 @@ fn rooms_alone(
                 .find(|room| room.channel.id == channel_id);
             Ok(Reply::Channel(room))
         }
+        // nobody is answering in a room unless a test says so
+        Query::Drafts { .. } => Ok(Reply::Drafts(Vec::new())),
         query => answer(query),
     }
 }

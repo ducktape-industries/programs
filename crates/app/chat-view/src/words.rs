@@ -38,6 +38,15 @@ pub(crate) const SEARCH_MESSAGES: &str = "Search messages";
 /// What an agent's badge says.
 pub(crate) const AGENT: &str = "Agent";
 
+// someone answering in a room before they post: who, and what they say they are doing
+pub(crate) fn answering(name: &str) -> String {
+    format!("{name} is answering…")
+}
+
+pub(crate) fn doing(what: &str) -> String {
+    format!("{what}…")
+}
+
 pub(crate) const FIND_SOMEONE: &str = "Find a person or agent";
 pub(crate) const SEARCH_PEOPLE: &str = "Search by name or number";
 pub(crate) const NO_ONE_MATCHES: &str = "Nobody matches that name or number";

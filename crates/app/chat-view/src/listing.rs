@@ -56,6 +56,8 @@ pub(crate) struct Listing {
     pub bare: bool,
     pub state: ListState,
     pub unread: Option<u64>,
+    // who is answering in the pane, after its rows (`Chat::answering`)
+    pub answering: Vec<chat::Draft>,
 }
 
 /// The list of `pane`'s `messages`, its state spliced to their keys and
@@ -75,11 +77,13 @@ pub(crate) fn listing(
         && room
             .and_then(|room| room.thread.as_ref())
             .is_some_and(|thread| thread.replies.ready().is_some_and(Vec::is_empty));
+    let answering = chat.answering(pane);
     let keys = lead
         .then_some("intro".to_owned())
         .into_iter()
         .chain(messages.iter().map(|message| message.id.clone()))
         .chain(bare.then_some("no-replies".to_owned()))
+        .chain(answering.iter().map(answering_key))
         .collect::<Vec<_>>();
     let landing = || match shape {
         Shape::Landed => Some(landing(chat, messages) + usize::from(lead)),
@@ -103,6 +107,15 @@ pub(crate) fn listing(
         bare,
         state,
         unread,
+        answering,
+    }
+}
+
+// a draft's row key, by its author: one draft per author in a room
+pub(crate) fn answering_key(draft: &chat::Draft) -> String {
+    match &draft.author {
+        chat::Principal::Account(number) => format!("answering-{number}"),
+        chat::Principal::Root => "answering-system".to_owned(),
     }
 }
 

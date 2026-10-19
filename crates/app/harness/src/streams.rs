@@ -29,6 +29,7 @@ pub(crate) async fn streamed(ctx: &Ctx, thread: u64, event: Event) -> Result<(),
     let folded = fold(partial.clone(), &event);
     crate::replies::keep(ctx, thread, event.seq, &partial, &folded)?;
     crate::resume::moved(ctx, thread)?;
+    crate::drafts::wrote(ctx, thread, &partial, &folded, restarted).await;
     let settled = match step(&partial, &folded, restarted) {
         Step::Nothing => Settled::default(),
         Step::Restarted => void_reply(ctx, thread).await?,

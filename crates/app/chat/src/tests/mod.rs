@@ -10,6 +10,7 @@ use crate::{Op, PageRequest, PostPolicy, Principal, Query, ReactedBy, Reply, par
 mod attachments;
 mod attributed;
 mod channels;
+mod drafts;
 mod gate;
 mod legacy;
 mod mentions;

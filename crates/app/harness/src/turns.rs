@@ -405,12 +405,18 @@ pub(crate) async fn converse(ctx: &Ctx, id: u64) {
     if let Err(error) = retire(ctx, id) {
         stall(ctx, id, &error);
     }
+    crate::drafts::settled(ctx, id).await;
 }
 
 async fn drive(ctx: &Ctx, id: u64) -> Result<(), Error> {
     while let Some(step) = claim(ctx, id)? {
         if let Some(asked) = step.asked() {
             resume::watch(ctx, id, asked.wait, Some(asked.config)).await;
+            let doing = match &step {
+                Step::Compact { .. } => crate::drafts::SUMMARIZING,
+                Step::Learn { .. } | Step::Ask { .. } | Step::Again(_) => "",
+            };
+            crate::drafts::asking(ctx, id, doing).await;
         }
         match step {
             Step::Learn { asked, model } => learn(ctx, id, asked, model).await?,
@@ -761,6 +767,7 @@ pub(crate) async fn conclude(
     if thread(ctx, id)?.open_calls > 0 {
         resume::watch(ctx, id, None, Some(config)).await;
     }
+    crate::drafts::running(ctx, id, &calls).await;
     let runs = calls
         .into_iter()
         .map(|(index, call)| run_call(ctx, id, index, call));

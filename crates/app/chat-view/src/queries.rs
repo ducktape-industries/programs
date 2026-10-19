@@ -256,6 +256,11 @@ pub(crate) async fn search_hits(
     }
 }
 
+// Who is answering in a room right now: each draft, with its text so far.
+pub(crate) async fn answering(host: Host, channel_id: String) -> Result<Vec<chat::Draft>, Error> {
+    host.query(ask::Drafts { channel_id }).await
+}
+
 // an agent whose script calls harness: harness keeps whom it answers; any other agent runs
 // outside harness, and no rule of harness's says whom it answers
 pub(crate) fn run_by_harness(names: &Names, principal: &Principal) -> bool {

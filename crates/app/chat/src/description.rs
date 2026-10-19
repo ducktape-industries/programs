@@ -211,6 +211,17 @@ pub fn describe(op: &Op) -> Description {
             channel_id,
             vec![],
         ),
+        Op::Drafting {
+            channel_id,
+            text,
+            doing,
+            ..
+        } => {
+            let mut fields = vec![field("text", Value::text(text))];
+            fields.extend(doing.iter().map(|doing| field("doing", Value::text(doing))));
+            ("Answering", channel_id, fields)
+        }
+        Op::Undraft { channel_id } => ("Stop answering", channel_id, vec![]),
     };
     let mut all = place(channel);
     all.extend(fields);

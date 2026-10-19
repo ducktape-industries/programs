@@ -527,6 +527,7 @@ pub(crate) async fn dispatch(ctx: &Ctx, id: u64, index: u64) -> Result<Settled, 
                 outcome: None,
             };
             LIVE.put(ctx, &(id, index), &live);
+            crate::drafts::running(ctx, id, &[(index, call.clone())]).await;
             run_call(ctx, id, index, call).await
         }
     }

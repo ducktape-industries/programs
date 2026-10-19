@@ -609,3 +609,95 @@ fn a_stream_the_node_starts_again_mid_commit_places_its_call_once() {
     assert!(notices(chain, thread).is_empty());
     assert_eq!(thread_row(chain, thread).asking, Asking::Running);
 }
+
+fn drafts(chain: &MockChain) -> Vec<(String, String)> {
+    let asked = chat::Query::Drafts {
+        channel_id: "general".into(),
+    };
+    let chat::Reply::Drafts(drafts) = chain.query(chat::PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    drafts
+        .into_iter()
+        .map(|draft| (draft.doing, draft.text))
+        .collect()
+}
+
+fn draft(doing: &str, text: &str) -> (String, String) {
+    (doing.into(), text.into())
+}
+
+#[test]
+fn a_turn_drafts_its_text_and_its_calls_where_it_was_woken_and_its_post_takes_their_place() {
+    let world = world();
+    let chain = &world.chain;
+    let (_, request) = asked(&world);
+    assert_eq!(drafts(chain), [draft("", "")]);
+    let more = sse(json!({
+        "type": "content_block_delta", "index": 0,
+        "delta": { "type": "text_delta", "text": " now." }
+    }));
+    let events = [
+        vec![
+            began(),
+            writes(0, "Looking"),
+            more,
+            stops(0),
+            calls(1, "toolu_c", "chat_channels"),
+            input(1, "{}"),
+            stops(1),
+        ],
+        ended("tool_use").to_vec(),
+    ]
+    .concat();
+    stream(chain, &request, &events, &[0, 1]);
+    assert_eq!(drafts(chain), [draft("", "Looking")]);
+    stream(chain, &request, &events, &[2]);
+    assert_eq!(drafts(chain), [draft("", "Looking now.")]);
+    stream(chain, &request, &events, &[3, 4, 5, 6]);
+    assert_eq!(
+        drafts(chain),
+        [draft("running chat_channels", "Looking now.")]
+    );
+    from(chain, &request, &events, 7);
+    end(chain, &request, events.len() as u64);
+    assert_eq!(
+        drafts(chain),
+        [draft("running chat_channels", "Looking now.")],
+        "its call still runs"
+    );
+    ran(chain, "toolu_c");
+    assert_eq!(drafts(chain), [draft("", "")], "the next model call");
+    chain.at(5, 0);
+    let (next, _) = open_request(chain);
+    let posting = post_events("toolu_p", &[r#"{"channel":"general","text":"Done"}"#]);
+    through(chain, &next, &posting, 2);
+    assert_eq!(drafts(chain), [draft("", "On it.")]);
+    from(chain, &next, &posting, 2);
+    end(chain, &next, posting.len() as u64);
+    assert!(
+        drafts(chain).is_empty(),
+        "the post took its place, and its own call is not drawn running"
+    );
+    chain.at(6, 0);
+    relay_back(chain, "toolu_p");
+    assert_eq!(drafts(chain), [draft("", "")]);
+    chain.at(7, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Posted." }]),
+        "end_turn",
+    );
+    assert!(drafts(chain).is_empty(), "the turn is over");
+}
+
+#[test]
+fn a_turn_waiting_to_ask_its_model_again_keeps_its_draft_and_says_so() {
+    let world = world();
+    let chain = &world.chain;
+    let (_, request) = asked(&world);
+    let limited =
+        json!({ "type": "error", "error": { "type": "rate_limit_error", "message": "Slow down" } });
+    answer(chain, request.id, Answer::Output(response(429, limited)));
+    assert_eq!(drafts(chain), [draft("waiting to retry", "")]);
+}

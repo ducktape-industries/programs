@@ -32,3 +32,18 @@ harness's: every runtime and every person reads the same meta through `Query::Ch
   `meta["rules"]`, and the file through files when the value is a path.
 - chat-view shows them in the room's details, where they are set and cleared, and says "This room
   has rules" over the composer.
+
+## Drafts
+
+Someone answering in a room before they post keeps a draft there (`Op::Drafting`): its text, a
+piece at a time, what they say they are doing (`doing`, such as `running forge_read`), and the
+thread root it answers under, if any. `anew` starts the text over and keeps the block the draft
+opened at. Drafting is allowed where the author may post, and a draft under a thread names that
+thread's root. The author's post in the room takes their draft there down, and so does
+`Op::Undraft`. A draft tells nobody: it never reaches attribution. `Query::Drafts { channel_id }`
+answers who is answering in the room, each draft with its text folded from its pieces (a growing
+draft adds a row per piece and never rewrites one). An author has one draft per room: drafting
+under another thread moves it and starts its text over.
+
+harness keeps one for each turn of an agent's conversation that answers in a chat place, and
+chat-view draws each at the foot of the list it answers in ("tech is answering…").

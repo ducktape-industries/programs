@@ -310,3 +310,21 @@ pub(crate) fn chosen() -> Query {
         channel_id: room(),
     }
 }
+
+pub(crate) fn drafting() -> Op {
+    Op::Drafting {
+        channel_id: room(),
+        thread: None,
+        text: "Looking at the build".into(),
+        anew: false,
+        doing: Some("running forge_read".into()),
+    }
+}
+
+pub(crate) fn undraft() -> Op {
+    Op::Undraft { channel_id: room() }
+}
+
+pub(crate) fn drafts() -> Query {
+    Query::Drafts { channel_id: room() }
+}

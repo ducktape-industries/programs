@@ -62,8 +62,9 @@ pub use text::{plain_text, tag_ranges, tags};
 /// of `program.changes` plays back in a test to say which a block touched.
 pub mod tables {
     pub use crate::state::{
-        ANSWERED, CHANNEL_META, CHANNELS, HEADS, LISTENERS, LISTENING, MEMBERS, MENTIONED,
-        MESSAGE_IDS, MESSAGES, NOTICES, PARTICIPANTS, POSTED, REACTIONS, REPLIES, ROOTS,
+        ANSWERED, CHANNEL_META, CHANNELS, DRAFT_PIECES, DRAFTS, HEADS, LISTENERS, LISTENING,
+        MEMBERS, MENTIONED, MESSAGE_IDS, MESSAGES, NOTICES, PARTICIPANTS, POSTED, REACTIONS,
+        REPLIES, ROOTS,
     };
 }
 
@@ -194,6 +195,19 @@ pub enum Op {
     // what it chose for the room as it is
     #[tool_op(description = "Hear every new message of a channel for a wait, leaving what you chose for the room as it is.", example = examples::watch)]
     Watch { channel_id: String, watching: bool },
+    // the sender answering in a room before it posts: `text` joins its draft there (`anew`: in
+    // place of the text so far), `doing` (when given) replaces what it says it is doing, and
+    // `thread` is the root it answers under
+    #[tool_op(description = "Show that you are answering in a channel before you post: text joins your draft there (anew: in place of the text so far), doing (when given) replaces the line on what you are doing, and thread is the root you answer under. Your post in the channel takes the draft's place. Allowed where you may post; nobody is told.", example = examples::drafting)]
+    Drafting {
+        channel_id: String,
+        thread: Option<u64>,
+        text: String,
+        anew: bool,
+        doing: Option<String>,
+    },
+    #[tool_op(description = "Take down your draft in a channel.", example = examples::undraft)]
+    Undraft { channel_id: String },
 }
 
 /// A read. `viewer` is the reader's principals: they decide
@@ -364,6 +378,11 @@ pub enum Query {
         account: AccountNumber,
         channel_id: String,
     },
+    // who is answering in a room before they post (`Op::Drafting`), each with its text so far
+    #[ask(Reply::Drafts(Vec<Draft>))]
+    #[reads(state::DRAFTS, state::DRAFT_PIECES)]
+    #[tool_query(description = "Who is answering in a channel right now, before they post: each draft's author, the thread root it answers under, the block and time it opened, what it says it is doing and its text so far.", example = examples::drafts)]
+    Drafts { channel_id: String },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -392,6 +411,7 @@ pub enum Reply {
         listening: bool,
         notices: Option<Notices>,
     },
+    Drafts(Vec<Draft>),
 }
 
 /// Where an account is in a room ([`Query::Followed`]): what comes after the
@@ -642,6 +662,28 @@ pub struct MessageHits {
     pub capped: bool,
 }
 
+// Someone answering in a room before they post (`Op::Drafting`): the thread root it answers
+// under, the block and time it opened, what it says it is doing and its text so far.
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+pub struct Draft {
+    pub author: Principal,
+    pub thread: Option<u64>,
+    pub height: u64,
+    pub time: u64,
+    pub doing: String,
+    pub text: String,
+}
+
 /// The room two accounts share: `dm-<lower>-<higher>`.
 pub fn dm_channel_id(a: AccountNumber, b: AccountNumber) -> String {
     format!("dm-{}-{}", a.min(b), a.max(b))
@@ -720,6 +762,8 @@ fn op_variants_only_append() {
             "ListenFor",
             "SetNoticesFor",
             "Watch",
+            "Drafting",
+            "Undraft",
         ]
     );
 }

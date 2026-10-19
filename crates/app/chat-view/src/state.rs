@@ -376,6 +376,10 @@ pub struct Room {
     // the whole window read again, until it lands
     #[serde(skip)]
     pub(crate) rereading_all: bool,
+    // who is answering in the room right now (chat's `Drafts`), each drawn at the foot of the
+    // list it answers in
+    #[serde(skip)]
+    pub(crate) answering: Loadable<Vec<chat::Draft>>,
 }
 
 // A thread opened this session and closed: its replies, shown at once when

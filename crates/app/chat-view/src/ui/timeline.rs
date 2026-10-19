@@ -252,6 +252,7 @@ fn rows(
         bare,
         state,
         unread,
+        answering,
     } = listing(chat, pane, &messages, cx);
     let lead = lead_text.is_some();
     let (grid, active_id, cell) = grid(chat, pane, &messages, lead, &state, cx);
@@ -266,9 +267,13 @@ fn rows(
             }
             let at = index - usize::from(lead);
             let Some(message) = messages.get(at).cloned() else {
-                return match bare {
-                    true => no_replies(&theme).into_any_element(),
-                    false => div().into_any_element(),
+                let after = at - messages.len();
+                if bare && after == 0 {
+                    return no_replies(&theme).into_any_element();
+                }
+                return match answering.get(after - usize::from(bare)) {
+                    Some(draft) => super::answering::row(chat, draft, &theme, &ladder),
+                    None => div().into_any_element(),
                 };
             };
             let day = new_day(&messages, at);

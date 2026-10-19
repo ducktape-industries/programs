@@ -9,11 +9,12 @@ use crate::listen::{
     chooser, chosen, followed, listen, listened, notices_cut, set_notices, watch, watched,
 };
 use crate::ops::{
-    create_channel, delete, edit, open_dm, post, react, remove_meta, rename, set_archived,
-    set_membership, set_meta,
+    create_channel, delete, drafting, edit, open_dm, post, react, remove_meta, rename,
+    set_archived, set_membership, set_meta, undraft,
 };
 use crate::queries::{
-    around, attention, by_id, channel, channels, reactors, roots, search, seen_by, tagged, thread,
+    around, attention, by_id, channel, channels, drafts, reactors, roots, search, seen_by, tagged,
+    thread,
 };
 use crate::state::MEMBERS;
 use crate::{Op, Query, Reply};
@@ -118,6 +119,14 @@ impl Program for Chat {
                 channel_id,
                 watching,
             } => watch(ctx, &channel_id, watching),
+            Op::Drafting {
+                channel_id,
+                thread,
+                text,
+                anew,
+                doing,
+            } => drafting(ctx, &sender, &channel_id, thread, text, anew, doing),
+            Op::Undraft { channel_id } => undraft(ctx, &sender, &channel_id),
         }
     }
 
@@ -220,6 +229,7 @@ impl Program for Chat {
                 account,
                 channel_id,
             } => (chosen(ctx, account, &channel_id)?, vec![]),
+            Query::Drafts { channel_id } => (Reply::Drafts(drafts(ctx, &channel_id)?), vec![]),
         };
         seen_by(ctx, reply, viewer)
     }

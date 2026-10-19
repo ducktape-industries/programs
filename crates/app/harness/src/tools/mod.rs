@@ -18,6 +18,11 @@ mod wait;
 
 pub(crate) use chat::shown_by;
 
+// a call of chat_post: the post shows the answer itself
+pub(crate) fn posts(tool: &str) -> bool {
+    tool == <chat::Post as Tool>::NAME
+}
+
 use ::program::{
     BlobId, Error, ExecCtx, Principal, ProgramId, QueryCtx, invalid, unexpected_reply,
 };

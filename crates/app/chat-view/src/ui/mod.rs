@@ -1,6 +1,7 @@
 //! Native GPUI composition for Chat. State and program operations stay in the
 //! root view; this module only builds the element tree and installs listeners.
 
+pub(crate) mod answering;
 pub(crate) mod attachment;
 pub mod dialogs;
 pub mod menu;

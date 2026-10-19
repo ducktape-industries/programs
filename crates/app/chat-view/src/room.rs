@@ -24,6 +24,24 @@ impl Chat {
         format!("Message {}", self.room_name(&room.id))
     }
 
+    // who is answering in `pane`, drawn at the foot of its list: the room's drafts while it shows
+    // its newest rows, a thread's once every reply is in
+    pub(crate) fn answering(&self, pane: Pane) -> Vec<chat::Draft> {
+        let Some(room) = &self.room else {
+            return Vec::new();
+        };
+        let under = match (pane, &room.thread) {
+            (Pane::Timeline, _) if !room.landed => None,
+            (Pane::Thread, Some(thread)) if !thread.has_more => Some(thread.root),
+            (Pane::Timeline | Pane::Thread, _) => return Vec::new(),
+        };
+        let drafts = room.answering.ready().into_iter().flatten();
+        drafts
+            .filter(|draft| draft.thread == under)
+            .cloned()
+            .collect()
+    }
+
     /// A pane's refused read, asked again: the open thread, or the room
     /// from its newest message.
     pub(crate) fn retry_read(&mut self, pane: Pane, cx: &mut Context<Self>) {
@@ -105,6 +123,11 @@ impl Chat {
         room.members = Loadable::Idle;
         *self.timeline_drawn.borrow_mut() = Drawn::default();
         let members_id = room.id.clone();
+        let answering = queries::answering(cx.host(), members_id.clone());
+        room.answering = Loadable::Loading(cx.land(answering, |chat, answering, cx| {
+            cx.notify();
+            room_of(chat).answering = answering.into();
+        }));
         if land > 0 {
             let rows = queries::around(cx.host(), id.clone(), land, viewer);
             room.messages = Loadable::Loading(cx.land(rows, move |chat, result, cx| {
@@ -343,6 +366,12 @@ impl Chat {
         }) {
             let roster = queries::members(cx.host(), id.clone());
             cx.load(self, roster, |chat| &mut room_of(chat).members);
+        }
+        if touched(&ask::Drafts {
+            channel_id: id.clone(),
+        }) {
+            let answering = queries::answering(cx.host(), id.clone());
+            cx.load(self, answering, |chat| &mut room_of(chat).answering);
         }
         if let Some(written) = catch_up {
             self.catch_up(written, cx);

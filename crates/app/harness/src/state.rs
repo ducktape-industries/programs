@@ -115,12 +115,24 @@ pub const SEEDED: Set<(AccountNumber, String)> = Set::new("seeded/");
 pub const WATCHED: Set<u64> = Set::new("wait-watched/");
 // what each conversation was last told of each chat room's rules (`room_rules.rs`)
 pub const RULES_TOLD: Map<(u64, String), crate::room_rules::Told> = Map::new("rules-told/");
+// the chat place each conversation's turn keeps its live draft in, and what the draft last said
+// the turn was doing (`drafts.rs`)
+pub const DRAFTING: Map<u64, Drafted> = Map::new("drafting/");
+// the chat place of the last input each conversation heard, where its next turn answers unless
+// the conversation is bound to one
+pub const HEARD_AT: Map<u64, Place> = Map::new("heard-at/");
 
 // a wait for a files path: the path, and its node when the wait was armed (none: nothing there)
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct FileWatch {
     pub path: String,
     pub node: Option<files::Node>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Drafted {
+    pub place: Place,
+    pub doing: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]

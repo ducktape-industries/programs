@@ -10,8 +10,8 @@ use crate::listen::note;
 use crate::mentions::resolve_typed;
 use crate::rules;
 use crate::state::{
-    ANSWERED, CHANNEL_META, CHANNELS, HEADS, MEMBERS, MESSAGE_IDS, PARTICIPANTS, REACTIONS,
-    REPLIES, ROOTS, channel, message, newest_first, put_message, toggle,
+    ANSWERED, CHANNEL_META, CHANNELS, DRAFT_PIECES, DRAFTS, Drafted, HEADS, MEMBERS, MESSAGE_IDS,
+    PARTICIPANTS, REACTIONS, REPLIES, ROOTS, channel, message, newest_first, put_message, toggle,
 };
 use crate::{
     AccountNumber, Block, ChannelRow, MemberRow, MsgRow, PostPolicy, Principal, Reaction,
@@ -207,7 +207,7 @@ pub(crate) fn post(
     report(ctx, sender, None, &row)?;
     MESSAGE_IDS.put(ctx, &message_id, &(channel_id.clone(), seq));
     HEADS.put(ctx, &channel_id, &seq);
-    Ok(())
+    undraft(ctx, sender, &channel_id)
 }
 
 /// Reply `seq` joins the thread under `root`: the root counts it, and its
@@ -363,5 +363,69 @@ fn count_out(reactions: &mut Vec<Reaction>, emoji: &str) {
         if reactions[at].count == 0 {
             reactions.remove(at);
         }
+    }
+}
+
+// ── drafts ──────────────────────────────────────────────────────────────────
+
+// `sender` answering in a room before it posts: `text` joins its draft there as one more piece
+// (`anew`: in place of the pieces so far), `doing` replaces what it says it is doing, and the
+// draft answers under `thread`'s root or at the room's foot; one under another place starts over
+pub(crate) fn drafting(
+    ctx: &ExecCtx,
+    sender: &Principal,
+    channel_id: &str,
+    thread: Option<u64>,
+    text: String,
+    anew: bool,
+    doing: Option<String>,
+) -> Result<(), Error> {
+    rules::writable(ctx, &channel(ctx, channel_id)?, sender)?;
+    let key = (channel_id.to_owned(), sender.clone());
+    let held = DRAFTS.get(ctx, &key)?;
+    let moved = held.as_ref().is_none_or(|held| held.thread != thread);
+    if let Some(root) = thread.filter(|_| moved)
+        && message(ctx, channel_id, root)?.thread.is_some()
+    {
+        return Err(invalid("a draft answers under a thread's root"));
+    }
+    let mut draft = held.unwrap_or(Drafted {
+        thread,
+        height: ctx.env().height,
+        time: ctx.env().time,
+        doing: String::new(),
+        pieces: 0,
+    });
+    if anew || moved {
+        drop_pieces(ctx, &key, draft.pieces);
+        draft.pieces = 0;
+    }
+    draft.thread = thread;
+    if let Some(doing) = doing {
+        draft.doing = doing;
+    }
+    if !text.is_empty() {
+        let (channel_id, author) = key.clone();
+        DRAFT_PIECES.put(ctx, &(channel_id, author, draft.pieces), &text);
+        draft.pieces += 1;
+    }
+    DRAFTS.put(ctx, &key, &draft);
+    Ok(())
+}
+
+// `sender`'s draft in the room taken down with its pieces: it posted there, or stopped answering
+pub(crate) fn undraft(ctx: &ExecCtx, sender: &Principal, channel_id: &str) -> Result<(), Error> {
+    let key = (channel_id.to_owned(), sender.clone());
+    let Some(draft) = DRAFTS.get(ctx, &key)? else {
+        return Ok(());
+    };
+    drop_pieces(ctx, &key, draft.pieces);
+    DRAFTS.remove(ctx, &key);
+    Ok(())
+}
+
+fn drop_pieces(ctx: &ExecCtx, (channel_id, author): &(String, Principal), pieces: u64) {
+    for piece in 0..pieces {
+        DRAFT_PIECES.remove(ctx, &(channel_id.clone(), author.clone(), piece));
     }
 }

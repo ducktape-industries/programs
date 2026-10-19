@@ -112,6 +112,7 @@ fn rows(
         bare,
         state,
         unread,
+        answering,
     } = listing(chat, pane, &messages, cx);
     let lead = usize::from(intro.is_some());
     let (theme, ladder) = (*theme, *ladder);
@@ -125,10 +126,14 @@ fn rows(
             }
             let at = index - lead;
             let Some(message) = messages.get(at) else {
-                return match bare {
-                    true => quiet("chat-thread-no-replies", words::NO_REPLIES, &theme, &ladder)
-                        .into_any_element(),
-                    false => div().into_any_element(),
+                let after = at - messages.len();
+                if bare && after == 0 {
+                    return quiet("chat-thread-no-replies", words::NO_REPLIES, &theme, &ladder)
+                        .into_any_element();
+                }
+                return match answering.get(after - usize::from(bare)) {
+                    Some(draft) => crate::ui::answering::row(chat, draft, &theme, &ladder),
+                    None => div().into_any_element(),
                 };
             };
             // a thread runs without separators, as the Expo thread's list

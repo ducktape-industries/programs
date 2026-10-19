@@ -9,6 +9,7 @@ mod calls;
 mod codec;
 pub mod config;
 mod conversations;
+mod drafts;
 mod examples;
 mod gate;
 mod listening;
