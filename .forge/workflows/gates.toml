@@ -13,7 +13,7 @@ channel = "channel-18df9127f1a3eef4-1792310773949584"
 [[jobs]]
 id = "gates"
 runs-on = ["pods"]
-image = "localhost:5000/toolchain:5ceec8835a16@sha256:b962dfd6e1faf42c1a39faf8c65d375c124811488ea83aa7d89b353e9a2393f9"
+image = "localhost:5000/toolchain:f8ff9f00de3f@sha256:bbdcb20bbddd8035fd9a9fc0acf03330e0b4f5d00b05292bed7fd8279306b25c"
 steps = ["sh /tools/gates.sh /work/programs"]
 
 [jobs.env]
