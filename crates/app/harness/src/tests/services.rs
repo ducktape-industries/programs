@@ -493,3 +493,103 @@ fn a_pin_reads_from_the_front_matter_and_leaves_the_config_as_it_was() {
     };
     assert_eq!(pin, pinned);
 }
+
+// `account` answers through `service` with a search: its use, its result with content only that
+// account reads, and a cited answer
+fn searched(chain: &MockChain, service: &str, account: &str) {
+    let (request, _, _) = open(chain, service, "/v1/messages");
+    let body = json!({
+        "id": "msg_s",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-test",
+        "content": [
+            {
+                "type": "server_tool_use",
+                "id": "srvtoolu_1",
+                "name": "web_search",
+                "input": { "query": "ducktape" },
+            },
+            {
+                "type": "web_search_tool_result",
+                "tool_use_id": "srvtoolu_1",
+                "content": [{
+                    "type": "web_search_result",
+                    "url": "https://ducktape.example",
+                    "title": "Ducktape",
+                    "encrypted_content": "EqgfCioIARgB",
+                }],
+            },
+            {
+                "type": "text",
+                "text": "Ducktape is a network.",
+                "citations": [{
+                    "type": "web_search_result_location",
+                    "url": "https://ducktape.example",
+                    "title": "Ducktape",
+                    "encrypted_index": "Eo8BCioIAhgB",
+                    "cited_text": "Ducktape is a network.",
+                }],
+            },
+        ],
+        "stop_reason": "end_turn",
+        "usage": { "input_tokens": 10, "output_tokens": 5 }
+    });
+    let headers = [
+        ("x-ccs-account", account),
+        ("anthropic-ratelimit-unified-5h-utilization", "0.5"),
+        ("anthropic-ratelimit-unified-5h-reset", FAR),
+    ];
+    let response = http::Response {
+        status: 200,
+        headers: headers
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect(),
+        body: body.to_string().into_bytes(),
+    };
+    answer(chain, request.id, Answer::Output(abi::encode(&response)));
+}
+
+#[test]
+fn a_search_one_account_answered_reaches_another_as_plain_text_after_a_429() {
+    let world = world();
+    let chain = &world.chain;
+    two_services(&world);
+    status(chain, 2, SERVICE, &[("a", 50)]);
+    status(chain, 4, TWO, &[("c", 20)]);
+    let thread = world.mention("m1", "look it up");
+    chain.at(6, 0);
+    learned(chain, TWO, Some("c"));
+    chain.at(7, 0);
+    searched(chain, TWO, "c");
+    world.mention("m2", "and now?");
+    chain.at(8, 0);
+    let (own, _, _) = open(chain, TWO, "/v1/messages");
+    let sent = body(chain, &own).to_string();
+    assert!(
+        sent.contains("EqgfCioIARgB") && sent.contains("server_tool_use"),
+        "the account that minted it reads it as sent: {sent}"
+    );
+    says(chain, TWO, "c", LIMITED);
+    chain.at(9, 0);
+    chain.at(10, 0);
+    let (moved, _, pinned) = open(chain, SERVICE, "/v1/messages");
+    assert_eq!(pinned.as_deref(), Some("a"));
+    let sent = body(chain, &moved).to_string();
+    for minted in [
+        "EqgfCioIARgB",
+        "Eo8BCioIAhgB",
+        r#""type":"server_tool_use""#,
+        r#""type":"web_search_tool_result""#,
+    ] {
+        assert!(
+            !sent.contains(minted),
+            "{minted} reached another account: {sent}"
+        );
+    }
+    assert!(sent.contains("Ducktape https://ducktape.example"), "{sent}");
+    assert!(sent.contains("Ducktape is a network."), "{sent}");
+    says(chain, SERVICE, "a", FINE);
+    assert_eq!(route(chain, thread), on(SERVICE, "a"));
+}

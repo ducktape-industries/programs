@@ -154,13 +154,14 @@ pub(crate) fn image_side(width: u32, height: u32) -> Result<(), String> {
     }
 }
 
-fn blocks(body: &Body, looks: &[Look]) -> Vec<Value> {
+fn blocks(body: &Body, looks: &[Look], foreign: bool) -> Vec<Value> {
     match body {
         Body::Post { text, .. } => {
             let mut blocks = vec![json!({ "type": "text", "text": text })];
             blocks.extend(looks.iter().flat_map(seen));
             blocks
         }
+        Body::Turn { said, .. } if foreign => said.iter().filter_map(plain_block).collect(),
         Body::Turn { said, .. } => said.iter().filter_map(said_block).collect(),
         Body::Refused { call, problem, .. } => vec![json!({
             "type": "tool_result",
@@ -230,17 +231,65 @@ fn said_block(said: &Said) -> Option<Value> {
     }
 }
 
+// a block of a turn another account answered: a server tool's use and result, and a cited run,
+// carry what only that account reads (encrypted content, an encrypted index), so they go as text
+fn plain_block(said: &Said) -> Option<Value> {
+    let text = match said {
+        Said::ServerToolUse { name, input, .. } => format!("[{name} {input}]"),
+        Said::ServerToolResult(block) => plain_result(block),
+        Said::Cited { text, .. } => text.clone(),
+        Said::Text(_)
+        | Said::Thinking { .. }
+        | Said::RedactedThinking(_)
+        | Said::ToolUse { .. } => return said_block(said),
+    };
+    (!text.is_empty()).then(|| json!({ "type": "text", "text": text }))
+}
+
+// a server tool's result as text: each page it found (its title and address), or the page it
+// fetched and its plain text; never its encrypted content
+fn plain_result(block: &str) -> String {
+    let Ok(value) = serde_json::from_str::<Value>(block) else {
+        return String::new();
+    };
+    let kind = text_of(&value, "type");
+    let content = &value["content"];
+    let mut lines = vec![format!("[{kind}]")];
+    let page = |item: &Value| {
+        let (title, url) = (text_of(item, "title"), text_of(item, "url"));
+        (!url.is_empty()).then(|| format!("{title} {url}").trim().to_owned())
+    };
+    match content {
+        Value::Array(items) => lines.extend(items.iter().filter_map(page)),
+        Value::Object(_) => {
+            lines.extend(page(content));
+            let source = &content["content"]["source"];
+            lines.extend(
+                source["data"]
+                    .as_str()
+                    .filter(|_| source["type"] == "text")
+                    .map(str::to_owned),
+            );
+        }
+        _ => {}
+    }
+    lines.join("\n")
+}
+
 pub(crate) fn message(
     role: Role,
     frames: &[Frame],
-    looks: &Looks,
+    (looks, foreign): (&Looks, &crate::wire::Foreign),
     first: bool,
     last: bool,
 ) -> String {
     let none: Vec<Look> = Vec::new();
     let mut content: Vec<Value> = frames
         .iter()
-        .flat_map(|frame| blocks(&frame.body, looks.get(&frame.seq).unwrap_or(&none)))
+        .flat_map(|frame| {
+            let shown = looks.get(&frame.seq).unwrap_or(&none);
+            blocks(&frame.body, shown, foreign.contains(&frame.seq))
+        })
         .collect();
     if content.is_empty() {
         content.push(json!({ "type": "text", "text": "(nothing)" }));

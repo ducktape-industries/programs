@@ -52,18 +52,22 @@ pub(crate) fn header(wire: Wire, header: &Header) -> String {
     }
 }
 
+// the frames in `foreign` hold server-tool blocks another account minted, which the wire sends as
+// plain text
 pub(crate) fn message(
     wire: Wire,
     role: Role,
     frames: &[Frame],
-    looks: &Looks,
+    (looks, foreign): (&Looks, &Foreign),
     first: bool,
     last: bool,
 ) -> String {
     match wire {
-        Wire::AnthropicMessages => anthropic::message(role, frames, looks, first, last),
+        Wire::AnthropicMessages => anthropic::message(role, frames, (looks, foreign), first, last),
     }
 }
+
+pub(crate) type Foreign = std::collections::BTreeSet<u64>;
 
 // whether the model takes one image of `size` bytes, else why not
 pub(crate) fn image_size(wire: Wire, size: u64) -> Result<(), String> {

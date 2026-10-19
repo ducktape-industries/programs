@@ -17,11 +17,12 @@ use crate::pictures::{self, Looks, Picture};
 use crate::resume::{self, Failure};
 use crate::routes::{self, Picked};
 use crate::state::{
-    ENDING, FLIGHTS, FRAMES, HELD, LIVE, Live, PARTIALS, RETRIES, SEALED, SHOWN, THREADS, WITHHELD,
+    ANSWERED, ENDING, FLIGHTS, FRAMES, HELD, LIVE, Live, PARTIALS, RETRIES, SEALED, SEALED_FOR,
+    SHOWN, THREADS, WITHHELD,
 };
 use crate::tallies;
 use crate::waiting::settling;
-use crate::wire::{self, Answered, Header, Summarized, Summary};
+use crate::wire::{self, Answered, Foreign, Header, Summarized, Summary};
 use crate::{
     Asking, Body, Configured, Context, Forming, Frame, ModelRow, PART, Partial, Role, Said, Sealed,
     Stop, ThreadRow, Threshold, Window, Wire, streamed_as,
@@ -269,11 +270,44 @@ fn tail(ctx: &ExecCtx, thread: &ThreadRow) -> Result<Vec<Frame>, Error> {
         .collect())
 }
 
+// whether a turn's answerer is the account a call goes to: an unpinned call is the service's to
+// place, as it was before harness picked accounts
+fn same(service: &str, account: &Option<String>, asked: &Asked) -> bool {
+    service == asked.service && (asked.account.is_none() || *account == asked.account)
+}
+
+// the turns among `frames` whose server-tool blocks another account minted (or an answerer harness
+// did not record): only the account that answered reads them as they were sent
+fn foreign(ctx: &ExecCtx, thread: u64, frames: &[Frame], asked: &Asked) -> Result<Foreign, Error> {
+    let mut found = Foreign::new();
+    for frame in frames {
+        let Body::Turn { said, .. } = &frame.body else {
+            continue;
+        };
+        let minted = said.iter().any(|said| {
+            matches!(
+                said,
+                Said::ServerToolUse { .. } | Said::ServerToolResult(_) | Said::Cited { .. }
+            )
+        });
+        if !minted {
+            continue;
+        }
+        let answerer = ANSWERED.get(ctx, &(thread, frame.seq))?;
+        let own = answerer.is_some_and(|by| same(&by.service, &by.account, asked));
+        if !own {
+            found.insert(frame.seq);
+        }
+    }
+    Ok(found)
+}
+
 fn seal(
     ctx: &ExecCtx,
     thread: &mut ThreadRow,
-    wire: Wire,
+    asked: &Asked,
 ) -> Result<Option<(Role, Vec<Frame>)>, Error> {
+    let wire = asked.wire;
     let mut groups = grouped(tail(ctx, thread)?);
     let Some(last) = groups.pop() else {
         return Ok(None);
@@ -281,7 +315,9 @@ fn seal(
     for (role, frames) in groups {
         let end = frames[frames.len() - 1].seq;
         let looks = pictures::looks(ctx, thread.id, wire, &frames)?;
-        let message = wire::message(wire, role, &frames, &looks, opens(thread), false);
+        let foreign = foreign(ctx, thread.id, &frames, asked)?;
+        let shown = (&looks, &foreign);
+        let message = wire::message(wire, role, &frames, shown, opens(thread), false);
         let part = put_part(ctx, message)?;
         let sealed = Sealed {
             end,
@@ -316,19 +352,29 @@ fn unseal(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
     Ok(())
 }
 
-fn reseal(ctx: &ExecCtx, thread: &mut ThreadRow, wire: Wire) -> Result<(), Error> {
+// sealed parts written in another wire, or for another account than the call's, are written again:
+// what a server tool's blocks say depends on the account that reads them. Parts sealed before
+// harness kept their account were written for the thread's route
+fn reseal(ctx: &ExecCtx, thread: &mut ThreadRow, asked: &Asked) -> Result<(), Error> {
     let other_wire = sealed_parts(ctx, thread.id)?
         .iter()
-        .any(|sealed| sealed.wire != wire);
-    if other_wire {
+        .any(|sealed| sealed.wire != asked.wire);
+    let sealed_for = match SEALED_FOR.get(ctx, &thread.id)? {
+        Some(sealed_for) => Some(sealed_for),
+        None => routes::route(ctx, thread.id)?.map(|route| (route.service, route.account)),
+    };
+    let moved = sealed_for.is_some_and(|(service, account)| !same(&service, &account, asked));
+    if other_wire || moved {
         unseal(ctx, thread)?;
     }
+    let target = (asked.service.clone(), asked.account.clone());
+    SEALED_FOR.put(ctx, &thread.id, &target);
     Ok(())
 }
 
 fn turn_parts(ctx: &ExecCtx, thread: &mut ThreadRow, turn: &Turn) -> Result<Vec<BlobId>, Error> {
     let wire = turn.asked.wire;
-    let Some((role, frames)) = seal(ctx, thread, wire)? else {
+    let Some((role, frames)) = seal(ctx, thread, &turn.asked)? else {
         return Err(wrong_state("a thread with nothing said asks no model"));
     };
     let mut parts = opening(ctx, thread, turn)?;
@@ -338,7 +384,8 @@ fn turn_parts(ctx: &ExecCtx, thread: &mut ThreadRow, turn: &Turn) -> Result<Vec<
             .map(|sealed| sealed.part),
     );
     let looks = pictures::looks(ctx, thread.id, wire, &frames)?;
-    let last = wire::message(wire, role, &frames, &looks, opens(thread), true);
+    let foreign = foreign(ctx, thread.id, &frames, &turn.asked)?;
+    let last = wire::message(wire, role, &frames, (&looks, &foreign), opens(thread), true);
     parts.push(put_part(ctx, last)?);
     parts.push(put_part(ctx, wire::close(wire).into())?);
     Ok(parts)
@@ -350,7 +397,7 @@ fn summarize_parts(
     turn: &Turn,
 ) -> Result<Option<(u64, Vec<BlobId>)>, Error> {
     let wire = turn.asked.wire;
-    seal(ctx, thread, wire)?;
+    seal(ctx, thread, &turn.asked)?;
     let answered = |sealed: &Sealed| {
         let seen = sealed.end <= thread.seen;
         let allowed = thread
@@ -517,7 +564,7 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         Window::Unreported => None,
         Window::Tokens(tokens) => Some(tokens),
     };
-    reseal(ctx, thread, model.wire)?;
+    reseal(ctx, thread, &asked)?;
     let mut system = config.paragraphs();
     let bound = binding(ctx, thread)?;
     system.push(manual(agent, &thread.title, bound.as_ref()));
@@ -620,7 +667,8 @@ fn largest_unseen(ctx: &ExecCtx, thread: &ThreadRow, wire: Wire) -> Result<Optio
     });
     let sized = unseen.map(|frame| {
         let one = std::slice::from_ref(&frame);
-        let message = wire::message(wire, Role::User, one, &Looks::new(), true, false);
+        let none = (&Looks::new(), &Foreign::new());
+        let message = wire::message(wire, Role::User, one, none, true, false);
         (message.len(), frame)
     });
     Ok(sized.max_by_key(|(size, _)| *size).map(|(_, frame)| frame))

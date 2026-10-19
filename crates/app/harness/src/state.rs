@@ -115,6 +115,9 @@ pub const SEEDED: Set<(AccountNumber, String)> = Set::new("seeded/");
 pub const WATCHED: Set<u64> = Set::new("wait-watched/");
 // what each conversation was last told of each chat room's rules (`room_rules.rs`)
 pub const RULES_TOLD: Map<(u64, String), crate::room_rules::Told> = Map::new("rules-told/");
+// the service and ccs account each thread's sealed parts were written for: a server tool's blocks
+// minted on one account reach another only as plain text, so a move writes them again
+pub const SEALED_FOR: Map<u64, (String, Option<String>)> = Map::new("sealed-for/");
 // the chat place each conversation's turn keeps its live draft in, and what the draft last said
 // the turn was doing (`drafts.rs`)
 pub const DRAFTING: Map<u64, Drafted> = Map::new("drafting/");
