@@ -666,18 +666,24 @@ impl Tool for Commit {
     }
 }
 
-// Git's report of the push: the branch it moved, to `commit` on `parent`. A report that refuses
-// it fails the call in forge's words: objects forge did not take (a commit over its bounds, which
-// a new repository's first commit cannot be checked against before the repository exists) or a
-// branch it did not move.
+// Git's report of the push: the branch it moved, to `commit` on `parent`.
 fn reported(output: &[u8], commit: &str, parent: Option<&str>) -> Result<Value, Error> {
+    let branch = moved(output)?;
+    Ok(json!({ "ok": true, "pushed": branch, "commit": commit, "parent": parent }))
+}
+
+// The branch git's report of a push says forge moved. A report that refuses it fails the call in
+// forge's words: objects forge did not take (a commit over its bounds, which a new repository's
+// first commit cannot be checked against before the repository exists) or a branch it did not
+// move (`ng`: a push that does not fast-forward, a stale old head).
+pub(crate) fn moved(output: &[u8]) -> Result<String, Error> {
     let lines = pktline::Reader::new(output).filter_map(|pkt| match pkt {
         Ok(Pkt::Data(data)) => Some(String::from_utf8_lossy(pktline::strip_newline(data))),
         _ => None,
     });
     for line in lines {
         if let Some(branch) = line.strip_prefix("ok ") {
-            return Ok(json!({ "ok": true, "pushed": branch, "commit": commit, "parent": parent }));
+            return Ok(branch.to_owned());
         }
         match line.strip_prefix("unpack ") {
             Some("ok") => {}

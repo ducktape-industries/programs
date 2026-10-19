@@ -542,6 +542,32 @@ fn a_push_packs_in_the_pod_and_moves_the_branch_as_the_agent() {
     assert!(none.starts_with(code::NOT_FOUND), "{none}");
 }
 
+#[test]
+fn a_push_forge_does_not_take_fails_the_call_and_leaves_the_branch() {
+    let world = podded(super::forge_commit::forged(10_000));
+    let chain = &world.chain;
+    let thread = world.opened("m1", "push it", Some(WINDOW));
+    let first = json!({ "repo": "notes", "branch": "main", "files": [{ "path": "a.md", "content": "a" }], "message": "a" });
+    turn(chain, 3, &[("c_a", "forge_commit", first)]);
+    let a = tip(chain, "main");
+    let second = json!({ "repo": "notes", "branch": "main", "files": [{ "path": "a.md", "content": "b" }], "message": "b" });
+    turn(chain, 5, &[("c_b", "forge_commit", second)]);
+    let b = tip(chain, "main");
+    let push = json!({ "pod": POD, "path": "/work/notes", "repo": "notes", "branch": "main" });
+    turn(chain, 7, &[("p_behind", "pod_push", push)]);
+    chain.at(9, 0);
+    let (made, pack) = pod_commit(chain, &a);
+    let [row]: [RequestRow; 1] = asked(chain).try_into().unwrap();
+    let pack_id = format!("sha256:{}", abi::hex(pack.digest()));
+    let packed =
+        json!({ "commit": made, "pack": pack_id, "objects": 3, "size": 1, "kind": "pack" });
+    answer(chain, row.id, ok(packed));
+    let refused = refusal(chain, thread, "p_behind");
+    let why = "forge did not move the branch: ng refs/heads/main non-fast-forward";
+    assert!(refused.contains(why), "{refused}");
+    assert_eq!(tip(chain, "main"), b);
+}
+
 // a stream with no every at block 3, its call run at 4 (time 0); its watch at 5 (time 1000) reads
 // the pod, whose answer lands at 6 (time 2000): a block of 1 s and a trip of 1 s
 fn measured_stream(world: &World) -> (u64, RequestRow) {

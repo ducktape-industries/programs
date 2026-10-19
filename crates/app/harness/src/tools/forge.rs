@@ -5,7 +5,7 @@ mod changes;
 mod commit;
 
 pub(crate) use changes::{ChangeClose, ChangeComment, ChangeOpen};
-pub(crate) use commit::{Commit, branch_ref, found, oid, request as push_request};
+pub(crate) use commit::{Commit, branch_ref, found, moved, oid, request as push_request};
 
 use ::program::{Error, ExecCtx, invalid, not_found};
 use forge::{ChangeFilter, ChangeState, Content, EntryKind, Query, Reply, Revision};

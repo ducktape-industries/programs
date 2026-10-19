@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use store::PageRequest;
 
-use super::forge::{Commit, branch_ref, found, oid, push_request};
+use super::forge::{branch_ref, found, moved, oid, push_request};
 use super::{Run, Seat, Tool, Write, object, unexpected};
 use crate::PART;
 
@@ -390,8 +390,11 @@ impl Pushing {
             target: forge::PROGRAM.into(),
             payload: abi::encode(&op),
         }];
+        // forge's report of the push, read as forge_commit reads it: a branch forge did not move
+        // (a push that does not fast-forward) fails the call
         let read = move |output: &[u8]| {
-            let mut pushed = <Commit as Tool>::render(output)?;
+            moved(output)?;
+            let mut pushed = json!({ "ok": true });
             merged(&mut pushed, &shown);
             Ok(pushed)
         };
