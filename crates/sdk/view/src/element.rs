@@ -124,6 +124,15 @@ pub struct Lowering<'a> {
     row: Option<usize>,
     /// The state of each list lowered so far, beside that list's path.
     lists: Vec<(crate::ListState, Vec<wire::ElementIdWire>)>,
+    // The nodes lowered so far.
+    lowered: usize,
+    // For each memo being lowered, innermost last: whether it holds a list,
+    // whose rows are the list state's now, and so can't be kept.
+    opaque: Vec<bool>,
+    // The entities whose renders are being lowered, innermost last.
+    entities: Vec<u64>,
+    // A tooltip's content keeps nothing: it lowers once, when asked.
+    tooltip: bool,
 }
 
 /// An authored [`ElementId`] as the wire carries it. Every id a view can
@@ -144,6 +153,10 @@ impl<'a> Lowering<'a> {
             authored_path: Vec::new(),
             row: None,
             lists: Vec::new(),
+            lowered: 0,
+            opaque: Vec::new(),
+            entities: Vec::new(),
+            tooltip: false,
         }
     }
 
@@ -157,7 +170,130 @@ impl<'a> Lowering<'a> {
             authored_path: Vec::new(),
             row: None,
             lists: Vec::new(),
+            lowered: 0,
+            opaque: Vec::new(),
+            entities: Vec::new(),
+            tooltip: true,
         }
+    }
+
+    // The nodes this lowering lowered: an element that lowers to a node
+    // of its own counts one.
+    pub(crate) fn lowered(&self) -> usize {
+        self.lowered
+    }
+
+    // A list lowered inside a memo: the memo is lowered every frame.
+    pub(crate) fn opaque(&mut self) {
+        self.opaque.iter_mut().for_each(|opaque| *opaque = true);
+    }
+
+    // Lowers what `lower` lowers as the render of `entity`, inside the
+    // entity lowered around it: a notify of `entity` is one of each
+    // entity around it too.
+    pub(crate) fn entity(
+        &mut self,
+        entity: u64,
+        lower: impl FnOnce(&mut Self) -> wire::Node,
+    ) -> wire::Node {
+        if let Some(&parent) = self.entities.last() {
+            let mut memos = self.app.inner.memos.borrow_mut();
+            memos.parents.insert(entity, parent);
+        }
+        self.entities.push(entity);
+        let node = lower(self);
+        self.entities.pop();
+        node
+    }
+
+    // The node `memo` stands for: the one kept at its place when its deps
+    // are the ones it was kept with and its routes are still there, else
+    // the one its build lowers to now, kept for the next frame. With
+    // checks on (a debug build) a kept memo is lowered again all the same
+    // and fails, naming it, when the two differ.
+    pub(crate) fn memo(&mut self, memo: crate::memo::Memo) -> wire::Node {
+        let crate::memo::Memo {
+            id,
+            deps,
+            same,
+            build,
+        } = memo;
+        if self.tooltip {
+            let element = build(self.window, self.app);
+            return self.lower_element(element);
+        }
+        let key = crate::memo::Key {
+            path: self.authored_path.clone(),
+            row: self.row,
+            id,
+        };
+        let (kept, frame) = {
+            let mut memos = self.app.inner.memos.borrow_mut();
+            (memos.entries.remove(&key), memos.frame)
+        };
+        let mut kept = kept.filter(|kept| same(&*kept.deps, &*deps));
+        if let Some(kept) = &kept {
+            debug_assert!(
+                kept.seen != frame,
+                "two memos at {key:?}: give each its own id"
+            );
+        }
+        // a memo whose routes can't be taken again is lowered anew
+        if !self.app.inner.memo_checks.get()
+            && let Some(entry) = kept.take()
+            && slots::replay(self.slots(), &entry.journal)
+        {
+            self.row.take();
+            let dense = entry.dense.iter().cloned();
+            self.app.inner.dense.borrow_mut().extend(dense);
+            let node = entry.node.clone();
+            let entry = crate::memo::Entry {
+                seen: frame,
+                ..entry
+            };
+            self.app.inner.memos.borrow_mut().entries.insert(key, entry);
+            return node;
+        }
+        self.app.inner.memos.borrow_mut().anew.push(key.id.clone());
+        let dense_from = self.app.inner.dense.borrow().len();
+        self.opaque.push(false);
+        slots::begin_journal(self.slots());
+        let element = build(self.window, self.app);
+        let node = self.lower_element(element);
+        let journal = slots::end_journal(self.slots());
+        let opaque = self.opaque.pop().expect("its own mark");
+        assert!(
+            node.identity().is_some() || key.row.is_some(),
+            "memo {:?} lowers to a node with no id: give the element it builds one",
+            key.id
+        );
+        let mut lowered = node.clone();
+        crate::memo::without_pictures(&mut lowered);
+        if let Some(kept) = kept {
+            let (mut was, mut now) = (kept.node, lowered.clone());
+            let patches = wire::diff(&mut was, &mut now);
+            assert!(
+                patches.is_empty(),
+                "memo {:?} at {:?} was kept, but lowering it again draws something else \
+                 ({} patches, the first {:?}): its deps leave out something it reads",
+                key.id,
+                key.path,
+                patches.len(),
+                patches.first()
+            );
+        }
+        if !opaque {
+            let dense = self.app.inner.dense.borrow()[dense_from..].to_vec();
+            let entry = crate::memo::Entry {
+                deps,
+                node: lowered,
+                journal,
+                dense,
+                seen: frame,
+            };
+            self.app.inner.memos.borrow_mut().entries.insert(key, entry);
+        }
+        node
     }
 
     pub(crate) fn slots(&self) -> &slots::Context {
@@ -199,6 +335,7 @@ impl<'a> Lowering<'a> {
         // of its own: a deferred view lowers to the one its render returns
         let defers = element.defers();
         let row = if defers { None } else { self.row.take() };
+        self.lowered += usize::from(!defers);
         let segment = wire::identity::segment(element.id().map(wire_id), row);
         let entered = segment.is_some();
         if let Some(segment) = segment {
@@ -233,6 +370,7 @@ impl<'a> Lowering<'a> {
     /// window of rows, the commands waiting for it), so a second list
     /// drawing it in this frame is refused, naming both.
     pub(crate) fn draws_list(&mut self, state: &crate::ListState) {
+        self.opaque();
         if let Some((_, first)) = self.lists.iter().find(|(drawn, _)| drawn.is(state)) {
             panic!(
                 "one ListState drawn by two lists: {first:?} and {:?}; each list takes a state \

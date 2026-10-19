@@ -13,6 +13,36 @@ pub(crate) struct Driver<V: View> {
     /// How many times the root rendered: what `TestAppContext::renders`
     /// reads.
     pub(crate) renders: u64,
+    pub(crate) spent: Spent,
+}
+
+// What the ticks so far spent in the view, summed: the time it took to
+// render its root into elements, to lower them (a child entity and a list
+// row render as they are lowered) and to diff the tree against the last,
+// on a native clock, and the nodes it lowered. A test host reads them per
+// tick.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Spent {
+    pub render: std::time::Duration,
+    pub lower: std::time::Duration,
+    pub diff: std::time::Duration,
+    pub lowered: usize,
+}
+
+// A wasm view has no clock to read (`Instant::now` panics there), so it
+// times nothing.
+#[cfg(not(target_arch = "wasm32"))]
+type Clock = std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+struct Clock;
+#[cfg(target_arch = "wasm32")]
+impl Clock {
+    fn now() -> Self {
+        Clock
+    }
+    fn elapsed(&self) -> std::time::Duration {
+        std::time::Duration::ZERO
+    }
 }
 impl<V: View> Drop for Driver<V> {
     fn drop(&mut self) {
@@ -52,6 +82,7 @@ impl<V: View> Driver<V> {
             last_root: None,
             busy: false,
             renders: 0,
+            spent: Spent::default(),
         }
     }
     pub fn entity(&self) -> Entity<V> {
@@ -96,14 +127,7 @@ impl<V: View> Driver<V> {
         // next view names those pictures by hash alone, and that is
         // the same tree — and the tree the host keeps, which drops the
         // bytes the same way once it has the pictures.
-        kept.for_each_mut(&mut |node| match node {
-            wire::Node::Svg {
-                source: wire::SvgSource::Data { bytes, .. },
-                ..
-            } => *bytes = None,
-            wire::Node::Image { data, .. } => *data = None,
-            _ => {}
-        });
+        crate::memo::without_pictures(kept);
     }
 
     fn tick_wire(&mut self, events: Vec<wire::Event>) -> wire::Frame {
@@ -237,6 +261,7 @@ impl<V: View> Driver<V> {
             }
             wire::Event::Pointer { touch } => {
                 if self.app.inner.touch.replace(touch) != touch {
+                    self.app.inner.memos.borrow_mut().forget();
                     self.app.notify();
                 }
                 None
@@ -245,12 +270,14 @@ impl<V: View> Driver<V> {
                 let side = |v: f32| px(if v.is_finite() { v.max(0.) } else { 0. });
                 let viewport = gpui::size(side(width), side(height));
                 if self.app.inner.viewport.replace(viewport) != viewport {
+                    self.app.inner.memos.borrow_mut().forget();
                     self.app.notify();
                 }
                 None
             }
             wire::Event::Offset { minutes } => {
                 crate::design::set_utc_offset(minutes);
+                self.app.inner.memos.borrow_mut().forget();
                 self.app.notify();
                 None
             }
@@ -265,6 +292,7 @@ impl<V: View> Driver<V> {
             wire::Event::Resync => {
                 self.last_root = None;
                 slots::clear_pictures(&self.app.inner.slots);
+                self.app.inner.memos.borrow_mut().forget();
                 self.app.notify();
                 None
             }
@@ -315,7 +343,9 @@ impl<V: View> Driver<V> {
         let unchanged = match (&mut root, &mut self.last_root) {
             (None, _) => true,
             (Some(root), Some(last)) => {
+                let started = Clock::now();
                 patches = wire::diff_taking(last, root);
+                self.spent.diff += started.elapsed();
                 patches.is_empty()
             }
             (Some(_), None) => false,
@@ -350,12 +380,18 @@ impl<V: View> Driver<V> {
     ) -> Vec<wire::Style> {
         let mut styles = self.app.inner.styles.borrow_mut();
         if let Some(root) = whole {
+            // the table starts over, numbered anew: the subtrees kept for
+            // the next frame are parts of this tree, renumbered with it
+            let mut memos = self.app.inner.memos.borrow_mut();
             styles.retain(|visit| {
                 let contents = tooltips
                     .iter_mut()
                     .filter_map(|response| response.content.as_deref_mut());
                 for tree in std::iter::once(root).chain(contents) {
                     tree.for_each_mut(&mut |node| node.styles_mut(visit));
+                }
+                for entry in memos.entries.values_mut() {
+                    entry.node.for_each_mut(&mut |node| node.styles_mut(visit));
                 }
             });
         }
@@ -365,10 +401,12 @@ impl<V: View> Driver<V> {
     fn render_root(&mut self) -> wire::Node {
         self.renders += 1;
         slots::begin_frame(&self.app.inner.slots);
+        self.app.inner.memos.borrow_mut().begin_frame();
         self.app.inner.uniform_lists.begin_frame();
-        let entity = &self.entity;
+        let (entity, spent) = (&self.entity, &mut self.spent);
         let root = self.app.update(|app| {
             let mut window = app.window();
+            let started = Clock::now();
             let element = {
                 let mut cx = Context {
                     app,
@@ -380,9 +418,16 @@ impl<V: View> Driver<V> {
                     .render(&mut window, &mut cx)
                     .into_element()
             };
-            Lowering::new(&mut window, app).lower_element(element)
+            spent.render += started.elapsed();
+            let started = Clock::now();
+            let mut lowering = Lowering::new(&mut window, app);
+            let root = lowering.entity(entity.id, |lowering| lowering.lower_element(element));
+            spent.lowered += lowering.lowered();
+            spent.lower += started.elapsed();
+            root
         });
         slots::end_frame(&self.app.inner.slots);
+        self.app.inner.memos.borrow_mut().end_frame();
         self.app.inner.uniform_lists.end_frame();
         root
     }

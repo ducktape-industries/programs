@@ -148,7 +148,7 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     let mut index = 0;
     for info in room_list.channels {
         let id = info.channel.id.as_str();
-        let row = channel_button(chat, info, open == Some(id), index == at, cx, theme);
+        let row = channel_row(chat, info, open == Some(id), index == at, cx, theme);
         box_ = box_.child(row);
         index += 1;
     }
@@ -160,7 +160,7 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         ));
         for info in section.channels {
             let id = info.channel.id.as_str();
-            let row = channel_button(chat, info, open == Some(id), index == at, cx, theme);
+            let row = channel_row(chat, info, open == Some(id), index == at, cx, theme);
             box_ = box_.child(row);
             index += 1;
         }
@@ -171,9 +171,22 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         new_dm(cx, theme),
         theme,
     ));
+    let names = std::rc::Rc::new(chat.names.ready().cloned());
     for crate::room_list::DmEntry { info, peer } in room_list.dms {
         let selected = open == Some(info.channel.id.as_str());
-        let row = dm_button(chat, info, peer, selected, index == at, cx, theme, ladder);
+        let active = index == at;
+        let room = &info.channel.id;
+        let read = (chat.unread(info), super::room_menu::waits(chat, room));
+        let deps = (info.clone(), peer, selected, active, read, names.clone());
+        let (info, theme, ladder) = (info.clone(), *theme, *ladder);
+        let row = cx.memo(
+            format!("chat-sidebar-dm-{peer}"),
+            deps,
+            move |chat, _, cx| {
+                dm_button(chat, &info, peer, selected, active, cx, &theme, &ladder)
+                    .into_any_element()
+            },
+        );
         box_ = box_.child(row);
         index += 1;
     }
@@ -264,6 +277,26 @@ fn quiet(id: impl Into<ElementId>, text: impl Into<String>, theme: &Theme) -> im
         .text_size(design::text::CAPTION)
         .text_color(theme.sidebar_muted)
         .child(text.into())
+}
+
+// A channel's row, drawn again only when what it shows moved.
+fn channel_row(
+    chat: &Chat,
+    info: &ChannelInfo,
+    selected: bool,
+    active: bool,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+) -> AnyElement {
+    let room = &info.channel.id;
+    let read = (chat.unread(info), super::room_menu::waits(chat, room));
+    let deps = (info.clone(), selected, active, read);
+    let (info, theme) = (info.clone(), *theme);
+    let id = format!("chat-sidebar-channel-{}", info.channel.id);
+    cx.memo(id, deps, move |chat, _, cx| {
+        channel_button(chat, &info, selected, active, cx, &theme)
+    })
+    .into_any_element()
 }
 
 fn channel_button(

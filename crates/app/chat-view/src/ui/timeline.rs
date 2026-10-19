@@ -256,6 +256,7 @@ fn rows(
     let lead = lead_text.is_some();
     let (grid, active_id, cell) = grid(chat, pane, &messages, lead, &state, cx);
     let theme = *theme;
+    let shared = message::Shared::of(chat);
     let list = gpui_list(
         shape.id(),
         state,
@@ -270,38 +271,37 @@ fn rows(
                     false => div().into_any_element(),
                 };
             };
-            let day = new_day(&messages, at)
-                .map(|day| day_marker(&message.id, day, &theme).into_any_element());
-            let unread = (unread == Some(message.seq)).then(|| unread_marker(&theme));
+            let day = new_day(&messages, at);
+            let unread = unread == Some(message.seq);
             let active = (active_id.as_ref() == Some(&message.id)).then_some(cell);
-            let id = message.id.clone();
-            let marked = format!("chat-message-{id}-marked");
             let set = (at + 1, messages.len());
-            let (card, controls) =
-                message::card(chat, message, pane, active, set, cx, &theme, &ladder);
-            if active.is_some() {
-                let cursor = chat.cursor_mut(pane);
-                cursor.controls = controls;
-                cursor.controls_of = Some(id);
-            }
-            if day.is_none() && unread.is_none() {
-                return card;
-            }
-            // The markers sit outside the card, which is the grid's row,
-            // so the list's row is this wrapper: it carries the message's
-            // key, as a bare card does, and the card under it is filed by
-            // its message wherever the row moves. Full width, as a bare
-            // card is: a row shrunk to its words took the hover and the
-            // action strip with it
-            div()
-                .id(marked)
-                .w_full()
-                .flex()
-                .flex_col()
-                .children(day)
-                .children(unread)
-                .child(card)
-                .into_any_element()
+            // the row is drawn again only when what it reads moved
+            let deps = message::RowDeps {
+                seen: message::Seen::of(chat, pane, &message),
+                message: message.clone(),
+                pane,
+                active,
+                set,
+                markers: (day.clone(), unread),
+                shared: shared.clone(),
+                ladder,
+            };
+            let id = message.id.clone();
+            let row = format!("chat-message-{id}-drawn");
+            cx.memo(row, deps, move |chat, _, cx| {
+                row_of(
+                    chat,
+                    message,
+                    (day, unread),
+                    pane,
+                    active,
+                    set,
+                    cx,
+                    &theme,
+                    &ladder,
+                )
+            })
+            .into_any_element()
         }),
     )
     .with_sizing_behavior(ListSizingBehavior::Auto)
@@ -309,6 +309,53 @@ fn rows(
     .min_h(px(0.))
     .w_full();
     grid.flex().flex_col().flex_1().min_h(px(0.)).child(list)
+}
+
+// A message's row in the list: its card, under the day and unread markers
+// where it opens a day or the unread messages.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the card's own arguments, and the markers above it"
+)]
+fn row_of(
+    chat: &mut Chat,
+    message: ChatMessage,
+    (day, unread): (Option<String>, bool),
+    pane: Pane,
+    active: Option<usize>,
+    set: (usize, usize),
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    let day = day.map(|day| day_marker(&message.id, day, theme).into_any_element());
+    let unread = unread.then(|| unread_marker(theme));
+    let id = message.id.clone();
+    let marked = format!("chat-message-{id}-marked");
+    let (card, controls) = message::card(chat, message, pane, active, set, cx, theme, ladder);
+    if active.is_some() {
+        let cursor = chat.cursor_mut(pane);
+        cursor.controls = controls;
+        cursor.controls_of = Some(id);
+    }
+    if day.is_none() && unread.is_none() {
+        return card;
+    }
+    // The markers sit outside the card, which is the grid's row,
+    // so the list's row is this wrapper: it carries the message's
+    // key, as a bare card does, and the card under it is filed by
+    // its message wherever the row moves. Full width, as a bare
+    // card is: a row shrunk to its words took the hover and the
+    // action strip with it
+    div()
+        .id(marked)
+        .w_full()
+        .flex()
+        .flex_col()
+        .children(day)
+        .children(unread)
+        .child(card)
+        .into_any_element()
 }
 
 /// "Jump to latest", when the timeline is not at its live tail.

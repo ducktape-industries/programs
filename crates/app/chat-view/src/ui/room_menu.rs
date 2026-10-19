@@ -65,6 +65,13 @@ fn room_item(
 // The sidebar row of `room` opens its menu under a right press, at the
 // pointer, and from assistive tech's "show menu" under the row, which
 // says where it is while the menu waits to open there.
+// The room's menu waits to open under its row, which says where it is.
+pub fn waits(chat: &Chat, room: &str) -> bool {
+    chat.room_menu
+        .as_ref()
+        .is_some_and(|menu| menu.room == room && menu.at.is_none())
+}
+
 pub fn row(row: Stateful<Div>, room: &str, chat: &Chat, cx: &mut Context<Chat>) -> Stateful<Div> {
     let pressed = room.to_owned();
     let open = cx.listener(move |chat, event: &MouseDownEvent, window, cx| {
@@ -74,10 +81,7 @@ pub fn row(row: Stateful<Div>, room: &str, chat: &Chat, cx: &mut Context<Chat>) 
     let show = cx.listener(move |chat, _: &(), window, cx| {
         chat.open_room_menu(asked.clone(), None, window, cx)
     });
-    let waits = chat
-        .room_menu
-        .as_ref()
-        .is_some_and(|menu| menu.room == room && menu.at.is_none());
+    let waits = waits(chat, room);
     let placed = cx.listener(|chat, bounds: &Bounds<Pixels>, window, cx| {
         chat.place_room_menu(*bounds, window, cx)
     });

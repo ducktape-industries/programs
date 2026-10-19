@@ -18,6 +18,92 @@ use rich::rich_line;
 use view::design::Ladder;
 
 const PENDING_OPACITY: f32 = 0.5;
+
+// What a message's row reads: the message, where it stands in the pane,
+// what the reader is doing with it, and what every row reads alike. A row
+// whose deps are the ones it was drawn with is drawn as it was
+// (`Context::memo`).
+#[derive(PartialEq)]
+pub(crate) struct RowDeps {
+    pub message: ChatMessage,
+    pub pane: Pane,
+    pub active: Option<usize>,
+    pub set: (usize, usize),
+    pub markers: (Option<String>, bool),
+    pub seen: Seen,
+    pub shared: std::rc::Rc<Shared>,
+    pub ladder: Ladder,
+}
+
+// What the reader is doing with one message: its menu is open, it is in
+// the copy range, the pointer is on it, who chose its reactions, and how
+// far each file it carries has been read (its picture, by the image held,
+// and whether Save has its chunks).
+#[derive(PartialEq)]
+pub(crate) struct Seen {
+    chosen: bool,
+    ranged: bool,
+    pointed: bool,
+    reactors: Option<std::collections::BTreeMap<String, Vec<Principal>>>,
+    files: Vec<Option<(Option<usize>, bool)>>,
+}
+
+impl Seen {
+    pub(crate) fn of(chat: &Chat, pane: Pane, message: &ChatMessage) -> Self {
+        let seq = message.seq;
+        Self {
+            chosen: chat
+                .menu
+                .as_ref()
+                .is_some_and(|menu| menu.pane == pane && menu.seq == seq),
+            ranged: chat.copy.is_some_and(|range| range.holds(pane, seq)),
+            pointed: chat.pointer_on((pane, seq)),
+            reactors: chat
+                .room
+                .as_ref()
+                .and_then(|room| room.reactors.get(&seq))
+                .cloned(),
+            files: message
+                .blocks
+                .iter()
+                .filter_map(|block| match block {
+                    Block::Attachment(file) => Some(file),
+                    _ => None,
+                })
+                .map(|file| {
+                    let shown = chat.shown_files.get(&(file.path.clone(), file.snapshot));
+                    shown.map(|shown| {
+                        let picture = shown.picture.as_ref();
+                        let picture =
+                            picture.map(|picture| std::sync::Arc::as_ptr(picture) as usize);
+                        (picture, shown.chunks.is_some())
+                    })
+                })
+                .collect(),
+        }
+    }
+}
+
+// What every row of a frame reads alike: the names, whether the reader
+// may write, and the room a program's post links to. Made once a frame.
+#[derive(PartialEq)]
+pub(crate) struct Shared {
+    names: Option<Names>,
+    writable: bool,
+    chain: String,
+    room: String,
+}
+
+impl Shared {
+    pub(crate) fn of(chat: &Chat) -> std::rc::Rc<Self> {
+        std::rc::Rc::new(Self {
+            names: chat.names.ready().cloned(),
+            writable: chat.may_write(),
+            chain: chat.session.chain_id.clone(),
+            room: chat.room_id(),
+        })
+    }
+}
 /// How far the action strip hangs over the card's top edge: half of the
 /// strip, which is 26 tall (24 px buttons inside a 1 px border).
 const STRIP_OVERHANG: f32 = 13.;

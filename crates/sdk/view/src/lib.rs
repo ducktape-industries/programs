@@ -56,6 +56,8 @@ pub use primitives::{
 };
 pub use rich_text::{InteractiveText, StyledText};
 pub use view_element::{AnyView, ViewElement};
+mod memo;
+pub use memo::{Memo, memo};
 pub use web::{Web, WebHandle, WebState, web};
 
 /// Every SDK name a view file writes, in one import:
@@ -77,15 +79,15 @@ pub mod prelude {
         Global, Host, HoverListenerMode, Hsla, Image, ImageFormat, Input, InteractiveElement,
         InteractiveText, IntoElement, KeyDownEvent, KeyUpEvent, List, ListAlignment,
         ListHorizontalSizingBehavior, ListOffset, ListScrollEvent, ListSizingBehavior, ListState,
-        Loadable, MediaState, MediaStatus, MicHandle, ModifiersChangedEvent, MouseButton,
+        Loadable, MediaState, MediaStatus, Memo, MicHandle, ModifiersChangedEvent, MouseButton,
         MouseDownEvent, MouseExitEvent, MouseMoveEvent, MousePressureEvent, MouseUpEvent,
         ObjectFit, ParentElement, PinchEvent, Pixels, Playback, Render, RenderOnce, Role,
         ScrollHandle, ScrollStrategy, ScrollWheelEvent, SharedString, StatefulInteractiveElement,
         Styled, StyledImage, StyledText, Subscription, Task, TextField, TextInputAction, Textarea,
         Theme, Tint, TrackState, UniformListScrollHandle, View, VirtualKeyboard, WebHandle,
         WebState, Window, anchored, camera, canvas, deferred, design, div, export_notifier,
-        export_view, hsla, img, list, microphone, modal_overlay, px, remote_audio, remote_video,
-        rems, resize_handle, rgb, sensor, sheet, svg, uniform_list, web,
+        export_view, hsla, img, list, memo, microphone, modal_overlay, px, remote_audio,
+        remote_video, rems, resize_handle, rgb, sensor, sheet, svg, uniform_list, web,
     };
 }
 mod text;

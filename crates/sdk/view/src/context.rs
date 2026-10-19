@@ -41,6 +41,10 @@ pub(crate) struct AppState {
     pub alive: Cell<bool>,
     pub globals: RefCell<Rc<Globals>>,
     pub uniform_lists: crate::element::UniformLists,
+    // The subtrees kept from the last frame, and each entity's notifies.
+    pub memos: RefCell<crate::memo::Cache>,
+    // Whether a kept memo is lowered again and held to what it kept.
+    pub memo_checks: Cell<bool>,
     /// The ids each press [`design::dense`](crate::design::dense) marked is
     /// filed under, in the tree last lowered: the presses
     /// [`assert_fits`](crate::testing::assert_fits) lets stay under a
@@ -90,6 +94,8 @@ impl App {
                 alive: Cell::new(true),
                 globals: RefCell::new(globals),
                 uniform_lists: Default::default(),
+                memos: RefCell::default(),
+                memo_checks: Cell::new(cfg!(debug_assertions)),
                 dense: RefCell::default(),
                 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
                 root: Cell::new(None),
@@ -149,6 +155,8 @@ impl App {
         self.set_shared_global(TypeId::of::<G>(), Rc::new(global));
     }
     pub(crate) fn set_shared_global(&mut self, kind: TypeId, global: Rc<dyn Any>) {
+        // any subtree may read a global
+        self.inner.memos.borrow_mut().forget();
         self.refresh_globals();
         Rc::make_mut(&mut self.globals).insert(kind, global);
         *self.inner.globals.borrow_mut() = self.globals.clone();
@@ -438,10 +446,27 @@ impl<V> Context<'_, V> {
     }
 }
 impl<V: 'static> Context<'_, V> {
+    // [`memo`](crate::memo), built by a method of this entity: `build`
+    // runs on it, as a listener does, only when the memo is lowered anew.
+    pub fn memo<D: PartialEq + 'static, E: crate::IntoElement>(
+        &self,
+        id: impl Into<gpui::ElementId>,
+        deps: D,
+        build: impl FnOnce(&mut V, &mut Window, &mut Context<V>) -> E + 'static,
+    ) -> crate::Memo {
+        let entity = self.entity();
+        crate::memo(id, deps, move |window, app| {
+            entity.update_in_window(app, window, |view, window, cx| {
+                crate::IntoElement::into_any_element(build(view, window, cx))
+            })
+        })
+    }
     /// The view renders on the next tick, whichever entity notified; and
     /// what [`observe`](Self::observe)s this entity hears it.
     pub fn notify(&mut self) {
         self.app.notify();
+        let id = self.entity.id;
+        self.app.inner.memos.borrow_mut().notified(id);
         self.app
             .inner
             .events

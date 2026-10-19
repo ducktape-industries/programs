@@ -102,7 +102,7 @@ struct Key {
 /// it is a number that stands for the path so far; [`ROOT`] is around the
 /// outermost. A scope is looked up by these three, exactly: two paths
 /// never share a number.
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 struct ScopeKey {
     within: Option<u32>,
     parent: u32,
@@ -154,6 +154,19 @@ struct Routes {
     /// `marks` says where each scope's counters start.
     counters: Vec<(Kind, u32)>,
     marks: Vec<usize>,
+    // The journals of the memos being lowered, innermost last.
+    journals: Vec<Journal>,
+}
+
+// What a memo's lowering took from the route table: the keys and the
+// scopes it looked up, how many scopes were open around it, and the number
+// of the one it sat in, once it took a route.
+#[derive(Default)]
+pub(crate) struct Journal {
+    keys: Vec<Key>,
+    scopes: Vec<ScopeKey>,
+    depth: usize,
+    base: Option<u32>,
 }
 
 impl Routes {
@@ -179,6 +192,9 @@ impl Routes {
                 parent,
                 segment,
             };
+            for journal in &mut self.journals {
+                journal.scopes.push(key.clone());
+            }
             parent = match self.scopes.entry(key) {
                 Entry::Occupied(mut slot) => {
                     slot.get_mut().seen = self.frame;
@@ -222,6 +238,9 @@ impl Routes {
             kind,
             ordinal,
         };
+        for journal in &mut self.journals {
+            journal.keys.push(key);
+        }
         let id = match self.ids.entry(key) {
             Entry::Occupied(mut slot) => {
                 slot.get_mut().seen = self.frame;
@@ -239,6 +258,65 @@ impl Routes {
         };
         self.live.insert(id, route);
         id
+    }
+
+    // A memo starts lowering: the routes it takes are written down, so a
+    // later frame that keeps it keeps them too.
+    fn begin_journal(&mut self) {
+        self.journals.push(Journal {
+            depth: self.open.len(),
+            ..Journal::default()
+        });
+    }
+
+    fn end_journal(&mut self) -> Journal {
+        let mut journal = self.journals.pop().expect("a journal begun");
+        if !journal.keys.is_empty() {
+            journal.base = Some(match journal.depth.checked_sub(1) {
+                None => ROOT,
+                Some(at) => match self.open.get(at) {
+                    Some(Open::Numbered(number)) => *number,
+                    _ => unreachable!("a route numbers every scope around it"),
+                },
+            });
+        }
+        journal
+    }
+
+    // A kept memo takes its routes again, as the frame that lowered it took
+    // them: the same ids for the same listeners. False, and nothing taken,
+    // when one of them is gone or the scope around it is another.
+    fn replay(&mut self, journal: &Journal) -> bool {
+        let Some(base) = journal.base else {
+            return true;
+        };
+        if self.open.len() != journal.depth || self.scope() != base {
+            return false;
+        }
+        let held = journal.keys.iter().all(|key| self.ids.contains_key(key))
+            && journal
+                .scopes
+                .iter()
+                .all(|key| self.scopes.contains_key(key));
+        if !held {
+            return false;
+        }
+        let frame = self.frame;
+        for key in &journal.keys {
+            if let Some(slot) = self.ids.get_mut(key) {
+                slot.seen = frame;
+            }
+        }
+        for key in &journal.scopes {
+            if let Some(slot) = self.scopes.get_mut(key) {
+                slot.seen = frame;
+            }
+        }
+        for outer in &mut self.journals {
+            outer.keys.extend_from_slice(&journal.keys);
+            outer.scopes.extend(journal.scopes.iter().cloned());
+        }
+        true
     }
 
     fn get(&self, id: u32) -> Option<Rc<dyn Any>> {
@@ -360,6 +438,18 @@ pub(crate) fn enter_scope(context: &Context, segment: ElementIdWire) {
 
 pub(crate) fn leave_scope(context: &Context) {
     context.0.borrow_mut().routes.leave_scope();
+}
+
+pub(crate) fn begin_journal(context: &Context) {
+    context.0.borrow_mut().routes.begin_journal();
+}
+
+pub(crate) fn end_journal(context: &Context) -> Journal {
+    context.0.borrow_mut().routes.end_journal()
+}
+
+pub(crate) fn replay(context: &Context, journal: &Journal) -> bool {
+    context.0.borrow_mut().routes.replay(journal)
 }
 
 /// The root is about to lower a frame.
@@ -539,6 +629,44 @@ mod tests {
             .collect();
         numbered.sort();
         assert_eq!(numbered, ["button", "page"]);
+    }
+
+    // A memo's routes, taken again from its journal, keep their ids through
+    // a frame that does not lower them, and go with the first frame that
+    // neither lowers nor keeps it.
+    #[test]
+    fn a_journal_keeps_the_routes_a_memo_took() {
+        let mut routes = Routes::default();
+        let page = || ElementIdWire::Name("page".into());
+        routes.frame += 1;
+        routes.begin_lowering(None);
+        routes.enter_scope(page());
+        routes.begin_journal();
+        routes.enter_scope(ElementIdWire::Name("row".into()));
+        let id = routes.take(Kind::Click, Rc::new(()));
+        routes.leave_scope();
+        let journal = routes.end_journal();
+        routes.leave_scope();
+        routes.end_frame();
+
+        routes.frame += 1;
+        routes.begin_lowering(None);
+        routes.enter_scope(page());
+        assert!(routes.replay(&journal));
+        routes.leave_scope();
+        routes.end_frame();
+        assert!(routes.get(id).is_some(), "the kept route lives on");
+
+        routes.frame += 1;
+        routes.begin_lowering(None);
+        routes.enter_scope(ElementIdWire::Name("elsewhere".into()));
+        assert!(!routes.replay(&journal), "another scope is another place");
+        routes.leave_scope();
+        routes.end_frame();
+        assert!(
+            routes.get(id).is_none(),
+            "a frame without the memo frees it"
+        );
     }
 
     #[test]

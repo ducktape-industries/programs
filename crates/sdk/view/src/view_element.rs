@@ -7,17 +7,33 @@ type ViewRenderer = Box<dyn FnOnce(&mut crate::Window, &mut crate::App) -> AnyEl
 /// child entity in its parent's tree, or a tooltip's content.
 pub struct AnyView {
     render: ViewRenderer,
+    entity: u64,
+    cached: bool,
 }
 
 impl<V: crate::Render> From<crate::Entity<V>> for AnyView {
     fn from(entity: crate::Entity<V>) -> Self {
+        let id = entity.id;
         Self {
             render: Box::new(move |window, app| {
                 entity.update_in_window(app, window, |view, window, cx| {
                     view.render(window, cx).into_any_element()
                 })
             }),
+            entity: id,
+            cached: false,
         }
+    }
+}
+
+impl AnyView {
+    // Kept as it was last lowered while its entity, and every entity drawn
+    // inside it, has not notified: gpui's `cached`. Its render reads only
+    // its own state and what it observes, and its root has an id; a debug
+    // build lowers each reuse again and fails where the two differ.
+    pub fn cached(mut self) -> Self {
+        self.cached = true;
+        self
     }
 }
 
@@ -32,7 +48,47 @@ impl<V: crate::Render> IntoElement for crate::Entity<V> {
 
 impl RenderOnce for AnyView {
     fn render(self, window: &mut crate::Window, cx: &mut crate::App) -> impl IntoElement {
-        (self.render)(window, cx)
+        let entity = self.entity;
+        let inner = match self.cached {
+            true => {
+                let version = cx.inner.memos.borrow().version(entity);
+                crate::memo::Memo {
+                    id: crate::memo::MemoId::Entity(entity),
+                    deps: Box::new(version),
+                    same: crate::memo::same::<u64>,
+                    build: self.render,
+                }
+                .into_any_element()
+            }
+            false => (self.render)(window, cx),
+        };
+        Entered { entity, inner }
+    }
+}
+
+// An entity's render, lowered as that entity's: a notify inside it is one
+// of every entity it is drawn in.
+struct Entered {
+    entity: u64,
+    inner: AnyElement,
+}
+
+impl Element for Entered {
+    fn defers(&self) -> bool {
+        true
+    }
+
+    fn lower(self: Box<Self>, lowering: &mut Lowering<'_>) -> wire::Node {
+        let Self { entity, inner } = *self;
+        lowering.entity(entity, |lowering| lowering.lower_element(inner))
+    }
+}
+
+impl IntoElement for Entered {
+    type Element = Self;
+
+    fn into_element(self) -> Self {
+        self
     }
 }
 

@@ -602,8 +602,13 @@ fn a_tick_reports_what_it_rendered_and_sent() {
     let first = cx.reports()[0];
     assert!(first.rendered && first.patches == 0 && first.bytes > 0);
     assert_eq!(first.nodes, cx.root().count());
+    assert!(first.lowered > 0, "a first frame lowers the tree");
     let quiet = cx.tick(Vec::new());
     assert!(!quiet.rendered && quiet.patches == 0 && !quiet.busy);
+    assert_eq!(
+        quiet.lowered, 0,
+        "a tick that renders nothing lowers nothing"
+    );
     cx.simulate_focus("list");
     cx.simulate_key_down("list", "down");
     let key = cx.reports()[0];

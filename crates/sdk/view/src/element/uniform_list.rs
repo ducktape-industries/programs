@@ -220,6 +220,7 @@ impl Element for UniformList {
             None => (None, 0),
         };
         let scroll = self.scroll.as_ref().map(|handle| &handle.0);
+        lowering.opaque();
         let viewport = lowering.window.viewport_size().height;
         let (route, ranges) = lowering.app.inner.uniform_lists.route(
             &path,

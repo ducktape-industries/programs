@@ -479,6 +479,29 @@ subscriptions, and build both in `attach`, so a restore builds them again.
 A child is not a `View`: it logs with `cx.host().log(..)`.
 `tests/gpui_entities.rs` is the whole of it.
 
+## Keeping a subtree
+
+Every frame a view renders lowers its whole tree, and most of a frame's
+cost is that lowering. A subtree that reads little can be kept instead.
+`memo(id, deps, |window, cx| element)` (or `cx.memo(id, deps, |view,
+window, cx| ..)`, which builds on the entity) is lowered once and kept while
+`deps` compare equal to the ones it was kept with: a row's
+`memo(format!("row-{seq}"), (row.clone(), hovered), ..)`. `id` is unique
+among its siblings, the element it builds has an id (or is a list row), and
+`deps` hold everything the build reads. A child entity drawn
+`AnyView::from(entity).cached()` is kept while it, and every entity drawn
+inside it, has not notified (gpui's `cached`); its render must read only its
+own state and what it observes. Everything a subtree may read lowers every
+memo again: a global (the theme), the pane's size, the device, the reader's
+offset, a resync, and a frame sent whole. A memo holding a list is lowered
+every frame (its rows are the list's state now); memos inside the list's
+rows are kept. Picture bytes and routes stay the host's and the kept
+subtree's. In a debug build every reuse is lowered again and held to what
+was kept, failing with the memo's id where they differ: a missing dep is a
+failing test, not a stale screen (`TestAppContext::memo_checks(false)` sees
+what a release build does, and a test that counts `TickReport::lowered`
+turns it off). `src/tests/memo.rs` is the whole of it.
+
 ## Exporting
 
 `export_view!(View)` (`src/lib.rs`) writes the five wasm exports and the
@@ -548,7 +571,9 @@ app's file does (`keep(key, &value)` seeds it, `kept::<T>(key)` reads it),
 and a test's own `handle::<StoreGet>` still answers in its place. Then
 `simulate_click`, `simulate_input`, `simulate_event` and a typed
 `simulate_*` per event; `texts`, `find`, `node(key).style()`/`.text()`/
-`.children()`, `interactivity`, `last_frame`, and a `TickReport` per tick.
+`.children()`, `interactivity`, `last_frame`, and a `TickReport` per tick
+(whether it rendered, the nodes it lowered, the patches and bytes it sent,
+and the time it spent rendering, lowering, diffing and encoding).
 Keys go where the host sends them: `simulate_focus` (or a click, or the
 view's own `Window::focus`) puts the keyboard on a node, and a key goes
 down its focus path to the capture listeners and back up it; a key at a

@@ -11,7 +11,8 @@ use crate::{
 };
 
 trait TestDriver {
-    fn tick(&mut self, events: Vec<Event>) -> (Frame, usize);
+    fn tick(&mut self, events: Vec<Event>) -> (Frame, usize, std::time::Duration);
+    fn spent(&self) -> crate::driver::Spent;
     fn app_mut(&mut self) -> &mut App;
     fn host(&self) -> Host;
     fn snapshot(&self) -> Result<Vec<u8>, String>;
@@ -19,8 +20,15 @@ trait TestDriver {
 }
 impl<V: View> TestDriver for Driver<V> {
     /// The frame the host gets, and its size on the wire.
-    fn tick(&mut self, events: Vec<Event>) -> (Frame, usize) {
-        self.tick_with(events, |frame| (frame.clone(), wire::encode(frame).len()))
+    fn tick(&mut self, events: Vec<Event>) -> (Frame, usize, std::time::Duration) {
+        self.tick_with(events, |frame| {
+            let started = std::time::Instant::now();
+            let bytes = wire::encode(frame).len();
+            (frame.clone(), bytes, started.elapsed())
+        })
+    }
+    fn spent(&self) -> crate::driver::Spent {
+        self.spent
     }
     fn app_mut(&mut self) -> &mut App {
         self.app_mut()
@@ -50,6 +58,16 @@ pub struct TickReport {
     pub bytes: usize,
     pub requests: usize,
     pub busy: bool,
+    // Nodes the view lowered for the tick: the whole tree when it rendered
+    // and kept nothing.
+    pub lowered: usize,
+    // The time the view spent rendering its root into elements, lowering
+    // them, diffing the tree against the last, and encoding the frame: a
+    // native test's measure of a tick's cost, on this machine's clock.
+    pub render: std::time::Duration,
+    pub lower: std::time::Duration,
+    pub diff: std::time::Duration,
+    pub encode: std::time::Duration,
 }
 
 /// One view and its [`FakeHost`], driven as the app drives it: every
@@ -173,6 +191,20 @@ impl TestAppContext {
     pub fn ticks(&self) -> u64 {
         self.ticks
     }
+    // Whether a memo kept from the last frame is lowered again and held to
+    // what it kept, failing the test where they differ: on in a debug
+    // build. Off, the view keeps what it kept, as a release build does: a
+    // test that counts what a tick lowers turns it off.
+    pub fn memo_checks(&mut self, on: bool) {
+        self.app_mut().inner.memo_checks.set(on);
+    }
+    // The memos the last frame the view rendered lowered anew, by id, in
+    // the order it reached them: a test pins that an input lowers only
+    // the subtrees it changed.
+    pub fn memos_lowered(&mut self) -> Vec<String> {
+        let memos = self.app_mut().inner.memos.borrow();
+        memos.anew.iter().map(ToString::to_string).collect()
+    }
     /// The ticks the last `simulate_*`, `run_until_parked` or `tick` ran,
     /// in order.
     pub fn reports(&self) -> &[TickReport] {
@@ -245,9 +277,10 @@ impl TestAppContext {
         let mut owed = self.host.take_events();
         owed.extend(events);
         let driver = self.driver.as_mut().expect("open a view first");
-        let renders = driver.renders();
-        let (frame, bytes) = driver.tick(owed);
+        let (renders, spent) = (driver.renders(), driver.spent());
+        let (frame, bytes, encode) = driver.tick(owed);
         let rendered = driver.renders() > renders;
+        let now = driver.spent();
         self.dense = driver.app_mut().inner.dense.borrow().clone();
         self.ticks += 1;
         let host = driver.host();
@@ -285,6 +318,11 @@ impl TestAppContext {
             bytes,
             requests: frame.requests.len(),
             busy: frame.busy,
+            lowered: now.lowered - spent.lowered,
+            render: now.render - spent.render,
+            lower: now.lower - spent.lower,
+            diff: now.diff - spent.diff,
+            encode,
         };
         self.move_focus(&frame, dialogs.unwrap_or_default());
         let mut told = self.adopt();

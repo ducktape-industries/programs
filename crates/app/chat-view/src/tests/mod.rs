@@ -17,6 +17,7 @@ mod archived;
 mod attachments;
 mod categories;
 mod context_menus;
+mod cost;
 mod dms;
 mod menus;
 mod message;
