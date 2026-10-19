@@ -74,7 +74,6 @@ dependencies = [
 name = "activity"
 version = "0.1.0"
 dependencies = [
- "abi",
  "borsh",
  "describe",
  "program",
@@ -524,7 +523,6 @@ version = "0.1.0"
 dependencies = [
  "abi",
  "blob",
- "borsh",
  "describe",
  "program",
  "valset",
@@ -2242,13 +2240,11 @@ version = "0.1.0"
 dependencies = [
  "abi",
  "access",
- "base64 0.22.1",
  "borsh",
  "chat",
  "ducklink",
  "forge",
  "founding",
- "futures",
  "gitcore",
  "identity",
  "ownership",
@@ -2762,7 +2758,6 @@ name = "halo"
 version = "0.1.0"
 dependencies = [
  "abi",
- "borsh",
  "describe",
  "program",
  "store",
@@ -3141,7 +3136,6 @@ dependencies = [
  "describe",
  "design",
  "program",
- "serde",
  "store",
 ]
 
@@ -3586,7 +3580,6 @@ dependencies = [
  "activity",
  "chat",
  "ducklink",
- "futures",
  "identity",
  "programs",
  "serde",
@@ -3720,7 +3713,6 @@ name = "node-view"
 version = "0.1.0"
 dependencies = [
  "abi",
- "futures",
  "identity",
  "programs",
  "serde",
@@ -6331,7 +6323,6 @@ dependencies = [
  "serde_json",
  "slotmap",
  "strum",
- "unicode-segmentation",
  "uuid",
  "view-wire",
  "wasmparser 0.251.0",

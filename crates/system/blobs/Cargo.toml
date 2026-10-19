@@ -13,7 +13,6 @@ describe = []
 [dependencies]
 abi = { workspace = true }
 blob = { workspace = true }
-borsh = { workspace = true }
 describe = { workspace = true }
 program = { workspace = true }
 

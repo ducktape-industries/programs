@@ -20,6 +20,5 @@ abi = { workspace = true }
 design = { workspace = true }
 describe = { workspace = true }
 borsh = { workspace = true }
-serde = { workspace = true }
 program = { workspace = true }
 store = { workspace = true }

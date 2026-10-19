@@ -11,7 +11,6 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-futures.workspace = true
 view.workspace = true
 identity.workspace = true
 activity.workspace = true

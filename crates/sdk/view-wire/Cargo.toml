@@ -44,7 +44,6 @@ memchr = "2"
 # A node's variant name for a report (`Refused::At`): already built for
 # gpui-pre, derive included.
 strum = { version = "0.28", features = ["derive"] }
-unicode-segmentation = "1"
 
 # Honor the actual Serde shapes in views without carrying unrelated parser arms.
 # Native hosts retain the full MessagePack deserializer.

@@ -12,7 +12,7 @@ pub use gitcore::{
     Commit, Hash, Kind, Limits, MemoryObjects, Mode, Object, Objects, Oid, Signature, Tree,
     TreeEntry, pack,
 };
-pub use program::{Blob, BlobId, Cause, Env, HashKind, Origin, code};
+pub use program::{Blob, BlobId, Env, HashKind, Origin, code};
 pub use program::{MockHost, Program};
 
 pub mod sandbox;
