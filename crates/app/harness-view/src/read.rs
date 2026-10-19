@@ -1,12 +1,14 @@
 //! Every read the screens make: the roster (agents, their threads and topics, room names, nodes
 //! serving each service and relay, the time), one agent in full (access lists, topics, tallies,
 //! bound conversations), one transcript as far as its list shows it, the models and services.
+use std::cell::RefCell;
+use std::cmp::Reverse;
 use std::collections::{BTreeSet, HashMap};
 
 use egress::{RELAY, ServiceRow};
 use harness::{
     AgentSetup, Asking, Awaited, Body, CallRow, Frame, ModelRow, Partial, SettleWindow, Tally,
-    ThreadRow, ToolInfo, Usage, WaitRow, WithheldFrame,
+    ThreadRow, ToolInfo, Usage, WaitRow, WithheldFrame, Written,
 };
 use identity::{Category, Kind, Ownership, PageRequest};
 use program::Writers;
@@ -98,7 +100,80 @@ async fn card(host: &Host, agent: u64) -> Result<Option<AgentSetup>, Error> {
     host.query(harness::ask::Card { agent }).await
 }
 
-pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error> {
+// What the roster's last read held of each agent's conversations, and what harness wrote
+// since: a read asks again only for what moved (`roster`).
+#[derive(Default)]
+pub(crate) struct Known {
+    threads: HashMap<u64, Vec<ThreadRow>>,
+    // the conversations whose rows harness wrote, the agents whose list of them it wrote
+    moved: BTreeSet<u64>,
+    agents: BTreeSet<u64>,
+    everything: bool,
+}
+
+impl Known {
+    pub(crate) fn heard(&mut self, written: &[Written]) {
+        for wrote in written {
+            match wrote {
+                Written::Thread(thread) => {
+                    self.moved.insert(*thread);
+                }
+                Written::Agent(agent) => {
+                    self.agents.insert(*agent);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // nothing held is trusted: the next read asks for every agent's conversations again
+    pub(crate) fn forget(&mut self) {
+        self.everything = true;
+    }
+}
+
+// an agent's held conversations, newest first, each one that moved as its own read found it
+fn updated(
+    agent: u64,
+    held: &[ThreadRow],
+    moved: &BTreeSet<u64>,
+    read: &HashMap<u64, Option<ThreadRow>>,
+) -> Vec<ThreadRow> {
+    let kept = held.iter().filter(|row| !moved.contains(&row.id));
+    let mut threads: Vec<ThreadRow> = kept.cloned().collect();
+    let found = read.values().flatten().filter(|row| row.agent == agent);
+    threads.extend(found.cloned());
+    threads.sort_by_key(|row| Reverse(row.id));
+    threads
+}
+
+pub(crate) async fn roster(
+    host: Host,
+    me: Option<u64>,
+    known: &RefCell<Known>,
+) -> Result<Roster, Error> {
+    // what moved since the last read, taken now: what harness writes while this one runs is
+    // the next read's
+    let (held, moved, whole) = {
+        let mut known = known.borrow_mut();
+        let mut held = std::mem::take(&mut known.threads);
+        if std::mem::take(&mut known.everything) {
+            held.clear();
+        }
+        let moved = std::mem::take(&mut known.moved);
+        (held, moved, std::mem::take(&mut known.agents))
+    };
+    // each conversation that moved, read alone, unless its agent's whole list is read again
+    let mut read = HashMap::new();
+    for &thread in &moved {
+        let listed = held
+            .iter()
+            .any(|(agent, rows)| whole.contains(agent) && rows.iter().any(|row| row.id == thread));
+        if !listed {
+            read.insert(thread, host.query(harness::ask::Thread { thread }).await?);
+        }
+    }
+    let mut fresh = HashMap::new();
     let tip = host
         .ask::<ChainBlocks>(BlockPage {
             before: None,
@@ -112,8 +187,9 @@ pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error>
     let mut serving: HashMap<String, usize> = HashMap::new();
     serving.insert(RELAY.to_owned(), served(&host, RELAY).await?);
     let mut agents = Vec::new();
-    // ponytail: one Agent and one Threads read per agent; a harness query of every agent's live
-    // state when networks run many agents
+    // one Card read per agent; its conversations come from the last read, each one harness
+    // wrote since read alone, and the whole list only for an agent whose list moved (or one the
+    // last read didn't hold)
     for account in accounts
         .iter()
         .filter(|account| calls_harness(&account.kind()))
@@ -131,12 +207,17 @@ pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error>
             }
             count = serving.get(&service).copied();
         }
-        let threads = host
-            .query_all(|after| harness::ask::Threads {
-                agent,
-                page: page(after),
-            })
-            .await?;
+        let threads = match held.get(&agent).filter(|_| !whole.contains(&agent)) {
+            Some(rows) => updated(agent, rows, &moved, &read),
+            None => {
+                host.query_all(|after| harness::ask::Threads {
+                    agent,
+                    page: page(after),
+                })
+                .await?
+            }
+        };
+        fresh.insert(agent, threads.clone());
         let topic = match crate::words::spoken_of(&threads) {
             Some(thread) => topic(&host, thread.id).await?,
             None => None,
@@ -167,6 +248,7 @@ pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error>
         .into_iter()
         .map(|info| (info.channel.id, info.channel.name))
         .collect();
+    known.borrow_mut().threads = fresh;
     Ok(Roster {
         agents,
         unscripted,

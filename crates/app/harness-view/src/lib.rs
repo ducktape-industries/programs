@@ -79,6 +79,9 @@ pub struct Agents {
     // a change heard while the roster or the agent is read reads it once more when it lands
     #[serde(skip)]
     again: Again,
+    // what the roster's last read held of each agent's conversations, and what moved since
+    #[serde(skip)]
+    known: Rc<RefCell<read::Known>>,
     // what blocks wrote to the open conversation since its last read of them, and that read
     #[serde(skip)]
     touched: Touched,
@@ -304,6 +307,7 @@ impl View for Agents {
                     if reader {
                         // another reader's roster: the one being read is the last one's
                         view.roster = Loadable::Idle;
+                        view.known.borrow_mut().forget();
                         view.read_roster(cx);
                     }
                     cx.notify();
@@ -369,6 +373,7 @@ impl Render for Agents {
 impl Agents {
     /// Everything on screen read again: the roster, and what the screen reads besides.
     fn refresh(&mut self, cx: &mut Context<Self>) {
+        self.known.borrow_mut().forget();
         self.read_roster(cx);
         self.read_budget(cx);
         self.read_screen(cx);
@@ -382,6 +387,7 @@ impl Agents {
             .iter()
             .filter_map(|key| harness::written(key.as_slice()))
             .collect();
+        self.known.borrow_mut().heard(&written);
         let roster = written.iter().any(|wrote| {
             matches!(
                 wrote,
@@ -442,10 +448,14 @@ impl Agents {
             return;
         }
         let (host, me, again) = (cx.host(), self.me, self.again.roster.clone());
+        let known = self.known.clone();
         let read = async move {
             loop {
                 again.set(false);
-                let roster = read::roster(host.clone(), me).await;
+                let roster = read::roster(host.clone(), me, &known).await;
+                if roster.is_err() {
+                    known.borrow_mut().forget();
+                }
                 if !again.get() {
                     return roster;
                 }

@@ -22,6 +22,15 @@ fn wrote(height: u64, written: &[Written]) -> Option<Change> {
     })
 }
 
+// how many times the view read `agent`'s list of conversations
+fn lists_read(cx: &TestAppContext, agent: u64) -> usize {
+    let asked = cx.host().requests::<Query<harness::Harness>>();
+    let lists = asked
+        .iter()
+        .filter(|query| matches!(query, harness::Query::Threads { agent: of, .. } if *of == agent));
+    lists.count()
+}
+
 fn open_thread(cx: &mut TestAppContext) {
     cx.simulate_click("agent-12");
     cx.run_until_parked();
@@ -156,4 +165,63 @@ fn the_list_reads_cards_and_no_prompts() {
     let prompt = |query: &harness::Query| matches!(query, harness::Query::Agent { .. });
     assert!(asked.iter().any(card), "{asked:?}");
     assert!(!asked.iter().any(prompt), "{asked:?}");
+}
+
+// The roster read every agent's whole list of conversations on each block of harness, egress,
+// identity, files or access: it now reads alone each conversation harness wrote.
+#[test]
+fn a_block_that_writes_a_conversation_reads_it_alone_and_no_agents_list() {
+    let (mut cx, shared) = seated(Net::default(), EDDY);
+    let changes = cx.host().stream::<Changes<harness::Harness>>();
+    cx.run_until_parked();
+    assert!(cx.has_text("1 open · 1 closed"), "{:?}", cx.texts());
+    let lists = (lists_read(&cx, SCOUT), lists_read(&cx, ATLAS));
+    shared.borrow_mut().threads[0].closed = true;
+    changes.send(wrote(10, &[Written::Thread(7)]));
+    cx.run_until_parked();
+    assert!(cx.has_text("0 open · 2 closed"), "{:?}", cx.texts());
+    assert_eq!((lists_read(&cx, SCOUT), lists_read(&cx, ATLAS)), lists);
+    let asked = cx.host().requests::<Query<harness::Harness>>();
+    assert!(
+        asked.contains(&harness::Query::Thread { thread: 7 }),
+        "{asked:?}"
+    );
+}
+
+#[test]
+fn a_new_conversation_reads_its_agents_list_again_and_no_other() {
+    let (mut cx, shared) = seated(Net::default(), EDDY);
+    let changes = cx.host().stream::<Changes<harness::Harness>>();
+    cx.run_until_parked();
+    let lists = (lists_read(&cx, SCOUT), lists_read(&cx, ATLAS));
+    shared
+        .borrow_mut()
+        .threads
+        .push(thread(11, SCOUT, EDDY, "chat/ops"));
+    changes.send(wrote(10, &[Written::Thread(11), Written::Agent(SCOUT)]));
+    cx.run_until_parked();
+    assert!(cx.has_text("2 open · 1 closed"), "{:?}", cx.texts());
+    assert_eq!(lists_read(&cx, SCOUT), lists.0 + 1);
+    assert_eq!(lists_read(&cx, ATLAS), lists.1);
+}
+
+#[test]
+fn a_block_of_another_program_reads_no_list_and_a_feed_that_comes_back_reads_every_one() {
+    let (mut cx, _) = seated(Net::default(), EDDY);
+    let files = cx.host().stream::<Changes<files::Files>>();
+    let changes = cx.host().stream::<Changes<harness::Harness>>();
+    cx.run_until_parked();
+    let lists = (lists_read(&cx, SCOUT), lists_read(&cx, ATLAS));
+    files.send(Some(Change {
+        height: 10,
+        keys: Vec::new(),
+    }));
+    cx.run_until_parked();
+    assert_eq!((lists_read(&cx, SCOUT), lists_read(&cx, ATLAS)), lists);
+    changes.send(None);
+    cx.run_until_parked();
+    assert_eq!(
+        (lists_read(&cx, SCOUT), lists_read(&cx, ATLAS)),
+        (lists.0 + 1, lists.1 + 1)
+    );
 }
