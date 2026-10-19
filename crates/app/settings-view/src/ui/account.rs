@@ -50,8 +50,10 @@ pub(super) fn account(
             let keys = account.keys.iter().enumerate().map(|(i, key)| {
                 key_row(i, key.label.as_deref().unwrap_or("Key"), key, theme, ladder)
             });
-            let picture = view.picture(cx);
-            let presses = super::photo::presses(view, account.avatar.is_some(), cx, ladder, theme);
+            let picture = view.picture(account.avatar, cx);
+            let has_picture = account.avatar.is_some();
+            let presses =
+                super::photo::presses(view, account.number, has_picture, cx, ladder, theme);
             column("settings/account/data")
                 .gap_0()
                 .child(who(&account.name, &about, picture, presses, theme))
@@ -412,6 +414,12 @@ fn agent(
                 .text_size(design::text::CAPTION)
                 .text_color(theme.muted),
         );
+    let face = shared::agent_face(
+        agent,
+        view.picture(agent.avatar, cx),
+        design::size::AVATAR,
+        theme,
+    );
     let row = div()
         .id(format!("settings/agents/{number}"))
         .flex()
@@ -419,10 +427,7 @@ fn agent(
         .items_center()
         .gap(design::space::LG)
         .py(design::space::MD)
-        .child(
-            shared::agent_face(agent, design::size::AVATAR, theme)
-                .font_weight(FontWeight::SEMIBOLD),
-        )
+        .child(face.font_weight(FontWeight::SEMIBOLD))
         .child(body)
         .when(!revoked, |row| {
             row.child(actions(view, agent, renaming, cx, theme))
@@ -435,6 +440,9 @@ fn agent(
             theme,
         )
     });
+    let photo_refused = view
+        .photo_stopped(number)
+        .and_then(|form| problem(&format!("agents/{number}/photo"), form, "", theme));
     let answers = (!revoked).then(|| answers(view, agent, cx, theme, ladder));
     div()
         .id(format!("settings/agents/{number}/card"))
@@ -445,6 +453,7 @@ fn agent(
         .when(revoked, |card| card.opacity(0.6))
         .child(row)
         .children(renamed)
+        .children(photo_refused)
         .children(answers)
         .into_any_element()
 }
@@ -623,9 +632,10 @@ fn people(
         .child(adding)
 }
 
-/// An agent's presses: Rename (Save while its field is open, with
-/// Cancel), Suspend or Resume, Revoke. Suspend and Revoke are confirmed
-/// by the host before the key signs them: one press here.
+// An agent's presses: Rename (Save while its field is open, with
+// Cancel), Change photo and Remove photo, Suspend or Resume, Revoke.
+// Suspend and Revoke are confirmed by the host before the key signs them:
+// one press here.
 fn actions(
     view: &Settings,
     agent: &Agent,
@@ -649,6 +659,32 @@ fn actions(
     });
     let cancel = cx
         .listener(move |v: &mut Settings, _: &ClickEvent, _, cx| v.cancel_rename_agent(number, cx));
+    let change = view.reads_files.then(|| {
+        let pressed =
+            cx.listener(move |v: &mut Settings, _: &ClickEvent, _, cx| v.change_photo(number, cx));
+        submit(
+            &format!("settings/agents/{number}/photo/change"),
+            words::CHANGE_PHOTO,
+            words::OPENING,
+            view.photo_opening(number),
+            false,
+            theme,
+            pressed,
+        )
+    });
+    let remove = agent.avatar.is_some().then(|| {
+        let pressed =
+            cx.listener(move |v: &mut Settings, _: &ClickEvent, _, cx| v.remove_photo(number, cx));
+        submit(
+            &format!("settings/agents/{number}/photo/remove"),
+            words::REMOVE_PHOTO,
+            words::REMOVING,
+            view.photo_removing(number),
+            false,
+            theme,
+            pressed,
+        )
+    });
     let busy = view.agent_standing.busy;
     div()
         .id(format!("settings/agents/{number}/actions"))
@@ -681,6 +717,8 @@ fn actions(
                 .on_click(cancel),
             )
         })
+        .children(change)
+        .children(remove)
         .child(submit(
             &format!("settings/agents/{number}/{toggle}"),
             toggle_label,

@@ -42,6 +42,9 @@ pub struct Settings {
     // Change photo, from the pick to the save, and Remove photo
     pub(crate) change_photo: Form,
     pub(crate) remove_photo: Form,
+    // the account Change or Remove photo was last pressed for: the seated
+    // account or an agent it manages
+    pub(crate) photo_of: Option<u64>,
     // the picked picture in the crop sheet: a restored view has none open
     #[serde(skip)]
     pub(crate) photo: Option<Photo>,

@@ -16,10 +16,11 @@ const SHEET: &str = "settings/photo";
 const THUMB: Pixels = design::space::BLOCK;
 const STEP: Pixels = design::space::SM;
 
-// Change photo where the host reads a picked file, Remove photo while there
-// is a picture, and what stopped either.
+// The seated account's (`number`) Change photo where the host reads a
+// picked file, Remove photo while there is a picture, and what stopped either.
 pub(crate) fn presses(
     view: &Settings,
+    number: u64,
     has_picture: bool,
     cx: &mut Context<Settings>,
     ladder: &Ladder,
@@ -28,31 +29,32 @@ pub(crate) fn presses(
     if !view.reads_files && !has_picture {
         return None;
     }
-    let reading = view.change_photo.busy && view.photo.is_none();
+    let reading = view.photo_opening(number);
     let change = view.reads_files.then(|| {
-        let pressed = cx.listener(|v: &mut Settings, _: &ClickEvent, _, cx| v.change_photo(cx));
+        let pressed =
+            cx.listener(move |v: &mut Settings, _: &ClickEvent, _, cx| v.change_photo(number, cx));
         let label = match reading {
             true => words::OPENING,
             false => words::CHANGE_PHOTO,
         };
         design::button("settings/photo/change", label, ladder, theme, pressed)
             .kind(Kind::Outline)
-            .busy(view.change_photo.busy)
+            .busy(view.photo_of == Some(number) && view.change_photo.busy)
     });
     let remove = has_picture.then(|| {
-        let pressed = cx.listener(|v: &mut Settings, _: &ClickEvent, _, cx| v.remove_photo(cx));
-        let label = match view.remove_photo.busy {
+        let pressed =
+            cx.listener(move |v: &mut Settings, _: &ClickEvent, _, cx| v.remove_photo(number, cx));
+        let label = match view.photo_removing(number) {
             true => words::REMOVING,
             false => words::REMOVE_PHOTO,
         };
         design::button("settings/photo/remove", label, ladder, theme, pressed)
             .kind(Kind::Quiet)
-            .busy(view.remove_photo.busy)
+            .busy(view.photo_removing(number))
     });
-    let stopped = [&view.change_photo, &view.remove_photo]
-        .into_iter()
-        .filter(|_| view.photo.is_none())
-        .find_map(|form| refused("settings/photo/refused", form, ladder, theme));
+    let stopped = view
+        .photo_stopped(number)
+        .and_then(|form| refused("settings/photo/refused", form, ladder, theme));
     Some(
         div()
             .flex()

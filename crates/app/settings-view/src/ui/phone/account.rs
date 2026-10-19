@@ -160,8 +160,15 @@ fn seat_pane(
             .child(who(
                 &account.name,
                 about(account),
-                view.picture(cx),
-                crate::ui::photo::presses(view, account.avatar.is_some(), cx, ladder, theme),
+                view.picture(account.avatar, cx),
+                crate::ui::photo::presses(
+                    view,
+                    account.number,
+                    account.avatar.is_some(),
+                    cx,
+                    ladder,
+                    theme,
+                ),
                 ladder,
                 theme,
             ))

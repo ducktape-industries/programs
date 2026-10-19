@@ -49,6 +49,10 @@ pub struct Agent {
     #[serde(with = "view::borsh_bytes")]
     pub ownership: Ownership,
     pub names: BTreeMap<u64, String>,
+    // its card's picture and bio, which its manager sets as their own
+    #[serde(with = "view::borsh_bytes")]
+    pub avatar: Option<abi::BlobId>,
+    pub bio: Option<String>,
 }
 
 impl Agent {
@@ -176,6 +180,8 @@ async fn agents(host: &Host, manager: u64) -> Result<Vec<Agent>, Error> {
             number,
             keys: agent.keys().len(),
             name: agent.card.name,
+            avatar: agent.card.avatar,
+            bio: agent.card.bio,
             kind,
             ownership,
             names,

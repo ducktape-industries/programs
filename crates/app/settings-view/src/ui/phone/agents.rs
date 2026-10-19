@@ -48,7 +48,7 @@ pub(super) fn pane(
     let rows: Vec<_> = account
         .agents
         .iter()
-        .map(|agent| agent_row(agent, cx, ladder, theme))
+        .map(|agent| agent_row(view, agent, cx, ladder, theme))
         .collect();
     let create = cx.listener(|v: &mut Settings, _: &ClickEvent, window, cx| {
         v.open_sheet(Sheet::CreateAgent, cx);
@@ -122,6 +122,7 @@ fn add_row(
 
 /// One agent's row; a press opens its sheet, a revoked one's too.
 fn agent_row(
+    view: &Settings,
     agent: &Agent,
     cx: &mut Context<Settings>,
     ladder: &Ladder,
@@ -144,12 +145,13 @@ fn agent_row(
     let open = cx.listener(move |v: &mut Settings, _: &ClickEvent, _, cx| {
         v.open_sheet(Sheet::Actions(number), cx)
     });
+    let face = agent_avatar(agent, view.picture(agent.avatar, cx), ladder.avatar, theme);
     design::row(format!("settings/agents/{number}"), ladder, theme)
         .min_h(ladder.row_tall)
         .role(Role::Button)
         .focusable()
         .on_click(open)
-        .child(design::lead(agent_avatar(agent, ladder.avatar, theme)))
+        .child(design::lead(face))
         .child(
             design::row_words(
                 design::row_title(agent.name.clone(), ladder, theme).text_color(tone),
@@ -178,8 +180,13 @@ fn standing_badge(agent: &Agent, ladder: &Ladder, theme: &Theme) -> Stateful<Div
 
 // SDK gap: a face at 0.5 when off, swap when the SDK builds it (kit.md §2)
 /// An agent's face, faded once revoked.
-fn agent_avatar(agent: &Agent, face: design::Face, theme: &Theme) -> Div {
-    agent_face(agent, face, theme).when(agent.standing() == Standing::Revoked, |face| {
+fn agent_avatar(
+    agent: &Agent,
+    picture: Option<std::sync::Arc<view::Image>>,
+    face: design::Face,
+    theme: &Theme,
+) -> Div {
+    agent_face(agent, picture, face, theme).when(agent.standing() == Standing::Revoked, |face| {
         face.opacity(REVOKED_OPACITY)
     })
 }
@@ -248,8 +255,14 @@ fn agent_sheet(
         words::account(number),
         words::standing(agent.standing())
     );
+    let face = agent_avatar(
+        agent,
+        view.picture(agent.avatar, cx),
+        ladder.avatar_sheet,
+        theme,
+    );
     let head = design::sheet_head(format!("settings/agents/{number}/head"), theme).child(named(
-        agent_avatar(agent, ladder.avatar_sheet, theme),
+        face,
         name_line(&agent.name, ladder.body),
         about,
         ladder,
@@ -268,9 +281,9 @@ fn agent_sheet(
     }
 }
 
-/// An agent's actions: Rename, whom it answers, Suspend or Resume, Revoke.
-/// Suspend and Revoke are one press here: the host confirms them before
-/// the key signs.
+// An agent's actions: Rename, Change photo and Remove photo, whom it
+// answers, Suspend or Resume, Revoke. Suspend and Revoke are one press
+// here: the host confirms them before the key signs.
 fn actions(
     view: &Settings,
     agent: &Agent,
@@ -293,6 +306,36 @@ fn actions(
     let revoke = cx.listener(move |v: &mut Settings, _: &ClickEvent, _, cx| {
         v.set_standing(identity::Op::Revoke { account: number }, cx)
     });
+    let change = view.reads_files.then(|| {
+        let pressed =
+            cx.listener(move |v: &mut Settings, _: &ClickEvent, _, cx| v.change_photo(number, cx));
+        let label = match view.photo_opening(number) {
+            true => words::OPENING,
+            false => words::CHANGE_PHOTO,
+        };
+        let id = format!("settings/agents/{number}/photo/change");
+        design::sheet_row(id, label, ladder, theme, pressed).icon("camera")
+    });
+    let remove = agent.avatar.is_some().then(|| {
+        let pressed =
+            cx.listener(move |v: &mut Settings, _: &ClickEvent, _, cx| v.remove_photo(number, cx));
+        let label = match view.photo_removing(number) {
+            true => words::REMOVING,
+            false => words::REMOVE_PHOTO,
+        };
+        let id = format!("settings/agents/{number}/photo/remove");
+        design::sheet_row(id, label, ladder, theme, pressed).icon("trash")
+    });
+    let photo_refused = view
+        .photo_stopped(number)
+        .and_then(|form| form.problem.as_ref())
+        .map(|problem| {
+            div().px(SHEET_INSET).child(note(
+                words::problem_text(problem, ""),
+                theme.danger,
+                ladder,
+            ))
+        });
     column(format!("settings/agents/{number}/actions"))
         .child(
             design::sheet_row(
@@ -304,6 +347,8 @@ fn actions(
             )
             .icon("pencil"),
         )
+        .children(change)
+        .children(remove)
         .child(
             design::sheet_row(
                 format!("settings/agents/{number}/answers/open"),
@@ -335,6 +380,7 @@ fn actions(
                 ladder,
             ))
         }))
+        .children(photo_refused)
         .into_any_element()
 }
 

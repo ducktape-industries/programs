@@ -1,6 +1,7 @@
 //! What both designs draw alike, once: an agent's face, and the three
 //! answers an agent can take. Each design passes its own ladder; neither
 //! design's tree reaches into the other's.
+use std::sync::Arc;
 use view::design::{Face, Ladder};
 use view::prelude::*;
 use view::{Div, Stateful};
@@ -10,11 +11,19 @@ use crate::queries::Agent;
 use crate::state::Choice;
 use crate::words;
 
-/// An agent's initial, in the agent tint.
-pub(crate) fn agent_face(agent: &Agent, face: impl Into<Face>, theme: &Theme) -> Div {
-    design::avatar(&agent.name, face, theme)
+// An agent's face in the agent tint: its initial, or its picture once read,
+// ringed in the tint.
+pub(crate) fn agent_face(
+    agent: &Agent,
+    picture: Option<Arc<Image>>,
+    face: impl Into<Face>,
+    theme: &Theme,
+) -> Div {
+    let ringed = picture.is_some();
+    design::avatar_with(&agent.name, picture, face, theme)
         .bg(theme.agent_soft)
         .text_color(theme.agent)
+        .when(ringed, |face| face.border_2().border_color(theme.agent))
 }
 
 /// Whom an agent answers, `shown` picked: one press sends Only me or
