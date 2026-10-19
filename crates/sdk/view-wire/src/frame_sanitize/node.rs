@@ -97,7 +97,7 @@ fn sanitize_fields(
         | Node::ResizeHandle { style, .. }
         | Node::Sensor { style, .. }
         | Node::Text(crate::TextNode { style, .. }) => walk.style(*style)?,
-        Node::Space | Node::Deferred { .. } => {}
+        Node::Space | Node::Unknown { .. } | Node::Deferred { .. } => {}
         Node::UniformList {
             id,
             path,

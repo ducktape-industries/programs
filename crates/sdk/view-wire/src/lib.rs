@@ -41,6 +41,15 @@
 /// id it was built with, and a host refuses any other.
 pub const WIRE_ID: &str = include!(concat!(env!("OUT_DIR"), "/wire_id.rs"));
 
+// The wire level this build speaks: 1 since J-085, when every reader
+// learned to step over what a later build appends (`codec.rs`, "Appends"),
+// and one more with each append after it. A view's manifest carries it
+// (line 6); a host reads every level, and sends a view only the events its
+// level reads ([`Event::level`]). A view built before J-085 carries a
+// [`WIRE_ID`] there, and is level 0. `tests/golden/levels/<level>.bin`
+// keeps each level's frame, and every one must still read.
+pub const WIRE_LEVEL: u32 = 1;
+
 /// For `skip_serializing_if`: a value that says nothing is left out.
 pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {
     *value == T::default()
@@ -124,6 +133,7 @@ pub(crate) use frame_sanitize::{finite, sanitize_tree};
 
 mod codec;
 pub(crate) use codec::bounded_vec;
+pub(crate) use codec::fell;
 pub use codec::{decode, encode, try_encode};
 
 #[cfg(test)]

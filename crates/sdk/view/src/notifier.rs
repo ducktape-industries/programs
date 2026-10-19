@@ -264,7 +264,7 @@ mod tests {
             [Capability::Program, Capability::Notify]
         );
         assert!(manifest.targets.is_empty());
-        assert_eq!(manifest.wire_id, crate::wire::WIRE_ID);
+        assert_eq!(manifest.level(), crate::wire::WIRE_LEVEL);
         // it draws nothing: no tint and no window width, written as such
         assert!(text.ends_with("\nnone\n"), "{text:?}");
         assert_eq!(manifest.tint, crate::Tint::None);

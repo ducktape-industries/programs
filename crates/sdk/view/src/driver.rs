@@ -299,6 +299,9 @@ impl<V: View> Driver<V> {
             wire::Event::A11yAction { handler, data } => self.route(handler, &data),
             wire::Event::Web { handler, state } => self.route(handler, &state),
             wire::Event::Media { handler, state } => self.route(handler, &state),
+            // a later host's event this build cannot read: dropped, and
+            // the rest of the tick runs
+            wire::Event::Unknown { .. } => None,
         }
     }
 

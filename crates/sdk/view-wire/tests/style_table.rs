@@ -514,15 +514,14 @@ fn a_node_without_interactivity_writes_the_empty_sparse_struct() {
     assert_eq!(decode::<Node>(&encode(&clicks)).unwrap(), clicks);
 }
 
-/// A sparse struct's reader takes the fields this build has and refuses any
-/// other index, as a style entry's bitmap refuses a bit past its last field.
-/// An index it skipped would be a value of any shape read and dropped.
+// A sparse struct's reader takes the fields this build has and steps over
+// any other index, with its value whatever its shape: a field a later build
+// appended (J-085, `codec.rs` "Appends").
 #[test]
-fn a_sparse_struct_refuses_a_field_this_build_does_not_have() {
-    let error = decode::<Interactivity>(&[0x81, 99, 0xc3]).unwrap_err();
-    assert!(error.contains("expected field index"), "{error}");
-    let error = decode::<Aria>(&[0x81, 127, 0xc0]).unwrap_err();
-    assert!(error.contains("expected field index"), "{error}");
+fn a_sparse_struct_steps_over_a_field_this_build_does_not_have() {
+    let read = decode::<Interactivity>(&[0x82, 99, 0x92, 0x01, 0x02, 18, 0x07]).unwrap();
+    assert_eq!(read.on_click, Some(7), "{read:?}");
+    assert_eq!(decode::<Aria>(&[0x81, 127, 0xc0]), Ok(Aria::default()));
     // `Interactivity` has 43 fields and `Aria` 32 (`schema.txt`)
     // the last field each has is still read
     assert!(decode::<Interactivity>(&[0x81, 42, 0xc0]).is_ok());

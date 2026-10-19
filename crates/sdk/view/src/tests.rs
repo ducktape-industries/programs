@@ -771,12 +771,12 @@ fn the_manifest_bytes_are_what_the_view_trait_says() {
         std::str::from_utf8(&bytes).unwrap(),
         format!(
             "ducktape.view.manifest\nApp\nWords\nclock,program,\n560\n{}\n\nicons/hammer.svg\norange\n1180",
-            wire::WIRE_ID
+            wire::WIRE_LEVEL
         )
     );
     let manifest = wire::manifest::Manifest::parse(std::str::from_utf8(&bytes).unwrap()).unwrap();
     assert_eq!(manifest.min_width, 560);
-    assert_eq!(manifest.wire_id, wire::WIRE_ID);
+    assert_eq!(manifest.level(), wire::WIRE_LEVEL);
     assert_eq!(manifest.capabilities, App::CAPABILITIES);
     assert!(manifest.targets.is_empty());
     assert_eq!(manifest.icon, App::ICON);

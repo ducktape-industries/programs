@@ -175,7 +175,7 @@ impl Manifested {
             + 1
             + digits(self.min_width)
             + 1
-            + wire::WIRE_ID.len();
+            + digits(wire::WIRE_LEVEL);
         let mut i = 0;
         while i < self.capabilities.len() {
             len += self.capabilities[i].as_str().len() + 1;
@@ -190,7 +190,7 @@ impl Manifested {
     }
 
     // The manifest text (`view_wire::manifest`: header, name, description,
-    // capabilities, min width, [`wire::WIRE_ID`], an empty line 7, icon,
+    // capabilities, min width, [`wire::WIRE_LEVEL`], an empty line 7, icon,
     // tint, width), at compile time: a window width under the min width,
     // or an icon that is not an asset path ([`wire::manifest::is_icon`]),
     // fails the build.
@@ -219,7 +219,7 @@ impl Manifested {
         at = put(&mut out, at, b"\n");
         at = put_number(&mut out, at, self.min_width);
         at = put(&mut out, at, b"\n");
-        at = put(&mut out, at, wire::WIRE_ID.as_bytes());
+        at = put_number(&mut out, at, wire::WIRE_LEVEL);
         at = put(&mut out, at, b"\n");
         // line 7, which views before J-054 listed their targets on
         at = put(&mut out, at, b"\n");
@@ -461,3 +461,6 @@ mod stale_routes_tests;
 
 #[cfg(test)]
 mod row_identity_tests;
+
+#[cfg(test)]
+mod appends_tests;

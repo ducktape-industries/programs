@@ -603,6 +603,13 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
                 text: String::new(),
             },
         ),
+        exchange::<HostMethods>(
+            (),
+            Hosted {
+                level: 1,
+                kinds: vec!["link.open".into(), "host.methods".into()],
+            },
+        ),
         exchange::<LinkOpen>("duck://chat/room".into(), ()),
         exchange::<LinkWindow>("duck://chat/room".into(), ()),
         exchange::<HostRoute>((), "tx/00ff".into()),

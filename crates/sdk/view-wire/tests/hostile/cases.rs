@@ -384,9 +384,10 @@ fn a_length_prefix_bomb_is_refused_without_the_allocation() {
     bomb.extend_from_slice(&u32::MAX.to_be_bytes());
     let start = std::time::Instant::now();
     let error = decode::<Frame>(&bomb).unwrap_err();
+    // the count is more than the bytes left could hold: refused at the header
     assert!(
-        error.contains("IO error while reading marker"),
-        "must enter the array and refuse the missing child, not reject malformed encoding: {error}"
+        error.contains("the bytes end inside a value"),
+        "must refuse the count the bytes cannot hold: {error}"
     );
     assert!(
         start.elapsed() < std::time::Duration::from_secs(1),

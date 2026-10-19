@@ -195,7 +195,7 @@ pub(super) fn check_bounds(node: &Node, styles: &Styles, depth: usize, ctx: &str
                 "{ctx}: sanitize kept an invalid field"
             );
         }
-        Node::Space => {}
+        Node::Space | Node::Unknown { .. } => {}
         Node::Overlay { children, .. } => {
             assert!(children.len() <= 2, "{ctx}: overlay child count");
             for child in children {

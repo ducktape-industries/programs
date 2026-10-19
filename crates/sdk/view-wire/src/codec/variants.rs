@@ -40,6 +40,9 @@ macro_rules! by_variant {
                     serializer.serialize_newtype_variant("Node", index, stringify!($newtype), inner)
                 })*
                 $(Node::$variant { .. } => $variant(node, serializer, index),)*
+                Node::Unknown { .. } => Err(serde::ser::Error::custom(
+                    "a node this build could not read never crosses",
+                )),
             }
         }
 

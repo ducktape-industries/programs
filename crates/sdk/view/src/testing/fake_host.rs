@@ -352,9 +352,12 @@ impl FakeHost {
             state.requests.push(request.clone());
             // The app refuses a method the manifest leaves out
             // (`undeclared_capability`); a test fails on it instead.
-            if let (Some(declared), Some((capability, _))) =
-                (state.declared, methods::Capability::of_kind(&request.kind))
-            {
+            // `host.methods` is answered to every view, as the app answers it
+            if let (Some(declared), Some((capability, _)), false) = (
+                state.declared,
+                methods::Capability::of_kind(&request.kind),
+                request.kind == methods::HostMethods::KIND,
+            ) {
                 assert!(
                     declared.contains(&capability),
                     "{}: `{}` needs the `{}` capability, \
@@ -469,7 +472,13 @@ fn kept(kept: &mut BTreeMap<String, Vec<u8>>, request: &Request) -> Option<Event
         false => Ok(()),
     };
     let payload = &request.payload;
-    let result = if request.kind == StoreGet::KIND {
+    let result = if request.kind == methods::HostMethods::KIND {
+        // what a host of this build answers: every kind
+        Ok(methods::HostMethods::encode_reply(&methods::Hosted {
+            level: crate::wire::WIRE_LEVEL,
+            kinds: methods::ALL.iter().map(|kind| (*kind).to_owned()).collect(),
+        }))
+    } else if request.kind == StoreGet::KIND {
         StoreGet::decode_request(payload)
             .map_err(malformed)
             .and_then(|key| {

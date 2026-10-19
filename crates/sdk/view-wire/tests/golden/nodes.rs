@@ -940,5 +940,6 @@ pub fn node_variant(node: &Node) -> &'static str {
         Node::Camera { .. } => "Camera",
         Node::Microphone { .. } => "Microphone",
         Node::Remote { .. } => "Remote",
+        Node::Unknown { .. } => unreachable!("a node this build cannot read never crosses"),
     }
 }

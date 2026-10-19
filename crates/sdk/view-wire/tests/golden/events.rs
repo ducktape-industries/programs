@@ -483,5 +483,6 @@ pub fn event_variant(event: &Event) -> &'static str {
         Event::Web { .. } => "Web",
         Event::Media { .. } => "Media",
         Event::FileDrop { .. } => "FileDrop",
+        Event::Unknown { .. } => unreachable!("an event this build cannot read never crosses"),
     }
 }

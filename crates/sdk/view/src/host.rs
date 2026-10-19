@@ -267,6 +267,14 @@ impl Host {
                 .insert(id, format!("{request:?}"));
         }
     }
+    // What this host answers ([`methods::Hosted`]), asked once: a view
+    // keeps it and asks [`methods::Hosted::has`] before it offers what
+    // needs a kind. `None` from a host before J-085, which says nothing of
+    // it: ask the kind, and fall back on `unknown_request`.
+    pub fn hosted(&self) -> impl Future<Output = Option<methods::Hosted>> + 'static + use<> {
+        let asked = self.ask::<methods::HostMethods>(());
+        async move { asked.await.ok() }
+    }
     pub fn log(&self, message: impl AsRef<str>) {
         self.notify::<methods::HostLog>(message.as_ref().to_owned());
     }

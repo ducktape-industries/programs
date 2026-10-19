@@ -82,10 +82,18 @@ fn apply_one(root: &mut Node, patch: Patch) -> Result<(), &'static str> {
     };
     let mut target = root;
     for index in path {
+        // a node this build could not read holds what the view patches
+        // there, unseen: the patch changes nothing this host draws
+        if matches!(target, Node::Unknown { .. }) {
+            return Ok(());
+        }
         target = target
             .children_mut()
             .get_mut(index as usize)
             .ok_or("a path to no node")?;
+    }
+    if matches!(target, Node::Unknown { .. }) && !matches!(edit, Edit::Replace(_)) {
+        return Ok(());
     }
     match edit {
         Edit::Replace(node) => *target = node,

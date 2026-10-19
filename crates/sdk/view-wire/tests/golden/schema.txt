@@ -19,6 +19,7 @@ host.badge None i64 -> ()
 host.float None Float -> Placement
 host.id None String -> String
 host.log None String -> ()
+host.methods None () -> Hosted
 host.placement None () -> Placement
 host.route None () -> String
 host.screen None () -> Vec<String>
@@ -106,6 +107,7 @@ Facing__Front = Struct { fields: Empty }
 Field = Struct { fields: NamedFields([("label", "String"), ("value", "Value")]) }
 Float = Struct { fields: NamedFields([("width", "u32"), ("height", "u32"), ("min_width", "u32"), ("min_height", "u32"), ("on_top", "bool")]) }
 Head = Struct { fields: NamedFields([("height", "u64"), ("time", "u64"), ("id", "[u8; 32]")]) }
+Hosted = Struct { fields: NamedFields([("level", "u32"), ("kinds", "Vec<String>")]) }
 Invite = Struct { fields: NamedFields([("invite", "String"), ("notes", "Vec<Error>")]) }
 LiveAnnounce = Struct { fields: NamedFields([("name", "String"), ("by", "u64"), ("mode", "LiveMode"), ("up", "bool")]) }
 LiveItem = Enum { tag_width: 1, variants: [(0, "Waiting", "LiveItem__Waiting"), (1, "Opened", "LiveItem__Opened"), (2, "Object", "LiveItem__Object"), (3, "GroupEnd", "LiveItem__GroupEnd")] }

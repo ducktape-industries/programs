@@ -1013,6 +1013,26 @@ pub struct CarriedView {
     /// it does not know, or a capability it does not know.
     pub manifest: Option<crate::manifest::Manifest>,
 }
+// `host.methods`'s answer: the wire level this host reads
+// ([`crate::WIRE_LEVEL`]) and every kind it answers. A host before J-085
+// refuses `host.methods` [`refusal::UNKNOWN_REQUEST`], which a view reads
+// as a host that says nothing of what it answers: it asks a kind, and
+// falls back on `unknown_request`.
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub struct Hosted {
+    pub level: u32,
+    pub kinds: Vec<String>,
+}
+
+impl Hosted {
+    // Whether this host answers `kind` (`link.window`).
+    pub fn has(&self, kind: &str) -> bool {
+        self.kinds.iter().any(|known| known == kind)
+    }
+}
 methods! {
     also: ["program.query", "op.submit", "program.changes", HostWidget::KIND];
     /// `chain.status`: the connected node's status.
@@ -1254,6 +1274,10 @@ methods! {
     FileRelease, "file.release", Vec<u64>, ();
     FileSave, "file.save", SaveFile, bool;
     ClipboardFiles, "clipboard.files", (), Pasted;
+    // `host.methods`: what this host answers ([`Hosted`]), so a view asks
+    // before it offers what needs a kind. Answered to every view, whatever
+    // its manifest declares: it grants nothing.
+    HostMethods, "host.methods", (), Hosted;
 }
 
 /// The `<capability>` half of every kind in [`ALL`]: what a view's manifest

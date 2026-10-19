@@ -1383,6 +1383,17 @@
     }
   },
   {
+    "kind": "host.methods",
+    "request": null,
+    "reply": {
+      "level": 1,
+      "kinds": [
+        "link.open",
+        "host.methods"
+      ]
+    }
+  },
+  {
     "kind": "link.open",
     "request": "duck://chat/room",
     "reply": null

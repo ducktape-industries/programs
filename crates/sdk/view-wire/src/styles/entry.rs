@@ -232,10 +232,23 @@ pub(super) fn write(style: &StyleRefinement, out: &mut Vec<u8>) {
 pub(super) fn read(bytes: &[u8]) -> Result<StyleRefinement, &'static str> {
     let mut input = Reader(bytes);
     let style = StyleRefinement::read(&mut input)?;
-    match input.0.is_empty() {
-        true => Ok(style),
-        false => Err("a style entry runs past its fields"),
+    // After the fields, a later build's: records of a field id, a length
+    // and that many bytes (`codec.rs`, "Appends"), none of which this
+    // build has, so each is stepped over. An entry that sets no later
+    // field has none, and its bytes are what they were before J-085.
+    // A record names a field past the ones this build has, each past the
+    // one before: bytes that name a known field are no later build's.
+    let mut next = StyleRefinement::FIELDS.len() as u64;
+    while !input.0.is_empty() {
+        let field = get_count(&mut input)?;
+        if field < next {
+            return Err("a style entry runs past its fields");
+        }
+        next = field + 1;
+        let len = get_count(&mut input)?;
+        input.take(usize::try_from(len).map_err(|_| "a style entry runs past its fields")?)?;
     }
+    Ok(style)
 }
 
 /// Every refinement an entry holds, each with its fields in the order its

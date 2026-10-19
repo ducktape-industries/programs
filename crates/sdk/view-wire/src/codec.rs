@@ -2,6 +2,7 @@ use crate::*;
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod bin;
+mod read;
 mod variants;
 mod write;
 pub(crate) use write::SPARSE;
@@ -94,7 +95,10 @@ impl Serialize for Node {
 impl<'de> Deserialize<'de> for Node {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let node = budget::Node::enter().map_err(serde::de::Error::custom)?;
-        Node::deserialize(deserializer).map_err(|error| node.failed(error))
+        Node::deserialize(deserializer).or_else(|error| match fell(&error) {
+            Some(what) => Ok(Node::Unknown { what }),
+            None => Err(node.failed(error)),
+        })
     }
 }
 
@@ -190,15 +194,40 @@ macro_rules! sparse {
 }
 pub(crate) use sparse;
 
+// Reads what `encode` wrote, from this build or a later one (the
+// appends below). The reader works over the slice itself: a string or a
+// `bin` is lent from `bytes` and copied once, into the value that keeps it.
+//
+// APPENDS. A later build of this crate only appends: a field at its
+// struct's end, with `#[serde(default)]`; a variant at its enum's end. So
+// this reader takes a struct's fields it knows and steps over the rest, a
+// sparse struct's keys it knows and steps over the rest, and fills a field
+// it was not sent with its default. A variant this build does not know
+// fails the value it is in, up to the nearest fallback ([`fallback`]):
+// [`Node`] and [`Event`], which stand in `Unknown` for the value and say
+// what was not known. A host or a view of an earlier build reads a later
+// one's frame with no tree node or event lost but those.
 pub fn decode<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T, String> {
-    // The reader over the slice itself: a string or a `bin` is lent from
-    // `bytes` and copied once, into the value that keeps it.
-    let mut deserializer = rmp_serde::Deserializer::from_read_ref(bytes);
-    let value = T::deserialize(&mut deserializer).map_err(|error| error.to_string())?;
-    if !deserializer.remaining_slice().is_empty() {
+    let mut reader = read::Reader::new(bytes);
+    let value = T::deserialize(&mut reader).map_err(|error| error.to_string())?;
+    if reader.rest() != 0 {
         return Err("trailing MessagePack bytes".into());
     }
     Ok(value)
+}
+
+// The enums a fallback stands in for: where the reader meets a variant it
+// does not know inside one, it steps over that enum's whole value and fails
+// it with [`FELL`] and what it was, and the type's `Deserialize` answers its
+// `Unknown` in its place ([`fell`]). By name, so no other deserializer (the
+// goldens' JSON, the schema's tracer) sees anything but the derived shape.
+pub(crate) const FALLBACKS: [&str; 2] = ["Node", "Event"];
+pub(crate) const FELL: &str = "$view_wire::fell: ";
+
+// What a fallback's value held that this build does not know, where `error`
+// is the reader's [`FELL`]; `None` for any other failure.
+pub(crate) fn fell(error: &impl std::fmt::Display) -> Option<String> {
+    error.to_string().strip_prefix(FELL).map(str::to_owned)
 }
 
 #[cfg(test)]
@@ -270,12 +299,21 @@ mod tests {
             .rposition(|bytes| bytes == [0x92, space, space])
             .expect("the inner container's children")
             + 2;
+        // a kind a later build added stands in as unknown, its siblings read
         bytes[at] = 0x7f;
-        let error = super::decode::<Node>(&bytes).unwrap_err();
+        let Node::Container(ContainerNode { children, .. }) =
+            super::decode::<Node>(&bytes).unwrap()
+        else {
+            panic!("the root reads")
+        };
         assert!(
-            error.starts_with("node at [1, 1]: invalid value: integer `127`"),
-            "{error}"
+            matches!(children[1].children()[1], Node::Unknown { .. }),
+            "{children:?}"
         );
+        // bytes that are no variant at all fail, naming the node
+        bytes[at] = 0xc1;
+        let error = super::decode::<Node>(&bytes).unwrap_err();
+        assert!(error.starts_with("node at [1, 1]: "), "{error}");
         bytes[at] = space;
         assert_eq!(super::decode::<Node>(&bytes), Ok(tree));
     }

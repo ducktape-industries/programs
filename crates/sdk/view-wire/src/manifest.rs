@@ -29,6 +29,8 @@ pub const LINES: [&str; 10] = [
 #[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
 pub struct Manifest {
     /// the [`crate::WIRE_ID`] the view was built against
+    // since J-085 the [`crate::WIRE_LEVEL`] it was built at, in decimal
+    // ([`Manifest::level`])
     pub wire_id: String,
     pub name: String,
     pub description: String,
@@ -138,6 +140,13 @@ const fn has_control(text: &str) -> bool {
 /// This parses the binary structure; it does not validate the exports or execute it.
 #[cfg(feature = "manifest")]
 pub fn read_manifest(bytes: &[u8]) -> Option<Manifest> {
+    read_manifest_noting(bytes).map(|(manifest, _)| manifest)
+}
+
+// [`read_manifest`], and the capabilities it left out
+// ([`Manifest::parse_noting`]).
+#[cfg(feature = "manifest")]
+pub fn read_manifest_noting(bytes: &[u8]) -> Option<(Manifest, Vec<String>)> {
     let mut payloads = wasmparser::Parser::new(0).parse_all(bytes);
     // A view is a core module; a component is not something the host
     // instantiates, so it is not in the catalog.
@@ -156,18 +165,22 @@ pub fn read_manifest(bytes: &[u8]) -> Option<Manifest> {
             if manifest.is_some() {
                 return None;
             }
-            manifest = Some(Manifest::parse(std::str::from_utf8(section.data()).ok()?)?);
+            manifest = Some(Manifest::parse_noting(
+                std::str::from_utf8(section.data()).ok()?,
+            )?);
         }
     }
     manifest
 }
 
 impl Manifest {
-    // Parses the strict ten-line ([`LINES`]) `ducktape.view.manifest`
-    // text and its bounds. A capability this host does not know refuses
-    // the whole manifest: a grant is never silently narrowed; so does an
-    // icon that is not an asset path ([`is_icon`]). Line 7 is read as a
-    // list and given no meaning.
+    // Parses the ten-line ([`LINES`]) `ducktape.view.manifest` text and
+    // its bounds; an icon that is not an asset path ([`is_icon`]) refuses
+    // it. Line 7 is read as a list and given no meaning. Since J-085 a
+    // line past the ones this host knows is read past, and a capability
+    // it does not know is left out: it grants nothing on a host that has
+    // no such capability, and [`Manifest::parse_noting`] says which were
+    // left out, for the host to log.
     //
     // The tint and the width alone are read leniently: a tint this host
     // does not know, a width that is not one in canonical decimal, or no
@@ -177,6 +190,12 @@ impl Manifest {
     // nothing, and a view built against another wire still runs (a host
     // refuses a manifest, never a look).
     pub fn parse(text: &str) -> Option<Self> {
+        Self::parse_noting(text).map(|(manifest, _)| manifest)
+    }
+
+    // [`Manifest::parse`], and the capabilities line 4 names that this
+    // host does not know, which the manifest leaves out.
+    pub fn parse_noting(text: &str) -> Option<(Self, Vec<String>)> {
         if text.chars().any(|c| c.is_control() && c != '\n') {
             return None;
         }
@@ -186,10 +205,15 @@ impl Manifest {
         }
         let name = lines.next()?.to_owned();
         let description = lines.next()?.to_owned();
-        let capabilities = list(lines.next()?)?
-            .into_iter()
-            .map(Capability::parse)
-            .collect::<Option<_>>()?;
+        let mut unknown = Vec::new();
+        let mut capabilities = Vec::new();
+        for name in list(lines.next()?)? {
+            match Capability::parse(name) {
+                Some(known) => capabilities.push(known),
+                None if name.is_empty() => return None,
+                None => unknown.push(name.to_owned()),
+            }
+        }
         let min_width = px(lines.next()?)?;
         let wire_id = lines.next()?.to_owned();
         let targets: Vec<String> = list(lines.next()?)?
@@ -199,9 +223,6 @@ impl Manifest {
         let icon = lines.next()?.to_owned();
         let tint = lines.next().and_then(Tint::parse).unwrap_or_default();
         let width = lines.next().and_then(px);
-        if lines.next().is_some() {
-            return None;
-        }
         let manifest = Self {
             wire_id,
             name,
@@ -213,7 +234,18 @@ impl Manifest {
             tint,
             width,
         };
-        manifest.within_bounds().then_some(manifest)
+        manifest.within_bounds().then_some((manifest, unknown))
+    }
+
+    // The wire level the view was built at ([`crate::WIRE_LEVEL`]): line 6
+    // in canonical decimal. A view built before J-085 wrote its `WIRE_ID`
+    // there, sixteen hex digits, which is level 0.
+    pub fn level(&self) -> u32 {
+        self.wire_id
+            .parse::<u32>()
+            .ok()
+            .filter(|level| level.to_string() == self.wire_id)
+            .unwrap_or(0)
     }
 
     fn within_bounds(&self) -> bool {
@@ -300,10 +332,8 @@ mod tests {
             "ducktape.view.manifest\nSized\nDescription\n\n480",
             "ducktape.view.manifest\nSized\nDescription\n\n480\n0123abcd", // six lines: the shape before targets
             "ducktape.view.manifest\nSized\nDescription\n\n480\n0123abcd\n", // seven lines: the shape before icon
-            "ducktape.view.manifest\nSized\nDescription\n\n480\n0123abcd\n\n\nnone\n\nextra",
             "ducktape.view.manifest\nSized\nDescription\nclock\n480\n0123abcd\n\n\nnone\n",
             "ducktape.view.manifest\nSized\nDescription\nclock,,\n480\n0123abcd\n\n\nnone\n",
-            "ducktape.view.manifest\nSized\nDescription\nclock,storage,\n480\n0123abcd\n\n\nnone\n",
         ] {
             assert!(
                 Manifest::parse(invalid).is_none(),
@@ -336,11 +366,10 @@ mod tests {
         ] {
             assert!(parse(invalid).is_none(), "accepted {invalid:?}");
         }
-        // every line valid on its own (`480` is hex, so a wire id too): only
-        // the eleventh line refuses it
+        // a line past the tenth is a later build's, read past
         assert!(
-            Manifest::parse("ducktape.view.manifest\nApp\n\n\n480\n480\n\n\nnone\n\n").is_none(),
-            "an eleventh line accepted"
+            Manifest::parse("ducktape.view.manifest\nApp\n\n\n480\n480\n\n\nnone\n\n").is_some(),
+            "an eleventh line refused"
         );
     }
 
@@ -457,6 +486,35 @@ mod tests {
             (before.width, before.tint, &*before.icon),
             (None, Tint::Blue, "icons/a.svg")
         );
+    }
+
+    // Claim (J-085): a manifest a later build wrote still reads. A
+    // capability this host does not know is left out and named, the lines
+    // after the tenth are read past, and the level is line 6 in decimal,
+    // or 0 for a view built before levels.
+    #[test]
+    fn a_later_builds_manifest_reads() {
+        let text = "ducktape.view.manifest\nApp\n\nclock,teleport,store,\n480\n7\n\n\nblue\n900\nan eleventh line\n";
+        let (manifest, unknown) = Manifest::parse_noting(text).unwrap();
+        assert_eq!(
+            manifest.capabilities,
+            [Capability::Clock, Capability::Store]
+        );
+        assert_eq!(unknown, ["teleport"]);
+        assert_eq!((manifest.width, manifest.tint), (Some(900), Tint::Blue));
+        assert_eq!(manifest.level(), 7);
+        let level = |id: &str| {
+            Manifest::parse(&format!(
+                "ducktape.view.manifest\nApp\n\n\n480\n{id}\n\n\nnone\n"
+            ))
+            .unwrap()
+            .level()
+        };
+        assert_eq!(level("1"), 1);
+        assert_eq!(level(&crate::WIRE_LEVEL.to_string()), crate::WIRE_LEVEL);
+        for before in ["cd5911c62028048f", "ce6c54ef404b8852", "01", "0123abcd"] {
+            assert_eq!(level(before), 0, "{before}");
+        }
     }
 
     #[test]

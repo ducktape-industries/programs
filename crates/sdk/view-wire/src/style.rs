@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 /// Declarative interactivity lowered into native GPUI's `Interactivity`.
 /// Sparse on the wire: a node sets a few of these and leaves the rest out.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields, remote = "Self")]
+#[serde(default, remote = "Self")]
 pub struct Interactivity {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<gpui::Role>,

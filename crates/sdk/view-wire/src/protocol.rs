@@ -23,6 +23,7 @@ pub struct RichTextHover {
 /// a structural change. A frame lowered without the listener frees its
 /// route, and a freed route names nothing again.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub enum Event {
     /// The user activated the widget the view gave this message route to
     /// (a button press, an input submit).
@@ -267,6 +268,80 @@ pub enum Event {
         handler: u32,
         files: Vec<crate::methods::Picked>,
     },
+    // An event this build cannot read, from a host of a later build: its
+    // kind, or a value in it, is a variant this build does not know
+    // (`codec.rs`, "Appends"). The view drops it; it never crosses.
+    #[serde(skip)]
+    Unknown {
+        what: String,
+    },
+}
+
+impl Serialize for Event {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        Event::serialize(self, serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Event {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Event::deserialize(deserializer).or_else(|error| match crate::fell(&error) {
+            Some(what) => Ok(Event::Unknown { what }),
+            None => Err(error),
+        })
+    }
+}
+
+impl Event {
+    // The wire level that added the event ([`crate::WIRE_LEVEL`]): a host
+    // sends a view only the events its manifest's level reads
+    // ([`crate::manifest::Manifest::level`]), since a view built before
+    // J-085 cannot step over one it does not know. One arm per variant, so
+    // an appended event says its level.
+    pub fn level(&self) -> u32 {
+        match self {
+            Self::Message(..)
+            | Self::Click { .. }
+            | Self::MouseDown { .. }
+            | Self::MouseUp { .. }
+            | Self::MouseDownOut { .. }
+            | Self::MouseUpOut { .. }
+            | Self::MousePressure { .. }
+            | Self::MouseMove { .. }
+            | Self::MouseExit { .. }
+            | Self::ScrollWheel { .. }
+            | Self::Pinch { .. }
+            | Self::KeyDown { .. }
+            | Self::KeyUp { .. }
+            | Self::ModifiersChanged { .. }
+            | Self::Hover { .. }
+            | Self::FileDropExit { .. }
+            | Self::AuxClick { .. }
+            | Self::TooltipRequest { .. }
+            | Self::Text { .. }
+            | Self::Theme { .. }
+            | Self::Pointer { .. }
+            | Self::Viewport { .. }
+            | Self::Offset { .. }
+            | Self::Select { .. }
+            | Self::RichTextHover { .. }
+            | Self::Bounds { .. }
+            | Self::Drag { .. }
+            | Self::ScrollOffset { .. }
+            | Self::UniformListRange { .. }
+            | Self::UniformListState { .. }
+            | Self::ListRequest { .. }
+            | Self::ListScroll { .. }
+            | Self::Response { .. }
+            | Self::Resync
+            | Self::A11yAction { .. }
+            | Self::Back { .. }
+            | Self::Web { .. }
+            | Self::Media { .. }
+            | Self::FileDrop { .. } => 0,
+            Self::Unknown { .. } => u32::MAX,
+        }
+    }
 }
 
 /// Why a request failed, as the view gets it: the one [`Error`] — a stable

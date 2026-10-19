@@ -507,7 +507,8 @@ turns it off). `src/tests/memo.rs` is the whole of it.
 `export_view!(View)` (`src/lib.rs`) writes the five wasm exports and the
 manifest section `ducktape.view.manifest` from the trait's consts
 (`view-wire/src/manifest.rs`: header, `NAME`, `DESCRIPTION`,
-`CAPABILITIES`, `MIN_WINDOW_WIDTH` in decimal, `WIRE_ID`, an empty line (views
+`CAPABILITIES`, `MIN_WINDOW_WIDTH` in decimal, `WIRE_LEVEL` in decimal (a view
+built before J-085 wrote `WIRE_ID` there), an empty line (views
 built before J-054 listed their targets there; a host reads it past), `ICON`, `TINT`,
 `WINDOW_WIDTH` in decimal or empty for none; the line list is
 `manifest::LINES`, part of `schema.txt` and so of `WIRE_ID`).
@@ -527,8 +528,41 @@ view in `VIEWS`, runs `wasm-opt`, checks the ABI and prints the size;
 proves nothing in `VIEW_LINKABLE` reaches `VIEW_FORBIDDEN`. Wire bytes are
 pinned by `view-wire/tests/golden.rs`: a shape change fails it until the
 fixtures are regenerated with `WIRE_GOLDEN_WRITE=1`, which moves `WIRE_ID`
-(`view-wire/build.rs` hashes them); a host refuses a view built against
-another.
+(`view-wire/build.rs` hashes them).
+
+## A host built at another commit (J-085)
+
+The app is released apart from the views it runs, so a view meets hosts
+built before and after it. The wire only appends: a field at its struct's
+end, with `#[serde(default)]`; a variant at its enum's end; a method, a
+manifest line. Nothing that crosses is removed, moved or retyped, and the
+tools repo's `interfaces` gate holds `view-wire/tests/golden/schema.txt` to
+it against the change's merge base. A method's request and reply never
+change: a new shape is a new kind (`notify.post.2`). A request enum may
+grow (an older host refuses the new variant `malformed_request`); a reply
+or stream item never does.
+
+Each side reads what the other appended. The reader (`view-wire`
+`codec/read.rs`) steps over a struct's fields and a sparse struct's keys it
+does not know, and fills a field it was not sent with its default. A
+variant it does not know, anywhere inside a node or an event, stands in for
+that node or event alone: the host draws nothing for `Node::Unknown` and
+logs what it was, and the view drops `Event::Unknown`. A style entry's
+later fields come after the ones it knew, and are stepped over. A manifest
+line past the ones a host knows is read past, and a capability it does not
+know is left out and logged.
+
+`WIRE_LEVEL` counts the appends: a view's manifest carries it, and a host
+sends a view only the events its level reads (`Event::level`), because a
+view built before J-085 reads strictly. What a host answers is
+`host.methods` (`methods::Hosted`): `cx.host().hosted()` asks it once, and
+`Hosted::has("link.window")` says whether to offer what needs it. A host
+before J-085 refuses `host.methods`, and `hosted()` answers `None`: ask the
+kind, and fall back on `unknown_request`.
+
+What still needs a new app: a new ability of the host's own (a method it
+answers, a node it draws, a style it applies, an event it makes). The view
+runs on an older app all the same, without it.
 
 ## A notifier
 

@@ -30,9 +30,11 @@ impl Node {
             | Self::Camera { id, .. }
             | Self::Microphone { id, .. }
             | Self::Remote { id, .. } => Some(id),
-            Self::Space | Self::Anchored { .. } | Self::Deferred { .. } | Self::Canvas { .. } => {
-                None
-            }
+            Self::Space
+            | Self::Unknown { .. }
+            | Self::Anchored { .. }
+            | Self::Deferred { .. }
+            | Self::Canvas { .. } => None,
         }
     }
 
@@ -71,7 +73,9 @@ impl Node {
             | Self::Camera { style, .. }
             | Self::Microphone { style, .. }
             | Self::Remote { style, .. } => Some(*style),
-            Self::Anchored { .. } | Self::Deferred { .. } | Self::Space => None,
+            Self::Anchored { .. } | Self::Deferred { .. } | Self::Space | Self::Unknown { .. } => {
+                None
+            }
         }
     }
 
@@ -97,7 +101,7 @@ impl Node {
             | Self::Camera { style, .. }
             | Self::Microphone { style, .. }
             | Self::Remote { style, .. } => visit(style),
-            Self::Anchored { .. } | Self::Deferred { .. } | Self::Space => {}
+            Self::Anchored { .. } | Self::Deferred { .. } | Self::Space | Self::Unknown { .. } => {}
         }
         if let Self::Container(crate::ContainerNode {
             interactivity: Some(interactivity),
@@ -180,6 +184,7 @@ impl Node {
             | Self::Svg { .. }
             | Self::Field { .. }
             | Self::Space
+            | Self::Unknown { .. }
             | Self::Overlay { .. }
             | Self::Sheet { .. }
             | Self::Canvas { .. } => &[],
@@ -211,6 +216,7 @@ impl Node {
             | Self::Svg { .. }
             | Self::Field { .. }
             | Self::Space
+            | Self::Unknown { .. }
             | Self::Canvas { .. }
             | Self::Web { .. }
             | Self::Camera { .. }
@@ -246,6 +252,7 @@ impl Node {
             | Self::Text(crate::TextNode { .. })
             | Self::Field { .. }
             | Self::Space
+            | Self::Unknown { .. }
             | Self::Svg { .. }
             | Self::Canvas { .. }
             | Self::Web { .. }
@@ -277,6 +284,7 @@ impl Node {
             | Self::Text(crate::TextNode { .. })
             | Self::Field { .. }
             | Self::Space
+            | Self::Unknown { .. }
             | Self::Svg { .. }
             | Self::Canvas { .. }
             | Self::Web { .. }

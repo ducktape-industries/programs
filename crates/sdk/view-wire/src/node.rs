@@ -443,6 +443,15 @@ pub enum Node {
         media: RemoteMedia,
         on_state: Option<u32>,
     },
+    // A node this build cannot read, in a frame a later build wrote: its
+    // kind, or a value in it, is a variant this build does not know
+    // (`codec.rs`, "Appends"). A host draws nothing for it and logs `what`;
+    // a patch into it does nothing. It never crosses: a view never builds
+    // one, and the writer refuses it.
+    #[serde(skip)]
+    Unknown {
+        what: String,
+    },
 }
 
 /// What a [`Node::Remote`] plays of its track.
