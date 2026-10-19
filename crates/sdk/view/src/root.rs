@@ -6,6 +6,7 @@ use futures::StreamExt;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
+use std::rc::Rc;
 
 pub trait Render: 'static + Sized {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement;
@@ -230,6 +231,58 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Loadable<T> {
     }
 }
 
+// A `Loadable` the view reads again whenever what it shows may have moved
+// (`Context::reread`): asked for while a read of it is out, the read out is kept and lands what
+// it read, and one more read follows it. A read replaced for every write heard while it runs
+// never lands on a network that writes every block.
+pub struct Reread<T> {
+    shown: Loadable<T>,
+    again: bool,
+}
+
+impl<T> Default for Reread<T> {
+    fn default() -> Self {
+        Self {
+            shown: Loadable::Idle,
+            again: false,
+        }
+    }
+}
+
+impl<T> std::ops::Deref for Reread<T> {
+    type Target = Loadable<T>;
+    fn deref(&self) -> &Loadable<T> {
+        &self.shown
+    }
+}
+
+impl<T> std::ops::DerefMut for Reread<T> {
+    fn deref_mut(&mut self) -> &mut Loadable<T> {
+        &mut self.shown
+    }
+}
+
+impl<T: Serialize> Serialize for Reread<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.shown.serialize(serializer)
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Reread<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Self {
+            shown: Loadable::deserialize(deserializer)?,
+            again: false,
+        })
+    }
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for Reread<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.shown.fmt(f)
+    }
+}
+
 impl<T: std::fmt::Debug> std::fmt::Debug for Loadable<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -263,6 +316,53 @@ impl<V: 'static> Context<'_, V> {
         work: impl Future<Output = Result<T, Error>> + 'static,
         at: impl Fn(&mut V) -> &mut Loadable<T> + 'static,
     ) {
+        self.load_then(view, work, at, |_, _| {});
+    }
+
+    // Reads into the `Reread` slot `at` finds, as `load` does, unless a
+    // read of it is out: that read is kept, and once it has landed
+    // `read_again` runs, once, however many asks came in meanwhile.
+    // `read_again` is the view's own read (`Self::read_roster`), so the
+    // read that follows asks for what the view wants by then.
+    pub fn reread<T, F>(
+        &mut self,
+        view: &mut V,
+        at: impl Fn(&mut V) -> &mut Reread<T> + 'static,
+        work: impl FnOnce(&mut V, &mut Context<V>) -> F,
+        read_again: impl FnOnce(&mut V, &mut Context<V>) + 'static,
+    ) where
+        T: PartialEq + 'static,
+        F: Future<Output = Result<T, Error>> + 'static,
+    {
+        let slot = at(view);
+        if matches!(slot.shown, Loadable::Loading(_) | Loadable::Reloading(..)) {
+            slot.again = true;
+            return;
+        }
+        slot.again = false;
+        let work = work(view, self);
+        let at = Rc::new(at);
+        let land = at.clone();
+        self.load_then(
+            view,
+            work,
+            move |view| &mut land(view).shown,
+            move |view, cx| {
+                if std::mem::take(&mut at(view).again) {
+                    read_again(view, cx);
+                }
+            },
+        );
+    }
+
+    // `load`, and `then` once the answer has landed in the slot.
+    fn load_then<T: PartialEq + 'static>(
+        &mut self,
+        view: &mut V,
+        work: impl Future<Output = Result<T, Error>> + 'static,
+        at: impl Fn(&mut V) -> &mut Loadable<T> + 'static,
+        then: impl FnOnce(&mut V, &mut Context<V>) + 'static,
+    ) {
         // the slot as it is now; `at` then moves into the task, which finds
         // the slot again when the answer lands
         let slot = at(view);
@@ -279,6 +379,7 @@ impl<V: 'static> Context<'_, V> {
                         cx.notify();
                     }
                 }
+                then(view, cx);
             });
         });
         *slot = match slot.take() {
@@ -358,7 +459,9 @@ mod follow_tests {
     use crate::methods::{self, Capability, Change, Changes, Program, Query};
     use crate::testing::{Probe, TestAppContext};
     use crate::wire::Event;
-    use crate::{Context, IntoElement, Loadable, ParentElement, Render, Task, View, Window};
+    use crate::{
+        Context, IntoElement, Loadable, ParentElement, Render, Reread, Task, View, Window,
+    };
     use serde::{Deserialize, Serialize};
     use std::{cell::Cell, rc::Rc};
 
@@ -690,5 +793,67 @@ mod follow_tests {
         // the lands: the newer lands, then the older
         cx.tick(vec![answer(newer[1], 4), answer(older[1], 3)]);
         entity.read(|view| assert_eq!(view.value.ready(), Some(&40), "{:?}", view.value));
+    }
+
+    // Shows the counter in a `Reread` slot, read again whenever the view hears it may have
+    // moved.
+    #[derive(Default, Serialize, Deserialize)]
+    struct Recount {
+        value: Reread<u64>,
+    }
+    impl View for Recount {
+        const NAME: &'static str = "Recount";
+        const CAPABILITIES: &'static [Capability] = &[Capability::Program];
+        fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+            self.read(cx);
+        }
+    }
+    impl Recount {
+        fn read(&mut self, cx: &mut Context<Self>) {
+            cx.reread(
+                self,
+                |view| &mut view.value,
+                |_, cx| cx.host().ask::<Query<Counter>>(()),
+                Self::read,
+            );
+        }
+    }
+    impl Render for Recount {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            crate::div().child(match self.value.ready() {
+                Some(value) => value.to_string(),
+                None => "…".to_owned(),
+            })
+        }
+    }
+
+    // A network that writes every block asks for a read while one is out, again and again: the
+    // read out lands what it read, and one more read follows it, however many asks came in
+    // meanwhile. A read replaced for each ask would never land.
+    #[test]
+    fn a_reread_asked_while_one_is_out_lands_it_then_reads_once_more() {
+        let mut cx = TestAppContext::new();
+        cx.host().never::<Query<Counter>>();
+        let view = cx.open::<Recount>();
+        let first = asked(&cx);
+        for _ in 0..3 {
+            cx.update(&view, |view, _, cx| view.read(cx));
+            cx.tick(vec![]);
+        }
+        assert_eq!(
+            cx.host().requests::<Query<Counter>>().len(),
+            1,
+            "the read out is kept"
+        );
+        cx.host().handle::<Query<Counter>>(|()| Ok(6));
+        cx.tick(vec![answer(first, 5)]);
+        view.read(|view| assert_eq!(view.value.ready(), Some(&5), "{:?}", view.value));
+        cx.run_until_parked();
+        assert!(cx.has_text("6"), "{:?}", cx.texts());
+        assert_eq!(
+            cx.host().requests::<Query<Counter>>().len(),
+            2,
+            "one more read, and no other"
+        );
     }
 }

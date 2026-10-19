@@ -81,7 +81,7 @@ pub mod prelude {
         ListHorizontalSizingBehavior, ListOffset, ListScrollEvent, ListSizingBehavior, ListState,
         Loadable, MediaState, MediaStatus, Memo, MicHandle, ModifiersChangedEvent, MouseButton,
         MouseDownEvent, MouseExitEvent, MouseMoveEvent, MousePressureEvent, MouseUpEvent,
-        ObjectFit, ParentElement, PinchEvent, Pixels, Playback, Render, RenderOnce, Role,
+        ObjectFit, ParentElement, PinchEvent, Pixels, Playback, Render, RenderOnce, Reread, Role,
         ScrollHandle, ScrollStrategy, ScrollWheelEvent, SharedString, StatefulInteractiveElement,
         Styled, StyledImage, StyledText, Subscription, Task, TextField, TextInputAction, Textarea,
         Theme, Tint, TrackState, UniformListScrollHandle, View, VirtualKeyboard, WebHandle,
@@ -106,7 +106,7 @@ mod window;
 
 mod root;
 mod snapshot;
-pub use root::{Loadable, Render, View};
+pub use root::{Loadable, Render, Reread, View};
 mod paged;
 pub use paged::Paged;
 pub use wire::methods;

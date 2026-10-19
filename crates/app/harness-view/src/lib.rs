@@ -11,7 +11,7 @@ mod timeline;
 mod ui;
 mod words;
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -46,11 +46,11 @@ pub struct Agents {
     #[serde(skip)]
     chain: String,
     #[serde(skip)]
-    roster: Loadable<Roster>,
+    roster: Reread<Roster>,
     #[serde(skip)]
-    budget: Loadable<harness::BudgetReport>,
+    budget: Reread<harness::BudgetReport>,
     #[serde(skip)]
-    detail: Loadable<Detail>,
+    detail: Reread<Detail>,
     #[serde(skip)]
     transcript: Loadable<Option<Transcript>>,
     #[serde(skip)]
@@ -72,9 +72,6 @@ pub struct Agents {
     reading: Option<Task<()>>,
     #[serde(skip)]
     title: Option<String>,
-    // a change heard while the roster or the agent is read reads it once more when it lands
-    #[serde(skip)]
-    again: Again,
     // what the roster's last read held of each agent's conversations, and what moved since
     #[serde(skip)]
     known: Rc<RefCell<read::Known>>,
@@ -106,13 +103,6 @@ pub struct Agents {
 
 // A face's picture, once read: `None` while it is read, and for an account with none.
 pub(crate) type Picture = Option<std::sync::Arc<view::Image>>;
-
-#[derive(Default)]
-struct Again {
-    roster: Rc<Cell<bool>>,
-    detail: Rc<Cell<bool>>,
-    budget: Rc<Cell<bool>>,
-}
 
 #[derive(Default)]
 pub(crate) struct Wanted {
@@ -228,10 +218,6 @@ pub(crate) fn agent_state(card: &read::Card, roster: &Roster) -> State {
     })
 }
 
-fn busy<T>(slot: &Loadable<T>) -> bool {
-    matches!(slot, Loadable::Loading(_) | Loadable::Reloading(..))
-}
-
 fn shown_mut(slot: &mut Loadable<Option<Transcript>>) -> Option<&mut Transcript> {
     match slot {
         Loadable::Ready(Some(shown)) | Loadable::Reloading(Some(shown), _) => Some(shown),
@@ -318,7 +304,7 @@ impl View for Agents {
                     view.chain = session.chain_id;
                     if reader {
                         // another reader's roster: the one being read is the last one's
-                        view.roster = Loadable::Idle;
+                        *view.roster = Loadable::Idle;
                         view.known.borrow_mut().forget();
                         view.read_roster(cx);
                     }
@@ -460,62 +446,45 @@ impl Agents {
         }
     }
 
+    // a change heard while the roster, the budget or the agent is read reads it once more when
+    // that read lands
     fn read_roster(&mut self, cx: &mut Context<Self>) {
-        if busy(&self.roster) {
-            self.again.roster.set(true);
-            return;
-        }
-        let (host, me, again) = (cx.host(), self.me, self.again.roster.clone());
-        let known = self.known.clone();
-        let read = async move {
-            loop {
-                again.set(false);
-                let roster = read::roster(host.clone(), me, &known).await;
-                if roster.is_err() {
-                    known.borrow_mut().forget();
+        cx.reread(
+            self,
+            |view| &mut view.roster,
+            |view, cx| {
+                let (host, me, known) = (cx.host(), view.me, view.known.clone());
+                async move {
+                    let roster = read::roster(host, me, &known).await;
+                    if roster.is_err() {
+                        known.borrow_mut().forget();
+                    }
+                    roster
                 }
-                if !again.get() {
-                    return roster;
-                }
-            }
-        };
-        cx.load(self, read, |view| &mut view.roster);
+            },
+            Self::read_roster,
+        );
     }
 
     fn read_budget(&mut self, cx: &mut Context<Self>) {
-        if busy(&self.budget) {
-            self.again.budget.set(true);
-            return;
-        }
-        let (host, again) = (cx.host(), self.again.budget.clone());
-        let read = async move {
-            loop {
-                again.set(false);
-                let budget = read::budget(&host).await;
-                if !again.get() {
-                    return budget;
-                }
-            }
-        };
-        cx.load(self, read, |view| &mut view.budget);
+        cx.reread(
+            self,
+            |view| &mut view.budget,
+            |_, cx| {
+                let host = cx.host();
+                async move { read::budget(&host).await }
+            },
+            Self::read_budget,
+        );
     }
 
     fn read_detail(&mut self, agent: u64, cx: &mut Context<Self>) {
-        if busy(&self.detail) {
-            self.again.detail.set(true);
-            return;
-        }
-        let (host, again) = (cx.host(), self.again.detail.clone());
-        let read = async move {
-            loop {
-                again.set(false);
-                let detail = read::detail(host.clone(), agent).await;
-                if !again.get() {
-                    return detail;
-                }
-            }
-        };
-        cx.load(self, read, |view| &mut view.detail);
+        cx.reread(
+            self,
+            |view| &mut view.detail,
+            move |_, cx| read::detail(cx.host(), agent),
+            Self::read_screen,
+        );
     }
 
     fn read_screen(&mut self, cx: &mut Context<Self>) {
@@ -700,7 +669,7 @@ impl Agents {
         // what the next screen reads of the same agent or thread stays on screen while it is
         // read again
         if screen.agent() != self.screen.agent() {
-            self.detail = Loadable::Idle;
+            *self.detail = Loadable::Idle;
             self.setup_draft = SetupDraft::default();
         }
         if screen.thread() != self.screen.thread() {

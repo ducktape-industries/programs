@@ -85,6 +85,7 @@ with these; the rest of this page is reference.
 | `cx.follow::<D>(request, \|view, item, cx\| ..).detach()` | 6/6 | A host stream: the session, a program's blocks, the clock. One call a stream, in `attach`. |
 | `cx.log_refused(what, &refusal)` | 6/6 | A refusal nothing on screen waits for, to the host's log under the view's `NAME`. It asks `host.log`, so the view declares `Capability::Host`. |
 | `Loadable<T>`; `cx.load(self, work, \|view\| &mut view.slot)` | 6/6; 5/6 | An answer and its states, and the read that fills it. |
+| `Reread<T>`; `cx.reread(self, \|view\| &mut view.slot, \|view, cx\| work, Self::read)` | 1/6 | A `Loadable` read again on every change heard: a read out lands, and one more follows it. |
 | `cx.land(work, \|view, answer, cx\| ..)` | 6/6 | The answer to your own closure: a write, or a read that does more than fill a slot. |
 | `host.query(ask)`, `host.query_all(\|after\| ask)` | 5/6 | A typed question to a program: one page, or the listing whole. |
 | `cx.notify()` | 6/6 | The view decides when it renders ("When a view renders"). |
@@ -416,6 +417,12 @@ for something only the view can judge.
   read that must blank what is shown first says so in its own line,
   `self.slot = Loadable::Idle;`. The read lives in the slot: replacing or
   dropping the slot cancels it, so a newer read supersedes an older one.
+  `Reread<T>` is a `Loadable` for what a view reads again on every change it
+  hears: `cx.reread(self, |view| &mut view.slot, |view, cx| work, Self::read)`
+  reads it as `load` does, unless a read of it is out. Then the read out is
+  kept, and once it has landed `Self::read` runs once, however many changes
+  came in meanwhile. A read replaced for every write heard while it runs never
+  lands on a network that writes every block.
 - `cx.land(work, |view, answer, cx| ..)` hands the answer, the value or the
   refusal, to the closure and does nothing else; the closure notifies if it
   moved anything. It is for a write, or a read that does more than fill a

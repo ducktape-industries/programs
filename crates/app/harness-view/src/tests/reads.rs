@@ -188,6 +188,28 @@ fn a_block_that_writes_a_conversation_reads_it_alone_and_no_agents_list() {
     );
 }
 
+// duckpond writes harness in every block: a roster read that a write overtakes lands what it
+// read, and the write reads once more after it. Thrown away for each write instead, the list
+// stayed on its first read forever.
+#[test]
+fn a_roster_read_lands_though_a_write_comes_in_every_block() {
+    let (mut cx, shared) = seated(Net::default(), EDDY);
+    let changes = cx.host().stream::<Changes<harness::Harness>>();
+    cx.run_until_parked();
+    changes.send(wrote(10, &[Written::Agent(SCOUT)]));
+    cx.run_until_parked();
+    let one_read = cx.reports().len();
+    shared
+        .borrow_mut()
+        .threads
+        .push(thread(11, SCOUT, EDDY, "chat/ops"));
+    for height in 11..11 + 2 * one_read as u64 {
+        changes.send(wrote(height, &[Written::Agent(SCOUT)]));
+        cx.tick(Vec::new());
+    }
+    assert!(cx.has_text("2 open · 1 closed"), "{:?}", cx.texts());
+}
+
 #[test]
 fn a_new_conversation_reads_its_agents_list_again_and_no_other() {
     let (mut cx, shared) = seated(Net::default(), EDDY);
