@@ -92,6 +92,8 @@ struct World {
     asked_roots: Rc<RefCell<Vec<Vec<u64>>>>,
     /// Whether a `Followed` read is refused.
     refuse_followed: Rc<Cell<bool>>,
+    // whether an `Accounts` read is refused
+    refuse_accounts: Rc<Cell<bool>>,
     /// What the reader chose, room by room, as chat keeps it on chain.
     choices: Rc<RefCell<BTreeMap<String, Choice>>>,
     kept: Rc<RefCell<BTreeMap<String, Vec<u8>>>>,
@@ -104,15 +106,27 @@ impl World {
         let world = self.clone();
         host.handle::<Ask<chat::Chat>>(move |query| {
             Ok(match query {
-                Query::Accounts { .. } => Reply::Accounts(page(
-                    [(7, "eddy"), (8, "reviewer")]
-                        .map(|(number, name)| chat::Profile {
-                            number,
-                            name: name.into(),
-                            kind: chat::Kind::User,
-                        })
-                        .into(),
-                )),
+                Query::Accounts { .. } => {
+                    if world.refuse_accounts.get() {
+                        return Err(view::host::Error::new("refused", "the node is busy"));
+                    }
+                    let profile = |number, name: &str, kind| chat::Profile {
+                        number,
+                        name: name.into(),
+                        kind,
+                    };
+                    let idle = chat::Kind::Program {
+                        script: None,
+                        manager: 7,
+                        category: chat::Category::Agent,
+                        standing: chat::Standing::Suspended,
+                    };
+                    Reply::Accounts(page(vec![
+                        profile(7, "eddy", chat::Kind::User),
+                        profile(8, "reviewer", chat::Kind::User),
+                        profile(9, "idle", idle),
+                    ]))
+                }
                 Query::Channels { .. } => Reply::Channels(page(world.rooms.borrow().clone())),
                 Query::Channel { channel_id } => {
                     let rooms = world.rooms.borrow();
@@ -612,6 +626,46 @@ fn a_mention_is_told_though_where_i_am_will_not_read() {
     world.start(&mut notifier);
     world.post(&mut notifier, vec![mention("general", 1)]);
     assert_eq!(titles(&notifier), ["reviewer mentioned you"]);
+}
+
+// A notice names its sender as the roster does, a person and an agent that does not act alike.
+#[test]
+fn a_notice_names_a_person_and_a_suspended_agent() {
+    let world = World::default();
+    *world.rooms.borrow_mut() = vec![room("general", "General", 0)];
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    let at_me = || said("@eddy", vec![Mark::Mention(Principal::Account(7))]);
+    world.post(
+        &mut notifier,
+        vec![row("general", 1, 8, at_me()), row("general", 2, 9, at_me())],
+    );
+    assert_eq!(
+        titles(&notifier),
+        ["reviewer mentioned you", "idle (suspended) mentioned you"]
+    );
+}
+
+// The roster will not read as the run starts (a node busy with every notifier a server starts
+// at once): nothing is announced until it reads, the next block reads it again, and what came
+// meanwhile is announced then, by name.
+#[test]
+fn a_roster_that_would_not_read_is_read_again_before_any_notice() {
+    let world = World::default();
+    world.keep("notified/0102", &BTreeMap::from([("general".into(), 0)]));
+    *world.rooms.borrow_mut() = vec![room("general", "General", 0)];
+    world.refuse_accounts.set(true);
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    world.post(&mut notifier, vec![mention("general", 1)]);
+    assert!(posts(&notifier).is_empty(), "{:?}", posts(&notifier));
+
+    world.refuse_accounts.set(false);
+    world.post(&mut notifier, vec![mention("general", 2)]);
+    assert_eq!(
+        titles(&notifier),
+        ["reviewer mentioned you", "reviewer mentioned you"]
+    );
 }
 
 fn say_hi() -> Vec<Block> {

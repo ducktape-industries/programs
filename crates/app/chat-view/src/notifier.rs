@@ -65,6 +65,9 @@ pub struct ChatNotices {
     /// Moves with every new reader: what lands for an earlier one is dropped.
     run: u64,
     names: Option<Names>,
+    // a roster read under way, and whether something moved the roster since it began
+    reading_names: bool,
+    names_again: bool,
     /// The rooms and their heads, as the channel list last said.
     rooms: Option<Vec<ChannelInfo>>,
     // what moved of the list since its last read, and whether a read is under way
@@ -118,6 +121,10 @@ impl Notifier for ChatNotices {
                 let change = change.as_ref();
                 notices.moved.heard(change);
                 notices.load_rooms(cx);
+                // a roster that would not read is read again with the next block
+                if notices.names.is_none() {
+                    notices.load_names(cx);
+                }
                 if let Some(me) = notices.session.account
                     && change.is_none_or(|change| choices_moved(change, me))
                 {
@@ -205,20 +212,31 @@ impl ChatNotices {
         .detach();
     }
 
+    // The roster, one read at a time, and one more when it moved during that one. A refused
+    // read keeps the names as they were, none on a run's first read: the notices wait for them
+    // and the next block reads them again, so no sender is named "account N" for want of a read.
     fn load_names(&mut self, cx: &mut Context<Self>) {
+        if self.reading_names {
+            self.names_again = true;
+            return;
+        }
+        self.reading_names = true;
         let host = cx.host();
         let names = ::chat::view::roster(move |ask| host.query(ask));
         self.load(
             names,
             |notices, names, cx| {
-                // a roster that will not load names everyone "account N":
-                // the notices still go out
-                let names = names.unwrap_or_else(|refusal| {
-                    log_refused(cx, "the names", &refusal);
-                    Names::default()
-                });
-                notices.names = Some(names);
-                notices.settle(cx);
+                notices.reading_names = false;
+                match names {
+                    Ok(names) => {
+                        notices.names = Some(names);
+                        notices.settle(cx);
+                    }
+                    Err(refusal) => log_refused(cx, "the names", &refusal),
+                }
+                if std::mem::take(&mut notices.names_again) {
+                    notices.load_names(cx);
+                }
             },
             cx,
         );
