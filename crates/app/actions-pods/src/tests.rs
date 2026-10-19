@@ -5,7 +5,9 @@ use ::program::{
     Error, ExecCtx, MockChain, MockHost, Origin, Program, QueryCtx, Scheme, code, invalid,
     wrong_state,
 };
-use abi::role::egress::{Answer, Event, Op as Egress, Request, RequestRow, StreamEnd, http};
+use abi::role::egress::{
+    Answer, DEFAULT_WAIT, Event, Op as Egress, Request, RequestRow, StreamEnd, http,
+};
 use actions::{CheckRow, Input, Job, Offer, State};
 use serde_json::{Value, json};
 use store::Item;
@@ -250,7 +252,7 @@ fn sent(method: &str, target: &str) -> (String, String) {
 
 // An offer at 1000 ms, its run the block after at 3000 ms: a block of 2000 ms. The pod's creation
 // lands 500 ms later, so a wait request lasts 64 × 2000 ms and its alive events come every
-// (128000 − 500) / 1000 = 127 s.
+// (128000 / 2 − 500) / 1000 = 63 s.
 fn ran_to_its_end(exit_code: Value) -> Node {
     let mut node = node();
     node.offer(1).unwrap();
@@ -272,7 +274,7 @@ fn ran_to_its_end(exit_code: Value) -> Node {
     );
     node.answer(500, 201, json!({"pod": {"name": "duckpond-7"}}));
     let wait = node.pending();
-    let every = sent("GET", "/v1/pods/duckpond-7/wait?every=127");
+    let every = sent("GET", "/v1/pods/duckpond-7/wait?every=63");
     assert_eq!(aimed(&wait), every);
     node.after(1_000);
     let alive = Event {
@@ -327,7 +329,7 @@ fn an_offered_check_runs_in_a_pod_and_passes_when_its_steps_do() {
         pod: Some("duckpond-7".into()),
         block_ms: 2_000,
         trip_ms: 500,
-        every: 127,
+        every: 63,
     };
     assert_eq!(node.run(1), Some(row));
 }
@@ -404,4 +406,93 @@ fn a_check_another_runner_claimed_is_left_alone_and_only_its_senders_are_heard()
         .submit(signed, PROGRAM, &Op::Heard(event))
         .unwrap_err();
     assert_eq!(heard.code, code::UNAUTHORIZED);
+}
+
+// The wait opens after the creation's answer; 65 blocks of 1 s pass with no event, so egress
+// expires it, and the pod is read.
+fn outlived(node: &mut Node) {
+    node.offer(1).unwrap();
+    node.after(2_000);
+    node.after(0);
+    node.answer(500, 201, json!({"pod": {"name": "duckpond-7"}}));
+    let first = node.pending();
+    assert_eq!(
+        aimed(&first),
+        sent("GET", "/v1/pods/duckpond-7/wait?every=63")
+    );
+    for _ in 0..=DEFAULT_WAIT {
+        node.after(1_000);
+    }
+}
+
+fn run_status(state: &str, exit_code: Value) -> Value {
+    let status = json!({"state": state, "exit_code": exit_code, "reason": "Error"});
+    let run = json!({"name": "run", "status": status});
+    json!({"pod": {"name": "duckpond-7", "phase": "Running", "containers": [run]}})
+}
+
+// What follows a pod's end: /out listed (its log alone), copied, and the pod deleted.
+fn copied_and_deleted(node: &mut Node) {
+    let listed = json!({"exit_code": 0, "stdout": "/out/log\n", "stderr": ""});
+    let find = node.answer(1_000, 200, listed);
+    assert_eq!(find, sent("POST", "/v1/pods/duckpond-7/exec"));
+    let copied = node.answer(1_000, 200, json!({"written": "/shared/…"}));
+    assert_eq!(copied, sent("POST", "/v1/pods/duckpond-7/file"));
+    let deleted = node.answer(1_000, 200, json!({"deleted": "duckpond-7"}));
+    assert_eq!(deleted, sent("DELETE", "/v1/pods/duckpond-7"));
+    assert!(node.idle());
+}
+
+#[test]
+fn a_pod_that_outlives_its_wait_is_read_and_waited_on_again_at_the_beat_its_blocks_measured() {
+    let mut node = node();
+    outlived(&mut node);
+    let read = node.answer(1_000, 200, run_status("running", Value::Null));
+    assert_eq!(read, sent("GET", "/v1/pods/duckpond-7"));
+    let again = node.pending();
+    // 66 blocks over 66 s since the first wait opened: blocks of 1000 ms, (32000 − 500) / 1000
+    assert_eq!(
+        aimed(&again),
+        sent("GET", "/v1/pods/duckpond-7/wait?every=31")
+    );
+    node.after(1_000);
+    let line = "pod duckpond-7 ended: exit code 0 (Completed)";
+    let ended = json!({"line": line, "exit_code": 0, "pod": {"name": "duckpond-7"}});
+    let ended = Event {
+        id: again.id,
+        seq: 0,
+        data: format!("event: ended\ndata: {ended}").into_bytes(),
+    };
+    node.node(&Egress::Events(vec![ended]));
+    let end = StreamEnd::Complete {
+        status: 200,
+        headers: vec![("content-type".into(), "text/event-stream".into())],
+    };
+    let finished = Egress::EndStream {
+        id: again.id,
+        events: 1,
+        end,
+    };
+    node.node(&finished);
+    copied_and_deleted(&mut node);
+    let log = format!("/shared/actions/programs/{COMMIT}/gates/gates-1/log");
+    assert_eq!(
+        node.reports(),
+        [(1, State::Passed, line.to_owned(), Some(log))]
+    );
+    let row = node.run(1).unwrap();
+    assert_eq!((row.block_ms, row.every), (1_000, 31));
+}
+
+#[test]
+fn a_pod_that_ended_while_its_wait_was_broken_reports_how_it_ended() {
+    let mut node = node();
+    outlived(&mut node);
+    let terminated = run_status("terminated", json!(2));
+    let read = node.answer(1_000, 200, terminated);
+    assert_eq!(read, sent("GET", "/v1/pods/duckpond-7"));
+    copied_and_deleted(&mut node);
+    let line = "pod duckpond-7 ended: exit code 2 (Error)".to_owned();
+    let log = format!("/shared/actions/programs/{COMMIT}/gates/gates-1/log");
+    assert_eq!(node.reports(), [(1, State::Failed, line, Some(log))]);
 }

@@ -102,9 +102,10 @@ fn check_row(ctx: &QueryCtx, id: u64) -> Result<CheckRow, Error> {
     }
 }
 
-// The pod made, its end awaited, its outputs copied. The alive events come as often as a request
-// lasts (DEFAULT_WAIT blocks of the measured block time) less the trip the pod's creation took
-// to land, so each lands before the request it keeps alive expires.
+// The pod made, its end awaited, its outputs copied. The wait's alive events beat at half a
+// request's lifetime less the trip (`alive_every`). A wait that ends with no `ended` (an expiry,
+// a node restart) asks the pod itself: one that ended is read so, and one still running is
+// waited on again, its beat measured from the blocks the broken wait lasted.
 async fn pod_run(ctx: &Ctx, check: &CheckRow, kept: &mut RunRow) -> Result<Ending, String> {
     let made_at = ctx.env().time;
     let created = post(ctx, "/v1/pods".to_owned(), &pod_body(check)).await?;
@@ -114,31 +115,33 @@ async fn pod_run(ctx: &Ctx, check: &CheckRow, kept: &mut RunRow) -> Result<Endin
         .ok_or("the pods service named no pod")?
         .to_owned();
     kept.pod = Some(pod.clone());
-    let lasts = DEFAULT_WAIT.saturating_mul(kept.block_ms);
-    let every = lasts.saturating_sub(kept.trip_ms) / 1000;
-    if every == 0 {
-        return Err(format!(
-            "a request lasts {lasts} ms ({DEFAULT_WAIT} blocks of {} ms) and the pod's creation took {} ms to land, which leaves no whole second between alive events",
-            kept.block_ms, kept.trip_ms
-        ));
-    }
-    kept.every = every;
-    let wait = format!("/v1/pods/{pod}/wait?every={every}");
-    let events = Delivery::Events {
-        deliver: crate::heard_as(),
+    let mut opened = (ctx.env().height, ctx.env().time);
+    let ended = loop {
+        let every = alive_every(kept.block_ms, kept.trip_ms)?;
+        kept.every = every;
+        let wait = format!("/v1/pods/{pod}/wait?every={every}");
+        let events = Delivery::Events {
+            deliver: crate::heard_as(),
+        };
+        let waited = ask(ctx, http::Method::Get, wait, Vec::new(), events).await;
+        if let Some(ended) = ENDED.get(ctx, &pod).map_err(|refused| refused.message)? {
+            ENDED.remove(ctx, &pod);
+            break serde_json::from_slice::<Value>(&ended).map_err(|error| error.to_string())?;
+        }
+        if let Ok(answer) = &waited
+            && answer.status != 200
+        {
+            return Err(refusal("the wait", answer));
+        }
+        if let Some(ended) = pod_ended(ctx, &pod).await? {
+            break ended;
+        }
+        let (height, time) = (ctx.env().height, ctx.env().time);
+        if let Some(blocks) = height.checked_sub(opened.0).filter(|blocks| *blocks > 0) {
+            kept.block_ms = time.saturating_sub(opened.1) / blocks;
+        }
+        opened = (height, time);
     };
-    let waited = ask(ctx, http::Method::Get, wait, Vec::new(), events)
-        .await
-        .map_err(|refused| refused.message)?;
-    if waited.status != 200 {
-        return Err(refusal("the wait", &waited));
-    }
-    let ended = ENDED
-        .get(ctx, &pod)
-        .map_err(|refused| refused.message)?
-        .ok_or("the wait ended without an ended event")?;
-    ENDED.remove(ctx, &pod);
-    let ended: Value = serde_json::from_slice(&ended).map_err(|error| error.to_string())?;
     let state = match ended["exit_code"].as_i64() {
         Some(0) => State::Passed,
         Some(_) => State::Failed,
@@ -154,6 +157,55 @@ async fn pod_run(ctx: &Ctx, check: &CheckRow, kept: &mut RunRow) -> Result<Endin
         summary,
         log,
     })
+}
+
+// How often a pod's alive events come, in whole seconds: each must land inside the request it
+// keeps alive, which lasts DEFAULT_WAIT blocks of the measured block time, and a beat lands up to
+// the measured trip after the pods service sends it. So beats come every half that lifetime less
+// the trip (chief, j-033 msg 68), leaving the other half for a beat held up on its way.
+pub(crate) fn alive_every(block_ms: u64, trip_ms: u64) -> Result<u64, String> {
+    let lasts = DEFAULT_WAIT.saturating_mul(block_ms);
+    match (lasts / 2).saturating_sub(trip_ms) / 1000 {
+        0 => Err(format!(
+            "a request lasts {lasts} ms ({DEFAULT_WAIT} blocks of {block_ms} ms) and a trip took {trip_ms} ms to land, which leaves no whole second between alive events inside half of it"
+        )),
+        every => Ok(every),
+    }
+}
+
+// The pod as the pods service reads it now: how it ended, in the `ended` event's shape, or None
+// while its run container runs.
+async fn pod_ended(ctx: &Ctx, pod: &str) -> Result<Option<Value>, String> {
+    let target = format!("/v1/pods/{pod}");
+    let read = ask(ctx, http::Method::Get, target, Vec::new(), Delivery::Whole)
+        .await
+        .map_err(|refused| refused.message)?;
+    if read.status != 200 {
+        return Err(refusal("the pod's read", &read));
+    }
+    let view: Value = serde_json::from_slice(&read.body).map_err(|error| error.to_string())?;
+    let view = &view["pod"];
+    let run = view["containers"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|container| container["name"] == "run");
+    let status = run.map(|container| &container["status"]);
+    let terminated = status.is_some_and(|status| status["state"] == "terminated");
+    let phase = view["phase"].as_str().unwrap_or_default();
+    if !terminated && !matches!(phase, "Succeeded" | "Failed") {
+        return Ok(None);
+    }
+    let exit_code = status.map_or(Value::Null, |status| status["exit_code"].clone());
+    let why = status
+        .and_then(|status| status["reason"].as_str())
+        .or(view["reason"].as_str())
+        .unwrap_or(phase);
+    let line = match exit_code.as_i64() {
+        Some(code) => format!("pod {pod} ended: exit code {code} ({why})"),
+        None => format!("pod {pod} ended: {why}"),
+    };
+    Ok(Some(json!({"line": line, "exit_code": exit_code})))
 }
 
 // The check's repository at its commit in `/work/<repo>`, its inputs, and its steps run there in
