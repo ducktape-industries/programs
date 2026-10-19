@@ -13,7 +13,6 @@ const UNDESCRIBED: &[&str] = &[
     "scheduler",
     "access",
     "ownership",
-    "chat",
     "forge",
     "files",
     "activity",

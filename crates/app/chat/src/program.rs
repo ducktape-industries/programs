@@ -27,7 +27,7 @@ impl Program for Chat {
     type Reply = Reply;
     const TABLES: &'static [::program::Table] = crate::state::TABLES;
     const RETURNS: &'static [::program::schema::Return] =
-        &[::program::schema::returns::<Option<Vec<u8>>>("AdoptOwners")];
+        <Op as ::program::tools::Described>::RETURNS;
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         let sender = ctx.sender()?;
@@ -120,6 +120,10 @@ impl Program for Chat {
                 watching,
             } => watch(ctx, &channel_id, watching),
         }
+    }
+
+    fn tools() -> ::program::tools::Tools {
+        ::program::tools::Tools::of::<Op, Query>()
     }
 
     fn reply(_ctx: &ExecCtx, _id: &MessageId, _outcome: &Outcome) -> Result<(), Error> {

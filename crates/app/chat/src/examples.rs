@@ -1,0 +1,312 @@
+//! A working value of each chat op and query, as `#[tool_op]` and `#[tool_query]` name them: what
+//! an agent edits rather than build one from the schema.
+use std::collections::BTreeMap;
+
+use crate::{Block, Mark, Notices, Op, PageRequest, PostPolicy, Principal, Query, Span};
+
+const ROOM: &str = "design";
+
+fn room() -> String {
+    ROOM.into()
+}
+
+fn me() -> Vec<Principal> {
+    vec![Principal::Account(21)]
+}
+
+fn every() -> PageRequest {
+    PageRequest {
+        after: None,
+        limit: None,
+    }
+}
+
+fn twenty() -> PageRequest {
+    PageRequest {
+        after: None,
+        limit: Some(20),
+    }
+}
+
+pub(crate) fn create() -> Op {
+    Op::CreateChannel {
+        channel_id: room(),
+        name: room(),
+        post_policy: PostPolicy::Open,
+    }
+}
+
+pub(crate) fn dm() -> Op {
+    Op::CreateDmChannel {
+        counterpart: 17,
+        name: "chief".into(),
+    }
+}
+
+pub(crate) fn rename() -> Op {
+    Op::RenameChannel {
+        channel_id: room(),
+        name: "design review".into(),
+    }
+}
+
+pub(crate) fn archive() -> Op {
+    Op::SetChannelArchived {
+        channel_id: room(),
+        archived: true,
+    }
+}
+
+pub(crate) fn post() -> Op {
+    let hello = Span::plain("hello ");
+    let chief = Span {
+        text: "chief".into(),
+        marks: vec![Mark::Mention(Principal::Account(17))],
+    };
+    Op::PostMessage {
+        channel_id: room(),
+        message_id: "m-1".into(),
+        blocks: vec![Block::Paragraph(vec![hello, chief])],
+        thread: None,
+    }
+}
+
+pub(crate) fn edit() -> Op {
+    Op::EditMessage {
+        channel_id: room(),
+        seq: 4,
+        blocks: vec![Block::paragraph("hello again")],
+        base_rev: None,
+    }
+}
+
+pub(crate) fn delete() -> Op {
+    Op::DeleteMessage {
+        channel_id: room(),
+        seq: 4,
+    }
+}
+
+pub(crate) fn react() -> Op {
+    Op::AddReaction {
+        channel_id: room(),
+        seq: 4,
+        emoji: "👍".into(),
+    }
+}
+
+pub(crate) fn unreact() -> Op {
+    Op::RemoveReaction {
+        channel_id: room(),
+        seq: 4,
+        emoji: "👍".into(),
+    }
+}
+
+pub(crate) fn seat() -> Op {
+    Op::SetMembership {
+        channel_id: room(),
+        principal: Principal::Account(21),
+        member: true,
+    }
+}
+
+pub(crate) fn create_with_meta() -> Op {
+    Op::CreateChannelWithMeta {
+        channel_id: room(),
+        name: room(),
+        post_policy: PostPolicy::Open,
+        meta: BTreeMap::from([(crate::RULES.to_owned(), "English, short.".to_owned())]),
+    }
+}
+
+pub(crate) fn set_meta() -> Op {
+    Op::SetChannelMeta {
+        channel_id: room(),
+        key: crate::RULES.into(),
+        value: "English, short.".into(),
+    }
+}
+
+pub(crate) fn remove_meta() -> Op {
+    Op::RemoveChannelMeta {
+        channel_id: room(),
+        key: crate::RULES.into(),
+    }
+}
+
+pub(crate) fn migrate() -> Op {
+    Op::Migrate { channel_id: room() }
+}
+
+pub(crate) fn listen() -> Op {
+    Op::Listen {
+        channel_id: room(),
+        listening: true,
+    }
+}
+
+pub(crate) fn migrate_some() -> Op {
+    Op::MigrateSome { limit: 1 }
+}
+
+pub(crate) fn notices() -> Op {
+    Op::SetNotices {
+        channel_id: room(),
+        notices: Some(Notices::Mentions),
+    }
+}
+
+pub(crate) fn adopt() -> Op {
+    Op::AdoptOwners {
+        kind: "chat.message".into(),
+        after: None,
+        limit: 100,
+    }
+}
+
+pub(crate) fn listen_for() -> Op {
+    Op::ListenFor {
+        account: 21,
+        channel_id: room(),
+        listening: true,
+    }
+}
+
+pub(crate) fn notices_for() -> Op {
+    Op::SetNoticesFor {
+        account: 21,
+        channel_id: room(),
+        notices: Some(Notices::Off),
+    }
+}
+
+pub(crate) fn watch() -> Op {
+    Op::Watch {
+        channel_id: room(),
+        watching: true,
+    }
+}
+
+pub(crate) fn channels() -> Query {
+    Query::Channels { page: every() }
+}
+
+pub(crate) fn channel() -> Query {
+    Query::Channel { channel_id: room() }
+}
+
+pub(crate) fn by_id() -> Query {
+    Query::MessageById {
+        message_id: "m-1".into(),
+    }
+}
+
+pub(crate) fn attention() -> Query {
+    Query::ThreadAttention {
+        channel_id: room(),
+        author: Principal::Account(21),
+    }
+}
+
+pub(crate) fn roots() -> Query {
+    Query::Roots {
+        channel_id: room(),
+        viewer: me(),
+        page: twenty(),
+    }
+}
+
+pub(crate) fn around() -> Query {
+    Query::MessagesAround {
+        channel_id: room(),
+        seq: 40,
+        viewer: me(),
+        page: twenty(),
+    }
+}
+
+pub(crate) fn thread() -> Query {
+    Query::Thread {
+        channel_id: room(),
+        root_seq: 4,
+        viewer: me(),
+        page: every(),
+    }
+}
+
+pub(crate) fn members() -> Query {
+    Query::Members {
+        channel_id: room(),
+        page: every(),
+    }
+}
+
+pub(crate) fn search() -> Query {
+    Query::Search {
+        text: "deploy".into(),
+        viewer: me(),
+        channel_id: None,
+        page: twenty(),
+    }
+}
+
+pub(crate) fn tagged() -> Query {
+    Query::TagSearch {
+        tag: "release".into(),
+        viewer: me(),
+        channel_id: None,
+        page: twenty(),
+    }
+}
+
+pub(crate) fn accounts() -> Query {
+    Query::Accounts { page: every() }
+}
+
+pub(crate) fn reactors() -> Query {
+    Query::Reactors {
+        channel_id: room(),
+        seqs: vec![4, 5],
+    }
+}
+
+pub(crate) fn unmigrated() -> Query {
+    Query::Unmigrated { page: every() }
+}
+
+pub(crate) fn listening() -> Query {
+    Query::Listening {
+        account: 21,
+        page: every(),
+    }
+}
+
+pub(crate) fn followed() -> Query {
+    Query::Followed {
+        channel_id: room(),
+        account: 21,
+        roots: vec![4],
+    }
+}
+
+pub(crate) fn cut() -> Query {
+    Query::Notices {
+        account: 21,
+        page: every(),
+    }
+}
+
+pub(crate) fn watching() -> Query {
+    Query::Watching {
+        account: 21,
+        page: every(),
+    }
+}
+
+pub(crate) fn chosen() -> Query {
+    Query::Chosen {
+        account: 21,
+        channel_id: room(),
+    }
+}

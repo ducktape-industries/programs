@@ -26,6 +26,7 @@
 mod adopt;
 pub mod attributed;
 mod description;
+mod examples;
 mod gate;
 mod listen;
 mod mentions;
@@ -74,8 +75,14 @@ pub const PROGRAM: &str = "chat";
 pub const RULES: &str = "rules";
 
 /// A write. The enum only grows at its end (see `op_variants_only_append`).
-#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
+#[derive(
+    BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq, ::program::Described,
+)]
+#[tool_about(
+    "Channels, direct rooms, messages, threads, reactions and who hears each room. A message is markdown blocks; read one back as `text`."
+)]
 pub enum Op {
+    #[tool_op(description = "Open a channel you own. channel_id has no '/', and an id with ':' belongs to the program its prefix names; `dm-` ids open only through CreateDmChannel. Open lets anyone post; MembersOnly lets you and its members.", example = examples::create)]
     CreateChannel {
         channel_id: String,
         name: String,
@@ -84,19 +91,17 @@ pub enum Op {
     /// A members-only room between the actor's account and `counterpart`,
     /// id [`dm_channel_id`]; creating it twice is a no-op. The only way a
     /// dm id opens.
+    #[tool_op(description = "Open the members-only room between you and counterpart, id `dm-<lower>-<higher>`. Opening it again does nothing.", example = examples::dm)]
     CreateDmChannel {
         counterpart: AccountNumber,
         name: String,
     },
-    RenameChannel {
-        channel_id: String,
-        name: String,
-    },
-    SetChannelArchived {
-        channel_id: String,
-        archived: bool,
-    },
+    #[tool_op(description = "Rename a channel. Its owner, or whom the owner lists; never a direct room.", example = examples::rename)]
+    RenameChannel { channel_id: String, name: String },
+    #[tool_op(description = "Archive a channel (no one posts there) or bring it back. Its owner, or whom the owner lists; never a direct room.", example = examples::archive)]
+    SetChannelArchived { channel_id: String, archived: bool },
     /// `thread` names the root this message replies to.
+    #[tool_op(description = "Post in a channel, or reply in a thread when thread is its root's seq. message_id is yours to choose, unique across chat, no '/'; a second post with it is refused. blocks are markdown as Paragraph spans with marks (Bold, Italic, Code, Link, Mention), Quote, Code, Divider. Posting needs the room open to you and not archived.", example = examples::post)]
     PostMessage {
         channel_id: String,
         message_id: String,
@@ -104,80 +109,82 @@ pub enum Op {
         thread: Option<u64>,
     },
     /// `base_rev` is what the editor started from, recorded, never judged.
+    #[tool_op(description = "Replace a message's blocks. Its author, or whom the author lists. base_rev is the rev you edited from, recorded and never judged.", example = examples::edit)]
     EditMessage {
         channel_id: String,
         seq: u64,
         blocks: Vec<Block>,
         base_rev: Option<u32>,
     },
-    DeleteMessage {
-        channel_id: String,
-        seq: u64,
-    },
+    #[tool_op(description = "Delete a message, leaving a tombstone. Its author, or the channel's owner.", example = examples::delete)]
+    DeleteMessage { channel_id: String, seq: u64 },
+    #[tool_op(description = "React to a message with an emoji, as yourself.", example = examples::react)]
     AddReaction {
         channel_id: String,
         seq: u64,
         emoji: String,
     },
+    #[tool_op(description = "Take back your own reaction.", example = examples::unreact)]
     RemoveReaction {
         channel_id: String,
         seq: u64,
         emoji: String,
     },
+    #[tool_op(description = "Seat or unseat a principal in a channel's members. Its owner, or whom the owner lists; never a direct room.", example = examples::seat)]
     SetMembership {
         channel_id: String,
         principal: Principal,
         member: bool,
     },
+    #[tool_op(description = "CreateChannel with its meta set at once: text keys to text values, such as rules.", example = examples::create_with_meta)]
     CreateChannelWithMeta {
         channel_id: String,
         name: String,
         post_policy: PostPolicy,
         meta: BTreeMap<String, String>,
     },
+    #[tool_op(description = "Set one meta key of a channel, such as rules: how to talk there, as the text or a files path holding it. Whoever may rename it.", example = examples::set_meta)]
     SetChannelMeta {
         channel_id: String,
         key: String,
         value: String,
     },
-    RemoveChannelMeta {
-        channel_id: String,
-        key: String,
-    },
+    #[tool_op(description = "Remove one meta key. Whoever may rename the channel.", example = examples::remove_meta)]
+    RemoveChannelMeta { channel_id: String, key: String },
     // moved `channel_id`'s messages off the layout chat kept before `Stored`; every channel has
     // moved, so it writes nothing now, and refuses only a channel that does not exist
-    Migrate {
-        channel_id: String,
-    },
-    Listen {
-        channel_id: String,
-        listening: bool,
-    },
+    #[tool_op(description = "Retired: every channel has moved to the current layout, so it writes nothing and refuses only a channel that does not exist.", example = examples::migrate)]
+    Migrate { channel_id: String },
+    #[tool_op(description = "Hear every new message of a channel (or stop). Listening takes off what SetNotices cut there.", example = examples::listen)]
+    Listen { channel_id: String, listening: bool },
     // migrated the first `limit` channels `Query::Unmigrated` listed; none is left, so it writes
     // nothing
-    MigrateSome {
-        limit: u64,
-    },
+    #[tool_op(description = "Retired with Migrate: none is left to migrate, so it writes nothing.", example = examples::migrate_some)]
+    MigrateSome { limit: u64 },
     /// What of `channel_id` still tells the sender (`None`: what chat tells
     /// by default). It stops their listening there, as `Listen` takes this
     /// off: the two are one choice.
+    #[tool_op(description = "Cut what a channel tells you to Mentions (mentions, and direct rooms) or Off; null goes back to chat's default. It stops your listening there.", example = examples::notices)]
     SetNotices {
         channel_id: String,
         notices: Option<Notices>,
     },
     // one-time (J-011 ⑥): records owners for chat's owned rows from before the guard
+    #[tool_op(description = "One-time backfill of owners for chat's rows written before ownership was recorded, a page at a time; returns the key to resume after, or null when done.", returns = Option<Vec<u8>>, example = examples::adopt)]
     AdoptOwners {
         kind: String,
         after: Option<Vec<u8>>,
         limit: u64,
     },
     // as `Listen`, for `account`: the account itself or its manager in identity
+    #[tool_op(description = "Listen, for another account: the account itself or its manager in identity.", example = examples::listen_for)]
     ListenFor {
         account: AccountNumber,
         channel_id: String,
         listening: bool,
     },
     // as `SetNotices`, for `account`: the account itself or its manager in identity
+    #[tool_op(description = "SetNotices, for another account: the account itself or its manager in identity.", example = examples::notices_for)]
     SetNoticesFor {
         account: AccountNumber,
         channel_id: String,
@@ -185,10 +192,8 @@ pub enum Op {
     },
     // hears every new message of `channel_id` for the sender's wait (a `watch` relation), leaving
     // what it chose for the room as it is
-    Watch {
-        channel_id: String,
-        watching: bool,
-    },
+    #[tool_op(description = "Hear every new message of a channel for a wait, leaving what you chose for the room as it is.", example = examples::watch)]
+    Watch { channel_id: String, watching: bool },
 }
 
 /// A read. `viewer` is the reader's principals: they decide
@@ -199,23 +204,35 @@ pub enum Op {
 /// a read of message rows follows `REACTIONS` too, since the viewer's own
 /// reactions are read onto the rows.
 #[derive(
-    BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq, ::program::Ask,
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    ::program::Ask,
+    ::program::Described,
 )]
 #[ask(Chat)]
 pub enum Query {
     #[ask(Reply::Channels(PageResponse<ChannelInfo>))]
     #[reads(state::CHANNELS, state::HEADS, state::CHANNEL_META)]
+    #[tool_query(description = "Every channel a page at a time: id, name, post policy, owner, archived, meta and head_seq (its newest message's seq). A page with limit null is every row.", example = examples::channels)]
     Channels { page: PageRequest },
     #[ask(Reply::Channel(Option<ChannelInfo>))]
     #[reads(state::CHANNELS, state::HEADS, state::CHANNEL_META)]
+    #[tool_query(description = "One channel by id, with its meta (rules among them), or null.", example = examples::channel)]
     Channel { channel_id: String },
     /// The message an emitted id names (forge finds its own posts so).
     #[ask(Reply::Message(Option<MsgRow>))]
     #[reads(state::MESSAGE_IDS, state::MESSAGES, state::REACTIONS)]
+    #[tool_query(description = "The message a message_id names, or null.", example = examples::by_id)]
     MessageById { message_id: String },
     /// The author's most recently answered thread in this channel, if any.
     #[ask(Reply::Attention(Option<MsgRow>))]
     #[reads(state::ANSWERED, state::MESSAGES, state::REACTIONS)]
+    #[tool_query(description = "The author's most recently answered thread in a channel, or null.", example = examples::attention)]
     ThreadAttention {
         channel_id: String,
         author: Principal,
@@ -223,6 +240,7 @@ pub enum Query {
     /// One page of timeline roots, newest first.
     #[ask(Reply::Roots(PageResponse<MsgRow>))]
     #[reads(state::ROOTS, state::MESSAGES, state::REACTIONS)]
+    #[tool_query(description = "A channel's timeline, newest first, without thread replies. viewer is the principals reading, which decide reacted_by_me on each reaction.", example = examples::roots)]
     Roots {
         channel_id: String,
         viewer: Vec<Principal>,
@@ -231,6 +249,7 @@ pub enum Query {
     /// `page.limit` messages centred on `seq`.
     #[ask(Reply::Messages(Vec<MsgRow>))]
     #[reads(state::MESSAGES, state::REACTIONS)]
+    #[tool_query(description = "page.limit messages centred on seq.", example = examples::around)]
     MessagesAround {
         channel_id: String,
         seq: u64,
@@ -240,6 +259,7 @@ pub enum Query {
     /// The root plus one page of replies, in post order.
     #[ask(Reply::Thread { root: Option<MsgRow>, replies: PageResponse<MsgRow> })]
     #[reads(state::REPLIES, state::MESSAGES, state::REACTIONS)]
+    #[tool_query(description = "A thread's root and a page of its replies, in post order.", example = examples::thread)]
     Thread {
         channel_id: String,
         root_seq: u64,
@@ -248,6 +268,7 @@ pub enum Query {
     },
     #[ask(Reply::Members(PageResponse<MemberRow>))]
     #[reads(state::MEMBERS)]
+    #[tool_query(description = "A channel's seated members, a page at a time.", example = examples::members)]
     Members {
         channel_id: String,
         page: PageRequest,
@@ -257,6 +278,7 @@ pub enum Query {
     // hits. Answered by walking the messages: chat keeps no search index.
     #[ask(Reply::Hits(MessageHits))]
     #[reads(state::HEADS, state::MESSAGES, state::REACTIONS)]
+    #[tool_query(description = "Messages holding every word of text (case folded), newest first, in one channel or all; capped says the walk stopped at page.limit hits.", example = examples::search)]
     Search {
         text: String,
         viewer: Vec<Principal>,
@@ -267,6 +289,7 @@ pub enum Query {
     // Answered by walking the messages: chat keeps no tag index.
     #[ask(Reply::TagHits(PageResponse<MsgRow>))]
     #[reads(state::HEADS, state::MESSAGES, state::REACTIONS)]
+    #[tool_query(description = "Messages whose #tags hold tag, newest first.", example = examples::tagged)]
     TagSearch {
         tag: String,
         viewer: Vec<Principal>,
@@ -278,18 +301,22 @@ pub enum Query {
     /// reads nothing of chat's: it moves with identity's blocks, which a
     /// view follows apart.
     #[ask(Reply::Accounts(PageResponse<Profile>))]
+    #[tool_query(description = "Every account's profile by number, as identity keeps them, a page at a time.", example = examples::accounts)]
     Accounts { page: PageRequest },
     // Who chose each reaction on the messages at `seqs`: one entry per
     // message and emoji, each in key order.
     #[ask(Reply::Reactors(Vec<ReactedBy>))]
     #[reads(state::REACTIONS)]
+    #[tool_query(description = "Who chose each reaction on the messages at seqs: one entry per message and emoji.", example = examples::reactors)]
     Reactors { channel_id: String, seqs: Vec<u64> },
     // the channels whose messages were not all migrated yet (`Op::Migrate`): every channel has
     // moved, so it answers none
     #[ask(Reply::ChannelIds(PageResponse<String>))]
+    #[tool_query(description = "Retired with Migrate: answers no channel.", example = examples::unmigrated)]
     Unmigrated { page: PageRequest },
     #[ask(Reply::Listening(PageResponse<String>))]
     #[reads(state::LISTENING)]
+    #[tool_query(description = "The channels an account listens to.", example = examples::listening)]
     Listening {
         account: AccountNumber,
         page: PageRequest,
@@ -305,6 +332,7 @@ pub enum Query {
         state::PARTICIPANTS,
         state::MENTIONED
     )]
+    #[tool_query(description = "Where an account is in a channel, for its notices: the seq it came into the room at, and into each thread of roots it is in.", example = examples::followed)]
     Followed {
         channel_id: String,
         account: AccountNumber,
@@ -314,6 +342,7 @@ pub enum Query {
     /// what still tells it, a page at a time.
     #[ask(Reply::Notices(PageResponse<(String, Notices)>))]
     #[reads(state::NOTICES)]
+    #[tool_query(description = "The channels an account cut the notices of, each with what still tells it.", example = examples::cut)]
     Notices {
         account: AccountNumber,
         page: PageRequest,
@@ -321,6 +350,7 @@ pub enum Query {
     // the rooms `account` watches for a wait (`Op::Watch`)
     #[ask(Reply::Watching(PageResponse<String>))]
     #[reads(state::WATCHING)]
+    #[tool_query(description = "The channels an account watches for a wait.", example = examples::watching)]
     Watching {
         account: AccountNumber,
         page: PageRequest,
@@ -329,6 +359,7 @@ pub enum Query {
     // it when cut
     #[ask(Reply::Chosen { listening: bool, notices: Option<Notices> })]
     #[reads(state::LISTENING, state::NOTICES)]
+    #[tool_query(description = "What an account chose for a channel: whether it listens, and what still tells it when cut.", example = examples::chosen)]
     Chosen {
         account: AccountNumber,
         channel_id: String,
