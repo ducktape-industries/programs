@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use super::*;
 
-use chat::tables::{HEADS, MESSAGE_IDS, MESSAGES, ROOTS};
+use chat::tables::{HEADS, MESSAGE_IDS, MESSAGES, POSTED, ROOTS};
 
 const ADA: u64 = 11;
 
@@ -50,11 +50,20 @@ fn a_message_writes_its_point_keys_and_an_edit_its_row_alone() {
         let (keys, applied) = chat_writes(&mut net, &post).await;
         let channel = || "general".to_owned();
         let row = MESSAGES.key(&(channel(), 1u64));
+        let asked = abi::role::identity::Query::Account(public(ADA));
+        let abi::role::identity::Reply::Account(Some(ada)) =
+            net.ask(identity::PROGRAM, &asked).await
+        else {
+            panic!("Ada's key holds an account");
+        };
+        let author = chat::Principal::Account(ada);
         let points = BTreeSet::from([
             row.clone(),
             MESSAGE_IDS.key(&"m1".to_owned()),
             HEADS.key(&channel()),
             ROOTS.key(&(channel(), u64::MAX - 1)),
+            // her first message in the room
+            POSTED.key(&(channel(), author)),
         ]);
         assert_eq!(keys, points, "a root post writes its point keys alone");
         let stored = applied.writes.programs[chat::PROGRAM][&row]
