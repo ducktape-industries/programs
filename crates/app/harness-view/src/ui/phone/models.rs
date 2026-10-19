@@ -1,15 +1,17 @@
-//! The model records harness keeps, each a row (its id, its service and how many nodes serve
-//! it, its window, its owner), and the form that sets one, its own page over them: a new record
-//! from More, or its owner's record from its row. The form's `SetModel` is shown for the
-//! person's yes before it is sent.
+//! The model records harness keeps, each a row (its id, the services that reach it and how many
+//! nodes serve the first, its window, its owner) that opens its form, its own page over them;
+//! More opens a new one. The form's writes are shown for the person's yes before they are sent.
 use harness::Wire;
 use view::design::{Ladder, space};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
 
 use super::parts::{glyph, scroller, section};
-use crate::models::ModelDraft;
+use crate::models::{Press, Yes};
 use crate::read::Model;
+use crate::ui::models::{
+    COMPACT_HINT, ID_HINT, KEPT_ID, NAME_HINT, SERVICES_HINT, open, place_words, pressing,
+};
 use crate::ui::waiting;
 use crate::words::{compact_short, serving_words, window_short};
 use crate::{Agents, Screen};
@@ -28,6 +30,17 @@ pub(super) fn page(
         .into_any_element()
 }
 
+// A press that opens the form page with `press`.
+fn opening(
+    press: Press,
+    cx: &mut Context<Agents>,
+) -> impl Fn(&ClickEvent, &mut view::Window, &mut App) + 'static {
+    cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
+        view.press_model(press.clone(), cx);
+        view.go(Screen::SetModel, cx)
+    })
+}
+
 fn rows(
     view: &Agents,
     cx: &mut Context<Agents>,
@@ -38,12 +51,8 @@ fn rows(
     let roster = view.roster.ready();
     let rows: Vec<Stateful<Div>> = models
         .iter()
-        .map(|model| row(view, model, roster, cx, theme, ladder))
+        .map(|model| row(model, roster, cx, theme, ladder))
         .collect();
-    let set = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| {
-        view.model_draft = ModelDraft::default();
-        view.go(Screen::SetModel, cx)
-    });
     div()
         .flex()
         .flex_col()
@@ -68,11 +77,7 @@ fn rows(
                 .child(glyph("plus", theme, ladder))
                 .child(
                     design::row_words(design::row_title("Set a model", ladder, theme)).child(
-                        design::row_caption(
-                            "A record you own; an agent’s file names it by id.",
-                            ladder,
-                            theme,
-                        ),
+                        design::row_caption("A record agents’ files name by id.", ladder, theme),
                     ),
                 )
                 .child(design::chevron(ladder, theme));
@@ -84,14 +89,13 @@ fn rows(
                     design::pressed(row, ladder)
                         .role(Role::Button)
                         .focusable()
-                        .on_click(set),
+                        .on_click(opening(Press::New, cx)),
                 )
         }))
 }
 
-/// A record: its owner's row opens the form at it; anyone else's only reads.
+// A record: a press opens its form.
 fn row(
-    view: &Agents,
     model: &Model,
     roster: Option<&crate::read::Roster>,
     cx: &mut Context<Agents>,
@@ -99,12 +103,15 @@ fn row(
     ladder: &Ladder,
 ) -> Stateful<Div> {
     let row = model.row.clone();
-    let owned = view.me == Some(row.owner);
     let owner = roster.map_or_else(
         || format!("account {}", row.owner),
         |roster| roster.name(row.owner),
     );
-    let (serving, tone) = serving_words(model.serving, theme);
+    let (serving, tone) = serving_words(model.serving(), theme);
+    let more = match model.services.len() {
+        0 | 1 => String::new(),
+        services => format!(" +{}", services - 1),
+    };
     // one line: the service, how many nodes serve it in its tone, the window
     let caption = div()
         .flex()
@@ -113,7 +120,7 @@ fn row(
         .whitespace_nowrap()
         .text_type(ladder.caption)
         .text_color(theme.muted)
-        .child(format!("{} · ", row.service))
+        .child(format!("{}{more} · ", row.service))
         .child(div().flex_none().text_color(tone).child(serving))
         .child(
             div()
@@ -143,23 +150,13 @@ fn row(
                 .text_color(theme.muted)
                 .child(owner),
         );
-    match owned {
-        true => {
-            let editing = row.clone();
-            let edit = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
-                view.edit_model(&editing, cx);
-                view.go(Screen::SetModel, cx)
-            });
-            design::pressed(line.child(design::chevron(ladder, theme)), ladder)
-                .role(Role::Button)
-                .focusable()
-                .on_click(edit)
-        }
-        false => line,
-    }
+    design::pressed(line.child(design::chevron(ladder, theme)), ladder)
+        .role(Role::Button)
+        .focusable()
+        .on_click(opening(open(model), cx))
 }
 
-/// The form that sets a record, its own page over the models.
+// The form that sets, edits or removes a record, its own page over the models.
 pub(super) fn form(
     view: &Agents,
     cx: &mut Context<Agents>,
@@ -180,8 +177,7 @@ pub(super) fn form(
             )
         }),
         cx.processor(|view: &mut Agents, index: usize, _, cx| {
-            view.model_draft.wire = index;
-            cx.notify();
+            view.press_model(Press::Wire(index), cx)
         }),
     );
     let label = |words: &'static str| {
@@ -190,24 +186,24 @@ pub(super) fn form(
             .text_color(theme.muted)
             .child(words)
     };
-    let cancel = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.back(cx));
-    // its first press shows the record for a yes, its second sends it
-    let (verb_id, verb_words) = match draft.confirming {
-        true => ("model-set", "Set"),
-        false => ("model-next", "Set model…"),
+    // its first press shows what it sends for a yes, its second sends it
+    let (verb_id, verb_words, verb_press) = match draft.asking {
+        None => ("model-next", "Save…", Press::Ask(Yes::Save)),
+        Some(Yes::Save) => ("model-set", "Save", Press::Yes),
+        Some(Yes::Remove) => ("model-remove-yes", "Remove", Press::Yes),
     };
-    let next =
+    // Cancel leaves the yes, else the page
+    let cancel =
         cx.listener(
-            |view: &mut Agents, _: &ClickEvent, _, cx| match view.model_draft.confirming {
-                true => view.set_model(cx),
-                false => view.confirm_model(cx),
+            |view: &mut Agents, _: &ClickEvent, _, cx| match view.model_draft.asking {
+                Some(_) => view.press_model(Press::Unask, cx),
+                None => view.back(cx),
             },
         );
-    let verb = design::button(verb_id, verb_words, ladder, theme, next)
+    let verb = design::button(verb_id, verb_words, ladder, theme, pressing(verb_press, cx))
         .kind(design::Kind::Primary)
         .busy(draft.sending.is_some());
-    // the record as it is sent, for the person's yes
-    let confirming = draft.confirming.then(|| {
+    let asked = draft.asked(view.roster.ready()).map(|(title, lines)| {
         div()
             .id("model-confirm")
             .flex()
@@ -216,31 +212,44 @@ pub(super) fn form(
             .p(space::LG)
             .bg(theme.surface)
             .text_type(ladder.secondary)
-            .child(
-                div()
-                    .font_weight(FontWeight::MEDIUM)
-                    .child(format!("Set model · {}", draft.id.text().trim())),
-            )
-            .child(format!("wire {}", draft.wire().label()))
-            .child(format!(
-                "service {}",
-                draft.service.clone().unwrap_or_default()
-            ))
-            .child(format!("vendor's name {}", draft.name.text().trim()))
+            .child(div().font_weight(FontWeight::MEDIUM).child(title))
+            .children(lines)
     });
+    let id = match draft.was {
+        Some(_) => div()
+            .flex()
+            .flex_col()
+            .gap(space::XS)
+            .child(label("Model id"))
+            .child(design::mono(draft.id()).id("model-id-kept"))
+            .child(label(KEPT_ID))
+            .into_any_element(),
+        None => design::field(Input::new("model-id", &draft.id, "Model id"), ladder, theme)
+            .label("Model id")
+            .caption(ID_HINT)
+            .mono()
+            .into_any_element(),
+    };
+    let remove = draft
+        .was
+        .as_ref()
+        .filter(|_| draft.asking.is_none())
+        .map(|_| {
+            design::button(
+                "model-remove",
+                "Remove…",
+                ladder,
+                theme,
+                pressing(Press::Ask(Yes::Remove), cx),
+            )
+            .kind(design::Kind::Quiet)
+        });
     let body = div()
         .flex()
         .flex_col()
         .gap(space::LG)
         .p(space::BLOCK)
-        .child(
-            design::field(Input::new("model-id", &draft.id, "Model id"), ladder, theme)
-                .label("Model id")
-                .caption(
-                    "What an agent's configuration names: lowercase letters, digits, -, _ and .",
-                )
-                .mono(),
-        )
+        .child(id)
         .child(
             div()
                 .flex()
@@ -257,7 +266,16 @@ pub(super) fn form(
                 theme,
             )
             .label("Vendor's name")
-            .caption("The model as the vendor names it."),
+            .caption(NAME_HINT),
+        )
+        .child(
+            design::field(
+                Input::new("model-compact-at", &draft.compact_at, "Compacts at"),
+                ladder,
+                theme,
+            )
+            .label("Compacts at")
+            .caption(COMPACT_HINT),
         )
         .children(draft.problem.clone().map(|problem| {
             div()
@@ -266,23 +284,24 @@ pub(super) fn form(
                 .text_color(theme.danger)
                 .child(problem)
         }))
-        .children(confirming)
+        .children(asked)
         .child(design::form_verbs(
             design::button("model-cancel", "Cancel", ladder, theme, cancel)
                 .kind(design::Kind::Quiet),
             verb,
-        ));
-    let title = match draft.id.text().trim().is_empty() {
-        true => "Set a model".to_owned(),
-        false => format!("Set {}", draft.id.text().trim()),
+        ))
+        .children(remove);
+    let title = match draft.was {
+        Some(_) => format!("Edit {}", draft.id()),
+        None => "Set a model".to_owned(),
     };
     super::page("set-model-page", title, view, cx, theme, ladder)
         .child(scroller("set-model-scroll").child(body))
         .into_any_element()
 }
 
-/// The registered services, one pick each: its name, its owner and how many member nodes serve
-/// it now.
+// The registered services, one pick each: its name, its owner, how many member nodes serve it
+// now, and a picked one's place in the list.
 fn services(
     view: &Agents,
     cx: &mut Context<Agents>,
@@ -294,21 +313,21 @@ fn services(
         None => {
             let offers = view.offers.ready().map_or(&[][..], Vec::as_slice);
             let roster = view.roster.ready();
+            let picked = &view.model_draft.services;
             let rows = offers.iter().map(|offer| {
                 let name = offer.row.name.clone();
-                let picked = view.model_draft.service.as_deref() == Some(name.as_str());
+                let place = picked.iter().position(|service| *service == name);
                 let owner = roster.map_or_else(
                     || format!("account {}", offer.row.owner),
                     |roster| roster.name(offer.row.owner),
                 );
                 let (now, tone) = serving_words(offer.serving, theme);
-                let chose = name.clone();
-                let pick = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
-                    view.model_draft.service = Some(chose.clone());
-                    cx.notify();
-                });
-                super::create::pick(format!("service-{name}"), picked, theme, ladder)
-                    .on_click(pick)
+                let below = match place {
+                    Some(place) => format!("{} · owner {owner}", place_words(place)),
+                    None => format!("owner {owner}"),
+                };
+                super::create::pick(format!("service-{name}"), place.is_some(), theme, ladder)
+                    .on_click(pressing(Press::Service(name.clone()), cx))
                     .child(
                         design::mono(name)
                             .text_type(ladder.small)
@@ -321,7 +340,7 @@ fn services(
                             .truncate()
                             .text_type(ladder.caption)
                             .text_color(theme.muted)
-                            .child(format!("owner {owner}")),
+                            .child(below),
                     )
                     .child(
                         div()
@@ -352,7 +371,13 @@ fn services(
             div()
                 .text_type(ladder.caption)
                 .text_color(theme.muted)
-                .child("Service"),
+                .child("Services"),
+        )
+        .child(
+            div()
+                .text_type(ladder.caption)
+                .text_color(theme.muted)
+                .child(SERVICES_HINT),
         )
         .child(list)
 }

@@ -3,6 +3,7 @@ mod budget;
 mod compact_at;
 mod conversations;
 mod live_calls;
+mod models;
 mod phone;
 mod reads;
 mod server_tools;
@@ -233,6 +234,8 @@ struct Net {
     budget: harness::BudgetReport,
     // the open thread's armed waits
     armed: Vec<harness::WaitRow>,
+    // the services that reach each record after its first, by its id
+    model_services: Vec<(String, Vec<String>)>,
 }
 
 // The one node the fake egress lists.
@@ -379,6 +382,7 @@ impl Default for Net {
             settling: Vec::new(),
             budget: harness::BudgetReport::default(),
             armed: Vec::new(),
+            model_services: Vec::new(),
         }
     }
 }
@@ -544,7 +548,14 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                     .collect(),
             )),
             harness::Query::Wait { .. } => harness::Reply::Wait(None),
-            harness::Query::Services { .. } => harness::Reply::Services(None),
+            harness::Query::Services { model } => {
+                let record = net.models.iter().find(|row| row.id == model);
+                harness::Reply::Services(record.map(|row| {
+                    let more = net.model_services.iter().find(|(id, _)| *id == model);
+                    let more = more.map(|(_, services)| services.clone());
+                    [vec![row.service.clone()], more.unwrap_or_default()].concat()
+                }))
+            }
             harness::Query::Route { .. } => harness::Reply::Route(None),
             harness::Query::Routes { .. } => harness::Reply::Routes(page(Vec::new())),
             harness::Query::Answerers { .. } => harness::Reply::Answerers(page(Vec::new())),
@@ -1595,7 +1606,7 @@ fn the_models_page_lists_the_records_and_sets_one_after_a_yes() {
     cx.simulate_input("model-name", "claude-opus-5-5");
     cx.simulate_click("model-next");
     cx.run_until_parked();
-    assert!(cx.has_text("Set model · opus"), "{:?}", cx.texts());
+    assert!(cx.has_text("Save opus"), "{:?}", cx.texts());
     assert!(cx.host().requests::<Submit<harness::Harness>>().is_empty());
     cx.simulate_click("model-set");
     cx.run_until_parked();
@@ -1762,6 +1773,20 @@ fn screens() -> Vec<(&'static str, TestAppContext, (u32, u32))> {
             open(Net::default(), false, &["agents-models"]),
             DESK,
         ),
+        (
+            "D4-model-edit",
+            open(Net::default(), false, &["agents-models", "model-sonnet"]),
+            DESK,
+        ),
+        (
+            "D4-model-remove",
+            open(
+                Net::default(),
+                false,
+                &["agents-models", "model-sonnet", "model-remove"],
+            ),
+            DESK,
+        ),
         ("D5-create", create(false), DESK),
         ("D5-edit", edit, DESK),
         (
@@ -1805,6 +1830,11 @@ fn screens() -> Vec<(&'static str, TestAppContext, (u32, u32))> {
         (
             "P4-models",
             open(Net::default(), true, &["agents-models"]),
+            PHONE,
+        ),
+        (
+            "P4-model-edit",
+            open(Net::default(), true, &["agents-models", "model-sonnet"]),
             PHONE,
         ),
         ("P5-create", create(true), PHONE),

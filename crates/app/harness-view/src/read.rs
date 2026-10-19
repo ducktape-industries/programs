@@ -755,7 +755,14 @@ pub(crate) async fn calls(
 #[derive(PartialEq)]
 pub(crate) struct Model {
     pub row: ModelRow,
-    pub serving: usize,
+    // every service that reaches it, the record's first, each with the member nodes serving it
+    pub services: Vec<(String, usize)>,
+}
+
+impl Model {
+    pub fn serving(&self) -> usize {
+        self.services.first().map_or(0, |(_, serving)| *serving)
+    }
 }
 
 pub(crate) async fn models(host: Host) -> Result<Vec<Model>, Error> {
@@ -764,8 +771,18 @@ pub(crate) async fn models(host: Host) -> Result<Vec<Model>, Error> {
         .await?;
     let mut models = Vec::new();
     for row in rows {
-        let serving = served(&host, &row.service).await?;
-        models.push(Model { row, serving });
+        let asked = harness::ask::Services {
+            model: row.id.clone(),
+        };
+        // none once the record went since its page was read: its own service
+        let listed = host.query(asked).await?;
+        let listed = listed.unwrap_or_else(|| vec![row.service.clone()]);
+        let mut services = Vec::new();
+        for service in listed {
+            let serving = served(&host, &service).await?;
+            services.push((service, serving));
+        }
+        models.push(Model { row, services });
     }
     Ok(models)
 }

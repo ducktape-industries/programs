@@ -1,7 +1,6 @@
 //! The create form: the ops a new agent takes, each with how far it got, the configuration
 //! file it writes (where, the model from harness's records, thinking, max output, wait, the
-//! system prompt) and who it answers. Editing is the same form, its fields filled from the agent's
-//! file, saved as a new version of it.
+//! system prompt) and who it answers. Editing is the same form, filled from the agent's file.
 use view::design::Ladder;
 use view::design::{size, space};
 use view::prelude::*;
@@ -265,7 +264,7 @@ fn models(
             let rows = models.iter().map(|model| {
                 let id = model.row.id.clone();
                 let picked = view.draft.model.as_deref() == Some(id.as_str());
-                let (now, tone) = serving_words(model.serving, theme);
+                let (now, tone) = serving_words(model.serving(), theme);
                 let pick = id.clone();
                 pickable(format!("model-{id}"), picked, theme)
                     .on_click(

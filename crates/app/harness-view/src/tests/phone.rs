@@ -362,7 +362,7 @@ fn the_models_open_the_form_that_sets_one_as_its_own_page() {
     tap(&mut cx, &["service-anthropic"]);
     cx.simulate_input("model-name", "claude-opus-5-5");
     tap(&mut cx, &["model-next"]);
-    assert!(cx.has_text("Set model · opus"), "{:?}", cx.texts());
+    assert!(cx.has_text("Save opus"), "{:?}", cx.texts());
     tap(&mut cx, &["model-set"]);
     assert_eq!(
         cx.host().requests::<Submit<harness::Harness>>(),
@@ -374,6 +374,26 @@ fn the_models_open_the_form_that_sets_one_as_its_own_page() {
         }]
     );
     // a set record goes back to the models it was set over
+    assert!(cx.find("models-list").is_some(), "{:?}", cx.texts());
+}
+
+#[test]
+fn a_record_opens_its_form_page_and_is_removed_after_a_yes() {
+    let (mut cx, _) = phone(Net::default(), EDDY);
+    cx.host()
+        .handle::<Submit<harness::Harness>>(|_| Ok(applied(Vec::new())));
+    tap(&mut cx, &["agents-models", "model-sonnet"]);
+    assert!(cx.has_text("Edit sonnet"), "{:?}", cx.texts());
+    tap(&mut cx, &["model-remove"]);
+    let naming = "Scout and Atlas still name it in their configuration: each asks no model until it names another.";
+    assert!(cx.has_text(naming), "{:?}", cx.texts());
+    assert!(cx.host().requests::<Submit<harness::Harness>>().is_empty());
+    tap(&mut cx, &["model-remove-yes"]);
+    assert_eq!(
+        cx.host().requests::<Submit<harness::Harness>>(),
+        [harness::Op::RemoveModel { id: SONNET.into() }]
+    );
+    // a removed record goes back to the models
     assert!(cx.find("models-list").is_some(), "{:?}", cx.texts());
 }
 
@@ -424,6 +444,8 @@ fn sweep() {
         cx.simulate_back();
         cx.run_until_parked();
         tap(cx, &["agents-models", "models-set"]);
+        cx.simulate_back();
+        tap(cx, &["model-sonnet", "model-remove"]);
         cx.simulate_back();
         cx.simulate_back();
         cx.run_until_parked();

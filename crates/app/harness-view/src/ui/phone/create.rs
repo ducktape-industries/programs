@@ -1,7 +1,6 @@
 //! The create and edit form, one page: its fields full width, the model a pick from harness's
-//! records, thinking and whom it answers as segments, then its one verb. What a create sends is
-//! said in the title row's caption; once its first op lands, how far it got is said over the
-//! verb.
+//! records, thinking and whom it answers as segments, then its one verb. The title row's caption
+//! says what a create sends; once its first op lands, how far it got is said over the verb.
 use harness::Thinking;
 use view::design::{Ladder, space};
 use view::prelude::*;
@@ -201,7 +200,7 @@ fn models(
     let rows = models.iter().map(|model| {
         let id = model.row.id.clone();
         let picked = view.draft.model.as_deref() == Some(id.as_str());
-        let (now, tone) = serving_words(model.serving, theme);
+        let (now, tone) = serving_words(model.serving(), theme);
         let chose = id.clone();
         let choose = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
             view.draft.model = Some(chose.clone());
