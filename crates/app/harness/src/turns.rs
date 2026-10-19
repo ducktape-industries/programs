@@ -66,7 +66,7 @@ pub(crate) fn say(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body) {
 
 // an input and the pictures it came with
 pub(crate) fn say_with(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body, pictures: Vec<Picture>) {
-    let looping = thread.asking != Asking::Idle;
+    let looping = thread.asking != Asking::Idle || thread.paused();
     if !looping {
         append(ctx, thread, body);
         pictures::keep(ctx, thread.id, thread.frames, pictures);
@@ -84,6 +84,17 @@ pub(crate) fn settle(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error>
         thread.seen = thread.frames;
     }
     ENDING.remove(ctx, &thread.id);
+    // input held behind a paused turn would sit between a server tool's use and its result, which
+    // the continuation carries: it waits until the continuation is answered
+    if !thread.paused() {
+        unhold(ctx, thread)?;
+    }
+    thread.asking = Asking::Idle;
+    FLIGHTS.remove(ctx, &thread.id);
+    Ok(())
+}
+
+fn unhold(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
     for index in 0..thread.held {
         let key = (thread.id, index);
         if let Some(body) = HELD.get(ctx, &key)? {
@@ -93,8 +104,6 @@ pub(crate) fn settle(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error>
         HELD.remove(ctx, &key);
     }
     thread.held = 0;
-    thread.asking = Asking::Idle;
-    FLIGHTS.remove(ctx, &thread.id);
     Ok(())
 }
 
@@ -444,6 +453,12 @@ fn may_ask(thread: &ThreadRow) -> bool {
 
 fn claim(ctx: &ExecCtx, id: u64) -> Result<Option<Step>, Error> {
     let mut thread = thread(ctx, id)?;
+    // a paused turn that ended without its continuation (given up, refused) lets its held input go
+    let left_held = thread.asking == Asking::Idle && !thread.paused() && thread.held > 0;
+    if left_held {
+        unhold(ctx, &mut thread)?;
+        THREADS.put(ctx, &id, &thread);
+    }
     if !may_ask(&thread) || resume::waits(ctx, id)? || settling(ctx, id) {
         return Ok(None);
     }

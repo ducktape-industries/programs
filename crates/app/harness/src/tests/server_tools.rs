@@ -147,3 +147,58 @@ fn a_search_and_a_fetch_are_kept_as_sent_never_run_and_sent_back() {
     assert_eq!(sent["messages"][1]["role"], "assistant");
     assert_eq!(sent["messages"][1]["content"], searched_and_fetched());
 }
+
+#[test]
+fn input_heard_while_a_turn_pauses_mid_fetch_waits_until_the_continuation_is_answered() {
+    let world = world();
+    let chain = &world.chain;
+    commit(chain, ADA, CONFIG, &searcher().write());
+    let thread = world.opened("m1", "fetch it", Some(WINDOW));
+    world.mention("m2", "and this too");
+    chain.at(3, 0);
+    let all = searched_and_fetched();
+    let blocks = all.as_array().unwrap();
+    let paused = json!(blocks[3..4].to_vec());
+    model_says(chain, paused, "pause_turn");
+    assert_eq!(
+        held(chain, thread).len(),
+        1,
+        "the post waits behind the paused turn"
+    );
+    let (request, _) = open_request(chain);
+    let sent = body(chain, &request);
+    let messages = sent["messages"].as_array().unwrap();
+    assert_eq!(
+        messages.last().unwrap()["role"],
+        "assistant",
+        "{messages:?}"
+    );
+    assert!(
+        !sent["messages"].to_string().contains("and this too"),
+        "nothing follows the server tool's use: {messages:?}"
+    );
+    chain.at(4, 0);
+    model_says(chain, json!(blocks[4..].to_vec()), "end_turn");
+    assert!(
+        held(chain, thread).is_empty(),
+        "the continuation is answered"
+    );
+    let bodies = frames(chain, thread);
+    let [
+        ..,
+        Body::Turn { stop: first, .. },
+        Body::Turn { stop: last, .. },
+        Body::Post { text, .. },
+    ] = &bodies[..]
+    else {
+        panic!("the paused turn, its continuation, then the post: {bodies:?}");
+    };
+    assert_eq!((*first, *last), (Stop::Pause, Stop::EndTurn));
+    assert!(text.contains("and this too"), "{text}");
+    let (request, _) = open_request(chain);
+    assert!(
+        body(chain, &request)["messages"]
+            .to_string()
+            .contains("and this too")
+    );
+}

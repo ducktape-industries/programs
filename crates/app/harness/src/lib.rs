@@ -576,8 +576,13 @@ pub enum Context {
 impl ThreadRow {
     pub fn due(&self) -> bool {
         let unseen_input = self.last_input > self.seen;
-        let paused = self.last_stop == Some(Stop::Pause);
-        unseen_input || paused
+        unseen_input || self.paused()
+    }
+
+    // the model paused its turn (`pause_turn`, mid server tool): the next request goes on from
+    // the turn's last block, with nothing after it
+    pub fn paused(&self) -> bool {
+        self.last_stop == Some(Stop::Pause)
     }
 }
 
