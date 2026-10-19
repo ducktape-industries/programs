@@ -323,6 +323,8 @@ pub(crate) struct PushArgs {
     #[serde(rename = "ref")]
     reference: Option<String>,
     container: Option<String>,
+    #[serde(default)]
+    allow_stack: bool,
 }
 
 pub(crate) struct Push;
@@ -355,9 +357,43 @@ struct Pushing {
     branch: Vec<u8>,
     hash: gitcore::Hash,
     old: Option<String>,
+    allow_stack: bool,
 }
 
 impl Pushing {
+    // a commit lands alone: on the branch's head, or for a new branch on a commit forge holds
+    fn alone(&self, commit: &str, packed: &Value) -> Result<(), Error> {
+        let parents = packed["parents"].as_array();
+        let (Some(parents), Some(commits)) = (parents, packed["commits"].as_u64()) else {
+            return Err(unexpected(SERVICE, "push", packed));
+        };
+        let parent = parents
+            .first()
+            .and_then(Value::as_str)
+            .unwrap_or("no parent");
+        let branch = String::from_utf8_lossy(&self.branch);
+        let asked = "allow_stack: true is for a push like that made on purpose, such as carrying someone's commits";
+        if let Some(head) = self.old.as_deref()
+            && parent != head
+        {
+            return Err(Error::new(
+                code::WRONG_STATE,
+                format!(
+                    "{commit} is not a child of {branch}'s head {head}: its parent is {parent}. Rebase it onto {head}, or push {parent} first if it belongs there; {asked}"
+                ),
+            ));
+        }
+        if commits > 1 {
+            return Err(Error::new(
+                code::WRONG_STATE,
+                format!(
+                    "{commit} stacks on {parent}, which forge does not hold yet: the push would land {commits} commits on the new branch {branch}. Push {parent} first, or rebase {commit} onto a commit forge holds, like dev's head; {asked}"
+                ),
+            ));
+        }
+        Ok(())
+    }
+
     // the pack the pods service answered, pushed to forge onto the branch as the agent
     fn push(self, output: &[u8]) -> Result<Run, Error> {
         let packed = answered(output)?;
@@ -374,6 +410,9 @@ impl Pushing {
             let mut same = json!({ "ok": true, "unchanged": true });
             merged(&mut same, &shown);
             return Ok(Run::Done(same));
+        }
+        if !self.allow_stack {
+            self.alone(commit, &packed)?;
         }
         let new = oid(self.hash, commit)?;
         let old = match &self.old {
@@ -413,7 +452,7 @@ fn merged(into: &mut Value, from: &Value) {
 
 impl Tool for Push {
     const NAME: &'static str = "pod_push";
-    const DESCRIPTION: &'static str = "Push a commit a pod made to a branch of a forge repository, as your account, in one call: the pods service packs the commit ref names (HEAD if omitted) in the git work tree at path, leaving out what the branch's head on forge and the work tree's remote refs already reach, and puts the pack as a blob; then forge takes the push from you, and its write list decides as for any push. A branch that does not exist yet is created; one that has moved on is not moved (forge refuses a push that does not fast-forward). It answers the branch, the new head and the old one. A clone from a pod's forge input has forge's refs as its remote refs, so a new branch packs only its own commits.";
+    const DESCRIPTION: &'static str = "Push a commit a pod made to a branch of a forge repository, as your account, in one call: the pods service packs the commit ref names (HEAD if omitted) in the git work tree at path, leaving out what the branch's head on forge and the work tree's remote refs already reach, and puts the pack as a blob; then forge takes the push from you, and its write list decides as for any push. A branch that does not exist yet is created; one that has moved on is not moved (forge refuses a push that does not fast-forward). Unless allow_stack is true, it refuses a commit whose parent is not the branch's head, or, for a new branch, one that would bring commits forge does not hold yet along under it. It answers the branch, the new head and the old one. A clone from a pod's forge input has forge's refs as its remote refs, so a new branch packs only its own commits.";
     const WRITES: bool = true;
     type Args = PushArgs;
 
@@ -426,6 +465,7 @@ impl Tool for Push {
                 "branch": { "type": "string", "description": "the branch to push to, like j-057/pod-tools" },
                 "ref": { "type": "string", "description": "the commit to push, as git in the pod names it: a branch, a commit id or HEAD (the default)" },
                 "container": container_schema(),
+                "allow_stack": { "type": "boolean", "description": "push it even when its parent is not the branch's head, or when commits forge does not hold yet come along under it, such as carrying someone's commits; false if omitted" },
             }),
             &["pod", "path", "repo", "branch"],
         )
@@ -455,6 +495,7 @@ impl Tool for Push {
             branch,
             hash: forge::hash_of(repo.hash),
             old,
+            allow_stack: args.allow_stack,
         };
         Ok(Run::Then {
             writes,

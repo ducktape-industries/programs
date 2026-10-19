@@ -282,7 +282,7 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
         (
             "pod_push",
             vec![
-                json!({ "pod": "duckpond-19154", "path": "/work/programs", "repo": "programs", "branch": "j-066/catalog-test", "ref": "HEAD", "container": "run" }),
+                json!({ "pod": "duckpond-19154", "path": "/work/programs", "repo": "programs", "branch": "j-066/catalog-test", "ref": "HEAD", "container": "run", "allow_stack": false }),
             ],
         ),
         (

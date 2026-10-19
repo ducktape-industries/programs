@@ -518,12 +518,11 @@ fn a_push_packs_in_the_pod_and_moves_the_branch_as_the_agent() {
     let have = json!({ "path": "/work/notes", "have": [main] });
     assert_eq!(body(chain, onto_main), have);
     let pack_id = format!("sha256:{}", abi::hex(pack.digest()));
-    let packed =
-        json!({ "commit": made, "pack": pack_id, "objects": 3, "size": 1, "kind": "pack" });
+    let packed = json!({ "commit": made, "parents": [main], "commits": 1, "pack": pack_id, "objects": 3, "size": 1, "kind": "pack" });
     answer(chain, onto_main.id, ok(packed));
     let new = json!({ "path": "/work/notes", "have": [], "ref": "work" });
     assert_eq!(body(chain, onto_side), new);
-    let held = json!({ "commit": made, "pack": null, "objects": 0, "size": 12, "kind": "pack" });
+    let held = json!({ "commit": made, "parents": [main], "commits": 0, "pack": null, "objects": 0, "size": 12, "kind": "pack" });
     answer(chain, onto_side.id, ok(held));
     let pushed = json_result(chain, thread, "p_main");
     assert_eq!(
@@ -553,19 +552,85 @@ fn a_push_forge_does_not_take_fails_the_call_and_leaves_the_branch() {
     let second = json!({ "repo": "notes", "branch": "main", "files": [{ "path": "a.md", "content": "b" }], "message": "b" });
     turn(chain, 5, &[("c_b", "forge_commit", second)]);
     let b = tip(chain, "main");
-    let push = json!({ "pod": POD, "path": "/work/notes", "repo": "notes", "branch": "main" });
+    let push = json!({ "pod": POD, "path": "/work/notes", "repo": "notes", "branch": "main", "allow_stack": true });
     turn(chain, 7, &[("p_behind", "pod_push", push)]);
     chain.at(9, 0);
     let (made, pack) = pod_commit(chain, &a);
     let [row]: [RequestRow; 1] = asked(chain).try_into().unwrap();
     let pack_id = format!("sha256:{}", abi::hex(pack.digest()));
-    let packed =
-        json!({ "commit": made, "pack": pack_id, "objects": 3, "size": 1, "kind": "pack" });
+    let packed = json!({ "commit": made, "parents": [a], "commits": 1, "pack": pack_id, "objects": 3, "size": 1, "kind": "pack" });
     answer(chain, row.id, ok(packed));
     let refused = refusal(chain, thread, "p_behind");
     let why = "forge did not move the branch: ng refs/heads/main non-fast-forward";
     assert!(refused.contains(why), "{refused}");
     assert_eq!(tip(chain, "main"), b);
+}
+
+#[test]
+fn a_push_that_brings_an_unlanded_parent_along_is_refused_unless_asked_for() {
+    let world = podded(super::forge_commit::forged(10_000));
+    let chain = &world.chain;
+    let thread = world.opened("m1", "push it", Some(WINDOW));
+    let file = json!({ "path": "a.md", "content": "a" });
+    let first = json!({ "repo": "notes", "branch": "main", "files": [file], "message": "a" });
+    turn(chain, 3, &[("c_main", "forge_commit", first)]);
+    let main = tip(chain, "main");
+    let push = |branch: &str| json!({ "pod": POD, "path": "/work/notes", "repo": "notes", "branch": branch, "ref": branch });
+    let mut carried = push("carried");
+    carried["allow_stack"] = json!(true);
+    let calls = [
+        ("p_grand", "pod_push", push("main")),
+        ("p_new", "pod_push", push("fresh")),
+        ("p_dev", "pod_push", push("from-main")),
+        ("p_carried", "pod_push", carried),
+    ];
+    turn(chain, 5, &calls);
+    chain.at(7, 0);
+    let (made, pack) = pod_commit(chain, &main);
+    let pack_id = format!("sha256:{}", abi::hex(pack.digest()));
+    let unlanded = "ab".repeat(20);
+    let rows = asked(chain);
+    assert_eq!(rows.len(), 4, "{rows:?}");
+    for row in &rows {
+        let sent = body(chain, row);
+        let reference = sent["ref"].as_str().unwrap().to_owned();
+        assert!(sent.get("allow_stack").is_none(), "{sent}");
+        let parent = if reference == "from-main" {
+            &main
+        } else {
+            &unlanded
+        };
+        let commits = if reference == "from-main" { 1 } else { 2 };
+        let packed = json!({ "commit": made, "parents": [parent], "commits": commits, "pack": pack_id, "objects": 3, "size": 1, "kind": "pack" });
+        answer(chain, row.id, ok(packed));
+    }
+    let grand = refusal(chain, thread, "p_grand");
+    let why =
+        format!("{made} is not a child of refs/heads/main's head {main}: its parent is {unlanded}");
+    assert!(grand.starts_with(code::WRONG_STATE), "{grand}");
+    assert!(
+        grand.contains(&why) && grand.contains("allow_stack: true"),
+        "{grand}"
+    );
+    assert_eq!(tip(chain, "main"), main);
+    let new = refusal(chain, thread, "p_new");
+    let why = format!(
+        "{made} stacks on {unlanded}, which forge does not hold yet: the push would land 2 commits on the new branch refs/heads/fresh. Push {unlanded} first"
+    );
+    assert!(
+        new.contains(&why) && new.contains("carrying someone's commits"),
+        "{new}"
+    );
+    let dev = json_result(chain, thread, "p_dev");
+    assert_eq!(
+        (&dev["head"], &dev["old"]),
+        (&json!(made), &json!(null)),
+        "{dev}"
+    );
+    assert_eq!(tip(chain, "from-main"), made);
+    let carried = json_result(chain, thread, "p_carried");
+    assert_eq!(carried["head"], json!(made), "{carried}");
+    assert_eq!(tip(chain, "carried"), made);
 }
 
 // a stream with no every at block 3, its call run at 4 (time 0); its watch at 5 (time 1000) reads
