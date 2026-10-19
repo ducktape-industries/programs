@@ -3,7 +3,8 @@
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx, Reply as Wanted};
 
 use crate::rules::{
-    check, checks, claim, queued, register, replied, report, rerun, run, runners, trigger, watched,
+    check, checks, claim, previewing, queued, register, replied, report, rerun, run, runners,
+    trigger, watched,
 };
 use crate::{Op, PROGRAM, Query, Reply};
 
@@ -37,11 +38,12 @@ impl Program for Actions {
                 log,
             } => report(ctx, check, state, summary, log),
             Op::Rerun { check } => rerun(ctx, check),
+            Op::Preview { repo, n } => previewing(ctx, &repo, n),
         }
     }
 
-    // A runner that refuses an offer leaves the check queued for another; a Preview forge
-    // refuses makes an errored run that says why (`rules::replied`).
+    // A runner that refuses an offer errs its check, and a Preview forge refuses makes an errored
+    // run, each saying why (`rules::replied`).
     fn reply(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), Error> {
         replied(ctx, id, outcome)
     }

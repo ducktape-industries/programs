@@ -19,6 +19,9 @@ pub const TARGETS: Set<(String, Vec<u8>, u64)> = Set::new("t/").shared();
 // The Previews actions asked forge for, by the message's seq, until forge answers in the
 // frame that asked.
 pub const PREVIEWING: Map<u64, (String, u64)> = Map::new("p/").shared();
+// The offers actions sent runners, by the message's seq, each naming its check and runner, until
+// the runner answers in the frame that offered.
+pub const OFFERING: Map<u64, (u64, String)> = Map::new("f/").shared();
 pub const RUNNERS: Map<AccountNumber, RunnerRow> = Map::new("u/").shared();
 pub const LAST_RUN: Item<u64> = Item::new("last-run").shared();
 pub const LAST_CHECK: Item<u64> = Item::new("last-check").shared();
@@ -33,6 +36,7 @@ pub(crate) const TABLES: &[::program::Table] = &[
     SOURCES.table(),
     TARGETS.table(),
     PREVIEWING.table(),
+    OFFERING.table(),
     RUNNERS.table(),
     LAST_RUN.table(),
     LAST_CHECK.table(),

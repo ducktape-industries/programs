@@ -30,4 +30,5 @@ toml = { workspace = true }
 
 [dev-dependencies]
 access = { workspace = true }
+scheduler = { workspace = true }
 gitcore = { workspace = true }

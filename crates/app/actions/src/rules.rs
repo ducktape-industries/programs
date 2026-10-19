@@ -9,8 +9,8 @@ use forge::{ChangeState, CheckState, Content, EntryKind, Revision, Watched};
 use store::Item;
 
 use crate::state::{
-    BY_COMMIT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, PREVIEWING, QUEUED, RUNNERS, RUNS, SOURCES,
-    TARGETS,
+    BY_COMMIT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, OFFERING, PREVIEWING, QUEUED, RUNNERS, RUNS,
+    SOURCES, TARGETS,
 };
 use crate::workflow;
 use crate::{
@@ -40,14 +40,14 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             let source = (repo.clone(), reference.clone());
             if let Some(n) = SOURCES.get(ctx, &source)? {
                 match still_open(ctx, &repo, n)? {
-                    true => preview(ctx, &repo, n),
+                    true => preview(ctx, &repo, n)?,
                     false => SOURCES.remove(ctx, &source),
                 }
             }
             let into = TARGETS.range_of(ctx, &source, &PageRequest::default())?;
             for (_, _, n) in into.items {
                 match still_open(ctx, &repo, n)? {
-                    true => preview(ctx, &repo, n),
+                    true => preview(ctx, &repo, n)?,
                     false => TARGETS.remove(ctx, &(repo.clone(), reference.clone(), n)),
                 }
             }
@@ -67,29 +67,81 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
                 SOURCES.put(ctx, &(repo.clone(), reference), &n);
             }
             TARGETS.insert(ctx, &(repo.clone(), into, n));
-            preview(ctx, &repo, n);
-            Ok(())
+            preview(ctx, &repo, n)
         }
         Watched::Previewed {
             repo, n, merge, by, ..
-        } => start(ctx, &started(&repo, &merge, Event::Preview { n }, Some(by))),
+        } => {
+            adopt(ctx, &repo, n)?;
+            start(ctx, &started(&repo, &merge, Event::Preview { n }, Some(by)))
+        }
     }
 }
 
+// The change's Preview is asked for in actions' own run the block after (`Op::Preview`), so its
+// checks' offers start a frame of their own rather than nest under the op that moved a head.
+fn preview(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
+    let env = ctx.env();
+    let scheduler = env.role(abi::role::SCHEDULER)?.clone();
+    let height = env
+        .height
+        .checked_add(1)
+        .ok_or_else(|| Error::new(code::EXHAUSTED, "the height is exhausted"))?;
+    let op = crate::Op::Preview {
+        repo: repo.to_owned(),
+        n,
+    };
+    let schedule = abi::role::scheduler::Op::Schedule {
+        height,
+        target: env.program.clone(),
+        payload: abi::encode(&op),
+    };
+    ctx.emit(scheduler, &schedule, Reply::None);
+    Ok(())
+}
+
 // forge builds the change's Preview, the squash its merge would land, and says so with
-// `Previewed`; one it refuses (a conflict) makes an errored run that says why (`replied`).
-fn preview(ctx: &ExecCtx, repo: &str, n: u64) {
+// `Previewed`; one it refuses (a conflict) makes an errored run that says why (`replied`). Open:
+// anyone may ask actions to preview a change.
+pub(crate) fn previewing(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
     let op = forge::Op::Preview {
         repo: repo.to_owned(),
         n,
     };
     let sent = ctx.emit(forge::PROGRAM, &op, Reply::Wanted);
     PREVIEWING.put(ctx, &sent.seq, &(repo.to_owned(), n));
+    Ok(())
+}
+
+// A change previewed that actions holds no rows for (one opened before actions watched forge)
+// joins: its source and target are kept, so their moves preview it again.
+fn adopt(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
+    let asked = forge::Query::Change {
+        repo: repo.to_owned(),
+        n,
+        page: PageRequest::first(1),
+    };
+    let change = match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)? {
+        forge::Reply::Change { change, .. } => change,
+        other => return Err(unexpected_reply(forge::PROGRAM, "Change", &other)),
+    };
+    if let Revision::Ref(reference) = change.from {
+        SOURCES.put(ctx, &(repo.to_owned(), reference), &n);
+    }
+    TARGETS.insert(ctx, &(repo.to_owned(), change.into, n));
+    Ok(())
 }
 
 // forge's answer to what actions sent it: a Preview it refused makes a run on the change's head,
 // errored, that names why (a conflict names every path); any other answer changes nothing.
 pub(crate) fn replied(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), Error> {
+    if let Some((check, runner)) = OFFERING.get(ctx, &id.seq)? {
+        OFFERING.remove(ctx, &id.seq);
+        if let Outcome::Rejected(refused) = outcome {
+            refused_offer(ctx, check, &runner, &refused.message)?;
+        }
+        return Ok(());
+    }
     let Some((repo, n)) = PREVIEWING.get(ctx, &id.seq)? else {
         return Ok(());
     };
@@ -104,6 +156,32 @@ pub(crate) fn replied(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Resul
     let preview = format!("refs/changes/{n}/merge");
     let started = started(&repo, &head, Event::Preview { n }, None);
     record(ctx, &started, &preview, Named::default(), Some(why))?;
+    Ok(())
+}
+
+// A runner refused the offer of a check: unless another runner's offer of it is still out or it
+// left the queue, it ends errored, saying why, never silently queued.
+fn refused_offer(ctx: &ExecCtx, id: u64, runner: &str, why: &str) -> Result<(), Error> {
+    let pending = OFFERING
+        .all(ctx)?
+        .into_iter()
+        .any(|(_, (check, _))| check == id);
+    let mut check = load(ctx, id)?;
+    if pending || check.state != State::Queued {
+        return Ok(());
+    }
+    check.state = State::Errored;
+    check.finished = Some(ctx.env().height);
+    check.summary = format!("{runner} refused the offer: {why}");
+    QUEUED.remove(ctx, &id);
+    CHECKS.put(ctx, &id, &check);
+    tell_forge(ctx, &check);
+    let run = RUNS
+        .get(ctx, &check.run)?
+        .ok_or_else(|| corrupt("r/", &check.run.to_be_bytes(), "a check's run is missing"))?;
+    if let (Event::Push { reference }, Some(channel)) = (&run.event, &run.notify) {
+        red(ctx, &run, &check, reference, channel);
+    }
     Ok(())
 }
 
@@ -361,7 +439,8 @@ fn offer(ctx: &ExecCtx, runner: &RunnerRow, check: &CheckRow) {
     if covers {
         let mut payload = runner.deliver.clone();
         payload.extend(abi::encode(&Offer { check: check.id }));
-        ctx.emit_raw(program.clone(), payload, Reply::Wanted);
+        let sent = ctx.emit_raw(program.clone(), payload, Reply::Wanted);
+        OFFERING.put(ctx, &sent.seq, &(check.id, program.clone()));
     }
 }
 

@@ -44,6 +44,7 @@ dependencies = [
  "forge",
  "gitcore",
  "program",
+ "scheduler",
  "serde",
  "store",
  "toml 1.1.6+spec-1.1.0",

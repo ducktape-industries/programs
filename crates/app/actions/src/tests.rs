@@ -15,6 +15,7 @@ const OWNER_ACCOUNT: u64 = 11;
 const RUNNER: &str = "runner";
 const RUNNER_ACCOUNT: u64 = 904;
 const OFFERS: Item<Vec<u64>> = Item::new("offers");
+const REFUSING: Item<bool> = Item::new("refusing");
 const REPO: &str = "project";
 
 const GATES: &str = r#"
@@ -84,6 +85,7 @@ steps = ["Review the diff."]
 enum Runs {
     Register(Vec<String>),
     Offer(Offer),
+    Refuse,
 }
 
 struct Runner;
@@ -103,8 +105,12 @@ impl Program for Runner {
                 };
                 ctx.emit(PROGRAM, &register, Wanted::None);
             }
+            Runs::Refuse => REFUSING.put(ctx, &true),
             Runs::Offer(offer) => {
                 ctx.env().sent_by(PROGRAM)?;
+                if REFUSING.get(ctx)?.unwrap_or(false) {
+                    return Err(::program::invalid("the runner is out of pods"));
+                }
                 let mut offers = OFFERS.get(ctx)?.unwrap_or_default();
                 offers.push(offer.check);
                 OFFERS.put(ctx, &offers);
@@ -139,6 +145,7 @@ struct World {
     chain: MockChain,
     store: MemoryObjects,
     time: i64,
+    height: std::cell::Cell<u64>,
 }
 
 fn world() -> World {
@@ -148,6 +155,7 @@ fn world() -> World {
     chain.seat::<access::Access>("access");
     chain.seat::<Actions>(PROGRAM);
     chain.seat::<Runner>(RUNNER);
+    chain.seat::<::scheduler::Scheduler>(::scheduler::PROGRAM);
     chain.hold(OWNER, OWNER_ACCOUNT);
     let programs = [
         (forge::PROGRAM, 900),
@@ -172,6 +180,7 @@ fn world() -> World {
         chain,
         store: MemoryObjects::new(Hash::Sha1),
         time: 1,
+        height: std::cell::Cell::new(1),
     }
 }
 
@@ -307,8 +316,16 @@ impl World {
         check
     }
 
-    // The commit change `n`'s latest Preview made.
+    // The next block, to its end: what actions scheduled for it runs.
+    fn tick(&self) {
+        let height = self.height.get() + 2;
+        self.height.set(height);
+        self.chain.at(height, height * 1000);
+    }
+
+    // The commit change `n`'s latest Preview made, the block after actions asked for it.
     fn preview(&self, n: u64) -> Oid {
+        self.tick();
         let asked = forge::Query::Preview {
             repo: REPO.into(),
             n,
@@ -645,6 +662,7 @@ fn a_change_that_does_not_preview_makes_an_errored_run_that_says_why() {
         reviewers: Vec::new(),
     };
     world.forge(&open).unwrap();
+    world.tick();
     let run = world.run(1);
     assert_eq!(run.event, Event::Preview { n: 1 });
     let ran = (run.commit.as_str(), run.workflow.as_str());
@@ -724,4 +742,69 @@ fn an_account_registers_as_a_runner_hears_no_offer_and_claims_and_reports_what_i
     );
     let told = ("changes.toml#review".to_owned(), forge::CheckState::Failed);
     assert_eq!(world.statuses(root), [told]);
+}
+
+#[test]
+fn a_change_opened_before_actions_watched_joins_on_its_first_preview() {
+    let mut world = world();
+    let root = world.commit(&[], &[("changes.toml", CHANGES)]);
+    world.push(None, root, "main");
+    let feature = world.commit(&[root], &[("changes.toml", CHANGES)]);
+    world.push(None, feature, "feature");
+    let open = forge::Op::ChangeOpen {
+        repo: REPO.into(),
+        from: forge::Revision::Ref(b"refs/heads/feature".to_vec()),
+        into: b"refs/heads/main".to_vec(),
+        title: "Feature".into(),
+        body: String::new(),
+        reviewers: Vec::new(),
+    };
+    world.forge(&open).unwrap();
+    world.tick();
+    // as if actions came after the change: it holds no rows for it
+    let actions = world.chain.host(PROGRAM);
+    let ctx = actions.exec(::program::MockHost::env(PROGRAM));
+    crate::state::SOURCES.remove(&ctx, &(REPO.to_owned(), b"refs/heads/feature".to_vec()));
+    crate::state::TARGETS.remove(&ctx, &(REPO.to_owned(), b"refs/heads/main".to_vec(), 1));
+    drop(ctx);
+    let previewed = forge::Op::Preview {
+        repo: REPO.into(),
+        n: 1,
+    };
+    let moved = world.commit(&[root], &[("changes.toml", CHANGES)]);
+    world.push(Some(root), moved, "main");
+    world.forge(&previewed).unwrap();
+    let first = world.preview(1);
+    let later = world.commit(&[feature], &[("changes.toml", CHANGES)]);
+    world.push(Some(feature), later, "feature");
+    assert_ne!(
+        world.preview(1),
+        first,
+        "the adopted change previews again as its source moves"
+    );
+}
+
+#[test]
+fn a_runner_that_refuses_its_offer_errs_the_check_saying_why() {
+    let mut world = world();
+    world.runner(&["pods"]);
+    let anyone = Origin::Signed(OWNER.to_vec());
+    world.chain.submit(anyone, RUNNER, &Runs::Refuse).unwrap();
+    let root = world.commit(&[], &[("gates.toml", GATES)]);
+    world.push(None, root, "main");
+    let checks = world.checks(root);
+    assert_eq!(
+        jobs(&checks),
+        [("gates", State::Errored), ("render", State::Queued)],
+        "render needs gpu, which no runner offers"
+    );
+    assert_eq!(
+        checks[0].summary,
+        "runner refused the offer: the runner is out of pods"
+    );
+    let told = world.statuses(root);
+    assert!(
+        told.contains(&("gates.toml#gates".to_owned(), forge::CheckState::Errored)),
+        "{told:?}"
+    );
 }

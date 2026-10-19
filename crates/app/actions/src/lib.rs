@@ -47,6 +47,12 @@ pub enum Op {
     Rerun {
         check: u64,
     },
+    // forge builds change `n`'s Preview, and its checks run on it: what actions sends itself the
+    // block after a change opens or a head moves, so the Preview starts a frame of its own.
+    Preview {
+        repo: String,
+        n: u64,
+    },
 }
 
 // What forge puts before each event it tells actions: `Op::Watched`'s tag.
@@ -235,6 +241,7 @@ pub fn describe(op: &Op) -> describe::Description {
             vec![check(id), field("summary", Value::text(summary))],
         ),
         Op::Rerun { check: id } => (format!("Run check {id} again"), vec![check(id)]),
+        Op::Preview { repo, n } => (format!("Preview change {repo}#{n}"), Vec::new()),
     };
     describe::Description { title, fields }
 }
@@ -245,6 +252,8 @@ describe::export!(Op, describe);
 fn op_variants_only_append() {
     assert_eq!(
         describe::variants::<Op>(),
-        ["Watched", "Trigger", "Register", "Claim", "Report", "Rerun"]
+        [
+            "Watched", "Trigger", "Register", "Claim", "Report", "Rerun", "Preview"
+        ]
     );
 }
