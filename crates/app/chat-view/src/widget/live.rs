@@ -10,7 +10,7 @@ use borsh::schema::BorshSchemaContainer;
 use serde_json::Value;
 use view::methods::{BlobGet, Call, NamedChanges, NamedQuery};
 use view::prelude::*;
-use view::{Host, Task};
+use view::{Host, Task, store};
 
 use super::{Slot, Widget, at, parse, put, with_me};
 use crate::{Chat, words};
@@ -27,7 +27,13 @@ pub(crate) struct Widgets {
     pub(crate) side: bool,
 }
 
-type Schemas = Rc<RefCell<BTreeMap<BlobId, Rc<Interface>>>>;
+// Each code's interface, or why its schema doesn't read.
+type Schema = Result<Rc<Interface>, String>;
+type Schemas = Rc<RefCell<BTreeMap<BlobId, Schema>>>;
+
+// Where the device keeps a program's schema section, with the code it came
+// from (`store`): read again only once the program runs other code.
+const KEPT_SCHEMA: &str = "widget-schema/";
 
 // A program's query and reply types, by its code's schema.
 struct Interface {
@@ -173,13 +179,18 @@ impl Chat {
     }
 
     // A block of `program`: the widgets that read it ask again, and on a
-    // block of files every widget looks whether its file moved.
+    // block of files every widget looks whether its file moved. A widget
+    // whose read failed asks again on any block it hears.
     fn widgets_moved(&mut self, program: &str, cx: &mut Context<Self>) {
         let moved: Vec<(String, bool)> = self
             .widgets
             .files
             .iter()
-            .map(|(path, live)| (path.clone(), live.follows.as_deref() == Some(program)))
+            .map(|(path, live)| {
+                let failed = matches!(live.shown, Shown::Failed { .. });
+                let reads = live.follows.as_deref() == Some(program);
+                (path.clone(), failed || reads)
+            })
             .collect();
         for (path, reads) in moved {
             if reads || program == files::PROGRAM {
@@ -361,11 +372,12 @@ async fn source(
                 put(&mut query, &cursor, after).map_err(bad)?;
             }
             let reply = ask(&host, &interface, &program, query).await?;
-            let listed = rows_of(&reply, &rows).map_err(bad)?;
             let more = match at(&reply, &next) {
-                None | Some(Value::Null) => None,
+                None => return Err(bad(words::widget_no_next(&next))),
+                Some(Value::Null) => None,
                 Some(next) => Some(serde_json::to_vec(next).map_err(|e| bad(e.to_string()))?),
             };
+            let listed = rows_of(&reply, &rows).map_err(bad)?;
             if after.is_none() {
                 *first.borrow_mut() = Some(reply);
             }
@@ -404,7 +416,8 @@ async fn ask(
         target: program.to_owned(),
         body,
     };
-    let bytes = host.ask::<NamedQuery>(call).await?;
+    let asked = |refusal| view::host::malformed(words::widget_asked(program, &said(&refusal)));
+    let bytes = host.ask::<NamedQuery>(call).await.map_err(asked)?;
     borsh_json::decode(&interface.schema, &interface.reply, "reply", &bytes).map_err(fault)
 }
 
@@ -414,16 +427,24 @@ fn said(refusal: &view::host::Error) -> String {
 }
 
 // The program's query and reply types, from the schema its code carries:
-// read once per code, so a program swapped to new code is read again.
-async fn interface(host: &Host, program: &str, schemas: &Schemas) -> Result<Rc<Interface>, String> {
+// read once per code, kept on the device with that code, so a program
+// swapped to new code is read again and its code is not fetched per run.
+async fn interface(host: &Host, program: &str, schemas: &Schemas) -> Schema {
+    let reading = |refusal| words::widget_code_unread(program, &design::sentence(&refusal));
     let asked = programs::ask::Program(program.to_owned());
-    let (_, entry) = host
-        .query(asked)
-        .await
-        .map_err(|refusal| design::sentence(&refusal))?;
+    let (_, entry) = host.query(asked).await.map_err(reading)?;
     let entry = entry.ok_or_else(|| words::widget_no_program(program))?;
     if let Some(known) = schemas.borrow().get(&entry.code) {
-        return Ok(known.clone());
+        return known.clone();
+    }
+    let key = format!("{KEPT_SCHEMA}{program}");
+    // a store the host refuses is a store with nothing kept
+    if let Ok(Some((code, section))) = store::get::<(BlobId, Vec<u8>)>(host, &key).await
+        && code == entry.code
+        && let Ok(interface) = interface_of(program, &section)
+    {
+        schemas.borrow_mut().insert(code, Ok(interface.clone()));
+        return Ok(interface);
     }
     let id = match entry.code {
         BlobId::Sha256(digest) => format!("sha256:{}", abi::hex(&digest)),
@@ -432,22 +453,31 @@ async fn interface(host: &Host, program: &str, schemas: &Schemas) -> Result<Rc<I
     let code = host
         .ask::<BlobGet>(id)
         .await
-        .map_err(|refusal| design::sentence(&refusal))?
+        .map_err(reading)?
         .ok_or_else(|| words::widget_no_code(program))?;
     let section = custom_section(&code, ::program::schema::SECTION)
-        .ok_or_else(|| words::widget_no_schema(program))?;
+        .ok_or_else(|| words::widget_no_schema(program));
+    let interface = section.and_then(|section| {
+        let interface = interface_of(program, section)?;
+        store::set(host, &key, Some(&(entry.code, section.to_vec())));
+        Ok(interface)
+    });
+    schemas.borrow_mut().insert(entry.code, interface.clone());
+    interface
+}
+
+// The query and reply types a schema section names.
+fn interface_of(program: &str, section: &[u8]) -> Schema {
     let unreadable = || words::widget_bad_schema(program);
     let schema: BorshSchemaContainer = abi::decode(section).map_err(|_| unreadable())?;
     schema.validate().map_err(|_| unreadable())?;
     let roots = ::program::schema::roots(&schema).ok_or_else(unreadable)?;
     let (query, reply) = (roots.query.to_owned(), roots.reply.to_owned());
-    let interface = Rc::new(Interface {
+    Ok(Rc::new(Interface {
         schema,
         query,
         reply,
-    });
-    schemas.borrow_mut().insert(entry.code, interface.clone());
-    Ok(interface)
+    }))
 }
 
 // The payload of a wasm module's custom section `name`, by its section

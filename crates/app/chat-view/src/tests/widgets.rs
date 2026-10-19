@@ -253,6 +253,124 @@ fn a_cursor_reads_every_page_putting_each_next_where_it_says() {
 }
 
 #[test]
+fn a_cursor_whose_reply_has_no_next_beside_its_rows_says_so() {
+    let nested = LISTED.replace(
+        "rows = \"Channels.items\"",
+        "rows = \"Channels.items.0.meta\"",
+    );
+    let held = held(&[(ROOMS, &nested)]);
+    let (cx, _) = desk(rooms(&[("widget.pinned", ROOMS)]), held);
+    let said = "The reply doesn’t read: there is no `Channels.items.0.next`";
+    assert!(said_starting(&cx, said), "{:?}", cx.texts());
+}
+
+#[test]
+fn a_failed_read_says_which_and_asks_again_on_the_next_block() {
+    let (rooms, held) = (rooms(&[("widget.pinned", ROOMS)]), held(&[(ROOMS, LISTED)]));
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    serve(&cx, rooms, held);
+    let code = format!("sha256:{}", abi::hex(&CODE));
+    let cut = Rc::new(RefCell::new(true));
+    cx.host().handle::<BlobGet>(move |id| {
+        if id == code && cut.replace(false) {
+            let why = "no answer came back: error decoding response body";
+            return Err(view::host::malformed(why.into()));
+        }
+        Ok((id == code).then(chat_code))
+    });
+    let _view = cx.open::<Chat>();
+    seat(&mut cx);
+    cx.simulate_click("chat-sidebar-channel-general");
+    cx.run_until_parked();
+    let said = "Reading chat’s code: no answer came back: error decoding response body";
+    assert!(cx.has_text(said), "{:?}", cx.texts());
+    let files = cx.host().stream::<Changes<files::Files>>();
+    files.send(block(10, Vec::new()));
+    cx.run_until_parked();
+    assert!(cx.has_text("#General at 3"), "{:?}", cx.texts());
+}
+
+#[test]
+fn a_refused_question_names_the_program_asked() {
+    // the widget's own question, which the view never asks
+    let limited = COUNTED.replace("page = {}", "page = { limit = 99 }");
+    let (rooms, held) = (
+        rooms(&[("widget.pinned", ROOMS)]),
+        held(&[(ROOMS, &limited)]),
+    );
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    serve(&cx, rooms.clone(), held);
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| match query {
+            Query::Channels { page } if page.limit == Some(99) => {
+                Err(view::host::malformed("no answer came back".into()))
+            }
+            Query::Channels { .. } => Ok(Reply::Channels(page(rooms.borrow().clone()))),
+            query => Ok(chat_reply(query)),
+        }));
+    let _view = cx.open::<Chat>();
+    seat(&mut cx);
+    cx.simulate_click("chat-sidebar-channel-general");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("Asking chat: no answer came back"),
+        "{:?}",
+        cx.texts()
+    );
+}
+
+#[test]
+fn a_schema_is_kept_on_the_device_with_its_code_and_read_from_there() {
+    use view::methods::{self, StoreGet, StoreSet};
+    let code = format!("sha256:{}", abi::hex(&CODE));
+    let fetched = |cx: &TestAppContext| {
+        let asked = cx.host().requests::<BlobGet>();
+        asked.iter().filter(|id| **id == code).count()
+    };
+    let held = held(&[(ROOMS, LISTED)]);
+    let (cx, _) = desk(rooms(&[("widget.pinned", ROOMS)]), held.clone());
+    assert_eq!(fetched(&cx), 1);
+    let kept = cx.host().requests::<StoreSet>();
+    let kept = kept
+        .into_iter()
+        .find(|(key, _)| key == "widget-schema/chat");
+    let kept = kept.and_then(|(_, kept)| kept).expect("the schema is kept");
+    let (from, section): (BlobId, Vec<u8>) = methods::decode(&kept).unwrap();
+    assert_eq!(from, BlobId::Sha256(CODE));
+    // a later run reads it off the device; kept from other code, it fetches
+    let elsewhere = methods::encode(&(BlobId::Sha256([5; 32]), section));
+    for (kept, fetches) in [(kept, 0), (elsewhere, 1)] {
+        let mut cx = TestAppContext::new();
+        configure(&mut cx);
+        serve(&cx, rooms(&[("widget.pinned", ROOMS)]), held.clone());
+        cx.host()
+            .handle::<StoreGet>(move |key| Ok((key == "widget-schema/chat").then(|| kept.clone())));
+        let _view = cx.open::<Chat>();
+        seat(&mut cx);
+        cx.simulate_click("chat-sidebar-channel-general");
+        cx.run_until_parked();
+        assert!(cx.has_text("#General at 3"), "{:?}", cx.texts());
+        assert_eq!(fetched(&cx), fetches);
+    }
+}
+
+#[test]
+fn a_widget_with_no_rows_says_its_own_empty_words() {
+    let only = "where = { \"channel.id\" = \"none\" }\nempty = \"Nothing waiting on a decision.\"";
+    let none = TICKED.replace("except = { \"channel.id\" = [\"dm-7-8\"] }", only);
+    let held = held(&[(ROOMS, &none)]);
+    let (cx, _) = desk(rooms(&[("widget.pinned", ROOMS)]), held);
+    let said = "Nothing waiting on a decision.";
+    assert!(cx.has_text(said), "{:?}", cx.texts());
+    assert_eq!(
+        widget::parse(LISTED).unwrap().view.nothing(),
+        "Nothing to show."
+    );
+}
+
+#[test]
 fn the_pinned_card_folds_and_unfolds() {
     let held = held(&[(ROOMS, LISTED)]);
     let (mut cx, _) = desk(rooms(&[("widget.pinned", ROOMS)]), held);

@@ -62,7 +62,7 @@ fn summary(chat: &Chat, shape: &Shape, reply: &Value, rows: &[Value]) -> String 
         }
     };
     match said.trim().is_empty() {
-        true => words::WIDGET_EMPTY.to_owned(),
+        true => shape.nothing(),
         false => said,
     }
 }
@@ -268,7 +268,7 @@ pub(crate) fn body(
     let shape = &widget.view;
     let rows = shape.rows(rows);
     if rows.is_empty() && !matches!(shape.kind, Kind::Stat | Kind::Columns) {
-        return quiet("empty", words::WIDGET_EMPTY.into(), theme.muted);
+        return quiet("empty", shape.nothing(), theme.muted);
     }
     let draw = Draw {
         chat,

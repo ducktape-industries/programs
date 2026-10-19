@@ -255,6 +255,20 @@ pub(crate) fn widget_reply(why: &str) -> String {
     format!("The reply doesn’t read: {why}")
 }
 
+// a question the source program or the node did not answer
+pub(crate) fn widget_asked(program: &str, why: &str) -> String {
+    format!("Asking {program}: {why}")
+}
+
+// the program's entry or code, which its schema is read from, did not come
+pub(crate) fn widget_code_unread(program: &str, why: &str) -> String {
+    format!("Reading {program}’s code: {why}")
+}
+
+pub(crate) fn widget_no_next(path: &str) -> String {
+    format!("there is no `{path}` to read the next page from")
+}
+
 pub(crate) fn widget_not_a_list(path: &str) -> String {
     format!("`{path}` is not a list")
 }

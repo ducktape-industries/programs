@@ -36,6 +36,7 @@ group_by = "status"                   # columns: one column per value
 order = ["waiting", "doing"]          # columns: these first, in this order, then as they come
 item = "J-{id} {title} · {owner|name}"     # a row's text
 on_press = { open = "{channel}" }     # optional: where pressing a row goes
+empty = "Nothing waiting."            # optional: what it says with no rows ("Nothing to show.")
 ```
 
 Per kind:
@@ -65,13 +66,18 @@ channel id, opened in chat. No widget ever sends an op.
   never on a timer.
 - On every files block chat-view looks at the file again and reads it anew when its object moved.
 - The program's schema comes from its code: programs `Program(name)` → `entry.code`, `blob.get`,
-  the `ducktape.schema` custom section. It is read once per code, so an upgraded program is read
-  again.
+  the `ducktape.schema` custom section. It is read once per code and kept on the device (view
+  `store`, key `widget-schema/<program>`, with the code it came from), so the code is fetched again
+  only once the program runs other code.
+- A widget whose read failed asks again on the next block it hears (files, or its source program).
 
 ## Errors
 
 A file that does not parse, a file missing, a program the network does not run, a query the
-program refuses, a reply that does not read: the widget says why in its own place.
+program refuses, a reply that does not read: the widget says why in its own place. A read that
+failed says which: "Reading board’s code: …" (its entry or its code, for the schema) or "Asking
+board: …" (the query). A `cursor` whose reply has no `next` beside its rows says so rather than
+stop after one page.
 
 ## Which programs a widget can read
 

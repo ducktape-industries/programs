@@ -111,6 +111,8 @@ pub(crate) struct Shape {
     pub(crate) checked: Option<Filter>,
     #[serde(default)]
     pub(crate) on_press: Option<Press>,
+    #[serde(default)]
+    pub(crate) empty: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq)]
@@ -266,6 +268,13 @@ pub(crate) fn holds(filter: &Filter, row: &Value) -> bool {
 }
 
 impl Shape {
+    // What the view says when it has no rows: the file's `empty`, else the
+    // default.
+    pub(crate) fn nothing(&self) -> String {
+        let empty = self.empty.clone();
+        empty.unwrap_or_else(|| crate::words::WIDGET_EMPTY.to_owned())
+    }
+
     // The rows the view draws: those `where` keeps and `except` leaves.
     pub(crate) fn rows<'v>(&self, rows: &'v [Value]) -> Vec<&'v Value> {
         rows.iter()
