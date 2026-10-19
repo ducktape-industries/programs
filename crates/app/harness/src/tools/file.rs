@@ -378,13 +378,11 @@ fn checked(
             ));
         }
     }
-    match (written.step.is_empty(), &written.script) {
-        (true, None) => return Err("it has no [[step]] and no script".to_owned()),
-        (false, Some(_)) => return Err("it has steps and a script: a tool has one".to_owned()),
-        (true, Some(_)) => {
-            return Err("a script body runs in a pod, which harness does not do yet".to_owned());
-        }
-        (false, None) => {}
+    if written.script.is_some() {
+        return Err("a tool file holds steps only: there is no script body".to_owned());
+    }
+    if written.step.is_empty() {
+        return Err("it has no [[step]]".to_owned());
     }
     let mut known: BTreeSet<String> = written.input.keys().cloned().collect();
     let mut steps = Vec::new();
