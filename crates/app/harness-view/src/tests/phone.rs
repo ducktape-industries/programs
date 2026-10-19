@@ -127,7 +127,10 @@ fn an_agent_page_says_what_it_does_and_opens_each_part_of_its_setup() {
         "Model",
         "4,096 tokens",
         "Thinking",
-        "Auto",
+        "Model's default",
+        "Configured",
+        "Ready",
+        "Edit front matter",
         "forge_log",
         "writes as Scout",
     ] {
@@ -430,7 +433,7 @@ fn sweep() {
         assert_eq!(cx.back_handler(), None);
         tap(cx, &["agent-12", "agent-actions"]);
         cx.simulate_back();
-        tap(cx, &["agent-part-model"]);
+        tap(cx, &["agent-part-model", "setup-edit"]);
         cx.simulate_back();
         tap(cx, &["agent-part-usage"]);
         cx.simulate_back();

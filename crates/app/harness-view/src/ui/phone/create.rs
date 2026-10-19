@@ -4,12 +4,12 @@
 use harness::Thinking;
 use view::design::{Ladder, space};
 use view::prelude::*;
-use view::{Div, FontWeight, Stateful};
+use view::{Div, FontWeight};
 
 use super::parts::scroller;
 use crate::Agents;
 use crate::create::{Answers, Changers, proposed_path};
-use crate::ui::{thinking_picker, waiting};
+use crate::ui::{pick, thinking_picker, waiting};
 use crate::words::{serving_words, window_short};
 
 pub(super) fn page(
@@ -22,7 +22,7 @@ pub(super) fn page(
     let (title, caption) = match draft.again {
         true => (
             format!("Edit {}", draft.name.text()),
-            "a new version of its configuration file",
+            "its prompt, file and lists; the setup edits its front matter",
         ),
         false => (
             "Create an agent".to_owned(),
@@ -118,55 +118,57 @@ fn fields(
         .label("Configuration file")
         .caption("Read at each model call. Only you may change it."),
     )
-    .child(labelled(
-        "Model",
-        models(view, cx, theme, ladder),
-        theme,
-        ladder,
-    ))
-    .child(labelled(
-        "Thinking",
-        div()
-            .flex()
-            .flex_col()
-            .gap(space::XS)
-            .child(thinking_picker(
-                "create-thinking",
-                draft.thinking,
+    .when(!draft.again, |form| {
+        form.child(labelled(
+            "Model",
+            models(view, cx, theme, ladder),
+            theme,
+            ladder,
+        ))
+        .child(labelled(
+            "Thinking",
+            div()
+                .flex()
+                .flex_col()
+                .gap(space::XS)
+                .child(thinking_picker(
+                    "create-thinking",
+                    draft.thinking,
+                    ladder,
+                    theme,
+                    cx.processor(|view: &mut Agents, thinking: Option<Thinking>, _, cx| {
+                        view.draft.thinking = thinking;
+                        cx.notify();
+                    }),
+                ))
+                .child(
+                    div()
+                        .text_type(ladder.caption)
+                        .text_color(theme.muted)
+                        .child("Auto is the model's default."),
+                ),
+            theme,
+            ladder,
+        ))
+        .child(
+            design::field(
+                Input::new("create-max-tokens", &draft.max_tokens, "Max output tokens")
+                    .placeholder("4096"),
                 ladder,
                 theme,
-                cx.processor(|view: &mut Agents, thinking: Option<Thinking>, _, cx| {
-                    view.draft.thinking = thinking;
-                    cx.notify();
-                }),
-            ))
-            .child(
-                div()
-                    .text_type(ladder.caption)
-                    .text_color(theme.muted)
-                    .child("Auto is the model's default."),
-            ),
-        theme,
-        ladder,
-    ))
-    .child(
-        design::field(
-            Input::new("create-max-tokens", &draft.max_tokens, "Max output tokens")
-                .placeholder("4096"),
-            ladder,
-            theme,
+            )
+            .label("Max output tokens"),
         )
-        .label("Max output tokens"),
-    )
-    .child(
-        design::field(
-            Input::new("create-wait", &draft.wait, "Wait").placeholder("egress's default"),
-            ladder,
-            theme,
+        .child(
+            design::field(
+                Input::new("create-wait", &draft.wait, "Wait").placeholder("egress's default"),
+                ladder,
+                theme,
+            )
+            .label("Wait")
+            .caption("Blocks egress waits for the answer."),
         )
-        .label("Wait")
-        .caption("Blocks egress waits for the answer."),
-    )
+    })
     .child(
         design::field(
             Textarea::new("create-system", &draft.system, "System prompt")
@@ -246,26 +248,6 @@ fn models(
             ))
         })
         .into_any_element()
-}
-
-/// One choice of a list the form picks from: a row's height, its edge in ink once picked.
-pub(super) fn pick(id: String, picked: bool, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
-    let row = div()
-        .id(SharedString::from(id))
-        .flex()
-        .items_center()
-        .gap(space::LG)
-        .min_h(ladder.row)
-        .px(space::LG)
-        .border_1()
-        .border_color(match picked {
-            true => theme.foreground,
-            false => theme.border,
-        });
-    design::pressed(row, ladder)
-        .role(Role::Button)
-        .aria_toggled(picked.into())
-        .focusable()
 }
 
 /// One of a few choices, its list field under it once "Listed…" is picked.

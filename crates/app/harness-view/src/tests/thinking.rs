@@ -41,7 +41,10 @@ fn the_agent_shows_its_thinking_and_its_manager_sets_it_there() {
     cx.run_until_parked();
     assert!(cx.has_text("Thinking"), "{:?}", cx.texts());
     assert!(cx.has_text("Low"), "{:?}", cx.texts());
-    cx.simulate_click("agent-thinking-level-5");
+    cx.simulate_click("setup-edit");
+    cx.run_until_parked();
+    cx.simulate_click("setup-thinking-5");
+    cx.simulate_click("setup-save");
     cx.run_until_parked();
     let deeper = Config {
         thinking: Some(Thinking::Max),
@@ -79,7 +82,7 @@ fn the_agent_shows_its_thinking_and_its_manager_sets_it_there() {
 }
 
 #[test]
-fn only_the_manager_sees_the_thinking_picker() {
+fn a_visitor_reads_the_setup_and_may_open_its_editor() {
     let (mut cx, _) = seated(Net::default(), ADA);
     cx.simulate_click("agent-12");
     cx.run_until_parked();
@@ -88,7 +91,8 @@ fn only_the_manager_sees_the_thinking_picker() {
     cx.simulate_click("setup");
     cx.run_until_parked();
     assert!(cx.has_text("Model's default"), "{:?}", cx.texts());
-    assert!(cx.find("agent-thinking-level").is_none());
+    // the file's list, not the view, decides whose save lands
+    assert!(cx.find("setup-edit").is_some(), "{:?}", cx.texts());
 }
 
 #[test]
@@ -104,7 +108,10 @@ fn an_edit_and_a_thinking_pick_keep_the_channels_it_listens_to_and_its_settle() 
     files_take(&cx);
     cx.simulate_click("agent-12");
     cx.run_until_parked();
-    cx.simulate_click("agent-thinking-level-2");
+    cx.simulate_click("setup-edit");
+    cx.run_until_parked();
+    cx.simulate_click("setup-thinking-2");
+    cx.simulate_click("setup-save");
     cx.run_until_parked();
     let thinks = Config {
         thinking: Some(Thinking::Low),

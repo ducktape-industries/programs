@@ -1,21 +1,12 @@
-//! Agents: the program accounts whose script calls `harness`, and how each one worked. The
-//! list shows every agent with its state; an agent shows its conversations, then its setup (its
-//! configuration file, what harness resolves from it, whom it answers) and what its turns used;
-//! a conversation shows its transcript, read only, a burst of tool calls folded to one line; the
-//! models page lists harness's model records and sets one. People talk to an agent in chat; the
-//! writes here are a manager's (create, edit its configuration, take it back from harness,
-//! start, fork or close a conversation) and a model record's owner's.
-//!
-//! - `read`: every read the screens make; `links`: the links in and out.
-//! - `create`: the create form and the ops it sends in order; `models`: the models form.
-//! - `timeline`: a transcript's frames grouped into what a person reads.
-//! - `ui`: the screens, the desktop's beside the phone's (`ui/phone`); the root picks one by
-//!   the device.
+//! Agents: harness's agents and how each worked: the list, an agent (its conversations, its setup,
+//! its front matter edited by `setup`), a transcript (`timeline`), the models (`models`), the create
+//! and edit form (`create`), who may act (`policies`); `read` reads, `ui` draws desktop and phone.
 mod create;
 mod links;
 mod models;
 mod policies;
 mod read;
+mod setup;
 mod timeline;
 mod ui;
 mod words;
@@ -34,12 +25,16 @@ use harness::{Asking, ThreadRow, Written};
 use identity::Identity;
 use models::ModelDraft;
 use read::{Detail, Model, Offer, Roster, Touched, Transcript};
+use setup::SetupDraft;
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Agents {
     screen: Screen,
     draft: Draft,
     model_draft: ModelDraft,
+    // the agent's front matter, while it is edited
+    #[serde(default)]
+    setup_draft: SetupDraft,
     /// a manager's write waiting for its second press
     arming: Option<Arm>,
     /// the folds turned from how they start: a transcript's rows, an agent's setup
@@ -695,6 +690,7 @@ impl Agents {
         // read again
         if screen.agent() != self.screen.agent() {
             self.detail = Loadable::Idle;
+            self.setup_draft = SetupDraft::default();
         }
         if screen.thread() != self.screen.thread() {
             self.transcript = Loadable::Idle;

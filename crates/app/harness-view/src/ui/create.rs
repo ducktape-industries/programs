@@ -182,51 +182,57 @@ fn fields(
         .placeholder(proposed_path(view.home(), &draft.name.text()).unwrap_or_default()),
         theme,
     ))
-    .child(models(view, cx, theme, ladder))
-    .child(labelled(
-        "Thinking",
-        "How hard the model thinks before it answers.",
-        div().flex().child(thinking_picker(
-            "create-thinking",
-            draft.thinking,
-            ladder,
-            theme,
-            cx.processor(|view: &mut Agents, thinking: Option<Thinking>, _, cx| {
-                view.draft.thinking = thinking;
-                cx.notify();
-            }),
-        )),
-        theme,
-    ))
-    .child(
-        div()
-            .flex()
-            .flex_wrap()
-            .gap(space::LG)
+    .when(!draft.again, |form| {
+        form.child(models(view, cx, theme, ladder))
+            .child(labelled(
+                "Thinking",
+                "How hard the model thinks before it answers.",
+                div().flex().child(thinking_picker(
+                    "create-thinking",
+                    draft.thinking,
+                    ladder,
+                    theme,
+                    cx.processor(|view: &mut Agents, thinking: Option<Thinking>, _, cx| {
+                        view.draft.thinking = thinking;
+                        cx.notify();
+                    }),
+                )),
+                theme,
+            ))
             .child(
-                labelled(
-                    "Max output tokens",
-                    "The most one answer writes.",
-                    input(
-                        Input::new("create-max-tokens", &draft.max_tokens, "Max output tokens"),
-                        theme,
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(space::LG)
+                    .child(
+                        labelled(
+                            "Max output tokens",
+                            "The most one answer writes.",
+                            input(
+                                Input::new(
+                                    "create-max-tokens",
+                                    &draft.max_tokens,
+                                    "Max output tokens",
+                                ),
+                                theme,
+                            )
+                            .placeholder("4096"),
+                            theme,
+                        )
+                        .w(px(200.)),
                     )
-                    .placeholder("4096"),
-                    theme,
-                )
-                .w(px(200.)),
+                    .child(
+                        labelled(
+                            "Wait",
+                            "Blocks egress waits for the answer.",
+                            input(Input::new("create-wait", &draft.wait, "Wait"), theme)
+                                .placeholder("egress's default"),
+                            theme,
+                        )
+                        .w(px(200.)),
+                    ),
             )
-            .child(
-                labelled(
-                    "Wait",
-                    "Blocks egress waits for the answer.",
-                    input(Input::new("create-wait", &draft.wait, "Wait"), theme)
-                        .placeholder("egress's default"),
-                    theme,
-                )
-                .w(px(200.)),
-            ),
-    )
+    })
     .child(labelled(
         "System prompt",
         "Each paragraph is its own system block; harness adds its ducktape manual after them.",

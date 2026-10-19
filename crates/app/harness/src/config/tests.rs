@@ -1,6 +1,7 @@
 mod compact_at;
 mod listen;
 mod server_tools;
+mod splice;
 mod thinking;
 
 use super::*;

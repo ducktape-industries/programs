@@ -8,6 +8,7 @@ mod phone;
 mod policies;
 mod reads;
 mod server_tools;
+mod setup;
 mod thinking;
 mod waits;
 
@@ -237,6 +238,8 @@ struct Net {
     armed: Vec<harness::WaitRow>,
     // the services that reach each record after its first, by its id
     model_services: Vec<(String, Vec<String>)>,
+    // configuration files by path where one is not its setup's configuration as `write` puts it
+    files: Vec<(String, String)>,
 }
 
 // The one node the fake egress lists.
@@ -384,6 +387,7 @@ impl Default for Net {
             budget: harness::BudgetReport::default(),
             armed: Vec::new(),
             model_services: Vec::new(),
+            files: Vec::new(),
         }
     }
 }
@@ -684,6 +688,29 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
         Ok(match query {
             chat::Query::Channels { .. } => {
                 chat::Reply::Channels(page(net.rooms.iter().map(room).collect()))
+            }
+            other => panic!("unexpected query: {other:?}"),
+        })
+    });
+    let shared = net.clone();
+    cx.host().handle::<Query<files::Files>>(move |query| {
+        let net = shared.borrow();
+        Ok(match query {
+            files::Query::Read { path, offset, .. } => {
+                let named = net.files.iter().find(|(at, _)| *at == path);
+                let setup = net.setups.iter().find(|setup| setup.path == path);
+                let written = setup
+                    .and_then(|setup| setup.configured.config())
+                    .map(|(_, config)| config.write());
+                let text = named.map(|(_, text)| text.clone()).or(written);
+                let text = text.unwrap_or_else(|| panic!("no file at {path}"));
+                files::Reply::Contents(files::Contents {
+                    snapshot: SNAPSHOT,
+                    size: text.len() as u64,
+                    offset,
+                    bytes: text.as_bytes()[offset as usize..].to_vec(),
+                    eof: true,
+                })
             }
             other => panic!("unexpected query: {other:?}"),
         })
@@ -1346,11 +1373,11 @@ fn edit_commits_a_new_version_of_the_file_and_scripts_only_a_moved_path() {
     cx.run_until_parked();
     cx.simulate_click("agent-edit");
     cx.run_until_parked();
-    cx.simulate_input("create-max-tokens", "1024");
+    cx.simulate_input("create-system", "You are Scout, on call.");
     cx.simulate_click("create-next");
     cx.run_until_parked();
     let smaller = Config {
-        max_tokens: 1024,
+        system: "You are Scout, on call.".into(),
         ..config_of("Scout")
     };
     assert_eq!(
@@ -1467,11 +1494,11 @@ fn editing_a_configuration_in_another_accounts_home_shows_the_refusal_files_retu
     cx.run_until_parked();
     cx.simulate_click("agent-edit");
     cx.run_until_parked();
-    cx.simulate_input("create-max-tokens", "1024");
+    cx.simulate_input("create-system", "You are Scout, on call.");
     cx.simulate_click("create-next");
     cx.run_until_parked();
     let smaller = Config {
-        max_tokens: 1024,
+        system: "You are Scout, on call.".into(),
         ..config_of("Scout")
     };
     assert_eq!(
@@ -1807,6 +1834,11 @@ fn screens() -> Vec<(&'static str, TestAppContext, (u32, u32))> {
             ),
             DESK,
         ),
+        (
+            "D2-setup-edit",
+            open(Net::default(), false, &["agent-12", "setup-edit"]),
+            DESK,
+        ),
         ("D5-create", create(false), DESK),
         ("D5-edit", edit, DESK),
         (
@@ -1823,6 +1855,15 @@ fn screens() -> Vec<(&'static str, TestAppContext, (u32, u32))> {
         ),
         ("P1-list", open(Net::default(), true, &[]), PHONE),
         ("P2-agent", open(Net::default(), true, &["agent-12"]), PHONE),
+        (
+            "P2-setup-edit",
+            open(
+                Net::default(),
+                true,
+                &["agent-12", "agent-part-model", "setup-edit"],
+            ),
+            PHONE,
+        ),
         (
             "P2-agent-sheet",
             open(Net::default(), true, &["agent-12", "agent-actions"]),

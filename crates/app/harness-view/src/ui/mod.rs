@@ -1,14 +1,13 @@
-//! The screens: the agents, one agent, one conversation, the create form, the models, the
-//! desktop's here and the phone's in `phone/`. Both trees draw with what this module holds
-//! (the badges, the folds, a conversation's timeline in `timeline`) and never with each
-//! other's; the words they say are `words`'. Colour is kept for what it says: an agent's tint,
-//! and a state's badge.
+//! The screens, the desktop's here and the phone's in `phone/`: both draw with what this module
+//! holds (the badges, the folds, a pick, the front-matter editor in `setup`, `timeline`) and never
+//! with each other's; their words are `words`'. Colour says something: an agent's tint, a state.
 mod agent;
 pub(crate) mod budget;
 mod create;
 mod list;
 mod models;
 pub(crate) mod phone;
+mod setup;
 mod thread;
 mod timeline;
 
@@ -407,6 +406,26 @@ pub(crate) fn fold(
                 .text_color(theme.muted)
                 .child(caption)
         }))
+}
+
+// One choice of a list a form picks from: a row's height, its edge in ink once picked.
+pub(crate) fn pick(id: String, picked: bool, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
+    let row = div()
+        .id(SharedString::from(id))
+        .flex()
+        .items_center()
+        .gap(space::LG)
+        .min_h(ladder.row)
+        .px(space::LG)
+        .border_1()
+        .border_color(match picked {
+            true => theme.foreground,
+            false => theme.border,
+        });
+    design::pressed(row, ladder)
+        .role(Role::Button)
+        .aria_toggled(picked.into())
+        .focusable()
 }
 
 /// An id in the data face that a press copies: a frame's place, a call's id.

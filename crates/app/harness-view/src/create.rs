@@ -1,24 +1,17 @@
-//! The create form: a new agent is identity's `CreateAgent`, a `files` commit of its
-//! configuration file (its bytes put first as `chunk` blobs, `op.put`, never in the commit;
-//! proposed in its manager's home, `/home/<manager's name>/agents/`), access's `Set` of the
-//! file's write list to `Owner`, so only the manager's account number changes it whatever names
-//! change, identity's `SetScript` with a script that calls harness and names that file, then
-//! access's `Set` of the agent's harness key when it answers more than its manager. A step that
-//! is refused keeps the steps before it, so pressing on resumes where it stopped. Editing an
-//! agent is the same form at its commit: a new version of its file, which keeps its list, and a
-//! new list and a new script when its path moves; who may change the file and whom the agent
-//! answers are the same two `Set`s, sent only when the form changes them.
+//! The create form: identity's `CreateAgent`, a files commit of its configuration (chunk blobs put
+//! first), access's `Set` of the file's list, identity's `SetScript`, access's `Set` of whom it
+//! answers; a refused step resumes there. An edit writes the file's body alone, and moved lists.
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use view::methods::{BlobBody, NewBlob, PutBlobs};
 use view::prelude::*;
 
-use harness::{AgentSetup, BlobId, Config, Configured, ServerTool, Thinking};
+use harness::{AgentSetup, BlobId, Config, Configured, Thinking};
 use identity::{Identity, Ownership, Party, Script};
 use program::Writers;
 
-use crate::read::Detail;
+use crate::read::{self, Detail};
 use crate::{Agents, Screen, applied};
 
 #[derive(Default, Serialize, Deserialize)]
@@ -29,19 +22,10 @@ pub(crate) struct Draft {
     pub max_tokens: TextField,
     pub wait: TextField,
     pub thinking: Option<Thinking>,
-    // what the configuration lists; the form shows no control for it and writes it back
-    #[serde(default)]
-    pub server_tools: Vec<ServerTool>,
-    // the channels it listens to and how long its general input settles, as its file names them:
-    // the form keeps both and edits neither
-    #[serde(default)]
-    pub listen: Vec<String>,
-    #[serde(default)]
-    pub settle: Option<u64>,
-    // when its conversations start compacting, as the configuration names it; written back
-    #[serde(default)]
-    pub compact_at: Option<u64>,
     pub system: TextField,
+    // an edit's prompt as it opened: the body is written only once the field moves from it
+    #[serde(default)]
+    pub prompt: String,
     pub answers: Answers,
     pub listed: TextField,
     /// who may change the configuration file, as an edit picks it; none keeps its list
@@ -55,7 +39,6 @@ pub(crate) struct Draft {
     pub scripted: bool,
     pub answered: bool,
     pub again: bool,
-    pub rethink: bool,
     pub base: Option<[u8; 32]>,
     pub script_path: Option<String>,
     pub problem: Option<String>,
@@ -89,10 +72,16 @@ pub(crate) struct Lists {
 
 pub(crate) struct Form {
     pub path: String,
-    pub config: Config,
+    pub writes: Writes,
     pub ownership: Ownership,
     /// the file's own list, when an edit picks one
     pub changers: Option<Ownership>,
+}
+
+// what a save writes: a new agent's file whole, or an edit's with its body, where it moved
+pub(crate) enum Writes {
+    Whole(Config),
+    Edit { body: Option<String> },
 }
 
 #[derive(Clone, Copy)]
@@ -112,8 +101,7 @@ enum Next {
 
 /// What the form says it does, under its title.
 pub(crate) const CREATE_INTRO: &str = "A new account you manage, handed to harness.";
-pub(crate) const EDIT_INTRO: &str =
-    "Saving commits a new version of the configuration file; the next model call reads it.";
+pub(crate) const EDIT_INTRO: &str = "Saving writes the configuration file's system prompt and keeps its front matter, which the agent's Setup edits; the next model call reads it.";
 
 pub(crate) fn proposed_path(home: Option<&str>, name: &str) -> Option<String> {
     let home = home?;
@@ -167,20 +155,13 @@ impl Draft {
                 "Your account's name is not read yet, so no home is proposed: type the configuration file's path.".into(),
             );
         };
-        let Some(model) = self.model.clone() else {
-            return Err("Pick the model it asks.".into());
-        };
-        let max_tokens = match self.max_tokens.text().trim().parse::<u32>() {
-            Ok(max) if max > 0 => max,
-            _ => return Err("Max output tokens is a whole number, at least 1.".into()),
-        };
-        let wait = self.wait.text().trim().to_owned();
-        let wait = match wait.is_empty() {
-            true => None,
-            false => match wait.parse::<u64>() {
-                Ok(blocks) if blocks > 0 => Some(blocks),
-                _ => return Err("Wait is a whole number of blocks, at least 1, or empty.".into()),
+        let system = self.system.text().trim().to_owned();
+        let writes = match self.again {
+            // an edit writes the prompt alone: the front matter is the setup's to edit
+            true => Writes::Edit {
+                body: (system != self.prompt).then_some(system),
             },
+            false => Writes::Whole(self.config(system)?),
         };
         let ownership = match self.answers {
             Answers::Manager => Ownership::Owner,
@@ -210,19 +191,39 @@ impl Draft {
         };
         Ok(Form {
             path,
-            config: Config {
-                model,
-                max_tokens,
-                wait,
-                thinking: self.thinking,
-                server_tools: self.server_tools.clone(),
-                listen: self.listen.clone(),
-                settle: self.settle,
-                compact_at: self.compact_at,
-                system: self.system.text().trim().to_owned(),
-            },
+            writes,
             ownership,
             changers,
+        })
+    }
+
+    // a new agent's configuration, its prompt `system`
+    fn config(&self, system: String) -> Result<Config, String> {
+        let Some(model) = self.model.clone() else {
+            return Err("Pick the model it asks.".into());
+        };
+        let max_tokens = match self.max_tokens.text().trim().parse::<u32>() {
+            Ok(max) if max > 0 => max,
+            _ => return Err("Max output tokens is a whole number, at least 1.".into()),
+        };
+        let wait = self.wait.text().trim().to_owned();
+        let wait = match wait.is_empty() {
+            true => None,
+            false => match wait.parse::<u64>() {
+                Ok(blocks) if blocks > 0 => Some(blocks),
+                _ => return Err("Wait is a whole number of blocks, at least 1, or empty.".into()),
+            },
+        };
+        Ok(Config {
+            model,
+            max_tokens,
+            wait,
+            thinking: self.thinking,
+            server_tools: Vec::new(),
+            listen: Vec::new(),
+            settle: None,
+            compact_at: None,
+            system,
         })
     }
 
@@ -270,8 +271,12 @@ impl Draft {
 impl Draft {
     /// The form at an agent's configuration, whom it answers and who may change its file.
     fn editing(detail: &Detail, setup: &AgentSetup, name: &str) -> Draft {
-        let config = setup.configured.config().map(|(_, config)| config.clone());
-        let field = |text: Option<String>| TextField::new(text.unwrap_or_default());
+        // the prompt harness read; empty while it reads none
+        let prompt = setup
+            .configured
+            .config()
+            .map(|(_, config)| config.system.clone());
+        let prompt = prompt.unwrap_or_default();
         let (answers, listed) = match &detail.ownership {
             Ownership::Owner => (Answers::Manager, String::new()),
             Ownership::Anyone => (Answers::Anyone, String::new()),
@@ -295,26 +300,8 @@ impl Draft {
         Draft {
             name: TextField::new(name),
             path: TextField::new(setup.path.clone()),
-            model: config.as_ref().map(|config| config.model.clone()),
-            max_tokens: field(config.as_ref().map(|config| config.max_tokens.to_string())),
-            wait: field(
-                config
-                    .as_ref()
-                    .and_then(|config| config.wait)
-                    .map(|wait| wait.to_string()),
-            ),
-            thinking: config.as_ref().and_then(|config| config.thinking),
-            server_tools: config
-                .as_ref()
-                .map(|config| config.server_tools.clone())
-                .unwrap_or_default(),
-            listen: config
-                .as_ref()
-                .map(|config| config.listen.clone())
-                .unwrap_or_default(),
-            settle: config.as_ref().and_then(|config| config.settle),
-            compact_at: config.as_ref().and_then(|config| config.compact_at),
-            system: field(config.as_ref().map(|config| config.system.clone())),
+            system: TextField::new(prompt.clone()),
+            prompt,
             answers,
             listed: TextField::new(listed),
             changers,
@@ -358,7 +345,7 @@ fn words(parties: &[Party]) -> String {
     words.join(", ")
 }
 
-fn base_of(configured: &Configured) -> Option<[u8; 32]> {
+pub(crate) fn base_of(configured: &Configured) -> Option<[u8; 32]> {
     let snapshot = match configured {
         Configured::Unreadable { .. } => None,
         Configured::Malformed { snapshot, .. }
@@ -369,6 +356,44 @@ fn base_of(configured: &Configured) -> Option<[u8; 32]> {
         Some(BlobId::Sha256(digest)) => Some(digest),
         Some(BlobId::Sha1(_)) | None => None,
     }
+}
+
+// `bytes` put as `chunk` blobs, then committed at `path` over snapshot `base`
+pub(crate) async fn write_file(
+    host: &Host,
+    path: String,
+    base: Option<[u8; 32]>,
+    bytes: Vec<u8>,
+    message: String,
+) -> Result<(), String> {
+    let size = bytes.len() as u64;
+    let blobs: Vec<NewBlob> = bytes
+        .chunks(files::CHUNK_SIZE as usize)
+        .map(|chunk| NewBlob {
+            kind: files::CHUNK.into(),
+            body: BlobBody::Bytes(chunk.to_vec()),
+        })
+        .collect();
+    // an empty file has no chunk to put
+    let digests = match blobs.is_empty() {
+        true => Vec::new(),
+        false => host
+            .put(PutBlobs { blobs })
+            .await
+            .map_err(|refusal| design::sentence(&refusal))?,
+    };
+    let chunks = digests.into_iter().map(BlobId::Sha256).collect();
+    let op = files::Op::Commit {
+        base: base.map(BlobId::Sha256),
+        message,
+        changes: vec![files::Change::Put {
+            path,
+            exec: false,
+            meta: BTreeMap::new(),
+            content: files::Content::Chunks { size, chunks },
+        }],
+    };
+    applied(host.ask::<Submit<files::Files>>(op).await).map(|_| ())
 }
 
 impl Agents {
@@ -398,27 +423,6 @@ impl Agents {
         };
         self.draft = draft;
         self.go(Screen::Create, cx);
-    }
-
-    pub(crate) fn rethink(
-        &mut self,
-        name: &str,
-        thinking: Option<Thinking>,
-        cx: &mut Context<Self>,
-    ) {
-        if self.draft.sending.is_some() {
-            return;
-        }
-        let Some(draft) = self.editing(name) else {
-            return;
-        };
-        self.draft = Draft {
-            thinking,
-            rethink: true,
-            ..draft
-        };
-        cx.notify();
-        self.advance(cx);
     }
 
     pub(crate) fn advance(&mut self, cx: &mut Context<Self>) {
@@ -460,16 +464,8 @@ impl Agents {
                 self.set_list(op, Listing::Answers, cx)
             }
             Next::Done(agent) => {
-                let rethought = self.draft.rethink;
                 self.draft = Draft::default();
-                match rethought {
-                    // the thinking picker writes from the agent's page and stays there
-                    true => {
-                        self.read_screen(cx);
-                        cx.notify();
-                    }
-                    false => self.go(Screen::Agent(agent), cx),
-                }
+                self.go(Screen::Agent(agent), cx);
             }
         }
     }
@@ -520,64 +516,41 @@ impl Agents {
         cx.notify();
     }
 
-    /// Puts the agent's config on the network as `chunk` blobs, then commits it.
+    // the configuration written at the form's path: a new agent's whole, an edit's file read at
+    // its snapshot with its body, where that moved
     fn commit(&mut self, agent: u64, form: Form, cx: &mut Context<Self>) {
-        let config = form.config.write().into_bytes();
-        let size = config.len() as u64;
-        let blobs: Vec<NewBlob> = config
-            .chunks(files::CHUNK_SIZE as usize)
-            .map(|chunk| NewBlob {
-                kind: files::CHUNK.into(),
-                body: BlobBody::Bytes(chunk.to_vec()),
-            })
-            .collect();
-        // an empty config has no chunk to put
-        if blobs.is_empty() {
-            let content = files::Content::Chunks {
-                size,
-                chunks: Vec::new(),
-            };
-            return self.commit_put(agent, form, content, cx);
-        }
-        let put = cx.host().put(PutBlobs { blobs });
-        self.draft.sending = Some(cx.land(put, move |view, answer, cx| {
-            view.draft.sending = None;
-            match answer {
-                Ok(digests) => {
-                    let chunks = digests.into_iter().map(BlobId::Sha256).collect();
-                    let content = files::Content::Chunks { size, chunks };
-                    view.commit_put(agent, form, content, cx);
+        let message = format!(
+            "Configure agent {} (account {agent})",
+            self.draft.name.text()
+        );
+        let (host, base) = (cx.host(), self.draft.base);
+        let from = self
+            .draft
+            .script_path
+            .clone()
+            .unwrap_or_else(|| form.path.clone());
+        let writing = async move {
+            let bytes = match form.writes {
+                Writes::Whole(config) => config.write().into_bytes(),
+                Writes::Edit { body } => {
+                    let file = read::file(&host, &from, base.map(BlobId::Sha256)).await?;
+                    match body {
+                        Some(system) => harness::config::with_body(&file, &system)
+                            .map_err(|malformed| {
+                                format!("The file keeps no front matter to write the prompt under: {malformed}.")
+                            })?
+                            .into_bytes(),
+                        None => file,
+                    }
                 }
-                Err(refusal) => view.landed(Err(design::sentence(&refusal)), cx),
-            }
-        }));
-        cx.notify();
-    }
-
-    /// Commits the agent's config, its bytes on the network as `content`.
-    fn commit_put(
-        &mut self,
-        agent: u64,
-        form: Form,
-        content: files::Content,
-        cx: &mut Context<Self>,
-    ) {
-        let name = self.draft.name.text();
-        let changes = vec![files::Change::Put {
-            path: form.path,
-            exec: false,
-            meta: BTreeMap::new(),
-            content,
-        }];
-        let op = files::Op::Commit {
-            base: self.draft.base.map(BlobId::Sha256),
-            message: format!("Configure agent {name} (account {agent})"),
-            changes,
+            };
+            write_file(&host, form.path, base, bytes, message).await
         };
-        let submit = cx.host().ask::<Submit<files::Files>>(op);
-        self.draft.sending = Some(cx.land(submit, |view, answer, cx| {
+        let sent = async move { Ok::<_, Error>(writing.await) };
+        self.draft.sending = Some(cx.land(sent, |view, written, cx| {
             view.draft.sending = None;
-            let landed = applied(answer).map(|_| view.draft.committed = true);
+            let written = written.unwrap_or_else(|refusal| Err(design::sentence(&refusal)));
+            let landed = written.map(|_| view.draft.committed = true);
             view.landed(landed, cx);
         }));
         cx.notify();

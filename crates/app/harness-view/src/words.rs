@@ -5,8 +5,8 @@ use harness::{
     AccountBudget, Awaited, BudgetReport, StatusOutcome, StatusRead, WHOLE_WINDOW, WindowOutlook,
 };
 use harness::{
-    AgentSetup, Asking, Body, CallRow, CallState, Configured, Flow, Frame, Partial, Stop, Thinking,
-    ThreadRow, Usage, Window,
+    AgentSetup, Asking, Body, CallRow, CallState, Configured, Flow, Frame, Partial, ServerTool,
+    Stop, Thinking, ThreadRow, Usage, Window,
 };
 use identity::{Ownership, Party};
 use program::Writers;
@@ -392,6 +392,53 @@ pub(crate) fn wait_words(wait: Option<u64>) -> String {
     wait.map_or_else(
         || "egress's default".to_owned(),
         |wait| design::plural(wait, "block", "blocks"),
+    )
+}
+
+// how harness read the agent's configuration, and why it cannot run it
+pub(crate) fn configured_words(configured: &Configured) -> String {
+    match configured {
+        Configured::Ready { .. } => "Ready".to_owned(),
+        Configured::UnknownModel { config, .. } => format!(
+            "Unknown model: it names {}, which harness keeps no record of",
+            config.model
+        ),
+        Configured::Malformed { malformed, .. } => format!("Malformed: {malformed}"),
+        Configured::Unreadable { reason } => format!("Unreadable: {reason}"),
+    }
+}
+
+pub(crate) fn server_tools_words(tools: &[ServerTool]) -> String {
+    match tools {
+        [] => "none".to_owned(),
+        tools => {
+            let words: Vec<&str> = tools.iter().map(|tool| tool.word()).collect();
+            words.join(", ")
+        }
+    }
+}
+
+// the rooms it hears every message of, each by its name where the roster holds the room
+pub(crate) fn listen_words(listen: &[String], roster: &Roster) -> String {
+    let rooms: Vec<String> = listen
+        .iter()
+        .map(|id| {
+            roster
+                .rooms
+                .get(id)
+                .map_or_else(|| id.clone(), |name| format!("#{name}"))
+        })
+        .collect();
+    match rooms.is_empty() {
+        true => "none: what reaches it".to_owned(),
+        false => rooms.join(", "),
+    }
+}
+
+pub(crate) fn settle_words(settle: Option<u64>) -> String {
+    settle.map_or_else(
+        || "none".to_owned(),
+        |millis| format!("{} ms", design::grouped(millis)),
     )
 }
 

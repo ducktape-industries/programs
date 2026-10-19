@@ -1,8 +1,7 @@
 //! One agent: who it is and what it is doing, where to talk to it, its conversations, and its
-//! setup as rows that each open a page of it. Its manager's writes (edit, start or fork a
-//! conversation, take it back from harness) open as a sheet from the title row; taking it back
-//! asks a second press inside the sheet.
-use harness::{AgentSetup, Thinking};
+//! setup as rows that each open a page of it (the model's edits the front matter); the writes on
+//! it open as a sheet from the title row, taking it back asking a second press there.
+use harness::AgentSetup;
 use view::design::{Ladder, space};
 use view::prelude::*;
 use view::{FontWeight, Stateful};
@@ -11,9 +10,10 @@ use super::agents::face;
 use super::parts::{actions, badged, fact, glyph, notice, opening_row, scroller, section};
 use crate::policies::{CLAIM, CLAIM_HINT};
 use crate::read::{self, Detail, Roster};
+use crate::setup::Press;
+use crate::ui::setup::editor;
 use crate::ui::{
-    BOUND_WORDS, agent_gone, bound_badge, closed_badge, current_badge, state_badge,
-    thinking_picker, waiting,
+    BOUND_WORDS, agent_gone, bound_badge, closed_badge, current_badge, state_badge, waiting,
 };
 use crate::words::{
     PROBLEM_CAPTION, agent_sentence, answers, compacts_line, conversation_label, file_link, lower,
@@ -21,6 +21,7 @@ use crate::words::{
     starts, thinking_words, thread_words, tools_words, upper_first, usage_total, usage_words,
     wait_words, window_words,
 };
+use crate::words::{configured_words, listen_words, server_tools_words, settle_words};
 use crate::{Agents, Arm, Part, Screen, Sheet, State, agent_state, thread_state};
 
 pub(super) fn page(
@@ -392,9 +393,30 @@ fn model_part(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
+    if view.setup_draft.agent == Some(setup.agent) {
+        return editor(view, cx, theme, ladder)
+            .p(space::BLOCK)
+            .into_any_element();
+    }
     let name = roster.name(setup.agent);
+    // the front matter opens to anyone signed in: the file's list decides whose save lands
+    let edit = (view.me.is_some() && setup.configured.config().is_some()).then(|| {
+        let opening = Press::Open(Box::new(setup.clone()));
+        let open = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
+            view.press_setup(opening.clone(), cx)
+        });
+        let button = design::button("setup-edit", "Edit front matter", ladder, theme, open)
+            .kind(design::Kind::Outline);
+        div().flex().flex_col().p(space::BLOCK).child(button)
+    });
     let muted = |words: String| div().text_color(theme.muted).child(words);
-    let mut facts = div().flex().flex_col();
+    let mut facts = div().flex().flex_col().child(fact(
+        "part-configured",
+        "Configured",
+        configured_words(&setup.configured),
+        theme,
+        ladder,
+    ));
     if let Some((_, config)) = setup.configured.config() {
         facts = facts
             .child(fact(
@@ -409,7 +431,7 @@ fn model_part(
             .child(fact(
                 "part-thinking",
                 "Thinking",
-                thinking(view, setup, &name, cx, theme, ladder),
+                thinking_words(config.thinking),
                 theme,
                 ladder,
             ))
@@ -424,6 +446,27 @@ fn model_part(
                 "part-wait",
                 "Wait",
                 wait_words(config.wait),
+                theme,
+                ladder,
+            ))
+            .child(fact(
+                "part-server-tools",
+                "Server tools",
+                server_tools_words(&config.server_tools),
+                theme,
+                ladder,
+            ))
+            .child(fact(
+                "part-listen",
+                "Listens to",
+                listen_words(&config.listen, roster),
+                theme,
+                ladder,
+            ))
+            .child(fact(
+                "part-settle",
+                "Settle",
+                settle_words(config.settle),
                 theme,
                 ladder,
             ));
@@ -471,58 +514,7 @@ fn model_part(
                     )
                 })
         }))
-        .into_any_element()
-}
-
-/// The thinking level: its manager's press writes the configuration file again with that level;
-/// anyone else reads it.
-fn thinking(
-    view: &Agents,
-    setup: &AgentSetup,
-    name: &str,
-    cx: &mut Context<Agents>,
-    theme: &Theme,
-    ladder: &Ladder,
-) -> AnyElement {
-    let Some((_, config)) = setup.configured.config() else {
-        return div().into_any_element();
-    };
-    if view.me != Some(setup.manager) {
-        return div()
-            .child(thinking_words(config.thinking))
-            .into_any_element();
-    }
-    let rethinking = view.draft.rethink && view.draft.created == Some(setup.agent);
-    let picked = match rethinking && view.draft.sending.is_some() {
-        true => view.draft.thinking,
-        false => config.thinking,
-    };
-    let problem = view.draft.problem.clone().filter(|_| rethinking);
-    let name = name.to_owned();
-    let pick = cx.processor(
-        move |view: &mut Agents, thinking: Option<Thinking>, _, cx| {
-            view.rethink(&name, thinking, cx)
-        },
-    );
-    div()
-        .flex()
-        .flex_col()
-        .gap(space::XS)
-        .pt(space::XS)
-        .child(thinking_picker(
-            "agent-thinking-level",
-            picked,
-            ladder,
-            theme,
-            pick,
-        ))
-        .children(problem.map(|problem| {
-            div()
-                .id("agent-thinking-problem")
-                .text_type(ladder.caption)
-                .text_color(theme.danger)
-                .child(problem)
-        }))
+        .children(edit)
         .into_any_element()
 }
 

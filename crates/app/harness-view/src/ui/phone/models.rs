@@ -323,7 +323,7 @@ fn services(
                     Some(place) => format!("{} · owner {owner}", place_words(place)),
                     None => format!("owner {owner}"),
                 };
-                super::create::pick(format!("service-{name}"), place.is_some(), theme, ladder)
+                crate::ui::pick(format!("service-{name}"), place.is_some(), theme, ladder)
                     .on_click(pressing(Press::Service(name.clone()), cx))
                     .child(
                         design::mono(name)

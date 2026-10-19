@@ -1,6 +1,6 @@
 //! An agent's configuration file: Markdown whose TOML front matter, between `+++` lines, names
 //! the model, `max_tokens`, `wait`, `thinking`, `server_tools`, `listen`, `settle`, `compact_at`
-//! and a `service` or `account` it pins (`Pin`); its body is the system prompt. harness-view writes it.
+//! and the `service` or `account` it pins (`Pin`); its body is the system prompt (`with_front`, `with_body`).
 use std::fmt;
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
@@ -188,17 +188,8 @@ impl Config {
 
     pub fn parse_pinned(bytes: &[u8]) -> Result<(Config, Pin), Malformed> {
         let text = std::str::from_utf8(bytes).map_err(|_| Malformed::NotText)?;
-        let lines: Vec<&str> = text.split_inclusive('\n').collect();
-        let opens = lines.first().is_some_and(|line| fence(line));
-        if !opens {
-            return Err(Malformed::NoOpeningFence);
-        }
-        let after = &lines[1..];
-        let Some(close) = after.iter().position(|line| fence(line)) else {
-            return Err(Malformed::NoClosingFence);
-        };
-        let front = after[..close].concat();
-        let matter: FrontMatter = toml::from_str(&front)
+        let [_, front, _, body] = parts(text)?;
+        let matter: FrontMatter = toml::from_str(front)
             .map_err(|error| Malformed::FrontMatter(error.message().to_owned()))?;
         if matter.max_tokens == 0 {
             return Err(Malformed::NoTokens);
@@ -233,7 +224,7 @@ impl Config {
             listen: matter.listen,
             settle,
             compact_at: matter.compact_at,
-            system: after[close + 1..].concat().trim().to_owned(),
+            system: body.trim().to_owned(),
         };
         Ok((config, pin))
     }
@@ -253,6 +244,12 @@ impl Config {
     }
 
     pub fn write(&self) -> String {
+        let front = self.front(&Pin::default());
+        format!("{FENCE}\n{front}{FENCE}\n{}\n", self.system)
+    }
+
+    // the front matter between the fences: the fields it names, then what `pin` pins
+    fn front(&self, pin: &Pin) -> String {
         let model = toml::Value::String(self.model.clone());
         let mut front = format!("model = {model}\nmax_tokens = {}\n", self.max_tokens);
         if let Some(wait) = self.wait {
@@ -280,8 +277,48 @@ impl Config {
         if let Some(compact_at) = self.compact_at {
             front.push_str(&format!("compact_at = {compact_at}\n"));
         }
-        format!("{FENCE}\n{front}{FENCE}\n{}\n", self.system)
+        for (key, named) in [("service", &pin.service), ("account", &pin.account)] {
+            if let Some(named) = named {
+                let named = toml::Value::String(named.clone());
+                front.push_str(&format!("{key} = {named}\n"));
+            }
+        }
+        front
     }
+}
+
+// a file's opening fence line, its front matter, its closing fence line and its body, each as
+// the file holds it
+fn parts(text: &str) -> Result<[&str; 4], Malformed> {
+    let Some(open) = text.split_inclusive('\n').next().filter(|line| fence(line)) else {
+        return Err(Malformed::NoOpeningFence);
+    };
+    let mut at = open.len();
+    for line in text[at..].split_inclusive('\n') {
+        if fence(line) {
+            let body = at + line.len();
+            return Ok([open, &text[open.len()..at], line, &text[body..]]);
+        }
+        at += line.len();
+    }
+    Err(Malformed::NoClosingFence)
+}
+
+// `file` with the front matter `config` names and the service or account the file pins, its
+// body kept byte for byte; `config.system` is not read
+pub fn with_front(file: &[u8], config: &Config) -> Result<String, Malformed> {
+    let (_, pin) = Config::parse_pinned(file)?;
+    let text = std::str::from_utf8(file).map_err(|_| Malformed::NotText)?;
+    let [open, _, close, body] = parts(text)?;
+    Ok(format!("{open}{}{close}{body}", config.front(&pin)))
+}
+
+// `file` with `system` as its body, its front matter kept byte for byte
+pub fn with_body(file: &[u8], system: &str) -> Result<String, Malformed> {
+    let text = std::str::from_utf8(file).map_err(|_| Malformed::NotText)?;
+    let [open, front, close, _] = parts(text)?;
+    let close = close.trim_end();
+    Ok(format!("{open}{front}{close}\n{system}\n"))
 }
 
 #[cfg(test)]

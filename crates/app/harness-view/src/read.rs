@@ -7,8 +7,8 @@ use std::collections::{BTreeSet, HashMap};
 
 use egress::{RELAY, ServiceRow};
 use harness::{
-    AgentSetup, Asking, Awaited, Body, CallRow, Frame, ModelRow, Partial, SettleWindow, Tally,
-    ThreadRow, ToolInfo, Usage, WaitRow, WithheldFrame, Written,
+    AgentSetup, Asking, Awaited, BlobId, Body, CallRow, Frame, ModelRow, Partial, SettleWindow,
+    Tally, ThreadRow, ToolInfo, Usage, WaitRow, WithheldFrame, Written,
 };
 use identity::{Category, Kind, Ownership, PageRequest};
 use program::Writers;
@@ -813,6 +813,31 @@ pub(crate) async fn offers(host: Host) -> Result<Vec<Offer>, Error> {
         offers.push(Offer { row, serving });
     }
     Ok(offers)
+}
+
+// the bytes of the file at `path` as snapshot `at` holds them, read a chunk at a time
+pub(crate) async fn file(host: &Host, path: &str, at: Option<BlobId>) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    loop {
+        let asked = files::ask::Read {
+            path: path.to_owned(),
+            at,
+            offset: bytes.len() as u64,
+            len: files::CHUNK_SIZE,
+        };
+        let contents = host
+            .query(asked)
+            .await
+            .map_err(|refusal| design::sentence(&refusal))?;
+        // a read short of the size it states would never end
+        if contents.bytes.is_empty() && !contents.eof {
+            return Err(format!("{path} ended before the size files gives it."));
+        }
+        bytes.extend(contents.bytes);
+        if contents.eof {
+            return Ok(bytes);
+        }
+    }
 }
 
 /// The thread at `place`: the open one, else the last one there.

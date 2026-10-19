@@ -1,26 +1,28 @@
-//! One agent: who it is and what it is doing now, where to talk to it, its conversations, then
-//! its setup folded (the model, thinking, tools and whom it answers, its configuration file and
-//! who may change it), its system prompt folded, and what its turns used. Its manager edits its
-//! configuration, starts or forks a conversation, or takes it back from harness.
-use harness::{AgentSetup, Thinking};
+//! One agent: who it is and what it is doing, where to talk to it, its conversations, its setup
+//! folded (its front matter, read or edited in place, whom it answers, its file and who may change
+//! it), its prompt folded, what its turns used; its manager's edit, take back and conversations.
+use harness::AgentSetup;
 use view::FontWeight;
 use view::design::Ladder;
 use view::design::{space, text};
 use view::prelude::*;
 
 use super::list::{ROW, pressable};
+use super::setup::editor;
 use super::{
     BOUND_WORDS, agent_gone, back, bound_badge, caption, closed_badge, current_badge, fact, fold,
-    meter, no_node, opened, panel, state_badge, thinking_picker, waiting,
+    meter, no_node, opened, panel, state_badge, waiting,
 };
 use crate::policies::{CLAIM, CLAIM_HINT};
 use crate::read::{self, Detail, Roster};
+use crate::setup::Press;
 use crate::words::{
     PROBLEM_CAPTION, about, agent_sentence, ago, answers, compacts_words, context_short,
     conversation_label, file_link, full, may_change, model_more, prompt, prompt_words, quoted,
     reach, read_at, removes, starts, thinking_words, thread_words, threshold_source, tools_words,
     upper_first, usage_total, usage_words, wait_words, window_words,
 };
+use crate::words::{configured_words, listen_words, server_tools_words, settle_words};
 use crate::{Agents, Arm, Screen, State, agent_state, thread_state};
 
 pub(super) fn render(
@@ -208,10 +210,7 @@ fn setup_fold(
             )
             .w(px(240.)),
         );
-        facts = match manages {
-            true => facts.children(thinking(view, setup, name, cx, &theme, ladder)),
-            false => facts.child(fact("Thinking", thinking_words(config.thinking), &theme).w(FACT)),
-        };
+        facts = facts.child(fact("Thinking", thinking_words(config.thinking), &theme).w(FACT));
         facts = facts
             .child(
                 fact(
@@ -221,8 +220,20 @@ fn setup_fold(
                 )
                 .w(FACT),
             )
-            .child(fact("Wait", wait_words(config.wait), &theme).w(FACT));
+            .child(fact("Wait", wait_words(config.wait), &theme).w(FACT))
+            .child(
+                fact(
+                    "Server tools",
+                    server_tools_words(&config.server_tools),
+                    &theme,
+                )
+                .w(FACT),
+            )
+            .child(fact("Listens to", listen_words(&config.listen, roster), &theme).w(px(240.)))
+            .child(fact("Settle", settle_words(config.settle), &theme).w(FACT));
     }
+    facts =
+        facts.child(fact("Configured", configured_words(&setup.configured), &theme).w(px(300.)));
     facts = facts
         .child(fact("Tools", tools_words(detail, name), &theme).w(FACT))
         .child(fact("Answers", answers(&detail.ownership, roster), &theme).w(FACT));
@@ -259,12 +270,30 @@ fn setup_fold(
             .children(threshold_source(threshold).map(muted));
         facts = facts.child(fact_of("Compacts at", compacts, &theme).w(px(240.)));
     }
+    // the front matter opens to anyone signed in: the file's list decides whose save lands
+    let editing = view.setup_draft.agent == Some(setup.agent);
+    let readable = setup.configured.config().is_some();
+    let edit = (view.me.is_some() && readable && !editing).then(|| {
+        let opening = Press::Open(Box::new(setup.clone()));
+        let open = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
+            view.press_setup(opening.clone(), cx)
+        });
+        let button = design::button("setup-edit", "Edit front matter…", ladder, &theme, open)
+            .kind(design::Kind::Outline);
+        div().flex().pl(space::BLOCK).child(button)
+    });
+    let shown = match editing {
+        true => editor(view, cx, &theme, ladder).max_w(px(560.)),
+        false => facts,
+    };
     div()
         .flex()
         .flex_col()
         .gap(space::SM)
         .child(head)
-        .when(open, |fold| fold.child(facts.pl(space::BLOCK)))
+        .when(open, |fold| {
+            fold.child(shown.pl(space::BLOCK)).children(edit)
+        })
 }
 
 /// How wide a fact is in the setup's grid.
@@ -278,48 +307,6 @@ fn fact_of(label: &'static str, value: impl IntoElement, theme: &Theme) -> view:
         .gap(space::HAIR)
         .child(caption(label, theme))
         .child(div().font_weight(FontWeight::MEDIUM).child(value))
-}
-
-/// The manager's thinking: a press writes the configuration file again with that level.
-fn thinking(
-    view: &Agents,
-    setup: &AgentSetup,
-    name: &str,
-    cx: &mut Context<Agents>,
-    theme: &Theme,
-    ladder: &Ladder,
-) -> Option<impl IntoElement + use<>> {
-    let (_, config) = setup.configured.config()?;
-    let rethinking = view.draft.rethink && view.draft.created == Some(setup.agent);
-    let sending = rethinking && view.draft.sending.is_some();
-    let picked = match sending {
-        true => view.draft.thinking,
-        false => config.thinking,
-    };
-    let problem = view.draft.problem.clone().filter(|_| rethinking);
-    let name = name.to_owned();
-    let pick = cx.processor(
-        move |view: &mut Agents, thinking: Option<Thinking>, _, cx| {
-            view.rethink(&name, thinking, cx)
-        },
-    );
-    Some(
-        div()
-            .flex()
-            .flex_col()
-            .gap(space::HAIR)
-            .child(caption("Thinking", theme))
-            .child(div().flex().child(thinking_picker(
-                "agent-thinking-level",
-                picked,
-                ladder,
-                theme,
-                pick,
-            )))
-            .children(problem.map(|problem| {
-                panel("agent-thinking-problem", theme.danger_soft, theme).child(problem)
-            })),
-    )
 }
 
 fn prompt_fold(
