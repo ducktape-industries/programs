@@ -2561,8 +2561,21 @@ pub fn setting_row(
 /// side alone), on the raised surface. A caller recolours it (an agent, a
 /// speaker) with `bg` / `text_color`.
 pub fn avatar(name: &str, size: impl Into<Face>, theme: &Theme) -> Div {
+    avatar_with(name, None, size, theme)
+}
+
+// [`avatar`] with the person's picture (`crate::pictures::Pictures` reads
+// it by its blob id), cut round to fill the face. The initial stays while
+// `picture` is `None` (none set, still read, or no picture the app draws),
+// and where the app cannot draw the bytes it holds.
+pub fn avatar_with(
+    name: &str,
+    picture: Option<std::sync::Arc<crate::Image>>,
+    size: impl Into<Face>,
+    theme: &Theme,
+) -> Div {
     let Face { side, text, weight } = size.into();
-    div()
+    let face = div()
         .size(side)
         .flex_shrink_0()
         .rounded_full()
@@ -2572,8 +2585,27 @@ pub fn avatar(name: &str, size: impl Into<Face>, theme: &Theme) -> Div {
         .bg(theme.surface_raised)
         .text_color(theme.muted)
         .text_type(text)
-        .when_some(weight, |face, weight| face.font_weight(weight))
-        .child(initial(name))
+        .when_some(weight, |face, weight| face.font_weight(weight));
+    let letter = initial(name);
+    let Some(picture) = picture else {
+        return face.child(letter);
+    };
+    let fallback = move || {
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(letter.clone())
+            .into_any_element()
+    };
+    face.child(
+        img(picture)
+            .size_full()
+            .rounded_full()
+            .object_fit(ObjectFit::Cover)
+            .with_fallback(fallback),
+    )
 }
 
 /// How far an arrow key moves a [`divider`]; shift moves it four times as far.

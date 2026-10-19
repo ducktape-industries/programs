@@ -300,6 +300,13 @@ program refuses `stale` (it was handed out before a write): the read starts
 over from the first page, and the refusal is never shown. Any other refusal
 is the answer.
 
+A person's picture is a blob (identity's card names it, `avatar`). A
+`pictures::Pictures` entity reads each blob id once with `blob.get` and
+keeps what it read; `get(&blob, cx)` answers the picture once it lands and
+notifies then, and `design::avatar_with(name, picture, size, theme)` draws
+it round, with the initial in its place until then and where it is no
+picture the app draws. `design::avatar` is the initial alone.
+
 `Session` (`methods.rs`, `cx.follow::<HostSession>`) is what every view is handed:
 `connected`, `chain_id`, `signer` (the seated key, hex), `account` (its
 account number, `None` until the host resolves one), `endpoint`; an item per
