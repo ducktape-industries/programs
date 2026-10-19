@@ -103,6 +103,8 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
         block_ms: ctx.env().time.saturating_sub(offered),
         ..RunRow::default()
     };
+    // a pod held for a check that ended (one superseded, say) is deleted before the room is counted
+    settle(&ctx).await?;
     if busy_pods(&ctx, &row) >= concurrent(&ctx)? {
         WAITING.insert(&ctx, &check);
         return Ok(());
@@ -188,11 +190,16 @@ fn busy_pods(ctx: &QueryCtx, check: &CheckRow) -> u64 {
 // replaced, has its pod deleted; a run an update of this program cut off is taken up by a
 // `Resume` the block after; a live run is left alone. Then the checks the quota refused try again.
 pub(crate) async fn sweep(ctx: Ctx) -> Result<(), Error> {
-    let now = own_code(&ctx);
-    for (check, held) in PODS.all(&ctx)? {
-        swept(&ctx, check, &held, now).await;
-    }
+    settle(&ctx).await?;
     retry(&ctx).await;
+    Ok(())
+}
+
+async fn settle(ctx: &Ctx) -> Result<(), Error> {
+    let now = own_code(ctx);
+    for (check, held) in PODS.all(ctx)? {
+        swept(ctx, check, &held, now).await;
+    }
     Ok(())
 }
 
@@ -284,14 +291,19 @@ async fn supersede(ctx: &Ctx, by: &CheckRow) -> bool {
 }
 
 // A check a newer attempt replaced: its pod deleted, and the check, if still running, reported
-// errored, as no run will report it.
+// superseded, as no run will report it.
 async fn retire(ctx: &Ctx, check: &CheckRow, held: &PodRow, by: &CheckRow) {
     delete(ctx, &held.pod).await;
     PODS.remove(ctx, &check.id);
     ADOPTING.remove(ctx, &check.id);
     if check.state == State::Running {
         let why = format!("superseded by check {} (attempt {})", by.id, by.attempt);
-        report(ctx, check.id, Ending::errored(why)).await;
+        let superseded = Ending {
+            state: State::Superseded,
+            summary: why,
+            log: None,
+        };
+        report(ctx, check.id, superseded).await;
     }
 }
 

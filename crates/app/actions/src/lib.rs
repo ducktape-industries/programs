@@ -108,6 +108,8 @@ pub fn watching() -> Vec<u8> {
 }
 
 // Errored: the runner or what it runs on broke, so the check says nothing of the code.
+// Superseded: a newer push to its branch, a newer Preview of its change, or the change's merge
+// or close made it moot before it ended, so it says nothing of the code either.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum State {
     Queued,
@@ -115,6 +117,7 @@ pub enum State {
     Passed,
     Failed,
     Errored,
+    Superseded,
 }
 
 impl State {
@@ -125,6 +128,7 @@ impl State {
             State::Passed => "passed",
             State::Failed => "failed",
             State::Errored => "errored",
+            State::Superseded => "superseded",
         }
     }
 }

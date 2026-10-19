@@ -888,3 +888,138 @@ fn a_queued_check_ends_errored_unclaimed_but_passes_only_once_claimed() {
         code::WRONG_STATE
     );
 }
+
+// Two jobs a change runs on its Preview.
+const PAIR: &str = r#"
+[on]
+change = ["opened", "updated"]
+
+[[jobs]]
+id = "review"
+runs-on = ["pods"]
+image = "toolchain"
+steps = ["make review"]
+
+[[jobs]]
+id = "lint"
+runs-on = ["pods"]
+image = "toolchain"
+steps = ["make lint"]
+"#;
+
+fn ends(checks: &[CheckRow]) -> Vec<(State, &str)> {
+    checks
+        .iter()
+        .map(|check| (check.state, check.summary.as_str()))
+        .collect()
+}
+
+// `main` and `feature` both hold PAIR, and change 1 asks to merge `feature` into `main`.
+fn paired(world: &mut World) -> (Oid, Oid) {
+    let root = world.commit(&[], &[("pair.toml", PAIR)]);
+    world.push(None, root, "main");
+    let feature = world.commit(&[root], &[("pair.toml", PAIR)]);
+    world.push(None, feature, "feature");
+    let open = forge::Op::ChangeOpen {
+        repo: REPO.into(),
+        from: forge::Revision::Ref(b"refs/heads/feature".to_vec()),
+        into: b"refs/heads/main".to_vec(),
+        title: "Feature".into(),
+        body: String::new(),
+        reviewers: Vec::new(),
+    };
+    world.forge(&open).unwrap();
+    (root, feature)
+}
+
+// A queued and a running check of change 1's Preview are superseded by its next Preview, and
+// the next Preview's by the change's close; forge hears each as errored.
+#[test]
+fn a_newer_preview_and_then_the_close_supersede_the_changes_open_checks() {
+    let mut world = world();
+    let (_, feature) = paired(&mut world);
+    let first = world.preview(1);
+    world.act(&Op::Claim { check: 1 }).unwrap();
+    let later = world.commit(&[feature], &[("pair.toml", PAIR)]);
+    world.push(Some(feature), later, "feature");
+    let second = world.preview(1);
+    let why = format!("superseded by Preview {} of #1", &second.to_hex()[..12]);
+    assert_eq!(
+        ends(&world.checks(first)),
+        [(State::Superseded, why.as_str()); 2]
+    );
+    let errored = forge::CheckState::Errored;
+    let told = world.statuses(first);
+    assert!(told.iter().all(|(_, state)| *state == errored), "{told:?}");
+    assert_eq!(ends(&world.checks(second)), [(State::Queued, ""); 2]);
+    let close = forge::Op::ChangeClose {
+        repo: REPO.into(),
+        n: 1,
+    };
+    world.forge(&close).unwrap();
+    assert_eq!(
+        ends(&world.checks(second)),
+        [(State::Superseded, "change #1 closed"); 2]
+    );
+}
+
+#[test]
+fn a_change_that_merges_supersedes_its_open_checks() {
+    let mut world = world();
+    let (root, feature) = paired(&mut world);
+    let preview = world.preview(1);
+    let merge = forge::Op::SquashMerge {
+        repo: REPO.into(),
+        into: b"refs/heads/main".to_vec(),
+        from: forge::Revision::Ref(b"refs/heads/feature".to_vec()),
+        expected_into: root.to_hex(),
+        expected_from: feature.to_hex(),
+        message: None,
+        change: Some(1),
+    };
+    world.forge(&merge).unwrap();
+    assert_eq!(
+        ends(&world.checks(preview)),
+        [(State::Superseded, "change #1 merged"); 2]
+    );
+}
+
+// A running check of a push to main is superseded by the next push to main, not by a push to
+// another branch, and posts no line; a queued one may be superseded by hand, unclaimed.
+#[test]
+fn a_newer_push_to_the_branch_supersedes_its_open_checks_and_says_nothing_in_the_channel() {
+    let mut world = world();
+    let create = chat::Op::CreateChannel {
+        channel_id: "engineering".into(),
+        name: "engineering".into(),
+        post_policy: chat::PostPolicy::Open,
+    };
+    let owner = Origin::Signed(OWNER.to_vec());
+    world.chain.submit(owner, chat::PROGRAM, &create).unwrap();
+    let root = world.commit(&[], &[("loud.toml", LOUD)]);
+    world.push(None, root, "main");
+    world.act(&Op::Claim { check: 1 }).unwrap();
+    let other = world.commit(&[root], &[("loud.toml", LOUD)]);
+    world.push(None, other, "other");
+    assert_eq!(world.check(1).state, State::Running, "another branch moved");
+    let next = world.commit(&[root], &[("loud.toml", LOUD)]);
+    world.push(Some(root), next, "main");
+    let check = world.check(1);
+    let why = format!("superseded by a push of {} to main", &next.to_hex()[..12]);
+    assert_eq!((check.state, check.summary), (State::Superseded, why));
+    let told = ("loud.toml#gates".to_owned(), forge::CheckState::Errored);
+    assert_eq!(world.statuses(root), [told]);
+    let quiet = chat::Query::MessageById {
+        message_id: "actions-check-1".into(),
+    };
+    let reply: chat::Reply = world.chain.query(chat::PROGRAM, &quiet).unwrap();
+    assert_eq!(reply, chat::Reply::Message(None), "superseded is not red");
+    let by_hand = Op::Report {
+        check: 2,
+        state: State::Superseded,
+        summary: "swept".into(),
+        log: None,
+    };
+    world.act(&by_hand).unwrap();
+    assert_eq!(world.check(2).state, State::Superseded);
+}

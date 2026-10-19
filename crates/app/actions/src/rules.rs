@@ -9,8 +9,8 @@ use forge::{ChangeState, CheckState, Content, EntryKind, Revision, Watched};
 use store::Item;
 
 use crate::state::{
-    ASKS, BY_COMMIT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, OFFERING, PREVIEWING, QUEUED, RUNNERS,
-    RUNS, SOURCES, TARGETS,
+    ASKS, BY_COMMIT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, LINES, OFFERING, PREVIEWING, QUEUED,
+    RUNNERS, RUNS, SOURCES, TARGETS,
 };
 use crate::workflow;
 use crate::{
@@ -52,10 +52,22 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
                     false => TARGETS.remove(ctx, &(repo.clone(), reference.clone(), n)),
                 }
             }
+            let why = format!(
+                "superseded by a push of {} to {}",
+                short(&commit),
+                branch(&reference)
+            );
+            supersede(ctx, &repo, &reference, &why)?;
             start(ctx, &started(&repo, &commit, Event::Push { reference }, by))
         }
-        Watched::Moved { new: None, .. } | Watched::Closed { .. } | Watched::Merged { .. } => {
-            Ok(())
+        Watched::Moved { new: None, .. } => Ok(()),
+        Watched::Closed { repo, n, .. } => {
+            let why = format!("change #{n} closed");
+            supersede(ctx, &repo, preview_ref(n).as_bytes(), &why)
+        }
+        Watched::Merged { repo, n, .. } => {
+            let why = format!("change #{n} merged");
+            supersede(ctx, &repo, preview_ref(n).as_bytes(), &why)
         }
         Watched::Opened {
             repo,
@@ -74,6 +86,8 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             repo, n, merge, by, ..
         } => {
             adopt(ctx, &repo, n)?;
+            let why = format!("superseded by Preview {} of #{n}", short(&merge));
+            supersede(ctx, &repo, preview_ref(n).as_bytes(), &why)?;
             start(ctx, &started(&repo, &merge, Event::Preview { n }, Some(by)))
         }
     }
@@ -154,7 +168,7 @@ pub(crate) fn replied(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Resul
         return Ok(());
     };
     let why = format!("change {n} does not preview: {}", refused.message);
-    let preview = format!("refs/changes/{n}/merge");
+    let preview = preview_ref(n);
     let started = started(&repo, &head, Event::Preview { n }, None);
     record(ctx, &started, &preview, Named::default(), Some(why))?;
     Ok(())
@@ -212,7 +226,8 @@ fn tell_forge(ctx: &ExecCtx, check: &CheckRow) {
         State::Queued | State::Running => CheckState::Pending,
         State::Passed => CheckState::Passed,
         State::Failed => CheckState::Failed,
-        State::Errored => CheckState::Errored,
+        // forge has no word for a superseded check, and a merge reads only the newest Preview's
+        State::Errored | State::Superseded => CheckState::Errored,
     };
     let op = forge::Op::Status {
         repo: check.repo.clone(),
@@ -372,6 +387,9 @@ fn record(
         notify: named.notify,
     };
     RUNS.put(ctx, &id, &run);
+    if let Some(line) = line_of(&run.event) {
+        LINES.insert(ctx, &(run.repo.clone(), line, id));
+    }
     if run.error.is_some() {
         // a workflow that does not read is its file's status, errored
         let op = forge::Op::Status {
@@ -494,8 +512,10 @@ pub(crate) fn report(
 ) -> Result<(), Error> {
     let account = ctx.sender_account()?;
     let mut check = load(ctx, id)?;
-    // a runner whose claim was refused says so: a queued check may end errored unclaimed
-    let unclaimed = check.state == State::Queued && state == State::Errored;
+    // a runner whose claim was refused says so, and a check made moot is superseded: a queued
+    // check may end either way unclaimed
+    let moot = matches!(state, State::Errored | State::Superseded);
+    let unclaimed = check.state == State::Queued && moot;
     if check.state != State::Running && !unclaimed {
         return Err(wrong_state(format!(
             "check {id} is {}, not running",
@@ -507,7 +527,7 @@ pub(crate) fn report(
     }
     if matches!(state, State::Queued | State::Running) {
         return Err(invalid(
-            "a report says how a check ended: passed, failed or errored",
+            "a report says how a check ended: passed, failed, errored or superseded",
         ));
     }
     check.state = state;
@@ -528,13 +548,60 @@ pub(crate) fn report(
     Ok(())
 }
 
+// A newer run on a line (a push to the branch, a Preview of the change), or the change's merge
+// or close, makes the checks of the line's earlier runs moot: each still queued or running ends
+// superseded, saying why, and posts no line. Those runs leave the line.
+fn supersede(ctx: &ExecCtx, repo: &str, line: &[u8], why: &str) -> Result<(), Error> {
+    let on = (repo.to_owned(), line.to_vec());
+    for (_, _, run) in LINES.scan(ctx, LINES.prefix_of(&on))? {
+        for (_, id) in BY_RUN.scan(ctx, BY_RUN.prefix_of(&run))? {
+            let mut check = load(ctx, id)?;
+            if !matches!(check.state, State::Queued | State::Running) {
+                continue;
+            }
+            check.state = State::Superseded;
+            check.finished = Some(ctx.env().height);
+            check.summary = why.to_owned();
+            QUEUED.remove(ctx, &id);
+            CHECKS.put(ctx, &id, &check);
+            tell_forge(ctx, &check);
+        }
+        LINES.remove(ctx, &(repo.to_owned(), line.to_vec(), run));
+    }
+    Ok(())
+}
+
+// The line a run is on, whose next run supersedes it: a push's branch, or a Preview's ref.
+fn line_of(event: &Event) -> Option<Vec<u8>> {
+    match event {
+        Event::Push { reference } => Some(reference.clone()),
+        Event::Preview { n } => Some(preview_ref(*n).into_bytes()),
+        Event::Opened { .. } | Event::Updated { .. } | Event::Manual => None,
+    }
+}
+
+fn preview_ref(n: u64) -> String {
+    format!("refs/changes/{n}/merge")
+}
+
+fn short(commit: &str) -> &str {
+    commit.get(..12).unwrap_or(commit)
+}
+
+fn branch(reference: &[u8]) -> String {
+    let branch = String::from_utf8_lossy(reference);
+    branch
+        .strip_prefix("refs/heads/")
+        .unwrap_or(&branch)
+        .to_owned()
+}
+
 // A push's check ended red: one line in the workflow's channel, naming who pushed. A channel
 // that refuses it leaves the report as it is (`Program::reply` absorbs the refusal).
 fn red(ctx: &ExecCtx, run: &RunRow, check: &CheckRow, reference: &[u8], channel: &str) {
-    let branch = String::from_utf8_lossy(reference);
-    let branch = branch.strip_prefix("refs/heads/").unwrap_or(&branch);
+    let branch = branch(reference);
     let workflow = run.name.as_deref().unwrap_or(&run.workflow);
-    let commit = check.commit.get(..12).unwrap_or(&check.commit);
+    let commit = short(&check.commit);
     let mut line = format!(
         "**{workflow} {} on {} `{branch}`** at `{commit}`: check {} (job `{}`, attempt {})",
         check.state.word(),

@@ -67,7 +67,8 @@ impl Program for Stand {
                 log,
             } => {
                 let now = state_of(ctx, check)?;
-                let unclaimed = now == State::Queued && state == State::Errored;
+                let moot = matches!(state, State::Errored | State::Superseded);
+                let unclaimed = now == State::Queued && moot;
                 if now != State::Running && !unclaimed {
                     return Err(wrong_state(format!("check {check} is not running")));
                 }
@@ -821,7 +822,7 @@ fn a_run_an_update_cut_off_is_taken_up_by_a_sweep_and_reports_how_its_pod_ended(
 }
 
 // Check 1 is rerun as check 3 while its pod still runs: check 3's run deletes check 1's pod and
-// reports check 1 superseded.
+// reports check 1 superseded before it counts its room and makes its own.
 #[test]
 fn a_rerun_deletes_the_earlier_attempts_pod_and_reports_it_superseded() {
     let mut node = node();
@@ -832,7 +833,6 @@ fn a_rerun_deletes_the_earlier_attempts_pod_and_reports_it_superseded() {
     node.offer(AGAIN).unwrap();
     node.after(1_000);
     node.after(0);
-    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
     let deleted = "/v1/pods/duckpond-7";
     node.answer_to(
         1_000,
@@ -841,8 +841,9 @@ fn a_rerun_deletes_the_earlier_attempts_pod_and_reports_it_superseded() {
         200,
         json!({"deleted": "duckpond-7"}),
     );
+    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
     let why = "superseded by check 3 (attempt 2)".to_owned();
-    assert_eq!(node.reports(), [(1, State::Errored, why, None)]);
+    assert_eq!(node.reports(), [(1, State::Superseded, why, None)]);
     assert_eq!(node.held(), [AGAIN]);
     node.pending_to("GET", "/v1/pods/duckpond-8/wait?every=32");
 }
@@ -927,4 +928,31 @@ fn a_check_past_the_runners_concurrency_waits_for_one_of_its_pods_to_end() {
     assert_eq!(posts, 2, "two pods at once");
     let none = wide.concurrent(0).unwrap_err();
     assert_eq!(none.code, code::INVALID_INPUT);
+}
+
+// Check 1 is superseded while its pod runs: check 2's run deletes that pod before it counts the
+// pods it holds, and takes the room.
+#[test]
+fn a_superseded_checks_pod_is_deleted_by_the_next_run_which_takes_its_room() {
+    let mut node = node();
+    waiting_on_its_pod(&mut node);
+    let superseded = actions::Op::Report {
+        check: 1,
+        state: State::Superseded,
+        summary: "superseded by Preview 0123456789ab of #7".into(),
+        log: None,
+    };
+    let owner = Origin::Signed(OWNER.to_vec());
+    node.chain
+        .submit(owner, actions::PROGRAM, &superseded)
+        .unwrap();
+    node.offer(2).unwrap();
+    node.after(1_000);
+    node.after(0);
+    let deleted = json!({"deleted": "duckpond-7"});
+    node.answer_to(1_000, "DELETE", "/v1/pods/duckpond-7", 200, deleted);
+    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
+    assert_eq!(node.held(), [2]);
+    assert!(node.waiting().is_empty());
+    node.pending_to("GET", "/v1/pods/duckpond-8/wait?every=32");
 }

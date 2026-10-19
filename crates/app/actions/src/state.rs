@@ -10,6 +10,9 @@ pub const CHECKS: Map<u64, CheckRow> = Map::new("c/").shared();
 pub const BY_COMMIT: Set<(String, String, u64)> = Set::new("k/").shared();
 // Index: each check of a run, its reruns included.
 pub const BY_RUN: Set<(u64, u64)> = Set::new("b/").shared();
+// Index: the runs whose open checks the next run on their line supersedes, by repository and
+// line: a push's branch, or a change's Preview ref (`refs/changes/<n>/merge`).
+pub const LINES: Set<(String, Vec<u8>, u64)> = Set::new("l/").shared();
 // Index: the checks no runner has claimed.
 pub const QUEUED: Set<u64> = Set::new("q/").shared();
 // The open change whose source a repository's ref is.
@@ -34,6 +37,7 @@ pub(crate) const TABLES: &[::program::Table] = &[
     CHECKS.table(),
     BY_COMMIT.table(),
     BY_RUN.table(),
+    LINES.table(),
     QUEUED.table(),
     SOURCES.table(),
     TARGETS.table(),
