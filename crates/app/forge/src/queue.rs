@@ -9,8 +9,8 @@ use crate::contract::{
     Required,
 };
 use crate::state::{
-    LOGGING, QUEUE, QUEUE_SEQ, QUEUED, REQUIRED, STATUSES, channel_id, load_change, load_repo,
-    next, next_message, parse_oid, ref_key, repo_hash, resolve, set_ref,
+    LOGGING, QUEUE, QUEUE_SEQ, QUEUED, REQUIRED, STATUSES, load_change, load_repo, next,
+    next_message, parse_oid, ref_key, repo_hash, resolve, set_ref,
 };
 
 pub(crate) fn enqueue(
@@ -162,7 +162,8 @@ fn leave(ctx: &ExecCtx, repo: &str, into: &[u8], seq: u64, n: u64) {
     QUEUED.remove(ctx, &(repo.to_owned(), n));
 }
 
-// The entry leaves the queue, and its change's channel hears why, naming whoever queued it;
+// The entry leaves the queue, and its change's room hears why, naming whoever queued it (and, in
+// a job room, the change);
 // chat's answer is absorbed (`discussion::replied`).
 fn left(
     ctx: &ExecCtx,
@@ -177,13 +178,17 @@ fn left(
         Principal::Account(number) => format!("<@{number}> "),
         Principal::Root => String::new(),
     };
+    let change = load_change(ctx, repo, entry.n)?;
+    let named = match crate::discussion::in_job_room(repo, &change) {
+        true => format!("{repo} #{}", entry.n),
+        false => entry.n.to_string(),
+    };
     let text = format!(
-        "{who}change {} left the merge queue of {}: {why}",
-        entry.n,
+        "{who}change {named} left the merge queue of {}: {why}",
         String::from_utf8_lossy(into)
     );
     let line = chat::Op::PostMessage {
-        channel_id: channel_id(repo, entry.n),
+        channel_id: change.channel,
         message_id: next_message(ctx)?,
         blocks: chat::parse_message(&text),
         thread: None,

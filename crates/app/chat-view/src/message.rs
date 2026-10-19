@@ -46,10 +46,44 @@ pub struct ChatMessage {
     /// block time in milliseconds; 0 for a pending row
     pub time: u64,
     pub reactions: Vec<Reaction>,
-    /// `(program, code)` when this is a program's own post
-    /// ([`chat::program_post`]): shown as that program's event, not as a
-    /// code block
-    pub system: Option<(String, String)>,
+    // a program's own post ([`chat::program_post`]): shown as that program's event, not as a
+    // code block
+    pub system: Option<SystemLine>,
+}
+
+// A program's own post as the frame draws it: the program, what the line says, and the
+// program's room it is about (`forge:web:3`), which its link opens where the program shows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SystemLine {
+    pub program: String,
+    pub said: String,
+    pub room: String,
+}
+
+// A program's post in a room of its own says its code, about that room. Posted in another room
+// (forge's lines in a job's room), a code ending `<name> <n>` is about the program's room
+// `<program>:<name>:<n>` and reads `<name> #<n> <event>`: `opened programs 213` is
+// `programs #213 opened`, about `forge:programs:213`.
+pub fn system_line(program: &str, code: &str, channel: &str) -> SystemLine {
+    let own = chat::namespace::program(channel) == Some(program);
+    let about = || {
+        let (rest, n) = code.rsplit_once(' ')?;
+        let n: u64 = n.parse().ok()?;
+        let (event, name) = rest.rsplit_once(' ')?;
+        Some((event, name, n))
+    };
+    match about().filter(|_| !own) {
+        Some((event, name, n)) => SystemLine {
+            program: program.into(),
+            said: format!("{name} #{n} {event}"),
+            room: chat::namespace::id(program, &format!("{name}:{n}")),
+        },
+        None => SystemLine {
+            program: program.into(),
+            said: code.into(),
+            room: channel.into(),
+        },
+    }
 }
 
 impl ChatMessage {
@@ -83,7 +117,7 @@ pub enum SpanStyle {
 
 pub fn chat_message(row: MsgRow, names: &Names, rooms: &crate::links::Rooms) -> ChatMessage {
     let system = chat::program_post(&row, names.program(&row.author))
-        .map(|(program, code)| (program.into(), code.into()));
+        .map(|(program, code)| system_line(program, code, &row.channel_id));
     let edited = row.rev > 0;
     let (body, edit_body, blocks) = if row.deleted {
         (
@@ -406,6 +440,22 @@ mod tests {
             ..MsgRow::by(Principal::Account(7))
         };
         chat_message(row, &Names::empty(), &crate::links::Rooms::default())
+    }
+
+    #[test]
+    fn a_programs_line_in_another_room_names_the_room_it_is_about() {
+        let line = system_line("forge", "review 2 programs 213", "j-101");
+        assert_eq!(line.said, "programs #213 review 2");
+        assert_eq!(line.room, "forge:programs:213");
+        for (code, channel) in [
+            ("opened", "forge:programs:213"),
+            ("opened programs 213", "forge:programs:213"),
+            ("opened", "j-101"),
+            ("opened programs x", "j-101"),
+        ] {
+            let line = system_line("forge", code, channel);
+            assert_eq!((line.said.as_str(), line.room.as_str()), (code, channel));
+        }
     }
 
     #[test]

@@ -4,7 +4,7 @@ use view::accesskit::Action;
 use view::prelude::*;
 use view::{Div, FontStyle, FontWeight, HighlightStyle, Stateful, UnderlineStyle};
 
-use crate::message::{ChatMessage, SpanStyle};
+use crate::message::{ChatMessage, SpanStyle, SystemLine};
 use crate::ui::badge;
 use crate::{Chat, Control, Mode, Pane};
 use chat::view::Names;
@@ -577,8 +577,8 @@ fn blocks(
     cx: &mut Context<Chat>,
     theme: &Theme,
 ) -> Vec<AnyElement> {
-    if let Some((program, code)) = &message.system {
-        return vec![program_post(chat, message, program, code, cells, cx, theme)];
+    if let Some(post) = &message.system {
+        return vec![program_post(chat, message, post, cells, cx, theme)];
     }
     if message.blocks.is_empty() {
         let text = div()
@@ -707,13 +707,12 @@ fn header(message: &ChatMessage, cells: &mut Cells, theme: &Theme, ladder: &Ladd
     header.into_any_element()
 }
 
-/// A program's own post: its event code, quiet and mono, and (on the first
-/// of a run) a link to where the program itself shows the room.
+// A program's own post: what it says, quiet and mono, and a link to where the program itself
+// shows the room it is about: once a run in the program's own room, on each line elsewhere.
 fn program_post(
     chat: &Chat,
     message: &ChatMessage,
-    program: &str,
-    code: &str,
+    post: &SystemLine,
     cells: &mut Cells,
     cx: &mut Context<Chat>,
     theme: &Theme,
@@ -725,11 +724,10 @@ fn program_post(
         .gap(design::space::SM)
         .text_size(design::text::SECONDARY)
         .text_color(theme.muted)
-        .child(design::mono(code.to_owned()));
-    // one link per run of the program's lines: the room is the same
-    let link = message
-        .show_author
-        .then(|| crate::links::program_link(&chat.session.chain_id, &chat.room_id()))
+        .child(design::mono(post.said.clone()));
+    let elsewhere = post.room != chat.room_id();
+    let link = (message.show_author || elsewhere)
+        .then(|| crate::links::program_link(&chat.session.chain_id, &post.room))
         .flatten();
     if let Some(link) = link {
         let active = cells.push(Control::ProgramOpen(link.clone()));
@@ -745,7 +743,7 @@ fn program_post(
             .hover(move |style| style.text_decoration_1())
             .on_click(open)
             .consumes_click()
-            .child(words::open_in(program));
+            .child(words::open_in(&post.program));
         line = line.child(cell(
             &id,
             true,

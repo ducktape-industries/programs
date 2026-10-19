@@ -707,29 +707,22 @@ pub mod namespace {
     }
 }
 
-/// The program whose own account wrote `row` in that program's own
-/// `<program>:<name>` room (`author_program`: the program the author's
-/// account is, from identity's profiles).
-pub fn program_author<'a>(row: &'a MsgRow, author_program: Option<&str>) -> Option<&'a str> {
-    namespace::program(&row.channel_id).filter(|program| author_program == Some(*program))
-}
-
-/// A program's own post in its own room ([`program_author`]), as one code
-/// block in that program's language (forge's `opened`, `review 7`). The code
-/// is the program's to word; a reader shows it as that program's event and
-/// points to where the program itself shows the room. `(program, code)`.
+// A program's own post, in any room: its own account's message of one code block in that
+// program's language (`author_program`: the program the author's account is, from identity's
+// profiles), such as forge's `opened` and `review 7` in a change's room, or `opened programs
+// 213` in a job's room. The code is the program's to word; a reader shows it as that program's
+// event and points to where the program itself shows it. `(program, code)`.
 pub fn program_post<'a>(
     row: &'a MsgRow,
     author_program: Option<&str>,
 ) -> Option<(&'a str, &'a str)> {
-    let program = program_author(row, author_program)?;
     match row.blocks.as_slice() {
         [
             Block::Code {
                 lang: Some(lang),
                 text,
             },
-        ] if lang == program => Some((program, text)),
+        ] if author_program == Some(lang.as_str()) => Some((lang, text)),
         _ => None,
     }
 }
@@ -769,7 +762,7 @@ fn op_variants_only_append() {
 }
 
 #[test]
-fn a_programs_own_code_block_in_its_room_is_its_post() {
+fn a_programs_own_code_block_is_its_post_in_any_room() {
     let code = |lang: &str| Block::Code {
         lang: Some(lang.into()),
         text: "review 7".into(),
@@ -787,12 +780,20 @@ fn a_programs_own_code_block_in_its_room_is_its_post() {
         program_post(&post, program_of(&post)),
         Some(("forge", "review 7"))
     );
+    // a job's room hears of a change there
+    for elsewhere in [
+        row("j-101", forge(), vec![code("forge")]),
+        row("chess:1", forge(), vec![code("forge")]),
+    ] {
+        assert_eq!(
+            program_post(&elsewhere, program_of(&elsewhere)),
+            Some(("forge", "review 7"))
+        );
+    }
     for other in [
         row("forge:web:3", Principal::Account(1), vec![code("forge")]),
         row("forge:web:3", forge(), vec![code("rust")]),
         row("forge:web:3", forge(), vec![code("forge"), Block::Divider]),
-        row("general", forge(), vec![code("forge")]),
-        row("chess:1", forge(), vec![code("forge")]),
     ] {
         assert_eq!(program_post(&other, program_of(&other)), None, "{other:?}");
     }

@@ -94,7 +94,7 @@ pub enum Op {
         result: String,
         change: Option<u64>,
     },
-    #[tool_op(description = "Open a change (a pull request) from a branch or commit into a branch, with reviewers. Anyone may; it opens a chat channel forge:<repo>:<n> for its conversation. Returns the change's number.", returns = OpReply, example = crate::examples::open)]
+    #[tool_op(description = "Open a change (a pull request) from a branch or commit into a branch, with reviewers. Anyone may; it opens a chat channel forge:<repo>:<n> for its conversation, or, from a j-NNN/… branch while chat holds room j-NNN unarchived and open to post, talks in that job room. Returns the change's number.", returns = OpReply, example = crate::examples::open)]
     ChangeOpen {
         repo: String,
         from: Revision,
@@ -167,7 +167,7 @@ pub enum Op {
     Watch { deliver: Vec<u8> },
     // Archives the channels of `repo`'s merged and closed changes numbered above `after`,
     // `limit` numbers of them, that chat still shows unarchived; open to anyone.
-    #[tool_op(description = "Archive the chat channels of a repository's merged and closed changes numbered after after, limit numbers of them. Anyone may. Returns where to resume.", returns = OpReply, example = crate::examples::archive_ended)]
+    #[tool_op(description = "Archive the chat channels of a repository's merged and closed changes numbered after after, limit numbers of them; a job room a change talked in is left. Anyone may. Returns where to resume.", returns = OpReply, example = crate::examples::archive_ended)]
     ArchiveEnded {
         repo: String,
         after: Option<u64>,

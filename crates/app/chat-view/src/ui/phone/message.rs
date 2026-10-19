@@ -7,7 +7,7 @@ use view::{FontWeight, HighlightStyle, UnderlineStyle};
 
 use super::parts::{HAIRLINE, face};
 use super::rich;
-use crate::message::ChatMessage;
+use crate::message::{ChatMessage, SystemLine};
 use crate::words;
 use crate::{Chat, Mode, Pane};
 use chat::Reaction;
@@ -204,9 +204,7 @@ fn body(
                 .child(words::MESSAGE_DELETED)
                 .into_any_element(),
         ],
-        (Some((program, code)), false) => {
-            vec![program_line(chat, message, program, code, cx, theme)]
-        }
+        (Some(post), false) => vec![program_line(chat, message, post, cx, theme)],
         (None, false) => rich::blocks(chat, message, cx, theme, ladder),
     };
     div()
@@ -223,22 +221,21 @@ fn body(
         }))
 }
 
-/// A program's own post: the program in medium, its event, and the way to
-/// where the program shows this room.
+// A program's own post: the program in medium, what it says, and the way to where the program
+// shows the room it is about.
 fn program_line(
     chat: &Chat,
     message: &ChatMessage,
-    program: &str,
-    code: &str,
+    post: &SystemLine,
     cx: &mut Context<Chat>,
     theme: &Theme,
 ) -> AnyElement {
-    let open = words::open_in(program);
-    let text = format!("{program} {code}  {open}");
+    let open = words::open_in(&post.program);
+    let text = format!("{} {}  {open}", post.program, post.said);
     let link = text.len() - open.len()..text.len();
     let highlights = vec![
         (
-            0..program.len(),
+            0..post.program.len(),
             HighlightStyle {
                 font_weight: Some(FontWeight::MEDIUM),
                 ..Default::default()
@@ -257,7 +254,7 @@ fn program_line(
             },
         ),
     ];
-    let target = crate::links::program_link(&chat.session.chain_id, &chat.room_id());
+    let target = crate::links::program_link(&chat.session.chain_id, &post.room);
     let line = InteractiveText::new(
         ElementId::from(format!("chat-message-{}-program", message.id)),
         StyledText::new(text).with_highlights(highlights),

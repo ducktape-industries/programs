@@ -432,6 +432,39 @@ fn a_link_to_a_forge_room_lands_in_it() {
     );
 }
 
+// forge's line about a change, in the job's room it talks in, names the change and opens it in
+// forge, on its own line.
+#[test]
+fn a_forge_line_in_a_job_room_names_its_change_and_opens_it_in_forge() {
+    let (mut cx, view) = opened();
+    cx.update(&view, |chat, _, cx| {
+        let room = chat.room.as_mut().unwrap();
+        let line = chat::MsgRow {
+            channel_id: room.id.clone(),
+            seq: 1,
+            message_id: "forge-line".into(),
+            height: 2,
+            blocks: vec![chat::Block::Code {
+                lang: Some("forge".into()),
+                text: "opened programs 213".into(),
+            }],
+            // forge's own account (9)
+            ..chat::MsgRow::by(Principal::Account(9))
+        };
+        room.messages = Loadable::Ready(vec![line]);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(cx.has_text("programs #213 opened"), "{:?}", cx.texts());
+    assert!(cx.find("chat-message-forge-line-block-0-code").is_none());
+    cx.simulate_click("chat-message-forge-line-program-open");
+    let opened = cx.host().requests::<view::methods::LinkOpen>();
+    assert_eq!(
+        opened.last().map(String::as_str),
+        Some("duck://testnet-0a1b2c3d/forge/programs/213")
+    );
+}
+
 /// A dm's sidebar row is called by its peer, not the avatar's initial drawn
 /// before the name; an agent's badge is its description.
 #[test]

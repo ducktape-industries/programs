@@ -8,7 +8,7 @@ use view::Paged;
 use view::prelude::*;
 
 use crate::queries::{self, PAGE};
-use crate::state::{ChangeTab, Filter, Forge, Progress, RepoTab};
+use crate::state::{ChangeTab, Filter, Forge, Progress, RepoTab, Talk};
 use forge::{ChangeFilter, ChangeState, PageRequest, Query, Reply, Revision};
 use view::methods::HostBadge;
 
@@ -169,17 +169,17 @@ impl Forge {
     /// again (`None`: every one), on the same terms as [`Self::reread`].
     pub(crate) fn reread_conversations(&mut self, change: Option<&Change>, cx: &mut Context<Self>) {
         let (host, viewer) = (cx.host(), self.viewer());
-        let touched = |channel: &String| {
+        let touched = |talk: &Talk| {
             change.is_none_or(|change| {
                 change.touches::<chat::Chat, _>(&chat::ask::Roots {
-                    channel_id: channel.clone(),
+                    channel_id: talk.channel.clone(),
                     viewer: viewer.clone(),
                     page: PageRequest::default(),
                 })
             })
         };
         // named before any is asked, as in `reread`
-        let again: Vec<(String, bool)> = self
+        let again: Vec<(Talk, bool)> = self
             .messages
             .iter()
             .filter_map(|(channel, slot)| match slot {
@@ -237,7 +237,7 @@ impl Forge {
     /// Read the open change's conversation again, as the reader asked
     /// after a refusal.
     pub(crate) fn retry_conversation(&mut self, cx: &mut Context<Self>) {
-        if let Some(channel) = self.open_channel() {
+        if let Some(channel) = self.open_talk() {
             self.rereading_messages.remove(&channel);
             self.messages.remove(&channel);
         }
@@ -269,7 +269,7 @@ impl Forge {
         }
         self.settle_badge(cx);
         self.sync_writers(cx);
-        let Some(channel) = self.open_channel() else {
+        let Some(channel) = self.open_talk() else {
             self.messages.clear();
             self.rereading_messages.clear();
             return;

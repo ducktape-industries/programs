@@ -37,10 +37,12 @@ only.
   id is its oid, with no table between them (`src/objects.rs`).
 - Forge emits chat creation for `forge:<repo>:<n>` and system lines for opening,
   closing, merging, and submitting a review. Chat owns all conversation replies.
+  A change from a `j-NNN/…` branch talks in its job's room `j-NNN` instead, while chat
+  holds that room unarchived and open to post as it opens (see "A job's room").
   The kernel runs each emission once the handler returns Ok, in the same frame,
   so the record and its channel land in one block or not at all.
 - A change that ends (`Merge` or `SquashMerge` naming it, `ChangeClose`) has its
-  channel archived: forge sends chat `SetChannelArchived` as itself, and a refusal
+  own channel archived (a job room is left as it is): forge sends chat `SetChannelArchived` as itself, and a refusal
   never fails the op (see "Archiving a change's channel").
 - A review is owned by its author (`Owned<Review>`, kind `forge.review`): the
   ownership role records it as theirs. A review is one immutable operation: verdict, body, pinned head and base, and
@@ -389,6 +391,24 @@ and shows unarchived; open changes, archived channels and missing ones are left.
 run, `None` once it reached the repository's last number. It takes its own
 `after`, not a listing cursor, because a cursor is pinned to forge's write count
 and the op is a write. A second run archives nothing.
+
+### A job's room
+
+`ChangeOpen` from a branch whose name under `refs/heads/` starts with a `j-<digits>/`
+segment (`refs/heads/j-101/folders`) asks chat for the room `j-<digits>`. While chat
+holds it unarchived and open to post (not members-only), the change talks there: its
+`channel` is `j-101`, forge creates no `forge:<repo>:<n>` channel, and each system line
+names the change after its code (`opened programs 213`, `review 2 programs 213`,
+`merged programs 213`, `closed programs 213`). Otherwise (another branch, a room chat
+does not hold, an archived or members-only one) the change gets its own channel as
+above. The room is decided once, at open, and kept on the change.
+
+forge posts into a job room with `Reply::Wanted` and absorbs chat's answer, so a room
+archived after the change opened never fails a review, a merge or a close: the line is
+just not there. forge never archives a job room: an ending change leaves it, and
+`ArchiveEnded` skips it. A merge queue's leave line names the change there (`change
+<repo> #<n> left …`). `Judgment` counts only the replies to the change's own review lines
+in a job room, never the room's other threads.
 
 Review OIDs and anchors receive syntactic validation, not object reads in
 consensus. Paths must be relative, lines positive, bodies nonblank, and anchors

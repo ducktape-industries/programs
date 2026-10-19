@@ -320,7 +320,7 @@ fn timeline(
             ladder,
             theme,
         ))
-        .children(replies(forge, change, cx, ladder, theme))
+        .children(replies(forge, cx, ladder, theme))
 }
 
 /// A section head with a word at its right (`SectionHead` `right`).
@@ -506,12 +506,11 @@ fn review_line(
 /// quiet line; a refusal and Retry.
 fn replies(
     forge: &Forge,
-    change: &Change,
     cx: &mut Context<Forge>,
     ladder: &Ladder,
     theme: &Theme,
 ) -> Vec<AnyElement> {
-    if let Some(Loadable::Failed(refusal)) = forge.messages.get(&change.channel) {
+    if let Some(Loadable::Failed(refusal)) = forge.talk_rows() {
         let retry = cx.listener(|forge, _: &ClickEvent, _, cx| forge.retry_conversation(cx));
         return vec![
             design::refused(

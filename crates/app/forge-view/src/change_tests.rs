@@ -1450,3 +1450,35 @@ fn a_gutter_comment_button_is_at_least_24_px_each_way() {
         assert!(column > Some(24.), "{key}: a column of {column:?}");
     }
 }
+
+// A change from a job's branch talks in the job's room: its tab holds forge's lines about it and
+// the replies under its opening line, never the room's other talk or another change's lines,
+// and a reply goes under its opening line.
+#[test]
+fn a_change_in_a_job_room_shows_its_own_lines_and_their_thread() {
+    let (mut cx, view) = change_screen("job", ChangeTab::Conversation);
+    assert!(cx.has_text("opened this change"), "{:?}", cx.texts());
+    assert!(cx.has_text("Reading it now"), "{:?}", cx.texts());
+    assert!(!cx.has_text("Morning, all"), "{:?}", cx.texts());
+    // the opening, three reviews and the one reply
+    view.read(|forge| {
+        assert_eq!(forge.change_tab_count(ChangeTab::Conversation), Some(5));
+    });
+    cx.update(&view, |forge, _, cx| {
+        forge.reply = view::TextField::new("on it");
+        cx.notify();
+    });
+    cx.run_until_parked();
+    cx.simulate_click("forge-reply-send");
+    cx.run_until_parked();
+    assert!(
+        cx.host()
+            .requests::<Submit<::chat::Chat>>()
+            .iter()
+            .any(|op| matches!(
+                op,
+                chat::Op::PostMessage { channel_id, thread: Some(2), .. } if channel_id == "j-7"
+            )),
+        "the reply goes under the opening line"
+    );
+}

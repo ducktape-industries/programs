@@ -44,7 +44,7 @@ pub(crate) fn render(
     }
     // Until chat answers, the reviews stand on their own; once it has, each
     // sits in the timeline where forge posted its line.
-    let placed = |review: &forge::Review| match forge.messages.get(&change.channel) {
+    let placed = |review: &forge::Review| match forge.talk_rows() {
         Some(Loadable::Ready(rows) | Loadable::Reloading(rows, _)) => {
             rows.iter().any(|row| row.message_id == review.message_id)
         }
@@ -201,12 +201,12 @@ fn forge_line(
 
 /// The hidden chat channel of this change, in chat's row shape.
 fn messages(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) -> AnyElement {
-    let Some((change, _, _, _)) = forge.change() else {
+    if forge.change().is_none() {
         return div().into_any_element();
-    };
+    }
     // forge's own lines are told by their author, whom the roster names
     let naming = forge.names.is_idle() || forge.names.is_loading();
-    match forge.messages.get(&change.channel) {
+    match forge.talk_rows() {
         None | Some(Loadable::Idle) | Some(Loadable::Loading(_)) => {
             quiet(words::READING_CONVERSATION, theme)
         }

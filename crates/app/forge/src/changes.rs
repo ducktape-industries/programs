@@ -51,6 +51,7 @@ pub(crate) fn open(
         draft.from = Revision::Oid(source.to_hex());
     }
     let n = next_number(ctx, repo)?;
+    let channel = discussion::room(ctx, repo, n, &draft.from)?;
     let change = Change {
         n,
         from: draft.from,
@@ -71,7 +72,7 @@ pub(crate) fn open(
         closed_by: None,
         merged_by: None,
         merged_heads: None,
-        channel: crate::state::channel_id(repo, n),
+        channel,
         system_seq: 1,
     };
     fits(ctx, &change)?;
@@ -82,8 +83,10 @@ pub(crate) fn open(
         rev: 0,
     };
     AUTHORSHIP.put(ctx, &(repo.to_owned(), n), &authorship);
-    discussion::create(ctx, repo, &change);
-    discussion::post(ctx, &change, message, Event::Opened);
+    if !discussion::in_job_room(repo, &change) {
+        discussion::create(ctx, repo, &change);
+    }
+    discussion::post(ctx, repo, &change, message, Event::Opened);
     let opened = Watched::Opened {
         repo: repo.to_owned(),
         n,
@@ -148,7 +151,7 @@ pub(crate) fn close(
     change.system_seq = next(change.system_seq)?;
     let message = next_message(ctx)?;
     save_change(ctx, repo, &change)?;
-    discussion::post(ctx, &change, message, Event::Closed);
+    discussion::post(ctx, repo, &change, message, Event::Closed);
     discussion::archive(ctx, repo, &change);
     let closed = Watched::Closed {
         repo: repo.to_owned(),
@@ -203,7 +206,7 @@ pub(crate) fn submit_review(
     let message = next_message(ctx)?;
     save_review(ctx, repo, n, &review);
     save_change(ctx, repo, &change)?;
-    discussion::post(ctx, &change, message, Event::Reviewed(id));
+    discussion::post(ctx, repo, &change, message, Event::Reviewed(id));
     Ok(OpReply::Review {
         height: env.height,
         n,
@@ -314,7 +317,7 @@ pub(crate) fn merged(
     fits(ctx, &change)?;
     let message = next_message(ctx)?;
     save_change(ctx, repo, &change)?;
-    discussion::post(ctx, &change, message, Event::Merged);
+    discussion::post(ctx, repo, &change, message, Event::Merged);
     discussion::archive(ctx, repo, &change);
     let merged = Watched::Merged {
         repo: repo.to_owned(),
@@ -668,7 +671,8 @@ pub(crate) fn repoint(ctx: &ExecCtx, repo: &str, n: u64, from: Revision) -> Resu
 
 // The channels left unarchived before forge archived them as their changes ended: each merged
 // or closed change of `repo` numbered above `after`, `limit` numbers of them, has its channel
-// archived unless chat shows it archived already or holds none. Run again, it archives nothing.
+// archived unless chat shows it archived already or holds none; a job room is left as it is. Run
+// again, it archives nothing.
 pub(crate) fn archive_ended(
     ctx: &ExecCtx,
     repo: &str,
@@ -692,7 +696,8 @@ pub(crate) fn archive_ended(
             continue;
         };
         let ended = change.state != ChangeState::Open;
-        if ended && discussion::unarchived(ctx, &change)? {
+        let own_room = !discussion::in_job_room(repo, &change);
+        if ended && own_room && discussion::unarchived(ctx, &change)? {
             discussion::archive(ctx, repo, &change);
             archived.push(n);
         }

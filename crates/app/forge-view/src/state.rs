@@ -10,6 +10,24 @@ use view::prelude::*;
 
 use forge::{CommitInfo, LineComment, Query, Reply, Revision, Side, Verdict};
 
+// Where a change's conversation is read: the whole of its own room, or, in a job's room
+// (`j-NNN`), forge's lines there that end `<repo> <n>` and the replies under its opening line.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct Talk {
+    pub(crate) channel: String,
+    pub(crate) named: Option<String>,
+}
+
+impl Talk {
+    pub(crate) fn of(repo: &str, change: &forge::Change) -> Self {
+        let own = chat::namespace::program(&change.channel) == Some(forge::PROGRAM);
+        Talk {
+            channel: change.channel.clone(),
+            named: (!own).then(|| format!("{repo} {}", change.n)),
+        }
+    }
+}
+
 #[derive(Default, Serialize, Deserialize)]
 pub struct Forge {
     pub(crate) nav: Nav,
@@ -62,15 +80,15 @@ pub struct Forge {
     #[serde(skip)]
     pub(crate) writers: BTreeMap<String, Loadable<Option<identity::Ownership>>>,
     #[serde(skip)]
-    /// each change channel's rows
-    pub(crate) messages: BTreeMap<String, Loadable<Vec<chat::MsgRow>>>,
+    // each change conversation's rows, by where it is read
+    pub(crate) messages: BTreeMap<Talk, Loadable<Vec<chat::MsgRow>>>,
     /// a refusal on screen, read again with the block: the read lives
     /// here because the slot holds the refusal, and a newer block's read
     /// stored in its place cancels it
     #[serde(skip)]
     pub(crate) rereading: BTreeMap<Query, Task<()>>,
     #[serde(skip)]
-    pub(crate) rereading_messages: BTreeMap<String, Task<()>>,
+    pub(crate) rereading_messages: BTreeMap<Talk, Task<()>>,
     #[serde(skip)]
     pub(crate) pending: Vec<Pending>,
     /// the height of the last forge block heard: an op issued before it

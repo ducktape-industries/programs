@@ -4,7 +4,7 @@ use std::rc::Rc;
 use view::prelude::*;
 
 use crate::queries::PAGE;
-use crate::state::{self, Anchor, ChangeTab, Forge, Menu, Nav, Progress, change_key};
+use crate::state::{self, Anchor, ChangeTab, Forge, Menu, Nav, Progress, Talk, change_key};
 use crate::words::{self, ref_label};
 use forge::Principal;
 use forge::{
@@ -582,13 +582,22 @@ impl Forge {
         }
     }
 
-    /// The hidden chat channel of the open change: read on its tab, and
-    /// on every tab on the phone, whose strip counts its lines as Expo's
-    /// does.
-    pub(crate) fn open_channel(&self) -> Option<String> {
-        let (change, _, _, _) = self.change()?;
+    // Where the open change's conversation is read ([`Talk`]).
+    pub(crate) fn talk(&self) -> Option<Talk> {
+        let (change, ..) = self.change()?;
+        Some(Talk::of(self.nav.repo.as_deref()?, change))
+    }
+
+    // The open change's conversation to read: on its tab, and on every tab on the phone, whose
+    // strip counts its lines as Expo's does.
+    pub(crate) fn open_talk(&self) -> Option<Talk> {
         let read = self.touch || self.nav.change_tab == ChangeTab::Conversation;
-        read.then(|| change.channel.clone())
+        self.talk().filter(|_| read)
+    }
+
+    // The open change's conversation as its read stands.
+    pub(crate) fn talk_rows(&self) -> Option<&Loadable<Vec<chat::MsgRow>>> {
+        self.messages.get(&self.talk()?)
     }
 
     pub(crate) fn review(&self) -> Option<&state::ReviewSession> {
@@ -622,23 +631,31 @@ impl Forge {
 
     // ------------------------------------------------------ the open change
 
-    /// The open change's room, once read.
+    // The open change's conversation, once read.
     pub(crate) fn conversation(&self) -> Option<&[chat::MsgRow]> {
-        let (change, ..) = self.change()?;
-        match self.messages.get(&change.channel)? {
+        match self.talk_rows()? {
             Loadable::Ready(rows) | Loadable::Reloading(rows, _) => Some(rows),
             _ => None,
         }
     }
 
-    /// forge's own line in a change's room: written by the account the
-    /// roster names forge's ([`chat::program_author`]).
+    // forge's own line, in the change's own room or a job's: written by the account the roster
+    // names forge's.
     pub(crate) fn is_forge_line(&self, row: &chat::MsgRow) -> bool {
         let program = self
             .names
             .ready()
             .and_then(|names| names.program(&row.author));
-        chat::program_author(row, program) == Some(forge::PROGRAM)
+        program == Some(forge::PROGRAM)
+    }
+
+    // In a job's room, the open change's opening line: the thread its replies go in.
+    pub(crate) fn opening_thread(&self) -> Option<u64> {
+        self.talk()?.named.as_ref()?;
+        let rows = self.conversation()?;
+        rows.iter()
+            .find(|row| self.is_forge_line(row))
+            .map(|row| row.seq)
     }
 
     /// What `row` of the open change's room is: a reader's reply, or

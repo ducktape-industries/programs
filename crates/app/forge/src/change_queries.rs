@@ -118,7 +118,12 @@ fn judge(
         && latest
             .as_ref()
             .is_none_or(|review| source.as_ref() != Some(&review.draft.commit_oid));
-    let mut replies = discussion::attention(ctx, &change.channel, principal)?.and_then(|root| {
+    // a job room's threads are the job's talk: there only the change's review lines count
+    let started = match discussion::in_job_room(repo, change) {
+        true => None,
+        false => discussion::attention(ctx, &change.channel, principal)?,
+    };
+    let mut replies = started.and_then(|root| {
         root.last_reply_seq.map(|last_reply_seq| ReplyAttention {
             review: None,
             root_seq: root.seq,
