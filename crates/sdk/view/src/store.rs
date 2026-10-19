@@ -1,12 +1,12 @@
-//! What a view keeps on this device between runs: its own keys, on the
-//! network it runs on (`store.get` / `store.set`), borsh-encoded. The host
-//! keeps them apart per view and per network; no other view reads them.
+//! What a view keeps on this device between runs (`store`): its own keys,
+//! borsh-encoded, apart per program, per network and per seated key; no
+//! other program reads them. `cx.store()` is the handle.
 use std::future::Future;
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::host::{Error, Host, malformed};
-use crate::methods::{self, StoreGet, StoreSet};
+use crate::methods::{self, StoreGet, StoreList, StoreSet};
 
 /// The value kept under `key`, or `None` where nothing is.
 pub fn get<T: BorshDeserialize>(
@@ -25,4 +25,48 @@ pub fn get<T: BorshDeserialize>(
 /// Keep `value` under `key`; `None` drops it. Nobody waits for the answer.
 pub fn set<T: BorshSerialize>(host: &Host, key: &str, value: Option<&T>) {
     host.notify::<StoreSet>((key.to_owned(), value.map(methods::encode)));
+}
+
+// Drop what is kept under `key`. Nobody waits for the answer.
+pub fn remove(host: &Host, key: &str) {
+    host.notify::<StoreSet>((key.to_owned(), None));
+}
+
+// The keys kept under `prefix` (empty: every key), in byte order. A host
+// older than `store.list` refuses it `unknown_request`: read that as
+// nothing kept, and go on with the defaults.
+pub fn list(
+    host: &Host,
+    prefix: &str,
+) -> impl Future<Output = Result<Vec<String>, Error>> + 'static + use<> {
+    host.ask::<StoreList>(prefix.to_owned())
+}
+
+// The view's store, as `cx.store()` hands it: the functions above, on the
+// view's host.
+#[derive(Clone)]
+pub struct Store(pub(crate) Host);
+
+impl Store {
+    pub fn get<T: BorshDeserialize>(
+        &self,
+        key: &str,
+    ) -> impl Future<Output = Result<Option<T>, Error>> + 'static + use<T> {
+        get(&self.0, key)
+    }
+
+    pub fn set<T: BorshSerialize>(&self, key: &str, value: &T) {
+        set(&self.0, key, Some(value));
+    }
+
+    pub fn remove(&self, key: &str) {
+        remove(&self.0, key);
+    }
+
+    pub fn list(
+        &self,
+        prefix: &str,
+    ) -> impl Future<Output = Result<Vec<String>, Error>> + 'static + use<> {
+        list(&self.0, prefix)
+    }
 }

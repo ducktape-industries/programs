@@ -306,6 +306,38 @@ is the answer.
 account number, `None` until the host resolves one), `endpoint`; an item per
 change. Read "who am I" from `account`; no view asks identity for it.
 
+## Keeping things on the device
+
+A view keeps small things of its own between runs (a collapsed group, a
+sort, a read cursor) in the host's store, under the `store` capability:
+
+```rust
+let store = cx.store();
+// a future: `Ok(None)` where nothing is kept under the key
+let collapsed = store.get::<BTreeSet<String>>("rooms/collapsed");
+// nobody waits for these
+store.set("rooms/collapsed", &groups);
+store.remove("rooms/collapsed");
+// the keys under a prefix, in byte order
+let keys = store.list("rooms/");
+```
+
+A value is the view's own borsh bytes (`view::store` has the same calls
+over a `Host`). The host keeps them on this device and never on the
+network, apart per program (its panes and its notifier share them, and
+`store.changes` tells each instance the keys another one set), per network
+and per seated key: two accounts signed in on one device each keep their
+own, and with no key seated the device keeps one set. So a view reads what
+it keeps again when `Session.signer` changes. They last across restarts:
+a file in the app's data folder on a desktop, in the app's own sandbox on a
+phone. Nothing caps a value or the number of keys but the device's disk; a
+write the disk refuses is refused `host_fault` in the system's words. Each
+set rewrites the program's whole file, so what changes often stays small.
+
+`store.list` is newer than the rest: a host older than it refuses it
+`unknown_request`, and a view reads that as nothing kept and goes on with
+its defaults. The test host keeps a store of its own (see Testing).
+
 ## Live tracks
 
 A view that declares `Capability::Live` publishes and subscribes to tracks
@@ -509,7 +541,11 @@ An ask waits for its answer, so a test says what comes back:
 nothing answers fails the test, naming it. A subscription nothing feeds
 stays open; `stream::<Method>()` is its feed, and a feed nobody hears
 fails the test. `requests::<Method>()` is everything the view sent,
-notifies too (`HostLog`, `LinkOpen`, `HostWidget`). Then
+notifies too (`HostLog`, `LinkOpen`, `HostWidget`). The store is the one
+ask answered with no handler: a `store.get`, `store.set` or `store.list`
+nothing handles reads and writes the host's own store in memory, as the
+app's file does (`keep(key, &value)` seeds it, `kept::<T>(key)` reads it),
+and a test's own `handle::<StoreGet>` still answers in its place. Then
 `simulate_click`, `simulate_input`, `simulate_event` and a typed
 `simulate_*` per event; `texts`, `find`, `node(key).style()`/`.text()`/
 `.children()`, `interactivity`, `last_frame`, and a `TickReport` per tick.

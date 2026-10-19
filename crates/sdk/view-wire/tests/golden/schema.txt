@@ -47,6 +47,7 @@ program.describe None (String, Vec<u8>) -> Option<Description>
 program.query Some("P") ProgramQuery -> ProgramReply
 store.changes None () -> String
 store.get None String -> Option<Vec<u8>>
+store.list None String -> Vec<String>
 store.set None (String, Option<Vec<u8>>) -> ()
 
 # borsh: every definition the methods reach

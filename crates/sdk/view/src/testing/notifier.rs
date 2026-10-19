@@ -44,9 +44,10 @@ impl<N: Notifier> TestNotifier<N> {
         entity
     }
 
-    /// Ends the run, as a disconnect, a new deployment or a quit does: what
-    /// it followed is unsubscribed, and what the host owed it is dropped.
-    /// Its store is the test's handlers', which outlive it.
+    // Ends the run, as a disconnect, a new deployment or a quit does: what
+    // it followed is unsubscribed, and what the host owed it is dropped.
+    // Its store is the host's (its own, or the test's handlers), which
+    // outlives it.
     pub fn stop(&mut self) {
         if self.driver.take().is_some() {
             self.host.reset_connection();

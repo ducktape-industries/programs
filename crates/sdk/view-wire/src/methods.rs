@@ -1122,9 +1122,11 @@ methods! {
     /// tag; the host marks this view's rows under it read and takes down
     /// its standing banner. Another view's rows are never touched.
     NotifySeen, "notify.seen", String, ();
-    /// `store.get`: the value this view keeps under a key on this device,
-    /// for the network in hand; `None` where it keeps none. A view sees
-    /// only its own keys, and only on the network it runs on.
+    // `store.get`: the value this view keeps under a key on this device,
+    // for the network and the key seated in hand (with no key seated, the
+    // device's own); `None` where it keeps none. A view sees only its own
+    // program's keys, only on the network it runs on and only for the key
+    // it runs with: two accounts signed in on one device keep apart.
     StoreGet, "store.get", String, Option<Vec<u8>>;
     /// `store.set`: keep a value under a key, or drop it with `None`.
     StoreSet, "store.set", (String, Option<Vec<u8>>), ();
@@ -1133,6 +1135,11 @@ methods! {
     /// the network in hand, once the value is kept: a `store.get` asked
     /// after the item reads it. An instance never hears its own sets.
     StoreChanges, "store.changes", (), String;
+    // `store.list`: the keys this view keeps under a prefix (empty: every
+    // key), as `store.get` scopes them, in byte order. A host older than
+    // this method refuses it `unknown_request`: a view reads that as
+    // nothing kept and goes on with its defaults.
+    StoreList, "store.list", String, Vec<String>;
     /// `chain.heads`: a subscription, one item per finalized block, oldest
     /// first, from the tip at subscribe on. Heights may skip where the host
     /// could not fill a gap (a reconnect, a node with no archive); a view

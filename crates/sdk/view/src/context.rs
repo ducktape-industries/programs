@@ -101,6 +101,10 @@ impl App {
     pub fn host(&self) -> Host {
         self.inner.host.clone()
     }
+    // What the view keeps on this device (`store`): `cx.store().get(key)`.
+    pub fn store(&self) -> crate::store::Store {
+        crate::store::Store(self.host())
+    }
     pub fn spawn<R: 'static>(&self, f: impl AsyncFnOnce(&mut AsyncApp) -> R + 'static) -> Task<R> {
         let mut cx = AsyncApp {
             inner: Rc::downgrade(&self.inner),
@@ -260,6 +264,9 @@ pub struct AsyncApp {
 impl AsyncApp {
     pub fn host(&self) -> Host {
         self.inner.upgrade().expect("app released").host.clone()
+    }
+    pub fn store(&self) -> crate::store::Store {
+        crate::store::Store(self.host())
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

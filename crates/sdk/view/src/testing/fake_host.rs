@@ -3,7 +3,12 @@ use crate::{
     methods::{self, Method},
     wire::{ElementIdWire, Event, Frame, MediaState, Node, Request, TrackState},
 };
-use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, HashMap},
+    marker::PhantomData,
+    rc::Rc,
+};
 
 /// A method kind and the program it addresses (`None` for the host's own).
 type Key = (String, Option<String>);
@@ -28,6 +33,9 @@ struct State {
     /// The camera, microphone and remote pieces of the tree the host
     /// holds, as the app keeps them.
     pieces: Vec<Piece>,
+    // The host's own store: it answers the `store.get`, `store.set` and
+    // `store.list` no handler takes, as the app's file does.
+    kept: BTreeMap<String, Vec<u8>>,
 }
 
 /// A piece as the host keeps it, by the path it is filed under: what it
@@ -150,6 +158,20 @@ impl FakeHost {
             .filter(|r| matches::<C>(r))
             .map(|r| C::decode_request(&r.payload).expect("valid capability request"))
             .collect()
+    }
+
+    // Seeds the host's own store: `value` kept under `key`, borsh-encoded
+    // as a view's `store.set` keeps it.
+    pub fn keep<T: borsh::BorshSerialize>(&self, key: &str, value: &T) {
+        let bytes = methods::encode(value);
+        self.0.borrow_mut().kept.insert(key.to_owned(), bytes);
+    }
+
+    // What the host's own store keeps under `key`, read as `T`; `None`
+    // where it keeps nothing.
+    pub fn kept<T: borsh::BorshDeserialize>(&self, key: &str) -> Option<T> {
+        let bytes = self.0.borrow().kept.get(key).cloned()?;
+        Some(methods::decode(&bytes).expect("a kept value reads as the type asked"))
     }
     /// Answers each ask of `kind` addressed to `target` (`None`: to any
     /// program, where no typed handler names one) with the bytes
@@ -350,12 +372,15 @@ impl FakeHost {
                     .unwrap_or_else(|| String::from_utf8_lossy(&request.payload).into_owned())
             };
             let event = match host.shape(request.id) {
-                Shape::Notify => {
-                    find(&mut state.asks, kind, target).and_then(|answer| answer(request))
-                }
+                Shape::Notify => match find(&mut state.asks, kind, target) {
+                    Some(answer) => answer(request),
+                    None => kept(&mut state.kept, request),
+                },
                 Shape::Ask => {
                     if let Some(answer) = find(&mut state.asks, kind, target) {
                         answer(request)
+                    } else if let Some(answer) = kept(&mut state.kept, request) {
+                        Some(answer)
                     } else if find(&mut state.streams, kind, target).is_some() {
                         panic!(
                             "the view asks `{kind}` {}, and `stream` feeds only subscriptions: \
@@ -428,6 +453,58 @@ fn answer<C: Method>(
             result: reply.map(|reply| C::encode_reply(&reply)),
             done: true,
         })
+    })
+}
+
+// The host's own store's answer to `request`, as the app's file answers it;
+// `None` for a kind it does not keep. A key is not empty: the app refuses
+// one `malformed_request`, and so does this.
+fn kept(kept: &mut BTreeMap<String, Vec<u8>>, request: &Request) -> Option<Event> {
+    use methods::{StoreGet, StoreList, StoreSet};
+    let named = |key: &str| match key.is_empty() {
+        true => Err(Error::new(
+            methods::refusal::MALFORMED_REQUEST,
+            "a store key is not empty",
+        )),
+        false => Ok(()),
+    };
+    let payload = &request.payload;
+    let result = if request.kind == StoreGet::KIND {
+        StoreGet::decode_request(payload)
+            .map_err(malformed)
+            .and_then(|key| {
+                named(&key)?;
+                Ok(StoreGet::encode_reply(&kept.get(&key).cloned()))
+            })
+    } else if request.kind == StoreSet::KIND {
+        StoreSet::decode_request(payload)
+            .map_err(malformed)
+            .and_then(|(key, value)| {
+                named(&key)?;
+                match value {
+                    Some(value) => kept.insert(key, value),
+                    None => kept.remove(&key),
+                };
+                Ok(StoreSet::encode_reply(&()))
+            })
+    } else if request.kind == StoreList::KIND {
+        StoreList::decode_request(payload)
+            .map_err(malformed)
+            .map(|prefix| {
+                let keys: Vec<String> = kept
+                    .keys()
+                    .filter(|key| key.starts_with(&prefix))
+                    .cloned()
+                    .collect();
+                StoreList::encode_reply(&keys)
+            })
+    } else {
+        return None;
+    };
+    Some(Event::Response {
+        id: request.id,
+        result,
+        done: true,
     })
 }
 
@@ -703,6 +780,72 @@ mod tests {
         flush(&host, &channel);
         feed.close();
         assert!(futures::executor::block_on(stream.next()).is_none());
+    }
+
+    // Sends what `channel` asked to `host`, and hands its answers back.
+    fn answered(host: &FakeHost, channel: &crate::host::Host) {
+        flush(host, channel);
+        for event in host.take_events() {
+            if let Event::Response { id, result, done } = event {
+                channel.fulfill(id, result, done);
+            }
+        }
+    }
+
+    // A store no handler takes is the host's own: what the view sets it
+    // reads back and lists, a removed key is gone, an empty key is
+    // refused as the app refuses it, and the test reads and seeds it.
+    #[test]
+    fn a_store_nothing_handles_is_the_hosts_own() {
+        use crate::store;
+        use futures::executor::block_on;
+        let host = FakeHost::default();
+        let channel = crate::host::Host::default();
+        host.keep("rooms/seen", &3u64);
+        store::set(&channel, "rooms/collapsed", Some(&vec!["work".to_owned()]));
+        store::set(&channel, "emoji", Some(&1u8));
+        store::remove(&channel, "emoji");
+        let collapsed = store::get::<Vec<String>>(&channel, "rooms/collapsed");
+        let rooms = store::list(&channel, "rooms/");
+        let every = store::list(&channel, "");
+        let unnamed = store::get::<u8>(&channel, "");
+        answered(&host, &channel);
+        assert_eq!(block_on(collapsed), Ok(Some(vec!["work".to_owned()])));
+        let listed = ["rooms/collapsed", "rooms/seen"].map(str::to_owned);
+        assert_eq!(block_on(rooms), Ok(listed.to_vec()));
+        assert_eq!(block_on(every), Ok(listed.to_vec()));
+        let refused = block_on(unnamed).unwrap_err();
+        assert_eq!(refused.code, methods::refusal::MALFORMED_REQUEST);
+        assert_eq!(host.kept::<u8>("emoji"), None);
+        assert_eq!(host.kept::<u64>("rooms/seen"), Some(3));
+        assert_eq!(host.requests::<methods::StoreSet>().len(), 3);
+    }
+
+    // A test's own store handler answers in the host's own store's place.
+    #[test]
+    fn a_store_handler_wins_over_the_hosts_own() {
+        use futures::executor::block_on;
+        let host = FakeHost::default();
+        host.keep("a", &1u8);
+        host.handle::<methods::StoreGet>(|_| Ok(None));
+        let channel = crate::host::Host::default();
+        let read = crate::store::get::<u8>(&channel, "a");
+        answered(&host, &channel);
+        assert_eq!(block_on(read), Ok(None));
+    }
+
+    // A host older than `store.list` refuses it, and the view hears the
+    // refusal it falls back on.
+    #[test]
+    fn an_old_host_refuses_a_list() {
+        use futures::executor::block_on;
+        let host = FakeHost::default();
+        host.refuse::<methods::StoreList>(methods::refusal::UNKNOWN_REQUEST, "no such method");
+        let channel = crate::host::Host::default();
+        let listed = crate::store::list(&channel, "");
+        answered(&host, &channel);
+        let refused = block_on(listed).unwrap_err();
+        assert_eq!(refused.code, methods::refusal::UNKNOWN_REQUEST);
     }
 
     #[test]

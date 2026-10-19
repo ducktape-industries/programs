@@ -642,6 +642,7 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
         exchange::<StoreSet>(("reads/alice".into(), Some(vec![1, 2])), ()),
         exchange::<NotifySeen>("#design".into(), ()),
         exchange::<StoreChanges>((), "reads/alice".into()),
+        exchange::<StoreList>("rooms/".into(), vec!["rooms/collapsed".into()]),
         exchange::<HostShowing>("general".into(), ()),
         exchange::<HostScreen>((), vec!["dm-3-5".into(), "general".into()]),
         exchange::<ChainHeads>(
