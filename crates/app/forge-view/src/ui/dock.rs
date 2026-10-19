@@ -5,7 +5,7 @@ use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
 
 use crate::Forge;
-use crate::select::Standings;
+use crate::select::{Picture, Standings};
 use crate::ui::components::{badge, id, path_text, quiet, short_hex};
 use crate::words;
 use forge::{Mergeability, Verdict};
@@ -40,7 +40,7 @@ pub(crate) fn sidebar(
         .map(|row| row.border_b_1().border_color(theme.border));
     column
         .children(who)
-        .child(reviews(forge, theme, ladder))
+        .child(reviews(forge, cx, theme, ladder))
         .child(merge_status(forge, theme))
         .child(comments(forge, cx, theme))
         .child(
@@ -90,7 +90,12 @@ fn section(key: &str, title: &str, note: Option<String>, theme: &Theme) -> State
 /// Each reviewer's latest verdict, then who was asked and has not
 /// answered. Approvals are advisory: the merge is a compare-and-set on
 /// both heads.
-fn reviews(forge: &Forge, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
+fn reviews(
+    forge: &Forge,
+    cx: &mut Context<Forge>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Stateful<Div> {
     let mut section = section(
         "forge-reviews",
         "Reviews",
@@ -116,6 +121,7 @@ fn reviews(forge: &Forge, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
         };
         section = section.child(person(
             forge.principal_name(who),
+            forge.picture(who, cx),
             badge(
                 id(format!("forge-reviewer-verdict-{index}")),
                 label,
@@ -129,6 +135,7 @@ fn reviews(forge: &Forge, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
     for (index, who) in waiting.into_iter().enumerate() {
         section = section.child(person(
             forge.principal_name(who),
+            forge.picture(who, cx),
             badge(
                 id(format!("forge-reviewer-asked-{index}")),
                 words::ASKED,
@@ -143,13 +150,13 @@ fn reviews(forge: &Forge, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
 }
 
 /// A reviewer's line: avatar, name, their verdict on the right.
-fn person(name: String, verdict: impl IntoElement, theme: &Theme) -> Div {
+fn person(name: String, picture: Picture, verdict: impl IntoElement, theme: &Theme) -> Div {
     div()
         .flex()
         .items_center()
         .gap(design::space::SM)
         .child(
-            design::avatar(&name, design::size::AVATAR_SM, theme)
+            design::avatar_with(&name, picture, design::size::AVATAR_SM, theme)
                 .border_1()
                 .border_color(theme.border)
                 .font_weight(FontWeight::SEMIBOLD),

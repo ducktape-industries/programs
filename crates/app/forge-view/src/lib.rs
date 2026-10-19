@@ -82,6 +82,8 @@ impl View for Forge {
         Capability::Host,
         Capability::Link,
         Capability::Clipboard,
+        // each card's picture (`blob.get`)
+        Capability::Blob,
     ];
     // at 560 the repository tab bar's About toggle is past the right edge
     const MIN_WINDOW_WIDTH: u32 = 640;
@@ -147,6 +149,7 @@ impl View for Forge {
         if self.names.is_idle() {
             cx.load(self, queries::roster(cx.host()), |forge| &mut forge.names);
         }
+        self.read_avatars(cx);
         self.sync(cx);
     }
 }

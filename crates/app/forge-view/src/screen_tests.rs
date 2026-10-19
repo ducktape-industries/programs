@@ -83,6 +83,8 @@ fn screen(state: &str) -> TestAppContext {
                 .handle::<Ask>(|_| Err(refusal("refused-not-found")));
             cx.host()
                 .handle::<Query<::chat::Chat>>(|_| Ok(chat::Reply::Accounts(accounts())));
+            cx.host()
+                .handle::<Query<identity::Identity>>(|_| Ok(super::no_accounts()));
             cx.open::<Forge>();
             cx.run_until_parked();
             cx

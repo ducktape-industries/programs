@@ -933,13 +933,22 @@ pub(crate) enum Tint {
     Agent,
 }
 
-/// A name's initial at the list's size (`Avatar.tsx`), in the agent tint
-/// for an agent.
+// A name's initial, or its picture once read, at the list's size
+// (`Avatar.tsx`); in the agent tint for an agent, a picture ringed in it.
 // SDK gap: the kit's `Avatar` `agent`; the SDK builds it later
-pub(crate) fn avatar(name: &str, agent: bool, ladder: &Ladder, theme: &Theme) -> Div {
-    design::avatar(name, ladder.avatar, theme).when(agent, |face| {
-        face.bg(theme.agent_soft).text_color(theme.agent)
-    })
+pub(crate) fn avatar(
+    name: &str,
+    picture: crate::select::Picture,
+    agent: bool,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> Div {
+    let ringed = agent && picture.is_some();
+    design::avatar_with(name, picture, ladder.avatar, theme)
+        .when(agent, |face| {
+            face.bg(theme.agent_soft).text_color(theme.agent)
+        })
+        .when(ringed, |face| face.border_2().border_color(theme.agent))
 }
 
 /// A state word on the kit's 20 tall tag (`Badge.tsx`), in its tint.
@@ -1345,7 +1354,13 @@ fn people_rows(
             pick(forge, chosen.clone(), cx);
         });
         Row::titled(id(format!("{}-{number}", ask.key)), name.clone())
-            .lead(avatar(&name, forge.is_agent(&person), ladder, theme))
+            .lead(avatar(
+                &name,
+                forge.picture(&person, cx),
+                forge.is_agent(&person),
+                ladder,
+                theme,
+            ))
             .caption(caption(format!("account {number}"), ladder, theme))
             .press(ladder, theme)
             .role(Role::Button)

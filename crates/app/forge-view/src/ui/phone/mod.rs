@@ -71,7 +71,10 @@ fn page(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) 
         return new_change::render(forge, form, cx, ladder, theme);
     }
     let nav = match forge.nav().depth() {
-        0 => Nav::root(reader(forge)),
+        0 => {
+            let me = forge.me_principal();
+            Nav::root_with(reader(forge), me.and_then(|me| forge.picture(&me, cx)))
+        }
         depth => Nav::back(
             depth,
             cx.listener(|forge, _: &ClickEvent, window, cx| forge.back(window, cx)),

@@ -103,6 +103,7 @@ fn repo_row(
 ) -> AnyElement {
     let name = info.name.clone();
     let group = format!("forge-repo-{name}-row");
+    let picture = forge.picture(&info.repo.owner, cx);
     let open = cx.listener({
         let name = name.clone();
         move |forge, _: &ClickEvent, _, cx| forge.open_repo(name.clone(), cx)
@@ -153,6 +154,7 @@ fn repo_row(
         .child(repo_facts(
             info,
             owner,
+            picture,
             table,
             active == Some(2),
             theme,
@@ -262,6 +264,7 @@ fn copy_button(
 fn repo_facts(
     info: &RepoInfo,
     owner: String,
+    picture: crate::select::Picture,
     table: bool,
     active: bool,
     theme: &Theme,
@@ -282,7 +285,7 @@ fn repo_facts(
                 .items_center()
                 .gap_1p5()
                 .child(
-                    design::avatar(&owner, design::size::AVATAR, theme)
+                    design::avatar_with(&owner, picture, design::size::AVATAR, theme)
                         .border_1()
                         .border_color(theme.border)
                         .font_weight(view::FontWeight::SEMIBOLD),

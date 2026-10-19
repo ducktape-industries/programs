@@ -292,7 +292,7 @@ fn timeline(
         ],
         false => reviews
             .iter()
-            .map(|review| review_line(forge, review, ladder, theme))
+            .map(|review| review_line(forge, review, cx, ladder, theme))
             .collect(),
     };
     div()
@@ -304,7 +304,7 @@ fn timeline(
         .flex_col()
         .pb(design::space::BLOCK)
         .children(body)
-        .children(events(forge, change, ladder, theme))
+        .children(events(forge, change, cx, ladder, theme))
         .child(section_aside(
             "forge-reviews-head",
             "Reviews",
@@ -337,32 +337,34 @@ fn section_aside(
 /// The change's own events from forge's lines that are no review's
 /// (`eventsOf`, as [`Forge::change_event`] reads them): the first opened
 /// it, a later one is how it ended.
-fn events(forge: &Forge, change: &Change, ladder: &Ladder, theme: &Theme) -> Vec<AnyElement> {
+fn events(
+    forge: &Forge,
+    change: &Change,
+    cx: &mut Context<Forge>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> Vec<AnyElement> {
     if forge.names.ready().is_none() {
         return Vec::new();
     }
     let Some(rows) = forge.conversation() else {
         return Vec::new();
     };
-    let name =
-        |who: Option<&Principal>| who.map(|who| forge.principal_name(who)).unwrap_or_default();
     rows.iter()
         .filter_map(|row| {
-            let (who, what) = match forge.change_event(row)? {
-                ChangeEvent::Opened => (
-                    forge.principal_name(&change.author),
-                    words::OPENED_IT.to_owned(),
-                ),
-                ChangeEvent::Merged { by, oid } => {
-                    (name(by), words::merged_into(&change.into, oid))
-                }
-                ChangeEvent::Closed { by } => (name(by), words::CLOSED_IT.to_owned()),
+            let (by, what) = match forge.change_event(row)? {
+                ChangeEvent::Opened => (Some(&change.author), words::OPENED_IT.to_owned()),
+                ChangeEvent::Merged { by, oid } => (by, words::merged_into(&change.into, oid)),
+                ChangeEvent::Closed { by } => (by, words::CLOSED_IT.to_owned()),
                 ChangeEvent::Reply | ChangeEvent::Review(_) => return None,
             };
+            let who = by.map(|by| forge.principal_name(by)).unwrap_or_default();
+            let picture = by.and_then(|by| forge.picture(by, cx));
             let said = div().text_color(theme.muted).child(what).into_any_element();
             let line = TimelineLine {
                 key: format!("forge-event-{}", row.message_id),
                 name: who,
+                picture,
                 agent: false,
                 meta: words::block(row.height),
             };
@@ -377,13 +379,14 @@ fn events(forge: &Forge, change: &Change, ladder: &Ladder, theme: &Theme) -> Vec
 struct TimelineLine {
     key: String,
     name: String,
+    picture: crate::select::Picture,
     agent: bool,
     meta: String,
 }
 
 impl TimelineLine {
     fn draw(self, said: Vec<AnyElement>, ladder: &Ladder, theme: &Theme) -> AnyElement {
-        let face = parts::avatar(&self.name, self.agent, ladder, theme);
+        let face = parts::avatar(&self.name, self.picture, self.agent, ladder, theme);
         let head = div()
             .flex()
             .items_center()
@@ -435,7 +438,13 @@ impl TimelineLine {
 /// One review (`ReviewLine`): its verdict as a badge under the name (and
 /// `outdated`), what it says, each line comment as `path:line — body` in
 /// the data face.
-fn review_line(forge: &Forge, review: &Review, ladder: &Ladder, theme: &Theme) -> AnyElement {
+fn review_line(
+    forge: &Forge,
+    review: &Review,
+    cx: &mut Context<Forge>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> AnyElement {
     let label = verdict_label(review.draft.verdict);
     let tint = match review.draft.verdict {
         Verdict::Approve => Tint::Ok,
@@ -485,6 +494,7 @@ fn review_line(forge: &Forge, review: &Review, ladder: &Ladder, theme: &Theme) -
     let line = TimelineLine {
         key: format!("forge-review-{}", review.id),
         name: forge.principal_name(&review.author),
+        picture: forge.picture(&review.author, cx),
         agent: forge.is_agent(&review.author),
         meta: words::block(review.height),
     };
@@ -528,7 +538,7 @@ fn replies(
     let said: Vec<AnyElement> = rows
         .iter()
         .filter(|row| !forge.is_forge_line(row))
-        .map(|row| reply_line(forge, row, ladder, theme))
+        .map(|row| reply_line(forge, row, cx, ladder, theme))
         .collect();
     match said.is_empty() {
         true => vec![
@@ -544,7 +554,13 @@ fn replies(
     }
 }
 
-fn reply_line(forge: &Forge, row: &chat::MsgRow, ladder: &Ladder, theme: &Theme) -> AnyElement {
+fn reply_line(
+    forge: &Forge,
+    row: &chat::MsgRow,
+    cx: &mut Context<Forge>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> AnyElement {
     let meta = match row.time {
         0 => words::block(row.height),
         time => design::clock(time),
@@ -556,6 +572,7 @@ fn reply_line(forge: &Forge, row: &chat::MsgRow, ladder: &Ladder, theme: &Theme)
     let line = TimelineLine {
         key: format!("forge-message-{}", row.message_id),
         name: forge.principal_name(&row.author),
+        picture: forge.picture(&row.author, cx),
         agent: forge.is_agent(&row.author),
         meta,
     };
@@ -896,7 +913,7 @@ fn details(
             ladder,
             theme,
         ))
-        .children(reviewers(forge, ladder, theme))
+        .children(reviewers(forge, cx, ladder, theme))
         .child(design::section_head(
             id("forge-details-merge"),
             words::MERGE_STATUS,
@@ -917,22 +934,38 @@ fn details(
 
 /// Each reviewer's latest verdict, then each asked who has not answered
 /// ([`Forge::standings`]).
-fn reviewers(forge: &Forge, ladder: &Ladder, theme: &Theme) -> Vec<AnyElement> {
+fn reviewers(
+    forge: &Forge,
+    cx: &mut Context<Forge>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> Vec<AnyElement> {
     let Some(Standings { answered, asked }) = forge.standings() else {
         return Vec::new();
     };
-    let answered = answered.into_iter().map(|(who, verdict)| {
-        let tint = match verdict {
-            Verdict::Approve => Tint::Ok,
-            Verdict::RequestChanges => Tint::Danger,
-            Verdict::Comment => Tint::Plain,
-        };
-        person_row(forge, who, words::standing(verdict), tint, ladder, theme)
-    });
+    let answered: Vec<AnyElement> = answered
+        .into_iter()
+        .map(|(who, verdict)| {
+            let tint = match verdict {
+                Verdict::Approve => Tint::Ok,
+                Verdict::RequestChanges => Tint::Danger,
+                Verdict::Comment => Tint::Plain,
+            };
+            person_row(
+                forge,
+                who,
+                words::standing(verdict),
+                tint,
+                cx,
+                ladder,
+                theme,
+            )
+        })
+        .collect();
     let waiting = asked
         .into_iter()
-        .map(|who| person_row(forge, who, words::ASKED, Tint::Plain, ladder, theme));
-    let rows: Vec<AnyElement> = answered.chain(waiting).collect();
+        .map(|who| person_row(forge, who, words::ASKED, Tint::Plain, cx, ladder, theme));
+    let rows: Vec<AnyElement> = answered.into_iter().chain(waiting).collect();
     match rows.is_empty() {
         true => vec![
             parts::quiet(
@@ -953,13 +986,19 @@ fn person_row(
     who: &Principal,
     word: &str,
     tint: Tint,
+    cx: &mut Context<Forge>,
     ladder: &Ladder,
     theme: &Theme,
 ) -> AnyElement {
     let name = forge.principal_name(who);
     let key = format!("forge-details-{}-{word}", who.account().unwrap_or_default());
     Row::titled(id(key.clone()), name.clone())
-        .lead(design::avatar(&name, ladder.avatar_inline, theme))
+        .lead(design::avatar_with(
+            &name,
+            forge.picture(who, cx),
+            ladder.avatar_inline,
+            theme,
+        ))
         .tail(parts::badge(
             id(format!("{key}-badge")),
             word.to_owned(),

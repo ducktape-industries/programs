@@ -211,6 +211,27 @@ impl Forge {
     /// An identity block landed: the names are read again.
     pub(crate) fn reread_names(&mut self, cx: &mut Context<Self>) {
         cx.load(self, queries::roster(cx.host()), |forge| &mut forge.names);
+        self.read_avatars(cx);
+    }
+
+    // Each account's picture, read again; what is on screen stays until a
+    // different set lands.
+    pub(crate) fn read_avatars(&mut self, cx: &mut Context<Self>) {
+        if self.pictures.is_none() {
+            self.pictures = Some(cx.new(|_| view::pictures::Pictures::default()));
+        }
+        let host = cx.host();
+        let read = identity::view::avatars(move |ask| host.query(ask));
+        cx.land(read, |forge, read, cx| match read {
+            Ok(avatars) => {
+                if forge.avatars != avatars {
+                    forge.avatars = avatars;
+                    cx.notify();
+                }
+            }
+            Err(refusal) => cx.log_refused("the pictures", &refusal),
+        })
+        .detach();
     }
 
     /// Read the open change's conversation again, as the reader asked

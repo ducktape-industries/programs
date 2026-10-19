@@ -85,6 +85,7 @@ fn owned(cx: &TestAppContext, records: Vec<Held>, policies: Vec<ownership::Polic
                     kind: identity::Kind::User,
                 }))
             }
+            identity::Query::List { .. } => no_accounts(),
             query => panic!("unexpected identity query: {query:?}"),
         })
     });

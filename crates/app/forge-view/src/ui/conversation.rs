@@ -3,7 +3,7 @@
 use view::prelude::*;
 
 use crate::Forge;
-use crate::select::ChangeEvent;
+use crate::select::{ChangeEvent, Picture};
 use crate::state::verdict_verb;
 use crate::ui::components::{badge, button, empty_state, id, quiet};
 use crate::ui::scroller;
@@ -51,9 +51,9 @@ pub(crate) fn render(
         _ => false,
     };
     for review in reviews.items.iter().filter(|review| !placed(review)) {
-        column = column.child(review_card(forge, review, theme, ladder));
+        column = column.child(review_card(forge, review, cx, theme, ladder));
     }
-    column = column.child(messages(forge, theme, ladder));
+    column = column.child(messages(forge, cx, theme, ladder));
     // a reply on its way, or one that did not land, over the box
     let reply = forge.reply_scope();
     if let Some(scope) = reply.filter(|scope| !forge.pending_in(scope).is_empty()) {
@@ -70,6 +70,7 @@ pub(crate) fn render(
 fn review_card(
     forge: &Forge,
     review: &forge::Review,
+    cx: &mut Context<Forge>,
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
@@ -77,6 +78,7 @@ fn review_card(
     let outdated = forge.outdated(&review.draft.commit_oid);
     let mut head = timeline_head(
         &author,
+        forge.picture(&review.author, cx),
         Some(author.clone()),
         verdict_verb(review.draft.verdict),
         review.height,
@@ -126,6 +128,7 @@ fn review_card(
 /// (quiet), and the block it landed in on the right.
 fn timeline_head(
     avatar: &str,
+    picture: Picture,
     who: Option<String>,
     what: &str,
     height: u64,
@@ -136,7 +139,7 @@ fn timeline_head(
         .items_center()
         .gap(design::space::SM)
         .child(
-            design::avatar(avatar, design::size::AVATAR, theme)
+            design::avatar_with(avatar, picture, design::size::AVATAR, theme)
                 .border_1()
                 .border_color(theme.border)
                 .font_weight(view::FontWeight::SEMIBOLD),
@@ -157,11 +160,18 @@ fn timeline_head(
 
 /// One line of the change's history: who did it, if forge recorded it,
 /// what happened, and the block it landed in.
-fn event(key: String, who: Option<String>, what: String, height: u64, theme: &Theme) -> AnyElement {
+fn event(
+    key: String,
+    who: Option<String>,
+    picture: Picture,
+    what: String,
+    height: u64,
+    theme: &Theme,
+) -> AnyElement {
     let avatar = who.clone().unwrap_or_default();
     div()
         .id(id(format!("forge-event-{key}")))
-        .child(timeline_head(&avatar, who, &what, height, theme))
+        .child(timeline_head(&avatar, picture, who, &what, height, theme))
         .into_any_element()
 }
 
@@ -171,39 +181,26 @@ fn forge_line(
     forge: &Forge,
     row: &chat::MsgRow,
     what: ChangeEvent,
+    cx: &mut Context<Forge>,
     theme: &Theme,
     ladder: &Ladder,
 ) -> Option<AnyElement> {
     let (change, ..) = forge.change()?;
-    let actor = |principal: Option<&forge::Principal>| {
-        principal.map(|principal| forge.principal_name(principal))
-    };
     let key = row.message_id.clone();
-    Some(match what {
+    let (by, what) = match what {
         ChangeEvent::Reply => return None,
-        ChangeEvent::Review(review) => review_card(forge, review, theme, ladder),
-        ChangeEvent::Opened => event(
-            key,
-            Some(forge.principal_name(&change.author)),
-            words::OPENED_IT.into(),
-            row.height,
-            theme,
-        ),
-        ChangeEvent::Merged { by, oid } => event(
-            key,
-            actor(by),
-            words::merged_into(&change.into, oid),
-            row.height,
-            theme,
-        ),
-        ChangeEvent::Closed { by } => {
-            event(key, actor(by), words::CLOSED_IT.into(), row.height, theme)
-        }
-    })
+        ChangeEvent::Review(review) => return Some(review_card(forge, review, cx, theme, ladder)),
+        ChangeEvent::Opened => (Some(&change.author), words::OPENED_IT.to_owned()),
+        ChangeEvent::Merged { by, oid } => (by, words::merged_into(&change.into, oid)),
+        ChangeEvent::Closed { by } => (by, words::CLOSED_IT.to_owned()),
+    };
+    let who = by.map(|by| forge.principal_name(by));
+    let picture = by.and_then(|by| forge.picture(by, cx));
+    Some(event(key, who, picture, what, row.height, theme))
 }
 
 /// The hidden chat channel of this change, in chat's row shape.
-fn messages(forge: &Forge, theme: &Theme, ladder: &Ladder) -> AnyElement {
+fn messages(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     let Some((change, _, _, _)) = forge.change() else {
         return div().into_any_element();
     };
@@ -244,12 +241,14 @@ fn messages(forge: &Forge, theme: &Theme, ladder: &Ladder) -> AnyElement {
                 match forge.change_event(message) {
                     Some(ChangeEvent::Reply) => {}
                     Some(what) => {
-                        column = column.children(forge_line(forge, message, what, theme, ladder));
+                        column =
+                            column.children(forge_line(forge, message, what, cx, theme, ladder));
                         continue;
                     }
                     None => continue,
                 }
                 let author = forge.principal_name(&message.author);
+                let picture = forge.picture(&message.author, cx);
                 column = column.child(
                     div()
                         .id(id(format!("forge-message-{}", message.message_id)))
@@ -258,6 +257,7 @@ fn messages(forge: &Forge, theme: &Theme, ladder: &Ladder) -> AnyElement {
                         .gap(design::space::XS)
                         .child(timeline_head(
                             &author,
+                            picture,
                             Some(author.clone()),
                             "replied",
                             message.height,

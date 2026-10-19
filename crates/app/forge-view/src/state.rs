@@ -53,6 +53,12 @@ pub struct Forge {
     pub(crate) logs: BTreeMap<Query, (Entity<Paged<CommitInfo>>, Subscription)>,
     #[serde(skip)]
     pub(crate) names: Loadable<chat::view::Names>,
+    // each account's picture by its card's blob (identity's), re-read on
+    // identity's heads, and the pictures read so far
+    #[serde(skip)]
+    pub(crate) avatars: BTreeMap<u64, abi::BlobId>,
+    #[serde(skip)]
+    pub(crate) pictures: Option<Entity<view::pictures::Pictures>>,
     #[serde(skip)]
     pub(crate) writers: BTreeMap<String, Loadable<Option<identity::Ownership>>>,
     #[serde(skip)]

@@ -76,6 +76,7 @@ pub(crate) fn render(
         .child(access_row(
             "owner",
             forge.principal_name(&repo.repo.owner),
+            forge.picture(&repo.repo.owner, cx),
             "Owner",
             None,
             theme,
@@ -176,6 +177,7 @@ fn flags(
 fn access_row(
     key: &str,
     name: String,
+    picture: crate::select::Picture,
     role: &str,
     action: Option<AnyElement>,
     theme: &Theme,
@@ -189,7 +191,7 @@ fn access_row(
         .border_b_1()
         .border_color(theme.border)
         .child(
-            design::avatar(&name, design::size::AVATAR, theme)
+            design::avatar_with(&name, picture, design::size::AVATAR, theme)
                 .border_1()
                 .border_color(theme.border)
                 .font_weight(FontWeight::SEMIBOLD),
@@ -363,6 +365,7 @@ fn writer_rows(
             access_row(
                 &key.key(),
                 forge.writer_name(key),
+                forge.writer_picture(key, cx),
                 words::CAN_WRITE,
                 Some(action.into_any_element()),
                 theme,

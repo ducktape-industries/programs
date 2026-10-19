@@ -98,6 +98,10 @@ pub(crate) enum Stage<'a, T = Reply> {
 
 const UNLISTED: &Ownership = &Ownership::Anyone;
 
+// A face's picture, once read: `None` while it is read, and for an
+// account with none.
+pub(crate) type Picture = Option<std::sync::Arc<view::Image>>;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Writer {
     Party(Party),
@@ -560,6 +564,21 @@ impl Forge {
         match self.names.ready() {
             Some(names) => names.member(principal),
             None => chat::view::unnamed(principal),
+        }
+    }
+
+    // `who`'s picture, once read: their card's; its first ask reads it.
+    pub(crate) fn picture(&self, who: &Principal, cx: &mut Context<Self>) -> Picture {
+        let blob = self.avatars.get(&who.account()?)?;
+        let pictures = self.pictures.as_ref()?;
+        pictures.update(cx, |pictures, cx| pictures.get(blob, cx))
+    }
+
+    // A writer's picture: an account's, once read.
+    pub(crate) fn writer_picture(&self, writer: &Writer, cx: &mut Context<Self>) -> Picture {
+        match writer {
+            Writer::Party(Party::Account(number)) => self.picture(&Principal::Account(*number), cx),
+            Writer::Party(Party::Program(_)) | Writer::Everyone => None,
         }
     }
 

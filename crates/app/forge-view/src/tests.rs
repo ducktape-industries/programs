@@ -342,6 +342,18 @@ pub(crate) fn configure(cx: &mut TestAppContext, mode: &'static str) {
             })
         });
     cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
+    // each card's picture: no account holds one
+    cx.host()
+        .handle::<ProgramQuery<Identity>>(|_| Ok(no_accounts()));
+}
+
+// identity's accounts with none listed: no picture to draw.
+pub(crate) fn no_accounts() -> identity::Reply {
+    identity::Reply::Accounts(identity::PageResponse {
+        height: 1,
+        items: Vec::new(),
+        next: None,
+    })
 }
 
 /// `key` seated on the test chain, connected, holding `account`.
@@ -898,6 +910,8 @@ fn a_refused_read_keeps_its_reason_and_offers_one_retry() {
         .handle::<Ask>(|_| Err(refusal("refused-object-not-held")));
     cx.host()
         .handle::<ProgramQuery<::chat::Chat>>(|_| Ok(chat::Reply::Accounts(accounts())));
+    cx.host()
+        .handle::<ProgramQuery<Identity>>(|_| Ok(no_accounts()));
     cx.open::<Forge>();
     cx.run_until_parked();
     let sentence = "object ffffffffffffffffffffffffffffffffffffffff is not held by this node";
@@ -1923,6 +1937,9 @@ mod phone_tests;
 
 #[path = "policies_tests.rs"]
 mod policies_tests;
+
+#[path = "faces_tests.rs"]
+mod faces_tests;
 
 #[test]
 fn copy_puts_the_address_on_the_clipboard_without_opening_the_repository() {
