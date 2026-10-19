@@ -6,7 +6,7 @@ use identity::Ownership;
 use std::collections::BTreeMap;
 use view::prelude::*;
 
-use crate::{PAGE, Reactors, SPAN, WINDOW};
+use crate::{PAGE, Reactors, WINDOW};
 
 fn page(after: Option<Vec<u8>>, limit: usize) -> PageRequest {
     PageRequest {
@@ -156,18 +156,21 @@ pub(crate) async fn beside(
     Ok(sorted(rows.into_iter().filter(past).collect()))
 }
 
+// The rows `first..=last`, and only as many as that: around the span's
+// middle, half its width each way.
 pub(crate) async fn span(
     host: Host,
     channel_id: String,
     (first, last): (u64, u64),
     viewer: Vec<Principal>,
 ) -> Result<Vec<MsgRow>, Error> {
+    let width = usize::try_from(last - first + 1).unwrap_or(usize::MAX);
     let rows = host
         .query(ask::MessagesAround {
             channel_id,
             seq: first.midpoint(last),
             viewer,
-            page: page(None, SPAN),
+            page: page(None, width),
         })
         .await?;
     let held = |row: &MsgRow| (first..=last).contains(&row.seq);

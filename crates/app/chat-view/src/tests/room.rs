@@ -548,7 +548,7 @@ fn a_landed_room_rereads_its_window() {
                 ..
             } => {
                 assert_eq!((channel_id.as_str(), seq), ("general", 1), "its middle");
-                assert_eq!(page.limit, Some(SPAN as u64), "as wide as a window grows");
+                assert_eq!(page.limit, Some(2), "as wide as the window it holds");
                 Reply::Messages(vec![row(1, 7, "hello"), row(2, 8, "edited since")])
             }
             Query::Channels { .. } => Reply::Channels(page(vec![channel("general", "General", 3)])),

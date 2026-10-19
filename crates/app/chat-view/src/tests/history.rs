@@ -123,8 +123,11 @@ fn a_block_reads_again_only_the_rows_it_wrote_and_a_new_root_one_page() {
     let since = &asked(&cx)[before..];
     let roots = |query: &Query| matches!(query, Query::Roots { .. });
     assert!(!since.iter().any(roots), "no page of roots: {since:?}");
-    let around = |query: &Query| matches!(query, Query::MessagesAround { seq: 595, .. });
-    assert!(since.iter().any(around), "the row it wrote: {since:?}");
+    let around = |query: &Query| matches!(query, Query::MessagesAround { seq: 595, page, .. } if page.limit == Some(1));
+    assert!(
+        since.iter().any(around),
+        "the row it wrote, alone: {since:?}"
+    );
     let reactors = |query: &Query| matches!(query, Query::Reactors { seqs, .. } if seqs == &[595]);
     assert!(
         since.iter().any(reactors),

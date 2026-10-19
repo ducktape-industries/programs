@@ -1245,12 +1245,13 @@ fn reacted(rows: &[MsgRow]) -> Vec<u64> {
     reacted.map(|row| row.seq).collect()
 }
 
-// `seqs`, ascending, in runs one read answers: each under a span apart.
+// `seqs`, ascending, in runs of neighbours: one read each, of those rows
+// alone, so a block that wrote one row reads one row.
 fn spans(seqs: &[u64]) -> Vec<(u64, u64)> {
     let mut spans: Vec<(u64, u64)> = Vec::new();
     for &seq in seqs {
         match spans.last_mut() {
-            Some((first, last)) if seq - *first < SPAN as u64 => *last = seq,
+            Some((_, last)) if seq == *last + 1 => *last = seq,
             _ => spans.push((seq, seq)),
         }
     }
