@@ -606,6 +606,27 @@ fn an_edit_cancelled_leaves_no_draft_and_opens_from_the_message_again() {
     view.read(|chat| assert!(chat.drafts.contains_key("edit-general-2")));
 }
 
+// The desktop's `@` menu, open in the whole view, whose every frame the
+// audit holds: a list box of the people and agents it offers, each an
+// option a key reaches; forge's own account is none of them.
+#[test]
+fn the_desktop_mention_menu_is_a_list_box_every_frame_passes() {
+    let (mut cx, _) = opened();
+    cx.simulate_bounds("chat-pane", (260., 0.), (840., 760.));
+    cx.simulate_bounds("draft-general", (276., 640.), (808., 104.));
+    cx.simulate_input("draft-general/editor", "@");
+    let Some(wire::Node::UniformList { count, .. }) = cx.find("draft-general/mentions") else {
+        panic!("the choices are a list: {:?}", cx.texts())
+    };
+    assert_eq!(*count, 3, "eddy, reviewer and ada");
+    let menu = cx.interactivity("draft-general/mention-menu");
+    assert_eq!(menu.role, Some(view::Role::ListBox));
+    let ada = cx.interactivity("draft-general/mention/<@10>");
+    assert_eq!(ada.role, Some(view::Role::ListBoxOption));
+    assert!(ada.focusable);
+    assert!(cx.find("draft-general/mention/<@9>").is_none());
+}
+
 #[test]
 fn the_pane_says_where_it_is_for_the_mention_menu() {
     let (mut cx, chat) = opened();

@@ -84,9 +84,7 @@ fn drawn_with(draft: &Draft, key: &str, choices: &[MentionChoice]) -> wire::Node
     tree
 }
 
-/// The composer's tree unaudited: only for what the tree carries beside
-/// the open @-mention menu, whose faults are
-/// `the_mention_menu_is_not_yet_reachable`'s to name.
+// The composer's tree, unaudited.
 fn lowered(draft: &Draft, key: &str, choices: &[MentionChoice]) -> wire::Node {
     lowered_styled(draft, key, choices).0
 }
@@ -324,27 +322,33 @@ fn toolbar_mention_and_restore_actions_have_reachable_aria_routes() {
         panic!("missing mention action");
     };
     assert!(interactivity.on_click.is_some());
-    assert_eq!(interactivity.role, Some(Role::MenuItem));
+    assert_eq!(interactivity.role, Some(Role::ListBoxOption));
     assert_eq!(interactivity.aria.label.as_deref(), Some("@Ada"));
-    // with the menu shut, the whole composer passes the audit
+    // with the menu open, and shut, the whole composer passes the audit
+    drawn_with(&draft, "c", &choices);
     host::selects(&draft.field, 0..0);
     drawn_with(&draft, "c", &choices);
 }
 
-/// The known faults, each and no other: the @-mention rows are menu items
-/// with no menu, which no key reaches (the keys stay in the editor) and
-/// whose `selected` a menu item does not carry. The honest shape is an
-/// EditableComboBox editor whose active descendant is the picked option,
-/// a wire change of its own; this test fails once that lands.
+// The open @-mention menu is a list box of the people it offers: each row
+// an option Tab reaches, which says whether it is the one Enter picks, so
+// the menu passes the audit.
 #[test]
-fn the_mention_menu_is_not_yet_reachable() {
-    use wire::FaultKind::{Orphan, Unreachable, UnreadState};
-    let faults: Vec<_> = wire::audit(&lowered(&caret("@A", 2), "c", &roster()))
-        .into_iter()
-        .map(|fault| (fault.path.last().cloned(), fault.kind))
-        .collect();
-    let at = |kind| (Some("c/mention/<@1>".to_owned()), kind);
-    assert_eq!(faults, [at(UnreadState), at(Unreachable), at(Orphan)]);
+fn the_mention_menu_is_a_list_box_of_reachable_options() {
+    let root = drawn_with(&caret("@A", 2), "c", &roster());
+    let held = |key| match node(&root, key) {
+        Some(wire::Node::Container(wire::ContainerNode {
+            interactivity: Some(interactivity),
+            ..
+        })) => Some(interactivity.clone()),
+        _ => None,
+    };
+    let menu = held("c/mention-menu").expect("the menu is open");
+    assert_eq!(menu.role, Some(Role::ListBox));
+    let row = held("c/mention/<@1>").expect("Ada is offered");
+    assert_eq!(row.role, Some(Role::ListBoxOption));
+    assert!(row.focusable && row.on_click.is_some());
+    assert_eq!(row.aria.selected, Some(true));
 }
 
 #[test]
@@ -622,9 +626,9 @@ fn what_is_typed_into_a_draft_made_in_render_is_lost() {
     assert_eq!(value, "hi");
 }
 
-/// An agent that would not answer the writer says so beside its name, a
-/// warning badge the item's name carries too; a choice with no hint draws
-/// none, and the badge adds no fault to the menu's known ones.
+// An agent that would not answer the writer says so beside its name, a
+// warning badge the item's name carries too; a choice with no hint draws
+// none, and the menu with its badge passes the audit.
 #[test]
 fn a_mention_choice_carries_its_hint() {
     let choices = vec![
@@ -641,7 +645,7 @@ fn a_mention_choice_carries_its_hint() {
             offered: true,
         },
     ];
-    let root = lowered(&caret("@", 1), "c", &choices);
+    let root = drawn_with(&caret("@", 1), "c", &choices);
     let label = |key| match node(&root, key) {
         Some(wire::Node::Container(wire::ContainerNode {
             interactivity: Some(interactivity),
@@ -657,11 +661,4 @@ fn a_mention_choice_carries_its_hint() {
     assert!(node(&root, "c/mention/<@2>/hint").is_some());
     assert!(clickable(&root, "c/mention/<@2>").is_some(), "still picked");
     assert!(node(&root, "c/mention/<@1>/hint").is_none());
-    let faults = wire::audit(&root);
-    assert!(
-        faults
-            .iter()
-            .all(|fault| fault.path.last().is_some_and(|key| !key.ends_with("/hint"))),
-        "{faults:?}"
-    );
 }

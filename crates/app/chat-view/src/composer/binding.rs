@@ -182,9 +182,10 @@ impl RenderOnce for MentionItem {
         });
         let mut row = div()
             .id(self.id)
-            .role(Role::MenuItem)
+            .role(Role::ListBoxOption)
             .aria_label(name)
             .aria_selected(self.selected)
+            .focusable()
             .w_full()
             .flex()
             .items_center()
@@ -371,6 +372,8 @@ pub(crate) fn mention_popup(
         .min_h(px(0.));
     let frame = div()
         .id(ElementId::Name(format!("{key}/mention-menu").into()))
+        .role(Role::ListBox)
+        .aria_label(words::PEOPLE)
         .w(opening.width)
         .max_h(opening.room)
         .flex()

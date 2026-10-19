@@ -91,11 +91,10 @@ fn named(key: &str) -> Option<wire::ElementIdWire> {
     Some(wire::ElementIdWire::Name(key.into()))
 }
 
-/// The mention menu's choices say why an agent would not answer the
-/// writer: scout answers its manager only, atlas the people it lists, and
-/// sage, open to anyone, says nothing; a person says nothing. (The menu
-/// draws the hint as a badge: `composer/binding/tests.rs`; with the menu
-/// open, the frame fails the audit on the menu's known faults.)
+// The mention menu's choices say why an agent would not answer the
+// writer: scout answers its manager only, atlas the people it lists, and
+// sage, open to anyone, says nothing; a person says nothing. (The menu
+// draws the hint as a badge: `composer/binding/tests.rs`.)
 #[test]
 fn the_mention_menu_says_which_agents_would_not_answer_the_writer() {
     let (_cx, view) = agents();
