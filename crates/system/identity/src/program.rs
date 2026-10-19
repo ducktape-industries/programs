@@ -18,7 +18,6 @@ impl Program for Identity {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
-    const TABLES: &'static [::program::Table] = crate::rules::TABLES;
     const RETURNS: &'static [Return] = <Op as Described>::RETURNS;
 
     fn tools() -> Tools {

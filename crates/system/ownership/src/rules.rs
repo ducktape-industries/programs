@@ -1,5 +1,5 @@
 //! The rules: the guard's verdict on each run the kernel reports, and each owner's op, over the
-//! program's tables (every one shared: the ownership program is never guarded).
+//! program's tables (the ownership program is never guarded).
 
 use ::program::kernel::error_from;
 use ::program::{
@@ -14,19 +14,19 @@ use crate::{
     ScopeDefault, Writers,
 };
 
-pub(crate) const POLICIES: Map<PolicyId, Policy> = Map::new("policy/").shared();
+pub(crate) const POLICIES: Map<PolicyId, Policy> = Map::new("policy/");
 // each owner's policies, by the owner's borsh
-pub(crate) const OWNED: Set<(Vec<u8>, PolicyId)> = Set::new("owned/").shared();
-pub(crate) const OPEN: Map<Vec<u8>, PolicyId> = Map::new("open/").shared();
-pub(crate) const RECORDS: Map<(ProgramId, Vec<u8>), Record> = Map::new("record/").shared();
-pub(crate) const LINKED: Set<(PolicyId, ProgramId, Vec<u8>)> = Set::new("linked/").shared();
+pub(crate) const OWNED: Set<(Vec<u8>, PolicyId)> = Set::new("owned/");
+pub(crate) const OPEN: Map<Vec<u8>, PolicyId> = Map::new("open/");
+pub(crate) const RECORDS: Map<(ProgramId, Vec<u8>), Record> = Map::new("record/");
+pub(crate) const LINKED: Set<(PolicyId, ProgramId, Vec<u8>)> = Set::new("linked/");
 // (owner's borsh, scope's borsh) → the policy a new item there links to
-pub(crate) const DEFAULTS: Map<(Vec<u8>, Vec<u8>), PolicyId> = Map::new("default/").shared();
-pub(crate) const NEXT: Item<PolicyId> = Item::new("next").shared();
+pub(crate) const DEFAULTS: Map<(Vec<u8>, Vec<u8>), PolicyId> = Map::new("default/");
+pub(crate) const NEXT: Item<PolicyId> = Item::new("next");
 // one-time (J-011 ⑥): each owner's "Only me (as before)", and each converted access list's
 // policy, by (program, the key it was set at)
-pub(crate) const MIGRATED: Map<Vec<u8>, PolicyId> = Map::new("migrated/").shared();
-pub(crate) const CONVERTED: Map<(ProgramId, String), PolicyId> = Map::new("converted/").shared();
+pub(crate) const MIGRATED: Map<Vec<u8>, PolicyId> = Map::new("migrated/");
+pub(crate) const CONVERTED: Map<(ProgramId, String), PolicyId> = Map::new("converted/");
 
 fn key(party: &Party) -> Vec<u8> {
     abi::encode(party)
@@ -48,15 +48,15 @@ pub(crate) fn guard(ctx: &ExecCtx, guard: Guard) -> Result<(), Error> {
     ctx.env().kernel()?;
     let actor = actor_of(&guard);
     // every check first, then every write, so a refusal writes nothing
-    let mut created = Vec::new();
+    let mut claimed = Vec::new();
     let mut dropped = Vec::new();
     for write in guard.writes {
         let at = (guard.program.clone(), write.key);
         let record = RECORDS.get(ctx, &at)?;
-        match (write.existed, record) {
-            (false, stale) if write.kept => created.push((at, stale, write.kind)),
-            (false, _) => {}
-            (true, Some(record)) => {
+        let created = !write.existed && write.kept;
+        match (created, write.claimed, record) {
+            (true, Some(kind), stale) => claimed.push((at, stale, kind)),
+            (_, _, Some(record)) => {
                 let policy = effective(ctx, record.policy)?;
                 if !admits(ctx, &policy, &record.owner, &actor)? {
                     let kind = record.kind.as_deref().unwrap_or("key");
@@ -73,19 +73,20 @@ pub(crate) fn guard(ctx: &ExecCtx, guard: Guard) -> Result<(), Error> {
                     dropped.push((at, record));
                 }
             }
-            // a key from before the guard: its owner is the migration's to record
-            (true, None) => {}
+            // no record and no claim: a shared key, or one from before the guard, whose owner is
+            // the migration's to record
+            (_, _, None) => {}
         }
     }
-    for ((program, key), stale, kind) in created {
+    for ((program, key), stale, kind) in claimed {
         if let Some(stale) = stale {
             LINKED.remove(ctx, &(stale.policy, program.clone(), key.clone()));
         }
-        let policy = default_for(ctx, &actor, kind.as_deref(), &program)?;
+        let policy = default_for(ctx, &actor, Some(&kind), &program)?;
         let record = Record {
             owner: actor.clone(),
             policy,
-            kind,
+            kind: Some(kind),
         };
         RECORDS.put(ctx, &(program.clone(), key.clone()), &record);
         LINKED.insert(ctx, &(policy, program, key));

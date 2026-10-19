@@ -13,9 +13,8 @@ ownership.workspace = true
 serde.workspace = true
 view.workspace = true
 
-# The test that holds `KINDS` to what each program's `TABLES` declares.
+# The test that holds `KINDS` to the kinds each program's owned tables claim.
 [dev-dependencies]
-program.workspace = true
 chat.workspace = true
 forge.workspace = true
 harness.workspace = true

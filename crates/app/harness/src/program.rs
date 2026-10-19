@@ -23,7 +23,6 @@ impl Program for Harness {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
-    const TABLES: &'static [::program::Table] = crate::state::TABLES;
     const RETURNS: &'static [Return] = &[
         returns::<u64>("NewThread"),
         returns::<u64>("ForkThread"),

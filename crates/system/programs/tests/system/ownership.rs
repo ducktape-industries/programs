@@ -1,6 +1,6 @@
 //! The kernel's ownership guard on ducktape's host, the ownership program bound to its role: the
-//! probe declares `o/` owned (`probe.item`) and `s/` shared, so a narrowed policy refuses another
-//! account's write to an owned key and leaves a shared one alone.
+//! probe claims `o/ada` as a `probe.item` as it creates it and writes `s/` plainly, so a narrowed
+//! policy refuses another account's write to the claimed key and leaves a shared one alone.
 use super::*;
 
 const ADA: u64 = 21;
@@ -10,6 +10,14 @@ fn set(key: &[u8]) -> Vec<Step> {
     vec![Step::Op(HostOp::Set {
         key: key.to_vec(),
         value: b"v".to_vec(),
+    })]
+}
+
+fn claim(key: &[u8]) -> Vec<Step> {
+    vec![Step::Op(HostOp::SetOwned {
+        key: key.to_vec(),
+        value: b"v".to_vec(),
+        kind: "probe.item".into(),
     })]
 }
 
@@ -37,7 +45,7 @@ fn a_narrowed_policy_refuses_another_accounts_write_to_an_owned_key() {
             policy: Some(policy),
         };
         net.apply(&public(ADA), ownership::PROGRAM, &global).await;
-        net.apply(&public(ADA), "probe", &set(b"o/ada")).await;
+        net.apply(&public(ADA), "probe", &claim(b"o/ada")).await;
         let asked = ownership::Query::Record {
             program: "probe".into(),
             key: b"o/ada".to_vec(),

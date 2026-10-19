@@ -30,11 +30,6 @@ pub trait Program {
     // An op left out returns bytes no schema names.
     const RETURNS: &'static [crate::schema::Return] = &[];
 
-    // The tables its state holds, as the kernel's ownership guard reads them (each `store`
-    // table's `table()`); `export!` writes them as the `ducktape.tables` section. A key under no
-    // table is owned.
-    const TABLES: &'static [crate::Table] = &[];
-
     // What the program tells an agent about each op and query: `tools::Tools::of::<Op, Query>()`
     // over `#[derive(Described)]`. founding writes it as the `ducktape.tools` section.
     fn tools() -> crate::tools::Tools {
@@ -272,8 +267,6 @@ macro_rules! export {
         pub extern "C" fn call(ptr: u32, len: u32) -> u64 {
             $crate::exports::call::<$program>(ptr, len)
         }
-
-        $crate::tables_section!($program);
     };
 }
 

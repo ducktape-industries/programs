@@ -4,47 +4,29 @@ use store::{Item, Map, Set};
 
 use crate::{AccountNumber, Asks, CheckRow, RunRow, RunnerRow};
 
-pub const RUNS: Map<u64, RunRow> = Map::new("r/").shared();
-pub const CHECKS: Map<u64, CheckRow> = Map::new("c/").shared();
+pub const RUNS: Map<u64, RunRow> = Map::new("r/");
+pub const CHECKS: Map<u64, CheckRow> = Map::new("c/");
 // Index: each check by its repository and commit.
-pub const BY_COMMIT: Set<(String, String, u64)> = Set::new("k/").shared();
+pub const BY_COMMIT: Set<(String, String, u64)> = Set::new("k/");
 // Index: each check of a run, its reruns included.
-pub const BY_RUN: Set<(u64, u64)> = Set::new("b/").shared();
+pub const BY_RUN: Set<(u64, u64)> = Set::new("b/");
 // Index: the runs whose open checks the next run on their line supersedes, by repository and
 // line: a push's branch, or a change's Preview ref (`refs/changes/<n>/merge`).
-pub const LINES: Set<(String, Vec<u8>, u64)> = Set::new("l/").shared();
+pub const LINES: Set<(String, Vec<u8>, u64)> = Set::new("l/");
 // Index: the checks no runner has claimed.
-pub const QUEUED: Set<u64> = Set::new("q/").shared();
+pub const QUEUED: Set<u64> = Set::new("q/");
 // The open change whose source a repository's ref is.
-pub const SOURCES: Map<(String, Vec<u8>), u64> = Map::new("o/").shared();
+pub const SOURCES: Map<(String, Vec<u8>), u64> = Map::new("o/");
 // Index: the open changes into each branch, previewed again when it moves.
-pub const TARGETS: Set<(String, Vec<u8>, u64)> = Set::new("t/").shared();
+pub const TARGETS: Set<(String, Vec<u8>, u64)> = Set::new("t/");
 // The Previews actions asked forge for, by the message's seq, until forge answers in the
 // frame that asked.
-pub const PREVIEWING: Map<u64, (String, u64)> = Map::new("p/").shared();
+pub const PREVIEWING: Map<u64, (String, u64)> = Map::new("p/");
 // The offers actions sent runners, by the message's seq, each naming its check and runner, until
 // the runner answers in the frame that offered.
-pub const OFFERING: Map<u64, (u64, String)> = Map::new("f/").shared();
-pub const RUNNERS: Map<AccountNumber, RunnerRow> = Map::new("u/").shared();
-pub const LAST_RUN: Item<u64> = Item::new("last-run").shared();
-pub const LAST_CHECK: Item<u64> = Item::new("last-check").shared();
+pub const OFFERING: Map<u64, (u64, String)> = Map::new("f/");
+pub const RUNNERS: Map<AccountNumber, RunnerRow> = Map::new("u/");
+pub const LAST_RUN: Item<u64> = Item::new("last-run");
+pub const LAST_CHECK: Item<u64> = Item::new("last-check");
 // What each check's job asks of its pod, when its workflow states anything.
-pub const ASKS: Map<u64, Asks> = Map::new("asks/").shared();
-
-// Every table here is general data: only this program's code governs it.
-pub(crate) const TABLES: &[::program::Table] = &[
-    RUNS.table(),
-    CHECKS.table(),
-    BY_COMMIT.table(),
-    BY_RUN.table(),
-    LINES.table(),
-    QUEUED.table(),
-    SOURCES.table(),
-    TARGETS.table(),
-    PREVIEWING.table(),
-    OFFERING.table(),
-    RUNNERS.table(),
-    LAST_RUN.table(),
-    LAST_CHECK.table(),
-    ASKS.table(),
-];
+pub const ASKS: Map<u64, Asks> = Map::new("asks/");

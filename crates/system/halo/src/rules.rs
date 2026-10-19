@@ -7,9 +7,9 @@ use store::{Item, Map};
 
 use crate::{Class, Founded, Genesis, Lane, LaneId, MAX_NAME};
 
-const LANES: Map<String, Lane> = Map::new("l/").shared();
+const LANES: Map<String, Lane> = Map::new("l/");
 /// The next id ever handed out; past `LaneId::MAX` every id is spent.
-const NEXT: Item<u16> = Item::new("next").shared();
+const NEXT: Item<u16> = Item::new("next");
 
 pub(crate) fn init(ctx: &ExecCtx, genesis: Genesis) -> Result<(), Error> {
     for Founded { name, cap, pinned } in genesis.lanes {
@@ -110,6 +110,3 @@ fn already_listed(name: &str) -> Error {
 fn unlisted(name: &str) -> Error {
     not_found(format!("no lane {name}"))
 }
-
-// Every table here is general data: only this program's code governs it.
-pub(crate) const TABLES: &[::program::Table] = &[LANES.table(), NEXT.table()];

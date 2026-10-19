@@ -17,22 +17,22 @@ use crate::contract::{
 use crate::objects::hash_of;
 
 /// The bounds forge was founded with.
-pub const BOUNDS: Item<Bounds> = Item::new("bounds").shared();
+pub const BOUNDS: Item<Bounds> = Item::new("bounds");
 /// How many ops forge has accepted. Every listing cursor is pinned to it:
 /// only a forge op rewrites a listing, and two ops in one block share a
 /// height but not a count.
-pub const WRITES: Item<u64> = Item::new("writes").shared();
+pub const WRITES: Item<u64> = Item::new("writes");
 /// One record per repository, by name.
-pub const REPOS: Map<String, Repo> = Map::new("p/").shared();
+pub const REPOS: Map<String, Repo> = Map::new("p/");
 /// Index: every repository by its last activity, newest first.
-pub const ACTIVITY: Set<(u64, String)> = Set::new("a/").shared();
+pub const ACTIVITY: Set<(u64, String)> = Set::new("a/");
 /// Each repository's refs and the oid bytes each points at.
-pub const REFS: Map<(String, Vec<u8>), Vec<u8>> = Map::new("r/").shared();
+pub const REFS: Map<(String, Vec<u8>), Vec<u8>> = Map::new("r/");
 /// The last change number each repository gave out.
-pub const NUMBERS: Map<String, u64> = Map::new("n/").shared();
+pub const NUMBERS: Map<String, u64> = Map::new("n/");
 /// Changes by repository and number; a scan across repositories lists them
 /// by name (Judgment pages this table whole).
-pub const CHANGES: Map<(String, u64), Change> = Map::new("c/").shared();
+pub const CHANGES: Map<(String, u64), Change> = Map::new("c/");
 /// Reviews by repository, change number and review id.
 // Each review is its author's, of the kind `forge.review`: no op rewrites or deletes one.
 pub const REVIEWS: Map<(String, u64, u64), Owned<Review>> = Map::new("v/");
@@ -49,37 +49,36 @@ pub const AUTHORSHIP: Map<(String, u64), Owned<Authorship>> = Map::new("o/");
 // migration writes it.
 pub const CUSTODY: Map<String, Owned<Custody>> = Map::new("k/");
 /// Index: the reviews one principal submitted on one change, oldest first.
-pub const AUTHORED: Set<(String, u64, Principal, u64)> = Set::new("u/").shared();
+pub const AUTHORED: Set<(String, u64, Principal, u64)> = Set::new("u/");
 /// Index: the changes a principal authored, is asked to review, or reviewed.
-pub const INVOLVED: Set<(Principal, String, u64)> = Set::new("i/").shared();
+pub const INVOLVED: Set<(Principal, String, u64)> = Set::new("i/");
 /// The last system message id forge posted into chat.
-pub const MESSAGES: Item<u64> = Item::new("system-message-seq").shared();
+pub const MESSAGES: Item<u64> = Item::new("system-message-seq");
 // Each repository's protected branches besides its head, which always is: no rebase moves
 // one and no `DeleteBranch` deletes one.
-pub const PROTECTED: Set<(String, Vec<u8>)> = Set::new("b/").shared();
+pub const PROTECTED: Set<(String, Vec<u8>)> = Set::new("b/");
 // The programs that watch forge, each with the prefix it hears events under.
-pub const WATCHERS: Map<ProgramId, Vec<u8>> = Map::new("w/").shared();
+pub const WATCHERS: Map<ProgramId, Vec<u8>> = Map::new("w/");
 // The archives forge asked chat for, by the message's seq, each naming its change. chat
 // answers in the frame that asked, which takes the row away again.
-pub const ARCHIVING: Map<u64, (String, u64)> = Map::new("x/").shared();
+pub const ARCHIVING: Map<u64, (String, u64)> = Map::new("x/");
 // The lines forge posted to say chat refused an archive, by the message's seq, until chat
 // answers them (in the same frame).
-pub const LOGGING: Set<u64> = Set::new("l/").shared();
+pub const LOGGING: Set<u64> = Set::new("l/");
 // Each change's latest Preview.
-pub const PREVIEWS: Map<(String, u64), PreviewInfo> = Map::new("m/").shared();
+pub const PREVIEWS: Map<(String, u64), PreviewInfo> = Map::new("m/");
 // Every status a reporter gave a commit: by repository, commit, reporter and context.
-pub const STATUSES: Map<(String, String, Principal, String), CommitStatus> =
-    Map::new("s/").shared();
+pub const STATUSES: Map<(String, String, Principal, String), CommitStatus> = Map::new("s/");
 // The branches that move only by a merge whose Preview is green.
-pub const REQUIRED: Map<(String, Vec<u8>), Required> = Map::new("q/").shared();
+pub const REQUIRED: Map<(String, Vec<u8>), Required> = Map::new("q/");
 // Each branch's merge queue, in the order its changes joined: by repository, branch and place.
-pub const QUEUE: Map<(String, Vec<u8>, u64), QueueEntry> = Map::new("e/").shared();
+pub const QUEUE: Map<(String, Vec<u8>, u64), QueueEntry> = Map::new("e/");
 // Index: the branch and place each queued change holds.
-pub const QUEUED: Map<(String, u64), (Vec<u8>, u64)> = Map::new("g/").shared();
+pub const QUEUED: Map<(String, u64), (Vec<u8>, u64)> = Map::new("g/");
 // The last place a queue gave out.
-pub const QUEUE_SEQ: Item<u64> = Item::new("queue-seq").shared();
+pub const QUEUE_SEQ: Item<u64> = Item::new("queue-seq");
 // The archived repositories, by name. `ACTIVITY` holds none of them, so `Repos` lists none.
-pub const ARCHIVED: Set<String> = Set::new("h/").shared();
+pub const ARCHIVED: Set<String> = Set::new("h/");
 
 /// Stored state that is not what forge wrote: an operator's problem.
 pub(crate) fn storage(sentence: impl Into<String>) -> Error {
@@ -396,32 +395,3 @@ pub fn kept(ctx: &ExecCtx, repo: &str) -> Result<(), Error> {
     }
     Ok(())
 }
-
-// Every table here but REVIEWS, AUTHORSHIP and CUSTODY is general data: only this program's code
-// governs it.
-pub(crate) const TABLES: &[::program::Table] = &[
-    BOUNDS.table(),
-    WRITES.table(),
-    REPOS.table(),
-    ACTIVITY.table(),
-    REFS.table(),
-    NUMBERS.table(),
-    CHANGES.table(),
-    REVIEWS.table(),
-    AUTHORSHIP.table(),
-    CUSTODY.table(),
-    AUTHORED.table(),
-    INVOLVED.table(),
-    MESSAGES.table(),
-    PROTECTED.table(),
-    WATCHERS.table(),
-    ARCHIVING.table(),
-    LOGGING.table(),
-    PREVIEWS.table(),
-    STATUSES.table(),
-    REQUIRED.table(),
-    QUEUE.table(),
-    QUEUED.table(),
-    QUEUE_SEQ.table(),
-    ARCHIVED.table(),
-];

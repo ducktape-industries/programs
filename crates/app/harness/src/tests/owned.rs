@@ -1,5 +1,3 @@
-use ::program::{Held, Program as _, Table};
-
 use super::*;
 use crate::state::{CONVERSATIONS, MODELS};
 
@@ -32,17 +30,9 @@ fn compact_at(tokens: u64) -> Op {
 }
 
 #[test]
-fn harness_declares_its_models_and_agents_conversations_owned_and_every_other_table_shared() {
-    let owned: Vec<&Table> = Harness::TABLES
-        .iter()
-        .filter(|table| table.held != Held::Shared)
-        .collect();
-    assert_eq!(owned, [&MODELS.table(), &CONVERSATIONS.table()]);
-    assert_eq!(owned[0].held, Held::Owned(Some("harness.model")));
-    assert_eq!(
-        owned[1].held,
-        Held::Owned(Some("harness.agent-conversation"))
-    );
+fn harness_claims_its_models_and_agents_conversations() {
+    assert_eq!(MODELS.kind(), Some("harness.model"));
+    assert_eq!(CONVERSATIONS.kind(), Some("harness.agent-conversation"));
 }
 
 #[test]

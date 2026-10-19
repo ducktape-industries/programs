@@ -62,12 +62,19 @@ pub fn identity_role(roster: &Roster, request: &[u8]) -> Result<Vec<u8>, Error> 
 }
 pub type Verifier = Box<dyn Fn(Scheme, &[u8], &[u8], &[u8], &[u8]) -> bool>;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Touch {
+    pub existed: bool,
+    pub claimed: Option<String>,
+}
+
 #[derive(Default)]
 pub struct MockState {
     pub state: BTreeMap<Vec<u8>, Vec<u8>>,
-    // each key a run set or deleted, the first time it did, and whether it held a value then: what
-    // the kernel tells the ownership role (a `MockChain` clears it before each run)
-    pub touched: BTreeMap<Vec<u8>, bool>,
+    // each key a run set or deleted, with whether it held a value the first time and the kind a
+    // write claimed it as: what the kernel tells the ownership role (a `MockChain` clears it
+    // before each run)
+    pub touched: BTreeMap<Vec<u8>, Touch>,
     pub blobs: BTreeMap<BlobId, Blob>,
     /// The last `set_return_data`.
     pub output: Vec<u8>,
@@ -365,12 +372,17 @@ impl MockHost {
                 )),
             },
             HostOp::Set { key, value } => {
-                mock.touch(&key);
+                mock.touch(&key, None);
+                mock.state.insert(key, value);
+                HostReply::Done
+            }
+            HostOp::SetOwned { key, value, kind } => {
+                mock.touch(&key, Some(kind));
                 mock.state.insert(key, value);
                 HostReply::Done
             }
             HostOp::Delete(key) => {
-                mock.touch(&key);
+                mock.touch(&key, None);
                 mock.state.remove(&key);
                 HostReply::Done
             }
@@ -465,10 +477,14 @@ impl MockHost {
 }
 
 impl MockState {
-    fn touch(&mut self, key: &[u8]) {
-        if !self.touched.contains_key(key) {
-            let existed = self.state.contains_key(key);
-            self.touched.insert(key.to_vec(), existed);
+    fn touch(&mut self, key: &[u8], claim: Option<String>) {
+        let existed = self.state.contains_key(key);
+        let touch = self.touched.entry(key.to_vec()).or_insert(Touch {
+            existed,
+            claimed: None,
+        });
+        if claim.is_some() {
+            touch.claimed = claim;
         }
     }
 

@@ -22,45 +22,44 @@ type Seq = u64;
 // writes its row, its meta and its seats included, so the channel's policy decides who may.
 pub const CHANNELS: Map<ChannelId, Owned<ChannelRow>> = Map::new("channel/");
 // a channel's meta, beside its row: the ops that write it rewrite the row too
-pub const CHANNEL_META: Map<ChannelId, BTreeMap<String, String>> =
-    Map::new("channel-meta/").shared();
+pub const CHANNEL_META: Map<ChannelId, BTreeMap<String, String>> = Map::new("channel-meta/");
 /// The newest message's seq, per channel.
-pub const HEADS: Map<ChannelId, Seq> = Map::new("head/").shared();
+pub const HEADS: Map<ChannelId, Seq> = Map::new("head/");
 // each message as chat keeps it
-pub const MESSAGES: Map<(ChannelId, Seq), Stored> = Map::new("stored/").shared();
+pub const MESSAGES: Map<(ChannelId, Seq), Stored> = Map::new("stored/");
 /// Where each message id lives: ids are unique across channels.
 // Each id is its author's, of the kind `chat.message`: only a post writes it, and the author's
 // own edit or delete writes it again, so the message's policy decides them. The message itself
 // (`MESSAGES`) is shared, since replies and reactions by others rewrite its row; a moderator's
 // delete writes the tombstone there and the channel's row, never the author's id.
 pub const MESSAGE_IDS: Map<String, Owned<(ChannelId, Seq), Authored>> = Map::new("message-id/");
-pub const MEMBERS: Map<(ChannelId, Principal), MemberRow> = Map::new("member/").shared();
+pub const MEMBERS: Map<(ChannelId, Principal), MemberRow> = Map::new("member/");
 /// Who chose which emoji: `(channel, seq, emoji, principal)`.
-pub const REACTIONS: Set<(ChannelId, Seq, String, Principal)> = Set::new("reaction/").shared();
+pub const REACTIONS: Set<(ChannelId, Seq, String, Principal)> = Set::new("reaction/");
 
 /// Timeline roots, newest first: `(channel, newest_first(seq))`.
-pub const ROOTS: Set<(ChannelId, Seq)> = Set::new("root/").shared();
+pub const ROOTS: Set<(ChannelId, Seq)> = Set::new("root/");
 /// Thread replies in post order: `(channel, root, reply)`.
-pub const REPLIES: Set<(ChannelId, Seq, Seq)> = Set::new("reply/").shared();
+pub const REPLIES: Set<(ChannelId, Seq, Seq)> = Set::new("reply/");
 /// Each author's answered threads, newest answer first:
 /// `(channel, root author, newest_first(last reply))` → the root's seq.
-pub const ANSWERED: Map<(ChannelId, Principal, Seq), Seq> = Map::new("answered/").shared();
-pub const PARTICIPANTS: Map<(ChannelId, Seq, Principal), Seq> = Map::new("participant/").shared();
+pub const ANSWERED: Map<(ChannelId, Principal, Seq), Seq> = Map::new("answered/");
+pub const PARTICIPANTS: Map<(ChannelId, Seq, Principal), Seq> = Map::new("participant/");
 // who listens to each channel, and the height each began: `(channel, account)` → height
-pub const LISTENERS: Map<(ChannelId, AccountNumber), u64> = Map::new("listener/").shared();
+pub const LISTENERS: Map<(ChannelId, AccountNumber), u64> = Map::new("listener/");
 // the channels each account listens to: `(account, channel)`
-pub const LISTENING: Set<(AccountNumber, ChannelId)> = Set::new("listening/").shared();
+pub const LISTENING: Set<(AccountNumber, ChannelId)> = Set::new("listening/");
 // each principal's first message in each channel's timeline: `(channel, principal)` → its seq
-pub const POSTED: Map<(ChannelId, Principal), Seq> = Map::new("posted/").shared();
+pub const POSTED: Map<(ChannelId, Principal), Seq> = Map::new("posted/");
 // each principal's first mention in each thread's replies (its root says its own):
 // `(channel, root, principal)` → the seq of the reply that mentioned it
-pub const MENTIONED: Map<(ChannelId, Seq, Principal), Seq> = Map::new("mentioned/").shared();
+pub const MENTIONED: Map<(ChannelId, Seq, Principal), Seq> = Map::new("mentioned/");
 // what of each channel still tells an account that cut its notices: `(account, channel)`
-pub const NOTICES: Map<(AccountNumber, ChannelId), Notices> = Map::new("notices/").shared();
+pub const NOTICES: Map<(AccountNumber, ChannelId), Notices> = Map::new("notices/");
 // who watches each channel for a wait, and the height each began: `(channel, account)` → height
-pub const WATCHERS: Map<(ChannelId, AccountNumber), u64> = Map::new("watcher/").shared();
+pub const WATCHERS: Map<(ChannelId, AccountNumber), u64> = Map::new("watcher/");
 // the channels each account watches: `(account, channel)`
-pub const WATCHING: Set<(AccountNumber, ChannelId)> = Set::new("watching/").shared();
+pub const WATCHING: Set<(AccountNumber, ChannelId)> = Set::new("watching/");
 
 // A message as chat keeps it: the [`MsgRow`] a read answers, less what a
 // read derives (its flat text and `#tags`, from `blocks`; whether the
@@ -236,26 +235,3 @@ impl Kind for Authored {
 impl Kind for ChannelRow {
     const KIND: &'static str = "chat.channel";
 }
-
-// Every table here but CHANNELS and MESSAGE_IDS is general data: only this program's code governs
-// it.
-pub(crate) const TABLES: &[::program::Table] = &[
-    CHANNELS.table(),
-    CHANNEL_META.table(),
-    HEADS.table(),
-    MESSAGES.table(),
-    MESSAGE_IDS.table(),
-    MEMBERS.table(),
-    REACTIONS.table(),
-    ROOTS.table(),
-    REPLIES.table(),
-    ANSWERED.table(),
-    PARTICIPANTS.table(),
-    LISTENERS.table(),
-    LISTENING.table(),
-    NOTICES.table(),
-    WATCHERS.table(),
-    WATCHING.table(),
-    POSTED.table(),
-    MENTIONED.table(),
-];

@@ -1,9 +1,7 @@
-//! The guard over a native chain: `notes` writes the keys each op names (an owned `n/` table of
+//! The guard over a native chain: `notes` writes the keys each op names (claiming each `n/` key as a
 //! `test.note`, a shared `c/` counter), and `bot` sends `notes` the same op as its own account.
 
-use ::program::{
-    Error, ExecCtx, MockChain, Origin, Program, QueryCtx, Reply as Wanted, Table, code,
-};
+use ::program::{Error, ExecCtx, MockChain, Origin, Program, QueryCtx, Reply as Wanted, code};
 use abi::role::ownership::Write;
 
 use crate::*;
@@ -17,12 +15,11 @@ impl Program for Notes {
     type Op = Writes;
     type Query = ();
     type Reply = ();
-    const TABLES: &'static [Table] = &[Table::owned("n/", "test.note"), Table::shared("c/")];
-
     fn execute(ctx: &ExecCtx, writes: Writes) -> Result<(), Error> {
         for (key, value) in writes {
+            let claim = key.starts_with("n/").then_some("test.note");
             match value {
-                Some(value) => ctx.set(key, value),
+                Some(value) => ctx.set_with(key, value, claim),
                 None => ctx.delete(key),
             }
         }
@@ -370,6 +367,26 @@ fn only_an_items_owner_relinks_or_transfers_it() {
 }
 
 #[test]
+fn the_kernel_reads_a_record_at_the_key_records_keep_it() {
+    for (program, key) in [("chat", b"m\0/7".as_slice()), ("", b""), ("notes", b"n/a")] {
+        let at = (program.to_owned(), key.to_vec());
+        assert_eq!(
+            crate::rules::RECORDS.key(&at),
+            abi::role::ownership::record_key(program, key)
+        );
+    }
+}
+
+#[test]
+fn a_key_created_with_no_claim_has_no_owner() {
+    let chain = chain();
+    note(&chain, "ada", "c/loose", Some("hers")).unwrap();
+    assert_eq!(record(&chain, "c/loose"), None);
+    note(&chain, "bob", "c/loose", Some("his")).unwrap();
+    note(&chain, "bob", "c/loose", None).unwrap();
+}
+
+#[test]
 fn only_the_kernel_guards_and_its_bytes_are_the_kernels() {
     let chain = chain();
     let guard = abi::role::ownership::Guard {
@@ -378,7 +395,7 @@ fn only_the_kernel_guards_and_its_bytes_are_the_kernels() {
         sender: Some(abi::Principal::Account(1)),
         writes: vec![Write {
             key: b"n/z".to_vec(),
-            kind: None,
+            claimed: Some("test.note".into()),
             existed: false,
             kept: true,
         }],
@@ -410,7 +427,7 @@ impl Program for Adopter {
 
     fn execute(ctx: &ExecCtx, op: Adopting) -> Result<(), Error> {
         match op {
-            Adopting::Write(key) => ctx.set(key, b"v".to_vec()),
+            Adopting::Write(key) => ctx.set_with(key, b"v".to_vec(), Some("test.old")),
             Adopting::Adopt(items) => crate::adopt(ctx, items)?,
         }
         Ok(())

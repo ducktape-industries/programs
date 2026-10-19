@@ -4,7 +4,7 @@
 use std::marker::PhantomData;
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use program::{Error, Held, Range, Table};
+use program::{Error, Range};
 use program::{ExecCtx, QueryCtx, corrupt};
 
 use crate::key::KeyCodec;
@@ -16,12 +16,11 @@ use crate::page::{Listing, PageRequest, PageResponse};
 /// (`"m/"` beside `"m/x/"` would read each other's rows).
 pub struct Map<K, V> {
     prefix: &'static str,
-    shared: bool,
     _types: PhantomData<fn() -> (K, V)>,
 }
 
-// What a table's rows are: the value each holds, and the kind an owned row is of (none for a
-// plain value, whose table is owned of no kind unless it is `shared()`).
+// What a table's rows are: the value each holds, and the kind a write claims each row as (none for
+// a plain value, whose rows are shared).
 pub trait Row {
     type Value: BorshSerialize + BorshDeserialize;
     const KIND: Option<&'static str>;
@@ -39,7 +38,7 @@ pub trait Kind {
 }
 
 // The rows of a table of owned `T`s: `Map<K, Owned<T>>` reads and writes `T` itself, the same
-// bytes, and declares its prefix owned of `T`'s kind. A row type another crate defines (an abi
+// bytes, and each put claims its row as `T`'s kind, so the row a put creates is its writer's. A row type another crate defines (an abi
 // role's) names its kind through a marker of the program's own: `Owned<ServiceRow, Service>`.
 pub struct Owned<T, K = T>(PhantomData<fn() -> (T, K)>);
 
@@ -52,29 +51,13 @@ impl<K: KeyCodec, V: Row> Map<K, V> {
     pub const fn new(prefix: &'static str) -> Self {
         Map {
             prefix,
-            shared: false,
             _types: PhantomData,
         }
     }
 
-    // The table's rows are general data: no owner, no policy, and the kernel never guards them.
-    pub const fn shared(self) -> Self {
-        Map {
-            shared: true,
-            ..self
-        }
-    }
-
-    // The table as `Program::TABLES` lists it.
-    pub const fn table(&self) -> Table {
-        let held = match self.shared {
-            true => Held::Shared,
-            false => Held::Owned(V::KIND),
-        };
-        Table {
-            prefix: self.prefix,
-            held,
-        }
+    // The kind each put claims its row as: `Owned<T>`'s, none for a plain value.
+    pub const fn kind(&self) -> Option<&'static str> {
+        V::KIND
     }
 
     /// The table's prefix followed by `head`: a full key, or the leading
@@ -112,7 +95,7 @@ impl<K: KeyCodec, V: Row> Map<K, V> {
 
     /// Writes the row at `key`, replacing any.
     pub fn put(&self, ctx: &ExecCtx, key: &K, value: &V::Value) {
-        ctx.set(self.key(key), abi::encode(value));
+        ctx.set_with(self.key(key), abi::encode(value), V::KIND);
     }
 
     /// Removes the row at `key` (a missing row is no error).
@@ -226,16 +209,6 @@ impl<K: KeyCodec> Set<K> {
         }
     }
 
-    pub const fn shared(self) -> Self {
-        Set {
-            map: self.map.shared(),
-        }
-    }
-
-    pub const fn table(&self) -> Table {
-        self.map.table()
-    }
-
     pub fn key<H: KeyCodec>(&self, head: &H) -> Vec<u8> {
         self.map.key(head)
     }
@@ -305,7 +278,6 @@ impl<K: KeyCodec> Set<K> {
 /// genesis gave.
 pub struct Item<T> {
     key: &'static str,
-    shared: bool,
     _type: PhantomData<fn() -> T>,
 }
 
@@ -313,27 +285,7 @@ impl<T: Row> Item<T> {
     pub const fn new(key: &'static str) -> Self {
         Item {
             key,
-            shared: false,
             _type: PhantomData,
-        }
-    }
-
-    pub const fn shared(self) -> Self {
-        Item {
-            shared: true,
-            ..self
-        }
-    }
-
-    // The item as `Program::TABLES` lists it: its key is the table's prefix.
-    pub const fn table(&self) -> Table {
-        let held = match self.shared {
-            true => Held::Shared,
-            false => Held::Owned(T::KIND),
-        };
-        Table {
-            prefix: self.key,
-            held,
         }
     }
 
@@ -345,7 +297,7 @@ impl<T: Row> Item<T> {
     }
 
     pub fn put(&self, ctx: &ExecCtx, value: &T::Value) {
-        ctx.set(self.key.as_bytes().to_vec(), abi::encode(value));
+        ctx.set_with(self.key.as_bytes().to_vec(), abi::encode(value), T::KIND);
     }
 
     /// Reads the value (or its default), lets `change` alter it, stores and returns it.

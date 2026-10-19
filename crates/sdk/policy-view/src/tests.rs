@@ -1,24 +1,23 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use ownership::{Party, Policy, Scope, ScopeDefault, Writers};
-use program::{Held, Program};
-
 use crate::{Holdings, KINDS, PROGRAMS, scope, writers};
-
-// Each owned kind `P` declares, with the program's name.
-fn owned<P: Program>() -> impl Iterator<Item = (&'static str, &'static str)> {
-    P::TABLES.iter().filter_map(|table| match &table.held {
-        Held::Owned(Some(kind)) => Some((P::NAME, *kind)),
-        _ => None,
-    })
-}
+use ownership::{Party, Policy, Scope, ScopeDefault, Writers};
 
 #[test]
-fn the_kinds_are_the_ones_the_programs_declare() {
-    let declared: BTreeSet<_> = owned::<chat::Chat>()
-        .chain(owned::<forge::Forge>())
-        .chain(owned::<harness::Harness>())
-        .chain(owned::<egress::Egress>())
+fn the_kinds_are_the_ones_the_programs_claim() {
+    let claimed = [
+        ("chat", chat::tables::CHANNELS.kind()),
+        ("chat", chat::tables::MESSAGE_IDS.kind()),
+        ("forge", forge::tables::REVIEWS.kind()),
+        ("forge", forge::tables::AUTHORSHIP.kind()),
+        ("forge", forge::tables::CUSTODY.kind()),
+        ("harness", harness::tables::MODELS.kind()),
+        ("harness", harness::tables::CONVERSATIONS.kind()),
+        ("egress", egress::tables::SERVICES.kind()),
+    ];
+    let declared: BTreeSet<_> = claimed
+        .into_iter()
+        .map(|(program, kind)| (program, kind.expect("an owned table")))
         .collect();
     let listed: BTreeSet<_> = KINDS.iter().map(|kind| (kind.program, kind.name)).collect();
     assert_eq!(listed, declared);

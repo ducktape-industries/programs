@@ -1,12 +1,9 @@
 //! The program: every op and every query, each handed to its rule.
 
 use ::program::schema::{Return, returns};
-use ::program::{Error, ExecCtx, Program, QueryCtx, Table};
+use ::program::{Error, ExecCtx, Program, QueryCtx};
 
-use crate::rules::{
-    self, CONVERTED, DEFAULTS, LINKED, MIGRATED, NEXT, OPEN, OWNED, POLICIES, RECORDS, create,
-    edit, relink, retire, set_default, switch, transfer,
-};
+use crate::rules::{self, create, edit, relink, retire, set_default, switch, transfer};
 use crate::{Op, PROGRAM, PolicyId, Query, Reply};
 
 pub struct Ownership;
@@ -17,17 +14,6 @@ impl Program for Ownership {
     type Query = Query;
     type Reply = Reply;
     const RETURNS: &'static [Return] = &[returns::<PolicyId>("Create")];
-    const TABLES: &'static [Table] = &[
-        POLICIES.table(),
-        OWNED.table(),
-        OPEN.table(),
-        RECORDS.table(),
-        LINKED.table(),
-        DEFAULTS.table(),
-        NEXT.table(),
-        MIGRATED.table(),
-        CONVERTED.table(),
-    ];
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         match op {

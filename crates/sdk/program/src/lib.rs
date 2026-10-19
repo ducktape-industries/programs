@@ -58,7 +58,6 @@ pub mod refuse;
 pub mod schema;
 pub mod section;
 pub mod source;
-pub mod tables;
 pub mod tools;
 
 pub use abi;
@@ -76,7 +75,9 @@ pub use kernel::{
     Principal, ProgramId, Range, Roles, Ticket, code,
 };
 #[cfg(not(target_arch = "wasm32"))]
-pub use mock::{Called, MockHost, MockState, Resumed, Sibling, Verifier, blob_id, identity_role};
+pub use mock::{
+    Called, MockHost, MockState, Resumed, Sibling, Touch, Verifier, blob_id, identity_role,
+};
 #[cfg(target_arch = "wasm32")]
 pub use program::exports;
 pub use program::{Ask, Program, Reads, access, execute, hook, is_name, query, resource};
@@ -85,4 +86,3 @@ pub use refuse::{
     already_exists, capacity, corrupt, decoded, invalid, not_found, stale, unauthorized,
     unexpected_reply, wrong_state,
 };
-pub use tables::{Held, Table};

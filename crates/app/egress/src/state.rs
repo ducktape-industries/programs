@@ -26,12 +26,12 @@ impl Kind for Service {
 }
 
 pub const SERVICES: Map<String, Owned<ServiceRow, Service>> = Map::new("service/");
-pub const NODES: Map<Vec<u8>, NodeRow> = Map::new("node/").shared();
-pub const SERVING: Set<(String, Vec<u8>)> = Set::new("serving/").shared();
-pub const TURNS: Map<String, u64> = Map::new("turn/").shared();
-pub const REQUESTS: Map<u64, Stored> = Map::new("request/").shared();
-pub const ASSIGNED: Set<(Vec<u8>, u64)> = Set::new("assigned/").shared();
-pub const COUNT: Item<u64> = Item::new("count").shared();
+pub const NODES: Map<Vec<u8>, NodeRow> = Map::new("node/");
+pub const SERVING: Set<(String, Vec<u8>)> = Set::new("serving/");
+pub const TURNS: Map<String, u64> = Map::new("turn/");
+pub const REQUESTS: Map<u64, Stored> = Map::new("request/");
+pub const ASSIGNED: Set<(Vec<u8>, u64)> = Set::new("assigned/");
+pub const COUNT: Item<u64> = Item::new("count");
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Stream {
@@ -46,18 +46,5 @@ pub struct Ending {
     pub end: StreamEnd,
 }
 
-pub const STREAMS: Map<u64, Stream> = Map::new("stream/").shared();
-pub const EARLY: Map<(u64, u64), Vec<u8>> = Map::new("early/").shared();
-
-// Every table here but SERVICES is general data: only this program's code governs it.
-pub(crate) const TABLES: &[::program::Table] = &[
-    SERVICES.table(),
-    NODES.table(),
-    SERVING.table(),
-    TURNS.table(),
-    REQUESTS.table(),
-    ASSIGNED.table(),
-    COUNT.table(),
-    STREAMS.table(),
-    EARLY.table(),
-];
+pub const STREAMS: Map<u64, Stream> = Map::new("stream/");
+pub const EARLY: Map<(u64, u64), Vec<u8>> = Map::new("early/");

@@ -1,4 +1,4 @@
-use ::program::{Held, MockChain, Origin, Ownership, Program as _, Table, code};
+use ::program::{MockChain, Origin, Ownership, code};
 
 use crate::state::{CHANNELS, MESSAGE_IDS};
 use crate::{Op, PostPolicy, Principal};
@@ -80,14 +80,9 @@ fn reshapes(n: u64) -> Vec<Op> {
 }
 
 #[test]
-fn chat_declares_its_channels_and_messages_owned_and_every_other_table_shared() {
-    let owned: Vec<&Table> = crate::Chat::TABLES
-        .iter()
-        .filter(|table| table.held != Held::Shared)
-        .collect();
-    assert_eq!(owned, [&CHANNELS.table(), &MESSAGE_IDS.table()]);
-    assert_eq!(owned[0].held, Held::Owned(Some("chat.channel")));
-    assert_eq!(owned[1].held, Held::Owned(Some("chat.message")));
+fn chat_claims_its_channels_and_messages() {
+    assert_eq!(CHANNELS.kind(), Some("chat.channel"));
+    assert_eq!(MESSAGE_IDS.kind(), Some("chat.message"));
 }
 
 #[test]

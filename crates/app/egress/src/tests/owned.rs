@@ -1,5 +1,3 @@
-use ::program::{Held, Table};
-
 use super::*;
 use crate::state::{SERVICES, Service};
 
@@ -28,16 +26,8 @@ fn assign(nodes: &[[u8; 32]]) -> Op {
 }
 
 #[test]
-fn egress_declares_its_services_owned_and_every_other_table_shared() {
-    let owned: Vec<&Table> = Egress::TABLES
-        .iter()
-        .filter(|table| table.held != Held::Shared)
-        .collect();
-    assert_eq!(owned, [&SERVICES.table()]);
-    assert_eq!(
-        owned[0].held,
-        Held::Owned(Some(<Service as store::Kind>::KIND))
-    );
+fn egress_claims_each_service_it_registers() {
+    assert_eq!(SERVICES.kind(), Some(<Service as store::Kind>::KIND));
     assert_eq!(<Service as store::Kind>::KIND, "egress.service");
 }
 

@@ -10,8 +10,8 @@ and `Transfer`.
   `forge.repo`, `forge.change`, `forge.review`, `harness.model`,
   `harness.agent-conversation`, `egress.service`), the program that keeps it
   and what a person calls it; `PROGRAMS`, the programs that keep them, each
-  once; `kind(name)`. A test holds `KINDS` to what each program's `TABLES`
-  declares owned, so a new owned kind fails it until it is listed here.
+  once; `kind(name)`. A test holds `KINDS` to the kinds the programs' owned
+  tables claim (each `Map<_, Owned<T>>`'s `kind()`).
 - `writers(write, owner, reader, names)`: who may write the items on a policy,
   beside its owner, in words: "Anyone", "Only you", "You, Ada and board" to the
   owner, "Only Maya" to anyone else. `party(party, names)` and `scope(scope)`

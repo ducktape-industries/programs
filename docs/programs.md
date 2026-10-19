@@ -390,35 +390,32 @@ told of every frame a block carries through `Program::hook(ctx, record)`.
 chain, `Root`); a program that does not override `hook` refuses the call.
 `activity` is the one this repo founds.
 
-Every key a program writes is **owned** unless the program declares the
-table it falls in **shared**: the kernel hands each run's owned writes to the
-ownership role, which records who created each key and refuses another
-account's change where the creator's policy says so ([roles.md](roles.md),
-the ownership row). A program lists its tables once, as
-`Program::TABLES`, and `export!` writes them into its code as the
-`ducktape.tables` section:
+Every key a program writes is **shared** (general data: no owner, no policy,
+only the program's own code governs it) unless the write that creates it
+**claims** it: `ctx.set_with(key, value, Some(kind))` sends the kernel's
+`SetOwned`, and the account the frame acts as becomes the key's owner, an
+item of that kind. From then on the kernel hands every run that writes the
+key to the ownership role, which refuses another account's change where the
+owner's policy says so ([roles.md](roles.md), the ownership row). A claim on
+a key that already holds a value is a plain write. A table of owned items is
+a `Map<K, Owned<T>>`, whose every `put` claims its row:
 
 ```rust
-const VOTES: Map<(String, AccountNumber), u8> = Map::new("vote/").shared();
+const VOTES: Map<(String, AccountNumber), u8> = Map::new("vote/");
 const POLLS: Map<String, Owned<PollRow>> = Map::new("poll/");
 
 impl Kind for PollRow {
     const KIND: &'static str = "poll.poll";
 }
-
-// in `impl Program for Poll`
-const TABLES: &'static [Table] = &[VOTES.table(), POLLS.table()];
 ```
 
-`.shared()` (on `Map`, `Set` and `Item`) makes a table general data: no
-owner, no policy, only the program's own code governs it, as for a counter
-or an index many accounts write. `Map<K, Owned<T>>` reads and writes `T`
-itself, the same bytes as `Map<K, T>`, and names its rows' kind (`T::KIND`),
-which a user's defaults and policies know them by. A row type another crate
+`Map<K, Owned<T>>` reads and writes `T` itself, the same bytes as
+`Map<K, T>`, and claims each row it creates as `T::KIND`, which a user's
+defaults and policies know it by (`kind()` says it). A row type another crate
 defines names its kind through a marker type of the program's own
-(`Map<String, Owned<ServiceRow, Service>>`, `impl Kind for Service`). A plain table that is
-neither is owned with no kind. This repo's programs declare their tables
-shared, and move each kind of owned item over one at a time (forge's reviews,
+(`Map<String, Owned<ServiceRow, Service>>`, `impl Kind for Service`). Every
+other table, and a raw `ctx.set`, is shared, and a program that never claims
+pays nothing for the guard. This repo's programs own these kinds (forge's reviews,
 `forge.review`, egress's services, `egress.service`, harness's models,
 `harness.model`, chat's channels and messages, `chat.channel` and
 `chat.message`, forge's changes and repositories, `forge.change` and
@@ -719,11 +716,11 @@ then). `chain.init(program, &params)` runs `init` as the kernel admits a
 program: one frame, what it emits run after it, a refusal undoing it all.
 Before each op the chain asks the program's `access` as the kernel does, and
 when it answers needs, runs the access role's `Check` on the program seated
-there (seat `access::Access` under `"access"`); and once a run that wrote
-keys outside its `TABLES`' shared ones returns, the chain asks the program
-seated at the ownership role, as the kernel does, before anything the run
-emitted runs (seat `ownership::Ownership` under `"ownership"`; with none
-seated, nothing is guarded);
+there (seat `access::Access` under `"access"`); and once a run that claimed a
+new key, or changed a key the ownership program holds a record for, returns,
+the chain asks the program seated at the ownership role, as the kernel does,
+before anything the run emitted runs (seat `ownership::Ownership` under
+`"ownership"`; with none seated, nothing is guarded);
 `chain.at(height, time)` moves the chain to another block. The two tests that matter
 for poll: the announcement lands in the frame that opened the poll, and a
 room that refuses the line still gets its poll while a refused closing

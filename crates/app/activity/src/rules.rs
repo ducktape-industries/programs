@@ -5,10 +5,10 @@ use store::{Map, PageRequest, PageResponse};
 
 use crate::{Frame, Used};
 
-const FRAMES: Map<(u64, u32), Frame> = Map::new("f/").shared();
-const SIGNED: Map<(Vec<u8>, u64, u32), Frame> = Map::new("k/").shared();
-const ACTED: Map<(AccountNumber, u64, u32), Frame> = Map::new("a/").shared();
-const USED: Map<(AccountNumber, ProgramId), u64> = Map::new("u/").shared();
+const FRAMES: Map<(u64, u32), Frame> = Map::new("f/");
+const SIGNED: Map<(Vec<u8>, u64, u32), Frame> = Map::new("k/");
+const ACTED: Map<(AccountNumber, u64, u32), Frame> = Map::new("a/");
+const USED: Map<(AccountNumber, ProgramId), u64> = Map::new("u/");
 
 fn newest_first(frame: &Frame) -> (u64, u32) {
     (u64::MAX - frame.height, u32::MAX - frame.position)
@@ -65,7 +65,3 @@ pub(crate) fn used(ctx: &QueryCtx, page: &PageRequest) -> Result<PageResponse<Us
             frames,
         }))
 }
-
-// Every table here is general data: only this program's code governs it.
-pub(crate) const TABLES: &[::program::Table] =
-    &[FRAMES.table(), SIGNED.table(), ACTED.table(), USED.table()];

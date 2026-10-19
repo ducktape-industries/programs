@@ -1,12 +1,12 @@
-//! The kernel's ownership guard, run natively: `Keeper` writes the keys its op names under a shared
-//! table, an owned one and none, and `Guardian`, seated at the ownership role, keeps each guard it
-//! is asked and refuses or sends as its host is told to.
+//! The kernel's ownership guard, run natively: `Keeper` writes the keys its op names, claiming
+//! each `o/` key it creates as a `test.item`, and `Guardian`, seated at the ownership role, keeps
+//! each guard it is asked and refuses or sends as its host is told to.
 
-use abi::role::ownership::{Guard, Op as Guarded, Write};
+use abi::role::ownership::{Guard, Op as Guarded, Write, record_key};
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use super::*;
-use crate::{Reply, Table};
+use crate::Reply;
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 enum Step {
@@ -17,22 +17,28 @@ enum Step {
 
 struct Keeper;
 
+fn claim(key: &str) -> Option<&'static str> {
+    key.starts_with("o/").then_some("test.item")
+}
+
 impl Program for Keeper {
     const NAME: &'static str = "keeper";
     type Op = Vec<Step>;
     type Query = ();
     type Reply = ();
-    const TABLES: &'static [Table] = &[Table::shared("s/"), Table::owned("o/", "test.item")];
 
     fn init(ctx: &ExecCtx, _: &[u8]) -> Result<(), Error> {
-        ctx.set(b"o/genesis".to_vec(), b"x".to_vec());
+        ctx.set_with(b"o/genesis".to_vec(), b"x".to_vec(), claim("o/genesis"));
         Ok(())
     }
 
     fn execute(ctx: &ExecCtx, steps: Vec<Step>) -> Result<(), Error> {
         for step in steps {
             match step {
-                Step::Set(key) => ctx.set(key, b"v".to_vec()),
+                Step::Set(key) => {
+                    let kind = claim(&key);
+                    ctx.set_with(key, b"v".to_vec(), kind)
+                }
                 Step::Delete(key) => ctx.delete(key),
                 Step::Emit(target, steps) => {
                     ctx.emit(target, &steps, Reply::None);
@@ -95,24 +101,33 @@ fn guards(chain: &MockChain) -> Vec<(Env, Guard)> {
         .unwrap_or_default()
 }
 
+fn record(chain: &MockChain, key: &str) {
+    chain
+        .host("ownership")
+        .borrow_mut()
+        .state
+        .insert(record_key("keeper", key.as_bytes()), Vec::new());
+}
+
 fn set(key: &str) -> Step {
     Step::Set(key.into())
 }
 
-fn write(key: &str, kind: Option<&str>, existed: bool, kept: bool) -> Write {
+fn write(key: &str, claimed: Option<&str>, existed: bool, kept: bool) -> Write {
     Write {
         key: key.as_bytes().to_vec(),
-        kind: kind.map(str::to_owned),
+        claimed: claimed.map(str::to_owned),
         existed,
         kept,
     }
 }
 
 #[test]
-fn a_run_tells_the_guardian_each_owned_key_once_and_no_shared_one() {
+fn a_run_tells_the_guardian_each_claimed_create_and_recorded_key_once() {
     let chain = chain();
     chain.init("keeper", &()).unwrap();
     assert!(guards(&chain).is_empty(), "init is not guarded");
+    record(&chain, "loose");
     let steps = vec![
         set("s/a"),
         set("o/b"),
@@ -138,10 +153,11 @@ fn a_run_tells_the_guardian_each_owned_key_once_and_no_shared_one() {
         [
             write("loose", None, false, true),
             write("o/b", Some("test.item"), false, true),
-            write("o/genesis", Some("test.item"), true, false),
-        ]
+        ],
+        "an unrecorded key from before, deleted, and a claim that went again ask nothing"
     );
     chain.submit(ada(), "keeper", &vec![set("s/only")]).unwrap();
+    chain.submit(ada(), "keeper", &vec![set("o/b")]).unwrap();
     assert_eq!(guards(&chain).len(), 1, "shared writes ask nothing");
 }
 

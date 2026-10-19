@@ -25,7 +25,6 @@ impl Program for Chat {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
-    const TABLES: &'static [::program::Table] = crate::state::TABLES;
     const RETURNS: &'static [::program::schema::Return] =
         <Op as ::program::tools::Described>::RETURNS;
 

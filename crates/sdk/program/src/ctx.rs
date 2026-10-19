@@ -354,6 +354,27 @@ impl ExecCtx {
         })
     }
 
+    // Writes `value` at `key` as `set` does; with a kind, the write also claims the key: when it
+    // creates the key, the account the frame acts as becomes its owner, an item of that kind,
+    // and the ownership role guards every later write to it. A claim on a key that already
+    // holds a value is a plain write.
+    pub fn set_with(
+        &self,
+        key: impl Into<Vec<u8>>,
+        value: impl Into<Vec<u8>>,
+        claim: Option<&str>,
+    ) {
+        let (key, value) = (key.into(), value.into());
+        match claim {
+            Some(kind) => self.done(HostOp::SetOwned {
+                key,
+                value,
+                kind: kind.to_owned(),
+            }),
+            None => self.done(HostOp::Set { key, value }),
+        }
+    }
+
     /// Removes `key` from this program's state (a missing key is no error).
     pub fn delete(&self, key: impl Into<Vec<u8>>) {
         self.done(HostOp::Delete(key.into()))

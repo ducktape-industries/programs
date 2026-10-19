@@ -63,18 +63,11 @@ fn record(sandbox: &MemorySandbox, n: u64, id: u64) -> Option<ownership::Record>
 }
 
 #[test]
-fn forge_declares_its_reviews_changes_and_repositories_owned_and_every_other_table_shared() {
-    let owned: Vec<_> = Forge::TABLES
-        .iter()
-        .filter(|table| table.held != program::Held::Shared)
-        .collect();
-    assert_eq!(
-        owned,
-        [&REVIEWS.table(), &AUTHORSHIP.table(), &CUSTODY.table()]
-    );
-    assert_eq!(owned[0].held, program::Held::Owned(Some("forge.review")));
-    assert_eq!(owned[1].held, program::Held::Owned(Some("forge.change")));
-    assert_eq!(owned[2].held, program::Held::Owned(Some("forge.repo")));
+fn forge_claims_its_reviews_changes_and_repositories() {
+    assert_eq!(REVIEWS.kind(), Some("forge.review"));
+    assert_eq!(AUTHORSHIP.kind(), Some("forge.change"));
+    assert_eq!(CUSTODY.kind(), Some("forge.repo"));
+    assert_eq!(REPOS.kind(), None);
 }
 
 #[test]

@@ -15,20 +15,20 @@ use store::{Item, Map, Set};
 use crate::{Op, PROGRAM, PodRow, RunRow, SERVICE};
 
 // The block time each check was offered at, until its run claims it.
-pub(crate) const OFFERED: Map<u64, u64> = Map::new("o/").shared();
+pub(crate) const OFFERED: Map<u64, u64> = Map::new("o/");
 // The data of each pod's `ended` event, until its run reads it.
-pub(crate) const ENDED: Map<String, Vec<u8>> = Map::new("e/").shared();
-pub(crate) const RUNS: Map<u64, RunRow> = Map::new("r/").shared();
+pub(crate) const ENDED: Map<String, Vec<u8>> = Map::new("e/");
+pub(crate) const RUNS: Map<u64, RunRow> = Map::new("r/");
 // Each check's pod, kept as soon as the pods service names it, until a run deletes it.
-pub(crate) const PODS: Map<u64, PodRow> = Map::new("p/").shared();
+pub(crate) const PODS: Map<u64, PodRow> = Map::new("p/");
 // The checks the quota had no room for, left queued until one of this runner's pods ends.
-pub(crate) const WAITING: Set<u64> = Set::new("w/").shared();
+pub(crate) const WAITING: Set<u64> = Set::new("w/");
 // The checks whose pod is being made, from just before the POST until its answer.
-pub(crate) const MAKING: Set<u64> = Set::new("m/").shared();
+pub(crate) const MAKING: Set<u64> = Set::new("m/");
 // How many pods this runner holds at once; unset, 1.
-pub(crate) const CONCURRENT: Item<u64> = Item::new("concurrent").shared();
+pub(crate) const CONCURRENT: Item<u64> = Item::new("concurrent");
 // The cut-off runs a Sweep handed to a `Resume`, until it runs.
-pub(crate) const ADOPTING: Map<u64, Adopting> = Map::new("a/").shared();
+pub(crate) const ADOPTING: Map<u64, Adopting> = Map::new("a/");
 
 // A `Resume` scheduled for block `at`, by a Sweep at block time `time`.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -784,15 +784,3 @@ fn waited_on(ctx: &QueryCtx, egress: &ProgramId, id: u64) -> Result<String, Erro
         .map(str::to_owned)
         .ok_or_else(|| wrong_state(format!("request {id} is not a pod's wait")))
 }
-
-// Every table here is general data: only this program's code governs it.
-pub(crate) const TABLES: &[::program::Table] = &[
-    OFFERED.table(),
-    ENDED.table(),
-    RUNS.table(),
-    PODS.table(),
-    WAITING.table(),
-    ADOPTING.table(),
-    MAKING.table(),
-    CONCURRENT.table(),
-];

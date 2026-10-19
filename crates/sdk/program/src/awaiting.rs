@@ -314,7 +314,5 @@ macro_rules! export_awaiting {
         pub extern "C" fn call(ptr: u32, len: u32) -> u64 {
             $crate::awaiting::exports::call::<$program>(ptr, len)
         }
-
-        $crate::tables_section!($program);
     };
 }

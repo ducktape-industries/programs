@@ -1,4 +1,4 @@
-//! The kinds of item the ownership program records, as the programs' `TABLES` declare them (a
+//! The kinds of item the ownership program records, as the programs' owned tables claim them (a
 //! test holds the two together), and what a person calls each.
 
 // One kind of owned item: its name in ownership, the program that keeps it, and its words.

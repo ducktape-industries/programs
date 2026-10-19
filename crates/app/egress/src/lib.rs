@@ -21,6 +21,11 @@ pub use program::Egress;
 pub use rules::service_key;
 pub use store::{PageRequest, PageResponse};
 
+// The table of the services egress claims, for what reads its owned kinds.
+pub mod tables {
+    pub use crate::state::SERVICES;
+}
+
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
 pub const PROGRAM: &str = "egress";

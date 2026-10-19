@@ -6,9 +6,9 @@ use program::kernel::error_from;
 use program::{Error, ExecCtx, ProgramId, QueryCtx, Range, unauthorized, wrong_state};
 use store::{Map, Set};
 
-const TICKETS: Map<Ticket, TicketRow> = Map::new("t/").shared();
-const BY_FRAME: Set<(FrameId, Ticket)> = Set::new("f/").shared();
-const OWED: Set<(ProgramId, Ticket)> = Set::new("o/").shared();
+const TICKETS: Map<Ticket, TicketRow> = Map::new("t/");
+const BY_FRAME: Set<(FrameId, Ticket)> = Set::new("f/");
+const OWED: Set<(ProgramId, Ticket)> = Set::new("o/");
 
 fn open(ctx: &ExecCtx, row: &TicketRow) {
     TICKETS.put(ctx, &row.ticket, row);
@@ -109,6 +109,3 @@ pub(crate) fn owed(
     let tickets = OWED.scan(ctx, range)?.into_iter().map(|(_, ticket)| ticket);
     rows(ctx, tickets)
 }
-
-// Every table here is general data: only this program's code governs it.
-pub(crate) const TABLES: &[::program::Table] = &[TICKETS.table(), BY_FRAME.table(), OWED.table()];

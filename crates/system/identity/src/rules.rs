@@ -11,14 +11,14 @@ use crate::{
     Life, Op, Reference, Reply, Script,
 };
 
-pub(crate) const ACCOUNTS: Map<AccountNumber, Account> = Map::new("a/").shared();
-pub(crate) const OF_KEY: Map<Vec<u8>, AccountNumber> = Map::new("k/").shared();
-pub(crate) const OF_PROGRAM: Map<ProgramId, AccountNumber> = Map::new("m/").shared();
-const GENERATION: Map<Vec<u8>, u64> = Map::new("g/").shared();
+pub(crate) const ACCOUNTS: Map<AccountNumber, Account> = Map::new("a/");
+pub(crate) const OF_KEY: Map<Vec<u8>, AccountNumber> = Map::new("k/");
+pub(crate) const OF_PROGRAM: Map<ProgramId, AccountNumber> = Map::new("m/");
+const GENERATION: Map<Vec<u8>, u64> = Map::new("g/");
 /// `(manager, managed)`: the program accounts an account manages, revoked
 /// ones too, so a manager's list keeps what they answered for.
-pub(crate) const MANAGED: Set<(AccountNumber, AccountNumber)> = Set::new("d/").shared();
-const NEXT: Item<AccountNumber> = Item::new("next").shared();
+pub(crate) const MANAGED: Set<(AccountNumber, AccountNumber)> = Set::new("d/");
+const NEXT: Item<AccountNumber> = Item::new("next");
 
 pub(crate) fn account(ctx: &QueryCtx, number: AccountNumber) -> Result<Account, Error> {
     ACCOUNTS
@@ -553,13 +553,3 @@ pub(crate) fn runs(
         Life::Revoked => Err(revoked(number)),
     }
 }
-
-// Every table here is general data: only this program's code governs it.
-pub(crate) const TABLES: &[::program::Table] = &[
-    ACCOUNTS.table(),
-    OF_KEY.table(),
-    OF_PROGRAM.table(),
-    GENERATION.table(),
-    MANAGED.table(),
-    NEXT.table(),
-];

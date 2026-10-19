@@ -16,7 +16,6 @@ impl Program for Programs {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
-    const TABLES: &'static [::program::Table] = crate::rules::TABLES;
 
     fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
         init(ctx, decoded::<Genesis>(PROGRAM, "Genesis", params)?);

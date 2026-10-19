@@ -11,11 +11,11 @@ use store::{Item, Map, PageRequest, Set};
 
 use crate::{Genesis, INVITE_NAMESPACE, Invite, Membership, Motion, Op, Pending, Role, Voted};
 
-pub(crate) const MEMBERS: Map<Vec<u8>, Membership> = Map::new("m/").shared();
-const CAP: Item<u32> = Item::new("cap").shared();
-const DOOR: Item<bool> = Item::new("door").shared();
-const SPENT: Set<Vec<u8>> = Set::new("spent/").shared();
-const VOTES: Map<Vec<u8>, Vec<Vec<u8>>> = Map::new("votes/").shared();
+pub(crate) const MEMBERS: Map<Vec<u8>, Membership> = Map::new("m/");
+const CAP: Item<u32> = Item::new("cap");
+const DOOR: Item<bool> = Item::new("door");
+const SPENT: Set<Vec<u8>> = Set::new("spent/");
+const VOTES: Map<Vec<u8>, Vec<Vec<u8>>> = Map::new("votes/");
 const KEY_LEN: usize = 32;
 
 pub(crate) fn init(ctx: &ExecCtx, genesis: Genesis) -> Result<(), Error> {
@@ -414,12 +414,3 @@ fn door_word(open: bool) -> &'static str {
         false => "closed",
     }
 }
-
-// Every table here is general data: only this program's code governs it.
-pub(crate) const TABLES: &[::program::Table] = &[
-    MEMBERS.table(),
-    CAP.table(),
-    DOOR.table(),
-    SPENT.table(),
-    VOTES.table(),
-];

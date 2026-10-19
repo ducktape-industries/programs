@@ -100,17 +100,3 @@ fn validators(ctx: &QueryCtx) -> Result<Vec<Vec<u8>>, Error> {
         other => Err(unexpected_reply(&role, "Validators", &other)),
     }
 }
-
-// blob::contract's BUNDLES, INDEX and NEXT, all general data
-pub(crate) const TABLES: &[::program::Table] = &[
-    ::program::Table::shared("b/"),
-    ::program::Table::shared("i/"),
-    ::program::Table::shared("next"),
-];
-
-#[test]
-fn the_tables_are_the_contracts_keys() {
-    use blob::contract::{BUNDLES, INDEX, NEXT};
-    let prefixes: Vec<&[u8]> = TABLES.iter().map(|table| table.prefix.as_bytes()).collect();
-    assert_eq!(prefixes, [BUNDLES, INDEX, NEXT]);
-}

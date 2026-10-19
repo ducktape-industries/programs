@@ -15,7 +15,6 @@ impl Program for Actions {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
-    const TABLES: &'static [::program::Table] = crate::state::TABLES;
 
     fn init(ctx: &ExecCtx, _params: &[u8]) -> Result<(), Error> {
         let watch = forge::Op::Watch {

@@ -56,7 +56,6 @@ struct Seat {
     query: Entry<QueryCtx>,
     access: Entry<QueryCtx>,
     resource: Lookup,
-    tables: Vec<ownership::Table>,
 }
 
 enum Call<'a> {
@@ -331,7 +330,6 @@ impl MockChain {
             query: Rc::new(|ctx, request| crate::query::<M>(&ctx, request)),
             access: Rc::new(|ctx, payload| crate::access::<M>(&ctx, payload)),
             resource: Rc::new(|ctx, key| crate::resource::<M>(&ctx, key)),
-            tables: crate::tables::declared(M::TABLES),
         };
         let roster = self.roster.clone();
         if let Some(identity) = self.roles.get(role::IDENTITY) {
@@ -746,8 +744,9 @@ impl MockChain {
     }
 
     // The kernel's ownership guard (`crates/kernel/host/src/lib.rs`, `guard`): once a run that
-    // wrote owned keys returns, and before anything it emitted runs, one call to the program
-    // seated at the ownership role, as the chain. Not guarded: init, the chain's own runs, the
+    // claimed a new key, or changed a key the ownership program holds a record for, returns, and
+    // before anything it emitted runs, one call to the program seated at the ownership role, as
+    // the chain. Not guarded: init, the chain's own runs, the
     // validators' messages and the ownership program's own runs; with no program seated there,
     // nothing is.
     fn guard(&self, env: &Env, seat: &Seat, runs_an_op: bool) -> Result<(), Error> {
@@ -765,16 +764,20 @@ impl MockChain {
         }
         let writes: Vec<ownership::Write> = {
             let state = &seat.host.borrow().state;
+            let records = &guarding.host.borrow().state;
             touched
                 .into_iter()
-                .filter(|(key, _)| !ownership::shared(&seat.tables, key))
-                .filter_map(|(key, existed)| {
+                .filter_map(|(key, touch)| {
                     let kept = state.contains_key(&key);
-                    let kind = ownership::kind_of(&seat.tables, &key);
-                    (existed || kept).then_some(ownership::Write {
+                    let recorded = records.contains_key(&ownership::record_key(&env.program, &key));
+                    let created = !touch.existed && kept;
+                    let claims = created && touch.claimed.is_some();
+                    let changed = touch.existed || kept;
+                    let asks = claims || (changed && recorded);
+                    asks.then_some(ownership::Write {
                         key,
-                        kind,
-                        existed,
+                        claimed: touch.claimed,
+                        existed: touch.existed,
                         kept,
                     })
                 })
