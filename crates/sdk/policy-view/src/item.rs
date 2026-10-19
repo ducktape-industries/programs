@@ -450,6 +450,20 @@ pub fn row<V: 'static>(
     ladder: &Ladder,
     theme: &Theme,
 ) -> Option<Stateful<Div>> {
+    row_titled(editing, id, WHO, lens, cx, ladder, theme)
+}
+
+// The row under its own title, for an item whose policy decides something else than an edit
+// ("Who can start its conversations").
+pub fn row_titled<V: 'static>(
+    editing: &Editing,
+    id: &str,
+    title: &'static str,
+    lens: Lens<V>,
+    cx: &mut Context<V>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> Option<Stateful<Div>> {
     editing.item.as_ref()?;
     let row =
         design::row(id.to_owned(), ladder, theme)
@@ -458,7 +472,7 @@ pub fn row<V: 'static>(
                 design::icon("shield", ladder.icon_row).text_color(theme.muted),
             ))
             .child(
-                design::row_words(design::row_title(WHO, ladder, theme))
+                design::row_words(design::row_title(title, ladder, theme))
                     .child(design::row_caption(said(editing), ladder, theme)),
             );
     if !editing.owns() {
@@ -488,7 +502,7 @@ pub(crate) fn said(editing: &Editing) -> String {
 
 // "You · Team · You, Ada and board", "Maya · Open · Anyone", or for an item no record names, what
 // it is before policies.
-pub(crate) fn about(standing: &Standing, reader: Option<&Party>) -> String {
+pub fn about(standing: &Standing, reader: Option<&Party>) -> String {
     let (Some(record), Some(policy)) = (&standing.record, &standing.policy) else {
         return BEFORE.to_owned();
     };

@@ -48,10 +48,9 @@ fn rows(
     ladder: &Ladder,
 ) -> impl IntoElement + use<> {
     let models = view.models.ready().map_or(&[][..], Vec::as_slice);
-    let roster = view.roster.ready();
     let rows: Vec<Stateful<Div>> = models
         .iter()
-        .map(|model| row(model, roster, cx, theme, ladder))
+        .map(|model| row(view, model, cx, theme, ladder))
         .collect();
     div()
         .flex()
@@ -94,19 +93,16 @@ fn rows(
         }))
 }
 
-// A record: a press opens its form.
+// A record: whose it is and its policy; a press opens its form.
 fn row(
+    view: &Agents,
     model: &Model,
-    roster: Option<&crate::read::Roster>,
     cx: &mut Context<Agents>,
     theme: &Theme,
     ladder: &Ladder,
 ) -> Stateful<Div> {
     let row = model.row.clone();
-    let owner = roster.map_or_else(
-        || format!("account {}", row.owner),
-        |roster| roster.name(row.owner),
-    );
+    let owner = crate::policies::model_words(view, model);
     let (serving, tone) = serving_words(model.serving(), theme);
     let more = match model.services.len() {
         0 | 1 => String::new(),
@@ -249,6 +245,7 @@ pub(super) fn form(
         .flex_col()
         .gap(space::LG)
         .p(space::BLOCK)
+        .children(crate::policies::model_row(view, cx, ladder, theme))
         .child(id)
         .child(
             div()

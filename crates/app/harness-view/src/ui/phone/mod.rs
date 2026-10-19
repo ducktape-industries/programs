@@ -45,6 +45,7 @@ pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
         Screen::SetModel => (models::form(view, cx, &theme, ladder), None),
         Screen::Create => (create::page(view, cx, &theme, ladder), None),
     };
+    let sheet = crate::policies::sheet(view, cx, ladder, &theme).or(sheet);
     let back = (sheet.is_some() || depth(view) > 0)
         .then(|| cx.listener(|view: &mut Agents, _: &BackEvent, _, cx| view.back(cx)));
     div()

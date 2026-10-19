@@ -43,6 +43,11 @@ use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 pub use gate::{agent_key, conversation_key, model_key, thread_key};
 pub use state::{Written, written};
 
+// The owned tables: the keys ownership records a model and an agent's conversations under.
+pub mod tables {
+    pub use crate::state::{CONVERSATIONS, MODELS};
+}
+
 pub const PROGRAM: &str = "harness";
 pub const PART: &str = "part";
 

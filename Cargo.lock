@@ -2792,6 +2792,8 @@ dependencies = [
  "files",
  "harness",
  "identity",
+ "ownership",
+ "policy-view",
  "program",
  "serde",
  "serde_json",

@@ -20,6 +20,10 @@ egress.workspace = true
 # an agent's configuration is a file in files: the form commits it
 files.workspace = true
 access.workspace = true
+# who can start an agent's conversations and edit a model: ownership's answers, in policy-view's
+# words
+ownership.workspace = true
+policy-view.workspace = true
 program.workspace = true
 # `dm_peers`: a DM's place reads as the person it is with
 chat.workspace = true

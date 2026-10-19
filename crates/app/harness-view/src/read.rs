@@ -757,6 +757,8 @@ pub(crate) struct Model {
     pub row: ModelRow,
     // every service that reaches it, the record's first, each with the member nodes serving it
     pub services: Vec<(String, usize)>,
+    // whose it is and its policy, as ownership says, for the reader
+    pub standing: policy_view::Standing,
 }
 
 impl Model {
@@ -765,7 +767,8 @@ impl Model {
     }
 }
 
-pub(crate) async fn models(host: Host) -> Result<Vec<Model>, Error> {
+pub(crate) async fn models(host: Host, me: Option<u64>) -> Result<Vec<Model>, Error> {
+    let reader = me.map(ownership::Party::Account);
     let rows = host
         .query_all(|after| harness::ask::Models { page: page(after) })
         .await?;
@@ -782,7 +785,13 @@ pub(crate) async fn models(host: Host) -> Result<Vec<Model>, Error> {
             let serving = served(&host, &service).await?;
             services.push((service, serving));
         }
-        models.push(Model { row, services });
+        let held = crate::policies::model_item(&row.id);
+        let standing = policy_view::item::standing(host.clone(), held, reader.clone()).await?;
+        models.push(Model {
+            row,
+            services,
+            standing,
+        });
     }
     Ok(models)
 }

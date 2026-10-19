@@ -13,6 +13,7 @@ use super::{
     BOUND_WORDS, agent_gone, back, bound_badge, caption, closed_badge, current_badge, fact, fold,
     meter, no_node, opened, panel, state_badge, thinking_picker, waiting,
 };
+use crate::policies::{CLAIM, CLAIM_HINT};
 use crate::read::{self, Detail, Roster};
 use crate::words::{
     PROBLEM_CAPTION, about, agent_sentence, ago, answers, compacts_words, context_short,
@@ -412,6 +413,38 @@ fn removing(
     )
 }
 
+// Claim, for the agent's manager while nobody holds its conversations.
+fn claim(
+    view: &Agents,
+    detail: &Detail,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Option<impl IntoElement + use<>> {
+    let setup = detail.setup.as_ref()?;
+    let agent = setup.agent;
+    if !view.claims(agent, setup.manager) {
+        return None;
+    }
+    let press = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
+        view.converse(harness::Op::ClaimConversations { agent }, cx)
+    });
+    Some(
+        div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(space::SM)
+            .py(space::SM)
+            .child(
+                design::button("agent-claim", CLAIM, ladder, theme, press)
+                    .kind(design::Kind::Outline)
+                    .enabled(view.acting.is_none()),
+            )
+            .child(caption(CLAIM_HINT, theme)),
+    )
+}
+
 fn threads(
     view: &Agents,
     detail: &Detail,
@@ -421,6 +454,8 @@ fn threads(
     theme: &Theme,
     ladder: &Ladder,
 ) -> impl IntoElement + use<> {
+    let policy = crate::policies::conversations_row(view, cx, ladder, theme);
+    let claim = claim(view, detail, cx, theme, ladder);
     let current = detail.setup.as_ref().and_then(|setup| setup.current);
     let threshold = detail
         .setup
@@ -574,6 +609,8 @@ fn threads(
                 )
                 .children(actions),
         )
+        .children(policy)
+        .children(claim)
         .children(rows)
         .when(detail.threads.is_empty(), |list| {
             list.child(div().py(space::SM).child(design::quiet(

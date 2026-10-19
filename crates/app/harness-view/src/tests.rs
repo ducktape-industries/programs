@@ -5,6 +5,7 @@ mod conversations;
 mod live_calls;
 mod models;
 mod phone;
+mod policies;
 mod reads;
 mod server_tools;
 mod thinking;
@@ -586,6 +587,16 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
         let net = shared.borrow();
         Ok(match query {
             identity::Query::List { .. } => identity::Reply::Accounts(page(net.accounts.clone())),
+            identity::Query::Profile { number } => identity::Reply::Profile(
+                net.accounts
+                    .iter()
+                    .find(|account| account.number == number)
+                    .map(|account| identity::Profile {
+                        number,
+                        name: account.card.name.clone(),
+                        kind: identity::Kind::User,
+                    }),
+            ),
             other => panic!("unexpected query: {other:?}"),
         })
     });
@@ -630,6 +641,14 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
     });
     cx.host()
         .handle::<Submit<access::Access>>(|_| Ok(applied(Vec::new())));
+    // nothing harness keeps has an owner on record: each keeps the rule from before policies
+    cx.host().handle::<Query<ownership::Ownership>>(|query| {
+        Ok(match query {
+            ownership::Query::Record { .. } => ownership::Reply::Record(None),
+            ownership::Query::Effective { .. } => ownership::Reply::Policy(None),
+            query => panic!("unexpected ownership query: {query:?}"),
+        })
+    });
     let shared = net.clone();
     cx.host().handle::<Query<egress::Egress>>(move |query| {
         let net = shared.borrow();

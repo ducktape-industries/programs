@@ -1,8 +1,8 @@
 # policy-view
 
 What a view shows of the `ownership` program's policies, written once for every
-view that links it (settings-view's Policies pane; chat-view's and forge-view's
-"Who can edit" rows; harness-view next). It links `ownership` and `identity`
+view that links it (settings-view's Policies pane; chat-view's, forge-view's
+and harness-view's "Who can edit" rows). It links `ownership` and `identity`
 with `program` off, and `view`; its only writes are the item sheets' `Relink`
 and `Transfer`.
 
@@ -40,3 +40,6 @@ and `Transfer`.
   policy… (`Relink`, among their live policies) and Transfer… (an account found
   by name or `#number`, then a plain confirm that names it). An item with no
   record reads "Open (from before policies)". `item::find` is that lookup.
+  `item::row_titled` is the row under another title (harness-view's "Who can
+  start its conversations"), and `item::about(standing, reader)` what a
+  `Standing` read with `item::standing` says, for a list that reads one per row.

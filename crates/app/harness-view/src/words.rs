@@ -519,11 +519,16 @@ pub(crate) fn thread_words(thread: &harness::ThreadRow) -> Option<String> {
     }
 }
 
-/// Whether the reader may start or fork the agent's conversation.
+// Whether the reader may start or fork the agent's conversation: its conversations' policy's
+// answer once read, else as before policies, access's writers.
 pub(crate) fn starts(view: &Agents, detail: &Detail) -> bool {
-    match (&detail.conversation_writers, view.me) {
+    let before = match (&detail.conversation_writers, view.me) {
         (Some(writers), Some(me)) => writers.allows(&[Party::Account(me)]),
         _ => false,
+    };
+    match &detail.setup {
+        Some(setup) => view.may_start(setup.agent, before),
+        None => before,
     }
 }
 

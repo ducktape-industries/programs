@@ -9,6 +9,7 @@ use view::{FontWeight, Stateful};
 
 use super::agents::face;
 use super::parts::{actions, badged, fact, glyph, notice, opening_row, scroller, section};
+use crate::policies::{CLAIM, CLAIM_HINT};
 use crate::read::{self, Detail, Roster};
 use crate::ui::{
     BOUND_WORDS, agent_gone, bound_badge, closed_badge, current_badge, state_badge,
@@ -140,6 +141,7 @@ fn detail(
             )
         }))
         .children(stopped.map(|words| notice("agent-no-node", words, true, theme, ladder)))
+        .children(crate::policies::conversations_row(view, cx, ladder, theme))
         .child(threads(detail, roster, cx, theme, ladder))
         .child(setup_rows(setup, detail, roster, cx, theme, ladder))
         .into_any_element()
@@ -697,6 +699,10 @@ pub(super) fn sheet(
                 cx.notify();
             });
             let begins = starts(view, detail);
+            let claims = view.claims(agent, setup.manager);
+            let claim = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
+                view.converse(harness::Op::ClaimConversations { agent }, cx)
+            });
             div()
                 .flex()
                 .flex_col()
@@ -710,6 +716,13 @@ pub(super) fn sheet(
                             edit,
                         )
                         .icon("pencil"),
+                    )
+                })
+                .when(claims, |rows| {
+                    rows.child(
+                        design::sheet_row("agent-sheet-claim", CLAIM, ladder, theme, claim)
+                            .icon("shield")
+                            .hint(CLAIM_HINT),
                     )
                 })
                 .when(begins, |rows| {

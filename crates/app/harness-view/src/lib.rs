@@ -14,6 +14,7 @@
 mod create;
 mod links;
 mod models;
+mod policies;
 mod read;
 mod timeline;
 mod ui;
@@ -98,6 +99,11 @@ pub struct Agents {
     // the open conversation's list: its thread and the rows it holds, a row a frame
     #[serde(skip)]
     rows: RefCell<Option<(u64, ListState)>>,
+    // who can start the open agent's conversations, and edit the model whose form is open
+    #[serde(skip)]
+    conversations_policy: policy_view::Editing,
+    #[serde(skip)]
+    model_policy: policy_view::Editing,
 }
 
 #[derive(Default)]
@@ -354,6 +360,11 @@ impl View for Agents {
             Err(refusal) => cx.log_refused("access's live heads", &refusal),
         })
         .detach();
+        cx.follow::<Changes<ownership::Ownership>>((), |view, change, cx| match change {
+            Ok(change) => view.ownership_moved(change, cx),
+            Err(refusal) => cx.log_refused("ownership's live heads", &refusal),
+        })
+        .detach();
         self.refresh(cx);
     }
 }
@@ -361,6 +372,7 @@ impl View for Agents {
 impl Render for Agents {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.settle_title(cx);
+        self.settle_policies(cx);
         // two designs, picked by the device: under a finger the phone's pages, under a
         // pointer the desktop's screens
         match window.touch() {
@@ -502,11 +514,14 @@ impl Agents {
 
     fn read_screen(&mut self, cx: &mut Context<Self>) {
         let host = cx.host();
+        let me = self.me;
         match self.screen {
             Screen::List => {}
-            Screen::Create => cx.load(self, read::models(host), |view| &mut view.models),
+            Screen::Create => cx.load(self, read::models(host, me), |view| &mut view.models),
             Screen::Models => {
-                cx.load(self, read::models(host.clone()), |view| &mut view.models);
+                cx.load(self, read::models(host.clone(), me), |view| {
+                    &mut view.models
+                });
                 cx.load(self, read::offers(host), |view| &mut view.offers);
             }
             Screen::SetModel => cx.load(self, read::offers(host), |view| &mut view.offers),
@@ -693,6 +708,8 @@ impl Agents {
         self.screen = screen;
         self.arming = None;
         self.sheet = None;
+        self.conversations_policy.sheet = None;
+        self.model_policy.sheet = None;
         self.notice = None;
         self.read_screen(cx);
         cx.notify();
@@ -719,6 +736,9 @@ impl Agents {
 
     /// Back: the sheet on screen closes, else the screen this one was opened from opens.
     pub(crate) fn back(&mut self, cx: &mut Context<Self>) {
+        if self.policy_sheet_open() {
+            return self.close_policy_sheet(cx);
+        }
         if self.sheet.take().is_some() {
             self.arming = None;
             return cx.notify();
@@ -838,6 +858,7 @@ impl Agents {
         self.doing = Some(
             match op {
                 harness::Op::ForkThread { .. } => "Forking the conversation",
+                harness::Op::ClaimConversations { .. } => "Claiming who starts its conversations",
                 _ => "Starting a new conversation",
             }
             .to_owned(),

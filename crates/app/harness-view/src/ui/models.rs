@@ -83,14 +83,9 @@ fn rows(
     ladder: &Ladder,
 ) -> impl IntoElement + use<> {
     let models = view.models.ready().map_or(&[][..], Vec::as_slice);
-    let roster = view.roster.ready();
     let rows = models.iter().map(|model| {
         let row = model.row.clone();
-        let owned = view.me == Some(row.owner);
-        let owner = roster.map_or_else(
-            || format!("account {}", row.owner),
-            |roster| roster.name(row.owner),
-        );
+        let owner = crate::policies::model_words(view, model);
         let (serving, tone) = serving_words(model.serving(), theme);
         let more = model.services.iter().skip(1).map(|(name, _)| name.as_str());
         let more: Vec<&str> = more.collect();
@@ -137,8 +132,7 @@ fn rows(
                     .gap(space::XXS)
                     .text_size(text::CAPTION)
                     .text_color(theme.muted)
-                    .child(owner)
-                    .when(owned, |owner| owner.child("(you)")),
+                    .child(owner),
             )
             .child(design::chevron(ladder, theme))
     });
@@ -235,6 +229,7 @@ fn form(
         .flex_col()
         .gap(space::LG)
         .child(design::heading("model-form", title, 2, theme))
+        .children(crate::policies::model_row(view, cx, ladder, theme))
         .child(id)
         .child(labelled(
             "Wire",

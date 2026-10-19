@@ -58,6 +58,7 @@ pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
                 .child(caption("sent · waiting for the block", &theme))
         }))
         .child(screen)
+        .children(crate::policies::sheet(view, cx, ladder, &theme))
         .into_any_element()
 }
 
