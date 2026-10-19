@@ -1,17 +1,21 @@
-//! Turns a node restart or a harness update cut off. Each model call keeps egress's own deadline,
-//! and a run harness schedules past it records a reply that streamed whole, relays lost calls
-//! again or asks the model again; a failed call is asked again later, and its manager hears.
+//! Turns and tool calls a node restart or a harness update cut off. A model call, a tool call's
+//! write and a watched stream keep egress's deadline; a run scheduled past it records what streamed
+//! whole, relays again, fails a call whose answer was lost or asks again, and the manager hears.
 use ::program::{BlobId, Cause, Ctx, EntryId, Error, ExecCtx, Principal, QueryCtx, all, code};
 use ::program::{Range, unexpected_reply, wrong_state};
-use abi::role::egress::{DEFAULT_WAIT, http};
+use abi::role::egress::{self, DEFAULT_WAIT, http};
 use abi::role::identity::AccountNumber;
 
 use crate::agents::{configured, harnessed_agent, hear_again, running, thread};
-use crate::calls::{Settled, refusal, run_call};
+use crate::bookings::note;
+use crate::calls::{Settled, lost, refusal, run_call};
 use crate::conversations::{binding, conversation};
+use crate::schema::code_of;
 use crate::state::{
-    CALLS, FLIGHTS, FRAMES, Flight, PARTIALS, REPORTING, REPORTS, RETRIES, Retry, THREADS, USAGE,
+    AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, PARTIALS, REPORTING, REPORTS, RETRIES, Retry,
+    STREAMING, THREADS, USAGE, WATCHES,
 };
+use crate::tools::Write;
 use crate::turns::{append, conclude, converse, give_up, say, settle};
 use crate::wire;
 use crate::{Asking, Body, CallState, Flow, Op, PROGRAM, Partial, Place, ThreadRow, UsageWindow};
@@ -147,6 +151,181 @@ pub(crate) async fn watch(ctx: &Ctx, id: u64, wait: Option<u64>, config: Option<
     let after = deadline(&flight).saturating_add(1);
     flight.watch = ctx.schedule(after, PROGRAM, &wake(id)).await.ok();
     FLIGHTS.put(ctx, &id, &flight);
+}
+
+// a tool call's write that awaits its answer: a harness update cancels the frame awaiting it (the
+// kernel's `cancel_parked`), and egress answers a whole request by its deadline, so a run after
+// either that finds the call still writing knows its answer is lost; harness wakes itself then
+pub(crate) async fn awaiting(ctx: &Ctx, id: u64, call: &str, writes: &[Write]) {
+    let key = (id, call.to_owned());
+    let height = ctx.env().height;
+    // a frame that came back to write again still runs the code it first wrote with
+    let code = match AWAITED.get(ctx, &key) {
+        Ok(Some(awaited)) => awaited.code,
+        _ => code_of(ctx, PROGRAM).ok(),
+    };
+    let deadline = answered_by(ctx, height, writes);
+    if let Some(deadline) = deadline {
+        let after = deadline.saturating_add(1);
+        let _ = ctx.schedule(after, PROGRAM, &wake(id)).await;
+    }
+    let awaited = Awaited {
+        height,
+        code,
+        deadline,
+    };
+    AWAITED.put(ctx, &key, &awaited);
+}
+
+// the block egress has answered every write by, when each asks it for an answer whole: they run
+// one after another, so their waits add up
+fn answered_by(ctx: &QueryCtx, height: u64, writes: &[Write]) -> Option<u64> {
+    let egress = ctx.env().roles.get(abi::role::EGRESS).cloned()?;
+    let mut blocks = 0u64;
+    for write in writes {
+        if write.target != egress {
+            return None;
+        }
+        let op = abi::decode::<egress::Op>(&write.payload).ok()?;
+        let egress::Op::Request {
+            delivery: egress::Delivery::Whole,
+            wait,
+            ..
+        } = op
+        else {
+            return None;
+        };
+        blocks = blocks.saturating_add(wait.unwrap_or(DEFAULT_WAIT));
+    }
+    (blocks > 0).then_some(height.saturating_add(blocks))
+}
+
+// why a call's write will never hear its answer, if it won't
+fn lost_why(awaited: &Awaited, code: Option<BlobId>, height: u64) -> Option<String> {
+    let sent = awaited.height;
+    let updated = matches!((awaited.code, code), (Some(then), Some(now)) if then != now);
+    if updated {
+        return Some(format!(
+            "harness was updated while this call awaited the answer to what it sent at block {sent}"
+        ));
+    }
+    let deadline = awaited.deadline.filter(|deadline| height > *deadline)?;
+    Some(format!(
+        "harness heard no answer by block {deadline}, egress's deadline for what this call sent at block {sent}: a harness update cut off the run awaiting it"
+    ))
+}
+
+// each call whose answer can no longer come fails with what happened; none runs again by itself,
+// as its write may have done its work before the answer was lost
+async fn lost_writes(ctx: &Ctx, id: u64) -> Result<(), Error> {
+    let open = AWAITED.scan(ctx, AWAITED.prefix_of(&id))?;
+    if open.is_empty() {
+        return Ok(());
+    }
+    let height = ctx.env().height;
+    let code = code_of(ctx, PROGRAM).ok();
+    let mut failed = 0usize;
+    for ((_, call), awaited) in open {
+        let Some(why) = lost_why(&awaited, code, height) else {
+            continue;
+        };
+        AWAITED.remove(ctx, &(id, call.clone()));
+        let text = format!(
+            "{why}, so its answer was lost. It may have run: check, and run it again if it is still needed"
+        );
+        if lost(ctx, id, &call, text)? {
+            failed += 1;
+        }
+    }
+    if failed == 0 {
+        return Ok(());
+    }
+    let row = thread(ctx, id)?;
+    let line = match failed {
+        1 => "a tool call's answer was lost to a harness update; harness failed the call, and the model hears why".to_owned(),
+        count => format!(
+            "{count} tool calls' answers were lost to a harness update; harness failed them, and the model hears why"
+        ),
+    };
+    tell(ctx, &row, line, "a tool call's answer was lost").await
+}
+
+// a watch's stream: egress ends it by its deadline, which each block of its events moves, and the
+// run awaiting it hears an end no event said; a harness update cancels that run
+pub(crate) async fn listening(ctx: &Ctx, id: u64, watch: u64) {
+    let made = ctx.env().height;
+    let mut flight = Flight {
+        made,
+        moved: made,
+        wait: DEFAULT_WAIT,
+        config: None,
+        watch: None,
+    };
+    let after = deadline(&flight).saturating_add(1);
+    flight.watch = ctx.schedule(after, PROGRAM, &wake(id)).await.ok();
+    STREAMING.put(ctx, &(id, watch), &flight);
+}
+
+pub(crate) fn stream_moved(ctx: &ExecCtx, id: u64, watch: u64) -> Result<(), Error> {
+    let key = (id, watch);
+    let height = ctx.env().height;
+    let Some(flight) = STREAMING
+        .get(ctx, &key)?
+        .filter(|flight| flight.moved < height)
+    else {
+        return Ok(());
+    };
+    let moved = Flight {
+        moved: height,
+        ..flight
+    };
+    STREAMING.put(ctx, &key, &moved);
+    Ok(())
+}
+
+pub(crate) fn unlistened(ctx: &ExecCtx, id: u64, watch: u64) {
+    STREAMING.remove(ctx, &(id, watch));
+}
+
+// a stream egress has ended with no one to hear its end, as the run awaiting it was cut off: its
+// conversation hears that instead; one still going is watched again past its moved deadline
+async fn lost_streams(ctx: &Ctx, id: u64) -> Result<(), Error> {
+    let env = ctx.env();
+    let height = env.height;
+    for ((_, watch), flight) in STREAMING.scan(ctx, STREAMING.prefix_of(&id))? {
+        let key = (id, watch);
+        let Some(row) = WATCHES.get(ctx, &watch)? else {
+            STREAMING.remove(ctx, &key);
+            continue;
+        };
+        let end = deadline(&flight);
+        if height <= end {
+            let own =
+                matches!(env.cause, Cause::Scheduled { entry } if Some(entry) == flight.watch);
+            if own {
+                let watch = ctx
+                    .schedule(end.saturating_add(1), PROGRAM, &wake(id))
+                    .await
+                    .ok();
+                STREAMING.put(ctx, &key, &Flight { watch, ..flight });
+            }
+            continue;
+        }
+        STREAMING.remove(ctx, &key);
+        WATCHES.remove(ctx, &watch);
+        let text = format!(
+            "{} call {} ({}) ended unheard: harness heard nothing more of it by block {end}, egress's deadline for its stream, as a harness update cut off the run that listened for its end; what it ran may still be running",
+            row.tool, row.call, row.about
+        );
+        // a closed conversation's line goes to the agent's current one, which wakes a block later
+        if let Some(told) = note(ctx, row.agent, Some(row.thread), text)?
+            && told != id
+        {
+            let next = height.saturating_add(1);
+            let _ = ctx.schedule(next, PROGRAM, &wake(told)).await;
+        }
+    }
+    Ok(())
 }
 
 // egress moves a streaming call's deadline past each block that carries its events
@@ -290,6 +469,8 @@ async fn repace(ctx: &Ctx, id: u64) {
 }
 
 pub(crate) async fn recover(ctx: &Ctx, id: u64) -> Result<(), Error> {
+    lost_writes(ctx, id).await?;
+    lost_streams(ctx, id).await?;
     let row = thread(ctx, id)?;
     if row.asking == Asking::Idle {
         return Ok(());

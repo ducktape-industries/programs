@@ -63,7 +63,7 @@ pub(crate) fn schema_of(ctx: &QueryCtx, program: &str) -> Result<Interface, Erro
     })
 }
 
-fn code_of(ctx: &QueryCtx, program: &str) -> Result<BlobId, Error> {
+pub(crate) fn code_of(ctx: &QueryCtx, program: &str) -> Result<BlobId, Error> {
     let unknown = || {
         Error::new(
             code::UNKNOWN_PROGRAM,

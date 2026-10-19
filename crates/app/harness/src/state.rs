@@ -73,6 +73,10 @@ pub const WAIT_REFS: Map<u64, (String, String)> = Map::new("wait-refs/").shared(
 pub const CHANGE_WAITS: Set<((String, u64), u64)> = Set::new("wait-change/").shared();
 // how many forge waits are open: harness watches forge while any is
 pub const FORGE_WAITS: Item<u64> = Item::new("wait-forge").shared();
+// each tool call whose write awaits its answer, and each stream a watch listens to, by thread:
+// what tells a later run that the frame awaiting it is gone
+pub const AWAITED: Map<(u64, String), Awaited> = Map::new("awaited/").shared();
+pub const STREAMING: Map<(u64, u64), Flight> = Map::new("streaming/").shared();
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Live {
@@ -124,6 +128,16 @@ pub struct Flight {
     pub wait: u64,
     pub config: Option<BlobId>,
     pub watch: Option<EntryId>,
+}
+
+// a tool call's write awaiting its answer since block `height`: harness's code then, as a code
+// change cancels the frame that awaits it, and the block egress answers by when each write asks
+// egress for an answer whole
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Awaited {
+    pub height: u64,
+    pub code: Option<BlobId>,
+    pub deadline: Option<u64>,
 }
 
 // a failed model call asked again: not before block `at`, nor before time `until` when the model
@@ -373,4 +387,6 @@ pub(crate) const TABLES: &[::program::Table] = &[
     WAIT_REFS.table(),
     CHANGE_WAITS.table(),
     FORGE_WAITS.table(),
+    AWAITED.table(),
+    STREAMING.table(),
 ];

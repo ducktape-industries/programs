@@ -132,6 +132,7 @@ pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
     let Some(row) = WATCHES.get(&ctx, &watch)? else {
         return Ok(());
     };
+    crate::resume::listening(&ctx, row.thread, watch).await;
     let row = match MEASURES.get(&ctx, &watch)? {
         None => row,
         Some(measure) => {
@@ -160,9 +161,11 @@ pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
         },
         wait: None,
     };
+    crate::resume::listening(&ctx, row.thread, watch).await;
     let answered = ctx
         .call_raw_as(row.agent, bound(&ctx)?, abi::encode(&op))
         .await;
+    crate::resume::unlistened(&ctx, row.thread, watch);
     // an event that said the end woke the conversation already
     if !WATCHES.has(&ctx, &watch) {
         return Ok(());
@@ -215,6 +218,7 @@ pub(crate) async fn heard(ctx: &Ctx, watch: u64, event: Event) -> Result<(), Err
     let Some(row) = WATCHES.get(ctx, &watch)? else {
         return Ok(());
     };
+    crate::resume::stream_moved(ctx, row.thread, watch)?;
     let said = match tools::find(&row.tool) {
         Some(entry) => (entry.heard)(&event.data)?,
         None => None,
@@ -223,6 +227,7 @@ pub(crate) async fn heard(ctx: &Ctx, watch: u64, event: Event) -> Result<(), Err
         return Ok(());
     };
     WATCHES.remove(ctx, &watch);
+    crate::resume::unlistened(ctx, row.thread, watch);
     let text = format!(
         "{} call {} ({}) ended: {said}",
         row.tool, row.call, row.about

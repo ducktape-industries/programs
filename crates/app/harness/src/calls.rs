@@ -8,7 +8,7 @@ use attribution::Change;
 use serde_json::Value;
 
 use crate::agents::{running, thread};
-use crate::state::{CALLS, DEFERRED, LIVE, Live, PARTIALS, SHOWN, THREADS};
+use crate::state::{AWAITED, CALLS, DEFERRED, LIVE, Live, PARTIALS, SHOWN, THREADS};
 use crate::tools::{self, Entry, Run, Seat, Show, Undo, Write};
 use crate::turns::{append, request, serves, settle};
 use crate::watches;
@@ -553,7 +553,52 @@ pub(crate) async fn run_call(
         Ok(_) => perform(ctx, id, &call).await?,
         Err(error) => (format!("the relay failed: {}", refusal(&error)), true),
     };
+    if reported_lost(ctx, id, &call)? {
+        let text = format!(
+            "call {call} was answered after harness reported its answer lost, and the model is not told again: {text}"
+        );
+        notice(ctx, id, text)?;
+        return Ok(Settled::default());
+    }
     finish(ctx, id, index, &call, text, failed)
+}
+
+// a frame that comes back to a call harness already failed as lost (its code read as changed
+// while this frame still awaited) records nothing more, as the model has the call's result
+fn reported_lost(ctx: &ExecCtx, id: u64, call: &str) -> Result<bool, Error> {
+    let key = (id, call.to_owned());
+    let awaited = AWAITED.get(ctx, &key)?.is_some();
+    AWAITED.remove(ctx, &key);
+    let state = CALLS.get(ctx, &key)?.map(|row| row.state);
+    Ok(match state {
+        Some(CallState::Done { .. }) => true,
+        Some(CallState::Voided { .. }) => !awaited,
+        Some(CallState::Relaying | CallState::Writing | CallState::Showing) | None => false,
+    })
+}
+
+// a call whose write's answer is lost: a writing call fails with why, in its reply's place while
+// the reply is still coming, and a voided one lets its turn go on
+pub(crate) fn lost(ctx: &ExecCtx, id: u64, call: &str, why: String) -> Result<bool, Error> {
+    let Some(row) = CALLS.get(ctx, &(id, call.to_owned()))? else {
+        return Ok(false);
+    };
+    match row.state {
+        CallState::Writing => {
+            let index = LIVE
+                .scan(ctx, LIVE.prefix_of(&id))?
+                .into_iter()
+                .find(|(_, live)| live.call == call)
+                .map_or(0, |((_, index), _)| index);
+            finish(ctx, id, index, call, why, true)?;
+            Ok(true)
+        }
+        CallState::Voided { .. } => {
+            release(ctx, id)?;
+            Ok(true)
+        }
+        CallState::Relaying | CallState::Showing | CallState::Done { .. } => Ok(false),
+    }
 }
 
 enum Ready {
@@ -638,6 +683,7 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
             Err(error) => return Ok((refusal(&error), true)),
         };
         mark(ctx, id, call, CallState::Writing)?;
+        crate::resume::awaiting(ctx, id, call, &writes).await;
         let output = match written(ctx, owner.agent, writes).await {
             Ok(output) => output,
             Err(error) => return Ok((refusal(&error), true)),

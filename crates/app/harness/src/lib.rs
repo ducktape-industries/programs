@@ -985,7 +985,9 @@ pub fn describe(op: &Op) -> describe::Description {
         ),
         Op::RunBooked => ("Run a booked run".to_owned(), Vec::new()),
         Op::Resume { thread } => (
-            format!("Resume thread {thread}'s turn if a restart or an update cut it off"),
+            format!(
+                "Resume thread {thread}'s turn and tool calls if a restart or an update cut them off"
+            ),
             vec![field("thread", Value::count(*thread))],
         ),
         Op::Report { manager } => (

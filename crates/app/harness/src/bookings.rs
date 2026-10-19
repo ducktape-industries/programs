@@ -2,8 +2,8 @@
 //! due, sends the booked op as that account; what it did is kept and told to the conversation it
 //! was booked from, which is how an agent wakes itself. Only who booked a run cancels it.
 use ::program::{
-    Cause, Ctx, Error, Principal, QueryCtx, Range, corrupt, invalid, not_found, unauthorized,
-    unexpected_reply, wrong_state,
+    Cause, Ctx, Error, ExecCtx, Principal, QueryCtx, Range, corrupt, invalid, not_found,
+    unauthorized, unexpected_reply, wrong_state,
 };
 use abi::role::identity::AccountNumber;
 use abi::role::scheduler;
@@ -187,21 +187,33 @@ fn told(
     }
 }
 
-// a line from the network in the conversation `thread` names, else the agent's current one,
-// which wakes it
+// a line from the network in the conversation `thread` names, else the agent's current one: the
+// conversation it went to
+pub(crate) fn note(
+    ctx: &ExecCtx,
+    agent: AccountNumber,
+    thread: Option<u64>,
+    text: String,
+) -> Result<Option<u64>, Error> {
+    let Some(mut row) = told(ctx, agent, thread)? else {
+        return Ok(None);
+    };
+    let author = Principal::Root;
+    say(ctx, &mut row, Body::Post { author, text });
+    THREADS.put(ctx, &row.id, &row);
+    Ok(Some(row.id))
+}
+
+// that line, which wakes the conversation
 pub(crate) async fn tell(
     ctx: &Ctx,
     agent: AccountNumber,
     thread: Option<u64>,
     text: String,
 ) -> Result<(), Error> {
-    let Some(mut row) = told(ctx, agent, thread)? else {
-        return Ok(());
-    };
-    let author = Principal::Root;
-    say(ctx, &mut row, Body::Post { author, text });
-    THREADS.put(ctx, &row.id, &row);
-    converse(ctx, row.id).await;
+    if let Some(id) = note(ctx, agent, thread, text)? {
+        converse(ctx, id).await;
+    }
     Ok(())
 }
 
