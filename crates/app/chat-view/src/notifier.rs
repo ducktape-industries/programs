@@ -67,6 +67,9 @@ pub struct ChatNotices {
     names: Option<Names>,
     /// The rooms and their heads, as the channel list last said.
     rooms: Option<Vec<ChannelInfo>>,
+    // what moved of the list since its last read, and whether a read is under way
+    moved: Moved,
+    reading_rooms: bool,
     /// The reader's cursors, as the panes keep them.
     reads: Option<BTreeMap<String, u64>>,
     /// The seq announced up to in each room; `None` until read off the
@@ -108,16 +111,13 @@ impl Notifier for ChatNotices {
             Err(refusal) => log_refused(cx, "the session", &refusal),
         })
         .detach();
-        // a block re-reads the rooms where it wrote to the list
+        // a block reads again the rooms it wrote the row, head or meta of; a feed that came
+        // back, every room
         cx.follow::<Changes<chat::Chat>>((), |notices, change, cx| match change {
             Ok(change) => {
-                let list = chat::ask::Channels {
-                    page: PageRequest::default(),
-                };
                 let change = change.as_ref();
-                if change.is_none_or(|change| change.touches::<chat::Chat, _>(&list)) {
-                    notices.load_rooms(cx);
-                }
+                notices.moved.heard(change);
+                notices.load_rooms(cx);
                 if let Some(me) = notices.session.account
                     && change.is_none_or(|change| choices_moved(change, me))
                 {
@@ -290,22 +290,31 @@ impl ChatNotices {
         );
     }
 
+    // the rooms that moved, read one read at a time: what moves during a read is the next one's
     fn load_rooms(&mut self, cx: &mut Context<Self>) {
-        let host = cx.host();
-        let rooms = async move {
-            host.query_all(|after| chat::ask::Channels {
-                page: PageRequest { after, limit: None },
-            })
-            .await
+        if self.reading_rooms {
+            return;
+        }
+        let Some(moved) = self.moved.take(self.rooms.is_some()) else {
+            return;
         };
+        self.reading_rooms = true;
+        let read = read_list(cx.host(), moved.clone());
         self.load(
-            rooms,
-            |notices, rooms, cx| match rooms {
-                Ok(rooms) => {
-                    notices.rooms = Some(rooms);
-                    notices.settle(cx);
+            read,
+            move |notices, read, cx| {
+                notices.reading_rooms = false;
+                match read {
+                    Ok(read) => {
+                        notices.rooms = Some(landed(notices.rooms.take(), read));
+                        notices.settle(cx);
+                        notices.load_rooms(cx);
+                    }
+                    Err(refusal) => {
+                        notices.moved.put_back(moved);
+                        log_refused(cx, "the rooms", &refusal);
+                    }
                 }
-                Err(refusal) => log_refused(cx, "the rooms", &refusal),
             },
             cx,
         );
@@ -694,3 +703,93 @@ fn mentions(blocks: &[Block], me: u64) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+// What chat blocks moved of the channel list since it was last read: every room (a feed that came
+// back, or nothing held yet), or the rooms they wrote the row, head or meta of. The notifier and
+// the panes both keep their list this way.
+#[derive(Clone, Default)]
+pub(crate) struct Moved {
+    every: bool,
+    rooms: BTreeSet<String>,
+}
+
+pub(crate) enum ListRead {
+    Every(Vec<ChannelInfo>),
+    Rooms(Vec<(String, Option<ChannelInfo>)>),
+}
+
+impl Moved {
+    pub(crate) fn heard(&mut self, change: Option<&view::methods::Change>) {
+        match change {
+            Some(change) => self
+                .rooms
+                .extend(chat::view::channels_written(&change.keys)),
+            None => self.every = true,
+        }
+    }
+
+    pub(crate) fn every(&mut self) {
+        self.every = true;
+    }
+
+    // what to read now, taken; every room when no list is held
+    pub(crate) fn take(&mut self, held: bool) -> Option<Moved> {
+        let moved = std::mem::take(self);
+        let every = moved.every || !held;
+        (every || !moved.rooms.is_empty()).then_some(Moved {
+            every,
+            rooms: moved.rooms,
+        })
+    }
+
+    // a read that failed: what it was for goes with the next one
+    pub(crate) fn put_back(&mut self, moved: Moved) {
+        self.every |= moved.every;
+        self.rooms.extend(moved.rooms);
+    }
+}
+
+pub(crate) async fn read_list(host: Host, moved: Moved) -> Result<ListRead, Error> {
+    if moved.every {
+        let every = host
+            .query_all(|after| chat::ask::Channels {
+                page: PageRequest { after, limit: None },
+            })
+            .await?;
+        return Ok(ListRead::Every(every));
+    }
+    let mut rooms = Vec::new();
+    for room in moved.rooms {
+        let asked = chat::ask::Channel {
+            channel_id: room.clone(),
+        };
+        let info = host.query(asked).await?;
+        rooms.push((room, info));
+    }
+    Ok(ListRead::Rooms(rooms))
+}
+
+// the list as a read leaves it: a room read alone replaces its row, or joins before the first
+// room whose id sorts after it (the program lists them by id), or leaves when it is gone
+pub(crate) fn landed(held: Option<Vec<ChannelInfo>>, read: ListRead) -> Vec<ChannelInfo> {
+    let rooms = match read {
+        ListRead::Every(every) => return every,
+        ListRead::Rooms(rooms) => rooms,
+    };
+    let mut list = held.unwrap_or_default();
+    for (room, info) in rooms {
+        let at = list.iter().position(|held| held.channel.id == room);
+        match (at, info) {
+            (Some(at), Some(info)) => list[at] = info,
+            (Some(at), None) => {
+                list.remove(at);
+            }
+            (None, Some(info)) => {
+                let after = list.iter().position(|held| held.channel.id > room);
+                list.insert(after.unwrap_or(list.len()), info);
+            }
+            (None, None) => {}
+        }
+    }
+    list
+}

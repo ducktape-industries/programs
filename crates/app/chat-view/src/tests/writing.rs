@@ -27,6 +27,7 @@ fn a_send_shows_greyed_then_lands_and_a_refusal_is_a_banner() {
     cx.host().handle::<Ask<::chat::Chat>>(|query| {
         Ok(match query {
             Query::Channels { .. } => Reply::Channels(page(vec![channel("general", "General", 3)])),
+            Query::Channel { .. } => Reply::Channel(Some(channel("general", "General", 3))),
             Query::Roots { .. } => Reply::Roots(page(vec![
                 row(1, 7, "hello"),
                 row(2, 8, "**hi** there"),
@@ -118,6 +119,7 @@ fn a_greyed_post_keeps_its_place_and_height_when_it_lands() {
     cx.host().handle::<Ask<::chat::Chat>>(|query| {
         Ok(match query {
             Query::Channels { .. } => Reply::Channels(page(vec![channel("general", "General", 3)])),
+            Query::Channel { .. } => Reply::Channel(Some(channel("general", "General", 3))),
             Query::Roots { .. } => Reply::Roots(page(vec![
                 row(1, 7, "hello"),
                 row(2, 8, "**hi** there"),
@@ -154,6 +156,7 @@ fn a_post_the_room_shows_before_its_receipt_is_shown_once() {
     cx.host().handle::<Ask<::chat::Chat>>(|query| {
         Ok(match query {
             Query::Channels { .. } => Reply::Channels(page(vec![channel("general", "General", 3)])),
+            Query::Channel { .. } => Reply::Channel(Some(channel("general", "General", 3))),
             Query::Roots { .. } => Reply::Roots(page(vec![
                 row(1, 7, "hello"),
                 row(2, 8, "**hi** there"),

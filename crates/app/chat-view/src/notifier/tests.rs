@@ -114,6 +114,11 @@ impl World {
                         .into(),
                 )),
                 Query::Channels { .. } => Reply::Channels(page(world.rooms.borrow().clone())),
+                Query::Channel { channel_id } => {
+                    let rooms = world.rooms.borrow();
+                    let room = rooms.iter().find(|room| room.channel.id == channel_id);
+                    Reply::Channel(room.cloned())
+                }
                 // as the program pages it: half before `seq`, half from it
                 Query::MessagesAround {
                     channel_id,
@@ -611,4 +616,33 @@ fn a_mention_is_told_though_where_i_am_will_not_read() {
 
 fn say_hi() -> Vec<Block> {
     said("hi", vec![])
+}
+
+// A message reads its own room alone (`Channel`): the whole channel list is read when the run
+// starts, and again only when the feed comes back.
+#[test]
+fn a_message_reads_its_room_alone_and_not_the_channel_list() {
+    let world = World::default();
+    *world.rooms.borrow_mut() = vec![room("design", "Design", 0), room("general", "General", 1)];
+    world.rows.borrow_mut().push(mention("general", 1));
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    let asked = |notifier: &TestNotifier<ChatNotices>| {
+        let asked = notifier.host().requests::<Ask<chat::Chat>>();
+        let lists = asked
+            .iter()
+            .filter(|query| matches!(query, Query::Channels { .. }));
+        let rooms = asked.iter().filter_map(|query| match query {
+            Query::Channel { channel_id } => Some(channel_id.clone()),
+            _ => None,
+        });
+        (lists.count(), rooms.collect::<Vec<_>>())
+    };
+    assert_eq!(asked(&notifier), (1, Vec::new()));
+    world.post(&mut notifier, vec![mention("general", 2)]);
+    assert_eq!(asked(&notifier), (1, vec!["general".to_owned()]));
+    assert_eq!(posts(&notifier).len(), 1, "the new mention is announced");
+    notifier.host().stream::<Changes<chat::Chat>>().send(None);
+    notifier.run_until_parked();
+    assert_eq!(asked(&notifier).0, 2);
 }

@@ -91,6 +91,9 @@ pub struct Chat {
     /// the channel list read again while the one on screen stays
     #[serde(skip)]
     pub(crate) rereading_channels: Option<view::Task<()>>,
+    // what chat blocks moved of the channel list since that read (`notifier::Moved`)
+    #[serde(skip)]
+    pub(crate) moved_channels: crate::notifier::Moved,
     // each draft file's put, by its draft and id: dropped, it stops
     #[serde(skip)]
     pub(crate) uploads: BTreeMap<(String, u64), view::Task<()>>,

@@ -176,6 +176,19 @@ fn chat_reply(query: Query) -> Reply {
             channel("dm-7-8", "dm", 1),
             channel("forge:web:3", "Review web#3", 2),
         ])),
+        Query::Channel { channel_id } => {
+            let every = Query::Channels {
+                page: chat::PageRequest::default(),
+            };
+            let Reply::Channels(rooms) = chat_reply(every) else {
+                unreachable!()
+            };
+            let room = rooms
+                .items
+                .into_iter()
+                .find(|room| room.channel.id == channel_id);
+            Reply::Channel(room)
+        }
         Query::Roots { channel_id, .. } => Reply::Roots(page(if channel_id == "general" {
             vec![row(1, 7, "hello"), row(2, 8, "**hi** there")]
         } else {
@@ -413,10 +426,11 @@ fn a_block_whose_rereads_land_the_same_rows_draws_nothing() {
     assert_eq!(cx.renders(), renders, "the same names drew nothing");
 }
 
-/// A block re-reads only what it wrote to, as the program declares it: a
-/// member seated re-reads the room's roster and nothing else, a message
-/// posted re-reads the rows and the channel list (its head moved) and not
-/// the roster, and a reopened link (`None`) re-reads all three.
+// A block re-reads only what it wrote to, as the program declares it: a
+// member seated re-reads the room's roster and nothing else, a message
+// posted re-reads the rows and its own room in the channel list (its head
+// moved) and not the roster or the whole list, and a reopened link (`None`)
+// re-reads the whole list, the rows and the roster.
 #[test]
 fn a_block_re_reads_only_the_tables_it_wrote_to() {
     let (mut cx, _) = opened();
@@ -426,27 +440,37 @@ fn a_block_re_reads_only_the_tables_it_wrote_to() {
         let count = |pick: fn(&Query) -> bool| asked.iter().filter(|query| pick(query)).count();
         (
             count(|query| matches!(query, Query::Channels { .. })),
+            count(|query| matches!(query, Query::Channel { .. })),
             count(|query| matches!(query, Query::Roots { .. })),
             count(|query| matches!(query, Query::Members { .. })),
         )
     };
-    let (list, rows, roster) = counts(&cx);
+    let (list, room, rows, roster) = counts(&cx);
     let seated = chat::tables::MEMBERS.key(&("general".to_owned(), Principal::Account(9)));
     changes.send(block(4, vec![seated]));
     cx.run_until_parked();
-    assert_eq!(counts(&cx), (list, rows, roster + 1), "a member seated");
+    assert_eq!(
+        counts(&cx),
+        (list, room, rows, roster + 1),
+        "a member seated"
+    );
     changes.send(block(5, posted("general")));
     cx.run_until_parked();
     assert_eq!(
         counts(&cx),
-        (list + 1, rows + 1, roster + 1),
+        (list, room + 1, rows + 1, roster + 1),
         "a message posted"
     );
+    let asked = cx.host().requests::<Ask<::chat::Chat>>();
+    let general = Query::Channel {
+        channel_id: "general".into(),
+    };
+    assert!(asked.contains(&general), "{asked:?}");
     changes.send(None);
     cx.run_until_parked();
     assert_eq!(
         counts(&cx),
-        (list + 2, rows + 2, roster + 2),
+        (list + 1, room + 1, rows + 2, roster + 2),
         "a reopened link"
     );
 }

@@ -165,12 +165,9 @@ impl Chat {
     /// program declares it; `None`, a reopened node link, reads everything
     /// again.
     pub(crate) fn changed(&mut self, change: Option<&Change>, cx: &mut Context<Self>) {
-        let list = ask::Channels {
-            page: PageRequest::default(),
-        };
-        if change.is_none_or(|change| change.touches::<chat::Chat, _>(&list)) {
-            self.reread_channels(cx);
-        }
+        // the rooms it wrote the row, head or meta of, each read alone; `None`, every room
+        self.moved_channels.heard(change);
+        self.reread_moved(cx);
         // the reader's choices show in the details alone
         if let Some(me) = self.my_account()
             && self.details.is_some()
@@ -181,11 +178,36 @@ impl Chat {
         self.refresh_room(change, cx);
     }
 
+    // every room read again, in place of a read under way
     pub(crate) fn reread_channels(&mut self, cx: &mut Context<Self>) {
-        let list = queries::channels(cx.host());
-        self.rereading_channels = Some(cx.land(list, |chat, rooms, cx| match rooms {
-            Ok(rooms) => chat.channels_landed(rooms, cx),
-            Err(refusal) => cx.log_refused("the channel list", &refusal),
+        self.rereading_channels = None;
+        self.moved_channels.every();
+        self.reread_moved(cx);
+    }
+
+    // the rooms that moved, read one read at a time: what moves during a read is the next one's
+    fn reread_moved(&mut self, cx: &mut Context<Self>) {
+        if self.rereading_channels.is_some() {
+            return;
+        }
+        let held = self.channels.ready().is_some();
+        let Some(moved) = self.moved_channels.take(held) else {
+            return;
+        };
+        let read = crate::notifier::read_list(cx.host(), moved.clone());
+        self.rereading_channels = Some(cx.land(read, move |chat, read, cx| {
+            chat.rereading_channels = None;
+            match read {
+                Ok(read) => {
+                    let held = chat.channels.ready().cloned();
+                    chat.channels_landed(crate::notifier::landed(held, read), cx);
+                    chat.reread_moved(cx);
+                }
+                Err(refusal) => {
+                    chat.moved_channels.put_back(moved);
+                    cx.log_refused("the channel list", &refusal);
+                }
+            }
         }));
     }
 

@@ -54,6 +54,9 @@ fn full_room(newest: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
             Query::Channels { .. } => {
                 Reply::Channels(page(vec![channel("general", "General", newest.get())]))
             }
+            Query::Channel { .. } => {
+                Reply::Channel(Some(channel("general", "General", newest.get())))
+            }
             Query::Roots { .. } => {
                 let top = newest.get();
                 Reply::Roots(::chat::PageResponse {

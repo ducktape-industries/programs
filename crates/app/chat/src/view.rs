@@ -3,11 +3,14 @@
 //! the asker (`|ask| host.query(ask)` in a view) so this crate links no
 //! view runtime. Names are display text, not identity: "the same person"
 //! is the account number.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 
 use ::program::Error;
 
+use store::KeyCodec;
+
+use crate::tables::{CHANNEL_META, CHANNELS, HEADS};
 use crate::{Kind, MsgRow, PageRequest, PageResponse, Principal, Profile, ask};
 
 /// Every account's profile, every page of it, folded into [`Names`].
@@ -156,4 +159,18 @@ pub fn unnamed(principal: &Principal) -> String {
         Principal::Account(number) => format!("account {number}"),
         Principal::Root => "system".into(),
     }
+}
+
+// The channels `keys` wrote the row, head or meta of: what the channel list shows of each, which
+// `ask::Channel` reads again alone.
+pub fn channels_written<'a>(keys: impl IntoIterator<Item = &'a Vec<u8>>) -> BTreeSet<String> {
+    let tables = [CHANNELS.key(&()), HEADS.key(&()), CHANNEL_META.key(&())];
+    keys.into_iter()
+        .filter_map(|key| {
+            tables.iter().find_map(|table| {
+                let mut rest = key.strip_prefix(table.as_slice())?;
+                String::decode_key(&mut rest).filter(|_| rest.is_empty())
+            })
+        })
+        .collect()
 }
