@@ -9,12 +9,13 @@ use forge::{ChangeState, CheckState, Content, EntryKind, Revision, Watched};
 use store::Item;
 
 use crate::state::{
-    BY_COMMIT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, OFFERING, PREVIEWING, QUEUED, RUNNERS, RUNS,
-    SOURCES, TARGETS,
+    ASKS, BY_COMMIT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, OFFERING, PREVIEWING, QUEUED, RUNNERS,
+    RUNS, SOURCES, TARGETS,
 };
 use crate::workflow;
 use crate::{
-    CheckRow, Event, Job, Offer, PageRequest, PageResponse, RunRow, RunnerRow, State, WORKFLOWS,
+    Asks, CheckRow, Event, Job, Offer, PageRequest, PageResponse, RunRow, RunnerRow, State,
+    WORKFLOWS,
 };
 
 // What started a run: a repository's commit, the event and who made it.
@@ -278,8 +279,8 @@ fn start(ctx: &ExecCtx, started: &Started) -> Result<(), Error> {
                     notify: workflow.notify,
                 };
                 let run = record(ctx, started, &file, named, None)?;
-                for job in workflow.jobs {
-                    queue(ctx, &run, job, 1)?;
+                for (job, asks) in workflow.jobs {
+                    queue(ctx, &run, job, 1, asks)?;
                 }
             }
             Ok(_) => {}
@@ -395,7 +396,7 @@ fn next(ctx: &ExecCtx, counter: &Item<u64>) -> Result<u64, Error> {
     Ok(n)
 }
 
-fn queue(ctx: &ExecCtx, run: &RunRow, job: Job, attempt: u32) -> Result<(), Error> {
+fn queue(ctx: &ExecCtx, run: &RunRow, job: Job, attempt: u32, asks: Asks) -> Result<(), Error> {
     let id = next(ctx, &LAST_CHECK)?;
     let check = CheckRow {
         id,
@@ -415,6 +416,9 @@ fn queue(ctx: &ExecCtx, run: &RunRow, job: Job, attempt: u32) -> Result<(), Erro
         log: None,
     };
     CHECKS.put(ctx, &id, &check);
+    if asks != Asks::default() {
+        ASKS.put(ctx, &id, &asks);
+    }
     BY_COMMIT.insert(ctx, &(check.repo.clone(), check.commit.clone(), id));
     BY_RUN.insert(ctx, &(run.id, id));
     QUEUED.insert(ctx, &id);
@@ -570,7 +574,8 @@ pub(crate) fn rerun(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
         .attempt
         .checked_add(1)
         .ok_or_else(|| Error::new(code::EXHAUSTED, "attempts exhausted"))?;
-    queue(ctx, &run, check.job, attempt)
+    let asks = ASKS.get(ctx, &id)?.unwrap_or_default();
+    queue(ctx, &run, check.job, attempt, asks)
 }
 
 fn load(ctx: &QueryCtx, id: u64) -> Result<CheckRow, Error> {
@@ -581,6 +586,10 @@ fn load(ctx: &QueryCtx, id: u64) -> Result<CheckRow, Error> {
 
 pub(crate) fn check(ctx: &QueryCtx, id: u64) -> Result<Option<CheckRow>, Error> {
     CHECKS.get(ctx, &id)
+}
+
+pub(crate) fn asks(ctx: &QueryCtx, id: u64) -> Result<Option<Asks>, Error> {
+    ASKS.get(ctx, &id)
 }
 
 pub(crate) fn checks(

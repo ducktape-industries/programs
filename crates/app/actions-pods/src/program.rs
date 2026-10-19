@@ -1,7 +1,9 @@
 //! The program: it registers with actions in `init`, then awaits egress as each check runs.
 use ::program::{Awaiting, Ctx, Error, ExecCtx, Program, QueryCtx, Reply as Wanted, decoded};
 
-use crate::rules::{RUNS, heard, offered, run};
+use crate::rules::{
+    PODS, RUNS, WAITING, concurrent, heard, offered, resume, run, set_concurrent, sweep,
+};
 use crate::{Config, Op, PROGRAM, Query, Reply};
 
 pub struct ActionsPods;
@@ -26,6 +28,9 @@ impl Program for ActionsPods {
     fn query(ctx: &QueryCtx, query: Query) -> Result<Reply, Error> {
         match query {
             Query::Run { check } => Ok(Reply::Run(RUNS.get(ctx, &check)?)),
+            Query::Pods => Ok(Reply::Pods(PODS.all(ctx)?)),
+            Query::Waiting => Ok(Reply::Waiting(WAITING.all(ctx)?)),
+            Query::Concurrent => Ok(Reply::Concurrent(concurrent(ctx)?)),
         }
     }
 }
@@ -36,6 +41,9 @@ impl Awaiting for ActionsPods {
             Op::Offer(offer) => offered(ctx, offer.check).await,
             Op::Run { check } => run(ctx, check).await,
             Op::Heard(event) => heard(&ctx, event),
+            Op::Sweep => sweep(ctx).await,
+            Op::Resume { check } => resume(ctx, check).await,
+            Op::SetConcurrent { most } => set_concurrent(ctx, most).await,
         }
     }
 }

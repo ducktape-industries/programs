@@ -31,4 +31,6 @@ access = { workspace = true }
 awaits = { workspace = true }
 identity = { workspace = true }
 scheduler = { workspace = true }
+# the programs role, which names the code this program runs
+programs = { workspace = true }
 valset = { workspace = true }

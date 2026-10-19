@@ -1,6 +1,7 @@
 // actions-pods on a MockChain with egress, the scheduler and awaits roles and a stand-in for
-// actions, the test playing egress's node: an offer claimed and run the block after, the pod made
-// and waited on as a stream, `/out` copied, the check reported and the pod deleted.
+// actions, the test playing egress's node: an offer run the block after, the pod made, the check
+// claimed, the pod waited on as a stream, `/out` copied, the check reported and the pod deleted.
+use ::program::section::{CUSTOM, MODULE};
 use ::program::{
     Error, ExecCtx, MockChain, MockHost, Origin, Program, QueryCtx, Scheme, code, invalid,
     wrong_state,
@@ -8,10 +9,11 @@ use ::program::{
 use abi::role::egress::{
     Answer, DEFAULT_WAIT, Event, Op as Egress, Request, RequestRow, StreamEnd, http,
 };
-use actions::{CheckRow, Input, Job, Offer, State};
+use actions::{Asks, CheckRow, Input, Job, Offer, PageResponse, State};
+use programs::{Entry, Genesis, Programs};
 use serde_json::{Value, json};
 use store::Item;
-use valset::{Genesis, Member, Valset};
+use valset::{Genesis as Founding, Member, Valset};
 
 use crate::*;
 
@@ -24,11 +26,17 @@ type Report = (u64, State, String, Option<String>);
 
 // The check the stand-in refuses to let anyone claim, with a refusal that is not wrong_state.
 const REFUSED: u64 = 9;
+// Check 1's rerun: the same run and job, attempt 2, known to the stand-in once a Rerun asks it.
+const AGAIN: u64 = 3;
+// The check whose job states its CPUs, memory and scratch.
+const SIXTEEN: u64 = 4;
 
 const CLAIMED: Item<Vec<u64>> = Item::new("claimed");
 const REPORTS: Item<Vec<Report>> = Item::new("reports");
+const RERUN: Item<bool> = Item::new("rerun");
 
-// actions as a runner meets it: a check to read, a claim taken once, reports kept.
+// actions as a runner meets it: a check to read, a claim taken once, a report taken once from a
+// running check (or an errored one from a queued check), and a rerun.
 struct Stand;
 
 impl Program for Stand {
@@ -44,10 +52,10 @@ impl Program for Stand {
                 "the stand-in refuses this claim for its own reasons",
             )),
             actions::Op::Claim { check } => {
-                let mut claimed = CLAIMED.get(ctx)?.unwrap_or_default();
-                if claimed.contains(&check) {
-                    return Err(wrong_state(format!("check {check} is running")));
+                if state_of(ctx, check)? != State::Queued {
+                    return Err(wrong_state(format!("check {check} is not queued")));
                 }
+                let mut claimed = CLAIMED.get(ctx)?.unwrap_or_default();
                 claimed.push(check);
                 CLAIMED.put(ctx, &claimed);
                 Ok(())
@@ -58,21 +66,77 @@ impl Program for Stand {
                 summary,
                 log,
             } => {
+                let now = state_of(ctx, check)?;
+                let unclaimed = now == State::Queued && state == State::Errored;
+                if now != State::Running && !unclaimed {
+                    return Err(wrong_state(format!("check {check} is not running")));
+                }
                 let mut reports = REPORTS.get(ctx)?.unwrap_or_default();
                 reports.push((check, state, summary, log));
                 REPORTS.put(ctx, &reports);
+                Ok(())
+            }
+            actions::Op::Rerun { .. } => {
+                RERUN.put(ctx, &true);
                 Ok(())
             }
             _ => Err(invalid("the stand-in takes registers, claims and reports")),
         }
     }
 
-    fn query(_ctx: &QueryCtx, query: actions::Query) -> Result<actions::Reply, Error> {
+    fn query(ctx: &QueryCtx, query: actions::Query) -> Result<actions::Reply, Error> {
         match query {
-            actions::Query::Check { id } => Ok(actions::Reply::Check(Some(check_row(id)))),
+            actions::Query::Check { id } => Ok(actions::Reply::Check(Some(row_now(ctx, id)?))),
+            actions::Query::Checks { .. } => {
+                let mut ids = vec![1];
+                if RERUN.get(ctx)?.unwrap_or(false) {
+                    ids.push(AGAIN);
+                }
+                let items = ids
+                    .into_iter()
+                    .map(|id| row_now(ctx, id))
+                    .collect::<Result<Vec<_>, Error>>()?;
+                let height = ctx.env().height;
+                let page = PageResponse {
+                    height,
+                    items,
+                    next: None,
+                };
+                Ok(actions::Reply::Checks(page))
+            }
+            actions::Query::Asks { check } => {
+                Ok(actions::Reply::Asks((check == SIXTEEN).then(sixteen)))
+            }
             _ => Err(invalid("the stand-in answers checks")),
         }
     }
+}
+
+fn sixteen() -> Asks {
+    Asks {
+        cpu: Some("16".into()),
+        memory: Some("40Gi".into()),
+        scratch: vec!["/var/tmp/target".into()],
+    }
+}
+
+fn state_of(ctx: &QueryCtx, id: u64) -> Result<State, Error> {
+    let reports = REPORTS.get(ctx)?.unwrap_or_default();
+    if let Some((_, state, _, _)) = reports.iter().find(|report| report.0 == id) {
+        return Ok(*state);
+    }
+    let claimed = CLAIMED.get(ctx)?.unwrap_or_default();
+    Ok(match claimed.contains(&id) {
+        true => State::Running,
+        false => State::Queued,
+    })
+}
+
+fn row_now(ctx: &QueryCtx, id: u64) -> Result<CheckRow, Error> {
+    Ok(CheckRow {
+        state: state_of(ctx, id)?,
+        ..check_row(id)
+    })
 }
 
 fn check_row(id: u64) -> CheckRow {
@@ -82,7 +146,7 @@ fn check_row(id: u64) -> CheckRow {
         repo: "programs".into(),
         commit: COMMIT.into(),
         workflow: "gates.toml".into(),
-        attempt: 1,
+        attempt: if id == AGAIN { 2 } else { 1 },
         job: Job {
             id: "gates".into(),
             runs_on: vec!["pods".into()],
@@ -94,11 +158,11 @@ fn check_row(id: u64) -> CheckRow {
                 files: "/shared/tools/gates.sh".into(),
             }],
         },
-        state: State::Running,
+        state: State::Queued,
         claimant: None,
         reporter: None,
         queued: 1,
-        started: Some(1),
+        started: None,
         finished: None,
         summary: String::new(),
         log: None,
@@ -127,7 +191,7 @@ fn node() -> Node {
         address: None,
         halo: "node.example.org:9100".into(),
     });
-    let genesis = Genesis {
+    let genesis = Founding {
         validators: members.to_vec(),
         member_cap: 8,
     };
@@ -169,6 +233,34 @@ fn node() -> Node {
     }
 }
 
+// A module whose one custom section names its build, so two builds are two codes.
+fn code(build: &[u8]) -> Vec<u8> {
+    let name = b"ducktape.build";
+    let mut body = vec![name.len() as u8];
+    body.extend(name);
+    body.extend(build);
+    let mut code = MODULE.to_vec();
+    code.extend([1, 1, 0, CUSTOM, body.len() as u8]);
+    code.extend(body);
+    code
+}
+
+// The programs role lists this program's code, as a deploy lists it.
+fn listed(chain: &MockChain, build: &[u8]) {
+    let entry = |program: &str, code: Vec<u8>| Entry {
+        program: program.into(),
+        code: chain.put_blob(programs::CODE_KIND, code).unwrap(),
+        params: Vec::new(),
+    };
+    let genesis = Genesis {
+        programs: vec![entry(PROGRAM, code(build)), entry("valset", code(b""))],
+        views: Vec::new(),
+        hooks: Vec::new(),
+        roles: ::program::Roles::default(),
+    };
+    chain.init(programs::PROGRAM, &genesis).unwrap();
+}
+
 impl Node {
     // The next block, `ms` after this one.
     fn after(&mut self, ms: u64) {
@@ -183,24 +275,39 @@ impl Node {
             .submit(from_actions, PROGRAM, &Op::Offer(Offer { check }))
     }
 
-    // The one request egress assigned the node and it has not answered.
-    fn pending(&self) -> RequestRow {
+    fn sweep(&self) {
+        let anyone = Origin::Signed(OWNER.to_vec());
+        self.chain.submit(anyone, PROGRAM, &Op::Sweep).unwrap();
+    }
+
+    fn open(&self) -> Vec<RequestRow> {
         let asked = egress::Query::Assigned { key: ADA.to_vec() };
         let egress::Reply::Requests(rows) = self.chain.query(egress::PROGRAM, &asked).unwrap()
         else {
             panic!("assigned answers Requests");
         };
-        let [row] = rows.try_into().expect("one request in flight");
+        rows
+    }
+
+    // The one request egress assigned the node and it has not answered.
+    fn pending(&self) -> RequestRow {
+        let [row] = self.open().try_into().expect("one request in flight");
+        row
+    }
+
+    // The one open request aimed at `method target`.
+    fn pending_to(&self, method: &str, target: &str) -> RequestRow {
+        let rows: Vec<RequestRow> = self
+            .open()
+            .into_iter()
+            .filter(|row| aimed(row) == sent(method, target))
+            .collect();
+        let [row] = rows.try_into().expect("one request so aimed");
         row
     }
 
     fn idle(&self) -> bool {
-        let asked = egress::Query::Assigned { key: ADA.to_vec() };
-        let egress::Reply::Requests(rows) = self.chain.query(egress::PROGRAM, &asked).unwrap()
-        else {
-            panic!("assigned answers Requests");
-        };
-        rows.is_empty()
+        self.open().is_empty()
     }
 
     fn node(&self, op: &Egress) {
@@ -208,10 +315,7 @@ impl Node {
         self.chain.submit(ada, egress::PROGRAM, op).unwrap();
     }
 
-    // The pending request answered whole in the next block: its method and target.
-    fn answer(&mut self, ms: u64, status: u16, body: Value) -> (String, String) {
-        self.after(ms);
-        let row = self.pending();
+    fn reply(&self, row: &RequestRow, status: u16, body: Value) {
         let response = http::Response {
             status,
             headers: vec![("content-type".into(), "application/json".into())],
@@ -222,7 +326,44 @@ impl Node {
             answer: Answer::Output(abi::encode(&response)),
         };
         self.node(&answer);
+    }
+
+    // The pending request answered whole in the next block: its method and target.
+    fn answer(&mut self, ms: u64, status: u16, body: Value) -> (String, String) {
+        self.after(ms);
+        let row = self.pending();
+        self.reply(&row, status, body);
         aimed(&row)
+    }
+
+    // The open request aimed at `method target`, answered whole in the next block.
+    fn answer_to(&mut self, ms: u64, method: &str, target: &str, status: u16, body: Value) {
+        self.after(ms);
+        let row = self.pending_to(method, target);
+        self.reply(&row, status, body);
+    }
+
+    // A wait's `ended` event and the stream's end, in the next block.
+    fn ended(&mut self, wait: &RequestRow, seq: u64, exit_code: Value) {
+        self.after(1_000);
+        let line = "pod duckpond-7 ended: exit code 0 (Completed)";
+        let ended = json!({"line": line, "exit_code": exit_code, "pod": {"name": "duckpond-7"}});
+        let ended = Event {
+            id: wait.id,
+            seq,
+            data: format!("event: ended\ndata: {ended}").into_bytes(),
+        };
+        self.node(&Egress::Events(vec![ended]));
+        let end = StreamEnd::Complete {
+            status: 200,
+            headers: vec![("content-type".into(), "text/event-stream".into())],
+        };
+        let finished = Egress::EndStream {
+            id: wait.id,
+            events: seq + 1,
+            end,
+        };
+        self.node(&finished);
     }
 
     fn body(&self, row: &RequestRow) -> Value {
@@ -240,8 +381,41 @@ impl Node {
     }
 
     fn run(&self, check: u64) -> Option<RunRow> {
-        let Reply::Run(row) = self.chain.query(PROGRAM, &Query::Run { check }).unwrap();
+        let Reply::Run(row) = self.chain.query(PROGRAM, &Query::Run { check }).unwrap() else {
+            panic!("run answers Run");
+        };
         row
+    }
+
+    fn pods(&self) -> Vec<(u64, PodRow)> {
+        let Reply::Pods(rows) = self.chain.query(PROGRAM, &Query::Pods).unwrap() else {
+            panic!("pods answers Pods");
+        };
+        rows
+    }
+
+    fn held(&self) -> Vec<u64> {
+        self.pods().into_iter().map(|(check, _)| check).collect()
+    }
+
+    fn concurrent(&self, most: u64) -> Result<Vec<u8>, Error> {
+        let anyone = Origin::Signed(OWNER.to_vec());
+        self.chain
+            .submit(anyone, PROGRAM, &Op::SetConcurrent { most })
+    }
+
+    fn concurrency(&self) -> u64 {
+        let Reply::Concurrent(most) = self.chain.query(PROGRAM, &Query::Concurrent).unwrap() else {
+            panic!("concurrent answers Concurrent");
+        };
+        most
+    }
+
+    fn waiting(&self) -> Vec<u64> {
+        let Reply::Waiting(checks) = self.chain.query(PROGRAM, &Query::Waiting).unwrap() else {
+            panic!("waiting answers Waiting");
+        };
+        checks
     }
 }
 
@@ -256,9 +430,24 @@ fn sent(method: &str, target: &str) -> (String, String) {
     (method.to_owned(), target.to_owned())
 }
 
-// An offer at 1000 ms, its run the block after at 3000 ms: a block of 2000 ms. The pod's creation
-// lands 500 ms later, so a wait request lasts 64 × 2000 ms and its alive events come every
-// 128000 / 2 / 1000 = 64 s: the creation's trip is not taken off.
+fn pod(name: &str) -> Value {
+    json!({"pod": {"name": name}})
+}
+
+// Check 1 offered at 1000 ms and run the block after at 3000 ms: a block of 2000 ms. Its pod's
+// creation lands 500 ms later, the check is claimed, and the wait opens: a request lasts
+// 64 × 2000 ms, so alive events come every 128000 / 2 / 1000 = 64 s.
+fn waiting_on_its_pod(node: &mut Node) -> RequestRow {
+    node.offer(1).unwrap();
+    node.after(2_000);
+    node.after(0);
+    node.answer(500, 201, pod("duckpond-7"));
+    let wait = node.pending();
+    let every = sent("GET", "/v1/pods/duckpond-7/wait?every=64");
+    assert_eq!(aimed(&wait), every);
+    wait
+}
+
 fn ran_to_its_end(exit_code: Value) -> Node {
     let mut node = node();
     node.offer(1).unwrap();
@@ -273,15 +462,17 @@ fn ran_to_its_end(exit_code: Value) -> Node {
     let gates = json!({"path": "/tools/gates.sh", "files": {"path": "/shared/tools/gates.sh"}});
     assert_eq!(body["inputs"][1], gates);
     assert_eq!(body["env"], json!({"FEATURE_SETS": "forge:program"}));
+    assert_eq!(body["resources"], Value::Null, "the job states no CPUs");
     let script = body["command"][2].as_str().unwrap();
     assert!(
         script.contains("cd '/work/programs'\n")
             && script.ends_with("sh /tools/gates.sh /work/programs\n")
     );
-    node.answer(500, 201, json!({"pod": {"name": "duckpond-7"}}));
+    node.answer(500, 201, pod("duckpond-7"));
     let wait = node.pending();
     let every = sent("GET", "/v1/pods/duckpond-7/wait?every=64");
     assert_eq!(aimed(&wait), every);
+    assert_eq!(node.held(), [1], "the pod is kept as soon as it is named");
     node.after(1_000);
     let alive = Event {
         id: wait.id,
@@ -289,25 +480,7 @@ fn ran_to_its_end(exit_code: Value) -> Node {
         data: b"event: alive\ndata: {}".to_vec(),
     };
     node.node(&Egress::Events(vec![alive]));
-    node.after(1_000);
-    let line = "pod duckpond-7 ended: exit code 0 (Completed)";
-    let ended = json!({"line": line, "exit_code": exit_code, "pod": {"name": "duckpond-7"}});
-    let ended = Event {
-        id: wait.id,
-        seq: 1,
-        data: format!("event: ended\ndata: {ended}").into_bytes(),
-    };
-    node.node(&Egress::Events(vec![ended]));
-    let end = StreamEnd::Complete {
-        status: 200,
-        headers: vec![("content-type".into(), "text/event-stream".into())],
-    };
-    let ended = Egress::EndStream {
-        id: wait.id,
-        events: 2,
-        end,
-    };
-    node.node(&ended);
+    node.ended(&wait, 1, exit_code);
     let listed = json!({"exit_code": 0, "stdout": "/out/log\n/out/summary.txt\n", "stderr": ""});
     let find = node.answer(1_000, 200, listed);
     assert_eq!(find, sent("POST", "/v1/pods/duckpond-7/exec"));
@@ -318,6 +491,7 @@ fn ran_to_its_end(exit_code: Value) -> Node {
     let deleted = node.answer(1_000, 200, json!({"deleted": "duckpond-7"}));
     assert_eq!(deleted, sent("DELETE", "/v1/pods/duckpond-7"));
     assert!(node.idle());
+    assert!(node.held().is_empty(), "a deleted pod is let go");
     node
 }
 
@@ -359,6 +533,7 @@ fn a_pod_the_service_refuses_errs_the_check_and_leaves_nothing_to_delete() {
     assert!(node.idle());
     let why = "/v1/pods answered 422: pods \"duckpond-7\" is forbidden".to_owned();
     assert_eq!(node.reports(), [(1, State::Errored, why, None)]);
+    assert!(node.held().is_empty() && node.waiting().is_empty());
 }
 
 // A block of 10 ms: a request lasts 640 ms, and the pod's creation took 490 ms to land.
@@ -368,7 +543,7 @@ fn a_wait_with_no_whole_second_to_beat_errs_the_check_and_deletes_the_pod() {
     node.offer(1).unwrap();
     node.after(10);
     node.after(0);
-    node.answer(490, 201, json!({"pod": {"name": "duckpond-7"}}));
+    node.answer(490, 201, pod("duckpond-7"));
     let deleted = node.answer(1_000, 200, json!({"deleted": "duckpond-7"}));
     assert_eq!(deleted, sent("DELETE", "/v1/pods/duckpond-7"));
     let reports: [Report; 1] = node.reports().try_into().unwrap();
@@ -402,6 +577,11 @@ fn a_check_another_runner_claimed_is_left_alone_and_only_its_senders_are_heard()
         )
         .unwrap_err();
     assert_eq!(unscheduled.code, code::UNAUTHORIZED);
+    let resumed = node
+        .chain
+        .submit(signed.clone(), PROGRAM, &Op::Resume { check: 1 })
+        .unwrap_err();
+    assert_eq!(resumed.code, code::UNAUTHORIZED);
     let event = Event {
         id: made.id,
         seq: 0,
@@ -420,7 +600,7 @@ fn outlived(node: &mut Node) {
     node.offer(1).unwrap();
     node.after(2_000);
     node.after(0);
-    node.answer(500, 201, json!({"pod": {"name": "duckpond-7"}}));
+    node.answer(500, 201, pod("duckpond-7"));
     let first = node.pending();
     assert_eq!(
         aimed(&first),
@@ -461,26 +641,9 @@ fn a_pod_that_outlives_its_wait_is_read_and_waited_on_again_at_the_beat_its_bloc
         aimed(&again),
         sent("GET", "/v1/pods/duckpond-7/wait?every=32")
     );
-    node.after(1_000);
-    let line = "pod duckpond-7 ended: exit code 0 (Completed)";
-    let ended = json!({"line": line, "exit_code": 0, "pod": {"name": "duckpond-7"}});
-    let ended = Event {
-        id: again.id,
-        seq: 0,
-        data: format!("event: ended\ndata: {ended}").into_bytes(),
-    };
-    node.node(&Egress::Events(vec![ended]));
-    let end = StreamEnd::Complete {
-        status: 200,
-        headers: vec![("content-type".into(), "text/event-stream".into())],
-    };
-    let finished = Egress::EndStream {
-        id: again.id,
-        events: 1,
-        end,
-    };
-    node.node(&finished);
+    node.ended(&again, 0, json!(0));
     copied_and_deleted(&mut node);
+    let line = "pod duckpond-7 ended: exit code 0 (Completed)";
     let log = format!("/shared/actions/programs/{COMMIT}/gates/gates-1/log");
     assert_eq!(
         node.reports(),
@@ -503,6 +666,8 @@ fn a_pod_that_ended_while_its_wait_was_broken_reports_how_it_ended() {
     assert_eq!(node.reports(), [(1, State::Failed, line, Some(log))]);
 }
 
+// The pod is made before the claim: a check already taken makes none, and a claim refused for
+// another reason deletes the pod it made and errs the check.
 #[test]
 fn a_claim_refused_for_any_reason_but_its_state_errs_the_check_and_one_already_taken_is_left() {
     let mut node = node();
@@ -513,12 +678,18 @@ fn a_claim_refused_for_any_reason_but_its_state_errs_the_check_and_one_already_t
     node.offer(REFUSED).unwrap();
     node.after(2_000);
     node.after(0);
-    assert!(node.idle(), "no pod for either");
+    let made = node.pending();
+    assert_eq!(aimed(&made), sent("POST", "/v1/pods"), "none for check 1");
+    node.answer(500, 201, pod("duckpond-7"));
+    let deleted = node.answer(1_000, 200, json!({"deleted": "duckpond-7"}));
+    assert_eq!(deleted, sent("DELETE", "/v1/pods/duckpond-7"));
+    assert!(node.idle());
     let why = "the claim was refused: the stand-in refuses this claim for its own reasons";
     assert_eq!(
         node.reports(),
         [(REFUSED, State::Errored, why.to_owned(), None)]
     );
+    assert!(node.held().is_empty());
 }
 
 // A creation that took longer to land than a whole request lasts (scheduling, an image pull)
@@ -529,10 +700,231 @@ fn a_creation_slower_than_a_whole_request_still_waits_at_half_the_window() {
     node.offer(1).unwrap();
     node.after(1_000);
     node.after(0);
-    node.answer(88_951, 201, json!({"pod": {"name": "duckpond-7"}}));
+    node.answer(88_951, 201, pod("duckpond-7"));
     let wait = node.pending();
     assert_eq!(
         aimed(&wait),
         sent("GET", "/v1/pods/duckpond-7/wait?every=32")
     );
+}
+
+#[test]
+fn a_job_that_states_what_it_asks_gets_it_for_its_pod_and_cargo_runs_as_many_jobs_as_cpus() {
+    let mut node = node();
+    node.offer(SIXTEEN).unwrap();
+    node.after(2_000);
+    node.after(0);
+    let made = node.pending();
+    let body = node.body(&made);
+    let requests = json!({"requests": {"cpu": "16", "memory": "40Gi"}});
+    assert_eq!(body["resources"], requests);
+    let env = json!({"CARGO_BUILD_JOBS": "16", "FEATURE_SETS": "forge:program"});
+    assert_eq!(body["env"], env);
+    let scratch = json!({"path": "/var/tmp/target", "scratch": {"medium": "Memory"}});
+    assert_eq!(body["inputs"][2], scratch);
+}
+
+const FULL: &str = "pods \"duckpond-8\" is forbidden: exceeded quota: hardcap, requested: requests.cpu=16, used: requests.cpu=40, limited: requests.cpu=48";
+
+// Check 1 runs; check 2's pod finds the quota full, so check 2 stays queued, unclaimed and
+// unreported, until check 1's pod ends and its room is free.
+#[test]
+fn a_quota_with_no_room_leaves_the_check_queued_until_a_pod_of_this_runner_ends() {
+    let mut node = node();
+    node.concurrent(2).unwrap();
+    let wait = waiting_on_its_pod(&mut node);
+    node.offer(2).unwrap();
+    node.after(1_000);
+    node.after(0);
+    node.answer_to(500, "POST", "/v1/pods", 403, json!({"error": FULL}));
+    assert_eq!(node.waiting(), [2]);
+    assert!(node.reports().is_empty(), "a full quota reports nothing");
+    assert_eq!(node.held(), [1]);
+    node.ended(&wait, 0, json!(0));
+    copied_and_deleted(&mut node);
+    assert!(node.waiting().is_empty(), "check 2 runs again");
+    node.after(1_000);
+    node.after(0);
+    let made = node.pending();
+    assert_eq!(aimed(&made), sent("POST", "/v1/pods"));
+    node.answer(500, 201, pod("duckpond-9"));
+    let wait = node.pending();
+    // offered again as the pod ended, run a block of 1000 ms later: 64000 / 2 / 1000
+    assert_eq!(
+        aimed(&wait),
+        sent("GET", "/v1/pods/duckpond-9/wait?every=32")
+    );
+    assert_eq!(node.held(), [2]);
+}
+
+#[test]
+fn a_pod_that_asks_more_than_the_whole_quota_errs_its_check() {
+    let mut node = node();
+    node.offer(1).unwrap();
+    node.after(2_000);
+    node.after(0);
+    let never = "pods \"duckpond-7\" is forbidden: exceeded quota: hardcap, requested: requests.cpu=16,requests.memory=200Gi, used: requests.cpu=0,requests.memory=0, limited: requests.cpu=54840m,requests.memory=124634176Ki";
+    node.answer(500, 403, json!({"error": never}));
+    assert!(node.idle() && node.waiting().is_empty());
+    let reports: [Report; 1] = node.reports().try_into().unwrap();
+    let [(1, State::Errored, why, None)] = reports else {
+        panic!("one errored report");
+    };
+    assert!(
+        why.starts_with("the pod asks more than the quota holds"),
+        "{why}"
+    );
+}
+
+// An update of this program cancels the run parked on check 1's pod; the cut-off wait expires,
+// and nobody reports the check. A Sweep takes the pod up in a Resume the block after, which waits
+// on it, copies `/out`, reports how it ended and deletes it.
+#[test]
+fn a_run_an_update_cut_off_is_taken_up_by_a_sweep_and_reports_how_its_pod_ended() {
+    let mut node = node();
+    node.chain.seat::<Programs>(programs::PROGRAM);
+    listed(&node.chain, b"1");
+    waiting_on_its_pod(&mut node);
+    let [(1, before)]: [(u64, PodRow); 1] = node.pods().try_into().unwrap() else {
+        panic!("check 1's pod is held");
+    };
+    assert!(before.code.is_some(), "the pod names the code that made it");
+    listed(&node.chain, b"2");
+    node.chain.cancel_parked(PROGRAM);
+    for _ in 0..=DEFAULT_WAIT {
+        node.after(1_000);
+    }
+    assert!(node.idle() && node.reports().is_empty());
+    node.sweep();
+    node.sweep();
+    node.after(2_000);
+    node.after(0);
+    let again = node.pending();
+    assert_eq!(
+        aimed(&again),
+        sent("GET", "/v1/pods/duckpond-7/wait?every=64"),
+        "one Resume, at the block the Sweep measured"
+    );
+    let [(1, after)]: [(u64, PodRow); 1] = node.pods().try_into().unwrap() else {
+        panic!("check 1's pod is held");
+    };
+    assert!(after.code.is_some() && after.code != before.code);
+    node.ended(&again, 0, json!(0));
+    copied_and_deleted(&mut node);
+    let line = "pod duckpond-7 ended: exit code 0 (Completed)";
+    let log = format!("/shared/actions/programs/{COMMIT}/gates/gates-1/log");
+    assert_eq!(
+        node.reports(),
+        [(1, State::Passed, line.to_owned(), Some(log))]
+    );
+    assert!(node.held().is_empty());
+}
+
+// Check 1 is rerun as check 3 while its pod still runs: check 3's run deletes check 1's pod and
+// reports check 1 superseded.
+#[test]
+fn a_rerun_deletes_the_earlier_attempts_pod_and_reports_it_superseded() {
+    let mut node = node();
+    waiting_on_its_pod(&mut node);
+    let rerun = actions::Op::Rerun { check: 1 };
+    let owner = Origin::Signed(OWNER.to_vec());
+    node.chain.submit(owner, actions::PROGRAM, &rerun).unwrap();
+    node.offer(AGAIN).unwrap();
+    node.after(1_000);
+    node.after(0);
+    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
+    let deleted = "/v1/pods/duckpond-7";
+    node.answer_to(
+        1_000,
+        "DELETE",
+        deleted,
+        200,
+        json!({"deleted": "duckpond-7"}),
+    );
+    let why = "superseded by check 3 (attempt 2)".to_owned();
+    assert_eq!(node.reports(), [(1, State::Errored, why, None)]);
+    assert_eq!(node.held(), [AGAIN]);
+    node.pending_to("GET", "/v1/pods/duckpond-8/wait?every=32");
+}
+
+// Check 1 ended under another reporter while its pod ran, and check 2 still runs: a Sweep deletes
+// check 1's pod and leaves check 2's alone.
+#[test]
+fn a_sweep_deletes_the_pod_of_a_check_that_ended_and_leaves_a_live_run_alone() {
+    let mut node = node();
+    node.concurrent(2).unwrap();
+    waiting_on_its_pod(&mut node);
+    node.offer(2).unwrap();
+    node.after(1_000);
+    node.after(0);
+    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
+    node.pending_to("GET", "/v1/pods/duckpond-8/wait?every=32");
+    let report = actions::Op::Report {
+        check: 1,
+        state: State::Passed,
+        summary: "a person ran it".into(),
+        log: None,
+    };
+    let owner = Origin::Signed(OWNER.to_vec());
+    node.chain.submit(owner, actions::PROGRAM, &report).unwrap();
+    node.sweep();
+    let deleted = "/v1/pods/duckpond-7";
+    node.answer_to(
+        1_000,
+        "DELETE",
+        deleted,
+        200,
+        json!({"deleted": "duckpond-7"}),
+    );
+    assert_eq!(node.held(), [2]);
+    let deletes = node
+        .open()
+        .iter()
+        .filter(|row| aimed(row).0 == "DELETE")
+        .count();
+    assert_eq!(deletes, 0, "check 2's pod is left alone");
+}
+
+// Unset, the runner holds one pod at once: two checks offered together make one pod, and the
+// second runs once the first's pod ends. A runner set to two makes both.
+#[test]
+fn a_check_past_the_runners_concurrency_waits_for_one_of_its_pods_to_end() {
+    let mut node = node();
+    assert_eq!(node.concurrency(), 1);
+    node.offer(1).unwrap();
+    node.offer(2).unwrap();
+    node.after(2_000);
+    node.after(0);
+    let made = node.pending();
+    assert_eq!(aimed(&made), sent("POST", "/v1/pods"), "one pod, not two");
+    assert_eq!(node.waiting(), [2]);
+    node.answer(500, 201, pod("duckpond-7"));
+    let wait = node.pending();
+    node.ended(&wait, 0, json!(0));
+    copied_and_deleted(&mut node);
+    node.after(1_000);
+    node.after(0);
+    let next = node.pending();
+    assert_eq!(
+        aimed(&next),
+        sent("POST", "/v1/pods"),
+        "check 2 runs once the pod ends"
+    );
+    assert!(node.waiting().is_empty());
+
+    let mut wide = crate::tests::node();
+    wide.concurrent(2).unwrap();
+    assert_eq!(wide.concurrency(), 2);
+    wide.offer(1).unwrap();
+    wide.offer(2).unwrap();
+    wide.after(2_000);
+    wide.after(0);
+    let posts = wide
+        .open()
+        .iter()
+        .filter(|row| aimed(row) == sent("POST", "/v1/pods"))
+        .count();
+    assert_eq!(posts, 2, "two pods at once");
+    let none = wide.concurrent(0).unwrap_err();
+    assert_eq!(none.code, code::INVALID_INPUT);
 }

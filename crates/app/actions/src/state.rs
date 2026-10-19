@@ -2,7 +2,7 @@
 //! change each source ref belongs to, the runners and the counters.
 use store::{Item, Map, Set};
 
-use crate::{AccountNumber, CheckRow, RunRow, RunnerRow};
+use crate::{AccountNumber, Asks, CheckRow, RunRow, RunnerRow};
 
 pub const RUNS: Map<u64, RunRow> = Map::new("r/").shared();
 pub const CHECKS: Map<u64, CheckRow> = Map::new("c/").shared();
@@ -25,6 +25,8 @@ pub const OFFERING: Map<u64, (u64, String)> = Map::new("f/").shared();
 pub const RUNNERS: Map<AccountNumber, RunnerRow> = Map::new("u/").shared();
 pub const LAST_RUN: Item<u64> = Item::new("last-run").shared();
 pub const LAST_CHECK: Item<u64> = Item::new("last-check").shared();
+// What each check's job asks of its pod, when its workflow states anything.
+pub const ASKS: Map<u64, Asks> = Map::new("asks/").shared();
 
 // Every table here is general data: only this program's code governs it.
 pub(crate) const TABLES: &[::program::Table] = &[
@@ -40,4 +42,5 @@ pub(crate) const TABLES: &[::program::Table] = &[
     RUNNERS.table(),
     LAST_RUN.table(),
     LAST_CHECK.table(),
+    ASKS.table(),
 ];

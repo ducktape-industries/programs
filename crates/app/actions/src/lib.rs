@@ -14,11 +14,58 @@ pub use store::{PageRequest, PageResponse};
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
-use crate::state::{BY_COMMIT, CHECKS, QUEUED, RUNNERS, RUNS};
+use crate::state::{ASKS, BY_COMMIT, CHECKS, QUEUED, RUNNERS, RUNS};
 
 pub const PROGRAM: &str = "actions";
 // Where a repository keeps its workflows, one TOML file each.
 pub const WORKFLOWS: &str = ".forge/workflows";
+
+// A Kubernetes CPU quantity ("16", "1.5", "500m") in thousandths of a CPU; None for other text.
+pub fn millicores(quantity: &str) -> Option<u64> {
+    match quantity.strip_suffix('m') {
+        Some(milli) if digits(milli) => milli.parse().ok(),
+        Some(_) => None,
+        None => thousandths(quantity),
+    }
+}
+
+// A Kubernetes memory quantity ("40Gi", "512Mi", "1.5G", "1000") in bytes; None for other text.
+pub fn bytes(quantity: &str) -> Option<u64> {
+    const UNITS: [(&str, u64); 12] = [
+        ("Ki", 1 << 10),
+        ("Mi", 1 << 20),
+        ("Gi", 1 << 30),
+        ("Ti", 1 << 40),
+        ("Pi", 1 << 50),
+        ("Ei", 1 << 60),
+        ("k", 1_000),
+        ("M", 1_000_000),
+        ("G", 1_000_000_000),
+        ("T", 1_000_000_000_000),
+        ("P", 1_000_000_000_000_000),
+        ("E", 1_000_000_000_000_000_000),
+    ];
+    let (number, unit) = UNITS
+        .iter()
+        .find_map(|(suffix, unit)| quantity.strip_suffix(suffix).map(|number| (number, *unit)))
+        .unwrap_or((quantity, 1));
+    Some(thousandths(number)?.checked_mul(unit)? / 1000)
+}
+
+fn digits(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+// A decimal number with at most three places, in thousandths.
+fn thousandths(number: &str) -> Option<u64> {
+    let (whole, fraction) = number.split_once('.').unwrap_or((number, "0"));
+    if !digits(whole) || !digits(fraction) || fraction.len() > 3 {
+        return None;
+    }
+    let whole: u64 = whole.parse().ok()?;
+    let fraction: u64 = format!("{fraction:0<3}").parse().ok()?;
+    whole.checked_mul(1000)?.checked_add(fraction)
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum Op {
@@ -90,6 +137,15 @@ pub struct Job {
     pub steps: Vec<String>,
     pub env: Vec<(String, String)>,
     pub inputs: Vec<Input>,
+}
+
+// What a check's job asks of the pod a runner makes for it, as its workflow states it: CPUs and
+// memory as Kubernetes quantities, and the paths that are memory-backed scratch.
+#[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Asks {
+    pub cpu: Option<String>,
+    pub memory: Option<String>,
+    pub scratch: Vec<String>,
 }
 
 // A file of files placed at `path` before the steps run.
@@ -183,6 +239,10 @@ pub enum Query {
     #[ask(Reply::Runners(PageResponse<RunnerRow>))]
     #[reads(RUNNERS)]
     Runners { page: PageRequest },
+    // What a check's job asks of its pod; None for a job that states nothing.
+    #[ask(Reply::Asks(Option<Asks>))]
+    #[reads(ASKS)]
+    Asks { check: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -192,6 +252,7 @@ pub enum Reply {
     Queued(PageResponse<CheckRow>),
     Run(Option<RunRow>),
     Runners(PageResponse<RunnerRow>),
+    Asks(Option<Asks>),
 }
 
 pub fn describe(op: &Op) -> describe::Description {
@@ -247,6 +308,18 @@ pub fn describe(op: &Op) -> describe::Description {
 }
 
 describe::export!(Op, describe);
+
+#[test]
+fn a_quantity_reads_as_kubernetes_writes_it() {
+    let cpus = ["16", "1.5", "500m", "0.25"].map(millicores);
+    assert_eq!(cpus, [Some(16_000), Some(1_500), Some(500), Some(250)]);
+    let not = ["lots", "16.", "+5", "1.2345", "m", "5mm", ""].map(millicores);
+    assert!(not.iter().all(Option::is_none), "{not:?}");
+    let memory = ["40Gi", "512Mi", "1.5G", "1000", "124634176Ki"].map(bytes);
+    let expected: [u64; 5] = [40 << 30, 512 << 20, 1_500_000_000, 1000, 124_634_176 << 10];
+    assert_eq!(memory, expected.map(Some));
+    assert_eq!(["lots", "40GiB", "Gi", "5m"].map(bytes), [None; 4]);
+}
 
 #[test]
 fn op_variants_only_append() {

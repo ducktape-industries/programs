@@ -69,6 +69,27 @@ image = "toolchain"
 steps = ["make review"]
 "#;
 
+// A job that states what its pod asks, beside one that states nothing.
+const SIXTEEN: &str = r#"
+[on]
+push = ["main"]
+
+[[jobs]]
+id = "gates"
+runs-on = ["pods"]
+image = "toolchain"
+cpu = "16"
+memory = "40Gi"
+scratch = ["/var/tmp/target"]
+steps = ["make check"]
+
+[[jobs]]
+id = "lint"
+runs-on = ["pods"]
+image = "toolchain"
+steps = ["make lint"]
+"#;
+
 // A job no container runs: the `claude` runner is its own environment.
 const CLAUDE: &str = r#"
 [on]
@@ -514,6 +535,38 @@ fn a_check_is_claimed_once_reported_once_and_rerun_as_its_next_attempt() {
 }
 
 #[test]
+fn a_job_that_states_what_its_pod_asks_keeps_it_for_every_attempt_and_a_bad_quantity_says_why() {
+    let mut world = world();
+    let root = world.commit(&[], &[("sixteen.toml", SIXTEEN)]);
+    world.push(None, root, "main");
+    let asks = |world: &World, check: u64| {
+        let Reply::Asks(asks) = world.chain.query(PROGRAM, &Query::Asks { check }).unwrap() else {
+            panic!("asks answers Asks");
+        };
+        asks
+    };
+    let sixteen = Asks {
+        cpu: Some("16".into()),
+        memory: Some("40Gi".into()),
+        scratch: vec!["/var/tmp/target".into()],
+    };
+    assert_eq!(asks(&world, 1), Some(sixteen.clone()));
+    assert_eq!(asks(&world, 2), None, "lint states nothing");
+    world.act(&Op::Claim { check: 1 }).unwrap();
+    world.act(&Op::Rerun { check: 1 }).unwrap();
+    assert_eq!(world.check(3).attempt, 2);
+    assert_eq!(asks(&world, 3), Some(sixteen), "a rerun asks the same");
+    let lots = SIXTEEN.replace("memory = \"40Gi\"", "memory = \"lots\"");
+    let other = world.commit(&[root], &[("sixteen.toml", lots.as_str())]);
+    world.push(Some(root), other, "main");
+    let error = world.run(2).error.unwrap();
+    assert!(
+        error.contains("memory takes a Kubernetes quantity"),
+        "{error}"
+    );
+}
+
+#[test]
 fn a_trigger_runs_every_workflow_at_a_commit() {
     let mut world = world();
     let root = world.commit(&[], &[("changes.toml", CHANGES)]);
@@ -634,11 +687,14 @@ fn the_programs_gates_workflow_reads() {
     };
     assert!(gates.starts_on(&dev) && gates.starts_on(&Event::Updated { n: 1 }));
     assert!(gates.notify.is_some());
-    let steps = &gates.jobs[0].steps;
+    let (job, asks) = &gates.jobs[0];
+    assert_eq!(asks.cpu.as_deref(), Some("16"));
+    assert!(asks.memory.is_some() && asks.scratch == ["/var/tmp/target"]);
+    let steps = &job.steps;
     assert!(steps[1].contains("/forge/tools"), "{steps:?}");
     assert_eq!(steps[2], "sh /var/tmp/tools/gates.sh /work/programs");
     assert!(
-        gates.jobs[0].inputs.is_empty(),
+        job.inputs.is_empty(),
         "/shared/tools holds no scripts (J-062)"
     );
 }

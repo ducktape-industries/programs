@@ -3,7 +3,7 @@
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx, Reply as Wanted};
 
 use crate::rules::{
-    check, checks, claim, previewing, queued, register, replied, report, rerun, run, runners,
+    asks, check, checks, claim, previewing, queued, register, replied, report, rerun, run, runners,
     trigger, watched,
 };
 use crate::{Op, PROGRAM, Query, Reply};
@@ -57,6 +57,7 @@ impl Program for Actions {
             Query::Queued { page } => Reply::Queued(queued(ctx, &page)?),
             Query::Run { id } => Reply::Run(run(ctx, id)?),
             Query::Runners { page } => Reply::Runners(runners(ctx, &page)?),
+            Query::Asks { check } => Reply::Asks(asks(ctx, check)?),
         })
     }
 }

@@ -1,11 +1,11 @@
 //! A workflow file, `.forge/workflows/<name>.toml`: the events that run it (`on.push` branches,
-//! `on.change` "opened"/"updated": each Preview of a change), its jobs, each run as one check
-//! (`image` only for a runner that makes a container), and `notify.channel`, told of a red push.
+//! `on.change` "opened"/"updated": each Preview), its jobs, each one check (`image`, `cpu`,
+//! `memory` and `scratch` for a runner that makes a pod), and `notify.channel`, told of a red push.
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
 
-use crate::{Event, Input, Job};
+use crate::{Asks, Event, Input, Job, bytes, millicores};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -45,6 +45,11 @@ struct JobFile {
     env: BTreeMap<String, String>,
     #[serde(default)]
     inputs: Vec<InputFile>,
+    // Kubernetes quantities ("16", "40Gi"), and the paths a pod holds in memory
+    cpu: Option<String>,
+    memory: Option<String>,
+    #[serde(default)]
+    scratch: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -60,7 +65,7 @@ pub(crate) struct Workflow {
     push: Vec<String>,
     opened: bool,
     updated: bool,
-    pub(crate) jobs: Vec<Job>,
+    pub(crate) jobs: Vec<(Job, Asks)>,
 }
 
 const CHANGE_EVENTS: [&str; 2] = ["opened", "updated"];
@@ -83,18 +88,42 @@ pub(crate) fn parse(text: &str) -> Result<Workflow, String> {
         if !ids.insert(job.id.clone()) {
             return Err(format!("two jobs are named {:?}", job.id));
         }
+        let quantities = [
+            (
+                "cpu",
+                &job.cpu,
+                millicores(job.cpu.as_deref().unwrap_or("0")),
+            ),
+            (
+                "memory",
+                &job.memory,
+                bytes(job.memory.as_deref().unwrap_or("0")),
+            ),
+        ];
+        if let Some((key, Some(text), _)) = quantities.iter().find(|(_, _, read)| read.is_none()) {
+            return Err(format!(
+                "job {:?}: {key} takes a Kubernetes quantity such as \"16\" or \"40Gi\", not {text:?}",
+                job.id
+            ));
+        }
+        let asks = Asks {
+            cpu: job.cpu,
+            memory: job.memory,
+            scratch: job.scratch,
+        };
         let inputs = job.inputs.into_iter().map(|input| Input {
             path: input.path,
             files: input.files,
         });
-        jobs.push(Job {
+        let planned = Job {
             id: job.id,
             runs_on: job.runs_on,
             image: job.image,
             steps: job.steps,
             env: job.env.into_iter().collect(),
             inputs: inputs.collect(),
-        });
+        };
+        jobs.push((planned, asks));
     }
     let names = |event: &str| file.on.change.iter().any(|named| named == event);
     Ok(Workflow {
