@@ -21,7 +21,8 @@
 #                   program crate with the feature off) and the system views
 #   crates/lib/     libraries a program links: gitcore (git objects, packs,
 #                   walks, diffs, the wire's server side), borsh-json (a
-#                   program's values as JSON by the borsh schema it carries)
+#                   program's values as JSON by the borsh schema it carries),
+#                   model-wire (the harness wire and its provider adapters)
 #
 # A view links its program by path and reads its types; a view is a cdylib for
 # wasm32-unknown-unknown on `view`. The host that runs the programs
@@ -78,6 +79,7 @@ members = [
     "crates/app/actions-pods",
     "crates/lib/gitcore",
     "crates/lib/borsh-json",
+    "crates/lib/model-wire",
 ]
 # Third-party crates taken whole (crates/vendor/<crate>/README.ducktape.md
 # says from where and what differs). Path dependencies, not members: the
@@ -96,6 +98,7 @@ program = { path = "crates/sdk/program" }
 store = { path = "crates/sdk/store" }
 gitcore = { path = "crates/lib/gitcore" }
 borsh-json = { path = "crates/lib/borsh-json" }
+model-wire = { path = "crates/lib/model-wire" }
 ducklink = { path = "crates/sdk/ducklink" }
 design = { path = "crates/sdk/design" }
 view-wire = { path = "crates/sdk/view-wire" }
