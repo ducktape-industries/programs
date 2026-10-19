@@ -506,7 +506,9 @@ subtree's. In a debug build every reuse is lowered again and held to what
 was kept, failing with the memo's id where they differ: a missing dep is a
 failing test, not a stale screen (`TestAppContext::memo_checks(false)` sees
 what a release build does, and a test that counts `TickReport::lowered`
-turns it off). `src/tests/memo.rs` is the whole of it.
+turns it off). A kept subtree is neither copied nor diffed: the frame holds its node's
+shell, and the last tree's node takes its place. `src/tests/memo.rs` is
+the whole of it.
 
 ## Exporting
 

@@ -71,13 +71,20 @@ impl Window {
 /// host matches whole paths. A view names a target by the ids it holds
 /// ([`Window::focus`]); the frame it renders is the first that holds an
 /// element it just opened, so the path is read there, not earlier.
-pub(crate) fn send_widgets(context: &slots::Context, root: Option<&wire::Node>) {
+pub(crate) fn send_widgets(
+    context: &slots::Context,
+    root: Option<&wire::Node>,
+    behind: Option<&wire::Node>,
+) {
     let host = slots::host(context);
     for mut command in slots::take_widgets(context) {
-        if let (Some(root), Some(target)) = (root, target_mut(&mut command))
-            && let Some(path) = resolve(root, target)
-        {
-            *target = path;
+        if let (Some(root), Some(target)) = (root, target_mut(&mut command)) {
+            // `behind` holds the subtrees `root` keeps from the last frame
+            let found =
+                resolve(root, target).or_else(|| behind.and_then(|behind| resolve(behind, target)));
+            if let Some(path) = found {
+                *target = path;
+            }
         }
         host.notify::<crate::methods::HostWidget>(command);
     }
@@ -229,7 +236,7 @@ mod tests {
             host.drain_outbox().is_empty(),
             "nothing goes out before the frame"
         );
-        super::send_widgets(&app.inner.slots, None);
+        super::send_widgets(&app.inner.slots, None, None);
         let sent: Vec<_> = host
             .drain_outbox()
             .iter()
@@ -255,7 +262,7 @@ mod tests {
         let handle = app.focus_handle();
         let mut window = app.window();
         handle.focus(&mut window, &mut app);
-        super::send_widgets(&app.inner.slots, None);
+        super::send_widgets(&app.inner.slots, None, None);
         let requests = app.host().drain_outbox();
         let [request] = requests.as_slice() else {
             panic!("one focus command")

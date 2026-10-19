@@ -15,12 +15,12 @@ pub(crate) enum MemoId {
     Entity(u64),
 }
 
-type Build = Box<dyn FnOnce(&mut Window, &mut App) -> AnyElement>;
+pub(crate) type Build = Box<dyn FnOnce(&mut Window, &mut App) -> AnyElement>;
 
 // A subtree lowered once and kept: built and lowered again only when its
 // deps differ from the ones it was last lowered with, or when something
-// every subtree may read changed (the theme, the pane, the device, a whole
-// frame, a resync). Made by [`memo`] and [`Context::memo`](crate::Context::memo).
+// every subtree may read changed (the theme, the pane, the device, a
+// resync). Made by [`memo`] and [`Context::memo`](crate::Context::memo).
 pub struct Memo {
     pub(crate) id: MemoId,
     pub(crate) deps: Box<dyn Any>,
@@ -93,16 +93,26 @@ pub(crate) struct Key {
     pub id: MemoId,
 }
 
-// One kept subtree: the deps it was lowered with, the node (without the
-// picture bytes it first carried: the host has them), what its lowering
-// did besides (its routes, the scope around them, its dense marks), and
-// the frame that last drew it.
+// One kept subtree: the deps it was lowered with, its node's own fields
+// (its shell: the node with no children, and without the picture bytes it
+// first carried), what its lowering did besides (its routes, the scope
+// around them, its dense marks), and the frame that last drew it. The
+// node itself is kept nowhere but in the last tree: a frame that keeps it
+// lowers to its shell, and the shell is swapped for the last tree's node.
 pub(crate) struct Entry {
     pub deps: Box<dyn Any>,
-    pub node: wire::Node,
+    pub shell: wire::Node,
     pub journal: slots::Journal,
     pub dense: Vec<Vec<wire::ElementIdWire>>,
     pub seen: u64,
+}
+
+// A memo the frame kept: the path its node is filed under, its id, and,
+// with checks on, the node its build lowers to now.
+pub(crate) struct Hit {
+    pub path: Vec<wire::ElementIdWire>,
+    pub id: MemoId,
+    pub check: Option<wire::Node>,
 }
 
 #[derive(Default)]
@@ -116,12 +126,15 @@ pub(crate) struct Cache {
     pub parents: HashMap<u64, u64>,
     // The memos the frame lowered anew, in the order it reached them.
     pub anew: Vec<MemoId>,
+    // The memos the frame kept, standing in its tree as their shells.
+    pub hits: Vec<Hit>,
 }
 
 impl Cache {
     pub fn begin_frame(&mut self) {
         self.frame += 1;
         self.anew.clear();
+        self.hits.clear();
     }
 
     // Drops every subtree the frame did not draw, as the routes it took
@@ -165,4 +178,204 @@ pub(crate) fn without_pictures(node: &mut wire::Node) {
         wire::Node::Image { data, .. } => *data = None,
         _ => {}
     });
+}
+
+// `node`'s own fields: a copy of it with no children (an empty list, or
+// an empty stand-in per slot), its children never copied.
+pub(crate) fn shell(node: &mut wire::Node) -> wire::Node {
+    let mut shell = match node.child_list_mut() {
+        Some(list) => {
+            let children = std::mem::take(list);
+            let shell = node.clone();
+            *node.child_list_mut().expect("a list") = children;
+            shell
+        }
+        None => {
+            let parts = node.children_mut();
+            let children: Vec<wire::Node> = parts
+                .iter_mut()
+                .map(|slot| std::mem::replace(slot, wire::Node::empty()))
+                .collect();
+            let shell = node.clone();
+            for (slot, child) in node.children_mut().iter_mut().zip(children) {
+                *slot = child;
+            }
+            shell
+        }
+    };
+    without_pictures(&mut shell);
+    shell
+}
+
+// Where each of `targets` stands in `root`, by the path it is filed under
+// (`wire::identity`): its position, as child indices from the root.
+fn find(
+    root: &wire::Node,
+    targets: &HashMap<&[wire::ElementIdWire], usize>,
+) -> HashMap<Vec<u32>, usize> {
+    fn walk(
+        node: &wire::Node,
+        row: Option<usize>,
+        path: &mut Vec<wire::ElementIdWire>,
+        at: &mut Vec<u32>,
+        targets: &HashMap<&[wire::ElementIdWire], usize>,
+        found: &mut HashMap<Vec<u32>, usize>,
+    ) {
+        let segment = wire::identity::segment(node.identity().cloned(), row);
+        let entered = segment.is_some();
+        if let Some(segment) = segment {
+            path.push(segment);
+            if let Some(&target) = targets.get(path.as_slice()) {
+                found.insert(at.clone(), target);
+                path.pop();
+                return;
+            }
+        }
+        for (index, child) in node.children().iter().enumerate() {
+            at.push(index as u32);
+            walk(
+                child,
+                wire::identity::row(node, index),
+                path,
+                at,
+                targets,
+                found,
+            );
+            at.pop();
+        }
+        if entered {
+            path.pop();
+        }
+    }
+    let mut found = HashMap::new();
+    if !targets.is_empty() {
+        walk(
+            root,
+            None,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            targets,
+            &mut found,
+        );
+    }
+    found
+}
+
+// Fails, naming the memo, where what it lowers to now is not the node it
+// kept.
+fn check(hit: &Hit, kept: &wire::Node) {
+    let Some(now) = &hit.check else {
+        return;
+    };
+    let (mut was, mut now) = (kept.clone(), now.clone());
+    let patches = wire::diff(&mut was, &mut now);
+    assert!(
+        patches.is_empty(),
+        "memo {} at {:?} was kept, but lowering it again draws something else ({} patches, \
+         the first {:?}): its deps leave out something it reads",
+        hit.id,
+        hit.path,
+        patches.len(),
+        patches.first()
+    );
+}
+
+// The node at `at` of `root`.
+fn at_mut<'a>(mut node: &'a mut wire::Node, at: &[u32]) -> Option<&'a mut wire::Node> {
+    for index in at {
+        node = node.children_mut().get_mut(*index as usize)?;
+    }
+    Some(node)
+}
+
+// Where the node at `at` of the new tree is now: in a subtree a patch
+// carries out of it, or in the tree.
+fn placed<'a>(
+    new: &'a mut wire::Node,
+    patches: &'a mut [wire::Patch],
+    at: &[u32],
+) -> Option<&'a mut wire::Node> {
+    for patch in patches.iter_mut() {
+        let (base, node) = match patch {
+            wire::Patch::Replace { path, node } => (path.clone(), node),
+            wire::Patch::Insert { path, index, node } => {
+                let mut base = path.clone();
+                base.push(*index);
+                (base, node)
+            }
+            _ => continue,
+        };
+        if let Some(rest) = at.strip_prefix(base.as_slice()) {
+            return at_mut(node, rest);
+        }
+    }
+    at_mut(new, at)
+}
+
+// The patches from `last` to `new`, as `wire::diff_taking` answers them,
+// where `new` holds the shells of the memos `hits` kept: each shell takes
+// the node of `last` that stands where it stands (moved, never copied,
+// and never diffed). With `checks` on, each is held to what its memo
+// lowers to now, and a shell with no node of `last` at its place fails;
+// with them off that answers None, and the frame must be drawn whole.
+// `last` is left with what `new` gave up.
+pub(crate) fn keeping(
+    last: &mut wire::Node,
+    new: &mut wire::Node,
+    hits: &[Hit],
+    checks: bool,
+) -> Option<Vec<wire::Patch>> {
+    let targets: HashMap<&[wire::ElementIdWire], usize> = hits
+        .iter()
+        .enumerate()
+        .map(|(index, hit)| (hit.path.as_slice(), index))
+        .collect();
+    let standing = find(new, &targets);
+    let mut kept = vec![false; hits.len()];
+    let mut keep = |at: &[u32], old: &wire::Node, shell: &wire::Node| {
+        let Some(&hit) = standing.get(at) else {
+            return wire::Kept::Diff;
+        };
+        let same = old.identity() == shell.identity()
+            && std::mem::discriminant(old) == std::mem::discriminant(shell);
+        if !same {
+            return wire::Kept::Carry;
+        }
+        check(&hits[hit], old);
+        kept[hit] = true;
+        wire::Kept::Keep
+    };
+    let mut patches = wire::diff_keeping(last, new, &mut keep);
+    let rest: HashMap<&[wire::ElementIdWire], usize> =
+        targets.into_iter().filter(|(_, hit)| !kept[*hit]).collect();
+    if rest.is_empty() {
+        return Some(patches);
+    }
+    let behind = find(last, &rest);
+    let mut from: HashMap<usize, Vec<u32>> =
+        behind.into_iter().map(|(at, hit)| (hit, at)).collect();
+    for (at, hit) in standing {
+        if kept[hit] {
+            continue;
+        }
+        let node = from
+            .remove(&hit)
+            .and_then(|from| at_mut(last, &from))
+            .map(|node| std::mem::replace(node, wire::Node::empty()));
+        let Some(node) = node else {
+            assert!(
+                !checks,
+                "memo {} at {:?} was kept, but the last tree has no node at its place",
+                hits[hit].id, hits[hit].path
+            );
+            return None;
+        };
+        check(&hits[hit], &node);
+        let Some(shell) = placed(new, &mut patches, &at) else {
+            assert!(!checks, "memo {} stands nowhere in its frame", hits[hit].id);
+            return None;
+        };
+        *shell = node;
+    }
+    Some(patches)
 }

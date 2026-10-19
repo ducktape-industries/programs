@@ -148,7 +148,11 @@ enum Edit {
 /// are what [`sanitize`] already makes unique on the host.
 pub fn diff(old: &mut Node, new: &mut Node) -> Vec<Patch> {
     let mut patches = Vec::new();
-    diff_node(old, new, false, &mut Vec::new(), &mut patches);
+    let take = &mut Take {
+        take: false,
+        kept: None,
+    };
+    diff_node(old, new, take, &mut Vec::new(), &mut patches);
     patches
 }
 
@@ -163,14 +167,57 @@ pub fn diff(old: &mut Node, new: &mut Node) -> Vec<Patch> {
 #[doc(hidden)]
 pub fn diff_taking(old: &mut Node, new: &mut Node) -> Vec<Patch> {
     let mut patches = Vec::new();
-    diff_node(old, new, true, &mut Vec::new(), &mut patches);
+    let take = &mut Take {
+        take: true,
+        kept: None,
+    };
+    diff_node(old, new, take, &mut Vec::new(), &mut patches);
     patches
+}
+
+// What [`diff_keeping`] does with a node of `new`: diff it as any other,
+// keep the node of `old` across from it, or send it whole.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kept {
+    Diff,
+    Keep,
+    Carry,
+}
+
+// [`diff_taking`], where some nodes of `new` stand for the node of `old`
+// across from them: `kept` hears each node of `new`, at its position, with
+// the node of `old` it is matched with, before the two are compared.
+// `Keep` moves the node of `old` into `new` in its place, never compared
+// and never copied; `Carry` sends the node of `new` whole. `old` is left
+// with what `new` gave up, so it is no base for a diff after. Plumbing for
+// view's driver, not a view's API.
+#[doc(hidden)]
+pub fn diff_keeping(old: &mut Node, new: &mut Node, kept: &mut KeptBy<'_>) -> Vec<Patch> {
+    let mut patches = Vec::new();
+    let take = &mut Take {
+        take: true,
+        kept: Some(kept),
+    };
+    diff_node(old, new, take, &mut Vec::new(), &mut patches);
+    patches
+}
+
+// What a [`diff_keeping`] asks of each node of `new`: its position, the
+// node of `old` it is matched with, and itself.
+type KeptBy<'a> = dyn FnMut(&[u32], &Node, &Node) -> Kept + 'a;
+
+// How a diff carries a subtree (moved out of `new`, else copied), and what
+// it hears before it compares two nodes.
+struct Take<'a> {
+    take: bool,
+    kept: Option<&'a mut KeptBy<'a>>,
 }
 
 /// The subtree a patch carries: `new` itself, moved out behind an empty
 /// stand-in, or a copy of it.
-fn carry(new: &mut Node, take: bool) -> Node {
-    match take {
+fn carry(new: &mut Node, take: &Take<'_>) -> Node {
+    match take.take {
         true => std::mem::replace(new, Node::empty()),
         false => new.clone(),
     }
@@ -183,10 +230,28 @@ fn carry(new: &mut Node, take: bool) -> Node {
 fn diff_node(
     old: &mut Node,
     new: &mut Node,
-    take: bool,
+    take: &mut Take<'_>,
     path: &mut Vec<u32>,
     out: &mut Vec<Patch>,
 ) {
+    let kept = match take.kept.as_mut() {
+        Some(kept) => kept(path, old, new),
+        None => Kept::Diff,
+    };
+    match kept {
+        Kept::Diff => {}
+        Kept::Keep => {
+            std::mem::swap(old, new);
+            return;
+        }
+        Kept::Carry => {
+            out.push(Patch::Replace {
+                path: path.clone(),
+                node: carry(new, take),
+            });
+            return;
+        }
+    }
     let same_kind = std::mem::discriminant(old) == std::mem::discriminant(new);
     let same_arity = new.child_list_mut().is_some() || old.children().len() == new.children().len();
     if !(same_kind && same_arity) {
@@ -237,7 +302,7 @@ fn diff_rows(
     new: &mut [Node],
     old_start: usize,
     new_start: usize,
-    take: bool,
+    take: &mut Take<'_>,
     path: &mut Vec<u32>,
     out: &mut Vec<Patch>,
 ) {
@@ -281,7 +346,7 @@ fn diff_rows(
 fn diff_list(
     old: &mut [Node],
     new: &mut [Node],
-    take: bool,
+    take: &mut Take<'_>,
     path: &mut Vec<u32>,
     out: &mut Vec<Patch>,
 ) {
@@ -371,7 +436,7 @@ fn diff_keyed(
     old: &mut [Node],
     new: &mut [Node],
     offset: usize,
-    take: bool,
+    take: &mut Take<'_>,
     path: &mut Vec<u32>,
     out: &mut Vec<Patch>,
 ) {

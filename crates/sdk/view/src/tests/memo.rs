@@ -125,6 +125,107 @@ fn loosen_and_rename(cx: &mut TestAppContext, rows: &Entity<Rows>) {
     cx.run_until_parked();
 }
 
+// A kept row moved under a wrapper with no id is filed where it was, so it
+// is still kept: the frame sends the wrapper whole, with the row's node
+// from the last tree in it.
+#[derive(Default, Serialize, Deserialize)]
+struct Wrapped {
+    wrapped: bool,
+    count: usize,
+}
+impl View for Wrapped {
+    const NAME: &'static str = "Wrapped";
+}
+impl Render for Wrapped {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let row = memo("row", (), |_, _| {
+            div().id("row").child(div().id("inner").child("kept"))
+        });
+        let row = match self.wrapped {
+            true => div().child(row).into_any_element(),
+            false => row.into_any_element(),
+        };
+        div().id("page").child(row).child(self.count.to_string())
+    }
+}
+
+fn wrap_and_unwrap(checks: bool) {
+    let mut cx = TestAppContext::new();
+    let view = cx.open::<Wrapped>();
+    cx.memo_checks(checks);
+    for wrapped in [true, false] {
+        cx.update(&view, |view, _, cx| {
+            view.wrapped = wrapped;
+            view.count += 1;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        let count = view.read(|view| view.count.to_string());
+        assert!(
+            cx.has_text("kept") && cx.has_text(&count),
+            "{:?}",
+            cx.texts()
+        );
+        assert!(cx.memos_lowered().is_empty(), "the row was kept");
+    }
+}
+
+#[test]
+fn a_kept_row_moved_under_a_wrapper_comes_from_the_last_tree() {
+    wrap_and_unwrap(false);
+    wrap_and_unwrap(true);
+}
+
+// The page with its other part, and its row when `row` is.
+fn page(row: bool) -> wire::Node {
+    let page = div().id("page").child(div().id("other").child("other"));
+    let page = match row {
+        true => page.child(div().id("row").child("kept")),
+        false => page,
+    };
+    crate::testing::lower::<(), _>(move |_| page).0
+}
+
+// The page with its row standing as its shell, kept as memo "row".
+fn kept_row() -> (wire::Node, Vec<crate::memo::Hit>) {
+    let mut new = page(true);
+    let shell = crate::memo::shell(&mut new.children_mut()[1]);
+    new.children_mut()[1] = shell;
+    let hit = crate::memo::Hit {
+        path: vec![
+            wire::ElementIdWire::Name("page".into()),
+            wire::ElementIdWire::Name("row".into()),
+        ],
+        id: crate::memo::MemoId::Named(wire::ElementIdWire::Name("row".into())),
+        check: None,
+    };
+    (new, vec![hit])
+}
+
+#[test]
+fn a_kept_row_takes_the_last_trees_node_and_sends_nothing() {
+    let (mut new, hits) = kept_row();
+    let patches = crate::memo::keeping(&mut page(true), &mut new, &hits, true);
+    assert_eq!(patches, Some(Vec::new()));
+    assert_eq!(new, page(true));
+}
+
+// A memo kept with no node at its place in the last tree never takes
+// another: checks fail naming it, and without them the frame is drawn
+// whole.
+#[test]
+#[should_panic(expected = "memo row at")]
+fn a_kept_row_the_last_tree_lacks_fails_with_checks() {
+    let (mut new, hits) = kept_row();
+    crate::memo::keeping(&mut page(false), &mut new, &hits, true);
+}
+
+#[test]
+fn a_kept_row_the_last_tree_lacks_draws_the_frame_whole() {
+    let (mut new, hits) = kept_row();
+    assert!(crate::memo::keeping(&mut page(false), &mut new, &hits, false).is_none());
+}
+
 // What any subtree may read, the theme, lowers every memo again.
 #[test]
 fn a_new_theme_lowers_every_memo_again() {

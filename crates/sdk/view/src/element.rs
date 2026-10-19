@@ -231,62 +231,80 @@ impl<'a> Lowering<'a> {
             let mut memos = self.app.inner.memos.borrow_mut();
             (memos.entries.remove(&key), memos.frame)
         };
-        let mut kept = kept.filter(|kept| same(&*kept.deps, &*deps));
+        let kept = kept.filter(|kept| same(&*kept.deps, &*deps));
         if let Some(kept) = &kept {
             debug_assert!(
                 kept.seen != frame,
                 "two memos at {key:?}: give each its own id"
             );
         }
-        // a memo whose routes can't be taken again is lowered anew
-        if !self.app.inner.memo_checks.get()
-            && let Some(entry) = kept.take()
-            && slots::replay(self.slots(), &entry.journal)
-        {
-            self.row.take();
-            let dense = entry.dense.iter().cloned();
-            self.app.inner.dense.borrow_mut().extend(dense);
-            let node = entry.node.clone();
-            let entry = crate::memo::Entry {
-                seen: frame,
-                ..entry
-            };
-            self.app.inner.memos.borrow_mut().entries.insert(key, entry);
-            return node;
-        }
-        self.app.inner.memos.borrow_mut().anew.push(key.id.clone());
+        // A kept memo stands in the tree as its shell, and the driver
+        // puts the last tree's node in its place; one whose routes can't
+        // be taken again is lowered anew. With checks on (a debug build) a
+        // kept memo is lowered again all the same, and the driver holds
+        // what it lowers to now to the node it stands for.
+        let checks = self.app.inner.memo_checks.get();
+        let kept = kept.filter(|kept| checks || slots::replay(self.slots(), &kept.journal));
+        let Some(entry) = kept else {
+            self.app.inner.memos.borrow_mut().anew.push(key.id.clone());
+            return self.lower_anew(key, deps, build, frame);
+        };
+        let mut path = key.path.clone();
+        path.extend(wire::identity::segment(
+            entry.shell.identity().cloned(),
+            key.row,
+        ));
+        let id = key.id.clone();
+        let (shell, check) = match checks {
+            true => {
+                let node = self.lower_anew(key, deps, build, frame);
+                (entry.shell, Some(node))
+            }
+            false => {
+                self.row.take();
+                let dense = entry.dense.iter().cloned();
+                self.app.inner.dense.borrow_mut().extend(dense);
+                let shell = entry.shell.clone();
+                let entry = crate::memo::Entry {
+                    seen: frame,
+                    ..entry
+                };
+                self.app.inner.memos.borrow_mut().entries.insert(key, entry);
+                (shell, None)
+            }
+        };
+        let hit = crate::memo::Hit { path, id, check };
+        self.app.inner.memos.borrow_mut().hits.push(hit);
+        shell
+    }
+
+    // `build` lowered as `key`'s memo, and kept for the next frame unless
+    // it holds a list.
+    fn lower_anew(
+        &mut self,
+        key: crate::memo::Key,
+        deps: Box<dyn std::any::Any>,
+        build: crate::memo::Build,
+        frame: u64,
+    ) -> wire::Node {
         let dense_from = self.app.inner.dense.borrow().len();
         self.opaque.push(false);
         slots::begin_journal(self.slots());
         let element = build(self.window, self.app);
-        let node = self.lower_element(element);
+        let mut node = self.lower_element(element);
         let journal = slots::end_journal(self.slots());
         let opaque = self.opaque.pop().expect("its own mark");
         assert!(
             node.identity().is_some() || key.row.is_some(),
-            "memo {:?} lowers to a node with no id: give the element it builds one",
+            "memo {} lowers to a node with no id: give the element it builds one",
             key.id
         );
-        let mut lowered = node.clone();
-        crate::memo::without_pictures(&mut lowered);
-        if let Some(kept) = kept {
-            let (mut was, mut now) = (kept.node, lowered.clone());
-            let patches = wire::diff(&mut was, &mut now);
-            assert!(
-                patches.is_empty(),
-                "memo {:?} at {:?} was kept, but lowering it again draws something else \
-                 ({} patches, the first {:?}): its deps leave out something it reads",
-                key.id,
-                key.path,
-                patches.len(),
-                patches.first()
-            );
-        }
         if !opaque {
             let dense = self.app.inner.dense.borrow()[dense_from..].to_vec();
+            let shell = crate::memo::shell(&mut node);
             let entry = crate::memo::Entry {
                 deps,
-                node: lowered,
+                shell,
                 journal,
                 dense,
                 seen: frame,

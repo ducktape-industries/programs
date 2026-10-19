@@ -333,28 +333,67 @@ impl<V: View> Driver<V> {
     fn frame(&mut self) -> wire::Frame {
         let render = self.app.inner.dirty.replace(false) || self.last_root.is_none();
         let mut root = render.then(|| self.render_root());
+        let hits = std::mem::take(&mut self.app.inner.memos.borrow_mut().hits);
+        // a target inside a kept subtree is found in the last tree, which
+        // holds it until the frame takes it
+        let behind = match hits.is_empty() {
+            true => None,
+            false => self.last_root.as_ref(),
+        };
         crate::window::send_widgets(
             &self.app.inner.slots,
             root.as_ref().or(self.last_root.as_ref()),
+            behind,
         );
         self.busy |= self.app.inner.dirty.get() || executor::ready(&self.app.inner.tasks.borrow());
         // Patches against the last tree, unless there is none — a first
         // frame or a resync. Nothing lowered is nothing changed, and a
         // lowered tree that diffs to no patches is the same tree
         // (`apply(old, diff(old, new))` leaves `old == new`).
+        let checks = self.app.inner.memo_checks.get();
         let mut patches = Vec::new();
+        let mut lost = false;
         let unchanged = match (&mut root, &mut self.last_root) {
             (None, _) => true,
             (Some(root), Some(last)) => {
                 let started = Clock::now();
-                patches = wire::diff_taking(last, root);
+                match hits.is_empty() {
+                    true => patches = wire::diff_taking(last, root),
+                    false => match crate::memo::keeping(last, root, &hits, checks) {
+                        Some(kept) => patches = kept,
+                        None => lost = true,
+                    },
+                }
                 self.spent.diff += started.elapsed();
                 patches.is_empty()
             }
-            (Some(_), None) => false,
+            (Some(_), None) => {
+                assert!(
+                    !checks || hits.is_empty(),
+                    "memos kept with no last tree to keep them from"
+                );
+                lost = !hits.is_empty();
+                false
+            }
         };
-        if let Some(tree) = root.take().filter(|_| !unchanged) {
-            root = self.keep(tree, &mut patches);
+        // A kept memo with no node behind it: nothing is sent, and the next
+        // tick draws the tree whole.
+        if lost {
+            root = None;
+            patches.clear();
+            self.last_root = None;
+            slots::clear_pictures(&self.app.inner.slots);
+            self.app.inner.memos.borrow_mut().forget();
+            self.app.notify();
+            self.busy = true;
+        }
+        let unchanged = unchanged || lost;
+        match root.take() {
+            Some(tree) if !unchanged => root = self.keep(tree, &mut patches),
+            // the same tree, with the subtrees it kept moved in from the
+            // last one: the next frame's base
+            Some(tree) => self.last_root = Some(tree),
+            None => {}
         }
         let host = self.app.host();
         let requests = host.drain_outbox();
@@ -394,7 +433,7 @@ impl<V: View> Driver<V> {
                     tree.for_each_mut(&mut |node| node.styles_mut(visit));
                 }
                 for entry in memos.entries.values_mut() {
-                    entry.node.for_each_mut(&mut |node| node.styles_mut(visit));
+                    entry.shell.for_each_mut(&mut |node| node.styles_mut(visit));
                 }
             });
         }

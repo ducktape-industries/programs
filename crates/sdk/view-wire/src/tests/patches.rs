@@ -102,6 +102,40 @@ fn a_keyed_list_edited_in_its_middle_sends_only_the_edit() {
     }
 }
 
+// A node `kept` keeps is moved in from the old tree and sends nothing; one
+// it carries is sent whole; the rest are diffed as `diff_taking` diffs them.
+#[test]
+fn a_kept_node_is_moved_in_and_a_carried_one_sent_whole() {
+    let old = column(vec![
+        keyed("a", "one"),
+        keyed("b", "two"),
+        keyed("c", "three"),
+    ]);
+    let stand = |key: &str| keyed(key, "");
+    let mut new = column(vec![stand("a"), stand("b"), keyed("c", "three!")]);
+    let mut last = old.clone();
+    let mut kept = |_: &[u32], _: &Node, node: &Node| match node.key() {
+        Some("a") => Kept::Keep,
+        Some("b") => Kept::Carry,
+        _ => Kept::Diff,
+    };
+    let patches = diff_keeping(&mut last, &mut new, &mut kept);
+    let kinds: Vec<&str> = patches
+        .iter()
+        .map(|patch| match patch {
+            Patch::Replace { .. } => "replace",
+            Patch::Props { .. } => "props",
+            _ => "other",
+        })
+        .collect();
+    assert_eq!(kinds, ["replace", "props"], "{patches:#?}");
+    assert_eq!(
+        new.children()[0],
+        keyed("a", "one"),
+        "moved in from the old tree"
+    );
+}
+
 /// A node that gains its first interaction, or loses its last, is the
 /// same node with other fields: one `Props` that carries the interactivity
 /// it has now (or none), and its children stay where they are.
