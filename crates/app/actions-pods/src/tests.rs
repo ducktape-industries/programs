@@ -258,7 +258,7 @@ fn sent(method: &str, target: &str) -> (String, String) {
 
 // An offer at 1000 ms, its run the block after at 3000 ms: a block of 2000 ms. The pod's creation
 // lands 500 ms later, so a wait request lasts 64 × 2000 ms and its alive events come every
-// (128000 / 2 − 500) / 1000 = 63 s.
+// 128000 / 2 / 1000 = 64 s: the creation's trip is not taken off.
 fn ran_to_its_end(exit_code: Value) -> Node {
     let mut node = node();
     node.offer(1).unwrap();
@@ -280,7 +280,7 @@ fn ran_to_its_end(exit_code: Value) -> Node {
     );
     node.answer(500, 201, json!({"pod": {"name": "duckpond-7"}}));
     let wait = node.pending();
-    let every = sent("GET", "/v1/pods/duckpond-7/wait?every=63");
+    let every = sent("GET", "/v1/pods/duckpond-7/wait?every=64");
     assert_eq!(aimed(&wait), every);
     node.after(1_000);
     let alive = Event {
@@ -335,7 +335,7 @@ fn an_offered_check_runs_in_a_pod_and_passes_when_its_steps_do() {
         pod: Some("duckpond-7".into()),
         block_ms: 2_000,
         trip_ms: 500,
-        every: 63,
+        every: 64,
     };
     assert_eq!(node.run(1), Some(row));
 }
@@ -375,7 +375,7 @@ fn a_wait_with_no_whole_second_to_beat_errs_the_check_and_deletes_the_pod() {
     let [(1, State::Errored, why, None)] = reports else {
         panic!("one errored report");
     };
-    assert!(why.contains("no whole second"), "{why}");
+    assert!(why.contains("under the 2 s"), "{why}");
 }
 
 #[test]
@@ -424,7 +424,7 @@ fn outlived(node: &mut Node) {
     let first = node.pending();
     assert_eq!(
         aimed(&first),
-        sent("GET", "/v1/pods/duckpond-7/wait?every=63")
+        sent("GET", "/v1/pods/duckpond-7/wait?every=64")
     );
     for _ in 0..=DEFAULT_WAIT {
         node.after(1_000);
@@ -456,10 +456,10 @@ fn a_pod_that_outlives_its_wait_is_read_and_waited_on_again_at_the_beat_its_bloc
     let read = node.answer(1_000, 200, run_status("running", Value::Null));
     assert_eq!(read, sent("GET", "/v1/pods/duckpond-7"));
     let again = node.pending();
-    // 66 blocks over 66 s since the first wait opened: blocks of 1000 ms, (32000 − 500) / 1000
+    // 66 blocks over 66 s since the first wait opened: blocks of 1000 ms, 64000 / 2 / 1000
     assert_eq!(
         aimed(&again),
-        sent("GET", "/v1/pods/duckpond-7/wait?every=31")
+        sent("GET", "/v1/pods/duckpond-7/wait?every=32")
     );
     node.after(1_000);
     let line = "pod duckpond-7 ended: exit code 0 (Completed)";
@@ -487,7 +487,7 @@ fn a_pod_that_outlives_its_wait_is_read_and_waited_on_again_at_the_beat_its_bloc
         [(1, State::Passed, line.to_owned(), Some(log))]
     );
     let row = node.run(1).unwrap();
-    assert_eq!((row.block_ms, row.every), (1_000, 31));
+    assert_eq!((row.block_ms, row.every), (1_000, 32));
 }
 
 #[test]
@@ -518,5 +518,21 @@ fn a_claim_refused_for_any_reason_but_its_state_errs_the_check_and_one_already_t
     assert_eq!(
         node.reports(),
         [(REFUSED, State::Errored, why.to_owned(), None)]
+    );
+}
+
+// A creation that took longer to land than a whole request lasts (scheduling, an image pull)
+// still waits at half the window: the trip says nothing of how late a beat lands.
+#[test]
+fn a_creation_slower_than_a_whole_request_still_waits_at_half_the_window() {
+    let mut node = node();
+    node.offer(1).unwrap();
+    node.after(1_000);
+    node.after(0);
+    node.answer(88_951, 201, json!({"pod": {"name": "duckpond-7"}}));
+    let wait = node.pending();
+    assert_eq!(
+        aimed(&wait),
+        sent("GET", "/v1/pods/duckpond-7/wait?every=32")
     );
 }

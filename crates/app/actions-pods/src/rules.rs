@@ -109,7 +109,7 @@ fn check_row(ctx: &QueryCtx, id: u64) -> Result<CheckRow, Error> {
 }
 
 // The pod made, its end awaited, its outputs copied. The wait's alive events beat at half a
-// request's lifetime less the trip (`alive_every`). A wait that ends with no `ended` (an expiry,
+// request's lifetime (`alive_every`). A wait that ends with no `ended` (an expiry,
 // a node restart) asks the pod itself: one that ended is read so, and one still running is
 // waited on again, its beat measured from the blocks the broken wait lasted.
 async fn pod_run(ctx: &Ctx, check: &CheckRow, kept: &mut RunRow) -> Result<Ending, String> {
@@ -123,7 +123,7 @@ async fn pod_run(ctx: &Ctx, check: &CheckRow, kept: &mut RunRow) -> Result<Endin
     kept.pod = Some(pod.clone());
     let mut opened = (ctx.env().height, ctx.env().time);
     let ended = loop {
-        let every = alive_every(kept.block_ms, kept.trip_ms)?;
+        let every = alive_every(kept.block_ms)?;
         kept.every = every;
         let wait = format!("/v1/pods/{pod}/wait?every={every}");
         let events = Delivery::Events {
@@ -165,18 +165,19 @@ async fn pod_run(ctx: &Ctx, check: &CheckRow, kept: &mut RunRow) -> Result<Endin
     })
 }
 
-// How often a pod's alive events come, in whole seconds: each must land inside the request it
-// keeps alive, which lasts DEFAULT_WAIT blocks of the measured block time, and a beat lands up to
-// the measured trip after the pods service sends it. So beats come every half that lifetime less
-// the trip (chief, j-033 msg 68), leaving the other half for a beat held up on its way.
-pub(crate) fn alive_every(block_ms: u64, trip_ms: u64) -> Result<u64, String> {
+// How often a pod's alive events come, in whole seconds: every half of the time a request lasts
+// (DEFAULT_WAIT blocks of the measured block time), the other half for a beat held up on its way.
+// No trip is taken off: the pod's creation, slowed by scheduling or an image pull, says nothing of
+// how late a beat lands (chief, j-033 msg 79). Only a request too short for two whole-second beats
+// is refused.
+pub(crate) fn alive_every(block_ms: u64) -> Result<u64, String> {
     let lasts = DEFAULT_WAIT.saturating_mul(block_ms);
-    match (lasts / 2).saturating_sub(trip_ms) / 1000 {
-        0 => Err(format!(
-            "a request lasts {lasts} ms ({DEFAULT_WAIT} blocks of {block_ms} ms) and a trip took {trip_ms} ms to land, which leaves no whole second between alive events inside half of it"
-        )),
-        every => Ok(every),
+    if lasts < 2000 {
+        return Err(format!(
+            "a request lasts {lasts} ms ({DEFAULT_WAIT} blocks of {block_ms} ms), under the 2 s two whole-second beats need"
+        ));
     }
+    Ok(lasts / 2 / 1000)
 }
 
 // The pod as the pods service reads it now: how it ended, in the `ended` event's shape, or None
