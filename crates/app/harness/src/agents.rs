@@ -286,13 +286,15 @@ enum Heard {
     Direct,
     Thread,
     Listen,
+    // a message a wait listened for, quoted as the wake
+    Waited,
 }
 
 impl Heard {
     // a mention or a direct message starts a turn at once; the rest waits out the settle window
     fn direct(self) -> bool {
         match self {
-            Heard::Mention | Heard::Direct => true,
+            Heard::Mention | Heard::Direct | Heard::Waited => true,
             Heard::Thread | Heard::Listen => false,
         }
     }
@@ -368,11 +370,11 @@ fn designation(
         Heard::Mention => "mentioned you",
         Heard::Direct => "wrote to you directly",
         Heard::Thread => "continued a thread with you",
-        Heard::Listen => "wrote",
+        Heard::Listen | Heard::Waited => "wrote",
     };
     let listened = match heard {
         Heard::Listen => ", which you listen to",
-        Heard::Mention | Heard::Direct | Heard::Thread => "",
+        Heard::Mention | Heard::Direct | Heard::Thread | Heard::Waited => "",
     };
     let in_thread = match row.thread {
         Some(root) => format!(", in the thread of message {root} (reply_to {root})"),
@@ -392,7 +394,13 @@ fn designation(
 }
 
 pub(crate) async fn attributed(ctx: Ctx, change: Change) -> Result<(), Error> {
-    let Some((thread, heard)) = heard(&ctx, change)? else {
+    let Hearing { told, woke } = heard(&ctx, change)?;
+    // a wait the message ends wakes its conversation at once, as a direct input does
+    if let Some(thread) = woke {
+        waiting::end(&ctx, thread).await?;
+        converse(&ctx, thread).await;
+    }
+    let Some((thread, heard)) = told else {
         return Ok(());
     };
     match heard.direct() {
@@ -414,7 +422,7 @@ pub(crate) fn hear_again(ctx: &ExecCtx, changes: Vec<Change>) {
     }
 }
 
-fn heard(ctx: &ExecCtx, change: Change) -> Result<Option<(u64, Heard)>, Error> {
+fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
     let from_attribution = ctx.env().sent_by(attribution::PROGRAM).is_ok();
     let held_back_by_harness = ctx.env().sent_by(PROGRAM).is_ok();
     if !(from_attribution || held_back_by_harness) {
@@ -424,33 +432,41 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Option<(u64, Heard)>, Error> {
     }
     let added = change.kind == Changed::Added;
     let Actor::Account(actor) = change.actor else {
-        return Ok(None);
+        return Ok(Hearing::default());
     };
     let Some(why) = heard_as(&change.reason) else {
-        return Ok(None);
+        return Ok(Hearing::default());
     };
     let by_another = actor != change.recipient;
     let told_already =
         LAST.get(ctx, &change.recipient)? == Some((change.source.clone(), change.revision));
     let heeded = added && by_another && !told_already;
     if !heeded {
-        return Ok(None);
+        return Ok(Hearing::default());
     }
     if deferred_while_shown(ctx, &change)? {
-        return Ok(None);
+        return Ok(Hearing::default());
     }
     let Some(agent) = running(ctx, change.recipient)? else {
-        return Ok(None);
+        return Ok(Hearing::default());
     };
+    let listened = match why {
+        Heard::Listen => listens(ctx, &agent, &change)?,
+        Heard::Mention | Heard::Direct | Heard::Thread | Heard::Waited => true,
+    };
+    let woke = waited(ctx, &agent, &change, actor, why)?;
+    let seen = (change.source.clone(), change.revision);
     if !answers(ctx, &agent, actor)? {
-        dropped(ctx, &agent, actor, why, &change)?;
-        return Ok(None);
+        match woke {
+            Some(_) => LAST.put(ctx, &agent.number, &seen),
+            None => dropped(ctx, &agent, actor, why, &change)?,
+        }
+        return Ok(Hearing { told: None, woke });
     }
-    LAST.put(
-        ctx,
-        &agent.number,
-        &(change.source.clone(), change.revision),
-    );
+    LAST.put(ctx, &agent.number, &seen);
+    if !listened {
+        return Ok(Hearing { told: None, woke });
+    }
     let Designation {
         place,
         places,
@@ -458,12 +474,102 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Option<(u64, Heard)>, Error> {
     } = designation(ctx, &change, actor, why)?;
     let (mut thread, reached) = route(ctx, &agent, &places, place)?;
     PLACES.put(ctx, &(agent.number, reached), &thread.id);
+    // the wake that conversation heard already quotes the message
+    if woke == Some(thread.id) {
+        return Ok(Hearing { told: None, woke });
+    }
     let text = text + &crate::waits::still_armed(ctx, thread.id)?;
     let author = Principal::Account(actor);
     say(ctx, &mut thread, Body::Post { author, text });
     THREADS.put(ctx, &thread.id, &thread);
     resume::heard(ctx, thread.id)?;
-    Ok(Some((thread.id, why)))
+    Ok(Hearing {
+        told: Some((thread.id, why)),
+        woke,
+    })
+}
+
+// what a change brought: the conversation it reached as an input, and the one whose wait it ended
+#[derive(Default)]
+struct Hearing {
+    told: Option<(u64, Heard)>,
+    woke: Option<u64>,
+}
+
+fn message_channel(ctx: &QueryCtx, change: &Change) -> Result<Option<String>, Error> {
+    let from_chat = change.source.program == chat::PROGRAM
+        && change.source.object.kind == chat::attributed::MESSAGE;
+    if !from_chat {
+        return Ok(None);
+    }
+    let asked = chat::Query::MessageById {
+        message_id: change.source.object.id.clone(),
+    };
+    match ctx.query(chat::PROGRAM, &asked)? {
+        chat::Reply::Message(row) => Ok(row.map(|row| row.channel_id)),
+        other => Err(unexpected_reply(chat::PROGRAM, "MessageById", &other)),
+    }
+}
+
+// a listened message reaches the agent from a channel its configuration names; chat also
+// listens for a message wait, whose channel the configuration may not name
+fn listens(ctx: &QueryCtx, agent: &Agent, change: &Change) -> Result<bool, Error> {
+    let waits = crate::waits::message_waits(ctx, agent.number)?;
+    if waits.is_empty() {
+        return Ok(true);
+    }
+    let Some(channel) = message_channel(ctx, change)? else {
+        return Ok(true);
+    };
+    if !waits.iter().any(|(waited, _)| *waited == channel) {
+        return Ok(true);
+    }
+    let configured = configured(ctx, &agent.path)?;
+    Ok(configured
+        .config()
+        .is_some_and(|(_, config)| config.listen.contains(&channel)))
+}
+
+// the first of the agent's message waits a chat message matches (its channel, its author if the
+// wait names one, a mention or a direct message if it asks for one) ends with the message,
+// whoever wrote it: the conversation it wakes
+fn waited(
+    ctx: &ExecCtx,
+    agent: &Agent,
+    change: &Change,
+    actor: AccountNumber,
+    why: Heard,
+) -> Result<Option<u64>, Error> {
+    let waits = crate::waits::message_waits(ctx, agent.number)?;
+    if waits.is_empty() {
+        return Ok(None);
+    }
+    let Some(channel) = message_channel(ctx, change)? else {
+        return Ok(None);
+    };
+    let to_me = matches!(why, Heard::Mention | Heard::Direct);
+    for (waited_in, wait) in waits {
+        let Some(crate::WaitRow {
+            event: crate::WaitFor::Message {
+                from, mentions_me, ..
+            },
+            ..
+        }) = crate::waits::wait_row(ctx, wait)?
+        else {
+            continue;
+        };
+        let theirs = from.is_none_or(|from| from == actor);
+        if waited_in != channel || !theirs || (mentions_me && !to_me) {
+            continue;
+        }
+        let quoted = match why {
+            Heard::Listen => Heard::Waited,
+            other => other,
+        };
+        let text = designation(ctx, change, actor, quoted)?.text;
+        return crate::waits::end(ctx, wait, text);
+    }
+    Ok(None)
 }
 
 // who an agent answers is its list's to say; what it did not answer still leaves a trace
@@ -480,7 +586,7 @@ fn dropped(
         Heard::Thread => "a thread reply",
         // a channel it listens to is talk around the agent, not to it: what it does not answer
         // there is left without a notice, or each such message would add one
-        Heard::Listen => return Ok(()),
+        Heard::Listen | Heard::Waited => return Ok(()),
     };
     let Source { program, object } = &change.source;
     let text = format!(

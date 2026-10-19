@@ -144,6 +144,12 @@ pub(crate) fn close(
     save_change(ctx, repo, &change)?;
     discussion::post(ctx, &change, message, Event::Closed);
     discussion::archive(ctx, repo, &change);
+    let closed = Watched::Closed {
+        repo: repo.to_owned(),
+        n,
+        by: actor.clone(),
+    };
+    crate::watchers::tell(ctx, &closed)?;
     Ok(OpReply::Change {
         height: env.height,
         n,
@@ -304,6 +310,13 @@ fn merged(
     save_change(ctx, repo, &change)?;
     discussion::post(ctx, &change, message, Event::Merged);
     discussion::archive(ctx, repo, &change);
+    let merged = Watched::Merged {
+        repo: repo.to_owned(),
+        n: change.n,
+        oid: result.to_hex(),
+        by: actor.clone(),
+    };
+    crate::watchers::tell(ctx, &merged)?;
     Ok(())
 }
 

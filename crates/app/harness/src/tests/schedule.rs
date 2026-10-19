@@ -26,6 +26,7 @@ fn schemed_with(files_code: Vec<u8>) -> World {
             code_with(&interface::<attribution::Attribution>()),
         ),
         (awaits::PROGRAM, code_with(&interface::<awaits::Awaits>())),
+        (forge::PROGRAM, code_with(&interface::<forge::Forge>())),
         ("valset", module(&[])),
     ];
     listed(&world.chain, &codes);

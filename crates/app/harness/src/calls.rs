@@ -161,7 +161,9 @@ pub(crate) fn relayable(ctx: &QueryCtx, target: &str, payload: &[u8]) -> Result<
     } else if target == attribution::PROGRAM {
         "attribution would take it as harness's own registration or attribution"
     } else if target == PROGRAM && harness_own(payload) {
-        "harness takes this op only from attribution, egress or the scheduler"
+        "harness takes this op only from attribution, egress, forge or the scheduler"
+    } else if target == forge::PROGRAM && watches(payload) {
+        "forge would take it as harness's own watcher: wait for a ref or a change with wait_for"
     } else if bound(abi::role::EGRESS) && streams(payload) {
         "egress would hand each event of the answer to harness: ask for the answer whole"
     } else {
@@ -181,7 +183,15 @@ fn harness_own(payload: &[u8]) -> bool {
             | Op::Watch { .. }
             | Op::Heard { .. }
             | Op::WaitDue
-            | Op::PodEvent { .. })
+            | Op::PodEvent { .. }
+            | Op::Forged(_))
+    )
+}
+
+fn watches(payload: &[u8]) -> bool {
+    matches!(
+        abi::decode::<forge::Op>(payload),
+        Ok(forge::Op::Watch { .. })
     )
 }
 

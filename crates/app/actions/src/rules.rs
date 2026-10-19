@@ -53,7 +53,9 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             }
             start(ctx, &started(&repo, &commit, Event::Push { reference }, by))
         }
-        Watched::Moved { new: None, .. } => Ok(()),
+        Watched::Moved { new: None, .. } | Watched::Closed { .. } | Watched::Merged { .. } => {
+            Ok(())
+        }
         Watched::Opened {
             repo,
             n,

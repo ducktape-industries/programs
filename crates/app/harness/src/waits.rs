@@ -1,6 +1,6 @@
-//! Waits: one event an agent names (a block's height, a pod's end) wakes the conversation that
-//! waits for it once, and the turn that armed it ends meanwhile. harness hears the event from the
-//! scheduler or from the pods service's wait stream, never by asking again on a clock of its own.
+//! Waits: one event an agent names (a block's height, a pod's end, a chat message, a forge ref or
+//! change) wakes the conversation that waits for it once, and the turn that armed it ends. harness
+//! hears it from the scheduler, the pods wait stream, chat's listening or forge's watchers.
 use ::program::{
     Cause, Ctx, Error, ExecCtx, Principal, QueryCtx, corrupt, decoded, invalid, not_found,
     unauthorized, unexpected_reply, wrong_state,
@@ -11,15 +11,18 @@ use abi::role::scheduler;
 use serde_json::Value;
 use store::{PageRequest, PageResponse};
 
-use crate::agents::thread;
+use crate::agents::{configured, harnessed_agent, thread};
 use crate::calls::refusal;
 use crate::conversations::current;
 use crate::state::{
-    ARMED, ENDING, POD_WAITS, PodWatch, SCHEDULED, THREADS, WAIT_COUNT, WAIT_ENTRIES, WAITING,
-    WAITS,
+    ARMED, CHANGE_WAITS, ENDING, FORGE_WAITS, MESSAGE_WAITS, POD_WAITS, PodWatch, REF_WAITS,
+    SCHEDULED, THREADS, WAIT_COUNT, WAIT_ENTRIES, WAIT_REFS, WAITING, WAITS,
 };
 use crate::turns::{bound, converse, request, say};
-use crate::{Asking, Body, Ended, Op, PROGRAM, ThreadRow, WaitFor, WaitRow, pod_event_as};
+use crate::{
+    Asking, Body, Ended, Op, PROGRAM, ThreadRow, WaitFor, WaitRow, forged_as, listening,
+    pod_event_as,
+};
 
 // the egress service the pods contract names
 pub(crate) const PODS: &str = "pods";
@@ -28,6 +31,21 @@ pub(crate) fn what(event: &WaitFor) -> String {
     match event {
         WaitFor::Height { height } => format!("block {height}"),
         WaitFor::Pod { name } => format!("pod {name} to end"),
+        WaitFor::Message {
+            channel,
+            from,
+            mentions_me,
+        } => {
+            let who = from.map_or("anyone".to_owned(), |from| format!("account {from}"));
+            let to_you = if *mentions_me {
+                " addressed to you"
+            } else {
+                ""
+            };
+            format!("a message{to_you} from {who} in chat channel {channel}")
+        }
+        WaitFor::Change { repo, n } => format!("change {n} in {repo} to move, close or merge"),
+        WaitFor::Ref { repo, reference } => format!("{reference} in {repo} to move"),
     }
 }
 
@@ -69,6 +87,17 @@ async fn unschedule(ctx: &Ctx, entry: u64) -> Result<(), Error> {
     Ok(())
 }
 
+// a branch named alone is the branch's ref
+fn normalized(event: WaitFor) -> WaitFor {
+    match event {
+        WaitFor::Ref { repo, reference } if !reference.starts_with("refs/") => WaitFor::Ref {
+            repo,
+            reference: format!("refs/heads/{reference}"),
+        },
+        other => other,
+    }
+}
+
 pub(crate) async fn wait(ctx: &Ctx, thread_id: u64, event: WaitFor) -> Result<(), Error> {
     let agent = ctx.sender_account()?;
     let row = thread(ctx, thread_id)?;
@@ -80,6 +109,7 @@ pub(crate) async fn wait(ctx: &Ctx, thread_id: u64, event: WaitFor) -> Result<()
     if row.closed {
         return Err(wrong_state(format!("conversation {thread_id} is closed")));
     }
+    let event = normalized(event);
     let id = WAIT_COUNT.get(ctx)?.unwrap_or(0) + 1;
     WAIT_COUNT.put(ctx, &id);
     match &event {
@@ -91,6 +121,25 @@ pub(crate) async fn wait(ctx: &Ctx, thread_id: u64, event: WaitFor) -> Result<()
         WaitFor::Pod { name } => {
             named_pod(name)?;
             watch_from_next_block(ctx, id).await?;
+        }
+        WaitFor::Message { channel, .. } => {
+            if !listening::exists(ctx, channel)? {
+                return Err(not_found(format!("chat holds no channel {channel}")));
+            }
+            MESSAGE_WAITS.insert(ctx, &(agent, (channel.clone(), id)));
+            listening::tell(ctx, agent, channel, true);
+        }
+        WaitFor::Change { repo, n } => {
+            if let Some(source) = open_change(ctx, repo, *n)? {
+                watch_ref(ctx, id, repo, source);
+            }
+            CHANGE_WAITS.insert(ctx, &((repo.clone(), *n), id));
+            forge_waits(ctx, true)?;
+        }
+        WaitFor::Ref { repo, reference } => {
+            known_repo(ctx, repo)?;
+            watch_ref(ctx, id, repo, reference.clone());
+            forge_waits(ctx, true)?;
         }
     }
     let waiting = WaitRow {
@@ -144,7 +193,7 @@ pub(crate) async fn unwait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
 }
 
 // what a wait holds besides its row: its place among its conversation's armed waits, its
-// scheduler entry, its pod's watch
+// scheduler entry, its pod's watch, its channel's listening, its forge ref or change
 fn disarm(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
     ARMED.remove(ctx, &(row.thread, row.id));
     if let Some(entry) = SCHEDULED.get(ctx, &row.id)? {
@@ -152,13 +201,30 @@ fn disarm(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
         SCHEDULED.remove(ctx, &row.id);
     }
     POD_WAITS.remove(ctx, &row.id);
+    if let Some(key) = WAIT_REFS.get(ctx, &row.id)? {
+        REF_WAITS.remove(ctx, &(key, row.id));
+        WAIT_REFS.remove(ctx, &row.id);
+    }
+    match &row.event {
+        WaitFor::Height { .. } | WaitFor::Pod { .. } => {}
+        WaitFor::Message { channel, .. } => {
+            MESSAGE_WAITS.remove(ctx, &(row.agent, (channel.clone(), row.id)));
+            unlisten(ctx, row.agent, channel)?;
+        }
+        WaitFor::Change { repo, n } => {
+            CHANGE_WAITS.remove(ctx, &((repo.clone(), *n), row.id));
+            forge_waits(ctx, false)?;
+        }
+        WaitFor::Ref { .. } => forge_waits(ctx, false)?,
+    }
     Ok(())
 }
 
-// the wait ends, and its conversation (else the agent's canonical one) hears why, once
-async fn fire(ctx: &Ctx, wait: u64, what: String) -> Result<(), Error> {
+// the wait ends, and its conversation (else the agent's canonical one) hears why, once: the
+// conversation that heard it
+pub(crate) fn end(ctx: &ExecCtx, wait: u64, what: String) -> Result<Option<u64>, Error> {
     let Some(mut row) = open(ctx, wait)? else {
-        return Ok(());
+        return Ok(None);
     };
     row.ended = Some(Ended {
         height: ctx.env().height,
@@ -167,14 +233,22 @@ async fn fire(ctx: &Ctx, wait: u64, what: String) -> Result<(), Error> {
     WAITS.put(ctx, &wait, &row);
     disarm(ctx, &row)?;
     let Some(mut told) = told(ctx, &row)? else {
-        return Ok(());
+        return Ok(None);
     };
     let still = still_armed(ctx, told.id)?;
-    let text = format!("Wait {wait} is over: {what}.{still}");
+    // a message quoted whole ends with its own text
+    let stop = if what.contains('\n') { "" } else { "." };
+    let text = format!("Wait {wait} is over: {what}{stop}{still}");
     let author = Principal::Root;
     say(ctx, &mut told, Body::Post { author, text });
     THREADS.put(ctx, &told.id, &told);
-    converse(ctx, told.id).await;
+    Ok(Some(told.id))
+}
+
+async fn fire(ctx: &Ctx, wait: u64, what: String) -> Result<(), Error> {
+    if let Some(thread) = end(ctx, wait, what)? {
+        converse(ctx, thread).await;
+    }
     Ok(())
 }
 
@@ -196,6 +270,182 @@ pub(crate) async fn wait_due(ctx: &Ctx) -> Result<(), Error> {
     };
     let height = ctx.env().height;
     fire(ctx, wait, format!("block {height} has come")).await
+}
+
+// the agent's open message waits: each one's channel and number
+pub(crate) fn message_waits(
+    ctx: &QueryCtx,
+    agent: AccountNumber,
+) -> Result<Vec<(String, u64)>, Error> {
+    let waits = MESSAGE_WAITS.scan(ctx, MESSAGE_WAITS.prefix_of(&agent))?;
+    Ok(waits.into_iter().map(|(_, waited)| waited).collect())
+}
+
+// a channel no other wait needs and the agent's configuration doesn't name stops being listened
+// to, so what is said there after the wait reaches nobody
+fn unlisten(ctx: &ExecCtx, agent: AccountNumber, channel: &str) -> Result<(), Error> {
+    let needed = message_waits(ctx, agent)?
+        .iter()
+        .any(|(waited, _)| waited == channel);
+    if needed {
+        return Ok(());
+    }
+    let Some(harnessed) = harnessed_agent(ctx, agent)? else {
+        return Ok(());
+    };
+    let configured = configured(ctx, &harnessed.path)?;
+    let named = configured
+        .config()
+        .is_some_and(|(_, config)| config.listen.iter().any(|listened| listened == channel));
+    if !named {
+        listening::tell(ctx, agent, channel, false);
+    }
+    Ok(())
+}
+
+// the change's source branch, once the change is known to be open; one already ended is refused
+// saying how
+fn open_change(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<String>, Error> {
+    let asked = forge::Query::Change {
+        repo: repo.to_owned(),
+        n,
+        page: PageRequest::first(1),
+    };
+    let change = match ctx.query(forge::PROGRAM, &asked)? {
+        forge::Reply::Change { change, .. } => change,
+        other => return Err(unexpected_reply(forge::PROGRAM, "Change", &other)),
+    };
+    let ended = match change.state {
+        forge::ChangeState::Open => {
+            return Ok(match change.from {
+                forge::Revision::Ref(name) => Some(String::from_utf8_lossy(&name).into_owned()),
+                forge::Revision::Oid(_) => None,
+            });
+        }
+        forge::ChangeState::Closed => "closed",
+        forge::ChangeState::Merged => "merged",
+    };
+    Err(wrong_state(format!(
+        "change {n} in {repo} is already {ended}"
+    )))
+}
+
+fn known_repo(ctx: &QueryCtx, repo: &str) -> Result<(), Error> {
+    let asked = forge::Query::Repo {
+        repo: repo.to_owned(),
+    };
+    match ctx.query(forge::PROGRAM, &asked)? {
+        forge::Reply::Repo { .. } => Ok(()),
+        other => Err(unexpected_reply(forge::PROGRAM, "Repo", &other)),
+    }
+}
+
+fn watch_ref(ctx: &ExecCtx, wait: u64, repo: &str, reference: String) {
+    let key = (repo.to_owned(), reference);
+    REF_WAITS.insert(ctx, &(key.clone(), wait));
+    WAIT_REFS.put(ctx, &wait, &key);
+}
+
+// harness hears forge's watchers' events while a forge wait is open, and only then
+fn forge_waits(ctx: &ExecCtx, opened: bool) -> Result<(), Error> {
+    let before = FORGE_WAITS.get(ctx)?.unwrap_or(0);
+    let after = match opened {
+        true => before + 1,
+        false => before.saturating_sub(1),
+    };
+    FORGE_WAITS.put(ctx, &after);
+    let deliver = match (before, after) {
+        (0, 1) => forged_as(),
+        (1, 0) => Vec::new(),
+        _ => return Ok(()),
+    };
+    let watch = forge::Op::Watch { deliver };
+    ctx.emit(forge::PROGRAM, &watch, ::program::Reply::None);
+    Ok(())
+}
+
+fn who(by: Option<&Principal>) -> String {
+    match by {
+        Some(Principal::Account(number)) => format!("account {number}"),
+        Some(Principal::Root) => "the network".to_owned(),
+        None => "someone".to_owned(),
+    }
+}
+
+fn moved_words((old, new): (&Option<String>, &Option<String>), by: Option<&Principal>) -> String {
+    let by = who(by);
+    match (old, new) {
+        (Some(old), Some(new)) => format!("moved from {old} to {new} by {by}"),
+        (None, Some(new)) => format!("was made at {new} by {by}"),
+        (_, None) => format!("was deleted by {by}"),
+    }
+}
+
+fn change_ended(
+    ctx: &QueryCtx,
+    repo: &str,
+    n: u64,
+    how: &str,
+) -> Result<Vec<(u64, String)>, Error> {
+    let key = (repo.to_owned(), n);
+    let waits = CHANGE_WAITS.scan(ctx, CHANGE_WAITS.prefix_of(&key))?;
+    Ok(waits
+        .into_iter()
+        .map(|(_, wait)| (wait, format!("change {n} in {repo} {how}")))
+        .collect())
+}
+
+// a ref forge moved (a change's source too), or a change it closed or merged, ends each wait on it
+pub(crate) async fn forged(ctx: &Ctx, event: forge::Watched) -> Result<(), Error> {
+    ctx.env().sent_by(forge::PROGRAM)?;
+    let ended = match &event {
+        forge::Watched::Moved {
+            repo,
+            reference,
+            old,
+            new,
+            by,
+        } => {
+            let reference = String::from_utf8_lossy(reference).into_owned();
+            let moved = moved_words((old, new), by.as_ref());
+            let key = (repo.clone(), reference.clone());
+            let mut ended = Vec::new();
+            for (_, wait) in REF_WAITS.scan(ctx, REF_WAITS.prefix_of(&key))? {
+                let Some(row) = open(ctx, wait)? else {
+                    continue;
+                };
+                let what = match row.event {
+                    WaitFor::Change { n, .. } => {
+                        format!("change {n} in {repo}: its source {reference} {moved}")
+                    }
+                    _ => format!("{reference} in {repo} {moved}"),
+                };
+                ended.push((wait, what));
+            }
+            ended
+        }
+        forge::Watched::Opened { .. } | forge::Watched::Previewed { .. } => Vec::new(),
+        forge::Watched::Closed { repo, n, by } => {
+            let how = format!("was closed by {}", who(Some(by)));
+            change_ended(ctx, repo, *n, &how)?
+        }
+        forge::Watched::Merged { repo, n, oid, by } => {
+            let how = format!("was merged by {} as {oid}", who(Some(by)));
+            change_ended(ctx, repo, *n, &how)?
+        }
+    };
+    let mut woken = Vec::new();
+    for (wait, what) in ended {
+        if let Some(thread) = end(ctx, wait, what)?
+            && !woken.contains(&thread)
+        {
+            woken.push(thread);
+        }
+    }
+    for thread in woken {
+        converse(ctx, thread).await;
+    }
+    Ok(())
 }
 
 // a pod's name as Kubernetes takes one, so it stands in a path whole

@@ -64,6 +64,14 @@ pub const POD_WAITS: Map<u64, PodWatch> = Map::new("pod-wait/").shared();
 // threads whose turn armed a wait: it ends once its calls are back
 pub const ENDING: Set<u64> = Set::new("ending/").shared();
 pub const WAIT_COUNT: Item<u64> = Item::new("wait-count").shared();
+// each agent's open message waits, by channel
+pub const MESSAGE_WAITS: Set<(AccountNumber, (String, u64))> = Set::new("wait-message/").shared();
+// open waits on a forge ref (a ref's own, or a change's source), and each one's ref
+pub const REF_WAITS: Set<((String, String), u64)> = Set::new("wait-ref/").shared();
+pub const WAIT_REFS: Map<u64, (String, String)> = Map::new("wait-refs/").shared();
+pub const CHANGE_WAITS: Set<((String, u64), u64)> = Set::new("wait-change/").shared();
+// how many forge waits are open: harness watches forge while any is
+pub const FORGE_WAITS: Item<u64> = Item::new("wait-forge").shared();
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Live {
@@ -348,4 +356,9 @@ pub(crate) const TABLES: &[::program::Table] = &[
     POD_WAITS.table(),
     ENDING.table(),
     WAIT_COUNT.table(),
+    MESSAGE_WAITS.table(),
+    REF_WAITS.table(),
+    WAIT_REFS.table(),
+    CHANGE_WAITS.table(),
+    FORGE_WAITS.table(),
 ];

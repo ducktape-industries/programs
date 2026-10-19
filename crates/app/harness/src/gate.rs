@@ -59,7 +59,8 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::Unwait { .. }
         | Op::WaitDue
         | Op::PodWait { .. }
-        | Op::PodEvent { .. } => Vec::new(),
+        | Op::PodEvent { .. }
+        | Op::Forged(_) => Vec::new(),
     })
 }
 

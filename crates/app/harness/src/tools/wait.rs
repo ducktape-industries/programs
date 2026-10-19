@@ -1,6 +1,6 @@
-//! Tools over waits: the agent names one event (a block's height, a pod's end), and this turn
-//! ends once its calls are back; the event wakes the conversation once, as a message. The agent
-//! lists its waits, open and over, and cancels one before it is over.
+//! Tools over waits: the agent names one event (a block's height, a pod's end, a chat message, a
+//! forge ref or change), and this turn ends once its calls are back; the event wakes the
+//! conversation once, as a message. The agent lists its waits and cancels one before it is over.
 use ::program::{Error, ExecCtx, unexpected_reply};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -13,7 +13,25 @@ use crate::{Op, PROGRAM, WaitFor, WaitRow};
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 enum EventArgs {
     Height(u64),
-    Pod { name: String },
+    Pod {
+        name: String,
+    },
+    Message {
+        channel: String,
+        #[serde(default)]
+        from: Option<u64>,
+        #[serde(default)]
+        mentions_me: bool,
+    },
+    Change {
+        repo: String,
+        n: u64,
+    },
+    Ref {
+        repo: String,
+        #[serde(rename = "ref")]
+        reference: String,
+    },
 }
 
 impl From<EventArgs> for WaitFor {
@@ -21,6 +39,17 @@ impl From<EventArgs> for WaitFor {
         match event {
             EventArgs::Height(height) => WaitFor::Height { height },
             EventArgs::Pod { name } => WaitFor::Pod { name },
+            EventArgs::Message {
+                channel,
+                from,
+                mentions_me,
+            } => WaitFor::Message {
+                channel,
+                from,
+                mentions_me,
+            },
+            EventArgs::Change { repo, n } => WaitFor::Change { repo, n },
+            EventArgs::Ref { repo, reference } => WaitFor::Ref { repo, reference },
         }
     }
 }
@@ -32,9 +61,13 @@ pub(crate) struct ForArgs {
 
 pub(crate) struct For;
 
+fn repo_schema() -> Value {
+    json!({ "type": "string", "description": "the forge repository, as forge_repos lists them" })
+}
+
 impl Tool for For {
     const NAME: &'static str = "wait_for";
-    const DESCRIPTION: &'static str = "Wake this conversation once when an event happens, and end this turn meanwhile: once this reply's tool calls are back, you are not asked again until the event, or any other message, arrives. The event comes as one message saying what happened. Events: a block's `height` (later than the current one), or a `pod` of the pods service ending (by its name; a pod that has ended already wakes you at once). A message that arrives first wakes you as usual, and the wait stays. Answers the wait's number, which wait_list shows and wait_cancel takes.";
+    const DESCRIPTION: &'static str = "Wake this conversation once when an event happens, and end this turn meanwhile: once this reply's tool calls are back, you are not asked again until the event, or any other message, arrives. The event comes as one message saying what happened. Events: a `message` in a chat channel (only from one account with `from`, only one that mentions you or writes to you directly with `mentions_me`; whoever writes it, even someone you don't otherwise hear); a forge `change` whose source branch moves, or that is closed or merged (one already closed or merged is refused); a forge `ref` that moves (a branch's name alone is its refs/heads/ ref); a block's `height` (later than the current one); or a `pod` of the pods service ending (by its name; a pod that has ended already wakes you at once). A message that arrives first wakes you as usual, and the wait stays. Answers the wait's number, which wait_list shows and wait_cancel takes.";
     const WRITES: bool = true;
     type Args = ForArgs;
 
@@ -43,10 +76,35 @@ impl Tool for For {
             json!({ "name": { "type": "string", "description": "the pod's name, as the pods service answered it" } }),
             &["name"],
         );
+        let message = object(
+            json!({
+                "channel": { "type": "string", "description": "the channel's id, as chat_channels lists them" },
+                "from": { "type": "integer", "description": "only a message this account writes; anyone's if omitted" },
+                "mentions_me": { "type": "boolean", "description": "only a message that mentions you or writes to you directly" },
+            }),
+            &["channel"],
+        );
+        let change = object(
+            json!({
+                "repo": repo_schema(),
+                "n": { "type": "integer", "description": "the change's number" },
+            }),
+            &["repo", "n"],
+        );
+        let reference = object(
+            json!({
+                "repo": repo_schema(),
+                "ref": { "type": "string", "description": "a branch, like dev, or a whole ref, like refs/heads/dev" },
+            }),
+            &["repo", "ref"],
+        );
         let event = json!({
             "type": "object",
             "description": "exactly one of these",
             "properties": {
+                "message": message,
+                "change": change,
+                "ref": reference,
                 "height": { "type": "integer", "description": "the block to wake at, later than the current one" },
                 "pod": pod,
             },

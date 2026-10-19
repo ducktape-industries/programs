@@ -896,6 +896,11 @@ pub(crate) fn armed_words(shown: &Transcript) -> Option<String> {
                     format!("block {}", design::grouped(*height))
                 }
                 harness::WaitFor::Pod { name } => format!("pod {name} to end"),
+                harness::WaitFor::Message { channel, .. } => {
+                    format!("a message in chat channel {channel}")
+                }
+                harness::WaitFor::Change { repo, n } => format!("change {n} in {repo}"),
+                harness::WaitFor::Ref { repo, reference } => format!("{reference} in {repo}"),
             };
             format!("{what} (since block {})", design::grouped(row.made))
         })

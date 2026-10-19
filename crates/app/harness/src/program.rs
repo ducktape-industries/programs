@@ -127,6 +127,7 @@ impl Awaiting for Harness {
             Op::WaitDue => wait_due(&ctx).await,
             Op::PodWait { wait } => pod_wait(&ctx, wait).await,
             Op::PodEvent { wait, event } => pod_event(&ctx, wait, event).await,
+            Op::Forged(event) => waits::forged(&ctx, event).await,
         }
     }
 }

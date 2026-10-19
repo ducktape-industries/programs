@@ -297,6 +297,10 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             vec![
                 json!({ "event": { "height": 106505 } }),
                 json!({ "event": { "pod": { "name": "duckpond-32359" } } }),
+                json!({ "event": { "message": { "channel": "j-051", "from": 17, "mentions_me": true } } }),
+                json!({ "event": { "message": { "channel": "j-051" } } }),
+                json!({ "event": { "change": { "repo": "programs", "n": 88 } } }),
+                json!({ "event": { "ref": { "repo": "programs", "ref": "refs/heads/dev" } } }),
             ],
         ),
         ("wait_list", vec![json!({}), json!({ "cursor": null })]),

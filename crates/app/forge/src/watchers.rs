@@ -1,5 +1,6 @@
-//! Watchers: programs told of every ref forge moves and every change it opens, each event a
-//! message of its own (`deliver ++ borsh(Watched)`) whose refusal never fails forge's write.
+//! Watchers: programs told of every ref forge moves and every change it opens, closes or merges,
+//! each event a message of its own (`deliver ++ borsh(Watched)`) whose refusal never fails
+//! forge's write.
 use ::program::{Error, ExecCtx, Reply};
 
 use crate::contract::Watched;

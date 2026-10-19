@@ -23,6 +23,7 @@ mod server_tools;
 mod streams;
 mod thinking;
 mod wait;
+mod wait_forge;
 mod workspace;
 
 use ::program::{Error, MockChain, Origin, Principal, code};

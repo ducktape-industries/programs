@@ -774,7 +774,7 @@ pub enum OpReply {
 }
 
 // What a watcher hears (`Op::Watch`): a ref a push, a merge or a squash moved, `old` or `new`
-// None where it was made or deleted, and a change opened; each names who did it.
+// None where it was made or deleted, and a change opened, closed or merged; each names who did it.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum Watched {
     Moved {
@@ -797,6 +797,17 @@ pub enum Watched {
         repo: String,
         n: u64,
         merge: String,
+        by: Principal,
+    },
+    Closed {
+        repo: String,
+        n: u64,
+        by: Principal,
+    },
+    Merged {
+        repo: String,
+        n: u64,
+        oid: String,
         by: Principal,
     },
 }

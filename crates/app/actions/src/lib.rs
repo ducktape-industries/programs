@@ -201,6 +201,12 @@ pub fn describe(op: &Op) -> describe::Description {
         Op::Watched(forge::Watched::Opened { repo, n, .. }) => {
             (format!("Hear change {repo}#{n} open"), Vec::new())
         }
+        Op::Watched(forge::Watched::Closed { repo, n, .. }) => {
+            (format!("Hear change {repo}#{n} close"), Vec::new())
+        }
+        Op::Watched(forge::Watched::Merged { repo, n, .. }) => {
+            (format!("Hear change {repo}#{n} merge"), Vec::new())
+        }
         Op::Watched(forge::Watched::Previewed { repo, n, .. }) => {
             (format!("Hear change {repo}#{n} previewed"), Vec::new())
         }

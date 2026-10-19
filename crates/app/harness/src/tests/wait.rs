@@ -354,3 +354,193 @@ fn the_pod_event_prefix_decodes_as_a_pod_event() {
         Op::PodEvent { wait: 9, event }
     );
 }
+
+fn channel(world: &World, id: &str) {
+    let create = chat::Op::CreateChannel {
+        channel_id: id.into(),
+        name: id.into(),
+        post_policy: chat::PostPolicy::Open,
+    };
+    world
+        .chain
+        .submit(signed(ADA), chat::PROGRAM, &create)
+        .unwrap();
+}
+
+fn listens(chain: &MockChain, agent: AccountNumber, channel: &str) -> bool {
+    let asked = chat::Query::Listening {
+        account: agent,
+        page: PageRequest::default(),
+    };
+    let chat::Reply::Listening(page) = chain.query(chat::PROGRAM, &asked).unwrap() else {
+        panic!("chat answers what an account listens to")
+    };
+    page.items.iter().any(|listened| listened == channel)
+}
+
+fn message(channel: &str, rest: Value) -> Value {
+    let mut wanted = json!({ "channel": channel });
+    if let (Some(wanted), Some(rest)) = (wanted.as_object_mut(), rest.as_object()) {
+        wanted.extend(rest.clone());
+    }
+    json!({ "event": { "message": wanted } })
+}
+
+fn ended_turn(chain: &MockChain, at: u64) {
+    chain.at(at, 0);
+    let words = json!([{ "type": "text", "text": "Seen." }]);
+    model_says(chain, words, "end_turn");
+}
+
+#[test]
+fn a_wait_for_a_message_wakes_once_on_the_first_that_matches_whoever_writes_it() {
+    let world = schemed();
+    let chain = &world.chain;
+    channel(&world, "random");
+    let thread = world.opened("m1", "wake me when Bo writes in random", Some(WINDOW));
+    let wanted = message("random", json!({ "from": world.bo }));
+    turn(&world, 3, &[("w1", "wait_for", wanted)]);
+    let wait = waited(chain, thread, "w1");
+    assert_eq!(asking(chain), 0, "the turn that armed a wait ends");
+    assert!(listens(chain, world.agent, "random"), "chat tells harness");
+
+    chain.at(5, 0);
+    world.post(ADA, "general", "g1", "elsewhere");
+    world.post(ADA, "random", "r1", "not Bo");
+    assert!(wakes(chain, thread).is_empty(), "nothing else ends it");
+    assert_eq!(
+        asking(chain),
+        0,
+        "a channel only a wait listens to asks nothing"
+    );
+    world.post(BO, "random", "r2", "Bo is here");
+    let [wake] = wakes(chain, thread).try_into().expect("one wake");
+    let opens = format!(
+        "Wait {wait} is over: Bo (account {}) wrote in chat channel random, message",
+        world.bo
+    );
+    assert!(wake.starts_with(&opens), "{wake}");
+    assert!(wake.ends_with("Bo is here"), "{wake}");
+    assert_eq!(
+        asking(chain),
+        1,
+        "a person the agent doesn't answer still ends it"
+    );
+    assert!(
+        !listens(chain, world.agent, "random"),
+        "the wait's listening ends with it"
+    );
+
+    ended_turn(chain, 6);
+    chain.at(7, 0);
+    world.post(BO, "random", "r3", "again");
+    assert_eq!(wakes(chain, thread).len(), 1, "it wakes once");
+    assert_eq!(asking(chain), 0);
+}
+
+#[test]
+fn a_wait_for_a_message_to_the_agent_is_ended_by_a_mention_heard_once() {
+    let world = schemed();
+    let chain = &world.chain;
+    channel(&world, "random");
+    let thread = world.opened("m1", "wake me when someone asks me in random", Some(WINDOW));
+    let wanted = message("random", json!({ "mentions_me": true }));
+    turn(&world, 3, &[("w1", "wait_for", wanted)]);
+    let wait = waited(chain, thread, "w1");
+
+    chain.at(5, 0);
+    world.post(ADA, "random", "r1", "just talk");
+    assert!(wakes(chain, thread).is_empty());
+    let asks = format!("<@{}> look here", world.agent);
+    world.post(ADA, "random", "r2", &asks);
+    let [wake] = wakes(chain, thread).try_into().expect("one wake");
+    assert!(
+        wake.starts_with(&format!(
+            "Wait {wait} is over: Ada (account {}) mentioned you",
+            world.ada
+        )),
+        "{wake}"
+    );
+    let heard = frames(chain, thread)
+        .into_iter()
+        .chain(held(chain, thread))
+        .filter(|body| body.text().contains("look here"))
+        .count();
+    assert_eq!(heard, 1, "the mention is heard once, as the wake");
+    assert_eq!(asking(chain), 1);
+}
+
+#[test]
+fn a_cancelled_message_wait_stops_listening_and_an_unknown_channel_is_refused() {
+    let world = schemed();
+    let chain = &world.chain;
+    channel(&world, "random");
+    let thread = world.opened("m1", "wait in random", Some(WINDOW));
+    let calls = [
+        ("w1", "wait_for", message("random", json!({}))),
+        ("w2", "wait_for", message("nowhere", json!({}))),
+    ];
+    turn(&world, 3, &calls);
+    let wait = waited(chain, thread, "w1");
+    let text = refused(chain, thread, "w2");
+    assert!(text.contains("chat holds no channel nowhere"), "{text}");
+    assert!(listens(chain, world.agent, "random"));
+
+    chain.at(5, 0);
+    world.mention("m2", "never mind");
+    turn(&world, 6, &[("c1", "wait_cancel", json!({ "wait": wait }))]);
+    assert_eq!(answered(chain, thread, "c1"), json!({ "ok": true }));
+    assert!(!listens(chain, world.agent, "random"));
+    ended_turn(chain, 8);
+    chain.at(9, 0);
+    world.post(BO, "random", "r1", "hello?");
+    assert!(wakes(chain, thread).is_empty());
+    assert_eq!(asking(chain), 0);
+}
+
+#[test]
+fn an_agent_neither_hands_harness_a_forge_event_nor_moves_its_forge_watcher() {
+    let world = schemed();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "forge a wake", Some(WINDOW));
+    let closed = json!({ "Forged": { "Closed": { "repo": "notes", "n": 1, "by": { "Account": world.ada } } } });
+    let calls = [
+        (
+            "f1",
+            "network_call",
+            json!({ "program": PROGRAM, "op": closed }),
+        ),
+        (
+            "f2",
+            "network_call",
+            json!({ "program": "forge", "op": { "Watch": { "deliver": "" } } }),
+        ),
+    ];
+    turn(&world, 3, &calls);
+    for call in ["f1", "f2"] {
+        let text = refused(chain, thread, call);
+        let refusal = text.starts_with(code::UNAUTHORIZED) && text.contains("does not send");
+        assert!(refusal, "{text}");
+    }
+    let event = forge::Watched::Closed {
+        repo: "notes".into(),
+        n: 1,
+        by: Principal::Account(world.ada),
+    };
+    let error = chain
+        .submit(signed(ADA), PROGRAM, &Op::Forged(event))
+        .unwrap_err();
+    assert_eq!(error.code, code::UNAUTHORIZED, "{error:?}");
+}
+
+#[test]
+fn the_forge_prefix_decodes_as_forged() {
+    let event = forge::Watched::Closed {
+        repo: "notes".into(),
+        n: 4,
+        by: Principal::Account(9),
+    };
+    let mut delivered = forged_as();
+    delivered.extend(abi::encode(&event));
+    assert_eq!(abi::decode::<Op>(&delivered).unwrap(), Op::Forged(event));
+}

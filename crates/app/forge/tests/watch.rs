@@ -1,4 +1,5 @@
 //! A program that watches forge hears each ref a push or a merge moves and each change opened,
+//! closed or merged,
 //! and a watcher that refuses what it hears never refuses forge's write.
 mod common;
 
@@ -134,9 +135,50 @@ fn a_watcher_hears_each_ref_moved_and_each_change_opened() {
         moved("refs/heads/main", None, Some(root)),
         moved("refs/heads/feature", None, Some(feature)),
         opened,
+        Watched::Merged {
+            repo: "project".into(),
+            n: 1,
+            oid: feature.to_hex(),
+            by: person(OWNER),
+        },
         moved("refs/heads/main", Some(root), Some(feature)),
     ];
     assert_eq!(heard(&sandbox), expected);
+}
+
+#[test]
+fn a_watcher_hears_a_change_closed() {
+    let sandbox = watched();
+    let mut source = MemoryObjects::new(Hash::Sha1);
+    let root = file_commit(&mut source, &[], 1, &[("a", b"1\n")]);
+    let feature = file_commit(&mut source, &[root], 2, &[("a", b"2\n")]);
+    let zero = Hash::Sha1.zero();
+    let pack = pack_of(&source, &all_ids(&source));
+    let made = [
+        (zero, root, "refs/heads/main"),
+        (zero, feature, "refs/heads/feature"),
+    ];
+    push(&sandbox, OWNER, "project", &made, &pack).unwrap();
+    let open = Op::ChangeOpen {
+        repo: "project".into(),
+        from: branch("feature"),
+        into: b"refs/heads/main".to_vec(),
+        title: "Feature".into(),
+        body: String::new(),
+        reviewers: Vec::new(),
+    };
+    act(&sandbox, OWNER, &open).unwrap();
+    let close = Op::ChangeClose {
+        repo: "project".into(),
+        n: 1,
+    };
+    act(&sandbox, OWNER, &close).unwrap();
+    let closed = Watched::Closed {
+        repo: "project".into(),
+        n: 1,
+        by: person(OWNER),
+    };
+    assert_eq!(heard(&sandbox).last(), Some(&closed));
 }
 
 #[test]

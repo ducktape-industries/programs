@@ -124,6 +124,7 @@ pub enum Op {
         wait: u64,
         event: Event,
     },
+    Forged(forge::Watched),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -698,11 +699,29 @@ pub struct Ran {
     pub text: String,
 }
 
-// what a wait (`wait_for`) waits for: a block's height, or a pod of the pods service to end
+// what a wait (`wait_for`) waits for: a block's height, a pod of the pods service to end, a chat
+// message, a forge change to move, close or merge, or a forge ref to move
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum WaitFor {
-    Height { height: u64 },
-    Pod { name: String },
+    Height {
+        height: u64,
+    },
+    Pod {
+        name: String,
+    },
+    Message {
+        channel: String,
+        from: Option<AccountNumber>,
+        mentions_me: bool,
+    },
+    Change {
+        repo: String,
+        n: u64,
+    },
+    Ref {
+        repo: String,
+        reference: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -860,6 +879,11 @@ pub fn heard_as(watch: u64) -> Vec<u8> {
     deliver
 }
 
+// the prefix forge's watchers tell harness each event under, read as `Op::Forged`
+pub fn forged_as() -> Vec<u8> {
+    vec![23]
+}
+
 // the prefix egress hands each event of a pod's wait stream under, read as `Op::PodEvent`
 pub fn pod_event_as(wait: u64) -> Vec<u8> {
     let mut deliver = vec![22];
@@ -1013,6 +1037,7 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Event {} of wait {wait}'s pod stream", event.seq),
             vec![field("data", Value::count(event.data.len() as u64))],
         ),
+        Op::Forged(_) => ("Hear a ref or a change forge moved".to_owned(), Vec::new()),
     };
     describe::Description { title, fields }
 }
@@ -1047,6 +1072,7 @@ fn op_variants_only_append() {
             "WaitDue",
             "PodWait",
             "PodEvent",
+            "Forged",
         ]
     );
 }

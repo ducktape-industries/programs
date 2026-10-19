@@ -9,7 +9,7 @@ use super::*;
 const TIME_MS: u64 = 1_760_000_000_000;
 
 // One model turn of calls at `height`, each run once its relay comes back, a block later.
-fn turn(chain: &MockChain, height: u64, calls: &[(&str, &str, Value)]) {
+pub(super) fn turn(chain: &MockChain, height: u64, calls: &[(&str, &str, Value)]) {
     chain.at(height, TIME_MS);
     let uses: Vec<Value> = calls
         .iter()
@@ -24,7 +24,7 @@ fn turn(chain: &MockChain, height: u64, calls: &[(&str, &str, Value)]) {
 
 // `forged` with forge's own account registered, as identity registers it when forge is admitted,
 // so the chat channel a change opens is made as forge.
-fn world() -> World {
+pub(super) fn world() -> World {
     let seated = forged(10_000);
     let register = identity::Op::RegisterProgram {
         program: forge::PROGRAM.into(),
@@ -36,19 +36,19 @@ fn world() -> World {
     seated
 }
 
-fn answered(chain: &MockChain, thread: u64, call: &str) -> Value {
+pub(super) fn answered(chain: &MockChain, thread: u64, call: &str) -> Value {
     let (text, failed) = result_of(chain, thread, call);
     assert!(!failed, "{call}: {text}");
     serde_json::from_str(&text).unwrap()
 }
 
-fn refusal(chain: &MockChain, thread: u64, call: &str) -> String {
+pub(super) fn refusal(chain: &MockChain, thread: u64, call: &str) -> String {
     let (text, failed) = result_of(chain, thread, call);
     assert!(failed, "{call} should fail: {text}");
     text
 }
 
-fn head(chain: &MockChain, repo: &str, branch: &str) -> String {
+pub(super) fn head(chain: &MockChain, repo: &str, branch: &str) -> String {
     let asked = forge::Query::Log {
         repo: repo.into(),
         from: Revision::Ref(format!("refs/heads/{branch}").into_bytes()),
@@ -93,7 +93,7 @@ const LIB: &str = "pub mod a;\npub mod b;\n\nfn one() {}\nfn two() {}\n";
 
 // A repository `notes` whose main holds `src/lib.rs` and `README.md`, and whose `dev` is one
 // commit on top that adds `src/a.rs`. Answers dev's head.
-fn seeded(world: &World, thread: u64) -> String {
+pub(super) fn seeded(world: &World, thread: u64) -> String {
     let chain = &world.chain;
     let start = json!({
         "repo": "notes",

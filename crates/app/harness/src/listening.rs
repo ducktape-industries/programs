@@ -1,5 +1,6 @@
 //! An agent's `listen` setting kept in chat: at each model call harness starts the agent listening
-//! to each channel its configuration names that chat holds, and stops it where it names none.
+//! to each channel its configuration names that chat holds, and stops it where neither it nor an
+//! open message wait (`waits.rs`) names one.
 use ::program::{Error, ExecCtx, QueryCtx, unexpected_reply};
 use abi::role::identity::AccountNumber;
 use store::PageRequest;
@@ -21,18 +22,23 @@ pub(crate) fn mirror(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent, liste
 
 fn mirrored(ctx: &ExecCtx, agent: AccountNumber, listen: &[String]) -> Result<(), Error> {
     let held = listened(ctx, agent)?;
+    let waited: Vec<String> = crate::waits::message_waits(ctx, agent)?
+        .into_iter()
+        .map(|(channel, _)| channel)
+        .collect();
     for channel in listen.iter().filter(|channel| !held.contains(channel)) {
         if exists(ctx, channel)? {
             tell(ctx, agent, channel, true);
         }
     }
-    for channel in held.iter().filter(|channel| !listen.contains(channel)) {
+    let wanted = |channel: &String| listen.contains(channel) || waited.contains(channel);
+    for channel in held.iter().filter(|channel| !wanted(channel)) {
         tell(ctx, agent, channel, false);
     }
     Ok(())
 }
 
-fn tell(ctx: &ExecCtx, agent: AccountNumber, channel: &str, listening: bool) {
+pub(crate) fn tell(ctx: &ExecCtx, agent: AccountNumber, channel: &str, listening: bool) {
     let op = chat::Op::Listen {
         channel_id: channel.to_owned(),
         listening,
@@ -40,7 +46,7 @@ fn tell(ctx: &ExecCtx, agent: AccountNumber, channel: &str, listening: bool) {
     ctx.emit_as(agent, chat::PROGRAM, &op, ::program::Reply::None);
 }
 
-fn exists(ctx: &QueryCtx, channel: &str) -> Result<bool, Error> {
+pub(crate) fn exists(ctx: &QueryCtx, channel: &str) -> Result<bool, Error> {
     let asked = chat::Query::Channel {
         channel_id: channel.to_owned(),
     };
