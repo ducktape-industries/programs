@@ -14,6 +14,8 @@ The network's default way to run workloads (J-129). A program keeps the canonica
 | `b/` | (account, name) | the machine's last beat, one height |
 | `d/` | (run, account, name) | the machines that declined a run |
 | `last` | | the last run id |
+| `t/` | message seq | an end told and not answered yet: its run and attempt |
+| `told` | | how many ends were told in chat |
 
 ## Ops
 - `Ask { spec }`: anyone. Queues run 1 and returns its id. fleet places it in its own run the block after (`Place`), because the guard records the claim row's owner and policy only once the Ask returns, and placement reads that policy.
@@ -25,7 +27,7 @@ The network's default way to run workloads (J-129). A program keeps the canonica
 - `Cancel { run }`: whoever the claim row's policy admits (the asker always). A queued, assigned or lost run ends `Cancelled`. A running one becomes `Stopping` until its machine reports.
 - `Requeue { run }`: the same parties. A lost or ended run is queued as its next attempt.
 - `Lapse { machine }`, `Unclaimed { run, attempt }`, `Place { run }`: fleet books these for itself. Anyone may send them, and each acts only on what the chain shows:
-  - A machine holding a running run that hasn't beaten for `DEFAULT_WAIT` blocks (egress's silence bound) loses its runs. `OnLoss::Retry` queues each one again. `OnLoss::Park` makes a job `Lost`.
+  - A machine holding a running run that hasn't beaten for `DEFAULT_WAIT` blocks (egress's silence bound) loses its runs. `OnLoss::Retry` queues each one again. `OnLoss::Park` makes a job `Lost`. Any other run its machine was stopping (`Stopping`) ends `Cancelled` instead of being queued again.
   - An assignment unclaimed for `DEFAULT_WAIT` blocks marks its machine gone and queues the run again.
   - A queued run is placed.
 
@@ -35,12 +37,12 @@ A queued run goes to the ready machine that has been free longest (`idle_since`,
 - covers the run's affinity: none means anywhere, `Machine(id)` means that machine, `Labels` means a machine holding every one of them;
 - serves the run's asker;
 - hasn't declined the run;
-- is admitted by the run's claim policy, read through the ownership role (`Record`, `Effective`) before the assignment.
+- is admitted by the run's claim policy, read through the ownership role (`Record`, `Effective`) before the assignment. As ownership resolves a party, a listed program admits the account it acts as (identity `OfProgram`).
 
 A freed slot takes the oldest queued run it covers in the same frame.
 
 ## Who is told
-`Spec.notify`: `Chat { channel }` gets one line per end. `Program { program, deliver }` hears `deliver ++ borsh(Ended { run, attempt, state })` when a run ends or is lost. A refusal leaves the run as it ended.
+`Spec.notify`: `Chat { channel }` gets one line per end, each with a message id of its own (`fleet-run-<run>-<attempt>-<n>`), so a lost job's late end is told too. `Program { program, deliver }` hears `deliver ++ borsh(Ended { run, attempt, state })` when a run ends or is lost. A refusal leaves the run as it ended, and is added to its summary (`not told: …`) while the run is still at that attempt.
 
 ## Queries
 `Workload { id }`, `Run { id }`, `Queued { page }`, `Machine { machine }`, `Machines { page }`, `Holds { machine, page }`.

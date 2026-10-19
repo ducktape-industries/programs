@@ -33,3 +33,7 @@ pub const BEATS: Map<(AccountNumber, String), u64> = Map::new("b/");
 // The machines that declined a run, which it is never assigned to again.
 pub const DECLINED: Set<(u64, AccountNumber, String)> = Set::new("d/");
 pub const LAST: Item<u64> = Item::new("last");
+// Each end told and not yet answered, by the seq of its message: the run and attempt it told of.
+pub const TELLING: Map<u64, (u64, u32)> = Map::new("t/");
+// How many ends were told in chat, which gives each line a message id of its own.
+pub const TOLD: Item<u64> = Item::new("told");

@@ -2,16 +2,18 @@
 //! slot takes the queued runs it covers, and a run goes from assigned to running to how its
 //! machine says it ended; a machine silent for the egress wait loses its runs.
 use ::program::{
-    Error, ExecCtx, Outcome, QueryCtx, Reply as Wanted, code, invalid, not_found, wrong_state,
+    Error, ExecCtx, MessageId, Outcome, QueryCtx, Reply as Wanted, code, invalid, not_found,
+    unexpected_reply, wrong_state,
 };
 use abi::role::egress::DEFAULT_WAIT;
+use abi::role::identity;
 
 use crate::state::{
-    BEATS, CLAIMS, Claim, DECLINED, HOLDS, LAST, MACHINES, QUEUED, RUNS, WORKLOADS,
+    BEATS, CLAIMS, Claim, DECLINED, HOLDS, LAST, MACHINES, QUEUED, RUNS, TELLING, TOLD, WORKLOADS,
 };
 use crate::{
     AccountNumber, Affinity, Ended, Kind, MachineId, MachineRow, MachineView, Notify, OnLoss, Op,
-    Out, PageRequest, PageResponse, RunRow, Serves, Spec, State, Workload,
+    Out, PageRequest, PageResponse, ProgramId, RunRow, Serves, Spec, State, Workload,
 };
 
 type Key = (AccountNumber, String);
@@ -186,7 +188,7 @@ pub(crate) fn report(
     } else {
         run.state = state;
         RUNS.put(ctx, &id, &run);
-        tell(ctx, &workload, &run);
+        tell(ctx, &workload, &run)?;
     }
     fill(ctx, &machine)
 }
@@ -240,7 +242,7 @@ pub(crate) fn cancel(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
             run.state = State::Cancelled;
             run.finished = Some(height(ctx));
             RUNS.put(ctx, &id, &run);
-            tell(ctx, &workload(ctx, id)?, &run);
+            tell(ctx, &workload(ctx, id)?, &run)?;
             match machine.filter(|_| assigned) {
                 Some(machine) => {
                     release(ctx, id, &machine)?;
@@ -340,18 +342,24 @@ fn requeued(ctx: &ExecCtx, run: &mut RunRow) -> Result<(), Error> {
     place(ctx, run.id)
 }
 
+// A run its silent machine held: a job that must never run twice is parked as lost, a run someone
+// was stopping ends cancelled, and any other is queued again.
 fn lose(ctx: &ExecCtx, mut run: RunRow, machine: &MachineId, why: &str) -> Result<(), Error> {
     HOLDS.remove(ctx, &(machine.account, machine.name.clone(), run.id));
     let workload = workload(ctx, run.id)?;
     run.summary = why.to_owned();
     let park = workload.spec.kind == Kind::Job && workload.spec.on_loss == OnLoss::Park;
-    if park {
-        run.state = State::Lost;
-        RUNS.put(ctx, &run.id, &run);
-        tell(ctx, &workload, &run);
-        return Ok(());
+    let stopping = run.state == State::Stopping;
+    match (park, stopping) {
+        (true, _) => run.state = State::Lost,
+        (false, true) => {
+            run.state = State::Cancelled;
+            run.finished = Some(height(ctx));
+        }
+        (false, false) => return requeued(ctx, &mut run),
     }
-    requeued(ctx, &mut run)
+    RUNS.put(ctx, &run.id, &run);
+    tell(ctx, &workload, &run)
 }
 
 // The run leaves its machine's holds, and the machine's slot is free again.
@@ -444,8 +452,7 @@ fn admitted(ctx: &QueryCtx, id: u64, account: AccountNumber) -> Result<bool, Err
     let ownership::Reply::Record(Some(record)) = asked else {
         return Ok(true);
     };
-    let actor = ownership::Party::Account(account);
-    if record.owner == actor {
+    if is(ctx, &record.owner, account)? {
         return Ok(true);
     }
     let effective = ownership::Query::Effective {
@@ -456,11 +463,36 @@ fn admitted(ctx: &QueryCtx, id: u64, account: AccountNumber) -> Result<bool, Err
     let ownership::Reply::Policy(Some(policy)) = asked else {
         return Ok(true);
     };
-    Ok(match policy.write {
-        ownership::Writers::Anyone => true,
-        ownership::Writers::Owner => false,
-        ownership::Writers::Listed(parties) => parties.contains(&actor),
-    })
+    match policy.write {
+        ownership::Writers::Anyone => Ok(true),
+        ownership::Writers::Owner => Ok(false),
+        ownership::Writers::Listed(parties) => {
+            for party in &parties {
+                if is(ctx, party, account)? {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        }
+    }
+}
+
+// Whether a party is the machine's account as ownership resolves it: that account, or a program
+// that acts as it.
+fn is(ctx: &QueryCtx, party: &ownership::Party, account: AccountNumber) -> Result<bool, Error> {
+    match party {
+        ownership::Party::Account(number) => Ok(*number == account),
+        ownership::Party::Program(program) => Ok(account_of(ctx, program)? == Some(account)),
+    }
+}
+
+fn account_of(ctx: &QueryCtx, program: &ProgramId) -> Result<Option<AccountNumber>, Error> {
+    let registry = ctx.env().role(abi::role::IDENTITY)?.clone();
+    let asked = identity::Query::OfProgram(program.clone());
+    match ctx.query::<identity::Query, identity::Reply>(registry.clone(), &asked)? {
+        identity::Reply::Account(account) => Ok(account),
+        other => Err(unexpected_reply(&registry, "OfProgram", &other)),
+    }
 }
 
 fn assign(ctx: &ExecCtx, id: u64, mut row: MachineRow) -> Result<(), Error> {
@@ -515,10 +547,11 @@ fn schedule(ctx: &ExecCtx, at: u64, op: &Op) -> Result<(), Error> {
     Ok(())
 }
 
-// A run that ended or was lost, told to whom its workload names.
-fn tell(ctx: &ExecCtx, workload: &Workload, run: &RunRow) {
-    match &workload.spec.notify {
-        None => {}
+// A run that ended or was lost, told to whom its workload names. Each chat line has a message id
+// of its own, and each message is kept by its seq until its answer comes (`replied`).
+fn tell(ctx: &ExecCtx, workload: &Workload, run: &RunRow) -> Result<(), Error> {
+    let sent = match &workload.spec.notify {
+        None => return Ok(()),
         Some(Notify::Program { program, deliver }) => {
             let ended = Ended {
                 run: run.id,
@@ -527,9 +560,15 @@ fn tell(ctx: &ExecCtx, workload: &Workload, run: &RunRow) {
             };
             let mut payload = deliver.clone();
             payload.extend(abi::encode(&ended));
-            ctx.emit_raw(program.clone(), payload, Wanted::Wanted);
+            ctx.emit_raw(program.clone(), payload, Wanted::Wanted)
         }
         Some(Notify::Chat { channel }) => {
+            let told = TOLD
+                .get(ctx)?
+                .unwrap_or(0)
+                .checked_add(1)
+                .ok_or_else(|| Error::new(code::EXHAUSTED, "told ends are exhausted"))?;
+            TOLD.put(ctx, &told);
             let mut line = format!(
                 "**run {} {}** (attempt {}), asked by <@{}>",
                 run.id,
@@ -545,17 +584,38 @@ fn tell(ctx: &ExecCtx, workload: &Workload, run: &RunRow) {
             }
             let post = chat::Op::PostMessage {
                 channel_id: channel.clone(),
-                message_id: format!("fleet-run-{}-{}", run.id, run.attempt),
+                message_id: format!("fleet-run-{}-{}-{told}", run.id, run.attempt),
                 blocks: chat::parse_message(&line),
                 thread: None,
             };
-            ctx.emit(chat::PROGRAM, &post, Wanted::Wanted);
+            ctx.emit(chat::PROGRAM, &post, Wanted::Wanted)
         }
-    }
+    };
+    TELLING.put(ctx, &sent.seq, &(run.id, run.attempt));
+    Ok(())
 }
 
-// Whoever fleet told of an end may refuse it; the run stays as it ended.
-pub(crate) fn replied(_outcome: &Outcome) -> Result<(), Error> {
+// The answer to an end fleet told: a refusal goes into the run's summary while the run is still at
+// that attempt, and the run stays as it ended.
+pub(crate) fn replied(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), Error> {
+    let Some((run, attempt)) = TELLING.get(ctx, &id.seq)? else {
+        return Ok(());
+    };
+    TELLING.remove(ctx, &id.seq);
+    let Outcome::Rejected(refused) = outcome else {
+        return Ok(());
+    };
+    let Some(mut row) = RUNS.get(ctx, &run)? else {
+        return Ok(());
+    };
+    if row.attempt != attempt {
+        return Ok(());
+    }
+    row.summary = match row.summary.is_empty() {
+        true => format!("not told: {}", refused.message),
+        false => format!("{}; not told: {}", row.summary, refused.message),
+    };
+    RUNS.put(ctx, &run, &row);
     Ok(())
 }
 

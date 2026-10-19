@@ -49,8 +49,8 @@ impl Program for Fleet {
         }
     }
 
-    fn reply(_ctx: &ExecCtx, _id: &MessageId, outcome: &Outcome) -> Result<(), Error> {
-        replied(outcome)
+    fn reply(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), Error> {
+        replied(ctx, id, outcome)
     }
 
     fn query(ctx: &QueryCtx, query: Query) -> Result<Reply, Error> {

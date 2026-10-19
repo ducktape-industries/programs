@@ -20,6 +20,8 @@ const A_ACCOUNT: u64 = 21;
 const B: &[u8] = b"machine-b-key";
 const B_ACCOUNT: u64 = 22;
 const WATCHER: &str = "watcher";
+const WORKER: &str = "worker";
+const WORKER_ACCOUNT: u64 = 31;
 const HEARD: Item<Vec<Ended>> = Item::new("heard");
 
 // A program told of each run's end, as harness or actions would be.
@@ -59,6 +61,7 @@ fn world() -> World {
     let mut chain = MockChain::default();
     chain.seat::<Fleet>(PROGRAM);
     chain.seat::<Watcher>(WATCHER);
+    chain.seat::<chat::Chat>(chat::PROGRAM);
     chain.seat::<::scheduler::Scheduler>(::scheduler::PROGRAM);
     chain.seat::<ownership::Ownership>(ownership::PROGRAM);
     for (key, account) in [
@@ -106,6 +109,21 @@ fn machine(account: u64, name: &str) -> MachineId {
 impl World {
     fn act(&self, key: &[u8], op: &Op) -> Result<Vec<u8>, Error> {
         self.chain.submit(Origin::Signed(key.to_vec()), PROGRAM, op)
+    }
+
+    fn act_as_program(&self, program: &str, op: &Op) -> Result<Vec<u8>, Error> {
+        self.chain
+            .submit(Origin::Program(program.into()), PROGRAM, op)
+    }
+
+    fn line(&self, message_id: &str) -> Option<String> {
+        let asked = chat::Query::MessageById {
+            message_id: message_id.into(),
+        };
+        let chat::Reply::Message(row) = self.chain.query(chat::PROGRAM, &asked).unwrap() else {
+            panic!("MessageById answers a message");
+        };
+        row.map(|row| chat::plain_text(&row.blocks))
     }
 
     // The run asked for, and the block after it ended, where fleet places it.
@@ -477,4 +495,137 @@ fn the_askers_claim_policy_decides_which_machines_take_their_runs() {
     world.claim(B, adas, 1).unwrap();
     world.act(ADA, &Op::Cancel { run: adas }).unwrap();
     assert_eq!(world.run(adas).state, State::Stopping);
+}
+
+#[test]
+fn a_run_being_stopped_whose_machine_goes_silent_ends_cancelled_and_goes_nowhere_else() {
+    let world = world();
+    world.to(2);
+    world.ready(A, "a", &[], 2);
+    let service = world.ask(Spec {
+        kind: Kind::Service,
+        ..job()
+    });
+    let retry = world.ask(job());
+    // both claimed at block 6, which books the lapse check for 6 + the wait
+    world.claim(A, service, 1).unwrap();
+    world.claim(A, retry, 1).unwrap();
+    world.act(ADA, &Op::Cancel { run: service }).unwrap();
+    world.act(ADA, &Op::Cancel { run: retry }).unwrap();
+    world.ready(B, "b", &[], 2);
+    world.to(6 + DEFAULT_WAIT + 1);
+    for run in [service, retry] {
+        let ended = world.run(run);
+        assert_eq!(
+            (ended.state, ended.attempt, ended.finished),
+            (State::Cancelled, 1, Some(6 + DEFAULT_WAIT)),
+            "{ended:?}"
+        );
+    }
+    assert!(world.holds(machine(B_ACCOUNT, "b")).is_empty());
+    assert!(world.queued().is_empty());
+    let told = |run| Ended {
+        run,
+        attempt: 1,
+        state: State::Cancelled,
+    };
+    assert_eq!(world.heard(), [told(service), told(retry)]);
+}
+
+#[test]
+fn a_machine_a_listed_program_runs_takes_the_askers_runs() {
+    let world = world();
+    world.chain.register(WORKER, WORKER_ACCOUNT);
+    let policy = ownership::Op::Create {
+        name: "my workers".into(),
+        write: ownership::Writers::Listed(vec![ownership::Party::Program(WORKER.into())]),
+    };
+    let made = world
+        .chain
+        .submit(Origin::Signed(ADA.to_vec()), ownership::PROGRAM, &policy)
+        .unwrap();
+    let policy: ownership::PolicyId = abi::decode(&made).unwrap();
+    let default = ownership::Op::SetDefault {
+        scope: ownership::Scope::Kind("fleet.claim".into()),
+        policy: Some(policy),
+    };
+    world
+        .chain
+        .submit(Origin::Signed(ADA.to_vec()), ownership::PROGRAM, &default)
+        .unwrap();
+    world.to(2);
+    world.ready(A, "a", &[], 1);
+    world.to(3);
+    let ready = Op::Ready {
+        name: "w".into(),
+        labels: Vec::new(),
+        slots: 1,
+        serves: Serves::Anyone,
+    };
+    world.act_as_program(WORKER, &ready).unwrap();
+    let run = world.ask(job());
+    let worker = machine(WORKER_ACCOUNT, "w");
+    assert_eq!(world.placed(run), (State::Assigned, Some(worker), 1));
+    world
+        .act_as_program(WORKER, &Op::Claim { run, attempt: 1 })
+        .unwrap();
+    assert_eq!(world.run(run).state, State::Running);
+}
+
+#[test]
+fn a_parked_jobs_late_end_is_told_in_chat_after_its_loss() {
+    let world = world();
+    let channel = chat::Op::CreateChannel {
+        channel_id: "builds".into(),
+        name: "builds".into(),
+        post_policy: chat::PostPolicy::Open,
+    };
+    world
+        .chain
+        .submit(Origin::Signed(ADA.to_vec()), chat::PROGRAM, &channel)
+        .unwrap();
+    world.to(2);
+    world.ready(A, "a", &[], 1);
+    let parked = world.ask(Spec {
+        on_loss: OnLoss::Park,
+        notify: Some(Notify::Chat {
+            channel: "builds".into(),
+        }),
+        ..job()
+    });
+    // claimed at block 4, which books the lapse check for 4 + the wait
+    world.claim(A, parked, 1).unwrap();
+    world.to(4 + DEFAULT_WAIT + 1);
+    assert_eq!(world.run(parked).state, State::Lost);
+    world.act(A, &Op::Beat { name: "a".into() }).unwrap();
+    world.report(A, parked, 1, State::Passed).unwrap();
+    let lost = world.line(&format!("fleet-run-{parked}-1-1")).unwrap();
+    assert!(lost.contains(&format!("run {parked} lost")), "{lost}");
+    let passed = world.line(&format!("fleet-run-{parked}-1-2")).unwrap();
+    assert!(passed.contains(&format!("run {parked} passed")), "{passed}");
+    let ended = world.run(parked);
+    assert_eq!(ended.state, State::Passed);
+    assert!(!ended.summary.contains("not told"), "{}", ended.summary);
+}
+
+#[test]
+fn a_channel_that_refuses_an_end_is_said_on_the_run() {
+    let world = world();
+    world.to(2);
+    world.ready(A, "a", &[], 1);
+    let run = world.ask(Spec {
+        notify: Some(Notify::Chat {
+            channel: "nowhere".into(),
+        }),
+        ..job()
+    });
+    world.claim(A, run, 1).unwrap();
+    world.report(A, run, 1, State::Failed).unwrap();
+    let ended = world.run(run);
+    assert_eq!(ended.state, State::Failed);
+    assert!(
+        ended.summary.starts_with("failed at 1; not told: "),
+        "{}",
+        ended.summary
+    );
 }
