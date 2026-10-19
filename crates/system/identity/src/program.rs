@@ -5,9 +5,9 @@ use ::program::tools::{Described, Tools};
 use ::program::{Error, ExecCtx, Program, QueryCtx};
 
 use crate::rules::{
-    ACCOUNTS, MANAGED, OF_PROGRAM, account, add_key, create, create_agent, generation, needs,
-    of_key, profiles, register_program, remove_key, resolve, resource, resume, revoke, runs,
-    set_name, set_profile, set_script, suspend,
+    ACCOUNTS, MANAGED, OF_PROGRAM, account, add_key, answers, create, create_agent, generation,
+    hears, needs, of_key, profiles, register_program, remove_key, resolve, resource, resume,
+    revoke, runs, set_name, set_ownership, set_profile, set_script, suspend,
 };
 use crate::{Op, Query, Reply};
 
@@ -44,9 +44,7 @@ impl Program for Identity {
             Op::Suspend { account } => suspend(ctx, account),
             Op::Resume { account } => resume(ctx, account),
             Op::Revoke { account } => revoke(ctx, account),
-            Op::SetOwnership { .. } => Err(::program::unauthorized(
-                "whom an agent answers is its list in the access program: set it there",
-            )),
+            Op::SetOwnership { account, ownership } => set_ownership(ctx, account, ownership),
             Op::SetScript { account, script } => set_script(ctx, account, script),
         }
     }
@@ -84,6 +82,8 @@ impl Program for Identity {
                     .range_of(ctx, &by, &page)?
                     .try_map(|(_, number)| account(ctx, number))?,
             ),
+            Query::Answers { account } => Reply::Answers(answers(ctx, account)?),
+            Query::Hears { account, from } => Reply::Hears(hears(ctx, account, from)?),
         })
     }
 }

@@ -144,6 +144,17 @@ pub(crate) fn list() -> Query {
     }
 }
 
+pub(crate) fn answers() -> Query {
+    Query::Answers { account: 40 }
+}
+
+pub(crate) fn hears() -> Query {
+    Query::Hears {
+        account: 40,
+        from: 15,
+    }
+}
+
 pub(crate) fn managed() -> Query {
     Query::Managed {
         by: 15,

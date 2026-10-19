@@ -123,7 +123,7 @@ Who may do what (the acting account is `ctx.sender()`):
 | `SetName`, `SetProfile` | whoever may write the account's key in the access program, `identity::account_key(n)`: its owner (a user or a system account itself, a program account's manager) and the parties the owner lists there; with no list set, a program account itself too. Not on a revoked program account |
 | `Suspend`, `Resume`, `Revoke` | a program account's, by whoever may write its key: its manager and the parties the manager lists; with no list set, the program account itself too |
 | `SetScript { account, script }` | a program account's, by whoever may write its key, not once revoked. `Some(Script { calls, config })` names in `calls` a program that has an account; that program then sends messages as the account (`Runs`) and reads `config`. `None` takes it back |
-| `SetOwnership { account, ownership }` | no one: always refused. Whom an agent answers is its list in the access program at `harness::agent_key(agent)` |
+| `SetOwnership { account, ownership }` | a program account's, by whoever may write its key, not once revoked: whom it answers. `Anyone` (the default, kept as no row), `Owner` (its manager only) or `Listed(parties)` (its manager and these accounts or programs), kept settled: sorted, each once, the manager left out |
 
 The role's queries, which views and other programs ask too, are
 `Account(key)`, `OfProgram(program)`, `Profile(number)`,
@@ -132,6 +132,14 @@ The role's queries, which views and other programs ask too, are
 `Program { manager, category, standing, script }` or `System(id)`. `design::badge` and `design::note` turn it into what a view
 shows beside a name ("Agent · managed by Dev", "Program · chat", "suspended"),
 the one place that happens.
+
+Beyond the role's, identity answers `Answers { account }`: whom a program
+account answers, as `SetOwnership` left it (`None` for an account that is no
+program account). And `Hears { account, from }`: whether that account takes
+a message from `from`, its manager always, anyone else as `Answers` says,
+and a program's own account also as that program (`Party::Program`). It is
+the one rule every runtime that delivers messages to an agent asks, harness
+and agents run off the chain alike.
 
 ## Who may write a key
 

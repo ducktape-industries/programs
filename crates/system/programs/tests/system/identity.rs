@@ -399,14 +399,21 @@ fn an_agent_acts_until_its_manager_suspends_it() {
         };
         let listed_sets_no_list = net.refuse(&bot_key, access::PROGRAM, &take_its_card).await;
         assert_eq!(listed_sets_no_list, reason::UNAUTHORIZED);
-        let set_ownership = identity::Op::SetOwnership {
+        let narrow = identity::Op::SetOwnership {
             account: agent,
             ownership: identity::Ownership::Owner,
         };
-        let retired = net
-            .refuse(&bot_key, identity::PROGRAM, &set_ownership)
-            .await;
-        assert_eq!(retired, reason::UNAUTHORIZED);
+        let by_bob = net.refuse(&public(2), identity::PROGRAM, &narrow).await;
+        assert_eq!(by_bob, reason::UNAUTHORIZED);
+        net.apply(&bot_key, identity::PROGRAM, &narrow).await;
+        for (from, heard) in [(alice, true), (bob, false)] {
+            let hears = identity::Query::Hears {
+                account: agent,
+                from,
+            };
+            let asked: identity::Reply = net.ask(identity::PROGRAM, &hears).await;
+            assert_eq!(asked, identity::Reply::Hears(heard), "{from}");
+        }
         let writers = access::Query::Writers {
             program: identity::PROGRAM.into(),
             key: identity::account_key(agent),

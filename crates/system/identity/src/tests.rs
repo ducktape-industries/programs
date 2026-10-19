@@ -861,20 +861,114 @@ fn an_agents_key_consent_expires_and_is_not_replayed() {
     assert!(get(&store, agent).holds(BOT));
 }
 
+fn answers(store: &MockHost, account: u64) -> Option<Ownership> {
+    match query(store, Query::Answers { account }) {
+        Reply::Answers(answers) => answers,
+        other => panic!("{other:?}"),
+    }
+}
+
+fn hears(store: &MockHost, account: u64, from: u64) -> Result<bool, ::program::Error> {
+    let asked = Query::Hears { account, from };
+    match Identity::query(&store.query(env(Origin::Root, None, 100)), asked)? {
+        Reply::Hears(hears) => Ok(hears),
+        other => panic!("{other:?}"),
+    }
+}
+
+fn account_of(store: &MockHost, program: &str) -> u64 {
+    run(
+        store,
+        &root(),
+        Op::RegisterProgram {
+            program: program.into(),
+        },
+    )
+    .unwrap();
+    let Some(Principal::Account(number)) = from_program(store, program).sender else {
+        panic!("{program} acts as its account");
+    };
+    number
+}
+
 #[test]
-fn set_ownership_is_retired() {
+fn an_agent_answers_anyone_until_it_or_its_manager_narrows_it() {
     let store = memory();
-    create(&store, ALICE, "Alice");
+    let alice = create(&store, ALICE, "Alice");
     let bob = create(&store, BOB, "Bob");
     let agent = create_agent(&store, ALICE, "Scout");
-    let retired = Op::SetOwnership {
+    add_agent_key(&store, ALICE, agent, BOT).unwrap();
+    let pods = account_of(&store, "pods");
+    assert_eq!(answers(&store, agent), Some(Ownership::Anyone));
+    for from in [alice, bob, pods] {
+        assert!(hears(&store, agent, from).unwrap(), "{from}");
+    }
+
+    let set = |ownership| Op::SetOwnership {
         account: agent,
-        ownership: Ownership::Listed(vec![Party::Account(bob)]),
+        ownership,
     };
+    // the account's key: its manager and the agent itself write it (the card test shows who)
     assert_eq!(
-        refused(&store, &signed(&store, ALICE), retired).code,
-        code::UNAUTHORIZED
+        needs(&store, &set(Ownership::Owner)),
+        [::program::Need::write(crate::account_key(agent))]
     );
+    let pods_party = || Party::Program("pods".into());
+    let listed = vec![pods_party(), Party::Account(alice), pods_party()];
+    run(
+        &store,
+        &signed(&store, ALICE),
+        set(Ownership::Listed(listed)),
+    )
+    .unwrap();
+    assert_eq!(
+        answers(&store, agent),
+        Some(Ownership::Listed(vec![pods_party()])),
+        "settled: once each, its manager left out"
+    );
+    assert!(hears(&store, agent, alice).unwrap(), "its manager, always");
+    assert!(hears(&store, agent, pods).unwrap(), "a program's account");
+    assert!(!hears(&store, agent, bob).unwrap());
+
+    let manager_only = Ownership::Listed(vec![Party::Account(alice)]);
+    run(&store, &signed(&store, BOT), set(manager_only)).unwrap();
+    assert_eq!(answers(&store, agent), Some(Ownership::Owner));
+    assert!(!hears(&store, agent, pods).unwrap());
+    assert!(hears(&store, agent, alice).unwrap());
+
+    run(&store, &signed(&store, BOT), set(Ownership::Anyone)).unwrap();
+    assert_eq!(answers(&store, agent), Some(Ownership::Anyone));
+    assert!(hears(&store, agent, bob).unwrap());
+}
+
+#[test]
+fn only_a_program_account_answers_and_not_once_revoked() {
+    let store = memory();
+    let alice = create(&store, ALICE, "Alice");
+    let agent = create_agent(&store, ALICE, "Scout");
+    let forge = account_of(&store, "forge");
+    let narrow = |account| Op::SetOwnership {
+        account,
+        ownership: Ownership::Owner,
+    };
+    for account in [alice, forge] {
+        let why = refused(&store, &signed(&store, ALICE), narrow(account));
+        assert_eq!(why.code, code::WRONG_STATE, "{account}");
+        assert_eq!(answers(&store, account), None);
+        let asked = hears(&store, account, alice).unwrap_err();
+        assert_eq!(asked.code, code::WRONG_STATE);
+    }
+    assert_eq!(answers(&store, 99), None);
+    assert_eq!(hears(&store, 99, alice).unwrap_err().code, code::NOT_FOUND);
+
+    run(
+        &store,
+        &signed(&store, ALICE),
+        Op::Revoke { account: agent },
+    )
+    .unwrap();
+    let revoked = refused(&store, &signed(&store, ALICE), narrow(agent));
+    assert_eq!(revoked.code, code::WRONG_STATE);
 }
 
 fn runs(store: &MockHost, program: &str, account: u64) -> Result<Option<u64>, ::program::Error> {

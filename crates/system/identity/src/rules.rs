@@ -19,6 +19,8 @@ const GENERATION: Map<Vec<u8>, u64> = Map::new("g/");
 /// ones too, so a manager's list keeps what they answered for.
 pub(crate) const MANAGED: Set<(AccountNumber, AccountNumber)> = Set::new("d/");
 const NEXT: Item<AccountNumber> = Item::new("next");
+// whom a program account answers, where it narrowed it: no row answers anyone
+const ANSWERS: Map<AccountNumber, Ownership> = Map::new("answers/");
 
 pub(crate) fn account(ctx: &QueryCtx, number: AccountNumber) -> Result<Account, Error> {
     ACCOUNTS
@@ -411,13 +413,13 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::Suspend { account }
         | Op::Resume { account }
         | Op::Revoke { account }
-        | Op::SetScript { account, .. } => vec![Need::write(account_key(*account))],
+        | Op::SetScript { account, .. }
+        | Op::SetOwnership { account, .. } => vec![Need::write(account_key(*account))],
         Op::RegisterProgram { .. }
         | Op::Create { .. }
         | Op::CreateAgent { .. }
         | Op::AddKey { .. }
-        | Op::RemoveKey { .. }
-        | Op::SetOwnership { .. } => Vec::new(),
+        | Op::RemoveKey { .. } => Vec::new(),
     }
 }
 
@@ -552,4 +554,55 @@ pub(crate) fn runs(
         Life::Suspended { .. } => Err(suspended(number)),
         Life::Revoked => Err(revoked(number)),
     }
+}
+
+// whom a program account answers, settled against its manager, whom it always answers; anyone
+// keeps no row
+pub(crate) fn set_ownership(
+    ctx: &ExecCtx,
+    number: AccountNumber,
+    ownership: Ownership,
+) -> Result<(), Error> {
+    let Control::Program { manager, .. } = editable(ctx, number)?.control else {
+        return Err(not_managed(number));
+    };
+    match ownership.settled(Some(&Party::Account(manager))) {
+        Ownership::Anyone => ANSWERS.remove(ctx, &number),
+        settled => ANSWERS.put(ctx, &number, &settled),
+    }
+    Ok(())
+}
+
+pub(crate) fn answers(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<Ownership>, Error> {
+    let Some(Account {
+        control: Control::Program { .. },
+        ..
+    }) = ACCOUNTS.get(ctx, &number)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(
+        ANSWERS.get(ctx, &number)?.unwrap_or(Ownership::Anyone),
+    ))
+}
+
+pub(crate) fn hears(
+    ctx: &QueryCtx,
+    number: AccountNumber,
+    from: AccountNumber,
+) -> Result<bool, Error> {
+    let Control::Program { manager, .. } = account(ctx, number)?.control else {
+        return Err(not_managed(number));
+    };
+    let answers = ANSWERS.get(ctx, &number)?.unwrap_or(Ownership::Anyone);
+    let program = ACCOUNTS
+        .get(ctx, &from)?
+        .and_then(|sender| match sender.control {
+            Control::System { program } => Some(Party::Program(program)),
+            Control::User { .. } | Control::Program { .. } => None,
+        });
+    let sender: Vec<Party> = std::iter::once(Party::Account(from))
+        .chain(program)
+        .collect();
+    Ok(answers.allows(Some(&Party::Account(manager)), &sender))
 }

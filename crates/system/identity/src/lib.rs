@@ -211,7 +211,7 @@ pub enum Op {
     /// manager's.
     #[tool_op(description = "Stop a program account for good: its keys are dropped. Its manager, or whom the manager lists.", example = examples::revoke)]
     Revoke { account: AccountNumber },
-    #[tool_op(description = "Retired: always refused. Whom an agent answers is its list in the access program at harness's agents/<n>.", example = examples::set_ownership)]
+    #[tool_op(description = "Set whom a program account answers: Anyone (the default), Owner (its manager only) or Listed (its manager and these accounts or programs). Whoever may write the account's key, not once revoked.", example = examples::set_ownership)]
     SetOwnership {
         account: AccountNumber,
         ownership: Ownership,
@@ -285,6 +285,15 @@ pub enum Query {
         by: AccountNumber,
         page: PageRequest,
     },
+    #[ask(Reply::Answers(Option<Ownership>))]
+    #[tool_query(description = "Whom a program account answers: Anyone until it or its manager narrows it with SetOwnership; null for an account that is no program account.", example = examples::answers)]
+    Answers { account: AccountNumber },
+    #[ask(Reply::Hears(bool))]
+    #[tool_query(description = "Whether a program account takes a message from account from: its manager always, anyone else as Answers says, and a program's own account as that program too. The one rule every runtime that delivers to an agent asks.", example = examples::hears)]
+    Hears {
+        account: AccountNumber,
+        from: AccountNumber,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -301,6 +310,8 @@ pub enum Reply {
     Generation(u64),
     Resolved(Vec<Option<AccountNumber>>),
     Accounts(PageResponse<Account>),
+    Answers(Option<Ownership>),
+    Hears(bool),
 }
 
 /// An op as a person reads it: a title and its fields. The source of the
@@ -459,6 +470,8 @@ fn query_and_reply_variants_only_append() {
             "Resolve",
             "List",
             "Managed",
+            "Answers",
+            "Hears",
         ]
     );
     assert_eq!(
@@ -471,6 +484,8 @@ fn query_and_reply_variants_only_append() {
             "Generation",
             "Resolved",
             "Accounts",
+            "Answers",
+            "Hears",
         ]
     );
 }
