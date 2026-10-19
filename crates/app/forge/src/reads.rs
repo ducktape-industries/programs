@@ -89,6 +89,10 @@ impl Reading<'_> {
             bytes: Vec::new(),
         };
         if header.len > self.bounds.blob_bytes {
+            if range.is_some() {
+                let len = requested.len.min(header.len - requested.offset);
+                self.judged_range(id, &mut blob, len)?;
+            }
             return Ok(blob);
         }
         let object = self
@@ -107,7 +111,39 @@ impl Reading<'_> {
         blob.range.len = blob.bytes.len() as u64;
         Ok(blob)
     }
+
+    // A range of a blob too big to read whole, read alone and judged on its own bytes: text when
+    // it holds no NUL and is UTF-8 but for a code point cut at an edge, else binary in that range.
+    fn judged_range(&self, id: &Oid, blob: &mut BlobView, len: u64) -> Result<(), Error> {
+        let bytes = self
+            .store
+            .read(id, blob.range.offset, len)
+            .ok_or_else(|| object_not_held(id))?;
+        blob.range.len = bytes.len() as u64;
+        if bytes.contains(&0) || !utf8_within(&bytes) {
+            blob.content = Content::Binary;
+            return Ok(());
+        }
+        blob.content = Content::Text;
+        blob.bytes = bytes;
+        Ok(())
+    }
 }
+
+// UTF-8 but for the code points a range's edges cut: continuation bytes at its start, an
+// unfinished sequence at its end.
+fn utf8_within(bytes: &[u8]) -> bool {
+    let cut = bytes
+        .iter()
+        .take(3)
+        .take_while(|byte| **byte & 0xC0 == 0x80)
+        .count();
+    match std::str::from_utf8(&bytes[cut..]) {
+        Ok(_) => true,
+        Err(error) => error.error_len().is_none(),
+    }
+}
+
 fn signature(sig: Signature) -> GitSignature {
     GitSignature {
         name: sig.name,

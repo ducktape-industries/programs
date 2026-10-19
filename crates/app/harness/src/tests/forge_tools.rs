@@ -287,6 +287,81 @@ fn a_change_is_opened_commented_on_and_closed_by_its_number() {
     assert_eq!(review.draft.body, "Replaced by #2.");
 }
 
+// `world`, with forge serving a blob whole only up to `blob_bytes`.
+fn narrow(blob_bytes: u64) -> World {
+    let mut seated = super::world();
+    seated.chain.seat::<forge::Forge>(forge::PROGRAM);
+    let bounds = forge::Bounds {
+        blob_bytes,
+        ..super::forge_commit::bounds(10_000)
+    };
+    seated.chain.init(forge::PROGRAM, &bounds).unwrap();
+    let register = identity::Op::RegisterProgram {
+        program: forge::PROGRAM.into(),
+    };
+    seated
+        .chain
+        .submit(Origin::Root, identity::PROGRAM, &register)
+        .unwrap();
+    seated
+}
+
+#[test]
+fn a_file_over_what_forge_serves_at_once_is_read_and_searched_a_range_at_a_time() {
+    let world = narrow(64);
+    let chain = &world.chain;
+    let thread = world.opened("m1", "big files", Some(WINDOW));
+    let rows: String = (1..=60).map(|n| format!("row {n}\n")).collect();
+    let mixed = format!(
+        "find me\n{}\n{}find me\nend\n",
+        "x".repeat(55),
+        "\0".repeat(64)
+    );
+    let files = json!({
+        "repo": "big",
+        "files": [
+            { "path": "rows.txt", "content": rows },
+            { "path": "mixed.txt", "content": mixed },
+        ],
+        "message": "big files",
+    });
+    turn(chain, 3, &[("b1", "forge_commit", files)]);
+    answered(chain, thread, "b1");
+    let span = json!({ "repo": "big", "path": "rows.txt", "offset": 54, "length": 14 });
+    let lines = json!({ "repo": "big", "path": "rows.txt", "lines": [11, 12] });
+    let whole = json!({ "repo": "big", "path": "rows.txt" });
+    let binary = json!({ "repo": "big", "path": "mixed.txt", "offset": 64, "length": 64 });
+    let straddled = json!({ "repo": "big", "pattern": "row 11" });
+    let found = json!({ "repo": "big", "pattern": "find me" });
+    turn(
+        chain,
+        5,
+        &[
+            ("r1", "forge_read", span),
+            ("r2", "forge_read", lines),
+            ("r3", "forge_read", whole),
+            ("r4", "forge_read", binary),
+            ("g1", "forge_grep", straddled),
+            ("g2", "forge_grep", found),
+        ],
+    );
+    let text = &answered(chain, thread, "r1")["text"];
+    assert_eq!(text, &json!("row 10\nrow 11\n"));
+    let text = &answered(chain, thread, "r2")["text"];
+    assert_eq!(text, &json!("row 11\nrow 12\n"));
+    assert_eq!(answered(chain, thread, "r3")["content"], json!("oversize"));
+    let content = &answered(chain, thread, "r4")["content"];
+    assert_eq!(content, &json!("binary in this range"));
+    let said = answered(chain, thread, "g1");
+    let row = json!({ "path": "rows.txt", "line": 11, "text": "row 11" });
+    assert_eq!(said["hits"], json!([row]));
+    let skipped = json!(["mixed.txt bytes 64..128: binary in this range"]);
+    assert_eq!(said["skipped"], skipped);
+    let first = json!({ "path": "mixed.txt", "line": 1, "text": "find me" });
+    let after = json!({ "path": "mixed.txt", "line": null, "offset": 128, "text": "find me" });
+    assert_eq!(answered(chain, thread, "g2")["hits"], json!([first, after]));
+}
+
 #[test]
 fn a_file_is_read_by_path_and_lines_found_by_prefix_and_searched() {
     let world = world();

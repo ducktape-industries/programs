@@ -41,6 +41,10 @@ impl<'a> ObjectStore<'a> {
             .blob_stat(blob_id_of(id))
             .ok_or(GitError::MissingObject(*id))
     }
+
+    pub fn read(&self, id: &Oid, offset: u64, len: u64) -> Option<Vec<u8>> {
+        self.sandbox.blob_read(blob_id_of(id), offset, len)
+    }
 }
 
 impl Objects for ObjectStore<'_> {

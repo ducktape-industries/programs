@@ -10,7 +10,7 @@ use super::*;
 /// When the agent's calls run: the commit's time is this, in seconds.
 const TIME_MS: u64 = 1_760_000_000_000;
 
-fn bounds(max_objects: u64) -> Bounds {
+pub(super) fn bounds(max_objects: u64) -> Bounds {
     Bounds {
         max_objects,
         max_delta_depth: 64,

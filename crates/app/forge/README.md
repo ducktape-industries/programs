@@ -163,10 +163,15 @@ an account acts through any of its keys.
 
 ## Blobs, diffs, and mergeability
 
-`Blob` returns `Text`, `Binary` (NUL or invalid UTF-8), or `Oversize` (total size
-above `Bounds.blob_bytes`). Binary/oversize replies have a header and no content
-bytes, even when a small range was requested. Text ranges use byte offsets,
-may split a UTF-8 code point, and clamp their end at EOF. Zero-length text is valid.
+`Blob` returns `Text`, `Binary` (NUL or invalid UTF-8), or `Oversize`. A blob up to
+`Bounds.blob_bytes` is read and judged whole. A blob above it answers `Oversize`
+when no range is asked. A range of it (at most `blob_bytes` long, as any range) is
+read alone and judged on its own bytes: `Text` with them when it holds no NUL and
+is UTF-8 but for a code point cut at either edge, else `Binary` in that range, its
+`range` naming the bytes judged (a blob judged whole answers `Binary` with an empty
+range). Binary/oversize replies carry no content bytes. Text ranges use byte
+offsets, may split a UTF-8 code point, and clamp their end at EOF. Zero-length
+text is valid.
 
 `Diff` compares trees directly; use `base: None` for a root commit. For a change's
 merge-base diff, first use `Compare.base`, then `Diff { base, head: from, ... }`.

@@ -166,28 +166,59 @@ fn entry_at(
         .map(|(_, kind, id)| (kind, id)))
 }
 
-// The whole text of the blob `id`, or why it has none: forge serves a blob's bytes up to its
-// `blob_bytes` in one read, and none of a binary one.
-fn text_of(ctx: &ExecCtx, repo: &str, id: &str, path: &str) -> Result<String, Error> {
+// The blob `id`, or the range of it forge reads alone.
+fn blob_of(
+    ctx: &ExecCtx,
+    repo: &str,
+    id: &str,
+    range: Option<forge::ByteRange>,
+) -> Result<forge::BlobView, Error> {
     let asked = Query::Blob {
         repo: repo.into(),
         oid: id.into(),
-        range: None,
+        range,
     };
-    let blob = match ask(ctx, asked)? {
-        Reply::Blob { blob, .. } => blob,
-        other => return Err(unexpected(forge::PROGRAM, "Blob", &other)),
-    };
-    match blob.content {
-        Content::Text if blob.bytes.len() as u64 == blob.size => {
-            String::from_utf8(blob.bytes).map_err(|_| invalid(format!("{path} is not text")))
-        }
-        Content::Text | Content::Oversize => Err(::program::capacity(format!(
-            "{path} is {} bytes, more than forge serves in one read",
-            blob.size
-        ))),
-        Content::Binary | Content::Gitlink => Err(invalid(format!("{path} is not text"))),
+    match ask(ctx, asked)? {
+        Reply::Blob { blob, .. } => Ok(blob),
+        other => Err(unexpected(forge::PROGRAM, "Blob", &other)),
     }
+}
+
+// How many bytes of a blob forge serves in one read: the repository's `Bounds.blob_bytes`.
+fn served(ctx: &ExecCtx, repo: &str) -> Result<u64, Error> {
+    match ask(ctx, Query::Repo { repo: repo.into() })? {
+        Reply::Repo { bounds, .. } => Ok(bounds.blob_bytes),
+        other => Err(unexpected(forge::PROGRAM, "Repo", &other)),
+    }
+}
+
+// The whole text of the blob `id`, or why it has none: a blob over what forge serves in one read
+// is read a range at a time, and a range binary in itself leaves it none.
+fn text_of(ctx: &ExecCtx, repo: &str, id: &str, path: &str) -> Result<String, Error> {
+    let blob = blob_of(ctx, repo, id, None)?;
+    let bytes = match blob.content {
+        Content::Text => blob.bytes,
+        Content::Oversize => {
+            let most = served(ctx, repo)?;
+            let mut bytes = Vec::new();
+            while (bytes.len() as u64) < blob.size {
+                let at = bytes.len() as u64;
+                let range = forge::ByteRange {
+                    offset: at,
+                    len: most,
+                };
+                let part = blob_of(ctx, repo, id, Some(range))?;
+                if part.content != Content::Text || part.bytes.is_empty() {
+                    let end = at + part.range.len;
+                    return Err(invalid(format!("{path} is binary in bytes {at}..{end}")));
+                }
+                bytes.extend(part.bytes);
+            }
+            bytes
+        }
+        Content::Binary | Content::Gitlink => return Err(invalid(format!("{path} is not text"))),
+    };
+    String::from_utf8(bytes).map_err(|_| invalid(format!("{path} is not text")))
 }
 
 fn state_name(state: ChangeState) -> &'static str {
@@ -399,7 +430,7 @@ pub(crate) struct Read;
 
 impl Tool for Read {
     const NAME: &'static str = "forge_read";
-    const DESCRIPTION: &'static str = "Read a file of a repository as text, by its path at a branch or commit, or by its object id (from forge_tree): the whole file, some of its lines, or a byte range of it. Forge refuses a range longer than it serves at once, and answers a file larger than that as oversize.";
+    const DESCRIPTION: &'static str = "Read a file of a repository as text, by its path at a branch or commit, or by its object id (from forge_tree): the whole file, some of its lines, or a byte range of it. Forge refuses a range longer than it serves at once; a file larger than that reads by lines or by ranges, and as oversize whole. Such a file's range is judged on its own bytes: \"binary in this range\".";
     type Args = ReadArgs;
 
     fn schema() -> Value {
@@ -459,12 +490,16 @@ impl Tool for Read {
         };
         match ask(ctx, asked)? {
             Reply::Blob { blob, .. } => {
+                let content = match blob.content {
+                    Content::Binary if blob.range.len > 0 => "binary in this range".to_owned(),
+                    content => format!("{content:?}").to_lowercase(),
+                };
                 let mut value = json!({
                     "id": blob.oid,
                     "path": path,
                     "size": blob.size,
                     "offset": blob.range.offset,
-                    "content": format!("{:?}", blob.content).to_lowercase(),
+                    "content": content,
                 });
                 if let Ok(text) = String::from_utf8(blob.bytes) {
                     value["text"] = json!(text);
@@ -706,7 +741,7 @@ pub(crate) struct Grep;
 
 impl Tool for Grep {
     const NAME: &'static str = "forge_grep";
-    const DESCRIPTION: &'static str = "Search the text files of a repository at a branch or commit for a literal string: each matching line with its path and line number, in path order. Files forge does not serve as text (binary, or larger than it serves in one read) are listed as skipped. It reads every file under the prefix, so narrow the prefix in a large repository.";
+    const DESCRIPTION: &'static str = "Search the text files of a repository at a branch or commit for a literal string: each matching line with its path and line number, in path order. A file larger than forge serves in one read is searched a range at a time. Binary files, and a big file's ranges that are binary in themselves, are listed as skipped; a hit after such a range gives its byte offset in place of a line number. It reads every file under the prefix, so narrow the prefix in a large repository.";
     type Args = GrepArgs;
 
     fn schema() -> Value {
@@ -728,31 +763,110 @@ impl Tool for Grep {
         let rev = chosen(ctx, &args.repo, &args.rev)?;
         let at = commit_of(ctx, &args.repo, rev)?;
         let prefix = args.prefix.unwrap_or_default();
-        let mut hits = Vec::new();
-        let mut skipped = Vec::new();
+        let mut search = Search {
+            ctx,
+            repo: &args.repo,
+            pattern: &args.pattern,
+            served: None,
+            hits: Vec::new(),
+            skipped: Vec::new(),
+        };
         for (path, kind, id) in under_prefix(ctx, &args.repo, &at, &prefix)? {
-            if !matches!(kind, EntryKind::File | EntryKind::Executable) {
-                continue;
-            }
-            let text = match text_of(ctx, &args.repo, &id, &path) {
-                Ok(text) => text,
-                Err(unread)
-                    if unread.code == ::program::code::CAPACITY
-                        || unread.code == ::program::code::INVALID_INPUT =>
-                {
-                    skipped.push(path);
-                    continue;
-                }
-                Err(refused) => return Err(refused),
-            };
-            for (index, line) in text.lines().enumerate() {
-                if line.contains(&args.pattern) {
-                    hits.push(json!({ "path": path, "line": index + 1, "text": line }));
-                }
+            if matches!(kind, EntryKind::File | EntryKind::Executable) {
+                search.file(&path, &id)?;
             }
         }
         Ok(Run::Done(
-            json!({ "commit": at, "hits": hits, "skipped": skipped }),
+            json!({ "commit": at, "hits": search.hits, "skipped": search.skipped }),
         ))
+    }
+}
+
+// forge_grep's pass over the files: each line holding `pattern` is a hit, and what forge answers
+// as no text is skipped. A file over what forge serves in one read is scanned a range at a time,
+// a line cut at a range's end carried into the next; a range binary in itself is skipped and
+// named, and a hit after it gives its byte offset, as the lines in that range are not known.
+struct Search<'a> {
+    ctx: &'a ExecCtx,
+    repo: &'a str,
+    pattern: &'a str,
+    served: Option<u64>,
+    hits: Vec<Value>,
+    skipped: Vec<String>,
+}
+
+impl Search<'_> {
+    fn file(&mut self, path: &str, id: &str) -> Result<(), Error> {
+        let blob = blob_of(self.ctx, self.repo, id, None)?;
+        match blob.content {
+            Content::Text => {
+                let text = String::from_utf8_lossy(&blob.bytes);
+                for (index, line) in text.lines().enumerate() {
+                    self.hit(path, Some(index as u64 + 1), 0, line);
+                }
+                Ok(())
+            }
+            Content::Oversize => self.ranges(path, id, blob.size),
+            Content::Binary | Content::Gitlink => {
+                self.skipped.push(path.into());
+                Ok(())
+            }
+        }
+    }
+
+    fn ranges(&mut self, path: &str, id: &str, size: u64) -> Result<(), Error> {
+        let most = match self.served {
+            Some(most) => most,
+            None => served(self.ctx, self.repo)?,
+        };
+        self.served = Some(most);
+        let mut carried: Vec<u8> = Vec::new();
+        let (mut start, mut line, mut at) = (0u64, Some(1u64), 0u64);
+        while at < size {
+            let range = forge::ByteRange {
+                offset: at,
+                len: most,
+            };
+            let part = blob_of(self.ctx, self.repo, id, Some(range))?;
+            if part.range.len == 0 {
+                break;
+            }
+            at += part.range.len;
+            if part.content != Content::Text {
+                let from = at - part.range.len;
+                let skipped = format!("{path} bytes {from}..{at}: binary in this range");
+                self.skipped.push(skipped);
+                carried.clear();
+                (start, line) = (at, None);
+                continue;
+            }
+            carried.extend(part.bytes);
+            let whole = match carried.iter().rposition(|byte| *byte == b'\n') {
+                _ if at >= size => carried.len(),
+                Some(last) => last + 1,
+                None => continue,
+            };
+            let rest = carried.split_off(whole);
+            for piece in carried.split_inclusive(|byte| *byte == b'\n') {
+                let text = String::from_utf8_lossy(piece);
+                let text = text.strip_suffix('\n').unwrap_or(&text);
+                self.hit(path, line, start, text.strip_suffix('\r').unwrap_or(text));
+                start += piece.len() as u64;
+                line = line.map(|n| n + 1);
+            }
+            carried = rest;
+        }
+        Ok(())
+    }
+
+    fn hit(&mut self, path: &str, line: Option<u64>, offset: u64, text: &str) {
+        if !text.contains(self.pattern) {
+            return;
+        }
+        let mut hit = json!({ "path": path, "line": line, "text": text });
+        if line.is_none() {
+            hit["offset"] = json!(offset);
+        }
+        self.hits.push(hit);
     }
 }
