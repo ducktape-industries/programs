@@ -131,6 +131,10 @@ pub struct Draft {
     // the message its files are filed under, minted with the first
     #[serde(default)]
     pub message_id: Option<String>,
+    // every name a commit was asked for under that message: its folder may
+    // hold each, whatever became of the file in the draft
+    #[serde(default)]
+    pub filed: Vec<String>,
     #[serde(default)]
     pub attachments: Vec<Attaching>,
     // how many files were attached: the next one's id

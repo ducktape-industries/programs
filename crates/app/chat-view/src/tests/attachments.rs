@@ -11,7 +11,16 @@ use view::methods::{
 const SNAPSHOT: [u8; 32] = [5; 32];
 const OBJECT: [u8; 32] = [6; 32];
 const CHUNK: [u8; 32] = [9; 32];
-const PNG: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+
+// a PNG's signature and header, which name its size
+fn png(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+    bytes.extend(13u32.to_be_bytes());
+    bytes.extend(b"IHDR");
+    bytes.extend(width.to_be_bytes());
+    bytes.extend(height.to_be_bytes());
+    bytes
+}
 
 fn picked(name: &str, size: u64, file: u64) -> Picked {
     Picked {
@@ -27,8 +36,6 @@ fn files_host(cx: &mut TestAppContext) {
     cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
     cx.host()
         .handle::<Submit<files::Files>>(|_| Ok(view::testing::applied(Vec::new())));
-    cx.host()
-        .handle::<Submit<access::Access>>(|_| Ok(view::testing::applied(Vec::new())));
     cx.host()
         .handle::<Ask<files::Files>>(|query| Ok(files_reply(query)));
     let object = files::FileObj {
@@ -63,13 +70,7 @@ fn files_reply(query: files::Query) -> files::Reply {
                 }),
             }
         }
-        files::Query::Read { .. } => files::Reply::Contents(files::Contents {
-            snapshot: BlobId::Sha256(SNAPSHOT),
-            size: PNG.len() as u64,
-            offset: 0,
-            bytes: PNG.to_vec(),
-            eof: true,
-        }),
+        files::Query::Read { .. } => contents(png(96, 96)),
         files::Query::Head => files::Reply::Head(Some(files::SnapshotRow {
             id: BlobId::Sha256(SNAPSHOT),
             parent: None,
@@ -395,29 +396,6 @@ fn a_picture_is_read_where_it_stands_whatever_snapshot_its_message_names() {
     });
 }
 
-// A file that goes up is its uploader's alone from then on: the message
-// reads it where it stands, so no one else may write it again (J-075).
-#[test]
-fn a_file_that_goes_up_is_listed_its_uploaders_alone() {
-    let (mut cx, _) = opened();
-    files_host(&mut cx);
-    holds_puts(&mut cx);
-    cx.host()
-        .handle::<FilePick>(|_| Ok(vec![picked("tape.png", 3, 1)]));
-    cx.simulate_click("draft-general/attach");
-    cx.run_until_parked();
-    let put = puts(&cx);
-    let [(path, _)] = put.as_slice() else {
-        panic!("one file put: {put:?}")
-    };
-    let owned = access::Op::Set {
-        program: files::PROGRAM.into(),
-        key: path.clone(),
-        list: Some(::program::Ownership::Owner),
-    };
-    assert_eq!(cx.host().requests::<Submit<access::Access>>(), [owned]);
-}
-
 // A click on a picture opens it whole over the room: Save hands the host
 // its chunks, Open in Files opens its path in Files and closes it, and a
 // press outside it closes it too.
@@ -477,4 +455,231 @@ fn a_click_on_a_picture_opens_it_whole_with_save_and_open_in_files() {
         "a press outside closes it"
     );
     view.read(|chat| assert!(chat.enlarged.is_none()));
+}
+
+// A picture's file as files reads it back: its bytes whole.
+fn contents(bytes: Vec<u8>) -> files::Reply {
+    files::Reply::Contents(files::Contents {
+        snapshot: BlobId::Sha256(SNAPSHOT),
+        size: bytes.len() as u64,
+        offset: 0,
+        bytes,
+        eof: true,
+    })
+}
+
+// A room whose one message carries `tape.png`, a picture of `size` as its
+// header says.
+fn picture_room(cx: &mut TestAppContext, size: (u32, u32)) {
+    files_host(cx);
+    cx.host().handle::<Ask<files::Files>>(move |query| {
+        Ok(match query {
+            files::Query::Read { .. } => contents(png(size.0, size.1)),
+            query => files_reply(query),
+        })
+    });
+    let picture = chat::Block::Attachment(chat::message::Attachment {
+        path: "/chat/general/m3/tape.png".into(),
+        snapshot: SNAPSHOT,
+        name: "tape.png".into(),
+        size: 3,
+        content_type: "image/png".into(),
+    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                    blocks: vec![picture.clone()],
+                    ..row(3, 8, "")
+                }])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(4, posted("general")));
+    cx.run_until_parked();
+}
+
+// The size the node under `key` is drawn at, as its style names it.
+fn drawn_at(cx: &TestAppContext, key: &str, (width, height): (f32, f32)) {
+    let size = &cx.style(key).size;
+    let named = (size.width, size.height);
+    assert_eq!(
+        named,
+        (Some(px(width).into()), Some(px(height).into())),
+        "{key}"
+    );
+}
+
+// A picture in a message draws at its own size, at the start of its column;
+// a bigger one, wide or tall, scaled down into 360×240 with its aspect kept.
+#[test]
+fn a_picture_in_a_message_draws_at_its_own_size_up_to_its_bound() {
+    let sizes = [
+        ((96, 96), (96., 96.)),
+        ((4000, 1000), (360., 90.)),
+        ((1000, 4000), (60., 240.)),
+    ];
+    for (size, at) in sizes {
+        let (mut cx, _view) = opened();
+        picture_room(&mut cx, size);
+        drawn_at(&cx, "chat-message-m3-block-0/picture", at);
+        let button = cx.style("chat-message-m3-block-0");
+        let aligned = format!("{:?}", button.align_self);
+        assert_eq!(aligned, "Some(Start)", "at the start of its column");
+    }
+}
+
+// A picture bigger than the window, wide or tall, opens whole inside the
+// overlay: fit to the pane less its inset and the row of buttons below it.
+#[test]
+fn a_picture_bigger_than_the_window_opens_whole_inside_it() {
+    let inset = 2. * f32::from(crate::ui::dialogs::INSET);
+    let bar = f32::from(view::design::space::SM) + f32::from(view::design::POINTER.hit);
+    let room = (800. - inset, 600. - inset - bar);
+    for size in [(4000, 1000), (1000, 4000)] {
+        let (mut cx, _view) = opened();
+        cx.simulate_resize(800., 600.);
+        picture_room(&mut cx, size);
+        cx.simulate_click("chat-message-m3-block-0");
+        cx.run_until_parked();
+        let (width, height) = view::picture::fit(size, room);
+        assert!(width <= room.0 && height <= room.1, "{size:?} fits");
+        assert!(width == room.0 || height == room.1, "{size:?} fills a side");
+        drawn_at(&cx, "chat-picture/image", (width, height));
+    }
+}
+
+// What every way a picture comes in ends in: one commit that only creates
+// its path under the draft's message, then the post that carries it; the
+// access program is never asked.
+fn sends_the_picture(cx: &mut TestAppContext) {
+    cx.run_until_parked();
+    let path = "/chat/general/message-1/image.png";
+    let commits = cx.host().requests::<Submit<files::Files>>();
+    let [
+        files::Op::Commit {
+            base: None,
+            changes,
+            ..
+        },
+    ] = commits.as_slice()
+    else {
+        panic!("one commit that only creates: {commits:?}")
+    };
+    let put = matches!(changes.as_slice(), [files::Change::Put { path: at, .. }] if at == path);
+    assert!(put, "{changes:?}");
+    let listed = cx.host().requests::<Submit<access::Access>>();
+    assert!(listed.is_empty(), "nothing else asked: {listed:?}");
+    cx.simulate_input("draft-general/editor", "look");
+    cx.simulate_field_key("draft-general/editor", "enter");
+    cx.run_until_parked();
+    let posted = cx.host().requests::<Submit<::chat::Chat>>();
+    let [
+        Op::PostMessage {
+            message_id, blocks, ..
+        },
+    ] = posted.as_slice()
+    else {
+        panic!("one post: {posted:?}")
+    };
+    assert_eq!(message_id, "message-1");
+    assert_eq!(carried(blocks), [path]);
+}
+
+#[test]
+fn a_picked_picture_is_committed_and_posted() {
+    let (mut cx, _view) = opened();
+    files_host(&mut cx);
+    holds_puts(&mut cx);
+    cx.host()
+        .handle::<FilePick>(|_| Ok(vec![picked("image.png", 3, 1)]));
+    cx.simulate_click("draft-general/attach");
+    sends_the_picture(&mut cx);
+}
+
+#[test]
+fn a_pasted_picture_is_committed_and_posted_as_a_picked_one_is() {
+    let (mut cx, _view) = opened();
+    files_host(&mut cx);
+    holds_puts(&mut cx);
+    cx.host().handle::<ClipboardFiles>(|()| {
+        Ok(Pasted {
+            files: vec![picked("image.png", 3, 1)],
+            text: String::new(),
+        })
+    });
+    cx.simulate_focus("draft-general/editor");
+    cx.simulate_field_key("draft-general/editor", "cmd-v");
+    sends_the_picture(&mut cx);
+}
+
+#[test]
+fn a_dropped_picture_is_committed_and_posted_as_a_picked_one_is() {
+    let (mut cx, _view) = opened();
+    files_host(&mut cx);
+    holds_puts(&mut cx);
+    cx.simulate_file_drop("draft-general/drop", vec![picked("image.png", 3, 1)]);
+    sends_the_picture(&mut cx);
+}
+
+// A name a commit was asked for stays taken in the message's folder after
+// its chip is gone: the same name again goes up numbered, never over it.
+#[test]
+fn a_name_filed_under_the_message_stays_taken_after_its_chip_is_gone() {
+    let (mut cx, _view) = opened();
+    files_host(&mut cx);
+    holds_puts(&mut cx);
+    let mut first = true;
+    cx.host().handle::<Submit<files::Files>>(move |_| {
+        Ok(match std::mem::take(&mut first) {
+            true => view::methods::Submitted::InDoubt {
+                frame: [0; 32],
+                until: 9,
+            },
+            false => view::testing::applied(Vec::new()),
+        })
+    });
+    cx.simulate_file_drop("draft-general/drop", vec![picked("image.png", 3, 1)]);
+    cx.run_until_parked();
+    cx.simulate_click("draft-general/file/1/remove");
+    cx.run_until_parked();
+    cx.simulate_file_drop("draft-general/drop", vec![picked("image.png", 3, 2)]);
+    cx.run_until_parked();
+    let paths: Vec<String> = puts(&cx).into_iter().map(|(path, _)| path).collect();
+    let folder = "/chat/general/message-1";
+    let named = [
+        format!("{folder}/image.png"),
+        format!("{folder}/image (2).png"),
+    ];
+    assert_eq!(paths, named);
+}
+
+// A refusal shows whole on the file's chip, wrapping rather than cut, and
+// the file's own path in it reads as "this file", the reason first.
+#[test]
+fn a_long_refusal_shows_whole_on_the_files_chip() {
+    let (mut cx, _view) = opened();
+    files_host(&mut cx);
+    holds_puts(&mut cx);
+    let path = "/chat/general/message-1/image.png";
+    let said = format!("{path} changed since the base snapshot: read it again and retry");
+    cx.host().handle::<Submit<files::Files>>(move |_| {
+        Ok(view::methods::Submitted::Refused {
+            frame: [0; 32],
+            until: 9,
+            refusal: view::host::Error::new("stale", said.clone()),
+        })
+    });
+    cx.simulate_file_drop("draft-general/drop", vec![picked("image.png", 3, 1)]);
+    cx.run_until_parked();
+    let whole = "That didn’t go through: this file changed since the base snapshot: \
+                 read it again and retry";
+    assert!(cx.has_text(whole), "{:?}", cx.texts());
+    let status = cx.style("draft-general/file/1/status");
+    assert_eq!(
+        status.text.text_overflow, None,
+        "never cut with an ellipsis"
+    );
 }

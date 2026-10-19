@@ -1,6 +1,6 @@
 //! What each files op needs of the access program, and who owns each key: a path by the account
-//! that created it, each `/home/<name>` by the one account named `<name>`, each `/chat` folder by
-//! chat, and a pin (`pins/<name>`) by the account that made it, which alone drops it unless listed.
+//! that created it, alone beneath a chat message, each `/home/<name>` by the account named
+//! `<name>`, each `/chat` folder by chat, and a pin (`pins/<name>`) by its maker, alone unless listed.
 use ::program::{Error, Need, Ownership, Party, QueryCtx, Resource};
 use store::PageRequest;
 
@@ -40,9 +40,12 @@ pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
         None if is_chat_folder(&segments) => Some(Party::Program(CHAT.into())),
         None => created(ctx, &segments)?.map(Party::Account),
     };
+    // what a chat message carries is its creator's alone: the message reads
+    // it where it stands. Until it is made, the folders above it decide
+    let carried = segments.len() > 3 && segments[0] == CHAT && owner.is_some();
     Ok(Resource {
         owner,
-        default: None,
+        default: carried.then_some(Ownership::Owner),
     })
 }
 

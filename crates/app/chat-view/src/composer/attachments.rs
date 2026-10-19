@@ -68,13 +68,15 @@ impl Attaching {
 }
 
 impl Draft {
-    // `picked` among the draft's files, named apart from the others; its
-    // id, the host's handle and its size, to put it by
+    // `picked` among the draft's files, named apart from the others and
+    // from every name its message's folder took; its id, the host's handle
+    // and its size, to put it by
     pub fn attach(&mut self, picked: Picked) -> (u64, u64, u64) {
         let taken: Vec<&str> = self
             .attachments
             .iter()
             .map(|file| file.name.as_str())
+            .chain(self.filed.iter().map(String::as_str))
             .collect();
         let name = named(&picked.name, &taken);
         self.attached += 1;

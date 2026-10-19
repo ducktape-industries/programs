@@ -77,7 +77,7 @@ impl Seen {
                     shown.map(|shown| {
                         let picture = shown.picture.as_ref();
                         let picture =
-                            picture.map(|picture| std::sync::Arc::as_ptr(picture) as usize);
+                            picture.map(|picture| std::sync::Arc::as_ptr(&picture.image) as usize);
                         (picture, shown.chunks.is_some())
                     })
                 })

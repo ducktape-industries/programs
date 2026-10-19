@@ -312,3 +312,31 @@ fn setting_a_list_in_a_commit_is_retired_and_a_pin_is_its_makers_to_drop() {
     );
     chain.submit(signed(ADA), PROGRAM, &unpin).unwrap();
 }
+
+// A file beneath a chat message is its creator's alone with no list set:
+// another account may add a file beside it, but not write or remove it.
+#[test]
+fn a_file_beneath_a_chat_message_is_its_creators_alone_with_no_list() {
+    let chain = chain();
+    let file = "/chat/general/message-1/image.png";
+    write(&chain, ADA, file).unwrap();
+    assert_eq!(listed(&chain, file), None);
+    assert_eq!(code_of(write(&chain, BO, file)), code::UNAUTHORIZED);
+    write(&chain, BO, "/chat/general/message-1/notes.txt").unwrap();
+    write(&chain, ADA, file).unwrap();
+    assert_eq!(text(&chain, file), "ada");
+    let writers = access::Query::Writers {
+        program: PROGRAM.into(),
+        key: file.into(),
+    };
+    let alone = Writers::Listed {
+        at: file.into(),
+        owner: Some(Party::Account(1)),
+        list: Ownership::Owner,
+    };
+    assert_eq!(asked(&chain, writers), access::Reply::Writers(alone));
+    let remove = || vec![Change::Remove { path: file.into() }];
+    let refused = commit_as(&chain, signed(BO), remove());
+    assert_eq!(code_of(refused), code::UNAUTHORIZED);
+    commit_as(&chain, signed(ADA), remove()).unwrap();
+}

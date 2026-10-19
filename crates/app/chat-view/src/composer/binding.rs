@@ -618,10 +618,10 @@ pub(crate) fn chips<V: 'static>(
                     .text_type(ladder.secondary)
                     .child(file.name.clone()),
             )
+            // said whole, wrapping: why a file failed is always read in full
             .child(
                 div()
                     .id(ElementId::Name(format!("{id}/status").into()))
-                    .truncate()
                     .text_type(ladder.caption)
                     .text_color(tone)
                     .child(status),

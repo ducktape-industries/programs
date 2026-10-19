@@ -17,7 +17,15 @@ use crate::{Chat, Pane, words};
 #[derive(Clone, Default)]
 pub(crate) struct Shown {
     pub(crate) chunks: Option<Vec<[u8; 32]>>,
-    pub(crate) picture: Option<Arc<Image>>,
+    pub(crate) picture: Option<Picture>,
+}
+
+// A picture a message carries: the image, and its width and height as its
+// header names them, which every place that draws it fits to its room.
+#[derive(Clone)]
+pub(crate) struct Picture {
+    pub(crate) image: Arc<Image>,
+    pub(crate) size: (u32, u32),
 }
 
 fn release(file: Option<u64>, cx: &mut Context<Chat>) {
@@ -197,11 +205,13 @@ impl Chat {
                         chunks,
                     },
                 };
-                let said = words::attached(&file.name);
                 file.upload = Upload::Committing;
-                Some((file.id, path, change, said))
+                Some((file.id, file.name.clone(), path, change))
             })
             .collect();
+        draft
+            .filed
+            .extend(commits.iter().map(|(_, name, ..)| name.clone()));
         let failed = draft
             .attachments
             .iter()
@@ -217,8 +227,8 @@ impl Chat {
                 post = draft.queued.take();
             }
         }
-        for (id, path, change, said) in commits {
-            self.commit(target, id, path, change, said, cx);
+        for (id, name, path, change) in commits {
+            self.commit(target, id, path, change, words::attached(&name), cx);
         }
         if let Some((send, target)) = post {
             self.post_draft(target, send, cx);
@@ -232,7 +242,11 @@ impl Chat {
         };
         draft.minting = false;
         match minted {
-            Ok(id) => draft.message_id = Some(id),
+            // a new message's folder holds nothing yet
+            Ok(id) => {
+                draft.message_id = Some(id);
+                draft.filed.clear();
+            }
             // nothing is filed under no message: each file not up says why
             // and is let go; the next one attached asks again
             Err(refusal) => {
@@ -270,19 +284,10 @@ impl Chat {
         cx.spawn(async move |this, cx| {
             let host = cx.host();
             let landed = async {
+                // files keeps a file under a chat message its uploader's
+                // alone, so the commit is all an upload asks of a program
                 if let Some(why) = design::failure(&ask.await) {
-                    return Err(why);
-                }
-                // a message reads its file where it stands, so no one but
-                // its uploader may write it again
-                let owned = access::Op::Set {
-                    program: files::PROGRAM.into(),
-                    key: path.clone(),
-                    list: Some(::program::Ownership::Owner),
-                };
-                if let Some(why) = design::failure(&host.ask::<Submit<access::Access>>(owned).await)
-                {
-                    return Err(why);
+                    return Err(words::not_up_because(&why, &path));
                 }
                 let read = files::ask::Stat {
                     path: path.clone(),
@@ -539,7 +544,7 @@ async fn picture(
     host: &Host,
     file: &Attachment,
     at: Option<BlobId>,
-) -> Result<Option<Arc<Image>>, Error> {
+) -> Result<Option<Picture>, Error> {
     let mut bytes = Vec::new();
     loop {
         let read = files::ask::Read {
@@ -559,5 +564,9 @@ async fn picture(
         }
     }
     let format = view::picture::picture_format(&bytes);
-    Ok(format.map(|format| Arc::new(Image::from_bytes(format, bytes))))
+    let size = view::picture::picture_size(&bytes);
+    Ok(format.zip(size).map(|(format, size)| Picture {
+        image: Arc::new(Image::from_bytes(format, bytes)),
+        size,
+    }))
 }

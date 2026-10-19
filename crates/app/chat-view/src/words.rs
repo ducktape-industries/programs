@@ -270,6 +270,12 @@ pub(crate) fn not_up(name: &str, why: &str) -> String {
     format!("{name} didn’t upload: {why}")
 }
 
+// why a file didn't go up, on its chip under its name: where the refusal
+// names the file's own path, that reads as "this file"
+pub(crate) fn not_up_because(why: &str, path: &str) -> String {
+    why.replace(path, "this file")
+}
+
 // a count of bytes, in the unit that reads best
 pub(crate) fn size(bytes: u64) -> String {
     const KB: u64 = 1024;
