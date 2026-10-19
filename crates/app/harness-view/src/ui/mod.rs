@@ -18,7 +18,7 @@ use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
 
 use crate::words::{thinking_short, thinking_words};
-use crate::{Agents, Screen, State};
+use crate::{Agents, Picture, Screen, State};
 
 /// The desktop's screens, under a pointer: what the last write left over the screen, then the
 /// screen whole.
@@ -120,6 +120,21 @@ pub(crate) fn caption(words: impl Into<SharedString>, theme: &Theme) -> Div {
         .text_size(text::CAPTION)
         .text_color(theme.muted)
         .child(words.into())
+}
+
+// An agent's face, as both designs draw it: its initial on the agent's tint, or its picture
+// once read, ringed in the tint.
+pub(crate) fn agent_face(
+    name: &str,
+    picture: Picture,
+    side: impl Into<view::design::Face>,
+    theme: &Theme,
+) -> Div {
+    let pictured = picture.is_some();
+    design::avatar_with(name, picture, side, theme)
+        .bg(theme.agent_soft)
+        .text_color(theme.agent)
+        .when(pictured, |face| face.border_2().border_color(theme.agent))
 }
 
 /// One fact: its label over its value.

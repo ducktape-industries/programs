@@ -5,10 +5,10 @@ use view::design::{space, text};
 use view::prelude::*;
 use view::{FontWeight, Stateful};
 
-use super::{caption, state_badge, waiting};
+use super::{agent_face, caption, state_badge, waiting};
 use crate::read::{Card, Roster, Unscripted};
 use crate::words::{agent_sentence_topic, ago, last_moved};
-use crate::{Agents, Screen, agent_state};
+use crate::{Agents, Picture, Screen, agent_state};
 
 /// How tall a row is at least.
 pub(super) const ROW: Pixels = px(44.);
@@ -112,16 +112,26 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
                 mine.len() + roster.unscripted.len(),
                 theme,
             )
-            .children(
-                mine.iter()
-                    .map(|card| row(card, roster, view.me, cx, theme, ladder)),
-            )
-            .children(
-                roster
-                    .unscripted
-                    .iter()
-                    .map(|unscripted| unscripted_row(unscripted, cx, theme, ladder)),
-            ),
+            .children(mine.iter().map(|card| {
+                row(
+                    card,
+                    view.picture(card.setup.agent, cx),
+                    roster,
+                    view.me,
+                    cx,
+                    theme,
+                    ladder,
+                )
+            }))
+            .children(roster.unscripted.iter().map(|unscripted| {
+                unscripted_row(
+                    unscripted,
+                    view.picture(unscripted.number, cx),
+                    cx,
+                    theme,
+                    ladder,
+                )
+            })),
         );
     }
     if !others.is_empty() {
@@ -130,13 +140,19 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
             true => "Agents",
             false => "Other agents",
         };
-        list = list.child(
-            group("agents-others", label, others.len(), theme).children(
-                others
-                    .iter()
-                    .map(|card| row(card, roster, view.me, cx, theme, ladder)),
-            ),
-        );
+        list = list.child(group("agents-others", label, others.len(), theme).children(
+            others.iter().map(|card| {
+                row(
+                    card,
+                    view.picture(card.setup.agent, cx),
+                    roster,
+                    view.me,
+                    cx,
+                    theme,
+                    ladder,
+                )
+            }),
+        ));
     }
     list.into_any_element()
 }
@@ -188,18 +204,14 @@ pub(super) fn pressable(id: String, theme: &Theme) -> Stateful<view::Div> {
         .focusable()
 }
 
-fn who(name: String, below: String, theme: &Theme) -> impl IntoElement + use<> {
+fn who(name: String, picture: Picture, below: String, theme: &Theme) -> impl IntoElement + use<> {
     div()
         .flex()
         .flex_none()
         .items_center()
         .gap(space::LG)
         .w(px(220.))
-        .child(
-            design::avatar(&name, px(AVATAR), theme)
-                .bg(theme.agent_soft)
-                .text_color(theme.agent),
-        )
+        .child(agent_face(&name, picture, px(AVATAR), theme))
         .child(
             div()
                 .min_w_0()
@@ -212,6 +224,7 @@ fn who(name: String, below: String, theme: &Theme) -> impl IntoElement + use<> {
 
 fn row(
     card: &Card,
+    picture: Picture,
     roster: &Roster,
     me: Option<u64>,
     cx: &mut Context<Agents>,
@@ -239,7 +252,7 @@ fn row(
                 view.go(Screen::Agent(agent), cx)
             }),
         )
-        .child(who(card.name.clone(), below, theme))
+        .child(who(card.name.clone(), picture, below, theme))
         .child(
             div()
                 .flex_1()
@@ -284,6 +297,7 @@ fn row(
 /// form at its configuration.
 fn unscripted_row(
     unscripted: &Unscripted,
+    picture: Picture,
     cx: &mut Context<Agents>,
     theme: &Theme,
     ladder: &Ladder,
@@ -301,7 +315,7 @@ fn unscripted_row(
         .py(space::XS)
         .border_b_1()
         .border_color(theme.border)
-        .child(who(name, format!("account {agent}"), theme))
+        .child(who(name, picture, format!("account {agent}"), theme))
         .child(
             div()
                 .flex_1()

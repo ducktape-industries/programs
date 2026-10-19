@@ -80,7 +80,10 @@ fn depth(view: &Agents) -> usize {
 /// other page has Back.
 fn nav(view: &Agents, cx: &mut Context<Agents>) -> Nav {
     match (depth(view), view.me) {
-        (0, Some(_)) => Nav::root(view.home().unwrap_or_default().to_owned()),
+        (0, Some(me)) => Nav::root_with(
+            view.home().unwrap_or_default().to_owned(),
+            view.picture(me, cx),
+        ),
         (0, None) => Nav::Child,
         (depth, _) => Nav::back(
             depth,

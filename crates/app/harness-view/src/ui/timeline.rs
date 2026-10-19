@@ -10,14 +10,14 @@ use view::design::{fonts, space};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
 
-use super::{copy_chip, fold, opened, toggler};
+use super::{agent_face, copy_chip, fold, opened, toggler};
 use crate::read::{Roster, Transcript};
 use crate::timeline::{self, Entry, Work};
 use crate::words::{
     author, call_state, call_wait, first_line, flow_failed, flow_words, frame_meta, mentions, ran,
     size_words, stop_words, summary_words, usage_words, work_meta, work_size,
 };
-use crate::{Agents, Sheet, State, thread_state};
+use crate::{Agents, Picture, Sheet, State, thread_state};
 
 /// How wide an entry's avatar is.
 const AVATAR: f32 = 24.;
@@ -86,7 +86,9 @@ fn row(
                 view.want_call(id);
             }
         }
-        return partial_row(partial, &shown.calls, &agent, theme, ladder).into_any_element();
+        let picture = view.picture(shown.thread.agent, cx);
+        return partial_row(partial, &shown.calls, &agent, picture, theme, ladder)
+            .into_any_element();
     }
     if seq < shown.from {
         view.want_from(seq);
@@ -206,12 +208,6 @@ fn said_by(
     ]
 }
 
-fn agent_face(name: &str, theme: &Theme) -> Div {
-    design::avatar(name, px(AVATAR), theme)
-        .bg(theme.agent_soft)
-        .text_color(theme.agent)
-}
-
 #[allow(clippy::too_many_arguments)]
 fn entry_row(
     view: &Agents,
@@ -244,7 +240,8 @@ fn entry_row(
                 return div().into_any_element();
             };
             let name = author(who, roster);
-            let face = design::avatar(&name, px(AVATAR), theme);
+            let picture = view.author_picture(&frame.body, cx);
+            let face = design::avatar_with(&name, picture, px(AVATAR), theme);
             let meta = meta(frame.seq, frame_meta(frame), cx);
             let head = said_by(name, "wrote".into(), frame.time, theme, ladder);
             // the post whole, harness's framing line included (owner, 10-18)
@@ -258,7 +255,12 @@ fn entry_row(
             let held = worked(view, work, live, shown, cx, theme, ladder);
             entry(
                 first.seq,
-                agent_face(agent, theme),
+                agent_face(
+                    agent,
+                    view.picture(shown.thread.agent, cx),
+                    px(AVATAR),
+                    theme,
+                ),
                 head,
                 meta,
                 held,
@@ -306,7 +308,12 @@ fn entry_row(
                 .children(usage);
             entry(
                 frame.seq,
-                agent_face(agent, theme),
+                agent_face(
+                    agent,
+                    view.picture(shown.thread.agent, cx),
+                    px(AVATAR),
+                    theme,
+                ),
                 head,
                 meta,
                 held,
@@ -792,6 +799,7 @@ fn partial_row(
     partial: &Partial,
     calls: &[CallRow],
     agent: &str,
+    picture: Picture,
     theme: &Theme,
     ladder: &Ladder,
 ) -> impl IntoElement + use<> {
@@ -830,7 +838,7 @@ fn partial_row(
         .py(space::LG)
         .border_b_1()
         .border_color(theme.border)
-        .child(agent_face(agent, theme))
+        .child(agent_face(agent, picture, px(AVATAR), theme))
         .child(
             div()
                 .flex_1()

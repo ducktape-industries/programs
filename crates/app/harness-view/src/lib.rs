@@ -99,7 +99,13 @@ pub struct Agents {
     conversations_policy: policy_view::Editing,
     #[serde(skip)]
     model_policy: policy_view::Editing,
+    // each card's picture, read once per blob as a face first draws it
+    #[serde(skip)]
+    pictures: Option<Entity<view::pictures::Pictures>>,
 }
+
+// A face's picture, once read: `None` while it is read, and for an account with none.
+pub(crate) type Picture = Option<std::sync::Arc<view::Image>>;
 
 #[derive(Default)]
 struct Again {
@@ -295,10 +301,15 @@ impl View for Agents {
         Capability::Chain,
         // an id or a link, copied
         Capability::Clipboard,
+        // each card's picture (`blob.get`)
+        Capability::Blob,
     ];
     const MIN_WINDOW_WIDTH: u32 = 480;
 
     fn attach(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.pictures.is_none() {
+            self.pictures = Some(cx.new(|_| view::pictures::Pictures::default()));
+        }
         cx.follow::<HostSession>((), |view, session, cx| match session {
             Ok(session) => {
                 if (view.me, &view.chain) != (session.account, &session.chain_id) {
@@ -891,6 +902,24 @@ impl Agents {
     pub(crate) fn home(&self) -> Option<&str> {
         let me = self.me?;
         self.roster.ready()?.names.get(&me).map(String::as_str)
+    }
+
+    // `number`'s picture, once read: its card's, as the roster's identity read found it.
+    pub(crate) fn picture(&self, number: u64, cx: &mut Context<Self>) -> Picture {
+        let blob = self.roster.ready()?.avatars.get(&number)?;
+        let pictures = self.pictures.as_ref()?;
+        pictures.update(cx, |pictures, cx| pictures.get(blob, cx))
+    }
+
+    // The picture of who wrote `body`: a post's author's.
+    pub(crate) fn author_picture(&self, body: &harness::Body, cx: &mut Context<Self>) -> Picture {
+        match body {
+            harness::Body::Post {
+                author: harness::Principal::Account(number),
+                ..
+            } => self.picture(*number, cx),
+            _ => None,
+        }
     }
 
     /// An account's name once the roster is read, else its number.

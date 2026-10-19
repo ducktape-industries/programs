@@ -10,8 +10,8 @@ use view::prelude::*;
 use super::list::{ROW, pressable};
 use super::setup::editor;
 use super::{
-    BOUND_WORDS, agent_gone, back, bound_badge, caption, closed_badge, current_badge, fact, fold,
-    meter, no_node, opened, panel, state_badge, waiting,
+    BOUND_WORDS, agent_face, agent_gone, back, bound_badge, caption, closed_badge, current_badge,
+    fact, fold, meter, no_node, opened, panel, state_badge, waiting,
 };
 use crate::policies::{CLAIM, CLAIM_HINT};
 use crate::read::{self, Detail, Roster};
@@ -80,15 +80,12 @@ fn detail(
         })
     };
     let head = div()
+        .id("agent-head")
         .flex()
         .flex_wrap()
         .items_start()
         .gap(space::LG)
-        .child(
-            design::avatar(&name, px(40.), theme)
-                .bg(theme.agent_soft)
-                .text_color(theme.agent),
-        )
+        .child(agent_face(&name, view.picture(agent, cx), px(40.), theme))
         .child(
             div()
                 .flex_1()

@@ -2,6 +2,7 @@ mod armed;
 mod budget;
 mod compact_at;
 mod conversations;
+mod faces;
 mod live_calls;
 mod models;
 mod phone;
@@ -412,6 +413,9 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
     });
     // an id or a link copied, which `requests` then lists
     cx.host().handle::<ClipboardWrite>(|_| Ok(()));
+    // each card's picture, as the node holds it: a PNG's first bytes
+    cx.host()
+        .handle::<view::methods::BlobGet>(|_| Ok(Some(b"\x89PNG\r\n\x1a\nface".to_vec())));
     // the tip, which says how long ago a conversation moved
     cx.host().handle::<ChainBlocks>(|_| {
         Ok(BlockList {

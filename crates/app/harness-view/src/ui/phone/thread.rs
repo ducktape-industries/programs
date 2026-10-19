@@ -107,7 +107,12 @@ fn thread(
                 let who = held_author(body, roster);
                 design::row(format!("held-{index}"), ladder, theme)
                     .min_h(ladder.row_tall)
-                    .child(design::avatar(&who, ladder.avatar, theme))
+                    .child(design::avatar_with(
+                        &who,
+                        view.author_picture(body, cx),
+                        ladder.avatar,
+                        theme,
+                    ))
                     .child(
                         design::row_words(design::row_title(who.clone(), ladder, theme)).child(
                             design::row_caption(

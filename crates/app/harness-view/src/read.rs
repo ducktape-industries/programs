@@ -25,6 +25,8 @@ pub(crate) struct Roster {
     /// the reader's agent accounts that no script hands to harness yet
     pub unscripted: Vec<Unscripted>,
     pub names: HashMap<u64, String>,
+    // each account's picture by its number, as its card holds it
+    pub avatars: HashMap<u64, BlobId>,
     /// each chat room's name by its channel id, which a thread's place holds
     pub rooms: HashMap<String, String>,
     /// member nodes that serve relay: no tool call runs without one
@@ -252,6 +254,10 @@ pub(crate) async fn roster(
     Ok(Roster {
         agents,
         unscripted,
+        avatars: accounts
+            .iter()
+            .filter_map(|account| Some((account.number, account.card.avatar?)))
+            .collect(),
         names: accounts
             .into_iter()
             .map(|account| (account.number, account.card.name))

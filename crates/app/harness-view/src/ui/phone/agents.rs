@@ -5,9 +5,9 @@ use view::prelude::*;
 
 use super::parts::{badged, glyph, opening_row, scroller, section};
 use crate::read::{Card, Roster, Unscripted};
-use crate::ui::{state_badge, waiting};
+use crate::ui::{agent_face, state_badge, waiting};
 use crate::words::{agent_sentence_topic, last_moved, network};
-use crate::{Agents, Screen, agent_state};
+use crate::{Agents, Picture, Screen, agent_state};
 
 /// How the root's page is named in its parts' keys.
 const PAGE: &str = "agents-page";
@@ -71,13 +71,25 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
         let count = mine.len() + roster.unscripted.len();
         list = list
             .child(section("agents-mine", "My agents", count, theme, ladder))
-            .children(mine.iter().map(|card| row(card, roster, cx, theme, ladder)))
-            .children(
-                roster
-                    .unscripted
-                    .iter()
-                    .map(|unscripted| unscripted_row(unscripted, cx, theme, ladder)),
-            );
+            .children(mine.iter().map(|card| {
+                row(
+                    card,
+                    view.picture(card.setup.agent, cx),
+                    roster,
+                    cx,
+                    theme,
+                    ladder,
+                )
+            }))
+            .children(roster.unscripted.iter().map(|unscripted| {
+                unscripted_row(
+                    unscripted,
+                    view.picture(unscripted.number, cx),
+                    cx,
+                    theme,
+                    ladder,
+                )
+            }));
     }
     if !others.is_empty() {
         // with none of the reader's above them, the others are the one list
@@ -87,11 +99,16 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
         };
         list = list
             .child(section("agents-others", label, others.len(), theme, ladder))
-            .children(
-                others
-                    .iter()
-                    .map(|card| row(card, roster, cx, theme, ladder)),
-            );
+            .children(others.iter().map(|card| {
+                row(
+                    card,
+                    view.picture(card.setup.agent, cx),
+                    roster,
+                    cx,
+                    theme,
+                    ladder,
+                )
+            }));
     }
     list.child(more(view, cx, theme, ladder))
         .child(
@@ -105,15 +122,9 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
         .into_any_element()
 }
 
-/// An agent's face: its initial on its tint.
-pub(super) fn face(name: &str, side: impl Into<view::design::Face>, theme: &Theme) -> view::Div {
-    design::avatar(name, side, theme)
-        .bg(theme.agent_soft)
-        .text_color(theme.agent)
-}
-
 fn row(
     card: &Card,
+    picture: Picture,
     roster: &Roster,
     cx: &mut Context<Agents>,
     theme: &Theme,
@@ -139,7 +150,7 @@ fn row(
     let moved = last_moved(card).map(|time| design::ago(roster.now, time));
     opening_row(
         format!("agent-{agent}"),
-        face(&card.name, ladder.avatar, theme),
+        agent_face(&card.name, picture, ladder.avatar, theme),
         words,
         moved,
         theme,
@@ -152,6 +163,7 @@ fn row(
 /// form at its configuration.
 fn unscripted_row(
     unscripted: &Unscripted,
+    picture: Picture,
     cx: &mut Context<Agents>,
     theme: &Theme,
     ladder: &Ladder,
@@ -176,7 +188,7 @@ fn unscripted_row(
     );
     opening_row(
         format!("unscripted-{agent}"),
-        face(&name, ladder.avatar, theme),
+        agent_face(&name, picture, ladder.avatar, theme),
         words,
         None,
         theme,

@@ -6,11 +6,11 @@ use view::design::{Ladder, space};
 use view::prelude::*;
 use view::{FontWeight, Stateful};
 
-use super::agents::face;
 use super::parts::{actions, badged, fact, glyph, notice, opening_row, scroller, section};
 use crate::policies::{CLAIM, CLAIM_HINT};
 use crate::read::{self, Detail, Roster};
 use crate::setup::Press;
+use crate::ui::agent_face;
 use crate::ui::setup::editor;
 use crate::ui::{
     BOUND_WORDS, agent_gone, bound_badge, closed_badge, current_badge, state_badge, waiting,
@@ -88,13 +88,19 @@ fn detail(
         about.push(note.to_owned());
     }
     let head = div()
+        .id("agent-head")
         .flex()
         .items_center()
         .gap(space::BLOCK)
         .p(space::BLOCK)
         .border_b_1()
         .border_color(theme.border)
-        .child(face(&name, ladder.avatar_detail, theme))
+        .child(agent_face(
+            &name,
+            view.picture(agent, cx),
+            ladder.avatar_detail,
+            theme,
+        ))
         .child(
             div()
                 .flex_1()
@@ -657,7 +663,12 @@ pub(super) fn sheet(
         .flex_row()
         .items_center()
         .gap(space::LG)
-        .child(face(&name, ladder.avatar_sheet, theme))
+        .child(agent_face(
+            &name,
+            view.picture(agent, cx),
+            ladder.avatar_sheet,
+            theme,
+        ))
         .child(
             div()
                 .flex()
