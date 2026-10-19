@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
-use crate::legacy::{migrate, migrate_some, unmigrated};
 use crate::listen::{followed, listen, listened, notices_cut, set_notices};
 use crate::ops::{
     create_channel, delete, edit, open_dm, post, react, remove_meta, rename, set_archived,
@@ -83,12 +82,12 @@ impl Program for Chat {
                 value,
             } => set_meta(ctx, &channel_id, key, value),
             Op::RemoveChannelMeta { channel_id, key } => remove_meta(ctx, &channel_id, &key),
-            Op::Migrate { channel_id } => migrate(ctx, &channel_id),
+            Op::Migrate { channel_id } => crate::state::channel(ctx, &channel_id).map(drop),
             Op::Listen {
                 channel_id,
                 listening,
             } => listen(ctx, &channel_id, listening),
-            Op::MigrateSome { limit } => migrate_some(ctx, limit),
+            Op::MigrateSome { .. } => Ok(()),
             Op::SetNotices {
                 channel_id,
                 notices,
@@ -162,7 +161,14 @@ impl Program for Chat {
             Query::Reactors { channel_id, seqs } => {
                 (Reply::Reactors(reactors(ctx, channel_id, &seqs)?), vec![])
             }
-            Query::Unmigrated { page } => (Reply::ChannelIds(unmigrated(ctx, &page)?), vec![]),
+            Query::Unmigrated { .. } => {
+                let none = crate::PageResponse {
+                    height: ctx.env().height,
+                    items: Vec::new(),
+                    next: None,
+                };
+                (Reply::ChannelIds(none), vec![])
+            }
             Query::Listening { account, page } => {
                 (Reply::Listening(listened(ctx, account, &page)?), vec![])
             }

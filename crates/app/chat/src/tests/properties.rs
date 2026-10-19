@@ -2,11 +2,10 @@
 //! refused op writes nothing, the reactions agree with the messages, and
 //! search and tags find what the messages hold.
 use super::channels::edit;
-use super::legacy::{age, every_row, legacy_is_empty, migrate};
 use super::messages::tagged;
 use super::*;
 use crate::MsgRow;
-use crate::state::{HEADS, PARTICIPANTS, REACTIONS};
+use crate::state::{HEADS, MESSAGES, PARTICIPANTS, REACTIONS};
 
 /// xorshift64*: the same seed walks the same way.
 struct Rng(u64);
@@ -33,11 +32,6 @@ fn any_walk_keeps_reactions_and_search_in_step_with_the_messages() {
         let mut rng = Rng(seed);
         let mut chat = Chat::with_channel(PostPolicy::Open);
         for step in 0..80 {
-            match rng.below(12) {
-                0 => age(&chat),
-                1 => chat.ok(&CY, migrate("general")),
-                _ => {}
-            }
             let head = HEADS.get(&chat.reads(), &"general".into()).unwrap();
             let seq = 1 + rng.below(head.unwrap_or(0));
             let text = *rng.pick(&TEXTS);
@@ -59,10 +53,13 @@ fn any_walk_keeps_reactions_and_search_in_step_with_the_messages() {
             }
         }
         in_step(&chat, seed);
-        chat.ok(&BO, migrate("general"));
-        assert!(legacy_is_empty(&chat), "seed {seed}: migrated");
-        in_step(&chat, seed);
     }
+}
+
+// every message, by channel then seq
+fn every_row(chat: &Chat) -> Vec<MsgRow> {
+    let rows = MESSAGES.all(&chat.reads()).unwrap();
+    rows.into_iter().map(|(_, row)| row.row()).collect()
 }
 
 fn in_step(chat: &Chat, seed: u64) {

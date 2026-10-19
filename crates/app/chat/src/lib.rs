@@ -15,7 +15,6 @@
 //! - `origin.rs`: the identity role's roster
 //! - `queries.rs`: one short function per question
 //! - `text.rs`: what search and tags read out of a message, at read time
-//! - `legacy.rs`: the layout chat kept before `Stored`, read until each channel migrates
 //! - `mentions.rs`: a typed `@name` made the mention of the one account
 //!   that holds the name, as a message is posted or edited
 //! - `view.rs`: the reads a view makes of chat, folded into [`view::Names`]
@@ -27,7 +26,6 @@
 pub mod attributed;
 mod description;
 mod gate;
-mod legacy;
 mod listen;
 mod mentions;
 pub mod message;
@@ -61,7 +59,6 @@ pub use text::{plain_text, tags};
 /// Every table chat keeps, as a block's writes name them: what a follower
 /// of `program.changes` plays back in a test to say which a block touched.
 pub mod tables {
-    pub use crate::legacy::{CHANNEL_TAGS, OLD_MESSAGES, TAGS, WORDS};
     pub use crate::state::{
         ANSWERED, CHANNEL_META, CHANNELS, HEADS, LISTENERS, LISTENING, MEMBERS, MENTIONED,
         MESSAGE_IDS, MESSAGES, NOTICES, PARTICIPANTS, POSTED, REACTIONS, REPLIES, ROOTS,
@@ -142,8 +139,8 @@ pub enum Op {
         channel_id: String,
         key: String,
     },
-    // moves `channel_id`'s messages from the layout chat kept before `Stored` and drops their
-    // search and tag postings: every read answers the same, and a second run writes nothing
+    // moved `channel_id`'s messages off the layout chat kept before `Stored`; every channel has
+    // moved, so it writes nothing now, and refuses only a channel that does not exist
     Migrate {
         channel_id: String,
     },
@@ -151,8 +148,8 @@ pub enum Op {
         channel_id: String,
         listening: bool,
     },
-    // migrates, as `Migrate` does each, the first `limit` channels `Query::Unmigrated` lists:
-    // the rest wait for the next run, and a run once none is left writes nothing
+    // migrated the first `limit` channels `Query::Unmigrated` listed; none is left, so it writes
+    // nothing
     MigrateSome {
         limit: u64,
     },
@@ -258,10 +255,9 @@ pub enum Query {
     #[ask(Reply::Reactors(Vec<ReactedBy>))]
     #[reads(state::REACTIONS)]
     Reactors { channel_id: String, seqs: Vec<u64> },
-    // the channels whose messages are not all migrated yet (`Op::Migrate`), a page of channels
-    // at a time: a page may name none and still lead to the next
+    // the channels whose messages were not all migrated yet (`Op::Migrate`): every channel has
+    // moved, so it answers none
     #[ask(Reply::ChannelIds(PageResponse<String>))]
-    #[reads(state::CHANNELS, legacy::OLD_MESSAGES)]
     Unmigrated { page: PageRequest },
     #[ask(Reply::Listening(PageResponse<String>))]
     #[reads(state::LISTENING)]

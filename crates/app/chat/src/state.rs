@@ -10,7 +10,6 @@ use ::program::{Error, ExecCtx, QueryCtx, not_found};
 use borsh::{BorshDeserialize, BorshSerialize};
 use store::{Kind, Map, Owned, Set};
 
-use crate::legacy;
 use crate::{
     AccountNumber, Block, ChannelRow, MemberRow, MsgRow, Notices, Principal, Reaction, plain_text,
     tags,
@@ -27,7 +26,7 @@ pub const CHANNEL_META: Map<ChannelId, BTreeMap<String, String>> =
     Map::new("channel-meta/").shared();
 /// The newest message's seq, per channel.
 pub const HEADS: Map<ChannelId, Seq> = Map::new("head/").shared();
-// each message as chat keeps it; a channel not migrated yet still holds old rows (`legacy`)
+// each message as chat keeps it
 pub const MESSAGES: Map<(ChannelId, Seq), Stored> = Map::new("stored/").shared();
 /// Where each message id lives: ids are unique across channels.
 // Each id is its author's, of the kind `chat.message`: only a post writes it, and the author's
@@ -149,7 +148,6 @@ pub(crate) fn messages(
 // `reacted_by_me` are dropped here, whatever they hold.
 pub(crate) fn put_message(ctx: &ExecCtx, row: &MsgRow) -> Result<(), Error> {
     let key = (row.channel_id.clone(), row.seq);
-    legacy::forget(ctx, &key)?;
     MESSAGES.put(ctx, &key, &Stored::from(row.clone()));
     Ok(())
 }
@@ -199,15 +197,12 @@ impl From<MsgRow> for Stored {
     }
 }
 
-// the row at `key`: the one chat keeps, else an old row its channel has not migrated yet
+// the row at `key`
 pub(crate) fn stored(ctx: &QueryCtx, key: &(ChannelId, Seq)) -> Result<Option<Stored>, Error> {
-    if let Some(row) = MESSAGES.get(ctx, key)? {
-        return Ok(Some(row));
-    }
-    Ok(legacy::OLD_MESSAGES.get(ctx, key)?.map(Stored::from))
+    MESSAGES.get(ctx, key)
 }
 
-// `channel_id`'s rows from seq `lo` to below `hi` in seq order, old rows among them
+// `channel_id`'s rows from seq `lo` to below `hi` in seq order
 pub(crate) fn stored_between(
     ctx: &QueryCtx,
     channel_id: &str,
@@ -215,14 +210,9 @@ pub(crate) fn stored_between(
     hi: Seq,
 ) -> Result<Vec<Stored>, Error> {
     let at = |seq: Seq| (channel_id.to_owned(), seq);
-    let old = legacy::OLD_MESSAGES;
-    let range = Range::new(old.key(&at(lo)), Some(old.key(&at(hi))));
-    let mut rows: BTreeMap<Seq, Stored> = (old.scan(ctx, range)?.into_iter())
-        .map(|((_, seq), row)| (seq, Stored::from(row)))
-        .collect();
     let range = Range::new(MESSAGES.key(&at(lo)), Some(MESSAGES.key(&at(hi))));
-    rows.extend((MESSAGES.scan(ctx, range)?.into_iter()).map(|((_, seq), row)| (seq, row)));
-    Ok(rows.into_values().collect())
+    let rows = MESSAGES.scan(ctx, range)?.into_iter();
+    Ok(rows.map(|(_, row)| row).collect())
 }
 
 pub(crate) fn toggle<K: store::KeyCodec>(ctx: &ExecCtx, set: &Set<K>, key: &K, on: bool) {
@@ -262,8 +252,4 @@ pub(crate) const TABLES: &[::program::Table] = &[
     NOTICES.table(),
     POSTED.table(),
     MENTIONED.table(),
-    crate::legacy::OLD_MESSAGES.table(),
-    crate::legacy::WORDS.table(),
-    crate::legacy::TAGS.table(),
-    crate::legacy::CHANNEL_TAGS.table(),
 ];
