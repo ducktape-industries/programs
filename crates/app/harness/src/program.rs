@@ -5,7 +5,7 @@
 use ::program::schema::{Return, returns};
 use ::program::{Awaiting, Ctx, Error, ExecCtx, Program, QueryCtx};
 
-use crate::agents::{attributed, close, setup};
+use crate::agents::{attributed, card, close, setup};
 use crate::bookings::{book, run_booked, unbook};
 use crate::conversations::{fork_thread, new_thread, open_thread};
 use crate::models::{remove_model, set_compact_at, set_model};
@@ -87,6 +87,7 @@ impl Program for Harness {
             Query::Waits { agent, page } => Ok(Reply::Waits(waits::waits(ctx, agent, &page)?)),
             Query::Wait { wait } => Ok(Reply::Wait(waits::wait_row(ctx, wait)?)),
             Query::Armed { thread, page } => Ok(Reply::Waits(waits::armed(ctx, thread, &page)?)),
+            Query::Card { agent } => Ok(Reply::Agent(card(ctx, agent)?)),
         }
     }
 }

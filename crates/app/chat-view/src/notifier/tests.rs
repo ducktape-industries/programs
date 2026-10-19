@@ -448,13 +448,12 @@ fn a_room_on_screen_gets_no_notice() {
     assert_eq!(badge(&notifier), Some(1));
 }
 
-/// A catch-up of more rooms than are read at once: no turn announces more
-/// rooms than it reads, so what lands in a turn stays small however many
-/// rooms the reader has, and every room is still announced, once.
+// A catch-up of many rooms reads every room that moved, all at once, and
+// announces each, once.
 #[test]
-fn a_catch_up_reads_a_few_rooms_at_a_time() {
+fn a_catch_up_announces_every_room_once() {
     let world = World::default();
-    let ids: Vec<String> = (0..5 * READS).map(|n| format!("c{n}")).collect();
+    let ids: Vec<String> = (0..20).map(|n| format!("c{n}")).collect();
     *world.rooms.borrow_mut() = ids.iter().map(|id| room(id, id, 1)).collect();
     world
         .rows
@@ -473,12 +472,7 @@ fn a_catch_up_reads_a_few_rooms_at_a_time() {
             continue;
         }
         let kept: BTreeMap<String, u64> = methods::decode(&value.unwrap()).unwrap();
-        let now = kept.values().filter(|seq| **seq == 1).count();
-        assert!(
-            now - announced <= READS,
-            "{now} announced after {announced}"
-        );
-        announced = now;
+        announced = kept.values().filter(|seq| **seq == 1).count();
     }
     assert_eq!(announced, ids.len());
     assert_eq!(posts(&notifier).len(), ids.len());

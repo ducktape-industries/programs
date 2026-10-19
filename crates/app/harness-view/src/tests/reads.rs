@@ -125,7 +125,7 @@ fn a_block_of_another_program_reads_the_setup_and_no_frames() {
     let frames = frames_asked(&cx).len();
     let setups = |cx: &TestAppContext| {
         let asked = cx.host().requests::<Query<harness::Harness>>();
-        let setup = harness::Query::Agent { agent: SCOUT };
+        let setup = harness::Query::Card { agent: SCOUT };
         asked.iter().filter(|query| **query == setup).count()
     };
     let read = setups(&cx);
@@ -136,4 +136,24 @@ fn a_block_of_another_program_reads_the_setup_and_no_frames() {
     cx.run_until_parked();
     assert_eq!(frames_asked(&cx).len(), frames);
     assert!(setups(&cx) > read, "the configuration file may have moved");
+}
+
+// The list reads each agent's card again on a block of another program, and
+// never the setup with its prompt (`Agent`), which only the agent's own
+// screen reads: a phone's list of agents read every agent's whole prompt on
+// every block.
+#[test]
+fn the_list_reads_cards_and_no_prompts() {
+    let (mut cx, _) = seated(Net::default(), EDDY);
+    let changes = cx.host().stream::<Changes<files::Files>>();
+    changes.send(Some(Change {
+        height: 10,
+        keys: Vec::new(),
+    }));
+    cx.run_until_parked();
+    let asked = cx.host().requests::<Query<harness::Harness>>();
+    let card = |query: &harness::Query| matches!(query, harness::Query::Card { .. });
+    let prompt = |query: &harness::Query| matches!(query, harness::Query::Agent { .. });
+    assert!(asked.iter().any(card), "{asked:?}");
+    assert!(!asked.iter().any(prompt), "{asked:?}");
 }

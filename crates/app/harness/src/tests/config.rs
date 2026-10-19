@@ -182,3 +182,23 @@ fn harness_registers_with_attribution_at_its_init() {
     };
     assert_eq!(registered, [PROGRAM.to_owned()]);
 }
+
+// `Card` is `Agent` with the system prompt left out: a list of agents, read
+// again on every block, carries no agent's prompt
+#[test]
+fn a_card_is_the_setup_without_its_system_prompt() {
+    let world = world();
+    let chain = &world.chain;
+    let whole = setup(chain, world.agent).unwrap();
+    let asked = Query::Card { agent: world.agent };
+    let Reply::Agent(Some(card)) = chain.query(PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    let mut expected = whole.clone();
+    if let Configured::Ready { config, .. } = &mut expected.configured {
+        assert_eq!(config.system, "Keep notes in /shared.");
+        config.system = String::new();
+    }
+    assert_ne!(expected, whole, "the agent's setup has a prompt");
+    assert_eq!(card, expected);
+}

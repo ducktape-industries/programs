@@ -57,20 +57,6 @@ fn notified_key(signer: &str) -> String {
     format!("notified/{signer}")
 }
 
-/// Rooms asked per page of the channel list.
-const ROOMS: u64 = 64;
-
-/// The most messages read back in one room at a time.
-// ponytail: a room past this many unread since its cursor counts and
-// announces only its newest READ_BACK; page back if a badge must count more.
-const READ_BACK: u64 = 256;
-
-/// The most rooms read at once. The host gives each turn of a notifier a
-/// fixed fuel and ends one that runs out, and a turn lands every read
-/// answered since the last: so a turn lands at most this many rooms of
-/// READ_BACK messages, however many rooms a catch-up has.
-const READS: usize = 4;
-
 /// Chat's notifier: what it knows of the reader and the rooms, and what it
 /// has counted and announced.
 #[derive(Default)]
@@ -308,10 +294,7 @@ impl ChatNotices {
         let host = cx.host();
         let rooms = async move {
             host.query_all(|after| chat::ask::Channels {
-                page: PageRequest {
-                    after,
-                    limit: Some(ROOMS),
-                },
+                page: PageRequest { after, limit: None },
             })
             .await
         };
@@ -401,10 +384,6 @@ impl ChatNotices {
             if head <= count.to || self.reading.contains(&room) {
                 continue;
             }
-            if self.reading.len() + due.len() >= READS {
-                // read, and announced, once a read under way lands
-                continue;
-            }
             // announced up to the head now: a list landing before this
             // read reads past it, never this range again
             announced.insert(room.clone(), head);
@@ -432,7 +411,7 @@ impl ChatNotices {
         me: u64,
         cx: &mut Context<Self>,
     ) {
-        let fresh = (head - from).min(READ_BACK);
+        let fresh = head - from;
         let host = cx.host();
         let channel_id = room.clone();
         // the new messages, then where the reader is in the room and in

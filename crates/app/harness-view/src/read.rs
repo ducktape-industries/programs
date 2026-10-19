@@ -92,6 +92,12 @@ pub(crate) async fn setup(host: &Host, agent: u64) -> Result<Option<AgentSetup>,
     host.query(harness::ask::Agent { agent }).await
 }
 
+// what a list or a conversation shows of an agent: its setup without its system prompt, which
+// only the agent's own screen reads (`setup`)
+async fn card(host: &Host, agent: u64) -> Result<Option<AgentSetup>, Error> {
+    host.query(harness::ask::Card { agent }).await
+}
+
 pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error> {
     let tip = host
         .ask::<ChainBlocks>(BlockPage {
@@ -113,7 +119,7 @@ pub(crate) async fn roster(host: Host, me: Option<u64>) -> Result<Roster, Error>
         .filter(|account| calls_harness(&account.kind()))
     {
         let agent = account.number;
-        let Some(setup) = setup(&host, agent).await? else {
+        let Some(setup) = card(&host, agent).await? else {
             continue;
         };
         let service = setup.configured.model().map(|model| model.service.clone());
@@ -431,7 +437,7 @@ async fn served_setup(
     host: &Host,
     agent: u64,
 ) -> Result<(Option<AgentSetup>, Option<usize>), Error> {
-    let setup = setup(host, agent).await?;
+    let setup = card(host, agent).await?;
     let service = setup
         .as_ref()
         .and_then(|setup| setup.configured.model())

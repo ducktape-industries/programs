@@ -835,6 +835,10 @@ pub enum Query {
     #[ask(Reply::Waits(PageResponse<WaitRow>))]
     #[reads(state::ARMED, state::WAITS)]
     Armed { thread: u64, page: PageRequest },
+    // `Agent` with the system prompt left out (an empty `system`): what a
+    // list of agents, read again on every block, needs of each
+    #[ask(Reply::Agent(Option<AgentSetup>))]
+    Card { agent: AccountNumber },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1106,7 +1110,8 @@ fn query_variants_only_append() {
             "Budget",
             "Waits",
             "Wait",
-            "Armed"
+            "Armed",
+            "Card"
         ]
     );
 }

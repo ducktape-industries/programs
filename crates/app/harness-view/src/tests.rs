@@ -132,6 +132,14 @@ fn setup(agent: u64, name: &str, manager: u64, window: Window) -> AgentSetup {
     }
 }
 
+// a setup as harness's `Card` answers it: the system prompt left out
+fn card(mut setup: AgentSetup) -> AgentSetup {
+    if let Configured::Ready { config, .. } = &mut setup.configured {
+        config.system = String::new();
+    }
+    setup
+}
+
 fn thread(id: u64, agent: u64, manager: u64, place: &str) -> ThreadRow {
     ThreadRow {
         id,
@@ -415,6 +423,13 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                     .iter()
                     .find(|setup| setup.agent == agent)
                     .cloned(),
+            ),
+            harness::Query::Card { agent } => harness::Reply::Agent(
+                net.setups
+                    .iter()
+                    .find(|setup| setup.agent == agent)
+                    .cloned()
+                    .map(card),
             ),
             harness::Query::Models { .. } => harness::Reply::Models(page(net.models.clone())),
             harness::Query::Model { id } => {

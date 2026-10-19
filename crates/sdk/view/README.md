@@ -264,8 +264,11 @@ A node program is addressed by its own type, the one that implements
 says whether a read moved, from the tables the program's `Query` declares
 with `#[reads(..)]` (`program::Reads`; another program's tables it reads are
 declared with that program named first), so a view re-reads what the block
-touched and maps no key itself (`None` is a reopened link: read everything
-again). Every refusal is the program SDK's `Error`
+touched and maps no key itself (`None` is a reopened link, or the view back
+on screen or its app back in front: read everything again). The host follows
+the node only for a view on screen, a notifier always, of an app in front;
+off screen or behind another app a view hears no blocks, and nothing is
+asked of the node for its `Changes<P>` or `ChainHeads`. Every refusal is the program SDK's `Error`
 (`code` token, `message`), one type end to end: a program's codes are
 `error::code`, the host's own are `methods::refusal`. `Loadable<T>` + `cx.load`
 (`src/root.rs`) hold an ask's states and snapshot `Loading`

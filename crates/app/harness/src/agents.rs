@@ -138,6 +138,18 @@ pub(crate) fn setup(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<Agen
     }))
 }
 
+// `setup` with the system prompt left out, the rest as it is
+pub(crate) fn card(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<AgentSetup>, Error> {
+    let mut setup = setup(ctx, number)?;
+    if let Some(setup) = &mut setup
+        && let Configured::Ready { config, .. } | Configured::UnknownModel { config, .. } =
+            &mut setup.configured
+    {
+        config.system = String::new();
+    }
+    Ok(setup)
+}
+
 pub(crate) fn harnessed_agent(
     ctx: &QueryCtx,
     number: AccountNumber,

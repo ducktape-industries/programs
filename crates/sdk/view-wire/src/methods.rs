@@ -240,6 +240,9 @@ impl Change {
 /// it, carrying the block's height and the keys it wrote ([`Change`]);
 /// `None` when the node link was reopened and the view should re-read
 /// everything. The request is `P`'s name, as the host reads it.
+// The host also says `None` when the view comes back on screen or its app
+// back in front: it follows the node only for a view on screen (a notifier:
+// always) of an app in front.
 pub struct Changes<P>(std::marker::PhantomData<P>);
 impl<P: Program> sealed::Sealed for Changes<P> {}
 impl<P: Program> Method for Changes<P> {
