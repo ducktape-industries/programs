@@ -9,6 +9,7 @@ fn roster_of(count: usize) -> Vec<MentionChoice> {
             hint: None,
             offered: true,
             sigil: '@',
+            typed: false,
         })
         .collect()
 }

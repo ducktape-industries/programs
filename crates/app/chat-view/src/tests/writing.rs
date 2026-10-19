@@ -639,7 +639,7 @@ fn hash_offers_the_rooms_and_a_pick_is_a_link_to_one() {
     let Some(wire::Node::UniformList { count, .. }) = cx.find("draft-general/mentions") else {
         panic!("the rooms are a list: {:?}", cx.texts())
     };
-    assert_eq!(*count, 2, "General and Review web#3");
+    assert_eq!(*count, 1, "General: a program's room waits for a letter");
     let token = "[#General](duck://testnet-0a1b2c3d/chat/general)";
     let general = format!("draft-general/mention/{token}");
     let row = cx.interactivity(&general);
@@ -655,6 +655,79 @@ fn hash_offers_the_rooms_and_a_pick_is_a_link_to_one() {
         )),
         "{asked:?}"
     );
+}
+
+// A bare `#` offers the rooms the reader is in (owned, opened, listened
+// to), those a block posted in latest first, then A to Z. A work room and a
+// room the reader is not in wait for a letter typed after the `#`; an
+// archived room and a direct one are never offered.
+#[test]
+fn hash_offers_the_rooms_you_are_in_and_the_rest_when_typed() {
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    let room = |id: &str, name: &str, owner: u64, archived: bool| {
+        let mut info = channel(id, name, 1);
+        info.channel.owner = Principal::Account(owner);
+        info.channel.archived = archived;
+        info
+    };
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Channels { .. } => {
+                    let mut rooms = vec![
+                        room("general", "General", 7, false),
+                        room("design", "Design", 9, false),
+                        room("random", "Random", 9, false),
+                        room("lobby", "Lobby", 9, false),
+                        room("attic", "Attic", 7, true),
+                        room("dm-7-8", "dm", 7, false),
+                    ];
+                    let job =
+                        |n: u64| room(&format!("j-{n}"), &format!("jobs/j-{n} · job"), 7, false);
+                    rooms.extend((100..150).map(job));
+                    Reply::Channels(page(rooms))
+                }
+                Query::Listening { .. } => Reply::Listening(page(vec!["design".into()])),
+                query => chat_reply(query),
+            })
+        }));
+    let view = cx.open::<Chat>();
+    seat(&mut cx);
+    cx.simulate_click("chat-sidebar-channel-general");
+    cx.run_until_parked();
+    cx.update(&view, |chat, _, cx| {
+        chat.opened.insert("random".into());
+        cx.notify();
+    });
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(5, posted("design")));
+    cx.run_until_parked();
+    cx.simulate_bounds("chat-pane", (260., 0.), (840., 760.));
+    cx.simulate_bounds("draft-general", (276., 640.), (808., 104.));
+    cx.simulate_input("draft-general/editor", "#");
+    cx.run_until_parked();
+    let Some(wire::Node::UniformList { count, .. }) = cx.find("draft-general/mentions") else {
+        panic!("the rooms are a list: {:?}", cx.texts())
+    };
+    assert_eq!(*count, 3, "the three rooms eddy is in");
+    let mut offered = |typed: &str| {
+        cx.simulate_input("draft-general/editor", typed);
+        view.read(|chat| {
+            let choices = chat.mention_choices();
+            let found = crate::composer::matching_choices(&choices, '#', &typed[1..]);
+            let labels = found.into_iter().map(|choice| choice.label.clone());
+            labels.collect::<Vec<_>>()
+        })
+    };
+    assert_eq!(offered("#"), ["Design", "General", "Random"]);
+    let jobs = offered("#j-1");
+    assert_eq!(jobs.len(), 50, "{jobs:?}");
+    assert_eq!(offered("#j-12").len(), 10);
+    assert_eq!(offered("#lob"), ["Lobby"]);
+    assert!(offered("#att").is_empty(), "an archived room");
+    assert!(offered("#dm").is_empty(), "a direct room");
 }
 
 #[test]

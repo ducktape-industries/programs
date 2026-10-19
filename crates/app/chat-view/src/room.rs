@@ -195,6 +195,7 @@ impl Chat {
         // the rooms it wrote the row, head or meta of, each read alone; `None`, every room
         self.moved_channels.heard(change);
         self.visited_heard(change);
+        self.active_heard(change);
         self.reread_moved(cx);
         // the reader's choices, and those of the accounts it manages, show in the details alone
         let managed = self.managed_choices.ready().into_iter().flatten();
@@ -469,6 +470,17 @@ impl Chat {
                 }
             })
             .detach();
+        }
+    }
+
+    // The rooms a block posted in, at its height: what `#` offers first.
+    fn active_heard(&mut self, change: Option<&Change>) {
+        let Some(change) = change else { return };
+        for info in self.channels.ready().into_iter().flatten() {
+            let head = chat::tables::HEADS.key(&info.channel.id);
+            if change.keys.contains(&head) {
+                self.active.insert(info.channel.id.clone(), change.height);
+            }
         }
     }
 

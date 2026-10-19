@@ -36,6 +36,10 @@ pub struct MentionChoice {
     pub offered: bool,
     // what is typed before it: `@` for an account, `#` for a room
     pub sigil: char,
+    // offered only once something is typed after its sigil: a work room, or
+    // one the reader is not in
+    #[serde(default)]
+    pub typed: bool,
 }
 
 impl MentionChoice {
@@ -172,17 +176,18 @@ pub(crate) fn matching_choices<'a>(
         .filter(|choice| {
             choice.sigil == sigil
                 && choice.offered
+                && !(choice.typed && needle.is_empty())
                 && words_start(&choice.label.to_lowercase(), &needle)
         })
         .collect()
 }
 
 // Whether a word of `name` starts with `needle`: the name's start, or the
-// place after a space, `-`, `_` or `.`.
+// place after a space, `-`, `_`, `.` or a folder's `/`.
 fn words_start(name: &str, needle: &str) -> bool {
     let after_break = name
         .char_indices()
-        .filter(|(_, c)| matches!(c, ' ' | '-' | '_' | '.'))
+        .filter(|(_, c)| matches!(c, ' ' | '-' | '_' | '.' | '/'))
         .map(|(at, c)| at + c.len_utf8());
     std::iter::once(0)
         .chain(after_break)
@@ -648,6 +653,7 @@ mod tests {
             hint: None,
             offered: true,
             sigil: '@',
+            typed: false,
         }]
     }
 
@@ -753,6 +759,7 @@ mod tests {
             hint: None,
             offered: false,
             sigil: '@',
+            typed: false,
         }];
         let draft = Draft::from_body("ask <@9> @fo", &forge);
         assert_eq!(draft.field.text(), "ask @forge @fo");
@@ -778,6 +785,7 @@ mod tests {
             hint: None,
             offered: true,
             sigil: '@',
+            typed: false,
         });
         let every = ["Ada Lovelace", "Alan", "bo.k", "qa-mention-b"];
         assert_eq!(found(&choices, ""), every);
@@ -803,6 +811,7 @@ mod tests {
             hint: None,
             offered: true,
             sigil: '#',
+            typed: false,
         };
         let choices = [roster().remove(0), room.clone()];
         let mut draft = Draft::from_body("hi #ge", &choices);
@@ -825,6 +834,25 @@ mod tests {
             panic!("one paragraph")
         };
         assert_eq!(spans[1].marks, [chat::message::Mark::Link(link.into())]);
+    }
+
+    // A choice offered only once typed waits for a letter after its sigil,
+    // and a folder's `/` starts a word.
+    #[test]
+    fn a_choice_offered_once_typed_waits_for_a_letter() {
+        let room = MentionChoice {
+            token: "[#jobs/j-127](duck://testnet-0a1b2c3d/chat/j-127)".into(),
+            label: "jobs/j-127 · a filter".into(),
+            hint: None,
+            offered: true,
+            sigil: '#',
+            typed: true,
+        };
+        let found = |partial| matching_choices(std::slice::from_ref(&room), '#', partial).len();
+        assert_eq!(found(""), 0);
+        assert_eq!(found("j-1"), 1);
+        assert_eq!(found("jobs"), 1);
+        assert_eq!(found("filter"), 1);
     }
 
     #[test]

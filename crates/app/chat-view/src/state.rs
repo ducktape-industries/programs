@@ -92,9 +92,13 @@ pub struct Chat {
     pub(crate) opened_kept: Option<String>,
     #[serde(skip)]
     pub(crate) listening: BTreeSet<String>,
-    // the phone's list asked them this session: only its tree reads them
+    // asked this session: the phone's list and `#` read them
     #[serde(skip)]
     pub(crate) listening_asked: bool,
+    // the block height each room's newest message last moved at, as this
+    // session heard it: what `#` offers first
+    #[serde(skip)]
+    pub(crate) active: BTreeMap<String, u64>,
     // the phone's groups of rooms the reader opened (`room_list::WORK`,
     // `room_list::ALL`): shut until they do
     #[serde(default)]

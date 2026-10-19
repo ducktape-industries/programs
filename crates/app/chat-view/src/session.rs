@@ -131,11 +131,12 @@ impl Chat {
         // a link that came back: the sidebar says the rooms are loading
         self.channels = Loadable::Idle;
         cx.load(self, channels(cx.host()), |chat| &mut chat.channels);
-        // the phone's next frame asks again which rooms the reader listens to
+        // the next frame asks again which rooms the reader listens to
         self.listening_asked = false;
     }
 
-    // The rooms the reader listens to, which the phone lists as theirs.
+    // The rooms the reader listens to, which the phone lists as theirs and
+    // `#` offers.
     pub(crate) fn load_listening(&mut self, cx: &mut Context<Self>) {
         let Some(me) = self.my_account() else {
             return;

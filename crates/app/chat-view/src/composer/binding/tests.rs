@@ -148,6 +148,7 @@ fn roster() -> Vec<MentionChoice> {
         hint: None,
         offered: true,
         sigil: '@',
+        typed: false,
     }]
 }
 
@@ -428,6 +429,7 @@ fn menu_navigation_then_enter_picks_a_stable_identity_and_escape_leaves_enter_to
             hint: None,
             offered: true,
             sigil: '@',
+            typed: false,
         },
         MentionChoice {
             token: "<@2>".into(),
@@ -435,6 +437,7 @@ fn menu_navigation_then_enter_picks_a_stable_identity_and_escape_leaves_enter_to
             hint: None,
             offered: true,
             sigil: '@',
+            typed: false,
         },
     ];
     let mut draft = caret("@A", 2);
@@ -643,6 +646,7 @@ fn a_mention_choice_carries_its_hint() {
             hint: None,
             offered: true,
             sigil: '@',
+            typed: false,
         },
         MentionChoice {
             token: "<@2>".into(),
@@ -650,6 +654,7 @@ fn a_mention_choice_carries_its_hint() {
             hint: Some("Answers its manager only".into()),
             offered: true,
             sigil: '@',
+            typed: false,
         },
     ];
     let root = drawn_with(&caret("@", 1), "c", &choices);

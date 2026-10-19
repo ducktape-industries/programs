@@ -5,6 +5,7 @@ use crate::names::mention_token;
 use crate::{Chat, Mode, words};
 use chat::MsgRow;
 use chat::message::Attachment;
+use std::cmp::Reverse;
 use view::prelude::*;
 
 impl Chat {
@@ -32,17 +33,21 @@ impl Chat {
                 label: choice.label,
                 offered: choice.offered,
                 sigil: '@',
+                typed: false,
             })
             .chain(self.room_choices())
             .collect()
     }
 
     // The rooms `#` names: every room of the list but a direct one, by its
-    // name, each a link to it; an archived one is named, not offered. The
-    // link's label leaves out what would end it early.
+    // name, each a link to it. A bare `#` offers the rooms the reader is in,
+    // those a block posted in this session latest first, then A to Z; a work
+    // room, or one the reader is not in, waits for a letter typed after the
+    // `#`; an archived one is named, never offered. The link's label leaves
+    // out what would end it early.
     fn room_choices(&self) -> Vec<MentionChoice> {
         let chain = &self.session.chain_id;
-        let mut rooms: Vec<MentionChoice> = self
+        let mut rooms: Vec<(Option<u64>, MentionChoice)> = self
             .channels
             .ready()
             .into_iter()
@@ -55,17 +60,19 @@ impl Chat {
                     .chars()
                     .filter(|c| !matches!(c, '[' | ']' | '\n' | '\r'))
                     .collect();
-                Some(MentionChoice {
+                let room = MentionChoice {
                     token: format!("[#{label}]({link})"),
                     label: name.clone(),
                     hint: None,
                     offered: !info.channel.archived,
                     sigil: '#',
-                })
+                    typed: crate::room_list::is_work(info) || !self.is_in(info),
+                };
+                Some((self.active.get(&info.channel.id).copied(), room))
             })
             .collect();
-        rooms.sort_by_key(|room| room.label.to_lowercase());
-        rooms
+        rooms.sort_by_key(|(active, room)| (Reverse(*active), room.label.to_lowercase()));
+        rooms.into_iter().map(|(_, room)| room).collect()
     }
 
     pub(crate) fn composer(

@@ -32,7 +32,7 @@ pub(crate) struct PhoneRooms<'a> {
 
 // A job's room (`j-…`, under folders too: `jobs/j-097`) or a program's own
 // (a change's review): what Work holds.
-fn is_work(info: &ChannelInfo) -> bool {
+pub(crate) fn is_work(info: &ChannelInfo) -> bool {
     chat::namespace::program(&info.channel.id).is_some()
         || label(&info.channel.name).starts_with("j-")
 }
@@ -343,9 +343,18 @@ impl Chat {
         list
     }
 
+    // Whether the reader is in `info`'s room: opened on this device,
+    // listened to, or theirs.
+    pub(crate) fn is_in(&self, info: &ChannelInfo) -> bool {
+        let id = info.channel.id.as_str();
+        let owner = self.my_account().map(Principal::Account);
+        self.opened.contains(id)
+            || self.listening.contains(id)
+            || owner.as_ref() == Some(&info.channel.owner)
+    }
+
     pub(crate) fn phone_rooms(&self) -> PhoneRooms<'_> {
         let me = self.my_account();
-        let owner = me.map(Principal::Account);
         let (mut mine, mut work, mut rest, mut dms) =
             (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         let mut archived = 0;
@@ -360,10 +369,7 @@ impl Chat {
                 dms.extend(peer.map(|peer| DmEntry { info, peer }));
                 continue;
             }
-            let held = self.opened.contains(id)
-                || self.listening.contains(id)
-                || owner.as_ref() == Some(&info.channel.owner);
-            match (is_work(info), held) {
+            match (is_work(info), self.is_in(info)) {
                 (true, _) => work.push(info),
                 (false, true) => mine.push(info),
                 (false, false) => rest.push(info),
