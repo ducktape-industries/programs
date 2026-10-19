@@ -1,7 +1,6 @@
-//! What each op checks and writes: an account registering a service and assigning the nodes
-//! that may serve it (its key's list in the access program decides who assigns), a member node serving, a program's call and the chain electing its node,
-//! the node answering it (whole, or as events the requester hears once each in `seq` order, then
-//! the stream's end), and the request's own scheduled run expiring it.
+//! What each op checks and writes: a service its owner registers, assigns and lends (the access
+//! lists on `services/<name>` and `lend/<name>`), a member node serving, a program's call and the
+//! elected node's answer (whole, or as events in `seq` order, then the stream's end) or expiry.
 use ::program::kernel::error_from;
 use ::program::{
     BlobId, Cause, Ctx, Error, ExecCtx, Need, Origin, Ownership, Party, QueryCtx, Reply, Resource,
@@ -75,6 +74,12 @@ pub fn service_key(name: &str) -> String {
     format!("services/{name}")
 }
 
+// The key whose access list names the accounts a service is lent to: a lending node asks access
+// `Writers` for it before it relays a borrowing node's request to the service.
+pub fn lend_key(name: &str) -> String {
+    format!("lend/{name}")
+}
+
 pub(crate) fn needs(op: &Op) -> Vec<Need> {
     match op {
         Op::Assign { service, .. } => vec![Need::write(service_key(service))],
@@ -89,7 +94,10 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
 }
 
 pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
-    let Some(name) = key.strip_prefix("services/") else {
+    let named = key
+        .strip_prefix("services/")
+        .or_else(|| key.strip_prefix("lend/"));
+    let Some(name) = named else {
         return Ok(Resource::default());
     };
     let owner = SERVICES.get(ctx, &name.to_owned())?.map(|row| row.owner);

@@ -1,10 +1,6 @@
-//! The `egress` program, bound to the egress role (`abi::role::egress`): a program's call to
-//! something outside the chain, a registered service or the public internet, answered by the
-//! member node the chain elects, in a later block, or expired by its own scheduled run. An
-//! `Http` request's call answers an encoded `http::Response`. One that asks for its reply as
-//! events (`Delivery::Events`) hears each event of a `text/event-stream` reply as its own op,
-//! and its call answers the `http::Response` with an empty body when the stream ends; any other
-//! reply comes whole, as for every request. Its first queries are the role's.
+//! The `egress` program, bound to the egress role (`abi::role::egress`): a program's call to a
+//! registered service or the public internet, answered whole or as `text/event-stream` events by
+//! the elected member node, or expired by its own scheduled run. Its first queries are the role's.
 mod program;
 mod rules;
 mod state;
@@ -18,7 +14,7 @@ pub use abi::role::egress::{
 };
 pub use abi::role::identity::AccountNumber;
 pub use program::Egress;
-pub use rules::service_key;
+pub use rules::{lend_key, service_key};
 pub use store::{PageRequest, PageResponse};
 
 // The table of the services egress claims, for what reads its owned kinds.
