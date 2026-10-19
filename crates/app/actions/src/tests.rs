@@ -606,7 +606,13 @@ fn the_programs_gates_workflow_reads() {
     };
     assert!(gates.starts_on(&dev) && gates.starts_on(&Event::Updated { n: 1 }));
     assert!(gates.notify.is_some());
-    assert_eq!(gates.jobs[0].steps, ["sh /tools/gates.sh /work/programs"]);
+    let steps = &gates.jobs[0].steps;
+    assert!(steps[1].contains("/forge/tools"), "{steps:?}");
+    assert_eq!(steps[2], "sh /var/tmp/tools/gates.sh /work/programs");
+    assert!(
+        gates.jobs[0].inputs.is_empty(),
+        "/shared/tools holds no scripts (J-062)"
+    );
 }
 
 #[test]

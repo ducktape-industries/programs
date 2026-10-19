@@ -1,5 +1,6 @@
 # The programs gates (AGENTS.md): rustfmt, clippy -D warnings with the feature sets crates
-# build, and the workspace tests, run by /shared/tools/gates.sh in one pod (J-033).
+# build, and the workspace tests, run in one pod by gates.sh from the forge repo tools at its
+# main head, cloned from the forge this repository's own clone came from (J-033, J-062).
 name = "gates"
 
 [on]
@@ -14,12 +15,12 @@ channel = "channel-18df9127f1a3eef4-1792310773949584"
 id = "gates"
 runs-on = ["pods"]
 image = "localhost:5000/toolchain:f8ff9f00de3f@sha256:bbdcb20bbddd8035fd9a9fc0acf03330e0b4f5d00b05292bed7fd8279306b25c"
-steps = ["sh /tools/gates.sh /work/programs"]
+steps = [
+    "git config --global --add safe.directory '*'",
+    "git clone -q \"$(git remote get-url origin | sed 's#/forge/programs$#/forge/tools#')\" /var/tmp/tools",
+    "sh /var/tmp/tools/gates.sh /work/programs",
+]
 
 [jobs.env]
 FEATURE_SETS = "chat-view:notifier harness:program harness:describe"
 TEST_ARGS = "--workspace"
-
-[[jobs.inputs]]
-path = "/tools/gates.sh"
-files = "/shared/tools/gates.sh"
