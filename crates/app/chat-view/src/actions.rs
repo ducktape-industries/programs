@@ -149,6 +149,20 @@ impl Chat {
         self.menu = None;
     }
 
+    // Who chose `emoji` on the message at `seq`, by name, as the room last
+    // read them.
+    pub(crate) fn reactor_names(&self, seq: u64, emoji: &str) -> Vec<String> {
+        let empty = Names::empty();
+        let names = self.names.ready().unwrap_or(&empty);
+        let reactors = self.room.as_ref().and_then(|room| room.reactors.get(&seq));
+        reactors
+            .and_then(|reactors| reactors.get(emoji))
+            .into_iter()
+            .flatten()
+            .map(|principal| names.author(principal))
+            .collect()
+    }
+
     /// Presses `control` of the message at `seq`: what its click does.
     pub(crate) fn act(
         &mut self,

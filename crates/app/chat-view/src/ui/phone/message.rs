@@ -1,11 +1,6 @@
-//! One message row (Expo `src/chat/MessageRow.tsx`, design §4.2): the
-//! run's face and byline, the blocks ([`super::rich`]), "edited", the
-//! reactions and their "+", and in the room the button into its thread. A
-//! tap does nothing, as in the phone's own messengers; a long press (or
-//! the screen reader's "Message actions", or a keyboard's press) opens
-//! the actions sheet. Reads
-//! the message and the open menu; writes through the model's own
-//! reactions, menus and thread.
+//! One phone message row (Expo `MessageRow.tsx`): face, byline, blocks,
+//! reactions and the way into its thread. A tap does nothing; a long press
+//! opens the actions sheet, and on a reaction names who chose it.
 use view::prelude::*;
 use view::{Div, Stateful};
 use view::{FontWeight, HighlightStyle, UnderlineStyle};
@@ -52,18 +47,17 @@ pub(super) fn row(
     let chosen = chat.menu.as_ref().is_some_and(|menu| {
         menu.pane == pane && menu.seq == seq && matches!(menu.mode, Mode::Toolbar | Mode::More)
     });
-    // a finger's long press opens the actions, and so does the keyboard's
-    // press on the row; a tap does nothing
+    // the keyboard's press on the row opens the actions; a tap does nothing
     let actions = cx.listener(move |chat, event: &ClickEvent, _window, cx| {
-        let opens = match event {
-            ClickEvent::Touch(touch) => touch.long_press,
-            ClickEvent::Keyboard(_) => true,
-            ClickEvent::Mouse(_) => false,
-        };
-        if opens {
+        if matches!(event, ClickEvent::Keyboard(_)) {
             cx.notify();
             chat.show_menu(pane, seq, rev, Mode::More);
         }
+    });
+    // a finger's long press is the row's aux click, as a right press is
+    let held = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
+        cx.notify();
+        chat.show_menu(pane, seq, rev, Mode::More);
     });
     let row = div()
         .id(format!("chat-message-{}-row", message.id))
@@ -84,6 +78,7 @@ pub(super) fn row(
         .aria_size_of_set(set.1)
         .focusable()
         .on_click(actions)
+        .on_aux_click(held)
         .child(
             div()
                 .w(ladder.avatar.side)
@@ -137,7 +132,7 @@ fn content(
         .gap(design::space::XXS)
         .children(message.show_author.then(|| byline(message, theme, ladder)))
         .child(body(chat, message, cx, theme, ladder))
-        .children(reacted.then(|| reactions(message, pane, cx, theme, ladder)))
+        .children(reacted.then(|| reactions(chat, message, pane, cx, theme, ladder)))
         .children(threaded.then(|| thread_button(message, cx, theme, ladder)))
 }
 
@@ -270,6 +265,7 @@ fn program_line(
 /// The reactions: a chip per emoji (the reader's own on the accent), then
 /// "+" for the picker.
 fn reactions(
+    chat: &Chat,
     message: &ChatMessage,
     pane: Pane,
     cx: &mut Context<Chat>,
@@ -286,8 +282,16 @@ fn reactions(
                 cx.notify();
                 chat.react(seq, emoji.clone(), add, cx)
             });
+            let shown = reaction.emoji.clone();
+            let held = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
+                cx.notify();
+                chat.reactors_of = shown.clone();
+                chat.show_menu(pane, seq, rev, Mode::Reactors);
+            });
             let id = format!("chat-message-{}-reaction-{}", message.id, reaction.emoji);
-            emoji_chip(id, reaction, react, theme, ladder)
+            let who = chat.reactor_names(seq, &reaction.emoji).join(", ");
+            let presses = Presses { react, held };
+            emoji_chip(id, reaction, &who, presses, theme, ladder)
         })
         .collect();
     let pick = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
@@ -327,23 +331,36 @@ fn chip(mine: bool, theme: &Theme) -> Div {
         .when(mine, |chip| chip.bg(theme.accent_soft))
 }
 
-/// One emoji and how many chose it; a press adds the reader's or takes it
-/// back.
-fn emoji_chip(
+// A chip's two presses: a tap's, and a long press's.
+struct Presses<R, H> {
+    react: R,
+    held: H,
+}
+
+// One emoji and how many chose it; a press adds the reader's or takes it
+// back, a long press names who chose it (`who`, also its description).
+fn emoji_chip<R, H>(
     id: String,
     reaction: &Reaction,
-    click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    who: &str,
+    presses: Presses<R, H>,
     theme: &Theme,
     ladder: &Ladder,
-) -> AnyElement {
+) -> AnyElement
+where
+    R: Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    H: Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+{
     let mine = reaction.reacted_by_me;
     let hit = design::hit(id, CHIP_WIDTH, CHIP_HEIGHT, HAIRLINE, ladder)
         .role(Role::Button)
         .aria_label(format!("{} {}", reaction.emoji, reaction.count))
+        .when(!who.is_empty(), |hit| hit.aria_description(who.to_owned()))
         .aria_toggled(mine.into())
         .focusable()
-        .on_click(click)
-        .consumes_click();
+        .on_click(presses.react)
+        .consumes_click()
+        .on_aux_click(presses.held);
     chip(mine, theme)
         .child(div().text_type(CHIP_EMOJI).child(reaction.emoji.clone()))
         .child(

@@ -36,6 +36,9 @@ pub struct Chat {
     pub(crate) layout: Layout,
     pub(crate) reads: Reads,
     pub(crate) menu: Option<Menu>,
+    // the reaction whose choosers `Mode::Reactors` names
+    #[serde(default)]
+    pub(crate) reactors_of: String,
     /// The reaction picker's search and tab while it is open.
     #[serde(skip)]
     pub(crate) picker: Picker,
@@ -488,6 +491,9 @@ pub enum Mode {
     Delete,
     /// an agent author's card, opened from its avatar
     Profile,
+    // who chose one reaction (`Chat::reactors_of`), from a phone chip's
+    // long press
+    Reactors,
 }
 
 /// The delete confirmation's Cancel, the button that takes the keys as it

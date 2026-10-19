@@ -28,6 +28,8 @@ fn files_host(cx: &mut TestAppContext) {
     cx.host()
         .handle::<Submit<files::Files>>(|_| Ok(view::testing::applied(Vec::new())));
     cx.host()
+        .handle::<Submit<access::Access>>(|_| Ok(view::testing::applied(Vec::new())));
+    cx.host()
         .handle::<Ask<files::Files>>(|query| Ok(files_reply(query)));
     let object = files::FileObj {
         size: 3,
@@ -68,6 +70,16 @@ fn files_reply(query: files::Query) -> files::Reply {
             bytes: PNG.to_vec(),
             eof: true,
         }),
+        files::Query::Head => files::Reply::Head(Some(files::SnapshotRow {
+            id: BlobId::Sha256(SNAPSHOT),
+            parent: None,
+            root: BlobId::Sha256(OBJECT),
+            author: Principal::Account(7),
+            message: "head".into(),
+            seq: 1,
+            height: 1,
+            time: 0,
+        })),
         query => panic!("unexpected files query: {query:?}"),
     }
 }
@@ -298,4 +310,108 @@ fn a_message_draws_its_picture_and_saves_its_other_files_through_the_host() {
         blobs: vec![CHUNK],
     };
     assert_eq!(cx.host().requests::<FileSave>(), [save]);
+}
+
+// A phone's tap on a picture opens it: the host is handed its chunks, as
+// Save hands them, for the system's viewer (J-075).
+#[test]
+fn a_tap_on_a_picture_on_a_phone_hands_it_to_the_host_to_open() {
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    let _view = cx.open::<Chat>();
+    cx.simulate_touch(true);
+    cx.simulate_resize(390., 844.);
+    cx.run_until_parked();
+    seat(&mut cx);
+    files_host(&mut cx);
+    cx.host().handle::<FileSave>(|_| Ok(true));
+    let picture = chat::Block::Attachment(chat::message::Attachment {
+        path: "/chat/general/m3/tape.png".into(),
+        snapshot: SNAPSHOT,
+        name: "tape.png".into(),
+        size: 3,
+        content_type: "image/png".into(),
+    });
+    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
+        Ok(match query {
+            Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                blocks: vec![picture.clone()],
+                ..row(3, 8, "")
+            }])),
+            query => chat_reply(query),
+        })
+    });
+    cx.simulate_click("chat-rooms-channel-general");
+    cx.run_until_parked();
+    cx.simulate_click("chat-message-m3-block-0");
+    cx.run_until_parked();
+    let opened = SaveFile {
+        name: "tape.png".into(),
+        blobs: vec![CHUNK],
+    };
+    assert_eq!(cx.host().requests::<FileSave>(), [opened]);
+}
+
+// A message names the snapshot the node predicted as its file went up; the
+// block that carried the commit minted another (#duckpond 73's picture).
+// The file is read where it stands, and drawn (J-075).
+#[test]
+fn a_picture_is_read_where_it_stands_whatever_snapshot_its_message_names() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    cx.host().handle::<Ask<files::Files>>(|query| match &query {
+        files::Query::Stat { at: Some(_), .. } | files::Query::Read { at: Some(_), .. } => Err(
+            view::host::Error::new("not_found", "files minted no snapshot"),
+        ),
+        _ => Ok(files_reply(query)),
+    });
+    let picture = chat::Block::Attachment(chat::message::Attachment {
+        path: "/chat/general/m3/image.png".into(),
+        snapshot: SNAPSHOT,
+        name: "image.png".into(),
+        size: 3,
+        content_type: "image/png".into(),
+    });
+    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
+        Ok(match query {
+            Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                blocks: vec![picture.clone()],
+                ..row(3, 8, "")
+            }])),
+            query => chat_reply(query),
+        })
+    });
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(4, posted("general")));
+    cx.run_until_parked();
+    view.read(|chat| {
+        let key = ("/chat/general/m3/image.png".to_owned(), SNAPSHOT);
+        let shown = &chat.shown_files[&key];
+        assert!(shown.picture.is_some(), "drawn");
+        assert_eq!(shown.chunks.as_deref(), Some(&[CHUNK][..]), "and saved");
+    });
+}
+
+// A file that goes up is its uploader's alone from then on: the message
+// reads it where it stands, so no one else may write it again (J-075).
+#[test]
+fn a_file_that_goes_up_is_listed_its_uploaders_alone() {
+    let (mut cx, _) = opened();
+    files_host(&mut cx);
+    holds_puts(&mut cx);
+    cx.host()
+        .handle::<FilePick>(|_| Ok(vec![picked("tape.png", 3, 1)]));
+    cx.simulate_click("draft-general/attach");
+    cx.run_until_parked();
+    let put = puts(&cx);
+    let [(path, _)] = put.as_slice() else {
+        panic!("one file put: {put:?}")
+    };
+    let owned = access::Op::Set {
+        program: files::PROGRAM.into(),
+        key: path.clone(),
+        list: Some(::program::Ownership::Owner),
+    };
+    assert_eq!(cx.host().requests::<Submit<access::Access>>(), [owned]);
 }

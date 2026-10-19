@@ -1,10 +1,6 @@
 //! What chat says, once: every sentence, status word, title and label
-//! that more than one place shows, in either tree. The Expo app types
-//! these in its chat screens (it has no chat `words.ts`); here a tree that
-//! shows one reads it from this file. The model keeps the sentences only
-//! it says: a room's intro (`names.rs`), the composer's hint (`room.rs`),
-//! and the notices a write or a read leaves (`actions.rs`, `room.rs`,
-//! `search.rs`, `watch.rs`).
+//! more than one place shows, in either tree. The model keeps the
+//! sentences only it says (`names.rs`, `room.rs`, `actions.rs`, `search.rs`).
 use chat::ChannelRow;
 
 #[cfg(not(feature = "notifier"))]
@@ -125,6 +121,12 @@ pub(crate) const OPENING_DM: &str = "Opening the conversation";
 // ---------- a message's actions and the picker ----------
 
 pub(crate) const MESSAGE_ACTIONS: &str = "Message actions";
+pub(crate) const WHO_REACTED: &str = "Who reacted";
+
+// A picture's name, as a phone's tap on it opens it.
+pub(crate) fn open(name: &str) -> String {
+    format!("Open {name}")
+}
 pub(crate) const ADD_REACTION: &str = "Add reaction";
 pub(crate) const REPLY_IN_THREAD: &str = "Reply in thread";
 pub(crate) const COPY_LINK: &str = "Copy link";

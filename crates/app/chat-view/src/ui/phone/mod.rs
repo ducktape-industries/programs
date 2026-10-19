@@ -1,12 +1,6 @@
-//! The phone's chat: the Expo app's chat stack (mobile
-//! `app/(tabs)/chat/_layout.tsx`), one screen at a time, chosen once at the
-//! view's root by `window.touch()`. Reads the page stack ([`Chat::pages`]),
-//! the open message menu (an actions or picker sheet, the delete
-//! confirmation) and the session; writes nothing itself: Back pops the
-//! stack through [`Chat::back`]. Nothing under here asks whether the device
-//! is touch: every screen is the Expo design, on the ladder's
-//! [`design::TOUCH`] values. Without a node only the rooms page shows, and
-//! says so.
+//! The phone's chat: the Expo app's chat stack, one screen at a time, chosen
+//! at the view's root by `window.touch()`, on [`design::TOUCH`]. Writes
+//! nothing itself: Back pops the stack through [`Chat::back`].
 use view::prelude::*;
 
 use crate::words;
@@ -34,6 +28,7 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> AnyElement {
     // what is drawn, decided once: the page on top and what is over it
     let page = page(chat);
     let sheet = actions::sheet(chat, cx, &theme, ladder)
+        .or_else(|| actions::reactors(chat, cx, &theme, ladder))
         .or_else(|| picker::sheet(chat, cx, &theme, ladder))
         .or_else(|| details::sheet(chat, cx, &theme, ladder))
         .or_else(|| crate::policies::sheet(chat, cx, ladder, &theme));

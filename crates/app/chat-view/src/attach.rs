@@ -273,6 +273,17 @@ impl Chat {
                 if let Some(why) = design::failure(&ask.await) {
                     return Err(why);
                 }
+                // a message reads its file where it stands, so no one but
+                // its uploader may write it again
+                let owned = access::Op::Set {
+                    program: files::PROGRAM.into(),
+                    key: path.clone(),
+                    list: Some(::program::Ownership::Owner),
+                };
+                if let Some(why) = design::failure(&host.ask::<Submit<access::Access>>(owned).await)
+                {
+                    return Err(why);
+                }
                 let read = files::ask::Stat {
                     path: path.clone(),
                     at: None,
@@ -306,7 +317,7 @@ impl Chat {
             .drafts
             .get_mut(&target.key())
             .and_then(|draft| draft.attachments.iter_mut().find(|file| file.id == id));
-        let left = match file {
+        let left: Option<String> = match file {
             Some(file) => {
                 file.upload = match landed {
                     Ok(snapshot) => Upload::Landed(Attachment {
@@ -321,34 +332,38 @@ impl Chat {
                 None
             }
             // taken out while its commit was out: what it left goes too
-            None => landed.ok().map(|snapshot| (path, snapshot)),
+            None => landed.ok().map(|_| path),
         };
-        if let Some((path, snapshot)) = left {
-            self.unlink(target, path, snapshot, cx);
+        if let Some(path) = left {
+            self.unlink(target, path, cx);
         }
         self.advance(target, cx);
         cx.notify();
     }
 
     // Removes a file the draft no longer carries from files: the uploader's
-    // own, based on the snapshot that put it.
-    fn unlink(
-        &mut self,
-        target: &Target,
-        path: String,
-        snapshot: [u8; 32],
-        cx: &mut Context<Self>,
-    ) {
+    // own, at the files head (the snapshot it went up in is the node's
+    // prediction, which a block may have minted under another id).
+    fn unlink(&mut self, target: &Target, path: String, cx: &mut Context<Self>) {
         let name = path.rsplit('/').next().unwrap_or_default().to_owned();
-        let op = files::Op::Commit {
-            base: Some(BlobId::Sha256(snapshot)),
-            message: words::unattached(&name),
-            changes: vec![Change::Remove { path }],
-        };
-        let ask = cx.host().ask::<Submit<files::Files>>(op);
+        let host = cx.host();
         let on = target.clone();
         cx.spawn(async move |this, cx| {
-            if let Some(said) = design::failure(&ask.await) {
+            let removed = async {
+                let head = host.query(files::ask::Head).await;
+                let head = head.map_err(|refusal| design::sentence(&refusal))?;
+                let op = files::Op::Commit {
+                    base: head.map(|row| row.id),
+                    message: words::unattached(&name),
+                    changes: vec![Change::Remove { path }],
+                };
+                match design::failure(&host.ask::<Submit<files::Files>>(op).await) {
+                    Some(said) => Err(said),
+                    None => Ok(()),
+                }
+            }
+            .await;
+            if let Err(said) = removed {
                 let _ = this.update(cx, |chat, cx| chat.say(&on, said, cx));
             }
         })
@@ -373,7 +388,7 @@ impl Chat {
         self.uploads.remove(&(key, id));
         release(gone.file.take(), cx);
         if let Upload::Landed(file) = gone.upload {
-            self.unlink(target, file.path, file.snapshot, cx);
+            self.unlink(target, file.path, cx);
         }
         self.advance(target, cx);
         cx.notify();
@@ -464,7 +479,12 @@ impl Chat {
 // The file at the snapshot its message names: its chunks, from the file
 // object files keeps, and the whole picture when it is one.
 async fn shown(host: Host, file: &Attachment) -> Result<Shown, Error> {
-    let at = Some(BlobId::Sha256(file.snapshot));
+    // the file at its path as it stands: the path is the message's own,
+    // and only its uploader writes it (`commit` lists it so). The snapshot
+    // a message names is the one the node predicted as the file went up (a
+    // view reads the preconfirmed layer); the block that carried it may
+    // have minted it under another id
+    let at: Option<BlobId> = None;
     let stat = files::ask::Stat {
         path: file.path.clone(),
         at,

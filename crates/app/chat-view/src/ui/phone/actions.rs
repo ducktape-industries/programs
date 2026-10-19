@@ -1,6 +1,6 @@
 //! What a pressed message offers (Expo `src/chat/Actions.tsx`, design §4.4, boards 40/41/43): who
 //! wrote it, quick reactions, Reply in thread, Copy text and link, Who can edit, and Edit or Delete
-//! where the reader may; and the kit `Dialog` a delete asks first. Each runs through the model.
+//! where the reader may; the kit `Dialog` a delete asks first; and who chose a reaction.
 use view::prelude::*;
 use view::{Div, Stateful};
 
@@ -49,6 +49,64 @@ pub(super) fn sheet(
         .children(rows(chat, message, pane, cx, theme, ladder));
     Some(
         design::sheet("chat-actions-sheet", words::MESSAGE_ACTIONS, ladder, theme)
+            .on_dismiss(close)
+            .child(body)
+            .into_any_element(),
+    )
+}
+
+// Who chose one reaction, while a chip's long press holds the menu on it
+// (the desktop's hover names them): the emoji and its count, then a name
+// a row.
+pub(super) fn reactors(
+    chat: &Chat,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Option<AnyElement> {
+    let menu = chat
+        .menu
+        .as_ref()
+        .filter(|menu| menu.mode == Mode::Reactors)?;
+    let messages = chat.messages(menu.pane);
+    let message = messages.iter().find(|message| message.seq == menu.seq)?;
+    let emoji = &chat.reactors_of;
+    let reaction = message
+        .reactions
+        .iter()
+        .find(|reaction| &reaction.emoji == emoji)?;
+    let close = cx.listener(|chat, _: &(), _window, cx| {
+        chat.close_menu();
+        cx.notify();
+    });
+    let head = design::sheet_head("chat-reactors-head", theme).child(
+        div()
+            .text_type(ladder.body)
+            .child(format!("{emoji} {}", reaction.count)),
+    );
+    let names = chat
+        .reactor_names(menu.seq, emoji)
+        .into_iter()
+        .enumerate()
+        .map(|(at, name)| {
+            div()
+                .id(format!("chat-reactors-{at}"))
+                .px(design::space::BLOCK)
+                .py(design::space::MD)
+                .border_b_1()
+                .border_color(theme.border)
+                .truncate()
+                .text_type(ladder.body)
+                .child(name)
+        });
+    let body = div()
+        .id("chat-reactors")
+        .flex()
+        .flex_col()
+        .child(head)
+        .children(names);
+    Some(
+        design::sheet("chat-reactors-sheet", words::WHO_REACTED, ladder, theme)
             .on_dismiss(close)
             .child(body)
             .into_any_element(),

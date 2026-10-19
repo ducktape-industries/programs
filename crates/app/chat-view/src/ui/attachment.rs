@@ -1,6 +1,6 @@
 //! A file a message carries, as both designs draw it: the picture itself
-//! when it is one the app draws, else a row with its name, its size and
-//! Save, which hands the host its chunks for the system's save dialog.
+//! (on a phone a tap opens it in the system's viewer), else a row with its
+//! name, size and Save; both hand the host its chunks (`file.save`).
 use chat::message::Attachment;
 use view::design::Ladder;
 use view::prelude::*;
@@ -22,13 +22,25 @@ pub(crate) fn view(
     let shown = chat.shown_files.get(&(file.path.clone(), file.snapshot));
     if let Some(picture) = shown.and_then(|shown| shown.picture.clone()) {
         let (name, theme) = (file.name.clone(), *theme);
+        // on a phone a tap opens it whole: the host hands it to the
+        // system's viewer (Quick Look, Android's), whose share saves it
+        let touch = ladder.touch;
+        let open = {
+            let file = file.clone();
+            cx.listener(move |chat, _: &ClickEvent, _, cx| chat.save_file(&file, cx))
+        };
+        let (role, label) = match touch {
+            true => (Role::Button, words::open(&file.name)),
+            false => (Role::Image, file.name.clone()),
+        };
         return img(picture)
             .id(id)
             .max_w(FILE_W)
             .max_h(PICTURE_H)
             .object_fit(ObjectFit::ScaleDown)
-            .role(Role::Image)
-            .aria_label(file.name.clone())
+            .role(role)
+            .aria_label(label)
+            .when(touch, |picture| picture.on_click(open))
             .with_fallback(move || design::quiet(name.clone(), &theme).into_any_element())
             .into_any_element();
     }

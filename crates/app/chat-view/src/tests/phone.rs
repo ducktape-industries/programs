@@ -1,7 +1,6 @@
-//! Chat on a phone: the Expo app's screens (`ui/phone/`), each in the
-//! states the Expo app has and through each of its actions, and the sweep
-//! that holds every frame to the touch ladder at 360, 390 and 430
-//! (SPEC §8.1d, §10).
+//! Chat on a phone: the Expo app's screens (`ui/phone/`), in their states and
+//! through their actions, and the sweep that holds every frame to the touch
+//! ladder at 360, 390 and 430 (SPEC §8.1d, §10).
 use super::*;
 use view::testing;
 
@@ -26,13 +25,14 @@ fn in_general() -> (TestAppContext, Entity<Chat>) {
     (cx, view)
 }
 
-/// A finger held on `key`: the touch click its route hears, long.
+// A finger held on `key`: the aux click the host hands its route, as a
+// long press is touch's twin of the right button.
 fn long_press(cx: &mut TestAppContext, key: &str) {
     let handler = cx
         .interactivity(key)
-        .on_click
-        .unwrap_or_else(|| panic!("{key} has no click route"));
-    cx.tick(vec![wire::Event::Click {
+        .on_aux_click
+        .unwrap_or_else(|| panic!("{key} has no aux click route"));
+    cx.tick(vec![wire::Event::AuxClick {
         handler,
         event: wire::click::Click::Touch {
             position: Default::default(),
@@ -670,6 +670,38 @@ fn a_tap_on_a_message_does_nothing_and_a_long_press_opens_its_actions() {
         cx.find("chat-room-page").is_some(),
         "Back closed the sheet, not the page"
     );
+}
+
+#[test]
+fn a_long_press_on_a_reaction_names_who_chose_it_and_not_the_rows_actions() {
+    let (mut cx, view) = in_general();
+    let mut liked = row(1, 7, "hello");
+    liked.reactions = vec![::chat::Reaction {
+        emoji: "👍".into(),
+        count: 2,
+        reacted_by_me: true,
+    }];
+    rows_are(&mut cx, &view, vec![liked]);
+    cx.update(&view, |chat, _, cx| {
+        chat.room.as_mut().expect("open").read_reactors(cx);
+    });
+    cx.run_until_parked();
+    long_press(&mut cx, "chat-message-m1-reaction-👍");
+    assert!(matches!(
+        cx.node("chat-reactors-sheet"),
+        wire::Node::Sheet { label: Some(label), .. } if label == "Who reacted"
+    ));
+    assert!(cx.find("chat-actions-sheet").is_none(), "the chip's own");
+    assert!(cx.find("chat-reactors-0").is_some(), "{:?}", cx.texts());
+    assert!(cx.find("chat-reactors-1").is_some(), "{:?}", cx.texts());
+    assert!(cx.has_text("ada"), "{:?}", cx.texts());
+    view.read(|chat| {
+        let menu = chat.menu.as_ref().expect("open");
+        assert_eq!((menu.seq, menu.mode), (1, Mode::Reactors));
+    });
+    cx.simulate_back();
+    assert!(cx.find("chat-reactors-sheet").is_none());
+    assert!(cx.find("chat-room-page").is_some(), "Back closed the sheet");
 }
 
 #[test]

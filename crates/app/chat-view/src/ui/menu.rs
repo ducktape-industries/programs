@@ -152,7 +152,7 @@ fn popup_geometry(menu: &Menu, items: usize) -> Option<(Pair, Option<Pair>)> {
         Mode::More => Some(menu_size(items)),
         Mode::Reactions => Some(picker_size()),
         Mode::Delete | Mode::Profile => None,
-        Mode::Toolbar | Mode::Editing => return None,
+        Mode::Toolbar | Mode::Editing | Mode::Reactors => return None,
     };
     Some((menu.at, size))
 }
@@ -191,7 +191,7 @@ fn message_menu(
         Mode::Reactions => reactions(chat, menu, cx, theme, ladder),
         Mode::Delete => delete(chat, cx, theme),
         Mode::Profile => card::card(chat, menu, cx, theme, ladder),
-        Mode::Editing => div().into_any_element(),
+        Mode::Editing | Mode::Reactors => div().into_any_element(),
     }
 }
 
