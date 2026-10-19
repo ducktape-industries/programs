@@ -1,13 +1,13 @@
 //! The model budget: each model account's usage windows, from its answers and from its service's
 //! own status, how often harness called each service in the last whole minute, and when each
 //! window runs out at the pace it climbed at.
-use ::program::{Ctx, Error, ExecCtx, QueryCtx};
+use ::program::{Ctx, Error, ExecCtx, QueryCtx, all};
 use abi::role::egress::{self, http};
 use serde::Deserialize;
 
 use crate::calls::refusal;
 use crate::resume::header;
-use crate::state::{BUDGETS, Budget, BudgetWindow, FLIGHTS, PACES, Pace, READS, Seen};
+use crate::state::{BUDGETS, Budget, BudgetWindow, FLIGHTS, MODELS, PACES, Pace, READS, Seen};
 use crate::{
     AccountBudget, BudgetReport, ServicePace, StatusOutcome, StatusRead, WHOLE_WINDOW as WHOLE,
     WindowOutlook,
@@ -16,10 +16,10 @@ use crate::{
 const PREFIX: &str = "anthropic-ratelimit-unified-";
 const UTILIZATION: &str = "-utilization";
 // the account that answered, as Anthropic names it
-const ORGANIZATION: &str = "anthropic-organization-id";
-// ccs's own name for that account; sent on a request it would pin the request to that account,
-// so harness only ever reads it
-const CCS_ACCOUNT: &str = "x-ccs-account";
+pub(crate) const ORGANIZATION: &str = "anthropic-organization-id";
+// ccs's own name for that account; sent on a request it pins the request to that account, with no
+// fall-over, which is how harness picks the account each model call goes to (`routes.rs`)
+pub(crate) const CCS_ACCOUNT: &str = "x-ccs-account";
 // where ccs answers the windows of every account it holds
 const STATUS: &str = "/ccs/status";
 const MINUTE: u64 = 60_000;
@@ -232,6 +232,25 @@ pub(crate) fn seen(ctx: &ExecCtx, service: &str, response: &http::Response) {
 // ccs's status of every account it holds, idle ones too, read when someone asks (chief's
 // heartbeat, the strip's Refresh). A service with no status (404) is noted as such, quietly.
 pub(crate) async fn read(ctx: Ctx, service: String) -> Result<(), Error> {
+    read_one(&ctx, service).await;
+    Ok(())
+}
+
+// every service a model is reached through, each read as `read` reads one, at once (J-090)
+pub(crate) async fn read_all(ctx: Ctx) -> Result<(), Error> {
+    let mut services: Vec<String> = Vec::new();
+    for (id, model) in MODELS.all(&ctx)? {
+        for service in crate::routes::services_of(&ctx, &id, &model.service)? {
+            if !services.contains(&service) {
+                services.push(service);
+            }
+        }
+    }
+    all(services.into_iter().map(|service| read_one(&ctx, service))).await;
+    Ok(())
+}
+
+async fn read_one(ctx: &Ctx, service: String) {
     let head = http::Head {
         method: http::Method::Get,
         target: STATUS.to_owned(),
@@ -242,11 +261,11 @@ pub(crate) async fn read(ctx: Ctx, service: String) -> Result<(), Error> {
         head,
         body: Vec::new(),
     };
-    let answer = crate::turns::request(&ctx, request, egress::Delivery::Whole, None).await;
+    let answer = crate::turns::request(ctx, request, egress::Delivery::Whole, None).await;
     let outcome = match answer {
         Err(error) => StatusOutcome::Failed(refusal(&error)),
         Ok(bytes) => match abi::decode::<http::Response>(&bytes) {
-            Ok(response) => status_read(&ctx, &service, &response),
+            Ok(response) => status_read(ctx, &service, &response),
             Err(_) => StatusOutcome::Failed("the egress answer is not an HTTP response".into()),
         },
     };
@@ -257,8 +276,7 @@ pub(crate) async fn read(ctx: Ctx, service: String) -> Result<(), Error> {
         time: env.time,
         outcome,
     };
-    READS.put(&ctx, &read.service, &read);
-    Ok(())
+    READS.put(ctx, &read.service, &read);
 }
 
 #[derive(Deserialize)]
@@ -312,6 +330,7 @@ fn status_read(ctx: &ExecCtx, service: &str, response: &http::Response) -> Statu
             ..before.unwrap_or_default()
         };
         BUDGETS.put(ctx, &key, &row);
+        crate::routes::read(ctx, service, &reading.label, &row);
     }
     StatusOutcome::Read {
         accounts: status.accounts.len() as u64,

@@ -1,10 +1,10 @@
 //! The model records: an id the first account to set it owns, the wire the model speaks, the
-//! egress service that reaches it, the vendor's name for it, the context window harness learns
-//! from the vendor, and its `compact_at` default. Only its owner changes or removes a record.
+//! egress services that reach it (`SetServices` lists more than one), the vendor's name for it,
+//! the window harness learns, its `compact_at` default. Only its owner changes or removes one.
 use ::program::{Error, ExecCtx, QueryCtx, invalid, not_found};
 use store::{PageRequest, PageResponse};
 
-use crate::state::{COMPACT_AT, MODELS, StoredModel, WINDOWS};
+use crate::state::{COMPACT_AT, MODEL_SERVICES, MODELS, StoredModel, WINDOWS};
 use crate::{ModelRow, Window, Wire};
 
 fn lowercase_name(text: &str) -> bool {
@@ -99,6 +99,7 @@ pub(crate) fn remove_model(ctx: &ExecCtx, id: String) -> Result<(), Error> {
     MODELS.remove(ctx, &id);
     COMPACT_AT.remove(ctx, &id);
     WINDOWS.remove(ctx, &id);
+    MODEL_SERVICES.remove(ctx, &id);
     Ok(())
 }
 
@@ -129,6 +130,34 @@ pub(crate) fn learned(ctx: &ExecCtx, asked: &ModelRow, window: Window) -> Result
     let still_asked = row.wire == asked.wire && row.name == asked.name;
     if still_asked {
         WINDOWS.put(ctx, &asked.id, &window);
+    }
+    Ok(())
+}
+
+// every service that reaches a model, in order, the first its record's: the record is rewritten
+// with it, so the record's policy decides who sets the list
+pub(crate) fn set_services(ctx: &ExecCtx, id: String, services: Vec<String>) -> Result<(), Error> {
+    let Some(record) = MODELS.get(ctx, &id)? else {
+        return Err(not_found(format!("no model {id}")));
+    };
+    let mut listed: Vec<String> = Vec::new();
+    for service in services {
+        checked(&id, &service, &record.name)?;
+        if !listed.contains(&service) {
+            listed.push(service);
+        }
+    }
+    let Some((first, rest)) = listed.split_first() else {
+        return Err(invalid("a model is reached through at least one service"));
+    };
+    let record = StoredModel {
+        service: first.clone(),
+        ..record
+    };
+    MODELS.put(ctx, &id, &record);
+    match rest.is_empty() {
+        true => MODEL_SERVICES.remove(ctx, &id),
+        false => MODEL_SERVICES.put(ctx, &id, &rest.to_vec()),
     }
     Ok(())
 }

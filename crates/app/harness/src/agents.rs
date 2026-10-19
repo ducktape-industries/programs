@@ -9,6 +9,7 @@ use abi::role::identity::{AccountNumber, Category, Kind, Profile, Standing};
 use attribution::{Actor, Change, Kind as Changed, Reason, Source};
 
 use crate::calls::deferred_while_shown;
+use crate::config::Pin;
 use crate::conversations::{binding, conversation, current, route};
 use crate::resume;
 use crate::state::{BOUND, LAST, PLACES, THREADS};
@@ -96,30 +97,37 @@ pub(crate) fn read(
 }
 
 pub(crate) fn configured(ctx: &QueryCtx, path: &str) -> Result<Configured, Error> {
+    Ok(configured_pinned(ctx, path)?.0)
+}
+
+// `configured`, and the service or account its front matter pins the agent's model calls to
+pub(crate) fn configured_pinned(ctx: &QueryCtx, path: &str) -> Result<(Configured, Pin), Error> {
     let (snapshot, bytes) = match read(ctx, path, None) {
         Ok(read) => read,
         Err(error) => {
             let reason = format!("{}: {}", error.code, error.message);
-            return Ok(Configured::Unreadable { reason });
+            return Ok((Configured::Unreadable { reason }, Pin::default()));
         }
     };
-    let config = match Config::parse(&bytes) {
-        Ok(config) => config,
+    let (config, pin) = match Config::parse_pinned(&bytes) {
+        Ok(parsed) => parsed,
         Err(malformed) => {
-            return Ok(Configured::Malformed {
+            let configured = Configured::Malformed {
                 snapshot,
                 malformed,
-            });
+            };
+            return Ok((configured, Pin::default()));
         }
     };
-    Ok(match crate::models::model(ctx, &config.model)? {
+    let configured = match crate::models::model(ctx, &config.model)? {
         Some(model) => Configured::Ready {
             snapshot,
             config,
             model,
         },
         None => Configured::UnknownModel { snapshot, config },
-    })
+    };
+    Ok((configured, pin))
 }
 
 pub(crate) fn setup(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<AgentSetup>, Error> {

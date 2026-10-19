@@ -31,10 +31,12 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
             true => Vec::new(),
             false => vec![Need::write(thread_key(*thread))],
         },
-        Op::SetModel { id, .. } | Op::SetCompactAt { id, .. } => match MODELS.has(ctx, id) {
-            true => vec![Need::write(model_key(id))],
-            false => Vec::new(),
-        },
+        Op::SetModel { id, .. } | Op::SetCompactAt { id, .. } | Op::SetServices { id, .. } => {
+            match MODELS.has(ctx, id) {
+                true => vec![Need::write(model_key(id))],
+                false => Vec::new(),
+            }
+        }
         Op::RemoveModel { id } => match MODELS.has(ctx, id) {
             true => vec![Need::delete(model_key(id))],
             false => Vec::new(),
@@ -62,7 +64,8 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::PodEvent { .. }
         | Op::Forged(_)
         | Op::ClaimConversations { .. }
-        | Op::AdoptOwners { .. } => Vec::new(),
+        | Op::AdoptOwners { .. }
+        | Op::ReadBudgets => Vec::new(),
     })
 }
 

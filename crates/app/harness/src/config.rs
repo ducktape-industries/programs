@@ -1,6 +1,6 @@
 //! An agent's configuration file: Markdown whose TOML front matter, between `+++` lines, names
-//! the model, `max_tokens`, `wait`, `thinking`, `server_tools`, `listen`, `settle`, `compact_at`;
-//! its body is the system prompt. Harness parses it at each model call; harness-view writes it.
+//! the model, `max_tokens`, `wait`, `thinking`, `server_tools`, `listen`, `settle`, `compact_at`
+//! and a `service` or `account` it pins (`Pin`); its body is the system prompt. harness-view writes it.
 use std::fmt;
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
@@ -22,6 +22,15 @@ pub struct Config {
     pub settle: Option<u64>,
     pub compact_at: Option<u64>,
     pub system: String,
+}
+
+// the service, or the ccs account, an agent's front matter pins its model calls to (J-090): a
+// service keeps them to its accounts, an account to itself, with no move off it; harness reads
+// it beside `Config`, which keeps its shape
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Pin {
+    pub service: Option<String>,
+    pub account: Option<String>,
 }
 
 #[derive(
@@ -144,6 +153,8 @@ struct FrontMatter {
     listen: Vec<String>,
     settle: Option<String>,
     compact_at: Option<u64>,
+    service: Option<String>,
+    account: Option<String>,
 }
 
 fn fence(line: &str) -> bool {
@@ -172,6 +183,10 @@ fn duration(millis: u64) -> String {
 
 impl Config {
     pub fn parse(bytes: &[u8]) -> Result<Config, Malformed> {
+        Config::parse_pinned(bytes).map(|(config, _)| config)
+    }
+
+    pub fn parse_pinned(bytes: &[u8]) -> Result<(Config, Pin), Malformed> {
         let text = std::str::from_utf8(bytes).map_err(|_| Malformed::NotText)?;
         let lines: Vec<&str> = text.split_inclusive('\n').collect();
         let opens = lines.first().is_some_and(|line| fence(line));
@@ -204,7 +219,12 @@ impl Config {
             None => None,
             Some(given) => Some(millis(&given).ok_or(Malformed::NoSettle(given))?),
         };
-        Ok(Config {
+        let named = |name: Option<String>| name.filter(|name| !name.is_empty());
+        let pin = Pin {
+            service: named(matter.service),
+            account: named(matter.account),
+        };
+        let config = Config {
             model: matter.model,
             max_tokens: matter.max_tokens,
             wait: matter.wait,
@@ -214,7 +234,8 @@ impl Config {
             settle,
             compact_at: matter.compact_at,
             system: after[close + 1..].concat().trim().to_owned(),
-        })
+        };
+        Ok((config, pin))
     }
 
     pub fn paragraphs(&self) -> Vec<String> {

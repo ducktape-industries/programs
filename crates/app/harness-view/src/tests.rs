@@ -544,6 +544,10 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                     .collect(),
             )),
             harness::Query::Wait { .. } => harness::Reply::Wait(None),
+            harness::Query::Services { .. } => harness::Reply::Services(None),
+            harness::Query::Route { .. } => harness::Reply::Route(None),
+            harness::Query::Routes { .. } => harness::Reply::Routes(page(Vec::new())),
+            harness::Query::Answerers { .. } => harness::Reply::Answerers(page(Vec::new())),
             harness::Query::Tools => harness::Reply::Tools(vec![
                 ToolInfo {
                     name: "forge_log".into(),

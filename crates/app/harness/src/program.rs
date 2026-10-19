@@ -1,14 +1,13 @@
 //! The program: every op and query handed to its function. An attribution may start a thread's
 //! loop, which awaits the model and each tool call. At its init harness registers with
-//! attribution, which then hands it every change about an account whose script calls harness;
-//! the egress role hands it each event of a model's streamed reply.
+//! attribution for every change about an account whose script calls harness.
 use ::program::schema::{Return, returns};
 use ::program::{Awaiting, Ctx, Error, ExecCtx, Program, QueryCtx};
 
 use crate::agents::{attributed, card, close, setup};
 use crate::bookings::{book, run_booked, unbook};
 use crate::conversations::{fork_thread, new_thread, open_thread};
-use crate::models::{remove_model, set_compact_at, set_model};
+use crate::models::{remove_model, set_compact_at, set_model, set_services};
 use crate::streams::streamed;
 use crate::waiting::due;
 use crate::waits::{pod_event, pod_wait, unwait, wait, wait_due};
@@ -89,6 +88,12 @@ impl Program for Harness {
             Query::Wait { wait } => Ok(Reply::Wait(waits::wait_row(ctx, wait)?)),
             Query::Armed { thread, page } => Ok(Reply::Waits(waits::armed(ctx, thread, &page)?)),
             Query::Card { agent } => Ok(Reply::Agent(card(ctx, agent)?)),
+            Query::Services { model } => Ok(Reply::Services(crate::routes::services(ctx, &model)?)),
+            Query::Route { thread } => Ok(Reply::Route(crate::routes::route(ctx, thread)?)),
+            Query::Routes { page } => Ok(Reply::Routes(crate::routes::routes(ctx, &page)?)),
+            Query::Answerers { thread, page } => Ok(Reply::Answerers(crate::routes::answerers(
+                ctx, thread, &page,
+            )?)),
         }
     }
 }
@@ -134,6 +139,8 @@ impl Awaiting for Harness {
             Op::AdoptOwners { kind, after, limit } => {
                 crate::adopt::adopt_owners(&ctx, &kind, after, limit)
             }
+            Op::SetServices { id, services } => set_services(&ctx, id, services),
+            Op::ReadBudgets => budget::read_all(ctx).await,
         }
     }
 }

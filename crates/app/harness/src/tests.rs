@@ -21,6 +21,7 @@ mod reads;
 mod resume;
 mod schedule;
 mod server_tools;
+mod services;
 mod stranded;
 mod streams;
 mod thinking;

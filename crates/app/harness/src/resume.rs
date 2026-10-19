@@ -10,6 +10,7 @@ use crate::agents::{configured, harnessed_agent, hear_again, running, thread};
 use crate::bookings::note;
 use crate::calls::{Settled, lost, refusal, run_call};
 use crate::conversations::{binding, conversation};
+use crate::routes;
 use crate::schema::code_of;
 use crate::state::{
     AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, PARTIALS, REPORTING, REPORTS, RETRIES, Retry,
@@ -48,10 +49,19 @@ impl Wait {
     }
 }
 
+// what a failed call says of the account it went to: it refused the call (a 429), or failed it
+// (a 5xx, a broken stream, a service egress could not reach)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Fault {
+    Refused,
+    Failed,
+}
+
 pub(crate) struct Failure {
     pub text: String,
     pub again: Option<Again>,
     pub wait: Option<Wait>,
+    pub fault: Option<Fault>,
 }
 
 impl Failure {
@@ -60,6 +70,7 @@ impl Failure {
             text: text.into(),
             again,
             wait: None,
+            fault: None,
         }
     }
 
@@ -75,6 +86,14 @@ impl Failure {
         Failure::new(text, Some(Again::Busy))
     }
 
+    // a stream the model's service broke or failed
+    pub fn broke(text: impl Into<String>) -> Failure {
+        Failure {
+            fault: Some(Fault::Failed),
+            ..Failure::busy(text)
+        }
+    }
+
     // the model's own answer: a 429 or a 5xx says it was busy, anything else is final
     pub fn answered(text: String, response: &http::Response) -> Failure {
         let busy = response.status == 429 || response.status >= 500;
@@ -87,8 +106,13 @@ impl Failure {
             reset: seconds(RESET),
         };
         let asked = wait.after.is_some() || wait.reset.is_some();
+        let fault = match response.status {
+            429 => Fault::Refused,
+            _ => Fault::Failed,
+        };
         Failure {
             wait: asked.then_some(wait),
+            fault: Some(fault),
             ..Failure::busy(text)
         }
     }
@@ -99,7 +123,10 @@ impl Failure {
         let unchanged = error.code == code::INVALID_INPUT || error.code == code::UNAUTHORIZED;
         match unchanged {
             true => Failure::last(text),
-            false => Failure::lost(text),
+            false => Failure {
+                fault: Some(Fault::Failed),
+                ..Failure::lost(text)
+            },
         }
     }
 }
@@ -383,10 +410,18 @@ pub(crate) async fn again(ctx: &Ctx, id: u64, failure: Failure) -> Result<(), Er
         .get(ctx, &id)?
         .map_or(1, |retry| retry.attempt.saturating_add(1));
     let until = failure.wait.and_then(|wait| wait.until(now));
+    // an account that refused or failed the call is passed over while another the call may go to
+    // is free: asked there at the next block, whatever the wait the first one named
+    let moved = match failure.fault {
+        Some(fault) => routes::failed(ctx, id, fault == Fault::Refused, until)?,
+        None => false,
+    };
+    let until = until.filter(|_| !moved);
     // the wait doubles from one block, with no last attempt; a time the model named is waited
     // out from the next block on, by the pace the chain keeps
     let gap = match until {
         Some(_) => 1,
+        None if moved => 1,
         None => 1u64.checked_shl(attempt - 1).unwrap_or(u64::MAX),
     };
     let at = height.saturating_add(gap);
@@ -417,6 +452,7 @@ pub(crate) async fn again(ctx: &Ctx, id: u64, failure: Failure) -> Result<(), Er
             "once the model's wait ends at {} (seconds since the epoch)",
             until.div_ceil(1000)
         ),
+        None if moved => format!("at block {at} on another of its model's accounts"),
         None => format!("at block {at}"),
     };
     let text = format!(

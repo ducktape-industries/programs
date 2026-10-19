@@ -1,10 +1,6 @@
-//! The `harness` program: agents that consensus runs. An agent is a program account whose
-//! script calls harness; its script's `config` is the path of its configuration in `files`
-//! (`config.rs`), which harness reads at each model call. A mention, a direct message or a reply
-//! in a chat thread the agent took part in reaches harness through `attribution`; the model is a record harness keeps
-//! (`SetModel`), reached through the egress role in the wire it speaks (`wire/`), which streams
-//! a turn's reply back one event at a time (`Streamed`, folded into a [`Partial`]). Every tool
-//! call runs in a later block, as the agent.
+//! The `harness` program: agents that consensus runs. An agent is a program account whose script
+//! calls harness and names its configuration in files (`config.rs`); what it hears reaches harness
+//! through `attribution`, its model through the egress role (`wire/`, the account by `routes.rs`).
 mod adopt;
 mod agents;
 mod bookings;
@@ -19,6 +15,7 @@ mod models;
 mod program;
 mod queries;
 mod resume;
+mod routes;
 mod schema;
 mod state;
 mod streams;
@@ -135,6 +132,12 @@ pub enum Op {
         after: Option<Vec<u8>>,
         limit: u64,
     },
+    // the services a model is reached through, its record's first: harness picks among them
+    SetServices {
+        id: String,
+        services: Vec<String>,
+    },
+    ReadBudgets,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -690,6 +693,34 @@ pub struct WindowOutlook {
     pub runs_out: Option<u64>,
 }
 
+// the service and ccs account a thread's prompt cache was last written on (none: the service
+// chose), the summary the prompt it wrote began with, and the block it answered at
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Route {
+    pub service: String,
+    pub account: Option<String>,
+    pub summary: Option<u64>,
+    pub height: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Routed {
+    pub thread: u64,
+    pub route: Route,
+}
+
+// who answered a thread's turn or summary at frame `seq`: the service, ccs's name for the account
+// and the model's id for it, and whether the thread moved there from the account before, which
+// re-wrote its prompt cache (the turn's `usage.cache_write` says how much)
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Answerer {
+    pub seq: u64,
+    pub service: String,
+    pub account: Option<String>,
+    pub organization: Option<String>,
+    pub moved: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Booking {
     pub entry: u64,
@@ -849,6 +880,19 @@ pub enum Query {
     // list of agents, read again on every block, needs of each
     #[ask(Reply::Agent(Option<AgentSetup>))]
     Card { agent: AccountNumber },
+    // every service a model is reached through, its record's first
+    #[ask(Reply::Services(Option<Vec<String>>))]
+    #[reads(state::MODELS, state::MODEL_SERVICES)]
+    Services { model: String },
+    #[ask(Reply::Route(Option<Route>))]
+    #[reads(state::ROUTES)]
+    Route { thread: u64 },
+    #[ask(Reply::Routes(PageResponse<Routed>))]
+    #[reads(state::ROUTES)]
+    Routes { page: PageRequest },
+    #[ask(Reply::Answerers(PageResponse<Answerer>))]
+    #[reads(state::ANSWERED)]
+    Answerers { thread: u64, page: PageRequest },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -874,6 +918,10 @@ pub enum Reply {
     Budget(BudgetReport),
     Waits(PageResponse<WaitRow>),
     Wait(Option<WaitRow>),
+    Services(Option<Vec<String>>),
+    Route(Option<Route>),
+    Routes(PageResponse<Routed>),
+    Answerers(PageResponse<Answerer>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -930,8 +978,16 @@ pub fn awaited(
             let thread = u64::from_le_bytes(bytes);
             (streamed_as(thread) == *deliver).then_some(Awaited::Reply { thread })
         }
-        (Request::Http { head, .. }, Delivery::Whole) => wire::awaited(head),
+        (Request::Http { head, .. }, Delivery::Whole) => wire::awaited(&unpinned(head)),
     }
+}
+
+// a whole request's head without the account harness pinned it to, which says nothing of what it asks
+fn unpinned(head: &abi::role::egress::http::Head) -> abi::role::egress::http::Head {
+    let mut head = head.clone();
+    head.headers
+        .retain(|(key, _)| !key.eq_ignore_ascii_case(budget::CCS_ACCOUNT));
+    head
 }
 
 pub fn describe(op: &Op) -> describe::Description {
@@ -1062,6 +1118,17 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Record the owners of {kind} items"),
             vec![field("kind", Value::text(kind))],
         ),
+        Op::SetServices { id, services } => (
+            format!("Set the services that reach model {id}"),
+            vec![
+                field("model", Value::text(id)),
+                field("services", Value::text(services.join(", "))),
+            ],
+        ),
+        Op::ReadBudgets => (
+            "Read every model service's status of the model accounts it holds".to_owned(),
+            Vec::new(),
+        ),
     };
     describe::Description { title, fields }
 }
@@ -1099,6 +1166,8 @@ fn op_variants_only_append() {
             "Forged",
             "ClaimConversations",
             "AdoptOwners",
+            "SetServices",
+            "ReadBudgets",
         ]
     );
 }
@@ -1133,7 +1202,11 @@ fn query_variants_only_append() {
             "Waits",
             "Wait",
             "Armed",
-            "Card"
+            "Card",
+            "Services",
+            "Route",
+            "Routes",
+            "Answerers"
         ]
     );
 }

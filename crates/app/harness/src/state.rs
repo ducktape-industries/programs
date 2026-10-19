@@ -81,6 +81,19 @@ pub const FORGE_WAITS: Item<u64> = Item::new("wait-forge").shared();
 // what tells a later run that the frame awaiting it is gone
 pub const AWAITED: Map<(u64, String), Awaited> = Map::new("awaited/").shared();
 pub const STREAMING: Map<(u64, u64), Flight> = Map::new("streaming/").shared();
+// the services a model is reached through after its record's first (J-090): `SetServices`
+// rewrites the record too, so the record's policy governs it
+pub const MODEL_SERVICES: Map<String, Vec<String>> = Map::new("model-services/").shared();
+// the service and ccs account each thread's prompt cache was last written on
+pub const ROUTES: Map<u64, crate::Route> = Map::new("route/").shared();
+// the account each thread's latest model call went to, and who answered it
+pub const PICKS: Map<u64, Pick> = Map::new("pick/").shared();
+// the (service, account) pairs a thread's failed call passed over until it is answered
+pub const TRIED: Set<(u64, (String, String))> = Set::new("tried/").shared();
+// an account that answered a 429, until the time (ms) its wait named, if it named one
+pub const REFUSED: Map<(String, String), Option<u64>> = Map::new("refused/").shared();
+// who answered each of a thread's turns and summaries, by frame
+pub const ANSWERED: Map<(u64, u64), crate::Answerer> = Map::new("answered/").shared();
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Live {
@@ -238,6 +251,18 @@ pub struct PodWatch {
     pub entry: Option<EntryId>,
 }
 
+// the service and ccs account a thread's call went to (none: the service chooses), the summary its
+// prompt began with, every pair it could have gone to, and the account and model id that answered
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Pick {
+    pub service: String,
+    pub account: Option<String>,
+    pub summary: Option<u64>,
+    pub candidates: Vec<(String, Option<String>)>,
+    pub label: Option<String>,
+    pub organization: Option<String>,
+}
+
 pub(crate) fn newest_first(id: u64) -> u64 {
     u64::MAX - id
 }
@@ -347,7 +372,12 @@ pub fn written(key: &[u8]) -> Option<Written> {
     if budget.iter().any(|prefix| key.starts_with(prefix)) {
         return Some(Written::Budget);
     }
-    let models = [MODELS.key(&()), COMPACT_AT.key(&()), WINDOWS.key(&())];
+    let models = [
+        MODELS.key(&()),
+        COMPACT_AT.key(&()),
+        WINDOWS.key(&()),
+        MODEL_SERVICES.key(&()),
+    ];
     let model = models.iter().any(|prefix| key.starts_with(prefix));
     model.then_some(Written::Model)
 }
@@ -406,4 +436,10 @@ pub(crate) const TABLES: &[::program::Table] = &[
     FORGE_WAITS.table(),
     AWAITED.table(),
     STREAMING.table(),
+    MODEL_SERVICES.table(),
+    ROUTES.table(),
+    PICKS.table(),
+    TRIED.table(),
+    REFUSED.table(),
+    ANSWERED.table(),
 ];

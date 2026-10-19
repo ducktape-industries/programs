@@ -1,20 +1,20 @@
-//! The loop consensus runs for a thread: read the agent's configuration and its model's record,
-//! learn the model's context window, summarize the thread when its next answer would not fit,
-//! ask the model in its wire for a streamed reply, build the turn from the streamed events or
-//! the whole answer, record the results of calls that ran while it streamed, run the rest, and
-//! ask again once every result is back.
+//! The loop consensus runs for a thread: read the agent's configuration and its model, pick the
+//! account to ask (`routes.rs`), learn the window, summarize when the next answer would not fit,
+//! ask for a streamed reply, build the turn, run its calls, and ask again once they are back.
 use ::program::{
     BlobId, Ctx, Error, ExecCtx, HashKind, ProgramId, QueryCtx, Range, all, unexpected_reply,
     wrong_state,
 };
 use abi::role::egress::{self, http};
 
-use crate::agents::{Agent, configured, hear_again, manual, running, thread};
+use crate::agents::{Agent, configured_pinned, hear_again, manual, running, thread};
+use crate::budget::CCS_ACCOUNT;
 use crate::calls::{Placed, place, refusal, run_call, take_back_showing};
 use crate::conversations::{binding, retire};
 use crate::listening::mirror;
 use crate::models::learned;
 use crate::resume::{self, Failure};
+use crate::routes::{self, Picked};
 use crate::state::{
     ENDING, FLIGHTS, FRAMES, HELD, LIVE, Live, PARTIALS, RETRIES, SEALED, SHOWN, THREADS, WITHHELD,
 };
@@ -29,6 +29,8 @@ use crate::{
 struct Asked {
     wire: Wire,
     service: String,
+    account: Option<String>,
+    thread: u64,
     wait: Option<u64>,
     config: BlobId,
 }
@@ -92,6 +94,7 @@ pub(crate) fn give_up(ctx: &ExecCtx, thread: &mut ThreadRow, text: String) {
     thread.seen = thread.seen.max(thread.last_input);
     thread.last_stop = None;
     RETRIES.remove(ctx, &thread.id);
+    routes::untried(ctx, thread.id);
 }
 
 pub(crate) fn bound(ctx: &QueryCtx) -> Result<ProgramId, Error> {
@@ -131,10 +134,14 @@ pub(crate) async fn request(
 async fn call_model(
     ctx: &Ctx,
     asked: &Asked,
-    head: http::Head,
+    mut head: http::Head,
     parts: Vec<BlobId>,
     delivery: egress::Delivery,
 ) -> Result<http::Response, Failure> {
+    // pinned to the account harness picked, so ccs neither chooses another nor falls over to one
+    if let Some(account) = &asked.account {
+        head.headers.push((CCS_ACCOUNT.into(), account.clone()));
+    }
     let request_ = egress::Request::Http {
         service: asked.service.clone(),
         head,
@@ -145,6 +152,7 @@ async fn call_model(
     let response: http::Response = abi::decode(&bytes)
         .map_err(|_| Failure::last("the egress answer is not an HTTP response"))?;
     resume::window_seen(ctx, &asked.service, &response);
+    routes::heard(ctx, asked.thread, &response);
     Ok(response)
 }
 
@@ -431,7 +439,8 @@ fn claim(ctx: &ExecCtx, id: u64) -> Result<Option<Step>, Error> {
 }
 
 fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<Step>, Error> {
-    let (snapshot, config, model) = match configured(ctx, &agent.path)? {
+    let (configured, pin) = configured_pinned(ctx, &agent.path)?;
+    let (snapshot, config, model) = match configured {
         Configured::Ready {
             snapshot,
             config,
@@ -446,16 +455,25 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         }
     };
     mirror(ctx, thread, agent, &config.listen);
-    if !serves(ctx, &model.service)? {
-        let text = format!(
-            "no member node serves {}: the model was not asked",
-            model.service
-        );
-        return Ok(Some(Step::Again(Failure::lost(text))));
-    }
+    let (pick, forced) = match routes::pick(ctx, thread, &model, &pin)? {
+        Picked::Chosen { pick, forced } => (pick, forced),
+        Picked::Unlisted(text) => {
+            give_up(ctx, thread, text);
+            return Ok(None);
+        }
+        Picked::Unserved(services) => {
+            let text = format!(
+                "no member node serves {}: the model was not asked",
+                services.join(" or ")
+            );
+            return Ok(Some(Step::Again(Failure::lost(text))));
+        }
+    };
     let asked = Asked {
         wire: model.wire,
-        service: model.service.clone(),
+        service: pick.service,
+        account: pick.account,
+        thread: thread.id,
         wait: config.wait,
         config: snapshot,
     };
@@ -486,7 +504,11 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         max_tokens: config.max_tokens,
         header,
     };
-    match crowded(thread, window, turn.max_tokens, threshold) {
+    // a move off the account that holds the cache re-writes the whole prompt: a thread that would
+    // compact after one more answer anyway compacts first, on the new account
+    let grown = grown(thread.context, turn.max_tokens);
+    let soon = forced && crowded(grown, window, turn.max_tokens, threshold);
+    match crowded(thread.context, window, turn.max_tokens, threshold) || soon {
         true => plan_summary(ctx, thread, turn),
         false => plan_turn(ctx, thread, turn),
     }
@@ -569,19 +591,24 @@ fn largest_unseen(ctx: &ExecCtx, thread: &ThreadRow, wire: Wire) -> Result<Optio
 
 // compact once the context reaches the threshold in effect, or when the next answer would not
 // fit the window, which holds whatever the threshold
-fn crowded(
-    thread: &ThreadRow,
-    window: Option<u64>,
-    max_tokens: u32,
-    threshold: Option<u64>,
-) -> bool {
-    match (thread.context, window) {
+fn crowded(context: Context, window: Option<u64>, max_tokens: u32, threshold: Option<u64>) -> bool {
+    match (context, window) {
         (Context::Overflowed, _) => true,
         (Context::Measured(tokens), _) if threshold.is_some_and(|at| tokens >= at) => true,
         (Context::Measured(_), None) => false,
         (Context::Measured(tokens), Some(window)) => {
             tokens.saturating_add(u64::from(max_tokens)) > window
         }
+    }
+}
+
+// the context one more answer of up to `max_tokens` would leave
+fn grown(context: Context, max_tokens: u32) -> Context {
+    match context {
+        Context::Measured(tokens) => {
+            Context::Measured(tokens.saturating_add(u64::from(max_tokens)))
+        }
+        Context::Overflowed => Context::Overflowed,
     }
 }
 
@@ -668,6 +695,7 @@ fn summarize(
 ) -> Result<(), Error> {
     let block = summary.block;
     append(ctx, thread, Body::Compaction { wire, block });
+    routes::answered(ctx, thread.id, thread.frames)?;
     tallies::summarized(ctx, thread.id)?;
     thread.summary = Some(thread.frames);
     thread.context = Context::Measured(summary.tokens);
@@ -738,7 +766,7 @@ fn read_answer(
     // a stream that broke, stopped short or failed is the model's to answer again
     match streamed {
         Some(partial) => match wire::folded(partial) {
-            Answered::Failed(text) => Err(Failure::busy(text)),
+            Answered::Failed(text) => Err(Failure::broke(text)),
             answered => Ok(answered),
         },
         None => match wire::answered(wire, response) {
@@ -889,6 +917,7 @@ fn record(
         usage,
     };
     append(ctx, thread, turn);
+    routes::answered(ctx, thread.id, thread.frames)?;
     tallies::turned(ctx, thread.id, &usage)?;
     let mut calls = Vec::new();
     for (index, call, tool, input) in asked {
