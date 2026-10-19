@@ -3,13 +3,13 @@
 // claimed, the pod waited on as a stream, `/out` copied, the check reported and the pod deleted.
 use ::program::section::{CUSTOM, MODULE};
 use ::program::{
-    Error, ExecCtx, MockChain, MockHost, Origin, Program, QueryCtx, Scheme, code, invalid,
+    BlobId, Error, ExecCtx, MockChain, MockHost, Origin, Program, QueryCtx, Scheme, code, invalid,
     wrong_state,
 };
 use abi::role::egress::{
     Answer, DEFAULT_WAIT, Event, Op as Egress, Request, RequestRow, StreamEnd, http,
 };
-use actions::{Asks, CheckRow, Input, Job, Offer, PageResponse, State};
+use actions::{Asks, CheckRow, Input, Job, Need, Offer, Output, OutputsRow, PageResponse, State};
 use programs::{Entry, Genesis, Programs};
 use serde_json::{Value, json};
 use store::Item;
@@ -30,10 +30,17 @@ const REFUSED: u64 = 9;
 const AGAIN: u64 = 3;
 // The check whose job states its CPUs, memory and scratch.
 const SIXTEEN: u64 = 4;
+// A check that needs job `build`, met by check BUILT; and one whose need, met by STRAYED, names an
+// output that climbs out of its folder.
+const NEEDY: u64 = 5;
+const ASTRAY: u64 = 6;
+const BUILT: u64 = 11;
+const STRAYED: u64 = 12;
 
 const CLAIMED: Item<Vec<u64>> = Item::new("claimed");
 const REPORTS: Item<Vec<Report>> = Item::new("reports");
 const RERUN: Item<bool> = Item::new("rerun");
+const OUTS: Item<Vec<(u64, Vec<Output>)>> = Item::new("outs");
 
 // actions as a runner meets it: a check to read, a claim taken once, a report taken once from a
 // running check (or an errored one from a queued check), and a rerun.
@@ -81,6 +88,12 @@ impl Program for Stand {
                 RERUN.put(ctx, &true);
                 Ok(())
             }
+            actions::Op::Outputs { check, files } => {
+                let mut kept = OUTS.get(ctx)?.unwrap_or_default();
+                kept.push((check, files));
+                OUTS.put(ctx, &kept);
+                Ok(())
+            }
             _ => Err(invalid("the stand-in takes registers, claims and reports")),
         }
     }
@@ -108,9 +121,37 @@ impl Program for Stand {
             actions::Query::Asks { check } => {
                 Ok(actions::Reply::Asks((check == SIXTEEN).then(sixteen)))
             }
+            actions::Query::Needs { check } => Ok(actions::Reply::Needs(needs_of(check))),
+            actions::Query::Outputs { check } => Ok(actions::Reply::Outputs(outputs_of(check))),
             _ => Err(invalid("the stand-in answers checks")),
         }
     }
+}
+
+fn needs_of(check: u64) -> Vec<Need> {
+    let met = match check {
+        NEEDY => BUILT,
+        ASTRAY => STRAYED,
+        _ => return Vec::new(),
+    };
+    vec![Need {
+        job: "build".into(),
+        check: Some(met),
+    }]
+}
+
+fn outputs_of(check: u64) -> Option<OutputsRow> {
+    let path = match check {
+        BUILT => "dist/app.tar.gz",
+        STRAYED => "../../etc/passwd",
+        _ => return None,
+    };
+    let files = vec![Output {
+        path: path.into(),
+        blob: BlobId::Sha256([0xab; 32]),
+        size: 7,
+    }];
+    Some(OutputsRow { by: 1, files })
 }
 
 fn sixteen() -> Asks {
@@ -381,6 +422,12 @@ impl Node {
         REPORTS.get(&read).unwrap().unwrap_or_default()
     }
 
+    fn outputs(&self) -> Vec<(u64, Vec<Output>)> {
+        let stand = self.chain.host(actions::PROGRAM);
+        let read = stand.query(MockHost::env(actions::PROGRAM));
+        OUTS.get(&read).unwrap().unwrap_or_default()
+    }
+
     fn run(&self, check: u64) -> Option<RunRow> {
         let Reply::Run(row) = self.chain.query(PROGRAM, &Query::Run { check }).unwrap() else {
             panic!("run answers Run");
@@ -485,14 +532,25 @@ fn ran_to_its_end(exit_code: Value) -> Node {
     let listed = json!({"exit_code": 0, "stdout": "/out/log\n/out/summary.txt\n", "stderr": ""});
     let find = node.answer(1_000, 200, listed);
     assert_eq!(find, sent("POST", "/v1/pods/duckpond-7/exec"));
-    for _ in 0..2 {
-        let copied = node.answer(1_000, 200, json!({"written": "/shared/…"}));
-        assert_eq!(copied, sent("POST", "/v1/pods/duckpond-7/file"));
-    }
+    let copied = node.answer(1_000, 200, json!({"written": "/shared/…"}));
+    assert_eq!(copied, sent("POST", "/v1/pods/duckpond-7/file"));
+    let put = node.pending();
+    assert_eq!(aimed(&put), sent("POST", "/v1/pods/duckpond-7/blob"));
+    let asked = json!({"paths": ["/out/summary.txt"], "kind": "output", "container": "out"});
+    assert_eq!(node.body(&put), asked, "the log is not an output");
+    let held = format!("sha256:{}", "ab".repeat(32));
+    let summary = json!({"path": "/out/summary.txt", "blob": held, "size": 5});
+    node.answer(1_000, 200, json!({"blobs": [summary], "kind": "output"}));
     let deleted = node.answer(1_000, 200, json!({"deleted": "duckpond-7"}));
     assert_eq!(deleted, sent("DELETE", "/v1/pods/duckpond-7"));
     assert!(node.idle());
     assert!(node.held().is_empty(), "a deleted pod is let go");
+    let summary = Output {
+        path: "summary.txt".into(),
+        blob: BlobId::Sha256([0xab; 32]),
+        size: 5,
+    };
+    assert_eq!(node.outputs(), [(1, vec![summary])]);
     node
 }
 
@@ -955,4 +1013,32 @@ fn a_superseded_checks_pod_is_deleted_by_the_next_run_which_takes_its_room() {
     assert_eq!(node.held(), [2]);
     assert!(node.waiting().is_empty());
     node.pending_to("GET", "/v1/pods/duckpond-8/wait?every=32");
+}
+
+#[test]
+fn a_check_that_needs_a_job_has_its_outputs_placed_in_its_one_pod() {
+    let mut node = node();
+    node.offer(NEEDY).unwrap();
+    node.after(2_000);
+    node.after(0);
+    let made = node.pending();
+    assert_eq!(aimed(&made), sent("POST", "/v1/pods"));
+    let held = format!("sha256:{}", "ab".repeat(32));
+    let placed = json!({"path": "/needs/build/dist/app.tar.gz", "blob": held});
+    let inputs = node.body(&made)["inputs"].clone();
+    assert_eq!(inputs[2], placed, "{inputs}");
+}
+
+#[test]
+fn a_needed_output_that_would_leave_its_folder_errs_the_check_and_makes_no_pod() {
+    let mut node = node();
+    node.offer(ASTRAY).unwrap();
+    node.after(2_000);
+    node.after(0);
+    assert!(node.idle());
+    let why = "check output \"../../etc/passwd\" of `build` would land outside /needs/build";
+    assert_eq!(
+        node.reports(),
+        [(ASTRAY, State::Errored, why.to_owned(), None)]
+    );
 }

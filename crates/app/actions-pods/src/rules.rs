@@ -1,5 +1,5 @@
 //! A check run as a pod: booked when actions offers it, run the block after, the pod made, then the
-//! check claimed, the pod's end heard as a stream, `/out` copied, the check reported and the pod
+//! check claimed, the pod's end heard as a stream, `/out` kept, the check reported and the pod
 //! deleted. A quota with no room leaves the check queued; `Sweep` settles the pods runs left.
 use ::program::{
     BlobId, Cause, Ctx, Error, ExecCtx, HashKind, ProgramId, QueryCtx, code, decoded, invalid,
@@ -7,7 +7,7 @@ use ::program::{
 };
 use abi::role::egress::{DEFAULT_WAIT, Delivery, Event, Op as Egress, Request, http};
 use abi::role::programs as role;
-use actions::{Asks, CheckRow, PageRequest, State, bytes, millicores};
+use actions::{Asks, CheckRow, Output, PageRequest, State, bytes, millicores};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde_json::{Value, json};
 use store::{Item, Map, Set};
@@ -416,7 +416,11 @@ async fn made(ctx: &Ctx, check: &CheckRow) -> Made {
         Ok(asks) => asks,
         Err(refused) => return Made::Refused(refused.message),
     };
-    let body = pod_body(check, &asks);
+    let needed = match needed(ctx, check.id) {
+        Ok(needed) => needed,
+        Err(why) => return Made::Refused(why),
+    };
+    let body = pod_body(check, &asks, needed);
     let answer = match send(ctx, "/v1/pods".to_owned(), &body).await {
         Ok(answer) => answer,
         Err(why) => return Made::Refused(why),
@@ -509,7 +513,7 @@ async fn waited(
         None => State::Errored,
     };
     let mut summary = ended["line"].as_str().unwrap_or_default().to_owned();
-    let (log, missed) = copy_out(ctx, check, pod).await;
+    let (log, missed) = kept_out(ctx, check, pod).await;
     if let Some(missed) = missed {
         summary.push_str(&format!("; {missed}"));
     }
@@ -570,11 +574,12 @@ async fn pod_ended(ctx: &Ctx, pod: &str) -> Result<Option<Value>, String> {
     Ok(Some(json!({"line": line, "exit_code": exit_code})))
 }
 
-// The check's repository at its commit in `/work/<repo>`, its inputs, and its steps run there in
+// The check's repository at its commit in `/work/<repo>`, its inputs, what the jobs it needs produced
+// (`needed`), and its steps run there in
 // order, stopping at the first that fails, their output in `/out/log`. What the job asks is the
 // pod's request, cargo runs as many jobs as it asks CPUs (its own env still wins), and each
 // scratch path is memory-backed, so a build's output never touches the node's disk.
-fn pod_body(check: &CheckRow, asks: &Asks) -> Value {
+fn pod_body(check: &CheckRow, asks: &Asks, needed: Vec<Value>) -> Value {
     let work = format!("/work/{}", check.repo);
     let mut inputs = vec![json!({
         "path": work,
@@ -583,6 +588,7 @@ fn pod_body(check: &CheckRow, asks: &Asks) -> Value {
     for input in &check.job.inputs {
         inputs.push(json!({"path": input.path, "files": {"path": input.files}}));
     }
+    inputs.extend(needed);
     for path in &asks.scratch {
         inputs.push(json!({"path": path, "scratch": {"medium": "Memory"}}));
     }
@@ -630,10 +636,15 @@ fn quoted(text: &str) -> String {
     format!("'{}'", text.replace('\'', "'\\''"))
 }
 
-// Every file under the pod's `/out` into files, under
-// `/shared/actions/<repo>/<commit>/<workflow>/<job>-<attempt>/`: where its log is, and what
-// was not copied.
-async fn copy_out(ctx: &Ctx, check: &CheckRow, pod: &str) -> (Option<String>, Option<String>) {
+// The kind a check's outputs are put as.
+const OUTPUT_KIND: &str = "output";
+// A check's log, which the report links.
+const LOG: &str = "/out/log";
+
+// The pod's `/out` kept in two requests: its log copied into files, under
+// `/shared/actions/<repo>/<commit>/<workflow>/<job>-<attempt>/log`, and every other file put as a
+// blob and recorded as the check's outputs (`record`). Where the log is, and what was not kept.
+async fn kept_out(ctx: &Ctx, check: &CheckRow, pod: &str) -> (Option<String>, Option<String>) {
     let workflow = check.workflow.trim_end_matches(".toml");
     let dir = format!(
         "/shared/actions/{}/{}/{workflow}/{}-{}",
@@ -644,29 +655,121 @@ async fn copy_out(ctx: &Ctx, check: &CheckRow, pod: &str) -> (Option<String>, Op
         Ok(listed) => listed,
         Err(why) => return (None, Some(format!("/out was not listed: {why}"))),
     };
-    let files: Vec<String> = listed["stdout"]
+    let files: Vec<&str> = listed["stdout"]
         .as_str()
         .unwrap_or_default()
         .lines()
-        .map(str::to_owned)
+        .filter(|file| file.starts_with("/out/"))
         .collect();
     let mut missed = Vec::new();
     let mut log = None;
-    for file in &files {
-        let Some(relative) = file.strip_prefix("/out/") else {
-            continue;
-        };
-        let to = format!("{dir}/{relative}");
+    if files.contains(&LOG) {
+        let to = format!("{dir}/log");
         let message = format!("actions: check {} of {}", check.id, check.repo);
-        let copy = json!({"path": file, "to": to, "container": "out", "message": message});
+        let copy = json!({"path": LOG, "to": to, "container": "out", "message": message});
         match post(ctx, format!("/v1/pods/{pod}/file"), &copy).await {
-            Ok(_) if relative == "log" => log = Some(to),
-            Ok(_) => {}
-            Err(why) => missed.push(format!("{file}: {why}")),
+            Ok(_) => log = Some(to),
+            Err(why) => missed.push(format!("{LOG}: {why}")),
         }
     }
-    let missed = (!missed.is_empty()).then(|| format!("not copied: {}", missed.join("; ")));
+    let outputs: Vec<&str> = files.into_iter().filter(|file| *file != LOG).collect();
+    if !outputs.is_empty()
+        && let Err(why) = record(ctx, check.id, pod, &outputs).await
+    {
+        missed.push(format!("the outputs: {why}"));
+    }
+    let missed = (!missed.is_empty()).then(|| format!("not kept: {}", missed.join("; ")));
     (log, missed)
+}
+
+// Every output put as a blob in one request, then recorded on the check by its path under `/out`,
+// its blob and its size, where a check that needs this job finds it (`actions::Query::Outputs`).
+async fn record(ctx: &Ctx, check: u64, pod: &str, paths: &[&str]) -> Result<(), String> {
+    let put = json!({"paths": paths, "kind": OUTPUT_KIND, "container": "out"});
+    let held = post(ctx, format!("/v1/pods/{pod}/blob"), &put).await?;
+    let blobs = held["blobs"]
+        .as_array()
+        .ok_or_else(|| "the pods service named no blobs".to_owned())?;
+    let mut files = Vec::new();
+    for blob in blobs {
+        let path = blob["path"]
+            .as_str()
+            .and_then(|path| path.strip_prefix("/out/"));
+        let id = blob["blob"].as_str().and_then(blob_of);
+        let (Some(path), Some(id), Some(size)) = (path, id, blob["size"].as_u64()) else {
+            return Err(format!("the pods service answered {blob} for a blob"));
+        };
+        files.push(Output {
+            path: path.to_owned(),
+            blob: id,
+            size,
+        });
+    }
+    let said = actions::Op::Outputs { check, files };
+    ctx.call_raw(actions::PROGRAM, abi::encode(&said))
+        .await
+        .map(|_| ())
+        .map_err(|refused| refused.message)
+}
+
+// What the jobs a check needs produced, each a blob input at `/needs/<job>/<path>` of the pod's one
+// creation request.
+fn needed(ctx: &QueryCtx, check: u64) -> Result<Vec<Value>, String> {
+    let asked = actions::Query::Needs { check };
+    let needs = match ctx.query::<actions::Query, actions::Reply>(actions::PROGRAM, &asked) {
+        Ok(actions::Reply::Needs(needs)) => needs,
+        Ok(other) => return Err(unexpected_reply(actions::PROGRAM, "Needs", &other).message),
+        Err(refused) => return Err(refused.message),
+    };
+    let mut inputs = Vec::new();
+    for need in needs {
+        let Some(met) = need.check else {
+            return Err(format!("needs `{}`, which no passed check met", need.job));
+        };
+        let asked = actions::Query::Outputs { check: met };
+        let files = match ctx.query::<actions::Query, actions::Reply>(actions::PROGRAM, &asked) {
+            Ok(actions::Reply::Outputs(row)) => row.map(|row| row.files).unwrap_or_default(),
+            Ok(other) => return Err(unexpected_reply(actions::PROGRAM, "Outputs", &other).message),
+            Err(refused) => return Err(refused.message),
+        };
+        for file in files {
+            let path = placed(&need.job, &file.path)?;
+            inputs.push(json!({"path": path, "blob": blob_text(&file.blob)}));
+        }
+    }
+    Ok(inputs)
+}
+
+// Where a needed output goes, `/needs/<job>/<path>`; refused when the job or the path would leave
+// that folder.
+fn placed(job: &str, path: &str) -> Result<String, String> {
+    let plain = |part: &str| !part.is_empty() && part != "." && part != "..";
+    match plain(job) && !job.contains('/') && path.split('/').all(plain) {
+        true => Ok(format!("/needs/{job}/{path}")),
+        false => Err(format!(
+            "check output {path:?} of `{job}` would land outside /needs/{job}"
+        )),
+    }
+}
+
+// A blob id as the pods service writes it, `sha256:<64 hex digits>`.
+fn blob_of(text: &str) -> Option<BlobId> {
+    let hex = text.strip_prefix("sha256:")?;
+    if hex.len() != 64 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut digest = [0; 32];
+    for (byte, pair) in digest.iter_mut().zip(hex.as_bytes().chunks(2)) {
+        *byte = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
+    }
+    Some(BlobId::Sha256(digest))
+}
+
+fn blob_text(blob: &BlobId) -> String {
+    match blob {
+        BlobId::Sha256(digest) => format!("sha256:{}", abi::hex(digest)),
+        BlobId::Sha1(digest) => format!("sha1:{}", abi::hex(digest)),
+    }
 }
 
 async fn send(ctx: &Ctx, target: String, body: &Value) -> Result<http::Response, String> {

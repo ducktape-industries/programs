@@ -1,5 +1,5 @@
 //! The `actions-pods` program: an `actions` runner that runs each check it claims as a pod of the
-//! pods service, through egress, hears the pod end as a stream, copies its `/out` into files,
+//! pods service, through egress, hears the pod end as a stream, keeps its `/out` as outputs,
 //! reports the check and deletes the pod; `Sweep` settles the pods runs left (`rules.rs`).
 mod program;
 mod rules;
