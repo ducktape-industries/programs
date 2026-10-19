@@ -2,6 +2,7 @@
 //! written back to the same bytes.
 mod forms;
 mod interface;
+mod tools;
 
 use borsh::schema::{BorshSchemaContainer, Definition};
 use borsh::{BorshSchema, BorshSerialize};

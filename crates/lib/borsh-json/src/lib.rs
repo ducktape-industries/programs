@@ -9,6 +9,7 @@ mod shape;
 mod spoken;
 #[cfg(test)]
 mod tests;
+pub mod tools;
 
 use std::fmt;
 use std::ops::RangeInclusive;

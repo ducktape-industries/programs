@@ -59,6 +59,7 @@ pub mod schema;
 pub mod section;
 pub mod source;
 pub mod tables;
+pub mod tools;
 
 pub use abi;
 pub use abi::hook;

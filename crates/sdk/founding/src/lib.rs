@@ -18,7 +18,7 @@ use wasmparser::{Encoding, Parser, Payload, Validator};
 
 pub use diff::{Change, Difference, differences};
 pub use program::source::Source;
-pub use schema::{schema, write_schemas};
+pub use schema::{schema, tools, write_schemas};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 

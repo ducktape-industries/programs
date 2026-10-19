@@ -30,5 +30,6 @@ wasm-encoder = "0.251"
 wasmparser = "0.251"
 
 [dev-dependencies]
+borsh-json = { workspace = true }
 tempfile = { workspace = true }
 toml = "0.9"

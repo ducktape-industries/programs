@@ -34,6 +34,10 @@ pub trait Program {
     // table is owned.
     const TABLES: &'static [crate::Table] = &[];
 
+    // What the program tells an agent about each op and query (`tools::Tools::new`); `export!`
+    // writes it as the `ducktape.tools` section. Nothing by default.
+    const TOOLS: crate::tools::Tools = crate::tools::Tools::NONE;
+
     /// Genesis, with the params the network was founded with. Nothing by
     /// default; override only where genesis needs it.
     fn init(_ctx: &ExecCtx, _params: &[u8]) -> Result<(), Error> {
@@ -267,6 +271,7 @@ macro_rules! export {
         }
 
         $crate::tables_section!($program);
+        $crate::tools_section!($program);
     };
 }
 

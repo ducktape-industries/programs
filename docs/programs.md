@@ -98,6 +98,35 @@ the type each op variant's output is the borsh of:
 reads such an op's output back as JSON. An op left out (or one whose output
 is no one borsh type) answers its bytes as hex.
 
+**Each op and query says what it does, to an agent.** `impl Program` gives
+a line on what the program is for and, for each `Op` and `Query` variant,
+what it does, with an example to edit:
+
+```rust
+const TOOLS: Tools = Tools::new(
+    "Polls anyone opens and closes.",
+    &[
+        op("Open", "Open a poll with its choices. Anyone may.")
+            .example(r#"{"Open":{"id":"lunch","choices":["noodles","rice"]}}"#),
+        query("Poll", "One poll by id, or null."),
+    ],
+);
+```
+
+(`program::tools::{Tools, op, query}`). `export!` writes it as the
+`ducktape.tools` section of the program's code: JSON text,
+`{"about": …, "ops": {variant: {"says": …, "example": …}}, "queries": …}`,
+that a harness or an adapter reads without the program's schema, and that
+only grows by new keys. `borsh_json::tools::check` holds a section to the
+interface: every variant described once, each saying something, and each
+example a value of its own variant written as it reads back. founding's
+`every_program_describes_each_op_and_query_with_examples_of_its_own` runs
+it for every program here (`UNDESCRIBED` lists the ones not described yet;
+a program leaves it as its `TOOLS` lands), and a program out of tree runs
+it in its own test. Say what the op does, who may send it and what it
+returns, in plain sentences; a retired variant says it is retired and what
+replaced it.
+
 **The append-only rule.** Borsh encodes a variant by its index, and a host
 describes an op that landed at any height with the program's *current*
 code. So `Op` only grows at its end: append a variant, never insert,

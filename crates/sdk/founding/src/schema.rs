@@ -1,36 +1,56 @@
-//! Each program's interface schema, from its crate linked natively with `program` off: what
-//! `schemas RELEASE` writes as `<program>.schema` and the bundle packs as `ducktape.schema`.
+//! Each program's interface schema and what it tells agents (`Program::TOOLS`), from its crate
+//! linked natively with `program` off: what `schemas RELEASE` writes as `<program>.schema` and the
+//! bundle packs as `ducktape.schema`.
 use std::fs;
 use std::path::Path;
 
+use borsh::BorshSchema;
 use borsh::schema::BorshSchemaContainer;
-use program::schema::interface;
+use program::Program;
+use program::tools::Tools;
 
 use crate::Result;
 
 pub fn schema(program: &str) -> Option<BorshSchemaContainer> {
-    let schema = match program {
-        "programs" => interface::<programs::Programs>(),
-        "valset" => interface::<valset::Valset>(),
-        "identity" => interface::<identity::Identity>(),
-        "blobs" => interface::<blobs::Blobs>(),
-        "awaits" => interface::<awaits::Awaits>(),
-        "halo" => interface::<halo::Halo>(),
-        "scheduler" => interface::<scheduler::Scheduler>(),
-        "access" => interface::<access::Access>(),
-        "ownership" => interface::<ownership::Ownership>(),
-        "chat" => interface::<chat::Chat>(),
-        "forge" => interface::<forge::Forge>(),
-        "files" => interface::<files::Files>(),
-        "activity" => interface::<activity::Activity>(),
-        "egress" => interface::<egress::Egress>(),
-        "attribution" => interface::<attribution::Attribution>(),
-        "harness" => interface::<harness::Harness>(),
-        "actions" => interface::<actions::Actions>(),
-        "actions-pods" => interface::<actions_pods::ActionsPods>(),
+    interface(program).map(|(schema, _)| schema)
+}
+
+pub fn tools(program: &str) -> Option<Tools> {
+    interface(program).map(|(_, tools)| tools)
+}
+
+fn interface(program: &str) -> Option<(BorshSchemaContainer, Tools)> {
+    let interface = match program {
+        "programs" => of::<programs::Programs>(),
+        "valset" => of::<valset::Valset>(),
+        "identity" => of::<identity::Identity>(),
+        "blobs" => of::<blobs::Blobs>(),
+        "awaits" => of::<awaits::Awaits>(),
+        "halo" => of::<halo::Halo>(),
+        "scheduler" => of::<scheduler::Scheduler>(),
+        "access" => of::<access::Access>(),
+        "ownership" => of::<ownership::Ownership>(),
+        "chat" => of::<chat::Chat>(),
+        "forge" => of::<forge::Forge>(),
+        "files" => of::<files::Files>(),
+        "activity" => of::<activity::Activity>(),
+        "egress" => of::<egress::Egress>(),
+        "attribution" => of::<attribution::Attribution>(),
+        "harness" => of::<harness::Harness>(),
+        "actions" => of::<actions::Actions>(),
+        "actions-pods" => of::<actions_pods::ActionsPods>(),
         _ => return None,
     };
-    Some(schema)
+    Some(interface)
+}
+
+fn of<P: Program>() -> (BorshSchemaContainer, Tools)
+where
+    P::Op: BorshSchema,
+    P::Query: BorshSchema,
+    P::Reply: BorshSchema,
+{
+    (program::schema::interface::<P>(), P::TOOLS)
 }
 
 pub fn write_schemas(release: &Path, programs: &[impl AsRef<str>]) -> Result<()> {
