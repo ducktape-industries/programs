@@ -1,6 +1,6 @@
 //! The rooms the reader can open: the desktop's channels then direct rooms, newest first (a
-//! program's own `forge:…` rooms its to show); the phone's the reader's own by category, then
-//! Work (job and program rooms) and All channels, both shut until opened.
+//! program's own `forge:…` rooms its to show); the phone's the reader's own, then Work and All
+//! channels, both shut until opened. In both, a `/` in a channel's name files it under folders.
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -12,18 +12,16 @@ use crate::Chat;
 use crate::names::dm_peer_of;
 use crate::queries;
 
-pub(crate) const CATEGORY: &str = "category";
 // the phone's two groups shut until the reader opens them
 pub(crate) const WORK: &str = "work";
 pub(crate) const ALL: &str = "all";
 
 // The phone's list: the rooms the reader is in (opened on this device,
-// owned, listened to), plain and by category; their direct rooms; Work,
+// owned, listened to); their direct rooms; Work,
 // every job (`j-…`) and program (`forge:…`) room; and All channels, the
 // other rooms.
 pub(crate) struct PhoneRooms<'a> {
     pub mine: Vec<&'a ChannelInfo>,
-    pub sections: Vec<Section<'a>>,
     pub dms: Vec<DmEntry<'a>>,
     pub work: Vec<&'a ChannelInfo>,
     pub rest: Vec<&'a ChannelInfo>,
@@ -31,9 +29,11 @@ pub(crate) struct PhoneRooms<'a> {
     pub archived: usize,
 }
 
-// A job's room or a program's own (a change's review): what Work holds.
+// A job's room (`j-…`, under folders too: `jobs/j-097`) or a program's own
+// (a change's review): what Work holds.
 fn is_work(info: &ChannelInfo) -> bool {
-    chat::namespace::program(&info.channel.id).is_some() || info.channel.name.starts_with("j-")
+    chat::namespace::program(&info.channel.id).is_some()
+        || label(&info.channel.name).starts_with("j-")
 }
 
 // A direct room in the list: the room and the other person.
@@ -42,14 +42,8 @@ pub(crate) struct DmEntry<'a> {
     pub peer: u64,
 }
 
-pub(crate) struct Section<'a> {
-    pub category: &'a str,
-    pub channels: Vec<&'a ChannelInfo>,
-}
-
 pub(crate) struct RoomList<'a> {
     pub channels: Vec<&'a ChannelInfo>,
-    pub sections: Vec<Section<'a>>,
     pub dms: Vec<DmEntry<'a>>,
 }
 
@@ -265,35 +259,6 @@ impl<'a> Tree<'a> {
     }
 }
 
-pub(crate) fn category_of(info: &ChannelInfo) -> Option<&str> {
-    let category = info.meta.get(CATEGORY)?.trim();
-    (!category.is_empty()).then_some(category)
-}
-
-fn grouped(channels: Vec<&ChannelInfo>) -> (Vec<&ChannelInfo>, Vec<Section<'_>>) {
-    let mut plain = Vec::new();
-    let mut sections: Vec<Section<'_>> = Vec::new();
-    for info in channels {
-        let Some(category) = category_of(info) else {
-            plain.push(info);
-            continue;
-        };
-        match sections.iter_mut().find(|held| held.category == category) {
-            Some(section) => section.channels.push(info),
-            None => sections.push(Section {
-                category,
-                channels: vec![info],
-            }),
-        }
-    }
-    sections.sort_by_cached_key(section_order);
-    (plain, sections)
-}
-
-fn section_order<'a>(section: &Section<'a>) -> (String, &'a str) {
-    (section.category.to_lowercase(), section.category)
-}
-
 pub(crate) struct DmChoice {
     pub peer: u64,
     pub name: String,
@@ -355,26 +320,12 @@ impl Chat {
             }
         }
         dms.sort_by_key(|dm| Reverse(self.recency(dm)));
-        let (mine, sections) = grouped(mine);
         PhoneRooms {
             mine,
-            sections,
             dms,
             work,
             rest,
             archived,
-        }
-    }
-
-    // the desktop's list: the same rooms, with each categorized channel
-    // filed under its section
-    pub(crate) fn sidebar_rooms(&self) -> RoomList<'_> {
-        let list = self.room_list();
-        let (channels, sections) = grouped(list.channels);
-        RoomList {
-            channels,
-            sections,
-            ..list
         }
     }
 
@@ -447,11 +398,7 @@ impl Chat {
                     .map(|peer| DmEntry { info, peer }),
             );
         }
-        RoomList {
-            channels,
-            sections: Vec::new(),
-            dms,
-        }
+        RoomList { channels, dms }
     }
 
     pub(crate) fn settle_dm_heads(&mut self, cx: &mut Context<Self>) {

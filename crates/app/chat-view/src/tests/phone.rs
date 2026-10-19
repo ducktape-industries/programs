@@ -1394,8 +1394,9 @@ fn the_channels_owner_on_record_decides_not_the_owner_the_row_names() {
 
 // ---------- the reader's rooms, and the groups shut until opened ----------
 
-// A busy network: General eddy owns, Teams' Design he listens to, a job's
-// room, a change's review and Random he is in none of, and his direct room.
+// A busy network: General eddy owns, Design he listens to (its `category`
+// meta read by nobody now), two jobs' rooms (one filed under jobs/), a
+// change's review and Random he is in none of, and his direct room.
 fn busy_network(cx: &TestAppContext) {
     cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
         let theirs = |id: &str, name: &str| {
@@ -1411,6 +1412,7 @@ fn busy_network(cx: &TestAppContext) {
                     channel("general", "General", 3),
                     design,
                     theirs("j-075", "j-075"),
+                    theirs("j-101", "jobs/j-101 · channel folders"),
                     theirs("forge:web:3", "Review web#3"),
                     theirs("random", "Random"),
                     channel("dm-7-8", "dm", 1),
@@ -1423,22 +1425,21 @@ fn busy_network(cx: &TestAppContext) {
 }
 
 #[test]
-fn the_rooms_page_lists_the_readers_rooms_by_category_and_shuts_work_and_the_rest() {
+fn the_rooms_page_lists_the_readers_rooms_and_shuts_work_and_the_rest() {
     let (mut cx, view) = phone();
     busy_network(&cx);
     cx.update(&view, |chat, _, cx| chat.load_channels(cx));
     cx.run_until_parked();
     assert!(cx.find("chat-rooms-channel-general").is_some(), "owned");
     assert!(
-        cx.find("chat-rooms-category-Teams").is_some(),
-        "{:?}",
-        cx.texts()
+        cx.find("chat-rooms-category-Teams").is_none(),
+        "a category meta files nothing"
     );
     assert!(
         cx.find("chat-rooms-channel-design").is_some(),
         "listened to"
     );
-    for shut in ["j-075", "forge:web:3", "random"] {
+    for shut in ["j-075", "j-101", "forge:web:3", "random"] {
         let row = format!("chat-rooms-channel-{shut}");
         assert!(cx.find(&row).is_none(), "{shut} is shut away");
     }
@@ -1455,6 +1456,11 @@ fn the_rooms_page_lists_the_readers_rooms_by_category_and_shuts_work_and_the_res
     assert!(
         cx.find("chat-rooms-channel-j-075").is_some(),
         "a job's room"
+    );
+    assert!(
+        cx.find("chat-rooms-folder-jobs").is_some()
+            && cx.find("chat-rooms-channel-j-101").is_some(),
+        "a job's room filed under jobs/ is Work's too"
     );
     assert!(
         cx.find("chat-rooms-channel-forge:web:3").is_some(),

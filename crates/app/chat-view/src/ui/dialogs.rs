@@ -49,8 +49,6 @@ pub fn channel_create(
         )
         .child(caption("Channel name", theme))
         .child(name_field(create, can_submit, cx, theme))
-        .child(caption(words::CATEGORY, theme))
-        .child(category_field(create, can_submit, cx, theme))
         .children(notes(chat, create, theme))
         // one row, as the other views' dialogs: the option, then Cancel
         // beside the primary action
@@ -97,17 +95,6 @@ fn name_field(
     let name = Input::new("chat-create-name", &create.name, "Name the new channel")
         .placeholder("Channel name");
     form_field(name, create, can_submit, cx, theme)
-}
-
-fn category_field(
-    create: &ChannelCreate,
-    can_submit: bool,
-    cx: &mut Context<Chat>,
-    theme: &Theme,
-) -> Input {
-    let category = Input::new("chat-create-category", &create.category, words::CATEGORY)
-        .placeholder(words::NO_CATEGORY);
-    form_field(category, create, can_submit, cx, theme)
 }
 
 fn form_field(

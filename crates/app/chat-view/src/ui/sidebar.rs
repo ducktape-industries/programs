@@ -115,22 +115,14 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         ));
     }
     let open = chat.room.as_ref().map(|room| room.id.as_str());
-    let room_list = chat.sidebar_rooms();
+    let room_list = chat.room_list();
     let plain = chat.lines(&room_list.channels);
-    let sections: Vec<(&str, Vec<Line<'_>>)> = room_list
-        .sections
-        .iter()
-        .map(|section| (section.category, chat.lines(&section.channels)))
-        .collect();
     // one Tab stop under the header: ↑ ↓ walk the channels, their folders
     // and the direct messages, Enter opens the active room or folder, → and
     // ← open and close the active folder
-    let filed = plain
-        .iter()
-        .chain(sections.iter().flat_map(|(_, lines)| lines));
     let dms = room_list.dms.iter();
     let dms = dms.map(|dm| Spot::Room(dm.info.channel.id.clone()));
-    let spots: Vec<Spot> = filed.map(Line::spot).chain(dms).collect();
+    let spots: Vec<Spot> = plain.iter().map(Line::spot).chain(dms).collect();
     let at = chat.rooms_at(&spots);
     let picked = spots.clone();
     // the Menu key or Shift+F10 opens the active room's menu, under its row
@@ -176,17 +168,6 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     for line in &plain {
         box_ = box_.child(line_row(chat, line, open, index == at, cx, theme, ladder));
         index += 1;
-    }
-    for (category, lines) in &sections {
-        box_ = box_.child(section_title(
-            format!("chat-sidebar-category-{category}"),
-            category,
-            theme,
-        ));
-        for line in lines {
-            box_ = box_.child(line_row(chat, line, open, index == at, cx, theme, ladder));
-            index += 1;
-        }
     }
     box_ = box_.child(section_header(
         "chat-sidebar-dm-header",

@@ -8,9 +8,10 @@ app's screens). `lib.rs` picks the design once per frame by `window.touch()`;
 NOTIFIER (`notifier.rs`) alone, in place of the view.
 
 ## Panes and screens
-- Rooms: the desktop sidebar (`ui/sidebar.rs`, `Chat::sidebar_rooms`, with
-  category sections) and the phone's rooms page (`ui/phone/rooms.rs`,
-  `Chat::room_list`). In both, a `/` in a channel's name files it under
+- Rooms: the desktop sidebar (`ui/sidebar.rs`, `Chat::room_list`) and the
+  phone's rooms page (`ui/phone/rooms.rs`, `Chat::phone_rooms`: the reader's
+  own, then Work and All channels). In both, a `/` in a channel's name files
+  it under
   folders (`Chat::lines`): `jobs/j-097` is listed as `j-097` under **jobs**,
   each folder where its first channel would be, a channel named as a folder
   is that folder's row, and a closed folder counts the unread rooms inside.

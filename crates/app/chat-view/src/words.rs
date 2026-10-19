@@ -175,10 +175,6 @@ pub(crate) const UNARCHIVE: &str = "Unarchive";
 pub(crate) const RENAME_CHANNEL: &str = "Rename channel";
 /// The Add a member field's label and placeholder.
 pub(crate) const ACCOUNT_NUMBER: &str = "Account number";
-pub(crate) const CATEGORY: &str = "Category";
-pub(crate) const NO_CATEGORY: &str = "No category";
-pub(crate) const SET_CATEGORY: &str = "Set category";
-pub(crate) const CLEAR_CATEGORY: &str = "Clear category";
 pub(crate) const RULES: &str = "Rules";
 pub(crate) const NO_RULES: &str = "No rules";
 pub(crate) const SET_RULES: &str = "Set rules";

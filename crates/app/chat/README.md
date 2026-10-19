@@ -13,7 +13,7 @@ readers share.
 
 | key | value | read by |
 |---|---|---|
-| `category` | a section name | chat-view, which files the room under that section of its sidebar |
+| `category` | a section name | nobody now: chat-view files rooms by the `/` in their names, and leaves the value as it is |
 | `widget.header`, `widget.pinned`, `widget.side` | a widget file's path | chat-view ([widgets.md](../../../docs/widgets.md)) |
 | `rules` (`chat::RULES`) | how to talk in the room | everyone who talks there |
 

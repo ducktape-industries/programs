@@ -1,5 +1,5 @@
-//! Channel folders: a `/` in a channel's name files it under a folder in both trees' room lists, a
-//! folder opens and closes and stays so on the device, and a closed one counts its unread rooms.
+//! Channel folders, the one grouping: a `/` in a channel's name files it under a folder in both
+//! trees' room lists, a folder opens and closes and stays so, and a closed one counts its unread.
 use super::room::claims;
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
@@ -214,6 +214,11 @@ fn the_arrows_open_and_close_a_folder_and_a_hidden_room_hands_it_its_row() {
 fn the_phone_files_channels_under_folders_too() {
     let (mut cx, view) = desk(&[]);
     cx.simulate_touch(true);
+    assert!(
+        cx.find("chat-rooms-folder-jobs").is_none(),
+        "jobs' rooms are Work's, shut until opened"
+    );
+    cx.simulate_click("chat-rooms-work");
     assert!(cx.find("chat-rooms-folder-jobs").is_some());
     assert!(cx.find("chat-rooms-channel-j-097").is_some());
     assert!(cx.has_text("j-097 · channel folders"));
@@ -260,4 +265,46 @@ fn export_folder_screens() {
     }
     let listed = serde_json::to_vec_pretty(&manifest).unwrap();
     std::fs::write(out.join("folders-manifest.json"), listed).unwrap();
+}
+
+// The `/` in names is the one grouping: a `category` meta files nothing, the
+// create form and the details have no category, and a block that writes a
+// channel's meta still reads the list again.
+#[test]
+fn a_category_files_nothing_and_new_channels_carry_none() {
+    let (mut cx, _) = desk(&[]);
+    let mut moved = rooms();
+    moved[0].channel.name = "teams/general".into();
+    moved[0].meta.insert("category".into(), "Ops".into());
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Channels { .. } => Reply::Channels(page(moved.clone())),
+                query => chat_reply(query),
+            })
+        }));
+    let meta = chat::tables::CHANNEL_META.key(&"general".to_owned());
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(5, vec![meta]));
+    cx.run_until_parked();
+    assert!(cx.find("chat-sidebar-folder-teams").is_some(), "read again");
+    assert!(cx.find("chat-sidebar-category-Ops").is_none());
+
+    cx.simulate_click("chat-sidebar-channel-general");
+    cx.run_until_parked();
+    cx.simulate_click("chat-room-details");
+    assert!(cx.find("chat-details-category").is_none());
+
+    cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
+    cx.simulate_click("chat-sidebar-new-channel");
+    assert!(cx.find("chat-create-category").is_none());
+    cx.simulate_input("chat-create-name", "jobs/j-102");
+    cx.simulate_submit("chat-create-name");
+    cx.run_until_parked();
+    let sent = cx.host().requests::<Submit<::chat::Chat>>().pop();
+    assert!(
+        matches!(&sent, Some(Op::CreateChannel { name, .. }) if name == "jobs/j-102"),
+        "{sent:?}"
+    );
 }

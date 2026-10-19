@@ -403,8 +403,6 @@ pub struct Hits {
 #[derive(Serialize, Deserialize, Default)]
 pub struct ChannelCreate {
     pub(crate) name: TextField,
-    #[serde(default)]
-    pub(crate) category: TextField,
     pub(crate) members_only: bool,
     pub(crate) error: String,
     #[serde(skip)]
@@ -427,8 +425,6 @@ pub struct DmHead {
 #[derive(Serialize, Deserialize, Default)]
 pub struct Details {
     pub(crate) name_draft: TextField,
-    #[serde(default)]
-    pub(crate) category_draft: TextField,
     #[serde(default)]
     pub(crate) rules_draft: TextField,
     pub(crate) member_draft: TextField,

@@ -1,5 +1,5 @@
 //! The rooms, the chat's first page (Expo `app/(tabs)/chat/index.tsx`, boards 10-12): the title
-//! row, the reader's own channels by category, their direct rooms newest first, then Work and All
+//! row, the reader's own channels, their direct rooms newest first, then Work and All
 //! channels shut until opened, channels in their folders; a folder's row opens or closes it.
 use view::prelude::*;
 use view::{Div, Stateful};
@@ -93,7 +93,7 @@ fn caption(chat: &Chat) -> String {
 }
 
 // The reader's channels always (their loading line or empty state under
-// them), each category's, Direct messages always, then Work and All
+// them), Direct messages always, then Work and All
 // channels where they hold a room.
 fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
     let list = chat.phone_rooms();
@@ -101,20 +101,9 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     let loading = matches!(chat.channels, Loadable::Idle | Loadable::Loading(_));
     // the empty state says the network holds no channel: keyed on every
     // room, not the ones the reader is in, and none archived
-    let none = list.mine.is_empty()
-        && list.sections.is_empty()
-        && list.work.is_empty()
-        && list.rest.is_empty();
+    let none = list.mine.is_empty() && list.work.is_empty() && list.rest.is_empty();
     let empty = (!loading && none && list.archived == 0).then(|| no_rooms(chat, cx, theme, ladder));
     let mine = lines(chat, &list.mine, cx, theme, ladder);
-    let mut sections = Vec::new();
-    for section in &list.sections {
-        let id = format!("chat-rooms-category-{}", section.category);
-        let head = design::section_head(id, section.category.to_owned(), ladder, theme)
-            .children(count(section.channels.len()));
-        sections.push(head.into_any_element());
-        sections.extend(lines(chat, &section.channels, cx, theme, ladder));
-    }
     let mut dms = Vec::new();
     for dm in &list.dms {
         dms.push(dm_row(chat, dm, cx, theme, ladder));
@@ -150,7 +139,6 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
             ))
         })
         .children(empty)
-        .children(sections)
         .child(
             design::section_head("chat-rooms-dms-head", words::DIRECT_MESSAGES, ladder, theme)
                 .children(count(list.dms.len()))

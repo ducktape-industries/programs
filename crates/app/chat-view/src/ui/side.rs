@@ -160,14 +160,6 @@ pub fn details(
                     ladder,
                 ))
                 .child(rule(theme))
-                .children(category_section(
-                    &details.category_draft,
-                    crate::room_list::category_of(info).is_some(),
-                    cx,
-                    theme,
-                    ladder,
-                ))
-                .child(rule(theme))
                 .children(rules_section(chat, &details.rules_draft, cx, theme, ladder))
                 .child(rule(theme))
                 .child(section(words::MEMBERS, theme))
@@ -244,48 +236,6 @@ fn name_section(
         )
         .into_any_element(),
     ]
-}
-
-fn category_section(
-    draft: &TextField,
-    categorized: bool,
-    cx: &mut Context<Chat>,
-    theme: &Theme,
-    ladder: &Ladder,
-) -> Vec<AnyElement> {
-    let set = cx.listener(|chat, _: &ClickEvent, _window, cx| {
-        cx.notify();
-        chat.set_category(cx)
-    });
-    let mut controls = vec![
-        section(words::CATEGORY, theme).into_any_element(),
-        field("chat-details-category", draft, words::CATEGORY, theme)
-            .placeholder(words::NO_CATEGORY)
-            .into_any_element(),
-        button(
-            "chat-details-set-category",
-            words::SET_CATEGORY,
-            ladder,
-            theme,
-            set,
-        )
-        .into_any_element(),
-    ];
-    if categorized {
-        let clear = cx.listener(|chat, _: &ClickEvent, _window, cx| {
-            cx.notify();
-            chat.clear_category(cx)
-        });
-        let clear = button(
-            "chat-details-clear-category",
-            words::CLEAR_CATEGORY,
-            ladder,
-            theme,
-            clear,
-        );
-        controls.push(clear.into_any_element());
-    }
-    controls
 }
 
 // the room's rules as they read, then the field their owner sets them in: the text itself, or a

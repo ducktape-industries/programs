@@ -15,7 +15,6 @@ use view::methods::{Changes, HostId, HostSession, HostVisible, Session, Submit};
 mod agents;
 mod archived;
 mod attachments;
-mod categories;
 mod context_menus;
 mod cost;
 mod dms;
@@ -583,16 +582,11 @@ fn export_chat_screens() {
     .unwrap();
 }
 
-// Every room's id in the list's order, folders aside: channels, each
-// category's, then the direct rooms.
+// Every room's id in the list's order, folders aside: the channels, then
+// the direct rooms.
 impl crate::room_list::RoomList<'_> {
     fn ids(&self) -> Vec<String> {
-        let sectioned = self.sections.iter().flat_map(|section| &section.channels);
-        let channels = self
-            .channels
-            .iter()
-            .chain(sectioned)
-            .map(|info| info.channel.id.clone());
+        let channels = self.channels.iter().map(|info| info.channel.id.clone());
         channels
             .chain(self.dms.iter().map(|dm| dm.info.channel.id.clone()))
             .collect()
