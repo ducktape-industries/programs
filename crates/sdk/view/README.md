@@ -148,9 +148,9 @@ A `Styled` method's style crosses whole as the node's style entry, but for
 gpui's debug outlines (a debug build's alone) and a pattern background (the
 host refuses it). Text styling cascades to the text inside, as in gpui:
 colour, family, features, fallbacks, size, line height, weight, slant,
-background, underline, strikethrough, white space, overflow, alignment, line
-clamp and letter spacing (`.letter_spacing(px(0.66))`, in pixels, negative
-to tighten).
+background, underline, strikethrough, white space, overflow, alignment and
+line clamp. Letter spacing (`.letter_spacing(..)`) crosses too, but the app
+draws text at the font's own spacing whatever it says.
 Ours, defined in this crate:
 
 - `App`, `AppContext`, `AsyncApp`, `Context`, `Entity`, `WeakEntity`
