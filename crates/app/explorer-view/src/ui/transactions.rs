@@ -301,12 +301,14 @@ fn from(view: &Explorer, tx: &TxRow, cx: Cx, theme: &Theme) -> Div {
     let Some((account, at)) = view.holder(&tx.signer) else {
         return div().child(mono(abi::hex(&tx.signer)));
     };
+    let picture = view.picture(account, cx);
     div()
         .flex()
         .items_center()
         .gap_2()
-        .child(design::avatar(
+        .child(design::avatar_with(
             &account.card.name,
+            picture,
             design::size::AVATAR,
             theme,
         ))
@@ -407,15 +409,16 @@ fn value(view: &Explorer, shown: &Value, at: &str, cx: Cx, theme: &Theme) -> Any
 /// An account as its avatar and name, a link to its page; its number
 /// where the window has no such account.
 fn account(view: &Explorer, number: u64, at: &str, cx: Cx, theme: &Theme) -> AnyElement {
-    let name = view
-        .account(number)
-        .map(|account| account.card.name.clone());
+    let face = view.account(number).map(|account| {
+        let picture = view.picture(account, cx);
+        design::avatar_with(&account.card.name, picture, design::size::AVATAR_SM, theme)
+    });
     let shown = view.name_of(number);
     div()
         .flex()
         .items_center()
         .gap_2()
-        .children(name.map(|name| design::avatar(&name, design::size::AVATAR_SM, theme)))
+        .children(face)
         .child(link(
             format!("explorer-value-{at}"),
             shown,

@@ -231,12 +231,14 @@ fn from(view: &Explorer, tx: &TxRow, cx: Cx, k: &Look) -> Div {
         return data(abi::hex(&tx.signer));
     };
     let which = words::key_line(account, at, &tx.signer);
+    let picture = view.picture(account, cx);
     div()
         .flex()
         .items_center()
         .gap(space::SM)
-        .child(design::avatar(
+        .child(design::avatar_with(
             &account.card.name,
+            picture,
             k.ladder.avatar_inline,
             &k.theme,
         ))
@@ -346,15 +348,21 @@ fn value(view: &Explorer, shown: &Value, at: &str, cx: Cx, k: &Look) -> AnyEleme
 /// An account as its face and name, a link to its page, and its number
 /// faint (Expo `AccountValue`).
 fn account_value(view: &Explorer, number: u64, at: &str, cx: Cx, k: &Look) -> AnyElement {
-    let name = view
-        .account(number)
-        .map(|account| account.card.name.clone());
+    let face = view.account(number).map(|account| {
+        let picture = view.picture(account, cx);
+        design::avatar_with(
+            &account.card.name,
+            picture,
+            k.ladder.avatar_inline,
+            &k.theme,
+        )
+    });
     let shown = view.name_of(number);
     div()
         .flex()
         .items_center()
         .gap(space::XS)
-        .children(name.map(|name| design::avatar(&name, k.ladder.avatar_inline, &k.theme)))
+        .children(face)
         .child(linked(
             format!("explorer-value-{at}"),
             shown,

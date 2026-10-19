@@ -579,18 +579,27 @@ pub(super) fn small(
     .into_any_element()
 }
 
-/// An account's face (Expo `Avatar` with `words.ts` `faceOf`): a system
-/// program's is square with a mono letter, a managed account's in the
-/// agent tint, a suspended or revoked one at half strength.
-pub(super) fn face(account: &identity::Account, size: Face, k: &Look) -> Div {
+// An account's face (Expo `Avatar` with `words.ts` `faceOf`): its
+// `picture` once read, else its initial; a system program's is square with
+// a mono letter, a managed account's in the agent tint (a picture ringed in
+// it), a suspended or revoked one at half strength.
+pub(super) fn face(
+    account: &identity::Account,
+    picture: Option<std::sync::Arc<view::Image>>,
+    size: Face,
+    k: &Look,
+) -> Div {
     let kind = account.kind();
     let off = kind.note().is_some();
+    let name = &account.card.name;
+    let ringed = picture.is_some();
     let avatar = match kind {
-        identity::Kind::System(_) => module_face(&account.card.name, size, k),
-        identity::Kind::Program { .. } => design::avatar(&account.card.name, size, &k.theme)
+        identity::Kind::System(_) => module_face(name, size, k),
+        identity::Kind::Program { .. } => design::avatar_with(name, picture, size, &k.theme)
             .bg(k.theme.agent_soft)
-            .text_color(k.theme.agent),
-        identity::Kind::User => design::avatar(&account.card.name, size, &k.theme),
+            .text_color(k.theme.agent)
+            .when(ringed, |face| face.border_2().border_color(k.theme.agent)),
+        identity::Kind::User => design::avatar_with(name, picture, size, &k.theme),
     };
     // SDK gap: Avatar `off`, the SDK builds it later
     avatar.when(off, |avatar| avatar.opacity(OFF_OPACITY))

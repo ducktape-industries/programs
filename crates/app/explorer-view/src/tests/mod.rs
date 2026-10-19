@@ -7,6 +7,7 @@
 mod access;
 mod describe;
 mod detail;
+mod faces;
 mod follow;
 mod pages;
 mod phone;

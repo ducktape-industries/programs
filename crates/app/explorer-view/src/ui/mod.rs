@@ -459,10 +459,14 @@ impl Rows {
 }
 
 /// Who signed: the account holding the key, or the key itself.
-fn signer(view: &Explorer, key: &[u8], theme: &Theme) -> impl IntoElement {
-    let (name, number) = match view.holder(key) {
-        Some((account, _)) => (account.card.name.clone(), Some(account.number)),
-        None => (short(key), None),
+fn signer(view: &Explorer, key: &[u8], cx: Cx, theme: &Theme) -> impl IntoElement {
+    let (name, number, picture) = match view.holder(key) {
+        Some((account, _)) => (
+            account.card.name.clone(),
+            Some(account.number),
+            view.picture(account, cx),
+        ),
+        None => (short(key), None, None),
     };
     div()
         .flex()
@@ -470,7 +474,12 @@ fn signer(view: &Explorer, key: &[u8], theme: &Theme) -> impl IntoElement {
         .gap_2()
         .w(SIGNER_W)
         .flex_shrink_0()
-        .child(design::avatar(&name, design::size::AVATAR, theme))
+        .child(design::avatar_with(
+            &name,
+            picture,
+            design::size::AVATAR,
+            theme,
+        ))
         .child(div().truncate().child(name))
         .children(number.map(|number| {
             mono(format!("#{number}"))
@@ -597,7 +606,7 @@ fn tx_row(view: &Explorer, tx: &TxRow, cx: Cx, theme: &Theme) -> Stateful<Div> {
     row(ElementId::Name(id), label, tx_route(tx), cx, theme)
         .child(mark)
         .child(div().flex_1().truncate().child(tx.target.clone()))
-        .child(signer(view, &tx.signer, theme))
+        .child(signer(view, &tx.signer, cx, theme))
         .child(mono(place).text_color(theme.muted))
 }
 
@@ -694,7 +703,7 @@ fn frame_row(view: &Explorer, frame: &activity::Frame, cx: Cx, theme: &Theme) ->
     row(ElementId::Name(id), label, frame_route(frame), cx, theme)
         .child(mark)
         .child(div().flex_1().truncate().child(frame.target.clone()))
-        .child(signer(view, &frame.signer, theme))
+        .child(signer(view, &frame.signer, cx, theme))
         .child(mono(grouped(height)).text_color(theme.muted))
         .child(
             mono(ago(now, frame.time))

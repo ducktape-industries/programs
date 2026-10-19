@@ -56,7 +56,8 @@ impl View for Explorer {
         Capability::Chain,
         Capability::Program,
         Capability::Op,
-        // what a program's code declares, on its page (`blob.manifest`)
+        // what a program's code declares, on its page (`blob.manifest`), and
+        // each account's picture (`blob.get`)
         Capability::Blob,
         Capability::Host,
         Capability::Clock,
@@ -68,6 +69,9 @@ impl View for Explorer {
     const MIN_WINDOW_WIDTH: u32 = 640;
 
     fn attach(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.pictures.is_none() {
+            self.pictures = Some(cx.new(|_| view::pictures::Pictures::default()));
+        }
         self.watch(cx);
         self.read_all(cx);
     }

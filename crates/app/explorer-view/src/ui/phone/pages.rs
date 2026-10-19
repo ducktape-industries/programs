@@ -284,7 +284,12 @@ fn account_line(view: &Explorer, account: &identity::Account, cx: Cx, k: &Look) 
         cx,
         k,
     )
-    .child(design::lead(face(account, k.ladder.avatar, k)))
+    .child(design::lead(face(
+        account,
+        view.picture(account, cx),
+        k.ladder.avatar,
+        k,
+    )))
     .child(title_and_caption(
         div().truncate().child(account.card.name.clone()),
         caption(about, k),

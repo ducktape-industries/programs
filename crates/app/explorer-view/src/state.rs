@@ -327,6 +327,9 @@ pub struct Explorer {
     /// the phone's sheet over the page, if one is open
     #[serde(skip)]
     pub(crate) sheet: Option<Sheet>,
+    // each account's picture, read by its blob id as a face first draws it
+    #[serde(skip)]
+    pub(crate) pictures: Option<Entity<view::pictures::Pictures>>,
 }
 
 /// A sheet the phone opens over the Programs page (Expo `programs.tsx`);
@@ -415,6 +418,17 @@ impl Explorer {
         self.accounts
             .ready()
             .map_or(&[][..], |accounts| accounts.list.as_slice())
+    }
+
+    // The picture on `account`'s card, once read.
+    pub(crate) fn picture(
+        &self,
+        account: &identity::Account,
+        cx: &mut Context<Explorer>,
+    ) -> Option<std::sync::Arc<view::Image>> {
+        let blob = account.card.avatar?;
+        let pictures = self.pictures.clone()?;
+        pictures.update(cx, |pictures, cx| pictures.get(&blob, cx))
     }
 
     pub(crate) fn account(&self, number: u64) -> Option<&identity::Account> {

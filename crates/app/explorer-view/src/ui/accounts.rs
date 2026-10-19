@@ -50,6 +50,7 @@ pub(super) fn accounts(view: &Explorer, cx: Cx, theme: &Theme, ladder: &Ladder) 
 fn account_row(view: &Explorer, account: &Account, cx: Cx, theme: &Theme) -> Stateful<Div> {
     let name = &account.card.name;
     let sent = view.sent_by(account.number);
+    let picture = view.picture(account, cx);
     row(
         SharedString::from(format!("explorer-account-{}", account.number)).into(),
         name.clone(),
@@ -57,7 +58,12 @@ fn account_row(view: &Explorer, account: &Account, cx: Cx, theme: &Theme) -> Sta
         cx,
         theme,
     )
-    .child(design::avatar(name, design::size::AVATAR, theme))
+    .child(design::avatar_with(
+        name,
+        picture,
+        design::size::AVATAR,
+        theme,
+    ))
     .child(div().flex_1().truncate().child(name.clone()))
     .child(div().text_color(theme.muted).child(view.kind_of(account)))
     .child(mono(format!("#{}", account.number)).text_color(theme.faint))
@@ -180,13 +186,14 @@ fn title(view: &Explorer, account: &Account, cx: Cx, theme: &Theme) -> impl Into
         view.kind_of(account),
         plural(account.keys().len() as u64, "device", "devices")
     );
+    let picture = view.picture(account, cx);
     div()
         .flex()
         .items_center()
         .gap_4()
         .px_5()
         .py_4()
-        .child(design::avatar(name, PAGE_AVATAR, theme))
+        .child(design::avatar_with(name, picture, PAGE_AVATAR, theme))
         .child(
             div()
                 .flex()

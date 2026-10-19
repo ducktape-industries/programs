@@ -44,7 +44,7 @@ pub(super) fn account(view: &Explorer, number: u64, cx: Cx, k: &Look) -> AnyElem
     };
     page.child(
         scroller("explorer-page")
-            .child(head(account, &kind, k))
+            .child(head(account, view.picture(account, cx), &kind, k))
             .child(figures(view, account, k))
             .children(devices(view, account, k))
             .children(programs_used(view, number, cx, k))
@@ -87,7 +87,12 @@ fn missing(view: &Explorer, number: u64, cx: Cx, k: &Look) -> AnyElement {
 
 /// Its face at the detail size, its name, `account n · what it is · its
 /// devices`.
-fn head(account: &identity::Account, kind: &str, k: &Look) -> Div {
+fn head(
+    account: &identity::Account,
+    picture: Option<std::sync::Arc<view::Image>>,
+    kind: &str,
+    k: &Look,
+) -> Div {
     let about = format!(
         "account {} · {kind} · {}",
         account.number,
@@ -98,7 +103,7 @@ fn head(account: &identity::Account, kind: &str, k: &Look) -> Div {
         .items_center()
         .gap(space::LG)
         .p(space::BLOCK)
-        .child(face(account, k.ladder.avatar_detail, k))
+        .child(face(account, picture, k.ladder.avatar_detail, k))
         .child(
             div()
                 .flex_1()
