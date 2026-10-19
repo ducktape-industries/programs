@@ -46,6 +46,16 @@ fn a_seeded_room_is_read_off_the_chain_and_a_post_comes_back_through_it() {
         },
     )
     .unwrap();
+    // the reader listens to general: one of the rooms its sidebar holds
+    net.submit(
+        net.me(),
+        chat::PROGRAM,
+        &Op::Listen {
+            channel_id: "general".into(),
+            listening: true,
+        },
+    )
+    .unwrap();
     net.at(minute(2));
     post(&net, ada, "m1", "hello from ada");
     net.at(minute(3));
