@@ -18,6 +18,7 @@ use crate::ops::{
 use crate::queries::{
     advertise, closure, listing, protected_branches, ref_names, refs, repos, upload,
 };
+use crate::queue::{dequeue, enqueue, settle};
 use crate::reads::{blob, comparison, diff, log, tree};
 use crate::state::{load_bounds, load_repo};
 use crate::watchers::watch;
@@ -61,6 +62,19 @@ impl Program for Forge {
     /// active.
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         let repo = op.repo().map(str::to_owned);
+        // an op that moves a ref, ends or re-points a change, reports a status or changes what
+        // a branch requires moves the repository's merge queues on
+        let settles = matches!(
+            op,
+            Op::Push { .. }
+                | Op::Merge { .. }
+                | Op::SquashMerge { .. }
+                | Op::Rebase { .. }
+                | Op::ChangeRepoint { .. }
+                | Op::ChangeClose { .. }
+                | Op::Status { .. }
+                | Op::RequireChecks { .. }
+        );
         let actor = &Principal::Account(ctx.sender_account()?);
         let reply = match op {
             Op::Watch { deliver } => return watch(ctx, deliver),
@@ -194,7 +208,16 @@ impl Program for Forge {
                 branch,
                 required,
             } => require(ctx, &repo, &branch, required).map(|()| None),
+            Op::Enqueue {
+                repo,
+                n,
+                expected_head,
+            } => enqueue(ctx, actor, &repo, n, &expected_head).map(|()| None),
+            Op::Dequeue { repo, n } => dequeue(ctx, &repo, n).map(|()| None),
         }?;
+        if settles && let Some(repo) = &repo {
+            settle(ctx, repo)?;
+        }
         if let Some(reply) = reply {
             ctx.set_return_data(abi::encode(&reply));
         }
@@ -340,6 +363,10 @@ impl Program for Forge {
             Query::Required { repo, page } => Reply::Required {
                 height,
                 page: required(ctx, repo, &listing(page)?)?,
+            },
+            Query::Queue { repo, branch, page } => Reply::Queue {
+                height,
+                page: crate::queue::queue(ctx, repo, branch, &listing(page)?)?,
             },
         })
     }

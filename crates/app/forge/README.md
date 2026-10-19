@@ -102,6 +102,7 @@ and decode a `forge::Reply` from the concatenated `Respond` bytes.
 | `Preview { repo: r, n: 1 }` | `Option<PreviewInfo>`: change 1's latest Preview, the target and source heads it read and the squash it made (`merge`) |
 | `Statuses { repo: r, commit: c, page }` | `page<CommitStatus>`: every status of `c`, by reporter then context, each with its state, url and height |
 | `Required { repo: r, page }` | `page<RequiredBranch>`: the branches with required checks, in byte-name order, each with its reporter and contexts |
+| `Queue { repo: r, branch: b"refs/heads/dev".to_vec(), page }` | `page<QueueEntry>`: the branch's merge queue, first in line first, each with its head when it joined and who queued it |
 
 `Advertise` and `Upload` speak Git's own smart-HTTP framing, so they carry no
 Borsh height envelope. They are not UI list APIs. `Upload` answers `ls-refs`
@@ -206,6 +207,8 @@ Closing is terminal; there is no reopen operation.
 | `Preview { repo: r, n: 1 }` | change 1's squash on its target's head, under `refs/changes/1/merge`; `OpReply::Previewed { height, n, oid }` |
 | `Status { repo: r, commit: c, context: "gates.toml#gates".into(), state: CheckState::Passed, url: Some(log) }` | the sender's status of `c` in that context; empty output |
 | `RequireChecks { repo: r, branch: b"refs/heads/dev".to_vec(), required: Some(Required { reporter, contexts }) }` | the branch moves only by a gated merge (`None` drops it); empty output |
+| `Enqueue { repo: r, n: 1, expected_head: b }` | change 1 joins its target's merge queue; empty output |
+| `Dequeue { repo: r, n: 1 }` | change 1 leaves its queue; empty output |
 | `ArchiveEnded { repo: r, after: None, limit: 20 }` | archives the channels of ended changes numbered above `after`, `limit` numbers of them; `OpReply::ArchivedEnded { height, archived, next }` |
 
 A push's objects never ride inside its frame. The client puts git's pack as a
@@ -290,6 +293,19 @@ names each context that is pending, failed or errored, and says "no status from
 gated merge lands has the Preview's parent and tree, since the same merge runs on the
 same commits. The break-glass is the settings owner sending `RequireChecks` with
 `required: None`, one op on chain; the refusals say so.
+
+`Enqueue { n, expected_head }` puts open change `n`, still at that head, at the end of
+its target's merge queue; the target must require checks (`Enqueue` and `Dequeue` need
+what `SquashMerge` needs). Only the first in line is previewed, as it reaches the front,
+with whoever queued it as committer (a Preview of the same heads made already is used as
+is). The op that makes that Preview green in every required context, a `Status` usually,
+lands it: the branch moves to the Preview's very commit, so what landed is what was
+tested, the change is merged by whoever queued it, and the next in line is previewed on
+the new head. An entry leaves the queue, with one line in its change's channel naming
+whoever queued it, when a required context goes `Failed` or `Errored`, when its Preview
+is refused (a conflict names its paths), or when its head moves; a change that merged or
+closed otherwise just leaves. Each op that moves a ref, ends or re-points a change,
+reports a status or changes what a branch requires moves the repository's queues on.
 
 ### Archiving a change's channel
 

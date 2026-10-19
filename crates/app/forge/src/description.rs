@@ -228,6 +228,16 @@ pub fn describe(op: &Op) -> Description {
             };
             (verb, repo, fields)
         }
+        Op::Enqueue {
+            repo,
+            n,
+            expected_head,
+        } => (
+            "Queue change",
+            repo,
+            vec![change(n), field("head", Value::text(expected_head))],
+        ),
+        Op::Dequeue { repo, n } => ("Take change out of the queue", repo, vec![change(n)]),
         Op::ReviewSubmit { repo, n, review } => (
             "Review",
             repo,

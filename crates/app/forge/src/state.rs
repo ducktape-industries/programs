@@ -10,8 +10,8 @@ use gitcore::{Hash, Oid};
 use store::{Item, Kind, Map, Owned, Set};
 
 use crate::contract::{
-    Bounds, Change, ChangeState, CommitStatus, PreviewInfo, Principal, Repo, Required, Review,
-    Revision, Watched, valid_repo_name,
+    Bounds, Change, ChangeState, CommitStatus, PreviewInfo, Principal, QueueEntry, Repo, Required,
+    Review, Revision, Watched, valid_repo_name,
 };
 use crate::objects::hash_of;
 
@@ -59,6 +59,12 @@ pub const STATUSES: Map<(String, String, Principal, String), CommitStatus> =
     Map::new("s/").shared();
 // The branches that move only by a merge whose Preview is green.
 pub const REQUIRED: Map<(String, Vec<u8>), Required> = Map::new("q/").shared();
+// Each branch's merge queue, in the order its changes joined: by repository, branch and place.
+pub const QUEUE: Map<(String, Vec<u8>, u64), QueueEntry> = Map::new("e/").shared();
+// Index: the branch and place each queued change holds.
+pub const QUEUED: Map<(String, u64), (Vec<u8>, u64)> = Map::new("g/").shared();
+// The last place a queue gave out.
+pub const QUEUE_SEQ: Item<u64> = Item::new("queue-seq").shared();
 
 /// Stored state that is not what forge wrote: an operator's problem.
 pub(crate) fn storage(sentence: impl Into<String>) -> Error {
@@ -347,4 +353,7 @@ pub(crate) const TABLES: &[::program::Table] = &[
     PREVIEWS.table(),
     STATUSES.table(),
     REQUIRED.table(),
+    QUEUE.table(),
+    QUEUED.table(),
+    QUEUE_SEQ.table(),
 ];

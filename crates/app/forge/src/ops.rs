@@ -97,7 +97,9 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::Merge { repo, .. }
         | Op::Stage { repo, .. }
         | Op::SquashMerge { repo, .. }
-        | Op::DeleteBranch { repo, .. } => {
+        | Op::DeleteBranch { repo, .. }
+        | Op::Enqueue { repo, .. }
+        | Op::Dequeue { repo, .. } => {
             vec![Need::write(repo_key(repo))]
         }
         Op::ChangeClose { repo, n } => {

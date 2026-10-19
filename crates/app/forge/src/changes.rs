@@ -290,7 +290,7 @@ fn open_on(
 }
 
 // The change merged at `result` by `actor`, and its line in the change's channel.
-fn merged(
+pub(crate) fn merged(
     ctx: &ExecCtx,
     actor: &Principal,
     repo: &str,
@@ -461,6 +461,22 @@ pub(crate) fn preview(
     repo: &str,
     n: u64,
 ) -> Result<OpReply, Error> {
+    let made = previewed(ctx, require_named(actor)?, repo, n)?;
+    Ok(OpReply::Previewed {
+        height: ctx.env().height,
+        n,
+        oid: made.merge,
+    })
+}
+
+// Change `n`'s Preview on its target's head now: the one made already while both heads stay,
+// else a new squash `committer` commits, which watchers hear of.
+pub(crate) fn previewed(
+    ctx: &ExecCtx,
+    committer: AccountNumber,
+    repo: &str,
+    n: u64,
+) -> Result<PreviewInfo, Error> {
     let env = ctx.env();
     let mut record = load_repo(ctx, repo)?;
     let hash = repo_hash(&record);
@@ -473,11 +489,7 @@ pub(crate) fn preview(
         && made.into_head == into.to_hex()
         && made.from_head == from.to_hex()
     {
-        return Ok(OpReply::Previewed {
-            height: env.height,
-            n,
-            oid: made.merge,
-        });
+        return Ok(made);
     }
     let message = message_of(None, Some(&change))?;
     let bounds = load_bounds(ctx)?;
@@ -491,7 +503,8 @@ pub(crate) fn preview(
             "the target already holds the change: nothing to preview",
         ));
     }
-    let committer = signature(ctx, require_named(actor)?)?;
+    let by = Principal::Account(committer);
+    let committer = signature(ctx, committer)?;
     let author = match change.author.account() {
         Some(author) => signature(ctx, author)?,
         None => committer.clone(),
@@ -523,14 +536,10 @@ pub(crate) fn preview(
         repo: repo.to_owned(),
         n,
         merge: id.to_hex(),
-        by: actor.clone(),
+        by,
     };
     crate::watchers::tell(ctx, &previewed)?;
-    Ok(OpReply::Previewed {
-        height: env.height,
-        n,
-        oid: id.to_hex(),
-    })
+    Ok(made)
 }
 
 // What `Rebase` carries besides its repository.

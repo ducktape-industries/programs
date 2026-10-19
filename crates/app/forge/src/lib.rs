@@ -40,6 +40,7 @@ mod state;
 mod watchers;
 
 mod program;
+mod queue;
 
 pub use contract::*;
 pub use description::describe;
@@ -52,7 +53,8 @@ pub use program::Forge;
 pub mod tables {
     pub use crate::state::{
         ACTIVITY, ARCHIVING, AUTHORED, BOUNDS, CHANGES, INVOLVED, LOGGING, MESSAGES, NUMBERS,
-        PREVIEWS, PROTECTED, REFS, REPOS, REQUIRED, REVIEWS, STATUSES, WATCHERS, WRITES,
+        PREVIEWS, PROTECTED, QUEUE, QUEUED, REFS, REPOS, REQUIRED, REVIEWS, STATUSES, WATCHERS,
+        WRITES,
     };
 }
 
@@ -86,6 +88,8 @@ fn op_variants_only_append() {
             "Preview",
             "Status",
             "RequireChecks",
+            "Enqueue",
+            "Dequeue",
         ]
     );
 }

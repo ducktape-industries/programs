@@ -3,8 +3,8 @@ use ::program::{BlobId, HashKind};
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
 use crate::state::{
-    ACTIVITY, AUTHORED, CHANGES, INVOLVED, PREVIEWS, PROTECTED, REFS, REPOS, REQUIRED, REVIEWS,
-    STATUSES,
+    ACTIVITY, AUTHORED, CHANGES, INVOLVED, PREVIEWS, PROTECTED, QUEUE, REFS, REPOS, REQUIRED,
+    REVIEWS, STATUSES,
 };
 
 pub use crate::read_contract::*;
@@ -191,6 +191,17 @@ pub enum Op {
         branch: Vec<u8>,
         required: Option<Required>,
     },
+    // Change `n`, still at `expected_head`, joins its target's merge queue: it lands, as its
+    // Preview's commit, in the op that marks that Preview green in every required context.
+    Enqueue {
+        repo: String,
+        n: u64,
+        expected_head: String,
+    },
+    Dequeue {
+        repo: String,
+        n: u64,
+    },
 }
 
 impl Op {
@@ -215,7 +226,9 @@ impl Op {
             | Op::ArchiveEnded { repo, .. }
             | Op::Preview { repo, .. }
             | Op::Status { repo, .. }
-            | Op::RequireChecks { repo, .. } => Some(repo),
+            | Op::RequireChecks { repo, .. }
+            | Op::Enqueue { repo, .. }
+            | Op::Dequeue { repo, .. } => Some(repo),
             Op::Watch { .. } => None,
         }
     }
@@ -402,6 +415,13 @@ pub enum Query {
         repo: String,
         page: PageRequest,
     },
+    // a branch's merge queue, first in line first
+    #[reads(QUEUE)]
+    Queue {
+        repo: String,
+        branch: Vec<u8>,
+        page: PageRequest,
+    },
 }
 
 impl Query {
@@ -430,7 +450,8 @@ impl Query {
             | Query::RefNames { page, .. }
             | Query::DiffStat { page, .. }
             | Query::Statuses { page, .. }
-            | Query::Required { page, .. } => Some(page),
+            | Query::Required { page, .. }
+            | Query::Queue { page, .. } => Some(page),
             Query::Advertise { .. }
             | Query::Upload { .. }
             | Query::Repo { .. }
@@ -457,7 +478,8 @@ impl Query {
             | Query::RefNames { page, .. }
             | Query::DiffStat { page, .. }
             | Query::Statuses { page, .. }
-            | Query::Required { page, .. } => Some(page),
+            | Query::Required { page, .. }
+            | Query::Queue { page, .. } => Some(page),
             Query::Advertise { .. }
             | Query::Upload { .. }
             | Query::Repo { .. }
@@ -595,6 +617,10 @@ pub enum Reply {
     Required {
         height: u64,
         page: PageResponse<RequiredBranch>,
+    },
+    Queue {
+        height: u64,
+        page: PageResponse<QueueEntry>,
     },
 }
 
@@ -862,6 +888,15 @@ pub struct PreviewInfo {
     pub into_head: String,
     pub from_head: String,
     pub merge: String,
+    pub height: u64,
+}
+
+// A change in a merge queue: its head when it joined and who queued it.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct QueueEntry {
+    pub n: u64,
+    pub head: String,
+    pub by: Principal,
     pub height: u64,
 }
 
