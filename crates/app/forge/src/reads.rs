@@ -7,7 +7,6 @@ use crate::state::{load_repo, parse_oid, repo_hash, resolve};
 use ::program::Error;
 use ::program::{QueryCtx, invalid, not_found};
 use gitcore::{Commit, Hash, Kind, Mode, Objects, Oid, Signature, Tag, Tree};
-use std::collections::BTreeSet;
 use store::Listing;
 
 pub struct Reading<'a> {
@@ -289,6 +288,14 @@ pub fn diff(
     crate::diffs::query(&r, height, base, head, path, listing)
 }
 
+// The object reads one comparison takes.
+fn compare_reads(bounds: &Bounds) -> u64 {
+    bounds
+        .log_walk
+        .saturating_mul(8)
+        .saturating_add(bounds.tree_walk)
+}
+
 /// How `from` stands against `into`: ahead, behind, and their base.
 pub fn comparison(
     ctx: &QueryCtx,
@@ -298,37 +305,64 @@ pub fn comparison(
     from: &Revision,
     into: &Revision,
 ) -> Result<Reply, Error> {
-    let reads = bounds
-        .log_walk
-        .saturating_mul(8)
-        .saturating_add(bounds.tree_walk);
-    let r = reading(ctx, name, bounds, reads)?;
-    let from = r.commit_id(resolve(ctx, name, from, r.hash)?)?;
+    let r = reading(ctx, name, bounds, compare_reads(bounds))?;
     let into = r.commit_id(resolve(ctx, name, into, r.hash)?)?;
-    compare(&r, height, from, into)
+    let comparison = counted(ctx, &r, name, from, into)?;
+    Ok(Reply::Compare { height, comparison })
 }
 
-fn compare(r: &Reading<'_>, height: u64, from: Oid, into: Oid) -> Result<Reply, Error> {
-    let source: BTreeSet<_> = r
-        .result(gitcore::walk::commits(
-            &r.store,
-            &[from],
-            &[],
-            cap(r.bounds.log_walk),
-        ))?
-        .into_iter()
-        .collect();
-    let target: BTreeSet<_> = r
-        .result(gitcore::walk::commits(
-            &r.store,
-            &[into],
-            &[],
-            cap(r.bounds.log_walk),
-        ))?
-        .into_iter()
-        .collect();
-    let ahead = source.difference(&target).count() as u64;
-    let behind = target.difference(&source).count() as u64;
+// Each of `from` against `into`, each read on a budget of its own, so one that cannot be counted
+// is refused alone.
+pub fn comparisons(
+    ctx: &QueryCtx,
+    height: u64,
+    bounds: &Bounds,
+    name: &str,
+    from: &[Revision],
+    into: &Revision,
+) -> Result<Reply, Error> {
+    let r = reading(ctx, name, bounds, compare_reads(bounds))?;
+    let into = r.commit_id(resolve(ctx, name, into, r.hash)?)?;
+    let mut compared = Vec::with_capacity(from.len());
+    for revision in from {
+        let own = Reading {
+            store: ObjectStore::querying(ctx, bounds, compare_reads(bounds)),
+            hash: r.hash,
+            bounds,
+        };
+        let tally = match counted(ctx, &own, name, revision, into) {
+            Ok(comparison) => Tally::Counted(comparison),
+            Err(refusal) => Tally::Refused(refusal.message),
+        };
+        compared.push(Compared {
+            from: revision.clone(),
+            tally,
+        });
+    }
+    Ok(Reply::Compares {
+        height,
+        into: into.to_hex(),
+        compared,
+    })
+}
+
+// `from` against `into`: each side's commits the other does not reach, walked from each tip down
+// to where the histories meet, not through either whole history.
+fn counted(
+    ctx: &QueryCtx,
+    r: &Reading<'_>,
+    name: &str,
+    from: &Revision,
+    into: Oid,
+) -> Result<Comparison, Error> {
+    let from = r.commit_id(resolve(ctx, name, from, r.hash)?)?;
+    let walk = cap(r.bounds.log_walk);
+    let ahead = r
+        .result(gitcore::walk::commits(&r.store, &[from], &[into], walk))?
+        .len() as u64;
+    let behind = r
+        .result(gitcore::walk::commits(&r.store, &[into], &[from], walk))?
+        .len() as u64;
     let base = r.result(gitcore::walk::merge_base(
         &r.store,
         &from,
@@ -343,15 +377,12 @@ fn compare(r: &Reading<'_>, height: u64, from: Oid, into: Oid) -> Result<Reply, 
         Some(b) if b == into => Mergeability::FastForward,
         Some(_) => Mergeability::Diverged,
     };
-    Ok(Reply::Compare {
-        height,
-        comparison: Comparison {
-            from: from.to_hex(),
-            into: into.to_hex(),
-            base: base.map(|o| o.to_hex()),
-            ahead,
-            behind,
-            mergeability,
-        },
+    Ok(Comparison {
+        from: from.to_hex(),
+        into: into.to_hex(),
+        base: base.map(|o| o.to_hex()),
+        ahead,
+        behind,
+        mergeability,
     })
 }

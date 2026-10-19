@@ -473,6 +473,16 @@ pub enum Query {
     #[ask(Reply::Shallow { height: u64, listed: Vec<Listed>, next: DeepWalk, shallow: Vec<String>, unshallow: Vec<String> })]
     #[tool_query(description = "For a shallow fetch (git fetch --depth): History cut deepen commits below each want, and once its depths are walked the boundary, shallow (new) and unshallow (the client's, now passed); send next back for the rest.", example = crate::examples::shallow)]
     Shallow { repo: String, walk: DeepWalk },
+    // Each of `from` against `into`, in order, as `Compare` answers one: a branch that cannot be
+    // counted (past the walk bound, or no such ref) is refused alone.
+    #[reads(REFS)]
+    #[ask(Reply::Compares { height: u64, into: String, compared: Vec<Compared> })]
+    #[tool_query(description = "Many branches against one head in one read: each one's ahead, behind, base and mergeability as Compare answers it, or why it could not be counted.", example = crate::examples::compares)]
+    Compares {
+        repo: String,
+        into: Revision,
+        from: Vec<Revision>,
+    },
 }
 
 impl Query {
@@ -514,7 +524,8 @@ impl Query {
             | Query::Preview { .. }
             | Query::Archived { .. }
             | Query::History { .. }
-            | Query::Shallow { .. } => None,
+            | Query::Shallow { .. }
+            | Query::Compares { .. } => None,
         }
     }
 
@@ -546,7 +557,8 @@ impl Query {
             | Query::Preview { .. }
             | Query::Archived { .. }
             | Query::History { .. }
-            | Query::Shallow { .. } => None,
+            | Query::Shallow { .. }
+            | Query::Compares { .. } => None,
         }
     }
 }
@@ -697,6 +709,12 @@ pub enum Reply {
         next: DeepWalk,
         shallow: Vec<String>,
         unshallow: Vec<String>,
+    },
+    // A `Compares`: `into` resolved, and each branch asked, in order.
+    Compares {
+        height: u64,
+        into: String,
+        compared: Vec<Compared>,
     },
 }
 

@@ -9,7 +9,7 @@ use view::prelude::*;
 
 use crate::queries::{self, PAGE};
 use crate::state::{ChangeTab, Filter, Forge, Progress, RepoTab, Talk};
-use forge::{ChangeFilter, ChangeState, PageRequest, Query, Reply, Revision};
+use forge::{ChangeFilter, ChangeState, PageRequest, Query, Reply};
 use view::methods::HostBadge;
 
 impl Forge {
@@ -66,6 +66,9 @@ impl Forge {
     }
 
     pub(crate) fn reread_writers(&mut self, cx: &mut Context<Self>) {
+        if self.hidden {
+            return;
+        }
         let again: Vec<String> = self
             .writers
             .iter()
@@ -116,19 +119,20 @@ impl Forge {
         self.reread_conversations(change, cx);
     }
 
-    /// Asks again for the reads on screen that `touched` names, keeping what
-    /// is there until the fresh answer lands; a read that lands what is
-    /// there draws nothing. Each read lives in its slot, or beside the
-    /// refusal it shows, so a screen the reader leaves drops its reads with
-    /// it. A read still out is left to land: its landing runs `sync`, and
-    /// the next block asks it again. A refusal is asked again with every
-    /// forge or chat block, whatever it wrote: forge refuses a listing
-    /// `stale` when any op moved its count, and the answer replaces the
-    /// refusal. A log reads the pages it holds again, not its whole history.
+    // Asks again for the reads on screen that `touched` names, keeping what is there until the
+    // fresh answer lands; a read that lands what is there draws nothing. Each read lives in its
+    // slot, or beside the refusal it shows, so a screen the reader leaves drops its reads with it.
+    // A read still out is left to land: its landing runs `sync`, and the next block asks it again.
+    // A refusal stays on screen, saying why, until a block writes what it reads or the reader
+    // retries: a block that wrote elsewhere does not ask it again. Out of sight nothing is asked.
+    // A log reads the pages it holds again, not its whole history.
     fn reread(&mut self, touched: impl Fn(&Query) -> bool, cx: &mut Context<Self>) {
+        if self.hidden {
+            return;
+        }
         for (query, (log, _)) in &self.logs {
-            let (out, refused) = log.read(|log| (log.is_loading(), log.failed().is_some()));
-            if !out && (refused || touched(query)) {
+            let out = log.read(|log| log.is_loading());
+            if !out && touched(query) {
                 log.update(cx, |log, cx| log.reread(cx));
             }
         }
@@ -139,7 +143,7 @@ impl Forge {
             .iter()
             .filter_map(|(query, slot)| match slot {
                 Loadable::Idle | Loadable::Loading(_) => None,
-                Loadable::Failed(_) => Some((query.clone(), true)),
+                Loadable::Failed(_) => touched(query).then(|| (query.clone(), true)),
                 Loadable::Ready(_) | Loadable::Reloading(..) => {
                     touched(query).then(|| (query.clone(), false))
                 }
@@ -168,6 +172,9 @@ impl Forge {
     /// A chat block landed: the change conversations it wrote to are read
     /// again (`None`: every one), on the same terms as [`Self::reread`].
     pub(crate) fn reread_conversations(&mut self, change: Option<&Change>, cx: &mut Context<Self>) {
+        if self.hidden {
+            return;
+        }
         let (host, viewer) = (cx.host(), self.viewer());
         let touched = |talk: &Talk| {
             change.is_none_or(|change| {
@@ -184,7 +191,7 @@ impl Forge {
             .iter()
             .filter_map(|(channel, slot)| match slot {
                 Loadable::Idle | Loadable::Loading(_) => None,
-                Loadable::Failed(_) => Some((channel.clone(), true)),
+                Loadable::Failed(_) => touched(channel).then(|| (channel.clone(), true)),
                 Loadable::Ready(_) | Loadable::Reloading(..) => {
                     touched(channel).then(|| (channel.clone(), false))
                 }
@@ -210,6 +217,9 @@ impl Forge {
 
     /// An identity block landed: the names are read again.
     pub(crate) fn reread_names(&mut self, cx: &mut Context<Self>) {
+        if self.hidden {
+            return;
+        }
         cx.load(self, queries::roster(cx.host()), |forge| &mut forge.names);
         self.read_avatars(cx);
     }
@@ -256,6 +266,9 @@ impl Forge {
 
     /// Issue what this screen needs and drop what it does not.
     pub(crate) fn sync(&mut self, cx: &mut Context<Self>) {
+        if self.hidden {
+            return;
+        }
         self.land_goto();
         self.land_reveal();
         let needed = self.needed();
@@ -374,18 +387,7 @@ impl Forge {
                     .collect()
             }
             RepoTab::Changes => self.changes_query(&repo).into_iter().collect(),
-            RepoTab::Refs => {
-                let head = self.head_name();
-                self.branches()
-                    .into_iter()
-                    .filter(|name| *name != head)
-                    .map(|name| Query::Compare {
-                        repo: repo.clone(),
-                        from: Revision::Ref(name),
-                        into: Revision::Ref(head.clone()),
-                    })
-                    .collect()
-            }
+            RepoTab::Refs => self.compares_query().into_iter().collect(),
             RepoTab::Settings => Vec::new(),
         }
     }

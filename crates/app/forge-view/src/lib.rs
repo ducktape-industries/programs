@@ -136,8 +136,11 @@ impl View for Forge {
         })
         .detach();
         cx.follow::<HostVisible>((), |forge, shown, cx| match shown {
-            Ok(true) => forge.refresh(cx),
-            Ok(false) => {}
+            Ok(true) => {
+                forge.hidden = false;
+                forge.refresh(cx)
+            }
+            Ok(false) => forge.hidden = true,
             Err(refusal) => cx.log_refused("visibility", &refusal),
         })
         .detach();

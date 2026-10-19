@@ -137,3 +137,16 @@ pub struct Comparison {
     pub behind: u64,
     pub mergeability: Mergeability,
 }
+
+// One branch of a `Compares`: what it was asked as, and its comparison or why there is none.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Compared {
+    pub from: Revision,
+    pub tally: Tally,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum Tally {
+    Counted(Comparison),
+    Refused(String),
+}

@@ -9,7 +9,7 @@ use crate::words::{self, ref_label};
 use forge::Principal;
 use forge::{
     Bounds, Change, ChangeState, CommitInfo, Comparison, FileDiff, PageRequest, PageResponse,
-    Query, RefInfo, Reply, RepoInfo, Review, Revision, Side, Verdict,
+    Query, RefInfo, Reply, RepoInfo, Review, Revision, Side, Tally, Verdict,
 };
 use identity::{Ownership, Party};
 
@@ -788,14 +788,40 @@ impl Forge {
         if !name.starts_with(b"refs/heads/") {
             return None;
         }
-        let query = Query::Compare {
-            repo: self.repo_name(),
-            from: Revision::Ref(name.to_vec()),
-            into: Revision::Ref(head),
-        };
-        Some(match self.ready(&query) {
-            Some(Reply::Compare { comparison, .. }) => words::compared(comparison),
+        let into = Revision::Ref(head);
+        let compares = self.data.iter().find_map(|(query, slot)| match query {
+            Query::Compares { into: asked, .. } if *asked == into => Some(slot),
+            _ => None,
+        });
+        let from = Revision::Ref(name.to_vec());
+        Some(match compares {
+            Some(Loadable::Ready(reply) | Loadable::Reloading(reply, _)) => {
+                let Reply::Compares { compared, .. } = &**reply else {
+                    return None;
+                };
+                match &compared.iter().find(|item| item.from == from)?.tally {
+                    Tally::Counted(comparison) => words::compared(comparison),
+                    Tally::Refused(why) => why.clone(),
+                }
+            }
+            Some(Loadable::Failed(refusal)) => design::sentence(refusal),
             _ => words::COMPARING.to_owned(),
+        })
+    }
+
+    // Every branch but the browsed one against it, in one read: the Refs tab's standings.
+    pub(crate) fn compares_query(&self) -> Option<Query> {
+        let head = self.head_name();
+        let from: Vec<Revision> = self
+            .branches()
+            .into_iter()
+            .filter(|name| *name != head)
+            .map(Revision::Ref)
+            .collect();
+        (!from.is_empty()).then(|| Query::Compares {
+            repo: self.repo_name(),
+            into: Revision::Ref(head),
+            from,
         })
     }
 

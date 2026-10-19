@@ -311,6 +311,14 @@ pub(crate) fn compare() -> Query {
     }
 }
 
+pub(crate) fn compares() -> Query {
+    Query::Compares {
+        repo: repo(),
+        into: Revision::Ref(main()),
+        from: vec![feature()],
+    }
+}
+
 pub(crate) fn activity() -> Query {
     Query::Activity { repo: repo() }
 }

@@ -91,7 +91,8 @@ fn next_cursor(reply: &Reply) -> Option<&Vec<u8>> {
         | Reply::Closure { .. }
         | Reply::Preview { .. }
         | Reply::Archived { .. }
-        | Reply::Shallow { .. } => None,
+        | Reply::Shallow { .. }
+        | Reply::Compares { .. } => None,
     }
 }
 

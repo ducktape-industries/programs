@@ -327,6 +327,17 @@ fn replay(tape: &mut Tape) {
     ] {
         tape.capture(&rig, name, compare(from, into));
     }
+    tape.capture(
+        &rig,
+        "compares",
+        Query::Compares {
+            repo: REPO.into(),
+            into: reference("main"),
+            from: ["feature", "clean", "conflict", "unrelated"]
+                .map(reference)
+                .to_vec(),
+        },
+    );
     tape.capture(&rig, "activity", Query::Activity { repo: REPO.into() });
     tape.git_reply(
         &rig,

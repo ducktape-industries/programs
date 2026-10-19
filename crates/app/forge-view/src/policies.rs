@@ -123,6 +123,9 @@ impl Forge {
 
     // Ownership wrote: what is held is read again where the block touched it.
     pub(crate) fn ownership_moved(&mut self, change: Option<Change>, cx: &mut Context<Self>) {
+        if self.hidden {
+            return;
+        }
         item::moved(self, repo_policy, change.as_ref(), cx);
         item::moved(self, change_policy, change.as_ref(), cx);
     }

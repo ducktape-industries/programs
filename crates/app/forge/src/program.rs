@@ -21,7 +21,7 @@ use crate::queries::{
     upload,
 };
 use crate::queue::{dequeue, enqueue, settle};
-use crate::reads::{blob, comparison, diff, log, tree};
+use crate::reads::{blob, comparison, comparisons, diff, log, tree};
 use crate::state::{load_bounds, load_repo};
 use crate::watchers::watch;
 
@@ -336,6 +336,9 @@ impl Program for Forge {
             Query::Closure { repo, walk } => closure(ctx, height, &bounds, repo, walk)?,
             Query::History { repo, walk } => history(ctx, height, &bounds, repo, walk)?,
             Query::Shallow { repo, walk } => shallow(ctx, height, &bounds, repo, walk)?,
+            Query::Compares { repo, into, from } => {
+                comparisons(ctx, height, &bounds, repo, from, into)?
+            }
             Query::Protected { repo, page } => Reply::Protected {
                 height,
                 page: protected_branches(ctx, repo, &listing(page)?)?,

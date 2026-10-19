@@ -95,6 +95,9 @@ pub struct Forge {
     /// is carried by the time its receipt lands
     #[serde(skip)]
     pub(crate) block: u64,
+    // out of sight (`host.visible` false): nothing is read until it shows again
+    #[serde(skip)]
+    pub(crate) hidden: bool,
     #[serde(skip)]
     pub(crate) diff_scroll: UniformListScrollHandle,
     #[serde(skip)]

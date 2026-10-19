@@ -8,7 +8,7 @@ use super::*;
 use crate::api::{Ask, SubmitForge};
 use crate::state::{ChangeTab, Filter, RepoTab};
 use forge::{ChangeFilter, ChangeState, Op, PageRequest, PageResponse, Query, Reply};
-use view::methods::{HostId, HostSession, Session};
+use view::methods::{HostId, HostSession, HostVisible, Session};
 use view::methods::{Query as ProgramQuery, Submit};
 use view::testing::{StreamSender, TestAppContext};
 use view::{Entity, Theme, wire};
@@ -91,6 +91,7 @@ fn answer(query: &Query, mode: &str) -> Reply {
         Query::Diff { .. } => reply("diff-text"),
         Query::Compare { .. } if mode == "diverged" => reply("compare-diverged"),
         Query::Compare { .. } => reply("compare"),
+        Query::Compares { .. } => reply("compares"),
         Query::Changes {
             filter:
                 ChangeFilter {
@@ -524,6 +525,7 @@ struct Heads {
     forge: StreamSender<Changes<forge::Forge>>,
     chat: StreamSender<Changes<::chat::Chat>>,
     identity: StreamSender<Changes<Identity>>,
+    visible: StreamSender<HostVisible>,
 }
 
 /// Boots like [`booted`], following heads the test sends, and opens
@@ -535,6 +537,7 @@ fn followed(mode: &'static str) -> (TestAppContext, Heads) {
         forge: cx.host().stream(),
         chat: cx.host().stream(),
         identity: cx.host().stream(),
+        visible: cx.host().stream(),
     };
     let props = cx.host().stream::<HostSession>();
     cx.open::<Forge>();
@@ -572,11 +575,10 @@ fn a_block_whose_rereads_land_the_same_replies_draws_nothing() {
     assert_eq!(cx.renders(), renders, "nothing drew");
 }
 
-/// A refusal on screen is asked again with each block, without a Retry:
-/// while it holds it stays, drawing nothing, and the block after the node
-/// answers replaces it with the page.
+// A refusal on screen stays, saying why and drawing nothing, through a block that wrote nothing
+// it reads; the block that moves a ref it reads asks it again, and an answer replaces it.
 #[test]
-fn a_refused_read_is_asked_again_with_each_block_until_it_answers() {
+fn a_refused_read_is_asked_again_when_a_block_writes_what_it_reads() {
     let (mut cx, heads) = followed("default");
     cx.host().handle::<Ask>(|query| match query {
         Query::Log { .. } => Err(refusal("refused-not-found")),
@@ -594,27 +596,24 @@ fn a_refused_read_is_asked_again_with_each_block_until_it_answers() {
             .count()
     };
     let (renders, asked) = (cx.renders(), logs(&cx));
-    // a block that wrote nothing the log reads asks a refusal again all the
-    // same: forge refuses a listing `stale` when any op moved its count
-    heads.forge.send(block(100, vec![review_key()]));
-    cx.run_until_parked();
-    assert_eq!(logs(&cx), asked + 1, "the refusal was asked again");
-    assert!(cx.has_text(&sentence));
-    assert_eq!(cx.renders(), renders, "a refusal that holds drew nothing");
     cx.host()
         .handle::<Ask>(|query| Ok(answer(&query, "default")));
-    heads.forge.send(block(101, vec![review_key()]));
+    heads.forge.send(block(100, vec![review_key()]));
+    cx.run_until_parked();
+    assert_eq!(logs(&cx), asked, "a review moves nothing the log reads");
+    assert!(cx.has_text(&sentence));
+    assert_eq!(cx.renders(), renders, "a refusal that holds drew nothing");
+    heads.forge.send(block(101, vec![ref_key()]));
     cx.run_until_parked();
     assert!(!cx.has_text(&sentence), "{:?}", cx.texts());
     assert!(cx.has_text("Feature"), "{:?}", cx.texts());
 }
 
-/// A change's conversation refused (the node was away) is asked again with
-/// each block: while the refusal holds it stays, drawing nothing, and the
-/// block after the node answers replaces it with the rows. It has no Retry
-/// of its own, so before this only leaving the change cleared it.
+// A change's conversation refused (the node was away) stays, drawing nothing, through a chat
+// block that wrote nothing it reads; a block that posts in it asks it again, and the rows
+// replace the refusal.
 #[test]
-fn a_refused_conversation_is_asked_again_with_each_block_until_it_answers() {
+fn a_refused_conversation_is_asked_again_when_a_block_posts_in_it() {
     let (mut cx, heads) = followed("default");
     cx.host()
         .handle::<ProgramQuery<::chat::Chat>>(|query| match query {
@@ -634,17 +633,17 @@ fn a_refused_conversation_is_asked_again_with_each_block_until_it_answers() {
         cx.texts()
     );
     let renders = cx.renders();
+    cx.host()
+        .handle::<ProgramQuery<::chat::Chat>>(|query| Ok(chat_answer(query)));
     heads
         .chat
         .send(block(100, vec![member_key("forge:project:1")]));
     cx.run_until_parked();
     assert!(cx.find("forge-conversation-refused").is_some());
     assert_eq!(cx.renders(), renders, "a refusal that holds drew nothing");
-    cx.host()
-        .handle::<ProgramQuery<::chat::Chat>>(|query| Ok(chat_answer(query)));
     heads
         .chat
-        .send(block(101, vec![member_key("forge:project:1")]));
+        .send(block(101, vec![root_key("forge:project:1")]));
     cx.run_until_parked();
     assert!(
         cx.find("forge-conversation-refused").is_none(),
@@ -3300,4 +3299,71 @@ fn an_archived_repository_wears_its_badge_and_a_live_one_none() {
     assert!(cx.has_text("project"), "a link still opens it");
     let (cx, _) = opened("default");
     assert!(cx.find("forge-repo-archived").is_none());
+}
+
+// The Refs tab of a repository with more than 120 branches reads every branch's standing in one
+// Compares, and asks no Compare.
+#[test]
+fn the_refs_tab_reads_every_branch_standing_in_one_ask() {
+    let (mut cx, view) = opened("many-refs");
+    cx.simulate_click("forge-tab-refs");
+    cx.run_until_parked();
+    let branches = view.read(|forge| forge.branches().len());
+    assert!(branches > 120, "{branches} branches");
+    let asked = cx.host().requests::<Ask>();
+    let count = |kind: fn(&Query) -> bool| asked.iter().filter(|query| kind(query)).count();
+    let compares = count(|query| matches!(query, Query::Compares { .. }));
+    let compare = count(|query| matches!(query, Query::Compare { .. }));
+    assert_eq!((compares, compare), (1, 0));
+}
+
+// A refused read stays refused, saying why, until what it reads moves: blocks that wrote none of
+// its tables do not ask it again, and a ref moved does.
+#[test]
+fn a_refused_read_is_asked_again_only_when_what_it_reads_moves() {
+    let (mut cx, heads) = followed("default");
+    cx.host().handle::<Ask>(|query| match query {
+        Query::Compares { .. } => Err(refusal("refused-capacity")),
+        query => Ok(answer(&query, "default")),
+    });
+    cx.simulate_click("forge-tab-refs");
+    cx.run_until_parked();
+    let compares = |cx: &TestAppContext| {
+        cx.host()
+            .requests::<Ask>()
+            .iter()
+            .filter(|query| matches!(query, Query::Compares { .. }))
+            .count()
+    };
+    assert_eq!(compares(&cx), 1);
+    heads.forge.send(block(100, vec![review_key()]));
+    cx.run_until_parked();
+    heads.chat.send(block(101, vec![root_key("general")]));
+    cx.run_until_parked();
+    assert_eq!(compares(&cx), 1, "blocks that moved no ref");
+    heads.forge.send(block(102, vec![ref_key()]));
+    cx.run_until_parked();
+    assert_eq!(compares(&cx), 2, "a ref moved");
+}
+
+// A pane out of sight asks nothing: blocks of every program it follows land and none is read,
+// until it shows again, when what is on screen is read once.
+#[test]
+fn a_hidden_pane_reads_nothing_until_it_shows_again() {
+    let (mut cx, heads) = followed("default");
+    heads.visible.send(false);
+    cx.run_until_parked();
+    let asked = cx.host().requests::<Ask>().len();
+    heads.forge.send(block(100, vec![ref_key()]));
+    cx.run_until_parked();
+    heads.forge.send(None);
+    cx.run_until_parked();
+    heads
+        .chat
+        .send(block(101, vec![answered_key("forge:project:1")]));
+    cx.run_until_parked();
+    assert_eq!(cx.host().requests::<Ask>().len(), asked);
+    heads.visible.send(true);
+    cx.run_until_parked();
+    assert!(cx.host().requests::<Ask>().len() > asked);
 }

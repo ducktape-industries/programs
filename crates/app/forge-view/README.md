@@ -36,7 +36,11 @@ wire and the rules), and `ownership` and `policy-view` for who can edit.
 ## Follows
 `HostSession`, `HostRoute`, `HostVisible`, and the live heads of forge (the
 reads on screen), chat (change conversations), identity (names), access (the
-writers list) and ownership (who can edit what is held).
+writers list) and ownership (who can edit what is held). Out of sight
+(`HostVisible` false) it reads nothing, and shows again by reading what is on
+screen once. A refused read stays on screen, saying why, until a block writes a
+table it reads or the reader retries. The Refs tab reads every branch's
+standing in one `Compares`.
 
 ## Tests
 `tests.rs` replays the forge program's own reply bytes

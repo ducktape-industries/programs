@@ -101,7 +101,8 @@ and decode a `forge::Reply` from the concatenated `Respond` bytes.
 | `Blob { repo: r, oid: blob, range: Some(ByteRange { offset: 0, len: 100 }) }` | OID, total size, classification, actual byte range and bytes |
 | `Diff { repo: r, base: Some(a), head: b, path: None, cursor: None, limit: 20 }` | normalized endpoints, total matching file count, `page<FileDiff>` |
 | `DiffStat { repo: r, base: Some(a), head: b, page }` | what `Diff` with no path answers, less the hunks: `page<FileStat>`, each file's path as a `String` (its new path, or its old one for a delete), status, kinds, sizes, content class and line counts |
-| `Compare { repo: r, from: feature, into: main }` | resolved endpoints, merge base, ahead/behind, mergeability |
+| `Compare { repo: r, from: feature, into: main }` | resolved endpoints, merge base, ahead/behind, mergeability; each side is walked from its tip to where the two histories meet, within `Bounds.log_walk` commits |
+| `Compares { repo: r, into: main, from: vec![feature, clean] }` | `into` resolved, and for each of `from` in order a `Compared`: `Tally::Counted(Comparison)` as `Compare` answers it, or `Tally::Refused(why)` for a branch past the walk bound or no such ref, each counted on a read budget of its own. A view's list of branches reads every standing in this one query |
 | `Activity { repo: r }` | `last_height`: last successful forge operation in the repo |
 | `Changes { repo: r, filter: ChangeFilter { state: Some(ChangeState::Open), ..Default::default() }, cursor: None, limit: 20 }` | `page<ChangeSummary>` with author, endpoints, counts and historical verdict totals |
 | `Change { repo: r, n: 1, cursor: None, limit: 20 }` | full change record/body/channel, optional current source/target heads, `reviews: PageResponse<Review>` |
