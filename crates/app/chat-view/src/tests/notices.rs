@@ -76,6 +76,7 @@ fn kept_cursors_bring_the_badge_back_after_a_relaunch() {
             Query::Roots { .. } => Reply::Roots(page(Vec::new())),
             Query::Members { .. } => Reply::Members(page(Vec::new())),
             query @ Query::MessagesAround { .. } => chat_reply(query),
+            Query::Listening { .. } => Reply::Listening(page(Vec::new())),
             query => panic!("unexpected chat query: {query:?}"),
         })
     }));
@@ -117,6 +118,7 @@ fn a_refused_store_read_still_keeps_cursors() {
             Query::Channels { .. } => Reply::Channels(page(vec![channel("general", "General", 3)])),
             Query::Roots { .. } => Reply::Roots(page(Vec::new())),
             Query::Members { .. } => Reply::Members(page(Vec::new())),
+            Query::Listening { .. } => Reply::Listening(page(Vec::new())),
             query => panic!("unexpected chat query: {query:?}"),
         })
     }));

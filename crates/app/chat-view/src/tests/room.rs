@@ -219,6 +219,7 @@ fn a_full_room_renders_inside_the_frame_budget() {
                 Query::Roots { .. } => Reply::Roots(page(rows.clone())),
                 Query::Members { .. } => Reply::Members(page(Vec::new())),
                 Query::Reactors { seqs, .. } => reactors(seqs),
+                Query::Listening { .. } => Reply::Listening(page(Vec::new())),
                 query => panic!("unexpected chat query: {query:?}"),
             })
         }));
@@ -553,6 +554,7 @@ fn a_landed_room_rereads_its_window() {
             }
             Query::Channels { .. } => Reply::Channels(page(vec![channel("general", "General", 3)])),
             Query::Members { .. } => Reply::Members(page(Vec::new())),
+            Query::Listening { .. } => Reply::Listening(page(Vec::new())),
             query => panic!("unexpected chat query: {query:?}"),
         })
     }));

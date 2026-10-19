@@ -116,6 +116,9 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     }
     let open = chat.room.as_ref().map(|room| room.id.as_str());
     let room_list = chat.room_list();
+    if room_list.channels.is_empty() && room_list.left_out > 0 {
+        list = list.child(quiet("chat-sidebar-none-held", words::NONE_HELD, theme));
+    }
     let plain = chat.lines(&room_list.channels);
     // one Tab stop under the header: ↑ ↓ walk the channels, their folders
     // and the direct messages, Enter opens the active room or folder, → and

@@ -135,7 +135,7 @@ impl Chat {
         self.listening_asked = false;
     }
 
-    // The rooms the reader listens to, which the phone lists as theirs and
+    // The rooms the reader listens to, which both lists hold as theirs and
     // `#` offers.
     pub(crate) fn load_listening(&mut self, cx: &mut Context<Self>) {
         let Some(me) = self.my_account() else {

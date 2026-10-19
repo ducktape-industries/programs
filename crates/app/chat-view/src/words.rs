@@ -31,8 +31,11 @@ pub(crate) const NEW_CHANNEL: &str = "New channel";
 pub(crate) const CHAT: &str = "Chat";
 pub(crate) const CHANNELS: &str = "Channels";
 pub(crate) const DIRECT_MESSAGES: &str = "Direct messages";
-pub(crate) const WORK: &str = "Work";
-pub(crate) const ALL_CHANNELS: &str = "All channels";
+// what the room lists say while the reader is in no channel and the network holds some
+pub(crate) const NONE_HELD: &str =
+    "Rooms you open, own or listen to are listed here. Search finds the rest by name.";
+// search's head over the rooms whose names match
+pub(crate) const ROOMS: &str = "Rooms";
 pub(crate) const LOADING_ROOMS: &str = "Loading rooms…";
 pub(crate) const SEARCH_MESSAGES: &str = "Search messages";
 /// What an agent's badge says.

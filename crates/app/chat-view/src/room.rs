@@ -233,7 +233,7 @@ impl Chat {
             self.load_choices(cx);
         }
         self.refresh_room(change, cx);
-        // the rooms the reader listens to, which the phone lists as theirs
+        // the rooms the reader listens to, which both lists hold as theirs
         if let Some(me) = self.my_account().filter(|_| self.listening_asked) {
             let listening = ask::Listening {
                 account: me,

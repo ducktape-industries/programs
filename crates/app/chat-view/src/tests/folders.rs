@@ -213,11 +213,6 @@ fn the_arrows_open_and_close_a_folder_and_a_hidden_room_hands_it_its_row() {
 fn the_phone_files_channels_under_folders_too() {
     let (mut cx, view) = desk(&[]);
     cx.simulate_touch(true);
-    assert!(
-        cx.find("chat-rooms-folder-jobs").is_none(),
-        "jobs' rooms are Work's, shut until opened"
-    );
-    cx.simulate_click("chat-rooms-work");
     assert!(cx.find("chat-rooms-folder-jobs").is_some());
     assert!(cx.find("chat-rooms-channel-j-097").is_some());
     assert!(cx.has_text("j-097 · channel folders"));

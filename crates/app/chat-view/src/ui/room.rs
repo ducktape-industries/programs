@@ -28,7 +28,11 @@ pub fn render(
         .bg(theme.background)
         .text_color(theme.foreground);
     let Some(room) = &chat.room else {
-        return pane.child(no_room(chat, cx, theme, ladder));
+        // a search asked with no room open answers here: what the lists leave out is found so
+        return match chat.search.query.is_empty() {
+            true => pane.child(no_room(chat, cx, theme, ladder)),
+            false => pane.child(search_results(chat, cx, theme, ladder)),
+        };
     };
     let body = match chat.search.query.is_empty() {
         true => timeline::list(chat, Pane::Timeline, cx, theme, ladder).into_any_element(),
@@ -376,6 +380,7 @@ fn search_results(
         .flex_col()
         .gap_2()
         .p_3()
+        .children(room_matches(chat, cx, theme))
         .children(found)
         .child(button(
             "chat-search-clear",
@@ -384,6 +389,45 @@ fn search_results(
             theme,
             clear,
         ))
+}
+
+// The rooms whose names hold the search, under how many, a row each that opens it; nothing when no
+// room's name does.
+fn room_matches(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme) -> Vec<AnyElement> {
+    let found = chat.found_rooms();
+    if found.is_empty() {
+        return Vec::new();
+    }
+    let count = design::plural(found.len() as u64, "room", "rooms");
+    let mut list = vec![
+        div()
+            .id("chat-search-rooms-head")
+            .text_size(design::text::SECONDARY)
+            .text_color(theme.muted)
+            .child(format!("{count} for “{}”", chat.search.query))
+            .into_any_element(),
+    ];
+    for info in found {
+        let room = info.channel.id.clone();
+        let open = cx.listener(move |chat, _: &ClickEvent, _, cx| {
+            cx.notify();
+            chat.open_found(room.clone(), cx)
+        });
+        let name = format!("#{}", info.channel.name);
+        let row = div()
+            .id(format!("chat-search-room-{}", info.channel.id))
+            .p_2()
+            .bg(theme.surface)
+            .cursor_pointer()
+            .hover(|s| s.bg(theme.surface_raised))
+            .role(view::Role::Button)
+            .aria_label(name.clone())
+            .focusable()
+            .on_click(open)
+            .child(name);
+        list.push(row.into_any_element());
+    }
+    list
 }
 
 /// How many hits, a row per hit, and the way to more.

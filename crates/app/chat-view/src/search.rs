@@ -1,5 +1,6 @@
-//! Message search: `#tag` pages through the tag index, anything else is a
-//! full-text search the program caps.
+//! Search: the rooms whose names hold it, from the rooms the view holds; and messages, where `#tag`
+//! pages through the tag index and anything else is a full-text search the program caps.
+use chat::ChannelInfo;
 use view::prelude::*;
 
 use crate::queries::search_hits;
@@ -72,6 +73,32 @@ impl Chat {
             }
         })
         .detach();
+    }
+
+    // The rooms whose names hold what was searched (a leading `#` aside), in the program's order:
+    // how a room the lists leave out is found. Archived and direct rooms never are.
+    pub(crate) fn found_rooms(&self) -> Vec<&ChannelInfo> {
+        let query = self.search.query.trim();
+        let query = query
+            .strip_prefix('#')
+            .unwrap_or(query)
+            .trim()
+            .to_lowercase();
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let rooms = self.channels.ready().into_iter().flatten();
+        rooms
+            .filter(|info| !info.channel.archived && chat::dm_peers(&info.channel.id).is_none())
+            .filter(|info| info.channel.name.to_lowercase().contains(&query))
+            .collect()
+    }
+
+    // A found room opened from the desktop's results: the search let go, as a hit's is.
+    pub(crate) fn open_found(&mut self, channel_id: String, cx: &mut Context<Self>) {
+        self.search_clear();
+        self.create = None;
+        self.choose(channel_id, cx);
     }
 
     pub(crate) fn search_clear(&mut self) {

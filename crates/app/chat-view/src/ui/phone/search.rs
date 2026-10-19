@@ -1,10 +1,6 @@
-//! Message search, a page of its own (Expo `app/(tabs)/chat/search.tsx`,
-//! board 55): Back, the field with its magnifier, Clear; the one scope;
-//! then Messages with how many, newest first, a row per hit with the
-//! searched words in medium. Reads the search's draft, query and hits and
-//! the rooms they sit in; the keyboard's search key asks, Clear empties
-//! the field and the hits, a hit opens its room landed on it over this
-//! page.
+//! Search, a page of its own (Expo `app/(tabs)/chat/search.tsx`, board 55): Back, the field, Clear;
+//! the one scope; then the rooms whose names hold it and the messages, newest first, the searched
+//! words in medium. A room, or a hit landed on, opens over this page.
 use view::prelude::*;
 use view::{Div, Stateful};
 use view::{FontWeight, HighlightStyle};
@@ -34,7 +30,7 @@ pub(super) fn screen(
         .bg(theme.background)
         .child(title_row(chat, back, cx, theme, ladder))
         .child(scope(theme, ladder))
-        .when(asked, |page| page.children(hits(chat, cx, theme, ladder)))
+        .when(asked, |page| page.child(results(chat, cx, theme, ladder)))
         .into_any_element()
 }
 
@@ -122,6 +118,61 @@ fn scope(theme: &Theme, ladder: &Ladder) -> Div {
         )
 }
 
+// What an asked search shows, in one scroll: the rooms whose names hold it, then the messages.
+fn results(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
+    div()
+        .id("chat-search-results")
+        .flex_1()
+        .min_h(px(0.))
+        .overflow_y_scroll()
+        .flex()
+        .flex_col()
+        .children(rooms(chat, cx, theme, ladder))
+        .children(hits(chat, cx, theme, ladder))
+}
+
+// The rooms whose names hold the search, under Rooms and how many, a row each that opens it over
+// this page; nothing when no room's name does.
+fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Vec<AnyElement> {
+    let found = chat.found_rooms();
+    if found.is_empty() {
+        return Vec::new();
+    }
+    let head = design::section_head("chat-search-rooms-head", words::ROOMS, ladder, theme)
+        .child(found.len().to_string());
+    let mut rows = vec![head.into_any_element()];
+    for info in found {
+        let room = info.channel.id.clone();
+        let open = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
+            cx.notify();
+            chat.choose(room.clone(), cx)
+        });
+        let name = info.channel.name.clone();
+        let hash = design::icon("hash", ladder.icon_row).text_color(theme.muted);
+        let row = design::row(
+            format!("chat-search-room-{}", info.channel.id),
+            ladder,
+            theme,
+        )
+        .role(Role::Button)
+        .aria_label(name.clone())
+        .focusable()
+        .on_click(open)
+        .child(design::lead(hash))
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.))
+                .truncate()
+                .text_type(ladder.body)
+                .text_color(theme.foreground)
+                .child(name),
+        );
+        rows.push(row.into_any_element());
+    }
+    rows
+}
+
 /// What an asked search shows: its refusal with Retry, or its hits; nothing
 /// while it is on its way.
 fn hits(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Option<AnyElement> {
@@ -149,21 +200,10 @@ fn hits(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> 
     }
 }
 
-/// Messages and how many, newest first; a row per hit; a capped search
-/// says so under them.
-fn list(
-    chat: &Chat,
-    hits: &Hits,
-    cx: &mut Context<Chat>,
-    theme: &Theme,
-    ladder: &Ladder,
-) -> Stateful<Div> {
+// Messages and how many, newest first; a row per hit; a capped search says so under them.
+fn list(chat: &Chat, hits: &Hits, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Div {
     let count = format!("{} · newest first", hits.rows.len());
     div()
-        .id("chat-search-results")
-        .flex_1()
-        .min_h(px(0.))
-        .overflow_y_scroll()
         .flex()
         .flex_col()
         .child(design::section_head("chat-search-head", "Messages", ladder, theme).child(count))

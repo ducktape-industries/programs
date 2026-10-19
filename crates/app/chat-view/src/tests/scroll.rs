@@ -67,6 +67,7 @@ fn full_room(newest: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
                 // the harness shows the last frame alone: who reacted is named by
                 // nobody here, so no frame of its own follows the rows'
                 Query::Reactors { .. } => Reply::Reactors(Vec::new()),
+                Query::Listening { .. } => Reply::Listening(page(Vec::new())),
                 query => panic!("unexpected chat query: {query:?}"),
             })
         }));
@@ -297,6 +298,7 @@ fn long_room(head: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
                 // the harness shows the last frame alone: who reacted is named by
                 // nobody here, so no frame of its own follows the rows'
                 Query::Reactors { .. } => Reply::Reactors(Vec::new()),
+                Query::Listening { .. } => Reply::Listening(page(Vec::new())),
                 query => panic!("unexpected chat query: {query:?}"),
             })
         }));
@@ -402,6 +404,7 @@ fn seeded_room(listed: Option<u64>) -> (TestAppContext, Entity<Chat>) {
                     next: None,
                 }),
                 Query::Members { .. } => Reply::Members(page(Vec::new())),
+                Query::Listening { .. } => Reply::Listening(page(Vec::new())),
                 query => panic!("unexpected chat query: {query:?}"),
             })
         }));

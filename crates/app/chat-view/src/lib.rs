@@ -154,13 +154,8 @@ impl Render for Chat {
         self.settle_policies(cx);
         // the one pick: a phone draws the Expo app's own screens, every
         // other window the desktop's (STRUCTURE v2)
-        // the rooms the reader listens to: the phone's list holds them, and
-        // `#` once it is typed
-        let hash = || {
-            let mut drafts = self.drafts.values();
-            drafts.any(|draft| matches!(draft.typed(), Some(('#', _))))
-        };
-        if !self.listening_asked && (window.touch() || hash()) {
+        // the rooms the reader listens to: both lists hold them, and `#` offers them
+        if !self.listening_asked {
             self.load_listening(cx);
         }
         if window.touch() {

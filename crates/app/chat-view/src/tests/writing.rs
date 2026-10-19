@@ -164,6 +164,7 @@ fn a_post_the_room_shows_before_its_receipt_is_shown_once() {
             ])),
             // the receipt reads everything again, the roster too
             Query::Members { .. } => Reply::Members(page(Vec::new())),
+            Query::Listening { .. } => Reply::Listening(page(Vec::new())),
             query => panic!("unexpected chat query: {query:?}"),
         })
     }));

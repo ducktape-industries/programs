@@ -21,6 +21,7 @@ mod cost;
 mod dms;
 mod faces;
 mod folders;
+mod held;
 mod history;
 mod menus;
 mod message;
@@ -86,6 +87,13 @@ fn a_desk_window_opens_chat_at_its_width() {
     let text = std::str::from_utf8(&MANIFEST_SECTION).unwrap();
     let manifest = wire::manifest::Manifest::parse(text).unwrap();
     assert_eq!(manifest.width, Some(1200));
+}
+
+// A change's review room, as forge opens it: forge's own.
+fn review_room() -> ChannelInfo {
+    let mut room = channel("forge:web:3", "Review web#3", 2);
+    room.channel.owner = Principal::Account(9);
+    room
 }
 
 fn row(seq: u64, author: u64, text: &str) -> MsgRow {
@@ -301,7 +309,7 @@ fn chat_reply(query: Query) -> Reply {
         Query::Channels { .. } => Reply::Channels(page(vec![
             channel("general", "General", 3),
             channel("dm-7-8", "dm", 1),
-            channel("forge:web:3", "Review web#3", 2),
+            review_room(),
         ])),
         Query::Roots { channel_id, .. } => Reply::Roots(page(if channel_id == "general" {
             vec![row(1, 7, "hello"), row(2, 8, "**hi** there")]

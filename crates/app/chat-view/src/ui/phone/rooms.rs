@@ -1,12 +1,12 @@
 //! The rooms, the chat's first page (Expo `app/(tabs)/chat/index.tsx`, boards 10-12): the title
-//! row, the reader's own channels, their direct rooms newest first, then Work and All
-//! channels shut until opened, channels in their folders; a folder's row opens or closes it.
+//! row, the channels the reader is in, in their folders, then their direct rooms newest first; a
+//! folder's row opens or closes it.
 use view::prelude::*;
 use view::{Div, Stateful};
 
 use super::parts::{face, quiet};
 use crate::Chat;
-use crate::room_list::{ALL, DmEntry, FolderLine, Line, WORK, label};
+use crate::room_list::{DmEntry, FolderLine, Line, label};
 use crate::words;
 use chat::{ChannelInfo, Principal};
 use view::design::Ladder;
@@ -93,32 +93,23 @@ fn caption(chat: &Chat) -> String {
         .join(" · ")
 }
 
-// The reader's channels always (their loading line or empty state under
-// them), Direct messages always, then Work and All
-// channels where they hold a room.
+// The channels the reader is in (their loading line, the empty state, or where the rest are, under
+// them), then Direct messages always.
 fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
-    let list = chat.phone_rooms();
+    let list = chat.room_list();
     let count = |rows: usize| (rows > 0).then(|| rows.to_string());
     let loading = matches!(chat.channels, Loadable::Idle | Loadable::Loading(_));
-    // the empty state says the network holds no channel: keyed on every
-    // room, not the ones the reader is in, and none archived
-    let none = list.mine.is_empty() && list.work.is_empty() && list.rest.is_empty();
-    let empty = (!loading && none && list.archived == 0).then(|| no_rooms(chat, cx, theme, ladder));
-    let mine = lines(chat, &list.mine, cx, theme, ladder);
+    // the empty state says the network holds no channel: keyed on every room, the ones left out
+    // of the list too
+    let none = list.channels.is_empty() && list.left_out == 0;
+    let empty = (!loading && none).then(|| no_rooms(chat, cx, theme, ladder));
+    let elsewhere = (list.channels.is_empty() && list.left_out > 0)
+        .then(|| quiet("chat-rooms-none-held", words::NONE_HELD, theme, ladder));
+    let mine = lines(chat, &list.channels, cx, theme, ladder);
     let mut dms = Vec::new();
     for dm in &list.dms {
         dms.push(dm_row(chat, dm, cx, theme, ladder));
     }
-    let work = group(chat, WORK, words::WORK, &list.work, cx, theme, ladder);
-    let rest = group(
-        chat,
-        ALL,
-        words::ALL_CHANNELS,
-        &list.rest,
-        cx,
-        theme,
-        ladder,
-    );
     div()
         .id("chat-rooms")
         .flex_1()
@@ -128,7 +119,7 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         .flex_col()
         .child(
             design::section_head("chat-rooms-channels-head", words::CHANNELS, ladder, theme)
-                .children(count(list.mine.len())),
+                .children(count(list.channels.len())),
         )
         .children(mine)
         .when(loading, |rooms| {
@@ -140,55 +131,13 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
             ))
         })
         .children(empty)
+        .children(elsewhere)
         .child(
             design::section_head("chat-rooms-dms-head", words::DIRECT_MESSAGES, ladder, theme)
                 .children(count(list.dms.len()))
                 .child(new_message(cx, theme, ladder)),
         )
         .children(dms)
-        .children(work)
-        .children(rest)
-}
-
-// A group shut until the reader opens it: its head, a button, says how many
-// rooms it holds and opens or shuts it; its rooms show while it is open.
-// Nothing while it holds none.
-fn group(
-    chat: &Chat,
-    key: &'static str,
-    label: &'static str,
-    rooms: &[&ChannelInfo],
-    cx: &mut Context<Chat>,
-    theme: &Theme,
-    ladder: &Ladder,
-) -> Vec<AnyElement> {
-    if rooms.is_empty() {
-        return Vec::new();
-    }
-    let open = chat.open_groups.contains(key);
-    let toggle = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
-        if !chat.open_groups.remove(key) {
-            chat.open_groups.insert(key.to_owned());
-        }
-        cx.notify();
-    });
-    let chevron = match open {
-        true => "chevron-down",
-        false => "chevron-right",
-    };
-    let head = design::section_head(format!("chat-rooms-{key}"), label, ladder, theme)
-        .child(rooms.len().to_string())
-        .child(design::icon(chevron, ladder.icon_row).text_color(theme.muted))
-        .min_h(ladder.row)
-        .role(Role::Button)
-        .aria_expanded(open)
-        .focusable()
-        .on_click(toggle);
-    let mut group = vec![head.into_any_element()];
-    if open {
-        group.extend(lines(chat, rooms, cx, theme, ladder));
-    }
-    group
 }
 
 // `channels` as rows, each under the folders its name gives.
