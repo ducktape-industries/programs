@@ -112,7 +112,7 @@ pub(crate) fn thread(
     })
 }
 
-/// Up to `page.limit` messages, half before `seq` and half from it.
+// The stored messages from `seq - page.limit / 2` through `seq + page.limit / 2`.
 pub(crate) fn around(
     ctx: &QueryCtx,
     channel_id: String,

@@ -260,10 +260,11 @@ pub enum Query {
         viewer: Vec<Principal>,
         page: PageRequest,
     },
-    /// `page.limit` messages centred on `seq`.
+    // the seqs from seq - page.limit / 2 through seq + page.limit / 2: a window symmetric about
+    // seq, so an even limit holds limit + 1 seqs; page.after is not read
     #[ask(Reply::Messages(Vec<MsgRow>))]
     #[reads(state::MESSAGES, state::REACTIONS)]
-    #[tool_query(description = "page.limit messages centred on seq.", example = examples::around)]
+    #[tool_query(description = "The messages from seq - page.limit/2 through seq + page.limit/2 (integer halves): a window symmetric about seq, so an even limit gives up to limit + 1 messages. page.after is not read.", example = examples::around)]
     MessagesAround {
         channel_id: String,
         seq: u64,
