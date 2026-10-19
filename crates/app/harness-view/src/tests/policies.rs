@@ -147,7 +147,7 @@ fn a_model_on_record_says_whose_it_is_in_its_row_and_its_form() {
     assert!(cx.find("model-policy").is_some());
     assert!(cx.has_text("Who can edit"), "{:?}", cx.texts());
     assert!(
-        cx.find("model-policy/sheet").is_none(),
+        cx.interactivity("model-policy").on_click.is_none(),
         "only its owner presses the row"
     );
 }
