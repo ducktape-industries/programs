@@ -109,6 +109,9 @@ pub const ANSWERED: Map<(u64, u64), crate::Answerer> = Map::new("answered/").sha
 pub const SEEDED: Set<(AccountNumber, String)> = Set::new("seeded/").shared();
 // message waits that watch their room (`Op::Watch`); one armed before that listened instead
 pub const WATCHED: Set<u64> = Set::new("wait-watched/").shared();
+// what each conversation was last told of each chat room's rules (`room_rules.rs`)
+pub const RULES_TOLD: Map<(u64, String), crate::room_rules::Told> =
+    Map::new("rules-told/").shared();
 
 // a wait for a files path: the path, and its node when the wait was armed (none: nothing there)
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -472,4 +475,5 @@ pub(crate) const TABLES: &[::program::Table] = &[
     ANSWERED.table(),
     SEEDED.table(),
     WATCHED.table(),
+    RULES_TOLD.table(),
 ];

@@ -307,6 +307,16 @@ async fn read(
 
 // The file's text at `snapshot`, read a chunk at a time.
 async fn contents(host: &Host, path: &str, at: Option<BlobId>) -> Result<String, String> {
+    let bytes = file_bytes(host, path, at).await?;
+    String::from_utf8(bytes).map_err(|_| words::WIDGET_NOT_TEXT.into())
+}
+
+// The file's bytes at `snapshot`, read a chunk at a time.
+pub(crate) async fn file_bytes(
+    host: &Host,
+    path: &str,
+    at: Option<BlobId>,
+) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
     loop {
         let read = files::ask::Read {
@@ -325,10 +335,9 @@ async fn contents(host: &Host, path: &str, at: Option<BlobId>) -> Result<String,
         }
         bytes.extend(contents.bytes);
         if contents.eof {
-            break;
+            return Ok(bytes);
         }
     }
-    String::from_utf8(bytes).map_err(|_| words::WIDGET_NOT_TEXT.into())
 }
 
 // The source's reply and the rows it lists: every page of them when the

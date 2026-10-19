@@ -29,6 +29,7 @@ mod policies;
 mod reader;
 mod rich;
 mod room;
+mod rules;
 mod scroll;
 mod widgets;
 mod writing;

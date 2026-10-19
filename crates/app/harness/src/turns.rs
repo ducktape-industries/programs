@@ -713,6 +713,7 @@ fn summarize(
     append(ctx, thread, Body::Compaction { wire, block });
     routes::answered(ctx, thread.id, thread.frames)?;
     tallies::summarized(ctx, thread.id)?;
+    crate::room_rules::forget(ctx, thread.id)?;
     thread.summary = Some(thread.frames);
     thread.context = Context::Measured(summary.tokens);
     thread.base = through + 1;

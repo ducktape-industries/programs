@@ -148,6 +148,7 @@ fn compose(
     // inset from the pane's edges, so the field reads as a field
     div()
         .p_3()
+        .children(crate::ui::rules::line(chat, cx, theme, ladder))
         .child(composer(
             chat,
             target,

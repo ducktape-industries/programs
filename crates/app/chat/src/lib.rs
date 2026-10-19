@@ -69,6 +69,10 @@ pub mod tables {
 /// The name this program runs under.
 pub const PROGRAM: &str = "chat";
 
+// The channel meta key a room's rules sit under: the text itself, or a files path whose file
+// holds them (README, "Channel meta"). Readers respect them; nothing enforces them.
+pub const RULES: &str = "rules";
+
 /// A write. The enum only grows at its end (see `op_variants_only_append`).
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
 pub enum Op {

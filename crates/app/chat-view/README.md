@@ -20,6 +20,11 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
   confirm.
 - Beside the room (desktop) or as a page (phone): the thread, the channel's
   details (`ui/side.rs::details`, `ui/phone/details.rs`) and a widget.
+- Rules: a channel's `rules` meta (`rules.rs`, `ui/rules.rs`), the text or the
+  content of the file a files path names, read while the details are open and
+  again when a files block moves it. The details show them (the desktop's also
+  set and clear them), and a faint "This room has rules" over the composer
+  opens the details.
 - Dialogs: new channel, new direct message (`ui/dialogs.rs`, phone pages).
 - Who can edit (`policies.rs`, through `policy-view`'s `item`): a row in the
   channel's details, and "Who can edit" in a message's menu, each opening a

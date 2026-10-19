@@ -520,9 +520,11 @@ impl Chat {
                     .map(|info| info.channel.name.clone())
                     .unwrap_or_default();
                 let category = info.and_then(category_of).unwrap_or_default().to_owned();
+                let rules = self.room_rules().unwrap_or_default().to_owned();
                 self.details = Some(crate::Details {
                     name_draft: view::TextField::new(name),
                     category_draft: view::TextField::new(category),
+                    rules_draft: view::TextField::new(rules),
                     member_draft: Default::default(),
                     notices_at: None,
                     managed_at: Default::default(),

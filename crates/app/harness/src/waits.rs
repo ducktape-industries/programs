@@ -242,15 +242,27 @@ fn disarm(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
 // the wait ends, and its conversation (else the agent's canonical one) hears why, once: the
 // conversation that heard it
 pub(crate) fn end(ctx: &ExecCtx, wait: u64, what: String) -> Result<Option<u64>, Error> {
-    end_seen(ctx, wait, what, Vec::new())
+    ended(ctx, wait, what, Vec::new(), None)
 }
 
-// `end`, for a message that came with pictures
+// `end`, for a message from chat room `room` that came with pictures: the conversation hears the
+// room's rules ahead of it when they are new to it
 pub(crate) fn end_seen(
     ctx: &ExecCtx,
     wait: u64,
     what: String,
     pictures: Vec<Picture>,
+    room: &str,
+) -> Result<Option<u64>, Error> {
+    ended(ctx, wait, what, pictures, Some(room))
+}
+
+fn ended(
+    ctx: &ExecCtx,
+    wait: u64,
+    what: String,
+    pictures: Vec<Picture>,
+    room: Option<&str>,
 ) -> Result<Option<u64>, Error> {
     let Some(mut row) = open(ctx, wait)? else {
         return Ok(None);
@@ -273,6 +285,9 @@ pub(crate) fn end_seen(
     // a message quoted whole ends with its own text
     let stop = if what.contains('\n') { "" } else { "." };
     let text = format!("Wait {wait} is over: {what}{stop}{still}");
+    if let Some(room) = room {
+        crate::room_rules::tell(ctx, &mut told, room)?;
+    }
     let author = Principal::Root;
     say_with(ctx, &mut told, Body::Post { author, text }, pictures);
     THREADS.put(ctx, &told.id, &told);

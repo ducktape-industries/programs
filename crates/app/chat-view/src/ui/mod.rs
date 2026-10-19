@@ -9,6 +9,7 @@ pub(crate) mod notices;
 pub(crate) mod phone;
 pub mod room;
 pub mod room_menu;
+pub(crate) mod rules;
 pub mod side;
 pub mod sidebar;
 pub(crate) mod timeline;

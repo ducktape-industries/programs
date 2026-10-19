@@ -68,6 +68,7 @@ pub(super) fn screen(
             theme,
             ladder,
         ))
+        .children(rules(chat, theme, ladder))
         .children(crate::ui::widget::section(chat, cx, theme, ladder))
         .children(members(chat, room, info, cx, theme, ladder))
         .children(owner_actions(chat, info, cx, theme, ladder));
@@ -75,6 +76,18 @@ pub(super) fn screen(
         .children(parts::room_notice(chat, cx, theme, ladder))
         .child(body)
         .into_any_element()
+}
+
+// the room's rules as they read, under a head of their own, when it has any
+fn rules(chat: &Chat, theme: &Theme, ladder: &Ladder) -> Vec<AnyElement> {
+    let Some(said) = crate::ui::rules::said(chat, theme, ladder) else {
+        return Vec::new();
+    };
+    let head = design::section_head("chat-details-rules-head", words::RULES, ladder, theme);
+    vec![
+        head.into_any_element(),
+        div().p(design::space::BLOCK).child(said).into_any_element(),
+    ]
 }
 
 /// The name, then who may post, when it was made and by whom.

@@ -12,7 +12,7 @@ use serde_json::Value;
 
 #[cfg(test)]
 pub(crate) use live::module_with;
-pub(crate) use live::{Shown, Widgets};
+pub(crate) use live::{Shown, Widgets, file_bytes};
 
 // Where a channel shows a widget: the meta key that names its file.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

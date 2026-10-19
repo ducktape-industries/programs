@@ -21,6 +21,7 @@ mod pictures;
 mod pods;
 mod reads;
 mod resume;
+mod rules;
 mod schedule;
 mod server_tools;
 mod services;

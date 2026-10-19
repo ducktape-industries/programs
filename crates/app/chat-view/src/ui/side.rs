@@ -168,6 +168,8 @@ pub fn details(
                     ladder,
                 ))
                 .child(rule(theme))
+                .children(rules_section(chat, &details.rules_draft, cx, theme, ladder))
+                .child(rule(theme))
                 .child(section(words::MEMBERS, theme))
                 .children(member_adder(&details.member_draft, cx, theme, ladder))
         }
@@ -277,6 +279,51 @@ fn category_section(
         let clear = button(
             "chat-details-clear-category",
             words::CLEAR_CATEGORY,
+            ladder,
+            theme,
+            clear,
+        );
+        controls.push(clear.into_any_element());
+    }
+    controls
+}
+
+// the room's rules as they read, then the field their owner sets them in: the text itself, or a
+// files path whose file holds them
+fn rules_section(
+    chat: &Chat,
+    draft: &TextField,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Vec<AnyElement> {
+    let set = cx.listener(|chat, _: &ClickEvent, _window, cx| {
+        cx.notify();
+        chat.set_rules(cx)
+    });
+    let mut controls = vec![section(words::RULES, theme).into_any_element()];
+    controls.extend(crate::ui::rules::said(chat, theme, ladder));
+    controls.push(
+        field("chat-details-rules", draft, words::RULES, theme)
+            .placeholder(words::NO_RULES)
+            .into_any_element(),
+    );
+    let set = button(
+        "chat-details-set-rules",
+        words::SET_RULES,
+        ladder,
+        theme,
+        set,
+    );
+    controls.push(set.into_any_element());
+    if chat.room_rules().is_some() {
+        let clear = cx.listener(|chat, _: &ClickEvent, _window, cx| {
+            cx.notify();
+            chat.clear_rules(cx)
+        });
+        let clear = button(
+            "chat-details-clear-rules",
+            words::CLEAR_RULES,
             ladder,
             theme,
             clear,

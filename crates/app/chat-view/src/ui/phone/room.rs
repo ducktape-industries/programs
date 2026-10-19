@@ -43,6 +43,10 @@ pub(super) fn screen(
         .children(crate::ui::widget::line(chat, theme, ladder))
         .children(crate::ui::widget::pinned(chat, cx, theme, ladder))
         .child(timeline::list(chat, Pane::Timeline, cx, theme, ladder))
+        .children(
+            crate::ui::rules::line(chat, cx, theme, ladder)
+                .map(|line| div().px(design::space::BLOCK).child(line)),
+        )
         .child(composer::band(
             chat,
             Pane::Timeline,

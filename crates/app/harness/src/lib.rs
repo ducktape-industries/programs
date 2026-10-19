@@ -16,6 +16,7 @@ mod pictures;
 mod program;
 mod queries;
 mod resume;
+mod room_rules;
 mod routes;
 mod schema;
 mod state;

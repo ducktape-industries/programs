@@ -283,6 +283,8 @@ pub(crate) fn manual(agent: &Agent, title: &str, bound: Option<&Place>) -> Strin
          yourself: Listen (every message), SetNotices with no notices (mentions and replies in \
          your threads, the default), Mentions (mentions only) or Off (nothing). Direct messages \
          always reach you, and a message wait still ends with its message.\n\
+         - Rules: a chat room's rules (its rules meta) reach you ahead of the first message you \
+         hear from it, and again when they change; follow them there.\n\
          - Forge: forge_commit commits files to a git repository and pushes them as account \
          {number}, creating the repository if it does not exist.\n\
          - Pods: pod_exec runs a command in a pod (with every, it answers at once and this \
@@ -304,6 +306,8 @@ struct Designation {
     places: Vec<String>,
     text: String,
     pictures: Vec<Picture>,
+    // the chat room a message came from
+    room: Option<String>,
 }
 
 fn name_of(ctx: &QueryCtx, number: AccountNumber) -> String {
@@ -401,6 +405,7 @@ fn designation(
             places: Vec::new(),
             text,
             pictures: Vec::new(),
+            room: None,
         });
     };
     let verb = match heard {
@@ -428,6 +433,7 @@ fn designation(
         places: chat_places(&row.channel_id, row.thread),
         text,
         pictures: pictures::of_message(&row.blocks),
+        room: Some(row.channel_id),
     })
 }
 
@@ -511,12 +517,16 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
         places,
         text,
         pictures,
+        room,
     } = designation(ctx, &change, actor, why)?;
     let (mut thread, reached) = route(ctx, &agent, &places, place)?;
     PLACES.put(ctx, &(agent.number, reached), &thread.id);
     // the wake that conversation heard already quotes the message
     if woke == Some(thread.id) {
         return Ok(Hearing { told: None, woke });
+    }
+    if let Some(room) = &room {
+        crate::room_rules::tell(ctx, &mut thread, room)?;
     }
     let text = text + &crate::waits::still_armed(ctx, thread.id)?;
     let author = Principal::Account(actor);
@@ -610,7 +620,7 @@ fn waited(
             other => other,
         };
         let Designation { text, pictures, .. } = designation(ctx, change, actor, quoted)?;
-        return crate::waits::end_seen(ctx, wait, text, pictures);
+        return crate::waits::end_seen(ctx, wait, text, pictures, &channel);
     }
     Ok(None)
 }

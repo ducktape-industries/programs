@@ -138,6 +138,9 @@ pub struct Chat {
     pub(crate) room_policy: policy_view::Editing,
     #[serde(skip)]
     pub(crate) message_policy: policy_view::Editing,
+    // the open room's rules as its details read them (`rules.rs`)
+    #[serde(skip)]
+    pub(crate) rules: crate::rules::Rules,
 }
 
 /// A page of the view's [`Pages`]: the room list, search, the new-channel
@@ -426,6 +429,8 @@ pub struct Details {
     pub(crate) name_draft: TextField,
     #[serde(default)]
     pub(crate) category_draft: TextField,
+    #[serde(default)]
+    pub(crate) rules_draft: TextField,
     pub(crate) member_draft: TextField,
     /// the notices choice the arrows are on, until one is chosen
     #[serde(default)]

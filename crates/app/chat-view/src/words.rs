@@ -179,6 +179,19 @@ pub(crate) const CATEGORY: &str = "Category";
 pub(crate) const NO_CATEGORY: &str = "No category";
 pub(crate) const SET_CATEGORY: &str = "Set category";
 pub(crate) const CLEAR_CATEGORY: &str = "Clear category";
+pub(crate) const RULES: &str = "Rules";
+pub(crate) const NO_RULES: &str = "No rules";
+pub(crate) const SET_RULES: &str = "Set rules";
+pub(crate) const CLEAR_RULES: &str = "Clear rules";
+// the line over the composer of a room with rules, which opens its details
+pub(crate) const HAS_RULES: &str = "This room has rules";
+pub(crate) const RULES_READING: &str = "Reading the rules…";
+pub(crate) const RULES_FILES: &str = "files' live heads, for the room's rules";
+
+// where a room's rules are read from
+pub(crate) fn rules_from(path: &str) -> String {
+    format!("From {path}")
+}
 pub(crate) const NOTIFICATIONS: &str = "Notifications";
 // an agent whose script calls no harness: harness keeps no rule of whom it answers
 pub(crate) const OUTSIDE_HARNESS: &str = "Runs outside harness";

@@ -44,6 +44,8 @@ mod room_list;
 #[cfg(not(feature = "notifier"))]
 mod room_menu;
 #[cfg(not(feature = "notifier"))]
+mod rules;
+#[cfg(not(feature = "notifier"))]
 mod search;
 #[cfg(not(feature = "notifier"))]
 mod session;
@@ -147,6 +149,7 @@ impl Render for Chat {
         self.settle_dm_heads(cx);
         self.settle_files(cx);
         self.settle_widgets(cx);
+        self.settle_rules(cx);
         self.settle_policies(cx);
         // the one pick: a phone draws the Expo app's own screens, every
         // other window the desktop's (STRUCTURE v2)
