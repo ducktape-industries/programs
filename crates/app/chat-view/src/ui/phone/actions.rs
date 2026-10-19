@@ -1,11 +1,6 @@
-//! What a pressed message offers (Expo `src/chat/Actions.tsx` `Actions`,
-//! design §4.4, boards 40/41/43): a sheet with who wrote it, when and in
-//! which block, the six reactions the reader uses most and the way to all
-//! of them, then Reply in thread, Copy text, Copy link, and Edit or Delete
-//! where the reader may; and the kit `Dialog` a delete asks first. Reads
-//! the open menu, the message and the reader's recent reactions; each
-//! action closes the sheet and runs through the model (react, the thread,
-//! the clipboard, an edit, the delete).
+//! What a pressed message offers (Expo `src/chat/Actions.tsx`, design §4.4, boards 40/41/43): who
+//! wrote it, quick reactions, Reply in thread, Copy text and link, Who can edit, and Edit or Delete
+//! where the reader may; and the kit `Dialog` a delete asks first. Each runs through the model.
 use view::prelude::*;
 use view::{Div, Stateful};
 
@@ -160,7 +155,7 @@ fn rows(
 ) -> Vec<AnyElement> {
     let (seq, rev, deleted) = (message.seq, message.rev, message.deleted);
     let in_thread = pane == Pane::Thread || message.thread.is_some();
-    let mine = chat.wrote(pane, seq);
+    let (edit, delete) = (chat.may_edit(pane, seq), chat.may_delete(pane, seq));
     let link = chat.message_link(seq);
     let row =
         |id: &'static str, icon: &'static str, label: &'static str, danger: bool, click: Press| {
@@ -218,7 +213,18 @@ fn rows(
             open(chat, pane, seq, rev, mode, window)
         }))
     };
-    if !deleted && mine {
+    let who = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
+        cx.notify();
+        chat.who_can_edit(pane, seq, cx);
+    });
+    rows.push(row(
+        "chat-actions-who-can-edit",
+        "shield",
+        policy_view::item::WHO,
+        false,
+        Box::new(who),
+    ));
+    if !deleted && edit {
         rows.push(row(
             "chat-actions-edit",
             "pencil",
@@ -227,7 +233,7 @@ fn rows(
             reopen(Mode::Editing, cx),
         ));
     }
-    if !deleted && (mine || chat.owns_room()) {
+    if !deleted && delete {
         rows.push(row(
             "chat-actions-delete",
             "trash",

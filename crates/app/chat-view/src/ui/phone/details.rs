@@ -1,9 +1,6 @@
-//! Channel details (Expo `app/(tabs)/chat/[channel]/details.tsx`, board
-//! 53): the channel's name and facts, its members, and for its owner the
-//! way to add a member, rename it, archive or unarchive it; adding,
-//! renaming and removing a member each a sheet over the page. Reads the
-//! open channel, its members and the roster; writes the details' drafts
-//! and open sheet, and sends membership, rename and archive ops.
+//! Channel details (Expo `app/(tabs)/chat/[channel]/details.tsx`, board 53): its name and facts,
+//! who can edit it, its members, and for whoever may change it adding and removing a member,
+//! rename and archive, each a sheet over the page; sends membership, rename and archive ops.
 use view::prelude::*;
 use view::{Div, Stateful};
 
@@ -14,10 +11,6 @@ use chat::view::Names;
 use chat::{ChannelInfo, Principal};
 use view::FontWeight;
 use view::design::Ladder;
-
-/// How many people the Add sheet offers (mobile
-/// `app/(tabs)/chat/[channel]/details.tsx:142`).
-const OFFERED: usize = 8;
 
 pub(super) fn screen(
     chat: &Chat,
@@ -52,6 +45,7 @@ pub(super) fn screen(
         .flex()
         .flex_col()
         .child(head(chat, info, theme, ladder))
+        .children(crate::policies::room_row(chat, cx, ladder, theme))
         .child(design::section_head(
             "chat-details-notices-head",
             words::NOTIFICATIONS,
@@ -138,13 +132,13 @@ fn members(
             quiet("chat-details-no-members", words::NO_MEMBERS, theme, ladder).into_any_element(),
         );
     }
-    let owner = chat.owns_room();
+    let changes = chat.may_change_room();
     rows.extend(
         roster
             .into_iter()
-            .map(|member| member_row(chat, info, member, owner, cx, theme, ladder)),
+            .map(|member| member_row(chat, info, member, changes, cx, theme, ladder)),
     );
-    if owner {
+    if changes {
         let add = cx.listener(|chat, _: &ClickEvent, _window, cx| {
             chat.open_details_sheet(DetailsSheet::Add);
             cx.notify();
@@ -172,7 +166,7 @@ fn member_row(
     chat: &Chat,
     info: &ChannelInfo,
     (principal, name): (Principal, String),
-    owner: bool,
+    changes: bool,
     cx: &mut Context<Chat>,
     theme: &Theme,
     ladder: &Ladder,
@@ -191,7 +185,7 @@ fn member_row(
         .ready()
         .is_some_and(|names| crate::message::agent(names, &principal));
     let removable = match &principal {
-        Principal::Account(account) if owner && Some(&principal) != me.as_ref() => Some(*account),
+        Principal::Account(account) if changes && Some(&principal) != me.as_ref() => Some(*account),
         _ => None,
     };
     let id = format!(
@@ -247,7 +241,7 @@ fn owner_actions(
     theme: &Theme,
     ladder: &Ladder,
 ) -> Vec<AnyElement> {
-    if !chat.owns_room() {
+    if !chat.may_change_room() {
         return Vec::new();
     }
     let rename = cx.listener(|chat, _: &ClickEvent, _window, cx| {
@@ -272,7 +266,7 @@ fn owner_actions(
         ),
     };
     vec![
-        design::section_head("chat-details-owner-head", "Owner actions", ladder, theme)
+        design::section_head("chat-details-owner-head", "Channel actions", ladder, theme)
             .into_any_element(),
         action_row("chat-details-rename", "pencil", theme, ladder)
             .on_click(rename)
@@ -415,7 +409,6 @@ fn add_body(
     let people = names
         .people()
         .filter(|account| !seated.contains(&Principal::Account(*account)))
-        .take(OFFERED)
         .map(|account| {
             let pick = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
                 chat.close_details_sheet();

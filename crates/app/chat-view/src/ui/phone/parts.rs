@@ -202,10 +202,9 @@ pub(super) fn room_notice(
     )
 }
 
-/// The strip in the composer's place where the reader may not write
-/// (Expo `GateStrip`, the desktop's words): archived in warning, with
-/// Unarchive for the room's owner; members-only with its lock; no
-/// account, quiet.
+// The strip in the composer's place where the reader may not write (Expo `GateStrip`, the
+// desktop's words): archived in warning, with Unarchive for whoever may change the room;
+// members-only with its lock; no account, quiet.
 pub(super) fn gate_strip(
     chat: &Chat,
     gate: Gate,
@@ -218,7 +217,7 @@ pub(super) fn gate_strip(
         Gate::NotMember => (NoticeKind::Quiet, Some("lock")),
         Gate::NoAccount => (NoticeKind::Quiet, None),
     };
-    let unarchive = (gate == Gate::Archived && chat.owns_room()).then(|| {
+    let unarchive = (gate == Gate::Archived && chat.may_change_room()).then(|| {
         let unarchive = cx.listener(|chat, _: &ClickEvent, _window, cx| {
             cx.notify();
             chat.set_archived(false, cx);

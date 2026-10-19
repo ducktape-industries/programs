@@ -103,6 +103,11 @@ pub struct Chat {
     // the widgets the open room names, what they show and what they read
     #[serde(skip)]
     pub(crate) widgets: crate::widget::Widgets,
+    // who can edit the open room, and the message whose menu is open (`policies.rs`)
+    #[serde(skip)]
+    pub(crate) room_policy: policy_view::Editing,
+    #[serde(skip)]
+    pub(crate) message_policy: policy_view::Editing,
 }
 
 /// A page of the view's [`Pages`]: the room list, search, the new-channel
@@ -192,6 +197,9 @@ impl Chat {
         {
             return;
         }
+        if self.message_policy.sheet.take().is_some() || self.room_policy.sheet.take().is_some() {
+            return;
+        }
         if let Some(details) = &mut self.details
             && details.sheet.take().is_some()
         {
@@ -215,6 +223,8 @@ impl Chat {
         self.menu = None;
         self.copy = None;
         self.hovered = None;
+        self.room_policy = Default::default();
+        self.message_policy = Default::default();
     }
 }
 

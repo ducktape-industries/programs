@@ -30,6 +30,9 @@ access.workspace = true
 harness.workspace = true
 program.workspace = true
 abi.workspace = true
+# who can edit a room or a message: ownership's answers, in policy-view's words
+ownership.workspace = true
+policy-view.workspace = true
 # widgets: a widget file's TOML, and any program's query and reply as JSON
 # by the schema its code carries
 toml.workspace = true

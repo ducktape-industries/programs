@@ -22,6 +22,7 @@ mod menus;
 mod message;
 mod notices;
 mod phone;
+mod policies;
 mod reader;
 mod rich;
 mod room;
@@ -143,8 +144,81 @@ fn configure(cx: &mut TestAppContext) {
             query => panic!("unexpected access query: {query:?}"),
         })
     });
+    // no item chat keeps has an owner on record: each keeps the rule from before policies
+    cx.host().handle::<Ask<ownership::Ownership>>(|query| {
+        Ok(match query {
+            ownership::Query::Record { .. } => ownership::Reply::Record(None),
+            ownership::Query::Effective { .. } => ownership::Reply::Policy(None),
+            query => panic!("unexpected ownership query: {query:?}"),
+        })
+    });
     cx.host()
         .handle::<Submit<::chat::Chat>>(|_| Ok(view::testing::applied(Vec::new())));
+}
+
+// A policy of account `owner`'s.
+fn a_policy(id: u64, owner: u64, name: &str, write: ownership::Writers) -> ownership::Policy {
+    ownership::Policy {
+        id,
+        owner: ownership::Party::Account(owner),
+        name: name.into(),
+        write,
+        retired: false,
+        switched_to: None,
+    }
+}
+
+// What ownership answers: chat's `key` owned by account `owner` on `policy`, among the owner's
+// `policies`; any other key has no record. Identity names eddy (7), reviewer (8), forge (9) and
+// ada (anyone else), and every ownership write lands.
+fn owned(
+    cx: &TestAppContext,
+    key: Vec<u8>,
+    owner: u64,
+    policy: ownership::Policy,
+    policies: Vec<ownership::Policy>,
+) {
+    let record = ownership::Record {
+        owner: ownership::Party::Account(owner),
+        policy: policy.id,
+        kind: None,
+    };
+    cx.host().handle::<Ask<ownership::Ownership>>(move |query| {
+        Ok(match query {
+            ownership::Query::Record { key: asked, .. } => {
+                ownership::Reply::Record((asked == key).then(|| record.clone()))
+            }
+            ownership::Query::Effective { key: asked, .. } => {
+                ownership::Reply::Policy((asked == key).then(|| policy.clone()))
+            }
+            ownership::Query::Policies { .. } => ownership::Reply::Policies(page(policies.clone())),
+            ownership::Query::Defaults { .. } => ownership::Reply::Defaults(page(Vec::new())),
+            ownership::Query::Open { .. } => {
+                ownership::Reply::Open(policies.first().map(|policy| policy.id))
+            }
+            query => panic!("unexpected ownership query: {query:?}"),
+        })
+    });
+    cx.host().handle::<Ask<Identity>>(|query| {
+        Ok(match query {
+            identity::Query::Profile { number } => {
+                let name = match number {
+                    7 => "eddy",
+                    8 => "reviewer",
+                    9 => "forge",
+                    _ => "ada",
+                };
+                identity::Reply::Profile(Some(identity::Profile {
+                    number,
+                    name: name.into(),
+                    kind: identity::Kind::User,
+                }))
+            }
+            query => panic!("unexpected identity query: {query:?}"),
+        })
+    });
+    cx.host()
+        .handle::<Submit<ownership::Ownership>>(|_| Ok(view::testing::applied(Vec::new())));
 }
 
 // A test host's chat answers with `Channel` answered as its own `Channels` lists the room: the

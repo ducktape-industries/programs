@@ -205,6 +205,7 @@ enum Action {
     CopyText,
     CopyLink,
     WorkRecord,
+    WhoCanEdit,
     Edit,
     Delete,
 }
@@ -223,7 +224,8 @@ fn more_items(chat: &Chat, menu: &Menu) -> Vec<Action> {
         (Action::CopyText, text_of(chat, pane, seq).is_some()),
         (Action::CopyLink, chat.message_link(seq).is_some()),
         (Action::WorkRecord, work_record(chat, pane, seq).is_some()),
-        (Action::Edit, writable && chat.wrote(pane, seq)),
+        (Action::WhoCanEdit, chat.message_item(pane, seq).is_some()),
+        (Action::Edit, writable && chat.may_edit(pane, seq)),
         (Action::Delete, writable && chat.may_delete(pane, seq)),
     ]
     .into_iter()
@@ -290,6 +292,13 @@ fn action_item(
             press,
             *theme,
         ),
+        Action::WhoCanEdit => Item::new(
+            "chat-menu-who-can-edit",
+            "🔒",
+            policy_view::item::WHO,
+            press,
+            *theme,
+        ),
         Action::Edit => Item::new("chat-menu-edit", "✎", words::EDIT_MESSAGE, press, *theme),
         Action::Delete => {
             let (fg, bg) = (theme.danger, theme.background);
@@ -321,6 +330,7 @@ fn act(
     match action {
         Action::Reply => chat.reply_in_thread(seq, cx),
         Action::React => chat.open_menu(pane, seq, rev, Mode::Reactions, window, cx),
+        Action::WhoCanEdit => chat.who_can_edit(pane, seq, cx),
         Action::Edit => chat.open_menu(pane, seq, rev, Mode::Editing, window, cx),
         Action::Delete => chat.open_menu(pane, seq, rev, Mode::Delete, window, cx),
         Action::CopyText => {

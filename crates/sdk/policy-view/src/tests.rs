@@ -92,3 +92,63 @@ fn a_scope_with_no_default_inherits_the_next_wider_one() {
     );
     assert_eq!(scope(&Scope::Global), "Everything");
 }
+
+#[test]
+fn an_item_says_whose_it_is_and_whether_its_policy_admits_the_reader() {
+    use crate::item::{BEFORE, about};
+    use crate::{Editing, Item, Standing};
+    let maya = Party::Account(7);
+    let ada = Party::Account(9);
+    let names = BTreeMap::from([(7, "Maya".to_owned()), (9, "Ada".to_owned())]);
+    let team = Policy {
+        id: 3,
+        owner: maya.clone(),
+        name: "Team".into(),
+        write: Writers::Listed(vec![ada.clone()]),
+        retired: false,
+        switched_to: None,
+    };
+    let standing = |owns| Standing {
+        record: Some(ownership::Record {
+            owner: maya.clone(),
+            policy: 3,
+            kind: Some("chat.channel".into()),
+        }),
+        policy: Some(team.clone()),
+        names: names.clone(),
+        owns,
+        admits: Some(true),
+    };
+    assert_eq!(
+        about(&standing(true), Some(&maya)),
+        "You · Team · You and Ada"
+    );
+    assert_eq!(
+        about(&standing(false), Some(&ada)),
+        "Maya · Team · Maya and Ada"
+    );
+    let before = Standing {
+        record: None,
+        policy: None,
+        names: BTreeMap::new(),
+        owns: false,
+        admits: None,
+    };
+    assert_eq!(about(&before, Some(&ada)), BEFORE);
+    let item = Item {
+        program: "chat".into(),
+        key: vec![1],
+        label: "#general".into(),
+    };
+    let editing = Editing {
+        item: Some(item.clone()),
+        standing: view::Loadable::Ready(standing(false)),
+        ..Editing::default()
+    };
+    assert_eq!(editing.admits(&item), Some(true));
+    let other = Item {
+        key: vec![2],
+        ..item.clone()
+    };
+    assert_eq!(editing.admits(&other), None, "another item is not read");
+}

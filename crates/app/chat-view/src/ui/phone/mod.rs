@@ -35,7 +35,8 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> AnyElement {
     let page = page(chat);
     let sheet = actions::sheet(chat, cx, &theme, ladder)
         .or_else(|| picker::sheet(chat, cx, &theme, ladder))
-        .or_else(|| details::sheet(chat, cx, &theme, ladder));
+        .or_else(|| details::sheet(chat, cx, &theme, ladder))
+        .or_else(|| crate::policies::sheet(chat, cx, ladder, &theme));
     let confirm = actions::confirm(chat, cx, &theme, ladder);
     // Back goes somewhere exactly while a page is over the rooms or a sheet
     // or the dialog is over the page (rule 13); the host leaves the

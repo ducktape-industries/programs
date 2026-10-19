@@ -255,24 +255,20 @@ impl Chat {
         Some(row.author.clone())
     }
 
-    /// Whether the reader wrote the message at `seq`: only its author
-    /// edits it, and the chat program refuses anyone else.
+    // Whether the reader wrote the message at `seq`: who edits it before policies (`may_edit`).
     pub(crate) fn wrote(&self, pane: Pane, seq: u64) -> bool {
         let Some(me) = self.me() else { return false };
         self.shown(pane)
             .any(|row| row.seq == seq && row.author == me)
     }
 
-    /// Whether the reader may delete the message at `seq`: its author, or
-    /// the channel's owner.
+    // Whether the reader may delete the message at `seq`: its author's delete is the message's
+    // policy's to decide, anyone else's the channel's, as chat decides them (`policies.rs`).
     pub(crate) fn may_delete(&self, pane: Pane, seq: u64) -> bool {
-        self.wrote(pane, seq) || self.owns_room()
-    }
-
-    /// Whether the reader owns the open channel.
-    pub(crate) fn owns_room(&self) -> bool {
-        self.room_info()
-            .is_some_and(|info| Some(&info.channel.owner) == self.me().as_ref())
+        match self.wrote(pane, seq) {
+            true => self.may_edit(pane, seq),
+            false => self.may_change_room(),
+        }
     }
 
     // ---------- writes ----------

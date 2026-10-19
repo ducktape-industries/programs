@@ -141,7 +141,8 @@ pub fn details(
         false => {
             let pane = pane
                 .child(details_header(words::CHANNEL_DETAILS, cx, theme, ladder))
-                .child(rule(theme));
+                .child(rule(theme))
+                .children(crate::policies::room_row(chat, cx, ladder, theme));
             notices(pane, cx)
                 .children(name_section(
                     &details.name_draft,

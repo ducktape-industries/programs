@@ -1057,7 +1057,7 @@ fn details_name_the_channel_its_facts_members_and_the_owners_actions() {
     assert!(cx.has_text("No members added. An open channel needs none."));
     for label in [
         "Add a member…",
-        "Owner actions",
+        "Channel actions",
         "Rename channel",
         "Archive channel",
     ] {
@@ -1072,7 +1072,7 @@ fn a_reader_who_does_not_own_the_channel_has_no_owners_actions() {
         general.channel.owner = Principal::Account(9)
     });
     cx.simulate_click("Channel details");
-    assert!(!cx.has_text("Owner actions") && !cx.has_text("Add a member…"));
+    assert!(!cx.has_text("Channel actions") && !cx.has_text("Add a member…"));
 }
 
 #[test]
@@ -1296,4 +1296,49 @@ fn at_lists_every_match_in_the_room_above_the_band() {
     assert_eq!(frame.max_size.height, Some(px(room).into()));
     let dense = cx.dense().to_vec();
     view::testing::assert_fits(cx.root(), cx.styles(), &dense, 390., &design::TOUCH);
+}
+
+// ---------- who can edit (`policies.rs`) ----------
+
+#[test]
+fn a_reader_a_channels_policy_lists_has_its_actions_and_its_row_says_whose_it_is() {
+    let (mut cx, view) = in_general();
+    general_is(&mut cx, &view, |general| {
+        general.channel.owner = Principal::Account(9)
+    });
+    let team = a_policy(
+        3,
+        9,
+        "Team",
+        ownership::Writers::Listed(vec![ownership::Party::Account(7)]),
+    );
+    let general = chat::tables::CHANNELS.key(&"general".to_owned());
+    owned(&cx, general, 9, team.clone(), vec![team]);
+    cx.simulate_click("Channel details");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("forge · Team · forge and eddy"),
+        "{:?}",
+        cx.texts()
+    );
+    for label in ["Add a member…", "Channel actions", "Rename channel"] {
+        assert!(cx.has_text(label), "{label}");
+    }
+}
+
+#[test]
+fn the_channels_owner_on_record_decides_not_the_owner_the_row_names() {
+    let (mut cx, _) = in_general();
+    // eddy is the owner chat names, and the record says forge, on its own Only me
+    let close = a_policy(4, 9, "Close", ownership::Writers::Owner);
+    let general = chat::tables::CHANNELS.key(&"general".to_owned());
+    owned(&cx, general, 9, close.clone(), vec![close]);
+    cx.simulate_click("Channel details");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("forge · Close · Only forge"),
+        "{:?}",
+        cx.texts()
+    );
+    assert!(!cx.has_text("Channel actions") && !cx.has_text("Add a member…"));
 }

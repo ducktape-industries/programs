@@ -1,9 +1,10 @@
 # policy-view
 
 What a view shows of the `ownership` program's policies, written once for every
-view that links it (settings-view's Policies pane now; chat-view, forge-view and
-harness-view's "who can edit this" rows next). It links `ownership` and
-`identity` with `program` off, and `view`; nothing here writes.
+view that links it (settings-view's Policies pane; chat-view's "Who can edit"
+rows; forge-view and harness-view next). It links `ownership` and `identity`
+with `program` off, and `view`; its only writes are the item sheets' `Relink`
+and `Transfer`.
 
 - `KINDS`: every kind of owned item (`chat.channel`, `chat.message`,
   `forge.repo`, `forge.change`, `forge.review`, `harness.model`,
@@ -23,3 +24,19 @@ harness-view's "who can edit this" rows next). It links `ownership` and
 - `items(host, policy)`: how many items are on a policy. ownership keeps no
   count, so this reads every page of `Linked`; a screen asks it once, when a
   sheet that needs the number opens, never for a list.
+- `item` (with `Item`, `Standing`, `Editing`, `Sheet`, `Lens`): "Who can edit"
+  on one item a view keeps. The view holds an `Editing` slot per item it shows
+  a row for and passes a lens to it (`fn(&mut V) -> &mut Editing`).
+  `item::hold(view, lens, item, reader, cx)` reads the item's `Record` and
+  `Effective` policy (and identity's names for the accounts they name) when it
+  is another item or reader than the one held; `item::let_go` empties the slot;
+  `item::moved` reads again on an ownership block that touched them.
+  `Editing::admits(item)` is whether the policy lets the reader change it (its
+  owner, or anyone the policy admits, a program counted as its account), `None`
+  before the read lands and for an item with no record, where the view keeps
+  the rule it had before policies. `item::row` draws "Who can edit" with
+  "Owner · Policy · who may write" (a press for the owner), and `item::sheet`
+  the sheet over the view: what the row says, then for the owner Change
+  policy… (`Relink`, among their live policies) and Transfer… (an account found
+  by name or `#number`, then a plain confirm that names it). An item with no
+  record reads "Open (from before policies)". `item::find` is that lookup.

@@ -716,6 +716,8 @@ dependencies = [
  "futures",
  "harness",
  "identity",
+ "ownership",
+ "policy-view",
  "program",
  "programs",
  "serde",
