@@ -693,6 +693,7 @@ dependencies = [
  "attribution",
  "borsh",
  "describe",
+ "ownership",
  "program",
  "serde",
  "store",

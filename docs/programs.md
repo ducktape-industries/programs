@@ -348,8 +348,8 @@ defines names its kind through a marker type of the program's own
 (`Map<String, Owned<ServiceRow, Service>>`, `impl Kind for Service`). A plain table that is
 neither is owned with no kind. This repo's programs declare their tables
 shared, and move each kind of owned item over one at a time (forge's reviews,
-`forge.review`, egress's services, `egress.service`, and harness's models,
-`harness.model`, so far).
+`forge.review`, egress's services, `egress.service`, harness's models,
+`harness.model`, and chat's channels, `chat.channel`, so far).
 
 Four rules hold for every owned table:
 

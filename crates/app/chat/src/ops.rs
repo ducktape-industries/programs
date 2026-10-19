@@ -101,9 +101,16 @@ pub(crate) fn set_archived(ctx: &ExecCtx, id: &str, archived: bool) -> Result<()
     Ok(())
 }
 
+// The channel's row, rewritten as it is: an op that reshapes the channel without changing the
+// row (its meta, its seats) writes it so the channel's policy decides it (programs.md §5).
+fn touch(ctx: &ExecCtx, channel: &ChannelRow) {
+    CHANNELS.put(ctx, &channel.id, channel);
+}
+
 pub(crate) fn set_meta(ctx: &ExecCtx, id: &str, key: String, value: String) -> Result<(), Error> {
     let channel = channel(ctx, id)?;
     rules::not_dm(&channel)?;
+    touch(ctx, &channel);
     let mut meta = CHANNEL_META.get(ctx, &channel.id)?.unwrap_or_default();
     meta.insert(key, value);
     CHANNEL_META.put(ctx, &channel.id, &meta);
@@ -117,6 +124,7 @@ pub(crate) fn remove_meta(ctx: &ExecCtx, id: &str, key: &str) -> Result<(), Erro
     if meta.remove(key).is_none() {
         return Ok(());
     }
+    touch(ctx, &channel);
     if meta.is_empty() {
         CHANNEL_META.remove(ctx, &channel.id);
     } else {
@@ -133,6 +141,7 @@ pub(crate) fn set_membership(
 ) -> Result<(), Error> {
     let channel = channel(ctx, id)?;
     rules::not_dm(&channel)?;
+    touch(ctx, &channel);
     if member {
         seat(ctx, id, principal);
     } else {

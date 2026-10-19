@@ -28,4 +28,5 @@ unicode-normalization = { workspace = true }
 
 [dev-dependencies]
 access = { workspace = true }
+ownership = { workspace = true }
 store = { workspace = true }

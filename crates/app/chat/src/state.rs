@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use ::program::Range;
 use ::program::{Error, ExecCtx, QueryCtx, not_found};
 use borsh::{BorshDeserialize, BorshSerialize};
-use store::{Map, Set};
+use store::{Kind, Map, Owned, Set};
 
 use crate::legacy;
 use crate::{
@@ -19,7 +19,10 @@ use crate::{
 type ChannelId = String;
 type Seq = u64;
 
-pub const CHANNELS: Map<ChannelId, ChannelRow> = Map::new("channel/").shared();
+// Each channel is its opener's, of the kind `chat.channel`. Every op that reshapes a channel
+// writes its row, its meta and its seats included, so the channel's policy decides who may.
+pub const CHANNELS: Map<ChannelId, Owned<ChannelRow>> = Map::new("channel/");
+// a channel's meta, beside its row: the ops that write it rewrite the row too
 pub const CHANNEL_META: Map<ChannelId, BTreeMap<String, String>> =
     Map::new("channel-meta/").shared();
 /// The newest message's seq, per channel.
@@ -226,7 +229,11 @@ pub(crate) fn toggle<K: store::KeyCodec>(ctx: &ExecCtx, set: &Set<K>, key: &K, o
     }
 }
 
-// Every table here is general data: only this program's code governs it.
+impl Kind for ChannelRow {
+    const KIND: &'static str = "chat.channel";
+}
+
+// Every table here but CHANNELS is general data: only this program's code governs it.
 pub(crate) const TABLES: &[::program::Table] = &[
     CHANNELS.table(),
     CHANNEL_META.table(),
