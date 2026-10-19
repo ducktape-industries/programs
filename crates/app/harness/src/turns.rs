@@ -414,7 +414,7 @@ async fn drive(ctx: &Ctx, id: u64) -> Result<(), Error> {
             resume::watch(ctx, id, asked.wait, Some(asked.config)).await;
             let doing = match &step {
                 Step::Compact { .. } => crate::drafts::SUMMARIZING,
-                Step::Learn { .. } | Step::Ask { .. } | Step::Again(_) => "",
+                Step::Learn { .. } | Step::Ask { .. } | Step::Again(_) => crate::drafts::THINKING,
             };
             crate::drafts::asking(ctx, id, doing).await;
         }

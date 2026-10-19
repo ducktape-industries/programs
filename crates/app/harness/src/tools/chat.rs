@@ -1,6 +1,6 @@
 //! Tools over `chat`: channels, messages, threads and search read as the agent reads them, and
-//! posts and reactions the agent makes, which chat allows where it allows the agent. A post
-//! shows as its text arrives and a reaction once its input is whole.
+//! posts and reactions the agent makes as itself. A post lands whole once its call runs (its draft
+//! shows the text as it arrives), a reaction once its input is whole.
 use ::program::{Error, ExecCtx, Principal};
 use attribution::Source;
 use chat::attributed::MESSAGE;
@@ -335,11 +335,18 @@ fn arrived(input: &Prefix) -> Option<Posted> {
     })
 }
 
+// the text a chat_post call's input says so far, when it posts in `channel`: what the agent's
+// draft there shows while the call forms
+pub(crate) fn posting_in(input: &str, channel: &str) -> Option<String> {
+    let posted = arrived(&prefix(input))?;
+    (posted.channel == channel).then_some(posted.text)
+}
+
 pub(crate) struct Post;
 
 impl Tool for Post {
     const NAME: &'static str = "chat_post";
-    const DESCRIPTION: &'static str = "Post a message to a chat channel, or a reply in a message's thread. Markdown works; `<@N>` mentions account N, and `@name` mentions the one account named so. The message is yours, and chat allows it where it allows your account. It appears as you write it, so give channel and reply_to before text.";
+    const DESCRIPTION: &'static str = "Post a message to a chat channel, or a reply in a message's thread. Markdown works; `<@N>` mentions account N, and `@name` mentions the one account named so. The message is yours, and chat allows it where it allows your account. It lands whole once you finish it, and your draft in the channel shows its text as you write it, so give channel and reply_to before text.";
     const WRITES: bool = true;
     type Args = PostArgs;
 
@@ -374,33 +381,6 @@ impl Tool for Post {
                 post(moved_id(&own), &posted),
             ])),
         }
-    }
-
-    fn show(ctx: &ExecCtx, seat: &Seat, input: &str) -> Result<Show, Error> {
-        let Some(posted) = arrived(&prefix(input)) else {
-            return Ok(Show::Wait);
-        };
-        let own = message_id(seat.thread, seat.call);
-        let Some(shown) = record::<Posted>(seat) else {
-            return Ok(Show::Write {
-                writes: vec![post(own, &posted)],
-                shown: json!(posted),
-            });
-        };
-        if shown.text == posted.text {
-            return Ok(Show::Wait);
-        }
-        let Some(row) = standing(ctx, own)? else {
-            return Ok(Show::Wait);
-        };
-        let shown = Posted {
-            text: posted.text,
-            ..shown
-        };
-        Ok(Show::Write {
-            writes: vec![edit(&row, &shown.text)],
-            shown: json!(shown),
-        })
     }
 
     fn void(ctx: &ExecCtx, seat: &Seat) -> Result<Undo, Error> {

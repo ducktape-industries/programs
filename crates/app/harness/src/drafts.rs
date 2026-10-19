@@ -1,6 +1,6 @@
 //! A turn's live draft in the chat place it answers (chat's `Drafting`), written as the agent:
-//! opened at each model call, grown by the reply's visible text, told the calls it runs or the
-//! retry it waits for, and taken down once the turn is over. A draft never fails a turn.
+//! opened at each model call, grown by the reply's visible text and its posts' into that room, told
+//! the calls it runs or the retry it waits for, and taken down once the turn is over.
 use ::program::{Ctx, ExecCtx, ProgramId, QueryCtx};
 
 use crate::conversations::binding;
@@ -8,6 +8,7 @@ use crate::state::{CALLS, DRAFTING, Drafted, HEARD_AT, RETRIES, THREADS};
 use crate::{AccountNumber, Asking, Partial, Place, Said, ThreadRow};
 
 pub(crate) const SUMMARIZING: &str = "summarizing its conversation";
+pub(crate) const THINKING: &str = "thinking";
 const RETRYING: &str = "waiting to retry";
 
 // a chat input a conversation heard: where its next turn answers, unless it is bound to a place
@@ -21,12 +22,6 @@ fn row(ctx: &QueryCtx, id: u64) -> Option<ThreadRow> {
 
 fn held(ctx: &QueryCtx, id: u64) -> Option<Drafted> {
     DRAFTING.get(ctx, &id).ok().flatten()
-}
-
-// where a turn of `row` answers: the place it is bound to, else that of the input that woke it
-fn answering(ctx: &QueryCtx, row: &ThreadRow) -> Option<Place> {
-    let bound = binding(ctx, row).ok().flatten();
-    bound.or_else(|| HEARD_AT.get(ctx, &row.id).ok().flatten())
 }
 
 // a refused write leaves the draft as chat holds it and the turn as it is
@@ -57,17 +52,26 @@ async fn draft(
     write(ctx, agent, &op).await;
 }
 
-// a model call of the turn begins: the draft opens where the turn answers, or starts its text
-// over there, saying what the call is for
+// a model call of the turn begins: the draft opens where the turn answers (the place its
+// conversation is bound to, else that of the input heard last, else where it already is), or
+// starts its text over there, saying what the call is for; a draft in another room is taken down
 pub(crate) async fn asking(ctx: &Ctx, id: u64, doing: &str) {
     let Some(row) = row(ctx, id) else {
         return;
     };
     let kept = held(ctx, id).map(|held| held.place);
-    let Some(place) = kept.or_else(|| answering(ctx, &row)) else {
+    let heard = HEARD_AT.get(ctx, &id).ok().flatten();
+    HEARD_AT.remove(ctx, &id);
+    let bound = binding(ctx, &row).ok().flatten();
+    let Some(place) = bound.or(heard).or_else(|| kept.clone()) else {
         return;
     };
-    HEARD_AT.remove(ctx, &id);
+    if let Some(left) = kept.filter(|left| left.channel() != place.channel()) {
+        let op = chat::Op::Undraft {
+            channel_id: left.channel().to_owned(),
+        };
+        write(ctx, row.agent, &op).await;
+    }
     let drafted = Drafted {
         place: place.clone(),
         doing: doing.to_owned(),
@@ -90,7 +94,8 @@ pub(crate) async fn wrote(ctx: &Ctx, id: u64, before: &Partial, after: &Partial,
     let Some(held) = held(ctx, id) else {
         return;
     };
-    let (was, now) = (visible(before), visible(after));
+    let channel = held.place.channel();
+    let (was, now) = (visible(before, channel), visible(after, channel));
     let grown = now
         .strip_prefix(was.as_str())
         .filter(|_| !restarted)
@@ -103,39 +108,56 @@ pub(crate) async fn wrote(ctx: &Ctx, id: u64, before: &Partial, after: &Partial,
     let Some(row) = row(ctx, id) else {
         return;
     };
-    draft(ctx, row.agent, &held.place, text, anew, None).await;
+    // the reply's first words end its "thinking"
+    let doing = (held.doing == THINKING).then(String::new);
+    if doing.is_some() {
+        let drafted = Drafted {
+            place: held.place.clone(),
+            doing: String::new(),
+        };
+        DRAFTING.put(ctx, &id, &drafted);
+    }
+    draft(ctx, row.agent, &held.place, text, anew, doing).await;
 }
 
-// what the reply says so far, its thinking and its calls aside: its text blocks a paragraph
-// apart, a cited run joined to the text before it
-fn visible(partial: &Partial) -> String {
+// what the reply says so far, its thinking and its other calls aside: its text blocks and each
+// post into `channel` a paragraph apart, a cited run joined to the text before it
+fn visible(partial: &Partial, channel: &str) -> String {
     let mut text = String::new();
     for said in &partial.said {
-        match said {
-            Said::Text(more) => {
-                if !text.is_empty() && !more.is_empty() {
-                    text.push_str("\n\n");
-                }
-                text.push_str(more);
+        let (more, apart) = match said {
+            Said::Text(more) => (Some(more.clone()), true),
+            Said::Cited { text: more, .. } => (Some(more.clone()), false),
+            Said::ToolUse { name, input, .. } => {
+                (crate::tools::posting(name, input, channel), true)
             }
-            Said::Cited { text: more, .. } => text.push_str(more),
             Said::Thinking { .. }
             | Said::RedactedThinking(_)
-            | Said::ToolUse { .. }
             | Said::ServerToolUse { .. }
-            | Said::ServerToolResult(_) => {}
+            | Said::ServerToolResult(_) => (None, false),
+        };
+        let Some(more) = more else {
+            continue;
+        };
+        if apart && !text.is_empty() && !more.is_empty() {
+            text.push_str("\n\n");
         }
+        text.push_str(&more);
     }
     text
 }
 
-// the turn's calls run: the draft names their tools, a post's aside, as the post shows itself
+// the turn's calls run: the draft names their tools, a post into its room aside, whose text it
+// shows
 pub(crate) async fn running(ctx: &Ctx, id: u64, calls: &[(u64, String)]) {
+    let Some(held) = held(ctx, id) else {
+        return;
+    };
     let mut tools: Vec<String> = Vec::new();
     for (_, call) in calls {
         let placed = CALLS.get(ctx, &(id, call.clone())).ok().flatten();
         if let Some(placed) = placed
-            && !crate::tools::posts(&placed.tool)
+            && crate::tools::posting(&placed.tool, &placed.input, held.place.channel()).is_none()
             && !tools.contains(&placed.tool)
         {
             tools.push(placed.tool);

@@ -211,7 +211,7 @@ fn a_call_still_running_when_the_turn_ends_is_recorded_after_it_and_then_the_mod
 }
 
 #[test]
-fn a_post_shows_as_its_text_arrives_and_ends_as_one_message_with_the_exact_text() {
+fn a_streamed_post_lands_once_whole_and_is_never_edited_while_the_draft_shows_its_text() {
     let world = world();
     let chain = &world.chain;
     let (thread, request) = asked(&world);
@@ -225,28 +225,26 @@ fn a_post_shows_as_its_text_arrives_and_ends_as_one_message_with_the_exact_text(
         ],
     );
     let id = format!("harness-{thread}-toolu_p");
-    through(chain, &request, &events, 5);
+    through(chain, &request, &events, 6);
+    assert_eq!(drafts(chain), [draft("", "On it.\n\nHel")]);
+    from(chain, &request, &events, 6);
+    end(chain, &request, events.len() as u64);
     assert!(
         message(chain, &id).is_none(),
-        "nothing to show before the text"
+        "nothing is posted while the call forms"
     );
-    through(chain, &request, &events, 6);
-    let shown = message(chain, &id).unwrap();
-    assert_eq!(text_of(&shown), "Hel");
-    assert_eq!(shown.author, Principal::Account(world.agent));
-    assert_eq!(
-        call_state(chain, thread, "toolu_p"),
-        Some(CallState::Showing)
-    );
-    from(chain, &request, &events, 6);
-    let grown = message(chain, &id).unwrap();
-    assert_eq!(grown.seq, shown.seq);
-    assert_eq!(grown.blocks, chat::parse_message("Hello **world**"));
-    end(chain, &request, events.len() as u64);
+    assert_eq!(drafts(chain), [draft("", "On it.\n\nHello **world**")]);
     ran(chain, "toolu_p");
     let [posted] = posts_by(chain, world.agent).try_into().unwrap();
-    assert_eq!(posted.seq, shown.seq);
+    assert_eq!(posted.message_id, id);
+    assert_eq!(posted.author, Principal::Account(world.agent));
     assert_eq!(posted.blocks, chat::parse_message("Hello **world**"));
+    assert_eq!(
+        (posted.rev, posted.edited),
+        (0, false),
+        "one PostMessage with the whole text, and no EditMessage"
+    );
+    assert!(message(chain, &format!("{id}-moved")).is_none());
     let (text, failed) = result_of(chain, thread, "toolu_p");
     assert!(!failed, "{text}");
     let (_, head) = open_request(chain);
@@ -295,6 +293,7 @@ fn a_post_the_target_refuses_becomes_the_calls_failed_result() {
     let events = post_events("toolu_p", &[r#"{"channel":"nowhere","text":"Hi"}"#]);
     from(chain, &request, &events, 0);
     end(chain, &request, events.len() as u64);
+    ran(chain, "toolu_p");
     let (text, failed) = result_of(chain, thread, "toolu_p");
     assert!(failed, "{text}");
     assert!(text.contains("nowhere"), "{text}");
@@ -308,32 +307,25 @@ fn a_post_the_target_refuses_becomes_the_calls_failed_result() {
 }
 
 #[test]
-fn a_reply_that_starts_over_takes_back_what_the_old_one_posted_and_posts_once() {
+fn a_reply_that_starts_over_before_its_post_is_whole_posts_only_the_new_one() {
     let world = world();
     let chain = &world.chain;
     let (thread, request) = asked(&world);
     let first = post_events("toolu_a", &[r#"{"channel":"general","text":"Draft one"#]);
     through(chain, &request, &first, 5);
     let old = format!("harness-{thread}-toolu_a");
-    assert!(message(chain, &old).is_some());
+    assert!(message(chain, &old).is_none());
+    assert_eq!(drafts(chain), [draft("", "On it.\n\nDraft one")]);
     let second = post_events("toolu_b", &[r#"{"channel":"general","text":"Final"}"#]);
     from(chain, &request, &second, 0);
     end(chain, &request, second.len() as u64);
-    assert!(message(chain, &old).unwrap().deleted);
-    assert_eq!(
-        call_state(chain, thread, "toolu_a"),
-        Some(CallState::Voided { height: 3 })
-    );
+    assert_eq!(drafts(chain), [draft("", "On it.\n\nFinal")]);
+    assert_eq!(call_state(chain, thread, "toolu_a"), None);
     ran(chain, "toolu_b");
     let [posted] = posts_by(chain, world.agent).try_into().unwrap();
     assert_eq!(posted.message_id, format!("harness-{thread}-toolu_b"));
     assert_eq!(text_of(&posted), "Final");
-    let said = notices(chain, thread);
-    assert!(
-        said.iter()
-            .any(|text| text.contains("started over") && text.contains("toolu_a")),
-        "{said:?}"
-    );
+    assert!(message(chain, &old).is_none());
     let [Body::Turn { said, .. }] = &turns(chain, thread)[..] else {
         panic!("one turn");
     };
@@ -372,7 +364,7 @@ fn a_reply_that_starts_over_after_a_call_ran_says_so_and_a_post_it_made_is_taken
 }
 
 #[test]
-fn a_stream_that_breaks_while_a_post_forms_takes_the_post_back() {
+fn a_stream_that_breaks_while_a_post_forms_posts_nothing() {
     let world = world();
     let chain = &world.chain;
     let (thread, request) = asked(&world);
@@ -382,21 +374,20 @@ fn a_stream_that_breaks_while_a_post_forms_takes_the_post_back() {
     );
     through(chain, &request, &events, 5);
     let id = format!("harness-{thread}-toolu_p");
-    assert_eq!(text_of(&message(chain, &id).unwrap()), "Half");
+    assert!(message(chain, &id).is_none());
     let mut broken = events.clone();
     broken[5] = b"event: content_block_delta\r\ndata: not json".to_vec();
     stream(chain, &request, &broken, &[5, 6, 7]);
     end(chain, &request, 8);
-    assert!(message(chain, &id).unwrap().deleted);
+    assert!(message(chain, &id).is_none());
     let said = notices(chain, thread);
     assert!(said.iter().any(|text| text.contains("broke")), "{said:?}");
-    assert!(said.iter().any(|text| text.contains("toolu_p")), "{said:?}");
     assert_eq!(thread_row(chain, thread).asking, Asking::Idle);
     assert!(assigned(chain, RELAY).is_empty());
 }
 
 #[test]
-fn a_post_still_forming_when_its_thread_closes_is_taken_back_and_fails() {
+fn a_post_still_forming_when_its_thread_closes_never_posts_and_fails() {
     let world = world();
     let chain = &world.chain;
     let (thread, request) = asked(&world);
@@ -412,7 +403,7 @@ fn a_post_still_forming_when_its_thread_closes_is_taken_back_and_fails() {
     end(chain, &request, events.len() as u64);
     ran(chain, "toolu_p");
     let id = format!("harness-{thread}-toolu_p");
-    assert!(message(chain, &id).unwrap().deleted);
+    assert!(message(chain, &id).is_none(), "nothing was posted");
     let (text, failed) = result_of(chain, thread, "toolu_p");
     assert!(failed && text.contains("closed"), "{text}");
     assert!(assigned(chain, SERVICE).is_empty());
@@ -632,7 +623,7 @@ fn a_turn_drafts_its_text_and_its_calls_where_it_was_woken_and_its_post_takes_th
     let world = world();
     let chain = &world.chain;
     let (_, request) = asked(&world);
-    assert_eq!(drafts(chain), [draft("", "")]);
+    assert_eq!(drafts(chain), [draft("thinking", "")]);
     let more = sse(json!({
         "type": "content_block_delta", "index": 0,
         "delta": { "type": "text_delta", "text": " now." }
@@ -667,7 +658,11 @@ fn a_turn_drafts_its_text_and_its_calls_where_it_was_woken_and_its_post_takes_th
         "its call still runs"
     );
     ran(chain, "toolu_c");
-    assert_eq!(drafts(chain), [draft("", "")], "the next model call");
+    assert_eq!(
+        drafts(chain),
+        [draft("thinking", "")],
+        "the next model call"
+    );
     chain.at(5, 0);
     let (next, _) = open_request(chain);
     let posting = post_events("toolu_p", &[r#"{"channel":"general","text":"Done"}"#]);
@@ -675,13 +670,20 @@ fn a_turn_drafts_its_text_and_its_calls_where_it_was_woken_and_its_post_takes_th
     assert_eq!(drafts(chain), [draft("", "On it.")]);
     from(chain, &next, &posting, 2);
     end(chain, &next, posting.len() as u64);
-    assert!(
-        drafts(chain).is_empty(),
-        "the post took its place, and its own call is not drawn running"
+    assert_eq!(
+        drafts(chain),
+        [draft("", "On it.\n\nDone")],
+        "the post's text shows in the draft, and its own call is not drawn running"
     );
     chain.at(6, 0);
     relay_back(chain, "toolu_p");
-    assert_eq!(drafts(chain), [draft("", "")]);
+    let [posted] = posts_by(chain, world.agent).try_into().unwrap();
+    assert_eq!(text_of(&posted), "Done");
+    assert_eq!(
+        drafts(chain),
+        [draft("thinking", "")],
+        "the post took the draft's place, and the next model call opened it again"
+    );
     chain.at(7, 0);
     model_says(
         chain,
@@ -700,4 +702,41 @@ fn a_turn_waiting_to_ask_its_model_again_keeps_its_draft_and_says_so() {
         json!({ "type": "error", "error": { "type": "rate_limit_error", "message": "Slow down" } });
     answer(chain, request.id, Answer::Output(response(429, limited)));
     assert_eq!(drafts(chain), [draft("waiting to retry", "")]);
+}
+
+#[test]
+fn a_draft_follows_the_input_heard_while_the_turn_ran_to_its_place() {
+    let world = world();
+    let chain = &world.chain;
+    let (_, _) = asked(&world);
+    let under = |chain: &MockChain| {
+        let asked = chat::Query::Drafts {
+            channel_id: "general".into(),
+        };
+        let chat::Reply::Drafts(drafts) = chain.query(chat::PROGRAM, &asked).unwrap() else {
+            panic!()
+        };
+        drafts
+            .into_iter()
+            .map(|draft| draft.thread)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(under(chain), [None], "the room it was woken in");
+    let reply = chat::Op::PostMessage {
+        channel_id: "general".into(),
+        message_id: "m2".into(),
+        blocks: chat::parse_message(&format!("<@{}> and here", world.agent)),
+        thread: Some(1),
+    };
+    chain.submit(signed(BO), chat::PROGRAM, &reply).unwrap();
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Done." }]),
+        "end_turn",
+    );
+    assert_eq!(
+        under(chain),
+        [Some(1)],
+        "the next model call answers in the thread it heard from"
+    );
 }
