@@ -216,3 +216,103 @@ fn one_variant_is_named_and_made_alone() {
     assert_eq!(made("Vote"), Some(json!("Vote")));
     assert_eq!(made("Shut"), None);
 }
+
+#[test]
+fn a_network_schema_ask_is_one_of_five_and_a_mixed_one_says_what_to_give() {
+    use crate::discover::Ask;
+    let some = |text: &str| Some(text.to_owned());
+    assert_eq!(Ask::of(None, None, None, None), Ok(Ask::Roster));
+    assert_eq!(Ask::of(None, None, None, Some(false)), Ok(Ask::Roster));
+    assert_eq!(
+        Ask::of(some("poll"), None, None, None),
+        Ok(Ask::Index("poll".into()))
+    );
+    assert_eq!(
+        Ask::of(some("poll"), None, None, Some(true)),
+        Ok(Ask::Whole("poll".into()))
+    );
+    assert_eq!(
+        Ask::of(some("poll"), some("Open"), None, None),
+        Ok(Ask::Op("poll".into(), "Open".into()))
+    );
+    assert_eq!(
+        Ask::of(some("poll"), None, some("Poll"), None),
+        Ok(Ask::Query("poll".into(), "Poll".into()))
+    );
+    assert!(Ask::of(None, some("Open"), None, None).is_err());
+    assert!(Ask::of(some("poll"), some("Open"), None, Some(true)).is_err());
+    assert!(Ask::of(some("poll"), some("Open"), some("Poll"), None).is_err());
+}
+
+#[test]
+fn the_index_and_an_unfolded_op_read_the_section_and_the_schema_together() {
+    use crate::discover::{Refusal, Side, index, roster, unfold};
+    let poll = poll();
+    let told = read(&section(&poll, &Poll::tools()).unwrap()).unwrap();
+    let listed = index("poll", &poll, &told);
+    assert_eq!(listed["about"], json!("Polls anyone opens and closes."));
+    assert_eq!(
+        listed["ops"]["Open"],
+        json!("Open a poll with its choices.")
+    );
+    assert_eq!(listed["queries"]["Polls"], serde_json::Value::Null);
+    assert!(listed.get("note").is_none(), "{listed}");
+    let silent = index("poll", &poll, &Described::default());
+    assert!(silent["note"].as_str().unwrap().contains("describes none"));
+
+    let open = unfold("poll", &poll, &told, Side::Op, "Open").unwrap();
+    assert_eq!(
+        open["example"],
+        json!({ "Open": { "id": "lunch", "choices": ["noodles", "rice"] } })
+    );
+    assert_eq!(open["returns"], json!("u64"));
+    assert_eq!(
+        open["shape"],
+        json!({ "Open": { "struct": { "id": "string", "choices": { "vec": "string" } } } })
+    );
+    let made = unfold("poll", &poll, &Described::default(), Side::Op, "Close").unwrap();
+    assert_eq!(made["example"], json!({ "Close": 0 }));
+    assert!(made.get("description").is_none(), "{made}");
+    let Err(Refusal::Asked(why)) = unfold("poll", &poll, &told, Side::Query, "Open") else {
+        panic!("a query poll lacks is refused")
+    };
+    assert_eq!(
+        why,
+        "program poll has no query Open; its queries are Poll, Polls"
+    );
+
+    let rows = roster(vec![
+        ("poll".into(), Ok(told)),
+        ("odd".into(), Err("no JSON".into())),
+    ]);
+    assert_eq!(
+        rows,
+        json!({ "programs": [
+            { "program": "poll", "about": "Polls anyone opens and closes." },
+            { "program": "odd", "unread": "no JSON" },
+        ] })
+    );
+}
+
+#[test]
+fn an_http_answer_reads_as_its_status_headers_and_body() {
+    use crate::discover::http_answer;
+    let answer = |body: &[u8]| {
+        let response = abi::role::egress::http::Response {
+            status: 200,
+            headers: vec![("content-type".into(), "text/plain".into())],
+            body: body.to_vec(),
+        };
+        http_answer(&abi::encode(&response))
+    };
+    assert_eq!(answer(br#"{"a":1}"#)["body"], json!({ "a": 1 }));
+    assert_eq!(answer(b"plain")["body_as"], json!("text"));
+    assert_eq!(answer(&[0xff])["body"], json!("ff"));
+    let broken = http_answer(b"no");
+    assert!(
+        broken["unread"]
+            .as_str()
+            .unwrap()
+            .starts_with("the answer is no HTTP response")
+    );
+}

@@ -5,11 +5,12 @@ use ::program::{Error, ExecCtx, invalid, unexpected_reply};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::interface::{encoded, program_schema};
+use super::interface::encoded;
 use super::{Run, Seat, Tool, cursor_schema, object, write};
 use crate::bookings::newest;
 use crate::schema::schema_of;
 use crate::{Booking, Op, PROGRAM, Ran};
+use borsh_json::discover::program_input as program_schema;
 
 #[derive(Deserialize)]
 pub(crate) struct BookArgs {

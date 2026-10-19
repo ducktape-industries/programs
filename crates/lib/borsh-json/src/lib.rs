@@ -1,7 +1,8 @@
 //! Values of any program as JSON, by the borsh schema its code carries: JSON to borsh bytes, borsh
 //! bytes to JSON, each type's shape as JSON a model follows, and a code's whole [`Interface`].
-//! harness's `network_*` tools, chat's widgets and the ducktape CLI use it.
+//! harness's `network_*` tools (in `discover`'s words), chat's widgets and the ducktape CLI use it.
 mod decode;
+pub mod discover;
 mod encode;
 mod example;
 mod interface;
