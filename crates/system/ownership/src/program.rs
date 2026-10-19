@@ -4,8 +4,8 @@ use ::program::schema::{Return, returns};
 use ::program::{Error, ExecCtx, Program, QueryCtx, Table};
 
 use crate::rules::{
-    self, DEFAULTS, LINKED, NEXT, OPEN, OWNED, POLICIES, RECORDS, create, edit, relink, retire,
-    set_default, switch, transfer,
+    self, CONVERTED, DEFAULTS, LINKED, MIGRATED, NEXT, OPEN, OWNED, POLICIES, RECORDS, create,
+    edit, relink, retire, set_default, switch, transfer,
 };
 use crate::{Op, PROGRAM, PolicyId, Query, Reply};
 
@@ -25,6 +25,8 @@ impl Program for Ownership {
         LINKED.table(),
         DEFAULTS.table(),
         NEXT.table(),
+        MIGRATED.table(),
+        CONVERTED.table(),
     ];
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
@@ -45,6 +47,7 @@ impl Program for Ownership {
             } => relink(ctx, program, key, policy),
             Op::Transfer { program, key, to } => transfer(ctx, program, key, to),
             Op::SetDefault { scope, policy } => set_default(ctx, scope, policy),
+            Op::Adopt { items } => rules::adopt(ctx, items),
         }
     }
 

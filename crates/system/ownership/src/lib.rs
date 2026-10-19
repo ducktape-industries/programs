@@ -1,6 +1,7 @@
 //! The `ownership` program: who may write each owned key a program holds. The kernel asks it once
 //! per run that wrote owned keys (`Op::Guard`); it records each new key's owner and policy and
 //! admits a change only where the key's policy admits the actor. `program` adds the wasm exports.
+mod adopt;
 mod program;
 mod rules;
 #[cfg(test)]
@@ -10,6 +11,7 @@ use std::fmt;
 
 use ::program::{AccountNumber, ProgramId};
 use abi::role::ownership::Guard;
+pub use adopt::{Adopted, Rule, adopt, by_itself, owner_of, rule_of, writers_of};
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 pub use program::Ownership;
 use rules::{DEFAULTS, LINKED, OPEN, OWNED, POLICIES, RECORDS};
@@ -18,6 +20,8 @@ pub use store::{PageRequest, PageResponse};
 pub const PROGRAM: &str = "ownership";
 // what an owner's open policy, the one every item links to until they choose, is named
 pub const OPEN_POLICY: &str = "Open";
+// what the policy an owner's items from before the guard keep, when only they wrote them, is named
+pub const AS_BEFORE: &str = "Only me (as before)";
 
 pub type PolicyId = u64;
 
@@ -127,6 +131,10 @@ pub enum Op {
         scope: Scope,
         policy: Option<PolicyId>,
     },
+    // one-time (J-011 ⑥): a program records owners for the owned rows it kept before the guard
+    Adopt {
+        items: Vec<Adopted>,
+    },
 }
 
 #[derive(
@@ -222,6 +230,10 @@ pub fn describe(op: &Op) -> describe::Description {
                 vec![field("policy", chosen)],
             )
         }
+        Op::Adopt { items } => (
+            "Record owners from before the guard".into(),
+            vec![field("items", Value::count(items.len() as u64))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -260,7 +272,8 @@ fn op_variants_only_append() {
             "Switch",
             "Relink",
             "Transfer",
-            "SetDefault"
+            "SetDefault",
+            "Adopt"
         ]
     );
 }

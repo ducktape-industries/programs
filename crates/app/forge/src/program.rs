@@ -42,6 +42,7 @@ impl Program for Forge {
         returns::<OpReply>("ChangeRepoint"),
         returns::<OpReply>("ArchiveEnded"),
         returns::<OpReply>("Preview"),
+        returns::<Option<Vec<u8>>>("AdoptOwners"),
     ];
 
     fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
@@ -215,6 +216,9 @@ impl Program for Forge {
                 expected_head,
             } => enqueue(ctx, actor, &repo, n, &expected_head).map(|()| None),
             Op::Dequeue { repo, n } => dequeue(ctx, &repo, n).map(|()| None),
+            Op::AdoptOwners { kind, after, limit } => {
+                crate::adopt::adopt_owners(ctx, &kind, after, limit).map(|()| None)
+            }
         }?;
         if let Some(repo) = &governed {
             crate::state::kept(ctx, repo)?;

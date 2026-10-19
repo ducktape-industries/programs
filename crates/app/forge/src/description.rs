@@ -238,6 +238,12 @@ pub fn describe(op: &Op) -> Description {
             vec![change(n), field("head", Value::text(expected_head))],
         ),
         Op::Dequeue { repo, n } => ("Take change out of the queue", repo, vec![change(n)]),
+        Op::AdoptOwners { kind, .. } => {
+            return Description {
+                title: format!("Record the owners of {kind} items"),
+                fields: vec![field("kind", Value::text(kind))],
+            };
+        }
         Op::ReviewSubmit { repo, n, review } => (
             "Review",
             repo,

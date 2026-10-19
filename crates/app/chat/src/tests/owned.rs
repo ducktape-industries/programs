@@ -278,3 +278,69 @@ fn anothers_delete_is_refused_where_the_channel_is_narrowed() {
     );
     assert_eq!(run(&chain, BO, &delete), Ok(()));
 }
+
+// One-time (J-011 ⑥): chat's rows from before the ownership program was seated.
+#[test]
+fn adopt_owners_records_chats_rows_from_before_the_guard_as_access_enforces_them_today() {
+    let mut chain = MockChain::default();
+    chain.seat::<crate::Chat>(crate::PROGRAM);
+    chain.seat::<access::Access>("access");
+    chain.register(crate::PROGRAM, 900);
+    chain.register("board", 950);
+    for (key, number) in [(ADA, 1), (BO, 2)] {
+        chain.hold(key.to_vec(), number);
+    }
+    for id in ["general", "j-1"] {
+        let create = Op::CreateChannel {
+            channel_id: id.into(),
+            name: id.into(),
+            post_policy: PostPolicy::Open,
+        };
+        run(&chain, ADA, &create).unwrap();
+    }
+    let board = access::Op::Set {
+        program: crate::PROGRAM.into(),
+        key: "j-1".into(),
+        list: Some(Ownership::Listed(vec![::program::Party::Program(
+            "board".into(),
+        )])),
+    };
+    chain.submit(signed(ADA), "access", &board).unwrap();
+    bo_posts(&chain);
+    chain.seat::<ownership::Ownership>(ownership::PROGRAM);
+    for kind in ["chat.channel", "chat.message"] {
+        let op = Op::AdoptOwners {
+            kind: kind.into(),
+            after: None,
+            limit: 10,
+        };
+        let next = chain.submit(signed(BO), crate::PROGRAM, &op).unwrap();
+        assert_eq!(abi::decode::<Option<Vec<u8>>>(&next).unwrap(), None);
+    }
+    let effective = |key: Vec<u8>| {
+        let query = ownership::Query::Effective {
+            program: crate::PROGRAM.into(),
+            key,
+        };
+        let ownership::Reply::Policy(Some(policy)) =
+            chain.query(ownership::PROGRAM, &query).unwrap()
+        else {
+            panic!("the row is recorded");
+        };
+        policy
+    };
+    let general = effective(CHANNELS.key(&"general".to_owned()));
+    assert_eq!(
+        (general.name.as_str(), &general.owner),
+        (ownership::AS_BEFORE, &ownership::Party::Account(1))
+    );
+    let listed = effective(CHANNELS.key(&"j-1".to_owned()));
+    assert_eq!(listed.name, "chat j-1 (as before)");
+    let program = ownership::Party::Program("board".into());
+    assert_eq!(listed.write, ownership::Writers::Listed(vec![program]));
+    let message = effective(MESSAGE_IDS.key(&"bo-1".to_owned()));
+    assert_eq!(
+        (message.name.as_str(), &message.owner),
+        (ownership::AS_BEFORE, &ownership::Party::Account(2))
+    );
+}

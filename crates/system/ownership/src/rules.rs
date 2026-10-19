@@ -9,7 +9,10 @@ use ::program::{
 use abi::role::{self, identity, ownership::Guard};
 use store::{Item, Map, PageRequest, PageResponse, Set};
 
-use crate::{Linked, OPEN_POLICY, Party, Policy, PolicyId, Record, Scope, ScopeDefault, Writers};
+use crate::{
+    AS_BEFORE, Adopted, Linked, OPEN_POLICY, Party, Policy, PolicyId, Record, Rule, Scope,
+    ScopeDefault, Writers,
+};
 
 pub(crate) const POLICIES: Map<PolicyId, Policy> = Map::new("policy/").shared();
 // each owner's policies, by the owner's borsh
@@ -20,6 +23,10 @@ pub(crate) const LINKED: Set<(PolicyId, ProgramId, Vec<u8>)> = Set::new("linked/
 // (owner's borsh, scope's borsh) → the policy a new item there links to
 pub(crate) const DEFAULTS: Map<(Vec<u8>, Vec<u8>), PolicyId> = Map::new("default/").shared();
 pub(crate) const NEXT: Item<PolicyId> = Item::new("next").shared();
+// one-time (J-011 ⑥): each owner's "Only me (as before)", and each converted access list's
+// policy, by (program, the key it was set at)
+pub(crate) const MIGRATED: Map<Vec<u8>, PolicyId> = Map::new("migrated/").shared();
+pub(crate) const CONVERTED: Map<(ProgramId, String), PolicyId> = Map::new("converted/").shared();
 
 fn key(party: &Party) -> Vec<u8> {
     abi::encode(party)
@@ -445,4 +452,66 @@ pub(crate) fn defaults(
 
 pub(crate) fn open(ctx: &QueryCtx, owner: &Party) -> Result<Option<PolicyId>, Error> {
     OPEN.get(ctx, &key(owner))
+}
+
+// One-time (J-011 ⑥): the sending program's rows from before the guard, each recorded as its
+// owner's and linked by its rule. A row recorded already is left as it is, unless the program
+// itself holds it (a row it wrote for the migration); so run again, it changes nothing.
+pub(crate) fn adopt(ctx: &ExecCtx, items: Vec<Adopted>) -> Result<(), Error> {
+    let program = ctx.env().sending_program()?;
+    let itself = Party::Program(program.clone());
+    for item in items {
+        let at = (program.clone(), item.key);
+        let stale = match RECORDS.get(ctx, &at)? {
+            Some(record) if !is(ctx, &itself, &record.owner)? => continue,
+            stale => stale,
+        };
+        let policy = match item.rule {
+            Rule::Open => open_of(ctx, &item.owner)?,
+            Rule::OwnerOnly => as_before(ctx, &item.owner)?,
+            Rule::List {
+                at: listed,
+                write,
+                by,
+            } => converted(ctx, &program, listed, write, &by)?,
+        };
+        let (program, key) = at.clone();
+        if let Some(stale) = stale {
+            LINKED.remove(ctx, &(stale.policy, program.clone(), key.clone()));
+        }
+        LINKED.insert(ctx, &(policy, program, key));
+        let record = Record {
+            owner: item.owner,
+            policy,
+            kind: item.kind,
+        };
+        RECORDS.put(ctx, &at, &record);
+    }
+    Ok(())
+}
+
+fn as_before(ctx: &ExecCtx, owner: &Party) -> Result<PolicyId, Error> {
+    if let Some(id) = MIGRATED.get(ctx, &key(owner))? {
+        return Ok(id);
+    }
+    let id = made(ctx, owner, AS_BEFORE.into(), Writers::Owner)?;
+    MIGRATED.put(ctx, &key(owner), &id);
+    Ok(id)
+}
+
+fn converted(
+    ctx: &ExecCtx,
+    program: &ProgramId,
+    at: String,
+    write: Writers,
+    by: &Party,
+) -> Result<PolicyId, Error> {
+    let row = (program.clone(), at);
+    if let Some(id) = CONVERTED.get(ctx, &row)? {
+        return Ok(id);
+    }
+    let name = format!("{program} {} (as before)", row.1);
+    let id = made(ctx, by, name, write)?;
+    CONVERTED.put(ctx, &row, &id);
+    Ok(id)
 }

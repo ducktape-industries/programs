@@ -30,6 +30,7 @@ impl Program for Harness {
         returns::<u64>("ForkThread"),
         returns::<u64>("OpenThread"),
         returns::<u64>("Wait"),
+        returns::<Option<Vec<u8>>>("AdoptOwners"),
     ];
 
     fn init(ctx: &ExecCtx, _params: &[u8]) -> Result<(), Error> {
@@ -130,6 +131,9 @@ impl Awaiting for Harness {
             Op::PodEvent { wait, event } => pod_event(&ctx, wait, event).await,
             Op::Forged(event) => waits::forged(&ctx, event).await,
             Op::ClaimConversations { agent } => crate::conversations::claim(&ctx, agent),
+            Op::AdoptOwners { kind, after, limit } => {
+                crate::adopt::adopt_owners(&ctx, &kind, after, limit)
+            }
         }
     }
 }

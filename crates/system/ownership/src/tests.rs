@@ -392,3 +392,175 @@ fn only_the_kernel_guards_and_its_bytes_are_the_kernels() {
     assert_eq!(refused.code, code::UNAUTHORIZED);
     assert_eq!(record(&chain, "n/z"), None);
 }
+
+// One-time (J-011 ⑥): a program that writes keys and sends ownership `Adopt` for them.
+#[derive(Debug, borsh::BorshSerialize, borsh::BorshDeserialize)]
+enum Adopting {
+    Write(String),
+    Adopt(Vec<Adopted>),
+}
+
+struct Adopter;
+
+impl Program for Adopter {
+    const NAME: &'static str = "adopter";
+    type Op = Adopting;
+    type Query = ();
+    type Reply = ();
+
+    fn execute(ctx: &ExecCtx, op: Adopting) -> Result<(), Error> {
+        match op {
+            Adopting::Write(key) => ctx.set(key, b"v".to_vec()),
+            Adopting::Adopt(items) => crate::adopt(ctx, items)?,
+        }
+        Ok(())
+    }
+
+    fn query(_: &QueryCtx, (): ()) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+fn adopting() -> MockChain {
+    let mut chain = chain();
+    chain.seat::<Adopter>("adopter");
+    chain.register("adopter", 102);
+    chain
+}
+
+fn item(key: &str, owner: Party, rule: Rule) -> Adopted {
+    Adopted {
+        key: key.as_bytes().to_vec(),
+        owner,
+        kind: Some("test.old".into()),
+        rule,
+    }
+}
+
+fn adopted(chain: &MockChain, key: &str) -> (Record, Policy) {
+    let query = Query::Record {
+        program: "adopter".into(),
+        key: key.as_bytes().to_vec(),
+    };
+    let Reply::Record(Some(record)) = ask(chain, query) else {
+        panic!("{key} is recorded");
+    };
+    let Reply::Policy(Some(policy)) = ask(chain, Query::Policy { id: record.policy }) else {
+        panic!("its policy is kept");
+    };
+    (record, policy)
+}
+
+fn send(chain: &MockChain, op: &Adopting) -> Result<Vec<u8>, Error> {
+    chain.submit(by("ada"), "adopter", op)
+}
+
+#[test]
+fn a_program_records_owners_from_before_the_guard_once_and_on_todays_rule() {
+    let chain = adopting();
+    let room = Rule::List {
+        at: "room".into(),
+        write: Writers::Listed(vec![Party::Program("bot".into())]),
+        by: ADA,
+    };
+    let items = vec![
+        item("n/mine", ADA, Rule::OwnerOnly),
+        item("n/open", ADA, Rule::Open),
+        item("n/room-1", ADA, room.clone()),
+        item("n/room-2", BOB, room),
+    ];
+    send(&chain, &Adopting::Adopt(items)).unwrap();
+    let (mine, only) = adopted(&chain, "n/mine");
+    assert_eq!(
+        (&mine.owner, mine.kind.as_deref()),
+        (&ADA, Some("test.old"))
+    );
+    assert_eq!(
+        (only.name.as_str(), &only.write, &only.owner),
+        (AS_BEFORE, &Writers::Owner, &ADA)
+    );
+    assert_eq!(adopted(&chain, "n/open").1.name, OPEN_POLICY);
+    let (first, listed) = adopted(&chain, "n/room-1");
+    let (second, _) = adopted(&chain, "n/room-2");
+    assert_eq!(first.policy, second.policy, "one policy per list");
+    assert_eq!(second.owner, BOB);
+    assert_eq!(listed.name, "adopter room (as before)");
+    // run again, with other owners: nothing changes
+    let again = vec![item("n/mine", BOB, Rule::Open)];
+    send(&chain, &Adopting::Adopt(again)).unwrap();
+    assert_eq!(adopted(&chain, "n/mine").0, mine);
+    // a row the program wrote itself is the program's until it says whose it is
+    send(&chain, &Adopting::Write("n/written".into())).unwrap();
+    assert_eq!(
+        adopted(&chain, "n/written").0.owner,
+        Party::Account(1),
+        "ada's frame wrote it"
+    );
+    let ours = chain.submit(
+        Origin::Program("adopter".into()),
+        "adopter",
+        &Adopting::Write("n/ours".into()),
+    );
+    ours.unwrap();
+    assert_eq!(adopted(&chain, "n/ours").0.owner, Party::Account(102));
+    let reassign = vec![
+        item("n/ours", BOB, Rule::OwnerOnly),
+        item("n/written", BOB, Rule::OwnerOnly),
+    ];
+    send(&chain, &Adopting::Adopt(reassign)).unwrap();
+    assert_eq!(adopted(&chain, "n/ours").0.owner, BOB);
+    assert_eq!(
+        adopted(&chain, "n/written").0.owner,
+        ADA,
+        "ada's stays hers"
+    );
+    // only a program records owners, for its own keys
+    let direct = Op::Adopt {
+        items: vec![item("n/else", ADA, Rule::Open)],
+    };
+    assert_eq!(
+        act(&chain, "ada", &direct).unwrap_err().code,
+        code::UNAUTHORIZED
+    );
+}
+
+#[test]
+fn todays_access_answer_reads_as_a_rule() {
+    use abi::role::access::{Ownership as Listing, Party as Lister, Writers as Today};
+    let listed = |owner: Option<Lister>, list| Today::Listed {
+        at: "room".into(),
+        owner,
+        list,
+    };
+    assert_eq!(rule_of(&ADA, &Today::Anyone), Rule::Open);
+    assert_eq!(
+        rule_of(&ADA, &listed(Some(Lister::Account(1)), Listing::Anyone)),
+        Rule::Open
+    );
+    assert_eq!(
+        rule_of(&ADA, &listed(Some(Lister::Account(1)), Listing::Owner)),
+        Rule::OwnerOnly
+    );
+    assert_eq!(
+        rule_of(&ADA, &listed(None, Listing::Owner)),
+        Rule::OwnerOnly
+    );
+    let board = Listing::Listed(vec![Lister::Program("board".into())]);
+    assert_eq!(
+        rule_of(&ADA, &listed(Some(Lister::Account(1)), board)),
+        Rule::List {
+            at: "room".into(),
+            write: Writers::Listed(vec![Party::Program("board".into())]),
+            by: ADA,
+        }
+    );
+    // a list its owner set above another's row admits that owner too
+    assert_eq!(
+        rule_of(&ADA, &listed(Some(Lister::Account(2)), Listing::Owner)),
+        Rule::List {
+            at: "room".into(),
+            write: Writers::Listed(vec![BOB]),
+            by: BOB,
+        }
+    );
+}

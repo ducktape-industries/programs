@@ -24,6 +24,8 @@ impl Program for Chat {
     type Query = Query;
     type Reply = Reply;
     const TABLES: &'static [::program::Table] = crate::state::TABLES;
+    const RETURNS: &'static [::program::schema::Return] =
+        &[::program::schema::returns::<Option<Vec<u8>>>("AdoptOwners")];
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         let sender = ctx.sender()?;
@@ -92,6 +94,9 @@ impl Program for Chat {
                 channel_id,
                 notices,
             } => set_notices(ctx, &channel_id, notices),
+            Op::AdoptOwners { kind, after, limit } => {
+                crate::adopt::adopt_owners(ctx, &kind, after, limit)
+            }
         }
     }
 

@@ -5,6 +5,7 @@
 //! (`SetModel`), reached through the egress role in the wire it speaks (`wire/`), which streams
 //! a turn's reply back one event at a time (`Streamed`, folded into a [`Partial`]). Every tool
 //! call runs in a later block, as the agent.
+mod adopt;
 mod agents;
 mod bookings;
 mod budget;
@@ -127,6 +128,12 @@ pub enum Op {
     Forged(forge::Watched),
     ClaimConversations {
         agent: AccountNumber,
+    },
+    // one-time (J-011 ⑥): records owners for harness's owned rows from before the guard
+    AdoptOwners {
+        kind: String,
+        after: Option<Vec<u8>>,
+        limit: u64,
     },
 }
 
@@ -1051,6 +1058,10 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Claim who starts agent {agent}'s conversations"),
             vec![field("agent", Value::count(*agent))],
         ),
+        Op::AdoptOwners { kind, .. } => (
+            format!("Record the owners of {kind} items"),
+            vec![field("kind", Value::text(kind))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -1087,6 +1098,7 @@ fn op_variants_only_append() {
             "PodEvent",
             "Forged",
             "ClaimConversations",
+            "AdoptOwners",
         ]
     );
 }

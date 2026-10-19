@@ -11,4 +11,4 @@ mod table;
 
 pub use key::KeyCodec;
 pub use page::{Cursor, Listing, PageRequest, PageResponse};
-pub use table::{Item, Kind, Map, Owned, Row, Set};
+pub use table::{Batch, Item, Kind, Map, Owned, Row, Set};

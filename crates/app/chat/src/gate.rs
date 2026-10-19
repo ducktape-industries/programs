@@ -30,7 +30,8 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::Migrate { .. }
         | Op::MigrateSome { .. }
         | Op::Listen { .. }
-        | Op::SetNotices { .. } => Vec::new(),
+        | Op::SetNotices { .. }
+        | Op::AdoptOwners { .. } => Vec::new(),
     }
 }
 

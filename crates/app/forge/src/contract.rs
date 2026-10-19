@@ -202,6 +202,12 @@ pub enum Op {
         repo: String,
         n: u64,
     },
+    // one-time (J-011 ⑥): records owners for forge's owned rows from before the guard
+    AdoptOwners {
+        kind: String,
+        after: Option<Vec<u8>>,
+        limit: u64,
+    },
 }
 
 impl Op {
@@ -229,7 +235,7 @@ impl Op {
             | Op::RequireChecks { repo, .. }
             | Op::Enqueue { repo, .. }
             | Op::Dequeue { repo, .. } => Some(repo),
-            Op::Watch { .. } => None,
+            Op::Watch { .. } | Op::AdoptOwners { .. } => None,
         }
     }
 }

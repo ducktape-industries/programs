@@ -1,7 +1,7 @@
 mod common;
 use common::*;
 
-use forge::tables::{AUTHORSHIP, CUSTODY, REVIEWS};
+use forge::tables::{AUTHORSHIP, CUSTODY, REPOS, REVIEWS};
 
 // A change WRITER opened on a pushed repository, with the ownership program seated at its role.
 fn reviewed() -> (MemorySandbox, u64, Oid) {
@@ -260,4 +260,96 @@ fn a_repositorys_policy_decides_pushes_rules_and_closing_anothers_change() {
     act(&sandbox, OWNER, &delete).unwrap();
     act(&sandbox, OWNER, &protect).unwrap();
     act(&sandbox, WRITER, &close).unwrap();
+}
+
+// One-time (J-011 ⑥): forge's rows from before the ownership program was seated.
+#[test]
+fn adopt_owners_records_forges_rows_from_before_the_guard_as_access_enforces_them_today() {
+    let mut sandbox = founded();
+    create(&sandbox, "project", HashKind::Sha1);
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let main = file_commit(&mut store, &[], 1, &[("a", b"1\n")]);
+    let feature = file_commit(&mut store, &[main], 2, &[("a", b"2\n")]);
+    let zero = Hash::Sha1.zero();
+    let refs = [
+        (zero, main, "refs/heads/main"),
+        (zero, feature, "refs/heads/feature"),
+    ];
+    let pack = pack_of(&store, &all_ids(&store));
+    push(&sandbox, OWNER, "project", &refs, &pack).unwrap();
+    let open = Op::ChangeOpen {
+        repo: "project".into(),
+        from: forge::Revision::Ref(b"refs/heads/feature".to_vec()),
+        into: b"refs/heads/main".to_vec(),
+        title: "Teach a".into(),
+        body: String::new(),
+        reviewers: Vec::new(),
+    };
+    act(&sandbox, WRITER, &open).unwrap();
+    act(&sandbox, OWNER, &review(1, feature)).unwrap();
+    // a change and a repository from before steps 5 and 6: no authorship, no custody
+    let change = AUTHORSHIP.key(&("project".to_owned(), 1u64));
+    let repo = CUSTODY.key(&"project".to_owned());
+    for key in [&change, &repo] {
+        sandbox.forge.borrow_mut().state.remove(key);
+    }
+    sandbox
+        .chain
+        .seat::<ownership::Ownership>(ownership::PROGRAM);
+    let adopt = |kind: &str, after: Option<Vec<u8>>, limit| -> Option<Vec<u8>> {
+        let op = Op::AdoptOwners {
+            kind: kind.into(),
+            after,
+            limit,
+        };
+        abi::decode(&act(&sandbox, STRANGER, &op).unwrap()).unwrap()
+    };
+    let next = adopt("forge.repo", None, 1);
+    assert_eq!(next, Some(REPOS.key(&"project".to_owned())), "a full batch");
+    assert_eq!(adopt("forge.repo", next, 1), None);
+    for kind in ["forge.review", "forge.change"] {
+        assert_eq!(adopt(kind, None, 10), None);
+    }
+    let policy = |key: &[u8]| {
+        let query = ownership::Query::Effective {
+            program: forge::PROGRAM.into(),
+            key: key.to_vec(),
+        };
+        let ownership::Reply::Policy(Some(policy)) =
+            sandbox.chain.query(ownership::PROGRAM, &query).unwrap()
+        else {
+            panic!("the row is recorded");
+        };
+        policy
+    };
+    let owner = |key: &[u8]| record_at(&sandbox, key).unwrap().owner;
+    // the change was its author's alone; the repository anyone's (its default); a review is open
+    assert_eq!(owner(&change), ownership::Party::Account(12));
+    assert_eq!(policy(&change).name, ownership::AS_BEFORE);
+    assert_eq!(owner(&repo), ownership::Party::Account(11));
+    assert_eq!(policy(&repo).name, ownership::OPEN_POLICY);
+    let review = REVIEWS.key(&("project".to_owned(), 1u64, 1u64));
+    assert_eq!(owner(&review), ownership::Party::Account(11));
+    assert_eq!(policy(&review).name, ownership::OPEN_POLICY);
+    // run again: nothing changes
+    let before = [&change, &repo, &review].map(|key| record_at(&sandbox, key));
+    for kind in ["forge.review", "forge.change", "forge.repo"] {
+        adopt(kind, None, 10);
+    }
+    assert_eq!(
+        [&change, &repo, &review].map(|key| record_at(&sandbox, key)),
+        before
+    );
+}
+
+fn record_at(sandbox: &MemorySandbox, key: &[u8]) -> Option<ownership::Record> {
+    let query = ownership::Query::Record {
+        program: forge::PROGRAM.into(),
+        key: key.to_vec(),
+    };
+    let ownership::Reply::Record(record) = sandbox.chain.query(ownership::PROGRAM, &query).unwrap()
+    else {
+        panic!("Record answers a record");
+    };
+    record
 }

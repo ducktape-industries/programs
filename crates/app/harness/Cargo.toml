@@ -16,6 +16,7 @@ program = []
 describe = []
 
 [dependencies]
+ownership = { workspace = true }
 access = { workspace = true }
 abi = { workspace = true }
 borsh = { workspace = true }
@@ -38,7 +39,6 @@ serde_json = { workspace = true }
 toml = { workspace = true }
 
 [dev-dependencies]
-ownership = { workspace = true }
 blobs = { workspace = true }
 egress = { workspace = true }
 halo = { workspace = true }

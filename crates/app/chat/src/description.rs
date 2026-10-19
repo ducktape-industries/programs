@@ -167,6 +167,12 @@ pub fn describe(op: &Op) -> Description {
             channel_id,
             vec![],
         ),
+        Op::AdoptOwners { kind, .. } => {
+            return Description {
+                title: format!("Record the owners of {kind} items"),
+                fields: vec![field("kind", Value::text(kind))],
+            };
+        }
     };
     let mut all = place(channel);
     all.extend(fields);

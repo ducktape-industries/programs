@@ -16,6 +16,7 @@ program = []
 describe = []
 
 [dependencies]
+ownership = { workspace = true }
 abi = { workspace = true }
 describe = { workspace = true }
 program = { workspace = true, features = ["serde"] }
@@ -27,5 +28,4 @@ store = { workspace = true }
 
 [dev-dependencies]
 access = { workspace = true }
-ownership = { workspace = true }
 sha2 = { version = "0.10", default-features = false }

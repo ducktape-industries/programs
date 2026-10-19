@@ -21,6 +21,7 @@
 //! - `description.rs`: [`describe()`], an op in a person's words
 
 // The wire, as a view and a git client see it.
+mod adopt;
 mod contract;
 mod read_contract;
 mod review_contract;
@@ -90,6 +91,7 @@ fn op_variants_only_append() {
             "RequireChecks",
             "Enqueue",
             "Dequeue",
+            "AdoptOwners",
         ]
     );
 }

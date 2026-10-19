@@ -371,6 +371,16 @@ Four rules hold for every owned table:
   created it, so a row deleted and written again belongs to its new writer.
   Keep an empty value, or fold the row into the item's own.
 
+Rows a program kept before the ownership role was seated have no record, and
+the guard leaves a key with no record alone. Each program that owns kinds has
+a one-time open op, `AdoptOwners { kind, after, limit }`, that records them
+(J-011 ⑥): anyone sends it, it answers where the next batch starts and sends
+the program the same op, and that run sends the ownership role `Adopt` with
+each row's owner (from the row's own stored fields) and the policy matching
+what the access program enforces for it today. A record already there is
+left as it is, so running it again changes nothing. egress's services wait
+for access's own removal (its `Op` is the kernel's).
+
 ## 6. Talking to other programs
 
 **A query is a read.** `ctx.query::<Q, R>(program, &q)` runs the sibling's

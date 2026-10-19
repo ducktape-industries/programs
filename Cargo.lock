@@ -3977,6 +3977,7 @@ name = "ownership"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "access",
  "borsh",
  "describe",
  "program",

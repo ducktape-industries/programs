@@ -23,6 +23,7 @@
 //! The program runs over `program`'s contexts, so a native test runs it over
 //! [`program::MockHost`] exactly as the host does. The `program` feature adds
 //! its wasm exports.
+mod adopt;
 pub mod attributed;
 mod description;
 mod gate;
@@ -159,6 +160,12 @@ pub enum Op {
     SetNotices {
         channel_id: String,
         notices: Option<Notices>,
+    },
+    // one-time (J-011 ⑥): records owners for chat's owned rows from before the guard
+    AdoptOwners {
+        kind: String,
+        after: Option<Vec<u8>>,
+        limit: u64,
     },
 }
 
@@ -636,6 +643,7 @@ fn op_variants_only_append() {
             "Listen",
             "MigrateSome",
             "SetNotices",
+            "AdoptOwners",
         ]
     );
 }

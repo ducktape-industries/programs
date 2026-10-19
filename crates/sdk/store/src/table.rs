@@ -185,10 +185,33 @@ impl<K: KeyCodec, V: Row> Map<K, V> {
         self.prefix
     }
 
+    pub fn batch(
+        &self,
+        ctx: &QueryCtx,
+        after: Option<&[u8]>,
+        limit: u64,
+    ) -> Result<Batch<K, V::Value>, Error> {
+        let mut range = Range::prefix(self.prefix);
+        if let Some(after) = after {
+            range = range.after(after);
+        }
+        let rows = self.scan(ctx, range.limit(limit))?;
+        let full = limit > 0 && rows.len() as u64 == limit;
+        let next = rows.last().filter(|_| full).map(|(key, _)| self.key(key));
+        Ok(Batch { rows, next })
+    }
+
     /// Whether `key`, as a block's writes list it, is a row of this table.
     pub fn owns(&self, key: &[u8]) -> bool {
         key.starts_with(self.prefix.as_bytes())
     }
+}
+
+// One batch of a table's rows in key order after the raw key `after`, at most `limit` of them, and
+// where the next batch starts: the last row's raw key when this one is full.
+pub struct Batch<K, V> {
+    pub rows: Vec<(K, V)>,
+    pub next: Option<Vec<u8>>,
 }
 
 /// A [`Map`] with no values: which keys are present.

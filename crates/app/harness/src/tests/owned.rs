@@ -157,3 +157,55 @@ fn an_agents_manager_claims_who_starts_its_conversations_and_its_policy_decides(
     }
     chain.submit(signed(ADA), PROGRAM, &new).unwrap();
 }
+
+// One-time (J-011 ⑥): harness's models and every agent's conversations row, from before the
+// ownership program was seated.
+#[test]
+fn adopt_owners_records_models_and_gives_every_agent_its_managers_conversations_row() {
+    let mut world = world();
+    world.chain.seat::<ownership::Ownership>(ownership::PROGRAM);
+    let chain = &world.chain;
+    for kind in ["harness.model", "harness.agent-conversation"] {
+        let mut after = None;
+        loop {
+            let op = Op::AdoptOwners {
+                kind: kind.into(),
+                after,
+                limit: 2,
+            };
+            let next: Option<Vec<u8>> =
+                abi::decode(&chain.submit(signed(BO), PROGRAM, &op).unwrap()).unwrap();
+            if next.is_none() {
+                break;
+            }
+            after = next;
+        }
+    }
+    let effective = |key: Vec<u8>| {
+        let query = ownership::Query::Effective {
+            program: PROGRAM.into(),
+            key,
+        };
+        let ownership::Reply::Policy(Some(policy)) =
+            chain.query(ownership::PROGRAM, &query).unwrap()
+        else {
+            panic!("the row is recorded");
+        };
+        policy
+    };
+    let model = effective(MODELS.key(&MODEL.to_owned()));
+    assert_eq!(
+        (model.name.as_str(), &model.owner),
+        (ownership::AS_BEFORE, &ownership::Party::Account(world.ada))
+    );
+    let conversations = effective(CONVERSATIONS.key(&world.agent));
+    assert_eq!(
+        (conversations.name.as_str(), &conversations.owner),
+        (ownership::AS_BEFORE, &ownership::Party::Account(world.ada))
+    );
+    // its manager's alone, as before: another account's start is refused, the manager's applies
+    let new = Op::NewThread { agent: world.agent };
+    let refused = chain.submit(signed(BO), PROGRAM, &new).unwrap_err();
+    assert_eq!(refused.code, code::UNAUTHORIZED);
+    chain.submit(signed(ADA), PROGRAM, &new).unwrap();
+}

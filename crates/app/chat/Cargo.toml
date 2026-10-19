@@ -16,6 +16,7 @@ program = []
 describe = []
 
 [dependencies]
+ownership = { workspace = true }
 abi = { workspace = true }
 attribution = { workspace = true }
 describe = { workspace = true }
@@ -28,5 +29,4 @@ unicode-normalization = { workspace = true }
 
 [dev-dependencies]
 access = { workspace = true }
-ownership = { workspace = true }
 store = { workspace = true }
