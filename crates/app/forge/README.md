@@ -107,6 +107,7 @@ and decode a `forge::Reply` from the concatenated `Respond` bytes.
 | `Advertise { repo: r, service: Service::UploadPack }` | raw Git protocol v2 advertisement |
 | `Upload { repo: r, request: git_v2_ls_refs_bytes }` | raw Git protocol v2 `ls-refs` response |
 | `Closure { repo: r, walk: Walk::of(gitcore::walk::Walk::of(&wants, &haves)) }` | `listed`: the ids and kinds of the objects `wants` reach less what `haves` reach, and `next`, the walk to send back for the next page |
+| `History { repo: r, walk: Walk::of(gitcore::walk::Walk::of(&wants, &haves)) }` | `Reply::Closure` less the trees: the commits `wants` reach less what `haves` reach, newest first, and the tags, trees and blobs a want names itself; `next` as for `Closure` |
 | `Protected { repo: r, cursor: None, limit: 20 }` | `page<Vec<u8>>`: the protected branch names in byte order; the head is protected besides |
 | `Preview { repo: r, n: 1 }` | `Option<PreviewInfo>`: change 1's latest Preview, the target and source heads it read and the squash it made (`merge`) |
 | `Statuses { repo: r, commit: c, page }` | `page<CommitStatus>`: every status of `c`, by reporter then context, each with its state, url and height |
@@ -131,6 +132,18 @@ listed, until `next` is done (`gitcore::walk::Listing`). A git object is stored 
 would hash it as (`<kind> <len>\0<body>`), under the repository's hash, so an
 object's blob id is its oid: `forge::blob_id_of(&oid)` names the blob a node
 serves at `/v1/blobs`.
+
+`History` walks as `Closure` does and leaves the trees to the client. It lists the
+commits, and the tags, trees and blobs a want names itself, reading each commit
+and its parents once, so a page holds about `Bounds.tree_walk` commits where a
+`Closure` page holds that many objects of every kind. The client reads the listed
+commits from its node's blobs, queues each one's tree against its parents' trees
+(and each listed tree against none) in `gitcore::walk::Trees`, and expands them a
+level at a time from the tree bodies `Trees::wanted` names, which a fetch's pack
+holds anyway. What it ends with is what `Closure` lists. A fetch spends one query
+per page under the node's lock, so this takes a clone of a few thousand commits
+from dozens of pages to a handful (git-remote-duck asks `History` first, and
+`Closure` where a forge answers no `History`).
 
 An unborn ref returns `not_found`; an empty directory/list is a successful empty
 page. Missing current change refs are `None` on the detail, so a deleted branch
@@ -329,7 +342,7 @@ every op that names it, before writing anything, `wrong_state` ("<repo> is
 archived: un-archive it …"): pushes, stages, changes and reviews, merges, branch
 rules, statuses and previews alike, so its open changes stay as they are. `Create`
 of its name still answers that the name is taken. Every query answers as before,
-the git wire (`Advertise`, `Upload`, `Closure`) included, so a clone, a fetch or a
+the git wire (`Advertise`, `Upload`, `Closure`, `History`) included, so a clone, a fetch or a
 pinned dependency keeps working. `Archive { archived: false }` restores it: it is
 listed again and takes writes again. Archiving an archived repository, or
 restoring one that is not, is `wrong_state`.

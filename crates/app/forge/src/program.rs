@@ -16,7 +16,7 @@ use crate::ops::{
     configure, create, delete_branch, init, needs, protect, push, resource, retired, stage, touch,
 };
 use crate::queries::{
-    advertise, closure, listing, protected_branches, ref_names, refs, repos, upload,
+    advertise, closure, history, listing, protected_branches, ref_names, refs, repos, upload,
 };
 use crate::queue::{dequeue, enqueue, settle};
 use crate::reads::{blob, comparison, diff, log, tree};
@@ -341,6 +341,7 @@ impl Program for Forge {
                 page: judgment(ctx, principal, &listing(page)?)?,
             },
             Query::Closure { repo, walk } => closure(ctx, height, &bounds, repo, walk)?,
+            Query::History { repo, walk } => history(ctx, height, &bounds, repo, walk)?,
             Query::Protected { repo, page } => Reply::Protected {
                 height,
                 page: protected_branches(ctx, repo, &listing(page)?)?,

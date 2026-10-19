@@ -445,6 +445,13 @@ pub enum Query {
     ArchivedRepos {
         page: PageRequest,
     },
+    // `Closure` less the trees: the commits the walk reaches, newest first, and the tags, trees
+    // and blobs a want names itself; the client expands each commit's tree against its parents'
+    // from tree bodies it reads itself (`gitcore::walk::Trees`). Answers `Reply::Closure`.
+    History {
+        repo: String,
+        walk: Walk,
+    },
 }
 
 impl Query {
@@ -484,7 +491,8 @@ impl Query {
             | Query::Activity { .. }
             | Query::Closure { .. }
             | Query::Preview { .. }
-            | Query::Archived { .. } => None,
+            | Query::Archived { .. }
+            | Query::History { .. } => None,
         }
     }
 
@@ -514,7 +522,8 @@ impl Query {
             | Query::Activity { .. }
             | Query::Closure { .. }
             | Query::Preview { .. }
-            | Query::Archived { .. } => None,
+            | Query::Archived { .. }
+            | Query::History { .. } => None,
         }
     }
 }

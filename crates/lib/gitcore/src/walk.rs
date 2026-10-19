@@ -1,4 +1,5 @@
-// History walks over the store: ancestry checks, wants-minus-haves, the paged closure a fetch lists, path lookup.
+// History walks over the store: ancestry checks, wants-minus-haves, the paged closure a fetch lists
+// (whole, or its history with the trees left to a client that expands them), path lookup.
 
 use super::error::{Error, Result};
 use crate::object::{Commit, Kind, Mode, Tag, Tree, TreeEntry};
@@ -292,10 +293,22 @@ struct Page<'a, S: ?Sized> {
     listed: Vec<Listed>,
     seen: BTreeSet<Oid>,
     most: usize,
+    expand: bool,
 }
 
 pub fn closure<S: Objects + ?Sized>(store: &S, walk: Walk, most: usize) -> Result<Closed> {
-    let mut page = Page::open(store, walk, most);
+    walked(Page::open(store, walk, most, true))
+}
+
+// `closure` less the trees: the commits the walk reaches, newest first, and the tags, trees and
+// blobs a want names itself. Each commit's tree is left to the client, which reads the tree
+// bodies itself and expands them as `closure` would (`Trees`).
+pub fn history<S: Objects + ?Sized>(store: &S, walk: Walk, most: usize) -> Result<Closed> {
+    walked(Page::open(store, walk, most, false))
+}
+
+fn walked<S: Objects + ?Sized>(mut page: Page<'_, S>) -> Result<Closed> {
+    let most = page.most;
     let mut ran = 0usize;
     while let Some(unit) = page.next_unit() {
         let page_full = ran > 0 && page.named() >= most;
@@ -318,7 +331,7 @@ pub fn closure<S: Objects + ?Sized>(store: &S, walk: Walk, most: usize) -> Resul
 }
 
 impl<'a, S: Objects + ?Sized> Page<'a, S> {
-    fn open(store: &'a S, walk: Walk, most: usize) -> Page<'a, S> {
+    fn open(store: &'a S, walk: Walk, most: usize, expand: bool) -> Page<'a, S> {
         let mut page = Page {
             store,
             haves: walk.haves,
@@ -331,6 +344,7 @@ impl<'a, S: Objects + ?Sized> Page<'a, S> {
             listed: Vec::new(),
             seen: BTreeSet::new(),
             most,
+            expand,
         };
         for queued in walk.commits {
             let known = page.marks.contains_key(&queued.id);
@@ -482,7 +496,8 @@ impl<'a, S: Objects + ?Sized> Page<'a, S> {
                 self.list(id, Kind::Tag);
                 self.objects.push_back(target);
             }
-            Kind::Tree => self.trees.push(Pending::of(id, Vec::new())),
+            Kind::Tree if self.expand => self.trees.push(Pending::of(id, Vec::new())),
+            Kind::Tree => self.list(id, Kind::Tree),
             Kind::Blob => self.list(id, Kind::Blob),
         }
         Ok(())
@@ -542,7 +557,9 @@ impl<'a, S: Objects + ?Sized> Page<'a, S> {
                 self.enqueue(parent, parent_time, false);
             }
         }
-        self.trees.push(Pending::of(tree, against));
+        if self.expand {
+            self.trees.push(Pending::of(tree, against));
+        }
         Ok(())
     }
 
@@ -587,6 +604,69 @@ impl Listing {
         self.walk
             .commits
             .retain(|queued| queued.uninteresting || !received.contains(&queued.id));
+    }
+
+    pub fn into_listed(self) -> Vec<Listed> {
+        self.listed
+    }
+}
+
+// What `history` leaves to its client: each listed commit's tree compared with its parents'
+// trees, and each tree a want names, expanded as `closure` expands them. The client reads the
+// trees `wanted` names, then `expand`s one level, until `is_done`.
+#[derive(Default)]
+pub struct Trees {
+    pending: Vec<Pending>,
+    expanded: BTreeSet<(Oid, Vec<Oid>)>,
+    seen: BTreeSet<Oid>,
+    listed: Vec<Listed>,
+}
+
+impl Trees {
+    pub fn commit(&mut self, tree: Oid, parent_trees: Vec<Oid>) {
+        self.pending.push(Pending::of(tree, parent_trees));
+    }
+
+    pub fn tree(&mut self, tree: Oid) {
+        self.pending.push(Pending::of(tree, Vec::new()));
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    // The trees the next `expand` reads: each changed pending tree and those it is compared with.
+    pub fn wanted(&self) -> Vec<Oid> {
+        let wanted: BTreeSet<Oid> = self
+            .pending
+            .iter()
+            .filter(|pending| !pending.against.contains(&pending.tree))
+            .flat_map(|pending| {
+                std::iter::once(pending.tree).chain(pending.against.iter().copied())
+            })
+            .collect();
+        wanted.into_iter().collect()
+    }
+
+    // One level: each pending tree's entries that no tree it is compared with holds are listed,
+    // and its changed subtrees are pending next.
+    pub fn expand<S: Objects + ?Sized>(&mut self, store: &S) -> Result<()> {
+        for pending in std::mem::take(&mut self.pending) {
+            let first = self
+                .expanded
+                .insert((pending.tree, pending.against.clone()));
+            if !first {
+                continue;
+            }
+            let expansion = tree_expansion(store, &pending, usize::MAX)?;
+            for item in expansion.listed {
+                if self.seen.insert(item.id) {
+                    self.listed.push(item);
+                }
+            }
+            self.pending.extend(expansion.trees);
+        }
+        Ok(())
     }
 
     pub fn into_listed(self) -> Vec<Listed> {

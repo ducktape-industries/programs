@@ -8,7 +8,7 @@ use gitcore::wire::smart_http_service_header;
 use gitcore::wire::upload::{Command, capability_advertisement, ls_refs_response, parse_command};
 use store::{KeyCodec, Listing};
 
-use gitcore::walk::{Closed, closure as close};
+use gitcore::walk::{Closed, closure as close, history as walk_history};
 
 use crate::contract::*;
 use crate::objects::ObjectStore;
@@ -186,6 +186,28 @@ pub(crate) fn closure(
     name: &str,
     walk: &Walk,
 ) -> Result<Reply, Error> {
+    walked(ctx, height, bounds, name, walk, true)
+}
+
+// `Closure` less the trees, which the client expands from tree bodies it reads itself.
+pub(crate) fn history(
+    ctx: &QueryCtx,
+    height: u64,
+    bounds: &Bounds,
+    name: &str,
+    walk: &Walk,
+) -> Result<Reply, Error> {
+    walked(ctx, height, bounds, name, walk, false)
+}
+
+fn walked(
+    ctx: &QueryCtx,
+    height: u64,
+    bounds: &Bounds,
+    name: &str,
+    walk: &Walk,
+    trees: bool,
+) -> Result<Reply, Error> {
     let repo = load_repo(ctx, name)?;
     let store = ObjectStore::querying(ctx, bounds, bounds.tree_walk);
     let Some(asked) = walk.parse(repo.hash) else {
@@ -193,7 +215,12 @@ pub(crate) fn closure(
             "a walk names an id that is not an object id of this repository",
         ));
     };
-    let Closed { listed, next } = close(&store, asked, usize::MAX).map_err(refusal_of)?;
+    let closed = if trees {
+        close(&store, asked, usize::MAX)
+    } else {
+        walk_history(&store, asked, usize::MAX)
+    };
+    let Closed { listed, next } = closed.map_err(refusal_of)?;
     Ok(Reply::Closure {
         height,
         listed: listed.into_iter().map(Listed::of).collect(),

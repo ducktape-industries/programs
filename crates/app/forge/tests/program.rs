@@ -822,6 +822,78 @@ fn a_closure_names_each_object_by_the_blob_the_node_holds_it_as() {
     }
 }
 
+// What a client lists from `History` pages, expanding the trees itself from `source`.
+fn history_of(
+    sandbox: &MemorySandbox,
+    source: &MemoryObjects,
+    wants: &[Oid],
+    haves: &[Oid],
+) -> BTreeSet<Oid> {
+    let mut listing = Listing::of(wants, haves);
+    while let Some(walk) = listing.pending() {
+        let query = Query::History {
+            repo: "project".into(),
+            walk: forge::Walk::of(walk),
+        };
+        let reply = abi::decode(&ask(sandbox, &query).unwrap()).unwrap();
+        let Reply::Closure { listed, next, .. } = reply else {
+            panic!("a history answers Closure");
+        };
+        listing.receive(Closed {
+            listed: listed
+                .iter()
+                .map(|item| item.parse(HashKind::Sha1).unwrap())
+                .collect(),
+            next: next.parse(HashKind::Sha1).unwrap(),
+        });
+    }
+    let listed = listing.into_listed();
+    let body = |id: &Oid| source.get(id).unwrap().unwrap().body;
+    let mut trees = gitcore::walk::Trees::default();
+    for item in &listed {
+        assert_eq!(
+            item.kind,
+            Kind::Commit,
+            "a history of commits lists commits"
+        );
+        let commit = Commit::parse(&body(&item.id), Hash::Sha1).unwrap();
+        let parents = commit
+            .parents
+            .iter()
+            .map(|parent| Commit::parse(&body(parent), Hash::Sha1).unwrap().tree)
+            .collect();
+        trees.commit(commit.tree, parents);
+    }
+    while !trees.is_done() {
+        trees.expand(source).unwrap();
+    }
+    let trees = trees.into_listed();
+    listed.iter().chain(&trees).map(|item| item.id).collect()
+}
+
+#[test]
+fn a_history_and_the_trees_its_client_expands_list_what_a_closure_lists() {
+    let (sandbox, source, [_, c2, side, _, c4]) = history(bounds());
+    for haves in [vec![], vec![c2, side], vec![c4]] {
+        let closure = listed_ids(&sandbox, &[c4], &haves);
+        assert_eq!(history_of(&sandbox, &source, &[c4], &haves), closure);
+    }
+    let (narrow, source, [.., c4]) = history(Bounds {
+        tree_walk: 3,
+        ..bounds()
+    });
+    let first = Query::History {
+        repo: "project".into(),
+        walk: forge::Walk::of(gitcore::walk::Walk::of(&[c4], &[])),
+    };
+    let Reply::Closure { next, .. } = abi::decode(&ask(&narrow, &first).unwrap()).unwrap() else {
+        panic!("a history answers Closure");
+    };
+    assert!(!next.parse(HashKind::Sha1).unwrap().is_done(), "{next:?}");
+    let closure = listed_ids(&narrow, &[c4], &[]);
+    assert_eq!(history_of(&narrow, &source, &[c4], &[]), closure);
+}
+
 #[test]
 fn a_closure_of_an_object_the_node_does_not_hold_is_refused() {
     let (sandbox, _, _) = history(bounds());

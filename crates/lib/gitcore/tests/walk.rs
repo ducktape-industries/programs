@@ -6,7 +6,10 @@
 mod common;
 
 use common::{blob, commit, file_tree, git_binary, temp_dir, tree};
-use gitcore::walk::{Listing, Verdict, closure, commits, is_ancestor, tree_at_path};
+use gitcore::walk::{
+    Listing, Trees, Verdict, Walk, closure, commits, history as walked_history, is_ancestor,
+    tree_at_path,
+};
 use gitcore::{Commit, Error, Hash, Kind, MemoryObjects, Mode, Objects as _, Oid, Tree};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write as _;
@@ -158,6 +161,48 @@ fn paged(
     (listed, pages)
 }
 
+// What a client lists from `history` pages and its own `Trees`, reading at each level only the
+// trees `wanted` names.
+fn split_listing(
+    store: &MemoryObjects,
+    wants: &[Oid],
+    haves: &[Oid],
+    most: usize,
+) -> BTreeSet<Oid> {
+    let mut listing = Listing::of(wants, haves);
+    while let Some(walk) = listing.pending() {
+        listing.receive(walked_history(store, walk, most).unwrap());
+    }
+    let listed = listing.into_listed();
+    let body = |id: &Oid| store.get(id).unwrap().unwrap().body;
+    let mut trees = Trees::default();
+    for item in &listed {
+        match item.kind {
+            Kind::Commit => {
+                let commit = Commit::parse(&body(&item.id), Hash::Sha1).unwrap();
+                let parents = commit
+                    .parents
+                    .iter()
+                    .map(|parent| Commit::parse(&body(parent), Hash::Sha1).unwrap().tree)
+                    .collect();
+                trees.commit(commit.tree, parents);
+            }
+            Kind::Tree => trees.tree(item.id),
+            Kind::Blob | Kind::Tag => {}
+        }
+    }
+    while !trees.is_done() {
+        let mut read = MemoryObjects::new(Hash::Sha1);
+        for id in trees.wanted() {
+            let object = store.get(&id).unwrap().unwrap();
+            read.put(object.kind, &object.body).unwrap();
+        }
+        trees.expand(&read).unwrap();
+    }
+    let trees = trees.into_listed();
+    listed.iter().chain(&trees).map(|item| item.id).collect()
+}
+
 fn listed(d: &Dag, wants: &[Oid], haves: &[Oid]) -> BTreeSet<Oid> {
     listed_in(&d.store, wants, haves)
 }
@@ -177,6 +222,27 @@ fn a_closure_lists_a_history_once_whatever_its_merges() {
     expected.extend(d.trees.iter().copied());
     expected.extend(blobs(&[b"0\n", b"1\n", b"2\n", b"3\n", b"g\n"]));
     assert_eq!(listed(&d, &[d.merge], &[]), expected);
+}
+
+#[test]
+fn a_history_lists_the_commits_and_its_client_expands_the_trees_to_the_closure() {
+    let d = dag();
+    let closed = walked_history(&d.store, Walk::of(&[d.merge], &[]), usize::MAX).unwrap();
+    assert!(closed.next.is_done());
+    let commits: BTreeSet<Oid> = closed.listed.iter().map(|item| item.id).collect();
+    let all = [d.root, d.a, d.b, d.c, d.merge].into_iter().collect();
+    assert_eq!(commits, all);
+    assert!(closed.listed.iter().all(|item| item.kind == Kind::Commit));
+    for haves in [vec![], vec![d.c, d.root], vec![d.a]] {
+        let whole = listed(&d, &[d.merge], &haves);
+        assert_eq!(
+            split_listing(&d.store, &[d.merge], &haves, usize::MAX),
+            whole
+        );
+        assert_eq!(split_listing(&d.store, &[d.merge], &haves, 1), whole);
+    }
+    let named = split_listing(&d.store, &[d.trees[3]], &[], usize::MAX);
+    assert_eq!(named, listed(&d, &[d.trees[3]], &[]));
 }
 
 #[test]
@@ -581,6 +647,8 @@ fn paged_closures_of_generated_histories_list_what_git_lists() {
         for most in PAGES {
             let listed = paged(&store, &wants, &haves, most).0;
             let context = format!("history {seed}, pages of {most}, haves {}", haves.len());
+            let split = split_listing(&store, &wants, &haves, most);
+            assert_eq!(split, listed, "{context}: history, then the client's trees");
             if haves.is_empty() {
                 assert_eq!(listed, git_listed, "{context}");
                 continue;
