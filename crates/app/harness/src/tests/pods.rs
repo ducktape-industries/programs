@@ -515,7 +515,8 @@ fn a_stream_without_every_streams_at_the_heartbeat_harness_measures() {
     answer(chain, read.id, ok(json!({ "pod": { "name": POD } })));
     let [row]: [RequestRow; 1] = asked(chain).try_into().unwrap();
     assert_eq!(target(&row), format!("/v1/pods/{POD}/exec"));
-    let every = 63;
+    // blocks of 1 s: half of 64 s
+    let every = 32;
     assert_eq!(
         body(chain, &row),
         json!({ "command": ["sh", "-c", "cargo test"], "every": every })

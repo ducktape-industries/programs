@@ -291,7 +291,7 @@ fn streaming(world: &World, thread: u64) -> (u64, RequestRow) {
     assert_eq!(target, "/v1/pods/duckpond-7");
     answer(chain, read.id, Answer::Output(response(200, json!({}))));
     let (stream, target) = pod_request(chain);
-    assert_eq!(target, "/v1/pods/duckpond-7/wait?every=63");
+    assert_eq!(target, "/v1/pods/duckpond-7/wait?every=32");
     let pod_event = egress::Delivery::Events {
         deliver: pod_event_as(wait),
     };

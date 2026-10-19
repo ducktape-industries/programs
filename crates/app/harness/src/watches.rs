@@ -73,7 +73,7 @@ pub(crate) async fn open_measured(
 }
 
 // the request a measured stream sends: its body with the heartbeat a request's lifetime leaves
-// (`waits::alive_every`), from the block time since it was made and the trip of the pod's read
+// (`waits::alive_every`), from the block time since it was made
 async fn measured(ctx: &Ctx, row: &Watching, measure: &Measure) -> Result<egress::Request, String> {
     let env = ctx.env();
     let blocks = env.height.saturating_sub(measure.height).max(1);
@@ -97,12 +97,10 @@ async fn measured(ctx: &Ctx, row: &Watching, measure: &Measure) -> Result<egress
         wait: None,
     };
     let egress = bound(ctx).map_err(|error| refusal(&error))?;
-    let asked_at = env.time;
     let answered = ctx
         .call_raw_as(row.agent, egress, abi::encode(&op))
         .await
         .map_err(|error| format!("the pod was not read: {}", refusal(&error)))?;
-    let trip = ctx.env().time.saturating_sub(asked_at);
     let response: http::Response = abi::decode(&answered)
         .map_err(|fault| format!("the pod's read is no HTTP response: {}", fault.sentence))?;
     if response.status != 200 {
@@ -112,7 +110,7 @@ async fn measured(ctx: &Ctx, row: &Watching, measure: &Measure) -> Result<egress
             response.status
         ));
     }
-    let every = crate::waits::alive_every(block_ms, trip)?;
+    let every = crate::waits::alive_every(block_ms)?;
     let mut body: Value = serde_json::from_str(&measure.body).map_err(|error| error.to_string())?;
     body["every"] = json!(every);
     crate::tools::pods::posted(ctx, target, &body).map_err(|error| refusal(&error))

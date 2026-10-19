@@ -485,17 +485,18 @@ fn refused_by_pods(what: &str, answer: &http::Response) -> String {
     format!("{what} answered {}: {error}", answer.status)
 }
 
-// how often a stream's alive events come so each lands before the request it keeps alive
-// expires: a request lasts DEFAULT_WAIT blocks of the measured block time, less the measured trip
-// a request to the pods service takes to land (chief's J-033 ruling (a))
-pub(crate) fn alive_every(block_ms: u64, trip: u64) -> Result<u64, String> {
+// how often a stream's alive events come, in whole seconds: every half of the time a request
+// lasts (DEFAULT_WAIT blocks of the measured block time), the other half for a beat held up on its
+// way; no trip is taken off, since how long a read or a creation took to land says nothing of how
+// late a beat lands (chief, j-033 msgs 68, 79); only a request too short for two beats is refused
+pub(crate) fn alive_every(block_ms: u64) -> Result<u64, String> {
     let lasts = DEFAULT_WAIT.saturating_mul(block_ms);
-    match lasts.saturating_sub(trip) / 1000 {
-        0 => Err(format!(
-            "a request lasts {lasts} ms ({DEFAULT_WAIT} blocks of {block_ms} ms) and a read of the pod took {trip} ms to land, which leaves no whole second between the stream's alive events"
-        )),
-        every => Ok(every),
+    if lasts < 2000 {
+        return Err(format!(
+            "a request lasts {lasts} ms ({DEFAULT_WAIT} blocks of {block_ms} ms), under the 2 s two whole-second beats need"
+        ));
     }
+    Ok(lasts / 2 / 1000)
 }
 
 // the pod's stream opens in harness's own run the block after, so the block time is measured
@@ -514,8 +515,8 @@ async fn watch_from_next_block(ctx: &Ctx, wait: u64) -> Result<(), Error> {
 
 // A pod's wait, in harness's own scheduled run: the pod read once, which measures the trip a
 // request to the pods service takes to land, then its wait stream
-// (`GET /v1/pods/NAME/wait?every=S`), whose `alive` events come as often as a request lasts
-// (DEFAULT_WAIT blocks of the measured block time) less that trip, so each lands before the
+// (`GET /v1/pods/NAME/wait?every=S`), whose `alive` events come every half a request's lifetime
+// (DEFAULT_WAIT blocks of the measured block time), so each lands before the
 // request it keeps alive expires. A stream that ends with the wait still open (a node restart,
 // an expiry) opens again from the next block. Sent by anyone else, it opens the stream again
 // from the next block: how a stream a harness update lost is opened again.
@@ -553,13 +554,11 @@ pub(crate) async fn pod_wait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
         ..watch
     };
     POD_WAITS.put(ctx, &wait, &streaming);
-    let asked_at = env.time;
     let read = ask_pods(ctx, format!("/v1/pods/{name}"), Delivery::Whole).await;
-    let trip = ctx.env().time.saturating_sub(asked_at);
     if let Some(over) = unwatchable(name, read) {
         return fire(ctx, wait, over).await;
     }
-    let every = match alive_every(block_ms, trip) {
+    let every = match alive_every(block_ms) {
         Ok(every) => every,
         Err(why) => {
             let over = format!("harness can't wait on pod {name}: {why}");
