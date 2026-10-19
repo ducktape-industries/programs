@@ -489,3 +489,59 @@ fn a_push_packs_in_the_pod_and_moves_the_branch_as_the_agent() {
     let none = refusal(chain, thread, "p_none");
     assert!(none.starts_with(code::NOT_FOUND), "{none}");
 }
+
+// a stream with no every at block 3, its call run at 4 (time 0); its watch at 5 (time 1000) reads
+// the pod, whose answer lands at 6 (time 2000): a block of 1 s and a trip of 1 s
+fn measured_stream(world: &World) -> (u64, RequestRow) {
+    let chain = &world.chain;
+    let thread = world.opened("m1", "build it", Some(WINDOW));
+    let input = json!({ "pod": POD, "script": "cargo test", "stream": true });
+    turn(chain, 3, &[("s1", "pod_exec", input)]);
+    let streams = json_result(chain, thread, "s1");
+    assert_eq!(streams["streaming"], json!(true), "{streams}");
+    assert!(asked(chain).is_empty(), "the stream opens a block later");
+    chain.at(5, 1000);
+    chain.at(6, 2000);
+    let [read]: [RequestRow; 1] = asked(chain).try_into().unwrap();
+    assert_eq!(target(&read), format!("/v1/pods/{POD}"));
+    (thread, read)
+}
+
+#[test]
+fn a_stream_without_every_streams_at_the_heartbeat_harness_measures() {
+    let world = podded(world());
+    let chain = &world.chain;
+    let (thread, read) = measured_stream(&world);
+    answer(chain, read.id, ok(json!({ "pod": { "name": POD } })));
+    let [row]: [RequestRow; 1] = asked(chain).try_into().unwrap();
+    assert_eq!(target(&row), format!("/v1/pods/{POD}/exec"));
+    let every = 63;
+    assert_eq!(
+        body(chain, &row),
+        json!({ "command": ["sh", "-c", "cargo test"], "every": every })
+    );
+    chain.at(7, 3000);
+    let ended = r#"event: ended
+data: {"exit_code": 0, "stdout": "ok", "stderr": ""}"#;
+    event(chain, &row, 0, ended);
+    let [woke]: [String; 1] = told(chain, thread).try_into().unwrap();
+    assert!(
+        woke.starts_with("pod_exec call s1 (pod duckpond-7: sh -c cargo test) ended: "),
+        "{woke}"
+    );
+}
+
+#[test]
+fn a_measured_stream_whose_pod_is_unknown_wakes_its_conversation_with_why() {
+    let world = podded(world());
+    let chain = &world.chain;
+    let (thread, read) = measured_stream(&world);
+    let gone = json!({ "error": "no pod duckpond-7" });
+    answer(chain, read.id, Answer::Output(response(404, gone)));
+    let [woke]: [String; 1] = told(chain, thread).try_into().unwrap();
+    assert!(
+        woke.starts_with("pod_exec call s1 (pod duckpond-7: sh -c cargo test) did not start: the pod's read answered 404"),
+        "{woke}"
+    );
+    assert!(asked(chain).is_empty(), "no stream opens");
+}

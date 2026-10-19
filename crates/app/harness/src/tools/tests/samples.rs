@@ -252,6 +252,7 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
         (
             "pod_exec",
             vec![
+                json!({ "pod": "duckpond-7", "script": "cargo test", "stream": true }),
                 json!({ "pod": "duckpond-19154", "command": ["sh", "-c", "echo \"it's\" | sed 's/\\x27/\\\\/g'"] }),
                 json!({ "pod": "duckpond-19154", "script": CODE, "container": "out", "every": 20 }),
                 json!({ "pod": "duckpond-19154", "command": [], "script": null, "every": null }),

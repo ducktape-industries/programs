@@ -485,6 +485,19 @@ fn refused_by_pods(what: &str, answer: &http::Response) -> String {
     format!("{what} answered {}: {error}", answer.status)
 }
 
+// how often a stream's alive events come so each lands before the request it keeps alive
+// expires: a request lasts DEFAULT_WAIT blocks of the measured block time, less the measured trip
+// a request to the pods service takes to land (chief's J-033 ruling (a))
+pub(crate) fn alive_every(block_ms: u64, trip: u64) -> Result<u64, String> {
+    let lasts = DEFAULT_WAIT.saturating_mul(block_ms);
+    match lasts.saturating_sub(trip) / 1000 {
+        0 => Err(format!(
+            "a request lasts {lasts} ms ({DEFAULT_WAIT} blocks of {block_ms} ms) and a read of the pod took {trip} ms to land, which leaves no whole second between the stream's alive events"
+        )),
+        every => Ok(every),
+    }
+}
+
 // the pod's stream opens in harness's own run the block after, so the block time is measured
 // between the two
 async fn watch_from_next_block(ctx: &Ctx, wait: u64) -> Result<(), Error> {
@@ -546,14 +559,13 @@ pub(crate) async fn pod_wait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
     if let Some(over) = unwatchable(name, read) {
         return fire(ctx, wait, over).await;
     }
-    let lasts = DEFAULT_WAIT.saturating_mul(block_ms);
-    let every = lasts.saturating_sub(trip) / 1000;
-    if every == 0 {
-        let over = format!(
-            "harness can't wait on pod {name}: a request lasts {lasts} ms ({DEFAULT_WAIT} blocks of {block_ms} ms) and the pod's read took {trip} ms to land, which leaves no whole second between the stream's alive events"
-        );
-        return fire(ctx, wait, over).await;
-    }
+    let every = match alive_every(block_ms, trip) {
+        Ok(every) => every,
+        Err(why) => {
+            let over = format!("harness can't wait on pod {name}: {why}");
+            return fire(ctx, wait, over).await;
+        }
+    };
     let target = format!("/v1/pods/{name}/wait?every={every}");
     let events = Delivery::Events {
         deliver: pod_event_as(wait),

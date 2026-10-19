@@ -53,6 +53,7 @@ pub const READS: Map<String, crate::StatusRead> = Map::new("status/").shared();
 pub const COUNT: Item<u64> = Item::new("count").shared();
 pub const WATCHES: Map<u64, Watching> = Map::new("watch/").shared();
 pub const WATCH_COUNT: Item<u64> = Item::new("watch-count").shared();
+pub const MEASURES: Map<u64, Measure> = Map::new("watch-measure/").shared();
 pub const WAITS: Map<u64, WaitRow> = Map::new("wait/").shared();
 pub const WAITING: Set<(AccountNumber, u64)> = Set::new("waiting/").shared();
 // each conversation's waits not over yet
@@ -147,6 +148,16 @@ pub struct Watching {
     pub tool: String,
     pub about: String,
     pub request: abi::role::egress::Request,
+}
+
+// a streamed call whose heartbeat harness measures before its stream opens: the block and time
+// it was made at, the pod whose read measures the trip, and the JSON body its `every` goes in
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Measure {
+    pub height: u64,
+    pub time: u64,
+    pub pod: String,
+    pub body: String,
 }
 
 // one model account's usage windows, as its last answer or status reading named them, at
@@ -348,6 +359,7 @@ pub(crate) const TABLES: &[::program::Table] = &[
     COUNT.table(),
     WATCHES.table(),
     WATCH_COUNT.table(),
+    MEASURES.table(),
     WAITS.table(),
     WAITING.table(),
     ARMED.table(),

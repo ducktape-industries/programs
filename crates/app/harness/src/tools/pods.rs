@@ -49,7 +49,11 @@ fn absolute(path: &str) -> Result<(), Error> {
 }
 
 // a POST to the pods service, its JSON body put as one part
-fn posted(ctx: &ExecCtx, target: String, body: &Value) -> Result<egress::Request, Error> {
+pub(crate) fn posted(
+    ctx: &ExecCtx,
+    target: String,
+    body: &Value,
+) -> Result<egress::Request, Error> {
     let part = ctx.blob_put(HashKind::Sha256, PART, body.to_string().into_bytes())?;
     let head = http::Head {
         method: http::Method::Post,
@@ -128,6 +132,7 @@ pub(crate) struct ExecArgs {
     script: Option<String>,
     container: Option<String>,
     every: Option<u64>,
+    stream: Option<bool>,
 }
 
 fn command(command: Option<Vec<String>>, script: Option<String>) -> Result<Vec<String>, Error> {
@@ -145,7 +150,7 @@ pub(crate) struct Exec;
 
 impl Tool for Exec {
     const NAME: &'static str = "pod_exec";
-    const DESCRIPTION: &'static str = "Run a command in a pod of the pods service and read its exit code, stdout and stderr (stdout_hex or stderr_hex where they are not UTF-8). Give command (an array, run as it is) or script (shell text, run with sh -c). Without every the call answers when the command ends, which must be within egress's wait for one request (DEFAULT_WAIT, 64 blocks): give a longer command every. With every (seconds), the call answers at once that it streams, and when the command ends this conversation gets one message with its exit code, stdout and stderr, so nothing needs polling; meanwhile the pod sends a heartbeat each every seconds, and egress gives the stream up if 64 blocks pass with none, so pick every well under that (a block is about a second). An answer comes back whole only while it fits one block (BLOCK_BYTES, 16 MiB, the JSON around the output included): a larger one fails with \"the answer is larger than a block carries\", never a cut body, so write large output to a file and read it with pod_read in parts. With every, an ended event larger than a block ends the stream as cut (event_too_large), and the message says so. A refusal by the pods service (no such pod, a container that ended) fails the call, or is the message.";
+    const DESCRIPTION: &'static str = "Run a command in a pod of the pods service and read its exit code, stdout and stderr (stdout_hex or stderr_hex where they are not UTF-8). Give command (an array, run as it is) or script (shell text, run with sh -c). Without every or stream the call answers when the command ends, which must be within egress's wait for one request (DEFAULT_WAIT, 64 blocks): stream a longer command. With stream true, harness picks the heartbeat itself the block after: 64 blocks of the block time it measures, less what a read of the pod takes to land, so you give no number. With every (seconds), the call answers at once that it streams, and when the command ends this conversation gets one message with its exit code, stdout and stderr, so nothing needs polling; meanwhile the pod sends a heartbeat each every seconds, and egress gives the stream up if 64 blocks pass with none, so pick every well under that (a block is about a second). An answer comes back whole only while it fits one block (BLOCK_BYTES, 16 MiB, the JSON around the output included): a larger one fails with \"the answer is larger than a block carries\", never a cut body, so write large output to a file and read it with pod_read in parts. With every, an ended event larger than a block ends the stream as cut (event_too_large), and the message says so. A refusal by the pods service (no such pod, a container that ended) fails the call, or is the message.";
     const WRITES: bool = true;
     type Args = ExecArgs;
 
@@ -157,6 +162,7 @@ impl Tool for Exec {
                 "script": { "type": "string", "description": "instead of command: shell text, run with sh -c" },
                 "container": container_schema(),
                 "every": { "type": "integer", "minimum": 1, "description": "stream it: the seconds between heartbeats while it runs; the conversation is told when it ends" },
+                "stream": { "type": "boolean", "description": "stream it at a heartbeat harness measures, as every does with one you give; the conversation is told when it ends" },
             }),
             &["pod"],
         )
@@ -173,6 +179,15 @@ impl Tool for Exec {
         }
         let target = format!("/v1/pods/{pod}/exec");
         let Some(every) = args.every else {
+            if args.stream == Some(true) {
+                let pod = pod.to_owned();
+                return Ok(Run::Measured {
+                    pod,
+                    target,
+                    body,
+                    about,
+                });
+            }
             let writes = whole(ctx, posted(ctx, target, &body)?)?;
             return Ok(Run::Read {
                 writes,

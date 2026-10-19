@@ -618,6 +618,20 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
                     Err(error) => (refusal(&error), true),
                 });
             }
+            Ok(Run::Measured {
+                pod,
+                target,
+                body,
+                about,
+            }) => {
+                let measured = (pod, target, body);
+                let opened =
+                    watches::open_measured(ctx, &owner, call, &row.tool, measured, about).await;
+                return Ok(match opened {
+                    Ok(value) => (value.to_string(), false),
+                    Err(error) => (refusal(&error), true),
+                });
+            }
             Ok(Run::Write(writes)) => (writes, After::Read(Box::new(entry.render))),
             Ok(Run::Read { writes, read }) => (writes, After::Read(read)),
             Ok(Run::Then { writes, then }) => (writes, After::Then(then)),

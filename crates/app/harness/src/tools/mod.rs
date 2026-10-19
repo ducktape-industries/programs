@@ -8,7 +8,7 @@ mod files;
 mod forge;
 pub(crate) mod interface;
 mod network;
-mod pods;
+pub(crate) mod pods;
 pub(crate) mod prefix;
 mod schedule;
 mod thread;
@@ -42,7 +42,8 @@ pub(crate) type Reading = Box<dyn FnOnce(&[u8]) -> Result<Value, Error>>;
 pub(crate) type Following = Box<dyn FnOnce(&[u8]) -> Result<Run, Error>>;
 
 // what a call does: answer at once, write and read the last write's output, write and choose the
-// next run from it, or answer that it streams and wake its conversation when the stream ends
+// next run from it, or answer that it streams and wake its conversation when the stream ends,
+// at a heartbeat it gives or one harness measures
 pub(crate) enum Run {
     Done(Value),
     Write(Vec<Write>),
@@ -56,6 +57,12 @@ pub(crate) enum Run {
     },
     Stream {
         request: egress::Request,
+        about: String,
+    },
+    Measured {
+        pod: String,
+        target: String,
+        body: Value,
         about: String,
     },
 }
