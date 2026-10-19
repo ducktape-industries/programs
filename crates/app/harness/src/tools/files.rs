@@ -564,7 +564,7 @@ impl Tool for Write {
         };
         // the list is set once the commit has made the path, so a new file's creator sets it
         let set = list_set(ctx, path, Some(list))?;
-        let then = move |output: &[u8]| {
+        let then = move |_: &ExecCtx, output: &[u8]| {
             let mut answer = committed(output)?;
             answer["write"] = json!("set");
             let read = move |_: &[u8]| Ok(answer);

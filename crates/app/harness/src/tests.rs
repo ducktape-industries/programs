@@ -10,6 +10,7 @@ mod chat_channels;
 mod compact_at;
 mod config;
 mod conversations;
+mod file_tools;
 mod forge_commit;
 mod forge_tools;
 mod listen;

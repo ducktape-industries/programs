@@ -1,4 +1,5 @@
-//! JSON to borsh bytes by a schema: the bytes the type's own `BorshSerialize` writes.
+//! JSON to borsh bytes by a schema: the bytes the type's own `BorshSerialize` writes; and
+//! whether a value with holes in it, each standing for a value of any type, would encode.
 use borsh::schema::{BorshSchemaContainer, Declaration, Fields};
 use serde_json::{Map, Value};
 
@@ -10,8 +11,31 @@ pub fn encode(
     name: &str,
     value: &Value,
 ) -> Result<Vec<u8>, Fault> {
+    written(schema, declaration, name, value, None)
+}
+
+// The faults `encode` names for `value`, where each value `hole` says is one stands for a value of
+// any type and is not looked into.
+pub fn fits(
+    schema: &BorshSchemaContainer,
+    declaration: &str,
+    name: &str,
+    value: &Value,
+    hole: fn(&Value) -> bool,
+) -> Result<(), Fault> {
+    written(schema, declaration, name, value, Some(hole)).map(drop)
+}
+
+fn written(
+    schema: &BorshSchemaContainer,
+    declaration: &str,
+    name: &str,
+    value: &Value,
+    hole: Option<fn(&Value) -> bool>,
+) -> Result<Vec<u8>, Fault> {
     let mut writer = Writer {
         schema,
+        hole,
         out: Vec::new(),
     };
     writer.value(declaration, value, &At::root(name))?;
@@ -20,11 +44,15 @@ pub fn encode(
 
 struct Writer<'s> {
     schema: &'s BorshSchemaContainer,
+    hole: Option<fn(&Value) -> bool>,
     out: Vec<u8>,
 }
 
 impl<'s> Writer<'s> {
     fn value(&mut self, declaration: &'s str, value: &Value, at: &At) -> Result<(), Fault> {
+        if self.hole.is_some_and(|hole| hole(value)) {
+            return Ok(());
+        }
         match kind(self.schema, declaration)? {
             Kind::Unit => unit(value, at),
             Kind::Bool => self.boolean(value, at),

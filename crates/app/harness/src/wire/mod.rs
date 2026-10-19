@@ -16,6 +16,7 @@ pub(crate) struct Header<'a> {
     pub thinking: Option<Thinking>,
     pub server_tools: &'a [ServerTool],
     pub system: &'a [String],
+    pub file_tools: &'a [crate::tools::file::FileTool],
 }
 
 #[derive(Debug, PartialEq)]

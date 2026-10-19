@@ -64,18 +64,25 @@ fn cached() -> Value {
     json!({ "type": "ephemeral" })
 }
 
-fn definitions() -> Vec<Value> {
-    tools::CATALOG
-        .iter()
-        .map(|entry| {
-            json!({
-                "name": entry.name,
-                "description": entry.description,
-                "input_schema": (entry.schema)(),
-                "eager_input_streaming": true,
-            })
+// harness's own tools, then the agent's tool files, each naming the file it is read from
+fn definitions(files: &[tools::file::FileTool]) -> Vec<Value> {
+    let native = tools::CATALOG.iter().map(|entry| {
+        json!({
+            "name": entry.name,
+            "description": entry.description,
+            "input_schema": (entry.schema)(),
+            "eager_input_streaming": true,
         })
-        .collect()
+    });
+    let written = files.iter().map(|tool| {
+        json!({
+            "name": tool.name,
+            "description": format!("{} (tool file {})", tool.description, tool.path),
+            "input_schema": tool.schema(),
+            "eager_input_streaming": true,
+        })
+    });
+    native.chain(written).collect()
 }
 
 fn server_definition(tool: ServerTool) -> Value {
@@ -87,7 +94,7 @@ fn server_definition(tool: ServerTool) -> Value {
 }
 
 pub(crate) fn header(header: &Header) -> String {
-    let mut tools = definitions();
+    let mut tools = definitions(header.file_tools);
     tools.extend(header.server_tools.iter().copied().map(server_definition));
     if let Some(Value::Object(last)) = tools.last_mut() {
         last.insert("cache_control".into(), cached());

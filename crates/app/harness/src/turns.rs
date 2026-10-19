@@ -500,12 +500,15 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
     let mut system = config.paragraphs();
     let bound = binding(ctx, thread)?;
     system.push(manual(agent, &thread.title, bound.as_ref()));
+    let files = crate::tools::file::load(ctx, &agent.name);
+    system.extend(crate::tools::file::left_out(&files.problems));
     let header = Header {
         name: &model.name,
         max_tokens: config.max_tokens,
         thinking: config.thinking,
         server_tools: &config.server_tools,
         system: &system,
+        file_tools: &files.tools,
     };
     let header = put_part(ctx, wire::header(model.wire, &header))?;
     let threshold = Threshold::of(&config, Some(&model)).map(Threshold::tokens);

@@ -4,6 +4,7 @@
 mod blob;
 mod chat;
 mod edits;
+pub(crate) mod file;
 pub(crate) mod files;
 mod forge;
 mod image;
@@ -17,7 +18,9 @@ mod wait;
 
 pub(crate) use chat::shown_by;
 
-use ::program::{BlobId, Error, ExecCtx, Principal, ProgramId, invalid, unexpected_reply};
+use ::program::{
+    BlobId, Error, ExecCtx, Principal, ProgramId, QueryCtx, invalid, unexpected_reply,
+};
 use abi::role::egress;
 use abi::role::identity::AccountNumber;
 use serde::de::DeserializeOwned;
@@ -41,11 +44,11 @@ pub(crate) struct Write {
 
 pub(crate) type Reading = Box<dyn FnOnce(&[u8]) -> Result<Value, Error>>;
 
-pub(crate) type Following = Box<dyn FnOnce(&[u8]) -> Result<Run, Error>>;
+pub(crate) type Following = Box<dyn FnOnce(&ExecCtx, &[u8]) -> Result<Run, Error>>;
 
 // what a call does: answer at once, write and read the last write's output, write and choose the
-// next run from it, or answer that it streams and wake its conversation when the stream ends,
-// at a heartbeat it gives or one harness measures
+// next run from it (as a step a refusal names), or answer that it streams and wake its
+// conversation when the stream ends, at a heartbeat it gives or one harness measures
 pub(crate) enum Run {
     Done(Value),
     Write(Vec<Write>),
@@ -54,6 +57,11 @@ pub(crate) enum Run {
         read: Reading,
     },
     Then {
+        writes: Vec<Write>,
+        then: Following,
+    },
+    Step {
+        step: String,
         writes: Vec<Write>,
         then: Following,
     },
@@ -95,8 +103,8 @@ pub(crate) trait Tool {
     fn run(ctx: &ExecCtx, seat: &Seat, args: Self::Args) -> Result<Run, Error>;
     /// The call's result from its last write's output; an error fails the call, as a refused
     /// write does.
-    fn render(_output: &[u8]) -> Result<Value, Error> {
-        Ok(json!({ "ok": true }))
+    fn render(output: &[u8]) -> Result<Value, Error> {
+        acknowledged(output)
     }
     fn show(_ctx: &ExecCtx, _seat: &Seat, _input: &str) -> Result<Show, Error> {
         Ok(Show::Wait)
@@ -205,6 +213,30 @@ pub(crate) fn find(name: &str) -> Option<&'static Entry> {
     CATALOG.iter().find(|entry| entry.name == name)
 }
 
+pub(crate) enum Resolved {
+    Native(&'static Entry),
+    File(Box<file::FileTool>),
+}
+
+// the tool `name` is for `agent`: harness's own, else the agent's tool file, else the shared one;
+// a tool file that does not load says why
+pub(crate) fn resolve(
+    ctx: &QueryCtx,
+    agent: AccountNumber,
+    name: &str,
+) -> Result<Option<Resolved>, String> {
+    if let Some(entry) = find(name) {
+        return Ok(Some(Resolved::Native(entry)));
+    }
+    let profile =
+        crate::agents::profile(ctx, agent).map_err(|error| crate::calls::refusal(&error))?;
+    let Some(profile) = profile else {
+        return Ok(None);
+    };
+    let tool = file::resolve(ctx, &profile.name, name)?;
+    Ok(tool.map(|tool| Resolved::File(Box::new(tool))))
+}
+
 // a call's input with each field its tool's schema gives no type read as the JSON it holds
 pub(crate) fn untyped_read(tool: &str, input: &mut Value) {
     let Some(entry) = find(tool) else {
@@ -237,6 +269,11 @@ pub(crate) fn infos() -> Vec<ToolInfo> {
             writes: entry.writes,
         })
         .collect()
+}
+
+// a write's output that says nothing more than that it applied
+pub(crate) fn acknowledged(_output: &[u8]) -> Result<Value, Error> {
+    Ok(json!({ "ok": true }))
 }
 
 pub(crate) fn object(properties: Value, required: &[&str]) -> Value {

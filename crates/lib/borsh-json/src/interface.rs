@@ -6,7 +6,7 @@ use borsh::schema::{BorshSchemaContainer, Declaration};
 use program::schema::{returned, roots};
 use serde_json::{Value, json};
 
-use crate::{Fault, decode, encode, shape, variant};
+use crate::{Fault, decode, encode, fits, shape, variant};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Interface {
@@ -73,6 +73,15 @@ impl Interface {
 
     pub fn encode_query(&self, query: &Value) -> Result<Vec<u8>, Fault> {
         encode(&self.schema, &self.query, "query", query)
+    }
+
+    // What `encode_op` would refuse in `op`, each value `hole` takes standing for any value.
+    pub fn op_fits(&self, op: &Value, hole: fn(&Value) -> bool) -> Result<(), Fault> {
+        fits(&self.schema, &self.op, "op", op, hole)
+    }
+
+    pub fn query_fits(&self, query: &Value, hole: fn(&Value) -> bool) -> Result<(), Fault> {
+        fits(&self.schema, &self.query, "query", query, hole)
     }
 
     pub fn decode_op(&self, op: &[u8]) -> Result<Value, Fault> {

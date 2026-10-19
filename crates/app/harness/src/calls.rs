@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::agents::{running, thread};
 use crate::state::{AWAITED, CALLS, DEFERRED, LIVE, Live, SHOWN, THREADS};
-use crate::tools::{self, Entry, Run, Seat, Show, Undo, Write};
+use crate::tools::{self, Resolved, Run, Seat, Show, Undo, Write};
 use crate::turns::{append, request, serves, settle};
 use crate::watches;
 use crate::{Asking, Body, CallRow, CallState, Op, PROGRAM, Said, ThreadRow};
@@ -56,9 +56,13 @@ fn planned(
     if made_before {
         return Err(format!("call {call} was made before"));
     }
-    let entry = tools::find(tool).ok_or_else(|| format!("there is no tool named {tool}"))?;
+    let resolved = tools::resolve(ctx, thread.agent, tool)?
+        .ok_or_else(|| format!("there is no tool named {tool}"))?;
     let input: Value = serde_json::from_str(input).map_err(|_| invalid_json(input))?;
-    (entry.check)(&input)?;
+    match resolved {
+        Resolved::Native(entry) => (entry.check)(&input)?,
+        Resolved::File(file) => file.check(&input)?,
+    }
     let relaying = serves(ctx, RELAY).map_err(|error| error.message)?;
     if !relaying {
         return Err(format!(
@@ -616,15 +620,23 @@ enum Ready {
     Closed,
     Stopped,
     Unknown,
-    Runs(&'static Entry),
+    Broken(String),
+    Runs(Resolved),
 }
 
-fn ready(thread: &ThreadRow, runs: bool, tool: &str) -> Ready {
-    match (thread.closed, runs, tools::find(tool)) {
-        (true, _, _) => Ready::Closed,
-        (false, false, _) => Ready::Stopped,
-        (false, true, None) => Ready::Unknown,
-        (false, true, Some(entry)) => Ready::Runs(entry),
+fn ready(
+    thread: &ThreadRow,
+    runs: bool,
+    resolve: impl FnOnce() -> Result<Option<Resolved>, String>,
+) -> Ready {
+    match (thread.closed, runs) {
+        (true, _) => Ready::Closed,
+        (false, false) => Ready::Stopped,
+        (false, true) => match resolve() {
+            Ok(Some(tool)) => Ready::Runs(tool),
+            Ok(None) => Ready::Unknown,
+            Err(problem) => Ready::Broken(problem),
+        },
     }
 }
 
@@ -634,7 +646,8 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
         return Ok((format!("call {call} is not open"), true));
     };
     let runs = running(ctx, owner.agent)?.is_some();
-    let entry = match ready(&owner, runs, &row.tool) {
+    let resolve = || tools::resolve(ctx, owner.agent, &row.tool);
+    let tool = match ready(&owner, runs, resolve) {
         Ready::Closed => {
             let words = match take_back(ctx, &owner, &row).await? {
                 TakenBack::NothingShown | TakenBack::Stays => "",
@@ -653,7 +666,8 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
             ));
         }
         Ready::Unknown => return Ok((format!("there is no tool named {}", row.tool), true)),
-        Ready::Runs(entry) => entry,
+        Ready::Broken(problem) => return Ok((problem, true)),
+        Ready::Runs(tool) => tool,
     };
     let input: Value = serde_json::from_str(&row.input).unwrap_or(Value::Null);
     let before = shown(ctx, id, call)?;
@@ -663,9 +677,16 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
         call,
         shown: before.as_ref(),
     };
-    let mut next = (entry.run)(ctx, &seat, input);
+    let render: fn(&[u8]) -> Result<Value, Error> = match &tool {
+        Resolved::Native(entry) => entry.render,
+        Resolved::File(_) => tools::acknowledged,
+    };
+    let mut next = match tool {
+        Resolved::Native(entry) => (entry.run)(ctx, &seat, input),
+        Resolved::File(file) => tools::file::run(ctx, *file, input),
+    };
     loop {
-        let (writes, after) = match next {
+        let (writes, after, step) = match next {
             Ok(Run::Done(value)) => return Ok((value.to_string(), false)),
             Ok(Run::Stream { request, about }) => {
                 let opened = watches::open(ctx, &owner, call, &row.tool, request, about).await;
@@ -688,16 +709,18 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
                     Err(error) => (refusal(&error), true),
                 });
             }
-            Ok(Run::Write(writes)) => (writes, After::Read(Box::new(entry.render))),
-            Ok(Run::Read { writes, read }) => (writes, After::Read(read)),
-            Ok(Run::Then { writes, then }) => (writes, After::Then(then)),
+            Ok(Run::Write(writes)) => (writes, After::Read(Box::new(render)), None),
+            Ok(Run::Read { writes, read }) => (writes, After::Read(read), None),
+            Ok(Run::Then { writes, then }) => (writes, After::Then(then), None),
+            Ok(Run::Step { step, writes, then }) => (writes, After::Then(then), Some(step)),
             Err(error) => return Ok((refusal(&error), true)),
         };
         mark(ctx, id, call, CallState::Writing)?;
         crate::resume::awaiting(ctx, id, call, &writes).await;
-        let output = match written(ctx, owner.agent, writes).await {
-            Ok(output) => output,
-            Err(error) => return Ok((refusal(&error), true)),
+        let output = match (written(ctx, owner.agent, writes).await, step) {
+            (Ok(output), _) => output,
+            (Err(error), None) => return Ok((refusal(&error), true)),
+            (Err(error), Some(step)) => return Ok((format!("{step}: {}", refusal(&error)), true)),
         };
         // what it did is kept until its turn is recorded, for a reply that starts over
         SHOWN.put(ctx, &(id, call.to_owned()), &row.input);
@@ -708,7 +731,7 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
                     Err(refused) => (refusal(&refused), true),
                 });
             }
-            After::Then(then) => next = then(&output),
+            After::Then(then) => next = then(ctx, &output),
         }
     }
 }

@@ -499,7 +499,7 @@ impl Tool for Push {
         };
         Ok(Run::Then {
             writes,
-            then: Box::new(move |output| pushing.push(output)),
+            then: Box::new(move |_: &ExecCtx, output: &[u8]| pushing.push(output)),
         })
     }
 }

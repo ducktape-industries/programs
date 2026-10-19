@@ -9,6 +9,7 @@ fn sent(thinking: Option<Thinking>) -> Value {
         thinking,
         server_tools: &[],
         system: &system,
+        file_tools: &[],
     };
     let mut text = super::header(Wire::AnthropicMessages, &header);
     text.push_str(anthropic::CLOSE);

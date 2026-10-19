@@ -95,3 +95,27 @@ fn an_output_reads_in_the_type_its_op_returns_else_as_hex_and_why() {
         )
     );
 }
+
+#[test]
+fn a_value_with_holes_is_checked_everywhere_but_at_its_holes() {
+    let read = counter();
+    let hole: fn(&Value) -> bool = |value| value.as_str().is_some_and(|text| text.starts_with('$'));
+    assert_eq!(
+        read.op_fits(&json!({ "Count": { "by": "$n" } }), hole),
+        Ok(())
+    );
+    assert_eq!(read.op_fits(&json!({ "Name": "$who" }), hole), Ok(()));
+    assert_eq!(read.op_fits(&json!("$any"), hole), Ok(()));
+    let unknown = json!({ "Count": { "by": "$n", "times": 2 } });
+    assert_eq!(
+        read.op_fits(&unknown, hole).unwrap_err().to_string(),
+        "at op.Count: there is no field times; the fields are by"
+    );
+    let wrong = read.op_fits(&json!({ "Count": { "by": "three" } }), hole);
+    let wrong = wrong.unwrap_err().to_string();
+    assert!(
+        wrong.starts_with("at op.Count.by: expected an integer"),
+        "{wrong}"
+    );
+    assert!(read.encode_op(&json!({ "Count": { "by": "$n" } })).is_err());
+}

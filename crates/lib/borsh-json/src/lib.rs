@@ -17,7 +17,7 @@ use std::ops::RangeInclusive;
 use borsh::schema::{BorshSchemaContainer, Declaration, Definition, Fields};
 
 pub use decode::decode;
-pub use encode::encode;
+pub use encode::{encode, fits};
 pub use example::{example, examples};
 pub use interface::{Interface, Unreadable, unread};
 pub use program::schema::SECTION;
