@@ -18,6 +18,19 @@ Guidance for assistant sessions in this repository; `CLAUDE.md` links here.
 - A design that seems to need a new restriction is a question for the user
   before it is built.
 
+## Who May Call Each Op
+
+- Each program's README contract names, for every op, who may call it:
+  any account; anyone; programs only (a call from another program); one
+  named program or a role's program (forge only, the egress role only);
+  the owner of what it writes, or whom that key's access list names; the
+  program's own scheduled run; a member node; a validators' vote.
+- Write it from the check in the code (`sent_by`, `sending_program`,
+  `sender_account`, the `Cause`, the op's `Need`s), never from intent, and
+  change it in the same change as the check. An op with no check says
+  "anyone". Queries are answered for anyone unless the contract says
+  otherwise.
+
 ## Delivery
 
 - This repository lives on duckpond's forge as `programs`, and forge's `dev`
