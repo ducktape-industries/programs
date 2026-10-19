@@ -30,9 +30,19 @@ fn build() {
     static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     ONCE.get_or_init(|| {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        // every program at once: cargo's own job count, else every core
+        let jobs = std::env::var("CARGO_BUILD_JOBS")
+            .ok()
+            .or_else(|| {
+                let cores = std::thread::available_parallelism().ok()?;
+                Some(cores.to_string())
+            })
+            .unwrap_or_else(|| "1".into());
         let status = std::process::Command::new("make")
             .arg("-C")
             .arg(&root)
+            .arg("-j")
+            .arg(jobs)
             .arg("wasm-programs")
             .status()
             .expect("make is on PATH");

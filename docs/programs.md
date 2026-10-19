@@ -31,7 +31,8 @@ what to do next. The files, in reading order:
 
 - `program` adds the two wasm exports (`program::export!`). Only the program's
   own wasm build turns it on (`make wasm-programs` builds each program in a
-  target dir of its own with `--features program`). Everything else, the
+  target dir of its own with `--features program`, one make target each, so
+  `make -j` builds them at once). Everything else, the
   types, the rules, the `Poll` type, is always built: a view links the crate
   with the feature off and gets the types with no host import and no export,
   and a native test runs the real `execute` and `query`.

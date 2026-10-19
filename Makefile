@@ -86,6 +86,13 @@ VIEW_GATE = tools/view-gate.sh $(if $(filter release,$(WASM_PROFILE)),,--fast)
 PROGRAM_TARGET = $(BUILD_TARGET)/programs/$1
 program_artifact = $(call PROGRAM_TARGET,$1)/wasm32-unknown-unknown/$(WASM_PROFILE)/$(subst -,_,$1).wasm
 program_build = $(WASM_BUILD) --target-dir $(call PROGRAM_TARGET,$1) -p $1 --features program
+# The programs, their describe modules and the notifiers build one target each
+# (wasm-programs/<name>, wasm-describes/<name>, wasm-notifiers/<view>), each in a
+# target dir of its own, so `make -j` builds them at once. A `+` recipe hands cargo
+# make's jobserver: the cargo runs share make's -j instead of each taking every core.
+# place FROM,TO: an artifact lands under a temporary name and is renamed into place,
+# so a reader of $(WASM_OUT) never sees half of one.
+place = cp $1 $2.part && mv -f $2.part $2
 export CARGO BUILD_TARGET WASM_PROFILE WASM_OUT WASM_BUILD WASM_OPT
 
 .PHONY: dev wasm-why new-program new-view scaffold-check
@@ -138,11 +145,14 @@ program-wasm-check:
 	done; \
 	echo "abi, program and store build for wasm32"
 
-## builds every program (with `program` on) into $(WASM_OUT)/<name>.wasm. The
-## founding suite reads the boot set from there.
-wasm-programs:
+## builds every program (with `program` on) into $(WASM_OUT)/<name>.wasm, all
+## at once under `make -j`. The founding suite reads the boot set from there.
+wasm-programs: $(addprefix wasm-programs/,$(PROGRAMS))
+
+.PHONY: $(addprefix wasm-programs/,$(PROGRAMS))
+$(addprefix wasm-programs/,$(PROGRAMS)): wasm-programs/%:
 	@mkdir -p $(WASM_OUT)
-	@$(foreach p,$(PROGRAMS),$(call program_build,$(p)) && cp $(call program_artifact,$(p)) $(WASM_OUT)/ || exit 1;)
+	+@$(call program_build,$*) && $(call place,$(call program_artifact,$*),$(WASM_OUT)/$(subst -,_,$*).wasm)
 
 ## the whole suite; the founding suite runs `make wasm-programs` itself.
 test:
@@ -160,9 +170,13 @@ describe_artifact = $(call DESCRIBE_TARGET,$1)/wasm32-unknown-unknown/$(WASM_PRO
 ## `alloc`/`describe` exports over its `describe` fn, no imports) into
 ## $(WASM_OUT)/<name>.describe.wasm, ABI-checked. qa's pack embeds each as
 ## the `ducktape.describe` section of its program.
-wasm-describes:
+wasm-describes: $(addprefix wasm-describes/,$(PROGRAMS))
+
+.PHONY: $(addprefix wasm-describes/,$(PROGRAMS))
+$(addprefix wasm-describes/,$(PROGRAMS)): wasm-describes/%:
 	@mkdir -p $(WASM_OUT)
-	@$(foreach p,$(PROGRAMS),$(call describe_build,$(p)) && cp $(call describe_artifact,$(p)) $(WASM_OUT)/$(subst -,_,$(p)).describe.wasm && python3 tools/check-describe-abi.py $(WASM_OUT)/$(subst -,_,$(p)).describe.wasm || exit 1;)
+	+@$(call describe_build,$*) && $(call place,$(call describe_artifact,$*),$(WASM_OUT)/$(subst -,_,$*).describe.wasm) && \
+	  python3 tools/check-describe-abi.py $(WASM_OUT)/$(subst -,_,$*).describe.wasm
 
 .PHONY: wasm-schemas
 
@@ -205,20 +219,26 @@ wasm-founding: wasm-modules
 
 .PHONY: wasm-program
 
-## builds one program's code as wasm-founding packs it, into
-## $(WASM_OUT)/program/<P>.wasm: `make wasm-program P=chat`. It builds only what
-## that program carries (the program, its describe module and schema, and the
-## view and notifier `founding`'s `modules` names for it) with the recipes
-## wasm-modules runs, so its bytes are founding/<P>.wasm's. A deploy of one
-## program builds this, not the whole founding. A standalone view ships as
-## wasm-views builds it: `make wasm-views VIEWS=explorer-view`.
+## builds programs' code as wasm-founding packs it, into
+## $(WASM_OUT)/program/<P>.wasm: `make wasm-program P=chat`, or several at once
+## with `make -j wasm-program P="chat forge"`. It builds only what those programs
+## carry (each program, its describe module and schema, and the view and
+## notifier `founding`'s `modules` names for it) with the recipes wasm-modules
+## runs, so its bytes are founding/<P>.wasm's. A deploy of programs builds this,
+## not the whole founding. A standalone view ships as wasm-views builds it:
+## `make wasm-views VIEWS=explorer-view`.
 wasm-program:
-	@test -n "$(P)" || { echo "usage: make wasm-program P=<program>"; exit 1; }
-	@modules=$$($(CARGO) run --locked -q -p founding --bin modules -- $(P)) && \
-	  $(MAKE) --no-print-directory wasm-programs wasm-describes wasm-schemas wasm-views wasm-notifiers PROGRAMS=$(P) $$modules
+	@test -n "$(P)" || { echo "usage: make wasm-program P='<program>...'"; exit 1; }
+	+@views=""; notifiers=""; \
+	  for p in $(P); do \
+	    modules=$$($(CARGO) run --locked -q -p founding --bin modules -- $$p) || exit 1; \
+	    set -- $$modules; views="$$views $${1#VIEWS=}"; notifiers="$$notifiers $${2#NOTIFIERS=}"; \
+	  done; \
+	  $(MAKE) --no-print-directory wasm-programs wasm-describes wasm-schemas wasm-views wasm-notifiers \
+	    PROGRAMS="$(P)" VIEWS="$$views" NOTIFIERS="$$notifiers"
 	@echo "source: $(or $(SOURCE_COMMIT),none: the checkout has changes git sees)"
 	@$(CARGO) run --locked --release -p founding -- $(STAMP) $(WASM_OUT) $(WASM_OUT)/program $(P)
-	@cd $(WASM_OUT)/program && sha256sum $(P).wasm
+	@cd $(WASM_OUT)/program && sha256sum $(addsuffix .wasm,$(P))
 
 # `make dl-stage` without a channel stops here, before its build
 ifneq ($(filter dl-stage,$(MAKECMDGOALS)),)
@@ -296,9 +316,13 @@ notifier_artifact = $(call NOTIFY_TARGET,$1)/wasm32-unknown-unknown/notify/$(sub
 
 ## builds every notifier into $(WASM_OUT)/<view>.notify.wasm, optimized,
 ## ABI-checked (alloc/init/tick) and its size printed.
-wasm-notifiers:
+wasm-notifiers: $(addprefix wasm-notifiers/,$(sort $(NOTIFIERS)))
+
+.PHONY: $(addprefix wasm-notifiers/,$(sort $(NOTIFIERS)))
+$(addprefix wasm-notifiers/,$(sort $(NOTIFIERS))): wasm-notifiers/%:
 	@mkdir -p $(WASM_OUT)
-	@$(foreach v,$(NOTIFIERS),$(call notifier_build,$(v)) && cp $(call notifier_artifact,$(v)) $(WASM_OUT)/$(subst -,_,$(v)).notify.wasm && tools/view-gate.sh $(v).notify $(WASM_OUT)/$(subst -,_,$(v)).notify.wasm notifier || exit 1;)
+	+@$(call notifier_build,$*) && $(call place,$(call notifier_artifact,$*),$(WASM_OUT)/$(subst -,_,$*).notify.wasm) && \
+	  tools/view-gate.sh $*.notify $(WASM_OUT)/$(subst -,_,$*).notify.wasm notifier
 
 ## builds every VIEW_LINKABLE crate for wasm32-unknown-unknown, plus the
 ## exported view probe of view, the example view and every notifier, then fails
