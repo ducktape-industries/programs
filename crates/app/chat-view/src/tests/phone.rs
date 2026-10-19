@@ -58,12 +58,12 @@ fn tap(cx: &mut TestAppContext, key: &str) {
 /// The chat program's answer to the channel list replaced by `reply`.
 fn channels_answer(cx: &TestAppContext, reply: fn() -> Result<Vec<ChannelInfo>, String>) {
     cx.host()
-        .handle::<Ask<::chat::Chat>>(move |query| match query {
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| match query {
             Query::Channels { .. } => reply()
                 .map(|rooms| Reply::Channels(page(rooms)))
                 .map_err(|why| view::host::Error::new("refused", &why)),
             query => Ok(chat_reply(query)),
-        });
+        }));
 }
 
 /// The ops the reader's writes submitted, in order.
@@ -241,7 +241,7 @@ fn a_row_opens_its_room_and_back_returns_to_the_rooms() {
 fn search_asks_on_the_search_key_and_a_hit_opens_its_room_over_the_page() {
     let (mut cx, _) = phone();
     // a hit lands the room on its message, read around it
-    cx.host().handle::<Ask<::chat::Chat>>(|query| {
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
         Ok(match query {
             Query::MessagesAround {
                 channel_id, seq, ..
@@ -251,7 +251,7 @@ fn search_asks_on_the_search_key_and_a_hit_opens_its_room_over_the_page() {
             }
             query => chat_reply(query),
         })
-    });
+    }));
     cx.simulate_click("Search");
     assert!(cx.find("chat-search-page").is_some());
     assert!(cx.has_text("All rooms"));
@@ -274,14 +274,14 @@ fn search_asks_on_the_search_key_and_a_hit_opens_its_room_over_the_page() {
 #[test]
 fn a_landed_room_offers_latest_until_it_reaches_the_newest_and_latest_reads_the_tail() {
     let (mut cx, view) = phone();
-    cx.host().handle::<Ask<::chat::Chat>>(|query| {
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
         Ok(match query {
             Query::MessagesAround { .. } => {
                 Reply::Messages(vec![row(1, 7, "hello"), row(2, 8, "**hi** there")])
             }
             query => chat_reply(query),
         })
-    });
+    }));
     let land = |cx: &mut TestAppContext| {
         cx.simulate_click("chat-search-hit-general-1");
         cx.run_until_parked();
@@ -325,10 +325,11 @@ fn a_room_scrolled_up_offers_latest() {
 #[test]
 fn a_refused_older_page_is_said_at_the_lists_end() {
     let (mut cx, view) = in_general();
-    cx.host().handle::<Ask<::chat::Chat>>(|query| match query {
-        Query::Roots { .. } => Err(view::host::Error::new("refused", "the node is busy")),
-        query => Ok(chat_reply(query)),
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(|query| match query {
+            Query::Roots { .. } => Err(view::host::Error::new("refused", "the node is busy")),
+            query => Ok(chat_reply(query)),
+        }));
     cx.update(&view, |chat, _, cx| {
         chat.room.as_mut().expect("a room is open").has_older = true;
         chat.load_older(cx);
@@ -372,10 +373,11 @@ fn clear_empties_the_field_and_the_hits() {
 #[test]
 fn a_refused_search_says_why_and_retry_asks_again() {
     let (mut cx, _) = phone();
-    cx.host().handle::<Ask<::chat::Chat>>(|query| match query {
-        Query::Search { .. } => Err(view::host::Error::new("refused", "too many words")),
-        query => Ok(chat_reply(query)),
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(|query| match query {
+            Query::Search { .. } => Err(view::host::Error::new("refused", "too many words")),
+            query => Ok(chat_reply(query)),
+        }));
     cx.simulate_click("Search");
     cx.simulate_input("search", "hello");
     cx.simulate_submit("search");
@@ -1026,14 +1028,15 @@ fn a_thread_says_it_is_loading_and_a_refused_one_retries() {
     cx.host().never::<Ask<::chat::Chat>>();
     thread(&mut cx, &view, 1);
     assert!(cx.has_text("Loading the thread…"));
-    cx.host().handle::<Ask<::chat::Chat>>(|query| match query {
-        Query::Thread { .. } => Err(view::host::Error::new("refused", "the thread is gone")),
-        query => Ok(chat_reply(query)),
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(|query| match query {
+            Query::Thread { .. } => Err(view::host::Error::new("refused", "the thread is gone")),
+            query => Ok(chat_reply(query)),
+        }));
     thread(&mut cx, &view, 1);
     assert!(cx.has_text("the thread is gone"));
     cx.host()
-        .handle::<Ask<::chat::Chat>>(|query| Ok(chat_reply(query)));
+        .handle::<Ask<::chat::Chat>>(rooms_alone(|query| Ok(chat_reply(query))));
     cx.simulate_click("chat-messages-retry");
     cx.run_until_parked();
     assert!(cx.has_text("No replies yet"));
@@ -1269,7 +1272,7 @@ fn placed(cx: &mut TestAppContext) {
 #[test]
 fn at_lists_every_match_in_the_room_above_the_band() {
     let (mut cx, _) = in_general();
-    cx.host().handle::<Ask<::chat::Chat>>(|query| {
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
         Ok(match query {
             Query::Accounts { .. } => {
                 let people = (0..40).map(|n| person(100 + n, &format!("ann{n:02}")));
@@ -1277,7 +1280,7 @@ fn at_lists_every_match_in_the_room_above_the_band() {
             }
             query => chat_reply(query),
         })
-    });
+    }));
     cx.host()
         .stream::<Changes<Identity>>()
         .send(block(9, Vec::new()));

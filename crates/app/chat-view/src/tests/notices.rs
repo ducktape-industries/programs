@@ -16,14 +16,14 @@ fn a_pane_posts_nothing_and_takes_a_read_rooms_notices_down() {
         cx.host().requests::<HostShowing>().last().unwrap(),
         "general"
     );
-    cx.host().handle::<Ask<::chat::Chat>>(|query| {
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
         Ok(match query {
             Query::Roots { .. } => Reply::Roots(page(Vec::new())),
             Query::Members { .. } => Reply::Members(page(Vec::new())),
             query @ Query::MessagesAround { .. } => chat_reply(query),
             query => panic!("unexpected chat query: {query:?}"),
         })
-    });
+    }));
     cx.update(&view, |chat, _, cx| {
         cx.notify();
         chat.channels_landed(
@@ -66,7 +66,7 @@ fn kept_cursors_bring_the_badge_back_after_a_relaunch() {
             ]))
         }))
     });
-    cx.host().handle::<Ask<::chat::Chat>>(|query| {
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
         Ok(match query {
             Query::Accounts { .. } => Reply::Accounts(page(Vec::new())),
             Query::Channels { .. } => Reply::Channels(page(vec![
@@ -78,7 +78,7 @@ fn kept_cursors_bring_the_badge_back_after_a_relaunch() {
             query @ Query::MessagesAround { .. } => chat_reply(query),
             query => panic!("unexpected chat query: {query:?}"),
         })
-    });
+    }));
     cx.open::<Chat>();
     seat(&mut cx);
     assert!(cx.find("chat-sidebar-channel-general-unread").is_some());
@@ -111,7 +111,7 @@ fn a_refused_store_read_still_keeps_cursors() {
         "reads/0102" => Err(malformed("the store is unavailable".into())),
         _ => Ok(None),
     });
-    cx.host().handle::<Ask<::chat::Chat>>(|query| {
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
         Ok(match query {
             Query::Accounts { .. } => Reply::Accounts(page(Vec::new())),
             Query::Channels { .. } => Reply::Channels(page(vec![channel("general", "General", 3)])),
@@ -119,7 +119,7 @@ fn a_refused_store_read_still_keeps_cursors() {
             Query::Members { .. } => Reply::Members(page(Vec::new())),
             query => panic!("unexpected chat query: {query:?}"),
         })
-    });
+    }));
     cx.open::<Chat>();
     seat(&mut cx);
     let asked = cx.host().requests::<StoreGet>();
@@ -147,14 +147,14 @@ fn a_refused_store_read_still_keeps_cursors() {
 fn the_details_choose_a_rooms_notices() {
     use view::methods::Submit;
     let (mut cx, _view) = opened();
-    cx.host().handle::<Ask<::chat::Chat>>(|query| {
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
         Ok(match query {
             Query::Notices { .. } => {
                 Reply::Notices(page(vec![("general".into(), chat::Notices::Mentions)]))
             }
             query => chat_reply(query),
         })
-    });
+    }));
     cx.simulate_click("chat-room-details");
     cx.run_until_parked();
     let group = cx.interactivity("chat-details-notices").role;

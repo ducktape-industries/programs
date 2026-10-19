@@ -48,30 +48,28 @@ fn commands(cx: &TestAppContext) -> Vec<wire::ListCommand> {
 fn full_room(newest: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Accounts { .. } => Reply::Accounts(page(Vec::new())),
-            Query::Channels { .. } => {
-                Reply::Channels(page(vec![channel("general", "General", newest.get())]))
-            }
-            Query::Channel { .. } => {
-                Reply::Channel(Some(channel("general", "General", newest.get())))
-            }
-            Query::Roots { .. } => {
-                let top = newest.get();
-                Reply::Roots(::chat::PageResponse {
-                    height: 1,
-                    items: (top + 1 - WINDOW as u64..=top).map(marked_row).collect(),
-                    next: Some(vec![1]),
-                })
-            }
-            Query::Members { .. } => Reply::Members(page(Vec::new())),
-            // the harness shows the last frame alone: who reacted is named by
-            // nobody here, so no frame of its own follows the rows'
-            Query::Reactors { .. } => Reply::Reactors(Vec::new()),
-            query => panic!("unexpected chat query: {query:?}"),
-        })
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Accounts { .. } => Reply::Accounts(page(Vec::new())),
+                Query::Channels { .. } => {
+                    Reply::Channels(page(vec![channel("general", "General", newest.get())]))
+                }
+                Query::Roots { .. } => {
+                    let top = newest.get();
+                    Reply::Roots(::chat::PageResponse {
+                        height: 1,
+                        items: (top + 1 - WINDOW as u64..=top).map(marked_row).collect(),
+                        next: Some(vec![1]),
+                    })
+                }
+                Query::Members { .. } => Reply::Members(page(Vec::new())),
+                // the harness shows the last frame alone: who reacted is named by
+                // nobody here, so no frame of its own follows the rows'
+                Query::Reactors { .. } => Reply::Reactors(Vec::new()),
+                query => panic!("unexpected chat query: {query:?}"),
+            })
+        }));
     let view = cx.open::<Chat>();
     seat(&mut cx);
     cx.simulate_click("chat-sidebar-channel-general");
@@ -115,30 +113,31 @@ fn an_older_page_lands_only_in_the_room_it_was_read_for() {
     let (mut cx, view) = full_room(Rc::new(Cell::new(WINDOW as u64)));
     let older = Rc::new(Cell::new(0));
     let paged = older.clone();
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Roots {
-                page: ::chat::PageRequest { after: None, .. },
-                ..
-            } => Reply::Roots(::chat::PageResponse {
-                height: 1,
-                items: (1..=WINDOW as u64).map(marked_row).collect(),
-                next: Some(vec![1]),
-            }),
-            Query::Roots { .. } => {
-                paged.set(paged.get() + 1);
-                Reply::Roots(::chat::PageResponse {
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots {
+                    page: ::chat::PageRequest { after: None, .. },
+                    ..
+                } => Reply::Roots(::chat::PageResponse {
                     height: 1,
-                    items: vec![marked_row(1_000 + paged.get())],
-                    next: (paged.get() < 4).then(|| vec![1]),
-                })
-            }
-            Query::Members { .. } => Reply::Members(page(Vec::new())),
-            Query::Channels { .. } => Reply::Channels(page(Vec::new())),
-            Query::Reactors { .. } => Reply::Reactors(Vec::new()),
-            query => panic!("unexpected chat query: {query:?}"),
-        })
-    });
+                    items: (1..=WINDOW as u64).map(marked_row).collect(),
+                    next: Some(vec![1]),
+                }),
+                Query::Roots { .. } => {
+                    paged.set(paged.get() + 1);
+                    Reply::Roots(::chat::PageResponse {
+                        height: 1,
+                        items: vec![marked_row(1_000 + paged.get())],
+                        next: (paged.get() < 4).then(|| vec![1]),
+                    })
+                }
+                Query::Members { .. } => Reply::Members(page(Vec::new())),
+                Query::Channels { .. } => Reply::Channels(page(Vec::new())),
+                Query::Reactors { .. } => Reply::Reactors(Vec::new()),
+                query => panic!("unexpected chat query: {query:?}"),
+            })
+        }));
     cx.update(&view, |chat, _, cx| {
         chat.load_older(cx);
         chat.open("dm-7-8".into(), cx);
@@ -275,31 +274,32 @@ fn jump_to_latest_shows_as_the_reader_leaves_the_tail() {
 fn long_room(head: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        let head = head.get();
-        Ok(match query {
-            Query::Accounts { .. } => Reply::Accounts(page(Vec::new())),
-            Query::Channels { .. } => {
-                Reply::Channels(page(vec![channel("general", "General", head)]))
-            }
-            Query::MessagesAround { seq, page, .. } => {
-                let half = page.limit() / 2;
-                let lo = seq.saturating_sub(half).max(1);
-                let hi = seq.saturating_add(half).min(head);
-                Reply::Messages((lo..=hi).map(marked_row).collect())
-            }
-            Query::Roots { .. } => Reply::Roots(::chat::PageResponse {
-                height: 1,
-                items: (head + 1 - WINDOW as u64..=head).map(marked_row).collect(),
-                next: Some(vec![1]),
-            }),
-            Query::Members { .. } => Reply::Members(page(Vec::new())),
-            // the harness shows the last frame alone: who reacted is named by
-            // nobody here, so no frame of its own follows the rows'
-            Query::Reactors { .. } => Reply::Reactors(Vec::new()),
-            query => panic!("unexpected chat query: {query:?}"),
-        })
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            let head = head.get();
+            Ok(match query {
+                Query::Accounts { .. } => Reply::Accounts(page(Vec::new())),
+                Query::Channels { .. } => {
+                    Reply::Channels(page(vec![channel("general", "General", head)]))
+                }
+                Query::MessagesAround { seq, page, .. } => {
+                    let half = page.limit() / 2;
+                    let lo = seq.saturating_sub(half).max(1);
+                    let hi = seq.saturating_add(half).min(head);
+                    Reply::Messages((lo..=hi).map(marked_row).collect())
+                }
+                Query::Roots { .. } => Reply::Roots(::chat::PageResponse {
+                    height: 1,
+                    items: (head + 1 - WINDOW as u64..=head).map(marked_row).collect(),
+                    next: Some(vec![1]),
+                }),
+                Query::Members { .. } => Reply::Members(page(Vec::new())),
+                // the harness shows the last frame alone: who reacted is named by
+                // nobody here, so no frame of its own follows the rows'
+                Query::Reactors { .. } => Reply::Reactors(Vec::new()),
+                query => panic!("unexpected chat query: {query:?}"),
+            })
+        }));
     let view = cx.open::<Chat>();
     seat(&mut cx);
     (cx, view)
@@ -377,33 +377,34 @@ fn seeded_room(listed: Option<u64>) -> (TestAppContext, Entity<Chat>) {
     };
     let mut cx = TestAppContext::new();
     configure(&mut cx);
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Accounts { .. } => Reply::Accounts(page(Vec::new())),
-            Query::Channels { .. } => {
-                let Some(head) = listed else {
-                    return Err(wire::Error::new("unavailable", "the node is busy"));
-                };
-                Reply::Channels(page(vec![channel("general", "General", head)]))
-            }
-            Query::MessagesAround { seq, page, .. } => {
-                let half = page.limit() / 2;
-                let lo = seq.saturating_sub(half).max(1);
-                let hi = seq.saturating_add(half).min(SEEDED_HEAD);
-                Reply::Messages((lo..=hi).map(message).collect())
-            }
-            Query::Roots { .. } => Reply::Roots(::chat::PageResponse {
-                height: 1,
-                items: (1..=SEEDED_HEAD)
-                    .filter(|seq| !seq.is_multiple_of(3))
-                    .map(message)
-                    .collect(),
-                next: None,
-            }),
-            Query::Members { .. } => Reply::Members(page(Vec::new())),
-            query => panic!("unexpected chat query: {query:?}"),
-        })
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Accounts { .. } => Reply::Accounts(page(Vec::new())),
+                Query::Channels { .. } => {
+                    let Some(head) = listed else {
+                        return Err(wire::Error::new("unavailable", "the node is busy"));
+                    };
+                    Reply::Channels(page(vec![channel("general", "General", head)]))
+                }
+                Query::MessagesAround { seq, page, .. } => {
+                    let half = page.limit() / 2;
+                    let lo = seq.saturating_sub(half).max(1);
+                    let hi = seq.saturating_add(half).min(SEEDED_HEAD);
+                    Reply::Messages((lo..=hi).map(message).collect())
+                }
+                Query::Roots { .. } => Reply::Roots(::chat::PageResponse {
+                    height: 1,
+                    items: (1..=SEEDED_HEAD)
+                        .filter(|seq| !seq.is_multiple_of(3))
+                        .map(message)
+                        .collect(),
+                    next: None,
+                }),
+                Query::Members { .. } => Reply::Members(page(Vec::new())),
+                query => panic!("unexpected chat query: {query:?}"),
+            })
+        }));
     let view = cx.open::<Chat>();
     (cx, view)
 }

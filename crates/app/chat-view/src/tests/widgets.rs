@@ -116,12 +116,13 @@ fn chat_code() -> Vec<u8> {
 // The programs, files and blobs a widget reads, answered: chat runs from
 // `CODE`, files holds `held`.
 fn serve(cx: &TestAppContext, rooms: Rooms, held: Held) {
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Channels { .. } => Reply::Channels(page(rooms.borrow().clone())),
-            query => chat_reply(query),
-        })
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Channels { .. } => Reply::Channels(page(rooms.borrow().clone())),
+                query => chat_reply(query),
+            })
+        }));
     cx.host().handle::<Ask<programs::Programs>>(|query| {
         Ok(match query {
             programs::Query::Program(name) => programs::Reply::Program {
@@ -219,25 +220,26 @@ fn a_cursor_reads_every_page_putting_each_next_where_it_says() {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
     serve(&cx, rooms.clone(), held);
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        let all = rooms.borrow();
-        let (items, next) = match query {
-            Query::Channels { page } if page.after.is_none() => {
-                (all[..1].to_vec(), Some(vec![0xab]))
-            }
-            Query::Channels { page } => {
-                assert_eq!(page.after, Some(vec![0xab]));
-                (all[1..].to_vec(), None)
-            }
-            query => return Ok(chat_reply(query)),
-        };
-        let height = 1;
-        Ok(Reply::Channels(::chat::PageResponse {
-            height,
-            items,
-            next,
-        }))
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            let all = rooms.borrow();
+            let (items, next) = match query {
+                Query::Channels { page } if page.after.is_none() => {
+                    (all[..1].to_vec(), Some(vec![0xab]))
+                }
+                Query::Channels { page } => {
+                    assert_eq!(page.after, Some(vec![0xab]));
+                    (all[1..].to_vec(), None)
+                }
+                query => return Ok(chat_reply(query)),
+            };
+            let height = 1;
+            Ok(Reply::Channels(::chat::PageResponse {
+                height,
+                items,
+                next,
+            }))
+        }));
     let _view = cx.open::<Chat>();
     seat(&mut cx);
     cx.simulate_click("chat-sidebar-channel-general");

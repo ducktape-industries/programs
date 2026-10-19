@@ -241,29 +241,30 @@ fn landed_rows_read_who_reacted_and_a_block_reads_them_again() {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
     let by = who.clone();
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Roots { channel_id, .. } if channel_id == "general" => {
-                let mut row = row(1, 7, "hello");
-                row.reactions = vec![chat::Reaction {
-                    emoji: "👍".into(),
-                    count: 1,
-                    reacted_by_me: false,
-                }];
-                Reply::Roots(page(vec![row]))
-            }
-            Query::Reactors { seqs, .. } => Reply::Reactors(
-                seqs.into_iter()
-                    .map(|seq| chat::ReactedBy {
-                        seq,
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { channel_id, .. } if channel_id == "general" => {
+                    let mut row = row(1, 7, "hello");
+                    row.reactions = vec![chat::Reaction {
                         emoji: "👍".into(),
-                        by: by.borrow().clone(),
-                    })
-                    .collect(),
-            ),
-            query => chat_reply(query),
-        })
-    });
+                        count: 1,
+                        reacted_by_me: false,
+                    }];
+                    Reply::Roots(page(vec![row]))
+                }
+                Query::Reactors { seqs, .. } => Reply::Reactors(
+                    seqs.into_iter()
+                        .map(|seq| chat::ReactedBy {
+                            seq,
+                            emoji: "👍".into(),
+                            by: by.borrow().clone(),
+                        })
+                        .collect(),
+                ),
+                query => chat_reply(query),
+            })
+        }));
     cx.open::<Chat>();
     seat(&mut cx);
     cx.simulate_click("chat-sidebar-channel-general");

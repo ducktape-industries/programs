@@ -14,25 +14,26 @@ fn dm_id(peer: u64) -> String {
 }
 
 fn answer(cx: &TestAppContext, rooms: Vec<ChannelInfo>, newest: Vec<(u64, u64)>) {
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Channels { .. } => Reply::Channels(page(rooms.clone())),
-            Query::MessagesAround {
-                channel_id, seq, ..
-            } => {
-                let time = newest
-                    .iter()
-                    .find(|(peer, _)| dm_id(*peer) == channel_id)
-                    .map_or(0, |(_, time)| *time);
-                Reply::Messages(vec![MsgRow {
-                    channel_id,
-                    time,
-                    ..row(seq, 8, "said")
-                }])
-            }
-            query => chat_reply(query),
-        })
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Channels { .. } => Reply::Channels(page(rooms.clone())),
+                Query::MessagesAround {
+                    channel_id, seq, ..
+                } => {
+                    let time = newest
+                        .iter()
+                        .find(|(peer, _)| dm_id(*peer) == channel_id)
+                        .map_or(0, |(_, time)| *time);
+                    Reply::Messages(vec![MsgRow {
+                        channel_id,
+                        time,
+                        ..row(seq, 8, "said")
+                    }])
+                }
+                query => chat_reply(query),
+            })
+        }));
 }
 
 fn desk(rooms: Vec<ChannelInfo>, newest: Vec<(u64, u64)>) -> (TestAppContext, Entity<Chat>) {

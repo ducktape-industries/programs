@@ -26,7 +26,7 @@ fn agent(number: u64, name: &str, calls: Option<&str>) -> chat::Profile {
 fn agents() -> (TestAppContext, Entity<Chat>) {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
-    cx.host().handle::<Ask<::chat::Chat>>(|query| {
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
         Ok(match query {
             Query::Accounts { .. } => Reply::Accounts(page(vec![
                 person(7, "eddy"),
@@ -50,7 +50,7 @@ fn agents() -> (TestAppContext, Entity<Chat>) {
             ])),
             query => chat_reply(query),
         })
-    });
+    }));
     cx.host().handle::<Ask<access::Access>>(|query| {
         Ok(match query {
             access::Query::List { program, key } if program == harness::PROGRAM => {

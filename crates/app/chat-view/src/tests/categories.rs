@@ -28,18 +28,13 @@ fn general_in(category: &str) -> Vec<ChannelInfo> {
 }
 
 fn answer(cx: &TestAppContext, rooms: Vec<ChannelInfo>) {
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Channels { .. } => Reply::Channels(page(rooms.clone())),
-            Query::Channel { channel_id } => Reply::Channel(
-                rooms
-                    .iter()
-                    .find(|room| room.channel.id == channel_id)
-                    .cloned(),
-            ),
-            query => chat_reply(query),
-        })
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Channels { .. } => Reply::Channels(page(rooms.clone())),
+                query => chat_reply(query),
+            })
+        }));
 }
 
 fn desk(rooms: Vec<ChannelInfo>) -> (TestAppContext, Entity<Chat>) {

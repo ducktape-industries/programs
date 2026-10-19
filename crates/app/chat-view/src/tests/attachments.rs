@@ -265,18 +265,19 @@ fn a_message_draws_its_picture_and_saves_its_other_files_through_the_host() {
         file("tape.png", "image/png"),
         file("plan.pdf", "application/pdf"),
     ];
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Roots { .. } => Reply::Roots(page(vec![
-                row(1, 7, "hello"),
-                MsgRow {
-                    blocks: blocks.clone(),
-                    ..row(3, 8, "")
-                },
-            ])),
-            query => chat_reply(query),
-        })
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![
+                    row(1, 7, "hello"),
+                    MsgRow {
+                        blocks: blocks.clone(),
+                        ..row(3, 8, "")
+                    },
+                ])),
+                query => chat_reply(query),
+            })
+        }));
     cx.host()
         .stream::<Changes<::chat::Chat>>()
         .send(block(4, posted("general")));

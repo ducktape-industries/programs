@@ -42,23 +42,26 @@ fn a_peers_name_gained_later_replaces_its_numeric_fallback() {
     let has_gary = known.clone();
     let mut cx = TestAppContext::new();
     quiet_methods(&mut cx);
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Accounts { .. } => {
-                let mut accounts = vec![person(7, "eddy")];
-                if has_gary.get() {
-                    accounts.push(person(9, "gary"));
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Accounts { .. } => {
+                    let mut accounts = vec![person(7, "eddy")];
+                    if has_gary.get() {
+                        accounts.push(person(9, "gary"));
+                    }
+                    Reply::Accounts(page(accounts))
                 }
-                Reply::Accounts(page(accounts))
-            }
-            Query::Channels { .. } => Reply::Channels(page(vec![channel("general", "General", 2)])),
-            Query::Roots { .. } => {
-                Reply::Roots(page(vec![row(1, 7, "hello"), row(2, 9, "hi from gary")]))
-            }
-            Query::Members { .. } => Reply::Members(page(Vec::new())),
-            query => panic!("unexpected chat query: {query:?}"),
-        })
-    });
+                Query::Channels { .. } => {
+                    Reply::Channels(page(vec![channel("general", "General", 2)]))
+                }
+                Query::Roots { .. } => {
+                    Reply::Roots(page(vec![row(1, 7, "hello"), row(2, 9, "hi from gary")]))
+                }
+                Query::Members { .. } => Reply::Members(page(Vec::new())),
+                query => panic!("unexpected chat query: {query:?}"),
+            })
+        }));
     cx.host()
         .handle::<Submit<::chat::Chat>>(|_| Ok(view::testing::applied(Vec::new())));
 
@@ -103,7 +106,7 @@ fn a_peers_name_gained_later_replaces_its_numeric_fallback() {
 fn the_roster_is_read_past_its_first_page() {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
-    cx.host().handle::<Ask<::chat::Chat>>(|query| {
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
         Ok(match query {
             Query::Accounts { page } => {
                 let start = page.after.map_or(1, |after| after[0] as u64 * 256 + 1);
@@ -120,7 +123,7 @@ fn the_roster_is_read_past_its_first_page() {
             Query::Channels { .. } => Reply::Channels(page(Vec::new())),
             query => panic!("unexpected chat query: {query:?}"),
         })
-    });
+    }));
     let view = cx.open::<Chat>();
     seat(&mut cx);
     view.read(|chat| {

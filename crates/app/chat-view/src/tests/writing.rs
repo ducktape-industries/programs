@@ -24,10 +24,9 @@ fn a_send_shows_greyed_then_lands_and_a_refusal_is_a_banner() {
     // the program took it; the re-read after the send does not serve it yet
     assert!(cx.has_text("on its way") && greyed(&cx, "message-1"));
     // its block lands, and the rows read again serve it
-    cx.host().handle::<Ask<::chat::Chat>>(|query| {
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
         Ok(match query {
             Query::Channels { .. } => Reply::Channels(page(vec![channel("general", "General", 3)])),
-            Query::Channel { .. } => Reply::Channel(Some(channel("general", "General", 3))),
             Query::Roots { .. } => Reply::Roots(page(vec![
                 row(1, 7, "hello"),
                 row(2, 8, "**hi** there"),
@@ -38,7 +37,7 @@ fn a_send_shows_greyed_then_lands_and_a_refusal_is_a_banner() {
             ])),
             query => panic!("unexpected chat query: {query:?}"),
         })
-    });
+    }));
     cx.host()
         .stream::<Changes<::chat::Chat>>()
         .send(block(4, posted("general")));
@@ -116,10 +115,9 @@ fn a_post_shows_greyed_while_its_submit_is_in_flight() {
 fn a_greyed_post_keeps_its_place_and_height_when_it_lands() {
     let (mut cx, view, _) = post_in_flight("on its way");
     let pending = cx.style("chat-message-message-1-card").clone();
-    cx.host().handle::<Ask<::chat::Chat>>(|query| {
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
         Ok(match query {
             Query::Channels { .. } => Reply::Channels(page(vec![channel("general", "General", 3)])),
-            Query::Channel { .. } => Reply::Channel(Some(channel("general", "General", 3))),
             Query::Roots { .. } => Reply::Roots(page(vec![
                 row(1, 7, "hello"),
                 row(2, 8, "**hi** there"),
@@ -130,7 +128,7 @@ fn a_greyed_post_keeps_its_place_and_height_when_it_lands() {
             ])),
             query => panic!("unexpected chat query: {query:?}"),
         })
-    });
+    }));
     cx.host()
         .stream::<Changes<::chat::Chat>>()
         .send(block(4, posted("general")));
@@ -153,10 +151,9 @@ fn a_post_the_room_shows_before_its_receipt_is_shown_once() {
     use view::methods::Method;
     let (mut cx, view, receipt) = post_in_flight("on its way");
     // its block lands first, and the re-read serves it
-    cx.host().handle::<Ask<::chat::Chat>>(|query| {
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
         Ok(match query {
             Query::Channels { .. } => Reply::Channels(page(vec![channel("general", "General", 3)])),
-            Query::Channel { .. } => Reply::Channel(Some(channel("general", "General", 3))),
             Query::Roots { .. } => Reply::Roots(page(vec![
                 row(1, 7, "hello"),
                 row(2, 8, "**hi** there"),
@@ -169,7 +166,7 @@ fn a_post_the_room_shows_before_its_receipt_is_shown_once() {
             Query::Members { .. } => Reply::Members(page(Vec::new())),
             query => panic!("unexpected chat query: {query:?}"),
         })
-    });
+    }));
     cx.host()
         .stream::<Changes<::chat::Chat>>()
         .send(block(4, posted("general")));
@@ -198,21 +195,22 @@ fn a_window_opened_around_a_hit_settles_a_post_it_serves() {
         message_id: "message-1".into(),
         ..row(3, 7, "on its way")
     };
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Search { .. } => Reply::Hits(MessageHits {
-                hits: vec![row(1, 7, "hello")],
-                capped: false,
-            }),
-            Query::MessagesAround { .. } => Reply::Messages(vec![
-                row(1, 7, "hello"),
-                row(2, 8, "**hi** there"),
-                landed(),
-            ]),
-            Query::Members { .. } => Reply::Members(page(Vec::new())),
-            query => panic!("unexpected chat query: {query:?}"),
-        })
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Search { .. } => Reply::Hits(MessageHits {
+                    hits: vec![row(1, 7, "hello")],
+                    capped: false,
+                }),
+                Query::MessagesAround { .. } => Reply::Messages(vec![
+                    row(1, 7, "hello"),
+                    row(2, 8, "**hi** there"),
+                    landed(),
+                ]),
+                Query::Members { .. } => Reply::Members(page(Vec::new())),
+                query => panic!("unexpected chat query: {query:?}"),
+            })
+        }));
     cx.simulate_input("chat-sidebar-search", "hello");
     cx.simulate_submit("chat-sidebar-search");
     cx.run_until_parked();

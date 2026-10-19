@@ -131,7 +131,7 @@ fn quiet_methods(cx: &mut TestAppContext) {
 fn configure(cx: &mut TestAppContext) {
     quiet_methods(cx);
     cx.host()
-        .handle::<Ask<::chat::Chat>>(|query| Ok(chat_reply(query)));
+        .handle::<Ask<::chat::Chat>>(rooms_alone(|query| Ok(chat_reply(query))));
     // the one agent, eddy's own, answers only him
     cx.host().handle::<Ask<access::Access>>(|query| {
         Ok(match query {
@@ -145,6 +145,30 @@ fn configure(cx: &mut TestAppContext) {
     });
     cx.host()
         .handle::<Submit<::chat::Chat>>(|_| Ok(view::testing::applied(Vec::new())));
+}
+
+// A test host's chat answers with `Channel` answered as its own `Channels` lists the room: the
+// read a block that writes a room makes (`notifier::Moved`). Every fake here is wrapped in it, so
+// none needs an arm of its own.
+fn rooms_alone(
+    mut answer: impl FnMut(Query) -> Result<Reply, view::host::Error> + 'static,
+) -> impl FnMut(Query) -> Result<Reply, view::host::Error> + 'static {
+    move |query| match query {
+        Query::Channel { channel_id } => {
+            let every = Query::Channels {
+                page: chat::PageRequest::default(),
+            };
+            let Reply::Channels(rooms) = answer(every)? else {
+                unreachable!("Channels answers Channels")
+            };
+            let room = rooms
+                .items
+                .into_iter()
+                .find(|room| room.channel.id == channel_id);
+            Ok(Reply::Channel(room))
+        }
+        query => answer(query),
+    }
 }
 
 /// What the fake chat program answers: three rooms, two rows in `general`
@@ -176,19 +200,6 @@ fn chat_reply(query: Query) -> Reply {
             channel("dm-7-8", "dm", 1),
             channel("forge:web:3", "Review web#3", 2),
         ])),
-        Query::Channel { channel_id } => {
-            let every = Query::Channels {
-                page: chat::PageRequest::default(),
-            };
-            let Reply::Channels(rooms) = chat_reply(every) else {
-                unreachable!()
-            };
-            let room = rooms
-                .items
-                .into_iter()
-                .find(|room| room.channel.id == channel_id);
-            Reply::Channel(room)
-        }
         Query::Roots { channel_id, .. } => Reply::Roots(page(if channel_id == "general" {
             vec![row(1, 7, "hello"), row(2, 8, "**hi** there")]
         } else {
@@ -236,50 +247,51 @@ fn threaded(cx: &TestAppContext, head: u64, thread: impl Fn(u64) -> Option<u64> 
         height: seq,
         ..row(seq, 7 + seq % 2, &format!("row {seq}"))
     };
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Accounts { .. } => Reply::Accounts(page(Vec::new())),
-            Query::Channels { .. } => {
-                Reply::Channels(page(vec![channel("general", "General", head)]))
-            }
-            Query::MessagesAround { seq, page, .. } => {
-                let half = page.limit() / 2;
-                let lo = seq.saturating_sub(half).max(1);
-                let hi = seq.saturating_add(half).min(head);
-                Reply::Messages((lo..=hi).map(&message).collect())
-            }
-            Query::Roots { .. } => Reply::Roots(::chat::PageResponse {
-                height: 1,
-                items: (1..=head)
-                    .map(&message)
-                    .filter(|row| row.thread.is_none())
-                    .collect(),
-                next: None,
-            }),
-            Query::Thread { root_seq, page, .. } => {
-                let after = page.after.as_deref().map_or(root_seq, |after| {
-                    u64::from_le_bytes(after.try_into().expect("a seq"))
-                });
-                let mut replies = (after + 1..=head)
-                    .map(&message)
-                    .filter(|row| row.thread == Some(root_seq));
-                let items: Vec<MsgRow> = replies.by_ref().take(page.limit() as usize).collect();
-                let more = replies.next().is_some();
-                let next = items.last().filter(|_| more);
-                let next = next.map(|row| row.seq.to_le_bytes().to_vec());
-                Reply::Thread {
-                    root: Some(message(root_seq)),
-                    replies: ::chat::PageResponse {
-                        height: 1,
-                        items,
-                        next,
-                    },
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Accounts { .. } => Reply::Accounts(page(Vec::new())),
+                Query::Channels { .. } => {
+                    Reply::Channels(page(vec![channel("general", "General", head)]))
                 }
-            }
-            Query::Members { .. } => Reply::Members(page(Vec::new())),
-            query => chat_reply(query),
-        })
-    });
+                Query::MessagesAround { seq, page, .. } => {
+                    let half = page.limit() / 2;
+                    let lo = seq.saturating_sub(half).max(1);
+                    let hi = seq.saturating_add(half).min(head);
+                    Reply::Messages((lo..=hi).map(&message).collect())
+                }
+                Query::Roots { .. } => Reply::Roots(::chat::PageResponse {
+                    height: 1,
+                    items: (1..=head)
+                        .map(&message)
+                        .filter(|row| row.thread.is_none())
+                        .collect(),
+                    next: None,
+                }),
+                Query::Thread { root_seq, page, .. } => {
+                    let after = page.after.as_deref().map_or(root_seq, |after| {
+                        u64::from_le_bytes(after.try_into().expect("a seq"))
+                    });
+                    let mut replies = (after + 1..=head)
+                        .map(&message)
+                        .filter(|row| row.thread == Some(root_seq));
+                    let items: Vec<MsgRow> = replies.by_ref().take(page.limit() as usize).collect();
+                    let more = replies.next().is_some();
+                    let next = items.last().filter(|_| more);
+                    let next = next.map(|row| row.seq.to_le_bytes().to_vec());
+                    Reply::Thread {
+                        root: Some(message(root_seq)),
+                        replies: ::chat::PageResponse {
+                            height: 1,
+                            items,
+                            next,
+                        },
+                    }
+                }
+                Query::Members { .. } => Reply::Members(page(Vec::new())),
+                query => chat_reply(query),
+            })
+        }));
 }
 
 // The row `pane`'s list was last scrolled to: where it opened, until the
