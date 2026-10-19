@@ -17,6 +17,10 @@ pub const MODELS: Map<String, Owned<StoredModel>> = Map::new("model/");
 // a model's `compact_at` default, beside its record; `SetCompactAt` rewrites the record too, so
 // the record's policy governs it
 pub const COMPACT_AT: Map<String, u64> = Map::new("compact/").shared();
+// Who may start an agent's conversations, of the kind `harness.agent-conversation`: its manager's
+// once they claim it (`ClaimConversations`). `NewThread` and `ForkThread` write it, so its policy
+// decides them; an agent whose manager never claimed it has none, and stays open.
+pub const CONVERSATIONS: Map<AccountNumber, Owned<Conversations>> = Map::new("conversations/");
 // the context window a thread's turn learned for a model: any agent's turn writes it, so it lives
 // beside the owned record (a record stored before it still carries the window it had)
 pub const WINDOWS: Map<String, Window> = Map::new("model-window/").shared();
@@ -99,6 +103,17 @@ pub struct StoredModel {
     pub service: String,
     pub name: String,
     pub window: Window,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Conversations {
+    pub manager: AccountNumber,
+    // how many conversations were started or forked since it was claimed
+    pub rev: u64,
+}
+
+impl Kind for Conversations {
+    const KIND: &'static str = "harness.agent-conversation";
 }
 
 impl Kind for StoredModel {
@@ -337,9 +352,11 @@ pub fn written(key: &[u8]) -> Option<Written> {
     model.then_some(Written::Model)
 }
 
-// Every table here but MODELS is general data: only this program's code governs it.
+// Every table here but MODELS and CONVERSATIONS is general data: only this program's code
+// governs it.
 pub(crate) const TABLES: &[::program::Table] = &[
     MODELS.table(),
+    CONVERSATIONS.table(),
     COMPACT_AT.table(),
     WINDOWS.table(),
     LAST.table(),

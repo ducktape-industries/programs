@@ -350,8 +350,9 @@ neither is owned with no kind. This repo's programs declare their tables
 shared, and move each kind of owned item over one at a time (forge's reviews,
 `forge.review`, egress's services, `egress.service`, harness's models,
 `harness.model`, chat's channels and messages, `chat.channel` and
-`chat.message`, and forge's changes and repositories, `forge.change` and
-`forge.repo`, so far). When others' ops write an item's record (a change's reviews, close
+`chat.message`, forge's changes and repositories, `forge.change` and
+`forge.repo`, and who starts an agent's conversations,
+`harness.agent-conversation`). When others' ops write an item's record (a change's reviews, close
 and merge), the owned row is a small row of its own beside the shared record
 (forge's `Authorship`), which the item's own ops write.
 

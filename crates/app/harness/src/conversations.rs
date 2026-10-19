@@ -1,14 +1,16 @@
 //! An agent's conversations: a canonical thread that hears every input whose place no other is
 //! bound to, and threads anyone binds to a chat channel or thread (`OpenThread`). A canonical
 //! thread is renewed or forked by its manager, and closes once idle and no longer current.
-use ::program::{Error, ExecCtx, Principal, QueryCtx, already_exists, not_found, unexpected_reply};
+use ::program::{
+    Error, ExecCtx, Principal, QueryCtx, already_exists, not_found, unauthorized, unexpected_reply,
+};
 use abi::role::identity::AccountNumber;
 use store::PageRequest;
 
 use crate::agents::{Agent, agent_named, managed, thread};
 use crate::state::{
-    BOUND, BY_AGENT, Binding, COUNT, CURRENT, FRAMES, PLACES, THREADS, TOPICS, WITHHELD,
-    newest_first,
+    BOUND, BY_AGENT, Binding, CONVERSATIONS, COUNT, CURRENT, Conversations, FRAMES, PLACES,
+    THREADS, TOPICS, WITHHELD, newest_first,
 };
 use crate::{Asking, Body, Context, Frame, Place, Role, Said, ThreadRow};
 
@@ -143,8 +145,40 @@ pub(crate) fn retire(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     Ok(())
 }
 
+// The agent's manager claims who may start its conversations: the row becomes theirs, and its
+// policy decides each `NewThread` and `ForkThread` from then on. Claiming it again changes nothing.
+pub(crate) fn claim(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
+    let agent = agent_named(ctx, number)?;
+    let by = ctx.sender_account()?;
+    if by != agent.manager {
+        return Err(unauthorized(format!(
+            "only agent {number}'s manager, account {}, claims who starts its conversations",
+            agent.manager
+        )));
+    }
+    if CONVERSATIONS.has(ctx, &number) {
+        return Ok(());
+    }
+    let row = Conversations {
+        manager: by,
+        rev: 0,
+    };
+    CONVERSATIONS.put(ctx, &number, &row);
+    Ok(())
+}
+
+// The agent's conversations row, written again as one starts: a no-op until its manager claims it.
+fn started(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
+    if let Some(mut row) = CONVERSATIONS.get(ctx, &number)? {
+        row.rev += 1;
+        CONVERSATIONS.put(ctx, &number, &row);
+    }
+    Ok(())
+}
+
 pub(crate) fn new_thread(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
     let agent = managed(ctx, number)?;
+    started(ctx, number)?;
     let previous = current(ctx, number)?;
     let row = open(ctx, &agent, String::new(), &Opening::Fresh)?;
     THREADS.put(ctx, &row.id, &row);
@@ -157,6 +191,7 @@ pub(crate) fn new_thread(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Err
 
 pub(crate) fn fork_thread(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
     let agent = managed(ctx, number)?;
+    started(ctx, number)?;
     let Some(from) = current(ctx, number)? else {
         return Err(not_found(format!(
             "agent {number} has no conversation to fork"

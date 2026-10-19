@@ -129,6 +129,7 @@ impl Awaiting for Harness {
             Op::PodWait { wait } => pod_wait(&ctx, wait).await,
             Op::PodEvent { wait, event } => pod_event(&ctx, wait, event).await,
             Op::Forged(event) => waits::forged(&ctx, event).await,
+            Op::ClaimConversations { agent } => crate::conversations::claim(&ctx, agent),
         }
     }
 }

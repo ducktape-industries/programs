@@ -125,6 +125,9 @@ pub enum Op {
         event: Event,
     },
     Forged(forge::Watched),
+    ClaimConversations {
+        agent: AccountNumber,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1044,6 +1047,10 @@ pub fn describe(op: &Op) -> describe::Description {
             vec![field("data", Value::count(event.data.len() as u64))],
         ),
         Op::Forged(_) => ("Hear a ref or a change forge moved".to_owned(), Vec::new()),
+        Op::ClaimConversations { agent } => (
+            format!("Claim who starts agent {agent}'s conversations"),
+            vec![field("agent", Value::count(*agent))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -1079,6 +1086,7 @@ fn op_variants_only_append() {
             "PodWait",
             "PodEvent",
             "Forged",
+            "ClaimConversations",
         ]
     );
 }
