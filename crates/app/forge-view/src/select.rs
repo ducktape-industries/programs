@@ -225,6 +225,21 @@ impl Forge {
         }
     }
 
+    // whether forge holds the open repository archived, the badge its header wears
+    pub(crate) fn archived_query(&self) -> Query {
+        Query::Archived {
+            repo: self.repo_name(),
+        }
+    }
+
+    // a read that has not landed, or was refused, draws no badge
+    pub(crate) fn archived(&self) -> bool {
+        matches!(
+            self.ready(&self.archived_query()),
+            Some(Reply::Archived { archived: true, .. })
+        )
+    }
+
     pub(crate) fn writers_stage(&self) -> Stage<'_, Ownership> {
         let slot = self
             .nav

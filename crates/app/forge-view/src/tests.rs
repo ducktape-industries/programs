@@ -53,6 +53,8 @@ fn answer(query: &Query, mode: &str) -> Reply {
         Query::Repos { .. } if mode == "empty" => reply("repos-empty"),
         Query::Repos { .. } => reply("repos"),
         Query::Repo { .. } => reply("repo"),
+        Query::Archived { .. } if mode == "archived" => reply("archived"),
+        Query::Archived { .. } => reply("unarchived"),
         Query::Refs {
             page: PageRequest { after: None, .. },
             ..
@@ -2891,11 +2893,20 @@ fn a_block_costs_the_reads_of_the_tables_it_wrote_to() {
     assert_eq!(
         all.keys().collect::<Vec<_>>(),
         [
-            "Activity", "Blob", "Changes", "Judgment", "Refs", "Repo", "Repos", "Tree"
+            "Activity", "Archived", "Blob", "Changes", "Judgment", "Refs", "Repo", "Repos", "Tree"
         ],
         "{all:?}"
     );
-    assert_eq!(all.values().sum::<usize>(), 10);
+    assert_eq!(all.values().sum::<usize>(), 11);
+    let archived = forge::tables::ARCHIVED.key(&"project".to_owned());
+    let archiving = costs(&mut costed, "Readme tab, the repo archived", |c| {
+        c.heads.forge.send(block(105, vec![archived]))
+    });
+    assert_eq!(
+        archiving.keys().collect::<Vec<_>>(),
+        ["Archived"],
+        "the badge's read follows an archive: {archiving:?}"
+    );
     costed.cx.simulate_click("forge-tab-changes");
     costed.cx.run_until_parked();
     costed.cx.simulate_click("forge-filter-judgment");
@@ -3177,4 +3188,14 @@ fn a_long_ref_name_is_cut_in_the_middle_and_whole_on_hover() {
         format!("{overflow:?}").starts_with("Some(TruncateMiddle("),
         "{overflow:?}"
     );
+}
+
+#[test]
+fn an_archived_repository_wears_its_badge_and_a_live_one_none() {
+    let (cx, _) = opened("archived");
+    assert!(cx.find("forge-repo-archived").is_some(), "{:?}", cx.texts());
+    assert!(cx.has_text("Archived"), "{:?}", cx.texts());
+    assert!(cx.has_text("project"), "a link still opens it");
+    let (cx, _) = opened("default");
+    assert!(cx.find("forge-repo-archived").is_none());
 }

@@ -80,3 +80,7 @@ fixtures`; without the variable the test must reproduce the committed bytes.
 | `change-merged` | `Query` → `Reply` | Merged record and result OID. |
 | `judgment-conversation` | `Query` → `Reply` | Chat-authored thread with a reply; no forge review ID. |
 | `refused-capacity` | `Query` → `Refusal` | Complete commit walk exceeds the founded bound. |
+| `unarchived` | `Query` → `Reply` | `Archived` of a repository that is not archived. |
+| `archived` | `Query` → `Reply` | `Archived` once `Archive` archived it. |
+| `archived-repos` | `Query` → `Reply` | `ArchivedRepos`: the archived repository. |
+| `repos-archived` | `Query` → `Reply` | `Repos` with the archived repository left out. |

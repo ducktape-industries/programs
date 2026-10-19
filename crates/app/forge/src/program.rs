@@ -78,6 +78,7 @@ impl Program for Forge {
         );
         let actor = &Principal::Account(ctx.sender_account()?);
         let governed = crate::ops::governed(ctx, &op).map(str::to_owned);
+        crate::ops::writable(ctx, &op)?;
         let reply = match op {
             Op::Watch { deliver } => return watch(ctx, deliver),
             Op::Create { repo, hash } => create(ctx, actor, &repo, hash).map(|()| None),
@@ -218,6 +219,9 @@ impl Program for Forge {
             Op::Dequeue { repo, n } => dequeue(ctx, &repo, n).map(|()| None),
             Op::AdoptOwners { kind, after, limit } => {
                 crate::adopt::adopt_owners(ctx, &kind, after, limit).map(|()| None)
+            }
+            Op::Archive { repo, archived } => {
+                crate::ops::archive(ctx, &repo, archived).map(|()| None)
             }
         }?;
         if let Some(repo) = &governed {
@@ -375,6 +379,14 @@ impl Program for Forge {
             Query::Queue { repo, branch, page } => Reply::Queue {
                 height,
                 page: crate::queue::queue(ctx, repo, branch, &listing(page)?)?,
+            },
+            Query::Archived { repo } => Reply::Archived {
+                height,
+                archived: crate::queries::archived(ctx, repo)?,
+            },
+            Query::ArchivedRepos { page } => Reply::ArchivedRepos {
+                height,
+                page: crate::queries::archived_repos(ctx, &listing(page)?)?,
             },
         })
     }

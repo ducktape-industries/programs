@@ -78,6 +78,8 @@ pub const QUEUE: Map<(String, Vec<u8>, u64), QueueEntry> = Map::new("e/").shared
 pub const QUEUED: Map<(String, u64), (Vec<u8>, u64)> = Map::new("g/").shared();
 // The last place a queue gave out.
 pub const QUEUE_SEQ: Item<u64> = Item::new("queue-seq").shared();
+// The archived repositories, by name. `ACTIVITY` holds none of them, so `Repos` lists none.
+pub const ARCHIVED: Set<String> = Set::new("h/").shared();
 
 /// Stored state that is not what forge wrote: an operator's problem.
 pub(crate) fn storage(sentence: impl Into<String>) -> Error {
@@ -107,15 +109,22 @@ pub fn load_repo(ctx: &QueryCtx, name: &str) -> Result<Repo, Error> {
         .ok_or_else(|| not_found(format!("no repository named {name}")))
 }
 
-/// Stores the record and moves it in the activity index, so the index
-/// holds exactly one row per repository.
+// Stores the record and moves it in the activity index, so the index holds exactly one row per
+// repository that is not archived.
 pub fn save_repo(ctx: &ExecCtx, name: &str, repo: &Repo) -> Result<(), Error> {
     if let Some(old) = REPOS.get(ctx, &name.to_owned())? {
         ACTIVITY.remove(ctx, &(newest_first(old.last_activity), name.to_owned()));
     }
-    ACTIVITY.insert(ctx, &(newest_first(repo.last_activity), name.to_owned()));
+    if !archived(ctx, name) {
+        ACTIVITY.insert(ctx, &(newest_first(repo.last_activity), name.to_owned()));
+    }
     REPOS.put(ctx, &name.to_owned(), repo);
     Ok(())
+}
+
+// Whether the repository `name` is archived.
+pub fn archived(ctx: &QueryCtx, name: &str) -> bool {
+    ARCHIVED.has(ctx, &name.to_owned())
 }
 
 /// How many ops forge has accepted so far (0 before any).
@@ -414,4 +423,5 @@ pub(crate) const TABLES: &[::program::Table] = &[
     QUEUE.table(),
     QUEUED.table(),
     QUEUE_SEQ.table(),
+    ARCHIVED.table(),
 ];

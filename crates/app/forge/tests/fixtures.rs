@@ -592,6 +592,27 @@ fn replay(tape: &mut Tape) {
             page: PageRequest::first(1),
         },
     );
+    tape.capture(&rig, "unarchived", Query::Archived { repo: REPO.into() });
+    rig.execute(&Op::Archive {
+        repo: REPO.into(),
+        archived: true,
+    })
+    .unwrap();
+    tape.capture(&rig, "archived", Query::Archived { repo: REPO.into() });
+    tape.capture(
+        &rig,
+        "archived-repos",
+        Query::ArchivedRepos {
+            page: PageRequest::first(2),
+        },
+    );
+    tape.capture(
+        &rig,
+        "repos-archived",
+        Query::Repos {
+            page: PageRequest::first(2),
+        },
+    );
 }
 
 #[test]

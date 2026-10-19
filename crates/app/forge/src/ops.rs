@@ -17,9 +17,9 @@ use crate::contract::{
 };
 use crate::objects::{ObjectWriter, object_not_held};
 use crate::state::{
-    PROTECTED, delete_ref, load_bounds, load_change, load_ref, load_refs, load_repo, parse_oid,
-    protected, ref_key, repo_exists, repo_hash, save_bounds, save_repo, set_ref, sourced_by,
-    storage,
+    ARCHIVED, PROTECTED, delete_ref, load_bounds, load_change, load_ref, load_refs, load_repo,
+    parse_oid, protected, ref_key, repo_exists, repo_hash, save_bounds, save_repo, set_ref,
+    sourced_by, storage,
 };
 
 pub const PROGRAM: &str = "forge";
@@ -87,6 +87,32 @@ pub(crate) fn configure(ctx: &ExecCtx, name: &str, settings: Settings) -> Result
     save_repo(ctx, name, &repo)
 }
 
+// Archives the repository `name`, or restores it: an archived one leaves the activity index, so
+// `Repos` lists it no more, and every op on it but this one is refused (`writable`).
+pub(crate) fn archive(ctx: &ExecCtx, name: &str, archived: bool) -> Result<(), Error> {
+    let repo = load_repo(ctx, name)?;
+    let key = name.to_owned();
+    match (archived, crate::state::archived(ctx, name)) {
+        (true, true) => return Err(wrong_state(format!("{name} is archived already"))),
+        (false, false) => return Err(wrong_state(format!("{name} is not archived"))),
+        (true, false) => ARCHIVED.insert(ctx, &key),
+        (false, true) => ARCHIVED.remove(ctx, &key),
+    }
+    save_repo(ctx, name, &repo)
+}
+
+// Refuses, before it writes anything, an op on an archived repository: only `Archive` restores
+// one, and `Create` still says the name is taken.
+pub(crate) fn writable(ctx: &QueryCtx, op: &Op) -> Result<(), Error> {
+    let exempt = matches!(op, Op::Archive { .. } | Op::Create { .. });
+    match op.repo() {
+        Some(name) if !exempt && crate::state::archived(ctx, name) => Err(wrong_state(format!(
+            "{name} is archived: un-archive it (Archive with archived: false) to write to it"
+        ))),
+        _ => Ok(()),
+    }
+}
+
 pub(crate) fn retired() -> Error {
     unauthorized(
         "a repository's writers are its list in the access program: set it there, as the owner",
@@ -107,7 +133,8 @@ pub(crate) fn governed<'o>(ctx: &QueryCtx, op: &'o Op) -> Option<&'o str> {
         | Op::DeleteBranch { repo, .. }
         | Op::Enqueue { repo, .. }
         | Op::Dequeue { repo, .. }
-        | Op::Rebase { repo, .. } => Some(repo),
+        | Op::Rebase { repo, .. }
+        | Op::Archive { repo, .. } => Some(repo),
         Op::ChangeClose { repo, n } => {
             let sender = ctx.env().sender.clone();
             let authored = load_change(ctx, repo, *n)
@@ -131,7 +158,10 @@ pub(crate) fn governed<'o>(ctx: &QueryCtx, op: &'o Op) -> Option<&'o str> {
 
 pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
     let needs = match op {
-        Op::Configure { repo, .. } | Op::Protect { repo, .. } | Op::RequireChecks { repo, .. } => {
+        Op::Configure { repo, .. }
+        | Op::Protect { repo, .. }
+        | Op::RequireChecks { repo, .. }
+        | Op::Archive { repo, .. } => {
             vec![Need::write(settings_key(repo))]
         }
         Op::Push { repo, .. }

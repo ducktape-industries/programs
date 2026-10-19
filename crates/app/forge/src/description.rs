@@ -238,6 +238,13 @@ pub fn describe(op: &Op) -> Description {
             vec![change(n), field("head", Value::text(expected_head))],
         ),
         Op::Dequeue { repo, n } => ("Take change out of the queue", repo, vec![change(n)]),
+        Op::Archive { repo, archived } => {
+            let verb = match archived {
+                true => "Archive repository",
+                false => "Un-archive repository",
+            };
+            (verb, repo, Vec::new())
+        }
         Op::AdoptOwners { kind, .. } => {
             return Description {
                 title: format!("Record the owners of {kind} items"),

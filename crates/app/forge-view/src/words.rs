@@ -63,6 +63,9 @@ pub(crate) fn hash_kind(hash: abi::HashKind) -> &'static str {
 /// named Actions, not the More of the capsule beside them.
 pub(crate) const ACTIONS: &str = "Actions";
 
+// an archived repository's badge: it takes no writes until it is un-archived
+pub(crate) const ARCHIVED: &str = "Archived";
+
 // ---------------------------------------------------------------- reading
 
 pub(crate) const READING: &str = "Reading…";

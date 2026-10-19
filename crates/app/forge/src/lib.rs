@@ -53,9 +53,9 @@ pub use program::Forge;
 /// of `program.changes` plays back in a test to say which a block touched.
 pub mod tables {
     pub use crate::state::{
-        ACTIVITY, ARCHIVING, AUTHORED, AUTHORSHIP, BOUNDS, CHANGES, CUSTODY, INVOLVED, LOGGING,
-        MESSAGES, NUMBERS, PREVIEWS, PROTECTED, QUEUE, QUEUED, REFS, REPOS, REQUIRED, REVIEWS,
-        STATUSES, WATCHERS, WRITES,
+        ACTIVITY, ARCHIVED, ARCHIVING, AUTHORED, AUTHORSHIP, BOUNDS, CHANGES, CUSTODY, INVOLVED,
+        LOGGING, MESSAGES, NUMBERS, PREVIEWS, PROTECTED, QUEUE, QUEUED, REFS, REPOS, REQUIRED,
+        REVIEWS, STATUSES, WATCHERS, WRITES,
     };
 }
 
@@ -92,6 +92,7 @@ fn op_variants_only_append() {
             "Enqueue",
             "Dequeue",
             "AdoptOwners",
+            "Archive",
         ]
     );
 }

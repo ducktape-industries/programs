@@ -73,7 +73,8 @@ The cursor is bound to the original query arguments and height; changing only
 Filtered change/judgment pages can be empty **with a next cursor**: continue until
 `next == None`. Limits must be `1..=Bounds.page_size`; they are not silently clamped.
 
-Repos sort by descending activity height then name. Refs use byte-name order,
+Repos sort by descending activity height then name, and leave archived ones out
+(`ArchivedRepos` lists those, by name). Refs use byte-name order,
 trees use Git entry order, diffs use path-byte order, changes use ascending item
 number, and reviews use submission order. Judgment scans repo then item number.
 Log covers all parents, ordered by descending committer time then OID, matching
@@ -111,6 +112,8 @@ and decode a `forge::Reply` from the concatenated `Respond` bytes.
 | `Statuses { repo: r, commit: c, page }` | `page<CommitStatus>`: every status of `c`, by reporter then context, each with its state, url and height |
 | `Required { repo: r, page }` | `page<RequiredBranch>`: the branches with required checks, in byte-name order, each with its reporter and contexts |
 | `Queue { repo: r, branch: b"refs/heads/dev".to_vec(), page }` | `page<QueueEntry>`: the branch's merge queue, first in line first, each with its head when it joined and who queued it |
+| `Archived { repo: r }` | `archived`: whether the repository is archived (`Archive`) |
+| `ArchivedRepos { page }` | `page<RepoInfo>`: the archived repositories, which `Repos` leaves out, in name order |
 
 `Advertise` and `Upload` speak Git's own smart-HTTP framing, so they carry no
 Borsh height envelope. They are not UI list APIs. `Upload` answers `ls-refs`
@@ -189,7 +192,7 @@ A repository's writers are whoever its list in the access program allows, at
 `forge::repo_key(repo)`: anyone unless the owner sets a list there
 (`access::Op::Set`). `Push`, `Merge`, `SquashMerge`, `Stage`, `DeleteBranch` and
 a `ChangeClose` by anyone but the change's author need that key; `Configure`,
-`Protect` and `RequireChecks` need `forge::settings_key(repo)`, which follows the same list unless the
+`Protect`, `RequireChecks` and `Archive` need `forge::settings_key(repo)`, which follows the same list unless the
 owner sets one of its own. `Preview` and `Status` need no key: anyone previews an open
 change, and anyone reports a status, under their own account.
 Reviews remain appendable on closed/merged changes.
@@ -218,6 +221,7 @@ Closing is terminal; there is no reopen operation.
 | `Enqueue { repo: r, n: 1, expected_head: b }` | change 1 joins its target's merge queue; empty output |
 | `Dequeue { repo: r, n: 1 }` | change 1 leaves its queue; empty output |
 | `ArchiveEnded { repo: r, after: None, limit: 20 }` | archives the channels of ended changes numbered above `after`, `limit` numbers of them; `OpReply::ArchivedEnded { height, archived, next }` |
+| `Archive { repo: r, archived: true }` | archives the repository (`false`: restores it); empty output |
 
 A push's objects never ride inside its frame. The client puts git's pack as a
 blob of kind `pack` (`forge::PACK_KIND`) with `ducktape blob put FILE --kind
@@ -314,6 +318,21 @@ whoever queued it, when a required context goes `Failed` or `Errored`, when its 
 is refused (a conflict names its paths), or when its head moves; a change that merged or
 closed otherwise just leaves. Each op that moves a ref, ends or re-points a change,
 reports a status or changes what a branch requires moves the repository's queues on.
+
+### Archiving a repository
+
+`Archive { repo, archived: true }` archives a repository; the repository's policy
+decides it, as `Configure`'s does (`forge::settings_key(repo)`). An archived
+repository leaves `Repos` (its activity row goes, so pages stay whole) and is
+listed by `ArchivedRepos`; `Archived { repo }` says whether one is. forge refuses
+every op that names it, before writing anything, `wrong_state` ("<repo> is
+archived: un-archive it …"): pushes, stages, changes and reviews, merges, branch
+rules, statuses and previews alike, so its open changes stay as they are. `Create`
+of its name still answers that the name is taken. Every query answers as before,
+the git wire (`Advertise`, `Upload`, `Closure`) included, so a clone, a fetch or a
+pinned dependency keeps working. `Archive { archived: false }` restores it: it is
+listed again and takes writes again. Archiving an archived repository, or
+restoring one that is not, is `wrong_state`.
 
 ### Archiving a change's channel
 

@@ -14,7 +14,8 @@ use crate::contract::*;
 use crate::objects::ObjectStore;
 use crate::ops::{cap, refusal_of};
 use crate::state::{
-    ACTIVITY, PROTECTED, REFS, load_bounds, load_refs, load_repo, repo_hash, storage, writes,
+    ACTIVITY, ARCHIVED, PROTECTED, REFS, load_bounds, load_refs, load_repo, repo_hash, storage,
+    writes,
 };
 
 const AGENT: &[u8] = b"ducktape-forge";
@@ -22,6 +23,25 @@ const AGENT: &[u8] = b"ducktape-forge";
 /// Repositories, the most recently active first.
 pub(crate) fn repos(ctx: &QueryCtx, listing: &Listing) -> Result<PageResponse<RepoInfo>, Error> {
     ACTIVITY.page_of(ctx, &(), listing)?.try_map(|(_, name)| {
+        Ok(RepoInfo {
+            repo: load_repo(ctx, &name)?,
+            name,
+        })
+    })
+}
+
+// Whether the repository `name` is archived; a name no repository has is not found.
+pub(crate) fn archived(ctx: &QueryCtx, name: &str) -> Result<bool, Error> {
+    load_repo(ctx, name)?;
+    Ok(crate::state::archived(ctx, name))
+}
+
+// The archived repositories, in name order.
+pub(crate) fn archived_repos(
+    ctx: &QueryCtx,
+    listing: &Listing,
+) -> Result<PageResponse<RepoInfo>, Error> {
+    ARCHIVED.page_of(ctx, &(), listing)?.try_map(|name| {
         Ok(RepoInfo {
             repo: load_repo(ctx, &name)?,
             name,

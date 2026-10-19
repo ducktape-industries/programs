@@ -3,8 +3,8 @@ use ::program::{BlobId, HashKind};
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
 use crate::state::{
-    ACTIVITY, AUTHORED, CHANGES, INVOLVED, PREVIEWS, PROTECTED, QUEUE, REFS, REPOS, REQUIRED,
-    REVIEWS, STATUSES,
+    ACTIVITY, ARCHIVED, AUTHORED, CHANGES, INVOLVED, PREVIEWS, PROTECTED, QUEUE, REFS, REPOS,
+    REQUIRED, REVIEWS, STATUSES,
 };
 
 pub use crate::read_contract::*;
@@ -208,6 +208,12 @@ pub enum Op {
         after: Option<Vec<u8>>,
         limit: u64,
     },
+    // An archived repository leaves `Repos`, refuses every op but this one and still answers
+    // every read and clone; `archived: false` restores it.
+    Archive {
+        repo: String,
+        archived: bool,
+    },
 }
 
 impl Op {
@@ -234,7 +240,8 @@ impl Op {
             | Op::Status { repo, .. }
             | Op::RequireChecks { repo, .. }
             | Op::Enqueue { repo, .. }
-            | Op::Dequeue { repo, .. } => Some(repo),
+            | Op::Dequeue { repo, .. }
+            | Op::Archive { repo, .. } => Some(repo),
             Op::Watch { .. } | Op::AdoptOwners { .. } => None,
         }
     }
@@ -428,6 +435,16 @@ pub enum Query {
         branch: Vec<u8>,
         page: PageRequest,
     },
+    // whether a repository is archived
+    #[reads(ARCHIVED)]
+    Archived {
+        repo: String,
+    },
+    // the archived repositories, in name order: what `Repos` leaves out
+    #[reads(ARCHIVED, REPOS)]
+    ArchivedRepos {
+        page: PageRequest,
+    },
 }
 
 impl Query {
@@ -457,7 +474,8 @@ impl Query {
             | Query::DiffStat { page, .. }
             | Query::Statuses { page, .. }
             | Query::Required { page, .. }
-            | Query::Queue { page, .. } => Some(page),
+            | Query::Queue { page, .. }
+            | Query::ArchivedRepos { page } => Some(page),
             Query::Advertise { .. }
             | Query::Upload { .. }
             | Query::Repo { .. }
@@ -465,7 +483,8 @@ impl Query {
             | Query::Compare { .. }
             | Query::Activity { .. }
             | Query::Closure { .. }
-            | Query::Preview { .. } => None,
+            | Query::Preview { .. }
+            | Query::Archived { .. } => None,
         }
     }
 
@@ -485,7 +504,8 @@ impl Query {
             | Query::DiffStat { page, .. }
             | Query::Statuses { page, .. }
             | Query::Required { page, .. }
-            | Query::Queue { page, .. } => Some(page),
+            | Query::Queue { page, .. }
+            | Query::ArchivedRepos { page } => Some(page),
             Query::Advertise { .. }
             | Query::Upload { .. }
             | Query::Repo { .. }
@@ -493,7 +513,8 @@ impl Query {
             | Query::Compare { .. }
             | Query::Activity { .. }
             | Query::Closure { .. }
-            | Query::Preview { .. } => None,
+            | Query::Preview { .. }
+            | Query::Archived { .. } => None,
         }
     }
 }
@@ -627,6 +648,14 @@ pub enum Reply {
     Queue {
         height: u64,
         page: PageResponse<QueueEntry>,
+    },
+    Archived {
+        height: u64,
+        archived: bool,
+    },
+    ArchivedRepos {
+        height: u64,
+        page: PageResponse<RepoInfo>,
     },
 }
 

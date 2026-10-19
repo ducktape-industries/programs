@@ -36,11 +36,30 @@ pub(super) fn render(
             info.repo.last_activity,
         ));
     }
-    page.children(parts::notices(forge, ladder, theme))
+    let archived = forge.archived().then(|| archived_row(ladder, theme));
+    page.children(archived)
+        .children(parts::notices(forge, ladder, theme))
         .child(ref_row(forge, &name, cx, ladder, theme))
         .child(strip(forge, cx, ladder, theme))
         .child(tabs::render(forge, cx, ladder, theme))
         .into_any_element()
+}
+
+// The badge an archived repository wears under its title row.
+fn archived_row(ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
+    div()
+        .id(id("forge-repo-archived-row"))
+        .flex()
+        .flex_none()
+        .px(design::space::BLOCK)
+        .pt(design::space::LG)
+        .child(parts::badge(
+            id("forge-repo-archived"),
+            words::ARCHIVED,
+            parts::Tint::Warn,
+            ladder,
+            theme,
+        ))
 }
 
 /// Copy the address: its check says so once it is on the clipboard.

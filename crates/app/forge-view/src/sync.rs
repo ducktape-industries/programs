@@ -309,6 +309,7 @@ impl Forge {
             return wanted;
         };
         wanted.push(self.repo_query());
+        wanted.push(self.archived_query());
         wanted.push(self.refs_query());
         wanted.push(Query::Activity { repo: repo.clone() });
         // the tab bar says how many changes are open, whichever tab shows

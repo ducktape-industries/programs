@@ -80,6 +80,7 @@ fn next_cursor(reply: &Reply) -> Option<&Vec<u8>> {
         Reply::Statuses { page, .. } => page.next.as_ref(),
         Reply::Required { page, .. } => page.next.as_ref(),
         Reply::Queue { page, .. } => page.next.as_ref(),
+        Reply::ArchivedRepos { page, .. } => page.next.as_ref(),
         // a log is never read whole: `log_page`
         Reply::Log { .. }
         | Reply::Repo { .. }
@@ -87,7 +88,8 @@ fn next_cursor(reply: &Reply) -> Option<&Vec<u8>> {
         | Reply::Blob { .. }
         | Reply::Activity { .. }
         | Reply::Closure { .. }
-        | Reply::Preview { .. } => None,
+        | Reply::Preview { .. }
+        | Reply::Archived { .. } => None,
     }
 }
 

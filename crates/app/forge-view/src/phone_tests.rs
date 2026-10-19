@@ -1432,3 +1432,13 @@ fn a_pointer_keeps_the_desktop_at_every_width() {
         );
     }
 }
+
+#[test]
+fn an_archived_repository_wears_its_badge_on_the_phone() {
+    let mut cx = phone("archived");
+    press(&mut cx, "forge-repo-project");
+    assert!(cx.find("forge-repo-archived").is_some(), "{:?}", cx.texts());
+    let mut cx = phone("default");
+    press(&mut cx, "forge-repo-project");
+    assert!(cx.find("forge-repo-archived").is_none());
+}

@@ -23,7 +23,7 @@ use crate::Forge;
 use crate::select::Writer;
 use crate::state::{Dock, Menu, Progress, RepoTab};
 use crate::words;
-use components::{button, heading, id, quiet};
+use components::{badge, button, heading, id, quiet};
 use forge::Reply;
 use view::design::Ladder;
 
@@ -270,6 +270,15 @@ fn title(
         .pt(design::space::BLOCK)
         .pb(design::space::XS)
         .child(heading(id("forge-repo-name"), name.to_owned(), 1, theme));
+    if forge.archived() {
+        title = title.child(badge(
+            id("forge-repo-archived"),
+            words::ARCHIVED,
+            ladder,
+            theme.warning,
+            theme.warning_soft,
+        ));
+    }
     if let Some((info, _)) = forge.repo() {
         let owner = forge.principal_name(&info.repo.owner);
         title = title.child(
