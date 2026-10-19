@@ -129,6 +129,18 @@ the enums so a view renders what the program keeps.
 
 ## 3. State: tables over `store`
 
+**State holds only what programs need to decide.** Every key a program
+writes is consensus state: every node stores it, every proof covers it, and
+every node that joins the network downloads it. So a program keeps only what
+an op, or another program's ask, reads to decide something. A record of what
+happened (who signed which frame, a conversation's transcript, a stream once
+it's folded) is an index: whoever wants it rebuilds it from the blocks, and
+the blocks are the record. Before adding a table, name the decision that
+reads it. And don't rewrite a growing value whole at every step: each
+rewrite stays in the log until its floor passes, so a value that grows by a
+piece per event costs every node the square of its size. Append the pieces
+as rows of their own and fold them when they're read.
+
 A program's state is its own key space of bytes; no other program reads
 its keys (section 6 is how you ask). `store` puts typed tables over
 it, declared once as `const`s in `rules.rs`:
