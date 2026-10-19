@@ -347,7 +347,7 @@ impl Explorer {
             self.session_chain = session.chain_id;
             cx.notify();
         }
-        let signer = abi::unhex(&session.signer).filter(|key| !key.is_empty());
+        let signer = design::unhex(&session.signer).filter(|key| !key.is_empty());
         if signer != self.acting.signer || session.account != self.acting.account {
             // another reader's rights and forms are not this one's
             self.acting = Acting {
@@ -597,7 +597,7 @@ pub(crate) fn built(form: &Form, network: &Network, tip: u64) -> Result<programs
             } else {
                 let params = form.params.text();
                 let params = params.trim().trim_start_matches("0x");
-                let params = abi::unhex(params).ok_or_else(|| {
+                let params = design::unhex(params).ok_or_else(|| {
                     Problem::at(FormField::Params, "Params are hex digits, or nothing.")
                 })?;
                 Change::Set(programs::Entry {
@@ -617,7 +617,7 @@ fn code(form: &Form) -> Result<abi::BlobId, Problem> {
     let text = form.code.text();
     let text = text.trim();
     let digits = text.strip_prefix("sha256:").unwrap_or(text);
-    let digest: Option<[u8; 32]> = abi::unhex(digits).and_then(|bytes| bytes.try_into().ok());
+    let digest: Option<[u8; 32]> = design::unhex(digits).and_then(|bytes| bytes.try_into().ok());
     digest
         .map(abi::BlobId::Sha256)
         .ok_or_else(|| Problem::at(FormField::Code, "A code id is sha256: and 64 hex digits."))

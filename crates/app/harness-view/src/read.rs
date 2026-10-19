@@ -224,7 +224,7 @@ pub(crate) async fn roster(
         };
         agents.push(Card {
             name: account.card.name.clone(),
-            note: account.kind().note(),
+            note: view::design::note(&account.kind()),
             serving: count,
             threads,
             setup,

@@ -229,7 +229,7 @@ fn stdout(answer: &Value) -> Result<Vec<u8>, Error> {
         return Ok(text.as_bytes().to_vec());
     }
     let hex = answer["stdout_hex"].as_str().unwrap_or_default();
-    abi::unhex(hex).ok_or_else(|| unexpected(SERVICE, "exec", answer))
+    design::unhex(hex).ok_or_else(|| unexpected(SERVICE, "exec", answer))
 }
 
 fn contents(path: &str, offset: u64, answer: &Value) -> Result<Value, Error> {
@@ -344,7 +344,7 @@ fn branch_head(ctx: &ExecCtx, repo: &str, branch: &[u8]) -> Result<Option<String
 }
 
 fn blob_of(id: &str) -> Result<BlobId, Error> {
-    let digest = id.strip_prefix("sha256:").and_then(abi::unhex);
+    let digest = id.strip_prefix("sha256:").and_then(design::unhex);
     let digest = digest.and_then(|digest| <[u8; 32]>::try_from(digest).ok());
     let digest = digest.ok_or_else(|| unexpected(SERVICE, "push", &id))?;
     Ok(BlobId::Sha256(digest))

@@ -278,7 +278,7 @@ fn member_row(
     let theme = *theme;
     let number = row.number;
     let selected = view.selected() == Some(number);
-    let dim = row.kind.note().is_some();
+    let dim = design::note(&row.kind).is_some();
     let name_of = |manager| name(all, manager);
     let kind = match row.manager() {
         // an agent: identity's words name its manager and why it no longer
@@ -486,7 +486,7 @@ fn head(
             row,
             view.picture(row, cx),
             px(32.),
-            row.kind.note().is_some(),
+            design::note(&row.kind).is_some(),
             theme,
         ))
         .child(
@@ -720,7 +720,7 @@ fn manages(
                     agent,
                     view.picture(agent, cx),
                     size::AVATAR_SM,
-                    agent.kind.note().is_some(),
+                    design::note(&agent.kind).is_some(),
                     &theme,
                 ))
                 .child(

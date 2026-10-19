@@ -77,8 +77,8 @@ pub enum Value {
 }
 
 impl Value {
-    /// Bytes as their length and a preview: all of them up to 32, else the
-    /// first 8 and the last 2 (what `abi::preview` shows).
+    // Bytes as their length and a preview: all of them up to 32, else the
+    // first 8 and the last 2 (what `design::preview` shows).
     pub fn bytes(bytes: &[u8]) -> Value {
         let preview = match bytes.len() {
             0..=32 => bytes.to_vec(),

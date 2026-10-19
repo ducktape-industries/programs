@@ -92,7 +92,7 @@ impl Nodes {
     pub(crate) fn session_changed(&mut self, session: Session, cx: &mut Context<Self>) {
         self.read_reader(session.account, cx);
         self.chain = Some(session.chain_id).filter(|chain| !chain.is_empty());
-        let signer = abi::unhex(&session.signer).filter(|key| !key.is_empty());
+        let signer = design::unhex(&session.signer).filter(|key| !key.is_empty());
         if signer != self.voting.signer {
             // another reader's voices are not this one's
             self.voting.voices.clear();

@@ -1,8 +1,7 @@
 # programs — the ducktape contract line and the programs written against it,
 # one repository.
 #
-#   crates/sdk/     the contracts: `abi` (the borsh bytes ABI a program and the
-#                   host share), `error` (the one `Error` and its codes, below both SDKs),
+#   crates/sdk/     the contracts: `error` (the one `Error` and its codes, below both SDKs),
 #                   `program` (the program SDK: the one `Program` trait a
 #                   program implements and a view names it by, `ExecCtx`/
 #                   `QueryCtx`, `export!`, refusals; `MockHost` runs a program
@@ -27,16 +26,14 @@
 # A view links its program by path and reads its types; a view is a cdylib for
 # wasm32-unknown-unknown on `view`. The host that runs the programs
 # (runtime, state, blob, host, node, consensus, the daemon) lives in ducktape,
-# and `crates/sdk/abi` is a copy of its `crates/kernel/abi`: the `[patch]`
-# below makes the host the suite links compile against the copy, so a copy
-# that drifts from the kernel fails the build here. `program` is the full
-# program SDK, not a copy of the kernel's small `program` crate, so it carries
-# no patch.
+# and so does the kernel ABI every program speaks: `abi` below is ducktape's
+# own `crates/kernel/abi` at the rev the host is pinned to, so the host and
+# every program share one abi. `program` is the full program SDK, not the
+# kernel's small `program` crate.
 
 [workspace]
 resolver = "2"
 members = [
-    "crates/sdk/abi",
     "crates/sdk/error",
     "crates/sdk/program",
     "crates/sdk/program-derive",
@@ -92,7 +89,6 @@ version = "0.1.0"
 
 [workspace.dependencies]
 # ---- the contracts, in tree
-abi = { path = "crates/sdk/abi" }
 error = { path = "crates/sdk/error" }
 program = { path = "crates/sdk/program" }
 store = { path = "crates/sdk/store" }
@@ -126,6 +122,10 @@ egress = { path = "crates/app/egress" }
 activity = { path = "crates/app/activity" }
 files = { path = "crates/app/files" }
 
+# ---- the kernel ABI a program and the host share: ducktape's own
+# `crates/kernel/abi`, at the rev the host below is pinned to
+abi = { git = "https://github.com/ducktape-industries/ducktape", rev = "b5f164664d555ff054cd32559879abf8104e1c4a" }
+
 # ---- the blobs contract the blobs program records and the programs that read
 # held blobs ask it by; the host the founding suite runs the boot set on and
 # the key schemes it signs with, and the probe fixture it seats
@@ -157,7 +157,6 @@ unicode-normalization = "0.1"
 toml = { version = "1", default-features = false, features = ["std", "parse", "display", "serde"] }
 
 [patch."https://github.com/ducktape-industries/ducktape"]
-abi = { path = "crates/sdk/abi" }
 store = { path = "crates/sdk/store" }
 
 # proc-macro and build-script crates (serde_derive, async-trait, borsh-derive)

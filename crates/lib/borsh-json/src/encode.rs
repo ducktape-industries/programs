@@ -105,7 +105,7 @@ impl<'s> Writer<'s> {
     fn bytes(&mut self, length: Length, value: &Value, at: &At) -> Result<(), Fault> {
         let bytes = match single(value, "utf8") {
             Some(text) => text.as_str().map(|text| text.as_bytes().to_vec()),
-            None => value.as_str().and_then(abi::unhex),
+            None => value.as_str().and_then(design::unhex),
         }
         .ok_or_else(|| got(at, value, "bytes as hex, or {\"utf8\": text}"))?;
         self.length(length, bytes.len(), at)?;

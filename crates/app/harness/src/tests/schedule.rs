@@ -205,7 +205,7 @@ fn a_booked_op_its_schema_names_no_return_for_answers_hex_and_says_why() {
     let chain = &world.chain;
     let (thread, entry) = committed_at_10(&world);
     let answer = answer_of(chain, thread, "files", entry);
-    let bytes = abi::unhex(answer["returned"].as_str().unwrap()).unwrap();
+    let bytes = design::unhex(answer["returned"].as_str().unwrap()).unwrap();
     assert_eq!(abi::decode::<BlobId>(&bytes).unwrap(), head(chain));
     let unread = answer["unread"].as_str().unwrap();
     let why = "names no type for what its op Commit returns";

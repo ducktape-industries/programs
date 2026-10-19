@@ -482,7 +482,21 @@ mod tests {
         }
         // one for one: a token added on either side is missing here
         let count = |text: &str| text.matches("pub const").count();
-        let reasons = include_str!("../../abi/src/lib.rs");
+        let metadata = std::process::Command::new(env!("CARGO"))
+            .args(["metadata", "--format-version", "1", "--manifest-path"])
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
+            .output()
+            .expect("cargo metadata runs");
+        assert!(metadata.status.success(), "{metadata:?}");
+        let metadata: serde_json::Value = serde_json::from_slice(&metadata.stdout).unwrap();
+        let abi = metadata["packages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|package| package["name"] == "abi")
+            .expect("the SDK links abi");
+        let manifest = std::path::Path::new(abi["manifest_path"].as_str().unwrap());
+        let reasons = std::fs::read_to_string(manifest.with_file_name("src/lib.rs")).unwrap();
         let reasons = &reasons[reasons.find("pub mod reason").unwrap()..];
         let reasons = &reasons[..reasons.find("\n}").unwrap()];
         let codes = include_str!("../../error/src/lib.rs");

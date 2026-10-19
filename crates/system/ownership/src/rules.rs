@@ -63,7 +63,7 @@ pub(crate) fn guard(ctx: &ExecCtx, guard: Guard) -> Result<(), Error> {
                     return Err(unauthorized(format!(
                         "{actor} may not write {}'s {kind} {}: its policy {} (#{}) is {}'s",
                         at.0,
-                        abi::preview(&at.1),
+                        design::preview(&at.1),
                         policy.name,
                         policy.id,
                         record.owner
@@ -312,11 +312,11 @@ fn owned_record(
     let at = (program.clone(), key.to_vec());
     let record = RECORDS
         .get(ctx, &at)?
-        .ok_or_else(|| not_found(format!("{program} keeps no owned {}", abi::preview(key))))?;
+        .ok_or_else(|| not_found(format!("{program} keeps no owned {}", design::preview(key))))?;
     if !is(ctx, &record.owner, me)? {
         return Err(unauthorized(format!(
             "{program}'s {} is {}'s",
-            abi::preview(key),
+            design::preview(key),
             record.owner
         )));
     }

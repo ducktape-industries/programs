@@ -21,6 +21,9 @@ serde = { workspace = true, optional = true }
 blob = { workspace = true }
 sha2 = { workspace = true }
 
+[dev-dependencies]
+serde_json = { workspace = true }
+
 # A program written with `program` alone: `cargo build --target
 # wasm32-unknown-unknown -p program --example counter` builds it, and `cargo
 # test` runs its native test over `MockHost`.

@@ -349,7 +349,7 @@ fn an_agent_suspends_itself_and_its_manager_resumes_it() {
     let agent = create_agent(&store, ALICE, "Scout");
     add_agent_key(&store, ALICE, agent, BOT).unwrap();
     run(&store, &signed(&store, BOT), Op::Suspend { account: agent }).unwrap();
-    assert_eq!(get(&store, agent).kind().note(), Some("suspended"));
+    assert_eq!(design::note(&get(&store, agent).kind()), Some("suspended"));
     let its_key = signed_at(&store, BOT, 100).unwrap_err();
     assert_eq!(its_key.code, code::UNAUTHORIZED);
     run(
@@ -403,11 +403,11 @@ fn an_agent_creates_an_agent_it_manages() {
         Op::Suspend { account: helper },
     )
     .unwrap();
-    assert_eq!(get(&store, helper).kind().note(), Some("suspended"));
+    assert_eq!(design::note(&get(&store, helper).kind()), Some("suspended"));
     run(&store, &signed(&store, BOT), Op::Resume { account: helper }).unwrap();
-    assert_eq!(get(&store, helper).kind().note(), None);
+    assert_eq!(design::note(&get(&store, helper).kind()), None);
     run(&store, &signed(&store, BOT), Op::Revoke { account: helper }).unwrap();
-    assert_eq!(get(&store, helper).kind().note(), Some("revoked"));
+    assert_eq!(design::note(&get(&store, helper).kind()), Some("revoked"));
 }
 
 #[test]
@@ -599,7 +599,7 @@ fn an_agent_is_suspended_resumed_or_revoked_and_its_manager_owns_it() {
     let refused_key = signed_at(&store, BOT, 100).unwrap_err();
     assert_eq!(refused_key.code, code::UNAUTHORIZED);
     assert_eq!(keys_of(&get(&store, agent)), [BOT.to_vec()]);
-    assert_eq!(get(&store, agent).kind().note(), Some("suspended"));
+    assert_eq!(design::note(&get(&store, agent).kind()), Some("suspended"));
     let again = refused(&store, &signed(&store, ALICE), suspend());
     assert_eq!(again.code, code::WRONG_STATE);
     // a suspended agent's manager still works its keys and its card
@@ -623,7 +623,7 @@ fn an_agent_is_suspended_resumed_or_revoked_and_its_manager_owns_it() {
 
     run(&store, &signed(&store, ALICE), revoke()).unwrap();
     let account = get(&store, agent);
-    assert_eq!(account.kind().note(), Some("revoked"));
+    assert_eq!(design::note(&account.kind()), Some("revoked"));
     assert!(account.keys().is_empty(), "revoked, it keeps no key");
     assert_eq!(
         query(&store, Query::OfKey { key: BOT.to_vec() }),

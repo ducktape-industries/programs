@@ -67,7 +67,7 @@ const LISTED: u64 = 20;
 
 // the entry a cursor names: the hex `next` of the page before
 fn below(cursor: &str) -> Result<u64, Error> {
-    let bytes = abi::unhex(cursor).and_then(|bytes| <[u8; 8]>::try_from(bytes).ok());
+    let bytes = design::unhex(cursor).and_then(|bytes| <[u8; 8]>::try_from(bytes).ok());
     bytes
         .map(u64::from_be_bytes)
         .ok_or_else(|| invalid("a cursor is the hex `next` of a page"))

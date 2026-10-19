@@ -16,6 +16,7 @@ describe = []
 
 [dependencies]
 abi = { workspace = true }
+design = { workspace = true }
 access = { workspace = true }
 borsh = { workspace = true }
 describe = { workspace = true }

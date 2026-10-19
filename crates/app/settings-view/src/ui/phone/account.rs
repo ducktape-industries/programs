@@ -153,7 +153,7 @@ fn seat_pane(
     theme: &Theme,
 ) -> Stateful<Div> {
     // a signer that is not hex is no key: no row is this device's
-    let mine = abi::unhex(&view.session.signer).unwrap_or_default();
+    let mine = design::unhex(&view.session.signer).unwrap_or_default();
     let pane = column("settings/account/data");
     match seat {
         Seat::Account(account) => pane

@@ -19,7 +19,7 @@ pub(super) fn snapshot(text: &Option<String>) -> Result<Option<BlobId>, Error> {
     let Some(text) = text else {
         return Ok(None);
     };
-    let digest: [u8; 32] = abi::unhex(text)
+    let digest: [u8; 32] = design::unhex(text)
         .and_then(|bytes| bytes.try_into().ok())
         .ok_or_else(|| invalid("a snapshot is 64 hex digits"))?;
     Ok(Some(BlobId::Sha256(digest)))

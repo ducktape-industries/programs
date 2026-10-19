@@ -572,6 +572,73 @@ pub fn fingerprint(key: &[u8]) -> String {
     format!("{} {}", &hex[..4], &hex[4..])
 }
 
+// `abi::hex` read back: `None` for an odd length or a non-hex digit.
+pub fn unhex(text: &str) -> Option<Vec<u8>> {
+    let digit = |byte: u8| (byte as char).to_digit(16).map(|d| d as u8);
+    let text = text.as_bytes();
+    if !text.len().is_multiple_of(2) {
+        return None;
+    }
+    text.chunks(2)
+        .map(|pair| Some(digit(pair[0])? << 4 | digit(pair[1])?))
+        .collect()
+}
+
+// Bytes as a person reads them: a key or hash up to 32 bytes as `short_hex`,
+// else their count and the head and tail `short_hex` keeps, without hexing
+// the whole payload.
+pub fn preview(bytes: &[u8]) -> String {
+    match bytes.len() {
+        0 => "0 bytes".into(),
+        1..=32 => short_hex(&abi::hex(bytes)),
+        len => format!(
+            "{len} bytes · {}",
+            short_hex(&(abi::hex(&bytes[..8]) + &abi::hex(&bytes[len - 2..])))
+        ),
+    }
+}
+
+// The badge beside an account's name: "Agent · managed by <name>", or
+// "Program · <program>" for a system account. A user wears none. `name_of`
+// names the manager.
+pub fn badge(
+    kind: &abi::role::identity::Kind,
+    name_of: impl FnOnce(abi::role::identity::AccountNumber) -> String,
+) -> Option<String> {
+    use abi::role::identity::{Category, Kind};
+    match kind {
+        Kind::User => None,
+        Kind::Program {
+            manager,
+            category: Category::Agent,
+            ..
+        } => Some(format!("Agent · managed by {}", name_of(*manager))),
+        Kind::System(program) => Some(format!("Program · {program}")),
+    }
+}
+
+// Why an account does not act, noted beside its name: "suspended" or
+// "revoked". `None` while it acts.
+pub fn note(kind: &abi::role::identity::Kind) -> Option<&'static str> {
+    use abi::role::identity::{Kind, Standing};
+    match kind {
+        Kind::Program {
+            standing: Standing::Suspended,
+            ..
+        } => Some("suspended"),
+        Kind::Program {
+            standing: Standing::Revoked,
+            ..
+        } => Some("revoked"),
+        Kind::User
+        | Kind::System(_)
+        | Kind::Program {
+            standing: Standing::Active,
+            ..
+        } => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -586,6 +653,50 @@ mod tests {
             short_hex("오리테이프오리테이프오리테이프"),
             "오리테이프오리테…리테이프"
         );
+    }
+    #[test]
+    fn unhex_reads_hex_back() {
+        for bytes in [&[][..], &[0], &[0xab, 0x01, 0xff]] {
+            assert_eq!(unhex(&abi::hex(bytes)).as_deref(), Some(bytes));
+        }
+        assert_eq!(unhex("ABff"), Some(vec![0xab, 0xff]));
+        for bad in ["a", "zz", "é1", "0x00"] {
+            assert_eq!(unhex(bad), None, "{bad}");
+        }
+    }
+    #[test]
+    fn a_preview_keeps_a_short_run_and_counts_a_long_one() {
+        assert_eq!(preview(&[]), "0 bytes");
+        assert_eq!(preview(&[0xab; 4]), "abababab");
+        assert_eq!(preview(&[0xab; 32]), "abababab…abab");
+        let mut long = vec![0x11; 40];
+        long[39] = 0x22;
+        assert_eq!(preview(&long), "40 bytes · 11111111…1122");
+    }
+    #[test]
+    fn an_agent_wears_its_manager_and_a_held_one_its_standing() {
+        use abi::role::identity::{Category, Kind, Standing};
+        let agent = |standing| Kind::Program {
+            manager: 7,
+            category: Category::Agent,
+            standing,
+            script: None,
+        };
+        let named = |number: u64| format!("#{number}");
+        let active = agent(Standing::Active);
+        assert_eq!(
+            badge(&active, named).as_deref(),
+            Some("Agent · managed by #7")
+        );
+        assert_eq!(
+            badge(&Kind::System("chat".into()), named).as_deref(),
+            Some("Program · chat")
+        );
+        assert_eq!(badge(&Kind::User, named), None);
+        assert_eq!(note(&active), None);
+        assert_eq!(note(&agent(Standing::Suspended)), Some("suspended"));
+        assert_eq!(note(&agent(Standing::Revoked)), Some("revoked"));
+        assert_eq!(note(&Kind::User), None);
     }
     #[test]
     fn a_fingerprint_is_the_first_four_bytes_of_the_keys_sha256() {

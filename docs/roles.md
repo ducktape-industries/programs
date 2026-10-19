@@ -3,7 +3,7 @@
 The kernel knows the programs it calls by the role each fills, never by
 their ids. Each founding program names the roles it fills, and the programs
 role keeps the table from then on; every call the kernel makes goes to the
-program that fills the role, speaking the role's interface in `crates/sdk/abi`
+program that fills the role, speaking the role's interface in ducktape's `abi`
 (`abi::role::{programs, validators, identity, awaits, halo, scheduler,
 access, ownership}`) or, for blobs, ducktape's `blob::contract`. The programs in
 `crates/system/` are one implementation of each. The scheduler role
@@ -129,7 +129,7 @@ The role's queries, which views and other programs ask too, are
 `Account(key)`, `OfProgram(program)`, `Profile(number)`,
 `Profiles { after, limit }` and `Runs { program, account }`. A `Profile` is
 `{ number, name, kind }`, where `Kind` is `User`,
-`Program { manager, category, standing, script }` or `System(id)`. `Kind::badge` and `Kind::note` in `abi` turn it into what a view
+`Program { manager, category, standing, script }` or `System(id)`. `design::badge` and `design::note` turn it into what a view
 shows beside a name ("Agent · managed by Dev", "Program · chat", "suspended"),
 the one place that happens.
 

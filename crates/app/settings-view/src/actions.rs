@@ -366,7 +366,7 @@ impl Settings {
                 agent.number == account && agent.standing() != identity::Standing::Revoked
             }))
         };
-        let op = abi::unhex(self.agent_key.text.text().trim())
+        let op = design::unhex(self.agent_key.text.text().trim())
             .and_then(|bytes| abi::decode::<identity::Op>(&bytes).ok())
             .filter(
                 |op| matches!(op, identity::Op::AddKey { consent, .. } if mine(consent.account)),

@@ -115,7 +115,7 @@ pub(crate) fn hash_of(text: &str) -> Option<[u8; 32]> {
     if text.len() != 64 {
         return None;
     }
-    abi::unhex(text)?.try_into().ok()
+    design::unhex(text)?.try_into().ok()
 }
 
 /// A listing of activity's frames, read a page at a time, and whether
@@ -464,9 +464,9 @@ impl Explorer {
         Some(closes.saturating_sub(status.height))
     }
 
-    /// What `account` is, its manager named from the list: "User", "Agent ·
-    /// managed by Dev · suspended", "Program · forge" (identity's own wording,
-    /// [`identity::view::kind`], over `Kind::badge` and `Kind::note`).
+    // What `account` is, its manager named from the list: "User", "Agent ·
+    // managed by Dev · suspended", "Program · forge" (identity's own wording,
+    // `identity::view::kind`, over `design::badge` and `design::note`).
     pub(crate) fn kind_of(&self, account: &identity::Account) -> String {
         identity::view::kind(&account.kind(), |manager| {
             self.account(manager)

@@ -26,7 +26,7 @@ pub(super) fn face(
     let pictured = picture.is_some();
     let avatar = design::avatar_with(&row.name, picture, size, theme);
     let avatar = row.group().face(avatar, pictured, theme);
-    avatar.when(row.kind.note().is_some(), |avatar| {
+    avatar.when(design::note(&row.kind).is_some(), |avatar| {
         avatar.opacity(NOT_ACTING_OPACITY)
     })
 }
@@ -40,7 +40,7 @@ pub(super) fn name_line(row: &Row, me: bool, role: Type, ladder: &Ladder, theme:
         .items_baseline()
         .min_w_0()
         .text_type(role)
-        .when(row.kind.note().is_some(), |line| {
+        .when(design::note(&row.kind).is_some(), |line| {
             line.text_color(theme.faint)
         })
         .child(div().min_w_0().truncate().child(row.name.clone()))

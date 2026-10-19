@@ -119,7 +119,7 @@ impl Names {
             Some(name) => name.to_owned(),
             None => unnamed(principal),
         };
-        match self.kind(principal).and_then(Kind::note) {
+        match self.kind(principal).and_then(design::note) {
             Some(note) => format!("{name} ({note})"),
             None => name,
         }
@@ -144,12 +144,12 @@ impl Names {
         }
     }
 
-    /// What an account is, beside its name ([`Kind::badge`]): an agent and
-    /// who manages it ("Agent · managed by Dev"), or the program it is
-    /// ("Program · forge"). None for a user.
+    // What an account is, beside its name (`design::badge`): an agent and
+    // who manages it ("Agent · managed by Dev"), or the program it is
+    // ("Program · forge"). None for a user.
     pub fn badge(&self, principal: &Principal) -> Option<String> {
-        self.kind(principal)?
-            .badge(|manager| self.member(&Principal::Account(manager)))
+        let kind = self.kind(principal)?;
+        design::badge(kind, |manager| self.member(&Principal::Account(manager)))
     }
 }
 

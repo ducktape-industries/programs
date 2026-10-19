@@ -220,7 +220,7 @@ impl Render for Agents {
                         .py(design::space::SM)
                         .child(agent.name.clone())
                         // "suspended" or "revoked", for an agent that is.
-                        .children(agent.kind.note().map(|note| design::quiet(note, &theme)))
+                        .children(design::note(&agent.kind).map(|note| design::quiet(note, &theme)))
                 }))
                 .into_any_element(),
         };

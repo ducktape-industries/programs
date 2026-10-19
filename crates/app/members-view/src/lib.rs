@@ -260,7 +260,7 @@ impl Row {
 
     /// An agent's standing word: `active`, else why it no longer acts.
     fn life(&self) -> &'static str {
-        self.kind.note().unwrap_or(words::ACTIVE)
+        design::note(&self.kind).unwrap_or(words::ACTIVE)
     }
 }
 

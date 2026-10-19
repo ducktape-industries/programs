@@ -30,18 +30,19 @@ pub async fn avatars<F: Future<Output = Result<PageResponse<Account>, ::program:
     }
 }
 
-/// What an account is, as members and explorer label it: "User",
-/// "Agent · managed by eddy · suspended", "Program · chat". The badge and
-/// the note are [`Kind`](crate::Kind)'s; `name_of` names the manager, or
-/// its number stands in.
+// What an account is, as members and explorer label it: "User",
+// "Agent · managed by eddy · suspended", "Program · chat". The badge and
+// the note are `design::badge` and `design::note`; `name_of` names the
+// manager, or its number stands in.
 pub fn kind(
     kind: &crate::Kind,
     name_of: impl FnOnce(crate::AccountNumber) -> Option<String>,
 ) -> String {
-    let what = kind
-        .badge(|manager| name_of(manager).unwrap_or_else(|| format!("#{manager}")))
-        .unwrap_or_else(|| "User".into());
-    match kind.note() {
+    let what = design::badge(kind, |manager| {
+        name_of(manager).unwrap_or_else(|| format!("#{manager}"))
+    })
+    .unwrap_or_else(|| "User".into());
+    match design::note(kind) {
         Some(note) => format!("{what} · {note}"),
         None => what,
     }

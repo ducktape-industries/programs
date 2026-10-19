@@ -104,7 +104,7 @@ pub(crate) async fn account(
     if signer.is_empty() {
         return Ok(None);
     }
-    let key = abi::unhex(&signer)
+    let key = design::unhex(&signer)
         .ok_or_else(|| malformed("the session's signer is not hexadecimal".into()))?;
     let Some(number) = number else {
         // the host resolves no account for a suspended agent's key, which
@@ -139,8 +139,8 @@ pub(crate) async fn account(
     })))
 }
 
-/// The account holding `key` that does not act, by its name and why not
-/// (`Kind::note`); `None` for a key no account holds.
+// The account holding `key` that does not act, by its name and why not
+// (`design::note`); `None` for a key no account holds.
 async fn held_by(host: &Host, key: &[u8]) -> Result<Option<(String, &'static str)>, Error> {
     let references = vec![Reference::Key(key.to_vec())];
     let resolved = host.query(identity::ask::Resolve { references }).await?;
@@ -148,7 +148,7 @@ async fn held_by(host: &Host, key: &[u8]) -> Result<Option<(String, &'static str
         return Ok(None);
     };
     let profile = host.query(identity::ask::Profile { number }).await?;
-    Ok(profile.and_then(|p| Some((p.name, p.kind.note()?))))
+    Ok(profile.and_then(|p| Some((p.name, design::note(&p.kind)?))))
 }
 
 /// Every agent `manager` manages.

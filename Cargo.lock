@@ -5,9 +5,9 @@ version = 4
 [[package]]
 name = "abi"
 version = "0.1.0"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b5f164664d555ff054cd32559879abf8104e1c4a#b5f164664d555ff054cd32559879abf8104e1c4a"
 dependencies = [
  "borsh",
- "design",
 ]
 
 [[package]]
@@ -590,6 +590,7 @@ version = "0.1.0"
 dependencies = [
  "abi",
  "borsh",
+ "design",
  "program",
  "serde_json",
 ]
@@ -696,6 +697,7 @@ dependencies = [
  "attribution",
  "borsh",
  "describe",
+ "design",
  "ownership",
  "program",
  "serde",
@@ -1626,6 +1628,7 @@ dependencies = [
 name = "design"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "sha2 0.10.9",
 ]
 
@@ -2766,6 +2769,7 @@ dependencies = [
  "borsh-json",
  "chat",
  "describe",
+ "design",
  "egress",
  "files",
  "forge",
@@ -3120,6 +3124,7 @@ dependencies = [
  "abi",
  "borsh",
  "describe",
+ "design",
  "program",
  "serde",
  "store",
@@ -3999,6 +4004,7 @@ dependencies = [
  "access",
  "borsh",
  "describe",
+ "design",
  "program",
  "store",
 ]
@@ -4375,6 +4381,7 @@ dependencies = [
  "error",
  "program-derive",
  "serde",
+ "serde_json",
  "sha2 0.10.9",
 ]
 
@@ -4403,6 +4410,7 @@ dependencies = [
  "commonware-cryptography",
  "commonware-runtime",
  "describe",
+ "design",
  "egress",
  "files",
  "fixture-wasm",

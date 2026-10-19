@@ -251,7 +251,7 @@ pub(crate) fn page(cursor: &Option<String>) -> Result<PageRequest, Error> {
     match cursor {
         None => Ok(PageRequest::default()),
         Some(cursor) => {
-            let after = abi::unhex(cursor)
+            let after = design::unhex(cursor)
                 .ok_or_else(|| invalid("a cursor is the hex `next` of a page"))?;
             Ok(PageRequest {
                 after: Some(after),

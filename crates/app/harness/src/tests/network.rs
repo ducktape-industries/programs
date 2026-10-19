@@ -329,7 +329,7 @@ fn committed(files_code: Vec<u8>) -> (Value, Value, BlobId) {
 }
 
 fn returned_bytes(answer: &Value) -> BlobId {
-    let bytes = abi::unhex(answer["returned"].as_str().unwrap()).unwrap();
+    let bytes = design::unhex(answer["returned"].as_str().unwrap()).unwrap();
     abi::decode(&bytes).unwrap()
 }
 

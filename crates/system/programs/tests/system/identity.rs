@@ -278,7 +278,10 @@ fn a_programs_account_creates_and_manages_an_agent() {
         );
         let suspend = identity::Op::Suspend { account: agent };
         output_of(&net.sent_by("probe", identity::PROGRAM, &suspend).await);
-        assert_eq!(net.account(agent).await.kind().note(), Some("suspended"));
+        assert_eq!(
+            design::note(&net.account(agent).await.kind()),
+            Some("suspended")
+        );
     });
 }
 
@@ -544,89 +547,6 @@ fn a_program_sends_as_the_agent_whose_script_calls_it_while_the_agent_acts() {
         let user = net.sent_as(ALICE).await;
         assert_eq!(refusal_of(&user), reason::UNAUTHORIZED);
     });
-}
-
-/// The roles programs answer and the env the kernel hands every frame are
-/// ducktape's: `abi::role` (identity, programs, validators), `Env` and what
-/// it carries here are a copy of ducktape's, and this compares the two
-/// sources item by item. (The workspace patches ducktape's `abi` to this
-/// copy, so nothing links both: the source is what can drift.) The
-/// checkout is the one cargo resolved `host` from.
-#[test]
-fn the_roles_and_the_env_are_ducktapes_byte_for_byte() {
-    let metadata = std::process::Command::new(env!("CARGO"))
-        .args(["metadata", "--format-version", "1", "--no-deps"])
-        .arg("--manifest-path")
-        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
-        .output()
-        .expect("cargo metadata runs");
-    assert!(metadata.status.success(), "{metadata:?}");
-    let metadata: serde_json::Value = serde_json::from_slice(&metadata.stdout).unwrap();
-    // `--no-deps` lists the workspace alone; the git source of `host` is
-    // in this package's dependency list, as cargo resolved it
-    let host = metadata["packages"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|package| package["name"] == "programs")
-        .and_then(|package| package["dependencies"].as_array())
-        .unwrap()
-        .iter()
-        .find(|dependency| dependency["name"] == "host")
-        .expect("the founding suite links ducktape's host");
-    // `git+https://…/ducktape?rev=<rev>`
-    let source = host["source"].as_str().unwrap();
-    let (_, rev) = source.split_once("rev=").expect("host is pinned to a rev");
-    let ducktape = cargo_git_checkout(rev);
-    let theirs = std::fs::read_to_string(ducktape.join("crates/kernel/abi/src/lib.rs")).unwrap();
-    let ours = include_str!("../../../../sdk/abi/src/lib.rs");
-    // each item runs from its first line to the first `}` closing at the
-    // left margin
-    let item = |text: &str, first: &str| {
-        let start = text
-            .find(&format!("\n{first}"))
-            .unwrap_or_else(|| panic!("abi has `{first}`"));
-        let end = text[start..].find("\n}\n").unwrap() + start;
-        text[start..end].to_owned()
-    };
-    for first in [
-        "pub mod role {",
-        "pub enum Origin {",
-        "pub enum Principal {",
-        "pub struct Roles(",
-        "pub struct Env {",
-        "pub enum Cause {",
-        "pub struct Message {",
-    ] {
-        assert_eq!(
-            item(&theirs, first),
-            item(ours, first),
-            "abi's `{first}` drifted from ducktape's"
-        );
-    }
-}
-
-/// Where cargo checked ducktape out at `rev`: `$CARGO_HOME/git/checkouts/
-/// ducktape-<hash>/<short rev>`.
-fn cargo_git_checkout(rev: &str) -> std::path::PathBuf {
-    let home = std::env::var_os("CARGO_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| std::path::Path::new(&home).join(".cargo")))
-        .expect("CARGO_HOME or HOME");
-    let checkouts = home.join("git/checkouts");
-    let short = &rev[..7];
-    std::fs::read_dir(&checkouts)
-        .unwrap_or_else(|error| panic!("{}: {error}", checkouts.display()))
-        .flatten()
-        .filter(|entry| entry.file_name().to_string_lossy().starts_with("ducktape-"))
-        .map(|entry| entry.path().join(short))
-        .find(|path| path.join("crates/kernel/abi/src/lib.rs").is_file())
-        .unwrap_or_else(|| {
-            panic!(
-                "no checkout of ducktape @ {short} under {}",
-                checkouts.display()
-            )
-        })
 }
 
 #[test]

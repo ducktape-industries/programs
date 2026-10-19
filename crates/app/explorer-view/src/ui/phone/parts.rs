@@ -590,7 +590,7 @@ pub(super) fn face(
     k: &Look,
 ) -> Div {
     let kind = account.kind();
-    let off = kind.note().is_some();
+    let off = design::note(&kind).is_some();
     let name = &account.card.name;
     let ringed = picture.is_some();
     let avatar = match kind {

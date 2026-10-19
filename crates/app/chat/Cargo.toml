@@ -18,6 +18,7 @@ describe = []
 [dependencies]
 ownership = { workspace = true }
 abi = { workspace = true }
+design = { workspace = true }
 attribution = { workspace = true }
 describe = { workspace = true }
 borsh = { workspace = true }
