@@ -1,6 +1,6 @@
 //! A workflow file, `.forge/workflows/<name>.toml`: the events that run it (`on.push` branches,
 //! `on.change` "opened"/"updated": each Preview), its jobs, each one check (`needs`, `image`, `cpu`,
-//! `memory` and `scratch` for a runner that makes a pod), and `notify.channel`, told of a red push.
+//! `memory` and `scratch` for a runner that makes a pod, `runners`), and `notify.channel`.
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
@@ -53,6 +53,8 @@ struct JobFile {
     // the ids of the jobs of this file that must pass before this one runs
     #[serde(default)]
     needs: Vec<String>,
+    // the accounts whose claim and report count for this job; any runner's when it names none
+    runners: Option<Vec<u64>>,
 }
 
 #[derive(Deserialize)]
@@ -71,11 +73,13 @@ pub(crate) struct Workflow {
     pub(crate) jobs: Vec<Planned>,
 }
 
-// A job as its workflow states it: the check's job, what its pod asks and the jobs it needs.
+// A job as its workflow states it: the check's job, what its pod asks, the jobs it needs and the
+// accounts that may run it (empty: any).
 pub(crate) struct Planned {
     pub(crate) job: Job,
     pub(crate) asks: Asks,
     pub(crate) needs: Vec<String>,
+    pub(crate) runners: Vec<u64>,
 }
 
 const CHANGE_EVENTS: [&str; 2] = ["opened", "updated"];
@@ -116,6 +120,12 @@ pub(crate) fn parse(text: &str) -> Result<Workflow, String> {
                 job.id
             ));
         }
+        if job.runners.as_ref().is_some_and(Vec::is_empty) {
+            return Err(format!(
+                "job {:?}: runners names at least one account; leave it out for any runner",
+                job.id
+            ));
+        }
         let asks = Asks {
             cpu: job.cpu,
             memory: job.memory,
@@ -137,6 +147,7 @@ pub(crate) fn parse(text: &str) -> Result<Workflow, String> {
             job: planned,
             asks,
             needs: job.needs,
+            runners: job.runners.unwrap_or_default(),
         });
     }
     for planned in &jobs {

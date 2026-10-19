@@ -32,6 +32,9 @@ pub const LAST_CHECK: Item<u64> = Item::new("last-check");
 pub const ASKS: Map<u64, Asks> = Map::new("asks/");
 // The jobs each check's job needs, when it names any.
 pub const NEEDS: Map<u64, Vec<String>> = Map::new("needs/");
+// The accounts a check's workflow names as its job's runners, when it names any: only they claim
+// it or end it.
+pub const NAMED: Map<u64, Vec<AccountNumber>> = Map::new("named/");
 // For a check its needs held back, the passed check of each job it needs, once all have passed.
 pub const MET: Map<u64, Vec<Need>> = Map::new("met/");
 // What each check produced, once its runner said.

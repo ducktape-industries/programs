@@ -9,8 +9,8 @@ use forge::{ChangeState, CheckState, Content, EntryKind, Revision, Watched};
 use store::Item;
 
 use crate::state::{
-    ASKS, BY_COMMIT, BY_EVENT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, LINES, MET, NEEDS, OFFERING,
-    OUTPUTS, PREVIEWING, QUEUED, RUNNERS, RUNS, SOURCES, TARGETS,
+    ASKS, BY_COMMIT, BY_EVENT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, LINES, MET, NAMED, NEEDS,
+    OFFERING, OUTPUTS, PREVIEWING, QUEUED, RUNNERS, RUNS, SOURCES, TARGETS,
 };
 use crate::workflow::{self, Planned};
 use crate::{
@@ -419,7 +419,12 @@ fn next(ctx: &ExecCtx, counter: &Item<u64>) -> Result<u64, Error> {
 
 // A check of the job: queued and offered, or, when it needs other jobs, waiting until they pass.
 fn queue(ctx: &ExecCtx, run: &RunRow, planned: Planned, attempt: u32) -> Result<(), Error> {
-    let Planned { job, asks, needs } = planned;
+    let Planned {
+        job,
+        asks,
+        needs,
+        runners,
+    } = planned;
     let id = next(ctx, &LAST_CHECK)?;
     let waits = !needs.is_empty();
     let check = CheckRow {
@@ -442,6 +447,9 @@ fn queue(ctx: &ExecCtx, run: &RunRow, planned: Planned, attempt: u32) -> Result<
     CHECKS.put(ctx, &id, &check);
     if asks != Asks::default() {
         ASKS.put(ctx, &id, &asks);
+    }
+    if !runners.is_empty() {
+        NAMED.put(ctx, &id, &runners);
     }
     BY_COMMIT.insert(ctx, &(check.repo.clone(), check.commit.clone(), id));
     BY_RUN.insert(ctx, &(run.id, id));
@@ -554,7 +562,7 @@ fn offer(ctx: &ExecCtx, runner: &RunnerRow, check: &CheckRow) {
         .runs_on
         .iter()
         .all(|label| runner.labels.contains(label));
-    if covers {
+    if covers && named(ctx, check.id, runner.account) {
         let mut payload = runner.deliver.clone();
         payload.extend(abi::encode(&Offer { check: check.id }));
         let sent = ctx.emit_raw(program.clone(), payload, Reply::Wanted);
@@ -581,9 +589,27 @@ pub(crate) fn register(ctx: &ExecCtx, labels: Vec<String>, deliver: Vec<u8>) -> 
     Ok(())
 }
 
+// Whether `account` may run check `id`: any account, unless its job names its runners.
+fn named(ctx: &QueryCtx, id: u64, account: u64) -> bool {
+    match NAMED.get(ctx, &id) {
+        Ok(Some(runners)) => runners.contains(&account),
+        Ok(None) => true,
+        Err(_) => false,
+    }
+}
+
+fn unnamed(id: u64) -> Error {
+    unauthorized(format!(
+        "check {id}'s job names its runners in its workflow, and this account is not one"
+    ))
+}
+
 pub(crate) fn claim(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     let account = ctx.sender_account()?;
     let mut check = load(ctx, id)?;
+    if !named(ctx, id, account) {
+        return Err(unnamed(id));
+    }
     if check.state != State::Queued {
         return Err(wrong_state(format!(
             "check {id} is {}, not queued",
@@ -623,6 +649,9 @@ pub(crate) fn report(
         return Err(unauthorized(format!(
             "only the account that claimed check {id} reports how it ended"
         )));
+    }
+    if unclaimed && !named(ctx, id, account) {
+        return Err(unnamed(id));
     }
     if unclaimed {
         QUEUED.remove(ctx, &id);
@@ -751,6 +780,7 @@ pub(crate) fn rerun(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
         job: check.job,
         asks: ASKS.get(ctx, &id)?.unwrap_or_default(),
         needs: NEEDS.get(ctx, &id)?.unwrap_or_default(),
+        runners: NAMED.get(ctx, &id)?.unwrap_or_default(),
     };
     queue(ctx, &run, planned, attempt)
 }

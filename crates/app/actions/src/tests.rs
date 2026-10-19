@@ -1367,3 +1367,103 @@ fn only_the_account_that_claimed_a_check_reports_it_or_records_its_outputs() {
         (State::Errored, Some(STRANGER_ACCOUNT))
     );
 }
+
+// A job that names its runners: only they claim it or end it unclaimed, so a stranger can neither
+// run it nor end it; a rerun keeps the names, and a job that names none is open as before.
+const NAMED_JOBS: &str = r#"
+[on]
+push = ["main"]
+
+[[jobs]]
+id = "gates"
+runs-on = ["pods"]
+image = "toolchain"
+runners = [11]
+steps = ["make check"]
+
+[[jobs]]
+id = "lint"
+runs-on = ["pods"]
+image = "toolchain"
+steps = ["make lint"]
+"#;
+
+#[test]
+fn a_job_that_names_its_runners_is_claimed_reported_and_given_outputs_by_them_alone() {
+    let mut world = world();
+    world.runner(&["pods"]);
+    let root = world.commit(&[], &[("named.toml", NAMED_JOBS)]);
+    world.push(None, root, "main");
+    assert_eq!(
+        world.offers(),
+        [2],
+        "the program runner is not named, so hears only lint"
+    );
+    let claimed = world.stranger(&Op::Claim { check: 1 }).unwrap_err();
+    assert_eq!(claimed.code, code::UNAUTHORIZED);
+    let errored = |check| Op::Report {
+        check,
+        state: State::Errored,
+        summary: "no runner".into(),
+        log: None,
+    };
+    assert_eq!(
+        world.stranger(&errored(1)).unwrap_err().code,
+        code::UNAUTHORIZED
+    );
+    assert_eq!(world.check(1).state, State::Queued);
+    world.act(&Op::Claim { check: 1 }).unwrap();
+    let passed = Op::Report {
+        check: 1,
+        state: State::Passed,
+        summary: String::new(),
+        log: None,
+    };
+    let blob = world.chain.put_blob("chunk", b"built".to_vec()).unwrap();
+    let outputs = Op::Outputs {
+        check: 1,
+        files: vec![Output {
+            path: "built".into(),
+            blob,
+            size: 5,
+        }],
+    };
+    assert_eq!(
+        world.stranger(&outputs).unwrap_err().code,
+        code::UNAUTHORIZED
+    );
+    assert_eq!(
+        world.stranger(&passed).unwrap_err().code,
+        code::UNAUTHORIZED
+    );
+    world.act(&outputs).unwrap();
+    world.act(&passed).unwrap();
+    world.stranger(&Op::Rerun { check: 1 }).unwrap();
+    let again = world.check(3);
+    assert_eq!((again.job.id.as_str(), again.attempt), ("gates", 2));
+    assert_eq!(
+        world.stranger(&Op::Claim { check: 3 }).unwrap_err().code,
+        code::UNAUTHORIZED,
+        "a rerun keeps the names"
+    );
+    world.stranger(&Op::Claim { check: 2 }).unwrap();
+    let lint = Op::Report {
+        check: 2,
+        state: State::Passed,
+        summary: String::new(),
+        log: None,
+    };
+    world.stranger(&lint).unwrap();
+    assert_eq!(world.check(2).reporter, Some(STRANGER_ACCOUNT));
+}
+
+#[test]
+fn a_job_that_names_no_runner_in_its_list_is_an_errored_run() {
+    let mut world = world();
+    let text = NAMED_JOBS.replace("runners = [11]", "runners = []");
+    let root = world.commit(&[], &[("named.toml", text.as_str())]);
+    world.push(None, root, "main");
+    assert!(world.checks(root).is_empty());
+    let why = "job \"gates\": runners names at least one account; leave it out for any runner";
+    assert_eq!(world.run(1).error.as_deref(), Some(why));
+}
