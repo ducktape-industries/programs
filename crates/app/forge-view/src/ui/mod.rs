@@ -78,7 +78,8 @@ pub(crate) fn render(forge: &mut Forge, cx: &mut Context<Forge>) -> impl IntoEle
         .bg(theme.background)
         .text_color(theme.foreground)
         .text_size(design::text::BODY)
-        .child(columns);
+        .child(columns)
+        .children(crate::policies::sheet(forge, cx, ladder, &theme));
     // an open dropdown floats in a modal overlay: Tab stays in it and a
     // press outside closes it
     let (label, floating) = match forge.menu {

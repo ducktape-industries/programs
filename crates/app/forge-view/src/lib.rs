@@ -21,6 +21,8 @@
 //! runs it once per network, open panes or none. The `notifier` feature
 //! builds it alone in place of the view.
 mod notifier;
+#[cfg(not(feature = "notifier"))]
+mod policies;
 pub use notifier::ForgeNotices;
 #[cfg(feature = "notifier")]
 view::export_notifier!(ForgeNotices);
@@ -130,6 +132,12 @@ impl View for Forge {
             Err(refusal) => cx.log_refused("access's live heads", &refusal),
         })
         .detach();
+        // who can edit the open repository or change may be among what it wrote
+        cx.follow::<Changes<ownership::Ownership>>((), |forge, change, cx| match change {
+            Ok(change) => forge.ownership_moved(change, cx),
+            Err(refusal) => cx.log_refused("ownership's live heads", &refusal),
+        })
+        .detach();
         cx.follow::<HostVisible>((), |forge, shown, cx| match shown {
             Ok(true) => forge.refresh(cx),
             Ok(false) => {}
@@ -156,6 +164,7 @@ impl Render for Forge {
         // sees each
         self.settle_title(cx);
         self.settle_showing(cx);
+        self.settle_policies(cx);
         // the one pick between the two designs: under a finger the Expo
         // app's screens (`ui::phone`), under a pointer the desktop's; the
         // phone's screens read a little more (`Forge::touch`)

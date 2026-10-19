@@ -27,6 +27,9 @@ chat.workspace = true
 ducklink.workspace = true
 forge.workspace = true
 identity.workspace = true
+# who can edit a repository or a change: ownership's answers, in policy-view's words
+ownership.workspace = true
+policy-view.workspace = true
 futures.workspace = true
 pulldown-cmark.workspace = true
 serde.workspace = true

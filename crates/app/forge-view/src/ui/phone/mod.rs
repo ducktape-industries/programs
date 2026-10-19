@@ -127,5 +127,6 @@ fn sheet(
             repos::new_repository(forge.new_repo.as_ref()?, cx, ladder, theme)
         }
         Overlay::FinishReview => review::render(forge, forge.review()?, cx, ladder, theme),
+        Overlay::Policy => crate::policies::sheet(forge, cx, ladder, theme)?,
     })
 }

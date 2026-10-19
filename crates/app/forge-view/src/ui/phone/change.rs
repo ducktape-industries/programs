@@ -584,7 +584,8 @@ fn merge_gate(forge: &Forge, ladder: &Ladder, theme: &Theme) -> Option<AnyElemen
 /// way, each half the row; 16 in, 12 over, a hairline above.
 fn review_bar(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> Div {
     let merge = cx.listener(|forge, _: &ClickEvent, _, cx| forge.merge(cx));
-    let mergeable = forge.merge_block().is_none() && forge.writes_repo() && !parts::sending(forge);
+    let mergeable =
+        forge.merge_block().is_none() && forge.may_change_repo() && !parts::sending(forge);
     let me = forge.me_principal().is_some();
     let review = match forge.review() {
         Some(_) => {
@@ -887,6 +888,7 @@ fn details(
         .overflow_y_scroll()
         .flex()
         .flex_col()
+        .children(crate::policies::change_row(forge, cx, ladder, theme))
         .child(section_aside(
             "forge-details-reviews",
             "Reviews",
@@ -1116,7 +1118,7 @@ fn actions(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Them
         return div();
     };
     let open = change.state == ChangeState::Open;
-    let mine = forge.me_principal().as_ref() == Some(&change.author);
+    let edits = forge.may_edit_change();
     let edit = cx.listener(|forge, _: &ClickEvent, window, cx| {
         forge.close_sheet(cx);
         forge.start_edit(window, cx);
@@ -1143,10 +1145,10 @@ fn actions(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Them
     div()
         .flex()
         .flex_col()
-        .children((open && mine).then(|| {
+        .children((open && edits).then(|| {
             design::sheet_row(id("forge-change-edit"), "Edit", ladder, theme, edit).icon("pencil")
         }))
-        .children((open && forge.writes_repo()).then(|| {
+        .children((open && forge.may_close_change()).then(|| {
             design::sheet_row(id("forge-change-close"), "Close", ladder, theme, close)
                 .icon("x")
                 .danger()

@@ -2233,6 +2233,8 @@ dependencies = [
  "futures",
  "gitcore",
  "identity",
+ "ownership",
+ "policy-view",
  "program",
  "pulldown-cmark",
  "serde",

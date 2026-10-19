@@ -332,6 +332,15 @@ pub(crate) fn configure(cx: &mut TestAppContext, mode: &'static str) {
         .handle::<ProgramQuery<access::Access>>(|query| Ok(access_answer(query)));
     cx.host()
         .handle::<Submit<access::Access>>(|_| Ok(view::testing::applied(Vec::new())));
+    // no repository or change has an owner on record: each keeps the rule from before policies
+    cx.host()
+        .handle::<ProgramQuery<ownership::Ownership>>(|query| {
+            Ok(match query {
+                ownership::Query::Record { .. } => ownership::Reply::Record(None),
+                ownership::Query::Effective { .. } => ownership::Reply::Policy(None),
+                query => panic!("unexpected ownership query: {query:?}"),
+            })
+        });
     cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
 }
 
@@ -1911,6 +1920,9 @@ mod log_tests;
 
 #[path = "phone_tests.rs"]
 mod phone_tests;
+
+#[path = "policies_tests.rs"]
+mod policies_tests;
 
 #[test]
 fn copy_puts_the_address_on_the_clipboard_without_opening_the_repository() {

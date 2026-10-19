@@ -869,8 +869,9 @@ fn ref_row(
 
 // ------------------------------------------------------------------ Settings
 
-/// The repository's settings and writers (`SettingsTab`): what a switch
-/// changes is saved at once; everything is read-only for a non-owner.
+// The repository's settings and writers (`SettingsTab`): what a switch changes is saved at once.
+// The settings are read-only to whom the repository's policy does not admit, the writers to all
+// but its owner, whose access list it is.
 fn settings(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> AnyElement {
     let page = body("forge-settings")
         .overflow_y_scroll()
@@ -889,6 +890,7 @@ fn settings(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &The
         Err(state) => return page.child(state).into_any_element(),
     };
     let owner = forge.owns_repo();
+    let configures = forge.may_configure();
     let section = |key: &str, label: &str| {
         design::section_head(id(key.to_owned()), label.to_owned(), ladder, theme)
     };
@@ -896,12 +898,13 @@ fn settings(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &The
         .child(default_head(
             forge,
             &repo.repo.settings.head,
-            owner,
+            configures,
             cx,
             ladder,
             theme,
         ))
         .child(section("forge-settings-access", "Access"))
+        .children(crate::policies::repo_row(forge, cx, ladder, theme))
         .child(
             Row::titled(id("forge-writer-owner"), "Owner")
                 .tail(
@@ -914,7 +917,7 @@ fn settings(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &The
         .children(switches(
             forge,
             &repo.repo.settings,
-            owner,
+            configures,
             cx,
             ladder,
             theme,

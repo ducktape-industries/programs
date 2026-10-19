@@ -1,8 +1,8 @@
 # policy-view
 
 What a view shows of the `ownership` program's policies, written once for every
-view that links it (settings-view's Policies pane; chat-view's "Who can edit"
-rows; forge-view and harness-view next). It links `ownership` and `identity`
+view that links it (settings-view's Policies pane; chat-view's and forge-view's
+"Who can edit" rows; harness-view next). It links `ownership` and `identity`
 with `program` off, and `view`; its only writes are the item sheets' `Relink`
 and `Transfer`.
 

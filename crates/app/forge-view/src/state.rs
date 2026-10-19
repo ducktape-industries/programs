@@ -174,6 +174,11 @@ pub struct Forge {
     pub(crate) blob_cache: crate::blob::BlobCache,
     #[serde(skip)]
     pub(crate) diff_cache: crate::ui::diff::DiffCache,
+    // who can edit the open repository and the open change (`policies.rs`)
+    #[serde(skip)]
+    pub(crate) repo_policy: policy_view::Editing,
+    #[serde(skip)]
+    pub(crate) change_policy: policy_view::Editing,
 }
 
 /// Where the reader is. One flat record: every screen is a projection of it,
@@ -310,6 +315,8 @@ pub(crate) enum Overlay {
     NewRepository,
     /// Finish your review
     FinishReview,
+    // who can edit the open repository or change (`policies.rs`)
+    Policy,
 }
 
 /// A sheet a phone page opens over itself; Back closes it first.

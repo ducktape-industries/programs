@@ -36,7 +36,10 @@ pub(crate) fn sidebar(
     let Some((change, _, _, _)) = forge.change() else {
         return column.child(quiet(words::READING_CHANGE, theme));
     };
+    let who = crate::policies::change_row(forge, cx, ladder, theme)
+        .map(|row| row.border_b_1().border_color(theme.border));
     column
+        .children(who)
         .child(reviews(forge, theme, ladder))
         .child(merge_status(forge, theme))
         .child(comments(forge, cx, theme))

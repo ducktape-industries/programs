@@ -196,7 +196,7 @@ fn title_line(
     let close = cx.listener(|forge, _: &ClickEvent, _, cx| forge.close_change(cx));
     let merge = cx.listener(|forge, _: &ClickEvent, _, cx| forge.merge(cx));
     let open = change.state == ChangeState::Open;
-    let mine = forge.me_principal().as_ref() == Some(&change.author);
+    let edits = forge.may_edit_change();
     let closing = closing(forge, change);
     let mergeable = forge.merge_block().is_none();
     let mut top = div()
@@ -225,7 +225,7 @@ fn title_line(
             .child(
                 button(id("forge-edit-change"), "Edit", ladder, theme, edit)
                     .kind(design::Kind::Quiet)
-                    .enabled(mine),
+                    .enabled(edits),
             )
             .child(
                 button(
@@ -240,12 +240,12 @@ fn title_line(
                     close,
                 )
                 .kind(design::Kind::Outline)
-                .enabled(forge.writes_repo()),
+                .enabled(forge.may_close_change()),
             )
             .child(
                 button(id("forge-merge"), "Merge", ladder, theme, merge)
                     .kind(design::Kind::Primary)
-                    .enabled(mergeable && forge.writes_repo()),
+                    .enabled(mergeable && forge.may_change_repo()),
             );
     }
     top

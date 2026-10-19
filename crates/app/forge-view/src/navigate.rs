@@ -15,6 +15,8 @@ impl Forge {
         self.notice.clear();
         self.sheet = None;
         self.details = false;
+        self.repo_policy.sheet = None;
+        self.change_policy.sheet = None;
         // a walk of a list ends where the reader moves: none stays lit
         self.list_cursor = None;
         self.repos_cursor = None;
@@ -36,6 +38,9 @@ impl Forge {
     /// or Finish your review. The phone draws this and its Back closes
     /// this, so the two never disagree (rule 13).
     pub(crate) fn overlay(&self) -> Option<Overlay> {
+        if self.policy_sheet_open() {
+            return Some(Overlay::Policy);
+        }
         if let Some(menu) = self.menu {
             return Some(Overlay::Menu(menu));
         }
@@ -58,6 +63,7 @@ impl Forge {
             Some(Overlay::Sheet(_)) => return self.close_sheet(cx),
             Some(Overlay::NewRepository) => return self.cancel_repo(cx),
             Some(Overlay::FinishReview) => return self.finishing(false, cx),
+            Some(Overlay::Policy) => return self.close_policy_sheet(cx),
             None => {}
         }
         if self.change_form().is_some() {

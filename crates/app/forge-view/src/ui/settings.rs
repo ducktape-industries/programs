@@ -68,10 +68,11 @@ pub(crate) fn render(
             div().flex().justify_end().py(design::space::LG).child(
                 button(id("forge-settings-save"), "Save", ladder, theme, save)
                     .kind(design::Kind::Primary)
-                    .enabled(forge.owns_repo()),
+                    .enabled(forge.may_configure()),
             ),
         )
         .child(group("forge-settings-access-title", "Access", theme))
+        .children(crate::policies::repo_row(forge, cx, ladder, theme))
         .child(access_row(
             "owner",
             forge.principal_name(&repo.repo.owner),
@@ -133,7 +134,7 @@ fn flags(
         }
         cx.notify();
     });
-    let owns = forge.owns_repo();
+    let configures = forge.may_configure();
     [
         design::setting_row(
             id("forge-settings-force-row"),
@@ -143,7 +144,7 @@ fn flags(
                 id("forge-settings-force"),
                 words::ALLOW_FORCE_PUSHES,
                 form.allow_force,
-                owns,
+                configures,
                 ladder,
                 theme,
                 force,
@@ -159,7 +160,7 @@ fn flags(
                 id("forge-settings-delete"),
                 words::ALLOW_REF_DELETION,
                 form.allow_delete,
-                owns,
+                configures,
                 ladder,
                 theme,
                 delete,
