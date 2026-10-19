@@ -1,6 +1,6 @@
-//! The `activity` program: where each frame a block carried sits on the chain and who signed it,
-//! kept newest first network-wide, under the key that signed it and under the account it acted as,
-//! as the kernel tells its hooks. Views list the network's transactions and what an account did from it.
+//! The `activity` program: the frames each account acted in, newest first, and how many it sent
+//! each program, as the kernel tells its hooks. Every frame, and every frame by signing key, is the
+//! node's to list (`chain.blocks`, `/v1/activity`); views list what an account did from here.
 mod examples;
 mod program;
 mod rules;
@@ -47,7 +47,7 @@ pub struct Used {
     ::program::Described,
 )]
 #[tool_about(
-    "Where each frame sits on the chain and who signed it, kept newest first network-wide, by signing key and by the account it acted as, as the kernel tells it. It takes no op."
+    "The frames each account acted in, newest first, and how many it sent each program, as the kernel tells it. Every frame, and every frame by signing key, is the node's to list (/v1/blocks, /v1/activity). It takes no op."
 )]
 #[ask(Activity)]
 pub enum Query {
@@ -58,13 +58,13 @@ pub enum Query {
         page: PageRequest,
     },
     #[ask(Reply::Frames(PageResponse<Frame>))]
-    #[tool_query(description = "The frames a key signed, newest first.", example = examples::signed)]
+    #[tool_query(description = "Refused: activity keeps no frame by signing key. The node lists them (/v1/activity).", example = examples::signed)]
     Signed { key: Vec<u8>, page: PageRequest },
     #[ask(Reply::Used(PageResponse<Used>))]
     #[tool_query(description = "How many frames each account sent each program, a page at a time.", example = examples::used)]
     Used { page: PageRequest },
     #[ask(Reply::Frames(PageResponse<Frame>))]
-    #[tool_query(description = "Every frame on the network, newest first.", example = examples::frames)]
+    #[tool_query(description = "Refused: activity keeps no network-wide list. Every frame is in the node's blocks (/v1/blocks).", example = examples::frames)]
     Frames { page: PageRequest },
 }
 

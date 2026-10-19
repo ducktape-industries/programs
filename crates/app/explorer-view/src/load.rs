@@ -1,8 +1,6 @@
-//! The loaders: the head and the window it pulls (`chain.status`,
-//! `chain.blocks`), the lists the system programs answer, and what an op
-//! says it does (`program.describe`). A list is read with `cx.load`,
-//! which keeps what is on screen while it reads again and draws only what
-//! changed.
+//! The loaders: the head and the window it pulls (`chain.status`, `chain.blocks`), the lists the
+//! system programs answer, and what an op says it does (`program.describe`). A list is read with
+//! `cx.load`, which keeps what is on screen while it reads again and draws only what changed.
 use std::future::Future;
 
 use view::Paged;
@@ -19,12 +17,6 @@ const ACTED: usize = queries::PAGE as usize;
 /// The payload a row's transaction is read with (Expo `ROW_PAYLOAD`,
 /// `query/page.ts:10`): past it, the row is titled by its size.
 const ROW_PAYLOAD: u32 = 4 << 10;
-/// The rows a program's transactions read back by themselves before they
-/// ask to look further: twenty pages. Activity lists no transaction by
-/// program, so one with few would otherwise read all of activity, a page
-/// a tick (garage's 60k frames: 1,200 pages, 9 MB held and walked on every
-/// draw).
-pub(crate) const LOOK_BACK: usize = 1_000;
 
 impl Explorer {
     /// Everything, again: the boot, a restore, a retry.
@@ -33,7 +25,6 @@ impl Explorer {
         self.read_accounts(cx);
         self.read_validators(cx);
         self.read_network(cx);
-        self.read_frames(cx);
         self.read_used(cx);
         self.read_page(cx);
         self.read_acted(cx);
@@ -130,21 +121,6 @@ impl Explorer {
         cx.load(self, work, |view| &mut view.network);
     }
 
-    /// Every transaction, newest first, a page at a time: the Overview
-    /// shows the first page, the Transactions tab reads on as it is
-    /// scrolled. Asked again (a write to activity, a retry), it reads its
-    /// first page again as [`reread_first`](Self::reread_first) says.
-    pub(crate) fn read_frames(&mut self, cx: &mut Context<Self>) {
-        let host = cx.host();
-        if self.frames.is_some() {
-            let first = move || queries::frames(host, None);
-            return self.reread_first(first, |view| view.frames.as_mut(), cx);
-        }
-        let page = move |after| queries::frames(host.clone(), after);
-        self.frames = Some(Listing::new(page, cx));
-        self.reach = LOOK_BACK;
-    }
-
     pub(crate) fn read_used(&mut self, cx: &mut Context<Self>) {
         let work = queries::used(cx.host());
         cx.load(self, work, |view| &mut view.used);
@@ -238,19 +214,8 @@ impl Explorer {
         cx.notify();
     }
 
-    /// Look further back: a program's transactions read [`LOOK_BACK`] rows
-    /// further by themselves.
-    pub(crate) fn look_further(&mut self, cx: &mut Context<Self>) {
-        self.reach += LOOK_BACK;
-        cx.notify();
-    }
-
     /// The listings `stale` picks, read anew from their first page.
     fn start_over_where(&mut self, stale: impl Fn(&Listing) -> bool, cx: &mut Context<Self>) {
-        if self.frames.as_ref().is_some_and(&stale) {
-            self.frames = None;
-            self.read_frames(cx);
-        }
         if self.acted.as_ref().is_some_and(|(_, acted)| stale(acted)) {
             self.acted = None;
             self.read_acted(cx);

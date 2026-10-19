@@ -258,8 +258,9 @@ too. The call's origin is the kernel itself (`Origin::Root`, from
 never changes a frame: its receipt stays as it ran, a hook that refuses,
 traps, runs out of fuel or emits a message keeps none of its writes, and
 the block goes on. `activity` (`crates/app/activity`) is the hook this
-repo founds: it lists every frame newest first, and indexes who signed
-what, by key and by account.
+repo founds: it keeps the frames each account acted in, newest first, and
+how many each account sent each program. Every frame, and every frame by
+signing key, is the node's to list (`/v1/blocks`, `/v1/activity`).
 
 Who may schedule or cancel (putting a blob is open to any account):
 

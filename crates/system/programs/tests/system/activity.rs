@@ -20,28 +20,12 @@ impl Net {
         page.items
     }
 
-    async fn signed(&self, key: &[u8]) -> Vec<(u64, u32, bool)> {
-        let asked = activity::Query::Signed {
-            key: key.to_vec(),
-            page: PageRequest::default(),
-        };
-        let activity::Reply::Frames(page) = self.ask(activity::PROGRAM, &asked).await else {
-            panic!()
-        };
-        page.items
+    async fn ran(&self, account: AccountNumber) -> Vec<(u64, u32, bool)> {
+        let acted = self.acted(account).await;
+        acted
             .into_iter()
             .map(|frame| (frame.height, frame.position, frame.applied))
             .collect()
-    }
-
-    async fn recorded(&self) -> Vec<activity::Frame> {
-        let asked = activity::Query::Frames {
-            page: PageRequest::default(),
-        };
-        let activity::Reply::Frames(page) = self.ask(activity::PROGRAM, &asked).await else {
-            panic!()
-        };
-        page.items
     }
 
     async fn rename(&mut self, name: &str) {
@@ -59,7 +43,7 @@ impl Net {
 }
 
 #[test]
-fn a_founding_hook_is_told_of_every_frame_and_answers_by_account_and_key() {
+fn a_founding_hook_is_told_of_every_frame_and_keeps_it_by_account() {
     deterministic::Runner::default().start(|context| async move {
         let dir = tempfile::tempdir().unwrap();
         let mut net = Net::found_with(
@@ -87,34 +71,24 @@ fn a_founding_hook_is_told_of_every_frame_and_answers_by_account_and_key() {
             reason::ALREADY_EXISTS
         );
         assert_eq!(
-            net.signed(&public(ALICE_KEY)).await,
-            [(3, 0, false), (2, 0, true), (1, 0, true)],
-            "every frame the key signed, refused or not, newest first"
+            net.ran(ALICE).await,
+            [(3, 0, false), (2, 0, true)],
+            "every frame the account acted in, refused or not, newest first: the create ran before the key held an account"
         );
         let acted = net.acted(ALICE).await;
-        let heights: Vec<u64> = acted.iter().map(|frame| frame.height).collect();
-        assert_eq!(
-            heights,
-            [3, 2],
-            "the create ran before the key held an account"
-        );
         assert_eq!(acted[1].target, identity::PROGRAM);
-        let frames = net.recorded().await;
-        let places: Vec<(u64, u32)> = frames
-            .iter()
-            .map(|frame| (frame.height, frame.position))
-            .collect();
-        assert!(
-            places.windows(2).all(|pair| pair[0] > pair[1]),
-            "every frame once, newest first: {places:?}"
-        );
-        let alices: Vec<(u64, u32, bool)> = frames
-            .iter()
-            .filter(|frame| frame.signer == public(ALICE_KEY))
-            .map(|frame| (frame.height, frame.position, frame.applied))
-            .collect();
-        assert_eq!(alices, net.signed(&public(ALICE_KEY)).await);
         assert_eq!(acted[1].time, TIME + 2000);
+        let every = activity::Query::Frames {
+            page: PageRequest::default(),
+        };
+        let by_key = activity::Query::Signed {
+            key: public(ALICE_KEY).to_vec(),
+            page: PageRequest::default(),
+        };
+        for asked in [every, by_key] {
+            let refusal = net.refused(activity::PROGRAM, &asked).await;
+            assert_eq!(refusal.reason, reason::UNSUPPORTED, "the node lists them");
+        }
         let asked = activity::Query::Used {
             page: PageRequest::default(),
         };
@@ -151,9 +125,9 @@ fn a_hook_the_programs_schedules_is_told_from_its_height_until_it_is_removed() {
         .await;
         net.rename("Before").await;
         assert_eq!(net.height, hooked_at - 1);
-        assert_eq!(net.signed(&public(ALICE_KEY)).await, []);
+        assert_eq!(net.ran(ALICE).await, []);
         net.rename("Hooked").await;
-        assert_eq!(net.signed(&public(ALICE_KEY)).await, [(hooked_at, 0, true)]);
+        assert_eq!(net.ran(ALICE).await, [(hooked_at, 0, true)]);
         let unhooked_at = net.height + 2;
         net.schedule(
             unhooked_at,
@@ -162,12 +136,10 @@ fn a_hook_the_programs_schedules_is_told_from_its_height_until_it_is_removed() {
         .await;
         assert_eq!(net.height, unhooked_at - 1);
         net.rename("Unhooked").await;
-        let votes = net.signed(&public(FOUNDERS[1])).await;
         assert_eq!(
-            votes,
-            [(unhooked_at - 1, 1, true)],
-            "the vote that hooked it went unheard, the one that unhooks it is heard"
+            net.ran(ALICE).await,
+            [(hooked_at, 0, true)],
+            "a frame from the height the hook is removed goes unheard"
         );
-        assert_eq!(net.signed(&public(ALICE_KEY)).await, [(hooked_at, 0, true)]);
     });
 }

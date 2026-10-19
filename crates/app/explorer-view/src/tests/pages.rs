@@ -16,7 +16,7 @@ fn the_overview_shows_the_head_and_the_latest_blocks_and_transactions() {
     assert!(cx.has_text("mystery") && cx.has_text("02020202…0202"));
     assert!(
         cx.host().requests::<ChainTx>().is_empty(),
-        "the latest transactions are activity's frames"
+        "the latest transactions are the window's"
     );
     // the page tabs sit in a named tab list
     let Some(view::wire::Node::Container(bar)) = cx.find("explorer-tabs") else {
@@ -650,11 +650,7 @@ fn the_transactions_list_lowers_only_the_rows_the_host_shows() {
         other => panic!("no list of rows: {other:?}"),
     };
     let (count, lowered, _) = list(&cx);
-    assert_eq!(
-        count,
-        crate::queries::PAGE as usize + 1,
-        "the first page, and the line that reads on"
-    );
+    assert_eq!(count, WINDOW, "every transaction the window holds");
     assert!(
         (14..count).contains(&lowered),
         "a screenful and a margin, not every row: {lowered}"

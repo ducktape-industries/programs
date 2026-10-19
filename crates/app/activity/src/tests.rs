@@ -82,7 +82,7 @@ fn told() -> (MockHost, Vec<hook::Record>) {
 }
 
 #[test]
-fn an_account_reads_what_it_did_newest_first_and_a_key_what_it_signed() {
+fn an_account_reads_what_it_did_newest_first() {
     let (host, records) = told();
     let (acted, next) = frames(ask(
         &host,
@@ -94,26 +94,6 @@ fn an_account_reads_what_it_did_newest_first_and_a_key_what_it_signed() {
     let newest_first: Vec<Frame> = [4, 3, 1, 0].iter().map(|at| frame(&records[*at])).collect();
     assert_eq!(acted, newest_first);
     assert_eq!(next, None);
-    let (signed, _) = frames(ask(
-        &host,
-        Query::Signed {
-            key: ADA_PHONE.to_vec(),
-            page: PageRequest::default(),
-        },
-    ));
-    assert_eq!(signed, [frame(&records[4]), frame(&records[1])]);
-    let (stranger, _) = frames(ask(
-        &host,
-        Query::Signed {
-            key: STRANGER.to_vec(),
-            page: PageRequest::default(),
-        },
-    ));
-    assert_eq!(
-        stranger,
-        [frame(&records[2])],
-        "a key that holds no account is kept by key"
-    );
 }
 
 #[test]

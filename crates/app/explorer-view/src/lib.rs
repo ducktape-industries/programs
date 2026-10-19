@@ -1,30 +1,6 @@
-//! Explorer: the chain as this node lists it. Finalized blocks and the
-//! transactions each carries come from `chain.blocks` and `chain.block`,
-//! read with no payload; every transaction, newest first, and what each
-//! account did, from `activity`; one transaction opened by its place, its
-//! whole payload from `chain.tx` and its op's title from
-//! `program.describe`; who signed them from `identity`; the validators
-//! from `valset`; the programs from `programs`.
-//!
-//! What the node does not keep is not shown: there is no per-block state
-//! root or write set. The block list is the last [`WINDOW`] blocks, read a
-//! page at a time and then followed at the head as `chain.heads` pushes
-//! it; the transaction list is the frames `activity` recorded, newest
-//! first, read a page at a time as it is scrolled. A write to activity
-//! reads a list's first page again in place while that is all it holds,
-//! and tells a list read on past it that newer rows landed above it
-//! (`Explorer::reread_first` in `load.rs`). A row in any transaction list,
-//! a block's own included, shows only what its read carries: how the
-//! transaction ran, its program, its signer's account and its place. An
-//! op's title shows only on that transaction's page.
-//!
-//! The state is one struct (`state.rs`) and the window (`chain.rs`). Reads
-//! are typed (`queries.rs`) and loaded in `load.rs`, re-read on the live
-//! heads `watch.rs` follows; where the reader goes lands in `actions.rs`;
-//! what the reader changes on the Programs page, by account or by vote, in
-//! `acting.rs`; the sentences both designs show, once, in `words.rs`. `ui/`
-//! draws the desktop's pages and `ui/phone/` the phone's screens, picked
-//! once in [`Explorer`]'s render.
+//! Explorer: the chain as this node lists it. Blocks and their transactions come from the window
+//! (`chain.blocks`, the last [`WINDOW`] blocks, followed at the head); one transaction's payload from
+//! `chain.tx`; what an account did from `activity`; the rest from the system programs.
 mod acting;
 mod actions;
 mod chain;

@@ -53,12 +53,11 @@ impl Explorer {
             Err(refusal) => cx.log_refused("the programs role's live heads", &refusal),
         })
         .detach();
-        // a write to activity: each listing of its frames asks its first
+        // a write to activity: the open account's listing asks its first
         // page again, read in place or telling it is behind
         // (`Explorer::reread_first`); the counts are read again
         cx.follow::<Changes<Activity>>((), |view, head, cx| match head {
             Ok(_) => {
-                view.read_frames(cx);
                 view.read_used(cx);
                 view.read_acted(cx);
             }

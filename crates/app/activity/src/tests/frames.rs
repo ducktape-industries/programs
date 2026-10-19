@@ -1,52 +1,41 @@
 use super::*;
 
-fn every(host: &MockHost, page: PageRequest) -> (Vec<Frame>, Option<Vec<u8>>) {
-    frames(ask(host, Query::Frames { page }))
+#[test]
+fn a_frame_is_kept_under_the_account_it_acted_as_and_nowhere_else() {
+    let (host, _) = told();
+    let kept: Vec<Vec<u8>> = host.borrow().state.keys().cloned().collect();
+    assert!(!kept.is_empty());
+    assert!(
+        kept.iter()
+            .all(|key| key.starts_with(b"a/") || key.starts_with(b"u/")),
+        "nothing network-wide or by key: {kept:?}"
+    );
 }
 
 #[test]
-fn every_frame_reads_back_once_newest_first_whoever_signed_it() {
-    let (host, records) = told();
-    let (all, next) = every(&host, PageRequest::default());
-    let newest_first: Vec<Frame> = records.iter().rev().map(frame).collect();
-    assert_eq!(all, newest_first);
-    assert_eq!(next, None);
-}
-
-#[test]
-fn a_frame_told_out_of_order_still_reads_in_its_place_on_the_chain() {
+fn a_frame_no_account_signed_is_kept_nowhere() {
     let host = MockHost::default();
-    let records = [
-        record(7, 1, ADA, Some(5), "chat"),
-        record(2, 0, STRANGER, None, "identity"),
-        record(7, 0, ADA_PHONE, Some(5), "forge"),
-        record(11, 4, ADA, Some(5), "chat"),
-    ];
-    for record in &records {
-        tell(&host, record);
-    }
-    let places: Vec<(u64, u32)> = every(&host, PageRequest::default())
-        .0
-        .iter()
-        .map(|frame| (frame.height, frame.position))
-        .collect();
-    assert_eq!(places, [(11, 4), (7, 1), (7, 0), (2, 0)]);
+    tell(&host, &record(3, 2, STRANGER, None, "identity"));
+    assert!(host.borrow().state.is_empty());
 }
 
 #[test]
-fn the_network_wide_pages_resume_and_cover_every_frame_once() {
-    let (host, records) = told();
-    let mut read = Vec::new();
-    let mut page = PageRequest::first(2);
-    loop {
-        let (items, next) = every(&host, page);
-        assert!(items.len() <= 2);
-        read.extend(items);
-        let Some(next) = next else {
-            break;
-        };
-        page = PageRequest::resume(Some(next), 2);
+fn every_frame_and_the_frames_of_a_key_are_refused_naming_where_the_node_lists_them() {
+    let (host, _) = told();
+    let every = Query::Frames {
+        page: PageRequest::default(),
+    };
+    let by_key = Query::Signed {
+        key: ADA.to_vec(),
+        page: PageRequest::default(),
+    };
+    for query in [every, by_key] {
+        let refused = Activity::query(&host.query(MockHost::env(PROGRAM)), query).unwrap_err();
+        assert_eq!(refused.code, code::UNSUPPORTED);
+        assert!(
+            refused.message.contains("/v1/blocks") && refused.message.contains("/v1/activity"),
+            "{}",
+            refused.message
+        );
     }
-    let newest_first: Vec<Frame> = records.iter().rev().map(frame).collect();
-    assert_eq!(read, newest_first);
 }

@@ -2,7 +2,7 @@
 
 use ::program::{Error, ExecCtx, Program, QueryCtx, code, hook};
 
-use crate::rules::{acted, frames, keep, signed, used};
+use crate::rules::{acted, keep, unkept, used};
 use crate::{Op, PROGRAM, Query, Reply};
 
 pub struct Activity;
@@ -30,9 +30,9 @@ impl Program for Activity {
 
     fn query(ctx: &QueryCtx, query: Query) -> Result<Reply, Error> {
         Ok(match query {
-            Query::Frames { page } => Reply::Frames(frames(ctx, &page)?),
+            Query::Frames { .. } => return Err(unkept("every frame")),
             Query::Acted { account, page } => Reply::Frames(acted(ctx, account, &page)?),
-            Query::Signed { key, page } => Reply::Frames(signed(ctx, key, &page)?),
+            Query::Signed { .. } => return Err(unkept("frames by signing key")),
             Query::Used { page } => Reply::Used(used(ctx, &page)?),
         })
     }

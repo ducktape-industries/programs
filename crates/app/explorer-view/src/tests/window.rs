@@ -300,13 +300,13 @@ fn a_snapshot_restores_without_reading_the_window_again() {
     assert!(restored.has_text("6f6f6f6f…6f6f"), "{:?}", restored.texts());
     assert!(restored.find("explorer-block-12").is_some());
     assert!(restored.host().requests::<ChainBlocks>().is_empty());
-    // the frames are not in the snapshot: their first page is asked again
-    let first = activity::Query::Frames {
-        page: activity::PageRequest::first(crate::queries::PAGE),
-    };
-    let asked = restored.host().requests::<Query<Activity>>();
-    assert_eq!(asked.iter().filter(|query| **query == first).count(), 1);
-    assert!(restored.has_text("Reading transactions…"));
+    // the latest transactions are the window's: restored with it
+    assert!(
+        restored.find("explorer-tx-12-0").is_some(),
+        "{:?}",
+        restored.texts()
+    );
+    assert!(!restored.has_text("Reading transactions…"));
 }
 
 /// Every page over a full window stays inside the host's frame budgets, and

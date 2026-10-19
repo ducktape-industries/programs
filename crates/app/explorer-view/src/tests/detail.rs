@@ -70,7 +70,7 @@ fn the_transactions_link_opens_the_programs_transactions() {
     cx.simulate_click("explorer-program-txs");
     cx.run_until_parked();
     assert!(
-        cx.has_text("Transactions · chat") && cx.has_text("2 transactions"),
+        cx.has_text("Transactions · chat") && cx.has_text("2 transactions in the last 13 blocks"),
         "{:?}",
         cx.texts()
     );

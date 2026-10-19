@@ -1,9 +1,6 @@
-//! A node the explorer reads, played by the fake host: a short chain, three
-//! accounts, one validator and `programs`, each answered as the program
-//! would. Tests by what they cover: `access` (what a reader changes on the
-//! Programs page), `describe`, `window`, `pages`, `detail` (one program's
-//! page), `search`, `transactions`, `phone` (the touch body at phone
-//! widths).
+//! A node the explorer reads, played by the fake host: a short chain, three accounts, one
+//! validator and `programs`, each answered as the program would. The modules split the tests by
+//! what they cover.
 mod access;
 mod describe;
 mod detail;
@@ -327,10 +324,6 @@ pub(crate) fn index(cx: &TestAppContext, chain: impl Fn() -> Vec<Block> + 'stati
             })
         });
         Ok(match query {
-            activity::Query::Frames { page: asked } => {
-                let every = frames.map(|(_, frame)| frame);
-                activity::Reply::Frames(page_of(every, &asked))
-            }
             activity::Query::Acted {
                 account,
                 page: asked,

@@ -259,15 +259,6 @@ pub struct Explorer {
     pub(crate) validators: Loadable<Vec<Vec<u8>>>,
     pub(crate) network: Loadable<Network>,
     pub(crate) used: Loadable<Used>,
-    /// every transaction, newest first, a page at a time (`read_frames`):
-    /// read again on a restore, so a snapshot carries no frame
-    #[serde(skip)]
-    pub(crate) frames: Option<Listing>,
-    /// how many rows of `frames` a program's transactions read back by
-    /// themselves (`LOOK_BACK`, and that more at each Look further back);
-    /// `LOOK_BACK` again whenever `frames` starts over
-    #[serde(skip)]
-    pub(crate) reach: usize,
     /// what the account page on screen did, newest first, a page at a
     /// time (`read_acted`), and whose it is
     #[serde(skip)]

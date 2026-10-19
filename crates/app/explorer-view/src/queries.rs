@@ -1,7 +1,6 @@
-//! Typed reads of the system programs: accounts (identity), validators
-//! (valset), programs (programs), and every transaction and what each
-//! account did (activity), a page at a time. The window's blocks are the
-//! host's (`load.rs`).
+//! Typed reads of the system programs: accounts (identity), validators (valset), programs
+//! (programs), and what each account did (activity), a page at a time. The window's blocks and their
+//! transactions are the host's (`load.rs`).
 use view::host::Page;
 use view::prelude::*;
 
@@ -53,25 +52,9 @@ pub(crate) async fn used(host: Host) -> Result<Used, Error> {
     Ok(Used { list })
 }
 
-/// A page of activity's frames, newest first. One page holds the
-/// Overview's latest and the phone's Activity rows (`load::ACTED`); an
-/// unbounded ask is one page of every frame on the network (garage's 57k,
-/// 104M fuel in one call).
+// A page of what an account did, newest first: one page holds the phone's Activity rows
+// (`load::ACTED`), and an unbounded ask is every frame the account acted in at once.
 pub(crate) const PAGE: u64 = 50;
-
-/// The page of every transaction after `after`, as a [`Paged`](view::Paged)
-/// reads it: its frames and the cursor of the page after them.
-pub(crate) async fn frames(
-    host: Host,
-    after: Option<Vec<u8>>,
-) -> Result<Page<activity::Frame>, Error> {
-    let page = host
-        .query(activity::ask::Frames {
-            page: activity::PageRequest::resume(after, PAGE),
-        })
-        .await?;
-    Ok((page.items, page.next))
-}
 
 /// The page of what account `account` did after `after`.
 pub(crate) async fn acted(

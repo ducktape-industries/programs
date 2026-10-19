@@ -1,7 +1,6 @@
-//! The explorer's pages under a pointer: the desktop tree, which the root
-//! picks when the device is not touch first (`lib.rs`; the phone's is
-//! `ui/phone/`). Square corners, rows split by one-pixel rules, hashes and
-//! numbers in the data face.
+//! The explorer's pages under a pointer, which the root picks when the device is not touch first
+//! (`lib.rs`; the phone's are `ui/phone/`). Square corners, rows split by one-pixel rules, hashes
+//! and numbers in the data face.
 use std::ops::Range;
 
 use view::prelude::*;
@@ -203,10 +202,10 @@ fn page(view: &Explorer, cx: Cx, theme: &Theme, ladder: &Ladder) -> AnyElement {
         };
     }
     match view.pages.top().clone() {
-        Route::Overview => overview(view, cx, theme, ladder),
+        Route::Overview => overview(view, cx, theme),
         Route::Blocks => blocks(view, cx, theme),
         Route::Block(height) => block(view, height, cx, theme, ladder),
-        Route::Transactions(program) => transactions(view, program, cx, theme, ladder),
+        Route::Transactions(program) => transactions(view, program, cx, theme),
         Route::Tx { height, position } => tx(view, height, position, cx, theme, ladder),
         Route::Accounts => accounts(view, cx, theme, ladder),
         Route::Account(number) => account(view, number, cx, theme, ladder),
@@ -311,9 +310,6 @@ struct Rows {
     routes: Vec<Route>,
     children: Vec<AnyElement>,
     paint: Option<Painter>,
-    /// the line a painted list ends with while its listing reads on
-    /// ([`Rows::more`])
-    more: Option<&'static str>,
 }
 
 /// Paints a range of a list's rows, each a [`row`], off the view they are
@@ -333,7 +329,6 @@ fn rows(id: &'static str, label: &'static str, view: &Explorer) -> Rows {
         routes: Vec::new(),
         children: Vec::new(),
         paint: None,
-        more: None,
     }
 }
 
@@ -366,13 +361,6 @@ impl Rows {
         self.paint = Some(Box::new(paint));
         self
     }
-    /// The line the painted rows end with, a row of their height that is
-    /// no option: the listing goes on past them. The painter is asked for
-    /// its index too, which is how it hears the list reached its end.
-    fn more(mut self, line: Option<&'static str>) -> Self {
-        self.more = line;
-        self
-    }
     /// The painted rows built now, drawn whole: for a list in a page that
     /// scrolls (the Overview's panels, a block's transactions, an account's
     /// activity), which is laid out by its rows; a list sized by its box
@@ -398,7 +386,6 @@ impl Rows {
             routes,
             children,
             paint,
-            more,
         } = self;
         let count = routes.len();
         let active = active.min(count.saturating_sub(1));
@@ -426,29 +413,13 @@ impl Rows {
         let theme = *cx.global::<Theme>();
         let window = uniform_list(
             SharedString::from(format!("{id}-rows")),
-            count + usize::from(more.is_some()),
+            count,
             cx.processor(move |view: &mut Explorer, range: Range<usize>, _, cx| {
-                let mut rows: Vec<AnyElement> = paint(view, range.clone(), cx, &theme)
+                paint(view, range.clone(), cx, &theme)
                     .into_iter()
-                    .zip(range.clone())
+                    .zip(range)
                     .map(|(row, index)| option(row, index == active, &theme))
-                    .collect();
-                if let Some(line) = more.filter(|_| range.end > count) {
-                    rows.push(
-                        div()
-                            .id(SharedString::from(format!("{id}-more")))
-                            .h(ROW_H)
-                            .px_5()
-                            .flex()
-                            .items_center()
-                            .border_b_1()
-                            .border_color(theme.border)
-                            .text_color(theme.faint)
-                            .child(line)
-                            .into_any_element(),
-                    );
-                }
-                rows
+                    .collect::<Vec<AnyElement>>()
             }),
         )
         .track_scroll(&scroll)
@@ -617,10 +588,8 @@ fn tx_route(tx: &TxRow) -> Route {
     }
 }
 
-/// The frames `select` picks of those `listing` holds, in order, as a
-/// [`Rows`] list. A list painted past them (its [`Rows::more`] line) reads
-/// the listing's next page, and the next while that line stays in view:
-/// until the rows fill the list or the listing ends.
+// The frames `select` picks of those `listing` holds, in order, as a `Rows` list. A list painted
+// past them reads the listing's next page, until the rows fill the list or the listing ends.
 fn frame_rows(
     list: Rows,
     listing: &Entity<Paged<activity::Frame>>,

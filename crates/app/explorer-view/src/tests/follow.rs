@@ -323,7 +323,11 @@ fn a_pushed_head_asks_for_the_blocks_since_the_top() {
         .map(|ask| (ask.before, ask.limit))
         .collect();
     assert_eq!(new, [(None, 3)]);
-    assert!(cx.has_text("3 transactions"), "{:?}", cx.texts());
+    assert!(
+        cx.has_text("3 transactions in the last 19 blocks"),
+        "{:?}",
+        cx.texts()
+    );
 }
 
 #[test]
@@ -366,8 +370,8 @@ fn an_accounts_activity_past_the_window_lists_its_frames_and_reads_no_transactio
     cx.run_until_parked();
     assert_eq!(
         cx.host().requests::<Query<Activity>>().len(),
-        asked + 3,
-        "the first page of every frame, the counts and the open account's"
+        asked + 2,
+        "the counts and the open account's"
     );
     assert!(cx.host().requests::<ChainTx>().is_empty());
     cx.simulate_click("explorer-tx-11-0");

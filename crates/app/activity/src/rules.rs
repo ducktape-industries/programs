@@ -1,12 +1,11 @@
-//! The rules: a frame kept network-wide, under its key and under its account, and the pages and counts read back.
+//! The rules: a frame kept under the account it acted as, its count by program, and the pages read
+//! back. Every frame, and every frame by signing key, is the node's to list.
 
-use ::program::{AccountNumber, Error, ExecCtx, ProgramId, QueryCtx, hook};
+use ::program::{AccountNumber, Error, ExecCtx, ProgramId, QueryCtx, code, hook};
 use store::{Map, PageRequest, PageResponse};
 
 use crate::{Frame, Used};
 
-const FRAMES: Map<(u64, u32), Frame> = Map::new("f/");
-const SIGNED: Map<(Vec<u8>, u64, u32), Frame> = Map::new("k/");
 const ACTED: Map<(AccountNumber, u64, u32), Frame> = Map::new("a/");
 const USED: Map<(AccountNumber, ProgramId), u64> = Map::new("u/");
 
@@ -15,6 +14,9 @@ fn newest_first(frame: &Frame) -> (u64, u32) {
 }
 
 pub(crate) fn keep(ctx: &ExecCtx, record: hook::Record) -> Result<(), Error> {
+    let Some(account) = record.account else {
+        return Ok(());
+    };
     let frame = Frame {
         height: record.height,
         position: record.position,
@@ -24,11 +26,6 @@ pub(crate) fn keep(ctx: &ExecCtx, record: hook::Record) -> Result<(), Error> {
         applied: record.applied,
     };
     let (height, position) = newest_first(&frame);
-    FRAMES.put(ctx, &(height, position), &frame);
-    SIGNED.put(ctx, &(frame.signer.clone(), height, position), &frame);
-    let Some(account) = record.account else {
-        return Ok(());
-    };
     ACTED.put(ctx, &(account, height, position), &frame);
     let used = (account, frame.target);
     let frames = USED.get(ctx, &used)?.unwrap_or(0);
@@ -36,8 +33,13 @@ pub(crate) fn keep(ctx: &ExecCtx, record: hook::Record) -> Result<(), Error> {
     Ok(())
 }
 
-pub(crate) fn frames(ctx: &QueryCtx, page: &PageRequest) -> Result<PageResponse<Frame>, Error> {
-    Ok(FRAMES.range(ctx, page)?.map(|(_, frame)| frame))
+pub(crate) fn unkept(what: &str) -> Error {
+    Error::new(
+        code::UNSUPPORTED,
+        format!(
+            "activity no longer keeps {what}: the node lists every frame in its blocks (chain.blocks, /v1/blocks) and by signing key (/v1/activity)"
+        ),
+    )
 }
 
 pub(crate) fn acted(
@@ -46,14 +48,6 @@ pub(crate) fn acted(
     page: &PageRequest,
 ) -> Result<PageResponse<Frame>, Error> {
     Ok(ACTED.range_of(ctx, &account, page)?.map(|(_, frame)| frame))
-}
-
-pub(crate) fn signed(
-    ctx: &QueryCtx,
-    key: Vec<u8>,
-    page: &PageRequest,
-) -> Result<PageResponse<Frame>, Error> {
-    Ok(SIGNED.range_of(ctx, &key, page)?.map(|(_, frame)| frame))
 }
 
 pub(crate) fn used(ctx: &QueryCtx, page: &PageRequest) -> Result<PageResponse<Used>, Error> {

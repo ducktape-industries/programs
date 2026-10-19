@@ -1,11 +1,6 @@
-//! The explorer's sentences, once: every sentence, problem and capability
-//! line the desktop's pages and the phone's screens both show (the phone's
-//! are Expo's: `src/network/words.ts` and the explorer screens, mobile dev
-//! 266633c). Neither design types a sentence the other also types; a
-//! heading or a button's label stays where it is drawn. Two homes sit
-//! beside this one, each with the model it words: a form's titles, fields,
-//! notes, problems and press words in `acting.rs`, and why a program page
-//! lists no capability in `state.rs` (`Unlisted::sentence`).
+//! The explorer's sentences, once: every sentence both designs show (the phone's are Expo's,
+//! `src/network/words.ts`, mobile dev 266633c). A form's words live in `acting.rs`, and why a
+//! program page lists no capability in `state.rs` (`Unlisted::sentence`).
 use ::programs::{Change, NOTICE, Pending};
 use view::methods::{Capability, Manifested};
 
@@ -57,18 +52,14 @@ pub(crate) const NO_BLOCK_TRANSACTIONS: &str = "No transactions in this block.";
 pub(crate) const NO_TRANSACTION: &str = "Transaction not found";
 pub(crate) const NO_ACCOUNT_HERE: &str = "Identity holds no account by this number.";
 pub(crate) const NO_ACTIVITY: &str = "No activity recorded.";
-/// The line a list of transactions ends with while activity goes on past
-/// the rows read: it reads the next page as it comes into view.
-pub(crate) const READING_OLDER: &str = "Reading older transactions…";
 /// The press under an account's newest activity that reads the page past it.
 pub(crate) const SHOW_OLDER: &str = "Show older";
 /// Over a list read on past its first page once rows were written above
 /// it, and the press that reads it anew from them.
 pub(crate) const NEWER: &str = "Newer transactions";
 pub(crate) const SHOW_NEWEST: &str = "Show newest";
-/// Under a program's transactions once they read back as far as they read
-/// by themselves: the press that reads further.
-pub(crate) const LOOK_FURTHER: &str = "Look further back";
+// Under the transactions while the window does not reach the chain's start: where older ones are.
+pub(crate) const OLDER_TRANSACTIONS: &str = "Older transactions: open a block or search a hash.";
 pub(crate) const NO_PROGRAM_HERE: &str = "The programs role runs and lists nothing by this name.";
 pub(crate) const RUNS_NOTHING: &str = "The programs role of this network runs nothing yet.";
 pub(crate) const NOTHING_SCHEDULED: &str = "Nothing is scheduled against the programs role.";
@@ -241,17 +232,6 @@ pub(crate) fn in_block(height: u64) -> String {
 /// A device's name where its key carries no label: `Device 2`.
 pub(crate) fn device(index: usize) -> String {
     format!("Device {}", index + 1)
-}
-
-/// How far back a program's transactions were looked for, while activity
-/// goes on past the rows read: `3 of the newest 150 transactions`, `None
-/// in the newest 1,000 transactions`.
-pub(crate) fn of_the_newest(matching: u64, read: u64) -> String {
-    let read = plural(read, "transaction", "transactions");
-    match matching {
-        0 => format!("None in the newest {read}"),
-        _ => format!("{} of the newest {read}", grouped(matching)),
-    }
 }
 
 pub(crate) fn transactions_to(program: &str) -> String {
