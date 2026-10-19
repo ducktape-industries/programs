@@ -8,6 +8,7 @@ use abi::role::identity::{Kind, Profile};
 use crate::*;
 
 mod lists;
+mod watchers;
 
 fn profile(number: u64, name: &str) -> Profile {
     Profile {

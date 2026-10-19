@@ -549,6 +549,7 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                     .collect(),
             )),
             harness::Query::Wait { .. } => harness::Reply::Wait(None),
+            harness::Query::Wakes { .. } => harness::Reply::Wakes(Vec::new()),
             harness::Query::Services { model } => {
                 let record = net.models.iter().find(|row| row.id == model);
                 harness::Reply::Services(record.map(|row| {

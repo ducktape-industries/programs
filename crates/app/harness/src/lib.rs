@@ -27,6 +27,7 @@ mod tools;
 mod turns;
 mod waiting;
 mod waits;
+mod wakes;
 mod watches;
 mod wire;
 
@@ -144,6 +145,8 @@ pub enum Op {
         services: Vec<String>,
     },
     ReadBudgets,
+    // a commit files made, told to harness while a wait for a files path is open
+    Filed(files::SnapshotRow),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -747,7 +750,7 @@ pub struct Ran {
 }
 
 // what a wait (`wait_for`) waits for: a block's height, a pod of the pods service to end, a chat
-// message, a forge change to move, close or merge, or a forge ref to move
+// message, a forge change to move, close or merge, a forge ref to move, or a files path to change
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum WaitFor {
     Height {
@@ -769,6 +772,9 @@ pub enum WaitFor {
         repo: String,
         reference: String,
     },
+    File {
+        path: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -785,6 +791,23 @@ pub struct WaitRow {
 pub struct Ended {
     pub height: u64,
     pub text: String,
+}
+
+// what will wake a conversation again, each as harness holds it: an input no turn has seen yet
+// (or a paused turn), a turn in progress, tool calls still open, a model call in flight, a retry
+// asked again from block `at`, a settle window until time `until` (ms), an armed wait, a streamed
+// tool call's watch, or a run booked from it that has not run; none means nothing will
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum Wake {
+    Unseen,
+    Turn,
+    Calls { open: u32 },
+    Flight,
+    Retry { at: u64 },
+    Settle { until: u64 },
+    Wait { wait: u64 },
+    Stream { watch: u64 },
+    Booking { entry: u64 },
 }
 
 #[derive(
@@ -899,6 +922,19 @@ pub enum Query {
     #[ask(Reply::Answerers(PageResponse<Answerer>))]
     #[reads(state::ANSWERED)]
     Answerers { thread: u64, page: PageRequest },
+    // what will wake a conversation again; none when nothing will
+    #[ask(Reply::Wakes(Vec<Wake>))]
+    #[reads(
+        state::THREADS,
+        state::FLIGHTS,
+        state::RETRIES,
+        state::SETTLING,
+        state::ARMED,
+        state::STREAMING,
+        state::BOOKED,
+        state::BOOKINGS
+    )]
+    Wakes { thread: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -928,6 +964,7 @@ pub enum Reply {
     Route(Option<Route>),
     Routes(PageResponse<Routed>),
     Answerers(PageResponse<Answerer>),
+    Wakes(Vec<Wake>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -950,6 +987,12 @@ pub fn heard_as(watch: u64) -> Vec<u8> {
 // the prefix forge's watchers tell harness each event under, read as `Op::Forged`
 pub fn forged_as() -> Vec<u8> {
     vec![23]
+}
+
+// the prefix files tells harness each commit under while a wait for a files path is open, read
+// as `Op::Filed`
+pub fn filed_as() -> Vec<u8> {
+    vec![28]
 }
 
 // the prefix egress hands each event of a pod's wait stream under, read as `Op::PodEvent`
@@ -1124,6 +1167,10 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Record the owners of {kind} items"),
             vec![field("kind", Value::text(kind))],
         ),
+        Op::Filed(row) => (
+            format!("Hear files' commit {}", row.seq),
+            vec![field("message", Value::text(&row.message))],
+        ),
         Op::SetServices { id, services } => (
             format!("Set the services that reach model {id}"),
             vec![
@@ -1174,6 +1221,7 @@ fn op_variants_only_append() {
             "AdoptOwners",
             "SetServices",
             "ReadBudgets",
+            "Filed",
         ]
     );
 }
@@ -1212,7 +1260,8 @@ fn query_variants_only_append() {
             "Services",
             "Route",
             "Routes",
-            "Answerers"
+            "Answerers",
+            "Wakes"
         ]
     );
 }

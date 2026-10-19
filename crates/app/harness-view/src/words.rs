@@ -906,6 +906,7 @@ pub(crate) fn armed_words(shown: &Transcript) -> Option<String> {
                 }
                 harness::WaitFor::Change { repo, n } => format!("change {n} in {repo}"),
                 harness::WaitFor::Ref { repo, reference } => format!("{reference} in {repo}"),
+                harness::WaitFor::File { path } => format!("{path} in files"),
             };
             format!("{what} (since block {})", design::grouped(row.made))
         })

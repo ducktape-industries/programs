@@ -1,6 +1,6 @@
 //! Everything files keeps in its own state: the head, every snapshot it minted in
 //! commit order, and named pins. Trees and bytes live in blobs, never here.
-use ::program::{BlobId, Error, QueryCtx, not_found};
+use ::program::{BlobId, Error, ProgramId, QueryCtx, not_found};
 use store::{Item, Map};
 
 use crate::objects::digest;
@@ -11,6 +11,8 @@ pub const HISTORY: Map<u64, SnapshotRow> = Map::new("history/").shared();
 pub const SNAPSHOTS: Map<[u8; 32], u64> = Map::new("snapshot/").shared();
 pub const PINS: Map<String, PinRow> = Map::new("pin/").shared();
 pub const COUNT: Item<u64> = Item::new("count").shared();
+// each program told of every commit, and the prefix it hears them under
+pub const WATCHERS: Map<ProgramId, Vec<u8>> = Map::new("watchers/").shared();
 
 pub(crate) fn newest_first(seq: u64) -> u64 {
     u64::MAX - seq
@@ -41,4 +43,5 @@ pub(crate) const TABLES: &[::program::Table] = &[
     SNAPSHOTS.table(),
     PINS.table(),
     COUNT.table(),
+    WATCHERS.table(),
 ];

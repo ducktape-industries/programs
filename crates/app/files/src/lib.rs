@@ -14,6 +14,7 @@ mod state;
 #[cfg(test)]
 mod tests;
 mod tree;
+mod watchers;
 
 use std::collections::BTreeMap;
 
@@ -48,6 +49,11 @@ pub enum Op {
     },
     Unpin {
         name: String,
+    },
+    // A program hears of every commit, each as `deliver ++ borsh(SnapshotRow)`; an empty
+    // `deliver` stops it.
+    Watch {
+        deliver: Vec<u8>,
     },
 }
 
@@ -303,6 +309,10 @@ pub fn describe(op: &Op) -> describe::Description {
             vec![field("snapshot", hash(snapshot))],
         ),
         Op::Unpin { name } => (format!("Unpin {name}"), Vec::new()),
+        Op::Watch { deliver } => match deliver.is_empty() {
+            true => ("Stop hearing of every commit".to_owned(), Vec::new()),
+            false => ("Hear of every commit".to_owned(), Vec::new()),
+        },
     };
     describe::Description { title, fields }
 }
@@ -342,6 +352,6 @@ describe::export!(Op, describe);
 fn op_variants_only_append() {
     assert_eq!(
         describe::variants::<Op>(),
-        ["Stage", "Commit", "Pin", "Unpin"]
+        ["Stage", "Commit", "Pin", "Unpin", "Watch"]
     );
 }

@@ -97,7 +97,8 @@ pub(crate) fn commit(
         message,
     };
     let id = put_snapshot(ctx, &snapshot)?;
-    record(ctx, id, snapshot)?;
+    let row = record(ctx, id, snapshot)?;
+    crate::watchers::tell(ctx, &row)?;
     ctx.set_return_data(abi::encode(&id));
     Ok(())
 }
@@ -241,7 +242,7 @@ fn apply(
     }
 }
 
-fn record(ctx: &ExecCtx, id: BlobId, snapshot: SnapshotObj) -> Result<(), Error> {
+fn record(ctx: &ExecCtx, id: BlobId, snapshot: SnapshotObj) -> Result<SnapshotRow, Error> {
     let seq = COUNT.get(ctx)?.unwrap_or(0) + 1;
     let row = SnapshotRow {
         id,
@@ -257,5 +258,5 @@ fn record(ctx: &ExecCtx, id: BlobId, snapshot: SnapshotObj) -> Result<(), Error>
     HISTORY.put(ctx, &newest_first(seq), &row);
     SNAPSHOTS.put(ctx, &digest(&id)?, &seq);
     HEAD.put(ctx, &row);
-    Ok(())
+    Ok(row)
 }

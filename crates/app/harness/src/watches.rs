@@ -170,35 +170,40 @@ pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
     }
     WATCHES.remove(&ctx, &watch);
     let why = unheard(answered);
-    let text = format!(
-        "{} call {} ({}) ended without saying how: {why}",
-        row.tool, row.call, row.about
-    );
+    let text = format!("{} call {} ({}) {why}", row.tool, row.call, row.about);
     woken(&ctx, &row, text).await
 }
 
-// why a stream ended before any event said its end
+// what became of a stream that ended before any event said its end: a stream lost on its way
+// (broken off, or closed with no end event, as a service that stops mid-stream closes it) is no
+// result, and says so; a service that answered without streaming ended it
+const LOST: &str = "this is not its result: what it ran may still be running, so re-attach with \
+                    build.sh wait <run> (a build.sh run keeps its status on the pod's disk), or look \
+                    at the pod, before running it again";
+
 fn unheard(answered: Result<Vec<u8>, Error>) -> String {
     let output = match answered {
         Ok(output) => output,
         Err(error) => {
-            return format!(
-                "the stream broke off ({}); what it ran may still be running",
-                refusal(&error)
-            );
+            let why = refusal(&error);
+            return format!("lost its stream, which broke off ({why}): {LOST}");
         }
     };
     match abi::decode::<http::Response>(&output) {
         Ok(response) if response.body.is_empty() => format!(
-            "the stream ended with status {} and said nothing more",
+            "lost its stream, which closed with status {} before its end event (the service \
+             that streamed it stopped before the end, as a restart there does): {LOST}",
             response.status
         ),
         Ok(response) => format!(
-            "the service answered {}: {}",
+            "ended without saying how: the service answered {}: {}",
             response.status,
             String::from_utf8_lossy(&response.body)
         ),
-        Err(fault) => format!("the answer is no HTTP response: {}", fault.sentence),
+        Err(fault) => format!(
+            "ended without saying how: the answer is no HTTP response: {}",
+            fault.sentence
+        ),
     }
 }
 

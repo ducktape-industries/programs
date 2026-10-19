@@ -88,6 +88,7 @@ impl Program for Harness {
             Query::Wait { wait } => Ok(Reply::Wait(waits::wait_row(ctx, wait)?)),
             Query::Armed { thread, page } => Ok(Reply::Waits(waits::armed(ctx, thread, &page)?)),
             Query::Card { agent } => Ok(Reply::Agent(card(ctx, agent)?)),
+            Query::Wakes { thread } => Ok(Reply::Wakes(crate::wakes::wakes(ctx, thread)?)),
             Query::Services { model } => Ok(Reply::Services(crate::routes::services(ctx, &model)?)),
             Query::Route { thread } => Ok(Reply::Route(crate::routes::route(ctx, thread)?)),
             Query::Routes { page } => Ok(Reply::Routes(crate::routes::routes(ctx, &page)?)),
@@ -139,6 +140,7 @@ impl Awaiting for Harness {
             Op::AdoptOwners { kind, after, limit } => {
                 crate::adopt::adopt_owners(&ctx, &kind, after, limit)
             }
+            Op::Filed(row) => waits::filed(&ctx, row).await,
             Op::SetServices { id, services } => set_services(&ctx, id, services),
             Op::ReadBudgets => budget::read_all(ctx).await,
         }

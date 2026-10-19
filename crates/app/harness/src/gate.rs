@@ -65,7 +65,8 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::Forged(_)
         | Op::ClaimConversations { .. }
         | Op::AdoptOwners { .. }
-        | Op::ReadBudgets => Vec::new(),
+        | Op::ReadBudgets
+        | Op::Filed(_) => Vec::new(),
     })
 }
 

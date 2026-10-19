@@ -84,6 +84,10 @@ pub const WAIT_REFS: Map<u64, (String, String)> = Map::new("wait-refs/").shared(
 pub const CHANGE_WAITS: Set<((String, u64), u64)> = Set::new("wait-change/").shared();
 // how many forge waits are open: harness watches forge while any is
 pub const FORGE_WAITS: Item<u64> = Item::new("wait-forge").shared();
+// each open wait on a files path, with the path's node when it was armed
+pub const FILE_WAITS: Map<u64, FileWatch> = Map::new("wait-file/").shared();
+// how many file waits are open: harness hears files' commits while any is
+pub const FILE_WAIT_COUNT: Item<u64> = Item::new("wait-files").shared();
 // each tool call whose write awaits its answer, and each stream a watch listens to, by thread:
 // what tells a later run that the frame awaiting it is gone
 pub const AWAITED: Map<(u64, String), Awaited> = Map::new("awaited/").shared();
@@ -101,6 +105,13 @@ pub const TRIED: Set<(u64, (String, String))> = Set::new("tried/").shared();
 pub const REFUSED: Map<(String, String), Option<u64>> = Map::new("refused/").shared();
 // who answered each of a thread's turns and summaries, by frame
 pub const ANSWERED: Map<(u64, u64), crate::Answerer> = Map::new("answered/").shared();
+
+// a wait for a files path: the path, and its node when the wait was armed (none: nothing there)
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct FileWatch {
+    pub path: String,
+    pub node: Option<files::Node>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Live {
@@ -445,6 +456,8 @@ pub(crate) const TABLES: &[::program::Table] = &[
     WAIT_REFS.table(),
     CHANGE_WAITS.table(),
     FORGE_WAITS.table(),
+    FILE_WAITS.table(),
+    FILE_WAIT_COUNT.table(),
     AWAITED.table(),
     STREAMING.table(),
     MODEL_SERVICES.table(),

@@ -27,7 +27,9 @@ mod stranded;
 mod streams;
 mod thinking;
 mod wait;
+mod wait_file;
 mod wait_forge;
+mod wakes;
 mod workspace;
 
 use ::program::{Error, MockChain, Origin, Principal, code};

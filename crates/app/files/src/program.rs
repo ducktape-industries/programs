@@ -1,7 +1,7 @@
 //! The program: every op acts as the account the host resolved, and every op and
 //! query is handed to its function in `ops.rs`, `commit.rs` or `queries.rs`.
 use ::program::schema::{Return, returns};
-use ::program::{BlobId, Error, ExecCtx, Program, QueryCtx};
+use ::program::{BlobId, Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::commit::commit;
 use crate::ops::{pin, unpin};
@@ -19,6 +19,10 @@ impl Program for Files {
     const RETURNS: &'static [Return] = &[returns::<BlobId>("Commit")];
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
+        // a watcher is the program that sends it; every other op acts as an account
+        if let Op::Watch { deliver } = op {
+            return crate::watchers::watch(ctx, deliver);
+        }
         let writer = ctx.sender()?;
         match op {
             Op::Stage { .. } => Err(carried()),
@@ -29,7 +33,13 @@ impl Program for Files {
             } => commit(ctx, writer, base, message, changes),
             Op::Pin { name, snapshot } => pin(ctx, writer, name, snapshot),
             Op::Unpin { name } => unpin(ctx, name),
+            Op::Watch { .. } => Ok(()),
         }
+    }
+
+    // the only messages files wants answered are its watchers': a refusal there keeps the commit
+    fn reply(_: &ExecCtx, _: &MessageId, _: &Outcome) -> Result<(), Error> {
+        Ok(())
     }
 
     fn access(_: &QueryCtx, op: &Op) -> Result<Vec<::program::Need>, Error> {

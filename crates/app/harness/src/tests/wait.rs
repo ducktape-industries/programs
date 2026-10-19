@@ -84,6 +84,31 @@ fn a_wait_for_a_height_ends_the_turn_and_wakes_its_conversation_once_at_its_bloc
 }
 
 #[test]
+fn a_wait_whose_conversation_closed_ends_there_as_a_notice_and_wakes_no_other() {
+    let world = schemed();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "wake me at block 20", Some(WINDOW));
+    turn(&world, 3, &[("w1", "wait_for", height(20))]);
+    let wait = waited(chain, thread, "w1");
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Close { thread })
+        .unwrap();
+    chain.at(6, 0);
+    let fresh = world.mention("m2", "a fresh start");
+    assert_ne!(fresh, thread);
+    chain.at(21, 0);
+    assert!(wakes(chain, fresh).is_empty(), "{:?}", wakes(chain, fresh));
+    assert!(wakes(chain, thread).is_empty());
+    let noticed = frames(chain, thread).into_iter().any(|body| match body {
+        Body::Notice { text } => text.starts_with(&format!(
+            "Not delivered, as this conversation is closed: Wait {wait} is over: block"
+        )),
+        _ => false,
+    });
+    assert!(noticed, "{:?}", frames(chain, thread));
+}
+
+#[test]
 fn a_refused_wait_does_not_end_the_turn() {
     let world = schemed();
     let chain = &world.chain;

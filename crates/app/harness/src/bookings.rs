@@ -13,7 +13,7 @@ use crate::calls::{refusal, relayable};
 use crate::conversations::current;
 use crate::state::{BOOKED, BOOKINGS, THREADS};
 use crate::tools::interface::answered;
-use crate::turns::{converse, say};
+use crate::turns::{append, converse, say};
 use crate::{Body, Booking, Op, PROGRAM, Ran, ThreadRow};
 
 fn bound_scheduler(ctx: &QueryCtx) -> Result<String, Error> {
@@ -195,6 +195,12 @@ pub(crate) fn note(
     thread: Option<u64>,
     text: String,
 ) -> Result<Option<u64>, Error> {
+    if let Some(id) = thread
+        && let Some(mut row) = THREADS.get(ctx, &id)?.filter(|row| row.closed)
+    {
+        undelivered(ctx, &mut row, text);
+        return Ok(None);
+    }
     let Some(mut row) = told(ctx, agent, thread)? else {
         return Ok(None);
     };
@@ -202,6 +208,14 @@ pub(crate) fn note(
     say(ctx, &mut row, Body::Post { author, text });
     THREADS.put(ctx, &row.id, &row);
     Ok(Some(row.id))
+}
+
+// what was meant to wake a conversation that is closed: a notice on it, which wakes nothing, and
+// never a line in another conversation, which knows nothing of what was asked
+pub(crate) fn undelivered(ctx: &ExecCtx, row: &mut ThreadRow, text: String) {
+    let text = format!("Not delivered, as this conversation is closed: {text}");
+    append(ctx, row, Body::Notice { text });
+    THREADS.put(ctx, &row.id, row);
 }
 
 // that line, which wakes the conversation

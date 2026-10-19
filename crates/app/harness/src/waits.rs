@@ -1,8 +1,8 @@
 //! Waits: one event an agent names (a block's height, a pod's end, a chat message, a forge ref or
-//! change) wakes the conversation that waits for it once, and the turn that armed it ends. harness
-//! hears it from the scheduler, the pods wait stream, chat's listening or forge's watchers.
+//! change, a files path) wakes the conversation that waits for it once, and the turn that armed it
+//! ends. harness hears it from the scheduler, the pods wait stream, chat, or forge's or files' watchers.
 use ::program::{
-    Cause, Ctx, Error, ExecCtx, Principal, QueryCtx, corrupt, decoded, invalid, not_found,
+    BlobId, Cause, Ctx, Error, ExecCtx, Principal, QueryCtx, corrupt, decoded, invalid, not_found,
     unauthorized, unexpected_reply, wrong_state,
 };
 use abi::role::egress::{DEFAULT_WAIT, Delivery, Event, Request, http};
@@ -16,12 +16,13 @@ use crate::calls::refusal;
 use crate::conversations::current;
 use crate::pictures::Picture;
 use crate::state::{
-    ARMED, CHANGE_WAITS, ENDING, FORGE_WAITS, MESSAGE_WAITS, POD_WAITS, PodWatch, REF_WAITS,
-    SCHEDULED, THREADS, WAIT_COUNT, WAIT_ENTRIES, WAIT_REFS, WAITING, WAITS,
+    ARMED, CHANGE_WAITS, ENDING, FILE_WAIT_COUNT, FILE_WAITS, FORGE_WAITS, FileWatch,
+    MESSAGE_WAITS, POD_WAITS, PodWatch, REF_WAITS, SCHEDULED, THREADS, WAIT_COUNT, WAIT_ENTRIES,
+    WAIT_REFS, WAITING, WAITS,
 };
 use crate::turns::{bound, converse, request, say_with};
 use crate::{
-    Asking, Body, Ended, Op, PROGRAM, ThreadRow, WaitFor, WaitRow, forged_as, listening,
+    Asking, Body, Ended, Op, PROGRAM, ThreadRow, WaitFor, WaitRow, filed_as, forged_as, listening,
     pod_event_as,
 };
 
@@ -47,6 +48,7 @@ pub(crate) fn what(event: &WaitFor) -> String {
         }
         WaitFor::Change { repo, n } => format!("change {n} in {repo} to move, close or merge"),
         WaitFor::Ref { repo, reference } => format!("{reference} in {repo} to move"),
+        WaitFor::File { path } => format!("{path} to change in files"),
     }
 }
 
@@ -142,6 +144,15 @@ pub(crate) async fn wait(ctx: &Ctx, thread_id: u64, event: WaitFor) -> Result<()
             watch_ref(ctx, id, repo, reference.clone());
             forge_waits(ctx, true)?;
         }
+        WaitFor::File { path } => {
+            let node = node_at(ctx, path, None)?;
+            let watch = FileWatch {
+                path: path.clone(),
+                node,
+            };
+            FILE_WAITS.put(ctx, &id, &watch);
+            files_waits(ctx, true)?;
+        }
     }
     let waiting = WaitRow {
         id,
@@ -217,6 +228,10 @@ fn disarm(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
             forge_waits(ctx, false)?;
         }
         WaitFor::Ref { .. } => forge_waits(ctx, false)?,
+        WaitFor::File { .. } => {
+            FILE_WAITS.remove(ctx, &row.id);
+            files_waits(ctx, false)?;
+        }
     }
     Ok(())
 }
@@ -243,6 +258,11 @@ pub(crate) fn end_seen(
     });
     WAITS.put(ctx, &wait, &row);
     disarm(ctx, &row)?;
+    if let Some(mut closed) = THREADS.get(ctx, &row.thread)?.filter(|told| told.closed) {
+        let text = format!("Wait {wait} is over: {what}");
+        crate::bookings::undelivered(ctx, &mut closed, text);
+        return Ok(None);
+    }
     let Some(mut told) = told(ctx, &row)? else {
         return Ok(None);
     };
@@ -457,6 +477,76 @@ pub(crate) async fn forged(ctx: &Ctx, event: forge::Watched) -> Result<(), Error
         converse(ctx, thread).await;
     }
     Ok(())
+}
+
+// the node at `path` in files, at snapshot `at` or at the head: none where nothing is there
+fn node_at(ctx: &QueryCtx, path: &str, at: Option<BlobId>) -> Result<Option<files::Node>, Error> {
+    let asked = files::Query::Stat {
+        path: path.to_owned(),
+        at,
+    };
+    match ctx.query(files::PROGRAM, &asked)? {
+        files::Reply::Stat { entry, .. } => Ok(entry.map(|entry| entry.node)),
+        other => Err(unexpected_reply(files::PROGRAM, "Stat", &other)),
+    }
+}
+
+// harness hears files' commits while a file wait is open, and only then
+fn files_waits(ctx: &ExecCtx, opened: bool) -> Result<(), Error> {
+    let before = FILE_WAIT_COUNT.get(ctx)?.unwrap_or(0);
+    let after = match opened {
+        true => before + 1,
+        false => before.saturating_sub(1),
+    };
+    FILE_WAIT_COUNT.put(ctx, &after);
+    let deliver = match (before, after) {
+        (0, 1) => filed_as(),
+        (1, 0) => Vec::new(),
+        _ => return Ok(()),
+    };
+    let watch = files::Op::Watch { deliver };
+    ctx.emit(files::PROGRAM, &watch, ::program::Reply::None);
+    Ok(())
+}
+
+// a commit files made ends each wait on a path whose node it changed, made or removed
+pub(crate) async fn filed(ctx: &Ctx, row: files::SnapshotRow) -> Result<(), Error> {
+    ctx.env().sent_by(files::PROGRAM)?;
+    let mut woken = Vec::new();
+    for (wait, watch) in FILE_WAITS.all(ctx)? {
+        let now = node_at(ctx, &watch.path, Some(row.id))?;
+        if now == watch.node {
+            continue;
+        }
+        let what = filed_words(&watch, now.is_some(), &row);
+        if let Some(thread) = end(ctx, wait, what)?
+            && !woken.contains(&thread)
+        {
+            woken.push(thread);
+        }
+    }
+    for thread in woken {
+        converse(ctx, thread).await;
+    }
+    Ok(())
+}
+
+fn filed_words(watch: &FileWatch, there: bool, row: &files::SnapshotRow) -> String {
+    let how = match (watch.node.is_some(), there) {
+        (false, _) => "was made",
+        (true, false) => "was removed",
+        (true, true) => "changed",
+    };
+    let snapshot = abi::hex(row.id.digest());
+    let by = who(Some(&row.author));
+    let said = match row.message.trim() {
+        "" => String::new(),
+        message => format!(" (\"{message}\")"),
+    };
+    format!(
+        "{} {how} in files snapshot {snapshot} by {by}{said}",
+        watch.path
+    )
 }
 
 // a pod's name as Kubernetes takes one, so it stands in a path whole

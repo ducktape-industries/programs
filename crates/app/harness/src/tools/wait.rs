@@ -1,5 +1,5 @@
 //! Tools over waits: the agent names one event (a block's height, a pod's end, a chat message, a
-//! forge ref or change), and this turn ends once its calls are back; the event wakes the
+//! forge ref or change, a files path), and this turn ends once its calls are back; the event wakes the
 //! conversation once, as a message. The agent lists its waits and cancels one before it is over.
 use ::program::{Error, ExecCtx, unexpected_reply};
 use serde::Deserialize;
@@ -32,6 +32,9 @@ enum EventArgs {
         #[serde(rename = "ref")]
         reference: String,
     },
+    File {
+        path: String,
+    },
 }
 
 impl From<EventArgs> for WaitFor {
@@ -50,6 +53,7 @@ impl From<EventArgs> for WaitFor {
             },
             EventArgs::Change { repo, n } => WaitFor::Change { repo, n },
             EventArgs::Ref { repo, reference } => WaitFor::Ref { repo, reference },
+            EventArgs::File { path } => WaitFor::File { path },
         }
     }
 }
@@ -67,7 +71,7 @@ fn repo_schema() -> Value {
 
 impl Tool for For {
     const NAME: &'static str = "wait_for";
-    const DESCRIPTION: &'static str = "Wake this conversation once when an event happens, and end this turn meanwhile: once this reply's tool calls are back, you are not asked again until the event, or any other message, arrives. The event comes as one message saying what happened. Events: a `message` in a chat channel (only from one account with `from`, only one that mentions you or writes to you directly with `mentions_me`; whoever writes it, even someone you don't otherwise hear); a forge `change` whose source branch moves, or that is closed or merged (one already closed or merged is refused); a forge `ref` that moves (a branch's name alone is its refs/heads/ ref); a block's `height` (later than the current one); or a `pod` of the pods service ending (by its name; a pod that has ended already wakes you at once). A message that arrives first wakes you as usual, and the wait stays. Answers the wait's number, which wait_list shows and wait_cancel takes.";
+    const DESCRIPTION: &'static str = "Wake this conversation once when an event happens, and end this turn meanwhile: once this reply's tool calls are back, you are not asked again until the event, or any other message, arrives. The event comes as one message saying what happened. Events: a `message` in a chat channel (only from one account with `from`, only one that mentions you or writes to you directly with `mentions_me`; whoever writes it, even someone you don't otherwise hear); a forge `change` whose source branch moves, or that is closed or merged (one already closed or merged is refused); a forge `ref` that moves (a branch's name alone is its refs/heads/ ref); a block's `height` (later than the current one); a `pod` of the pods service ending (by its name; a pod that has ended already wakes you at once); or a `file` of files that a commit changes (a file's bytes, mode or meta; anything below a directory; or the path being made or removed). A message that arrives first wakes you as usual, and the wait stays. Answers the wait's number, which wait_list shows and wait_cancel takes.";
     const WRITES: bool = true;
     type Args = ForArgs;
 
@@ -98,6 +102,10 @@ impl Tool for For {
             }),
             &["repo", "ref"],
         );
+        let file = object(
+            json!({ "path": { "type": "string", "description": "an absolute path, like /shared/tools/warm-pod" } }),
+            &["path"],
+        );
         let event = json!({
             "type": "object",
             "description": "exactly one of these",
@@ -107,6 +115,7 @@ impl Tool for For {
                 "ref": reference,
                 "height": { "type": "integer", "description": "the block to wake at, later than the current one" },
                 "pod": pod,
+                "file": file,
             },
             "minProperties": 1,
             "maxProperties": 1,

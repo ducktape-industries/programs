@@ -274,10 +274,62 @@ fn a_stream_that_breaks_off_wakes_its_conversation_with_why() {
     end(chain, &row, 1, cut);
     let [woke]: [String; 1] = told(chain, thread).try_into().unwrap();
     assert!(
-        woke.starts_with("pod_exec call s1 (pod duckpond-7: sh -c cargo test) ended without saying how: the stream broke off"),
+        woke.starts_with(
+            "pod_exec call s1 (pod duckpond-7: sh -c cargo test) lost its stream, which broke off"
+        ),
         "{woke}"
     );
     assert!(woke.contains("stream_broken"), "{woke}");
+    assert!(woke.contains("this is not its result"), "{woke}");
+}
+
+#[test]
+fn a_stream_that_closes_before_its_end_event_wakes_its_conversation_saying_it_is_no_result() {
+    let world = podded(world());
+    let chain = &world.chain;
+    let (thread, row) = streaming(&world);
+    event(chain, &row, 0, ALIVE);
+    end(chain, &row, 1, complete());
+    let [woke]: [String; 1] = told(chain, thread).try_into().unwrap();
+    let lost = "pod_exec call s1 (pod duckpond-7: sh -c cargo test) lost its stream, which closed \
+                with status 200 before its end event";
+    assert!(woke.starts_with(lost), "{woke}");
+    assert!(woke.contains("this is not its result"), "{woke}");
+    assert!(!woke.contains(" ended"), "{woke}");
+}
+
+#[test]
+fn a_streams_end_for_a_closed_conversation_stays_there_as_a_notice_and_reaches_no_other() {
+    let world = podded(world());
+    let chain = &world.chain;
+    let (thread, row) = streaming(&world);
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Close { thread })
+        .unwrap();
+    chain.at(8, 0);
+    let fresh = world.mention("m2", "a fresh start");
+    assert_ne!(
+        fresh, thread,
+        "the place opened a new canonical conversation"
+    );
+    let ended = r#"event: ended
+data: {"exit_code": 0, "stdout": "ok", "stderr": ""}"#;
+    event(chain, &row, 0, ended);
+    assert!(told(chain, fresh).is_empty(), "{:?}", told(chain, fresh));
+    assert!(told(chain, thread).is_empty());
+    let notices: Vec<String> = frames(chain, thread)
+        .into_iter()
+        .filter_map(|body| match body {
+            Body::Notice { text } => Some(text),
+            _ => None,
+        })
+        .collect();
+    let [notice] = &notices[..] else {
+        panic!("{notices:?}");
+    };
+    let said = "Not delivered, as this conversation is closed: pod_exec call s1";
+    assert!(notice.starts_with(said), "{notice}");
+    assert!(!thread_row(chain, thread).due(), "a notice wakes nothing");
 }
 
 #[test]
@@ -289,7 +341,7 @@ fn a_refusal_before_any_stream_wakes_its_conversation_with_the_services_words() 
     answer(chain, row.id, Answer::Output(response(404, gone)));
     let [woke]: [String; 1] = told(chain, thread).try_into().unwrap();
     assert!(
-        woke.ends_with(r#"the service answered 404: {"error":"pod duckpond-7 was not read"}"#),
+        woke.ends_with(r#"ended without saying how: the service answered 404: {"error":"pod duckpond-7 was not read"}"#),
         "{woke}"
     );
 }
