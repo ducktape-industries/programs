@@ -197,7 +197,8 @@ fn json_that_does_not_fit_the_schema_says_where_and_why() {
         bytes_of::<Named>(json!({ "count": 1, "label": "x", "extra": 2 })),
         Err(Fault::UnknownField {
             at: at("value"),
-            field: "extra".into()
+            field: "extra".into(),
+            known: vec!["count".into(), "label".into(), "note".into()],
         })
     );
     assert_eq!(
@@ -211,7 +212,13 @@ fn json_that_does_not_fit_the_schema_says_where_and_why() {
         bytes_of::<Shape>(json!("Circle")),
         Err(Fault::UnknownVariant {
             at: at("value"),
-            variant: "Circle".into()
+            variant: "Circle".into(),
+            known: vec![
+                "Empty".into(),
+                "Point".into(),
+                "Tagged".into(),
+                "Both".into()
+            ],
         })
     );
     assert!(matches!(
@@ -241,7 +248,10 @@ fn json_that_does_not_fit_the_schema_says_where_and_why() {
     ));
     assert_eq!(
         bytes_of::<Vec<u8>>(json!([1])).map_err(|fault| fault.to_string()),
-        Err("at value: expected bytes as hex, or {\"utf8\": text}".to_owned())
+        Err(
+            "at value: expected bytes as hex, or {\"utf8\": text}, got an array of length 1"
+                .to_owned()
+        )
     );
 }
 
@@ -436,4 +446,130 @@ fn bytes_written_as_utf8_text_read_so_wherever_they_nest() {
         bytes_of::<Deep>(by_text).unwrap(),
         borsh::to_vec(&value).unwrap()
     );
+}
+
+fn written_back<T: BorshSchema>() -> Value {
+    let schema = schema_of::<T>();
+    let made = example(&schema, schema.declaration()).unwrap();
+    let bytes = encode(&schema, schema.declaration(), "value", &made).unwrap();
+    let read = decode(&schema, schema.declaration(), "value", &bytes).unwrap();
+    assert_eq!(read, made);
+    made
+}
+
+#[test]
+fn an_example_is_a_value_the_codec_writes_and_reads_back_the_same() {
+    assert_eq!(
+        written_back::<Named>(),
+        json!({ "count": 0, "label": "", "note": null })
+    );
+    assert_eq!(written_back::<Shape>(), json!("Empty"));
+    assert_eq!(written_back::<Sparse>(), json!("First"));
+    assert_eq!(
+        written_back::<Wide>(),
+        json!({ "big": "0", "small": 0, "signed": "0", "ratio": 0.0 })
+    );
+    assert_eq!(
+        written_back::<Raw>(),
+        json!({
+            "bytes": "",
+            "digest": "00000000",
+            "list": [0],
+            "fixed": [0, 0],
+            "map": [["", 0]],
+            "pair": [0, ""],
+            "unit": null,
+        })
+    );
+    assert_eq!(written_back::<Nested>(), json!({ "maybe": null }));
+    assert_eq!(written_back::<Tree>(), json!({ "Leaf": 0 }));
+    written_back::<Deep>();
+}
+
+#[test]
+fn every_variant_of_an_enum_has_an_example_and_one_that_holds_itself_holds_none() {
+    let schema = schema_of::<Shape>();
+    assert_eq!(
+        examples(&schema, schema.declaration()).unwrap(),
+        vec![
+            ("Empty".to_owned(), json!("Empty")),
+            ("Point".to_owned(), json!({ "Point": { "x": 0, "y": 0 } })),
+            ("Tagged".to_owned(), json!({ "Tagged": "" })),
+            ("Both".to_owned(), json!({ "Both": [0, 0] })),
+        ]
+    );
+    let schema = schema_of::<Tree>();
+    let made = examples(&schema, schema.declaration()).unwrap();
+    assert_eq!(made[1], ("Node".to_owned(), json!({ "Node": [] })));
+    for (_, value) in &made {
+        encode(&schema, schema.declaration(), "value", value).unwrap();
+    }
+    let schema = schema_of::<Named>();
+    assert_eq!(examples(&schema, schema.declaration()).unwrap(), Vec::new());
+}
+
+#[test]
+fn a_sequence_that_holds_itself_is_empty_in_an_example() {
+    let mut definitions = BTreeMap::new();
+    definitions.insert(
+        "Loop".to_owned(),
+        Definition::Sequence {
+            length_width: 4,
+            length_range: 0..=u64::from(u32::MAX),
+            elements: "Loop".to_owned(),
+        },
+    );
+    let schema = BorshSchemaContainer::new("Loop".to_owned(), definitions);
+    assert_eq!(example(&schema, "Loop").unwrap(), json!([]));
+}
+
+#[test]
+fn a_refusal_names_what_exists_and_what_was_given() {
+    let said = |fault: Result<Vec<u8>, Fault>| fault.unwrap_err().to_string();
+    assert_eq!(
+        said(bytes_of::<Shape>(json!("Circle"))),
+        "at value: there is no variant named Circle; the variants are Empty, Point, Tagged, Both"
+    );
+    let extra = json!({ "count": 1, "label": "x", "extra": 2 });
+    assert_eq!(
+        said(bytes_of::<Named>(extra)),
+        "at value: there is no field extra; the fields are count, label, note"
+    );
+    let point = json!({ "Point": { "x": 1, "y": "two" } });
+    assert_eq!(
+        said(bytes_of::<Shape>(point)),
+        "at value.Point.y: expected an integer, got the string \"two\""
+    );
+    assert_eq!(
+        said(bytes_of::<Shape>(json!("Point"))),
+        "at value.Point: expected {\"Point\": value}, got the string \"Point\""
+    );
+    assert_eq!(
+        said(bytes_of::<Named>(json!([1, "x"]))),
+        "at value: expected an object, got an array of length 2"
+    );
+    let two = json!({ "Point": 1, "Both": 2 });
+    assert_eq!(
+        said(bytes_of::<Shape>(two)),
+        "at value: expected \"Variant\" or {\"Variant\": value}, got an object with keys Both, Point"
+    );
+}
+
+#[test]
+fn every_wrong_element_of_a_list_is_named_in_one_refusal() {
+    let fault = bytes_of::<Vec<u16>>(json!(["a", 1, true])).unwrap_err();
+    assert_eq!(
+        fault.to_string(),
+        "2 problems: at value[0]: expected an integer, got the string \"a\"; at value[2]: expected an integer, got true"
+    );
+}
+
+#[test]
+fn json_written_out_as_a_string_reads_as_the_json_it_holds() {
+    let op = json!({ "Point": { "x": 1, "y": 2 } });
+    assert_eq!(spoken(&json!(op.to_string())), op);
+    assert_eq!(spoken(&json!("Empty")), json!("Empty"));
+    assert_eq!(spoken(&json!(7)), json!(7));
+    assert_eq!(unquoted(&json!("[1,2]")), Some(json!([1, 2])));
+    assert_eq!(unquoted(&json!("7")), None);
 }

@@ -46,7 +46,7 @@ impl<'s> Writer<'s> {
     fn boolean(&mut self, value: &Value, at: &At) -> Result<(), Fault> {
         let flag = value
             .as_bool()
-            .ok_or_else(|| at.mismatch("true or false"))?;
+            .ok_or_else(|| got(at, value, "true or false"))?;
         self.out.push(u8::from(flag));
         Ok(())
     }
@@ -65,7 +65,7 @@ impl<'s> Writer<'s> {
         };
         let width = usize::from(bytes);
         let bits = u32::from(bytes) * 8;
-        let number = integer(value).ok_or_else(|| at.mismatch("an integer"))?;
+        let number = integer(value).ok_or_else(|| got(at, value, "an integer"))?;
         let le = match (signed, number) {
             (true, Integer::Negative(number)) => {
                 let fits = bits >= 128 || number >= -(1i128 << (bits - 1));
@@ -87,7 +87,7 @@ impl<'s> Writer<'s> {
     }
 
     fn float(&mut self, bytes: u8, value: &Value, at: &At) -> Result<(), Fault> {
-        let number = value.as_f64().ok_or_else(|| at.mismatch("a number"))?;
+        let number = value.as_f64().ok_or_else(|| got(at, value, "a number"))?;
         match bytes {
             4 => self.out.extend_from_slice(&(number as f32).to_le_bytes()),
             _ => self.out.extend_from_slice(&number.to_le_bytes()),
@@ -96,7 +96,7 @@ impl<'s> Writer<'s> {
     }
 
     fn text(&mut self, length: Length, value: &Value, at: &At) -> Result<(), Fault> {
-        let text = value.as_str().ok_or_else(|| at.mismatch("a string"))?;
+        let text = value.as_str().ok_or_else(|| got(at, value, "a string"))?;
         self.length(length, text.len(), at)?;
         self.out.extend_from_slice(text.as_bytes());
         Ok(())
@@ -107,7 +107,7 @@ impl<'s> Writer<'s> {
             Some(text) => text.as_str().map(|text| text.as_bytes().to_vec()),
             None => value.as_str().and_then(abi::unhex),
         }
-        .ok_or_else(|| at.mismatch("bytes as hex, or {\"utf8\": text}"))?;
+        .ok_or_else(|| got(at, value, "bytes as hex, or {\"utf8\": text}"))?;
         self.length(length, bytes.len(), at)?;
         self.out.extend_from_slice(&bytes);
         Ok(())
@@ -122,7 +122,7 @@ impl<'s> Writer<'s> {
         let nested = kind(self.schema, inner)?.nullable();
         let some = match nested {
             true => {
-                single(value, "Some").ok_or_else(|| at.mismatch("null or {\"Some\": value}"))?
+                single(value, "Some").ok_or_else(|| got(at, value, "null or {\"Some\": value}"))?
             }
             false => value,
         };
@@ -136,23 +136,25 @@ impl<'s> Writer<'s> {
         value: &Value,
         at: &At,
     ) -> Result<(), Fault> {
-        let items = value.as_array().ok_or_else(|| at.mismatch("an array"))?;
+        let items = value.as_array().ok_or_else(|| got(at, value, "an array"))?;
         self.length(length, items.len(), at)?;
+        let mut faults = Vec::new();
         for (index, item) in items.iter().enumerate() {
-            self.value(elements, item, &at.index(index))?;
+            faults.extend(self.value(elements, item, &at.index(index)).err());
         }
-        Ok(())
+        Fault::all(faults)
     }
 
     fn tuple(&mut self, elements: &'s [Declaration], value: &Value, at: &At) -> Result<(), Fault> {
         let items = value
             .as_array()
             .filter(|items| items.len() == elements.len())
-            .ok_or_else(|| at.mismatch(format!("an array of {}", elements.len())))?;
+            .ok_or_else(|| got(at, value, format!("an array of {}", elements.len())))?;
+        let mut faults = Vec::new();
         for (index, (element, item)) in elements.iter().zip(items).enumerate() {
-            self.value(element, item, &at.index(index))?;
+            faults.extend(self.value(element, item, &at.index(index)).err());
         }
-        Ok(())
+        Fault::all(faults)
     }
 
     fn fields(&mut self, fields: &'s Fields, value: &Value, at: &At) -> Result<(), Fault> {
@@ -172,7 +174,9 @@ impl<'s> Writer<'s> {
         value: &Value,
         at: &At,
     ) -> Result<(), Fault> {
-        let object = value.as_object().ok_or_else(|| at.mismatch("an object"))?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| got(at, value, "an object"))?;
         // every field is written, so one refusal names each field that is unknown, missing or wrong
         let mut faults: Vec<Fault> = object
             .keys()
@@ -180,6 +184,7 @@ impl<'s> Writer<'s> {
             .map(|field| Fault::UnknownField {
                 at: at.render(),
                 field: field.clone(),
+                known: named.iter().map(|(name, _)| name.clone()).collect(),
             })
             .collect();
         for (name, declaration) in named {
@@ -219,8 +224,8 @@ impl<'s> Writer<'s> {
     ) -> Result<(), Fault> {
         let (name, body) = match value {
             Value::String(name) => (name.as_str(), None),
-            Value::Object(object) => one_key(object).ok_or_else(|| at.mismatch(VARIANT))?,
-            _ => return Err(at.mismatch(VARIANT)),
+            Value::Object(object) => one_key(object).ok_or_else(|| got(at, value, VARIANT))?,
+            _ => return Err(got(at, value, VARIANT)),
         };
         let (tag, variant_name, declaration) = variants
             .iter()
@@ -228,6 +233,7 @@ impl<'s> Writer<'s> {
             .ok_or_else(|| Fault::UnknownVariant {
                 at: at.render(),
                 variant: name.to_owned(),
+                known: variants.iter().map(|(_, known, _)| known.clone()).collect(),
             })?;
         self.tag(tag_width, *tag, at)?;
         let here = at.field(variant_name);
@@ -238,7 +244,7 @@ impl<'s> Writer<'s> {
             (None, Some(body)) => self.value(declaration, body, &here),
             (_, None) => match unit {
                 true => Ok(()),
-                false => Err(here.mismatch(format!("{{\"{variant_name}\": value}}"))),
+                false => Err(got(&here, value, format!("{{\"{variant_name}\": value}}"))),
             },
         }
     }
@@ -270,12 +276,37 @@ impl<'s> Writer<'s> {
     }
 }
 
+// What a value that does not fit was: its kind, with a string's text, a number and an object's keys.
+fn given(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_owned(),
+        Value::Bool(flag) => flag.to_string(),
+        Value::Number(number) => format!("the number {number}"),
+        Value::String(_) => format!("the string {value}"),
+        Value::Array(items) => format!("an array of length {}", items.len()),
+        Value::Object(object) if object.is_empty() => "an empty object".to_owned(),
+        Value::Object(object) => {
+            let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            format!("an object with keys {}", keys.join(", "))
+        }
+    }
+}
+
+fn got(at: &At, value: &Value, expected: impl Into<String>) -> Fault {
+    Fault::Mismatch {
+        at: at.render(),
+        expected: expected.into(),
+        given: Some(given(value)),
+    }
+}
+
 const VARIANT: &str = "\"Variant\" or {\"Variant\": value}";
 
 fn unit(value: &Value, at: &At) -> Result<(), Fault> {
     match value {
         Value::Null => Ok(()),
-        _ => Err(at.mismatch("null")),
+        _ => Err(got(at, value, "null")),
     }
 }
 
@@ -283,7 +314,7 @@ fn empty(value: &Value, at: &At) -> Result<(), Fault> {
     let empty_object = value.as_object().is_some_and(Map::is_empty);
     match value.is_null() || empty_object {
         true => Ok(()),
-        false => Err(at.mismatch("null")),
+        false => Err(got(at, value, "null")),
     }
 }
 

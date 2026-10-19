@@ -1,5 +1,6 @@
 //! Every program's ops, queries and replies read to JSON by the codec and written back to the
 //! same bytes.
+mod examples;
 mod programs;
 
 use borsh::BorshSerialize;

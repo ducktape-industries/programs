@@ -5,11 +5,11 @@ use abi::role::egress::{self, http};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{Reading, Run, Seat, Tool, Write, object, unquoted};
+use super::{Reading, Run, Seat, Tool, Write, object};
 use borsh_json::unread;
 
 use crate::calls::refusal;
-use crate::codec::Fault;
+use crate::codec::{Fault, spoken};
 use crate::schema::{Interface, schema_of};
 
 pub(crate) fn program_schema() -> Value {
@@ -23,11 +23,6 @@ fn refused(fault: Fault) -> Error {
 pub(crate) fn encoded(ctx: &ExecCtx, program: &str, op: &Value) -> Result<Vec<u8>, Error> {
     let interface = schema_of(ctx, program)?;
     interface.encode_op(&spoken(op)).map_err(refused)
-}
-
-// an op or a query as the agent meant it: JSON written out as a string is read as that JSON
-fn spoken(value: &Value) -> Value {
-    unquoted(value).unwrap_or_else(|| value.clone())
 }
 
 #[derive(Deserialize)]

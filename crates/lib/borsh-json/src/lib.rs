@@ -3,8 +3,10 @@
 //! harness's `network_*` tools, chat's widgets and the ducktape CLI use it.
 mod decode;
 mod encode;
+mod example;
 mod interface;
 mod shape;
+mod spoken;
 #[cfg(test)]
 mod tests;
 
@@ -15,25 +17,63 @@ use borsh::schema::{BorshSchemaContainer, Declaration, Definition, Fields};
 
 pub use decode::decode;
 pub use encode::encode;
+pub use example::{example, examples};
 pub use interface::{Interface, Unreadable, unread};
 pub use program::schema::SECTION;
 pub use shape::shape;
+pub use spoken::{spoken, unquoted};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Fault {
-    Mismatch { at: String, expected: String },
-    UnknownVariant { at: String, variant: String },
-    UnknownField { at: String, field: String },
-    MissingField { at: String, field: String },
-    OutOfRange { at: String, declaration: String },
-    Length { at: String, length: u64 },
-    Truncated { at: String },
-    Trailing { left: usize },
-    Tag { at: String, tag: u64 },
-    NotUtf8 { at: String },
-    NotANumber { at: String },
-    Undefined { declaration: String },
-    Unsupported { declaration: String },
+    Mismatch {
+        at: String,
+        expected: String,
+        given: Option<String>,
+    },
+    UnknownVariant {
+        at: String,
+        variant: String,
+        known: Vec<String>,
+    },
+    UnknownField {
+        at: String,
+        field: String,
+        known: Vec<String>,
+    },
+    MissingField {
+        at: String,
+        field: String,
+    },
+    OutOfRange {
+        at: String,
+        declaration: String,
+    },
+    Length {
+        at: String,
+        length: u64,
+    },
+    Truncated {
+        at: String,
+    },
+    Trailing {
+        left: usize,
+    },
+    Tag {
+        at: String,
+        tag: u64,
+    },
+    NotUtf8 {
+        at: String,
+    },
+    NotANumber {
+        at: String,
+    },
+    Undefined {
+        declaration: String,
+    },
+    Unsupported {
+        declaration: String,
+    },
     Several(Vec<Fault>),
 }
 
@@ -58,11 +98,26 @@ impl Fault {
 impl fmt::Display for Fault {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Fault::Mismatch { at, expected } => write!(f, "at {at}: expected {expected}"),
-            Fault::UnknownVariant { at, variant } => {
-                write!(f, "at {at}: there is no variant named {variant}")
-            }
-            Fault::UnknownField { at, field } => write!(f, "at {at}: there is no field {field}"),
+            Fault::Mismatch {
+                at,
+                expected,
+                given: None,
+            } => write!(f, "at {at}: expected {expected}"),
+            Fault::Mismatch {
+                at,
+                expected,
+                given: Some(given),
+            } => write!(f, "at {at}: expected {expected}, got {given}"),
+            Fault::UnknownVariant { at, variant, known } => write!(
+                f,
+                "at {at}: there is no variant named {variant}; the variants are {}",
+                known.join(", ")
+            ),
+            Fault::UnknownField { at, field, known } => write!(
+                f,
+                "at {at}: there is no field {field}; the fields are {}",
+                known.join(", ")
+            ),
             Fault::MissingField { at, field } => write!(f, "at {at}: field {field} is missing"),
             Fault::OutOfRange { at, declaration } => {
                 write!(f, "at {at}: the number does not fit {declaration}")
@@ -143,6 +198,7 @@ impl<'a> At<'a> {
         Fault::Mismatch {
             at: self.render(),
             expected: expected.into(),
+            given: None,
         }
     }
 }

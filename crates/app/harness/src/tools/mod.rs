@@ -25,6 +25,7 @@ use serde_json::{Value, json};
 use store::PageRequest;
 
 use crate::ToolInfo;
+use crate::codec::unquoted;
 
 pub(crate) struct Seat<'a> {
     pub thread: u64,
@@ -202,13 +203,6 @@ pub(crate) const CATALOG: &[Entry] = &[
 
 pub(crate) fn find(name: &str) -> Option<&'static Entry> {
     CATALOG.iter().find(|entry| entry.name == name)
-}
-
-// the JSON a value holds where it came as JSON text: an object, an array or a string written out
-// as a string, which a stream or a client may hand on for a field that names no type
-pub(crate) fn unquoted(value: &Value) -> Option<Value> {
-    let held: Value = serde_json::from_str(value.as_str()?).ok()?;
-    matches!(held, Value::Object(_) | Value::Array(_) | Value::String(_)).then_some(held)
 }
 
 // a call's input with each field its tool's schema gives no type read as the JSON it holds
