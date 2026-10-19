@@ -7,6 +7,7 @@ pub(crate) mod anthropic;
 
 use abi::role::egress::http::{Head, Response};
 
+use crate::pictures::Looks;
 use crate::{Awaited, Flow, Frame, Partial, Role, Said, ServerTool, Stop, Thinking, Usage, Wire};
 
 pub(crate) struct Header<'a> {
@@ -28,6 +29,7 @@ pub(crate) struct Reply {
 pub(crate) enum Answered {
     Reply(Reply),
     Overflow,
+    Pictures(String),
     Failed(String),
 }
 
@@ -39,6 +41,7 @@ pub(crate) struct Summary {
 pub(crate) enum Summarized {
     Summary(Summary),
     Overflow,
+    Pictures(String),
     Failed(String),
 }
 
@@ -48,9 +51,30 @@ pub(crate) fn header(wire: Wire, header: &Header) -> String {
     }
 }
 
-pub(crate) fn message(wire: Wire, role: Role, frames: &[Frame], first: bool, last: bool) -> String {
+pub(crate) fn message(
+    wire: Wire,
+    role: Role,
+    frames: &[Frame],
+    looks: &Looks,
+    first: bool,
+    last: bool,
+) -> String {
     match wire {
-        Wire::AnthropicMessages => anthropic::message(role, frames, first, last),
+        Wire::AnthropicMessages => anthropic::message(role, frames, looks, first, last),
+    }
+}
+
+// whether the model takes one image of `size` bytes, else why not
+pub(crate) fn image_size(wire: Wire, size: u64) -> Result<(), String> {
+    match wire {
+        Wire::AnthropicMessages => anthropic::image_size(size),
+    }
+}
+
+// whether the model takes one image of `width` by `height` pixels, else why not
+pub(crate) fn image_side(wire: Wire, width: u32, height: u32) -> Result<(), String> {
+    match wire {
+        Wire::AnthropicMessages => anthropic::image_side(width, height),
     }
 }
 

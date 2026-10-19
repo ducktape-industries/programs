@@ -82,6 +82,14 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             vec![json!({ "from": "/a/\"b\"", "to": "/a/c's", "base": null, "message": PROSE })],
         ),
         (
+            "image_view",
+            vec![
+                json!({ "path": "/shared/qa/it's \"shot\".png" }),
+                json!({ "path": "/a.png", "snapshot": SNAPSHOT }),
+                json!({ "path": "/a.png", "snapshot": null }),
+            ],
+        ),
+        (
             "chat_channels",
             vec![
                 json!({}),

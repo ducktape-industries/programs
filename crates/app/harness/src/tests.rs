@@ -16,6 +16,7 @@ mod listen;
 mod models;
 mod network;
 mod owned;
+mod pictures;
 mod pods;
 mod reads;
 mod resume;

@@ -1,6 +1,6 @@
 //! Tools over `files`, the network's filesystem: reads at the head or at a snapshot, and
 //! commits the agent makes, which files allows where it allows the agent's account or harness.
-//! `edit.rs` is `files_edit`. `stat`, `read_all` and `beneath` here serve it and `forge_commit`.
+//! `edit.rs` is `files_edit`. `stat`, `read_all` and `beneath` serve it, `forge_commit` and pictures.
 mod edit;
 
 pub(crate) use edit::Edit;

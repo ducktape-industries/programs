@@ -13,6 +13,7 @@ use crate::calls::{Placed, place, refusal, run_call, take_back_showing};
 use crate::conversations::{binding, retire};
 use crate::listening::mirror;
 use crate::models::learned;
+use crate::pictures::{self, Looks, Picture};
 use crate::resume::{self, Failure};
 use crate::routes::{self, Picked};
 use crate::state::{
@@ -60,11 +61,18 @@ pub(crate) fn append(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body) {
 }
 
 pub(crate) fn say(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body) {
+    say_with(ctx, thread, body, Vec::new());
+}
+
+// an input and the pictures it came with
+pub(crate) fn say_with(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body, pictures: Vec<Picture>) {
     let looping = thread.asking != Asking::Idle;
     if !looping {
         append(ctx, thread, body);
+        pictures::keep(ctx, thread.id, thread.frames, pictures);
         return;
     }
+    pictures::hold(ctx, thread.id, thread.held, pictures);
     HELD.put(ctx, &(thread.id, thread.held), &body);
     thread.held += 1;
 }
@@ -80,6 +88,7 @@ pub(crate) fn settle(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error>
         let key = (thread.id, index);
         if let Some(body) = HELD.get(ctx, &key)? {
             append(ctx, thread, body);
+            pictures::unhold(ctx, thread.id, index, thread.frames)?;
         }
         HELD.remove(ctx, &key);
     }
@@ -262,7 +271,8 @@ fn seal(
     };
     for (role, frames) in groups {
         let end = frames[frames.len() - 1].seq;
-        let message = wire::message(wire, role, &frames, opens(thread), false);
+        let looks = pictures::looks(ctx, thread.id, wire, &frames)?;
+        let message = wire::message(wire, role, &frames, &looks, opens(thread), false);
         let part = put_part(ctx, message)?;
         let sealed = Sealed {
             end,
@@ -318,7 +328,8 @@ fn turn_parts(ctx: &ExecCtx, thread: &mut ThreadRow, turn: &Turn) -> Result<Vec<
             .iter()
             .map(|sealed| sealed.part),
     );
-    let last = wire::message(wire, role, &frames, opens(thread), true);
+    let looks = pictures::looks(ctx, thread.id, wire, &frames)?;
+    let last = wire::message(wire, role, &frames, &looks, opens(thread), true);
     parts.push(put_part(ctx, last)?);
     parts.push(put_part(ctx, wire::close(wire).into())?);
     Ok(parts)
@@ -583,7 +594,8 @@ fn largest_unseen(ctx: &ExecCtx, thread: &ThreadRow, wire: Wire) -> Result<Optio
         new && input && kept
     });
     let sized = unseen.map(|frame| {
-        let message = wire::message(wire, Role::User, std::slice::from_ref(&frame), true, false);
+        let one = std::slice::from_ref(&frame);
+        let message = wire::message(wire, Role::User, one, &Looks::new(), true, false);
         (message.len(), frame)
     });
     Ok(sized.max_by_key(|(size, _)| *size).map(|(_, frame)| frame))
@@ -676,6 +688,10 @@ async fn compact(
             thread.compact_before = Some(through);
             None
         }
+        Ok((Summarized::Pictures(text), response)) => match unpictured(ctx, &mut thread, &text)? {
+            true => None,
+            false => failed(ctx, &mut thread, Failure::answered(text, &response)),
+        },
         Ok((Summarized::Failed(text), response)) => {
             failed(ctx, &mut thread, Failure::answered(text, &response))
         }
@@ -780,6 +796,7 @@ enum Ending {
     Closed,
     Reply(wire::Reply),
     Overflow,
+    Pictures(String),
     Failed(Failure),
 }
 
@@ -788,6 +805,7 @@ fn ending(closed: bool, answered: Result<Answered, Failure>) -> Ending {
         (true, _) => Ending::Closed,
         (false, Ok(Answered::Reply(reply))) => Ending::Reply(reply),
         (false, Ok(Answered::Overflow)) => Ending::Overflow,
+        (false, Ok(Answered::Pictures(text))) => Ending::Pictures(text),
         (false, Ok(Answered::Failed(text))) => Ending::Failed(Failure::last(text)),
         (false, Err(failure)) => Ending::Failed(failure),
     }
@@ -845,6 +863,12 @@ fn turned(
             thread.context = Context::Overflowed;
             calls
         }
+        Ending::Pictures(text) => {
+            if !unpictured(ctx, &mut thread, &text)? {
+                again = failed(ctx, &mut thread, Failure::last(text));
+            }
+            Vec::new()
+        }
         Ending::Failed(failure) => match dispatched(ctx, id, partial)? {
             Some(reply) => {
                 let calls = record(ctx, &mut thread, upto, config, reply)?;
@@ -881,6 +905,20 @@ fn stall(ctx: &ExecCtx, id: u64, error: &Error) {
     if settle(ctx, &mut thread).is_ok() {
         THREADS.put(ctx, &id, &thread);
     }
+}
+
+// the model refused the request over its images: each one so far reaches it as words from now
+// on, and it is asked again; false when every one was words already
+fn unpictured(ctx: &ExecCtx, thread: &mut ThreadRow, text: &str) -> Result<bool, Error> {
+    if !pictures::hide(ctx, thread.id, text)? {
+        return Ok(false);
+    }
+    unseal(ctx, thread)?;
+    let text = format!(
+        "{text}: every image so far reaches the model as words from now on, and it is asked again"
+    );
+    append(ctx, thread, Body::Notice { text });
+    Ok(true)
 }
 
 fn record(
@@ -925,7 +963,10 @@ fn record(
             Some(Live {
                 outcome: Some(body),
                 ..
-            }) => append(ctx, thread, body),
+            }) => {
+                append(ctx, thread, body);
+                pictures::called(ctx, thread.id, &call, thread.frames)?;
+            }
             Some(Live { outcome: None, .. }) => {}
             None => match place(ctx, thread, &call, &tool, &input)? {
                 Placed::Refused(body) => append(ctx, thread, body),

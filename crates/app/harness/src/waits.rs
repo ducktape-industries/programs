@@ -14,11 +14,12 @@ use store::{PageRequest, PageResponse};
 use crate::agents::{configured, harnessed_agent, thread};
 use crate::calls::refusal;
 use crate::conversations::current;
+use crate::pictures::Picture;
 use crate::state::{
     ARMED, CHANGE_WAITS, ENDING, FORGE_WAITS, MESSAGE_WAITS, POD_WAITS, PodWatch, REF_WAITS,
     SCHEDULED, THREADS, WAIT_COUNT, WAIT_ENTRIES, WAIT_REFS, WAITING, WAITS,
 };
-use crate::turns::{bound, converse, request, say};
+use crate::turns::{bound, converse, request, say_with};
 use crate::{
     Asking, Body, Ended, Op, PROGRAM, ThreadRow, WaitFor, WaitRow, forged_as, listening,
     pod_event_as,
@@ -223,6 +224,16 @@ fn disarm(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
 // the wait ends, and its conversation (else the agent's canonical one) hears why, once: the
 // conversation that heard it
 pub(crate) fn end(ctx: &ExecCtx, wait: u64, what: String) -> Result<Option<u64>, Error> {
+    end_seen(ctx, wait, what, Vec::new())
+}
+
+// `end`, for a message that came with pictures
+pub(crate) fn end_seen(
+    ctx: &ExecCtx,
+    wait: u64,
+    what: String,
+    pictures: Vec<Picture>,
+) -> Result<Option<u64>, Error> {
     let Some(mut row) = open(ctx, wait)? else {
         return Ok(None);
     };
@@ -240,7 +251,7 @@ pub(crate) fn end(ctx: &ExecCtx, wait: u64, what: String) -> Result<Option<u64>,
     let stop = if what.contains('\n') { "" } else { "." };
     let text = format!("Wait {wait} is over: {what}{stop}{still}");
     let author = Principal::Root;
-    say(ctx, &mut told, Body::Post { author, text });
+    say_with(ctx, &mut told, Body::Post { author, text }, pictures);
     THREADS.put(ctx, &told.id, &told);
     Ok(Some(told.id))
 }

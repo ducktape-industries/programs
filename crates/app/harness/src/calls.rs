@@ -283,6 +283,7 @@ async fn taken_back(ctx: &Ctx, id: u64, call: &str, why: &str) -> Result<(), Err
 }
 
 fn voided(ctx: &ExecCtx, id: u64, call: &str) -> Result<(), Error> {
+    crate::pictures::dropped(ctx, id, call);
     let height = ctx.env().height;
     mark(ctx, id, call, CallState::Voided { height })
 }
@@ -745,6 +746,7 @@ fn finish(
         Asking::Idle | Asking::Learning | Asking::Compacting { .. } | Asking::Running => {
             SHOWN.remove(ctx, &key);
             append(ctx, &mut owner, result);
+            crate::pictures::called(ctx, id, call, owner.frames)?;
             THREADS.put(ctx, &id, &owner);
         }
     }

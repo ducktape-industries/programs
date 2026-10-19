@@ -308,6 +308,7 @@ fn copied(ctx: &ExecCtx, from: &ThreadRow, row: &mut ThreadRow) -> Result<(), Er
             WITHHELD.insert(ctx, &(row.id, frame.seq));
         }
     }
+    crate::pictures::forked(ctx, from.id, row.id, &frames)?;
     let inputs = frames
         .iter()
         .filter(|frame| frame.body.role() == Some(Role::User));

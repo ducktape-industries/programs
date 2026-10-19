@@ -7,6 +7,7 @@ use attribution::{Change, Source};
 use borsh::{BorshDeserialize, BorshSerialize};
 use store::{Item, KeyCodec, Kind, Map, Owned, Set};
 
+use crate::pictures::{Hidden, Picture};
 use crate::{
     Body, Booking, CallRow, Frame, ModelRow, Partial, Place, Sealed, SettleWindow, Tally,
     ThreadRow, UsageWindow, WaitRow, Window, Wire,
@@ -39,6 +40,12 @@ pub const PARTIALS: Map<u64, Partial> = Map::new("partial/").shared();
 pub const LIVE: Map<(u64, u64), Live> = Map::new("live/").shared();
 pub const SHOWN: Map<(u64, String), String> = Map::new("shown/").shared();
 pub const DEFERRED: Map<(u64, String, u64), Change> = Map::new("deferred/").shared();
+// the pictures each frame came with (`pictures.rs`), where files holds each; a held input's
+// until it is appended, a tool call's until its result is; and how far the model refused them
+pub const PICTURES: Map<(u64, u64), Vec<Picture>> = Map::new("picture/").shared();
+pub const HELD_PICTURES: Map<(u64, u64), Vec<Picture>> = Map::new("held-picture/").shared();
+pub const CALL_PICTURES: Map<(u64, String), Vec<Picture>> = Map::new("call-picture/").shared();
+pub const HIDDEN: Map<u64, Hidden> = Map::new("hidden/").shared();
 /// a thread's topic: the one line its agent last set with `thread_topic`
 pub const TOPICS: Map<u64, String> = Map::new("topic/").shared();
 pub const TALLIES: Map<u64, Tally> = Map::new("tally/").shared();
@@ -404,6 +411,10 @@ pub(crate) const TABLES: &[::program::Table] = &[
     LIVE.table(),
     SHOWN.table(),
     DEFERRED.table(),
+    PICTURES.table(),
+    HELD_PICTURES.table(),
+    CALL_PICTURES.table(),
+    HIDDEN.table(),
     TOPICS.table(),
     TALLIES.table(),
     BOOKINGS.table(),

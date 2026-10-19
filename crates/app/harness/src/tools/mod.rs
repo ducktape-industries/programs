@@ -4,8 +4,9 @@
 mod blob;
 mod chat;
 mod edits;
-mod files;
+pub(crate) mod files;
 mod forge;
+mod image;
 pub(crate) mod interface;
 mod network;
 pub(crate) mod pods;
@@ -159,6 +160,7 @@ pub(crate) const CATALOG: &[Entry] = &[
     entry::<files::SetList>(),
     entry::<files::Remove>(),
     entry::<files::Move>(),
+    entry::<image::View>(),
     entry::<chat::Channels>(),
     entry::<chat::Messages>(),
     entry::<chat::Thread>(),

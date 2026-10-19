@@ -2758,6 +2758,7 @@ dependencies = [
  "activity",
  "attribution",
  "awaits",
+ "base64 0.22.1",
  "blobs",
  "borsh",
  "borsh-json",

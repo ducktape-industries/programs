@@ -11,9 +11,10 @@ use attribution::{Actor, Change, Kind as Changed, Reason, Source};
 use crate::calls::deferred_while_shown;
 use crate::config::Pin;
 use crate::conversations::{binding, conversation, current, route};
+use crate::pictures::{self, Picture};
 use crate::resume;
 use crate::state::{BOUND, LAST, PLACES, THREADS};
-use crate::turns::{converse, say};
+use crate::turns::{converse, say, say_with};
 use crate::waiting;
 use crate::{AgentSetup, Body, Config, Configured, Op, PROGRAM, Place, ThreadRow};
 
@@ -279,7 +280,9 @@ pub(crate) fn manual(agent: &Agent, title: &str, bound: Option<&Place>) -> Strin
          conversation hears when the command ends), pod_read reads a file out of a pod, and \
          pod_push pushes a commit a pod made to forge as account {number}.\n\
          - Programs: network_schema gives any program's op, query and reply shapes; \
-         network_query asks it a query and network_call sends it an op as account {number}.",
+         network_query asks it a query and network_call sends it an op as account {number}.\n\
+         - Images: an image a message carries comes with it, and image_view shows you an \
+         image file of files (copy one from a pod to files first).",
         name = agent.name,
         number = agent.number,
         manager = agent.manager,
@@ -291,6 +294,7 @@ struct Designation {
     place: String,
     places: Vec<String>,
     text: String,
+    pictures: Vec<Picture>,
 }
 
 fn name_of(ctx: &QueryCtx, number: AccountNumber) -> String {
@@ -384,6 +388,7 @@ fn designation(
             place,
             places: Vec::new(),
             text,
+            pictures: Vec::new(),
         });
     };
     let verb = match heard {
@@ -410,6 +415,7 @@ fn designation(
         place: format!("{}/{}", chat::PROGRAM, row.channel_id),
         places: chat_places(&row.channel_id, row.thread),
         text,
+        pictures: pictures::of_message(&row.blocks),
     })
 }
 
@@ -491,6 +497,7 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
         place,
         places,
         text,
+        pictures,
     } = designation(ctx, &change, actor, why)?;
     let (mut thread, reached) = route(ctx, &agent, &places, place)?;
     PLACES.put(ctx, &(agent.number, reached), &thread.id);
@@ -500,7 +507,7 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
     }
     let text = text + &crate::waits::still_armed(ctx, thread.id)?;
     let author = Principal::Account(actor);
-    say(ctx, &mut thread, Body::Post { author, text });
+    say_with(ctx, &mut thread, Body::Post { author, text }, pictures);
     THREADS.put(ctx, &thread.id, &thread);
     resume::heard(ctx, thread.id)?;
     Ok(Hearing {
@@ -586,8 +593,8 @@ fn waited(
             Heard::Listen => Heard::Waited,
             other => other,
         };
-        let text = designation(ctx, change, actor, quoted)?.text;
-        return crate::waits::end(ctx, wait, text);
+        let Designation { text, pictures, .. } = designation(ctx, change, actor, quoted)?;
+        return crate::waits::end_seen(ctx, wait, text, pictures);
     }
     Ok(None)
 }

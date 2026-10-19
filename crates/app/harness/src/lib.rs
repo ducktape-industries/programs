@@ -12,6 +12,7 @@ mod conversations;
 mod gate;
 mod listening;
 mod models;
+mod pictures;
 mod program;
 mod queries;
 mod resume;

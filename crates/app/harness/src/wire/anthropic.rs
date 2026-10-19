@@ -6,6 +6,7 @@ use abi::role::egress::http::{Head, Method, Response};
 use serde_json::{Map, Value, json};
 
 use super::{Answered, Header, Reply, Summarized, Summary};
+use crate::pictures::{Look, Looks};
 use crate::{
     Awaited, Body, Flow, Forming, Frame, Partial, Role, Said, ServerTool, Stop, Thinking, Usage,
     tools,
@@ -17,6 +18,11 @@ pub(crate) const WEB_SEARCH: &str = "web_search_20250305";
 pub(crate) const WEB_FETCH: &str = "web_fetch_20250910";
 pub(crate) const CLOSE: &str = r#"],"stream":true}"#;
 pub(crate) const SUMMARIZE: &str = r#"],"compaction":{"type":"summarize"}}"#;
+// Anthropic's own limits on one image, from its vision guide
+// (https://docs.anthropic.com/en/docs/build-with-claude/vision): at most 5 MB as base64, and at
+// most 8000 px on either side
+const IMAGE_BASE64: u64 = 5 * 1024 * 1024;
+const IMAGE_SIDE: u32 = 8000;
 
 pub(crate) fn head(summarized: bool) -> Head {
     let mut headers = vec![
@@ -122,9 +128,32 @@ fn thought(request: &mut Map<String, Value>, thinking: Thinking) {
     request.insert("output_config".into(), json!({ "effort": effort }));
 }
 
-fn blocks(body: &Body) -> Vec<Value> {
+pub(crate) fn image_size(size: u64) -> Result<(), String> {
+    let encoded = size.div_ceil(3).saturating_mul(4);
+    match encoded <= IMAGE_BASE64 {
+        true => Ok(()),
+        false => {
+            Err("too large to show: Anthropic takes at most 5 MB of base64 per image".to_owned())
+        }
+    }
+}
+
+pub(crate) fn image_side(width: u32, height: u32) -> Result<(), String> {
+    match width.max(height) <= IMAGE_SIDE {
+        true => Ok(()),
+        false => Err(format!(
+            "{width}×{height} px, too large to show: Anthropic takes at most {IMAGE_SIDE} px on a side"
+        )),
+    }
+}
+
+fn blocks(body: &Body, looks: &[Look]) -> Vec<Value> {
     match body {
-        Body::Post { text, .. } => vec![json!({ "type": "text", "text": text })],
+        Body::Post { text, .. } => {
+            let mut blocks = vec![json!({ "type": "text", "text": text })];
+            blocks.extend(looks.iter().flat_map(seen));
+            blocks
+        }
         Body::Turn { said, .. } => said.iter().filter_map(said_block).collect(),
         Body::Refused { call, problem, .. } => vec![json!({
             "type": "tool_result",
@@ -138,10 +167,31 @@ fn blocks(body: &Body) -> Vec<Value> {
             "type": "tool_result",
             "tool_use_id": call,
             "is_error": failed,
-            "content": text,
+            "content": result_content(text, looks),
         })],
         Body::Notice { .. } | Body::Compaction { .. } => Vec::new(),
     }
+}
+
+// a picture's blocks: the line naming it, then the image; or the sentence saying why not
+fn seen(look: &Look) -> Vec<Value> {
+    match look {
+        Look::Image { label, media, data } => vec![
+            json!({ "type": "text", "text": label }),
+            json!({ "type": "image", "source": { "type": "base64", "media_type": media, "data": data } }),
+        ],
+        Look::Words(text) => vec![json!({ "type": "text", "text": text })],
+    }
+}
+
+// a tool result's content: its text alone, or with what it shows after it
+fn result_content(text: &str, looks: &[Look]) -> Value {
+    if looks.is_empty() {
+        return json!(text);
+    }
+    let mut content = vec![json!({ "type": "text", "text": text })];
+    content.extend(looks.iter().flat_map(seen));
+    Value::Array(content)
 }
 
 fn said_block(said: &Said) -> Option<Value> {
@@ -173,10 +223,17 @@ fn said_block(said: &Said) -> Option<Value> {
     }
 }
 
-pub(crate) fn message(role: Role, frames: &[Frame], first: bool, last: bool) -> String {
+pub(crate) fn message(
+    role: Role,
+    frames: &[Frame],
+    looks: &Looks,
+    first: bool,
+    last: bool,
+) -> String {
+    let none: Vec<Look> = Vec::new();
     let mut content: Vec<Value> = frames
         .iter()
-        .flat_map(|frame| blocks(&frame.body))
+        .flat_map(|frame| blocks(&frame.body, looks.get(&frame.seq).unwrap_or(&none)))
         .collect();
     if content.is_empty() {
         content.push(json!({ "type": "text", "text": "(nothing)" }));
@@ -480,11 +537,24 @@ fn overflowed(response: &Response) -> bool {
     response.status == 400 && invalid && too_long
 }
 
+// a request the model refused over its images, in its words: an image, or a request of many, too
+// large, or a request too large in all
+fn refused_pictures(response: &Response) -> bool {
+    let value: Value = serde_json::from_slice(&response.body).unwrap_or(Value::Null);
+    let invalid = value["error"]["type"] == "invalid_request_error";
+    let image = value["error"]["message"]
+        .as_str()
+        .is_some_and(|message| message.to_lowercase().contains("image"));
+    (response.status == 400 && invalid && image) || response.status == 413
+}
+
 pub(crate) fn answered(response: &Response) -> Answered {
     if response.status != 200 {
-        return match overflowed(response) {
-            true => Answered::Overflow,
-            false => Answered::Failed(failure(response.status, &response.body)),
+        let text = failure(response.status, &response.body);
+        return match (overflowed(response), refused_pictures(response)) {
+            (true, _) => Answered::Overflow,
+            (false, true) => Answered::Pictures(text),
+            (false, false) => Answered::Failed(text),
         };
     }
     let value = match json(&response.body) {
@@ -503,6 +573,9 @@ pub(crate) fn answered(response: &Response) -> Answered {
 pub(crate) fn summarized(response: &Response) -> Summarized {
     if overflowed(response) {
         return Summarized::Overflow;
+    }
+    if refused_pictures(response) {
+        return Summarized::Pictures(failure(response.status, &response.body));
     }
     match summary(response) {
         Ok(summary) => Summarized::Summary(summary),
