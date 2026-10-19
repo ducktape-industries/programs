@@ -544,7 +544,7 @@ fn an_agent_queries_and_calls_a_program_through_the_schema_its_code_carries() {
             "thread": null,
         } });
         let calls = json!([
-            { "type": "tool_use", "id": "toolu_s", "name": "network_schema", "input": { "program": "chat" } },
+            { "type": "tool_use", "id": "toolu_s", "name": "network_schema", "input": { "program": "chat", "whole": true } },
             { "type": "tool_use", "id": "toolu_q", "name": "network_query", "input": { "program": "chat", "query": { "Channel": { "channel_id": "general" } } } },
             { "type": "tool_use", "id": "toolu_c", "name": "network_call", "input": { "program": "chat", "op": post } },
             { "type": "tool_use", "id": "toolu_f", "name": "network_schema", "input": { "program": "files" } },
