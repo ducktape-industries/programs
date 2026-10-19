@@ -12,6 +12,8 @@ use crate::*;
 
 const OWNER: &[u8] = b"owner-key";
 const OWNER_ACCOUNT: u64 = 11;
+const STRANGER: &[u8] = b"stranger-key";
+const STRANGER_ACCOUNT: u64 = 12;
 const RUNNER: &str = "runner";
 const RUNNER_ACCOUNT: u64 = 904;
 const OFFERS: Item<Vec<u64>> = Item::new("offers");
@@ -178,6 +180,7 @@ fn world() -> World {
     chain.seat::<Runner>(RUNNER);
     chain.seat::<::scheduler::Scheduler>(::scheduler::PROGRAM);
     chain.hold(OWNER, OWNER_ACCOUNT);
+    chain.hold(STRANGER, STRANGER_ACCOUNT);
     let programs = [
         (forge::PROGRAM, 900),
         ("chat", 901),
@@ -303,6 +306,11 @@ impl World {
     fn act(&self, op: &Op) -> Result<Vec<u8>, Error> {
         self.chain
             .submit(Origin::Signed(OWNER.to_vec()), PROGRAM, op)
+    }
+
+    fn stranger(&self, op: &Op) -> Result<Vec<u8>, Error> {
+        self.chain
+            .submit(Origin::Signed(STRANGER.to_vec()), PROGRAM, op)
     }
 
     fn runner(&self, labels: &[&str]) {
@@ -1298,4 +1306,64 @@ fn a_running_check_records_its_outputs_by_blob_and_who_said_so() {
         panic!("outputs answers Outputs");
     };
     assert_eq!(none, None);
+}
+
+// A running check's report and outputs are its claimant's alone, so no other account marks it
+// passed or swaps what it built; a queued check any account may still end errored or superseded,
+// as claiming it first would let it.
+#[test]
+fn only_the_account_that_claimed_a_check_reports_it_or_records_its_outputs() {
+    let mut world = world();
+    let root = world.commit(&[], &[("gates.toml", GATES)]);
+    world.push(None, root, "main");
+    world.act(&Op::Claim { check: 1 }).unwrap();
+    let passed = Op::Report {
+        check: 1,
+        state: State::Passed,
+        summary: "exit code 0".into(),
+        log: None,
+    };
+    let forged = world.stranger(&passed).unwrap_err();
+    assert_eq!(forged.code, code::UNAUTHORIZED);
+    let blob = world.chain.put_blob("chunk", b"forged".to_vec()).unwrap();
+    let swapped = Op::Outputs {
+        check: 1,
+        files: vec![Output {
+            path: "app.tar.gz".into(),
+            blob,
+            size: 6,
+        }],
+    };
+    assert_eq!(
+        world.stranger(&swapped).unwrap_err().code,
+        code::UNAUTHORIZED
+    );
+    let Reply::Outputs(none) = world
+        .chain
+        .query(PROGRAM, &Query::Outputs { check: 1 })
+        .unwrap()
+    else {
+        panic!("outputs answers Outputs");
+    };
+    assert_eq!(none, None, "the stranger's outputs were not kept");
+    assert_eq!(world.check(1).state, State::Running);
+    world.act(&swapped).unwrap();
+    world.act(&passed).unwrap();
+    let check = world.check(1);
+    assert_eq!(
+        (check.state, check.reporter),
+        (State::Passed, Some(OWNER_ACCOUNT))
+    );
+    let errored = Op::Report {
+        check: 2,
+        state: State::Errored,
+        summary: "no runner took it".into(),
+        log: None,
+    };
+    world.stranger(&errored).unwrap();
+    let check = world.check(2);
+    assert_eq!(
+        (check.state, check.reporter),
+        (State::Errored, Some(STRANGER_ACCOUNT))
+    );
 }

@@ -3,7 +3,7 @@
 //! how its runner says it ended.
 use ::program::{
     Error, ExecCtx, MessageId, Outcome, Principal, QueryCtx, Reply, code, corrupt, invalid,
-    not_found, unexpected_reply, wrong_state,
+    not_found, unauthorized, unexpected_reply, wrong_state,
 };
 use forge::{ChangeState, CheckState, Content, EntryKind, Revision, Watched};
 use store::Item;
@@ -618,6 +618,12 @@ pub(crate) fn report(
             check.state.word()
         )));
     }
+    // a running check's result is its claimant's to say: a reader of results trusts who ran it
+    if check.state == State::Running && check.claimant != Some(account) {
+        return Err(unauthorized(format!(
+            "only the account that claimed check {id} reports how it ended"
+        )));
+    }
     if unclaimed {
         QUEUED.remove(ctx, &id);
     }
@@ -757,6 +763,11 @@ pub(crate) fn outputs(ctx: &ExecCtx, id: u64, files: Vec<Output>) -> Result<(), 
         return Err(wrong_state(format!(
             "check {id} is {}, not running",
             check.state.word()
+        )));
+    }
+    if check.claimant != Some(by) {
+        return Err(unauthorized(format!(
+            "only the account that claimed check {id} records its outputs"
         )));
     }
     OUTPUTS.put(ctx, &id, &OutputsRow { by, files });
