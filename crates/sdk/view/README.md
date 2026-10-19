@@ -553,7 +553,9 @@ know is left out and logged.
 
 `WIRE_LEVEL` counts the appends: a view's manifest carries it, and a host
 sends a view only the events its level reads (`Event::level`), because a
-view built before J-085 reads strictly. What a host answers is
+view built before J-085 reads strictly. What each level added is listed
+beside it (`view-wire/src/lib.rs`): level 2, `op.put` takes a blob of any
+size. What a host answers is
 `host.methods` (`methods::Hosted`): `cx.host().hosted()` asks it once, and
 `Hosted::has("link.window")` says whether to offer what needs it. A host
 before J-085 refuses `host.methods`, and `hosted()` answers `None`: ask the

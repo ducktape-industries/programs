@@ -717,9 +717,6 @@ impl Network {
                             .picked(file, offset, len)
                             .ok_or_else(|| malformed("no file the view holds holds that slice"))?,
                     };
-                    if body.len() as u64 > methods::BLOB_MOST {
-                        return Err(malformed("a blob holds at most BLOB_MOST bytes"));
-                    }
                     bodies.push((blob.kind, body));
                 }
                 let mut ids = Vec::with_capacity(bodies.len());

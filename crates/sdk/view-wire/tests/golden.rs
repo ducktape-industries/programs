@@ -557,7 +557,7 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
                         body: BlobBody::Picked {
                             file: 1,
                             offset: 0,
-                            len: BLOB_MOST,
+                            len: 1 << 20,
                         },
                     },
                     NewBlob {
