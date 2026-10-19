@@ -58,7 +58,7 @@ pub use rich_text::{InteractiveText, StyledText};
 pub use view_element::{AnyView, ViewElement};
 mod memo;
 pub use memo::{Memo, memo};
-pub use web::{Web, WebHandle, WebState, web};
+pub use web::{Artifact, Web, WebHandle, WebState, artifact, web};
 
 /// Every SDK name a view file writes, in one import:
 /// `use view::prelude::*;`. gpui's names (elements, styles,
@@ -85,9 +85,10 @@ pub mod prelude {
         ScrollHandle, ScrollStrategy, ScrollWheelEvent, SharedString, StatefulInteractiveElement,
         Styled, StyledImage, StyledText, Subscription, Task, TextField, TextInputAction, Textarea,
         Theme, Tint, TrackState, UniformListScrollHandle, View, VirtualKeyboard, WebHandle,
-        WebState, Window, anchored, camera, canvas, deferred, design, div, export_notifier,
-        export_view, hsla, img, list, memo, microphone, modal_overlay, px, remote_audio,
-        remote_video, rems, resize_handle, rgb, sensor, sheet, svg, uniform_list, web,
+        WebState, Window, anchored, artifact, camera, canvas, deferred, design, div,
+        export_notifier, export_view, hsla, img, list, memo, microphone, modal_overlay, px,
+        remote_audio, remote_video, rems, resize_handle, rgb, sensor, sheet, svg, uniform_list,
+        web,
     };
 }
 mod text;

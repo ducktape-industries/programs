@@ -161,10 +161,24 @@ fn an_undeclared_piece_is_found_in_the_tree_a_patch_and_a_tooltip() {
         on_state: None,
         publish: None,
     };
+    let artifact = Node::Artifact {
+        id: ElementIdWire::Name("artifact".into()),
+        link: "duck://dognet-b5b6ea90/files/shared/plan.html".into(),
+        style: StyleId(0),
+    };
     let in_tree = Frame {
         root: Some(column(vec![text("a"), column(vec![web])])),
         ..Frame::default()
     };
+    let in_list = Frame {
+        root: Some(column(vec![artifact])),
+        ..Frame::default()
+    };
+    // a view that draws pages is not one that embeds artifacts
+    assert_eq!(
+        in_list.undeclared(&[Capability::Web]),
+        Some(Capability::Artifact)
+    );
     let in_patch = Frame {
         patches: vec![Patch::Insert {
             path: Vec::new(),
@@ -185,6 +199,7 @@ fn an_undeclared_piece_is_found_in_the_tree_a_patch_and_a_tooltip() {
         (in_tree, Capability::Web),
         (in_patch, Capability::Microphone),
         (in_tooltip, Capability::Camera),
+        (in_list, Capability::Artifact),
     ] {
         assert_eq!(frame.undeclared(&[Capability::Host]), Some(gate));
         assert_eq!(frame.undeclared(&[Capability::Host, gate]), None);

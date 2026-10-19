@@ -1314,11 +1314,12 @@ methods! {
     FileRead, "file.read", ReadFile, Vec<u8>;
 }
 
-/// The `<capability>` half of every kind in [`ALL`]: what a view's manifest
-/// declares, and the only names it may. A method is reached only through the
-/// capability its kind starts with. One capability gates a node, not a
-/// method: [`Capability::Web`]; three gate a node and their methods:
-/// [`Capability::Camera`], [`Capability::Microphone`], [`Capability::Live`].
+// The `<capability>` half of every kind in [`ALL`]: what a view's manifest
+// declares, and the only names it may. A method is reached only through the
+// capability its kind starts with. Two capabilities gate a node, not a
+// method: [`Capability::Web`] and [`Capability::Artifact`]; three gate a
+// node and their methods: [`Capability::Camera`], [`Capability::Microphone`],
+// [`Capability::Live`].
 #[derive(
     Clone,
     Copy,
@@ -1371,10 +1372,15 @@ pub enum Capability {
     // what it holds of them (`file.read`). Putting them on the network is
     // an op (`op.put`), under [`Capability::Op`].
     File,
+    // The view embeds artifacts ([`crate::Node::Artifact`]): pages kept on
+    // the network at a `duck://` link, drawn by the app where it has a web
+    // view and shown as their link where it has none. Unlike `web`, it takes
+    // none of the links the app opens.
+    Artifact,
 }
 
 impl Capability {
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 17] = [
         Self::Chain,
         Self::Program,
         Self::Op,
@@ -1391,6 +1397,7 @@ impl Capability {
         Self::Camera,
         Self::Microphone,
         Self::File,
+        Self::Artifact,
     ];
 
     /// The name a manifest and a kind spell it with.
@@ -1412,6 +1419,7 @@ impl Capability {
             Self::Camera => "camera",
             Self::Microphone => "microphone",
             Self::File => "file",
+            Self::Artifact => "artifact",
         }
     }
 
@@ -1546,16 +1554,18 @@ mod tests {
             .collect();
         prefixes.sort_unstable();
         prefixes.dedup();
-        // `web` gates a node (`Node::Web`), not a method
+        // `web` and `artifact` gate a node (`Node::Web`, `Node::Artifact`),
+        // not a method
         let mut known: Vec<&str> = Capability::ALL
             .into_iter()
-            .filter(|capability| *capability != Capability::Web)
+            .filter(|capability| !matches!(capability, Capability::Web | Capability::Artifact))
             .map(Capability::as_str)
             .collect();
         known.sort_unstable();
         assert_eq!(prefixes, known);
         assert_eq!(Capability::parse("link"), Some(Capability::Link));
         assert_eq!(Capability::parse("web"), Some(Capability::Web));
+        assert_eq!(Capability::parse("artifact"), Some(Capability::Artifact));
         for name in ["rpc", "chat", "program.query", "", "Chain"] {
             assert_eq!(Capability::parse(name), None, "{name:?}");
         }

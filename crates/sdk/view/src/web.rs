@@ -1,5 +1,6 @@
 //! The web piece: a page the host's browser engine draws ([`wire::Node::Web`]),
-//! for a view that declares [`Capability::Web`](crate::methods::Capability::Web).
+//! for a view that declares [`Capability::Web`](crate::methods::Capability::Web);
+//! and the artifact piece ([`wire::Node::Artifact`]), for one that declares `artifact`.
 use crate::element::wire_id;
 use crate::interactivity::EventListener;
 use crate::revised::Revised;
@@ -135,6 +136,55 @@ impl Styled for Web {
 }
 
 impl gpui::prelude::FluentBuilder for Web {}
+
+// An artifact the app draws at `link` (`duck://<chain>/files/<path>`, which
+// it reloads when the file changes, or `duck://<chain>/blobs/<hex>`): the
+// page, as tall as its content, where the app has a web view; the link
+// alone where it has none. The app loads and reloads it, so the element
+// takes no listeners. Only a view whose manifest declares
+// `Capability::Artifact` may draw one: the host refuses any other's frame.
+pub struct Artifact {
+    id: ElementId,
+    link: String,
+    style: Box<StyleRefinement>,
+}
+
+pub fn artifact(id: impl Into<ElementId>, link: impl Into<String>) -> Artifact {
+    Artifact {
+        id: id.into(),
+        link: link.into(),
+        style: Box::default(),
+    }
+}
+
+impl IntoElement for Artifact {
+    type Element = Self;
+    fn into_element(self) -> Self {
+        self
+    }
+}
+
+impl Element for Artifact {
+    fn id(&self) -> Option<ElementId> {
+        Some(self.id.clone())
+    }
+
+    fn lower(self: Box<Self>, lowering: &mut Lowering<'_>) -> wire::Node {
+        wire::Node::Artifact {
+            id: wire_id(self.id),
+            link: self.link,
+            style: lowering.style(&self.style),
+        }
+    }
+}
+
+impl Styled for Artifact {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
+impl gpui::prelude::FluentBuilder for Artifact {}
 
 impl crate::testing::TestAppContext {
     /// The page of the web piece `name` reports `state`, as the app tells
@@ -272,5 +322,46 @@ mod tests {
     #[should_panic(expected = "undeclared_capability")]
     fn a_web_piece_the_manifest_leaves_out_fails_the_test() {
         TestAppContext::new().open::<Undeclared>();
+    }
+
+    const PLAN: &str = "duck://dognet-b5b6ea90/files/shared/plan.html";
+
+    // Embeds an artifact, under the capability named by `ARTIFACT`.
+    #[derive(Default, serde::Deserialize, serde::Serialize)]
+    struct Embeds<const ARTIFACT: bool>;
+
+    impl<const ARTIFACT: bool> View for Embeds<ARTIFACT> {
+        const NAME: &'static str = "Embeds";
+        const CAPABILITIES: &'static [Capability] = match ARTIFACT {
+            true => &[Capability::Artifact],
+            false => &[Capability::Web],
+        };
+        fn new(_: &mut Window, _: &mut Context<Self>) -> Self {
+            Self
+        }
+    }
+
+    impl<const ARTIFACT: bool> Render for Embeds<ARTIFACT> {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().child(artifact("plan", PLAN).w_full())
+        }
+    }
+
+    // An artifact piece carries its link and nothing a page reports.
+    #[test]
+    fn an_artifact_piece_carries_its_link() {
+        let mut cx = TestAppContext::new();
+        cx.open::<Embeds<true>>();
+        let wire::Node::Artifact { link, .. } = cx.node("plan").clone() else {
+            panic!("no artifact piece: {:?}", cx.root());
+        };
+        assert_eq!(link, PLAN);
+    }
+
+    // Drawing pages is not embedding artifacts: `web` alone is refused.
+    #[test]
+    #[should_panic(expected = "undeclared_capability")]
+    fn an_artifact_piece_needs_its_own_capability() {
+        TestAppContext::new().open::<Embeds<false>>();
     }
 }

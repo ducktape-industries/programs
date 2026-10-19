@@ -99,7 +99,8 @@ pub(super) fn check_bounds(node: &Node, styles: &Styles, depth: usize, ctx: &str
         Node::Web { style, .. }
         | Node::Camera { style, .. }
         | Node::Microphone { style, .. }
-        | Node::Remote { style, .. } => {
+        | Node::Remote { style, .. }
+        | Node::Artifact { style, .. } => {
             check_native_style(&styles[*style]);
             if let Some(track) = node.live_track() {
                 assert_eq!(track.check(), Ok(()), "{ctx}: a track out of its rule kept");

@@ -116,5 +116,6 @@ by_variant! {
             id, style, device, output, monitor, revision, commands, on_state, publish, muted,
         },
         Remote { id, style, track, media, on_state },
+        Artifact { id, link, style },
     ],
 }

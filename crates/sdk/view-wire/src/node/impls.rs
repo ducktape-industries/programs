@@ -29,7 +29,8 @@ impl Node {
             | Self::Web { id, .. }
             | Self::Camera { id, .. }
             | Self::Microphone { id, .. }
-            | Self::Remote { id, .. } => Some(id),
+            | Self::Remote { id, .. }
+            | Self::Artifact { id, .. } => Some(id),
             Self::Space
             | Self::Unknown { .. }
             | Self::Anchored { .. }
@@ -72,7 +73,8 @@ impl Node {
             | Self::Web { style, .. }
             | Self::Camera { style, .. }
             | Self::Microphone { style, .. }
-            | Self::Remote { style, .. } => Some(*style),
+            | Self::Remote { style, .. }
+            | Self::Artifact { style, .. } => Some(*style),
             Self::Anchored { .. } | Self::Deferred { .. } | Self::Space | Self::Unknown { .. } => {
                 None
             }
@@ -100,7 +102,8 @@ impl Node {
             | Self::Web { style, .. }
             | Self::Camera { style, .. }
             | Self::Microphone { style, .. }
-            | Self::Remote { style, .. } => visit(style),
+            | Self::Remote { style, .. }
+            | Self::Artifact { style, .. } => visit(style),
             Self::Anchored { .. } | Self::Deferred { .. } | Self::Space | Self::Unknown { .. } => {}
         }
         if let Self::Container(crate::ContainerNode {
@@ -171,6 +174,7 @@ impl Node {
                 publish: Some(_), ..
             } => &[Capability::Microphone, Capability::Live],
             Self::Remote { .. } => &[Capability::Live],
+            Self::Artifact { .. } => &[Capability::Artifact],
             Self::RichText { .. }
             | Self::Anchored { .. }
             | Self::UniformList { .. }
@@ -221,7 +225,8 @@ impl Node {
             | Self::Web { .. }
             | Self::Camera { .. }
             | Self::Microphone { .. }
-            | Self::Remote { .. } => &[],
+            | Self::Remote { .. }
+            | Self::Artifact { .. } => &[],
         }
     }
 
@@ -258,7 +263,8 @@ impl Node {
             | Self::Web { .. }
             | Self::Camera { .. }
             | Self::Microphone { .. }
-            | Self::Remote { .. } => &mut [],
+            | Self::Remote { .. }
+            | Self::Artifact { .. } => &mut [],
         }
     }
 
@@ -290,7 +296,8 @@ impl Node {
             | Self::Web { .. }
             | Self::Camera { .. }
             | Self::Microphone { .. }
-            | Self::Remote { .. } => None,
+            | Self::Remote { .. }
+            | Self::Artifact { .. } => None,
         }
     }
 

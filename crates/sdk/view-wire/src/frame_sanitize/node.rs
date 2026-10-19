@@ -155,7 +155,8 @@ fn sanitize_fields(
         Node::Web { style, .. }
         | Node::Camera { style, .. }
         | Node::Microphone { style, .. }
-        | Node::Remote { style, .. } => walk.style(*style)?,
+        | Node::Remote { style, .. }
+        | Node::Artifact { style, .. } => walk.style(*style)?,
         Node::Anchored {
             fit,
             position,

@@ -161,7 +161,7 @@ Ours, defined in this crate:
   `Subscription` are gpui's.
 - `div`, `uniform_list`, `list`, `Input`, `Textarea`, `img`/`Img`, `svg`/`Svg`,
   `canvas`/`Canvas`, `InteractiveText`/`StyledText`, `sensor`,
-  `resize_handle`, `modal_overlay`, `web`, `camera`, `microphone`,
+  `resize_handle`, `modal_overlay`, `web`, `artifact`, `camera`, `microphone`,
   `remote_video`, `remote_audio` (`src/element.rs`, `src/list.rs`,
   `src/primitives/`, `src/rich_text.rs`, `src/behavior.rs`, `src/web.rs`,
   `src/media.rs`):
@@ -598,7 +598,7 @@ writes its three exports (`alloc`/`init`/`tick`: borsh answers in, a borsh
 The view crate builds it alone under a `notifier` cargo feature, and a
 founding packs it into the program's code blob as `ducktape.notify`. It
 may not declare what needs a person in front of it (`op`, `invite`,
-`link`, `clipboard`, `web`): the app refuses to start it.
+`link`, `clipboard`, `web`, `artifact`): the app refuses to start it.
 
 Two host methods are its signals: `store.changes` (a key another instance
 of the program, a pane, set in the store they share: a read cursor moved)
@@ -674,8 +674,9 @@ element with no host, sanitizer or audit, for a test of what that element
 carries (`testing::assert_accessible(&tree)` audits it when the test wants).
 It holds the view to its `View::CAPABILITIES` as the app
 does: a method whose capability the manifest leaves out, or a web, camera,
-microphone or remote piece from a view that does not declare `web`, `camera`,
-`microphone` or (for a piece on a live track) `live`, panics with
+microphone, remote or artifact piece from a view that does not declare `web`,
+`camera`, `microphone`, `artifact` or (for a piece on a live track) `live`,
+panics with
 `methods::refusal::UNDECLARED_CAPABILITY`, the code the app refuses them
 with. A node method may name any program, in a test as in the app.
 Screen export: a test gated on `*_SCREEN_EXPORT=1` (`FORGE_SCREEN_EXPORT`,

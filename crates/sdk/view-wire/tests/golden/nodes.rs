@@ -395,6 +395,11 @@ fn first_nodes() -> Vec<Node> {
             },
             on_state: Some(21),
         },
+        Node::Artifact {
+            id: id("artifact"),
+            link: "duck://dognet-b5b6ea90/files/shared/artifacts/plan.html".into(),
+            style: style(),
+        },
         text("plain"),
         // drawn in capitals, named as written
         Node::Text(TextNode {
@@ -940,6 +945,7 @@ pub fn node_variant(node: &Node) -> &'static str {
         Node::Camera { .. } => "Camera",
         Node::Microphone { .. } => "Microphone",
         Node::Remote { .. } => "Remote",
+        Node::Artifact { .. } => "Artifact",
         Node::Unknown { .. } => unreachable!("a node this build cannot read never crosses"),
     }
 }

@@ -443,6 +443,24 @@ pub enum Node {
         media: RemoteMedia,
         on_state: Option<u32>,
     },
+    // An artifact: a page kept on the network at a `duck://` link, a files
+    // path (`duck://<chain>/files/<path>`, followed: the host reloads the
+    // page when a commit changes the file) or a blob
+    // (`duck://<chain>/blobs/<sha256 hex>`, frozen). A host with a web view
+    // draws the page across the node's box, as tall as the page's content
+    // (the host measures it, whatever height the style asks), and serves
+    // the page and every `duck://` address it reads from the network,
+    // read-only. A host without one, or one that cannot open the link,
+    // draws the link alone: one line, which a press opens as `link.open`
+    // does. The host loads and reloads it, so the node carries no
+    // listeners and no commands. Only a view whose manifest declares the
+    // `artifact` capability may send one; a host refuses the frame of any
+    // other ([`Frame::undeclared`]).
+    Artifact {
+        id: ElementIdWire,
+        link: String,
+        style: StyleId,
+    },
     // A node this build cannot read, in a frame a later build wrote: its
     // kind, or a value in it, is a variant this build does not know
     // (`codec.rs`, "Appends"). A host draws nothing for it and logs `what`;

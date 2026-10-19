@@ -628,6 +628,15 @@
             }
           },
           {
+            "Artifact": {
+              "id": {
+                "Name": "artifact"
+              },
+              "link": "duck://dognet-b5b6ea90/files/shared/artifacts/plan.html",
+              "style": 0
+            }
+          },
+          {
             "Text": {
               "id": {
                 "Name": "plain"

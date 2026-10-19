@@ -371,5 +371,6 @@ pub(crate) fn allows(capability: Capability) -> &'static str {
         Capability::File => {
             "lets you pick files on this device: it sees their names and sizes, never where they are"
         }
+        Capability::Artifact => "shows pages kept on the network, which the app draws",
     }
 }

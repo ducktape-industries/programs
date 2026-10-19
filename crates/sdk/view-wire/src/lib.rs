@@ -48,8 +48,9 @@ pub const WIRE_ID: &str = include!(concat!(env!("OUT_DIR"), "/wire_id.rs"));
 // level reads ([`Event::level`]). A view built before J-085 carries a
 // [`WIRE_ID`] there, and is level 0. `tests/golden/levels/<level>.bin`
 // keeps each level's frame, and every one must still read. Level 2:
-// `op.put` takes a blob of any size. Level 3: `file.read`.
-pub const WIRE_LEVEL: u32 = 3;
+// `op.put` takes a blob of any size. Level 3: `file.read`. Level 4:
+// `Node::Artifact` and the `artifact` capability.
+pub const WIRE_LEVEL: u32 = 4;
 
 /// For `skip_serializing_if`: a value that says nothing is left out.
 pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {

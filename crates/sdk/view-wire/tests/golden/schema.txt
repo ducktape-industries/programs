@@ -74,7 +74,8 @@ BlockRef = Enum { tag_width: 1, variants: [(0, "Height", "BlockRef__Height"), (1
 BlockRef__Height = Struct { fields: UnnamedFields(["u64"]) }
 BlockRef__Id = Struct { fields: UnnamedFields(["[u8; 32]"]) }
 CameraDevice = Struct { fields: NamedFields([("id", "String"), ("name", "String"), ("default", "bool"), ("facing", "Facing")]) }
-Capability = Enum { tag_width: 1, variants: [(0, "Chain", "Capability__Chain"), (1, "Program", "Capability__Program"), (2, "Op", "Capability__Op"), (3, "Invite", "Capability__Invite"), (4, "Link", "Capability__Link"), (5, "Blob", "Capability__Blob"), (6, "Host", "Capability__Host"), (7, "Clock", "Capability__Clock"), (8, "Clipboard", "Capability__Clipboard"), (9, "Notify", "Capability__Notify"), (10, "Store", "Capability__Store"), (11, "Web", "Capability__Web"), (12, "Live", "Capability__Live"), (13, "Camera", "Capability__Camera"), (14, "Microphone", "Capability__Microphone"), (15, "File", "Capability__File")] }
+Capability = Enum { tag_width: 1, variants: [(0, "Chain", "Capability__Chain"), (1, "Program", "Capability__Program"), (2, "Op", "Capability__Op"), (3, "Invite", "Capability__Invite"), (4, "Link", "Capability__Link"), (5, "Blob", "Capability__Blob"), (6, "Host", "Capability__Host"), (7, "Clock", "Capability__Clock"), (8, "Clipboard", "Capability__Clipboard"), (9, "Notify", "Capability__Notify"), (10, "Store", "Capability__Store"), (11, "Web", "Capability__Web"), (12, "Live", "Capability__Live"), (13, "Camera", "Capability__Camera"), (14, "Microphone", "Capability__Microphone"), (15, "File", "Capability__File"), (16, "Artifact", "Capability__Artifact")] }
+Capability__Artifact = Struct { fields: Empty }
 Capability__Blob = Struct { fields: Empty }
 Capability__Camera = Struct { fields: Empty }
 Capability__Chain = Struct { fields: Empty }
@@ -1069,6 +1070,10 @@ Node enum
     track: TypeName("LiveTrack")
     media: TypeName("RemoteMedia")
     on_state: Option(U32)
+  20 Artifact struct
+    id: TypeName("WireRepr")
+    link: Str
+    style: U32
 NodeId NewTypeStruct(U64)
 Orientation enum
   0 horizontal: Unit
