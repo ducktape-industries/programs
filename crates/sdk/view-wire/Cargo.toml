@@ -27,7 +27,9 @@ gpui.workspace = true
 # Toggled, Live, Action, ActionData, ...), which `Interactivity`, `Aria` and
 # `Event::A11yAction` serialize.
 accesskit = { version = "0.25.1", features = ["serde"] }
-rmp-serde = "1"
+# crates.io's 1.3.1 with shared parser code, a default-off `typed` decoding
+# and `remaining_slice` (its README.ducktape.md).
+rmp-serde = { path = "../../vendor/rmp-serde" }
 borsh.workspace = true
 slotmap = "1.0.6"
 uuid = "1.1.2"
@@ -47,7 +49,7 @@ unicode-segmentation = "1"
 # Honor the actual Serde shapes in views without carrying unrelated parser arms.
 # Native hosts retain the full MessagePack deserializer.
 [target.'cfg(target_family = "wasm")'.dependencies]
-rmp-serde = { version = "1", features = ["typed"] }
+rmp-serde = { path = "../../vendor/rmp-serde", features = ["typed"] }
 
 [dev-dependencies]
 # The readable twin of the golden fixtures.

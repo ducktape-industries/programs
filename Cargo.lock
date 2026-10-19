@@ -4923,7 +4923,6 @@ dependencies = [
 [[package]]
 name = "rmp-serde"
 version = "1.3.1"
-source = "git+https://github.com/ducktape-industries/gpui-pre?rev=2622bd8294b97a966f8febbd3b9dcb2cb5850aca#2622bd8294b97a966f8febbd3b9dcb2cb5850aca"
 dependencies = [
  "rmp",
  "serde",

@@ -29,16 +29,15 @@ view = { path = "../programs/crates/sdk/view" }
 serde = { version = "1", features = ["derive"] }
 
 [patch.crates-io]
-rmp-serde = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "2622bd8294b97a966f8febbd3b9dcb2cb5850aca" }
 gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "2622bd8294b97a966f8febbd3b9dcb2cb5850aca" }
 ```
 
-The `[patch.crates-io]` lines are this workspace's own, at the rev its
-`Cargo.toml` pins: the SDK builds against the gpui fork's copies of those
-two crates (crates.io's `rmp-serde` has no `typed` feature, and without
-the fork's scheduler a view does not build for wasm32), and cargo reads
-`[patch]` only from the manifest being built, so a crate outside the
-workspace repeats them. A view inside the workspace
+The `[patch.crates-io]` line is this workspace's own, at the rev its
+`Cargo.toml` pins: the SDK builds against the gpui fork's scheduler
+(without it a view does not build for wasm32), and cargo reads `[patch]`
+only from the manifest being built, so a crate outside the workspace
+repeats it. `rmp-serde` needs no patch: view-wire takes programs' own copy
+(`crates/vendor/rmp-serde`) by path. A view inside the workspace
 writes `view.workspace = true` and no patch.
 
 The smallest view, `src/lib.rs`:

@@ -79,6 +79,10 @@ members = [
     "crates/lib/gitcore",
     "crates/lib/borsh-json",
 ]
+# Third-party crates taken whole (crates/vendor/<crate>/README.ducktape.md
+# says from where and what differs). Path dependencies, not members: the
+# workspace's lints and gates are not theirs.
+exclude = ["crates/vendor"]
 
 [workspace.package]
 edition = "2024"
@@ -241,5 +245,4 @@ inherits = "release"
 strip = "debuginfo"
 
 [patch.crates-io]
-rmp-serde = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "2622bd8294b97a966f8febbd3b9dcb2cb5850aca" }
 gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "2622bd8294b97a966f8febbd3b9dcb2cb5850aca" }

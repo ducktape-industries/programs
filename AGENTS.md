@@ -61,3 +61,13 @@ Guidance for assistant sessions in this repository; `CLAUDE.md` links here.
   `DUCKTAPE_HOME=/mnt/data/code/qa/.local/duckpond/operator DUCKTAPE_DEVICE_KEY_STORE=file`
   (`forge-change.sh` sets both itself), the workspace holding account 22's
   "operator git" key.
+
+## Vendored code
+
+- `crates/vendor/<crate>` holds a third-party crate taken whole, as
+  published, plus our delta; its `README.ducktape.md` names the archive, its
+  SHA-256 and every file that differs. It keeps its own license, comments
+  and formatting: it is not a workspace member, `crates/vendor/rustfmt.toml`
+  turns formatting off, and the AGENTS lint does not read it. Change it
+  only to re-apply the delta on a new upstream release, and say so in its
+  README.
