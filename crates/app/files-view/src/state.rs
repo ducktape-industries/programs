@@ -75,7 +75,7 @@ pub fn file_glyph(name: &str) -> &'static str {
     }
 }
 
-pub use view::picture::{SHOW_MOST, picture_format};
+pub use view::picture::picture_format;
 
 /// The places beside the reader's home, in the order both designs list
 /// them; each opens its folder.
@@ -223,8 +223,8 @@ pub struct Opened {
     pub bytes: Vec<u8>,
     /// `bytes` is the whole file
     pub whole: bool,
-    /// the whole picture, when the file is one of at most [`SHOW_MOST`]
-    /// bytes. Never kept: a restored view reads it again
+    // the whole picture, when the file is one. Never kept: a restored
+    // view reads it again
     #[serde(skip)]
     pub picture: Option<Arc<Image>>,
     /// who writes it

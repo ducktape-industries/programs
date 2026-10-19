@@ -13,7 +13,7 @@ use view::{Point, wire};
 
 use super::*;
 use crate::menu::MENU;
-use crate::state::{Holds, SHOW_MOST};
+use crate::state::Holds;
 use crate::words;
 
 /// The place in the texts on screen of the first text containing `part`.
@@ -726,19 +726,22 @@ fn a_picture_read_short_of_its_size_says_so() {
 }
 
 #[test]
-fn a_picture_too_large_to_draw_says_its_size_and_is_not_read_on() {
-    let (cx, _, reads) = picture_page(SHOW_MOST as usize + 1);
+fn a_picture_of_any_size_is_read_whole_and_drawn() {
+    let size = 9 * files::CHUNK_SIZE as usize;
+    let (cx, _, reads) = picture_page(size);
     assert_eq!(
         reads.borrow().len(),
-        1,
-        "only the first bytes, which say it is a picture"
+        10,
+        "its first bytes, then every chunk"
     );
-    assert!(cx.find("files-picture").is_none());
-    assert!(
-        shows(&cx, &words::too_big_to_show(SHOW_MOST + 1)),
-        "{:?}",
-        cx.texts()
-    );
+    let Some(wire::Node::Image {
+        data: Some(wire::ImageData::Encoded(bytes)),
+        ..
+    }) = cx.find("files-picture")
+    else {
+        panic!("no picture: {:?}", cx.texts());
+    };
+    assert_eq!(bytes.len(), size);
 }
 
 /// What files holds at `path` now, read whole.

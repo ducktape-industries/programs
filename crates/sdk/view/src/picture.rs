@@ -1,12 +1,6 @@
-//! Which pictures a view draws whole: the formats the app decodes, told by
-//! a file's first bytes, and the most bytes a picture is read whole for.
+//! Which pictures a view draws: the formats the app decodes, told by a
+//! file's first bytes.
 use crate::ImageFormat;
-
-// ponytail: a picture shown is held whole in the view's memory and read
-// a chunk per query, then crosses to the app once; the app draws at most
-// 64 MiB of pixels (about 4096 x 4096), whatever the file holds. Read a
-// smaller rendition (made at upload) to show larger files.
-pub const SHOW_MOST: u64 = 8 << 20;
 
 // PNG, JPEG, GIF, WebP and BMP; `None` for anything else. An SVG is text,
 // and shows as its text.

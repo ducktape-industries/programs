@@ -488,7 +488,7 @@ async fn shown(host: Host, file: &Attachment) -> Result<Shown, Error> {
             BlobId::Sha1(_) => None,
         })
         .collect();
-    let drawn = file.content_type.starts_with("image/") && file.size <= view::picture::SHOW_MOST;
+    let drawn = file.content_type.starts_with("image/");
     let picture = match drawn {
         true => picture(&host, file, at).await?,
         false => None,

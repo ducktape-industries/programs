@@ -7,9 +7,7 @@ use files::{Change, DiffEntry, DiffKind, EntryInfo, Node, Principal, SnapshotRow
 use view::Image;
 use view::design::{date, grouped, plural};
 
-use crate::state::{
-    Holds, Names, NoHome, Note, Opened, PREVIEW, Place, SHOW_MOST, holds_by_name, name_of,
-};
+use crate::state::{Holds, Names, NoHome, Note, Opened, PREVIEW, Place, holds_by_name, name_of};
 use crate::write::{ListChoice, Naming, Write};
 
 pub const TITLE: &str = "Files";
@@ -224,23 +222,13 @@ pub fn entry_kind(entry: &EntryInfo) -> &'static str {
     kind(&entry.node, holds_by_name(name_of(&entry.path)))
 }
 
-/// The picture a file draws, or what shows in its place: it is too large
-/// to be read here, or (a restored view reads it again) still reading.
+// The picture a file draws, or what shows in its place while it is read
+// (a restored view reads it again).
 pub fn picture(file: &Opened) -> Result<&Arc<Image>, String> {
     match &file.picture {
         Some(picture) => Ok(picture),
-        None if file.size() > SHOW_MOST => Err(too_big_to_show(file.size())),
         None => Err(READING_PICTURE.to_owned()),
     }
-}
-
-/// What a picture too large to draw here says in its place.
-pub fn too_big_to_show(size: u64) -> String {
-    format!(
-        "An image of {}: only one of {} or less is drawn here.",
-        self::size(size),
-        self::size(SHOW_MOST)
-    )
 }
 
 /// Why only part of a file shows.

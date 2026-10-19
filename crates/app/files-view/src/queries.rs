@@ -9,8 +9,7 @@ use files::{BlobId, PageRequest};
 use view::prelude::*;
 
 use crate::state::{
-    Folder, HISTORY_PAGE, History, Names, Opened, PREVIEW, ROOT, SHOW_MOST, Snapshot,
-    picture_format,
+    Folder, HISTORY_PAGE, History, Names, Opened, PREVIEW, ROOT, Snapshot, picture_format,
 };
 
 /// A folder's entries, every page of them, and who writes it.
@@ -113,9 +112,8 @@ pub(crate) async fn file(
     })
 }
 
-/// The whole picture a file's first bytes begin, read on from them a
-/// chunk at a time at the same snapshot; `None` when they begin none, or
-/// the file holds more than [`SHOW_MOST`].
+// The whole picture a file's first bytes begin, read on from them a
+// chunk at a time at the same snapshot; `None` when they begin none.
 async fn picture(
     host: &Host,
     path: &str,
@@ -125,9 +123,6 @@ async fn picture(
     let Some(format) = picture_format(&first.bytes) else {
         return Ok(None);
     };
-    if first.size > SHOW_MOST {
-        return Ok(None);
-    }
     let mut bytes = first.bytes.clone();
     while (bytes.len() as u64) < first.size {
         let next = host
