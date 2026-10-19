@@ -209,6 +209,10 @@ git sees stamps none), `forge.params`, and a
 `founding.toml` that `ducktape init` reads once its network, time, key and
 address are filled. A network is founded from one built at a commit on forge
 `dev`; core's `docs/found-a-network.md` walks a founding through every step.
+A local network (qa's kit) builds its founding with `make wasm-founding`
+too: `make wasm-publish` and `.github/workflows/release.yml`, which published
+the GitHub release `wasm-<commit>`, are still in the tree, but the workflow
+is disabled.
 
 `make dev`'s view gate requires `wasm-tools` and Python 3; view releases,
 and every notifier build (`make wasm-modules`, `fast` too), also need [Binaryen wasm-opt 132](https://github.com/WebAssembly/binaryen/releases/tag/version_132).
