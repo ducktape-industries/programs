@@ -1,6 +1,8 @@
 //! A widget in its place: the line under the room's title, the pinned card over the messages and
 //! the side pane on the desktop; the same line and card in the phone's room, the side widget as a
 //! section of its details. Reads the widgets the open room names; writes the fold and the pane.
+mod sections;
+
 use serde_json::Value;
 use view::design::Ladder;
 use view::prelude::*;
@@ -14,6 +16,7 @@ fn scope(chat: &Chat, count: Option<usize>) -> Scope<'_> {
         me: chat.my_account(),
         names: chat.names.ready(),
         count,
+        now: chat.widgets.now,
     }
 }
 
@@ -55,6 +58,15 @@ fn summary(chat: &Chat, shape: &Shape, reply: &Value, rows: &[Value]) -> String 
             .collect::<Vec<_>>()
             .join(" · "),
         Kind::Table => design::plural(rows.len() as u64, "row", "rows"),
+        Kind::List if shape.group_by.is_some() => shape
+            .sections(&rows)
+            .iter()
+            .map(|(value, items)| match shape.icons.get(value) {
+                Some(icon) => format!("{icon} {value} {}", items.len()),
+                None => format!("{value} {}", items.len()),
+            })
+            .collect::<Vec<_>>()
+            .join(" · "),
         Kind::List | Kind::Checklist => {
             let (item, scope) = (shape.item.as_deref().unwrap_or_default(), scope(chat, None));
             let items: Vec<String> = rows.iter().map(|row| fill(item, row, &scope)).collect();
@@ -273,11 +285,13 @@ pub(crate) fn body(
     let draw = Draw {
         chat,
         slot,
+        path: chat.widget_path(slot).unwrap_or_default(),
         shape,
         theme,
         ladder,
     };
     match shape.kind {
+        Kind::List if shape.in_parts() => draw.parted(&rows, cx),
         Kind::List => draw.list(&rows, cx),
         Kind::Checklist => draw.checklist(&rows, cx),
         Kind::Columns => draw.columns(&rows, cx),
@@ -289,6 +303,8 @@ pub(crate) fn body(
 struct Draw<'a> {
     chat: &'a Chat,
     slot: Slot,
+    // the file the widget is read from: what the reader's folds are kept by
+    path: &'a str,
     shape: &'a Shape,
     theme: &'a Theme,
     ladder: &'a Ladder,

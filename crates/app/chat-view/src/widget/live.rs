@@ -12,7 +12,7 @@ use view::methods::{BlobGet, Call, NamedChanges, NamedQuery};
 use view::prelude::*;
 use view::{Host, Task, store};
 
-use super::{Slot, Widget, at, parse, put, with_me};
+use super::{Shape, Slot, Widget, at, parse, put, with_me};
 use crate::{Chat, words};
 
 // Every widget the open room names, by file path, and what they read.
@@ -25,6 +25,23 @@ pub(crate) struct Widgets {
     pub(crate) folded: BTreeSet<String>,
     // the desktop's side pane is open
     pub(crate) side: bool,
+    // the chain's newest block time (ms), which `|ago` counts from
+    pub(crate) now: Option<u64>,
+    // the sections the reader folded or opened against the file's `fold`,
+    // by file and value
+    pub(crate) flipped: BTreeSet<(String, String)>,
+}
+
+// What `|ago` says no finer than once the time is past a minute: a new
+// head redraws a widget only as the minute turns.
+const MINUTE: u64 = 60_000;
+
+impl Widgets {
+    // Whether the reader sees section `value` of the file at `path` folded.
+    pub(crate) fn folded(&self, path: &str, value: &str, shape: &Shape) -> bool {
+        let flipped = self.flipped.contains(&(path.to_owned(), value.to_owned()));
+        shape.fold.iter().any(|fold| fold == value) != flipped
+    }
 }
 
 // Each code's interface, or why its schema doesn't read.
@@ -116,6 +133,27 @@ impl Chat {
         };
         if !self.widgets.folded.remove(&room.id) {
             self.widgets.folded.insert(room.id.clone());
+        }
+    }
+
+    // A section the reader folds or opens.
+    pub(crate) fn flip_section(&mut self, path: &str, value: &str) {
+        let key = (path.to_owned(), value.to_owned());
+        if !self.widgets.flipped.remove(&key) {
+            self.widgets.flipped.insert(key);
+        }
+    }
+
+    // The chain's newest block time: a frame when the minute turns while a
+    // widget shows.
+    pub(crate) fn widgets_ticked(&mut self, time: u64, cx: &mut Context<Self>) {
+        let turned = self
+            .widgets
+            .now
+            .is_none_or(|now| now / MINUTE != time / MINUTE);
+        self.widgets.now = Some(time);
+        if turned && !self.widgets.files.is_empty() {
+            cx.notify();
         }
     }
 

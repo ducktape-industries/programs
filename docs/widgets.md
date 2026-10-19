@@ -40,7 +40,7 @@ empty = "Nothing waiting."            # optional: what it says with no rows ("No
 ```
 
 Per kind:
-- `list`: a row per item (`item`).
+- `list`: a row per item (`item`), or in parts and sections (below).
 - `columns`: a column per `group_by` value, headed by the value and its count, a card per row (`item`).
 - `table`: `columns = [{ title = "Job", value = "J-{id}" }, …]`, a header row and a row per item;
   the first cell is the row's link.
@@ -54,11 +54,46 @@ matches when every field it names holds one of them, compared as a template writ
 
 Templates: `{a.b.0.c}` is the value at that path in the row (in the reply for `stat`): a string as
 it is, a number or bool as JSON, null or missing as nothing. `{path|name}` writes an account
-number as the name chat knows for it. `{me}` is the reader's account number, in templates and in
+number as the name chat knows for it. `{path|ago}` writes a time in
+milliseconds as how long before the chain's newest block it was (`5m`). `{me}` is the reader's account number, in templates and in
 the source query's strings (a string that is `{me}` alone becomes the number).
 
 `on_press.open`: a `duck://` or `https://` result opens through the host; anything else is a chat
 channel id, opened in chat. No widget ever sends an op.
+
+## A list in parts
+
+A `list` that groups its rows, or names a part beside `item`, draws them in parts (J-088):
+
+```toml
+[view]
+kind = "list"
+group_by = "status"                   # a section per value, under a head the reader folds
+order = ["waiting", "doing"]          # these sections first, in this order; one with no rows is left out
+fold = ["todo"]                       # the sections that start folded
+item = "{title}"                      # the row's title
+lead = "J-{id}"                       # muted, before the title
+chip = "{owner|name}"                 # a small initial and the name
+trail = "{updated.time|ago}"          # muted, at the end
+badge = "{mark.doing}"                # a template whose text picks one of `badges`
+badges = [
+    { when = "Turn", mark = "●", tone = "success", label = "working now" },
+    { when = "Build", mark = "◐", tone = "warning", label = "waiting on a build" },
+]
+
+[view.icons]                          # before a section's value in its head
+doing = "🛠️"
+
+[view.tones]                          # a bar at the left of a section's rows
+doing = "accent"
+```
+
+A section's head reads `▾ 🛠️ doing   12  ● 3  ◐ 2`: its icon, its value, its rows, and how many
+of them wear each badge; pressed, it folds or opens the section. A tone is one of the chat theme's:
+accent, success, warning, danger, agent, foreground, muted, faint, link. Under a pointer a row is
+one line (badge, lead, title, chip, trail); under a finger, the badge and title over a muted line of
+the rest. A row presses as `on_press` says, and assistive tech reads its parts and its badge's
+`label`. The header slot says a grouped list as `🔴 waiting 2 · 🛠️ doing 12`.
 
 ## How it stays current
 
@@ -87,4 +122,5 @@ what it answers. An app host from before J-054 still refuses a program the view'
 doesn't list, and refuses a chat-view built since J-054 outright (its manifest lists none).
 
 The code: `crates/app/chat-view/src/widget.rs` (the file, templates, filters),
-`widget/live.rs` (the data path), `ui/widget.rs` (drawing); the codec is `crates/lib/borsh-json`.
+`widget/live.rs` (the data path), `ui/widget.rs` (drawing; `ui/widget/sections.rs`
+a list in parts); the codec is `crates/lib/borsh-json`.

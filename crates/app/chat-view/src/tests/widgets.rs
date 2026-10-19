@@ -1,7 +1,7 @@
 //! Widgets: a file a channel's meta names, drawn from any program's query read by that program's
 //! schema, again on its blocks and on the file's; each kind in its place, errors said in place.
 use super::*;
-use crate::widget::{self, Filter, Scope, Slot};
+use crate::widget::{self, Filter, Scope, Shown, Slot};
 use abi::BlobId;
 use serde_json::{Value, json};
 use std::cell::RefCell;
@@ -538,6 +538,7 @@ fn templates_fill_paths_names_and_the_reader() {
         me: Some(21),
         names: Some(&names),
         count: None,
+        now: None,
     };
     let filled = widget::fill(
         "J-{id} {title} {tags.1}{none} {me} {missing}|{open",
@@ -594,4 +595,331 @@ fn a_file_that_misses_what_its_kind_needs_says_so() {
     );
     let slots: Vec<&str> = Slot::ALL.iter().map(|slot| slot.key()).collect();
     assert_eq!(slots, ["widget.header", "widget.pinned", "widget.side"]);
+}
+
+const BOARD: &str = "/shared/widgets/board.toml";
+
+// The board as orthory asked for it: a section per status with its icon and
+// tone, rows in parts, a mark for a conversation at work; done left out, todo
+// folded.
+const BOARDED: &str = r#"
+title = "Board"
+[source]
+program = "chat"
+query = { Channels = { page = {} } }
+rows = "Channels.items"
+[view]
+kind = "list"
+except = { status = ["done"] }
+group_by = "status"
+order = ["waiting", "doing", "review", "deploying", "todo"]
+fold = ["todo"]
+item = "{title}"
+lead = "J-{id}"
+chip = "{owner|name}"
+trail = "{updated.time|ago}"
+badge = "{mark.doing}"
+badges = [
+    { when = "Turn", mark = "●", tone = "success", label = "working now" },
+    { when = "Build", mark = "◐", tone = "warning", label = "waiting on a build" },
+]
+on_press = { open = "{channel}" }
+[view.icons]
+waiting = "🔴"
+doing = "🛠️"
+review = "👀"
+deploying = "🚀"
+todo = "📋"
+[view.tones]
+waiting = "danger"
+doing = "accent"
+review = "warning"
+deploying = "success"
+todo = "faint"
+"#;
+
+// The chain's newest block time, which `|ago` counts from.
+const NOW: u64 = 1_792_400_000_000;
+
+// Job `id` as board's `Jobs` reads in JSON, written `minutes` ago, with its
+// owner's conversation at `doing` (a `Working` mark) or idle.
+fn job(id: u32, title: &str, status: &str, owner: u64, minutes: u64, doing: Option<&str>) -> Value {
+    let time = NOW - minutes * 60_000;
+    json!({
+        "id": id,
+        "title": title,
+        "status": status,
+        "owner": owner,
+        "channel": format!("j-{id:03}"),
+        "updated": { "height": 1, "time": time, "by": owner },
+        "mark": doing.map(|doing| json!({ "job": id, "doing": doing })),
+    })
+}
+
+fn jobs() -> Vec<Value> {
+    vec![
+        job(
+            91,
+            "Phone simulator tests on the Mac",
+            "waiting",
+            17,
+            140,
+            None,
+        ),
+        job(84, "Who may write a widget file", "waiting", 15, 600, None),
+        job(
+            88,
+            "The board widget as a list grouped by status",
+            "doing",
+            21,
+            0,
+            Some("Turn"),
+        ),
+        job(
+            87,
+            "A widget's failed read heals on the next block",
+            "doing",
+            21,
+            3,
+            Some("Build"),
+        ),
+        job(
+            75,
+            "Pictures in chat on phones",
+            "doing",
+            21,
+            1,
+            Some("Turn"),
+        ),
+        job(83, "Agents see images", "doing", 21, 12, None),
+        job(
+            81,
+            "Memory scratch and CPU requests for build pods",
+            "doing",
+            21,
+            6,
+            Some("Build"),
+        ),
+        job(
+            82,
+            "Board closes only a room's own conversation",
+            "review",
+            21,
+            25,
+            None,
+        ),
+        job(86, "Fuel per frame for every view", "review", 21, 48, None),
+        job(
+            80,
+            "A preview build for every change",
+            "review",
+            17,
+            130,
+            None,
+        ),
+        job(
+            79,
+            "Harness resumes a turn after a code swap",
+            "deploying",
+            17,
+            9,
+            None,
+        ),
+        job(
+            90,
+            "Agents' memory as rules, not logs",
+            "todo",
+            17,
+            300,
+            None,
+        ),
+        job(
+            92,
+            "The pond on a phone's home screen",
+            "todo",
+            15,
+            900,
+            None,
+        ),
+        job(
+            65,
+            "Close every finished job's room",
+            "done",
+            21,
+            3000,
+            None,
+        ),
+    ]
+}
+
+// A desk (a phone when `touch`) with `general` open, its meta naming the board
+// in `slots`, the board showing `jobs()` by tech's, chief's and orthory's
+// names.
+fn board(touch: bool, slots: &[&str]) -> (TestAppContext, Entity<Chat>) {
+    let meta: Vec<(&str, &str)> = slots.iter().map(|slot| (*slot, BOARD)).collect();
+    let rooms = rooms(&meta);
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    serve(&cx, rooms.clone(), held(&[(BOARD, BOARDED)]));
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Accounts { .. } => Reply::Accounts(page(vec![
+                    person(15, "orthory"),
+                    person(17, "chief"),
+                    person(21, "tech"),
+                ])),
+                Query::Channels { .. } => Reply::Channels(page(rooms.borrow().clone())),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
+    let view = cx.open::<Chat>();
+    match touch {
+        true => {
+            cx.simulate_touch(true);
+            cx.simulate_resize(390., 844.);
+        }
+        false => cx.simulate_resize(1280., 800.),
+    }
+    seat(&mut cx);
+    let room = match touch {
+        true => "chat-rooms-channel-general",
+        false => "chat-sidebar-channel-general",
+    };
+    cx.simulate_click(room);
+    cx.run_until_parked();
+    cx.update(&view, |chat, _, cx| {
+        let live = chat
+            .widgets
+            .files
+            .get_mut(BOARD)
+            .expect("the room names the board");
+        let Shown::Ready { rows, .. } = &mut live.shown else {
+            panic!("the board reads: {:?}", live.shown);
+        };
+        *rows = jobs();
+        chat.widgets.now = Some(NOW);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    (cx, view)
+}
+
+#[test]
+fn a_grouped_list_heads_each_status_with_its_icon_its_count_and_its_marks() {
+    let (cx, _) = board(false, &["widget.pinned", "widget.header"]);
+    let texts = cx.texts();
+    let at = |text: &str| texts.iter().position(|drawn| drawn == text);
+    let order = ["waiting", "doing", "review", "deploying", "todo"].map(at);
+    assert!(order.iter().all(Option::is_some), "{texts:?}");
+    assert!(order.is_sorted(), "in the file's order: {texts:?}");
+    assert!(
+        at("Close every finished job's room").is_none(),
+        "except leaves done out"
+    );
+    assert!(
+        at("Agents' memory as rules, not logs").is_none(),
+        "todo starts folded"
+    );
+    let doing = cx.interactivity("chat-widget-pinned-section-1");
+    assert_eq!(doing.role, Some(view::Role::Button));
+    assert_eq!(doing.aria.expanded, Some(true));
+    let counted = "doing, 5 rows, 2 working now, 2 waiting on a build";
+    assert_eq!(doing.aria.label.as_deref(), Some(counted));
+    let row = cx.interactivity("chat-widget-pinned-1-0");
+    assert_eq!(row.role, Some(view::Role::Link));
+    let said = "J-88, The board widget as a list grouped by status, tech, 0s, working now";
+    assert_eq!(row.aria.label.as_deref(), Some(said));
+    let line = "Board: 🔴 waiting 2 · 🛠️ doing 5 · 👀 review 3 · 🚀 deploying 1 · 📋 todo 2";
+    assert!(cx.has_text(line), "{texts:?}");
+}
+
+#[test]
+fn a_section_head_folds_and_opens_its_rows() {
+    let (mut cx, _) = board(false, &["widget.pinned"]);
+    cx.simulate_click("chat-widget-pinned-section-4");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("Agents' memory as rules, not logs"),
+        "todo opens"
+    );
+    let todo = cx.interactivity("chat-widget-pinned-section-4");
+    assert_eq!(todo.aria.expanded, Some(true));
+    assert!(cx.has_text("Agents see images"));
+    cx.simulate_click("chat-widget-pinned-section-1");
+    cx.run_until_parked();
+    assert!(!cx.has_text("Agents see images"), "doing folds");
+    let doing = cx.interactivity("chat-widget-pinned-section-1");
+    assert_eq!(doing.aria.expanded, Some(false));
+}
+
+#[test]
+fn a_phone_draws_a_row_as_its_title_over_a_line_of_the_rest() {
+    let (mut cx, _) = board(true, &["widget.side"]);
+    cx.simulate_click("chat-room-details");
+    cx.run_until_parked();
+    let title = "The board widget as a list grouped by status";
+    assert!(cx.has_text(title), "{:?}", cx.texts());
+    assert!(cx.has_text("J-88 · tech · 0s"), "{:?}", cx.texts());
+}
+
+#[test]
+fn a_file_names_only_the_themes_tones() {
+    let wrong = BOARDED.replace("doing = \"accent\"", "doing = \"blue\"");
+    let said = widget::parse(&wrong).unwrap_err();
+    assert!(said.starts_with("`blue` is no tone"), "{said}");
+    let theme = view::Theme::light();
+    for name in widget::TONES {
+        assert!(widget::tone(&theme, Some(name)).is_some(), "{name}");
+    }
+}
+
+#[test]
+fn ago_counts_from_the_chains_newest_block() {
+    let row = json!({ "at": NOW - 5 * 60_000 });
+    let scope = Scope {
+        me: None,
+        names: None,
+        count: None,
+        now: Some(NOW),
+    };
+    assert_eq!(widget::fill("{at|ago} ago", &row, &scope), "5m ago");
+    let before = Scope { now: None, ..scope };
+    assert_eq!(widget::fill("{at|ago}", &row, &before), "");
+}
+
+// `CHAT_SCREEN_EXPORT=1` writes the board widget's frames for the app's
+// node-less renderer: the desktop's side pane and the phone's details page,
+// light and dark, listed in `board-manifest.json`.
+#[test]
+fn export_board_widget_screens() {
+    if std::env::var_os("CHAT_SCREEN_EXPORT").is_none() {
+        return;
+    }
+    let out =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/chat/fixtures");
+    std::fs::create_dir_all(&out).unwrap();
+    let mut manifest = Vec::new();
+    for dark in [false, true] {
+        let theme = if dark { "dark" } else { "light" };
+        for (touch, (width, height)) in [(false, (1280, 800)), (true, (390, 844))] {
+            let (mut cx, _) = board(touch, &["widget.side"]);
+            cx.simulate_theme(dark);
+            let open = match touch {
+                true => "chat-room-details",
+                false => "chat-room-widget",
+            };
+            cx.simulate_click(open);
+            cx.run_until_parked();
+            let device = if touch { "phone" } else { "desktop" };
+            let name = format!("board-{device}-{theme}");
+            let frame = serde_json::to_vec(&cx.whole_frame()).unwrap();
+            std::fs::write(out.join(format!("{name}.json")), frame).unwrap();
+            let size = json!({ "name": name, "width": width, "height": height, "theme": theme });
+            manifest.push(size);
+        }
+    }
+    let listed = serde_json::to_vec_pretty(&manifest).unwrap();
+    std::fs::write(out.join("board-manifest.json"), listed).unwrap();
 }

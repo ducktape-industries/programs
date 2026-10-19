@@ -40,6 +40,7 @@ impl Chat {
         // under a finger); a new frame only when the day turns
         cx.follow::<ChainHeads>((), |chat, head, cx| match head {
             Ok(head) => {
+                chat.widgets_ticked(head.time, cx);
                 let today = Some(crate::message::day_of(head.time));
                 if chat.today != today {
                     chat.today = today;
