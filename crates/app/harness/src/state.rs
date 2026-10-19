@@ -94,6 +94,8 @@ pub const FILE_WAIT_COUNT: Item<u64> = Item::new("wait-files").shared();
 // what tells a later run that the frame awaiting it is gone
 pub const AWAITED: Map<(u64, String), Awaited> = Map::new("awaited/").shared();
 pub const STREAMING: Map<(u64, u64), Flight> = Map::new("streaming/").shared();
+// the harness code that runs, and the block harness first ran it at (`resume::switched`)
+pub const RUNNING: Item<(BlobId, u64)> = Item::new("running").shared();
 // the services a model is reached through after its record's first (J-090): `SetServices`
 // rewrites the record too, so the record's policy governs it
 pub const MODEL_SERVICES: Map<String, Vec<String>> = Map::new("model-services/").shared();
@@ -471,6 +473,7 @@ pub(crate) const TABLES: &[::program::Table] = &[
     FILE_WAIT_COUNT.table(),
     AWAITED.table(),
     STREAMING.table(),
+    RUNNING.table(),
     MODEL_SERVICES.table(),
     ROUTES.table(),
     PICKS.table(),

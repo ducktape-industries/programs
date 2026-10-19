@@ -228,7 +228,9 @@ pub(crate) fn thread(ctx: &QueryCtx, id: u64) -> Result<ThreadRow, Error> {
         .ok_or_else(|| not_found(format!("no thread {id}")))
 }
 
-pub(crate) fn close(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
+// a closed conversation's turn ends at once when its model call was cut off, else once the call's
+// answer comes back
+pub(crate) async fn close(ctx: &Ctx, id: u64) -> Result<(), Error> {
     let mut thread = thread(ctx, id)?;
     let bound = binding(ctx, &thread)?.is_some();
     if bound {
@@ -236,6 +238,7 @@ pub(crate) fn close(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     }
     thread.closed = true;
     THREADS.put(ctx, &id, &thread);
+    converse(ctx, id).await;
     Ok(())
 }
 

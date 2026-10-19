@@ -102,7 +102,7 @@ impl Program for Harness {
 impl Awaiting for Harness {
     async fn execute(ctx: Ctx, op: Op) -> Result<(), Error> {
         match op {
-            Op::Close { thread } => close(&ctx, thread),
+            Op::Close { thread } => close(&ctx, thread).await,
             Op::Attributed(change) => attributed(ctx, *change).await,
             Op::SetModel {
                 id,

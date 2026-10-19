@@ -1,6 +1,6 @@
 //! Turns and tool calls a node restart or a harness update cut off. A model call, a tool call's
-//! write and a watched stream keep egress's deadline; a run scheduled past it records what streamed
-//! whole, relays again, fails a call whose answer was lost or asks again, and the manager hears.
+//! write and a watched stream keep egress's deadline, and new code's first run wakes each turn
+//! under way before it: harness records what streamed whole, relays, fails or asks again.
 use ::program::{BlobId, Cause, Ctx, EntryId, Error, ExecCtx, Principal, QueryCtx, all, code};
 use ::program::{Range, unexpected_reply, wrong_state};
 use abi::role::egress::{self, DEFAULT_WAIT, http};
@@ -13,13 +13,15 @@ use crate::conversations::{binding, conversation};
 use crate::routes;
 use crate::schema::code_of;
 use crate::state::{
-    AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, REPORTING, REPORTS, RETRIES, Retry,
-    STREAMING, THREADS, USAGE, WATCHES,
+    AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, PARTIALS, REPORTING, REPORTS, RETRIES,
+    RUNNING, Retry, STREAMING, THREADS, USAGE, WATCHES,
 };
 use crate::tools::Write;
-use crate::turns::{append, conclude, converse, give_up, say, settle};
+use crate::turns::{append, bound, conclude, converse, give_up, say, settle};
 use crate::wire;
-use crate::{Asking, Body, CallState, Flow, Op, PROGRAM, Partial, Place, ThreadRow, UsageWindow};
+use crate::{
+    Asking, Body, CallState, Flow, Op, PROGRAM, Partial, Place, ThreadRow, UsageWindow, streamed_as,
+};
 
 const RETRY_AFTER: &str = "retry-after";
 const UTILIZATION: &str = "anthropic-ratelimit-unified-5h-utilization";
@@ -504,7 +506,77 @@ async fn repace(ctx: &Ctx, id: u64) {
     RETRIES.put(ctx, &id, &paced);
 }
 
+// the block harness first ran the code that runs now; a switch to new code cancels every frame
+// that awaited a model call or a relay (the kernel's `cancel_parked`), so new code's first run
+// wakes, at the next block, each conversation whose turn was under way before it
+async fn switched(ctx: &Ctx) -> Result<Option<u64>, Error> {
+    let Ok(code) = code_of(ctx, PROGRAM) else {
+        return Ok(None);
+    };
+    if let Some((running, since)) = RUNNING.get(ctx)?
+        && running == code
+    {
+        return Ok(Some(since));
+    }
+    let since = ctx.env().height;
+    RUNNING.put(ctx, &(code, since));
+    let mut wakes = Vec::new();
+    for (id, row) in THREADS.all(ctx)? {
+        let before = FLIGHTS
+            .get(ctx, &id)?
+            .is_none_or(|flight| flight.made < since);
+        if row.asking != Asking::Idle && before {
+            wakes.push(wake(id));
+        }
+    }
+    let next = since.saturating_add(1);
+    all(wakes.iter().map(|op| ctx.schedule(next, PROGRAM, op))).await;
+    Ok(Some(since))
+}
+
+// a reply that may still stream after the run awaiting it was cut off: egress still holds its
+// call, whose events and end reach harness whatever run awaited them, and its end records it
+fn still_streaming(ctx: &QueryCtx, row: &ThreadRow) -> Result<bool, Error> {
+    let asked = matches!(row.asking, Asking::Asked { .. });
+    let whole = PARTIALS
+        .get(ctx, &row.id)?
+        .is_some_and(|partial| streamed(&partial));
+    if row.closed || !asked || whole {
+        return Ok(false);
+    }
+    held_by_egress(ctx, row.id)
+}
+
+// whether egress holds the thread's streamed model call, on whichever member node it went to
+fn held_by_egress(ctx: &QueryCtx, id: u64) -> Result<bool, Error> {
+    use abi::role::validators::{Query, Reply};
+    let validators = ctx.env().role(abi::role::VALIDATORS)?.clone();
+    let members = match ctx.query::<Query, Reply>(&validators, &Query::Members)? {
+        Reply::Members(members) => members,
+        other => return Err(unexpected_reply(&validators, "Members", &other)),
+    };
+    let program = bound(ctx)?;
+    let ours = egress::Delivery::Events {
+        deliver: streamed_as(id),
+    };
+    for member in members {
+        let asked = egress::Query::Assigned { key: member.key };
+        let rows = match ctx.query(&program, &asked)? {
+            egress::Reply::Requests(rows) => rows,
+            other => return Err(unexpected_reply(&program, "Assigned", &other)),
+        };
+        let held = rows
+            .iter()
+            .any(|row| row.requester == PROGRAM && row.delivery == ours);
+        if held {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 pub(crate) async fn recover(ctx: &Ctx, id: u64) -> Result<(), Error> {
+    let since = switched(ctx).await?;
     lost_writes(ctx, id).await?;
     lost_streams(ctx, id).await?;
     let row = thread(ctx, id)?;
@@ -514,19 +586,30 @@ pub(crate) async fn recover(ctx: &Ctx, id: u64) -> Result<(), Error> {
     let flight = FLIGHTS.get(ctx, &id)?;
     let height = ctx.env().height;
     // a call made before harness kept flights was cut off by the update that brought this code
-    let cut = flight
+    let lapsed = flight
         .as_ref()
         .is_none_or(|flight| height > deadline(flight));
+    // one made before the code that runs now lost the run awaiting it to the switch
+    let switch = since.filter(|since| flight.as_ref().is_some_and(|flight| flight.made < *since));
+    let cut = match (lapsed, switch) {
+        (true, _) => true,
+        (false, Some(_)) => !still_streaming(ctx, &row)?,
+        (false, None) => false,
+    };
     if !cut {
         return Ok(());
     }
-    let text = match &flight {
-        Some(flight) => format!(
+    let text = match (&flight, switch) {
+        (Some(flight), Some(since)) if !lapsed => format!(
+            "the model call made at block {} was cut off: harness's code changed by block {since}",
+            flight.made
+        ),
+        (Some(flight), _) => format!(
             "the model call made at block {} was cut off: harness heard no answer by block {}",
             flight.made,
             deadline(flight)
         ),
-        None => "the model call was cut off by a harness update".to_owned(),
+        (None, _) => "the model call was cut off by a harness update".to_owned(),
     };
     match row.asking {
         Asking::Idle => Ok(()),
@@ -557,7 +640,7 @@ pub(crate) async fn recover(ctx: &Ctx, id: u64) -> Result<(), Error> {
     }
 }
 
-fn streamed(partial: &Partial) -> bool {
+pub(crate) fn streamed(partial: &Partial) -> bool {
     matches!(partial.flow, Flow::Ended | Flow::Overflowed)
 }
 

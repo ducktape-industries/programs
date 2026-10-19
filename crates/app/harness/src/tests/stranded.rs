@@ -4,6 +4,7 @@ use programs::Programs;
 use super::network::{pods_get, served};
 use super::*;
 use crate::schema::tests::{code_with, listed, module};
+use crate::wire::tests::{TEXT, events};
 
 const PODS: &str = "pods";
 const POD: &str = "duckpond-7";
@@ -287,4 +288,125 @@ fn a_measured_stream_an_update_cut_off_before_its_stream_opened_wakes_its_conver
     );
     assert!(woke.starts_with(&unheard), "{woke}");
     assert!(assigned(chain, PODS).is_empty(), "no exec is sent");
+}
+
+// what a model call's reply streams: each line of `fixture` as one event, from the node
+fn reply_streams(chain: &MockChain, request: &RequestRow, fixture: &str) {
+    for (seq, data) in (0u64..).zip(events(fixture)) {
+        let event = egress::Event {
+            id: request.id,
+            seq,
+            data,
+        };
+        let op = egress::Op::Events(vec![event]);
+        chain.submit(signed(&NODE), egress::PROGRAM, &op).unwrap();
+    }
+}
+
+fn turns(chain: &MockChain, thread: u64) -> usize {
+    let bodies = frames(chain, thread).into_iter();
+    bodies
+        .filter(|body| matches!(body, Body::Turn { .. }))
+        .count()
+}
+
+fn partial(chain: &MockChain, thread: u64) -> Option<Partial> {
+    let Reply::Partial(partial) = chain.query(PROGRAM, &Query::Partial { thread }).unwrap() else {
+        panic!()
+    };
+    partial
+}
+
+fn wakes_of(chain: &MockChain, thread: u64) -> Vec<Wake> {
+    let Reply::Wakes(wakes) = chain.query(PROGRAM, &Query::Wakes { thread }).unwrap() else {
+        panic!()
+    };
+    wakes
+}
+
+#[test]
+fn a_reply_that_streams_whole_after_a_switch_is_recorded_as_it_ends() {
+    let world = listed_world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "hello", Some(WINDOW));
+    let (request, _) = open_request(chain);
+    updated(chain, 3);
+    chain.cancel_parked(PROGRAM);
+    reply_streams(chain, &request, TEXT);
+    assert_eq!(turns(chain, thread), 1, "its end records it");
+    assert_eq!(thread_row(chain, thread).asking, Asking::Idle);
+    let [open]: [RequestRow; 1] = assigned(chain, SERVICE).try_into().unwrap();
+    assert_eq!(open.id, request.id, "nothing is asked again");
+    chain.at(5, 0);
+    assert_eq!(turns(chain, thread), 1, "the switch's wake adds nothing");
+    assert_eq!(assigned(chain, SERVICE).len(), 1);
+}
+
+#[test]
+fn a_call_egress_no_longer_holds_is_asked_again_from_the_first_frame_after_a_switch() {
+    let world = listed_world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "hello", Some(WINDOW));
+    let (request, _) = open_request(chain);
+    updated(chain, 3);
+    chain.cancel_parked(PROGRAM);
+    let failed = Answer::Failed("the node restarted".into());
+    answer(chain, request.id, failed);
+    assert!(assigned(chain, SERVICE).is_empty(), "no run hears it");
+    world.mention("m2", "still there?");
+    let said = notices(chain, thread);
+    let cut = "the model call made at block 2 was cut off: harness's code changed by block 3";
+    assert!(said.iter().any(|text| text.starts_with(cut)), "{said:?}");
+    chain.at(5, 0);
+    let (asked, _) = open_request(chain);
+    assert_eq!(
+        asked.made, 4,
+        "asked a block after the switch, not at egress's deadline"
+    );
+    let messages = sent(chain);
+    assert!(messages.contains("still there?"), "{messages}");
+}
+
+#[test]
+fn closing_a_conversation_whose_call_a_switch_cut_off_ends_its_turn_and_its_records() {
+    let world = listed_world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "hello", Some(WINDOW));
+    let (request, _) = open_request(chain);
+    updated(chain, 3);
+    chain.cancel_parked(PROGRAM);
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Close { thread })
+        .unwrap();
+    let row = thread_row(chain, thread);
+    assert_eq!((row.closed, row.asking), (true, Asking::Idle));
+    let wakes = wakes_of(chain, thread);
+    let held = |wake: &Wake| matches!(wake, Wake::Turn | Wake::Flight);
+    assert!(!wakes.iter().any(held), "{wakes:?}");
+    assert_eq!(partial(chain, thread), None);
+    chain.at(6, 0);
+    let [open]: [RequestRow; 1] = assigned(chain, SERVICE).try_into().unwrap();
+    assert_eq!(open.id, request.id, "a closed conversation asks nothing");
+}
+
+#[test]
+fn new_code_ends_the_turn_a_closed_conversation_lost_to_an_older_switch() {
+    let world = listed_world();
+    let chain = &world.chain;
+    let stuck = world.opened("m1", "hello", Some(WINDOW));
+    let close = Op::Close { thread: stuck };
+    chain.submit(signed(ADA), PROGRAM, &close).unwrap();
+    chain.cancel_parked(PROGRAM);
+    let asking = thread_row(chain, stuck).asking;
+    assert!(matches!(asking, Asking::Asked { .. }), "{asking:?}");
+    updated(chain, 9);
+    let fresh = world.mention("m2", "a fresh start");
+    assert_ne!(fresh, stuck);
+    chain.at(11, 0);
+    let row = thread_row(chain, stuck);
+    assert_eq!((row.closed, row.asking), (true, Asking::Idle));
+    let wakes = wakes_of(chain, stuck);
+    let held = |wake: &Wake| matches!(wake, Wake::Turn | Wake::Flight);
+    assert!(!wakes.iter().any(held), "{wakes:?}");
+    assert_eq!(partial(chain, stuck), None);
 }
