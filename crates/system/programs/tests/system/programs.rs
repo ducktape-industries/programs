@@ -294,7 +294,7 @@ fn a_schedule_from_a_key_with_no_account_or_under_the_notice_is_refused() {
 }
 
 #[test]
-fn an_account_upgrades_a_program_that_fills_no_role_with_no_vote() {
+fn an_account_upgrades_a_program_it_holds_with_no_vote() {
     deterministic::Runner::default().start(|context| async move {
         let dir = tempfile::tempdir().unwrap();
         let mut net = Net::found(context, dir.path()).await;
@@ -326,6 +326,22 @@ fn an_account_upgrades_a_program_that_fills_no_role_with_no_vote() {
         });
         let refused = net.refuse(&public(7), programs::PROGRAM, &a_role).await;
         assert_eq!(refused, reason::UNAUTHORIZED, "a role's program");
+        let held = net
+            .refuse(&public(7), programs::PROGRAM, &upgrade(lands_at))
+            .await;
+        assert_eq!(held, reason::UNAUTHORIZED, "probe is the vote's");
+        let handed = programs::Op::Own {
+            program: "probe".into(),
+            holder: programs::Holder::Account(seven),
+        };
+        output_of(&net.govern(&handed).await);
+        let programs::Reply::Owner { holder, .. } = net
+            .ask(programs::PROGRAM, &programs::Query::Owner("probe".into()))
+            .await
+        else {
+            panic!()
+        };
+        assert_eq!(holder, Some(programs::Holder::Account(seven)));
         let lands_at = net.height + 1 + programs::NOTICE;
         net.apply(&public(7), programs::PROGRAM, &upgrade(lands_at))
             .await;
@@ -369,7 +385,13 @@ fn the_vote_overrules_an_accounts_change_at_its_own_key() {
             name: "Seven".into(),
             scheme: Scheme::Ed25519,
         };
-        net.apply(&public(7), identity::PROGRAM, &create).await;
+        let output = net.apply(&public(7), identity::PROGRAM, &create).await;
+        let seven: AccountNumber = abi::decode(&output).unwrap();
+        let handed = programs::Op::Own {
+            program: "probe".into(),
+            holder: programs::Holder::Account(seven),
+        };
+        output_of(&net.govern(&handed).await);
         let code = net.hold(programs::CODE_KIND, &program("chat")).await;
         let lands_at = net.height + 1 + programs::NOTICE;
         let change = programs::Change::Set(programs::Entry {

@@ -14,13 +14,16 @@ use ::program::{
 use store::{Item, KeyCodec, Map, Set};
 
 use crate::{
-    Built, CODE_KIND, Change, Entry, Genesis, NOTICE, Provenance, Scheduled, Source, View,
+    Built, CODE_KIND, Change, Entry, Genesis, Holder, NOTICE, Provenance, Scheduled, Source, View,
     role_bound,
 };
 
 const PROGRAMS: Map<ProgramId, Entry> = Map::new("p/");
 const VIEWS: Map<ProgramId, View> = Map::new("v/");
 const HOOKS: Set<ProgramId> = Set::new("h/");
+// Who holds each name that has a record: written by a name's first change (`schedule`), by
+// genesis, and by `own`; a removal leaves it.
+pub(crate) const OWNERS: Map<ProgramId, Holder> = Map::new("o/");
 pub(crate) const ROLES: Map<String, ProgramId> = Map::new("r/");
 type At = (u64, ProgramId);
 /// The value stays a bare `Change`, so a `programs` swapped in over pending
@@ -31,9 +34,11 @@ pub(crate) const BY: Map<At, AccountNumber> = Map::new("b/");
 
 pub(crate) fn init(ctx: &ExecCtx, genesis: Genesis) {
     for entry in genesis.programs {
+        OWNERS.put(ctx, &entry.program, &Holder::Vote);
         PROGRAMS.put(ctx, &entry.program, &entry);
     }
     for view in genesis.views {
+        OWNERS.put(ctx, &view.name, &Holder::Vote);
         VIEWS.put(ctx, &view.name, &view);
     }
     for hook in genesis.hooks {
@@ -87,7 +92,55 @@ fn fills_no_role(ctx: &QueryCtx, name: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn by_account(ctx: &QueryCtx, scheduled: &Scheduled) -> Result<(), Error> {
+// The holder of `name`: its record, else the vote's for a name that runs, is listed or has a
+// change waiting (one from before records were kept), else none: the name is free.
+pub(crate) fn holder_of(ctx: &QueryCtx, name: &str) -> Result<Option<Holder>, Error> {
+    let key = name.to_owned();
+    if let Some(holder) = OWNERS.get(ctx, &key)? {
+        return Ok(Some(holder));
+    }
+    let present =
+        PROGRAMS.has(ctx, &key) || VIEWS.has(ctx, &key) || waits(ctx, name, &[], |_| true)?;
+    Ok(present.then_some(Holder::Vote))
+}
+
+fn belongs(name: &str, holder: &Holder) -> String {
+    match holder {
+        Holder::Vote => format!(
+            "{name} belongs to the validators' vote: only the vote changes it, and only the vote hands it to an account (`Own`)"
+        ),
+        Holder::Account(account) => format!(
+            "{name} belongs to account {account}: only account {account} or the validators' vote changes it, and either hands it on (`Own`)"
+        ),
+    }
+}
+
+// Whether `account` may change `name`: it holds it, or nobody does and its change claims it.
+fn held_by(ctx: &QueryCtx, name: &str, account: AccountNumber) -> Result<(), Error> {
+    match holder_of(ctx, name)? {
+        None => Ok(()),
+        Some(Holder::Account(held)) if held == account => Ok(()),
+        Some(holder) => Err(unauthorized(belongs(name, &holder))),
+    }
+}
+
+pub(crate) fn own(ctx: &ExecCtx, program: ProgramId, to: Holder) -> Result<(), Error> {
+    if let Some(account) = actor(&ctx.env(), &program)? {
+        match holder_of(ctx, &program)? {
+            Some(Holder::Account(held)) if held == account => {}
+            Some(holder) => return Err(unauthorized(belongs(&program, &holder))),
+            None => {
+                return Err(not_found(format!(
+                    "nobody holds {program}: the first account to set it holds it"
+                )));
+            }
+        }
+    }
+    OWNERS.put(ctx, &program, &to);
+    Ok(())
+}
+
+fn by_account(ctx: &QueryCtx, scheduled: &Scheduled, account: AccountNumber) -> Result<(), Error> {
     let name = scheduled.change.program();
     if matches!(scheduled.change, Change::SetHook(_) | Change::RemoveHook(_)) {
         return Err(unauthorized(format!(
@@ -101,6 +154,7 @@ fn by_account(ctx: &QueryCtx, scheduled: &Scheduled) -> Result<(), Error> {
         )));
     }
     fills_no_role(ctx, name)?;
+    held_by(ctx, name, account)?;
     let earliest = ctx.env().height.checked_add(NOTICE);
     if earliest.is_none_or(|earliest| scheduled.height < earliest) {
         let min = earliest.map_or_else(|| "past the last".into(), |h| h.to_string());
@@ -144,8 +198,8 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
     let env = ctx.env();
     let by = actor(&env, scheduled.change.program())?;
     let changes = match by {
-        Some(_) => {
-            by_account(ctx, &scheduled)?;
+        Some(account) => {
+            by_account(ctx, &scheduled, account)?;
             Vec::new()
         }
         None => overruled(ctx, scheduled.change.program())?,
@@ -248,6 +302,9 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
     if gone {
         return Ok(());
     }
+    if !OWNERS.has(ctx, &key.1) {
+        OWNERS.put(ctx, &key.1, &by.map_or(Holder::Vote, Holder::Account));
+    }
     SCHEDULE.put(ctx, &key, &scheduled.change);
     if let Some(account) = by {
         BY.put(ctx, &key, &account);
@@ -288,6 +345,9 @@ pub(crate) fn cancel(ctx: &ExecCtx, height: u64, program: ProgramId) -> Result<(
             "the validators' vote changes {} at {height}: only the vote cancels it",
             key.1
         )));
+    }
+    if let Some(account) = by {
+        held_by(ctx, &key.1, account)?;
     }
     // A removal cancelled keeps its name held, which a pending set of the
     // other kind may since have claimed.

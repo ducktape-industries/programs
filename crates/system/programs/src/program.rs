@@ -4,8 +4,8 @@
 use ::program::{Error, ExecCtx, Program, QueryCtx, decoded};
 
 use crate::rules::{
-    BY, Roster, SCHEDULE, at, cancel, fold, hooks_at, init, roles_at, roster, schedule, sources,
-    views_at,
+    BY, Roster, SCHEDULE, at, cancel, fold, holder_of, hooks_at, init, own, roles_at, roster,
+    schedule, sources, views_at,
 };
 use crate::{Genesis, Op, PROGRAM, PageResponse, Pending, Query, Reply};
 
@@ -27,6 +27,7 @@ impl Program for Programs {
         match op {
             Op::Schedule(scheduled) => schedule(ctx, scheduled),
             Op::Cancel { height, program } => cancel(ctx, height, program),
+            Op::Own { program, holder } => own(ctx, program, holder),
         }
     }
 
@@ -79,6 +80,10 @@ impl Program for Programs {
             Query::Sources => Reply::Sources {
                 height,
                 programs: sources(ctx, height)?,
+            },
+            Query::Owner(program) => Reply::Owner {
+                height,
+                holder: holder_of(ctx, &program)?,
             },
         })
     }

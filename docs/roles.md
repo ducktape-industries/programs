@@ -270,18 +270,27 @@ Who may schedule or cancel (putting a blob is open to any account):
   "programs", op }`: the enacting vote emits `op` to the programs role in the
   same frame; a refusal there undoes the programs' writes, the vote stands,
   and the motion is gone.
-- Any account: a frame that acts as an account, through any origin. It
-  sets, publishes with an empty role list and removes any id, one that
-  runs nothing yet included, but never the id of a program that fills a
-  role, and its change lands at least `NOTICE` (60) blocks after the
-  block it is made in, so the vote can cancel it first. It may not change
-  an id the vote has a change waiting on, nor claim an id an account's
-  waiting removal frees (a program under a view being removed, or the
-  reverse) before that removal lands. It cancels any change an account
-  made to an id that fills no role, never one the vote made.
-  `Scheduled` answers who made each change (`Pending.by`, `None` for the
-  vote).
-- Hooks: any account may replace a hook's code (`Set` of a hooked id).
+- The account that holds an id: a frame that acts as an account, through
+  any origin. An id (a program's, or a view's) has at most one holder
+  (`Query::Owner`, table `o/`): the vote holds every id genesis founds,
+  and every id that ran, was listed or had a change waiting before
+  holders were recorded; the first account to `Set`, `Publish` or
+  `SetView` a free id holds it from the block it schedules that change,
+  so no second account claims it during the notice; a removal keeps the
+  holder. `Own { program, holder }` hands an id to an account or to the
+  vote, sent by the account that holds it or by the vote. Another
+  account's change is refused `unauthorized`, naming the holder. The
+  holder sets, publishes with an empty role list and removes its id, but
+  never the id of a program that fills a role, and its change lands at
+  least `NOTICE` (60) blocks after the block it is made in, so the vote
+  can cancel it first. It may not change an id the vote has a change
+  waiting on, nor claim an id an account's waiting removal frees (a
+  program under a view being removed, or the reverse) before that
+  removal lands. It cancels any change an account made to an id it holds
+  that fills no role, never one the vote made. `Scheduled` answers who
+  made each change (`Pending.by`, `None` for the vote).
+- Hooks: the account that holds a hook's id may replace its code (`Set`
+  of a hooked id).
   The hook keeps its status: it still cannot emit and runs on the kernel's
   capped hook fuel. Only the vote sets, unsets or removes a hook
   (`SetHook`, `RemoveHook`, `Remove` of a hooked id).

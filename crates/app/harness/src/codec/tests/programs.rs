@@ -225,6 +225,15 @@ fn programs_round_trips() {
         height: 100,
         program: "chat".into(),
     });
+    programs.op(&::programs::Op::Own {
+        program: "chat".into(),
+        holder: ::programs::Holder::Account(17),
+    });
+    programs.query(&::programs::Query::Owner("chat".into()));
+    programs.reply(&::programs::Reply::Owner {
+        height: 5,
+        holder: Some(::programs::Holder::Vote),
+    });
     assert_eq!(programs.query(&::programs::Query::Roster), json!("Roster"));
     programs.query(&::programs::Query::Program("chat".into()));
     programs.reply(&::programs::Reply::Roles(::program::MockHost::roles()));

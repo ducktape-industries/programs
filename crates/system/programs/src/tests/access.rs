@@ -1,17 +1,16 @@
-// Who changes the programs role: the validators' vote, or any account at
-// least `NOTICE` blocks ahead on a program that fills no role; and what the
+// Who changes the programs role: the validators' vote, or the account that holds a name, at
+// least `NOTICE` blocks ahead on a program that fills no role; who holds a name, and what the
 // vote's word does to the changes accounts made.
 
 use ::program::{AccountNumber, Error, Principal};
 
 use super::*;
-use crate::rules::BY;
-use crate::{NOTICE, Pending};
+use crate::rules::{BY, OWNERS};
+use crate::{Holder, NOTICE, Pending};
 
 const CAROL: AccountNumber = 7;
 const DAN: AccountNumber = 8;
 const EVE: AccountNumber = 9;
-const AGENT: AccountNumber = 11;
 const TIP: u64 = 10;
 const EARLIEST: u64 = TIP + 1 + NOTICE;
 
@@ -20,7 +19,7 @@ fn seated() -> (MockHost, BlobId) {
     crate::rules::init(
         &store.exec(env(0, Origin::Root)),
         genesis(
-            ["chat", "forge", "activity"]
+            ["chat", "forge", "activity", "files"]
                 .map(|program| entry(program, BlobId::Sha256([1; 32])))
                 .into(),
             vec![View {
@@ -32,6 +31,15 @@ fn seated() -> (MockHost, BlobId) {
     );
     let blobs = blobs_role(&store);
     fold_to(&store, TIP + 1);
+    let handed = [
+        ("chat", CAROL),
+        ("forge", DAN),
+        ("activity", EVE),
+        ("lens", CAROL),
+    ];
+    for (name, account) in handed {
+        run(&store, vote(), own(name, Holder::Account(account))).unwrap();
+    }
     (store, held(&blobs, CODE_KIND, b"wasm"))
 }
 
@@ -51,10 +59,12 @@ fn run(store: &MockHost, env: Env, op: Op) -> Result<(), Error> {
     store.attempt(|| Programs::execute(&store.exec(env), op))
 }
 
+fn refusal(store: &MockHost, env: Env, op: Op) -> Error {
+    store.refused(|| Programs::execute(&store.exec(env), op))
+}
+
 fn refused(store: &MockHost, env: Env, op: Op) -> String {
-    store
-        .refused(|| Programs::execute(&store.exec(env), op))
-        .code
+    refusal(store, env, op).code
 }
 
 fn at(height: u64, change: Change) -> Op {
@@ -69,6 +79,21 @@ fn cancel_at(height: u64, program: &str) -> Op {
     Op::Cancel {
         height,
         program: program.into(),
+    }
+}
+
+fn own(program: &str, holder: Holder) -> Op {
+    Op::Own {
+        program: program.into(),
+        holder,
+    }
+}
+
+fn owner(store: &MockHost, name: &str) -> Option<Holder> {
+    let asked = Query::Owner(name.into());
+    match Programs::query(&store.query(env(TIP + 1, Origin::Root)), asked).unwrap() {
+        Reply::Owner { holder, .. } => holder,
+        other => panic!("{other:?}"),
     }
 }
 
@@ -140,7 +165,7 @@ fn an_accounts_change_lands_no_sooner_than_notice_blocks_after_it_is_made() {
 }
 
 #[test]
-fn any_account_changes_a_program_that_fills_no_role_but_never_a_role_or_a_hook() {
+fn an_account_changes_a_name_it_holds_but_never_a_role_or_a_hook() {
     let (store, code) = seated();
     let cases: Vec<(&str, Env, Change)> = vec![
         ("a role", by(EVE), set("valset", code)),
@@ -189,7 +214,7 @@ fn any_account_changes_a_program_that_fills_no_role_but_never_a_role_or_a_hook()
     run(&store, by(EVE), at(EARLIEST, set("activity", code))).unwrap();
     run(
         &store,
-        by(EVE),
+        by(DAN),
         at(EARLIEST, Change::Remove("forge".into())),
     )
     .unwrap();
@@ -207,23 +232,156 @@ fn any_account_changes_a_program_that_fills_no_role_but_never_a_role_or_a_hook()
         ),
     )
     .unwrap();
-    let through_harness = by(AGENT).from_program("harness", Some(AGENT));
+    let through_harness = by(CAROL).from_program("harness", Some(CAROL));
     run(&store, through_harness, at(EARLIEST + 2, set("chat", code))).unwrap();
     assert_eq!(
         waiting(&store),
         [
             (EARLIEST, "activity".into(), Some(EVE)),
-            (EARLIEST, "forge".into(), Some(EVE)),
+            (EARLIEST, "forge".into(), Some(DAN)),
             (EARLIEST, "trade".into(), Some(DAN)),
             (EARLIEST + 1, "board".into(), Some(DAN)),
             (EARLIEST + 1, "chat".into(), Some(CAROL)),
-            (EARLIEST + 2, "chat".into(), Some(AGENT)),
+            (EARLIEST + 2, "chat".into(), Some(CAROL)),
         ]
     );
     fold_to(&store, EARLIEST + 2);
     assert_eq!(code_at(&store, EARLIEST + 2, "trade"), Some(code));
     assert_eq!(code_at(&store, EARLIEST + 2, "chat"), Some(code));
     assert_eq!(code_at(&store, EARLIEST + 2, "forge"), None);
+}
+
+#[test]
+fn a_stranger_is_refused_by_name_of_the_holder_and_how_it_hands_a_name_on() {
+    let (store, code) = seated();
+    let changes = [
+        set("chat", code),
+        view_of("lens", code),
+        Change::Remove("chat".into()),
+    ];
+    for change in changes {
+        let refused = refusal(&store, by(EVE), at(EARLIEST, change.clone()));
+        assert_eq!(refused.code, code::UNAUTHORIZED, "{change:?}");
+        let says = &refused.message;
+        assert!(says.contains("account 7") && says.contains("Own"), "{says}");
+    }
+    let refused = refusal(&store, by(EVE), at(EARLIEST, set("files", code)));
+    assert_eq!(refused.code, code::UNAUTHORIZED);
+    let says = &refused.message;
+    assert!(
+        says.contains("the validators' vote") && says.contains("Own"),
+        "{says}"
+    );
+    assert!(waiting(&store).is_empty());
+    run(&store, by(CAROL), at(EARLIEST, set("chat", code))).unwrap();
+    run(&store, vote(), at(EARLIEST, set("files", code))).unwrap();
+}
+
+#[test]
+fn the_first_account_to_set_a_free_name_holds_it_through_its_removal() {
+    let (store, code) = seated();
+    assert_eq!(owner(&store, "trade"), None);
+    run(&store, by(DAN), at(EARLIEST, set("trade", code))).unwrap();
+    assert_eq!(
+        owner(&store, "trade"),
+        Some(Holder::Account(DAN)),
+        "held from its schedule, before it lands"
+    );
+    assert_eq!(
+        refused(&store, by(EVE), at(EARLIEST + 1, set("trade", code))),
+        code::UNAUTHORIZED,
+        "a second account within the notice"
+    );
+    run(&store, by(EVE), at(EARLIEST, view_of("market", code))).unwrap();
+    assert_eq!(owner(&store, "market"), Some(Holder::Account(EVE)));
+    let then = |height: u64, account| Env {
+        height,
+        ..by(account)
+    };
+    let removed = EARLIEST + 1 + NOTICE;
+    let removal = at(removed, Change::Remove("trade".into()));
+    run(&store, then(EARLIEST + 1, DAN), removal).unwrap();
+    fold_to(&store, removed);
+    assert_eq!(code_at(&store, removed, "trade"), None);
+    fold_to(&store, removed + 1);
+    let again = at(removed + 1 + NOTICE, set("trade", code));
+    assert_eq!(
+        refused(&store, then(removed + 1, EVE), again.clone()),
+        code::UNAUTHORIZED,
+        "a removal keeps the holder"
+    );
+    assert_eq!(owner(&store, "trade"), Some(Holder::Account(DAN)));
+    run(&store, then(removed + 1, DAN), again).unwrap();
+}
+
+#[test]
+fn a_founded_name_is_the_votes_and_its_holder_or_the_vote_hands_it_on() {
+    let (store, code) = seated();
+    assert_eq!(owner(&store, "files"), Some(Holder::Vote));
+    assert_eq!(
+        refused(&store, by(EVE), own("files", Holder::Account(EVE))),
+        code::UNAUTHORIZED,
+        "a stranger takes no name"
+    );
+    assert_eq!(
+        refused(&store, by(EVE), own("ghost", Holder::Account(EVE))),
+        code::NOT_FOUND,
+        "nobody holds a free name to hand on"
+    );
+    run(&store, vote(), own("files", Holder::Account(EVE))).unwrap();
+    run(&store, by(EVE), at(EARLIEST, set("files", code))).unwrap();
+    run(&store, by(EVE), own("files", Holder::Account(DAN))).unwrap();
+    assert_eq!(owner(&store, "files"), Some(Holder::Account(DAN)));
+    let refused_eve = refusal(&store, by(EVE), at(EARLIEST + 1, set("files", code)));
+    assert_eq!(refused_eve.code, code::UNAUTHORIZED);
+    assert!(refused_eve.message.contains("account 8"), "{refused_eve:?}");
+    assert_eq!(
+        refused(&store, by(EVE), cancel_at(EARLIEST, "files")),
+        code::UNAUTHORIZED,
+        "nor cancels its own change once it handed the name on"
+    );
+    run(&store, by(DAN), cancel_at(EARLIEST, "files")).unwrap();
+    run(&store, by(DAN), own("files", Holder::Vote)).unwrap();
+    assert_eq!(
+        refused(&store, by(DAN), at(EARLIEST, set("files", code))),
+        code::UNAUTHORIZED
+    );
+    run(&store, vote(), own("files", Holder::Account(CAROL))).unwrap();
+    assert_eq!(owner(&store, "files"), Some(Holder::Account(CAROL)));
+    run(&store, vote(), at(5_000, set("new", code))).unwrap();
+    assert_eq!(
+        owner(&store, "new"),
+        Some(Holder::Vote),
+        "the vote's first set"
+    );
+    assert_eq!(
+        refused(&store, by(EVE), at(EARLIEST, set("new", code))),
+        code::UNAUTHORIZED
+    );
+}
+
+#[test]
+fn a_name_with_no_record_that_runs_is_listed_or_waits_is_the_votes() {
+    let (store, code) = seated();
+    run(&store, by(DAN), at(EARLIEST, set("trade", code))).unwrap();
+    let ctx = store.exec(env(TIP, Origin::Root));
+    for name in ["chat", "lens", "trade"] {
+        OWNERS.remove(&ctx, &name.to_owned());
+    }
+    for name in ["chat", "lens", "trade"] {
+        assert_eq!(owner(&store, name), Some(Holder::Vote), "{name}");
+    }
+    assert_eq!(owner(&store, "ghost"), None);
+    assert_eq!(
+        refused(&store, by(CAROL), at(EARLIEST + 1, set("chat", code))),
+        code::UNAUTHORIZED
+    );
+    assert_eq!(
+        refused(&store, by(DAN), at(EARLIEST + 1, set("trade", code))),
+        code::UNAUTHORIZED
+    );
+    run(&store, vote(), own("chat", Holder::Account(CAROL))).unwrap();
+    run(&store, by(CAROL), at(EARLIEST + 1, set("chat", code))).unwrap();
 }
 
 #[test]
@@ -239,7 +397,7 @@ fn a_change_the_vote_left_waiting_holds_the_name_against_accounts() {
 }
 
 #[test]
-fn the_votes_removal_takes_the_names_changes_along_and_frees_it_once_it_lands() {
+fn the_votes_removal_takes_the_names_changes_along_and_the_name_stays_its_holders() {
     let (store, code) = seated();
     run(&store, by(CAROL), at(EARLIEST, set("chat", code))).unwrap();
     run(&store, by(DAN), at(EARLIEST, set("forge", code))).unwrap();
@@ -258,18 +416,24 @@ fn the_votes_removal_takes_the_names_changes_along_and_frees_it_once_it_lands() 
     );
     fold_to(&store, EARLIEST + 2);
     assert_eq!(code_at(&store, EARLIEST + 2, "chat"), None);
-    let later = Env {
+    fold_to(&store, EARLIEST + 3);
+    let later = |account| Env {
         height: EARLIEST + 3,
-        ..by(EVE)
+        ..by(account)
     };
-    run(&store, later, at(EARLIEST + 3 + NOTICE, set("chat", code))).unwrap();
+    let again = at(EARLIEST + 3 + NOTICE, set("chat", code));
+    assert_eq!(
+        refused(&store, later(EVE), again.clone()),
+        code::UNAUTHORIZED
+    );
+    run(&store, later(CAROL), again).unwrap();
 }
 
 #[test]
 fn the_votes_change_takes_every_change_an_account_made_to_its_name_along() {
     let (store, code) = seated();
     run(&store, by(CAROL), at(EARLIEST + 5, set("chat", code))).unwrap();
-    run(&store, by(DAN), at(EARLIEST + 9, set("chat", code))).unwrap();
+    run(&store, by(CAROL), at(EARLIEST + 9, set("chat", code))).unwrap();
     run(&store, by(DAN), at(EARLIEST + 5, set("forge", code))).unwrap();
     run(&store, by(EVE), at(EARLIEST, view_of("trade", code))).unwrap();
     run(&store, by(EVE), at(EARLIEST, set("board", code))).unwrap();
@@ -367,14 +531,19 @@ fn the_votes_cancel_of_a_change_already_gone_is_done() {
 }
 
 #[test]
-fn any_account_cancels_an_accounts_change_and_only_the_vote_cancels_the_votes() {
+fn only_a_names_holder_cancels_an_accounts_change_and_only_the_vote_the_votes() {
     let (store, code) = seated();
-    run(&store, by(CAROL), at(EARLIEST, set("chat", code))).unwrap();
-    run(&store, by(DAN), at(EARLIEST + 1, set("chat", code))).unwrap();
-    run(&store, by(DAN), at(EARLIEST + 2, set("chat", code))).unwrap();
+    for height in EARLIEST..EARLIEST + 3 {
+        run(&store, by(CAROL), at(height, set("chat", code))).unwrap();
+    }
+    assert_eq!(
+        refused(&store, by(DAN), cancel_at(EARLIEST, "chat")),
+        code::UNAUTHORIZED,
+        "a stranger"
+    );
     run(&store, by(CAROL), cancel_at(EARLIEST, "chat")).unwrap();
     run(&store, by(CAROL), cancel_at(EARLIEST + 1, "chat")).unwrap();
-    let through_harness = by(AGENT).from_program("harness", Some(AGENT));
+    let through_harness = by(CAROL).from_program("harness", Some(CAROL));
     run(&store, through_harness, cancel_at(EARLIEST + 2, "chat")).unwrap();
     let read = store.query(env(TIP + 1, Origin::Root));
     for height in EARLIEST..EARLIEST + 3 {
@@ -441,19 +610,17 @@ fn a_name_an_accounts_removal_frees_is_held_until_it_lands() {
         at(EARLIEST, Change::RemoveView("lens".into())),
     )
     .unwrap();
-    for who in [CAROL, DAN] {
-        assert_eq!(
-            refused(&store, by(who), at(EARLIEST + 1, view_of("chat", code))),
-            code::WRONG_STATE,
-            "a view of chat by {who}"
-        );
-        assert_eq!(
-            refused(&store, by(who), at(EARLIEST + 1, set("lens", code))),
-            code::WRONG_STATE,
-            "a program lens by {who}"
-        );
-    }
-    run(&store, by(DAN), cancel_at(EARLIEST, "chat")).unwrap();
+    assert_eq!(
+        refused(&store, by(CAROL), at(EARLIEST + 1, view_of("chat", code))),
+        code::WRONG_STATE,
+        "a view of chat"
+    );
+    assert_eq!(
+        refused(&store, by(CAROL), at(EARLIEST + 1, set("lens", code))),
+        code::WRONG_STATE,
+        "a program lens"
+    );
+    run(&store, by(CAROL), cancel_at(EARLIEST, "chat")).unwrap();
     run(&store, by(CAROL), cancel_at(EARLIEST, "lens")).unwrap();
     assert!(waiting(&store).is_empty());
     assert!(code_at(&store, EARLIEST + 1, "chat").is_some());

@@ -1,18 +1,6 @@
-//! The `programs` program: the roster of programs a network runs, and
-//! the scheduled changes to it, made by the validators' vote
-//! (`Env::authority`) or by any account, whose change to a program that
-//! fills no role lands at least [`NOTICE`] blocks after it is made, so the
-//! vote can cancel it first.
-//! It fills the kernel's programs role: each block the kernel asks
-//! `Query::At(height)` and runs what it answers, and on a roster change
-//! `Query::Roles`, the role table the published programs declare. A client asks
-//! `Query::Roster`: what runs and is listed at the query's own height. An
-//! update is a `Change::Set` of held code under a running id: the
-//! kernel swaps the code and keeps the program's state and account; `init`
-//! does not run again.
-//!
-//! The types, rules and [`Programs`] program are always built; a view links
-//! them with `program` off. The `program` feature adds its wasm exports.
+//! The `programs` program: the roster of programs a network runs and the changes scheduled to
+//! it, by the validators' vote or by the account that holds a name (`Query::Owner`), whose change
+//! lands at least [`NOTICE`] blocks after it is made. What the kernel asks of it: the README.
 mod program;
 mod rules;
 #[cfg(test)]
@@ -38,6 +26,13 @@ pub struct Pending {
     pub height: u64,
     pub change: Change,
     pub by: Option<AccountNumber>,
+}
+
+// Who holds a name, the program's or the view's under it: who, beside the vote, changes it.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum Holder {
+    Vote,
+    Account(AccountNumber),
 }
 
 pub fn role_bound(roles: &Roles, program: &str) -> bool {
@@ -107,6 +102,7 @@ pub struct Scheduled {
 pub enum Op {
     Schedule(Scheduled),
     Cancel { height: u64, program: ProgramId },
+    Own { program: ProgramId, holder: Holder },
 }
 
 #[derive(
@@ -136,6 +132,10 @@ pub enum Query {
     // height.
     #[ask(Reply::Sources { height: u64, programs: Vec<Built> })]
     Sources,
+    // Who holds a name at the query's own height: its record, else the vote for a name that runs,
+    // is listed or has a change waiting, else none (free: an account's first set claims it).
+    #[ask(Reply::Owner { height: u64, holder: Option<Holder> })]
+    Owner(ProgramId),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -157,6 +157,10 @@ pub enum Reply {
     Sources {
         height: u64,
         programs: Vec<Built>,
+    },
+    Owner {
+        height: u64,
+        holder: Option<Holder>,
     },
 }
 
@@ -223,6 +227,19 @@ pub fn describe(op: &Op) -> describe::Description {
                 height(at),
             ],
         ),
+        Op::Own { program, holder } => {
+            let holder = match holder {
+                Holder::Vote => Value::text("the validators' vote"),
+                Holder::Account(account) => Value::Account(*account),
+            };
+            (
+                format!("Own · {program}"),
+                vec![
+                    field("program", Value::Program(program.clone())),
+                    field("holder", holder),
+                ],
+            )
+        }
     };
     describe::Description { title, fields }
 }
@@ -233,5 +250,5 @@ describe::export!(Op, describe);
 /// enum only grows at its end. Append a new variant here; never reorder.
 #[test]
 fn op_variants_only_append() {
-    assert_eq!(describe::variants::<Op>(), ["Schedule", "Cancel"]);
+    assert_eq!(describe::variants::<Op>(), ["Schedule", "Cancel", "Own"]);
 }

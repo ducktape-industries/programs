@@ -297,6 +297,12 @@ pub(crate) fn words(motion: &Motion, roster: &[Entry]) -> String {
                 "Cancel {program}'s change at block {}",
                 design::grouped(height)
             ),
+            Ok(programs::Op::Own { program, holder }) => match holder {
+                programs::Holder::Vote => format!("Hand {program} to the validators' vote"),
+                programs::Holder::Account(account) => {
+                    format!("Hand {program} to account {account}")
+                }
+            },
             Err(_) => "A program change this screen can't read".into(),
         },
         Motion::Role { role, op } if role == abi::role::HALO => match abi::decode(op) {

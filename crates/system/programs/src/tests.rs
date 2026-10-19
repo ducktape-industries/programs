@@ -7,7 +7,9 @@ mod sources;
 use ::program::{BlobId, Env, MockHost, Origin, Program, code};
 use store::PageRequest;
 
-use crate::{CODE_KIND, Change, Entry, Genesis, Op, Programs, Query, Reply, Scheduled, View};
+use crate::{
+    CODE_KIND, Change, Entry, Genesis, Holder, Op, Programs, Query, Reply, Scheduled, View,
+};
 
 fn env(height: u64, origin: Origin) -> Env {
     Env {
@@ -163,13 +165,17 @@ fn a_frame_that_acts_as_no_account_never_schedules_or_cancels() {
         height: 5,
         program: "new".into(),
     };
+    let own = Op::Own {
+        program: "new".into(),
+        holder: Holder::Vote,
+    };
     for origin in [
         Origin::Signed(vec![9]),
         Origin::Root,
         Origin::Program("probe".into()),
         Origin::Program(MockHost::role(abi::role::PROGRAMS)),
     ] {
-        for op in [Op::Schedule(scheduled.clone()), cancel.clone()] {
+        for op in [Op::Schedule(scheduled.clone()), cancel.clone(), own.clone()] {
             let refused =
                 store.refused(|| Programs::execute(&store.exec(env(1, origin.clone())), op));
             assert_eq!(refused.code, code::UNAUTHORIZED);
@@ -177,6 +183,7 @@ fn a_frame_that_acts_as_no_account_never_schedules_or_cancels() {
     }
     Programs::execute(&store.exec(authority(1)), Op::Schedule(scheduled)).unwrap();
     Programs::execute(&store.exec(authority(1)), cancel).unwrap();
+    Programs::execute(&store.exec(authority(1)), own).unwrap();
 }
 
 #[test]
