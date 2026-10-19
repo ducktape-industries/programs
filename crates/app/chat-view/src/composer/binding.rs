@@ -254,12 +254,14 @@ pub(crate) fn presses<V: 'static>(
 
 /// The host's text area over the draft: what it shows, what it claims,
 /// its lines wrapping; each design sizes it.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn editor<V: 'static>(
     draft: &Draft,
     key: &str,
     label: &str,
     placeholder: &str,
     editable: bool,
+    choices: &[MentionChoice],
     handle: &Handle<V>,
     cx: &Context<V>,
 ) -> Textarea {
@@ -275,7 +277,7 @@ pub(crate) fn editor<V: 'static>(
             }),
         );
     if editable {
-        area = area.claims(draft.claims()).on_key(cx.listener(
+        area = area.claims(draft.claims(choices)).on_key(cx.listener(
             move |view, key: &KeyDownEvent, window, cx| {
                 let state = wire::keyboard::KeyState::from(&key.keystroke);
                 keyed(view, Event::Key(state, key.is_held), window, cx);
@@ -325,9 +327,9 @@ fn mention_menu<V: 'static>(
     handle: &Handle<V>,
     cx: &Context<V>,
 ) -> Option<Deferred> {
-    let (_, partial) = draft.query()?;
+    let (sigil, partial) = draft.typed()?;
     let opening = opening(draft.placed?, pane?)?;
-    let matches: Rc<[MentionChoice]> = matching_choices(choices, &partial)
+    let matches: Rc<[MentionChoice]> = matching_choices(choices, sigil, &partial)
         .into_iter()
         .cloned()
         .collect();
@@ -347,7 +349,7 @@ fn mention_menu<V: 'static>(
                     let on_click = presses.as_ref().map(|presses| picks(presses, tag));
                     MentionItem {
                         id: ElementId::Name(format!("{menu_key}/mention/{}", choice.token).into()),
-                        label: format!("@{}", choice.label).into(),
+                        label: choice.shown().into(),
                         hint: choice.hint.clone().map(Into::into),
                         selected: index == selected,
                         on_click,
@@ -416,11 +418,13 @@ pub fn view<V: 'static, F: Fn(&mut V, Event, &mut Window, &mut Context<V>) + 'st
 ) -> impl IntoElement + use<V, F> {
     let handle: Handle<V> = Rc::new(handle);
     let editor_id = super::draft::editor_id(key);
-    let editor = editor(draft, &editor_id, label, hint, editable, &handle, cx)
-        .min_h(px(40.))
-        .max_h(px(200.))
-        .p(design::space::MD)
-        .text_size(design::text::BODY);
+    let editor = editor(
+        draft, &editor_id, label, hint, editable, choices, &handle, cx,
+    )
+    .min_h(px(40.))
+    .max_h(px(200.))
+    .p(design::space::MD)
+    .text_size(design::text::BODY);
     let mut rows: Vec<AnyElement> = Vec::new();
 
     let menu = mention_menu(draft, key, &editor_id, editable, choices, pane, &handle, cx);

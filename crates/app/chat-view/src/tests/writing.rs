@@ -627,6 +627,36 @@ fn the_desktop_mention_menu_is_a_list_box_every_frame_passes() {
     assert!(cx.find("draft-general/mention/<@9>").is_none());
 }
 
+// `#` offers the rooms of the list, never a direct one, as options of the
+// same list box, every frame audited; picking General asks the field for a
+// link to it as one span.
+#[test]
+fn hash_offers_the_rooms_and_a_pick_is_a_link_to_one() {
+    let (mut cx, _) = opened();
+    cx.simulate_bounds("chat-pane", (260., 0.), (840., 760.));
+    cx.simulate_bounds("draft-general", (276., 640.), (808., 104.));
+    cx.simulate_input("draft-general/editor", "#");
+    let Some(wire::Node::UniformList { count, .. }) = cx.find("draft-general/mentions") else {
+        panic!("the rooms are a list: {:?}", cx.texts())
+    };
+    assert_eq!(*count, 2, "General and Review web#3");
+    let token = "[#General](duck://testnet-0a1b2c3d/chat/general)";
+    let general = format!("draft-general/mention/{token}");
+    let row = cx.interactivity(&general);
+    assert_eq!(row.role, Some(view::Role::ListBoxOption));
+    cx.simulate_click(&general);
+    cx.run_until_parked();
+    let asked = cx.host().requests::<view::methods::HostWidget>();
+    assert!(
+        asked.iter().any(|command| matches!(
+            command,
+            wire::WidgetCommand::Replace { text, token: Some(id), .. }
+                if text == "#General" && id == token
+        )),
+        "{asked:?}"
+    );
+}
+
 #[test]
 fn the_pane_says_where_it_is_for_the_mention_menu() {
     let (mut cx, chat) = opened();

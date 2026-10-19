@@ -62,7 +62,17 @@ pub(super) fn band(
         Rc::new(move |chat, event, window, cx| chat.composer(target.clone(), event, window, cx));
     let editable = chat.session.connected;
     let editor_id = editor_id(&key);
-    let field = editor(draft, &editor_id, label, placeholder, editable, &handle, cx);
+    let choices = chat.mention_choices();
+    let field = editor(
+        draft,
+        &editor_id,
+        label,
+        placeholder,
+        editable,
+        &choices,
+        &handle,
+        cx,
+    );
     let send = press(
         editable && draft.can_send(),
         "send".into(),
@@ -90,7 +100,9 @@ pub(super) fn band(
         .border_t_1()
         .border_color(theme.border)
         .bg(theme.background)
-        .children(mentions(chat, draft, &key, presses, theme, ladder))
+        .children(mentions(
+            chat, draft, &choices, &key, presses, theme, ladder,
+        ))
         .children(original.map(|original| edit_bar(&key, original, cx, theme, ladder)))
         .children(chips)
         .child(field_row(draft, field, attach, send, edits, theme, ladder))
@@ -148,16 +160,16 @@ fn original(chat: &Chat, pane: Pane) -> Option<String> {
 fn mentions(
     chat: &Chat,
     draft: &Draft,
+    choices: &[MentionChoice],
     key: &str,
     presses: Option<Presses>,
     theme: &Theme,
     ladder: &Ladder,
 ) -> Option<Deferred> {
-    let (_, partial) = draft.query()?;
+    let (sigil, partial) = draft.typed()?;
     let opening = opening(draft.placed?, chat.layout.pane?)?;
-    let choices = chat.mention_choices();
     let names = chat.names.ready();
-    let matches: Rc<[(MentionChoice, bool)]> = matching_choices(&choices, &partial)
+    let matches: Rc<[(MentionChoice, bool)]> = matching_choices(choices, sigil, &partial)
         .into_iter()
         .map(|choice| (choice.clone(), agent(names, choice)))
         .collect();
@@ -213,6 +225,11 @@ fn mention_row(
     ladder: &Ladder,
 ) -> Stateful<Div> {
     let account = crate::names::mentioned(&choice.token);
+    // a person by their name and face, a room as `#name`
+    let name = match account {
+        Some(_) => choice.label.clone(),
+        None => choice.shown(),
+    };
     let row = div()
         .id(ElementId::Name(
             format!("{key}/mention/{}", choice.token).into(),
@@ -223,22 +240,16 @@ fn mention_row(
         .gap(design::space::LG)
         .px(design::space::BLOCK)
         .role(Role::Button)
-        .aria_label(choice.label.clone())
+        .aria_label(name.clone())
         .focusable()
-        .child(face(
-            &choice.label,
-            agent,
-            picture,
-            ladder.avatar_inline,
-            theme,
-        ))
+        .children(account.map(|_| face(&choice.label, agent, picture, ladder.avatar_inline, theme)))
         .child(
             div()
                 .flex_1()
                 .min_w(px(0.))
                 .truncate()
                 .text_type(ladder.body)
-                .child(choice.label.clone()),
+                .child(name),
         )
         .children(account.map(|account| {
             div()

@@ -300,7 +300,7 @@ mod tests {
         let keystroke = view::Keystroke::parse("cmd-v").unwrap();
         let paste = wire::keyboard::KeyState::from(&keystroke);
         assert_eq!(draft.key_tag(&paste, false, &[]).as_deref(), Some("paste"));
-        assert!(draft.claims().iter().any(|claim| {
+        assert!(draft.claims(&[]).iter().any(|claim| {
             claim.command && claim.key == wire::keyboard::Key::Character("v".into())
         }));
         let (asks, outcome) = draft.act("paste", "c/editor", &[]);

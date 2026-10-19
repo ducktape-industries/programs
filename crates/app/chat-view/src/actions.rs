@@ -196,7 +196,7 @@ impl Chat {
     fn edit_body(&self, pane: Pane, seq: u64) -> Option<String> {
         let names = self.names.ready().cloned().unwrap_or_default();
         let row = self.shown(pane).find(|row| row.seq == seq)?.clone();
-        let message = chat_message(row, &names);
+        let message = chat_message(row, &names, &links::Rooms::default());
         (!message.edit_body.is_empty()).then_some(message.edit_body)
     }
 
@@ -233,11 +233,13 @@ impl Chat {
         let names = self.names.ready().unwrap_or(&empty);
         let boundary = (pane == Pane::Timeline).then_some(self.reads.boundary);
         let zone = zone();
+        let rooms = self.rooms();
         let mut drawn = self.drawn(pane).borrow_mut();
         let same = |folded: &&Folded| {
             folded.boundary == boundary
                 && folded.zone == zone
                 && folded.names == *names
+                && folded.rooms == rooms
                 && folded.rows.iter().eq(self.shown(pane))
         };
         if let Some(folded) = drawn.folded.as_ref().filter(same) {
@@ -246,13 +248,14 @@ impl Chat {
         let rows: Vec<MsgRow> = self.shown(pane).cloned().collect();
         let mut messages: Vec<ChatMessage> = rows
             .iter()
-            .map(|row| chat_message(row.clone(), names))
+            .map(|row| chat_message(row.clone(), names, &rooms))
             .collect();
         mark_message_groups(&mut messages, boundary);
         let messages: Rc<[ChatMessage]> = messages.into();
         drawn.folded = Some(Folded {
             rows,
             names: names.clone(),
+            rooms,
             boundary,
             zone,
             messages: messages.clone(),
@@ -554,6 +557,30 @@ impl Chat {
             agent,
             &self.room_id(),
         )
+    }
+
+    // The rooms a message names: the list's, but the direct ones.
+    pub(crate) fn rooms(&self) -> links::Rooms {
+        let listed = self
+            .channels
+            .ready()
+            .into_iter()
+            .flatten()
+            .filter(|info| chat::dm_peers(&info.channel.id).is_none())
+            .map(|info| (info.channel.id.clone(), info.channel.name.clone()));
+        links::Rooms::new(&self.session.chain_id, listed)
+    }
+
+    // A link pressed in a message: a room of this chain opens here, at the
+    // message it names; any other link as `open_link` opens it.
+    pub(crate) fn open_pressed(&mut self, link: String, cx: &mut Context<Self>) {
+        match links::room_route(&self.session.chain_id, &link) {
+            Some((room, seq)) => {
+                self.search_clear();
+                self.open_at(room, seq, cx);
+            }
+            None => self.open_link(link, cx),
+        }
     }
 
     pub(crate) fn open_link(&mut self, link: String, cx: &mut Context<Self>) {

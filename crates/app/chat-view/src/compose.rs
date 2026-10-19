@@ -8,8 +8,8 @@ use chat::message::Attachment;
 use view::prelude::*;
 
 impl Chat {
-    // Every name a mention may carry, the roster's and the room's members',
-    // each marked whether `@` offers it.
+    // Every name a mention may carry, each marked whether the menu offers
+    // it: after `@` the roster's and the room's members', after `#` the rooms.
     pub(crate) fn mention_choices(&self) -> Vec<MentionChoice> {
         let Some(names) = self.names.ready() else {
             return Vec::new();
@@ -31,8 +31,41 @@ impl Chat {
                 },
                 label: choice.label,
                 offered: choice.offered,
+                sigil: '@',
             })
+            .chain(self.room_choices())
             .collect()
+    }
+
+    // The rooms `#` names: every room of the list but a direct one, by its
+    // name, each a link to it; an archived one is named, not offered. The
+    // link's label leaves out what would end it early.
+    fn room_choices(&self) -> Vec<MentionChoice> {
+        let chain = &self.session.chain_id;
+        let mut rooms: Vec<MentionChoice> = self
+            .channels
+            .ready()
+            .into_iter()
+            .flatten()
+            .filter(|info| ::chat::dm_peers(&info.channel.id).is_none())
+            .filter_map(|info| {
+                let link = crate::links::channel_link(chain, &info.channel.id, None)?;
+                let name = &info.channel.name;
+                let label: String = name
+                    .chars()
+                    .filter(|c| !matches!(c, '[' | ']' | '\n' | '\r'))
+                    .collect();
+                Some(MentionChoice {
+                    token: format!("[#{label}]({link})"),
+                    label: name.clone(),
+                    hint: None,
+                    offered: !info.channel.archived,
+                    sigil: '#',
+                })
+            })
+            .collect();
+        rooms.sort_by_key(|room| room.label.to_lowercase());
+        rooms
     }
 
     pub(crate) fn composer(

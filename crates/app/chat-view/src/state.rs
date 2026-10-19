@@ -318,6 +318,7 @@ pub enum Shape {
 pub struct Folded {
     pub(crate) rows: Vec<MsgRow>,
     pub(crate) names: Names,
+    pub(crate) rooms: crate::links::Rooms,
     pub(crate) boundary: Option<u64>,
     pub(crate) zone: u64,
     pub(crate) messages: Rc<[ChatMessage]>,

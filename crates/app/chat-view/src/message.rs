@@ -81,7 +81,7 @@ pub enum SpanStyle {
     Code,
 }
 
-pub fn chat_message(row: MsgRow, names: &Names) -> ChatMessage {
+pub fn chat_message(row: MsgRow, names: &Names, rooms: &crate::links::Rooms) -> ChatMessage {
     let system = chat::program_post(&row, names.program(&row.author))
         .map(|(program, code)| (program.into(), code.into()));
     let edited = row.rev > 0;
@@ -95,7 +95,7 @@ pub fn chat_message(row: MsgRow, names: &Names) -> ChatMessage {
         (
             message_body(&row.blocks, names),
             draft_body(&row.blocks),
-            row.blocks,
+            rooms.blocks(row.blocks),
         )
     };
     ChatMessage {
@@ -385,7 +385,7 @@ pub(crate) fn line(
     let open = cx.processor(move |chat, index: usize, _window, cx| {
         if let Some(target) = targets.get(index) {
             cx.notify();
-            chat.open_link(target.clone(), cx);
+            chat.open_pressed(target.clone(), cx);
         }
     });
     InteractiveText::new(id, styled)
@@ -405,7 +405,7 @@ mod tests {
             blocks: vec![Block::paragraph("hi")],
             ..MsgRow::by(Principal::Account(7))
         };
-        chat_message(row, &Names::empty())
+        chat_message(row, &Names::empty(), &crate::links::Rooms::default())
     }
 
     #[test]

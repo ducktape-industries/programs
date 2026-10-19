@@ -193,7 +193,7 @@ fn hit(
 ) -> AnyElement {
     let empty = chat::view::Names::empty();
     let names = chat.names.ready().unwrap_or(&empty);
-    let message = crate::message::chat_message(row.clone(), names);
+    let message = crate::message::chat_message(row.clone(), names, &chat.rooms());
     let (id, seq) = (row.channel_id.clone(), row.seq);
     let open = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
         cx.notify();

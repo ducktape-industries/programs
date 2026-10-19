@@ -34,6 +34,39 @@ pub struct MentionChoice {
     // false for a name `@` does not offer (a program's own account, an
     // agent that does not act): it still names a mention already written
     pub offered: bool,
+    // what is typed before it: `@` for an account, `#` for a room
+    pub sigil: char,
+}
+
+impl MentionChoice {
+    // How the field and the menu show it: `@ada`, `#general`.
+    pub(crate) fn shown(&self) -> String {
+        format!("{}{}", self.sigil, self.label)
+    }
+
+    // Whether a body's `token` names what this choice does: its own token,
+    // or a link to the same room under an older label.
+    fn stands_for(&self, token: &str) -> bool {
+        self.token == token
+            || room_link(&self.token).is_some_and(|link| room_link(token) == Some(link))
+    }
+}
+
+// The link of a room's token, `[#name](link)`.
+fn room_link(token: &str) -> Option<&str> {
+    let (_, link) = token.strip_prefix("[#")?.split_once("](")?;
+    link.strip_suffix(')')
+}
+
+// The length of the token `text` opens with: an account's `<@n>`, or a
+// room's `[#name](link)`.
+fn token_len(text: &str) -> Option<usize> {
+    if text.starts_with("<@") {
+        return text.find('>').map(|end| end + 1);
+    }
+    let close = text.find("](")?;
+    let end = text[close..].find(')')? + close;
+    Some(end + 1)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,12 +159,17 @@ fn markers(tag: &str) -> Option<(&'static str, &'static str)> {
 
 pub(crate) fn matching_choices<'a>(
     choices: &'a [MentionChoice],
+    sigil: char,
     partial: &str,
 ) -> Vec<&'a MentionChoice> {
     let needle = partial.to_lowercase();
     choices
         .iter()
-        .filter(|choice| choice.offered && words_start(&choice.label.to_lowercase(), &needle))
+        .filter(|choice| {
+            choice.sigil == sigil
+                && choice.offered
+                && words_start(&choice.label.to_lowercase(), &needle)
+        })
         .collect()
 }
 
@@ -162,26 +200,28 @@ impl Draft {
         let mut text = String::new();
         let mut tokens = Vec::new();
         let mut remaining = body.as_str();
-        while let Some(start) = remaining.find("<@") {
+        let opens = |rest: &str| ["<@", "[#"].iter().filter_map(|open| rest.find(open)).min();
+        while let Some(start) = opens(remaining) {
             text.push_str(&remaining[..start]);
             remaining = &remaining[start..];
-            let Some(end) = remaining.find('>') else {
-                break;
+            let Some(len) = token_len(remaining) else {
+                text.push_str(&remaining[..2]);
+                remaining = &remaining[2..];
+                continue;
             };
-            let token = &remaining[..=end];
-            match roster.iter().find(|choice| choice.token == token) {
+            let token = &remaining[..len];
+            match roster.iter().find(|choice| choice.stands_for(token)) {
                 Some(choice) => {
                     let start = text.len();
-                    text.push('@');
-                    text.push_str(&choice.label);
+                    text.push_str(&choice.shown());
                     tokens.push(wire::TextToken {
                         range: wire::TextRange::from(start..text.len()),
-                        id: token.into(),
+                        id: choice.token.clone(),
                     });
                 }
                 None => text.push_str(token),
             }
-            remaining = &remaining[end + 1..];
+            remaining = &remaining[len..];
         }
         text.push_str(remaining);
         self.field.reset_with_tokens(text, tokens);
@@ -257,8 +297,9 @@ impl Draft {
         Some(self.field.replace(target, range, text, None, caret))
     }
 
-    /// The `@name` being typed at the caret, if any: its span and the name
-    /// so far. None with a selection, inside a mention, or after Escape.
+    // The `@name` or `#room` being typed at the caret, if any: its span and
+    // the name so far. None with a selection, inside a mention, or after
+    // Escape.
     pub(crate) fn query(&self) -> Option<(Range<usize>, String)> {
         let cursor = self.field.selection();
         if self.menu_dismissed || cursor.start != cursor.end {
@@ -273,7 +314,7 @@ impl Draft {
             return None;
         }
         let line = before.rsplit('\n').next()?;
-        let start = line.rfind('@')?;
+        let start = line.rfind(['@', '#'])?;
         let partial = &line[start + 1..];
         let valid = partial.chars().all(|c| handle_char(c) || c == ' ')
             && line[..start]
@@ -293,10 +334,23 @@ impl Draft {
         Some((range, partial.into()))
     }
 
+    // What the query asks for: the sigil typed, and the name so far.
+    pub(crate) fn typed(&self) -> Option<(char, String)> {
+        let (range, partial) = self.query()?;
+        let sigil = self.field.text()[range.start..].chars().next()?;
+        Some((sigil, partial))
+    }
+
+    // Whether the menu is open: a name is being typed that a choice matches.
+    fn menu_open(&self, choices: &[MentionChoice]) -> bool {
+        self.menu(choices)
+            .is_some_and(|(matches, _)| !matches.is_empty())
+    }
+
     /// The menu's choices and which row is picked.
     fn menu<'a>(&self, choices: &'a [MentionChoice]) -> Option<(Vec<&'a MentionChoice>, usize)> {
-        let (_, partial) = self.query()?;
-        let matches = matching_choices(choices, &partial);
+        let (sigil, partial) = self.typed()?;
+        let matches = matching_choices(choices, sigil, &partial);
         let selected = self.menu_index.min(matches.len().saturating_sub(1));
         Some((matches, selected))
     }
@@ -304,7 +358,7 @@ impl Draft {
     /// The keys the composer hears instead of the engine: Enter to send or
     /// to pick a mention, the arrows and Escape while the menu is open, and
     /// the formatting chords.
-    pub(super) fn claims(&self) -> Vec<wire::KeyClaim> {
+    pub(super) fn claims(&self, choices: &[MentionChoice]) -> Vec<wire::KeyClaim> {
         let bare = |key| wire::KeyClaim {
             key: Key::Named(key),
             modifiers: Modifiers::default(),
@@ -319,7 +373,7 @@ impl Draft {
             command: true,
         };
         let mut claims = vec![bare(Named::Enter)];
-        if self.query().is_some() {
+        if self.menu_open(choices) {
             claims.extend([Named::ArrowUp, Named::ArrowDown, Named::Escape].map(bare));
         }
         claims.extend(
@@ -363,9 +417,9 @@ impl Draft {
             },
             // the arrows and Escape are claimed only while the menu is open;
             // one from a frame before it shut is the engine's to have had
-            Key::Named(Named::ArrowDown) if self.query().is_some() => Some("menu-next".into()),
-            Key::Named(Named::ArrowUp) if self.query().is_some() => Some("menu-previous".into()),
-            Key::Named(Named::Escape) if self.query().is_some() => Some("menu-dismiss".into()),
+            Key::Named(Named::ArrowDown) if self.menu_open(choices) => Some("menu-next".into()),
+            Key::Named(Named::ArrowUp) if self.menu_open(choices) => Some("menu-previous".into()),
+            Key::Named(Named::Escape) if self.menu_open(choices) => Some("menu-dismiss".into()),
             _ => None,
         }
     }
@@ -482,7 +536,7 @@ impl Draft {
         let Some((range, _)) = self.query() else {
             return Vec::new();
         };
-        let label = format!("@{}", choice.label);
+        let label = choice.shown();
         let end = range.start + label.len();
         vec![
             self.field.replace(
@@ -589,6 +643,7 @@ mod tests {
             label: "Ada".into(),
             hint: None,
             offered: true,
+            sigil: '@',
         }]
     }
 
@@ -693,6 +748,7 @@ mod tests {
             label: "forge".into(),
             hint: None,
             offered: false,
+            sigil: '@',
         }];
         let draft = Draft::from_body("ask <@9> @fo", &forge);
         assert_eq!(draft.field.text(), "ask @forge @fo");
@@ -707,7 +763,7 @@ mod tests {
     #[test]
     fn a_query_matches_the_start_of_any_word_of_a_name() {
         fn found<'a>(choices: &'a [MentionChoice], partial: &str) -> Vec<&'a str> {
-            matching_choices(choices, partial)
+            matching_choices(choices, '@', partial)
                 .into_iter()
                 .map(|choice| choice.label.as_str())
                 .collect()
@@ -717,6 +773,7 @@ mod tests {
             label: label.into(),
             hint: None,
             offered: true,
+            sigil: '@',
         });
         let every = ["Ada Lovelace", "Alan", "bo.k", "qa-mention-b"];
         assert_eq!(found(&choices, ""), every);
@@ -727,6 +784,43 @@ mod tests {
         assert_eq!(found(&choices, "men"), ["qa-mention-b"]);
         assert_eq!(found(&choices, "k"), ["bo.k"]);
         assert!(found(&choices, "ve").is_empty(), "inside a word");
+    }
+
+    // `#` asks for a room: only the rooms match it, and a pick puts a link
+    // to the room in the field as one span, which the body carries as the
+    // markdown chat reads as a link. A body naming the room under an older
+    // label shows its name now.
+    #[test]
+    fn a_picked_room_is_a_link_to_it() {
+        let link = "duck://testnet-0a1b2c3d/chat/general";
+        let room = MentionChoice {
+            token: format!("[#General]({link})"),
+            label: "General".into(),
+            hint: None,
+            offered: true,
+            sigil: '#',
+        };
+        let choices = [roster().remove(0), room.clone()];
+        let mut draft = Draft::from_body("hi #ge", &choices);
+        assert_eq!(draft.typed(), Some(('#', "ge".into())));
+        assert_eq!(draft.menu(&choices), Some((vec![&room], 0)));
+        let tag = format!("mention:{}", room.token);
+        let (edits, _) = draft.act(&tag, "c/editor", &choices);
+        assert_eq!(
+            replaces(&edits),
+            [
+                (3..6, "#General", Some(room.token.as_str()), 11),
+                (6..6, " ", None, 7)
+            ]
+        );
+        let seeded = Draft::from_body(&format!("see [#old]({link})"), &choices);
+        assert_eq!(seeded.field.text(), "see #General");
+        assert_eq!(seeded.body(), format!("see [#General]({link})"));
+        let blocks = chat::parse_message(&seeded.body());
+        let chat::message::Block::Paragraph(spans) = &blocks[0] else {
+            panic!("one paragraph")
+        };
+        assert_eq!(spans[1].marks, [chat::message::Mark::Link(link.into())]);
     }
 
     #[test]

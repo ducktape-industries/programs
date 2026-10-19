@@ -147,6 +147,7 @@ fn roster() -> Vec<MentionChoice> {
         label: "Ada".into(),
         hint: None,
         offered: true,
+        sigil: '@',
     }]
 }
 
@@ -357,6 +358,8 @@ fn the_arrows_are_claimed_only_while_the_menu_is_open() {
     for key in [Named::ArrowUp, Named::ArrowDown, Named::Escape] {
         assert!(!closed.contains(&bare(key)), "{key:?} belongs to the host");
     }
+    let word = claimed(&caret("#tag", 4));
+    assert!(!word.contains(&bare(Named::ArrowUp)), "a # no room answers");
     let open = claimed(&caret("@A", 2));
     for key in [Named::ArrowUp, Named::ArrowDown, Named::Escape] {
         assert!(open.contains(&bare(key)), "{key:?} belongs to the menu");
@@ -424,12 +427,14 @@ fn menu_navigation_then_enter_picks_a_stable_identity_and_escape_leaves_enter_to
             label: "Ada".into(),
             hint: None,
             offered: true,
+            sigil: '@',
         },
         MentionChoice {
             token: "<@2>".into(),
             label: "Alan".into(),
             hint: None,
             offered: true,
+            sigil: '@',
         },
     ];
     let mut draft = caret("@A", 2);
@@ -637,12 +642,14 @@ fn a_mention_choice_carries_its_hint() {
             label: "Ada".into(),
             hint: None,
             offered: true,
+            sigil: '@',
         },
         MentionChoice {
             token: "<@2>".into(),
             label: "Scout".into(),
             hint: Some("Answers its manager only".into()),
             offered: true,
+            sigil: '@',
         },
     ];
     let root = drawn_with(&caret("@", 1), "c", &choices);

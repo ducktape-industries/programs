@@ -107,6 +107,38 @@ fn rich_message_keeps_styles_and_dispatches_each_link_by_value() {
     );
 }
 
+// A link to a room draws as the room's name now and opens it here, not
+// through the app; a plain `#word` naming one room links to it too.
+#[test]
+fn a_room_link_names_the_room_and_opens_it_in_place() {
+    let (mut cx, view) = opened();
+    let text = "see [#old](duck://testnet-0a1b2c3d/chat/forge%3Aweb%3A3) and #general";
+    cx.update(&view, |chat, _, cx| {
+        let mut linked = row(3, 7, text);
+        linked.message_id = "rooms".into();
+        linked.blocks = chat::parse_message(text);
+        let room = chat.room.as_mut().unwrap();
+        room.messages.ready_mut().unwrap().push(linked);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let key = "chat-message-rooms-block-0";
+    let Some(wire::Node::RichText {
+        text,
+        clickable_ranges,
+        ..
+    }) = cx.find(key)
+    else {
+        panic!("the paragraph is one rich text node");
+    };
+    assert_eq!(text, "see #Review web#3 and #general");
+    assert_eq!(clickable_ranges.len(), 2);
+    cx.simulate_rich_click(key, 0);
+    cx.run_until_parked();
+    view.read(|chat| assert_eq!(chat.room.as_ref().unwrap().id, "forge:web:3"));
+    assert!(cx.host().requests::<view::methods::LinkOpen>().is_empty());
+}
+
 /// A person's avatar opens their identity page, the page a mention of
 /// them opens; the press is the avatar's, so the message stays unchosen.
 /// (An agent's opens its card: `agents.rs`.)
