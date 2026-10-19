@@ -107,6 +107,17 @@ fn touch(ctx: &ExecCtx, channel: &ChannelRow) {
     CHANNELS.put(ctx, &channel.id, channel);
 }
 
+// The message's id, rewritten as it is: its author's edit or delete writes it so the message's
+// policy decides it. A message whose id was never recorded gets none here (writing one would
+// make this writer its owner).
+fn authored(ctx: &ExecCtx, row: &MsgRow) -> Result<(), Error> {
+    let at = MESSAGE_IDS.get(ctx, &row.message_id)?;
+    if let Some(at) = at {
+        MESSAGE_IDS.put(ctx, &row.message_id, &at);
+    }
+    Ok(())
+}
+
 pub(crate) fn set_meta(ctx: &ExecCtx, id: &str, key: String, value: String) -> Result<(), Error> {
     let channel = channel(ctx, id)?;
     rules::not_dm(&channel)?;
@@ -260,6 +271,7 @@ pub(crate) fn edit(
         ..old.clone()
     };
     put_message(ctx, &row)?;
+    authored(ctx, &old)?;
     note(ctx, &row);
     report(ctx, sender, Some(&old), &row)?;
     Ok(())
@@ -271,10 +283,16 @@ pub(crate) fn delete(
     channel_id: &str,
     seq: u64,
 ) -> Result<(), Error> {
-    channel(ctx, channel_id)?;
+    let room = channel(ctx, channel_id)?;
     let old = message(ctx, channel_id, seq)?;
     if old.deleted {
         return Ok(());
+    }
+    // the author's own delete is the message's policy's to decide; anyone else's is moderation,
+    // the channel's policy's, and leaves the author's id as it is
+    match old.author == *sender {
+        true => authored(ctx, &old)?,
+        false => touch(ctx, &room),
     }
     forget_answer(ctx, &old);
     let reacted = REACTIONS.scan(ctx, REACTIONS.prefix_of(&(channel_id.to_owned(), seq)))?;

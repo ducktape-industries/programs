@@ -30,7 +30,11 @@ pub const HEADS: Map<ChannelId, Seq> = Map::new("head/").shared();
 // each message as chat keeps it; a channel not migrated yet still holds old rows (`legacy`)
 pub const MESSAGES: Map<(ChannelId, Seq), Stored> = Map::new("stored/").shared();
 /// Where each message id lives: ids are unique across channels.
-pub const MESSAGE_IDS: Map<String, (ChannelId, Seq)> = Map::new("message-id/").shared();
+// Each id is its author's, of the kind `chat.message`: only a post writes it, and the author's
+// own edit or delete writes it again, so the message's policy decides them. The message itself
+// (`MESSAGES`) is shared, since replies and reactions by others rewrite its row; a moderator's
+// delete writes the tombstone there and the channel's row, never the author's id.
+pub const MESSAGE_IDS: Map<String, Owned<(ChannelId, Seq), Authored>> = Map::new("message-id/");
 pub const MEMBERS: Map<(ChannelId, Principal), MemberRow> = Map::new("member/").shared();
 /// Who chose which emoji: `(channel, seq, emoji, principal)`.
 pub const REACTIONS: Set<(ChannelId, Seq, String, Principal)> = Set::new("reaction/").shared();
@@ -229,11 +233,18 @@ pub(crate) fn toggle<K: store::KeyCodec>(ctx: &ExecCtx, set: &Set<K>, key: &K, o
     }
 }
 
+pub struct Authored;
+
+impl Kind for Authored {
+    const KIND: &'static str = "chat.message";
+}
+
 impl Kind for ChannelRow {
     const KIND: &'static str = "chat.channel";
 }
 
-// Every table here but CHANNELS is general data: only this program's code governs it.
+// Every table here but CHANNELS and MESSAGE_IDS is general data: only this program's code governs
+// it.
 pub(crate) const TABLES: &[::program::Table] = &[
     CHANNELS.table(),
     CHANNEL_META.table(),

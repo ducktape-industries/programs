@@ -82,10 +82,11 @@ fn a_message_writes_its_point_keys_and_an_edit_its_row_alone() {
             base_rev: None,
         };
         let (keys, _) = chat_writes(&mut net, &edit).await;
+        let message = MESSAGE_IDS.key(&"m1".to_owned());
         assert_eq!(
             keys,
-            BTreeSet::from([row]),
-            "an edit rewrites the row alone"
+            BTreeSet::from([row, message]),
+            "an edit rewrites the row, and its author's id for the message's policy"
         );
     });
 }

@@ -1,6 +1,6 @@
 use ::program::{Held, MockChain, Origin, Ownership, Program as _, Table, code};
 
-use crate::state::CHANNELS;
+use crate::state::{CHANNELS, MESSAGE_IDS};
 use crate::{Op, PostPolicy, Principal};
 
 const ADA: &[u8] = b"ada-key";
@@ -80,13 +80,14 @@ fn reshapes(n: u64) -> Vec<Op> {
 }
 
 #[test]
-fn chat_declares_its_channels_owned_and_every_other_table_shared() {
+fn chat_declares_its_channels_and_messages_owned_and_every_other_table_shared() {
     let owned: Vec<&Table> = crate::Chat::TABLES
         .iter()
         .filter(|table| table.held != Held::Shared)
         .collect();
-    assert_eq!(owned, [&CHANNELS.table()]);
+    assert_eq!(owned, [&CHANNELS.table(), &MESSAGE_IDS.table()]);
     assert_eq!(owned[0].held, Held::Owned(Some("chat.channel")));
+    assert_eq!(owned[1].held, Held::Owned(Some("chat.message")));
 }
 
 #[test]
@@ -145,4 +146,135 @@ fn a_channels_policy_decides_every_op_that_reshapes_it_and_posting_stays_open() 
         thread: None,
     };
     assert_eq!(run(&chain, BO, &post), Ok(()));
+}
+
+fn bo_posts(chain: &MockChain) -> u64 {
+    let post = Op::PostMessage {
+        channel_id: "general".into(),
+        message_id: "bo-1".into(),
+        blocks: crate::parse_message("bo's words"),
+        thread: None,
+    };
+    run(chain, BO, &post).unwrap();
+    1
+}
+
+fn strict(chain: &MockChain, key: &[u8]) -> ownership::PolicyId {
+    let made = ownership::Op::Create {
+        name: "mine".into(),
+        write: ownership::Writers::Owner,
+    };
+    let made = chain
+        .submit(signed(key), ownership::PROGRAM, &made)
+        .unwrap();
+    abi::decode(&made).unwrap()
+}
+
+fn relink(chain: &MockChain, key: &[u8], at: Vec<u8>, policy: ownership::PolicyId) {
+    let relink = ownership::Op::Relink {
+        program: crate::PROGRAM.into(),
+        key: at,
+        policy,
+    };
+    chain
+        .submit(signed(key), ownership::PROGRAM, &relink)
+        .unwrap();
+}
+
+#[test]
+fn a_messages_policy_decides_its_authors_edits_and_the_channels_decides_moderation() {
+    let chain = chain();
+    let seq = bo_posts(&chain);
+    let id = MESSAGE_IDS.key(&"bo-1".to_owned());
+    let query = ownership::Query::Record {
+        program: crate::PROGRAM.into(),
+        key: id.clone(),
+    };
+    let ownership::Reply::Record(Some(owned)) = chain.query(ownership::PROGRAM, &query).unwrap()
+    else {
+        panic!("the guard recorded bo's message");
+    };
+    assert_eq!(owned.owner, ownership::Party::Account(2));
+    assert_eq!(owned.kind.as_deref(), Some("chat.message"));
+    // the access list lets anyone edit and delete it; the policies are what narrow it now
+    let anyone = access::Op::Set {
+        program: crate::PROGRAM.into(),
+        key: crate::message_key("general", seq),
+        list: Some(Ownership::Anyone),
+    };
+    chain.submit(signed(BO), "access", &anyone).unwrap();
+    relink(&chain, BO, id, strict(&chain, BO));
+    let edit = |text: &str| Op::EditMessage {
+        channel_id: "general".into(),
+        seq,
+        blocks: crate::parse_message(text),
+        base_rev: None,
+    };
+    assert_eq!(
+        run(&chain, ADA, &edit("ada's words")),
+        Err(code::UNAUTHORIZED.to_string())
+    );
+    assert_eq!(run(&chain, BO, &edit("bo's words, again")), Ok(()));
+    // replies and reactions by others still land on bo's message
+    let react = Op::AddReaction {
+        channel_id: "general".into(),
+        seq,
+        emoji: "👍".into(),
+    };
+    assert_eq!(run(&chain, ADA, &react), Ok(()));
+    let reply = Op::PostMessage {
+        channel_id: "general".into(),
+        message_id: "ada-1".into(),
+        blocks: crate::parse_message("a reply"),
+        thread: Some(seq),
+    };
+    assert_eq!(run(&chain, ADA, &reply), Ok(()));
+    // moderation is the channel's: ada's channel narrowed, only ada removes bo's message, and
+    // bo's id stays his
+    relink(
+        &chain,
+        ADA,
+        CHANNELS.key(&"general".to_owned()),
+        strict(&chain, ADA),
+    );
+    let delete = Op::DeleteMessage {
+        channel_id: "general".into(),
+        seq,
+    };
+    let moderated = run(&chain, ADA, &delete);
+    assert_eq!(moderated, Ok(()));
+    let ownership::Reply::Record(Some(kept)) = chain.query(ownership::PROGRAM, &query).unwrap()
+    else {
+        panic!("a moderated message keeps its author's record");
+    };
+    assert_eq!(kept.owner, ownership::Party::Account(2));
+}
+
+#[test]
+fn anothers_delete_is_refused_where_the_channel_is_narrowed() {
+    let chain = chain();
+    let seq = bo_posts(&chain);
+    let anyone = access::Op::Set {
+        program: crate::PROGRAM.into(),
+        key: crate::message_key("general", seq),
+        list: Some(Ownership::Anyone),
+    };
+    chain.submit(signed(BO), "access", &anyone).unwrap();
+    relink(
+        &chain,
+        ADA,
+        CHANNELS.key(&"general".to_owned()),
+        strict(&chain, ADA),
+    );
+    let delete = Op::DeleteMessage {
+        channel_id: "general".into(),
+        seq,
+    };
+    // a third account moderating ada's narrowed channel is refused; bo deletes his own
+    chain.hold(b"cy-key".to_vec(), 3);
+    assert_eq!(
+        run(&chain, b"cy-key", &delete),
+        Err(code::UNAUTHORIZED.to_string())
+    );
+    assert_eq!(run(&chain, BO, &delete), Ok(()));
 }
