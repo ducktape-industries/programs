@@ -186,80 +186,25 @@ nothing built is committed. `make dev` and a view's `--example live` build
 with the `fast` profile instead (`Cargo.toml`): no fat LTO, sixteen codegen
 units and no wasm-opt (a notifier is built for size, through wasm-opt,
 whatever the profile), into `wasm32-unknown-unknown/fast/`, for the edit
-loop and for garage, the network that runs dev; a release, and every
+loop and for garage, the network that runs dev; a founding, and every
 program a hosted network (duckpond) runs, is always the release profile's
-bytes. A hosted network never runs a release: its pods service, or
-eddy-claude (account 24), builds a commit on the network's forge `dev`, and
-the builder puts it as a blob. A release founds a local network (qa's kit).
+bytes. A hosted network's pods service, or eddy-claude (account 24), builds
+a commit on the network's forge `dev`, and the builder puts it as a blob.
 `WASM_PROFILE=fast` on a wasm target's command line asks for it
 (`make dev WASM_PROFILE=release` for the bytes that ship), and in the
 environment of an `--example live` it picks the rig's profile.
 `make wasm-reproducible` proves the bytes do not depend on the checkout. They do depend on the host triple (the
 Makefile says why at `WASM_RUSTFLAGS`), and the reference host is Linux x86_64:
-a founding or a release is packed from a build made there, and a Mac's build
+a founding is packed from a build made there, and a Mac's build
 is a development build.
 
-`make wasm-publish` builds every artifact at the checked-out commit and
-publishes them as the GitHub release `wasm-<commit>`, in two archives, each
-with its `SHA256SUMS`. `programs-wasm.tar.gz` holds every artifact unpacked.
-`founding.tar.gz` (`make wasm-founding`) holds a founding: each program with its describe module,
+`make wasm-founding` packs a founding, `founding.tar.gz`: each program with its describe module,
 its schema and any view embedded (`crates/sdk/founding`), stamped with the commit it was built
 from (`ducktape.source`, which the programs role's `Sources` reads back; a checkout with changes
 git sees stamps none), `forge.params`, and a
 `founding.toml` that `ducktape init` reads once its network, time, key and
-address are filled. It runs only on the reference host, from a clean checkout
-whose commit is on origin, and never replaces a published commit. A founder
-downloads these bytes instead of building them, so only the machine that
-publishes needs the wasm tools below and `gh`. Each
-time `main` moves, the self-hosted runner fabrics-1 publishes it
-(`.github/workflows/release.yml`).
-
-Each time `dev` or `main` moves, its build is also published to
-https://dl.ducktape.industries/programs/. A branch is a channel: `dev`
-publishes the fast profile's bytes, `main` the release profile's (the same
-build as its GitHub release). A version is the commit's first-parent count
-(`git rev-list --count --first-parent HEAD`), shown as `dev-1234` or
-`main-87`. `programs/<channel>/<version>/` holds every artifact `make
-wasm-modules` builds, unpacked, `founding.tar.gz` and `manifest.json`, and
-nothing in it is ever replaced. `programs/<channel>/latest.json` is a copy of
-the newest version's manifest, cached for a minute and written after every
-file it names. `built_at` is the commit's committer time and `wire_id` the
-`WIRE_ID` the views speak; `artifacts` has one entry per file:
-
-```json
-{
-  "repo": "programs",
-  "channel": "dev",
-  "version": 660,
-  "display": "dev-660",
-  "commit": "41affe2c50df0a4fb280934f7f3e1e7d861345d9",
-  "profile": "fast",
-  "built_at": "2026-10-18T01:26:17Z",
-  "wire_id": "967e0ea397677413",
-  "artifacts": {
-    "chat_view.wasm": {
-      "sha256": "f2b278b1aed0587d1771f2bcf705d792f840df1ff9d5586f2acbd2d405d7e9e9",
-      "bytes": 3312535
-    }
-  }
-}
-```
-
-```sh
-dl=https://dl.ducktape.industries/programs/dev
-curl -fsS $dl/latest.json > latest.json
-curl -fsSO "$dl/$(jq -r .version latest.json)/founding.tar.gz"
-jq -r '.artifacts["founding.tar.gz"].sha256' latest.json   # sha256sum founding.tar.gz prints the same
-```
-
-A file is checked by the manifest's sha256, fetched over HTTPS; nothing is
-signed yet, since nothing verifies a signature. fabrics-1 builds and stages
-each version (`make dl-stage`), and a job on GitHub's Ubuntu, the only one
-that holds the bucket's keys, uploads the stage (`tools/publish-dl.py`).
-`make dl-stage CHANNEL=dev WASM_PROFILE=fast` is the dry run: it builds,
-writes the stage and its manifest under `$CARGO_TARGET_DIR/dl/dev/`, and
-prints the upload order, without credentials. `make dl-publish-check` checks
-the script.
+address are filled. A network is founded from one built at a commit on forge
+`dev`; core's `docs/found-a-network.md` walks a founding through every step.
 
 `make dev`'s view gate requires `wasm-tools` and Python 3; view releases,
 and every notifier build (`make wasm-modules`, `fast` too), also need [Binaryen wasm-opt 132](https://github.com/WebAssembly/binaryen/releases/tag/version_132).
