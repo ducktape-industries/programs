@@ -77,6 +77,16 @@ macro_rules! method {
     };
 }
 
+// What [`each_listed`] hands every method the list below declares, by
+// type: the golden's schema reads each one's request and reply through it.
+#[cfg(feature = "schema")]
+pub trait Listed {
+    fn method<M: Method>(&mut self)
+    where
+        M::Request: borsh::BorshSchema,
+        M::Reply: borsh::BorshSchema;
+}
+
 /// Every [`method!`] below, and [`ALL`] from the same list, so a method is
 /// never declared without being listed. `also` names the kinds written by
 /// hand: the three node methods generic over a [`Program`], and [`HostWidget`].
@@ -89,6 +99,12 @@ macro_rules! methods {
 
         /// Every kind, so a host can assert it answers each one.
         pub const ALL: &[&str] = &[$($also,)* $($kind),*];
+
+        // Each method the list declares, in its order, to `listed`.
+        #[cfg(feature = "schema")]
+        pub fn each_listed(listed: &mut impl Listed) {
+            $(listed.method::<$name>();)*
+        }
     };
 }
 

@@ -423,6 +423,23 @@ where
     (M::KIND, shape)
 }
 
+// Every method `methods!` lists, each through [`borsh`].
+struct Borsh<'a> {
+    definitions: &'a mut Definitions,
+    shapes: &'a mut BTreeMap<&'static str, Shape>,
+}
+
+impl methods::Listed for Borsh<'_> {
+    fn method<M: Method>(&mut self)
+    where
+        M::Request: BorshSchema,
+        M::Reply: BorshSchema,
+    {
+        let (kind, shape) = borsh::<M>(self.definitions);
+        self.shapes.insert(kind, shape);
+    }
+}
+
 /// A method on the tree's side of the codec rule, its request and reply as
 /// serde traces them.
 fn tree_method<M: Method>() -> (&'static str, Shape)
@@ -445,61 +462,17 @@ pub(super) fn shapes() -> (BTreeMap<&'static str, Shape>, Definitions) {
     use methods::*;
     let mut definitions = Definitions::new();
     let d = &mut definitions;
-    let shapes: BTreeMap<&str, Shape> = [
+    let mut shapes: BTreeMap<&str, Shape> = [
         borsh::<Query<P>>(d),
         borsh::<Submit<P>>(d),
         borsh::<Changes<P>>(d),
         tree_method::<HostWidget>(),
-        borsh::<ChainStatus>(d),
-        borsh::<InviteCreate>(d),
-        borsh::<ChainBlocks>(d),
-        borsh::<ChainBlock>(d),
-        borsh::<ChainTx>(d),
-        borsh::<ChainNetwork>(d),
-        borsh::<BlobGet>(d),
-        borsh::<BlobManifest>(d),
-        borsh::<HostSession>(d),
-        borsh::<HostVisible>(d),
-        borsh::<HostFloat>(d),
-        borsh::<HostUnfloat>(d),
-        borsh::<HostPlacement>(d),
-        borsh::<HostBadge>(d),
-        borsh::<HostTitle>(d),
-        borsh::<HostShow>(d),
-        borsh::<CameraDevices>(d),
-        borsh::<MicrophoneDevices>(d),
-        borsh::<MicrophoneChime>(d),
-        borsh::<FilePick>(d),
-        borsh::<OpPut>(d),
-        borsh::<FileRelease>(d),
-        borsh::<FileRead>(d),
-        borsh::<FileSave>(d),
-        borsh::<ClipboardFiles>(d),
-        borsh::<HostMethods>(d),
-        borsh::<LinkOpen>(d),
-        borsh::<LinkWindow>(d),
-        borsh::<HostRoute>(d),
-        borsh::<HostId>(d),
-        borsh::<ClockTicks>(d),
-        borsh::<HostLog>(d),
-        borsh::<ClipboardRead>(d),
-        borsh::<ClipboardWrite>(d),
-        borsh::<NotifyPost>(d),
-        borsh::<NotifySeen>(d),
-        borsh::<StoreGet>(d),
-        borsh::<StoreSet>(d),
-        borsh::<StoreChanges>(d),
-        borsh::<StoreList>(d),
-        borsh::<HostShowing>(d),
-        borsh::<HostScreen>(d),
-        borsh::<ChainHeads>(d),
-        borsh::<ProgramDescribe>(d),
-        borsh::<LivePublishTrack>(d),
-        borsh::<LiveSendObject>(d),
-        borsh::<LiveSubscribeTrack>(d),
-        borsh::<LiveTracks>(d),
     ]
     .into();
+    each_listed(&mut Borsh {
+        definitions: d,
+        shapes: &mut shapes,
+    });
     let kinds: BTreeSet<&str> = shapes.keys().copied().collect();
     let all: BTreeSet<&str> = ALL.iter().copied().collect();
     assert_eq!(kinds, all, "one line per method in ALL");
