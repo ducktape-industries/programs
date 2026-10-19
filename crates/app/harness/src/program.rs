@@ -1,7 +1,8 @@
 //! The program: every op and query handed to its function. An attribution may start a thread's
 //! loop, which awaits the model and each tool call. At its init harness registers with
 //! attribution for every change about an account whose script calls harness.
-use ::program::schema::{Return, returns};
+use ::program::schema::Return;
+use ::program::tools::{Described, Tools};
 use ::program::{Awaiting, Ctx, Error, ExecCtx, Program, QueryCtx};
 
 use crate::agents::{attributed, card, close, setup};
@@ -23,13 +24,11 @@ impl Program for Harness {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
-    const RETURNS: &'static [Return] = &[
-        returns::<u64>("NewThread"),
-        returns::<u64>("ForkThread"),
-        returns::<u64>("OpenThread"),
-        returns::<u64>("Wait"),
-        returns::<Option<Vec<u8>>>("AdoptOwners"),
-    ];
+    const RETURNS: &'static [Return] = <Op as Described>::RETURNS;
+
+    fn tools() -> Tools {
+        Tools::of::<Op, Query>()
+    }
 
     fn init(ctx: &ExecCtx, _params: &[u8]) -> Result<(), Error> {
         let register = attribution::Op::Register {

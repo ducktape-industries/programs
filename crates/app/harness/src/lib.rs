@@ -9,6 +9,7 @@ mod calls;
 mod codec;
 pub mod config;
 mod conversations;
+mod examples;
 mod gate;
 mod listening;
 mod models;
@@ -54,100 +55,101 @@ pub mod tables {
 pub const PROGRAM: &str = "harness";
 pub const PART: &str = "part";
 
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
+)]
+#[tool_about(
+    "Agents that consensus runs: each agent's conversations (threads) with its model, the models harness reaches through egress, the runs agents book, and the waits that wake them. An agent is a program account whose script calls harness and names its configuration file in files."
+)]
 pub enum Op {
-    Close {
-        thread: u64,
-    },
+    #[tool_op(description = "Close a conversation; it stays readable. Its agent's manager, or whom the manager lists; a conversation bound to a place (OpenThread) anyone may close.", example = examples::close)]
+    Close { thread: u64 },
+    #[tool_op(
+        description = "From attribution only (and harness itself for one it held back): a change about an agent, such as a mention, a direct message or a reply in its thread, which reaches its conversation when the agent's list allows the author."
+    )]
     Attributed(Box<Change>),
+    #[tool_op(description = "Set a model record: the wire it speaks, the egress service that reaches it and the vendor's name for it. The first account to set an id owns it; after that its owner, or whom the owner lists.", example = examples::set_model)]
     SetModel {
         id: String,
         wire: Wire,
         service: String,
         name: String,
     },
-    RemoveModel {
-        id: String,
-    },
-    Streamed {
-        thread: u64,
-        event: Event,
-    },
-    NewThread {
-        agent: AccountNumber,
-    },
-    ForkThread {
-        agent: AccountNumber,
-    },
-    OpenThread {
-        agent: AccountNumber,
-        place: Place,
-    },
+    #[tool_op(description = "Remove a model record. Its owner, or whom the owner lists.", example = examples::remove_model)]
+    RemoveModel { id: String },
+    #[tool_op(
+        description = "From the program bound to the egress role only: one event of a model's streamed reply for a conversation waiting on it."
+    )]
+    Streamed { thread: u64, event: Event },
+    #[tool_op(description = "Start a fresh conversation for an agent, which becomes its current one. Its manager, or whom its conversation list allows. Returns the conversation's id.", returns = u64, example = examples::new_thread)]
+    NewThread { agent: AccountNumber },
+    #[tool_op(description = "Start a conversation that begins from the agent's current one (its frames, summary included), which becomes current. Its manager, or whom its conversation list allows. Returns the conversation's id.", returns = u64, example = examples::fork_thread)]
+    ForkThread { agent: AccountNumber },
+    #[tool_op(description = "Open a conversation for an agent bound to a place (a chat channel or a thread): what's heard there goes to it. Any account; refused while the agent has one open there. Returns the conversation's id.", returns = u64, example = examples::open_thread)]
+    OpenThread { agent: AccountNumber, place: Place },
+    #[tool_op(description = "As an agent harness runs: run an op of target as yourself at a later height, waking thread with what it did. Returns the booking's entry.", example = examples::book)]
     Book {
         height: u64,
         target: String,
         payload: Vec<u8>,
         thread: Option<u64>,
     },
-    Unbook {
-        entry: u64,
-    },
+    #[tool_op(description = "Cancel a booked run before it runs. The agent that booked it.", example = examples::unbook)]
+    Unbook { entry: u64 },
+    #[tool_op(description = "Harness's own scheduled entry only: runs a booked op at its block.")]
     RunBooked,
-    Resume {
-        thread: u64,
-    },
-    Report {
-        manager: AccountNumber,
-    },
-    Settle {
-        thread: u64,
-    },
-    Watch {
-        watch: u64,
-    },
-    Heard {
-        watch: u64,
-        event: Event,
-    },
-    SetCompactAt {
-        id: String,
-        compact_at: Option<u64>,
-    },
-    ReadBudget {
-        service: String,
-    },
-    Wait {
-        thread: u64,
-        event: WaitFor,
-    },
-    Unwait {
-        wait: u64,
-    },
+    #[tool_op(description = "Kick a conversation that stopped: it asks its model again where a lost or failed call left it idle. Anyone may.", example = examples::resume)]
+    Resume { thread: u64 },
+    #[tool_op(
+        description = "Harness's own: posts the lines it kept for a manager about its agents' conversations."
+    )]
+    Report { manager: AccountNumber },
+    #[tool_op(description = "Harness's own scheduled entry: ends a conversation's settle window.")]
+    Settle { thread: u64 },
+    #[tool_op(
+        description = "Harness's own scheduled run: opens the egress stream a streamed tool call waits on."
+    )]
+    Watch { watch: u64 },
+    #[tool_op(
+        description = "From the program bound to the egress role only: one event of a watched tool call's stream."
+    )]
+    Heard { watch: u64, event: Event },
+    #[tool_op(description = "Set or clear (null) the tokens at which a model's conversations summarize, unless an agent's config sets its own. The model's owner, or whom the owner lists.", example = examples::set_compact_at)]
+    SetCompactAt { id: String, compact_at: Option<u64> },
+    #[tool_op(description = "Read a service's usage windows from its ccs status into harness's budget rows. Anyone may.", example = examples::read_budget)]
+    ReadBudget { service: String },
+    #[tool_op(description = "As an agent harness runs: wake thread once when the event happens (a height, a pod ending, a chat message, a forge change or ref, a files path). Returns the wait's id.", returns = u64)]
+    Wait { thread: u64, event: WaitFor },
+    #[tool_op(description = "Cancel an open wait. The agent that made it.", example = examples::unwait)]
+    Unwait { wait: u64 },
+    #[tool_op(description = "Harness's own scheduled entry only: a wait for a height comes due.")]
     WaitDue,
-    PodWait {
-        wait: u64,
-    },
-    PodEvent {
-        wait: u64,
-        event: Event,
-    },
+    #[tool_op(description = "Harness's own scheduled entry: follows a pod a wait is open on.")]
+    PodWait { wait: u64 },
+    #[tool_op(
+        description = "From the program bound to the egress role only: one event of a pod wait's stream."
+    )]
+    PodEvent { wait: u64, event: Event },
+    #[tool_op(
+        description = "From forge only: a ref moved or a change opened, for the waits on it."
+    )]
     Forged(forge::Watched),
-    ClaimConversations {
-        agent: AccountNumber,
-    },
+    #[tool_op(description = "Claim who may start an agent's conversations: the ownership role records the row as yours, and its policy decides each later NewThread and ForkThread. The agent's manager only.", example = examples::claim)]
+    ClaimConversations { agent: AccountNumber },
     // one-time (J-011 ⑥): records owners for harness's owned rows from before the guard
+    #[tool_op(description = "One-time backfill of owners for harness's rows from before ownership was recorded, a page at a time; returns the key to resume after, or null when done.", returns = Option<Vec<u8>>, example = examples::adopt)]
     AdoptOwners {
         kind: String,
         after: Option<Vec<u8>>,
         limit: u64,
     },
     // the services a model is reached through, its record's first: harness picks among them
-    SetServices {
-        id: String,
-        services: Vec<String>,
-    },
+    #[tool_op(description = "Set every egress service a model is reached through, in order; the first becomes its record's service. The model's owner, or whom the owner lists.", example = examples::set_services)]
+    SetServices { id: String, services: Vec<String> },
+    #[tool_op(description = "ReadBudget for every service any model lists. Anyone may.", example = examples::read_budgets)]
     ReadBudgets,
     // a commit files made, told to harness while a wait for a files path is open
+    #[tool_op(description = "From files only: a commit, for the waits on a files path.")]
     Filed(files::SnapshotRow),
 }
 
@@ -813,62 +815,86 @@ pub enum Wake {
 }
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Ask,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    ::program::Ask,
+    ::program::Described,
 )]
 #[ask(Harness)]
 pub enum Query {
     #[ask(Reply::Agent(Option<AgentSetup>))]
+    #[tool_query(description = "What harness resolves for an agent: its manager, standing, config path, the config and its model or what is wrong with them, and its current conversation.", example = examples::agent)]
     Agent { agent: AccountNumber },
     #[ask(Reply::Thread(Option<ThreadRow>))]
     #[reads(state::THREADS)]
+    #[tool_query(description = "One conversation's row: its agent, manager, place, whether it's asking or idle, and its frame count.", example = examples::thread)]
     Thread { thread: u64 },
     #[ask(Reply::Threads(PageResponse<ThreadRow>))]
     #[reads(state::BY_AGENT, state::THREADS)]
+    #[tool_query(description = "An agent's conversations, newest first.", example = examples::threads)]
     Threads {
         agent: AccountNumber,
         page: PageRequest,
     },
     #[ask(Reply::Frames(PageResponse<Frame>))]
     #[reads(state::FRAMES)]
+    #[tool_query(description = "A conversation's frames in order: posts heard, turns with what the model said and its tool calls, results, notices.", example = examples::frames)]
     Frames { thread: u64, page: PageRequest },
     #[ask(Reply::Held(Vec<Body>))]
     #[reads(state::HELD)]
+    #[tool_query(description = "The inputs a conversation holds behind its running loop.", example = examples::held)]
     Held { thread: u64 },
     #[ask(Reply::Calls(PageResponse<CallRow>))]
     #[reads(state::CALLS)]
+    #[tool_query(description = "A conversation's tool calls with their state.", example = examples::calls)]
     Calls { thread: u64, page: PageRequest },
     #[ask(Reply::Tools(Vec<ToolInfo>))]
+    #[tool_query(description = "Every tool harness offers its models: name, description, input schema and whether it writes.", example = examples::tools)]
     Tools,
     #[ask(Reply::Thread(Option<ThreadRow>))]
     #[reads(state::PLACES, state::THREADS)]
+    #[tool_query(description = "The conversation an agent's input from a place (chat/<channel> or chat/<channel>/<root>) last reached.", example = examples::thread_at)]
     ThreadAt { agent: AccountNumber, place: String },
     #[ask(Reply::Model(Option<ModelRow>))]
     #[reads(state::MODELS, state::COMPACT_AT, state::WINDOWS)]
+    #[tool_query(description = "One model record with the context window harness learned, or null.", example = examples::model)]
     Model { id: String },
     #[ask(Reply::Models(PageResponse<ModelRow>))]
     #[reads(state::MODELS, state::COMPACT_AT, state::WINDOWS)]
+    #[tool_query(description = "Every model record.", example = examples::models)]
     Models { page: PageRequest },
     #[ask(Reply::Withheld(Vec<WithheldFrame>))]
     #[reads(state::WITHHELD, state::FRAMES)]
+    #[tool_query(description = "The inputs left out of a conversation's model view because the request was too long, by frame.", example = examples::withheld)]
     Withheld { thread: u64 },
     #[ask(Reply::Partial(Option<Partial>))]
     #[reads(state::PARTIALS, state::PIECES)]
+    #[tool_query(description = "The reply a model is streaming into a conversation now, or null.", example = examples::partial)]
     Partial { thread: u64 },
     /// the line the thread's agent last set with `thread_topic`, if it set one
     #[ask(Reply::Topic(Option<String>))]
     #[reads(state::TOPICS)]
+    #[tool_query(description = "The line a conversation's agent last set with thread_topic, or null.", example = examples::topic)]
     Topic { thread: u64 },
     #[ask(Reply::Threads(PageResponse<ThreadRow>))]
     #[reads(state::BOUND, state::THREADS)]
+    #[tool_query(description = "An agent's conversations bound to a place.", example = examples::bound)]
     Bound {
         agent: AccountNumber,
         page: PageRequest,
     },
     #[ask(Reply::Tally(Tally))]
     #[reads(state::TALLIES, state::FRAMES)]
+    #[tool_query(description = "A conversation's token and cost tally so far.", example = examples::tally)]
     Tally { thread: u64 },
     #[ask(Reply::Frames(PageResponse<Frame>))]
     #[reads(state::FRAMES)]
+    #[tool_query(description = "A conversation's frames from seq from on.", example = examples::frames_from)]
     FramesFrom {
         thread: u64,
         from: u64,
@@ -876,53 +902,67 @@ pub enum Query {
     },
     #[ask(Reply::Call(Option<CallRow>))]
     #[reads(state::CALLS)]
+    #[tool_query(description = "One tool call of a conversation, by its id, or null.", example = examples::call)]
     Call { thread: u64, call: String },
     #[ask(Reply::Bookings(PageResponse<Booking>))]
     #[reads(state::BOOKED, state::BOOKINGS)]
+    #[tool_query(description = "The runs an agent booked.", example = examples::bookings)]
     Bookings {
         agent: AccountNumber,
         page: PageRequest,
     },
     #[ask(Reply::Booking(Option<Booking>))]
     #[reads(state::BOOKINGS)]
+    #[tool_query(description = "One booked run by entry, and what it did once it ran, or null.", example = examples::booking)]
     Booking { entry: u64 },
     #[ask(Reply::UsageWindow(Option<UsageWindow>))]
     #[reads(state::USAGE)]
+    #[tool_query(description = "The last usage window a service's answers reported (utilization and reset), or null.", example = examples::usage_window)]
     UsageWindow { service: String },
     #[ask(Reply::Settling(Option<SettleWindow>))]
     #[reads(state::SETTLING)]
+    #[tool_query(description = "A conversation's settle window, or null.", example = examples::settling)]
     Settling { thread: u64 },
     #[ask(Reply::Budget(BudgetReport))]
     #[reads(state::BUDGETS, state::PACES, state::FLIGHTS, state::READS)]
+    #[tool_query(description = "Every model service account's usage windows, calls per minute and when it runs out.", example = examples::budget)]
     Budget,
     #[ask(Reply::Waits(PageResponse<WaitRow>))]
     #[reads(state::WAITING, state::WAITS)]
+    #[tool_query(description = "An agent's waits, open and ended.", example = examples::waits)]
     Waits {
         agent: AccountNumber,
         page: PageRequest,
     },
     #[ask(Reply::Wait(Option<WaitRow>))]
     #[reads(state::WAITS)]
+    #[tool_query(description = "One wait by id and how it ended, or null.", example = examples::wait)]
     Wait { wait: u64 },
     #[ask(Reply::Waits(PageResponse<WaitRow>))]
     #[reads(state::ARMED, state::WAITS)]
+    #[tool_query(description = "The waits armed on one conversation.", example = examples::armed)]
     Armed { thread: u64, page: PageRequest },
     // `Agent` with the system prompt left out (an empty `system`): what a
     // list of agents, read again on every block, needs of each
     #[ask(Reply::Agent(Option<AgentSetup>))]
+    #[tool_query(description = "Agent, with the system prompt left out: what a list of agents needs of each.", example = examples::card)]
     Card { agent: AccountNumber },
     // every service a model is reached through, its record's first
     #[ask(Reply::Services(Option<Vec<String>>))]
     #[reads(state::MODELS, state::MODEL_SERVICES)]
+    #[tool_query(description = "Every service a model is reached through, its record's first, or null.", example = examples::services)]
     Services { model: String },
     #[ask(Reply::Route(Option<Route>))]
     #[reads(state::ROUTES)]
+    #[tool_query(description = "The service and account a conversation's model calls go to, or null.", example = examples::route)]
     Route { thread: u64 },
     #[ask(Reply::Routes(PageResponse<Routed>))]
     #[reads(state::ROUTES)]
+    #[tool_query(description = "Every conversation's route.", example = examples::routes)]
     Routes { page: PageRequest },
     #[ask(Reply::Answerers(PageResponse<Answerer>))]
     #[reads(state::ANSWERED)]
+    #[tool_query(description = "Which service and account answered each turn and summary of a conversation, and whether it moved there.", example = examples::answerers)]
     Answerers { thread: u64, page: PageRequest },
     // what will wake a conversation again; none when nothing will
     #[ask(Reply::Wakes(Vec<Wake>))]
@@ -936,6 +976,7 @@ pub enum Query {
         state::BOOKED,
         state::BOOKINGS
     )]
+    #[tool_query(description = "What will wake a conversation again (an unseen input, a turn, open calls, a call in flight, a retry, a settle window, a wait, a stream, a booking); none means nothing will.", example = examples::wakes)]
     Wakes { thread: u64 },
 }
 

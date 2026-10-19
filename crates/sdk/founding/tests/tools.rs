@@ -13,7 +13,6 @@ const UNDESCRIBED: &[&str] = &[
     "ownership",
     "egress",
     "attribution",
-    "harness",
     "actions",
     "actions-pods",
 ];
