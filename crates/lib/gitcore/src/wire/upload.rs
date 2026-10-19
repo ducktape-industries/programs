@@ -4,7 +4,7 @@ use super::{pktline, sideband};
 use crate::error::{Error, Result};
 use crate::object::{Kind, Object, Tag};
 use crate::oid::{Hash, Oid};
-use crate::pack::PackWriter;
+use crate::pack::{PackWriter, entry};
 use crate::store::Objects;
 use std::collections::BTreeMap;
 
@@ -260,11 +260,21 @@ pub fn respond<I>(command: &Fetch, objects: I, sink: &mut dyn FnMut(&[u8])) -> R
 where
     I: ExactSizeIterator<Item = Result<Object>>,
 {
+    let entries = objects.map(|object| object.map(|object| entry(object.kind, &object.body)));
+    respond_entries(command, entries, sink)
+}
+
+// `respond` for objects already made pack entries (`pack::entry`), so a caller can make them on
+// as many threads as it has.
+pub fn respond_entries<I>(command: &Fetch, entries: I, sink: &mut dyn FnMut(&[u8])) -> Result<()>
+where
+    I: ExactSizeIterator<Item = Result<Vec<u8>>>,
+{
     let Some(first_want) = command.wants.first() else {
         return Err(Error::BadRequest);
     };
     let hash = first_want.hash();
-    let count = u32::try_from(objects.len()).map_err(|_| Error::TooManyObjects)?;
+    let count = u32::try_from(entries.len()).map_err(|_| Error::TooManyObjects)?;
     if !command.done {
         let ready = !command.wait_for_done;
         sink(&acknowledgments(&[], ready));
@@ -279,8 +289,8 @@ where
     {
         let mut write = |bytes: &[u8]| banded.write(bytes);
         let mut writer = PackWriter::new(&mut write, hash, count);
-        for object in objects {
-            writer.add(&object?);
+        for entry in entries {
+            writer.add_entry(&entry?);
         }
         writer.finish()?;
     }

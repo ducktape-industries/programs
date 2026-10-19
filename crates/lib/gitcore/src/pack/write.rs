@@ -2,7 +2,7 @@
 
 use super::{SIGNATURE, kind_code};
 use crate::error::{Error, Result};
-use crate::object::Object;
+use crate::object::{Kind, Object};
 use crate::oid::{Hash, Hasher, Oid};
 use miniz_oxide::deflate::compress_to_vec_zlib;
 
@@ -28,8 +28,12 @@ impl<'a> PackWriter<'a> {
     }
 
     pub fn add(&mut self, object: &Object) {
-        self.emit(&entry_header(kind_code(object.kind), object.body.len()));
-        self.emit(&compress_to_vec_zlib(&object.body, COMPRESSION_LEVEL));
+        self.add_entry(&entry(object.kind, &object.body));
+    }
+
+    // An entry made by `entry`, which may run on any thread.
+    pub fn add_entry(&mut self, entry: &[u8]) {
+        self.emit(entry);
     }
 
     pub fn finish(self) -> Result<Oid> {
@@ -42,6 +46,13 @@ impl<'a> PackWriter<'a> {
         self.hasher.update(bytes);
         (self.sink)(bytes);
     }
+}
+
+// One object as a pack holds it: its header, then its body compressed.
+pub fn entry(kind: Kind, body: &[u8]) -> Vec<u8> {
+    let mut out = entry_header(kind_code(kind), body.len());
+    out.extend_from_slice(&compress_to_vec_zlib(body, COMPRESSION_LEVEL));
+    out
 }
 
 fn entry_header(type_code: u8, size: usize) -> Vec<u8> {
