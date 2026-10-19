@@ -1,0 +1,22 @@
+[package]
+name = "policy-view"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+# What every view shows of the ownership program's policies: the kinds of
+# item a default names, a policy in words, and one owner's side read whole.
+# It links the program crates with `program` off, as every view does.
+[dependencies]
+identity.workspace = true
+ownership.workspace = true
+serde.workspace = true
+view.workspace = true
+
+# The test that holds `KINDS` to what each program's `TABLES` declares.
+[dev-dependencies]
+program.workspace = true
+chat.workspace = true
+forge.workspace = true
+harness.workspace = true
+egress.workspace = true

@@ -8,6 +8,7 @@ use view::testing::{StreamSender, TestAppContext};
 use view::{Theme, wire};
 
 mod phone;
+mod policies;
 
 /// A press on `key` as the host sends it, to batch several in one tick.
 fn press(cx: &TestAppContext, key: &str) -> wire::Event {
@@ -105,9 +106,19 @@ fn respond(cx: &TestAppContext) {
                     next: None,
                 })
             }
+            // Ada, whom Maya's Team policy lists and a new one adds by her number
+            identity::Query::Profile { number: 9 } => {
+                identity::Reply::Profile(Some(policies::ada()))
+            }
+            identity::Query::Resolve { references }
+                if references == [identity::Reference::Account(9)] =>
+            {
+                identity::Reply::Resolved(vec![Some(9)])
+            }
             q => panic!("unexpected query: {q:?}"),
         })
     });
+    policies::owning(cx);
     cx.host().handle::<Query<Access>>(|q| {
         Ok(match q {
             access::Query::List { program, key } if is_scout(&program, &key) => {

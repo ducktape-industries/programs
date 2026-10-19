@@ -14,6 +14,7 @@ impl Settings {
             self.create_account = Form::default();
         }
         self.session = session;
+        self.policies_reseated(cx);
         self.read_account(cx);
     }
 
@@ -22,6 +23,10 @@ impl Settings {
     pub(crate) fn select_section(&mut self, section: Section, cx: &mut Context<Self>) {
         self.section = section;
         self.close_sheet(cx);
+        self.close_policy_sheet(cx);
+        if section == Section::Policies {
+            self.refresh_policies(cx);
+        }
     }
 
     pub(crate) fn open_sheet(&mut self, sheet: Sheet, cx: &mut Context<Self>) {

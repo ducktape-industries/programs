@@ -64,6 +64,18 @@ fn sweep() {
         cx.simulate_click("settings/agents/create/cancel");
         cx.simulate_click("settings/agents/key/open");
         cx.simulate_back();
+        cx.simulate_click("settings/strip/policies");
+        cx.run_until_parked();
+        cx.simulate_click("settings/policies/2");
+        cx.simulate_click("settings/policies/2/edit");
+        cx.simulate_click("settings/policies/edit/write/specific");
+        cx.simulate_back();
+        cx.simulate_click("settings/policies/2");
+        cx.simulate_click("settings/policies/2/remove");
+        cx.run_until_parked();
+        cx.simulate_dismiss("settings/policies/sheet");
+        cx.simulate_click("settings/policies/default/kind-chat.channel");
+        cx.simulate_back();
         cx.simulate_click("settings/strip/invites");
         assert_eq!(cx.back_handler(), None);
     });

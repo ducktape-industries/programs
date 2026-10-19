@@ -25,7 +25,8 @@ mod parts;
 pub(crate) fn render(view: &Settings, cx: &mut Context<Settings>) -> impl IntoElement {
     let theme = *cx.global::<Theme>();
     let ladder = &design::TOUCH;
-    let sheet = agents::sheet(view, cx, ladder, &theme);
+    let sheet = agents::sheet(view, cx, ladder, &theme)
+        .or_else(|| crate::ui::policies::sheet(view, cx, ladder, &theme));
     div()
         .id("settings")
         .size_full()
@@ -35,7 +36,7 @@ pub(crate) fn render(view: &Settings, cx: &mut Context<Settings>) -> impl IntoEl
         .text_color(theme.foreground)
         .text_type(ladder.body)
         .when(sheet.is_some(), |root| {
-            root.on_back(cx.listener(|v: &mut Settings, _: &BackEvent, _, cx| v.close_sheet(cx)))
+            root.on_back(cx.listener(|v: &mut Settings, _: &BackEvent, _, cx| v.back(cx)))
         })
         .child(account::screen(view, cx, ladder, &theme))
         .children(sheet)

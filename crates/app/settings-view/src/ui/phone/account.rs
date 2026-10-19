@@ -43,6 +43,7 @@ pub(super) fn screen(
     let pane = match section {
         Section::Account => account_pane(view, cx, ladder, theme),
         Section::Agents => agents::pane(view, cx, ladder, theme),
+        Section::Policies => crate::ui::policies::pane(view, cx, ladder, theme),
         Section::Invites => {
             quiet("settings/invite/unsupported", NO_INVITES, ladder, theme).into_any_element()
         }

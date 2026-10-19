@@ -29,15 +29,29 @@ pub struct Settings {
     /// the one suspend, resume or revoke in flight
     pub(crate) agent_standing: Form,
     pub(crate) answering: BTreeMap<u64, Answering>,
+    // the reader's policies and defaults, read while the Policies pane is open
+    pub(crate) holdings: Loadable<policy_view::Holdings>,
+    // the sheet open over the Policies pane, on either design
+    pub(crate) policy_sheet: Option<PolicySheet>,
+    pub(crate) policy_form: PolicyForm,
+    // how many items are on the policy a Remove or Move sheet is about
+    pub(crate) policy_items: Loadable<usize>,
+    // the one Remove, Move or default in flight from its sheet
+    pub(crate) policy_write: Form,
 }
 
 impl Settings {
     pub(crate) fn sections(&self) -> Vec<Section> {
         let has_account = matches!(self.account.ready(), Some(Some(Seat::Account(_))));
-        [Section::Account, Section::Agents, Section::Invites]
-            .into_iter()
-            .filter(|section| *section != Section::Agents || has_account)
-            .collect()
+        [
+            Section::Account,
+            Section::Agents,
+            Section::Policies,
+            Section::Invites,
+        ]
+        .into_iter()
+        .filter(|section| has_account || !matches!(section, Section::Agents | Section::Policies))
+        .collect()
     }
 
     /// A write of Account's is in flight, any form's (Expo `useBusy`'s
@@ -122,8 +136,9 @@ impl Answering {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Choice {
+    #[default]
     Manager,
     Specific,
     Anyone,
@@ -162,6 +177,8 @@ pub(crate) enum Section {
     #[default]
     Account,
     Agents,
+    // listed, as Agents is, only for an account
+    Policies,
     Invites,
 }
 
@@ -170,6 +187,7 @@ impl Section {
         match self {
             Self::Account => "Account",
             Self::Agents => "Agents",
+            Self::Policies => "Policies",
             Self::Invites => "Invites",
         }
     }
@@ -177,6 +195,7 @@ impl Section {
         match self {
             Self::Account => "account",
             Self::Agents => "agents",
+            Self::Policies => "policies",
             Self::Invites => "invites",
         }
     }
@@ -203,4 +222,29 @@ pub(crate) enum Problem {
     /// it did not land, worded as every view words it
     /// (`design::failure`)
     Refused(String),
+}
+
+// A sheet over the Policies pane, on either design: one policy's actions, its form (a new
+// policy's with none), its removal, the move of everything on it, or what new items in a scope
+// use.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum PolicySheet {
+    Actions(u64),
+    Edit(Option<u64>),
+    Remove(u64),
+    Move(u64),
+    Default(#[serde(with = "view::borsh_bytes")] ownership::Scope),
+}
+
+// A policy as its sheet holds it: the name typed (its form's busy and problem are the save's),
+// who may write, the parties a Specific policy lists with the names known for them, and the
+// person typed to add.
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub(crate) struct PolicyForm {
+    pub(crate) name: Form,
+    pub(crate) grant: Choice,
+    #[serde(with = "view::borsh_bytes")]
+    pub(crate) listed: Vec<ownership::Party>,
+    pub(crate) names: BTreeMap<u64, String>,
+    pub(crate) person: Form,
 }

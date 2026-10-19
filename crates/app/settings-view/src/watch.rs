@@ -1,11 +1,12 @@
 //! What Account follows while it is open: the session, and the live heads
-//! of identity, valset and access. Every follower says what a refusal means to it;
+//! of identity, valset, access and ownership. Every follower says what a refusal means to it;
 //! none ends on one.
 use view::prelude::*;
 
 use crate::Settings;
 use access::Access;
 use identity::Identity;
+use ownership::Ownership;
 use valset::Valset;
 
 impl Settings {
@@ -34,6 +35,12 @@ impl Settings {
         cx.follow::<Changes<Access>>((), |view, head, cx| match head {
             Ok(_) => view.refresh_account(cx),
             Err(refusal) => cx.log_refused("access's live heads", &refusal),
+        })
+        .detach();
+        // one of the reader's policies, defaults or open policy may be among what it wrote
+        cx.follow::<Changes<Ownership>>((), |view, head, cx| match head {
+            Ok(change) => view.ownership_moved(change, cx),
+            Err(refusal) => cx.log_refused("ownership's live heads", &refusal),
         })
         .detach();
     }

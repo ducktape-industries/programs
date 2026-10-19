@@ -1,4 +1,4 @@
-//! The Account screen: a left menu (Account, Agents, Invites) and the one
+//! The Account screen: a left menu (Account, Agents, Policies, Invites) and the one
 //! pane it has open. `render` reads the state and changes nothing; presses
 //! land in `actions.rs`.
 use view::prelude::*;
@@ -12,6 +12,7 @@ use view::design::Ladder;
 
 mod account;
 pub(crate) mod phone;
+mod policies;
 mod shared;
 
 /// The left menu's width.
@@ -28,8 +29,10 @@ pub(crate) fn render(view: &Settings, cx: &mut Context<Settings>) -> impl IntoEl
     let body = match section {
         Section::Account => account::account(view, cx, &theme, ladder),
         Section::Agents => account::agents_pane(view, cx, &theme, ladder),
+        Section::Policies => policies::pane(view, cx, ladder, &theme),
         Section::Invites => invites(view, cx, &theme, ladder),
     };
+    let sheet = policies::sheet(view, cx, ladder, &theme);
     div()
         .id("settings")
         .flex()
@@ -54,6 +57,7 @@ pub(crate) fn render(view: &Settings, cx: &mut Context<Settings>) -> impl IntoEl
                         .child(body),
                 ),
         )
+        .children(sheet)
 }
 
 fn nav(

@@ -36,7 +36,7 @@ NOTIFIERS := chat-view forge-view
 # read their contracts: `programs`'s signing deps are dev-only, and `-e
 # normal` below is what says so. Every program crate is linked with `program`
 # off, which is what a plain `-p` build below checks.
-VIEW_LINKABLE := ducklink program view-wire view design store programs valset identity settings-view chat forge activity files egress attribution harness actions actions-pods
+VIEW_LINKABLE := ducklink program view-wire view design store programs valset identity settings-view chat forge activity files egress attribution harness actions actions-pods ownership policy-view
 VIEW_FORBIDDEN := blst commonware-cryptography wasm-bindgen js-sys web-sys
 
 # Cargo uses this directory for both workspaces.

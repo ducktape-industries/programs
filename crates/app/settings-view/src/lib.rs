@@ -11,6 +11,7 @@
 //! presses land in `actions.rs`; `ui/` (the desktop) and `ui/phone/` (the
 //! phone) draw and never mutate, both worded by `words.rs`.
 mod actions;
+mod policies;
 mod queries;
 mod state;
 mod ui;
@@ -23,7 +24,8 @@ use view::prelude::*;
 
 impl View for Settings {
     const NAME: &'static str = "Account";
-    const DESCRIPTION: &'static str = "Your account, its keys, the agents it manages, and invites.";
+    const DESCRIPTION: &'static str =
+        "Your account, its keys, the agents it manages, your policies, and invites.";
     const ICON: &'static str = "icons/circle-user.svg";
     const TINT: Tint = Tint::Pink;
     const CAPABILITIES: &'static [Capability] = &[

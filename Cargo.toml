@@ -9,7 +9,7 @@
 #                   natively), `store` (optional typed tables and paging over
 #                   program's contexts), `ducklink` (the `duck://`
 #                   grammar), the view contract (`view-wire`,
-#                   `view`, `design`), and `conformance` (the
+#                   `view`, `design`, `policy-view`), and `conformance` (the
 #                   role suite a program proves it fills a role with)
 #   crates/system/  the boot set: programs, valset, identity and blobs, one
 #                   crate each in the same shape as the app programs; the
@@ -47,6 +47,7 @@ members = [
     "crates/sdk/view-wire",
     "crates/sdk/view",
     "crates/sdk/view-derive",
+    "crates/sdk/policy-view",
     "crates/sdk/founding",
     "crates/system/programs",
     "crates/system/valset",
@@ -97,6 +98,7 @@ view-wire = { path = "crates/sdk/view-wire" }
 describe = { path = "crates/sdk/describe" }
 conformance = { path = "crates/sdk/conformance" }
 view = { path = "crates/sdk/view" }
+policy-view = { path = "crates/sdk/policy-view" }
 gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpui-pre", rev = "c698ed2c7e8eeed46641e5ea9622ee55b84b1486", default-features = false }
 programs = { path = "crates/system/programs" }
 valset = { path = "crates/system/valset" }
@@ -184,6 +186,8 @@ opt-level = 3
 [profile.release.package.explorer-view]
 opt-level = 3
 [profile.release.package.settings-view]
+opt-level = 3
+[profile.release.package.policy-view]
 opt-level = 3
 [profile.release.package.files-view]
 opt-level = 3
