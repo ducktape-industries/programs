@@ -55,6 +55,53 @@ fn a_diff_applied_to_the_old_tree_is_the_new_tree() {
     assert!(diff(&mut new.clone(), &mut new).is_empty());
 }
 
+// A keyed list edited in its middle sends the edit and nothing more: a
+// row inserted is one `Insert`, a row taken out one `Remove`, a row moved
+// one `Move`, and the rows around it are never sent again (J-086).
+#[test]
+fn a_keyed_list_edited_in_its_middle_sends_only_the_edit() {
+    let rows = |keys: &[usize]| {
+        column(
+            keys.iter()
+                .map(|key| keyed(&format!("row-{key}"), &format!("row {key}")))
+                .collect(),
+        )
+    };
+    let all: Vec<usize> = (0..100).collect();
+    let mut inserted = all.clone();
+    inserted.insert(50, 1_000);
+    let mut removed = all.clone();
+    removed.remove(50);
+    let mut moved = all.clone();
+    let row = moved.remove(70);
+    moved.insert(20, row);
+    let mut swapped = all.clone();
+    swapped.swap(40, 41);
+    for (new, want) in [
+        (inserted, "insert"),
+        (removed, "remove"),
+        (moved, "move"),
+        (swapped, "move"),
+    ] {
+        let (old, new) = (rows(&all), rows(&new));
+        let patches = diff(&mut old.clone(), &mut new.clone());
+        let kinds: Vec<&str> = patches
+            .iter()
+            .map(|patch| match patch {
+                Patch::Replace { .. } => "replace",
+                Patch::Props { .. } => "props",
+                Patch::Insert { .. } => "insert",
+                Patch::Remove { .. } => "remove",
+                Patch::Move { .. } => "move",
+            })
+            .collect();
+        assert_eq!(kinds, [want], "{patches:#?}");
+        let mut applied = old;
+        apply(&mut applied, patches, &held()).unwrap();
+        assert_eq!(applied, new, "{want}");
+    }
+}
+
 /// A node that gains its first interaction, or loses its last, is the
 /// same node with other fields: one `Props` that carries the interactivity
 /// it has now (or none), and its children stay where they are.
