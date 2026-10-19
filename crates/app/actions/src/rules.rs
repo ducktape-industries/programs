@@ -9,8 +9,8 @@ use forge::{ChangeState, CheckState, Content, EntryKind, Revision, Watched};
 use store::Item;
 
 use crate::state::{
-    ASKS, BY_COMMIT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, LINES, MET, NEEDS, OFFERING, OUTPUTS,
-    PREVIEWING, QUEUED, RUNNERS, RUNS, SOURCES, TARGETS,
+    ASKS, BY_COMMIT, BY_EVENT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, LINES, MET, NEEDS, OFFERING,
+    OUTPUTS, PREVIEWING, QUEUED, RUNNERS, RUNS, SOURCES, TARGETS,
 };
 use crate::workflow::{self, Planned};
 use crate::{
@@ -389,6 +389,7 @@ fn record(
         notify: named.notify,
     };
     RUNS.put(ctx, &id, &run);
+    BY_EVENT.insert(ctx, &(run.repo.clone(), abi::encode(&run.event), id));
     if let Some(line) = line_of(&run.event) {
         LINES.insert(ctx, &(run.repo.clone(), line, id));
     }
@@ -794,6 +795,19 @@ pub(crate) fn queued(ctx: &QueryCtx, page: &PageRequest) -> Result<PageResponse<
 
 pub(crate) fn run(ctx: &QueryCtx, id: u64) -> Result<Option<RunRow>, Error> {
     RUNS.get(ctx, &id)
+}
+
+pub(crate) fn runs(
+    ctx: &QueryCtx,
+    repo: &str,
+    event: &Event,
+    page: &PageRequest,
+) -> Result<PageResponse<RunRow>, Error> {
+    let event = (repo.to_owned(), abi::encode(event));
+    BY_EVENT.range_of(ctx, &event, page)?.try_map(|(_, _, id)| {
+        RUNS.get(ctx, &id)?
+            .ok_or_else(|| corrupt("r/", &id.to_be_bytes(), "an indexed run is missing"))
+    })
 }
 
 pub(crate) fn runners(

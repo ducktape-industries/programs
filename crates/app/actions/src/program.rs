@@ -4,7 +4,7 @@ use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx, Reply as 
 
 use crate::rules::{
     asks, check, checks, claim, needs, outputs, outputs_of, previewing, queued, register, replied,
-    report, rerun, run, runners, trigger, watched,
+    report, rerun, run, runners, runs, trigger, watched,
 };
 use crate::{Op, PROGRAM, Query, Reply};
 
@@ -60,6 +60,7 @@ impl Program for Actions {
             Query::Asks { check } => Reply::Asks(asks(ctx, check)?),
             Query::Needs { check } => Reply::Needs(needs(ctx, check)?),
             Query::Outputs { check } => Reply::Outputs(outputs_of(ctx, check)?),
+            Query::Runs { repo, event, page } => Reply::Runs(runs(ctx, &repo, &event, &page)?),
         })
     }
 }

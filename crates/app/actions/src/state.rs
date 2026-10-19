@@ -36,3 +36,7 @@ pub const NEEDS: Map<u64, Vec<String>> = Map::new("needs/");
 pub const MET: Map<u64, Vec<Need>> = Map::new("met/");
 // What each check produced, once its runner said.
 pub const OUTPUTS: Map<u64, OutputsRow> = Map::new("outputs/");
+// Index: each run by its repository and event (the event's borsh), so a branch's pushes, a
+// change's Previews or the runs triggered by hand list in one query. Runs recorded before this
+// index was kept are not in it.
+pub const BY_EVENT: Set<(String, Vec<u8>, u64)> = Set::new("e/");

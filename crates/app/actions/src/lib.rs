@@ -14,7 +14,7 @@ pub use store::{PageRequest, PageResponse};
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
-use crate::state::{ASKS, BY_COMMIT, CHECKS, MET, NEEDS, OUTPUTS, QUEUED, RUNNERS, RUNS};
+use crate::state::{ASKS, BY_COMMIT, BY_EVENT, CHECKS, MET, NEEDS, OUTPUTS, QUEUED, RUNNERS, RUNS};
 
 pub const PROGRAM: &str = "actions";
 // Where a repository keeps its workflows, one TOML file each.
@@ -290,6 +290,15 @@ pub enum Query {
     #[ask(Reply::Outputs(Option<OutputsRow>))]
     #[reads(OUTPUTS)]
     Outputs { check: u64 },
+    // A repository's runs of one event, oldest first: a branch's pushes (`Push`), a change's
+    // Previews (`Preview`), or the runs triggered by hand (`Manual`).
+    #[ask(Reply::Runs(PageResponse<RunRow>))]
+    #[reads(RUNS, BY_EVENT)]
+    Runs {
+        repo: String,
+        event: Event,
+        page: PageRequest,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -302,6 +311,7 @@ pub enum Reply {
     Asks(Option<Asks>),
     Needs(Vec<Need>),
     Outputs(Option<OutputsRow>),
+    Runs(PageResponse<RunRow>),
 }
 
 pub fn describe(op: &Op) -> describe::Description {

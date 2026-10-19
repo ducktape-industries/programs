@@ -381,6 +381,18 @@ impl World {
             .collect()
     }
 
+    fn runs(&self, event: Event, page: PageRequest) -> PageResponse<RunRow> {
+        let asked = Query::Runs {
+            repo: REPO.into(),
+            event,
+            page,
+        };
+        let Reply::Runs(page) = self.chain.query(PROGRAM, &asked).unwrap() else {
+            panic!("runs answer Runs");
+        };
+        page
+    }
+
     fn run(&self, id: u64) -> RunRow {
         let Reply::Run(Some(run)) = self.chain.query(PROGRAM, &Query::Run { id }).unwrap() else {
             panic!("no run {id}");
@@ -580,6 +592,37 @@ fn a_trigger_runs_every_workflow_at_a_commit() {
     let checks = world.checks(root);
     assert_eq!(jobs(&checks), [("review", State::Queued)]);
     assert_eq!(world.run(checks[0].run).event, Event::Manual);
+}
+
+// A branch's runs list a page at a time, oldest first, apart from the run a trigger made at the
+// same commit and from another branch's.
+#[test]
+fn runs_list_by_event_a_page_at_a_time_oldest_first() {
+    let mut world = world();
+    let root = world.commit(&[], &[("gates.toml", GATES)]);
+    world.push(None, root, "main");
+    let trigger = Op::Trigger {
+        repo: REPO.into(),
+        commit: root.to_hex(),
+    };
+    world.act(&trigger).unwrap();
+    let next = world.commit(&[root], &[("gates.toml", GATES)]);
+    world.push(Some(root), next, "main");
+    let ids =
+        |page: &PageResponse<RunRow>| -> Vec<u64> { page.items.iter().map(|run| run.id).collect() };
+    let main = Event::Push {
+        reference: b"refs/heads/main".to_vec(),
+    };
+    let first = world.runs(main.clone(), PageRequest::first(1));
+    assert_eq!(ids(&first), [1]);
+    let second = world.runs(main, PageRequest::resume(first.next, 1));
+    assert_eq!((ids(&second), second.next), (vec![3], None));
+    assert_eq!(second.items[0].commit, next.to_hex());
+    assert_eq!(ids(&world.runs(Event::Manual, PageRequest::default())), [2]);
+    let other = Event::Push {
+        reference: b"refs/heads/other".to_vec(),
+    };
+    assert!(world.runs(other, PageRequest::default()).items.is_empty());
 }
 
 #[test]
