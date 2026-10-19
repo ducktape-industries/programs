@@ -1,19 +1,18 @@
-//! A small embedded highlighter: one hand-written scanner over a per-language
-//! table (comments, strings, keywords), line by line, carrying only whether a
-//! block comment is still open. No grammar, no dependency: colour is a reading
-//! aid, not a parser, and a table per language is all it needs.
+//! A small embedded highlighter: one hand-written scanner over a per-language table (comments,
+//! strings, keywords), line by line, carrying only whether a block comment is still open. No
+//! grammar, no dependency: colour is a reading aid, not a parser.
 use std::ops::Range;
 use view::prelude::*;
 use view::{FontStyle, FontWeight, HighlightStyle};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Token {
+pub enum Token {
     Keyword,
     Type,
     String,
     Number,
     Comment,
-    /// a key: TOML/YAML `key =`/`key:`, a JSON object key
+    // a key: TOML/YAML `key =`/`key:`, a JSON object key
     Property,
 }
 
@@ -21,7 +20,7 @@ struct Lang {
     line_comment: &'static [&'static str],
     block_comment: Option<(&'static str, &'static str)>,
     keywords: &'static [&'static str],
-    /// `key =` / `key:` at the start of a line is a property
+    // `key =` / `key:` at the start of a line is a property
     keyed: bool,
 }
 
@@ -110,7 +109,7 @@ static JSON: Lang = Lang {
     keyed: false,
 };
 
-/// The table for a file name, by extension; `None` is plain text.
+// The table for a file name, by extension; `None` is plain text.
 fn lang(name: &str) -> Option<&'static Lang> {
     let lower = name.to_ascii_lowercase();
     let ext = lower.rsplit('.').next().unwrap_or("");
@@ -124,10 +123,10 @@ fn lang(name: &str) -> Option<&'static Lang> {
     })
 }
 
-/// The language a file's name says it is written in, as the phone's file
-/// bar names it (the Expo app's `highlight.ts` `languageOf`): markdown,
-/// else named from the table [`lang`] picks; `None` for plain text.
-pub(crate) fn language_of(name: &str) -> Option<&'static str> {
+// The language a file's name says it is written in, as the phone's file
+// bar names it (the Expo app's `highlight.ts` `languageOf`): markdown,
+// else named from the table [`lang`] picks; `None` for plain text.
+pub fn language_of(name: &str) -> Option<&'static str> {
     let lower = name.to_ascii_lowercase();
     if lower.ends_with(".md") || lower.ends_with(".markdown") {
         return Some("markdown");
@@ -155,9 +154,10 @@ pub(crate) fn language_of(name: &str) -> Option<&'static str> {
     })
 }
 
-/// Tokens of every line of `text`, by line. Markdown source is its own
-/// case: a heading or a fence line is one token, the rest is prose.
-pub(crate) fn tokens(name: &str, lines: &[&str]) -> Vec<Vec<(Range<usize>, Token)>> {
+// Tokens of every line of `text`, by line, for a file `name` or a fenced
+// block's language. Markdown source is its own case: a heading or a fence
+// line is one token, the rest is prose.
+pub fn tokens(name: &str, lines: &[&str]) -> Vec<Vec<(Range<usize>, Token)>> {
     let lower = name.to_ascii_lowercase();
     if lower.ends_with(".md") || lower == "md" || lower == "markdown" {
         return lines
@@ -255,8 +255,8 @@ fn scan(lang: &Lang, line: &str, open: &mut bool) -> Vec<(Range<usize>, Token)> 
     out
 }
 
-/// The quoted run opening at `at` and what it is: a string, or a JSON
-/// key; `None` for a lone quote, a Rust lifetime (`'a`) among them.
+// The quoted run opening at `at` and what it is: a string, or a JSON
+// key; `None` for a lone quote, a Rust lifetime (`'a`) among them.
 fn quoted(lang: &Lang, bytes: &[u8], at: usize) -> Option<(usize, Token)> {
     let byte = bytes[at];
     let end = close_quote(bytes, at)
@@ -270,8 +270,8 @@ fn quoted(lang: &Lang, bytes: &[u8], at: usize) -> Option<(usize, Token)> {
     Some((end, token))
 }
 
-/// What the word at `range` is: a config key leading its line, a keyword,
-/// a capitalised type, or nothing to colour.
+// What the word at `range` is: a config key leading its line, a keyword,
+// a capitalised type, or nothing to colour.
 fn word(lang: &Lang, line: &str, range: Range<usize>, leads: bool) -> Option<Token> {
     let bytes = line.as_bytes();
     let next = bytes[range.end..]
@@ -297,7 +297,7 @@ fn word_len(bytes: &[u8], number: bool) -> usize {
         .unwrap_or(bytes.len())
 }
 
-/// The end (exclusive) of the quoted run opening at `at`, backslash-escaped.
+// The end (exclusive) of the quoted run opening at `at`, backslash-escaped.
 fn close_quote(bytes: &[u8], at: usize) -> Option<usize> {
     let quote = bytes[at];
     let mut index = at + 1;
@@ -311,9 +311,9 @@ fn close_quote(bytes: &[u8], at: usize) -> Option<usize> {
     None
 }
 
-/// The calm palette's link and accent are ink, so keywords take the one
-/// tint it has; types and keys are ink set heavier instead of a hue.
-pub(crate) fn style(token: Token, theme: &Theme) -> HighlightStyle {
+// The calm palette's link and accent are ink, so keywords take the one
+// tint it has; types and keys are ink set heavier instead of a hue.
+pub fn style(token: Token, theme: &Theme) -> HighlightStyle {
     let color = match token {
         Token::Keyword => Some(theme.agent),
         Token::String => Some(theme.success),
@@ -373,6 +373,16 @@ mod tests {
             vec![("done */", Token::Comment)],
             "fn is not a JS keyword"
         );
+    }
+
+    #[test]
+    fn a_fenced_blocks_language_picks_its_table() {
+        let lines = ["fn main() {}"];
+        assert_eq!(
+            words(lines[0], &tokens("rust", &lines)[0]),
+            vec![("fn", Token::Keyword)]
+        );
+        assert!(tokens("", &lines)[0].is_empty(), "no language is plain");
     }
 
     #[test]

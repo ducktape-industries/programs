@@ -344,17 +344,9 @@ fn span_display(span: &Span, names: &Names) -> String {
         .unwrap_or_else(|| span.text.clone())
 }
 
-/// A line of `text` with no runs; `mono` sets it in the data face at the
-/// secondary size.
-pub(crate) fn plain_line(id: ElementId, text: &str, mono: bool) -> InteractiveText {
-    let styled = StyledText::new(text.to_owned());
-    let mut text = InteractiveText::new(id, styled).w_full();
-    if mono {
-        text = text
-            .font_family(design::fonts::FAMILY_MONO)
-            .text_size(design::text::SECONDARY);
-    }
-    text
+// A line of `text` with no runs.
+pub(crate) fn plain_line(id: ElementId, text: &str) -> InteractiveText {
+    InteractiveText::new(id, StyledText::new(text.to_owned())).w_full()
 }
 
 /// One styled run of a rich line, as a design draws it: the words it adds,
@@ -392,7 +384,7 @@ pub(crate) fn line(
 ) -> InteractiveText {
     let styled = styled_spans(spans, names);
     if styled.is_empty() {
-        return plain_line(id, &span_text(spans, names), false);
+        return plain_line(id, &span_text(spans, names));
     }
     let mut text = String::new();
     let mut highlights = Vec::new();

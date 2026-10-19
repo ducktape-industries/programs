@@ -1,0 +1,21 @@
+[package]
+name = "markdown"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+# Markdown as a document every view draws the same way: the block model, the
+# highlighter, and both designs' drawing, over `view`.
+[features]
+# The pulldown-cmark parser (`parse`, `desktop::render`). A view that reads
+# markdown text turns it on; one that keeps blocks of its own (chat-view)
+# leaves it off and links no parser.
+parse = ["dep:pulldown-cmark"]
+
+[dependencies]
+view.workspace = true
+pulldown-cmark = { workspace = true, optional = true }
+
+# `desktop`'s view test: the document view it opens is serde, as every view is
+[dev-dependencies]
+serde.workspace = true

@@ -5,8 +5,8 @@ use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
 
-use crate::highlight::{self, Token};
-use crate::markdown::{self, Block};
+use markdown::highlight::{self, Token};
+use markdown::{Block, parse};
 
 /// A text blob's rows and their highlight tokens.
 pub(crate) struct Lines {
@@ -48,7 +48,7 @@ impl BlobCache {
         {
             return blocks.clone();
         }
-        let blocks = Rc::new(markdown::parse(&String::from_utf8_lossy(bytes)));
+        let blocks = Rc::new(parse(&String::from_utf8_lossy(bytes)));
         *slot = Some((oid.to_owned(), blocks.clone()));
         blocks
     }

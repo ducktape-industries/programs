@@ -8,7 +8,7 @@
 #                   natively), `store` (optional typed tables and paging over
 #                   program's contexts), `ducklink` (the `duck://`
 #                   grammar), the view contract (`view-wire`,
-#                   `view`, `design`, `policy-view`), and `conformance` (the
+#                   `view`, `design`, `policy-view`, `markdown`), and `conformance` (the
 #                   role suite a program proves it fills a role with)
 #   crates/system/  the boot set: programs, valset, identity and blobs, one
 #                   crate each in the same shape as the app programs; the
@@ -46,6 +46,7 @@ members = [
     "crates/sdk/view",
     "crates/sdk/view-derive",
     "crates/sdk/policy-view",
+    "crates/sdk/markdown",
     "crates/sdk/founding",
     "crates/system/programs",
     "crates/system/valset",
@@ -103,6 +104,7 @@ describe = { path = "crates/sdk/describe" }
 conformance = { path = "crates/sdk/conformance" }
 view = { path = "crates/sdk/view" }
 policy-view = { path = "crates/sdk/policy-view" }
+markdown = { path = "crates/sdk/markdown" }
 gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpui-pre", rev = "2622bd8294b97a966f8febbd3b9dcb2cb5850aca", default-features = false }
 programs = { path = "crates/system/programs" }
 valset = { path = "crates/system/valset" }
@@ -150,7 +152,8 @@ sha2 = "0.10"
 tempfile = "3"
 base64 = "0.22"
 futures = "0.3"
-# Forge's markdown: CommonMark + GFM, no HTML writer and no CLI.
+# The markdown crate's parser (its `parse` feature): CommonMark + GFM, no HTML
+# writer and no CLI.
 pulldown-cmark = { version = "0.13", default-features = false }
 # duckfs path normalization: NFC so visually-identical names collide instead
 # of coexisting (a consensus-determinism requirement, not cosmetics).
@@ -196,6 +199,8 @@ opt-level = 3
 [profile.release.package.settings-view]
 opt-level = 3
 [profile.release.package.policy-view]
+opt-level = 3
+[profile.release.package.markdown]
 opt-level = 3
 [profile.release.package.files-view]
 opt-level = 3

@@ -34,7 +34,7 @@ pub(crate) fn render(
                 .pb(design::space::LG)
                 .border_b_1()
                 .border_color(theme.border)
-                .child(crate::ui::markdown::render(
+                .child(markdown::desktop::render(
                     "forge-change-body-text",
                     &change.body,
                     theme,

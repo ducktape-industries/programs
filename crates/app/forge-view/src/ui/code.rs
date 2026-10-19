@@ -11,12 +11,12 @@ use view::prelude::*;
 use view::{Div, Stateful};
 
 use crate::Forge;
-use crate::highlight;
 use crate::tree::{Key, Row, Slot};
 use crate::ui::components::{button, empty_state, heading, id, path_text, quiet};
-use crate::ui::{markdown, staged};
+use crate::ui::staged;
 use crate::words;
 use forge::{BlobView, Content, EntryKind, Query, Reply};
+use markdown::desktop::source_line;
 use view::design::Ladder;
 
 pub(crate) fn render(
@@ -393,7 +393,7 @@ fn blob_content(
             .overflow_y_scroll()
             .px_5()
             .py_4()
-            .child(markdown::render_blocks(
+            .child(markdown::desktop::render_blocks(
                 "forge-blob-markdown",
                 &forge.blob_cache.doc(oid, &blob.bytes),
                 theme,
@@ -489,28 +489,4 @@ pub(crate) fn join(dir: &[u8], name: &[u8]) -> Vec<u8> {
     path.push(b'/');
     path.extend_from_slice(name);
     path
-}
-
-/// One source line as mono rich text in its tokens' colours.
-pub(crate) fn source_line(
-    element_id: ElementId,
-    text: &str,
-    tokens: &[(Range<usize>, highlight::Token)],
-    theme: &Theme,
-) -> AnyElement {
-    let styled = StyledText::new(text.to_owned()).with_highlights(
-        tokens
-            .iter()
-            .map(|(range, token)| (range.clone(), highlight::style(*token, theme))),
-    );
-    div()
-        .id(element_id)
-        .flex_1()
-        .min_w(px(0.))
-        .font_family(design::fonts::FAMILY_MONO)
-        .text_size(design::text::SECONDARY)
-        .text_color(theme.foreground)
-        .whitespace_nowrap()
-        .child(styled)
-        .into_any_element()
 }

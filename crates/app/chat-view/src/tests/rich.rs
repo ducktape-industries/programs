@@ -65,7 +65,7 @@ fn rich_message_keeps_styles_and_dispatches_each_link_by_value() {
     else {
         panic!("message paragraph is one rich text node");
     };
-    assert_eq!(text, "bold italic first @reviewer code");
+    assert_eq!(text, "bold italic first @reviewer  code ");
     let wire::RichTextRuns::Highlights(highlights) = runs else {
         panic!("chat authors highlight ranges");
     };
@@ -289,4 +289,63 @@ fn an_offset_landing_late_moves_the_day_dividers() {
         "Seoul's midnight falls between"
     );
     assert!(cx.has_text("25 Sep 2026"));
+}
+
+// A table and a heading typed into a message draw as the shared ones (the
+// markdown crate's), the table's marks kept and its separator gone, and the
+// line after the table stays a paragraph.
+#[test]
+fn a_typed_table_and_heading_draw_as_the_shared_ones() {
+    let (mut cx, view) = opened();
+    let text =
+        "## Footprint\n| share | idle |\n|---|---|\n| **total** | 104.8 |\n| heap | 30.9 |\nafter";
+    cx.update(&view, |chat, _, cx| {
+        let mut table = parsed_row(3, 7, text);
+        table.message_id = "table".into();
+        let room = chat.room.as_mut().unwrap();
+        room.messages.ready_mut().unwrap().push(table);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(
+        cx.find("chat-message-table-block-0-h").is_some(),
+        "{:?}",
+        cx.texts()
+    );
+    assert!(cx.find("chat-message-table-block-1-table").is_some());
+    let Some(wire::Node::RichText { text, runs, .. }) = cx.find("chat-message-table-block-1-1-0")
+    else {
+        panic!("a body cell is one rich text node");
+    };
+    assert_eq!(text, "total");
+    let wire::RichTextRuns::Highlights(highlights) = runs else {
+        panic!("the cell's marks are highlight ranges");
+    };
+    assert!(highlights[0].1.font_weight.is_some(), "total stays bold");
+    assert!(cx.has_text("30.9") && !cx.has_text("|---|---|"));
+    assert!(cx.find("chat-message-table-block-5").is_some());
+}
+
+// `CHAT_SCREEN_EXPORT=1` writes a room holding a typed table, a heading and
+// a fenced block for the app's node-less renderer, as the desktop draws it.
+#[test]
+fn export_markdown_screens() {
+    if std::env::var_os("CHAT_SCREEN_EXPORT").is_none() {
+        return;
+    }
+    let (mut cx, view) = opened();
+    cx.update(&view, |chat, _, cx| {
+        let room = chat.room.as_mut().unwrap();
+        room.messages = Loadable::Ready(vec![parsed_row(1, 7, TYPED_TABLE)]);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let out =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/chat/fixtures");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::write(
+        out.join("markdown-desktop.json"),
+        serde_json::to_vec(&cx.whole_frame()).unwrap(),
+    )
+    .unwrap();
 }

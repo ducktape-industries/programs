@@ -12,7 +12,6 @@ use view::design::{Kind, Ladder, Nav};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
 
-use super::document;
 use super::parts::{self, Row, Tint, Tone};
 use super::tabs;
 use crate::Forge;
@@ -22,6 +21,7 @@ use crate::markdown;
 use crate::select::{ChangeEvent, Standings};
 use crate::state::{ChangeTab, Sheet, change_key, verdict_label};
 use crate::words::{self, path_text};
+use ::markdown::phone as document;
 use forge::{Change, ChangeState, Content, FileDiff, Principal, Reply, Review, Verdict};
 use view::design::short_hex;
 
@@ -270,7 +270,7 @@ fn timeline(
         .map(|(.., reviews)| reviews.items.as_slice())
         .unwrap_or_default();
     let body = (!change.body.trim().is_empty()).then(|| {
-        let blocks = markdown::parse(&change.body);
+        let blocks = ::markdown::parse(&change.body);
         let links = markdown::links(Vec::new(), cx);
         div().p(design::space::BLOCK).child(document::markdown(
             "forge-change-body",

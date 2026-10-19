@@ -9,7 +9,6 @@ pub(crate) mod components;
 pub(crate) mod conversation;
 pub(crate) mod diff;
 pub(crate) mod dock;
-pub(crate) mod markdown;
 pub(crate) mod phone;
 pub(crate) mod readme;
 pub(crate) mod refs;

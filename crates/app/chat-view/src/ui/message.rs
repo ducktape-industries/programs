@@ -11,7 +11,7 @@ use chat::view::Names;
 use chat::{Block, Principal, Span};
 mod controls;
 pub(crate) mod rich;
-use crate::message::plain_line;
+use crate::markup::{Piece, opens, pieces};
 use crate::words;
 use controls::{Face, action_button, reaction_button, replies_button};
 use rich::rich_line;
@@ -589,10 +589,17 @@ fn blocks(
     }
     let empty = Names::empty();
     let names = chat.names.ready().unwrap_or(&empty);
-    let blocks = message.blocks.iter().enumerate();
-    blocks
-        .map(|(index, block)| {
-            block_view(chat, message, index, block, names, cx, theme).into_any_element()
+    pieces(&message.blocks, names)
+        .into_iter()
+        .map(|(index, piece)| match piece {
+            Piece::Chat(block) => block_view(chat, message, index, block, names, cx, theme),
+            Piece::Markdown(block) => {
+                let key = format!("chat-message-{}-block-{index}", message.id);
+                div()
+                    .cursor_text()
+                    .child(markdown::desktop::block(&key, &block, theme, &opens(cx)))
+                    .into_any_element()
+            }
         })
         .collect()
 }
@@ -836,29 +843,25 @@ fn block_view(
             .w_full()
             .bg(theme.border)
             .into_any_element(),
+        // its language over the shared code panel, coloured by it
         Block::Code { lang, text } => {
-            let mut code = div()
+            let lang = lang.as_deref().unwrap_or_default();
+            let caption = (!lang.is_empty()).then(|| {
+                div()
+                    .text_size(design::text::CAPTION)
+                    .text_color(theme.muted)
+                    .child(lang.to_owned())
+            });
+            let key = format!("chat-message-{}-block-{index}", message.id);
+            div()
                 .id(id)
                 .flex()
                 .flex_col()
                 .gap_1()
-                .p_2()
-                .bg(theme.surface)
-                .cursor_text();
-            if let Some(lang) = lang.as_ref().filter(|lang| !lang.is_empty()) {
-                code = code.child(
-                    div()
-                        .text_size(design::text::CAPTION)
-                        .text_color(theme.muted)
-                        .child(lang.clone()),
-                );
-            }
-            code.child(plain_line(
-                format!("chat-message-{}-block-{index}-code", message.id).into(),
-                text,
-                true,
-            ))
-            .into_any_element()
+                .cursor_text()
+                .children(caption)
+                .child(markdown::desktop::code(&key, lang, text, theme))
+                .into_any_element()
         }
         Block::Quote(spans) => div()
             .border_l_2()

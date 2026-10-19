@@ -13,7 +13,6 @@ use view::design::{Kind, Ladder, TextType};
 use view::prelude::*;
 use view::{Div, Paged, Stateful};
 
-use super::document;
 use super::parts::{self, Chip, Row, Tone};
 use crate::id;
 use crate::list;
@@ -23,6 +22,7 @@ use crate::tree::{self, Slot};
 use crate::words::{self, ref_label};
 use crate::{Forge, Stage};
 use forge::{BlobView, ChangeSummary, CommitInfo, Content, Judgment, Query, Reply};
+use markdown::phone as document;
 
 /// The open tab's body.
 pub(super) fn render(

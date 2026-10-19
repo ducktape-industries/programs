@@ -33,6 +33,8 @@ abi.workspace = true
 # who can edit a room or a message: ownership's answers, in policy-view's words
 ownership.workspace = true
 policy-view.workspace = true
+# code blocks, tables and headings drawn as forge-view draws them, with no parser
+markdown.workspace = true
 # widgets: a widget file's TOML, and any program's query and reply as JSON
 # by the schema its code carries
 toml.workspace = true

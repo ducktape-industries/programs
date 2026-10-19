@@ -20,17 +20,17 @@ use view::design::{Kind, Ladder};
 use view::prelude::*;
 use view::{Div, FontWeight, ListAlignment, ListOffset, ListState, Stateful};
 
-use super::document;
 use super::parts::{self, Tint};
 use super::review;
 use crate::Forge;
-use crate::highlight::{self, Token};
 use crate::id;
 use crate::select::{Published, path_of};
 use crate::state::Anchor;
 use crate::words::path_text;
 use crate::words::{self, file_status, why_no_lines};
 use forge::{FileDiff, LineKind};
+use markdown::highlight::{self, Token};
+use markdown::phone as document;
 
 /// The gutter's width and the marker's column (`Lines.tsx` `GUTTER`,
 /// `MARKER`).

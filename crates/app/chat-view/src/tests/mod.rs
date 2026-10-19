@@ -635,3 +635,22 @@ fn person(number: u64, name: &str) -> chat::Profile {
         kind: chat::Kind::User,
     }
 }
+
+// j-131 message 15's table as it was typed, under a heading, then a fenced
+// block: what the markdown screens show.
+const TYPED_TABLE: &str = "## First macOS table
+| footprint share (MiB) | idle | chat + 5 rooms | Δ |
+|---|---|---|---|
+| **total** (phys_footprint, matches Activity Monitor) | 104.8 | 151.3 | +46.5 |
+| heap, dirty pages of the malloc regions | 30.9 | 60.6 | +29.7 |
+| ↳ of which the allocator says is in use | 24.3 | 35.7 | +11.4 |
+| GPU (OS regions: IOAccelerator + IOSurface), dirty | 54.0 | 63.5 | +9.5 |
+| untagged anonymous (wasm memory), dirty | 1.4 | 8.4 | +7.0 |
+| ↳ chat/1 view, linear memory resident | — | 7.2 | |
+| notifiers | 0.5 | 0.5 | |
+| pictures + rasters | 0.0 | 0.8 | |
+The fix is one line, `#[cfg(all(test, target_os = \"linux\"))]`:
+```rust
+#[cfg(all(test, target_os = \"linux\"))]
+fn with_center(x: u32) -> u32 { x * 2 } // dead on macOS
+```";

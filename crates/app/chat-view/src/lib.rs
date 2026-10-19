@@ -28,6 +28,8 @@ mod kept;
 mod links;
 #[cfg(not(feature = "notifier"))]
 mod listing;
+#[cfg(not(feature = "notifier"))]
+mod markup;
 mod message;
 mod names;
 #[cfg(not(feature = "notifier"))]

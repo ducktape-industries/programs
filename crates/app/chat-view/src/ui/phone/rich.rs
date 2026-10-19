@@ -10,7 +10,8 @@ use view::{FontStyle, FontWeight, HighlightStyle, UnderlineStyle};
 
 use super::parts::HAIRLINE;
 use crate::Chat;
-use crate::message::{ChatMessage, ChatSpan, Run, SpanStyle, line, plain_line};
+use crate::markup::{Piece, opens, pieces};
+use crate::message::{ChatMessage, ChatSpan, Run, SpanStyle, line};
 use chat::view::Names;
 use chat::{Block, Span};
 use view::design::Ladder;
@@ -23,8 +24,6 @@ const MARKER: Pixels = px(16.);
 /// A code block's language: the eyebrow at 10 (mobile
 /// `src/chat/Rich.tsx:42`).
 const CODE_LANG: Pixels = px(10.);
-/// A code block's line (mobile `src/chat/Rich.tsx:47`).
-const CODE_LINE: Pixels = px(18.);
 
 pub(super) fn blocks(
     chat: &Chat,
@@ -41,13 +40,16 @@ pub(super) fn blocks(
     }
     let empty = Names::empty();
     let names = chat.names.ready().unwrap_or(&empty);
-    message
-        .blocks
-        .iter()
-        .enumerate()
-        .map(|(index, block)| {
+    pieces(&message.blocks, names)
+        .into_iter()
+        .map(|(index, piece)| {
             let id = format!("chat-message-{}-block-{index}", message.id);
-            block_view(chat, id, block, names, cx, theme, ladder)
+            match piece {
+                Piece::Chat(block) => block_view(chat, id, block, names, cx, theme, ladder),
+                Piece::Markdown(block) => {
+                    markdown::phone::block(&id, &block, &opens(cx), ladder, theme)
+                }
+            }
         })
         .collect()
 }
@@ -99,38 +101,26 @@ fn block_view(
     }
 }
 
-/// A code block: its language over it, the code in the data face on the
-/// raised ground, one line per line, scrolling sideways.
+// A code block: its language over it, then the shared code panel, the
+// code in the data face on the raised ground in the colours of its
+// language, scrolling sideways.
 fn code(id: String, lang: Option<&str>, text: &str, theme: &Theme, ladder: &Ladder) -> AnyElement {
-    let lang = lang.filter(|lang| !lang.is_empty()).map(|lang| {
+    let lang = lang.unwrap_or_default();
+    let eyebrow = (!lang.is_empty()).then(|| {
         design::eyebrow(lang.to_owned(), ladder, theme)
             .text_type(design::Type {
                 size: CODE_LANG,
                 ..ladder.eyebrow
             })
-            .px(design::space::LG)
             .mb(design::space::XXS)
     });
-    let lines = div()
-        .id(format!("{id}-scroll"))
-        .overflow_x_scroll()
-        .px(design::space::LG)
-        .font_family(design::fonts::FAMILY_MONO)
-        .text_type(design::Type {
-            line: Some(CODE_LINE),
-            ..ladder.code
-        })
-        .whitespace_nowrap()
-        .child(plain_line(format!("{id}-code").into(), text, false));
     div()
-        .id(id)
+        .id(id.clone())
         .flex()
         .flex_col()
         .my(design::space::XXS)
-        .py(design::space::SM)
-        .bg(theme.surface_raised)
-        .children(lang)
-        .child(lines)
+        .children(eyebrow)
+        .child(markdown::phone::code_box(&id, lang, text, ladder, theme))
         .into_any_element()
 }
 

@@ -29,7 +29,8 @@ identity.workspace = true
 # who can edit a repository or a change: ownership's answers, in policy-view's words
 ownership.workspace = true
 policy-view.workspace = true
-pulldown-cmark.workspace = true
+# documents read, highlighted and drawn: the SDK's, with its parser
+markdown = { workspace = true, features = ["parse"] }
 serde.workspace = true
 serde_json.workspace = true
 

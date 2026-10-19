@@ -1,25 +1,22 @@
-//! Forge: repositories, code, commits, refs and the Changes a reviewer
-//! lives in, on the view `View` shape.
-//!
-//! The forge program answers everything this screen shows, in borsh, through
-//! one method (`program.query`); conversation is chat's, through the method
-//! chat-view uses. Reads are a cache keyed by the query itself: `sync` asks
-//! what the current screen needs, issues what is missing, and drops what the
-//! reader has navigated away from. `render` writes only what the frame
-//! learns, the pane's width and the window's title last sent — what an
-//! event changes lands in `actions`.
-//!
-//! - `state`: what the view holds; `select`: what the screens read out of it.
-//! - `sync`: which reads the screen needs; `queries`: how one read is asked.
-//! - `navigate`, `actions`, `review`, `tree`: what an event changes.
-//! - `words`: every sentence both designs say; `markdown`, `highlight`,
-//!   `blob`: documents, source tokens and the open file, read once for
-//!   either design; `list`: a list as one Tab stop.
-//! - `ui`: the desktop's screens; `ui::phone`: the phone's (the Expo app's).
-//!
-//! What becomes a notice is forge's NOTIFIER's (`notifier.rs`): the host
-//! runs it once per network, open panes or none. The `notifier` feature
-//! builds it alone in place of the view.
+//! Forge: repositories, code, commits, refs and the Changes a reviewer lives in, on the view
+//! `View` shape. The forge program answers everything this screen shows, in borsh, through one
+//! method (`program.query`); conversation is chat's, through the method chat-view uses.
+//
+// Reads are a cache keyed by the query itself: `sync` asks what the current screen needs,
+// issues what is missing, and drops what the reader has navigated away from. `render` writes
+// only what the frame learns, the pane's width and the window's title last sent — what an event
+// changes lands in `actions`.
+//
+// - `state`: what the view holds; `select`: what the screens read out of it.
+// - `sync`: which reads the screen needs; `queries`: how one read is asked.
+// - `navigate`, `actions`, `review`, `tree`: what an event changes.
+// - `words`: every sentence both designs say; `markdown`: where a document's links go; `blob`:
+//   the open file's lines, tokens and blocks, read once for either design (the SDK's `markdown`
+//   crate parses, highlights and draws them); `list`: a list as one Tab stop.
+// - `ui`: the desktop's screens; `ui::phone`: the phone's (the Expo app's).
+//
+// What becomes a notice is forge's NOTIFIER's (`notifier.rs`): the host runs it once per
+// network, open panes or none. The `notifier` feature builds it alone in place of the view.
 mod notifier;
 #[cfg(not(feature = "notifier"))]
 mod policies;
@@ -31,8 +28,6 @@ view::export_notifier!(ForgeNotices);
 mod api;
 #[cfg(not(feature = "notifier"))]
 mod blob;
-#[cfg(not(feature = "notifier"))]
-mod highlight;
 #[cfg(not(feature = "notifier"))]
 mod list;
 #[cfg(not(feature = "notifier"))]

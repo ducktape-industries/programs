@@ -7,7 +7,7 @@ use crate::Forge;
 use crate::markdown::links;
 use crate::ui::code::no_commits;
 use crate::ui::components::{empty_state, id, path_text, quiet};
-use crate::ui::{markdown, staged};
+use crate::ui::staged;
 use crate::words;
 use forge::{BlobView, Content, Query, Reply};
 use view::design::Ladder;
@@ -93,7 +93,7 @@ fn document(
     theme: &Theme,
 ) -> Stateful<Div> {
     let body = if matches!(blob.content, Content::Text) {
-        markdown::render_blocks(
+        markdown::desktop::render_blocks(
             "forge-readme-body",
             &forge.blob_cache.doc(oid, &blob.bytes),
             theme,

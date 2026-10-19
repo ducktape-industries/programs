@@ -14,15 +14,15 @@ use view::Div;
 use view::design::{Kind, Ladder, Nav};
 use view::prelude::*;
 
-use super::document;
 use super::lines::{self, Shown};
 use super::parts;
 use super::tabs;
 use crate::Forge;
-use crate::highlight;
 use crate::id;
 use crate::words::{self, path_text, ref_label};
 use forge::{BlobView, Content, Query, Reply};
+use markdown::highlight;
+use markdown::phone as document;
 
 pub(super) fn render(
     forge: &Forge,

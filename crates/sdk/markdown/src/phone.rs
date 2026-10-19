@@ -1,11 +1,6 @@
-//! A markdown document on the phone (Expo `src/forge/Document.tsx`): the
-//! blocks `crate::markdown` parses, as the kit's text at the phone's scale.
-//! Blocks 10 apart in body text; headings medium on the heading and title
-//! roles; lists with mono markers; quotes muted behind a rule; code on
-//! `surface_raised`, highlighted, scrolling sideways; bold is medium.
-//! Links press through the caller's `OnLink`.
-//!
-//! Reads the parsed blocks; writes nothing.
+//! A markdown document on the phone (Expo `src/forge/Document.tsx`): [`Block`]s as the kit's text
+//! at the phone's scale, code on `surface_raised` in the [`highlight`]er's colours, scrolling
+//! sideways, links pressed through the caller's [`OnLink`].
 use std::ops::Range;
 
 use view::design::{Ladder, TextType, Type};
@@ -16,16 +11,17 @@ use view::{
 };
 
 use crate::highlight::{self, Token};
-use crate::id;
-use crate::markdown::{Block, OnLink, Text};
+use crate::{Block, OnLink, Text, id};
 
-/// A list item's marker column and how far its marker sits down to meet
-/// the body's first line (`Document.tsx` `item`).
+// A list item's marker column and how far its marker sits down to meet
+// the body's first line (`Document.tsx` `item`).
 const MARKER_W: Pixels = px(18.);
 const MARKER_DROP: Pixels = px(2.);
 
-/// `blocks` drawn under the element `name`.
-pub(super) fn markdown(
+// `blocks` drawn under the element `name`: blocks 10 apart in body text;
+// headings medium on the heading and title roles; lists with mono markers;
+// quotes muted behind a rule; bold is medium.
+pub fn markdown(
     name: &str,
     blocks: &[Block],
     on_link: &OnLink,
@@ -38,7 +34,19 @@ pub(super) fn markdown(
         .into_any_element()
 }
 
-/// How a column's prose reads: as it is, or muted inside a quote.
+// One block under the element `key`, in the body text the caller sets: what
+// a view that keeps blocks of its own draws each of them through.
+pub fn block(
+    key: &str,
+    block: &Block,
+    on_link: &OnLink,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> AnyElement {
+    block_element(key, block, Voice::Plain, on_link, ladder, theme)
+}
+
+// How a column's prose reads: as it is, or muted inside a quote.
 #[derive(Clone, Copy)]
 enum Voice {
     Plain,
@@ -99,9 +107,9 @@ fn block_element(
     }
 }
 
-/// A heading: medium on the heading role (level 1), the title role
-/// (level 2) or body text; 8 over it, and under the first two levels 4
-/// more and a hairline.
+// A heading: medium on the heading role (level 1), the title role
+// (level 2) or body text; 8 over it, and under the first two levels 4
+// more and a hairline.
 fn heading(
     key: &str,
     level: usize,
@@ -132,8 +140,8 @@ fn heading(
         .into_any_element()
 }
 
-/// A list item: its marker mono, muted, secondary, in its column; its
-/// body a column of its own.
+// A list item: its marker mono, muted, secondary, in its column; its
+// body a column of its own.
 fn item(
     key: &str,
     marker: &str,
@@ -166,8 +174,8 @@ fn item(
         .into_any_element()
 }
 
-/// A table: a hairline around and between its cells, the header row on
-/// `surface` and medium; cells secondary, 8 in, 4 over and under.
+// A table: a hairline around and between its cells, the header row on
+// `surface` and medium; cells secondary, 8 in, 4 over and under.
 fn table(
     key: &str,
     rows: &[Vec<Text>],
@@ -211,9 +219,9 @@ fn table(
         .into_any_element()
 }
 
-/// A fenced block (`CodeBox`): code on `surface_raised`, 12 in,
-/// highlighted, scrolling sideways.
-fn code_box(key: &str, lang: &str, text: &str, ladder: &Ladder, theme: &Theme) -> AnyElement {
+// A fenced block (`CodeBox`): code on `surface_raised`, 12 in, in the
+// colours of `lang` (a file name or a fence's language), scrolling sideways.
+pub fn code_box(key: &str, lang: &str, text: &str, ladder: &Ladder, theme: &Theme) -> AnyElement {
     let lines: Vec<&str> = text.trim_end_matches('\n').split('\n').collect();
     let tokens = highlight::tokens(lang, &lines);
     let rows = lines
@@ -234,10 +242,10 @@ fn code_box(key: &str, lang: &str, text: &str, ladder: &Ladder, theme: &Theme) -
         .into_any_element()
 }
 
-/// One source line in its tokens' colours (`Code`): keywords agent,
-/// strings success, numbers warning, comments muted italic, types and
-/// keys medium; on one line, at `role`.
-pub(super) fn code_line(
+// One source line in its tokens' colours (`Code`): keywords agent,
+// strings success, numbers warning, comments muted italic, types and
+// keys medium; on one line, at `role`.
+pub fn code_line(
     element_id: ElementId,
     line: &str,
     tokens: &[(Range<usize>, Token)],
@@ -258,8 +266,8 @@ pub(super) fn code_line(
         .child(styled)
 }
 
-/// The tokens' shared colours ([`highlight::style`]), types and keys at
-/// the Expo app's medium where the desktop sets them semibold (`Document.tsx` `Code`).
+// The tokens' shared colours ([`highlight::style`]), types and keys at
+// the Expo app's medium where the desktop sets them semibold (`Document.tsx` `Code`).
 fn token_style(token: Token, theme: &Theme) -> HighlightStyle {
     let style = highlight::style(token, theme);
     HighlightStyle {
@@ -268,9 +276,9 @@ fn token_style(token: Token, theme: &Theme) -> HighlightStyle {
     }
 }
 
-/// A run of prose (`Runs`): bold medium, italic, struck through, inline
-/// code mono on `surface_raised`, quiet muted, a link underlined and
-/// pressed through `on_link`.
+// A run of prose (`Runs`): bold medium, italic, struck through, inline
+// code mono on `surface_raised`, quiet muted, a link underlined and
+// pressed through `on_link`.
 fn runs(element_id: &str, text: &Text, on_link: &OnLink, theme: &Theme) -> AnyElement {
     let mut links = Vec::new();
     let mut targets = Vec::new();

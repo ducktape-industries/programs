@@ -25,7 +25,10 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
 - The room: its timeline (`ui/timeline.rs`, `ui/phone/timeline.rs`) and
   composer; a message's menu (desktop `ui/menu.rs` at the pointer, phone
   `ui/phone/actions.rs` as a sheet), the reaction picker and the delete
-  confirm.
+  confirm. A message's blocks draw as chat keeps them, and a run of `| … |`
+  lines under a `|---|` row as a table, a `# ` line as a heading (`markup.rs`);
+  code blocks, tables and headings draw through the SDK's `markdown` crate,
+  coloured by a block's language, with no parser linked.
 - Beside the room (desktop) or as a page (phone): the thread, the channel's
   details (`ui/side.rs::details`, `ui/phone/details.rs`) and a widget.
 - Rules: a channel's `rules` meta (`rules.rs`, `ui/rules.rs`), the text or the

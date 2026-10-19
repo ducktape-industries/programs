@@ -782,7 +782,7 @@ fn rich_text_draws_its_quote_code_list_and_divider() {
         cx.texts()
     );
     assert!(
-        cx.find("chat-message-m1-block-1-scroll").is_some(),
+        cx.find("chat-message-m1-block-1-code").is_some(),
         "code scrolls sideways"
     );
     assert!(cx.find("chat-message-m1-block-2-item").is_some());
@@ -1406,4 +1406,37 @@ fn the_channels_owner_on_record_decides_not_the_owner_the_row_names() {
         cx.texts()
     );
     assert!(!cx.has_text("Channel actions") && !cx.has_text("Add a member…"));
+}
+
+// On the phone too, a typed table and heading draw as the shared ones.
+#[test]
+fn a_typed_table_and_heading_draw_as_the_shared_ones_on_the_phone() {
+    let (mut cx, view) = in_general();
+    let text = "# Footprint\n| share | idle |\n|---|---|\n| total | 104.8 |";
+    rows_are(&mut cx, &view, vec![parsed_row(1, 7, text)]);
+    assert!(
+        cx.find("chat-message-m1-block-0-h").is_some(),
+        "{:?}",
+        cx.texts()
+    );
+    assert!(cx.find("chat-message-m1-block-1-table").is_some());
+    assert!(cx.has_text("104.8") && !cx.has_text("| total | 104.8 |"));
+}
+
+// `CHAT_SCREEN_EXPORT=1` writes the same room as the phone draws it.
+#[test]
+fn export_markdown_phone_screens() {
+    if std::env::var_os("CHAT_SCREEN_EXPORT").is_none() {
+        return;
+    }
+    let (mut cx, view) = in_general();
+    rows_are(&mut cx, &view, vec![parsed_row(1, 7, TYPED_TABLE)]);
+    let out =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/chat/fixtures");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::write(
+        out.join("markdown-phone.json"),
+        serde_json::to_vec(&cx.whole_frame()).unwrap(),
+    )
+    .unwrap();
 }

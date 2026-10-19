@@ -1,6 +1,6 @@
-//! The desktop's documents: [`crate::markdown`]'s blocks drawn as
-//! elements, styled runs over one `StyledText` per paragraph, links pressed
-//! through the caller's [`OnLink`].
+//! The desktop's documents: [`Block`]s drawn as elements, styled runs over one `StyledText` per
+//! paragraph, links pressed through the caller's [`OnLink`], code as [`source_line`]s in the
+//! [`highlight`]er's colours on a bordered panel that scrolls sideways.
 use std::ops::Range;
 
 use view::prelude::*;
@@ -9,14 +9,12 @@ use view::{
 };
 
 use crate::highlight;
-use crate::markdown::{Block, OnLink, Text, parse};
-use crate::ui::code::source_line;
-use crate::ui::components::id;
+use crate::{Block, OnLink, Text, id};
 
-/// A list item's marker column: room for a two-digit number and its dot.
+// A list item's marker column: room for a two-digit number and its dot.
 const LIST_MARKER_W: Pixels = px(18.);
 
-/// Rich text for one paragraph: styled runs, links pressed through `on_link`.
+// Rich text for one paragraph: styled runs, links pressed through `on_link`.
 fn rich(element_id: String, text: &Text, theme: &Theme, on_link: &OnLink) -> AnyElement {
     let mut links = Vec::new();
     let mut targets = Vec::new();
@@ -71,19 +69,15 @@ fn rich(element_id: String, text: &Text, theme: &Theme, on_link: &OnLink) -> Any
         .into_any_element()
 }
 
-/// A markdown body that is not a file (a change's), its links pressed
-/// through `on_link`.
-pub(crate) fn render(name: &str, text: &str, theme: &Theme, on_link: &OnLink) -> AnyElement {
-    render_blocks(name, &parse(text), theme, on_link)
+// A markdown body that is not a file (a change's), its links pressed
+// through `on_link`.
+#[cfg(feature = "parse")]
+pub fn render(name: &str, text: &str, theme: &Theme, on_link: &OnLink) -> AnyElement {
+    render_blocks(name, &crate::parse(text), theme, on_link)
 }
 
-/// Blocks [`parse`] already made, drawn under the element `name`.
-pub(crate) fn render_blocks(
-    name: &str,
-    blocks: &[Block],
-    theme: &Theme,
-    on_link: &OnLink,
-) -> AnyElement {
+// Blocks already made, drawn under the element `name`.
+pub fn render_blocks(name: &str, blocks: &[Block], theme: &Theme, on_link: &OnLink) -> AnyElement {
     column(name, blocks, theme, on_link)
         .gap_2()
         .text_size(design::text::BODY)
@@ -93,68 +87,74 @@ pub(crate) fn render_blocks(
 
 fn column(name: &str, blocks: &[Block], theme: &Theme, on_link: &OnLink) -> Stateful<Div> {
     let mut out = div().id(id(name.to_owned())).flex().flex_col().gap_2();
-    for (at, block) in blocks.iter().enumerate() {
-        let key = format!("{name}-{at}");
-        let element: AnyElement = match block {
-            Block::Heading(level, text) => {
-                let size = match level {
-                    1 => design::text::TITLE,
-                    2 => design::text::SECTION,
-                    _ => design::text::BODY,
-                };
-                let mut heading = div()
-                    .id(id(format!("{key}-h")))
-                    .text_size(size)
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .role(Role::Heading)
-                    .aria_level(*level)
-                    .pt_2()
-                    .child(rich(key, text, theme, on_link));
-                if *level <= 2 {
-                    heading = heading.pb_1().border_b_1().border_color(theme.border);
-                }
-                heading.into_any_element()
-            }
-            Block::Paragraph(text) => rich(key, text, theme, on_link),
-            Block::Item(marker, body) => div()
-                .id(id(format!("{key}-li")))
-                .flex()
-                .gap_2()
-                .child(
-                    div()
-                        .id(id(format!("{key}-marker")))
-                        .min_w(LIST_MARKER_W)
-                        .role(Role::ListMarker)
-                        .text_color(theme.muted)
-                        .font_family(design::fonts::FAMILY_MONO)
-                        .text_size(design::text::SECONDARY)
-                        .child(marker.clone()),
-                )
-                .child(
-                    column(&key, body, theme, on_link)
-                        .gap_1()
-                        .flex_1()
-                        .min_w(px(0.)),
-                )
-                .into_any_element(),
-            Block::Code(lang, text) => code(&key, lang, text, theme),
-            Block::Quote(body) => div()
-                .id(id(format!("{key}-quote")))
-                .pl_3()
-                .border_l_1()
-                .border_color(theme.border_strong)
-                .text_color(theme.muted)
-                .child(column(&key, body, theme, on_link))
-                .into_any_element(),
-            Block::Rule => div().h(px(1.)).bg(theme.border).into_any_element(),
-            Block::Table(rows) => table(&key, rows, theme, on_link),
-        };
-        out = out.child(element);
+    for (at, each) in blocks.iter().enumerate() {
+        out = out.child(block(&format!("{name}-{at}"), each, theme, on_link));
     }
     out
 }
 
-fn code(key: &str, lang: &str, text: &str, theme: &Theme) -> AnyElement {
+// One block under the element `key`, in the body text the caller sets: what
+// a view that keeps blocks of its own draws each of them through.
+pub fn block(key: &str, block: &Block, theme: &Theme, on_link: &OnLink) -> AnyElement {
+    match block {
+        Block::Heading(level, text) => {
+            let size = match level {
+                1 => design::text::TITLE,
+                2 => design::text::SECTION,
+                _ => design::text::BODY,
+            };
+            let mut heading = div()
+                .id(id(format!("{key}-h")))
+                .text_size(size)
+                .font_weight(FontWeight::SEMIBOLD)
+                .role(Role::Heading)
+                .aria_level(*level)
+                .pt_2()
+                .child(rich(key.to_owned(), text, theme, on_link));
+            if *level <= 2 {
+                heading = heading.pb_1().border_b_1().border_color(theme.border);
+            }
+            heading.into_any_element()
+        }
+        Block::Paragraph(text) => rich(key.to_owned(), text, theme, on_link),
+        Block::Item(marker, body) => div()
+            .id(id(format!("{key}-li")))
+            .flex()
+            .gap_2()
+            .child(
+                div()
+                    .id(id(format!("{key}-marker")))
+                    .min_w(LIST_MARKER_W)
+                    .role(Role::ListMarker)
+                    .text_color(theme.muted)
+                    .font_family(design::fonts::FAMILY_MONO)
+                    .text_size(design::text::SECONDARY)
+                    .child(marker.clone()),
+            )
+            .child(
+                column(key, body, theme, on_link)
+                    .gap_1()
+                    .flex_1()
+                    .min_w(px(0.)),
+            )
+            .into_any_element(),
+        Block::Code(lang, text) => code(key, lang, text, theme),
+        Block::Quote(body) => div()
+            .id(id(format!("{key}-quote")))
+            .pl_3()
+            .border_l_1()
+            .border_color(theme.border_strong)
+            .text_color(theme.muted)
+            .child(column(key, body, theme, on_link))
+            .into_any_element(),
+        Block::Rule => div().h(px(1.)).bg(theme.border).into_any_element(),
+        Block::Table(rows) => table(key, rows, theme, on_link),
+    }
+}
+
+// A fenced block: a bordered panel on `surface`, one line per line in the
+// colours of `lang` (a file name or a fence's language), scrolling sideways.
+pub fn code(key: &str, lang: &str, text: &str, theme: &Theme) -> AnyElement {
     let lines: Vec<&str> = text.split('\n').collect();
     let tokens = highlight::tokens(lang, &lines);
     let mut block = div()
@@ -172,6 +172,8 @@ fn code(key: &str, lang: &str, text: &str, theme: &Theme) -> AnyElement {
     block.into_any_element()
 }
 
+// A grid with a hairline around and between its cells, the header row first
+// on `surface` and semibold.
 fn table(key: &str, rows: &[Vec<Text>], theme: &Theme, on_link: &OnLink) -> AnyElement {
     let width = rows.iter().map(Vec::len).max().unwrap_or(0);
     let mut grid = div()
@@ -209,12 +211,36 @@ fn table(key: &str, rows: &[Vec<Text>], theme: &Theme, on_link: &OnLink) -> AnyE
     grid.into_any_element()
 }
 
-#[cfg(test)]
+// One source line as mono rich text in its tokens' colours.
+pub fn source_line(
+    element_id: ElementId,
+    text: &str,
+    tokens: &[(Range<usize>, highlight::Token)],
+    theme: &Theme,
+) -> AnyElement {
+    let styled = StyledText::new(text.to_owned()).with_highlights(
+        tokens
+            .iter()
+            .map(|(range, token)| (range.clone(), highlight::style(*token, theme))),
+    );
+    div()
+        .id(element_id)
+        .flex_1()
+        .min_w(px(0.))
+        .font_family(design::fonts::FAMILY_MONO)
+        .text_size(design::text::SECONDARY)
+        .text_color(theme.foreground)
+        .whitespace_nowrap()
+        .child(styled)
+        .into_any_element()
+}
+
+#[cfg(all(test, feature = "parse"))]
 mod view_tests {
     use view::testing::TestAppContext;
     use view::{Context, IntoElement, Render, View, Window};
 
-    /// A document that keeps each destination its `OnLink` is handed.
+    // A document that keeps each destination its `OnLink` is handed.
     #[derive(Default, serde::Serialize, serde::Deserialize)]
     struct Doc {
         pressed: Vec<String>,
@@ -228,7 +254,7 @@ mod view_tests {
         fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             let theme = *cx.global::<view::Theme>();
             let doc = cx.weak_entity();
-            let on_link: crate::markdown::OnLink = std::rc::Rc::new(move |dest, _, cx| {
+            let on_link: crate::OnLink = std::rc::Rc::new(move |dest, _, cx| {
                 doc.update(cx, |doc, cx| {
                     doc.pressed.push(dest.clone());
                     cx.notify();
@@ -244,10 +270,9 @@ mod view_tests {
         }
     }
 
-    /// Every link of a paragraph presses, a bare URL among them, and hands
-    /// the caller its destination as written: where it goes (the host, or a
-    /// file of the repository) is the caller's to decide, and
-    /// `a_relative_link_opens_its_file_in_the_code_tab` holds forge's.
+    // Every link of a paragraph presses, a bare URL among them, and hands
+    // the caller its destination as written: where it goes (the host, or a
+    // file of the repository) is the caller's to decide.
     #[test]
     fn a_pressed_link_hands_its_destination_to_the_caller() {
         let mut cx = TestAppContext::new();

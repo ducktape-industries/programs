@@ -1,24 +1,20 @@
-//! Forge on a phone: the Expo app's forge stack (`app/(tabs)/forge/**`,
-//! `_layout.tsx`), a tree of its own that the view's root picks once
-//! under a finger (`lib.rs`). It shares the model with the desktop
-//! (`state`, `select`, `navigate`, `actions`) and draws with the SDK's
-//! touch ladder; nothing in it asks which pointer it is under.
-//!
-//! One file per Expo screen, each naming its source: [`repos`] (Forge's
-//! root), [`repo`] (a repository) with its tab bodies in [`tabs`],
-//! [`change`] (a change), [`diff`] (one file of its diff), [`commit`],
-//! [`code`] (one file of the Code tab), [`new_change`] (New or Edit
-//! change) and [`review`] (Finish your review); [`document`] is the
-//! markdown they render, [`lines`] the code and diff rows, [`parts`] what
-//! several of them draw.
-//!
-//! Reads the route ([`Nav::pages`](crate::state::Nav::pages)), what lies
-//! over the page ([`Forge::overlay`]) and the open form; writes Back.
+//! Forge on a phone: the Expo app's forge stack (`app/(tabs)/forge/**`, `_layout.tsx`), a tree
+//! of its own that the view's root picks once under a finger (`lib.rs`), sharing the model with
+//! the desktop (`state`, `select`, `navigate`, `actions`) and drawing with the SDK's touch ladder.
+//
+// Nothing in it asks which pointer it is under. One file per Expo screen, each naming its source:
+// `repos` (Forge's root), `repo` (a repository) with its tab bodies in `tabs`, `change` (a
+// change), `diff` (one file of its diff), `commit`, `code` (one file of the Code tab),
+// `new_change` (New or Edit change) and `review` (Finish your review); the SDK's
+// `markdown::phone` is the markdown they render, `lines` the code and diff rows, `parts` what
+// several of them draw.
+//
+// Reads the route (`Nav::pages`), what lies over the page (`Forge::overlay`) and the open form;
+// writes Back.
 mod change;
 mod code;
 mod commit;
 mod diff;
-mod document;
 mod lines;
 mod new_change;
 mod parts;

@@ -3,8 +3,9 @@
 use super::*;
 use crate::message::{Run, line};
 
-/// The desktop's runs: bold is bold, a link and a mention in the link
-/// tone, inline code on the fenced block's ground at the paragraph's size.
+// The desktop's runs: bold is bold, a link and a mention in the link
+// tone, inline code on the raised ground at the paragraph's size with a
+// space either side, as the phone pads it and forge-view grounds it.
 pub(crate) fn rich_line(
     id: ElementId,
     spans: &[Span],
@@ -39,8 +40,9 @@ pub(crate) fn rich_line(
                 return Run::of(span, style, Some(account));
             }
             SpanStyle::Code => {
-                style.background_color = Some(theme.surface);
+                style.background_color = Some(theme.surface_raised);
                 return Run {
+                    text: format!(" {} ", span.text),
                     mono: true,
                     ..Run::of(span, style, None)
                 };

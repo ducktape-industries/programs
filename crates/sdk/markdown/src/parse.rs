@@ -1,45 +1,14 @@
 //! Markdown into blocks of rich text, by pulldown-cmark: CommonMark plus
 //! GFM tables, task lists, strikethrough and footnotes. Raw HTML stays the
 //! text it is; an image is its alt text, quiet; nothing is fetched.
-use std::ops::Range;
-
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd, TextMergeStream};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Block {
-    Heading(usize, Text),
-    Paragraph(Text),
-    /// marker (`•`, `3.`, `☐`, `☑` or a footnote's `[1]`), then its body
-    Item(String, Vec<Block>),
-    Code(String, String),
-    Quote(Vec<Block>),
-    Rule,
-    /// the header row first
-    Table(Vec<Vec<Text>>),
-}
-
-/// One run of prose and its marked ranges.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct Text {
-    pub text: String,
-    pub runs: Vec<(Range<usize>, Marks)>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct Marks {
-    pub bold: bool,
-    pub italic: bool,
-    pub strike: bool,
-    pub code: bool,
-    /// an image's alt text or a footnote reference: drawn muted
-    pub quiet: bool,
-    pub link: Option<String>,
-}
+use crate::{Block, Marks, Text};
 
 enum Frame {
     Root,
     Quote,
-    /// the next ordinal of an ordered list
+    // the next ordinal of an ordered list
     List(Option<u64>),
     Item(String),
 }
@@ -70,15 +39,11 @@ impl Builder {
     }
 
     fn push(&mut self, text: &str, marks: Marks) {
-        let start = self.text.text.len();
-        self.text.text.push_str(text);
-        if marks != Marks::default() {
-            self.text.runs.push((start..self.text.text.len(), marks));
-        }
+        self.text.push(text, marks);
     }
 
-    /// Prose outside a link: a bare `https://`, `http://` or `duck://` word
-    /// is a link too, as it was under chat's tokenizer.
+    // Prose outside a link: a bare `https://`, `http://` or `duck://` word
+    // is a link too, as it was under chat's tokenizer.
     fn prose(&mut self, text: &str) {
         let marks = self.marks();
         if marks.link.is_some() {
@@ -116,8 +81,8 @@ impl Builder {
         self.frames.last_mut().expect("root frame").1.push(block);
     }
 
-    /// Loose inline text (a tight list item's) becomes a paragraph before
-    /// anything else opens.
+    // Loose inline text (a tight list item's) becomes a paragraph before
+    // anything else opens.
     fn flush(&mut self) {
         if !self.text.text.trim().is_empty() {
             let text = self.take();
@@ -297,7 +262,7 @@ impl Builder {
     }
 }
 
-pub(crate) fn parse(text: &str) -> Vec<Block> {
+pub fn parse(text: &str) -> Vec<Block> {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_TASKLISTS
         | Options::ENABLE_STRIKETHROUGH
