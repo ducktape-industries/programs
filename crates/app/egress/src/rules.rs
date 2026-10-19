@@ -11,8 +11,8 @@ use abi::role::validators;
 use store::{PageRequest, PageResponse};
 
 use crate::state::{
-    ASSIGNED, COUNT, EARLY, Ending, NODES, REQUESTS, SERVICES, SERVING, STREAMS, Stored, Stream,
-    TURNS,
+    ASSIGNED, COUNT, EARLY, EXPIRIES, Ending, NODES, REQUESTS, SERVICES, SERVING, STREAMS, Stored,
+    Stream, TURNS,
 };
 use crate::{
     Answer, DEFAULT_WAIT, Delivery, Event, HTTP, NodeRow, Op, PROGRAM, RELAY, RESERVED, Request,
@@ -277,6 +277,15 @@ pub(crate) async fn request(
     Ok(())
 }
 
+fn expiry_of(ctx: &QueryCtx, row: &RequestRow) -> Result<u64, Error> {
+    Ok(EXPIRIES.get(ctx, &row.id)?.unwrap_or(row.expiry))
+}
+
+fn current(ctx: &QueryCtx, mut row: RequestRow) -> Result<RequestRow, Error> {
+    row.expiry = expiry_of(ctx, &row)?;
+    Ok(row)
+}
+
 fn open(ctx: &QueryCtx, id: u64) -> Result<Stored, Error> {
     REQUESTS
         .get(ctx, &id)?
@@ -286,6 +295,7 @@ fn open(ctx: &QueryCtx, id: u64) -> Result<Stored, Error> {
 fn close(ctx: &ExecCtx, stored: Stored, answer: Result<Vec<u8>, Error>) -> Result<(), Error> {
     let row = stored.row;
     REQUESTS.remove(ctx, &row.id);
+    EXPIRIES.remove(ctx, &row.id);
     ASSIGNED.remove(ctx, &(row.node.clone(), row.id));
     STREAMS.remove(ctx, &row.id);
     drop_early(ctx, row.id)?;
@@ -332,7 +342,7 @@ fn streamed(stored: &Stored) -> Result<&[u8], Error> {
 
 pub(crate) async fn answer(ctx: &Ctx, id: u64, answer: Answer) -> Result<(), Error> {
     let stored = from_its_node(ctx, id)?;
-    ctx.cancel(stored.row.expiry).await?;
+    ctx.cancel(expiry_of(ctx, &stored.row)?).await?;
     let answered = match answer {
         Answer::Output(output) => Ok(output),
         Answer::Failed(reason) => Err(failed(stored.row.request.service(), &reason)),
@@ -347,17 +357,17 @@ pub(crate) async fn events(ctx: &Ctx, events: Vec<Event>) -> Result<(), Error> {
     let mut events = events.into_iter().peekable();
     while let Some(first) = events.next() {
         let id = first.id;
-        let mut stored = from_its_node(ctx, id)?;
+        let stored = from_its_node(ctx, id)?;
         let deliver = streamed(&stored)?.to_vec();
         let mut stream = STREAMS.get(ctx, &id)?.unwrap_or_default();
         let height = ctx.env().height;
         let unmoved = stream.moved != height;
         if unmoved {
             let expires = expiry_height(height, stored.wait)?;
-            ctx.cancel(stored.row.expiry).await?;
-            stored.row.expiry = ctx.schedule(expires, PROGRAM, &Op::Expire { id }).await?;
+            ctx.cancel(expiry_of(ctx, &stored.row)?).await?;
+            let expiry = ctx.schedule(expires, PROGRAM, &Op::Expire { id }).await?;
+            EXPIRIES.put(ctx, &id, &expiry);
             stream.moved = height;
-            REQUESTS.put(ctx, &id, &stored);
         }
         let same_request = std::iter::once(first).chain(std::iter::from_fn(|| {
             events.next_if(|event| event.id == id)
@@ -475,7 +485,7 @@ pub(crate) async fn end_stream(
 /// body), so an `Http` request's call answers one type whether its reply came whole or as
 /// events; a cut answers the service's failure.
 async fn finish(ctx: &Ctx, stored: Stored, ending: Ending) -> Result<(), Error> {
-    ctx.cancel(stored.row.expiry).await?;
+    ctx.cancel(expiry_of(ctx, &stored.row)?).await?;
     let Ending { events, end } = ending;
     let ended = match &end {
         StreamEnd::Complete { status, headers } => Ok(abi::encode(&http::Response {
@@ -509,7 +519,7 @@ pub(crate) fn expire(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
         ));
     }
     let stored = open(ctx, id)?;
-    let its_expiry = stored.row.expiry == entry;
+    let its_expiry = expiry_of(ctx, &stored.row)? == entry;
     if !its_expiry {
         return Err(unauthorized(format!(
             "entry {entry} is not request {id}'s expiry"
@@ -524,12 +534,15 @@ pub(crate) fn assigned(ctx: &QueryCtx, key: &Vec<u8>) -> Result<Vec<RequestRow>,
     ASSIGNED
         .scan(ctx, ASSIGNED.prefix_of(key))?
         .into_iter()
-        .map(|(_, id)| Ok(open(ctx, id)?.row))
+        .map(|(_, id)| current(ctx, open(ctx, id)?.row))
         .collect()
 }
 
 pub(crate) fn request_row(ctx: &QueryCtx, id: u64) -> Result<Option<RequestRow>, Error> {
-    Ok(REQUESTS.get(ctx, &id)?.map(|stored| stored.row))
+    REQUESTS
+        .get(ctx, &id)?
+        .map(|stored| current(ctx, stored.row))
+        .transpose()
 }
 
 pub(crate) fn node(ctx: &QueryCtx, key: &Vec<u8>) -> Result<Option<NodeRow>, Error> {

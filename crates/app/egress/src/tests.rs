@@ -701,6 +701,30 @@ fn events_in_one_frame_are_heard_in_its_order_and_move_the_expiry_once() {
 }
 
 #[test]
+fn a_moved_expiry_leaves_the_stored_request_as_it_was_made() {
+    let chain = chain();
+    serve(&chain, ADA, &[HTTP]).unwrap();
+    stream(&chain, http_request(HTTP, MESSAGES, Vec::new()), Some(5));
+    let stored = |chain: &MockChain| {
+        let ctx = chain.host(PROGRAM).query(MockHost::env(PROGRAM));
+        crate::state::REQUESTS.get(&ctx, &1).unwrap().unwrap()
+    };
+    let made = stored(&chain);
+    for height in [3, 4] {
+        chain.at(height, 0);
+        let event = Event {
+            id: 1,
+            seq: height - 3,
+            data: b"a".to_vec(),
+        };
+        submit(&chain, &ADA, &Op::Events(vec![event])).unwrap();
+        assert_eq!(stored(&chain), made);
+        let moved = request_row(&chain, 1).unwrap().expiry;
+        assert_eq!(entry(&chain, moved).unwrap().height, height + 5);
+    }
+}
+
+#[test]
 fn a_cut_stream_fails_its_call_and_a_whole_request_takes_no_event_or_end() {
     let chain = chain();
     serve(&chain, ADA, &[HTTP, RELAY]).unwrap();

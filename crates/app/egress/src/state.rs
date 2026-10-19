@@ -48,3 +48,6 @@ pub struct Ending {
 
 pub const STREAMS: Map<u64, Stream> = Map::new("stream/");
 pub const EARLY: Map<(u64, u64), Vec<u8>> = Map::new("early/");
+// The scheduled expiry of a request whose stream moved it, apart from its row, so a moving
+// stream rewrites eight bytes a block and not the whole request.
+pub const EXPIRIES: Map<u64, u64> = Map::new("expiry/");
