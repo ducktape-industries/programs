@@ -2,7 +2,7 @@
 //! change each source ref belongs to, the runners and the counters.
 use store::{Item, Map, Set};
 
-use crate::{AccountNumber, Asks, CheckRow, RunRow, RunnerRow};
+use crate::{AccountNumber, Asks, CheckRow, Need, OutputsRow, RunRow, RunnerRow};
 
 pub const RUNS: Map<u64, RunRow> = Map::new("r/");
 pub const CHECKS: Map<u64, CheckRow> = Map::new("c/");
@@ -30,3 +30,9 @@ pub const LAST_RUN: Item<u64> = Item::new("last-run");
 pub const LAST_CHECK: Item<u64> = Item::new("last-check");
 // What each check's job asks of its pod, when its workflow states anything.
 pub const ASKS: Map<u64, Asks> = Map::new("asks/");
+// The jobs each check's job needs, when it names any.
+pub const NEEDS: Map<u64, Vec<String>> = Map::new("needs/");
+// For a check its needs held back, the passed check of each job it needs, once all have passed.
+pub const MET: Map<u64, Vec<Need>> = Map::new("met/");
+// What each check produced, once its runner said.
+pub const OUTPUTS: Map<u64, OutputsRow> = Map::new("outputs/");

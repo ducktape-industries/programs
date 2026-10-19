@@ -9,13 +9,13 @@ use forge::{ChangeState, CheckState, Content, EntryKind, Revision, Watched};
 use store::Item;
 
 use crate::state::{
-    ASKS, BY_COMMIT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, LINES, OFFERING, PREVIEWING, QUEUED,
-    RUNNERS, RUNS, SOURCES, TARGETS,
+    ASKS, BY_COMMIT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, LINES, MET, NEEDS, OFFERING, OUTPUTS,
+    PREVIEWING, QUEUED, RUNNERS, RUNS, SOURCES, TARGETS,
 };
-use crate::workflow;
+use crate::workflow::{self, Planned};
 use crate::{
-    Asks, CheckRow, Event, Job, Offer, PageRequest, PageResponse, RunRow, RunnerRow, State,
-    WORKFLOWS,
+    Asks, CheckRow, Event, Need, Offer, Output, OutputsRow, PageRequest, PageResponse, RunRow,
+    RunnerRow, State, WORKFLOWS,
 };
 
 // What started a run: a repository's commit, the event and who made it.
@@ -191,6 +191,7 @@ fn refused_offer(ctx: &ExecCtx, id: u64, runner: &str, why: &str) -> Result<(), 
     QUEUED.remove(ctx, &id);
     CHECKS.put(ctx, &id, &check);
     tell_forge(ctx, &check);
+    release(ctx, check.run)?;
     let run = RUNS
         .get(ctx, &check.run)?
         .ok_or_else(|| corrupt("r/", &check.run.to_be_bytes(), "a check's run is missing"))?;
@@ -223,11 +224,12 @@ fn open_head(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<String>, Error
 // required checks name.
 fn tell_forge(ctx: &ExecCtx, check: &CheckRow) {
     let state = match check.state {
-        State::Queued | State::Running => CheckState::Pending,
+        State::Queued | State::Running | State::Waiting => CheckState::Pending,
         State::Passed => CheckState::Passed,
         State::Failed => CheckState::Failed,
-        // forge has no word for a superseded check, and a merge reads only the newest Preview's
-        State::Errored | State::Superseded => CheckState::Errored,
+        // forge has no word for a superseded or skipped check, and a merge reads only the newest
+        // Preview's
+        State::Errored | State::Superseded | State::Skipped => CheckState::Errored,
     };
     let op = forge::Op::Status {
         repo: check.repo.clone(),
@@ -294,8 +296,8 @@ fn start(ctx: &ExecCtx, started: &Started) -> Result<(), Error> {
                     notify: workflow.notify,
                 };
                 let run = record(ctx, started, &file, named, None)?;
-                for (job, asks) in workflow.jobs {
-                    queue(ctx, &run, job, 1, asks)?;
+                for planned in workflow.jobs {
+                    queue(ctx, &run, planned, 1)?;
                 }
             }
             Ok(_) => {}
@@ -414,8 +416,11 @@ fn next(ctx: &ExecCtx, counter: &Item<u64>) -> Result<u64, Error> {
     Ok(n)
 }
 
-fn queue(ctx: &ExecCtx, run: &RunRow, job: Job, attempt: u32, asks: Asks) -> Result<(), Error> {
+// A check of the job: queued and offered, or, when it needs other jobs, waiting until they pass.
+fn queue(ctx: &ExecCtx, run: &RunRow, planned: Planned, attempt: u32) -> Result<(), Error> {
+    let Planned { job, asks, needs } = planned;
     let id = next(ctx, &LAST_CHECK)?;
+    let waits = !needs.is_empty();
     let check = CheckRow {
         id,
         run: run.id,
@@ -424,7 +429,7 @@ fn queue(ctx: &ExecCtx, run: &RunRow, job: Job, attempt: u32, asks: Asks) -> Res
         workflow: run.workflow.clone(),
         attempt,
         job,
-        state: State::Queued,
+        state: if waits { State::Waiting } else { State::Queued },
         claimant: None,
         reporter: None,
         queued: ctx.env().height,
@@ -439,12 +444,102 @@ fn queue(ctx: &ExecCtx, run: &RunRow, job: Job, attempt: u32, asks: Asks) -> Res
     }
     BY_COMMIT.insert(ctx, &(check.repo.clone(), check.commit.clone(), id));
     BY_RUN.insert(ctx, &(run.id, id));
-    QUEUED.insert(ctx, &id);
-    tell_forge(ctx, &check);
+    if waits {
+        NEEDS.put(ctx, &id, &needs);
+        tell_forge(ctx, &check);
+        return release(ctx, run.id);
+    }
+    offered(ctx, &check)
+}
+
+// A check nothing holds back: queued, told to forge and offered to every runner.
+fn offered(ctx: &ExecCtx, check: &CheckRow) -> Result<(), Error> {
+    QUEUED.insert(ctx, &check.id);
+    tell_forge(ctx, check);
     for (_, runner) in RUNNERS.all(ctx)? {
-        offer(ctx, &runner, &check);
+        offer(ctx, &runner, check);
     }
     Ok(())
+}
+
+// Each waiting check of the run whose needs have all passed is queued and offered, and one whose
+// need ended otherwise is skipped, saying which; again, until no waiting check moves, so a skip
+// reaches everything that waits on it.
+fn release(ctx: &ExecCtx, run: u64) -> Result<(), Error> {
+    loop {
+        let checks = of_run(ctx, run)?;
+        let mut moved = false;
+        for waiting in checks.iter().filter(|check| check.state == State::Waiting) {
+            let needs = NEEDS.get(ctx, &waiting.id)?.unwrap_or_default();
+            let mut check = waiting.clone();
+            match settled(&checks, &needs) {
+                Settled::Waiting => continue,
+                Settled::Passed(met) => {
+                    check.state = State::Queued;
+                    CHECKS.put(ctx, &check.id, &check);
+                    MET.put(ctx, &check.id, &met);
+                    offered(ctx, &check)?;
+                }
+                Settled::Blocked(why) => {
+                    check.state = State::Skipped;
+                    check.finished = Some(ctx.env().height);
+                    check.summary = why;
+                    CHECKS.put(ctx, &check.id, &check);
+                    tell_forge(ctx, &check);
+                }
+            }
+            moved = true;
+        }
+        if !moved {
+            return Ok(());
+        }
+    }
+}
+
+fn of_run(ctx: &QueryCtx, run: u64) -> Result<Vec<CheckRow>, Error> {
+    let mut checks = Vec::new();
+    for (_, id) in BY_RUN.scan(ctx, BY_RUN.prefix_of(&run))? {
+        checks.push(load(ctx, id)?);
+    }
+    Ok(checks)
+}
+
+enum Settled {
+    Waiting,
+    Passed(Vec<Need>),
+    Blocked(String),
+}
+
+// Where the jobs a check needs stand, each by its newest attempt in the run.
+fn settled(checks: &[CheckRow], needs: &[String]) -> Settled {
+    let mut met = Vec::new();
+    let mut waiting = false;
+    for need in needs {
+        let newest = checks
+            .iter()
+            .filter(|check| &check.job.id == need)
+            .max_by_key(|check| check.attempt);
+        match newest {
+            Some(check) if check.state == State::Passed => met.push(Need {
+                job: need.clone(),
+                check: Some(check.id),
+            }),
+            Some(check)
+                if !matches!(check.state, State::Queued | State::Running | State::Waiting) =>
+            {
+                return Settled::Blocked(format!(
+                    "needs `{need}`, whose check {} ended {}",
+                    check.id,
+                    check.state.word()
+                ));
+            }
+            _ => waiting = true,
+        }
+    }
+    match waiting {
+        true => Settled::Waiting,
+        false => Settled::Passed(met),
+    }
 }
 
 // A program runner whose labels cover the job hears the check; one that refuses leaves it
@@ -537,6 +632,7 @@ pub(crate) fn report(
     check.log = log;
     CHECKS.put(ctx, &id, &check);
     tell_forge(ctx, &check);
+    release(ctx, check.run)?;
     if matches!(state, State::Failed | State::Errored) {
         let run = RUNS
             .get(ctx, &check.run)?
@@ -556,7 +652,7 @@ fn supersede(ctx: &ExecCtx, repo: &str, line: &[u8], why: &str) -> Result<(), Er
     for (_, _, run) in LINES.scan(ctx, LINES.prefix_of(&on))? {
         for (_, id) in BY_RUN.scan(ctx, BY_RUN.prefix_of(&run))? {
             let mut check = load(ctx, id)?;
-            if !matches!(check.state, State::Queued | State::Running) {
+            if !matches!(check.state, State::Queued | State::Running | State::Waiting) {
                 continue;
             }
             check.state = State::Superseded;
@@ -631,8 +727,11 @@ fn red(ctx: &ExecCtx, run: &RunRow, check: &CheckRow, reference: &[u8], channel:
 pub(crate) fn rerun(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     ctx.sender_account()?;
     let check = load(ctx, id)?;
-    if check.state == State::Queued {
-        return Err(wrong_state(format!("check {id} is still queued")));
+    if matches!(check.state, State::Queued | State::Waiting) {
+        return Err(wrong_state(format!(
+            "check {id} is still {}",
+            check.state.word()
+        )));
     }
     let run = RUNS
         .get(ctx, &check.run)?
@@ -641,8 +740,26 @@ pub(crate) fn rerun(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
         .attempt
         .checked_add(1)
         .ok_or_else(|| Error::new(code::EXHAUSTED, "attempts exhausted"))?;
-    let asks = ASKS.get(ctx, &id)?.unwrap_or_default();
-    queue(ctx, &run, check.job, attempt, asks)
+    let planned = Planned {
+        job: check.job,
+        asks: ASKS.get(ctx, &id)?.unwrap_or_default(),
+        needs: NEEDS.get(ctx, &id)?.unwrap_or_default(),
+    };
+    queue(ctx, &run, planned, attempt)
+}
+
+// The files a running check produced, as a runner says: who said so is kept with them.
+pub(crate) fn outputs(ctx: &ExecCtx, id: u64, files: Vec<Output>) -> Result<(), Error> {
+    let by = ctx.sender_account()?;
+    let check = load(ctx, id)?;
+    if check.state != State::Running {
+        return Err(wrong_state(format!(
+            "check {id} is {}, not running",
+            check.state.word()
+        )));
+    }
+    OUTPUTS.put(ctx, &id, &OutputsRow { by, files });
+    Ok(())
 }
 
 fn load(ctx: &QueryCtx, id: u64) -> Result<CheckRow, Error> {
@@ -684,4 +801,24 @@ pub(crate) fn runners(
     page: &PageRequest,
 ) -> Result<PageResponse<RunnerRow>, Error> {
     Ok(RUNNERS.range(ctx, page)?.map(|(_, runner)| runner))
+}
+
+pub(crate) fn needs(ctx: &QueryCtx, id: u64) -> Result<Vec<Need>, Error> {
+    let met = MET.get(ctx, &id)?.unwrap_or_default();
+    let needs = NEEDS
+        .get(ctx, &id)?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|job| {
+            let check = met
+                .iter()
+                .find(|need| need.job == job)
+                .and_then(|need| need.check);
+            Need { job, check }
+        });
+    Ok(needs.collect())
+}
+
+pub(crate) fn outputs_of(ctx: &QueryCtx, id: u64) -> Result<Option<OutputsRow>, Error> {
+    OUTPUTS.get(ctx, &id)
 }

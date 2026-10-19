@@ -8,13 +8,13 @@ mod state;
 mod tests;
 mod workflow;
 
-pub use ::program::{AccountNumber, Principal, ProgramId};
+pub use ::program::{AccountNumber, BlobId, Principal, ProgramId};
 pub use program::Actions;
 pub use store::{PageRequest, PageResponse};
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
-use crate::state::{ASKS, BY_COMMIT, CHECKS, QUEUED, RUNNERS, RUNS};
+use crate::state::{ASKS, BY_COMMIT, CHECKS, MET, NEEDS, OUTPUTS, QUEUED, RUNNERS, RUNS};
 
 pub const PROGRAM: &str = "actions";
 // Where a repository keeps its workflows, one TOML file each.
@@ -100,6 +100,12 @@ pub enum Op {
         repo: String,
         n: u64,
     },
+    // The files running check `check` produced, by blob, as its runner says; saying it again
+    // replaces them. A check that needs its job places them from here (`Query::Outputs`).
+    Outputs {
+        check: u64,
+        files: Vec<Output>,
+    },
 }
 
 // What forge puts before each event it tells actions: `Op::Watched`'s tag.
@@ -110,6 +116,8 @@ pub fn watching() -> Vec<u8> {
 // Errored: the runner or what it runs on broke, so the check says nothing of the code.
 // Superseded: a newer push to its branch, a newer Preview of its change, or the change's merge
 // or close made it moot before it ended, so it says nothing of the code either.
+// Waiting: a job it needs has not passed yet, so no runner is offered it.
+// Skipped: a job it needs ended other than passed, so it never ran.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum State {
     Queued,
@@ -118,6 +126,8 @@ pub enum State {
     Failed,
     Errored,
     Superseded,
+    Waiting,
+    Skipped,
 }
 
 impl State {
@@ -129,6 +139,8 @@ impl State {
             State::Failed => "failed",
             State::Errored => "errored",
             State::Superseded => "superseded",
+            State::Waiting => "waiting",
+            State::Skipped => "skipped",
         }
     }
 }
@@ -157,6 +169,29 @@ pub struct Asks {
 pub struct Input {
     pub path: String,
     pub files: String,
+}
+
+// A job a check needs, and the passed check of it that met the need once all of them have passed:
+// whose outputs a runner places for the check.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Need {
+    pub job: String,
+    pub check: Option<u64>,
+}
+
+// A file a check produced, at `path` under its outputs, by the blob that holds its bytes.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Output {
+    pub path: String,
+    pub blob: BlobId,
+    pub size: u64,
+}
+
+// What a check produced, and the account that said so.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct OutputsRow {
+    pub by: AccountNumber,
+    pub files: Vec<Output>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -247,6 +282,14 @@ pub enum Query {
     #[ask(Reply::Asks(Option<Asks>))]
     #[reads(ASKS)]
     Asks { check: u64 },
+    // The jobs a check needs, each with the passed check that met it once all have passed.
+    #[ask(Reply::Needs(Vec<Need>))]
+    #[reads(NEEDS, MET)]
+    Needs { check: u64 },
+    // What a check produced, once its runner said.
+    #[ask(Reply::Outputs(Option<OutputsRow>))]
+    #[reads(OUTPUTS)]
+    Outputs { check: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -257,6 +300,8 @@ pub enum Reply {
     Run(Option<RunRow>),
     Runners(PageResponse<RunnerRow>),
     Asks(Option<Asks>),
+    Needs(Vec<Need>),
+    Outputs(Option<OutputsRow>),
 }
 
 pub fn describe(op: &Op) -> describe::Description {
@@ -307,6 +352,10 @@ pub fn describe(op: &Op) -> describe::Description {
         ),
         Op::Rerun { check: id } => (format!("Run check {id} again"), vec![check(id)]),
         Op::Preview { repo, n } => (format!("Preview change {repo}#{n}"), Vec::new()),
+        Op::Outputs { check: id, files } => (
+            format!("Record check {id}'s outputs"),
+            vec![check(id), field("files", Value::count(files.len() as u64))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -330,7 +379,7 @@ fn op_variants_only_append() {
     assert_eq!(
         describe::variants::<Op>(),
         [
-            "Watched", "Trigger", "Register", "Claim", "Report", "Rerun", "Preview"
+            "Watched", "Trigger", "Register", "Claim", "Report", "Rerun", "Preview", "Outputs"
         ]
     );
 }

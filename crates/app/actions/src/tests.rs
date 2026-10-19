@@ -687,7 +687,7 @@ fn the_programs_gates_workflow_reads() {
     };
     assert!(gates.starts_on(&dev) && gates.starts_on(&Event::Updated { n: 1 }));
     assert!(gates.notify.is_some());
-    let (job, asks) = &gates.jobs[0];
+    let workflow::Planned { job, asks, .. } = &gates.jobs[0];
     assert_eq!(asks.cpu.as_deref(), Some("16"));
     assert!(asks.memory.is_some() && asks.scratch == ["/var/tmp/target"]);
     let steps = &job.steps;
@@ -1032,4 +1032,227 @@ fn a_newer_push_to_the_branch_supersedes_its_open_checks_and_says_nothing_in_the
     };
     world.act(&by_hand).unwrap();
     assert_eq!(world.check(2).state, State::Superseded);
+}
+
+// A release: a publish that needs two builds, named before them.
+const RELEASE: &str = r#"
+[on]
+push = ["main"]
+
+[[jobs]]
+id = "publish"
+runs-on = ["pods"]
+image = "toolchain"
+needs = ["linux", "mac"]
+steps = ["make publish"]
+
+[[jobs]]
+id = "linux"
+runs-on = ["pods"]
+image = "toolchain"
+steps = ["make linux"]
+
+[[jobs]]
+id = "mac"
+runs-on = ["pods"]
+image = "toolchain"
+steps = ["make mac"]
+"#;
+
+// Three jobs in a line, each needing the one before.
+const LINE: &str = r#"
+[on]
+push = ["main"]
+
+[[jobs]]
+id = "build"
+runs-on = ["pods"]
+image = "toolchain"
+steps = ["make build"]
+
+[[jobs]]
+id = "sign"
+runs-on = ["pods"]
+image = "toolchain"
+needs = ["build"]
+steps = ["make sign"]
+
+[[jobs]]
+id = "publish"
+runs-on = ["pods"]
+image = "toolchain"
+needs = ["sign"]
+steps = ["make publish"]
+"#;
+
+fn end(world: &World, check: u64, state: State) {
+    world.act(&Op::Claim { check }).unwrap();
+    let report = Op::Report {
+        check,
+        state,
+        summary: String::new(),
+        log: None,
+    };
+    world.act(&report).unwrap();
+}
+
+fn needs(world: &World, check: u64) -> Vec<Need> {
+    let Reply::Needs(needs) = world.chain.query(PROGRAM, &Query::Needs { check }).unwrap() else {
+        panic!("needs answers Needs");
+    };
+    needs
+}
+
+#[test]
+fn a_job_waits_until_every_job_it_needs_has_passed_and_only_then_is_offered() {
+    let mut world = world();
+    world.runner(&["pods"]);
+    let root = world.commit(&[], &[("release.toml", RELEASE)]);
+    world.push(None, root, "main");
+    let checks = world.checks(root);
+    assert_eq!(
+        jobs(&checks),
+        [
+            ("publish", State::Waiting),
+            ("linux", State::Queued),
+            ("mac", State::Queued)
+        ]
+    );
+    assert_eq!(
+        world.offers(),
+        [2, 3],
+        "no runner is offered a waiting check"
+    );
+    let pending = (
+        "release.toml#publish".to_owned(),
+        forge::CheckState::Pending,
+    );
+    assert!(world.statuses(root).contains(&pending));
+    let early = world.act(&Op::Claim { check: 1 }).unwrap_err();
+    assert_eq!(early.code, code::WRONG_STATE);
+    let unmet = |job: &str| Need {
+        job: job.into(),
+        check: None,
+    };
+    assert_eq!(needs(&world, 1), [unmet("linux"), unmet("mac")]);
+    end(&world, 2, State::Passed);
+    assert_eq!(world.check(1).state, State::Waiting, "mac has not passed");
+    end(&world, 3, State::Passed);
+    assert_eq!(world.check(1).state, State::Queued);
+    assert_eq!(world.offers(), [2, 3, 1]);
+    let met = |job: &str, check| Need {
+        job: job.into(),
+        check: Some(check),
+    };
+    assert_eq!(needs(&world, 1), [met("linux", 2), met("mac", 3)]);
+}
+
+#[test]
+fn a_need_that_fails_skips_all_that_wait_on_it_and_a_rerun_waits_on_its_newest_attempt() {
+    let mut world = world();
+    let root = world.commit(&[], &[("line.toml", LINE)]);
+    world.push(None, root, "main");
+    end(&world, 1, State::Failed);
+    let checks = world.checks(root);
+    assert_eq!(
+        jobs(&checks),
+        [
+            ("build", State::Failed),
+            ("sign", State::Skipped),
+            ("publish", State::Skipped)
+        ]
+    );
+    assert_eq!(
+        checks[1].summary,
+        "needs `build`, whose check 1 ended failed"
+    );
+    assert_eq!(
+        checks[2].summary,
+        "needs `sign`, whose check 2 ended skipped"
+    );
+    let skipped = ("line.toml#publish".to_owned(), forge::CheckState::Errored);
+    assert!(world.statuses(root).contains(&skipped));
+    world.act(&Op::Rerun { check: 1 }).unwrap();
+    world.act(&Op::Rerun { check: 2 }).unwrap();
+    assert_eq!(world.check(4).state, State::Queued);
+    assert_eq!(
+        world.check(5).state,
+        State::Waiting,
+        "build's newest attempt is queued"
+    );
+    let waiting = world.act(&Op::Rerun { check: 5 }).unwrap_err();
+    assert_eq!(waiting.code, code::WRONG_STATE);
+    end(&world, 4, State::Passed);
+    assert_eq!(world.check(5).state, State::Queued);
+}
+
+#[test]
+fn a_waiting_check_is_superseded_with_its_run_and_a_need_that_cannot_be_met_says_why() {
+    let mut world = world();
+    let root = world.commit(&[], &[("line.toml", LINE)]);
+    world.push(None, root, "main");
+    let next = world.commit(&[root], &[("line.toml", LINE)]);
+    world.push(Some(root), next, "main");
+    let states: Vec<State> = world.checks(root).iter().map(|check| check.state).collect();
+    assert_eq!(states, [State::Superseded; 3]);
+    let needs = "needs = [\"build\"]";
+    let cases = [
+        (
+            "needs = [\"lint\"]",
+            "job \"sign\" needs \"lint\", which is no job of this file",
+        ),
+        ("needs = [\"sign\"]", "job \"sign\" needs itself"),
+        (
+            "needs = [\"publish\"]",
+            "jobs sign, publish need each other in a loop",
+        ),
+    ];
+    let mut parent = next;
+    for (run, (need, why)) in (3..).zip(cases) {
+        let text = LINE.replace(needs, need);
+        let commit = world.commit(&[parent], &[("line.toml", text.as_str())]);
+        world.push(Some(parent), commit, "main");
+        parent = commit;
+        assert!(world.checks(commit).is_empty());
+        assert_eq!(world.run(run).error.as_deref(), Some(why));
+    }
+}
+
+#[test]
+fn a_running_check_records_its_outputs_by_blob_and_who_said_so() {
+    let mut world = world();
+    let root = world.commit(&[], &[("release.toml", RELEASE)]);
+    world.push(None, root, "main");
+    let blob = world.chain.put_blob("chunk", b"tarball".to_vec()).unwrap();
+    let files = vec![Output {
+        path: "ducktape-app.tar.gz".into(),
+        blob,
+        size: 7,
+    }];
+    let said = Op::Outputs {
+        check: 2,
+        files: files.clone(),
+    };
+    assert_eq!(world.act(&said).unwrap_err().code, code::WRONG_STATE);
+    world.act(&Op::Claim { check: 2 }).unwrap();
+    world.act(&said).unwrap();
+    let asked = Query::Outputs { check: 2 };
+    let Reply::Outputs(Some(row)) = world.chain.query(PROGRAM, &asked).unwrap() else {
+        panic!("outputs answers Outputs");
+    };
+    assert_eq!(
+        row,
+        OutputsRow {
+            by: OWNER_ACCOUNT,
+            files
+        }
+    );
+    let Reply::Outputs(none) = world
+        .chain
+        .query(PROGRAM, &Query::Outputs { check: 3 })
+        .unwrap()
+    else {
+        panic!("outputs answers Outputs");
+    };
+    assert_eq!(none, None);
 }

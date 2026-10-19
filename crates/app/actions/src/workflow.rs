@@ -1,5 +1,5 @@
 //! A workflow file, `.forge/workflows/<name>.toml`: the events that run it (`on.push` branches,
-//! `on.change` "opened"/"updated": each Preview), its jobs, each one check (`image`, `cpu`,
+//! `on.change` "opened"/"updated": each Preview), its jobs, each one check (`needs`, `image`, `cpu`,
 //! `memory` and `scratch` for a runner that makes a pod), and `notify.channel`, told of a red push.
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -50,6 +50,9 @@ struct JobFile {
     memory: Option<String>,
     #[serde(default)]
     scratch: Vec<String>,
+    // the ids of the jobs of this file that must pass before this one runs
+    #[serde(default)]
+    needs: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -65,7 +68,14 @@ pub(crate) struct Workflow {
     push: Vec<String>,
     opened: bool,
     updated: bool,
-    pub(crate) jobs: Vec<(Job, Asks)>,
+    pub(crate) jobs: Vec<Planned>,
+}
+
+// A job as its workflow states it: the check's job, what its pod asks and the jobs it needs.
+pub(crate) struct Planned {
+    pub(crate) job: Job,
+    pub(crate) asks: Asks,
+    pub(crate) needs: Vec<String>,
 }
 
 const CHANGE_EVENTS: [&str; 2] = ["opened", "updated"];
@@ -123,7 +133,29 @@ pub(crate) fn parse(text: &str) -> Result<Workflow, String> {
             env: job.env.into_iter().collect(),
             inputs: inputs.collect(),
         };
-        jobs.push((planned, asks));
+        jobs.push(Planned {
+            job: planned,
+            asks,
+            needs: job.needs,
+        });
+    }
+    for planned in &jobs {
+        let id = &planned.job.id;
+        if planned.needs.contains(id) {
+            return Err(format!("job {id:?} needs itself"));
+        }
+        if let Some(unknown) = planned.needs.iter().find(|need| !ids.contains(*need)) {
+            return Err(format!(
+                "job {id:?} needs {unknown:?}, which is no job of this file"
+            ));
+        }
+    }
+    let looped = looped(&jobs);
+    if !looped.is_empty() {
+        return Err(format!(
+            "jobs {} need each other in a loop",
+            looped.join(", ")
+        ));
     }
     let names = |event: &str| file.on.change.iter().any(|named| named == event);
     Ok(Workflow {
@@ -134,6 +166,33 @@ pub(crate) fn parse(text: &str) -> Result<Workflow, String> {
         push: file.on.push,
         jobs,
     })
+}
+
+// The jobs left once every job whose needs are all taken is taken, again and again: those that
+// need each other, directly or through others.
+fn looped(jobs: &[Planned]) -> Vec<String> {
+    let mut taken: BTreeSet<&str> = BTreeSet::new();
+    loop {
+        let ready: Vec<&str> = jobs
+            .iter()
+            .filter(|planned| !taken.contains(planned.job.id.as_str()))
+            .filter(|planned| {
+                planned
+                    .needs
+                    .iter()
+                    .all(|need| taken.contains(need.as_str()))
+            })
+            .map(|planned| planned.job.id.as_str())
+            .collect();
+        if ready.is_empty() {
+            break;
+        }
+        taken.extend(ready);
+    }
+    jobs.iter()
+        .map(|planned| planned.job.id.clone())
+        .filter(|id| !taken.contains(id.as_str()))
+        .collect()
 }
 
 impl Workflow {
