@@ -50,6 +50,12 @@ pub(crate) fn editor(
             view.press_setup(Press::Thinking(thinking), cx)
         }),
     );
+    // under a finger the six segments share the form's width, so the box stretches to it; under
+    // a pointer each is as wide as its word
+    let thinking = match ladder.touch {
+        true => div().flex().flex_col().child(thinking),
+        false => div().flex().child(thinking),
+    };
     let tools: Vec<_> = ServerTool::ALL
         .iter()
         .map(|tool| {
@@ -96,7 +102,7 @@ pub(crate) fn editor(
         .flex_col()
         .gap(space::LG)
         .child(labelled("Model", models, theme, ladder))
-        .child(labelled("Thinking", div().flex().child(thinking), theme, ladder))
+        .child(labelled("Thinking", thinking, theme, ladder))
         .child(number(
             "setup-max-tokens",
             &draft.max_tokens,
