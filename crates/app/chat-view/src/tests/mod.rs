@@ -19,6 +19,7 @@ mod categories;
 mod context_menus;
 mod cost;
 mod dms;
+mod folders;
 mod history;
 mod menus;
 mod message;
@@ -579,6 +580,22 @@ fn export_chat_screens() {
         serde_json::to_vec(&cx.whole_frame()).unwrap(),
     )
     .unwrap();
+}
+
+// Every room's id in the list's order, folders aside: channels, each
+// category's, then the direct rooms.
+impl crate::room_list::RoomList<'_> {
+    fn ids(&self) -> Vec<String> {
+        let sectioned = self.sections.iter().flat_map(|section| &section.channels);
+        let channels = self
+            .channels
+            .iter()
+            .chain(sectioned)
+            .map(|info| info.channel.id.clone());
+        channels
+            .chain(self.dms.iter().map(|dm| dm.info.channel.id.clone()))
+            .collect()
+    }
 }
 
 /// A person's profile in the roster.

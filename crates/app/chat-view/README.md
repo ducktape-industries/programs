@@ -10,7 +10,10 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
 ## Panes and screens
 - Rooms: the desktop sidebar (`ui/sidebar.rs`, `Chat::sidebar_rooms`, with
   category sections) and the phone's rooms page (`ui/phone/rooms.rs`,
-  `Chat::room_list`).
+  `Chat::room_list`). In both, a `/` in a channel's name files it under
+  folders (`Chat::lines`): `jobs/j-097` is listed as `j-097` under **jobs**,
+  each folder where its first channel would be, a channel named as a folder
+  is that folder's row, and a closed folder counts the unread rooms inside.
 - The room: its timeline (`ui/timeline.rs`, `ui/phone/timeline.rs`) and
   composer; a message's menu (desktop `ui/menu.rs` at the pointer, phone
   `ui/phone/actions.rs` as a sheet), the reaction picker and the delete
@@ -25,7 +28,9 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
 ## State
 One struct, `Chat` (`state.rs`), with a field per pane: `room` (its messages,
 members, thread), `details`, `menu`, `search`, `create`, `dm_pick`, `layout`,
-`reads` (unread cursors, kept in the view store), `drafts` (the composers).
+`reads` (unread cursors, kept in the view store), `closed_folders` (the room
+list's closed folders, kept in the view store under `folders`), `drafts` (the
+composers).
 Reads land in `Loadable` slots. `room_policy` and `message_policy` are
 `policy_view::Editing` slots: the room's is read while its details, a
 message's menu or its archived strip ask it, the message's while its menu or

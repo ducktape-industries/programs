@@ -2,7 +2,7 @@
 use chat::{ChannelInfo, MemberRow, MsgRow, Principal};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use view::prelude::*;
 
@@ -45,6 +45,9 @@ pub struct Chat {
     /// The reader's reactions, newest first: the picker's frequent row.
     #[serde(default)]
     pub(crate) recent_emoji: Vec<String>,
+    // the room list's folders the reader closed, by path; kept on the device
+    #[serde(default)]
+    pub(crate) closed_folders: BTreeSet<String>,
     /// Where the pointer is among the message rows: the row that carries
     /// the action strip, beside a chosen one. One slot whatever the pointer
     /// entered took last, so a strip that vanished under the pointer (its
@@ -58,7 +61,7 @@ pub struct Chat {
     /// The room the arrows are on in the sidebar's list; the open room
     /// until they move.
     #[serde(skip)]
-    pub(crate) rooms_cursor: Option<String>,
+    pub(crate) rooms_cursor: Option<crate::room_list::Spot>,
     #[serde(skip)]
     pub(crate) dm_heads: BTreeMap<String, DmHead>,
     /// The message the arrows are on in the room, and in the thread.

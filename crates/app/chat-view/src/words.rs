@@ -58,6 +58,19 @@ pub(crate) fn policy(channel: &ChannelRow) -> &'static str {
     }
 }
 
+// A folder of the room list, by its name: what its row or its chevron is.
+pub(crate) fn folder(name: &str) -> String {
+    format!("{name} folder")
+}
+
+// What a closed folder holds that the reader has not read.
+pub(crate) fn unread_rooms(count: usize) -> String {
+    match count {
+        1 => "1 unread room".to_owned(),
+        count => format!("{count} unread rooms"),
+    }
+}
+
 /// An account by its number, where no name is known or beside the name.
 pub(crate) fn account(number: u64) -> String {
     format!("account {number}")

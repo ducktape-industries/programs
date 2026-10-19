@@ -1,8 +1,7 @@
-//! What chat keeps on this device between runs (`store`): the reader's read
-//! cursors, so the unread dots come back right after a relaunch and chat's
-//! notifier counts and announces from them, and their frequent reactions. Per network by the host, per
-//! reader by the key.
-use std::collections::BTreeMap;
+//! What chat keeps on this device between runs (`store`), per network by the host and per
+//! reader by the key: the read cursors (the unread dots after a relaunch, which the notifier
+//! counts from), the frequent reactions, and the room list's folders the reader closed.
+use std::collections::{BTreeMap, BTreeSet};
 
 use view::prelude::*;
 use view::store;
@@ -10,6 +9,7 @@ use view::store;
 use crate::Chat;
 
 const EMOJI: &str = "emoji";
+const FOLDERS: &str = "folders";
 
 impl Chat {
     /// The key the reader's cursors are kept under; none with no key seated.
@@ -38,6 +38,15 @@ impl Chat {
                 }
             }
             chat.recent_emoji.truncate(crate::emoji::RECENT);
+        })
+        .detach();
+        let folders = store::get::<BTreeSet<String>>(&cx.host(), FOLDERS);
+        cx.land(folders, |chat, folders, cx| match folders {
+            Ok(closed) => {
+                chat.closed_folders = closed.unwrap_or_default();
+                cx.notify();
+            }
+            Err(refusal) => cx.log_refused("the closed folders", &refusal),
         })
         .detach();
         self.load_reads(key, cx);
@@ -99,5 +108,9 @@ impl Chat {
 
     pub(crate) fn save_emoji(&self, cx: &mut Context<Self>) {
         store::set(&cx.host(), EMOJI, Some(&self.recent_emoji));
+    }
+
+    pub(crate) fn save_folders(&self, cx: &mut Context<Self>) {
+        store::set(&cx.host(), FOLDERS, Some(&self.closed_folders));
     }
 }

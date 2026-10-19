@@ -1,16 +1,12 @@
-//! The rooms, the chat's first page (Expo `app/(tabs)/chat/index.tsx`,
-//! boards 10-12): "Chat" over the network and the reader, Search and New
-//! channel in its title row; then the channels and the direct rooms held,
-//! newest first, each section with its count, Direct messages' New message;
-//! each unread room with its dot. Reads the channel list, the roster and
-//! the read cursors; a row opens its room, the title row's buttons open
-//! the Search page and the new-channel form.
+//! The rooms, the chat's first page (Expo `app/(tabs)/chat/index.tsx`, boards 10-12): the title
+//! row, the channels in their folders and the direct rooms newest first, each unread room with its
+//! dot; a row opens its room, a folder's row opens or closes the folder.
 use view::prelude::*;
 use view::{Div, Stateful};
 
 use super::parts::{face, quiet};
 use crate::Chat;
-use crate::room_list::DmEntry;
+use crate::room_list::{DmEntry, FolderLine, Line, label};
 use crate::words;
 use chat::{ChannelInfo, Principal};
 use view::design::Ladder;
@@ -118,9 +114,12 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
                 .children(count(list.channels.len())),
         )
         .children(
-            list.channels
-                .iter()
-                .map(|info| channel_row(chat, info, cx, theme, ladder)),
+            chat.lines(&list.channels)
+                .into_iter()
+                .map(|line| match line {
+                    Line::Room { info, depth } => channel_row(chat, info, depth, cx, theme, ladder),
+                    Line::Folder(folder) => folder_row(chat, &folder, cx, theme, ladder),
+                }),
         )
         .when(loading, |rooms| {
             rooms.child(quiet(
@@ -165,6 +164,7 @@ fn new_message(cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> impl I
 fn channel_row(
     chat: &Chat,
     info: &ChannelInfo,
+    depth: usize,
     cx: &mut Context<Chat>,
     theme: &Theme,
     ladder: &Ladder,
@@ -187,18 +187,103 @@ fn channel_row(
             ))
         })
         .when(chat.unread(info), |tail| tail.child(dot(&id, theme)));
-    row(
-        &id,
-        channel.name.clone(),
-        channel.id.clone(),
-        cx,
-        theme,
-        ladder,
-    )
-    .child(design::lead(hash.text_color(theme.muted)))
-    .child(title(channel.name.clone(), theme, ladder))
-    .child(tail)
-    .into_any_element()
+    let name = label(&channel.name).to_owned();
+    row(&id, name.clone(), channel.id.clone(), cx, theme, ladder)
+        .pl(indent(depth))
+        .child(design::lead(hash.text_color(theme.muted)))
+        .child(title(name, theme, ladder))
+        .child(tail)
+        .into_any_element()
+}
+
+// Where a row `depth` folders deep starts: a lead column further each.
+fn indent(depth: usize) -> Pixels {
+    design::space::BLOCK + design::space::XL * depth as f32
+}
+
+// A folder's row: its chevron, its name, and while it is closed how many
+// rooms inside are unread; a press opens or closes it. A folder named as a
+// channel opens that channel, and its chevron opens or closes the folder.
+fn folder_row(
+    chat: &Chat,
+    folder: &FolderLine,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    let id = format!("chat-rooms-folder-{}", folder.path);
+    let path = folder.path.clone();
+    let toggle = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
+        chat.toggle_folder(&path, cx);
+        cx.notify();
+    });
+    let shape = if folder.open {
+        "chevron-down"
+    } else {
+        "chevron-right"
+    };
+    let chevron = design::lead(design::icon(shape, ladder.icon_row).text_color(theme.muted));
+    let unread = folder.own.is_some_and(|own| chat.unread(own));
+    let tail = div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap(design::space::SM)
+        .when(folder.unread > 0, |tail| {
+            tail.child(design::badge(
+                format!("{id}-count"),
+                folder.unread.to_string(),
+                ladder,
+                theme.foreground,
+                theme.accent_soft,
+            ))
+        })
+        .when(unread, |tail| tail.child(dot(&id, theme)));
+    let counted = (folder.unread > 0).then(|| words::unread_rooms(folder.unread));
+    let line = design::row(id.clone(), ladder, theme).pl(indent(folder.depth));
+    let name = title(folder.name.to_owned(), theme, ladder);
+    let Some(own) = folder.own else {
+        return line
+            .role(Role::Button)
+            .aria_label(words::folder(folder.name))
+            .aria_expanded(folder.open)
+            .when_some(counted, |line, counted| line.aria_description(counted))
+            .focusable()
+            .on_click(toggle)
+            .child(chevron)
+            .child(name)
+            .child(tail)
+            .into_any_element();
+    };
+    let room = own.channel.id.clone();
+    let choose = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
+        cx.notify();
+        chat.choose(room.clone(), cx)
+    });
+    let fold = chevron
+        .id(format!("{id}-fold"))
+        .min_h(ladder.hit)
+        .role(Role::Button)
+        .aria_label(words::folder(folder.name))
+        .aria_expanded(folder.open)
+        .focusable()
+        .on_click(toggle);
+    let opens = div()
+        .id(format!("{id}-open"))
+        .flex_1()
+        .min_w(px(0.))
+        .min_h(ladder.hit)
+        .flex()
+        .items_center()
+        .gap(design::space::LG)
+        .role(Role::Button)
+        .aria_label(folder.name.to_owned())
+        .when_some(counted, |opens, counted| opens.aria_description(counted))
+        .focusable()
+        .on_click(choose)
+        .child(name)
+        .child(tail);
+    line.child(fold).child(opens).into_any_element()
 }
 
 // A direct room's row: the other person's face and name, Agent for an

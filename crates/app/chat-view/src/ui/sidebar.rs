@@ -5,6 +5,7 @@ use view::{Div, Stateful};
 
 use chat::{ChannelInfo, Principal};
 
+use crate::room_list::{FolderLine, Line, Spot, label};
 use crate::words;
 use crate::{ChannelCreate, Chat};
 use view::design::Ladder;
@@ -115,30 +116,56 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     }
     let open = chat.room.as_ref().map(|room| room.id.as_str());
     let room_list = chat.sidebar_rooms();
-    // one Tab stop under the header: ↑ ↓ walk the channels and the direct
-    // messages, Enter opens the active room
-    let ids = room_list.ids();
-    let at = chat.rooms_at(&ids);
-    let picked = ids.clone();
+    let plain = chat.lines(&room_list.channels);
+    let sections: Vec<(&str, Vec<Line<'_>>)> = room_list
+        .sections
+        .iter()
+        .map(|section| (section.category, chat.lines(&section.channels)))
+        .collect();
+    // one Tab stop under the header: ↑ ↓ walk the channels, their folders
+    // and the direct messages, Enter opens the active room or folder, → and
+    // ← open and close the active folder
+    let filed = plain
+        .iter()
+        .chain(sections.iter().flat_map(|(_, lines)| lines));
+    let dms = room_list.dms.iter();
+    let dms = dms.map(|dm| Spot::Room(dm.info.channel.id.clone()));
+    let spots: Vec<Spot> = filed.map(Line::spot).chain(dms).collect();
+    let at = chat.rooms_at(&spots);
+    let picked = spots.clone();
     // the Menu key or Shift+F10 opens the active room's menu, under its row
-    let asked = ids.get(at).cloned();
+    let asked = spots.get(at).cloned();
     let keys = cx.listener(move |chat, event: &KeyDownEvent, window, cx| {
-        if let Some(room) = asked
-            .clone()
-            .filter(|_| design::asks_for_menu(&event.keystroke))
+        let Some(spot) = &asked else {
+            return;
+        };
+        if let Some(room) = spot.room()
+            && design::asks_for_menu(&event.keystroke)
         {
-            chat.open_room_menu(room, None, window, cx)
+            return chat.open_room_menu(room.to_owned(), None, window, cx);
+        }
+        let Spot::Folder { path, .. } = spot else {
+            return;
+        };
+        let open = match event.keystroke.key.as_str() {
+            "right" => true,
+            "left" => false,
+            _ => return,
+        };
+        if !event.keystroke.modifiers.modified() {
+            chat.fold(path, open, cx);
+            cx.notify();
         }
     });
     let mut box_ = design::composite("chat-sidebar-rooms-list", Role::ListBox, "Rooms")
-        .active(at, ids.len())
+        .active(at, spots.len())
         .on_move(cx.processor(move |chat, index: usize, _, cx| {
-            chat.rooms_cursor = Some(ids[index].clone());
+            chat.rooms_cursor = Some(spots[index].clone());
             cx.notify();
         }))
         .on_press(cx.processor(move |chat, index: usize, _, cx| {
             cx.notify();
-            chat.choose(picked[index].clone(), cx)
+            chat.press_spot(&picked[index], cx)
         }))
         .build()
         .on_key_down(keys)
@@ -146,22 +173,18 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         .flex_col()
         .gap_1();
     let mut index = 0;
-    for info in room_list.channels {
-        let id = info.channel.id.as_str();
-        let row = channel_row(chat, info, open == Some(id), index == at, cx, theme);
-        box_ = box_.child(row);
+    for line in &plain {
+        box_ = box_.child(line_row(chat, line, open, index == at, cx, theme, ladder));
         index += 1;
     }
-    for section in room_list.sections {
+    for (category, lines) in &sections {
         box_ = box_.child(section_title(
-            format!("chat-sidebar-category-{}", section.category),
-            section.category,
+            format!("chat-sidebar-category-{category}"),
+            category,
             theme,
         ));
-        for info in section.channels {
-            let id = info.channel.id.as_str();
-            let row = channel_row(chat, info, open == Some(id), index == at, cx, theme);
-            box_ = box_.child(row);
+        for line in lines {
+            box_ = box_.child(line_row(chat, line, open, index == at, cx, theme, ladder));
             index += 1;
         }
     }
@@ -279,10 +302,157 @@ fn quiet(id: impl Into<ElementId>, text: impl Into<String>, theme: &Theme) -> im
         .child(text.into())
 }
 
+// A line of the channel list: a channel's row, or a folder's.
+fn line_row(
+    chat: &Chat,
+    line: &Line,
+    open: Option<&str>,
+    active: bool,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    match line {
+        Line::Room { info, depth } => {
+            let selected = open == Some(info.channel.id.as_str());
+            channel_row(chat, info, *depth, selected, active, cx, theme)
+        }
+        Line::Folder(folder) => folder_row(chat, folder, open, active, cx, theme, ladder),
+    }
+}
+
+// Where a row `depth` folders deep starts: a chevron's width further each.
+fn indent(depth: usize) -> Pixels {
+    design::space::XXS + FOLD * depth as f32
+}
+
+// A folder's chevron, the smallest box a pointer presses (the door's AX-017).
+const FOLD: Pixels = px(24.);
+
+// A folder's row: its chevron, its name, and while it is closed how many
+// rooms inside are unread. A folder named as a channel is that channel's
+// row too: a press opens the channel, and the chevron opens or closes it.
+fn folder_row(
+    chat: &Chat,
+    folder: &FolderLine,
+    open: Option<&str>,
+    active: bool,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    let id = format!("chat-sidebar-folder-{}", folder.path);
+    let path = folder.path.clone();
+    let toggle = cx.listener(move |chat, _: &ClickEvent, _, cx| {
+        chat.toggle_folder(&path, cx);
+        cx.notify();
+    });
+    let own = folder.own;
+    let selected = own.is_some_and(|own| open == Some(own.channel.id.as_str()));
+    let unread = own.is_some_and(|own| chat.unread(own)) && !selected;
+    let glyph = div()
+        .min_w(FOLD)
+        .min_h(FOLD)
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_color(theme.sidebar_muted)
+        .child(if folder.open { "▾" } else { "▸" });
+    let row = div()
+        .id(id.clone())
+        .flex()
+        .w_full()
+        .items_center()
+        .gap_1()
+        .min_h(design::size::CONTROL)
+        .pl(indent(folder.depth))
+        .pr_1()
+        .bg(if selected {
+            theme.sidebar_raised
+        } else {
+            theme.sidebar
+        })
+        .cursor_pointer()
+        .hover(|s| s.bg(theme.sidebar_raised))
+        .when(active && !selected, |row| row.bg(theme.sidebar_raised))
+        .aria_selected(selected)
+        .when(folder.unread > 0, |row| {
+            row.aria_description(words::unread_rooms(folder.unread))
+        });
+    let mut row = match own {
+        // the chevron is a press of its own, which the row's leaves alone
+        Some(own) => {
+            let room = own.channel.id.clone();
+            let choose = cx.listener(move |chat, _: &ClickEvent, _, cx| {
+                cx.notify();
+                chat.choose(room.clone(), cx)
+            });
+            let fold = glyph
+                .id(format!("{id}-fold"))
+                .role(Role::Button)
+                .aria_label(words::folder(folder.name))
+                .aria_expanded(folder.open)
+                .on_click(toggle)
+                .consumes_click();
+            row.aria_label(folder.name.to_owned())
+                .on_click(choose)
+                .child(fold)
+        }
+        None => row
+            .aria_label(words::folder(folder.name))
+            .aria_expanded(folder.open)
+            .on_click(toggle)
+            .child(glyph),
+    };
+    row = row.child(
+        div()
+            .flex_1()
+            .truncate()
+            .text_color(if unread || folder.unread > 0 {
+                theme.sidebar_foreground
+            } else {
+                theme.sidebar_muted
+            })
+            .child(folder.name.to_owned()),
+    );
+    if own.is_some_and(|own| own.channel.members_only()) {
+        row = row.child(
+            div()
+                .text_size(design::text::CAPTION)
+                .text_color(theme.sidebar_muted)
+                .child(words::MEMBERS_ONLY),
+        );
+    }
+    if folder.unread > 0 {
+        row = row.child(super::badge(
+            format!("{id}-count"),
+            folder.unread.to_string(),
+            ladder,
+            theme.foreground,
+            theme.accent_soft,
+        ));
+    }
+    if unread {
+        row = row.child(
+            div()
+                .id(format!("{id}-unread"))
+                .size_2()
+                .rounded_full()
+                .bg(theme.accent),
+        );
+    }
+    let row = match own {
+        Some(own) => super::room_menu::row(row, &own.channel.id, chat, cx),
+        None => row,
+    };
+    design::item(row, Role::ListBoxOption, active).into_any_element()
+}
+
 // A channel's row, drawn again only when what it shows moved.
 fn channel_row(
     chat: &Chat,
     info: &ChannelInfo,
+    depth: usize,
     selected: bool,
     active: bool,
     cx: &mut Context<Chat>,
@@ -290,11 +460,11 @@ fn channel_row(
 ) -> AnyElement {
     let room = &info.channel.id;
     let read = (chat.unread(info), super::room_menu::waits(chat, room));
-    let deps = (info.clone(), selected, active, read);
+    let deps = (info.clone(), depth, selected, active, read);
     let (info, theme) = (info.clone(), *theme);
     let id = format!("chat-sidebar-channel-{}", info.channel.id);
     cx.memo(id, deps, move |chat, _, cx| {
-        channel_button(chat, &info, selected, active, cx, &theme)
+        channel_button(chat, &info, depth, selected, active, cx, &theme)
     })
     .into_any_element()
 }
@@ -302,6 +472,7 @@ fn channel_row(
 fn channel_button(
     chat: &Chat,
     info: &ChannelInfo,
+    depth: usize,
     selected: bool,
     active: bool,
     cx: &mut Context<Chat>,
@@ -320,7 +491,8 @@ fn channel_button(
         .items_center()
         .gap_1()
         .min_h(design::size::CONTROL)
-        .px_1()
+        .pl(indent(depth))
+        .pr_1()
         .bg(if selected {
             theme.sidebar_raised
         } else {
@@ -341,7 +513,7 @@ fn channel_button(
                 } else {
                     theme.sidebar_muted
                 })
-                .child(info.channel.name.clone()),
+                .child(label(&info.channel.name).to_owned()),
         );
     if info.channel.members_only() {
         row = row.child(

@@ -121,7 +121,7 @@ fn the_last_channel_hidden_hands_its_row_to_the_one_before() {
     ];
     let (mut cx, view) = desk(rooms);
     cx.update(&view, |chat, _, cx| {
-        chat.rooms_cursor = Some("zed".into());
+        chat.rooms_cursor = Some(crate::room_list::Spot::Room("zed".into()));
         cx.notify();
     });
     cx.run_until_parked();
