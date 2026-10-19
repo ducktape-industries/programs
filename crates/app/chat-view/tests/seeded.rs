@@ -1,7 +1,8 @@
-//! Chat over the fake node: the chain seeded through chat's own ops, what
-//! the person sees read off it, someone else's post reaching the open room
-//! through `program.changes`, and a post through the composer landing on the
-//! chain as the signed-in account.
+//! Chat over the fake node: the chain seeded through chat's own ops, what the
+//! person sees read off it, another's post reaching the open room through
+//! `program.changes`, and a composer post landing as the signed-in account.
+// the view's tests: the notifier build (`--features notifier`) has no view
+#![cfg(not(feature = "notifier"))]
 use chat::{Block, Op, PostPolicy, Query, Reply};
 use chat_view::Chat;
 use view::methods::{HostId, HostSession, HostVisible, StoreGet};
