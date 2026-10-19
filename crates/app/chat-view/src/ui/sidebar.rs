@@ -314,8 +314,8 @@ fn line_row(
 // A folder's chevron, the smallest box a pointer presses (the door's AX-017).
 const FOLD: Pixels = px(24.);
 
-// A folder's row: its name with its `/`, while it is closed how many rooms inside are unread, and
-// its chevron at the row's end. A folder named as a channel is that channel's row too: a press
+// A folder's row: its name with its `/` after the lead column, while it is closed how many rooms
+// inside are unread, and its chevron at the row's end. A folder named as a channel is that channel's row too: a press
 // opens the channel, and the chevron opens or closes it.
 fn folder_row(
     chat: &Chat,
@@ -391,7 +391,9 @@ fn folder_row(
             (row, glyph)
         }
     };
-    let mut row = row.child(
+    // the kit row's lead column, empty, as a room row's holds its `#`: the folder's name starts
+    // where its rooms' names do
+    let mut row = row.child(design::lead(div())).child(
         div()
             .flex_1()
             .truncate()
@@ -488,7 +490,9 @@ fn channel_button(
         .when(active && !selected, |row| row.bg(theme.sidebar_raised))
         .aria_selected(selected)
         .on_click(click)
-        .child(div().text_color(theme.sidebar_muted).child("#"))
+        .child(design::lead(
+            div().text_color(theme.sidebar_muted).child("#"),
+        ))
         .child(
             div()
                 .flex_1()

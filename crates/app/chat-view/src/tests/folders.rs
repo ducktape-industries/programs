@@ -308,8 +308,8 @@ fn a_category_files_nothing_and_new_channels_carry_none() {
     );
 }
 
-// A folder's header reads its name with its `/`, and its chevron ends the row: the name first and
-// taking the slack, the chevron last.
+// A folder's header reads its name with its `/`, and its chevron ends the row: the lead column
+// first, as a room row's, then the name taking the slack, the chevron last.
 #[test]
 fn a_folders_header_keeps_its_slash_and_its_chevron_ends_the_row() {
     let (cx, _) = desk(&[]);
@@ -328,8 +328,7 @@ fn a_folders_header_keeps_its_slash_and_its_chevron_ends_the_row() {
             cx.find(&fold),
             "{row}'s chevron is its last part"
         );
-        let Some(wire::Node::Container(wire::ContainerNode { style, .. })) = children.first()
-        else {
+        let Some(wire::Node::Container(wire::ContainerNode { style, .. })) = children.get(1) else {
             panic!("{row}'s name is a container");
         };
         let grow = cx.styles()[*style].flex_grow;
@@ -407,4 +406,26 @@ fn the_phones_new_channel_page_chips_a_pasted_folder_too() {
         (text.as_str(), tokens),
         ("teams/ops/web", vec![chip_of("teams")])
     );
+}
+
+// A folder's header and the rooms under it lead with one column, the kit row's: the header's name
+// starts where the rooms' names do.
+#[test]
+fn a_folders_name_starts_where_its_rooms_names_do() {
+    let (cx, _) = desk(&[]);
+    let lead = |key: &str| {
+        let Some(wire::Node::Container(wire::ContainerNode { children, .. })) = cx.find(key) else {
+            panic!("{key} is a row");
+        };
+        let Some(wire::Node::Container(wire::ContainerNode { style, .. })) = children.first()
+        else {
+            panic!("{key} leads with a column");
+        };
+        let style = &cx.styles()[*style];
+        (style.size.width, style.flex_shrink)
+    };
+    let header = lead("chat-sidebar-folder-jobs");
+    assert!(header.0.is_some(), "the lead column has the kit's width");
+    assert_eq!(header, lead("chat-sidebar-channel-j-097"));
+    assert_eq!(header, lead("chat-sidebar-channel-general"));
 }
