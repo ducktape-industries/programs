@@ -24,6 +24,11 @@ only.
   A change's authorship is its own owned row (`o/`, kind `forge.change`), its author's
   from `ChangeOpen`: `ChangeEdit`, `ChangeRepoint` and `Rebase` write it, so the change's
   policy decides them, while reviews, closes and merges write only the shared record.
+  A repository's custody is its own owned row (`k/`, kind `forge.repo`), its creator's
+  from `Create`: every op the repository's policy decides (a push, a merge, a staged
+  pack, a branch deleted, protected or given required checks, `Configure`, the merge
+  queue, a rebase, and closing someone else's change) writes it, while the shared
+  record (`p/`) takes every op's activity.
   A repository's number counter allocates the shared future issue/change number space.
 - Every table is declared once in `src/state.rs` as a typed `store::Map`/`Set`/`Item`:
   records (repos, refs, changes, reviews), the indexes over them (activity,

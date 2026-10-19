@@ -42,6 +42,12 @@ pub const REVIEWS: Map<(String, u64, u64), Owned<Review>> = Map::new("v/");
 // too, so the change's policy decides them. A change opened before this row existed has none
 // until a migration writes it.
 pub const AUTHORSHIP: Map<(String, u64), Owned<Authorship>> = Map::new("o/");
+// Each repository's custody, of the kind `forge.repo`: its creator's from `Create` on. The
+// repository's record (`REPOS`) is shared, since every op on it marks it active; each op the
+// repository's policy decides (`ops::governed`: pushes, merges, branch rules, closing another's
+// change) writes this row too. A repository created before this row existed has none until a
+// migration writes it.
+pub const CUSTODY: Map<String, Owned<Custody>> = Map::new("k/");
 /// Index: the reviews one principal submitted on one change, oldest first.
 pub const AUTHORED: Set<(String, u64, Principal, u64)> = Set::new("u/").shared();
 /// Index: the changes a principal authored, is asked to review, or reviewed.
@@ -361,8 +367,29 @@ pub fn reshaped(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
     Ok(())
 }
 
-// Every table here but REVIEWS and AUTHORSHIP is general data: only this program's code governs
-// it.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Custody {
+    pub owner: Principal,
+    // how many ops the repository's policy decided
+    pub rev: u64,
+}
+
+impl Kind for Custody {
+    const KIND: &'static str = "forge.repo";
+}
+
+// The custody of `repo`, written again: a no-op for a repository that has none.
+pub fn kept(ctx: &ExecCtx, repo: &str) -> Result<(), Error> {
+    let at = repo.to_owned();
+    if let Some(mut custody) = CUSTODY.get(ctx, &at)? {
+        custody.rev += 1;
+        CUSTODY.put(ctx, &at, &custody);
+    }
+    Ok(())
+}
+
+// Every table here but REVIEWS, AUTHORSHIP and CUSTODY is general data: only this program's code
+// governs it.
 pub(crate) const TABLES: &[::program::Table] = &[
     BOUNDS.table(),
     WRITES.table(),
@@ -373,6 +400,7 @@ pub(crate) const TABLES: &[::program::Table] = &[
     CHANGES.table(),
     REVIEWS.table(),
     AUTHORSHIP.table(),
+    CUSTODY.table(),
     AUTHORED.table(),
     INVOLVED.table(),
     MESSAGES.table(),

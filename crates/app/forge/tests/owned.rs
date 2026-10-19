@@ -1,7 +1,7 @@
 mod common;
 use common::*;
 
-use forge::tables::{AUTHORSHIP, REVIEWS};
+use forge::tables::{AUTHORSHIP, CUSTODY, REVIEWS};
 
 // A change WRITER opened on a pushed repository, with the ownership program seated at its role.
 fn reviewed() -> (MemorySandbox, u64, Oid) {
@@ -63,14 +63,18 @@ fn record(sandbox: &MemorySandbox, n: u64, id: u64) -> Option<ownership::Record>
 }
 
 #[test]
-fn forge_declares_its_reviews_and_changes_owned_and_every_other_table_shared() {
+fn forge_declares_its_reviews_changes_and_repositories_owned_and_every_other_table_shared() {
     let owned: Vec<_> = Forge::TABLES
         .iter()
         .filter(|table| table.held != program::Held::Shared)
         .collect();
-    assert_eq!(owned, [&REVIEWS.table(), &AUTHORSHIP.table()]);
+    assert_eq!(
+        owned,
+        [&REVIEWS.table(), &AUTHORSHIP.table(), &CUSTODY.table()]
+    );
     assert_eq!(owned[0].held, program::Held::Owned(Some("forge.review")));
     assert_eq!(owned[1].held, program::Held::Owned(Some("forge.change")));
+    assert_eq!(owned[2].held, program::Held::Owned(Some("forge.repo")));
 }
 
 #[test]
@@ -182,4 +186,78 @@ fn a_changes_policy_decides_its_authors_side_and_others_still_review_and_close()
         n,
     };
     act(&sandbox, STRANGER, &close).unwrap();
+}
+
+#[test]
+fn a_repositorys_policy_decides_pushes_rules_and_closing_anothers_change() {
+    let (sandbox, n, head) = reviewed();
+    let query = ownership::Query::Record {
+        program: forge::PROGRAM.into(),
+        key: CUSTODY.key(&"project".to_owned()),
+    };
+    let ownership::Reply::Record(Some(owned)) =
+        sandbox.chain.query(ownership::PROGRAM, &query).unwrap()
+    else {
+        panic!("the guard recorded the repository's custody");
+    };
+    assert_eq!(owned.owner, ownership::Party::Account(11));
+    assert_eq!(owned.kind.as_deref(), Some("forge.repo"));
+    // a branch of the stranger's own, pushed while the repository's policy is open
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let theirs = file_commit(&mut store, &[head], 3, &[("a", b"3\n")]);
+    let pack = pack_of(&store, &all_ids(&store));
+    let zero = Hash::Sha1.zero();
+    let branch = "refs/heads/stranger";
+    push(
+        &sandbox,
+        STRANGER,
+        "project",
+        &[(zero, theirs, branch)],
+        &pack,
+    )
+    .unwrap();
+    let strict = ownership::Op::Create {
+        name: "mine".into(),
+        write: ownership::Writers::Owner,
+    };
+    let made = sandbox
+        .chain
+        .submit(Origin::Signed(OWNER.to_vec()), ownership::PROGRAM, &strict)
+        .unwrap();
+    let policy: ownership::PolicyId = abi::decode(&made).unwrap();
+    let relink = ownership::Op::Relink {
+        program: forge::PROGRAM.into(),
+        key: CUSTODY.key(&"project".to_owned()),
+        policy,
+    };
+    sandbox
+        .chain
+        .submit(Origin::Signed(OWNER.to_vec()), ownership::PROGRAM, &relink)
+        .unwrap();
+    let delete = Op::DeleteBranch {
+        repo: "project".into(),
+        branch: branch.as_bytes().to_vec(),
+        expected: theirs.to_hex(),
+    };
+    let protect = Op::Protect {
+        repo: "project".into(),
+        branch: b"refs/heads/main".to_vec(),
+        protected: true,
+    };
+    let close = Op::ChangeClose {
+        repo: "project".into(),
+        n,
+    };
+    for op in [&delete, &protect, &close] {
+        assert_eq!(
+            refused(&sandbox, STRANGER, op).code,
+            code::UNAUTHORIZED,
+            "{op:?}"
+        );
+    }
+    // a stranger still reviews; the owner deletes and protects; the author closes their own
+    act(&sandbox, STRANGER, &review(n, head)).unwrap();
+    act(&sandbox, OWNER, &delete).unwrap();
+    act(&sandbox, OWNER, &protect).unwrap();
+    act(&sandbox, WRITER, &close).unwrap();
 }

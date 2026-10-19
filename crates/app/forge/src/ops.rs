@@ -69,6 +69,11 @@ pub(crate) fn create(
         refs_count: 0,
         last_activity: 0,
     };
+    let custody = crate::state::Custody {
+        owner: actor.clone(),
+        rev: 0,
+    };
+    crate::state::CUSTODY.put(ctx, &name.to_owned(), &custody);
     save_repo(ctx, name, &repo)
 }
 
@@ -86,6 +91,41 @@ pub(crate) fn retired() -> Error {
     unauthorized(
         "a repository's writers are its list in the access program: set it there, as the owner",
     )
+}
+
+// The repository whose policy decides `op`, if any: the ops `needs` asks a repository's list for
+// (its `repo_key` or `settings_key`), so that each writes the repository's custody.
+pub(crate) fn governed<'o>(ctx: &QueryCtx, op: &'o Op) -> Option<&'o str> {
+    match op {
+        Op::Configure { repo, .. }
+        | Op::Protect { repo, .. }
+        | Op::RequireChecks { repo, .. }
+        | Op::Push { repo, .. }
+        | Op::Merge { repo, .. }
+        | Op::Stage { repo, .. }
+        | Op::SquashMerge { repo, .. }
+        | Op::DeleteBranch { repo, .. }
+        | Op::Enqueue { repo, .. }
+        | Op::Dequeue { repo, .. }
+        | Op::Rebase { repo, .. } => Some(repo),
+        Op::ChangeClose { repo, n } => {
+            let sender = ctx.env().sender.clone();
+            let authored = load_change(ctx, repo, *n)
+                .is_ok_and(|change| sender.as_ref() == Some(&change.author));
+            (!authored).then_some(repo.as_str())
+        }
+        Op::Create { .. }
+        | Op::Grant { .. }
+        | Op::Revoke { .. }
+        | Op::ChangeOpen { .. }
+        | Op::ChangeEdit { .. }
+        | Op::ChangeRepoint { .. }
+        | Op::ReviewSubmit { .. }
+        | Op::Watch { .. }
+        | Op::ArchiveEnded { .. }
+        | Op::Preview { .. }
+        | Op::Status { .. } => None,
+    }
 }
 
 pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {

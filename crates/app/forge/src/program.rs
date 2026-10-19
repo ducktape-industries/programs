@@ -76,6 +76,7 @@ impl Program for Forge {
                 | Op::RequireChecks { .. }
         );
         let actor = &Principal::Account(ctx.sender_account()?);
+        let governed = crate::ops::governed(ctx, &op).map(str::to_owned);
         let reply = match op {
             Op::Watch { deliver } => return watch(ctx, deliver),
             Op::Create { repo, hash } => create(ctx, actor, &repo, hash).map(|()| None),
@@ -215,6 +216,9 @@ impl Program for Forge {
             } => enqueue(ctx, actor, &repo, n, &expected_head).map(|()| None),
             Op::Dequeue { repo, n } => dequeue(ctx, &repo, n).map(|()| None),
         }?;
+        if let Some(repo) = &governed {
+            crate::state::kept(ctx, repo)?;
+        }
         if settles && let Some(repo) = &repo {
             settle(ctx, repo)?;
         }
