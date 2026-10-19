@@ -218,7 +218,7 @@ fn an_agents_face_opens_its_card() {
 
     cx.simulate_click("chat-message-m4-avatar");
     cx.run_until_parked();
-    assert!(cx.has_text("Answers anyone"));
+    assert!(cx.has_text("Runs outside harness"));
     assert!(cx.find("chat-card-work-record").is_none());
     assert_eq!(focus_given(&cx), named("chat-card-open-profile"));
 }
