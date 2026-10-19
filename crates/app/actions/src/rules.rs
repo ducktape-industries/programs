@@ -490,11 +490,16 @@ pub(crate) fn report(
 ) -> Result<(), Error> {
     let account = ctx.sender_account()?;
     let mut check = load(ctx, id)?;
-    if check.state != State::Running {
+    // a runner whose claim was refused says so: a queued check may end errored unclaimed
+    let unclaimed = check.state == State::Queued && state == State::Errored;
+    if check.state != State::Running && !unclaimed {
         return Err(wrong_state(format!(
             "check {id} is {}, not running",
             check.state.word()
         )));
+    }
+    if unclaimed {
+        QUEUED.remove(ctx, &id);
     }
     if matches!(state, State::Queued | State::Running) {
         return Err(invalid(

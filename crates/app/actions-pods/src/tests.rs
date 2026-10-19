@@ -22,6 +22,9 @@ const COMMIT: &str = "1111111111111111111111111111111111111111";
 
 type Report = (u64, State, String, Option<String>);
 
+// The check the stand-in refuses to let anyone claim, with a refusal that is not wrong_state.
+const REFUSED: u64 = 9;
+
 const CLAIMED: Item<Vec<u64>> = Item::new("claimed");
 const REPORTS: Item<Vec<Report>> = Item::new("reports");
 
@@ -37,6 +40,9 @@ impl Program for Stand {
     fn execute(ctx: &ExecCtx, op: actions::Op) -> Result<(), Error> {
         match op {
             actions::Op::Register { .. } => Ok(()),
+            actions::Op::Claim { check } if check == REFUSED => Err(invalid(
+                "the stand-in refuses this claim for its own reasons",
+            )),
             actions::Op::Claim { check } => {
                 let mut claimed = CLAIMED.get(ctx)?.unwrap_or_default();
                 if claimed.contains(&check) {
@@ -495,4 +501,22 @@ fn a_pod_that_ended_while_its_wait_was_broken_reports_how_it_ended() {
     let line = "pod duckpond-7 ended: exit code 2 (Error)".to_owned();
     let log = format!("/shared/actions/programs/{COMMIT}/gates/gates-1/log");
     assert_eq!(node.reports(), [(1, State::Failed, line, Some(log))]);
+}
+
+#[test]
+fn a_claim_refused_for_any_reason_but_its_state_errs_the_check_and_one_already_taken_is_left() {
+    let mut node = node();
+    let taken = actions::Op::Claim { check: 1 };
+    let owner = Origin::Signed(OWNER.to_vec());
+    node.chain.submit(owner, actions::PROGRAM, &taken).unwrap();
+    node.offer(1).unwrap();
+    node.offer(REFUSED).unwrap();
+    node.after(2_000);
+    node.after(0);
+    assert!(node.idle(), "no pod for either");
+    let why = "the claim was refused: the stand-in refuses this claim for its own reasons";
+    assert_eq!(
+        node.reports(),
+        [(REFUSED, State::Errored, why.to_owned(), None)]
+    );
 }

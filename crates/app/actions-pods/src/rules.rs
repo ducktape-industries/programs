@@ -1,8 +1,8 @@
-//! A check run as a pod: claimed when actions offers it and run the block after, so the block
-//! time is measured between the two; the pod made, its end heard as a stream, `/out` copied into
+//! A check run as a pod: booked when actions offers it, then claimed and run in this program's own
+//! run the block after, however deep the offer came, so the block time is measured between the two; the pod made, its end heard as a stream, `/out` copied into
 //! files, the check reported and the pod deleted. A step that fails reports the check errored.
 use ::program::{
-    BlobId, Cause, Ctx, Error, ExecCtx, HashKind, ProgramId, QueryCtx, decoded, unauthorized,
+    BlobId, Cause, Ctx, Error, ExecCtx, HashKind, ProgramId, QueryCtx, code, decoded, unauthorized,
     unexpected_reply, wrong_state,
 };
 use abi::role::egress::{DEFAULT_WAIT, Delivery, Event, Op as Egress, Request, http};
@@ -12,7 +12,7 @@ use store::Map;
 
 use crate::{Op, PROGRAM, RunRow, SERVICE};
 
-// The block time each claimed check was offered at, until its run takes it.
+// The block time each check was offered at, until its run claims it.
 pub(crate) const OFFERED: Map<u64, u64> = Map::new("o/").shared();
 // The data of each pod's `ended` event, until its run reads it.
 pub(crate) const ENDED: Map<String, Vec<u8>> = Map::new("e/").shared();
@@ -24,21 +24,18 @@ struct Ending {
     log: Option<String>,
 }
 
+// The offer only books the run: the claim waits for this program's own run the block after, a
+// frame of its own (an offer nested deep in its trigger's frame cannot claim, J-033). A run that
+// can't be booked refuses the offer, which actions records on the check.
 pub(crate) async fn offered(ctx: Ctx, check: u64) -> Result<(), Error> {
     ctx.env().sent_by(actions::PROGRAM)?;
-    let claim = actions::Op::Claim { check };
-    let claimed = ctx.call_raw(actions::PROGRAM, abi::encode(&claim)).await;
-    if claimed.is_err() {
-        // another runner took it first, or it is no longer queued
+    if OFFERED.has(&ctx, &check) {
         return Ok(());
     }
     OFFERED.put(&ctx, &check, &ctx.env().time);
     let own = ctx.env().program.clone();
     let next = ctx.env().height + 1;
-    if let Err(refused) = ctx.schedule(next, own, &Op::Run { check }).await {
-        let why = format!("its run was not scheduled: {}", refused.message);
-        report(&ctx, check, Ending::errored(why)).await;
-    }
+    ctx.schedule(next, own, &Op::Run { check }).await?;
     Ok(())
 }
 
@@ -56,6 +53,15 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
         )));
     };
     OFFERED.remove(&ctx, &check);
+    let claim = actions::Op::Claim { check };
+    if let Err(refused) = ctx.call_raw(actions::PROGRAM, abi::encode(&claim)).await {
+        // a check another runner took or that ended is left alone; any other refusal errs it
+        if refused.code != code::WRONG_STATE {
+            let why = format!("the claim was refused: {}", refused.message);
+            report(&ctx, check, Ending::errored(why)).await;
+        }
+        return Ok(());
+    }
     let mut kept = RunRow {
         check,
         block_ms: ctx.env().time.saturating_sub(offered),

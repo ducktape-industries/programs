@@ -808,3 +808,27 @@ fn a_runner_that_refuses_its_offer_errs_the_check_saying_why() {
         "{told:?}"
     );
 }
+
+#[test]
+fn a_queued_check_ends_errored_unclaimed_but_passes_only_once_claimed() {
+    let mut world = world();
+    let root = world.commit(&[], &[("gates.toml", GATES)]);
+    world.push(None, root, "main");
+    let report = |state| Op::Report {
+        check: 2,
+        state,
+        summary: "the claim was refused: messages nest deeper than 8".into(),
+        log: None,
+    };
+    assert_eq!(
+        world.act(&report(State::Passed)).unwrap_err().code,
+        code::WRONG_STATE
+    );
+    world.act(&report(State::Errored)).unwrap();
+    let errored = world.check(2);
+    assert_eq!((errored.state, errored.claimant), (State::Errored, None));
+    assert_eq!(
+        world.act(&Op::Claim { check: 2 }).unwrap_err().code,
+        code::WRONG_STATE
+    );
+}
