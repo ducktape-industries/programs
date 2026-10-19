@@ -10,7 +10,6 @@ const UNDESCRIBED: &[&str] = &[
     "awaits",
     "halo",
     "scheduler",
-    "access",
     "ownership",
     "egress",
     "attribution",

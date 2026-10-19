@@ -14,6 +14,10 @@ impl Program for Access {
     type Reply = Reply;
     const TABLES: &'static [::program::Table] = crate::rules::TABLES;
 
+    fn tools() -> ::program::tools::Tools {
+        ::program::tools::Tools::of::<Op, Query>()
+    }
+
     fn init(_: &ExecCtx, _: &[u8]) -> Result<(), Error> {
         Ok(())
     }
