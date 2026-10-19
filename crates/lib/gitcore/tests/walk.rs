@@ -5,12 +5,12 @@
 #[path = "common/mod.rs"]
 mod common;
 
-use common::{blob, commit, file_tree, git_binary, temp_dir, tree};
+use common::{blob, commit, file_tree, git_binary, signature, temp_dir, tree};
 use gitcore::walk::{
-    Listing, Trees, Verdict, Walk, closure, commits, history as walked_history, is_ancestor,
-    tree_at_path,
+    Listing, ShallowListing, Trees, Verdict, Walk, closure, commits, history as walked_history,
+    is_ancestor, shallow_history, tree_at_path,
 };
-use gitcore::{Commit, Error, Hash, Kind, MemoryObjects, Mode, Objects as _, Oid, Tree};
+use gitcore::{Commit, Error, Hash, Kind, MemoryObjects, Mode, Objects as _, Oid, Tag, Tree};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write as _;
 use std::path::Path;
@@ -586,9 +586,7 @@ fn ids(listing: &[u8]) -> BTreeSet<Oid> {
 
 #[test]
 fn paged_closures_of_generated_histories_list_what_git_lists() {
-    let Some(git_path) = git_binary() else {
-        return;
-    };
+    let git_path = git_binary();
     let root = temp_dir("gitcore-closure");
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
     for seed in 0..120 {
@@ -706,4 +704,250 @@ fn nested_reachability_and_path_lookup() {
             .unwrap()
             .is_none()
     );
+}
+
+struct Cut {
+    listed: BTreeSet<Oid>,
+    shallow: BTreeSet<Oid>,
+    unshallow: BTreeSet<Oid>,
+}
+
+// What a shallow client lists from `shallow_history` pages and its own `Trees`: each boundary's
+// tree, a new one's or its own, against no parents, since it has none of them.
+fn shallow_listing(
+    store: &MemoryObjects,
+    wants: &[Oid],
+    haves: &[Oid],
+    deepen: Option<u32>,
+    client: &[Oid],
+    most: usize,
+) -> Cut {
+    let mut listing = ShallowListing::of(wants, haves, deepen, client);
+    while let Some(deep) = listing.pending() {
+        listing.receive(shallow_history(store, deep, most).unwrap());
+    }
+    let shallow = set(listing.shallow());
+    let unshallow = set(listing.unshallow());
+    let cut: BTreeSet<Oid> = shallow.iter().chain(client).copied().collect();
+    let listed = listing.into_listed();
+    let body = |id: &Oid| store.get(id).unwrap().unwrap().body;
+    let tree_of = |id: &Oid| Commit::parse(&body(id), Hash::Sha1).unwrap().tree;
+    let mut trees = Trees::default();
+    for item in &listed {
+        match item.kind {
+            Kind::Commit if cut.contains(&item.id) => trees.commit(tree_of(&item.id), Vec::new()),
+            Kind::Commit => {
+                let commit = Commit::parse(&body(&item.id), Hash::Sha1).unwrap();
+                trees.commit(commit.tree, commit.parents.iter().map(tree_of).collect());
+            }
+            Kind::Tree => trees.tree(item.id),
+            Kind::Blob | Kind::Tag => {}
+        }
+    }
+    while !trees.is_done() {
+        trees.expand(store).unwrap();
+    }
+    let trees = trees.into_listed();
+    Cut {
+        listed: listed.iter().chain(&trees).map(|item| item.id).collect(),
+        shallow,
+        unshallow,
+    }
+}
+
+fn set(ids: &[Oid]) -> BTreeSet<Oid> {
+    ids.iter().copied().collect()
+}
+
+// What a repository holding `commits`, and none of their parents besides, holds.
+fn held(store: &MemoryObjects, commits: &[Oid]) -> BTreeSet<Oid> {
+    let mut held = set(commits);
+    for id in commits {
+        let body = store.get(id).unwrap().unwrap().body;
+        let tree = Commit::parse(&body, Hash::Sha1).unwrap().tree;
+        held.extend(reachable(store, &[tree]));
+    }
+    held
+}
+
+#[test]
+fn a_shallow_walk_lists_the_commits_within_its_depth_and_names_the_boundary() {
+    let d = dag();
+    for most in PAGES {
+        let one = shallow_listing(&d.store, &[d.merge], &[], Some(1), &[], most);
+        assert_eq!(one.listed, held(&d.store, &[d.merge]), "pages of {most}");
+        assert_eq!(one.shallow, set(&[d.merge]));
+        let two = shallow_listing(&d.store, &[d.merge], &[], Some(2), &[], most);
+        let within = held(&d.store, &[d.merge, d.c, d.b]);
+        assert_eq!(two.listed, within, "pages of {most}");
+        assert_eq!(two.shallow, set(&[d.c, d.b]));
+        let three = shallow_listing(&d.store, &[d.merge], &[], Some(3), &[], most);
+        assert_eq!(three.listed, listed(&d, &[d.merge], &[]), "pages of {most}");
+        assert_eq!(three.shallow, set(&[d.a, d.root]));
+        let four = shallow_listing(&d.store, &[d.merge], &[], Some(4), &[], most);
+        assert_eq!(four.listed, three.listed);
+        assert!(four.shallow.is_empty() && four.unshallow.is_empty());
+    }
+}
+
+#[test]
+fn a_wanted_tag_puts_its_commit_one_deep_whatever_reaches_it_further_down() {
+    let mut d = dag();
+    let tag = Tag {
+        object: d.a,
+        kind: Kind::Commit,
+        name: b"v1".to_vec(),
+        tagger: Some(signature(250)),
+        message: b"v1\n".to_vec(),
+    };
+    let tag = d.store.put(Kind::Tag, &tag.serialize()).unwrap();
+    for wants in [[d.merge, tag], [tag, d.merge]] {
+        let two = shallow_listing(&d.store, &wants, &[], Some(2), &[], usize::MAX);
+        assert_eq!(two.shallow, set(&[d.c, d.b, d.root]), "{wants:?}");
+        let mut expected = held(&d.store, &[d.merge, d.c, d.b, d.a, d.root]);
+        expected.insert(tag);
+        assert_eq!(two.listed, expected, "{wants:?}");
+    }
+}
+
+#[test]
+fn a_client_deepening_its_boundary_hears_it_lifted_and_gets_what_lies_below() {
+    let d = dag();
+    let had = held(&d.store, &[d.merge]);
+    let now = held(&d.store, &[d.merge, d.c, d.b]);
+    for most in PAGES {
+        let deeper = shallow_listing(&d.store, &[d.merge], &[d.merge], Some(2), &[d.merge], most);
+        assert_eq!(deeper.unshallow, set(&[d.merge]), "pages of {most}");
+        assert_eq!(deeper.shallow, set(&[d.c, d.b]), "pages of {most}");
+        assert!(!deeper.listed.contains(&d.merge), "pages of {most}");
+        assert!(deeper.listed.is_subset(&now), "pages of {most}");
+        let holds: BTreeSet<Oid> = had.union(&deeper.listed).copied().collect();
+        assert_eq!(holds, now, "pages of {most}");
+    }
+}
+
+#[test]
+fn a_shallow_clients_fetch_walks_from_its_boundary_and_never_past_it() {
+    let d = dag();
+    let fetched = shallow_listing(&d.store, &[d.merge], &[d.c], None, &[d.c], usize::MAX);
+    let commits = set(&[d.merge, d.c, d.b, d.a, d.root]);
+    let listed_commits: BTreeSet<Oid> = fetched.listed.intersection(&commits).copied().collect();
+    assert_eq!(listed_commits, set(&[d.merge, d.b, d.root]));
+    assert!(fetched.shallow.is_empty() && fetched.unshallow.is_empty());
+    assert!(
+        !listed(&d, &[d.merge], &[d.c]).contains(&d.root),
+        "a client that is not shallow holds the root"
+    );
+}
+
+#[test]
+fn shallow_walks_of_generated_histories_hold_what_git_clones_and_deepens() {
+    let git_path = git_binary();
+    let root = temp_dir("gitcore-shallow");
+    let mut rng = Rng(0x2545_F491_4F6C_DD1D);
+    for seed in 0..40 {
+        let made = history(&mut rng);
+        let source = root.join(format!("source-{seed}"));
+        std::fs::create_dir_all(&source).unwrap();
+        git(&git_path, &source, &["init", "-q", "--bare"], b"");
+        git(
+            &git_path,
+            &source,
+            &["fast-import", "--quiet"],
+            &made.import,
+        );
+        let branches = git(
+            &git_path,
+            &source,
+            &["for-each-ref", "--format=%(refname)", "refs/heads/"],
+            b"",
+        );
+        let first_branch = String::from_utf8(branches).unwrap();
+        let first_branch = first_branch.lines().next().unwrap();
+        git(
+            &git_path,
+            &source,
+            &["symbolic-ref", "HEAD", first_branch],
+            b"",
+        );
+        let all = git(
+            &git_path,
+            &source,
+            &["cat-file", "--batch-all-objects", "--batch"],
+            b"",
+        );
+        let store = loaded(&all);
+        let tips = git(
+            &git_path,
+            &source,
+            &["for-each-ref", "--format=%(objectname)", "refs/heads/"],
+            b"",
+        );
+        let wants: Vec<Oid> = ids(&tips).into_iter().collect();
+        let depth = 1 + rng.below(3) as u32;
+        let deeper = depth + rng.below(3) as u32;
+        let context = format!("history {seed}, depth {depth} then {deeper}");
+        let clone = root.join(format!("clone-{seed}"));
+        let url = format!("file://{}", source.display());
+        let clone_path = clone.display().to_string();
+        let depth_arg = format!("--depth={depth}");
+        let cloning: [&str; 7] = [
+            "clone",
+            "-q",
+            "--bare",
+            "--no-single-branch",
+            &depth_arg,
+            &url,
+            &clone_path,
+        ];
+        git(&git_path, &root, &cloning, b"");
+        let cloned = objects_in(&git_path, &clone);
+        let cloned_cut = shallow_file(&clone);
+        let ours = shallow_listing(&store, &wants, &[], Some(depth), &[], usize::MAX);
+        assert_eq!(ours.listed, cloned, "{context}: the clone");
+        assert_eq!(ours.shallow, cloned_cut, "{context}: the clone's boundary");
+        assert!(ours.unshallow.is_empty(), "{context}");
+        let deeper_arg = format!("--depth={deeper}");
+        let fetching: [&str; 5] = [
+            "fetch",
+            "-q",
+            &deeper_arg,
+            "origin",
+            "+refs/heads/*:refs/heads/*",
+        ];
+        git(&git_path, &clone, &fetching, b"");
+        let fetched = objects_in(&git_path, &clone);
+        let fetched_cut = shallow_file(&clone);
+        let client: Vec<Oid> = cloned_cut.iter().copied().collect();
+        for most in PAGES {
+            let again = shallow_listing(&store, &wants, &wants, Some(deeper), &client, most);
+            let holds: BTreeSet<Oid> = cloned.union(&again.listed).copied().collect();
+            assert_eq!(holds, fetched, "{context}, pages of {most}: the fetch");
+            let cut: BTreeSet<Oid> = cloned_cut
+                .difference(&again.unshallow)
+                .chain(&again.shallow)
+                .copied()
+                .collect();
+            assert_eq!(cut, fetched_cut, "{context}, pages of {most}: its boundary");
+        }
+    }
+    std::fs::remove_dir_all(&root).ok();
+}
+
+fn objects_in(git_path: &Path, dir: &Path) -> BTreeSet<Oid> {
+    let listed = git(
+        git_path,
+        dir,
+        &[
+            "cat-file",
+            "--batch-all-objects",
+            "--batch-check=%(objectname)",
+        ],
+        b"",
+    );
+    ids(&listed)
+}
+
+fn shallow_file(dir: &Path) -> BTreeSet<Oid> {
+    ids(&std::fs::read(dir.join("shallow")).unwrap_or_default())
 }

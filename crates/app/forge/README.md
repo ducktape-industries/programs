@@ -108,6 +108,7 @@ and decode a `forge::Reply` from the concatenated `Respond` bytes.
 | `Upload { repo: r, request: git_v2_ls_refs_bytes }` | raw Git protocol v2 `ls-refs` response |
 | `Closure { repo: r, walk: Walk::of(gitcore::walk::Walk::of(&wants, &haves)) }` | `listed`: the ids and kinds of the objects `wants` reach less what `haves` reach, and `next`, the walk to send back for the next page |
 | `History { repo: r, walk: Walk::of(gitcore::walk::Walk::of(&wants, &haves)) }` | `Reply::Closure` less the trees: the commits `wants` reach less what `haves` reach, newest first, and the tags, trees and blobs a want names itself; `next` as for `Closure` |
+| `Shallow { repo: r, walk: DeepWalk::of(gitcore::walk::Deep::of(&wants, &haves, Some(depth), &client_shallows)) }` | `History` cut `depth` commits below each want (`git fetch --depth`): `listed` and `next` as for `History`, and once the depths are walked the boundary, `shallow` (the new boundary commits) and `unshallow` (the client's boundaries the walk went past) |
 | `Protected { repo: r, cursor: None, limit: 20 }` | `page<Vec<u8>>`: the protected branch names in byte order; the head is protected besides |
 | `Preview { repo: r, n: 1 }` | `Option<PreviewInfo>`: change 1's latest Preview, the target and source heads it read and the squash it made (`merge`) |
 | `Statuses { repo: r, commit: c, page }` | `page<CommitStatus>`: every status of `c`, by reporter then context, each with its state, url and height |
@@ -144,6 +145,22 @@ holds anyway. What it ends with is what `Closure` lists. A fetch spends one quer
 per page under the node's lock, so this takes a clone of a few thousand commits
 from dozens of pages to a handful (git-remote-duck asks `History` first, and
 `Closure` where a forge answers no `History`).
+
+`Shallow` answers a shallow fetch. It first walks the depths, as git's upload-pack
+does: breadth first from the wants (each at depth 1), through every commit
+whatever the client holds, as far as `deepen`. A commit at depth `deepen` is a
+new boundary (`shallow`), unless the client already names it `shallow`; a client
+boundary nearer than that is lifted (`unshallow`) and its parents are wanted.
+Then it walks as `History` does with every boundary's parents cut, the new ones
+and the client's, so neither the walk nor the client's `haves` reach past one.
+`deepen: None` walks no depths and cuts only at the client's boundaries: a
+shallow client's plain fetch. The depths walked so far travel in `next` with
+the walk, each page reading at most `Bounds.tree_walk` objects, and `shallow`
+and `unshallow` are final on the page whose depths are done (every page after
+repeats them). The client expands the trees as for `History`, a boundary's tree
+against no parents, and sends `shallow` and `unshallow` in git's `shallow-info`
+section before the pack (`gitcore::wire::upload::respond_shallow`). forge's
+upload-pack advertisement does not offer `shallow` yet.
 
 An unborn ref returns `not_found`; an empty directory/list is a successful empty
 page. Missing current change refs are `None` on the detail, so a deleted branch
@@ -347,7 +364,7 @@ every op that names it, before writing anything, `wrong_state` ("<repo> is
 archived: un-archive it …"): pushes, stages, changes and reviews, merges, branch
 rules, statuses and previews alike, so its open changes stay as they are. `Create`
 of its name still answers that the name is taken. Every query answers as before,
-the git wire (`Advertise`, `Upload`, `Closure`, `History`) included, so a clone, a fetch or a
+the git wire (`Advertise`, `Upload`, `Closure`, `History`, `Shallow`) included, so a clone, a fetch or a
 pinned dependency keeps working. `Archive { archived: false }` restores it: it is
 listed again and takes writes again. Archiving an archived repository, or
 restoring one that is not, is `wrong_state`.

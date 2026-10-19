@@ -468,6 +468,11 @@ pub enum Query {
     #[ask(Reply::Closure { height: u64, listed: Vec<Listed>, next: Walk })]
     #[tool_query(description = "Closure less the trees: the commits a walk reaches, newest first, and the tags, trees and blobs a want names itself; send next back for the rest.", example = crate::examples::history)]
     History { repo: String, walk: Walk },
+    // `History` cut `deepen` commits below each want, for a shallow fetch (`git fetch --depth`),
+    // and the boundary that leaves (`gitcore::walk::shallow_history`).
+    #[ask(Reply::Shallow { height: u64, listed: Vec<Listed>, next: DeepWalk, shallow: Vec<String>, unshallow: Vec<String> })]
+    #[tool_query(description = "For a shallow fetch (git fetch --depth): History cut deepen commits below each want, and once its depths are walked the boundary, shallow (new) and unshallow (the client's, now passed); send next back for the rest.", example = crate::examples::shallow)]
+    Shallow { repo: String, walk: DeepWalk },
 }
 
 impl Query {
@@ -508,7 +513,8 @@ impl Query {
             | Query::Closure { .. }
             | Query::Preview { .. }
             | Query::Archived { .. }
-            | Query::History { .. } => None,
+            | Query::History { .. }
+            | Query::Shallow { .. } => None,
         }
     }
 
@@ -539,7 +545,8 @@ impl Query {
             | Query::Closure { .. }
             | Query::Preview { .. }
             | Query::Archived { .. }
-            | Query::History { .. } => None,
+            | Query::History { .. }
+            | Query::Shallow { .. } => None,
         }
     }
 }
@@ -682,6 +689,15 @@ pub enum Reply {
         height: u64,
         page: PageResponse<RepoInfo>,
     },
+    // A `Shallow` page: `listed` and `next` as `Closure`'s; once the depths are walked, `shallow`
+    // names the new boundary and `unshallow` the client's boundaries the walk went past.
+    Shallow {
+        height: u64,
+        listed: Vec<Listed>,
+        next: DeepWalk,
+        shallow: Vec<String>,
+        unshallow: Vec<String>,
+    },
 }
 
 #[derive(
@@ -780,6 +796,52 @@ impl Walk {
     }
 }
 
+// A shallow fetch's walk (`gitcore::walk::Deep`): `walk` as `History` takes it, the depth it is cut
+// at (None: only at the client's own boundaries, `client_shallows`), and the depths walked so far,
+// which the client sends back as `next` gave them.
+#[derive(
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    PartialOrd,
+    Ord,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+)]
+pub struct DeepWalk {
+    pub walk: Walk,
+    pub deepen: Option<u32>,
+    pub client_shallows: Vec<String>,
+    pub depths: Vec<(String, u32)>,
+    pub frontier: Vec<(String, u32)>,
+}
+
+impl DeepWalk {
+    pub fn of(deep: gitcore::walk::Deep) -> DeepWalk {
+        DeepWalk {
+            walk: Walk::of(deep.walk),
+            deepen: deep.deepen,
+            client_shallows: hexes(&deep.client_shallows),
+            depths: hexes_at(&deep.depths),
+            frontier: hexes_at(&deep.frontier),
+        }
+    }
+
+    pub fn parse(&self, hash: HashKind) -> Option<gitcore::walk::Deep> {
+        let oid_hash = crate::objects::hash_of(hash);
+        Some(gitcore::walk::Deep {
+            walk: self.walk.parse(hash)?,
+            deepen: self.deepen,
+            client_shallows: oids(oid_hash, &self.client_shallows)?,
+            depths: oids_at(oid_hash, &self.depths)?,
+            frontier: oids_at(oid_hash, &self.frontier)?,
+        })
+    }
+}
+
 impl Listed {
     pub fn of(listed: gitcore::walk::Listed) -> Listed {
         let kind = match listed.kind {
@@ -814,6 +876,19 @@ fn oids(hash: gitcore::Hash, hexes: &[String]) -> Option<Vec<gitcore::Oid>> {
     hexes
         .iter()
         .map(|hex| gitcore::Oid::from_hex(hash, hex).ok())
+        .collect()
+}
+
+fn hexes_at(ids: &[(gitcore::Oid, u32)]) -> Vec<(String, u32)> {
+    ids.iter()
+        .map(|(id, depth)| (id.to_hex(), *depth))
+        .collect()
+}
+
+fn oids_at(hash: gitcore::Hash, hexes: &[(String, u32)]) -> Option<Vec<(gitcore::Oid, u32)>> {
+    hexes
+        .iter()
+        .map(|(hex, depth)| Some((gitcore::Oid::from_hex(hash, hex).ok()?, *depth)))
         .collect()
 }
 

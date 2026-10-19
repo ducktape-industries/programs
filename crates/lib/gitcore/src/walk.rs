@@ -1,5 +1,6 @@
 // History walks over the store: ancestry checks, wants-minus-haves, the paged closure a fetch lists
-// (whole, or its history with the trees left to a client that expands them), path lookup.
+// (whole, or its history with the trees left to a client that expands them, or that history cut at
+// a depth for a shallow fetch), path lookup.
 
 use super::error::{Error, Result};
 use crate::object::{Commit, Kind, Mode, Tag, Tree, TreeEntry};
@@ -294,22 +295,24 @@ struct Page<'a, S: ?Sized> {
     seen: BTreeSet<Oid>,
     most: usize,
     expand: bool,
+    cut: BTreeSet<Oid>,
 }
 
 pub fn closure<S: Objects + ?Sized>(store: &S, walk: Walk, most: usize) -> Result<Closed> {
-    walked(Page::open(store, walk, most, true))
+    walked(Page::open(store, walk, most, true, BTreeSet::new()), 0)
 }
 
 // `closure` less the trees: the commits the walk reaches, newest first, and the tags, trees and
 // blobs a want names itself. Each commit's tree is left to the client, which reads the tree
 // bodies itself and expands them as `closure` would (`Trees`).
 pub fn history<S: Objects + ?Sized>(store: &S, walk: Walk, most: usize) -> Result<Closed> {
-    walked(Page::open(store, walk, most, false))
+    walked(Page::open(store, walk, most, false, BTreeSet::new()), 0)
 }
 
-fn walked<S: Objects + ?Sized>(mut page: Page<'_, S>) -> Result<Closed> {
+// `ran` counts the units run before this page's own (a shallow walk's depths), so a page that made
+// progress ends where its budget does rather than failing.
+fn walked<S: Objects + ?Sized>(mut page: Page<'_, S>, mut ran: usize) -> Result<Closed> {
     let most = page.most;
-    let mut ran = 0usize;
     while let Some(unit) = page.next_unit() {
         let page_full = ran > 0 && page.named() >= most;
         if page_full {
@@ -331,7 +334,13 @@ fn walked<S: Objects + ?Sized>(mut page: Page<'_, S>) -> Result<Closed> {
 }
 
 impl<'a, S: Objects + ?Sized> Page<'a, S> {
-    fn open(store: &'a S, walk: Walk, most: usize, expand: bool) -> Page<'a, S> {
+    fn open(
+        store: &'a S,
+        walk: Walk,
+        most: usize,
+        expand: bool,
+        cut: BTreeSet<Oid>,
+    ) -> Page<'a, S> {
         let mut page = Page {
             store,
             haves: walk.haves,
@@ -345,6 +354,7 @@ impl<'a, S: Objects + ?Sized> Page<'a, S> {
             seen: BTreeSet::new(),
             most,
             expand,
+            cut,
         };
         for queued in walk.commits {
             let known = page.marks.contains_key(&queued.id);
@@ -457,6 +467,15 @@ impl<'a, S: Objects + ?Sized> Page<'a, S> {
         }
     }
 
+    // A commit as this walk sees it: a cut one (a shallow boundary) has no parents.
+    fn info_of(&self, id: &Oid, commit: &Commit) -> Info {
+        let mut info = Info::of(commit);
+        if self.cut.contains(id) {
+            info.parents.clear();
+        }
+        info
+    }
+
     fn info(&mut self, id: &Oid) -> Result<Option<&Info>> {
         if !self.infos.contains_key(id) {
             let commit = self
@@ -464,7 +483,7 @@ impl<'a, S: Objects + ?Sized> Page<'a, S> {
                 .get(id)?
                 .filter(|object| object.kind == Kind::Commit);
             let info = match commit {
-                Some(object) => Some(Info::of(&Commit::parse(&object.body, id.hash())?)),
+                Some(object) => Some(self.info_of(id, &Commit::parse(&object.body, id.hash())?)),
                 None => None,
             };
             self.infos.insert(*id, info);
@@ -486,7 +505,7 @@ impl<'a, S: Objects + ?Sized> Page<'a, S> {
         let object = load(self.store, &id)?;
         match object.kind {
             Kind::Commit => {
-                let info = Info::of(&Commit::parse(&object.body, id.hash())?);
+                let info = self.info_of(&id, &Commit::parse(&object.body, id.hash())?);
                 let time = info.time;
                 self.infos.insert(id, Some(info));
                 self.enqueue(id, time, false);
@@ -570,6 +589,203 @@ impl<'a, S: Objects + ?Sized> Page<'a, S> {
     }
 }
 
+// A shallow fetch's walk (`git fetch --depth`): `history` cut `deepen` commits below each want. It
+// first walks the depths, breadth first from the wants (each at depth 1) through every commit
+// whatever the client holds, as git's upload-pack does; then `history`, each boundary's parents cut.
+// `deepen: None` walks no depths and cuts only at the client's own boundaries (`client_shallows`).
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct Deep {
+    pub walk: Walk,
+    pub deepen: Option<u32>,
+    pub client_shallows: Vec<Oid>,
+    pub depths: Vec<(Oid, u32)>,
+    pub frontier: Vec<(Oid, u32)>,
+}
+
+impl Deep {
+    pub fn of(wants: &[Oid], haves: &[Oid], deepen: Option<u32>, client_shallows: &[Oid]) -> Deep {
+        let frontier = match deepen {
+            Some(_) => wants.iter().map(|want| (*want, 1)).collect(),
+            None => Vec::new(),
+        };
+        Deep {
+            walk: Walk::of(wants, haves),
+            deepen,
+            client_shallows: client_shallows.to_vec(),
+            depths: Vec::new(),
+            frontier,
+        }
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.frontier.is_empty() && self.walk.is_done()
+    }
+}
+
+// A page of `shallow_history`. Once the depths are walked, `shallow` names the new boundary (the
+// commits at depth `deepen` the client does not hold as boundaries) and `unshallow` the client's
+// boundaries nearer than that, whose parents the walk lists.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Deepened {
+    pub listed: Vec<Listed>,
+    pub next: Deep,
+    pub shallow: Vec<Oid>,
+    pub unshallow: Vec<Oid>,
+}
+
+pub fn shallow_history<S: Objects + ?Sized>(
+    store: &S,
+    deep: Deep,
+    most: usize,
+) -> Result<Deepened> {
+    let Deep {
+        mut walk,
+        deepen,
+        client_shallows,
+        depths,
+        frontier,
+    } = deep;
+    let mut depths = Depths {
+        deepen,
+        client: client_shallows.iter().copied().collect(),
+        known: depths.into_iter().collect(),
+        frontier: frontier.into(),
+    };
+    let mut ran = 0usize;
+    while let Some((id, depth)) = depths.frontier.pop_front() {
+        let Err(error) = depths.expand(store, &mut walk.objects, id, depth) else {
+            ran += 1;
+            continue;
+        };
+        let page_full = error == Error::CapReached && ran > 0;
+        if !page_full {
+            return Err(error);
+        }
+        depths.frontier.push_front((id, depth));
+        return Ok(depths.page(Vec::new(), walk));
+    }
+    depths.settle();
+    let cut = depths
+        .shallow()
+        .into_iter()
+        .chain(client_shallows)
+        .collect();
+    let Closed { listed, next } = walked(Page::open(store, walk, most, false, cut), ran)?;
+    Ok(depths.page(listed, next))
+}
+
+struct Depths {
+    deepen: Option<u32>,
+    client: BTreeSet<Oid>,
+    known: BTreeMap<Oid, u32>,
+    frontier: VecDeque<(Oid, u32)>,
+}
+
+impl Depths {
+    // `id` lies `depth` commits from a want, or nearer: a commit nearer than `deepen` has its
+    // parents queued one deeper, and a client boundary among them has its parents wanted.
+    fn expand<S: Objects + ?Sized>(
+        &mut self,
+        store: &S,
+        wanted: &mut Vec<Oid>,
+        id: Oid,
+        depth: u32,
+    ) -> Result<()> {
+        let Some(deepen) = self.deepen else {
+            return Ok(());
+        };
+        let walked = self.known.get(&id).is_some_and(|known| *known <= depth);
+        if walked {
+            return Ok(());
+        }
+        let object = load(store, &id)?;
+        match object.kind {
+            Kind::Tag => {
+                let target = Tag::parse(&object.body, id.hash())?.object;
+                self.frontier.push_back((target, depth));
+            }
+            Kind::Commit => {
+                let parents = Commit::parse(&object.body, id.hash())?.parents;
+                self.known.insert(id, depth);
+                let boundary = depth >= deepen;
+                if boundary {
+                    return Ok(());
+                }
+                if self.client.contains(&id) {
+                    for parent in &parents {
+                        if !wanted.contains(parent) {
+                            wanted.push(*parent);
+                        }
+                    }
+                }
+                for parent in parents {
+                    let nearer = self
+                        .known
+                        .get(&parent)
+                        .is_none_or(|known| *known > depth + 1);
+                    if nearer {
+                        self.frontier.push_back((parent, depth + 1));
+                    }
+                }
+            }
+            Kind::Tree | Kind::Blob => {}
+        }
+        Ok(())
+    }
+
+    fn walked(&self) -> bool {
+        self.frontier.is_empty()
+    }
+
+    // Once the depths are walked, only the boundaries matter: the commits at `deepen` and the
+    // client's own.
+    fn settle(&mut self) {
+        let (deepen, client) = (self.deepen, &self.client);
+        self.known
+            .retain(|id, depth| Some(*depth) == deepen || client.contains(id));
+    }
+
+    fn shallow(&self) -> Vec<Oid> {
+        if !self.walked() {
+            return Vec::new();
+        }
+        self.known
+            .iter()
+            .filter(|(id, depth)| Some(**depth) == self.deepen && !self.client.contains(*id))
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    fn unshallow(&self) -> Vec<Oid> {
+        if !self.walked() {
+            return Vec::new();
+        }
+        let nearer = |depth: u32| self.deepen.is_some_and(|deepen| depth < deepen);
+        self.known
+            .iter()
+            .filter(|(id, depth)| self.client.contains(*id) && nearer(**depth))
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    fn page(self, listed: Vec<Listed>, walk: Walk) -> Deepened {
+        let shallow = self.shallow();
+        let unshallow = self.unshallow();
+        Deepened {
+            listed,
+            next: Deep {
+                walk,
+                deepen: self.deepen,
+                client_shallows: self.client.into_iter().collect(),
+                depths: self.known.into_iter().collect(),
+                frontier: self.frontier.into(),
+            },
+            shallow,
+            unshallow,
+        }
+    }
+}
+
 pub struct Listing {
     walk: Walk,
     received: BTreeSet<Oid>,
@@ -598,12 +814,71 @@ impl Listing {
                 self.listed.push(item);
             }
         }
-        let received = &self.received;
         self.walk = closed.next;
-        self.walk.objects.retain(|id| !received.contains(id));
-        self.walk
-            .commits
-            .retain(|queued| queued.uninteresting || !received.contains(&queued.id));
+        unreceived(&mut self.walk, &self.received);
+    }
+
+    pub fn into_listed(self) -> Vec<Listed> {
+        self.listed
+    }
+}
+
+// A walk sent back less what its earlier pages listed.
+fn unreceived(walk: &mut Walk, received: &BTreeSet<Oid>) {
+    walk.objects.retain(|id| !received.contains(id));
+    walk.commits
+        .retain(|queued| queued.uninteresting || !received.contains(&queued.id));
+}
+
+// `Listing` for `shallow_history`: what its pages list, once each, and the boundary the last one
+// names.
+#[derive(Default)]
+pub struct ShallowListing {
+    deep: Deep,
+    received: BTreeSet<Oid>,
+    listed: Vec<Listed>,
+    shallow: Vec<Oid>,
+    unshallow: Vec<Oid>,
+}
+
+impl ShallowListing {
+    pub fn of(
+        wants: &[Oid],
+        haves: &[Oid],
+        deepen: Option<u32>,
+        client_shallows: &[Oid],
+    ) -> ShallowListing {
+        ShallowListing {
+            deep: Deep::of(wants, haves, deepen, client_shallows),
+            ..ShallowListing::default()
+        }
+    }
+
+    pub fn pending(&mut self) -> Option<Deep> {
+        if self.deep.is_done() {
+            return None;
+        }
+        Some(std::mem::take(&mut self.deep))
+    }
+
+    pub fn receive(&mut self, page: Deepened) {
+        for item in page.listed {
+            if self.received.insert(item.id) {
+                self.listed.push(item);
+            }
+        }
+        self.deep = page.next;
+        unreceived(&mut self.deep.walk, &self.received);
+        self.shallow = page.shallow;
+        self.unshallow = page.unshallow;
+    }
+
+    pub fn shallow(&self) -> &[Oid] {
+        &self.shallow
+    }
+
+    pub fn unshallow(&self) -> &[Oid] {
+        &self.unshallow
     }
 
     pub fn into_listed(self) -> Vec<Listed> {

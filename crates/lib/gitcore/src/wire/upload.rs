@@ -43,6 +43,8 @@ pub struct Fetch {
     pub ofs_delta: bool,
     pub sideband_all: bool,
     pub wait_for_done: bool,
+    pub deepen: Option<u32>,
+    pub shallows: Vec<Oid>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -153,8 +155,15 @@ fn parse_fetch(args: &[&[u8]], hash: Hash) -> Result<Fetch> {
                     command.haves.push(Oid::from_hex(hash, hex)?);
                     continue;
                 }
+                if let Some(hex) = other.strip_prefix(b"shallow ") {
+                    command.shallows.push(Oid::from_hex(hash, hex)?);
+                    continue;
+                }
+                if let Some(depth) = other.strip_prefix(b"deepen ") {
+                    command.deepen = Some(depth_of(depth)?);
+                    continue;
+                }
                 let unsupported = other.starts_with(b"deepen")
-                    || other.starts_with(b"shallow ")
                     || other.starts_with(b"filter ")
                     || other.starts_with(b"want-ref ")
                     || other.starts_with(b"packfile-uris");
@@ -166,6 +175,14 @@ fn parse_fetch(args: &[&[u8]], hash: Hash) -> Result<Fetch> {
         }
     }
     Ok(command)
+}
+
+// `deepen <n>`: git takes no depth below 1.
+fn depth_of(text: &[u8]) -> Result<u32> {
+    let depth = std::str::from_utf8(text)
+        .ok()
+        .and_then(|text| text.parse::<u32>().ok());
+    depth.filter(|depth| *depth > 0).ok_or(Error::BadRequest)
 }
 
 fn matches_prefix(name: &[u8], prefixes: &[Vec<u8>]) -> bool {
@@ -252,6 +269,17 @@ pub fn acknowledgments(common: &[Oid], ready: bool) -> Vec<u8> {
     out
 }
 
+pub fn shallow_info(info: &ShallowInfo) -> Vec<u8> {
+    let mut out = Vec::new();
+    pktline::push_line(&mut out, b"shallow-info");
+    for (word, ids) in [("shallow", &info.shallow), ("unshallow", &info.unshallow)] {
+        for id in ids {
+            pktline::push_line(&mut out, format!("{word} {id}").as_bytes());
+        }
+    }
+    out
+}
+
 pub fn packfile_header() -> Vec<u8> {
     pktline::encode(b"packfile\n")
 }
@@ -270,6 +298,27 @@ pub fn respond_entries<I>(command: &Fetch, entries: I, sink: &mut dyn FnMut(&[u8
 where
     I: ExactSizeIterator<Item = Result<Vec<u8>>>,
 {
+    respond_shallow(command, &ShallowInfo::default(), entries, sink)
+}
+
+// The boundary a shallow fetch leaves (`walk::shallow_history`), as git's `shallow-info` names it.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct ShallowInfo {
+    pub shallow: Vec<Oid>,
+    pub unshallow: Vec<Oid>,
+}
+
+// `respond_entries` with the boundary: a fetch that deepens, or that comes from a shallow client,
+// hears it in a `shallow-info` section before the pack.
+pub fn respond_shallow<I>(
+    command: &Fetch,
+    info: &ShallowInfo,
+    entries: I,
+    sink: &mut dyn FnMut(&[u8]),
+) -> Result<()>
+where
+    I: ExactSizeIterator<Item = Result<Vec<u8>>>,
+{
     let Some(first_want) = command.wants.first() else {
         return Err(Error::BadRequest);
     };
@@ -282,6 +331,11 @@ where
             sink(pktline::flush());
             return Ok(());
         }
+        sink(pktline::delim());
+    }
+    let shallow_client = command.deepen.is_some() || !command.shallows.is_empty();
+    if shallow_client {
+        sink(&shallow_info(info));
         sink(pktline::delim());
     }
     sink(&packfile_header());

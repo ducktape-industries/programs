@@ -94,20 +94,15 @@ pub fn no_base(_: &Oid) -> gitcore::Result<Option<Object>> {
     Ok(None)
 }
 
-/// The `git` on PATH, if any (a test checking our bytes with git returns
-/// early without one).
-pub fn git_binary() -> Option<std::path::PathBuf> {
-    let output = std::process::Command::new("which")
-        .arg("git")
-        .output()
-        .ok()?;
-    let found = output.status.success();
-    if !found {
-        return None;
-    }
-    Some(std::path::PathBuf::from(
-        String::from_utf8_lossy(&output.stdout).trim(),
-    ))
+// The `git` on PATH: a test that checks our bytes with git fails without one.
+pub fn git_binary() -> std::path::PathBuf {
+    let git = std::path::PathBuf::from("git");
+    let found = std::process::Command::new(&git).arg("--version").output();
+    assert!(
+        found.is_ok_and(|output| output.status.success()),
+        "git not on PATH"
+    );
+    git
 }
 
 /// A fresh directory under the system temp dir, named for this process and thread.

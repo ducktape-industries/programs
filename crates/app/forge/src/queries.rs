@@ -8,7 +8,7 @@ use gitcore::wire::smart_http_service_header;
 use gitcore::wire::upload::{Command, capability_advertisement, ls_refs_response, parse_command};
 use store::{KeyCodec, Listing};
 
-use gitcore::walk::{Closed, closure as close, history as walk_history};
+use gitcore::walk::{Closed, closure as close, history as walk_history, shallow_history};
 
 use crate::contract::*;
 use crate::objects::ObjectStore;
@@ -225,5 +225,38 @@ fn walked(
         height,
         listed: listed.into_iter().map(Listed::of).collect(),
         next: Walk::of(next),
+    })
+}
+
+// `History` cut `deepen` commits below each want, and the boundary that leaves.
+pub(crate) fn shallow(
+    ctx: &QueryCtx,
+    height: u64,
+    bounds: &Bounds,
+    name: &str,
+    walk: &DeepWalk,
+) -> Result<Reply, Error> {
+    let repo = load_repo(ctx, name)?;
+    let store = ObjectStore::querying(ctx, bounds, bounds.tree_walk);
+    let Some(asked) = walk.parse(repo.hash) else {
+        return Err(invalid(
+            "a walk names an id that is not an object id of this repository",
+        ));
+    };
+    let no_depth = asked.deepen == Some(0);
+    if no_depth {
+        return Err(invalid("a shallow walk deepens by one commit at least"));
+    }
+    let deepened = shallow_history(&store, asked, usize::MAX).map_err(refusal_of)?;
+    Ok(Reply::Shallow {
+        height,
+        listed: deepened.listed.into_iter().map(Listed::of).collect(),
+        next: DeepWalk::of(deepened.next),
+        shallow: deepened.shallow.iter().map(gitcore::Oid::to_hex).collect(),
+        unshallow: deepened
+            .unshallow
+            .iter()
+            .map(gitcore::Oid::to_hex)
+            .collect(),
     })
 }

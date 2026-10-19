@@ -8,7 +8,8 @@ use gitcore::server::admit_pack;
 use gitcore::walk::{Listed, Listing, Walk, closure};
 use gitcore::wire::pktline::{self, Pkt, Reader};
 use gitcore::wire::upload::{
-    Command, Fetch, LsRefs, capability_advertisement, ls_refs_response, parse_command, respond,
+    Command, Fetch, LsRefs, ShallowInfo, capability_advertisement, ls_refs_response, parse_command,
+    respond, respond_shallow,
 };
 use gitcore::{Error, Hash, Kind, Limits, MemoryObjects, Objects, Oid, pack};
 use std::cell::Cell;
@@ -148,13 +149,53 @@ fn parse_commands() {
             ofs_delta: true,
             sideband_all: false,
             wait_for_done: false,
+            deepen: None,
+            shallows: Vec::new(),
         })
     );
 
+    let deepened = parse_command(
+        &request(
+            "fetch",
+            &[
+                "deepen 3",
+                &format!("want {a}"),
+                &format!("shallow {b}"),
+                "done",
+            ],
+        ),
+        Hash::Sha1,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(
-        parse_command(&request("fetch", &["deepen 1"]), Hash::Sha1),
-        Err(Error::Unsupported)
+        deepened,
+        Command::Fetch(Fetch {
+            wants: vec![sha1(a)],
+            done: true,
+            deepen: Some(3),
+            shallows: vec![sha1(b)],
+            ..Fetch::default()
+        })
     );
+    for refused in ["deepen 0", "deepen x"] {
+        assert_eq!(
+            parse_command(&request("fetch", &[refused]), Hash::Sha1),
+            Err(Error::BadRequest),
+            "{refused}"
+        );
+    }
+    for unsupported in [
+        "deepen-since 1700000000",
+        "deepen-not refs/heads/main",
+        "deepen-relative",
+    ] {
+        assert_eq!(
+            parse_command(&request("fetch", &[unsupported]), Hash::Sha1),
+            Err(Error::Unsupported),
+            "{unsupported}"
+        );
+    }
     assert_eq!(
         parse_command(&request("fetch", &["filter blob:none"]), Hash::Sha1),
         Err(Error::Unsupported)
@@ -281,9 +322,13 @@ fn run_fetch(store: &MemoryObjects, command: &Fetch) -> Response {
     let mut bytes = Vec::new();
     let mut sink = |chunk: &[u8]| bytes.extend_from_slice(chunk);
     respond(command, objects, &mut sink).unwrap();
+    parsed(&bytes)
+}
+
+fn parsed(bytes: &[u8]) -> Response {
     let mut sections = Vec::new();
     let mut pack = Vec::new();
-    for pkt in Reader::new(&bytes) {
+    for pkt in Reader::new(bytes) {
         match pkt.unwrap() {
             Pkt::Data(data) if sections.last().is_some_and(|s| s == "packfile") => {
                 assert_eq!(data[0], 1);
@@ -481,9 +526,7 @@ fn a_closure_refuses_a_page_that_cannot_read_one_object() {
 
 #[test]
 fn fetch_pack_is_valid_for_git() {
-    let Some(git) = git_binary() else {
-        return;
-    };
+    let git = git_binary();
     let (store, _, _, tip, _) = repo();
     let clone = run_fetch(
         &store,
@@ -519,4 +562,68 @@ fn fetch_pack_is_valid_for_git() {
         .unwrap();
     assert!(fsck.status.success(), "{fsck:?}");
     std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn a_shallow_fetch_names_its_boundary_before_the_pack() {
+    let (store, _, base, tip, _) = repo();
+    let answer = |command: &Fetch, info: &ShallowInfo| {
+        let object = store.get(&tip).unwrap().unwrap();
+        let entries = std::iter::once(Ok(pack::entry(object.kind, &object.body)));
+        let mut bytes = Vec::new();
+        let mut sink = |chunk: &[u8]| bytes.extend_from_slice(chunk);
+        respond_shallow(command, info, entries, &mut sink).unwrap();
+        parsed(&bytes)
+    };
+    let boundary = ShallowInfo {
+        shallow: vec![tip],
+        unshallow: vec![base],
+    };
+    let deepened = Fetch {
+        wants: vec![tip],
+        done: true,
+        deepen: Some(1),
+        ..Fetch::default()
+    };
+    let response = answer(&deepened, &boundary);
+    assert_eq!(
+        response.sections,
+        [
+            "shallow-info".to_string(),
+            format!("shallow {tip}"),
+            format!("unshallow {base}"),
+            "<delim>".into(),
+            "packfile".into(),
+            "<flush>".into(),
+        ]
+    );
+    assert_eq!(read_pack(&response.pack), [tip].into_iter().collect());
+
+    let from_a_shallow_client = Fetch {
+        wants: vec![tip],
+        done: true,
+        shallows: vec![base],
+        ..Fetch::default()
+    };
+    assert_eq!(
+        answer(&from_a_shallow_client, &ShallowInfo::default()).sections,
+        ["shallow-info", "<delim>", "packfile", "<flush>"]
+    );
+
+    let whole = Fetch {
+        wants: vec![tip],
+        done: true,
+        ..Fetch::default()
+    };
+    assert_eq!(answer(&whole, &boundary).sections, ["packfile", "<flush>"]);
+
+    let negotiating = Fetch {
+        wants: vec![tip],
+        wait_for_done: true,
+        deepen: Some(1),
+        ..Fetch::default()
+    };
+    let response = answer(&negotiating, &boundary);
+    assert_eq!(response.sections, ["acknowledgments", "NAK", "<flush>"]);
+    assert!(response.pack.is_empty());
 }

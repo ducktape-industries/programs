@@ -240,9 +240,7 @@ fn streaming_writer_matches_collected_writer() {
 
 #[test]
 fn git_accepts_a_pack_we_wrote() {
-    let Some(git) = git_binary() else {
-        return;
-    };
+    let git = git_binary();
     let original = pack::read(
         fixture!("ofs.pack"),
         Hash::Sha1,

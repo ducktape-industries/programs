@@ -415,3 +415,18 @@ pub(crate) fn history() -> Query {
         walk: Walk::default(),
     }
 }
+
+pub(crate) fn shallow() -> Query {
+    Query::Shallow {
+        repo: repo(),
+        walk: DeepWalk {
+            walk: Walk {
+                objects: vec![oid()],
+                ..Walk::default()
+            },
+            deepen: Some(1),
+            frontier: vec![(oid(), 1)],
+            ..DeepWalk::default()
+        },
+    }
+}
