@@ -11,6 +11,7 @@
 //! op, queries and replies are the first variants of [`Op`], [`Query`] and
 //! [`Reply`]. Who may do what, op by op: `docs/roles.md` at the repository
 //! root.
+mod examples;
 mod program;
 mod rules;
 #[cfg(test)]
@@ -162,34 +163,39 @@ impl Admission {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
+)]
+#[tool_about(
+    "Accounts and who acts as each: users and the keys they hold, program accounts (agents) with their manager, keys and script, and each program's own system account."
+)]
 pub enum Op {
     /// The identity role's op (`abi::role::identity::Op`), first: the
     /// system gives an admitted program its account.
-    RegisterProgram {
-        program: ProgramId,
-    },
+    #[tool_op(description = "The system alone (the identity role): gives an admitted program its account. A program that has one keeps it.", example = examples::register)]
+    RegisterProgram { program: ProgramId },
     /// A user's account, holding the signing key.
-    Create {
-        name: String,
-        scheme: Scheme,
-    },
-    CreateAgent {
-        name: String,
-    },
+    #[tool_op(description = "Create a user's account for the signing key, which must hold no account yet; it becomes the account's first key. Returns the new account's number.", returns = AccountNumber, example = examples::create)]
+    Create { name: String, scheme: Scheme },
+    #[tool_op(description = "Create a program account of the Agent category that you manage, with no key and no script yet. Any account that acts may. Returns its number.", returns = AccountNumber, example = examples::create_agent)]
+    CreateAgent { name: String },
+    #[tool_op(description = "Add the signing key to consent.account: a key already on it signs the consent (Admission under ducktape:identity:consent). Or a program account's manager signs and the new key consents to itself. Never a system account's or a revoked one's.", example = examples::add_key)]
     AddKey {
         scheme: Scheme,
         label: Option<String>,
         consent: Consent,
     },
+    #[tool_op(description = "Remove a key: an account's own key removes itself or a junior one, never the last; a program account's manager removes any of its keys.", example = examples::remove_key)]
     RemoveKey {
         account: AccountNumber,
         key: Vec<u8>,
     },
+    #[tool_op(description = "Rename an account. Whoever may write its key in the access program: a user or a system account itself, a program account's manager, and whom they list; not a revoked account.", example = examples::set_name)]
     SetName {
         account: AccountNumber,
         name: String,
     },
+    #[tool_op(description = "Set an account's avatar (a blob) and bio. Whoever may rename it.", example = examples::set_profile)]
     SetProfile {
         account: AccountNumber,
         avatar: Option<BlobId>,
@@ -197,21 +203,20 @@ pub enum Op {
     },
     /// A program account stops acting; its keys stay for `Resume`. Its
     /// manager's.
-    Suspend {
-        account: AccountNumber,
-    },
-    Resume {
-        account: AccountNumber,
-    },
+    #[tool_op(description = "Stop a program account acting; its keys stay for Resume. Its manager, or whom the manager lists.", example = examples::suspend)]
+    Suspend { account: AccountNumber },
+    #[tool_op(description = "Let a suspended program account act again. Its manager, or whom the manager lists.", example = examples::resume)]
+    Resume { account: AccountNumber },
     /// A program account stops for good: its keys are dropped. Its
     /// manager's.
-    Revoke {
-        account: AccountNumber,
-    },
+    #[tool_op(description = "Stop a program account for good: its keys are dropped. Its manager, or whom the manager lists.", example = examples::revoke)]
+    Revoke { account: AccountNumber },
+    #[tool_op(description = "Retired: always refused. Whom an agent answers is its list in the access program at harness's agents/<n>.", example = examples::set_ownership)]
     SetOwnership {
         account: AccountNumber,
         ownership: Ownership,
     },
+    #[tool_op(description = "Name the program that runs a program account's actions (calls) and the config it reads (harness: the agent's config file in files), or null to take it back. Whoever may write the account's key, not once revoked.", example = examples::set_script)]
     SetScript {
         account: AccountNumber,
         script: Option<Script>,
@@ -225,7 +230,15 @@ pub enum Reference {
 }
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Ask,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    ::program::Ask,
+    ::program::Described,
 )]
 #[ask(Identity)]
 pub enum Query {
@@ -234,30 +247,40 @@ pub enum Query {
     /// not act), a program's account, one account's profile and every
     /// account's.
     #[ask(Reply::Number(Option<AccountNumber>))]
+    #[tool_query(description = "The account a key acts as, or null; refused while that account does not act.", example = examples::of_key)]
     OfKey { key: Vec<u8> },
     #[ask(Reply::Number(Option<AccountNumber>))]
+    #[tool_query(description = "A program's own account number, or null.", example = examples::of_program)]
     OfProgram { program: ProgramId },
     #[ask(Reply::Profile(Option<Profile>))]
+    #[tool_query(description = "One account's number, name and kind (user, program account with its manager and standing, or system), or null.", example = examples::profile)]
     Profile { number: AccountNumber },
     #[ask(Reply::Profiles { profiles: Vec<Profile>, next: Option<AccountNumber> })]
+    #[tool_query(description = "Every account's profile in number order, after a number, at most limit of them; next is where to go on.", example = examples::profiles)]
     Profiles {
         after: Option<AccountNumber>,
         limit: u32,
     },
     #[ask(Reply::Number(Option<AccountNumber>))]
+    #[tool_query(description = "The account if program runs it (its script calls program), else null.", example = examples::runs)]
     Runs {
         program: ProgramId,
         account: AccountNumber,
     },
     #[ask(Reply::Account(Option<Account>))]
+    #[tool_query(description = "One account's whole record: its card and who acts as it, keys included, or null.", example = examples::get)]
     Get { number: AccountNumber },
     #[ask(Reply::Generation(u64))]
+    #[tool_query(description = "A key's generation: what a consent to it signs, so an old consent can't be replayed.", example = examples::generation)]
     Generation { key: Vec<u8> },
     #[ask(Reply::Resolved(Vec<Option<AccountNumber>>))]
+    #[tool_query(description = "The account each reference (a number or a key) names, in order, null where none.", example = examples::resolve)]
     Resolve { references: Vec<Reference> },
     #[ask(Reply::Accounts(PageResponse<Account>))]
+    #[tool_query(description = "Every account's whole record, a page at a time.", example = examples::list)]
     List { page: PageRequest },
     #[ask(Reply::Accounts(PageResponse<Account>))]
+    #[tool_query(description = "The program accounts an account manages, a page at a time.", example = examples::managed)]
     Managed {
         by: AccountNumber,
         page: PageRequest,

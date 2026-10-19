@@ -6,7 +6,6 @@ use borsh_json::tools::{check, read, section};
 const UNDESCRIBED: &[&str] = &[
     "programs",
     "valset",
-    "identity",
     "blobs",
     "awaits",
     "halo",
