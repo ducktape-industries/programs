@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use program::schema::{Roots, roots};
 
 fn programs() -> impl Iterator<Item = &'static str> {
@@ -5,6 +7,51 @@ fn programs() -> impl Iterator<Item = &'static str> {
         .iter()
         .map(|(program, _)| *program)
         .chain(founding::UNVIEWED.iter().copied())
+}
+
+// Each program's interface as `interfaces/<program>.schema` holds it: what
+// the tools repo's `interfaces` gate reads at a change's merge base with dev
+// and at the change, so a variant deleted or moved fails the change by a
+// baseline it cannot edit (J-085). A change that grows an interface writes
+// them again with `INTERFACES_WRITE=1`.
+#[test]
+fn the_committed_interfaces_are_the_built_ones() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("interfaces");
+    let write = std::env::var_os("INTERFACES_WRITE").is_some();
+    let every: Vec<&str> = programs()
+        .chain(founding::UNFOUNDED.iter().copied())
+        .collect();
+    let mut stale = Vec::new();
+    for program in &every {
+        let built = borsh::to_vec(&founding::schema(program).unwrap()).unwrap();
+        let path = dir.join(format!("{program}.schema"));
+        if write {
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(&path, &built).unwrap();
+        } else if std::fs::read(&path).ok() != Some(built) {
+            stale.push(*program);
+        }
+    }
+    let committed: Vec<String> = std::fs::read_dir(&dir)
+        .map(|entries| {
+            entries
+                .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    let unknown: Vec<&String> = committed
+        .iter()
+        .filter(|name| {
+            !every
+                .iter()
+                .any(|program| **name == format!("{program}.schema"))
+        })
+        .collect();
+    assert!(
+        stale.is_empty() && unknown.is_empty(),
+        "interfaces/ is not what the programs build (stale: {stale:?}, no program: {unknown:?}): \
+         write it again with INTERFACES_WRITE=1"
+    );
 }
 
 #[test]

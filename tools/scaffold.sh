@@ -135,8 +135,9 @@ pub fn describe(op: &Op) -> describe::Description {
 
 describe::export!(Op, describe);
 
-/// Old op bytes are described with the current code (\`describe\`): the op
-/// enum only grows at its end. Append a new variant here; never reorder.
+// Old op bytes are described with the current code (\`describe\`): the op
+// enum only grows at its end. Append a new variant here; never reorder, and
+// never delete one: retire it (docs/programs.md, "Retire, never delete").
 #[test]
 fn op_variants_only_append() {
     assert_eq!(describe::variants::<Op>(), ["Bump"]);

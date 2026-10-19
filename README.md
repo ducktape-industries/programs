@@ -166,7 +166,11 @@ The tree vocabulary, manifests, and five-function Wasm ABI are unchanged.
    `cargo run -p founding --bin schema-diff OLD NEW`, each a program's code or
    a `.schema` `make wasm-schemas` wrote, prints each difference, `+` for an
    enum that grew at its end (old bytes read the same) and `!` for one that
-   reads old bytes otherwise, and exits 1 on any `!`.
+   reads old bytes otherwise, and exits 1 on any `!`. Every change is held
+   to it already: the tools repo's `interfaces` gate compares
+   `crates/sdk/founding/interfaces/*.schema` at the change's merge base
+   with dev against the change's own (`docs/programs.md`, "Retire, never
+   delete").
 6. A new program: `make new-program NAME=x`, then `make new-view NAME=x-view`;
    each prints what to do next, down to its place in `crates/sdk/founding`
    ([`docs/programs.md`](docs/programs.md) walks it).

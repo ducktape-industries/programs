@@ -109,6 +109,23 @@ fn op_variants_only_append() {
 }
 ```
 
+**Retire, never delete.** A variant you no longer want stays where it is:
+its op is refused as retired, and its reply goes unused, so every variant
+after it keeps its tag. Deleting `programs`' `Query::Grants` (#478) moved
+`Roster` from tag 7 to 6, and every app built before the move could not
+list views on a network that ran it.
+
+The test above lives in the crate it guards, so the change that edits the
+enum can edit the list too. The gate a change can't edit is the tools
+repo's `interfaces` (`build.sh gates`, and `gates.sh` in CI). It reads each
+program's `crates/sdk/founding/interfaces/<program>.schema` at the change's
+merge base with dev and at the change, and fails on any difference
+`schema-diff` marks `!` (a variant or field removed, moved or retyped, in
+`Op`, `Query` or `Reply`), or on a program's file that goes. founding's
+`the_committed_interfaces_are_the_built_ones` holds the files to the
+crates: a change that grows an interface writes them again with
+`INTERFACES_WRITE=1 cargo test -p founding --test schema`.
+
 **Each query names its reply.** `#[derive(program::Ask)]` with
 `#[ask(Poll)]` (the program) and, on each variant, the reply that answers
 it writes one type per query into `poll::ask`, built like the variant. A
@@ -119,9 +136,9 @@ answer other questions. A reply with named fields is answered as their
 tuple (`#[ask(Reply::Thread { root: Option<Row>, replies: PageResponse<Row> })]`).
 
 A field added to an existing variant changes its bytes too; that is a new
-variant. `Query` and `Reply` are looser (a view and its program ship
-together), but a sibling program that queries you links your types, so
-treat them the same.
+variant. `Query` and `Reply` follow the same rule: the app, other
+programs and views built at other commits read them by tag, and the
+`interfaces` gate holds all three.
 
 Every list a client asks for takes a `store::PageRequest` and answers a
 `store::PageResponse` (section 3); the row types (`PollRow`) live beside
