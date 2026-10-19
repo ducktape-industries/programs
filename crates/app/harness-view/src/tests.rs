@@ -569,6 +569,7 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             harness::Query::Route { .. } => harness::Reply::Route(None),
             harness::Query::Routes { .. } => harness::Reply::Routes(page(Vec::new())),
             harness::Query::Answerers { .. } => harness::Reply::Answerers(page(Vec::new())),
+            harness::Query::AgentTools { .. } => harness::Reply::AgentTools(Default::default()),
             harness::Query::Tools => harness::Reply::Tools(vec![
                 ToolInfo {
                     name: "forge_log".into(),

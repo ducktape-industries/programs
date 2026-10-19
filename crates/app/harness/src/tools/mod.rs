@@ -218,6 +218,30 @@ pub(crate) fn find(name: &str) -> Option<&'static Entry> {
     CATALOG.iter().find(|entry| entry.name == name)
 }
 
+// every tool `agent` gets and where it is read from, the shared tool files its own take the place
+// of, and why each tool file left out does not load
+pub(crate) fn of_agent(ctx: &QueryCtx, agent: AccountNumber) -> Result<crate::AgentTools, Error> {
+    let profile = crate::agents::profile(ctx, agent)?
+        .ok_or_else(|| ::program::not_found(format!("no account {agent}")))?;
+    let loaded = file::load(ctx, &profile.name);
+    let native = CATALOG.iter().map(|entry| crate::AgentTool {
+        name: entry.name.into(),
+        source: crate::ToolSource::Native,
+    });
+    let written = loaded.tools.iter().map(|tool| crate::AgentTool {
+        name: tool.name.clone(),
+        source: crate::ToolSource::File {
+            path: tool.path.clone(),
+            snapshot: tool.snapshot,
+        },
+    });
+    Ok(crate::AgentTools {
+        tools: native.chain(written).collect(),
+        shadowed: loaded.shadowed,
+        problems: loaded.problems,
+    })
+}
+
 pub(crate) enum Resolved {
     Native(&'static Entry),
     File(Box<file::FileTool>),

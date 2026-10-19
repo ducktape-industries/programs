@@ -69,6 +69,14 @@ fn sent(chain: &MockChain) -> (Vec<Value>, String) {
     (tools, texts.join("\n"))
 }
 
+fn agent_tools(world: &World) -> AgentTools {
+    let asked = Query::AgentTools { agent: world.agent };
+    let Reply::AgentTools(tools) = world.chain.query(PROGRAM, &asked).unwrap() else {
+        panic!("AgentTools answers AgentTools")
+    };
+    tools
+}
+
 fn named<'t>(tools: &'t [Value], name: &str) -> Vec<&'t Value> {
     tools.iter().filter(|tool| tool["name"] == name).collect()
 }
@@ -122,6 +130,15 @@ fn a_tool_file_is_a_tool_on_the_next_model_call_and_one_that_does_not_load_says_
         assert!(system.contains(line), "{line} in {system}");
     }
     assert!(!system.contains("README"), "{system}");
+    let listed = agent_tools(&world);
+    let problems: Vec<&str> = listed.problems.iter().map(String::as_str).collect();
+    assert_eq!(problems.len(), 3, "{problems:?}");
+    assert!(
+        left_out[1..]
+            .iter()
+            .all(|line| problems.iter().any(|problem| problem.starts_with(*line))),
+        "{problems:?}"
+    );
 }
 
 #[test]
@@ -206,6 +223,24 @@ fn an_agents_own_tool_file_takes_the_place_of_a_shared_one_and_its_query_answers
     });
     turn(chain, 3, &[("w1", "files_write", own)]);
     answered(chain, thread, "w1");
+
+    let listed = agent_tools(&world);
+    let own: Vec<&AgentTool> = listed
+        .tools
+        .iter()
+        .filter(|tool| tool.name == "channel_name")
+        .collect();
+    let [own] = own.try_into().unwrap();
+    let ToolSource::File { path, .. } = &own.source else {
+        panic!("{own:?}")
+    };
+    assert_eq!(path, "/home/Scout/tools/channel_name.toml");
+    assert_eq!(listed.shadowed, ["/shared/tools/channel_name.toml"]);
+    let read = AgentTool {
+        name: "files_read".into(),
+        source: ToolSource::Native,
+    };
+    assert!(listed.tools.contains(&read), "{listed:?}");
 
     let (tools, _) = sent(chain);
     let [tool] = named(&tools, "channel_name").try_into().unwrap();

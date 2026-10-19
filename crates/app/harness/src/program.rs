@@ -87,6 +87,7 @@ impl Program for Harness {
             Query::Armed { thread, page } => Ok(Reply::Waits(waits::armed(ctx, thread, &page)?)),
             Query::Card { agent } => Ok(Reply::Agent(card(ctx, agent)?)),
             Query::Wakes { thread } => Ok(Reply::Wakes(crate::wakes::wakes(ctx, thread)?)),
+            Query::AgentTools { agent } => Ok(Reply::AgentTools(tools::of_agent(ctx, agent)?)),
             Query::Services { model } => Ok(Reply::Services(crate::routes::services(ctx, &model)?)),
             Query::Route { thread } => Ok(Reply::Route(crate::routes::route(ctx, thread)?)),
             Query::Routes { page } => Ok(Reply::Routes(crate::routes::routes(ctx, &page)?)),

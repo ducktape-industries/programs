@@ -100,6 +100,7 @@ pub(crate) struct FileTool {
     pub name: String,
     pub description: String,
     pub path: String,
+    pub snapshot: BlobId,
     input: BTreeMap<String, Field>,
     steps: Vec<Checked>,
     returns: Option<String>,
@@ -359,7 +360,7 @@ fn checked(
     at: Option<BlobId>,
     schemas: &mut Schemas,
 ) -> Result<FileTool, String> {
-    let (_, bytes) = read(ctx, path, at).map_err(|error| refusal(&error))?;
+    let (snapshot, bytes) = read(ctx, path, at).map_err(|error| refusal(&error))?;
     let text = String::from_utf8(bytes).map_err(|_| "the file is no UTF-8 text".to_owned())?;
     let written = parsed(&text)?;
     named(stem, &written.name)?;
@@ -398,6 +399,7 @@ fn checked(
         name: written.name,
         description: written.description,
         path: path.to_owned(),
+        snapshot,
         input: written.input,
         steps,
         returns: written.returns.map(|returns| returns.text),
@@ -494,6 +496,7 @@ fn listed(
 #[derive(Default)]
 pub(crate) struct Loaded {
     pub tools: Vec<FileTool>,
+    pub shadowed: Vec<String>,
     pub problems: Vec<String>,
 }
 
@@ -515,6 +518,7 @@ pub(crate) fn load(ctx: &QueryCtx, agent: &str) -> Loaded {
         };
         for (stem, path) in found {
             if !seen.insert(stem.clone()) {
+                loaded.shadowed.push(path);
                 continue;
             }
             match checked(ctx, &stem, &path, at, &mut schemas) {

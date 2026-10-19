@@ -263,3 +263,7 @@ pub(crate) fn answerers() -> Query {
 pub(crate) fn wakes() -> Query {
     Query::Wakes { thread: 144 }
 }
+
+pub(crate) fn agent_tools() -> Query {
+    Query::AgentTools { agent: 21 }
+}

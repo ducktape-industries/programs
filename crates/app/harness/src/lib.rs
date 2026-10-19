@@ -624,6 +624,28 @@ pub struct ToolInfo {
     pub writes: bool,
 }
 
+// where a tool an agent gets comes from: harness's own code, or a tool file read at a snapshot
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum ToolSource {
+    Native,
+    File { path: String, snapshot: BlobId },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct AgentTool {
+    pub name: String,
+    pub source: ToolSource,
+}
+
+// every tool an agent gets, the shared tool files one of its own takes the place of, and why
+// each tool file left out does not load
+#[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct AgentTools {
+    pub tools: Vec<AgentTool>,
+    pub shadowed: Vec<String>,
+    pub problems: Vec<String>,
+}
+
 // how much of a model service's usage window the last answer said is spent, and when the window
 // resets (seconds since the epoch), as its headers put them
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -979,6 +1001,9 @@ pub enum Query {
     )]
     #[tool_query(description = "What will wake a conversation again (an unseen input, a turn, open calls, a call in flight, a retry, a settle window, a wait, a stream, a booking); none means nothing will.", example = examples::wakes)]
     Wakes { thread: u64 },
+    #[ask(Reply::AgentTools(AgentTools))]
+    #[tool_query(description = "Every tool an agent gets on its next model call, each with where it comes from (harness's own, or a tool file's path and the snapshot it was read at), the shared tool files one of its own takes the place of, and why each tool file left out does not load.", example = examples::agent_tools)]
+    AgentTools { agent: AccountNumber },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1009,6 +1034,7 @@ pub enum Reply {
     Routes(PageResponse<Routed>),
     Answerers(PageResponse<Answerer>),
     Wakes(Vec<Wake>),
+    AgentTools(AgentTools),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -1305,7 +1331,8 @@ fn query_variants_only_append() {
             "Route",
             "Routes",
             "Answerers",
-            "Wakes"
+            "Wakes",
+            "AgentTools"
         ]
     );
 }
