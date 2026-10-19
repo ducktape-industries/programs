@@ -18,7 +18,7 @@ use borsh::schema::{BorshSchemaContainer, Declaration, Definition, Fields};
 
 pub use decode::decode;
 pub use encode::{encode, fits};
-pub use example::{example, examples};
+pub use example::{example, examples, variant_example};
 pub use interface::{Interface, Unreadable, unread};
 pub use program::schema::SECTION;
 pub use shape::{shape, variant_shape};
@@ -390,4 +390,14 @@ pub fn variant(schema: &BorshSchemaContainer, declaration: &str, bytes: &[u8]) -
         .iter()
         .find(|(discriminant, _, _)| *discriminant == tag)
         .map(|(_, name, _)| name.clone())
+}
+
+// The variants of enum `declaration`, in the schema's order; none for a type that is no enum.
+pub fn variants(schema: &BorshSchemaContainer, declaration: &str) -> Vec<String> {
+    match kind(schema, declaration) {
+        Ok(Kind::Enum { variants, .. }) => {
+            variants.iter().map(|(_, name, _)| name.clone()).collect()
+        }
+        _ => Vec::new(),
+    }
 }

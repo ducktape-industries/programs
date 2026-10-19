@@ -214,7 +214,16 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             "network_activity",
             vec![json!({ "account": 21, "cursor": "00" })],
         ),
-        ("network_schema", vec![json!({ "program": "forge" })]),
+        (
+            "network_schema",
+            vec![
+                json!({}),
+                json!({ "program": "forge" }),
+                json!({ "program": "chat", "op": "PostMessage", "query": null, "whole": null }),
+                json!({ "program": "forge", "query": "Log" }),
+                json!({ "program": "files", "whole": true }),
+            ],
+        ),
         (
             "network_query",
             vec![

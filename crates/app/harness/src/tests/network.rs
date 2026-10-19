@@ -6,7 +6,7 @@ use borsh::schema::{BorshSchemaContainer, Definition, Fields};
 use programs::Programs;
 
 use super::*;
-use crate::schema::tests::{code_with, listed, module};
+use crate::schema::tests::{code_with, described_code, listed, module};
 
 fn schemed() -> World {
     schemed_with(code_with(&interface::<files::Files>()))
@@ -79,8 +79,16 @@ fn the_model_reads_a_programs_shapes_asks_its_queries_and_reads_the_replies() {
     let world = schemed();
     let chain = &world.chain;
     let calls = [
-        ("s_chat", "network_schema", json!({ "program": "chat" })),
-        ("s_files", "network_schema", json!({ "program": "files" })),
+        (
+            "s_chat",
+            "network_schema",
+            json!({ "program": "chat", "whole": true }),
+        ),
+        (
+            "s_files",
+            "network_schema",
+            json!({ "program": "files", "whole": true }),
+        ),
         (
             "q_chat",
             "network_query",
@@ -320,7 +328,11 @@ fn committed(files_code: Vec<u8>) -> (Value, Value, BlobId) {
     let chain = &world.chain;
     let calls = [
         ("c_notes", "network_call", notes(chain)),
-        ("s_files", "network_schema", json!({ "program": "files" })),
+        (
+            "s_files",
+            "network_schema",
+            json!({ "program": "files", "whole": true }),
+        ),
     ];
     let thread = called(&world, &calls);
     let answer = json_result(chain, thread, "c_notes");
@@ -420,7 +432,11 @@ fn a_forge_merge_reads_back_as_the_reply_forges_schema_names_for_it() {
     };
     let calls = [
         ("c_merge", "network_call", merge),
-        ("s_forge", "network_schema", json!({ "program": "forge" })),
+        (
+            "s_forge",
+            "network_schema",
+            json!({ "program": "forge", "whole": true }),
+        ),
         ("q_side", "network_query", log("side")),
         ("q_gone", "network_query", log("gone")),
     ];
@@ -601,4 +617,164 @@ fn an_op_or_query_written_as_json_text_is_read_as_the_json_it_holds() {
     assert_eq!(posted.text, "hello");
     let head = json_result(chain, thread, "q_unit");
     assert!(head["reply"]["Head"].is_object(), "{head}");
+}
+
+// A world whose chat code tells of its ops and queries as founding packs it, beside files' code,
+// which carries only its schema, valset's, which carries neither, and odd's, whose tools section
+// is no JSON object.
+fn described() -> World {
+    let mut world = world();
+    world.chain.seat::<Programs>(programs::PROGRAM);
+    let chat_code = described_code(
+        &interface::<chat::Chat>(),
+        &<chat::Chat as Program>::tools(),
+    );
+    let codes = [
+        (chat::PROGRAM, chat_code),
+        (files::PROGRAM, code_with(&interface::<files::Files>())),
+        ("valset", module(&[])),
+        ("odd", module(&[(::program::tools::SECTION, b"[]")])),
+    ];
+    listed(&world.chain, &codes);
+    world
+}
+
+#[test]
+fn the_model_finds_a_program_unfolds_one_op_and_sends_its_example_edited() {
+    let world = described();
+    let chain = &world.chain;
+    let told = <chat::Chat as Program>::tools();
+    let post = told.ops.iter().find(|tool| tool.variant == "PostMessage");
+    let post = post.unwrap().description;
+    let calls = [
+        ("d_all", "network_schema", json!({})),
+        ("d_chat", "network_schema", json!({ "program": "chat" })),
+        (
+            "d_files",
+            "network_schema",
+            json!({ "program": "files", "whole": null }),
+        ),
+        (
+            "d_post",
+            "network_schema",
+            json!({ "program": "chat", "op": "PostMessage" }),
+        ),
+        (
+            "d_roots",
+            "network_schema",
+            json!({ "program": "chat", "query": "Roots" }),
+        ),
+        (
+            "d_commit",
+            "network_schema",
+            json!({ "program": "files", "op": "Commit" }),
+        ),
+    ];
+    let thread = called(&world, &calls);
+
+    let all = json_result(chain, thread, "d_all");
+    let about = |program: &str| {
+        let rows = all["programs"].as_array().unwrap();
+        let row = rows.iter().find(|row| row["program"] == program);
+        row.map(|row| row["about"].clone())
+    };
+    assert_eq!(about("chat"), Some(json!(told.about)), "{all}");
+    assert_eq!(about("files"), Some(Value::Null), "{all}");
+    assert_eq!(about("valset"), Some(Value::Null), "{all}");
+    let rows = all["programs"].as_array().unwrap();
+    let odd = rows.iter().find(|row| row["program"] == "odd").unwrap();
+    let unread = odd["unread"].as_str().unwrap();
+    assert!(
+        unread.contains("the tools section is no JSON object"),
+        "{all}"
+    );
+
+    let index = json_result(chain, thread, "d_chat");
+    assert_eq!(index["about"], json!(told.about));
+    assert_eq!(index["ops"]["PostMessage"], json!(post));
+    assert!(index["queries"]["Roots"].is_string(), "{index}");
+    assert!(
+        index.get("note").is_none() && index.get("types").is_none(),
+        "{index}"
+    );
+    let plain = json_result(chain, thread, "d_files");
+    assert_eq!(plain["ops"]["Commit"], Value::Null, "{plain}");
+    let note = plain["note"].as_str().unwrap();
+    assert!(note.contains("describes none of its ops"), "{note}");
+
+    let unfolded = json_result(chain, thread, "d_post");
+    assert_eq!(unfolded["description"], json!(post));
+    let thread_field = &unfolded["shape"]["PostMessage"]["struct"]["thread"];
+    assert_eq!(*thread_field, json!({ "option": "u64" }), "{unfolded}");
+    let types = unfolded["types"].as_object().unwrap();
+    assert!(
+        !types.is_empty() && !types.contains_key("Op") && !types.contains_key("Query"),
+        "{unfolded}"
+    );
+    assert!(unfolded.get("returns").is_none(), "{unfolded}");
+    let roots = json_result(chain, thread, "d_roots");
+    assert!(roots["description"].is_string(), "{roots}");
+    assert!(roots["example"]["Roots"].is_object(), "{roots}");
+    assert!(roots["returns"].is_object(), "{roots}");
+    let commit = json_result(chain, thread, "d_commit");
+    assert!(commit.get("description").is_none(), "{commit}");
+    assert!(commit["example"]["Commit"].is_object(), "{commit}");
+    let returned = commit["returns"].as_str().unwrap();
+    assert!(commit["types"][returned].is_object(), "{commit}");
+
+    let mut example = unfolded["example"].clone();
+    example["PostMessage"]["channel_id"] = json!("general");
+    example["PostMessage"]["message_id"] = json!("from-example");
+    let send = json!({ "program": "chat", "op": example });
+    turn(chain, 5, &[("c_example", "network_call", send)]);
+    assert_eq!(
+        json_result(chain, thread, "c_example"),
+        json!({ "ok": true })
+    );
+    let asked = chat::Query::MessageById {
+        message_id: "from-example".into(),
+    };
+    let chat::Reply::Message(Some(posted)) = chain.query(chat::PROGRAM, &asked).unwrap() else {
+        panic!("the example's post landed")
+    };
+    assert_eq!(posted.author, Principal::Account(world.agent));
+}
+
+#[test]
+fn a_variant_the_program_lacks_or_a_mixed_ask_is_refused_with_what_there_is() {
+    let world = described();
+    let chain = &world.chain;
+    let calls = [
+        (
+            "r_variant",
+            "network_schema",
+            json!({ "program": "chat", "op": "Post" }),
+        ),
+        (
+            "r_side",
+            "network_schema",
+            json!({ "program": "chat", "query": "PostMessage" }),
+        ),
+        (
+            "r_both",
+            "network_schema",
+            json!({ "program": "chat", "op": "PostMessage", "whole": true }),
+        ),
+        ("r_alone", "network_schema", json!({ "op": "PostMessage" })),
+    ];
+    let thread = called(&world, &calls);
+
+    let variant = refusal(chain, thread, "r_variant");
+    assert!(
+        variant.starts_with(code::INVALID_INPUT)
+            && variant.contains("program chat has no op Post; its ops are ")
+            && variant.contains("PostMessage"),
+        "{variant}"
+    );
+    let side = refusal(chain, thread, "r_side");
+    assert!(side.contains("has no query PostMessage"), "{side}");
+    for call in ["r_both", "r_alone"] {
+        let text = refusal(chain, thread, call);
+        assert!(text.starts_with(code::INVALID_INPUT), "{text}");
+    }
 }

@@ -139,6 +139,13 @@ for every program here (`UNDESCRIBED` lists the ones not described yet; a
 program leaves it as its enums derive `Described`). A retired variant says it
 is retired and what replaced it.
 
+harness's `network_schema` reads both sections of the code a program runs.
+With no program it lists every program that runs with its `about`; with a
+program, its index (each op and query by name with its description); with an
+`op` or a `query` too, that variant's description, its example (the
+section's, else one `borsh_json::variant_example` makes), its shape, the shape
+of what it returns and each type those name; with `whole`, every shape at once.
+
 **The append-only rule.** Borsh encodes a variant by its index, and a host
 describes an op that landed at any height with the program's *current*
 code. So `Op` only grows at its end: append a variant, never insert,

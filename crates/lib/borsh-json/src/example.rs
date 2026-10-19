@@ -37,6 +37,27 @@ pub fn examples<'s>(
     Ok(made)
 }
 
+// Variant `name` of enum `declaration` with a working value of it; none for a type that is no
+// enum or has no such variant.
+pub fn variant_example<'s>(
+    schema: &'s BorshSchemaContainer,
+    declaration: &'s str,
+    name: &str,
+) -> Result<Option<Value>, Fault> {
+    let Kind::Enum { variants, .. } = kind(schema, declaration)? else {
+        return Ok(None);
+    };
+    let Some((_, _, body)) = variants.iter().find(|(_, variant, _)| variant == name) else {
+        return Ok(None);
+    };
+    let mut maker = Maker {
+        schema,
+        open: vec![declaration],
+    };
+    let made = maker.variant(name, body).map_err(|stop| stop.fault(body))?;
+    Ok(Some(made))
+}
+
 enum Stop {
     Fault(Fault),
     Cycle,

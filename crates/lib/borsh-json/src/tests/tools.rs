@@ -204,3 +204,15 @@ fn a_section_is_read_by_the_keys_it_knows_and_refused_when_it_is_no_object() {
     assert!(read(br#"{"ops":{"Open":{"description":1}}}"#).is_err());
     assert!(read(br#"{"ops":{"Open":[]}}"#).is_err());
 }
+
+#[test]
+fn one_variant_is_named_and_made_alone() {
+    let poll = poll();
+    let ops = crate::variants(&poll.schema, &poll.op);
+    assert_eq!(ops, ["Open", "Close", "Vote"]);
+    assert!(crate::variants(&poll.schema, "u64").is_empty());
+    let made = |name: &str| crate::variant_example(&poll.schema, &poll.op, name).unwrap();
+    assert_eq!(made("Close"), Some(json!({ "Close": 0 })));
+    assert_eq!(made("Vote"), Some(json!("Vote")));
+    assert_eq!(made("Shut"), None);
+}

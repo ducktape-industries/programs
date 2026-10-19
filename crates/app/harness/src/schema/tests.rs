@@ -1,6 +1,7 @@
 use ::program::MockChain;
 use ::program::schema::interface;
 use ::program::section::{CUSTOM, MODULE};
+use ::program::tools::Tools;
 use borsh::schema::BorshSchemaContainer;
 use programs::{Entry, Genesis, Programs};
 
@@ -43,6 +44,14 @@ pub(crate) fn code_with(schema: &BorshSchemaContainer) -> Vec<u8> {
         (SECTION, &encoded),
         ("ducktape.describe", b"after"),
     ])
+}
+
+// Code as founding packs it: the schema, and the tools section `tools` tells.
+pub(crate) fn described_code(schema: &BorshSchemaContainer, tools: &Tools) -> Vec<u8> {
+    let encoded = borsh::to_vec(schema).unwrap();
+    let interface = Interface::read(&encoded).unwrap();
+    let told = borsh_json::tools::section(&interface, tools).unwrap();
+    module(&[(SECTION, &encoded), (::program::tools::SECTION, &told)])
 }
 
 pub(crate) fn listed(chain: &MockChain, codes: &[(&str, Vec<u8>)]) {

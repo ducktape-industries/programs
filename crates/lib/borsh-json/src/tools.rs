@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use program::tools::{Tool, Tools};
 use serde_json::{Map, Value, json};
 
-use crate::{Interface, Kind, decode, encode, examples, kind, shape, variant, variant_shape};
+use crate::{Interface, decode, encode, examples, shape, variant, variant_shape, variants};
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Described {
@@ -158,14 +158,14 @@ pub fn check(interface: &Interface, described: &Described) -> Vec<String> {
         ("query", interface.query.as_str(), &described.queries),
     ];
     for (root, declaration, told) in groups {
-        let variants = names(interface, declaration);
-        for name in &variants {
+        let known = variants(&interface.schema, declaration);
+        for name in &known {
             if !told.contains_key(name) {
                 problems.push(format!("{root} {name} is not described"));
             }
         }
         for (name, told) in told {
-            if !variants.contains(name) {
+            if !known.contains(name) {
                 problems.push(format!(
                     "{root} {name} is described, and the {root} has no variant {name}"
                 ));
@@ -183,15 +183,6 @@ pub fn check(interface: &Interface, described: &Described) -> Vec<String> {
         }
     }
     problems
-}
-
-fn names(interface: &Interface, declaration: &str) -> Vec<String> {
-    match kind(&interface.schema, declaration) {
-        Ok(Kind::Enum { variants, .. }) => {
-            variants.iter().map(|(_, name, _)| name.clone()).collect()
-        }
-        _ => Vec::new(),
-    }
 }
 
 // An example is any JSON that encodes as its own variant, `{"utf8": …}` byte forms included.
