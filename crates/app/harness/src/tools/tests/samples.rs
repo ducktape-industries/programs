@@ -209,6 +209,12 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
                 "repo": "programs", "at": COMMIT, "path": { "utf8": "crates/it's" }, "page": { "after": null, "limit": null },
             } } }),
                 json!({ "program": "chat", "query": { "Search": { "text": PROSE, "channel": null } } }),
+                json!({ "program": "forge", "query": { "Log": {
+                    "repo": "programs",
+                    "from": { "Ref": { "utf8": "refs/heads/j-066/it's" } },
+                    "exclude": { "Oid": COMMIT },
+                    "page": { "after": null, "limit": 1 },
+                } } }),
             ],
         ),
         (
@@ -226,6 +232,14 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             } } }),
                 json!({ "program": "chat", "op": { "PostMessage": { "channel_id": "j-066", "text": PROSE, "reply_to": null } } }),
                 json!({ "program": "harness", "op": { "Book": { "height": 1, "target": "forge", "payload": [], "thread": null } } }),
+                json!({ "program": "forge", "op": { "ChangeOpen": {
+                    "repo": "programs",
+                    "from": { "Ref": { "utf8": "refs/heads/j-066/utf8" } },
+                    "into": { "utf8": "refs/heads/dev" },
+                    "title": "nested \"utf8\" bytes",
+                    "body": PROSE,
+                    "reviewers": [{ "Account": 17 }],
+                } } }),
             ],
         ),
         (

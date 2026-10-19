@@ -412,11 +412,24 @@ fn a_forge_merge_reads_back_as_the_reply_forges_schema_names_for_it() {
         "result": side,
         "change": null,
     } } });
+    let log = |branch: &str| {
+        let from = json!({ "Ref": { "utf8": format!("refs/heads/{branch}") } });
+        let page = json!({ "after": null, "limit": 1 });
+        let log = json!({ "repo": "notes", "from": from, "exclude": null, "page": page });
+        json!({ "program": "forge", "query": { "Log": log } })
+    };
     let calls = [
         ("c_merge", "network_call", merge),
         ("s_forge", "network_schema", json!({ "program": "forge" })),
+        ("q_side", "network_query", log("side")),
+        ("q_gone", "network_query", log("gone")),
     ];
     turn(chain, 7, &calls);
+    // a ref written as text inside an enum reads as its bytes, and one forge lacks is named
+    let read = json_result(chain, thread, "q_side");
+    assert_eq!(read["reply"]["Log"]["tip"], json!(side), "{read}");
+    let gone = refusal(chain, thread, "q_gone");
+    assert!(gone.contains("no ref refs/heads/gone"), "{gone}");
 
     let merged = json_result(chain, thread, "c_merge");
     let reply = &merged["returned"]["Merged"];

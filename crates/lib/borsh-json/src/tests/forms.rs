@@ -393,3 +393,47 @@ fn every_wrong_field_of_a_value_is_named_in_one_refusal() {
         assert!(text.contains(named), "{text}");
     }
 }
+
+#[derive(BorshSerialize, BorshSchema)]
+enum Pointer {
+    Id(String),
+    Name(Vec<u8>),
+    Both { name: Vec<u8>, at: Option<Vec<u8>> },
+}
+
+#[derive(BorshSerialize, BorshSchema)]
+struct Deep {
+    from: Pointer,
+    all: Vec<Pointer>,
+    maybe: Option<Vec<u8>>,
+    pairs: Vec<(Vec<u8>, [u8; 2])>,
+}
+
+#[test]
+fn bytes_written_as_utf8_text_read_so_wherever_they_nest() {
+    let by_text = json!({
+        "from": { "Name": { "utf8": "refs/heads/dev" } },
+        "all": [
+            { "Id": "c1" },
+            { "Both": { "name": { "utf8": "it's \"x\"" }, "at": { "utf8": "main" } } },
+        ],
+        "maybe": { "utf8": "🦆" },
+        "pairs": [[{ "utf8": "a/b" }, { "utf8": "ok" }]],
+    });
+    let value = Deep {
+        from: Pointer::Name(b"refs/heads/dev".to_vec()),
+        all: vec![
+            Pointer::Id("c1".into()),
+            Pointer::Both {
+                name: b"it's \"x\"".to_vec(),
+                at: Some(b"main".to_vec()),
+            },
+        ],
+        maybe: Some("🦆".as_bytes().to_vec()),
+        pairs: vec![(b"a/b".to_vec(), *b"ok")],
+    };
+    assert_eq!(
+        bytes_of::<Deep>(by_text).unwrap(),
+        borsh::to_vec(&value).unwrap()
+    );
+}

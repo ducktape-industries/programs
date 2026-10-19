@@ -205,7 +205,11 @@ pub fn resolve(ctx: &QueryCtx, name: &str, revision: &Revision, hash: Hash) -> R
             if !gitcore::server::valid_ref_name(reference) {
                 return Err(invalid("revision must name a full ref"));
             }
-            load_ref(ctx, name, reference, hash)?.ok_or_else(|| not_found("the ref does not exist"))
+            let missing = || {
+                let shown = String::from_utf8_lossy(reference);
+                not_found(format!("repository {name} has no ref {shown}"))
+            };
+            load_ref(ctx, name, reference, hash)?.ok_or_else(missing)
         }
     }
 }
