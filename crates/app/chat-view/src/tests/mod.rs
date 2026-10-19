@@ -99,11 +99,19 @@ fn row(seq: u64, author: u64, text: &str) -> MsgRow {
     }
 }
 
+// `row` with `text` parsed as chat keeps a post: its marks, links and
+// mentions as chat reads them.
+fn parsed_row(seq: u64, author: u64, text: &str) -> MsgRow {
+    MsgRow {
+        blocks: chat::parse_message(text),
+        ..row(seq, author, text)
+    }
+}
+
 fn marked_row(seq: u64) -> MsgRow {
     let text = format!("row {seq}: **bold**, `code` and a [link](https://x.example/{seq})");
     let even = seq.is_multiple_of(2);
-    let mut row = row(seq, if even { 7 } else { 8 }, &text);
-    row.blocks = chat::parse_message(&text);
+    let mut row = parsed_row(seq, if even { 7 } else { 8 }, &text);
     row.reply_count = seq % 3;
     row.reactions = vec![::chat::Reaction {
         emoji: "👍".into(),

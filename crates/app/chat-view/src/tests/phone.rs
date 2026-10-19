@@ -774,10 +774,8 @@ fn a_deleted_message_says_so_and_an_edited_one_says_edited() {
 #[test]
 fn rich_text_draws_its_quote_code_list_and_divider() {
     let (mut cx, view) = in_general();
-    let mut rich = row(1, 7, "rich");
-    rich.blocks =
-        chat::parse_message("> a quote\n```rust\nfn main() {}\n```\n- one\n---\n**bold** `code`");
-    rows_are(&mut cx, &view, vec![rich]);
+    let text = "> a quote\n```rust\nfn main() {}\n```\n- one\n---\n**bold** `code`";
+    rows_are(&mut cx, &view, vec![parsed_row(1, 7, text)]);
     assert!(
         cx.has_text("rust"),
         "the language as written, the eyebrow's capitals the host's: {:?}",
@@ -789,6 +787,24 @@ fn rich_text_draws_its_quote_code_list_and_divider() {
     );
     assert!(cx.find("chat-message-m1-block-2-item").is_some());
     assert!(cx.find("chat-message-m1-block-3").is_some(), "the divider");
+}
+
+// A room link on the phone reads as the room's name now, and a press on
+// it opens the room in place, not through the app.
+#[test]
+fn a_room_link_opens_the_room_in_place() {
+    let (mut cx, view) = in_general();
+    let text = "see [#old](duck://testnet-0a1b2c3d/chat/forge%3Aweb%3A3)";
+    rows_are(&mut cx, &view, vec![parsed_row(1, 7, text)]);
+    let key = "chat-message-m1-block-0";
+    let Some(wire::Node::RichText { text, .. }) = cx.find(key) else {
+        panic!("the paragraph is one rich text node: {:?}", cx.texts())
+    };
+    assert_eq!(text, "see #Review web#3");
+    cx.simulate_rich_click(key, 0);
+    cx.run_until_parked();
+    view.read(|chat| assert_eq!(chat.room.as_ref().unwrap().id, "forge:web:3"));
+    assert!(cx.host().requests::<view::methods::LinkOpen>().is_empty());
 }
 
 // ---------- the actions sheet and the delete dialog (`src/chat/Actions.tsx`) ----------

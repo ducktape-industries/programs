@@ -114,9 +114,8 @@ fn a_room_link_names_the_room_and_opens_it_in_place() {
     let (mut cx, view) = opened();
     let text = "see [#old](duck://testnet-0a1b2c3d/chat/forge%3Aweb%3A3) and #general";
     cx.update(&view, |chat, _, cx| {
-        let mut linked = row(3, 7, text);
+        let mut linked = parsed_row(3, 7, text);
         linked.message_id = "rooms".into();
-        linked.blocks = chat::parse_message(text);
         let room = chat.room.as_mut().unwrap();
         room.messages.ready_mut().unwrap().push(linked);
         cx.notify();
@@ -229,9 +228,8 @@ fn list_lines_render_as_list_rows() {
     use view::px;
     let (mut cx, view) = opened();
     cx.update(&view, |chat, _, cx| {
-        let mut list = row(3, 7, "list");
+        let mut list = parsed_row(3, 7, "- **apples**\n2. pears\nplain");
         list.message_id = "list".into();
-        list.blocks = chat::parse_message("- **apples**\n2. pears\nplain");
         chat.room
             .as_mut()
             .unwrap()
