@@ -8,7 +8,7 @@ use attribution::Change;
 use serde_json::Value;
 
 use crate::agents::{running, thread};
-use crate::state::{AWAITED, CALLS, DEFERRED, LIVE, Live, PARTIALS, SHOWN, THREADS};
+use crate::state::{AWAITED, CALLS, DEFERRED, LIVE, Live, SHOWN, THREADS};
 use crate::tools::{self, Entry, Run, Seat, Show, Undo, Write};
 use crate::turns::{append, request, serves, settle};
 use crate::watches;
@@ -378,7 +378,7 @@ pub(crate) async fn take_back_showing(ctx: &Ctx, id: u64) -> Result<Settled, Err
 }
 
 fn said_at(ctx: &ExecCtx, id: u64, index: u64) -> Result<Option<(String, String, String)>, Error> {
-    let Some(partial) = PARTIALS.get(ctx, &id)? else {
+    let Some(partial) = crate::replies::read(ctx, id)? else {
         return Ok(None);
     };
     let said = usize::try_from(index)

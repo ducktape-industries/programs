@@ -529,6 +529,7 @@ fn plan_turn(ctx: &ExecCtx, thread: &mut ThreadRow, turn: Turn) -> Result<Option
     let parts = turn_parts(ctx, thread, &turn)?;
     let upto = thread.frames;
     thread.asking = Asking::Asked { upto };
+    crate::replies::clear(ctx, thread.id)?;
     PARTIALS.put(ctx, &thread.id, &Partial::new(turn.asked.wire));
     let summarized = thread.summary.is_some();
     Ok(Some(Step::Ask {
@@ -749,8 +750,8 @@ pub(crate) async fn conclude(
     config: BlobId,
     read: impl FnOnce(Option<Partial>) -> Result<Answered, Failure>,
 ) -> Result<(), Error> {
-    let partial = PARTIALS.get(ctx, &id)?;
-    PARTIALS.remove(ctx, &id);
+    let partial = crate::replies::read(ctx, id)?;
+    crate::replies::clear(ctx, id)?;
     let mut settled = take_back_showing(ctx, id).await?;
     let answered = read(partial.clone());
     let Turned { calls, again } = turned(ctx, id, upto, config, answered, partial)?;
@@ -894,8 +895,8 @@ fn turned(
 }
 
 fn stall(ctx: &ExecCtx, id: u64, error: &Error) {
-    PARTIALS.remove(ctx, &id);
-    let Ok(Some(mut thread)) = THREADS.get(ctx, &id) else {
+    let cleared = crate::replies::clear(ctx, id);
+    let Ok(Some(mut thread)) = cleared.and_then(|()| THREADS.get(ctx, &id)) else {
         return;
     };
     give_up(

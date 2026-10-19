@@ -6,12 +6,12 @@ use abi::role::identity::AccountNumber;
 use store::{PageRequest, PageResponse};
 
 use crate::state::{
-    BOUND, BY_AGENT, CALLS, FRAMES, HELD, PARTIALS, PLACES, SETTLING, THREADS, TOPICS, WITHHELD,
+    BOUND, BY_AGENT, CALLS, FRAMES, HELD, PLACES, SETTLING, THREADS, TOPICS, WITHHELD,
 };
 use crate::{Body, CallRow, Frame, ModelRow, Partial, SettleWindow, ThreadRow, WithheldFrame};
 
 pub(crate) fn partial(ctx: &QueryCtx, thread: u64) -> Result<Option<Partial>, Error> {
-    PARTIALS.get(ctx, &thread)
+    crate::replies::read(ctx, thread)
 }
 
 pub(crate) fn topic(ctx: &QueryCtx, thread: u64) -> Result<Option<String>, Error> {

@@ -37,6 +37,8 @@ pub const SEALED: Map<(u64, u64), Sealed> = Map::new("sealed/").shared();
 pub const CALLS: Map<(u64, String), CallRow> = Map::new("call/").shared();
 pub const WITHHELD: Set<(u64, u64)> = Set::new("withheld/").shared();
 pub const PARTIALS: Map<u64, Partial> = Map::new("partial/").shared();
+// a streaming reply's text as each event added it (`replies.rs`): by thread, block and event
+pub const PIECES: Map<(u64, u64, u64), String> = Map::new("piece/").shared();
 pub const LIVE: Map<(u64, u64), Live> = Map::new("live/").shared();
 pub const SHOWN: Map<(u64, String), String> = Map::new("shown/").shared();
 pub const DEFERRED: Map<(u64, String, u64), Change> = Map::new("deferred/").shared();
@@ -361,11 +363,12 @@ pub fn written(key: &[u8]) -> Option<Written> {
     if let Some((thread, call)) = under::<(u64, String)>(&CALLS.key(&()), key) {
         return Some(Written::Call { thread, call });
     }
-    let threads: [(Vec<u8>, OfThread); 8] = [
+    let threads: [(Vec<u8>, OfThread); 9] = [
         (THREADS.key(&()), Written::Thread),
         (HELD.key(&()), Written::Held),
         (WITHHELD.key(&()), Written::Withheld),
         (PARTIALS.key(&()), Written::Partial),
+        (PIECES.key(&()), Written::Partial),
         (TOPICS.key(&()), Written::Topic),
         (TALLIES.key(&()), Written::Tally),
         (SETTLING.key(&()), Written::Settling),
@@ -426,6 +429,7 @@ pub(crate) const TABLES: &[::program::Table] = &[
     CALLS.table(),
     WITHHELD.table(),
     PARTIALS.table(),
+    PIECES.table(),
     LIVE.table(),
     SHOWN.table(),
     DEFERRED.table(),

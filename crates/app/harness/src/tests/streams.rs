@@ -239,3 +239,62 @@ fn only_the_egress_role_streams_and_only_into_a_thread_waiting_on_its_model() {
 }
 
 mod live;
+
+fn kept_rows(chain: &MockChain, thread: u64) -> (Option<Partial>, Vec<String>) {
+    let host = chain.host(PROGRAM).borrow();
+    let head = host
+        .state
+        .get(&crate::state::PARTIALS.key(&thread))
+        .map(|bytes| borsh::from_slice(bytes).unwrap());
+    let under = crate::state::PIECES.key(&thread);
+    let pieces = host
+        .state
+        .range(under.clone()..)
+        .take_while(|(key, _)| key.starts_with(&under))
+        .map(|(_, bytes)| borsh::from_slice(bytes).unwrap())
+        .collect();
+    (head, pieces)
+}
+
+#[test]
+fn a_streaming_reply_keeps_each_events_text_once_beside_a_head_without_it() {
+    let world = world();
+    let chain = &world.chain;
+    let (thread, request) = asked(&world);
+    let events = events(TEXT);
+    stream(chain, &request, &events, &[0, 1, 2, 3, 4]);
+    let (head, pieces) = kept_rows(chain, thread);
+    assert_eq!(head.unwrap().said, [Said::Text(String::new())]);
+    assert_eq!(pieces, ["Hello", ", world"]);
+    let growing = partial(chain, thread).unwrap();
+    assert_eq!(growing.said, [Said::Text("Hello, world".into())]);
+    stream(chain, &request, &events, &[5, 6, 7]);
+    end(chain, &request, 8);
+    assert_eq!(kept_rows(chain, thread), (None, Vec::new()));
+}
+
+#[test]
+fn a_head_that_kept_its_text_whole_reads_whole_and_keeps_growing() {
+    let world = world();
+    let chain = &world.chain;
+    let (thread, request) = asked(&world);
+    let events = events(TEXT);
+    stream(chain, &request, &events, &[0, 1, 2, 3]);
+    let (head, _) = kept_rows(chain, thread);
+    let whole = Partial {
+        said: vec![Said::Text("Hello".into())],
+        ..head.unwrap()
+    };
+    {
+        let mut host = chain.host(PROGRAM).borrow_mut();
+        let under = crate::state::PIECES.key(&thread);
+        host.state.retain(|key, _| !key.starts_with(&under));
+        let key = crate::state::PARTIALS.key(&thread);
+        host.state.insert(key, borsh::to_vec(&whole).unwrap());
+    }
+    assert_eq!(partial(chain, thread).unwrap().said, whole.said);
+    stream(chain, &request, &events, &[4]);
+    let (head, pieces) = kept_rows(chain, thread);
+    assert_eq!(head.unwrap().said, [Said::Text(String::new())]);
+    assert_eq!(pieces, ["Hello, world"]);
+}

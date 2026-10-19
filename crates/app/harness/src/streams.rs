@@ -6,7 +6,7 @@ use ::program::{Ctx, Error, unauthorized, wrong_state};
 
 use crate::agents::hear_again;
 use crate::calls::{Settled, dispatch, show, void_reply};
-use crate::state::{PARTIALS, THREADS};
+use crate::state::THREADS;
 use crate::turns::{bound, converse};
 use crate::{Asking, Event, Flow, Forming, Partial, Said, wire};
 
@@ -20,14 +20,14 @@ pub(crate) async fn streamed(ctx: &Ctx, thread: u64, event: Event) -> Result<(),
     let asked = THREADS
         .get(ctx, &thread)?
         .is_some_and(|row| matches!(row.asking, Asking::Asked { .. }));
-    let Some(partial) = PARTIALS.get(ctx, &thread)?.filter(|_| asked) else {
+    let Some(partial) = crate::replies::read(ctx, thread)?.filter(|_| asked) else {
         return Err(wrong_state(format!(
             "thread {thread} is waiting on no model reply"
         )));
     };
     let restarted = matches!(arrival(partial.next_seq, event.seq), Arrival::Restart);
     let folded = fold(partial.clone(), &event);
-    PARTIALS.put(ctx, &thread, &folded);
+    crate::replies::keep(ctx, thread, event.seq, &partial, &folded)?;
     crate::resume::moved(ctx, thread)?;
     let settled = match step(&partial, &folded, restarted) {
         Step::Nothing => Settled::default(),

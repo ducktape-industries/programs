@@ -15,6 +15,7 @@ mod models;
 mod pictures;
 mod program;
 mod queries;
+mod replies;
 mod resume;
 mod room_rules;
 mod routes;
@@ -851,7 +852,7 @@ pub enum Query {
     #[reads(state::WITHHELD, state::FRAMES)]
     Withheld { thread: u64 },
     #[ask(Reply::Partial(Option<Partial>))]
-    #[reads(state::PARTIALS)]
+    #[reads(state::PARTIALS, state::PIECES)]
     Partial { thread: u64 },
     /// the line the thread's agent last set with `thread_topic`, if it set one
     #[ask(Reply::Topic(Option<String>))]

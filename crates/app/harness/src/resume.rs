@@ -13,7 +13,7 @@ use crate::conversations::{binding, conversation};
 use crate::routes;
 use crate::schema::code_of;
 use crate::state::{
-    AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, PARTIALS, REPORTING, REPORTS, RETRIES, Retry,
+    AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, REPORTING, REPORTS, RETRIES, Retry,
     STREAMING, THREADS, USAGE, WATCHES,
 };
 use crate::tools::Write;
@@ -541,9 +541,7 @@ pub(crate) async fn recover(ctx: &Ctx, id: u64) -> Result<(), Error> {
                 Some(config) => config,
                 None => configured_now(ctx, &row)?,
             };
-            let whole = PARTIALS
-                .get(ctx, &id)?
-                .is_some_and(|partial| streamed(&partial));
+            let whole = crate::replies::read(ctx, id)?.is_some_and(|partial| streamed(&partial));
             let read = move |partial: Option<Partial>| match partial.filter(streamed) {
                 Some(partial) => Ok(wire::folded(partial)),
                 None => Err(Failure::lost(text)),
