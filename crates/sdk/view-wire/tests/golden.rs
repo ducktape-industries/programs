@@ -578,6 +578,14 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
             Putting::Sent(12),
         ),
         exchange::<FileRelease>(vec![1, 2], ()),
+        exchange::<methods::FileRead>(
+            methods::ReadFile {
+                file: 1,
+                offset: 1,
+                len: 2,
+            },
+            b"ap".to_vec(),
+        ),
         exchange::<FileSave>(
             SaveFile {
                 name: "tape.png".into(),

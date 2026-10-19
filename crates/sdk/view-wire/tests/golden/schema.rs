@@ -472,6 +472,7 @@ pub(super) fn shapes() -> (BTreeMap<&'static str, Shape>, Definitions) {
         borsh::<FilePick>(d),
         borsh::<OpPut>(d),
         borsh::<FileRelease>(d),
+        borsh::<FileRead>(d),
         borsh::<FileSave>(d),
         borsh::<ClipboardFiles>(d),
         borsh::<HostMethods>(d),

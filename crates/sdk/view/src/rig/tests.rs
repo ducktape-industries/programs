@@ -471,3 +471,32 @@ fn a_put_reads_a_held_file_and_its_blob_is_held_at_once() {
         methods::decode(&net.answer("blob.get", None, &id).unwrap()).unwrap();
     assert_eq!(got.as_deref(), Some(&b"second"[..]));
 }
+
+#[test]
+fn a_held_file_reads_any_range_of_it_and_none_past_its_end() {
+    use crate::methods::{Pick, Picked, ReadFile};
+    let net = Network::new();
+    net.device(&[("film.mov", b"0123456789")]);
+    let picked = net
+        .answer(
+            "file.pick",
+            None,
+            &methods::encode(&Pick { multiple: false }),
+        )
+        .unwrap();
+    let picked: Vec<Picked> = methods::decode(&picked).unwrap();
+    let file = picked[0].file;
+    let read = |offset, len| {
+        let ask = ReadFile { file, offset, len };
+        net.answer("file.read", None, &methods::encode(&ask))
+            .map(|bytes| methods::decode::<Vec<u8>>(&bytes).unwrap())
+    };
+    assert_eq!(read(0, 10).unwrap(), b"0123456789");
+    assert_eq!(read(3, 4).unwrap(), b"3456");
+    assert_eq!(read(10, 0).unwrap(), b"");
+    let past = read(8, 3).unwrap_err();
+    assert_eq!(past.code, methods::refusal::MALFORMED_REQUEST);
+    net.answer("file.release", None, &methods::encode(&vec![file]))
+        .unwrap();
+    assert!(read(0, 1).is_err(), "a released file reads nothing");
+}

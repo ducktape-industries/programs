@@ -13,6 +13,7 @@ clipboard.read None () -> Clipboard
 clipboard.write None String -> ()
 clock.ticks None i64 -> ()
 file.pick None Pick -> Vec<Picked>
+file.read None ReadFile -> Vec<u8>
 file.release None Vec<u64> -> ()
 file.save None SaveFile -> bool
 host.badge None i64 -> ()
@@ -170,6 +171,7 @@ PutBlobs = Struct { fields: NamedFields([("blobs", "Vec<NewBlob>")]) }
 Putting = Enum { tag_width: 1, variants: [(0, "Sent", "Putting__Sent"), (1, "Held", "Putting__Held")] }
 Putting__Held = Struct { fields: UnnamedFields(["Vec<[u8; 32]>"]) }
 Putting__Sent = Struct { fields: UnnamedFields(["u64"]) }
+ReadFile = Struct { fields: NamedFields([("file", "u64"), ("offset", "u64"), ("len", "u64")]) }
 Receipt = Struct { fields: NamedFields([("program", "String"), ("outcome", "Outcome"), ("events", "Vec<Vec<u8>>"), ("nested", "Vec<Receipt>")]) }
 SaveFile = Struct { fields: NamedFields([("name", "String"), ("blobs", "Vec<[u8; 32]>")]) }
 Session = Struct { fields: NamedFields([("connected", "bool"), ("chain_id", "String"), ("signer", "String"), ("account", "Option<u64>"), ("endpoint", "String")]) }

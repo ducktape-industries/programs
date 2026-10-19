@@ -489,6 +489,7 @@ impl Network {
             "program.describe",
             "file.pick",
             "file.release",
+            "file.read",
             "op.put",
         ] {
             let net = self.clone();
@@ -691,6 +692,17 @@ impl Network {
                     })
                     .collect();
                 Ok(methods::encode(&picked))
+            }
+            "file.read" => {
+                let ask: methods::ReadFile =
+                    methods::decode(payload).map_err(|error| malformed(&error))?;
+                let bytes = self.picked(ask.file, ask.offset, ask.len).ok_or_else(|| {
+                    Error::new(
+                        methods::refusal::MALFORMED_REQUEST,
+                        "no file the view holds holds that range",
+                    )
+                })?;
+                Ok(methods::encode(&bytes))
             }
             "file.release" => {
                 let handles: Vec<u64> =

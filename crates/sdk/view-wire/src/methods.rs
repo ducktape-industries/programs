@@ -666,6 +666,15 @@ pub struct Pasted {
     pub files: Vec<Picked>,
     pub text: String,
 }
+// What `file.read` asks: `len` bytes from `offset` of the file the view
+// holds as `file`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub struct ReadFile {
+    pub file: u64,
+    pub offset: u64,
+    pub len: u64,
+}
 /// One notice for the host to decide on: `notify.post`. The view asks; the
 /// host logs it in its notification centre and decides whether a banner
 /// reaches the screen (the person's per-view choice, focus, a burst limit).
@@ -1277,6 +1286,16 @@ methods! {
     // before it offers what needs a kind. Answered to every view, whatever
     // its manifest declares: it grants nothing.
     HostMethods, "host.methods", (), Hosted;
+    // `file.read`: `len` bytes from `offset` of a file the view holds, by
+    // the handle `file.pick`, `clipboard.files` or a drop gave it: any
+    // file, of any kind and any size, read as it is, at any offset, as
+    // much as the view asks. The answer is exactly those bytes. No press is
+    // needed: the person's pick, paste or drop already chose the file.
+    // Refused [`refusal::MALFORMED_REQUEST`]: a handle the view does not
+    // hold, or a range past the file's size as held.
+    // [`refusal::HOST_FAULT`]: the file cannot be read, or its size changed
+    // since it was held.
+    FileRead, "file.read", ReadFile, Vec<u8>;
 }
 
 /// The `<capability>` half of every kind in [`ALL`]: what a view's manifest
@@ -1331,9 +1350,10 @@ pub enum Capability {
     /// (`microphone.devices`) and plays the test chime on a speaker
     /// (`microphone.chime`).
     Microphone,
-    /// The view asks the person for files on this device (`file.pick`):
-    /// what they pick, by name, and nothing else of the device's. Putting
-    /// them on the network is an op (`op.put`), under [`Capability::Op`].
+    // The view asks the person for files on this device (`file.pick`):
+    // what they pick, by name, and nothing else of the device's, and reads
+    // what it holds of them (`file.read`). Putting them on the network is
+    // an op (`op.put`), under [`Capability::Op`].
     File,
 }
 

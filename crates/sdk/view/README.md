@@ -562,7 +562,7 @@ know is left out and logged.
 sends a view only the events its level reads (`Event::level`), because a
 view built before J-085 reads strictly. What each level added is listed
 beside it (`view-wire/src/lib.rs`): level 2, `op.put` takes a blob of any
-size. What a host answers is
+size; level 3, `file.read`, a read of any file the view holds. What a host answers is
 `host.methods` (`methods::Hosted`): `cx.host().hosted()` asks it once, and
 `Hosted::has("link.window")` says whether to offer what needs it. A host
 before J-085 refuses `host.methods`, and `hosted()` answers `None`: ask the

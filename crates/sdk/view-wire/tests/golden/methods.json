@@ -1318,6 +1318,18 @@
     "reply": null
   },
   {
+    "kind": "file.read",
+    "request": {
+      "file": 1,
+      "offset": 1,
+      "len": 2
+    },
+    "reply": [
+      97,
+      112
+    ]
+  },
+  {
     "kind": "file.save",
     "request": {
       "name": "tape.png",
