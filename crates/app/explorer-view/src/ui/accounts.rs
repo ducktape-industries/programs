@@ -5,7 +5,7 @@ use identity::Account;
 use view::design::Ladder;
 
 pub(super) fn accounts(view: &Explorer, cx: Cx, theme: &Theme, ladder: &Ladder) -> AnyElement {
-    let listed = match &view.accounts {
+    let listed = match &*view.accounts {
         Loadable::Ready(listed) | Loadable::Reloading(listed, _) => listed,
         Loadable::Failed(refusal) => return failed(&design::sentence(refusal), cx, theme, ladder),
         Loadable::Idle | Loadable::Loading(_) => {
@@ -128,7 +128,7 @@ pub(super) fn account(
     ladder: &Ladder,
 ) -> AnyElement {
     let Some(account) = view.account(number) else {
-        return match &view.accounts {
+        return match &*view.accounts {
             Loadable::Ready(_) | Loadable::Reloading(_, _) => empty_state(
                 "explorer-no-account",
                 "user-x",

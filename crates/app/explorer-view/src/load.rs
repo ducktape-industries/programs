@@ -65,7 +65,7 @@ impl Explorer {
         // a change lands at its height without a write to the programs role, so
         // the programs role's live heads say nothing: the head that reaches it
         // reads the roster again
-        if let Loadable::Ready(network) = &self.network
+        if let Loadable::Ready(network) = &*self.network
             && network
                 .changes
                 .first()
@@ -106,24 +106,43 @@ impl Explorer {
         }
     }
 
+    // Each list is read again on its program's live heads, which on a busy network come nearly
+    // every block: a head heard while the list is read lets that read land and reads once more
+    // after it (`Reread`).
     pub(crate) fn read_accounts(&mut self, cx: &mut Context<Self>) {
-        let work = queries::accounts(cx.host());
-        cx.load(self, work, |view| &mut view.accounts);
+        cx.reread(
+            self,
+            |view| &mut view.accounts,
+            |_, cx| queries::accounts(cx.host()),
+            Self::read_accounts,
+        );
     }
 
     pub(crate) fn read_validators(&mut self, cx: &mut Context<Self>) {
-        let work = queries::validators(cx.host());
-        cx.load(self, work, |view| &mut view.validators);
+        cx.reread(
+            self,
+            |view| &mut view.validators,
+            |_, cx| queries::validators(cx.host()),
+            Self::read_validators,
+        );
     }
 
     pub(crate) fn read_network(&mut self, cx: &mut Context<Self>) {
-        let work = queries::network(cx.host());
-        cx.load(self, work, |view| &mut view.network);
+        cx.reread(
+            self,
+            |view| &mut view.network,
+            |_, cx| queries::network(cx.host()),
+            Self::read_network,
+        );
     }
 
     pub(crate) fn read_used(&mut self, cx: &mut Context<Self>) {
-        let work = queries::used(cx.host());
-        cx.load(self, work, |view| &mut view.used);
+        cx.reread(
+            self,
+            |view| &mut view.used,
+            |_, cx| queries::used(cx.host()),
+            Self::read_used,
+        );
     }
 
     /// What the account page on screen did, newest first, a page at a time;

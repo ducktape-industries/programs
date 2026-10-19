@@ -13,7 +13,7 @@ use ::programs::{NOTICE, Pending};
 use view::design::Ladder;
 
 pub(super) fn programs(view: &Explorer, cx: Cx, theme: &Theme, ladder: &Ladder) -> AnyElement {
-    let network = match &view.network {
+    let network = match &*view.network {
         Loadable::Ready(network) | Loadable::Reloading(network, _) => network,
         Loadable::Failed(refusal) => return failed(&design::sentence(refusal), cx, theme, ladder),
         Loadable::Idle | Loadable::Loading(_) => {
@@ -214,7 +214,7 @@ pub(super) fn program(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
-    let network = match &view.network {
+    let network = match &*view.network {
         Loadable::Ready(network) | Loadable::Reloading(network, _) => network,
         Loadable::Failed(refusal) => return failed(&design::sentence(refusal), cx, theme, ladder),
         Loadable::Idle | Loadable::Loading(_) => {

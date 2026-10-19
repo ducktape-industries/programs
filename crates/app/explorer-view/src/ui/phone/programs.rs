@@ -25,7 +25,7 @@ use super::parts::{
 const UNREAD_BLOCK_MS: u64 = 1000;
 
 pub(super) fn programs(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
-    let network = match &view.network {
+    let network = match &*view.network {
         Loadable::Ready(network) | Loadable::Reloading(network, _) => network,
         Loadable::Failed(refusal) => return refused(&design::sentence(refusal), cx, k),
         Loadable::Idle | Loadable::Loading(_) => {

@@ -67,6 +67,40 @@ fn a_programs_head_re_reads_the_programs() {
     assert!(cx.has_text("Nothing is scheduled against the programs role."));
 }
 
+// A busy network writes the programs role's neighbours nearly every block: a programs head heard
+// while the roster is read lets that read land and reads once more after it. A read replaced for
+// each head never landed, the roster being five reads in a row.
+#[test]
+fn the_programs_land_though_a_head_comes_in_every_block() {
+    let mut cx = TestAppContext::new();
+    node(&mut cx, Rc::new(RefCell::new(12)));
+    let heads = cx.host().stream::<Changes<Programs>>();
+    cx.open::<Explorer>();
+    cx.run_until_parked();
+    cx.simulate_click("explorer-tab-programs");
+    cx.run_until_parked();
+    let head = |height| {
+        Some(view::methods::Change {
+            height,
+            keys: Vec::new(),
+        })
+    };
+    heads.send(head(13));
+    cx.run_until_parked();
+    let one_read = cx.reports().len() as u64;
+    let programs = vec![
+        entry("chat", 0xab),
+        entry("identity", 0xcd),
+        entry("chess", 0x11),
+    ];
+    programs_with(&cx, programs, Vec::new(), Vec::new());
+    for height in 14..14 + 2 * one_read {
+        heads.send(head(height));
+        cx.tick(Vec::new());
+    }
+    assert!(cx.has_text("3 programs"), "{:?}", cx.texts());
+}
+
 fn programs_env(height: u64, origin: program::Origin) -> program::Env {
     program::Env {
         height,

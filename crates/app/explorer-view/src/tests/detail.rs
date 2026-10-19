@@ -295,6 +295,7 @@ fn a_page_opened_before_the_roster_asks_when_it_lands() {
     );
     assert!(cx.host().requests::<BlobManifest>().is_empty());
     respond(&mut cx);
+    cx.host().answer_held::<Query<Programs>>();
     heads.send(Some(view::methods::Change {
         height: 13,
         keys: Vec::new(),

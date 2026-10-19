@@ -612,7 +612,8 @@ no notice). `testing::TestNotifier` drives one against a `FakeHost`.
 `FakeHost` (`src/testing/fake_host.rs`) that answers by a request's shape.
 An ask waits for its answer, so a test says what comes back:
 `handle::<Method>`, `refuse`, or `never` for one that stays out; an ask
-nothing answers fails the test, naming it. A subscription nothing feeds
+nothing answers fails the test, naming it. `answer_held::<Method>()` answers
+the asks `never` held, with the handler given since: a host slow to answer. A subscription nothing feeds
 stays open; `stream::<Method>()` is its feed, and a feed nobody hears
 fails the test. `requests::<Method>()` is everything the view sent,
 notifies too (`HostLog`, `LinkOpen`, `HostWidget`). The store is the one

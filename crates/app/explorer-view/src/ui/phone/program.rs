@@ -34,7 +34,7 @@ pub(super) fn program(view: &Explorer, name: &str, cx: Cx, k: &Look) -> AnyEleme
         Some(copy) => page.trailing(copy),
         None => page,
     };
-    let body = match (&view.network, code) {
+    let body = match (&*view.network, code) {
         (Loadable::Failed(refusal), _) => refused(&design::sentence(refusal), cx, k),
         (Loadable::Idle | Loadable::Loading(_), _) => {
             quiet("explorer-program-loading", words::READING_ROLE, k)

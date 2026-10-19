@@ -70,7 +70,7 @@ fn open_dm(link: String, k: &Look) -> AnyElement {
 /// An account not in hand: the accounts being read, refused, or none by
 /// this number.
 fn missing(view: &Explorer, number: u64, cx: Cx, k: &Look) -> AnyElement {
-    match &view.accounts {
+    match &*view.accounts {
         Loadable::Ready(_) | Loadable::Reloading(_, _) => empty(
             "explorer-no-account",
             "user-x",

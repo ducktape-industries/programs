@@ -25,6 +25,9 @@ struct State {
     /// One feed per method: the subscriptions it reaches.
     streams: HashMap<Key, Stream>,
     requests: Vec<Request>,
+    // the asks a handler left out (`never`), until `answer_held` answers them or the view
+    // cancels them
+    held: Vec<Request>,
     events: Vec<Event>,
     /// Run after each frame is taken, with no borrow held: what a backing
     /// feeds the view's subscriptions from the frame's effects.
@@ -116,6 +119,27 @@ impl FakeHost {
             .borrow_mut()
             .asks
             .insert(key::<C>(), answer::<C>(|_| None));
+    }
+
+    // Answers now, with what answers `C` by then, every ask of `C` the host held out (`never`)
+    // and the view still waits for: a host slow to answer, not one that never does. Each lands
+    // on the view's next tick.
+    pub fn answer_held<C: Method>(&self) {
+        let mut state = self.0.borrow_mut();
+        let state = &mut *state;
+        let (kind, target) = key::<C>();
+        let (asked, kept): (Vec<Request>, Vec<Request>) = std::mem::take(&mut state.held)
+            .into_iter()
+            .partition(|request| matches::<C>(request));
+        state.held = kept;
+        for request in asked {
+            let answer = find(&mut state.asks, &kind, target.as_deref())
+                .expect("answer_held answers with the handler `C` has: give it one first");
+            match answer(&request) {
+                Some(event) => state.events.push(event),
+                None => state.held.push(request),
+            }
+        }
     }
 
     /// Refuses every ask of and subscription to `C`.
@@ -348,6 +372,9 @@ impl FakeHost {
             stream.host = Some(host.clone());
             stream.ids.retain(|id| !frame.cancels.contains(id));
         }
+        state
+            .held
+            .retain(|request| !frame.cancels.contains(&request.id));
         for request in &frame.requests {
             state.requests.push(request.clone());
             // The app refuses a method the manifest leaves out
@@ -374,6 +401,7 @@ impl FakeHost {
                 host.diagnostic(request.id)
                     .unwrap_or_else(|| String::from_utf8_lossy(&request.payload).into_owned())
             };
+            let mut held = false;
             let event = match host.shape(request.id) {
                 Shape::Notify => match find(&mut state.asks, kind, target) {
                     Some(answer) => answer(request),
@@ -381,7 +409,9 @@ impl FakeHost {
                 },
                 Shape::Ask => {
                     if let Some(answer) = find(&mut state.asks, kind, target) {
-                        answer(request)
+                        let answered = answer(request);
+                        held = answered.is_none();
+                        answered
                     } else if let Some(answer) = kept(&mut state.kept, request) {
                         Some(answer)
                     } else if find(&mut state.streams, kind, target).is_some() {
@@ -429,6 +459,9 @@ impl FakeHost {
                     }
                 }
             };
+            if held {
+                state.held.push(request.clone());
+            }
             state.events.extend(event);
         }
         drop(state);

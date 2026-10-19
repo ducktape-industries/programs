@@ -255,10 +255,10 @@ pub struct Explorer {
     pub(crate) session_chain: String,
     pub(crate) status: Loadable<NodeStatus>,
     pub(crate) chain: Chain,
-    pub(crate) accounts: Loadable<Accounts>,
-    pub(crate) validators: Loadable<Vec<Vec<u8>>>,
-    pub(crate) network: Loadable<Network>,
-    pub(crate) used: Loadable<Used>,
+    pub(crate) accounts: Reread<Accounts>,
+    pub(crate) validators: Reread<Vec<Vec<u8>>>,
+    pub(crate) network: Reread<Network>,
+    pub(crate) used: Reread<Used>,
     /// what the account page on screen did, newest first, a page at a
     /// time (`read_acted`), and whose it is
     #[serde(skip)]

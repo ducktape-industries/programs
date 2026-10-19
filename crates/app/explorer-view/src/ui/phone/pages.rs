@@ -224,7 +224,7 @@ pub(super) fn transactions(view: &Explorer, program: Option<&str>, cx: Cx, k: &L
 /// its face, what it is and its devices, the transactions activity
 /// recorded for it; only the rows on screen are drawn.
 fn accounts(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
-    let listed = match &view.accounts {
+    let listed = match &*view.accounts {
         Loadable::Ready(listed) | Loadable::Reloading(listed, _) => listed,
         Loadable::Failed(refusal) => return refused(&design::sentence(refusal), cx, k),
         Loadable::Idle | Loadable::Loading(_) => {
