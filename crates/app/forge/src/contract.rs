@@ -62,30 +62,29 @@ pub struct Repo {
     pub last_activity: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
+)]
+#[tool_about(
+    "Git repositories on the network: refs, commits, trees and blobs to read, pushes, changes (pull requests) with reviews, squash merges, rebases, required checks and merge queues. Refs, paths and git names are bytes: write them as hex or {\"utf8\": text}; oids are full lowercase hex. Clone and push with git over duck:// as well."
+)]
 pub enum Op {
-    Create {
-        repo: String,
-        hash: HashKind,
-    },
-    Configure {
-        repo: String,
-        settings: Settings,
-    },
-    Grant {
-        repo: String,
-        principal: Principal,
-    },
-    Revoke {
-        repo: String,
-        principal: Principal,
-    },
+    #[tool_op(description = "Create a repository you own, with sha1 or sha256 objects. Its name is unique and every op names it.", example = crate::examples::create)]
+    Create { repo: String, hash: HashKind },
+    #[tool_op(description = "Set a repository's settings: its head branch and whether pushes may force or delete refs. Whoever its policy admits (its owner by default).", example = crate::examples::configure)]
+    Configure { repo: String, settings: Settings },
+    #[tool_op(description = "Retired: a repository's writers are its list in the access program, which its owner sets.", example = crate::examples::grant)]
+    Grant { repo: String, principal: Principal },
+    #[tool_op(description = "Retired with Grant.", example = crate::examples::revoke)]
+    Revoke { repo: String, principal: Principal },
+    #[tool_op(description = "A git receive-pack: request is its pkt-lines (`<old> <new> <ref>\\0report-status`, then 0000) and pack a blob of the pack. Objects land once the pack unpacks; each ref moves where the repository's policy admits you, its settings allow it and it fast-forwards unless force is allowed. Returns git's report.", example = crate::examples::push)]
     Push {
         repo: String,
         request: Vec<u8>,
         pack: Option<BlobId>,
     },
     /// The client publishes immutable objects first. Consensus only checks both heads.
+    #[tool_op(description = "Move into to a result commit you built and published, with both heads checked against expected_into and expected_from, and mark change merged when one is named. Whoever the repository's policy admits; review verdicts are not enforced. Returns Merged.", returns = OpReply, example = crate::examples::merge)]
     Merge {
         repo: String,
         into: Vec<u8>,
@@ -95,6 +94,7 @@ pub enum Op {
         result: String,
         change: Option<u64>,
     },
+    #[tool_op(description = "Open a change (a pull request) from a branch or commit into a branch, with reviewers. Anyone may; it opens a chat channel forge:<repo>:<n> for its conversation. Returns the change's number.", returns = OpReply, example = crate::examples::open)]
     ChangeOpen {
         repo: String,
         from: Revision,
@@ -103,6 +103,7 @@ pub enum Op {
         body: String,
         reviewers: Vec<Principal>,
     },
+    #[tool_op(description = "Change a change's title, body or reviewers; a field left null stays. Its author, or whom the change's policy admits.", returns = OpReply, example = crate::examples::edit)]
     ChangeEdit {
         repo: String,
         n: u64,
@@ -110,20 +111,18 @@ pub enum Op {
         body: Option<String>,
         reviewers: Option<Vec<Principal>>,
     },
-    ChangeClose {
-        repo: String,
-        n: u64,
-    },
+    #[tool_op(description = "Close a change without merging; closing is final. Its author, or whom the repository's policy admits.", returns = OpReply, example = crate::examples::close)]
+    ChangeClose { repo: String, n: u64 },
+    #[tool_op(description = "Review a change at commit_oid: Approve, RequestChanges or Comment, a body, and line comments (path, side Old or New, line). Anyone may; every field is given. Returns the review's id.", returns = OpReply, example = crate::examples::review)]
     ReviewSubmit {
         repo: String,
         n: u64,
         review: ReviewDraft,
     },
-    Stage {
-        repo: String,
-        pack: BlobId,
-    },
+    #[tool_op(description = "Store a pack's objects without moving a ref, for a Merge result. Whoever the repository's policy admits.", example = crate::examples::stage)]
+    Stage { repo: String, pack: BlobId },
     // forge builds the merge itself: one squash commit on `into`'s head, under `Merge`'s CAS.
+    #[tool_op(description = "forge builds one squash commit of from onto into's head and moves into to it, both heads checked, and marks change merged; message null takes the change's title. Whoever the repository's policy admits. A text conflict is refused naming each path. Returns Merged.", returns = OpReply, example = crate::examples::squash)]
     SquashMerge {
         repo: String,
         into: Vec<u8>,
@@ -135,6 +134,7 @@ pub enum Op {
     },
     // forge rebuilds change `n` on `onto` as one squash commit, and the change's source moves
     // to it, under a CAS on `expected_head`.
+    #[tool_op(description = "Rebuild change n as one commit on onto and move the change's own branch there, while its head is still expected_head. A conflict is refused naming the paths. Whoever both the change's and the repository's policies admit. Returns Rebased.", returns = OpReply, example = crate::examples::rebase)]
     Rebase {
         repo: String,
         n: u64,
@@ -142,17 +142,20 @@ pub enum Op {
         expected_head: String,
     },
     // Change `n` takes `from` as its source; its number, reviews and channel stay.
+    #[tool_op(description = "Point change n at another source; its number, reviews and channel stay. Its author, or whom the change's policy admits.", returns = OpReply, example = crate::examples::repoint)]
     ChangeRepoint {
         repo: String,
         n: u64,
         from: Revision,
     },
     // A branch still at `expected`, that no protection covers and no open change names, goes.
+    #[tool_op(description = "Delete a branch still at expected, that no protection covers and no open change names. Whoever the repository's policy admits.", example = crate::examples::delete_branch)]
     DeleteBranch {
         repo: String,
         branch: Vec<u8>,
         expected: String,
     },
+    #[tool_op(description = "Protect a branch from deletion and force pushes, or stop. A repository's head is always protected. Whoever its policy admits.", example = crate::examples::protect)]
     Protect {
         repo: String,
         branch: Vec<u8>,
@@ -160,11 +163,11 @@ pub enum Op {
     },
     // A program hears of every ref forge moves and every change it opens, each as
     // `deliver ++ borsh(Watched)`; an empty `deliver` stops it.
-    Watch {
-        deliver: Vec<u8>,
-    },
+    #[tool_op(description = "From a program only: be told of every ref forge moves and every change it opens, each as deliver followed by the borsh of what happened. An empty deliver stops it.", example = crate::examples::watch)]
+    Watch { deliver: Vec<u8> },
     // Archives the channels of `repo`'s merged and closed changes numbered above `after`,
     // `limit` numbers of them, that chat still shows unarchived; open to anyone.
+    #[tool_op(description = "Archive the chat channels of a repository's merged and closed changes numbered after after, limit numbers of them. Anyone may. Returns where to resume.", returns = OpReply, example = crate::examples::archive_ended)]
     ArchiveEnded {
         repo: String,
         after: Option<u64>,
@@ -172,11 +175,10 @@ pub enum Op {
     },
     // forge builds change `n`'s squash on its target's head, as `SquashMerge` would land it, and
     // points `refs/changes/<n>/merge` at it: the commit a gated merge's checks run on.
-    Preview {
-        repo: String,
-        n: u64,
-    },
+    #[tool_op(description = "Build, without moving the target, the squash change n would land on its target's current head, and point refs/changes/<n>/merge at it: the commit required checks run on. Anyone may. Returns the preview.", returns = OpReply, example = crate::examples::preview)]
+    Preview { repo: String, n: u64 },
     // The sender's status of a commit in one context (e.g. `gates.toml#gates`).
+    #[tool_op(description = "Report your status of a commit in one context (such as gates.toml#gates): Pending, Passed, Failed or Errored, with an optional url. Recorded as yours; anyone may report.", example = crate::examples::status)]
     Status {
         repo: String,
         commit: String,
@@ -186,6 +188,7 @@ pub enum Op {
     },
     // `branch` moves only by a merge of a change whose Preview the reporter marks Passed in
     // every context; None drops the requirement.
+    #[tool_op(description = "Make branch move only by merging a change whose Preview the reporter marks Passed in every context; null drops the requirement. Whoever the repository's policy admits.", example = crate::examples::require)]
     RequireChecks {
         repo: String,
         branch: Vec<u8>,
@@ -193,16 +196,16 @@ pub enum Op {
     },
     // Change `n`, still at `expected_head`, joins its target's merge queue: it lands, as its
     // Preview's commit, in the op that marks that Preview green in every required context.
+    #[tool_op(description = "Put change n, still at expected_head, in its target's merge queue: it lands as its Preview's commit when that Preview turns green in every required context. Whoever the repository's policy admits.", example = crate::examples::enqueue)]
     Enqueue {
         repo: String,
         n: u64,
         expected_head: String,
     },
-    Dequeue {
-        repo: String,
-        n: u64,
-    },
+    #[tool_op(description = "Take change n out of its target's merge queue. Whoever the repository's policy admits.", example = crate::examples::dequeue)]
+    Dequeue { repo: String, n: u64 },
     // one-time (J-011 ⑥): records owners for forge's owned rows from before the guard
+    #[tool_op(description = "One-time backfill of owners for forge's rows from before ownership was recorded, a page at a time; returns the key to resume after, or null when done.", returns = Option<Vec<u8>>, example = crate::examples::adopt)]
     AdoptOwners {
         kind: String,
         after: Option<Vec<u8>>,
@@ -210,10 +213,8 @@ pub enum Op {
     },
     // An archived repository leaves `Repos`, refuses every op but this one and still answers
     // every read and clone; `archived: false` restores it.
-    Archive {
-        repo: String,
-        archived: bool,
-    },
+    #[tool_op(description = "Archive a repository (it leaves Repos and refuses every op but this one, while every read and clone still answers) or restore it with archived false. Whoever its policy admits.", example = crate::examples::archive)]
+    Archive { repo: String, archived: bool },
 }
 
 impl Op {
@@ -295,33 +296,31 @@ pub enum Service {
     BorshDeserialize,
     BorshSchema,
     ::program::Ask,
+    ::program::Described,
 )]
 #[ask(crate::Forge)]
 pub enum Query {
     #[reads(ACTIVITY, REPOS)]
-    Repos {
-        page: PageRequest,
-    },
+    #[ask(Reply::Repos { height: u64, page: PageResponse<RepoInfo> })]
+    #[tool_query(description = "Every repository but the archived ones, by latest activity: name, hash, owner, settings, ref count. Limits run 1 to the founded page size.", example = crate::examples::repos)]
+    Repos { page: PageRequest },
     #[reads(REPOS)]
-    Repo {
-        repo: String,
-    },
+    #[ask(Reply::Repo { height: u64, repo: RepoInfo, bounds: Bounds })]
+    #[tool_query(description = "One repository's record and the founded bounds (page size, walk and byte limits).", example = crate::examples::one_repo)]
+    Repo { repo: String },
     #[reads(REFS)]
-    Refs {
-        repo: String,
-        page: PageRequest,
-    },
-    Advertise {
-        repo: String,
-        service: Service,
-    },
-    Upload {
-        repo: String,
-        request: Vec<u8>,
-    },
+    #[ask(Reply::Refs { height: u64, page: PageResponse<RefInfo> })]
+    #[tool_query(description = "A repository's refs in byte-name order, each name as bytes with its target oid.", example = crate::examples::refs)]
+    Refs { repo: String, page: PageRequest },
+    #[tool_query(description = "Git's own wire: the ref advertisement of a service, as git's raw bytes, not a Reply. For a git client; read refs with Refs or RefNames.", example = crate::examples::advertise)]
+    Advertise { repo: String, service: Service },
+    #[tool_query(description = "Git's own wire: an upload-pack (protocol v2) request answered with git's raw bytes, not a Reply. For a git client; read history with Log and objects with Tree and Blob.", example = crate::examples::upload)]
+    Upload { repo: String, request: Vec<u8> },
     /// The history `from` reaches, less what `exclude` reaches (`git log
     /// exclude..from`): a change's own commits exclude its target.
     #[reads(REFS)]
+    #[ask(Reply::Log { height: u64, tip: String, page: PageResponse<CommitInfo> })]
+    #[tool_query(description = "The commits from reaches, less what exclude reaches (git log exclude..from), newest first: oid, tree, parents, message, author and committer.", example = crate::examples::log)]
     Log {
         repo: String,
         from: Revision,
@@ -329,6 +328,8 @@ pub enum Query {
         page: PageRequest,
     },
     #[reads(REFS)]
+    #[ask(Reply::Tree { height: u64, tree: String, page: PageResponse<TreeInfo> })]
+    #[tool_query(description = "The entries of a directory at a commit or tree oid; path [] is the root.", example = crate::examples::tree)]
     Tree {
         repo: String,
         at: String,
@@ -336,6 +337,8 @@ pub enum Query {
         page: PageRequest,
     },
     #[reads(REFS)]
+    #[ask(Reply::Blob { height: u64, blob: BlobView })]
+    #[tool_query(description = "A file's bytes by blob oid, whole or a byte range, with its size and whether it is text.", example = crate::examples::blob)]
     Blob {
         repo: String,
         oid: String,
@@ -343,6 +346,8 @@ pub enum Query {
     },
     /// None base means the empty tree, for a root commit's diff.
     #[reads(REFS)]
+    #[ask(Reply::Diff { height: u64, base: Option<String>, head: String, total_files: u64, page: PageResponse<FileDiff> })]
+    #[tool_query(description = "What changed from base (null: the empty tree) to head, per file with hunks, or one file when path is given.", example = crate::examples::diff)]
     Diff {
         repo: String,
         base: Option<String>,
@@ -351,16 +356,20 @@ pub enum Query {
         page: PageRequest,
     },
     #[reads(REFS)]
+    #[ask(Reply::Compare { height: u64, comparison: Comparison })]
+    #[tool_query(description = "Two revisions' resolved heads, merge base, ahead and behind, and whether from merges into into cleanly.", example = crate::examples::compare)]
     Compare {
         repo: String,
         from: Revision,
         into: Revision,
     },
     #[reads(REPOS)]
-    Activity {
-        repo: String,
-    },
+    #[ask(Reply::Activity { height: u64, last_height: u64 })]
+    #[tool_query(description = "The height of a repository's last successful op.", example = crate::examples::activity)]
+    Activity { repo: String },
     #[reads(CHANGES, INVOLVED)]
+    #[ask(Reply::Changes { height: u64, page: PageResponse<ChangeSummary> })]
+    #[tool_query(description = "A repository's changes in number order, filtered by author, involvement or state: author, endpoints, counts and verdicts. A filtered page can be empty with a next cursor: go on until next is null.", example = crate::examples::changes)]
     Changes {
         repo: String,
         filter: ChangeFilter,
@@ -368,6 +377,8 @@ pub enum Query {
     },
     /// The change, its two heads and a page of its reviews.
     #[reads(CHANGES, REVIEWS, REFS)]
+    #[ask(Reply::Change { height: u64, change: Change, source_head: Option<String>, target_head: Option<String>, reviews: PageResponse<Review> })]
+    #[tool_query(description = "One change: its record and body, its current source and target heads, and a page of its reviews.", example = crate::examples::change)]
     Change {
         repo: String,
         n: u64,
@@ -380,22 +391,24 @@ pub enum Query {
     /// reactions are not read.
     #[reads(CHANGES, REVIEWS, AUTHORED, REFS)]
     #[reads(chat::Chat: chat::tables::ANSWERED, chat::tables::MESSAGE_IDS, chat::tables::MESSAGES)]
+    #[ask(Reply::Judgment { height: u64, page: PageResponse<Judgment> })]
+    #[tool_query(description = "What one account owes across every repository: open changes asking its review at their current head, or holding a thread it wrote that someone answered.", example = crate::examples::judgment)]
     Judgment {
         principal: Principal,
         page: PageRequest,
     },
-    Closure {
-        repo: String,
-        walk: Walk,
-    },
+    #[ask(Reply::Closure { height: u64, listed: Vec<Listed>, next: Walk })]
+    #[tool_query(description = "For a fetch: the objects a walk's wants reach less what its haves reach, a page at a time; send next back for the rest.", example = crate::examples::closure)]
+    Closure { repo: String, walk: Walk },
     // A repository's protected branches, in byte-name order; its head is protected besides.
     #[reads(PROTECTED, REPOS)]
-    Protected {
-        repo: String,
-        page: PageRequest,
-    },
+    #[ask(Reply::Protected { height: u64, page: PageResponse<Vec<u8>> })]
+    #[tool_query(description = "A repository's protected branches in byte order; its head is protected besides.", example = crate::examples::protected)]
+    Protected { repo: String, page: PageRequest },
     // the refs whose name starts with `prefix` ("" for every ref), byte-name order, names as text
     #[reads(REFS)]
+    #[ask(Reply::RefNames { height: u64, page: PageResponse<RefName> })]
+    #[tool_query(description = "The refs whose name starts with prefix (\"\" for every ref), names as text, with their target oids.", example = crate::examples::ref_names)]
     RefNames {
         repo: String,
         prefix: String,
@@ -403,6 +416,8 @@ pub enum Query {
     },
     // what `Diff` answers less the hunks: each file's paths as text, kinds, sizes and line counts
     #[reads(REFS)]
+    #[ask(Reply::DiffStat { height: u64, base: Option<String>, head: String, total_files: u64, page: PageResponse<FileStat> })]
+    #[tool_query(description = "What Diff answers less the hunks: each file's path as text, status, kinds, sizes and line counts.", example = crate::examples::diff_stat)]
     DiffStat {
         repo: String,
         base: Option<String>,
@@ -411,12 +426,13 @@ pub enum Query {
     },
     // change `n`'s latest Preview
     #[reads(PREVIEWS)]
-    Preview {
-        repo: String,
-        n: u64,
-    },
+    #[ask(Reply::Preview { height: u64, preview: Option<PreviewInfo> })]
+    #[tool_query(description = "Change n's latest Preview: the heads it read and the squash it made, or null.", example = crate::examples::preview_of)]
+    Preview { repo: String, n: u64 },
     // every status of a commit, by reporter, then context
     #[reads(STATUSES)]
+    #[ask(Reply::Statuses { height: u64, page: PageResponse<CommitStatus> })]
+    #[tool_query(description = "Every status of a commit, by reporter then context, with state, url and height.", example = crate::examples::statuses)]
     Statuses {
         repo: String,
         commit: String,
@@ -424,12 +440,13 @@ pub enum Query {
     },
     // a repository's branches with required checks, in byte-name order
     #[reads(REQUIRED)]
-    Required {
-        repo: String,
-        page: PageRequest,
-    },
+    #[ask(Reply::Required { height: u64, page: PageResponse<RequiredBranch> })]
+    #[tool_query(description = "A repository's branches with required checks, each with its reporter and contexts.", example = crate::examples::required)]
+    Required { repo: String, page: PageRequest },
     // a branch's merge queue, first in line first
     #[reads(QUEUE)]
+    #[ask(Reply::Queue { height: u64, page: PageResponse<QueueEntry> })]
+    #[tool_query(description = "A branch's merge queue, first in line first, each change with its head when it joined and who queued it.", example = crate::examples::queue)]
     Queue {
         repo: String,
         branch: Vec<u8>,
@@ -437,21 +454,20 @@ pub enum Query {
     },
     // whether a repository is archived
     #[reads(ARCHIVED)]
-    Archived {
-        repo: String,
-    },
+    #[ask(Reply::Archived { height: u64, archived: bool })]
+    #[tool_query(description = "Whether a repository is archived.", example = crate::examples::archived)]
+    Archived { repo: String },
     // the archived repositories, in name order: what `Repos` leaves out
     #[reads(ARCHIVED, REPOS)]
-    ArchivedRepos {
-        page: PageRequest,
-    },
+    #[ask(Reply::ArchivedRepos { height: u64, page: PageResponse<RepoInfo> })]
+    #[tool_query(description = "The archived repositories, which Repos leaves out, in name order.", example = crate::examples::archived_repos)]
+    ArchivedRepos { page: PageRequest },
     // `Closure` less the trees: the commits the walk reaches, newest first, and the tags, trees
     // and blobs a want names itself; the client expands each commit's tree against its parents'
     // from tree bodies it reads itself (`gitcore::walk::Trees`). Answers `Reply::Closure`.
-    History {
-        repo: String,
-        walk: Walk,
-    },
+    #[ask(Reply::Closure { height: u64, listed: Vec<Listed>, next: Walk })]
+    #[tool_query(description = "Closure less the trees: the commits a walk reaches, newest first, and the tags, trees and blobs a want names itself; send next back for the rest.", example = crate::examples::history)]
+    History { repo: String, walk: Walk },
 }
 
 impl Query {

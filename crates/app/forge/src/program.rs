@@ -2,7 +2,8 @@
 //! query, each handed to its function (`ops.rs`, `changes.rs`,
 //! `queries.rs`, `reads.rs`, `change_queries.rs`).
 
-use ::program::schema::{Return, returns};
+use ::program::schema::Return;
+use ::program::tools::{Described, Tools};
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::change_queries::{change, changes, judgment};
@@ -31,19 +32,11 @@ impl Program for Forge {
     type Query = Query;
     type Reply = Reply;
     const TABLES: &'static [::program::Table] = crate::state::TABLES;
-    const RETURNS: &'static [Return] = &[
-        returns::<OpReply>("Merge"),
-        returns::<OpReply>("ChangeOpen"),
-        returns::<OpReply>("ChangeEdit"),
-        returns::<OpReply>("ChangeClose"),
-        returns::<OpReply>("ReviewSubmit"),
-        returns::<OpReply>("SquashMerge"),
-        returns::<OpReply>("Rebase"),
-        returns::<OpReply>("ChangeRepoint"),
-        returns::<OpReply>("ArchiveEnded"),
-        returns::<OpReply>("Preview"),
-        returns::<Option<Vec<u8>>>("AdoptOwners"),
-    ];
+    const RETURNS: &'static [Return] = <Op as Described>::RETURNS;
+
+    fn tools() -> Tools {
+        Tools::of::<Op, Query>()
+    }
 
     fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
         init(ctx, params)

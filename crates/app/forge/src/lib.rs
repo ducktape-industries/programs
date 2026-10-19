@@ -33,6 +33,7 @@ mod checks;
 mod description;
 mod diffs;
 mod discussion;
+mod examples;
 mod objects;
 mod ops;
 mod queries;
