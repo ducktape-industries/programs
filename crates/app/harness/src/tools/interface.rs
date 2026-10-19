@@ -6,8 +6,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{Reading, Run, Seat, Tool, Write, object, unquoted};
+use borsh_json::unread;
+
 use crate::calls::refusal;
-use crate::codec::{self, Fault};
+use crate::codec::Fault;
 use crate::schema::{Interface, schema_of};
 
 pub(crate) fn program_schema() -> Value {
@@ -20,8 +22,7 @@ fn refused(fault: Fault) -> Error {
 
 pub(crate) fn encoded(ctx: &ExecCtx, program: &str, op: &Value) -> Result<Vec<u8>, Error> {
     let interface = schema_of(ctx, program)?;
-    let op = spoken(op);
-    codec::encode(&interface.schema, &interface.op, "op", &op).map_err(refused)
+    interface.encode_op(&spoken(op)).map_err(refused)
 }
 
 // an op or a query as the agent meant it: JSON written out as a string is read as that JSON
@@ -47,16 +48,8 @@ impl Tool for Schema {
 
     fn run(ctx: &ExecCtx, _: &Seat, args: SchemaArgs) -> Result<Run, Error> {
         let interface = schema_of(ctx, &args.program)?;
-        let roots = [
-            ("op", interface.op.as_str()),
-            ("query", interface.query.as_str()),
-            ("reply", interface.reply.as_str()),
-        ];
-        let returns: Option<Vec<(&str, &str)>> = interface.returns.as_ref().map(|returns| {
-            let named = returns.iter().map(|(op, of)| (op.as_str(), of.as_str()));
-            named.collect()
-        });
-        let mut shape = codec::shape(&interface.schema, &roots, returns.as_deref())
+        let mut shape = interface
+            .shape()
             .map_err(|fault| Error::new(code::CORRUPT, fault.to_string()))?;
         shape["program"] = json!(args.program);
         Ok(Run::Done(shape))
@@ -89,11 +82,9 @@ impl Tool for Query {
     fn run(ctx: &ExecCtx, _: &Seat, args: QueryArgs) -> Result<Run, Error> {
         let interface = schema_of(ctx, &args.program)?;
         let query = spoken(&args.query);
-        let asked =
-            codec::encode(&interface.schema, &interface.query, "query", &query).map_err(refused)?;
+        let asked = interface.encode_query(&query).map_err(refused)?;
         let answer = ctx.query_raw(args.program, asked)?;
-        let read = codec::decode(&interface.schema, &interface.reply, "reply", &answer);
-        Ok(Run::Done(match read {
+        Ok(Run::Done(match interface.decode_reply(&answer) {
             Ok(reply) => json!({ "reply": reply }),
             Err(fault) => json!({ "bytes": abi::hex(&answer), "unread": fault.to_string() }),
         }))
@@ -127,8 +118,7 @@ impl Tool for Call {
     fn run(ctx: &ExecCtx, _: &Seat, args: CallArgs) -> Result<Run, Error> {
         let interface = schema_of(ctx, &args.program)?;
         let op = spoken(&args.op);
-        let payload =
-            codec::encode(&interface.schema, &interface.op, "op", &op).map_err(refused)?;
+        let payload = interface.encode_op(&op).map_err(refused)?;
         let read = reading(ctx, &args.program, interface, &payload);
         let writes = vec![Write {
             target: args.program,
@@ -184,50 +174,8 @@ fn answers_http(ctx: &QueryCtx, program: &str, payload: &[u8]) -> bool {
 // What the op's output reads as: JSON in the type its program's schema names for the op, else
 // its bytes as hex and why.
 fn returned(program: &str, interface: Interface, payload: &[u8]) -> Reading {
-    let op = codec::variant(&interface.schema, &interface.op, payload);
-    let named = match &op {
-        Some(op) => format!("its op {op}"),
-        None => "this op".to_owned(),
-    };
-    let declared = match (&interface.returns, &op) {
-        (Some(returns), Some(op)) => returns
-            .iter()
-            .find(|(returning, _)| returning == op)
-            .map(|(_, of)| of.clone()),
-        _ => None,
-    };
-    let undeclared = match &interface.returns {
-        Some(_) => format!(
-            "the schema of program {program} names no type for what {named} returns, so this is the output's bytes"
-        ),
-        None => format!(
-            "the schema of program {program} names no type for what its ops return, so this is the output's bytes"
-        ),
-    };
-    let program = program.to_owned();
-    Box::new(move |output| {
-        if output.is_empty() {
-            return Ok(json!({ "ok": true }));
-        }
-        let Some(of) = declared else {
-            return Ok(unread(output, &undeclared));
-        };
-        Ok(
-            match codec::decode(&interface.schema, &of, "returned", output) {
-                Ok(value) => json!({ "ok": true, "returned": value }),
-                Err(fault) => {
-                    let why = format!(
-                        "the output does not read as {of}, the type the schema of program {program} names for {named}: {fault}"
-                    );
-                    unread(output, &why)
-                }
-            },
-        )
-    })
-}
-
-fn unread(output: &[u8], why: &str) -> Value {
-    json!({ "ok": true, "returned": abi::hex(output), "unread": why })
+    let (program, payload) = (program.to_owned(), payload.to_vec());
+    Box::new(move |output| Ok(interface.returned(&program, &payload, output)))
 }
 
 fn response(output: &[u8]) -> Result<Value, Error> {

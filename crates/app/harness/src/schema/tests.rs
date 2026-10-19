@@ -1,6 +1,7 @@
 use ::program::MockChain;
 use ::program::schema::interface;
 use ::program::section::{CUSTOM, MODULE};
+use borsh::schema::BorshSchemaContainer;
 use programs::{Entry, Genesis, Programs};
 
 use super::*;

@@ -8,7 +8,6 @@ use serde_json::{Value, json};
 use super::interface::{encoded, program_schema};
 use super::{Run, Seat, Tool, cursor_schema, object, write};
 use crate::bookings::newest;
-use crate::codec;
 use crate::schema::schema_of;
 use crate::{Booking, Op, PROGRAM, Ran};
 
@@ -77,9 +76,9 @@ fn below(cursor: &str) -> Result<u64, Error> {
 pub(crate) struct List;
 
 fn op_of(ctx: &ExecCtx, booking: &Booking) -> Value {
-    let read = schema_of(ctx, &booking.target).ok().and_then(|interface| {
-        codec::decode(&interface.schema, &interface.op, "op", &booking.payload).ok()
-    });
+    let read = schema_of(ctx, &booking.target)
+        .ok()
+        .and_then(|interface| interface.decode_op(&booking.payload).ok());
     read.unwrap_or_else(|| json!({ "hex": abi::hex(&booking.payload) }))
 }
 

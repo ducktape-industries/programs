@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use abi::BlobId;
-use borsh::schema::BorshSchemaContainer;
+use borsh_json::Interface;
 use serde_json::Value;
 use view::methods::{BlobGet, Call, NamedChanges, NamedQuery};
 use view::prelude::*;
@@ -34,13 +34,6 @@ type Schemas = Rc<RefCell<BTreeMap<BlobId, Schema>>>;
 // Where the device keeps a program's schema section, with the code it came
 // from (`store`): read again only once the program runs other code.
 const KEPT_SCHEMA: &str = "widget-schema/";
-
-// A program's query and reply types, by its code's schema.
-struct Interface {
-    schema: BorshSchemaContainer,
-    query: String,
-    reply: String,
-}
 
 // The file object last read and what it parsed to.
 type File = (BlobId, Result<Rc<Widget>, String>);
@@ -410,15 +403,14 @@ async fn ask(
     query: Value,
 ) -> Result<Value, view::host::Error> {
     let fault = |fault: borsh_json::Fault| view::host::malformed(fault.to_string());
-    let body =
-        borsh_json::encode(&interface.schema, &interface.query, "query", &query).map_err(fault)?;
+    let body = interface.encode_query(&query).map_err(fault)?;
     let call = Call {
         target: program.to_owned(),
         body,
     };
     let asked = |refusal| view::host::malformed(words::widget_asked(program, &said(&refusal)));
     let bytes = host.ask::<NamedQuery>(call).await.map_err(asked)?;
-    borsh_json::decode(&interface.schema, &interface.reply, "reply", &bytes).map_err(fault)
+    interface.decode_reply(&bytes).map_err(fault)
 }
 
 // A refusal as the card says it.
@@ -466,18 +458,10 @@ async fn interface(host: &Host, program: &str, schemas: &Schemas) -> Schema {
     interface
 }
 
-// The query and reply types a schema section names.
+// The interface a schema section names.
 fn interface_of(program: &str, section: &[u8]) -> Schema {
-    let unreadable = || words::widget_bad_schema(program);
-    let schema: BorshSchemaContainer = abi::decode(section).map_err(|_| unreadable())?;
-    schema.validate().map_err(|_| unreadable())?;
-    let roots = ::program::schema::roots(&schema).ok_or_else(unreadable)?;
-    let (query, reply) = (roots.query.to_owned(), roots.reply.to_owned());
-    Ok(Rc::new(Interface {
-        schema,
-        query,
-        reply,
-    }))
+    let read = Interface::read(section).map_err(|_| words::widget_bad_schema(program))?;
+    Ok(Rc::new(read))
 }
 
 // The payload of a wasm module's custom section `name`, by its section

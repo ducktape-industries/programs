@@ -1,6 +1,7 @@
 //! The codec over Rust types' own schemas: the JSON form of each borsh shape, read to JSON and
 //! written back to the same bytes.
 mod forms;
+mod interface;
 
 use borsh::schema::{BorshSchemaContainer, Definition};
 use borsh::{BorshSchema, BorshSerialize};

@@ -1,8 +1,9 @@
 //! Values of any program as JSON, by the borsh schema its code carries: JSON to borsh bytes, borsh
-//! bytes to JSON, and the shape of each type as JSON a model follows. harness's `network_*` tools
-//! and chat's widgets use it.
+//! bytes to JSON, each type's shape as JSON a model follows, and a code's whole [`Interface`].
+//! harness's `network_*` tools, chat's widgets and the ducktape CLI use it.
 mod decode;
 mod encode;
+mod interface;
 mod shape;
 #[cfg(test)]
 mod tests;
@@ -14,6 +15,8 @@ use borsh::schema::{BorshSchemaContainer, Declaration, Definition, Fields};
 
 pub use decode::decode;
 pub use encode::encode;
+pub use interface::{Interface, Unreadable, unread};
+pub use program::schema::SECTION;
 pub use shape::shape;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

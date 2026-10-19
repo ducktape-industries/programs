@@ -3,18 +3,10 @@
 #[cfg(test)]
 pub(crate) mod tests;
 
-use ::program::schema::{SECTION, returned, roots};
+use ::program::schema::SECTION;
 use ::program::{BlobId, Error, QueryCtx, code, is_name, section};
 use abi::role::programs as role;
-use borsh::schema::{BorshSchemaContainer, Declaration};
-
-pub(crate) struct Interface {
-    pub schema: BorshSchemaContainer,
-    pub op: Declaration,
-    pub query: Declaration,
-    pub reply: Declaration,
-    pub returns: Option<Vec<(String, Declaration)>>,
-}
+pub(crate) use borsh_json::Interface;
 
 pub(crate) fn schema_of(ctx: &QueryCtx, program: &str) -> Result<Interface, Error> {
     let code = code_of(ctx, program)?;
@@ -24,42 +16,11 @@ pub(crate) fn schema_of(ctx: &QueryCtx, program: &str) -> Result<Interface, Erro
             format!("program {program}'s code carries no {SECTION} section, so it has no schema"),
         ));
     };
-    let unreadable = |what: &str| {
+    Interface::read(&section).map_err(|unreadable| {
         Error::new(
             code::CORRUPT,
-            format!("program {program}'s {SECTION} section {what}"),
+            format!("program {program}'s {SECTION} section {unreadable}"),
         )
-    };
-    let schema: BorshSchemaContainer =
-        abi::decode(&section).map_err(|_| unreadable("is no borsh schema"))?;
-    schema
-        .validate()
-        .map_err(|_| unreadable("is no valid schema"))?;
-    let Some(roots) = roots(&schema) else {
-        return Err(unreadable("names no op, query and reply"));
-    };
-    let returns = match roots.returns {
-        Some(returns) => {
-            let returned = returned(&schema, returns)
-                .ok_or_else(|| unreadable("names what its ops return in no struct of them"))?;
-            let owned = returned
-                .into_iter()
-                .map(|(op, of)| (op.to_owned(), of.to_owned()));
-            Some(owned.collect())
-        }
-        None => None,
-    };
-    let (op, query, reply) = (
-        roots.op.to_owned(),
-        roots.query.to_owned(),
-        roots.reply.to_owned(),
-    );
-    Ok(Interface {
-        schema,
-        op,
-        query,
-        reply,
-        returns,
     })
 }
 

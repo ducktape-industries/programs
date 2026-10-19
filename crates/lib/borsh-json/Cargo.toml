@@ -7,4 +7,6 @@ version.workspace = true
 # hex, the JSON form of bytes
 abi = { workspace = true }
 borsh = { workspace = true }
+# the interface a program's schema section packs (`program::schema`)
+program = { workspace = true }
 serde_json = { workspace = true }

@@ -3,4 +3,6 @@
 #[cfg(test)]
 mod tests;
 
-pub(crate) use borsh_json::{Fault, decode, encode, shape, variant};
+pub(crate) use borsh_json::Fault;
+#[cfg(test)]
+use borsh_json::{decode, encode, shape};
