@@ -27,5 +27,10 @@ gitcore = { workspace = true }
 store = { workspace = true }
 
 [dev-dependencies]
+criterion = "=0.8.2"
 access = { workspace = true }
 sha2 = { version = "0.10", default-features = false }
+
+[[bench]]
+name = "tree"
+harness = false

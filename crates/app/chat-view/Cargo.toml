@@ -41,5 +41,10 @@ borsh-json.workspace = true
 programs.workspace = true
 
 [dev-dependencies]
+criterion = "=0.8.2"
 # `examples/live.rs` and the chain-backed tests: the fake node
 view = { workspace = true, features = ["rig"] }
+
+[[bench]]
+name = "timeline"
+harness = false
