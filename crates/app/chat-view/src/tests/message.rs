@@ -253,6 +253,15 @@ fn landed_rows_read_who_reacted_and_a_block_reads_them_again() {
                     }];
                     Reply::Roots(page(vec![row]))
                 }
+                Query::MessagesAround { channel_id, .. } if channel_id == "general" => {
+                    let mut row = row(1, 7, "hello");
+                    row.reactions = vec![chat::Reaction {
+                        emoji: "👍".into(),
+                        count: 1,
+                        reacted_by_me: false,
+                    }];
+                    Reply::Messages(vec![row])
+                }
                 Query::Reactors { seqs, .. } => Reply::Reactors(
                     seqs.into_iter()
                         .map(|seq| chat::ReactedBy {

@@ -220,6 +220,20 @@ impl Chat {
         };
         room.pending.push(row);
         room.settle();
+        // the reader's own post follows, wherever they had scrolled: the
+        // list goes to its end, a room landed off its head goes live first
+        let pane = match target {
+            Target::Post {
+                thread: Some(_), ..
+            } => crate::Pane::Thread,
+            _ => crate::Pane::Timeline,
+        };
+        let landed = pane == crate::Pane::Timeline && room.landed;
+        let id = room.id.clone();
+        self.drawn(pane).borrow_mut().follow = true;
+        if landed {
+            self.open(id, cx);
+        }
         cx.notify();
     }
 

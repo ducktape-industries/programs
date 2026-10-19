@@ -34,10 +34,14 @@ impl Shape {
             Self::Landed | Self::Thread => ListAlignment::Top,
         }
     }
-    fn follow(self) -> FollowMode {
-        match self {
-            Self::Tail => FollowMode::Tail,
-            Self::Landed | Self::Thread => FollowMode::Normal,
+    // A room at its head follows its end, and a thread once every reply is
+    // in (`whole`): gpui follows while the reader is at the end, by where
+    // the list stands at each layout, and stops when they scroll up. A
+    // landing, or a thread with pages left, has no end on screen to follow.
+    fn follow(self, whole: bool) -> FollowMode {
+        match (self, whole) {
+            (Self::Tail, _) | (Self::Thread, true) => FollowMode::Tail,
+            (Self::Landed, _) | (Self::Thread, false) => FollowMode::Normal,
         }
     }
 }
@@ -82,7 +86,10 @@ pub(crate) fn listing(
         Shape::Thread => thread_landing(chat, messages),
         Shape::Tail => None,
     };
-    let state = list_state(chat, pane, shape, &keys, landing);
+    let whole = room
+        .and_then(|room| room.thread.as_ref())
+        .is_some_and(|thread| !thread.has_more && thread.replies.ready().is_some());
+    let state = list_state(chat, pane, (shape, whole), &keys, landing);
     state.set_scroll_handler(cx.listener(move |chat, event, _window, cx| {
         chat.list_scrolled(pane, event, cx);
     }));
@@ -124,14 +131,19 @@ fn thread_landing(chat: &Chat, messages: &[ChatMessage]) -> Option<usize> {
     at.filter(|_| target > 0)
 }
 
+// `whole`: every reply of the thread is in.
 fn list_state(
     chat: &Chat,
     pane: Pane,
-    shape: Shape,
+    (shape, whole): (Shape, bool),
     keys: &[String],
     landing: impl FnOnce() -> Option<usize>,
 ) -> ListState {
     let mut drawn = chat.drawn(pane).borrow_mut();
+    let at = |item_ix| ListOffset {
+        item_ix,
+        offset_in_item: px(0.),
+    };
     if let Some((held, state)) = drawn.list.clone()
         && held == shape
     {
@@ -141,16 +153,33 @@ fn list_state(
         if drawn.keys != keys {
             drawn.keys = keys.to_vec();
         }
+        // the thread's last page in: it follows from here on, from where
+        // the reader is (gpui puts a list that starts following at its end)
+        if shape == Shape::Thread && drawn.whole != whole {
+            drawn.whole = whole;
+            state.set_follow_mode(shape.follow(whole));
+            if whole {
+                state.scroll_to(state.logical_scroll_top());
+            }
+        }
+        if std::mem::take(&mut drawn.follow) {
+            state.scroll_to_end();
+        }
         return state;
     }
     let state = ListState::new(keys.len(), shape.alignment(), px(OVERDRAW));
-    state.set_follow_mode(shape.follow());
-    if let Some(item_ix) = landing() {
-        state.scroll_to(ListOffset {
-            item_ix,
-            offset_in_item: px(0.),
-        });
+    state.set_follow_mode(shape.follow(whole));
+    match landing() {
+        Some(item_ix) => state.scroll_to(at(item_ix)),
+        // a whole thread opens on its root, and follows once the reader
+        // reaches its end
+        None if shape == Shape::Thread && whole => state.scroll_to(at(0)),
+        None => {}
     }
+    if std::mem::take(&mut drawn.follow) {
+        state.scroll_to_end();
+    }
+    drawn.whole = whole;
     drawn.list = Some((shape, state.clone()));
     drawn.keys = keys.to_vec();
     state

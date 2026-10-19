@@ -33,7 +33,8 @@ pub(crate) async fn roots(
     limit: usize,
 ) -> Result<(Vec<MsgRow>, bool), Error> {
     let ask = move |ask| host.query(ask);
-    ::chat::view::roots(ask, channel_id, viewer, below, limit, PAGE as u64).await
+    let per_page = limit.min(PAGE) as u64;
+    ::chat::view::roots(ask, channel_id, viewer, below, limit, per_page).await
 }
 
 /// Every account's profile, folded into [`Names`].
@@ -186,20 +187,21 @@ pub(crate) async fn members(host: Host, channel_id: String) -> Result<Vec<Member
     .await
 }
 
-/// One page of a thread's replies after `after`, and the cursor to page on.
+// One page of `limit` of a thread's replies after `after`, and the cursor to page on.
 pub(crate) async fn thread(
     host: Host,
     channel_id: String,
     root_seq: u64,
     viewer: Vec<Principal>,
     after: Option<Vec<u8>>,
+    limit: usize,
 ) -> Result<(Vec<MsgRow>, Option<Vec<u8>>), Error> {
     let (_root, replies) = host
         .query(ask::Thread {
             channel_id,
             root_seq,
             viewer,
-            page: page(after, WINDOW),
+            page: page(after, limit),
         })
         .await?;
     Ok((sorted(replies.items), replies.next))

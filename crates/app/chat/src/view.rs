@@ -10,7 +10,7 @@ use ::program::Error;
 
 use store::KeyCodec;
 
-use crate::tables::{CHANNEL_META, CHANNELS, HEADS};
+use crate::tables::{CHANNEL_META, CHANNELS, HEADS, MESSAGES, REACTIONS, REPLIES, ROOTS};
 use crate::{Kind, MsgRow, PageRequest, PageResponse, Principal, Profile, ask};
 
 /// Every account's profile, every page of it, folded into [`Names`].
@@ -173,4 +173,46 @@ pub fn channels_written<'a>(keys: impl IntoIterator<Item = &'a Vec<u8>>) -> BTre
             })
         })
         .collect()
+}
+
+// What a block wrote of one channel's messages ([`messages_written`]): the seqs whose row or
+// reactions it wrote, whether it wrote the timeline's roots, and each reply it added to a
+// thread, as (root, reply). A view reads again only these.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Written {
+    pub seqs: BTreeSet<u64>,
+    pub roots: bool,
+    pub replies: BTreeSet<(u64, u64)>,
+}
+
+impl Written {
+    pub fn merge(&mut self, other: Written) {
+        self.seqs.extend(other.seqs);
+        self.roots |= other.roots;
+        self.replies.extend(other.replies);
+    }
+}
+
+// What `keys` wrote of channel `channel_id`'s messages.
+pub fn messages_written<'a>(
+    keys: impl IntoIterator<Item = &'a Vec<u8>>,
+    channel_id: &str,
+) -> Written {
+    let channel = channel_id.to_owned();
+    let rows = [MESSAGES.key(&channel), REACTIONS.key(&channel)];
+    let (roots, replies) = (ROOTS.key(&channel), REPLIES.key(&channel));
+    let mut written = Written::default();
+    for key in keys {
+        let row = rows
+            .iter()
+            .find_map(|table| key.strip_prefix(table.as_slice()));
+        if let Some(mut rest) = row {
+            written.seqs.extend(u64::decode_key(&mut rest));
+        } else if key.starts_with(&roots) {
+            written.roots = true;
+        } else if let Some(mut rest) = key.strip_prefix(replies.as_slice()) {
+            written.replies.extend(<(u64, u64)>::decode_key(&mut rest));
+        }
+    }
+    written
 }

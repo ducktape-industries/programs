@@ -103,6 +103,9 @@ pub struct Chat {
     // what each file a message carries is, once read, by path and snapshot
     #[serde(skip)]
     pub(crate) shown_files: BTreeMap<(String, [u8; 32]), crate::attach::Shown>,
+    // the rooms opened this session and left, by id
+    #[serde(skip)]
+    pub(crate) visited: BTreeMap<String, Visited>,
     // the widgets the open room names, what they show and what they read
     #[serde(skip)]
     pub(crate) widgets: crate::widget::Widgets,
@@ -221,7 +224,7 @@ impl Chat {
     /// The open room left: the list alone shows. Its draft stays in
     /// `drafts`; its reads were saved when it was chosen.
     pub(crate) fn close_room(&mut self) {
-        self.room = None;
+        self.keep_room();
         self.details = None;
         self.menu = None;
         self.copy = None;
@@ -234,6 +237,10 @@ impl Chat {
 #[derive(Default)]
 pub struct Drawn {
     pub(crate) list: Option<(Shape, view::ListState)>,
+    // the thread's every reply is in: its list follows its end
+    pub(crate) whole: bool,
+    // the reader's own post: the list goes to its end at the next frame
+    pub(crate) follow: bool,
     pub(crate) keys: Vec<String>,
     pub(crate) folded: Option<Folded>,
 }
@@ -290,6 +297,39 @@ pub struct Room {
     // the read of who chose them, until it lands
     #[serde(skip)]
     pub(crate) reading_reactors: Option<view::Task<()>>,
+    // the threads opened in this room this session and closed, by root
+    #[serde(skip)]
+    pub(crate) kept_threads: BTreeMap<u64, KeptThread>,
+    // the reads of what blocks wrote still out, and what they read again
+    #[serde(skip)]
+    pub(crate) reading: usize,
+    #[serde(skip)]
+    pub(crate) unsettled: chat::view::Written,
+    // the whole window read again, until it lands
+    #[serde(skip)]
+    pub(crate) rereading_all: bool,
+}
+
+// A thread opened this session and closed: its replies, shown at once when
+// it opens again.
+#[derive(Default)]
+pub struct KeptThread {
+    pub(crate) replies: Vec<MsgRow>,
+    pub(crate) has_more: bool,
+    pub(crate) next: Option<Vec<u8>>,
+}
+
+// A room opened this session and left: what it showed, and what the blocks
+// since wrote to it (`Chat::changed`), read again when it opens.
+#[derive(Default)]
+pub struct Visited {
+    pub(crate) rows: Vec<MsgRow>,
+    pub(crate) has_older: bool,
+    pub(crate) members: Vec<MemberRow>,
+    pub(crate) members_moved: bool,
+    pub(crate) reactors: Reactors,
+    pub(crate) threads: BTreeMap<u64, KeptThread>,
+    pub(crate) written: chat::view::Written,
 }
 
 // Who chose each reaction, by message seq and emoji.

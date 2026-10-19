@@ -19,6 +19,7 @@ mod categories;
 mod context_menus;
 mod cost;
 mod dms;
+mod history;
 mod menus;
 mod message;
 mod notices;
