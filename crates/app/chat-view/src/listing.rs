@@ -77,7 +77,11 @@ pub(crate) fn listing(
         .chain(messages.iter().map(|message| message.id.clone()))
         .chain(bare.then_some("no-replies".to_owned()))
         .collect::<Vec<_>>();
-    let landing = || landing(chat, messages) + usize::from(lead);
+    let landing = || match shape {
+        Shape::Landed => Some(landing(chat, messages) + usize::from(lead)),
+        Shape::Thread => thread_landing(chat, messages),
+        Shape::Tail => None,
+    };
     let state = list_state(chat, pane, shape, &keys, landing);
     state.set_scroll_handler(cx.listener(move |chat, event, _window, cx| {
         chat.list_scrolled(pane, event, cx);
@@ -113,12 +117,19 @@ pub(crate) fn landing(chat: &Chat, messages: &[ChatMessage]) -> usize {
         .unwrap_or(messages.len().saturating_sub(1))
 }
 
+// Where a thread opened on a reply opens: that reply's row, once it is read.
+fn thread_landing(chat: &Chat, messages: &[ChatMessage]) -> Option<usize> {
+    let target = chat.room.as_ref()?.thread.as_ref()?.target;
+    let at = messages.iter().position(|message| message.seq >= target);
+    at.filter(|_| target > 0)
+}
+
 fn list_state(
     chat: &Chat,
     pane: Pane,
     shape: Shape,
     keys: &[String],
-    landing: impl FnOnce() -> usize,
+    landing: impl FnOnce() -> Option<usize>,
 ) -> ListState {
     let mut drawn = chat.drawn(pane).borrow_mut();
     if let Some((held, state)) = drawn.list.clone()
@@ -134,9 +145,9 @@ fn list_state(
     }
     let state = ListState::new(keys.len(), shape.alignment(), px(OVERDRAW));
     state.set_follow_mode(shape.follow());
-    if shape == Shape::Landed {
+    if let Some(item_ix) = landing() {
         state.scroll_to(ListOffset {
-            item_ix: landing(),
+            item_ix,
             offset_in_item: px(0.),
         });
     }

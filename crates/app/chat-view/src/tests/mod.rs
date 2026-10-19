@@ -214,6 +214,74 @@ fn chat_reply(query: Query) -> Reply {
     }
 }
 
+// #general up to `head` as the chat program answers it: each message a
+// reply to the root `thread` names, or a root itself, a thread's replies
+// paged by the limit asked. Anything else as `chat_reply` answers it.
+fn threaded(cx: &TestAppContext, head: u64, thread: impl Fn(u64) -> Option<u64> + 'static) {
+    let message = move |seq: u64| MsgRow {
+        thread: thread(seq),
+        height: seq,
+        ..row(seq, 7 + seq % 2, &format!("row {seq}"))
+    };
+    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
+        Ok(match query {
+            Query::Accounts { .. } => Reply::Accounts(page(Vec::new())),
+            Query::Channels { .. } => {
+                Reply::Channels(page(vec![channel("general", "General", head)]))
+            }
+            Query::MessagesAround { seq, page, .. } => {
+                let half = page.limit() / 2;
+                let lo = seq.saturating_sub(half).max(1);
+                let hi = seq.saturating_add(half).min(head);
+                Reply::Messages((lo..=hi).map(&message).collect())
+            }
+            Query::Roots { .. } => Reply::Roots(::chat::PageResponse {
+                height: 1,
+                items: (1..=head)
+                    .map(&message)
+                    .filter(|row| row.thread.is_none())
+                    .collect(),
+                next: None,
+            }),
+            Query::Thread { root_seq, page, .. } => {
+                let after = page.after.as_deref().map_or(root_seq, |after| {
+                    u64::from_le_bytes(after.try_into().expect("a seq"))
+                });
+                let mut replies = (after + 1..=head)
+                    .map(&message)
+                    .filter(|row| row.thread == Some(root_seq));
+                let items: Vec<MsgRow> = replies.by_ref().take(page.limit() as usize).collect();
+                let more = replies.next().is_some();
+                let next = items.last().filter(|_| more);
+                let next = next.map(|row| row.seq.to_le_bytes().to_vec());
+                Reply::Thread {
+                    root: Some(message(root_seq)),
+                    replies: ::chat::PageResponse {
+                        height: 1,
+                        items,
+                        next,
+                    },
+                }
+            }
+            Query::Members { .. } => Reply::Members(page(Vec::new())),
+            query => chat_reply(query),
+        })
+    });
+}
+
+// The row `pane`'s list was last scrolled to: where it opened, until the
+// reader scrolls it.
+fn scrolled_to(view: &Entity<Chat>, pane: Pane) -> Option<usize> {
+    view.read(|chat| {
+        let drawn = chat.drawn(pane).borrow();
+        let state = drawn
+            .list
+            .as_ref()
+            .map(|(_, state)| state.logical_scroll_top());
+        state.map(|top| top.item_ix)
+    })
+}
+
 /// The reader the host seats: key `0102`, account 7, on testnet.
 fn session() -> Session {
     Session {

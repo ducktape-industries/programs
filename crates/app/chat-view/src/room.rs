@@ -64,6 +64,12 @@ impl Chat {
             // the pointer
             self.hovered = None;
         }
+        // a link names one message: a thread or the details over the room
+        // are not it, and a reply's own thread opens once its rows land
+        if land > 0 {
+            self.close_thread();
+            self.details = None;
+        }
         let room = self.room.get_or_insert_default();
         if !same {
             *room = Room {
@@ -89,9 +95,21 @@ impl Chat {
         *self.timeline_drawn.borrow_mut() = Drawn::default();
         let members_id = room.id.clone();
         if land > 0 {
-            let rows = queries::around(cx.host(), id, land, viewer);
-            room.messages = Loadable::Loading(cx.land(rows, |chat, result, cx| {
+            let rows = queries::around(cx.host(), id.clone(), land, viewer);
+            room.messages = Loadable::Loading(cx.land(rows, move |chat, result, cx| {
                 cx.notify();
+                // a reply opens in its thread, on it, and the room lands on
+                // its root: around the root when the reply's rows lack it
+                let reply = result.as_ref().ok().and_then(|rows| reply_root(rows, land));
+                match reply {
+                    Some((root, false)) => {
+                        chat.open_at(id, root, cx);
+                        chat.load_thread(root, false, land, cx);
+                        return;
+                    }
+                    Some((root, true)) => chat.load_thread(root, false, land, cx),
+                    None => {}
+                }
                 let room = room_of(chat);
                 if let Ok(rows) = &result {
                     room.has_older = rows.first().is_some_and(|row| row.seq > 1);
@@ -99,6 +117,8 @@ impl Chat {
                 room.messages = result.into();
                 room.settle();
                 room.read_reactors(cx);
+                // the thread's root is its list's first row
+                chat.seek(cx);
                 if chat
                     .channels
                     .ready()
@@ -456,16 +476,17 @@ impl Chat {
     /// The thread under `root`, read and shown; the keys stay where they
     /// are.
     pub(crate) fn open_thread(&mut self, root: u64, cx: &mut Context<Self>) {
-        self.load_thread(root, false, cx);
+        self.load_thread(root, false, 0, cx);
     }
 
     /// The thread under `root`, its reply field taking the keys once it
     /// can be typed in.
     pub(crate) fn reply_in_thread(&mut self, root: u64, cx: &mut Context<Self>) {
-        self.load_thread(root, true, cx);
+        self.load_thread(root, true, 0, cx);
     }
 
-    fn load_thread(&mut self, root: u64, reply: bool, cx: &mut Context<Self>) {
+    // `target`: the reply a link opened the thread on, 0 for none
+    fn load_thread(&mut self, root: u64, reply: bool, target: u64, cx: &mut Context<Self>) {
         let viewer = self.viewer();
         self.details = None;
         self.menu = None;
@@ -475,6 +496,7 @@ impl Chat {
         let thread = room.thread.get_or_insert_default();
         *thread = Thread {
             root,
+            target,
             ..Thread::default()
         };
         let handle = cx.spawn(async move |this, cx| {
@@ -495,6 +517,7 @@ impl Chat {
                         thread.next = next;
                         room_of(chat).settle();
                         room_of(chat).read_reactors(cx);
+                        chat.seek(cx);
                         if reply {
                             let key = Target::Post {
                                 channel: id,
@@ -536,6 +559,7 @@ impl Chat {
             match result {
                 Ok(_) if thread.root != root => {}
                 Ok((more, next)) => {
+                    let seeking = !thread.reached();
                     thread.has_more = next.is_some();
                     thread.next = next;
                     if let Some(rows) = thread.replies.ready_mut() {
@@ -543,6 +567,9 @@ impl Chat {
                     }
                     room_of(chat).settle();
                     room_of(chat).read_reactors(cx);
+                    if seeking {
+                        chat.seek(cx);
+                    }
                 }
                 Err(refusal) => {
                     chat.notice =
@@ -551,6 +578,22 @@ impl Chat {
             }
         })
         .detach();
+    }
+
+    // a thread opened on a reply reads its pages until the reply is in,
+    // then its list opens afresh, on the reply
+    fn seek(&mut self, cx: &mut Context<Self>) {
+        let Some(thread) = self.room.as_ref().and_then(|room| room.thread.as_ref()) else {
+            return;
+        };
+        if thread.target == 0 {
+            return;
+        }
+        if thread.reached() {
+            *self.thread_drawn.borrow_mut() = Drawn::default();
+        } else if thread.has_more {
+            self.load_more_replies(cx);
+        }
     }
 
     pub(crate) fn close_thread(&mut self) {
@@ -718,6 +761,24 @@ impl Chat {
             .iter()
             .map(|row| (row.principal.clone(), names.member(&row.principal)))
             .collect()
+    }
+}
+
+// The root of the reply at `seq` among `rows`, and whether `rows` hold it.
+fn reply_root(rows: &[MsgRow], seq: u64) -> Option<(u64, bool)> {
+    let root = rows.iter().find(|row| row.seq == seq)?.thread?;
+    Some((root, rows.iter().any(|row| row.seq == root)))
+}
+
+impl Thread {
+    // the reply a link opened the thread on is read, or none was named
+    fn reached(&self) -> bool {
+        let target = self.target;
+        target == 0
+            || self
+                .replies
+                .ready()
+                .is_some_and(|rows| rows.iter().any(|row| row.seq >= target))
     }
 }
 

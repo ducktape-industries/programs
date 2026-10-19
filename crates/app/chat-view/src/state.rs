@@ -282,6 +282,10 @@ pub(crate) type Reactors = BTreeMap<u64, BTreeMap<String, Vec<Principal>>>;
 #[derive(Serialize, Deserialize, Default)]
 pub struct Thread {
     pub(crate) root: u64,
+    // the reply a link opened the thread on (0: none): its pages are read
+    // until it is in, and the list opens on it
+    #[serde(skip)]
+    pub(crate) target: u64,
     pub(crate) replies: Loadable<Vec<MsgRow>>,
     pub(crate) has_more: bool,
     pub(crate) next: Option<Vec<u8>>,

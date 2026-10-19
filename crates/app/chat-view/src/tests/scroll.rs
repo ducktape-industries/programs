@@ -507,37 +507,9 @@ fn threaded_room(
     head: u64,
     thread: impl Fn(u64) -> Option<u64> + 'static,
 ) -> (TestAppContext, Entity<Chat>) {
-    let message = move |seq: u64| MsgRow {
-        thread: thread(seq),
-        height: seq,
-        ..row(seq, 7 + seq % 2, &format!("row {seq}"))
-    };
     let mut cx = TestAppContext::new();
     configure(&mut cx);
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Accounts { .. } => Reply::Accounts(page(Vec::new())),
-            Query::Channels { .. } => {
-                Reply::Channels(page(vec![channel("general", "General", head)]))
-            }
-            Query::MessagesAround { seq, page, .. } => {
-                let half = page.limit() / 2;
-                let lo = seq.saturating_sub(half).max(1);
-                let hi = seq.saturating_add(half).min(head);
-                Reply::Messages((lo..=hi).map(&message).collect())
-            }
-            Query::Roots { .. } => Reply::Roots(::chat::PageResponse {
-                height: 1,
-                items: (1..=head)
-                    .map(&message)
-                    .filter(|row| row.thread.is_none())
-                    .collect(),
-                next: None,
-            }),
-            Query::Members { .. } => Reply::Members(page(Vec::new())),
-            query => panic!("unexpected chat query: {query:?}"),
-        })
-    });
+    threaded(&cx, head, thread);
     let view = cx.open::<Chat>();
     seat(&mut cx);
     (cx, view)
@@ -630,6 +602,68 @@ fn a_link_opened_as_a_block_lands_opens_the_room_at_its_head() {
     open_link(&mut cx, 120);
     at_its_head(&cx, &view);
     assert_eq!(seqs(&view), (56, 120, 65), "the window around 120");
+}
+
+// A reply to root 100 from 101 to 200, roots on either side.
+fn a_hundred_replies(seq: u64) -> Option<u64> {
+    (101..=200).contains(&seq).then_some(100)
+}
+
+// A link to a reply opens its thread beside the room, on the reply, and
+// the room lands on its root.
+#[test]
+fn a_link_to_a_reply_opens_its_thread_on_it_and_the_room_on_its_root() {
+    let (mut cx, view) = threaded_room(300, a_hundred_replies);
+    open_link(&mut cx, 150);
+    assert_eq!(seqs(&view), (86, 214, 129), "the window around 150");
+    view.read(|chat| {
+        let room = chat.room.as_ref().unwrap();
+        assert!(room.landed);
+        assert_eq!(room.thread.as_ref().map(|thread| thread.root), Some(100));
+    });
+    assert!(cx.find("chat-thread-pane").is_some());
+    // the roots 86 to 99 above the root
+    assert_eq!(scrolled_to(&view, Pane::Timeline), Some(14));
+    // the root, then the replies from 101
+    assert_eq!(scrolled_to(&view, Pane::Thread), Some(50));
+}
+
+// A reply far below its root: the room lands around the root instead,
+// and the thread reads its pages until the reply is in.
+#[test]
+fn a_link_to_a_reply_whose_root_is_off_its_window_lands_on_the_root() {
+    let (mut cx, view) = threaded_room(1_000, |seq| (11..=900).contains(&seq).then_some(10));
+    open_link(&mut cx, 850);
+    assert_eq!(seqs(&view), (1, 74, 74), "the window around the root");
+    view.read(|chat| {
+        let room = chat.room.as_ref().unwrap();
+        assert_eq!(room.target, 10);
+        let thread = room.thread.as_ref().unwrap();
+        assert_eq!(thread.root, 10);
+        let replies = thread.replies.ready().unwrap();
+        assert_eq!(replies.last().map(|row| row.seq), Some(900));
+        assert!(!thread.has_more);
+    });
+    // the intro, then the roots 1 to 9
+    assert_eq!(scrolled_to(&view, Pane::Timeline), Some(10));
+    assert_eq!(scrolled_to(&view, Pane::Thread), Some(840));
+}
+
+// A link to a root lands the room on it, and a thread open beside it closes.
+#[test]
+fn a_link_to_a_root_closes_the_thread_beside_the_room() {
+    let (mut cx, view) = threaded_room(300, a_hundred_replies);
+    open_link(&mut cx, 150);
+    assert!(cx.find("chat-thread-pane").is_some());
+    open_link(&mut cx, 250);
+    view.read(|chat| {
+        let room = chat.room.as_ref().unwrap();
+        assert!(room.thread.is_none());
+        assert_eq!(room.target, 250);
+    });
+    assert!(cx.find("chat-thread-pane").is_none());
+    // the roots 201 to 249 above it
+    assert_eq!(scrolled_to(&view, Pane::Timeline), Some(49));
 }
 
 #[test]

@@ -878,6 +878,68 @@ fn reply_in_thread_opens_the_thread() {
     );
 }
 
+// The app hands the view the route of a link opened into it (a notice's).
+fn route(cx: &mut TestAppContext, route: &str) {
+    cx.host()
+        .stream::<view::methods::HostRoute>()
+        .send(route.into());
+    cx.run_until_parked();
+}
+
+// A phone seated on #general up to `head`, threaded as `thread` says.
+fn threaded_phone(
+    head: u64,
+    thread: impl Fn(u64) -> Option<u64> + 'static,
+) -> (TestAppContext, Entity<Chat>) {
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
+    threaded(&cx, head, thread);
+    let view = cx.open::<Chat>();
+    cx.simulate_touch(true);
+    cx.simulate_resize(390., 844.);
+    cx.run_until_parked();
+    seat(&mut cx);
+    (cx, view)
+}
+
+#[test]
+fn a_link_to_a_reply_opens_its_thread_page_on_it_over_the_room() {
+    let (mut cx, view) = threaded_phone(300, |seq| (101..=200).contains(&seq).then_some(100));
+    route(&mut cx, "general/150");
+    assert!(cx.find("chat-thread-page").is_some());
+    // the root, then the replies from 101
+    assert_eq!(scrolled_to(&view, Pane::Thread), Some(50));
+    cx.simulate_back();
+    assert!(cx.find("chat-room-page").is_some());
+    // the roots 86 to 99 above the root
+    assert_eq!(scrolled_to(&view, Pane::Timeline), Some(14));
+}
+
+#[test]
+fn a_link_to_a_reply_off_its_roots_window_opens_the_thread_page_on_it() {
+    let (mut cx, view) = threaded_phone(1_000, |seq| (11..=900).contains(&seq).then_some(10));
+    route(&mut cx, "general/850");
+    assert!(cx.find("chat-thread-page").is_some());
+    assert_eq!(scrolled_to(&view, Pane::Thread), Some(840));
+    cx.simulate_back();
+    assert!(cx.find("chat-room-page").is_some());
+    // the intro, then the roots 1 to 9
+    assert_eq!(scrolled_to(&view, Pane::Timeline), Some(10));
+}
+
+#[test]
+fn a_link_to_a_root_opens_the_room_page_on_it_over_an_open_thread() {
+    let (mut cx, view) = threaded_phone(300, |seq| (101..=200).contains(&seq).then_some(100));
+    route(&mut cx, "general/150");
+    assert!(cx.find("chat-thread-page").is_some());
+    route(&mut cx, "general/250");
+    assert!(cx.find("chat-thread-page").is_none());
+    assert!(cx.find("chat-room-page").is_some());
+    // the roots 201 to 249 above it
+    assert_eq!(scrolled_to(&view, Pane::Timeline), Some(49));
+}
+
 // ---------- the picker (`src/chat/Actions.tsx` `Picker`) ----------
 
 #[test]
