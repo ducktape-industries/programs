@@ -5246,6 +5246,7 @@ dependencies = [
  "access",
  "harness",
  "identity",
+ "image",
  "ownership",
  "policy-view",
  "serde",

@@ -8,6 +8,7 @@ use view::testing::{StreamSender, TestAppContext};
 use view::{Theme, wire};
 
 mod phone;
+mod photo;
 mod policies;
 
 /// A press on `key` as the host sends it, to batch several in one tick.
@@ -239,6 +240,13 @@ fn seated(state: &str, dark: bool) -> (TestAppContext, StreamSender<HostSession>
             cx.host()
                 .refuse::<Query<Identity>>("unavailable", "Account query refused.");
         }
+        // a host that answers no file method, and says so
+        "no-file-read" => cx.host().handle::<view::methods::HostMethods>(|()| {
+            Ok(view::methods::Hosted {
+                level: view::wire::WIRE_LEVEL,
+                kinds: Vec::new(),
+            })
+        }),
         _ => {}
     }
     cx.set_global(if dark { Theme::dark() } else { Theme::light() });

@@ -157,7 +157,14 @@ fn seat_pane(
     let pane = column("settings/account/data");
     match seat {
         Seat::Account(account) => pane
-            .child(who(&account.name, about(account), ladder, theme))
+            .child(who(
+                &account.name,
+                about(account),
+                view.picture(cx),
+                crate::ui::photo::presses(view, account.avatar.is_some(), cx, ladder, theme),
+                ladder,
+                theme,
+            ))
             .child(keys_head(account.keys.len(), ladder, theme))
             .children(account.keys.iter().enumerate().map(|(i, key)| {
                 let label = words::key_label(key.label.as_deref(), i);
@@ -167,6 +174,8 @@ fn seat_pane(
             .child(who(
                 words::UNREGISTERED,
                 words::NO_ACCOUNT_YET.into(),
+                None,
+                None,
                 ladder,
                 theme,
             ))
@@ -174,7 +183,14 @@ fn seat_pane(
             .child(key_row(0, THIS_DEVICE, key, &mine, ladder, theme))
             .child(create_account(view, cx, ladder, theme)),
         Seat::Stopped { key, name, note } => pane
-            .child(who(name, words::AGENT_KEY.into(), ladder, theme))
+            .child(who(
+                name,
+                words::AGENT_KEY.into(),
+                None,
+                None,
+                ladder,
+                theme,
+            ))
             .child(keys_head(1, ladder, theme))
             .child(key_row(0, THIS_DEVICE, key, &mine, ladder, theme))
             .child(quiet("settings/account/note", note.clone(), ladder, theme)),
@@ -213,17 +229,29 @@ fn about(account: &Account) -> String {
 }
 
 /// Who the seated key is: its face, its name, one mono line under it.
-fn who(name: &str, about: String, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
+// An account's picture fills the face once read; its photo presses follow.
+fn who(
+    name: &str,
+    about: String,
+    picture: Option<std::sync::Arc<view::Image>>,
+    presses: Option<Div>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> Stateful<Div> {
     div()
         .id("settings/who")
+        .flex()
+        .flex_col()
+        .gap(design::space::LG)
         .p(design::space::BLOCK)
         .child(named(
-            design::avatar(name, ladder.avatar_detail, theme),
+            design::avatar_with(name, picture, ladder.avatar_detail, theme),
             name_line(name, ladder.big_title).id("settings/who/name"),
             about,
             ladder,
             theme,
         ))
+        .children(presses)
 }
 
 fn keys_head(count: usize, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {

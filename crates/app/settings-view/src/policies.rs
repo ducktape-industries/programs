@@ -124,8 +124,12 @@ impl Settings {
         cx.notify();
     }
 
-    // Back on the phone: the policy sheet closes, else the Agents pane's.
+    // Back on the phone: the crop sheet closes, else the policy sheet, else
+    // the Agents pane's.
     pub(crate) fn back(&mut self, cx: &mut Context<Self>) {
+        if self.photo.is_some() {
+            return self.cancel_photo(cx);
+        }
         match self.policy_sheet {
             Some(_) => self.close_policy_sheet(cx),
             None => self.close_sheet(cx),

@@ -17,6 +17,9 @@ harness.workspace = true
 identity.workspace = true
 valset.workspace = true
 serde.workspace = true
+# the picked picture decoded, cut and saved as the avatar's JPEG: the one
+# gpui-pre already links into every view
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp"] }
 
 [dev-dependencies]
 # `examples/live.rs`: the view in the real app over the fake node

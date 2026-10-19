@@ -12,6 +12,7 @@ use view::design::Ladder;
 
 mod account;
 pub(crate) mod phone;
+pub(crate) mod photo;
 mod policies;
 mod shared;
 
@@ -32,7 +33,8 @@ pub(crate) fn render(view: &Settings, cx: &mut Context<Settings>) -> impl IntoEl
         Section::Policies => policies::pane(view, cx, ladder, &theme),
         Section::Invites => invites(view, cx, &theme, ladder),
     };
-    let sheet = policies::sheet(view, cx, ladder, &theme);
+    let sheet = photo::sheet(view, cx, ladder, &theme)
+        .or_else(|| policies::sheet(view, cx, ladder, &theme));
     div()
         .id("settings")
         .flex()

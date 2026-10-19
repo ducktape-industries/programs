@@ -20,7 +20,13 @@ pub(super) fn account(
         Loadable::Ready(Some(Seat::Bare(key))) | Loadable::Reloading(Some(Seat::Bare(key)), _) => {
             column("settings/account/data")
                 .gap_0()
-                .child(who(words::UNREGISTERED, words::NO_ACCOUNT_YET, theme))
+                .child(who(
+                    words::UNREGISTERED,
+                    words::NO_ACCOUNT_YET,
+                    None,
+                    None,
+                    theme,
+                ))
                 .child(group("settings/keys", words::KEYS, Some(1), theme))
                 .child(key_row(0, "Host key", key, theme, ladder))
                 .child(create_account(view, cx, theme, ladder))
@@ -31,7 +37,7 @@ pub(super) fn account(
         | Loadable::Reloading(Some(Seat::Stopped { key, name, note }), _) => {
             column("settings/account/data")
                 .gap_0()
-                .child(who(name, words::AGENT_KEY, theme))
+                .child(who(name, words::AGENT_KEY, None, None, theme))
                 .child(group("settings/keys", words::KEYS, Some(1), theme))
                 .child(key_row(0, "Host key", key, theme, ladder))
                 .child(secondary("settings/account/note", note, theme).pt(design::space::MD))
@@ -44,9 +50,11 @@ pub(super) fn account(
             let keys = account.keys.iter().enumerate().map(|(i, key)| {
                 key_row(i, key.label.as_deref().unwrap_or("Key"), key, theme, ladder)
             });
+            let picture = view.picture(cx);
+            let presses = super::photo::presses(view, account.avatar.is_some(), cx, ladder, theme);
             column("settings/account/data")
                 .gap_0()
-                .child(who(&account.name, &about, theme))
+                .child(who(&account.name, &about, picture, presses, theme))
                 .child(group(
                     "settings/keys",
                     words::KEYS,
@@ -92,7 +100,15 @@ pub(super) fn account(
 }
 
 /// Who the seated key is: an avatar, the name, one mono line under it.
-fn who(name: &str, about: &str, theme: &Theme) -> Stateful<Div> {
+// An account's picture fills the avatar once read; its photo presses sit
+// at the right.
+fn who(
+    name: &str,
+    about: &str,
+    picture: Option<std::sync::Arc<Image>>,
+    presses: Option<Div>,
+    theme: &Theme,
+) -> Stateful<Div> {
     div()
         .id("settings/who")
         .flex()
@@ -102,12 +118,13 @@ fn who(name: &str, about: &str, theme: &Theme) -> Stateful<Div> {
         .border_b_1()
         .border_color(theme.border)
         .child(
-            design::avatar(name, AVATAR_XL, theme)
+            design::avatar_with(name, picture, AVATAR_XL, theme)
                 .border_1()
                 .border_color(theme.border),
         )
         .child(
             div()
+                .flex_1()
                 .flex()
                 .flex_col()
                 .gap(design::space::HAIR)
@@ -124,6 +141,7 @@ fn who(name: &str, about: &str, theme: &Theme) -> Stateful<Div> {
                         .text_color(theme.muted),
                 ),
         )
+        .children(presses)
 }
 
 /// One key: its label over its short hex, a Validator tag on the right.

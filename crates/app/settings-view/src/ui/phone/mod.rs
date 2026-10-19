@@ -25,7 +25,8 @@ mod parts;
 pub(crate) fn render(view: &Settings, cx: &mut Context<Settings>) -> impl IntoElement {
     let theme = *cx.global::<Theme>();
     let ladder = &design::TOUCH;
-    let sheet = agents::sheet(view, cx, ladder, &theme)
+    let sheet = crate::ui::photo::sheet(view, cx, ladder, &theme)
+        .or_else(|| agents::sheet(view, cx, ladder, &theme))
         .or_else(|| crate::ui::policies::sheet(view, cx, ladder, &theme));
     div()
         .id("settings")

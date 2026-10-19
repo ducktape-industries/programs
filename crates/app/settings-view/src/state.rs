@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use view::prelude::*;
 
+use crate::photo::Photo;
 use crate::queries::Seat;
 
 /// The invite lifetimes offered, in days.
@@ -38,6 +39,17 @@ pub struct Settings {
     pub(crate) policy_items: Loadable<usize>,
     // the one Remove, Move or default in flight from its sheet
     pub(crate) policy_write: Form,
+    // Change photo, from the pick to the save, and Remove photo
+    pub(crate) change_photo: Form,
+    pub(crate) remove_photo: Form,
+    // the picked picture in the crop sheet: a restored view has none open
+    #[serde(skip)]
+    pub(crate) photo: Option<Photo>,
+    #[serde(skip)]
+    pub(crate) pictures: Option<Entity<view::pictures::Pictures>>,
+    // whether the host reads a picked file (`host.methods`), asked at attach
+    #[serde(skip)]
+    pub(crate) reads_files: bool,
 }
 
 impl Settings {
@@ -219,6 +231,8 @@ pub(crate) enum Problem {
     NotAKeyRequest,
     NoSuchAccount,
     SeveralAccounts,
+    // the file picked is no picture the view decodes
+    NotAPicture,
     /// it did not land, worded as every view words it
     /// (`design::failure`)
     Refused(String),

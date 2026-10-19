@@ -98,6 +98,16 @@ pub(crate) const RENAME_AGENT: &str = "Rename";
 pub(crate) const REVOKE: &str = "Revoke";
 /// The press that takes a person off whom an agent answers.
 pub(crate) const REMOVE: &str = "Remove";
+// The avatar's presses and the crop sheet.
+pub(crate) const CHANGE_PHOTO: &str = "Change photo…";
+pub(crate) const OPENING: &str = "Opening…";
+pub(crate) const REMOVE_PHOTO: &str = "Remove photo";
+pub(crate) const REMOVING: &str = "Removing…";
+pub(crate) const PHOTO_TITLE: &str = "Change photo";
+pub(crate) const PHOTO_HELP: &str = "Drag the picture to place it in the circle.";
+pub(crate) const PHOTO_FRAME: &str = "Move the picture in the circle";
+pub(crate) const ZOOM: &str = "Zoom";
+pub(crate) const SAVE: &str = "Save";
 
 /// The choice of whom an agent answers, as a control names it.
 pub(crate) fn who_answers(agent: &str) -> String {
@@ -190,6 +200,7 @@ pub(crate) fn problem_text(problem: &Problem, empty: &str) -> String {
         Problem::SeveralAccounts => {
             "More than one account has that name. Add it by its number.".into()
         }
+        Problem::NotAPicture => "That file isn’t a picture this app can open.".into(),
         Problem::Refused(said) => said.clone(),
     }
 }

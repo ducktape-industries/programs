@@ -31,6 +31,10 @@ pub struct Account {
     pub kind: Kind,
     pub keys: Vec<Key>,
     pub agents: Vec<Agent>,
+    // the card's picture and bio: Change photo keeps the bio as it is
+    #[serde(with = "view::borsh_bytes")]
+    pub avatar: Option<abi::BlobId>,
+    pub bio: Option<String>,
 }
 
 /// An agent the account manages.
@@ -124,6 +128,8 @@ pub(crate) async fn account(
         number,
         kind: account.kind(),
         name: account.card.name,
+        avatar: account.card.avatar,
+        bio: account.card.bio,
         keys,
         agents,
     })))

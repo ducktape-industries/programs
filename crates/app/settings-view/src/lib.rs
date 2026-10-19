@@ -1,16 +1,9 @@
-//! Account: who the seated key is (its account, its keys, the agents it
-//! manages) and invites to the network, one pane each behind a left menu.
-//! Under a finger it is the Expo app's Account screen instead: the same
-//! panes under a strip, an agent's forms in sheets (`ui/phone/`). The
-//! program is still `settings` (`programs`'s view); only its name on
-//! screen is Account. The node's own status is the Nodes view's, and the
-//! app's preferences the host's gear.
-//!
-//! The state is one struct (`state.rs`). Reads are typed asks of identity,
-//! valset and access (`queries.rs`), re-read on their live heads (`watch.rs`);
-//! presses land in `actions.rs`; `ui/` (the desktop) and `ui/phone/` (the
-//! phone) draw and never mutate, both worded by `words.rs`.
+//! Account (the `settings` program's view): the seated key's account, its
+//! picture and keys, its agents, policies and invites; `ui/` draws for a
+//! pointer and `ui/phone/` for a finger, from one state (`state.rs`).
 mod actions;
+mod avatar;
+mod photo;
 mod policies;
 mod queries;
 mod state;
@@ -34,6 +27,10 @@ impl View for Settings {
         Capability::Invite,
         Capability::Host,
         Capability::Clipboard,
+        // Change photo: the picture the reader picks, read in the view
+        Capability::File,
+        // the reader's picture, read by its blob id
+        Capability::Blob,
     ];
     // at 480 the Agents page's "Create agent" and "Add key" are cut
     const MIN_WINDOW_WIDTH: u32 = 560;
@@ -47,6 +44,10 @@ impl View for Settings {
     }
 
     fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+        if self.pictures.is_none() {
+            self.pictures = Some(cx.new(|_| view::pictures::Pictures::default()));
+        }
+        self.ask_hosted(cx);
         self.watch(cx);
     }
 }
