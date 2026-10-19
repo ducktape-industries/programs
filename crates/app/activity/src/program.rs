@@ -14,6 +14,10 @@ impl Program for Activity {
     type Reply = Reply;
     const TABLES: &'static [::program::Table] = crate::rules::TABLES;
 
+    fn tools() -> ::program::tools::Tools {
+        ::program::tools::Tools::of::<Op, Query>()
+    }
+
     fn execute(_ctx: &ExecCtx, (): Op) -> Result<(), Error> {
         Err(Error::new(
             code::UNSUPPORTED,

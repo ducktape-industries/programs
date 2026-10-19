@@ -12,7 +12,6 @@ const UNDESCRIBED: &[&str] = &[
     "scheduler",
     "access",
     "ownership",
-    "activity",
     "egress",
     "attribution",
     "harness",
