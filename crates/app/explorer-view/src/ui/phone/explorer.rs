@@ -74,10 +74,15 @@ fn titled(view: &Explorer, cx: Cx, k: &Look) -> design::Page {
     });
     // the reader's avatar leads the row (Expo `index.tsx:80` `root`)
     let reader = me(view).unwrap_or_default().to_owned();
+    let picture = view
+        .acting
+        .account
+        .and_then(|me| view.account(me))
+        .and_then(|me| view.picture(me, cx));
     let page = design::page(
         "explorer-root",
         "Explorer",
-        design::Nav::root(reader),
+        design::Nav::root_with(reader, picture),
         &k.ladder,
         &k.theme,
     )

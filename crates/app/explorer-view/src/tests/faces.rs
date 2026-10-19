@@ -1,6 +1,6 @@
 //! Each account's picture is its face wherever the explorer draws one: the
-//! Accounts list and an account's page, on both designs, each picture read
-//! once however often it is drawn.
+//! Accounts list and an account's page, on both designs, and the phone's root
+//! avatar; each picture read once however often it is drawn.
 use super::*;
 use view::methods::BlobGet;
 
@@ -68,4 +68,28 @@ fn an_accounts_picture_is_its_face_on_both_designs() {
         let reads = cx.host().requests::<BlobGet>();
         assert_eq!(reads, [blob(7), blob(8)], "each read once, touch {touch}");
     }
+}
+
+#[test]
+fn on_a_phone_the_root_leads_with_the_readers_picture() {
+    let mut cx = pictured();
+    cx.host().stream::<HostSession>().send(Session {
+        connected: true,
+        chain_id: "test#1".into(),
+        signer: abi::hex(&ADA),
+        account: Some(3),
+        endpoint: String::new(),
+    });
+    cx.simulate_touch(true);
+    cx.simulate_resize(390., 844.);
+    cx.run_until_parked();
+    let root = cx
+        .find("explorer-root-account")
+        .expect("the reader's avatar");
+    let mut pictured = false;
+    root.clone().for_each_mut(&mut |node| {
+        pictured |= matches!(node, view::wire::Node::Image { .. });
+    });
+    assert!(pictured, "Ada's picture leads the root: {:?}", cx.texts());
+    assert_eq!(cx.host().requests::<BlobGet>(), [blob(7)], "read once");
 }
