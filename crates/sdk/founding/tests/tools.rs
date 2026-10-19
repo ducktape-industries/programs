@@ -14,7 +14,6 @@ const UNDESCRIBED: &[&str] = &[
     "access",
     "ownership",
     "forge",
-    "files",
     "activity",
     "egress",
     "attribution",

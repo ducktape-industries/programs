@@ -1,7 +1,8 @@
 //! The program: every op acts as the account the host resolved, and every op and
 //! query is handed to its function in `ops.rs`, `commit.rs` or `queries.rs`.
-use ::program::schema::{Return, returns};
-use ::program::{BlobId, Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
+use ::program::schema::Return;
+use ::program::tools::{Described, Tools};
+use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::commit::commit;
 use crate::ops::{pin, unpin};
@@ -16,7 +17,7 @@ impl Program for Files {
     type Query = Query;
     type Reply = Reply;
     const TABLES: &'static [::program::Table] = crate::state::TABLES;
-    const RETURNS: &'static [Return] = &[returns::<BlobId>("Commit")];
+    const RETURNS: &'static [Return] = <Op as Described>::RETURNS;
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         // a watcher is the program that sends it; every other op acts as an account
@@ -38,6 +39,10 @@ impl Program for Files {
     }
 
     // the only messages files wants answered are its watchers': a refusal there keeps the commit
+    fn tools() -> Tools {
+        Tools::of::<Op, Query>()
+    }
+
     fn reply(_: &ExecCtx, _: &MessageId, _: &Outcome) -> Result<(), Error> {
         Ok(())
     }

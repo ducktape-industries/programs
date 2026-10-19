@@ -4,6 +4,7 @@
 //! answers what each op needs there and who owns each path.
 mod commit;
 mod cursor;
+mod examples;
 mod gate;
 mod objects;
 mod ops;
@@ -30,31 +31,32 @@ pub const PROGRAM: &str = "files";
 
 pub const CHUNK_SIZE: u64 = 1 << 20;
 
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
+)]
+#[tool_about(
+    "The network's versioned filesystem: every commit is a snapshot, and a path's writers are its nearest write list in the access program, else anyone. /home, /shared and each /home/<name> are the network's: write inside them."
+)]
 pub enum Op {
     /// Retired: file bytes never ride in a transaction ([`carried`]), so
     /// it is always refused. It stays so the ops of older blocks still read
     /// (`op_variants_only_append`).
-    Stage {
-        bytes: Vec<u8>,
-    },
+    #[tool_op(description = "Retired: file bytes never ride in a transaction, so it is always refused. Put them as chunk blobs and name them in a Commit.", example = examples::stage)]
+    Stage { bytes: Vec<u8> },
+    #[tool_op(description = "Make one snapshot of changes: Put (a file's chunks, each a 1 MiB blob of kind chunk put through the node's blob upload first, the last shorter), Mkdir, Remove, Move, Symlink. With base the snapshot you read, it is refused as stale if a path it touches changed since; with base null it only creates, refused if anything is at a path it touches. Each path is written where its write list admits you. SetOwnership is retired: a write list is set in the access program. Returns the new snapshot's id.", returns = BlobId, example = examples::commit)]
     Commit {
         base: Option<BlobId>,
         message: String,
         changes: Vec<Change>,
     },
-    Pin {
-        name: String,
-        snapshot: BlobId,
-    },
-    Unpin {
-        name: String,
-    },
+    #[tool_op(description = "Name a snapshot, so it stays findable by that name. The name is not empty, has no control characters, and is not taken. Anyone may pin; the pin is yours.", example = examples::pin)]
+    Pin { name: String, snapshot: BlobId },
+    #[tool_op(description = "Drop a pin. Its owner, or whom the owner lists.", example = examples::unpin)]
+    Unpin { name: String },
     // A program hears of every commit, each as `deliver ++ borsh(SnapshotRow)`; an empty
     // `deliver` stops it.
-    Watch {
-        deliver: Vec<u8>,
-    },
+    #[tool_op(description = "From a program only: be told of every commit, each as a message of deliver followed by the snapshot's row in borsh. An empty deliver stops it.", example = examples::watch)]
+    Watch { deliver: Vec<u8> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -192,24 +194,37 @@ pub struct DiffEntry {
 }
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Ask,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    ::program::Ask,
+    ::program::Described,
 )]
 #[ask(Files)]
 pub enum Query {
     #[ask(Reply::Head(Option<SnapshotRow>))]
     #[reads(state::HEAD)]
+    #[tool_query(description = "The newest snapshot, or null before the first commit.", example = examples::head)]
     Head,
     #[ask(Reply::Snapshot(Option<SnapshotRow>))]
     #[reads(state::HISTORY, state::SNAPSHOTS)]
+    #[tool_query(description = "One snapshot by id, or null.", example = examples::snapshot)]
     Snapshot { id: BlobId },
     #[ask(Reply::History(PageResponse<SnapshotRow>))]
     #[reads(state::HISTORY)]
+    #[tool_query(description = "Every snapshot, newest first, a page at a time.", example = examples::history)]
     History { page: PageRequest },
     #[ask(Reply::Stat { snapshot: Option<BlobId>, entry: Option<EntryInfo> })]
     #[reads(state::HEAD, state::HISTORY, state::SNAPSHOTS)]
+    #[tool_query(description = "What is at a path (a file with its size and exec bit, a directory, a symlink) and its meta, or null; at null reads the head.", example = examples::stat)]
     Stat { path: String, at: Option<BlobId> },
     #[ask(Reply::Listing { snapshot: Option<BlobId>, entries: PageResponse<EntryInfo> })]
     #[reads(state::HEAD, state::HISTORY, state::SNAPSHOTS)]
+    #[tool_query(description = "A directory's entries, a page at a time.", example = examples::list)]
     List {
         path: String,
         at: Option<BlobId>,
@@ -217,6 +232,7 @@ pub enum Query {
     },
     #[ask(Reply::Contents(crate::Contents))]
     #[reads(state::HEAD, state::HISTORY, state::SNAPSHOTS)]
+    #[tool_query(description = "len bytes of a file from offset, with the file's size and whether the read reached its end (eof).", example = examples::read)]
     Read {
         path: String,
         at: Option<BlobId>,
@@ -225,6 +241,7 @@ pub enum Query {
     },
     #[ask(Reply::Listing { snapshot: Option<BlobId>, entries: PageResponse<EntryInfo> })]
     #[reads(state::HEAD, state::HISTORY, state::SNAPSHOTS)]
+    #[tool_query(description = "Every file and directory whose path starts with prefix, in path order.", example = examples::find)]
     Find {
         prefix: String,
         at: Option<BlobId>,
@@ -232,6 +249,7 @@ pub enum Query {
     },
     #[ask(Reply::Hits { snapshot: Option<BlobId>, hits: PageResponse<Hit> })]
     #[reads(state::HEAD, state::HISTORY, state::SNAPSHOTS)]
+    #[tool_query(description = "Each line holding pattern as literal text, with its path and line number, under prefix.", example = examples::grep)]
     Grep {
         pattern: String,
         prefix: String,
@@ -240,6 +258,7 @@ pub enum Query {
     },
     #[ask(Reply::Diff(Vec<DiffEntry>))]
     #[reads(state::HISTORY, state::SNAPSHOTS)]
+    #[tool_query(description = "The paths under prefix that were added, removed or modified between two snapshots.", example = examples::diff)]
     Diff {
         from: BlobId,
         to: BlobId,
@@ -247,9 +266,11 @@ pub enum Query {
     },
     #[ask(Reply::Pins(PageResponse<PinRow>))]
     #[reads(state::PINS)]
+    #[tool_query(description = "Every pin, a page at a time.", example = examples::pins)]
     Pins { page: PageRequest },
     #[ask(Reply::Pin(Option<PinRow>))]
     #[reads(state::PINS)]
+    #[tool_query(description = "One pin by name, or null.", example = examples::one_pin)]
     Pin { name: String },
 }
 
