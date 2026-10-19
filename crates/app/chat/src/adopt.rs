@@ -17,7 +17,7 @@ pub(crate) fn adopt_owners(
     limit: u64,
 ) -> Result<(), Error> {
     let at = after.as_deref();
-    if !by_itself(ctx) {
+    if !by_itself(ctx)? {
         let next = match kind {
             "chat.channel" => CHANNELS.batch(ctx, at, limit)?.next,
             "chat.message" => MESSAGE_IDS.batch(ctx, at, limit)?.next,

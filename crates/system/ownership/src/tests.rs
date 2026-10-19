@@ -415,6 +415,8 @@ fn only_the_kernel_guards_and_its_bytes_are_the_kernels() {
 enum Adopting {
     Write(String),
     Adopt(Vec<Adopted>),
+    Page(String),
+    Relay(AccountNumber, String),
 }
 
 struct Adopter;
@@ -429,6 +431,15 @@ impl Program for Adopter {
         match op {
             Adopting::Write(key) => ctx.set_with(key, b"v".to_vec(), Some("test.old")),
             Adopting::Adopt(items) => crate::adopt(ctx, items)?,
+            Adopting::Page(key) => match crate::by_itself(ctx)? {
+                true => ctx.set_with(key, b"v".to_vec(), Some("test.old")),
+                false => {
+                    ctx.emit("adopter", &Adopting::Page(key), Wanted::None);
+                }
+            },
+            Adopting::Relay(account, key) => {
+                ctx.emit_as(account, "adopter", &Adopting::Page(key), Wanted::None);
+            }
         }
         Ok(())
     }
@@ -539,6 +550,33 @@ fn a_program_records_owners_from_before_the_guard_once_and_on_todays_rule() {
         act(&chain, "ada", &direct).unwrap_err().code,
         code::UNAUTHORIZED
     );
+}
+
+#[test]
+fn an_accounts_op_the_program_relays_in_its_own_name_pages_and_records_nothing_as_it() {
+    use abi::role::identity::{Category, Kind, Profile, Script, Standing};
+    let chain = adopting();
+    chain.profile(Profile {
+        number: 103,
+        name: "relayed agent".into(),
+        kind: Kind::Program {
+            script: Some(Script {
+                calls: "adopter".into(),
+                config: String::new(),
+            }),
+            manager: 1,
+            category: Category::Agent,
+            standing: Standing::Active,
+        },
+    });
+    send(&chain, &Adopting::Relay(103, "n/relayed".into())).unwrap();
+    assert_eq!(
+        adopted(&chain, "n/relayed").0.owner,
+        Party::Account(102),
+        "the program's own message wrote it, not the agent's relayed op"
+    );
+    send(&chain, &Adopting::Page("n/paged".into())).unwrap();
+    assert_eq!(adopted(&chain, "n/paged").0.owner, Party::Account(102));
 }
 
 #[test]

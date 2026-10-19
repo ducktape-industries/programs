@@ -96,11 +96,19 @@ pub fn writers_of(
     writers(key, list, resource)
 }
 
-// Whether this run is the program's own message to itself: a program's `AdoptOwners` sent by
-// anyone only pages and sends itself the same op, whose run writes and records.
-pub fn by_itself(ctx: &QueryCtx) -> bool {
+// Whether this run is the program's own message to itself, sent as its own account: a program's
+// `AdoptOwners` sent by anyone only pages and sends itself the same op, whose run writes and
+// records. An account's op that the program relays in its own name (harness running an agent's
+// op) acts as that account, so it only pages.
+pub fn by_itself(ctx: &QueryCtx) -> Result<bool, Error> {
     let env = ctx.env();
-    matches!(&env.origin, Origin::Program(program) if *program == env.program)
+    let from_itself = matches!(&env.origin, Origin::Program(program) if *program == env.program);
+    if !from_itself {
+        return Ok(false);
+    }
+    let own = crate::rules::account_of(ctx, &env.program)?;
+    let as_itself = matches!(env.sender, Some(Principal::Account(number)) if Some(number) == own);
+    Ok(as_itself)
 }
 
 // Sends the ownership role `items`, as this program.

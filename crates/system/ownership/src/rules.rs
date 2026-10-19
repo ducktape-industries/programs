@@ -143,7 +143,10 @@ fn is(ctx: &QueryCtx, party: &Party, actor: &Party) -> Result<bool, Error> {
     }
 }
 
-fn account_of(ctx: &QueryCtx, program: &ProgramId) -> Result<Option<AccountNumber>, Error> {
+pub(crate) fn account_of(
+    ctx: &QueryCtx,
+    program: &ProgramId,
+) -> Result<Option<AccountNumber>, Error> {
     let identity = ctx.env().role(role::IDENTITY)?.clone();
     let asked = identity::Query::OfProgram(program.clone());
     match ctx.query(identity.clone(), &asked)? {
