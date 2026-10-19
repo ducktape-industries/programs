@@ -136,7 +136,7 @@ fn configure(cx: &mut TestAppContext) {
     quiet_methods(cx);
     cx.host()
         .handle::<Ask<::chat::Chat>>(rooms_alone(|query| Ok(chat_reply(query))));
-    // the one agent, eddy's own, answers only him
+    // the one agent, eddy's own, keeps no list: it answers anyone
     cx.host().handle::<Ask<access::Access>>(|query| {
         Ok(match query {
             access::Query::List { program, key }

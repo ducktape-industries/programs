@@ -60,6 +60,14 @@ pub(super) fn screen(
             theme,
             ladder,
         ))
+        .children(crate::ui::notices::managed(
+            chat,
+            &info.channel.id,
+            chat::dm_peers(&info.channel.id).is_some(),
+            cx,
+            theme,
+            ladder,
+        ))
         .children(crate::ui::widget::section(chat, cx, theme, ladder))
         .children(members(chat, room, info, cx, theme, ladder))
         .children(owner_actions(chat, info, cx, theme, ladder));

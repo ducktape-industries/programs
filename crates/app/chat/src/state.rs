@@ -57,6 +57,10 @@ pub const POSTED: Map<(ChannelId, Principal), Seq> = Map::new("posted/").shared(
 pub const MENTIONED: Map<(ChannelId, Seq, Principal), Seq> = Map::new("mentioned/").shared();
 // what of each channel still tells an account that cut its notices: `(account, channel)`
 pub const NOTICES: Map<(AccountNumber, ChannelId), Notices> = Map::new("notices/").shared();
+// who watches each channel for a wait, and the height each began: `(channel, account)` → height
+pub const WATCHERS: Map<(ChannelId, AccountNumber), u64> = Map::new("watcher/").shared();
+// the channels each account watches: `(account, channel)`
+pub const WATCHING: Set<(AccountNumber, ChannelId)> = Set::new("watching/").shared();
 
 // A message as chat keeps it: the [`MsgRow`] a read answers, less what a
 // read derives (its flat text and `#tags`, from `blocks`; whether the
@@ -250,6 +254,8 @@ pub(crate) const TABLES: &[::program::Table] = &[
     LISTENERS.table(),
     LISTENING.table(),
     NOTICES.table(),
+    WATCHERS.table(),
+    WATCHING.table(),
     POSTED.table(),
     MENTIONED.table(),
 ];

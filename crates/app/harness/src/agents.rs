@@ -11,6 +11,7 @@ use attribution::{Actor, Change, Kind as Changed, Reason, Source};
 use crate::calls::deferred_while_shown;
 use crate::config::Pin;
 use crate::conversations::{binding, conversation, current, route};
+use crate::listening::chosen;
 use crate::pictures::{self, Picture};
 use crate::resume;
 use crate::state::{BOUND, LAST, PLACES, THREADS};
@@ -198,12 +199,16 @@ fn listed(ctx: &QueryCtx, agent: AccountNumber) -> Result<Option<Ownership>, Err
     }
 }
 
+// an agent answers its manager always, and with no list on its key anyone: a list its manager sets
+// narrows it
 fn answers(ctx: &QueryCtx, agent: &Agent, actor: AccountNumber) -> Result<bool, Error> {
     let by_manager = actor == agent.manager;
     if by_manager {
         return Ok(true);
     }
-    let list = listed(ctx, agent.number)?.unwrap_or_default();
+    let Some(list) = listed(ctx, agent.number)? else {
+        return Ok(true);
+    };
     let manager = Party::Account(agent.manager);
     Ok(list.allows(Some(&manager), &caller(ctx, actor)?))
 }
@@ -274,6 +279,10 @@ pub(crate) fn manual(agent: &Agent, title: &str, bound: Option<&Place>) -> Strin
          - Tools: each tool call runs in a later block, and its result arrives before the next \
          model call.\n\
          - Chat: chat_post posts to a channel; reply_to puts the post in a thread.\n\
+         - Hearing: what reaches you from each chat room is what you chose there, in chat as \
+         yourself: Listen (every message), SetNotices with no notices (mentions and replies in \
+         your threads, the default), Mentions (mentions only) or Off (nothing). Direct messages \
+         always reach you, and a message wait still ends with its message.\n\
          - Forge: forge_commit commits files to a git repository and pushes them as account \
          {number}, creating the repository if it does not exist.\n\
          - Pods: pod_exec runs a command in a pod (with every, it answers at once and this \
@@ -310,6 +319,8 @@ enum Heard {
     Direct,
     Thread,
     Listen,
+    // a message chat relates to the agent only for its wait: it never reaches a conversation
+    Watch,
     // a message a wait listened for, quoted as the wake
     Waited,
 }
@@ -319,7 +330,7 @@ impl Heard {
     fn direct(self) -> bool {
         match self {
             Heard::Mention | Heard::Direct | Heard::Waited => true,
-            Heard::Thread | Heard::Listen => false,
+            Heard::Thread | Heard::Listen | Heard::Watch => false,
         }
     }
 }
@@ -331,6 +342,7 @@ fn heard_as(reason: &Reason) -> Option<Heard> {
             chat::attributed::DIRECT => Some(Heard::Direct),
             chat::attributed::THREAD => Some(Heard::Thread),
             chat::attributed::LISTEN => Some(Heard::Listen),
+            chat::attributed::WATCH => Some(Heard::Watch),
             _ => None,
         },
         Reason::Authorship
@@ -395,11 +407,11 @@ fn designation(
         Heard::Mention => "mentioned you",
         Heard::Direct => "wrote to you directly",
         Heard::Thread => "continued a thread with you",
-        Heard::Listen | Heard::Waited => "wrote",
+        Heard::Listen | Heard::Watch | Heard::Waited => "wrote",
     };
     let listened = match heard {
         Heard::Listen => ", which you listen to",
-        Heard::Mention | Heard::Direct | Heard::Thread | Heard::Waited => "",
+        Heard::Mention | Heard::Direct | Heard::Thread | Heard::Watch | Heard::Waited => "",
     };
     let in_thread = match row.thread {
         Some(root) => format!(", in the thread of message {root} (reply_to {root})"),
@@ -476,12 +488,16 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
     let Some(agent) = running(ctx, change.recipient)? else {
         return Ok(Hearing::default());
     };
-    let listened = match why {
-        Heard::Listen => listens(ctx, &agent, &change)?,
-        Heard::Mention | Heard::Direct | Heard::Thread | Heard::Waited => true,
-    };
     let woke = waited(ctx, &agent, &change, actor, why)?;
     let seen = (change.source.clone(), change.revision);
+    // what the agent chose not to hear is never delivered: nothing of it is written, so another
+    // relation of the same message may still bring it
+    if !chooses(ctx, &agent, &change, why)? {
+        if woke.is_some() {
+            LAST.put(ctx, &agent.number, &seen);
+        }
+        return Ok(Hearing { told: None, woke });
+    }
     if !answers(ctx, &agent, actor)? {
         match woke {
             Some(_) => LAST.put(ctx, &agent.number, &seen),
@@ -490,9 +506,6 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
         return Ok(Hearing { told: None, woke });
     }
     LAST.put(ctx, &agent.number, &seen);
-    if !listened {
-        return Ok(Hearing { told: None, woke });
-    }
     let Designation {
         place,
         places,
@@ -538,23 +551,26 @@ fn message_channel(ctx: &QueryCtx, change: &Change) -> Result<Option<String>, Er
     }
 }
 
-// a listened message reaches the agent from a channel its configuration names; chat also
-// listens for a message wait, whose channel the configuration may not name
-fn listens(ctx: &QueryCtx, agent: &Agent, change: &Change) -> Result<bool, Error> {
-    let waits = crate::waits::message_waits(ctx, agent.number)?;
-    if waits.is_empty() {
-        return Ok(true);
+// whether a chat message reaches the agent, by what it chose for the message's room in chat:
+// every message where it listens; else a mention or a reply in its thread by default, a mention
+// alone when cut to mentions, nothing when off. A direct message always reaches it, and what chat
+// relates to it only for a wait (`watch`) never does
+fn chooses(ctx: &QueryCtx, agent: &Agent, change: &Change, why: Heard) -> Result<bool, Error> {
+    if matches!(why, Heard::Watch | Heard::Waited) {
+        return Ok(false);
     }
     let Some(channel) = message_channel(ctx, change)? else {
         return Ok(true);
     };
-    if !waits.iter().any(|(waited, _)| *waited == channel) {
+    if chat::dm_peers(&channel).is_some() {
         return Ok(true);
     }
-    let configured = configured(ctx, &agent.path)?;
-    Ok(configured
-        .config()
-        .is_some_and(|(_, config)| config.listen.contains(&channel)))
+    Ok(match chosen(ctx, agent.number, &channel)? {
+        (true, _) => true,
+        (false, None) => matches!(why, Heard::Mention | Heard::Direct | Heard::Thread),
+        (false, Some(chat::Notices::Mentions)) => matches!(why, Heard::Mention | Heard::Direct),
+        (false, Some(chat::Notices::Off)) => false,
+    })
 }
 
 // the first of the agent's message waits a chat message matches (its channel, its author if the
@@ -590,7 +606,7 @@ fn waited(
             continue;
         }
         let quoted = match why {
-            Heard::Listen => Heard::Waited,
+            Heard::Listen | Heard::Watch => Heard::Waited,
             other => other,
         };
         let Designation { text, pictures, .. } = designation(ctx, change, actor, quoted)?;
@@ -613,7 +629,7 @@ fn dropped(
         Heard::Thread => "a thread reply",
         // a channel it listens to is talk around the agent, not to it: what it does not answer
         // there is left without a notice, or each such message would add one
-        Heard::Listen | Heard::Waited => return Ok(()),
+        Heard::Listen | Heard::Watch | Heard::Waited => return Ok(()),
     };
     let Source { program, object } = &change.source;
     let text = format!(

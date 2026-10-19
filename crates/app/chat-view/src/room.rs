@@ -196,10 +196,15 @@ impl Chat {
         self.moved_channels.heard(change);
         self.visited_heard(change);
         self.reread_moved(cx);
-        // the reader's choices show in the details alone
+        // the reader's choices, and those of the accounts it manages, show in the details alone
+        let managed = self.managed_choices.ready().into_iter().flatten();
+        let managed: Vec<u64> = managed.map(|(account, _)| *account).collect();
         if let Some(me) = self.my_account()
             && self.details.is_some()
-            && change.is_none_or(|change| crate::notifier::choices_moved(change, me))
+            && change.is_none_or(|change| {
+                let mut whose = std::iter::once(me).chain(managed.iter().copied());
+                whose.any(|account| crate::notifier::choices_moved(change, account))
+            })
         {
             self.load_choices(cx);
         }

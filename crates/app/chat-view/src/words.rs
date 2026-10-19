@@ -178,6 +178,13 @@ pub(crate) const NO_CATEGORY: &str = "No category";
 pub(crate) const SET_CATEGORY: &str = "Set category";
 pub(crate) const CLEAR_CATEGORY: &str = "Clear category";
 pub(crate) const NOTIFICATIONS: &str = "Notifications";
+// an agent whose script calls no harness: harness keeps no rule of whom it answers
+pub(crate) const OUTSIDE_HARNESS: &str = "Runs outside harness";
+
+// a direct room's header with an agent harness doesn't run
+pub(crate) fn runs_outside_harness(name: &str) -> String {
+    format!("{name} runs outside harness.")
+}
 
 /// A room's notices choice as its details offer it: its name, and what it
 /// tells. A direct room's default is every message.
@@ -193,6 +200,24 @@ pub(crate) fn choice(choice: Choice, dm: bool) -> (&'static str, &'static str) {
         Choice::Cut(Notices::Mentions) => ("Mentions only", "Only what mentions you"),
         Choice::Cut(Notices::Off) => ("Off", "Nothing from here"),
     }
+}
+
+// a room's notices choice as the details offer it for an account the reader manages: what of the
+// room reaches it
+#[cfg(not(feature = "notifier"))]
+pub(crate) fn managed_choice(choice: Choice) -> (&'static str, &'static str) {
+    match choice {
+        Choice::Every => ("All messages", "Every new message, in every thread too"),
+        Choice::Default => ("Default", "Mentions, and replies in threads it is in"),
+        Choice::Cut(Notices::Mentions) => ("Mentions only", "Only what mentions it"),
+        Choice::Cut(Notices::Off) => ("Off", "Nothing from here"),
+    }
+}
+
+// the head over a managed account's notices group
+#[cfg(not(feature = "notifier"))]
+pub(crate) fn managed_notices(name: &str) -> String {
+    format!("What {name} hears")
 }
 
 // ---------- a message's files ----------

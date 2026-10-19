@@ -128,6 +128,14 @@ pub fn details(
                 theme,
                 ladder,
             ))
+            .children(notices::managed(
+                chat,
+                &info.channel.id,
+                dm,
+                cx,
+                theme,
+                ladder,
+            ))
             .child(rule(theme))
     };
     // a dm is its two people alike: nothing to rename, archive or seat

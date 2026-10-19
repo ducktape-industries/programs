@@ -167,6 +167,24 @@ pub enum Op {
         after: Option<Vec<u8>>,
         limit: u64,
     },
+    // as `Listen`, for `account`: the account itself or its manager in identity
+    ListenFor {
+        account: AccountNumber,
+        channel_id: String,
+        listening: bool,
+    },
+    // as `SetNotices`, for `account`: the account itself or its manager in identity
+    SetNoticesFor {
+        account: AccountNumber,
+        channel_id: String,
+        notices: Option<Notices>,
+    },
+    // hears every new message of `channel_id` for the sender's wait (a `watch` relation), leaving
+    // what it chose for the room as it is
+    Watch {
+        channel_id: String,
+        watching: bool,
+    },
 }
 
 /// A read. `viewer` is the reader's principals: they decide
@@ -296,6 +314,21 @@ pub enum Query {
         account: AccountNumber,
         page: PageRequest,
     },
+    // the rooms `account` watches for a wait (`Op::Watch`)
+    #[ask(Reply::Watching(PageResponse<String>))]
+    #[reads(state::WATCHING)]
+    Watching {
+        account: AccountNumber,
+        page: PageRequest,
+    },
+    // what `account` chose for `channel_id`: whether it listens there, and what of it still tells
+    // it when cut
+    #[ask(Reply::Chosen { listening: bool, notices: Option<Notices> })]
+    #[reads(state::LISTENING, state::NOTICES)]
+    Chosen {
+        account: AccountNumber,
+        channel_id: String,
+    },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -319,6 +352,11 @@ pub enum Reply {
     Listening(PageResponse<String>),
     Notices(PageResponse<(String, Notices)>),
     Followed(Followed),
+    Watching(PageResponse<String>),
+    Chosen {
+        listening: bool,
+        notices: Option<Notices>,
+    },
 }
 
 /// Where an account is in a room ([`Query::Followed`]): what comes after the
@@ -644,6 +682,9 @@ fn op_variants_only_append() {
             "MigrateSome",
             "SetNotices",
             "AdoptOwners",
+            "ListenFor",
+            "SetNoticesFor",
+            "Watch",
         ]
     );
 }

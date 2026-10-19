@@ -11,7 +11,7 @@ use crate::agents::{Agent, configured_pinned, hear_again, manual, running, threa
 use crate::budget::CCS_ACCOUNT;
 use crate::calls::{Placed, place, refusal, run_call, take_back_showing};
 use crate::conversations::{binding, retire};
-use crate::listening::mirror;
+use crate::listening::seed;
 use crate::models::learned;
 use crate::pictures::{self, Looks, Picture};
 use crate::resume::{self, Failure};
@@ -465,7 +465,7 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
             return Ok(None);
         }
     };
-    mirror(ctx, thread, agent, &config.listen);
+    seed(ctx, thread, agent, &config.listen);
     let (pick, forced) = match routes::pick(ctx, thread, &model, &pin)? {
         Picked::Chosen { pick, forced } => (pick, forced),
         Picked::Unlisted(text) => {

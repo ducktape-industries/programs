@@ -1,6 +1,6 @@
 //! An agent that listens to a channel: a message there reaches it as general input that waits
-//! out its settle window, a mention ends the window at once, and its own posts, other channels
-//! and a configuration that names no channel reach nothing.
+//! out its settle window, a mention ends the window at once, its own posts and other channels
+//! reach nothing, and `listen` seeds the room once, so chat's choice stands after it.
 use super::*;
 
 const SETTLE: u64 = 10_000;
@@ -146,7 +146,7 @@ fn with_settle_off_a_listened_message_starts_a_turn_at_once() {
 }
 
 #[test]
-fn the_agents_own_posts_and_other_channels_reach_nothing_and_a_config_without_listen_stops_it() {
+fn the_agents_own_posts_and_other_channels_reach_nothing_and_listen_seeds_the_room_once() {
     let world = world();
     let chain = &world.chain;
     let thread = listening(&world, Some(SETTLE));
@@ -178,7 +178,12 @@ fn the_agents_own_posts_and_other_channels_reach_nothing_and_a_config_without_li
     assert_eq!(posts(chain, thread).len(), 2, "an unlisted channel");
     assert_eq!(settling(chain, thread), None);
 
-    commit(chain, ADA, CONFIG, &scout().write());
+    let back = chat::Op::SetNoticesFor {
+        account: world.agent,
+        channel_id: "general".into(),
+        notices: None,
+    };
+    chain.submit(signed(ADA), chat::PROGRAM, &back).unwrap();
     world.mention("m3", "stop listening");
     block(chain, 8);
     model_says(chain, says("Stopped."), "end_turn");
@@ -193,4 +198,52 @@ fn the_agents_own_posts_and_other_channels_reach_nothing_and_a_config_without_li
     world.post(ADA, "general", "g9", "after it stopped");
     assert_eq!(posts(chain, thread).len(), 3);
     assert!(assigned(chain, SERVICE).is_empty());
+}
+
+fn listened_to(chain: &MockChain, agent: AccountNumber) -> Vec<String> {
+    let asked = chat::Query::Listening {
+        account: agent,
+        page: PageRequest::default(),
+    };
+    let chat::Reply::Listening(page) = chain.query(chat::PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    page.items
+}
+
+// a `listen` entry ending in `*` seeds every open room whose id starts with what comes before it,
+// a room opened later at the agent's next model call, and never an archived one
+#[test]
+fn a_listen_pattern_seeds_every_open_room_it_names_as_it_appears() {
+    let world = world();
+    let chain = &world.chain;
+    let open = |id: &str| {
+        let create = chat::Op::CreateChannel {
+            channel_id: id.into(),
+            name: id.into(),
+            post_policy: chat::PostPolicy::Open,
+        };
+        chain.submit(signed(ADA), chat::PROGRAM, &create).unwrap();
+    };
+    for id in ["j-1", "j-2", "jobs", "k-1"] {
+        open(id);
+    }
+    let archive = chat::Op::SetChannelArchived {
+        channel_id: "j-2".into(),
+        archived: true,
+    };
+    chain.submit(signed(ADA), chat::PROGRAM, &archive).unwrap();
+    let hears = Config {
+        listen: vec!["j-*".into()],
+        ..scout()
+    };
+    commit(chain, ADA, CONFIG, &hears.write());
+    world.opened("m1", "hello", Some(WINDOW));
+    assert_eq!(listened_to(chain, world.agent), ["j-1"]);
+    chain.at(3, 0);
+    model_says(chain, says("Hi."), "end_turn");
+    open("j-3");
+    chain.at(4, 0);
+    world.mention("m2", "a new room");
+    assert_eq!(listened_to(chain, world.agent), ["j-1", "j-3"]);
 }

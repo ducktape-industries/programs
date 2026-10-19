@@ -15,6 +15,7 @@ mod forge_tools;
 mod listen;
 mod models;
 mod network;
+mod notices;
 mod owned;
 mod pictures;
 mod pods;
@@ -282,6 +283,12 @@ impl World {
     }
 }
 
+// the agent's manager narrows whom it answers to itself alone: with no list it answers anyone
+fn manager_only(world: &World) {
+    let key = crate::agent_key(world.agent);
+    set_list(&world.chain, ADA, PROGRAM, key, ::program::Ownership::Owner);
+}
+
 fn assigned(chain: &MockChain, service: &str) -> Vec<RequestRow> {
     let asked = egress::Query::Assigned { key: NODE.to_vec() };
     let egress::Reply::Requests(rows) = chain.query(egress::PROGRAM, &asked).unwrap() else {
@@ -504,6 +511,7 @@ fn a_mention_by_its_manager_asks_the_model_in_the_agents_conversation() {
 fn a_direct_message_reaches_the_agent_and_only_those_it_answers_are_heard() {
     let world = world();
     let chain = &world.chain;
+    manager_only(&world);
     world.post(
         BO,
         "general",
@@ -651,6 +659,7 @@ fn a_reply_in_a_thread_the_agent_took_part_in_reaches_it_unmentioned_and_is_answ
 fn an_agent_that_answers_a_program_hears_what_that_program_posts_as_itself() {
     let world = world();
     let chain = &world.chain;
+    manager_only(&world);
     let post = |id: &str| chat::Op::PostMessage {
         channel_id: "general".into(),
         message_id: id.into(),

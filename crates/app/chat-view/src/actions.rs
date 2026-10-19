@@ -400,16 +400,49 @@ impl Chat {
     }
 
     /// The open room's notices are `choice`, as its details pick it.
-    pub(crate) fn choose_notices(&mut self, choice: Choice, cx: &mut Context<Self>) {
+    // for `whose`, an account the reader manages, else for the reader
+    pub(crate) fn choose_notices(
+        &mut self,
+        whose: Option<u64>,
+        choice: Choice,
+        cx: &mut Context<Self>,
+    ) {
         let channel_id = self.room_id();
         if channel_id.is_empty() {
             return;
         }
         if let Some(details) = &mut self.details {
-            details.notices_at = None;
+            match whose {
+                Some(account) => {
+                    details.managed_at.remove(&account);
+                }
+                None => details.notices_at = None,
+            }
         }
         cx.notify();
-        self.submit(choice.op(channel_id), cx);
+        let op = match whose {
+            Some(account) => choice.op_for(account, channel_id),
+            None => choice.op(channel_id),
+        };
+        self.submit(op, cx);
+    }
+
+    // the arrows are on choice `index` of `whose`'s notices group, the reader's when none
+    pub(crate) fn step_notices(
+        &mut self,
+        whose: Option<u64>,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(details) = &mut self.details {
+            match whose {
+                Some(account) => {
+                    details.managed_at.insert(account, index);
+                }
+                None => details.notices_at = Some(index),
+            }
+            cx.notify();
+        }
     }
 
     /// What the reader chose for `room`'s notices, once read.
@@ -492,6 +525,7 @@ impl Chat {
                     category_draft: view::TextField::new(category),
                     member_draft: Default::default(),
                     notices_at: None,
+                    managed_at: Default::default(),
                     sheet: None,
                 });
                 self.load_choices(cx);

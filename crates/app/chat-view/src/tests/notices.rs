@@ -205,3 +205,65 @@ fn the_details_choose_a_rooms_notices() {
         ]
     );
 }
+
+// the details offer each account the reader manages a group of its own in a room, checked as chat
+// holds its choice, beside the reader's own; a press writes the choice for it, and a direct room
+// offers none
+#[test]
+fn the_details_choose_a_managed_agents_notices() {
+    use view::methods::Submit;
+    let (mut cx, view) = opened();
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
+        Ok(match query {
+            Query::Notices { account: 8, .. } => {
+                Reply::Notices(page(vec![("general".into(), chat::Notices::Off)]))
+            }
+            query => chat_reply(query),
+        })
+    }));
+    cx.simulate_click("chat-room-details");
+    cx.run_until_parked();
+    let group = cx.interactivity("chat-details-notices-8");
+    assert_eq!(group.role, Some(view::Role::RadioGroup));
+    assert_eq!(group.aria.label.as_deref(), Some("What reviewer hears"));
+    let checked = |cx: &TestAppContext, id: &str| cx.interactivity(id).aria.toggled;
+    let on = Some(view::Toggled::True);
+    assert_eq!(checked(&cx, "chat-details-notices-8-off"), on);
+    assert_eq!(
+        checked(&cx, "chat-details-notices-default"),
+        on,
+        "the reader's own"
+    );
+
+    cx.simulate_click("chat-details-notices-8-every");
+    cx.simulate_click("chat-details-notices-8-mentions");
+    cx.run_until_parked();
+    let sent = cx.host().requests::<Submit<::chat::Chat>>();
+    assert_eq!(
+        sent[sent.len() - 2..],
+        [
+            chat::Op::ListenFor {
+                account: 8,
+                channel_id: "general".into(),
+                listening: true,
+            },
+            chat::Op::SetNoticesFor {
+                account: 8,
+                channel_id: "general".into(),
+                notices: Some(chat::Notices::Mentions),
+            },
+        ]
+    );
+
+    cx.update(&view, |chat, _, cx| {
+        cx.notify();
+        chat.choose("dm-7-8".into(), cx)
+    });
+    cx.run_until_parked();
+    if cx.find("chat-details-notices").is_none() {
+        cx.simulate_click("chat-room-details");
+        cx.run_until_parked();
+    }
+    assert!(cx.find("chat-details-notices").is_some());
+    assert!(cx.find("chat-details-notices-8").is_none(), "a direct room");
+}

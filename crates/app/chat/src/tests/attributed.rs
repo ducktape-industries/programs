@@ -8,7 +8,7 @@ use attribution::{
     Source,
 };
 
-use crate::attributed::{DIRECT, LISTEN, MESSAGE, THREAD};
+use crate::attributed::{DIRECT, LISTEN, MESSAGE, THREAD, WATCH};
 use crate::{Followed, Notices};
 
 const ADA: &[u8] = b"ada-key";
@@ -443,4 +443,130 @@ fn a_post_stands_when_no_attribution_is_seated() {
     let crate::Reply::Message(Some(_)) = chain.query(crate::PROGRAM, &asked).unwrap() else {
         panic!()
     };
+}
+
+fn watch(chain: &MockChain, key: &[u8], channel: &str, watching: bool) -> Result<(), String> {
+    let op = crate::Op::Watch {
+        channel_id: channel.into(),
+        watching,
+    };
+    chain
+        .submit(signed(key), crate::PROGRAM, &op)
+        .map(drop)
+        .map_err(|refusal| refusal.code)
+}
+
+fn watched(chain: &MockChain, account: u64) -> Vec<String> {
+    let asked = crate::Query::Watching {
+        account,
+        page: PageRequest::default(),
+    };
+    let crate::Reply::Watching(page) = chain.query(crate::PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    page.items
+}
+
+fn chosen(chain: &MockChain, account: u64, channel: &str) -> (bool, Option<Notices>) {
+    let asked = crate::Query::Chosen {
+        account,
+        channel_id: channel.into(),
+    };
+    let crate::Reply::Chosen { listening, notices } = chain.query(crate::PROGRAM, &asked).unwrap()
+    else {
+        panic!()
+    };
+    (listening, notices)
+}
+
+// a watcher hears each new message of its channel that relates to it in no other way, as a watch,
+// and watching leaves what it chose for the room as it is
+#[test]
+fn a_watcher_is_related_to_new_messages_and_its_choice_stays() {
+    let chain = chain();
+    open_general(&chain);
+    chain.at(2, 0);
+    set_notices(&chain, BO, "general", Some(Notices::Off));
+    watch(&chain, BO, "general", true).unwrap();
+    listen(&chain, CY, "general", true).unwrap();
+    watch(&chain, CY, "general", true).unwrap();
+    assert_eq!(watched(&chain, 2), ["general"]);
+    assert_eq!(chosen(&chain, 2, "general"), (false, Some(Notices::Off)));
+    assert_eq!(chosen(&chain, 3, "general"), (true, None));
+
+    let watching = || Reason::Defined(WATCH.into());
+    post(&chain, ADA, "general", "m1", "a plain message");
+    assert_eq!(
+        held(&chain, chat_source("m1")),
+        [(2, watching()), (3, listening())]
+    );
+    post(&chain, ADA, "general", "m2", "hi <@2>");
+    assert_eq!(
+        held(&chain, chat_source("m2")),
+        [(2, Reason::Mention), (3, listening())]
+    );
+    watch(&chain, BO, "general", false).unwrap();
+    assert!(watched(&chain, 2).is_empty());
+    assert_eq!(chosen(&chain, 2, "general"), (false, Some(Notices::Off)));
+    post(&chain, ADA, "general", "m3", "after Bo stopped");
+    assert_eq!(held(&chain, chat_source("m3")), [(3, listening())]);
+    assert_eq!(
+        watch(&chain, BO, "nowhere", true),
+        Err(code::NOT_FOUND.to_owned())
+    );
+}
+
+// an account's choice for a room is its own or its manager's to make, and nobody else's
+#[test]
+fn an_account_or_its_manager_chooses_for_it() {
+    let chain = chain();
+    chain.profile(Profile {
+        number: 4,
+        name: "Scout".into(),
+        kind: Kind::Program {
+            script: None,
+            manager: 1,
+            category: abi::role::identity::Category::Agent,
+            standing: abi::role::identity::Standing::Active,
+        },
+    });
+    open_general(&chain);
+    let as_key = |key: &[u8], op: crate::Op| {
+        chain
+            .submit(signed(key), crate::PROGRAM, &op)
+            .map(drop)
+            .map_err(|refusal| refusal.code)
+    };
+    let listen_for = |account, listening| crate::Op::ListenFor {
+        account,
+        channel_id: "general".into(),
+        listening,
+    };
+    let cut_for = |account, notices| crate::Op::SetNoticesFor {
+        account,
+        channel_id: "general".into(),
+        notices,
+    };
+    as_key(ADA, listen_for(4, true)).unwrap();
+    assert_eq!(listened(&chain, 4), ["general"]);
+    as_key(ADA, cut_for(4, Some(Notices::Off))).unwrap();
+    assert_eq!(chosen(&chain, 4, "general"), (false, Some(Notices::Off)));
+    assert!(listened(&chain, 4).is_empty(), "one choice");
+    let refused = [
+        (BO, listen_for(4, true)),
+        (CY, cut_for(4, None)),
+        (ADA, cut_for(2, Some(Notices::Off))),
+    ];
+    for (key, op) in refused {
+        assert_eq!(as_key(key, op), Err(code::UNAUTHORIZED.to_owned()));
+    }
+    assert_eq!(chosen(&chain, 4, "general"), (false, Some(Notices::Off)));
+    assert_eq!(chosen(&chain, 2, "general"), (false, None));
+    as_key(BO, cut_for(2, Some(Notices::Mentions))).unwrap();
+    assert_eq!(
+        chosen(&chain, 2, "general"),
+        (false, Some(Notices::Mentions))
+    );
+    as_key(ADA, cut_for(4, None)).unwrap();
+    assert_eq!(chosen(&chain, 4, "general"), (false, None));
 }

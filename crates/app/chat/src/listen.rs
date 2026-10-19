@@ -4,17 +4,22 @@
 //! are one choice, so each takes the other off. Short of either, an account is in a room once it
 //! writes in its timeline, sits in it (members-only) or opened it, and in a thread once it wrote
 //! the root, replied or was mentioned there ([`followed`]), from that message on.
-use ::program::{Error, ExecCtx, QueryCtx};
+use ::program::{Error, ExecCtx, QueryCtx, unauthorized, unexpected_reply};
+use abi::role::identity as role;
 
 use crate::attributed::mentioned;
 use crate::state::{
     CHANNELS, LISTENERS, LISTENING, MEMBERS, MENTIONED, NOTICES, PARTICIPANTS, POSTED, Stored,
-    channel, stored,
+    WATCHERS, WATCHING, channel, stored,
 };
 use crate::{AccountNumber, Followed, MsgRow, Notices, PageRequest, PageResponse, Principal};
 
-pub(crate) fn listen(ctx: &ExecCtx, channel_id: &str, listening: bool) -> Result<(), Error> {
-    let account = ctx.sender_account()?;
+pub(crate) fn listen(
+    ctx: &ExecCtx,
+    account: AccountNumber,
+    channel_id: &str,
+    listening: bool,
+) -> Result<(), Error> {
     channel(ctx, channel_id)?;
     let by_channel = (channel_id.to_owned(), account);
     let by_account = (account, channel_id.to_owned());
@@ -44,16 +49,81 @@ pub(crate) fn listened(
 
 pub(crate) fn set_notices(
     ctx: &ExecCtx,
+    account: AccountNumber,
     channel_id: &str,
     notices: Option<Notices>,
 ) -> Result<(), Error> {
-    listen(ctx, channel_id, false)?;
-    let by_account = (ctx.sender_account()?, channel_id.to_owned());
+    listen(ctx, account, channel_id, false)?;
+    let by_account = (account, channel_id.to_owned());
     match notices {
         Some(notices) => NOTICES.put(ctx, &by_account, &notices),
         None => NOTICES.remove(ctx, &by_account),
     }
     Ok(())
+}
+
+// who chooses for `account`: the account itself, or its manager in identity
+pub(crate) fn chooser(ctx: &ExecCtx, account: AccountNumber) -> Result<(), Error> {
+    let sender = ctx.sender_account()?;
+    if sender == account || manager(ctx, account)? == Some(sender) {
+        return Ok(());
+    }
+    Err(unauthorized(format!(
+        "what account {account} hears is its own choice or its manager's"
+    )))
+}
+
+fn manager(ctx: &QueryCtx, account: AccountNumber) -> Result<Option<AccountNumber>, Error> {
+    let identity = &ctx.env().role(abi::role::IDENTITY)?.clone();
+    let asked = role::Query::Profile(account);
+    match ctx.query::<role::Query, role::Reply>(identity, &asked)? {
+        role::Reply::Profile(profile) => Ok(profile.and_then(|profile| match profile.kind {
+            role::Kind::Program { manager, .. } => Some(manager),
+            role::Kind::User | role::Kind::System(_) => None,
+        })),
+        other => Err(unexpected_reply(identity, "Profile", &other)),
+    }
+}
+
+// the sender hears every new message of `channel_id` for a wait, apart from what it chose there
+pub(crate) fn watch(ctx: &ExecCtx, channel_id: &str, watching: bool) -> Result<(), Error> {
+    let account = ctx.sender_account()?;
+    channel(ctx, channel_id)?;
+    let by_channel = (channel_id.to_owned(), account);
+    let by_account = (account, channel_id.to_owned());
+    if !watching {
+        WATCHERS.remove(ctx, &by_channel);
+        WATCHING.remove(ctx, &by_account);
+        return Ok(());
+    }
+    if WATCHERS.has(ctx, &by_channel) {
+        return Ok(());
+    }
+    WATCHERS.put(ctx, &by_channel, &ctx.env().height);
+    WATCHING.insert(ctx, &by_account);
+    Ok(())
+}
+
+pub(crate) fn watched(
+    ctx: &QueryCtx,
+    account: AccountNumber,
+    page: &PageRequest,
+) -> Result<PageResponse<String>, Error> {
+    Ok(WATCHING
+        .range_of(ctx, &account, page)?
+        .map(|(_, channel_id)| channel_id))
+}
+
+pub(crate) fn chosen(
+    ctx: &QueryCtx,
+    account: AccountNumber,
+    channel_id: &str,
+) -> Result<crate::Reply, Error> {
+    let by_account = (account, channel_id.to_owned());
+    Ok(crate::Reply::Chosen {
+        listening: LISTENING.has(ctx, &by_account),
+        notices: NOTICES.get(ctx, &by_account)?,
+    })
 }
 
 pub(crate) fn notices_cut(
@@ -126,6 +196,15 @@ pub(crate) fn followed(
 pub(crate) fn listeners(ctx: &QueryCtx, row: &MsgRow) -> Result<Vec<AccountNumber>, Error> {
     let listening = LISTENERS.scan(ctx, LISTENERS.prefix_of(&row.channel_id))?;
     Ok(listening
+        .into_iter()
+        .filter(|(_, since)| *since <= row.height)
+        .map(|((_, account), _)| account)
+        .collect())
+}
+
+pub(crate) fn watchers(ctx: &QueryCtx, row: &MsgRow) -> Result<Vec<AccountNumber>, Error> {
+    let watching = WATCHERS.scan(ctx, WATCHERS.prefix_of(&row.channel_id))?;
+    Ok(watching
         .into_iter()
         .filter(|(_, since)| *since <= row.height)
         .map(|((_, account), _)| account)

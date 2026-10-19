@@ -654,6 +654,27 @@ impl Choice {
             },
         }
     }
+
+    // the op that makes it `channel_id`'s for `account`, which the reader manages
+    pub(crate) fn op_for(self, account: u64, channel_id: String) -> chat::Op {
+        match self {
+            Choice::Every => chat::Op::ListenFor {
+                account,
+                channel_id,
+                listening: true,
+            },
+            Choice::Default => chat::Op::SetNoticesFor {
+                account,
+                channel_id,
+                notices: None,
+            },
+            Choice::Cut(notices) => chat::Op::SetNoticesFor {
+                account,
+                channel_id,
+                notices: Some(notices),
+            },
+        }
+    }
 }
 
 /// What account `me` chose, room by room: a room not named is at

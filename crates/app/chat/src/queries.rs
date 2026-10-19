@@ -323,7 +323,9 @@ fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
         | Reply::ChannelIds(_)
         | Reply::Listening(_)
         | Reply::Notices(_)
-        | Reply::Followed(_) => vec![],
+        | Reply::Followed(_)
+        | Reply::Watching(_)
+        | Reply::Chosen { .. } => vec![],
     }
 }
 

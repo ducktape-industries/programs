@@ -239,6 +239,7 @@ fn the_manager_hears_one_line_for_a_blocks_cut_turns_and_a_bound_room_one_post()
 fn a_mention_from_someone_the_agent_does_not_answer_leaves_a_notice() {
     let world = world();
     let chain = &world.chain;
+    manager_only(&world);
     world.post(BO, "general", "m1", &format!("<@{}> psst", world.agent));
     let [row]: [ThreadRow; 1] = world.threads().try_into().unwrap();
     let [told]: [String; 1] = notices(chain, row.id).try_into().unwrap();

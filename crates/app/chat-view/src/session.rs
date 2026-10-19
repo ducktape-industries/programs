@@ -1,10 +1,13 @@
 //! Who reads: the session the host hands over (the seated key and the
 //! account it holds), and what that lets them do in the open room.
-use chat::Principal;
+use std::collections::BTreeMap;
+
+use chat::view::Names;
+use chat::{Kind, Principal};
 use view::prelude::*;
 
 use crate::Chat;
-use crate::notifier::choices;
+use crate::notifier::{Choice, choices};
 use crate::queries::{channels, ownerships, roster};
 use futures::FutureExt;
 
@@ -31,6 +34,7 @@ impl Chat {
         if reader_changed {
             self.load_names(cx);
             self.choices = Loadable::Idle;
+            self.managed_choices = Loadable::Idle;
             if self.details.is_some() {
                 self.load_choices(cx);
             }
@@ -81,10 +85,15 @@ impl Chat {
 
     /// What the reader chose for each room's notices, read again.
     pub(crate) fn load_choices(&mut self, cx: &mut Context<Self>) {
-        match self.my_account() {
-            Some(me) => cx.load(self, choices(cx.host(), me), |chat| &mut chat.choices),
-            None => self.choices = Loadable::Idle,
-        }
+        let Some(me) = self.my_account() else {
+            self.choices = Loadable::Idle;
+            self.managed_choices = Loadable::Idle;
+            return;
+        };
+        cx.load(self, choices(cx.host(), me), |chat| &mut chat.choices);
+        let known = self.names.ready().map(|names| managed_by(names, me));
+        let managed = managed_choices(cx.host(), me, known);
+        cx.load(self, managed, |chat| &mut chat.managed_choices);
     }
 
     pub(crate) fn load_channels(&mut self, cx: &mut Context<Self>) {
@@ -152,9 +161,46 @@ impl Chat {
 
     /// Why the agent `principal` would give the reader no answer
     /// ([`crate::names::unanswered`]).
+    // an agent harness doesn't run: what it answers is no rule of harness's
+    pub(crate) fn outside_harness(&self, principal: &Principal) -> bool {
+        let Some(names) = self.names.ready() else {
+            return false;
+        };
+        crate::message::agent(names, principal) && !crate::queries::run_by_harness(names, principal)
+    }
+
     pub(crate) fn unanswered(&self, principal: &Principal) -> Option<&'static str> {
         let names = self.names.ready()?;
         let ownerships = self.ownerships.ready()?;
         crate::names::unanswered(names, ownerships, principal, self.my_account()?)
     }
+}
+
+// the accounts `reader` manages in identity, in number order: it chooses their notices too
+fn managed_by(names: &Names, reader: u64) -> Vec<u64> {
+    let managed = |number: &u64| {
+        matches!(
+            names.kind(&Principal::Account(*number)),
+            Some(Kind::Program { manager, .. }) if *manager == reader
+        )
+    };
+    names.people().filter(managed).collect()
+}
+
+// what each account `reader` manages chose, room by room; `known` names them once the roster is
+// read, else the roster is read for them
+async fn managed_choices(
+    host: Host,
+    reader: u64,
+    known: Option<Vec<u64>>,
+) -> Result<Vec<(u64, BTreeMap<String, Choice>)>, Error> {
+    let accounts = match known {
+        Some(accounts) => accounts,
+        None => managed_by(&roster(host.clone()).await?, reader),
+    };
+    let mut chosen = Vec::new();
+    for account in accounts {
+        chosen.push((account, choices(host.clone(), account).await?));
+    }
+    Ok(chosen)
 }

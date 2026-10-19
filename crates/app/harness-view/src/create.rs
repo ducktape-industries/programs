@@ -48,8 +48,8 @@ pub(crate) struct Draft {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Answers {
-    #[default]
     Manager,
+    #[default]
     Anyone,
     Listed,
 }
@@ -259,7 +259,7 @@ impl Draft {
         }
         let answers_more = match self.again {
             true => (now.answers, &now.listed) != (was.answers, &was.listed),
-            false => form.ownership != Ownership::Owner,
+            false => form.ownership != Ownership::Anyone,
         };
         if answers_more && !self.answered {
             return Next::Answer(agent, form.ownership.clone());

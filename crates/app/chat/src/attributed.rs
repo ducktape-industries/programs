@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use ::program::{Error, ExecCtx, QueryCtx, Reply};
 use attribution::{Actor, Object, Reason, Relation, Update};
 
-use crate::listen::listeners;
+use crate::listen::{listeners, watchers};
 use crate::state::{PARTICIPANTS, message};
 use crate::{AccountNumber, Block, Mark, MsgRow, Principal, dm_peers};
 
@@ -15,6 +15,8 @@ pub const DIRECT: &str = "direct";
 pub const THREAD: &str = "thread";
 // each account listening to the message's channel that it relates to in no other way
 pub const LISTEN: &str = "listen";
+// each account watching the message's channel for a wait that it relates to in no other way
+pub const WATCH: &str = "watch";
 
 pub(crate) fn mentioned(blocks: &[Block]) -> impl Iterator<Item = AccountNumber> + '_ {
     blocks
@@ -51,6 +53,7 @@ pub fn relations(
     row: &MsgRow,
     thread: &[AccountNumber],
     listeners: &[AccountNumber],
+    watchers: &[AccountNumber],
 ) -> Vec<Relation> {
     if row.deleted {
         return Vec::new();
@@ -71,6 +74,12 @@ pub fn relations(
         let related = held.iter().any(|(account, _)| account == number);
         if !related {
             held.insert((*number, Reason::Defined(LISTEN.into())));
+        }
+    }
+    for number in watchers {
+        let related = held.iter().any(|(account, _)| account == number);
+        if !related {
+            held.insert((*number, Reason::Defined(WATCH.into())));
         }
     }
     held.into_iter()
@@ -95,8 +104,9 @@ pub(crate) fn report(
 ) -> Result<(), Error> {
     let thread = thread_before(ctx, row)?;
     let listening = listeners(ctx, row)?;
-    let after = relations(row, &thread, &listening);
-    let before = old.map(|old| relations(old, &thread, &listening));
+    let watching = watchers(ctx, row)?;
+    let after = relations(row, &thread, &listening, &watching);
+    let before = old.map(|old| relations(old, &thread, &listening, &watching));
     let unrelated = after.is_empty() && before.is_none_or(|before| before.is_empty());
     if unrelated {
         return Ok(());

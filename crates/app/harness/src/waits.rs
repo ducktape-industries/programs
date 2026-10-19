@@ -18,7 +18,7 @@ use crate::pictures::Picture;
 use crate::state::{
     ARMED, CHANGE_WAITS, ENDING, FILE_WAIT_COUNT, FILE_WAITS, FORGE_WAITS, FileWatch,
     MESSAGE_WAITS, POD_WAITS, PodWatch, REF_WAITS, SCHEDULED, THREADS, WAIT_COUNT, WAIT_ENTRIES,
-    WAIT_REFS, WAITING, WAITS,
+    WAIT_REFS, WAITING, WAITS, WATCHED,
 };
 use crate::turns::{bound, converse, request, say_with};
 use crate::{
@@ -130,7 +130,8 @@ pub(crate) async fn wait(ctx: &Ctx, thread_id: u64, event: WaitFor) -> Result<()
                 return Err(not_found(format!("chat holds no channel {channel}")));
             }
             MESSAGE_WAITS.insert(ctx, &(agent, (channel.clone(), id)));
-            listening::tell(ctx, agent, channel, true);
+            WATCHED.insert(ctx, &id);
+            listening::watch(ctx, agent, channel, true);
         }
         WaitFor::Change { repo, n } => {
             if let Some(source) = open_change(ctx, repo, *n)? {
@@ -221,7 +222,9 @@ fn disarm(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
         WaitFor::Height { .. } | WaitFor::Pod { .. } => {}
         WaitFor::Message { channel, .. } => {
             MESSAGE_WAITS.remove(ctx, &(row.agent, (channel.clone(), row.id)));
-            unlisten(ctx, row.agent, channel)?;
+            let watched = WATCHED.has(ctx, &row.id);
+            WATCHED.remove(ctx, &row.id);
+            unwatch(ctx, row.agent, channel, watched)?;
         }
         WaitFor::Change { repo, n } => {
             CHANGE_WAITS.remove(ctx, &((repo.clone(), *n), row.id));
@@ -312,22 +315,30 @@ pub(crate) fn message_waits(
     Ok(waits.into_iter().map(|(_, waited)| waited).collect())
 }
 
-// a channel no other wait needs and the agent's configuration doesn't name stops being listened
-// to, so what is said there after the wait reaches nobody
-fn unlisten(ctx: &ExecCtx, agent: AccountNumber, channel: &str) -> Result<(), Error> {
+// a channel no other wait needs stops being watched, so what is said there after the wait reaches
+// nobody; a wait armed before waits watched listened instead, and stops listening where the
+// agent's configuration doesn't name the channel
+fn unwatch(ctx: &ExecCtx, agent: AccountNumber, channel: &str, watched: bool) -> Result<(), Error> {
     let needed = message_waits(ctx, agent)?
         .iter()
         .any(|(waited, _)| waited == channel);
     if needed {
         return Ok(());
     }
+    if watched {
+        listening::watch(ctx, agent, channel, false);
+        return Ok(());
+    }
     let Some(harnessed) = harnessed_agent(ctx, agent)? else {
         return Ok(());
     };
     let configured = configured(ctx, &harnessed.path)?;
-    let named = configured
-        .config()
-        .is_some_and(|(_, config)| config.listen.iter().any(|listened| listened == channel));
+    let named = configured.config().is_some_and(|(_, config)| {
+        config
+            .listen
+            .iter()
+            .any(|entry| listening::names(entry, channel))
+    });
     if !named {
         listening::tell(ctx, agent, channel, false);
     }

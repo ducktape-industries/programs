@@ -57,17 +57,21 @@ pub(super) fn card(
             theme.agent_soft,
         ));
     }
-    let answers = chat
-        .ownerships
-        .ready()
-        .and_then(|ownerships| ownerships.get(&account))
-        .map(|ownership| {
-            div()
-                .id("chat-card-answers")
-                .text_size(design::text::SECONDARY)
-                .text_color(theme.muted)
-                .child(crate::names::answers(names, ownership))
-        });
+    let answers = match chat.outside_harness(&author) {
+        true => Some(crate::words::OUTSIDE_HARNESS.to_owned()),
+        false => chat
+            .ownerships
+            .ready()
+            .and_then(|ownerships| ownerships.get(&account))
+            .map(|ownership| crate::names::answers(names, ownership)),
+    };
+    let answers = answers.map(|line| {
+        div()
+            .id("chat-card-answers")
+            .text_size(design::text::SECONDARY)
+            .text_color(theme.muted)
+            .child(line)
+    });
     let open = |link: String| {
         Some(Box::new(cx.listener(move |chat, _: &ClickEvent, _, cx| {
             chat.close_menu();

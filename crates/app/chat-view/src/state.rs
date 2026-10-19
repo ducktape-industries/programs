@@ -25,6 +25,9 @@ pub struct Chat {
     /// details are open; a room not named is at its default
     #[serde(skip)]
     pub(crate) choices: Loadable<BTreeMap<String, crate::notifier::Choice>>,
+    // each account the reader manages, with what it chose for each room, read with the reader's
+    #[serde(skip)]
+    pub(crate) managed_choices: Loadable<Vec<(u64, BTreeMap<String, crate::notifier::Choice>)>>,
     pub(crate) room: Option<Room>,
     pub(crate) drafts: BTreeMap<String, Draft>,
     /// the banner over the room: the last refusal, until the reader moves on
@@ -412,6 +415,9 @@ pub struct Details {
     /// the notices choice the arrows are on, until one is chosen
     #[serde(default)]
     pub(crate) notices_at: Option<usize>,
+    // the choice the arrows are on in each managed account's group, until one is chosen
+    #[serde(default)]
+    pub(crate) managed_at: BTreeMap<u64, usize>,
     /// the sheet open over the phone's details page
     pub(crate) sheet: Option<DetailsSheet>,
 }

@@ -48,7 +48,7 @@ pub(crate) async fn ownerships(
 ) -> Result<BTreeMap<u64, Ownership>, Error> {
     let agents = names
         .people()
-        .filter(|number| crate::message::agent(names, &Principal::Account(*number)));
+        .filter(|number| run_by_harness(names, &Principal::Account(*number)));
     let asks = agents.map(|number| {
         let host = host.clone();
         async move {
@@ -58,7 +58,8 @@ pub(crate) async fn ownerships(
                     key: harness::agent_key(number),
                 })
                 .await?;
-            let ownership = list.unwrap_or(Ownership::Owner);
+            // an agent with no list answers anyone
+            let ownership = list.unwrap_or(Ownership::Anyone);
             Ok::<_, Error>((number, ownership))
         }
     });
@@ -241,4 +242,17 @@ pub(crate) async fn search_hits(
             Ok((hits, capped, None))
         }
     }
+}
+
+// an agent whose script calls harness: harness keeps whom it answers; any other agent runs
+// outside harness, and no rule of harness's says whom it answers
+pub(crate) fn run_by_harness(names: &Names, principal: &Principal) -> bool {
+    matches!(
+        names.kind(principal),
+        Some(chat::Kind::Program {
+            category: chat::Category::Agent,
+            script: Some(script),
+            ..
+        }) if script.calls == harness::PROGRAM
+    )
 }

@@ -319,7 +319,7 @@ pub(crate) async fn detail(host: Host, agent: u64) -> Result<Detail, Error> {
             key: harness::agent_key(agent),
         })
         .await?
-        .unwrap_or(Ownership::Owner);
+        .unwrap_or(Ownership::Anyone);
     let config_writers = match &setup {
         Some(setup) => Some(
             host.query(access::ask::Writers {

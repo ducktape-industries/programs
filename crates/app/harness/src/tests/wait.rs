@@ -392,15 +392,28 @@ fn channel(world: &World, id: &str) {
         .unwrap();
 }
 
-fn listens(chain: &MockChain, agent: AccountNumber, channel: &str) -> bool {
-    let asked = chat::Query::Listening {
+fn watches(chain: &MockChain, agent: AccountNumber, channel: &str) -> bool {
+    let asked = chat::Query::Watching {
         account: agent,
         page: PageRequest::default(),
     };
-    let chat::Reply::Listening(page) = chain.query(chat::PROGRAM, &asked).unwrap() else {
-        panic!("chat answers what an account listens to")
+    let chat::Reply::Watching(page) = chain.query(chat::PROGRAM, &asked).unwrap() else {
+        panic!("chat answers what an account watches")
     };
-    page.items.iter().any(|listened| listened == channel)
+    page.items.iter().any(|watched| watched == channel)
+}
+
+fn cut(chain: &MockChain, agent: AccountNumber, channel: &str) -> Option<chat::Notices> {
+    let asked = chat::Query::Chosen {
+        account: agent,
+        channel_id: channel.into(),
+    };
+    let chat::Reply::Chosen { listening, notices } = chain.query(chat::PROGRAM, &asked).unwrap()
+    else {
+        panic!("chat answers what an account chose")
+    };
+    assert!(!listening, "a wait never listens");
+    notices
 }
 
 fn message(channel: &str, rest: Value) -> Value {
@@ -427,7 +440,7 @@ fn a_wait_for_a_message_wakes_once_on_the_first_that_matches_whoever_writes_it()
     turn(&world, 3, &[("w1", "wait_for", wanted)]);
     let wait = waited(chain, thread, "w1");
     assert_eq!(asking(chain), 0, "the turn that armed a wait ends");
-    assert!(listens(chain, world.agent, "random"), "chat tells harness");
+    assert!(watches(chain, world.agent, "random"), "chat tells harness");
 
     chain.at(5, 0);
     world.post(ADA, "general", "g1", "elsewhere");
@@ -452,8 +465,8 @@ fn a_wait_for_a_message_wakes_once_on_the_first_that_matches_whoever_writes_it()
         "a person the agent doesn't answer still ends it"
     );
     assert!(
-        !listens(chain, world.agent, "random"),
-        "the wait's listening ends with it"
+        !watches(chain, world.agent, "random"),
+        "the wait's watching ends with it"
     );
 
     ended_turn(chain, 6);
@@ -496,7 +509,7 @@ fn a_wait_for_a_message_to_the_agent_is_ended_by_a_mention_heard_once() {
 }
 
 #[test]
-fn a_cancelled_message_wait_stops_listening_and_an_unknown_channel_is_refused() {
+fn a_cancelled_message_wait_stops_watching_and_an_unknown_channel_is_refused() {
     let world = schemed();
     let chain = &world.chain;
     channel(&world, "random");
@@ -509,13 +522,13 @@ fn a_cancelled_message_wait_stops_listening_and_an_unknown_channel_is_refused() 
     let wait = waited(chain, thread, "w1");
     let text = refused(chain, thread, "w2");
     assert!(text.contains("chat holds no channel nowhere"), "{text}");
-    assert!(listens(chain, world.agent, "random"));
+    assert!(watches(chain, world.agent, "random"));
 
     chain.at(5, 0);
     world.mention("m2", "never mind");
     turn(&world, 6, &[("c1", "wait_cancel", json!({ "wait": wait }))]);
     assert_eq!(answered(chain, thread, "c1"), json!({ "ok": true }));
-    assert!(!listens(chain, world.agent, "random"));
+    assert!(!watches(chain, world.agent, "random"));
     ended_turn(chain, 8);
     chain.at(9, 0);
     world.post(BO, "random", "r1", "hello?");
@@ -568,4 +581,50 @@ fn the_forge_prefix_decodes_as_forged() {
     let mut delivered = forged_as();
     delivered.extend(abi::encode(&event));
     assert_eq!(abi::decode::<Op>(&delivered).unwrap(), Op::Forged(event));
+}
+
+// a room the agent turned off brings it nothing, but a wait it armed there still ends with the one
+// message it waited for, and watching for the wait leaves the agent's choice as it was
+#[test]
+fn a_wait_in_a_room_turned_off_ends_with_its_message_and_nothing_else_arrives() {
+    let world = schemed();
+    let chain = &world.chain;
+    channel(&world, "random");
+    let off = chat::Op::SetNoticesFor {
+        account: world.agent,
+        channel_id: "random".into(),
+        notices: Some(chat::Notices::Off),
+    };
+    chain.submit(signed(ADA), chat::PROGRAM, &off).unwrap();
+    let thread = world.opened("m1", "wake me when Bo writes in random", Some(WINDOW));
+    let wanted = message("random", json!({ "from": world.bo }));
+    turn(&world, 3, &[("w1", "wait_for", wanted)]);
+    let wait = waited(chain, thread, "w1");
+    assert!(watches(chain, world.agent, "random"));
+    assert_eq!(cut(chain, world.agent, "random"), Some(chat::Notices::Off));
+
+    chain.at(5, 0);
+    let early = format!("<@{}> are you there?", world.agent);
+    world.post(ADA, "random", "r1", &early);
+    assert!(wakes(chain, thread).is_empty());
+    assert_eq!(asking(chain), 0, "an off room asks nothing");
+    world.post(BO, "random", "r2", "Bo is here");
+    let [wake] = wakes(chain, thread).try_into().expect("one wake");
+    assert!(wake.starts_with(&format!("Wait {wait} is over")), "{wake}");
+    assert!(wake.ends_with("Bo is here"), "{wake}");
+    assert!(!watches(chain, world.agent, "random"));
+    assert_eq!(cut(chain, world.agent, "random"), Some(chat::Notices::Off));
+
+    ended_turn(chain, 6);
+    chain.at(7, 0);
+    let late = format!("<@{}> and now?", world.agent);
+    world.post(ADA, "random", "r3", &late);
+    let leaked = frames(chain, thread)
+        .into_iter()
+        .chain(held(chain, thread))
+        .filter(|body| body.text().contains("are you there") || body.text().contains("and now"))
+        .count();
+    assert_eq!(leaked, 0, "nothing else of the room arrives");
+    assert_eq!(world.threads().len(), 1);
+    assert_eq!(asking(chain), 0);
 }

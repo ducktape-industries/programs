@@ -105,6 +105,10 @@ pub const TRIED: Set<(u64, (String, String))> = Set::new("tried/").shared();
 pub const REFUSED: Map<(String, String), Option<u64>> = Map::new("refused/").shared();
 // who answered each of a thread's turns and summaries, by frame
 pub const ANSWERED: Map<(u64, u64), crate::Answerer> = Map::new("answered/").shared();
+// the rooms harness seeded from an agent's `listen` (`listening::seed`): chat's choice stands after
+pub const SEEDED: Set<(AccountNumber, String)> = Set::new("seeded/").shared();
+// message waits that watch their room (`Op::Watch`); one armed before that listened instead
+pub const WATCHED: Set<u64> = Set::new("wait-watched/").shared();
 
 // a wait for a files path: the path, and its node when the wait was armed (none: nothing there)
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -466,4 +470,6 @@ pub(crate) const TABLES: &[::program::Table] = &[
     TRIED.table(),
     REFUSED.table(),
     ANSWERED.table(),
+    SEEDED.table(),
+    WATCHED.table(),
 ];

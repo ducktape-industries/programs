@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 
 pub const FENCE: &str = "+++";
 
-// `listen` names the chat channels the agent hears every message of, and `settle` how long, in
+// `listen` names the chat channels harness starts the agent hearing every message of, once each
+// (chat's per-room choice stands after that), an entry ending in `*` every open room whose id
+// starts with what comes before it, and `settle` how long, in
 // milliseconds, its general input waits for more before a turn, and `compact_at` the tokens of
 // context at which its conversations start compacting
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]

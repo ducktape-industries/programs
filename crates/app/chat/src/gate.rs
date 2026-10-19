@@ -31,7 +31,10 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::MigrateSome { .. }
         | Op::Listen { .. }
         | Op::SetNotices { .. }
-        | Op::AdoptOwners { .. } => Vec::new(),
+        | Op::AdoptOwners { .. }
+        | Op::ListenFor { .. }
+        | Op::SetNoticesFor { .. }
+        | Op::Watch { .. } => Vec::new(),
     }
 }
 

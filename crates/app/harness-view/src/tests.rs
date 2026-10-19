@@ -376,7 +376,7 @@ impl Default for Net {
                 nodes: vec![vec![1], vec![2]],
                 registered: 5,
             }],
-            answers: Vec::new(),
+            answers: vec![(SCOUT, identity::Ownership::Owner)],
             rooms: ["general", "release", "deploys"]
                 .map(|room| (room.to_owned(), room.to_owned()))
                 .into(),
@@ -1174,7 +1174,7 @@ fn the_create_flow_sends_its_ops_in_order() {
     assert!(cx.has_text("anthropic · 200K window"), "{:?}", cx.texts());
     cx.simulate_input("create-name", "Rover");
     fill(&mut cx);
-    cx.simulate_click("create-answers-1");
+    cx.simulate_click("create-answers-0");
     cx.simulate_click("create-next");
     cx.run_until_parked();
     assert_eq!(
@@ -1205,7 +1205,7 @@ fn the_create_flow_sends_its_ops_in_order() {
         cx.host().requests::<Submit<access::Access>>(),
         [
             kept("/home/Eddy/agents/rover.md"),
-            answering(ROVER, identity::Ownership::Anyone),
+            answering(ROVER, identity::Ownership::Owner),
         ]
     );
     assert!(cx.host().requests::<Submit<harness::Harness>>().is_empty());
@@ -1944,4 +1944,33 @@ fn export_harness_screens() {
         serde_json::to_vec_pretty(&manifest).unwrap(),
     )
     .unwrap();
+}
+
+// an agent with no list on its key answers anyone, and a new agent's form starts there: it sets no
+// list unless the manager narrows it
+#[test]
+fn an_agent_with_no_list_answers_anyone_and_a_new_one_starts_open() {
+    let net = Net {
+        answers: Vec::new(),
+        ..Net::default()
+    };
+    let (mut cx, _) = seated(net, EDDY);
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    assert!(!cx.has_text("Its manager only"), "{:?}", cx.texts());
+    assert!(cx.has_text("Anyone"), "{:?}", cx.texts());
+
+    let (mut cx, _) = seated(Net::default(), EDDY);
+    identity_takes(&cx);
+    files_take(&cx);
+    cx.simulate_click("agents-create");
+    cx.run_until_parked();
+    cx.simulate_input("create-name", "Rover");
+    fill(&mut cx);
+    cx.simulate_click("create-next");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.host().requests::<Submit<access::Access>>(),
+        [kept("/home/Eddy/agents/rover.md")]
+    );
 }

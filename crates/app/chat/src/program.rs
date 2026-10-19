@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
-use crate::listen::{followed, listen, listened, notices_cut, set_notices};
+use crate::listen::{
+    chooser, chosen, followed, listen, listened, notices_cut, set_notices, watch, watched,
+};
 use crate::ops::{
     create_channel, delete, edit, open_dm, post, react, remove_meta, rename, set_archived,
     set_membership, set_meta,
@@ -88,15 +90,35 @@ impl Program for Chat {
             Op::Listen {
                 channel_id,
                 listening,
-            } => listen(ctx, &channel_id, listening),
+            } => listen(ctx, ctx.sender_account()?, &channel_id, listening),
             Op::MigrateSome { .. } => Ok(()),
             Op::SetNotices {
                 channel_id,
                 notices,
-            } => set_notices(ctx, &channel_id, notices),
+            } => set_notices(ctx, ctx.sender_account()?, &channel_id, notices),
             Op::AdoptOwners { kind, after, limit } => {
                 crate::adopt::adopt_owners(ctx, &kind, after, limit)
             }
+            Op::ListenFor {
+                account,
+                channel_id,
+                listening,
+            } => {
+                chooser(ctx, account)?;
+                listen(ctx, account, &channel_id, listening)
+            }
+            Op::SetNoticesFor {
+                account,
+                channel_id,
+                notices,
+            } => {
+                chooser(ctx, account)?;
+                set_notices(ctx, account, &channel_id, notices)
+            }
+            Op::Watch {
+                channel_id,
+                watching,
+            } => watch(ctx, &channel_id, watching),
         }
     }
 
@@ -188,6 +210,13 @@ impl Program for Chat {
                 Reply::Followed(followed(ctx, channel_id, account, &roots)?),
                 vec![],
             ),
+            Query::Watching { account, page } => {
+                (Reply::Watching(watched(ctx, account, &page)?), vec![])
+            }
+            Query::Chosen {
+                account,
+                channel_id,
+            } => (chosen(ctx, account, &channel_id)?, vec![]),
         };
         seen_by(ctx, reply, viewer)
     }
