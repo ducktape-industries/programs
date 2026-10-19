@@ -68,6 +68,17 @@ image = "toolchain"
 steps = ["make review"]
 "#;
 
+// A job no container runs: the `claude` runner is its own environment.
+const CLAUDE: &str = r#"
+[on]
+change = ["opened"]
+
+[[jobs]]
+id = "review"
+runs-on = ["claude"]
+steps = ["Review the diff."]
+"#;
+
 // A program runner: it registers with actions and keeps each check it is offered.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 enum Runs {
@@ -641,4 +652,76 @@ fn a_change_that_does_not_preview_makes_an_errored_run_that_says_why() {
     let error = run.error.unwrap();
     assert!(error.starts_with("change 1 does not preview: "), "{error}");
     assert!(world.checks(feature).is_empty());
+}
+
+#[test]
+fn an_account_registers_as_a_runner_hears_no_offer_and_claims_and_reports_what_it_finds_queued() {
+    let mut world = world();
+    let root = world.commit(&[], &[("changes.toml", CLAUDE)]);
+    world.push(None, root, "main");
+    world
+        .act(&Op::Register {
+            labels: vec!["claude".into()],
+            deliver: Vec::new(),
+        })
+        .unwrap();
+    let Reply::Runners(runners) = world
+        .chain
+        .query(
+            PROGRAM,
+            &Query::Runners {
+                page: PageRequest::default(),
+            },
+        )
+        .unwrap()
+    else {
+        panic!("runners answer Runners");
+    };
+    let runner = RunnerRow {
+        account: OWNER_ACCOUNT,
+        labels: vec!["claude".into()],
+        program: None,
+        deliver: Vec::new(),
+    };
+    assert_eq!(runners.items, [runner]);
+    world
+        .act(&Op::Trigger {
+            repo: REPO.into(),
+            commit: root.to_hex(),
+        })
+        .unwrap();
+    let Reply::Queued(queued) = world
+        .chain
+        .query(
+            PROGRAM,
+            &Query::Queued {
+                page: PageRequest::default(),
+            },
+        )
+        .unwrap()
+    else {
+        panic!("queued answers Queued");
+    };
+    let found: Vec<(u64, &[String])> = queued
+        .items
+        .iter()
+        .map(|check| (check.id, check.job.runs_on.as_slice()))
+        .collect();
+    assert_eq!(found, [(1, ["claude".to_owned()].as_slice())]);
+    assert!(world.offers().is_empty(), "an account is sent no offer");
+    world.act(&Op::Claim { check: 1 }).unwrap();
+    let report = Op::Report {
+        check: 1,
+        state: State::Failed,
+        summary: "1 finding".into(),
+        log: Some("/shared/actions/project/log".into()),
+    };
+    world.act(&report).unwrap();
+    let check = world.check(1);
+    assert_eq!(
+        (check.state, check.claimant, check.reporter),
+        (State::Failed, Some(OWNER_ACCOUNT), Some(OWNER_ACCOUNT))
+    );
+    let told = ("changes.toml#review".to_owned(), forge::CheckState::Failed);
+    assert_eq!(world.statuses(root), [told]);
 }

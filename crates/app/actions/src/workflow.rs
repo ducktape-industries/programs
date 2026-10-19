@@ -1,6 +1,6 @@
-//! A workflow file, `.forge/workflows/<name>.toml`: the events that run it (`on.push` names
-//! branches, `on.change` takes "opened" and "updated": either runs it on each Preview of a change),
-//! its jobs, each run as one check, and the chat channel `notify.channel` told of a push's red one.
+//! A workflow file, `.forge/workflows/<name>.toml`: the events that run it (`on.push` branches,
+//! `on.change` "opened"/"updated": each Preview of a change), its jobs, each run as one check
+//! (`image` only for a runner that makes a container), and `notify.channel`, told of a red push.
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
@@ -37,6 +37,8 @@ struct On {
 struct JobFile {
     id: String,
     runs_on: Vec<String>,
+    // empty for a runner that is its own environment (an account runner such as `claude`)
+    #[serde(default)]
     image: String,
     steps: Vec<String>,
     #[serde(default)]
