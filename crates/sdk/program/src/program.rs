@@ -26,7 +26,8 @@ pub trait Program {
     type Reply: BorshSerialize + BorshDeserialize;
 
     // What each op variant's output is the borsh of, for whoever reads the program's schema
-    // (`schema::returns::<T>("Variant")`). An op left out returns bytes no schema names.
+    // (`Op::RETURNS`, from each `#[tool_op(returns = T)]`, or `schema::returns::<T>("Variant")`).
+    // An op left out returns bytes no schema names.
     const RETURNS: &'static [crate::schema::Return] = &[];
 
     // The tables its state holds, as the kernel's ownership guard reads them (each `store`
@@ -34,9 +35,11 @@ pub trait Program {
     // table is owned.
     const TABLES: &'static [crate::Table] = &[];
 
-    // What the program tells an agent about each op and query (`tools::Tools::new`); `export!`
-    // writes it as the `ducktape.tools` section. Nothing by default.
-    const TOOLS: crate::tools::Tools = crate::tools::Tools::NONE;
+    // What the program tells an agent about each op and query: `tools::Tools::of::<Op, Query>()`
+    // over `#[derive(Described)]`. founding writes it as the `ducktape.tools` section.
+    fn tools() -> crate::tools::Tools {
+        crate::tools::Tools::default()
+    }
 
     /// Genesis, with the params the network was founded with. Nothing by
     /// default; override only where genesis needs it.
@@ -271,7 +274,6 @@ macro_rules! export {
         }
 
         $crate::tables_section!($program);
-        $crate::tools_section!($program);
     };
 }
 

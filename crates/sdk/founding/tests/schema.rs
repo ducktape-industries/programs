@@ -87,5 +87,6 @@ fn a_program_with_no_schema_is_refused_by_name() {
     let release = tempfile::tempdir().unwrap();
     assert!(founding::write_schemas(release.path(), &["chat"]).is_ok());
     assert!(release.path().join("chat.schema").exists());
+    assert!(release.path().join("chat.tools").exists());
     assert!(founding::write_schemas(release.path(), &["nowhere"]).is_err());
 }

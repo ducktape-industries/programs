@@ -52,7 +52,7 @@ BUILD_TARGET := $(abspath $(or $(CARGO_TARGET_DIR),target))
 WASM_PROFILE = release
 WASM_OUT = $(BUILD_TARGET)/wasm32-unknown-unknown/$(WASM_PROFILE)
 # The artifacts wasm-modules leaves there (the target dir may hold others).
-ARTIFACTS := $(foreach a,$(PROGRAMS) $(VIEWS),$(subst -,_,$(a)).wasm) $(foreach p,$(PROGRAMS),$(subst -,_,$(p)).describe.wasm) $(foreach p,$(PROGRAMS),$(p).schema) $(foreach v,$(NOTIFIERS),$(subst -,_,$(v)).notify.wasm)
+ARTIFACTS := $(foreach a,$(PROGRAMS) $(VIEWS),$(subst -,_,$(a)).wasm) $(foreach p,$(PROGRAMS),$(subst -,_,$(p)).describe.wasm) $(foreach p,$(PROGRAMS),$(p).schema $(p).tools) $(foreach v,$(NOTIFIERS),$(subst -,_,$(v)).notify.wasm)
 
 # A wasm artifact is the same bytes from any checkout on any machine of one
 # host triple: panic locations would otherwise carry this checkout's, cargo's
@@ -181,8 +181,9 @@ $(addprefix wasm-describes/,$(PROGRAMS)): wasm-describes/%:
 .PHONY: wasm-schemas
 
 ## writes every program's schema (its Op, Query and Reply as one borsh schema
-## container, from its crate linked natively) into $(WASM_OUT)/<name>.schema.
-## A founding packs each as the `ducktape.schema` section of its program.
+## container, from its crate linked natively) into $(WASM_OUT)/<name>.schema,
+## and what it tells agents of each op and query into $(WASM_OUT)/<name>.tools.
+## A founding packs them as the `ducktape.schema` and `ducktape.tools` sections.
 wasm-schemas:
 	@mkdir -p $(WASM_OUT)
 	@$(CARGO) run --locked -p founding --bin schemas -- $(WASM_OUT) $(PROGRAMS)

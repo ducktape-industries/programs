@@ -13,12 +13,7 @@ pub fn shape(
     roots: &[(&str, &str)],
     returns: Option<&[(&str, &str)]>,
 ) -> Result<Value, Fault> {
-    let mut shaper = Shaper {
-        schema,
-        named: BTreeMap::new(),
-        pending: Vec::new(),
-        inlining: BTreeSet::new(),
-    };
+    let mut shaper = Shaper::new(schema);
     let mut out = Map::new();
     for (name, declaration) in roots {
         out.insert((*name).to_owned(), shaper.expr(declaration)?);
@@ -30,13 +25,43 @@ pub fn shape(
         }
         out.insert("returns".to_owned(), Value::Object(returned));
     }
-    while let Some(declaration) = shaper.pending.pop() {
-        let defined = shaper.definition(declaration)?;
-        shaper.named.insert(declaration.to_owned(), defined);
-    }
-    let types: Map<String, Value> = shaper.named.into_iter().collect();
-    out.insert("types".to_owned(), Value::Object(types));
+    out.insert("types".to_owned(), shaper.finish()?);
     Ok(Value::Object(out))
+}
+
+// Variant `name` of enum `declaration` as a value of it is written (`{"Variant": body}`, or
+// `"Variant"` for one that holds nothing) under `returns`, with each type it reaches under `types`.
+pub fn variant_shape<'s>(
+    schema: &'s BorshSchemaContainer,
+    declaration: &'s str,
+    name: &str,
+) -> Result<Value, Fault> {
+    let Kind::Enum { variants, .. } = kind(schema, declaration)? else {
+        return Err(Fault::Undefined {
+            declaration: format!("{declaration}::{name}"),
+        });
+    };
+    let Some((_, _, body)) = variants.iter().find(|(_, variant, _)| variant == name) else {
+        return Err(Fault::UnknownVariant {
+            at: declaration.to_owned(),
+            variant: name.to_owned(),
+            known: variants.iter().map(|(_, known, _)| known.clone()).collect(),
+        });
+    };
+    let mut shaper = Shaper::new(schema);
+    let fields = payload(schema, body);
+    let shaped = match (unit_variant(fields), fields) {
+        (true, _) => json!(name),
+        (false, Some(fields)) => one(name, shaper.fields(fields)?),
+        (false, None) => one(name, shaper.expr(body)?),
+    };
+    Ok(json!({ "returns": shaped, "types": shaper.finish()? }))
+}
+
+fn one(name: &str, body: Value) -> Value {
+    let mut object = Map::new();
+    object.insert(name.to_owned(), body);
+    Value::Object(object)
 }
 
 struct Shaper<'s> {
@@ -47,6 +72,24 @@ struct Shaper<'s> {
 }
 
 impl<'s> Shaper<'s> {
+    fn new(schema: &'s BorshSchemaContainer) -> Shaper<'s> {
+        Shaper {
+            schema,
+            named: BTreeMap::new(),
+            pending: Vec::new(),
+            inlining: BTreeSet::new(),
+        }
+    }
+
+    // Each type named so far, defined, with the ones their definitions name in turn.
+    fn finish(mut self) -> Result<Value, Fault> {
+        while let Some(declaration) = self.pending.pop() {
+            let defined = self.definition(declaration)?;
+            self.named.insert(declaration.to_owned(), defined);
+        }
+        Ok(Value::Object(self.named.into_iter().collect()))
+    }
+
     fn expr(&mut self, declaration: &'s str) -> Result<Value, Fault> {
         let kind = kind(self.schema, declaration)?;
         let by_name = matches!(kind, Kind::Struct(_) | Kind::Enum { .. })

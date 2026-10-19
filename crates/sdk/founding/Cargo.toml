@@ -7,6 +7,7 @@ default-run = "founding"
 [dependencies]
 abi = { workspace = true }
 borsh = { workspace = true }
+borsh-json = { workspace = true }
 program = { workspace = true }
 programs = { workspace = true }
 valset = { workspace = true }
@@ -30,6 +31,5 @@ wasm-encoder = "0.251"
 wasmparser = "0.251"
 
 [dev-dependencies]
-borsh-json = { workspace = true }
 tempfile = { workspace = true }
 toml = "0.9"

@@ -1,6 +1,6 @@
-//! Each program's interface schema and what it tells agents (`Program::TOOLS`), from its crate
-//! linked natively with `program` off: what `schemas RELEASE` writes as `<program>.schema` and the
-//! bundle packs as `ducktape.schema`.
+//! Each program's interface schema and what it tells agents (`Program::tools`), from its crate
+//! linked natively with `program` off: what `schemas RELEASE` writes as `<program>.schema` and
+//! `<program>.tools`, which the bundle packs as `ducktape.schema` and `ducktape.tools`.
 use std::fs;
 use std::path::Path;
 
@@ -50,22 +50,25 @@ where
     P::Query: BorshSchema,
     P::Reply: BorshSchema,
 {
-    (program::schema::interface::<P>(), P::TOOLS)
+    (program::schema::interface::<P>(), P::tools())
 }
 
 pub fn write_schemas(release: &Path, programs: &[impl AsRef<str>]) -> Result<()> {
     fs::create_dir_all(release)?;
     for program in programs {
         let program = program.as_ref();
-        let schema = schema(program).ok_or_else(|| {
+        let (schema, tools) = interface(program).ok_or_else(|| {
             format!(
                 "{program} has no schema: name its interface in crates/sdk/founding/src/schema.rs"
             )
         })?;
-        fs::write(
-            release.join(format!("{program}.schema")),
-            borsh::to_vec(&schema)?,
-        )?;
+        let schema = borsh::to_vec(&schema)?;
+        let read = borsh_json::Interface::read(&schema)
+            .map_err(|why| format!("{program}'s schema {why}"))?;
+        let tools = borsh_json::tools::section(&read, &tools)
+            .map_err(|why| format!("{program}'s tools: {why}"))?;
+        fs::write(release.join(format!("{program}.schema")), schema)?;
+        fs::write(release.join(format!("{program}.tools")), tools)?;
     }
     Ok(())
 }

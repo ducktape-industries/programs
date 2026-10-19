@@ -1,8 +1,8 @@
 use borsh_json::Interface;
-use borsh_json::tools::{check, read};
+use borsh_json::tools::{check, read, section};
 
-// Programs whose ops and queries are not described yet. Each leaves the list as its
-// `Program::TOOLS` lands, and from then on every op and query it has is held to its schema.
+// Programs whose ops and queries are not described yet. Each leaves the list as its enums derive
+// `Described`, and from then on every op and query it has is held to its schema.
 const UNDESCRIBED: &[&str] = &[
     "programs",
     "valset",
@@ -46,8 +46,8 @@ fn every_program_describes_each_op_and_query_with_examples_of_its_own() {
         }
         let schema = borsh::to_vec(&founding::schema(program).unwrap()).unwrap();
         let interface = Interface::read(&schema).unwrap();
-        let described = read(&program::tools::json(&tools)).unwrap();
-        let problems = check(&interface, &described);
+        let written = section(&interface, &tools).unwrap_or_else(|why| panic!("{program}: {why}"));
+        let problems = check(&interface, &read(&written).unwrap());
         assert!(problems.is_empty(), "{program}: {problems:#?}");
     }
 }
@@ -57,4 +57,19 @@ fn undescribed_names_only_programs_a_founding_packs() {
     for program in UNDESCRIBED {
         assert!(every().any(|known| known == *program), "{program}");
     }
+}
+
+#[test]
+fn a_program_is_packed_with_the_tools_section_schemas_writes() {
+    let release = tempfile::tempdir().unwrap();
+    founding::write_schemas(release.path(), &["chat"]).unwrap();
+    let written = std::fs::read(release.path().join("chat.tools")).unwrap();
+    assert!(read(&written).is_ok());
+    let module = b"\0asm\x01\0\0\0".to_vec();
+    let packed = founding::embed_tools(&module, &written).unwrap();
+    assert_eq!(
+        founding::section(&packed, founding::TOOLS_SECTION).unwrap(),
+        Some(written)
+    );
+    assert!(founding::embed_tools(&module, b"[]").is_err());
 }

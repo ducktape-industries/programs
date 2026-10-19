@@ -1,5 +1,5 @@
-//! `schemas RELEASE PROGRAM...`: writes `<program>.schema` for each program named, which the
-//! bundle packs.
+//! `schemas RELEASE PROGRAM...`: writes `<program>.schema` and `<program>.tools` for each program
+//! named, which the bundle packs.
 
 use std::path::PathBuf;
 use std::process::ExitCode;

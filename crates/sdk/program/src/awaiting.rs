@@ -316,6 +316,5 @@ macro_rules! export_awaiting {
         }
 
         $crate::tables_section!($program);
-        $crate::tools_section!($program);
     };
 }

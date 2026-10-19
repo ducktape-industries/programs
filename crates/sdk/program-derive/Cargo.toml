@@ -4,7 +4,8 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
-# `#[derive(program::Ask)]`: a program's queries, each asked alone.
+# `#[derive(program::Ask)]`: a program's queries, each asked alone; `#[derive(program::Described)]`:
+# each op and query as the program tells an agent.
 [lib]
 proc-macro = true
 

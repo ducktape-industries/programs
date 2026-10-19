@@ -98,34 +98,46 @@ the type each op variant's output is the borsh of:
 reads such an op's output back as JSON. An op left out (or one whose output
 is no one borsh type) answers its bytes as hex.
 
-**Each op and query says what it does, to an agent.** `impl Program` gives
-a line on what the program is for and, for each `Op` and `Query` variant,
-what it does, with an example to edit:
+**Each op and query says what it does, to an agent.** `#[derive(program::Described)]`
+on `Op` and on `Query` lists every variant, in order, with what its one
+attribute tells: never a `///` comment.
 
 ```rust
-const TOOLS: Tools = Tools::new(
-    "Polls anyone opens and closes.",
-    &[
-        op("Open", "Open a poll with its choices. Anyone may.")
-            .example(r#"{"Open":{"id":"lunch","choices":["noodles","rice"]}}"#),
-        query("Poll", "One poll by id, or null."),
-    ],
-);
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, program::Described)]
+#[tool_about("Polls anyone opens and closes.")]
+pub enum Op {
+    #[tool_op(
+        description = "Open a poll with its choices. Anyone may.",
+        returns = u64,
+        example = examples::open
+    )]
+    Open { id: String, choices: Vec<String> },
+}
 ```
 
-(`program::tools::{Tools, op, query}`). `export!` writes it as the
+`description` says what the variant does, who may send it and what it means,
+in plain sentences. `returns` names the type an op's output is the borsh of:
+the derive lists it as `Op::RETURNS`, which `impl Program` names
+(`const RETURNS: &'static [Return] = Op::RETURNS;`), so the schema's
+`returns` and `network_call`'s reading of the output come from it. A query
+needs none: the `Reply` variant its `#[ask(..)]` names is what it returns.
+`example` is a real value of the variant: a path names a fn that makes one, any
+other expression is one, so the compiler checks it. Each is optional; a
+variant with no example gets one `borsh_json::example` makes. `impl Program`
+gathers both enums with `fn tools() -> Tools { Tools::of::<Op, Query>() }`
+(`program::tools::Tools`). `make wasm-schemas` (founding's `schemas`) writes
+`<program>.tools` beside `<program>.schema`, and a founding packs it as the
 `ducktape.tools` section of the program's code: JSON text,
-`{"about": …, "ops": {variant: {"says": …, "example": …}}, "queries": …}`,
-that a harness or an adapter reads without the program's schema, and that
-only grows by new keys. `borsh_json::tools::check` holds a section to the
-interface: every variant described once, each saying something, and each
-example a value of its own variant written as it reads back. founding's
-`every_program_describes_each_op_and_query_with_examples_of_its_own` runs
-it for every program here (`UNDESCRIBED` lists the ones not described yet;
-a program leaves it as its `TOOLS` lands), and a program out of tree runs
-it in its own test. Say what the op does, who may send it and what it
-returns, in plain sentences; a retired variant says it is retired and what
-replaced it.
+`{"about": …, "ops": {variant: {"description", "example", "returns"}}, "queries": …}`,
+each example as JSON and each `returns` as the shape of what comes back, which
+a harness or an adapter reads without the program's schema, and which only
+grows by new keys. `borsh_json::tools::check` holds a section to the
+interface: every variant listed once, each with a description and an example
+that encodes as its own variant. founding's
+`every_program_describes_each_op_and_query_with_examples_of_its_own` runs it
+for every program here (`UNDESCRIBED` lists the ones not described yet; a
+program leaves it as its enums derive `Described`). A retired variant says it
+is retired and what replaced it.
 
 **The append-only rule.** Borsh encodes a variant by its index, and a host
 describes an op that landed at any height with the program's *current*

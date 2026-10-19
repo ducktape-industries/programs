@@ -21,7 +21,7 @@ pub use encode::encode;
 pub use example::{example, examples};
 pub use interface::{Interface, Unreadable, unread};
 pub use program::schema::SECTION;
-pub use shape::shape;
+pub use shape::{shape, variant_shape};
 pub use spoken::{spoken, unquoted};
 
 #[derive(Clone, Debug, PartialEq, Eq)]

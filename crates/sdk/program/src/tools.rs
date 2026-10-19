@@ -1,224 +1,106 @@
-//! What a program tells an agent about its ops and queries: a line on what it is for, and for each
-//! variant what it does, with an example to edit. `export!` writes it as the `ducktape.tools`
-//! custom section, JSON text that any harness reads without the program's schema.
+//! What a program tells an agent about its ops and queries: a line on what it is for, and each
+//! variant's description and an example. `#[derive(Described)]` lists an enum's variants (and what
+//! each op returns); founding writes them as the `ducktape.tools` section (`borsh_json::tools`).
+use borsh::BorshSerialize;
+
+use crate::schema::Return;
 
 pub const SECTION: &str = "ducktape.tools";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Kind {
-    Op,
-    Query,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// One variant as `#[tool_op(..)]` or `#[tool_query(..)]` tells it: its description (empty where
+// left out), an example as the borsh of a value of it, and for a query the `Reply` variant
+// `#[ask(..)]` names as its answer.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Tool {
-    pub kind: Kind,
     pub variant: &'static str,
-    pub says: &'static str,
-    pub example: Option<&'static str>,
+    pub description: &'static str,
+    pub example: Option<Vec<u8>>,
+    pub reply: &'static str,
 }
 
-pub const fn op(variant: &'static str, says: &'static str) -> Tool {
-    Tool {
-        kind: Kind::Op,
-        variant,
-        says,
-        example: None,
-    }
-}
-
-pub const fn query(variant: &'static str, says: &'static str) -> Tool {
-    Tool {
-        kind: Kind::Query,
-        variant,
-        says,
-        example: None,
-    }
-}
-
-impl Tool {
-    // A value of the variant as JSON text, which `borsh_json::tools::check` holds to the schema.
-    pub const fn example(self, example: &'static str) -> Tool {
-        Tool {
-            example: Some(example),
-            ..self
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Tools {
     pub about: &'static str,
-    pub tools: &'static [Tool],
+    pub ops: Vec<Tool>,
+    pub queries: Vec<Tool>,
 }
 
 impl Tools {
-    pub const NONE: Tools = Tools {
-        about: "",
-        tools: &[],
-    };
-
-    pub const fn new(about: &'static str, tools: &'static [Tool]) -> Tools {
-        Tools { about, tools }
-    }
-
-    pub const fn is_empty(&self) -> bool {
-        self.about.is_empty() && self.tools.is_empty()
-    }
-}
-
-// The section's bytes: `{"about": …, "ops": {variant: {"says": …, "example": …}}, "queries": …}`,
-// each example as its own JSON text, and `{}` for a program that says nothing.
-pub fn json(tools: &Tools) -> Vec<u8> {
-    let mut out = vec![0; section_len(tools)];
-    emit(tools, &mut out, true);
-    out
-}
-
-pub const fn section_len(tools: &Tools) -> usize {
-    let mut none: [u8; 0] = [];
-    emit(tools, &mut none, false)
-}
-
-pub const fn section<const N: usize>(tools: &Tools) -> [u8; N] {
-    let mut out = [0u8; N];
-    let at = emit(tools, &mut out, true);
-    assert!(at == N, "the section is not section_len's length");
-    out
-}
-
-const fn emit(tools: &Tools, out: &mut [u8], write: bool) -> usize {
-    let mut at = put(out, write, 0, b"{");
-    if !tools.is_empty() {
-        at = put(out, write, at, b"\"about\":");
-        at = text(out, write, at, tools.about.as_bytes());
-        at = put(out, write, at, b",\"ops\":{");
-        at = group(tools, Kind::Op, out, write, at);
-        at = put(out, write, at, b",\"queries\":{");
-        at = group(tools, Kind::Query, out, write, at);
-    }
-    put(out, write, at, b"}")
-}
-
-const fn group(tools: &Tools, kind: Kind, out: &mut [u8], write: bool, at: usize) -> usize {
-    let mut at = at;
-    let mut first = true;
-    let mut i = 0;
-    while i < tools.tools.len() {
-        let tool = &tools.tools[i];
-        i += 1;
-        if tool.kind as u8 != kind as u8 {
-            continue;
-        }
-        if !first {
-            at = put(out, write, at, b",");
-        }
-        first = false;
-        at = text(out, write, at, tool.variant.as_bytes());
-        at = put(out, write, at, b":{\"says\":");
-        at = text(out, write, at, tool.says.as_bytes());
-        if let Some(example) = tool.example {
-            at = put(out, write, at, b",\"example\":");
-            at = put(out, write, at, example.as_bytes());
-        }
-        at = put(out, write, at, b"}");
-    }
-    put(out, write, at, b"}")
-}
-
-const fn put(out: &mut [u8], write: bool, at: usize, bytes: &[u8]) -> usize {
-    let mut i = 0;
-    while i < bytes.len() {
-        if write {
-            out[at + i] = bytes[i];
-        }
-        i += 1;
-    }
-    at + bytes.len()
-}
-
-const HEX: &[u8; 16] = b"0123456789abcdef";
-
-const fn text(out: &mut [u8], write: bool, at: usize, text: &[u8]) -> usize {
-    let mut at = put(out, write, at, b"\"");
-    let mut i = 0;
-    while i < text.len() {
-        let byte = text[i];
-        i += 1;
-        at = match byte {
-            b'"' => put(out, write, at, b"\\\""),
-            b'\\' => put(out, write, at, b"\\\\"),
-            0..0x20 => {
-                let escaped = [
-                    b'\\',
-                    b'u',
-                    b'0',
-                    b'0',
-                    HEX[(byte >> 4) as usize],
-                    HEX[(byte & 15) as usize],
-                ];
-                put(out, write, at, &escaped)
-            }
-            _ => put(out, write, at, &[byte]),
+    // A program's ops and queries as their enums tell them, under the `#[tool_about(..)]` of
+    // either enum.
+    pub fn of<O: Described, Q: Described>() -> Tools {
+        let about = match O::ABOUT {
+            "" => Q::ABOUT,
+            about => about,
         };
+        Tools {
+            about,
+            ops: O::tools(),
+            queries: Q::tools(),
+        }
     }
-    put(out, write, at, b"\"")
+
+    pub fn is_empty(&self) -> bool {
+        self.about.is_empty() && self.ops.is_empty() && self.queries.is_empty()
+    }
 }
 
-// The `ducktape.tools` custom section of `$program`'s wasm module, from its `TOOLS`: what
-// `export!` and `export_awaiting!` expand to beside the exports.
+// What `#[derive(Described)]` writes for an enum. `RETURNS` lists each op variant whose
+// `#[tool_op(returns = T)]` says what it returns, for `Program::RETURNS` to name.
+pub trait Described {
+    const ABOUT: &'static str = "";
+    const RETURNS: &'static [Return] = &[];
+    fn tools() -> Vec<Tool>;
+}
+
+impl Described for () {
+    fn tools() -> Vec<Tool> {
+        Vec::new()
+    }
+}
+
 #[doc(hidden)]
-#[macro_export]
-macro_rules! tools_section {
-    ($program:ty) => {
-        #[cfg(target_arch = "wasm32")]
-        #[used]
-        #[unsafe(link_section = "ducktape.tools")]
-        static DUCKTAPE_TOOLS: [u8; $crate::tools::section_len(
-            &<$program as $crate::Program>::TOOLS,
-        )] = $crate::tools::section(&<$program as $crate::Program>::TOOLS);
-    };
+pub fn example<T: BorshSerialize>(value: T) -> Vec<u8> {
+    borsh::to_vec(&value).expect("borsh encodes an in-memory value")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const TOOLS: Tools = Tools::new(
-        "Polls \"open\" and closed.",
-        &[
-            op("Open", "Open a poll.\nIts id is yours.").example(r#"{"Open":{"id":"p"}}"#),
-            query("Poll", "One poll by id."),
-            op("Close", "Close a poll\\all of it."),
-        ],
-    );
+    struct Ops;
 
-    #[test]
-    fn the_section_is_json_text_of_ops_and_queries_with_each_example_as_written() {
-        let text = String::from_utf8(json(&TOOLS)).unwrap();
-        assert_eq!(
-            text,
-            concat!(
-                r#"{"about":"Polls \"open\" and closed.","#,
-                r#""ops":{"Open":{"says":"Open a poll.\u000aIts id is yours.","example":{"Open":{"id":"p"}}},"#,
-                r#""Close":{"says":"Close a poll\\all of it."}},"#,
-                r#""queries":{"Poll":{"says":"One poll by id."}}}"#,
-            )
-        );
-        const LEN: usize = section_len(&TOOLS);
-        let bytes: [u8; LEN] = section(&TOOLS);
-        assert_eq!(bytes.to_vec(), json(&TOOLS));
+    impl Described for Ops {
+        fn tools() -> Vec<Tool> {
+            vec![Tool {
+                variant: "Open",
+                description: "Open a poll.",
+                example: Some(example(7u64)),
+                ..Tool::default()
+            }]
+        }
+    }
+
+    struct Queries;
+
+    impl Described for Queries {
+        const ABOUT: &'static str = "Polls.";
+
+        fn tools() -> Vec<Tool> {
+            vec![Tool {
+                variant: "Poll",
+                reply: "Poll",
+                ..Tool::default()
+            }]
+        }
     }
 
     #[test]
-    fn a_program_that_says_nothing_has_an_empty_object() {
-        assert_eq!(json(&Tools::NONE), b"{}");
-        assert!(Tools::NONE.is_empty() && !TOOLS.is_empty());
-    }
-
-    #[test]
-    fn the_section_is_named_as_readers_read_it() {
-        let named = format!("link_section = \"{SECTION}\"");
-        assert!(include_str!("tools.rs").contains(&named));
+    fn a_programs_tools_are_its_ops_and_queries_under_either_enums_about() {
+        let tools = Tools::of::<Ops, Queries>();
+        assert_eq!(tools.about, "Polls.");
+        assert_eq!(tools.ops[0].example, Some(vec![7, 0, 0, 0, 0, 0, 0, 0]));
+        assert_eq!(tools.queries[0].reply, "Poll");
+        assert!(Tools::of::<(), ()>().is_empty() && !tools.is_empty());
     }
 }

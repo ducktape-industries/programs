@@ -29,6 +29,7 @@ pub const DESCRIBE_SECTION: &str = "ducktape.describe";
 pub const NOTIFY_SECTION: &str = "ducktape.notify";
 pub const SCHEMA_SECTION: &str = program::schema::SECTION;
 pub const SOURCE_SECTION: &str = program::source::SECTION;
+pub const TOOLS_SECTION: &str = program::tools::SECTION;
 // The repository this packer is built in, which every program it stamps names.
 pub const REPO: &str = "programs";
 pub const FOUNDING: &str = include_str!("../founding.toml");
@@ -135,7 +136,7 @@ pub fn modules(program: &str) -> Option<(Option<&'static str>, Option<&'static s
 }
 
 // One program's code as the bundle writes it: what `make wasm-modules` built for it under
-// `release`, with its view, describe module, schema and notifier embedded, and stamped with
+// `release`, with its view, describe module, schema, tools and notifier embedded, and stamped with
 // `source` when the build names the commit it ran at.
 pub fn pack(release: &Path, program: &str, source: Option<&Source>) -> Result<Vec<u8>> {
     let (view, notifier) =
@@ -150,6 +151,7 @@ pub fn pack(release: &Path, program: &str, source: Option<&Source>) -> Result<Ve
     let describe = read(release, &format!("{stem}.describe"), "wasm")?;
     packed = embed_describe(&packed, &describe)?;
     packed = embed_schema(&packed, &read(release, program, "schema")?)?;
+    packed = embed_tools(&packed, &read(release, program, "tools")?)?;
     if let Some(view) = notifier {
         packed = embed_notify(&packed, &read(release, &format!("{view}.notify"), "wasm")?)?;
     }
@@ -231,6 +233,12 @@ pub fn embed_schema(program: &[u8], schema: &[u8]) -> Result<Vec<u8>> {
         return Err("a schema names an op, a query and a reply".into());
     }
     embed_section(program, SCHEMA_SECTION, schema)
+}
+
+// The `ducktape.tools` section `schemas` wrote: JSON a reader takes without the program's schema.
+pub fn embed_tools(program: &[u8], tools: &[u8]) -> Result<Vec<u8>> {
+    borsh_json::tools::read(tools)?;
+    embed_section(program, TOOLS_SECTION, tools)
 }
 
 // Stamps `program` as built from `source`: a full commit id, never a branch or a short id.

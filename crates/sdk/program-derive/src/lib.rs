@@ -1,14 +1,14 @@
-//! `#[derive(Ask)]` on a program's `Query`: one type per variant, asked
-//! alone, each knowing the reply that answers it (`program::Ask`), and
-//! which tables each variant reads (`program::Reads`, from `#[reads(..)]`).
+//! `#[derive(Ask)]` on a program's `Query`: one type per variant, asked alone, each knowing the
+//! reply that answers it (`program::Ask`) and the tables it reads (`program::Reads`); and
+//! `#[derive(Described)]` on its `Op` and `Query`: each variant as it tells an agent.
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as Tokens;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{
-    Attribute, Data, DeriveInput, Error, Fields, Ident, Path, Token, Type, braced, parenthesized,
-    parse_macro_input,
+    Attribute, Data, DeriveInput, Error, Expr, Fields, Ident, LitStr, Path, Token, Type, braced,
+    parenthesized, parse_macro_input,
 };
 
 #[proc_macro_derive(Ask, attributes(ask, reads))]
@@ -260,5 +260,136 @@ fn asks(input: &DeriveInput) -> syn::Result<Tokens> {
         }
 
         #(#impls)*
+    })
+}
+
+#[proc_macro_derive(Described, attributes(tool_about, tool_op, tool_query, ask))]
+pub fn derive_described(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    described(&input)
+        .unwrap_or_else(Error::into_compile_error)
+        .into()
+}
+
+// What a variant's `#[tool_op(..)]` or `#[tool_query(..)]` tells: a description, what an op
+// returns, and an example, where a path names a fn that makes one and any other expression is one.
+#[derive(Default)]
+struct Told {
+    description: String,
+    returns: Option<Type>,
+    example: Option<Tokens>,
+}
+
+fn told(attr: &Attribute, op: bool) -> syn::Result<Told> {
+    let mut told = Told::default();
+    attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("description") {
+            told.description = meta.value()?.parse::<LitStr>()?.value();
+        } else if meta.path.is_ident("returns") && op {
+            told.returns = Some(meta.value()?.parse::<Type>()?);
+        } else if meta.path.is_ident("returns") {
+            return Err(meta.error("a query returns its `Reply` variant: `#[ask(..)]` names it"));
+        } else if meta.path.is_ident("example") {
+            let made = match meta.value()?.parse::<Expr>()? {
+                Expr::Path(path) => quote!(#path()),
+                value => quote!(#value),
+            };
+            told.example = Some(made);
+        } else {
+            return Err(meta.error("a tool tells `description`, `returns` (an op's) and `example`"));
+        }
+        Ok(())
+    })?;
+    Ok(told)
+}
+
+// The `Reply` variant an `#[ask(Reply::X(..))]` names, which answers a query; empty with none.
+fn reply(attrs: &[Attribute]) -> syn::Result<String> {
+    let Some(attr) = ask_attr(attrs) else {
+        return Ok(String::new());
+    };
+    let (Answer::One(path, _) | Answer::Fields(path, _)) = attr.parse_args::<Answer>()?;
+    let last = path
+        .segments
+        .last()
+        .map(|segment| segment.ident.to_string());
+    Ok(last.unwrap_or_default())
+}
+
+fn described(input: &DeriveInput) -> syn::Result<Tokens> {
+    let name = &input.ident;
+    let Data::Enum(data) = &input.data else {
+        return Err(Error::new_spanned(
+            name,
+            "`#[derive(Described)]` goes on a program's `Op` or `Query` enum",
+        ));
+    };
+    let about = match input
+        .attrs
+        .iter()
+        .find(|attr| attr.path().is_ident("tool_about"))
+    {
+        Some(attr) => attr.parse_args::<LitStr>()?.value(),
+        None => String::new(),
+    };
+    let mut kind: Option<bool> = None;
+    let mut listed = Vec::new();
+    let mut returns = Vec::new();
+    for variant in &data.variants {
+        let is_tool = |attr: &&Attribute| {
+            attr.path().is_ident("tool_op") || attr.path().is_ident("tool_query")
+        };
+        let mut tool = variant.attrs.iter().filter(is_tool);
+        let attr = tool.next();
+        if let Some(again) = tool.next() {
+            return Err(Error::new_spanned(
+                again,
+                "a variant has one `#[tool_op(..)]` or `#[tool_query(..)]`",
+            ));
+        }
+        let told = match attr {
+            Some(attr) => {
+                let op = attr.path().is_ident("tool_op");
+                if kind.is_some_and(|kind| kind != op) {
+                    return Err(Error::new_spanned(
+                        attr,
+                        "an enum's variants are all `tool_op` (an `Op`) or all `tool_query` (a `Query`)",
+                    ));
+                }
+                kind = Some(op);
+                told(attr, op)?
+            }
+            None => Told::default(),
+        };
+        let reply = reply(&variant.attrs)?;
+        let variant = variant.ident.to_string();
+        let description = &told.description;
+        let example = match &told.example {
+            Some(made) => quote! {
+                ::core::option::Option::Some(::program::tools::example::<#name>(#made))
+            },
+            None => quote!(::core::option::Option::None),
+        };
+        if let Some(ty) = &told.returns {
+            returns.push(quote!(::program::schema::returns::<#ty>(#variant)));
+        }
+        listed.push(quote! {
+            ::program::tools::Tool {
+                variant: #variant,
+                description: #description,
+                example: #example,
+                reply: #reply,
+            }
+        });
+    }
+    let (generics, types, bounds) = input.generics.split_for_impl();
+    Ok(quote! {
+        impl #generics ::program::tools::Described for #name #types #bounds {
+            const ABOUT: &'static str = #about;
+            const RETURNS: &'static [::program::schema::Return] = &[#(#returns),*];
+            fn tools() -> ::std::vec::Vec<::program::tools::Tool> {
+                ::std::vec![#(#listed),*]
+            }
+        }
     })
 }
