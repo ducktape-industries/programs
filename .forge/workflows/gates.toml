@@ -7,9 +7,9 @@ name = "gates"
 push = ["dev", "main"]
 change = ["opened", "updated"]
 
-# #engineering hears when a push's check ends failed or errored
+# #ci hears when a push's check ends failed or errored (orthory: not #engineering)
 [notify]
-channel = "channel-18df9127f1a3eef4-1792310773949584"
+channel = "ci"
 
 [[jobs]]
 id = "gates"
