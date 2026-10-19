@@ -16,9 +16,9 @@ use crate::discussion::{self, Event};
 use crate::objects::{ObjectWriter, object_not_held};
 use crate::ops::{cap, refusal_of, require_named};
 use crate::state::{
-    CHANGES, NUMBERS, load_bounds, load_change, load_ref, load_repo, next, next_message,
-    next_number, parse_oid, peek_message, protected, repo_hash, resolve, save_change, save_review,
-    set_ref,
+    AUTHORSHIP, Authorship, CHANGES, NUMBERS, load_bounds, load_change, load_ref, load_repo, next,
+    next_message, next_number, parse_oid, peek_message, protected, repo_hash, resolve, save_change,
+    save_review, set_ref,
 };
 
 /// What `ChangeOpen` carries besides its repository.
@@ -77,6 +77,11 @@ pub(crate) fn open(
     fits(ctx, &change)?;
     let message = next_message(ctx)?;
     save_change(ctx, repo, &change)?;
+    let authorship = Authorship {
+        author: actor.clone(),
+        rev: 0,
+    };
+    AUTHORSHIP.put(ctx, &(repo.to_owned(), n), &authorship);
     discussion::create(ctx, repo, &change);
     discussion::post(ctx, &change, message, Event::Opened);
     let opened = Watched::Opened {
@@ -120,6 +125,7 @@ pub(crate) fn edit(ctx: &ExecCtx, repo: &str, n: u64, fields: Edit) -> Result<Op
     touched(&mut change, &env);
     fits(ctx, &change)?;
     save_change(ctx, repo, &change)?;
+    crate::state::reshaped(ctx, repo, n)?;
     Ok(OpReply::Change {
         height: env.height,
         n,
@@ -614,6 +620,7 @@ pub(crate) fn rebase(
     touched(&mut change, &env);
     fits(ctx, &change)?;
     save_change(ctx, repo, &change)?;
+    crate::state::reshaped(ctx, repo, request.n)?;
     Ok(OpReply::Rebased {
         height: env.height,
         n: request.n,
@@ -652,6 +659,7 @@ pub(crate) fn repoint(ctx: &ExecCtx, repo: &str, n: u64, from: Revision) -> Resu
     touched(&mut change, &env);
     fits(ctx, &change)?;
     save_change(ctx, repo, &change)?;
+    crate::state::reshaped(ctx, repo, n)?;
     Ok(OpReply::Change {
         height: env.height,
         n,

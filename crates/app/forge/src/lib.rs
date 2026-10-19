@@ -52,9 +52,9 @@ pub use program::Forge;
 /// of `program.changes` plays back in a test to say which a block touched.
 pub mod tables {
     pub use crate::state::{
-        ACTIVITY, ARCHIVING, AUTHORED, BOUNDS, CHANGES, INVOLVED, LOGGING, MESSAGES, NUMBERS,
-        PREVIEWS, PROTECTED, QUEUE, QUEUED, REFS, REPOS, REQUIRED, REVIEWS, STATUSES, WATCHERS,
-        WRITES,
+        ACTIVITY, ARCHIVING, AUTHORED, AUTHORSHIP, BOUNDS, CHANGES, INVOLVED, LOGGING, MESSAGES,
+        NUMBERS, PREVIEWS, PROTECTED, QUEUE, QUEUED, REFS, REPOS, REQUIRED, REVIEWS, STATUSES,
+        WATCHERS, WRITES,
     };
 }
 

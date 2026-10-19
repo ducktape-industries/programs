@@ -1,7 +1,7 @@
 mod common;
 use common::*;
 
-use forge::tables::REVIEWS;
+use forge::tables::{AUTHORSHIP, REVIEWS};
 
 // A change WRITER opened on a pushed repository, with the ownership program seated at its role.
 fn reviewed() -> (MemorySandbox, u64, Oid) {
@@ -63,14 +63,14 @@ fn record(sandbox: &MemorySandbox, n: u64, id: u64) -> Option<ownership::Record>
 }
 
 #[test]
-fn forge_declares_its_reviews_owned_and_every_other_table_shared() {
+fn forge_declares_its_reviews_and_changes_owned_and_every_other_table_shared() {
     let owned: Vec<_> = Forge::TABLES
         .iter()
         .filter(|table| table.held != program::Held::Shared)
         .collect();
-    assert_eq!(owned.len(), 1);
-    assert_eq!(owned[0].prefix, REVIEWS.table().prefix);
+    assert_eq!(owned, [&REVIEWS.table(), &AUTHORSHIP.table()]);
     assert_eq!(owned[0].held, program::Held::Owned(Some("forge.review")));
+    assert_eq!(owned[1].held, program::Held::Owned(Some("forge.change")));
 }
 
 #[test]
@@ -108,4 +108,78 @@ fn a_review_is_its_authors_on_their_default_policy() {
         theirs.policy, policy,
         "the stranger's own default, not the owner's"
     );
+}
+
+#[test]
+fn a_changes_policy_decides_its_authors_side_and_others_still_review_and_close() {
+    let (sandbox, n, head) = reviewed();
+    let at = AUTHORSHIP.key(&("project".to_owned(), n));
+    let query = ownership::Query::Record {
+        program: forge::PROGRAM.into(),
+        key: at.clone(),
+    };
+    let ownership::Reply::Record(Some(owned)) =
+        sandbox.chain.query(ownership::PROGRAM, &query).unwrap()
+    else {
+        panic!("the guard recorded the change's authorship");
+    };
+    assert_eq!(owned.owner, ownership::Party::Account(12));
+    assert_eq!(owned.kind.as_deref(), Some("forge.change"));
+    // the change's access list lets anyone edit it; its own policy is what narrows it now
+    let anyone = access::Op::Set {
+        program: forge::PROGRAM.into(),
+        key: forge::change_key("project", n),
+        list: Some(program::Ownership::Anyone),
+    };
+    sandbox
+        .chain
+        .submit(Origin::Signed(WRITER.to_vec()), "access", &anyone)
+        .unwrap();
+    let retitle = |title: &str| Op::ChangeEdit {
+        repo: "project".into(),
+        n,
+        title: Some(title.into()),
+        body: None,
+        reviewers: None,
+    };
+    act(&sandbox, STRANGER, &retitle("Their title")).unwrap();
+    let strict = ownership::Op::Create {
+        name: "mine".into(),
+        write: ownership::Writers::Owner,
+    };
+    let made = sandbox
+        .chain
+        .submit(Origin::Signed(WRITER.to_vec()), ownership::PROGRAM, &strict)
+        .unwrap();
+    let policy: ownership::PolicyId = abi::decode(&made).unwrap();
+    let relink = ownership::Op::Relink {
+        program: forge::PROGRAM.into(),
+        key: at,
+        policy,
+    };
+    sandbox
+        .chain
+        .submit(Origin::Signed(WRITER.to_vec()), ownership::PROGRAM, &relink)
+        .unwrap();
+    let repoint = Op::ChangeRepoint {
+        repo: "project".into(),
+        n,
+        from: forge::Revision::Oid(head.to_hex()),
+    };
+    for op in [retitle("Theirs again"), repoint] {
+        assert_eq!(
+            refused(&sandbox, STRANGER, &op).code,
+            code::UNAUTHORIZED,
+            "{op:?}"
+        );
+    }
+    act(&sandbox, WRITER, &retitle("Teach a, again")).unwrap();
+    // reviews, and a close by another account, write only the shared record: the repository's
+    // policy decides who closes another's change
+    act(&sandbox, STRANGER, &review(n, head)).unwrap();
+    let close = Op::ChangeClose {
+        repo: "project".into(),
+        n,
+    };
+    act(&sandbox, STRANGER, &close).unwrap();
 }

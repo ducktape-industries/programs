@@ -21,6 +21,9 @@ only.
   checks (`RequireChecks`) moves only by a merge of a change whose latest Preview
   its reporter's `Status`es mark Passed.
 - Changes keep their title, body, author account, and lifecycle on the forge record.
+  A change's authorship is its own owned row (`o/`, kind `forge.change`), its author's
+  from `ChangeOpen`: `ChangeEdit`, `ChangeRepoint` and `Rebase` write it, so the change's
+  policy decides them, while reviews, closes and merges write only the shared record.
   A repository's number counter allocates the shared future issue/change number space.
 - Every table is declared once in `src/state.rs` as a typed `store::Map`/`Set`/`Item`:
   records (repos, refs, changes, reviews), the indexes over them (activity,

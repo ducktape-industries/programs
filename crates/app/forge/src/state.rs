@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 
 use ::program::{Error, ProgramId, code};
 use ::program::{ExecCtx, QueryCtx, invalid, not_found};
+use borsh::{BorshDeserialize, BorshSerialize};
 use gitcore::{Hash, Oid};
 use store::{Item, Kind, Map, Owned, Set};
 
@@ -35,6 +36,12 @@ pub const CHANGES: Map<(String, u64), Change> = Map::new("c/").shared();
 /// Reviews by repository, change number and review id.
 // Each review is its author's, of the kind `forge.review`: no op rewrites or deletes one.
 pub const REVIEWS: Map<(String, u64, u64), Owned<Review>> = Map::new("v/");
+// Each change's authorship, of the kind `forge.change`: its author's from `ChangeOpen` on. The
+// change's record (`CHANGES`) is shared, since reviews, closes and merges by others write it; the
+// ops that reshape what the author set (`ChangeEdit`, `ChangeRepoint`, `Rebase`) write this row
+// too, so the change's policy decides them. A change opened before this row existed has none
+// until a migration writes it.
+pub const AUTHORSHIP: Map<(String, u64), Owned<Authorship>> = Map::new("o/");
 /// Index: the reviews one principal submitted on one change, oldest first.
 pub const AUTHORED: Set<(String, u64, Principal, u64)> = Set::new("u/").shared();
 /// Index: the changes a principal authored, is asked to review, or reviewed.
@@ -333,7 +340,29 @@ impl Kind for Review {
     const KIND: &'static str = "forge.review";
 }
 
-// Every table here but REVIEWS is general data: only this program's code governs it.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Authorship {
+    pub author: Principal,
+    // how many times the author's side of the change was reshaped
+    pub rev: u64,
+}
+
+impl Kind for Authorship {
+    const KIND: &'static str = "forge.change";
+}
+
+// The authorship of change `n` of `repo`, written again: a no-op for a change that has none.
+pub fn reshaped(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
+    let at = (repo.to_owned(), n);
+    if let Some(mut authorship) = AUTHORSHIP.get(ctx, &at)? {
+        authorship.rev += 1;
+        AUTHORSHIP.put(ctx, &at, &authorship);
+    }
+    Ok(())
+}
+
+// Every table here but REVIEWS and AUTHORSHIP is general data: only this program's code governs
+// it.
 pub(crate) const TABLES: &[::program::Table] = &[
     BOUNDS.table(),
     WRITES.table(),
@@ -343,6 +372,7 @@ pub(crate) const TABLES: &[::program::Table] = &[
     NUMBERS.table(),
     CHANGES.table(),
     REVIEWS.table(),
+    AUTHORSHIP.table(),
     AUTHORED.table(),
     INVOLVED.table(),
     MESSAGES.table(),
