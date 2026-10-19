@@ -223,6 +223,10 @@ fn hit(
         .text_type(ladder.secondary)
         .text_color(theme.muted)
         .child(marked(&message.body, &chat.search.query, theme));
+    let picture = message
+        .from
+        .account()
+        .and_then(|account| chat.faces.of(account, cx));
     // seq is per channel: two channels' hits at one seq are two rows
     design::row(
         format!("chat-search-hit-{}-{seq}", row.channel_id),
@@ -237,6 +241,7 @@ fn hit(
     .child(design::lead(face(
         &message.author,
         message.agent,
+        picture,
         ladder.avatar,
         theme,
     )))

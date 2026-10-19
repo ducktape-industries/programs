@@ -11,6 +11,39 @@ use crate::message::ChatMessage;
 use chat::view::Names;
 use view::design::Pages;
 
+// Each account's picture by its card's blob (identity's), and the pictures
+// read so far: a face asks `of` for the one it draws.
+#[derive(Clone, Default)]
+pub(crate) struct Faces {
+    pub(crate) avatars: Rc<BTreeMap<u64, abi::BlobId>>,
+    pub(crate) pictures: Option<Entity<view::pictures::Pictures>>,
+}
+
+impl Faces {
+    // Account `account`'s picture, once read; its first ask reads it.
+    pub(crate) fn of(
+        &self,
+        account: u64,
+        cx: &mut impl view::AppContext,
+    ) -> Option<std::sync::Arc<view::Image>> {
+        let blob = self.avatars.get(&account)?;
+        let pictures = self.pictures.as_ref()?;
+        pictures.update(cx, |pictures, cx| pictures.get(blob, cx))
+    }
+
+    // What a kept row's face reads: the account's blob, and whether its
+    // picture is read yet; a row whose deps hold it draws again when either
+    // moves.
+    pub(crate) fn dep(
+        &self,
+        account: u64,
+        cx: &mut impl view::AppContext,
+    ) -> (Option<abi::BlobId>, bool) {
+        let blob = self.avatars.get(&account).cloned();
+        (blob, self.of(account, cx).is_some())
+    }
+}
+
 #[derive(Serialize, Deserialize, Default)]
 pub struct Chat {
     pub(crate) session: Session,
@@ -20,6 +53,9 @@ pub struct Chat {
     /// number, as identity keeps it
     #[serde(skip)]
     pub(crate) ownerships: Loadable<BTreeMap<u64, identity::Ownership>>,
+    // each account's picture, read again on identity's heads
+    #[serde(skip)]
+    pub(crate) faces: Faces,
     pub(crate) channels: Loadable<Vec<ChannelInfo>>,
     /// what the reader chose for each room's notices, read while the
     /// details are open; a room not named is at its default

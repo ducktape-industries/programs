@@ -29,12 +29,21 @@ const SMALL_BUTTON: Pixels = px(36.);
 const SMALL_BUTTON_ICON: Pixels = px(16.);
 
 // SDK gap: the agent avatar, kept local until the kit takes it (kit.md §2)
-/// A person's round initial at `size` (the kit's `Avatar`), on the agent
-/// tint for an agent.
-pub(super) fn face(name: &str, agent: bool, size: design::Face, theme: &Theme) -> Div {
-    design::avatar(name, size, theme).when(agent, |face| {
-        face.bg(theme.agent_soft).text_color(theme.agent)
-    })
+// A person's round initial at `size` (the kit's `Avatar`), or their
+// picture once read, on the agent tint for an agent (a picture ringed in it).
+pub(super) fn face(
+    name: &str,
+    agent: bool,
+    picture: Option<std::sync::Arc<view::Image>>,
+    size: design::Face,
+    theme: &Theme,
+) -> Div {
+    let ringed = agent && picture.is_some();
+    design::avatar_with(name, picture, size, theme)
+        .when(agent, |face| {
+            face.bg(theme.agent_soft).text_color(theme.agent)
+        })
+        .when(ringed, |face| face.border_2().border_color(theme.agent))
 }
 
 // SDK gap: quiet text at the ladder's sizes, kept local until the kit takes it (kit.md §2)

@@ -181,7 +181,16 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         let active = index == at;
         let room = &info.channel.id;
         let read = (chat.unread(info), super::room_menu::waits(chat, room));
-        let deps = (info.clone(), peer, selected, active, read, names.clone());
+        let face = chat.faces.dep(peer, cx);
+        let deps = (
+            info.clone(),
+            peer,
+            selected,
+            active,
+            read,
+            names.clone(),
+            face,
+        );
         let (info, theme, ladder) = (info.clone(), *theme, *ladder);
         let row = cx.memo(
             format!("chat-sidebar-dm-{peer}"),
@@ -542,6 +551,7 @@ fn dm_button(
         cx.notify();
         chat.choose(id.clone(), cx)
     });
+    let picture = chat.faces.of(peer, cx);
     let mut row = div()
         .id(format!("chat-sidebar-dm-{peer}"))
         .flex()
@@ -566,6 +576,7 @@ fn dm_button(
             format!("chat-sidebar-dm-{peer}-avatar"),
             &name,
             agent,
+            picture,
             theme.sidebar_raised,
             theme,
         ))
@@ -602,18 +613,22 @@ fn dm_button(
     design::item(row, Role::ListBoxOption, active)
 }
 
-/// A person's round initials: a direct room's face, in the sidebar and
-/// over the room.
+// A person's round initials, or their picture once read (an agent's
+// ringed in its tint): a direct room's face, in the sidebar and over the
+// room.
 pub fn avatar(
     id: impl Into<ElementId>,
     name: &str,
     agent: bool,
+    picture: Option<std::sync::Arc<view::Image>>,
     fill: view::Hsla,
     theme: &Theme,
 ) -> impl IntoElement {
-    design::avatar(name, design::size::AVATAR_LG, theme)
+    let ringed = agent && picture.is_some();
+    design::avatar_with(name, picture, design::size::AVATAR_LG, theme)
         .id(id)
         .bg(if agent { theme.agent_soft } else { fill })
         .text_color(theme.foreground)
         .text_size(design::text::CAPTION)
+        .when(ringed, |face| face.border_2().border_color(theme.agent))
 }

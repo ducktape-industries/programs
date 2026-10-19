@@ -166,16 +166,27 @@ fn mentions(
     }
     let row_key = key.to_owned();
     let (row_theme, row_ladder) = (*theme, *ladder);
+    let faces = chat.faces.clone();
     let rows = uniform_list(
         ElementId::Name(format!("{key}/mentions").into()),
         matches.len(),
-        move |range, _, _| {
+        move |range, _, cx| {
             range
                 .map(|index| {
                     let (choice, agent) = &matches[index];
+                    let account = crate::names::mentioned(&choice.token);
+                    let picture = account.and_then(|account| faces.of(account, cx));
                     let tag = format!("mention:{}", choice.token);
                     let pick = presses.as_ref().map(|presses| picks(presses, tag));
-                    mention_row(&row_key, choice, *agent, pick, &row_theme, &row_ladder)
+                    mention_row(
+                        &row_key,
+                        choice,
+                        *agent,
+                        picture,
+                        pick,
+                        &row_theme,
+                        &row_ladder,
+                    )
                 })
                 .collect::<Vec<_>>()
         },
@@ -196,6 +207,7 @@ fn mention_row(
     key: &str,
     choice: &MentionChoice,
     agent: bool,
+    picture: Option<std::sync::Arc<view::Image>>,
     pick: Option<Click>,
     theme: &Theme,
     ladder: &Ladder,
@@ -213,7 +225,13 @@ fn mention_row(
         .role(Role::Button)
         .aria_label(choice.label.clone())
         .focusable()
-        .child(face(&choice.label, agent, ladder.avatar_inline, theme))
+        .child(face(
+            &choice.label,
+            agent,
+            picture,
+            ladder.avatar_inline,
+            theme,
+        ))
         .child(
             div()
                 .flex_1()

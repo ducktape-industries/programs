@@ -272,12 +272,10 @@ fn choices_list(
         .flex()
         .flex_col()
         .gap_1()
-        .children(
-            choices
-                .iter()
-                .enumerate()
-                .map(|(index, choice)| choice_row(choice, index == at, cx, theme, ladder)),
-        );
+        .children(choices.iter().enumerate().map(|(index, choice)| {
+            let picture = chat.faces.of(choice.peer, cx);
+            choice_row(choice, index == at, picture, cx, theme, ladder)
+        }));
     div()
         .id("chat-dm-pick-scroll")
         .flex_1()
@@ -290,6 +288,7 @@ fn choices_list(
 fn choice_row(
     choice: &DmChoice,
     active: bool,
+    picture: Option<std::sync::Arc<view::Image>>,
     cx: &mut Context<Chat>,
     theme: &Theme,
     ladder: &Ladder,
@@ -318,6 +317,7 @@ fn choice_row(
             format!("{id}-avatar"),
             &choice.name,
             choice.agent,
+            picture,
             theme.surface_raised,
             theme,
         ))

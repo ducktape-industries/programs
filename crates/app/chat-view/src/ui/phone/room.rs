@@ -30,10 +30,12 @@ pub(super) fn screen(
         theme,
     )
     .trailing(info(chat, cx, theme, ladder));
+    let picture = chat.dm_peer_picture(cx);
     let page = match chat.dm_peer() {
         // a direct room's title is the person: their face beside the name
-        Some((peer, agent)) => page
-            .leading(parts::face(&peer, agent, ladder.avatar_inline, theme).id("chat-room-avatar")),
+        Some((peer, agent)) => page.leading(
+            parts::face(&peer, agent, picture, ladder.avatar_inline, theme).id("chat-room-avatar"),
+        ),
         None => match caption(chat, room) {
             Some(caption) => page.caption(caption),
             None => page,

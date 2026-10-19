@@ -213,9 +213,18 @@ fn member_row(
         "chat-details-member-{}",
         crate::names::mention_token(&principal)
     );
+    let picture = principal
+        .account()
+        .and_then(|account| chat.faces.of(account, cx));
     design::row(id.clone(), ladder, theme)
         .when(!notes.is_empty(), |row| row.min_h(ladder.row_tall))
-        .child(design::lead(face(&name, agent, ladder.avatar, theme)))
+        .child(design::lead(face(
+            &name,
+            agent,
+            picture,
+            ladder.avatar,
+            theme,
+        )))
         .child(
             div()
                 .flex_1()

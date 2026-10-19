@@ -104,6 +104,7 @@ pub(super) fn card(
                     "chat-card-avatar",
                     &name,
                     true,
+                    chat.faces.of(account, cx),
                     theme.surface_raised,
                     theme,
                 ))

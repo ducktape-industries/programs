@@ -18,6 +18,7 @@ mod attachments;
 mod context_menus;
 mod cost;
 mod dms;
+mod faces;
 mod folders;
 mod history;
 mod menus;
@@ -130,6 +131,19 @@ fn reactors(seqs: Vec<u64>) -> Reply {
 /// The host methods chat only talks to, never hears back from here.
 fn quiet_methods(cx: &mut TestAppContext) {
     cx.host().handle::<view::methods::StoreGet>(|_| Ok(None));
+    // no card holds a picture
+    cx.host().handle::<Ask<Identity>>(|query| match query {
+        identity::Query::List { .. } => Ok(no_cards()),
+        query => panic!("unexpected identity query: {query:?}"),
+    });
+}
+
+fn no_cards() -> identity::Reply {
+    identity::Reply::Accounts(identity::PageResponse {
+        height: 1,
+        items: Vec::new(),
+        next: None,
+    })
 }
 
 fn configure(cx: &mut TestAppContext) {
@@ -217,6 +231,7 @@ fn owned(
                     kind: identity::Kind::User,
                 }))
             }
+            identity::Query::List { .. } => no_cards(),
             query => panic!("unexpected identity query: {query:?}"),
         })
     });

@@ -29,10 +29,11 @@ pub(super) fn screen(
         chat.begin_create();
         cx.notify();
     });
+    let reader = chat.my_account().and_then(|me| chat.faces.of(me, cx));
     let page = design::page(
         "chat-rooms-page",
         words::CHAT,
-        design::Nav::root(chat.reader_name()),
+        design::Nav::root_with(chat.reader_name(), reader),
         ladder,
         theme,
     )
@@ -382,9 +383,16 @@ fn dm_row(
         })
         .when(unread, |tail| tail.child(dot(&id, theme)));
     let room = entry.info.channel.id.clone();
+    let picture = chat.faces.of(entry.peer, cx);
     row(&id, name.clone(), room, cx, theme, ladder)
         .when(agent, |row| row.aria_description(words::AGENT))
-        .child(design::lead(face(&name, agent, ladder.avatar, theme)))
+        .child(design::lead(face(
+            &name,
+            agent,
+            picture,
+            ladder.avatar,
+            theme,
+        )))
         .child(title(name, theme, ladder))
         .child(tail)
         .into_any_element()

@@ -33,6 +33,8 @@ pub(crate) struct RowDeps {
     pub seen: Seen,
     pub shared: std::rc::Rc<Shared>,
     pub ladder: Ladder,
+    // its author's face (`Faces::dep`)
+    pub face: Option<(Option<abi::BlobId>, bool)>,
 }
 
 // What the reader is doing with one message: its menu is open, it is in
@@ -180,6 +182,10 @@ pub fn card(
             cell.aria_active_descendant()
         })
         .on_click(press);
+    let picture = message
+        .from
+        .account()
+        .and_then(|account| chat.faces.of(account, cx));
     let card = div()
         .id(format!("chat-message-{id}-card"))
         .relative()
@@ -204,7 +210,7 @@ pub fn card(
         })
         .when(message.pending, |card| card.opacity(PENDING_OPACITY))
         .child(message_cell)
-        .child(avatar(&message, pane, &mut cells, cx, theme))
+        .child(avatar(&message, picture, pane, &mut cells, cx, theme))
         .child(content(
             chat,
             message.clone(),
@@ -352,10 +358,12 @@ fn cell(control_id: &str, enabled: bool, control: impl IntoElement) -> AnyElemen
         .into_any_element()
 }
 
-/// A run's first message wears its author's initials, which open the
-/// author's identity page as a mention does; the rest keep the column.
+// A run's first message wears its author's initials, or their picture
+// once read (an agent's ringed in its tint), which open the author's
+// identity page as a mention does; the rest keep the column.
 fn avatar(
     message: &ChatMessage,
+    picture: Option<std::sync::Arc<view::Image>>,
     pane: Pane,
     cells: &mut Cells,
     cx: &mut Context<Chat>,
@@ -369,6 +377,7 @@ fn avatar(
             .into_any_element();
     }
     let id = format!("chat-message-{}-avatar", message.id);
+    let ringed = message.agent && picture.is_some();
     let face = div()
         .id(id.clone())
         .size_7()
@@ -388,7 +397,21 @@ fn avatar(
         })
         .font_weight(view::FontWeight::SEMIBOLD)
         .text_size(design::text::CAPTION)
-        .child(message.initial.clone());
+        .when(ringed, |face| face.border_2().border_color(theme.agent));
+    let face = match picture {
+        Some(picture) => {
+            let initial = message.initial.clone();
+            let fallback = move || div().child(initial.clone()).into_any_element();
+            face.child(
+                img(picture)
+                    .size_full()
+                    .rounded(design::space::XS)
+                    .object_fit(ObjectFit::Cover)
+                    .with_fallback(fallback),
+            )
+        }
+        None => face.child(message.initial.clone()),
+    };
     let Principal::Account(account) = message.from else {
         return face.into_any_element();
     };

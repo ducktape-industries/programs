@@ -33,6 +33,7 @@ impl Chat {
             || self.session.chain_id != prev.chain_id;
         if reader_changed {
             self.load_names(cx);
+            self.load_avatars(cx);
             self.choices = Loadable::Idle;
             self.managed_choices = Loadable::Idle;
             if self.details.is_some() {
@@ -81,6 +82,36 @@ impl Chat {
         cx.load(self, names.clone(), |chat| &mut chat.names);
         let answers = async move { ownerships(host, &names.await?).await };
         cx.load(self, answers, |chat| &mut chat.ownerships);
+    }
+
+    // Each account's picture, read again; what is on screen stays until a
+    // different set lands.
+    pub(crate) fn load_avatars(&mut self, cx: &mut Context<Self>) {
+        if self.faces.pictures.is_none() {
+            self.faces.pictures = Some(cx.new(|_| view::pictures::Pictures::default()));
+        }
+        let host = cx.host();
+        let read = identity::view::avatars(move |ask| host.query(ask));
+        cx.land(read, |chat, read, cx| match read {
+            Ok(avatars) => {
+                if *chat.faces.avatars != avatars {
+                    chat.faces.avatars = std::rc::Rc::new(avatars);
+                    cx.notify();
+                }
+            }
+            Err(refusal) => cx.log_refused("the pictures", &refusal),
+        })
+        .detach();
+    }
+
+    // The open direct room's other person's picture, once read.
+    pub(crate) fn dm_peer_picture(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Option<std::sync::Arc<view::Image>> {
+        let room = self.room.as_ref()?;
+        let peer = crate::names::dm_peer_of(self.my_account()?, &room.id)?;
+        self.faces.of(peer, cx)
     }
 
     /// What the reader chose for each room's notices, read again.

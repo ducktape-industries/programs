@@ -59,6 +59,10 @@ pub(super) fn row(
         cx.notify();
         chat.show_menu(pane, seq, rev, Mode::More);
     });
+    let picture = message
+        .from
+        .account()
+        .and_then(|account| chat.faces.of(account, cx));
     let row = div()
         .id(format!("chat-message-{}-row", message.id))
         .relative()
@@ -84,8 +88,14 @@ pub(super) fn row(
                 .w(ladder.avatar.side)
                 .flex_none()
                 .children(message.show_author.then(|| {
-                    face(&message.author, message.agent, ladder.avatar, theme)
-                        .id(format!("chat-message-{}-avatar", message.id))
+                    face(
+                        &message.author,
+                        message.agent,
+                        picture,
+                        ladder.avatar,
+                        theme,
+                    )
+                    .id(format!("chat-message-{}-avatar", message.id))
                 })),
         )
         .child(content(chat, message, pane, cx, theme, ladder));

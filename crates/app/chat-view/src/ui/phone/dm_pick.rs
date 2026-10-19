@@ -77,11 +77,10 @@ fn choices_list(
         .overflow_y_scroll()
         .flex()
         .flex_col()
-        .children(
-            choices
-                .iter()
-                .map(|choice| choice_row(choice, cx, theme, ladder)),
-        )
+        .children(choices.iter().map(|choice| {
+            let picture = chat.faces.of(choice.peer, cx);
+            choice_row(choice, picture, cx, theme, ladder)
+        }))
         .into_any_element()
 }
 
@@ -89,6 +88,7 @@ fn choices_list(
 // for an agent.
 fn choice_row(
     choice: &DmChoice,
+    picture: Option<std::sync::Arc<view::Image>>,
     cx: &mut Context<Chat>,
     theme: &Theme,
     ladder: &Ladder,
@@ -127,6 +127,7 @@ fn choice_row(
         .child(design::lead(face(
             &choice.name,
             choice.agent,
+            picture,
             ladder.avatar,
             theme,
         )))

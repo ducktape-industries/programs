@@ -116,7 +116,7 @@ pub enum Nav {
     /// account's name (the session names only the account number). While
     /// it is still being read it is empty, and the avatar draws `•`
     /// ([`initial`](super::initial)).
-    Root(SharedString),
+    Root(SharedString, Option<std::sync::Arc<crate::Image>>),
     /// A page under another, and the way back to it: a control
     /// (`{id}-back`, [`Ladder::hit`] each way, named "Back") that runs the
     /// listener. Under a finger it is the Expo kit's header `Hit` with the
@@ -138,7 +138,15 @@ pub enum Nav {
 impl Nav {
     /// [`Nav::Root`] with the reader's account name.
     pub fn root(reader: impl Into<SharedString>) -> Self {
-        Self::Root(reader.into())
+        Self::Root(reader.into(), None)
+    }
+    // [`Nav::root`] with the reader's picture, which fills their avatar once
+    // read (`design::avatar_with`).
+    pub fn root_with(
+        reader: impl Into<SharedString>,
+        picture: Option<std::sync::Arc<crate::Image>>,
+    ) -> Self {
+        Self::Root(reader.into(), picture)
     }
     /// [`Nav::Back`] at `depth` over the root, running `back`.
     pub fn back(depth: usize, back: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
@@ -165,10 +173,12 @@ pub fn page(
 ) -> Page {
     let id = id.into();
     let (root, depth, nav) = match nav {
-        Nav::Root(reader) => (
+        Nav::Root(reader, picture) => (
             true,
             Some(0),
-            ladder.touch.then(|| account(&id, &reader, ladder, theme)),
+            ladder
+                .touch
+                .then(|| account(&id, &reader, picture, ladder, theme)),
         ),
         Nav::Back(depth, back) => (
             false,
@@ -193,7 +203,13 @@ pub fn page(
 }
 
 /// The reader's avatar on a first page under a finger ([`Nav::Root`]).
-fn account(id: &ElementId, reader: &str, ladder: &Ladder, theme: &Theme) -> AnyElement {
+fn account(
+    id: &ElementId,
+    reader: &str,
+    picture: Option<std::sync::Arc<crate::Image>>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> AnyElement {
     let show = |_: &ClickEvent, _: &mut Window, cx: &mut App| {
         cx.host().notify::<HostShow>(Place::Account);
     };
@@ -208,7 +224,7 @@ fn account(id: &ElementId, reader: &str, ladder: &Ladder, theme: &Theme) -> AnyE
         .aria_label("Account")
         .focusable()
         .on_click(show)
-        .child(super::avatar(reader, ladder.avatar, theme))
+        .child(super::avatar_with(reader, picture, ladder.avatar, theme))
         .into_any_element()
 }
 

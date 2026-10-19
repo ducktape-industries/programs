@@ -57,7 +57,10 @@ impl Chat {
         // re-read the roster on identity's heads, so a name another
         // signer claims replaces its "account N" fallback
         cx.follow::<Changes<Identity>>((), |chat, head, cx| match head {
-            Ok(_) => chat.load_names(cx),
+            Ok(_) => {
+                chat.load_names(cx);
+                chat.load_avatars(cx);
+            }
             Err(refusal) => cx.log_refused("identity's live heads", &refusal),
         })
         .detach();

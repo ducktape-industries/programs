@@ -285,6 +285,10 @@ fn rows(
                 markers: (day.clone(), unread),
                 shared: shared.clone(),
                 ladder,
+                face: message
+                    .from
+                    .account()
+                    .map(|author| chat.faces.dep(author, cx)),
             };
             let id = message.id.clone();
             let row = format!("chat-message-{id}-drawn");

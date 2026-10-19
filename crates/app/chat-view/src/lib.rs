@@ -118,6 +118,7 @@ impl View for Chat {
         if self.names.is_idle() {
             self.load_names(cx);
         }
+        self.load_avatars(cx);
         if self.channels.is_idle() {
             self.load_channels(cx);
         }

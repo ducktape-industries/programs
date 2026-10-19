@@ -180,12 +180,14 @@ fn header(
     let direct = chat::dm_peers(&room.id).is_some();
     let peer = chat.dm_peer();
     let mut title = div().flex().items_center().gap_2();
+    let picture = chat.dm_peer_picture(cx);
     if direct {
         let (name, agent) = peer.clone().unwrap_or((name.clone(), false));
         title = title.child(super::sidebar::avatar(
             "chat-room-avatar",
             &name,
             agent,
+            picture,
             theme.surface_raised,
             theme,
         ));
