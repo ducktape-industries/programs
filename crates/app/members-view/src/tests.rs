@@ -11,6 +11,7 @@ use view::testing::TestAppContext;
 use view::wire::{ContainerNode, Node};
 use view::{Hsla, StyleRefinement, Styled, Theme};
 
+mod faces;
 mod phone;
 
 #[test]

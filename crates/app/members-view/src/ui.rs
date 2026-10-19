@@ -309,7 +309,13 @@ fn member_row(
         })
         .aria_selected(selected)
         .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.select(number, cx)))
-        .child(avatar(row, size::AVATAR, dim, &theme))
+        .child(avatar(
+            row,
+            view.picture(row, cx),
+            size::AVATAR,
+            dim,
+            &theme,
+        ))
         .child(
             div()
                 .flex_1()
@@ -344,13 +350,21 @@ fn member_row(
     design::item(row, Role::ListBoxOption, active)
 }
 
-/// An account's initial: round for a person, tinted for an agent, square
-/// and monospaced for a program; faint when it no longer acts.
-fn avatar(row: &Row, size: Pixels, dim: bool, theme: &Theme) -> Div {
-    let avatar = design::avatar(&row.name, size, theme);
+// An account's initial, or its picture once read: round for a person,
+// tinted for an agent, square and monospaced for a program; faint when it
+// no longer acts.
+fn avatar(
+    row: &Row,
+    picture: Option<std::sync::Arc<view::Image>>,
+    size: Pixels,
+    dim: bool,
+    theme: &Theme,
+) -> Div {
+    let pictured = picture.is_some();
+    let avatar = design::avatar_with(&row.name, picture, size, theme);
     match dim {
         true => avatar.bg(theme.background).text_color(theme.faint),
-        false => row.group().face(avatar, theme),
+        false => row.group().face(avatar, pictured, theme),
     }
 }
 
@@ -380,7 +394,7 @@ fn detail(
         .child(devices(row, theme));
     let managed = view.managed(row.number);
     if !managed.is_empty() {
-        detail = detail.child(manages(&managed, cx, theme, ladder));
+        detail = detail.child(manages(view, &managed, cx, theme, ladder));
     }
     if !row.devices.is_empty() {
         detail = detail.child(activity(view, theme, ladder));
@@ -468,7 +482,13 @@ fn head(
         .pb(px(14.))
         .border_b_1()
         .border_color(theme.border)
-        .child(avatar(row, px(32.), row.kind.note().is_some(), theme))
+        .child(avatar(
+            row,
+            view.picture(row, cx),
+            px(32.),
+            row.kind.note().is_some(),
+            theme,
+        ))
         .child(
             div()
                 .flex_1()
@@ -667,6 +687,7 @@ fn devices(row: &Row, theme: &Theme) -> impl IntoElement {
 
 /// The agents a person manages; pressing one chooses it here.
 fn manages(
+    view: &Members,
     managed: &[&Row],
     cx: &mut Context<Members>,
     theme: &Theme,
@@ -697,6 +718,7 @@ fn manages(
                 .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.select(number, cx)))
                 .child(avatar(
                     agent,
+                    view.picture(agent, cx),
                     size::AVATAR_SM,
                     agent.kind.note().is_some(),
                     &theme,

@@ -52,10 +52,14 @@ pub(super) fn page(
         window.focus(FILTER_ID);
         cx.notify();
     });
+    let me = view
+        .me
+        .and_then(|me| view.all().iter().find(|row| row.number == me));
+    let me_picture = me.and_then(|me| view.picture(me, cx));
     let page = design::page(
         "members-roster",
         words::MEMBERS,
-        Nav::root(reader(view)),
+        Nav::root_with(reader(view), me_picture),
         ladder,
         theme,
     );
@@ -345,7 +349,12 @@ fn member_row(
     // chosen one
     .aria_selected(place.cursor)
     .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.open(number, cx)))
-    .child(design::lead(face(row, ladder.avatar, theme)))
+    .child(design::lead(face(
+        row,
+        view.picture(row, cx),
+        ladder.avatar,
+        theme,
+    )))
     .child(
         design::row_words(name_line(row, me, ladder.body, ladder, theme))
             .children(managed_by.map(|words| design::row_caption(words, ladder, theme))),

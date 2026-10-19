@@ -94,6 +94,9 @@ pub struct Members {
     /// the list's dragged width; `None` until the first drag
     #[serde(skip)]
     list: Option<f32>,
+    // each card's picture, read once per blob as a face first draws it
+    #[serde(skip)]
+    pictures: Option<Entity<view::pictures::Pictures>>,
 }
 
 impl Default for Members {
@@ -115,6 +118,7 @@ impl Default for Members {
             width: 0.,
             touch: false,
             list: None,
+            pictures: None,
         }
     }
 }
@@ -186,12 +190,16 @@ impl Group {
         }
     }
 
-    /// An avatar in this group's look: a person's as it is, an agent's in
-    /// the agent tint, a program's square in the data face.
-    fn face(self, avatar: Div, theme: &Theme) -> Div {
+    // An avatar in this group's look: a person's as it is, an agent's in
+    // the agent tint (a picture ringed in it), a program's square in the
+    // data face.
+    fn face(self, avatar: Div, pictured: bool, theme: &Theme) -> Div {
         match self {
             Group::People => avatar,
-            Group::Agents => avatar.bg(theme.agent_soft).text_color(theme.agent),
+            Group::Agents => avatar
+                .bg(theme.agent_soft)
+                .text_color(theme.agent)
+                .when(pictured, |face| face.border_2().border_color(theme.agent)),
             Group::Programs => avatar
                 .rounded_none()
                 .font_family(design::fonts::FAMILY_MONO),
@@ -212,6 +220,9 @@ struct Row {
     /// the valset seat of a key this account holds, where it holds one
     #[serde(with = "view::borsh_bytes")]
     seat: Option<valset::Role>,
+    // the card's picture; a snapshot from before it reads as none
+    #[serde(default, with = "view::borsh_bytes")]
+    avatar: Option<abi::BlobId>,
 }
 
 impl Row {
@@ -362,11 +373,16 @@ impl View for Members {
         Capability::Program,
         Capability::Host,
         Capability::Link,
+        // each card's picture (`blob.get`)
+        Capability::Blob,
     ];
     // the list and the detail fit at 320, the desk's smallest window
     const MIN_WINDOW_WIDTH: u32 = 320;
 
     fn attach(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.pictures.is_none() {
+            self.pictures = Some(cx.new(|_| view::pictures::Pictures::default()));
+        }
         cx.follow::<HostSession>((), |view, session, cx| match session {
             Ok(session) => {
                 let now = (session.account, &session.chain_id, &session.signer);
@@ -420,6 +436,13 @@ impl Render for Members {
 }
 
 impl Members {
+    // `row`'s picture, once read.
+    fn picture(&self, row: &Row, cx: &mut Context<Self>) -> Option<std::sync::Arc<view::Image>> {
+        let blob = row.avatar.as_ref()?;
+        let pictures = self.pictures.as_ref()?;
+        pictures.update(cx, |pictures, cx| pictures.get(blob, cx))
+    }
+
     /// One read of both programs — the boot, a retry, a restore, a live
     /// bump of either. Rows already on screen stay there while it runs, so a bump
     /// never blinks the list back to "Loading", and a bump that changed no
@@ -691,6 +714,7 @@ fn row(account: &identity::Account, members: &[valset::Membership]) -> Row {
         number: account.number,
         name: account.card.name.clone(),
         bio: account.card.bio.clone(),
+        avatar: account.card.avatar,
         kind: account.kind(),
         devices: account
             .keys()

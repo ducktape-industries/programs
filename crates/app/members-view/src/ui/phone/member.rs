@@ -49,7 +49,7 @@ pub(super) fn page(
         .children(devices(view, row, ladder, theme));
     let managed = view.managed(number);
     if !managed.is_empty() {
-        body = body.children(manages(&managed, cx, ladder, theme));
+        body = body.children(manages(view, &managed, cx, ladder, theme));
     }
     if !row.devices.is_empty() {
         body = body.children(activity(view, ladder, theme));
@@ -137,7 +137,12 @@ fn head(
         .gap(space::LG)
         .p(space::BLOCK)
         .pb(space::LG)
-        .child(face(row, ladder.avatar_detail, theme))
+        .child(face(
+            row,
+            view.picture(row, cx),
+            ladder.avatar_detail,
+            theme,
+        ))
         .child(
             div()
                 .flex_1()
@@ -291,6 +296,7 @@ fn device_row(
 /// Manages: the agents the account manages; a press opens one over this
 /// page.
 fn manages(
+    view: &Members,
     managed: &[&Row],
     cx: &mut Context<Members>,
     ladder: &Ladder,
@@ -300,7 +306,7 @@ fn manages(
         .child(managed.len().to_string());
     let rows = managed
         .iter()
-        .map(|agent| managed_row(agent, cx, ladder, theme));
+        .map(|agent| managed_row(agent, view.picture(agent, cx), cx, ladder, theme));
     std::iter::once(head.into_any_element())
         .chain(rows)
         .collect()
@@ -310,6 +316,7 @@ fn manages(
 /// the chevron.
 fn managed_row(
     agent: &Row,
+    picture: Option<std::sync::Arc<view::Image>>,
     cx: &mut Context<Members>,
     ladder: &Ladder,
     theme: &Theme,
@@ -328,7 +335,7 @@ fn managed_row(
     .aria_description(format!("{about} · {life}"))
     .focusable()
     .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.open(number, cx)))
-    .child(design::lead(face(agent, ladder.avatar, theme)))
+    .child(design::lead(face(agent, picture, ladder.avatar, theme)))
     .child(
         design::row_words(div().truncate().child(agent.name.clone()))
             .child(design::row_caption(about, ladder, theme)),

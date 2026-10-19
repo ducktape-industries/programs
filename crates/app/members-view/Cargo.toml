@@ -22,6 +22,8 @@ serde.workspace = true
 chat.workspace = true
 # mints the `duck://<chain>/chat/<room>` link Open DM opens
 ducklink.workspace = true
+# a card's picture, by its blob id
+abi.workspace = true
 
 # Typed fake-host tests use the program contracts.
 [dev-dependencies]

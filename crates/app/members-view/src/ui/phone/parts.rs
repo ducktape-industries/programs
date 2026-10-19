@@ -13,14 +13,19 @@ use crate::{Row, words};
 // SDK gap: the kit's face, 0.5 when off; the SDK builds it later
 const NOT_ACTING_OPACITY: f32 = 0.5;
 
-/// An account's initial (the kit's `Avatar`): round for a person, the
-/// agent tint for an agent, square and in the data face for a program;
-/// faded when it no longer acts.
+// An account's initial, or its picture once read (the kit's `Avatar`):
+// round for a person, the agent tint for an agent, square and in the data
+// face for a program; faded when it no longer acts.
 // SDK gap: the kit's face, 0.5 when off; the SDK builds it later
-pub(super) fn face(row: &Row, size: Face, theme: &Theme) -> Div {
-    let avatar = row
-        .group()
-        .face(design::avatar(&row.name, size, theme), theme);
+pub(super) fn face(
+    row: &Row,
+    picture: Option<std::sync::Arc<view::Image>>,
+    size: Face,
+    theme: &Theme,
+) -> Div {
+    let pictured = picture.is_some();
+    let avatar = design::avatar_with(&row.name, picture, size, theme);
+    let avatar = row.group().face(avatar, pictured, theme);
     avatar.when(row.kind.note().is_some(), |avatar| {
         avatar.opacity(NOT_ACTING_OPACITY)
     })
