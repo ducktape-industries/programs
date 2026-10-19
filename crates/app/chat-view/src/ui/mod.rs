@@ -84,6 +84,7 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> impl IntoElement {
         .children(crate::policies::sheet(chat, cx, ladder, &theme))
         .into_any_element();
     let screen = with_menu(chat, screen, cx, &theme, ladder);
+    let screen = attachment::over(chat, screen, cx, &theme, ladder);
     let screen = room_menu::over(chat, screen, cx, &theme, ladder);
     let screen = with_create(chat, screen, cx, &theme, ladder);
     with_dm_pick(chat, screen, cx, &theme, ladder)

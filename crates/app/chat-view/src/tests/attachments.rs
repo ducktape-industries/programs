@@ -332,15 +332,16 @@ fn a_tap_on_a_picture_on_a_phone_hands_it_to_the_host_to_open() {
         size: 3,
         content_type: "image/png".into(),
     });
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
-                blocks: vec![picture.clone()],
-                ..row(3, 8, "")
-            }])),
-            query => chat_reply(query),
-        })
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                    blocks: vec![picture.clone()],
+                    ..row(3, 8, "")
+                }])),
+                query => chat_reply(query),
+            })
+        }));
     cx.simulate_click("chat-rooms-channel-general");
     cx.run_until_parked();
     cx.simulate_click("chat-message-m3-block-0");
@@ -372,15 +373,16 @@ fn a_picture_is_read_where_it_stands_whatever_snapshot_its_message_names() {
         size: 3,
         content_type: "image/png".into(),
     });
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
-                blocks: vec![picture.clone()],
-                ..row(3, 8, "")
-            }])),
-            query => chat_reply(query),
-        })
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                    blocks: vec![picture.clone()],
+                    ..row(3, 8, "")
+                }])),
+                query => chat_reply(query),
+            })
+        }));
     cx.host()
         .stream::<Changes<::chat::Chat>>()
         .send(block(4, posted("general")));
@@ -414,4 +416,65 @@ fn a_file_that_goes_up_is_listed_its_uploaders_alone() {
         list: Some(::program::Ownership::Owner),
     };
     assert_eq!(cx.host().requests::<Submit<access::Access>>(), [owned]);
+}
+
+// A click on a picture opens it whole over the room: Save hands the host
+// its chunks, Open in Files opens its path in Files and closes it, and a
+// press outside it closes it too.
+#[test]
+fn a_click_on_a_picture_opens_it_whole_with_save_and_open_in_files() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    cx.host().handle::<FileSave>(|_| Ok(true));
+    let picture = chat::Block::Attachment(chat::message::Attachment {
+        path: "/chat/general/m3/tape.png".into(),
+        snapshot: SNAPSHOT,
+        name: "tape.png".into(),
+        size: 3,
+        content_type: "image/png".into(),
+    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                    blocks: vec![picture.clone()],
+                    ..row(3, 8, "")
+                }])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(4, posted("general")));
+    cx.run_until_parked();
+    assert!(cx.find("chat-picture").is_none(), "closed until clicked");
+    cx.simulate_click("chat-message-m3-block-0");
+    cx.run_until_parked();
+    assert!(cx.find("chat-picture/image").is_some(), "it opens whole");
+    cx.simulate_click("chat-picture/save");
+    cx.run_until_parked();
+    let save = SaveFile {
+        name: "tape.png".into(),
+        blobs: vec![CHUNK],
+    };
+    assert_eq!(cx.host().requests::<FileSave>(), [save]);
+    cx.simulate_click("chat-picture/open");
+    cx.run_until_parked();
+    let opened = cx.host().requests::<view::methods::LinkOpen>();
+    let files = "duck://testnet-0a1b2c3d/files/chat/general/m3/tape.png";
+    assert_eq!(opened.last().map(String::as_str), Some(files));
+    assert!(
+        cx.find("chat-picture").is_none(),
+        "Files opens in its place"
+    );
+    cx.simulate_click("chat-message-m3-block-0");
+    cx.run_until_parked();
+    assert!(cx.find("chat-picture").is_some());
+    cx.simulate_dismiss("chat-picture-overlay");
+    cx.run_until_parked();
+    assert!(
+        cx.find("chat-picture").is_none(),
+        "a press outside closes it"
+    );
+    view.read(|chat| assert!(chat.enlarged.is_none()));
 }

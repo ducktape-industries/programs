@@ -14,46 +14,47 @@ use view::{ListOffset, px};
 fn history(head: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
-    cx.host().handle::<Ask<::chat::Chat>>(move |query| {
-        Ok(match query {
-            Query::Channels { .. } => Reply::Channels(page(vec![
-                channel("general", "General", head.get()),
-                channel("random", "Random", 0),
-            ])),
-            Query::Roots {
-                channel_id,
-                page: asked,
-                ..
-            } if channel_id == "general" => {
-                let top = head.get();
-                let limit = asked.limit().min(top);
-                Reply::Roots(::chat::PageResponse {
-                    height: 1,
-                    items: (top + 1 - limit..=top).rev().map(marked_row).collect(),
-                    next: (limit < top).then(|| vec![1]),
-                })
-            }
-            Query::MessagesAround {
-                channel_id,
-                seq,
-                page: asked,
-                ..
-            } if channel_id == "general" => {
-                let half = asked.limit() / 2;
-                let lo = seq.saturating_sub(half).max(1);
-                let hi = seq.saturating_add(half).min(head.get());
-                Reply::Messages((lo..=hi).map(marked_row).collect())
-            }
-            Query::Thread { root_seq, .. } => Reply::Thread {
-                root: Some(marked_row(root_seq)),
-                replies: page(vec![MsgRow {
-                    thread: Some(root_seq),
-                    ..row(1000, 8, "a reply")
-                }]),
-            },
-            query => chat_reply(query),
-        })
-    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Channels { .. } => Reply::Channels(page(vec![
+                    channel("general", "General", head.get()),
+                    channel("random", "Random", 0),
+                ])),
+                Query::Roots {
+                    channel_id,
+                    page: asked,
+                    ..
+                } if channel_id == "general" => {
+                    let top = head.get();
+                    let limit = asked.limit().min(top);
+                    Reply::Roots(::chat::PageResponse {
+                        height: 1,
+                        items: (top + 1 - limit..=top).rev().map(marked_row).collect(),
+                        next: (limit < top).then(|| vec![1]),
+                    })
+                }
+                Query::MessagesAround {
+                    channel_id,
+                    seq,
+                    page: asked,
+                    ..
+                } if channel_id == "general" => {
+                    let half = asked.limit() / 2;
+                    let lo = seq.saturating_sub(half).max(1);
+                    let hi = seq.saturating_add(half).min(head.get());
+                    Reply::Messages((lo..=hi).map(marked_row).collect())
+                }
+                Query::Thread { root_seq, .. } => Reply::Thread {
+                    root: Some(marked_row(root_seq)),
+                    replies: page(vec![MsgRow {
+                        thread: Some(root_seq),
+                        ..row(1000, 8, "a reply")
+                    }]),
+                },
+                query => chat_reply(query),
+            })
+        }));
     let view = cx.open::<Chat>();
     cx.run_until_parked();
     seat(&mut cx);

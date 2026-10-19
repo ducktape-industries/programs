@@ -11,6 +11,17 @@ pub fn channel_link(chain: &str, channel: &str, seq: Option<u64>) -> Option<Stri
     ducklink::mint(chain, ::chat::PROGRAM, &tail)
 }
 
+// `duck://<chain>/files/<segment>/…`: where Files shows what is at `path`
+// (`/chat/general/m3/tape.png` is `duck://<chain>/files/chat/general/m3/tape.png`);
+// none without a chain.
+pub(crate) fn file_link(chain: &str, path: &str) -> Option<String> {
+    let tail: Vec<&str> = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    ducklink::mint(chain, ::files::PROGRAM, &tail)
+}
+
 /// Where a program's room (`forge:web:3`) is shown by its program:
 /// `duck://<chain>/forge/web/3`, the room id's own path
 /// ([`chat::namespace::program`]). None for a room people opened, or no chain yet.

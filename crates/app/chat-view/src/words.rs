@@ -123,7 +123,7 @@ pub(crate) const OPENING_DM: &str = "Opening the conversation";
 pub(crate) const MESSAGE_ACTIONS: &str = "Message actions";
 pub(crate) const WHO_REACTED: &str = "Who reacted";
 
-// A picture's name, as a phone's tap on it opens it.
+// A picture's name, as a click or a phone's tap on it opens it.
 pub(crate) fn open(name: &str) -> String {
     format!("Open {name}")
 }
@@ -186,6 +186,7 @@ pub(crate) fn choice(choice: Choice, dm: bool) -> (&'static str, &'static str) {
 
 pub(crate) const ATTACH: &str = "Attach files";
 pub(crate) const SAVE: &str = "Save";
+pub(crate) const OPEN_IN_FILES: &str = "Open in Files";
 pub(crate) const UPLOADING: &str = "Uploading…";
 // a put the host ended before the network held it
 pub(crate) const PUT_CLOSED: &str = "The upload stopped before the network held the file";

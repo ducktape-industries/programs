@@ -474,6 +474,22 @@ impl Chat {
         })
         .detach();
     }
+
+    pub(crate) fn enlarge(&mut self, file: &Attachment, cx: &mut Context<Self>) {
+        self.enlarged = Some(file.clone());
+        cx.notify();
+    }
+
+    // Files shows the file by the link to its path, beside the room, so the
+    // picture over the room closes
+    pub(crate) fn open_in_files(&mut self, path: &str, cx: &mut Context<Self>) {
+        self.enlarged = None;
+        match crate::links::file_link(&self.session.chain_id, path) {
+            Some(url) => cx.host().open_link(&url),
+            None => cx.host().log("no link to open: the session names no chain"),
+        }
+        cx.notify();
+    }
 }
 
 // The file at the snapshot its message names: its chunks, from the file

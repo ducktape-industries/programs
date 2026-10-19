@@ -103,6 +103,9 @@ pub struct Chat {
     // what each file a message carries is, once read, by path and snapshot
     #[serde(skip)]
     pub(crate) shown_files: BTreeMap<(String, [u8; 32]), crate::attach::Shown>,
+    // the picture a click opened whole over the room
+    #[serde(skip)]
+    pub(crate) enlarged: Option<chat::message::Attachment>,
     // the rooms opened this session and left, by id
     #[serde(skip)]
     pub(crate) visited: BTreeMap<String, Visited>,
