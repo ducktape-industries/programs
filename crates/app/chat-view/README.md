@@ -15,6 +15,10 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
   folders (`Chat::lines`): `jobs/j-097` is listed as `j-097` under **jobs**,
   each folder where its first channel would be, a channel named as a folder
   is that folder's row, and a closed folder counts the unread rooms inside.
+  Only the first `/` makes a folder (`a/b/c` is `b/c` under **a/**). In the
+  new-channel form, the text before the first `/` typed becomes one chip at
+  the field's start (a token whose id starts `wire::CHIP`); Backspace right
+  after it makes it text again, and the whole text is the channel's name.
 - The room: its timeline (`ui/timeline.rs`, `ui/phone/timeline.rs`) and
   composer; a message's menu (desktop `ui/menu.rs` at the pointer, phone
   `ui/phone/actions.rs` as a sheet), the reaction picker and the delete

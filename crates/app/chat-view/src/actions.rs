@@ -7,6 +7,7 @@ use view::prelude::*;
 use crate::composer::Target;
 use crate::message::{ChatMessage, chat_message, mark_message_groups, zone};
 use crate::notifier::Choice;
+use crate::room_list::{Chip, chip, chipped};
 use crate::{Chat, Control, CopyRange, Folded, Menu, Mode, Pane, links};
 use chat::view::Names;
 use std::rc::Rc;
@@ -605,6 +606,32 @@ impl Chat {
             }
         })
         .detach();
+    }
+
+    // The create form's name field `field` changed: its folder chip made, or taken back to text.
+    pub(crate) fn create_name_changed(
+        &mut self,
+        field: &'static str,
+        change: &view::wire::TextChange,
+        window: &mut Window,
+    ) {
+        let Some(create) = &mut self.create else {
+            return;
+        };
+        let had = std::mem::replace(&mut create.chip, chipped(change).map(str::to_owned));
+        let edit = match chip(change, had.as_deref()) {
+            Chip::Leave => return,
+            Chip::Make { end, id } => {
+                let text = change.text[..end].to_owned();
+                let caret = change.cursor.end as usize;
+                create.name.replace(field, 0..end, text, Some(id), caret)
+            }
+            Chip::Unmake { text } => {
+                let caret = text.len();
+                create.name.replace(field, 0..0, text, None, caret)
+            }
+        };
+        window.dispatch(edit);
     }
 
     /// The create dialog's channel: the host names it, chat opens it.

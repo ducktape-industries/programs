@@ -444,6 +444,9 @@ pub struct ChannelCreate {
     pub(crate) error: String,
     #[serde(skip)]
     pub(crate) busy: bool,
+    // the name's folder chip as the field last held it (`room_list::chip`)
+    #[serde(skip)]
+    pub(crate) chip: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]

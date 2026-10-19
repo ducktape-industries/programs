@@ -66,7 +66,7 @@ pub use sanitization::SanitizeReport;
 
 pub mod text;
 pub use text::{
-    Edit, KeyClaim, TextChange, TextRange, TextToken, changed_span, rebase, validate_field,
+    CHIP, Edit, KeyClaim, TextChange, TextRange, TextToken, changed_span, rebase, validate_field,
 };
 
 mod image;

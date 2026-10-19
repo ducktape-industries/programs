@@ -216,6 +216,11 @@ pub struct TextToken {
     pub id: String,
 }
 
+// A token whose id starts with `CHIP` is a chip, a fixed prefix of its field (a folder before a
+// name): a host that draws chips pads it and lays a fill under it. Any other token (a mention) is
+// drawn as its text.
+pub const CHIP: &str = "chip:";
+
 /// A key the view hears (`on_key`) instead of the engine, matched after
 /// IME processing against the key's state.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

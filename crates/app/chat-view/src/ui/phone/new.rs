@@ -99,9 +99,13 @@ fn name_field(
         cx.notify();
         chat.create_channel(cx)
     });
+    let changed = cx.listener(|chat, change: &view::wire::TextChange, window, _| {
+        chat.create_name_changed("chat-new-name", change, window)
+    });
     let input = Input::new("chat-new-name", &create.name, words::NAME)
         .autocorrect(false)
         .autocapitalize(Autocapitalize::None)
+        .on_change(changed)
         .on_submit(submit);
     let problem = (!create.error.is_empty()).then(|| create.error.clone());
     design::field(input, ladder, theme)

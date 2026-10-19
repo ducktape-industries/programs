@@ -56,14 +56,14 @@ fn open_room(view: &Entity<Chat>) -> Option<String> {
 }
 
 #[test]
-fn a_slash_files_a_channel_under_its_folder_by_its_last_part() {
+fn a_slash_files_a_channel_under_its_folder_by_its_first_slash() {
     let (mut cx, _) = desk(&[]);
     for shown in [
         "general",
-        "jobs",
+        "jobs/",
         "j-097 · channel folders",
         "j-098 · board",
-        "c",
+        "b/c",
     ] {
         assert!(cx.has_text(shown), "{shown}: {:?}", cx.texts());
     }
@@ -78,7 +78,6 @@ fn a_slash_files_a_channel_under_its_folder_by_its_last_part() {
         "chat-sidebar-channel-ci",
         "chat-sidebar-channel-random",
         "chat-sidebar-folder-a",
-        "chat-sidebar-folder-a/b",
         "chat-sidebar-channel-deep",
         "chat-sidebar-dm-8",
     ] {
@@ -108,7 +107,7 @@ fn names_without_a_slash_keep_their_rows_and_order() {
             .collect();
         assert_eq!(
             spots.join(" "),
-            "general jobs/ j-097 j-098 engineering/ ci random a/ a/b/ deep"
+            "general jobs/ j-097 j-098 engineering/ ci random a/ deep"
         );
     });
 }
@@ -145,10 +144,10 @@ fn a_closed_folder_hides_its_rooms_counts_the_unread_and_is_kept() {
 
 #[test]
 fn folders_kept_closed_come_back_closed() {
-    let (cx, _) = desk(&["jobs", "a/b"]);
+    let (cx, _) = desk(&["jobs", "a"]);
     assert!(cx.find("chat-sidebar-channel-j-097").is_none());
     assert!(cx.find("chat-sidebar-folder-jobs-count").is_some());
-    assert!(cx.find("chat-sidebar-folder-a/b").is_some());
+    assert!(cx.find("chat-sidebar-folder-a").is_some());
     assert!(cx.find("chat-sidebar-channel-deep").is_none());
     assert!(cx.find("chat-sidebar-channel-ci").is_some());
 }
@@ -306,5 +305,106 @@ fn a_category_files_nothing_and_new_channels_carry_none() {
     assert!(
         matches!(&sent, Some(Op::CreateChannel { name, .. }) if name == "jobs/j-102"),
         "{sent:?}"
+    );
+}
+
+// A folder's header reads its name with its `/`, and its chevron ends the row: the name first and
+// taking the slack, the chevron last.
+#[test]
+fn a_folders_header_keeps_its_slash_and_its_chevron_ends_the_row() {
+    let (cx, _) = desk(&[]);
+    assert!(cx.has_text("jobs/"), "{:?}", cx.texts());
+    assert!(!cx.has_text("jobs"), "the header keeps its delimiter");
+    for row in [
+        "chat-sidebar-folder-jobs",
+        "chat-sidebar-folder-engineering",
+    ] {
+        let Some(wire::Node::Container(wire::ContainerNode { children, .. })) = cx.find(row) else {
+            panic!("{row} is a row");
+        };
+        let fold = format!("{row}-fold");
+        assert_eq!(
+            children.last(),
+            cx.find(&fold),
+            "{row}'s chevron is its last part"
+        );
+        let Some(wire::Node::Container(wire::ContainerNode { style, .. })) = children.first()
+        else {
+            panic!("{row}'s name is a container");
+        };
+        let grow = cx.styles()[*style].flex_grow;
+        assert_eq!(grow, Some(1.), "{row}'s name takes the slack before it");
+    }
+}
+
+fn field_of(cx: &TestAppContext, key: &str) -> (String, Vec<wire::TextToken>) {
+    let Some(wire::Node::Field { value, tokens, .. }) = cx.find(key) else {
+        panic!("{key} is a field");
+    };
+    (value.clone(), tokens.to_vec())
+}
+
+fn chip_of(folder: &str) -> wire::TextToken {
+    let end = folder.len() as u32 + 1;
+    wire::TextToken {
+        range: wire::TextRange { start: 0, end },
+        id: format!("{}{folder}", wire::CHIP),
+    }
+}
+
+// The new channel's name: the text before the first `/` typed becomes one chip at the field's
+// start, a later `/` is the name's, Backspace right after the chip makes it text again, and the
+// channel is created under the whole name.
+#[test]
+fn a_slash_in_a_new_channels_name_chips_its_folder_and_backspace_takes_it_back() {
+    let (mut cx, _) = desk(&[]);
+    cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
+    cx.simulate_click("chat-sidebar-new-channel");
+    cx.simulate_input("chat-create-name", "/x");
+    cx.run_until_parked();
+    assert_eq!(
+        field_of(&cx, "chat-create-name").1,
+        [],
+        "no folder before it"
+    );
+    cx.simulate_input("chat-create-name", "jobs");
+    cx.simulate_input("chat-create-name", "jobs/");
+    cx.run_until_parked();
+    let (text, tokens) = field_of(&cx, "chat-create-name");
+    assert_eq!((text.as_str(), tokens), ("jobs/", vec![chip_of("jobs")]));
+
+    cx.simulate_input("chat-create-name", "");
+    cx.run_until_parked();
+    let (text, tokens) = field_of(&cx, "chat-create-name");
+    assert_eq!(
+        (text.as_str(), tokens.len()),
+        ("jobs", 0),
+        "the chip is text again"
+    );
+
+    cx.simulate_input("chat-create-name", "jobs/");
+    cx.run_until_parked();
+    cx.simulate_input("chat-create-name", "jobs/j-102/x");
+    cx.run_until_parked();
+    let (text, _) = field_of(&cx, "chat-create-name");
+    assert_eq!(text, "jobs/j-102/x", "a later slash is the name's");
+    cx.simulate_submit("chat-create-name");
+    cx.run_until_parked();
+    let sent = cx.host().requests::<Submit<::chat::Chat>>().pop();
+    let named = matches!(&sent, Some(Op::CreateChannel { name, .. }) if name == "jobs/j-102/x");
+    assert!(named, "{sent:?}");
+}
+
+#[test]
+fn the_phones_new_channel_page_chips_a_pasted_folder_too() {
+    let (mut cx, _) = desk(&[]);
+    cx.simulate_touch(true);
+    cx.simulate_click("chat-rooms-new-channel");
+    cx.simulate_input("chat-new-name", "teams/ops/web");
+    cx.run_until_parked();
+    let (text, tokens) = field_of(&cx, "chat-new-name");
+    assert_eq!(
+        (text.as_str(), tokens),
+        ("teams/ops/web", vec![chip_of("teams")])
     );
 }

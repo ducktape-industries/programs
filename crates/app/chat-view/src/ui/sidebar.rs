@@ -303,25 +303,20 @@ fn line_row(
     ladder: &Ladder,
 ) -> AnyElement {
     match line {
-        Line::Room { info, depth } => {
+        Line::Room { info, .. } => {
             let selected = open == Some(info.channel.id.as_str());
-            channel_row(chat, info, *depth, selected, active, cx, theme)
+            channel_row(chat, info, selected, active, cx, theme)
         }
         Line::Folder(folder) => folder_row(chat, folder, open, active, cx, theme, ladder),
     }
 }
 
-// Where a row `depth` folders deep starts: a chevron's width further each.
-fn indent(depth: usize) -> Pixels {
-    design::space::XXS + FOLD * depth as f32
-}
-
 // A folder's chevron, the smallest box a pointer presses (the door's AX-017).
 const FOLD: Pixels = px(24.);
 
-// A folder's row: its chevron, its name, and while it is closed how many
-// rooms inside are unread. A folder named as a channel is that channel's
-// row too: a press opens the channel, and the chevron opens or closes it.
+// A folder's row: its name with its `/`, while it is closed how many rooms inside are unread, and
+// its chevron at the row's end. A folder named as a channel is that channel's row too: a press
+// opens the channel, and the chevron opens or closes it.
 fn folder_row(
     chat: &Chat,
     folder: &FolderLine,
@@ -341,6 +336,7 @@ fn folder_row(
     let selected = own.is_some_and(|own| open == Some(own.channel.id.as_str()));
     let unread = own.is_some_and(|own| chat.unread(own)) && !selected;
     let glyph = div()
+        .id(format!("{id}-fold"))
         .min_w(FOLD)
         .min_h(FOLD)
         .flex()
@@ -355,8 +351,7 @@ fn folder_row(
         .items_center()
         .gap_1()
         .min_h(design::size::CONTROL)
-        .pl(indent(folder.depth))
-        .pr_1()
+        .px_1()
         .bg(if selected {
             theme.sidebar_raised
         } else {
@@ -369,7 +364,7 @@ fn folder_row(
         .when(folder.unread > 0, |row| {
             row.aria_description(words::unread_rooms(folder.unread))
         });
-    let mut row = match own {
+    let (row, glyph) = match own {
         // the chevron is a press of its own, which the row's leaves alone
         Some(own) => {
             let room = own.channel.id.clone();
@@ -378,23 +373,25 @@ fn folder_row(
                 chat.choose(room.clone(), cx)
             });
             let fold = glyph
-                .id(format!("{id}-fold"))
                 .role(Role::Button)
                 .aria_label(words::folder(folder.name))
                 .aria_expanded(folder.open)
                 .on_click(toggle)
                 .consumes_click();
-            row.aria_label(folder.name.to_owned())
-                .on_click(choose)
-                .child(fold)
+            (
+                row.aria_label(folder.name.to_owned()).on_click(choose),
+                fold,
+            )
         }
-        None => row
-            .aria_label(words::folder(folder.name))
-            .aria_expanded(folder.open)
-            .on_click(toggle)
-            .child(glyph),
+        None => {
+            let row = row
+                .aria_label(words::folder(folder.name))
+                .aria_expanded(folder.open)
+                .on_click(toggle);
+            (row, glyph)
+        }
     };
-    row = row.child(
+    let mut row = row.child(
         div()
             .flex_1()
             .truncate()
@@ -403,7 +400,7 @@ fn folder_row(
             } else {
                 theme.sidebar_muted
             })
-            .child(folder.name.to_owned()),
+            .child(format!("{}/", folder.name)),
     );
     if own.is_some_and(|own| own.channel.members_only()) {
         row = row.child(
@@ -431,6 +428,7 @@ fn folder_row(
                 .bg(theme.accent),
         );
     }
+    let row = row.child(glyph);
     let row = match own {
         Some(own) => super::room_menu::row(row, &own.channel.id, chat, cx),
         None => row,
@@ -442,7 +440,6 @@ fn folder_row(
 fn channel_row(
     chat: &Chat,
     info: &ChannelInfo,
-    depth: usize,
     selected: bool,
     active: bool,
     cx: &mut Context<Chat>,
@@ -450,11 +447,11 @@ fn channel_row(
 ) -> AnyElement {
     let room = &info.channel.id;
     let read = (chat.unread(info), super::room_menu::waits(chat, room));
-    let deps = (info.clone(), depth, selected, active, read);
+    let deps = (info.clone(), selected, active, read);
     let (info, theme) = (info.clone(), *theme);
     let id = format!("chat-sidebar-channel-{}", info.channel.id);
     cx.memo(id, deps, move |chat, _, cx| {
-        channel_button(chat, &info, depth, selected, active, cx, &theme)
+        channel_button(chat, &info, selected, active, cx, &theme)
     })
     .into_any_element()
 }
@@ -462,7 +459,6 @@ fn channel_row(
 fn channel_button(
     chat: &Chat,
     info: &ChannelInfo,
-    depth: usize,
     selected: bool,
     active: bool,
     cx: &mut Context<Chat>,
@@ -481,8 +477,7 @@ fn channel_button(
         .items_center()
         .gap_1()
         .min_h(design::size::CONTROL)
-        .pl(indent(depth))
-        .pr_1()
+        .px_1()
         .bg(if selected {
             theme.sidebar_raised
         } else {

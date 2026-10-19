@@ -92,8 +92,12 @@ fn name_field(
     cx: &mut Context<Chat>,
     theme: &Theme,
 ) -> Input {
+    let changed = cx.listener(|chat, change: &view::wire::TextChange, window, _| {
+        chat.create_name_changed("chat-create-name", change, window)
+    });
     let name = Input::new("chat-create-name", &create.name, "Name the new channel")
-        .placeholder("Channel name");
+        .placeholder("Channel name")
+        .on_change(changed);
     form_field(name, create, can_submit, cx, theme)
 }
 

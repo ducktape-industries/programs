@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use chat::view::Names;
 use chat::{Category, ChannelInfo, Kind, Principal};
 use view::prelude::*;
+use view::wire;
 
 use crate::Chat;
 use crate::names::dm_peer_of;
@@ -101,19 +102,68 @@ pub(crate) struct FolderLine<'a> {
     pub unread: usize,
 }
 
-// A channel's name in parts: split at each `/`, each part trimmed, empty
-// ones dropped. A name without `/` is one part, as it is.
+// A channel's name in parts: the folder before its first `/` and the name after it, each trimmed,
+// later `/`s the name's own. A name with no `/`, or nothing on one side of the first, is one part,
+// as it is.
 fn segments(name: &str) -> Vec<&str> {
-    if !name.contains('/') {
-        return vec![name];
+    match name.split_once('/') {
+        Some((folder, rest)) if !folder.trim().is_empty() && !rest.trim().is_empty() => {
+            vec![folder.trim(), rest.trim()]
+        }
+        _ => vec![name],
     }
-    name.split('/')
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .collect()
 }
 
-// What a channel's row says: inside a folder, its name's last part.
+// What the create form's name field asks once `change` landed, `had` its folder chip before it:
+// while none is chipped, the text before a `/` just typed or pasted becomes the chip, an atomic span
+// at the field's start (`wire::CHIP`); the chip deleted whole with nothing in its place (Backspace
+// right after it) comes back as its text without the `/`; anything else asks nothing.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Chip {
+    Leave,
+    Make { end: usize, id: String },
+    Unmake { text: String },
+}
+
+pub(crate) fn chip(change: &wire::TextChange, had: Option<&str>) -> Chip {
+    let Some(edit) = change.edit else {
+        return Chip::Leave;
+    };
+    if chipped(change).is_some() {
+        return Chip::Leave;
+    }
+    let (start, end) = (edit.range.start as usize, edit.range.end as usize);
+    let removed = start == 0 && edit.len == 0;
+    if let Some(had) = had.filter(|had| removed && end == had.len()) {
+        let text = had.strip_suffix('/').unwrap_or(had);
+        return Chip::Unmake {
+            text: text.to_owned(),
+        };
+    }
+    let Some(slash) = change.text.find('/') else {
+        return Chip::Leave;
+    };
+    let folder = change.text[..slash].trim();
+    let typed = (start..start + edit.len as usize).contains(&slash);
+    match typed && !folder.is_empty() {
+        true => Chip::Make {
+            end: slash + 1,
+            id: format!("{}{folder}", wire::CHIP),
+        },
+        false => Chip::Leave,
+    }
+}
+
+// The text of the folder chip `change` holds, if any.
+pub(crate) fn chipped(change: &wire::TextChange) -> Option<&str> {
+    let token = change
+        .tokens
+        .iter()
+        .find(|token| token.id.starts_with(wire::CHIP))?;
+    change.text.get(token.range.range())
+}
+
+// What a channel's row says: inside a folder, its name after the folder.
 pub(crate) fn label(name: &str) -> &str {
     match segments(name).as_slice() {
         [_, .., last] => last,
