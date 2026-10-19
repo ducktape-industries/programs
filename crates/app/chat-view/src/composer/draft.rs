@@ -31,6 +31,9 @@ pub struct MentionChoice {
     /// a word beside the label, said before the pick: why an agent would
     /// not answer the writer
     pub hint: Option<String>,
+    // false for a name `@` does not offer (a program's own account, an
+    // agent that does not act): it still names a mention already written
+    pub offered: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,8 +131,20 @@ pub(crate) fn matching_choices<'a>(
     let needle = partial.to_lowercase();
     choices
         .iter()
-        .filter(|choice| choice.label.to_lowercase().starts_with(&needle))
+        .filter(|choice| choice.offered && words_start(&choice.label.to_lowercase(), &needle))
         .collect()
+}
+
+// Whether a word of `name` starts with `needle`: the name's start, or the
+// place after a space, `-`, `_` or `.`.
+fn words_start(name: &str, needle: &str) -> bool {
+    let after_break = name
+        .char_indices()
+        .filter(|(_, c)| matches!(c, ' ' | '-' | '_' | '.'))
+        .map(|(at, c)| at + c.len_utf8());
+    std::iter::once(0)
+        .chain(after_break)
+        .any(|at| name[at..].starts_with(needle))
 }
 
 impl Draft {
@@ -573,6 +588,7 @@ mod tests {
             token: "<@7>".into(),
             label: "Ada".into(),
             hint: None,
+            offered: true,
         }]
     }
 
@@ -666,6 +682,51 @@ mod tests {
         ));
         assert_eq!(draft.body(), "hi <@7> ");
         assert_eq!(draft.query(), None, "a mention is never a query");
+    }
+
+    // A name `@` does not offer still names the mention a message already
+    // holds, as one span, but typing it finds nothing.
+    #[test]
+    fn a_name_not_offered_keeps_a_written_mention_and_is_never_matched() {
+        let forge = [MentionChoice {
+            token: "<@9>".into(),
+            label: "forge".into(),
+            hint: None,
+            offered: false,
+        }];
+        let draft = Draft::from_body("ask <@9> @fo", &forge);
+        assert_eq!(draft.field.text(), "ask @forge @fo");
+        assert_eq!(draft.body(), "ask <@9> @fo");
+        host::selects(&draft.field, 14..14);
+        assert_eq!(draft.query(), Some((11..14, "fo".into())));
+        assert_eq!(draft.menu(&forge), Some((Vec::new(), 0)));
+    }
+
+    // `@` matches the start of any word of a name, in any case, and a
+    // bare `@` every name offered, in the roster's order.
+    #[test]
+    fn a_query_matches_the_start_of_any_word_of_a_name() {
+        fn found<'a>(choices: &'a [MentionChoice], partial: &str) -> Vec<&'a str> {
+            matching_choices(choices, partial)
+                .into_iter()
+                .map(|choice| choice.label.as_str())
+                .collect()
+        }
+        let choices = ["Ada Lovelace", "Alan", "bo.k", "qa-mention-b"].map(|label| MentionChoice {
+            token: label.into(),
+            label: label.into(),
+            hint: None,
+            offered: true,
+        });
+        let every = ["Ada Lovelace", "Alan", "bo.k", "qa-mention-b"];
+        assert_eq!(found(&choices, ""), every);
+        assert_eq!(found(&choices, "a"), ["Ada Lovelace", "Alan"]);
+        assert_eq!(found(&choices, "lo"), ["Ada Lovelace"]);
+        assert_eq!(found(&choices, "LOVE"), ["Ada Lovelace"]);
+        assert_eq!(found(&choices, "ada l"), ["Ada Lovelace"]);
+        assert_eq!(found(&choices, "men"), ["qa-mention-b"]);
+        assert_eq!(found(&choices, "k"), ["bo.k"]);
+        assert!(found(&choices, "ve").is_empty(), "inside a word");
     }
 
     #[test]

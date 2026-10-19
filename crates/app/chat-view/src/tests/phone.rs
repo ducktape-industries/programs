@@ -1330,6 +1330,23 @@ fn at_lists_every_match_in_the_room_above_the_band() {
     view::testing::assert_fits(cx.root(), cx.styles(), &dense, 390., &design::TOUCH);
 }
 
+// `@` offers the roster's people and agents, never a program's own
+// account: forge is no row, and typing its name opens no menu.
+#[test]
+fn at_offers_people_and_agents_and_no_program() {
+    let (mut cx, _) = in_general();
+    placed(&mut cx);
+    cx.simulate_input("draft-general/editor", "@");
+    let Some(wire::Node::UniformList { count, .. }) = cx.find("draft-general/mentions") else {
+        panic!("the choices are a list: {:?}", cx.texts())
+    };
+    assert_eq!(*count, 3, "eddy, reviewer and ada");
+    assert!(cx.find("draft-general/mention/<@10>").is_some());
+    assert!(cx.find("draft-general/mention/<@9>").is_none());
+    cx.simulate_input("draft-general/editor", "@fo");
+    assert!(cx.find("draft-general/mentions").is_none());
+}
+
 // ---------- who can edit (`policies.rs`) ----------
 
 #[test]

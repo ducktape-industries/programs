@@ -17,6 +17,7 @@ pub fn mention_choices(names: &Names, members: &[Principal]) -> Vec<MentionChoic
         if !choices.iter().any(|choice| choice.principal == principal) {
             choices.push(MentionChoice {
                 label: names.mention(&principal)[1..].to_string(),
+                offered: offered(names, &principal),
                 principal,
             });
         }
@@ -25,10 +26,27 @@ pub fn mention_choices(names: &Names, members: &[Principal]) -> Vec<MentionChoic
     choices
 }
 
+// Whom `@` offers: a person, or an agent that acts. A program's own
+// account and an agent suspended or revoked are named, not offered.
+fn offered(names: &Names, principal: &Principal) -> bool {
+    matches!(
+        names.kind(principal),
+        Some(
+            Kind::User
+                | Kind::Program {
+                    category: Category::Agent,
+                    standing: Standing::Active,
+                    ..
+                }
+        )
+    )
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MentionChoice {
     pub label: String,
     pub principal: Principal,
+    pub offered: bool,
 }
 
 /// The canonical token the composer inserts: `<@account>`.
@@ -201,6 +219,38 @@ mod tests {
         assert_eq!(names.program(&account(3)), Some("forge"));
         assert!(crate::message::agent(&names, &account(2)));
         assert!(!crate::message::agent(&names, &account(3)));
+    }
+
+    // `@` offers people and the agents that act. A program's own account,
+    // an agent suspended or revoked, and a member the roster does not name
+    // are each still a choice, so a mention written of them keeps its name,
+    // but none is offered.
+    #[test]
+    fn the_mention_menu_offers_people_and_active_agents_only() {
+        let names = Names::from_roster([
+            profile(1, "ada", Kind::User),
+            profile(2, "scout", agent(1, Standing::Active)),
+            profile(3, "forge", Kind::System("forge".into())),
+            profile(4, "idle", agent(1, Standing::Suspended)),
+            profile(5, "gone", agent(1, Standing::Revoked)),
+        ]);
+        let members = [3, 4, 9].map(Principal::Account);
+        let choices = mention_choices(&names, &members);
+        let offered: Vec<_> = choices
+            .iter()
+            .map(|choice| (choice.label.as_str(), choice.offered))
+            .collect();
+        assert_eq!(
+            offered,
+            [
+                ("account-9", false),
+                ("ada", true),
+                ("forge", false),
+                ("gone", false),
+                ("idle", false),
+                ("scout", true),
+            ]
+        );
     }
 
     /// An active agent answers its manager always, and anyone else as its

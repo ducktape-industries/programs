@@ -8,7 +8,8 @@ use chat::message::Attachment;
 use view::prelude::*;
 
 impl Chat {
-    /// Who the composer offers after `@`: the roster, and the room's members.
+    // Every name a mention may carry, the roster's and the room's members',
+    // each marked whether `@` offers it.
     pub(crate) fn mention_choices(&self) -> Vec<MentionChoice> {
         let Some(names) = self.names.ready() else {
             return Vec::new();
@@ -29,6 +30,7 @@ impl Chat {
                         .map(|why| format!("Answers {why}")),
                 },
                 label: choice.label,
+                offered: choice.offered,
             })
             .collect()
     }

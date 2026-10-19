@@ -148,6 +148,7 @@ fn roster() -> Vec<MentionChoice> {
         token: "<@1>".into(),
         label: "Ada".into(),
         hint: None,
+        offered: true,
     }]
 }
 
@@ -418,11 +419,13 @@ fn menu_navigation_then_enter_picks_a_stable_identity_and_escape_leaves_enter_to
             token: "<@1>".into(),
             label: "Ada".into(),
             hint: None,
+            offered: true,
         },
         MentionChoice {
             token: "<@2>".into(),
             label: "Alan".into(),
             hint: None,
+            offered: true,
         },
     ];
     let mut draft = caret("@A", 2);
@@ -629,11 +632,13 @@ fn a_mention_choice_carries_its_hint() {
             token: "<@1>".into(),
             label: "Ada".into(),
             hint: None,
+            offered: true,
         },
         MentionChoice {
             token: "<@2>".into(),
             label: "Scout".into(),
             hint: Some("Answers its manager only".into()),
+            offered: true,
         },
     ];
     let root = lowered(&caret("@", 1), "c", &choices);
