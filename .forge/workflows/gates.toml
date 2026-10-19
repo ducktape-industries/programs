@@ -1,6 +1,7 @@
-# The programs gates (AGENTS.md): rustfmt, clippy -D warnings with the feature sets crates
-# build, and the workspace tests, run in one pod by gates.sh from the forge repo tools at its
-# main head, cloned from the forge this repository's own clone came from (J-033, J-062).
+# The programs CI, minimal but mechanical (orthory, #engineering 912/913): rustfmt, the agents
+# lint, clippy -D warnings on the workspace and on the feature sets crates build; no tests, which
+# wait for a release cut. gates.sh (GATES=check) from the forge repo tools at its main head runs
+# them in one pod, cloned from the forge this repository's own clone came from (J-033, J-062).
 name = "gates"
 
 [on]
@@ -16,9 +17,10 @@ id = "gates"
 runs-on = ["pods"]
 # What the pod asks: the quota queues a check that does not fit, and cargo runs as many jobs as
 # CPUs. The target dir is memory-backed scratch (gates.sh puts it at /var/tmp/target), so the
-# build never writes the node's disk; memory covers that target and the compile.
+# build never writes the node's disk; memory covers that target and the compile (a clippy-only
+# target, smaller than a test build's; trimmed once a check run is measured).
 cpu = "16"
-memory = "36Gi"
+memory = "24Gi"
 scratch = ["/var/tmp/target"]
 image = "localhost:5000/toolchain:f8ff9f00de3f@sha256:bbdcb20bbddd8035fd9a9fc0acf03330e0b4f5d00b05292bed7fd8279306b25c"
 steps = [
@@ -28,5 +30,6 @@ steps = [
 ]
 
 [jobs.env]
+GATES = "check"
+AGENTS_LINT = "1"
 FEATURE_SETS = "chat-view:notifier harness:program harness:describe"
-TEST_ARGS = "--workspace"

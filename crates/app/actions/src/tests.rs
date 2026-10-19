@@ -693,6 +693,8 @@ fn the_programs_gates_workflow_reads() {
     let steps = &job.steps;
     assert!(steps[1].contains("/forge/tools"), "{steps:?}");
     assert_eq!(steps[2], "sh /var/tmp/tools/gates.sh /work/programs");
+    let env = |key: &str| job.env.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+    assert_eq!((env("GATES"), env("AGENTS_LINT")), (Some("check"), Some("1")));
     assert!(
         job.inputs.is_empty(),
         "/shared/tools holds no scripts (J-062)"
