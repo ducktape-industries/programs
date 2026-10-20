@@ -734,7 +734,7 @@ pub(crate) struct Grep;
 
 impl Tool for Grep {
     const NAME: &'static str = "forge_grep";
-    const DESCRIPTION: &'static str = "Search the text files of a repository at a branch or commit for a literal string: each matching line with its path and line number, in path order. A file larger than forge serves in one read is searched a range at a time. Binary files, and a big file's ranges that are binary in themselves, are listed as skipped; a hit after such a range gives its byte offset in place of a line number. It reads every file under the prefix, so narrow the prefix in a large repository.";
+    const DESCRIPTION: &'static str = "Search the text files of a repository at a branch or commit for a literal string: each matching line with its path and line number, in path order. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans. A file larger than forge serves in one read is searched a range at a time. Binary files, and a big file's ranges that are binary in themselves, are listed as skipped; a hit after such a range gives its byte offset in place of a line number. It reads every file under the prefix, so narrow the prefix in a large repository.";
     type Args = GrepArgs;
 
     fn schema() -> Value {
@@ -742,7 +742,7 @@ impl Tool for Grep {
             json!({
                 "repo": repo_schema(),
                 "rev": rev_schema(),
-                "pattern": { "type": "string", "description": "the literal text to find" },
+                "pattern": { "type": "string", "description": "the literal text to find; a newline in it matches across lines" },
                 "prefix": prefix_schema(),
             }),
             &["repo", "pattern"],
@@ -759,7 +759,7 @@ impl Tool for Grep {
         let mut search = Search {
             ctx,
             repo: &args.repo,
-            pattern: &args.pattern,
+            spans: ::files::grep::Spans::new(&args.pattern),
             served: None,
             hits: Vec::new(),
             skipped: Vec::new(),
@@ -778,7 +778,7 @@ impl Tool for Grep {
 struct Search<'a> {
     ctx: &'a ExecCtx,
     repo: &'a str,
-    pattern: &'a str,
+    spans: ::files::grep::Spans<'a, (Option<u64>, u64)>,
     served: Option<u64>,
     hits: Vec<Value>,
     skipped: Vec<String>,
@@ -786,6 +786,7 @@ struct Search<'a> {
 
 impl Search<'_> {
     fn file(&mut self, path: &str, id: &str) -> Result<(), Error> {
+        self.spans.gap();
         let blob = blob_of(self.ctx, self.repo, id, None)?;
         match blob.content {
             Content::Text => {
@@ -826,6 +827,7 @@ impl Search<'_> {
                 let skipped = format!("{path} bytes {from}..{at}: binary in this range");
                 self.skipped.push(skipped);
                 carried.clear();
+                self.spans.gap();
                 (start, line) = (at, None);
                 continue;
             }
@@ -849,9 +851,9 @@ impl Search<'_> {
     }
 
     fn hit(&mut self, path: &str, line: Option<u64>, offset: u64, text: &str) {
-        if !text.contains(self.pattern) {
+        let Some(((line, offset), text)) = self.spans.line((line, offset), text) else {
             return;
-        }
+        };
         let mut hit = json!({ "path": path, "line": line, "text": text });
         if line.is_none() {
             hit["offset"] = json!(offset);

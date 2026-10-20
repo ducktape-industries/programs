@@ -333,13 +333,14 @@ fn grep_file(
         return Ok(());
     }
     let bytes = read_file(ctx, &file(ctx, id)?, 0, size)?;
+    let mut spans = crate::grep::Spans::new(grepping.pattern);
     for (index, line) in bytes.split(|&byte| byte == b'\n').enumerate() {
         let text = String::from_utf8_lossy(line);
-        if text.contains(grepping.pattern) {
+        if let Some((line, text)) = spans.line(index as u64 + 1, &text) {
             grepping.hits.push(Hit {
                 path: path.clone(),
-                line: index as u64 + 1,
-                text: text.into_owned(),
+                line,
+                text,
             });
         }
     }

@@ -703,3 +703,46 @@ fn a_symlink_reads_as_its_target_and_a_commit_carries_a_change() {
     };
     assert_eq!(refused(&host, ada(), empty).code, code::INVALID_INPUT);
 }
+
+#[test]
+fn a_pattern_holding_a_newline_finds_a_call_split_across_lines() {
+    let host = host();
+    let call = "fn main() {\n    run(\n        first,\n        second,\n    );\n}\n";
+    let changes = vec![
+        put(&host, "/shared/call.rs", call),
+        put(&host, "/shared/crlf.rs", &call.replace('\n', "\r\n")),
+        put(&host, "/shared/flat.rs", "run(first, second);\n"),
+    ];
+    commit(&host, ada(), None, changes).unwrap();
+    let grep = |pattern: &str| {
+        let query = Query::Grep {
+            pattern: pattern.into(),
+            prefix: "/shared/".into(),
+            at: None,
+            page: PageRequest::first(10),
+        };
+        let Reply::Hits { hits, .. } = ask(&host, query).unwrap() else {
+            panic!("a grep answers Hits")
+        };
+        let found: Vec<(String, u64, String)> = hits
+            .items
+            .into_iter()
+            .map(|hit| (hit.path, hit.line, hit.text))
+            .collect();
+        found
+    };
+    let split = "    run(\n        first,".to_owned();
+    assert_eq!(
+        grep("run(\n        first,"),
+        [
+            ("/shared/call.rs".to_owned(), 2, split.clone()),
+            ("/shared/crlf.rs".to_owned(), 2, split),
+        ]
+    );
+    let flat = (
+        "/shared/flat.rs".to_owned(),
+        1,
+        "run(first, second);".to_owned(),
+    );
+    assert_eq!(grep("run(first"), [flat]);
+}

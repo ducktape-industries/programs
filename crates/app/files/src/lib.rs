@@ -6,6 +6,7 @@ mod commit;
 mod cursor;
 mod examples;
 mod gate;
+pub mod grep;
 mod objects;
 mod ops;
 pub mod paths;
@@ -247,7 +248,7 @@ pub enum Query {
     },
     #[ask(Reply::Hits { snapshot: Option<BlobId>, hits: PageResponse<Hit> })]
     #[reads(state::HEAD, state::HISTORY, state::SNAPSHOTS)]
-    #[tool_query(description = "Each line holding pattern as literal text, with its path and line number, under prefix.", example = examples::grep)]
+    #[tool_query(description = "Each line holding pattern as literal text, with its path and line number, under prefix. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans.", example = examples::grep)]
     Grep {
         pattern: String,
         prefix: String,

@@ -282,13 +282,13 @@ pub(crate) struct Grep;
 
 impl Tool for Grep {
     const NAME: &'static str = "files_grep";
-    const DESCRIPTION: &'static str = "Search the text of the network's files for a literal string: each matching line with its path and line number.";
+    const DESCRIPTION: &'static str = "Search the text of the network's files for a literal string: each matching line with its path and line number. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans.";
     type Args = GrepArgs;
 
     fn schema() -> Value {
         object(
             json!({
-                "pattern": { "type": "string", "description": "the literal text to find" },
+                "pattern": { "type": "string", "description": "the literal text to find; a newline in it matches across lines" },
                 "prefix": { "type": "string", "description": "search only paths starting with this; / if omitted" },
                 "snapshot": snapshot_schema(),
                 "cursor": cursor_schema(),

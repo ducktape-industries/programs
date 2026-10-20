@@ -407,3 +407,39 @@ fn a_file_is_read_by_path_and_lines_found_by_prefix_and_searched() {
         ]
     );
 }
+
+#[test]
+fn a_pattern_holding_a_newline_finds_a_call_split_across_lines_and_ranges() {
+    let world = narrow(64);
+    let chain = &world.chain;
+    let thread = world.opened("m1", "split calls", Some(WINDOW));
+    let rows: String = (1..=60).map(|n| format!("row {n}\n")).collect();
+    let call = "fn main() {\n    run(\n        first,\n        second,\n    );\n}\n";
+    let files = json!({
+        "repo": "split",
+        "files": [
+            { "path": "call.rs", "content": call },
+            { "path": "crlf.rs", "content": call.replace('\n', "\r\n") },
+            { "path": "rows.txt", "content": rows },
+        ],
+        "message": "split calls",
+    });
+    turn(chain, 3, &[("c1", "forge_commit", files)]);
+    answered(chain, thread, "c1");
+    let split_call = json!({ "repo": "split", "pattern": "run(\n        first," });
+    let split_rows = json!({ "repo": "split", "pattern": "row 10\nrow 11" });
+    turn(
+        chain,
+        5,
+        &[
+            ("g1", "forge_grep", split_call),
+            ("g2", "forge_grep", split_rows),
+        ],
+    );
+    let text = "    run(\n        first,";
+    let call = json!({ "path": "call.rs", "line": 2, "text": text });
+    let crlf = json!({ "path": "crlf.rs", "line": 2, "text": text });
+    assert_eq!(answered(chain, thread, "g1")["hits"], json!([call, crlf]));
+    let row = json!({ "path": "rows.txt", "line": 10, "text": "row 10\nrow 11" });
+    assert_eq!(answered(chain, thread, "g2")["hits"], json!([row]));
+}
