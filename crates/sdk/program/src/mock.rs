@@ -473,6 +473,12 @@ impl MockHost {
                 HostReply::Done
             }
             HostOp::Query { .. } | HostOp::Resource { .. } => unreachable!("answered above"),
+            // reachable once core appends a host op this mock has no arm for yet
+            #[allow(unreachable_patterns)]
+            _ => HostReply::Refused(abi::Refusal::new(
+                code::UNSUPPORTED,
+                "MockHost does not model this host op yet",
+            )),
         }
     }
 
