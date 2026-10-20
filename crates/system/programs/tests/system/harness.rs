@@ -673,6 +673,16 @@ fn a_mentioned_agent_commits_files_to_forge_as_itself() {
     });
 }
 
+async fn drafts(net: &Net, channel_id: &str) -> Vec<chat::Draft> {
+    let asked = chat::Query::Drafts {
+        channel_id: channel_id.into(),
+    };
+    let chat::Reply::Drafts(drafts) = net.ask(chat::PROGRAM, &asked).await else {
+        panic!()
+    };
+    drafts
+}
+
 async fn message(net: &Net, message_id: &str) -> Option<chat::MsgRow> {
     let asked = chat::Query::MessageById {
         message_id: message_id.into(),
@@ -684,7 +694,7 @@ async fn message(net: &Net, message_id: &str) -> Option<chat::MsgRow> {
 }
 
 #[test]
-fn a_streamed_post_shows_as_it_arrives_and_a_mention_in_it_is_heard_once_it_is_whole() {
+fn a_streamed_post_forms_in_the_draft_lands_whole_and_a_mention_in_it_is_heard_once() {
     deterministic::Runner::default().start(|context| async move {
         let dir = tempfile::tempdir().unwrap();
         let mut net = Net::found_with(context, dir.path(), apps(), Vec::new(), MEMBER_CAP).await;
@@ -747,12 +757,12 @@ fn a_streamed_post_shows_as_it_arrives_and_a_mention_in_it_is_heard_once_it_is_w
         ];
         let id = format!("harness-{}-toolu_p", thread.id);
         net.stream(asked.id, &events, 0..3).await;
-        let shown = message(&net, &id).await.expect("the post shows as its text arrives");
-        assert_eq!(shown.author, program::Principal::Account(agent));
-        assert_eq!(
-            shown.blocks,
-            chat::parse_message(&format!("<@{echo}> pl"))
-        );
+        assert_eq!(message(&net, &id).await, None, "nothing posts while it forms");
+        let [draft] = &drafts(&net, "general").await[..] else {
+            panic!("the agent's draft in the room");
+        };
+        assert_eq!(draft.author, program::Principal::Account(agent));
+        assert!(draft.text.contains(&format!("<@{echo}> pl")), "{draft:?}");
         assert!(net.threads(echo).await.is_empty(), "a post still forming wakes no one");
 
         net.stream(asked.id, &events, 3..5).await;
@@ -760,8 +770,8 @@ fn a_streamed_post_shows_as_it_arrives_and_a_mention_in_it_is_heard_once_it_is_w
         net.stream(asked.id, &events, 5..events.len()).await;
         net.end_stream(asked.id, events.len() as u64).await;
         net.answer(relay.id, Vec::new()).await;
-        let whole = message(&net, &id).await.unwrap();
-        assert_eq!(whole.seq, shown.seq, "one message, edited");
+        let whole = message(&net, &id).await.expect("the post lands once its call runs");
+        assert_eq!(whole.author, program::Principal::Account(agent));
         assert_eq!(
             whole.blocks,
             chat::parse_message(&format!("<@{echo}> please check"))
