@@ -142,7 +142,9 @@ the one rule every runtime that delivers messages to an agent asks, harness
 and agents run off the chain alike. `Narrowed { page }` answers every program
 account that narrowed whom it answers, with its `Answers`, a page at a time,
 so a view reads them all in one paged query; an account it doesn't list
-answers `Anyone`.
+answers `Anyone`. chat-view (mention hints, a DM's header, an agent's card)
+and settings-view (a manager's agents) read it so; harness-view's page of one
+agent asks `Answers`.
 
 ## Who may write a key
 

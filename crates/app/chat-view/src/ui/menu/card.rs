@@ -55,11 +55,10 @@ pub(super) fn card(
             theme.agent_soft,
         ));
     }
-    let answers = chat
-        .ownerships
-        .ready()
-        .and_then(|ownerships| ownerships.get(&account))
-        .map(|ownership| crate::names::answers(names, ownership));
+    let anyone = identity::Ownership::Anyone;
+    let answers = chat.ownerships.ready().map(|ownerships| {
+        crate::names::answers(names, ownerships.get(&account).unwrap_or(&anyone))
+    });
     let answers = answers.map(|line| {
         div()
             .id("chat-card-answers")

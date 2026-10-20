@@ -50,12 +50,14 @@ fn agents() -> (TestAppContext, Entity<Chat>) {
     cx.host().handle::<Ask<Identity>>(|query| {
         Ok(match query {
             identity::Query::List { .. } => no_cards(),
-            identity::Query::Answers { account } => identity::Reply::Answers(Some(match account {
-                11 => Ownership::Owner,
-                12 => Ownership::Listed(vec![identity::Party::Account(14)]),
-                13 => Ownership::Anyone,
-                account => panic!("{account} is no agent's"),
-            })),
+            identity::Query::Narrowed { .. } => identity::Reply::Narrowed(identity::PageResponse {
+                height: 1,
+                items: vec![
+                    (11, Ownership::Owner),
+                    (12, Ownership::Listed(vec![identity::Party::Account(14)])),
+                ],
+                next: None,
+            }),
             query => panic!("unexpected identity query: {query:?}"),
         })
     });

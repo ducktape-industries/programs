@@ -158,6 +158,16 @@ async fn agents(host: &Host, manager: u64) -> Result<Vec<Agent>, Error> {
             page: PageRequest { after, limit: None },
         })
         .await?;
+    let narrowed: BTreeMap<u64, Ownership> = match listed.is_empty() {
+        true => BTreeMap::new(),
+        false => host
+            .query_all(|after| identity::ask::Narrowed {
+                page: PageRequest { after, limit: None },
+            })
+            .await?
+            .into_iter()
+            .collect(),
+    };
     let mut agents = Vec::new();
     for agent in listed {
         let kind @ Kind::Program { .. } = agent.kind() else {
@@ -167,10 +177,7 @@ async fn agents(host: &Host, manager: u64) -> Result<Vec<Agent>, Error> {
             )));
         };
         let number = agent.number;
-        let ownership = host
-            .query(identity::ask::Answers { account: number })
-            .await?
-            .unwrap_or(Ownership::Anyone);
+        let ownership = narrowed.get(&number).cloned().unwrap_or(Ownership::Anyone);
         let names = names(host, &ownership).await?;
         agents.push(Agent {
             number,

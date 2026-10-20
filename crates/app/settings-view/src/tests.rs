@@ -78,9 +78,11 @@ fn scout_is(cx: &TestAppContext, life: identity::Life) {
                     next: None,
                 })
             }
-            identity::Query::Answers { account: 12 } => {
-                identity::Reply::Answers(Some(identity::Ownership::Owner))
-            }
+            identity::Query::Narrowed { .. } => identity::Reply::Narrowed(identity::PageResponse {
+                height: 42,
+                items: vec![(12, identity::Ownership::Owner)],
+                next: None,
+            }),
             q => panic!("unexpected query: {q:?}"),
         })
     });
@@ -108,9 +110,11 @@ fn respond(cx: &TestAppContext) {
             {
                 identity::Reply::Resolved(vec![Some(9)])
             }
-            identity::Query::Answers { account: 12 } => {
-                identity::Reply::Answers(Some(identity::Ownership::Owner))
-            }
+            identity::Query::Narrowed { .. } => identity::Reply::Narrowed(identity::PageResponse {
+                height: 42,
+                items: vec![(12, identity::Ownership::Owner)],
+                next: None,
+            }),
             q => panic!("unexpected query: {q:?}"),
         })
     });
@@ -169,9 +173,11 @@ fn scout_seated(cx: &TestAppContext) {
                     next: None,
                 })
             }
-            identity::Query::Answers { account: 13 } => {
-                identity::Reply::Answers(Some(identity::Ownership::Owner))
-            }
+            identity::Query::Narrowed { .. } => identity::Reply::Narrowed(identity::PageResponse {
+                height: 42,
+                items: vec![(13, identity::Ownership::Owner)],
+                next: None,
+            }),
             q => panic!("unexpected query: {q:?}"),
         })
     });
@@ -804,9 +810,11 @@ fn an_identity_head_re_reads_the_account_in_place() {
                     next: None,
                 })
             }
-            identity::Query::Answers { account: 12 } => {
-                identity::Reply::Answers(Some(identity::Ownership::Owner))
-            }
+            identity::Query::Narrowed { .. } => identity::Reply::Narrowed(identity::PageResponse {
+                height: 42,
+                items: vec![(12, identity::Ownership::Owner)],
+                next: None,
+            }),
             q => panic!("unexpected query: {q:?}"),
         })
     });
@@ -893,8 +901,16 @@ fn answering(ownership: identity::Ownership) -> (TestAppContext, Answers) {
                     })
                     .collect(),
             ),
-            identity::Query::Answers { account: 12 } => {
-                identity::Reply::Answers(Some(read.borrow().clone()))
+            identity::Query::Narrowed { .. } => {
+                let items = match read.borrow().clone() {
+                    identity::Ownership::Anyone => Vec::new(),
+                    narrowed => vec![(12, narrowed)],
+                };
+                identity::Reply::Narrowed(identity::PageResponse {
+                    height: 42,
+                    items,
+                    next: None,
+                })
             }
             q => panic!("unexpected query: {q:?}"),
         })

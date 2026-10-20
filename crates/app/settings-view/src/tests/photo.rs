@@ -66,9 +66,11 @@ fn cards(
             identity::Query::Profile { number: 9 } => {
                 identity::Reply::Profile(Some(policies::ada()))
             }
-            identity::Query::Answers { .. } => {
-                identity::Reply::Answers(Some(identity::Ownership::Owner))
-            }
+            identity::Query::Narrowed { .. } => identity::Reply::Narrowed(identity::PageResponse {
+                height: 42,
+                items: vec![(agent.number, identity::Ownership::Owner)],
+                next: None,
+            }),
             q => panic!("unexpected query: {q:?}"),
         })
     });

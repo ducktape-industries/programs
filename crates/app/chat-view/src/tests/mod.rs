@@ -154,13 +154,17 @@ fn quiet_methods(cx: &mut TestAppContext) {
     cx.host().handle::<view::methods::StoreGet>(|_| Ok(None));
     cx.host().handle::<Ask<Identity>>(|query| match query {
         identity::Query::List { .. } => Ok(no_cards()),
-        identity::Query::Answers { .. } => Ok(anyone()),
+        identity::Query::Narrowed { .. } => Ok(none_narrowed()),
         query => panic!("unexpected identity query: {query:?}"),
     });
 }
 
-fn anyone() -> identity::Reply {
-    identity::Reply::Answers(Some(identity::Ownership::Anyone))
+fn none_narrowed() -> identity::Reply {
+    identity::Reply::Narrowed(identity::PageResponse {
+        height: 1,
+        items: Vec::new(),
+        next: None,
+    })
 }
 
 fn no_cards() -> identity::Reply {
@@ -241,7 +245,7 @@ fn owned(
                 }))
             }
             identity::Query::List { .. } => no_cards(),
-            identity::Query::Answers { .. } => anyone(),
+            identity::Query::Narrowed { .. } => none_narrowed(),
             query => panic!("unexpected identity query: {query:?}"),
         })
     });

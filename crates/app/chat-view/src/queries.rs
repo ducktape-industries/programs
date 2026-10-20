@@ -40,27 +40,13 @@ pub(crate) async fn roster(host: Host) -> Result<Names, Error> {
     ::chat::view::roster(move |ask| host.query(ask)).await
 }
 
-pub(crate) async fn ownerships(
-    host: Host,
-    names: &Names,
-) -> Result<BTreeMap<u64, Ownership>, Error> {
-    let agents = names
-        .people()
-        .filter(|number| crate::message::agent(names, &Principal::Account(*number)));
-    let asks = agents.map(|number| {
-        let host = host.clone();
-        async move {
-            let answers = host
-                .query(identity::ask::Answers { account: number })
-                .await?;
-            Ok::<_, Error>(answers.map(|ownership| (number, ownership)))
-        }
-    });
-    Ok(futures::future::try_join_all(asks)
-        .await?
-        .into_iter()
-        .flatten()
-        .collect())
+pub(crate) async fn ownerships(host: Host) -> Result<BTreeMap<u64, Ownership>, Error> {
+    let narrowed = host
+        .query_all(|after| identity::ask::Narrowed {
+            page: identity::PageRequest { after, limit: None },
+        })
+        .await?;
+    Ok(narrowed.into_iter().collect())
 }
 
 pub(crate) async fn reactors(

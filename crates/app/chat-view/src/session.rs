@@ -7,7 +7,6 @@ use view::prelude::*;
 use crate::Chat;
 use crate::notifier::{Choice, choices};
 use crate::queries::{channels, ownerships, roster};
-use futures::FutureExt;
 
 /// Why the reader may not write in the open room.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,14 +71,12 @@ impl Chat {
         }
     }
 
-    /// The roster's names and whom its agents answer, read again with the
-    /// ones on screen kept: the roster is read once, for both.
+    // The roster's names and every agent that narrowed whom it answers,
+    // read again with the ones on screen kept.
     pub(crate) fn load_names(&mut self, cx: &mut Context<Self>) {
         let host = cx.host();
-        let names = roster(host.clone()).shared();
-        cx.load(self, names.clone(), |chat| &mut chat.names);
-        let answers = async move { ownerships(host, &names.await?).await };
-        cx.load(self, answers, |chat| &mut chat.ownerships);
+        cx.load(self, roster(host.clone()), |chat| &mut chat.names);
+        cx.load(self, ownerships(host), |chat| &mut chat.ownerships);
     }
 
     // Each account's picture, read again; what is on screen stays until a
