@@ -128,16 +128,16 @@ files = { path = "crates/app/files" }
 
 # ---- the kernel ABI a program and the host share: ducktape's own
 # `crates/kernel/abi`, at the rev the host below is pinned to
-abi = { git = "https://github.com/ducktape-industries/ducktape", rev = "b86a45ace509febeb7f264e0b001e584459c749b" }
+abi = { git = "https://github.com/ducktape-industries/ducktape", rev = "6ead346a0958905110ecce2f9f80f5ceaad7ea43" }
 
 # ---- the blobs contract the blobs program records and the programs that read
 # held blobs ask it by; the host the founding suite runs the boot set on and
 # the key schemes it signs with, and the probe fixture it seats
 # (dev-dependencies only)
-host = { git = "https://github.com/ducktape-industries/ducktape", rev = "b86a45ace509febeb7f264e0b001e584459c749b" }
-blob = { git = "https://github.com/ducktape-industries/ducktape", rev = "b86a45ace509febeb7f264e0b001e584459c749b" }
-keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "b86a45ace509febeb7f264e0b001e584459c749b" }
-fixture-wasm = { git = "https://github.com/ducktape-industries/ducktape", rev = "b86a45ace509febeb7f264e0b001e584459c749b" }
+host = { git = "https://github.com/ducktape-industries/ducktape", rev = "6ead346a0958905110ecce2f9f80f5ceaad7ea43" }
+blob = { git = "https://github.com/ducktape-industries/ducktape", rev = "6ead346a0958905110ecce2f9f80f5ceaad7ea43" }
+keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "6ead346a0958905110ecce2f9f80f5ceaad7ea43" }
+fixture-wasm = { git = "https://github.com/ducktape-industries/ducktape", rev = "6ead346a0958905110ecce2f9f80f5ceaad7ea43" }
 commonware-cryptography = "2026.9.0"
 commonware-runtime = "2026.9.0"
 

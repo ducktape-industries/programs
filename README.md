@@ -50,9 +50,9 @@ founding out of what this repo builds. The forge smoke (real git against
 The kernel calls the boot programs by role, never by id. Each founding
 program names the roles it fills (`roles = [...]` on its `[[programs]]`
 entry in `founding.toml`): `programs`, `validators`, `identity`, `blobs`,
-`awaits`, `halo` and `access` always (`abi::role::REQUIRED`), and optionally
-`egress`, `scheduler` and `ownership` (on a network that fills none, no write
-is guarded). The programs role keeps that table from genesis
+`awaits` and `halo` always (`abi::role::REQUIRED`), and optionally
+`access`, `egress`, `scheduler` and `ownership` (on a network that fills
+neither access nor ownership, no op is checked and no write is guarded). The programs role keeps that table from genesis
 on, and only the validators' vote changes it, by publishing a program with
 the roles it fills. Every `Env` carries the table (`env.roles`, a map from
 role name to program; the names are constants in `abi::role`, and a new
