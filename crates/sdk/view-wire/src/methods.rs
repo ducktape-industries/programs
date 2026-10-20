@@ -129,8 +129,6 @@ fn decode_call<T: BorshDeserialize>(bytes: &[u8], target: &str) -> Result<T, Str
 }
 
 /// `program.query`: one query to `P`, answered with the bytes it `Respond`ed.
-/// The node answers from its preconfirmed state: the last block and the ops
-/// it has accepted since, ahead of the block that will carry them.
 pub struct Query<P>(std::marker::PhantomData<P>);
 impl<P: Program> sealed::Sealed for Query<P> {}
 impl<P: Program> Method for Query<P> {
