@@ -25,6 +25,7 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::CreateChannelWithMeta { .. }
         | Op::CreateDmChannel { .. }
         | Op::PostMessage { .. }
+        | Op::Post { .. }
         | Op::AddReaction { .. }
         | Op::RemoveReaction { .. }
         | Op::Migrate { .. }

@@ -46,23 +46,15 @@ pub fn describe(op: &Op) -> Description {
             message_id,
             blocks,
             thread,
+        } => return posted(channel_id, message_id, plain_text(blocks), thread),
+        Op::Post {
+            channel_id,
+            message_id,
+            text,
+            thread,
         } => {
-            let mut fields = channel_description_fields(channel_id);
-            fields.extend([
-                field("text", Value::Text(plain_text(blocks))),
-                field("message", Value::text(message_id)),
-                field(
-                    "thread",
-                    Value::Text(thread.map_or_else(|| "—".into(), |t| t.to_string())),
-                ),
-            ]);
-            return Description {
-                title: match dm_peers(channel_id) {
-                    Some(_) => "Direct message".into(),
-                    None => format!("Post in #{channel_id}"),
-                },
-                fields,
-            };
+            let text = plain_text(&crate::parse_message(text));
+            return posted(channel_id, message_id, text, thread);
         }
         Op::EditMessage {
             channel_id,
@@ -248,6 +240,25 @@ pub fn describe(op: &Op) -> Description {
 }
 
 describe::export!(Op, describe);
+
+fn posted(channel_id: &str, message_id: &str, text: String, thread: &Option<u64>) -> Description {
+    let mut fields = channel_description_fields(channel_id);
+    fields.extend([
+        field("text", Value::Text(text)),
+        field("message", Value::text(message_id)),
+        field(
+            "thread",
+            Value::Text(thread.map_or_else(|| "—".into(), |t| t.to_string())),
+        ),
+    ]);
+    Description {
+        title: match dm_peers(channel_id) {
+            Some(_) => "Direct message".into(),
+            None => format!("Post in #{channel_id}"),
+        },
+        fields,
+    }
+}
 
 fn created(name: &str, post_policy: &PostPolicy) -> Vec<Field> {
     let posting = match post_policy {

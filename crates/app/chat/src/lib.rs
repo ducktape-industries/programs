@@ -213,6 +213,15 @@ pub enum Op {
     // goes back to chat's
     #[tool_op(description = "Put your rooms and folders in your own order in the lists: a room by its channel id, a folder by its name (the text before a channel name's first '/'). Writes your whole order; an empty list goes back to chat's order.", example = examples::room_order)]
     SetRoomOrder { order: Vec<Entry> },
+    // `PostMessage` with its blocks parsed here from `text` (`parse_message`), for a writer that
+    // has text in hand
+    #[tool_op(description = "Post text in a channel, or reply in a thread when thread is its root's seq. text is markdown as chat's composer writes it: **bold**, *italic*, `code`, fenced code, > quotes, --- dividers, links, and <@N> to mention account N; each line is its own paragraph. message_id is yours to choose, unique across chat, no '/'; a second post with it is refused. Posting needs the room open to you and not archived.", example = examples::post_text)]
+    Post {
+        channel_id: String,
+        message_id: String,
+        text: String,
+        thread: Option<u64>,
+    },
 }
 
 /// A read. `viewer` is the reader's principals: they decide
@@ -804,6 +813,7 @@ fn op_variants_only_append() {
             "Drafting",
             "Undraft",
             "SetRoomOrder",
+            "Post",
         ]
     );
 }

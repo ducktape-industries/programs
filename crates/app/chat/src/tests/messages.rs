@@ -368,3 +368,27 @@ fn flat_text_joins_a_paragraphs_marked_runs_as_typed() {
         "the flaky retry in sync; see it"
     );
 }
+
+#[test]
+fn a_post_of_text_is_the_post_of_its_parsed_blocks() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    let text = "hello <@2>, the **draft** is up\n> quoted";
+    let as_text = |id: &str, thread| Op::Post {
+        channel_id: "general".into(),
+        message_id: id.into(),
+        text: text.into(),
+        thread,
+    };
+    chat.ok(&ADA, as_text("t1", None));
+    chat.post(&ADA, "b1", text, None);
+    chat.ok(&BO, as_text("t2", Some(1)));
+    let (by_text, by_blocks) = (chat.message(1), chat.message(2));
+    assert_eq!(by_text.blocks, parse_message(text));
+    assert_eq!(
+        (&by_text.blocks, &by_text.text),
+        (&by_blocks.blocks, &by_blocks.text)
+    );
+    assert_eq!(chat.message(1).reply_count, 1);
+    let again = chat.refused(&CY, as_text("t1", None));
+    assert_eq!(again, code::ALREADY_EXISTS);
+}

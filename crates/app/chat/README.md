@@ -3,6 +3,13 @@
 The `chat` program: channels, direct messages, threads, reactions and members. Its contract is
 its row in the repository's README; `src/lib.rs` says how its files are laid out.
 
+## Posting text
+
+`Post { channel_id, message_id, text, thread }` posts as `PostMessage` does, with its blocks
+parsed in chat from `text` by `parse_message`, the composer's own markdown (each line its own
+paragraph, `<@N>` a mention). A writer with text in hand, an agent or a script, sends it as it is;
+the posted message is the one `PostMessage` with `parse_message(text)` makes.
+
 ## Channel meta
 
 A channel's meta is a map of text keys to text values. Whoever may rename the channel sets a key

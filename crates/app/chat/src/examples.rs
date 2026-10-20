@@ -188,6 +188,15 @@ pub(crate) fn watch() -> Op {
     }
 }
 
+pub(crate) fn post_text() -> Op {
+    Op::Post {
+        channel_id: room(),
+        message_id: "m-2".into(),
+        text: "hello <@17>, the **draft** is up".into(),
+        thread: None,
+    }
+}
+
 pub(crate) fn channels() -> Query {
     Query::Channels { page: every() }
 }

@@ -128,6 +128,15 @@ impl Program for Chat {
             } => drafting(ctx, &sender, &channel_id, thread, text, anew, doing),
             Op::Undraft { channel_id } => undraft(ctx, &sender, &channel_id),
             Op::SetRoomOrder { order } => crate::order::set_order(ctx, order),
+            Op::Post {
+                channel_id,
+                message_id,
+                text,
+                thread,
+            } => {
+                let blocks = crate::parse_message(&text);
+                post(ctx, &sender, channel_id, message_id, blocks, thread)
+            }
         }
     }
 
