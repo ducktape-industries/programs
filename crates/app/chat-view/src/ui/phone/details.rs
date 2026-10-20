@@ -1,6 +1,6 @@
-//! Channel details (Expo `app/(tabs)/chat/[channel]/details.tsx`, board 53): its name and facts,
-//! who can edit it, its members, and for whoever may change it adding and removing a member,
-//! rename and archive, each a sheet over the page; sends membership, rename and archive ops.
+//! A room's details (Expo `app/(tabs)/chat/[channel]/details.tsx`, board 53): a channel's facts, who
+//! can edit it, its members and, for whoever may change it, membership, rename and archive sheets;
+//! a direct room's person, their profile one step in; and either room's notifications.
 use view::prelude::*;
 use view::{Div, Stateful};
 
@@ -20,9 +20,14 @@ pub(super) fn screen(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
+    let dm = chat::dm_peers(&room.id).is_some();
+    let title = match dm {
+        true => words::CONVERSATION_DETAILS,
+        false => words::CHANNEL_DETAILS,
+    };
     let page = design::page(
         "chat-details-page",
-        words::CHANNEL_DETAILS,
+        title,
         design::Nav::back(chat.pages().depth(), back),
         ladder,
         theme,
@@ -37,7 +42,6 @@ pub(super) fn screen(
             ))
             .into_any_element();
     };
-    let dm = chat::dm_peers(&info.channel.id).is_some();
     let agents = crate::ui::notices::agents(chat, dm, true, cx, theme, ladder);
     let agents_head = (!agents.is_empty()).then(|| {
         design::section_head(
@@ -54,8 +58,13 @@ pub(super) fn screen(
         .overflow_y_scroll()
         .flex()
         .flex_col()
-        .child(head(chat, info, theme, ladder))
-        .children(crate::policies::room_row(chat, cx, ladder, theme))
+        .children((!dm).then(|| head(chat, info, theme, ladder)))
+        .children(dm.then(|| person(chat, cx, theme, ladder)).flatten())
+        .children(
+            (!dm)
+                .then(|| crate::policies::room_row(chat, cx, ladder, theme))
+                .flatten(),
+        )
         .child(design::section_head(
             "chat-details-notices-head",
             words::NOTIFICATIONS,
@@ -65,7 +74,7 @@ pub(super) fn screen(
         .child(crate::ui::notices::choices(
             chat,
             &info.channel.id,
-            chat::dm_peers(&info.channel.id).is_some(),
+            dm,
             cx,
             theme,
             ladder,
@@ -74,12 +83,56 @@ pub(super) fn screen(
         .children(agents)
         .children(rules(chat, theme, ladder))
         .children(crate::ui::widget::section(chat, cx, theme, ladder))
-        .children(members(chat, room, info, cx, theme, ladder))
+        .children(
+            (!dm)
+                .then(|| members(chat, room, info, cx, theme, ladder))
+                .into_iter()
+                .flatten(),
+        )
         .children(owner_actions(chat, info, cx, theme, ladder));
-    page.caption(format!("#{}", info.channel.name))
+    let caption = match dm {
+        true => chat.room_name(&room.id),
+        false => format!("#{}", info.channel.name),
+    };
+    page.caption(caption)
         .children(parts::room_notice(chat, cx, theme, ladder))
         .child(body)
         .into_any_element()
+}
+
+fn person(
+    chat: &Chat,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Option<AnyElement> {
+    let peer = (chat.my_account()).and_then(|me| crate::names::dm_peer_of(me, &chat.room_id()))?;
+    let (name, agent) = chat.dm_peer()?;
+    let picture = chat.faces.of(peer, cx);
+    let open = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
+        chat.open_link(peer.to_string(), cx);
+    });
+    Some(
+        design::row("chat-details-profile", ladder, theme)
+            .min_h(ladder.row_tall)
+            .role(Role::Button)
+            .aria_label(format!("Profile of {name}"))
+            .focusable()
+            .on_click(open)
+            .child(design::lead(face(
+                &name,
+                agent,
+                picture,
+                ladder.avatar,
+                theme,
+            )))
+            .child(
+                design::row_words(design::row_title(name, ladder, theme))
+                    .child(design::row_caption("Profile", ladder, theme)),
+            )
+            .child(design::chevron(ladder, theme))
+            .into_any_element(),
+    )
 }
 
 fn rules(chat: &Chat, theme: &Theme, ladder: &Ladder) -> Vec<AnyElement> {
@@ -267,7 +320,7 @@ fn owner_actions(
     theme: &Theme,
     ladder: &Ladder,
 ) -> Vec<AnyElement> {
-    if !chat.may_change_room() {
+    if chat::dm_peers(&info.channel.id).is_some() || !chat.may_change_room() {
         return Vec::new();
     }
     let rename = cx.listener(|chat, _: &ClickEvent, _window, cx| {

@@ -102,6 +102,7 @@ pub(crate) fn account(number: u64) -> String {
 }
 
 pub(crate) const CHANNEL_DETAILS: &str = "Channel details";
+pub(crate) const CONVERSATION_DETAILS: &str = "Conversation details";
 pub(crate) const THREAD: &str = "Thread";
 pub(crate) const LOADING_MESSAGES: &str = "Loading messages…";
 pub(crate) const LOADING_THREAD: &str = "Loading the thread…";

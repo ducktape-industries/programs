@@ -474,7 +474,7 @@ fn a_channel_names_itself_its_members_and_who_may_post() {
 }
 
 #[test]
-fn a_direct_room_wears_the_persons_face_and_its_info_is_their_profile() {
+fn a_direct_rooms_info_opens_its_notifications_and_the_persons_profile_is_one_step_in() {
     let (mut cx, _) = phone();
     cx.simulate_click("chat-rooms-dm-8");
     cx.run_until_parked();
@@ -482,8 +482,25 @@ fn a_direct_room_wears_the_persons_face_and_its_info_is_their_profile() {
     assert!(cx.has_text("reviewer"));
     assert_eq!(
         cx.interactivity("chat-room-details").aria.label.as_deref(),
-        Some("Profile")
+        Some("Conversation details")
     );
+    cx.simulate_click("chat-room-details");
+    cx.run_until_parked();
+    assert!(cx.find("chat-details-page").is_some(), "{:?}", cx.texts());
+    assert!(cx.find("chat-details-notices-head").is_some());
+    for id in [
+        "chat-details-rename",
+        "chat-details-archive",
+        "chat-details-add",
+        "chat-details-members-head",
+    ] {
+        assert!(cx.find(id).is_none(), "{id} offered in a direct room");
+    }
+    let opened = |cx: &TestAppContext| cx.host().requests::<view::methods::LinkOpen>();
+    assert!(opened(&cx).is_empty());
+    cx.simulate_click("chat-details-profile");
+    cx.run_until_parked();
+    assert_eq!(opened(&cx).len(), 1, "the profile is one step in");
 }
 
 #[test]

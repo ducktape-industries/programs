@@ -258,7 +258,7 @@ fn header(
         .child(button(
             "chat-room-details",
             if direct {
-                "Conversation details"
+                words::CONVERSATION_DETAILS
             } else {
                 words::CHANNEL_DETAILS
             },

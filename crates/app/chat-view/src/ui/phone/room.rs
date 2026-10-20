@@ -1,11 +1,6 @@
-//! A room (Expo `app/(tabs)/chat/[channel]/index.tsx`, boards 20-22): the
-//! title row names it (a channel by `#name` over its members and policy; a
-//! direct room by the other person's face and name), its info button opens
-//! Channel details or the person's profile; under it the room's notice,
-//! the timeline, and the composer or the strip saying why the reader may
-//! not write. Reads the open room, its members and the write gate; writes
-//! what its controls do (details, the profile link) and, through the
-//! composer, the room's draft.
+//! A room (Expo `app/(tabs)/chat/[channel]/index.tsx`, boards 20-22): its title row (a channel's
+//! `#name` over its members and policy, a direct room's person), whose info button opens the room's
+//! details; under it the room's notice, the timeline, and the composer or the strip saying why not.
 use view::prelude::*;
 
 use super::{composer, parts, timeline};
@@ -78,32 +73,20 @@ fn caption(chat: &Chat, room: &Room) -> Option<String> {
 
 fn info(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     let glyph = design::icon("info", ladder.icon);
-    let peer = chat
-        .my_account()
-        .and_then(|me| crate::names::dm_peer_of(me, &chat.room_id()));
-    match peer {
-        Some(peer) => design::icon_button(
-            "chat-room-details",
-            glyph,
-            "Profile",
-            ladder,
-            theme,
-            cx.listener(move |chat, _: &ClickEvent, _window, cx| {
-                chat.open_link(peer.to_string(), cx);
-            }),
-        )
-        .into_any_element(),
-        None => design::icon_button(
-            "chat-room-details",
-            glyph,
-            words::CHANNEL_DETAILS,
-            ladder,
-            theme,
-            cx.listener(|chat, _: &ClickEvent, _window, cx| {
-                chat.toggle_details(cx);
-                cx.notify();
-            }),
-        )
-        .into_any_element(),
-    }
+    let label = match chat::dm_peers(&chat.room_id()) {
+        Some(_) => words::CONVERSATION_DETAILS,
+        None => words::CHANNEL_DETAILS,
+    };
+    design::icon_button(
+        "chat-room-details",
+        glyph,
+        label,
+        ladder,
+        theme,
+        cx.listener(|chat, _: &ClickEvent, _window, cx| {
+            chat.toggle_details(cx);
+            cx.notify();
+        }),
+    )
+    .into_any_element()
 }

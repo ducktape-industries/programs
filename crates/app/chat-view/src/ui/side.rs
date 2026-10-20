@@ -132,7 +132,12 @@ pub fn details(
     let pane = match dm {
         true => {
             let pane = pane
-                .child(details_header("Conversation details", cx, theme, ladder))
+                .child(details_header(
+                    words::CONVERSATION_DETAILS,
+                    cx,
+                    theme,
+                    ladder,
+                ))
                 .child(rule(theme));
             notices(pane, cx).child(section(words::PEOPLE, theme))
         }
