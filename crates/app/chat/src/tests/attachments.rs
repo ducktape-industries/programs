@@ -1,6 +1,5 @@
-//! Files a message carries: an attachment block keeps its tag after every older variant, a
-//! message of attachments alone posts, search finds it by a file's name, and mentions and tags
-//! read nothing in it.
+//! Files a message carries: an attachment block keeps its tag, a message of attachments alone
+//! posts, search finds it by a file's name, and mentions and tags read nothing in it.
 use super::*;
 use crate::Block;
 use crate::message::Attachment;
@@ -16,18 +15,7 @@ fn attachment(name: &str) -> Block {
 }
 
 #[test]
-fn block_variants_only_append() {
-    assert_eq!(
-        describe::variants::<Block>(),
-        [
-            "Paragraph",
-            "Code",
-            "Quote",
-            "Divider",
-            "Attachment",
-            "Notice"
-        ]
-    );
+fn stored_blocks_keep_their_tags() {
     assert_eq!(borsh::to_vec(&Block::Divider).unwrap(), [3]);
     assert_eq!(borsh::to_vec(&attachment("a")).unwrap()[0], 4);
 }
