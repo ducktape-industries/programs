@@ -2540,7 +2540,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre"
 version = "0.3.9"
-source = "git+https://github.com/ducktape-industries/gpui-pre?rev=2622bd8294b97a966f8febbd3b9dcb2cb5850aca#2622bd8294b97a966f8febbd3b9dcb2cb5850aca"
+source = "git+https://github.com/ducktape-industries/gpui-pre?rev=eef11e96c9fcf7e0389d31f125013370a1b02d92#eef11e96c9fcf7e0389d31f125013370a1b02d92"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -2666,7 +2666,7 @@ dependencies = [
 [[package]]
 name = "gpui-pre-scheduler"
 version = "0.3.9"
-source = "git+https://github.com/ducktape-industries/gpui-pre?rev=2622bd8294b97a966f8febbd3b9dcb2cb5850aca#2622bd8294b97a966f8febbd3b9dcb2cb5850aca"
+source = "git+https://github.com/ducktape-industries/gpui-pre?rev=eef11e96c9fcf7e0389d31f125013370a1b02d92#eef11e96c9fcf7e0389d31f125013370a1b02d92"
 dependencies = [
  "async-task",
  "backtrace",
