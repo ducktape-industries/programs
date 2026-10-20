@@ -169,8 +169,11 @@ fn read_item(item: &Value) -> Option<Block> {
                 .as_array()
                 .into_iter()
                 .flatten()
-                .filter(|part| part["type"] == "output_text")
-                .map(|part| text_of(part, "text"))
+                .filter_map(|part| match part["type"].as_str()? {
+                    "output_text" => Some(text_of(part, "text")),
+                    "refusal" => Some(text_of(part, "refusal")),
+                    _ => None,
+                })
                 .collect();
             Some(Block::Text {
                 text,
@@ -196,6 +199,11 @@ fn read_item(item: &Value) -> Option<Block> {
         }
         _ => None,
     }
+}
+
+fn refuses(item: &Value) -> bool {
+    let mut parts = item["content"].as_array().into_iter().flatten();
+    parts.any(|part| part["type"] == "refusal")
 }
 
 fn opened_item(item: &Value) -> Option<Block> {
@@ -226,6 +234,7 @@ pub struct Fold {
     done: BTreeMap<u64, Block>,
     summaries: BTreeMap<u64, u64>,
     events: u64,
+    refused: bool,
     ended: bool,
 }
 
@@ -238,6 +247,7 @@ impl Fold {
             done: BTreeMap::new(),
             summaries: BTreeMap::new(),
             events: 0,
+            refused: false,
             ended: false,
         }
     }
@@ -290,6 +300,14 @@ impl Fold {
                 events.extend(self.delta(output, &event["delta"]));
                 events
             }
+            "response.refusal.delta" => {
+                self.refused = true;
+                self.delta(output, &event["delta"])
+            }
+            "response.refusal.done" => {
+                self.refused = true;
+                Vec::new()
+            }
             "response.output_item.done" => self.item_done(output, &event["item"]),
             "response.completed" => vec![self.completed(&event["response"])],
             "response.incomplete" => vec![self.incomplete(&event["response"])],
@@ -321,6 +339,7 @@ impl Fold {
         else {
             return Vec::new();
         };
+        self.refused |= refuses(item);
         self.done.insert(index, block);
         vec![Event::End { index }]
     }
@@ -354,9 +373,10 @@ impl Fold {
             .done
             .values()
             .any(|block| matches!(block, Block::ToolUse { .. }));
-        let stop = match calls {
-            true => Stop::ToolUse,
-            false => Stop::EndTurn,
+        let stop = match (calls, self.refused) {
+            (true, _) => Stop::ToolUse,
+            (false, true) => Stop::Refusal,
+            (false, false) => Stop::EndTurn,
         };
         self.reply(response, stop)
     }

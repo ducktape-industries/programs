@@ -28,15 +28,37 @@ pub fn model_path(name: &str) -> String {
     format!("/v1/models/{name}")
 }
 
-pub fn headers(ask: Ask) -> Vec<(String, String)> {
+pub fn headers(request: &Request, ask: Ask) -> Vec<(String, String)> {
     let mut headers = vec![
         ("anthropic-version".to_owned(), VERSION.to_owned()),
         ("content-type".to_owned(), "application/json".to_owned()),
     ];
-    if ask == Ask::Summary {
+    if ask == Ask::Summary || carries_compaction(request) {
         headers.push(("anthropic-beta".to_owned(), COMPACTION_BETA.to_owned()));
     }
     headers
+}
+
+pub fn model_headers() -> Vec<(String, String)> {
+    vec![("anthropic-version".to_owned(), VERSION.to_owned())]
+}
+
+fn carries_compaction(request: &Request) -> bool {
+    request.messages.iter().any(|message| match message {
+        Message::Assistant { lane, blocks } => {
+            lane.provider == PROVIDER
+                && blocks.iter().any(|block| {
+                    matches!(
+                        block,
+                        Block::Summary {
+                            sealed: Some(_),
+                            ..
+                        }
+                    )
+                })
+        }
+        Message::User { .. } => false,
+    })
 }
 
 fn cached() -> Value {

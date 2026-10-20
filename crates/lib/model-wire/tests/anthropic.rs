@@ -448,3 +448,55 @@ fn a_summary_reads_back_its_compaction_block_and_its_words() {
     let sealed = json!({ "type": "compaction", "content": "We did things." }).to_string();
     assert_eq!(summary.sealed, Some(sealed));
 }
+
+#[test]
+fn a_turn_after_this_providers_compaction_asks_under_the_compaction_beta() {
+    let summary = |provider: &str| Message::Assistant {
+        lane: Lane {
+            provider: provider.into(),
+            model: MODEL.into(),
+        },
+        blocks: vec![Block::Summary {
+            text: "so far".into(),
+            sealed: Some(r#"{"type":"compaction","content":"so far"}"#.into()),
+        }],
+    };
+    let hi = Message::User {
+        blocks: vec![UserBlock::Text { text: "hi".into() }],
+    };
+    let request = |messages: Vec<Message>| Request {
+        model: MODEL.into(),
+        max_tokens: 1024,
+        thinking: None,
+        system: Vec::new(),
+        tools: Vec::new(),
+        server_tools: Vec::new(),
+        messages,
+    };
+    let beta = |request: &Request, ask: Ask| {
+        let headers = anthropic::headers(request, ask);
+        let found = headers
+            .into_iter()
+            .find(|(name, _)| name == "anthropic-beta");
+        found.map(|(_, value)| value)
+    };
+    let beta_named = Some(anthropic::COMPACTION_BETA.to_owned());
+    let fresh = request(vec![hi.clone()]);
+    assert_eq!(beta(&fresh, Ask::Turn), None);
+    assert_eq!(beta(&fresh, Ask::Summary), beta_named);
+    let summarized = request(vec![summary(anthropic::PROVIDER), hi.clone()]);
+    let body = anthropic::body(&summarized, Ask::Turn);
+    assert_eq!(body["messages"][0]["content"][0]["type"], "compaction");
+    assert_eq!(beta(&summarized, Ask::Turn), beta_named);
+    let foreign = request(vec![summary("openai"), hi]);
+    let body = anthropic::body(&foreign, Ask::Turn);
+    assert_eq!(body["messages"][0]["content"][0]["type"], "text");
+    assert_eq!(beta(&foreign, Ask::Turn), None);
+    assert_eq!(
+        anthropic::model_headers(),
+        [(
+            "anthropic-version".to_owned(),
+            anthropic::VERSION.to_owned()
+        )]
+    );
+}

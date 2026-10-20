@@ -1,6 +1,6 @@
 //! The Codex adapter against streams in the shape of OpenAI's documented Responses events (no live
 //! Codex stream is recorded yet): text, a function call, reasoning summaries, usage with a cached
-//! share, an incomplete reply, a failure, a stream cut short, and a request under the surface's rules.
+//! share, a refusal, an incomplete reply, a failure, a stream cut short, and a request under the surface's rules.
 use model_wire::codex::{self, Fold};
 use model_wire::{
     Block, Class, Event, Lane, Message, Reply, Request, Shown, Stop, Thinking, Tool, Usage,
@@ -331,4 +331,48 @@ fn a_model_reads_its_window_from_the_accounts_catalog() {
     );
     let missing = codex::model("absent", 200, &[], body.as_bytes(), 0).unwrap_err();
     assert_eq!(missing.class, Class::Provider);
+}
+
+#[test]
+fn a_refusal_streams_its_words_and_ends_the_turn_refused() {
+    let opened = json!({ "type": "message", "id": "msg_1", "role": "assistant", "status": "in_progress", "content": [] });
+    let refused = json!({
+        "type": "message", "id": "msg_1", "role": "assistant", "status": "completed",
+        "content": [{ "type": "refusal", "refusal": "I can't help with that." }],
+    });
+    let delta = |text: &str| json!({ "type": "response.refusal.delta", "output_index": 0, "content_index": 0, "item_id": "msg_1", "delta": text });
+    let streamed = vec![
+        created(),
+        json!({ "type": "response.output_item.added", "output_index": 0, "item": opened.clone() }),
+        json!({ "type": "response.content_part.added", "output_index": 0, "content_index": 0, "item_id": "msg_1", "part": { "type": "refusal", "refusal": "" } }),
+        delta("I can't"),
+        delta(" help with that."),
+        json!({ "type": "response.refusal.done", "output_index": 0, "content_index": 0, "item_id": "msg_1", "refusal": "I can't help with that." }),
+        json!({ "type": "response.output_item.done", "output_index": 0, "item": refused.clone() }),
+        completed(json!([refused.clone()]), usage(10, 0, 5)),
+    ];
+    let events = folded(&streamed);
+    let pieces: Vec<&str> = events
+        .iter()
+        .filter_map(|event| match event {
+            Event::Delta { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pieces, ["I can't", " help with that."]);
+    let Some(Event::Reply(reply)) = events.last() else {
+        panic!("a reply: {events:?}");
+    };
+    assert_eq!(reply.stop, Stop::Refusal);
+    assert_eq!(reply.said, [text("I can't help with that.")]);
+    let whole_only = vec![
+        created(),
+        json!({ "type": "response.output_item.added", "output_index": 0, "item": opened }),
+        json!({ "type": "response.output_item.done", "output_index": 0, "item": refused.clone() }),
+        completed(json!([refused]), usage(10, 0, 5)),
+    ];
+    let Some(Event::Reply(reply)) = folded(&whole_only).pop() else {
+        panic!("a reply");
+    };
+    assert_eq!(reply.stop, Stop::Refusal);
 }
