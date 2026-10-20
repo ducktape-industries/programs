@@ -40,6 +40,8 @@ pub struct ChatNotices {
     counted: BTreeMap<String, Count>,
     reading: BTreeSet<String>,
     counting: BTreeSet<String>,
+    told: BTreeMap<String, Told>,
+    unsure: BTreeSet<String>,
     screen: BTreeSet<String>,
     badge: Option<i64>,
 }
@@ -49,6 +51,19 @@ struct Count {
     cursor: u64,
     to: u64,
     meant: i64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Told {
+    since: u64,
+    to: u64,
+    meant: u64,
+}
+
+impl Told {
+    fn covers(&self, from: u64, head: u64) -> Option<bool> {
+        (self.since <= from && self.to >= head).then_some(self.meant > 0)
+    }
 }
 
 impl Notifier for ChatNotices {
@@ -231,6 +246,9 @@ impl ChatNotices {
                 });
                 let was = notices.choices.take().unwrap_or_default();
                 for room in was.keys().chain(choices.keys()) {
+                    if was.get(room) != choices.get(room) {
+                        notices.told.remove(room);
+                    }
                     if was.get(room) != choices.get(room)
                         && let Some(count) = notices.counted.get_mut(room)
                     {
@@ -335,15 +353,28 @@ impl ChatNotices {
                     meant: 0,
                 };
             }
-            if head > count.to && !self.counting.contains(&room) {
+            let pending = self.counting.contains(&room);
+            let unsure = self.unsure.contains(&room);
+            let queued = head > count.to && !pending && !unsure;
+            if queued {
                 uncounted.push((room.clone(), count.to));
             }
             let news = was.max(count.cursor);
             if head <= news || self.reading.contains(&room) {
                 continue;
             }
+            let meant = self
+                .told
+                .get(&room)
+                .and_then(|told| told.covers(news, head));
+            if meant.is_none() && (pending || queued) && !unsure {
+                continue;
+            }
             announced.insert(room.clone(), head);
-            due.push((room, news, head));
+            if meant != Some(false) {
+                self.unsure.remove(&room);
+                due.push((room, news, head));
+            }
         }
         let moved = Some(&announced) != kept.as_ref();
         self.announced = Some(Some(announced));
@@ -381,25 +412,37 @@ impl ChatNotices {
                     Ok(counts) => counts,
                     Err(refusal) => {
                         log_refused(cx, "the unread counts", &refusal);
-                        return notices.settle_badge(cx);
+                        notices
+                            .unsure
+                            .extend(rooms.iter().map(|(room, _)| room.clone()));
+                        return notices.settle(cx);
                     }
                 };
-                let mut moved = false;
+                let mut unmoved: BTreeSet<String> =
+                    rooms.iter().map(|(room, _)| room.clone()).collect();
                 for counted in counts {
-                    let since = rooms.iter().find(|(room, _)| *room == counted.channel_id);
+                    let Some(&(_, since)) =
+                        rooms.iter().find(|(room, _)| *room == counted.channel_id)
+                    else {
+                        continue;
+                    };
                     if let Some(count) = notices.counted.get_mut(&counted.channel_id)
-                        && since.is_some_and(|(_, since)| *since == count.to)
+                        && since == count.to
                         && counted.to > count.to
                     {
                         count.to = counted.to;
                         count.meant += counted.meant as i64;
-                        moved = true;
+                        unmoved.remove(&counted.channel_id);
+                        let told = Told {
+                            since,
+                            to: counted.to,
+                            meant: counted.meant,
+                        };
+                        notices.told.insert(counted.channel_id, told);
                     }
                 }
-                match moved {
-                    true => notices.settle(cx),
-                    false => notices.settle_badge(cx),
-                }
+                notices.unsure.extend(unmoved);
+                notices.settle(cx);
             },
             cx,
         );

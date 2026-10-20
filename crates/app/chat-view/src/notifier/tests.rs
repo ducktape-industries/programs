@@ -85,6 +85,7 @@ struct World {
     asked_roots: Rc<RefCell<Vec<Vec<u64>>>>,
     refuse_followed: Rc<Cell<bool>>,
     refuse_accounts: Rc<Cell<bool>>,
+    refuse_unread: Rc<Cell<bool>>,
     choices: Rc<RefCell<BTreeMap<String, Choice>>>,
     kept: Rc<RefCell<BTreeMap<String, Vec<u8>>>>,
 }
@@ -167,6 +168,9 @@ impl World {
                         })
                         .collect(),
                 )),
+                Query::Unread { .. } if world.refuse_unread.get() => {
+                    return Err(view::host::Error::new("refused", "the node is busy"));
+                }
                 Query::Unread { account, rooms } => Reply::Unread(
                     rooms
                         .into_iter()
@@ -704,4 +708,45 @@ fn a_relaunch_counts_every_room_in_one_read_and_reads_no_message() {
     assert_eq!(counts, [ids.len()], "not one count for every room");
     assert!(posts(&notifier).is_empty(), "announced before");
     assert_eq!(badge(&notifier), Some(2 * ids.len() as i64));
+}
+
+#[test]
+fn a_message_meant_for_no_one_here_reads_no_message() {
+    let world = World::default();
+    *world.rooms.borrow_mut() = vec![room("general", "General", 1)];
+    world.rows.borrow_mut().push(row("general", 1, 8, say_hi()));
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    let reads = |notifier: &TestNotifier<ChatNotices>| {
+        let asked = notifier.host().requests::<Ask<chat::Chat>>();
+        let read = asked
+            .iter()
+            .filter(|query| matches!(query, Query::MessagesAround { .. } | Query::Followed { .. }));
+        let counted = asked
+            .iter()
+            .filter(|query| matches!(query, Query::Unread { .. }));
+        (read.count(), counted.count())
+    };
+    let (read, counted) = reads(&notifier);
+    world.post(&mut notifier, vec![row("general", 2, 8, say_hi())]);
+    assert_eq!(
+        reads(&notifier),
+        (read, counted + 1),
+        "counted, and nothing meant: no message read"
+    );
+    assert!(posts(&notifier).is_empty());
+    world.post(&mut notifier, vec![mention("general", 3)]);
+    assert_eq!(reads(&notifier).0, read + 2, "a mention is read and told");
+    assert_eq!(posts(&notifier).len(), 1);
+}
+
+#[test]
+fn a_count_that_does_not_answer_still_reads_the_new_messages() {
+    let world = World::default();
+    *world.rooms.borrow_mut() = vec![room("general", "General", 0)];
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    world.refuse_unread.set(true);
+    world.post(&mut notifier, vec![mention("general", 1)]);
+    assert_eq!(posts(&notifier).len(), 1, "told without its count");
 }
