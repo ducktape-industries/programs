@@ -245,13 +245,19 @@ async fn read_one(ctx: &Ctx, service: String) {
         body: Vec::new(),
     };
     let answer = crate::turns::request(ctx, request, egress::Delivery::Whole, None).await;
-    let outcome = match answer {
-        Err(error) => StatusOutcome::Failed(refusal(&error)),
+    let (outcome, room) = match answer {
+        Err(error) => (StatusOutcome::Failed(refusal(&error)), Vec::new()),
         Ok(bytes) => match abi::decode::<http::Response>(&bytes) {
             Ok(response) => status_read(ctx, &service, &response),
-            Err(_) => StatusOutcome::Failed("the egress answer is not an HTTP response".into()),
+            Err(_) => {
+                let why = "the egress answer is not an HTTP response";
+                (StatusOutcome::Failed(why.into()), Vec::new())
+            }
         },
     };
+    if !room.is_empty() {
+        crate::resume::room(ctx, &service, &room).await;
+    }
     let env = ctx.env();
     let read = StatusRead {
         service,
@@ -270,6 +276,7 @@ struct Status {
 #[derive(Deserialize)]
 struct Reading {
     label: String,
+    provider: Option<String>,
     five_hour: Option<Usage>,
     weekly: Option<Usage>,
     models: Option<Vec<ModelUsage>>,
@@ -290,21 +297,41 @@ struct ModelUsage {
     usage: Usage,
 }
 
-fn status_read(ctx: &ExecCtx, service: &str, response: &http::Response) -> StatusOutcome {
+fn status_read(
+    ctx: &ExecCtx,
+    service: &str,
+    response: &http::Response,
+) -> (StatusOutcome, Vec<String>) {
+    let failed = |why: String| (StatusOutcome::Failed(why), Vec::new());
     match response.status {
         200 => {}
-        404 => return StatusOutcome::Unavailable,
-        status => return StatusOutcome::Failed(format!("the service answered HTTP {status}")),
+        404 => return (StatusOutcome::Unavailable, Vec::new()),
+        status => return failed(format!("the service answered HTTP {status}")),
     }
     let Ok(status) = serde_json::from_slice::<Status>(&response.body) else {
-        return StatusOutcome::Failed("the answer is not ccs's status".into());
+        return failed("the answer is not ccs's status".into());
     };
+    let Ok(held) = BUDGETS.scan(ctx, BUDGETS.prefix_of(&service.to_owned())) else {
+        return failed("harness could not read the service's rows".into());
+    };
+    for (key, _) in &held {
+        BUDGETS.remove(ctx, key);
+    }
     let env = ctx.env();
+    let mut room: Vec<String> = Vec::new();
     for reading in &status.accounts {
         let key = (service.to_owned(), reading.label.clone());
-        let before = BUDGETS.get(ctx, &key).ok().flatten();
+        let before = held
+            .iter()
+            .find(|(held, _)| *held == key)
+            .map(|(_, row)| row.clone());
         let windows =
             merge_budget_windows(before.as_ref(), read_windows(reading, env.time), env.time);
+        let spared = reading.error.is_none() && spare(&windows);
+        let provider = reading.provider.clone().filter(|_| spared);
+        if let Some(provider) = provider.filter(|provider| !room.contains(provider)) {
+            room.push(provider);
+        }
         let row = Budget {
             label: Some(reading.label.clone()),
             error: reading.error.clone(),
@@ -315,9 +342,19 @@ fn status_read(ctx: &ExecCtx, service: &str, response: &http::Response) -> Statu
         };
         BUDGETS.put(ctx, &key, &row);
     }
-    StatusOutcome::Read {
-        accounts: status.accounts.len() as u64,
-    }
+    let accounts = status.accounts.len() as u64;
+    (StatusOutcome::Read { accounts }, room)
+}
+
+fn spare(windows: &[BudgetWindow]) -> bool {
+    let full = |name: &str| {
+        let named = |window: &&BudgetWindow| window.name == name;
+        windows
+            .iter()
+            .filter(named)
+            .any(|window| window.used >= WHOLE)
+    };
+    !full("5h") && !full("7d")
 }
 
 fn read_windows(reading: &Reading, time: u64) -> Vec<BudgetWindow> {

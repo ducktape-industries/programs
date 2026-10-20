@@ -878,6 +878,7 @@ pub enum Wake {
     Wait { wait: u64 },
     Stream { watch: u64 },
     Booking { entry: u64 },
+    RetryAfter { at: u64, until: u64 },
 }
 
 #[derive(

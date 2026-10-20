@@ -1,6 +1,6 @@
 //! An agent's configuration file: Markdown whose TOML front matter, between `+++` lines, names
 //! the model, `max_tokens`, `wait`, `thinking`, `server_tools`, `listen`, `settle`, `compact_at`
-//! and the `service` or `account` it pins (`Pin`); its body is the system prompt (`with_front`, `with_body`).
+//! and the `service` it pins (`Pin`); its body is the system prompt (`with_front`, `with_body`).
 use std::fmt;
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
@@ -26,13 +26,11 @@ pub struct Config {
     pub system: String,
 }
 
-// the service, or the ccs account, an agent's front matter pins its model calls to (J-090): a
-// service keeps them to its accounts, an account to itself, with no move off it; harness reads
-// it beside `Config`, which keeps its shape
+// the service an agent's front matter pins its model calls to (J-090); harness reads it beside
+// `Config`, which keeps its shape
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Pin {
     pub service: Option<String>,
-    pub account: Option<String>,
 }
 
 #[derive(
@@ -156,7 +154,6 @@ struct FrontMatter {
     settle: Option<String>,
     compact_at: Option<u64>,
     service: Option<String>,
-    account: Option<String>,
 }
 
 fn fence(line: &str) -> bool {
@@ -215,7 +212,6 @@ impl Config {
         let named = |name: Option<String>| name.filter(|name| !name.is_empty());
         let pin = Pin {
             service: named(matter.service),
-            account: named(matter.account),
         };
         let config = Config {
             model: matter.model,
@@ -278,11 +274,9 @@ impl Config {
         if let Some(compact_at) = self.compact_at {
             front.push_str(&format!("compact_at = {compact_at}\n"));
         }
-        for (key, named) in [("service", &pin.service), ("account", &pin.account)] {
-            if let Some(named) = named {
-                let named = toml::Value::String(named.clone());
-                front.push_str(&format!("{key} = {named}\n"));
-            }
+        if let Some(service) = &pin.service {
+            let service = toml::Value::String(service.clone());
+            front.push_str(&format!("service = {service}\n"));
         }
         front
     }
@@ -303,7 +297,7 @@ fn front_matter_parts(text: &str) -> Result<[&str; 4], Malformed> {
     Err(Malformed::NoClosingFence)
 }
 
-// `file` with the front matter `config` names and the service or account the file pins, its
+// `file` with the front matter `config` names and the service the file pins, its
 // body kept byte for byte; `config.system` is not read
 pub fn with_front(file: &[u8], config: &Config) -> Result<String, Malformed> {
     let (_, pin) = Config::parse_pinned(file)?;

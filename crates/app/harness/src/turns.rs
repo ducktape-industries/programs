@@ -335,10 +335,10 @@ fn tail(ctx: &ExecCtx, thread: &ThreadRow) -> Result<Vec<Frame>, Error> {
         .collect())
 }
 
-// whether a turn's answerer is the account a call goes to: an unpinned call is the service's to
-// place, as it was before harness picked accounts
+// whether a turn's answerer is the account a call goes to: an unpinned call may reach any
+// account its service holds, so only a turn no account answered is its own
 fn same(service: &str, account: &Option<String>, asked: &Asked) -> bool {
-    service == asked.service && (asked.account.is_none() || *account == asked.account)
+    service == asked.service && *account == asked.account
 }
 
 // the turns among `frames` whose server-tool blocks another account minted (or an answerer harness

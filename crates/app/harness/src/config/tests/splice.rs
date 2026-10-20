@@ -1,11 +1,10 @@
 use super::*;
 
-const PINNED: &str = "+++\nmodel = \"sonnet\"\n# the long one\nmax_tokens = 4096\nservice = \"ccs\"\naccount = \"b\"\n+++\n\nYou keep notes.\r\n\n  Indented, kept.\n";
+const PINNED: &str = "+++\nmodel = \"sonnet\"\n# the long one\nmax_tokens = 4096\nservice = \"ccs\"\n+++\n\nYou keep notes.\r\n\n  Indented, kept.\n";
 
 fn pinned() -> Pin {
     Pin {
         service: Some("ccs".into()),
-        account: Some("b".into()),
     }
 }
 
@@ -21,7 +20,7 @@ fn a_new_front_matter_keeps_the_pins_and_the_body_byte_for_byte() {
     };
     let written = with_front(PINNED.as_bytes(), &thinks).unwrap();
     let body = "\nYou keep notes.\r\n\n  Indented, kept.\n";
-    let front = "model = \"sonnet\"\nmax_tokens = 4096\nthinking = \"high\"\ncompact_at = 650000\nservice = \"ccs\"\naccount = \"b\"\n";
+    let front = "model = \"sonnet\"\nmax_tokens = 4096\nthinking = \"high\"\ncompact_at = 650000\nservice = \"ccs\"\n";
     assert_eq!(written, format!("+++\n{front}+++\n{body}"));
     let (read, pin) = Config::parse_pinned(written.as_bytes()).unwrap();
     assert_eq!(pin, pinned());
@@ -38,6 +37,16 @@ fn a_new_body_keeps_the_front_matter_byte_for_byte() {
     let (read, pin) = Config::parse_pinned(written.as_bytes()).unwrap();
     assert_eq!(pin, pinned());
     assert_eq!(read.system, "Answer about deploys.");
+}
+
+#[test]
+fn a_front_matter_that_names_a_ccs_account_is_malformed() {
+    let named = PINNED.replace(
+        "service = \"ccs\"\n",
+        "service = \"ccs\"\naccount = \"b\"\n",
+    );
+    let read = Config::parse_pinned(named.as_bytes());
+    assert!(matches!(read, Err(Malformed::FrontMatter(_))), "{read:?}");
 }
 
 #[test]

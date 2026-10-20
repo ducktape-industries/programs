@@ -193,7 +193,12 @@ fn a_status_read_fills_every_account_and_a_404_is_only_unavailable() {
         report.services[0].this_minute, 0,
         "a status read is no model call"
     );
-    assert_eq!(report.accounts.len(), 3);
+    assert_eq!(
+        report.accounts.len(),
+        2,
+        "ccs's status is every row of its service: {:?}",
+        report.accounts
+    );
     let eph = account(&report, "anthropic3-eph");
     assert_eq!(
         (

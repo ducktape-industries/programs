@@ -252,12 +252,7 @@ fn a_mention_from_someone_the_agent_does_not_answer_leaves_a_notice() {
     assert!(assigned(chain, SERVICE).is_empty(), "a notice asks nothing");
 }
 
-#[test]
-fn a_429_holds_until_the_usage_window_resets_and_the_window_is_kept() {
-    let world = world();
-    let chain = &world.chain;
-    let thread = world.opened("m1", "hello", Some(WINDOW));
-    chain.at(3, 1_000_000);
+fn limited_until(chain: &MockChain, reset: &str) {
     let (request, _) = open_request(chain);
     let limited =
         json!({ "type": "error", "error": { "type": "rate_limit_error", "message": "Slow down" } });
@@ -268,11 +263,20 @@ fn a_429_holds_until_the_usage_window_resets_and_the_window_is_kept() {
                 "anthropic-ratelimit-unified-5h-utilization".into(),
                 "1.0".into(),
             ),
-            ("anthropic-ratelimit-unified-5h-reset".into(), "1100".into()),
+            ("anthropic-ratelimit-unified-5h-reset".into(), reset.into()),
         ],
         body: limited.to_string().into_bytes(),
     };
     answer(chain, request.id, Answer::Output(abi::encode(&busy)));
+}
+
+#[test]
+fn a_429_holds_until_the_usage_window_resets_or_an_input_comes_and_the_window_is_kept() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "hello", Some(WINDOW));
+    chain.at(3, 1_000_000);
+    limited_until(chain, "1100");
     let [told]: [String; 1] = notices(chain, thread).try_into().unwrap();
     let held = "again once the model's wait ends at 1100 (seconds since the epoch) (attempt 1)";
     assert!(told.ends_with(held), "{told}");
@@ -283,15 +287,48 @@ fn a_429_holds_until_the_usage_window_resets_and_the_window_is_kept() {
         panic!("the window is kept")
     };
     assert_eq!((window.utilization.as_str(), window.reset), ("1.0", 1100));
+    chain.at(4, 1_010_000);
+    assert!(assigned(chain, SERVICE).is_empty(), "held for the reset");
     chain.at(5, 1_020_000);
     world.mention("m2", "still there?");
-    assert!(
-        assigned(chain, SERVICE).is_empty(),
-        "a new input waits out the reset too"
+    assert_eq!(
+        assigned(chain, SERVICE).len(),
+        1,
+        "a new input ends the wait for the reset"
     );
-    chain.at(6, 1_100_000);
-    world.mention("m3", "now?");
-    assert_eq!(assigned(chain, SERVICE).len(), 1);
+}
+
+#[test]
+fn a_resume_someone_sends_ends_a_429s_wait_for_the_reset() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "hello", Some(WINDOW));
+    chain.at(3, 1_000_000);
+    limited_until(chain, "1100");
+    chain.at(5, 1_020_000);
+    assert!(assigned(chain, SERVICE).is_empty(), "held for the reset");
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Resume { thread })
+        .unwrap();
+    assert_eq!(
+        assigned(chain, SERVICE).len(),
+        1,
+        "a resume ends the wait for the reset"
+    );
+}
+
+#[test]
+fn a_429s_wait_ends_by_itself_at_the_reset() {
+    let world = world();
+    let chain = &world.chain;
+    world.opened("m1", "hello", Some(WINDOW));
+    chain.at(3, 1_000_000);
+    limited_until(chain, "1100");
+    chain.at(4, 1_010_000);
+    assert!(assigned(chain, SERVICE).is_empty(), "held for the reset");
+    chain.at(13, 1_100_000);
+    chain.at(14, 1_100_000);
+    assert_eq!(assigned(chain, SERVICE).len(), 1, "asked at the reset");
 }
 
 fn refused(chain: &MockChain) {

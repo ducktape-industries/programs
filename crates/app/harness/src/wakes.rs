@@ -24,7 +24,13 @@ pub(crate) fn wakes(ctx: &QueryCtx, id: u64) -> Result<Vec<Wake>, Error> {
         wakes.push(Wake::Flight);
     }
     if let Some(retry) = RETRIES.get(ctx, &id)? {
-        wakes.push(Wake::Retry { at: retry.at });
+        wakes.push(match retry.until {
+            Some(until) => Wake::RetryAfter {
+                at: retry.at,
+                until,
+            },
+            None => Wake::Retry { at: retry.at },
+        });
     }
     if let Some(window) = SETTLING.get(ctx, &id)? {
         wakes.push(Wake::Settle {

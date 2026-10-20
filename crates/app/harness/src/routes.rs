@@ -1,6 +1,6 @@
-//! Which model service and ccs account answers a thread's next call: its route first, as its prompt
-//! cache lives there, then every other listed account in ccs's order; an account that refused or
-//! failed this call is passed over for it alone, and harness pins the call to the one picked.
+//! Which model service and ccs account answers a thread's next call: the account its prompt cache
+//! sits on, as ccs named it in its last answer, then each service with no account named, so ccs
+//! picks; a call that failed on one is passed over to the next for that call alone.
 use ::program::{Error, ExecCtx, QueryCtx};
 use abi::role::egress::http;
 use store::{PageRequest, PageResponse};
@@ -8,7 +8,7 @@ use store::{PageRequest, PageResponse};
 use crate::budget::{CCS_ACCOUNT, ORGANIZATION};
 use crate::config::Pin;
 use crate::resume::header;
-use crate::state::{ANSWERED, BUDGETS, MODEL_SERVICES, PICKS, Pick, ROUTES, TRIED};
+use crate::state::{ANSWERED, MODEL_SERVICES, PICKS, Pick, ROUTES, TRIED};
 use crate::turns::serves;
 use crate::{Answerer, ModelRow, Route, Routed, ThreadRow};
 
@@ -59,43 +59,15 @@ fn tried(thread: u64, service: &str, account: Option<&str>) -> (u64, (String, St
     (thread, key(service, account))
 }
 
-fn labels(ctx: &QueryCtx, service: &str) -> Result<Vec<String>, Error> {
-    let all = BUDGETS.scan(ctx, BUDGETS.prefix_of(&service.to_owned()))?;
-    Ok(all.into_iter().filter_map(|(_, row)| row.label).collect())
-}
-
 fn untried_by(ctx: &QueryCtx, thread: u64, (service, account): &Candidate) -> bool {
     !TRIED.has(ctx, &tried(thread, service, account.as_deref()))
 }
 
-fn candidates(
-    ctx: &QueryCtx,
-    served: &[String],
-    pinned: Option<&str>,
-) -> Result<Vec<Candidate>, Error> {
-    if let Some(account) = pinned {
-        let mut on = served[0].clone();
-        for service in served {
-            if labels(ctx, service)?.iter().any(|label| label == account) {
-                on = service.clone();
-                break;
-            }
-        }
-        return Ok(vec![(on, Some(account.to_owned()))]);
-    }
-    let mut found = Vec::new();
-    for service in served {
-        let labels = labels(ctx, service)?;
-        if labels.is_empty() {
-            found.push((service.clone(), None));
-        }
-        found.extend(
-            labels
-                .into_iter()
-                .map(|label| (service.clone(), Some(label))),
-        );
-    }
-    Ok(found)
+fn candidates(cached: Option<&Route>, served: &[String]) -> Vec<Candidate> {
+    let pinned = cached.filter(|route| route.account.is_some() && served.contains(&route.service));
+    let pinned = pinned.map(|route| (route.service.clone(), route.account.clone()));
+    let unpinned = served.iter().map(|service| (service.clone(), None));
+    pinned.into_iter().chain(unpinned).collect()
 }
 
 pub(crate) enum Picked {
@@ -130,23 +102,13 @@ pub(crate) fn pick(
     if served.is_empty() {
         return Ok(Picked::Unserved(services));
     }
-    let candidates = candidates(ctx, &served, pin.account.as_deref())?;
     let route = ROUTES.get(ctx, &thread.id)?;
-    let at = |route: &Route| {
-        let routed = (route.service.clone(), route.account.clone());
-        candidates.iter().position(|candidate| *candidate == routed)
-    };
     let cached = route
         .as_ref()
         .filter(|route| route.summary == thread.summary);
-    let sticky = cached.and_then(at);
-    let order = sticky.into_iter().chain(0..candidates.len());
-    let mut open = order.filter(|index| untried_by(ctx, thread.id, &candidates[*index]));
-    let index = match open.next() {
-        Some(index) => index,
-        None => route.as_ref().and_then(at).unwrap_or(0),
-    };
-    let (service, account) = candidates[index].clone();
+    let candidates = candidates(cached, &served);
+    let open = (0..candidates.len()).find(|index| untried_by(ctx, thread.id, &candidates[*index]));
+    let (service, account) = candidates[open.unwrap_or(0)].clone();
     let pick = Pick {
         service,
         account,
@@ -190,14 +152,6 @@ pub(crate) fn answered(ctx: &ExecCtx, thread: u64, seq: u64) -> Result<(), Error
     };
     ANSWERED.put(ctx, &(thread, seq), &answerer);
     untried(ctx, thread);
-    let passed_over = before.as_ref().is_some_and(|route| {
-        let routed = (route.service.clone(), route.account.clone());
-        let listed = pick.candidates.contains(&routed);
-        moved && listed && route.summary == pick.summary
-    });
-    if passed_over {
-        return Ok(());
-    }
     let route = Route {
         service: pick.service,
         account,

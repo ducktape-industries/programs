@@ -13,8 +13,8 @@ use crate::conversations::{binding, conversation};
 use crate::routes;
 use crate::schema::code_of;
 use crate::state::{
-    AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, PARTIALS, REPORTING, REPORTS, RETRIES,
-    RUNNING, Retry, STREAMING, THREADS, USAGE, WATCHES,
+    ASKED, AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, PARTIALS, PICKS, REPORTING, REPORTS,
+    RETRIES, RUNNING, Retry, STREAMING, THREADS, USAGE, WATCHES,
 };
 use crate::tools::Write;
 use crate::turns::{append, bound, conclude, converse, give_up, say, settle};
@@ -365,8 +365,40 @@ pub(crate) fn heard(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
         return Ok(());
     };
     let at = ctx.env().height;
-    RETRIES.put(ctx, &id, &Retry { at, ..retry });
+    let until = None;
+    RETRIES.put(ctx, &id, &Retry { at, until, ..retry });
     Ok(())
+}
+
+pub(crate) async fn room(ctx: &Ctx, service: &str, providers: &[String]) {
+    let Ok(retries) = RETRIES.all(ctx) else {
+        return;
+    };
+    let next = ctx.env().height.saturating_add(1);
+    let mut wakes = Vec::new();
+    for (id, retry) in retries {
+        let on = PICKS
+            .get(ctx, &id)
+            .ok()
+            .flatten()
+            .is_some_and(|pick| pick.service == service);
+        let lane = ASKED.get(ctx, &id).ok().flatten();
+        let spoken = lane.is_some_and(|lane| providers.contains(&lane.provider));
+        if retry.until.is_some() && on && spoken {
+            let until = None;
+            RETRIES.put(
+                ctx,
+                &id,
+                &Retry {
+                    at: next,
+                    until,
+                    ..retry
+                },
+            );
+            wakes.push(wake(id));
+        }
+    }
+    all(wakes.iter().map(|op| ctx.schedule(next, PROGRAM, op))).await;
 }
 
 pub(crate) fn answered(ctx: &ExecCtx, id: u64) {
@@ -421,7 +453,7 @@ pub(crate) async fn again(ctx: &Ctx, id: u64, failure: Failure) -> Result<(), Er
             "once the model's wait ends at {} (seconds since the epoch)",
             until.div_ceil(1000)
         ),
-        None if moved => format!("at block {at} on another of its model's accounts"),
+        None if moved => format!("at block {at} with no account named, so its service picks one"),
         None => format!("at block {at}"),
     };
     let text = format!(
@@ -694,9 +726,16 @@ pub(crate) async fn resume(ctx: Ctx, id: u64) -> Result<(), Error> {
     thread(&ctx, id)?;
     rewatch(&ctx, id).await;
     repace(&ctx, id).await;
+    let_go(&ctx, id);
     reask(&ctx, id)?;
     converse(&ctx, id).await;
     Ok(())
+}
+
+fn let_go(ctx: &ExecCtx, id: u64) {
+    if !matches!(ctx.env().cause, Cause::Scheduled { .. }) {
+        RETRIES.remove(ctx, &id);
+    }
 }
 
 fn reask(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
