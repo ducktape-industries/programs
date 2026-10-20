@@ -227,8 +227,7 @@ fn row(
     ladder: &Ladder,
 ) -> impl IntoElement + use<> {
     let agent = card.setup.agent;
-    let open = card.threads.iter().filter(|thread| !thread.closed).count();
-    let closed = card.threads.len() - open;
+    let (open, closed) = (card.open, card.closed);
     let counts = match closed {
         0 => format!("{open} open"),
         closed => format!("{open} open · {closed} closed"),

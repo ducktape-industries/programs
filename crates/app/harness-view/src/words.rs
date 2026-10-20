@@ -6,7 +6,7 @@ use harness::{
 };
 use harness::{
     AgentSetup, Asking, Body, CallRow, CallState, Configured, Flow, Frame, Partial, ServerTool,
-    Stop, Thinking, ThreadRow, Usage, Window,
+    Spoken, Stop, Thinking, ThreadRow, Usage, Window,
 };
 use identity::{Ownership, Party};
 use program::Writers;
@@ -87,14 +87,14 @@ pub(crate) fn place_label(agent: u64, place: &str, roster: Option<&Roster>) -> S
             format!("DM · {name}")
         }
         None => roster
-            .and_then(|roster| roster.rooms.get(channel))
+            .and_then(|roster| roster.rooms.borrow().get(channel).cloned())
             .map_or_else(|| "a chat room".to_owned(), |name| format!("#{name}")),
     }
 }
 
 pub(crate) fn agent_sentence(card: &Card, roster: &Roster) -> String {
     let state = agent_state(card, roster);
-    let busiest = busiest(&card.threads);
+    let busiest = busiest(card).map(|said| &said.thread);
     let model = card.setup.configured.model();
     match (state, busiest, model) {
         (State::Unconfigured, _, _) => card
@@ -111,25 +111,27 @@ pub(crate) fn agent_sentence(card: &Card, roster: &Roster) -> String {
             conversation_place(thread, roster),
             asking_lower(thread.asking)
         ),
-        (_, None, _) => match card.threads.first() {
+        (_, None, _) => match card.newest.as_ref().map(|said| &said.thread) {
             Some(newest) => format!("last in {}", conversation_place(newest, roster)),
             None => "no conversation yet".to_owned(),
         },
     }
 }
 
-fn busiest(threads: &[ThreadRow]) -> Option<&ThreadRow> {
-    let open = threads.iter().filter(|thread| !thread.closed);
+// the conversation an agent is busiest in: one stuck, else one working, the newest first
+fn busiest(card: &Card) -> Option<&Spoken> {
+    let open = card.asking.iter().filter(|said| !said.thread.closed);
     open.clone()
-        .find(|thread| thread_state(thread) == State::Stuck)
+        .find(|said| thread_state(&said.thread) == State::Stuck)
         .or_else(|| {
             open.clone()
-                .find(|thread| thread_state(thread) == State::Working)
+                .find(|said| thread_state(&said.thread) == State::Working)
         })
 }
 
-pub(crate) fn spoken_of(threads: &[ThreadRow]) -> Option<&ThreadRow> {
-    busiest(threads).or_else(|| threads.first())
+// the conversation its sentence names: the busiest, else the newest
+fn spoken_of(card: &Card) -> Option<&Spoken> {
+    busiest(card).or(card.newest.as_ref())
 }
 
 pub(crate) fn agent_sentence_topic(card: &Card, roster: &Roster) -> String {
@@ -138,7 +140,8 @@ pub(crate) fn agent_sentence_topic(card: &Card, roster: &Roster) -> String {
         agent_state(card, roster),
         State::Idle | State::Working | State::Stuck
     );
-    match (&card.topic, names) {
+    let topic = spoken_of(card).and_then(|said| said.topic.as_ref());
+    match (topic, names) {
         (Some(topic), true) => format!("{sentence} · {}", quoted(topic)),
         _ => sentence,
     }
@@ -149,7 +152,7 @@ pub(crate) fn quoted(topic: &str) -> String {
 }
 
 pub(crate) fn last_moved(card: &Card) -> Option<u64> {
-    card.threads.iter().map(|thread| thread.last_time).max()
+    card.last_time
 }
 
 pub(crate) fn ago(now: u64, then: u64) -> String {
@@ -387,6 +390,7 @@ pub(crate) fn listen_words(listen: &[String], roster: &Roster) -> String {
         .map(|id| {
             roster
                 .rooms
+                .borrow()
                 .get(id)
                 .map_or_else(|| id.clone(), |name| format!("#{name}"))
         })

@@ -208,9 +208,9 @@ fn models(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladde
 
 fn rooms(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder) -> Div {
     let draft = &view.setup_draft;
-    let roster = view.roster.ready();
+    let rooms = view.rooms.borrow();
     let named = |id: &str| {
-        let name = roster.and_then(|roster| roster.rooms.get(id));
+        let name = rooms.get(id);
         name.map_or_else(|| id.to_owned(), |name| format!("#{name}"))
     };
     let listed: Vec<_> = draft
@@ -223,15 +223,14 @@ fn rooms(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder
         })
         .collect();
     let typed = draft.rooms.text().trim().to_lowercase();
-    let mut found: Vec<(&String, &String)> = match (typed.is_empty(), roster) {
-        (false, Some(roster)) => roster
-            .rooms
+    let mut found: Vec<(&String, &String)> = match typed.is_empty() {
+        false => rooms
             .iter()
             .filter(|(id, name)| {
                 !draft.listen.contains(*id) && name.to_lowercase().contains(&typed)
             })
             .collect(),
-        _ => Vec::new(),
+        true => Vec::new(),
     };
     found.sort_by_key(|(_, name)| *name);
     let found: Vec<_> = found

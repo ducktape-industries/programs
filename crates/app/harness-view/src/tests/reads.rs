@@ -20,12 +20,30 @@ fn wrote(height: u64, written: &[Written]) -> Option<Change> {
     })
 }
 
-fn lists_read(cx: &TestAppContext, agent: u64) -> usize {
-    let asked = cx.host().requests::<Query<harness::Harness>>();
-    let lists = asked
+// the list's reads so far: harness's cards, identity's accounts, the relay nodes, chat's names
+fn roster_reads(cx: &TestAppContext) -> [usize; 4] {
+    let harness = cx.host().requests::<Query<harness::Harness>>();
+    let identity = cx.host().requests::<Query<Identity>>();
+    let egress = cx.host().requests::<Query<egress::Egress>>();
+    let chat = cx.host().requests::<Query<chat::Chat>>();
+    let cards = harness
         .iter()
-        .filter(|query| matches!(query, harness::Query::Threads { agent: of, .. } if *of == agent));
-    lists.count()
+        .filter(|query| matches!(query, harness::Query::Cards { .. }));
+    let accounts = identity
+        .iter()
+        .filter(|query| matches!(query, identity::Query::List { .. }));
+    let relay = egress.iter().filter(
+        |query| matches!(query, egress::Query::Serving { service } if service == egress::RELAY),
+    );
+    let names = chat
+        .iter()
+        .filter(|query| matches!(query, chat::Query::Names { .. }));
+    [
+        cards.count(),
+        accounts.count(),
+        relay.count(),
+        names.count(),
+    ]
 }
 
 fn open_thread(cx: &mut TestAppContext) {
@@ -154,29 +172,51 @@ fn the_list_reads_cards_and_no_prompts() {
     }));
     cx.run_until_parked();
     let asked = cx.host().requests::<Query<harness::Harness>>();
-    let card = |query: &harness::Query| matches!(query, harness::Query::Card { .. });
+    let card = |query: &harness::Query| matches!(query, harness::Query::Cards { .. });
     let prompt = |query: &harness::Query| matches!(query, harness::Query::Agent { .. });
     assert!(asked.iter().any(card), "{asked:?}");
     assert!(!asked.iter().any(prompt), "{asked:?}");
 }
 
+// The list is four reads: harness's cards, the accounts, the relay nodes, and the names of the
+// rooms its cards name, in one ask. A write that moves a conversation reads the first three
+// again; a room once named stays named, and nothing is read per agent or per conversation. (The
+// read the view starts before the session names its reader is dropped for the reader's own, so
+// an open may ask chat twice.)
 #[test]
-fn a_block_that_writes_a_conversation_reads_it_alone_and_no_agents_list() {
+fn the_list_reads_four_things_and_a_write_three() {
     let (mut cx, shared) = seated(Net::default(), EDDY);
     let changes = cx.host().stream::<Changes<harness::Harness>>();
     cx.run_until_parked();
     assert!(cx.has_text("1 open · 1 closed"), "{:?}", cx.texts());
-    let lists = (lists_read(&cx, SCOUT), lists_read(&cx, ATLAS));
+    let names = chat::Query::Names {
+        ids: vec!["deploys".into(), "general".into()],
+    };
+    let asked = cx.host().requests::<Query<chat::Chat>>();
+    assert_eq!(asked.last(), Some(&names), "{asked:?}");
+    let cold = roster_reads(&cx);
     shared.borrow_mut().threads[0].closed = true;
     changes.send(wrote(10, &[Written::Thread(7)]));
     cx.run_until_parked();
     assert!(cx.has_text("0 open · 2 closed"), "{:?}", cx.texts());
-    assert_eq!((lists_read(&cx, SCOUT), lists_read(&cx, ATLAS)), lists);
+    let warm = roster_reads(&cx);
+    let moved: Vec<usize> = warm
+        .iter()
+        .zip(cold)
+        .map(|(warm, cold)| warm - cold)
+        .collect();
+    assert_eq!(moved, [1, 1, 1, 0]);
     let asked = cx.host().requests::<Query<harness::Harness>>();
-    assert!(
-        asked.contains(&harness::Query::Thread { thread: 7 }),
-        "{asked:?}"
-    );
+    let each = asked.iter().filter(|query| {
+        matches!(
+            query,
+            harness::Query::Card { .. }
+                | harness::Query::Threads { .. }
+                | harness::Query::Thread { .. }
+                | harness::Query::Topic { .. }
+        )
+    });
+    assert_eq!(each.count(), 0, "{asked:?}");
 }
 
 // duckpond writes harness in every block: a roster read that a write overtakes lands what it
@@ -199,42 +239,4 @@ fn a_roster_read_lands_though_a_write_comes_in_every_block() {
         cx.tick(Vec::new());
     }
     assert!(cx.has_text("2 open · 1 closed"), "{:?}", cx.texts());
-}
-
-#[test]
-fn a_new_conversation_reads_its_agents_list_again_and_no_other() {
-    let (mut cx, shared) = seated(Net::default(), EDDY);
-    let changes = cx.host().stream::<Changes<harness::Harness>>();
-    cx.run_until_parked();
-    let lists = (lists_read(&cx, SCOUT), lists_read(&cx, ATLAS));
-    shared
-        .borrow_mut()
-        .threads
-        .push(thread(11, SCOUT, EDDY, "chat/ops"));
-    changes.send(wrote(10, &[Written::Thread(11), Written::Agent(SCOUT)]));
-    cx.run_until_parked();
-    assert!(cx.has_text("2 open · 1 closed"), "{:?}", cx.texts());
-    assert_eq!(lists_read(&cx, SCOUT), lists.0 + 1);
-    assert_eq!(lists_read(&cx, ATLAS), lists.1);
-}
-
-#[test]
-fn a_block_of_another_program_reads_no_list_and_a_feed_that_comes_back_reads_every_one() {
-    let (mut cx, _) = seated(Net::default(), EDDY);
-    let files = cx.host().stream::<Changes<files::Files>>();
-    let changes = cx.host().stream::<Changes<harness::Harness>>();
-    cx.run_until_parked();
-    let lists = (lists_read(&cx, SCOUT), lists_read(&cx, ATLAS));
-    files.send(Some(Change {
-        height: 10,
-        keys: Vec::new(),
-    }));
-    cx.run_until_parked();
-    assert_eq!((lists_read(&cx, SCOUT), lists_read(&cx, ATLAS)), lists);
-    changes.send(None);
-    cx.run_until_parked();
-    assert_eq!(
-        (lists_read(&cx, SCOUT), lists_read(&cx, ATLAS)),
-        (lists.0 + 1, lists.1 + 1)
-    );
 }

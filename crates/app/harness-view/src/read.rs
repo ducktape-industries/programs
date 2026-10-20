@@ -1,18 +1,17 @@
-//! Every read the screens make: the roster (agents, their threads and topics, room names, nodes
-//! serving each service and relay, the time), one agent in full (access lists, topics, tallies,
-//! bound conversations), one transcript as far as its list shows it, the models and services.
-use std::cell::RefCell;
-use std::cmp::Reverse;
+//! Every read the screens make: the roster (harness's cards, the accounts, the relay nodes, the
+//! rooms its conversations sit in), one agent in full (access lists, topics, tallies, bound
+//! conversations), one transcript as far as its list shows it, the models and services.
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap};
+use std::rc::Rc;
 
 use egress::{RELAY, ServiceRow};
 use harness::{
     AgentSetup, Asking, Awaited, BlobId, Body, CallRow, Frame, ModelRow, Partial, SettleWindow,
-    Tally, ThreadRow, ToolInfo, Usage, WaitRow, WithheldFrame, Written,
+    Spoken, Tally, ThreadRow, ToolInfo, Usage, WaitRow, WithheldFrame,
 };
 use identity::{Category, Kind, Ownership, PageRequest};
 use program::Writers;
-use view::methods::{BlockPage, ChainBlocks};
 use view::prelude::*;
 
 fn page(after: Option<Vec<u8>>) -> PageRequest {
@@ -27,27 +26,31 @@ pub(crate) struct Roster {
     pub names: HashMap<u64, String>,
     // each account's picture by its number, as its card holds it
     pub avatars: HashMap<u64, BlobId>,
-    /// each chat room's name by its channel id, which a thread's place holds
-    pub rooms: HashMap<String, String>,
+    // the rooms the session has named, by channel id, which a thread's place holds
+    pub rooms: Rooms,
     /// member nodes that serve relay: no tool call runs without one
     pub relaying: usize,
-    /// the newest block's time, in milliseconds: now, as the chain tells it
+    // the newest head's time, in milliseconds: now, as the chain tells it
     pub now: u64,
 }
 
-/// One account whose script calls harness, as the list draws it.
+// One account whose script calls harness, as the list draws it: harness's card of it
+// (`AgentCard`), with its name and its note from identity.
 #[derive(PartialEq)]
 pub(crate) struct Card {
     pub name: String,
     pub setup: AgentSetup,
-    /// newest first
-    pub threads: Vec<ThreadRow>,
-    /// member nodes that serve its model's service, once its configuration names a model
+    pub open: u64,
+    pub closed: u64,
+    // when one of its conversations last moved, once it has one
+    pub last_time: Option<u64>,
+    pub newest: Option<Spoken>,
+    // each open conversation asking, newest first
+    pub asking: Vec<Spoken>,
+    // member nodes that serve its model's service, once its configuration names a model
     pub serving: Option<usize>,
-    /// "suspended" or "revoked", for an agent that is
+    // "suspended" or "revoked", for an agent that is
     pub note: Option<&'static str>,
-    /// the topic of the conversation its sentence names (`words::spoken_of`)
-    pub topic: Option<String>,
 }
 
 #[derive(PartialEq)]
@@ -66,17 +69,6 @@ impl Roster {
 
     pub fn card(&self, agent: u64) -> Option<&Card> {
         self.agents.iter().find(|card| card.setup.agent == agent)
-    }
-}
-
-fn calls_harness(kind: &Kind) -> bool {
-    match kind {
-        Kind::Program {
-            category: Category::Agent,
-            script: Some(script),
-            ..
-        } => script.calls == harness::PROGRAM,
-        Kind::User | Kind::Program { .. } | Kind::System(_) => false,
     }
 }
 
@@ -102,137 +94,90 @@ async fn card(host: &Host, agent: u64) -> Result<Option<AgentSetup>, Error> {
     host.query(harness::ask::Card { agent }).await
 }
 
-// What the roster's last read held of each agent's conversations, and what harness wrote
-// since: a read asks again only for what moved (`roster`).
-#[derive(Default)]
-pub(crate) struct Known {
-    threads: HashMap<u64, Vec<ThreadRow>>,
-    // the conversations whose rows harness wrote, the agents whose list of them it wrote
-    moved: BTreeSet<u64>,
-    agents: BTreeSet<u64>,
-    everything: bool,
+// Each chat room's name the session has read, by channel id: a read names the rooms it meets that
+// the session has not named (`name_rooms`), and a rename waits for the next session.
+pub(crate) type Rooms = Rc<RefCell<HashMap<String, String>>>;
+
+// the channel of a place in chat
+fn room_of(place: &str) -> Option<&str> {
+    place.strip_prefix("chat/")
 }
 
-impl Known {
-    pub(crate) fn heard(&mut self, written: &[Written]) {
-        for wrote in written {
-            match wrote {
-                Written::Thread(thread) => {
-                    self.moved.insert(*thread);
-                }
-                Written::Agent(agent) => {
-                    self.agents.insert(*agent);
-                }
-                _ => {}
-            }
-        }
+// each room of `channels` the session has not named yet, named in one read; a DM reads as the
+// person it is with, so it needs no name
+async fn name_rooms(host: &Host, rooms: &Rooms, channels: Vec<&str>) -> Result<(), Error> {
+    let ids: BTreeSet<String> = {
+        let named = rooms.borrow();
+        let unnamed = channels
+            .into_iter()
+            .filter(|id| chat::dm_peers(id).is_none() && !named.contains_key(*id));
+        unnamed.map(str::to_owned).collect()
+    };
+    if ids.is_empty() {
+        return Ok(());
     }
-
-    // nothing held is trusted: the next read asks for every agent's conversations again
-    pub(crate) fn forget(&mut self) {
-        self.everything = true;
-    }
+    let asked = chat::ask::Names {
+        ids: ids.into_iter().collect(),
+    };
+    let names = host.query(asked).await?;
+    rooms.borrow_mut().extend(names);
+    Ok(())
 }
 
-// an agent's held conversations, newest first, each one that moved as its own read found it
-fn updated(
-    agent: u64,
-    held: &[ThreadRow],
-    moved: &BTreeSet<u64>,
-    read: &HashMap<u64, Option<ThreadRow>>,
-) -> Vec<ThreadRow> {
-    let kept = held.iter().filter(|row| !moved.contains(&row.id));
-    let mut threads: Vec<ThreadRow> = kept.cloned().collect();
-    let found = read.values().flatten().filter(|row| row.agent == agent);
-    threads.extend(found.cloned());
-    threads.sort_by_key(|row| Reverse(row.id));
-    threads
+// every room's name, for the setup's room finder, which searches them all
+pub(crate) async fn every_room(host: Host, rooms: Rooms) -> Result<(), Error> {
+    let every = host
+        .query_all(|after| chat::ask::Channels { page: page(after) })
+        .await?;
+    let named = every
+        .into_iter()
+        .map(|info| (info.channel.id, info.channel.name));
+    rooms.borrow_mut().extend(named);
+    Ok(())
 }
 
+// the list: harness's card of each agent it runs, the accounts (names, pictures, the reader's
+// agents no script hands to harness yet), the nodes serving relay and the rooms the cards name;
+// its time is the newest head's
 pub(crate) async fn roster(
     host: Host,
     me: Option<u64>,
-    known: &RefCell<Known>,
+    rooms: Rooms,
+    now: Rc<Cell<u64>>,
 ) -> Result<Roster, Error> {
-    // what moved since the last read, taken now: what harness writes while this one runs is
-    // the next read's
-    let (held, moved, whole) = {
-        let mut known = known.borrow_mut();
-        let mut held = std::mem::take(&mut known.threads);
-        if std::mem::take(&mut known.everything) {
-            held.clear();
-        }
-        let moved = std::mem::take(&mut known.moved);
-        (held, moved, std::mem::take(&mut known.agents))
-    };
-    // each conversation that moved, read alone, unless its agent's whole list is read again
-    let mut read = HashMap::new();
-    for &thread in &moved {
-        let listed = held
-            .iter()
-            .any(|(agent, rows)| whole.contains(agent) && rows.iter().any(|row| row.id == thread));
-        if !listed {
-            read.insert(thread, host.query(harness::ask::Thread { thread }).await?);
-        }
-    }
-    let mut fresh = HashMap::new();
-    let tip = host
-        .ask::<ChainBlocks>(BlockPage {
-            before: None,
-            limit: 1,
-            most: 0,
-        })
-        .await?;
     let accounts = host
         .query_all(|after| identity::ask::List { page: page(after) })
         .await?;
-    let mut serving: HashMap<String, usize> = HashMap::new();
-    serving.insert(RELAY.to_owned(), served(&host, RELAY).await?);
-    let mut agents = Vec::new();
-    // one Card read per agent; its conversations come from the last read, each one harness
-    // wrote since read alone, and the whole list only for an agent whose list moved (or one the
-    // last read didn't hold)
-    for account in accounts
+    let cards = host
+        .query_all(|after| harness::ask::Cards { page: page(after) })
+        .await?;
+    let relaying = served(&host, RELAY).await?;
+    let spoken = cards
         .iter()
-        .filter(|account| calls_harness(&account.kind()))
-    {
-        let agent = account.number;
-        let Some(setup) = card(&host, agent).await? else {
-            continue;
-        };
-        let service = setup.configured.model().map(|model| model.service.clone());
-        let mut count = None;
-        if let Some(service) = service {
-            if !serving.contains_key(&service) {
-                let now = served(&host, &service).await?;
-                serving.insert(service.clone(), now);
+        .flat_map(|card| card.newest.iter().chain(&card.asking));
+    let channels = spoken.filter_map(|said| room_of(&said.thread.place));
+    name_rooms(&host, &rooms, channels.collect()).await?;
+    let agents = cards
+        .into_iter()
+        .map(|card| {
+            let number = card.setup.agent;
+            let account = accounts.iter().find(|account| account.number == number);
+            Card {
+                name: account.map_or_else(
+                    || format!("account {number}"),
+                    |account| account.card.name.clone(),
+                ),
+                note: account.and_then(|account| view::design::note(&account.kind())),
+                open: card.open,
+                closed: card.closed,
+                last_time: (card.open + card.closed > 0).then_some(card.last_time),
+                newest: card.newest,
+                asking: card.asking,
+                serving: card.serving.map(|serving| serving as usize),
+                setup: card.setup,
             }
-            count = serving.get(&service).copied();
-        }
-        let threads = match held.get(&agent).filter(|_| !whole.contains(&agent)) {
-            Some(rows) => updated(agent, rows, &moved, &read),
-            None => {
-                host.query_all(|after| harness::ask::Threads {
-                    agent,
-                    page: page(after),
-                })
-                .await?
-            }
-        };
-        fresh.insert(agent, threads.clone());
-        let topic = match crate::words::spoken_of(&threads) {
-            Some(thread) => topic(&host, thread.id).await?,
-            None => None,
-        };
-        agents.push(Card {
-            name: account.card.name.clone(),
-            note: view::design::note(&account.kind()),
-            serving: count,
-            threads,
-            setup,
-            topic,
-        });
-    }
+        })
+        .collect();
     let unscripted = accounts
         .iter()
         .filter(|account| unscripted_of(&account.kind(), me))
@@ -241,16 +186,6 @@ pub(crate) async fn roster(
             name: account.card.name.clone(),
         })
         .collect();
-    // ponytail: every room, direct messages too, on each roster read, and a rename waits for
-    // the next one since chat's writes start none; one Channel read per room a thread names
-    // when networks hold many rooms
-    let rooms = host
-        .query_all(|after| chat::ask::Channels { page: page(after) })
-        .await?
-        .into_iter()
-        .map(|info| (info.channel.id, info.channel.name))
-        .collect();
-    known.borrow_mut().threads = fresh;
     Ok(Roster {
         agents,
         unscripted,
@@ -263,8 +198,8 @@ pub(crate) async fn roster(
             .map(|account| (account.number, account.card.name))
             .collect(),
         rooms,
-        relaying: serving[RELAY],
-        now: tip.blocks.first().map_or(0, |block| block.time),
+        relaying,
+        now: now.get(),
     })
 }
 
@@ -317,7 +252,7 @@ pub(crate) struct Detail {
     pub tools: Vec<ToolInfo>,
 }
 
-pub(crate) async fn detail(host: Host, agent: u64) -> Result<Detail, Error> {
+pub(crate) async fn detail(host: Host, agent: u64, rooms: Rooms) -> Result<Detail, Error> {
     let setup = setup(&host, agent).await?;
     let ownership = host
         .query(identity::ask::Answers { account: agent })
@@ -349,6 +284,11 @@ pub(crate) async fn detail(host: Host, agent: u64) -> Result<Detail, Error> {
             page: page(after),
         })
         .await?;
+    let listen = setup.as_ref().and_then(|setup| setup.configured.config());
+    let listen = listen.map_or(&[][..], |(_, config)| &config.listen[..]);
+    let places = threads.iter().filter_map(|thread| room_of(&thread.place));
+    let channels = places.chain(listen.iter().map(String::as_str));
+    name_rooms(&host, &rooms, channels.collect()).await?;
     let bound = host
         .query_all(|after| harness::ask::Bound {
             agent,
@@ -540,10 +480,12 @@ pub(crate) async fn transcript(
     host: Host,
     id: u64,
     from: Option<u64>,
+    rooms: Rooms,
 ) -> Result<Option<Transcript>, Error> {
     let Some(thread) = host.query(harness::ask::Thread { thread: id }).await? else {
         return Ok(None);
     };
+    name_rooms(&host, &rooms, room_of(&thread.place).into_iter().collect()).await?;
     let from = from.unwrap_or(thread.frames + 1);
     let frames = frames_from(&host, id, from).await?;
     let first = match frames.first().filter(|frame| frame.seq == 1) {

@@ -168,7 +168,15 @@ impl Agents {
             Then::Stay => {}
             Then::Models => {
                 let (host, me) = (cx.host(), self.me);
-                cx.load(self, read::models(host, me), |view| &mut view.models);
+                cx.load(self, read::models(host.clone(), me), |view| {
+                    &mut view.models
+                });
+                let named = read::every_room(host, self.rooms.clone());
+                cx.land(named, |_, named, cx| match named {
+                    Ok(()) => cx.notify(),
+                    Err(refusal) => cx.log_refused("chat's rooms", &refusal),
+                })
+                .detach();
             }
             Then::Write(config) => {
                 let draft = &self.setup_draft;

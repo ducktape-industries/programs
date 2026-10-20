@@ -11,7 +11,7 @@ mod timeline;
 mod ui;
 mod words;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -65,9 +65,11 @@ pub struct Agents {
     reading: Option<Task<()>>,
     #[serde(skip)]
     title: Option<String>,
-    // what the roster's last read held of each agent's conversations, and what moved since
+    // the rooms named so far this session, and the newest head's time
     #[serde(skip)]
-    known: Rc<RefCell<read::Known>>,
+    rooms: read::Rooms,
+    #[serde(skip)]
+    now: Rc<Cell<u64>>,
     #[serde(skip)]
     touched: Touched,
     #[serde(skip)]
@@ -178,7 +180,7 @@ pub(crate) fn agent_state(card: &read::Card, roster: &Roster) -> State {
     if serving == 0 || roster.relaying == 0 {
         return State::NoNode;
     }
-    let states = card.threads.iter().map(thread_state);
+    let states = card.asking.iter().map(|said| thread_state(&said.thread));
     states.fold(State::Idle, |state, next| match (state, next) {
         (State::Stuck, _) | (_, State::Stuck) => State::Stuck,
         (State::Working, _) | (_, State::Working) => State::Working,
@@ -263,12 +265,14 @@ impl View for Agents {
             Ok(session) => {
                 if (view.me, &view.chain) != (session.account, &session.chain_id) {
                     let reader = view.me != session.account;
+                    if view.chain != session.chain_id {
+                        view.rooms.borrow_mut().clear();
+                    }
                     view.me = session.account;
                     view.chain = session.chain_id;
                     if reader {
                         // another reader's roster: the one being read is the last one's
                         *view.roster = Loadable::Idle;
-                        view.known.borrow_mut().forget();
                         view.read_roster(cx);
                     }
                     cx.notify();
@@ -286,6 +290,11 @@ impl View for Agents {
                 ));
                 cx.notify();
             }
+        })
+        .detach();
+        cx.follow::<ChainHeads>((), |view, head, cx| match head {
+            Ok(head) => view.ticked(head.time, cx),
+            Err(refusal) => cx.log_refused("the chain's heads", &refusal),
         })
         .detach();
         cx.follow::<Changes<harness::Harness>>((), |view, change, cx| match change {
@@ -336,7 +345,6 @@ impl Render for Agents {
 
 impl Agents {
     fn refresh(&mut self, cx: &mut Context<Self>) {
-        self.known.borrow_mut().forget();
         self.read_roster(cx);
         self.read_budget(cx);
         self.read_screen(cx);
@@ -348,7 +356,6 @@ impl Agents {
             .iter()
             .filter_map(|key| harness::written(key.as_slice()))
             .collect();
-        self.known.borrow_mut().heard(&written);
         let roster = written.iter().any(|wrote| {
             matches!(
                 wrote,
@@ -401,22 +408,24 @@ impl Agents {
         }
     }
 
+    // a new head: its time is now, which says how long ago each conversation moved
+    fn ticked(&mut self, time: u64, cx: &mut Context<Self>) {
+        self.now.set(time);
+        if let Some(roster) = self.roster.ready_mut()
+            && roster.now != time
+        {
+            roster.now = time;
+            cx.notify();
+        }
+    }
+
     // a change heard while the roster, the budget or the agent is read reads it once more when
     // that read lands
     fn read_roster(&mut self, cx: &mut Context<Self>) {
         cx.reread(
             self,
             |view| &mut view.roster,
-            |view, cx| {
-                let (host, me, known) = (cx.host(), view.me, view.known.clone());
-                async move {
-                    let roster = read::roster(host, me, &known).await;
-                    if roster.is_err() {
-                        known.borrow_mut().forget();
-                    }
-                    roster
-                }
-            },
+            |view, cx| read::roster(cx.host(), view.me, view.rooms.clone(), view.now.clone()),
             Self::read_roster,
         );
     }
@@ -437,7 +446,7 @@ impl Agents {
         cx.reread(
             self,
             |view| &mut view.detail,
-            move |_, cx| read::detail(cx.host(), agent),
+            move |view, cx| read::detail(cx.host(), agent, view.rooms.clone()),
             Self::read_screen,
         );
     }
@@ -469,7 +478,7 @@ impl Agents {
                 .and_then(Option::as_ref)
                 .map(|shown| shown.from),
         };
-        let open = read::transcript(cx.host(), thread, from);
+        let open = read::transcript(cx.host(), thread, from, self.rooms.clone());
         let task = cx.land(open, |view, opened, cx| {
             view.transcript = Loadable::from(opened);
             view.read_delta(cx);

@@ -23,8 +23,8 @@ use harness::{
     Wire, WithheldFrame,
 };
 use view::methods::{
-    BlobBody, Block, BlockList, ChainBlocks, Change, Changes, ClipboardWrite, LinkOpen, OpPut,
-    Putting, Query, Session, Submitted,
+    BlobBody, ChainHeads, Change, Changes, ClipboardWrite, Head, LinkOpen, OpPut, Putting, Query,
+    Session, Submitted,
 };
 use view::testing::TestAppContext;
 
@@ -142,6 +142,59 @@ fn card(mut setup: AgentSetup) -> AgentSetup {
         config.system = String::new();
     }
     setup
+}
+
+// every agent whose script calls harness, as harness's `Cards` answers it
+fn cards_of(net: &Net) -> Vec<harness::AgentCard> {
+    let scripted = net.accounts.iter().filter(|account| {
+        matches!(
+            &account.control,
+            identity::Control::Program { script: Some(script), .. } if script.calls == harness::PROGRAM
+        )
+    });
+    let cards = scripted.filter_map(|account| {
+        let setup = net
+            .setups
+            .iter()
+            .find(|setup| setup.agent == account.number)?;
+        let mut rows: Vec<&ThreadRow> = net
+            .threads
+            .iter()
+            .filter(|thread| thread.agent == account.number)
+            .collect();
+        rows.sort_by_key(|thread| u64::MAX - thread.id);
+        let spoken = |thread: &&ThreadRow| harness::Spoken {
+            thread: (*thread).clone(),
+            topic: net
+                .topics
+                .iter()
+                .find(|(id, _)| *id == thread.id)
+                .map(|(_, topic)| topic.clone()),
+        };
+        let open = rows.iter().filter(|thread| !thread.closed).count() as u64;
+        let service = setup.configured.model().map(|model| &model.service);
+        Some(harness::AgentCard {
+            setup: card(setup.clone()),
+            open,
+            closed: rows.len() as u64 - open,
+            last_time: rows
+                .iter()
+                .map(|thread| thread.last_time)
+                .max()
+                .unwrap_or(0),
+            newest: rows.first().map(spoken),
+            asking: rows
+                .iter()
+                .filter(|thread| !thread.closed && thread.asking != Asking::Idle)
+                .map(spoken)
+                .collect(),
+            serving: service.map(|service| {
+                let served = net.serving.iter().find(|(name, _)| name == service);
+                served.map_or(0, |(_, count)| *count as u64)
+            }),
+        })
+    });
+    cards.collect()
 }
 
 fn thread(id: u64, agent: u64, manager: u64, place: &str) -> ThreadRow {
@@ -416,17 +469,6 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
     // each card's picture, as the node holds it: a PNG's first bytes
     cx.host()
         .handle::<view::methods::BlobGet>(|_| Ok(Some(b"\x89PNG\r\n\x1a\nface".to_vec())));
-    // the tip, which says how long ago a conversation moved
-    cx.host().handle::<ChainBlocks>(|_| {
-        Ok(BlockList {
-            blocks: vec![Block {
-                height: 9010,
-                time: NOW,
-                ..Block::default()
-            }],
-            listed_from: Some(1),
-        })
-    });
     let shared = net.clone();
     cx.host().handle::<Query<harness::Harness>>(move |query| {
         let net = shared.borrow();
@@ -570,7 +612,7 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             harness::Query::Routes { .. } => harness::Reply::Routes(page(Vec::new())),
             harness::Query::Answerers { .. } => harness::Reply::Answerers(page(Vec::new())),
             harness::Query::AgentTools { .. } => harness::Reply::AgentTools(Default::default()),
-            harness::Query::Cards { .. } => harness::Reply::Cards(page(Vec::new())),
+            harness::Query::Cards { .. } => harness::Reply::Cards(page(cards_of(&net))),
             harness::Query::Tools => harness::Reply::Tools(vec![
                 ToolInfo {
                     name: "forge_log".into(),
@@ -693,6 +735,13 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             chat::Query::Channels { .. } => {
                 chat::Reply::Channels(page(net.rooms.iter().map(room).collect()))
             }
+            chat::Query::Names { ids } => chat::Reply::Names(
+                net.rooms
+                    .iter()
+                    .filter(|(id, _)| ids.contains(id))
+                    .cloned()
+                    .collect(),
+            ),
             other => panic!("unexpected query: {other:?}"),
         })
     });
@@ -724,6 +773,12 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
         account: Some(me),
         chain_id: "garage#0a1b2c3d".into(),
         ..Session::default()
+    });
+    // the newest head, which says how long ago a conversation moved
+    cx.host().stream::<ChainHeads>().send(Head {
+        height: 9010,
+        time: NOW,
+        ..Head::default()
     });
     cx.run_until_parked();
     (cx, net)
