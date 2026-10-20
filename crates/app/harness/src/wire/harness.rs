@@ -198,10 +198,7 @@ fn untyped(tool: &str, input: String) -> String {
 }
 
 fn wire_lane(lane: &Lane) -> model_wire::Lane {
-    model_wire::Lane {
-        provider: lane.provider.clone(),
-        model: lane.model.clone(),
-    }
+    model_wire::Lane::of(&lane.provider, &lane.model)
 }
 
 fn plain(said: &Said) -> Option<Block> {
@@ -290,10 +287,7 @@ pub(crate) fn own_summary(block: &str) -> String {
         Err(_) => model_wire::Summarized {
             text: block.to_owned(),
             sealed: None,
-            lane: model_wire::Lane {
-                provider: String::new(),
-                model: String::new(),
-            },
+            lane: model_wire::Lane::default(),
             tokens: 0,
         },
     };

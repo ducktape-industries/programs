@@ -117,10 +117,7 @@ pub(crate) fn summary(wire: Wire, written: Wire, block: &str, text: &str) -> Str
         (Wire::AnthropicMessages, Wire::AnthropicMessages) => anthropic::summary_message(block),
         (Wire::AnthropicMessages, Wire::Harness) => anthropic::summary_text(text),
         (Wire::Harness, Wire::AnthropicMessages) => {
-            let lane = model_wire::Lane {
-                provider: model_wire::anthropic::PROVIDER.into(),
-                model: String::new(),
-            };
+            let lane = model_wire::Lane::of(model_wire::anthropic::PROVIDER, "");
             harness::summary_message(lane, text, Some(block.to_owned()))
         }
         (Wire::Harness, Wire::Harness) => harness::own_summary(block),

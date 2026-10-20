@@ -2,7 +2,7 @@
 
 The harness wire: the one vocabulary harness speaks to a model, and an adapter per provider that
 translates it to that provider's own wire and back. harness (on chain) writes requests and reads
-events in it; the adapter service (forge repo `harness-model-adapter`, beside ccs) runs the
+events in it; the adapter service (`harness-model-adapter/` in forge's `services`, beside ccs) runs the
 adapters. A provider's field names appear only in its adapter's module: `anthropic` (Messages,
 through ccs's `/v1/`) and `codex` (OpenAI's Responses on the Codex surface a ChatGPT plan opens,
 through ccs's `/backend-api/`: the system prompt rides as the developer's message, no
@@ -19,14 +19,21 @@ through ccs's `/backend-api/`: the system prompt rides as the developer's messag
 
 An answer that is no reply carries a `Failure` as its body, under the provider's own status, with
 the provider's own headers (rate-limit windows, ccs's `x-ccs-account`) passed back as they came.
+Every answer also carries the budget in harness's own words (`budget`): for each usage window
+`x-harness-window-<name>-used` (the share used, a fraction), `-reset` (seconds since the epoch) and
+`-status`, then `x-harness-status` and `x-harness-account` (the provider's own id for the account).
+A window is named by its length (`5h`, `7d`), so every provider's windows read alike.
 There is no version anywhere: the vocabulary changes with harness, and this crate's tests hold both
 sides to it.
 
 ## The vocabulary
 
 - `Request`: model, max_tokens, thinking, system, tools (name, description, JSON schema), server
-  tools, messages. A user message holds text, images and tool results; an assistant message holds
-  `Block`s and the `Lane` (provider, model) that wrote it.
+  tools, messages, the `target` the call goes to (`pinned` to a service and account, `unpinned`, or
+  `unnamed` from a harness that names none), and a `cache_key` the conversation's calls share. A
+  user message holds text, images and tool results; an assistant message holds `Block`s and the
+  `Lane` that wrote it: provider, model, and the egress service and account that answered.
+- `Model`: the provider, the context window, and the picture limits where the provider states them.
 - `Block`: text (with the provider's citations), reasoning (with its seal), redacted reasoning, a
   tool use, a server-tool use and result, and a summary. `sealed` and `citations` hold what a
   provider issued and takes back verbatim; nothing on harness's side reads them.
@@ -40,9 +47,20 @@ sides to it.
 - `Failure`: a `Class` (dropped, provider, overloaded, wire, overflow, pictures, limited), the
   words, and for a limited or busy account the reset it waits for (seconds since the epoch).
 
-## The lane rule
+## The lane rule (`fit`)
 
-An adapter takes back what a provider sealed only from a message its own provider wrote, and a
-reasoning's seal only from its own model. Anything else goes back as its words (reasoning, cited
-text, a summary) or not at all (redacted reasoning, server-tool use and results). That is how one
-thread moves between models and providers.
+Each adapter fits a request before it spells it, by who wrote each assistant block and who reads
+the call:
+
+- User text, images, tool results, assistant text and tool calls always go. A tool call's id is
+  rewritten (the same way in its result) only where the target refuses its pattern.
+- A reasoning seal goes back only to what reads it: Anthropic's signatures and redacted thinking
+  to the same model, Codex's encrypted reasoning to the same model and account. Otherwise the
+  reasoning is left out, never sent as words: the new model would read them as its own reply.
+- A server tool's blocks and cited text go back as they were only to the same provider and
+  account; otherwise as their words, with each cited page's title and address.
+- A sealed summary goes back to its own provider; any other reads its words.
+
+A request with an `unnamed` target comes from a harness that judged accounts itself, so its server
+tool's blocks and cited text go as harness sent them. Codex's encrypted reasoning, which that
+harness never judged, goes only to a pinned, matching account, and is left out otherwise.

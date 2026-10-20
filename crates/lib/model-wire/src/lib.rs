@@ -2,7 +2,9 @@
 //! that translates it to that provider's own wire and back. A provider's field names appear only
 //! in its adapter's module.
 pub mod anthropic;
+pub mod budget;
 pub mod codex;
+pub mod fit;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -16,6 +18,21 @@ pub fn model_path(name: &str) -> String {
     format!("{MODELS}{name}")
 }
 
+pub fn budget_of(provider: &str, headers: &[(String, String)]) -> budget::Budget {
+    match provider {
+        anthropic::PROVIDER => anthropic::budget(headers),
+        codex::PROVIDER => codex::budget(headers),
+        _ => budget::Budget::default(),
+    }
+}
+
+pub fn answers(provider: &str, sealed: &str) -> Option<String> {
+    match provider {
+        anthropic::PROVIDER => anthropic::answers(sealed),
+        _ => None,
+    }
+}
+
 pub fn ccs_provider(word: &str) -> Option<&'static str> {
     let known = [
         (anthropic::CCS_PROVIDER, anthropic::PROVIDER),
@@ -25,7 +42,7 @@ pub fn ccs_provider(word: &str) -> Option<&'static str> {
     found.map(|(_, provider)| provider)
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Request {
     pub model: String,
     pub max_tokens: u32,
@@ -38,6 +55,22 @@ pub struct Request {
     #[serde(default)]
     pub server_tools: Vec<ServerTool>,
     pub messages: Vec<Message>,
+    #[serde(default)]
+    pub target: Target,
+    #[serde(default)]
+    pub cache_key: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Target {
+    #[default]
+    Unnamed,
+    Unpinned,
+    Pinned {
+        service: String,
+        account: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,10 +108,24 @@ pub struct Tool {
 
 // the provider and the model that wrote an assistant message: what it sealed goes back only to
 // the same provider, and its reasoning's seal only to the same model
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Lane {
     pub provider: String,
     pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+}
+
+impl Lane {
+    pub fn of(provider: &str, model: &str) -> Lane {
+        Lane {
+            provider: provider.to_owned(),
+            model: model.to_owned(),
+            ..Lane::default()
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -243,6 +290,14 @@ pub enum Class {
 pub struct Model {
     pub provider: String,
     pub window: Option<u64>,
+    #[serde(default)]
+    pub pictures: Option<Pictures>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Pictures {
+    pub most_base64: u64,
+    pub most_side: u32,
 }
 
 // a thread summarized: what a model of any provider reads, what its own provider takes back, and

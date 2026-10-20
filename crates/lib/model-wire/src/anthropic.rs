@@ -3,9 +3,10 @@
 //! model's window.
 use serde_json::{Map, Value, json};
 
+use crate::budget::{Budget, Window, header};
 use crate::{
-    Block, Class, Event, Failure, Lane, Message, Model, Reply, Request, ServerTool, Shown, Stop,
-    Summarized, Thinking, Usage, UserBlock,
+    Block, Class, Event, Failure, Lane, Message, Model, Pictures, Reply, Request, ServerTool,
+    Shown, Stop, Summarized, Thinking, Usage, UserBlock,
 };
 
 pub const PROVIDER: &str = "anthropic";
@@ -18,6 +19,10 @@ const WEB_FETCH: &str = "web_fetch_20250910";
 const OVERFLOWED: &str = "model_context_window_exceeded";
 const RESET: &str = "anthropic-ratelimit-unified-5h-reset";
 const RETRY_AFTER: &str = "retry-after";
+const UNIFIED: &str = "anthropic-ratelimit-unified-";
+const ORGANIZATION: &str = "anthropic-organization-id";
+const IMAGE_BASE64: u64 = 5 * 1024 * 1024;
+const IMAGE_SIDE: u32 = 8000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ask {
@@ -82,10 +87,7 @@ fn server_definition(tool: &ServerTool) -> Value {
 
 fn thought(body: &mut Map<String, Value>, thinking: Thinking) {
     let effort = match thinking {
-        Thinking::Off => {
-            body.insert("thinking".into(), json!({ "type": "disabled" }));
-            return;
-        }
+        Thinking::Off => return,
         Thinking::Low => "low",
         Thinking::Medium => "medium",
         Thinking::High => "high",
@@ -98,6 +100,7 @@ fn thought(body: &mut Map<String, Value>, thinking: Thinking) {
 // the request's body: the prompt is cached up to the last tool, the last system block and, on a
 // turn, the last block of the last message
 pub fn body(request: &Request, ask: Ask) -> Value {
+    let request = &crate::fit::fit(request, PROVIDER);
     let mut tools: Vec<Value> = request
         .tools
         .iter()
@@ -128,11 +131,7 @@ pub fn body(request: &Request, ask: Ask) -> Value {
     if !system.is_empty() {
         body.insert("system".into(), Value::Array(system));
     }
-    let mut messages: Vec<Value> = request
-        .messages
-        .iter()
-        .map(|message| message_json(message, &request.model))
-        .collect();
+    let mut messages: Vec<Value> = request.messages.iter().map(message_json).collect();
     if ask == Ask::Turn {
         let last = messages.last_mut();
         mark(last.and_then(|message| message["content"].as_array_mut()?.last_mut()));
@@ -145,16 +144,11 @@ pub fn body(request: &Request, ask: Ask) -> Value {
     Value::Object(body)
 }
 
-fn message_json(message: &Message, model: &str) -> Value {
+fn message_json(message: &Message) -> Value {
     let (role, mut content) = match message {
         Message::User { blocks } => ("user", blocks.iter().map(user_block).collect()),
-        Message::Assistant { lane, blocks } => {
-            let ours = lane.provider == PROVIDER;
-            let same_model = ours && lane.model == model;
-            let content: Vec<Value> = blocks
-                .iter()
-                .filter_map(|block| provider_owned_block(block, ours, same_model))
-                .collect();
+        Message::Assistant { blocks, .. } => {
+            let content: Vec<Value> = blocks.iter().filter_map(block_json).collect();
             ("assistant", content)
         }
     };
@@ -206,9 +200,9 @@ fn text_block(text: &str) -> Option<Value> {
     (!text.is_empty()).then(|| json!({ "type": "text", "text": text }))
 }
 
-fn provider_owned_block(block: &Block, ours: bool, same_model: bool) -> Option<Value> {
+fn block_json(block: &Block) -> Option<Value> {
     match block {
-        Block::Text { text, citations } if ours && !citations.is_empty() => {
+        Block::Text { text, citations } if !citations.is_empty() => {
             let citations: Vec<Value> = citations
                 .iter()
                 .filter_map(|citation| serde_json::from_str(citation).ok())
@@ -219,35 +213,134 @@ fn provider_owned_block(block: &Block, ours: bool, same_model: bool) -> Option<V
         Block::Reasoning {
             text,
             sealed: Some(signature),
-        } if same_model => Some(json!({
+        } => Some(json!({
             "type": "thinking",
             "thinking": text,
             "signature": signature,
         })),
-        Block::Reasoning { text, .. } => text_block(text),
-        Block::Redacted { sealed } if same_model => {
-            Some(json!({ "type": "redacted_thinking", "data": sealed }))
-        }
-        Block::Redacted { .. } => None,
+        Block::Reasoning { sealed: None, .. } => None,
+        Block::Redacted { sealed } => Some(json!({ "type": "redacted_thinking", "data": sealed })),
         Block::ToolUse { id, name, input } => Some(json!({
             "type": "tool_use",
             "id": id,
             "name": name,
             "input": input_of(input),
         })),
-        Block::ServerToolUse { id, name, input } if ours => Some(json!({
+        Block::ServerToolUse { id, name, input } => Some(json!({
             "type": "server_tool_use",
             "id": id,
             "name": name,
             "input": input_of(input),
         })),
-        Block::ServerToolResult { sealed } if ours => serde_json::from_str(sealed).ok(),
-        Block::ServerToolUse { .. } | Block::ServerToolResult { .. } => None,
+        Block::ServerToolResult { sealed } => serde_json::from_str(sealed).ok(),
         Block::Summary {
             sealed: Some(sealed),
             ..
-        } if ours => serde_json::from_str(sealed).ok(),
+        } => serde_json::from_str(sealed).ok(),
         Block::Summary { text, .. } => text_block(text),
+    }
+}
+
+pub fn tool_id(id: &str) -> String {
+    let fits = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-';
+    if !id.is_empty() && id.bytes().all(fits) {
+        return id.to_owned();
+    }
+    id.bytes()
+        .map(|byte| match byte {
+            b'_' => "__".to_owned(),
+            byte if fits(byte) => char::from(byte).to_string(),
+            byte => format!("_{byte:02x}"),
+        })
+        .collect()
+}
+
+pub fn plain(block: &Block) -> Option<String> {
+    let text = match block {
+        Block::ServerToolUse { name, input, .. } => format!("[{name} {input}]"),
+        Block::ServerToolResult { sealed } => plain_result(sealed),
+        Block::Text { text, citations } => plain_cited(text, citations),
+        _ => return None,
+    };
+    (!text.is_empty()).then_some(text)
+}
+
+fn plain_cited(text: &str, citations: &[String]) -> String {
+    let mut lines = vec![text.to_owned()];
+    for citation in citations {
+        let Ok(value) = serde_json::from_str::<Value>(citation) else {
+            continue;
+        };
+        let (title, url) = (text_of(&value, "title"), text_of(&value, "url"));
+        let source = format!("{title} {url}").trim().to_owned();
+        if !url.is_empty() && !lines.contains(&source) {
+            lines.push(source);
+        }
+    }
+    lines.join("\n")
+}
+
+fn plain_result(block: &str) -> String {
+    let Ok(value) = serde_json::from_str::<Value>(block) else {
+        return String::new();
+    };
+    let kind = text_of(&value, "type");
+    let content = &value["content"];
+    let mut lines = vec![format!("[{kind}]")];
+    let page = |item: &Value| {
+        let (title, url) = (text_of(item, "title"), text_of(item, "url"));
+        (!url.is_empty()).then(|| format!("{title} {url}").trim().to_owned())
+    };
+    match content {
+        Value::Array(items) => lines.extend(items.iter().filter_map(page)),
+        Value::Object(_) => {
+            lines.extend(page(content));
+            let source = &content["content"]["source"];
+            lines.extend(
+                source["data"]
+                    .as_str()
+                    .filter(|_| source["type"] == "text")
+                    .map(str::to_owned),
+            );
+        }
+        _ => {}
+    }
+    lines.join("\n")
+}
+
+pub fn answers(sealed: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(sealed).ok()?;
+    value["tool_use_id"].as_str().map(str::to_owned)
+}
+
+pub fn budget(headers: &[(String, String)]) -> Budget {
+    let mut windows: Vec<Window> = Vec::new();
+    for (key, value) in headers {
+        let key = key.to_ascii_lowercase();
+        let named = key.strip_prefix(UNIFIED);
+        let Some(name) = named.and_then(|rest| rest.strip_suffix("-utilization")) else {
+            continue;
+        };
+        let reset = header(headers, &format!("{UNIFIED}{name}-reset"));
+        let Some(reset) = reset.and_then(|reset| reset.parse().ok()) else {
+            continue;
+        };
+        if name.is_empty() || windows.iter().any(|window| window.name == name) {
+            continue;
+        }
+        let status = header(headers, &format!("{UNIFIED}{name}-status"));
+        windows.push(Window {
+            name: name.to_owned(),
+            used: value.trim().to_owned(),
+            reset,
+            status: status.map(str::to_owned),
+        });
+    }
+    let account = header(headers, ORGANIZATION).filter(|id| !id.is_empty());
+    Budget {
+        windows,
+        status: header(headers, &format!("{UNIFIED}status")).map(str::to_owned),
+        account: account.map(str::to_owned),
     }
 }
 
@@ -549,10 +642,7 @@ impl Fold {
         }
         Event::Reply(Reply {
             model: self.model.clone(),
-            lane: Lane {
-                provider: PROVIDER.to_owned(),
-                model: self.asked.clone(),
-            },
+            lane: Lane::of(PROVIDER, &self.asked),
             said: std::mem::take(&mut self.said),
             stop: self.stop.unwrap_or(Stop::EndTurn),
             usage: self.usage,
@@ -571,13 +661,6 @@ fn stream_failure(error: &Value) -> Failure {
     };
     let message = format!("the model's reply failed as it streamed, {kind}: {message}");
     Failure::new(class, message)
-}
-
-fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
-    let found = headers
-        .iter()
-        .find(|(key, _)| key.eq_ignore_ascii_case(name));
-    found.map(|(_, value)| value.trim())
 }
 
 // an answer that is no reply, as the class harness acts on: `now` (seconds since the epoch) turns a
@@ -658,10 +741,7 @@ pub fn summarized(
     Ok(Summarized {
         text: text_of(block, "content"),
         sealed: Some(Value::Object(present).to_string()),
-        lane: Lane {
-            provider: PROVIDER.to_owned(),
-            model: asked.to_owned(),
-        },
+        lane: Lane::of(PROVIDER, asked),
         tokens,
     })
 }
@@ -688,5 +768,9 @@ pub fn model(
     Ok(Model {
         provider: PROVIDER.to_owned(),
         window,
+        pictures: Some(Pictures {
+            most_base64: IMAGE_BASE64,
+            most_side: IMAGE_SIDE,
+        }),
     })
 }

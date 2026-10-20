@@ -1,9 +1,10 @@
 //! The Codex adapter against streams in the shape of OpenAI's documented Responses events (no live
 //! Codex stream is recorded yet): text, a function call, reasoning summaries, usage with a cached
 //! share, a refusal, an incomplete reply, a failure, a stream cut short, and a request under the surface's rules.
+use model_wire::budget::{Budget, Window};
 use model_wire::codex::{self, Fold};
 use model_wire::{
-    Block, Class, Event, Lane, Message, Reply, Request, Shown, Stop, Thinking, Tool, Usage,
+    Block, Class, Event, Lane, Message, Reply, Request, Shown, Stop, Target, Thinking, Tool, Usage,
     UserBlock,
 };
 use serde_json::{Value, json};
@@ -100,10 +101,7 @@ fn a_text_reply_streams_its_pieces_and_ends_in_the_whole_turn() {
     assert_eq!(streamed, expected);
     let whole = Reply {
         model: MODEL.into(),
-        lane: Lane {
-            provider: codex::PROVIDER.into(),
-            model: MODEL.into(),
-        },
+        lane: Lane::of(codex::PROVIDER, MODEL),
         said: vec![text("Hello, world")],
         stop: Stop::EndTurn,
         usage: Usage {
@@ -244,10 +242,7 @@ fn a_request_goes_out_under_the_codex_surfaces_rules() {
                 blocks: vec![UserBlock::Text { text: "hi".into() }],
             },
             Message::Assistant {
-                lane: Lane {
-                    provider: "anthropic".into(),
-                    model: "claude".into(),
-                },
+                lane: Lane::of("anthropic", "claude"),
                 blocks: vec![
                     Block::Reasoning {
                         text: "thought".into(),
@@ -270,8 +265,10 @@ fn a_request_goes_out_under_the_codex_surfaces_rules() {
                 }],
             },
         ],
+        cache_key: Some("thread-7".into()),
+        ..Request::default()
     };
-    let body = codex::body(&request, Some("thread-7"));
+    let body = codex::body(&request);
     assert_eq!(body["instructions"], codex::INSTRUCTIONS);
     assert_eq!(body["input"][0]["content"][0]["text"], "You keep notes.");
     assert_eq!(
@@ -280,6 +277,7 @@ fn a_request_goes_out_under_the_codex_surfaces_rules() {
     );
     assert!(body.get("max_output_tokens").is_none());
     assert_eq!(body["reasoning"]["effort"], "high");
+    assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
     assert_eq!(body["prompt_cache_key"], "thread-7");
     assert_eq!(body["tools"][0]["type"], "function");
     assert_eq!(body["tools"][0]["parameters"], json!({ "type": "object" }));
@@ -292,18 +290,16 @@ fn a_request_goes_out_under_the_codex_surfaces_rules() {
     let expected = [
         json!(["message", "developer"]),
         json!(["message", "user"]),
-        json!(["message", "assistant"]),
         json!(["function_call", null]),
         json!(["function_call_output", null]),
     ];
     assert_eq!(kinds, expected);
     let input = &body["input"];
-    assert_eq!(input[2]["content"][0]["text"], "thought");
     assert!(
-        !body.to_string().contains("sig"),
-        "another provider's seal never goes out"
+        !body.to_string().contains("thought") && !body.to_string().contains("sig"),
+        "another provider's reasoning never goes out, as words or sealed"
     );
-    assert_eq!(input[4]["output"], "read");
+    assert_eq!(input[3]["output"], "read");
 }
 
 #[test]
@@ -318,6 +314,9 @@ fn a_refusal_reads_as_the_class_harness_acts_on() {
     let overflow = br#"{"error":{"code":"context_length_exceeded","message":"too long"}}"#;
     assert_eq!(codex::refused(400, &[], overflow, 0).class, Class::Overflow);
     assert_eq!(codex::refused(400, &[], b"{}", 0).class, Class::Provider);
+    let reached = br#"{"error":{"type":"usage_limit_reached","message":"limit","resets_at":5000}}"#;
+    let reached = codex::refused(429, &headers, reached, 1000);
+    assert_eq!((reached.class, reached.reset), (Class::Limited, Some(5000)));
 }
 
 #[test]
@@ -376,4 +375,92 @@ fn a_refusal_streams_its_words_and_ends_the_turn_refused() {
         panic!("a reply");
     };
     assert_eq!(reply.stop, Stop::Refusal);
+}
+
+#[test]
+fn reasoning_keeps_its_encrypted_item_and_goes_back_whole_to_the_same_model() {
+    let done = json!({
+        "type": "reasoning", "id": "rs_1", "encrypted_content": "gAAAA-sealed",
+        "summary": [{ "type": "summary_text", "text": "Plan." }],
+    });
+    let stream = vec![
+        created(),
+        json!({ "type": "response.output_item.added", "output_index": 0, "item": { "type": "reasoning", "id": "rs_1", "summary": [] } }),
+        json!({ "type": "response.output_item.done", "output_index": 0, "item": done.clone() }),
+        json!({ "type": "response.output_item.added", "output_index": 1, "item": call_item("") }),
+        json!({ "type": "response.output_item.done", "output_index": 1, "item": call_item("{}") }),
+        completed(json!([done.clone(), call_item("{}")]), usage(10, 0, 5)),
+    ];
+    let Some(Event::Reply(reply)) = folded(&stream).pop() else {
+        panic!("a reply");
+    };
+    let Block::Reasoning { text, sealed } = &reply.said[0] else {
+        panic!("reasoning first: {:?}", reply.said);
+    };
+    assert_eq!(text, "Plan.");
+    let sealed: Value = serde_json::from_str(sealed.as_deref().unwrap()).unwrap();
+    assert_eq!(sealed, done);
+    let lane = Lane {
+        service: Some("zk-codex".into()),
+        account: Some("codex-a".into()),
+        ..reply.lane.clone()
+    };
+    let request = |model: &str, target: Target| Request {
+        model: model.into(),
+        max_tokens: 1024,
+        messages: vec![Message::Assistant {
+            lane: lane.clone(),
+            blocks: reply.said.clone(),
+        }],
+        target,
+        ..Request::default()
+    };
+    let pinned = Target::Pinned {
+        service: "zk-codex".into(),
+        account: "codex-a".into(),
+    };
+    let same = codex::body(&request(MODEL, pinned.clone()));
+    assert_eq!(same["input"][0], done);
+    assert_eq!(same["input"][1]["type"], "function_call");
+    for (model, target) in [("gpt-other", pinned), (MODEL, Target::Unnamed)] {
+        let other = codex::body(&request(model, target));
+        assert_eq!(other["input"][0]["type"], "function_call");
+        assert!(!other.to_string().contains("gAAAA"), "{other}");
+        assert!(!other.to_string().contains("Plan."), "{other}");
+    }
+}
+
+#[test]
+fn the_codex_windows_read_as_the_harness_budget() {
+    let headers: Vec<(String, String)> = [
+        ("x-codex-primary-used-percent", "12.5"),
+        ("x-codex-primary-window-minutes", "300"),
+        ("x-codex-primary-reset-at", "1792524600"),
+        ("x-codex-secondary-used-percent", "100"),
+        ("x-codex-secondary-window-minutes", "10080"),
+        ("x-codex-secondary-reset-at", "1793084311"),
+        ("x-codex-other-primary-used-percent", "7"),
+        ("x-codex-other-primary-window-minutes", "90"),
+        ("x-codex-other-primary-reset-at", "1792520000"),
+    ]
+    .iter()
+    .map(|(name, value)| (name.to_string(), value.to_string()))
+    .collect();
+    let window = |name: &str, used: &str, reset: u64| Window {
+        name: name.into(),
+        used: used.into(),
+        reset,
+        status: None,
+    };
+    let expected = Budget {
+        windows: vec![
+            window("5h", "0.125", 1792524600),
+            window("7d", "1", 1793084311),
+            window("codex-other_90m", "0.07", 1792520000),
+        ],
+        ..Budget::default()
+    };
+    let budget = codex::budget(&headers);
+    assert_eq!(budget, expected);
+    assert_eq!(Budget::read(&budget.headers()), expected);
 }

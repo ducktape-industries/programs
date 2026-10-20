@@ -1,10 +1,11 @@
 //! The Anthropic adapter against the streams harness's own Anthropic wire was recorded from: each
-//! folds into the reply harness reads today, a request goes out as harness writes it today, and a
-//! block another provider or model sealed goes back as its words.
+//! folds into the reply harness reads today, a request goes out as harness writes it today, and what
+//! another model or provider sealed is left out or goes as its words.
 use model_wire::anthropic::{self, Ask, Fold};
+use model_wire::budget::{Budget, Window};
 use model_wire::{
-    Block, Class, Event, Failure, Lane, Message, Reply, Request, Shown, Stop, Thinking, Tool,
-    Usage, UserBlock,
+    Block, Class, Event, Failure, Lane, Message, Pictures, Reply, Request, Shown, Stop, Thinking,
+    Tool, Usage, UserBlock,
 };
 use serde_json::{Value, json};
 
@@ -36,10 +37,7 @@ fn reply(fixture: &str) -> Reply {
 }
 
 fn lane() -> Lane {
-    Lane {
-        provider: anthropic::PROVIDER.into(),
-        model: MODEL.into(),
-    }
+    Lane::of(anthropic::PROVIDER, MODEL)
 }
 
 fn usage(output: u64) -> Usage {
@@ -270,6 +268,7 @@ fn request(messages: Vec<Message>) -> Request {
         }],
         server_tools: Vec::new(),
         messages,
+        ..Request::default()
     }
 }
 
@@ -369,11 +368,8 @@ fn a_turn_goes_out_as_harness_writes_it_today() {
 }
 
 #[test]
-fn another_models_seal_goes_back_as_words_and_another_providers_not_at_all() {
-    let other_model = Lane {
-        provider: anthropic::PROVIDER.into(),
-        model: "claude-opus-5".into(),
-    };
+fn another_models_reasoning_is_left_out_and_another_providers_seals_go_as_words() {
+    let other_model = Lane::of(anthropic::PROVIDER, "claude-opus-5");
     let body = anthropic::body(&request(vec![assistant(other_model, said())]), Ask::Summary);
     let kinds: Vec<&str> = body["messages"][0]["content"]
         .as_array()
@@ -382,36 +378,28 @@ fn another_models_seal_goes_back_as_words_and_another_providers_not_at_all() {
         .map(|block| block["type"].as_str().unwrap())
         .collect();
     let expected = [
-        "text",
         "server_tool_use",
         "web_search_tool_result",
         "text",
         "tool_use",
     ];
     assert_eq!(kinds, expected);
-    assert_eq!(body["messages"][0]["content"][0]["text"], "let me check");
+    assert!(
+        !body.to_string().contains("let me check"),
+        "another model's reasoning never goes as words"
+    );
     assert_eq!(body["compaction"], json!({ "type": "summarize" }));
     assert!(body.get("stream").is_none());
 
-    let openai = Lane {
-        provider: "openai".into(),
-        model: "gpt-x".into(),
-    };
+    let openai = Lane::of("openai", "gpt-x");
     let body = anthropic::body(&request(vec![assistant(openai, said())]), Ask::Turn);
     let content = body["messages"][0]["content"].as_array().unwrap().clone();
     let words: Vec<Value> = content
         .iter()
         .map(|block| json!([block["type"], block["text"]]))
         .collect();
-    assert_eq!(
-        words,
-        [
-            json!(["text", "let me check"]),
-            json!(["text", "cited"]),
-            json!(["tool_use", null]),
-        ]
-    );
-    assert!(content[1].get("citations").is_none());
+    assert_eq!(words, [json!(["text", "cited"]), json!(["tool_use", null])]);
+    assert!(content[0].get("citations").is_none());
 }
 
 #[test]
@@ -484,10 +472,7 @@ fn a_summary_reads_back_its_compaction_block_and_its_words() {
 #[test]
 fn a_turn_after_this_providers_compaction_asks_under_the_compaction_beta() {
     let summary = |provider: &str| Message::Assistant {
-        lane: Lane {
-            provider: provider.into(),
-            model: MODEL.into(),
-        },
+        lane: Lane::of(provider, MODEL),
         blocks: vec![Block::Summary {
             text: "so far".into(),
             sealed: Some(r#"{"type":"compaction","content":"so far"}"#.into()),
@@ -499,11 +484,8 @@ fn a_turn_after_this_providers_compaction_asks_under_the_compaction_beta() {
     let request = |messages: Vec<Message>| Request {
         model: MODEL.into(),
         max_tokens: 1024,
-        thinking: None,
-        system: Vec::new(),
-        tools: Vec::new(),
-        server_tools: Vec::new(),
         messages,
+        ..Request::default()
     };
     let beta = |request: &Request, ask: Ask| {
         let headers = anthropic::headers(request, ask);
@@ -530,5 +512,70 @@ fn a_turn_after_this_providers_compaction_asks_under_the_compaction_beta() {
             "anthropic-version".to_owned(),
             anthropic::VERSION.to_owned()
         )]
+    );
+}
+
+#[test]
+fn thinking_off_asks_no_thinking_at_all() {
+    let mut off = request(vec![user()]);
+    off.thinking = Some(Thinking::Off);
+    let body = anthropic::body(&off, Ask::Turn);
+    assert!(body.get("thinking").is_none(), "{body}");
+    assert!(body.get("output_config").is_none(), "{body}");
+}
+
+#[test]
+fn a_models_record_carries_anthropics_picture_limits() {
+    let body = json!({ "max_input_tokens": 1000000 }).to_string();
+    let model = anthropic::model(200, &[], body.as_bytes(), 0).unwrap();
+    let pictures = Pictures {
+        most_base64: 5 * 1024 * 1024,
+        most_side: 8000,
+    };
+    assert_eq!(
+        (model.window, model.pictures),
+        (Some(1_000_000), Some(pictures))
+    );
+}
+
+#[test]
+fn the_unified_windows_read_as_the_harness_budget() {
+    let headers: Vec<(String, String)> = [
+        ("anthropic-ratelimit-unified-5h-utilization", "0.53"),
+        ("anthropic-ratelimit-unified-5h-reset", "1792362000"),
+        ("anthropic-ratelimit-unified-5h-status", "allowed"),
+        ("anthropic-ratelimit-unified-7d-utilization", "0.27"),
+        ("anthropic-ratelimit-unified-7d-reset", "1793048400"),
+        ("anthropic-ratelimit-unified-1d-utilization", "0.1"),
+        ("anthropic-ratelimit-unified-status", "allowed_warning"),
+        ("anthropic-organization-id", "org-a"),
+    ]
+    .iter()
+    .map(|(name, value)| (name.to_string(), value.to_string()))
+    .collect();
+    let budget = anthropic::budget(&headers);
+    let expected = Budget {
+        windows: vec![
+            Window {
+                name: "5h".into(),
+                used: "0.53".into(),
+                reset: 1792362000,
+                status: Some("allowed".into()),
+            },
+            Window {
+                name: "7d".into(),
+                used: "0.27".into(),
+                reset: 1793048400,
+                status: None,
+            },
+        ],
+        status: Some("allowed_warning".into()),
+        account: Some("org-a".into()),
+    };
+    assert_eq!(budget, expected);
+    assert_eq!(Budget::read(&budget.headers()), expected);
+    assert_eq!(
+        model_wire::budget_of(anthropic::PROVIDER, &headers),
+        expected
     );
 }

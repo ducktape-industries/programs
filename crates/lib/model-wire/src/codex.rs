@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
+use crate::budget::{self, Budget, Window, header};
 use crate::{
     Block, Class, Event, Failure, Lane, Message, Model, Reply, Request, Shown, Stop, Thinking,
     Usage, UserBlock,
@@ -22,7 +23,6 @@ pub fn headers() -> Vec<(String, String)> {
         ("content-type", "application/json"),
         ("accept", "text/event-stream"),
         ("openai-beta", "responses=experimental"),
-        ("originator", "codex_cli_rs"),
     ];
     headers
         .iter()
@@ -63,7 +63,8 @@ fn assistant_text(text: &str) -> Option<Value> {
         .flatten()
 }
 
-pub fn body(request: &Request, cache_key: Option<&str>) -> Value {
+pub fn body(request: &Request) -> Value {
+    let request = &crate::fit::fit(request, PROVIDER);
     let mut input: Vec<Value> = Vec::new();
     let system: Vec<Value> = request.system.iter().map(|text| input_text(text)).collect();
     input.extend(said("developer", system));
@@ -93,13 +94,14 @@ pub fn body(request: &Request, cache_key: Option<&str>) -> Value {
         "tools": tools,
         "tool_choice": "auto",
         "parallel_tool_calls": true,
+        "include": ["reasoning.encrypted_content"],
         "store": false,
         "stream": true,
     });
     if let Some(thinking) = request.thinking {
         body["reasoning"] = json!({ "effort": effort(thinking), "summary": "auto" });
     }
-    if let Some(key) = cache_key {
+    if let Some(key) = &request.cache_key {
         body["prompt_cache_key"] = json!(key);
     }
     body
@@ -142,9 +144,10 @@ fn user(input: &mut Vec<Value>, blocks: &[UserBlock]) {
 fn assistant(input: &mut Vec<Value>, blocks: &[Block]) {
     for block in blocks {
         let item = match block {
-            Block::Text { text, .. }
-            | Block::Reasoning { text, .. }
-            | Block::Summary { text, .. } => assistant_text(text),
+            Block::Text { text, .. } | Block::Summary { text, .. } => assistant_text(text),
+            Block::Reasoning { sealed, .. } => sealed
+                .as_deref()
+                .and_then(|item| serde_json::from_str(item).ok()),
             Block::ToolUse { id, name, input } => Some(json!({
                 "type": "function_call",
                 "call_id": id,
@@ -193,9 +196,11 @@ fn read_item(item: &Value) -> Option<Block> {
                 .flatten()
                 .map(|part| text_of(part, "text"))
                 .collect();
+            let sealed = item["encrypted_content"].as_str();
+            let sealed = sealed.filter(|sealed| !sealed.is_empty());
             Some(Block::Reasoning {
                 text: text.join("\n\n"),
-                sealed: None,
+                sealed: sealed.map(|_| item.to_string()),
             })
         }
         _ => None,
@@ -358,10 +363,7 @@ impl Fold {
         let (usage, prompt) = usage_of(&response["usage"]);
         Event::Reply(Reply {
             model,
-            lane: Lane {
-                provider: PROVIDER.to_owned(),
-                model: self.asked.clone(),
-            },
+            lane: Lane::of(PROVIDER, &self.asked),
             said,
             stop,
             usage,
@@ -432,11 +434,40 @@ fn failed(error: &Value) -> Failure {
     Failure::new(class_of(code), words)
 }
 
-fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
-    let found = headers
-        .iter()
-        .find(|(key, _)| key.eq_ignore_ascii_case(name));
-    found.map(|(_, value)| value.trim())
+fn window(headers: &[(String, String)], family: &str, place: &str) -> Option<Window> {
+    let named = |part: &str| header(headers, &format!("x-{family}-{place}-{part}"));
+    let used = budget::percent(named("used-percent")?)?;
+    let reset = named("reset-at")?.parse().ok()?;
+    let minutes: u64 = named("window-minutes")?.parse().ok()?;
+    let length = budget::named(minutes);
+    let name = match family {
+        "codex" => length,
+        family => format!("{family}_{length}"),
+    };
+    Some(Window {
+        name,
+        used,
+        reset,
+        status: None,
+    })
+}
+
+pub fn budget(headers: &[(String, String)]) -> Budget {
+    let mut windows: Vec<Window> = Vec::new();
+    for (key, _) in headers {
+        let key = key.to_ascii_lowercase();
+        let named = key.strip_prefix("x-");
+        let Some(family) = named.and_then(|rest| rest.strip_suffix("-primary-used-percent")) else {
+            continue;
+        };
+        for place in ["primary", "secondary"] {
+            windows.extend(window(headers, family, place));
+        }
+    }
+    Budget {
+        windows,
+        ..Budget::default()
+    }
 }
 
 pub fn refused(status: u16, headers: &[(String, String)], body: &[u8], now: u64) -> Failure {
@@ -460,8 +491,9 @@ pub fn refused(status: u16, headers: &[(String, String)], body: &[u8], now: u64)
         _ => Class::Provider,
     };
     let after = header(headers, RETRY_AFTER).and_then(|value| value.parse::<u64>().ok());
+    let after = after.map(|after| now.saturating_add(after));
     let reset = match class {
-        Class::Limited | Class::Overloaded => after.map(|after| now.saturating_add(after)),
+        Class::Limited | Class::Overloaded => after.max(error["resets_at"].as_u64()),
         _ => None,
     };
     Failure {
@@ -494,6 +526,7 @@ pub fn model(
     };
     Ok(Model {
         provider: PROVIDER.to_owned(),
+        pictures: None,
         window: listed["context_window"]
             .as_u64()
             .filter(|tokens| *tokens > 0),
