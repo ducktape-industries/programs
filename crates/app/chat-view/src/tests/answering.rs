@@ -49,3 +49,37 @@ fn a_draft_is_drawn_at_the_rooms_foot_until_chat_drops_it() {
     assert!(!cx.has_text("reviewer is answering…"), "{:?}", cx.texts());
     assert!(!cx.has_text("Looking at the build"));
 }
+
+#[test]
+fn a_drafts_text_is_drawn_as_its_post_will_be_never_as_its_raw_marks() {
+    let held = vec![draft(8, None, "", "Looking at the **build** in `ci`")];
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    let mut room = rooms_alone(|query| Ok(chat_reply(query)));
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(move |query| match query {
+            Query::Drafts { .. } => Ok(Reply::Drafts(held.clone())),
+            Query::Roots { channel_id, .. } if channel_id == "general" => {
+                let posted = vec![parsed_row(1, 7, "hello"), parsed_row(2, 8, "**hi** there")];
+                Ok(Reply::Roots(page(posted)))
+            }
+            query => room(query),
+        });
+    let _view = cx.open::<Chat>();
+    seat(&mut cx);
+    cx.simulate_click("chat-sidebar-channel-general");
+    cx.run_until_parked();
+    let texts = cx.texts();
+    assert!(
+        cx.has_text("hi there"),
+        "the post as chat keeps it: {texts:?}"
+    );
+    assert!(cx.has_text("reviewer is answering…"), "{texts:?}");
+    assert!(texts.iter().any(|text| text.contains("build")), "{texts:?}");
+    assert!(
+        !texts
+            .iter()
+            .any(|text| text.contains("**") || text.contains('`')),
+        "{texts:?}"
+    );
+}

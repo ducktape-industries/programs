@@ -33,12 +33,24 @@ pub(super) fn blocks(
             .child(message.body.clone());
         return vec![text.into_any_element()];
     }
+    let key = format!("chat-message-{}", message.id);
+    drawn(chat, &key, &message.blocks, cx, theme, ladder)
+}
+
+pub(super) fn drawn(
+    chat: &Chat,
+    key: &str,
+    blocks: &[Block],
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Vec<AnyElement> {
     let empty = Names::empty();
     let names = chat.names.ready().unwrap_or(&empty);
-    pieces(&message.blocks, names)
+    pieces(blocks, names)
         .into_iter()
         .map(|(index, piece)| {
-            let id = format!("chat-message-{}-block-{index}", message.id);
+            let id = format!("{key}-block-{index}");
             match piece {
                 Piece::Chat(block) => block_view(chat, id, block, names, cx, theme, ladder),
                 Piece::Markdown(block) => {

@@ -519,14 +519,25 @@ fn blocks(
             .child(message.body.clone());
         return vec![text.into_any_element()];
     }
+    let key = format!("chat-message-{}", message.id);
+    drawn(chat, &key, &message.blocks, cx, theme)
+}
+
+pub(super) fn drawn(
+    chat: &Chat,
+    key: &str,
+    blocks: &[Block],
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+) -> Vec<AnyElement> {
     let empty = Names::empty();
     let names = chat.names.ready().unwrap_or(&empty);
-    pieces(&message.blocks, names)
+    pieces(blocks, names)
         .into_iter()
         .map(|(index, piece)| match piece {
-            Piece::Chat(block) => block_view(chat, message, index, block, names, cx, theme),
+            Piece::Chat(block) => block_view(chat, key, index, block, names, cx, theme),
             Piece::Markdown(block) => {
-                let key = format!("chat-message-{}-block-{index}", message.id);
+                let key = format!("{key}-block-{index}");
                 div()
                     .cursor_text()
                     .child(markdown::desktop::block(&key, &block, theme, &opens(cx)))
@@ -751,14 +762,14 @@ fn reactions(
 
 fn block_view(
     chat: &Chat,
-    message: &ChatMessage,
+    key: &str,
     index: usize,
     block: &Block,
     names: &Names,
     cx: &mut Context<Chat>,
     theme: &Theme,
 ) -> AnyElement {
-    let id = ElementId::from(format!("chat-message-{}-block-{index}", message.id));
+    let id = ElementId::from(format!("{key}-block-{index}"));
     match block {
         Block::Divider => div()
             .id(id)
@@ -775,7 +786,7 @@ fn block_view(
                     .text_color(theme.muted)
                     .child(lang.to_owned())
             });
-            let key = format!("chat-message-{}-block-{index}", message.id);
+            let key = format!("{key}-block-{index}");
             div()
                 .id(id)
                 .flex()
@@ -795,12 +806,12 @@ fn block_view(
             .child(rich_line(id, spans, names, cx, theme))
             .into_any_element(),
         Block::Attachment(file) => {
-            let id = format!("chat-message-{}-block-{index}", message.id);
+            let id = format!("{key}-block-{index}");
             crate::ui::attachment::view(chat, id, file, cx, theme, &design::POINTER)
         }
         Block::Paragraph(spans) => match chat::list_item(spans) {
             Some((marker, item)) => div()
-                .id(format!("chat-message-{}-block-{index}-item", message.id))
+                .id(format!("{key}-block-{index}-item"))
                 .cursor_text()
                 .flex()
                 .gap_2()

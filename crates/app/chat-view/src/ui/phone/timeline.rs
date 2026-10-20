@@ -124,7 +124,12 @@ fn rows(
                         .into_any_element();
                 }
                 return match answering.get(after - usize::from(bare)) {
-                    Some(draft) => crate::ui::answering::row(chat, draft, &theme, &ladder),
+                    Some(draft) => {
+                        let seen: &Chat = chat;
+                        crate::ui::answering::row(seen, draft, &theme, &ladder, |key, blocks| {
+                            super::rich::drawn(seen, key, blocks, cx, &theme, &ladder)
+                        })
+                    }
                     None => div().into_any_element(),
                 };
             };

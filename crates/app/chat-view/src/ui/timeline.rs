@@ -226,7 +226,12 @@ fn rows(
                     return no_replies(&theme).into_any_element();
                 }
                 return match answering.get(after - usize::from(bare)) {
-                    Some(draft) => super::answering::row(chat, draft, &theme, &ladder),
+                    Some(draft) => {
+                        let seen: &Chat = chat;
+                        super::answering::row(seen, draft, &theme, &ladder, |key, blocks| {
+                            message::drawn(seen, key, blocks, cx, &theme)
+                        })
+                    }
                     None => div().into_any_element(),
                 };
             };
