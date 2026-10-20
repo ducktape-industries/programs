@@ -452,6 +452,17 @@ pub enum Query {
         account: AccountNumber,
         rooms: Vec<(String, u64)>,
     },
+    // One page of the messages holding every whitespace-separated term of `text` as a substring
+    // (NFC, case folded), newest first: `Search` with a cursor. Answered by walking the messages.
+    #[ask(Reply::TextHits(PageResponse<MsgRow>))]
+    #[reads(state::HEADS, state::MESSAGES, state::REACTIONS)]
+    #[tool_query(description = "Messages holding every word of text (case folded), newest first, in one channel or all, a page at a time.", example = examples::text_search)]
+    TextSearch {
+        text: String,
+        viewer: Vec<Principal>,
+        channel_id: Option<String>,
+        page: PageRequest,
+    },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -486,6 +497,7 @@ pub enum Reply {
     PostedIn(PageResponse<String>),
     ChosenBy(Vec<AccountChoice>),
     Unread(Vec<UnreadCount>),
+    TextHits(PageResponse<MsgRow>),
 }
 
 // One room's count ([`Query::Unread`]): what came after the cursor asked, up to `to`, meant for

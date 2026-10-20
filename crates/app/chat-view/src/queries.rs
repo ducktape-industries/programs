@@ -1,7 +1,7 @@
 //! Typed reads of the chat program. Every list takes a `PageRequest` and answers a
 //! `PageResponse`; `next` is the cursor of the page after it.
 use chat::view::Names;
-use chat::{ChannelInfo, MemberRow, MessageHits, MsgRow, PageRequest, Principal, ask};
+use chat::{ChannelInfo, MemberRow, MsgRow, PageRequest, Principal, ask};
 use identity::Ownership;
 use std::collections::BTreeMap;
 use view::prelude::*;
@@ -230,31 +230,30 @@ pub(crate) async fn search_hits(
     viewer: Vec<Principal>,
     after: Option<Vec<u8>>,
     screenful: usize,
-) -> Result<(Vec<MsgRow>, bool, Option<Vec<u8>>), Error> {
-    match text.strip_prefix('#') {
+) -> Result<(Vec<MsgRow>, Option<Vec<u8>>), Error> {
+    let asked = page(after, screenful);
+    let found = match text.strip_prefix('#') {
         Some(tag) if !tag.is_empty() => {
-            let tagged = host
-                .query(ask::TagSearch {
-                    tag: tag.to_owned(),
-                    viewer,
-                    channel_id,
-                    page: page(after, screenful),
-                })
-                .await?;
-            Ok((tagged.items, false, tagged.next))
+            let tag = tag.to_owned();
+            host.query(ask::TagSearch {
+                tag,
+                viewer,
+                channel_id,
+                page: asked,
+            })
+            .await?
         }
         _ => {
-            let MessageHits { hits, capped } = host
-                .query(ask::Search {
-                    text,
-                    viewer,
-                    channel_id,
-                    page: page(None, screenful),
-                })
-                .await?;
-            Ok((hits, capped, None))
+            host.query(ask::TextSearch {
+                text,
+                viewer,
+                channel_id,
+                page: asked,
+            })
+            .await?
         }
-    }
+    };
+    Ok((found.items, found.next))
 }
 
 // Who is answering in a room right now: each draft, with its text so far.

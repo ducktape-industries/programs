@@ -358,7 +358,7 @@ fn a_refused_search_says_why_and_retry_asks_again() {
     let (mut cx, _) = phone();
     cx.host()
         .handle::<Ask<::chat::Chat>>(rooms_alone(|query| match query {
-            Query::Search { .. } => Err(view::host::Error::new("refused", "too many words")),
+            Query::TextSearch { .. } => Err(view::host::Error::new("refused", "too many words")),
             query => Ok(chat_reply(query)),
         }));
     cx.simulate_click("Search");

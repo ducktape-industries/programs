@@ -1,7 +1,7 @@
 //! The view against a fake host: every method it asks is answered here, and
 //! each test drives the frame the way a person would.
 use super::*;
-use chat::{ChannelInfo, MessageHits, MsgRow, Op, PostPolicy, Principal, Query, Reply};
+use chat::{ChannelInfo, MsgRow, Op, PostPolicy, Principal, Query, Reply};
 use view::Loadable;
 use view::testing::TestAppContext;
 use view::wire;
@@ -35,6 +35,7 @@ mod rich;
 mod room;
 mod rules;
 mod scroll;
+mod search;
 mod widgets;
 mod writing;
 
@@ -311,18 +312,15 @@ fn chat_reply(query: Query) -> Reply {
             root: None,
             replies: page(Vec::new()),
         },
-        Query::Search { text, .. } => {
+        Query::TextSearch { text, .. } => {
             assert_eq!(text, "hello");
-            Reply::Hits(MessageHits {
-                hits: vec![
-                    row(1, 7, "hello"),
-                    MsgRow {
-                        channel_id: "dm-7-8".into(),
-                        ..row(1, 8, "hello")
-                    },
-                ],
-                capped: false,
-            })
+            Reply::TextHits(page(vec![
+                row(1, 7, "hello"),
+                MsgRow {
+                    channel_id: "dm-7-8".into(),
+                    ..row(1, 8, "hello")
+                },
+            ]))
         }
         Query::Reactors { seqs, .. } => reactors(seqs),
         Query::Listening { .. } => Reply::Listening(page(Vec::new())),

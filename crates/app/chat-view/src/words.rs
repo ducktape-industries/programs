@@ -33,6 +33,7 @@ pub(crate) const NONE_HELD: &str =
 pub(crate) const ROOMS: &str = "Rooms";
 pub(crate) const LOADING_ROOMS: &str = "Loading rooms…";
 pub(crate) const SEARCH_MESSAGES: &str = "Search messages";
+pub(crate) const MORE_RESULTS: &str = "More results";
 pub(crate) const AGENT: &str = "Agent";
 
 // someone answering in a room before they post: who, and what they say they are doing

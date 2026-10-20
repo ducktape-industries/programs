@@ -381,3 +381,12 @@ pub(crate) fn unread() -> Query {
         rooms: vec![(room(), 40)],
     }
 }
+
+pub(crate) fn text_search() -> Query {
+    Query::TextSearch {
+        text: "deploy".into(),
+        viewer: me(),
+        channel_id: None,
+        page: twenty(),
+    }
+}

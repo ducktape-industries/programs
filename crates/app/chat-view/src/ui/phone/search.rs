@@ -5,7 +5,7 @@ use view::prelude::*;
 use view::{Div, Stateful};
 use view::{FontWeight, HighlightStyle};
 
-use super::parts::{face, quiet};
+use super::parts::face;
 use crate::words;
 use crate::{Chat, Hits};
 use chat::MsgRow;
@@ -193,7 +193,7 @@ fn hits(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> 
     }
 }
 
-// Messages and how many, newest first; a row per hit; a capped search says so under them.
+// Messages and how many, newest first; a row per hit; More results under them while a page follows.
 fn list(chat: &Chat, hits: &Hits, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Div {
     let count = format!("{} · newest first", hits.rows.len());
     div()
@@ -205,14 +205,22 @@ fn list(chat: &Chat, hits: &Hits, cx: &mut Context<Chat>, theme: &Theme, ladder:
                 .iter()
                 .map(|row| hit(chat, row, cx, theme, ladder)),
         )
-        .when(hits.capped, |list| {
-            list.child(quiet(
-                "chat-search-capped",
-                "More than shown; narrow the search.",
-                theme,
-                ladder,
-            ))
-        })
+        .when(hits.has_more, |list| list.child(more(cx, theme, ladder)))
+}
+
+// The way to the next page of hits, under the ones shown.
+fn more(cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Div {
+    let more = cx.listener(|chat, _: &ClickEvent, _window, cx| {
+        cx.notify();
+        chat.search_more(cx)
+    });
+    div().flex().p(design::space::BLOCK).child(design::button(
+        "chat-search-more",
+        words::MORE_RESULTS,
+        ladder,
+        theme,
+        more,
+    ))
 }
 
 fn hit(

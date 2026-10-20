@@ -153,10 +153,7 @@ fn review_rooms(cx: &TestAppContext) {
                     channel("dm-7-8", "review", 1),
                 ]))
             }
-            Query::Search { .. } => Reply::Hits(MessageHits {
-                hits: vec![row(1, 7, "a review")],
-                capped: false,
-            }),
+            Query::TextSearch { .. } => Reply::TextHits(page(vec![row(1, 7, "a review")])),
             query => chat_reply(query),
         })
     }));

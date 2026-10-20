@@ -15,7 +15,7 @@ use crate::ops::{
 };
 use crate::queries::{
     around, attention, by_id, channel, channels, drafts, names, reactors, roots, search, seen_by,
-    tagged, thread,
+    tagged, text_search, thread,
 };
 use crate::state::MEMBERS;
 use crate::{Op, Query, Reply};
@@ -262,6 +262,15 @@ impl Program for Chat {
             Query::Unread { account, rooms } => (
                 Reply::Unread(crate::notice::unread(ctx, account, &rooms)?),
                 vec![],
+            ),
+            Query::TextSearch {
+                text,
+                viewer,
+                channel_id,
+                page,
+            } => (
+                Reply::TextHits(text_search(ctx, &text, channel_id, &page)?),
+                viewer,
             ),
         };
         seen_by(ctx, reply, viewer)

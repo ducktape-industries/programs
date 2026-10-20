@@ -1,5 +1,5 @@
-//! Search: the rooms whose names hold it, from the rooms the view holds; and messages, where `#tag`
-//! pages through the tag index and anything else is a full-text search the program caps.
+//! Search: the rooms whose names hold it, from the rooms the view holds; and messages, a screenful
+//! a page, by `#tag` or by every word, More results reading the page after.
 use chat::ChannelInfo;
 use view::prelude::*;
 
@@ -24,11 +24,10 @@ impl Chat {
         cx.load(
             self,
             async move {
-                let (rows, capped, next_after) =
+                let (rows, next_after) =
                     search_hits(host, text, None, viewer, None, screenful).await?;
                 Ok(Hits {
                     rows,
-                    capped,
                     has_more: next_after.is_some(),
                     next_after,
                 })
@@ -51,7 +50,7 @@ impl Chat {
         cx.land(more, |chat, result, cx| {
             cx.notify();
             chat.search.more_loading = false;
-            let (rows, _, next_after) = match result {
+            let (rows, next_after) = match result {
                 Ok(page) => page,
                 Err(refusal) => {
                     chat.notice =

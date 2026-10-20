@@ -465,7 +465,6 @@ pub struct Search {
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
 pub struct Hits {
     pub(crate) rows: Vec<MsgRow>,
-    pub(crate) capped: bool,
     pub(crate) has_more: bool,
     pub(crate) next_after: Option<Vec<u8>>,
 }

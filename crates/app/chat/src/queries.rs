@@ -147,15 +147,8 @@ pub(crate) fn search(
     channel_id: Option<String>,
     page: &PageRequest,
 ) -> Result<MessageHits, Error> {
-    let text = fold(text);
-    let terms: Vec<&str> = text.split_whitespace().collect();
-    if terms.is_empty() {
-        return Err(invalid("nothing to search for"));
-    }
-    let holds_every_term = |row: &Stored| {
-        let flat = fold(&plain_text(&row.blocks));
-        terms.iter().all(|term| flat.contains(term))
-    };
+    let terms = terms(text)?;
+    let holds_every_term = |row: &Stored| holds_every(&terms, row);
     let limit = usize::try_from(page.limit()).unwrap_or(usize::MAX);
     let mut hits = newest(
         ctx,
@@ -172,6 +165,17 @@ pub(crate) fn search(
     })
 }
 
+pub(crate) fn text_search(
+    ctx: &QueryCtx,
+    text: &str,
+    channel_id: Option<String>,
+    page: &PageRequest,
+) -> Result<PageResponse<MsgRow>, Error> {
+    let terms = terms(text)?;
+    let scope = PageRequest::scope_of(&(&terms, &channel_id));
+    paged(ctx, scope, channel_id, page, |row| holds_every(&terms, row))
+}
+
 pub(crate) fn tagged(
     ctx: &QueryCtx,
     tag: &str,
@@ -180,25 +184,49 @@ pub(crate) fn tagged(
 ) -> Result<PageResponse<MsgRow>, Error> {
     let label = tag_label(tag);
     let scope = PageRequest::scope_of(&(&label, &channel_id));
+    paged(ctx, scope, channel_id, page, |row| {
+        tags(&row.blocks).contains(&label)
+    })
+}
+
+// The whitespace-separated terms of `text`, folded as a message's text is.
+fn terms(text: &str) -> Result<Vec<String>, Error> {
+    let terms: Vec<String> = fold(text).split_whitespace().map(str::to_owned).collect();
+    match terms.is_empty() {
+        true => Err(invalid("nothing to search for")),
+        false => Ok(terms),
+    }
+}
+
+fn holds_every(terms: &[String], row: &Stored) -> bool {
+    let flat = fold(&plain_text(&row.blocks));
+    terms.iter().all(|term| flat.contains(term.as_str()))
+}
+
+// One page of the messages `keep` admits, newest first, resumed from the cursor `page` carries
+// in the listing `scope` names.
+fn paged(
+    ctx: &QueryCtx,
+    scope: Vec<u8>,
+    channel_id: Option<String>,
+    page: &PageRequest,
+    keep: impl Fn(&Stored) -> bool,
+) -> Result<PageResponse<MsgRow>, Error> {
     let listing = page.listing(ctx, scope.clone())?;
-    let after = match page.open(&scope)? {
-        None => None,
-        Some(cursor) => Some(
-            Place::decode_key(&mut cursor.after.as_slice()).ok_or_else(|| {
-                invalid(
-                    "a tag page cursor does not decode: restart the tag listing without a cursor",
-                )
-            })?,
-        ),
-    };
+    let after =
+        match page.open(&scope)? {
+            None => None,
+            Some(cursor) => Some(Place::decode_key(&mut cursor.after.as_slice()).ok_or_else(
+                || invalid("a search page cursor does not decode: search again without a cursor"),
+            )?),
+        };
     let want = usize::try_from(listing.limit()).unwrap_or(usize::MAX);
-    let tagged = |row: &Stored| tags(&row.blocks).contains(&label);
     let rows = newest(
         ctx,
         channel_id,
         after.as_ref(),
         want.saturating_add(1),
-        tagged,
+        keep,
     )?;
     Ok(listing.reply((rows.into_iter()).map(|row| (place(&row).key_bytes(), row.row()))))
 }
@@ -324,7 +352,9 @@ pub(crate) fn drafts(ctx: &QueryCtx, channel_id: &str) -> Result<Vec<Draft>, Err
 /// Every message row a reply carries.
 fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
     match reply {
-        Reply::Roots(page) | Reply::TagHits(page) => page.items.iter_mut().collect(),
+        Reply::Roots(page) | Reply::TagHits(page) | Reply::TextHits(page) => {
+            page.items.iter_mut().collect()
+        }
         Reply::Messages(rows) | Reply::Hits(MessageHits { hits: rows, .. }) => {
             rows.iter_mut().collect()
         }

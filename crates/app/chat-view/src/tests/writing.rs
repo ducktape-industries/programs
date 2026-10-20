@@ -255,10 +255,7 @@ fn a_window_opened_around_a_hit_settles_a_post_it_serves() {
     cx.host()
         .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
             Ok(match query {
-                Query::Search { .. } => Reply::Hits(MessageHits {
-                    hits: vec![row(1, 7, "hello")],
-                    capped: false,
-                }),
+                Query::TextSearch { .. } => Reply::TextHits(page(vec![row(1, 7, "hello")])),
                 Query::MessagesAround { .. } => Reply::Messages(vec![
                     row(1, 7, "hello"),
                     row(2, 8, "**hi** there"),

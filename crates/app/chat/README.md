@@ -47,6 +47,15 @@ asked, and nothing else of the room (no meta, no head): a reader that holds room
 conversations name their place as `chat/<channel>`) names them in one read. An id no room has is
 left out.
 
+## Search
+
+`Query::TextSearch { text, viewer, channel_id, page }` answers one page of the messages holding
+every whitespace-separated term of `text` as a substring (NFC, case folded), newest first, in one
+channel or all; `next` resumes it. `Query::TagSearch` pages the messages whose `#tags` hold a tag
+the same way. Both walk the messages: chat keeps no search index. `Query::Search` answers the
+first page alone, its `capped` saying the walk stopped at `page.limit`; harness's `chat_search`
+tool reads it.
+
 ## Drafts
 
 Someone answering in a room before they post keeps a draft there (`Op::Drafting`): its text, a

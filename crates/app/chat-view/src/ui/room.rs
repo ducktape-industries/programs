@@ -441,7 +441,7 @@ fn hit_list(
             chat.search_more(cx)
         });
         list.push(
-            button("chat-search-more", "More results", ladder, theme, more).into_any_element(),
+            button("chat-search-more", words::MORE_RESULTS, ladder, theme, more).into_any_element(),
         );
     }
     list

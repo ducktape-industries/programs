@@ -271,6 +271,39 @@ fn a_tag_page_cursor_stays_in_its_listing() {
     assert_eq!(refusal.code, code::STALE);
 }
 
+#[test]
+fn text_search_pages_newest_first_and_its_cursor_stays_in_its_search() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    chat.ok(&ADA, create("random", PostPolicy::Open));
+    chat.post(&BO, "g1", "ship it", None);
+    chat.ok(&BO, post("random", "r1", "Ship it", None));
+    chat.post(&BO, "g2", "nothing", None);
+    chat.ok(&BO, post("random", "r2", "ship that", None));
+    chat.post(&BO, "g3", "ship again", None);
+    let everywhere = [("general", 3), ("random", 2), ("random", 1), ("general", 1)];
+    let pages = [places(&everywhere[..3]), places(&everywhere[3..])];
+    assert_eq!(text_pages(&chat, "SHIP", None, 3), pages);
+    assert_eq!(
+        text_pages(&chat, "ship", None, 1).concat(),
+        places(&everywhere)
+    );
+    assert_eq!(
+        text_pages(&chat, "ship", Some("random"), 1).concat(),
+        places(&everywhere[1..3])
+    );
+    let both = places(&[("random", 1), ("general", 1)]);
+    assert_eq!(text_pages(&chat, "ship  it", None, 1).concat(), both);
+    let Reply::TextHits(first) = chat.ask(text_search("ship", None, PageRequest::first(1))) else {
+        panic!("a text search answers a page of hits");
+    };
+    let elsewhere = text_search("it", None, PageRequest::resume(first.next, 1));
+    let refusal = crate::Chat::query(&chat.reads(), elsewhere).unwrap_err();
+    assert_eq!(refusal.code, code::STALE);
+    let blank = text_search(" \t ", None, PageRequest::default());
+    let refusal = crate::Chat::query(&chat.reads(), blank).unwrap_err();
+    assert_eq!(refusal.code, code::INVALID_INPUT);
+}
+
 fn places(at: &[(&str, u64)]) -> Vec<(String, u64)> {
     at.iter()
         .map(|(channel, seq)| (channel.to_string(), *seq))
@@ -308,11 +341,34 @@ fn tag_search(tag: &str, channel: Option<&str>, page: PageRequest) -> Query {
 }
 
 fn tag_pages(chat: &Chat, tag: &str, channel: Option<&str>, limit: u64) -> Vec<Vec<(String, u64)>> {
+    pages(chat, limit, |page| tag_search(tag, channel, page))
+}
+
+fn text_search(text: &str, channel: Option<&str>, page: PageRequest) -> Query {
+    Query::TextSearch {
+        text: text.into(),
+        viewer: vec![],
+        channel_id: channel.map(str::to_owned),
+        page,
+    }
+}
+
+fn text_pages(
+    chat: &Chat,
+    text: &str,
+    channel: Option<&str>,
+    limit: u64,
+) -> Vec<Vec<(String, u64)>> {
+    pages(chat, limit, |page| text_search(text, channel, page))
+}
+
+// Every page of a search, `limit` hits each, each resumed from the cursor the one before answered.
+fn pages(chat: &Chat, limit: u64, ask: impl Fn(PageRequest) -> Query) -> Vec<Vec<(String, u64)>> {
     let (mut pages, mut after) = (Vec::new(), None);
     loop {
-        let page = PageRequest::resume(after, limit);
-        let Reply::TagHits(page) = chat.ask(tag_search(tag, channel, page)) else {
-            panic!("a tag search answers tag hits");
+        let asked = ask(PageRequest::resume(after, limit));
+        let (Reply::TagHits(page) | Reply::TextHits(page)) = chat.ask(asked) else {
+            panic!("a search answers a page of hits");
         };
         pages.push(
             page.items
@@ -320,7 +376,7 @@ fn tag_pages(chat: &Chat, tag: &str, channel: Option<&str>, limit: u64) -> Vec<V
                 .map(|row| (row.channel_id.clone(), row.seq))
                 .collect(),
         );
-        assert!(pages.len() <= 64, "the pages of a tag search end");
+        assert!(pages.len() <= 64, "the pages of a search end");
         match page.next {
             Some(next) => after = Some(next),
             None => return pages,
