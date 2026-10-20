@@ -21,45 +21,79 @@ impl Files {
         let page = self.page().clone();
         if all
             || page == Route::History
-            || matches!(self.history, Loadable::Idle | Loadable::Failed(_))
+            || matches!(*self.history, Loadable::Idle | Loadable::Failed(_))
         {
             self.read_history(cx);
         }
         match page {
             Route::Places | Route::History => {}
-            Route::Folder(path) => self.read_folder(path, cx),
+            Route::Folder(path) => self.read_folder(path, !all, cx),
             Route::File(path) => {
                 let folder = parent_of(&path);
                 if all || self.folder_at(folder).is_none() {
-                    self.read_folder(folder.to_owned(), cx);
+                    self.read_folder(folder.to_owned(), !all, cx);
                 }
-                self.read_file(path, cx);
+                self.read_file(path, !all, cx);
             }
             Route::Snapshot(id) => self.read_snapshot(id, cx),
         }
     }
 
-    fn read_folder(&mut self, path: String, cx: &mut Context<Self>) {
-        if self.folder_at(&path).is_none() {
-            self.folder = Loadable::Idle;
+    fn read_folder(&mut self, path: String, moved: bool, cx: &mut Context<Self>) {
+        let another = match self.folder.ready() {
+            Some(shown) => shown.path != path,
+            None => moved,
+        };
+        if another {
+            *self.folder = Loadable::Idle;
         }
-        let read = queries::folder(cx.host(), path);
-        cx.load(self, read, |view| &mut view.folder);
+        cx.reread(
+            self,
+            |view| &mut view.folder,
+            |_, cx| queries::folder(cx.host(), path),
+            Self::reread_folder,
+        );
     }
 
-    fn read_file(&mut self, path: String, cx: &mut Context<Self>) {
+    fn reread_folder(&mut self, cx: &mut Context<Self>) {
+        match self.page().clone() {
+            Route::Folder(path) => self.read_folder(path, false, cx),
+            Route::File(path) => self.read_folder(parent_of(&path).to_owned(), false, cx),
+            Route::Places | Route::History | Route::Snapshot(_) => {}
+        }
+    }
+
+    fn read_file(&mut self, path: String, moved: bool, cx: &mut Context<Self>) {
         let shown = self.file_at(&path);
         let kept = shown.and_then(Opened::kept_picture);
-        if shown.is_none() {
-            self.file = Loadable::Idle;
+        let another = match self.file.ready() {
+            Some(shown) => shown.path != path,
+            None => moved,
+        };
+        if another {
+            *self.file = Loadable::Idle;
         }
-        let read = queries::file(cx.host(), path, kept);
-        cx.load(self, read, |view| &mut view.file);
+        cx.reread(
+            self,
+            |view| &mut view.file,
+            move |_, cx| queries::file(cx.host(), path, kept),
+            Self::reread_file,
+        );
+    }
+
+    fn reread_file(&mut self, cx: &mut Context<Self>) {
+        if let Route::File(path) = self.page().clone() {
+            self.read_file(path, false, cx);
+        }
     }
 
     fn read_history(&mut self, cx: &mut Context<Self>) {
-        let read = queries::history(cx.host());
-        cx.load(self, read, |view| &mut view.history);
+        cx.reread(
+            self,
+            |view| &mut view.history,
+            |_, cx| queries::history(cx.host()),
+            Self::read_history,
+        );
         if self.names.is_idle() {
             self.read_names(cx);
         }
@@ -78,16 +112,24 @@ impl Files {
     }
 
     pub(crate) fn read_names(&mut self, cx: &mut Context<Self>) {
-        let read = queries::names(cx.host());
-        cx.load(self, read, |view| &mut view.names);
+        cx.reread(
+            self,
+            |view| &mut view.names,
+            |_, cx| queries::names(cx.host()),
+            Self::read_names,
+        );
     }
 
     pub(crate) fn read_reader(&mut self, cx: &mut Context<Self>) {
         let Some(account) = self.reader.account else {
             return;
         };
-        let read = queries::name(cx.host(), account);
-        cx.load(self, read, |view| &mut view.reader.name);
+        cx.reread(
+            self,
+            |view| &mut view.reader.name,
+            move |_, cx| queries::name(cx.host(), account),
+            Self::read_reader,
+        );
     }
 
     pub(crate) fn session_changed(&mut self, session: Session, cx: &mut Context<Self>) {
@@ -99,7 +141,7 @@ impl Files {
             return;
         }
         self.reader.account = session.account;
-        self.reader.name = Loadable::Idle;
+        *self.reader.name = Loadable::Idle;
         self.sheet = None;
         self.note = None;
         self.read_reader(cx);

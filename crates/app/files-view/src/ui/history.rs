@@ -12,7 +12,7 @@ use super::*;
 use crate::state::{History, PIN_GLYPH, SNAPSHOT_GLYPH, Snapshot};
 
 pub(super) fn history(view: &Files, marked: Option<BlobId>, cx: Cx, k: &Kit) -> AnyElement {
-    let history = match &view.history {
+    let history = match &*view.history {
         Loadable::Ready(history) | Loadable::Reloading(history, _) => history,
         Loadable::Failed(refusal) => return refused("files-history", refusal, cx, k),
         Loadable::Idle | Loadable::Loading(_) => {

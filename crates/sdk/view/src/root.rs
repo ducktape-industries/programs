@@ -241,6 +241,15 @@ impl<T> Default for Reread<T> {
     }
 }
 
+impl<T> From<Loadable<T>> for Reread<T> {
+    fn from(shown: Loadable<T>) -> Self {
+        Self {
+            shown,
+            again: false,
+        }
+    }
+}
+
 impl<T> std::ops::Deref for Reread<T> {
     type Target = Loadable<T>;
     fn deref(&self) -> &Loadable<T> {

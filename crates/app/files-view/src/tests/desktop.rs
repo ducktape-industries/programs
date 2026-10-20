@@ -1425,3 +1425,25 @@ fn a_text_files_words_take_the_text_cursor() {
         cx.texts()
     );
 }
+
+#[test]
+fn the_history_lands_though_a_commit_comes_in_every_block() {
+    let net = seeded();
+    let mut cx = desktop(&net);
+    let dev = net.me();
+    let tick_file = |tick: usize| put(&net, "/home/dev/tick.txt", tick.to_string().as_bytes());
+    commit(&net, dev, "Warm up", vec![tick_file(0)]);
+    cx.run_until_parked();
+    let one_read = cx.reports().len();
+    for tick in 0..2 * one_read {
+        commit(
+            &net,
+            dev,
+            &format!("Tick {tick}"),
+            vec![tick_file(tick + 1)],
+        );
+        cx.tick(Vec::new());
+    }
+    let landed = (0..2 * one_read).any(|tick| shows(&cx, &format!("Tick {tick}")));
+    assert!(landed, "{:?}", cx.texts());
+}

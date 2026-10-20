@@ -25,7 +25,7 @@ const ADA: u64 = 8;
 fn dev() -> Reader {
     Reader {
         account: Some(DEV),
-        name: Loadable::Ready(Some("dev".into())),
+        name: Loadable::Ready(Some("dev".into())).into(),
     }
 }
 
@@ -146,7 +146,7 @@ fn a_reader_signed_out_writes_nothing() {
 fn a_reader_identity_names_no_way_writes_where_anyone_may() {
     let unnamed = Reader {
         account: Some(DEV),
-        name: Loadable::Ready(None),
+        name: Loadable::Ready(None).into(),
     };
     assert!(unnamed.writes(&Writers::Anyone));
 }

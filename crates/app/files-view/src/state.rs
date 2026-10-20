@@ -141,7 +141,7 @@ impl Route {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Reader {
     pub account: Option<u64>,
-    pub name: Loadable<Option<String>>,
+    pub name: Reread<Option<String>>,
 }
 
 /// Why the reader has no home to show.
@@ -160,7 +160,7 @@ impl Reader {
         if self.account.is_none() {
             return Err(NoHome::SignedOut);
         }
-        match &self.name {
+        match &*self.name {
             Loadable::Ready(Some(name)) | Loadable::Reloading(Some(name), _) => {
                 Ok(format!("/home/{name}"))
             }
@@ -369,11 +369,11 @@ pub enum Sheet {
 pub struct Files {
     pub(crate) pages: Pages<Route>,
     pub(crate) reader: Reader,
-    pub(crate) folder: Loadable<Folder>,
-    pub(crate) file: Loadable<Opened>,
-    pub(crate) history: Loadable<History>,
+    pub(crate) folder: Reread<Folder>,
+    pub(crate) file: Reread<Opened>,
+    pub(crate) history: Reread<History>,
     pub(crate) snapshot: Loadable<Snapshot>,
-    pub(crate) names: Loadable<Names>,
+    pub(crate) names: Reread<Names>,
     pub(crate) chain: String,
     pub(crate) note: Option<Note>,
     #[serde(skip)]
@@ -391,11 +391,11 @@ impl Default for Files {
         Self {
             pages: Pages::root(Route::Places),
             reader: Reader::default(),
-            folder: Loadable::Idle,
-            file: Loadable::Idle,
-            history: Loadable::Idle,
+            folder: Reread::default(),
+            file: Reread::default(),
+            history: Reread::default(),
             snapshot: Loadable::Idle,
-            names: Loadable::Idle,
+            names: Reread::default(),
             chain: String::new(),
             note: None,
             sheet: None,

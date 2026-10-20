@@ -82,7 +82,7 @@ fn place_menu(view: &Files, row: Stateful<Div>, key: &str, path: &str, cx: Cx) -
 }
 
 fn latest(view: &Files, cx: Cx, k: &Kit) -> AnyElement {
-    let history = match &view.history {
+    let history = match &*view.history {
         Loadable::Ready(history) | Loadable::Reloading(history, _) => history,
         Loadable::Failed(refusal) => return refused("files-history", refusal, cx, k),
         Loadable::Idle | Loadable::Loading(_) => {

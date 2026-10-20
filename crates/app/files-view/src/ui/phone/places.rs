@@ -89,7 +89,7 @@ fn place_row(
 }
 
 fn history_caption(view: &Files) -> String {
-    match &view.history {
+    match &*view.history {
         Loadable::Ready(history) | Loadable::Reloading(history, _) => {
             match history.snapshots.first() {
                 Some(newest) => words::message_or_none(&newest.message).to_owned(),
