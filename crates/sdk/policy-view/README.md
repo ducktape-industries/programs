@@ -34,9 +34,10 @@ and `Transfer`.
   `Editing::admits(item)` is whether the policy lets the reader change it (its
   owner, or anyone the policy admits, a program counted as its account), `None`
   before the read lands and for an item with no record, where the view keeps
-  the rule it had before policies. `item::row` draws "Who can edit" with
-  "Owner · Policy · who may write" (a press for the owner), and `item::sheet`
-  the sheet over the view: what the row says, then for the owner Change
+  the rule it had before policies. `item::row` draws "Who can edit" with who
+  may write it, said once ("Only you", "You and Ada"), the row growing with its
+  words (a press for the owner), and `item::sheet` the sheet over the view: its
+  owner, its policy and who may write it, a line each, then for the owner Change
   policy… (`Relink`, among their live policies) and Transfer… (an account found
   by name or `#number`, then a plain confirm that names it). An item with no
   record reads "Open (from before policies)". `item::find` is that lookup.

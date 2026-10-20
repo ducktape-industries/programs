@@ -166,6 +166,10 @@ pub(crate) fn rules_from(path: &str) -> String {
     format!("From {path}")
 }
 pub(crate) const NOTIFICATIONS: &str = "Notifications";
+pub(crate) const AGENTS_NOTICES: &str = "Your agents";
+pub(crate) const ALL_AGENTS: &str = "All agents";
+pub(crate) const ALL_AGENTS_HEAR: &str = "What your agents hear";
+pub(crate) const MIXED: &str = "Mixed";
 
 #[cfg(not(feature = "notifier"))]
 pub(crate) fn choice(choice: Choice, dm: bool) -> (&'static str, &'static str) {

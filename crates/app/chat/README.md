@@ -74,3 +74,15 @@ chat's order, then what it names in its order, so the reader's lists follow it a
 `Query::PostedIn { account, page }` answers the channels an account wrote in the timeline of, kept
 as each post is noted (beside `Followed`'s room seq). It starts from the code that keeps it: posts
 made before are not listed.
+
+## Who hears a room
+
+Each account chooses what a room tells it: every message (`Listen`), or what `SetNotices` cuts it
+to (`Mentions`, `Off`, or chat's default with none). The two are one choice, and each takes the
+other off. An account's manager in identity chooses for it with `ListenFor` and `SetNoticesFor`,
+and for several accounts at once with `ChooseForMany { accounts, channel_id, listening, notices }`:
+one choice for every account named, each the sender or one it manages, all written or none; a
+choice both listening and cut is refused. `Query::Chosen` reads one account's choice for a room,
+and `Query::ChosenBy { channel_id, accounts }` several in one read, in the order asked. chat-view's
+room details offer the reader's own choice, then a row for each active agent the reader manages
+(and one for all of them), read with `ChosenBy` and written with `ChooseForMany`.

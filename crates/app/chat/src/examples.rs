@@ -358,3 +358,19 @@ pub(crate) fn posted_in() -> Query {
         page: every(),
     }
 }
+
+pub(crate) fn choose_for_many() -> Op {
+    Op::ChooseForMany {
+        accounts: vec![21, 22],
+        channel_id: room(),
+        listening: false,
+        notices: Some(Notices::Mentions),
+    }
+}
+
+pub(crate) fn chosen_by() -> Query {
+    Query::ChosenBy {
+        channel_id: room(),
+        accounts: vec![21, 22],
+    }
+}

@@ -61,9 +61,8 @@ pub struct Chat {
     /// details are open; a room not named is at its default
     #[serde(skip)]
     pub(crate) choices: Loadable<BTreeMap<String, crate::notifier::Choice>>,
-    // each account the reader manages, with what it chose for each room, read with the reader's
     #[serde(skip)]
-    pub(crate) managed_choices: Loadable<Vec<(u64, BTreeMap<String, crate::notifier::Choice>)>>,
+    pub(crate) managed_choices: Loadable<Vec<(u64, crate::notifier::Choice)>>,
     pub(crate) room: Option<Room>,
     pub(crate) drafts: BTreeMap<String, Draft>,
     /// the banner over the room: the last refusal, until the reader moves on
@@ -144,6 +143,8 @@ pub struct Chat {
     // the menu of a room in the sidebar, while one is open
     #[serde(skip)]
     pub(crate) room_menu: Option<RoomMenu>,
+    #[serde(skip)]
+    pub(crate) notices_menu: Option<NoticesMenu>,
     /// The line over the room saying a copy landed: not a refusal, so not
     /// the `notice` banner.
     #[serde(skip)]
@@ -503,9 +504,6 @@ pub struct Details {
     /// the notices choice the arrows are on, until one is chosen
     #[serde(default)]
     pub(crate) notices_at: Option<usize>,
-    // the choice the arrows are on in each managed account's group, until one is chosen
-    #[serde(default)]
-    pub(crate) managed_at: BTreeMap<u64, usize>,
     /// the sheet open over the phone's details page
     pub(crate) sheet: Option<DetailsSheet>,
 }
@@ -517,6 +515,7 @@ pub enum DetailsSheet {
     Add,
     Rename,
     Remove(u64),
+    Notices(Option<u64>),
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
@@ -667,6 +666,13 @@ pub struct Menu {
 #[derive(Clone, Debug)]
 pub struct RoomMenu {
     pub(crate) room: String,
+    pub(crate) at: Option<view::Point<Pixels>>,
+    pub(crate) active: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct NoticesMenu {
+    pub(crate) whose: Option<u64>,
     pub(crate) at: Option<view::Point<Pixels>>,
     pub(crate) active: usize,
 }

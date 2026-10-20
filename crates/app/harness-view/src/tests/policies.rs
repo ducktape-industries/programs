@@ -109,11 +109,7 @@ fn a_reader_the_conversations_policy_lists_starts_them_and_a_claimed_agent_offer
         vec![team.clone()],
     );
     open(&mut cx, "agent-12");
-    assert!(
-        cx.has_text("Eddy · Team · Eddy and Ada"),
-        "{:?}",
-        cx.texts()
-    );
+    assert!(cx.has_text("Eddy and Ada"), "{:?}", cx.texts());
     assert!(
         cx.find("agent-new-thread").is_some(),
         "the policy lets Ada start one, though access lists only Eddy"
@@ -121,7 +117,7 @@ fn a_reader_the_conversations_policy_lists_starts_them_and_a_claimed_agent_offer
     let (mut cx, _) = seated(Net::default(), EDDY);
     owned(&cx, vec![(scouts(), EDDY, team.clone())], vec![team]);
     open(&mut cx, "agent-12");
-    assert!(cx.has_text("You · Team · You and Ada"), "{:?}", cx.texts());
+    assert!(cx.has_text("You and Ada"), "{:?}", cx.texts());
     assert!(cx.find("agent-claim").is_none(), "Eddy holds them already");
 }
 
@@ -135,7 +131,7 @@ fn a_model_on_record_says_whose_it_is_in_its_row_and_its_form() {
         vec![open_to_all],
     );
     open(&mut cx, "agents-models");
-    assert!(cx.has_text("Ada · Open · Anyone"), "{:?}", cx.texts());
+    assert!(cx.has_text("Anyone"), "{:?}", cx.texts());
     open(&mut cx, "model-sonnet");
     assert!(
         cx.find("model-id-kept").is_some(),

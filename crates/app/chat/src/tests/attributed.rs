@@ -560,3 +560,68 @@ fn an_account_or_its_manager_chooses_for_it() {
     as_key(ADA, cut_for(4, None)).unwrap();
     assert_eq!(chosen(&chain, 4, "general"), (false, None));
 }
+
+#[test]
+fn a_manager_chooses_for_several_accounts_at_once() {
+    let chain = chain();
+    for number in [4, 5] {
+        chain.profile(Profile {
+            number,
+            name: format!("Scout {number}"),
+            kind: Kind::Program {
+                script: None,
+                manager: 1,
+                category: abi::role::identity::Category::Agent,
+                standing: abi::role::identity::Standing::Active,
+            },
+        });
+    }
+    open_general(&chain);
+    let choose = |key: &[u8], accounts: Vec<u64>, listening, notices| {
+        let op = crate::Op::ChooseForMany {
+            accounts,
+            channel_id: "general".into(),
+            listening,
+            notices,
+        };
+        chain
+            .submit(signed(key), crate::PROGRAM, &op)
+            .map(drop)
+            .map_err(|refusal| refusal.code)
+    };
+    let chosen_by = |accounts: Vec<u64>| {
+        let asked = crate::Query::ChosenBy {
+            channel_id: "general".into(),
+            accounts,
+        };
+        let crate::Reply::ChosenBy(chosen) = chain.query(crate::PROGRAM, &asked).unwrap() else {
+            panic!()
+        };
+        chosen
+            .into_iter()
+            .map(|chosen| (chosen.account, chosen.listening, chosen.notices))
+            .collect::<Vec<_>>()
+    };
+    choose(ADA, vec![4, 5], true, None).unwrap();
+    assert_eq!(chosen_by(vec![5, 4]), [(5, true, None), (4, true, None)]);
+    let mentions = Some(Notices::Mentions);
+    choose(ADA, vec![4, 5], false, mentions).unwrap();
+    assert_eq!(
+        chosen_by(vec![4, 5]),
+        [(4, false, mentions), (5, false, mentions)]
+    );
+    assert!(listened(&chain, 4).is_empty(), "one choice");
+    let unauthorized = Err(code::UNAUTHORIZED.to_owned());
+    assert_eq!(choose(BO, vec![4], false, None), unauthorized);
+    assert_eq!(
+        choose(ADA, vec![4, 2], false, Some(Notices::Off)),
+        unauthorized
+    );
+    assert_eq!(chosen_by(vec![4]), [(4, false, mentions)], "none written");
+    assert_eq!(
+        choose(ADA, vec![4], true, Some(Notices::Off)),
+        Err(code::INVALID_INPUT.to_owned())
+    );
+    choose(ADA, vec![4, 5], false, None).unwrap();
+    assert_eq!(chosen_by(vec![4, 5]), [(4, false, None), (5, false, None)]);
+}

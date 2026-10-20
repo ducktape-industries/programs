@@ -222,6 +222,13 @@ pub enum Op {
         text: String,
         thread: Option<u64>,
     },
+    #[tool_op(description = "Choose for several accounts at once what a channel tells them: listening true hears every message, else notices cuts it as SetNotices does (null: chat's default). Each account is you or one you manage in identity; all are written or none, and listening with notices set is refused.", example = examples::choose_for_many)]
+    ChooseForMany {
+        accounts: Vec<AccountNumber>,
+        channel_id: String,
+        listening: bool,
+        notices: Option<Notices>,
+    },
 }
 
 /// A read. `viewer` is the reader's principals: they decide
@@ -417,6 +424,13 @@ pub enum Query {
         account: AccountNumber,
         page: PageRequest,
     },
+    #[ask(Reply::ChosenBy(Vec<AccountChoice>))]
+    #[reads(state::LISTENING, state::NOTICES)]
+    #[tool_query(description = "What each of several accounts chose for a channel, in the order asked: whether it listens, and what still tells it when cut.", example = examples::chosen_by)]
+    ChosenBy {
+        channel_id: String,
+        accounts: Vec<AccountNumber>,
+    },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -449,6 +463,7 @@ pub enum Reply {
     Names(Vec<(String, String)>),
     RoomOrder(Vec<Entry>),
     PostedIn(PageResponse<String>),
+    ChosenBy(Vec<AccountChoice>),
 }
 
 // One place in an account's own order of its lists (`Op::SetRoomOrder`): a room by its channel id,
@@ -469,6 +484,23 @@ pub enum Reply {
 pub enum Entry {
     Room(String),
     Folder(String),
+}
+
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+pub struct AccountChoice {
+    pub account: AccountNumber,
+    pub listening: bool,
+    pub notices: Option<Notices>,
 }
 
 /// Where an account is in a room ([`Query::Followed`]): what comes after the
@@ -814,6 +846,7 @@ fn op_variants_only_append() {
             "Undraft",
             "SetRoomOrder",
             "Post",
+            "ChooseForMany",
         ]
     );
 }

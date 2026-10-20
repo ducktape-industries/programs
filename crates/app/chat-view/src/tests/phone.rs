@@ -1329,11 +1329,7 @@ fn a_reader_a_channels_policy_lists_has_its_actions_and_its_row_says_whose_it_is
     owned(&cx, general, 9, team.clone(), vec![team]);
     cx.simulate_click("Channel details");
     cx.run_until_parked();
-    assert!(
-        cx.has_text("forge · Team · forge and eddy"),
-        "{:?}",
-        cx.texts()
-    );
+    assert!(cx.has_text("forge and eddy"), "{:?}", cx.texts());
     for label in ["Add a member…", "Channel actions", "Rename channel"] {
         assert!(cx.has_text(label), "{label}");
     }
@@ -1347,11 +1343,7 @@ fn the_channels_owner_on_record_decides_not_the_owner_the_row_names() {
     owned(&cx, general, 9, close.clone(), vec![close]);
     cx.simulate_click("Channel details");
     cx.run_until_parked();
-    assert!(
-        cx.has_text("forge · Close · Only forge"),
-        "{:?}",
-        cx.texts()
-    );
+    assert!(cx.has_text("Only forge"), "{:?}", cx.texts());
     assert!(!cx.has_text("Channel actions") && !cx.has_text("Add a member…"));
 }
 

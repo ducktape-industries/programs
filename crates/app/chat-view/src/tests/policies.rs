@@ -32,7 +32,7 @@ fn the_details_say_who_can_edit_the_room_and_its_owner_relinks_it() {
     ];
     owned(&cx, general(), 7, team, mine);
     details(&mut cx, &view);
-    assert!(cx.has_text("You · Team · You and ada"), "{:?}", cx.texts());
+    assert!(cx.has_text("You and ada"), "{:?}", cx.texts());
     cx.simulate_click("chat-room-policy");
     cx.run_until_parked();
     assert!(cx.find("chat-room-policy/sheet").is_some());
@@ -101,7 +101,9 @@ fn a_message_its_policy_opens_to_anyone_offers_its_edit_and_says_whose_it_is() {
     cx.simulate_click("chat-menu-who-can-edit");
     cx.run_until_parked();
     assert!(cx.find("chat-message-policy/sheet").is_some());
-    assert!(cx.has_text("reviewer · Open · Anyone"), "{:?}", cx.texts());
+    for line in ["Owner: reviewer", "Policy: Open", "Can edit: Anyone"] {
+        assert!(cx.has_text(line), "{line}: {:?}", cx.texts());
+    }
     assert!(
         cx.find("chat-message-policy/relink").is_none(),
         "only its owner relinks it"

@@ -6,7 +6,8 @@ use std::collections::BTreeMap;
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::listen::{
-    chooser, chosen, followed, listen, listened, notices_cut, set_notices, watch, watched,
+    choose_for_many, chooser, chosen, chosen_by, followed, listen, listened, notices_cut,
+    set_notices, watch, watched,
 };
 use crate::ops::{
     create_channel, delete, drafting, edit, open_dm, post, react, remove_meta, rename,
@@ -137,6 +138,12 @@ impl Program for Chat {
                 let blocks = crate::parse_message(&text);
                 post(ctx, &sender, channel_id, message_id, blocks, thread)
             }
+            Op::ChooseForMany {
+                accounts,
+                channel_id,
+                listening,
+                notices,
+            } => choose_for_many(ctx, &accounts, &channel_id, listening, notices),
         }
     }
 
@@ -248,6 +255,10 @@ impl Program for Chat {
                 Reply::PostedIn(crate::order::posted_in(ctx, account, &page)?),
                 vec![],
             ),
+            Query::ChosenBy {
+                channel_id,
+                accounts,
+            } => (chosen_by(ctx, &channel_id, &accounts)?, vec![]),
         };
         seen_by(ctx, reply, viewer)
     }

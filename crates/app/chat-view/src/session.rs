@@ -1,9 +1,7 @@
 //! Who reads: the session the host hands over (the seated key and the
 //! account it holds), and what that lets them do in the open room.
-use std::collections::BTreeMap;
-
 use chat::view::Names;
-use chat::{Kind, Principal};
+use chat::{Kind, Principal, Standing};
 use view::prelude::*;
 
 use crate::Chat;
@@ -122,8 +120,9 @@ impl Chat {
             return;
         };
         cx.load(self, choices(cx.host(), me), |chat| &mut chat.choices);
+        let room = self.room_id();
         let known = self.names.ready().map(|names| managed_by(names, me));
-        let managed = managed_choices(cx.host(), me, known);
+        let managed = managed_choices(cx.host(), me, room, known);
         cx.load(self, managed, |chat| &mut chat.managed_choices);
     }
 
@@ -244,31 +243,39 @@ impl Chat {
     }
 }
 
-// the accounts `reader` manages in identity, in number order: it chooses their notices too
 fn managed_by(names: &Names, reader: u64) -> Vec<u64> {
     let managed = |number: &u64| {
         matches!(
             names.kind(&Principal::Account(*number)),
-            Some(Kind::Program { manager, .. }) if *manager == reader
+            Some(Kind::Program { manager, standing: Standing::Active, .. }) if *manager == reader
         )
     };
     names.people().filter(managed).collect()
 }
 
-// what each account `reader` manages chose, room by room; `known` names them once the roster is
-// read, else the roster is read for them
 async fn managed_choices(
     host: Host,
     reader: u64,
+    room: String,
     known: Option<Vec<u64>>,
-) -> Result<Vec<(u64, BTreeMap<String, Choice>)>, Error> {
+) -> Result<Vec<(u64, Choice)>, Error> {
+    if room.is_empty() || chat::dm_peers(&room).is_some() {
+        return Ok(Vec::new());
+    }
     let accounts = match known {
         Some(accounts) => accounts,
         None => managed_by(&roster(host.clone()).await?, reader),
     };
-    let mut chosen = Vec::new();
-    for account in accounts {
-        chosen.push((account, choices(host.clone(), account).await?));
+    if accounts.is_empty() {
+        return Ok(Vec::new());
     }
-    Ok(chosen)
+    let asked = chat::ask::ChosenBy {
+        channel_id: room,
+        accounts,
+    };
+    let chosen = host.query(asked).await?;
+    Ok(chosen
+        .into_iter()
+        .map(|chosen| (chosen.account, Choice::of(chosen.listening, chosen.notices)))
+        .collect())
 }

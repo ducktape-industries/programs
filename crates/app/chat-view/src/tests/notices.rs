@@ -200,48 +200,120 @@ fn the_details_choose_a_rooms_notices() {
     );
 }
 
-#[test]
-fn the_details_choose_a_managed_agents_notices() {
-    use view::methods::Submit;
-    let (mut cx, view) = opened();
-    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
+fn eddys_agents(cx: &TestAppContext) {
+    let agent = |number, name: &str, standing| chat::Profile {
+        kind: chat::Kind::Program {
+            script: None,
+            manager: 7,
+            category: chat::Category::Agent,
+            standing,
+        },
+        ..person(number, name)
+    };
+    let roster = vec![
+        person(7, "eddy"),
+        agent(8, "reviewer", chat::Standing::Active),
+        agent(11, "scout", chat::Standing::Active),
+        agent(12, "retired", chat::Standing::Revoked),
+    ];
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Accounts { .. } => Reply::Accounts(page(roster.clone())),
+                Query::ChosenBy {
+                    channel_id,
+                    accounts,
+                } => {
+                    assert_eq!(channel_id, "general");
+                    assert_eq!(accounts, [8, 11], "the agents that act, in one read");
+                    Reply::ChosenBy(
+                        accounts
+                            .into_iter()
+                            .map(|account| chat::AccountChoice {
+                                account,
+                                listening: false,
+                                notices: (account == 8).then_some(chat::Notices::Off),
+                            })
+                            .collect(),
+                    )
+                }
+                query => chat_reply(query),
+            })
+        }));
+    cx.host().handle::<Ask<access::Access>>(|query| {
         Ok(match query {
-            Query::Notices { account: 8, .. } => {
-                Reply::Notices(page(vec![("general".into(), chat::Notices::Off)]))
-            }
-            query => chat_reply(query),
+            access::Query::List { .. } => access::Reply::List(None),
+            query => panic!("unexpected access query: {query:?}"),
         })
-    }));
+    });
+}
+
+#[test]
+fn the_details_choose_what_the_readers_agents_hear() {
+    use view::methods::Submit;
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    eddys_agents(&cx);
+    let view = cx.open::<Chat>();
+    seat(&mut cx);
+    cx.simulate_click("chat-sidebar-channel-general");
+    cx.run_until_parked();
     cx.simulate_click("chat-room-details");
     cx.run_until_parked();
-    let group = cx.interactivity("chat-details-notices-8");
-    assert_eq!(group.role, Some(view::Role::RadioGroup));
-    assert_eq!(group.aria.label.as_deref(), Some("What reviewer hears"));
-    let checked = |cx: &TestAppContext, id: &str| cx.interactivity(id).aria.toggled;
-    let on = Some(view::Toggled::True);
-    assert_eq!(checked(&cx, "chat-details-notices-8-off"), on);
+    assert!(
+        cx.find("chat-details-agent-12").is_none(),
+        "a revoked agent"
+    );
+    let pick = |whose: &str| format!("chat-details-{whose}-pick");
+    let said = |cx: &TestAppContext, whose: &str| cx.interactivity(&pick(whose)).aria.label.clone();
     assert_eq!(
-        checked(&cx, "chat-details-notices-default"),
-        on,
-        "the reader's own"
+        said(&cx, "agent-8").as_deref(),
+        Some("What reviewer hears: Off")
+    );
+    assert_eq!(
+        said(&cx, "agent-11").as_deref(),
+        Some("What scout hears: Default")
+    );
+    assert_eq!(
+        said(&cx, "agents-all").as_deref(),
+        Some("What your agents hear: Mixed")
     );
 
-    cx.simulate_click("chat-details-notices-8-every");
-    cx.simulate_click("chat-details-notices-8-mentions");
+    let sent = |cx: &TestAppContext| cx.host().requests::<Submit<::chat::Chat>>();
+    let before = sent(&cx).len();
+    cx.simulate_click(&pick("agents-all"));
     cx.run_until_parked();
-    let sent = cx.host().requests::<Submit<::chat::Chat>>();
+    assert!(
+        cx.find("chat-notices-menu").is_none(),
+        "it waits for its button's place"
+    );
+    cx.simulate_bounds("chat-notices-menu-anchor", (700., 400.), (140., 32.));
+    cx.run_until_parked();
+    assert!(cx.find("chat-notices-menu").is_some());
+    cx.simulate_click("chat-notices-menu/mentions");
+    cx.run_until_parked();
+    assert!(cx.find("chat-notices-menu").is_none(), "a pick closes it");
+    cx.simulate_click(&pick("agent-11"));
+    cx.run_until_parked();
+    cx.simulate_bounds("chat-notices-menu-anchor", (700., 480.), (140., 32.));
+    cx.run_until_parked();
+    cx.simulate_click("chat-notices-menu/every");
+    cx.run_until_parked();
+    let general = || "general".to_owned();
     assert_eq!(
-        sent[sent.len() - 2..],
+        sent(&cx)[before..],
         [
-            chat::Op::ListenFor {
-                account: 8,
-                channel_id: "general".into(),
-                listening: true,
-            },
-            chat::Op::SetNoticesFor {
-                account: 8,
-                channel_id: "general".into(),
+            chat::Op::ChooseForMany {
+                accounts: vec![8, 11],
+                channel_id: general(),
+                listening: false,
                 notices: Some(chat::Notices::Mentions),
+            },
+            chat::Op::ChooseForMany {
+                accounts: vec![11],
+                channel_id: general(),
+                listening: true,
+                notices: None,
             },
         ]
     );
@@ -256,5 +328,59 @@ fn the_details_choose_a_managed_agents_notices() {
         cx.run_until_parked();
     }
     assert!(cx.find("chat-details-notices").is_some());
-    assert!(cx.find("chat-details-notices-8").is_none(), "a direct room");
+    assert!(cx.find(&pick("agent-8")).is_none(), "a direct room");
+}
+
+#[test]
+fn export_details_screens() {
+    if std::env::var_os("CHAT_SCREEN_EXPORT").is_none() {
+        return;
+    }
+    let out =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/chat/fixtures");
+    std::fs::create_dir_all(&out).unwrap();
+    let mut manifest = Vec::new();
+    for (touch, (width, height)) in [(false, (1000, 900)), (true, (390, 1400))] {
+        let mut cx = TestAppContext::new();
+        configure(&mut cx);
+        eddys_agents(&cx);
+        let only = a_policy(4, 7, ownership::AS_BEFORE, ownership::Writers::Owner);
+        let general = chat::tables::CHANNELS.key(&"general".to_owned());
+        owned(&cx, general, 7, only.clone(), vec![only]);
+        cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
+        cx.open::<Chat>();
+        cx.simulate_touch(touch);
+        cx.simulate_resize(width as f32, height as f32);
+        cx.run_until_parked();
+        seat(&mut cx);
+        let (device, room, details) = match touch {
+            true => ("phone", "chat-rooms-channel-general", "Channel details"),
+            false => (
+                "desktop",
+                "chat-sidebar-channel-general",
+                "chat-room-details",
+            ),
+        };
+        cx.simulate_click(room);
+        cx.run_until_parked();
+        cx.simulate_click(details);
+        cx.run_until_parked();
+        for state in ["list", "choosing"] {
+            if state == "choosing" {
+                cx.simulate_click("chat-details-agents-all-pick");
+                cx.run_until_parked();
+                if !touch {
+                    cx.simulate_bounds("chat-notices-menu-anchor", (790., 422.), (148., 28.));
+                    cx.run_until_parked();
+                }
+            }
+            let name = format!("details-{device}-{state}");
+            let frame = serde_json::to_vec(&cx.whole_frame()).unwrap();
+            std::fs::write(out.join(format!("{name}.json")), frame).unwrap();
+            let size = serde_json::json!({ "name": name, "width": width, "height": height });
+            manifest.push(size);
+        }
+    }
+    let listed = serde_json::to_vec_pretty(&manifest).unwrap();
+    std::fs::write(out.join("details-manifest.json"), listed).unwrap();
 }

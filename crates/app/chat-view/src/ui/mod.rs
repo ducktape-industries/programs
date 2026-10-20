@@ -82,6 +82,7 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> impl IntoElement {
     let screen = with_menu(chat, screen, cx, &theme, ladder);
     let screen = attachment::over(chat, screen, cx, &theme, ladder);
     let screen = room_menu::over(chat, screen, cx, &theme, ladder);
+    let screen = notices::over(chat, screen, cx, &theme, ladder);
     let screen = with_create(chat, screen, cx, &theme, ladder);
     with_dm_pick(chat, screen, cx, &theme, ladder)
 }

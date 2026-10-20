@@ -126,14 +126,7 @@ pub fn details(
                 theme,
                 ladder,
             ))
-            .children(notices::managed(
-                chat,
-                &info.channel.id,
-                dm,
-                cx,
-                theme,
-                ladder,
-            ))
+            .children(agents_section(chat, dm, cx, theme, ladder))
             .child(rule(theme))
     };
     let pane = match dm {
@@ -164,6 +157,23 @@ pub fn details(
         }
     };
     pane.children(members(chat, !dm, cx, theme))
+}
+
+fn agents_section(
+    chat: &Chat,
+    dm: bool,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Vec<AnyElement> {
+    let agents = notices::agents(chat, dm, false, cx, theme, ladder);
+    if agents.is_empty() {
+        return Vec::new();
+    }
+    vec![
+        section(words::AGENTS_NOTICES, theme).into_any_element(),
+        div().flex().flex_col().children(agents).into_any_element(),
+    ]
 }
 
 fn details_header(

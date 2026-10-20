@@ -367,56 +367,112 @@ impl Chat {
         );
     }
 
-    /// The open room's notices are `choice`, as its details pick it.
-    // for `whose`, an account the reader manages, else for the reader
-    pub(crate) fn choose_notices(
+    pub(crate) fn choose_notices(&mut self, choice: Choice, cx: &mut Context<Self>) {
+        let channel_id = self.room_id();
+        if channel_id.is_empty() {
+            return;
+        }
+        if let Some(details) = &mut self.details {
+            details.notices_at = None;
+        }
+        cx.notify();
+        self.submit(choice.op(channel_id), cx);
+    }
+
+    pub(crate) fn step_notices(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(details) = &mut self.details {
+            details.notices_at = Some(index);
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn choice(&self, room: &str) -> Option<Choice> {
+        let choices = self.choices.ready()?;
+        Some(choices.get(room).copied().unwrap_or_default())
+    }
+
+    pub(crate) fn agents_choice(&self, whose: Option<u64>) -> Option<Choice> {
+        let chosen = self.managed_choices.ready()?;
+        let mut of = chosen
+            .iter()
+            .filter(|(account, _)| whose.is_none_or(|whose| whose == *account))
+            .map(|(_, choice)| *choice);
+        let first = of.next()?;
+        of.all(|choice| choice == first).then_some(first)
+    }
+
+    pub(crate) fn choose_for_agents(
         &mut self,
         whose: Option<u64>,
         choice: Choice,
         cx: &mut Context<Self>,
     ) {
         let channel_id = self.room_id();
-        if channel_id.is_empty() {
+        let managed = self.managed_choices.ready().into_iter().flatten();
+        let accounts: Vec<u64> = managed
+            .map(|(account, _)| *account)
+            .filter(|account| whose.is_none_or(|whose| whose == *account))
+            .collect();
+        if channel_id.is_empty() || accounts.is_empty() {
             return;
         }
-        if let Some(details) = &mut self.details {
-            match whose {
-                Some(account) => {
-                    details.managed_at.remove(&account);
-                }
-                None => details.notices_at = None,
-            }
-        }
         cx.notify();
-        let op = match whose {
-            Some(account) => choice.op_for(account, channel_id),
-            None => choice.op(channel_id),
-        };
-        self.submit(op, cx);
+        self.submit(choice.op_for(accounts, channel_id), cx);
     }
 
-    // the arrows are on choice `index` of `whose`'s notices group, the reader's when none
-    pub(crate) fn step_notices(
+    pub(crate) fn open_notices_menu(&mut self, whose: Option<u64>, cx: &mut Context<Self>) {
+        let held = self.agents_choice(whose);
+        let mut offered = crate::ui::notices::OFFERED.iter();
+        let active = offered
+            .position(|choice| Some(*choice) == held)
+            .unwrap_or_default();
+        self.notices_menu = Some(crate::NoticesMenu {
+            whose,
+            at: None,
+            active,
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn place_notices_menu(
         &mut self,
-        whose: Option<u64>,
-        index: usize,
+        button: Bounds<Pixels>,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(details) = &mut self.details {
-            match whose {
-                Some(account) => {
-                    details.managed_at.insert(account, index);
-                }
-                None => details.notices_at = Some(index),
-            }
+        let Some(menu) = &mut self.notices_menu else {
+            return;
+        };
+        if menu.at.is_none() {
+            menu.at = Some(button.bottom_left());
+            window.focus(crate::ui::notices::MENU);
             cx.notify();
         }
     }
 
-    /// What the reader chose for `room`'s notices, once read.
-    pub(crate) fn choice(&self, room: &str) -> Option<Choice> {
-        let choices = self.choices.ready()?;
-        Some(choices.get(room).copied().unwrap_or_default())
+    pub(crate) fn move_in_notices_menu(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(menu) = &mut self.notices_menu {
+            menu.active = index;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn close_notices_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(menu) = self.notices_menu.take() {
+            window.focus(crate::ui::notices::pick_id(menu.whose));
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn pick_in_notices_menu(
+        &mut self,
+        whose: Option<u64>,
+        choice: Choice,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.close_notices_menu(window, cx);
+        self.choose_for_agents(whose, choice, cx);
     }
 
     /// The member the details' field names, if what it holds is an
@@ -493,7 +549,6 @@ impl Chat {
                     rules_draft: view::TextField::new(rules),
                     member_draft: Default::default(),
                     notices_at: None,
-                    managed_at: Default::default(),
                     sheet: None,
                 });
                 self.load_choices(cx);

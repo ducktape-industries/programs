@@ -37,6 +37,16 @@ pub(super) fn screen(
             ))
             .into_any_element();
     };
+    let dm = chat::dm_peers(&info.channel.id).is_some();
+    let agents = crate::ui::notices::agents(chat, dm, true, cx, theme, ladder);
+    let agents_head = (!agents.is_empty()).then(|| {
+        design::section_head(
+            "chat-details-agents-head",
+            words::AGENTS_NOTICES,
+            ladder,
+            theme,
+        )
+    });
     let body = div()
         .id("chat-details-scroll")
         .flex_1()
@@ -60,14 +70,8 @@ pub(super) fn screen(
             theme,
             ladder,
         ))
-        .children(crate::ui::notices::managed(
-            chat,
-            &info.channel.id,
-            chat::dm_peers(&info.channel.id).is_some(),
-            cx,
-            theme,
-            ladder,
-        ))
+        .children(agents_head)
+        .children(agents)
         .children(rules(chat, theme, ladder))
         .children(crate::ui::widget::section(chat, cx, theme, ladder))
         .children(members(chat, room, info, cx, theme, ladder))
@@ -342,6 +346,10 @@ pub(super) fn sheet(
         DetailsSheet::Rename => (
             words::RENAME_CHANNEL.to_owned(),
             rename_body(details, cx, theme, ladder),
+        ),
+        DetailsSheet::Notices(whose) => (
+            crate::ui::notices::heard(chat, whose),
+            crate::ui::notices::sheet_rows(chat, whose, cx, theme, ladder),
         ),
         DetailsSheet::Remove(account) => {
             let remove = cx.listener(move |chat, _: &ClickEvent, _window, cx| {

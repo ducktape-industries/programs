@@ -434,8 +434,6 @@ fn send<V: 'static>(view: &mut V, lens: Lens<V>, op: ownership::Op, cx: &mut Con
     .detach();
 }
 
-// The row, while an item is held: whose it is and its policy in words. Its owner's press opens the
-// sheet that changes either; anyone else reads it.
 pub fn row<V: 'static>(
     editing: &Editing,
     id: &str,
@@ -459,16 +457,19 @@ pub fn row_titled<V: 'static>(
     theme: &Theme,
 ) -> Option<Stateful<Div>> {
     editing.item.as_ref()?;
-    let row =
-        design::row(id.to_owned(), ladder, theme)
-            .min_h(ladder.row_tall)
-            .child(design::lead(
-                design::icon("shield", ladder.icon_row).text_color(theme.muted),
-            ))
-            .child(
-                design::row_words(design::row_title(title, ladder, theme))
-                    .child(design::row_caption(said(editing), ladder, theme)),
-            );
+    let row = design::row(id.to_owned(), ladder, theme)
+        .min_h(ladder.row_tall)
+        .flex_none()
+        .child(design::lead(
+            design::icon("shield", ladder.icon_row).text_color(theme.muted),
+        ))
+        .child(
+            design::row_words(design::row_title(title, ladder, theme)).child(caption(
+                said(editing),
+                ladder,
+                theme,
+            )),
+        );
     if !editing.owns() {
         return Some(row);
     }
@@ -493,18 +494,42 @@ pub(crate) fn said(editing: &Editing) -> String {
     }
 }
 
-// "You · Team · You, Ada and board", "Maya · Open · Anyone", or for an item no record names, what
-// it is before policies.
 pub fn about(standing: &Standing, reader: Option<&Party>) -> String {
     let (Some(record), Some(policy)) = (&standing.record, &standing.policy) else {
         return BEFORE.to_owned();
+    };
+    writers(&policy.write, &record.owner, reader, &standing.names)
+}
+
+pub(crate) fn facts(standing: &Standing, reader: Option<&Party>) -> Vec<String> {
+    let (Some(record), Some(policy)) = (&standing.record, &standing.policy) else {
+        return vec![BEFORE.to_owned()];
     };
     let owner = match standing.owns {
         true => "You".to_owned(),
         false => party(&record.owner, &standing.names),
     };
-    let who = writers(&policy.write, &record.owner, reader, &standing.names);
-    format!("{owner} · {} · {who}", policy.name)
+    vec![
+        format!("Owner: {owner}"),
+        format!("Policy: {}", policy.name),
+        format!("Can edit: {}", about(standing, reader)),
+    ]
+}
+
+fn told(editing: &Editing) -> Vec<String> {
+    match &editing.standing {
+        Loadable::Ready(standing) | Loadable::Reloading(standing, _) => {
+            facts(standing, editing.reader.as_ref())
+        }
+        _ => vec![said(editing)],
+    }
+}
+
+fn caption(text: String, ladder: &Ladder, theme: &Theme) -> Div {
+    div()
+        .text_type(ladder.caption)
+        .text_color(theme.muted)
+        .child(text)
 }
 
 fn title(sheet: Sheet, item: &Item) -> String {
@@ -584,9 +609,16 @@ fn about_sheet<V: 'static>(
         .child(
             div()
                 .id(format!("{id}/about"))
+                .flex()
+                .flex_col()
+                .gap(design::space::XXS)
                 .px(SHEET_INSET)
                 .py(design::space::LG)
-                .child(note(said(editing), theme.foreground, ladder)),
+                .children(
+                    told(editing)
+                        .into_iter()
+                        .map(|line| note(line, theme.foreground, ladder)),
+                ),
         )
         .when(editing.owns(), |column| {
             column.child(relink).child(transfer)

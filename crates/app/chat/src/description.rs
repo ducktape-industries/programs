@@ -224,6 +224,31 @@ pub fn describe(op: &Op) -> Description {
                 fields: vec![field("order", Value::List(entries.collect()))],
             };
         }
+        Op::ChooseForMany {
+            accounts,
+            channel_id,
+            listening,
+            notices,
+        } => (
+            match (*listening, notices) {
+                (true, _) => "Listen to channel for accounts",
+                (false, None) => "Default notices for accounts in channel",
+                (false, Some(Notices::Mentions)) => {
+                    "Notices of mentions only for accounts in channel"
+                }
+                (false, Some(Notices::Off)) => "Turn off notices for accounts in channel",
+            },
+            channel_id,
+            vec![field(
+                "accounts",
+                Value::List(
+                    accounts
+                        .iter()
+                        .map(|account| Value::Account(*account))
+                        .collect(),
+                ),
+            )],
+        ),
     };
     let mut all = channel_description_fields(channel);
     all.extend(fields);

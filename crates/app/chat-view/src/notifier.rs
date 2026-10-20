@@ -595,23 +595,25 @@ impl Choice {
         }
     }
 
-    pub(crate) fn op_for(self, account: u64, channel_id: String) -> chat::Op {
-        match self {
-            Choice::Every => chat::Op::ListenFor {
-                account,
-                channel_id,
-                listening: true,
-            },
-            Choice::Default => chat::Op::SetNoticesFor {
-                account,
-                channel_id,
-                notices: None,
-            },
-            Choice::Cut(notices) => chat::Op::SetNoticesFor {
-                account,
-                channel_id,
-                notices: Some(notices),
-            },
+    pub(crate) fn op_for(self, accounts: Vec<u64>, channel_id: String) -> chat::Op {
+        let (listening, notices) = match self {
+            Choice::Every => (true, None),
+            Choice::Default => (false, None),
+            Choice::Cut(notices) => (false, Some(notices)),
+        };
+        chat::Op::ChooseForMany {
+            accounts,
+            channel_id,
+            listening,
+            notices,
+        }
+    }
+
+    pub(crate) fn of(listening: bool, notices: Option<Notices>) -> Choice {
+        match (listening, notices) {
+            (true, _) => Choice::Every,
+            (false, None) => Choice::Default,
+            (false, Some(notices)) => Choice::Cut(notices),
         }
     }
 }

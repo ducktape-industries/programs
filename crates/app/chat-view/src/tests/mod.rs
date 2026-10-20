@@ -322,6 +322,16 @@ fn chat_reply(query: Query) -> Reply {
         // eddy wrote in no room and keeps chat's order
         Query::PostedIn { .. } => Reply::PostedIn(page(Vec::new())),
         Query::RoomOrder { .. } => Reply::RoomOrder(Vec::new()),
+        Query::ChosenBy { accounts, .. } => Reply::ChosenBy(
+            accounts
+                .into_iter()
+                .map(|account| chat::AccountChoice {
+                    account,
+                    listening: false,
+                    notices: None,
+                })
+                .collect(),
+        ),
         query => panic!("unexpected chat query: {query:?}"),
     }
 }

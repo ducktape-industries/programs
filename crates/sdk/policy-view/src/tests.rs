@@ -93,7 +93,7 @@ fn a_scope_with_no_default_inherits_the_next_wider_one() {
 
 #[test]
 fn an_item_says_whose_it_is_and_whether_its_policy_admits_the_reader() {
-    use crate::item::{BEFORE, about};
+    use crate::item::{BEFORE, about, facts};
     use crate::{Editing, Item, Standing};
     let maya = Party::Account(7);
     let ada = Party::Account(9);
@@ -117,13 +117,15 @@ fn an_item_says_whose_it_is_and_whether_its_policy_admits_the_reader() {
         owns,
         admits: Some(true),
     };
+    assert_eq!(about(&standing(true), Some(&maya)), "You and Ada");
+    assert_eq!(about(&standing(false), Some(&ada)), "Maya and Ada");
     assert_eq!(
-        about(&standing(true), Some(&maya)),
-        "You · Team · You and Ada"
+        facts(&standing(true), Some(&maya)),
+        ["Owner: You", "Policy: Team", "Can edit: You and Ada"]
     );
     assert_eq!(
-        about(&standing(false), Some(&ada)),
-        "Maya · Team · Maya and Ada"
+        facts(&standing(false), Some(&ada)),
+        ["Owner: Maya", "Policy: Team", "Can edit: Maya and Ada"]
     );
     let before = Standing {
         record: None,
@@ -133,6 +135,7 @@ fn an_item_says_whose_it_is_and_whether_its_policy_admits_the_reader() {
         admits: None,
     };
     assert_eq!(about(&before, Some(&ada)), BEFORE);
+    assert_eq!(facts(&before, Some(&ada)), [BEFORE]);
     let item = Item {
         program: "chat".into(),
         key: vec![1],

@@ -125,7 +125,7 @@ fn the_settings_say_who_can_edit_the_repository_and_its_owner_relinks_it() {
     let team = a_policy(5, 1, "Team", Writers::Listed(vec![account(2)]));
     let (mut cx, _) = opened_owned(1, vec![(custody(), 1, mine.clone())], vec![mine, team]);
     settings(&mut cx);
-    assert!(cx.has_text("You · Only me · Only you"), "{:?}", cx.texts());
+    assert!(cx.has_text("Only you"), "{:?}", cx.texts());
     cx.simulate_click("forge-repo-policy");
     cx.run_until_parked();
     assert!(cx.find("forge-repo-policy/sheet").is_some());
@@ -168,7 +168,7 @@ fn the_change_details_say_who_can_edit_it_and_its_policy_decides_edit() {
     let open = a_policy(3, 1, "Open", Writers::Anyone);
     let (cx, _) = change_owned(2, vec![(authorship(), 1, open.clone())], vec![open]);
     assert!(cx.find("forge-change-policy").is_some());
-    assert!(cx.has_text("Ada · Open · Anyone"), "{:?}", cx.texts());
+    assert!(cx.has_text("Anyone"), "{:?}", cx.texts());
     assert!(
         !disabled(&cx, "forge-edit-change"),
         "the change's policy admits Rae"
@@ -188,7 +188,7 @@ fn the_owner_on_record_decides_and_an_author_still_closes_their_own_change() {
     assert!(!disabled(&cx, "forge-close-change"));
     let (mut cx, _) = opened_owned(1, records(), vec![tals]);
     settings(&mut cx);
-    assert!(cx.has_text("Tal · Only me · Only Tal"), "{:?}", cx.texts());
+    assert!(cx.has_text("Only Tal"), "{:?}", cx.texts());
     assert!(disabled(&cx, "forge-settings-save"));
     assert!(
         !disabled(&cx, "forge-settings-grant"),
@@ -219,7 +219,7 @@ fn on_a_phone_the_settings_and_the_details_carry_the_rows_and_back_closes_the_sh
     };
     press(&mut cx, "forge-repo-project");
     press(&mut cx, "forge-tab-settings");
-    assert!(cx.has_text("You · Only me · Only you"), "{:?}", cx.texts());
+    assert!(cx.has_text("Only you"), "{:?}", cx.texts());
     press(&mut cx, "forge-repo-policy");
     assert!(cx.find("forge-repo-policy/sheet").is_some());
     cx.simulate_back();

@@ -4,7 +4,7 @@
 //! are one choice, so each takes the other off. Short of either, an account is in a room once it
 //! writes in its timeline, sits in it (members-only) or opened it, and in a thread once it wrote
 //! the root, replied or was mentioned there ([`followed`]), from that message on.
-use ::program::{Error, ExecCtx, QueryCtx, unauthorized, unexpected_reply};
+use ::program::{Error, ExecCtx, QueryCtx, invalid, unauthorized, unexpected_reply};
 use abi::role::identity as role;
 
 use crate::attributed::mentioned;
@@ -12,7 +12,9 @@ use crate::state::{
     CHANNELS, LISTENERS, LISTENING, MEMBERS, MENTIONED, NOTICES, PARTICIPANTS, POSTED, POSTED_IN,
     Stored, WATCHERS, WATCHING, channel, stored,
 };
-use crate::{AccountNumber, Followed, MsgRow, Notices, PageRequest, PageResponse, Principal};
+use crate::{
+    AccountChoice, AccountNumber, Followed, MsgRow, Notices, PageRequest, PageResponse, Principal,
+};
 
 pub(crate) fn listen(
     ctx: &ExecCtx,
@@ -58,6 +60,26 @@ pub(crate) fn set_notices(
     match notices {
         Some(notices) => NOTICES.put(ctx, &by_account, &notices),
         None => NOTICES.remove(ctx, &by_account),
+    }
+    Ok(())
+}
+
+pub(crate) fn choose_for_many(
+    ctx: &ExecCtx,
+    accounts: &[AccountNumber],
+    channel_id: &str,
+    listening: bool,
+    notices: Option<Notices>,
+) -> Result<(), Error> {
+    if listening && notices.is_some() {
+        return Err(invalid("a room is heard whole or cut, never both"));
+    }
+    for &account in accounts {
+        chooser(ctx, account)?;
+        match listening {
+            true => listen(ctx, account, channel_id, true)?,
+            false => set_notices(ctx, account, channel_id, notices)?,
+        }
     }
     Ok(())
 }
@@ -122,6 +144,23 @@ pub(crate) fn chosen(
         listening: LISTENING.has(ctx, &by_account),
         notices: NOTICES.get(ctx, &by_account)?,
     })
+}
+
+pub(crate) fn chosen_by(
+    ctx: &QueryCtx,
+    channel_id: &str,
+    accounts: &[AccountNumber],
+) -> Result<crate::Reply, Error> {
+    let mut chosen = Vec::new();
+    for &account in accounts {
+        let by_account = (account, channel_id.to_owned());
+        chosen.push(AccountChoice {
+            account,
+            listening: LISTENING.has(ctx, &by_account),
+            notices: NOTICES.get(ctx, &by_account)?,
+        });
+    }
+    Ok(crate::Reply::ChosenBy(chosen))
 }
 
 pub(crate) fn notices_cut(
