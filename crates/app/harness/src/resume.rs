@@ -411,6 +411,13 @@ pub(crate) async fn room(ctx: &Ctx, service: &str, providers: &[String]) {
     all(wakes.iter().map(|op| ctx.schedule(next, PROGRAM, op))).await;
 }
 
+pub(crate) async fn answered_on(ctx: &Ctx, service: &str, id: u64) {
+    let Some(lane) = ASKED.get(ctx, &id).ok().flatten() else {
+        return;
+    };
+    room(ctx, service, &[lane.provider]).await;
+}
+
 pub(crate) fn answered(ctx: &ExecCtx, id: u64) {
     RETRIES.remove(ctx, &id);
 }

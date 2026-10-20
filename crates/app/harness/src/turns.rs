@@ -220,6 +220,7 @@ async fn call_model(
     if let Some(account) = &asked.account {
         head.headers.push((CCS_ACCOUNT.into(), account.clone()));
     }
+    let prompted = !parts.is_empty();
     let request_ = egress::Request::Http {
         service: asked.service.clone(),
         head,
@@ -231,6 +232,10 @@ async fn call_model(
         .map_err(|_| Failure::last("the egress answer is not an HTTP response"))?;
     resume::window_seen(ctx, &asked.service, &response);
     routes::heard(ctx, asked.thread, &response);
+    let answered_a_prompt = prompted && response.status == 200;
+    if answered_a_prompt {
+        resume::answered_on(ctx, &asked.service, asked.thread).await;
+    }
     Ok(response)
 }
 
