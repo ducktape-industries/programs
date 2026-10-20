@@ -276,3 +276,48 @@ fn a_paused_turn_given_up_with_nothing_but_an_unanswered_use_is_left_out_as_a_no
         "{bodies:?}"
     );
 }
+
+#[test]
+fn a_summary_never_ends_between_a_server_tools_use_and_its_result() {
+    let world = world();
+    let chain = &world.chain;
+    let config = Config {
+        compact_at: Some(1000),
+        ..searcher()
+    };
+    commit(chain, ADA, CONFIG, &config.write());
+    world.opened("m1", "look it up", Some(WINDOW));
+    chain.at(3, 0);
+    let all = searched_and_fetched();
+    let blocks = all.as_array().unwrap();
+    let listing = tool_use("toolu_l", "files_list", json!({ "path": "/" }));
+    model_says(chain, json!([listing, blocks[1]]), "tool_use");
+    chain.at(4, 0);
+    relay_back(chain, "toolu_l");
+    chain.at(5, 0);
+    let more = tool_use("toolu_m", "files_list", json!({ "path": "/shared" }));
+    model_says_after(chain, json!([blocks[2], more]), "tool_use", 2000);
+    chain.at(6, 0);
+    relay_back(chain, "toolu_m");
+    let (request, _) = open_request(chain);
+    let sent = body(chain, &request);
+    assert_eq!(sent["compaction"], json!({ "type": "summarize" }));
+    for message in sent["messages"].as_array().unwrap() {
+        let content = message["content"].as_array().unwrap();
+        let answered: Vec<&Value> = content
+            .iter()
+            .filter_map(|block| block.get("tool_use_id"))
+            .collect();
+        for block in content
+            .iter()
+            .filter(|block| block["type"] == "server_tool_use")
+        {
+            assert!(
+                answered.contains(&&block["id"]),
+                "{} has no result in its own message: {}",
+                block["id"],
+                sent["messages"]
+            );
+        }
+    }
+}

@@ -479,7 +479,13 @@ fn summarize_parts(
         .into_iter()
         .take_while(answered)
         .collect();
-    let cut = covered.iter().rposition(|sealed| sealed.role == Role::User);
+    let settled = match covered.last() {
+        Some(last) => settled(ctx, thread, last.end)?,
+        None => std::collections::BTreeSet::new(),
+    };
+    let cut = covered
+        .iter()
+        .rposition(|sealed| sealed.role == Role::User && settled.contains(&sealed.end));
     covered.truncate(cut.map_or(0, |index| index + 1));
     let Some(through) = covered.last().map(|sealed| sealed.end) else {
         return Ok(None);
@@ -488,6 +494,38 @@ fn summarize_parts(
     parts.extend(covered.iter().map(|sealed| sealed.part));
     parts.push(put_part(ctx, wire::summarize(wire).into())?);
     Ok(Some((through, parts)))
+}
+
+fn settled(
+    ctx: &ExecCtx,
+    thread: &ThreadRow,
+    through: u64,
+) -> Result<std::collections::BTreeSet<u64>, Error> {
+    let from = FRAMES.key(&(thread.id, thread.base));
+    let range = Range::new(from, Some(FRAMES.key(&(thread.id, through + 1))));
+    let mut open = std::collections::BTreeSet::new();
+    let mut settled = std::collections::BTreeSet::new();
+    for (_, frame) in FRAMES.scan(ctx, range)? {
+        if let Body::Turn { said, .. } = &frame.body {
+            for said in said {
+                match said {
+                    Said::ServerToolUse { id, .. } => {
+                        open.insert(id.clone());
+                    }
+                    Said::ServerToolResult(block) => {
+                        if let Some(id) = wire::answers(block) {
+                            open.remove(&id);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if open.is_empty() {
+            settled.insert(frame.seq);
+        }
+    }
+    Ok(settled)
 }
 
 enum Step {
