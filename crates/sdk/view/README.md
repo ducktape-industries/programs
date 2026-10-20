@@ -335,8 +335,15 @@ over a `Host`). The host keeps them on this device and never on the
 network, apart per program (its panes and its notifier share them, and
 `store.changes` tells each instance the keys another one set), per network
 and per seated key: two accounts signed in on one device each keep their
-own, and with no key seated the device keeps one set. So a view reads what
-it keeps again when `Session.signer` changes. They last across restarts:
+own, and with no key seated the device keeps one set. A view instance never
+outlives the key it was seated with: when the seated key moves to another,
+or the session locks, the app (since app change 125) starts the view and
+its notifier again fresh, with nothing carried. No socket, request or state
+of the old key's runs on under the new one, and the new instance's first
+`host.session` names the new key, whose store it reads. A first unlock,
+from no key to a key, starts nothing again: a view running with no key
+reads the device's set until then, and reads what it keeps again when
+`Session.signer` changes. They last across restarts:
 a file in the app's data folder on a desktop, in the app's own sandbox on a
 phone. Nothing caps a value or the number of keys but the device's disk; a
 write the disk refuses is refused `host_fault` in the system's words. Each
