@@ -32,6 +32,16 @@ impl Chat {
         let reader_changed = self.session.signer != prev.signer
             || self.session.endpoint != prev.endpoint
             || self.session.chain_id != prev.chain_id;
+        let account_changed = self.session.account != prev.account;
+        if reader_changed || account_changed {
+            self.listening.clear();
+            self.posted.clear();
+            self.order.clear();
+            self.listening_asked = false;
+            if prev.connected && self.session.connected {
+                self.refresh(cx);
+            }
+        }
         if reader_changed {
             self.load_names(cx);
             self.load_avatars(cx);
@@ -143,7 +153,8 @@ impl Chat {
         };
         self.listening_asked = true;
         let read = crate::queries::listening(cx.host(), me);
-        cx.land(read, |chat, read, cx| match read {
+        cx.land(read, move |chat, read, cx| match read {
+            _ if chat.my_account() != Some(me) => {}
             Ok(rooms) => {
                 let rooms: std::collections::BTreeSet<String> = rooms.into_iter().collect();
                 if rooms != chat.listening {
@@ -155,7 +166,8 @@ impl Chat {
         })
         .detach();
         let posted = crate::queries::posted_in(cx.host(), me);
-        cx.land(posted, |chat, read, cx| match read {
+        cx.land(posted, move |chat, read, cx| match read {
+            _ if chat.my_account() != Some(me) => {}
             Ok(rooms) => {
                 let rooms: std::collections::BTreeSet<String> = rooms.into_iter().collect();
                 if rooms != chat.posted {
@@ -167,7 +179,8 @@ impl Chat {
         })
         .detach();
         let order = crate::queries::room_order(cx.host(), me);
-        cx.land(order, |chat, read, cx| match read {
+        cx.land(order, move |chat, read, cx| match read {
+            _ if chat.my_account() != Some(me) => {}
             Ok(order) => {
                 if order != chat.order {
                     chat.order = order;

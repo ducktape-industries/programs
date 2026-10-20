@@ -25,6 +25,117 @@ fn an_account_gained_later_re_enables_create_channel() {
     view.read(|chat| assert_eq!(chat.my_account(), Some(7)));
 }
 
+fn answer_by_account(cx: &TestAppContext) {
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
+        Ok(match query {
+            Query::Listening { account: 7, .. } => Reply::Listening(page(vec!["general".into()])),
+            Query::PostedIn { account: 7, .. } => Reply::PostedIn(page(vec!["general".into()])),
+            query => chat_reply(query),
+        })
+    }));
+}
+
+fn switch_to_ada(cx: &mut TestAppContext) {
+    cx.host().stream::<HostSession>().send(Session {
+        signer: "0a0b".into(),
+        account: Some(10),
+        ..session()
+    });
+    cx.run_until_parked();
+}
+
+#[test]
+fn a_key_switched_while_connected_reads_the_new_accounts_rooms_in_place_of_the_old() {
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    answer_by_account(&cx);
+    let view = cx.open::<Chat>();
+    cx.run_until_parked();
+    seat(&mut cx);
+    view.read(|chat| {
+        assert!(chat.listening.contains("general") && chat.posted.contains("general"));
+    });
+
+    cx.host().stream::<HostSession>().send(Session {
+        signer: "0a0b".into(),
+        account: Some(10),
+        ..session()
+    });
+    cx.run_until_parked();
+    view.read(|chat| {
+        assert!(chat.listening.is_empty(), "{:?}", chat.listening);
+        assert!(chat.posted.is_empty(), "{:?}", chat.posted);
+    });
+    let asked = cx.host().requests::<Ask<::chat::Chat>>();
+    assert!(
+        (asked.iter()).any(|query| matches!(query, Query::Listening { account: 10, .. })),
+        "the new account's rooms are asked"
+    );
+}
+
+#[test]
+fn a_key_switched_while_connected_reads_the_open_room_for_the_new_viewer() {
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    answer_by_account(&cx);
+    cx.open::<Chat>();
+    cx.run_until_parked();
+    seat(&mut cx);
+    cx.simulate_click("chat-sidebar-channel-general");
+    cx.run_until_parked();
+    let ada = vec![Principal::Account(10)];
+    let read_for_ada = |cx: &TestAppContext| {
+        (cx.host().requests::<Ask<::chat::Chat>>().iter()).any(|query| match query {
+            Query::Roots {
+                channel_id, viewer, ..
+            }
+            | Query::MessagesAround {
+                channel_id, viewer, ..
+            } => channel_id == "general" && *viewer == ada,
+            _ => false,
+        })
+    };
+    assert!(!read_for_ada(&cx));
+    switch_to_ada(&mut cx);
+    assert!(
+        read_for_ada(&cx),
+        "the room is read again as the new viewer"
+    );
+}
+
+#[test]
+fn the_old_accounts_answers_landing_after_a_switch_are_dropped() {
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    answer_by_account(&cx);
+    let view = cx.open::<Chat>();
+    cx.run_until_parked();
+    seat(&mut cx);
+    let asked_for_eddy = |cx: &TestAppContext| {
+        (cx.host().requests::<Ask<::chat::Chat>>().iter())
+            .filter(|query| matches!(query, Query::Listening { account: 7, .. }))
+            .count()
+    };
+    let answered = asked_for_eddy(&cx);
+    cx.host().never::<Ask<::chat::Chat>>();
+    cx.host().stream::<Changes<::chat::Chat>>().send(None);
+    cx.run_until_parked();
+    assert!(
+        asked_for_eddy(&cx) > answered,
+        "eddy's rooms are asked again, and held"
+    );
+
+    answer_by_account(&cx);
+    switch_to_ada(&mut cx);
+    view.read(|chat| assert!(chat.listening.is_empty() && chat.posted.is_empty()));
+    cx.host().answer_held::<Ask<::chat::Chat>>();
+    cx.run_until_parked();
+    view.read(|chat| {
+        assert!(chat.listening.is_empty(), "{:?}", chat.listening);
+        assert!(chat.posted.is_empty(), "{:?}", chat.posted);
+    });
+}
+
 #[test]
 fn a_peers_name_gained_later_replaces_its_numeric_fallback() {
     let known = std::rc::Rc::new(std::cell::Cell::new(false));
