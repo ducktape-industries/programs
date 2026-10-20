@@ -956,7 +956,7 @@ impl Chat {
             }
             Pane::Thread => {
                 let thread = room.thread.as_ref();
-                at == 1 && thread.is_some_and(|thread| thread.earlier && !thread.more_loading)
+                at == 1 && thread.is_some_and(|thread| thread.earlier && thread.paging.is_none())
             }
         }
     }
@@ -975,21 +975,17 @@ impl Chat {
         let Some(thread) = &mut room.thread else {
             return;
         };
-        if !thread.earlier || thread.more_loading {
+        let readable = thread.earlier && thread.paging.is_none();
+        if !readable {
             return;
         }
-        thread.more_loading = true;
-        let root = thread.root;
-        let every = queries::thread(cx.host(), id, root, viewer, None);
-        cx.land(every, move |chat, result, cx| {
+        let every = queries::thread(cx.host(), id, thread.root, viewer, None);
+        thread.paging = Some(cx.land(every, move |chat, result, cx| {
             cx.notify();
             let Some(thread) = chat.room.as_mut().and_then(|r| r.thread.as_mut()) else {
                 return;
             };
-            if thread.root != root {
-                return;
-            }
-            thread.more_loading = false;
+            thread.paging = None;
             match result {
                 Ok((mut every, next)) => {
                     let seqs = reacted(&every);
@@ -1010,8 +1006,7 @@ impl Chat {
                         format!("Couldn’t read this thread: {}", design::sentence(&refusal))
                 }
             }
-        })
-        .detach();
+        }));
     }
 
     pub(crate) fn load_more_replies(&mut self, cx: &mut Context<Self>) {
@@ -1021,20 +1016,19 @@ impl Chat {
         let Some(thread) = &mut room.thread else {
             return;
         };
-        if !thread.has_more || thread.more_loading {
+        let readable = thread.has_more && thread.paging.is_none();
+        if !readable {
             return;
         }
-        thread.more_loading = true;
-        let (root, after) = (thread.root, thread.next.clone());
-        let more = queries::thread(cx.host(), id, root, viewer, after);
-        cx.land(more, move |chat, result, cx| {
+        let after = thread.next.clone();
+        let more = queries::thread(cx.host(), id, thread.root, viewer, after);
+        thread.paging = Some(cx.land(more, move |chat, result, cx| {
             cx.notify();
             let Some(thread) = chat.room.as_mut().and_then(|r| r.thread.as_mut()) else {
                 return;
             };
-            thread.more_loading = false;
+            thread.paging = None;
             match result {
-                Ok(_) if thread.root != root => {}
                 Ok((more, next)) => {
                     let seeking = !thread.reached();
                     let seqs = reacted(&more);
@@ -1054,8 +1048,7 @@ impl Chat {
                         format!("Couldn’t read this thread: {}", design::sentence(&refusal))
                 }
             }
-        })
-        .detach();
+        }));
     }
 
     // a thread opened on a reply reads its pages until the reply is in,

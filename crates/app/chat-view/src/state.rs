@@ -450,7 +450,7 @@ pub struct Thread {
     #[serde(skip)]
     pub(crate) earlier: bool,
     #[serde(skip)]
-    pub(crate) more_loading: bool,
+    pub(crate) paging: Option<view::Task<()>>,
     /// the replies read again while the ones on screen stay
     #[serde(skip)]
     pub(crate) rereading: Option<view::Task<()>>,

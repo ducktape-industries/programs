@@ -243,6 +243,59 @@ fn a_thread_opened_again_shows_its_replies_at_once_and_reads_them_behind() {
     assert_eq!(reads, 1, "read again behind");
 }
 
+fn a_page_out_when_the_room_is_left(earlier: bool) -> (usize, bool) {
+    let (mut cx, view) = paged(Rc::new(Cell::new(600)), 5);
+    open(&mut cx, "chat-sidebar-channel-general");
+    cx.update(&view, |chat, _, cx| {
+        chat.open_thread(595, cx);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    cx.update(&view, |chat, _, cx| {
+        let thread = chat.room.as_mut().unwrap().thread.as_mut().unwrap();
+        match earlier {
+            true => {
+                thread.earlier = true;
+                chat.reached_first(Pane::Thread, cx);
+            }
+            false => {
+                thread.has_more = true;
+                thread.next = Some(::chat::replies_after(
+                    "general",
+                    595,
+                    10_000 + 595 * 100 + 2,
+                ));
+                chat.load_more_replies(cx);
+            }
+        }
+        chat.choose("random".into(), cx);
+        chat.room.as_mut().unwrap().thread = Some(crate::Thread {
+            root: 595,
+            replies: Loadable::Ready(Vec::new()),
+            earlier: true,
+            ..Default::default()
+        });
+        cx.notify();
+    });
+    cx.run_until_parked();
+    view.read(|chat| {
+        let room = chat.room.as_ref().unwrap();
+        assert_eq!(room.id, "random");
+        let thread = room.thread.as_ref().unwrap();
+        (thread.replies.ready().map_or(0, Vec::len), thread.earlier)
+    })
+}
+
+#[test]
+fn earlier_replies_out_when_the_room_is_left_land_in_no_other_rooms_thread() {
+    assert_eq!(a_page_out_when_the_room_is_left(true), (0, true));
+}
+
+#[test]
+fn more_replies_out_when_the_room_is_left_land_in_no_other_rooms_thread() {
+    assert_eq!(a_page_out_when_the_room_is_left(false), (0, true));
+}
+
 fn list_named<'a>(node: &'a wire::Node, name: &str) -> Option<&'a wire::Node> {
     if let wire::Node::List {
         id: wire::ElementIdWire::Name(id),
