@@ -5,15 +5,12 @@
 use super::*;
 use view::testing;
 
-/// Forge on a 390 wide phone, seated as Ada (account 1: `project`'s owner
-/// and change 1's author), once `mode`'s answers are set.
 fn phone(mode: &'static str) -> TestAppContext {
     let mut cx = TestAppContext::new();
     configure(&mut cx, mode);
     seat_phone(cx)
 }
 
-/// Forge on a phone whose reads `answer` answers.
 fn phone_answered(
     answer: impl Fn(&Query) -> Result<Reply, view::host::Error> + 'static,
 ) -> TestAppContext {
@@ -27,15 +24,12 @@ fn seat_phone(cx: TestAppContext) -> TestAppContext {
     seat_view(cx, Some(1)).0
 }
 
-/// Forge on a phone and its view, seated as Ada, once `mode`'s answers
-/// are set.
 fn phone_view(mode: &'static str) -> (TestAppContext, Entity<Forge>) {
     let mut cx = TestAppContext::new();
     configure(&mut cx, mode);
     seat_view(cx, Some(1))
 }
 
-/// Forge on a 390 wide phone, seated holding `account`.
 fn seat_view(mut cx: TestAppContext, account: Option<u64>) -> (TestAppContext, Entity<Forge>) {
     let props = cx.host().stream::<HostSession>();
     let view = cx.open::<Forge>();
@@ -47,7 +41,6 @@ fn seat_view(mut cx: TestAppContext, account: Option<u64>) -> (TestAppContext, E
     (cx, view)
 }
 
-/// Every forge write refused, as the program's prediction says it.
 fn refuse_writes(cx: &mut TestAppContext) {
     cx.host().handle::<SubmitForge>(|_| {
         Ok(view::methods::Submitted::Refused {
@@ -58,7 +51,6 @@ fn refuse_writes(cx: &mut TestAppContext) {
     });
 }
 
-/// The settings of `project` as the phone shows them.
 fn shown_settings(view: &Entity<Forge>) -> forge::Settings {
     view.read(|forge| forge.repo().map(|(info, _)| info.repo.settings.clone()))
         .expect("the repository is read")
@@ -79,14 +71,12 @@ fn press(cx: &mut TestAppContext, id: &str) {
     cx.run_until_parked();
 }
 
-/// `project` open on the phone.
 fn repository(mode: &'static str) -> TestAppContext {
     let mut cx = phone(mode);
     press(&mut cx, "forge-repo-project");
     cx
 }
 
-/// Change 1 of `project` open on the phone.
 fn change(mode: &'static str) -> TestAppContext {
     let mut cx = repository(mode);
     press(&mut cx, "forge-tab-changes");
@@ -94,7 +84,6 @@ fn change(mode: &'static str) -> TestAppContext {
     cx
 }
 
-/// `src/lib.rs` of change 1 open on its own page.
 fn file(mode: &'static str) -> TestAppContext {
     let mut cx = change(mode);
     press(&mut cx, "forge-change-tab-files");
@@ -105,8 +94,6 @@ fn file(mode: &'static str) -> TestAppContext {
 fn submitted(cx: &TestAppContext) -> Vec<forge::Op> {
     cx.host().requests::<SubmitForge>()
 }
-
-// ------------------------------------------------------------------ Forge
 
 #[test]
 fn the_root_lists_what_needs_my_judgment_then_every_repository() {
@@ -196,8 +183,6 @@ fn new_repository_opens_a_sheet_that_refuses_a_bad_name_then_creates() {
     );
 }
 
-// ------------------------------------------------------------------ a repository
-
 #[test]
 fn a_repository_names_its_owner_its_ref_and_six_tabs() {
     let cx = repository("default");
@@ -282,8 +267,6 @@ fn every_tab_draws_its_body() {
     }
 }
 
-// ------------------------------------------------------------------ a change
-
 #[test]
 fn a_change_shows_its_state_who_wants_what_and_four_tabs() {
     let cx = change("default");
@@ -305,8 +288,6 @@ fn a_change_shows_its_state_who_wants_what_and_four_tabs() {
     assert!(cx.find("forge-reply").is_some());
 }
 
-/// The strip says each tab's count whichever tab is open, as Expo's
-/// does: the change's conversation and its diff are read with it.
 #[test]
 fn the_strip_counts_every_tab_whichever_is_open() {
     let mut cx = change("reviewed");
@@ -376,8 +357,6 @@ fn start_review_pins_a_review_and_opens_the_files() {
     assert!(cx.has_text("Tick a file once you have read it."));
 }
 
-/// The host's capsule beside the title row draws `ellipsis` and is named
-/// More: a change's own Actions draw `ellipsis-vertical` and say Actions.
 #[test]
 fn a_changes_actions_are_not_drawn_as_the_capsules_more() {
     let cx = change("default");
@@ -445,8 +424,6 @@ fn details_name_the_reviews_the_merge_status_the_line_comments_and_the_channel()
     }
 }
 
-// ------------------------------------------------------------------ one file of a change
-
 #[test]
 fn a_file_page_walks_its_files_and_says_how_to_comment() {
     let cx = file("default");
@@ -484,8 +461,6 @@ fn a_published_comment_sits_under_its_line() {
     );
 }
 
-// ------------------------------------------------------------------ Finish your review
-
 #[test]
 fn finish_review_opens_the_sheet_and_submit_sends_one_review() {
     let mut cx = change("default");
@@ -505,8 +480,6 @@ fn finish_review_opens_the_sheet_and_submit_sends_one_review() {
     assert!(sent.iter().any(|op| matches!(op, forge::Op::ReviewSubmit { review, .. } if review.verdict == forge::Verdict::Approve)));
 }
 
-/// An empty comment review is refused before it is sent, in Expo's
-/// words (`review.tsx:46`).
 #[test]
 fn an_empty_comment_review_says_say_something_or_discard() {
     let mut cx = change("default");
@@ -538,8 +511,6 @@ fn discard_drops_the_review() {
     );
 }
 
-// ------------------------------------------------------------------ a commit
-
 #[test]
 fn a_commit_shows_its_facts_its_files_and_their_diff() {
     let mut cx = repository("default");
@@ -555,11 +526,6 @@ fn a_commit_shows_its_facts_its_files_and_their_diff() {
     assert!(cx.find("forge-commit-diff").is_some());
 }
 
-// ------------------------------------------------------------------ a file of the Code tab
-
-/// A folder of the Code tab opens on its own page (Expo 33): `src/` over
-/// the repository and the ref, the crumbs over its rows; the crumb of the
-/// repository, and Back, go back to the tab.
 #[test]
 fn a_folder_opens_on_its_own_page_and_its_crumb_goes_back() {
     let mut cx = repository("default");
@@ -581,9 +547,6 @@ fn a_folder_opens_on_its_own_page_and_its_crumb_goes_back() {
     assert!(cx.find("forge-page-repo").is_some());
 }
 
-/// `project` with folders `a/b/c` (no fixture nests a folder in a
-/// folder): the root's first page holds `a`, `a` holds `b`, `a/b` holds
-/// `c`, and each holds `src`'s files as well. Seated on the list.
 fn nested() -> (TestAppContext, Entity<Forge>) {
     let mut cx = TestAppContext::new();
     configure(&mut cx, "default");
@@ -614,7 +577,6 @@ fn nested() -> (TestAppContext, Entity<Forge>) {
     seat_view(cx, Some(1))
 }
 
-/// [`nested`] on `project`'s Code tab.
 fn nested_view() -> (TestAppContext, Entity<Forge>) {
     let (mut cx, view) = nested();
     press(&mut cx, "forge-repo-project");
@@ -622,14 +584,12 @@ fn nested_view() -> (TestAppContext, Entity<Forge>) {
     (cx, view)
 }
 
-/// `path`s, each pressed in turn: `a`, `a/b`, ... down the tree.
 fn walk(cx: &mut TestAppContext, paths: &[&str]) {
     for path in paths {
         press(cx, &format!("forge-tree-{path}"));
     }
 }
 
-/// The depth the folder page on top crosses with, and the folder it is.
 fn folder_page(cx: &TestAppContext, view: &Entity<Forge>) -> (Option<u32>, Vec<u8>) {
     let depth = cx.interactivity("forge-page-folder").page;
     (
@@ -638,11 +598,6 @@ fn folder_page(cx: &TestAppContext, view: &Entity<Forge>) -> (Option<u32>, Vec<u
     )
 }
 
-/// Each folder is a page of its own over its parent's, as Expo pushes a
-/// screen per folder (`code/[...path].tsx`): `a`, `a/b` and `a/b/c` sit
-/// one, two and three over the Code tab, so each opens with a push, and a
-/// file of `a/b/c` one over that; Back walks up one page at a time, each
-/// a pop, to the tab.
 #[test]
 fn each_folder_is_a_page_over_its_parent_and_back_walks_up_one() {
     let (mut cx, view) = nested_view();
@@ -668,8 +623,6 @@ fn each_folder_is_a_page_over_its_parent_and_back_walks_up_one() {
     assert_eq!(cx.interactivity("forge-page-repo").page, Some(1));
 }
 
-/// A crumb goes up every folder it skips at once, as Expo's
-/// `router.dismiss(depth - i)`: `a` from `a/b/c` is a pop of two.
 #[test]
 fn a_crumb_pops_every_folder_under_it() {
     let (mut cx, view) = nested_view();
@@ -678,8 +631,6 @@ fn a_crumb_pops_every_folder_under_it() {
     assert_eq!(folder_page(&cx, &view), (Some(2), b"a".to_vec()));
 }
 
-/// A link into `a/b` opens it at its own depth with `a`'s page under it:
-/// Back goes to `a`, then to the tab, as a tap down to `a/b` would.
 #[test]
 fn a_link_into_a_folder_lands_at_its_depth_over_its_parents() {
     let (mut cx, view) = nested_view();
@@ -694,11 +645,6 @@ fn a_link_into_a_folder_lands_at_its_depth_over_its_parents() {
     assert_eq!(cx.interactivity("forge-page-repo").page, Some(1));
 }
 
-/// While a link's folder is still being read its page already stands
-/// where the path lands, so the link slides once (Expo's
-/// `code/[...path].tsx` before it reads its entry). Back from it goes to
-/// its folder and forgets the link, so the read landing later moves
-/// nothing.
 #[test]
 fn a_link_stands_at_its_depth_while_its_folder_is_read() {
     let (mut cx, view) = nested_view();
@@ -713,9 +659,6 @@ fn a_link_stands_at_its_depth_while_its_folder_is_read() {
     view.read(|forge| assert_eq!(forge.nav().goto, None));
 }
 
-/// A route into a path of a repository (a file page's Copy link) opens
-/// it at its depth from anywhere: a folder over its parents, a file over
-/// its folder; a number after the name is still the change.
 #[test]
 fn a_route_into_a_path_opens_it_at_its_depth() {
     let (mut cx, view) = nested();
@@ -734,9 +677,6 @@ fn a_route_into_a_path_opens_it_at_its_depth() {
     assert!(cx.find("forge-page-change").is_some(), "{:?}", cx.texts());
 }
 
-/// A link to the README from a file deep in the Code tab opens the
-/// README tab and leaves the Code tab's pages: its next press opens on
-/// its root, not on the file the link was pressed in.
 #[test]
 fn a_readme_link_leaves_the_code_tabs_pages() {
     let (mut cx, view) = nested_view();
@@ -777,8 +717,6 @@ fn a_markdown_file_reads_as_its_document_until_source() {
     );
 }
 
-// ------------------------------------------------------------------ New change
-
 #[test]
 fn edit_opens_the_form_filled_and_save_sends_the_edit() {
     let mut cx = change("default");
@@ -809,9 +747,6 @@ fn compare_opens_a_new_change_that_refuses_a_blank_title() {
     );
 }
 
-/// New change from the Changes tab (Expo 38): no source yet; Source opens
-/// the ref sheet titled "Source", a pick fills it and the endpoints
-/// compare; Open sends the change from it into the default head.
 #[test]
 fn new_change_from_the_changes_tab_picks_its_source_on_the_ref_sheet() {
     let mut cx = repository("default");
@@ -848,11 +783,6 @@ fn new_change_from_the_changes_tab_picks_its_source_on_the_ref_sheet() {
     );
 }
 
-// ------------------------------------------------------------------ Settings
-
-/// A refused write keeps nothing off: its row says why in every view's
-/// words and Dismiss takes it away, the switches stay on, and the next
-/// flip sends the settings on screen with that one flipped.
 #[test]
 fn a_refused_setting_leaves_the_switches_on_and_the_next_flip_sends_what_shows() {
     let (mut cx, view) = phone_view("default");
@@ -910,8 +840,6 @@ fn the_delete_switch_saves_the_settings_on_screen_with_it_flipped() {
     );
 }
 
-/// Default head opens the ref sheet with Branches | Tags, as every ref
-/// sheet does; a pick saves it.
 #[test]
 fn default_head_opens_branches_and_tags_and_a_pick_saves_it() {
     let (mut cx, view) = phone_view("default");
@@ -941,8 +869,6 @@ fn revoke_takes_a_writer_away() {
     assert_eq!(set_lists(&cx), [Some(Ownership::Owner)]);
 }
 
-/// Grant opens the people sheet without the owner and those who write;
-/// a pick grants and closes it.
 #[test]
 fn grant_picks_a_member_on_the_people_sheet() {
     let mut cx = repository("default");
@@ -955,8 +881,6 @@ fn grant_picks_a_member_on_the_people_sheet() {
     assert!(cx.find("forge-grant-sheet").is_none());
     assert_eq!(set_lists(&cx), [listed(&[9, 2])]);
 }
-
-// ------------------------------------------------------------------ Changes and Refs
 
 #[test]
 fn a_filter_chip_reads_its_changes() {
@@ -976,8 +900,6 @@ fn a_filter_chip_reads_its_changes() {
     assert!(cx.find("forge-change-list").is_some(), "{:?}", cx.texts());
 }
 
-/// "Needs my judgment" in a repository lists that repository's changes
-/// alone.
 #[test]
 fn the_judgment_chip_keeps_this_repositorys_changes() {
     let mut cx = repository("default");
@@ -996,8 +918,6 @@ fn the_judgment_chip_keeps_this_repositorys_changes() {
     }
 }
 
-/// A filter about me asks nothing while the reader holds no account,
-/// and says so.
 #[test]
 fn a_reader_without_an_account_is_told_the_judgment_needs_one() {
     let mut cx = TestAppContext::new();
@@ -1028,10 +948,6 @@ fn the_refs_chips_switch_kinds_and_a_row_browses_its_ref() {
     );
 }
 
-// ------------------------------------------------------------------ a change's actions
-
-/// A reply keeps its text until it lands, and Send waits while it is
-/// out; once it lands the box empties.
 #[test]
 fn a_reply_keeps_its_text_until_it_lands() {
     let (mut cx, view) = phone_view("default");
@@ -1081,8 +997,6 @@ fn a_refused_reply_says_why_and_keeps_its_text() {
     assert!(!disabled(&cx, "forge-reply-send"), "it may be sent again");
 }
 
-/// Back on the close confirmation closes the sheet, and Actions opens on
-/// its list again.
 #[test]
 fn back_from_close_for_good_leaves_actions_on_its_list() {
     let mut cx = change("default");
@@ -1124,8 +1038,6 @@ fn reviewers_are_added_from_the_people_sheet_and_removed_by_their_chip() {
     assert!(cx.find("forge-reviewer-Tal").is_none());
 }
 
-/// All files: every file of the diff on one page, `N files`, nothing to
-/// walk.
 #[test]
 fn all_files_shows_every_file_on_one_page() {
     let mut cx = change("default");
@@ -1145,11 +1057,6 @@ fn all_files_shows_every_file_on_one_page() {
     assert!(cx.find("forge-page-change").is_some());
 }
 
-// ------------------------------------------------------------------ links
-
-/// A link to a folder opens its page; to a file, its page over its
-/// folder's; to a path the ref lacks, a page that says so. None unfolds
-/// the desktop's tree.
 #[test]
 fn a_link_opens_its_folder_or_file_page_or_says_the_ref_lacks_it() {
     let (mut cx, view) = phone_view("default");
@@ -1190,10 +1097,6 @@ fn a_link_opens_its_folder_or_file_page_or_says_the_ref_lacks_it() {
     assert!(cx.find("forge-page-missing").is_none());
 }
 
-// ------------------------------------------------------------------ states
-
-/// An unborn repository: its README tab says how to push to it, its
-/// Refs tab that it holds none.
 #[test]
 fn an_unborn_repository_says_how_to_push_and_holds_no_refs() {
     let mut cx = repository("unborn");
@@ -1229,10 +1132,8 @@ fn a_readme_that_is_not_text_says_so() {
     assert!(cx.has_text("This README is not text."), "{:?}", cx.texts());
 }
 
-/// A file that is not text shows why: binary, too large, a submodule.
 #[test]
 fn a_file_that_is_not_text_says_why() {
-    // the blob fixture as a submodule's entry reads (no fixture holds one)
     const GITLINK: &str = "6666666666666666666666666666666666666666";
     let (mut cx, view) = {
         let mut cx = TestAppContext::new();
@@ -1279,8 +1180,6 @@ fn a_file_that_is_not_text_says_why() {
     }
 }
 
-/// A refused read says why in its place, with Retry: the tree, the
-/// history, the refs, a change's diff.
 #[test]
 fn a_refused_tree_history_refs_or_diff_says_why_and_retries() {
     let refused = |what: fn(&Query) -> bool| {
@@ -1314,8 +1213,6 @@ fn a_refused_tree_history_refs_or_diff_says_why_and_retries() {
     assert!(cx.find("forge-diff-refused").is_some(), "{:?}", cx.texts());
 }
 
-/// A commit whose own read is refused says why, with Retry, not that it
-/// is still being read.
 #[test]
 fn a_refused_commit_says_why_and_retries() {
     let (mut cx, view) = {
@@ -1350,10 +1247,6 @@ fn a_refused_commit_says_why_and_retries() {
     );
 }
 
-// ------------------------------------------------------------------ the sweep
-
-/// Every phone screen fits each phone width under the touch ladder, and
-/// Back is set exactly while there is somewhere to go back to (rule 13).
 #[test]
 fn forge_fits_every_phone() {
     let mut cx = phone("reviewed");
@@ -1418,7 +1311,6 @@ fn forge_fits_every_phone() {
     });
 }
 
-/// Under a pointer the desktop draws at every width, never a phone page.
 #[test]
 fn a_pointer_keeps_the_desktop_at_every_width() {
     let (mut cx, _) = opened("default");

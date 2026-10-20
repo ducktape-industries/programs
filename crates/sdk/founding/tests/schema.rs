@@ -9,11 +9,6 @@ fn programs() -> impl Iterator<Item = &'static str> {
         .chain(founding::UNVIEWED.iter().copied())
 }
 
-// Each program's interface as `interfaces/<program>.schema` holds it: what
-// the tools repo's `interfaces` gate reads at a change's merge base with dev
-// and at the change, so a variant deleted or moved fails the change by a
-// baseline it cannot edit (J-085). A change that grows an interface writes
-// them again with `INTERFACES_WRITE=1`.
 #[test]
 fn the_committed_interfaces_are_the_built_ones() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("interfaces");

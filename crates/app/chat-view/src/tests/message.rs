@@ -3,13 +3,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use view::{StyleRefinement, Styled};
 
-/// The strip hangs half over the card's top edge (Slack's), and the
-/// message under it stays where it is; the card's ground hugs the message,
-/// the run's gap lying above it. The pointer on its upper half is
-/// over the row above, so the strip occludes (no row is hovered while the
-/// pointer is on it) and keeps itself drawn by its own hover; the card
-/// keeps its hover ground meanwhile. The wire keeps the negative inset:
-/// this frame went through the sanitizer.
 #[test]
 fn the_action_strip_hangs_over_the_rows_top_and_stays_under_the_pointer() {
     use view::px;
@@ -29,9 +22,6 @@ fn the_action_strip_hangs_over_the_rows_top_and_stays_under_the_pointer() {
         "the strip says when the pointer is on it"
     );
     assert!(strip.group_hover.is_none());
-    // the run's quiet lies in the row above the card, so the card's ground
-    // hugs the message (no forehead over the avatar), and the strip hangs
-    // half over the card's top edge
     let row = cx.style("chat-message-m1-row");
     assert_eq!(row.padding.top, Some(px(8.).into()), "the run's gap");
     let card = cx.style("chat-message-m1-card");
@@ -55,8 +45,6 @@ fn the_action_strip_hangs_over_the_rows_top_and_stays_under_the_pointer() {
             .and_then(|background| background.as_solid())
     };
     assert_eq!(ground(&cx), Some(raised));
-    // the pointer moves from the card onto the strip: the row leaves, the
-    // strip enters, in whichever order the host says them
     cx.simulate_hover("chat-message-m1-actions", true);
     cx.simulate_hover("chat-message-m1-row", false);
     assert!(
@@ -64,8 +52,6 @@ fn the_action_strip_hangs_over_the_rows_top_and_stays_under_the_pointer() {
         "the strip stays under the pointer"
     );
     assert_eq!(ground(&cx), Some(raised), "the card keeps its hover ground");
-    // a strip whose leave never comes (its row deleted or scrolled away
-    // under the pointer) is let go by the next row the pointer enters
     cx.simulate_hover("chat-message-m2-row", true);
     assert!(cx.find("chat-message-m1-actions").is_none());
     assert!(cx.find("chat-message-m2-actions").is_some());
@@ -80,7 +66,6 @@ fn the_action_strip_hangs_over_the_rows_top_and_stays_under_the_pointer() {
     assert!(cx.find("chat-message-m1-thumbs-up").is_some());
 }
 
-/// Two 🔥 on m1, one of them the reader's when `mine`.
 fn fire(cx: &mut TestAppContext, view: &Entity<Chat>, mine: bool) {
     cx.update(view, |chat, _, cx| {
         chat.room.as_mut().unwrap().messages.ready_mut().unwrap()[0]
@@ -95,7 +80,6 @@ fn fire(cx: &mut TestAppContext, view: &Entity<Chat>, mine: bool) {
     cx.run_until_parked();
 }
 
-/// The pointer over message `seq`'s row, as the host reports it.
 pub(super) fn hover(cx: &mut TestAppContext, view: &Entity<Chat>, seq: u64) {
     cx.update(view, |chat, _, cx| {
         chat.hovered = Some(crate::Hovered {
@@ -159,9 +143,6 @@ fn reaction_rows_keep_add_action_and_selected_accessibility() {
     });
 }
 
-/// A chip is named by its emoji, yours or not: the toggle says which, so
-/// the name the door reads does not flip with it, and it is neither the `+`
-/// picker's "Add reaction" nor the strip's "React with 👍", which always adds.
 #[test]
 fn a_reaction_chip_is_named_by_its_emoji_whether_toggled_or_not() {
     let (mut cx, view) = opened();
@@ -203,8 +184,6 @@ fn a_reaction_chip_is_named_by_its_emoji_whether_toggled_or_not() {
     );
 }
 
-// A chip names who chose it, as read from the program once rows land:
-// a tooltip on hover, and the same names beside the count for the door.
 #[test]
 fn a_reaction_chip_names_who_chose_it() {
     let (mut cx, view) = opened();
@@ -232,9 +211,6 @@ fn a_reaction_chip_names_who_chose_it() {
     assert!(chip.tooltip.is_some(), "the names show on hover");
 }
 
-// Rows that land with a reaction read who chose it, and a block where
-// one drops it and another chooses it (the count unmoved, the rows landing
-// as they were) reads them again.
 #[test]
 fn landed_rows_read_who_reacted_and_a_block_reads_them_again() {
     let who = Rc::new(RefCell::new(vec![Principal::Account(7)]));
@@ -299,10 +275,6 @@ fn landed_rows_read_who_reacted_and_a_block_reads_them_again() {
     assert_eq!(names(&cx).as_deref(), Some("1: ada"));
 }
 
-/// What a pointer presses on a message (its block link, a reaction chip,
-/// the `+`) and the sidebar's "+ New channel" are at least 24 px each way:
-/// the box's own floor, so the bounds the door's AX-017 reads cannot come
-/// in under it, whatever the text inside.
 #[test]
 fn the_small_press_targets_are_at_least_24_px_each_way() {
     use view::px;
@@ -317,7 +289,6 @@ fn the_small_press_targets_are_at_least_24_px_each_way() {
             "{key}"
         );
     }
-    // a chip is as tall as the thread button, and no narrower than tall
     for key in [
         "chat-message-m1-reaction-🔥",
         "chat-message-m1-reaction-add",
@@ -331,9 +302,6 @@ fn the_small_press_targets_are_at_least_24_px_each_way() {
     }
 }
 
-/// The hover strip's buttons, "Clear search" and the confirmation's
-/// "Dismiss" ✕ are at least 24 px each way, like the message's own
-/// controls above: the box's declared floor.
 #[test]
 fn the_strip_and_the_glyph_buttons_are_at_least_24_px_each_way() {
     use view::{design, px};
@@ -349,7 +317,6 @@ fn the_strip_and_the_glyph_buttons_are_at_least_24_px_each_way() {
     });
     cx.run_until_parked();
     let style = |key: &str| cx.style(key).clone();
-    // a strip button is 24 tall and as wide as a kit row, over 24
     assert!(design::size::ROW >= px(24.));
     for key in ["thread", "thumbs-up", "react", "more"] {
         let style = style(&format!("chat-message-m1-{key}"));
@@ -412,7 +379,6 @@ fn replies_read_as_a_button() {
     };
     let style = &cx.styles()[*style];
     assert_eq!(interactivity.role, Some(view::Role::Button));
-    // a cell of the timeline grid, not a stop of its own
     assert!(!interactivity.focusable && interactivity.hover.is_some());
     assert_eq!(style.mouse_cursor, Some(view::CursorStyle::PointingHand));
     assert!(cx.has_text("Open thread →"));
@@ -425,7 +391,6 @@ fn replies_read_as_a_button() {
     });
 }
 
-/// The emoji categories are one tab list: → opens the next category.
 #[test]
 fn an_arrow_on_the_emoji_tabs_opens_the_next_category() {
     let (mut cx, view) = opened();
@@ -485,9 +450,6 @@ fn the_picker_searches_and_enter_picks_the_first_match() {
     });
 }
 
-/// The timeline is one grid: Tab lands on the newest message, ↑ reveals and
-/// claims the one before it, → and Enter press its first control, Enter on
-/// the content selects the row as a click would (the strip appears).
 #[test]
 fn the_timeline_is_a_grid_whose_arrows_walk_messages_and_their_controls() {
     let (mut cx, view) = opened();
@@ -495,8 +457,6 @@ fn the_timeline_is_a_grid_whose_arrows_walk_messages_and_their_controls() {
     let grid = cx.interactivity("chat-message-list");
     assert_eq!(grid.role, Some(view::Role::Grid));
     assert!(grid.focusable && grid.tab_stop == Some(true));
-    // Grid > Row > GridCell: the message is cell 0, under the whole card,
-    // and keeps the pointer's click; the row holds the name and never claims
     let newest = cx.interactivity("chat-message-m2");
     assert_eq!(newest.role, Some(view::Role::GridCell));
     assert!(newest.aria.active_descendant, "the newest message on entry");
@@ -514,7 +474,6 @@ fn the_timeline_is_a_grid_whose_arrows_walk_messages_and_their_controls() {
     cx.simulate_focus("chat-message-list");
     cx.simulate_key_down("chat-message-list", "up");
     assert!(cx.interactivity("chat-message-m1").aria.active_descendant);
-    // the list draws the revealed row until the host asks for more
     assert!(!super::room::claims(&cx, "chat-message-m2"));
     let Some(wire::Node::List { commands, .. }) = cx
         .find("chat-message-list")
@@ -529,9 +488,6 @@ fn the_timeline_is_a_grid_whose_arrows_walk_messages_and_their_controls() {
         "the list reveals the message (after the intro row) before it claims: {commands:?}"
     );
 
-    // → the controls in paint order, each in a cell of its own: the
-    // author's avatar, the header's block link, then the reaction chip, a
-    // button that stays one
     cx.simulate_key_down("chat-message-list", "right");
     let avatar = cx.interactivity("chat-message-m1-avatar");
     assert_eq!(avatar.role, Some(view::Role::Link));
@@ -559,7 +515,6 @@ fn the_timeline_is_a_grid_whose_arrows_walk_messages_and_their_controls() {
             .iter()
             .any(|op| matches!(op, Op::AddReaction { emoji, seq: 1, .. } if emoji == "🔥"))
     );
-    // Home is the content; Enter is the row's click: chosen, its strip shows
     cx.simulate_key_down("chat-message-list", "home");
     assert!(cx.interactivity("chat-message-m1").aria.active_descendant);
     assert!(cx.find("chat-message-m1-actions").is_none());
@@ -569,8 +524,6 @@ fn the_timeline_is_a_grid_whose_arrows_walk_messages_and_their_controls() {
         assert_eq!((menu.seq, menu.mode), (1, Mode::Toolbar));
     });
     assert!(cx.find("chat-message-m1-actions").is_some());
-    // the strip's buttons are the cells after the chip and the `+`, each
-    // in a cell of the row beside the card
     cx.simulate_key_down("chat-message-list", "end");
     assert!(
         cx.interactivity("chat-message-m1-more")
@@ -603,11 +556,6 @@ fn the_timeline_is_a_grid_whose_arrows_walk_messages_and_their_controls() {
     });
 }
 
-/// A reaction chip is a cell of the message's row, as each of the card's
-/// controls is: no cell holds another, the message's own cell (under the
-/// whole card) holds none of them and keeps the pointer's click. The
-/// thread's rows are drawn the same way. Where the reader may not write,
-/// a disabled control's cell is disabled too.
 #[test]
 fn a_reaction_chip_is_its_own_cell_of_the_row() {
     let (mut cx, view) = opened();
@@ -642,7 +590,6 @@ fn a_reaction_chip_is_its_own_cell_of_the_row() {
             .iter()
             .any(|child| child.key() == Some(key) || holds(child, key))
     }
-    /// The cells under `node`, and whether one holds another.
     fn cells(node: &wire::Node, inside: bool, found: &mut Vec<String>) -> bool {
         let cell = is_cell(node);
         if cell {
@@ -667,7 +614,6 @@ fn a_reaction_chip_is_its_own_cell_of_the_row() {
         );
         let message = cx.find(&format!("chat-message-{m}")).unwrap();
         assert!(is_cell(message) && message.children().is_empty(), "{pane}");
-        // under the whole card, and no slot of the card's flex
         let wire::Node::Container(view::wire::ContainerNode { style, .. }) = message else {
             panic!("{pane}: the message's cell")
         };
@@ -688,8 +634,6 @@ fn a_reaction_chip_is_its_own_cell_of_the_row() {
         assert!(found.contains(&format!("{chip}-cell")), "{pane}: {found:?}");
         assert!(holds(row, &chip), "{pane}");
     }
-    // the timeline's row: the message, its avatar, its block link, the
-    // chip, the `+` and the way into the thread, a cell each in paint order
     let mut found = Vec::new();
     cells(cx.find("chat-message-m1-row").unwrap(), false, &mut found);
     assert_eq!(
@@ -703,7 +647,6 @@ fn a_reaction_chip_is_its_own_cell_of_the_row() {
             "chat-message-m1-replies-cell",
         ]
     );
-    // a press on the card is the message's cell's: chosen, as before
     cx.simulate_click("chat-message-m1");
     view.read(|chat| {
         let menu = chat.menu.as_ref().expect("the message is chosen");
@@ -712,8 +655,6 @@ fn a_reaction_chip_is_its_own_cell_of_the_row() {
             (Pane::Timeline, 1, Mode::Toolbar)
         );
     });
-    // every control on the card, its toolbar's too, consumes its press:
-    // the card's cell beneath never hears the same click
     fn clickable(node: &wire::Node, found: &mut Vec<(String, bool)>) {
         if let Some(interactivity) = node.interactivity()
             && interactivity.on_click.is_some()
@@ -736,8 +677,6 @@ fn a_reaction_chip_is_its_own_cell_of_the_row() {
         controls.iter().all(|(_, consumes)| *consumes),
         "{controls:?}"
     );
-    // a room the reader may not write in: a disabled control's cell is
-    // disabled too, as the arrows skip it; the others are not
     cx.update(&view, |chat, _, cx| {
         let channels = chat.channels.ready_mut().unwrap();
         let general = channels
@@ -772,10 +711,6 @@ fn a_reaction_chip_is_its_own_cell_of_the_row() {
     }
 }
 
-/// The controls Enter presses are the active row's as last drawn: when the
-/// row was not drawn since the cursor moved (scrolled away, or a message
-/// gone), Enter on a control cell presses nothing rather than another
-/// message's control.
 #[test]
 fn enter_presses_no_control_of_a_row_not_drawn_since_the_cursor_moved() {
     let (mut cx, view) = opened();
@@ -786,7 +721,6 @@ fn enter_presses_no_control_of_a_row_not_drawn_since_the_cursor_moved() {
         cx.simulate_key_down("chat-message-list", "right");
     }
     assert!(super::room::claims(&cx, "chat-message-m1-reaction-🔥"));
-    // the recorded controls are another row's: nothing to press
     cx.update(&view, |chat, _, _| {
         chat.timeline_cursor.controls_of = Some("m2".into());
     });
@@ -799,7 +733,6 @@ fn enter_presses_no_control_of_a_row_not_drawn_since_the_cursor_moved() {
             .any(|op| matches!(op, Op::AddReaction { emoji, seq: 1, .. } if emoji == "🔥"))
     };
     assert!(!reacted(&cx), "a stale row's control is not pressed");
-    // drawn again, the row's controls are its own
     cx.update(&view, |_, _, cx| cx.notify());
     cx.run_until_parked();
     cx.simulate_key_down("chat-message-list", "enter");
@@ -807,8 +740,6 @@ fn enter_presses_no_control_of_a_row_not_drawn_since_the_cursor_moved() {
     assert!(reacted(&cx));
 }
 
-/// An emoji grid is one stop of rows of eight: → → Enter adds the third
-/// emoji of the open category.
 #[test]
 fn two_arrows_and_enter_on_the_emoji_grid_add_the_third_emoji() {
     let (mut cx, view) = opened();
@@ -833,7 +764,6 @@ fn two_arrows_and_enter_on_the_emoji_grid_add_the_third_emoji() {
     cx.simulate_key_down("chat-reaction-grid", "right");
     cx.simulate_key_down("chat-reaction-grid", "right");
     assert!(cx.interactivity(&key(third)).aria.active_descendant);
-    // ↓ a row: eight on
     cx.simulate_key_down("chat-reaction-grid", "down");
     assert!(
         cx.interactivity(&key(category.emoji[10].0))

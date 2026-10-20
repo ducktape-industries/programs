@@ -20,13 +20,9 @@ use super::parts::{
     opens, quiet, refused, scroller, section, tail, title_and_caption, tx_line,
 };
 
-/// The rows each Overview section draws (Expo `pages.tsx:20` `LATEST`).
 const LATEST: usize = 12;
-/// The most lines a list page draws (Expo `src/network/window.ts`
-/// `LIST_ROWS`).
 const LIST_ROWS: usize = 50;
 
-/// The root page's list under the strip.
 pub(super) fn body(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
     match view.pages.first() {
         Route::Blocks => chain_gate(view, cx, k).unwrap_or_else(|| blocks(view, cx, k)),
@@ -35,7 +31,6 @@ pub(super) fn body(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
         }
         Route::Accounts => accounts(view, cx, k),
         Route::Programs => super::programs::programs(view, cx, k),
-        // the root is always a page's own list (`Explorer::go`)
         Route::Overview
         | Route::Block(_)
         | Route::Tx { .. }
@@ -44,9 +39,6 @@ pub(super) fn body(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
     }
 }
 
-/// A window page before the window's first page lands (Expo `ChainGate`):
-/// words::READING_CHAIN, or its refusal with Retry; `None` once it holds
-/// a block.
 pub(super) fn chain_gate(view: &Explorer, cx: Cx, k: &Look) -> Option<AnyElement> {
     if !view.chain.blocks.is_empty() {
         return None;
@@ -57,13 +49,10 @@ pub(super) fn chain_gate(view: &Explorer, cx: Cx, k: &Look) -> Option<AnyElement
     })
 }
 
-/// How many blocks the window holds.
 fn held(view: &Explorer) -> u64 {
     view.chain.blocks.len() as u64
 }
 
-/// The figures, the latest blocks and the latest transactions (Expo
-/// `Overview`).
 fn overview(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
     let txs = if view.chain.txs.is_empty() {
         quiet("explorer-no-txs", words::no_transactions_in(held(view)), k)
@@ -115,9 +104,6 @@ fn overview(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
         .into_any_element()
 }
 
-/// The Overview's four figures: the height and the block time, the epoch
-/// and the blocks to the next, the validators, the accounts; a dash for
-/// one not read yet.
 fn figures(view: &Explorer) -> Vec<Fact> {
     let status = view.status.ready();
     let dash = || words::NO_VALUE.to_owned();
@@ -158,9 +144,6 @@ fn figures(view: &Explorer) -> Vec<Fact> {
     ]
 }
 
-/// The window's blocks, newest first, each run of empty ones folded (Expo
-/// `Blocks`), and where the node's archive stops when it stops inside the
-/// window.
 fn blocks(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
     let archive = view
         .chain
@@ -182,8 +165,6 @@ fn blocks(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
         .into_any_element()
 }
 
-/// The window's transactions, newest first, or those sent to `program`
-/// (Expo `Transactions`).
 pub(super) fn transactions(view: &Explorer, program: Option<&str>, cx: Cx, k: &Look) -> AnyElement {
     let matching: Vec<&TxRow> = view
         .chain
@@ -220,9 +201,6 @@ pub(super) fn transactions(view: &Explorer, program: Option<&str>, cx: Cx, k: &L
         .into_any_element()
 }
 
-/// Every account identity lists (Expo `Accounts`, a `FlatList`): each with
-/// its face, what it is and its devices, the transactions activity
-/// recorded for it; only the rows on screen are drawn.
 fn accounts(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
     let listed = match &*view.accounts {
         Loadable::Ready(listed) | Loadable::Reloading(listed, _) => listed,
@@ -248,7 +226,6 @@ fn accounts(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
     )
     .flex_1()
     .min_h_0()
-    // the list's foot (Expo `pages.tsx:134` `ListFooterComponent`)
     .pb(space::BLOCK);
     div()
         .id("explorer-page")
@@ -266,8 +243,6 @@ fn accounts(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
         .into_any_element()
 }
 
-/// An account (Expo `Accounts`' row): its face, its name, `#n · what it is
-/// · its devices`, the transactions recorded for it.
 fn account_line(view: &Explorer, account: &identity::Account, cx: Cx, k: &Look) -> Stateful<Div> {
     let number = account.number;
     let sent = view.sent_by(number);

@@ -39,8 +39,6 @@ pub(super) fn render(
         .into_any_element()
 }
 
-/// A path a link named that the browsed ref does not hold: its page, as
-/// a file's, says so (`code/[...path].tsx`'s empty state).
 pub(super) fn missing(
     forge: &Forge,
     nav: Nav,
@@ -68,9 +66,6 @@ pub(super) fn missing(
     .into_any_element()
 }
 
-/// A path a link named while its folder's tree is read: a file's head
-/// over the read, as Expo's `code/[...path].tsx` shows before it knows
-/// the entry ("Resolving the ref…" before the ref names a tree to read).
 pub(super) fn landing(
     forge: &Forge,
     nav: Nav,
@@ -112,8 +107,6 @@ pub(super) fn landing(
     .into_any_element()
 }
 
-/// A file's page head: its name over its folder (the repository at the
-/// top) and the ref; Copy the path and Copy link.
 fn file_page(
     key: &'static str,
     path: &str,
@@ -151,9 +144,6 @@ fn file_page(
         .children(parts::notices(forge, ladder, theme))
 }
 
-/// A folder on its own page (board 62): `name/` over its parent (the
-/// repository at the top) and the ref; the crumbs and the ref over the
-/// folder's rows.
 pub(super) fn folder(
     forge: &Forge,
     nav: Nav,
@@ -182,8 +172,6 @@ pub(super) fn folder(
         .into_any_element()
 }
 
-/// `repo / a / b` in the data face (`Crumbs`): the folder shown in ink,
-/// each one above it muted, a press going back to its own page.
 fn crumbs(repo: &str, path: &str, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> Div {
     let parts: Vec<&str> = path.split('/').collect();
     let depth = parts.len();
@@ -217,7 +205,6 @@ fn crumbs(repo: &str, path: &str, cx: &mut Context<Forge>, ladder: &Ladder, them
     line
 }
 
-/// The file once read (`FileBody`), else the read in its place.
 fn body(
     forge: &Forge,
     (oid, dir, name): (&str, &str, &str),
@@ -300,7 +287,6 @@ fn body(
         .into_any_element()
 }
 
-/// Why a file that is not text shows nothing (`FileBody`'s empty states).
 fn unreadable(blob: &BlobView, ladder: &Ladder, theme: &Theme) -> Option<AnyElement> {
     let (title, body) = match blob.content {
         Content::Text => return None,
@@ -321,8 +307,6 @@ fn unreadable(blob: &BlobView, ladder: &Ladder, theme: &Theme) -> Option<AnyElem
     )
 }
 
-/// Source (a markdown file) and Wrap (while the lines show), each ink
-/// while on.
 fn toggles(
     forge: &Forge,
     markdown: bool,

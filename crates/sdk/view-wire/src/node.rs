@@ -81,13 +81,10 @@ pub enum SvgSource {
 /// [`SvgSource::Asset`] and a manifest's `icon`.
 pub const fn safe_asset_path(path: &str) -> bool {
     let bytes = path.as_bytes();
-    // where the segment being read starts
     let mut start = 0;
     let mut i = 0;
     while i <= bytes.len() {
         if i == bytes.len() || bytes[i] == b'/' {
-            // an empty path and a leading, doubled or trailing `/` are each
-            // an empty segment
             let outside = match i - start {
                 0 => true,
                 1 => bytes[start] == b'.',

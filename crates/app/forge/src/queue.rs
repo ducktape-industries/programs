@@ -60,7 +60,6 @@ pub(crate) fn dequeue(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
     settle_branch(ctx, repo, &into)
 }
 
-// Every queue of the repository, moved on as far as it goes.
 pub(crate) fn settle(ctx: &ExecCtx, repo: &str) -> Result<(), Error> {
     let branches = REQUIRED.range_of(ctx, &repo.to_owned(), &PageRequest::default())?;
     for ((_, branch), _) in branches.items {
@@ -75,8 +74,6 @@ enum Verdict {
     Waiting,
 }
 
-// The branch's queue from its first entry on: one that ended or moved leaves, the first is
-// previewed on the branch's head, and lands the moment its Preview is green or leaves once red.
 fn settle_branch(ctx: &ExecCtx, repo: &str, into: &[u8]) -> Result<(), Error> {
     let Some(required) = REQUIRED.get(ctx, &ref_key(repo, into))? else {
         return Ok(());
@@ -127,8 +124,6 @@ fn settle_branch(ctx: &ExecCtx, repo: &str, into: &[u8]) -> Result<(), Error> {
     }
 }
 
-// Green once the reporter marks every context Passed; red at the first it marks Failed or
-// Errored; waiting while any is pending or unreported.
 fn verdict(ctx: &QueryCtx, repo: &str, required: &Required, merge: &str) -> Result<Verdict, Error> {
     let mut waiting = false;
     for context in &required.contexts {

@@ -49,7 +49,6 @@ impl ScrollHandle {
         }
     }
 
-    /// The div lowering now at `path` is the one this handle moves.
     pub(crate) fn track(&self, slots: &slots::Context, path: &[wire::ElementIdWire]) {
         *self.0.borrow_mut() = Some(Tracked {
             slots: slots.clone(),

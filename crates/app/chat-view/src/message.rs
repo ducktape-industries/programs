@@ -87,7 +87,6 @@ pub fn system_line(program: &str, code: &str, channel: &str) -> SystemLine {
 }
 
 impl ChatMessage {
-    /// Whether the reader's own reactions on it include `emoji`.
     pub(crate) fn reacted(&self, emoji: &str) -> bool {
         self.reactions
             .iter()
@@ -128,7 +127,7 @@ pub fn chat_message(row: MsgRow, names: &Names, rooms: &crate::links::Rooms) -> 
     } else {
         (
             message_body(&row.blocks, names),
-            draft_body(&row.blocks),
+            editable_markdown_with_mention_ids(&row.blocks),
             rooms.blocks(row.blocks),
         )
     };
@@ -220,7 +219,6 @@ pub fn mark_message_groups(messages: &mut [ChatMessage], boundary: Option<u64>) 
                 || above.from != this.from
                 || unread == Some(this.seq)
                 || this.time.saturating_sub(above.time) > GROUP_GAP_MS
-                // a pending row (no time yet) runs on under its author
                 || (above.time > 0
                     && this.time > 0
                     && design::local(above.time) / DAY_MS != design::local(this.time) / DAY_MS)
@@ -248,9 +246,7 @@ pub fn message_body(blocks: &[Block], names: &Names) -> String {
         .join("\n")
 }
 
-/// Editable markdown with stable mention identities: a mention keeps its
-/// `<@7>` token rather than the name it renders as today.
-fn draft_body(blocks: &[Block]) -> String {
+fn editable_markdown_with_mention_ids(blocks: &[Block]) -> String {
     blocks
         .iter()
         .filter(|block| !matches!(block, Block::Attachment(_)))
@@ -349,9 +345,6 @@ pub(crate) fn plain_line(id: ElementId, text: &str) -> InteractiveText {
     InteractiveText::new(id, StyledText::new(text.to_owned())).w_full()
 }
 
-/// One styled run of a rich line, as a design draws it: the words it adds,
-/// how they look, where a press on them goes, whether they are in the
-/// data face.
 pub(crate) struct Run {
     pub text: String,
     pub style: HighlightStyle,
@@ -360,8 +353,6 @@ pub(crate) struct Run {
 }
 
 impl Run {
-    /// `span`'s own words in `style`, pressing through to `target` unless
-    /// it is empty.
     pub(crate) fn of(span: &ChatSpan, style: HighlightStyle, target: Option<&String>) -> Run {
         Run {
             text: span.text.clone(),
@@ -373,8 +364,6 @@ impl Run {
 }
 
 #[cfg(not(feature = "notifier"))]
-/// A line of `spans`, each run drawn by `run` (one design's), a press on a
-/// link or mention opening it.
 pub(crate) fn line(
     id: ElementId,
     spans: &[Span],
@@ -423,7 +412,6 @@ pub(crate) fn line(
 mod tests {
     use super::*;
 
-    /// Account 7 saying "hi" as row `seq`, posted at `time`.
     fn at(seq: u64, time: u64) -> ChatMessage {
         let row = MsgRow {
             seq,
@@ -461,7 +449,6 @@ mod tests {
         ];
         mark_message_groups(&mut messages, Some(2));
         let heads: Vec<bool> = messages.iter().map(|m| m.show_author).collect();
-        // 2 runs on; 3 is the first unread; 4 comes after a quiet past the gap
         assert_eq!(heads, [true, false, true, true]);
 
         mark_message_groups(&mut messages, None);
@@ -471,7 +458,6 @@ mod tests {
 
     #[test]
     fn a_pending_row_runs_on_under_its_authors_served_row() {
-        // 24 Sep 2026, 15:42 UTC, then a pending post (seq 0, no time yet)
         let mut messages = vec![at(1, 1_790_264_527_000), at(0, 0)];
         mark_message_groups(&mut messages, None);
         let heads: Vec<bool> = messages.iter().map(|m| m.show_author).collect();
@@ -483,7 +469,10 @@ mod tests {
         let source = "say **hi** and `code` to <@7> at [x](https://x.example)";
         let blocks = chat::message::parse_message(source);
         assert_ne!(blocks[0], Block::paragraph(source));
-        assert_eq!(draft_body(&blocks), source);
-        assert_eq!(chat::message::parse_message(&draft_body(&blocks)), blocks);
+        assert_eq!(editable_markdown_with_mention_ids(&blocks), source);
+        assert_eq!(
+            chat::message::parse_message(&editable_markdown_with_mention_ids(&blocks)),
+            blocks
+        );
     }
 }

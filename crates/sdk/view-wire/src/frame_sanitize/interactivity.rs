@@ -12,8 +12,6 @@ pub(super) fn sanitize_interactivity(
     {
         aria.level = None;
     }
-    // gpui panics (debug) on an active descendant that is the focused
-    // node, and a tracked focus handle makes a node focusable there.
     aria.active_descendant &= !interactivity.focusable && interactivity.focus_handle.is_none();
     for style in interactivity.styles() {
         walk.style(style)?;
@@ -22,8 +20,6 @@ pub(super) fn sanitize_interactivity(
     if keys.iter().any(|key| gpui::Keystroke::parse(key).is_err()) {
         return Err("a consumed key gpui cannot read");
     }
-    // the host stops a consumed click in the node's click listener; a node
-    // with none would cross and stop nothing
     if interactivity.consumes_click && interactivity.on_click.is_none() {
         return Err("consumes a click it does not take");
     }

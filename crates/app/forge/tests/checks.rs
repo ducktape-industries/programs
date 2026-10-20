@@ -12,7 +12,6 @@ fn branch(name: &str) -> forge::Revision {
     forge::Revision::Ref(name.as_bytes().to_vec())
 }
 
-// main and feature both moved on from root: feature changed b, main changed a.
 fn diverged(store: &mut MemoryObjects) -> (Oid, Oid) {
     let root = file_commit(store, &[], 1, &[("a", b"1\n"), ("b", b"1\n")]);
     let feature = file_commit(store, &[root], 2, &[("a", b"1\n"), ("b", b"2\n")]);
@@ -20,7 +19,6 @@ fn diverged(store: &mut MemoryObjects) -> (Oid, Oid) {
     (main, feature)
 }
 
-// The repository with main and feature pushed and the change WRITER opened from feature.
 fn seeded(store: &MemoryObjects, main: Oid, feature: Oid) -> MemorySandbox {
     let sandbox = founded();
     create(&sandbox, "project", HashKind::Sha1);
@@ -88,7 +86,6 @@ fn squash(heads: (Oid, Oid), change: Option<u64>) -> Op {
     }
 }
 
-// The tree of a commit forge stored.
 fn tree_of(sandbox: &MemorySandbox, id: Oid) -> Oid {
     let Oid::Sha1(digest) = id else {
         panic!("a sha1 repository");

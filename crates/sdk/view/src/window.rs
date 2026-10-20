@@ -66,11 +66,6 @@ impl Window {
     }
 }
 
-/// Sends the widget commands this tick asked for, in order, each target
-/// named by the path `root` (the tree this frame carries) gives it: the
-/// host matches whole paths. A view names a target by the ids it holds
-/// ([`Window::focus`]); the frame it renders is the first that holds an
-/// element it just opened, so the path is read there, not earlier.
 pub(crate) fn send_widgets(
     context: &slots::Context,
     root: Option<&wire::Node>,
@@ -79,7 +74,6 @@ pub(crate) fn send_widgets(
     let host = slots::host(context);
     for mut command in slots::take_widgets(context) {
         if let (Some(root), Some(target)) = (root, target_mut(&mut command)) {
-            // `behind` holds the subtrees `root` keeps from the last frame
             let found =
                 resolve(root, target).or_else(|| behind.and_then(|behind| resolve(behind, target)));
             if let Some(path) = found {
@@ -108,10 +102,6 @@ fn target_mut(command: &mut wire::WidgetCommand) -> Option<&mut wire::WidgetTarg
     }
 }
 
-/// The whole path of the one element `target` names in `root`: the one at
-/// exactly that path, else the one whose path ends with it. None when it
-/// is a whole path already, or when no element or more than one ends with
-/// it: it goes as named, and the host refuses a path it does not mount.
 fn resolve(root: &wire::Node, target: &[wire::ElementIdWire]) -> Option<wire::WidgetTarget> {
     fn walk(
         node: &wire::Node,
@@ -273,9 +263,6 @@ mod tests {
         );
     }
 
-    /// Two forms, each with a field named "input"; one press asks for the
-    /// right one by the ids that tell it apart, the other by the bare id
-    /// both hold.
     #[derive(Default, Serialize, Deserialize)]
     struct TwoForms;
     impl View for TwoForms {
@@ -316,9 +303,6 @@ mod tests {
             .collect()
     }
 
-    /// The host matches a target's whole path, so the SDK sends the one
-    /// the frame lowered: the right form's field, never the first that
-    /// ends with "input".
     #[test]
     fn a_focus_names_the_one_element_it_asks_for_by_its_whole_path() {
         let mut cx = TestAppContext::new();
@@ -337,8 +321,6 @@ mod tests {
         ));
     }
 
-    /// An id two scopes hold names neither: it goes out as named, and the
-    /// host refuses it, where it once focused the first in the tree.
     #[test]
     #[should_panic(expected = "the host refuses to focus")]
     fn an_id_two_scopes_hold_focuses_neither() {

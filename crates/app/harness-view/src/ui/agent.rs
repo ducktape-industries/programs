@@ -155,7 +155,6 @@ fn detail(
         .into_any_element()
 }
 
-/// What keeps harness from reading the agent's configuration, and what harness does about it.
 fn problem(setup: &AgentSetup, theme: &Theme) -> Option<impl IntoElement + use<>> {
     let problem = setup.configured.problem(&setup.path)?;
     Some(
@@ -165,8 +164,6 @@ fn problem(setup: &AgentSetup, theme: &Theme) -> Option<impl IntoElement + use<>
     )
 }
 
-/// What the agent is set up with, folded: open for its manager, who changes it, closed for
-/// everyone else.
 #[allow(clippy::too_many_arguments)]
 fn setup_fold(
     view: &Agents,
@@ -267,7 +264,6 @@ fn setup_fold(
             .children(threshold_source(threshold).map(muted));
         facts = facts.child(fact_of("Compacts at", compacts, &theme).w(px(240.)));
     }
-    // the front matter opens to anyone signed in: the file's list decides whose save lands
     let editing = view.setup_draft.agent == Some(setup.agent);
     let readable = setup.configured.config().is_some();
     let edit = (view.me.is_some() && readable && !editing).then(|| {
@@ -293,10 +289,8 @@ fn setup_fold(
         })
 }
 
-/// How wide a fact is in the setup's grid.
 const FACT: Pixels = px(180.);
 
-/// A fact whose value is more than words: its label over it.
 fn fact_of(label: &'static str, value: impl IntoElement, theme: &Theme) -> view::Div {
     div()
         .flex()
@@ -359,7 +353,6 @@ fn usage_line(detail: &Detail, theme: &Theme) -> impl IntoElement + use<> {
         .child(div().text_color(theme.faint).child(usage_words(&total)))
 }
 
-/// Take back's second press, and what it costs.
 fn removing(
     view: &Agents,
     name: &str,
@@ -397,7 +390,6 @@ fn removing(
     )
 }
 
-// Claim, for the agent's manager while nobody holds its conversations.
 fn claim(
     view: &Agents,
     detail: &Detail,
@@ -471,7 +463,6 @@ fn threads(
                 .into_any_element(),
             _ => caption(context_short(thread.context, window), &theme).into_any_element(),
         };
-        // the agent's own words on it, under its name
         let topic = detail.topics.get(&id).map(|topic| {
             caption(quoted(topic), &theme)
                 .id(SharedString::from(format!("thread-{id}-topic")))

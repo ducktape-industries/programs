@@ -10,7 +10,6 @@ use program::{Error, ExecCtx, QueryCtx, Reply as Wanted};
 use store::Item;
 
 const WATCHER: &str = "watcher";
-// `Ask::Heard`'s tag: the prefix the watcher hears forge's events under.
 const HEARS: u8 = 1;
 const HEARD: Item<Vec<Watched>> = Item::new("heard");
 const DEAF: Item<bool> = Item::new("deaf");

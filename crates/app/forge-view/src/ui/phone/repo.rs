@@ -45,7 +45,6 @@ pub(super) fn render(
         .into_any_element()
 }
 
-// The badge an archived repository wears under its title row.
 fn archived_row(ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
     div()
         .id(id("forge-repo-archived-row"))
@@ -62,7 +61,6 @@ fn archived_row(ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
         ))
 }
 
-/// Copy the address: its check says so once it is on the clipboard.
 fn copy_button(
     forge: &Forge,
     name: &str,
@@ -97,8 +95,6 @@ fn about_button(cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> impl
     )
 }
 
-/// The ref button (small, `git-branch`, `forge-ref-picker`) and the
-/// address, one line, its middle ellipsized; 16 in, 12 over, 6 under.
 fn ref_row(
     forge: &Forge,
     name: &str,
@@ -138,8 +134,6 @@ fn ref_row(
         .child(address)
 }
 
-/// The six tabs (`TABS`), one Tab stop whose arrows walk them; Changes
-/// carries how many are open.
 fn strip(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
     let tabs = RepoTab::ALL;
     let active = forge.tab_cursor.unwrap_or(forge.nav().tab);
@@ -177,10 +171,6 @@ fn strip(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme)
     bar
 }
 
-// ------------------------------------------------------------------ About
-
-/// The About sheet: the default head, the hash, the owner, the bounds,
-/// who writes.
 pub(super) fn about_sheet(
     forge: &Forge,
     cx: &mut Context<Forge>,

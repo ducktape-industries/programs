@@ -18,7 +18,6 @@ pub(crate) async fn wait(ctx: &Ctx, id: u64) -> Result<bool, Error> {
         if !over {
             return Ok(true);
         }
-        // its wake-up never ended it: the input that finds it over ends it
         forget(ctx, id, window.entry).await?;
         return Ok(false);
     }
@@ -37,7 +36,6 @@ pub(crate) async fn wait(ctx: &Ctx, id: u64) -> Result<bool, Error> {
     };
     let env = ctx.env();
     let wake = Op::Settle { thread: id };
-    // a scheduler that refuses the wake-up leaves no window to end: the turn starts now
     let Ok(entry) = ctx.schedule(env.height + 1, PROGRAM, &wake).await else {
         return Ok(false);
     };
@@ -61,7 +59,6 @@ pub(crate) async fn end(ctx: &Ctx, id: u64) -> Result<(), Error> {
 async fn forget(ctx: &Ctx, id: u64, entry: u64) -> Result<(), Error> {
     SETTLING.remove(ctx, &id);
     match ctx.cancel(entry).await {
-        // its run came already, and nothing is left to cancel
         Err(error) if error.code == code::WRONG_STATE => Ok(()),
         cancelled => cancelled,
     }
@@ -96,8 +93,6 @@ pub(crate) async fn due(ctx: Ctx, id: u64) -> Result<(), Error> {
     Ok(())
 }
 
-// the scheduler wakes by height and the window ends in time: the pace the chain kept since the
-// window opened says how many blocks the rest of it takes, never fewer than one
 fn blocks_left(window: &SettleWindow, height: u64, time: u64) -> u64 {
     let blocks = height.saturating_sub(window.opened);
     let took = time.saturating_sub(window.opened_time);

@@ -47,7 +47,7 @@ pub fn describe(op: &Op) -> Description {
             blocks,
             thread,
         } => {
-            let mut fields = place(channel_id);
+            let mut fields = channel_description_fields(channel_id);
             fields.extend([
                 field("text", Value::Text(plain_text(blocks))),
                 field("message", Value::text(message_id)),
@@ -107,7 +107,7 @@ pub fn describe(op: &Op) -> Description {
                 "Remove member"
             },
             channel_id,
-            vec![field("member", principal(who))],
+            vec![field("member", principal_description(who))],
         ),
         Op::CreateChannelWithMeta {
             channel_id,
@@ -223,14 +223,13 @@ pub fn describe(op: &Op) -> Description {
         }
         Op::Undraft { channel_id } => ("Stop answering", channel_id, vec![]),
     };
-    let mut all = place(channel);
+    let mut all = channel_description_fields(channel);
     all.extend(fields);
-    // a created channel's id is opaque; its name is what a person picked
     let shown = match op {
         Op::CreateChannel { name, .. } | Op::CreateChannelWithMeta { name, .. } => {
             format!("#{name}")
         }
-        _ => room(channel),
+        _ => room_title(channel),
     };
     Description {
         title: format!("{title} · {shown}"),
@@ -259,20 +258,15 @@ fn entries(meta: &BTreeMap<String, String>) -> Value {
     )
 }
 
-/// A channel as `describe` titles it: `#design`, or `DM` for a dm room,
-/// whose id is no name a person picked. Its two accounts are the
-/// `between` field, drawn as accounts (a name, an avatar), never numbers.
-fn room(channel_id: &str) -> String {
+fn room_title(channel_id: &str) -> String {
     match dm_peers(channel_id) {
         Some(_) => "DM".into(),
         None => format!("#{channel_id}"),
     }
 }
 
-/// The fields that say where an op happened: its `channel`, and for a dm
-/// room the two accounts it is `between`.
-fn place(channel_id: &str) -> Vec<Field> {
-    let mut fields = vec![field("channel", Value::Text(room(channel_id)))];
+fn channel_description_fields(channel_id: &str) -> Vec<Field> {
+    let mut fields = vec![field("channel", Value::Text(room_title(channel_id)))];
     fields.extend(dm_peers(channel_id).map(|(a, b)| {
         field(
             "between",
@@ -282,8 +276,7 @@ fn place(channel_id: &str) -> Vec<Field> {
     fields
 }
 
-/// A principal as a describe field shows it: an account, or the system.
-fn principal(principal: &Principal) -> Value {
+fn principal_description(principal: &Principal) -> Value {
     match principal {
         Principal::Account(number) => Value::Account(*number),
         Principal::Root => Value::text("system"),

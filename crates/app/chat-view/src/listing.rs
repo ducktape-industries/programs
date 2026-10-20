@@ -34,10 +34,6 @@ impl Shape {
             Self::Landed | Self::Thread => ListAlignment::Top,
         }
     }
-    // A room at its head follows its end, and a thread once every reply is
-    // in (`whole`): gpui follows while the reader is at the end, by where
-    // the list stands at each layout, and stops when they scroll up. A
-    // landing, or a thread with pages left, has no end on screen to follow.
     fn follow(self, whole: bool) -> FollowMode {
         match (self, whole) {
             (Self::Tail, _) | (Self::Thread, true) => FollowMode::Tail,
@@ -46,10 +42,6 @@ impl Shape {
     }
 }
 
-/// A pane's list as both designs draw over it: the list's state under the
-/// rows' keys, the room's intro leading them once its history is all
-/// here, whether "No replies yet" closes a thread that is only its root,
-/// and the first unread message.
 pub(crate) struct Listing {
     pub shape: Shape,
     pub intro: Option<String>,
@@ -60,8 +52,6 @@ pub(crate) struct Listing {
     pub answering: Vec<chat::Draft>,
 }
 
-/// The list of `pane`'s `messages`, its state spliced to their keys and
-/// its scroll heard by the model.
 pub(crate) fn listing(
     chat: &Chat,
     pane: Pane,
@@ -119,8 +109,6 @@ pub(crate) fn answering_key(draft: &chat::Draft) -> String {
     }
 }
 
-/// Where a landed room opens: the row of the message it landed on (a
-/// reply's, its root's).
 pub(crate) fn landing(chat: &Chat, messages: &[ChatMessage]) -> usize {
     let Some(room) = chat.room.as_ref().filter(|room| room.landed) else {
         return 0;
@@ -137,14 +125,12 @@ pub(crate) fn landing(chat: &Chat, messages: &[ChatMessage]) -> usize {
         .unwrap_or(messages.len().saturating_sub(1))
 }
 
-// Where a thread opened on a reply opens: that reply's row, once it is read.
 fn thread_landing(chat: &Chat, messages: &[ChatMessage]) -> Option<usize> {
     let target = chat.room.as_ref()?.thread.as_ref()?.target;
     let at = messages.iter().position(|message| message.seq >= target);
     at.filter(|_| target > 0)
 }
 
-// `whole`: every reply of the thread is in.
 fn list_state(
     chat: &Chat,
     pane: Pane,
@@ -166,8 +152,6 @@ fn list_state(
         if drawn.keys != keys {
             drawn.keys = keys.to_vec();
         }
-        // the thread's last page in: it follows from here on, from where
-        // the reader is (gpui puts a list that starts following at its end)
         if shape == Shape::Thread && drawn.whole != whole {
             drawn.whole = whole;
             state.set_follow_mode(shape.follow(whole));
@@ -184,8 +168,6 @@ fn list_state(
     state.set_follow_mode(shape.follow(whole));
     match landing() {
         Some(item_ix) => state.scroll_to(at(item_ix)),
-        // a whole thread opens on its root, and follows once the reader
-        // reaches its end
         None if shape == Shape::Thread && whole => state.scroll_to(at(0)),
         None => {}
     }
@@ -198,8 +180,6 @@ fn list_state(
     state
 }
 
-/// The splices that turn the list of `old` keys into `new`'s, last first
-/// applied: each the range of old rows it replaces and how many new ones.
 pub(crate) fn splices(old: &[String], new: &[String]) -> Vec<(Range<usize>, usize)> {
     let mut edits = Vec::new();
     diff(old, new, 0, &mut edits);

@@ -33,7 +33,6 @@ pub(crate) use view::testing::TestAppContext;
 pub(crate) const ADA: [u8; 32] = [1; 32];
 pub(crate) const STRANGER: [u8; 32] = [2; 32];
 pub(crate) const VALIDATOR: [u8; 32] = [9; 32];
-/// Block times, milliseconds: block `h` lands at `T0 + h` seconds.
 pub(crate) const T0: u64 = 1_790_000_000_000;
 
 pub(crate) fn post(channel: &str, text: &str) -> Vec<u8> {
@@ -81,8 +80,6 @@ pub(crate) fn receipt(
     }
 }
 
-/// Blocks 0..=`tip`: 11 carries Ada's post and their DM to account 7, 12 a
-/// stranger's op to a program that describes nothing.
 pub(crate) fn chain(tip: u64) -> Vec<Block> {
     (0..=tip)
         .map(|height| Block {
@@ -93,9 +90,6 @@ pub(crate) fn chain(tip: u64) -> Vec<Block> {
             epoch: height / 10,
             proposer: Some(VALIDATOR.to_vec()),
             txs: match height {
-                // Ada's post applied and emitted a message whose own
-                // message was refused; the stranger's op was rejected; the
-                // DM ran where the node kept no receipt
                 11 => vec![
                     Tx {
                         receipt: Some(receipt(
@@ -240,7 +234,6 @@ pub(crate) fn ada() -> identity::Account {
     account(3, "Ada", identity::Control::User { keys })
 }
 
-/// The agent Ada manages, suspended: no keys yet.
 pub(crate) fn scout() -> identity::Account {
     account(
         5,
@@ -254,7 +247,6 @@ pub(crate) fn scout() -> identity::Account {
     )
 }
 
-/// forge's own account.
 pub(crate) fn forge() -> identity::Account {
     account(
         6,
@@ -264,7 +256,6 @@ pub(crate) fn forge() -> identity::Account {
         },
     )
 }
-/// The account a key acts as: Ada's laptop is account 3, a stranger none.
 pub(crate) fn holder(signer: &[u8]) -> Option<u64> {
     (signer == ADA).then_some(3)
 }
@@ -277,11 +268,6 @@ fn whole<T>(items: Vec<T>) -> activity::PageResponse<T> {
     }
 }
 
-/// The page of `frames` (newest first) `asked` asks, as activity answers
-/// it: `limit` frames past the one its cursor names, and the cursor of
-/// the last while frames remain. A cursor is a frame's key, newest first
-/// (activity's `newest_first`), so a frame landed above the frames read
-/// moves no page below them.
 fn page_of(
     frames: impl Iterator<Item = activity::Frame>,
     asked: &activity::PageRequest,
@@ -302,8 +288,6 @@ fn page_of(
     }
 }
 
-/// The `activity` program over `chain`, as the kernel's hook would have
-/// told it of every frame.
 pub(crate) fn index(cx: &TestAppContext, chain: impl Fn() -> Vec<Block> + 'static) {
     cx.host().handle::<Query<Activity>>(move |query| {
         let frames = chain().into_iter().rev().flat_map(|block| {
@@ -359,7 +343,6 @@ pub(crate) fn index(cx: &TestAppContext, chain: impl Fn() -> Vec<Block> + 'stati
     });
 }
 
-/// A node at `tip`, whose tip the test may move.
 pub(crate) fn node(cx: &mut TestAppContext, tip: Rc<RefCell<u64>>) {
     let host = cx.host();
     let head = tip.clone();
@@ -381,10 +364,6 @@ pub(crate) fn node(cx: &mut TestAppContext, tip: Rc<RefCell<u64>>) {
     manifests(cx);
 }
 
-/// The host's `blob.manifest` over the suite's code: chat's code carries a
-/// view that declares six capabilities, identity's carries no view, the
-/// explorer's blob is a view itself; any other id is code the node does
-/// not hold.
 pub(crate) fn manifests(cx: &TestAppContext) {
     cx.host().handle::<BlobManifest>(|id| {
         let manifest = |name: &str, capabilities: Vec<Capability>| view::wire::manifest::Manifest {
@@ -442,7 +421,6 @@ pub(crate) const IDENTITY_CODE: &str =
 pub(crate) const EXPLORER_CODE: &str =
     "sha256:efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef";
 
-// The commit chat's code names; every other program's code names none.
 pub(crate) const STAMP: &str = "4cd69803b2faa3996ce1ddadbbc9b1d6e7641133";
 
 pub(crate) fn built(entries: &[programs::Entry]) -> Vec<programs::Built> {
@@ -469,8 +447,6 @@ pub(crate) fn entry(program: &str, code: u8) -> programs::Entry {
     }
 }
 
-/// The programs role: chat and identity running, a view-only entry, and forge's
-/// removal scheduled at 120.
 pub(crate) fn respond(cx: &mut TestAppContext) {
     programs_with(
         cx,
@@ -548,8 +524,6 @@ pub(crate) fn ready() -> (TestAppContext, Rc<RefCell<u64>>) {
     (cx, tip)
 }
 
-/// The host's `program.describe`, as each program's describe module would
-/// answer: its own `describe` over the op, `None` for a program without one.
 pub(crate) fn describes(cx: &mut TestAppContext) {
     fn with<T: borsh::BorshDeserialize>(
         op: &[u8],
@@ -569,7 +543,6 @@ pub(crate) fn describes(cx: &mut TestAppContext) {
     });
 }
 
-/// A full window: 1,000 blocks, each with a post, and a 1 MB push at the tip.
 pub(crate) fn heavy(cx: &mut TestAppContext) {
     let tip = WINDOW as u64;
     let chain: Vec<Block> = (0..=tip)
@@ -616,7 +589,6 @@ pub(crate) fn heavy(cx: &mut TestAppContext) {
     manifests(cx);
 }
 
-/// A restore that must read nothing: every ask left unanswered.
 pub(crate) fn quiet_host(cx: &TestAppContext) {
     let host = cx.host();
     host.never::<ChainStatus>();

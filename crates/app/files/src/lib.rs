@@ -111,8 +111,6 @@ pub enum Content {
     Chunks { size: u64, chunks: Vec<BlobId> },
 }
 
-/// The refusal of file bytes in a transaction, [`Op::Stage`] or
-/// [`Content::Inline`]: a transaction names chunks, never carries them.
 pub(crate) fn carried() -> ::program::Error {
     ::program::invalid(
         "file bytes never ride in a transaction: put them as chunk blobs through the \

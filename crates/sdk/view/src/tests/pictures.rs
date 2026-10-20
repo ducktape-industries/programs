@@ -7,7 +7,6 @@ use std::collections::HashSet;
 
 const KIB: usize = 1 << 10;
 
-/// One picture per size, each its own bytes.
 #[derive(Default, Serialize, Deserialize)]
 struct Gallery(Vec<usize>);
 impl View for Gallery {
@@ -29,14 +28,12 @@ impl Render for Gallery {
     }
 }
 
-/// The app's runtime as far as pictures go.
 #[derive(Default)]
 struct Host {
     tree: Option<wire::Node>,
     styles: wire::Styles,
     held: HashSet<u64>,
     drawn: HashSet<u64>,
-    /// Picture bytes a frame carried that the sanitizer dropped.
     dropped: usize,
 }
 
@@ -67,7 +64,6 @@ impl Host {
             wire::apply(tree, frame.patches.clone(), &self.styles)
                 .expect("the host takes the patches");
         }
-        // Adopt: the bytes move into the store, the tree keeps the hash.
         let (held, drawn) = (&mut self.held, &mut self.drawn);
         let mut kept = 0;
         drawn.clear();
@@ -91,7 +87,6 @@ impl Host {
         self.drawn.difference(&self.held).count()
     }
 
-    /// The host evicted what it held and dropped its tree.
     fn resync(&mut self) -> Vec<wire::Event> {
         self.tree = None;
         self.held.clear();
@@ -139,8 +134,6 @@ fn take_payload(node: &mut wire::Node) -> Option<usize> {
     Some(len)
 }
 
-/// Ticks the way the host does — again while the frame says busy — and
-/// answers how many frames it took to park.
 fn frames_to_park(
     driver: &mut Driver<Gallery>,
     host: &mut Host,
@@ -180,8 +173,6 @@ fn every_picture_drawn_reaches_the_host_in_one_frame() {
     assert_eq!(frames, 1);
 }
 
-/// Pictures that came in one at a time go out again together after a
-/// `Resync`, which is what the host sends when it evicts.
 #[test]
 fn every_picture_drawn_is_held_again_after_a_resync() {
     let mut driver = Driver::<Gallery>::new();

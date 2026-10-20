@@ -24,7 +24,6 @@ use crate::{Forge, Stage};
 use forge::{BlobView, ChangeSummary, CommitInfo, Content, Judgment, Query, Reply};
 use markdown::phone as document;
 
-/// The open tab's body.
 pub(super) fn render(
     forge: &Forge,
     cx: &mut Context<Forge>,
@@ -41,7 +40,6 @@ pub(super) fn render(
     }
 }
 
-/// A tab's column, the rest of the page's height.
 fn body(key: &str) -> Stateful<Div> {
     div()
         .id(id(key.to_owned()))
@@ -51,7 +49,6 @@ fn body(key: &str) -> Stateful<Div> {
         .flex_col()
 }
 
-/// A ref with nothing under it (`NoCommits`): how to push to it.
 fn no_commits(forge: &Forge, ladder: &Ladder, theme: &Theme) -> AnyElement {
     let address = forge.repo_link(&forge.repo_name());
     design::empty_state(
@@ -65,9 +62,6 @@ fn no_commits(forge: &Forge, ladder: &Ladder, theme: &Theme) -> AnyElement {
     .into_any_element()
 }
 
-/// What stands in for a tab that reads the browsed ref's tree before the
-/// ref resolves: the unborn ref's push hint once the refs are read, else
-/// the quiet line.
 fn unresolved(forge: &Forge, ladder: &Ladder, theme: &Theme) -> Option<AnyElement> {
     if forge.head_oid().is_some() {
         return None;
@@ -84,10 +78,6 @@ fn unresolved(forge: &Forge, ladder: &Ladder, theme: &Theme) -> Option<AnyElemen
     })
 }
 
-// ------------------------------------------------------------------ README
-
-/// The root README rendered (`ReadmeTab`): `README.md` over any other
-/// `README*`, under the file bar saying the ref and its size.
 fn readme(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> AnyElement {
     let page = body("forge-readme").overflow_y_scroll();
     if let Some(state) = unresolved(forge, ladder, theme) {
@@ -124,8 +114,6 @@ fn readme(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme
         .into_any_element()
 }
 
-/// The README's file bar over its document, or over the read in its
-/// place.
 fn readme_document(
     forge: &Forge,
     name: &[u8],
@@ -199,10 +187,6 @@ fn readme_body(
     document::markdown("forge-readme-body", &blocks, &links, ladder, theme)
 }
 
-// ------------------------------------------------------------------ Code
-
-/// The root folder: the file bar (the repository and the ref) over its
-/// [`folder_body`].
 fn code(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> AnyElement {
     let bar = parts::file_bar(
         "forge-code-bar",
@@ -214,9 +198,6 @@ fn code(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) 
     folder_body(forge, Vec::new(), bar, cx, ladder, theme)
 }
 
-/// A folder's body (`FolderBody`): `bar`, "Filter files", then the
-/// folders (`name/`, a chevron) and the files (mono) the filter keeps;
-/// each opens on a page of its own.
 pub(super) fn folder_body(
     forge: &Forge,
     dir: Vec<u8>,
@@ -273,7 +254,6 @@ pub(super) fn folder_body(
         .into_any_element()
 }
 
-/// Opens a folder, or a file, on its own page.
 fn press_entry(forge: &mut Forge, row: &tree::Row, cx: &mut Context<Forge>) {
     match &row.slot {
         Slot::Entry { .. } if row.is_dir() => forge.open_folder(Some(row.path.clone()), cx),
@@ -312,8 +292,6 @@ fn tree_list(
     )
 }
 
-/// One entry, in from the side by its depth: a folder `name/` with a
-/// chevron, a file mono; a folder still read, or refused, says so.
 fn tree_row(
     row: &tree::Row,
     index: usize,
@@ -345,9 +323,6 @@ fn tree_row(
     parts::option(line, active).into_any_element()
 }
 
-// ------------------------------------------------------------------ Commits
-
-/// The browsed ref's history (`CommitsTab`).
 fn commits(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> AnyElement {
     if let Some(state) = unresolved(forge, ladder, theme) {
         return body("forge-commits").child(state).into_any_element();
@@ -356,10 +331,6 @@ fn commits(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Them
     log(forge, &forge.log_query(), ids, cx, ladder, theme)
 }
 
-/// A history as a list (`Log`) drawn as `element_id`, its list `list_id`:
-/// the commits read so far and, while it goes on, the quiet line, which
-/// asks for the next page as it comes into view; a commit opens on its
-/// own page.
 pub(super) fn log(
     forge: &Forge,
     query: &Query,
@@ -408,8 +379,6 @@ pub(super) fn log(
     .into_any_element()
 }
 
-/// The log `query` asks once its first page landed, else what shows in
-/// its place: the quiet line, or the refusal and Retry.
 fn landed<'a>(
     forge: &'a Forge,
     query: &Query,
@@ -441,8 +410,6 @@ fn landed<'a>(
     }
 }
 
-/// Paints the rows of a log's window: a commit row each, and past the
-/// commits held, the quiet line that reads on.
 fn log_rows(
     log: Entity<Paged<CommitInfo>>,
     list_id: &'static str,
@@ -481,9 +448,6 @@ fn log_rows(
     }
 }
 
-// ------------------------------------------------------------------ Changes
-
-/// The filters in the Expo app's order (`query.ts` `FILTERS`).
 const FILTERS: [Filter; 6] = [
     Filter::Open,
     Filter::Merged,
@@ -493,8 +457,6 @@ const FILTERS: [Filter; 6] = [
     Filter::Involves,
 ];
 
-/// The changes under the picked filter, their titles filtered on the
-/// phone (`ChangesTab`).
 fn changes(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> AnyElement {
     let search = Input::new(
         id("forge-changes-search"),
@@ -505,7 +467,6 @@ fn changes(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Them
     .autocapitalize(Autocapitalize::None)
     .virtual_keyboard(VirtualKeyboard::Search)
     .placeholder(words::SEARCH_TITLES);
-    // a change opens from a source picked on its form; it takes an account
     let start =
         cx.listener(|forge, _: &ClickEvent, window, cx| forge.start_change(Vec::new(), window, cx));
     let new_change = parts::small_button(
@@ -536,7 +497,6 @@ fn changes(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Them
         )
         .children(parts::pending(forge, "changes", cx, ladder, theme));
     let repo = forge.repo_name();
-    // a filter about "me" asks nothing while the reader holds no account
     let Some(query) = forge.changes_query(&repo) else {
         return page
             .child(design::empty_state(
@@ -574,7 +534,6 @@ fn changes(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Them
         .into_any_element()
 }
 
-/// The filter chips; Open carries how many are open.
 fn filter_chips(
     forge: &Forge,
     cx: &mut Context<Forge>,
@@ -598,8 +557,6 @@ fn filter_chips(
     parts::chips("forge-filters", chips, chosen, ladder, theme, pick)
 }
 
-/// The changes a reply lists here: a change list as it is, the judgment
-/// read narrowed to this repository.
 fn listed<'a>(reply: &'a Reply, repo: &str) -> Vec<(&'a ChangeSummary, Option<&'a Judgment>)> {
     match reply {
         Reply::Changes { page, .. } => page.items.iter().map(|summary| (summary, None)).collect(),
@@ -671,10 +628,6 @@ fn change_list(
     .overflow_y_scroll()
 }
 
-// ------------------------------------------------------------------ Refs
-
-/// Branches | Tags; each branch's standing against the browsed ref, and
-/// Compare to open a change from it (`RefsTab`).
 fn refs(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> AnyElement {
     let all = forge.refs().unwrap_or_default();
     let count = |prefix: &[u8]| {
@@ -779,11 +732,9 @@ fn ref_list(
     )
 }
 
-/// What one ref's row says, read once a render.
 struct RefLine {
     name: Vec<u8>,
     label: String,
-    /// `<short> · <standing>`
     facts: String,
     browsing: bool,
     default: bool,
@@ -812,17 +763,12 @@ impl RefLine {
     }
 }
 
-/// What a ref's row does: browse it, or Compare it into a new change
-/// (offered to a writer).
 struct RefRoutes {
     browse: parts::Route<Vec<u8>>,
     compare: parts::Route<Vec<u8>>,
     may_compare: bool,
 }
 
-/// One ref (`RefRow`): its name, `<short> · <standing>`, picked while it
-/// is browsed; the default head wears `default`, another branch offers
-/// Compare.
 fn ref_row(
     line: &RefLine,
     routes: &RefRoutes,
@@ -867,11 +813,6 @@ fn ref_row(
     parts::option(row, active).into_any_element()
 }
 
-// ------------------------------------------------------------------ Settings
-
-// The repository's settings and writers (`SettingsTab`): what a switch changes is saved at once.
-// The settings are read-only to whom the repository's policy does not admit, the writers to all
-// but its owner, whose access list it is.
 fn settings(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> AnyElement {
     let page = body("forge-settings")
         .overflow_y_scroll()
@@ -927,8 +868,6 @@ fn settings(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &The
         .into_any_element()
 }
 
-/// "Default head": the ref, and for the owner the sheet that picks
-/// another.
 fn default_head(
     forge: &Forge,
     head: &[u8],
@@ -956,8 +895,6 @@ fn default_head(
     }
 }
 
-/// The force and delete switches: a flip saves at once, the settings on
-/// screen with the one flipped.
 fn switches(
     forge: &Forge,
     settings: &forge::Settings,
@@ -1042,8 +979,6 @@ fn writers(
     }
 }
 
-/// Who may write: a row each, Revoke beside it for the owner; none says
-/// so; the owner's "Grant write access…" opens the people sheet.
 fn writer_rows(
     forge: &Forge,
     writers: &[Writer],
@@ -1103,8 +1038,6 @@ fn writer_rows(
     rows
 }
 
-/// A member to grant write access to (`SettingsTab`'s `PeopleSheet`):
-/// everyone but the owner and those who already write.
 pub(super) fn grant_sheet(
     forge: &Forge,
     cx: &mut Context<Forge>,

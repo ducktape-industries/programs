@@ -32,22 +32,13 @@ use forge::{FileDiff, LineKind};
 use markdown::highlight::{self, Token};
 use markdown::phone as document;
 
-/// The gutter's width and the marker's column (`Lines.tsx` `GUTTER`,
-/// `MARKER`).
 const GUTTER: Pixels = px(40.);
 const MARKER: Pixels = px(16.);
-/// A mono cell's advance in ems of the code size: the data face's
-/// 600/1000 (`Lines.tsx` `ADVANCE`).
 const ADVANCE: f32 = 0.6;
-/// How far past the window the list lays rows out ahead.
 const OVERDRAW: Pixels = px(400.);
-/// The edge of the composer's buttons from each other (`DiffList.tsx`
-/// `Composer`: `gap.xxs`).
 const BUTTONS_GAP: Pixels = design::space::XXS;
-/// A card's own icon (`DiffList.tsx` `DraftCard`, `Composer`).
 const CARD_ICON: Pixels = px(16.);
 
-/// A line's ground: as it is, added, or deleted.
 #[derive(Clone, Copy, Hash)]
 pub(super) enum Ground {
     Plain,
@@ -55,53 +46,36 @@ pub(super) enum Ground {
     Deleted,
 }
 
-/// One line of code.
 pub(super) struct Line {
-    /// the number in the gutter
     pub(super) number: Option<u64>,
-    /// where a comment on it goes: its gutter number is then the button
     pub(super) anchor: Option<Anchor>,
-    /// `+`, `-` or a space in a column of its own: a diff's lines; none
-    /// for a file's own
     pub(super) marker: Option<char>,
     pub(super) text: String,
     pub(super) tokens: Vec<(Range<usize>, Token)>,
     pub(super) ground: Ground,
 }
 
-/// One row of a block.
 pub(super) enum Item {
-    /// what the page shows over the rows (a commit's facts), drawn by
-    /// the page's [`Head`]
     Head,
-    /// a file's head: its path (`old → new` once renamed), state, delta
     File {
         path: String,
         status: &'static str,
         additions: u64,
         deletions: u64,
     },
-    /// a hunk's `@@` head, or why a file has no lines
     Hunk(String),
     Line(Line),
     Comment(Published),
-    /// my staged comment at an anchor; `editable` while the lines take
-    /// comments
     Draft {
         anchor: Anchor,
         body: String,
         editable: bool,
     },
-    /// the open composer under its anchor
     Composer(Anchor),
 }
 
-/// What a page draws over the rows, as the block's first row.
 pub(super) type Head = Rc<dyn Fn(&Forge, &mut Context<Forge>) -> AnyElement>;
 
-/// What readers have written on a diff's lines, and whether its gutter
-/// numbers are comment buttons: a change's file under a reader with an
-/// account (`onGutter`), never a commit's diff.
 #[derive(Default)]
 pub(super) struct Notes {
     pub(super) commentable: bool,
@@ -111,8 +85,6 @@ pub(super) struct Notes {
 }
 
 impl Notes {
-    /// The cards under the line at `anchor`: what was published there,
-    /// then my staged comment, or the composer while it is open there.
     fn under(&self, anchor: &Anchor, rows: &mut Vec<Item>) {
         rows.extend(
             self.published
@@ -135,11 +107,6 @@ impl Notes {
     }
 }
 
-// ------------------------------------------------------------------ rows
-
-/// The rows of `files` (`paint`): each file's head, then its hunks'
-/// heads and lines (each file highlighted as one run of source), or why
-/// it has none; the notes under their lines.
 pub(super) fn diff_rows(files: &[&FileDiff], notes: &Notes) -> Vec<Item> {
     let mut rows = Vec::new();
     for file in files {
@@ -176,7 +143,6 @@ fn file_rows(file: &FileDiff, notes: &Notes, rows: &mut Vec<Item>) {
     for hunk in &file.hunks {
         rows.push(Item::Hunk(words::hunk(hunk)));
         for line in &hunk.lines {
-            // anchored on the new side when the line has one
             let number = line.new_line.or(line.old_line);
             let anchor: Anchor = (
                 path.clone(),
@@ -200,8 +166,6 @@ fn file_rows(file: &FileDiff, notes: &Notes, rows: &mut Vec<Item>) {
     }
 }
 
-/// The marker a diff line wears (`diff.ts` `marker`): an ASCII hyphen
-/// for a deleted line.
 fn marker(kind: LineKind) -> char {
     match kind {
         LineKind::Added => '+',
@@ -210,7 +174,6 @@ fn marker(kind: LineKind) -> char {
     }
 }
 
-/// A file's own lines, numbered from 1, with their tokens.
 pub(super) fn file_lines(texts: &[String], tokens: &[Vec<(Range<usize>, Token)>]) -> Vec<Item> {
     texts
         .iter()
@@ -228,8 +191,6 @@ pub(super) fn file_lines(texts: &[String], tokens: &[Vec<(Range<usize>, Token)>]
         .collect()
 }
 
-/// How many mono cells `line` takes (`diff.ts` `cells`): an East Asian
-/// wide character two, a tab four.
 fn cells(line: &str) -> usize {
     line.chars()
         .map(|ch| match ch as u32 {
@@ -247,11 +208,6 @@ fn cells(line: &str) -> usize {
         .sum()
 }
 
-// ------------------------------------------------------------------ the list
-
-/// The list a block is drawn in, kept across frames: the same page's
-/// rows changing (a composer opened, a comment staged) keep its place,
-/// another page starts at its top.
 #[derive(Default)]
 pub(crate) struct Block(RefCell<Option<Held>>);
 
@@ -262,10 +218,6 @@ struct Held {
 }
 
 impl Block {
-    /// The list for `count` rows signed `signature` on `page`: the one
-    /// held while both hold, else a new one at `reveal` (the open
-    /// composer's line), at the held one's top on the same page, or at
-    /// the top.
     fn state(&self, page: u64, signature: u64, count: usize, reveal: Option<usize>) -> ListState {
         let mut held = self.0.borrow_mut();
         if let Some(held) = held.as_ref()
@@ -293,7 +245,6 @@ impl Block {
         state
     }
 
-    /// Brings row `at` to the top: a commit's file row, its diff.
     pub(super) fn scroll_to(&self, at: usize) {
         if let Some(held) = self.0.borrow().as_ref() {
             held.state.scroll_to(ListOffset {
@@ -304,16 +255,12 @@ impl Block {
     }
 }
 
-/// What a block's rows are of (a file of a diff, a blob, a commit), as
-/// [`Shown::page`] names it.
 pub(super) fn page_of(what: impl Hash) -> u64 {
     let mut hasher = DefaultHasher::new();
     what.hash(&mut hasher);
     hasher.finish()
 }
 
-/// What tells two sets of rows apart on one page: their kinds, numbers
-/// and cards (a page's own lines are its page's).
 fn signature(rows: &[Item]) -> u64 {
     let mut hasher = DefaultHasher::new();
     rows.len().hash(&mut hasher);
@@ -337,11 +284,6 @@ fn signature(rows: &[Item]) -> u64 {
     hasher.finish()
 }
 
-/// A page's block: `rows` under the element `key`, `page` naming what
-/// they are of (a file of a diff, a blob), `head` drawing its
-/// [`Item::Head`]. Unwrapped, the block is as wide as its widest line and
-/// scrolls sideways as one; wrapped, its lines wrap at the window's
-/// width.
 pub(super) struct Shown {
     pub(super) key: &'static str,
     pub(super) page: u64,
@@ -350,13 +292,10 @@ pub(super) struct Shown {
     pub(super) wrapped: bool,
 }
 
-/// How the rows of a block are drawn, the same for each.
 #[derive(Clone, Copy)]
 struct Look {
     key: &'static str,
-    /// the gutter and the marker's column
     lead: Pixels,
-    /// the window's width: the cards' and a wrapped line's
     window: Pixels,
     wrapped: bool,
     ladder: Ladder,
@@ -426,7 +365,6 @@ pub(super) fn block(
         .into_any_element()
 }
 
-/// The widest line's run of cells at the code size.
 fn widest(rows: &[Item], ladder: &Ladder) -> Pixels {
     let most = rows
         .iter()
@@ -467,11 +405,6 @@ fn draw(
     }
 }
 
-// ------------------------------------------------------------------ rows drawn
-
-/// A line of code (`Lines.tsx` row): at least the code's line tall (20,
-/// `Lines.tsx:100`), its ground, the gutter number at the gutter's right
-/// (faint), the marker, the code highlighted.
 fn line_row(index: usize, line: &Line, look: &Look, cx: &mut Context<Forge>) -> Stateful<Div> {
     let theme = &look.theme;
     let ground = match line.ground {
@@ -509,10 +442,6 @@ fn line_row(index: usize, line: &Line, look: &Look, cx: &mut Context<Forge>) -> 
         )
 }
 
-/// The gutter: the line's number at its right, faint. While the line
-/// takes comments it is the comment button, pressed in the line's own box
-/// as Expo's is (`Lines.tsx:112-123`): a dense list's press
-/// (`design::dense`), under a finger's 44.
 fn gutter(index: usize, line: &Line, look: &Look, cx: &mut Context<Forge>) -> AnyElement {
     let number = line
         .number
@@ -539,7 +468,6 @@ fn gutter(index: usize, line: &Line, look: &Look, cx: &mut Context<Forge>) -> An
         .into_any_element()
 }
 
-/// One cell of code text: mono at the code size, in `tone`.
 fn code_cell(text: String, tone: Hsla, look: &Look) -> Div {
     div()
         .flex_none()
@@ -550,8 +478,6 @@ fn code_cell(text: String, tone: Hsla, look: &Look) -> Div {
         .child(text)
 }
 
-/// A hunk's head, or why a file has no lines: muted code on `surface`
-/// past the gutter.
 fn hunk_row(index: usize, text: &str, look: &Look) -> Stateful<Div> {
     let line = look.ladder.code.line.unwrap_or(look.ladder.code.size);
     div()
@@ -565,8 +491,6 @@ fn hunk_row(index: usize, text: &str, look: &Look) -> Stateful<Div> {
         .child(code_cell(text.to_owned(), look.theme.muted, look))
 }
 
-/// A file's head over its lines (`FileHead`): the path in the data face,
-/// `<state> · +a −d` at its right, on `surface` between hairlines.
 fn file_head(
     index: usize,
     path: &str,
@@ -607,8 +531,6 @@ fn file_head(
         )
 }
 
-/// A card under a line (`Card`): past the gutter, a hairline box on the
-/// window's ground; a draft's edge warns.
 fn card(key: String, warn: bool, look: &Look) -> (Stateful<Div>, Div) {
     let theme = &look.theme;
     let outer = div()
@@ -633,8 +555,6 @@ fn card(key: String, warn: bool, look: &Look) -> (Stateful<Div>, Div) {
     (outer, inner)
 }
 
-/// A published comment (`CommentCard`): its author, `line N · new ·
-/// block H` and `outdated`, then what it says.
 fn comment_card(index: usize, comment: &Published, look: &Look) -> Stateful<Div> {
     let (ladder, theme) = (&look.ladder, &look.theme);
     let (_, new_side, line) = &comment.anchor;
@@ -676,8 +596,6 @@ fn comment_card(index: usize, comment: &Published, look: &Look) -> Stateful<Div>
     )
 }
 
-/// My staged comment (`DraftCard`): "Your pending comment", its pencil
-/// to open it again while the line takes comments, what it says.
 fn draft_card(
     index: usize,
     (anchor, editable): (&Anchor, bool),
@@ -721,8 +639,6 @@ fn draft_card(
     )
 }
 
-/// The composer under the pressed line (`Composer`): "Your pending
-/// comment" and Reviewing, the field, Cancel and Stage.
 fn composer_card(forge: &Forge, look: &Look, cx: &mut Context<Forge>) -> Stateful<Div> {
     let (ladder, theme) = (&look.ladder, &look.theme);
     let (outer, inner) = card(format!("{}-composer", look.key), true, look);

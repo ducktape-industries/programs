@@ -31,7 +31,6 @@ pub struct TxRow {
     pub target: String,
     pub size: u32,
     pub payload: Option<Vec<u8>>,
-    /// what the host answered for it (`Explorer::describe`), or its bytes
     pub(crate) op: OnceCell<Description>,
     pub(crate) asked: Cell<bool>,
     /// how its run ended, where the node kept its receipt
@@ -111,7 +110,6 @@ impl<'de> Deserialize<'de> for TxRow {
     }
 }
 
-/// A block read into rows, its transactions newest first.
 pub(crate) fn rows(block: Block) -> (BlockRow, Vec<TxRow>) {
     let row = BlockRow {
         height: block.height,
@@ -186,8 +184,6 @@ impl Chain {
         self.listed_from.filter(|from| *from > 0)
     }
 
-    /// Folds in one page. `before` is what the page was asked with: `None`
-    /// reads down from the head, `Some` below the oldest block held.
     pub(crate) fn land(&mut self, before: Option<u64>, page: BlockList) {
         self.failed = None;
         self.listed_from = page.listed_from;
@@ -213,8 +209,6 @@ impl Chain {
                 merged.append(&mut self.txs);
                 self.txs = merged;
             }
-            // the first page, or a head so far past the window that it no
-            // longer joins: start the window again from here
             (None, _) => {
                 self.blocks = blocks;
                 self.txs = txs.collect();
@@ -227,20 +221,12 @@ impl Chain {
     }
 }
 
-/// One line of a block list: a block, or a run of empty ones.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Line<'a> {
     Block(&'a BlockRow),
-    /// consecutive blocks with no transaction, `oldest..=newest`
-    Empty {
-        newest: u64,
-        oldest: u64,
-    },
+    Empty { newest: u64, oldest: u64 },
 }
 
-/// `blocks` (newest first) as at most `rows` lines, each run of two or more
-/// empty blocks folded into one, so the list reaches back past quiet
-/// stretches as far as the window holds.
 pub(crate) fn lines(blocks: &[BlockRow], rows: usize) -> Vec<Line<'_>> {
     let mut lines = Vec::new();
     let mut at = 0;

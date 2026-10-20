@@ -3,7 +3,6 @@
 //! programs role and the chain say of it.
 use super::*;
 
-/// The Programs tab open, then `row` pressed.
 fn opened(row: &str) -> TestAppContext {
     let (mut cx, _) = ready();
     cx.simulate_click("explorer-tab-programs");
@@ -40,7 +39,6 @@ fn a_program_row_opens_its_page_with_its_capabilities_first() {
         cx.find("explorer-capability-web").is_none(),
         "only what it declares"
     );
-    // the capabilities come before the rest of the page
     let at = |text: &str| texts.iter().position(|t| t == text).expect(text);
     assert!(at("Capabilities") < at("About") && at("About") < at("Scheduled"));
     assert!(cx.has_text(CHAT_CODE), "the code id in full: {texts:?}");
@@ -77,8 +75,6 @@ fn the_transactions_link_opens_the_programs_transactions() {
     assert!(!cx.has_text("mystery"), "{:?}", cx.texts());
 }
 
-/// A program whose code carries no view asks nothing of the host, and the
-/// page says so rather than listing nothing.
 #[test]
 fn a_program_without_a_view_says_it_draws_nothing() {
     let cx = opened("explorer-program-identity");
@@ -96,8 +92,6 @@ fn a_program_without_a_view_says_it_draws_nothing() {
     assert!(cx.find("explorer-program-role").is_some());
 }
 
-/// A view-only entry has a page too: the blob is the view, so its manifest
-/// is read off the blob itself; it sends nothing, so no transactions.
 #[test]
 fn a_view_only_entry_opens_its_page() {
     let cx = opened("explorer-view-explorer");
@@ -112,9 +106,6 @@ fn a_view_only_entry_opens_its_page() {
     );
 }
 
-/// What the host cannot answer is said as it is: code the node does not
-/// hold, a view whose manifest this app cannot read, a refusal (with the
-/// retry every refused read has).
 #[test]
 fn unknown_code_and_an_unreadable_manifest_are_said_as_such() {
     let (mut cx, _) = ready();
@@ -171,10 +162,6 @@ fn unknown_code_and_an_unreadable_manifest_are_said_as_such() {
     assert!(cx.has_text(CHAT_CODE), "the rest of the page stands");
 }
 
-/// A view-only entry's two failures are told apart from a program's: a
-/// blob the host reads no view out of is a view this app cannot read (it
-/// is the view), never a program that draws nothing; and a manifest it
-/// cannot read is said as such.
 #[test]
 fn a_view_only_entrys_unread_view_is_never_a_program_that_draws_nothing() {
     let answer = |view: Option<CarriedView>| {
@@ -220,8 +207,6 @@ fn a_view_only_entrys_unread_view_is_never_a_program_that_draws_nothing() {
     );
 }
 
-/// Enter on the active row of the Programs list opens its page, as a
-/// press does; ← and → on the tabs leave and come back to it.
 #[test]
 fn enter_on_the_programs_list_opens_the_program() {
     let (mut cx, _) = ready();
@@ -249,7 +234,6 @@ fn enter_on_the_programs_list_opens_the_program() {
         "back to the page it left: {:?}",
         cx.texts()
     );
-    // the view-only list takes the keys too
     cx.simulate_click("explorer-tab-programs");
     cx.run_until_parked();
     cx.simulate_focus("explorer-views-list");
@@ -258,8 +242,6 @@ fn enter_on_the_programs_list_opens_the_program() {
     assert!(cx.has_text("wakes on a timer"), "{:?}", cx.texts());
 }
 
-/// Copy beside the code id puts the id on the clipboard in the spelling the
-/// Upgrade form takes.
 #[test]
 fn copy_puts_the_code_id_on_the_clipboard() {
     let mut cx = opened("explorer-program-chat");
@@ -275,8 +257,6 @@ fn copy_puts_the_code_id_on_the_clipboard() {
     assert!(cx.has_text("Copied the code id."), "{:?}", cx.texts());
 }
 
-/// A page opened by link before the roster landed says so, asks nothing
-/// yet, and asks for the manifest once, when the roster lands.
 #[test]
 fn a_page_opened_before_the_roster_asks_when_it_lands() {
     let mut cx = TestAppContext::new();

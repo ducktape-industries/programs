@@ -62,7 +62,6 @@ pub(crate) fn set_notices(
     Ok(())
 }
 
-// who chooses for `account`: the account itself, or its manager in identity
 pub(crate) fn chooser(ctx: &ExecCtx, account: AccountNumber) -> Result<(), Error> {
     let sender = ctx.sender_account()?;
     if sender == account || manager(ctx, account)? == Some(sender) {
@@ -85,7 +84,6 @@ fn manager(ctx: &QueryCtx, account: AccountNumber) -> Result<Option<AccountNumbe
     }
 }
 
-// the sender hears every new message of `channel_id` for a wait, apart from what it chose there
 pub(crate) fn watch(ctx: &ExecCtx, channel_id: &str, watching: bool) -> Result<(), Error> {
     let account = ctx.sender_account()?;
     channel(ctx, channel_id)?;
@@ -136,9 +134,6 @@ pub(crate) fn notices_cut(
         .map(|((_, channel_id), notices)| (channel_id, notices)))
 }
 
-/// What `row`, as posted or edited, says of who is in its room and thread: its author is in the
-/// room once it writes in the timeline, and each account a reply mentions is in its thread (a
-/// root's mentions are read off the root). A first time is kept, never moved.
 pub(crate) fn note(ctx: &ExecCtx, row: &MsgRow) {
     let Some(root) = row.thread else {
         let posted = (row.channel_id.clone(), row.author.clone());
@@ -155,8 +150,6 @@ pub(crate) fn note(ctx: &ExecCtx, row: &MsgRow) {
     }
 }
 
-/// Where `account` is in `channel_id`: the seq it came into the room at, and into each thread of
-/// `roots` it is in. A seat in a members-only room, or the room's opening, is in it from the start.
 pub(crate) fn followed(
     ctx: &QueryCtx,
     channel_id: String,
@@ -176,7 +169,6 @@ pub(crate) fn followed(
     };
     let mut threads = Vec::new();
     for &root in roots {
-        // a root that is not there roots no thread
         let Some(row) = stored(ctx, &(channel_id.clone(), root))?.map(Stored::row) else {
             continue;
         };

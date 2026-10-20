@@ -28,7 +28,6 @@ pub fn plain_text(blocks: &[Block]) -> String {
     out
 }
 
-// Text as search and tags compare it: NFC, lowercase.
 pub(crate) fn fold(text: &str) -> String {
     text.nfc().collect::<String>().to_lowercase()
 }
@@ -54,12 +53,10 @@ pub fn tags(blocks: &[Block]) -> Vec<String> {
     out
 }
 
-// A tag as it is matched: [`fold`]ed, no leading `#`.
 pub(crate) fn tag_label(text: &str) -> String {
     fold(text.trim_start_matches('#'))
 }
 
-// The `#tags` in one run of text, each as matched.
 fn span_tags(text: &str) -> Vec<String> {
     tag_ranges(text)
         .into_iter()

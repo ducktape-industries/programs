@@ -13,14 +13,10 @@ const OPENED: &str = "opened";
 const FOLDERS: &str = "folders";
 
 impl Chat {
-    /// The key the reader's cursors are kept under; none with no key seated.
     fn reads_key(&self) -> Option<String> {
         (!self.session.signer.is_empty()).then(|| crate::notifier::reads_key(&self.session.signer))
     }
 
-    /// The reader's cursors and reactions off the device. Until they land,
-    /// nothing is written back: a room first seen now is read to its head,
-    /// and that must not overwrite what was kept.
     pub(crate) fn load_kept(&mut self, cx: &mut Context<Self>) {
         self.reads.kept = None;
         let Some(key) = self.reads_key() else {
@@ -54,13 +50,10 @@ impl Chat {
         self.load_reads(key, cx);
     }
 
-    // The key the rooms the reader opened here are kept under.
     fn opened_key(&self) -> Option<String> {
         self.reads_key().map(|key| format!("{key}/{OPENED}"))
     }
 
-    // The rooms the reader opened on this device, off it. One opened before
-    // they land joins them, and the whole set is written back.
     fn load_opened(&mut self, cx: &mut Context<Self>) {
         self.opened.clear();
         self.opened_kept = None;
@@ -88,8 +81,6 @@ impl Chat {
         .detach();
     }
 
-    // The room on screen joins the rooms opened here: settled each frame,
-    // since the list, a link and a search all open rooms.
     pub(crate) fn settle_opened(&mut self, cx: &mut Context<Self>) {
         let Some(room) = &self.room else {
             return;
@@ -114,14 +105,12 @@ impl Chat {
             cx.notify();
             match reads {
                 Ok(reads) => chat.reads_landed(key, reads.unwrap_or_default(), cx),
-                // the reader changed meanwhile: their own load is under way
                 Err(_) if chat.reads_key().as_ref() != Some(&key) => {}
                 Err(refusal) => {
                     cx.host().log(format!(
                         "read cursors not loaded, starting from this session: {refusal}"
                     ));
                     chat.reads_landed(key, BTreeMap::new(), cx);
-                    // nothing of this session is on the device yet
                     chat.reads.written.clear();
                     chat.save_reads(cx);
                 }
@@ -130,7 +119,6 @@ impl Chat {
         .detach();
     }
 
-    /// The kept cursors stand for every room but the one on screen.
     fn reads_landed(&mut self, key: String, kept: BTreeMap<String, u64>, cx: &mut Context<Self>) {
         if self.reads_key().as_ref() != Some(&key) {
             return;
@@ -148,7 +136,6 @@ impl Chat {
         }
     }
 
-    /// The cursors onto the device when they moved.
     pub(crate) fn save_reads(&mut self, cx: &mut Context<Self>) {
         let key = self.reads_key();
         if key.is_none() || key != self.reads.kept || self.reads.written == self.reads.cursors {

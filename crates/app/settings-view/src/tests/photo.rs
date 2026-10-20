@@ -24,7 +24,6 @@ fn held() -> Option<abi::BlobId> {
     Some(abi::BlobId::Sha256(HELD))
 }
 
-// Scout with a bio and `avatar`, in `life`.
 fn scouting(avatar: Option<abi::BlobId>, life: identity::Life) -> identity::Account {
     let mut scout = scout();
     scout.card.avatar = avatar;
@@ -39,12 +38,10 @@ fn active() -> identity::Life {
     identity::Life::Active { keys: Vec::new() }
 }
 
-// Maya's card from here on, with a bio and `avatar`, read afresh.
 fn card(cx: &mut TestAppContext, props: &StreamSender<HostSession>, avatar: Option<abi::BlobId>) {
     cards(cx, props, avatar, scout());
 }
 
-// Maya's card with a bio and `avatar`, and `agent` the one she manages.
 fn cards(
     cx: &mut TestAppContext,
     props: &StreamSender<HostSession>,
@@ -81,7 +78,6 @@ fn cards(
     cx.run_until_parked();
 }
 
-// The device holds `bytes` as file 3, and the reader picks it with `press`.
 fn picks(cx: &mut TestAppContext, bytes: Vec<u8>, press: &str) {
     let size = bytes.len() as u64;
     cx.host().handle::<FilePick>(move |pick| {
@@ -106,7 +102,6 @@ fn picks(cx: &mut TestAppContext, bytes: Vec<u8>, press: &str) {
     cx.run_until_parked();
 }
 
-// The one blob the next `op.put` holds, a 256 px JPEG.
 fn holds_the_square(cx: &TestAppContext) {
     cx.host().ends::<OpPut>(|put| {
         let [blob] = &put.blobs[..] else {
@@ -122,7 +117,6 @@ fn holds_the_square(cx: &TestAppContext) {
     });
 }
 
-// identity takes the next `SetProfile` only as `set`.
 fn sets(cx: &TestAppContext, set: identity::Op) {
     cx.host().handle::<Submit<Identity>>(move |op| {
         assert_eq!(op, set);
@@ -138,7 +132,6 @@ fn a_picked_picture_is_cut_and_saved_as_the_avatar_with_the_bio_kept() {
     picks(&mut cx, png(600, 400), "settings/photo/change");
     assert!(cx.find("settings/photo").is_some(), "the crop sheet opens");
     assert_eq!(cx.host().requests::<FileRelease>(), [vec![3]]);
-    // a 600 by 400 picture zooms until its square is 256 across
     let zoom = cx.interactivity("settings/photo/zoom");
     assert_eq!(zoom.role, Some(view::Role::Splitter));
     assert_eq!(zoom.aria.numeric_value, Some(1.));

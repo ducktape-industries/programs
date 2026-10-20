@@ -87,9 +87,6 @@ fn founded<F: Fixture>() -> MockHost {
     host
 }
 
-/// What `At(height)` answers, by program. Asked a block ahead, as the
-/// kernel asks, so an answer read off the env's height instead of the
-/// asked one does not pass.
 fn at<F: Fixture>(host: &MockHost, height: u64) -> Vec<Entry> {
     let asked = Query::At(height);
     let from = height.saturating_sub(1).max(1);

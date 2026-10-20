@@ -53,10 +53,6 @@ fn column(children: Vec<wire::Node>) -> wire::Node {
     })
 }
 
-/// A patch's path and index are its node's position in the new tree, so
-/// `put_back` completes the tree `diff_taking` hollowed whatever the
-/// patches' order: moves, inserts, removes and a replace at one level,
-/// with a keyed list reordered below.
 #[test]
 fn put_back_completes_the_tree_a_taking_diff_hollowed() {
     let old = column(vec![
@@ -121,10 +117,6 @@ fn notify(driver: &mut Driver<Pages>, change: impl FnOnce(&mut Pages)) {
     });
 }
 
-/// The switch to a 500-row page through the production tick allocates
-/// about what re-rendering the page unchanged does: the rows go out in the
-/// frame and come back, not as a copy. With keyed chrome the frame is the
-/// page's patches; with unkeyed chrome the whole tree goes.
 fn a_switch_tick_does_not_copy_the_rows(keyed_chrome: bool) {
     let mut driver = Driver::<Pages>::new();
     notify(&mut driver, |view| view.keyed_chrome = keyed_chrome);

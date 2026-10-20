@@ -18,8 +18,6 @@ thread_local! {
     };
 }
 
-/// Starts a tree's table over: its first entry is the plain style, which
-/// [`PLAIN`] names.
 pub(super) fn start_table() {
     TABLE.with_borrow_mut(|table| {
         *table = Table {
@@ -29,8 +27,6 @@ pub(super) fn start_table() {
     });
 }
 
-/// A hostile style as a new entry of the table, by the id a node names it
-/// with: one draw of [`gen_native_style`].
 pub(super) fn gen_style(rng: &mut Rng) -> StyleId {
     let style = gen_native_style(rng);
     TABLE.with_borrow_mut(|table| {
@@ -40,13 +36,10 @@ pub(super) fn gen_style(rng: &mut Rng) -> StyleId {
     })
 }
 
-/// The entries generated since the last take: what the next frame carries.
 pub(super) fn take_styles() -> Vec<Style> {
     TABLE.with_borrow_mut(|table| std::mem::take(&mut table.waiting))
 }
 
-/// `sanitize`, and the table it left the host holding; what it refuses,
-/// not where.
 pub(super) fn sanitized(frame: &mut Frame) -> Result<Styles, Refused> {
     let mut styles = Styles::default();
     view_wire::sanitize(frame, &mut styles).map_err(|refused| refused.reason().clone())?;

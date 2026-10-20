@@ -139,10 +139,6 @@ impl ListState {
             item_ix: scroll_top.item_ix.min(inner.item_count),
             offset_in_item: px(f32::from(scroll_top.offset_in_item).max(0.)),
         };
-        // a row within a screenful of the end cannot be the top row: the
-        // host fills the screen upward from it, so the frame carries the
-        // screenful that ends the list, or the host measures the rows above
-        // it as placeholders and the real rows push it off the screen
         let start = offset
             .item_ix
             .min(inner.item_count.saturating_sub(INITIAL_ROWS));
@@ -189,11 +185,6 @@ impl ListState {
     pub(crate) fn is(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
     }
-    /// A request next to the window grows it rather than replacing it: the
-    /// host asks for the rows it is missing, not for all it shows, so
-    /// replacing dropped the rows on screen and the next frame asked for those
-    /// back. A request away from the window is a jump, and replaces it.
-    /// Answers whether the window moved: a request inside it changes no row.
     fn request(&self, request: &wire::ListRequest) -> bool {
         let mut inner = self.0.inner.borrow_mut();
         let held = inner.requested.clone();
@@ -403,12 +394,7 @@ impl IntoElement for List {
 }
 impl gpui::prelude::FluentBuilder for List {}
 
-/// Rows a list renders before the host says what it shows: a screenful of
-/// short rows. The host asks for more as they come into view — each row the
-/// view renders is paid for on every tick.
 const INITIAL_ROWS: usize = 24;
-/// Rows kept past each edge of what the host shows, in both lists: a
-/// scroll of fewer rows than this changes no row the view lowers.
 pub(crate) const MARGIN_ROWS: usize = 12;
 const SHORTEST_ROW: f32 = 24.;
 
@@ -544,8 +530,6 @@ mod tests {
         assert_eq!((props, inserts), (0, 1), "{:?}", frame.patches);
     }
 
-    /// The host asks for rows the window already holds: no row changes, so
-    /// the view does not render; a row outside it renders once.
     #[test]
     fn a_request_inside_the_window_renders_nothing() {
         let (mut cx, _) = opened();
@@ -681,7 +665,6 @@ mod tests {
         };
         assert_eq!(to(&mut cx, 100), 100..100 + INITIAL_ROWS);
         assert_eq!(to(&mut cx, 110), 100..110 + INITIAL_ROWS);
-        // the last row: the host draws the screenful above it
         assert_eq!(to(&mut cx, 1_999), 2_000 - INITIAL_ROWS..2_000);
     }
 
@@ -726,8 +709,6 @@ mod tests {
         assert_eq!(kept, 1_970 - 25..2_000, "600px of one-line rows each way");
     }
 
-    /// An empty list has no row to reveal: the window stays empty, and
-    /// the view is asked for no row.
     #[test]
     fn revealing_a_row_of_an_empty_list_renders_no_row() {
         let (mut cx, view) = opened();
@@ -748,10 +729,6 @@ mod tests {
         view.read(|view| assert_eq!(view.rendered.len(), rendered));
     }
 
-    /// The window follows the rows it holds through an edit: history
-    /// loading above shifts it, an arrival at its end grows it over the
-    /// new row, an edit past it leaves it alone; an edit that takes every
-    /// row it held starts it over at the list's first screenful.
     #[test]
     fn a_splice_shifts_or_grows_the_window_and_never_blanks_the_rows_on_screen() {
         let (mut cx, view) = opened();
@@ -770,7 +747,6 @@ mod tests {
             } => *range_start..*range_start + children.len(),
             other => panic!("expected list, got {other:?}"),
         };
-        // the reader scrolled up to rows 1_900..1_912
         cx.tick(vec![wire::Event::ListRequest {
             handler: request_handler,
             request: wire::ListRequest {
@@ -812,11 +788,6 @@ mod tests {
         );
     }
 
-    /// Chat's history page: the reader is at the top of the loaded rows
-    /// (the window starts at row 0, which is when chat pages older) and a
-    /// page as long as a frame carries lands above. The rows on screen are
-    /// rows 64..76 now and stay in the window: the page is before it, and
-    /// shifts it. A list with no window yet takes its first screenful.
     #[test]
     fn a_page_of_history_above_a_reader_at_the_top_keeps_the_rows_on_screen() {
         let (mut cx, view) = opened();
@@ -894,7 +865,6 @@ mod tests {
         assert!(matches!(cx.root(), wire::Node::List { commands, .. } if commands.is_empty()));
     }
 
-    /// One state, drawn by the lists `first` and `second` under `page`.
     #[derive(Default, Serialize, Deserialize)]
     struct Shared {
         #[serde(skip)]
@@ -919,9 +889,6 @@ mod tests {
         }
     }
 
-    /// A state holds one list's window and the commands waiting for it:
-    /// drawn by two lists, the first took the commands and each one's
-    /// requests moved the other's rows, with nothing said.
     #[test]
     #[should_panic(
         expected = "one ListState drawn by two lists: [Name(\"page\"), Name(\"first\")] \

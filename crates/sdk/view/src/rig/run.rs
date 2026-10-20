@@ -84,8 +84,6 @@ pub fn run(entry: &str, seed: impl FnOnce(&Network) -> Result<(), Error>) {
     }
 }
 
-/// Where cargo put us: the view crate, its workspace, its target dir, and
-/// the profile the wasm builds with.
 struct Workspace {
     cargo: String,
     crate_name: String,
@@ -122,7 +120,6 @@ impl Workspace {
         cargo
     }
 
-    /// The view for wasm32, as `make wasm-views` builds it, before wasm-opt.
     fn build_view(&self) -> Vec<u8> {
         say(format!(
             "building {} for wasm32 ({})",
@@ -154,9 +151,6 @@ impl Workspace {
         }
     }
 
-    /// `program`'s describe module, as `make wasm-describes` builds it (in
-    /// a target dir of its own: the crate with `describe` on is another
-    /// unit); `None`, said, for a program this workspace does not build.
     fn build_describe(&self, program: &str) -> Option<Vec<u8>> {
         let target = self.target.join("describe").join(program);
         say(format!("building {program}'s describe module"));
@@ -181,9 +175,6 @@ impl Workspace {
         std::fs::read(artifact).ok()
     }
 
-    /// The app on the fake node: `$DUCKTAPE_APP`, a built binary, or
-    /// `cargo run` in `$DUCKTAPE_APP_DIR` (`../app` beside this checkout),
-    /// its own state under `<target>/live/<entry>/`.
     fn app_command(&self, endpoint: &str, entry: &str) -> Command {
         let home = self.target.join("live").join(entry);
         let mut command = match std::env::var_os("DUCKTAPE_APP") {

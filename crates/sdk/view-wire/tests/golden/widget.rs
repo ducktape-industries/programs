@@ -3,8 +3,6 @@
 //! way `nodes.rs` samples `Node` so its bytes are pinned too.
 use super::*;
 
-/// Every `ElementIdAtom` variant once, wrapped in a `NamedChild` (the one
-/// place an atom crosses): a target list otherwise unremarkable.
 fn every_atom_child() -> Vec<ElementIdWire> {
     let atoms = [
         ElementIdAtom::View(1),

@@ -50,7 +50,6 @@ pub(super) fn page(
         .into_any_element()
 }
 
-/// Whether the reader has writes on the agent: its manager's, or a conversation's start.
 fn offers(view: &Agents) -> bool {
     let Some(detail) = view.detail.ready() else {
         return false;
@@ -154,7 +153,6 @@ fn detail(
         .into_any_element()
 }
 
-/// Where to talk to the agent: its current conversation's room, and a DM with the reader.
 fn reach_row(
     view: &Agents,
     detail: &Detail,
@@ -225,7 +223,6 @@ fn threads(
                     title.child(bound_badge(format!("thread-{id}-bound"), theme, ladder))
                 });
             let frames = design::plural(thread.frames, "frame", "frames");
-            // the agent's own words on it, where it set some, else what it is doing
             let topic = detail.topics.get(&id).map(|topic| quoted(topic));
             let (badge, words) = match thread.closed {
                 true => (
@@ -287,7 +284,6 @@ fn threads(
         .children(empty)
 }
 
-/// The setup, a row for each part, each opening its page.
 fn setup_rows(
     setup: &AgentSetup,
     detail: &Detail,
@@ -342,7 +338,6 @@ fn setup_rows(
         .child(row(Part::Usage, "info", "Usage", usage_total(detail)))
 }
 
-/// A part's name in its row's key.
 fn part_key(part: Part) -> &'static str {
     match part {
         Part::Model => "model",
@@ -352,7 +347,6 @@ fn part_key(part: Part) -> &'static str {
     }
 }
 
-/// One part of the agent's setup, its own page over the agent.
 pub(super) fn part(
     view: &Agents,
     agent: u64,
@@ -405,7 +399,6 @@ fn model_part(
             .into_any_element();
     }
     let name = roster.name(setup.agent);
-    // the front matter opens to anyone signed in: the file's list decides whose save lands
     let edit = (view.me.is_some() && setup.configured.config().is_some()).then(|| {
         let opening = Press::Open(Box::new(setup.clone()));
         let open = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
@@ -641,8 +634,6 @@ fn usage_part(detail: &Detail, roster: &Roster, theme: &Theme, ladder: &Ladder) 
         .into_any_element()
 }
 
-/// The agent's writes: its manager's edit and take back, and starting or forking a
-/// conversation for whoever may. Take back's second press is a card in the sheet.
 pub(super) fn sheet(
     view: &Agents,
     agent: u64,
@@ -741,7 +732,6 @@ pub(super) fn sheet(
                         .hint("starts from nothing"),
                     )
                 })
-                // a fork keeps the current conversation's context: none, nothing to fork
                 .when(begins && current.is_some(), |rows| {
                     rows.child(
                         design::sheet_row("agent-sheet-fork", "Fork", ladder, theme, fork)
@@ -781,7 +771,6 @@ pub(super) fn sheet(
     )
 }
 
-/// Take back's second press, in the sheet: what it does, then Cancel and Take back.
 fn removing(
     view: &Agents,
     name: &str,
@@ -811,7 +800,6 @@ fn removing(
     )
 }
 
-/// A write's second press inside a sheet: what it does, over its verbs.
 pub(super) fn confirm_card(
     id: &'static str,
     words: String,

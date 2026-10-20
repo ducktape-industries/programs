@@ -46,14 +46,12 @@ pub fn render(
         .child(compose(chat, room, cx, theme, ladder))
 }
 
-/// A refused write, until dismissed.
 fn notice(
     chat: &Chat,
     cx: &mut Context<Chat>,
     theme: &Theme,
     ladder: &Ladder,
 ) -> Option<impl IntoElement> {
-    // a refused write, or why the room's older messages could not be read
     let older_failed = chat
         .room
         .as_ref()
@@ -92,7 +90,6 @@ fn notice(
     )
 }
 
-/// A write that landed, said once, until dismissed.
 fn confirmation(
     chat: &Chat,
     cx: &mut Context<Chat>,
@@ -133,7 +130,6 @@ fn confirmation(
     )
 }
 
-/// The composer, or why the reader may not write here.
 fn compose(
     chat: &Chat,
     room: &Room,
@@ -149,7 +145,6 @@ fn compose(
         thread: None,
     };
     let editable = chat.session.connected;
-    // inset from the pane's edges, so the field reads as a field
     div()
         .p_3()
         .children(crate::ui::rules::line(chat, cx, theme, ladder))
@@ -179,8 +174,6 @@ fn header(
         chat.toggle_details(cx);
         cx.notify();
     });
-    // a direct room is a person: their initials and name, no `#`, and no
-    // "Members only" (a direct room always is)
     let direct = chat::dm_peers(&room.id).is_some();
     let peer = chat.dm_peer();
     let mut title = div().flex().items_center().gap_2();
@@ -227,8 +220,6 @@ fn header(
             theme.surface_raised,
         ));
     }
-    // a dm with an agent that would not answer the reader says so before
-    // they write; writing stays open
     let unanswered = chat
         .my_account()
         .and_then(|me| crate::names::dm_peer_of(me, &room.id))
@@ -459,9 +450,7 @@ fn hit_list(
     list
 }
 
-/// One hit: its text and where it sits, opening the room at it.
 fn hit(chat: &Chat, row: &MsgRow, cx: &mut Context<Chat>, theme: &Theme) -> AnyElement {
-    // where it sits: the room a person knows it by, and who wrote it
     let names = chat.names.ready();
     let room = match chat::dm_peers(&row.channel_id) {
         Some(_) => chat
@@ -481,7 +470,6 @@ fn hit(chat: &Chat, row: &MsgRow, cx: &mut Context<Chat>, theme: &Theme) -> AnyE
         .join(" · ");
     let id = row.channel_id.clone();
     let seq = row.seq;
-    // seq is per channel: two channels' hits at one seq are two rows
     let key = format!("chat-search-hit-{id}-{seq}");
     let open = cx.listener(move |chat, _: &ClickEvent, _, cx| {
         cx.notify();
@@ -513,7 +501,6 @@ fn hit(chat: &Chat, row: &MsgRow, cx: &mut Context<Chat>, theme: &Theme) -> AnyE
         .into_any_element()
 }
 
-/// Where the composer would be, why the reader may not write here.
 fn write_gate(gate: Gate, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     let why = words::gate(gate);
     let mut notice = div()
@@ -554,8 +541,6 @@ pub fn composer(
     cx: &mut Context<Chat>,
 ) -> impl IntoElement {
     let key = target.key();
-    // no draft is made here: one made here is a document its handler never
-    // sees, and what is typed into it is lost
     let draft = chat
         .drafts
         .get(&key)
@@ -563,7 +548,6 @@ pub fn composer(
     let choices = chat.mention_choices();
     let (commit, cancel) = match target {
         Target::Post { .. } => (words::SEND, None),
-        // an edit's way out sits beside its Save, as Send's row lays out
         Target::Edit { .. } => (
             "Save",
             Some(Box::new(cx.listener(|chat, _: &ClickEvent, _, cx| {
@@ -572,7 +556,6 @@ pub fn composer(
             })) as crate::composer::Click),
         ),
     };
-    // what the field is; the hint, drawn in it, says what to write
     let label = match target {
         Target::Post { thread: None, .. } => words::NEW_MESSAGE,
         Target::Post {
@@ -616,8 +599,6 @@ pub fn selection_bar(
         .gap_2()
         .p_2()
         .bg(theme.accent_soft)
-        // the range's own bar: a press on it is no press elsewhere, which
-        // lets the range go (`chat-root`) before its Copy could take it
         .occlude()
         .child(div().flex_1().child(format!(
             "{} selected",

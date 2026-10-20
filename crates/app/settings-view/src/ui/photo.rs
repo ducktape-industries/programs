@@ -11,13 +11,9 @@ use crate::state::Form;
 use crate::words;
 
 const SHEET: &str = "settings/photo";
-// The zoom slider's thumb, and how far an arrow moves the picture or the
-// thumb (as far as `design::divider` steps a pane).
 const THUMB: Pixels = design::space::BLOCK;
 const STEP: Pixels = design::space::SM;
 
-// The seated account's (`number`) Change photo where the host reads a
-// picked file, Remove photo while there is a picture, and what stopped either.
 pub(crate) fn presses(
     view: &Settings,
     number: u64,
@@ -72,7 +68,6 @@ pub(crate) fn presses(
     )
 }
 
-// What stopped `form`, in the danger tone.
 fn refused(id: &str, form: &Form, ladder: &Ladder, theme: &Theme) -> Option<Stateful<Div>> {
     let problem = form.problem.as_ref()?;
     Some(
@@ -84,7 +79,6 @@ fn refused(id: &str, form: &Form, ladder: &Ladder, theme: &Theme) -> Option<Stat
     )
 }
 
-// The crop sheet, while a picked picture is held.
 pub(crate) fn sheet(
     view: &Settings,
     cx: &mut Context<Settings>,
@@ -148,10 +142,6 @@ pub(crate) fn sheet(
     Some(sheet.into_any_element())
 }
 
-// The picture under a round window, the square `crop` cuts filling it: the
-// preview placed and scaled by layout, and the frame's corners outside the
-// circle covered in the sheet's ground (a ring as wide as the frame's half,
-// whose inner edge is the circle).
 fn frame(
     view: &Settings,
     preview: std::sync::Arc<Image>,
@@ -216,10 +206,6 @@ fn frame(
         )
 }
 
-// The zoom slider, for a picture that zooms: a track the frame's width,
-// the thumb at the zoom's place on it, equal travel an equal ratio. A
-// dragged handle is a splitter to assistive technology (the wire's audit),
-// one that says its value as a slider would.
 fn zoom(
     size: (u32, u32),
     crop: Crop,

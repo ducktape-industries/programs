@@ -46,7 +46,6 @@ fn record(chain: &MockChain) -> Option<ownership::Record> {
     record
 }
 
-// every op that reshapes `general`, by whoever sends it
 fn reshapes(n: u64) -> Vec<Op> {
     let channel_id = || "general".to_string();
     vec![
@@ -91,7 +90,6 @@ fn a_channels_policy_decides_every_op_that_reshapes_it_and_posting_stays_open() 
     let owned = record(&chain).expect("the guard recorded the channel");
     assert_eq!(owned.owner, ownership::Party::Account(1));
     assert_eq!(owned.kind.as_deref(), Some("chat.channel"));
-    // the access list lets anyone reshape it; the channel's own policy is what narrows it now
     let anyone = access::Op::Set {
         program: crate::PROGRAM.into(),
         key: "general".into(),
@@ -117,7 +115,6 @@ fn a_channels_policy_decides_every_op_that_reshapes_it_and_posting_stays_open() 
     chain
         .submit(signed(ADA), ownership::PROGRAM, &relink)
         .unwrap();
-    // the meta to remove, put back by its owner
     let meta = Op::SetChannelMeta {
         channel_id: "general".into(),
         key: "category".into(),
@@ -191,7 +188,6 @@ fn a_messages_policy_decides_its_authors_edits_and_the_channels_decides_moderati
     };
     assert_eq!(owned.owner, ownership::Party::Account(2));
     assert_eq!(owned.kind.as_deref(), Some("chat.message"));
-    // the access list lets anyone edit and delete it; the policies are what narrow it now
     let anyone = access::Op::Set {
         program: crate::PROGRAM.into(),
         key: crate::message_key("general", seq),
@@ -210,7 +206,6 @@ fn a_messages_policy_decides_its_authors_edits_and_the_channels_decides_moderati
         Err(code::UNAUTHORIZED.to_string())
     );
     assert_eq!(run(&chain, BO, &edit("bo's words, again")), Ok(()));
-    // replies and reactions by others still land on bo's message
     let react = Op::AddReaction {
         channel_id: "general".into(),
         seq,
@@ -224,8 +219,6 @@ fn a_messages_policy_decides_its_authors_edits_and_the_channels_decides_moderati
         thread: Some(seq),
     };
     assert_eq!(run(&chain, ADA, &reply), Ok(()));
-    // moderation is the channel's: ada's channel narrowed, only ada removes bo's message, and
-    // bo's id stays his
     relink(
         &chain,
         ADA,
@@ -265,7 +258,6 @@ fn anothers_delete_is_refused_where_the_channel_is_narrowed() {
         channel_id: "general".into(),
         seq,
     };
-    // a third account moderating ada's narrowed channel is refused; bo deletes his own
     chain.hold(b"cy-key".to_vec(), 3);
     assert_eq!(
         run(&chain, b"cy-key", &delete),
@@ -274,7 +266,6 @@ fn anothers_delete_is_refused_where_the_channel_is_narrowed() {
     assert_eq!(run(&chain, BO, &delete), Ok(()));
 }
 
-// One-time (J-011 ⑥): chat's rows from before the ownership program was seated.
 #[test]
 fn adopt_owners_records_chats_rows_from_before_the_guard_as_access_enforces_them_today() {
     let mut chain = MockChain::default();

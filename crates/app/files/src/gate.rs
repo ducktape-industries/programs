@@ -40,8 +40,6 @@ pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
         None if is_chat_folder(&segments) => Some(Party::Program(CHAT.into())),
         None => created(ctx, &segments)?.map(Party::Account),
     };
-    // what a chat message carries is its creator's alone: the message reads
-    // it where it stands. Until it is made, the folders above it decide
     let carried = segments.len() > 3 && segments[0] == CHAT && owner.is_some();
     Ok(Resource {
         owner,

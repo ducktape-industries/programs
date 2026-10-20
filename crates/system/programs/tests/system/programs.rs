@@ -65,8 +65,6 @@ fn a_held_program_is_scheduled_by_the_validators_vote_and_seated_at_its_height()
             }))
             .await;
         assert_eq!(refusal_of(&unheld), reason::NOT_FOUND);
-        // a change at or below the block passes its vote, valset reads no
-        // programs op, and the programs refuse it as it is enacted
         let past = programs::Op::Schedule(programs::Scheduled {
             height: net.height,
             change: programs::Change::Set(entry.clone()),
@@ -117,8 +115,6 @@ fn a_held_program_is_scheduled_by_the_validators_vote_and_seated_at_its_height()
         }
         let applied = net.tick().await;
         assert_eq!(applied.height, lands_at);
-        // identity giving identity2 its account, then the admission: a
-        // program has its account before its init runs
         let admitted: Vec<&str> = applied
             .admissions
             .iter()
@@ -126,8 +122,6 @@ fn a_held_program_is_scheduled_by_the_validators_vote_and_seated_at_its_height()
             .collect();
         assert_eq!(admitted, [identity::PROGRAM, "identity2"]);
         assert!(net.host.programs().unwrap().contains_key("identity2"));
-        // no op has run on the programs role since the schedule: what a client
-        // lists is answered at its height all the same
         let programs::Reply::Roster {
             height, programs, ..
         } = net.ask(programs::PROGRAM, &programs::Query::Roster).await

@@ -243,7 +243,6 @@ pub struct Summarized {
     pub tokens: u64,
 }
 
-// the data lines of one server-sent event, joined
 pub fn event_data(event: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(event);
     let data: Vec<&str> = text
@@ -255,7 +254,6 @@ pub fn event_data(event: &[u8]) -> Option<String> {
     has_data.then(|| data.join("\n"))
 }
 
-// an event as the service streams it
 pub fn sse(event: &Event) -> String {
     let data = serde_json::to_string(event).expect("an event is JSON");
     format!("data: {data}\n\n")

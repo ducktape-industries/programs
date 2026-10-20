@@ -25,7 +25,7 @@ pub fn millicores(quantity: &str) -> Option<u64> {
     match quantity.strip_suffix('m') {
         Some(milli) if digits(milli) => milli.parse().ok(),
         Some(_) => None,
-        None => thousandths(quantity),
+        None => decimal_thousandths(quantity),
     }
 }
 
@@ -49,15 +49,14 @@ pub fn bytes(quantity: &str) -> Option<u64> {
         .iter()
         .find_map(|(suffix, unit)| quantity.strip_suffix(suffix).map(|number| (number, *unit)))
         .unwrap_or((quantity, 1));
-    Some(thousandths(number)?.checked_mul(unit)? / 1000)
+    Some(decimal_thousandths(number)?.checked_mul(unit)? / 1000)
 }
 
 fn digits(text: &str) -> bool {
     !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-// A decimal number with at most three places, in thousandths.
-fn thousandths(number: &str) -> Option<u64> {
+fn decimal_thousandths(number: &str) -> Option<u64> {
     let (whole, fraction) = number.split_once('.').unwrap_or((number, "0"));
     if !digits(whole) || !digits(fraction) || fraction.len() > 3 {
         return None;

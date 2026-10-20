@@ -81,7 +81,6 @@ impl<'s> Shaper<'s> {
         }
     }
 
-    // Each type named so far, defined, with the ones their definitions name in turn.
     fn finish(mut self) -> Result<Value, Fault> {
         while let Some(declaration) = self.pending.pop() {
             let defined = self.definition(declaration)?;

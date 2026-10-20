@@ -20,15 +20,12 @@ use view::{Div, FontWeight, Stateful};
 use crate::words::{thinking_short, thinking_words};
 use crate::{Agents, Picture, Screen, State};
 
-/// The desktop's screens, under a pointer: what the last write left over the screen, then the
-/// screen whole.
 pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
     let theme = *cx.global::<Theme>();
     let ladder = &design::POINTER;
     let screen = match view.screen {
         Screen::List => list::render(view, cx, &theme, ladder),
         Screen::Create => create::render(view, cx, &theme, ladder),
-        // the phone's pages of an agent or a conversation are parts of the desktop's screen
         Screen::Agent(agent) | Screen::Part(agent, _) => {
             agent::render(view, agent, cx, &theme, ladder)
         }
@@ -61,7 +58,6 @@ pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
         .into_any_element()
 }
 
-/// What a read in flight or refused shows in place of its screen.
 pub(crate) fn waiting<T>(
     name: &str,
     slot: &Loadable<T>,
@@ -73,7 +69,6 @@ pub(crate) fn waiting<T>(
         Loadable::Idle | Loadable::Loading(_) => Some(
             design::quiet("Reading…", theme)
                 .id(SharedString::from(format!("{name}-loading")))
-                // a phone's page runs edge to edge: its line sits in as its rows' words do
                 .when(ladder.touch, |quiet| quiet.p(space::BLOCK))
                 .into_any_element(),
         ),
@@ -88,7 +83,6 @@ pub(crate) fn waiting<T>(
     }
 }
 
-/// A press back to the screen this one was opened from, named for it.
 pub(crate) fn back(
     id: &'static str,
     label: String,
@@ -101,7 +95,6 @@ pub(crate) fn back(
     design::button(id, label, ladder, theme, go).kind(design::Kind::Quiet)
 }
 
-/// A box of text that says something about the screen: a warning, a cost.
 pub(crate) fn panel(id: &'static str, background: Hsla, theme: &Theme) -> Stateful<Div> {
     div()
         .id(id)
@@ -114,7 +107,6 @@ pub(crate) fn panel(id: &'static str, background: Hsla, theme: &Theme) -> Statef
         .bg(background)
 }
 
-/// A line under a heading, in the muted colour.
 pub(crate) fn caption(words: impl Into<SharedString>, theme: &Theme) -> Div {
     div()
         .text_size(text::CAPTION)
@@ -122,8 +114,6 @@ pub(crate) fn caption(words: impl Into<SharedString>, theme: &Theme) -> Div {
         .child(words.into())
 }
 
-// An agent's face, as both designs draw it: its initial on the agent's tint, or its picture
-// once read, ringed in the tint.
 pub(crate) fn agent_face(
     name: &str,
     picture: Picture,
@@ -137,7 +127,6 @@ pub(crate) fn agent_face(
         .when(pictured, |face| face.border_2().border_color(theme.agent))
 }
 
-/// One fact: its label over its value.
 pub(crate) fn fact(label: &'static str, value: impl Into<SharedString>, theme: &Theme) -> Div {
     div()
         .flex()
@@ -148,7 +137,6 @@ pub(crate) fn fact(label: &'static str, value: impl Into<SharedString>, theme: &
         .child(div().font_weight(FontWeight::MEDIUM).child(value.into()))
 }
 
-/// A state's badge: a dot in its colour, then its word.
 pub(crate) fn state_badge(
     id: impl Into<ElementId>,
     state: State,
@@ -165,11 +153,8 @@ pub(crate) fn state_badge(
     dotted(id, label, foreground, background, ladder)
 }
 
-/// How wide a badge's dot is.
 const DOT: Pixels = px(6.);
 
-/// `design::badge` with a dot before its word, at the badge's sizes.
-// SDK gap: a badge with a leading dot; `design::badge` holds its words alone
 fn dotted(
     id: impl Into<ElementId>,
     label: &'static str,
@@ -197,7 +182,6 @@ fn dotted(
     .child(label)
 }
 
-/// The agent's current conversation's badge, in the agent's tint.
 pub(crate) fn current_badge(
     id: impl Into<ElementId>,
     theme: &Theme,
@@ -216,7 +200,6 @@ pub(crate) fn bound_badge(
 
 pub(crate) const BOUND_WORDS: &str = "Bound to a place: it hears only messages from there";
 
-/// A closed conversation's badge: raised, no dot, as it does nothing more.
 pub(crate) fn closed_badge(
     id: impl Into<ElementId>,
     theme: &Theme,
@@ -225,7 +208,6 @@ pub(crate) fn closed_badge(
     design::badge(id, "Closed", ladder, theme.muted, theme.surface_raised)
 }
 
-/// An account no script hands to harness any more.
 pub(crate) fn agent_gone(agent: u64, theme: &Theme, ladder: &Ladder) -> impl IntoElement + use<> {
     design::empty_state(
         "agent-gone",
@@ -239,7 +221,6 @@ pub(crate) fn agent_gone(agent: u64, theme: &Theme, ladder: &Ladder) -> impl Int
     )
 }
 
-/// A conversation harness does not hold.
 pub(crate) fn thread_gone(id: u64, theme: &Theme, ladder: &Ladder) -> impl IntoElement + use<> {
     design::empty_state(
         "thread-gone",
@@ -251,7 +232,6 @@ pub(crate) fn thread_gone(id: u64, theme: &Theme, ladder: &Ladder) -> impl IntoE
     )
 }
 
-/// The context against the window, as a bar `width` wide: drawn only once the window is known.
 pub(crate) fn meter(
     context: harness::Context,
     window: Option<u64>,
@@ -260,7 +240,6 @@ pub(crate) fn meter(
     theme: &Theme,
 ) -> Option<Div> {
     let window = window.filter(|window| *window > 0)?;
-    // a tick where the conversation starts compacting, when that comes before the window's end
     let mark = threshold.filter(|at| *at < window).map(|at| {
         div()
             .absolute()
@@ -307,7 +286,6 @@ pub(crate) fn thinking_picker(
         .map(|(index, choice)| {
             (
                 ElementId::Name(format!("{id}-{index}").into()),
-                // a phone's six segments share its width: the levels in few letters
                 SharedString::from(match ladder.touch {
                     true => thinking_short(*choice),
                     false => thinking_words(*choice),
@@ -326,9 +304,6 @@ pub(crate) fn thinking_picker(
     )
 }
 
-/// What is missing when no member node serves `service`, or relay, and the steps an
-/// operator takes: a registered service is served by the nodes its owner assigns; relay is
-/// egress's own, served by any member node that turns it on.
 pub(crate) fn no_node(
     id: &'static str,
     service: &str,
@@ -362,12 +337,10 @@ pub(crate) fn no_node(
     Some(shown)
 }
 
-/// Whether the fold under `key` is open: a key in `Agents.open` turns it from how it starts.
 pub(crate) fn opened(view: &Agents, key: &str, starts_open: bool) -> bool {
     starts_open != view.open.contains(key)
 }
 
-/// A press that turns the fold under `key`.
 pub(crate) fn toggler(
     key: String,
     cx: &mut Context<Agents>,
@@ -380,9 +353,6 @@ pub(crate) fn toggler(
     })
 }
 
-/// A row that opens and closes what follows it: its triangle, its label, a caption after it.
-/// The caller adds what it holds, open.
-// SDK gap: a disclosure row; the kit has none yet
 pub(crate) fn fold(
     key: String,
     open: bool,
@@ -423,7 +393,6 @@ pub(crate) fn fold(
         }))
 }
 
-// One choice of a list a form picks from: a row's height, its edge in ink once picked.
 pub(crate) fn pick(id: String, picked: bool, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
     let row = div()
         .id(SharedString::from(id))
@@ -443,8 +412,6 @@ pub(crate) fn pick(id: String, picked: bool, theme: &Theme, ladder: &Ladder) -> 
         .focusable()
 }
 
-/// An id in the data face that a press copies: a frame's place, a call's id.
-// SDK gap: a copyable id; the kit has none yet
 pub(crate) fn copy_chip(
     id: impl Into<ElementId>,
     words: String,

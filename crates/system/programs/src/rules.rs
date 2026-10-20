@@ -26,8 +26,6 @@ const HOOKS: Set<ProgramId> = Set::new("h/");
 pub(crate) const OWNERS: Map<ProgramId, Holder> = Map::new("o/");
 pub(crate) const ROLES: Map<String, ProgramId> = Map::new("r/");
 type At = (u64, ProgramId);
-/// The value stays a bare `Change`, so a `programs` swapped in over pending
-/// entries still reads them; who made one is `BY`.
 pub(crate) const SCHEDULE: Map<At, Change> = Map::new("s/");
 const FOLDED: Item<u64> = Item::new("folded");
 pub(crate) const BY: Map<At, AccountNumber> = Map::new("b/");
@@ -99,8 +97,9 @@ pub(crate) fn holder_of(ctx: &QueryCtx, name: &str) -> Result<Option<Holder>, Er
     if let Some(holder) = OWNERS.get(ctx, &key)? {
         return Ok(Some(holder));
     }
-    let present =
-        PROGRAMS.has(ctx, &key) || VIEWS.has(ctx, &key) || waits(ctx, name, &[], |_| true)?;
+    let present = PROGRAMS.has(ctx, &key)
+        || VIEWS.has(ctx, &key)
+        || matching_change_waits(ctx, name, &[], |_| true)?;
     Ok(present.then_some(Holder::Vote))
 }
 
@@ -162,7 +161,7 @@ fn by_account(ctx: &QueryCtx, scheduled: &Scheduled, account: AccountNumber) -> 
             "a change by an account lands at block {min} or later"
         )));
     }
-    if let Some(height) = voted(ctx, name)? {
+    if let Some(height) = pending_vote_height(ctx, name)? {
         return Err(wrong_state(format!(
             "the validators' vote changes {name} at {height}: wait until it lands or is cancelled"
         )));
@@ -175,7 +174,7 @@ fn by_account(ctx: &QueryCtx, scheduled: &Scheduled, account: AccountNumber) -> 
         _ => None,
     };
     if let Some(frees) = frees
-        && waits(ctx, name, &[], frees)?
+        && matching_change_waits(ctx, name, &[], frees)?
     {
         return Err(wrong_state(format!(
             "{name} is held until an account's removal lands: wait, or cancel it"
@@ -184,8 +183,7 @@ fn by_account(ctx: &QueryCtx, scheduled: &Scheduled, account: AccountNumber) -> 
     Ok(())
 }
 
-/// The height of a change the vote made to `name` that still waits.
-fn voted(ctx: &QueryCtx, name: &str) -> Result<Option<u64>, Error> {
+fn pending_vote_height(ctx: &QueryCtx, name: &str) -> Result<Option<u64>, Error> {
     Ok(SCHEDULE
         .all(ctx)?
         .into_iter()
@@ -215,8 +213,6 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
         held_code(ctx, code)?;
     }
     let name = scheduled.change.program();
-    // an id lands in its one spelling (`program::is_name`), so no id reads
-    // as another's; a removal names what is there, however it is spelled
     let lands = matches!(
         scheduled.change,
         Change::Set(_) | Change::SetView(_) | Change::Publish { .. }
@@ -246,11 +242,11 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
     let clash = match &scheduled.change {
         Change::Set(_) | Change::Publish { .. } => {
             views.contains_key(name)
-                || waits(ctx, name, &changes, |c| matches!(c, Change::SetView(_)))?
+                || matching_change_waits(ctx, name, &changes, |c| matches!(c, Change::SetView(_)))?
         }
         Change::SetView(_) => {
             programs.contains_key(name)
-                || waits(ctx, name, &changes, |c| {
+                || matching_change_waits(ctx, name, &changes, |c| {
                     matches!(c, Change::Set(_) | Change::Publish { .. })
                 })?
         }
@@ -296,9 +292,9 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
             key.1, key.0
         )));
     }
-    // first, so a maker left at this very key (a `programs` rolled back)
-    // takes nothing of the vote's own entry along
-    changes.iter().for_each(|at| drop_change(ctx, at));
+    changes
+        .iter()
+        .for_each(|at| remove_change_and_maker(ctx, at));
     if gone {
         return Ok(());
     }
@@ -321,9 +317,7 @@ fn overruled(ctx: &QueryCtx, name: &str) -> Result<Vec<At>, Error> {
         .collect())
 }
 
-/// A pending change gone, with who made it: directly, without `cancel`'s
-/// guard on a removal's reinstated name.
-fn drop_change(ctx: &ExecCtx, at: &At) {
+fn remove_change_and_maker(ctx: &ExecCtx, at: &At) {
     SCHEDULE.remove(ctx, at);
     BY.remove(ctx, at);
 }
@@ -363,14 +357,14 @@ pub(crate) fn cancel(ctx: &ExecCtx, height: u64, program: ProgramId) -> Result<(
         | Change::Publish { .. } => None,
     };
     if let Some(other) = reinstated
-        && waits(ctx, &key.1, &[], other)?
+        && matching_change_waits(ctx, &key.1, &[], other)?
     {
         return Err(already_exists(format!(
             "{} is claimed by a pending change of the other kind",
             key.1
         )));
     }
-    drop_change(ctx, &key);
+    remove_change_and_maker(ctx, &key);
     Ok(())
 }
 
@@ -389,7 +383,7 @@ pub(crate) fn fold(ctx: &ExecCtx, height: u64) -> Result<(), Error> {
     let mut after = before.clone();
     for (key, change) in due {
         apply(&mut after, change);
-        drop_change(ctx, &key);
+        remove_change_and_maker(ctx, &key);
     }
     write(ctx, &before, &after);
     FOLDED.put(ctx, &height);
@@ -476,7 +470,6 @@ pub(crate) fn at(ctx: &QueryCtx, height: u64) -> Result<Vec<Entry>, Error> {
     Ok(roster(ctx, height, &[])?.programs.into_values().collect())
 }
 
-// Each program that runs at `height`, with what its code says it was built from.
 pub(crate) fn sources(ctx: &QueryCtx, height: u64) -> Result<Vec<Built>, Error> {
     let built = at(ctx, height)?.into_iter().map(|entry| Built {
         source: provenance(ctx, entry.code),
@@ -560,8 +553,6 @@ fn apply(roster: &mut Roster, change: Change) {
     }
 }
 
-/// Every list at a height, by name: what is folded, and every change due
-/// by then but the `overruled` ones.
 pub(crate) fn roster(ctx: &QueryCtx, height: u64, overruled: &[At]) -> Result<Roster, Error> {
     let mut roster = stored(ctx)?;
     let due = due(ctx, height)?;
@@ -572,9 +563,7 @@ pub(crate) fn roster(ctx: &QueryCtx, height: u64, overruled: &[At]) -> Result<Ro
     Ok(roster)
 }
 
-/// Whether a change to `name` that `this` picks waits anywhere in the
-/// schedule, at any height, the `overruled` ones aside.
-fn waits(
+fn matching_change_waits(
     ctx: &QueryCtx,
     name: &str,
     overruled: &[At],

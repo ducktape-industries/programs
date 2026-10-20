@@ -120,12 +120,10 @@ pub const fn is_icon(icon: &str) -> bool {
     icon.is_empty() || (crate::safe_asset_path(icon) && !has_control(icon))
 }
 
-/// A control character (`char::is_control`) somewhere in `text`.
 const fn has_control(text: &str) -> bool {
     let bytes = text.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        // U+0080..=U+009F is `c2 80`..=`c2 9f`
         let c1 = bytes[i] == 0xc2 && i + 1 < bytes.len() && matches!(bytes[i + 1], 0x80..=0x9f);
         if bytes[i] < 0x20 || bytes[i] == 0x7f || c1 {
             return true;
@@ -148,8 +146,6 @@ pub fn read_manifest(bytes: &[u8]) -> Option<Manifest> {
 #[cfg(feature = "manifest")]
 pub fn read_manifest_noting(bytes: &[u8]) -> Option<(Manifest, Vec<String>)> {
     let mut payloads = wasmparser::Parser::new(0).parse_all(bytes);
-    // A view is a core module; a component is not something the host
-    // instantiates, so it is not in the catalog.
     let Some(Ok(wasmparser::Payload::Version {
         encoding: wasmparser::Encoding::Module,
         ..
@@ -207,22 +203,22 @@ impl Manifest {
         let description = lines.next()?.to_owned();
         let mut unknown = Vec::new();
         let mut capabilities = Vec::new();
-        for name in list(lines.next()?)? {
+        for name in comma_terminated_items(lines.next()?)? {
             match Capability::parse(name) {
                 Some(known) => capabilities.push(known),
                 None if name.is_empty() => return None,
                 None => unknown.push(name.to_owned()),
             }
         }
-        let min_width = px(lines.next()?)?;
+        let min_width = canonical_positive_pixels(lines.next()?)?;
         let wire_id = lines.next()?.to_owned();
-        let targets: Vec<String> = list(lines.next()?)?
+        let targets: Vec<String> = comma_terminated_items(lines.next()?)?
             .into_iter()
             .map(str::to_owned)
             .collect();
         let icon = lines.next()?.to_owned();
         let tint = lines.next().and_then(Tint::parse).unwrap_or_default();
-        let width = lines.next().and_then(px);
+        let width = lines.next().and_then(canonical_positive_pixels);
         let manifest = Self {
             wire_id,
             name,
@@ -259,17 +255,13 @@ impl Manifest {
     }
 }
 
-/// A width line: logical px in canonical decimal (no sign, no leading
-/// zero, no spaces), at least 1.
-fn px(line: &str) -> Option<u32> {
+fn canonical_positive_pixels(line: &str) -> Option<u32> {
     line.parse::<u32>()
         .ok()
         .filter(|n| n.to_string() == line && *n >= 1)
 }
 
-/// A comma-terminated list line (`a,b,`): its items, none for an empty
-/// line; `None` for a line that is not one.
-fn list(line: &str) -> Option<Vec<&str>> {
+fn comma_terminated_items(line: &str) -> Option<Vec<&str>> {
     match line.is_empty() {
         true => Some(Vec::new()),
         false => Some(line.strip_suffix(',')?.split(',').collect()),
@@ -310,8 +302,6 @@ mod tests {
         );
     }
 
-    // Claim: untrusted module metadata has one strict format. Dropping
-    // those guards is Red.
     #[test]
     fn the_manifest_format_is_strict() {
         let good =
@@ -327,11 +317,11 @@ mod tests {
         assert_eq!(parsed.tint, Tint::None);
         assert_eq!(parsed.width, None);
         for invalid in [
-            "Sized\nDescription\nclock,", // no header
-            "ducktape.view\nSized\nDescription\nclock,\n480\n0123abcd\n\n\nnone\n", // another header
+            "Sized\nDescription\nclock,",
+            "ducktape.view\nSized\nDescription\nclock,\n480\n0123abcd\n\n\nnone\n",
             "ducktape.view.manifest\nSized\nDescription\n\n480",
-            "ducktape.view.manifest\nSized\nDescription\n\n480\n0123abcd", // six lines: the shape before targets
-            "ducktape.view.manifest\nSized\nDescription\n\n480\n0123abcd\n", // seven lines: the shape before icon
+            "ducktape.view.manifest\nSized\nDescription\n\n480\n0123abcd",
+            "ducktape.view.manifest\nSized\nDescription\n\n480\n0123abcd\n",
             "ducktape.view.manifest\nSized\nDescription\nclock\n480\n0123abcd\n\n\nnone\n",
             "ducktape.view.manifest\nSized\nDescription\nclock,,\n480\n0123abcd\n\n\nnone\n",
         ] {
@@ -366,17 +356,12 @@ mod tests {
         ] {
             assert!(parse(invalid).is_none(), "accepted {invalid:?}");
         }
-        // a line past the tenth is a later build's, read past
         assert!(
             Manifest::parse("ducktape.view.manifest\nApp\n\n\n480\n480\n\n\nnone\n\n").is_some(),
             "an eleventh line refused"
         );
     }
 
-    // Claim: line 7 is read past. A view built when it listed the programs
-    // the view addressed still loads, whatever it listed, and one that can
-    // address a program (`op`, `program`) loads with the line empty: a view
-    // addresses any program, and its manifest has no say in which.
     #[test]
     fn line_seven_is_read_and_grants_nothing() {
         let parse = |caps: &str, targets: &str| {
@@ -412,17 +397,12 @@ mod tests {
         for invalid in ["/abs", "a/../b", "a/./b", "..", "a//b", "a/", "a\\b", "c:x"] {
             assert!(parse(invalid).is_none(), "accepted {invalid:?}");
         }
-        // a view's build asks the same rule, before there is a text to parse
         for control in ["a\nb", "a\tb", "a\u{7f}b", "a\u{85}b"] {
             assert!(!is_icon(control), "accepted {control:?}");
         }
         assert!(is_icon("icons/\u{e9}.svg"));
     }
 
-    // Claim: line 9 is a tint by its name, one of the closed set. Unlike a
-    // capability, a tint this host cannot name (a value, a name from a
-    // later set, or no line: a view built before tints) reads as none, the
-    // neutral tile, and the rest of the manifest stands.
     #[test]
     fn a_manifest_carries_its_tint() {
         let parse = |tint: &str| {
@@ -445,11 +425,6 @@ mod tests {
         );
     }
 
-    // Claim: line 10 is the width a desk window opens at, in line 5's
-    // canonical decimal, or empty for none. Like the tint it grants
-    // nothing: a width this host cannot read, or no line at all (a view
-    // built before widths), reads as none, the app's own share, and the
-    // rest of the manifest stands.
     #[test]
     fn a_manifest_carries_its_width() {
         let parse = |width: &str| {
@@ -488,10 +463,6 @@ mod tests {
         );
     }
 
-    // Claim (J-085): a manifest a later build wrote still reads. A
-    // capability this host does not know is left out and named, the lines
-    // after the tenth are read past, and the level is line 6 in decimal,
-    // or 0 for a view built before levels.
     #[test]
     fn a_later_builds_manifest_reads() {
         let text = "ducktape.view.manifest\nApp\n\nclock,teleport,store,\n480\n7\n\n\nblue\n900\nan eleventh line\n";

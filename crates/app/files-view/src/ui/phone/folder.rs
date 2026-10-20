@@ -28,7 +28,6 @@ pub(super) fn folder(view: &Files, path: &str, cx: Cx, k: &Kit) -> AnyElement {
 fn entries(entries: &[EntryInfo], writable: bool, cx: Cx, k: &Kit) -> AnyElement {
     if entries.is_empty() {
         let detail = words::empty_folder(writable);
-        // the glyph Expo's forge gives an empty tree (`src/forge/repo.tsx:208`)
         return design::empty_state(
             "files-empty",
             "folder-open",
@@ -39,8 +38,6 @@ fn entries(entries: &[EntryInfo], writable: bool, cx: Cx, k: &Kit) -> AnyElement
         )
         .into_any_element();
     }
-    // ponytail: every entry is drawn; a uniform_list once folders hold
-    // more than a screenful of hundreds
     div()
         .id("files-entries")
         .flex()

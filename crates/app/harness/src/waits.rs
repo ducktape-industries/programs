@@ -26,7 +26,6 @@ use crate::{
     pod_event_as,
 };
 
-// the egress service the pods contract names
 pub(crate) const PODS: &str = "pods";
 
 pub(crate) fn what(event: &WaitFor) -> String {
@@ -90,7 +89,6 @@ async fn unschedule(ctx: &Ctx, entry: u64) -> Result<(), Error> {
     Ok(())
 }
 
-// a branch named alone is the branch's ref
 fn normalized(event: WaitFor) -> WaitFor {
     match event {
         WaitFor::Ref { repo, reference } if !reference.starts_with("refs/") => WaitFor::Ref {
@@ -166,7 +164,6 @@ pub(crate) async fn wait(ctx: &Ctx, thread_id: u64, event: WaitFor) -> Result<()
     WAITS.put(ctx, &id, &waiting);
     WAITING.insert(ctx, &(agent, id));
     ARMED.insert(ctx, &(thread_id, id));
-    // the turn that armed it ends once its calls are back (`turns::settle`)
     let in_turn = thread(ctx, thread_id)?.asking != Asking::Idle;
     if in_turn {
         ENDING.insert(ctx, &thread_id);
@@ -205,8 +202,6 @@ pub(crate) async fn unwait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
     Ok(())
 }
 
-// what a wait holds besides its row: its place among its conversation's armed waits, its
-// scheduler entry, its pod's watch, its channel's listening, its forge ref or change
 fn disarm(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
     ARMED.remove(ctx, &(row.thread, row.id));
     if let Some(entry) = SCHEDULED.get(ctx, &row.id)? {
@@ -239,14 +234,10 @@ fn disarm(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
     Ok(())
 }
 
-// the wait ends, and its conversation (else the agent's canonical one) hears why, once: the
-// conversation that heard it
 pub(crate) fn end(ctx: &ExecCtx, wait: u64, what: String) -> Result<Option<u64>, Error> {
     ended(ctx, wait, what, Vec::new(), None)
 }
 
-// `end`, for a message from chat room `room` that came with pictures: the conversation hears the
-// room's rules ahead of it when they are new to it
 pub(crate) fn end_seen(
     ctx: &ExecCtx,
     wait: u64,
@@ -282,7 +273,6 @@ fn ended(
         return Ok(None);
     };
     let still = still_armed(ctx, told.id)?;
-    // a message quoted whole ends with its own text
     let stop = if what.contains('\n') { "" } else { "." };
     let text = format!("Wait {wait} is over: {what}{stop}{still}");
     if let Some(room) = room {
@@ -321,7 +311,6 @@ pub(crate) async fn wait_due(ctx: &Ctx) -> Result<(), Error> {
     fire(ctx, wait, format!("block {height} has come")).await
 }
 
-// the agent's open message waits: each one's channel and number
 pub(crate) fn message_waits(
     ctx: &QueryCtx,
     agent: AccountNumber,
@@ -330,9 +319,6 @@ pub(crate) fn message_waits(
     Ok(waits.into_iter().map(|(_, waited)| waited).collect())
 }
 
-// a channel no other wait needs stops being watched, so what is said there after the wait reaches
-// nobody; a wait armed before waits watched listened instead, and stops listening where the
-// agent's configuration doesn't name the channel
 fn unwatch(ctx: &ExecCtx, agent: AccountNumber, channel: &str, watched: bool) -> Result<(), Error> {
     let needed = message_waits(ctx, agent)?
         .iter()
@@ -360,8 +346,6 @@ fn unwatch(ctx: &ExecCtx, agent: AccountNumber, channel: &str, watched: bool) ->
     Ok(())
 }
 
-// the change's source branch, once the change is known to be open; one already ended is refused
-// saying how
 fn open_change(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<String>, Error> {
     let asked = forge::Query::Change {
         repo: repo.to_owned(),
@@ -403,7 +387,6 @@ fn watch_ref(ctx: &ExecCtx, wait: u64, repo: &str, reference: String) {
     WAIT_REFS.put(ctx, &wait, &key);
 }
 
-// harness hears forge's watchers' events while a forge wait is open, and only then
 fn forge_waits(ctx: &ExecCtx, opened: bool) -> Result<(), Error> {
     let before = FORGE_WAITS.get(ctx)?.unwrap_or(0);
     let after = match opened {
@@ -452,7 +435,6 @@ fn change_ended(
         .collect())
 }
 
-// a ref forge moved (a change's source too), or a change it closed or merged, ends each wait on it
 pub(crate) async fn forged(ctx: &Ctx, event: forge::Watched) -> Result<(), Error> {
     ctx.env().sent_by(forge::PROGRAM)?;
     let ended = match &event {
@@ -505,7 +487,6 @@ pub(crate) async fn forged(ctx: &Ctx, event: forge::Watched) -> Result<(), Error
     Ok(())
 }
 
-// the node at `path` in files, at snapshot `at` or at the head: none where nothing is there
 fn node_at(ctx: &QueryCtx, path: &str, at: Option<BlobId>) -> Result<Option<files::Node>, Error> {
     let asked = files::Query::Stat {
         path: path.to_owned(),
@@ -517,7 +498,6 @@ fn node_at(ctx: &QueryCtx, path: &str, at: Option<BlobId>) -> Result<Option<file
     }
 }
 
-// harness hears files' commits while a file wait is open, and only then
 fn files_waits(ctx: &ExecCtx, opened: bool) -> Result<(), Error> {
     let before = FILE_WAIT_COUNT.get(ctx)?.unwrap_or(0);
     let after = match opened {
@@ -535,7 +515,6 @@ fn files_waits(ctx: &ExecCtx, opened: bool) -> Result<(), Error> {
     Ok(())
 }
 
-// a commit files made ends each wait on a path whose node it changed, made or removed
 pub(crate) async fn filed(ctx: &Ctx, row: files::SnapshotRow) -> Result<(), Error> {
     ctx.env().sent_by(files::PROGRAM)?;
     let mut woken = Vec::new();
@@ -575,7 +554,6 @@ fn filed_words(watch: &FileWatch, there: bool, row: &files::SnapshotRow) -> Stri
     )
 }
 
-// a pod's name as Kubernetes takes one, so it stands in a path whole
 fn named_pod(name: &str) -> Result<(), Error> {
     let fits = !name.is_empty()
         && name.bytes().all(|byte| {
@@ -612,10 +590,6 @@ fn refused_by_pods(what: &str, answer: &http::Response) -> String {
     format!("{what} answered {}: {error}", answer.status)
 }
 
-// how often a stream's alive events come, in whole seconds: every half of the time a request
-// lasts (DEFAULT_WAIT blocks of the measured block time), the other half for a beat held up on its
-// way; no trip is taken off, since how long a read or a creation took to land says nothing of how
-// late a beat lands (chief, j-033 msgs 68, 79); only a request too short for two beats is refused
 pub(crate) fn alive_every(block_ms: u64) -> Result<u64, String> {
     let lasts = DEFAULT_WAIT.saturating_mul(block_ms);
     if lasts < 2000 {
@@ -626,8 +600,6 @@ pub(crate) fn alive_every(block_ms: u64) -> Result<u64, String> {
     Ok(lasts / 2 / 1000)
 }
 
-// the pod's stream opens in harness's own run the block after, so the block time is measured
-// between the two
 async fn watch_from_next_block(ctx: &Ctx, wait: u64) -> Result<(), Error> {
     let height = ctx.env().height;
     let entry = schedule(ctx, height + 1, &Op::PodWait { wait }).await?;
@@ -640,13 +612,6 @@ async fn watch_from_next_block(ctx: &Ctx, wait: u64) -> Result<(), Error> {
     Ok(())
 }
 
-// A pod's wait, in harness's own scheduled run: the pod read once, which measures the trip a
-// request to the pods service takes to land, then its wait stream
-// (`GET /v1/pods/NAME/wait?every=S`), whose `alive` events come every half a request's lifetime
-// (DEFAULT_WAIT blocks of the measured block time), so each lands before the
-// request it keeps alive expires. A stream that ends with the wait still open (a node restart,
-// an expiry) opens again from the next block. Sent by anyone else, it opens the stream again
-// from the next block: how a stream a harness update lost is opened again.
 pub(crate) async fn pod_wait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
     let Some(row) = open(ctx, wait)? else {
         return Err(wrong_state(format!("wait {wait} is not open")));
@@ -664,7 +629,6 @@ pub(crate) async fn pod_wait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
     };
     match (by_harness(ctx), scheduled) {
         (true, Some(entry)) if watch.entry == Some(entry) => {}
-        // a run a later one took the place of
         (true, Some(_)) => return Ok(()),
         _ => {
             if let Some(entry) = watch.entry {
@@ -712,7 +676,6 @@ pub(crate) async fn pod_wait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
     }
 }
 
-// why a pod can't be waited on, from the pods service's answer about it
 fn unwatchable(name: &str, answer: Result<http::Response, Error>) -> Option<String> {
     match answer {
         Ok(answer) if answer.status == 200 => None,
@@ -728,8 +691,6 @@ fn unwatchable(name: &str, answer: Result<http::Response, Error>) -> Option<Stri
     }
 }
 
-// an `ended` event ends the wait with the pods service's line; an `alive` one has done its work
-// by landing, which moved the stream's expiry on
 pub(crate) async fn pod_event(ctx: &Ctx, wait: u64, event: Event) -> Result<(), Error> {
     let egress = bound(ctx)?;
     let from_egress = ctx
@@ -753,7 +714,6 @@ pub(crate) async fn pod_event(ctx: &Ctx, wait: u64, event: Event) -> Result<(), 
     fire(ctx, wait, line).await
 }
 
-// an event is its raw lines up to the blank line: `event: ended` and `data: {"line", ...}`
 fn ended_line(raw: &[u8], name: &str) -> Option<String> {
     let text = String::from_utf8_lossy(raw);
     let is_ended = text.lines().any(|line| line.trim_end() == "event: ended");
@@ -771,7 +731,6 @@ fn ended_line(raw: &[u8], name: &str) -> Option<String> {
     })
 }
 
-// a line on each wait the conversation still holds, for an input that wakes it before them
 pub(crate) fn still_armed(ctx: &QueryCtx, thread: u64) -> Result<String, Error> {
     let mut armed = Vec::new();
     for (_, id) in ARMED.scan(ctx, ARMED.prefix_of(&thread))? {

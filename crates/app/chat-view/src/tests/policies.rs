@@ -123,7 +123,6 @@ fn an_item_with_no_record_keeps_the_rule_from_before_policies() {
         "{:?}",
         cx.texts()
     );
-    // another message's menu: the slot holds that one, and the sheet is gone with the last
     more(&mut cx, &view, 1);
     assert!(cx.find("chat-message-policy/sheet").is_none());
     assert!(

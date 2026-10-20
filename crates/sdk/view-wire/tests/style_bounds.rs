@@ -23,7 +23,6 @@ fn container(style: StyleId) -> Node {
 
 #[test]
 fn whole_frames_bound_base_and_every_conditional_style() {
-    // five entries, each hostile and each its own
     let hostile: Vec<_> = (0..5)
         .map(|height| {
             StyleRefinement::default()
@@ -81,9 +80,6 @@ fn whole_frames_bound_base_and_every_conditional_style() {
     }
 }
 
-/// gpui's own styles cross unchanged; a style change is one props patch
-/// whose frame carries the new entry, bounded as a whole frame's entries
-/// are, and the children under it stay.
 #[test]
 fn actual_gpui_styled_payloads_roundtrip_and_patch_without_replacing_children() {
     let text = StyleRefinement::default()
@@ -96,7 +92,6 @@ fn actual_gpui_styled_payloads_roundtrip_and_patch_without_replacing_children() 
         .p_4()
         .rounded_md()
         .bg(gpui::rgb(0x112233));
-    // the patch frame's entry is bounded as the whole frame's were
     let wider = row.clone().p_6().w(px(f32::INFINITY));
     let node = |style| {
         Node::Container(view_wire::ContainerNode {

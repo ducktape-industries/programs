@@ -14,8 +14,6 @@ pub struct UniformListScrollHandle(Rc<RefCell<UniformListScrollState>>);
 #[derive(Default)]
 struct UniformListScrollState {
     pub(crate) request: Option<wire::list::UniformListScrollRequest>,
-    /// Moves with every request: the host applies a request once, when it
-    /// sees a revision it has not.
     pub(crate) revision: u64,
     pub(crate) y_flipped: bool,
     pub(crate) top_index: usize,
@@ -209,8 +207,6 @@ impl Element for UniformList {
             .cloned()
             .expect("uniform list lowers inside its authored scope");
         let measure_index = self.measure_index.min(count.saturating_sub(1));
-        // the scroll the view asked for since the last frame anchors the
-        // window this frame lowers; it crosses once, under a new revision
         let (scroll_request, revision) = match &self.scroll {
             Some(handle) => {
                 let mut state = handle.0.borrow_mut();
@@ -281,31 +277,15 @@ struct UniformListRoute {
     route: u32,
     count: usize,
     measure_index: usize,
-    /// The rows lowered: a window around what the host shows, with
-    /// [`MARGIN_ROWS`] past each edge, sized from the viewport and the row
-    /// height. Empty until the list's first frame.
     window: Range<usize>,
-    /// The rows the list shows: what the host last said
-    /// (`Event::UniformListRange`), moved by a scroll the view asked for
-    /// since. None until either: the list is at its top.
     shown: Option<Range<usize>>,
-    /// The row height the host measured, once it has
-    /// (`Event::UniformListRange`). Before that the design system's row.
     item_height: Option<f32>,
     scroll: Option<Weak<RefCell<UniformListScrollState>>>,
-    /// The frame that last lowered this list.
     seen: u64,
 }
 
-/// The uniform lists the frame being lowered holds, by authored path: each
-/// keeps the route id the host answers with, the window of rows it lowers,
-/// the row height the host measured and the scroll handle it reports into.
-/// A list the frame did not lower is forgotten with it ([`end_frame`]).
-///
-/// [`end_frame`]: Self::end_frame
 pub(crate) struct UniformLists {
     lists: RefCell<HashMap<Vec<wire::ElementIdWire>, UniformListRoute>>,
-    // Route 0 is never given out.
     next_route: Cell<u32>,
     frame: Cell<u64>,
 }
@@ -321,29 +301,15 @@ impl Default for UniformLists {
 }
 
 impl UniformLists {
-    /// The root is about to lower a frame.
     pub(crate) fn begin_frame(&self) {
         self.frame.set(self.frame.get() + 1);
     }
 
-    /// The frame is lowered: a list it did not hold is forgotten, its
-    /// window and route with it.
     pub(crate) fn end_frame(&self) {
         let frame = self.frame.get();
         self.lists.borrow_mut().retain(|_, list| list.seen == frame);
     }
 
-    /// The route and row ranges to lower for the list at `path`,
-    /// registering it on first sight. `count` and `measure_index` arrive
-    /// clamped by [`UniformList::lower`]; the measurement row is always
-    /// among the ranges. The window holds the rows the list shows: the
-    /// ones the host last said it shows, a screenful of them at least
-    /// (sized from `viewport`, the pane's height, which the list's is at
-    /// most, and the measured row height), so a pane grown taller and rows
-    /// that came back after a filter are in the frame that shows them.
-    /// `request`, the scroll the view asked for this frame, moves them as
-    /// the host will ([`anchored`]), so the row it moves to is in the frame
-    /// that carries the move.
     fn route(
         &self,
         path: &[wire::ElementIdWire],
@@ -373,22 +339,18 @@ impl UniformLists {
         state.measure_index = measure_index;
         state.scroll = scroll.map(Rc::downgrade);
         let held = clamped(state.window.clone(), count);
-        let rows = rows_shown(viewport, state.item_height);
-        // a list scrolled past its last screenful is put back there, as the
-        // host puts it
+        let rows = viewport_row_count(viewport, state.item_height);
         let (start, end) = state.shown.as_ref().map_or((0, 0), |s| (s.start, s.end));
         let start = start.min(count.saturating_sub(rows));
         let shown = clamped(start..end.max(start + rows), count);
         let target = match request {
-            Some(request) => anchored(request, &shown, rows, count),
+            Some(request) => rows_after_scroll_request(request, &shown, rows, count),
             None => shown,
         };
         if request.is_some() {
             state.shown = Some(target.clone());
         }
         state.window = window(&held, target, count);
-        // the measurement row on its own only where the window does not
-        // hold it: a row painted twice is paid for twice
         let measurement = measure_index..measure_index.saturating_add(1).min(count);
         let mut ranges = Vec::new();
         if !state.window.contains(&measure_index) {
@@ -400,12 +362,6 @@ impl UniformLists {
         (state.route, ranges)
     }
 
-    /// The host shows rows `start..end` of the list at `path`, whose rows
-    /// it measured `item_height` tall: whether a frame is owed for it. The
-    /// host's word places the window: rows past it move the window to
-    /// them, with the margin past each edge, and that is a frame; rows it
-    /// holds draw nothing, and what it holds more than a margin off screen
-    /// (a scroll grew it) leaves with the next frame.
     pub(crate) fn request_range(
         &self,
         path: Vec<wire::ElementIdWire>,
@@ -441,8 +397,6 @@ impl UniformLists {
         !holds
     }
 
-    /// What the host reports about the list at `path`, written into the
-    /// scroll handle that tracks it.
     pub(crate) fn update_state(
         &self,
         path: &[wire::ElementIdWire],
@@ -464,22 +418,12 @@ impl UniformLists {
     }
 }
 
-/// How many rows fill `viewport`: the measured row height, or the design
-/// system's row until the host has measured one (a shorter row would over-
-/// send, never leave a blank).
-fn rows_shown(viewport: Pixels, item_height: Option<f32>) -> usize {
+fn viewport_row_count(viewport: Pixels, item_height: Option<f32>) -> usize {
     let item_height = item_height.unwrap_or(f32::from(crate::design::size::ROW));
     (f32::from(viewport) / item_height).ceil().max(1.) as usize
 }
 
-/// The rows a list showing `shown` (`rows` of them at least) shows after
-/// `request`: gpui's own rule. A row on screen is left where it is, unless
-/// the view insists; under `Nearest` a row above the shown lands at their
-/// top and one below at their bottom. The first and last rows shown may be
-/// cut by the list's edge, and the host moves for a cut row, so they count
-/// as off screen: the window that grows by the move ([`window`]) still
-/// holds the rows the host stays on when the row was whole.
-fn anchored(
+fn rows_after_scroll_request(
     request: &wire::list::UniformListScrollRequest,
     shown: &Range<usize>,
     rows: usize,

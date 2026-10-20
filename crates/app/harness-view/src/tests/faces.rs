@@ -9,7 +9,6 @@ fn blob(number: u64) -> String {
     format!("sha256:{}", format!("{:02x}", number as u8).repeat(32))
 }
 
-// The suite's network with everyone but Atlas holding a picture.
 fn pictured() -> Net {
     let mut net = Net::default();
     for account in &mut net.accounts {

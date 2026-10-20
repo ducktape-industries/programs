@@ -17,9 +17,7 @@ use crate::words;
 use forge::{Change, ChangeState, FileDiff, Query, Reply, Verdict};
 use view::design::Ladder;
 
-/// The Files tab's file list.
 const FILE_LIST_W: Pixels = px(240.);
-/// The finish-review panel.
 const FINISH_W: Pixels = px(380.);
 
 pub(crate) fn render(
@@ -69,9 +67,6 @@ pub(crate) fn render(
         },
         ChangeTab::Files => files(forge, cx, theme, ladder),
     };
-    // wide, the details stand beside the conversation and the commits (the
-    // files keep their width for the diff); narrow, "Details" lays them
-    // over the whole screen
     let mut row = div()
         .id(id("forge-change-body"))
         .relative()
@@ -148,8 +143,6 @@ fn header(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder
                 .child(words::CLOSING_IS_FINAL),
         );
     }
-    // why Merge is off: a strip while the change is open, a quiet line
-    // once it has ended
     match forge.merge_block() {
         Some(crate::actions::MergeBlock::NotOpen) => {
             column = column.child(
@@ -178,13 +171,10 @@ fn header(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder
     column.into_any_element()
 }
 
-/// Whether this change's Close waits for its second press.
 fn closing(forge: &Forge, change: &Change) -> bool {
     forge.closing == Some(crate::state::change_key(&forge.repo_name(), change.n))
 }
 
-/// The change's title, number and state, and what an open change offers:
-/// Edit, Close, and Merge (kept in place, off, while it cannot run).
 fn title_line(
     forge: &Forge,
     change: &Change,
@@ -219,7 +209,6 @@ fn title_line(
         )
         .child(state_chip(change.state, change.n, theme, ladder))
         .child(div().flex_1());
-    // an ended change has nothing left to edit, close or merge
     if open {
         top = top
             .child(
@@ -251,10 +240,7 @@ fn title_line(
     top
 }
 
-/// The change's tabs, each with its count once it is known.
 fn tabs(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
-    // manual: Files reads the whole diff and Commits a log, so the arrows
-    // only move and Enter opens
     let active = forge.change_tab_cursor.unwrap_or(forge.nav().change_tab);
     let at = |tab| {
         ChangeTab::ALL
@@ -297,8 +283,6 @@ fn tabs(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) 
     bar
 }
 
-// ------------------------------------------------------------------ files
-
 fn files(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     let Some(query) = forge.diff_query() else {
         return quiet(words::COMPARING_ENDPOINTS, theme);
@@ -329,18 +313,9 @@ fn files(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder)
     columns.child(pane).into_any_element()
 }
 
-/// The Files tab's list of files, the id its cursor is kept under.
 pub(crate) const FILE_LIST_ID: &str = "forge-file-tree-list";
-/// A file row's height, as the approved mock draws it.
 const FILE_ROW_H: f32 = 30.;
 
-/// The reviewer's file list: how much each file changes, a tick for the
-/// ones read, and a click that shows one file alone. A virtual list, so a
-/// render draws the rows on screen and not every file of a release; one
-/// Tab stop, a grid: ↑ ↓ walk the files, Enter opens the active one, and →
-/// reaches its viewed tick (drawn left of the name, as the mock has it,
-/// but the row's second cell: the press stays first so Enter opens), where
-/// Enter or Space ticks it.
 fn file_tree(
     forge: &Forge,
     query: &Query,
@@ -382,8 +357,6 @@ fn file_tree(
         .child(
             design::mono(words::files_changed(*total_files, added, deleted))
                 .id(id("forge-files-title"))
-                // a release's counts give way to All files, the way back to
-                // every file, rather than push it out of the column
                 .min_w(px(0.))
                 .truncate()
                 .text_size(design::text::CAPTION)
@@ -398,8 +371,6 @@ fn file_tree(
                 ),
             )
         });
-    // what marks the rows, read once a render for the rows the list draws:
-    // a render pays for the rows on screen, not for every file
     let count = page.items.len();
     let (at, cell) = crate::ui::components::cursor(forge, FILE_LIST_ID);
     let marks = Rc::new(FileMarks {
@@ -433,8 +404,6 @@ fn file_tree(
             }
         },
     )
-    // as tall as its rows, so the hint sits under a short list; a long one
-    // gives way to the column and scrolls
     .flex_none()
     .flex_shrink_1()
     .h(px(count as f32 * FILE_ROW_H));
@@ -462,8 +431,6 @@ fn file_tree(
         .into_any_element()
 }
 
-/// What marks the file list's rows: the files ticked, the comments on
-/// each, the file shown alone, and where the arrows are (row, cell).
 struct FileMarks {
     viewed: BTreeSet<String>,
     comments: BTreeMap<Vec<u8>, usize>,
@@ -472,8 +439,6 @@ struct FileMarks {
     walked: bool,
 }
 
-/// The paths of the open change's files the reader has ticked, as its
-/// viewed keys spell them.
 fn viewed_paths(forge: &Forge) -> BTreeSet<String> {
     let Some(prefix) = forge.file_key(b"") else {
         return BTreeSet::new();
@@ -486,8 +451,6 @@ fn viewed_paths(forge: &Forge) -> BTreeSet<String> {
         .collect()
 }
 
-/// One file of the diff, a grid row: its press (the path, its comments and
-/// counts) and its viewed tick, each a cell; the tick is drawn first.
 fn file_row(
     file: &FileDiff,
     index: usize,
@@ -534,14 +497,12 @@ fn file_row(
                 &theme,
             )
         })
-        // the arrows on the tick: the ring's ink marks the cell
         .when(walked && active == Some(1), |check| {
             check.border_2().border_color(theme.accent)
         })
         .text_size(px(10.))
         .aria_label(format!("Viewed {label}"))
         .aria_toggled(viewed.into())
-        // a tick is not also a click on the row
         .occlude()
         .on_click(tick)
         .child(if viewed { "✓" } else { "" });
@@ -599,8 +560,6 @@ fn file_row(
                 )
             }),
     );
-    // the tick's cell beside the press's, as a button may not hold it
-    // as wide as the list, so a long path is cut and its counts stay in view
     let row = div()
         .id(id(format!("forge-file-{label}")))
         .w_full()
@@ -635,7 +594,6 @@ fn file_row(
     row.into_any_element()
 }
 
-/// The line comments on each file: my review's drafts plus the published.
 fn file_comments(forge: &Forge) -> BTreeMap<Vec<u8>, usize> {
     let drafts = forge
         .review()
@@ -653,7 +611,6 @@ fn file_comments(forge: &Forge) -> BTreeMap<Vec<u8>, usize> {
     counts
 }
 
-/// The strip above the diff: what a review is, or where this one stands.
 fn strip(theme: &Theme) -> Stateful<Div> {
     div()
         .id(id("forge-review-bar"))
@@ -668,7 +625,6 @@ fn strip(theme: &Theme) -> Stateful<Div> {
         .border_color(theme.border)
 }
 
-/// No review under way: how to comment, and Start review.
 fn idle_review_bar(
     forge: &Forge,
     cx: &mut Context<Forge>,
@@ -696,8 +652,6 @@ fn idle_review_bar(
         .into_any_element()
 }
 
-/// Start review → staged comments → finish as exactly one operation. The
-/// finish form opens as a panel under its button.
 fn review_bar(
     forge: &Forge,
     cx: &mut Context<Forge>,
@@ -722,9 +676,6 @@ fn review_bar(
     )
     .kind(design::Kind::Primary)
     .enabled(forge.may_write());
-    // the form is a dialog over the button: Tab stays in it, Escape or a
-    // press outside folds it. Its layer puts the form's anchor on the
-    // button's right edge, where it hangs from
     let panel = review
         .finishing
         .then(|| finish_panel(forge, review, cx, theme, ladder));
@@ -768,9 +719,6 @@ fn review_bar(
     column.into_any_element()
 }
 
-/// The finish form, over the diff under its button: what the review says,
-/// its verdict, Submit review. A press outside folds it; nothing typed is
-/// lost. It hangs from the point its overlay's layer puts it at.
 fn finish_panel(
     forge: &Forge,
     review: &crate::state::ReviewSession,
@@ -832,7 +780,6 @@ fn finish_panel(
     .into_any_element()
 }
 
-/// What the review says overall, typed while finishing.
 fn review_body(body: &TextField, theme: &Theme) -> impl IntoElement + use<> {
     Textarea::new(id("forge-review-body"), body, words::REVIEW_BODY)
         .min_h(design::size::CONTROL * 2.5)
@@ -845,7 +792,6 @@ fn review_body(body: &TextField, theme: &Theme) -> impl IntoElement + use<> {
         .placeholder(words::REVIEW_PROMPT)
 }
 
-/// The three verdicts as radio rows, each with what it means.
 fn verdicts(
     forge: &Forge,
     picked: Verdict,
@@ -858,7 +804,6 @@ fn verdicts(
         .iter()
         .position(|(verdict, _, _)| *verdict == picked)
         .unwrap_or_default();
-    // a radio group: one Tab stop, and ↑ ↓ check the next verdict
     let mut column = design::composite(id("forge-verdicts"), Role::RadioGroup, "Verdict")
         .active(active, VERDICTS.len())
         .wrap()

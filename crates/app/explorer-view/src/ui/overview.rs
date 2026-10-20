@@ -1,17 +1,10 @@
 //! The Overview tab: the head, the latest blocks and transactions.
 use super::*;
 
-/// A stat keeps this much of the row; the four fold two by two below it.
 const STAT_MIN_W: Pixels = px(200.);
-/// The latest blocks keep this much beside the transactions.
 const PANEL_MIN_W: Pixels = px(320.);
-/// The latest transactions keep the width they have alone at the view's
-/// narrowest, its `MIN_WINDOW_WIDTH` less the scroll bar: any narrower, a
-/// row's fixed columns (hash, signer, age) leave the op's title no room.
 const TXS_MIN_W: Pixels = px(624.);
 
-/// Whether the latest transactions fit beside the latest blocks, in the
-/// view's width less the page's scroll bar: from a 960 px view.
 fn side_by_side(view: &Explorer) -> bool {
     let gutter = f32::from(design::size::SCROLLBAR);
     view.width - gutter >= f32::from(PANEL_MIN_W + TXS_MIN_W)
@@ -19,9 +12,6 @@ fn side_by_side(view: &Explorer) -> bool {
 
 pub(super) fn overview(view: &Explorer, cx: Cx, theme: &Theme) -> AnyElement {
     let side = side_by_side(view);
-    // side by side, the panels fill the page's height and the rule between
-    // them runs to its foot; narrower, each takes the page's width and its
-    // own height, the transactions right under the blocks
     let latest = div()
         .id("explorer-latest")
         .flex()
@@ -39,7 +29,6 @@ pub(super) fn overview(view: &Explorer, cx: Cx, theme: &Theme) -> AnyElement {
         .into_any_element()
 }
 
-/// The row of figures: height, epoch, validators, accounts.
 fn stats(view: &Explorer, theme: &Theme) -> impl IntoElement {
     let status = view.status.ready();
     let dash = || words::NO_VALUE.to_owned();
@@ -70,7 +59,6 @@ fn stats(view: &Explorer, theme: &Theme) -> impl IntoElement {
             .border_b_1()
             .border_color(theme.border)
     };
-    // in pairs, so a narrow row folds to two by two, never three and one
     div()
         .id("explorer-stats")
         .flex()
@@ -105,7 +93,6 @@ fn stats(view: &Explorer, theme: &Theme) -> impl IntoElement {
         )
 }
 
-/// One figure: its label, its value, and a note under it.
 fn stat(
     id: &'static str,
     label: &'static str,

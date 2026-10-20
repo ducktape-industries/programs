@@ -8,7 +8,6 @@ use ::program::{BlobHeader, BlobId, Error, HashKind};
 use ::program::{ExecCtx, QueryCtx, code, not_found};
 use gitcore::{Error as GitError, Hash, Kind, Object, Objects, Oid, WriteObjects};
 
-/// A different serving node or object replication can satisfy this query.
 pub(crate) fn object_not_held(oid: impl std::fmt::Display) -> Error {
     not_found(format!("object {oid} is not held by this node"))
 }

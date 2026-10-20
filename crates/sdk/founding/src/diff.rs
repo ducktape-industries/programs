@@ -58,7 +58,6 @@ fn named(schema: &BorshSchemaContainer) -> crate::Result<Roots<'_>> {
 struct Walk<'s> {
     old: &'s BorshSchemaContainer,
     new: &'s BorshSchemaContainer,
-    // each pair of types compared once: a type used twice is told of once, a recursive one ends
     seen: BTreeSet<(Declaration, Declaration)>,
     found: Vec<Difference>,
 }

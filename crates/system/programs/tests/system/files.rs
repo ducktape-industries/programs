@@ -79,7 +79,6 @@ fn files_names_held_chunks_and_never_takes_bytes_in_a_transaction() {
         assert_eq!(across.snapshot, snapshot);
         assert_eq!(net.read("/shared/a", 0, 100).await.bytes, b"hello");
 
-        // a chunk nobody put is not on the network
         let unheld = Content::Chunks {
             size: 5,
             chunks: vec![program::blob_id(abi::HashKind::Sha256, files::CHUNK, b"never").unwrap()],
@@ -89,7 +88,6 @@ fn files_names_held_chunks_and_never_takes_bytes_in_a_transaction() {
             net.refuse(&ada, files::PROGRAM, &refused).await,
             reason::NOT_FOUND
         );
-        // file bytes in a transaction, either way
         let staged = Op::Stage {
             bytes: b"bytes".to_vec(),
         };

@@ -35,14 +35,11 @@ pub fn sanitize(frame: &mut Frame, styles: &mut Styles) -> Result<SanitizeReport
     taken
 }
 
-/// [`sanitize`] of a frame whose style entries `styles` already holds.
 fn sanitize_against(frame: &mut Frame, styles: &Styles) -> Result<SanitizeReport, Refused> {
     let mut walk = Walk::new(styles);
     if let Some(root) = &mut frame.root {
         sanitize_tree_with(root, &mut walk)?;
     }
-    // a tooltip's content hangs under a node of the tree: not a root (no
-    // `on_back`), and under its one dialog layer (no sheet)
     walk.in_tooltip = true;
     for response in &mut frame.tooltip_responses {
         if let Some(content) = &mut response.content {
@@ -66,7 +63,6 @@ pub(crate) fn sanitize_tree(root: &mut Node, styles: &Styles) -> Result<Sanitize
 
 fn sanitize_tree_with(root: &mut Node, walk: &mut Walk) -> Result<(), Refused> {
     sanitize_node(root, 0, walk, &mut identity::Scopes::default(), None).map_err(|refused| {
-        // a refusing walk stops where it refused: `at` still names the node
         let node = walk
             .at
             .iter()
@@ -140,19 +136,12 @@ impl std::fmt::Display for Refused {
 impl std::error::Error for Refused {}
 
 pub(crate) struct Walk {
-    /// How many styles the tree's table holds: the ids a node may name.
     styles: usize,
-    /// A node already claimed the active descendant.
     pub(crate) active_descendant: bool,
-    /// The walk is inside a sheet: a second one is refused.
     pub(crate) in_sheet: bool,
-    /// The frame already holds a sheet: one layer means one scrim.
     pub(crate) sheet_seen: bool,
-    /// The walk is in a tooltip's content, which no sheet opens from.
     pub(crate) in_tooltip: bool,
-    /// The child indices from the root to the node being walked.
     pub(crate) at: Vec<u32>,
-    /// What the walk has cut so far.
     pub(crate) cuts: SanitizeReport,
 }
 
@@ -169,9 +158,6 @@ impl Walk {
         }
     }
 
-    /// A style a node names is one the table holds, or the frame is
-    /// refused: there is no style to draw it with, and a default one is a
-    /// look the view never wrote.
     pub(crate) fn style(&self, id: StyleId) -> Result<(), &'static str> {
         match (id.0 as usize) < self.styles {
             true => Ok(()),
@@ -179,7 +165,6 @@ impl Walk {
         }
     }
 
-    /// Counts `count` cuts of one kind, and where the first one fell.
     pub(crate) fn cut(&mut self, kind: fn(&mut SanitizeReport) -> &mut usize, count: usize) {
         if count == 0 {
             return;

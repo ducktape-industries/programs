@@ -30,14 +30,10 @@ pub trait Program {
     // An op left out returns bytes no schema names.
     const RETURNS: &'static [crate::schema::Return] = &[];
 
-    // What the program tells an agent about each op and query: `tools::Tools::of::<Op, Query>()`
-    // over `#[derive(Described)]`. founding writes it as the `ducktape.tools` section.
     fn tools() -> crate::tools::Tools {
         crate::tools::Tools::default()
     }
 
-    /// Genesis, with the params the network was founded with. Nothing by
-    /// default; override only where genesis needs it.
     fn init(_ctx: &ExecCtx, _params: &[u8]) -> Result<(), Error> {
         Ok(())
     }
@@ -46,12 +42,6 @@ pub trait Program {
         Err(Error::new(code::UNSUPPORTED, "this program executes no op"))
     }
 
-    /// The outcome of message `id`, which this program emitted with
-    /// [`Reply::Wanted`](crate::Reply::Wanted). A refusal here fails the
-    /// frame; Ok absorbs the outcome. By default an applied message is
-    /// absorbed and a refused one's refusal is returned, failing the frame
-    /// as if the message had been sent with [`Reply::None`](crate::Reply::None);
-    /// override to accept a refusal.
     fn reply(_ctx: &ExecCtx, _id: &MessageId, outcome: &Outcome) -> Result<(), Error> {
         match outcome {
             Outcome::Applied { .. } => Ok(()),
@@ -73,10 +63,6 @@ pub trait Program {
         Err(Error::new(code::UNSUPPORTED, "this program is no hook"))
     }
 
-    /// The bytes a query is answered with: [`Program::query`]'s `Reply` as
-    /// borsh. Override only for a query whose answer is not a `Reply` at
-    /// all (forge serves git's own wire through two of its queries); every
-    /// other program leaves it alone.
     fn answer(ctx: &QueryCtx, query: Self::Query) -> Result<Vec<u8>, Error> {
         Ok(abi::encode(&Self::query(ctx, query)?))
     }
@@ -284,8 +270,6 @@ mod tests {
         assert!(is_name(&"x".repeat(64)) && !is_name(&"x".repeat(65)));
     }
 
-    /// A program whose op, a `u64`, never decodes from a reply's empty
-    /// payload, and which keeps the replies it gets.
     struct Asker;
 
     impl Program for Asker {
@@ -326,7 +310,6 @@ mod tests {
         execute::<Asker>(&host.exec(env.clone()), &[]).unwrap();
         let kept: Option<(MessageId, Outcome)> = host.query(env.clone()).record("reply").unwrap();
         assert_eq!(kept, Some((id.clone(), outcome.clone())));
-        // the default reply returns a refused message's refusal
         let Outcome::Rejected(refusal) = &outcome else {
             unreachable!()
         };
@@ -336,8 +319,6 @@ mod tests {
         );
     }
 
-    /// Answers a query with bytes of its own, as forge serves git's wire:
-    /// its `Reply` is never what the host gets.
     struct Raw;
     impl Program for Raw {
         const NAME: &'static str = "raw";
@@ -415,7 +396,6 @@ mod tests {
         assert_eq!(silent.code, code::UNSUPPORTED);
     }
 
-    /// Keeps [`Program::reply`]'s default.
     struct Silent;
     impl Program for Silent {
         const NAME: &'static str = "silent";

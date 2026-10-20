@@ -213,10 +213,6 @@ mod variable_tests {
         );
     }
 
-    /// A list is a scope of its own: the id-less rows of two lists under
-    /// one parent, each filed under its index, do not meet. Two lists
-    /// written with one id in one scope are one id twice, as any two
-    /// siblings are.
     #[test]
     fn sibling_lists_file_their_rows_apart() {
         let pair = |first: &'static str, second: &'static str| Frame {

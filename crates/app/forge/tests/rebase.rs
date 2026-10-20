@@ -10,7 +10,6 @@ fn branch(name: &str) -> forge::Revision {
     forge::Revision::Ref(name.as_bytes().to_vec())
 }
 
-// A repository with each branch at its commit, every object of `store` pushed.
 fn seeded(store: &MemoryObjects, branches: &[(&str, Oid)]) -> MemorySandbox {
     let sandbox = founded();
     create(&sandbox, "project", HashKind::Sha1);
@@ -24,8 +23,6 @@ fn seeded(store: &MemoryObjects, branches: &[(&str, Oid)]) -> MemorySandbox {
     sandbox
 }
 
-// main and feature both moved on from root: feature in two commits (b changed, c added),
-// main in one (a changed).
 fn diverged(store: &mut MemoryObjects) -> (Oid, Oid) {
     let root = file_commit(store, &[], 1, &[("a", b"1\n"), ("b", b"1\n")]);
     let first = file_commit(store, &[root], 2, &[("a", b"1\n"), ("b", b"2\n")]);
@@ -35,7 +32,6 @@ fn diverged(store: &mut MemoryObjects) -> (Oid, Oid) {
     (main, feature)
 }
 
-// The change WRITER opens from `from` into main.
 fn opened(sandbox: &MemorySandbox, from: &str) -> u64 {
     let op = Op::ChangeOpen {
         repo: "project".into(),
@@ -84,7 +80,6 @@ fn protect(name: &str, protected: bool) -> Op {
     }
 }
 
-// The commit a rebase answered, and the commit as forge stored it.
 fn rebased(sandbox: &MemorySandbox, output: &[u8]) -> (Oid, Commit) {
     let forge::OpReply::Rebased { oid, .. } = abi::decode(output).unwrap() else {
         panic!("a rebase answers Rebased");
@@ -105,7 +100,6 @@ fn tree_with(store: &mut MemoryObjects, files: &[(&str, &[u8])]) -> Oid {
     tree(store, &entries)
 }
 
-// The change and its source's head, as the Change query answers them.
 fn change_of(sandbox: &MemorySandbox, n: u64) -> (forge::Change, Option<String>) {
     let query = Query::Change {
         repo: "project".into(),
@@ -136,7 +130,6 @@ fn protected_of(sandbox: &MemorySandbox) -> Vec<Vec<u8>> {
     page.items
 }
 
-// feature's change, reviewed once, rebased onto main by its author, in a sandbox of its own.
 fn landed() -> (MemorySandbox, MemoryObjects, u64, Oid, Oid, Commit) {
     let mut store = MemoryObjects::new(Hash::Sha1);
     let (main, feature) = diverged(&mut store);

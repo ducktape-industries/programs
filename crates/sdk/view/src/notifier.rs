@@ -70,8 +70,6 @@ pub trait Notifier: 'static + Sized {
     fn new(cx: &mut Context<Self>) -> Self;
 }
 
-/// One notifier's run loop: the wasm exports drive it on the host, and
-/// [`TestNotifier`](crate::testing::TestNotifier) drives it in a test.
 pub(crate) struct NotifierDriver<N: Notifier> {
     pub(crate) app: App,
     pub(crate) entity: Entity<N>,
@@ -98,8 +96,6 @@ impl<N: Notifier> NotifierDriver<N> {
         Self { app, entity }
     }
 
-    /// One tick: what the host owes it, in order, each settled before the
-    /// next, as a view's tick runs its events; then what it asked.
     pub(crate) fn tick(&mut self, answers: Vec<Answer>) -> Turn {
         executor::begin_tick(&mut self.app.inner.tasks.borrow_mut());
         let mut busy = self.app.settle();
@@ -163,7 +159,6 @@ mod tests {
     use crate::testing::TestNotifier;
     use crate::{Manifested, Notifier};
 
-    /// Counts the blocks of a program and posts one notice per block.
     struct Counter {
         seen: u64,
     }
@@ -205,12 +200,10 @@ mod tests {
             .collect();
         assert_eq!(titles, ["block 4", "block 5"]);
         notices.read(|counter| assert_eq!(counter.seen, 2));
-        // stopped, as on a disconnect: it follows nothing any more
         cx.stop();
         assert!(!blocks.subscribed());
     }
 
-    /// Rings once per session it is handed.
     struct Ring;
     impl Notifier for Ring {
         const NAME: &'static str = "Ring";
@@ -238,8 +231,6 @@ mod tests {
         }
     }
 
-    /// A ring crosses as it was posted: its kind, its end and its hang-up
-    /// link with it.
     #[test]
     fn a_ring_reaches_the_host_with_its_kind_and_its_end() {
         let mut cx = TestNotifier::<Ring>::new();
@@ -250,8 +241,6 @@ mod tests {
         assert_eq!(cx.host().requests::<NotifyPost>(), [ring()]);
     }
 
-    // The notifier's manifest is a view's: the host reads its name,
-    // capabilities with the same parser, at the wire it speaks.
     #[test]
     fn a_notifiers_manifest_reads_as_a_views() {
         const LEN: usize = Manifested::of_notifier::<Counter>().encoded_len();
@@ -265,7 +254,6 @@ mod tests {
         );
         assert!(manifest.targets.is_empty());
         assert_eq!(manifest.level(), crate::wire::WIRE_LEVEL);
-        // it draws nothing: no tint and no window width, written as such
         assert!(text.ends_with("\nnone\n"), "{text:?}");
         assert_eq!(manifest.tint, crate::Tint::None);
         assert_eq!(manifest.width, None);

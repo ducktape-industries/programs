@@ -53,7 +53,6 @@ pub(super) fn program(view: &Explorer, name: &str, cx: Cx, k: &Look) -> AnyEleme
     page.child(body).into_any_element()
 }
 
-/// The page under its title row (Expo `Detail`).
 fn detail(
     view: &Explorer,
     network: &Network,
@@ -73,7 +72,6 @@ fn detail(
         .into_any_element()
 }
 
-/// The hook and the role it fills, as badges; neither, nothing.
 fn standing(network: &Network, name: &str, k: &Look) -> Option<Div> {
     let hook = network.is_hook(name);
     let role = network.role_of(name);
@@ -94,7 +92,6 @@ fn standing(network: &Network, name: &str, k: &Look) -> Option<Div> {
     )
 }
 
-/// The manifest the code's view carries, once read and readable.
 fn view_manifest(view: &Explorer) -> Option<&Manifest> {
     view.manifest
         .ready()
@@ -103,8 +100,6 @@ fn view_manifest(view: &Explorer) -> Option<&Manifest> {
         .and_then(|carried| carried.manifest.as_ref())
 }
 
-/// What the code's view asks of the host, a row each, under its head with
-/// their count; or why none is shown (Expo `Capabilities`).
 fn capabilities(view: &Explorer, listed: bool, cx: Cx, k: &Look) -> Vec<AnyElement> {
     let count = view_manifest(view).map(|manifest| {
         aside(plural(
@@ -213,7 +208,6 @@ fn about(
         .collect()
 }
 
-/// The code id in the data face, and a small Copy beside it.
 fn code_and_copy(code: &abi::BlobId, cx: Cx, k: &Look) -> Div {
     let id = blob_ref(code);
     let copy: Press = {
@@ -238,8 +232,6 @@ fn code_and_copy(code: &abi::BlobId, cx: Cx, k: &Look) -> Div {
         ))
 }
 
-/// The params it runs with: "none", or their length and ends in the data
-/// face.
 fn params(params: &[u8]) -> Div {
     if params.is_empty() {
         div().child(words::NO_PARAMS)
@@ -248,8 +240,6 @@ fn params(params: &[u8]) -> Div {
     }
 }
 
-/// What is scheduled for it, under its head, each row as the Programs
-/// page says it; none, a quiet line.
 fn scheduled(view: &Explorer, network: &Network, name: &str, k: &Look) -> Vec<AnyElement> {
     let head = section("explorer-program-scheduled-header", "Scheduled", None, k);
     let rows: Vec<AnyElement> = network
@@ -271,8 +261,6 @@ fn scheduled(view: &Explorer, network: &Network, name: &str, k: &Look) -> Vec<An
         .collect()
 }
 
-/// The way to its transactions: how many the window holds, and over how
-/// many blocks.
 fn transactions(view: &Explorer, name: &str, cx: Cx, k: &Look) -> Stateful<Div> {
     let blocks = view.chain.blocks.len() as u64;
     let title = words::to_transactions(view.sent_to(name), blocks);

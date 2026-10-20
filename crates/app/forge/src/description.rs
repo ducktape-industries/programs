@@ -279,7 +279,6 @@ pub fn describe(op: &Op) -> Description {
 
 describe::export!(Op, describe);
 
-// A watch names no repository: forge tells the program of every one.
 fn watching(deliver: &[u8]) -> Description {
     let title = match deliver.is_empty() {
         true => "Stop watching forge",
@@ -291,7 +290,6 @@ fn watching(deliver: &[u8]) -> Description {
     }
 }
 
-/// A principal as a describe field shows it: an account, or the system.
 fn principal(principal: &Principal) -> Value {
     match principal {
         Principal::Account(number) => Value::Account(*number),

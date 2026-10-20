@@ -18,7 +18,6 @@ pub(crate) fn topic(ctx: &QueryCtx, thread: u64) -> Result<Option<String>, Error
     TOPICS.get(ctx, &thread)
 }
 
-// the settle window a thread's general input waits out, while one is open
 pub(crate) fn settling(ctx: &QueryCtx, thread: u64) -> Result<Option<SettleWindow>, Error> {
     SETTLING.get(ctx, &thread)
 }

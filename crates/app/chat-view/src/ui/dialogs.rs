@@ -8,7 +8,6 @@ use crate::words;
 use crate::{ChannelCreate, Chat};
 use view::design::Ladder;
 
-/// How wide the dialog's card grows.
 const CARD_MAX_WIDTH: f32 = 480.;
 
 pub(crate) const INSET: Pixels = px(24.);
@@ -50,8 +49,6 @@ pub fn channel_create(
         .child(caption("Channel name", theme))
         .child(name_field(create, can_submit, cx, theme))
         .children(notes(chat, create, theme))
-        // one row, as the other views' dialogs: the option, then Cancel
-        // beside the primary action
         .child(
             div()
                 .flex()
@@ -85,7 +82,6 @@ fn caption(text: &'static str, theme: &Theme) -> impl IntoElement {
         .child(text)
 }
 
-/// The name, typed; Enter creates where the dialog may.
 fn name_field(
     create: &ChannelCreate,
     can_submit: bool,
@@ -125,7 +121,6 @@ fn form_field(
     }
 }
 
-/// Members only, a toggle: on, posting takes a seat.
 fn members_only(
     create: &ChannelCreate,
     cx: &mut Context<Chat>,
@@ -150,7 +145,6 @@ fn members_only(
     .into_any_element()
 }
 
-/// Why the dialog failed, and why it cannot create at all.
 fn notes(chat: &Chat, create: &ChannelCreate, theme: &Theme) -> Vec<AnyElement> {
     let note = |text: String, color| {
         div()

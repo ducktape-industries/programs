@@ -3,7 +3,6 @@
 
 use chat::{Mark, message::inline_spans};
 
-/// `(text, [(span text, italic?, bold?)])`
 type Row = (&'static str, &'static [(&'static str, bool, bool)]);
 
 const ROWS: &[Row] = &[
@@ -63,7 +62,6 @@ fn emphasis_follows_the_flanking_rule() {
     }
 }
 
-/// `(text, [(span text, code?, bold?)])`
 type CodeRow = (&'static str, &'static [(&'static str, bool, bool)]);
 
 const CODE_ROWS: &[CodeRow] = &[
@@ -115,8 +113,6 @@ fn a_backtick_run_opens_a_code_span_only_the_same_run_closes() {
     }
 }
 
-/// `- `, `* ` and `1. ` open a one-level list item; anything else is a
-/// paragraph as typed, and the wire keeps the marker either way.
 #[test]
 fn a_paragraph_opening_with_a_marker_reads_as_a_list_item() {
     use chat::{Block, ListMarker, list_item, parse_message};
@@ -142,7 +138,6 @@ fn a_paragraph_opening_with_a_marker_reads_as_a_list_item() {
         item("12. twelfth"),
         Some((ListMarker::Ordered(12), "twelfth".into(), 1))
     );
-    // the item keeps its marks
     assert_eq!(
         item("- **ship** it"),
         Some((ListMarker::Bullet, "ship it".into(), 2))
@@ -150,7 +145,6 @@ fn a_paragraph_opening_with_a_marker_reads_as_a_list_item() {
     for plain in ["-apples", "1.5 litres", ". x", "a - b", "**- x**", "*it*"] {
         assert_eq!(item(plain), None, "`{plain}` is no list item");
     }
-    // one block per line: a typed list is a run of items
     let blocks = parse_message("- a\n- b\n1. c");
     assert_eq!(blocks.len(), 3);
     assert!(

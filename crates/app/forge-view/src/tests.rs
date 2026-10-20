@@ -19,7 +19,6 @@ use view::methods::{Change, Changes};
 #[path = "../../forge/fixtures/loader.rs"]
 mod loader;
 
-/// One committed fixture, exactly as the program answered it.
 pub(crate) fn bytes(name: &str) -> Vec<u8> {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../forge/fixtures");
     loader::bytes(&dir, name)
@@ -29,14 +28,12 @@ fn reply(name: &str) -> Reply {
     borsh::from_slice(&bytes(name)).unwrap_or_else(|error| panic!("decode {name}: {error}"))
 }
 
-/// One committed refusal, as the host hands the program's `Err` to a view.
 fn refusal(name: &str) -> view::host::Error {
     let refusal: abi::Refusal =
         borsh::from_slice(&bytes(name)).unwrap_or_else(|error| panic!("decode {name}: {error}"));
     view::host::Error::new(&refusal.reason, &refusal.sentence)
 }
 
-/// Which change record the program is holding in a given scenario.
 fn change_fixture(mode: &str) -> &'static str {
     match mode {
         "reviewed" | "job" => "change-reviewed",
@@ -47,7 +44,6 @@ fn change_fixture(mode: &str) -> &'static str {
     }
 }
 
-/// The program's answers, chosen by query shape — never by hand.
 fn answer(query: &Query, mode: &str) -> Reply {
     match query {
         Query::Repos { .. } if mode == "empty" => reply("repos-empty"),
@@ -143,8 +139,6 @@ fn many_changes() -> Reply {
     changes
 }
 
-/// The refs of a repository with a long history of branches: the first
-/// page's, then 120 more.
 fn many_refs() -> Reply {
     let mut refs = reply("refs");
     if let Reply::Refs { page, .. } = &mut refs {
@@ -156,9 +150,6 @@ fn many_refs() -> Reply {
     refs
 }
 
-/// A diff the size of a release: `files` files of `lines` added lines each
-/// (100 of 1000 are more rows than the host draws in one list; 264 files
-/// are a release's file list).
 fn release_diff(files: u64, lines: u64) -> Reply {
     let files: Vec<forge::FileDiff> = (0..files)
         .map(|n| {
@@ -207,7 +198,6 @@ fn release_diff(files: u64, lines: u64) -> Reply {
     }
 }
 
-/// forge's own account.
 const FORGE: u64 = 900;
 
 fn accounts() -> chat::PageResponse<chat::Profile> {
@@ -244,9 +234,6 @@ fn message(seq: u64, author: forge::Principal, text: &str) -> chat::MsgRow {
     }
 }
 
-/// Change 1's channel as forge and chat would fill it: forge's own lines
-/// under forge's real message ids (the open, one per review, the merge),
-/// with a reader's reply among them.
 fn forge_lines() -> Vec<chat::MsgRow> {
     let reviews = ["change-reviewed", "change-reviews-next"]
         .into_iter()
@@ -327,7 +314,6 @@ fn chat_answer(query: chat::Query) -> chat::Reply {
             height: 1,
             items: match channel_id.as_str() {
                 "forge:project:1" => forge_lines(),
-                // change 2 was opened, then closed
                 "forge:project:2" => (1..=2)
                     .map(|seq| chat::MsgRow {
                         channel_id: channel_id.clone(),
@@ -406,7 +392,6 @@ pub(crate) fn configure(cx: &mut TestAppContext, mode: &'static str) {
         .handle::<ProgramQuery<access::Access>>(|query| Ok(access_answer(query)));
     cx.host()
         .handle::<Submit<access::Access>>(|_| Ok(view::testing::applied(Vec::new())));
-    // no repository or change has an owner on record: each keeps the rule from before policies
     cx.host()
         .handle::<ProgramQuery<ownership::Ownership>>(|query| {
             Ok(match query {
@@ -430,7 +415,6 @@ pub(crate) fn no_accounts() -> identity::Reply {
     })
 }
 
-/// `key` seated on the test chain, connected, holding `account`.
 fn seat(key: &[u8], account: Option<u64>) -> Session {
     Session {
         signer: abi::hex(key),
@@ -441,16 +425,12 @@ fn seat(key: &[u8], account: Option<u64>) -> Session {
     }
 }
 
-/// Boots the view, seats a reader and waits for the first reads to land.
 pub(crate) fn booted(mode: &'static str) -> (TestAppContext, Entity<Forge>) {
     booted_as(mode, 2)
 }
 
-/// Boots seated as `account`: 2 (Rae) reviews and holds no write; 1 (Ada)
-/// owns `project`; 9 (Wren) is its granted writer.
 pub(crate) fn booted_as(mode: &'static str, account: u64) -> (TestAppContext, Entity<Forge>) {
     let mut cx = TestAppContext::new();
-    // a window with the rail and the dock beside the content (from 880 px)
     cx.simulate_resize(1180., 760.);
     configure(&mut cx, mode);
     let props = cx.host().stream::<HostSession>();
@@ -461,40 +441,30 @@ pub(crate) fn booted_as(mode: &'static str, account: u64) -> (TestAppContext, En
     (cx, view)
 }
 
-/// A block at `height` that wrote `keys`, as `program.changes` carries it.
 fn block(height: u64, keys: Vec<Vec<u8>>) -> Option<Change> {
     Some(Change { height, keys })
 }
 
-/// What a push writes: the ref it moved.
 fn ref_key() -> Vec<u8> {
     forge::tables::REFS.key(&("project".to_owned(), b"refs/heads/main".to_vec()))
 }
 
-/// What a review writes: its record.
 fn review_key() -> Vec<u8> {
     forge::tables::REVIEWS.key(&("project".to_owned(), 1u64, 1u64))
 }
 
-/// What a message posted in `channel` writes: its root.
 fn root_key(channel: &str) -> Vec<u8> {
     chat::tables::ROOTS.key(&(channel.to_owned(), 0u64))
 }
 
-/// What joining `channel` writes: a member row.
 fn member_key(channel: &str) -> Vec<u8> {
     chat::tables::MEMBERS.key(&(channel.to_owned(), forge::Principal::Account(2)))
 }
 
-/// What a reply to the reader's thread in `channel` writes that a judgment
-/// reads: the reader's `ANSWERED` entry.
 fn answered_key(channel: &str) -> Vec<u8> {
     chat::tables::ANSWERED.key(&(channel.to_owned(), forge::Principal::Account(2), 0u64))
 }
 
-/// What a review actually writes (`submit_review`, then `touch`): its
-/// record, its author index entry, the change's counts, forge's message
-/// counter, the repository's record and activity, and the write count.
 fn real_review_keys() -> Vec<Vec<u8>> {
     let (repo, n, id) = ("project".to_owned(), 1u64, 1u64);
     vec![
@@ -508,9 +478,6 @@ fn real_review_keys() -> Vec<Vec<u8>> {
     ]
 }
 
-/// What the line a review posts into the change's conversation writes in
-/// chat (`discussion::post`): the message row, its root entry, its id and
-/// the channel's head.
 fn posted_line_keys(channel: &str) -> Vec<Vec<u8>> {
     vec![
         chat::tables::MESSAGES.key(&(channel.to_owned(), 1u64)),
@@ -520,7 +487,6 @@ fn posted_line_keys(channel: &str) -> Vec<Vec<u8>> {
     ]
 }
 
-/// The live heads of the three programs forge follows, in the test's hands.
 struct Heads {
     forge: StreamSender<Changes<forge::Forge>>,
     chat: StreamSender<Changes<::chat::Chat>>,
@@ -528,8 +494,6 @@ struct Heads {
     visible: StreamSender<HostVisible>,
 }
 
-/// Boots like [`booted`], following heads the test sends, and opens
-/// `project`.
 fn followed(mode: &'static str) -> (TestAppContext, Heads) {
     let mut cx = TestAppContext::new();
     configure(&mut cx, mode);
@@ -548,10 +512,6 @@ fn followed(mode: &'static str) -> (TestAppContext, Heads) {
     (cx, heads)
 }
 
-/// A block that changed nothing on screen: a forge block re-reads the
-/// reads of the tables it wrote to, a chat block and an identity block
-/// re-read no forge read at all, the same replies land, and the view draws
-/// nothing for the items or the landings.
 #[test]
 fn a_block_whose_rereads_land_the_same_replies_draws_nothing() {
     let (mut cx, heads) = followed("default");
@@ -653,12 +613,6 @@ fn a_refused_conversation_is_asked_again_when_a_block_posts_in_it() {
     assert!(cx.has_text("Reading it now"), "{:?}", cx.texts());
 }
 
-/// Another key takes the seat while a change's conversation is open.
-/// forge's own lines are told by their author, whom the roster names, so
-/// the names shown for the key before are not kept under the new one: the
-/// conversation says it is being read until the roster lands again.
-/// (`session_changed` blanks `names` on purpose; `load` alone would keep
-/// them.)
 #[test]
 fn a_reader_change_shows_the_conversation_being_read_until_the_names_land() {
     use view::methods::Method;
@@ -676,8 +630,6 @@ fn a_reader_change_shows_the_conversation_being_read_until_the_names_land() {
     cx.run_until_parked();
     assert!(cx.has_text("Reading it now"), "{:?}", cx.texts());
 
-    // chat answers nothing by itself from here: the roster stays out, and
-    // the conversation is answered by hand below
     cx.host().never::<ProgramQuery<::chat::Chat>>();
     props.send(seat(b"another", Some(2)));
     let mut conversation = None;
@@ -708,9 +660,6 @@ fn a_reader_change_shows_the_conversation_being_read_until_the_names_land() {
     assert!(!cx.has_text("Reading it now"), "{:?}", cx.texts());
 }
 
-/// A read still out when a block lands is left to land: a block asks
-/// again only what is on screen, so heads that come faster than a slow
-/// read (a wide Compare, a large Diff) never restart it.
 #[test]
 fn a_block_leaves_a_read_still_out_to_land() {
     let (mut cx, heads) = followed("default");
@@ -724,7 +673,6 @@ fn a_block_leaves_a_read_still_out_to_land() {
             cx.run_until_parked();
         }
     };
-    // chat stops answering: the change's conversation is still out
     cx.host().never::<ProgramQuery<::chat::Chat>>();
     cx.simulate_click("forge-change-1");
     cx.run_until_parked();
@@ -742,7 +690,6 @@ fn a_block_leaves_a_read_still_out_to_land() {
         1,
         "the conversation was not asked again"
     );
-    // then forge stops: the Files tab's diff is still out
     cx.host().never::<Ask>();
     cx.simulate_click("forge-change-tab-files");
     cx.run_until_parked();
@@ -758,7 +705,6 @@ fn a_block_leaves_a_read_still_out_to_land() {
     assert_eq!(diffs(&cx), 1, "the diff was not asked again");
 }
 
-/// Boots and opens `project`.
 pub(crate) fn opened(mode: &'static str) -> (TestAppContext, Entity<Forge>) {
     opened_as(mode, 2)
 }
@@ -781,8 +727,6 @@ fn disabled(cx: &TestAppContext, id: &str) -> bool {
     interactivity.aria.disabled == Some(true) && interactivity.on_click.is_none()
 }
 
-/// Seats `key` (with `account` once identity names one) in a fresh view
-/// and opens `project`'s changes.
 fn seated(key: &[u8], account: Option<u64>) -> (TestAppContext, Entity<Forge>) {
     let mut cx = TestAppContext::new();
     configure(&mut cx, "judgment");
@@ -798,7 +742,6 @@ fn seated(key: &[u8], account: Option<u64>) -> (TestAppContext, Entity<Forge>) {
     (cx, view)
 }
 
-/// The principals forge was asked to judge.
 fn judged(cx: &TestAppContext) -> Vec<forge::Principal> {
     cx.host()
         .requests::<Ask>()
@@ -810,9 +753,6 @@ fn judged(cx: &TestAppContext) -> Vec<forge::Principal> {
         .collect()
 }
 
-/// The host's badge is a dot, never a count: 1 while any change waits on my
-/// judgment, 0 once none does or while nobody is seated, posted from the
-/// judgment read every screen keeps and again when a block changes it.
 #[test]
 fn the_badge_is_a_dot_while_a_change_waits_on_my_judgment() {
     use view::methods::HostBadge;
@@ -820,7 +760,6 @@ fn the_badge_is_a_dot_while_a_change_waits_on_my_judgment() {
     assert_eq!(cx.host().requests::<HostBadge>().last(), Some(&1));
     let (mut cx, _) = booted("judgment-empty");
     assert_eq!(cx.host().requests::<HostBadge>().last(), Some(&0));
-    // leaving the repositories page keeps the read, and the dot stays off
     cx.simulate_click("forge-repo-project-open");
     cx.run_until_parked();
     assert_eq!(cx.host().requests::<HostBadge>(), [0]);
@@ -828,9 +767,6 @@ fn the_badge_is_a_dot_while_a_change_waits_on_my_judgment() {
     assert_eq!(cx.host().requests::<HostBadge>().last(), Some(&0));
 }
 
-/// A key that holds no account reads everything and writes nothing: every
-/// write control is off, the filters about "me" ask nothing, and the
-/// screen says an account is needed.
 #[test]
 fn a_key_without_an_account_writes_nothing() {
     let (cx, view) = seated(b"stranger", None);
@@ -845,8 +781,6 @@ fn a_key_without_an_account_writes_nothing() {
     assert!(judged(&cx).is_empty());
 }
 
-/// A person's second device key is the same person: "mine" and judgment
-/// are the account's, whichever key is seated.
 #[test]
 fn a_second_device_key_reads_as_the_same_person() {
     let (mut cx, view) = seated(b"tester-laptop", Some(1));
@@ -860,8 +794,6 @@ fn a_second_device_key_reads_as_the_same_person() {
     view.read(|forge| assert_eq!(forge.me_principal(), Some(forge::Principal::Account(1))));
     cx.simulate_click("forge-filter-judgment");
     cx.run_until_parked();
-    // asked at the repositories page and again in the Changes tab: both
-    // times for the account
     let judged = judged(&cx);
     assert!(!judged.is_empty());
     assert!(
@@ -872,10 +804,6 @@ fn a_second_device_key_reads_as_the_same_person() {
     );
 }
 
-/// The reader creates the account in Account, then switches to Forge: the
-/// seated key never changes; the host resolves its new account and hands it
-/// over as a session change, and the same key writes and is judged as the
-/// account from then on.
 #[test]
 fn an_account_gained_later_is_who_forge_judges() {
     let mut cx = TestAppContext::new();
@@ -957,8 +885,6 @@ fn an_unborn_repo_says_so_instead_of_resolving_forever() {
     assert!(!cx.has_text("Resolving the ref…"));
 }
 
-/// An unborn repository's Commits tab says "No commits yet" with the
-/// repository's own address, not the program's refusal.
 #[test]
 fn an_unborn_repository_has_no_history_and_says_so_with_its_address() {
     let (mut cx, _) = opened("unborn");
@@ -1016,7 +942,6 @@ fn creating_a_repository_validates_its_name_then_shows_the_submission() {
         cx.texts()
     );
     assert!(cx.host().requests::<SubmitForge>().is_empty());
-    // SHA-256 unless SHA-1 is picked
     cx.simulate_input("forge-new-repo-name", "ledger");
     cx.simulate_click("forge-new-repo-submit");
     cx.run_until_parked();
@@ -1054,8 +979,6 @@ fn focused(cx: &TestAppContext) -> Option<String> {
     cx.focused().and_then(wire::Node::key).map(str::to_owned)
 }
 
-/// "New repository" opens with the keys in its name field, and Enter there
-/// creates the repository: a typed name is never lost to the list behind.
 #[test]
 fn a_new_repository_form_opens_focused_and_enter_creates() {
     let (mut cx, view) = booted("default");
@@ -1098,8 +1021,6 @@ fn a_repository_opens_with_its_header_ref_picker_and_tabs() {
             tab.label()
         );
     }
-    // The ref picker is one dropdown; open, it carries every ref the paged
-    // read followed, branches and tags apart, and a press outside folds it.
     assert!(cx.find("forge-ref-refs/heads/clean").is_none());
     let mut cx = cx;
     cx.simulate_click("forge-ref-picker");
@@ -1113,8 +1034,6 @@ fn a_repository_opens_with_its_header_ref_picker_and_tabs() {
     assert!(cx.find("forge-ref-picker-menu").is_none());
 }
 
-/// The tab bar counts the open changes on every tab, not only once the
-/// Changes tab was visited.
 #[test]
 fn the_changes_tab_counts_on_every_tab() {
     let (cx, _) = opened("default");
@@ -1131,9 +1050,6 @@ fn the_changes_tab_counts_on_every_tab() {
     );
 }
 
-/// The repository tabs read on open, so they are a manual tab list: → moves
-/// the active tab without opening it, Enter opens it, and a click resets
-/// the arrows to the open tab.
 #[test]
 fn the_repository_tabs_move_on_an_arrow_and_open_on_enter() {
     let (mut cx, view) = opened("default");
@@ -1141,7 +1057,6 @@ fn the_repository_tabs_move_on_an_arrow_and_open_on_enter() {
     assert_eq!(list.role, Some(view::Role::TabList));
     assert!(list.focusable && list.tab_stop == Some(true));
     assert!(!cx.interactivity("forge-tab-code").focusable);
-    // the repository opens on its README; the arrows start there
     view.read(|forge| assert_eq!(forge.nav().tab, RepoTab::Readme));
     assert!(cx.interactivity("forge-tab-readme").aria.active_descendant);
     cx.simulate_focus("forge-tab-list");
@@ -1189,7 +1104,6 @@ fn a_repo_opens_on_its_readme_and_code_holds_the_tree() {
         assert_eq!(forge.head_name(), b"refs/heads/clean".to_vec());
         assert_eq!(forge.nav().tab, RepoTab::Readme, "README first");
     });
-    // The README is the page, rendered, under the repository header.
     assert!(cx.find("forge-repo-header").is_some());
     assert!(cx.find("forge-readme-body").is_some(), "{:?}", cx.texts());
     assert!(cx.find("forge-tree").is_none(), "no tree on the front page");
@@ -1210,7 +1124,6 @@ fn a_repo_opens_on_its_readme_and_code_holds_the_tree() {
     view.read(|forge| assert!(forge.nav().blob.is_some()));
     assert!(cx.find("forge-blob-lines").is_some(), "{:?}", cx.texts());
     assert!(cx.has_text("one"), "the first source line is drawn");
-    // a markdown file is rendered, not listed
     cx.simulate_click("forge-tree-README.md");
     cx.run_until_parked();
     assert!(cx.find("forge-blob-markdown").is_some());
@@ -1220,8 +1133,6 @@ fn a_repo_opens_on_its_readme_and_code_holds_the_tree() {
     view.read(|forge| assert!(forge.nav().blob.is_none()));
 }
 
-/// The rail's and the tree's filters say what they filter; the hint drawn
-/// in them stays a hint.
 #[test]
 fn a_filter_field_is_named_apart_from_its_hint() {
     let (mut cx, _view) = opened("default");
@@ -1257,7 +1168,6 @@ fn a_relative_link_opens_its_file_in_the_code_tab() {
         cx.update(&view, |forge, _, cx| forge.follow_link(dir, dest, cx));
         cx.run_until_parked();
     };
-    // a folder unfolds, from a document one folder down
     follow(&mut cx, b"docs", "../src");
     view.read(|forge| {
         assert_eq!(forge.nav().tab, RepoTab::Code);
@@ -1271,7 +1181,6 @@ fn a_relative_link_opens_its_file_in_the_code_tab() {
             .expect("a file inside src")
             .path
     });
-    // a file inside it opens by its path alone, once its folder is read
     cx.update(&view, |forge, _, cx| {
         forge.nav_close_blob(cx);
         forge.open_tab(RepoTab::Readme, cx);
@@ -1284,12 +1193,10 @@ fn a_relative_link_opens_its_file_in_the_code_tab() {
         assert_eq!(forge.nav().blob.as_ref().map(|(p, _)| p), Some(&child));
     });
     assert!(cx.find("forge-blob").is_some());
-    // the root README is its own tab; a missing file says so
     follow(&mut cx, b"src", "../README.md");
     view.read(|forge| assert_eq!(forge.nav().tab, RepoTab::Readme));
     follow(&mut cx, b"", "missing.md");
     view.read(|forge| assert!(forge.notice.contains("missing.md"), "{}", forge.notice));
-    // the web still goes to the host
     follow(&mut cx, b"", "https://x.example");
     assert_eq!(
         cx.host().requests::<view::methods::LinkOpen>(),
@@ -1320,7 +1227,6 @@ fn a_folder_opens_its_children_inline_and_keeps_its_state() {
         "expanding reads the folder lazily"
     );
     let after = view.read(|forge| forge.tree_rows());
-    // every root row stays where it was; the children sit right under src
     assert_eq!(after[..=src], before[..=src]);
     let children: Vec<_> = after[src + 1..]
         .iter()
@@ -1331,21 +1237,17 @@ fn a_folder_opens_its_children_inline_and_keeps_its_state() {
     assert_eq!(after[src + 1 + children.len()..], before[src + 1..]);
     let child = path_of(&children[0].path);
     assert!(cx.find(&format!("forge-tree-{child}")).is_some());
-    // another tab and back: the folder is still open
     cx.simulate_click("forge-tab-readme");
     cx.run_until_parked();
     cx.simulate_click("forge-tab-code");
     cx.run_until_parked();
     view.read(|forge| assert!(forge.nav().expanded.contains(b"src".as_slice())));
     assert!(cx.find(&format!("forge-tree-{child}")).is_some());
-    // pressing it again folds it
     cx.simulate_click("forge-tree-src");
     cx.run_until_parked();
     assert_eq!(view.read(|forge| forge.tree_rows()), before);
 }
 
-/// A folder's row is called by its name alone, open or shut: the drawn
-/// `▸`/`▾` is no word of it, and `aria_expanded` says which.
 #[test]
 fn a_folder_row_is_named_without_its_glyph() {
     let (mut cx, _) = opened("default");
@@ -1387,11 +1289,8 @@ fn the_tree_walks_by_keyboard() {
         let _ = cx;
         view.read(|forge| forge.nav().cursor.clone().map(|path| path_of(&path)))
     };
-    // directories sort first: the first row, src, is the active one before
-    // any key, and ↑ there stays
     press(&mut cx, Key::Up);
     assert_eq!(cursor(&mut cx).as_deref(), Some("src"));
-    // the focused tree tells assistive technology which row is active
     let Some(wire::Node::Container(row)) = cx.find("forge-tree-src") else {
         panic!("the src row");
     };
@@ -1446,9 +1345,6 @@ fn an_oversize_blob_is_a_header_not_a_body() {
     assert!(cx.has_text("Binary file"));
 }
 
-/// Each text under `node` and whether it is drawn in a list marker
-/// (`Role::ListMarker`): the host leaves a marker's words out of the
-/// window's text selection, so a drag copies the rest.
 fn marked(node: &wire::Node) -> Vec<(String, bool)> {
     fn walk(node: &wire::Node, inside: bool, out: &mut Vec<(String, bool)>) {
         let inside = inside
@@ -1470,8 +1366,6 @@ fn marked(node: &wire::Node) -> Vec<(String, bool)> {
     out
 }
 
-/// A drag down a file or a diff copies its code alone: a line's number and
-/// its +/- are the line's markers, its code is not.
 #[test]
 fn line_numbers_and_diff_signs_are_markers_and_the_code_is_not() {
     let (mut cx, _view) = opened("default");
@@ -1508,7 +1402,6 @@ fn commits_follows_the_cursor_and_opens_one_commit_with_its_diff() {
     let (mut cx, view) = opened("default");
     cx.simulate_click("forge-tab-commits");
     cx.run_until_parked();
-    // `log` carries a next cursor; the second page is the root commit.
     let asked = cx.host().requests::<Ask>();
     assert!(
         asked.iter().any(|query| matches!(
@@ -1546,11 +1439,6 @@ fn commits_follows_the_cursor_and_opens_one_commit_with_its_diff() {
     view.read(|forge| assert!(forge.nav().commit.is_none()));
 }
 
-/// A commit touching a release's files (264): the file strip is capped at
-/// eight rows and scrolls, so the diff under it keeps its height, and it
-/// draws the files on screen, not one row per file on every render (19M
-/// fuel a key on the live rig); the keys reach every file: ↓ walks the
-/// strip, scrolled to the file it reaches, Enter shows that file.
 #[test]
 fn a_commit_with_many_files_keeps_its_diff_under_a_scrolling_strip() {
     let (mut cx, view) = opened("wide");
@@ -1606,8 +1494,6 @@ fn a_commit_with_many_files_keeps_its_diff_under_a_scrolling_strip() {
         )
     });
     assert!(cx.has_text("src/gen/file_150.rs · added · +3 −0"));
-    // the file shown alone narrows the diff, not the strip: every file is
-    // still listed, that one marked, and All files shows them all again
     let Some(wire::Node::UniformList { count, .. }) = cx.find("forge-commit-diff-strip") else {
         panic!("the strip");
     };
@@ -1622,13 +1508,10 @@ fn a_commit_with_many_files_keeps_its_diff_under_a_scrolling_strip() {
     cx.run_until_parked();
     view.read(|forge| assert!(forge.nav().diff_path.is_none()));
     assert!(cx.find("forge-commit-files-all").is_none());
-    // as on the Files tab, All files starts the strip's keys over: the
-    // file the arrows opened is not left lit
     assert_eq!(
         lit_rows(&cx, "forge-commit-diff-files", Role::ListBoxOption),
         Vec::<String>::new()
     );
-    // a commit opened again starts on all its files
     cx.simulate_click("forge-commit-diff-file-src/gen/file_000.rs");
     cx.run_until_parked();
     view.read(|forge| assert!(forge.nav().diff_path.is_some()));
@@ -1657,7 +1540,6 @@ fn refs_carry_their_distance_from_the_default_head_and_open_a_draft() {
             .iter()
             .any(|text| text.contains("forbids force pushes and ref deletions"))
     );
-    // Compare sits beside the row's press, not inside it
     let row = wire::Node::Container(control(&cx, "forge-ref-row-clean"));
     assert!(holds(&row, "forge-ref-row-clean-open") && holds(&row, "forge-compare-clean"));
     let open = wire::Node::Container(control(&cx, "forge-ref-row-clean-open"));
@@ -1694,7 +1576,6 @@ fn settings_shows_only_what_the_contract_exposes_and_grants_by_account() {
     cx.simulate_click("forge-settings-grant");
     cx.run_until_parked();
     assert_eq!(set_lists(&cx), [listed(&[9, 4])]);
-    // a name searches the roster; picking fills the number Grant sends
     cx.simulate_input("forge-settings-grant-input", "ra");
     cx.run_until_parked();
     assert!(cx.find("forge-grant-pick-2").is_some(), "Rae matches");
@@ -1728,8 +1609,6 @@ fn settings_shows_only_what_the_contract_exposes_and_grants_by_account() {
     );
 }
 
-/// Enter in the Grant field grants, like its button; not for a reader who
-/// cannot.
 #[test]
 fn enter_in_the_grant_field_grants_for_the_owner_only() {
     let (mut cx, _) = opened_as("default", 1);
@@ -1767,9 +1646,6 @@ fn the_narrow_window_folds_the_rail_and_the_dock_into_toggles() {
     assert!(cx.find("forge-rail").is_some());
 }
 
-/// Narrow, the "Repositories" toggle folds the rail alone: the Code tab's
-/// file tree gives way to an open file and comes back when the file closes,
-/// and a change's file list stays beside its diff, whatever the rail does.
 #[test]
 fn narrow_side_panes_do_not_follow_the_repositories_toggle() {
     let (mut cx, _) = opened("default");
@@ -1811,8 +1687,6 @@ fn narrow_side_panes_do_not_follow_the_repositories_toggle() {
     );
 }
 
-/// Narrow, About left open on a repository does not reappear as a change's
-/// "Details" overlay over the change.
 #[test]
 fn about_left_open_does_not_lay_a_change_s_details_over_it() {
     let (mut cx, _) = opened("default");
@@ -1828,10 +1702,6 @@ fn about_left_open_does_not_lay_a_change_s_details_over_it() {
     assert!(cx.find("forge-details-over").is_none(), "{:?}", cx.texts());
 }
 
-/// A window opens at 60% of the desk, 768 px on a 1280 one: the list keeps
-/// its table there and down to the view's 640, header and a column per
-/// fact, with no bar over it. Only under the table's own width does a row
-/// put its facts on one line under its name, the refs with their unit.
 #[test]
 fn the_repositories_keep_their_table_at_the_width_a_window_opens() {
     let (mut cx, _) = booted("default");
@@ -1862,8 +1732,6 @@ fn the_repositories_keep_their_table_at_the_width_a_window_opens() {
     }
 }
 
-/// The rail is one list box: the open repository is its active row on
-/// entry, ↑ ↓ move, Enter opens the active repository.
 #[test]
 fn the_rail_is_a_list_box_whose_enter_opens_the_active_repository() {
     let (mut cx, view) = opened("default");
@@ -1901,8 +1769,6 @@ fn the_rail_is_a_list_box_whose_enter_opens_the_active_repository() {
     view.read(|forge| assert_eq!(forge.nav().repo.as_deref(), Some(name)));
 }
 
-/// A walk of a list ends where the reader moves: back on the repositories
-/// after opening one, no row is lit as if still picked.
 #[test]
 fn a_walk_of_the_repositories_ends_with_a_move() {
     let (mut cx, view) = booted("default");
@@ -1975,7 +1841,6 @@ fn an_empty_judgment_says_nothing_waits_on_you() {
     assert!(cx.has_text("Nothing waits on you"), "{:?}", cx.texts());
 }
 
-/// Opens change #1 of `project` on one of its tabs.
 pub(crate) fn change_screen(mode: &'static str, tab: ChangeTab) -> (TestAppContext, Entity<Forge>) {
     change_screen_as(mode, tab, 2)
 }
@@ -2030,9 +1895,6 @@ fn copy_puts_the_address_on_the_clipboard_without_opening_the_repository() {
     view.read(|forge| assert!(forge.nav.repo.is_none(), "copy is not open"));
 }
 
-/// A row's Copy and block link, and the open repository's block link, are
-/// at least 24 px each way: the box's own floor, so the bounds the door's
-/// AX-017 reads cannot come in under it, whatever the text inside.
 #[test]
 fn the_small_press_targets_are_at_least_24_px_each_way() {
     let at_least_24 = |cx: &TestAppContext, key: &str| {
@@ -2051,12 +1913,10 @@ fn the_small_press_targets_are_at_least_24_px_each_way() {
     at_least_24(&cx, "forge-repo-activity");
 }
 
-/// A style's length in pixels, as gpui prints it ("24px"); `None` unset.
 pub(crate) fn pixels(length: Option<impl std::fmt::Display>) -> Option<f32> {
     length?.to_string().strip_suffix("px")?.parse().ok()
 }
 
-/// The key's roled container: its role, focus and press.
 pub(crate) fn control(cx: &TestAppContext, key: &str) -> wire::ContainerNode {
     match cx.find(key) {
         Some(wire::Node::Container(node)) => node.clone(),
@@ -2064,7 +1924,6 @@ pub(crate) fn control(cx: &TestAppContext, key: &str) -> wire::ContainerNode {
     }
 }
 
-/// Whether `key` lies anywhere under `node`.
 pub(crate) fn holds(node: &wire::Node, key: &str) -> bool {
     node.children()
         .iter()
@@ -2088,7 +1947,6 @@ fn a_repository_row_is_a_grid_row_whose_press_is_a_button_beside_its_controls() 
         open.interactivity.as_ref().unwrap().role,
         Some(view::Role::Button)
     );
-    // the grid holds the focus; its first row's press is active on entry
     assert!(
         !open.interactivity.as_ref().unwrap().focusable
             && open.interactivity.as_ref().unwrap().on_click.is_some()
@@ -2100,9 +1958,6 @@ fn a_repository_row_is_a_grid_row_whose_press_is_a_button_beside_its_controls() 
     }
 }
 
-/// The repository list is one grid: ↓ moves to the next repository, → to
-/// its Copy cell, and Enter presses the cell, so the address lands on
-/// the clipboard without opening the repository.
 #[test]
 fn the_repositories_grid_walks_cells_and_enter_presses_the_active_one() {
     let (mut cx, view) = booted("default");
@@ -2137,7 +1992,6 @@ fn the_repositories_grid_walks_cells_and_enter_presses_the_active_one() {
         cx.interactivity("forge-repos-column-Name").role,
         Some(view::Role::ColumnHeader)
     );
-    // the second repository when there is one, else the first
     let at = usize::from(rows.len() > 1);
     cx.simulate_focus("forge-repos-list");
     if at == 1 {
@@ -2165,7 +2019,6 @@ fn the_repositories_grid_walks_cells_and_enter_presses_the_active_one() {
     );
     assert!(cx.has_text("Copied"));
     view.read(|forge| assert!(forge.nav.repo.is_none(), "copy is not open"));
-    // → again: the activity link; Enter opens it in Explorer
     cx.simulate_key_down("forge-repos-list", "right");
     assert!(
         cx.interactivity(&format!("forge-repo-{name}-activity"))
@@ -2175,18 +2028,12 @@ fn the_repositories_grid_walks_cells_and_enter_presses_the_active_one() {
     cx.simulate_key_down("forge-repos-list", "enter");
     cx.run_until_parked();
     assert_eq!(cx.host().requests::<view::methods::LinkOpen>().len(), 1);
-    // Home: back to the press; Enter opens the repository
     cx.simulate_key_down("forge-repos-list", "home");
     cx.simulate_key_down("forge-repos-list", "enter");
     cx.run_until_parked();
     view.read(|forge| assert_eq!(forge.nav().repo.as_deref(), Some(name.as_str())));
 }
 
-/// The ref picker's menu takes the keys on open in its filter box, with the
-/// picked ref active: the box hears ↑ ↓ and Esc instead of its text (not
-/// Enter, its submit), ↓ then Enter picks a ref, and Esc closes the menu
-/// and gives the keys back to the button. The list is a Tab stop of its
-/// own in the modal overlay, whose keys do the same.
 #[test]
 fn the_ref_menu_takes_the_keys_on_open_and_gives_them_back() {
     use wire::keyboard::{Key, Named};
@@ -2274,7 +2121,6 @@ fn the_ref_menu_takes_the_keys_on_open_and_gives_them_back() {
         focused(&cx).last().map(String::as_str),
         Some("forge-ref-picker")
     );
-    // open again, on the ref just picked; the list's own keys
     cx.simulate_click("forge-ref-picker");
     cx.run_until_parked();
     assert!(cx.interactivity(&items[1]).aria.active_descendant);
@@ -2291,9 +2137,6 @@ fn the_ref_menu_takes_the_keys_on_open_and_gives_them_back() {
     });
 }
 
-/// Escape in the open menu closes it once: the menu consumes it, so the
-/// overlay around it, whose layer turns Escape into its dismiss, does not
-/// close it a second time (and give the keys back twice).
 #[test]
 fn escape_in_a_menu_closes_it_once() {
     let (mut cx, _view) = opened("default");
@@ -2307,7 +2150,6 @@ fn escape_in_a_menu_closes_it_once() {
             })
             .count()
     };
-    // from the filter box, which claims it, and from the list
     for list in [false, true] {
         cx.simulate_click("forge-ref-picker");
         cx.run_until_parked();
@@ -2325,9 +2167,6 @@ fn escape_in_a_menu_closes_it_once() {
     }
 }
 
-/// Every element of the window keeps its path while a dropdown is open and
-/// after it closes: the host keys a list's scroll and a field's state by
-/// the ids above them, so a menu must not move the window under itself.
 #[test]
 fn a_dropdown_leaves_the_window_where_it_was() {
     fn paths(
@@ -2372,12 +2211,9 @@ fn a_dropdown_leaves_the_window_where_it_was() {
     assert_eq!(window(&cx), closed);
 }
 
-/// The file tree claims a row before any key, and End takes the cursor to
-/// the last row.
 #[test]
 fn the_tree_claims_a_row_on_entry_and_end_reaches_the_last() {
     let (mut cx, view) = opened("default");
-    // the default ref carries no commits; `clean` has a tree
     cx.simulate_click("forge-ref-picker");
     cx.simulate_click("forge-ref-refs/heads/clean");
     cx.simulate_click("forge-tab-code");
@@ -2406,7 +2242,6 @@ fn the_tree_claims_a_row_on_entry_and_end_reaches_the_last() {
     assert!(cx.interactivity(&first).aria.active_descendant);
 }
 
-/// The file tree the same: a press on a folder lights nothing, the keys do.
 #[test]
 fn no_tree_row_is_lit_until_the_arrows_walk_it() {
     let (mut cx, _) = opened("default");
@@ -2422,8 +2257,6 @@ fn no_tree_row_is_lit_until_the_arrows_walk_it() {
     assert_eq!(lit(&cx).len(), 1, "the arrows lit the row they walked to");
 }
 
-/// A press in the tree is where the keys go on from: ↓ after opening a
-/// folder steps into it, wherever the arrows were before the press.
 #[test]
 fn the_keys_go_on_from_the_tree_row_pressed() {
     use crate::tree::Key;
@@ -2460,7 +2293,6 @@ fn a_forge_link_opens_its_repository() {
     routes.send("project".into());
     cx.run_until_parked();
     view.read(|forge| assert_eq!(forge.nav().repo.as_deref(), Some("project")));
-    // a change's room links here as `<repo>/<n>`
     routes.send("project/1".into());
     cx.run_until_parked();
     view.read(|forge| {
@@ -2469,8 +2301,6 @@ fn a_forge_link_opens_its_repository() {
             (Some("project"), Some(1))
         )
     });
-    // a file's Copy link links here as `<repo>/<path…>`: that path in
-    // the Code tab
     routes.send("project/src/lib.rs".into());
     cx.run_until_parked();
     view.read(|forge| {
@@ -2480,7 +2310,6 @@ fn a_forge_link_opens_its_repository() {
             (RepoTab::Code, Some(b"src/lib.rs".to_vec()))
         )
     });
-    // a link to forge itself, no repository named: the list
     routes.send(String::new());
     cx.run_until_parked();
     view.read(|forge| assert!(forge.nav().repo.is_none()));
@@ -2515,8 +2344,6 @@ fn the_commit_list_is_a_list_box_whose_enter_opens_the_active_commit() {
     view.read(|forge| assert_eq!(forge.nav().commit.as_deref(), Some(oid.as_str())));
 }
 
-/// The keys of the `role` nodes under `root` drawn with a background of
-/// their own: the rows a reader sees as "selected".
 fn lit_rows(cx: &TestAppContext, root: &str, role: Role) -> Vec<String> {
     fn walk(cx: &TestAppContext, node: &wire::Node, role: Role, out: &mut Vec<String>) {
         if let Some(key) = node.key()
@@ -2535,9 +2362,6 @@ fn lit_rows(cx: &TestAppContext, root: &str, role: Role) -> Vec<String> {
     out
 }
 
-/// At rest no row of a list is lit: the first is claimed for the keys,
-/// but a reader who has not touched the arrows sees no "selected" row.
-/// The arrows light the row they walk to.
 #[test]
 fn no_list_row_is_lit_until_the_arrows_walk_it() {
     let (cx, _) = booted("default");
@@ -2557,8 +2381,6 @@ fn no_list_row_is_lit_until_the_arrows_walk_it() {
     assert_eq!(lit.len(), 1, "{lit:?}");
 }
 
-/// The style of the list box or grid `id`, which says whether it scrolls
-/// and what room it keeps on its right.
 fn list_box<'a>(cx: &'a TestAppContext, id: &str) -> &'a view::StyleRefinement {
     assert!(
         matches!(cx.find(id), Some(wire::Node::Container(_))),
@@ -2567,10 +2389,6 @@ fn list_box<'a>(cx: &'a TestAppContext, id: &str) -> &'a view::StyleRefinement {
     cx.style(id)
 }
 
-/// The commits are a virtual list, which scrolls and has the host's bar in
-/// a gutter beside it. The list box around it is no scroller: one that was
-/// would keep a second gutter for a bar that never shows, 16 px of nothing
-/// between the rows and the bar.
 #[test]
 fn the_commit_list_leaves_the_scrolling_and_the_gutter_to_its_rows() {
     let (mut cx, _) = opened("default");
@@ -2586,9 +2404,6 @@ fn the_commit_list_leaves_the_scrolling_and_the_gutter_to_its_rows() {
     assert_eq!(rows.padding.right, None, "the gutter is the host's");
 }
 
-/// The list box does not scroll, so nothing reveals the commit an arrow
-/// moves to but the rows: the frame that answers the key asks them to
-/// scroll to it.
 #[test]
 fn an_arrow_on_the_commit_list_scrolls_its_rows_to_the_commit_moved_to() {
     let (mut cx, _) = opened("default");
@@ -2602,9 +2417,6 @@ fn an_arrow_on_the_commit_list_scrolls_its_rows_to_the_commit_moved_to() {
     assert_eq!(scroll_request.map(|request| request.index), Some(1));
 }
 
-/// The changes are a virtual list, which scrolls itself with the host's
-/// bar: the list box around it is no scroller, and the arrows scroll the
-/// rows to the change they move to.
 #[test]
 fn the_change_list_leaves_the_scrolling_to_its_rows() {
     let (mut cx, _) = opened("many-changes");
@@ -2620,11 +2432,6 @@ fn the_change_list_leaves_the_scrolling_to_its_rows() {
     assert_eq!(scroll_request.map(|request| request.index), Some(1));
 }
 
-/// A repository with a long past: the app repository has some 520 changes,
-/// most of them merged. The list draws the changes on screen, not one row
-/// per change on every render (180 merged rows cost 20M fuel a key), and
-/// the keys still reach every one: ↓ walks to a change far down, scrolled
-/// to, and Enter opens it.
 #[test]
 fn a_long_change_list_draws_the_changes_on_screen_and_opens_one_by_keyboard() {
     let (mut cx, view) = opened("many-changes");
@@ -2683,10 +2490,6 @@ fn the_ref_list_leaves_the_scrolling_to_its_rows() {
     assert_eq!(scroll_request.map(|request| request.index), Some(1));
 }
 
-/// The app repository has well over a hundred refs: the Refs tab draws the
-/// ones on screen, not one row per ref on every render (105 refs cost
-/// 23M fuel a key), and the keys still reach every ref: ↓ walks to one far
-/// down, scrolled to, and Enter browses it.
 #[test]
 fn a_long_ref_list_draws_the_refs_on_screen_and_picks_one_by_keyboard() {
     let (mut cx, view) = opened("many-refs");
@@ -2716,7 +2519,6 @@ fn a_long_ref_list_draws_the_refs_on_screen_and_picks_one_by_keyboard() {
     assert!(ref_rows(&cx).len() < 64);
 }
 
-/// The keys of the refs grid's rows drawn, in order.
 fn ref_rows(cx: &TestAppContext) -> Vec<String> {
     cx.find("forge-refs-rows")
         .expect("the refs")
@@ -2758,7 +2560,6 @@ fn the_ref_list_is_a_grid_whose_right_reaches_compare() {
             .aria
             .active_descendant
     );
-    // ↓ to the second ref, → to its Compare, Enter starts a change from it
     cx.simulate_focus("forge-refs-list");
     cx.simulate_key_down("forge-refs-list", "down");
     let branch = &rows[1];
@@ -2779,8 +2580,6 @@ fn the_ref_list_is_a_grid_whose_right_reaches_compare() {
     });
 }
 
-/// A reader who may not write sees a disabled Compare that is no cell: →
-/// stays on the ref, and Enter starts no change.
 #[test]
 fn a_reader_who_may_not_write_has_no_compare_cell() {
     let (mut cx, view) = seated(b"stranger", None);
@@ -2806,9 +2605,6 @@ fn a_reader_who_may_not_write_has_no_compare_cell() {
     view.read(|forge| assert!(forge.form.is_none(), "no draft for a reader"));
 }
 
-/// The default head and a tag have no Compare, and still sit in the refs
-/// grid as rows of cells: a `Row` whose one cell is the ref's press, never
-/// a list box's option under a grid (AX-105, the census's Forge: refs).
 #[test]
 fn a_ref_without_compare_is_a_grid_row_of_one_cell() {
     let (mut cx, view) = opened("default");
@@ -2830,7 +2626,6 @@ fn a_ref_without_compare_is_a_grid_row_of_one_cell() {
         );
         assert!(cx.find(&format!("forge-compare-{label}")).is_none());
     }
-    // the browsed default head says so on its press
     assert_eq!(
         cx.interactivity("forge-ref-row-main-open").aria.current,
         Some(view::accesskit::AriaCurrent::True)
@@ -2840,7 +2635,6 @@ fn a_ref_without_compare_is_a_grid_row_of_one_cell() {
             .position(|key| *key == format!("forge-ref-row-{label}"))
             .unwrap_or_else(|| panic!("{label} is listed: {rows:?}"))
     };
-    // ↓ to the default head, whose press claims; → finds no second cell
     cx.simulate_focus("forge-refs-list");
     for _ in 0..at("main") {
         cx.simulate_key_down("forge-refs-list", "down");
@@ -2851,7 +2645,6 @@ fn a_ref_without_compare_is_a_grid_row_of_one_cell() {
             .aria
             .active_descendant
     );
-    // ↓ on to the tag, and Enter browses it
     for _ in at("main")..at("v1") {
         cx.simulate_key_down("forge-refs-list", "down");
     }
@@ -2860,9 +2653,6 @@ fn a_ref_without_compare_is_a_grid_row_of_one_cell() {
     view.read(|forge| assert_eq!(forge.head_name(), b"refs/tags/v1".to_vec()));
 }
 
-// ---------- what one block costs a repository page ----------
-
-/// The variant name of a forge query, for a count by kind.
 fn kind(query: &Query) -> String {
     let text = format!("{query:?}");
     text.split([' ', '(', '{']).next().unwrap_or("?").to_owned()
@@ -2871,11 +2661,9 @@ fn kind(query: &Query) -> String {
 struct Costed {
     cx: TestAppContext,
     heads: Heads,
-    /// bytes of every forge reply the fake node handed back
     reply_bytes: std::rc::Rc<std::cell::RefCell<usize>>,
 }
 
-/// `followed("default")` with the forge reply bytes counted from here on.
 fn costed() -> Costed {
     let (cx, heads) = followed("default");
     let reply_bytes = std::rc::Rc::new(std::cell::RefCell::new(0usize));
@@ -2892,8 +2680,6 @@ fn costed() -> Costed {
     }
 }
 
-/// The forge asks one live item costs, by kind, printed with the reply
-/// bytes as `AUDIT <label>`.
 fn costs(
     costed: &mut Costed,
     label: &str,
@@ -2916,19 +2702,6 @@ fn costs(
     by_kind
 }
 
-/// What one block costs the repository page: the reads of the tables it
-/// wrote to, and nothing else. A review record written re-reads nothing the
-/// Readme tab shows (before, any block of any of the three programs re-read
-/// all of it: 8 asks, 1,554 bytes); a ref moved re-reads the refs and what
-/// hangs off them; the repo record written re-reads the repositories and
-/// the activity, so a real review block, which marks the repository active,
-/// costs those three; a chat block re-reads no forge read the Readme tab
-/// shows; an identity block only the names; and a reopened link (`None`)
-/// re-reads everything. The judgment is read on every screen for the
-/// host's badge, so a review record written costs that one read wherever
-/// the reader is. On the Judgment filter a real review lands as a forge
-/// item and, with the line it posted, a chat item, and each asks the
-/// judgment again.
 #[test]
 fn a_block_costs_the_reads_of_the_tables_it_wrote_to() {
     let mut costed = costed();
@@ -2943,7 +2716,6 @@ fn a_block_costs_the_reads_of_the_tables_it_wrote_to() {
     let real_review = costs(&mut costed, "Readme tab, a real review block", |c| {
         c.heads.forge.send(block(100, real_review_keys()))
     });
-    // the open-changes count on the tab bar reads the changes again too
     assert_eq!(
         real_review.keys().collect::<Vec<_>>(),
         ["Activity", "Changes", "Judgment", "Repo", "Repos"],
@@ -3038,11 +2810,6 @@ fn a_block_costs_the_reads_of_the_tables_it_wrote_to() {
     );
 }
 
-/// What a reader on "Needs my judgment" waits on is chat's: a chat block
-/// that answered a thread (an `ANSWERED` entry written) asks the judgment
-/// again, one that only seated a member does not, and a reopened chat link
-/// does. Before, a chat block re-read no forge read, and the list stayed
-/// stale until a forge block landed.
 #[test]
 fn a_chat_block_that_answered_a_thread_re_reads_the_judgment() {
     let (mut cx, heads) = followed("judgment");
@@ -3074,9 +2841,6 @@ fn a_chat_block_that_answered_a_thread_re_reads_the_judgment() {
     assert_eq!(judgments(&cx), asked + 2, "a reopened chat link");
 }
 
-/// The window is named for the screen: the repository list, a repository,
-/// a change by its number and, once its read lands, its title. Each name
-/// goes to the host once.
 #[test]
 fn the_window_is_named_for_the_screen() {
     use view::methods::HostTitle;
@@ -3087,7 +2851,6 @@ fn the_window_is_named_for_the_screen() {
     );
     cx.simulate_click("forge-tab-changes");
     cx.run_until_parked();
-    // the change's read never lands: its number alone
     cx.host().never::<Ask>();
     cx.simulate_click("forge-change-1");
     cx.run_until_parked();
@@ -3095,7 +2858,6 @@ fn the_window_is_named_for_the_screen() {
         cx.host().requests::<HostTitle>(),
         ["Repositories", "project", "project · #1"]
     );
-    // the read lands: the same window takes the title, once
     let (cx, _) = change_screen("default", ChangeTab::Conversation);
     assert_eq!(
         cx.host().requests::<HostTitle>(),
@@ -3108,7 +2870,6 @@ fn the_window_is_named_for_the_screen() {
     );
 }
 
-/// The keys of the items the open ref picker lists, in order.
 fn picker_items(cx: &TestAppContext) -> Vec<String> {
     fn gather(node: &wire::Node, items: &mut Vec<String>) {
         if node
@@ -3128,11 +2889,6 @@ fn picker_items(cx: &TestAppContext) -> Vec<String> {
     items
 }
 
-/// The ref picker as a reader uses it: the default branch first, what is
-/// typed in the filter box narrows both tabs in any case and counts what
-/// each still holds, a filter nothing matches says so, the tags are a
-/// press away, and Enter picks the first match. Opened again on a tag, it
-/// opens on the tags with that tag checked.
 #[test]
 fn the_ref_picker_filters_its_branches_and_tags() {
     let (mut cx, view) = opened("default");
@@ -3176,9 +2932,6 @@ fn the_ref_picker_filters_its_branches_and_tags() {
     );
 }
 
-/// The picker's Branches | Tags tabs are a radio group: ← → switch them and
-/// the keys stay on the tabs; a press switches them and hands the keys back
-/// to the filter box, where the typing goes on.
 #[test]
 fn the_ref_pickers_tabs_keep_their_arrows_and_a_press_goes_back_to_the_filter() {
     let (mut cx, _view) = opened("default");
@@ -3200,13 +2953,9 @@ fn the_ref_pickers_tabs_keep_their_arrows_and_a_press_goes_back_to_the_filter() 
     assert_eq!(focused(&cx).as_deref(), Some("forge-ref-picker-filter"));
 }
 
-/// A ref list longer than the window keeps the picker inside it: the list
-/// shows the rows the window has room for and scrolls the rest, a virtual
-/// list of every branch, opened scrolled to the picked one.
 #[test]
 fn a_long_ref_list_keeps_the_picker_in_the_window() {
     use view::px;
-    // the rows the open picker's list is as tall as
     let rows = |cx: &TestAppContext| {
         let height = cx.style("forge-ref-picker-rows").size.height;
         let (row, inset) = (design::height::ROW as f32, design::spacing::XXS as f32 * 2.);
@@ -3215,7 +2964,6 @@ fn a_long_ref_list_keeps_the_picker_in_the_window() {
     let (mut cx, view) = opened("default");
     cx.simulate_click("forge-ref-picker");
     cx.run_until_parked();
-    // as tall as the refs of both tabs, so a switch keeps its height
     assert_eq!(rows(&cx), Some(6), "a tall window shows every ref");
     cx.simulate_click("forge-ref-refs/heads/unrelated");
     cx.simulate_resize(1180., 200.);
@@ -3255,8 +3003,6 @@ fn a_long_ref_list_keeps_the_picker_in_the_window() {
     view.read(|forge| assert_eq!(forge.menu_cursor, 4));
 }
 
-/// A ref's name in a narrow column is cut in its middle, and a name long
-/// enough to be cut is said whole on hover; a short one is not.
 #[test]
 fn a_long_ref_name_is_cut_in_the_middle_and_whole_on_hover() {
     use crate::ui::components::{name_cell, whole_name};

@@ -17,7 +17,6 @@ use crate::state::{ChangeForm, Menu, Sheet, change_key};
 use crate::words::{self, ref_label};
 use forge::Reply;
 
-/// A removable chip's cross (`Choice.tsx` `RemovableChip`).
 const CHIP_CROSS: Pixels = px(14.);
 
 pub(super) fn render(
@@ -48,7 +47,6 @@ pub(super) fn render(
     design::page(
         "forge-page-change-form",
         title,
-        // over the stack's top page
         Nav::back(forge.nav().depth() + 1, back),
         ladder,
         theme,
@@ -61,15 +59,10 @@ pub(super) fn render(
     .into_any_element()
 }
 
-/// Open or Save is pressable: no write of this form's is on its way, and
-/// a new change has its source.
 fn ready(forge: &Forge, form: &ChangeForm, scope: &str) -> bool {
     !forge.busy(scope) && (form.edit.is_some() || !form.from.is_empty())
 }
 
-/// Open or Save in the title row (`HitText`): medium, a finger's height,
-/// faint while it is not `ready`.
-// SDK gap: the kit's `HitText`; the SDK builds it later
 fn send(
     verb: &'static str,
     ready: bool,
@@ -95,8 +88,6 @@ fn send(
     }
 }
 
-/// "Source → target": a button each that opens the ref sheet (off for an
-/// edit, which keeps its endpoints), and how they compare.
 fn endpoints(
     forge: &Forge,
     form: &ChangeForm,
@@ -122,7 +113,6 @@ fn endpoints(
         .items_center()
         .gap(design::space::LG)
         .child(picker(Menu::Source, source))
-        // the kit's `Icon` in its default tone (`Icon.tsx:8`)
         .child(design::icon("arrow-right", ladder.icon_row).text_color(theme.muted))
         .child(picker(Menu::Target, ref_label(&form.into)));
     div()
@@ -134,8 +124,6 @@ fn endpoints(
         .children(comparison(forge).map(|said| parts::caption(said, ladder, theme)))
 }
 
-/// `N ahead · M behind · <word>` for a new change whose endpoints have
-/// been compared.
 fn comparison(forge: &Forge) -> Option<String> {
     let Reply::Compare { comparison, .. } = forge.ready(&forge.form_compare_query()?)? else {
         return None;
@@ -143,7 +131,6 @@ fn comparison(forge: &Forge) -> Option<String> {
     Some(words::compared(comparison))
 }
 
-/// "Title", and why the form was refused; typing takes the refusal away.
 fn title_field(
     form: &ChangeForm,
     cx: &mut Context<Forge>,
@@ -168,7 +155,6 @@ fn title_field(
         })
 }
 
-/// "Body": many lines.
 fn body_field(form: &ChangeForm, ladder: &Ladder, theme: &Theme) -> impl IntoElement {
     let field = Textarea::new(id("forge-change-body"), &form.body, "Body")
         .autocorrect(true)
@@ -177,7 +163,6 @@ fn body_field(form: &ChangeForm, ladder: &Ladder, theme: &Theme) -> impl IntoEle
     design::field(field, ladder, theme).label("Body")
 }
 
-/// "Reviewers": a chip each that removes them, and Add.
 fn reviewers(
     forge: &Forge,
     form: &ChangeForm,
@@ -218,9 +203,6 @@ fn reviewers(
         .child(row)
 }
 
-/// A reviewer's chip (`RemovableChip`): the name and a cross in an
-/// outline box; the press removes them.
-// SDK gap: the kit's `RemovableChip`; the SDK builds it later
 fn removable_chip(
     name: &str,
     ladder: &Ladder,
@@ -242,7 +224,6 @@ fn removable_chip(
         .whitespace_nowrap()
         .child(name.to_owned())
         .child(design::icon("x", CHIP_CROSS).text_color(theme.foreground))
-        // the press reaches a finger's height, across the chip's width
         .child(
             design::hit(
                 id(format!("forge-reviewer-{name}")),
@@ -260,8 +241,6 @@ fn removable_chip(
         )
 }
 
-/// A member to ask for a review (`PeopleSheet` "Reviewers"): everyone
-/// not asked yet.
 pub(super) fn reviewers_sheet(
     forge: &Forge,
     cx: &mut Context<Forge>,

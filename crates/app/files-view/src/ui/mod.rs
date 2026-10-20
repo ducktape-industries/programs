@@ -25,33 +25,20 @@ pub(crate) mod phone;
 mod places;
 mod side;
 
-/// The bar's height.
 const BAR_H: Pixels = px(44.);
-/// A list row's height.
 const ROW_H: Pixels = px(40.);
-/// A detail line's label column.
 const LABEL_W: Pixels = px(110.);
 
-/// How a desktop pane lays its pages out, by its width.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Layout {
-    /// the tabs over one page
     Narrow,
-    /// the places down the side, one page beside them; a folder lists its
-    /// entries in columns
     Wide,
-    /// as wide, and a file or a snapshot opens beside the list it is in
     Split,
 }
 
-/// The side's width.
 const SIDE_W: f32 = 220.;
-/// The narrowest a page reads beside the side: a folder's three columns.
-/// With the side, 880: the width forge folds its side panes at.
 const PAGE_KEEPS: f32 = 660.;
-/// The narrowest a list reads beside what opened from it.
 const LIST_KEEPS: f32 = 460.;
-/// The narrowest a file's text or picture reads beside its list.
 const DETAIL_KEEPS: f32 = 520.;
 
 impl Layout {
@@ -101,7 +88,6 @@ pub(crate) fn render(view: &Files, cx: Cx) -> AnyElement {
     menu::over(view, files.children(form), cx, k)
 }
 
-/// The page on top of the stack, alone.
 fn page(view: &Files, layout: Layout, cx: Cx, k: &Kit) -> AnyElement {
     let columns = layout != Layout::Narrow;
     match view.page().clone() {
@@ -113,9 +99,6 @@ fn page(view: &Files, layout: Layout, cx: Cx, k: &Kit) -> AnyElement {
     }
 }
 
-/// Beside the side: the page on top, or, split, the list it is in (a
-/// folder's, the history) with what opened from it beside the list, or
-/// what would.
 fn body(view: &Files, layout: Layout, cx: Cx, k: &Kit) -> AnyElement {
     if layout != Layout::Split {
         return scrolled("files-page", page(view, layout, cx, k)).into_any_element();
@@ -156,7 +139,6 @@ fn body(view: &Files, layout: Layout, cx: Cx, k: &Kit) -> AnyElement {
         .into_any_element()
 }
 
-/// A pane that scrolls what it holds, sharing the room it is in.
 fn scrolled(id: &'static str, content: AnyElement) -> Stateful<Div> {
     div()
         .id(id)
@@ -167,7 +149,6 @@ fn scrolled(id: &'static str, content: AnyElement) -> Stateful<Div> {
         .child(content)
 }
 
-/// What the detail pane says before anything opens in it.
 fn hint(sentence: &'static str, k: &Kit) -> AnyElement {
     design::quiet(sentence, &k.theme)
         .id("files-hint")
@@ -176,8 +157,6 @@ fn hint(sentence: &'static str, k: &Kit) -> AnyElement {
         .into_any_element()
 }
 
-/// The tabs: the places (and every folder and file under them), and the
-/// history (and every snapshot in it).
 fn bar(view: &Files, cx: Cx, k: &Kit) -> impl IntoElement {
     let tabs = [
         ("places", words::PLACES, Route::Places),
@@ -226,8 +205,6 @@ fn bar(view: &Files, cx: Cx, k: &Kit) -> impl IntoElement {
         .border_b_1()
         .border_color(k.theme.border)
         .child(
-            // one Tab stop; ← → open the next tab's page, Enter or Space
-            // the tab's own from the top
             design::composite("files-tabs", Role::TabList, words::TABS)
                 .orientation(design::Orientation::Horizontal)
                 .wrap()
@@ -242,7 +219,6 @@ fn bar(view: &Files, cx: Cx, k: &Kit) -> impl IntoElement {
         )
 }
 
-/// The line the last write left.
 fn note(view: &Files, k: &Kit) -> Option<Stateful<Div>> {
     let note = view.note.as_ref()?;
     Some(
@@ -261,8 +237,6 @@ fn note(view: &Files, k: &Kit) -> Option<Stateful<Div>> {
     )
 }
 
-/// The path over a folder or a file: every folder above it a crumb that
-/// opens it (`files/crumb:<its path>`), the last one where the reader is.
 fn crumbs(path: &str, cx: Cx, k: &Kit) -> Stateful<Div> {
     let mut folders = vec![(ROOT.to_owned(), words::EVERYTHING.to_owned())];
     let mut at = String::new();
@@ -310,7 +284,6 @@ fn crumbs(path: &str, cx: Cx, k: &Kit) -> Stateful<Div> {
         .children(with_slashes(crumbs, k))
 }
 
-/// The crumbs with a slash between each two.
 fn with_slashes(crumbs: impl Iterator<Item = Stateful<Div>>, k: &Kit) -> Vec<AnyElement> {
     let mut out = Vec::new();
     for (index, crumb) in crumbs.enumerate() {
@@ -327,7 +300,6 @@ fn with_slashes(crumbs: impl Iterator<Item = Stateful<Div>>, k: &Kit) -> Vec<Any
     out
 }
 
-/// A section's title row: its name, then what sits on its right.
 fn heading(id: &str, title: &str, right: Option<String>, k: &Kit) -> Stateful<Div> {
     design::section_head(
         ElementId::Name(id.to_owned().into()),
@@ -338,7 +310,6 @@ fn heading(id: &str, title: &str, right: Option<String>, k: &Kit) -> Stateful<Di
     .children(right)
 }
 
-/// A page's title, over what it is.
 fn title(id: &str, text: &str, under: Option<String>, k: &Kit) -> Div {
     div()
         .px_5()
@@ -361,7 +332,6 @@ fn title(id: &str, text: &str, under: Option<String>, k: &Kit) -> Div {
         }))
 }
 
-/// A row's look: a glyph, its name, what it is on the right.
 fn row_look(
     id: String,
     glyph: &'static str,
@@ -389,7 +359,6 @@ fn row_look(
         )
 }
 
-/// A row that opens what it names.
 fn row(
     id: String,
     glyph: &'static str,
@@ -407,7 +376,6 @@ fn row(
         .on_click(press)
 }
 
-/// A row of what is open beside its list, marked.
 fn mark(row: Stateful<Div>, marked: bool, k: &Kit) -> Stateful<Div> {
     row.when(marked, |row| {
         row.bg(k.theme.accent_soft)
@@ -415,7 +383,6 @@ fn mark(row: Stateful<Div>, marked: bool, k: &Kit) -> Stateful<Div> {
     })
 }
 
-/// One line of a detail: its label, then its value.
 fn line(label: &'static str, value: impl IntoElement, k: &Kit) -> Div {
     div()
         .min_h(ROW_H)
@@ -435,7 +402,6 @@ fn line(label: &'static str, value: impl IntoElement, k: &Kit) -> Div {
         .child(div().flex_1().min_w_0().child(value))
 }
 
-/// A page still reading.
 fn reading(id: &'static str, sentence: &'static str, k: &Kit) -> AnyElement {
     design::quiet(sentence, &k.theme)
         .id(id)
@@ -444,7 +410,6 @@ fn reading(id: &'static str, sentence: &'static str, k: &Kit) -> AnyElement {
         .into_any_element()
 }
 
-/// A refused read, and Retry.
 fn refused(name: &str, refusal: &Error, cx: Cx, k: &Kit) -> AnyElement {
     let retry = cx.listener(|view: &mut Files, _: &ClickEvent, _, cx| view.read_page(cx));
     design::refused(name, design::sentence(refusal), &k.ladder, &k.theme, retry)
@@ -452,7 +417,6 @@ fn refused(name: &str, refusal: &Error, cx: Cx, k: &Kit) -> AnyElement {
         .into_any_element()
 }
 
-/// The writes the page offers, as a row of buttons.
 fn writes(view: &Files, cx: Cx, k: &Kit) -> Option<Div> {
     let offered = view.offered();
     if offered.is_empty() {
@@ -476,7 +440,6 @@ fn writes(view: &Files, cx: Cx, k: &Kit) -> Option<Div> {
     )
 }
 
-/// Text that reads as a path, a size or an id.
 fn data(text: impl Into<SharedString>) -> Div {
     div()
         .font_family(design::fonts::FAMILY_MONO)

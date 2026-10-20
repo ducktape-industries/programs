@@ -80,8 +80,6 @@ checked = { "channel.archived" = true }
 on_press = { open = "{channel.id}" }
 "#;
 
-// The files the fake files program holds: each path's object (a number
-// that moves with each write) and text.
 type Held = Rc<RefCell<BTreeMap<String, (u8, String)>>>;
 type Rooms = Rc<RefCell<Vec<ChannelInfo>>>;
 
@@ -93,7 +91,6 @@ fn held(files: &[(&str, &str)]) -> Held {
     Rc::new(RefCell::new(files))
 }
 
-// `general` wearing `meta`, `dm-7-8`, and `ops`, archived.
 fn rooms(meta: &[(&str, &str)]) -> Rooms {
     let mut general = channel("general", "General", 3);
     for (key, value) in meta {
@@ -106,15 +103,12 @@ fn rooms(meta: &[(&str, &str)]) -> Rooms {
 
 const CODE: [u8; 32] = [4; 32];
 
-// Chat's code as the node holds it: a module carrying its schema.
 fn chat_code() -> Vec<u8> {
     let schema = ::program::schema::interface::<::chat::Chat>();
     let payload = borsh::to_vec(&schema).unwrap();
     widget::module_with(::program::schema::SECTION, &payload)
 }
 
-// The programs, files and blobs a widget reads, answered: chat runs from
-// `CODE`, files holds `held`.
 fn serve(cx: &TestAppContext, rooms: Rooms, held: Held) {
     cx.host()
         .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
@@ -174,7 +168,6 @@ fn serve(cx: &TestAppContext, rooms: Rooms, held: Held) {
     });
 }
 
-// A desk with `general` open, its meta naming `meta`'s widgets.
 fn desk(rooms: Rooms, held: Held) -> (TestAppContext, Entity<Chat>) {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
@@ -186,7 +179,6 @@ fn desk(rooms: Rooms, held: Held) -> (TestAppContext, Entity<Chat>) {
     (cx, view)
 }
 
-// How many questions went to chat, the view's own and the widgets'.
 fn asked_chat(cx: &TestAppContext) -> usize {
     let asked = cx.host().requests::<NamedQuery>();
     asked.iter().filter(|call| call.target == "chat").count()
@@ -293,7 +285,6 @@ fn a_failed_read_says_which_and_asks_again_on_the_next_block() {
 
 #[test]
 fn a_refused_question_names_the_program_asked() {
-    // the widget's own question, which the view never asks
     let limited = COUNTED.replace("page = {}", "page = { limit = 99 }");
     let (rooms, held) = (
         rooms(&[("widget.pinned", ROOMS)]),
@@ -339,7 +330,6 @@ fn a_schema_is_kept_on_the_device_with_its_code_and_read_from_there() {
     let kept = kept.and_then(|(_, kept)| kept).expect("the schema is kept");
     let (from, section): (BlobId, Vec<u8>) = methods::decode(&kept).unwrap();
     assert_eq!(from, BlobId::Sha256(CODE));
-    // a later run reads it off the device; kept from other code, it fetches
     let elsewhere = methods::encode(&(BlobId::Sha256([5; 32]), section));
     for (kept, fetches) in [(kept, 0), (elsewhere, 1)] {
         let mut cx = TestAppContext::new();
@@ -398,7 +388,6 @@ fn a_block_of_the_source_asks_again_and_a_moved_file_is_read_again() {
     chat.send(block(9, Vec::new()));
     cx.run_until_parked();
     assert!(cx.has_text("#Ops at 6"), "{:?}", cx.texts());
-    // a files block that leaves the file as it was asks nothing again
     let asked = asked_chat(&cx);
     let files = cx.host().stream::<Changes<files::Files>>();
     files.send(block(10, Vec::new()));
@@ -474,8 +463,6 @@ fn what_does_not_read_is_said_in_the_widgets_place() {
         cx.texts()
     );
     assert!(cx.has_text("Rooms: This network runs no program called nowhere."));
-    // a program that does not run is not followed: programs is, whose
-    // block may deploy it
     let followed = cx.host().requests::<NamedChanges>();
     assert!(followed.contains(&"programs".to_owned()), "{followed:?}");
     assert!(!followed.contains(&"nowhere".to_owned()));

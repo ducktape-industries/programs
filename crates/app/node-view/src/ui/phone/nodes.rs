@@ -23,13 +23,9 @@ use crate::row::Status;
 use crate::words::{self, EpochPlace};
 use crate::{Nodes, voting};
 
-/// A member's dot (Expo `index.tsx:114`).
 const DOT: Pixels = px(8.);
-/// How tall the epoch's bar is (Expo `index.tsx:76`).
 const EPOCH_BAR: Pixels = px(6.);
 
-/// The list page: its title row, the vote's outcome strip, and what
-/// scrolls under them.
 pub(super) fn render(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> Page {
     let page = design::page(
         "nodes-page",
@@ -54,17 +50,12 @@ pub(super) fn render(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> Pa
         .child(scroller("nodes-scroll", body))
 }
 
-/// The network's name, as the session names it (Expo `index.tsx:164`
-/// `connection?.network`), or as the node does; Nodes before either says.
 fn title(view: &Nodes) -> String {
     let chain = view.chain.as_deref();
     let chain = chain.or(view.status.ready().map(|status| status.chain_id.as_str()));
     chain.map_or(words::NODES, words::network).to_owned()
 }
 
-/// Whether this node answers, and which node it is.
-// SDK gap: a caption that takes a node (Expo draws the word in its tone
-// and the key in the data face); the SDK builds it later
 fn pulse(view: &Nodes) -> Option<String> {
     let status = view.status.ready()?;
     Some(format!(
@@ -75,9 +66,6 @@ fn pulse(view: &Nodes) -> Option<String> {
     ))
 }
 
-/// The door's control, which raises its sheet: a door, named The door
-/// (Expo drew `Ellipsis`, the glyph of the capsule beside it now,
-/// [`Page::trailing`]).
 fn door_button(cx: &mut Context<Nodes>, theme: &Theme) -> impl IntoElement {
     let open = cx.listener(|view: &mut Nodes, _: &ClickEvent, _, cx| {
         view.door = true;
@@ -93,8 +81,6 @@ fn door_button(cx: &mut Context<Nodes>, theme: &Theme) -> impl IntoElement {
     )
 }
 
-/// The node's numbers, or why they are not here: refused with Retry, or
-/// still being read.
 fn numbers(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> AnyElement {
     if let Some(refusal) = view.status.failed() {
         let retry = cx.listener(|view: &mut Nodes, _: &ClickEvent, _, cx| view.retry_status(cx));
@@ -131,22 +117,14 @@ fn numbers(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> AnyElement {
         .into_any_element()
 }
 
-// SDK gap: the kit's `Facts` (`Fact`, `facts`, `fact_cell`); the SDK builds it later
-
-/// One of the kit's `Facts` (Expo `src/kit/Facts.tsx`): an eyebrow over a
-/// value over a caption.
 struct Fact {
-    /// names the cell: `nodes-status-{key}`
     key: &'static str,
     label: &'static str,
     value: String,
-    /// the value in the data face
     mono: bool,
     caption: Option<String>,
 }
 
-/// The kit's `Facts`: two to a row, each half the width, a hairline under
-/// every one and between the two of a row.
 fn facts(facts: impl IntoIterator<Item = Fact>, theme: &Theme) -> Stateful<Div> {
     div().id("nodes-status").flex().flex_wrap().children(
         facts
@@ -156,9 +134,6 @@ fn facts(facts: impl IntoIterator<Item = Fact>, theme: &Theme) -> Stateful<Div> 
     )
 }
 
-/// The `index`th fact's cell: the eyebrow (the data face, medium, muted,
-/// in capitals), the value in heading type, the caption muted. The first
-/// of a row draws the hairline between the two (Expo `Facts.tsx:24`).
 fn fact_cell(fact: Fact, index: usize, theme: &Theme) -> Stateful<Div> {
     div()
         .id(ElementId::Name(format!("nodes-status-{}", fact.key).into()))
@@ -193,8 +168,6 @@ fn fact_cell(fact: Fact, index: usize, theme: &Theme) -> Stateful<Div> {
         }))
 }
 
-/// `Epoch 131 · 29 / 64` over a bar the width of the screen, and when the
-/// next one starts.
 fn epoch(place: &EpochPlace, theme: &Theme) -> Stateful<Div> {
     div()
         .id("nodes-status-epoch")
@@ -221,8 +194,6 @@ fn epoch(place: &EpochPlace, theme: &Theme) -> Stateful<Div> {
         )
 }
 
-/// The epoch's bar: ink for the blocks gone, the hairline's grey for those
-/// to come, sharing its width as the epoch does.
 fn epoch_bar(place: &EpochPlace, theme: &Theme) -> Div {
     let part = |blocks: u64, fill: Hsla| share(blocks as f32).h_full().bg(fill);
     div()
@@ -233,9 +204,6 @@ fn epoch_bar(place: &EpochPlace, theme: &Theme) -> Div {
         .child(part(place.length - place.into, theme.border))
 }
 
-/// The members, or why they are not here: still being read, refused with
-/// Retry, none at all, or waiting on the node's status their rows read
-/// (the numbers above say why).
 fn members(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> AnyElement {
     if let Some(refusal) = view.nodes.failed() {
         let retry = cx.listener(|view: &mut Nodes, _: &ClickEvent, _, cx| view.read(cx));
@@ -256,9 +224,6 @@ fn members(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> AnyElement {
     }
 }
 
-/// The members once read: why no validator's state shows, how long the
-/// node has been silent, the validators then the residents under their
-/// counts, and what a validator's cells mean.
 fn roster(view: &Nodes, nodes: &[Node], cx: &Context<Nodes>, theme: &Theme) -> Stateful<Div> {
     let rows = |validators: bool| -> Vec<Stateful<Div>> {
         nodes
@@ -287,15 +252,10 @@ fn roster(view: &Nodes, nodes: &[Node], cx: &Context<Nodes>, theme: &Theme) -> S
         .children(footnote.map(|footnote| quiet("nodes-footnote", footnote, theme)))
 }
 
-/// A member as the kit's tall `Row`: its dot, its key (and who operates
-/// it) over its address, a validator's status word, a chevron. The row
-/// opens the member's page.
 fn member_row(view: &Nodes, node: &Node, cx: &Context<Nodes>, theme: &Theme) -> Stateful<Div> {
     let status = view.cells(node).status;
     let live = view.answering();
     let (tone, _) = tint(&status, live, theme);
-    // a resident's state is not reported, and a blank one is not known yet
-    // (Expo `index.tsx:110`)
     let unknown = !node.validator || (live && status == Status::Blank);
     let dot = if unknown { theme.faint } else { tone };
     let key = node.key.clone();
@@ -324,8 +284,6 @@ fn member_row(view: &Nodes, node: &Node, cx: &Context<Nodes>, theme: &Theme) -> 
     .child(design::chevron(&LADDER, theme))
 }
 
-/// A member's title: its short key in the data face, then who operates
-/// it, muted at secondary size, cut short where it runs out of room.
 fn member_title(node: &Node, theme: &Theme) -> Div {
     div()
         .flex()
@@ -334,7 +292,6 @@ fn member_title(node: &Node, theme: &Theme) -> Div {
         .whitespace_nowrap()
         .overflow_hidden()
         .text_type(LADDER.body)
-        // SDK gap: `design::mono` sized by the ladder; the SDK builds it later
         .child(
             design::mono(design::short_hex(&hex(&node.key)))
                 .flex_none()
@@ -350,15 +307,11 @@ fn member_title(node: &Node, theme: &Theme) -> Div {
         }))
 }
 
-/// A member's caption: its address in the data face, and `this node` on
-/// the one this app talks to.
 fn member_address(view: &Nodes, node: &Node, theme: &Theme) -> Div {
     design::row_caption(view.address_line(node), &LADDER, theme)
         .font_family(design::fonts::FAMILY_MONO)
 }
 
-/// The vote, for a reader who votes: the motions that wait, the scheduled
-/// changes, and where a program is changed.
 fn vote(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> Option<Div> {
     if !view.voting.votes() {
         return None;
@@ -376,8 +329,6 @@ fn vote(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> Option<Div> {
     )
 }
 
-/// The motions that wait for votes, or why there are none to show:
-/// refused with Retry, still being read, or none waiting.
 fn waiting(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> Vec<AnyElement> {
     let voting = &view.voting;
     if let Some(refusal) = voting.motions.failed() {
@@ -411,9 +362,6 @@ fn waiting(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> Vec<AnyEleme
         .collect()
 }
 
-/// A motion that waits: its words, how many voted of how many it needs
-/// and the reader's share, then Vote while the reader has a voice left on
-/// it, else a `voted` badge.
 fn motion_row(
     view: &Nodes,
     index: usize,
@@ -450,9 +398,6 @@ fn motion_row(
     )
 }
 
-/// The changes scheduled past the tip, or why there are none to show:
-/// refused with Retry, still being read, or none scheduled. (Expo reads a
-/// refused schedule as still being read, forever: `index.tsx:197-198`.)
 fn scheduled(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> Vec<AnyElement> {
     let voting = &view.voting;
     if let Some(refusal) = voting.scheduled.failed() {
@@ -485,8 +430,6 @@ fn scheduled(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> Vec<AnyEle
         .collect()
 }
 
-/// A scheduled change: what it does at which height, who made it and how
-/// long it can still be cancelled, then Propose cancel.
 fn scheduled_row(
     view: &Nodes,
     index: usize,
@@ -512,8 +455,6 @@ fn scheduled_row(
     )
 }
 
-/// A row of the vote (the kit's `Row` with a caption): what it is, its
-/// caption under it, its press at the right.
 fn vote_row(
     id: ElementId,
     title: String,
@@ -529,8 +470,6 @@ fn vote_row(
         .child(div().flex().items_center().gap(space::SM).child(tail))
 }
 
-/// The door, as a sheet over the list (Expo `index.tsx:224-241`): its two
-/// motions, each with what it means. Either closes the sheet and votes.
 pub(super) fn door(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> Option<AnyElement> {
     if !view.door {
         return None;
@@ -549,8 +488,6 @@ pub(super) fn door(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> Opti
     )
 }
 
-/// One of the door's sheet rows: the motion that opens or closes the
-/// door, and what it means as the row's hint.
 fn door_row(id: &'static str, open: bool, cx: &Context<Nodes>, theme: &Theme) -> impl IntoElement {
     let door = words::door(open);
     let vote = cx.listener(move |view: &mut Nodes, _: &ClickEvent, _, cx| {

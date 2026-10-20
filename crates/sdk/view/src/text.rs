@@ -10,8 +10,6 @@ use std::ops::Range;
 use std::rc::Rc;
 
 thread_local! {
-    /// Above every generation made or lowered so far: a fresh field is a
-    /// generation the host has not seen, whatever it replaces at its path.
     static GENERATIONS: Cell<u64> = const { Cell::new(0) };
 }
 
@@ -23,7 +21,6 @@ fn fresh_generation() -> u64 {
     })
 }
 
-/// Lowering saw `generation`: nothing made from now on is older than it.
 pub(crate) fn lowered_generation(generation: u64) {
     GENERATIONS.with(|generations| generations.set(generations.get().max(generation)));
 }
@@ -45,22 +42,14 @@ pub(crate) fn lowered_generation(generation: u64) {
 #[derive(Clone)]
 pub struct TextField(Rc<RefCell<State>>);
 
-/// What a [`TextField`] holds. The SDK's own consumers (lowering) read it
-/// through [`TextField::state`]; a view reads it through the field's
-/// readers.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename = "TextField")]
 pub(crate) struct State {
     pub(crate) text: String,
-    /// Bytes selected; a caret when empty.
     pub(crate) cursor: TextRange,
-    /// The atomic spans (mentions) and what they mean, where they now lie.
     pub(crate) tokens: Vec<TextToken>,
-    /// The span an IME is still composing in, part of `text` already.
     pub(crate) preedit: Option<TextRange>,
-    /// Moves on `reset`: the host adopts the text whole when it does.
     pub(crate) generation: u64,
-    /// The host's, as of the last change applied here.
     pub(crate) revision: u64,
 }
 
@@ -126,7 +115,6 @@ impl TextField {
         self.0.borrow().text.clone()
     }
 
-    /// What the field holds, for the SDK's own readers.
     pub(crate) fn state(&self) -> Ref<'_, State> {
         self.0.borrow()
     }
@@ -249,8 +237,6 @@ mod tests {
         assert_eq!(later.state().cursor, TextRange::caret(5));
     }
 
-    /// A reset is a new document with the spans it is given, and none
-    /// when it is given none.
     #[test]
     fn a_reset_seats_the_spans_it_is_given() {
         let mut field = TextField::new("old");
@@ -287,7 +273,6 @@ mod tests {
         };
         let current = field.generation();
         assert!(field.apply(&change(current, 7, "say word now")));
-        // the host's selection and spans are the field's
         assert_eq!(
             (field.selection(), field.tokens()),
             (4..8, vec![span.clone()])
@@ -313,8 +298,6 @@ mod tests {
                 TextRange::caret(0)
             )
         );
-        // a reset is a new document; the host's word on the old one, echoed
-        // before it adopted the reset, is not a word on this one
         field.reset("fresh");
         assert!(!field.apply(&change(current, 8, "say word now!")));
         assert_eq!(
@@ -326,10 +309,6 @@ mod tests {
         assert_eq!(field.state().revision, 9);
     }
 
-    /// A `Clone` is the same field: what the host says to one is the text
-    /// of the other, and a reset of one is a reset of both. Equality and
-    /// the snapshot are by value, so a field built apart with the same
-    /// content is equal and a restored one is a field of its own.
     #[test]
     fn a_clone_of_a_field_is_the_same_field() {
         let mut field = TextField::new("one");

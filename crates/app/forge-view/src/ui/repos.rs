@@ -26,33 +26,21 @@ fn listed<'a>(forge: &'a Forge, reply: &'a Reply) -> Vec<&'a RepoInfo> {
         .collect()
 }
 
-/// The table's column widths: owner, default head, refs, last activity.
-/// The name takes the rest. Last active holds "block 12,345,678" (16 mono
-/// characters at 0.6 em of the caption size, and the cell's insets).
 const OWNER_W: Pixels = px(150.);
 const HEAD_W: Pixels = px(120.);
 const REFS_W: Pixels = px(64.);
 const ACTIVITY_W: Pixels = px(130.);
-/// The overview's filter field.
 const SEARCH_W: Pixels = px(260.);
-/// The name keeps this much of a table row.
 const NAME_MIN_W: Pixels = px(120.);
-/// A table row's and its header's heights.
 const ROW_H: Pixels = px(48.);
 const HEADER_H: Pixels = px(30.);
-/// A table cell's side inset.
 const CELL_X: Pixels = px(12.);
 
-/// Whether the list, `width` wide, holds the table: the name's floor and
-/// every column, inside the rows' side margins and the scroll bar's gutter.
-/// That is 616 px, under the view's 640 minimum; a narrower list drops the
-/// header and puts each row's facts on one line under its name.
 fn table_fits(width: f32) -> bool {
     let columns = NAME_MIN_W + OWNER_W + HEAD_W + REFS_W + ACTIVITY_W;
     width >= f32::from(columns + design::space::SM * 2. + design::size::SCROLLBAR)
 }
 
-/// The table's head: what each column holds, quiet and mono.
 fn table_header(theme: &Theme) -> Stateful<Div> {
     let cell = |label: &'static str| {
         div()
@@ -80,13 +68,8 @@ fn table_header(theme: &Theme) -> Stateful<Div> {
         .child(cell("Last active").w(ACTIVITY_W).flex().justify_end())
 }
 
-/// The cells of a repository's row, in the order ← → walk them: the
-/// press that opens it, Copy, and the last-activity link.
 const CELLS: usize = 3;
 
-/// One repository: its name over the address it clones from, then its
-/// owner, default branch, refs and last activity, in their columns when
-/// `table`, else on one line under the name.
 #[allow(
     clippy::too_many_arguments,
     reason = "the ladder rides beside the theme into every sized helper; the phone rework of this view reshapes the row"
@@ -108,10 +91,6 @@ fn repo_row(
         let name = name.clone();
         move |forge, _: &ClickEvent, _, cx| forge.open_repo(name.clone(), cx)
     });
-    // the row's press lies under the whole row; Copy and the activity link
-    // sit over it, beside it rather than inside it, as a button may not
-    // hold them. Each is a cell of the grid, and the active cell's control
-    // is the one assistive technology is told is active.
     let press = div()
         .id(id(format!("forge-repo-{name}-open")))
         .size_full()
@@ -129,7 +108,6 @@ fn repo_row(
         .relative()
         .mx(design::space::SM)
         .min_h(ROW_H)
-        // a wrapped (narrow) row grows; the list's column must not squeeze it
         .flex_none()
         .flex()
         .flex_wrap()
@@ -137,7 +115,6 @@ fn repo_row(
         .border_b_1()
         .border_color(theme.border)
         .hover(|style| style.bg(theme.surface))
-        // the active row is drawn once the arrows have walked the list
         .when(active.is_some() && forge.repos_cursor.is_some(), |row| {
             row.bg(theme.surface)
         })
@@ -163,7 +140,6 @@ fn repo_row(
         .into_any_element()
 }
 
-/// A repository's name over its clone address, and Copy on hover.
 fn repo_title(
     forge: &Forge,
     name: &str,
@@ -209,8 +185,6 @@ fn repo_title(
         )
 }
 
-/// Copies the clone address; shown on hover, while the arrows are on it,
-/// and while it says Copied.
 fn copy_button(
     forge: &Forge,
     name: &str,
@@ -233,7 +207,6 @@ fn copy_button(
     let button = div()
         .id(id(format!("forge-repo-{name}-copy")))
         .aria_label(format!("Copy the address of {name}"))
-        // a click here is not also a click on the row that opens the repo
         .occlude()
         .min_w(PRESS_TARGET)
         .min_h(PRESS_TARGET)
@@ -257,10 +230,6 @@ fn copy_button(
     }
 }
 
-/// What a repository is: owner, default branch, refs, last activity. In the
-/// table each holds its column, the refs a bare count under their header;
-/// wrapped, they share one line under the name, each as wide as it reads,
-/// the refs with their unit.
 fn repo_facts(
     info: &RepoInfo,
     owner: String,
@@ -330,7 +299,6 @@ fn repo_facts(
         )
 }
 
-/// The screen: every repository of this network, newest activity first.
 pub(crate) fn overview(
     forge: &Forge,
     cx: &mut Context<Forge>,
@@ -371,7 +339,6 @@ pub(crate) fn overview(
     };
     let rows = listed(forge, body);
     if rows.is_empty() {
-        // the Expo app's (`app/(tabs)/forge/index.tsx:77-79`)
         let (glyph, title, detail) = match forge.search.is_blank() {
             true => ("hammer", words::NO_REPOSITORIES_YET, words::CREATE_ONE),
             false => (
@@ -391,8 +358,6 @@ pub(crate) fn overview(
             ))
             .into_any_element();
     }
-    // one Tab stop: ↑ ↓ walk the repositories, ← → a row's cells (Open,
-    // Copy, activity), Enter or Space presses the active cell
     let names: Vec<String> = rows.iter().map(|info| info.name.clone()).collect();
     let heights: Vec<u64> = rows.iter().map(|info| info.repo.last_activity).collect();
     let (at, cell) = forge
@@ -449,7 +414,6 @@ pub(crate) fn overview(
     column.child(list).into_any_element()
 }
 
-/// The rail: the same repositories, compact, while one of them is open.
 pub(crate) fn rail(
     forge: &Forge,
     cx: &mut Context<Forge>,
@@ -478,8 +442,6 @@ pub(crate) fn rail(
         Ok(reply) => reply,
         Err(state) => return column.child(state).into_any_element(),
     };
-    // one Tab stop: ↑ ↓ walk the repositories, Enter opens the active one;
-    // the arrows start on the open repository
     let names: Vec<String> = listed(forge, reply)
         .iter()
         .map(|info| info.name.clone())
@@ -536,11 +498,8 @@ pub(crate) fn rail(
     column.child(list).into_any_element()
 }
 
-/// The rail's row inset.
 const RAIL_X: Pixels = px(14.);
 
-/// The window's title bar already says Forge: the rail's head is the way
-/// back to every repository.
 fn rail_home(cx: &mut Context<Forge>, theme: &Theme) -> Stateful<Div> {
     let home = cx.listener(|forge, _: &ClickEvent, _, cx| forge.open_repos(cx));
     div()
@@ -564,8 +523,6 @@ fn rail_home(cx: &mut Context<Forge>, theme: &Theme) -> Stateful<Div> {
         )
 }
 
-/// The row pads, not the field: a full-width field with its own margins
-/// ran past the rail's edge.
 fn rail_search(forge: &Forge, theme: &Theme) -> Div {
     div().px(design::space::LG).pb(design::space::SM).child(
         Input::new(
@@ -643,7 +600,6 @@ fn dialog(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
-    // a name typed again takes the last refusal with it
     let typed = cx.listener(|forge, _: &wire::TextChange, _, cx| {
         if let Some(form) = &mut forge.new_repo {
             form.error.clear();

@@ -125,10 +125,6 @@ pub struct Interactivity {
 
 crate::codec::sparse!(Interactivity);
 
-/// A node's interactivity as it crosses: a node that declares none holds
-/// none, and on the wire that is the sparse struct with no field in it,
-/// which is what a node that sets no field writes too. So the reader hands
-/// back `None` for both, and the bytes do not say which the writer held.
 pub(crate) mod optional {
     use super::Interactivity;
     use serde::ser::SerializeStruct;

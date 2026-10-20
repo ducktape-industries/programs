@@ -103,8 +103,6 @@ impl<S: Objects + ?Sized> Merging<'_, S> {
             .collect())
     }
 
-    // The tree the three merge to, `None` once it holds nothing (git keeps no empty
-    // directory). A tree only one side changed is that side's, unread.
     fn tree(
         &mut self,
         path: &mut Vec<u8>,
@@ -151,7 +149,6 @@ impl<S: Objects + ?Sized> Merging<'_, S> {
         self.keep(Kind::Tree, body).map(Some)
     }
 
-    // One name's entry from its base, ours and theirs.
     fn entry(
         &mut self,
         path: &mut Vec<u8>,
@@ -190,12 +187,13 @@ impl<S: Objects + ?Sized> Merging<'_, S> {
         ours: Entry,
         theirs: Entry,
     ) -> Result<Option<Entry>> {
-        let Some(mode) = settled(base.map(|(mode, _)| mode), ours.0, theirs.0) else {
+        let Some(mode) = settle_one_sided_change(base.map(|(mode, _)| mode), ours.0, theirs.0)
+        else {
             self.clash(path, Clash::Mode);
             return Ok(Some(ours));
         };
         let base = base.map(|(_, id)| id);
-        let id = match settled(base, ours.1, theirs.1) {
+        let id = match settle_one_sided_change(base, ours.1, theirs.1) {
             Some(id) => id,
             None => match self.lines(path, base, ours.1, theirs.1)? {
                 Some(id) => id,
@@ -205,7 +203,6 @@ impl<S: Objects + ?Sized> Merging<'_, S> {
         Ok(Some((mode, id)))
     }
 
-    // The blob a line merge of the three makes, or `None` once it clashed.
     fn lines(
         &mut self,
         path: &[u8],
@@ -244,9 +241,7 @@ impl<S: Objects + ?Sized> Merging<'_, S> {
     }
 }
 
-// The value where only one side changed it, or both made it the same; `None` when both
-// changed it, differently.
-fn settled<T: PartialEq + Copy>(base: Option<T>, ours: T, theirs: T) -> Option<T> {
+fn settle_one_sided_change<T: PartialEq + Copy>(base: Option<T>, ours: T, theirs: T) -> Option<T> {
     if ours == theirs || base == Some(theirs) {
         return Some(ours);
     }
@@ -256,7 +251,6 @@ fn settled<T: PartialEq + Copy>(base: Option<T>, ours: T, theirs: T) -> Option<T
     None
 }
 
-// What one side did to the base: the base's lines `base` became the side's lines `side`.
 struct Edit {
     base: Range<usize>,
     side: Range<usize>,
@@ -287,9 +281,12 @@ fn edits(ops: &[Op]) -> Vec<Edit> {
     edits
 }
 
-// The lines one side puts in place of the base's `span`, from its edits inside it: outside
-// its edits a side's lines are the base's, one for one.
-fn side_of(edits: &[Edit], lines: &[&[u8]], base: &[&[u8]], span: &Range<usize>) -> Vec<u8> {
+fn side_lines_for_base_span(
+    edits: &[Edit],
+    lines: &[&[u8]],
+    base: &[&[u8]],
+    span: &Range<usize>,
+) -> Vec<u8> {
     let (Some(first), Some(last)) = (edits.first(), edits.last()) else {
         return base[span.clone()].concat();
     };
@@ -330,8 +327,8 @@ pub fn diff3(base: &[u8], ours: &[u8], theirs: &[u8], max_cost: usize) -> Result
             }
         }
         let span = start..end;
-        let ours = side_of(&our_edits[i..oi], &our_lines, &base, &span);
-        let theirs = side_of(&their_edits[j..tj], &their_lines, &base, &span);
+        let ours = side_lines_for_base_span(&our_edits[i..oi], &our_lines, &base, &span);
+        let theirs = side_lines_for_base_span(&their_edits[j..tj], &their_lines, &base, &span);
         let text = match (oi > i, tj > j) {
             (true, false) => ours,
             (false, true) => theirs,
@@ -406,7 +403,6 @@ mod tests {
         assert_eq!(refused, Err(Error::CapReached));
     }
 
-    // A tree of `files`, nested where a path has a `/`.
     fn files(store: &mut MemoryObjects, listed: &[(&str, &str)]) -> Oid {
         let mut entries = Vec::new();
         let mut dirs: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();

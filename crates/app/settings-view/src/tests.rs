@@ -11,7 +11,6 @@ mod phone;
 mod photo;
 mod policies;
 
-/// A press on `key` as the host sends it, to batch several in one tick.
 fn press(cx: &TestAppContext, key: &str) -> wire::Event {
     let handler = cx.interactivity(key).on_click.expect("a click route");
     wire::Event::Click {
@@ -32,7 +31,6 @@ fn account(number: u64, name: &str, control: identity::Control) -> identity::Acc
         control,
     }
 }
-/// Maya's account: a person holding one key.
 fn maya(number: u64, label: &str) -> identity::Account {
     let keys = vec![identity::Key {
         scheme: abi::Scheme::Ed25519,
@@ -42,7 +40,6 @@ fn maya(number: u64, label: &str) -> identity::Account {
     }];
     account(number, "Maya", identity::Control::User { keys })
 }
-/// Scout, the agent Maya (7) manages, keyless.
 fn scout() -> identity::Account {
     account(
         12,
@@ -56,8 +53,6 @@ fn scout() -> identity::Account {
     )
 }
 
-/// From here on identity reads Scout (12) in `life`: its manager's view
-/// after a suspend, a resume or a revoke lands.
 fn scout_is(cx: &TestAppContext, life: identity::Life) {
     cx.host().handle::<Query<Identity>>(move |q| {
         let life = life.clone();
@@ -107,7 +102,6 @@ fn respond(cx: &TestAppContext) {
                     next: None,
                 })
             }
-            // Ada, whom Maya's Team policy lists and a new one adds by her number
             identity::Query::Profile { number: 9 } => {
                 identity::Reply::Profile(Some(policies::ada()))
             }
@@ -199,7 +193,6 @@ fn scout_seated(cx: &TestAppContext) {
 fn fixture(state: &str, dark: bool) -> TestAppContext {
     seated(state, dark).0
 }
-/// The fixture, and the session feed the host speaks through.
 fn seated(state: &str, dark: bool) -> (TestAppContext, StreamSender<HostSession>) {
     let mut cx = TestAppContext::new();
     let props = cx.host().stream::<HostSession>();
@@ -240,7 +233,6 @@ fn seated(state: &str, dark: bool) -> (TestAppContext, StreamSender<HostSession>
             cx.host()
                 .refuse::<Query<Identity>>("unavailable", "Account query refused.");
         }
-        // a host that answers no file method, and says so
         "no-file-read" => cx.host().handle::<view::methods::HostMethods>(|()| {
             Ok(view::methods::Hosted {
                 level: view::wire::WIRE_LEVEL,
@@ -306,13 +298,10 @@ fn four_states_are_honest() {
     ] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
     }
-    // the node's status is the Nodes view's, the app's preferences the gear's
     assert!(!cx.has_text("Node"));
     assert!(cx.find("settings/app/body").is_none());
 }
 
-/// The left menu lists Agents only for an account, and each entry opens
-/// its pane.
 #[test]
 fn the_menu_opens_one_pane_at_a_time() {
     let mut cx = fixture("ready", false);
@@ -331,8 +320,6 @@ fn the_menu_opens_one_pane_at_a_time() {
     assert!(cx.find("settings/nav/agents").is_none());
     assert!(cx.find("settings/nav/invites").is_some());
 }
-/// The menu is one tab list, a column: one Tab stop, ↓ opens the next
-/// section (automatic), wrapping from the last to the first.
 #[test]
 fn an_arrow_on_the_menu_opens_the_next_section() {
     let mut cx = fixture("ready", false);
@@ -361,7 +348,6 @@ fn an_arrow_on_the_menu_opens_the_next_section() {
     cx.simulate_key_down("settings/nav", "up");
     cx.run_until_parked();
     assert!(cx.find("settings/invite/mint").is_some());
-    // the primary button's ring is drawn in the ink's foreground
     let mint = cx.interactivity("settings/invite/mint");
     let ring = &cx.styles()[mint.focus_visible.expect("a focus ring")];
     assert_eq!(ring.border_color, Some(Theme::light().primary_foreground));
@@ -391,8 +377,6 @@ fn invite_ttl_copy_and_refusal() {
     assert!(fixture("invite-refused", false).has_text("This node does not allow minting invites."));
     assert!(fixture("invite-loading", false).has_text("Minting invite…"));
 }
-/// The lifetime is a radio group: one Tab stop whose arrows check the next
-/// choice, wrapping at the ends; its segments are never focusable.
 #[test]
 fn the_invite_lifetime_checks_the_next_choice_on_an_arrow() {
     let mut cx = fixture("invite-ready", false);
@@ -409,7 +393,6 @@ fn the_invite_lifetime_checks_the_next_choice_on_an_arrow() {
             )
         })
     };
-    // the view opens on 7 days
     assert_eq!(checked(&cx), [(false, false), (true, true), (false, false)]);
     cx.simulate_focus("settings/ttl");
     cx.simulate_key_down("settings/ttl", "right");
@@ -511,14 +494,11 @@ fn unregistered_key_creates_an_account() {
         "Your key isn't linked to an account yet. An account gives you a name others see."
     ));
 
-    // Empty name never reaches the host: identity's own rule (a name is not
-    // empty) is mirrored inline.
     cx.simulate_click("settings/account/create/submit");
     cx.run_until_parked();
     assert!(cx.has_text("Enter an account name."));
     assert!(cx.host().requests::<Submit<Identity>>().is_empty());
 
-    // A refusal from the program lands as a human sentence, name kept.
     cx.host()
         .refuse::<Submit<Identity>>("invalid", "a name is not empty");
     cx.simulate_input("settings/account/create/name", "Maya");
@@ -526,8 +506,6 @@ fn unregistered_key_creates_an_account() {
     cx.run_until_parked();
     assert!(cx.has_text("That didn’t go through: a name is not empty"));
 
-    // Success holds the form busy until the host's session names the new
-    // account, which is read: "Who I am" now carries the name.
     cx.host().handle::<Submit<Identity>>(|op| {
         assert!(matches!(
             op,
@@ -587,7 +565,6 @@ fn create_account_disables_controls_while_busy() {
     assert!(options.disabled);
 }
 
-/// Every field says what it is for; the hint drawn in it stays a hint.
 #[test]
 fn a_field_is_named_apart_from_its_hint() {
     fn named(cx: &TestAppContext, key: &str) -> (String, String) {
@@ -675,7 +652,6 @@ fn a_person_creates_an_agent_and_adds_its_key() {
     cx.run_until_parked();
     assert_eq!(cx.host().requests::<Submit<Identity>>().len(), 1);
 
-    // a request that is not an AddKey for one of Maya's agents never leaves
     cx.simulate_input("settings/agents/key/request", "zz");
     cx.simulate_click("settings/agents/key/submit");
     cx.run_until_parked();
@@ -723,16 +699,12 @@ fn an_agents_account_lists_its_agents_and_creates_one() {
     );
 }
 
-/// The manager alone renames, suspends, resumes and revokes an agent from
-/// its line; each is one op, and the agents are read again after it.
-/// Revoke is one press: the host confirms it natively before signing.
 #[test]
 fn a_manager_renames_suspends_and_revokes_an_agent() {
     let mut cx = fixture("ready", false);
     cx.simulate_click("settings/nav/agents");
     cx.run_until_parked();
     let sent = |cx: &TestAppContext| cx.host().requests::<Submit<Identity>>().len();
-    // Rename turns the name into a field holding it; Save sends it
     assert!(cx.find("settings/agents/12/name").is_none());
     cx.simulate_click("settings/agents/12/rename");
     cx.run_until_parked();
@@ -770,7 +742,6 @@ fn a_manager_renames_suspends_and_revokes_an_agent() {
         "a rename that landed closes its field"
     );
 
-    // active, its line offers Suspend; suspended, Resume; revoked, nothing
     assert!(cx.find("settings/agents/12/suspend").is_some());
     assert!(cx.find("settings/agents/12/resume").is_none());
     cx.host().handle::<Submit<Identity>>(|op| {
@@ -811,9 +782,6 @@ fn a_manager_renames_suspends_and_revokes_an_agent() {
     }
 }
 
-/// Identity's live heads re-read the account in place: the account stays
-/// on screen while it is read again, and a rename and an agent suspended
-/// elsewhere then show.
 #[test]
 fn an_identity_head_re_reads_the_account_in_place() {
     let mut cx = fixture("ready", false);
@@ -824,13 +792,11 @@ fn an_identity_head_re_reads_the_account_in_place() {
             keys: Vec::new(),
         })
     };
-    // the re-read is under way, not answered yet
     cx.host().never::<Query<Identity>>();
     heads.send(head());
     cx.run_until_parked();
     assert!(cx.has_text("Maya"), "{:?}", cx.texts());
     assert!(!cx.has_text("Reading your account…"));
-    // Maya renames herself and suspends Scout from another device
     cx.host().handle::<Query<Identity>>(|q| {
         Ok(match q {
             identity::Query::Get { number } => {
@@ -1132,8 +1098,6 @@ fn typed(cx: &TestAppContext) -> &str {
     value
 }
 
-/// A person typed and not added goes with a choice that lands, and stays
-/// through one that is refused (one form for both on dev).
 #[test]
 fn a_person_typed_goes_with_a_choice_that_lands() {
     let (mut cx, _) = answering(listed(&[8]));
@@ -1153,7 +1117,6 @@ fn a_person_typed_goes_with_a_choice_that_lands() {
     assert_eq!(typed(&cx), "Eve");
 }
 
-/// The person field and Add wait while a choice is out (dev's one form).
 #[test]
 fn the_person_field_waits_for_a_choice_that_is_out() {
     let (mut cx, _) = answering(listed(&[8]));
@@ -1171,7 +1134,6 @@ fn the_person_field_waits_for_a_choice_that_is_out() {
     );
 }
 
-/// A Remove that lands takes a refused choice's sentence with it.
 #[test]
 fn a_landed_remove_takes_a_refused_choices_sentence() {
     let (mut cx, _) = answering(listed(&[8, 9]));

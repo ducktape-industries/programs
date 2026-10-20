@@ -18,13 +18,8 @@ mod node;
 mod nodes;
 mod parts;
 
-/// Every size on the phone: the SDK's touch ladder (the Expo app's theme
-/// and kit, mobile `src/design/theme.ts`).
 const LADDER: Ladder = design::TOUCH;
 
-/// The open page, the sheets over it, and Back exactly while a sheet is
-/// drawn or a member's page is open (rule 13; the host leaves the program
-/// else): both read off what this frame draws.
 pub(crate) fn render(view: &Nodes, cx: &mut Context<Nodes>) -> impl IntoElement {
     let theme = *cx.global::<Theme>();
     let pages = view.pages();

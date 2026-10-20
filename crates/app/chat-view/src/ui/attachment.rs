@@ -11,15 +11,11 @@ use super::dialogs::INSET;
 use crate::attach::Picture;
 use crate::{Chat, words};
 
-// the most room a file takes in a message's column
 const FILE_W: Pixels = px(360.);
 const PICTURE_H: Pixels = px(240.);
 const WHOLE: &str = "chat-picture";
 pub(crate) const WHOLE_OVERLAY: &str = "chat-picture-overlay";
 
-// A picture at its own size, scaled down into `room` with its aspect kept
-// and never past 1:1: the one way both the message and the picture opened
-// whole over the room draw it.
 fn fitted(picture: &Picture, room: (f32, f32)) -> Img {
     let (width, height) = view::picture::fit(picture.size, room);
     img(picture.image.clone())
@@ -40,8 +36,6 @@ pub(crate) fn view(
     let shown = chat.shown_files.get(&(file.path.clone(), file.snapshot));
     if let Some(picture) = shown.and_then(|shown| shown.picture.as_ref()) {
         let (name, theme) = (file.name.clone(), *theme);
-        // a click opens it whole over the room; on a phone a tap hands it
-        // to the system's viewer (Quick Look, Android's), whose share saves it
         let touch = ladder.touch;
         let open = {
             let file = file.clone();
@@ -116,8 +110,6 @@ pub(crate) fn view(
         .into_any_element()
 }
 
-// The picture a click opened, whole over the room and fit to the pane, with
-// Save and Open in Files; Escape or a press outside it closes it.
 pub(crate) fn over(
     chat: &Chat,
     screen: AnyElement,
@@ -151,8 +143,6 @@ fn whole(
 ) -> Option<AnyElement> {
     let shown = chat.shown_files.get(&(file.path.clone(), file.snapshot))?;
     let picture = shown.picture.as_ref()?;
-    // the pane less the overlay's inset each side, and below the picture
-    // the gap and the row of buttons, each as tall as a press needs
     let inset = 2. * f32::from(INSET);
     let bar = f32::from(design::space::SM) + f32::from(ladder.hit);
     let (width, height) = chat.layout.viewport;

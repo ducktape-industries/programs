@@ -19,7 +19,6 @@ fn search_finds_heights_hashes_accounts_and_programs() {
         cx.texts()
     );
     assert!(!cx.has_text("mystery"), "{:?}", cx.texts());
-    // a block hash in the window opens it; one outside is asked of the node
     search(&mut cx, &abi::hex(&[105; 32]));
     assert!(cx.has_text(&abi::hex(&[105; 32])), "{:?}", cx.texts());
     search(&mut cx, &abi::hex(&[0xee; 32]));

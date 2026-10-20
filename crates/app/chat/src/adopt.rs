@@ -8,8 +8,6 @@ use crate::gate::{message_key, resource};
 use crate::state::{CHANNELS, MESSAGE_IDS, message};
 use crate::{Op, PROGRAM};
 
-// A batch of `kind`'s rows after `after`. Sent by anyone, it answers where the next batch starts
-// and sends chat the same op, whose run records them.
 pub(crate) fn adopt_owners(
     ctx: &ExecCtx,
     kind: &str,

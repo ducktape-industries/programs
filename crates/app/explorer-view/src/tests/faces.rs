@@ -10,7 +10,6 @@ fn blob(byte: u8) -> String {
     format!("sha256:{}", format!("{byte:02x}").repeat(32))
 }
 
-// The suite's node, Ada's and Scout's cards each with a picture.
 fn pictured() -> TestAppContext {
     let mut cx = TestAppContext::new();
     node(&mut cx, Rc::new(RefCell::new(12)));

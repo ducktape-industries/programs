@@ -10,7 +10,6 @@ use std::{
     rc::Rc,
 };
 
-/// A method kind and the program it addresses (`None` for the host's own).
 type Key = (String, Option<String>);
 type Handler = Box<dyn FnMut(&Request) -> Option<Event>>;
 type Stream = Rc<RefCell<StreamState>>;
@@ -18,32 +17,20 @@ type Hook = Box<dyn FnMut(&FakeHost, &Frame, Option<&Node>)>;
 
 #[derive(Default)]
 struct State {
-    /// What answers an ask (`handle`, `refuse`, `never`).
     asks: HashMap<Key, Handler>,
-    /// What answers a subscription instead of a feed (`refuse`).
     refusals: HashMap<Key, Handler>,
-    /// One feed per method: the subscriptions it reaches.
     streams: HashMap<Key, Stream>,
     requests: Vec<Request>,
     // the asks a handler left out (`never`), until `answer_held` answers them or the view
     // cancels them
     held: Vec<Request>,
     events: Vec<Event>,
-    /// Run after each frame is taken, with no borrow held: what a backing
-    /// feeds the view's subscriptions from the frame's effects.
     after_frame: Vec<Hook>,
     declared: Option<&'static [methods::Capability]>,
-    /// The camera, microphone and remote pieces of the tree the host
-    /// holds, as the app keeps them.
     pieces: Vec<Piece>,
-    // The host's own store: it answers the `store.get`, `store.set` and
-    // `store.list` no handler takes, as the app's file does.
     kept: BTreeMap<String, Vec<u8>>,
 }
 
-/// A piece as the host keeps it, by the path it is filed under: what it
-/// opens, its state route and the state last told it (none yet), which the
-/// host tells again only when it changes.
 struct Piece {
     path: Vec<ElementIdWire>,
     opens: Opens,
@@ -51,9 +38,6 @@ struct Piece {
     state: Option<MediaState>,
 }
 
-/// What the host opens for a piece: a camera or a microphone by its device,
-/// a remote piece by its track. A piece that opens another under the same
-/// path starts over, as the app opens it anew.
 #[derive(PartialEq)]
 enum Opens {
     Camera(Option<String>),
@@ -77,8 +61,6 @@ fn key<C: Method>() -> Key {
     (C::KIND.to_owned(), C::TARGET.map(str::to_owned))
 }
 
-/// The entry for `kind` addressed to `target`, else the one addressed to
-/// no program in particular.
 fn find<'a, T>(
     map: &'a mut HashMap<Key, T>,
     kind: &str,
@@ -197,10 +179,6 @@ impl FakeHost {
         let bytes = self.0.borrow().kept.get(key).cloned()?;
         Some(methods::decode(&bytes).expect("a kept value reads as the type asked"))
     }
-    /// Answers each ask of `kind` addressed to `target` (`None`: to any
-    /// program, where no typed handler names one) with the bytes
-    /// `handler` gives for the request's: the fallback a chain-backed host
-    /// installs under a test's own typed handlers.
     #[cfg(feature = "rig")]
     pub(crate) fn answer_with(
         &self,
@@ -227,8 +205,6 @@ impl FakeHost {
             .insert(key, Box::new(move |request| (ends.borrow_mut())(request)));
     }
 
-    /// One item, as bytes, to every open subscription to `kind` addressed
-    /// to `target`; none open, it reaches nobody and is dropped.
     #[cfg(feature = "rig")]
     pub(crate) fn send_raw(&self, kind: &str, target: Option<&str>, payload: Vec<u8>) {
         let mut state = self.0.borrow_mut();
@@ -248,17 +224,10 @@ impl FakeHost {
             }));
     }
 
-    /// Runs `hook` on every frame the host takes, with the tree it holds
-    /// after it (none for a notifier's), once its requests are answered and
-    /// no borrow is held.
     pub(crate) fn after_frame(&self, hook: impl FnMut(&FakeHost, &Frame, Option<&Node>) + 'static) {
         self.0.borrow_mut().after_frame.push(Box::new(hook));
     }
 
-    /// The piece filed under `path` reports the state `update` leaves:
-    /// told to its `on_state` on the view's next tick when it is the
-    /// piece's first or changed, as the app tells it. A piece the tree does
-    /// not hold is not told.
     pub(crate) fn media(&self, path: &[ElementIdWire], update: impl FnOnce(&mut MediaState)) {
         let mut state = self.0.borrow_mut();
         let Some(piece) = state.pieces.iter_mut().find(|piece| piece.path == path) else {
@@ -277,8 +246,6 @@ impl FakeHost {
         state.events.extend(told);
     }
 
-    /// The track the piece filed under `path` was last told; `None` before
-    /// it was told any, or with no such piece.
     pub(crate) fn told_track(&self, path: &[ElementIdWire]) -> Option<TrackState> {
         let state = self.0.borrow();
         let piece = state.pieces.iter().find(|piece| piece.path == path)?;
@@ -300,30 +267,22 @@ impl FakeHost {
     pub(super) fn declare(&self, capabilities: &'static [methods::Capability]) {
         self.0.borrow_mut().declared = Some(capabilities);
     }
-    /// Whether `other` is this host, not a copy of it.
     pub(super) fn same(&self, other: &FakeHost) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
     }
-    /// Events the host owes the view's next tick, after whatever it owes already.
     pub(super) fn owe(&self, events: Vec<Event>) {
         self.0.borrow_mut().events.extend(events);
     }
     pub(crate) fn take_events(&self) -> Vec<Event> {
         std::mem::take(&mut self.0.borrow_mut().events)
     }
-    /// Answers or feed items wait for the view's next tick.
     pub(super) fn owes_events(&self) -> bool {
         !self.0.borrow().events.is_empty()
     }
 
-    /// Takes `frame`, after which the host holds `tree` (none for a
-    /// notifier, which has no tree).
     pub(crate) fn accept(&self, frame: &Frame, host: &crate::host::Host, tree: Option<&Node>) {
         let mut state = self.0.borrow_mut();
         if let Some(tree) = tree {
-            // a piece keeps its state while its path is in the tree and it
-            // opens what it opened; one placed anew, or opening another,
-            // starts over, as the app keeps them
             let mut held = std::mem::take(&mut state.pieces);
             state.pieces = super::pieces(tree)
                 .into_iter()
@@ -353,9 +312,6 @@ impl FakeHost {
                 })
                 .collect();
         }
-        // The app refuses a web, camera, microphone or remote piece from a
-        // view whose manifest leaves out what it needs (and ends the view);
-        // a test fails on it instead.
         if let Some(capability) = state
             .declared
             .and_then(|declared| frame.undeclared(declared))
@@ -377,9 +333,6 @@ impl FakeHost {
             .retain(|request| !frame.cancels.contains(&request.id));
         for request in &frame.requests {
             state.requests.push(request.clone());
-            // The app refuses a method the manifest leaves out
-            // (`undeclared_capability`); a test fails on it instead.
-            // `host.methods` is answered to every view, as the app answers it
             if let (Some(declared), Some((capability, _)), false) = (
                 state.declared,
                 methods::Capability::of_kind(&request.kind),
@@ -394,7 +347,6 @@ impl FakeHost {
                     capability.as_str()
                 );
             }
-            // a node method may name any program, as the app lets it
             let target = target_of(request);
             let (kind, target) = (request.kind.as_str(), target.as_deref());
             let shown = || {
@@ -475,7 +427,6 @@ impl FakeHost {
     }
 }
 
-/// An answer to one request of `C`: the reply `reply` gives, if any.
 fn answer<C: Method>(
     mut reply: impl FnMut(C::Request) -> Option<Result<C::Reply, Error>> + 'static,
 ) -> Handler {
@@ -492,9 +443,6 @@ fn answer<C: Method>(
     })
 }
 
-// The host's own store's answer to `request`, as the app's file answers it;
-// `None` for a kind it does not keep. A key is not empty: the app refuses
-// one `malformed_request`, and so does this.
 fn kept(kept: &mut BTreeMap<String, Vec<u8>>, request: &Request) -> Option<Event> {
     use methods::{StoreGet, StoreList, StoreSet};
     let named = |key: &str| match key.is_empty() {
@@ -506,7 +454,6 @@ fn kept(kept: &mut BTreeMap<String, Vec<u8>>, request: &Request) -> Option<Event
     };
     let payload = &request.payload;
     let result = if request.kind == methods::HostMethods::KIND {
-        // what a host of this build answers: every kind
         Ok(methods::HostMethods::encode_reply(&methods::Hosted {
             level: crate::wire::WIRE_LEVEL,
             kinds: methods::ALL.iter().map(|kind| (*kind).to_owned()).collect(),
@@ -550,10 +497,6 @@ fn kept(kept: &mut BTreeMap<String, Vec<u8>>, request: &Request) -> Option<Event
     })
 }
 
-/// The program a node method addresses: `program.changes` names it outright,
-/// `program.query` and `op.submit` carry it on their [`methods::Call`]
-/// envelope. `None` for every other kind (`program.describe` names a
-/// program too, but reads its describe module: no target of the view's).
 fn target_of(request: &Request) -> Option<String> {
     match request.kind.as_str() {
         "program.changes" => methods::decode::<String>(&request.payload).ok(),
@@ -686,7 +629,6 @@ mod tests {
         );
     }
 
-    /// Sends what `channel` asked since the last frame to `host`.
     fn flush(host: &FakeHost, channel: &crate::host::Host) {
         host.accept(
             &Frame {
@@ -824,7 +766,6 @@ mod tests {
         assert!(futures::executor::block_on(stream.next()).is_none());
     }
 
-    // Sends what `channel` asked to `host`, and hands its answers back.
     fn answered(host: &FakeHost, channel: &crate::host::Host) {
         flush(host, channel);
         for event in host.take_events() {
@@ -834,9 +775,6 @@ mod tests {
         }
     }
 
-    // A store no handler takes is the host's own: what the view sets it
-    // reads back and lists, a removed key is gone, an empty key is
-    // refused as the app refuses it, and the test reads and seeds it.
     #[test]
     fn a_store_nothing_handles_is_the_hosts_own() {
         use crate::store;
@@ -863,7 +801,6 @@ mod tests {
         assert_eq!(host.requests::<methods::StoreSet>().len(), 3);
     }
 
-    // A test's own store handler answers in the host's own store's place.
     #[test]
     fn a_store_handler_wins_over_the_hosts_own() {
         use futures::executor::block_on;
@@ -876,8 +813,6 @@ mod tests {
         assert_eq!(block_on(read), Ok(None));
     }
 
-    // A host older than `store.list` refuses it, and the view hears the
-    // refusal it falls back on.
     #[test]
     fn an_old_host_refuses_a_list() {
         use futures::executor::block_on;

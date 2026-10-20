@@ -12,7 +12,6 @@ const SNAPSHOT: [u8; 32] = [5; 32];
 const OBJECT: [u8; 32] = [6; 32];
 const CHUNK: [u8; 32] = [9; 32];
 
-// a PNG's signature and header, which name its size
 fn png(width: u32, height: u32) -> Vec<u8> {
     let mut bytes = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
     bytes.extend(13u32.to_be_bytes());
@@ -30,8 +29,6 @@ fn picked(name: &str, size: u64, file: u64) -> Picked {
     }
 }
 
-// what files answers: each path a file of 3 bytes at one snapshot, its
-// object one chunk, its bytes a picture's
 fn files_host(cx: &mut TestAppContext) {
     cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
     cx.host()
@@ -47,7 +44,6 @@ fn files_host(cx: &mut TestAppContext) {
         .handle::<BlobGet>(move |_| Ok(Some(abi::encode(&object))));
 }
 
-// every put held at once
 fn holds_puts(cx: &mut TestAppContext) {
     cx.host()
         .ends::<OpPut>(|put| Ok(Putting::Held(vec![CHUNK; put.blobs.len()])));
@@ -85,7 +81,6 @@ fn files_reply(query: files::Query) -> files::Reply {
     }
 }
 
-// what the files commits put: each path, and the message its meta names
 fn puts(cx: &TestAppContext) -> Vec<(String, String)> {
     let commits = cx.host().requests::<Submit<files::Files>>();
     commits
@@ -143,7 +138,6 @@ fn picked_files_go_up_at_once_under_the_drafts_message_and_the_post_carries_them
     assert_eq!(meta["source.channel"], "general");
     assert_eq!(meta["content-type"], "text/plain");
     assert_eq!(meta["name"], "notes.txt");
-    // the host lets each file go once its chunks are held
     assert_eq!(cx.host().requests::<FileRelease>(), [vec![1], vec![2]]);
     assert!(cx.has_text("notes (2).txt"), "{:?}", cx.texts());
     cx.simulate_input("draft-general/editor", "two files");
@@ -313,8 +307,6 @@ fn a_message_draws_its_picture_and_saves_its_other_files_through_the_host() {
     assert_eq!(cx.host().requests::<FileSave>(), [save]);
 }
 
-// A phone's tap on a picture opens it: the host is handed its chunks, as
-// Save hands them, for the system's viewer (J-075).
 #[test]
 fn a_tap_on_a_picture_on_a_phone_hands_it_to_the_host_to_open() {
     let mut cx = TestAppContext::new();
@@ -354,9 +346,6 @@ fn a_tap_on_a_picture_on_a_phone_hands_it_to_the_host_to_open() {
     assert_eq!(cx.host().requests::<FileSave>(), [opened]);
 }
 
-// A message names the snapshot the node predicted as its file went up; the
-// block that carried the commit minted another (#duckpond 73's picture).
-// The file is read where it stands, and drawn (J-075).
 #[test]
 fn a_picture_is_read_where_it_stands_whatever_snapshot_its_message_names() {
     let (mut cx, view) = opened();
@@ -396,9 +385,6 @@ fn a_picture_is_read_where_it_stands_whatever_snapshot_its_message_names() {
     });
 }
 
-// A click on a picture opens it whole over the room: Save hands the host
-// its chunks, Open in Files opens its path in Files and closes it, and a
-// press outside it closes it too.
 #[test]
 fn a_click_on_a_picture_opens_it_whole_with_save_and_open_in_files() {
     let (mut cx, view) = opened();
@@ -457,7 +443,6 @@ fn a_click_on_a_picture_opens_it_whole_with_save_and_open_in_files() {
     view.read(|chat| assert!(chat.enlarged.is_none()));
 }
 
-// A picture's file as files reads it back: its bytes whole.
 fn contents(bytes: Vec<u8>) -> files::Reply {
     files::Reply::Contents(files::Contents {
         snapshot: BlobId::Sha256(SNAPSHOT),
@@ -468,8 +453,6 @@ fn contents(bytes: Vec<u8>) -> files::Reply {
     })
 }
 
-// A room whose one message carries `tape.png`, a picture of `size` as its
-// header says.
 fn picture_room(cx: &mut TestAppContext, size: (u32, u32)) {
     files_host(cx);
     cx.host().handle::<Ask<files::Files>>(move |query| {
@@ -501,7 +484,6 @@ fn picture_room(cx: &mut TestAppContext, size: (u32, u32)) {
     cx.run_until_parked();
 }
 
-// The size the node under `key` is drawn at, as its style names it.
 fn drawn_at(cx: &TestAppContext, key: &str, (width, height): (f32, f32)) {
     let size = &cx.style(key).size;
     let named = (size.width, size.height);
@@ -512,8 +494,6 @@ fn drawn_at(cx: &TestAppContext, key: &str, (width, height): (f32, f32)) {
     );
 }
 
-// A picture in a message draws at its own size, at the start of its column;
-// a bigger one, wide or tall, scaled down into 360×240 with its aspect kept.
 #[test]
 fn a_picture_in_a_message_draws_at_its_own_size_up_to_its_bound() {
     let sizes = [
@@ -531,8 +511,6 @@ fn a_picture_in_a_message_draws_at_its_own_size_up_to_its_bound() {
     }
 }
 
-// A picture bigger than the window, wide or tall, opens whole inside the
-// overlay: fit to the pane less its inset and the row of buttons below it.
 #[test]
 fn a_picture_bigger_than_the_window_opens_whole_inside_it() {
     let inset = 2. * f32::from(crate::ui::dialogs::INSET);
@@ -551,9 +529,6 @@ fn a_picture_bigger_than_the_window_opens_whole_inside_it() {
     }
 }
 
-// What every way a picture comes in ends in: one commit that only creates
-// its path under the draft's message, then the post that carries it; the
-// access program is never asked.
 fn sends_the_picture(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let path = "/chat/general/message-1/image.png";
@@ -624,8 +599,6 @@ fn a_dropped_picture_is_committed_and_posted_as_a_picked_one_is() {
     sends_the_picture(&mut cx);
 }
 
-// A name a commit was asked for stays taken in the message's folder after
-// its chip is gone: the same name again goes up numbered, never over it.
 #[test]
 fn a_name_filed_under_the_message_stays_taken_after_its_chip_is_gone() {
     let (mut cx, _view) = opened();
@@ -656,8 +629,6 @@ fn a_name_filed_under_the_message_stays_taken_after_its_chip_is_gone() {
     assert_eq!(paths, named);
 }
 
-// A refusal shows whole on the file's chip, wrapping rather than cut, and
-// the file's own path in it reads as "this file", the reason first.
 #[test]
 fn a_long_refusal_shows_whole_on_the_files_chip() {
     let (mut cx, _view) = opened();

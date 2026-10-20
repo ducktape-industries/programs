@@ -15,22 +15,10 @@ use super::LADDER;
 use crate::row::Status;
 use crate::{Nodes, words};
 
-// SDK gap: the notice and its action (with `notice`, `action`, `alert`);
-// the SDK builds it later
-/// A notice's action: its secondary line (18) with 6 over and under, its
-/// press reaching 8 past each edge (Expo `src/kit/Notice.tsx:60`,
-/// `hitSlop={8}`).
 const NOTICE_ACTION: Pixels = px(30.);
 const NOTICE_REACH: Pixels = px(8.);
-// SDK gap: a button sized by its caller (`design::button` takes the
-// ladder's control height); the SDK builds it later
-/// How tall the confirm card's Not now stands, as its Vote and enact
-/// (Expo `src/kit/Confirm.tsx:84` `height: size.primary`, `theme.ts:75`).
 const CONFIRM_ROW: Pixels = px(48.);
 
-// SDK gap: the page's scroller; the SDK builds it later
-/// What a page scrolls, 16 clear at its end (Expo `index.tsx:170` and
-/// `[key].tsx:58`, `paddingBottom: gap.block`).
 pub(super) fn scroller(id: &'static str, body: Div) -> Stateful<Div> {
     div()
         .id(id)
@@ -40,7 +28,6 @@ pub(super) fn scroller(id: &'static str, body: Div) -> Stateful<Div> {
         .child(body.flex().flex_col().pb(space::BLOCK))
 }
 
-/// A press on `motion`: voted now, or once the reader says yes.
 pub(super) fn press(
     cx: &Context<Nodes>,
     motion: Motion,
@@ -48,9 +35,6 @@ pub(super) fn press(
     cx.listener(move |view: &mut Nodes, _: &ClickEvent, _, cx| view.press(motion.clone(), cx))
 }
 
-/// What the last vote did on a success strip, on the screen it was
-/// pressed on; or why it stopped on a danger one, on every screen; until
-/// dismissed.
 pub(super) fn outcome(
     view: &Nodes,
     cx: &mut Context<Nodes>,
@@ -74,16 +58,11 @@ pub(super) fn outcome(
     })
 }
 
-/// How long ago the node last answered, once a node that answered before
-/// is silent.
 pub(super) fn last_answer(view: &Nodes, id: &'static str, theme: &Theme) -> Option<Stateful<Div>> {
     let silent = view.status.ready().is_some() && !view.answering();
     silent.then(|| quiet(id, words::last_answer(view.ticks - view.answered), theme))
 }
 
-/// A press that enacts, asked as the kit's confirm card in a sheet: the
-/// motion in words, that it cannot be taken back, Not now and Vote and
-/// enact, and who signs.
 pub(super) fn confirm(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> Option<AnyElement> {
     let motion = view.voting.confirming.as_ref()?;
     let title = view.voting.words(motion);
@@ -96,8 +75,6 @@ pub(super) fn confirm(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme) -> O
     )
 }
 
-/// The confirm card (Expo `Confirm.tsx:62-92`): the title, the warning,
-/// the hold and the verb sharing the row one to two, the caption.
 fn confirm_card(title: String, cx: &mut Context<Nodes>, theme: &Theme) -> Stateful<Div> {
     let no = cx.listener(|view: &mut Nodes, _: &ClickEvent, _, cx| view.hold(cx));
     let yes = cx.listener(|view: &mut Nodes, _: &ClickEvent, _, cx| view.confirm(cx));
@@ -159,18 +136,12 @@ fn confirm_card(title: String, cx: &mut Context<Nodes>, theme: &Theme) -> Statef
         )
 }
 
-// SDK gap: no `flex_grow(n)` (or `relative()`) on an element, so the
-// style field is written; the SDK builds it later
-/// A box taking `parts` of its row's room (Expo's `flex: n`).
 pub(super) fn share(parts: f32) -> Div {
     let mut part = div().flex_basis(px(0.));
     part.style().flex_grow = Some(parts);
     part
 }
 
-/// A validator's status in colour (Expo `src/network/voting.tsx` `tintOf`,
-/// `index.tsx:110,134`): its tone and its soft ground; plain, muted on the
-/// raised surface, while the node is silent or the status unknown.
 pub(super) fn tint(status: &Status, live: bool, theme: &Theme) -> (Hsla, Hsla) {
     match (live, status) {
         (true, Status::InSync) => (theme.success, theme.success_soft),
@@ -180,15 +151,12 @@ pub(super) fn tint(status: &Status, live: bool, theme: &Theme) -> (Hsla, Hsla) {
     }
 }
 
-/// A danger notice, said as soon as it shows (the kit's `alert` role).
 fn alert(strip: Stateful<Div>) -> Stateful<Div> {
     strip
         .role(Role::Alert)
         .aria_live(view::accesskit::Live::Assertive)
 }
 
-/// The kit's `Notice`: a full-width strip of secondary text in `tone` on
-/// `ground`, 16 in and 10 over and under; its one action goes after.
 fn notice(id: impl Into<ElementId>, ground: Hsla, tone: Hsla, sentence: &str) -> Stateful<Div> {
     div()
         .id(id)
@@ -203,10 +171,6 @@ fn notice(id: impl Into<ElementId>, ground: Hsla, tone: Hsla, sentence: &str) ->
         .child(div().flex_1().child(sentence.to_owned()))
 }
 
-/// A notice's action: its word in the strip's tone, medium, 8 from the
-/// sentence, its press reaching 8 past each edge (the kit's `hitSlop`).
-/// Not `design::hit`: that reaches to the ladder's hit from the box's
-/// width, and a view can't measure its word.
 fn action(
     id: impl Into<ElementId>,
     label: &'static str,
@@ -236,8 +200,6 @@ fn action(
         )
 }
 
-/// The kit's small outline button; one that may not be pressed now (a
-/// vote in flight) is disabled.
 pub(super) fn small_button(
     id: ElementId,
     label: &'static str,
@@ -251,8 +213,6 @@ pub(super) fn small_button(
         .enabled(pressable)
 }
 
-// SDK gap: the quiet line at the ladder's sizes; the SDK builds it later
-/// The kit's `Quiet`: one muted line of secondary text, 16 in all round.
 pub(super) fn quiet(
     id: &'static str,
     text: impl Into<SharedString>,

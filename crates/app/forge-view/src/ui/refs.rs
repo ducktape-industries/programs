@@ -58,9 +58,6 @@ pub(crate) fn render(
             ))
             .into_any_element();
     }
-    // one Tab stop: ↑ ↓ walk the refs, ← → a row's cells (the ref, its
-    // Compare when the reader may write), Enter presses the active cell. A
-    // virtual list: a render draws the refs on screen, not every branch
     let Some(shared) = forge.shared(&forge.refs_query()) else {
         return column.into_any_element();
     };
@@ -71,7 +68,6 @@ pub(crate) fn render(
     let compares = |name: &[u8]| name != forge.default_head() && !name.starts_with(b"refs/tags/");
     let cells =
         1 + usize::from(forge.may_write() && names.get(at).is_some_and(|name| compares(name)));
-    // what each row shows, read once a render for the rows the list draws
     let marks = Marks {
         default: forge.default_head(),
         browsing: forge.head_name(),
@@ -100,7 +96,6 @@ pub(crate) fn render(
     let start: Route<Vec<u8>> = Rc::new(cx.listener(|forge, name: &Vec<u8>, window, cx| {
         forge.start_change(name.clone(), window, cx)
     }));
-    // what the settings forbid closes the list, after its last ref
     let forbidden = forge.forbids();
     let theme = *theme;
     let rows = crate::ui::components::rows(
@@ -127,26 +122,18 @@ pub(crate) fn render(
     column.child(list.child(rows)).into_any_element()
 }
 
-/// The ref name and target columns.
 const NAME_W: Pixels = px(200.);
 const TARGET_W: Pixels = px(100.);
 
-/// What marks the refs' rows, read once a render: the default head and the
-/// ref browsed, whether the reader may write, where the arrows are, and
-/// each ref's standing against the head.
 struct Marks {
     default: Vec<u8>,
     browsing: Vec<u8>,
     may_write: bool,
     walked: bool,
-    /// the active row and its cell
     active: (usize, usize),
     standings: Vec<Option<String>>,
 }
 
-/// One ref: its name, kind, target and standing, and Compare for a branch
-/// other than the default head. Spaced from the next as the list draws
-/// every row one height.
 fn ref_row(
     info: &RefInfo,
     index: usize,

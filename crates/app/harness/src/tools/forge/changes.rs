@@ -13,7 +13,6 @@ fn number_schema() -> Value {
     json!({ "type": "integer", "minimum": 1, "description": "the change's number, as forge_changes lists them" })
 }
 
-// The op as the agent's one write, and its output read back as forge's `OpReply`.
 fn sent(op: forge::Op, read: fn(OpReply) -> Result<Value, Error>) -> Run {
     let writes = vec![Write {
         target: forge::PROGRAM.into(),

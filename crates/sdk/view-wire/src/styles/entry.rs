@@ -40,14 +40,11 @@ impl<'a> Reader<'a> {
     }
 }
 
-/// A value an entry carries: its bytes out, and back.
 trait Value: Sized {
     fn put(&self, out: &mut Vec<u8>);
     fn get(input: &mut Reader) -> Result<Self, &'static str>;
 }
 
-/// A field of a refinement: `says` answers whether it says something,
-/// `put` writes one that does, and `get` reads one that was written.
 trait Field: Sized {
     fn says(&self) -> bool;
     fn put(&self, out: &mut Vec<u8>);
@@ -68,13 +65,9 @@ impl<T: Value> Field for Option<T> {
     }
 }
 
-/// A refinement: the bitmap of its fields that say something, low bit
-/// first, then those fields.
 trait Refinement: Default {
     const FIELDS: &'static [&'static str];
-    /// The bitmap: a bit for each field that says something.
     fn present(&self) -> u64;
-    /// Writes the bitmap, then the fields it names and no other.
     fn write(&self, out: &mut Vec<u8>);
     fn read(input: &mut Reader) -> Result<Self, &'static str>;
 }
@@ -131,7 +124,6 @@ macro_rules! refinement {
             }
         }
 
-        /// As a field, a refinement that sets nothing is absent.
         impl<$($bound: Value + Clone + Default + std::fmt::Debug + PartialEq)?> Field for $type {
             fn says(&self) -> bool {
                 self.present() != 0
@@ -184,8 +176,6 @@ refinement!(() StyleRefinement {
     grid_rows,
     grid_location,
 }
-// gpui's debug outlines exist in a debug build alone and are not a view's
-// to draw: the sanitizer clears them, so they do not cross.
 #[cfg(debug_assertions)]
 debug: _,
 #[cfg(debug_assertions)]
@@ -219,25 +209,16 @@ refinement!((T) CornersRefinement<T> {
     bottom_left,
 });
 
-/// The entry of a style that sets nothing: its bitmap, all clear.
 pub(super) const EMPTY: [u8; StyleRefinement::FIELDS.len().div_ceil(8)] =
     [0; StyleRefinement::FIELDS.len().div_ceil(8)];
 
-/// The entry's bytes, appended to `out`.
 pub(super) fn write(style: &StyleRefinement, out: &mut Vec<u8>) {
     Refinement::write(style, out);
 }
 
-/// The style an entry's bytes hold, all of them: a longer entry is refused.
 pub(super) fn read(bytes: &[u8]) -> Result<StyleRefinement, &'static str> {
     let mut input = Reader(bytes);
     let style = StyleRefinement::read(&mut input)?;
-    // After the fields, a later build's: records of a field id, a length
-    // and that many bytes (`codec.rs`, "Appends"), none of which this
-    // build has, so each is stepped over. An entry that sets no later
-    // field has none, and its bytes are what they were before J-085.
-    // A record names a field past the ones this build has, each past the
-    // one before: bytes that name a known field are no later build's.
     let mut next = StyleRefinement::FIELDS.len() as u64;
     while !input.0.is_empty() {
         let field = get_count(&mut input)?;
@@ -251,9 +232,6 @@ pub(super) fn read(bytes: &[u8]) -> Result<StyleRefinement, &'static str> {
     Ok(style)
 }
 
-/// Every refinement an entry holds, each with its fields in the order its
-/// bitmap counts them: `schema.txt` prints this, so a field added or moved
-/// moves `WIRE_ID`.
 pub(super) fn fields() -> [(&'static str, &'static [&'static str]); 6] {
     [
         ("StyleRefinement", StyleRefinement::FIELDS),
@@ -268,8 +246,7 @@ pub(super) fn fields() -> [(&'static str, &'static [&'static str]); 6] {
     ]
 }
 
-/// A count or a length, seven bits a byte, low bits first.
-fn put_count(out: &mut Vec<u8>, mut count: u64) {
+fn put_seven_bit_count(out: &mut Vec<u8>, mut count: u64) {
     while count >= 0x80 {
         out.push(count as u8 | 0x80);
         count >>= 7;
@@ -289,10 +266,8 @@ fn get_count(input: &mut Reader) -> Result<u64, &'static str> {
     Err("a style entry's count does not end")
 }
 
-/// A list: its count, then its items. Nothing is reserved from the count:
-/// an entry that claims more items than it holds runs out of bytes.
 fn put_list<T>(out: &mut Vec<u8>, items: &[T], put: impl Fn(&T, &mut Vec<u8>)) {
-    put_count(out, items.len() as u64);
+    put_seven_bit_count(out, items.len() as u64);
     for item in items {
         put(item, out);
     }
@@ -333,7 +308,7 @@ impl Value for bool {
 
 impl Value for usize {
     fn put(&self, out: &mut Vec<u8>) {
-        put_count(out, *self as u64);
+        put_seven_bit_count(out, *self as u64);
     }
     fn get(input: &mut Reader) -> Result<Self, &'static str> {
         Ok(usize::try_from(get_count(input)?).unwrap_or(usize::MAX))
@@ -342,7 +317,7 @@ impl Value for usize {
 
 impl Value for String {
     fn put(&self, out: &mut Vec<u8>) {
-        put_count(out, self.len() as u64);
+        put_seven_bit_count(out, self.len() as u64);
         out.extend_from_slice(self.as_bytes());
     }
     fn get(input: &mut Reader) -> Result<Self, &'static str> {
@@ -354,7 +329,7 @@ impl Value for String {
 
 impl Value for SharedString {
     fn put(&self, out: &mut Vec<u8>) {
-        put_count(out, self.len() as u64);
+        put_seven_bit_count(out, self.len() as u64);
         out.extend_from_slice(self.as_bytes());
     }
     fn get(input: &mut Reader) -> Result<Self, &'static str> {
@@ -371,10 +346,6 @@ impl Value for Pixels {
     }
 }
 
-/// A colour is its four floats on the way out: rounding one costs a colour
-/// conversion, and the view writes these bytes for every node it lowers.
-/// On this wire a colour has eight bits a channel (gpui's own serde writes
-/// `#rrggbbaa`), so the host rounds it to that here, once per entry.
 impl Value for Hsla {
     fn put(&self, out: &mut Vec<u8>) {
         for channel in [self.h, self.s, self.l, self.a] {
@@ -394,7 +365,6 @@ impl Value for Hsla {
     }
 }
 
-/// A length is flat: what it measures in, then how much.
 const PIXELS: u8 = 0;
 const REMS: u8 = 1;
 const FRACTION: u8 = 2;
@@ -455,8 +425,6 @@ impl Value for Length {
     }
 }
 
-/// An enum with no payload is its discriminant. The `match` names every
-/// variant, so one gpui adds fails to build here until it is listed.
 macro_rules! tags {
     ($($type:ident { $($variant:ident),+ $(,)? })+) => {$(
         impl Value for $type {
@@ -544,7 +512,7 @@ impl Value for UnderlineStyle {
         } = self;
         thickness.put(out);
         wavy.put(out);
-        put_optional(out, color);
+        put_presence_and_value(out, color);
     }
     fn get(input: &mut Reader) -> Result<Self, &'static str> {
         Ok(Self {
@@ -559,7 +527,7 @@ impl Value for StrikethroughStyle {
     fn put(&self, out: &mut Vec<u8>) {
         let Self { thickness, color } = self;
         thickness.put(out);
-        put_optional(out, color);
+        put_presence_and_value(out, color);
     }
     fn get(input: &mut Reader) -> Result<Self, &'static str> {
         Ok(Self {
@@ -569,9 +537,7 @@ impl Value for StrikethroughStyle {
     }
 }
 
-/// An optional value inside a struct that is not a refinement: a flag,
-/// then the value when it is set.
-fn put_optional<T: Value>(out: &mut Vec<u8>, value: &Option<T>) {
+fn put_presence_and_value<T: Value>(out: &mut Vec<u8>, value: &Option<T>) {
     value.is_some().put(out);
     if let Some(value) = value {
         value.put(out);
@@ -638,9 +604,6 @@ const SOLID: u8 = 0;
 const LINEAR_GRADIENT: u8 = 1;
 const PATTERN: u8 = 2;
 
-/// A solid crosses as its colour and a linear gradient as its angle, stops
-/// and colour space. gpui gives a pattern's payload no public read, so one
-/// crosses as its kind alone and the host refuses the entry.
 impl Value for Fill {
     fn put(&self, out: &mut Vec<u8>) {
         let Self::Color(background) = self;

@@ -33,16 +33,12 @@ use serde_reflection::{ContainerFormat, Format, FormatHolder, Named, Registry, V
 
 use super::schema::{Definitions, Shape, shapes, wire};
 
-/// `name`'s container, or a failure naming it: a name the wire reaches that
-/// the registry lacks is a hole in this gate, never a name to skip.
 fn container<'a>(registry: &'a Registry, name: &str) -> &'a ContainerFormat {
     registry
         .get(name)
         .unwrap_or_else(|| panic!("`{name}` is on the wire but not in the registry"))
 }
 
-/// Every container name reachable from `roots`, through every format each
-/// one holds, each visited once.
 fn reachable(registry: &Registry, roots: &[&str]) -> BTreeSet<String> {
     let mut seen = BTreeSet::new();
     let mut stack: Vec<String> = roots.iter().map(|name| (*name).to_string()).collect();
@@ -62,17 +58,12 @@ fn reachable(registry: &Registry, roots: &[&str]) -> BTreeSet<String> {
     seen
 }
 
-/// What a set of samples must, or does, show: a `(container, variant)` for
-/// every variant entered, and a `container.field` (or
-/// `container::variant.field`) for every struct field seen present.
 #[derive(Default)]
 struct Shown {
     variants: BTreeSet<(String, String)>,
     fields: BTreeSet<String>,
 }
 
-/// What the registry obliges: every reachable enum's variants, of every
-/// shape, and every reachable struct's (or struct-shaped variant's) fields.
 fn expected(registry: &Registry, reachable: &BTreeSet<String>) -> Shown {
     let mut out = Shown::default();
     for name in reachable {
@@ -99,12 +90,6 @@ fn expected(registry: &Registry, reachable: &BTreeSet<String>) -> Shown {
     out
 }
 
-/// Walks `value` (a container named `name`'s JSON twin) against the
-/// registry, recording every variant tag it carries and every field it
-/// shows present and non-null. A `null` is a field left out and holds
-/// nothing; anything else that does not fit its format fails, and so does
-/// a tag the registry does not declare: the sample writes a name the host
-/// does not read.
 fn observe(registry: &Registry, name: &str, value: &Json, out: &mut Shown) {
     if value.is_null() {
         return;
@@ -142,8 +127,6 @@ fn observe(registry: &Registry, name: &str, value: &Json, out: &mut Shown) {
     }
 }
 
-/// Records each of `named` that `map` shows present, as `<path>.<field>`,
-/// and walks into it.
 fn observe_fields(
     registry: &Registry,
     path: &str,
@@ -160,7 +143,6 @@ fn observe_fields(
     }
 }
 
-/// Walks each of `formats` into its element of the array `value`.
 fn observe_tuple(registry: &Registry, formats: &[Format], value: &Json, out: &mut Shown) {
     let items = elements(value);
     assert_eq!(items.len(), formats.len(), "a tuple's twin: {value}");
@@ -194,7 +176,6 @@ fn observe_format(registry: &Registry, format: &Format, value: &Json, out: &mut 
     }
 }
 
-/// What `expected` names that `observed` never showed, one line each.
 fn missing(expected: &Shown, observed: &Shown) -> Vec<String> {
     let mut gaps: Vec<String> = expected
         .variants
@@ -211,7 +192,6 @@ fn missing(expected: &Shown, observed: &Shown) -> Vec<String> {
     gaps
 }
 
-/// The elements of a JSON array; fails on anything else.
 fn elements(value: &Json) -> &[Json] {
     match value {
         Json::Array(items) => items,
@@ -259,14 +239,12 @@ fn every_reachable_variant_and_field_is_sampled() {
     );
 }
 
-/// `declaration`'s definition, or a failure naming it.
 fn definition<'a>(definitions: &'a Definitions, declaration: &str) -> &'a Definition {
     definitions.get(declaration).unwrap_or_else(|| {
         panic!("`{declaration}` is on the wire but not in the borsh definitions")
     })
 }
 
-/// Every declaration `definition` holds, in the order borsh writes them.
 fn parts(definition: &Definition) -> Vec<&Declaration> {
     match definition {
         Definition::Primitive(_)
@@ -287,7 +265,6 @@ fn parts(definition: &Definition) -> Vec<&Declaration> {
     }
 }
 
-/// Every `(enum, variant)` of every enum reachable from `roots`.
 fn borsh_variants(
     definitions: &Definitions,
     roots: Vec<Declaration>,
@@ -311,7 +288,6 @@ fn borsh_variants(
     variants
 }
 
-/// `width` bytes off the front of `bytes`.
 fn take<'a>(bytes: &mut &'a [u8], width: usize) -> &'a [u8] {
     let (head, rest) = bytes
         .split_at_checked(width)
@@ -320,7 +296,6 @@ fn take<'a>(bytes: &mut &'a [u8], width: usize) -> &'a [u8] {
     head
 }
 
-/// A little-endian length or tag.
 fn uint(bytes: &[u8]) -> u64 {
     bytes
         .iter()
@@ -328,8 +303,6 @@ fn uint(bytes: &[u8]) -> u64 {
         .fold(0, |value, byte| value << 8 | u64::from(*byte))
 }
 
-/// Reads one `declaration` off the front of `bytes` as `definitions` lay it
-/// out, recording every enum variant it takes.
 fn read(
     definitions: &Definitions,
     declaration: &str,
@@ -373,13 +346,6 @@ fn read(
     }
 }
 
-/// The borsh half: every variant, an `Option`'s `None` and `Some` included,
-/// of every enum a method's request or reply reaches, read off the
-/// exchanges' own bytes against the definitions `schema.txt` prints, each
-/// read to its last byte. Only the methods with no target: a node method's
-/// bytes are not its declared type's (`program.query` and `op.submit` wrap
-/// the request in a `Call`, `op.submit`'s reply and `program.changes`'
-/// request are raw), and `host.widget`'s are the tree's.
 #[test]
 fn every_borsh_variant_is_sampled() {
     let (shapes, definitions) = shapes();

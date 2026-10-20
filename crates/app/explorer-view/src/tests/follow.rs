@@ -1,8 +1,5 @@
 use super::*;
 
-/// A program's account comes from the kernel's `RegisterProgram`, which no
-/// transaction targets: identity's own live heads, not the window's
-/// transactions, re-read the accounts.
 #[test]
 fn an_identity_head_re_reads_the_accounts() {
     let mut cx = TestAppContext::new();
@@ -200,10 +197,6 @@ fn a_scheduled_swap_shows_once_a_head_reaches_its_height() {
     assert!(cx.has_text("Nothing is scheduled against the programs role."));
 }
 
-/// A change lands at its height with no op on the programs role after it: no
-/// programs head comes, the chain's head reaching it reads the roster
-/// again, and the programs role, which keeps the change in its schedule until
-/// an op folds it, answers it as running.
 #[test]
 fn a_change_reached_by_the_head_is_running_not_scheduled() {
     let mut cx = TestAppContext::new();
@@ -343,7 +336,6 @@ fn a_pushed_head_asks_for_the_blocks_since_the_top() {
         );
         assert_eq!(new, [(None, 1)]);
     }
-    // a head three blocks on asks for the three
     *tip.borrow_mut() = 18;
     let asked = cx.host().requests::<ChainBlocks>().len();
     heads.send(Head {

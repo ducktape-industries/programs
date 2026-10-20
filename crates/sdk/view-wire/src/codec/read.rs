@@ -6,9 +6,6 @@ use serde::de::{self, DeserializeSeed, IntoDeserializer, Visitor};
 
 use super::{FALLBACKS, FELL};
 
-// Why a decode failed. `unknown` marks a variant index no type of this
-// build names: the one failure a fallback (`codec.rs`) reads as the value
-// it stands in for, since a later build may have written it.
 #[derive(Debug)]
 pub(crate) struct Error {
     message: String,
@@ -83,9 +80,6 @@ impl<'de> Reader<'de> {
             .fold(0, |value, byte| (value << 8) | u64::from(*byte)))
     }
 
-    // The count of a container whose marker was `marker`, with how many
-    // values each counted item holds (a map's entry is two); `None` for a
-    // marker that is no container.
     fn container(&mut self, marker: u8) -> Result<Option<(u64, u64)>, Error> {
         Ok(match marker {
             0x90..=0x9f => Some((u64::from(marker & 0x0f), 1)),
@@ -98,9 +92,6 @@ impl<'de> Reader<'de> {
         })
     }
 
-    // Steps over one value whatever it holds, with no recursion: a count of
-    // the values still owed, which a container's header adds to. A count
-    // more than the bytes left could hold is refused at once.
     pub(crate) fn skip(&mut self) -> Result<(), Error> {
         let mut owed: u64 = 1;
         while owed > 0 {
@@ -171,8 +162,6 @@ impl<'de> Reader<'de> {
         }))
     }
 
-    // Reads a container's items with `visitor`, then steps over the ones it
-    // left: the fields a later build appended to a struct.
     fn visit_items<V: Visitor<'de>>(
         &mut self,
         count: u64,
@@ -317,10 +306,6 @@ impl<'de> de::Deserializer<'de> for &mut Reader<'de> {
         visitor.visit_newtype_struct(self)
     }
 
-    // A fallback's enum ([`FALLBACKS`]): the value, or, where a variant
-    // inside it is one this build does not know, the value stepped over and
-    // [`FELL`] answered with what was not known, for the type to stand in
-    // for (`codec.rs`). The innermost fallback takes it.
     fn deserialize_enum<V: Visitor<'de>>(
         self,
         name: &'static str,
@@ -354,8 +339,6 @@ impl<'de> de::Deserializer<'de> for &mut Reader<'de> {
 
 impl<'de> Reader<'de> {
     fn read_enum<V: Visitor<'de>>(&mut self, visitor: V) -> Result<V::Value, Error> {
-        // a variant by its index (the wire's writer) or by its name (a
-        // view's own state, which `try_encode` writes with rmp-serde's)
         let mut marker = self.byte()?;
         let payload = marker == 0x81;
         if payload {
@@ -419,8 +402,6 @@ impl<'de> de::EnumAccess<'de> for Variant<'_, 'de> {
 impl<'de> de::VariantAccess<'de> for Variant<'_, 'de> {
     type Error = Error;
 
-    // A unit variant, or one this build reads as a unit (`#[serde(other)]`,
-    // a variant a later build added): what it carried is stepped over.
     fn unit_variant(self) -> Result<(), Error> {
         match self.payload {
             true => self.reader.skip(),

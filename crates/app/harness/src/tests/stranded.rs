@@ -10,7 +10,6 @@ const PODS: &str = "pods";
 const POD: &str = "duckpond-7";
 const AGAIN: &str = "It may have run: check, and run it again if it is still needed";
 
-// the programs role lists harness's code beside egress's, and the node serves pods
 fn listed_world() -> World {
     let mut world = world();
     world.chain.seat::<Programs>(programs::PROGRAM);
@@ -27,13 +26,11 @@ fn codes(build: &[u8]) -> [(&'static str, Vec<u8>); 3] {
     ]
 }
 
-// harness's code changes at block `at`, as a deploy changes it: the programs role names new code
 fn updated(chain: &MockChain, at: u64) {
     chain.at(at, 0);
     listed(chain, &codes(b"2"));
 }
 
-// the model calls `tool` at `height`, and its relay comes back a block later
 fn turn(chain: &MockChain, height: u64, call: &str, tool: &str, input: Value) {
     chain.at(height, 0);
     model_says(chain, json!([tool_use(call, tool, input)]), "tool_use");
@@ -64,7 +61,6 @@ fn pods_request(chain: &MockChain) -> RequestRow {
     row
 }
 
-// what the model is asked next
 fn sent(chain: &MockChain) -> String {
     let (request, head) = open_request(chain);
     assert_eq!(path(&head), "/v1/messages");
@@ -188,7 +184,6 @@ fn an_answer_after_its_call_was_reported_lost_is_a_notice_and_no_second_result()
     assert!(late.contains("deployed"), "{late}");
 }
 
-// a streamed exec whose stream opens at block 7, its call answered and its turn over
 fn streaming(world: &World) -> (u64, RequestRow) {
     let chain = &world.chain;
     let thread = world.opened("m1", "build it", Some(WINDOW));
@@ -290,7 +285,6 @@ fn a_measured_stream_an_update_cut_off_before_its_stream_opened_wakes_its_conver
     assert!(assigned(chain, PODS).is_empty(), "no exec is sent");
 }
 
-// what a model call's reply streams: each line of `fixture` as one event, from the node
 fn reply_streams(chain: &MockChain, request: &RequestRow, fixture: &str) {
     for (seq, data) in (0u64..).zip(events(fixture)) {
         let event = egress::Event {

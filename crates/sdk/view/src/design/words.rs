@@ -34,27 +34,13 @@ pub fn failure(answer: &Result<Submitted, Error>) -> Option<String> {
     }
 }
 
-/// A write in doubt (`words.ts:80`). The Expo app puts the transport's own
-/// words after the colon; `Submitted::InDoubt` carries none, so it says
-/// what is known: no answer came back. What follows holds because a view
-/// settles a write in doubt by reading the chain for it (`InDoubt`'s doc).
 const IN_DOUBT: &str =
     "This may have gone through: no answer came back. What you see is read again from the node.";
 
-/// A write the program or the node refused (`words.ts:79`).
 fn did_not_go_through(error: &Error) -> String {
     format!("That didn’t go through: {}", sentence(error))
 }
 
-/// A write the host answered with an error of its own, or passed on the
-/// node's refusal. The host's codes ([`refusal::ALL`]) say it was never
-/// sent (`words.ts:82-84`), but two say it may have run: the node failed,
-/// or no answer came back. And a confirm the person cancelled
-/// (`consent_refused`) is a refusal like the program's, as Expo words its
-/// `NOT_CONFIRMED` (`src/kit/Confirm.tsx:28-32`). The host sends the same
-/// code when another confirmation for the view is still waiting (app
-/// `src/runtime/kernel/node.rs:221-223`), which so reads "That didn’t go
-/// through: another confirmation…" too.
 fn unsent(error: &Error) -> String {
     match error.code.as_str() {
         refusal::CONSENT_REFUSED => did_not_go_through(error),

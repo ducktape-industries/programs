@@ -212,10 +212,6 @@ pub fn lines(old: &[u8], new: &[u8], max_cost: usize) -> Result<Vec<Hunk>> {
     Ok(coalesce(&ops))
 }
 
-/// The edit script from `a` to `b`. The common head and tail are matched
-/// outright and a one-sided middle is written straight out, so only an
-/// interleaved edit pays Myers — and only that is held to `max_cost`, the
-/// largest edit distance searched (the search is O(D²) in space).
 pub(crate) fn myers<T: PartialEq>(a: &[T], b: &[T], max_cost: usize) -> Result<Vec<Op>> {
     let head = a.iter().zip(b).take_while(|(x, y)| x == y).count();
     let (a, b) = (&a[head..], &b[head..]);
@@ -449,9 +445,6 @@ mod tests {
         assert_eq!(myers(b"abcd", b"xbcy", 1), Err(Error::CapReached));
     }
 
-    /// A one-sided or end-anchored edit costs nothing against the cap: a
-    /// whole new file, a whole deleted one, or an insertion in the middle
-    /// of a file is written out, however long it is.
     #[test]
     fn one_sided_edits_are_not_searched() {
         let long: Vec<u8> = (0..5000u32).map(|i| i as u8).collect();
@@ -464,7 +457,6 @@ mod tests {
         expected.extend(vec![Op::Insert; 5000]);
         expected.extend(vec![Op::Equal; 2]);
         assert_eq!(myers(b"abcd", &grown, 0).unwrap(), expected);
-        // an interleaved middle is still searched, and still capped
         assert_eq!(
             myers(b"abXcdYef", b"abPcdQef", 10).unwrap(),
             [
@@ -483,9 +475,6 @@ mod tests {
         assert_eq!(myers(b"abXcdYef", b"abPcdQef", 3), Err(Error::CapReached));
     }
 
-    /// Matching the head and tail first keeps the plain search's answer:
-    /// a script that replays `a` into `b` with as few edits, capped
-    /// wherever the plain search is unless the middle left is one-sided.
     #[test]
     fn trimming_keeps_the_plain_search_answer() {
         let mut seed = 0x2545_f491_4f6c_dd1du64;

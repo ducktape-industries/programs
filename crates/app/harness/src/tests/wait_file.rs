@@ -26,7 +26,6 @@ fn file(path: &str) -> Value {
     json!({ "event": { "file": { "path": path } } })
 }
 
-// whether files tells harness of its commits: harness on files' watchers
 fn watching(chain: &MockChain) -> bool {
     let host = chain.host(files::PROGRAM);
     host.borrow()

@@ -41,15 +41,12 @@ fn column(children: Vec<Node>) -> Node {
     })
 }
 
-/// A shell around one page.
 fn shell(page: Node) -> Node {
     column(vec![text("title"), page, text("footer")])
 }
 
 fn pages() -> (Node, Node) {
     const ROWS: usize = 500;
-    // One unkeyed row against five hundred: the old row goes, every new
-    // row is an insert that carries its subtree.
     let old = shell(column(vec![text("no rows yet")]));
     let new = shell(column(
         (0..ROWS)
@@ -72,8 +69,6 @@ fn a_taking_diff_of_a_replaced_page_does_not_copy_the_rows() {
     let (mut old, mut new) = pages();
     let (taking, same) = allocated_by(|| view_wire::diff_taking(&mut old, &mut new));
     assert_eq!((patches, same), (501, 501));
-    // Both build the same patch list; copying the rows also allocates each
-    // row's children — two nodes per row — afresh.
     let rows_children = 500 * 2 * std::mem::size_of::<Node>();
     assert!(
         copying >= taking + rows_children,

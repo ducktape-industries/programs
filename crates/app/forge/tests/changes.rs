@@ -17,7 +17,6 @@ fn story() -> (Rig, Story) {
     (rig, story)
 }
 
-/// The op signed by `who`; the rig signs as the owner again afterwards.
 fn signed(rig: &mut Rig, who: &[u8], op: &Op) -> Result<Vec<u8>, program::Error> {
     rig.actor = who.to_vec();
     let result = rig.execute(op);
@@ -25,7 +24,6 @@ fn signed(rig: &mut Rig, who: &[u8], op: &Op) -> Result<Vec<u8>, program::Error>
     result
 }
 
-/// The reason `who`'s op is refused; the store is untouched by it.
 #[track_caller]
 fn refused_as(rig: &mut Rig, who: &[u8], op: &Op) -> String {
     rig.actor = who.to_vec();
@@ -81,8 +79,6 @@ fn edit_reviewers(n: u64, reviewers: Vec<Principal>) -> Op {
         reviewers: Some(reviewers),
     }
 }
-
-// ------------------------------------------------------------ repository
 
 #[test]
 fn configure_follows_the_repositorys_writers_and_takes_a_ref_for_head() {
@@ -140,8 +136,6 @@ fn grant_and_revoke_are_retired_and_the_owner_lists_writers_in_access() {
     );
 }
 
-// ---------------------------------------------------------------- changes
-
 #[test]
 fn open_numbers_changes_and_refuses_what_cannot_merge() {
     let (mut rig, story) = story();
@@ -179,12 +173,9 @@ fn open_numbers_changes_and_refuses_what_cannot_merge() {
     assert_eq!(rig.refused(&gone).code, code::NOT_FOUND);
 }
 
-/// Chat's refusal of a message forge sent without a reply fails forge's
-/// whole frame, as the kernel fails it: the change is never opened.
 #[test]
 fn chat_refusing_the_channel_fails_the_open_it_came_from() {
     let (mut rig, story) = story();
-    // forge itself, outside any change: the channel the change will want
     let forge = Principal::Account(sandbox::PROGRAMS[0].1);
     rig.chat_execute(
         forge,
@@ -242,7 +233,6 @@ fn edit_is_the_authors_and_drops_the_reviewers_it_unasks() {
         "only the author lists who edits a change"
     );
 
-    // Asking a fleet of accounts and unasking them leaves nothing behind.
     for i in 0..(3 * 64u64) {
         rig.sandbox.hold(&i.to_be_bytes(), 100 + i);
     }
@@ -404,13 +394,11 @@ fn a_merge_lands_its_change_once_and_only_over_the_heads_it_read() {
         story.feature
     );
 
-    // The feature moves on; its change is merged already.
     let main = refs_of(&rig.sandbox, REPO)["refs/heads/main"].clone();
     let merged = story.feature.clone();
     let tip = story.push_follow_up(&mut rig, "later.txt", b"later\n");
     let again = merge_over(&main, &tip);
     assert_eq!(rig.refused(&again).code, code::WRONG_STATE);
-    // ...and still reads the two heads it merged, not the moved refs
     let Reply::Change {
         source_head,
         target_head,

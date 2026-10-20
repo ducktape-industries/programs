@@ -145,8 +145,6 @@ pub(crate) fn retire(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     Ok(())
 }
 
-// The agent's manager claims who may start its conversations: the row becomes theirs, and its
-// policy decides each `NewThread` and `ForkThread` from then on. Claiming it again changes nothing.
 pub(crate) fn claim(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
     let agent = agent_named(ctx, number)?;
     let by = ctx.sender_account()?;
@@ -167,8 +165,7 @@ pub(crate) fn claim(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
     Ok(())
 }
 
-// The agent's conversations row, written again as one starts: a no-op until its manager claims it.
-fn started(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
+fn touch_claimed_conversations(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
     if let Some(mut row) = CONVERSATIONS.get(ctx, &number)? {
         row.rev += 1;
         CONVERSATIONS.put(ctx, &number, &row);
@@ -178,7 +175,7 @@ fn started(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
 
 pub(crate) fn new_thread(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
     let agent = managed(ctx, number)?;
-    started(ctx, number)?;
+    touch_claimed_conversations(ctx, number)?;
     let previous = current(ctx, number)?;
     let row = open(ctx, &agent, String::new(), &Opening::Fresh)?;
     THREADS.put(ctx, &row.id, &row);
@@ -191,7 +188,7 @@ pub(crate) fn new_thread(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Err
 
 pub(crate) fn fork_thread(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
     let agent = managed(ctx, number)?;
-    started(ctx, number)?;
+    touch_claimed_conversations(ctx, number)?;
     let Some(from) = current(ctx, number)? else {
         return Err(not_found(format!(
             "agent {number} has no conversation to fork"
@@ -320,7 +317,6 @@ fn copied(ctx: &ExecCtx, from: &ThreadRow, row: &mut ThreadRow) -> Result<(), Er
         | Body::Notice { .. }
         | Body::Compaction { .. } => None,
     });
-    // a fork goes on with what it was about, until its agent says otherwise
     if let Some(topic) = TOPICS.get(ctx, &from.id)? {
         TOPICS.put(ctx, &row.id, &topic);
     }

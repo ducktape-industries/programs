@@ -10,7 +10,6 @@ use view::{Div, Stateful};
 
 use crate::Forge;
 
-// The repository's row and sheet, and the change's: every id in them starts so.
 const REPO: &str = "forge-repo-policy";
 const CHANGE: &str = "forge-change-policy";
 
@@ -23,12 +22,10 @@ pub(crate) fn change_policy(forge: &mut Forge) -> &mut Editing {
 }
 
 impl Forge {
-    // The reader as ownership knows a party: their account.
     fn reader(&self) -> Option<Party> {
         self.my_account().map(Party::Account)
     }
 
-    // The open repository as ownership records it: its custody row.
     fn repo_item(&self) -> Option<Item> {
         let name = self.nav.repo.clone()?;
         Some(Item {
@@ -38,7 +35,6 @@ impl Forge {
         })
     }
 
-    // The open change as ownership records it: its authorship row.
     fn change_item(&self) -> Option<Item> {
         let (repo, n) = (self.nav.repo.clone()?, self.nav.change?);
         Some(Item {
@@ -48,8 +44,6 @@ impl Forge {
         })
     }
 
-    // Each frame: the open repository's standing is held while it is open, and the open change's
-    // while it is (both decide what its screens offer).
     pub(crate) fn settle_policies(&mut self, cx: &mut Context<Self>) {
         let reader = self.reader();
         match self.repo_item() {
@@ -62,8 +56,6 @@ impl Forge {
         }
     }
 
-    // A policy's answer once it is read (for a reader who writes at all), else `before`: the rule
-    // from before policies.
     fn by_policy(&self, read: Option<bool>, before: bool) -> bool {
         match read {
             Some(admits) => self.may_write() && admits,
@@ -71,9 +63,6 @@ impl Forge {
         }
     }
 
-    // Whether the reader may do what the open repository's policy decides (push, merge, close
-    // another's change): its answer, else as before policies, its owner and the writers access
-    // lists.
     pub(crate) fn may_change_repo(&self) -> bool {
         let read = self
             .repo_item()
@@ -81,8 +70,6 @@ impl Forge {
         self.by_policy(read, self.writes_repo())
     }
 
-    // Whether the reader may change the open repository's settings (default head, force, delete):
-    // its policy's answer, else as before policies, its owner.
     pub(crate) fn may_configure(&self) -> bool {
         let read = self
             .repo_item()
@@ -90,8 +77,6 @@ impl Forge {
         self.by_policy(read, self.owns_repo())
     }
 
-    // Whether the reader may edit the open change: its policy's answer, else as before policies,
-    // its author.
     pub(crate) fn may_edit_change(&self) -> bool {
         let read = self
             .change_item()
@@ -99,8 +84,6 @@ impl Forge {
         self.by_policy(read, self.authored())
     }
 
-    // Whether the reader may close the open change: its author closes their own, as forge lets
-    // them; anyone else's close is the repository's policy's to decide.
     pub(crate) fn may_close_change(&self) -> bool {
         (self.may_write() && self.authored()) || self.may_change_repo()
     }
@@ -111,7 +94,6 @@ impl Forge {
             .is_some_and(|(change, ..)| me.as_ref() == Some(&change.author))
     }
 
-    // Whether a policy sheet is open over the view (the phone's Back closes it first).
     pub(crate) fn policy_sheet_open(&self) -> bool {
         self.change_policy.sheet.is_some() || self.repo_policy.sheet.is_some()
     }
@@ -121,7 +103,6 @@ impl Forge {
         item::close_sheet(self, repo_policy, cx);
     }
 
-    // Ownership wrote: what is held is read again where the block touched it.
     pub(crate) fn ownership_moved(&mut self, change: Option<Change>, cx: &mut Context<Self>) {
         if self.hidden {
             return;
@@ -131,7 +112,6 @@ impl Forge {
     }
 }
 
-// The open repository's row, for its settings.
 pub(crate) fn repo_row(
     forge: &Forge,
     cx: &mut Context<Forge>,
@@ -141,7 +121,6 @@ pub(crate) fn repo_row(
     item::row(&forge.repo_policy, REPO, repo_policy, cx, ladder, theme)
 }
 
-// The open change's row, for its details.
 pub(crate) fn change_row(
     forge: &Forge,
     cx: &mut Context<Forge>,
@@ -158,7 +137,6 @@ pub(crate) fn change_row(
     )
 }
 
-// The policy sheet open over forge, if any: the change's, else the repository's.
 pub(crate) fn sheet(
     forge: &Forge,
     cx: &mut Context<Forge>,

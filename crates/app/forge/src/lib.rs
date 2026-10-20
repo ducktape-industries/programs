@@ -26,7 +26,6 @@ mod contract;
 mod read_contract;
 mod review_contract;
 
-// The state and the rules over it.
 mod change_queries;
 mod changes;
 mod checks;
@@ -60,10 +59,6 @@ pub mod tables {
     };
 }
 
-/// Old op bytes are described with the current code (`describe`): the op
-/// enum only grows at its end. Append a new variant here; never reorder.
-/// (Grant, Revoke, ChangeOpen and ChangeEdit name principals since the stage
-/// refound that made forge account-keyed; their names and order held.)
 #[test]
 fn op_variants_only_append() {
     assert_eq!(

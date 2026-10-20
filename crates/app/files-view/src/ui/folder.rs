@@ -11,25 +11,17 @@ use super::*;
 use crate::menu::{On, entry_key};
 use crate::state::{Folder, entry_glyph, name_of, parent_of};
 
-/// A column's width in a wide list: what an entry holds, how big it is.
 const KIND_W: Pixels = px(96.);
 const SIZE_W: Pixels = px(96.);
-/// The columns' names' height, over the rows.
 const HEADS_H: Pixels = px(32.);
 
-/// How a folder is listed.
 struct Listing<'a> {
-    /// the path the crumbs run to
     crumbs: &'a str,
-    /// the row of the file open beside the list
     marked: Option<&'a str>,
-    /// whether the page's writes show over the entries
     writes: bool,
-    /// whether the entries run in columns
     columns: bool,
 }
 
-/// A folder's page.
 pub(super) fn folder(view: &Files, path: &str, columns: bool, cx: Cx, k: &Kit) -> AnyElement {
     let listing = Listing {
         crumbs: path,
@@ -40,8 +32,6 @@ pub(super) fn folder(view: &Files, path: &str, columns: bool, cx: Cx, k: &Kit) -
     listed(view, path, listing, cx, k)
 }
 
-/// The folder the file at `path` is in, listed beside it: the file's
-/// crumbs, its row marked. Its writes are the file page's, beside.
 pub(super) fn beside(view: &Files, path: &str, cx: Cx, k: &Kit) -> AnyElement {
     let listing = Listing {
         crumbs: path,
@@ -53,7 +43,6 @@ pub(super) fn beside(view: &Files, path: &str, cx: Cx, k: &Kit) -> AnyElement {
 }
 
 fn listed(view: &Files, path: &str, listing: Listing, cx: Cx, k: &Kit) -> AnyElement {
-    // as tall as the pane at least: the entries' empty room reaches its foot
     let page = div()
         .id("files-folder")
         .min_h_full()
@@ -74,8 +63,6 @@ fn listed(view: &Files, path: &str, listing: Listing, cx: Cx, k: &Kit) -> AnyEle
     page.child(waiting).into_any_element()
 }
 
-/// The folder's entries, down to the pane's foot: a right press on the
-/// room under them opens the folder's menu, what is made in it.
 fn entries(view: &Files, folder: &Folder, listing: &Listing, cx: Cx, k: &Kit) -> Stateful<Div> {
     let list = div()
         .id("files-entries")
@@ -96,8 +83,6 @@ fn entries(view: &Files, folder: &Folder, listing: &Listing, cx: Cx, k: &Kit) ->
             &k.theme,
         ));
     }
-    // ponytail: every entry is drawn; a uniform_list once folders hold
-    // more than a screenful of hundreds
     let rows = folder.entries.iter().map(|entry| {
         let marked = listing.marked == Some(entry.path.as_str());
         entry_row(view, entry, listing.columns, marked, cx, k)
@@ -109,7 +94,6 @@ fn entries(view: &Files, folder: &Folder, listing: &Listing, cx: Cx, k: &Kit) ->
         .children(rows)
 }
 
-/// The columns' names, over the rows.
 fn heads(k: &Kit) -> Div {
     div()
         .h(HEADS_H)
@@ -121,13 +105,11 @@ fn heads(k: &Kit) -> Div {
         .border_color(k.theme.border)
         .text_size(design::text::CAPTION)
         .text_color(k.theme.muted)
-        // the glyph's room
         .child(div().flex_none().w(k.ladder.icon_row))
         .child(div().flex_1().child(words::NAME))
         .child(cells(words::KIND, words::SIZE.to_owned()))
 }
 
-/// What an entry holds and how big it is, each in its column.
 fn cells(kind: &'static str, size: String) -> Div {
     div()
         .flex()

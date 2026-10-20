@@ -255,8 +255,6 @@ fn fields(
     })
 }
 
-/// Harness's model records, one press each: the id the file names, its wire, its service and
-/// how many member nodes serve it now.
 fn models(
     view: &Agents,
     cx: &mut Context<Agents>,
@@ -397,8 +395,6 @@ fn answers(
     )
 }
 
-/// Who may change the configuration file: its manager alone, or the accounts listed too. An
-/// edit picks it; left as it opened, nothing is sent.
 fn changers(
     draft: &Draft,
     cx: &mut Context<Agents>,

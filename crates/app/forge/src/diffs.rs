@@ -76,7 +76,6 @@ pub fn stat(reply: Reply) -> Result<Reply, Error> {
     })
 }
 
-/// One side of a file change: its mode and blob.
 type Side = Option<(Mode, Oid)>;
 
 fn file(r: &Reading<'_>, c: &diff::Change) -> Result<FileDiff, Error> {
@@ -122,8 +121,6 @@ fn file(r: &Reading<'_>, c: &diff::Change) -> Result<FileDiff, Error> {
     }
     let old = old_blob.as_ref().map_or(&[][..], |b| &b.bytes);
     let new = new_blob.as_ref().map_or(&[][..], |b| &b.bytes);
-    // a diff that takes more than `merge_cost` edits to search is not
-    // shown inline, like a blob past `blob_bytes`; the page goes on
     result.hunks = match hunks(old, new, cap(r.bounds.merge_cost)) {
         Err(gitcore::Error::CapReached) => {
             result.content = Content::Oversize;
@@ -138,7 +135,6 @@ fn file(r: &Reading<'_>, c: &diff::Change) -> Result<FileDiff, Error> {
     Ok(result)
 }
 
-/// A change's old and new sides, and what kind of change it is.
 fn sides(kind: &diff::ChangeKind) -> (Side, Side, FileStatus) {
     use diff::ChangeKind as K;
     match *kind {
@@ -171,7 +167,6 @@ fn sides(kind: &diff::ChangeKind) -> (Side, Side, FileStatus) {
     }
 }
 
-/// A side's blob size; a gitlink or an absent side has none.
 fn size(r: &Reading<'_>, side: Side) -> Result<u64, Error> {
     match side {
         Some((Mode::Gitlink, _)) | None => Ok(0),
@@ -185,10 +180,8 @@ fn size(r: &Reading<'_>, side: Side) -> Result<u64, Error> {
     }
 }
 
-/// A diff line at its (old, new) row position.
 type Row = (usize, usize, DiffLine);
 
-/// Lines of context kept around each change.
 const CONTEXT: usize = 3;
 
 fn hunks(old: &[u8], new: &[u8], cost: usize) -> gitcore::Result<Vec<DiffHunk>> {
@@ -199,7 +192,6 @@ fn hunks(old: &[u8], new: &[u8], cost: usize) -> gitcore::Result<Vec<DiffHunk>> 
         .collect())
 }
 
-/// Every line of both sides, in order, as context, deleted or added.
 fn rows(old: &[u8], new: &[u8], cost: usize) -> gitcore::Result<Vec<Row>> {
     let a = diff::split_lines(old);
     let b = diff::split_lines(new);
@@ -230,8 +222,6 @@ fn rows(old: &[u8], new: &[u8], cost: usize) -> gitcore::Result<Vec<Row>> {
     Ok(rows)
 }
 
-/// The row ranges each hunk covers: every change with its context, ranges
-/// that touch merged.
 fn groups(rows: &[Row]) -> Vec<(usize, usize)> {
     let mut groups: Vec<(usize, usize)> = Vec::new();
     for (i, (_, _, line)) in rows.iter().enumerate() {

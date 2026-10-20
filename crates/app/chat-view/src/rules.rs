@@ -9,7 +9,6 @@ use crate::{Chat, words};
 
 #[derive(Default)]
 pub(crate) struct Rules {
-    // the path the open details' rules name, and its file as last read
     path: String,
     file: Option<BlobId>,
     read: Option<Result<Read, String>>,
@@ -23,7 +22,6 @@ enum Read {
     NotAFile,
 }
 
-// what the details say of the open room's rules
 pub(crate) enum Said<'a> {
     Text(&'a str),
     Reading(&'a str),
@@ -31,11 +29,9 @@ pub(crate) enum Said<'a> {
     Failed { path: &'a str, why: &'a str },
 }
 
-// the file a read found, and what it holds; none while it is still the file known
 type Landed = Option<(Option<BlobId>, Result<Read, String>)>;
 
 impl Chat {
-    // the open room's rules as its meta holds them, when it has any
     pub(crate) fn room_rules(&self) -> Option<&str> {
         let rules = self.room_info()?.meta.get(chat::RULES)?.trim();
         (!rules.is_empty()).then_some(rules)
@@ -95,8 +91,6 @@ impl Chat {
         self.submit(chat::Op::RemoveChannelMeta { channel_id, key }, cx);
     }
 
-    // the file the open details' rules name, read and followed through files' blocks while they
-    // show it: settled each frame, since the room, its meta and the details arrive by many paths
     pub(crate) fn settle_rules(&mut self, cx: &mut Context<Self>) {
         let named = self.details.as_ref().and(self.room_rules());
         let Some(path) = named
@@ -142,7 +136,6 @@ impl Chat {
     }
 }
 
-// the file at `path` as it now is, unless it is still the file `known`
 async fn read(host: &Host, path: &str, known: Option<BlobId>) -> Landed {
     let stat = files::ask::Stat {
         path: path.to_owned(),

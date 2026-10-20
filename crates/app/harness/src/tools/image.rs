@@ -45,7 +45,6 @@ impl Tool for View {
         else {
             return Err(not_found(format!("there is no file at {path}")));
         };
-        // its kind and size are in its first bytes: one read, as far as files answers at once
         let read = Query::Read {
             path: path.clone(),
             at: Some(at),

@@ -47,12 +47,10 @@ use crate::links;
 use crate::message::message_body;
 use crate::names::dm_peer_of;
 
-/// Where the panes keep the reader's read cursors, room by room.
 pub(crate) fn reads_key(signer: &str) -> String {
     format!("reads/{signer}")
 }
 
-/// Where the notifier keeps what it announced, room by room.
 fn notified_key(signer: &str) -> String {
     format!("notified/{signer}")
 }
@@ -62,36 +60,22 @@ fn notified_key(signer: &str) -> String {
 #[derive(Default)]
 pub struct ChatNotices {
     session: Session,
-    /// Moves with every new reader: what lands for an earlier one is dropped.
     run: u64,
     names: Option<Names>,
-    // a roster read under way, and whether something moved the roster since it began
     reading_names: bool,
     names_again: bool,
-    /// The rooms and their heads, as the channel list last said.
     rooms: Option<Vec<ChannelInfo>>,
-    // what moved of the list since its last read, and whether a read is under way
     moved: Moved,
     reading_rooms: bool,
-    /// The reader's cursors, as the panes keep them.
     reads: Option<BTreeMap<String, u64>>,
-    /// The seq announced up to in each room; `None` until read off the
-    /// store, and `Some(None)` when nothing was ever kept on this device.
     announced: Option<Option<BTreeMap<String, u64>>>,
-    /// What the reader chose, room by room; `None` until read.
     choices: Option<BTreeMap<String, Choice>>,
-    /// Per room, the messages meant for the reader past their cursor.
     counted: BTreeMap<String, Count>,
-    /// The rooms a read of new messages is under way for.
     reading: BTreeSet<String>,
-    /// The rooms a chat pane shows on screen now.
     screen: BTreeSet<String>,
-    /// The tab badge last sent.
     badge: Option<i64>,
 }
 
-/// One room's count: the messages meant for the reader past `cursor`, up
-/// to the seq `to`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Count {
     cursor: u64,
@@ -114,14 +98,11 @@ impl Notifier for ChatNotices {
             Err(refusal) => log_refused(cx, "the session", &refusal),
         })
         .detach();
-        // a block reads again the rooms it wrote the row, head or meta of; a feed that came
-        // back, every room
         cx.follow::<Changes<chat::Chat>>((), |notices, change, cx| match change {
             Ok(change) => {
                 let change = change.as_ref();
                 notices.moved.heard(change);
                 notices.load_rooms(cx);
-                // a roster that would not read is read again with the next block
                 if notices.names.is_none() {
                     notices.load_names(cx);
                 }
@@ -134,13 +115,11 @@ impl Notifier for ChatNotices {
             Err(refusal) => log_refused(cx, "chat's live heads", &refusal),
         })
         .detach();
-        // a name another signer claims replaces its "account N"
         cx.follow::<Changes<Identity>>((), |notices, head, cx| match head {
             Ok(_) => notices.load_names(cx),
             Err(refusal) => log_refused(cx, "identity's live heads", &refusal),
         })
         .detach();
-        // a pane read a room: its cursor moved
         cx.follow::<StoreChanges>((), |notices, key, cx| match key {
             Ok(key) if Some(&key) == notices.reads_key().as_ref() => notices.load_reads(cx),
             Ok(_) => {}
@@ -178,7 +157,6 @@ impl ChatNotices {
             self.session = next;
             return;
         }
-        // another reader, network or account: nothing known carries over
         *self = Self {
             session: next,
             run: self.run + 1,
@@ -196,7 +174,6 @@ impl ChatNotices {
         self.load_rooms(cx);
     }
 
-    /// `land` once `work` is answered, unless the reader changed meanwhile.
     fn load<T: 'static>(
         &self,
         work: impl Future<Output = Result<T, Error>> + 'static,
@@ -212,9 +189,6 @@ impl ChatNotices {
         .detach();
     }
 
-    // The roster, one read at a time, and one more when it moved during that one. A refused
-    // read keeps the names as they were, none on a run's first read: the notices wait for them
-    // and the next block reads them again, so no sender is named "account N" for want of a read.
     fn load_names(&mut self, cx: &mut Context<Self>) {
         if self.reading_names {
             self.names_again = true;
@@ -283,12 +257,10 @@ impl ChatNotices {
         self.load(
             choices(cx.host(), me),
             |notices, choices, cx| {
-                // choices that will not load leave every room at its default
                 let choices = choices.unwrap_or_else(|refusal| {
                     log_refused(cx, "the reader's choices", &refusal);
                     BTreeMap::new()
                 });
-                // a room chosen otherwise is counted again from its cursor
                 let was = notices.choices.take().unwrap_or_default();
                 for room in was.keys().chain(choices.keys()) {
                     if was.get(room) != choices.get(room)
@@ -308,7 +280,6 @@ impl ChatNotices {
         );
     }
 
-    // the rooms that moved, read one read at a time: what moves during a read is the next one's
     fn load_rooms(&mut self, cx: &mut Context<Self>) {
         if self.reading_rooms {
             return;
@@ -346,12 +317,7 @@ impl ChatNotices {
         self.settle(cx);
     }
 
-    /// Everything known: each room not on screen is read past what was
-    /// counted, what is new for the reader is announced, and the badge is
-    /// counted again.
     fn settle(&mut self, cx: &mut Context<Self>) {
-        // no account, nothing is meant for the reader; the rest still
-        // loading, the badge stays as it was until it is counted
         let Some(me) = self.session.account else {
             return self.settle_badge(cx);
         };
@@ -364,14 +330,12 @@ impl ChatNotices {
         ) else {
             return;
         };
-        // the first run on this device: every room as it stands is history
         let first = kept.is_none();
         let mut announced = kept.clone().unwrap_or_default();
         let mut due = Vec::new();
         for info in rooms {
             let (room, head) = (info.channel.id.clone(), info.head_seq);
             if self.screen.contains(&room) {
-                // in front of the reader: read, and nothing in it is news
                 self.counted.insert(
                     room.clone(),
                     Count {
@@ -383,13 +347,9 @@ impl ChatNotices {
                 announced.insert(room, head);
                 continue;
             }
-            // a room never announced is new since the last run, read from
-            // its start; on the first run, history
             let was = *announced
                 .entry(room.clone())
                 .or_insert(if first { head } else { 0 });
-            // a room no pane keeps a cursor for is counted from where this
-            // run first saw it
             let kept = reads.get(&room).copied();
             let start = kept.unwrap_or(was);
             let count = self.counted.entry(room.clone()).or_insert(Count {
@@ -400,7 +360,6 @@ impl ChatNotices {
             if let Some(cursor) = kept
                 && count.cursor != cursor
             {
-                // the reader read the room: counted again from their cursor
                 *count = Count {
                     cursor,
                     to: cursor,
@@ -411,8 +370,6 @@ impl ChatNotices {
             if head <= count.to || self.reading.contains(&room) {
                 continue;
             }
-            // announced up to the head now: a list landing before this
-            // read reads past it, never this range again
             announced.insert(room.clone(), head);
             due.push((room, count.to, head, was.max(cursor)));
         }
@@ -427,8 +384,6 @@ impl ChatNotices {
         self.settle_badge(cx);
     }
 
-    /// The messages in `room` past `from` up to `head`: those meant for the
-    /// reader are counted, and those past `news` posted.
     fn read(
         &mut self,
         room: String,
@@ -441,8 +396,6 @@ impl ChatNotices {
         let fresh = head - from;
         let host = cx.host();
         let channel_id = room.clone();
-        // the new messages, then where the reader is in the room and in
-        // the threads they reply in
         let asked = async move {
             let rows = host
                 .query(chat::ask::MessagesAround {
@@ -478,16 +431,12 @@ impl ChatNotices {
                     Ok(read) => read,
                     Err(refusal) => {
                         log_refused(cx, "the new messages", &refusal);
-                        // announced only as far as before: read again at the
-                        // next list
                         if let Some(Some(announced)) = &mut notices.announced {
                             announced.insert(room.clone(), news);
                         }
                         return;
                     }
                 };
-                // where the reader is unknown: what is meant for them
-                // whatever room it is in still is
                 let followed = followed.unwrap_or_else(|refusal| {
                     log_refused(cx, "where the reader is", &refusal);
                     Followed::default()
@@ -510,10 +459,8 @@ impl ChatNotices {
                 let meant: Vec<(&MsgRow, Why)> = rows
                     .iter()
                     .filter(|row| row.seq > from && row.seq <= head)
-                    .filter_map(|row| Some((row, meant_for(row, me, &followed, choice)?)))
+                    .filter_map(|row| Some((row, notification_reason(row, me, &followed, choice)?)))
                     .collect();
-                // counted only onto the count it read past: one the reader
-                // reset meanwhile is counted again at the next settle
                 if let Some(count) = notices.counted.get_mut(&room)
                     && count.to == from
                 {
@@ -525,8 +472,6 @@ impl ChatNotices {
                     .get(&room)
                     .map_or(news, |count| count.cursor);
                 if !notices.screen.contains(&room) {
-                    // a notice is made only for what is posted; the rest is
-                    // only counted
                     for (row, why) in meant
                         .into_iter()
                         .filter(|(row, _)| row.seq > news && row.seq > cursor)
@@ -551,8 +496,6 @@ impl ChatNotices {
         }
     }
 
-    /// The tab badge: messages meant for the reader in rooms still unread
-    /// and not on screen.
     fn settle_badge(&mut self, cx: &mut Context<Self>) {
         let count: i64 = self
             .rooms
@@ -569,25 +512,15 @@ impl ChatNotices {
     }
 }
 
-/// Why a message is meant for the reader, the first that holds of these:
-/// what its notice's title says.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Why {
-    /// It is in a direct room of theirs.
     Direct,
-    /// It mentions them.
     Mention,
-    /// It replies in a thread they are in.
     Thread,
-    /// It is in a room they are in.
     Room,
 }
 
-/// Why `row` is meant for account `me`, if it is: `followed` says where
-/// they are in its room, `choice` what they chose for it. Their own never
-/// is. A reply in a thread they are not in is meant for them only if they
-/// chose every message.
-fn meant_for(row: &MsgRow, me: u64, followed: &Followed, choice: Choice) -> Option<Why> {
+fn notification_reason(row: &MsgRow, me: u64, followed: &Followed, choice: Choice) -> Option<Why> {
     let cut = |notices| choice == Choice::Cut(notices);
     let after = |since: u64| row.seq > since;
     let thread_since = |root| {
@@ -612,7 +545,6 @@ fn meant_for(row: &MsgRow, me: u64, followed: &Followed, choice: Choice) -> Opti
     }
 }
 
-/// The notice a row meant for account `me`, for `why`, makes.
 fn notice(row: &MsgRow, why: Why, me: u64, name: &str, chain: &str, names: &Names) -> Notification {
     let sender = names.author(&row.author);
     let tag = tag(me, &row.channel_id, name, names);
@@ -625,14 +557,11 @@ fn notice(row: &MsgRow, why: Why, me: u64, name: &str, chain: &str, names: &Name
         },
         body: message_body(&row.blocks, names),
         tag,
-        // a notice without a link is one the centre cannot open, not a bad one
         link: links::channel_link(chain, &row.channel_id, Some(row.seq)).unwrap_or_default(),
         ..Notification::default()
     }
 }
 
-/// The tag a room's notices go under: `@peer` for a direct room, the
-/// channel's `#name` otherwise.
 pub(crate) fn tag(me: u64, room: &str, name: &str, names: &Names) -> String {
     match dm_peer_of(me, room) {
         Some(peer) => format!("@{}", names.author(&Principal::Account(peer))),
@@ -640,22 +569,15 @@ pub(crate) fn tag(me: u64, room: &str, name: &str, names: &Names) -> String {
     }
 }
 
-/// What of a room tells the reader, as they chose it in its details.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum Choice {
-    /// Every message: they listen to it (`Op::Listen`).
-    // ponytail: chat keeps the height listening began, not a seq, so a
-    // catch-up just after the choice announces what came before it too
     Every,
-    /// What [`Why`] says, chat's default.
     #[default]
     Default,
-    /// What they cut it to (`Op::SetNotices`).
     Cut(Notices),
 }
 
 impl Choice {
-    /// The op that makes it `channel_id`'s.
     pub(crate) fn op(self, channel_id: String) -> chat::Op {
         match self {
             Choice::Every => chat::Op::Listen {
@@ -673,7 +595,6 @@ impl Choice {
         }
     }
 
-    // the op that makes it `channel_id`'s for `account`, which the reader manages
     pub(crate) fn op_for(self, account: u64, channel_id: String) -> chat::Op {
         match self {
             Choice::Every => chat::Op::ListenFor {
@@ -695,8 +616,6 @@ impl Choice {
     }
 }
 
-/// What account `me` chose, room by room: a room not named is at
-/// [`Choice::Default`].
 pub(crate) async fn choices(host: Host, me: u64) -> Result<BTreeMap<String, Choice>, Error> {
     let page = |after| PageRequest { after, limit: None };
     let every = host
@@ -718,8 +637,6 @@ pub(crate) async fn choices(host: Host, me: u64) -> Result<BTreeMap<String, Choi
     Ok(every.chain(cut).collect())
 }
 
-/// Whether `change` wrote to what [`choices`] reads of account `me`: its
-/// own rows, not another account's.
 pub(crate) fn choices_moved(change: &Change, me: u64) -> bool {
     let mine = [
         chat::tables::LISTENING.key(&me),
@@ -743,9 +660,6 @@ fn mentions(blocks: &[Block], me: u64) -> bool {
 #[cfg(test)]
 mod tests;
 
-// What chat blocks moved of the channel list since it was last read: every room (a feed that came
-// back, or nothing held yet), or the rooms they wrote the row, head or meta of. The notifier and
-// the panes both keep their list this way.
 #[derive(Clone, Default)]
 pub(crate) struct Moved {
     every: bool,
@@ -771,7 +685,6 @@ impl Moved {
         self.every = true;
     }
 
-    // what to read now, taken; every room when no list is held
     pub(crate) fn take(&mut self, held: bool) -> Option<Moved> {
         let moved = std::mem::take(self);
         let every = moved.every || !held;
@@ -781,7 +694,6 @@ impl Moved {
         })
     }
 
-    // a read that failed: what it was for goes with the next one
     pub(crate) fn put_back(&mut self, moved: Moved) {
         self.every |= moved.every;
         self.rooms.extend(moved.rooms);
@@ -808,8 +720,6 @@ pub(crate) async fn read_list(host: Host, moved: Moved) -> Result<ListRead, Erro
     Ok(ListRead::Rooms(rooms))
 }
 
-// the list as a read leaves it: a room read alone replaces its row, or joins before the first
-// room whose id sorts after it (the program lists them by id), or leaves when it is gone
 pub(crate) fn landed(held: Option<Vec<ChannelInfo>>, read: ListRead) -> Vec<ChannelInfo> {
     let rooms = match read {
         ListRead::Every(every) => return every,

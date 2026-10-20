@@ -4,11 +4,8 @@ use crate::{View, modal_overlay, resize_handle, sensor, wire};
 
 #[derive(Default, serde::Deserialize, serde::Serialize)]
 struct BehaviorView {
-    /// The sensor's bounds as last heard (x, y, width, height), and how
-    /// many times it heard them.
     measured: [f32; 4],
     heard: u32,
-    /// The sensor is out of the tree.
     gone: bool,
     dragged: (f32, f32),
     dismissed: bool,
@@ -108,10 +105,6 @@ fn behavior_elements_lower_typed_routes_and_children() {
     });
 }
 
-/// What the host tells a sensor, and when: its child's bounds in the
-/// window's pixels, on the first sight of it and whenever the origin or the
-/// size differs from the last told. The same bounds again are no event:
-/// the view does not tick.
 #[test]
 fn a_sensor_hears_its_bounds_at_first_sight_and_when_they_differ() {
     let mut cx = TestAppContext::new();
@@ -138,8 +131,6 @@ fn a_sensor_hears_its_bounds_at_first_sight_and_when_they_differ() {
     );
 }
 
-/// A sensor that left the tree is forgotten: back in it, it hears the
-/// bounds it had before, since the view may have dropped them with it.
 #[test]
 fn a_sensor_back_in_the_tree_hears_its_bounds_again() {
     let mut cx = TestAppContext::new();
@@ -184,8 +175,6 @@ fn a_resize_handle_carries_role_name_focus_and_keys_to_the_wire() {
     assert!(interactivity.on_key_down.is_some());
 }
 
-/// A sheet keeps every child, as gpui's `child` adds one: two go to the
-/// host in one column, neither dropped.
 #[test]
 fn a_sheet_draws_every_child_it_holds() {
     let mut app = crate::App::for_driver();
@@ -208,9 +197,6 @@ fn a_sheet_draws_every_child_it_holds() {
     assert_eq!(words, ["Pick one", "options"]);
 }
 
-/// The base keeps its path whether or not a modal is open over it: the
-/// host keys a list's scroll and a field's state by it, and a modal that
-/// moved the base started the list over and dropped the field.
 #[test]
 fn a_modal_opening_leaves_its_base_where_it_was() {
     fn list_path(node: &wire::Node) -> Option<Vec<wire::ElementIdWire>> {
@@ -244,8 +230,6 @@ fn a_modal_opening_leaves_its_base_where_it_was() {
     assert_eq!(list_path(&open), Some(path));
 }
 
-/// An open modal is a dialog, and a dialog has a name: the host draws an
-/// unnamed one as no dialog at all, so the view stops where it is built.
 #[test]
 #[should_panic(expected = "a dialog has a name: its label is empty")]
 fn an_open_modal_overlay_needs_a_label() {

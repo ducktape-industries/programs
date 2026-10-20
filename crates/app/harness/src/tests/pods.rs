@@ -31,7 +31,6 @@ fn podded(world: World) -> World {
     world
 }
 
-// One model turn of `calls` at `height`, each run once its relay comes back, a block later.
 fn turn(chain: &MockChain, height: u64, calls: &[(&str, &str, Value)]) {
     chain.at(height, 0);
     let uses: Vec<Value> = calls
@@ -198,8 +197,6 @@ fn an_exec_names_a_pod_and_one_command() {
     assert!(asked(chain).is_empty());
 }
 
-// a streamed exec at block 3: its call answers at once, the model ends its turn at 5, and the
-// watch opens its stream at 6
 fn streaming(world: &World) -> (u64, RequestRow) {
     let chain = &world.chain;
     let thread = world.opened("m1", "build it", Some(WINDOW));
@@ -438,7 +435,6 @@ fn tip(chain: &MockChain, branch: &str) -> String {
     tip
 }
 
-// a commit over `parent`, as a pod's git would make it, and its pack put as pods puts one
 fn pod_commit(chain: &MockChain, parent: &str) -> (String, BlobId) {
     let hash = forge::hash_of(HashKind::Sha1);
     let file = Object::new(Kind::Blob, b"made in a pod\n".to_vec());
@@ -633,8 +629,6 @@ fn a_push_that_brings_an_unlanded_parent_along_is_refused_unless_asked_for() {
     assert_eq!(tip(chain, "carried"), made);
 }
 
-// a stream with no every at block 3, its call run at 4 (time 0); its watch at 5 (time 1000) reads
-// the pod, whose answer lands at 6 (time 2000): a block of 1 s and a trip of 1 s
 fn measured_stream(world: &World) -> (u64, RequestRow) {
     let chain = &world.chain;
     let thread = world.opened("m1", "build it", Some(WINDOW));
@@ -658,7 +652,6 @@ fn a_stream_without_every_streams_at_the_heartbeat_harness_measures() {
     answer(chain, read.id, ok(json!({ "pod": { "name": POD } })));
     let [row]: [RequestRow; 1] = asked(chain).try_into().unwrap();
     assert_eq!(target(&row), format!("/v1/pods/{POD}/exec"));
-    // blocks of 1 s: half of 64 s
     let every = 32;
     assert_eq!(
         body(chain, &row),

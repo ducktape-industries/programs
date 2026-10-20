@@ -40,15 +40,11 @@ use crate::{
 /// kernel's `MAX_DEPTH` (`crates/kernel/host/src/lib.rs`).
 pub const MAX_DEPTH: u32 = 8;
 
-/// A program's entry point with its type erased: [`crate::execute`] or
-/// [`crate::query`] of one `Program`, over the context the chain makes.
 type Entry<Ctx> = Rc<dyn Fn(Ctx, &[u8]) -> Result<(), Error>>;
 type Execute = Rc<dyn Fn(ExecCtx, &[u8]) -> Step>;
 type Lookup = Rc<dyn Fn(QueryCtx, &str) -> Result<(), Error>>;
 type Sender = Result<Option<Principal>, Error>;
 
-/// A program seated on the chain: its host and its entry points, typed away
-/// so the chain holds any program.
 struct Seat {
     host: MockHost,
     init: Entry<ExecCtx>,
@@ -146,8 +142,6 @@ pub struct Roster {
 }
 
 impl Roster {
-    /// Who acts, as the kernel (or a program) asks identity: the account a
-    /// key holds (refused while it does not act) or a program's own.
     pub(crate) fn account(&self, asked: &Query) -> Result<Option<AccountNumber>, Error> {
         let number = match asked {
             Query::Account(key) => self.keys.get(key).copied(),
@@ -176,7 +170,6 @@ impl Roster {
             && let Kind::Program { standing, .. } = profile.kind
             && standing != Standing::Active
         {
-            // identity's own words (`of_key`), revoked or suspended
             return Err(unauthorized(format!("account {number} is suspended")));
         }
         Ok(number)
@@ -218,7 +211,6 @@ impl From<Vec<Profile>> for Roster {
 /// let reply: chat::Reply = chain.query("chat", &chat::Query::Roots { .. })?;
 /// ```
 pub struct MockChain {
-    /// What genesis bound each role to: every frame's env carries it.
     roles: Roles,
     seats: BTreeMap<ProgramId, Seat>,
     roster: Rc<RefCell<Roster>>,
@@ -226,9 +218,7 @@ pub struct MockChain {
     next_ticket: Cell<Ticket>,
     next_frame: Cell<FrameId>,
     parked: RefCell<BTreeMap<FrameId, Parked>>,
-    /// The block every run is in: height and time.
     clock: Cell<(u64, u64)>,
-    /// The blobs [`MockChain::put_blob`] put: the network holds them.
     held: RefCell<BTreeMap<BlobId, Blob>>,
 }
 
@@ -239,7 +229,6 @@ impl Default for MockChain {
 }
 
 impl MockChain {
-    /// A chain whose genesis binds the roles to `roles`, nothing seated.
     fn role(&self, role: &str) -> Result<ProgramId, Error> {
         self.roles
             .bound(role)
@@ -338,7 +327,6 @@ impl MockChain {
                 Box::new(move |_, request| identity_role(&roster.borrow(), request)),
             );
         }
-        // a program may query itself, as the kernel answers it
         host.borrow_mut()
             .siblings
             .insert(program.clone(), seat.sibling());
@@ -575,9 +563,6 @@ impl MockChain {
         Ok(seat.host.take_response())
     }
 
-    /// The account the identity role says a frame acts as, asked as the
-    /// kernel asks: the seated identity program with the chain's own env, or
-    /// the roster. A reply that is not `Account` is refused.
     fn account(&self, asked: Query) -> Result<Option<Principal>, Error> {
         let identity = self.role(role::IDENTITY)?;
         let account = if self.seats.contains_key(&identity) {
@@ -713,8 +698,6 @@ impl MockChain {
                 Step::Done(Err(Error::new(code::PROTOCOL, "nothing is parked")))
             }
         };
-        // this run's output and messages, before a nested run of the same
-        // program (a reply) overwrites them
         let output = host.take_output();
         let emitted = host.take_emissions();
         let calls = host.take_calls();
@@ -743,12 +726,6 @@ impl MockChain {
         }
     }
 
-    // The kernel's ownership guard (`crates/kernel/host/src/lib.rs`, `guard`): once a run that
-    // claimed a new key, or changed a key the ownership program holds a record for, returns, and
-    // before anything it emitted runs, one call to the program seated at the ownership role, as
-    // the chain. Not guarded: init, the chain's own runs, the
-    // validators' messages and the ownership program's own runs; with no program seated there,
-    // nothing is.
     fn guard(&self, env: &Env, seat: &Seat, runs_an_op: bool) -> Result<(), Error> {
         let touched = std::mem::take(&mut seat.host.borrow_mut().touched);
         let Some(guardian) = self.roles.get(role::OWNERSHIP) else {
@@ -822,7 +799,6 @@ impl MockChain {
         first: u64,
         depth: u32,
     ) -> Result<(), Error> {
-        // the emitter's account, asked once for all its messages
         let as_itself = emitted.iter().any(|message| message.acting.is_none());
         let emitter = self.own_sender(&env.program, as_itself);
         for (seq, message) in emitted.into_iter().enumerate() {
@@ -1153,7 +1129,6 @@ impl Seat {
         })
     }
 
-    /// This program as another one's sibling: asked over its own host.
     fn sibling(&self) -> crate::Sibling {
         let (host, query) = (self.host.clone(), self.query.clone());
         Box::new(move |env, request| {

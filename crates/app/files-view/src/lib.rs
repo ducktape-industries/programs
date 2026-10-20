@@ -34,11 +34,8 @@ pub use state::Files;
 use view::design::Ladder;
 use view::prelude::*;
 
-/// What both designs draw in.
 pub(crate) type Cx<'a, 'b> = &'a mut Context<'b, Files>;
 
-/// What both designs draw with: the theme, and the ladder of sizes, the
-/// pointer's (`design::POINTER`) or the finger's (`design::TOUCH`).
 #[derive(Clone, Copy)]
 pub(crate) struct Kit {
     pub(crate) theme: Theme,
@@ -52,26 +49,16 @@ impl View for Files {
     const ICON: &'static str = "icons/folder.svg";
     const TINT: Tint = Tint::Amber;
     const CAPABILITIES: &'static [Capability] = &[
-        // the session (who reads, so which home is theirs) and the links
-        // opened into the view
         Capability::Host,
-        // files' reads and live heads, and identity's names
         Capability::Program,
-        // a commit, and an upload's chunks
         Capability::Op,
-        // the files an upload sends, as the reader picks them
         Capability::File,
-        // a row's Copy link
         Capability::Clipboard,
     ];
-    /// The history's rows, a message beside who made it and when, fit
-    /// here; a folder's crumbs wrap.
     const MIN_WINDOW_WIDTH: u32 = 480;
 
     fn attach(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.watch(cx);
-        // what landed while the view was away: the follow hears only what
-        // lands from now
         self.read_all(cx);
     }
 }
@@ -79,8 +66,6 @@ impl View for Files {
 impl Render for Files {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.width = window.viewport_size().width.into();
-        // two designs, picked once: under a finger the phone's screens
-        // (`ui/phone`), under a pointer the desktop's pages
         if window.touch() {
             ui::phone::render(self, cx)
         } else {

@@ -192,7 +192,6 @@ fn the_roles_queries_lead_and_encode_as_the_role_asks() {
     }
 }
 
-/// `Op` is core's egress role op: this order is the role's, so a change here is a role change.
 #[test]
 fn op_variants_follow_the_roles_order() {
     assert_eq!(

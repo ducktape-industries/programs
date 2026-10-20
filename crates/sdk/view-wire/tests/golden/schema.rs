@@ -44,9 +44,6 @@ use view_wire::{Event, Frame, Node, Patch, WidgetCommand};
 
 use super::golden;
 
-/// A tracer whose stand-in string is a colour: gpui writes `Hsla` as hex,
-/// and a colour is the one checked string it decodes outside an `Option`,
-/// where a refusal would not be cut on the next pass (see [`trace`]).
 fn tracer() -> Tracer {
     Tracer::new(
         TracerConfig::default()
@@ -55,12 +52,6 @@ fn tracer() -> Tracer {
     )
 }
 
-/// Traces `T` from the `Deserialize` side until every format it reaches is
-/// known, and answers its own. A decoder that checks what it decodes
-/// refuses the tracer's stand-in (an empty name, a zero-length chunk), but
-/// what the pass reached before the refusal is kept, and a sequence or
-/// option already known is empty on the next pass, so each pass gets
-/// further than the last.
 fn trace<T: DeserializeOwned>(tracer: &mut Tracer) -> Format {
     let samples = Samples::new();
     let mut refusal = None;
@@ -75,10 +66,6 @@ fn trace<T: DeserializeOwned>(tracer: &mut Tracer) -> Format {
 
 type Trace = fn(&mut Tracer) -> Format;
 
-/// Every container `traces` reach, by name, each one whole: every format
-/// known, and every enum at its declared variants, which a trace reaches
-/// only for an enum traced on its own (a pass revisits a nested enum at its
-/// first variant). One partial fails here by name.
 fn registry(traces: &[Trace]) -> Registry {
     let mut tracer = tracer();
     for trace in traces {
@@ -107,10 +94,6 @@ fn registry(traces: &[Trace]) -> Registry {
     registry
 }
 
-/// gpui's `FontFeatures` reads each tag's value through an untagged enum,
-/// which no trace can enter (`deserialize_any`), so the trace leaves it
-/// unknown: it is what `FontFeatures` writes instead, traced from the
-/// `Serialize` side.
 fn font_features(registry: &mut Registry) {
     let features = FontFeatures(Arc::new(vec![("calt".into(), 1)]));
     let (written, _) = tracer()
@@ -123,8 +106,6 @@ fn font_features(registry: &mut Registry) {
                 .iter_mut()
                 .find(|field| field.name == "font_features")
                 .expect("font_features");
-            // Only the map's values are past the trace: a field retyped to
-            // anything but a map is a shape of its own, not this one.
             let traced = format!("{:?}", field.value);
             assert!(
                 traced.contains("Map {"),
@@ -135,10 +116,6 @@ fn font_features(registry: &mut Registry) {
     }
 }
 
-/// accesskit's `ActionData` (an `A11yAction`'s data), whole, in place of the
-/// tree's partial one. Its `Point` is accesskit's f64 one, which a trace
-/// beside gpui's `Point<Pixels>` would refuse by name: so it is traced alone
-/// and [`merge`]d as `accesskit`.
 fn action_data(registry: &mut Registry) {
     if registry.remove("ActionData").is_none() {
         return;
@@ -151,8 +128,6 @@ fn action_data(registry: &mut Registry) {
     merge(registry, own, "accesskit");
 }
 
-/// `own`'s containers into `registry`: one `registry` already names
-/// otherwise enters as `<prefix>::<name>`, and so does every reference to it.
 fn merge(registry: &mut Registry, own: Registry, prefix: &str) {
     let clash: BTreeSet<String> = own
         .iter()
@@ -178,9 +153,6 @@ fn merge(registry: &mut Registry, own: Registry, prefix: &str) {
     }
 }
 
-/// gpui's `Background`, written once per tag: its tag is crate-private to
-/// gpui, so no trace can name it on its own, and a variant written before
-/// the trace reaches it is one the trace takes as whole.
 fn backgrounds(tracer: &mut Tracer) -> Format {
     let color = gpui::black();
     let stop = gpui::linear_color_stop(color, 0.);
@@ -196,10 +168,6 @@ fn backgrounds(tracer: &mut Tracer) -> Format {
     trace::<gpui::Background>(tracer)
 }
 
-/// A `bin` as the tracer reads one. A reply's `Result` holds its bytes as
-/// a `bin` (`codec/bin.rs`), and a `Result` is whole only traced on its own:
-/// this stands where the crate's own reader does, and the trace refuses it
-/// if `Event::Response` reads anything else there.
 struct Bin;
 
 impl<'de> serde::Deserialize<'de> for Bin {
@@ -218,8 +186,6 @@ impl<'de> serde::Deserialize<'de> for Bin {
     }
 }
 
-/// What the tree's trace starts from: what crosses, and every enum of
-/// view-wire's, accesskit's and gpui's under it.
 const TREE: &[Trace] = &[
     trace::<Frame>,
     trace::<Event>,
@@ -283,8 +249,6 @@ const TREE: &[Trace] = &[
     trace::<gpui::FontStyle>,
 ];
 
-/// What the style's trace starts from: gpui's backgrounds, its enums under
-/// a style, and the style.
 const STYLE: &[Trace] = &[
     backgrounds,
     trace::<gpui::AlignContent>,
@@ -308,16 +272,9 @@ const STYLE: &[Trace] = &[
     trace::<StyleRefinement>,
 ];
 
-/// Every container the tree reaches, and every one a style entry holds
-/// that the tree does not hold too. They are traced apart: a trace names a
-/// container by its serde name alone, and the tree's text ranges are
-/// `Range<usize>` where a style's grid placement is a
-/// `Range<GridPlacement>`.
 pub(super) fn tree() -> (Registry, Registry) {
     let tree = registry(TREE);
     let mut style = registry(STYLE);
-    // gpui's debug outlines are fields of its debug build alone, and no
-    // entry carries them: the shape is the same in either build
     let Some(ContainerFormat::Struct(fields)) = style.get_mut("StyleRefinement") else {
         unreachable!("StyleRefinement is a struct")
     };
@@ -326,15 +283,8 @@ pub(super) fn tree() -> (Registry, Registry) {
     (tree, style)
 }
 
-/// The backgrounds an entry does not carry: gpui gives a pattern's payload
-/// no public read, so one crosses as its kind alone and the host refuses
-/// the entry (`style_sanitize`'s own rule, held by its test).
 const PATTERNS: [&str; 2] = ["PatternSlash", "Checkerboard"];
 
-/// What the samples must show: [`tree`]'s two halves as one registry, the
-/// style's `Range<GridPlacement>` as `style::Range`. A table entry stands
-/// as the style it holds, which is what its JSON twin shows, less the
-/// [`PATTERNS`] no entry carries.
 pub(super) fn wire() -> Registry {
     let (mut registry, style) = tree();
     merge(&mut registry, style, "style");
@@ -356,8 +306,6 @@ pub(super) fn wire() -> Registry {
     registry
 }
 
-/// The entry codec's bitmaps count each refinement's fields in the order
-/// `schema.txt` lists them, so the shape names every bit.
 #[test]
 fn a_style_entry_counts_its_fields_as_the_shape_lists_them() {
     let (_, style) = tree();
@@ -370,9 +318,6 @@ fn a_style_entry_counts_its_fields_as_the_shape_lists_them() {
     }
 }
 
-/// The program a node method addresses, as [`Program`] declares it: each of
-/// its types is a marker, so the schema reads `ProgramQuery` where a view's
-/// program puts its own.
 struct P;
 impl Program for P {
     const NAME: &'static str = "P";
@@ -397,8 +342,6 @@ struct ProgramReply;
 
 pub(super) type Definitions = BTreeMap<Declaration, Definition>;
 
-/// A method's line: its target, its request and reply, and whether borsh
-/// carries them (else the tree's codec, serde's trace).
 pub(super) struct Shape {
     pub(super) target: Option<&'static str>,
     pub(super) request: String,
@@ -406,7 +349,6 @@ pub(super) struct Shape {
     pub(super) borsh: bool,
 }
 
-/// A borsh method, its request and reply declared and defined.
 fn borsh<M: Method>(definitions: &mut Definitions) -> (&'static str, Shape)
 where
     M::Request: BorshSchema,
@@ -423,7 +365,6 @@ where
     (M::KIND, shape)
 }
 
-// Every method `methods!` lists, each through [`borsh`].
 struct Borsh<'a> {
     definitions: &'a mut Definitions,
     shapes: &'a mut BTreeMap<&'static str, Shape>,
@@ -440,8 +381,6 @@ impl methods::Listed for Borsh<'_> {
     }
 }
 
-/// A method on the tree's side of the codec rule, its request and reply as
-/// serde traces them.
 fn tree_method<M: Method>() -> (&'static str, Shape)
 where
     M::Request: DeserializeOwned,
@@ -457,7 +396,6 @@ where
     (M::KIND, shape)
 }
 
-/// Every method in `ALL` by kind, and the borsh definitions they reach.
 pub(super) fn shapes() -> (BTreeMap<&'static str, Shape>, Definitions) {
     use methods::*;
     let mut definitions = Definitions::new();
@@ -479,8 +417,6 @@ pub(super) fn shapes() -> (BTreeMap<&'static str, Shape>, Definitions) {
     (shapes, definitions)
 }
 
-/// The whole text: the methods, the borsh definitions they reach, and the
-/// tree's containers.
 fn schema() -> String {
     let (shapes, definitions) = shapes();
     let (tree, style) = tree();
@@ -529,8 +465,6 @@ fn schema() -> String {
     text
 }
 
-/// A registry as text: a line per container, and under it one per field or
-/// variant (and a variant's fields), in the order they are written.
 fn render(text: &mut String, registry: &Registry) {
     let fields = |text: &mut String, fields: &[Named<Format>], indent: &str| {
         for field in fields {
@@ -560,10 +494,6 @@ fn render(text: &mut String, registry: &Registry) {
     }
 }
 
-/// Bytes cross as a `bin`, one copy each way (`codec/bin.rs`). A byte field
-/// that does not say so would cross as an array of integers and be read an
-/// element at a time: the shape names it here, so it cannot be added
-/// without failing.
 #[test]
 fn no_bytes_cross_as_an_array_of_integers() {
     let (tree, style) = tree();
@@ -614,14 +544,8 @@ fn the_wire_has_the_committed_shape() {
     assert!(committed == built, "{MESSAGE} (schema.txt grew or shrank)");
 }
 
-/// The files `build.rs` hashes into `WIRE_ID`, in its order.
 const HASHED: [&str; 3] = ["frame.bin", "methods.bin", "schema.txt"];
 
-/// The gap the schema closes, held generally: every name the wire has — a
-/// container, a field, a variant, a method kind — is in what `WIRE_ID`
-/// hashes, so none comes or goes without moving it. The bytes alone fail
-/// this even with every variant and field sampled (`coverage.rs`): neither
-/// borsh nor the tree's codec writes a name at all.
 #[test]
 fn wire_id_hashes_every_name_on_the_wire() {
     let hashed: Vec<u8> = HASHED

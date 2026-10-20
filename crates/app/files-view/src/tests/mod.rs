@@ -14,11 +14,8 @@ use view::testing::TestAppContext;
 
 use crate::Files;
 
-/// A file's text in dev's home.
 pub(crate) const NOTES: &str = "hello\nfrom dev";
-/// Bytes that are not UTF-8.
 pub(crate) const NOT_TEXT: [u8; 4] = [0xff, 0xfe, 0x00, 0x01];
-/// A one-pixel PNG.
 pub(crate) const PNG: [u8; 67] = [
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
     0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
@@ -27,12 +24,8 @@ pub(crate) const PNG: [u8; 67] = [
     0x42, 0x60, 0x82,
 ];
 
-/// When the seed's first block lands (unix ms), each next one a minute
-/// on: pinned, so a byline drawn to the second is the same on every run.
 pub(crate) const T0: u64 = 1_790_000_000_000;
 
-/// `bytes` put at `path`, its chunks put on `net` first as a node's blob
-/// upload puts them.
 pub(crate) fn put(net: &Network, path: &str, bytes: &[u8]) -> Change {
     let chunks = bytes
         .chunks(files::CHUNK_SIZE as usize)
@@ -52,7 +45,6 @@ pub(crate) fn put(net: &Network, path: &str, bytes: &[u8]) -> Change {
     }
 }
 
-/// One commit by `who`, based on the head: the snapshot it made.
 pub(crate) fn commit(
     net: &Network,
     who: u64,
@@ -147,7 +139,6 @@ pub(crate) fn list_at(net: &Network, path: &str) -> (Option<Ownership>, Option<P
     (list, resource.owner)
 }
 
-/// A file node, for the words a file's kind is said in.
 pub(crate) fn file() -> files::Node {
     files::Node::File {
         file: files::BlobId::Sha256([0; 32]),
@@ -156,8 +147,6 @@ pub(crate) fn file() -> files::Node {
     }
 }
 
-/// The view over `net`, read by `session`'s account, under a finger when
-/// `touch`.
 pub(crate) fn opened_as(net: &Network, session: Session, touch: bool) -> TestAppContext {
     let mut cx = TestAppContext::new();
     net.back(&cx.host());
@@ -169,13 +158,10 @@ pub(crate) fn opened_as(net: &Network, session: Session, touch: bool) -> TestApp
     cx
 }
 
-/// The view over `net`, read by dev, under a pointer.
 pub(crate) fn desktop(net: &Network) -> TestAppContext {
     opened_as(net, net.session(), false)
 }
 
-/// The view over `net`, read by dev, under a pointer in a pane `width`
-/// wide.
 pub(crate) fn desktop_at(net: &Network, width: f32) -> TestAppContext {
     let mut cx = desktop(net);
     cx.simulate_resize(width, 900.);
@@ -183,12 +169,10 @@ pub(crate) fn desktop_at(net: &Network, width: f32) -> TestAppContext {
     cx
 }
 
-/// The view over `net`, read by dev, under a finger.
 pub(crate) fn phone(net: &Network) -> TestAppContext {
     opened_as(net, net.session(), true)
 }
 
-/// Whether some text on screen contains `part`.
 pub(crate) fn shows(cx: &TestAppContext, part: &str) -> bool {
     cx.texts().iter().any(|text| text.contains(part))
 }

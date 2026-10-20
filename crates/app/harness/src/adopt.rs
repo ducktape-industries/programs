@@ -15,7 +15,6 @@ struct Accounts {
     next: Option<Vec<u8>>,
 }
 
-// A page of identity's accounts after `after` (an account number, big-endian), at most `limit`.
 fn accounts(ctx: &QueryCtx, after: Option<&[u8]>, limit: u64) -> Result<Accounts, Error> {
     let after = after
         .map(|bytes| <[u8; 8]>::try_from(bytes).map(u64::from_be_bytes))
@@ -35,9 +34,6 @@ fn accounts(ctx: &QueryCtx, after: Option<&[u8]>, limit: u64) -> Result<Accounts
     }
 }
 
-// A batch of `kind`'s rows after `after`. Sent by anyone, it answers where the next batch starts
-// and sends harness the same op; harness's own run records them, so the conversations rows it
-// writes are harness's until ownership reassigns them to each agent's manager.
 pub(crate) fn adopt_owners(
     ctx: &ExecCtx,
     kind: &str,

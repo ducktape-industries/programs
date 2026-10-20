@@ -26,7 +26,6 @@ impl Identity {
         }
     }
 
-    /// `key` joins `account`, consenting (every consent verifies here).
     fn add_key(key: &[u8], account: AccountNumber) -> identity::Op {
         identity::Op::AddKey {
             scheme: Scheme::Ed25519,
@@ -48,7 +47,6 @@ impl Identity {
         }
     }
 
-    /// `op`, signed by `agent`'s manager.
     fn as_manager(host: &MockHost, agent: AccountNumber, op: identity::Op) {
         let identity::Control::Program { manager, .. } = Self::get(host, agent).control else {
             panic!("{agent} is a program account");
@@ -71,7 +69,6 @@ impl conformance::identity::Fixture for Identity {
 
     fn host(&self) -> MockHost {
         let host = MockHost::default();
-        // every consent verifies: the suite checks the role, not signatures
         host.borrow_mut().verifier = Some(Box::new(|_, _, _, _, _| true));
         host
     }
@@ -80,14 +77,12 @@ impl conformance::identity::Fixture for Identity {
         Self::user(host, key)
     }
 
-    /// A suspended agent holding `key`.
     fn stopped(&self, host: &MockHost, key: &[u8]) -> AccountNumber {
         let agent = self.managed(host, key);
         Self::as_manager(host, agent, identity::Op::Suspend { account: agent });
         agent
     }
 
-    /// A user keeps their last key: a spare joins, then `key` goes.
     fn drop_key(&self, host: &MockHost, account: AccountNumber, key: &[u8]) {
         let spare = [key, b"'s spare"].concat();
         Self::run(host, &spare, None, Self::add_key(key, account));
@@ -98,7 +93,6 @@ impl conformance::identity::Fixture for Identity {
         Self::run(host, key, Some(account), remove);
     }
 
-    /// An active agent holding `key`.
     fn managed(&self, host: &MockHost, key: &[u8]) -> AccountNumber {
         let manager_key = [key, b"'s manager"].concat();
         let manager = Self::user(host, &manager_key);

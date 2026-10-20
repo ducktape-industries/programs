@@ -47,7 +47,6 @@ pub fn list(
             |el, older| el.child(older),
         )
         .when(!messages.is_empty(), |el| {
-            // the way back floats over the list's foot, taking no row of its own
             el.child(
                 div()
                     .relative()
@@ -72,8 +71,6 @@ pub fn list(
         })
 }
 
-/// What an empty pane says: loading, refused, no replies yet, or the
-/// room's beginning. None while the room itself is gone.
 fn nothing_yet(chat: &Chat, pane: Pane, theme: &Theme) -> Option<AnyElement> {
     let room = chat.room.as_ref()?;
     let rows = match pane {
@@ -100,7 +97,6 @@ fn nothing_yet(chat: &Chat, pane: Pane, theme: &Theme) -> Option<AnyElement> {
     })
 }
 
-/// The way to older history, while there is some.
 fn older(
     chat: &Chat,
     cx: &mut Context<Chat>,
@@ -137,8 +133,6 @@ fn older(
     Some(row.into_any_element())
 }
 
-/// The grid the desktop's arrows walk, and where its cursor is: the active
-/// message's id and cell.
 fn grid(
     chat: &Chat,
     pane: Pane,
@@ -147,11 +141,6 @@ fn grid(
     state: &ListState,
     cx: &mut Context<Chat>,
 ) -> (Stateful<Div>, Option<String>, usize) {
-    // One Tab stop, a grid: ↑ ↓ walk the messages (the list scrolls the
-    // next one into view before it claims), ← → a message's cells (the
-    // message, then its controls), Enter presses the active cell — on the
-    // message, its click. Active by message id: the newest until the
-    // arrows move.
     let cursor = chat.cursor(pane);
     let at = cursor
         .id
@@ -176,11 +165,8 @@ fn grid(
         },
     )
     .active(at, messages.len())
-    // the cells are counted as the active row is drawn (`Cursor::controls`),
-    // so the bound is the recorded count at the key, not at the build
     .cells(cell, usize::MAX)
     .on_move(cx.processor(move |chat, index: usize, _, cx| {
-        // the arrows leave the chosen message behind
         chat.let_go();
         let cursor = chat.cursor_mut(pane);
         cursor.id = Some(moved_to[index].id.clone());
@@ -202,8 +188,6 @@ fn grid(
         let message = &pressed[index];
         let (id, seq, rev) = (message.id.clone(), message.seq, message.rev);
         let cursor = chat.cursor(pane);
-        // the controls recorded are this message's, else the row was not
-        // drawn since the cursor moved and no control is pressed
         let control = match cursor.cell {
             0 => None,
             cell => Some(cursor.controls_of(&id).get(cell - 1).cloned()),
@@ -217,8 +201,6 @@ fn grid(
         }
     }))
     .build();
-    // the Menu key or Shift+F10 opens the active message's menu where
-    // Enter on its ⋯ does
     let asked = messages
         .get(at)
         .filter(|message| !message.pending && !message.deleted)
@@ -234,9 +216,6 @@ fn grid(
     (grid.on_key_down(keys), active_id, cell)
 }
 
-/// The native list: the room's intro first once its history is all here,
-/// the unread divider over the first unread message, and "No replies yet"
-/// under a thread that is only its root.
 fn rows(
     chat: &Chat,
     pane: Pane,
@@ -280,7 +259,6 @@ fn rows(
             let unread = unread == Some(message.seq);
             let active = (active_id.as_ref() == Some(&message.id)).then_some(cell);
             let set = (at + 1, messages.len());
-            // the row is drawn again only when what it reads moved
             let deps = message::RowDeps {
                 seen: message::Seen::of(chat, pane, &message),
                 message: message.clone(),
@@ -320,8 +298,6 @@ fn rows(
     grid.flex().flex_col().flex_1().min_h(px(0.)).child(list)
 }
 
-// A message's row in the list: its card, under the day and unread markers
-// where it opens a day or the unread messages.
 #[allow(
     clippy::too_many_arguments,
     reason = "the card's own arguments, and the markers above it"
@@ -350,12 +326,6 @@ fn row_of(
     if day.is_none() && unread.is_none() {
         return card;
     }
-    // The markers sit outside the card, which is the grid's row,
-    // so the list's row is this wrapper: it carries the message's
-    // key, as a bare card does, and the card under it is filed by
-    // its message wherever the row moves. Full width, as a bare
-    // card is: a row shrunk to its words took the hover and the
-    // action strip with it
     div()
         .id(marked)
         .w_full()
@@ -367,7 +337,6 @@ fn row_of(
         .into_any_element()
 }
 
-/// "Jump to latest", when the timeline is not at its live tail.
 fn jump_to_latest(
     chat: &Chat,
     cx: &mut Context<Chat>,
@@ -383,8 +352,6 @@ fn jump_to_latest(
         cx.notify();
         chat.open(id.clone(), cx)
     });
-    // a strip across the list's foot that only centres the button: it has
-    // no handlers, so a click beside the button still reaches the row under it
     let jump = div()
         .id("chat-jump-latest")
         .absolute()
@@ -403,7 +370,6 @@ fn jump_to_latest(
     Some(jump.into_any_element())
 }
 
-/// The day the messages under it were posted on, between two days.
 fn day_marker(id: &str, day: String, theme: &Theme) -> impl IntoElement {
     let rule = || div().h(px(1.)).flex_1().bg(theme.border);
     div()
@@ -434,8 +400,6 @@ fn unread_marker(theme: &Theme) -> impl IntoElement {
         .child("New messages")
 }
 
-/// The top of a room's history. The room's name is already its header's,
-/// so this says only where the history starts ([`Chat::intro`]).
 fn intro(text: &str, theme: &Theme) -> impl IntoElement {
     div()
         .id("chat-timeline-intro")
@@ -447,7 +411,6 @@ fn intro(text: &str, theme: &Theme) -> impl IntoElement {
         .child(text.to_owned())
 }
 
-/// A thread with nothing under its root yet.
 fn no_replies(theme: &Theme) -> impl IntoElement {
     div()
         .id("chat-thread-no-replies")

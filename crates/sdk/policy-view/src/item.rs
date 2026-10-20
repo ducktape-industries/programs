@@ -224,14 +224,13 @@ pub async fn standing(host: Host, item: Item, reader: Option<Party>) -> Result<S
     }
     let (owns, admits) = match (&record, &reader) {
         (Some(record), Some(reader)) => {
-            let owns = is(&host, &record.owner, reader).await?;
+            let owns = same_ownership_party(&host, &record.owner, reader).await?;
             let admits = match &policy {
-                Some(policy) if !owns => lets(&host, policy, reader).await?,
+                Some(policy) if !owns => policy_allows_reader(&host, policy, reader).await?,
                 _ => owns,
             };
             (owns, Some(admits))
         }
-        // nobody seated changes anything
         (Some(_), None) => (false, Some(false)),
         (None, _) => (false, None),
     };
@@ -244,14 +243,13 @@ pub async fn standing(host: Host, item: Item, reader: Option<Party>) -> Result<S
     })
 }
 
-// Whether `policy` lets `reader` write beside its items' owner.
-async fn lets(host: &Host, policy: &Policy, reader: &Party) -> Result<bool, Error> {
+async fn policy_allows_reader(host: &Host, policy: &Policy, reader: &Party) -> Result<bool, Error> {
     match &policy.write {
         Writers::Anyone => Ok(true),
         Writers::Owner => Ok(false),
         Writers::Listed(parties) => {
             for party in parties {
-                if is(host, party, reader).await? {
+                if same_ownership_party(host, party, reader).await? {
                     return Ok(true);
                 }
             }
@@ -260,9 +258,7 @@ async fn lets(host: &Host, policy: &Policy, reader: &Party) -> Result<bool, Erro
     }
 }
 
-// Whether `party` is `reader` as ownership counts them: the same party, or a program and the
-// account it acts as.
-async fn is(host: &Host, party: &Party, reader: &Party) -> Result<bool, Error> {
+async fn same_ownership_party(host: &Host, party: &Party, reader: &Party) -> Result<bool, Error> {
     match (party, reader) {
         (party, reader) if party == reader => Ok(true),
         (Party::Program(program), Party::Account(number))
@@ -413,8 +409,6 @@ pub fn transfer<V: 'static>(view: &mut V, lens: Lens<V>, cx: &mut Context<V>) {
     send(view, lens, op, cx);
 }
 
-// Sends `op`; landed, the sheet it was sent from closes while it is still the one open, and the
-// item is read again. A refusal stays on the sheet.
 fn send<V: 'static>(view: &mut V, lens: Lens<V>, op: ownership::Op, cx: &mut Context<V>) {
     let editing = lens(view);
     if editing.busy {
@@ -489,7 +483,6 @@ pub fn row_titled<V: 'static>(
     )
 }
 
-// What the row says: whose the item is and its policy, or why that is not known yet.
 pub(crate) fn said(editing: &Editing) -> String {
     match &editing.standing {
         Loadable::Ready(standing) | Loadable::Reloading(standing, _) => {
@@ -533,7 +526,6 @@ pub fn sheet<V: 'static>(
 ) -> Option<AnyElement> {
     let open = editing.sheet?;
     let item = editing.item.as_ref()?;
-    // Change policy… and Transfer… need the item's record: until it is read, the sheet says so
     let (shown, body) = match (open, editing.standing.ready()) {
         (Sheet::Relink, Some(_)) => (open, relinking(editing, item, id, lens, cx, ladder, theme)),
         (Sheet::Transfer, Some(_)) => (
@@ -552,7 +544,6 @@ pub fn sheet<V: 'static>(
     Some(sheet.into_any_element())
 }
 
-// Whose it is and its policy; for its owner, Change policy… and Transfer….
 fn about_sheet<V: 'static>(
     editing: &Editing,
     item: &Item,
@@ -603,7 +594,6 @@ fn about_sheet<V: 'static>(
         .into_any_element()
 }
 
-// The owner's live policies, the one in use marked; a press links the item to it.
 fn relinking<V: 'static>(
     editing: &Editing,
     item: &Item,
@@ -679,7 +669,6 @@ fn relink_rows<V: 'static>(
         .collect()
 }
 
-// Whom it goes to, typed and found; then a confirm that names them (Q3: a plain confirm).
 fn transferring<V: 'static>(
     editing: &Editing,
     item: &Item,
@@ -778,7 +767,6 @@ fn transferring<V: 'static>(
         .into_any_element()
 }
 
-// A sentence in the secondary size, in `tone`.
 fn note(text: impl Into<SharedString>, tone: Hsla, ladder: &Ladder) -> Div {
     div()
         .text_type(ladder.secondary)
@@ -786,7 +774,6 @@ fn note(text: impl Into<SharedString>, tone: Hsla, ladder: &Ladder) -> Div {
         .child(text.into())
 }
 
-// A sentence across the sheet, inset as its rows are.
 fn line(text: impl Into<SharedString>, tone: Hsla, ladder: &Ladder) -> Div {
     div()
         .px(SHEET_INSET)
@@ -794,14 +781,11 @@ fn line(text: impl Into<SharedString>, tone: Hsla, ladder: &Ladder) -> Div {
         .child(note(text, tone, ladder))
 }
 
-// What stopped the sheet's write, under it.
 fn refused(editing: &Editing, ladder: &Ladder, theme: &Theme) -> Option<Div> {
     let said = editing.problem.clone()?;
     Some(line(said, theme.danger, ladder))
 }
 
-// A sheet form's buttons, `{base}/cancel` then `{base}/submit`; the verb says `busy` and takes no
-// press while its write is in flight.
 fn verbs(
     base: &str,
     verb: &str,

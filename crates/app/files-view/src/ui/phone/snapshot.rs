@@ -64,7 +64,6 @@ fn found(view: &Files, row: &SnapshotRow, changes: &[DiffEntry], k: &Kit) -> Any
         .into_any_element()
 }
 
-/// What the snapshot changed, path by path.
 fn changed(row: &SnapshotRow, changes: &[DiffEntry], k: &Kit) -> AnyElement {
     if let Some(note) = words::changes_note(row, changes) {
         return quiet("files-changes-note", note, k);

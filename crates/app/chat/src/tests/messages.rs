@@ -92,8 +92,6 @@ fn an_edit_moves_search_with_it_and_a_deleted_message_takes_none() {
     assert_eq!(chat.refused(&BO, edit(1, "undead")), code::WRONG_STATE);
 }
 
-/// A row carries its block's time beside its height; an edit stamps its
-/// own time and keeps the post's.
 #[test]
 fn a_row_keeps_its_posts_block_time_through_an_edit() {
     let mut chat = Chat::with_channel(PostPolicy::Open);
@@ -191,8 +189,6 @@ fn search_is_newest_first_in_a_channel_and_across_them_and_keeps_its_limit() {
     assert_eq!(one, (places(&[("general", 3)]), true));
 }
 
-// A channel longer than one scan of its walk: the walk goes on below it,
-// newest first, to the channel's first message.
 #[test]
 fn search_walks_a_long_channel_to_its_first_message() {
     let mut chat = Chat::with_channel(PostPolicy::Open);
@@ -259,7 +255,6 @@ fn places(at: &[(&str, u64)]) -> Vec<(String, u64)> {
         .collect()
 }
 
-// Where the hits of a search are, and whether it was capped.
 fn hits(
     chat: &Chat,
     text: &str,
@@ -290,7 +285,6 @@ fn tag_search(tag: &str, channel: Option<&str>, page: PageRequest) -> Query {
     }
 }
 
-// Every page of a tag search, `limit` rows each, followed to its end.
 fn tag_pages(chat: &Chat, tag: &str, channel: Option<&str>, limit: u64) -> Vec<Vec<(String, u64)>> {
     let (mut pages, mut after) = (Vec::new(), None);
     loop {
@@ -326,7 +320,6 @@ fn attention(chat: &Chat, author: Principal) -> Option<crate::MsgRow> {
     row
 }
 
-/// The seqs tagged `tag`, in the channel and across channels (the same).
 pub(super) fn tagged(chat: &Chat, tag: &str) -> Vec<u64> {
     let ask = |channel_id| {
         let Reply::TagHits(page) = chat.ask(Query::TagSearch {

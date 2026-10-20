@@ -4,13 +4,11 @@
 use super::*;
 use crate::words::NO_NETWORK;
 
-/// How the app refuses `chain.network` for a node without the route.
 fn unsupported(cx: &TestAppContext) {
     cx.host()
         .refuse::<ChainNetwork>(methods::refusal::UNKNOWN_REQUEST, NO_NETWORK);
 }
 
-/// The sheet over node `this`, serving `chain.network` with `network`.
 fn voting(this: [u8; 2], network: NetworkStatus) -> (TestAppContext, StreamSender<ClockTicks>) {
     let mut cx = TestAppContext::new();
     node(&mut cx);
@@ -33,8 +31,6 @@ const VOTES: &str =
     "Height: the newest block the validator voted to finalize. Quiet: none for 20 blocks.";
 const NOT_VOTING: &str = "This node isn't voting right now, so it can't see the validators' votes.";
 
-/// With `chain.network`: a validator's newest vote, how far it is from the
-/// tip, one word; a resident's row is its key and address.
 #[test]
 fn the_network_fills_height_behind_and_status() {
     let (mut cx, ticks) = voting(THIS, seen(4200));
@@ -65,18 +61,12 @@ fn the_network_fills_height_behind_and_status() {
     ] {
         assert!(!cx.has_text(gone), "{gone}");
     }
-    // the same 20 whatever the set's size (three validators here)
     assert!(cx.has_text(VOTES) && !cx.has_text(NOT_VOTING));
-    // one ask in flight at a time, again on the clock
     ticks.send(());
     cx.run_until_parked();
     assert_eq!(cx.host().requests::<ChainNetwork>().len(), 2);
 }
 
-/// A node that reports no vote of its own hears none: a resident, and a
-/// validator in valset not seated yet (or catching up after a restart)
-/// while the others' votes still reach the seated. It says so once, and no
-/// validator reads Quiet for the votes it cannot hear.
 #[test]
 fn a_node_that_is_not_voting_says_so() {
     let unheard = |key: [u8; 2]| Peer {
@@ -102,9 +92,6 @@ fn a_node_that_is_not_voting_says_so() {
     }
 }
 
-/// The strip's column keeps a 16 px gutter from the column before it:
-/// this node's Address cell fills to its edge (its address cut short, then
-/// "this node"), and the strip drawn on from there read as one with it.
 #[test]
 fn the_strip_keeps_a_gutter_from_this_nodes_address() {
     use view::wire::{ContainerNode, Node};
@@ -128,13 +115,10 @@ fn the_strip_keeps_a_gutter_from_this_nodes_address() {
     assert_eq!(cx.styles()[column.style].padding.left, Some(px(16.).into()));
 }
 
-/// The table's least width, as the wire carries it.
 fn table_min_width(cx: &TestAppContext) -> serde_json::Value {
     serde_json::to_value(cx.style("nodes-table").min_size.width).unwrap()
 }
 
-/// Where row `row`'s strip sits and its marks' gap: `true` where it is on
-/// a line of its own under the row's cells.
 fn strip_of(cx: &TestAppContext, row: &str) -> (bool, serde_json::Value) {
     use view::wire::Node;
     fn marks(node: &Node) -> Option<&view::wire::ContainerNode> {
@@ -156,12 +140,6 @@ fn strip_of(cx: &TestAppContext, row: &str) -> (bool, serde_json::Value) {
     (below, serde_json::to_value(gap).unwrap())
 }
 
-/// As the sheet narrows, the strip's gaps close a pixel at a time; where
-/// even the narrowest does not fit beside the other columns, the strip
-/// goes on a line of its own under each row's cells, and its name under
-/// the column names. It never leaves: at the app's narrowest layout (480),
-/// Key, Height, Behind and Status fit the sheet less its inset and gutter
-/// (432), with the strip under them.
 #[test]
 fn a_narrow_sheet_moves_the_strip_under_its_row() {
     let (mut cx, _) = voting(THIS, seen(4200));
@@ -178,11 +156,9 @@ fn a_narrow_sheet_moves_the_strip_under_its_row() {
     assert_eq!(at(&mut cx, 1072.), (beside, gap("2px")));
     assert_eq!(at(&mut cx, 1010.), (beside, gap("2px")));
     assert_eq!(at(&mut cx, 1009.), (beside, gap("1px")));
-    // the column is kept as wide as its name, 41 characters of mono caption
     assert_eq!(at(&mut cx, 959.), (beside, gap("1px")));
     assert_eq!(texts_of(&cx, "nodes-columns")[2], label);
     assert_eq!(table_min_width(&cx), serde_json::json!("911px"));
-    // Address stays: under the row, the strip loses nothing
     assert_eq!(at(&mut cx, 958.), (below, gap("3px")));
     assert!(cx.has_text("10.0.0.1:4000") && cx.has_text("since 3,871"));
     assert_eq!(
@@ -200,7 +176,6 @@ fn a_narrow_sheet_moves_the_strip_under_its_row() {
         texts_of(&cx, "nodes-row-3"),
         ["0102", "—", "—", "—", "Doesn't propose"]
     );
-    // a resident's line goes under its row as a validator's strip does
     let Some(view::wire::Node::Container(resident)) = cx.find("nodes-row-3") else {
         panic!("no nodes-row-3");
     };
@@ -212,9 +187,6 @@ fn a_narrow_sheet_moves_the_strip_under_its_row() {
     assert!(cx.has_text("10.0.0.1:4000"));
 }
 
-/// A refusal after an answer (a node restarting past the app's retries, a
-/// dropped link) keeps the votes on screen and is logged; only a node that
-/// does not serve `chain.network` clears them.
 #[test]
 fn a_refusal_after_an_answer_keeps_the_votes() {
     let (mut cx, ticks) = voting(THIS, seen(4200));
@@ -240,8 +212,6 @@ fn a_refusal_after_an_answer_keeps_the_votes() {
     assert!(cx.has_text(NO_NETWORK) && !cx.has_text("voted"));
 }
 
-/// A node that does not serve `chain.network` says so in one line over
-/// empty cells, and logs it once.
 #[test]
 fn a_node_without_the_network_says_so_and_logs_once() {
     let mut cx = TestAppContext::new();
@@ -277,7 +247,6 @@ fn a_node_without_the_network_says_so_and_logs_once() {
     );
 }
 
-/// Every status badge's text colour, in row order.
 fn badge_inks(cx: &TestAppContext, node: &view::wire::Node, inks: &mut Vec<view::Hsla>) {
     use view::wire::{ElementIdWire, Node};
     if let Node::Container(container) = node {
@@ -292,9 +261,6 @@ fn badge_inks(cx: &TestAppContext, node: &view::wire::Node, inks: &mut Vec<view:
     }
 }
 
-/// A node that stops answering keeps its last numbers and says so after
-/// three silent seconds; the last block ages meanwhile. Its rows are what
-/// it said then: every badge goes grey under the last answer's age.
 #[test]
 fn a_silent_node_reads_not_answering() {
     let (mut cx, ticks) = ready();

@@ -11,7 +11,6 @@ struct Streams {
     values: Vec<u64>,
     pending_after_item: bool,
     #[serde(skip)]
-    /// Keeps the stream task alive.
     _task: Option<Task<()>>,
 }
 impl View for Streams {

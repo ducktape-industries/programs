@@ -439,7 +439,6 @@ fn a_role_motion_sends_its_op_to_the_role_once_enacted_and_takes_its_refusal() {
     assert_eq!(sent.len(), 1);
     assert_eq!(sent[0].target, MockHost::role(abi::role::PROGRAMS));
     assert_eq!(sent[0].payload, op);
-    // its refusal comes back as the reply, and the vote that enacted it stands
     assert!(sent[0].reply);
     let ctx = store.exec(env(Origin::Program(MockHost::role(abi::role::PROGRAMS))));
     let refused = ::program::Outcome::Rejected(Error::new(code::NOT_FOUND, "no such change"));
@@ -562,11 +561,7 @@ fn role_asks_the_program_bound_to_the_validators_role() {
     );
 }
 
-// ---- who votes for which validator ----
-
-/// Ada, a user: key 20 is her device.
 const ADA: AccountNumber = 10;
-/// Bob, a user who manages no validator: key 21 is his device.
 const BOB: AccountNumber = 14;
 
 fn profile(number: AccountNumber, kind: Kind) -> Profile {
@@ -577,7 +572,6 @@ fn profile(number: AccountNumber, kind: Kind) -> Profile {
     }
 }
 
-/// An agent Ada manages, in `standing`.
 fn agent(number: AccountNumber, standing: Standing) -> Profile {
     profile(
         number,
@@ -590,8 +584,6 @@ fn agent(number: AccountNumber, standing: Standing) -> Profile {
     )
 }
 
-/// Ada and Bob holding their devices, and each `(key, account)` of
-/// `held`; `agents` are Ada's agents.
 fn roster(held: &[(u8, AccountNumber)], agents: Vec<Profile>) -> Roster {
     let mut roster = Roster::from(agents);
     for user in [ADA, BOB] {
@@ -605,14 +597,12 @@ fn roster(held: &[(u8, AccountNumber)], agents: Vec<Profile>) -> Roster {
     roster
 }
 
-/// Validators 1 to 4, Ada's agent 11 holding validator 1's node key.
 fn delegated() -> MockHost {
     let store = found(&[1, 2, 3, 4], 8).unwrap();
     store.identity(roster(&[(1, 11)], vec![agent(11, Standing::Active)]));
     store
 }
 
-/// A frame from device key `n`, acting as `account`, as the host resolves it.
 fn device(store: &MockHost, n: u8, account: AccountNumber, motion: Motion) -> Result<Voted, Error> {
     let frame = Env {
         sender: Some(Principal::Account(account)),
@@ -647,7 +637,6 @@ fn counted(votes: u64) -> Voted {
     Voted::Counted { votes, needed: 3 }
 }
 
-/// A `Role` motion of `op` for the program bound to the programs role.
 fn programs_role(op: &programs::Op) -> Motion {
     Motion::Role {
         role: abi::role::PROGRAMS.into(),
@@ -655,7 +644,6 @@ fn programs_role(op: &programs::Op) -> Motion {
     }
 }
 
-/// A `programs` op scheduling chat's removal at `height`.
 fn schedule(height: u64) -> Motion {
     let op = programs::Op::Schedule(Scheduled {
         height,
@@ -666,7 +654,6 @@ fn schedule(height: u64) -> Motion {
 
 #[test]
 fn a_validator_votes_as_itself_and_asks_identity_nothing() {
-    // no identity is seated: any ask of it would be refused
     let store = founded();
     let open = Motion::Door { open: true };
     let one = Voted::Counted {
@@ -700,7 +687,6 @@ fn a_suspended_agent_adds_no_voice_and_any_other_refusal_fails_the_vote() {
     store.identity(roster(&[(1, 11), (2, 12)], agents));
     assert_eq!(device(&store, 20, ADA, open.clone()).unwrap(), counted(1));
     assert_eq!(voices(&store, 20), [key(1)]);
-    // an identity that refuses for any other reason fails the vote
     store.borrow_mut().siblings.insert(
         MockHost::role(abi::role::IDENTITY),
         Box::new(|_, _| Err(Error::new(code::UNSUPPORTED, "not answered here"))),
@@ -712,7 +698,6 @@ fn a_suspended_agent_adds_no_voice_and_any_other_refusal_fails_the_vote() {
 #[test]
 fn a_stranger_is_refused_and_a_node_key_on_a_user_votes_only_as_itself() {
     let store = found(&[1, 2, 3, 4], 8).unwrap();
-    // validator 2's node key on Ada's own account, not on an agent
     store.identity(roster(&[(2, ADA)], vec![]));
     let open = Motion::Door { open: true };
     let bob = device(&store, 21, BOB, open.clone()).unwrap_err();
@@ -748,7 +733,6 @@ fn a_key_taken_off_the_agent_casts_no_new_votes_and_its_votes_stand() {
     assert_eq!(vote(&store, 2, open).unwrap(), counted(2));
 }
 
-/// A `programs` op cancelling chat's change at `height`.
 fn cancel(height: u64) -> Motion {
     let op = programs::Op::Cancel {
         height,
@@ -757,14 +741,9 @@ fn cancel(height: u64) -> Motion {
     programs_role(&op)
 }
 
-/// valset reads no role's op: one too late to land, one the programs would refuse and bytes
-/// that are no op are counted like any other, for the role's program to refuse when the
-/// vote passes. Only a role the network does not bind is refused, before whom the frame
-/// votes for is asked.
 #[test]
 fn a_role_motion_is_counted_unread_and_refused_only_for_an_unbound_role() {
     let store = delegated();
-    // the block is at height 3
     assert_eq!(vote(&store, 1, schedule(2)).unwrap(), counted(1));
     assert_eq!(vote(&store, 1, cancel(1)).unwrap(), counted(1));
     let bad = programs_role(&programs::Op::Schedule(Scheduled {
@@ -786,7 +765,6 @@ fn a_role_motion_is_counted_unread_and_refused_only_for_an_unbound_role() {
         refused(&store, 1, Op::Vote(unbound.clone())),
         code::UNSUPPORTED
     );
-    // no identity is seated here, so asking it would be refused another way
     let store = founded();
     let unread = device(&store, 20, ADA, unbound).unwrap_err();
     assert_eq!(unread.code, code::UNSUPPORTED);
@@ -864,9 +842,7 @@ fn motions_list_what_vote_stored_and_voices_are_the_set_vote_uses() {
             },
         ]
     );
-    // past the change's height it still waits: the programs refuse it when it passes
     assert_eq!(motions(&store, 9).1.len(), 2);
-    // a voter unseated drops out of the list as out of the tally
     pass(&store, &[1, 2, 3], Motion::Remove { key: key(4) });
     let (needed, pending) = motions(&store, 3);
     assert_eq!(needed, 3);

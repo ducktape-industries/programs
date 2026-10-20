@@ -285,7 +285,6 @@ impl World {
     }
 }
 
-// the agent's manager narrows whom it answers to itself alone: with no list it answers anyone
 fn manager_only(world: &World) {
     let key = crate::agent_key(world.agent);
     set_list(&world.chain, ADA, PROGRAM, key, ::program::Ownership::Owner);

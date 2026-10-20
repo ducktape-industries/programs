@@ -16,11 +16,8 @@ pub(crate) mod photo;
 mod policies;
 mod shared;
 
-/// The left menu's width.
 const NAV_W: Pixels = px(200.);
-/// The widest a pane's rows run.
 const PANE_W: Pixels = px(720.);
-/// A field beside its button in a setting row.
 const FIELD_W: Pixels = px(220.);
 
 pub(crate) fn render(view: &Settings, cx: &mut Context<Settings>) -> impl IntoElement {
@@ -75,7 +72,6 @@ fn nav(
         .position(|section| *section == shown)
         .unwrap_or_default();
     let picked = sections.clone();
-    // one Tab stop, a column: ↑ ↓ open the next section
     design::composite("settings/nav", Role::TabList, "Settings")
         .active(at, sections.len())
         .wrap()
@@ -221,7 +217,6 @@ fn invites(
     body.child(minted).into_any_element()
 }
 
-/// A pane's small mono label above its rows.
 fn eyebrow(id: impl Into<String>, text: &str, theme: &Theme) -> Stateful<Div> {
     div()
         .id(id.into())
@@ -232,7 +227,6 @@ fn eyebrow(id: impl Into<String>, text: &str, theme: &Theme) -> Stateful<Div> {
         .child(text.to_owned())
 }
 
-/// A group's heading inside a pane, a hairline under it.
 fn group(id: impl Into<String>, title: &str, count: Option<usize>, theme: &Theme) -> Stateful<Div> {
     div()
         .id(id.into())
@@ -258,18 +252,15 @@ fn group(id: impl Into<String>, title: &str, count: Option<usize>, theme: &Theme
         }))
 }
 
-/// A full-width column of rows.
 fn column(id: impl Into<String>) -> Stateful<Div> {
     div().id(id.into()).flex().flex_col().gap_2().w_full()
 }
 
-/// A form's problem, if it has one, in the refusal box under it.
 fn problem(key: &str, form: &Form, empty: &str, theme: &Theme) -> Option<Stateful<Div>> {
     let problem = form.problem.as_ref()?;
     Some(refusal_line(key, &words::problem_text(problem, empty), theme).my(design::space::SM))
 }
 
-/// A refused write or mint, under the control that sent it.
 fn refusal_line(key: &str, sentence: &str, theme: &Theme) -> Stateful<Div> {
     div()
         .id(format!("settings/{key}/refused"))
@@ -294,8 +285,6 @@ fn secondary(id: impl Into<String>, text: impl Into<String>, theme: &Theme) -> S
         .child(text.into())
 }
 
-/// A text field over `form`: `name` says what it is for, `hint` is drawn
-/// in it while it is empty.
 fn field(id: &str, name: &str, hint: &str, form: &Form, theme: &Theme) -> Input {
     Input::new(id.to_owned(), &form.text, name.to_owned())
         .h(design::size::CONTROL)
@@ -308,7 +297,6 @@ fn field(id: &str, name: &str, hint: &str, form: &Form, theme: &Theme) -> Input 
         .disabled(form.busy)
 }
 
-/// A form's button: disabled, and saying so, while its submit is in flight.
 fn submit(
     id: &str,
     label: &str,
@@ -328,7 +316,6 @@ fn submit(
         .when(!busy, |b| b.on_click(pressed))
 }
 
-/// A bordered button on the window's own ground.
 fn button(id: impl Into<String>, label: impl Into<String>, theme: &Theme) -> Stateful<Div> {
     let theme = *theme;
     div()
@@ -349,7 +336,6 @@ fn button(id: impl Into<String>, label: impl Into<String>, theme: &Theme) -> Sta
         .child(label.into())
 }
 
-/// The one button a pane leads with: the ink fill.
 fn primary(id: impl Into<String>, label: impl Into<String>, theme: &Theme) -> Stateful<Div> {
     let button = button(id, label, theme)
         .bg(theme.primary)

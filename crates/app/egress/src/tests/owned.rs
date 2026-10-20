@@ -99,7 +99,6 @@ fn a_service_is_its_registrants_and_its_policy_decides_who_assigns() {
     let ownership::Party::Account(owner) = record.owner else {
         panic!("an account registered it");
     };
-    // the access list lets anyone assign; the service's policy is what narrows it now
     let anyone = access::Op::Set {
         program: PROGRAM.into(),
         key: service_key(SERVICE),

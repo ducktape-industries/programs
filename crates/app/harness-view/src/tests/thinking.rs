@@ -86,12 +86,10 @@ fn a_visitor_reads_the_setup_and_may_open_its_editor() {
     let (mut cx, _) = seated(Net::default(), ADA);
     cx.simulate_click("agent-12");
     cx.run_until_parked();
-    // a visitor's setup is folded until a press opens it
     assert!(!cx.has_text("Model's default"));
     cx.simulate_click("setup");
     cx.run_until_parked();
     assert!(cx.has_text("Model's default"), "{:?}", cx.texts());
-    // the file's list, not the view, decides whose save lands
     assert!(cx.find("setup-edit").is_some(), "{:?}", cx.texts());
 }
 

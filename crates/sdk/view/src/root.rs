@@ -131,16 +131,9 @@ pub trait View: Render + Serialize + DeserializeOwned + Default {
     /// # fn main() {}
     /// ```
     const WINDOW_WIDTH: Option<u32> = None;
-    /// The view's state on first mount, before it is attached. State only:
-    /// what it follows and asks starts in [`attach`](View::attach).
     fn new(_window: &mut Window, _cx: &mut Context<Self>) -> Self {
         Self::default()
     }
-    /// Joins the host: every subscription, follower and read the view keeps
-    /// running. Called once per mount, after [`new`](View::new) on a first
-    /// mount and after the snapshot is decoded on a restore, so what is
-    /// started here survives a redeploy. It also repairs what a snapshot
-    /// cannot carry (a request in flight, a menu half open).
     fn attach(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {}
 }
 /// Data the view asked for, in the states it can be in. `Loading` and
@@ -197,7 +190,6 @@ enum LoadableSnapshot<T> {
     Failed { code: String, message: String },
 }
 
-/// A finished load: its value, or the refusal in its place.
 impl<T> From<Result<T, Error>> for Loadable<T> {
     fn from(result: Result<T, Error>) -> Self {
         match result {
@@ -439,7 +431,6 @@ impl<V: 'static> Context<'_, V> {
     ) -> Task<()> {
         self.spawn(async move |this, cx| {
             let result = work.await;
-            // the view is gone: nothing is waiting for the answer
             let _ = this.update(cx, |view, cx| land(view, result, cx));
         })
     }
@@ -465,7 +456,6 @@ mod follow_tests {
     use serde::{Deserialize, Serialize};
     use std::{cell::Cell, rc::Rc};
 
-    /// A block at `height` that wrote nothing a query declares.
     fn block(height: u64) -> Option<Change> {
         Some(Change {
             height,
@@ -473,8 +463,6 @@ mod follow_tests {
         })
     }
 
-    /// Counts the heads a program's live stream announces, for as long as
-    /// the view runs.
     #[derive(Default, Serialize, Deserialize)]
     struct Heads {
         seen: usize,
@@ -499,8 +487,6 @@ mod follow_tests {
         }
     }
 
-    /// Nothing in the view holds the follower: `detach` keeps it for as
-    /// long as the view runs, and releasing the view unsubscribes.
     #[test]
     fn a_detached_follower_hears_every_item_until_the_view_is_released() {
         let mut cx = TestAppContext::new();
@@ -526,7 +512,6 @@ mod follow_tests {
         );
     }
 
-    /// Follows the same stream with the task kept, so the view can end it.
     #[derive(Default, Serialize, Deserialize)]
     struct Kept {
         seen: usize,
@@ -565,7 +550,6 @@ mod follow_tests {
         assert!(!feed.subscribed(), "dropping the task unsubscribed");
     }
 
-    /// The log line carries the view's own `NAME`: no call site spells it.
     #[test]
     fn log_refused_names_the_view() {
         let mut cx = TestAppContext::new();
@@ -579,7 +563,6 @@ mod follow_tests {
         );
     }
 
-    /// A program that keeps one number.
     struct Counter;
     impl Program for Counter {
         const NAME: &'static str = "counter";
@@ -596,7 +579,6 @@ mod follow_tests {
         }
     }
 
-    /// Shows the counter, read again on each of its heads.
     #[derive(Default, Serialize, Deserialize)]
     struct Count {
         value: Loadable<u64>,
@@ -630,9 +612,6 @@ mod follow_tests {
         }
     }
 
-    /// A head whose re-read lands the number already on screen draws
-    /// nothing: neither the item nor the landing renders. A head that moves
-    /// the number draws it once.
     #[test]
     fn a_head_whose_reread_lands_the_same_value_draws_nothing() {
         let mut cx = TestAppContext::new();
@@ -659,7 +638,6 @@ mod follow_tests {
         assert_eq!(cx.renders() - renders, 1, "a moved count draws once");
     }
 
-    /// The id of the counter read the last frame asked.
     fn asked(cx: &TestAppContext) -> u64 {
         let asks = cx.last_frame().requests.iter();
         let mut reads = asks.filter(|request| request.kind == "program.query");
@@ -674,8 +652,6 @@ mod follow_tests {
         }
     }
 
-    /// The one rule of `load`: a value on screen stays there, `Reloading`,
-    /// until the answer lands, and asking again draws nothing.
     #[test]
     fn a_load_on_a_ready_slot_keeps_it_shown_until_the_answer_lands() {
         let mut cx = TestAppContext::new();
@@ -702,10 +678,6 @@ mod follow_tests {
         assert_eq!(cx.renders(), renders + 1, "the new value draws once");
     }
 
-    /// A slot with nothing to show says it is loading, and the view renders
-    /// for that once: the caller writes no `cx.notify()` beside the `load`.
-    /// A slot the view blanks first (`Loadable::Idle`, a line of its own)
-    /// is such a slot.
     #[test]
     fn a_load_on_an_idle_slot_shows_loading_and_notifies_once() {
         let mut cx = TestAppContext::new();
@@ -728,8 +700,6 @@ mod follow_tests {
         assert_eq!(cx.renders(), renders + 2, "and its answer once");
     }
 
-    /// The view declares no `host`: a refused re-read reaches the view
-    /// itself, in the slot it re-read, not a log it cannot write.
     #[test]
     fn a_refused_load_lands_its_refusal_in_the_view() {
         let mut cx = TestAppContext::new();
@@ -747,10 +717,6 @@ mod follow_tests {
         assert!(cx.has_text("the counter moved on"), "{:?}", cx.texts());
     }
 
-    /// Two reads of one value are out; the host answers the newer first
-    /// (the older was retrying a transport failure). The older answer must
-    /// not land over the newer one: in a `load` slot the newer read
-    /// cancelled it, and so does a `land` task stored in its place.
     #[test]
     fn a_late_answer_never_lands_over_a_newer_one() {
         let mut cx = TestAppContext::new();
@@ -771,7 +737,6 @@ mod follow_tests {
         };
         let first = query(&cx);
         cx.tick(vec![answer(first[0], 0)]);
-        // a load and a land go out, then a newer pair replaces them
         let read = |cx: &mut TestAppContext| {
             cx.update(&entity, |view, _, cx| {
                 view.read(cx);
@@ -787,10 +752,8 @@ mod follow_tests {
         let older = read(&mut cx);
         let newer = read(&mut cx);
         assert_eq!((older.len(), newer.len()), (2, 2), "{older:?} {newer:?}");
-        // the loads: the newer lands, then the older
         cx.tick(vec![answer(newer[0], 2), answer(older[0], 1)]);
         entity.read(|view| assert_eq!(view.value.ready(), Some(&2), "{:?}", view.value));
-        // the lands: the newer lands, then the older
         cx.tick(vec![answer(newer[1], 4), answer(older[1], 3)]);
         entity.read(|view| assert_eq!(view.value.ready(), Some(&40), "{:?}", view.value));
     }

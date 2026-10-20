@@ -32,7 +32,6 @@ pub(super) fn page(
     let advance = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.advance(cx));
     let steps = draft.steps();
     let done = steps.iter().filter(|(_, done)| *done).count();
-    // how far a create got, once its first op landed
     let progress = (!draft.again && draft.created.is_some()).then(|| {
         let next = steps.iter().find(|(_, done)| !done).map(|(what, _)| *what);
         let mut words = format!("{done} of {} sent", steps.len());
@@ -74,7 +73,6 @@ pub(super) fn page(
         .into_any_element()
 }
 
-/// A field's label, over what it holds.
 fn labelled(label: &'static str, held: impl IntoElement, theme: &Theme, ladder: &Ladder) -> Div {
     div()
         .flex()
@@ -187,8 +185,6 @@ fn fields(
     })
 }
 
-/// Harness's model records, one pick each: its id, its service and window, how many member
-/// nodes serve it.
 fn models(
     view: &Agents,
     cx: &mut Context<Agents>,
@@ -250,7 +246,6 @@ fn models(
         .into_any_element()
 }
 
-/// One of a few choices, its list field under it once "Listed…" is picked.
 #[allow(clippy::too_many_arguments)]
 fn choice<T: Copy + PartialEq + 'static>(
     id: &'static str,
@@ -340,8 +335,6 @@ fn answers(
     )
 }
 
-/// Who may change the configuration file: its manager alone, or the accounts listed too. Left
-/// as it opened, nothing is sent.
 fn changers(
     view: &Agents,
     cx: &mut Context<Agents>,

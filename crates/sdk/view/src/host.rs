@@ -28,9 +28,7 @@ pub fn malformed(error: String) -> Error {
     Error::new(::error::code::UNEXPECTED_REPLY, error)
 }
 
-/// A reply of another variant than the question asks for: the program
-/// answered something else.
-fn wrong_reply() -> Error {
+fn unexpected_reply_variant() -> Error {
     malformed("the program answered another question".into())
 }
 
@@ -58,19 +56,11 @@ pub async fn all_pages<T, F: Future<Output = Result<Page<T>, Error>>>(
     Ok(rows)
 }
 
-/// What a read of a cursored listing brings: the page after a cursor, or
-/// the listing from its start and how many pages that was.
 pub(crate) enum Landed<T> {
     Next(Page<T>),
     Again(Page<T>, usize),
 }
 
-/// The one read of a cursored listing: the page after `after` alone, or
-/// with no cursor the listing from its start, `pages` pages or as many as
-/// it has. A cursor refused `stale` was handed out before the listing was
-/// rewritten, whichever page it asks for: its program says to start the
-/// listing over, so the walk does, from the first page, which carries no
-/// cursor to refuse.
 pub(crate) async fn walk<T, F: Future<Output = Result<Page<T>, Error>>>(
     mut ask: impl FnMut(Option<Vec<u8>>) -> F,
     pages: usize,
@@ -140,8 +130,6 @@ impl Host {
         registry.pending.insert(id, slot.clone());
         (id, slot)
     }
-    /// A request still in the outbox never reaches the host: it leaves
-    /// the outbox, and no cancel follows it for an id the host never saw.
     fn close(&self, id: u64) {
         let mut registry = self.0.borrow_mut();
         let open = registry.pending.remove(&id).is_some();
@@ -192,7 +180,7 @@ impl Host {
         ask: A,
     ) -> impl Future<Output = Result<A::Reply, Error>> + 'static + use<A> {
         let reply = self.ask::<methods::Query<A::Program>>(ask.into());
-        async move { A::answer(reply.await?).ok_or_else(wrong_reply) }
+        async move { A::answer(reply.await?).ok_or_else(unexpected_reply_variant) }
     }
     /// A cursored listing of a program, read whole: `ask` is given the
     /// cursor of each page (`None` first, then each page's `next`) and
@@ -257,8 +245,6 @@ impl Host {
             .ask(D::KIND, &D::encode_request(&request));
         self.remember(id, &request);
     }
-    /// The request as text, for a test's "unhandled request" panic. Views
-    /// run as wasm, where nothing reads it, so they skip the formatting.
     fn remember(&self, id: u64, request: &impl std::fmt::Debug) {
         if cfg!(not(target_arch = "wasm32")) {
             self.0
@@ -303,7 +289,6 @@ impl Host {
                     .is_some_and(|waiting| waiting.will_wake(waker))
         })
     }
-    /// What the view waits for on request `id`.
     pub(crate) fn shape(&self, id: u64) -> Shape {
         match self.0.borrow().pending.get(&id) {
             Some(slot) if slot.borrow().stream => Shape::Subscription,
@@ -313,7 +298,6 @@ impl Host {
     }
 }
 
-/// How a request waits: for one answer, for many, or for none.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Shape {
     Ask,
@@ -321,7 +305,6 @@ pub(crate) enum Shape {
     Notify,
 }
 
-/// The host's eventual answer to a [`Host::ask`].
 pub(crate) struct Response {
     id: u64,
     slot: Rc<RefCell<Slot>>,
@@ -353,7 +336,6 @@ impl Future for Response {
     }
 }
 
-/// Every answer the host sends to a [`Host::subscribe`], until it closes.
 pub(crate) struct Subscription {
     id: u64,
     slot: Rc<RefCell<Slot>>,
@@ -403,8 +385,6 @@ impl Host {
         registry.cancels.drain(..).collect()
     }
 
-    /// Ends a stream: its subscriber reads `None` next; an id nobody waits
-    /// for is ignored.
     pub(crate) fn close_stream(&self, id: u64) {
         let slot = self.0.borrow_mut().pending.remove(&id);
         if let Some(slot) = slot {
@@ -416,7 +396,6 @@ impl Host {
         }
     }
 
-    /// Delivers one answer; an id nobody waits for is dropped.
     pub(crate) fn fulfill(&self, id: u64, answer: Answer, done: bool) {
         let slot = {
             let mut registry = self.0.borrow_mut();
@@ -477,7 +456,6 @@ mod ask_tests {
         }
     }
 
-    /// A table as a program declares one: `#[reads]` asks it `owns` alone.
     struct Table(&'static str);
     impl Table {
         fn owns(&self, key: &[u8]) -> bool {
@@ -509,12 +487,6 @@ mod ask_tests {
         Items { after: Option<Vec<u8>> },
     }
 
-    /// A block's change touches the questions that read a table it wrote
-    /// to, asked of the query or of its ask type alike, as a block of the
-    /// program the follower names: the same key from another program's
-    /// block touches nothing, and a question answered partly from that
-    /// program's tables is touched by its blocks to those. A question that
-    /// declares nothing is touched by every block.
     #[test]
     fn a_change_touches_the_questions_that_read_what_it_wrote() {
         let change = crate::methods::Change {
@@ -555,9 +527,6 @@ mod ask_tests {
         Items(::store::PageResponse<u8>),
     }
 
-    /// Reads the shop's items whole with `query_all`, the host answering
-    /// each page with what `page` says for its cursor: the rows, and the
-    /// cursor of every page asked, in order.
     fn items(
         mut page: impl FnMut(Option<Vec<u8>>) -> Result<::store::PageResponse<u8>, super::Error>,
     ) -> (Result<Vec<u8>, super::Error>, Vec<Option<u8>>) {
@@ -583,7 +552,6 @@ mod ask_tests {
         panic!("the listing never ended: asked {asked:?}");
     }
 
-    /// Items 0..10, three a page.
     fn listing(after: Option<Vec<u8>>) -> Result<::store::PageResponse<u8>, super::Error> {
         let start = after.map_or(0, |cursor| cursor[0]);
         let end = (start + 3).min(10);
@@ -594,8 +562,6 @@ mod ask_tests {
         })
     }
 
-    /// The closure is handed `None`, then each page's `next`, and the rows
-    /// of every page come back as one list.
     #[test]
     fn query_all_follows_the_cursor_to_the_end() {
         let (all, asked) = items(listing);
@@ -603,13 +569,10 @@ mod ask_tests {
         assert_eq!(asked, [None, Some(3), Some(6), Some(9)]);
     }
 
-    /// `query_all` is `all_pages`' walk: a cursor the program refuses
-    /// `stale` starts the listing over, and the refusal is never the answer.
     #[test]
     fn a_write_between_two_pages_starts_query_all_over() {
         let mut written = false;
         let (all, asked) = items(|after| {
-            // the write lands once, after the first page is answered
             if after.is_some() && !std::mem::replace(&mut written, true) {
                 return Err(super::Error::new(
                     ::error::code::STALE,
@@ -622,8 +585,6 @@ mod ask_tests {
         assert_eq!(asked, [None, Some(3), None, Some(3), Some(6), Some(9)]);
     }
 
-    /// Asks `ask` and answers it `said`: the bytes it sent, and what the
-    /// asker got.
     fn asked<A: program::Ask + 'static>(
         ask: A,
         said: Said,
@@ -636,8 +597,6 @@ mod ask_tests {
         (request.payload, futures::executor::block_on(answer))
     }
 
-    /// A question asked alone is the program's own query on the wire, and
-    /// gets the reply that answers it; another reply is refused as such.
     #[test]
     fn a_typed_ask_sends_the_query_and_reads_its_own_reply() {
         let (sent, price) = asked(ask::Price { item: "tea".into() }, Said::Price(3));

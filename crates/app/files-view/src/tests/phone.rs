@@ -72,7 +72,6 @@ fn an_image_screen_shows_its_picture() {
 #[test]
 fn an_empty_folder_says_what_would_fill_it() {
     let net = seeded();
-    // the newest snapshot's byline is drawn: its time pinned as the seed's
     net.at(T0 + 240_000);
     commit(
         &net,
@@ -106,8 +105,6 @@ fn the_actions_sheet_offers_the_folders_writes_and_back_closes_it() {
     );
 }
 
-/// The host's capsule beside the title row draws `ellipsis`: the page's
-/// own Actions draw `ellipsis-vertical`, so the two never read as one.
 #[test]
 fn the_actions_control_is_not_drawn_as_the_capsules_ellipsis() {
     let net = seeded();
@@ -261,7 +258,6 @@ fn every_screen_and_sheet_fits_a_phone() {
     let mut cx = phone(&net);
     sweep(&mut cx, |cx| {
         tap(cx, "files/place/home");
-        // the folder's writes, and a name its field refuses
         tap(cx, "files/actions");
         tap(cx, "files/begin/new-folder");
         cx.simulate_input("files/write/name", "a/b");

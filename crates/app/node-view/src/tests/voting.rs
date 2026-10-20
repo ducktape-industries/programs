@@ -20,12 +20,10 @@ fn entry(program: &str, code: [u8; 32]) -> Entry {
     }
 }
 
-/// What the programs role runs: chat and valset, on code NOW.
 fn roster() -> Vec<Entry> {
     vec![entry("chat", NOW), entry("valset", NOW)]
 }
 
-/// valset at its new code at `height`.
 fn set_valset(height: u64) -> Motion {
     let op = programs::Op::Schedule(Scheduled {
         height,
@@ -37,9 +35,6 @@ fn set_valset(height: u64) -> Motion {
     }
 }
 
-/// The sheet for a reader whose seated key is `signer`: valset answering
-/// the set, the reader's voices (THIS votes for itself), and the motions
-/// that wait; the programs role its roster and `scheduled`; a vote counted.
 pub(super) fn sheet(
     signer: &[u8],
     needed: u64,
@@ -49,7 +44,6 @@ pub(super) fn sheet(
     sheet_view(signer, needed, pending, scheduled).0
 }
 
-/// [`sheet`], and the view, for a test that sets what a read left.
 pub(super) fn sheet_view(
     signer: &[u8],
     needed: u64,
@@ -61,7 +55,6 @@ pub(super) fn sheet_view(
     sheet_over(cx, signer, needed, pending, scheduled)
 }
 
-/// [`sheet_view`] over a node the test seated.
 fn sheet_over(
     mut cx: TestAppContext,
     signer: &[u8],
@@ -127,8 +120,6 @@ pub(super) fn submitted(cx: &TestAppContext) -> Vec<Op> {
     cx.host().requests::<Submit<Valset>>()
 }
 
-/// Account 11, the agent `validator vps`, which account 10, `ada`,
-/// manages.
 pub(super) fn operators() -> [identity::Profile; 2] {
     let agent = identity::Profile {
         number: 11,
@@ -148,8 +139,6 @@ pub(super) fn operators() -> [identity::Profile; 2] {
     [agent, ada]
 }
 
-/// A key on an agent reads who operates it; a key on no account, or on an
-/// agent that does not act now (refused `unauthorized`), reads as before.
 #[test]
 fn a_row_says_who_operates_a_node_on_an_agent() {
     let mut cx = TestAppContext::new();
@@ -182,8 +171,6 @@ fn a_row_says_who_operates_a_node_on_an_agent() {
     assert!(cx.has_text("10.0.0.1:4000"));
 }
 
-/// Identity refusing one row's operator is that row's line, with the
-/// reason; the list stands.
 #[test]
 fn a_refused_operator_read_marks_its_row_and_keeps_the_list() {
     let mut cx = TestAppContext::new();
@@ -237,12 +224,10 @@ fn a_reader_who_votes_gets_each_rows_motions_and_the_door() {
     ] {
         assert!(cx.find(id).is_some(), "{id}: {:?}", cx.texts());
     }
-    // a program is changed in Explorer: no form of its own here
     assert!(cx.find("nodes-change").is_none() && cx.find("nodes-change-code").is_none());
     assert!(cx.has_text("Change a program in Explorer, Programs."));
     assert!(cx.find("nodes-promote-0").is_none() && cx.find("nodes-demote-3").is_none());
     assert!(cx.has_text("No motion waits for votes.") && cx.has_text("No change is scheduled."));
-    // one vote of two: cast at once
     cx.simulate_click("nodes-promote-3");
     cx.run_until_parked();
     assert_eq!(
@@ -252,7 +237,6 @@ fn a_reader_who_votes_gets_each_rows_motions_and_the_door() {
         })]
     );
     assert!(cx.has_text("Vote counted: 1 of 2"));
-    // the vote's reply reads the voices again
     let voices = cx
         .host()
         .requests::<Query<Valset>>()
@@ -298,7 +282,6 @@ fn a_waiting_motion_reads_decoded_and_is_voted_with_its_own_bytes() {
             "Vote"
         ]
     );
-    // THIS's vote makes two of two: asked first
     cx.simulate_click("nodes-motion-vote-0");
     cx.run_until_parked();
     cx.simulate_click("nodes-confirm-yes");
@@ -342,7 +325,6 @@ fn a_scheduled_change_says_who_made_it_and_is_cancelled_by_a_vote() {
             "Propose cancel"
         ]
     );
-    // identity names no account 12 here
     assert_eq!(
         texts_of(&cx, "nodes-scheduled-1")[1],
         "by account 12 · validators can cancel for 10 min"
@@ -363,8 +345,6 @@ fn a_scheduled_change_says_who_made_it_and_is_cancelled_by_a_vote() {
     );
 }
 
-/// While the node's status is unread, a scheduled change tells who made it
-/// and no wait: no "0 min", no count from block 0.
 #[test]
 fn a_scheduled_change_tells_no_wait_before_the_status_is_read() {
     let changes = vec![
@@ -530,8 +510,6 @@ fn lanes(op: halo::Op) -> Motion {
     }
 }
 
-/// Until the motions are read (here they are refused), no press votes: a
-/// vote that enacts would go unasked.
 #[test]
 fn no_press_votes_before_the_motions_are_read() {
     let mut cx = TestAppContext::new();
@@ -557,7 +535,6 @@ fn no_press_votes_before_the_motions_are_read() {
     assert!(interactivity.on_click.is_none());
 }
 
-/// valset for a reader whose key THIS votes, its motions refused.
 fn respond_voter(cx: &mut TestAppContext) {
     cx.host().handle::<Query<Valset>>(move |query| {
         Ok(match query {
@@ -572,8 +549,6 @@ fn respond_voter(cx: &mut TestAppContext) {
     });
 }
 
-/// A vote's outcome, in the words both trees show (Expo
-/// `src/write/words.ts`).
 #[test]
 fn a_vote_says_what_it_came_to() {
     let applied = |voted: Voted| Ok(view::testing::applied(abi::encode(&voted)));
@@ -620,7 +595,6 @@ fn a_vote_says_what_it_came_to() {
         ))),
         Err("That didn’t go through: not confirmed".into())
     );
-    // a node's own code refuses the frame: it did not go through
     assert_eq!(
         said(Err(refusal(
             "bad_signature",
@@ -628,7 +602,6 @@ fn a_vote_says_what_it_came_to() {
         ))),
         Err("That didn’t go through: The frame's signature does not verify.".into())
     );
-    // the node failed with the frame in hand: it may have run
     assert_eq!(
         said(Err(refusal(methods::refusal::NODE_FAILED, "the node stopped"))),
         Err(

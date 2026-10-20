@@ -18,7 +18,6 @@ fn the_overview_shows_the_head_and_the_latest_blocks_and_transactions() {
         cx.host().requests::<ChainTx>().is_empty(),
         "the latest transactions are the window's"
     );
-    // the page tabs sit in a named tab list
     let Some(view::wire::Node::Container(bar)) = cx.find("explorer-tabs") else {
         panic!("a tab list");
     };
@@ -33,7 +32,6 @@ fn the_overview_shows_the_head_and_the_latest_blocks_and_transactions() {
         cx.has_text("6f6f6f6f…6f6f"),
         "block 11's hash, shortened: {texts:?}"
     );
-    // blocks 0–10 carry nothing: one quiet line, not eleven rows
     assert!(cx.has_text("0–10 · 11 empty blocks"), "{texts:?}");
     assert!(
         !cx.has_text("6c6c6c6c…6c6c"),
@@ -50,8 +48,6 @@ fn the_overview_shows_the_head_and_the_latest_blocks_and_transactions() {
     );
 }
 
-/// The pages are one tab list: one Tab stop, and → opens the next page
-/// (automatic activation), wrapping from the last to the first.
 #[test]
 fn an_arrow_on_the_pages_opens_the_next_page() {
     let (mut cx, _) = ready();
@@ -82,10 +78,6 @@ fn an_arrow_on_the_pages_opens_the_next_page() {
     );
 }
 
-/// → then ← on the pages comes back to the block the reader left, not to
-/// the Blocks list: an arrow opens a tab's page as it was left (the door's
-/// arrow probe in the census did → ← here and audited the list instead).
-/// A click on a tab still opens its list.
 #[test]
 fn an_arrow_away_and_back_returns_to_the_block_it_left() {
     let (mut cx, _) = ready();
@@ -122,10 +114,6 @@ fn an_arrow_away_and_back_returns_to_the_block_it_left() {
     assert!(cx.find("explorer-blocks").is_some(), "{:?}", cx.texts());
 }
 
-/// Enter or Space on the pages opens the active tab's list, as a click on
-/// the tab does: with an account open, an arrow away and back opens that
-/// account again, and no link on any page leads to the Accounts list, so
-/// without the press the keys never reach the list again.
 #[test]
 fn enter_on_the_accounts_tab_shows_the_accounts_list_again() {
     let (mut cx, _) = ready();
@@ -136,7 +124,6 @@ fn enter_on_the_accounts_tab_shows_the_accounts_list_again() {
     cx.simulate_key_down("explorer-accounts-list", "enter");
     cx.run_until_parked();
     assert!(cx.find("explorer-account").is_some(), "{:?}", cx.texts());
-    // the list left with its focus: Tab reaches the tabs
     cx.simulate_focus("explorer-tabs");
     cx.simulate_key_down("explorer-tabs", "right");
     cx.run_until_parked();
@@ -160,7 +147,6 @@ fn enter_on_the_accounts_tab_shows_the_accounts_list_again() {
             .aria
             .active_descendant
     );
-    // the list is the tab's page now: an arrow away and back stays on it
     cx.simulate_key_down("explorer-tabs", "right");
     cx.simulate_key_down("explorer-tabs", "left");
     cx.run_until_parked();
@@ -169,7 +155,6 @@ fn enter_on_the_accounts_tab_shows_the_accounts_list_again() {
         "{:?}",
         cx.texts()
     );
-    // Space is the same press
     cx.simulate_focus("explorer-accounts-list");
     cx.simulate_key_down("explorer-accounts-list", "enter");
     cx.run_until_parked();
@@ -184,9 +169,6 @@ fn enter_on_the_accounts_tab_shows_the_accounts_list_again() {
     );
 }
 
-/// A restored view keeps each tab's last page along with the page shown:
-/// → then ← after a restore still comes back to the block, not to the
-/// Blocks list.
 #[test]
 fn after_a_restore_an_arrow_away_and_back_returns_to_the_block() {
     let (mut cx, _) = ready();
@@ -213,8 +195,6 @@ fn after_a_restore_an_arrow_away_and_back_returns_to_the_block() {
     assert!(restored.has_text(&abi::hex(&[111; 32])), "block 11's hash");
 }
 
-/// A list is one Tab stop: ↓ moves the active row, Enter opens it; the
-/// rows are options, never focusable, and the first is active on entry.
 #[test]
 fn an_arrow_and_enter_on_the_accounts_opens_the_second_account() {
     let (mut cx, _) = ready();
@@ -252,12 +232,8 @@ fn an_arrow_and_enter_on_the_accounts_opens_the_second_account() {
     );
 }
 
-/// "All blocks →" and "All transactions →" are at least 24 px each way:
-/// the box's own floor, so the bounds the door's AX-017 reads cannot come
-/// in under it, whatever the text inside.
 #[test]
 fn the_overview_links_are_at_least_24_px_each_way() {
-    // a style's length in pixels, as gpui prints it ("24px")
     fn pixels(length: Option<impl std::fmt::Display>) -> Option<f32> {
         length?.to_string().strip_suffix("px")?.parse().ok()
     }
@@ -330,7 +306,6 @@ fn a_transaction_shows_its_block_anchor_signer_and_operation() {
     assert!(cx.has_text("channel") && cx.has_text("#design"));
     assert!(cx.has_text("text") && cx.has_text("hello there"));
     assert!(cx.has_text("Accepted"), "{texts:?}");
-    // the message it emitted, and that one's refused message under it
     assert!(cx.has_text("Messages") && cx.has_text("notify") && cx.has_text("mail"));
     assert!(
         cx.has_text("Rejected") && cx.has_text("the inbox is full") && cx.has_text("capacity"),
@@ -341,9 +316,6 @@ fn a_transaction_shows_its_block_anchor_signer_and_operation() {
     assert!(cx.has_text("2 transactions recorded"), "{:?}", cx.texts());
 }
 
-/// The desktop has no Back: however many pages the reader goes through, it
-/// keeps only the one shown over its list (the phone stacks them for
-/// Back).
 #[test]
 fn the_desktop_keeps_only_the_page_shown_over_its_list() {
     let mut cx = TestAppContext::new();
@@ -361,7 +333,6 @@ fn the_desktop_keeps_only_the_page_shown_over_its_list() {
     cx.simulate_click("explorer-from");
     cx.run_until_parked();
     assert!(cx.has_text("2 transactions recorded"), "{:?}", cx.texts());
-    // one page over the root, not the transaction under the account
     assert_eq!(pages(), (1, Route::Overview, Route::Account(3)));
 }
 
@@ -436,10 +407,6 @@ fn two_like_transactions_are_named_apart_by_their_place() {
     );
 }
 
-/// The node lands the same frame again (the same bytes, so the same hash,
-/// in a later block or twice in one): each row is still its own element,
-/// so the host takes the frame instead of refusing it (a refused frame
-/// ends the view: "duplicate typed element identity among siblings").
 #[test]
 fn a_frame_landed_again_is_a_row_of_its_own() {
     let mut cx = TestAppContext::new();
@@ -517,12 +484,6 @@ fn the_scheduled_changes_survive_a_snapshot() {
     assert!(restored.has_text("Remove") && restored.has_text("at 120"));
 }
 
-/// Narrower than the two panels' minimums together (a 960 px view, less the
-/// scroll bar), the latest transactions go under the latest blocks: a
-/// column, each panel the page's width and its own content's height, so no
-/// stretched gap and no rule left hanging. From 960 they sit side by side as
-/// before, the transactions never narrower than they are alone at the view's
-/// narrowest; narrower, their titles went to nothing.
 #[test]
 fn the_latest_panels_stack_where_the_transactions_would_squeeze() {
     use view::{StyleRefinement, Styled as _, design, px};
@@ -543,13 +504,11 @@ fn the_latest_panels_stack_where_the_transactions_would_squeeze() {
         assert_eq!(style(&cx, "explorer-latest").flex_grow, None, "{width}");
         for panel in ["explorer-latest-blocks", "explorer-latest-txs"] {
             let style = style(&cx, panel);
-            // the page's width: stretched across the column, nothing caps it
             assert_eq!(
                 (style.min_size.width, style.max_size.width),
                 (None, None),
                 "{panel} at {width}"
             );
-            // its own height: nothing grows it down the column
             assert_eq!(style.flex_grow, None, "{panel} at {width}");
             assert_eq!(style.border_widths.right, None, "{panel} at {width}");
         }
@@ -638,7 +597,6 @@ fn the_transactions_list_lowers_only_the_rows_the_host_shows() {
     cx.run_until_parked();
     cx.simulate_click("explorer-tab-transactions");
     cx.run_until_parked();
-    // row `index` is the transaction of block `WINDOW - index`
     let row = |index: usize| format!("explorer-tx-{}-0", WINDOW - index);
     let list = |cx: &TestAppContext| match cx.find("explorer-transactions-list-rows") {
         Some(Node::UniformList {
@@ -660,15 +618,11 @@ fn the_transactions_list_lowers_only_the_rows_the_host_shows() {
     assert_eq!(first.role, Some(view::Role::ListBoxOption));
     assert!(first.aria.active_descendant && !first.focusable);
 
-    // the host scrolled to rows 30..44: they come with a margin, the rows
-    // far above go, the measured row stays
     cx.simulate_range("explorer-transactions-list", 30..44);
     assert!(cx.find(&row(40)).is_some() && cx.find(&row(49)).is_some());
     assert!(cx.find(&row(5)).is_none(), "{:?}", list(&cx));
     assert!(cx.find(&row(0)).is_some(), "the row the host measures");
 
-    // ↓ on the list: the second row is active, and the frame that claims
-    // it carries the scroll to it (the request crosses once)
     cx.simulate_focus("explorer-transactions-list");
     cx.simulate_key_down("explorer-transactions-list", "down");
     let (_, _, request) = list(&cx);
@@ -677,14 +631,11 @@ fn the_transactions_list_lowers_only_the_rows_the_host_shows() {
         Some((1, Strategy::Nearest))
     );
     assert!(cx.interactivity(&row(1)).aria.active_descendant);
-    // the host scrolled there: the rows it left go with the next frame
     cx.simulate_range("explorer-transactions-list", 1..15);
     cx.simulate_key_down("explorer-transactions-list", "down");
     assert!(cx.interactivity(&row(2)).aria.active_descendant);
     assert!(cx.find(&row(40)).is_none(), "{:?}", list(&cx));
 
-    // another page, and back: the list opens at its top, the first row
-    // active, the rows the scroll reached let go
     cx.simulate_click("explorer-tab-blocks");
     cx.run_until_parked();
     cx.simulate_click("explorer-tab-transactions");
@@ -693,11 +644,6 @@ fn the_transactions_list_lowers_only_the_rows_the_host_shows() {
     assert!(cx.find(&row(40)).is_none(), "{:?}", list(&cx));
 }
 
-/// The Transactions list scrolls for its page, so its bar belongs where a
-/// page's is, at the pane's edge beside the rows: the page is no scroller
-/// there (no gutter of its own) and the list reaches the edge, where the
-/// host keeps the bar's gutter beside it. The view writes no room for the
-/// bar; the heading keeps the same inset, so it ends where the rows do.
 #[test]
 fn the_transactions_list_reaches_the_panes_edge_and_writes_no_gutter() {
     use view::wire::Node;
@@ -729,7 +675,6 @@ fn the_transactions_list_reaches_the_panes_edge_and_writes_no_gutter() {
     );
 }
 
-/// An account's activity is its newest page, drawn whole.
 #[test]
 fn an_accounts_activity_and_a_blocks_transactions_are_drawn_whole() {
     let mut cx = TestAppContext::new();

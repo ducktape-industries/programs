@@ -86,12 +86,10 @@ pub struct Stored {
     thread: Option<Seq>,
     reply_count: u64,
     last_reply_seq: Option<Seq>,
-    // each emoji chosen and how many chose it, in emoji order
     reactions: Vec<(String, u64)>,
 }
 
 impl Stored {
-    // The row a read answers.
     pub(crate) fn row(self) -> MsgRow {
         MsgRow {
             text: plain_text(&self.blocks),
@@ -122,7 +120,6 @@ impl Stored {
     }
 }
 
-/// A key part that scans newest first. Its own inverse.
 pub(crate) fn newest_first(n: u64) -> u64 {
     u64::MAX - n
 }
@@ -139,7 +136,6 @@ pub(crate) fn message(ctx: &QueryCtx, channel_id: &str, seq: Seq) -> Result<MsgR
         .ok_or_else(|| not_found(format!("no message {channel_id}/{seq}")))
 }
 
-/// The rows at these addresses; one gone (never, in chat) is skipped.
 pub(crate) fn messages(
     ctx: &QueryCtx,
     at: impl IntoIterator<Item = (ChannelId, Seq)>,
@@ -150,9 +146,6 @@ pub(crate) fn messages(
         .collect()
 }
 
-// Stores `row` as chat keeps it ([`Stored`]): what a read derives from
-// the rest is never stored, so a row's `text`, `tags` and
-// `reacted_by_me` are dropped here, whatever they hold.
 pub(crate) fn put_message(ctx: &ExecCtx, row: &MsgRow) -> Result<(), Error> {
     let key = (row.channel_id.clone(), row.seq);
     MESSAGES.put(ctx, &key, &Stored::from(row.clone()));
@@ -204,12 +197,10 @@ impl From<MsgRow> for Stored {
     }
 }
 
-// the row at `key`
 pub(crate) fn stored(ctx: &QueryCtx, key: &(ChannelId, Seq)) -> Result<Option<Stored>, Error> {
     MESSAGES.get(ctx, key)
 }
 
-// `channel_id`'s rows from seq `lo` to below `hi` in seq order
 pub(crate) fn stored_between(
     ctx: &QueryCtx,
     channel_id: &str,

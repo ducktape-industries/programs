@@ -10,10 +10,8 @@ use super::*;
 use crate::menu::On;
 use crate::state::{HISTORY_GLYPH, HOME_GLYPH, PIN_GLYPH, Place, SHARED_PATH};
 
-/// One thing the side opens.
 #[derive(Clone)]
 enum Item<'a> {
-    /// the reader's home, by its path
     Home(String),
     Place(Place),
     History,
@@ -30,7 +28,6 @@ impl Item<'_> {
         }
     }
 
-    /// What its row is keyed by: `files/side/<key>`.
     fn key(&self) -> String {
         match self {
             Item::Home(_) => "home".into(),
@@ -40,8 +37,6 @@ impl Item<'_> {
         }
     }
 
-    // What its row's menu is on: a place's folder, the keys going back
-    // to the list; none for the history or a pin.
     fn on(&self) -> Option<On> {
         let path = match self {
             Item::Home(path) => path.clone(),
@@ -71,9 +66,6 @@ impl Item<'_> {
     }
 }
 
-/// Everything the side lists, in order: the places, then the history and
-/// its pins. The home shows once identity names the reader's (the places
-/// page says why it does not).
 fn items(view: &Files) -> Vec<Item<'_>> {
     let home = view.reader.home().ok().map(Item::Home);
     let places = Place::ALL.map(Item::Place);
@@ -90,9 +82,6 @@ fn items(view: &Files) -> Vec<Item<'_>> {
         .collect()
 }
 
-/// The item the page on screen is under: the place a path is in (the
-/// first that holds it), the pin naming the snapshot open, else the
-/// history; none on the places page.
 fn here(page: &Route, items: &[Item]) -> Option<usize> {
     let under =
         |path: &str, folder: &str| path == folder || path.starts_with(&format!("{folder}/"));
@@ -122,7 +111,6 @@ pub(super) fn side(view: &Files, cx: Cx, k: &Kit) -> Stateful<Div> {
         view.open_from_places(routes[index].clone(), cx)
     };
     let moved = open.clone();
-    // the history's group starts at the history's own row
     let history_at = items
         .iter()
         .position(|item| matches!(item, Item::History))
@@ -142,8 +130,6 @@ pub(super) fn side(view: &Files, cx: Cx, k: &Kit) -> Stateful<Div> {
     let history = group("files-side-history", words::HISTORY, k)
         .mt_3()
         .children(rows);
-    // the Menu key or Shift+F10 opens the menu of the place the arrows
-    // are on, under its row
     let asked = items.get(here.unwrap_or(0)).and_then(Item::on);
     let keys = cx.listener(move |view: &mut Files, event: &KeyDownEvent, window, cx| {
         if let Some(on) = asked
@@ -176,7 +162,6 @@ pub(super) fn side(view: &Files, cx: Cx, k: &Kit) -> Stateful<Div> {
         .child(list)
 }
 
-/// A section of the list, named over its rows.
 fn group(id: &'static str, label: &'static str, k: &Kit) -> Stateful<Div> {
     div()
         .id(id)
@@ -195,10 +180,6 @@ fn group(id: &'static str, label: &'static str, k: &Kit) -> Stateful<Div> {
         )
 }
 
-/// One item: `picked` when the page on screen is under it, `active` when
-/// the arrows are on it.
-// ponytail: chat's sidebar row (`chat-view/src/ui/sidebar.rs`), copied;
-// a `design::` sidebar row once a third view draws one.
 fn row(view: &Files, item: &Item, picked: bool, active: bool, cx: Cx, k: &Kit) -> Stateful<Div> {
     let route = item.route();
     let open = cx.listener(move |view: &mut Files, _: &ClickEvent, _, cx| {

@@ -1,8 +1,5 @@
 use super::*;
 
-/// A sensor recurses like a container, is diffed as a node with one
-/// fixed child, and its id enters the sibling scope (the hostile property
-/// counts refusals over every kind at once, so this is the sensor's pin).
 #[test]
 fn a_sensor_round_trips_diffs_by_props_and_claims_its_key() {
     let frame = Frame {
@@ -12,7 +9,6 @@ fn a_sensor_round_trips_diffs_by_props_and_claims_its_key() {
     assert_eq!(decode::<Frame>(&encode(&frame)).unwrap(), frame);
     assert_eq!(frame.root.as_ref().unwrap().count(), 2);
 
-    // A changed route index is a `Props` patch that keeps the child.
     let mut old = sensor("App/m", Some(0), text("inside"));
     let mut new = sensor("App/m", Some(7), text("inside"));
     let patches = diff(&mut old, &mut new);
@@ -36,12 +32,6 @@ fn a_sensor_round_trips_diffs_by_props_and_claims_its_key() {
     ));
 }
 
-/// A tree nested past `MAX_DEPTH` is refused as the bytes are read, before
-/// a level of it is built. The bug this guards: a chain of a few thousand
-/// containers is a frame of ~100 KB — far inside any byte cap a host sets
-/// — and decoding it walked a host thread off its stack, aborting the
-/// process. A refusal is a message in one app's window; an overflow is
-/// every window gone.
 #[test]
 fn a_tree_the_host_would_not_walk_is_refused_before_it_is_built() {
     assert!(decode::<Frame>(&deep_chain_bytes(MAX_DEPTH - 1)).is_ok());
@@ -55,10 +45,6 @@ fn a_tree_the_host_would_not_walk_is_refused_before_it_is_built() {
     assert!(decode::<Frame>(&bytes).is_err());
 }
 
-/// Every lower, clone, diff, move and decode level pays for a node's
-/// inline bytes, so the rarely set parts sit behind a pointer as gpui keeps
-/// them: a node's interactivity and the conditional styles inside it. Inline
-/// they made a node 6,112 bytes.
 #[test]
 fn a_node_keeps_its_rarely_set_parts_behind_a_pointer() {
     assert!(
@@ -97,7 +83,6 @@ fn uniform_list_path_must_match_its_typed_tree_ancestry() {
     );
 }
 
-/// A hostile screen cannot cause quadratic identity repair or alias state.
 #[test]
 fn a_screen_of_one_typed_id_is_refused_in_linear_time() {
     let mut frame = Frame {

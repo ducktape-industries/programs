@@ -12,8 +12,6 @@ use identity::AccountNumber;
 use keyscheme::testkit;
 use programs::PageRequest;
 
-/// Where `make wasm-programs` left the boot set: the bytes are a build
-/// output, never committed.
 fn release_dir() -> std::path::PathBuf {
     let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
     std::env::var_os("CARGO_TARGET_DIR")
@@ -22,15 +20,10 @@ fn release_dir() -> std::path::PathBuf {
         .join("wasm32-unknown-unknown/release")
 }
 
-/// Builds the boot set once per test binary: `make wasm-programs` at the
-/// repo root, which is cargo's own freshness (a missing or stale artifact
-/// rebuilds, a fresh one costs a fingerprint check). The suite never skips;
-/// a failed build fails every test that reads the bytes.
 fn build() {
     static ONCE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
     ONCE.get_or_init(|| {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        // every program at once: cargo's own job count, else every core
         let jobs = std::env::var("CARGO_BUILD_JOBS")
             .ok()
             .or_else(|| {
@@ -56,11 +49,6 @@ fn program(name: &str) -> Vec<u8> {
     std::fs::read(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
-/// `crates/kernel/fixtures/probe`'s script type, mirrored byte-for-byte
-/// (same two borsh derives, same variant order) since the probe is bytes
-/// here, not a Cargo dependency. Only `Op` is scripted by this suite; the
-/// rest round-trip through the derives so the discriminants still match the
-/// binary's.
 #[derive(BorshSerialize, BorshDeserialize)]
 enum Step {
     Op(HostOp),
@@ -72,7 +60,6 @@ enum Step {
 
 const NETWORK: &[u8] = b"net";
 const EPOCH_LENGTH: u64 = 4;
-/// Room for a resident or two beside the two founding validators.
 const MEMBER_CAP: u32 = 8;
 const TIME: u64 = 1_700_000_000_000;
 const PROBE_SIGNER: u64 = 9;
@@ -172,7 +159,6 @@ impl Net {
         Net::found_with(context, dir, Vec::new(), Vec::new(), MEMBER_CAP).await
     }
 
-    /// The system set and the probe, then `apps`, with `hooks`, under `member_cap`.
     async fn found_with(
         context: Ctx,
         dir: &std::path::Path,
@@ -338,8 +324,6 @@ impl Net {
         id
     }
 
-    /// `bytes` as the network holds a file's: `chunk` blobs put through the
-    /// blobs role and held, apart from any commit.
     async fn chunks(&mut self, bytes: &[u8]) -> files::Content {
         let mut chunks = Vec::new();
         for chunk in bytes.chunks(files::CHUNK_SIZE as usize) {
@@ -378,7 +362,6 @@ impl Net {
         let signer = public(PROBE_SIGNER);
         let submission = self.submission(&signer, program, abi::encode(&script));
         let applied = self.block(vec![submission]).await;
-        // the message ran in the probe's frame; its refusal is the frame's
         applied.submissions[0]
             .nested
             .iter()
@@ -406,8 +389,6 @@ impl Net {
         enacting
     }
 
-    /// `op` passed by the validators' vote: the programs' run of it, applied or refused.
-    /// The vote stands either way, and the motion is gone.
     async fn govern(&mut self, op: &programs::Op) -> Receipt {
         let motion = valset::Motion::Role {
             role: abi::role::PROGRAMS.into(),
@@ -423,7 +404,6 @@ impl Net {
             .expect("the vote ran its op on the programs")
     }
 
-    /// A query the program refuses.
     async fn refused<Q: BorshSerialize>(&self, program: &str, query: &Q) -> abi::Refusal {
         self.host
             .query(

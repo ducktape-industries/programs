@@ -91,7 +91,6 @@ fn commit_of(ctx: &ExecCtx, repo: &str, rev: Revision) -> Result<String, Error> 
     }
 }
 
-// Every item of a listing forge answers a page at a time.
 fn every<T>(
     mut listed: impl FnMut(PageRequest) -> Result<PageResponse<T>, Error>,
 ) -> Result<Vec<T>, Error> {
@@ -110,7 +109,6 @@ fn every<T>(
     }
 }
 
-// `name` as the ref it names: a full ref as it is, a branch (`dev`) as `refs/heads/dev`.
 fn reference(name: &str) -> Vec<u8> {
     match name.starts_with("refs/") {
         true => name.as_bytes().to_vec(),
@@ -118,7 +116,6 @@ fn reference(name: &str) -> Vec<u8> {
     }
 }
 
-// The entries of the directory `dir` ("" for the root) in the commit `at`: name, kind, id.
 fn listed(
     ctx: &ExecCtx,
     repo: &str,
@@ -146,7 +143,6 @@ fn listed(
         .collect())
 }
 
-// The kind and object id of what is at `path` in the commit `at`, or `None` while nothing is.
 fn entry_at(
     ctx: &ExecCtx,
     repo: &str,
@@ -166,7 +162,6 @@ fn entry_at(
         .map(|(_, kind, id)| (kind, id)))
 }
 
-// The blob `id`, or the range of it forge reads alone.
 fn blob_of(
     ctx: &ExecCtx,
     repo: &str,
@@ -184,7 +179,6 @@ fn blob_of(
     }
 }
 
-// How many bytes of a blob forge serves in one read: the repository's `Bounds.blob_bytes`.
 fn served(ctx: &ExecCtx, repo: &str) -> Result<u64, Error> {
     match ask(ctx, Query::Repo { repo: repo.into() })? {
         Reply::Repo { bounds, .. } => Ok(bounds.blob_bytes),
@@ -192,8 +186,6 @@ fn served(ctx: &ExecCtx, repo: &str) -> Result<u64, Error> {
     }
 }
 
-// The whole text of the blob `id`, or why it has none: a blob over what forge serves in one read
-// is read a range at a time, and a range binary in itself leaves it none.
 fn text_of(ctx: &ExecCtx, repo: &str, id: &str, path: &str) -> Result<String, Error> {
     let blob = blob_of(ctx, repo, id, None)?;
     let bytes = match blob.content {
@@ -405,8 +397,6 @@ pub(crate) struct ReadArgs {
     lines: Option<(u64, u64)>,
 }
 
-// Lines `from` to `to` of `text`, counted from 1 and both included, as far as the text goes;
-// the line numbers read and how many lines the text has.
 fn lines_of(text: &str, from: u64, to: u64) -> Result<(String, u64, u64, u64), Error> {
     if from == 0 || to < from {
         return Err(invalid(
@@ -644,8 +634,6 @@ impl Tool for Change {
     }
 }
 
-// Every file and directory under `dir` in the commit `at` whose path starts with `prefix`, in
-// path order: a directory is walked only where a path in it can start with `prefix`.
 fn walked(
     ctx: &ExecCtx,
     repo: &str,
@@ -672,7 +660,6 @@ fn walked(
     Ok(())
 }
 
-// What `walked` finds from the deepest directory `prefix` names whole.
 fn under_prefix(
     ctx: &ExecCtx,
     repo: &str,
@@ -782,10 +769,6 @@ impl Tool for Grep {
     }
 }
 
-// forge_grep's pass over the files: each line holding `pattern` is a hit, and what forge answers
-// as no text is skipped. A file over what forge serves in one read is scanned a range at a time,
-// a line cut at a range's end carried into the next; a range binary in itself is skipped and
-// named, and a hit after it gives its byte offset, as the lines in that range are not known.
 struct Search<'a> {
     ctx: &'a ExecCtx,
     repo: &'a str,

@@ -19,7 +19,6 @@ trait TestDriver {
     fn renders(&self) -> u64;
 }
 impl<V: View> TestDriver for Driver<V> {
-    /// The frame the host gets, and its size on the wire.
     fn tick(&mut self, events: Vec<Event>) -> (Frame, usize, std::time::Duration) {
         self.tick_with(events, |frame| {
             let started = std::time::Instant::now();
@@ -79,51 +78,23 @@ pub struct TickReport {
 pub struct TestAppContext {
     host: FakeHost,
     driver: Option<Box<dyn TestDriver>>,
-    /// The last frame, as the host received it.
     frame: Frame,
-    /// The tree the host holds: the last one sent whole, patched since.
     tree: Option<Node>,
-    /// The style table of that tree, as the host holds it: a whole frame's
-    /// entries, and each one a later frame brought.
     styles: wire::Styles,
-    /// The presses [`design::dense`](crate::design::dense) marked in the
-    /// tree the view last lowered, as its [`App`] keeps them.
     dense: Vec<Vec<wire::ElementIdWire>>,
     reports: Vec<TickReport>,
     focus: Option<Focus>,
     globals: crate::context::Globals,
     ticks: u64,
-    /// The text of every field in the tree, as the host's engine holds it,
-    /// by the ids the field is filed under.
     fields: HashMap<Vec<wire::ElementIdWire>, HostField>,
-    /// The host engine's revision of the fields' text, one count for all,
-    /// and every edit it made, at the revision that made it.
     text_revision: u64,
     edits: Vec<(u64, wire::Edit)>,
-    /// The size the host lays the view out in, sent ahead of its first
-    /// tick as the app does ([`VIEWPORT`] until [`simulate_resize`]).
-    ///
-    /// [`simulate_resize`]: Self::simulate_resize
     viewport: Option<(f32, f32)>,
-    /// The bounds each sensor in the tree was last told, by the ids it is
-    /// filed under: the host tells them again only when they differ.
     sensors: HashMap<Vec<wire::ElementIdWire>, [f32; 4]>,
-    /// The device as last told through [`simulate_touch`](Self::simulate_touch):
-    /// a replacement hears it before its first tree, as the app tells it.
     touch: bool,
-    /// Set by [`sweep`](super::sweep): every frame is held to
-    /// [`assert_fits`](super::assert_fits) at this width under this ladder.
     pub(super) fits: Option<(f32, crate::design::Ladder)>,
 }
 
-/// One field's text in the host's engine: the engine owns it, and the view's
-/// copy in a frame only follows. `generation` is the view's document the
-/// engine took its text from.
-///
-/// Narrower than the app's host: it tells the view of a text it adopted
-/// only when the text differs (the app also when the cursor or the preedit
-/// does), keeps one revision and one edit log for all fields, forgets every
-/// field on a restore, and has no IME.
 struct HostField {
     generation: u64,
     text: String,
@@ -161,8 +132,6 @@ impl TestAppContext {
         self.mount(Box::new(driver));
         Ok(entity)
     }
-    /// Seats `driver` as the app seats a view: the host's facts (the
-    /// viewport, the reader's offset) reach it on its first tick.
     fn mount(&mut self, driver: Box<dyn TestDriver>) {
         self.host.reset_connection();
         self.driver = Some(driver);
@@ -259,7 +228,6 @@ impl TestAppContext {
         self.reports = vec![report];
         report
     }
-    /// Ticks until the view parks: no answer owed and nothing left to do.
     fn run(&mut self, mut events: Vec<Event>) {
         self.reports.clear();
         loop {
@@ -270,9 +238,6 @@ impl TestAppContext {
             }
         }
     }
-    /// One tick, taken in as the host takes it: the frame's requests
-    /// answered, its tree kept or patched, sanitized and audited, and focus
-    /// moved where the host would move it.
     fn step(&mut self, events: Vec<Event>) -> TickReport {
         let mut owed = self.host.take_events();
         owed.extend(events);
@@ -285,9 +250,6 @@ impl TestAppContext {
         self.ticks += 1;
         let host = driver.host();
         let dialogs = self.tree.as_ref().map(focus::open_dialogs);
-        // the frame as the host takes it: its style entries join the table
-        // (a whole tree's replace it), and every style a node names is one
-        // the table holds
         let mut hosted = Frame {
             styles: frame.styles.clone(),
             root: frame.root.clone(),
@@ -304,8 +266,6 @@ impl TestAppContext {
                 &self.styles,
             ));
         }
-        // its requests answered, and what the tree places kept, as the app
-        // keeps its pieces
         self.host.accept(&frame, &host, self.tree.as_ref());
         assert_frame_accessible(self.tree.as_ref(), &frame.tooltip_responses);
         if let (Some((width, ladder)), Some(tree)) = (&self.fits, &self.tree) {
@@ -332,13 +292,6 @@ impl TestAppContext {
         self.frame = frame;
         report
     }
-    /// What the host's engine does with the fields of the tree it now
-    /// holds. A field new to the tree starts with the frame's text. A field
-    /// whose generation moved is a new document: the engine's text becomes
-    /// the frame's, whatever was typed into the old one, and the view is
-    /// told when that changed it, with no edit, since it edits nothing. A
-    /// field at the generation the engine holds keeps the engine's text: the
-    /// frame's is the view's copy of it. One that left the tree is forgotten.
     fn adopt(&mut self) -> Vec<Event> {
         let mut shown = Vec::new();
         if let Some(root) = &self.tree {
@@ -381,8 +334,6 @@ impl TestAppContext {
         }
         told
     }
-    /// A sensor that left the tree is forgotten, as the app forgets it: back
-    /// in the tree, it is told its bounds again.
     fn forget_sensors(&mut self) {
         if self.sensors.is_empty() {
             return;
@@ -398,8 +349,6 @@ impl TestAppContext {
         }
         self.sensors.retain(|path, _| shown.contains(path));
     }
-    /// The view's own focus moves, then a dialog that opened this frame
-    /// takes the keyboard; focus on a node that left the tree is gone.
     fn move_focus(&mut self, frame: &Frame, open_before: Vec<Vec<wire::ElementIdWire>>) {
         let Some(root) = self.tree.as_ref() else {
             return;
@@ -491,7 +440,6 @@ impl TestAppContext {
     fn keys(&self) -> Vec<String> {
         keys(self.tree.as_ref())
     }
-    /// The chain from the root down to the node under `key`.
     fn chain(&self, key: &str) -> Vec<&Node> {
         chain_to(self.root(), key).unwrap_or_else(|| panic!("no node {key:?} in {:?}", self.keys()))
     }
@@ -500,7 +448,6 @@ impl TestAppContext {
     /// which `ducktape-app --render-tree` draws.
     pub fn whole_frame(&self) -> Frame {
         let mut root = self.root().clone();
-        // the styles the tree names, numbered from the first it names
         let mut styles = wire::Interner::default();
         root.for_each_mut(&mut |node| {
             node.styles_mut(&mut |id| *id = styles.intern(&self.styles[*id]))
@@ -517,8 +464,6 @@ impl TestAppContext {
     pub fn frame_bytes(&self) -> usize {
         crate::wire::encode(&self.whole_frame()).len()
     }
-
-    // Focus and keys.
 
     /// Puts the keyboard on `key`, as a person does by Tab or click: the
     /// node must be able to hold it (`focusable`, a tracked focus handle, a
@@ -598,9 +543,6 @@ impl TestAppContext {
         );
         self.run(events);
     }
-    /// The events a key-like input on the focus path through `key` makes:
-    /// `reach` says from which node of the chain up it still bubbles, and
-    /// what the node that stopped it makes of it.
     fn along_focus(
         &self,
         key: &str,
@@ -635,8 +577,6 @@ impl TestAppContext {
         );
         events
     }
-
-    // Pointer.
 
     /// A press of the button whose key, label or accessible name is `name`:
     /// its click and, as gpui passes a click out, the click of every node
@@ -831,7 +771,6 @@ impl TestAppContext {
         let handler = route(&self.chain(key), key, "file drop", |i| i.on_file_drop);
         self.run(vec![Event::FileDrop { handler, files }]);
     }
-    /// The events down the chain to `key` and back up it.
     fn along_chain(
         &self,
         key: &str,
@@ -846,15 +785,11 @@ impl TestAppContext {
         );
         events
     }
-    /// A press moves the keyboard where it lands, if anything there can
-    /// hold it.
     fn press(&mut self, pressed: Option<Focus>) {
         if pressed.is_some() {
             self.focus = pressed;
         }
     }
-
-    // Text, pictures and other widgets.
 
     /// The field with key or placeholder `name` now reads `text`: the
     /// host's engine took the typing into the text it holds and says so,
@@ -886,8 +821,6 @@ impl TestAppContext {
         };
         self.run(vec![event]);
     }
-    /// The host's word on a field's text at its next revision, `edit` being
-    /// what changed it, logged for the asks that read an older text.
     fn text_change(
         &mut self,
         generation: u64,
@@ -910,13 +843,6 @@ impl TestAppContext {
             tokens,
         }
     }
-    /// What the host's engine does with the `Replace`s a frame asks for, in
-    /// order: each is carried over the edits made since the revision it
-    /// read (`wire::rebase`, the host's own rule; an earlier ask in the same
-    /// frame is one), applied to the text the engine holds, and comes back
-    /// as the next change. An ask on a document the field has since left
-    /// (its generation moved) edits nothing: the frame's field is the
-    /// document.
     fn replace(&mut self, frame: &Frame) -> Vec<Event> {
         let Some(root) = self.tree.clone() else {
             return Vec::new();
@@ -966,7 +892,6 @@ impl TestAppContext {
             let range = rebased.range.range();
             let replacement = rebased.replacement(value, &text);
             let delta = replacement.len() as i64 - range.len() as i64;
-            // the engine's spans: one an edit touches goes, one after it moves
             tokens.retain(|token| {
                 token.range.end as usize <= range.start || token.range.start as usize >= range.end
             });
@@ -976,7 +901,6 @@ impl TestAppContext {
                     token.range.end = (token.range.end as i64 + delta) as u32;
                 }
             }
-            // one span only when the replacement is the view's text alone
             if let Some(id) = token.filter(|_| replacement == text) {
                 tokens.push(wire::TextToken {
                     range: wire::TextRange::from(range.start..range.start + text.len()),
@@ -1210,8 +1134,6 @@ impl TestAppContext {
         self.run(vec![Event::Resync]);
     }
 
-    // Lists.
-
     /// A pane `rows` rows tall: every list in the tree is asked for the
     /// rows it would show, as the host asks after it lays the frame out.
     /// A list anchored at its end shows its last rows, a uniform list
@@ -1252,7 +1174,6 @@ fn keystroke_of(keystroke: &str) -> gpui::Keystroke {
     gpui::Keystroke::parse(keystroke).expect("a keystroke gpui reads")
 }
 
-/// The one route the last node of `chain` has for `what`.
 fn route(chain: &[&Node], key: &str, what: &str, pick: fn(&Interactivity) -> Option<u32>) -> u32 {
     chain
         .last()
@@ -1261,8 +1182,6 @@ fn route(chain: &[&Node], key: &str, what: &str, pick: fn(&Interactivity) -> Opt
         .unwrap_or_else(|| panic!("{key:?} has no {what} route"))
 }
 
-/// An input dispatched along `chain` as gpui dispatches it: every capture
-/// route from the root down, then every bubble route from the last node up.
 fn along(
     chain: &[&Node],
     from: usize,
@@ -1286,12 +1205,6 @@ fn along(
     captured.chain(bubbled).collect()
 }
 
-/// Where a key going down the focus `chain` stops, as the host stops it:
-/// the deepest node that consumes it (its `consumes_keys`) hears it last,
-/// and an open overlay's layer turns Escape into the overlay's dismiss and
-/// stops it.
-/// Answers, for a key that stops, the first node of the chain that still
-/// hears it and the dismiss; `None` for a key that bubbles to the root.
 fn consumed_at(chain: &[&Node], keystroke: &gpui::Keystroke) -> Option<(usize, Option<Event>)> {
     let plain = !keystroke.modifiers.modified();
     for (at, node) in chain.iter().enumerate().rev() {
@@ -1338,27 +1251,14 @@ fn consumed_at(chain: &[&Node], keystroke: &gpui::Keystroke) -> Option<(usize, O
     None
 }
 
-/// Where a pointer's click on the last node of `chain` stops going out, as
-/// the host stops it: at the deepest node that consumes it
-/// (`consumes_click`) or blocks the pointer from what is behind it, or at
-/// the top of an open overlay's layer, whose content keeps the press from
-/// what is under the overlay. Answers the first node of the chain that
-/// still hears it.
 fn click_stops_at(chain: &[&Node]) -> usize {
     stops_at(chain, |i| i.consumes_click || blocks(i))
 }
 
-/// Where a press on the last node of `chain` stops going out: at the
-/// deepest node that blocks the pointer from what is behind it, or at the
-/// top of an open overlay's layer. A click's `consumes_click` stops the
-/// click, not the press under it.
 fn press_stops_at(chain: &[&Node]) -> usize {
     stops_at(chain, blocks)
 }
 
-/// Whether a node keeps the pointer from what is behind it, the nodes
-/// around it included: it occludes them, or blocks all but their scroll.
-/// gpui's hit test leaves those unhovered, so none of them hears a press.
 fn blocks(i: &Interactivity) -> bool {
     i.occlude || i.block_mouse_except_scroll
 }
@@ -1374,7 +1274,6 @@ fn stops_at(chain: &[&Node], stops: fn(&Interactivity) -> bool) -> usize {
         {
             return at + 1;
         }
-        // a sheet's panel keeps the press from what is under its scrim
         if let Node::Sheet { child, .. } = node
             && chain
                 .get(at + 1)
@@ -1389,8 +1288,6 @@ fn stops_at(chain: &[&Node], stops: fn(&Interactivity) -> bool) -> usize {
     0
 }
 
-/// The `pick` route of every node in `root` off `chain`: what hears a press
-/// outside it.
 fn outside<'a>(
     root: &'a Node,
     chain: &[&Node],
@@ -1410,7 +1307,6 @@ fn outside<'a>(
     out.into_iter()
 }
 
-/// The rows a list shows in a pane `rows` rows tall, when `node` is one.
 fn shown(node: &Node, rows: usize) -> Option<std::ops::Range<usize>> {
     use wire::list::{ListAlignment, UniformListScrollStrategy as Strategy};
     let (count, rows, start) = match node {
@@ -1443,7 +1339,6 @@ fn shown(node: &Node, rows: usize) -> Option<std::ops::Range<usize>> {
     Some(start..(start + rows).min(count))
 }
 
-/// What the host sends a list it shows `range` of.
 fn range_events(node: &Node, range: std::ops::Range<usize>) -> Vec<Event> {
     match node {
         Node::UniformList {

@@ -104,7 +104,6 @@ fn release(dir: &Path) {
         fs::write(dir.join(format!("{describe}.wasm")), module(&describe)).unwrap();
     }
     for program in founding::UNVIEWED.iter().chain(founding::UNFOUNDED) {
-        // as cargo and wasm-describes name them: `_` for `-`
         let stem = program.replace('-', "_");
         fs::write(dir.join(format!("{stem}.wasm")), module(program)).unwrap();
         let describe = format!("{stem}.describe");
@@ -142,7 +141,6 @@ fn the_bundle_names_every_file_it_holds_and_packs_each_program_with_its_own_view
             section(&packed, founding::SCHEMA_SECTION),
             [schema(program)]
         );
-        // chat and forge carry their notifier; the others none
         let notifier = founding::NOTIFIERS
             .iter()
             .find(|(name, _)| *name == program)
@@ -172,7 +170,6 @@ fn the_bundle_names_every_file_it_holds_and_packs_each_program_with_its_own_view
     let params = fs::read(out.path().join("halo.params")).unwrap();
     let lanes = abi::decode::<abi::role::halo::Genesis>(&params).unwrap();
     assert_eq!(lanes, founding::halo_lanes());
-    // a node applies blocks over the blobs lane: no vote may take it away
     let pinned: Vec<(&str, bool)> = lanes
         .lanes
         .iter()
@@ -228,14 +225,12 @@ fn one_program_packs_to_the_bytes_the_bundle_holds_for_it() {
     );
     assert_eq!(founding::modules("files"), Some((Some("files_view"), None)));
     assert_eq!(founding::modules("egress"), Some((None, None)));
-    // a program deployed later packs as an unviewed one does, and the bundle holds none of it
     for program in founding::UNFOUNDED {
         assert_eq!(founding::modules(program), Some((None, None)));
         let packed = founding::pack(built.path(), program, None).unwrap();
         assert_eq!(section(&packed, "tag"), [program.as_bytes().to_vec()]);
         assert!(!out.path().join(format!("{program}.wasm")).exists());
     }
-    // a standalone view rides no program, and nothing packs it
     assert_eq!(founding::modules("explorer_view"), None);
     assert!(founding::pack(built.path(), "explorer_view", None).is_err());
 }

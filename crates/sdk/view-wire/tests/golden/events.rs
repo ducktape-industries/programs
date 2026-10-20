@@ -376,7 +376,6 @@ pub fn every_event() -> Vec<Event> {
                 track: TrackState::Up { subscribers: 2 },
             },
         },
-        // a remote piece whose publisher left
         Event::Media {
             handler: 20,
             state: MediaState {

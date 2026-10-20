@@ -7,7 +7,6 @@ use super::*;
 use crate::MsgRow;
 use crate::state::{HEADS, MESSAGES, PARTICIPANTS, REACTIONS};
 
-/// xorshift64*: the same seed walks the same way.
 struct Rng(u64);
 
 impl Rng {
@@ -56,7 +55,6 @@ fn any_walk_keeps_reactions_and_search_in_step_with_the_messages() {
     }
 }
 
-// every message, by channel then seq
 fn every_row(chat: &Chat) -> Vec<MsgRow> {
     let rows = MESSAGES.all(&chat.reads()).unwrap();
     rows.into_iter().map(|(_, row)| row.row()).collect()

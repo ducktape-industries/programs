@@ -46,10 +46,6 @@ fn gen_tree(rng: &mut Rng, depth: usize, width: usize) -> Node {
     node
 }
 
-/// A sheet's detents: usually sound (none, a sheet fitted to what it
-/// holds, or one to three ascending in `0..=1`), so most random sheets
-/// reach the Sheet checks; one in five a hostile sender's (descending,
-/// past 1, not finite, too many).
 fn gen_detents(rng: &mut Rng) -> Vec<f32> {
     match rng.next_range(20) {
         0 => Vec::new(),
@@ -91,12 +87,6 @@ pub(super) fn gen_frame_with(rng: &mut Rng, depth: usize, width: usize) -> Frame
     }
 }
 
-// ------------------------------------------------------------ patch generator
-
-/// A path into `root`: a real one (a random walk down the tree that stops
-/// at a random depth) or, from a `hostile` sender, sometimes one step past
-/// a real one or a random vector, so `apply` sees both the paths a view
-/// sends and the ones a hostile one does.
 pub(super) fn gen_path(rng: &mut Rng, root: &Node, hostile: bool) -> Vec<u32> {
     let mut path = Vec::new();
     let mut node = root;
@@ -125,10 +115,6 @@ pub(super) fn gen_patch_tree(rng: &mut Rng) -> Node {
     gen_tree(rng, depth, width)
 }
 
-/// A node whose children are a list the host can insert into, remove from
-/// and reorder — as opposed to a fixed set of slots. Written out here rather
-/// than routed through `Node::child_list_mut`, so a variant that gains or
-/// loses its list fails a test instead of agreeing with itself.
 pub(super) fn is_list_node(node: &Node) -> bool {
     matches!(
         node,
@@ -140,11 +126,6 @@ pub(super) fn is_list_node(node: &Node) -> bool {
     )
 }
 
-/// One random patch against `root` as it stands. A `hostile` sender's
-/// indices are sometimes past the list, its list edits sometimes aimed at
-/// a node with no list, and its `Props` sometimes a whole subtree; the
-/// other kind of sender is what a real diff emits, so a whole sequence of
-/// its patches applies and the invariant is checked on the result.
 pub(super) fn gen_patch(rng: &mut Rng, root: &Node, hostile: bool) -> Patch {
     let path = gen_path(rng, root, hostile);
     let mut node = Some(root);
@@ -159,7 +140,6 @@ pub(super) fn gen_patch(rng: &mut Rng, root: &Node, hostile: bool) -> Patch {
     };
     let kind = match (is_list || hostile, rng.next_range(5)) {
         (false, kind) => kind % 2,
-        // Nothing to remove or move in an empty list.
         (true, kind) if kind >= 3 && len == 0 && !hostile => 2,
         (true, kind) => kind,
     };
@@ -169,13 +149,8 @@ pub(super) fn gen_patch(rng: &mut Rng, root: &Node, hostile: bool) -> Patch {
             node: gen_patch_tree(rng),
         },
         1 => {
-            // A node with its children set aside, as a view sends it, of
-            // the arity the node at the path has — or, from a hostile
-            // sender, any node at all.
             let mut fresh = gen_patch_tree(rng);
             let same_arity = |fresh: &Node| match node {
-                // Two list nodes take each other's children whatever the
-                // count; two fixed-slot nodes only at the same count.
                 Some(at) => match (is_list_node(at), is_list_node(fresh)) {
                     (true, true) => true,
                     (false, false) => at.children().len() == fresh.children().len(),
@@ -216,8 +191,6 @@ pub(super) fn gen_patch(rng: &mut Rng, root: &Node, hostile: bool) -> Patch {
     }
 }
 
-/// One random `Frame`: a tree plus a handful of requests whose `kind`
-/// string is generated the same hostile way as everything else.
 pub(super) fn gen_frame(rng: &mut Rng, i: usize) -> Frame {
     let (depth, width) = if i == 0 {
         (MAX_DEPTH + 8, NODES + 300)

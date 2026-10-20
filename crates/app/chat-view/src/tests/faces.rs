@@ -23,8 +23,6 @@ fn card(number: u64) -> identity::Account {
     }
 }
 
-// Boots with eddy (7) and reviewer (8) each holding a picture on their
-// card, and seats eddy.
 fn pictured(touch: bool) -> TestAppContext {
     let mut cx = TestAppContext::new();
     configure(&mut cx);

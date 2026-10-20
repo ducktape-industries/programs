@@ -236,9 +236,6 @@ mod tests {
         }
     }
 
-    /// A web piece carries its first address and a state route; a navigation
-    /// crosses once, under a revision the host has not seen, and the page's
-    /// state reaches the view's listener.
     #[test]
     fn a_web_piece_carries_its_navigations_once_and_hears_its_page() {
         let mut cx = TestAppContext::new();
@@ -284,7 +281,6 @@ mod tests {
                 ..Default::default()
             },
         );
-        // the commands went with the frame that carried them
         let wire::Node::Web {
             revision: kept,
             commands,
@@ -300,7 +296,6 @@ mod tests {
         });
     }
 
-    /// Draws a web piece, which its manifest leaves out.
     #[derive(Default, serde::Deserialize, serde::Serialize)]
     struct Undeclared;
 

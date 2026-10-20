@@ -19,12 +19,8 @@
 use serde::Serialize;
 use serde::ser;
 
-/// The newtype name a sparse struct wraps its fields in, so this writer
-/// keys them by index. Any other serializer writes the fields as they are.
 pub(crate) const SPARSE: &str = "$view_wire::sparse";
 
-/// Why a value did not encode: a `Serialize` of its own refused, or a
-/// shape the wire does not carry.
 #[derive(Debug)]
 pub(crate) struct Refused(pub(crate) String);
 
@@ -46,7 +42,6 @@ fn refuse<T>(what: &'static str) -> Result<T, Refused> {
 
 pub(crate) struct Writer<'a> {
     out: &'a mut Vec<u8>,
-    /// The struct about to be written said it is sparse.
     sparse: bool,
 }
 
@@ -95,9 +90,13 @@ fn int(out: &mut Vec<u8>, value: i64) {
     }
 }
 
-/// A length header: `short | len` when it fits `fits` values, else the
-/// 16-bit or the 32-bit marker and the length.
-fn length(out: &mut Vec<u8>, len: usize, short: u8, fits: usize, wide: u8) -> Result<(), Refused> {
+fn write_length_header(
+    out: &mut Vec<u8>,
+    len: usize,
+    short: u8,
+    fits: usize,
+    wide: u8,
+) -> Result<(), Refused> {
     match len {
         len if len < fits => out.push(short | len as u8),
         len if len <= 0xffff => {
@@ -114,15 +113,14 @@ fn length(out: &mut Vec<u8>, len: usize, short: u8, fits: usize, wide: u8) -> Re
 }
 
 fn array(out: &mut Vec<u8>, len: usize) -> Result<(), Refused> {
-    length(out, len, 0x90, 16, 0xdc)
+    write_length_header(out, len, 0x90, 16, 0xdc)
 }
 
 fn map(out: &mut Vec<u8>, len: usize) -> Result<(), Refused> {
-    length(out, len, 0x80, 16, 0xde)
+    write_length_header(out, len, 0x80, 16, 0xde)
 }
 
-/// A variant that carries data: the one-entry map its index keys.
-fn variant(out: &mut Vec<u8>, index: u32) {
+fn write_variant_map(out: &mut Vec<u8>, index: u32) {
     out.push(0x81);
     uint(out, u64::from(index));
 }
@@ -189,7 +187,7 @@ impl<'a> ser::Serializer for Writer<'a> {
         match value.len() {
             len if len < 32 => self.out.push(0xa0 | len as u8),
             len if len <= 0xff => self.out.extend_from_slice(&[0xd9, len as u8]),
-            len => length(self.out, len, 0, 0, 0xda)?,
+            len => write_length_header(self.out, len, 0, 0, 0xda)?,
         }
         self.out.extend_from_slice(value.as_bytes());
         Ok(())
@@ -197,7 +195,7 @@ impl<'a> ser::Serializer for Writer<'a> {
     fn serialize_bytes(self, value: &[u8]) -> Result<(), Refused> {
         match value.len() {
             len if len <= 0xff => self.out.extend_from_slice(&[0xc4, len as u8]),
-            len => length(self.out, len, 0, 0, 0xc5)?,
+            len => write_length_header(self.out, len, 0, 0, 0xc5)?,
         }
         self.out.extend_from_slice(value);
         Ok(())
@@ -241,7 +239,7 @@ impl<'a> ser::Serializer for Writer<'a> {
         _: &'static str,
         value: &T,
     ) -> Result<(), Refused> {
-        variant(self.out, index);
+        write_variant_map(self.out, index);
         value.serialize(Writer::new(self.out))
     }
     fn serialize_seq(self, len: Option<usize>) -> Result<Elements<'a>, Refused> {
@@ -267,7 +265,7 @@ impl<'a> ser::Serializer for Writer<'a> {
         _: &'static str,
         len: usize,
     ) -> Result<Elements<'a>, Refused> {
-        variant(self.out, index);
+        write_variant_map(self.out, index);
         self.serialize_tuple(len)
     }
     fn serialize_map(self, len: Option<usize>) -> Result<Elements<'a>, Refused> {
@@ -298,23 +296,17 @@ impl<'a> ser::Serializer for Writer<'a> {
         _: &'static str,
         len: usize,
     ) -> Result<Fields<'a>, Refused> {
-        variant(self.out, index);
+        write_variant_map(self.out, index);
         Writer::new(self.out).serialize_struct(name, len)
     }
 }
 
-/// The elements of a sequence or a tuple, or the keys and values of a map:
-/// each is written as it comes.
 pub(crate) struct Elements<'a> {
     out: &'a mut Vec<u8>,
-    /// For one that did not say its length up front: where its 32-bit
-    /// count goes, and the count so far.
     counted: Option<(usize, u32)>,
 }
 
 impl<'a> Elements<'a> {
-    /// A sequence or a map of unknown length: `marker` (the 32-bit array or
-    /// map header) and a count that [`Self::end`] fills in.
     fn counted(out: &'a mut Vec<u8>, marker: u8) -> Self {
         out.push(marker);
         let at = out.len();
@@ -362,8 +354,6 @@ elements! {
     SerializeMap serialize_key 1 serialize_value 0;
 }
 
-/// A struct's fields. A struct that is not sparse writes every one, so a
-/// field it leaves out would shift the ones after it: it is refused.
 pub(crate) struct Fields<'a> {
     out: &'a mut Vec<u8>,
     sparse: bool,

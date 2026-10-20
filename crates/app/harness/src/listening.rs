@@ -12,7 +12,7 @@ use crate::turns::append;
 use crate::{Body, ThreadRow};
 
 pub(crate) fn seed(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent, listen: &[String]) {
-    if let Err(error) = seeded(ctx, agent.number, listen) {
+    if let Err(error) = seed_unset_listening_choices(ctx, agent.number, listen) {
         let text = format!(
             "the channels the agent's configuration names to listen to were not seeded: {}",
             refusal(&error)
@@ -21,9 +21,11 @@ pub(crate) fn seed(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent, listen:
     }
 }
 
-// each room `listen` names that chat holds and harness never seeded for the agent starts it
-// listening, unless something is chosen there already; from then on chat's choice stands
-fn seeded(ctx: &ExecCtx, agent: AccountNumber, listen: &[String]) -> Result<(), Error> {
+fn seed_unset_listening_choices(
+    ctx: &ExecCtx,
+    agent: AccountNumber,
+    listen: &[String],
+) -> Result<(), Error> {
     let unseeded = |channel: &String| !SEEDED.has(ctx, &(agent, channel.clone()));
     let mut rooms = Vec::new();
     for channel in listen.iter().filter(|entry| !entry.ends_with('*')) {
@@ -32,7 +34,7 @@ fn seeded(ctx: &ExecCtx, agent: AccountNumber, listen: &[String]) -> Result<(), 
         }
     }
     if listen.iter().any(|entry| entry.ends_with('*')) {
-        for info in channels(ctx)? {
+        for info in all_chat_channels(ctx)? {
             let id = info.channel.id;
             let named = listen.iter().any(|entry| names(entry, &id));
             if named && !info.channel.archived && !rooms.contains(&id) && unseeded(&id) {
@@ -49,8 +51,6 @@ fn seeded(ctx: &ExecCtx, agent: AccountNumber, listen: &[String]) -> Result<(), 
     Ok(())
 }
 
-// whether a `listen` entry names `channel`: one ending in `*` every room whose id starts with what
-// comes before it, any other the room of that id
 pub(crate) fn names(entry: &str, channel: &str) -> bool {
     match entry.strip_suffix('*') {
         Some(prefix) => channel.starts_with(prefix),
@@ -58,8 +58,7 @@ pub(crate) fn names(entry: &str, channel: &str) -> bool {
     }
 }
 
-// every room chat holds, a page at a time
-fn channels(ctx: &QueryCtx) -> Result<Vec<chat::ChannelInfo>, Error> {
+fn all_chat_channels(ctx: &QueryCtx) -> Result<Vec<chat::ChannelInfo>, Error> {
     let mut rooms = Vec::new();
     let mut after = None;
     loop {
@@ -104,8 +103,6 @@ pub(crate) fn exists(ctx: &QueryCtx, channel: &str) -> Result<bool, Error> {
     }
 }
 
-// what the agent chose for `channel` in chat: whether it listens there, and what of it still tells
-// it when cut
 pub(crate) fn chosen(
     ctx: &QueryCtx,
     agent: AccountNumber,

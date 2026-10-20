@@ -20,14 +20,9 @@ use crate::{Chat, Pane};
 use view::FontWeight;
 use view::design::Ladder;
 
-/// The field grows to five lines, then scrolls (mobile
-/// `src/chat/Composer.tsx:182`).
 const FIELD_LINES: f32 = 5.;
-/// The pencil over an edit (mobile `src/chat/Composer.tsx:154`).
 const PENCIL: Pixels = px(18.);
 
-/// What a pane's foot holds: the composer for `post`, or for the message
-/// the pane is editing in its place; or the write gate's strip.
 pub(super) fn band(
     chat: &Chat,
     pane: Pane,
@@ -47,7 +42,6 @@ pub(super) fn band(
     let original = editing.as_ref().and(original(chat, pane));
     let target = editing.unwrap_or(post);
     let key = target.key();
-    // the draft is seated by `Chat::render` before the frame
     let Some(draft) = chat.drafts.get(&key) else {
         return div().into_any_element();
     };
@@ -149,7 +143,6 @@ pub(super) fn band(
         .into_any_element()
 }
 
-/// What the message being edited said, for the bar over the field.
 fn original(chat: &Chat, pane: Pane) -> Option<String> {
     let seq = chat.menu.as_ref()?.seq;
     let messages = chat.messages(pane);
@@ -214,7 +207,6 @@ fn agent(names: Option<&chat::view::Names>, choice: &MentionChoice) -> bool {
     })
 }
 
-/// One person `@` offers.
 fn mention_row(
     key: &str,
     choice: &MentionChoice,
@@ -225,7 +217,6 @@ fn mention_row(
     ladder: &Ladder,
 ) -> Stateful<Div> {
     let account = crate::names::mentioned(&choice.token);
-    // a person by their name and face, a room as `#name`
     let name = match account {
         Some(_) => choice.label.clone(),
         None => choice.shown(),
@@ -263,8 +254,6 @@ fn mention_row(
     }
 }
 
-/// Over the field while it edits a message: a pencil, "Editing message"
-/// over what the message said, and the X that stops it.
 fn edit_bar(
     key: &str,
     original: String,
@@ -315,9 +304,6 @@ fn edit_bar(
         ))
 }
 
-/// The field, growing to five lines (its edge danger while it holds a
-/// note), and Send beside it: the ink square once there is something to
-/// send; Save edit while it edits.
 fn field_row(
     draft: &Draft,
     field: Textarea,
@@ -372,7 +358,6 @@ fn field_row(
         .child(send)
 }
 
-// The way to the host's picker, beside the field.
 fn attach_button(key: &str, click: Option<Click>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     let enabled = click.is_some();
     let click: Click = click.unwrap_or_else(|| Box::new(|_, _, _| {}));

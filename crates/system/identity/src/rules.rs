@@ -15,8 +15,6 @@ pub(crate) const ACCOUNTS: Map<AccountNumber, Account> = Map::new("a/");
 pub(crate) const OF_KEY: Map<Vec<u8>, AccountNumber> = Map::new("k/");
 pub(crate) const OF_PROGRAM: Map<ProgramId, AccountNumber> = Map::new("m/");
 const GENERATION: Map<Vec<u8>, u64> = Map::new("g/");
-/// `(manager, managed)`: the program accounts an account manages, revoked
-/// ones too, so a manager's list keeps what they answered for.
 pub(crate) const MANAGED: Set<(AccountNumber, AccountNumber)> = Set::new("d/");
 const NEXT: Item<AccountNumber> = Item::new("next");
 // whom a program account answers, where it narrowed it: no row answers anyone
@@ -28,10 +26,6 @@ pub(crate) fn account(ctx: &QueryCtx, number: AccountNumber) -> Result<Account, 
         .ok_or_else(|| not_found(format!("account {number}")))
 }
 
-/// The account a frame signed by `key` acts as: refused while it does not
-/// act, so the host rejects the frame. A user and a system account always
-/// act; a program account while its manager keeps it active (a revoked one
-/// holds no key to be asked about).
 pub(crate) fn of_key(ctx: &QueryCtx, key: &Vec<u8>) -> Result<Option<AccountNumber>, Error> {
     let Some(number) = OF_KEY.get(ctx, key)? else {
         return Ok(None);
@@ -97,9 +91,7 @@ fn admit_key(ctx: &ExecCtx, key: &Vec<u8>, number: AccountNumber) -> Result<(), 
     Ok(())
 }
 
-/// Forgets every key in `keys`: the account no longer holds them. Their
-/// generations stay, so no old consent admits one again.
-fn drop_keys(ctx: &ExecCtx, keys: &[Key]) {
+fn drop_keys_preserving_generations(ctx: &ExecCtx, keys: &[Key]) {
     for key in keys {
         OF_KEY.remove(ctx, &key.key);
     }
@@ -113,8 +105,7 @@ fn named(name: String) -> Result<String, Error> {
     Ok(name)
 }
 
-/// A fresh card: a name, nothing else yet.
-fn card(ctx: &ExecCtx, name: String) -> Result<Card, Error> {
+fn fresh_named_card(ctx: &ExecCtx, name: String) -> Result<Card, Error> {
     Ok(Card {
         name: named(name)?,
         avatar: None,
@@ -128,8 +119,6 @@ fn save(ctx: &ExecCtx, mut account: Account) {
     ACCOUNTS.put(ctx, &account.number, &account);
 }
 
-/// The kernel, admitting `program`, gives it its account, named after it.
-/// A program that has one keeps it.
 pub(crate) fn register_program(ctx: &ExecCtx, program: ProgramId) -> Result<(), Error> {
     if ctx.env().origin != Origin::Root {
         return Err(unauthorized("only the system registers a program"));
@@ -137,7 +126,7 @@ pub(crate) fn register_program(ctx: &ExecCtx, program: ProgramId) -> Result<(), 
     if OF_PROGRAM.has(ctx, &program) {
         return Ok(());
     }
-    let card = card(ctx, program.clone())?;
+    let card = fresh_named_card(ctx, program.clone())?;
     let number = next_number(ctx)?;
     let account = Account {
         number,
@@ -154,7 +143,7 @@ pub(crate) fn register_program(ctx: &ExecCtx, program: ProgramId) -> Result<(), 
 pub(crate) fn create(ctx: &ExecCtx, name: String, scheme: Scheme) -> Result<(), Error> {
     let env = ctx.env();
     let signer = env.signer()?;
-    let card = card(ctx, name)?;
+    let card = fresh_named_card(ctx, name)?;
     if OF_KEY.has(ctx, &signer) {
         return Err(already_exists("this key already belongs to an account"));
     }
@@ -176,7 +165,6 @@ pub(crate) fn create(ctx: &ExecCtx, name: String, scheme: Scheme) -> Result<(), 
     Ok(())
 }
 
-/// The account number the frame acts as.
 fn acting(ctx: &ExecCtx) -> Result<AccountNumber, Error> {
     ctx.sender()?
         .account()
@@ -185,7 +173,7 @@ fn acting(ctx: &ExecCtx) -> Result<AccountNumber, Error> {
 
 pub(crate) fn create_agent(ctx: &ExecCtx, name: String) -> Result<(), Error> {
     let manager = acting(ctx)?;
-    let card = card(ctx, name)?;
+    let card = fresh_named_card(ctx, name)?;
     let number = next_number(ctx)?;
     let account = Account {
         number,
@@ -203,7 +191,6 @@ pub(crate) fn create_agent(ctx: &ExecCtx, name: String) -> Result<(), Error> {
     Ok(())
 }
 
-/// Refused unless the frame acts as `manager`, the manager of `number`.
 fn managing(ctx: &ExecCtx, manager: AccountNumber, number: AccountNumber) -> Result<(), Error> {
     let acting = acting(ctx)?;
     if acting != manager {
@@ -214,7 +201,6 @@ fn managing(ctx: &ExecCtx, manager: AccountNumber, number: AccountNumber) -> Res
     Ok(())
 }
 
-/// The refusal every op on a revoked program account meets.
 fn revoked(number: AccountNumber) -> Error {
     wrong_state(format!("account {number} is revoked for good"))
 }
@@ -497,12 +483,10 @@ pub(crate) fn resume(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> 
     })
 }
 
-/// Final: the program account's keys are dropped and act as no one; the
-/// manager's list keeps it.
 pub(crate) fn revoke(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
     relive(ctx, number, |life| match life {
         Life::Active { keys } | Life::Suspended { keys } => {
-            drop_keys(ctx, &keys);
+            drop_keys_preserving_generations(ctx, &keys);
             Ok(Life::Revoked)
         }
         Life::Revoked => Err(revoked(number)),

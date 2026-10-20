@@ -15,12 +15,9 @@ use crate::queries::{Account, Seat};
 use crate::state::{Form, Problem};
 use identity::Identity;
 
-// The kind `op.put` names the saved picture's blob by.
 const KIND: &str = "avatar";
 
 impl Settings {
-    // Whether this host reads a picked file: Change photo is offered only
-    // where it does.
     pub(crate) fn ask_hosted(&mut self, cx: &mut Context<Self>) {
         let hosted = cx.host().hosted();
         let asked = async move { Ok::<_, view::host::Error>(hosted.await) };
@@ -42,8 +39,6 @@ impl Settings {
         }
     }
 
-    // The bio on the card of `number`, the seated account or an agent it
-    // manages: a new picture keeps it. None for any other account.
     fn bio_of(&self, number: u64) -> Option<Option<String>> {
         let account = self.seated()?;
         if account.number == number {
@@ -53,7 +48,6 @@ impl Settings {
         Some(agent.bio.clone())
     }
 
-    // The picture `avatar` names, once read.
     pub(crate) fn picture(
         &self,
         avatar: Option<abi::BlobId>,
@@ -64,8 +58,6 @@ impl Settings {
         pictures.update(cx, |pictures, cx| pictures.get(&blob, cx))
     }
 
-    // The presses of `number` read the picked file while the crop sheet is
-    // not open yet.
     pub(crate) fn photo_opening(&self, number: u64) -> bool {
         self.photo_of == Some(number) && self.change_photo.busy && self.photo.is_none()
     }
@@ -74,8 +66,6 @@ impl Settings {
         self.photo_of == Some(number) && self.remove_photo.busy
     }
 
-    // What stopped the last Change or Remove photo of `number`, shown beside
-    // its presses while no crop sheet is open (the sheet shows its own).
     pub(crate) fn photo_stopped(&self, number: u64) -> Option<&Form> {
         if self.photo_of != Some(number) || self.photo.is_some() {
             return None;
@@ -85,8 +75,6 @@ impl Settings {
             .find(|form| form.problem.is_some())
     }
 
-    // Change photo for `number`: the picker, then the file read whole and
-    // decoded; the crop sheet opens on it.
     pub(crate) fn change_photo(&mut self, number: u64, cx: &mut Context<Self>) {
         if self.change_photo.busy || self.remove_photo.busy {
             return;
@@ -129,8 +117,6 @@ impl Settings {
         .detach();
     }
 
-    // Save in the crop sheet: the square put as one blob, then the avatar of
-    // the account the sheet was opened for set to it.
     pub(crate) fn save_photo(&mut self, cx: &mut Context<Self>) {
         let (Some(photo), Some(number)) = (&self.photo, self.photo_of) else {
             return;
@@ -166,7 +152,6 @@ impl Settings {
         self.set_profile(set, |view| &mut view.change_photo, cx);
     }
 
-    // Remove photo for `number`: its card's avatar taken off.
     pub(crate) fn remove_photo(&mut self, number: u64, cx: &mut Context<Self>) {
         let Some(bio) = self.bio_of(number) else {
             return;
@@ -208,8 +193,6 @@ impl Settings {
         .detach();
     }
 
-    // Cancel, or the sheet dismissed: the picture goes, nothing is saved. A
-    // save in flight goes on and lands as it lands.
     pub(crate) fn cancel_photo(&mut self, cx: &mut Context<Self>) {
         if !self.change_photo.busy {
             self.photo = None;
@@ -225,7 +208,6 @@ impl Settings {
         }
     }
 
-    // The zoom slider's thumb moved `by` points along its `travel`.
     pub(crate) fn slide_zoom(&mut self, by: f32, travel: f32, cx: &mut Context<Self>) {
         if let Some(photo) = &mut self.photo {
             photo.slid(by / travel);

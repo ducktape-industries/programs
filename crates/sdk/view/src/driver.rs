@@ -3,24 +3,15 @@ use crate::{
     App, Context, Entity, Host, IntoElement, Lowering, Theme, View, executor, px, slots, wire,
 };
 
-/// One view's run loop: the wasm exports drive it on the host, and
-/// [`TestAppContext`](crate::testing::TestAppContext) drives it in a test.
 pub(crate) struct Driver<V: View> {
     pub(crate) app: App,
     pub(crate) entity: Entity<V>,
     pub(crate) last_root: Option<wire::Node>,
     pub(crate) busy: bool,
-    /// How many times the root rendered: what `TestAppContext::renders`
-    /// reads.
     pub(crate) renders: u64,
     pub(crate) spent: Spent,
 }
 
-// What the ticks so far spent in the view, summed: the time it took to
-// render its root into elements, to lower them (a child entity and a list
-// row render as they are lowered) and to diff the tree against the last,
-// on a native clock, and the nodes it lowered. A test host reads them per
-// tick.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Spent {
     pub render: std::time::Duration,
@@ -29,8 +20,6 @@ pub(crate) struct Spent {
     pub lowered: usize,
 }
 
-// A wasm view has no clock to read (`Instant::now` panics there), so it
-// times nothing.
 #[cfg(not(target_arch = "wasm32"))]
 type Clock = std::time::Instant;
 #[cfg(target_arch = "wasm32")]
@@ -62,7 +51,9 @@ impl<V: View> Driver<V> {
     pub(crate) fn initialize_in(mut app: App, restored: Option<V>) -> Self {
         let entity = Entity::reserve(&app);
         #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
-        app.inner.root.set(Some((entity.id, encode_root::<V>)));
+        app.inner
+            .root
+            .set(Some((entity.id, encode_snapshot_for_notify_check::<V>)));
         app.update(|app| {
             let mut window = app.window();
             let mut cx = Context {
@@ -94,11 +85,6 @@ impl<V: View> Driver<V> {
     pub(crate) fn app_mut(&mut self) -> &mut App {
         &mut self.app
     }
-    /// Runs one tick and hands its frame to `send` — the host's encoder —
-    /// before putting back into the kept tree what the frame carried out of
-    /// it. The tree a frame sends whole, and the subtrees its patches
-    /// carry, are moved there and back rather than copied: the frame is
-    /// gone once it is encoded, and the kept tree is the next frame's base.
     pub(crate) fn tick_with<R>(
         &mut self,
         events: Vec<wire::Event>,
@@ -123,10 +109,6 @@ impl<V: View> Driver<V> {
                 kept
             }
         };
-        // Remembered without the picture bytes this frame carried: the
-        // next view names those pictures by hash alone, and that is
-        // the same tree — and the tree the host keeps, which drops the
-        // bytes the same way once it has the pictures.
         crate::memo::without_pictures(kept);
     }
 
@@ -148,8 +130,6 @@ impl<V: View> Driver<V> {
         self.frame()
     }
 
-    /// Runs one event: its route or its handler. A handler's message comes
-    /// back for the view to run; everything else has already happened.
     fn dispatch(&mut self, event: wire::Event) -> Option<Callback<V>> {
         match event {
             wire::Event::Message(handler) => self.route(handler, &()),
@@ -283,12 +263,9 @@ impl<V: View> Driver<V> {
             }
             wire::Event::Response { id, result, done } => {
                 self.app.host().fulfill(id, result, done);
-                // Response order is semantic: queued hidden data must be
-                // applied before a later visibility notification.
                 self.settle();
                 None
             }
-            // The host dropped the tree the patches build on.
             wire::Event::Resync => {
                 self.last_root = None;
                 slots::clear_pictures(&self.app.inner.slots);
@@ -299,8 +276,6 @@ impl<V: View> Driver<V> {
             wire::Event::A11yAction { handler, data } => self.route(handler, &data),
             wire::Event::Web { handler, state } => self.route(handler, &state),
             wire::Event::Media { handler, state } => self.route(handler, &state),
-            // a later host's event this build cannot read: dropped, and
-            // the rest of the tick runs
             wire::Event::Unknown { .. } => None,
         }
     }
@@ -334,8 +309,6 @@ impl<V: View> Driver<V> {
         let render = self.app.inner.dirty.replace(false) || self.last_root.is_none();
         let mut root = render.then(|| self.render_root());
         let hits = std::mem::take(&mut self.app.inner.memos.borrow_mut().hits);
-        // a target inside a kept subtree is found in the last tree, which
-        // holds it until the frame takes it
         let behind = match hits.is_empty() {
             true => None,
             false => self.last_root.as_ref(),
@@ -346,10 +319,6 @@ impl<V: View> Driver<V> {
             behind,
         );
         self.busy |= self.app.inner.dirty.get() || executor::ready(&self.app.inner.tasks.borrow());
-        // Patches against the last tree, unless there is none — a first
-        // frame or a resync. Nothing lowered is nothing changed, and a
-        // lowered tree that diffs to no patches is the same tree
-        // (`apply(old, diff(old, new))` leaves `old == new`).
         let checks = self.app.inner.memo_checks.get();
         let mut patches = Vec::new();
         let mut lost = false;
@@ -376,8 +345,6 @@ impl<V: View> Driver<V> {
                 false
             }
         };
-        // A kept memo with no node behind it: nothing is sent, and the next
-        // tick draws the tree whole.
         if lost {
             root = None;
             patches.clear();
@@ -390,8 +357,6 @@ impl<V: View> Driver<V> {
         let unchanged = unchanged || lost;
         match root.take() {
             Some(tree) if !unchanged => root = self.keep(tree, &mut patches),
-            // the same tree, with the subtrees it kept moved in from the
-            // last one: the next frame's base
             Some(tree) => self.last_root = Some(tree),
             None => {}
         }
@@ -411,10 +376,6 @@ impl<V: View> Driver<V> {
         }
     }
 
-    /// The style entries a frame carries. A tree sent whole starts the
-    /// table over with the styles it and the frame's tooltips name, and
-    /// carries them all; any other frame carries the entries the host does
-    /// not hold yet.
     fn styles(
         &mut self,
         whole: Option<&mut wire::Node>,
@@ -422,8 +383,6 @@ impl<V: View> Driver<V> {
     ) -> Vec<wire::Style> {
         let mut styles = self.app.inner.styles.borrow_mut();
         if let Some(root) = whole {
-            // the table starts over, numbered anew: the subtrees kept for
-            // the next frame are parts of this tree, renumbered with it
             let mut memos = self.app.inner.memos.borrow_mut();
             styles.retain(|visit| {
                 let contents = tooltips
@@ -474,17 +433,7 @@ impl<V: View> Driver<V> {
         root
     }
 
-    /// Keeps a changed tree as the next frame's base and says what to send:
-    /// the tree itself (patches cleared), or nothing beside the patches.
-    /// The diff took the patches' subtrees out of `tree`; a tree sent whole
-    /// gets them back here, a patched one in [`Driver::put_back`] once the
-    /// frame is sent.
     fn keep(&mut self, mut tree: wire::Node, patches: &mut Vec<wire::Patch>) -> Option<wire::Node> {
-        // Property changes remain patches even for tiny trees; replacing
-        // their identity would discard native state. Structural edits
-        // use the whole tree when it has no more nodes than the patches
-        // carry (counted, not encoded: sizing both by encoding them was
-        // most of a frame's cost).
         let only_props = patches
             .iter()
             .all(|patch| matches!(patch, wire::Patch::Props { .. }));
@@ -499,8 +448,6 @@ impl<V: View> Driver<V> {
                 })
                 .sum()
         };
-        // The tree's count as rendered: the hollowed tree plus what each
-        // taken subtree holds beyond its stand-in.
         let nodes = || -> usize {
             let taken: usize = patches
                 .iter()
@@ -516,9 +463,6 @@ impl<V: View> Driver<V> {
         if !only_props && carried() >= nodes() {
             put_back(&mut tree, std::mem::take(patches));
         }
-        // A frame that carries patches sends no tree, so the tree itself is
-        // kept; one that sends the tree has nothing to keep until the tree
-        // comes back from the encoder.
         match patches.is_empty() {
             true => {
                 self.last_root = None;
@@ -531,7 +475,6 @@ impl<V: View> Driver<V> {
         }
     }
 
-    /// Runs a route listener. A routed event carries no message back.
     fn route<E: 'static>(&mut self, handler: u32, event: &E) -> Option<Callback<V>> {
         let slots = self.app.inner.slots.clone();
         let mut window = self.app.window();
@@ -544,18 +487,11 @@ impl<V: View> Driver<V> {
     }
 }
 
-/// The root's snapshot bytes, for the debug check that a change to them
-/// notified. A view whose serde refuses has none, before and after.
 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
-fn encode_root<V: View>(view: &dyn std::any::Any) -> Vec<u8> {
+fn encode_snapshot_for_notify_check<V: View>(view: &dyn std::any::Any) -> Vec<u8> {
     wire::try_encode(view.downcast_ref::<V>().expect("the root view")).unwrap_or_default()
 }
 
-/// Puts the subtrees `patches` carry back into the tree `wire::diff_taking`
-/// took them from, which is `new` as it was: a patch's path and index are
-/// the position of its node in `new`. Each subtree goes into its stand-in's
-/// slot, never inserted, so the patches' order does not matter. Patches
-/// that carry no subtree are skipped.
 pub(crate) fn put_back(new: &mut wire::Node, patches: Vec<wire::Patch>) {
     for patch in patches {
         let (path, index, node) = match patch {

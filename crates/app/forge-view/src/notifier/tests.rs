@@ -8,8 +8,6 @@ use forge::{ChangeState, ChangeSummary, PageResponse, ReplyAttention, ReviewCoun
 use view::methods::{Changes, HostScreen, HostSession, StoreGet, StoreSet};
 use view::testing::TestNotifier;
 
-/// What forge says reader 2 owes on change `web#<n>`: their review when
-/// `requested`, and the newest reply to them at `reply` (none at 0).
 fn owed(n: u64, requested: bool, reply: u64) -> Judgment {
     Judgment {
         change: ChangeSummary {
@@ -44,8 +42,6 @@ fn session() -> Session {
     }
 }
 
-/// Forge as the notifier reads it, and the device's store, both outliving
-/// the notifier's runs.
 #[derive(Clone, Default)]
 struct World {
     owed: Rc<RefCell<Vec<Judgment>>>,
@@ -53,8 +49,6 @@ struct World {
 }
 
 impl World {
-    /// A run started as a connect starts it: the reader seated, nothing on
-    /// screen.
     fn start(&self) -> TestNotifier<ForgeNotices> {
         let mut notifier = TestNotifier::new();
         let host = notifier.host();
@@ -90,7 +84,6 @@ impl World {
         notifier
     }
 
-    /// Forge now says the reader owes `owed`, and a block says so.
     fn block(&self, notifier: &mut TestNotifier<ForgeNotices>, owed: Vec<Judgment>) {
         *self.owed.borrow_mut() = owed;
         notifier.host().stream::<Changes<forge::Forge>>().send(None);
@@ -107,9 +100,6 @@ fn posts(notifier: &TestNotifier<ForgeNotices>) -> Vec<(String, String)> {
         .collect()
 }
 
-/// A review asked of the reader is one notice linking to the change, and
-/// a reply to them on it another; neither comes twice, nor at the next
-/// launch. What they owed at the first run ever is history.
 #[test]
 fn a_review_request_and_a_reply_are_one_notice_each() {
     let world = World::default();
@@ -142,8 +132,6 @@ fn a_review_request_and_a_reply_are_one_notice_each() {
     assert!(posts(&relaunched).is_empty(), "announced once");
 }
 
-/// A change a forge pane shows is in front of the reader: no notice about
-/// it, then or once the pane leaves it.
 #[test]
 fn a_change_on_screen_gets_no_notice() {
     let world = World::default();

@@ -80,7 +80,6 @@ pub const QUEUE_SEQ: Item<u64> = Item::new("queue-seq");
 // The archived repositories, by name. `ACTIVITY` holds none of them, so `Repos` lists none.
 pub const ARCHIVED: Set<String> = Set::new("h/");
 
-/// Stored state that is not what forge wrote: an operator's problem.
 pub(crate) fn storage(sentence: impl Into<String>) -> Error {
     Error::new(code::CORRUPT, sentence)
 }
@@ -121,23 +120,19 @@ pub fn save_repo(ctx: &ExecCtx, name: &str, repo: &Repo) -> Result<(), Error> {
     Ok(())
 }
 
-// Whether the repository `name` is archived.
 pub fn archived(ctx: &QueryCtx, name: &str) -> bool {
     ARCHIVED.has(ctx, &name.to_owned())
 }
 
-/// How many ops forge has accepted so far (0 before any).
 pub(crate) fn writes(ctx: &QueryCtx) -> Result<u64, Error> {
     Ok(WRITES.get(ctx)?.unwrap_or(0))
 }
 
-/// Counts an accepted op.
 pub(crate) fn wrote(ctx: &ExecCtx) -> Result<(), Error> {
     WRITES.put(ctx, &(writes(ctx)? + 1));
     Ok(())
 }
 
-/// An activity key: a later height sorts first.
 fn newest_first(height: u64) -> u64 {
     u64::MAX - height
 }
@@ -188,7 +183,6 @@ pub fn delete_ref(ctx: &ExecCtx, name: &str, reference: &[u8]) -> Result<(), Err
     moved(ctx, name, reference, old, None)
 }
 
-// Every ref move tells the watchers, whichever op made it.
 fn moved(
     ctx: &ExecCtx,
     name: &str,
@@ -208,7 +202,6 @@ fn moved(
     crate::watchers::tell(ctx, &event)
 }
 
-// Whether `branch` is protected in the repository `name`: its head always is.
 pub fn protected(ctx: &QueryCtx, name: &str, repo: &Repo, branch: &[u8]) -> bool {
     repo.settings.head == branch || PROTECTED.has(ctx, &ref_key(name, branch))
 }
@@ -279,7 +272,6 @@ fn message_id(n: u64) -> String {
     chat::namespace::id(crate::PROGRAM, &format!("{n:016x}"))
 }
 
-/// Change `n`'s hidden chat channel: `forge:<repo>:<n>`.
 pub(crate) fn channel_id(repo: &str, n: u64) -> String {
     chat::namespace::id(crate::PROGRAM, &format!("{repo}:{n}"))
 }

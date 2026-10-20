@@ -163,7 +163,6 @@ impl Tool for Read {
     }
 }
 
-/// How many characters a topic holds at most: one line beside a conversation's name.
 pub(crate) const TOPIC_MAX: usize = 120;
 
 #[derive(Deserialize)]

@@ -21,7 +21,6 @@ use crate::state::{
     save_review, set_ref,
 };
 
-/// What `ChangeOpen` carries besides its repository.
 pub(crate) struct Draft {
     pub from: Revision,
     pub into: Vec<u8>,
@@ -75,7 +74,7 @@ pub(crate) fn open(
         channel,
         system_seq: 1,
     };
-    fits(ctx, &change)?;
+    enforce_record_size(ctx, &change)?;
     let message = next_message(ctx)?;
     save_change(ctx, repo, &change)?;
     let authorship = Authorship {
@@ -102,7 +101,6 @@ pub(crate) fn open(
     })
 }
 
-/// What `ChangeEdit` changes; `None` leaves a field as it is.
 pub(crate) struct Edit {
     pub title: Option<String>,
     pub body: Option<String>,
@@ -126,7 +124,7 @@ pub(crate) fn edit(ctx: &ExecCtx, repo: &str, n: u64, fields: Edit) -> Result<Op
         change.reviewers = reviewers;
     }
     touched(&mut change, &env);
-    fits(ctx, &change)?;
+    enforce_record_size(ctx, &change)?;
     save_change(ctx, repo, &change)?;
     crate::state::reshaped(ctx, repo, n)?;
     Ok(OpReply::Change {
@@ -135,7 +133,6 @@ pub(crate) fn edit(ctx: &ExecCtx, repo: &str, n: u64, fields: Edit) -> Result<Op
     })
 }
 
-/// Closing is terminal: the author or a writer ends an open change.
 pub(crate) fn close(
     ctx: &ExecCtx,
     actor: &Principal,
@@ -165,8 +162,6 @@ pub(crate) fn close(
     })
 }
 
-/// One immutable review: a verdict, a body and its line comments, pinned
-/// at the commits it read. Reviews stay appendable after a change ends.
 pub(crate) fn submit_review(
     ctx: &ExecCtx,
     actor: &Principal,
@@ -193,7 +188,7 @@ pub(crate) fn submit_review(
         draft,
         message_id: peek_message(ctx)?,
     };
-    fits(ctx, &review)?;
+    enforce_record_size(ctx, &review)?;
     change.review_count = id;
     change.comment_count = change
         .comment_count
@@ -202,7 +197,7 @@ pub(crate) fn submit_review(
     count_verdict(&mut change.verdicts, review.draft.verdict)?;
     touched(&mut change, &env);
     change.system_seq = next(change.system_seq)?;
-    fits(ctx, &change)?;
+    enforce_record_size(ctx, &change)?;
     let message = next_message(ctx)?;
     save_review(ctx, repo, n, &review);
     save_change(ctx, repo, &change)?;
@@ -214,7 +209,6 @@ pub(crate) fn submit_review(
     })
 }
 
-/// What `Merge` carries besides its repository.
 pub(crate) struct MergeRequest {
     pub into: Vec<u8>,
     pub from: Revision,
@@ -224,8 +218,6 @@ pub(crate) struct MergeRequest {
     pub change: Option<u64>,
 }
 
-/// A compare-and-swap of both heads: the client built and published the
-/// result; forge only checks that neither endpoint moved since.
 pub(crate) fn merge_heads(
     ctx: &ExecCtx,
     actor: &Principal,
@@ -240,14 +232,14 @@ pub(crate) fn merge_heads(
     let expected_from = parse_oid(hash, &merge.expected_from)?;
     let result = parse_oid(hash, &merge.result)?;
     let ends = (merge.into.as_slice(), &merge.from);
-    still_at(ctx, repo, hash, ends, (expected_into, expected_from))?;
+    heads_still_at_merge_inputs(ctx, repo, hash, ends, (expected_into, expected_from))?;
     let heads = (&expected_into, &expected_from);
     crate::checks::gate(ctx, repo, &merge.into, merge.change, heads)?;
     if result == expected_into || expected_from == expected_into {
         return Err(wrong_state("merge does not advance the target"));
     }
     if let Some(n) = merge.change {
-        let change = open_on(ctx, repo, hash, n, ends)?;
+        let change = open_change_on_endpoints(ctx, repo, hash, n, ends)?;
         let heads = MergedHeads {
             source: expected_from.to_hex(),
             target: expected_into.to_hex(),
@@ -262,8 +254,7 @@ pub(crate) fn merge_heads(
     })
 }
 
-// Both heads still where the merge read them: `into` at the first, `from` at the second.
-fn still_at(
+fn heads_still_at_merge_inputs(
     ctx: &QueryCtx,
     repo: &str,
     hash: Hash,
@@ -278,8 +269,7 @@ fn still_at(
     Ok(())
 }
 
-// Change `n`, open, on the merge's own endpoints.
-fn open_on(
+fn open_change_on_endpoints(
     ctx: &QueryCtx,
     repo: &str,
     hash: Hash,
@@ -298,7 +288,6 @@ fn open_on(
     Ok(change)
 }
 
-// The change merged at `result` by `actor`, and its line in the change's channel.
 pub(crate) fn merged(
     ctx: &ExecCtx,
     actor: &Principal,
@@ -314,7 +303,7 @@ pub(crate) fn merged(
     change.merged_heads = Some(heads);
     touched(&mut change, &env);
     change.system_seq = next(change.system_seq)?;
-    fits(ctx, &change)?;
+    enforce_record_size(ctx, &change)?;
     let message = next_message(ctx)?;
     save_change(ctx, repo, &change)?;
     discussion::post(ctx, repo, &change, message, Event::Merged);
@@ -329,7 +318,6 @@ pub(crate) fn merged(
     Ok(())
 }
 
-// What `SquashMerge` carries besides its repository.
 pub(crate) struct SquashRequest {
     pub into: Vec<u8>,
     pub from: Revision,
@@ -339,9 +327,6 @@ pub(crate) struct SquashRequest {
     pub change: Option<u64>,
 }
 
-// One squash commit forge builds itself: what `from` changed since its merge base with
-// `into`, merged onto `into`'s tree, with `into`'s head its one parent; then `into` moves to
-// it under `Merge`'s CAS. A conflict refuses it, naming every path, and writes nothing.
 pub(crate) fn squash(
     ctx: &ExecCtx,
     actor: &Principal,
@@ -355,17 +340,17 @@ pub(crate) fn squash(
     let expected_into = parse_oid(hash, &squash.expected_into)?;
     let expected_from = parse_oid(hash, &squash.expected_from)?;
     let ends = (squash.into.as_slice(), &squash.from);
-    still_at(ctx, repo, hash, ends, (expected_into, expected_from))?;
+    heads_still_at_merge_inputs(ctx, repo, hash, ends, (expected_into, expected_from))?;
     let heads = (&expected_into, &expected_from);
     crate::checks::gate(ctx, repo, &squash.into, squash.change, heads)?;
     if expected_from == expected_into {
         return Err(wrong_state("merge does not advance the target"));
     }
     let change = match squash.change {
-        Some(n) => Some(open_on(ctx, repo, hash, n, ends)?),
+        Some(n) => Some(open_change_on_endpoints(ctx, repo, hash, n, ends)?),
         None => None,
     };
-    let message = message_of(squash.message, change.as_ref())?;
+    let message = squash_message(squash.message, change.as_ref())?;
     let bounds = load_bounds(ctx)?;
     let objects = ObjectWriter::new(ctx, hash);
     let walk = cap(bounds.log_walk);
@@ -377,9 +362,9 @@ pub(crate) fn squash(
     if base == expected_from {
         return Err(wrong_state("merge does not advance the target"));
     }
-    let committer = signature(ctx, require_named(actor)?)?;
+    let committer = squash_signature_at_block_time(ctx, require_named(actor)?)?;
     let author = match change.as_ref().and_then(|change| change.author.account()) {
-        Some(author) => signature(ctx, author)?,
+        Some(author) => squash_signature_at_block_time(ctx, author)?,
         None => committer.clone(),
     };
     let made = Squashed {
@@ -406,8 +391,6 @@ pub(crate) fn squash(
     })
 }
 
-// What a squash commit is made of: the merge base, the head it lands on (`ours`, its one
-// parent), the head whose changes it carries (`theirs`), and whom it names.
 struct Squashed {
     base: Oid,
     ours: Oid,
@@ -417,8 +400,6 @@ struct Squashed {
     message: Vec<u8>,
 }
 
-// Writes the squash commit: what `theirs` changed since `base`, merged onto `ours`' tree. A
-// conflict refuses it, naming every path, and writes nothing.
 fn write_squash(
     mut objects: ObjectWriter<'_>,
     bounds: &Bounds,
@@ -432,7 +413,7 @@ fn write_squash(
     let merge =
         gitcore::merge::trees(&objects, Some(&base), &ours, &theirs, cost).map_err(refusal_of)?;
     if !merge.conflicts.is_empty() {
-        return Err(wrong_state(conflicted(&merge.conflicts)));
+        return Err(wrong_state(conflict_paths_and_reasons(&merge.conflicts)));
     }
     let commit = Commit {
         tree: merge.tree,
@@ -462,8 +443,6 @@ fn write_squash(
     Ok(id)
 }
 
-// Change `n`'s squash on its target's head, as `SquashMerge` would land it, under
-// `refs/changes/<n>/merge`; the same two heads answer the Preview already made.
 pub(crate) fn preview(
     ctx: &ExecCtx,
     actor: &Principal,
@@ -478,8 +457,6 @@ pub(crate) fn preview(
     })
 }
 
-// Change `n`'s Preview on its target's head now: the one made already while both heads stay,
-// else a new squash `committer` commits, which watchers hear of.
 pub(crate) fn previewed(
     ctx: &ExecCtx,
     committer: AccountNumber,
@@ -500,7 +477,7 @@ pub(crate) fn previewed(
     {
         return Ok(made);
     }
-    let message = message_of(None, Some(&change))?;
+    let message = squash_message(None, Some(&change))?;
     let bounds = load_bounds(ctx)?;
     let objects = ObjectWriter::new(ctx, hash);
     let walk = cap(bounds.log_walk);
@@ -513,9 +490,9 @@ pub(crate) fn previewed(
         ));
     }
     let by = Principal::Account(committer);
-    let committer = signature(ctx, committer)?;
+    let committer = squash_signature_at_block_time(ctx, committer)?;
     let author = match change.author.account() {
-        Some(author) => signature(ctx, author)?,
+        Some(author) => squash_signature_at_block_time(ctx, author)?,
         None => committer.clone(),
     };
     let made = Squashed {
@@ -551,16 +528,12 @@ pub(crate) fn previewed(
     Ok(made)
 }
 
-// What `Rebase` carries besides its repository.
 pub(crate) struct RebaseRequest {
     pub n: u64,
     pub onto: Revision,
     pub expected_head: String,
 }
 
-// Change `n` rebuilt on `onto`: what its head changed since their merge base, merged onto
-// `onto`'s tree as one squash commit whose one parent is `onto`, and its source moved there
-// under a CAS on its head. Its number, reviews and channel stay.
 pub(crate) fn rebase(
     ctx: &ExecCtx,
     actor: &Principal,
@@ -602,9 +575,9 @@ pub(crate) fn rebase(
             "the change already sits on onto: nothing to rebase",
         ));
     }
-    let committer = signature(ctx, require_named(actor)?)?;
+    let committer = squash_signature_at_block_time(ctx, require_named(actor)?)?;
     let author = match change.author.account() {
-        Some(author) => signature(ctx, author)?,
+        Some(author) => squash_signature_at_block_time(ctx, author)?,
         None => committer.clone(),
     };
     let made = Squashed {
@@ -613,7 +586,7 @@ pub(crate) fn rebase(
         theirs: head,
         author,
         committer,
-        message: rebased_message(&change),
+        message: rebase_title_and_body(&change),
     };
     let id = write_squash(objects, &bounds, hash, made)?;
     match &change.from {
@@ -621,7 +594,7 @@ pub(crate) fn rebase(
         Revision::Oid(_) => change.from = Revision::Oid(id.to_hex()),
     }
     touched(&mut change, &env);
-    fits(ctx, &change)?;
+    enforce_record_size(ctx, &change)?;
     save_change(ctx, repo, &change)?;
     crate::state::reshaped(ctx, repo, request.n)?;
     Ok(OpReply::Rebased {
@@ -631,8 +604,7 @@ pub(crate) fn rebase(
     })
 }
 
-// A rebase's message: the change's title, a blank line and its body.
-fn rebased_message(change: &Change) -> Vec<u8> {
+fn rebase_title_and_body(change: &Change) -> Vec<u8> {
     let message = match change.body.trim() {
         "" => change.title.trim().to_owned(),
         body => format!("{}\n\n{body}", change.title.trim()),
@@ -642,7 +614,6 @@ fn rebased_message(change: &Change) -> Vec<u8> {
     message
 }
 
-// Change `n` takes `from` as its source, checked as `ChangeOpen` checks it.
 pub(crate) fn repoint(ctx: &ExecCtx, repo: &str, n: u64, from: Revision) -> Result<OpReply, Error> {
     let env = ctx.env();
     let record = load_repo(ctx, repo)?;
@@ -660,7 +631,7 @@ pub(crate) fn repoint(ctx: &ExecCtx, repo: &str, n: u64, from: Revision) -> Resu
         from => from,
     };
     touched(&mut change, &env);
-    fits(ctx, &change)?;
+    enforce_record_size(ctx, &change)?;
     save_change(ctx, repo, &change)?;
     crate::state::reshaped(ctx, repo, n)?;
     Ok(OpReply::Change {
@@ -709,7 +680,6 @@ pub(crate) fn archive_ended(
     })
 }
 
-// The root tree of the commit `id`.
 fn root_tree(objects: &impl Objects, id: &Oid) -> Result<Oid, Error> {
     let object = objects
         .get(id)
@@ -723,9 +693,7 @@ fn root_tree(objects: &impl Objects, id: &Oid) -> Result<Oid, Error> {
         .tree)
 }
 
-// The squash's message: the one given, or the change's title and number, a blank line and
-// its body.
-fn message_of(given: Option<String>, change: Option<&Change>) -> Result<Vec<u8>, Error> {
+fn squash_message(given: Option<String>, change: Option<&Change>) -> Result<Vec<u8>, Error> {
     let message = match (given, change) {
         (Some(given), _) if given.trim().is_empty() => {
             return Err(invalid("a squash's message is nonblank"));
@@ -748,10 +716,10 @@ fn message_of(given: Option<String>, change: Option<&Change>) -> Result<Vec<u8>,
     Ok(message)
 }
 
-// Who a squash names, as `forge_commit` signs an agent's commit: the account by its identity
-// name (git's `<`, `>` and control characters left out) at `<number>@<chain id>`, at the
-// block's time, so every validator writes the same bytes.
-fn signature(ctx: &QueryCtx, account: AccountNumber) -> Result<Signature, Error> {
+fn squash_signature_at_block_time(
+    ctx: &QueryCtx,
+    account: AccountNumber,
+) -> Result<Signature, Error> {
     use abi::role::identity::{Query, Reply};
     let identity = &ctx.env().role(abi::role::IDENTITY)?.clone();
     let profile = match ctx.query::<Query, Reply>(identity, &Query::Profile(account))? {
@@ -777,8 +745,7 @@ fn signature(ctx: &QueryCtx, account: AccountNumber) -> Result<Signature, Error>
     })
 }
 
-// A conflict's refusal: every path, and why.
-fn conflicted(conflicts: &[Conflict]) -> String {
+fn conflict_paths_and_reasons(conflicts: &[Conflict]) -> String {
     let named: Vec<String> = conflicts
         .iter()
         .map(|conflict| {
@@ -821,8 +788,7 @@ fn require_open(change: &Change) -> Result<(), Error> {
     Ok(())
 }
 
-/// A record over `Bounds.record_bytes` is refused whole.
-fn fits(ctx: &QueryCtx, record: &impl borsh::BorshSerialize) -> Result<(), Error> {
+fn enforce_record_size(ctx: &QueryCtx, record: &impl borsh::BorshSerialize) -> Result<(), Error> {
     let bound = load_bounds(ctx)?.record_bytes;
     if abi::encode(record).len() as u64 > bound {
         return Err(capacity(format!(
@@ -850,7 +816,6 @@ fn check_reviewers(ctx: &QueryCtx, reviewers: &[Principal]) -> Result<(), Error>
     Ok(())
 }
 
-/// Both ends of a change or a merge are branches under `refs/heads/`.
 fn check_endpoints(into: &[u8], from: &Revision) -> Result<(), Error> {
     check_branch(into)?;
     if let Revision::Ref(name) = from {

@@ -44,9 +44,6 @@ pub(super) fn screen(
     .into_any_element()
 }
 
-/// The title row's Create (the kit `HitText`, testID `create`): body
-/// medium, faint while the name is empty or the create is on its way,
-/// which it says (Creating…).
 fn create_button(
     create: &ChannelCreate,
     cx: &mut Context<Chat>,
@@ -87,8 +84,6 @@ fn create_button(
     }
 }
 
-/// The name, with why the last create did not go under it; the keyboard's
-/// return creates.
 fn name_field(
     create: &ChannelCreate,
     cx: &mut Context<Chat>,
@@ -114,7 +109,6 @@ fn name_field(
         .into_element()
 }
 
-/// Who may post: Anyone or Members only.
 fn policy(create: &ChannelCreate, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Div {
     let pick = cx.processor(|chat, index: usize, _window, cx| {
         if let Some(create) = &mut chat.create {

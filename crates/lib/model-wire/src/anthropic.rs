@@ -130,7 +130,7 @@ fn message_json(message: &Message, model: &str) -> Value {
             let same_model = ours && lane.model == model;
             let content: Vec<Value> = blocks
                 .iter()
-                .filter_map(|block| said_block(block, ours, same_model))
+                .filter_map(|block| provider_owned_block(block, ours, same_model))
                 .collect();
             ("assistant", content)
         }
@@ -183,9 +183,7 @@ fn text_block(text: &str) -> Option<Value> {
     (!text.is_empty()).then(|| json!({ "type": "text", "text": text }))
 }
 
-// a block as this provider takes it back: what it sealed only if it wrote it (`ours`), and a
-// reasoning's seal only to the model that wrote it; anything else goes back as its text, or not
-fn said_block(block: &Block, ours: bool, same_model: bool) -> Option<Value> {
+fn provider_owned_block(block: &Block, ours: bool, same_model: bool) -> Option<Value> {
     match block {
         Block::Text { text, citations } if ours && !citations.is_empty() => {
             let citations: Vec<Value> = citations
@@ -320,7 +318,6 @@ pub struct Fold {
 }
 
 impl Fold {
-    // the fold of a reply to a request for model `asked`
     pub fn new(asked: &str) -> Fold {
         Fold {
             asked: asked.to_owned(),

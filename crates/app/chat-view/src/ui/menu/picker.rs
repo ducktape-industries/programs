@@ -11,9 +11,6 @@ use crate::words;
 use crate::{Chat, Menu, Mode, emoji};
 use view::design::Ladder;
 
-/// The reaction picker: a search field that takes the keys, the reader's
-/// frequent row, one tab of emoji at a time under a strip of tabs, or the
-/// search's matches in their place. Enter picks the first match.
 pub(super) fn reactions(
     chat: &Chat,
     menu: &Menu,
@@ -36,8 +33,6 @@ pub(super) fn reactions(
     picker.children(body).into_any_element()
 }
 
-/// What choosing `emoji` does: react to `seq`, or nothing where the reader
-/// may not write.
 fn pick(chat: &Chat, seq: u64, emoji: &str, cx: &mut Context<Chat>) -> Option<Press> {
     let emoji = emoji.to_owned();
     chat.may_write().then(|| {
@@ -48,7 +43,6 @@ fn pick(chat: &Chat, seq: u64, emoji: &str, cx: &mut Context<Chat>) -> Option<Pr
     })
 }
 
-/// The field that takes the keys; Enter reacts with its first match.
 fn search_field(chat: &Chat, menu: &Menu, cx: &mut Context<Chat>, theme: &Theme) -> Input {
     let key = focus_key(menu.pane, Mode::Reactions);
     let search = Input::new(key, &chat.picker.query, "Find an emoji to react with")
@@ -73,7 +67,6 @@ fn search_field(chat: &Chat, menu: &Menu, cx: &mut Context<Chat>, theme: &Theme)
     }
 }
 
-/// With no search: the frequent row, the tabs, and the open tab's emoji.
 fn browse(
     chat: &Chat,
     seq: u64,
@@ -123,9 +116,7 @@ fn browse(
     ]
 }
 
-/// A tab per emoji category, `chosen` marked.
 fn tabs(chosen: usize, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> impl IntoElement {
-    // one Tab stop; ← → open the next category
     let mut tabs = design::composite("chat-reaction-tabs", Role::TabList, words::EMOJI_CATEGORIES)
         .orientation(design::Orientation::Horizontal)
         .wrap()
@@ -160,8 +151,6 @@ fn tabs(chosen: usize, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -
     tabs
 }
 
-/// A search's matches, counted, scrolled in the room the tabs and grid
-/// leave.
 fn matches(chat: &Chat, seq: u64, cx: &mut Context<Chat>, theme: &Theme) -> Vec<AnyElement> {
     let found = emoji::search(&chat.picker.query.text());
     let count = match found.len() {
@@ -192,11 +181,6 @@ fn matches(chat: &Chat, seq: u64, cx: &mut Context<Chat>, theme: &Theme) -> Vec<
     ]
 }
 
-/// The emoji `cells` (each an id and its emoji) in rows of [`COLUMNS`], one
-/// Tab stop: ← → step a cell, ↑ ↓ a row, Home/End the row's ends,
-/// Ctrl+Home/End the grid's, Enter reacts with the active emoji. The search
-/// field above is the typeahead; where the reader may not write the cells
-/// are dimmed and Enter does nothing.
 fn grid(
     id: &'static str,
     label: &str,
@@ -255,7 +239,6 @@ fn grid(
     grid
 }
 
-/// A section's name over its cells, in the data face.
 fn caption(text: &str, theme: &Theme) -> impl IntoElement {
     div()
         .h(px(CAPTION))
@@ -265,9 +248,6 @@ fn caption(text: &str, theme: &Theme) -> impl IntoElement {
         .child(text.to_uppercase())
 }
 
-/// The picker keeps one size whatever it shows, so it never jumps under
-/// the pointer as a search narrows it: search, caption, frequent row, tabs,
-/// caption, grid.
 pub(super) fn picker_size() -> (f32, f32) {
     let columns = COLUMNS as f32;
     let grid = GRID_ROWS * CELL + (GRID_ROWS - 1.) * PICKER_GAP;
@@ -282,7 +262,6 @@ struct Reaction {
     id: ElementId,
     emoji: String,
     press: Option<Press>,
-    /// the grid's arrows are on this cell
     active: bool,
     theme: Theme,
 }
@@ -315,14 +294,10 @@ impl RenderOnce for Reaction {
             .justify_center()
             .text_size(design::text::TITLE)
             .role(Role::Button)
-            // named by its emoji, as the strip's "React with 👍": one name
-            // for 48 cells told assistive technology nothing apart
             .aria_label(words::react_with(&self.emoji))
             .aria_disabled(!enabled)
             .child(self.emoji);
         match self.press {
-            // hover and nothing more: each state is a style the frame
-            // carries for every cell (see `emoji::PER_TAB`)
             Some(press) => design::item(
                 cell.cursor_pointer()
                     .hover(|s| s.bg(self.theme.surface_raised))

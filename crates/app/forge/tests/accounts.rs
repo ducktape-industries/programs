@@ -129,9 +129,6 @@ fn one_person_with_two_keys_is_one_owner_author_and_reviewer() {
     assert_eq!(record(&rig, n).0.closed_by, Some(Principal::Account(1)));
 }
 
-/// A key that holds no account writes nothing, whatever the op, and leaves
-/// forge as it was; once identity seats it in an account, the same key
-/// writes as that account.
 #[test]
 fn a_key_writes_only_once_it_holds_an_account() {
     let (mut rig, story) = story();
@@ -239,8 +236,6 @@ fn an_ended_change_is_not_edited() {
     assert_eq!(rig.refused(&retitle).code, code::WRONG_STATE);
 }
 
-/// Each line is an event code in a `forge` block: no key, no name, no
-/// sentence. Who and what are on forge's records.
 #[test]
 fn system_lines_carry_an_event_code_and_no_name() {
     let (mut rig, story) = story();
@@ -267,7 +262,6 @@ fn system_lines_carry_an_event_code_and_no_name() {
     else {
         panic!()
     };
-    // each line landed in its op's own frame; newest first
     let texts: Vec<&str> = page.items.iter().map(|row| row.text.as_str()).collect();
     assert_eq!(texts, ["closed", "review 1", "opened"]);
     assert_eq!(page.items[0].blocks, [code("closed")]);

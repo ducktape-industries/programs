@@ -71,16 +71,12 @@ fn closing_a_conversation_says_whether_it_is_the_current_one() {
 
 #[test]
 fn a_conversation_reads_by_its_number_and_its_room_by_the_name_chat_gives_it() {
-    // a room's channel id says nothing to a person, and a conversation opened before an agent
-    // kept one conversation carries that id in its title
     const ROOM: &str = "channel-18df5a416a71b5fa-1792250406982472";
     let mut net = Net::default();
     net.rooms.push((ROOM.to_owned(), "payments".to_owned()));
     net.threads[0].place = format!("chat/{ROOM}");
     net.threads[0].title = format!("chat channel {ROOM}");
     let (mut cx, _) = seated(net, EDDY);
-    // the list's sentence names its room; the agent's rows, its heading and the window title
-    // add its number
     assert!(
         cx.has_text("in #payments · waiting for the model"),
         "{:?}",
@@ -207,7 +203,6 @@ fn the_agents_topic_shows_beside_its_conversation_and_never_in_place_of_its_name
         Some("Scout · #general · 7")
     );
 
-    // a phone draws it in the row's caption and under the conversation's title row
     cx.simulate_touch(true);
     cx.simulate_resize(390., 844.);
     cx.run_until_parked();

@@ -25,7 +25,6 @@ fn answer(cx: &TestAppContext, rooms: Vec<ChannelInfo>) {
         }));
 }
 
-// files holding `FILE` as `held` says: its object (a number that moves with each write) and text
 fn serve_file(cx: &TestAppContext, held: Rc<RefCell<(u8, String)>>) {
     cx.host().handle::<Ask<files::Files>>(move |query| {
         let snapshot = BlobId::Sha256([9; 32]);

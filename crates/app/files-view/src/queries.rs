@@ -12,7 +12,6 @@ use crate::state::{
     Folder, HISTORY_PAGE, History, Names, Opened, PREVIEW, ROOT, Snapshot, picture_format,
 };
 
-/// A folder's entries, every page of them, and who writes it.
 pub(crate) async fn folder(host: Host, path: String) -> Result<Folder, Error> {
     let mut snapshot = None;
     let mut entries = Vec::new();
@@ -32,7 +31,6 @@ pub(crate) async fn folder(host: Host, path: String) -> Result<Folder, Error> {
             None => break,
         }
     }
-    // folders first, each kind by name as `files` keeps a tree
     entries.sort_by_key(|entry| !matches!(entry.node, files::Node::Dir { .. }));
     let writers = writers(&host, &path).await?;
     Ok(Folder {
@@ -43,7 +41,6 @@ pub(crate) async fn folder(host: Host, path: String) -> Result<Folder, Error> {
     })
 }
 
-/// Who writes `path`; `/` names nothing a change can, so it has no answer.
 async fn writers(host: &Host, path: &str) -> Result<Option<Writers>, Error> {
     if path == ROOT {
         return Ok(None);
@@ -56,16 +53,11 @@ async fn writers(host: &Host, path: &str) -> Result<Option<Writers>, Error> {
     .map(Some)
 }
 
-/// What is at `path` at the newest snapshot, if anything.
 pub(crate) async fn entry(host: Host, path: String) -> Result<Option<files::EntryInfo>, Error> {
     let (_, entry) = host.query(files::ask::Stat { path, at: None }).await?;
     Ok(entry)
 }
 
-/// What is at `path`, its first [`PREVIEW`] bytes (the whole of a
-/// picture the app draws), and who writes it. `kept` is the picture on
-/// screen and the content it was read from: while the file's content is
-/// the same, it is kept and not read again.
 pub(crate) async fn file(
     host: Host,
     path: String,
@@ -90,8 +82,9 @@ pub(crate) async fn file(
                 .await?;
             let picture = match (node, kept) {
                 (files::Node::File { file, .. }, Some((was, kept))) if *file == was => Some(kept),
-                // a link's bytes are its target, never a picture's
-                (files::Node::File { .. }, _) => picture(&host, &path, snapshot, &contents).await?,
+                (files::Node::File { .. }, _) => {
+                    read_picture_at_snapshot(&host, &path, snapshot, &contents).await?
+                }
                 (_, _) => None,
             };
             (contents.bytes, contents.eof, picture)
@@ -112,9 +105,7 @@ pub(crate) async fn file(
     })
 }
 
-// The whole picture a file's first bytes begin, read on from them a
-// chunk at a time at the same snapshot; `None` when they begin none.
-async fn picture(
+async fn read_picture_at_snapshot(
     host: &Host,
     path: &str,
     at: Option<BlobId>,
@@ -133,8 +124,6 @@ async fn picture(
                 len: files::CHUNK_SIZE,
             })
             .await?;
-        // a read at one snapshot short of the size it states would draw
-        // half a picture, or never end
         if next.bytes.is_empty() {
             return Err(view::host::malformed(format!(
                 "{path} ends at {} of its {} bytes",
@@ -147,7 +136,6 @@ async fn picture(
     Ok(Some(Arc::new(Image::from_bytes(format, bytes))))
 }
 
-/// The newest [`HISTORY_PAGE`] snapshots, and every pin.
 pub(crate) async fn history(host: Host) -> Result<History, Error> {
     let newest = host
         .query(files::ask::History {
@@ -166,8 +154,6 @@ pub(crate) async fn history(host: Host) -> Result<History, Error> {
     })
 }
 
-/// The snapshot `id`, and what it changed against its parent; the first
-/// snapshot's whole tree is new, which this does not list.
 pub(crate) async fn snapshot(host: Host, id: BlobId) -> Result<Snapshot, Error> {
     let row = host.query(files::ask::Snapshot { id }).await?;
     let changes = match row.as_ref().and_then(|row| row.parent) {
@@ -184,7 +170,6 @@ pub(crate) async fn snapshot(host: Host, id: BlobId) -> Result<Snapshot, Error> 
     Ok(Snapshot { id, row, changes })
 }
 
-/// The name identity gives `account`, if any.
 pub(crate) async fn name(host: Host, account: u64) -> Result<Option<String>, Error> {
     let profile = host
         .query(identity::ask::Profile { number: account })
@@ -192,9 +177,6 @@ pub(crate) async fn name(host: Host, account: u64) -> Result<Option<String>, Err
     Ok(profile.map(|profile| profile.name))
 }
 
-/// Every account's name.
-// ponytail: every account, on every identity change; ask only the
-// authors on screen (`Profile` each) once the network holds thousands.
 pub(crate) async fn names(host: Host) -> Result<Names, Error> {
     let accounts = host
         .query_all(|after| identity::ask::List {

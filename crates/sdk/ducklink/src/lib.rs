@@ -33,8 +33,6 @@ use abi::reason::INVALID_INPUT;
 
 const SCHEME: &str = "duck://";
 
-/// how many hex digits a salt may be: at least 8, so `my-cafe` is a label and
-/// not `my` salted `cafe`; at most the whole 32-byte digest.
 const SALT_HEX: std::ops::RangeInclusive<usize> = 8..=64;
 
 /// the network, as the workspace registry keys it: `<label>#<salt>`.
@@ -177,7 +175,7 @@ impl Link {
             return Err(empty(&link.to_string()));
         }
         for segment in &link.tail {
-            named(segment, &encode(segment))?;
+            validate_segment_name(segment, &encode(segment))?;
         }
         Ok(link)
     }
@@ -237,8 +235,6 @@ pub fn number(segment: &str) -> Option<u64> {
     }
 }
 
-/// the program segment: a program id as the roster spells it
-/// (`program::is_name`).
 fn program_segment(program: &str) -> Result<(), Refused> {
     match program::is_name(program) {
         true => Ok(()),
@@ -251,11 +247,10 @@ fn program_segment(program: &str) -> Result<(), Refused> {
     }
 }
 
-/// a name's one spelling as a path segment.
 fn encode(name: &str) -> String {
     let mut spelled = String::with_capacity(name.len());
     for byte in name.bytes() {
-        match unreserved(byte) {
+        match rfc3986_unreserved(byte) {
             true => spelled.push(byte as char),
             false => spelled.push_str(&format!("%{byte:02X}")),
         }
@@ -263,13 +258,10 @@ fn encode(name: &str) -> String {
     spelled
 }
 
-/// RFC 3986's unreserved bytes: the only ones a path segment writes literally.
-fn unreserved(byte: u8) -> bool {
+fn rfc3986_unreserved(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~')
 }
 
-/// one tail segment, from its one spelling to the name it carries. Every other
-/// spelling of the same name is refused, never normalised.
 fn decode(segment: &str) -> Result<String, Refused> {
     let refuse = |rule: &str| {
         Err(Refused::new(
@@ -280,7 +272,7 @@ fn decode(segment: &str) -> Result<String, Refused> {
     let mut decoded = Vec::with_capacity(segment.len());
     let mut bytes = segment.bytes();
     while let Some(byte) = bytes.next() {
-        if unreserved(byte) {
+        if rfc3986_unreserved(byte) {
             decoded.push(byte);
             continue;
         }
@@ -301,7 +293,7 @@ fn decode(segment: &str) -> Result<String, Refused> {
             false => digit - b'A' + 10,
         };
         let escaped = nibble(high) << 4 | nibble(low);
-        if unreserved(escaped) {
+        if rfc3986_unreserved(escaped) {
             return refuse("writes [A-Za-z0-9._~-] literally, never as `%XX`");
         }
         decoded.push(escaped);
@@ -309,13 +301,11 @@ fn decode(segment: &str) -> Result<String, Refused> {
     let Ok(decoded) = String::from_utf8(decoded) else {
         return refuse("decodes to UTF-8 text");
     };
-    named(&decoded, segment)?;
+    validate_segment_name(&decoded, segment)?;
     Ok(decoded)
 }
 
-/// the names no tail segment carries, however it was built: one with `/` or
-/// NUL in it, `.` and `..`.
-fn named(name: &str, spelling: &str) -> Result<(), Refused> {
+fn validate_segment_name(name: &str, spelling: &str) -> Result<(), Refused> {
     let refuse = |rule: &str| {
         Err(Refused::new(
             INVALID_INPUT,
@@ -442,7 +432,6 @@ mod tests {
             "duck://dognet-b5b6ea90/Chat/general",
             "duck://dognet-b5b6ea90/ch%61t/general",
             "duck://dognet-b5b6ea90/chat.v2/general",
-            // longer than any id the roster holds
             &format!("duck://dognet-b5b6ea90/{}/x", "p".repeat(65)),
         ] {
             assert!(Link::parse(text).is_err(), "{text}");

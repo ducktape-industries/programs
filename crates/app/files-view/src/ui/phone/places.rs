@@ -53,8 +53,6 @@ pub(super) fn places(view: &Files, cx: Cx, k: &Kit) -> AnyElement {
         .into_any_element()
 }
 
-/// The reader's home: a place like the others once identity names it,
-/// else a row that says why there is none.
 fn home(view: &Files, cx: Cx, k: &Kit) -> Stateful<Div> {
     match view.reader.home() {
         Ok(path) => place_row("home", HOME_GLYPH, words::HOME, &path, &path, cx, k),
@@ -90,8 +88,6 @@ fn place_row(
     )
 }
 
-/// What the history row says under its title: the newest snapshot's
-/// message, that there is none yet, or why it could not be read.
 fn history_caption(view: &Files) -> String {
     match &view.history {
         Loadable::Ready(history) | Loadable::Reloading(history, _) => {

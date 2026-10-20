@@ -31,7 +31,6 @@ impl Tape {
         });
     }
 
-    /// A UI reply: the bytes decode as `Reply` and re-encode to themselves.
     fn capture(&mut self, rig: &Rig, name: &'static str, q: Query) -> Reply {
         let bytes = rig.query(&q).unwrap();
         let reply: Reply = abi::decode(&bytes).unwrap();
@@ -40,7 +39,6 @@ impl Tape {
         reply
     }
 
-    /// An op's output: the bytes decode as `OpReply`.
     fn output(&mut self, rig: &mut Rig, name: &'static str, op: Op) -> OpReply {
         let bytes = rig.execute(&op).unwrap();
         let reply: OpReply = abi::decode(&bytes).unwrap();
@@ -49,14 +47,12 @@ impl Tape {
         reply
     }
 
-    /// A refusal: `Err` through the ABI, captured as the borsh `Error`.
     fn refusal(&mut self, rig: &Rig, name: &'static str, q: Query) -> program::Error {
         let refusal = rig.query(&q).unwrap_err();
         self.save(name, abi::encode(&q), abi::encode(&refusal));
         refusal
     }
 
-    /// A smart-HTTP reply: git's own framing, not borsh.
     fn git_reply(&mut self, rig: &Rig, name: &'static str, q: Query) {
         let bytes = rig.query(&q).unwrap();
         assert!(!bytes.is_empty());
@@ -107,7 +103,6 @@ fn check(tape: &Tape) {
     }
 }
 
-/// The story, in the harness's order and at its heights.
 fn replay(tape: &mut Tape) {
     let bounds = fixture_bounds();
     let mut rig = Rig::start(bounds, HashKind::Sha1);
@@ -404,7 +399,6 @@ fn replay(tape: &mut Tape) {
     ) else {
         panic!();
     };
-    // an empty block keeps the cursor; forge writing after it does not
     rig.advance();
     rig.execute(&Op::Configure {
         repo: REPO.into(),

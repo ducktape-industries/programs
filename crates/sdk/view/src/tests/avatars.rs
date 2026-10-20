@@ -7,8 +7,6 @@ use program::abi::BlobId;
 
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\nface";
 
-// Four faces: ada and bo share a picture, cy's blob is no picture, di's
-// is not held.
 #[derive(Default, Serialize, Deserialize)]
 struct Faces {
     #[serde(skip)]

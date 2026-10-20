@@ -263,8 +263,6 @@ fn listened(chain: &MockChain, account: u64) -> Vec<String> {
     page.items
 }
 
-// a listener hears each new message in its channel that relates to it in no other way, never its
-// own, and an edit of a message from before it listened reaches it not
 #[test]
 fn a_listener_is_related_to_each_new_message_in_its_channel_it_relates_to_in_no_other_way() {
     let chain = chain();
@@ -339,8 +337,6 @@ fn notices_cut(chain: &MockChain, account: u64) -> Vec<(String, Notices)> {
     page.items
 }
 
-// a room's notices are one choice per account: every message (listening), cut to mentions or
-// off, or chat's default; each takes the one before it off, and one account's is its own
 #[test]
 fn a_rooms_notices_are_one_choice_listening_among_them() {
     let chain = chain();
@@ -377,9 +373,6 @@ fn followed(chain: &MockChain, channel: &str, account: u64, roots: &[u64]) -> Fo
     followed
 }
 
-// an account is in a room from its first message in the timeline (a seat in a members-only room
-// or the room's opening from the start), and in a thread from the first message there it wrote or
-// was mentioned in
 #[test]
 fn where_an_account_is_comes_from_what_it_wrote_and_what_mentioned_it() {
     let chain = chain();
@@ -479,8 +472,6 @@ fn chosen(chain: &MockChain, account: u64, channel: &str) -> (bool, Option<Notic
     (listening, notices)
 }
 
-// a watcher hears each new message of its channel that relates to it in no other way, as a watch,
-// and watching leaves what it chose for the room as it is
 #[test]
 fn a_watcher_is_related_to_new_messages_and_its_choice_stays() {
     let chain = chain();
@@ -516,7 +507,6 @@ fn a_watcher_is_related_to_new_messages_and_its_choice_stays() {
     );
 }
 
-// an account's choice for a room is its own or its manager's to make, and nobody else's
 #[test]
 fn an_account_or_its_manager_chooses_for_it() {
     let chain = chain();

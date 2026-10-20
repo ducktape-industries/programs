@@ -4,8 +4,6 @@ mod common;
 use common::*;
 use forge::{Content, FileStatus, RefName};
 
-// A repository with `main` on a root commit, `j-1/a` and `j-1/b` one commit on, and `j-10` at
-// the root: answers the sandbox, the root and the next commit.
 fn seeded() -> (MemorySandbox, Oid, Oid) {
     let mut store = MemoryObjects::new(Hash::Sha1);
     let root = file_commit(&mut store, &[], 1, &[("a", b"1\n2\n3\n"), ("old", b"x\n")]);

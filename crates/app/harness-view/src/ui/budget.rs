@@ -14,10 +14,8 @@ use crate::words::{
     budget_used,
 };
 
-// how wide a window's bar is drawn
 const BAR: f32 = 240.;
 
-// how full a window reads (J-048: amber from 80%, red from 95%, chief's numbers)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Level {
     Calm,
@@ -33,12 +31,10 @@ pub(crate) fn level(used: u64) -> Level {
     }
 }
 
-// a window whose reset has passed: what it used is no longer what it holds
 pub(crate) fn ended(window: &WindowOutlook, now: u64) -> bool {
     now >= window.reset.saturating_mul(1000)
 }
 
-// every service the budget names: the ones a status read asks
 pub(crate) fn services(report: &BudgetReport) -> BTreeSet<String> {
     let paced = report.services.iter().map(|pace| &pace.service);
     let held = report.accounts.iter().map(|row| &row.service);
@@ -46,8 +42,6 @@ pub(crate) fn services(report: &BudgetReport) -> BTreeSet<String> {
     paced.chain(held).chain(read).cloned().collect()
 }
 
-// the strip, once the budget is read: the calls and turns, each service's status reading, then
-// each account's windows
 pub(crate) fn strip(
     view: &Agents,
     cx: &mut Context<Agents>,
@@ -55,7 +49,6 @@ pub(crate) fn strip(
     ladder: &Ladder,
 ) -> Option<Stateful<Div>> {
     let report = view.budget.ready()?;
-    // the newest block's time, whichever read saw it last: a window may have reset since
     let now = view
         .roster
         .ready()

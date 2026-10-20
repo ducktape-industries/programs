@@ -27,8 +27,6 @@ fn consent(
     }
 }
 
-/// The founding programs, in admission order: identity numbers their
-/// accounts first, so a person's account comes after them.
 const FOUNDED: [&str; 6] = [
     programs::PROGRAM,
     valset::PROGRAM,
@@ -216,7 +214,6 @@ fn every_program_has_its_account_from_its_admission() {
             );
         }
 
-        // a program installed later has its account once it runs
         let code = net.hold(programs::CODE_KIND, PROBE).await;
         let lands_at = net.height + 3;
         let entry = programs::Entry {
@@ -236,7 +233,6 @@ fn every_program_has_its_account_from_its_admission() {
         let late = net.of_program("late").await.expect("late has an account");
         assert_eq!(net.account(late).await.card.name, "late");
 
-        // the program alone names its account; its frames act as it
         let alice = net.create(1, "Alice").await;
         let probe = net.of_program("probe").await.unwrap();
         let rename = identity::Op::SetName {
@@ -312,7 +308,6 @@ fn an_agent_acts_until_its_manager_suspends_it() {
             }
         );
 
-        // the manager signs; the agent's new key consents to joining
         let bot = key(21);
         let bot_key = public(21);
         let add = identity::Op::AddKey {
@@ -378,7 +373,6 @@ fn an_agent_acts_until_its_manager_suspends_it() {
             net.apply(&bot_key, identity::PROGRAM, &op).await;
             assert_eq!(net.account(relay).await.kind(), standing(after));
         }
-        // its key acts: a frame it signs runs (the probe's empty script)
         let idle = Vec::<Step>::new();
         output_of(&net.submit(&bot_key, "probe", &idle).await);
 
@@ -449,7 +443,6 @@ fn an_agent_acts_until_its_manager_suspends_it() {
         .await;
         output_of(&net.submit(&bot_key, "probe", &idle).await);
 
-        // suspended, its every frame is refused before it runs
         let by_bob = net.refuse(&public(2), identity::PROGRAM, &suspend).await;
         assert_eq!(by_bob, reason::UNAUTHORIZED);
         net.apply(&public(1), identity::PROGRAM, &suspend).await;
@@ -462,10 +455,8 @@ fn an_agent_acts_until_its_manager_suspends_it() {
             &identity::Op::Resume { account: agent },
         )
         .await;
-        // resumed, its key acts again
         output_of(&net.submit(&bot_key, "probe", &idle).await);
 
-        // then revoked for good
         net.apply(
             &public(1),
             identity::PROGRAM,
@@ -603,7 +594,6 @@ fn account_lists_resume_with_the_answering_height() {
                     break;
                 }
             }
-            // the founding programs' accounts, three people, three agents
             assert_eq!(
                 numbers,
                 if managed {
@@ -613,8 +603,6 @@ fn account_lists_resume_with_the_answering_height() {
                 }
             );
         }
-        // A cursor is opaque and bound to its listing: bytes that are not
-        // one are refused, and a Managed cursor does not open a List.
         let garbage = net
             .refused(
                 identity::PROGRAM,
@@ -654,15 +642,11 @@ fn account_lists_resume_with_the_answering_height() {
     });
 }
 
-/// The manager path on the real programs: a node key put on an agent with
-/// its consent lets the manager's device vote for that validator, until
-/// the agent is suspended.
 #[test]
 fn a_managers_device_votes_for_the_validator_on_its_agent_until_suspended() {
     deterministic::Runner::default().start(|context| async move {
         let dir = tempfile::tempdir().unwrap();
         let mut net = Net::found(context, dir.path()).await;
-        // Alice's device is key 3; founder 1's node key goes on her agent
         net.create(3, "Alice").await;
         let output = net
             .apply(

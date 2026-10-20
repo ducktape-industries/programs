@@ -18,9 +18,6 @@ use crate::{
     standing_badge, valset_badge, words,
 };
 
-/// The member's page: Back, the name over `account N`, Explorer; then the
-/// head, the bio, Open DM and Explorer, Devices, Manages, Recent activity
-/// and an agent's note.
 pub(super) fn page(
     view: &Members,
     number: u64,
@@ -41,7 +38,6 @@ pub(super) fn page(
         .overflow_y_scroll()
         .flex()
         .flex_col()
-        // the scroller's foot (`[number].tsx:78`)
         .pb(space::BLOCK)
         .child(head(view, row, rows, cx, ladder, theme))
         .children(bio(row, ladder))
@@ -78,8 +74,6 @@ pub(super) fn page(
     .into_any_element()
 }
 
-/// The page while the roster has no such account to show: it is read
-/// again, it was refused, or identity holds no account by this number.
 fn missing(
     view: &Members,
     number: u64,
@@ -90,7 +84,6 @@ fn missing(
 ) -> AnyElement {
     let body = match &view.rows {
         Loadable::Failed(refusal) => crate::refused(refusal, cx, ladder, theme).into_any_element(),
-        // Expo's `UserX` (`app/(tabs)/members/[number].tsx:33`)
         Loadable::Ready(_) | Loadable::Reloading(..) => design::empty_state(
             "members-no-account",
             "user-x",
@@ -115,9 +108,6 @@ fn missing(
     .into_any_element()
 }
 
-/// The head: the face at its detail size beside the name in the big
-/// title (`you` after mine), one line in the data face of what the account
-/// is, and its badges.
 fn head(
     view: &Members,
     row: &Row,
@@ -156,10 +146,6 @@ fn head(
         )
 }
 
-/// What the account is, in the data face: `account 7 · User · 1 device`,
-/// `account 8 · Program`, `account 8 · Program · chat`, or `account 9 ·
-/// Agent · managed by <manager> · 1 device` with the manager a link that
-/// opens the manager over this page.
 fn account_line(
     row: &Row,
     rows: &[Row],
@@ -185,14 +171,11 @@ fn account_line(
                 .child(inline_link("members-manager", who, open, ladder, theme))
                 .child(format!(" · {devices}"))
         }
-        // a program holds no keys of its own
         None if row.group() == Group::Programs => line.child(what),
         None => line.child(format!("{what} · {devices}")),
     }
 }
 
-/// An agent's standing, and the valset standing of a key the account
-/// holds (`Validator`, `Resident`), wrapping.
 fn badges(row: &Row, ladder: &Ladder, theme: &Theme) -> Div {
     let standing = standing_badge("members-standing", row, ladder, theme);
     div()
@@ -203,7 +186,6 @@ fn badges(row: &Row, ladder: &Ladder, theme: &Theme) -> Div {
         .children(row.seat.map(|seat| valset_badge(seat, ladder, theme)))
 }
 
-/// The bio, when the account wrote one: secondary, under the head.
 fn bio(row: &Row, ladder: &Ladder) -> Option<Stateful<Div>> {
     let bio = row.bio.clone().filter(|bio| !bio.trim().is_empty())?;
     Some(
@@ -216,8 +198,6 @@ fn bio(row: &Row, ladder: &Ladder) -> Option<Stateful<Div>> {
     )
 }
 
-/// Open DM (any account but the reader) and Explorer, as the
-/// kit's small outline buttons.
 fn actions(view: &Members, row: &Row, explorer: String, ladder: &Ladder, theme: &Theme) -> Div {
     let dm = view.dm_link(row);
     div()
@@ -237,7 +217,6 @@ fn actions(view: &Members, row: &Row, explorer: String, ladder: &Ladder, theme: 
         ))
 }
 
-/// Devices: the section head and a row per key the account acts with.
 fn devices(view: &Members, row: &Row, ladder: &Ladder, theme: &Theme) -> Vec<AnyElement> {
     let count = row.devices.len();
     let head = design::section_head("members-devices", words::DEVICES, ladder, theme)
@@ -256,9 +235,6 @@ fn devices(view: &Members, row: &Row, ladder: &Ladder, theme: &Theme) -> Vec<Any
     section
 }
 
-/// One key: a phone when it is the key this device signs with, else a
-/// key; its label (`Device N` when it has none), its short hex, the day it
-/// joined.
 fn device_row(
     view: &Members,
     index: usize,
@@ -293,8 +269,6 @@ fn device_row(
         .into_any_element()
 }
 
-/// Manages: the agents the account manages; a press opens one over this
-/// page.
 fn manages(
     view: &Members,
     managed: &[&Row],
@@ -312,8 +286,6 @@ fn manages(
         .collect()
 }
 
-/// One agent: its face, its name over `account N · Agent`, its standing,
-/// the chevron.
 fn managed_row(
     agent: &Row,
     picture: Option<std::sync::Arc<view::Image>>,
@@ -330,7 +302,6 @@ fn managed_row(
     )
     .min_h(ladder.row_tall)
     .role(Role::Button)
-    // the agent's name, not the avatar's initial drawn before it
     .aria_label(agent.name.clone())
     .aria_description(format!("{about} · {life}"))
     .focusable()
@@ -350,9 +321,6 @@ fn managed_row(
     row.into_any_element()
 }
 
-/// Recent activity: what the account's keys signed lately, newest first,
-/// or the quiet line for its read: on its way, refused (a network with no
-/// activity program says so; there is nothing to retry), or nothing yet.
 fn activity(view: &Members, ladder: &Ladder, theme: &Theme) -> Vec<AnyElement> {
     let head = design::section_head("members-activity", words::RECENT_ACTIVITY, ladder, theme);
     let body = match &view.activity {
@@ -388,9 +356,6 @@ fn activity(view: &Members, ladder: &Ladder, theme: &Theme) -> Vec<AnyElement> {
         .collect()
 }
 
-/// One frame the account signed: what its transaction did (`Signed::title`),
-/// then its block (a link to it in Explorer) and how long ago, in the data
-/// face.
 fn signed_row(
     index: usize,
     signed: &Signed,
@@ -420,7 +385,6 @@ fn signed_row(
         .into_any_element()
 }
 
-/// The kit's small outline button, opening `link` through the host.
 fn small_button(
     id: &'static str,
     label: &'static str,
@@ -433,11 +397,6 @@ fn small_button(
         .small()
 }
 
-/// A link inside a line of text (the explorer kit's `Linked`): small, in
-/// the data face, underlined, in the foreground. Its press reaches 44 up
-/// and down and half of 44 past each side, as wide as the word is unknown
-/// here.
-// SDK gap: the explorer kit's `Linked`; the SDK builds it later
 fn inline_link(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,

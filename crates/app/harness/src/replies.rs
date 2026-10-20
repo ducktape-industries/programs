@@ -29,7 +29,6 @@ fn text_mut(said: &mut Said) -> &mut String {
     }
 }
 
-// the thread's reply as it stands: each block with its pieces put back after it, in order
 pub(crate) fn read(ctx: &QueryCtx, thread: u64) -> Result<Option<Partial>, Error> {
     let Some(mut partial) = PARTIALS.get(ctx, &thread)? else {
         return Ok(None);
@@ -43,9 +42,6 @@ pub(crate) fn read(ctx: &QueryCtx, thread: u64) -> Result<Option<Partial>, Error
     Ok(Some(partial))
 }
 
-// keeps `after`, what event `seq` made of `before`: a block whose text grew keeps the new text
-// alone as a piece, and one whose text changed otherwise, or that a head kept whole, is kept
-// again as one piece
 pub(crate) fn keep(
     ctx: &ExecCtx,
     thread: u64,
@@ -86,7 +82,6 @@ fn forget(ctx: &ExecCtx, thread: u64, block: u64) -> Result<(), Error> {
     Ok(())
 }
 
-// the thread's reply gone: its head and every piece
 pub(crate) fn clear(ctx: &ExecCtx, thread: u64) -> Result<(), Error> {
     PARTIALS.remove(ctx, &thread);
     for (key, _) in PIECES.scan(ctx, PIECES.prefix_of(&thread))? {

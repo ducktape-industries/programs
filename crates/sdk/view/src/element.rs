@@ -23,7 +23,6 @@ use std::rc::Rc;
 /// native trait. GPUI's real `Element` requires native layout and paint state;
 /// a wasm view has neither, so lowering is the only operation it can perform.
 pub trait Element: 'static + IntoElement {
-    /// The authored identity that enters the typed ancestry while this element lowers.
     fn id(&self) -> Option<ElementId> {
         None
     }
@@ -31,8 +30,6 @@ pub trait Element: 'static + IntoElement {
     #[doc(hidden)]
     fn lower(self: Box<Self>, lowering: &mut Lowering<'_>) -> wire::Node;
 
-    /// Whether this element lowers to the node of an element it builds (a
-    /// view's render), rather than to a node of its own.
     #[doc(hidden)]
     fn defers(&self) -> bool {
         false
@@ -118,25 +115,15 @@ impl gpui::prelude::FluentBuilder for AnyElement {}
 pub struct Lowering<'a> {
     window: &'a mut Window,
     app: &'a mut App,
-    /// The path of the element being lowered: its id last, when it has one.
     authored_path: Vec<wire::ElementIdWire>,
-    /// The index of the list row whose root lowers next ([`Self::lower_row`]).
     row: Option<usize>,
-    /// The state of each list lowered so far, beside that list's path.
     lists: Vec<(crate::ListState, Vec<wire::ElementIdWire>)>,
-    // The nodes lowered so far.
     lowered: usize,
-    // For each memo being lowered, innermost last: whether it holds a list,
-    // whose rows are the list state's now, and so can't be kept.
     opaque: Vec<bool>,
-    // The entities whose renders are being lowered, innermost last.
     entities: Vec<u64>,
-    // A tooltip's content keeps nothing: it lowers once, when asked.
     tooltip: bool,
 }
 
-/// An authored [`ElementId`] as the wire carries it. Every id a view can
-/// author fits; the only refusals are ids gpui itself could not name.
 pub(crate) fn wire_id(id: ElementId) -> wire::ElementIdWire {
     wire::ElementIdWire::from_gpui(id)
         .expect("element ID must be portable across the view boundary")
@@ -145,7 +132,6 @@ pub(crate) fn wire_id(id: ElementId) -> wire::ElementIdWire {
 impl<'a> Lowering<'a> {
     pub(crate) fn new(window: &'a mut Window, app: &'a mut App) -> Self {
         slots::begin_lowering(&app.inner.slots, None);
-        // the presses the last tree marked dense are gone with it
         app.inner.dense.borrow_mut().clear();
         Self {
             window,
@@ -160,8 +146,6 @@ impl<'a> Lowering<'a> {
         }
     }
 
-    /// A lowering of the content the tooltip route `request` builds: its
-    /// listeners are keyed inside that tooltip and live as long as it does.
     pub(crate) fn within_tooltip(window: &'a mut Window, app: &'a mut App, request: u32) -> Self {
         slots::begin_lowering(&app.inner.slots, Some(request));
         Self {
@@ -177,20 +161,14 @@ impl<'a> Lowering<'a> {
         }
     }
 
-    // The nodes this lowering lowered: an element that lowers to a node
-    // of its own counts one.
     pub(crate) fn lowered(&self) -> usize {
         self.lowered
     }
 
-    // A list lowered inside a memo: the memo is lowered every frame.
     pub(crate) fn opaque(&mut self) {
         self.opaque.iter_mut().for_each(|opaque| *opaque = true);
     }
 
-    // Lowers what `lower` lowers as the render of `entity`, inside the
-    // entity lowered around it: a notify of `entity` is one of each
-    // entity around it too.
     pub(crate) fn entity(
         &mut self,
         entity: u64,
@@ -206,11 +184,6 @@ impl<'a> Lowering<'a> {
         node
     }
 
-    // The node `memo` stands for: the one kept at its place when its deps
-    // are the ones it was kept with and its routes are still there, else
-    // the one its build lowers to now, kept for the next frame. With
-    // checks on (a debug build) a kept memo is lowered again all the same
-    // and fails, naming it, when the two differ.
     pub(crate) fn memo(&mut self, memo: crate::memo::Memo) -> wire::Node {
         let crate::memo::Memo {
             id,
@@ -238,11 +211,6 @@ impl<'a> Lowering<'a> {
                 "two memos at {key:?}: give each its own id"
             );
         }
-        // A kept memo stands in the tree as its shell, and the driver
-        // puts the last tree's node in its place; one whose routes can't
-        // be taken again is lowered anew. With checks on (a debug build) a
-        // kept memo is lowered again all the same, and the driver holds
-        // what it lowers to now to the node it stands for.
         let checks = self.app.inner.memo_checks.get();
         let kept = kept.filter(|kept| checks || slots::replay(self.slots(), &kept.journal));
         let Some(entry) = kept else {
@@ -278,8 +246,6 @@ impl<'a> Lowering<'a> {
         shell
     }
 
-    // `build` lowered as `key`'s memo, and kept for the next frame unless
-    // it holds a list.
     fn lower_anew(
         &mut self,
         key: crate::memo::Key,
@@ -322,13 +288,10 @@ impl<'a> Lowering<'a> {
         *self.app.global::<crate::Theme>()
     }
 
-    /// The id `style` crosses under: its entry in the frame's style table,
-    /// one for every node that carries the same style.
     pub(crate) fn style(&self, style: &StyleRefinement) -> wire::StyleId {
         self.app.inner.styles.borrow_mut().intern(style)
     }
 
-    /// The id of the style that sets nothing, which a bare text carries.
     pub(crate) fn no_style(&self) -> wire::StyleId {
         self.app.inner.styles.borrow_mut().intern_empty()
     }
@@ -346,11 +309,7 @@ impl<'a> Lowering<'a> {
         self.lower_element(element.into_element())
     }
 
-    /// Lowers `element` in its scope: filed under its id (or, as a list
-    /// row's root, its index), and everything it lowers under it.
     pub(crate) fn lower_element<E: Element>(&mut self, element: E) -> wire::Node {
-        // a row's root is the first element under it that lowers to a node
-        // of its own: a deferred view lowers to the one its render returns
         let defers = element.defers();
         let row = if defers { None } else { self.row.take() };
         self.lowered += usize::from(!defers);
@@ -360,7 +319,6 @@ impl<'a> Lowering<'a> {
             slots::enter_scope(&self.app.inner.slots, segment.clone());
             self.authored_path.push(segment);
         }
-        // the box an `AnyElement` already is, or the one box an element gets
         let node = element.into_any().0.lower(self);
         debug_assert!(
             defers
@@ -375,8 +333,6 @@ impl<'a> Lowering<'a> {
         node
     }
 
-    /// Lowers row `index` of a list: filed under its own id, else under
-    /// its index, so the ids inside one row never meet another row's.
     pub(crate) fn lower_row<E: Element>(&mut self, index: usize, element: E) -> wire::Node {
         self.row = Some(index);
         let node = self.lower_element(element);
@@ -384,9 +340,6 @@ impl<'a> Lowering<'a> {
         node
     }
 
-    /// The list being lowered draws `state`. A state is one list's (its
-    /// window of rows, the commands waiting for it), so a second list
-    /// drawing it in this frame is refused, naming both.
     pub(crate) fn draws_list(&mut self, state: &crate::ListState) {
         self.opaque();
         if let Some((_, first)) = self.lists.iter().find(|(drawn, _)| drawn.is(state)) {
@@ -403,9 +356,6 @@ impl<'a> Lowering<'a> {
         &self.authored_path
     }
 
-    /// The element being lowered is a dense list's press
-    /// ([`design::dense`](crate::design::dense)): its path joins the marks
-    /// the [`App`] keeps for the sweep.
     pub(crate) fn mark_dense(&self) {
         self.app
             .inner
@@ -414,8 +364,6 @@ impl<'a> Lowering<'a> {
             .push(self.authored_path.clone());
     }
 
-    /// The id of the identified element being lowered, as the wire carries
-    /// it: the segment it was filed under when its lowering began.
     pub(crate) fn own_id(&self) -> wire::ElementIdWire {
         self.authored_path
             .last()
@@ -423,7 +371,6 @@ impl<'a> Lowering<'a> {
             .expect("an identified element lowers inside its authored scope")
     }
 
-    /// A route for a listener of `kind` on the element being lowered.
     pub(crate) fn route<A: 'static>(
         &self,
         kind: slots::Kind,
@@ -474,7 +421,7 @@ impl Element for Div {
         } = *self;
         let id = interactivity.id.as_ref().map(|_| lowering.own_id());
         if id.is_some() {
-            bar_gutter(&mut interactivity.base_style);
+            reserve_vertical_scrollbar_gutter(&mut interactivity.base_style);
         }
         let style = lowering.style(&interactivity.base_style);
         let wire_interactivity = interactivity.into_wire(lowering);
@@ -491,10 +438,7 @@ impl Element for Div {
     }
 }
 
-/// A scroller the host gives a vertical bar (one with an id) keeps its
-/// right edge for that bar: the bar paints over the scroller, so content
-/// inset less than its width would sit under it.
-fn bar_gutter(style: &mut StyleRefinement) {
+fn reserve_vertical_scrollbar_gutter(style: &mut StyleRefinement) {
     use gpui::{AbsoluteLength, DefiniteLength};
     if style.overflow.y != Some(Overflow::Scroll) {
         return;
@@ -697,8 +641,6 @@ impl Element for Input {
         let id = wire_id(this.id);
         let field = this.field.state().clone();
         crate::text::lowered_generation(field.generation);
-        // the binding: the host's word lands in the view's field, the view
-        // renders, and then the author's own listener hears it, if any
         let (bound, heard) = (this.field, this.on_change);
         let on_change = Some(lowering.route(
             slots::Kind::Change,
@@ -876,13 +818,6 @@ pub trait ParentElement {
         self
     }
 
-    /// Adds each of `children`, as [`Self::child`] would.
-    ///
-    /// Children are not scopes of their own, as the rows of a `list` or a
-    /// `uniform_list` are under their list's id: an id inside one child
-    /// meets the same id inside the next. A row of data built here carries
-    /// its own id (its item's key), which scopes the ids inside it. Two
-    /// children named by one key are refused, naming the id and its scope.
     fn children(mut self, children: impl IntoIterator<Item = impl IntoElement>) -> Self
     where
         Self: Sized,
@@ -909,9 +844,6 @@ impl Element for SharedString {
     }
 }
 
-/// Words the host draws in capitals and names as written (CSS
-/// `text-transform: uppercase`). Built by [`crate::design::eyebrow`], the
-/// one role set in capitals.
 pub(crate) struct Capitals(pub(crate) SharedString);
 
 impl Element for Capitals {
@@ -997,7 +929,7 @@ mod bar_gutter_tests {
         let bar = crate::design::size::SCROLLBAR;
         let mut inset = crate::div().id("s").overflow_y_scroll().p(px(8.));
         let mut style = inset.style().clone();
-        bar_gutter(&mut style);
+        reserve_vertical_scrollbar_gutter(&mut style);
         assert_eq!(style.padding.right, Some(bar.into()));
         assert_eq!(
             style.padding.left,
@@ -1006,11 +938,11 @@ mod bar_gutter_tests {
         );
         let mut wide = crate::div().id("s").overflow_y_scroll().pr(px(24.));
         let mut style = wide.style().clone();
-        bar_gutter(&mut style);
+        reserve_vertical_scrollbar_gutter(&mut style);
         assert_eq!(style.padding.right, Some(px(24.).into()));
         let mut still = crate::div().p(px(8.));
         let mut style = still.style().clone();
-        bar_gutter(&mut style);
+        reserve_vertical_scrollbar_gutter(&mut style);
         assert_eq!(
             style.padding.right,
             Some(px(8.).into()),

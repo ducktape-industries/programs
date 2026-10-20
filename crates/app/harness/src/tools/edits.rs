@@ -4,8 +4,6 @@ use ::program::{Error, invalid, not_found};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-// One edit as the agent writes it: `replace` with `with`, `after` or `before` with `insert`,
-// or `append` alone.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct EditArg {
@@ -31,7 +29,6 @@ pub(crate) enum Step {
 }
 
 impl EditArg {
-    // The edit numbered `n`, counted from 1, as one step.
     fn step(self, n: usize) -> Result<Step, Error> {
         match self {
             EditArg {
@@ -81,7 +78,6 @@ impl EditArg {
     }
 }
 
-// The edits as steps, each checked for its shape before any applies.
 pub(crate) fn steps(edits: Vec<EditArg>) -> Result<Vec<Step>, Error> {
     edits
         .into_iter()
@@ -90,7 +86,6 @@ pub(crate) fn steps(edits: Vec<EditArg>) -> Result<Vec<Step>, Error> {
         .collect()
 }
 
-// The schema of one edit.
 pub(crate) fn edit_schema() -> Value {
     json!({
         "type": "object",
@@ -106,13 +101,10 @@ pub(crate) fn edit_schema() -> Value {
     })
 }
 
-// The line, counted from 1, that byte `at` of `text` is on.
 fn line(text: &str, at: usize) -> usize {
     text[..at].matches('\n').count() + 1
 }
 
-// Where `span` starts in `text`, which must hold it exactly once; occurrences that overlap
-// count apart, so `aa` is in `aaa` twice.
 fn unique(text: &str, span: &str, path: &str, n: usize) -> Result<usize, Error> {
     if span.is_empty() {
         return Err(invalid(format!("edit {n} names an empty span")));
@@ -134,7 +126,6 @@ fn unique(text: &str, span: &str, path: &str, n: usize) -> Result<usize, Error> 
     }
 }
 
-// `text` once every step applies, in order, to what the one before it left.
 pub(crate) fn applied(mut text: String, steps: Vec<Step>, path: &str) -> Result<String, Error> {
     for (index, step) in steps.into_iter().enumerate() {
         let n = index + 1;

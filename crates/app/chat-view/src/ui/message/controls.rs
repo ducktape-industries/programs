@@ -3,20 +3,11 @@
 use crate::words;
 use view::prelude::*;
 
-/// An action strip button's height, the smallest box a pointer presses
-/// (the door's AX-017): the strip, borders and all, is 26. Its width is
-/// the kit's row height, already over 24.
 const STRIP_BUTTON_HEIGHT: f32 = 24.;
-/// A reaction chip's height, the thread button's: the smallest box a
-/// pointer presses (the door's AX-017), and a chip is no narrower.
 const REACTION_HEIGHT: f32 = 24.;
-/// The thread button's height under a root.
 const REPLIES_HEIGHT: f32 = 24.;
-// A reaction tooltip's widest line, before its names wrap.
 const REACTORS_WIDTH: f32 = 280.;
 
-/// `active`: the grid's arrows are on this button (it is never a Tab stop
-/// of its own; the pane's message list is).
 pub(super) fn action_button(
     id: impl Into<ElementId>,
     label: impl Into<String>,
@@ -59,8 +50,6 @@ pub(super) fn action_button(
     }
 }
 
-// What a reaction button shows: an emoji and how many chose it, named on
-// hover (`who`, empty until read), or the `+` that opens the picker.
 pub(super) enum Face<'a> {
     Emoji {
         emoji: &'a str,
@@ -89,8 +78,6 @@ pub(super) fn reaction_button(
         .justify_center()
         .gap_1()
         .border_1()
-        // the reader's own wear the strong line: accent_soft is the
-        // hover grey in the calm palette, so a fill alone can't say "mine"
         .border_color(if mine { theme.accent } else { theme.border })
         .bg(if mine {
             theme.accent_soft
@@ -106,10 +93,8 @@ pub(super) fn reaction_button(
         .aria_disabled(!enabled)
         .text_size(design::text::SECONDARY);
     control = match face {
-        // the count in the data face, as every count here is
         Face::Emoji { emoji, count, who } => {
             let control = control
-                // one name whether it is yours or not: the toggle says which
                 .aria_label(format!("{emoji} reaction"))
                 .aria_description(match who.is_empty() {
                     true => count.to_string(),
@@ -128,7 +113,6 @@ pub(super) fn reaction_button(
                 false => reactors_tip(control, who.into(), theme),
             }
         }
-        // `+` is the picker's method, not a toggle
         Face::Add => control.aria_label(words::ADD_REACTION).child("+"),
     };
     if enabled {
@@ -150,7 +134,6 @@ pub(super) fn reaction_button(
     }
 }
 
-// `chip` names who chose it on hover.
 fn reactors_tip<E: StatefulInteractiveElement>(chip: E, who: SharedString, theme: &Theme) -> E {
     let theme = *theme;
     chip.tooltip(move |_, cx| {
@@ -162,7 +145,6 @@ fn reactors_tip<E: StatefulInteractiveElement>(chip: E, who: SharedString, theme
     })
 }
 
-// A reaction's tooltip: who chose it.
 struct WhoChose {
     who: SharedString,
     theme: Theme,
@@ -184,8 +166,6 @@ impl Render for WhoChose {
     }
 }
 
-/// Under a message with replies: how many, and the way into them, drawn as
-/// the button it is.
 pub(super) fn replies_button(
     id: impl Into<ElementId>,
     count: u64,

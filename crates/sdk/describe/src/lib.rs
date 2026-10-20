@@ -187,7 +187,6 @@ pub mod exports {
         // SAFETY: the caller's contract
         let op = unsafe { std::slice::from_raw_parts(ptr as usize as *const u8, len as usize) };
         match describe_bytes(op, describe) {
-            // an instance answers once: the host throws it away after
             Some(answer) => {
                 let answer = answer.leak();
                 ((answer.as_ptr() as usize as u64) << 32) | answer.len() as u64
@@ -206,8 +205,6 @@ macro_rules! export {
     ($op:ty, $describe:path) => {
         #[cfg(all(target_family = "wasm", feature = "describe"))]
         const _: () = {
-            // named apart from the caller's `describe`, which `$describe`
-            // names inside this block
             #[unsafe(export_name = "alloc")]
             extern "C" fn __describe_alloc(len: u32) -> u32 {
                 $crate::exports::alloc(len)
@@ -248,11 +245,11 @@ pub fn variants<T: BorshDeserialize + std::fmt::Debug>() -> Vec<String> {
 pub fn section(module: &[u8]) -> Option<&[u8]> {
     let mut rest = module.strip_prefix(b"\0asm\x01\0\0\0")?;
     while let Some((&id, after)) = rest.split_first() {
-        let (size, after) = leb(after)?;
+        let (size, after) = read_leb128_u32(after)?;
         let body = after.get(..size)?;
         rest = &after[size..];
         if id == 0 {
-            let (len, name) = leb(body)?;
+            let (len, name) = read_leb128_u32(body)?;
             if name.get(..len)? == SECTION.as_bytes() {
                 return Some(&name[len..]);
             }
@@ -261,8 +258,7 @@ pub fn section(module: &[u8]) -> Option<&[u8]> {
     None
 }
 
-/// An unsigned LEB128 u32 and what follows it.
-fn leb(bytes: &[u8]) -> Option<(usize, &[u8])> {
+fn read_leb128_u32(bytes: &[u8]) -> Option<(usize, &[u8])> {
     let mut value = 0u32;
     for (index, byte) in bytes.iter().take(5).enumerate() {
         value |= u32::from(byte & 0x7f).checked_shl(7 * index as u32)?;

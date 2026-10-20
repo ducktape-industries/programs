@@ -130,7 +130,6 @@ impl MemorySandbox {
         });
     }
 
-    /// forge's env in a block at `height`, called by the chain itself.
     fn env(&self, height: u64) -> Env {
         Env {
             height,

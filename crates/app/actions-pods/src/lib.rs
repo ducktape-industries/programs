@@ -24,7 +24,6 @@ pub enum Op {
     Offer(actions::Offer),
     // The claimed check's run, the block after its offer: its own scheduled run alone.
     Run { check: u64 },
-    // An event of a pod's wait, from egress.
     Heard(Event),
     // Every pod this runner holds, settled against its check; open to anyone.
     Sweep,
@@ -79,7 +78,6 @@ pub enum Query {
     #[ask(Reply::Run(Option<RunRow>))]
     #[reads(RUNS)]
     Run { check: u64 },
-    // Each check's pod this runner holds.
     #[ask(Reply::Pods(Vec<(u64, PodRow)>))]
     #[reads(PODS)]
     Pods,
@@ -87,7 +85,6 @@ pub enum Query {
     #[ask(Reply::Waiting(Vec<u64>))]
     #[reads(WAITING)]
     Waiting,
-    // How many pods this runner holds at once.
     #[ask(Reply::Concurrent(u64))]
     #[reads(CONCURRENT)]
     Concurrent,

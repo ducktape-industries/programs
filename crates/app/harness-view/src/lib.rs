@@ -32,14 +32,10 @@ pub struct Agents {
     screen: Screen,
     draft: Draft,
     model_draft: ModelDraft,
-    // the agent's front matter, while it is edited
     #[serde(default)]
     setup_draft: SetupDraft,
-    /// a manager's write waiting for its second press
     arming: Option<Arm>,
-    /// the folds turned from how they start: a transcript's rows, an agent's setup
     open: BTreeSet<String>,
-    /// the phone's sheet over the page
     sheet: Option<Sheet>,
     #[serde(skip)]
     me: Option<u64>,
@@ -57,17 +53,14 @@ pub struct Agents {
     models: Loadable<Vec<Model>>,
     #[serde(skip)]
     offers: Loadable<Vec<Offer>>,
-    /// why a write or a link did not land
     #[serde(skip)]
     notice: Option<String>,
     #[serde(skip)]
     acting: Option<Task<()>>,
-    /// what the write in flight does, in words: "Taking Scout back"
     #[serde(skip)]
     doing: Option<String>,
     #[serde(skip)]
     routing: Option<Task<()>>,
-    // the status reads a Refresh press sent, while they land
     #[serde(skip)]
     reading: Option<Task<()>>,
     #[serde(skip)]
@@ -75,33 +68,26 @@ pub struct Agents {
     // what the roster's last read held of each agent's conversations, and what moved since
     #[serde(skip)]
     known: Rc<RefCell<read::Known>>,
-    // what blocks wrote to the open conversation since its last read of them, and that read
     #[serde(skip)]
     touched: Touched,
     #[serde(skip)]
     following: Option<Task<()>>,
-    // the conversation's frames above those read, and its calls on screen, being read
     #[serde(skip)]
     earlier: Option<Task<()>>,
     #[serde(skip)]
     calling: Option<Task<()>>,
-    // what the list asked for as it drew: the frames above those read, the calls it drew
     #[serde(skip)]
     wanted: RefCell<Wanted>,
-    // the open conversation's list: its thread and the rows it holds, a row a frame
     #[serde(skip)]
     rows: RefCell<Option<(u64, ListState)>>,
-    // who can start the open agent's conversations, and edit the model whose form is open
     #[serde(skip)]
     conversations_policy: policy_view::Editing,
     #[serde(skip)]
     model_policy: policy_view::Editing,
-    // each card's picture, read once per blob as a face first draws it
     #[serde(skip)]
     pictures: Option<Entity<view::pictures::Pictures>>,
 }
 
-// A face's picture, once read: `None` while it is read, and for an account with none.
 pub(crate) type Picture = Option<std::sync::Arc<view::Image>>;
 
 #[derive(Default)]
@@ -110,8 +96,6 @@ pub(crate) struct Wanted {
     calls: BTreeSet<String>,
 }
 
-/// Where the reader is. The desktop draws each screen whole; the phone draws them as a stack of
-/// pages, its depth fixed by the screen, and adds the pages a desktop screen holds inline.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Screen {
     #[default]
@@ -120,26 +104,19 @@ pub(crate) enum Screen {
     Agent(u64),
     Thread(u64),
     Models,
-    /// the phone's page of one part of an agent's setup
     Part(u64, Part),
-    /// the phone's page of a conversation's usage and context
     Usage(u64),
-    /// the phone's page of the form that sets a model
     SetModel,
 }
 
-/// A part of an agent's setup the phone opens as its own page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Part {
-    /// its model, thinking and tools
     Model,
-    /// its configuration file, who may change it and whom it answers
     File,
     Prompt,
     Usage,
 }
 
-/// The phone's sheets: an agent's or a conversation's actions, and one frame's facts.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Sheet {
     Agent,
@@ -148,7 +125,6 @@ pub(crate) enum Sheet {
 }
 
 impl Screen {
-    /// The agent whose detail the screen reads.
     fn agent(self) -> Option<u64> {
         match self {
             Screen::Agent(agent) | Screen::Part(agent, _) => Some(agent),
@@ -156,7 +132,6 @@ impl Screen {
         }
     }
 
-    /// The thread whose transcript the screen reads.
     fn thread(self) -> Option<u64> {
         match self {
             Screen::Thread(thread) | Screen::Usage(thread) => Some(thread),
@@ -171,20 +146,15 @@ pub(crate) enum Arm {
     Close(u64),
 }
 
-/// An agent's or a thread's state, as its badge says it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum State {
     Idle,
     Working,
-    /// still asking while input waits behind it
     Stuck,
-    /// no member node serves its model's service, or relay
     NoNode,
     Unconfigured,
 }
 
-/// A write's answer: the program's output once the node predicts it applies, else why not,
-/// in every view's words (`design::failure`), shown where the write was made.
 pub(crate) fn applied(answer: Result<Submitted, Error>) -> Result<Vec<u8>, String> {
     match answer {
         Ok(Submitted::Applied { output, .. }) => Ok(output),
@@ -201,8 +171,6 @@ pub(crate) fn thread_state(thread: &ThreadRow) -> State {
     }
 }
 
-/// An agent's state: its configuration and a node before anything, then the busiest of its
-/// open threads.
 pub(crate) fn agent_state(card: &read::Card, roster: &Roster) -> State {
     let Some(serving) = card.serving else {
         return State::Unconfigured;
@@ -225,7 +193,6 @@ fn shown_mut(slot: &mut Loadable<Option<Transcript>>) -> Option<&mut Transcript>
     }
 }
 
-// whether a key a block wrote moves the agent screen of `agent`
 fn moves_detail(detail: &Loadable<Detail>, agent: u64, wrote: &Written) -> bool {
     match wrote {
         Written::Agent(number) => *number == agent,
@@ -245,7 +212,6 @@ fn moves_detail(detail: &Loadable<Detail>, agent: u64, wrote: &Written) -> bool 
     }
 }
 
-// what the keys a block wrote touch of conversation `thread`, whose agent is `agent`
 fn touched_of(thread: u64, agent: Option<u64>, written: &[Written]) -> Touched {
     let mut touched = Touched::default();
     for wrote in written {
@@ -283,11 +249,8 @@ impl View for Agents {
         Capability::Op,
         Capability::Host,
         Capability::Link,
-        // the newest block's time: how long ago a conversation moved
         Capability::Chain,
-        // an id or a link, copied
         Capability::Clipboard,
-        // each card's picture (`blob.get`)
         Capability::Blob,
     ];
     const MIN_WINDOW_WIDTH: u32 = 480;
@@ -314,7 +277,6 @@ impl View for Agents {
             Err(refusal) => cx.log_refused("the session", &refusal),
         })
         .detach();
-        // `duck://<chain>/harness/<agent>/<place>`: a work-record link opens that thread
         cx.follow::<HostRoute>((), |view, route, cx| match route {
             Ok(route) => view.open_route(&route, cx),
             Err(refusal) => {
@@ -365,8 +327,6 @@ impl Render for Agents {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.settle_title(cx);
         self.settle_policies(cx);
-        // two designs, picked by the device: under a finger the phone's pages, under a
-        // pointer the desktop's screens
         match window.touch() {
             true => ui::phone::render(self, cx),
             false => ui::render(self, cx),
@@ -375,7 +335,6 @@ impl Render for Agents {
 }
 
 impl Agents {
-    /// Everything on screen read again: the roster, and what the screen reads besides.
     fn refresh(&mut self, cx: &mut Context<Self>) {
         self.known.borrow_mut().forget();
         self.read_roster(cx);
@@ -383,8 +342,6 @@ impl Agents {
         self.read_screen(cx);
     }
 
-    // a block of harness: what it wrote is read again where the screen shows it, and nothing
-    // else is
     fn heard(&mut self, change: &Change, cx: &mut Context<Self>) {
         let written: Vec<Written> = change
             .keys
@@ -430,8 +387,6 @@ impl Agents {
         }
     }
 
-    // a block of another program the screens read: the roster, and the screen's reads besides
-    // the conversation's own frames and calls
     fn elsewhere(&mut self, cx: &mut Context<Self>) {
         self.read_roster(cx);
         match self.screen {
@@ -505,8 +460,6 @@ impl Agents {
         }
     }
 
-    // the conversation read anew, as far as its list held it; the phone's usage page holds
-    // every turn
     fn open_transcript(&mut self, thread: u64, cx: &mut Context<Self>) {
         let from = match self.screen {
             Screen::Usage(_) => Some(1),
@@ -538,7 +491,6 @@ impl Agents {
         self.read_delta(cx);
     }
 
-    // what blocks wrote to the open conversation since, read once the read before it lands
     fn read_delta(&mut self, cx: &mut Context<Self>) {
         if self.following.is_some() {
             return;
@@ -568,7 +520,6 @@ impl Agents {
         }));
     }
 
-    // the list's row for frame `seq`, above the frames read: read from there on
     pub(crate) fn want_from(&self, seq: u64) {
         let mut wanted = self.wanted.borrow_mut();
         wanted.from = Some(wanted.from.map_or(seq, |from| from.min(seq)));
@@ -578,7 +529,6 @@ impl Agents {
         self.wanted.borrow_mut().calls.insert(call.to_owned());
     }
 
-    // what the list asked for as it drew, read
     pub(crate) fn read_wanted(&mut self, cx: &mut Context<Self>) {
         self.read_earlier(cx);
         self.read_calls(cx);
@@ -644,7 +594,6 @@ impl Agents {
         }));
     }
 
-    // the open conversation's list, a row a frame and one after them, kept as its frames grow
     pub(crate) fn rows_for(&self, thread: &ThreadRow) -> ListState {
         let count = thread.frames as usize + 1;
         let mut rows = self.rows.borrow_mut();
@@ -666,8 +615,6 @@ impl Agents {
     }
 
     pub(crate) fn go(&mut self, screen: Screen, cx: &mut Context<Self>) {
-        // what the next screen reads of the same agent or thread stays on screen while it is
-        // read again
         if screen.agent() != self.screen.agent() {
             *self.detail = Loadable::Idle;
             self.setup_draft = SetupDraft::default();
@@ -691,7 +638,6 @@ impl Agents {
         cx.notify();
     }
 
-    /// The screen this one was opened from.
     pub(crate) fn parent(&self) -> Screen {
         match self.screen {
             Screen::List => Screen::List,
@@ -710,7 +656,6 @@ impl Agents {
         }
     }
 
-    /// Back: the sheet on screen closes, else the screen this one was opened from opens.
     pub(crate) fn back(&mut self, cx: &mut Context<Self>) {
         if self.policy_sheet_open() {
             return self.close_policy_sheet(cx);
@@ -728,7 +673,6 @@ impl Agents {
         cx.notify();
     }
 
-    /// `text` onto the clipboard: a frame's id, a link. A refusal says so where writes do.
     pub(crate) fn copy(&mut self, text: String, cx: &mut Context<Self>) {
         let ask = cx.host().ask::<ClipboardWrite>(text);
         cx.land(ask, |view, copied, cx| {
@@ -773,7 +717,6 @@ impl Agents {
         }));
     }
 
-    /// The manager's write, sent once its second press confirms it.
     pub(crate) fn act(&mut self, arm: Arm, cx: &mut Context<Self>) {
         if self.acting.is_some() {
             return;
@@ -801,7 +744,6 @@ impl Agents {
         cx.notify();
     }
 
-    // each service's status of its model accounts, read on a press
     pub(crate) fn read_status(&mut self, cx: &mut Context<Self>) {
         if self.reading.is_some() {
             return;
@@ -873,14 +815,12 @@ impl Agents {
         self.roster.ready()?.names.get(&me).map(String::as_str)
     }
 
-    // `number`'s picture, once read: its card's, as the roster's identity read found it.
     pub(crate) fn picture(&self, number: u64, cx: &mut Context<Self>) -> Picture {
         let blob = self.roster.ready()?.avatars.get(&number)?;
         let pictures = self.pictures.as_ref()?;
         pictures.update(cx, |pictures, cx| pictures.get(blob, cx))
     }
 
-    // The picture of who wrote `body`: a post's author's.
     pub(crate) fn author_picture(&self, body: &harness::Body, cx: &mut Context<Self>) -> Picture {
         match body {
             harness::Body::Post {
@@ -891,15 +831,12 @@ impl Agents {
         }
     }
 
-    /// An account's name once the roster is read, else its number.
     pub(crate) fn agent_name(&self, agent: u64) -> String {
         self.roster
             .ready()
             .map_or_else(|| format!("account {agent}"), |roster| roster.name(agent))
     }
 
-    /// The window's title: `Agents` over the list, an agent's name, a conversation's heading
-    /// after its agent's name.
     fn settle_title(&mut self, cx: &mut Context<Self>) {
         let roster = self.roster.ready();
         let title = match self.screen {

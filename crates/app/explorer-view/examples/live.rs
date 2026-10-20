@@ -12,7 +12,6 @@ use view::rig;
 fn main() {
     let unprivileged = std::env::var_os("READER").is_some_and(|reader| reader == "none");
     rig::run("explorer", |net| {
-        // told of every frame from here, as on a network: who did what
         net.hook::<activity::Activity>(activity::PROGRAM);
         net.seat::<chat::Chat>(chat::PROGRAM);
         let ada = net.person("ada");
@@ -41,7 +40,6 @@ fn main() {
                 },
             )?;
         }
-        // the dev key is the one validator: its vote enacts at once
         let me = net.me();
         let vote = |op: &programs::Op| {
             let motion = Motion::Role {
@@ -64,7 +62,6 @@ fn main() {
         net.submit(ada, programs::PROGRAM, &at(700, set(chat::PROGRAM)))?;
         vote(&at(900, set("trade")))?;
         if unprivileged {
-            // the view hears the dev key vote for no one
             let validators: valset::Reply =
                 net.query(valset::PROGRAM, &valset::Query::Validators)?;
             net.handle::<Query<Valset>>(move |query| {

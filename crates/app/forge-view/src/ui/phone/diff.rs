@@ -37,7 +37,6 @@ pub(super) fn render(
     };
     let key = change_key(&forge.repo_name(), n);
     let page = match &path {
-        // All files: every file in one list, nothing to walk
         None => design::page("forge-page-file", words::ALL_FILES, nav, ladder, theme)
             .caption(format!("{title} · {} files", files.len())),
         Some(path) => {
@@ -79,7 +78,6 @@ pub(super) fn render(
         .into_any_element()
 }
 
-/// The files of the change's diff, once read.
 fn diff_files(forge: &Forge) -> Vec<&FileDiff> {
     match forge.diff_query().and_then(|query| forge.ready(&query)) {
         Some(Reply::Diff { page, .. }) => page.items.iter().collect(),
@@ -87,7 +85,6 @@ fn diff_files(forge: &Forge) -> Vec<&FileDiff> {
     }
 }
 
-/// ‹ or ›: the file `to` walks to, off at either end.
 fn walk(
     key: &'static str,
     (glyph, name): (&str, &'static str),
@@ -117,9 +114,6 @@ fn walk(
     .enabled(enabled)
 }
 
-/// The file's lines (every file's on All files) once the diff is read;
-/// until then why not. The list keeps its place across re-reads of the
-/// same change's file.
 fn body(
     forge: &Forge,
     (key, path): (&str, Option<&[u8]>),
@@ -170,10 +164,6 @@ fn body(
     lines::block(shown, forge, cx, ladder, theme)
 }
 
-/// What readers wrote on the change's lines: every published comment,
-/// against the head on screen; my staged ones and the open composer; the
-/// gutter a comment button while I hold an account and nothing of mine
-/// is on its way.
 fn notes(forge: &Forge) -> Notes {
     let published = forge.published_comments();
     let review = forge.review();
@@ -202,9 +192,6 @@ fn notes(forge: &Forge) -> Notes {
     }
 }
 
-/// The review bar: under a review, `Reviewing · N staged`, Discard and
-/// Finish review; else how to comment, and Start review. 16 in, 10 over
-/// and under, a hairline above.
 fn review_bar(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> Div {
     let bar = div()
         .flex()

@@ -19,7 +19,6 @@ impl Chat {
     pub(crate) fn search_now(&mut self, cx: &mut Context<Self>) {
         let (text, viewer) = (self.search.query.clone(), self.viewer());
         let host = cx.host();
-        // a new search: the hits shown answer another question
         self.search.hits = Loadable::Idle;
         cx.load(
             self,
@@ -105,7 +104,6 @@ impl Chat {
         self.search = Search::default();
     }
 
-    /// The search's field and hits emptied; its page stays open.
     pub(crate) fn search_empty(&mut self) {
         self.search = Search {
             shown: self.search.shown,
@@ -113,7 +111,6 @@ impl Chat {
         };
     }
 
-    /// A hit opens its room around the message.
     pub(crate) fn open_hit(&mut self, channel_id: String, seq: u64, cx: &mut Context<Self>) {
         self.search_clear();
         self.create = None;

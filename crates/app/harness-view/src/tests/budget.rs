@@ -15,7 +15,6 @@ fn outlook(name: &str, used: u64, reset: u64, runs_out: Option<u64>) -> WindowOu
     }
 }
 
-// ccs's account 1 at Anthropic, its windows `windows`, twelve calls in the last minute
 fn report(windows: Vec<WindowOutlook>) -> BudgetReport {
     BudgetReport {
         time: NOW,

@@ -12,25 +12,12 @@ use crate::words;
 use view::FontWeight;
 use view::design::Ladder;
 
-// SDK gap: the hairline token, kept local until the kit takes it (kit.md §2)
-/// A hairline (mobile `src/design/theme.ts:83`, `size.hairline`).
 pub(super) const HAIRLINE: Pixels = px(1.);
-// SDK gap: the kit Notice, kept local until the kit takes it (kit.md §2)
-/// The kit `Notice`'s icon (mobile `src/kit/Notice.tsx:49`).
 const NOTICE_ICON: Pixels = px(18.);
-/// A notice action's drawn height: its secondary line and `gap.xs` over
-/// and under (mobile `src/kit/Notice.tsx:60`); its press reaches `hit`.
 const NOTICE_ACTION_HEIGHT: Pixels = px(30.);
-// SDK gap: a Button's icon (mobile `src/kit/Button.tsx:75`), kept local
-// until the kit takes it; kit.md does not list it yet
-/// A small kit `Button` (mobile `src/design/theme.ts:76`, `size.small`)
-/// and its icon (mobile `src/kit/Button.tsx:75`).
 const SMALL_BUTTON: Pixels = px(36.);
 const SMALL_BUTTON_ICON: Pixels = px(16.);
 
-// SDK gap: the agent avatar, kept local until the kit takes it (kit.md §2)
-// A person's round initial at `size` (the kit's `Avatar`), or their
-// picture once read, on the agent tint for an agent (a picture ringed in it).
 pub(super) fn face(
     name: &str,
     agent: bool,
@@ -46,8 +33,6 @@ pub(super) fn face(
         .when(ringed, |face| face.border_2().border_color(theme.agent))
 }
 
-// SDK gap: quiet text at the ladder's sizes, kept local until the kit takes it (kit.md §2)
-/// The kit `Quiet`: one muted line of secondary text, 16 in all round.
 pub(super) fn quiet(
     id: impl Into<ElementId>,
     text: impl Into<SharedString>,
@@ -62,20 +47,13 @@ pub(super) fn quiet(
         .child(text.into())
 }
 
-// SDK gap: the kit Notice, kept local until the kit takes it (kit.md §2)
-/// What a kit `Notice` says by its ground and tone.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum NoticeKind {
     Danger,
     Warning,
-    /// on the surface, a hairline under it
     Quiet,
 }
 
-// SDK gap: the kit Notice, kept local until the kit takes it (kit.md §2)
-/// The kit `Notice` (mobile `src/kit/Notice.tsx`): secondary words on its
-/// kind's ground, 16 in and 10 over and under, an icon before them and
-/// its one action at the right. A danger notice is an alert.
 pub(super) fn notice(
     id: impl Into<ElementId>,
     kind: NoticeKind,
@@ -109,14 +87,10 @@ pub(super) fn notice(
         .text_type(ladder.secondary)
         .text_color(tone)
         .children(icon.map(|icon| design::icon(icon, NOTICE_ICON).text_color(tone)))
-        // the words take the room the icon and the action leave, and wrap in it
         .child(div().flex_1().min_w(px(0.)).child(words.into()))
         .children(action)
 }
 
-// SDK gap: the kit Notice, kept local until the kit takes it (kit.md §2)
-/// A notice's action: secondary medium in the notice's tone, its press
-/// reaching to `hit`.
 pub(super) fn notice_action(
     id: impl Into<ElementId>,
     label: &'static str,
@@ -141,11 +115,6 @@ pub(super) fn notice_action(
         .into_any_element()
 }
 
-// SDK gap: a Button's icon, as above
-/// The kit's small outline `Button` with an icon before its label
-/// (`design::button(..).small()` has no icon): 36 tall, 12 in, secondary
-/// medium; its press reaches `hit`. Drawn on the window's ground, so it
-/// reads over a list.
 pub(super) fn small_button(
     id: impl Into<ElementId>,
     icon: &'static str,
@@ -180,8 +149,6 @@ pub(super) fn small_button(
         )
 }
 
-/// The notice over a channel's screens (Expo `ChannelNotice`): a write the
-/// program refused, in danger, until dismissed.
 pub(super) fn room_notice(
     chat: &Chat,
     cx: &mut Context<Chat>,
@@ -211,9 +178,6 @@ pub(super) fn room_notice(
     )
 }
 
-// The strip in the composer's place where the reader may not write (Expo `GateStrip`, the
-// desktop's words): archived in warning, with Unarchive for whoever may change the room;
-// members-only with its lock; no account, quiet.
 pub(super) fn gate_strip(
     chat: &Chat,
     gate: Gate,

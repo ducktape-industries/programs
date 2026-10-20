@@ -42,15 +42,12 @@ fn a_reply_is_copied_once_on_the_way_in() {
         "decoding {BYTES} bytes of reply allocated {allocated}"
     );
 
-    // A `bin` that says it is longer than what it came in allocates nothing.
     let before = ALLOCATED.load(Ordering::Relaxed);
     let refused = decode::<Event>(&wire[..wire.len() / 2]).is_err();
     let allocated = ALLOCATED.load(Ordering::Relaxed) - before;
     assert!(refused);
     assert!(allocated < 1024, "a refused reply allocated {allocated}");
 
-    // {3: bin32 of 4 MiB} where a 16-byte `Uuid` belongs: its bound refuses
-    // it before the copy.
     let mut wire = vec![0x81, 0x03, 0xc6, 0x00, 0x40, 0x00, 0x00];
     wire.resize(wire.len() + (4 << 20), 9);
     let before = ALLOCATED.load(Ordering::Relaxed);

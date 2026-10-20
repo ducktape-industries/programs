@@ -76,7 +76,6 @@ pub(crate) fn image_size(wire: Wire, size: u64) -> Result<(), String> {
     }
 }
 
-// whether the model takes one image of `width` by `height` pixels, else why not
 pub(crate) fn image_side(wire: Wire, width: u32, height: u32) -> Result<(), String> {
     match wire {
         Wire::AnthropicMessages => anthropic::image_side(width, height),

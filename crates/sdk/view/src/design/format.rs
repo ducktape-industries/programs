@@ -26,9 +26,6 @@ thread_local! {
     static UTC_OFFSET_MINUTES: std::cell::Cell<i32> = const { std::cell::Cell::new(0) };
 }
 
-/// Sets the reader's UTC offset in minutes for [`date`], [`day`], [`clock`]
-/// and [`local`]. The driver sets it from the host's `Event::Offset`, which
-/// is in hand before the first frame, so a view never sees UTC.
 pub(crate) fn set_utc_offset(minutes: i32) {
     UTC_OFFSET_MINUTES.set(minutes);
 }
@@ -48,7 +45,6 @@ pub fn date(millis: u64) -> String {
     ];
     let seconds = local(millis) / 1000;
     let (days, of_day) = (seconds / 86_400, seconds % 86_400);
-    // days since 1970-01-01 to a civil date (Howard Hinnant's algorithm)
     let z = days as i64 + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;
@@ -114,7 +110,6 @@ mod tests {
 
     #[test]
     fn a_time_reads_as_its_day_and_clock() {
-        // 24 Sep 2026, 15:42:07 UTC
         let at = 1_790_264_527_000;
         assert_eq!(date(at), "24 Sep 2026, 15:42:07");
         assert_eq!(day(at), "24 Sep 2026");
@@ -125,15 +120,14 @@ mod tests {
 
     #[test]
     fn a_utc_instant_reads_in_the_readers_offset() {
-        // 24 Sep 2026, 15:42:07 UTC
         let at = 1_790_264_527_000;
-        set_utc_offset(540); // Seoul: past midnight, the next day
+        set_utc_offset(540);
         assert_eq!(date(at), "25 Sep 2026, 00:42:07");
         assert_eq!(day(at), "25 Sep 2026");
         assert_eq!(clock(at), "12:42 AM");
         set_utc_offset(-330);
         assert_eq!(clock(at), "10:12 AM");
-        set_utc_offset(-60); // before the epoch holds at the epoch
+        set_utc_offset(-60);
         assert_eq!(clock(0), "12:00 AM");
         set_utc_offset(0);
         assert_eq!(clock(at), "3:42 PM");

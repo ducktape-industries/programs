@@ -64,8 +64,6 @@ pub fn fold(validators: &[Vec<u8>], members: Vec<Membership>) -> Vec<Node> {
     nodes
 }
 
-/// The set, read twice: the consensus keys the program answers, then every
-/// membership behind them; then who operates each node.
 pub(crate) async fn nodes(host: Host) -> Result<Vec<Node>, Error> {
     let validators = host.query(ask::Validators).await?;
     let members = host
@@ -74,7 +72,6 @@ pub(crate) async fn nodes(host: Host) -> Result<Vec<Node>, Error> {
         })
         .await?;
     let mut nodes = fold(&validators, members);
-    // one row's operator unread is that row's line: the list stands
     for node in &mut nodes {
         node.operator = operator(&host, &node.key).await.unwrap_or_else(|refusal| {
             Some(format!(
@@ -86,11 +83,6 @@ pub(crate) async fn nodes(host: Host) -> Result<Vec<Node>, Error> {
     Ok(nodes)
 }
 
-/// Who operates the node whose key is `key`, through the identity role as
-/// valset's vote reads it (`Account`, then `Profile`): "operated by
-/// <manager> (<agent>)" for a key on an agent. `None` for a key on a
-/// person or on no account, and for an agent that does not act now
-/// (refused `unauthorized`); any other refusal is the caller's.
 pub(crate) async fn operator(host: &Host, key: &[u8]) -> Result<Option<String>, Error> {
     let account = match host.query(identity::ask::OfKey { key: key.to_vec() }).await {
         Ok(account) => account,
@@ -119,8 +111,6 @@ pub(crate) struct Motions {
     pub(crate) pending: Vec<Pending>,
 }
 
-/// Accounts by number, as identity names them; one it does not profile
-/// is left out, and reads as `account N`.
 pub(crate) type Names = BTreeMap<u64, String>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -142,19 +132,14 @@ async fn names(host: &Host, accounts: impl IntoIterator<Item = u64>) -> Result<N
     Ok(names)
 }
 
-/// The name identity gives account `number`; `None` where it profiles
-/// none.
 pub(crate) async fn name(host: Host, number: u64) -> Result<Option<String>, Error> {
     Ok(names(&host, [number]).await?.remove(&number))
 }
 
-/// The validators the seated key votes for: empty, it does not vote.
 pub(crate) async fn voices(host: Host, key: Vec<u8>) -> Result<Vec<Vec<u8>>, Error> {
     host.query(ask::Voices { key }).await
 }
 
-/// The motions waiting. ponytail: one page (256 motions); page on when a
-/// network keeps more open at once.
 pub(crate) async fn motions(host: Host) -> Result<Motions, Error> {
     let (needed, page) = host
         .query(ask::Motions {
@@ -170,7 +155,6 @@ pub(crate) async fn motions(host: Host) -> Result<Motions, Error> {
     })
 }
 
-/// The programs the programs role runs now, each with its code and params.
 pub(crate) async fn roster(host: Host) -> Result<Vec<Entry>, Error> {
     let (height, _) = host
         .query(programs::ask::Program(programs::PROGRAM.into()))
@@ -178,7 +162,6 @@ pub(crate) async fn roster(host: Host) -> Result<Vec<Entry>, Error> {
     host.query(programs::ask::At(height)).await
 }
 
-/// Every change the programs role holds scheduled, by height, and who made it.
 pub(crate) async fn scheduled(host: Host) -> Result<Schedule, Error> {
     let changes: Vec<programs::Pending> = host
         .query_all(|after| programs::ask::Scheduled {

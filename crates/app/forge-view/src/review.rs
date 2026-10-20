@@ -6,14 +6,10 @@ use crate::state::{Forge, PendingComment, ReviewRefusal, ReviewSession, change_k
 use forge::{Op, ReviewDraft, Verdict};
 
 impl Forge {
-    // -------------------------------------------------------- the review
-
     pub(crate) fn review_key(&self) -> Option<String> {
         Some(change_key(self.nav().repo.as_deref()?, self.nav().change?))
     }
 
-    /// Start a review pinned at the endpoints on screen. Later pushes make
-    /// the pin outdated; they never move it.
     pub(crate) fn start_review(&mut self, cx: &mut Context<Self>) {
         let Some(key) = self.review_key() else { return };
         let Some((_, source, _, _)) = self.change() else {
@@ -39,8 +35,6 @@ impl Forge {
         cx.notify();
     }
 
-    /// The gutter number is the button: it opens the composer for one anchor,
-    /// carrying whatever is already staged there, under its line.
     pub(crate) fn open_comment(
         &mut self,
         path: Vec<u8>,
@@ -59,7 +53,6 @@ impl Forge {
             .and_then(|review| review.staged(&path, new_side, line).cloned());
         if let Some(review) = self.reviews.get_mut(&key) {
             review.refused = None;
-            // a new document each time, whatever the field showed before
             let body = TextField::new(staged.map(|staged| staged.body.text()).unwrap_or_default());
             review.open = Some(PendingComment {
                 path,
@@ -112,8 +105,6 @@ impl Forge {
         cx.notify();
     }
 
-    /// One verdict and every staged comment as exactly one operation. A
-    /// refusal keeps the drafts.
     pub(crate) fn finish_review(&mut self, verdict: Verdict, cx: &mut Context<Self>) {
         let (Some(repo), Some(n)) = (self.nav().repo.clone(), self.nav().change) else {
             return;
@@ -153,7 +144,6 @@ impl Forge {
         );
     }
 
-    /// A published review's pin against the head on screen.
     pub(crate) fn outdated(&self, commit_oid: &str) -> bool {
         self.change()
             .and_then(|(_, source, _, _)| source.clone())

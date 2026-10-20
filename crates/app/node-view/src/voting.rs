@@ -19,25 +19,14 @@ use crate::queries::{self, Motions, Names, Node, Schedule};
 
 #[derive(Default)]
 pub(crate) struct Voting {
-    /// the seated key, as the session names it
     pub(crate) signer: Option<Vec<u8>>,
-    /// the validators the seated key votes for; empty: it does not vote
     pub(crate) voices: Vec<Vec<u8>>,
     pub(crate) motions: Loadable<Motions>,
-    /// the programs the programs role runs now
     pub(crate) roster: Loadable<Vec<Entry>>,
     pub(crate) scheduled: Loadable<Schedule>,
-    /// a press that enacts, waiting for the reader's yes
     pub(crate) confirming: Option<Motion>,
-    /// a vote in flight: no other press until it lands
     pub(crate) busy: bool,
-    /// what the last vote did, or the refusal it met
-    // ponytail: one outcome for every screen; Expo keeps a landed one per
-    // screen, so a vote on a page replaces the list's until Back
     pub(crate) outcome: Option<Result<String, String>>,
-    /// the member page the last vote was pressed on (`None`: the list); a
-    /// landed one's message shows only there (Expo: each screen's own
-    /// `usePress`), a failure on every screen (Expo's outbox rows)
     pub(crate) pressed_on: Option<Vec<u8>>,
 }
 
@@ -46,14 +35,10 @@ impl Voting {
         !self.voices.is_empty()
     }
 
-    /// Whether a press may vote now: none in flight, and the motions read,
-    /// so a press that enacts is known to and asks first.
     pub(crate) fn pressable(&self) -> bool {
         !self.busy && self.motions.ready().is_some()
     }
 
-    /// The validators that voted for `motion` so far: none for one that
-    /// does not wait yet.
     pub(crate) fn voters(&self, motion: &Motion) -> &[Vec<u8>] {
         self.motions
             .ready()
@@ -61,8 +46,6 @@ impl Voting {
             .map_or(&[], |pending| pending.voters.as_slice())
     }
 
-    /// Whether the reader's uncast voices carry `motion` to the quorum; a
-    /// press waits for the motions ([`pressable`](Voting::pressable)).
     pub(crate) fn enacts(&self, motion: &Motion) -> bool {
         let Some(motions) = self.motions.ready() else {
             return true;
@@ -72,13 +55,11 @@ impl Voting {
         (voters.len() + uncast) as u64 >= motions.needed
     }
 
-    /// The reader's voices that have not voted for `motion`.
     pub(crate) fn uncast(&self, motion: &Motion) -> usize {
         let voters = self.voters(motion);
         self.voices.iter().filter(|v| !voters.contains(v)).count()
     }
 
-    /// The programs the programs role runs now; none until read.
     pub(crate) fn entries(&self) -> &[Entry] {
         self.roster.ready().map_or(&[], Vec::as_slice)
     }
@@ -94,7 +75,6 @@ impl Nodes {
         self.chain = Some(session.chain_id).filter(|chain| !chain.is_empty());
         let signer = design::unhex(&session.signer).filter(|key| !key.is_empty());
         if signer != self.voting.signer {
-            // another reader's voices are not this one's
             self.voting.voices.clear();
             self.voting.confirming = None;
             self.voting.signer = signer;
@@ -102,9 +82,6 @@ impl Nodes {
         self.read_voices(cx);
     }
 
-    /// The reader's name for the first page's avatar, as identity names
-    /// the session's account; read again only when the account changes, so
-    /// the avatar does not blank on every session update.
     fn read_reader(&mut self, account: Option<u64>, cx: &mut Context<Self>) {
         if account == self.reader_account {
             return;
@@ -123,15 +100,12 @@ impl Nodes {
         });
     }
 
-    /// Whom the seated key votes for, then, while it votes, what the vote
-    /// reads: the boot, a session, a vote's reply, a valset head.
     pub(crate) fn read_voices(&mut self, cx: &mut Context<Self>) {
         let Some(key) = self.voting.signer.clone() else {
             return;
         };
         let ask = queries::voices(cx.host(), key.clone());
         cx.land(ask, move |view, answer, cx| {
-            // a session moved on while this was asked
             if view.voting.signer.as_ref() != Some(&key) {
                 return;
             }
@@ -155,8 +129,6 @@ impl Nodes {
         cx.load(self, work, |view| &mut view.voting.motions);
     }
 
-    /// The roster and the schedule: on a vote's first read and on the
-    /// `programs`'s live heads.
     pub(crate) fn read_programs(&mut self, cx: &mut Context<Self>) {
         if !self.voting.votes() {
             return;
@@ -167,8 +139,6 @@ impl Nodes {
         cx.load(self, scheduled, |view| &mut view.voting.scheduled);
     }
 
-    /// A press on a motion: voted now, or, where it enacts, once the reader
-    /// says yes.
     pub(crate) fn press(&mut self, motion: Motion, cx: &mut Context<Self>) {
         if !self.voting.pressable() {
             return;
@@ -180,7 +150,6 @@ impl Nodes {
         cx.notify();
     }
 
-    /// The reader's yes to the press that waits for one: its vote goes.
     pub(crate) fn confirm(&mut self, cx: &mut Context<Self>) {
         if let Some(motion) = self.voting.confirming.take() {
             self.vote(motion, cx);
@@ -188,7 +157,6 @@ impl Nodes {
         cx.notify();
     }
 
-    /// The reader's Not now: the press that waits is dropped, unsent.
     pub(crate) fn hold(&mut self, cx: &mut Context<Self>) {
         self.voting.confirming = None;
         cx.notify();
@@ -202,8 +170,6 @@ impl Nodes {
         cx.land(ask, |view, answer, cx| {
             view.voting.busy = false;
             let said = said(answer);
-            // its page closed while it was in flight: a landed message went
-            // with it
             let closed = view.voting.pressed_on.is_some() && view.voting.pressed_on != view.open;
             view.voting.outcome = (said.is_err() || !closed).then_some(said);
             view.read_voices(cx);
@@ -212,17 +178,12 @@ impl Nodes {
         .detach();
     }
 
-    /// The reader is done with the last vote's outcome.
     pub(crate) fn dismiss_outcome(&mut self, cx: &mut Context<Self>) {
         self.voting.outcome = None;
         cx.notify();
     }
 }
 
-/// What a vote came to: what a landed one did (mobile
-/// `src/network/nodes.ts` `votedWords`); else why it stopped, in the words
-/// every view says a write that did not land in ([`design::failure`], the
-/// Expo app's `src/write/words.ts:77-85`).
 pub(crate) fn said(answer: Result<Submitted, Error>) -> Result<String, String> {
     match answer {
         Ok(Submitted::Applied { output, .. }) => Ok(match abi::decode::<Voted>(&output) {
@@ -234,8 +195,6 @@ pub(crate) fn said(answer: Result<Submitted, Error>) -> Result<String, String> {
     }
 }
 
-/// The motions a voter can put on a member, each with its slug and its
-/// label: Demote and Remove a validator, Promote a resident.
 pub(crate) fn motions_on(node: &Node) -> Vec<(&'static str, &'static str, Motion)> {
     let key = node.key.clone();
     match node.validator {
@@ -247,7 +206,6 @@ pub(crate) fn motions_on(node: &Node) -> Vec<(&'static str, &'static str, Motion
     }
 }
 
-/// The motion Propose cancel builds for a scheduled change.
 pub(crate) fn cancel(pending: &Pending) -> Motion {
     let op = programs::Op::Cancel {
         height: pending.height,
@@ -259,7 +217,6 @@ pub(crate) fn cancel(pending: &Pending) -> Motion {
     }
 }
 
-/// A code id as the screen shows it: `sha256:1a2b3c4d…9f0e`.
 pub(crate) fn code_words(code: &abi::BlobId) -> String {
     let kind = match code.kind() {
         abi::HashKind::Sha256 => "sha256",
@@ -272,7 +229,6 @@ fn key_words(key: &[u8]) -> String {
     design::short_hex(&hex(key))
 }
 
-/// An account by its name, or its number while identity names none.
 pub(crate) fn named(names: &Names, account: u64) -> String {
     names
         .get(&account)
@@ -332,8 +288,6 @@ fn params_words(entry: &Entry, roster: &[Entry]) -> &'static str {
     }
 }
 
-/// A scheduled change in words: the program, the code, whether its params
-/// change (against what runs now), the height.
 pub(crate) fn scheduled_words(height: u64, change: &Change, roster: &[Entry]) -> String {
     let at = design::grouped(height);
     match change {

@@ -76,7 +76,6 @@ fn profile<F: Fixture>(host: &MockHost, number: AccountNumber) -> Option<Profile
     }
 }
 
-/// Every profile, paged by `limit`, checking each page as it comes.
 fn every_profile<F: Fixture>(host: &MockHost, limit: u32) -> Vec<Profile> {
     let mut all: Vec<Profile> = Vec::new();
     let mut after = None;
@@ -119,8 +118,6 @@ fn every_profile<F: Fixture>(host: &MockHost, limit: u32) -> Vec<Profile> {
     }
 }
 
-/// `RegisterProgram { program: name }` from `origin`, acting as `sender`
-/// (ignored from the system, which acts as `Principal::Root`).
 fn register<F: Fixture>(
     host: &MockHost,
     origin: Origin,
@@ -198,7 +195,6 @@ pub fn register_program_is_root_only_and_idempotent<F: Fixture>(fixture: &F) {
         Origin::Signed(b"someone".to_vec()),
         Origin::Program("chat".into()),
     ] {
-        // `attempt` also checks a refusal wrote nothing
         let answer = host.attempt(|| register::<F>(&host, origin.clone(), None, "probe"));
         assert_eq!(
             answer.map_err(|e| e.code),
@@ -276,7 +272,6 @@ pub fn an_unknown_key_or_program_holds_nothing<F: Fixture>(fixture: &F) {
 pub fn a_held_key_resolves_to_an_acting_account<F: Fixture>(fixture: &F) {
     let host = fixture.host();
     let number = fixture.account(&host, b"held key");
-    // a second holder, so an answer that ignores the key cannot pass
     let other = fixture.account(&host, b"other held key");
     assert_ne!(number, other, "identity: two keys, two accounts");
     for (key, holder) in [(&b"held key"[..], number), (&b"other held key"[..], other)] {

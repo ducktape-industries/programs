@@ -87,7 +87,6 @@ pub fn audit(root: &Node) -> Vec<Fault> {
     faults
 }
 
-/// A node and the ones above it, kept on the walk's own stack.
 struct Step<'a> {
     node: &'a Node,
     parent: Option<&'a Step<'a>>,
@@ -102,14 +101,11 @@ impl<'a> Step<'a> {
         keys
     }
 
-    /// The interactivity of every node above this one, innermost first.
     fn ancestors(&self) -> impl Iterator<Item = &'a Interactivity> {
         std::iter::successors(self.parent, |step| step.parent)
             .filter_map(|step| interactivity(step.node))
     }
 
-    /// Whether a node above this one holds a role in `roles`, and, when
-    /// `keyed` asks, is a Tab stop that hears the keys that walk its rows.
     fn inside(&self, roles: &[Role], keyed: bool) -> bool {
         self.ancestors().any(|above| {
             (!keyed
@@ -121,21 +117,14 @@ impl<'a> Step<'a> {
     }
 }
 
-/// A node Tab lands on: a `tab_stop` or a `tab_index` (both lower from
-/// `focusable()` unless the view opted out).
 fn tab_reaches(i: &Interactivity) -> bool {
     i.tab_stop == Some(true) || i.tab_index.is_some()
 }
 
-/// A node gpui gives a focus handle of its own and a place in the
-/// accessibility tree (a roleless focusable pushes none): the claims under
-/// it are budgeted apart from the ones outside it.
-fn takes_focus(i: &Interactivity) -> bool {
+fn owns_focus_claim_scope(i: &Interactivity) -> bool {
     (i.focusable || i.focus_handle.is_some()) && i.role.is_some()
 }
 
-/// `claimed`: a node earlier in the walk, under the same nearest focusable
-/// ancestor, holds the active descendant.
 fn walk(
     node: &Node,
     parent: Option<&Step<'_>>,
@@ -152,10 +141,8 @@ fn walk(
             kind,
         });
     }
-    // gpui honours one claim per focused node, so the budget restarts
-    // under every node that takes focus
     let mut own = false;
-    let claimed = match interactivity(node).is_some_and(takes_focus) {
+    let claimed = match interactivity(node).is_some_and(owns_focus_claim_scope) {
         true => &mut own,
         false => claimed,
     };
@@ -176,7 +163,6 @@ struct Rules {
 }
 
 impl Rules {
-    /// One rule: `selected` is its antecedent, `fails` its violation.
     fn check(&mut self, selected: bool, kind: FaultKind, fails: impl FnOnce() -> bool) {
         if selected && fails() {
             self.faults.push(kind);
@@ -192,7 +178,6 @@ const TOGGLE: [Role; 5] = [
     Role::MenuItemRadio,
 ];
 const MENU_ITEM: [Role; 3] = [Role::MenuItem, Role::MenuItemCheckBox, Role::MenuItemRadio];
-/// The roles that read `selected` (ARIA's aria-selected set).
 const SELECTABLE: [Role; 9] = [
     Role::Tab,
     Role::TreeItem,
@@ -204,7 +189,6 @@ const SELECTABLE: [Role; 9] = [
     Role::ColumnHeader,
     Role::RowHeader,
 ];
-/// Nothing inside these may be interactive: AT reads each as one control.
 const CONTROL: [Role; 9] = [
     Role::Button,
     Role::Link,
@@ -216,8 +200,6 @@ const CONTROL: [Role; 9] = [
     Role::Switch,
     Role::RadioButton,
 ];
-/// A focused one of these with a key route reaches its rows by arrow keys,
-/// whichever is active.
 const COMPOSITE: [Role; 8] = [
     Role::Tree,
     Role::ListBox,
@@ -247,7 +229,10 @@ fn rules(step: &Step<'_>, duplicate: bool, claimed: &mut bool) -> Rules {
     let role = interactivity.and_then(|i| view_role(i.role));
     let interactive = interactive(node);
     let name = std::cell::OnceCell::new();
-    let name = || name.get_or_init(|| name_of(node)).as_deref();
+    let name = || {
+        name.get_or_init(|| trimmed_accessible_name(node))
+            .as_deref()
+    };
     let is = |roles: &[Role]| role.is_some_and(|role| roles.contains(&role));
 
     rules.check(interactive && interactivity.is_some(), NoRole, || {
@@ -279,7 +264,6 @@ fn rules(step: &Step<'_>, duplicate: bool, claimed: &mut bool) -> Rules {
             _ => None,
         };
         rules.check(state.is_some(), MissingState, || state == Some(false));
-        // a roleless node's state is OrphanAria's
         rules.check(role.is_some(), UnreadState, || {
             (aria.selected.is_some() && !is(&SELECTABLE))
                 || (aria.toggled.is_some()
@@ -289,8 +273,6 @@ fn rules(step: &Step<'_>, duplicate: bool, claimed: &mut bool) -> Rules {
         rules.check(aria.disabled == Some(true), DisabledButLive, || {
             i.on_click.is_some() || i.on_key_down.is_some()
         });
-        // as the sanitizer keeps it: a focusable claim is dropped and
-        // spends nothing
         rules.check(aria.active_descendant, ActiveDescendant, || {
             i.focusable || i.focus_handle.is_some() || std::mem::replace(claimed, true)
         });
@@ -388,12 +370,11 @@ fn interactive(node: &Node) -> bool {
             clickable_ranges, ..
         } => !clickable_ranges.is_empty(),
         _ => interactivity(node)
-            .is_some_and(|i| pressed(i) || i.focusable || !i.aria.actions.is_empty()),
+            .is_some_and(|i| reachable_press_route(i) || i.focusable || !i.aria.actions.is_empty()),
     }
 }
 
-/// A route a press or a key reaches.
-fn pressed(i: &Interactivity) -> bool {
+fn reachable_press_route(i: &Interactivity) -> bool {
     [
         i.on_click,
         i.on_aux_click,
@@ -408,8 +389,7 @@ fn pressed(i: &Interactivity) -> bool {
     .any(Option::is_some)
 }
 
-/// What the node is called, trimmed; `None` for nothing.
-fn name_of(node: &Node) -> Option<String> {
+fn trimmed_accessible_name(node: &Node) -> Option<String> {
     fn trimmed(text: &str) -> Option<&str> {
         Some(text.trim()).filter(|text| !text.is_empty())
     }
@@ -433,9 +413,6 @@ fn name_of(node: &Node) -> Option<String> {
         })
 }
 
-/// Every [`Node::Text`] under the node, trimmed, joined by spaces: what
-/// names a container drawn with text and no label (`#` + `general` is
-/// "# general").
 fn descendant_text(node: &Node) -> String {
     fn gather<'a>(node: &'a Node, words: &mut Vec<&'a str>) {
         match node {

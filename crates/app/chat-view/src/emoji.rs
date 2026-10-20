@@ -429,7 +429,6 @@ mod tests {
         assert_eq!(search("🦆"), vec!["🦆"]);
         assert!(search("zzzzqx").is_empty());
         assert!(search(" ").is_empty());
-        // "lightning zap fast" is in Nature once: no double from elsewhere
         assert_eq!(search("zap"), vec!["⚡"]);
     }
 

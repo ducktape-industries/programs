@@ -19,9 +19,7 @@ use super::parts::{
     time_and_age, title_of,
 };
 
-/// An operation field's label column (Expo `tx/[hash].tsx:180`).
 const OP_KEY_W: Pixels = px(88.);
-/// How far a nested run steps in, per level (Expo `tx/[hash].tsx:139`).
 const NEST_STEP: Pixels = px(16.);
 
 pub(super) fn tx(view: &Explorer, height: u64, position: u32, cx: Cx, k: &Look) -> AnyElement {
@@ -44,7 +42,6 @@ pub(super) fn tx(view: &Explorer, height: u64, position: u32, cx: Cx, k: &Look) 
     page.child(found(view, tx, cx, k)).into_any_element()
 }
 
-/// A transaction link's hash that nothing here has (Expo `tx/[hash].tsx:43`).
 pub(super) fn by_hash(note: &Note, cx: Cx, k: &Look) -> AnyElement {
     let heading = words::NO_TRANSACTION;
     gone(
@@ -58,9 +55,6 @@ pub(super) fn by_hash(note: &Note, cx: Cx, k: &Look) -> AnyElement {
     )
 }
 
-/// A transaction not in hand: being read, refused, or not at its place.
-/// The words are ours: a transaction opens by its place here, not by a
-/// hash in the window as in the Expo app.
 fn missing(view: &Explorer, height: u64, position: u32, cx: Cx, k: &Look) -> AnyElement {
     match &view.located {
         Loadable::Ready(None) | Loadable::Reloading(None, _) => empty(
@@ -104,8 +98,6 @@ fn found(view: &Explorer, tx: &TxRow, cx: Cx, k: &Look) -> AnyElement {
     scroller("explorer-page")
         .child(key_value("explorer-field-block", "Block", block, k))
         .children(status)
-        // SDK gap: selectable text (Expo's hash is `selectable`, a long
-        // press copies it), swap when the SDK has it
         .child(key_value(
             "explorer-field-hash",
             "Hash",
@@ -137,7 +129,6 @@ fn found(view: &Explorer, tx: &TxRow, cx: Cx, k: &Look) -> AnyElement {
         .into_any_element()
 }
 
-/// Its program, and under it the code that runs it now, faint.
 fn program(view: &Explorer, tx: &TxRow, k: &Look) -> Div {
     let code = view.runs(&tx.target).map(|entry| {
         data(format!("code {}", short(entry.code.digest()))).text_color(k.theme.faint)
@@ -149,8 +140,6 @@ fn program(view: &Explorer, tx: &TxRow, k: &Look) -> Div {
         .children(code)
 }
 
-/// A run's outcome as a badge and, where it was refused, the refusal's
-/// sentence and reason under it (Expo `Status`).
 fn status(run: &Receipt, id: &str, k: &Look) -> Div {
     let refusal = match &run.outcome {
         Outcome::Applied { .. } => None,
@@ -169,10 +158,7 @@ fn status(run: &Receipt, id: &str, k: &Look) -> Div {
         .flex_col()
         .items_start()
         .gap(space::XXS)
-        // Expo's Badge centres itself (`Badge.tsx:20` `alignSelf`) over the
-        // column's start
         .child(div().w_full().flex().justify_center().child(badge))
-        // the receipt's own sentence, as Expo draws it (`tx/[hash].tsx:123`)
         .children(refusal.map(|refusal| div().child(refusal.message.clone())))
         .children(refusal.map(|refusal| {
             data(refusal.code.clone())
@@ -181,8 +167,6 @@ fn status(run: &Receipt, id: &str, k: &Look) -> Div {
         }))
 }
 
-/// The runs a transaction's messages caused, under their head (Expo
-/// `Messages`); none, no section.
 fn messages(tx: &TxRow, k: &Look) -> Option<Div> {
     let run = tx.receipt.as_ref().filter(|run| !run.nested.is_empty())?;
     let mut lines = Vec::new();
@@ -200,8 +184,6 @@ fn messages(tx: &TxRow, k: &Look) -> Option<Div> {
     )
 }
 
-/// Each run under the run that sent it, [`NEST_STEP`] further in per level
-/// (Expo `Nested`).
 fn nested(runs: &[Receipt], depth: usize, at: &str, k: &Look, lines: &mut Vec<AnyElement>) {
     for (index, run) in runs.iter().enumerate() {
         let id = format!("{at}-{index}");
@@ -224,8 +206,6 @@ fn nested(runs: &[Receipt], depth: usize, at: &str, k: &Look, lines: &mut Vec<An
     }
 }
 
-/// Who signed: the account holding the key and which of its keys, or the
-/// key alone (Expo `From`).
 fn from(view: &Explorer, tx: &TxRow, cx: Cx, k: &Look) -> Div {
     let Some((account, at)) = view.holder(&tx.signer) else {
         return data(abi::hex(&tx.signer));
@@ -264,8 +244,6 @@ fn from(view: &Explorer, tx: &TxRow, cx: Cx, k: &Look) -> Div {
         )
 }
 
-/// The op's fields, as its program described them, in a box on the
-/// surface (Expo `Operation`); empty until it has.
 fn operation(view: &Explorer, tx: &TxRow, cx: Cx, k: &Look) -> Stateful<Div> {
     let fields = tx
         .op()
@@ -305,8 +283,6 @@ fn operation(view: &Explorer, tx: &TxRow, cx: Cx, k: &Look) -> Stateful<Div> {
         .children(fields)
 }
 
-/// One described value as what it is (Expo `Shown`): an account by its
-/// face and name, a running program a link to its page, a hash short.
 fn value(view: &Explorer, shown: &Value, at: &str, cx: Cx, k: &Look) -> AnyElement {
     match shown {
         Value::Text(text) => div().child(clip(text)).into_any_element(),
@@ -345,8 +321,6 @@ fn value(view: &Explorer, shown: &Value, at: &str, cx: Cx, k: &Look) -> AnyEleme
     }
 }
 
-/// An account as its face and name, a link to its page, and its number
-/// faint (Expo `AccountValue`).
 fn account_value(view: &Explorer, number: u64, at: &str, cx: Cx, k: &Look) -> AnyElement {
     let face = view.account(number).map(|account| {
         let picture = view.picture(account, cx);

@@ -222,8 +222,6 @@ pub fn entry_kind(entry: &EntryInfo) -> &'static str {
     kind(&entry.node, holds_by_name(name_of(&entry.path)))
 }
 
-// The picture a file draws, or what shows in its place while it is read
-// (a restored view reads it again).
 pub fn picture(file: &Opened) -> Result<&Arc<Image>, String> {
     match &file.picture {
         Some(picture) => Ok(picture),

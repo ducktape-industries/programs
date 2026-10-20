@@ -14,23 +14,15 @@ use store::{Item, Map, Set};
 
 use crate::{Op, PROGRAM, PodRow, RunRow, SERVICE};
 
-// The block time each check was offered at, until its run claims it.
 pub(crate) const OFFERED: Map<u64, u64> = Map::new("o/");
-// The data of each pod's `ended` event, until its run reads it.
 pub(crate) const ENDED: Map<String, Vec<u8>> = Map::new("e/");
 pub(crate) const RUNS: Map<u64, RunRow> = Map::new("r/");
-// Each check's pod, kept as soon as the pods service names it, until a run deletes it.
 pub(crate) const PODS: Map<u64, PodRow> = Map::new("p/");
-// The checks the quota had no room for, left queued until one of this runner's pods ends.
 pub(crate) const WAITING: Set<u64> = Set::new("w/");
-// The checks whose pod is being made, from just before the POST until its answer.
 pub(crate) const MAKING: Set<u64> = Set::new("m/");
-// How many pods this runner holds at once; unset, 1.
 pub(crate) const CONCURRENT: Item<u64> = Item::new("concurrent");
-// The cut-off runs a Sweep handed to a `Resume`, until it runs.
 pub(crate) const ADOPTING: Map<u64, Adopting> = Map::new("a/");
 
-// A `Resume` scheduled for block `at`, by a Sweep at block time `time`.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub(crate) struct Adopting {
     at: u64,
@@ -45,14 +37,10 @@ struct Ending {
 
 enum Made {
     Pod(String),
-    // the quota has no room for the pod now
     Full,
     Refused(String),
 }
 
-// The offer only books the run: the claim waits for this program's own run the block after, a
-// frame of its own (an offer nested deep in its trigger's frame cannot claim, J-033). A run that
-// can't be booked refuses the offer, which actions records on the check.
 pub(crate) async fn offered(ctx: Ctx, check: u64) -> Result<(), Error> {
     ctx.env().sent_by(actions::PROGRAM)?;
     if OFFERED.has(&ctx, &check) {
@@ -76,8 +64,6 @@ fn scheduled_by_self(ctx: &Ctx) -> Result<(), Error> {
     Ok(())
 }
 
-// The pod is made before the claim, so a quota with no room leaves the check queued for a later
-// try; a claim refused then deletes the pod.
 pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
     scheduled_by_self(&ctx)?;
     let Some(offered) = OFFERED.get(&ctx, &check)? else {
@@ -94,7 +80,6 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
             return Ok(());
         }
     };
-    // a check another runner took or that ended is left alone
     if row.state != State::Queued {
         return Ok(());
     }
@@ -103,15 +88,14 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
         block_ms: ctx.env().time.saturating_sub(offered),
         ..RunRow::default()
     };
-    // a pod held for a check that ended (one superseded, say) is deleted before the room is counted
     settle(&ctx).await?;
-    if busy_pods(&ctx, &row) >= concurrent(&ctx)? {
+    if pods_counting_against_quota(&ctx, &row) >= concurrent(&ctx)? {
         WAITING.insert(&ctx, &check);
         return Ok(());
     }
     let made_at = ctx.env().time;
     MAKING.insert(&ctx, &check);
-    let made = made(&ctx, &row).await;
+    let made = create_pod_with_quota(&ctx, &row).await;
     MAKING.remove(&ctx, &check);
     let pod = match made {
         Made::Pod(pod) => pod,
@@ -128,27 +112,26 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
     kept.pod = Some(pod.clone());
     let held = PodRow {
         pod: pod.clone(),
-        code: own_code(&ctx),
+        code: code_at_current_height(&ctx),
     };
     PODS.put(&ctx, &check, &held);
     let claim = actions::Op::Claim { check };
     if let Err(refused) = ctx.call_raw(actions::PROGRAM, abi::encode(&claim)).await {
         delete(&ctx, &pod).await;
         PODS.remove(&ctx, &check);
-        // a check another runner took or that ended is left alone; any other refusal errs it
         if refused.code != code::WRONG_STATE {
             let why = format!("the claim was refused: {}", refused.message);
             report(&ctx, check, Ending::errored(why)).await;
         }
         return Ok(());
     }
-    if supersede(&ctx, &row).await {
-        retry(&ctx).await;
+    if supersede_earlier_attempts(&ctx, &row).await {
+        retry_waiting_next_block(&ctx).await;
     }
-    let ending = waited(&ctx, &row, &pod, &mut kept)
+    let ending = wait_for_pod_and_copy_outputs(&ctx, &row, &pod, &mut kept)
         .await
         .unwrap_or_else(Ending::errored);
-    end(&ctx, check, &pod, kept, ending).await;
+    finish_pod_and_retry_waiting(&ctx, check, &pod, kept, ending).await;
     Ok(())
 }
 
@@ -156,7 +139,6 @@ pub(crate) fn concurrent(ctx: &QueryCtx) -> Result<u64, Error> {
     Ok(CONCURRENT.get(ctx)?.unwrap_or(1))
 }
 
-// Open: a raised setting lets the checks waiting on it try again at once.
 pub(crate) async fn set_concurrent(ctx: Ctx, most: u64) -> Result<(), Error> {
     if most == 0 {
         return Err(invalid(
@@ -164,13 +146,11 @@ pub(crate) async fn set_concurrent(ctx: Ctx, most: u64) -> Result<(), Error> {
         ));
     }
     CONCURRENT.put(&ctx, &most);
-    retry(&ctx).await;
+    retry_waiting_next_block(&ctx).await;
     Ok(())
 }
 
-// The pods that count against the setting before `check`'s is made: those being made, and those
-// held for a running check, but not an earlier attempt of `check`'s own job, which it retires.
-fn busy_pods(ctx: &QueryCtx, check: &CheckRow) -> u64 {
+fn pods_counting_against_quota(ctx: &QueryCtx, check: &CheckRow) -> u64 {
     let making = MAKING.all(ctx).map(|making| making.len()).unwrap_or(0);
     let held = PODS
         .all(ctx)
@@ -186,17 +166,14 @@ fn busy_pods(ctx: &QueryCtx, check: &CheckRow) -> u64 {
     (making + held.count()) as u64
 }
 
-// Every pod this runner holds, against its check: a check that ended, or that a newer attempt
-// replaced, has its pod deleted; a run an update of this program cut off is taken up by a
-// `Resume` the block after; a live run is left alone. Then the checks the quota refused try again.
 pub(crate) async fn sweep(ctx: Ctx) -> Result<(), Error> {
     settle(&ctx).await?;
-    retry(&ctx).await;
+    retry_waiting_next_block(&ctx).await;
     Ok(())
 }
 
 async fn settle(ctx: &Ctx) -> Result<(), Error> {
-    let now = own_code(ctx);
+    let now = code_at_current_height(ctx);
     for (check, held) in PODS.all(ctx)? {
         swept(ctx, check, &held, now).await;
     }
@@ -213,17 +190,16 @@ async fn swept(ctx: &Ctx, check: u64, held: &PodRow, now: Option<BlobId>) {
         ADOPTING.remove(ctx, &check);
         return;
     }
-    let newest = checks_of(ctx, &found)
+    let newest = checks_of_commit(ctx, &found)
         .unwrap_or_default()
         .into_iter()
         .filter(|other| same_job(other, &found))
         .max_by_key(|other| other.attempt);
     if let Some(newest) = newest.filter(|newest| newest.attempt > found.attempt) {
-        retire(ctx, &found, held, &newest).await;
+        retire_superseded_check(ctx, &found, held, &newest).await;
         return;
     }
     let cut_off = matches!((held.code, now), (Some(then), Some(now)) if then != now);
-    // a Resume booked for a block still to come takes it up; one whose block passed never ran
     let booked = ADOPTING
         .get(ctx, &check)
         .ok()
@@ -242,9 +218,6 @@ async fn adopt(ctx: &Ctx, check: u64) {
     }
 }
 
-// The pod a cut-off run left, waited on from where that run was: its end heard, `/out` copied, the
-// check reported with how the pod ended, and the pod deleted. The block time is measured between
-// the Sweep that booked it and this run.
 pub(crate) async fn resume(ctx: Ctx, check: u64) -> Result<(), Error> {
     scheduled_by_self(&ctx)?;
     let Some(adopting) = ADOPTING.get(&ctx, &check)? else {
@@ -254,7 +227,7 @@ pub(crate) async fn resume(ctx: Ctx, check: u64) -> Result<(), Error> {
     let Some(mut held) = PODS.get(&ctx, &check)? else {
         return Ok(());
     };
-    held.code = own_code(&ctx);
+    held.code = code_at_current_height(&ctx);
     PODS.put(&ctx, &check, &held);
     let mut kept = RunRow {
         check,
@@ -263,19 +236,17 @@ pub(crate) async fn resume(ctx: Ctx, check: u64) -> Result<(), Error> {
         ..RunRow::default()
     };
     let ending = match check_row(&ctx, check) {
-        Ok(found) => waited(&ctx, &found, &held.pod, &mut kept)
+        Ok(found) => wait_for_pod_and_copy_outputs(&ctx, &found, &held.pod, &mut kept)
             .await
             .unwrap_or_else(Ending::errored),
         Err(refused) => Ending::errored(refused.message),
     };
-    end(&ctx, check, &held.pod, kept, ending).await;
+    finish_pod_and_retry_waiting(&ctx, check, &held.pod, kept, ending).await;
     Ok(())
 }
 
-// The earlier attempts of a check's job whose pods this runner still holds, retired; whether any
-// was.
-async fn supersede(ctx: &Ctx, by: &CheckRow) -> bool {
-    let earlier: Vec<CheckRow> = checks_of(ctx, by)
+async fn supersede_earlier_attempts(ctx: &Ctx, by: &CheckRow) -> bool {
+    let earlier: Vec<CheckRow> = checks_of_commit(ctx, by)
         .unwrap_or_default()
         .into_iter()
         .filter(|other| same_job(other, by) && other.attempt < by.attempt)
@@ -283,16 +254,14 @@ async fn supersede(ctx: &Ctx, by: &CheckRow) -> bool {
     let mut retired = false;
     for check in earlier {
         if let Ok(Some(held)) = PODS.get(ctx, &check.id) {
-            retire(ctx, &check, &held, by).await;
+            retire_superseded_check(ctx, &check, &held, by).await;
             retired = true;
         }
     }
     retired
 }
 
-// A check a newer attempt replaced: its pod deleted, and the check, if still running, reported
-// superseded, as no run will report it.
-async fn retire(ctx: &Ctx, check: &CheckRow, held: &PodRow, by: &CheckRow) {
+async fn retire_superseded_check(ctx: &Ctx, check: &CheckRow, held: &PodRow, by: &CheckRow) {
     delete(ctx, &held.pod).await;
     PODS.remove(ctx, &check.id);
     ADOPTING.remove(ctx, &check.id);
@@ -311,18 +280,21 @@ fn same_job(one: &CheckRow, other: &CheckRow) -> bool {
     one.run == other.run && one.job.id == other.job.id
 }
 
-// The pod's end: the pod deleted, the run kept, the check reported, and the checks the quota
-// refused trying again, as this pod's room is free.
-async fn end(ctx: &Ctx, check: u64, pod: &str, kept: RunRow, ending: Ending) {
+async fn finish_pod_and_retry_waiting(
+    ctx: &Ctx,
+    check: u64,
+    pod: &str,
+    kept: RunRow,
+    ending: Ending,
+) {
     delete(ctx, pod).await;
     PODS.remove(ctx, &check);
     RUNS.put(ctx, &check, &kept);
     report(ctx, check, ending).await;
-    retry(ctx).await;
+    retry_waiting_next_block(ctx).await;
 }
 
-// Each check the quota refused runs again the block after, as if offered then, oldest first.
-async fn retry(ctx: &Ctx) {
+async fn retry_waiting_next_block(ctx: &Ctx) {
     let Ok(waiting) = WAITING.all(ctx) else {
         return;
     };
@@ -352,9 +324,7 @@ async fn delete(ctx: &Ctx, pod: &str) {
     .await;
 }
 
-// The code this program runs at this block, as the programs role answers; None where it answers
-// nothing.
-fn own_code(ctx: &QueryCtx) -> Option<BlobId> {
+fn code_at_current_height(ctx: &QueryCtx) -> Option<BlobId> {
     let programs = ctx.env().role(abi::role::PROGRAMS).ok()?.clone();
     let asked = role::Query::At(ctx.env().height);
     let entries = match ctx.query(programs, &asked).ok()? {
@@ -387,8 +357,7 @@ fn check_row(ctx: &QueryCtx, id: u64) -> Result<CheckRow, Error> {
     }
 }
 
-// Every check of a check's commit: its job's other attempts among them.
-fn checks_of(ctx: &QueryCtx, check: &CheckRow) -> Result<Vec<CheckRow>, Error> {
+fn checks_of_commit(ctx: &QueryCtx, check: &CheckRow) -> Result<Vec<CheckRow>, Error> {
     let asked = actions::Query::Checks {
         repo: check.repo.clone(),
         commit: check.commit.clone(),
@@ -400,8 +369,7 @@ fn checks_of(ctx: &QueryCtx, check: &CheckRow) -> Result<Vec<CheckRow>, Error> {
     }
 }
 
-// What the check's job asks of its pod, as its workflow states it.
-fn asks_of(ctx: &QueryCtx, check: u64) -> Result<Asks, Error> {
+fn pod_requirements(ctx: &QueryCtx, check: u64) -> Result<Asks, Error> {
     let asked = actions::Query::Asks { check };
     match ctx.query::<actions::Query, actions::Reply>(actions::PROGRAM, &asked)? {
         actions::Reply::Asks(asks) => Ok(asks.unwrap_or_default()),
@@ -409,10 +377,8 @@ fn asks_of(ctx: &QueryCtx, check: u64) -> Result<Asks, Error> {
     }
 }
 
-// The check's pod, asking what its job states. A quota refusal is `Full`: the room comes back as
-// pods end. One that asks more than the quota's whole is refused, as that room never comes.
-async fn made(ctx: &Ctx, check: &CheckRow) -> Made {
-    let asks = match asks_of(ctx, check.id) {
+async fn create_pod_with_quota(ctx: &Ctx, check: &CheckRow) -> Made {
+    let asks = match pod_requirements(ctx, check.id) {
         Ok(asks) => asks,
         Err(refused) => return Made::Refused(refused.message),
     };
@@ -428,7 +394,7 @@ async fn made(ctx: &Ctx, check: &CheckRow) -> Made {
     if answer.status == 403 {
         let error = error_of(&answer);
         if error.contains("exceeded quota") {
-            return match never_fits(&error) {
+            return match request_exceeds_whole_quota(&error) {
                 Some(why) => Made::Refused(why),
                 None => Made::Full,
             };
@@ -447,9 +413,7 @@ async fn made(ctx: &Ctx, check: &CheckRow) -> Made {
     }
 }
 
-// Kubernetes' quota refusal names what the pod asks and the quota's whole: `exceeded quota: <name>,
-// requested: requests.cpu=16, used: requests.cpu=40, limited: requests.cpu=48`.
-fn never_fits(error: &str) -> Option<String> {
+fn request_exceeds_whole_quota(error: &str) -> Option<String> {
     let amount = |label: &str, resource: &str, read: fn(&str) -> Option<u64>| {
         let (_, rest) = error.split_once(label)?;
         let listed = rest.split(", ").next()?;
@@ -467,11 +431,7 @@ fn never_fits(error: &str) -> Option<String> {
     never.then(|| format!("the pod asks more than the quota holds: {error}"))
 }
 
-// The pod made, its end awaited, its outputs copied. The wait's alive events beat at half a
-// request's lifetime (`alive_every`). A wait that ends with no `ended` (an expiry,
-// a node restart) asks the pod itself: one that ended is read so, and one still running is
-// waited on again, its beat measured from the blocks the broken wait lasted.
-async fn waited(
+async fn wait_for_pod_and_copy_outputs(
     ctx: &Ctx,
     check: &CheckRow,
     pod: &str,
@@ -498,7 +458,7 @@ async fn waited(
         {
             return Err(refusal("the wait", answer));
         }
-        if let Some(ended) = pod_ended(ctx, pod).await? {
+        if let Some(ended) = read_pod_ending(ctx, pod).await? {
             break ended;
         }
         let (height, time) = (ctx.env().height, ctx.env().time);
@@ -524,11 +484,6 @@ async fn waited(
     })
 }
 
-// How often a pod's alive events come, in whole seconds: every half of the time a request lasts
-// (DEFAULT_WAIT blocks of the measured block time), the other half for a beat held up on its way.
-// No trip is taken off: the pod's creation, slowed by scheduling or an image pull, says nothing of
-// how late a beat lands (chief, j-033 msg 79). Only a request too short for two whole-second beats
-// is refused.
 pub(crate) fn alive_every(block_ms: u64) -> Result<u64, String> {
     let lasts = DEFAULT_WAIT.saturating_mul(block_ms);
     if lasts < 2000 {
@@ -539,9 +494,7 @@ pub(crate) fn alive_every(block_ms: u64) -> Result<u64, String> {
     Ok(lasts / 2 / 1000)
 }
 
-// The pod as the pods service reads it now: how it ended, in the `ended` event's shape, or None
-// while its run container runs.
-async fn pod_ended(ctx: &Ctx, pod: &str) -> Result<Option<Value>, String> {
+async fn read_pod_ending(ctx: &Ctx, pod: &str) -> Result<Option<Value>, String> {
     let target = format!("/v1/pods/{pod}");
     let read = ask(ctx, http::Method::Get, target, Vec::new(), Delivery::Whole)
         .await
@@ -839,27 +792,23 @@ async fn report(ctx: &Ctx, check: u64, ending: Ending) {
         summary: ending.summary,
         log: ending.log,
     };
-    // a check another reporter already ended keeps what it said
     let _ = ctx.call_raw(actions::PROGRAM, abi::encode(&report)).await;
 }
 
-// An `ended` event keeps its data for the run that waits on its pod; an `alive` one has done its
-// work by landing, which moved the wait's expiry on.
 pub(crate) fn heard(ctx: &ExecCtx, event: Event) -> Result<(), Error> {
     let egress = ctx.env().role(abi::role::EGRESS)?.clone();
     if ctx.env().sending_program()? != egress {
         return Err(unauthorized("a wait's events come from the egress role"));
     }
-    let Some(data) = ended_data(&event.data) else {
+    let Some(data) = ended_event_data(&event.data) else {
         return Ok(());
     };
-    let pod = waited_on(ctx, &egress, event.id)?;
+    let pod = pod_named_by_wait(ctx, &egress, event.id)?;
     ENDED.put(ctx, &pod, &data);
     Ok(())
 }
 
-// An event is its raw lines up to the blank line.
-fn ended_data(raw: &[u8]) -> Option<Vec<u8>> {
+fn ended_event_data(raw: &[u8]) -> Option<Vec<u8>> {
     let text = std::str::from_utf8(raw).ok()?;
     let ended = text.lines().any(|line| line == "event: ended");
     let data = text.lines().find_map(|line| line.strip_prefix("data: "));
@@ -868,8 +817,7 @@ fn ended_data(raw: &[u8]) -> Option<Vec<u8>> {
         .flatten()
 }
 
-// The pod a wait request names in its target, `/v1/pods/<pod>/wait?every=…`.
-fn waited_on(ctx: &QueryCtx, egress: &ProgramId, id: u64) -> Result<String, Error> {
+fn pod_named_by_wait(ctx: &QueryCtx, egress: &ProgramId, id: u64) -> Result<String, Error> {
     let asked = egress::Query::Request { id };
     let row = match ctx.query::<egress::Query, egress::Reply>(egress.clone(), &asked)? {
         egress::Reply::Request(Some(row)) => row,

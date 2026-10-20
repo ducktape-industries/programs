@@ -7,7 +7,6 @@ use view::{Div, FontWeight, Stateful};
 
 use crate::{Agents, Sheet};
 
-/// The line the last write left, or the write in flight: a strip under the title row.
 pub(super) fn note(view: &Agents, theme: &Theme, ladder: &Ladder) -> Option<AnyElement> {
     let strip = |id: &'static str, background: Hsla| {
         div()
@@ -42,7 +41,6 @@ pub(super) fn note(view: &Agents, theme: &Theme, ladder: &Ladder) -> Option<AnyE
     )
 }
 
-/// What scrolls under a page's title row.
 pub(super) fn scroller(id: &'static str) -> Stateful<Div> {
     div()
         .id(id)
@@ -54,9 +52,6 @@ pub(super) fn scroller(id: &'static str) -> Stateful<Div> {
         .pb(space::BLOCK)
 }
 
-/// The control in a title row that opens the page's sheet. What it holds is a mix (an edit, a
-/// start, a removal), so it draws `ellipsis-vertical`: the host's capsule beside it draws
-/// `ellipsis` ([`design::Page::trailing`]).
 pub(super) fn actions(
     id: &'static str,
     sheet: Sheet,
@@ -76,7 +71,6 @@ pub(super) fn actions(
     )
 }
 
-/// A list's section head, its count at its end.
 pub(super) fn section(
     id: &'static str,
     label: &'static str,
@@ -87,8 +81,6 @@ pub(super) fn section(
     design::section_head(id, label, ladder, theme).child(count.to_string())
 }
 
-/// A row that opens a page: what leads it, its title over its caption, what trails it, the
-/// chevron; the whole row the press.
 pub(super) fn opening_row(
     id: impl Into<ElementId>,
     lead: impl IntoElement,
@@ -116,12 +108,10 @@ pub(super) fn opening_row(
         .on_click(press)
 }
 
-/// A row's lead glyph, muted.
 pub(super) fn glyph(name: &str, theme: &Theme, ladder: &Ladder) -> Div {
     design::lead(design::icon(name, ladder.icon_row).text_color(theme.muted))
 }
 
-/// A row's title over a line that leads with a badge: a state, then its sentence.
 pub(super) fn badged(
     title: impl IntoElement,
     badge: Option<Stateful<Div>>,
@@ -140,8 +130,6 @@ pub(super) fn badged(
     )
 }
 
-/// A strip that says something about the page: why it cannot run, what nothing recovers. A
-/// danger one leads with a glyph and is an alert.
 pub(super) fn notice(
     id: &'static str,
     words: impl Into<SharedString>,
@@ -172,7 +160,6 @@ pub(super) fn notice(
         .child(div().flex_1().min_w_0().child(words.into()))
 }
 
-/// One fact of a page that holds them: its label over its value.
 pub(super) fn fact(
     id: impl Into<ElementId>,
     label: &'static str,

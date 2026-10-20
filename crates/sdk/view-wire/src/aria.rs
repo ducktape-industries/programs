@@ -80,7 +80,6 @@ pub struct Aria {
 
 crate::codec::sparse!(Aria);
 
-/// Actions the host answers itself, whatever a view advertises.
 pub(crate) const HOST_ACTIONS: [Action; 6] = [
     Action::Click,
     Action::Focus,
@@ -90,9 +89,6 @@ pub(crate) const HOST_ACTIONS: [Action; 6] = [
     Action::SetTextSelection,
 ];
 
-/// The role a view may give a node: `GenericContainer` and `Unknown` say
-/// nothing (and trip gpui's debug assert), and the window-level roles are
-/// the host's.
 pub(crate) fn view_role(role: Option<gpui::Role>) -> Option<gpui::Role> {
     use gpui::Role::*;
     role.filter(|role| {
@@ -113,8 +109,6 @@ pub(crate) fn view_role(role: Option<gpui::Role>) -> Option<gpui::Role> {
 }
 
 impl Aria {
-    /// Bounds everything the node's role does not decide; the rest is
-    /// `frame_sanitize::sanitize_interactivity`'s.
     pub(crate) fn sanitize(&mut self) {
         for value in [
             &mut self.numeric_value,

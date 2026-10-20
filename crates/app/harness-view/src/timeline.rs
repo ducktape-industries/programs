@@ -10,28 +10,20 @@ use harness::{Body, Frame, Said, Stop};
 use crate::words::upper_first;
 
 pub(crate) enum Entry<'a> {
-    /// a person's message, or the chain's
     Wrote(&'a Frame),
-    /// a burst of turns that asked for tool calls, and their results
     Worked(Work<'a>),
-    /// a turn that ended otherwise: an answer, max tokens, a refusal
     Answered(&'a Frame),
-    /// a summary the model sees in place of the frames before it
     Summary(&'a Frame),
-    /// what harness noted: a model call that failed, a call taken back
     Noted(&'a Frame),
-    /// a result or refusal whose call no turn here made
     Stray(&'a Frame),
 }
 
-/// The model's turns that asked for tool calls, one after another, and what came back.
 pub(crate) struct Work<'a> {
     pub turns: Vec<&'a Frame>,
     /// each call's result or refusal, by its call id
     pub results: HashMap<&'a str, &'a Frame>,
 }
 
-/// One tool call a turn made.
 pub(crate) struct Call<'a> {
     pub id: &'a str,
     pub tool: &'a str,
@@ -39,7 +31,6 @@ pub(crate) struct Call<'a> {
 
 pub(crate) fn entries(frames: &[Frame]) -> Vec<Entry<'_>> {
     let mut entries = Vec::new();
-    // the burst a turn asking for tool calls joins, while nothing else came between
     let mut working: Option<usize> = None;
     let mut made_in: HashMap<&str, usize> = HashMap::new();
     for frame in frames {
@@ -110,8 +101,6 @@ impl<'a> Work<'a> {
             })
     }
 
-    // every call the burst's turns made, harness's and the model vendor's, in order: its tool
-    // and its input
     fn uses(&self) -> impl Iterator<Item = (&'a str, &'a str)> + '_ {
         self.turns
             .iter()
@@ -128,7 +117,6 @@ impl<'a> Work<'a> {
             })
     }
 
-    /// Every frame of the burst, its turns and its results, in order.
     fn frames(&self) -> impl Iterator<Item = &'a Frame> + '_ {
         self.turns
             .iter()
@@ -158,7 +146,7 @@ impl<'a> Work<'a> {
     pub fn summary(&self) -> String {
         let mut done: Vec<(Option<String>, &str, u64)> = Vec::new();
         for (tool, input) in self.uses() {
-            let verb = verb(tool, input);
+            let verb = tool_action_verb(tool, input);
             let same = |(said, named, _): &&mut (Option<String>, &str, u64)| match &verb {
                 Some(_) => *said == verb,
                 None => said.is_none() && *named == tool,
@@ -191,20 +179,17 @@ fn said(turn: &Frame) -> &[Said] {
     }
 }
 
-/// files_read's verb, counted apart from the rest.
 const FILES_READ: &str = "read files";
 
-// web_fetch's verb, counted apart from the rest
 const WEB_FETCHED: &str = "fetched pages";
 
-/// What one call did, as a verb a person reads; none for a tool this table lacks.
-fn verb(tool: &str, input: &str) -> Option<String> {
+fn tool_action_verb(tool: &str, input: &str) -> Option<String> {
     Some(match tool {
         "chat_post" => "posted in chat".into(),
         "chat_react" => "reacted".into(),
         "chat_channels" | "chat_messages" | "chat_thread" | "chat_search" => "read chat".into(),
         "files_read" => FILES_READ.into(),
-        "files_write" => match written(input) {
+        "files_write" => match written_file_name(input) {
             Some(name) => format!("wrote {name}"),
             None => "wrote a file".into(),
         },
@@ -218,15 +203,12 @@ fn verb(tool: &str, input: &str) -> Option<String> {
     })
 }
 
-/// The name of the file a files_write input writes, its path's last part.
-fn written(input: &str) -> Option<String> {
+fn written_file_name(input: &str) -> Option<String> {
     let input: serde_json::Value = serde_json::from_str(input).ok()?;
     let path = input.get("path")?.as_str()?;
     path.rsplit('/').next().map(str::to_owned)
 }
 
-// a server tool call as its line says it: "Searched the web: <query>", "Fetched <url>"; as it
-// forms, "Searching the web: <query>"
 pub(crate) fn server_head(name: &str, input: &str, forming: bool) -> String {
     let asked = |key: &str| {
         serde_json::from_str::<serde_json::Value>(input)
@@ -243,8 +225,6 @@ pub(crate) fn server_head(name: &str, input: &str, forming: bool) -> String {
     }
 }
 
-// what a server tool's result block says: how many results, or the page's title, or the error
-// the vendor names; and each source by its title and url
 pub(crate) struct Outcome {
     pub words: String,
     pub failed: bool,
@@ -291,7 +271,6 @@ pub(crate) fn server_outcome(block: &str) -> Outcome {
     }
 }
 
-// the call a server tool's result block answers
 pub(crate) fn result_of(block: &str) -> String {
     serde_json::from_str::<serde_json::Value>(block)
         .ok()
@@ -299,8 +278,6 @@ pub(crate) fn result_of(block: &str) -> String {
         .unwrap_or_default()
 }
 
-// the result block server tool call `id` came back as, in any turn of `frames`: in the turn
-// that made it, or a later one when the vendor ran it beside harness's calls
 pub(crate) fn server_result<'a>(frames: &'a [Frame], id: &str) -> Option<&'a str> {
     frames.iter().flat_map(said).find_map(|said| match said {
         Said::ServerToolResult(block) if result_of(block) == id => Some(block.as_str()),
@@ -308,7 +285,6 @@ pub(crate) fn server_result<'a>(frames: &'a [Frame], id: &str) -> Option<&'a str
     })
 }
 
-// whether server tool call `id` is among `frames`
 pub(crate) fn server_use_in(frames: &[Frame], id: &str) -> bool {
     frames
         .iter()
@@ -316,7 +292,6 @@ pub(crate) fn server_use_in(frames: &[Frame], id: &str) -> bool {
         .any(|said| matches!(said, Said::ServerToolUse { id: used, .. } if used == id))
 }
 
-// the sources a cited text names, each once, by its title, else its document's, else its url
 pub(crate) fn cited_sources(citations: &[String]) -> Vec<String> {
     let mut sources: Vec<String> = Vec::new();
     for citation in citations {
@@ -331,7 +306,6 @@ pub(crate) fn cited_sources(citations: &[String]) -> Vec<String> {
     sources
 }
 
-/// A span of milliseconds as a person reads it: `40 s`, `2 min`, `3 h`.
 pub(crate) fn took_words(millis: u64) -> String {
     let seconds = millis / 1000;
     match seconds {
@@ -388,8 +362,6 @@ mod tests {
         )
     }
 
-    /// A burst of turns asking for calls reads as one entry, its results inside it, and the
-    /// answer after it as its own.
     #[test]
     fn a_burst_of_calls_is_one_entry_with_its_results() {
         let frames = vec![

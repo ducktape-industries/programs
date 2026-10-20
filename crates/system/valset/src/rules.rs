@@ -165,7 +165,6 @@ fn leave(ctx: &ExecCtx, key: Vec<u8>) -> Result<(), Error> {
 }
 
 fn vote(ctx: &ExecCtx, signer: Vec<u8>, motion: Motion) -> Result<(), Error> {
-    // first, so a motion that cannot pass asks identity nothing
     admissible(ctx, &motion)?;
     let validators = validators(ctx)?;
     let sender = ctx.env().sender.as_ref().and_then(Principal::account);
@@ -200,11 +199,6 @@ fn vote(ctx: &ExecCtx, signer: Vec<u8>, motion: Motion) -> Result<(), Error> {
     Ok(())
 }
 
-/// The validators a frame signed by `signer` votes for: itself when it is
-/// one, asking identity nothing; else each validator whose node key acts
-/// as an agent that `me` (the frame's account, asked only here) manages
-/// and keeps active. A node key sits on an agent, never on its operator's
-/// own account, so the operator's devices vote through the agent.
 pub(crate) fn voices(
     ctx: &QueryCtx,
     validators: &[Vec<u8>],
@@ -220,16 +214,18 @@ pub(crate) fn voices(
     };
     let mut voices = Vec::new();
     for validator in validators {
-        if managed_by(ctx, validator, me)? {
+        if active_program_managed_by(ctx, validator, me)? {
             voices.push(validator.clone());
         }
     }
     Ok(voices)
 }
 
-/// Whether `key` acts as a program account `manager` manages and keeps
-/// active, as the identity role says.
-fn managed_by(ctx: &QueryCtx, key: &[u8], manager: AccountNumber) -> Result<bool, Error> {
+fn active_program_managed_by(
+    ctx: &QueryCtx,
+    key: &[u8],
+    manager: AccountNumber,
+) -> Result<bool, Error> {
     let Some(account) = account_of(ctx, key)? else {
         return Ok(false);
     };
@@ -246,10 +242,6 @@ fn managed_by(ctx: &QueryCtx, key: &[u8], manager: AccountNumber) -> Result<bool
     }))
 }
 
-/// The account `key` acts as, as the identity role answers it: `None` for
-/// a key that holds none, or whose account does not act now (identity
-/// refuses it `unauthorized`). Any other refusal fails the caller, so an
-/// identity that misanswers drops no one's voice quietly.
 pub(crate) fn account_of(ctx: &QueryCtx, key: &[u8]) -> Result<Option<AccountNumber>, Error> {
     let bound = &ctx.env().role(abi::role::IDENTITY)?.clone();
     match ctx.query(bound, &identity::Query::Account(key.to_vec())) {
@@ -260,15 +252,11 @@ pub(crate) fn account_of(ctx: &QueryCtx, key: &[u8]) -> Result<Option<AccountNum
     }
 }
 
-/// A page of the motions waiting for votes, each with its voters still
-/// seated, as [`vote`] tallies them.
 pub(crate) fn motions(ctx: &QueryCtx, page: &PageRequest) -> Result<crate::Reply, Error> {
     let validators = validators(ctx)?;
     let prefix = VOTES.key(&());
     let listing = page.listing(ctx, prefix.clone())?;
     let mut scan = listing.scan(&prefix);
-    // ponytail: reads every motion past the cursor to fill one page; a
-    // handful wait at once (each needs a validator's vote to be stored)
     scan.limit = None;
     let mut rows = Vec::new();
     for (record, mut voters) in VOTES.scan(ctx, scan)? {
@@ -305,8 +293,6 @@ fn enact(ctx: &ExecCtx, motion: Motion) -> Result<(), Error> {
             DOOR.put(ctx, &open);
             Ok(())
         }
-        // a refusal comes back as the reply (`Valset::reply`), which takes it: the op's
-        // writes are undone, and the motion left the pending set with this vote
         Motion::Role { role, op } => {
             ctx.emit_raw(ctx.env().role(&role)?.clone(), op, Reply::Wanted);
             Ok(())

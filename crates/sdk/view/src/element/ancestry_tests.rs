@@ -209,8 +209,6 @@ fn uniform_list_lowers_selected_measurement_and_scroll_request() {
     else {
         panic!("expected uniform list");
     };
-    // the measurement row, then the window around the row scrolled to
-    // (one row tall: no viewport was sent) with the margin past each edge
     let margin = crate::list::MARGIN_ROWS as u32;
     let window = 42 - margin..43 + margin;
     assert_eq!(

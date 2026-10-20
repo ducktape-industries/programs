@@ -19,10 +19,6 @@ pub fn derive_ask(input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// What answers a variant asked alone: the reply variant and what it
-/// carries, one value (`Reply::List(PageResponse<Row>)`) or named fields
-/// (`Reply::Thread { root: Option<Row>, replies: PageResponse<Row> }`,
-/// answered as the tuple of them, in order).
 enum Answer {
     One(Path, Type),
     Fields(Path, Vec<(Ident, Type)>),
@@ -59,19 +55,14 @@ fn ask_attr(attrs: &[Attribute]) -> Option<&Attribute> {
     attrs.iter().find(|attr| attr.path().is_ident("ask"))
 }
 
-/// One `#[reads(..)]`: the tables a block must have written to for the
-/// answer to have moved, and whose program they are. The query's own
-/// (`#[reads(MESSAGES, REACTIONS)]`), or another program's, named first
-/// (`#[reads(chat::Chat: chat::tables::ANSWERED, chat::tables::MESSAGES)]`)
-/// for a question answered partly from its tables.
-struct Group {
+struct ReadGroup {
     program: Option<Path>,
     tables: Vec<Path>,
 }
 
-impl Parse for Group {
+impl Parse for ReadGroup {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut group = Group {
+        let mut group = ReadGroup {
             program: None,
             tables: Vec::new(),
         };
@@ -93,15 +84,10 @@ impl Parse for Group {
     }
 }
 
-/// What the `#[reads(..)]` attributes on a variant say a block must have
-/// written to for the answer to have moved: a block of a group's program
-/// that wrote a key one of the group's tables owns, for any group. With no
-/// attribute, any block of any program (`true`); a group with no tables
-/// never.
 fn touched_by(attrs: &[Attribute], own: &Path) -> syn::Result<Tokens> {
     let mut groups = Vec::new();
     for attr in attrs.iter().filter(|attr| attr.path().is_ident("reads")) {
-        let group: Group = attr.parse_args()?;
+        let group: ReadGroup = attr.parse_args()?;
         if group.tables.is_empty() {
             groups.push(quote!(false));
             continue;
@@ -235,7 +221,6 @@ fn asks(input: &DeriveInput) -> syn::Result<Tokens> {
          variant, it is that variant on the wire, and [`program::Ask`] names \
          the reply that answers it."
     );
-    // a `Query` no caller asks alone (only `#[reads]`) has no `ask` module
     let asks = (!types.is_empty()).then(|| {
         quote! {
             #[doc = #doc]
@@ -271,17 +256,15 @@ pub fn derive_described(input: TokenStream) -> TokenStream {
         .into()
 }
 
-// What a variant's `#[tool_op(..)]` or `#[tool_query(..)]` tells: a description, what an op
-// returns, and an example, where a path names a fn that makes one and any other expression is one.
 #[derive(Default)]
-struct Told {
+struct ToolDescription {
     description: String,
     returns: Option<Type>,
     example: Option<Tokens>,
 }
 
-fn told(attr: &Attribute, op: bool) -> syn::Result<Told> {
-    let mut told = Told::default();
+fn told(attr: &Attribute, op: bool) -> syn::Result<ToolDescription> {
+    let mut told = ToolDescription::default();
     attr.parse_nested_meta(|meta| {
         if meta.path.is_ident("description") {
             told.description = meta.value()?.parse::<LitStr>()?.value();
@@ -303,8 +286,7 @@ fn told(attr: &Attribute, op: bool) -> syn::Result<Told> {
     Ok(told)
 }
 
-// The `Reply` variant an `#[ask(Reply::X(..))]` names, which answers a query; empty with none.
-fn reply(attrs: &[Attribute]) -> syn::Result<String> {
+fn reply_variant_name(attrs: &[Attribute]) -> syn::Result<String> {
     let Some(attr) = ask_attr(attrs) else {
         return Ok(String::new());
     };
@@ -359,9 +341,9 @@ fn described(input: &DeriveInput) -> syn::Result<Tokens> {
                 kind = Some(op);
                 told(attr, op)?
             }
-            None => Told::default(),
+            None => ToolDescription::default(),
         };
-        let reply = reply(&variant.attrs)?;
+        let reply = reply_variant_name(&variant.attrs)?;
         let variant = variant.ident.to_string();
         let description = &told.description;
         let example = match &told.example {

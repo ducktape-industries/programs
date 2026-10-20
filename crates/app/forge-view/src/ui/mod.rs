@@ -26,26 +26,19 @@ use components::{badge, button, heading, id, quiet};
 use forge::Reply;
 use view::design::Ladder;
 
-/// The About dock beside a repository.
 const DOCK_W: Pixels = px(300.);
-/// A page's side inset.
 pub(crate) const PAGE_X: Pixels = px(20.);
-/// A tab bar's height.
 pub(crate) const TAB_BAR_H: Pixels = px(38.);
-/// A fact's label column.
 const FACT_LABEL_W: Pixels = px(120.);
 
 pub(crate) fn render(forge: &mut Forge, cx: &mut Context<Forge>) -> impl IntoElement {
     let theme = *cx.global::<Theme>();
-    // under a finger the phone's tree draws instead (`phone::render`)
     let ladder = &design::POINTER;
     let mut columns = div()
         .id(id("forge-columns"))
         .flex()
         .size_full()
         .min_h(px(0.));
-    // The rail switches between repositories; with none open, the list
-    // itself is the screen, and a rail beside it would say it twice.
     if forge.layout.tree_visible() && forge.nav().repo.is_some() {
         columns = columns
             .child(repos::rail(forge, cx, &theme, ladder))
@@ -61,7 +54,6 @@ pub(crate) fn render(forge: &mut Forge, cx: &mut Context<Forge>) -> impl IntoEle
             ));
     }
     columns = columns.child(main(forge, cx, &theme, ladder));
-    // a change carries its own details; the About dock is a repository's
     if let Some(dock) = forge
         .nav()
         .dock
@@ -79,8 +71,6 @@ pub(crate) fn render(forge: &mut Forge, cx: &mut Context<Forge>) -> impl IntoEle
         .text_size(design::text::BODY)
         .child(columns)
         .children(crate::policies::sheet(forge, cx, ladder, &theme));
-    // an open dropdown floats in a modal overlay: Tab stays in it and a
-    // press outside closes it
     let (label, floating) = match forge.menu {
         None => ("", None),
         Some(menu @ (Menu::Ref | Menu::Source | Menu::Target)) => (
@@ -116,7 +106,6 @@ fn main(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) 
         .flex()
         .flex_col()
         .min_h(px(0.));
-    // the list itself has no rail to fold, so no bar over it
     if forge.layout.narrow() && forge.nav().repo.is_some() {
         column = column.child(narrow_bar(forge, cx, theme, ladder));
     }
@@ -143,8 +132,6 @@ fn main(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) 
     column.child(body).into_any_element()
 }
 
-/// Why every write control is off: the seated key holds no account. The
-/// same rule and wording pattern as chat's `NoAccount`.
 fn no_account(theme: &Theme) -> AnyElement {
     div()
         .id(id("forge-no-account"))
@@ -160,8 +147,6 @@ fn no_account(theme: &Theme) -> AnyElement {
         .into_any_element()
 }
 
-/// The repository header: its name, what it is and its clone address,
-/// then the ref picker and the tabs on one bar.
 fn repo(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     let name = forge.repo_name();
     let mut tabs = div()
@@ -174,7 +159,6 @@ fn repo(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) 
         .border_b_1()
         .border_color(theme.border)
         .child(ref_picker(forge, cx, theme));
-    // manual: each tab reads on open, so the arrows only move and Enter opens
     let active = forge.tab_cursor.unwrap_or(forge.nav().tab);
     let at = |tab| {
         RepoTab::ALL
@@ -240,8 +224,6 @@ fn repo(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) 
         .into_any_element()
 }
 
-/// The repository's name, one mono line of what it is (owner, refs, the
-/// block it was last active at), and its address with Copy.
 fn title(
     forge: &Forge,
     name: &str,
@@ -326,13 +308,10 @@ fn title(
         .into_any_element()
 }
 
-/// `duck://explorer/block/<height>`: the host's short link to a view on
-/// this connection, Explorer at that block.
 pub(crate) fn block_href(height: u64) -> String {
     format!("duck://explorer/block/{height}")
 }
 
-/// `block 1,024`, opening Explorer at that block.
 pub(crate) fn block_link(
     id: impl Into<ElementId>,
     height: u64,
@@ -344,8 +323,6 @@ pub(crate) fn block_link(
         .aria_label(format!("Open {label} in Explorer"))
 }
 
-/// The picked ref as a dropdown at the head of the tab bar
-/// ([`components::menu`]). The pick steers every tab.
 fn ref_picker(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme) -> AnyElement {
     let head = forge.head_name();
     let label = match forge.refs() {
@@ -363,8 +340,6 @@ fn ref_picker(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme) -> AnyEleme
     )
 }
 
-/// On a narrow window an open repository's rail and a change's details
-/// fold into toggles.
 fn narrow_bar(
     forge: &Forge,
     cx: &mut Context<Forge>,
@@ -402,7 +377,6 @@ fn narrow_bar(
         .into_any_element()
 }
 
-/// The one docked panel a screen shows at a time.
 fn panel(
     forge: &Forge,
     dock: Dock,
@@ -507,7 +481,6 @@ pub(crate) fn fact(label: &str, value: impl Into<String>, theme: &Theme) -> AnyE
         .into_any_element()
 }
 
-/// The optimistic rows of a scope: what the reader issued, still in flight.
 pub(crate) fn pending(forge: &Forge, scope: &str, theme: &Theme) -> AnyElement {
     let ops = forge.pending_in(scope);
     if ops.is_empty() {
@@ -545,7 +518,6 @@ pub(crate) fn pending(forge: &Forge, scope: &str, theme: &Theme) -> AnyElement {
     column.into_any_element()
 }
 
-/// The `Reply` a read landed, or the loading/refused state in its place.
 pub(crate) fn staged<'a>(
     forge: &'a Forge,
     query: &forge::Query,
@@ -564,12 +536,10 @@ pub(crate) fn staged<'a>(
     }
 }
 
-/// The line a read shows until it lands.
 pub(crate) fn reading(element_id: &str, text: &str, theme: &Theme) -> AnyElement {
     components::loading(id(format!("{element_id}-loading")), text, theme)
 }
 
-/// A refused read: the program's sentence, and a Retry that asks again.
 pub(crate) fn refused(
     query: &forge::Query,
     element_id: &str,
@@ -585,7 +555,6 @@ pub(crate) fn refused(
         .into_any_element()
 }
 
-/// A scrolling content column, the shape every screen body uses.
 pub(crate) fn scroller(name: &str) -> Stateful<Div> {
     div()
         .id(id(name.to_owned()))

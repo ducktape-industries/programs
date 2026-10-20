@@ -7,7 +7,6 @@ use crate::{Chat, links};
 use identity::Identity;
 
 impl Chat {
-    /// Follows each of them for as long as the view runs.
     pub(crate) fn watch(&mut self, cx: &mut Context<Self>) {
         cx.follow::<HostSession>((), |chat, props, cx| match props {
             Ok(next) => chat.session_changed(next, cx),
@@ -17,14 +16,11 @@ impl Chat {
             }
         })
         .detach();
-        // a block re-reads what it wrote to, as the program declares it
         cx.follow::<Changes<::chat::Chat>>((), |chat, change, cx| match change {
             Ok(change) => chat.changed(change.as_ref(), cx),
             Err(refusal) => cx.log_refused("chat's live heads", &refusal),
         })
         .detach();
-        // `duck://<chain>/chat/<channel>[/<seq>]`: a link opened into
-        // this view (a notice's, say) names the room and the message
         cx.follow::<HostRoute>((), |chat, route, cx| match route {
             Ok(route) => {
                 if let Some((channel, seq)) = links::route_target(&route) {
@@ -36,8 +32,6 @@ impl Chat {
             Err(refusal) => cx.log_refused("the route", &refusal),
         })
         .detach();
-        // the chain's clock: which day "Today" is (a day separator's word
-        // under a finger); a new frame only when the day turns
         cx.follow::<ChainHeads>((), |chat, head, cx| match head {
             Ok(head) => {
                 chat.widgets_ticked(head.time, cx);
@@ -55,8 +49,6 @@ impl Chat {
             Err(refusal) => cx.log_refused("visibility", &refusal),
         })
         .detach();
-        // re-read the roster on identity's heads, so a name another
-        // signer claims replaces its "account N" fallback
         cx.follow::<Changes<Identity>>((), |chat, head, cx| match head {
             Ok(_) => {
                 chat.load_names(cx);
@@ -70,7 +62,6 @@ impl Chat {
             Err(refusal) => cx.log_refused("access's live heads", &refusal),
         })
         .detach();
-        // who can edit the open room or message may be among what it wrote
         cx.follow::<Changes<ownership::Ownership>>((), |chat, head, cx| match head {
             Ok(change) => chat.ownership_moved(change, cx),
             Err(refusal) => cx.log_refused("ownership's live heads", &refusal),

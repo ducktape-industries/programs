@@ -12,26 +12,18 @@ use crate::{Chat, Mode, emoji};
 use view::FontWeight;
 use view::design::Ladder;
 
-/// One emoji cell, each way (mobile `src/chat/Actions.tsx:24`), the emoji
-/// 24 on a 30 line (`:33`).
 pub(super) const CELL: Pixels = px(44.);
 const CELL_EMOJI: design::Type = design::Type::lined(24., 30.);
-/// Where the sheet rests (mobile `src/chat/Actions.tsx:153`).
 const DETENTS: [f32; 2] = [0.6, 1.0];
-/// A category tab: 36 wide, the glyph 20 on a 26 line, a 2 rule under the
-/// chosen one (mobile `src/chat/Actions.tsx:195` and `:197`).
 const TAB_WIDTH: Pixels = px(36.);
 const TAB_GLYPH: design::Type = design::Type::lined(20., 26.);
 
-/// One emoji cell as a sheet draws it: `mine`, the reader's own reaction
-/// on the message, wears the accent.
 pub(super) struct Cell {
     pub id: ElementId,
     pub emoji: String,
     pub mine: bool,
 }
 
-/// The picker, while a message's is open.
 pub(super) fn sheet(
     chat: &Chat,
     cx: &mut Context<Chat>,
@@ -73,7 +65,6 @@ pub(super) fn sheet(
     )
 }
 
-/// The search field, its magnifier in it.
 fn field(chat: &Chat, theme: &Theme, ladder: &Ladder) -> Div {
     let input = Input::new(
         "chat-reaction-search",
@@ -88,7 +79,6 @@ fn field(chat: &Chat, theme: &Theme, ladder: &Ladder) -> Div {
         .into_element()
 }
 
-/// No search: Frequently used, the tabs, the chosen tab's grid.
 fn browse(
     chat: &Chat,
     seq: u64,
@@ -115,7 +105,6 @@ fn browse(
     ]
 }
 
-/// A search: how many matched, then they.
 fn results(
     chat: &Chat,
     query: &str,
@@ -138,7 +127,6 @@ fn results(
     ]
 }
 
-/// A section's label: caption medium, muted, 16 in, 8 over and under.
 fn caption(text: &str, theme: &Theme, ladder: &Ladder) -> AnyElement {
     div()
         .px(design::space::BLOCK)
@@ -150,10 +138,6 @@ fn caption(text: &str, theme: &Theme, ladder: &Ladder) -> AnyElement {
         .into_any_element()
 }
 
-/// Cells in rows, 16 in from each side, the room left over shared between
-/// them. Expo's gap makes a row exactly the width, which Yoga's float sum
-/// overflows, so the Expo app draws one cell fewer a row (7 at 402 and at
-/// 411 wide); so does this.
 fn grid(
     chat: &Chat,
     section: &str,
@@ -169,7 +153,6 @@ fn grid(
         .into_iter()
         .map(|emoji| {
             let pick = emoji.clone();
-            // a pick the reader already reacted with only closes
             let press = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
                 cx.notify();
                 match reacted(chat, seq, &pick) {
@@ -204,7 +187,6 @@ fn grid(
         .children(rows)
 }
 
-/// Whether the reader reacted to the message at `seq` with `emoji`.
 fn reacted(chat: &Chat, seq: u64, emoji: &str) -> bool {
     let Some(menu) = &chat.menu else {
         return false;
@@ -214,8 +196,6 @@ fn reacted(chat: &Chat, seq: u64, emoji: &str) -> bool {
         .any(|message| message.seq == seq && message.reacted(emoji))
 }
 
-/// The category tabs, spread across the sheet; the chosen one's glyph
-/// over a 2 rule in the foreground.
 fn tabs(chosen: usize, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     let tabs: Vec<AnyElement> = emoji::CATEGORIES
         .iter()
@@ -261,8 +241,6 @@ fn tabs(chosen: usize, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -
         .into_any_element()
 }
 
-/// One 44 emoji cell (the Expo `Cell`); the reader's own reaction wears
-/// the accent edge and ground.
 pub(super) fn cell(
     cell: Cell,
     press: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,

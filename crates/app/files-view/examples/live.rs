@@ -7,8 +7,6 @@
 use files::{Change, Content, Op};
 use view::rig::{self, Network};
 
-/// `bytes` put at `path`, its chunks put on `net` first, as a node's blob
-/// upload puts them.
 fn put(net: &Network, path: &str, bytes: &[u8]) -> Change {
     let chunks = bytes
         .chunks(files::CHUNK_SIZE as usize)
@@ -28,7 +26,6 @@ fn put(net: &Network, path: &str, bytes: &[u8]) -> Change {
     }
 }
 
-/// A picture, 640 by 400: the tape roll on yellow.
 const TAPE: &[u8] = include_bytes!("tape.png");
 
 fn main() {
@@ -37,7 +34,6 @@ fn main() {
         net.seat::<access::Access>(access::PROGRAM);
         let dev = net.me();
         let ada = net.person("ada");
-        // each commit is based on the head, so it is stale on nothing
         let commit = |who, message: &str, changes| {
             let files::Reply::Head(head) = net.query(files::PROGRAM, &files::Query::Head)? else {
                 unreachable!("files answers Head with its head");

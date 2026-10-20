@@ -10,7 +10,6 @@ use view::{Div, Stateful};
 
 use crate::{Chat, Pane};
 
-// The room's row and sheet, and the message's sheet: every id in them starts so.
 const ROOM: &str = "chat-room-policy";
 const MESSAGE: &str = "chat-message-policy";
 
@@ -23,12 +22,10 @@ pub(crate) fn message_policy(chat: &mut Chat) -> &mut Editing {
 }
 
 impl Chat {
-    // The reader as ownership knows a party: their account.
     fn reader(&self) -> Option<Party> {
         self.my_account().map(Party::Account)
     }
 
-    // The open room as ownership records it.
     fn room_item(&self) -> Option<Item> {
         let info = self.room_info()?;
         Some(Item {
@@ -38,7 +35,6 @@ impl Chat {
         })
     }
 
-    // The message at `seq` in `pane` as ownership records it.
     pub(crate) fn message_item(&self, pane: Pane, seq: u64) -> Option<Item> {
         let row = self.shown(pane).find(|row| row.seq == seq)?;
         Some(Item {
@@ -48,8 +44,6 @@ impl Chat {
         })
     }
 
-    // Each frame: the room's standing is read while its details, a message's menu or its archived
-    // strip ask it, and the message's while its menu or its sheet is open.
     pub(crate) fn settle_policies(&mut self, cx: &mut Context<Self>) {
         let reader = self.reader();
         let archived = self.room_info().is_some_and(|info| info.channel.archived);
@@ -66,8 +60,6 @@ impl Chat {
         }
     }
 
-    // Whether the reader may change the open room (rename, archive, seat or remove members,
-    // remove others' messages): its policy's answer once read, else as before policies, its owner.
     pub(crate) fn may_change_room(&self) -> bool {
         let read = self
             .room_item()
@@ -78,8 +70,6 @@ impl Chat {
         })
     }
 
-    // Whether the reader may edit the message at `seq`: its policy's answer once read, else as
-    // before policies, its author.
     pub(crate) fn may_edit(&self, pane: Pane, seq: u64) -> bool {
         let read = self
             .message_item(pane, seq)
@@ -87,7 +77,6 @@ impl Chat {
         read.unwrap_or_else(|| self.wrote(pane, seq))
     }
 
-    // "Who can edit" on the message at `seq`: its menu closes and the sheet that says opens.
     pub(crate) fn who_can_edit(&mut self, pane: Pane, seq: u64, cx: &mut Context<Self>) {
         let Some(message) = self.message_item(pane, seq) else {
             return;
@@ -98,14 +87,12 @@ impl Chat {
         item::open_sheet(self, message_policy, Sheet::About, cx);
     }
 
-    // Ownership wrote: what is held is read again where the block touched it.
     pub(crate) fn ownership_moved(&mut self, change: Option<Change>, cx: &mut Context<Self>) {
         item::moved(self, room_policy, change.as_ref(), cx);
         item::moved(self, message_policy, change.as_ref(), cx);
     }
 }
 
-// The open room's row, for its details; a dm, which nobody renames or seats, has none.
 pub(crate) fn room_row(
     chat: &Chat,
     cx: &mut Context<Chat>,
@@ -121,7 +108,6 @@ pub(crate) fn room_row(
     item::row(&chat.room_policy, ROOM, room_policy, cx, ladder, theme)
 }
 
-// The policy sheet open over chat, if any: the message's, else the room's.
 pub(crate) fn sheet(
     chat: &Chat,
     cx: &mut Context<Chat>,

@@ -242,7 +242,6 @@ fn an_agent_hands_harness_no_wait_event_itself() {
     }
 }
 
-// the pods service is an egress service the node serves, as the model's is
 fn pods(world: &World) {
     let chain = &world.chain;
     let register = egress::Op::Register {
@@ -302,8 +301,6 @@ fn stream_ends(chain: &MockChain, row: &RequestRow, events: u64) {
 
 const ENDED: &str = "event: ended\ndata: {\"line\": \"pod duckpond-7 ended: exit code 0 (Completed)\", \"exit_code\": 0, \"pod\": \"duckpond-7\"}";
 
-// a pod wait armed at block 4 (time 0), its stream's run at block 5 (time 1000), the pod's read
-// answered at block 6 (time 2000): a block of 1 s and a trip of 1 s
 fn streaming(world: &World, thread: u64) -> (u64, RequestRow) {
     let chain = &world.chain;
     turn(world, 3, &[("w1", "wait_for", pod("duckpond-7"))]);
@@ -321,7 +318,6 @@ fn streaming(world: &World, thread: u64) -> (u64, RequestRow) {
         deliver: pod_event_as(wait),
     };
     assert_eq!(stream.delivery, pod_event);
-    // the node answers a request in a block after the one that made it
     chain.at(7, 3000);
     (wait, stream)
 }
@@ -583,8 +579,6 @@ fn the_forge_prefix_decodes_as_forged() {
     assert_eq!(abi::decode::<Op>(&delivered).unwrap(), Op::Forged(event));
 }
 
-// a room the agent turned off brings it nothing, but a wait it armed there still ends with the one
-// message it waited for, and watching for the wait leaves the agent's choice as it was
 #[test]
 fn a_wait_in_a_room_turned_off_ends_with_its_message_and_nothing_else_arrives() {
     let world = schemed();

@@ -37,7 +37,6 @@ impl AnyView {
     }
 }
 
-/// A child entity is a child element: `.child(self.sidebar.clone())`.
 impl<V: crate::Render> IntoElement for crate::Entity<V> {
     type Element = ViewElement<AnyView>;
 
@@ -66,8 +65,6 @@ impl RenderOnce for AnyView {
     }
 }
 
-// An entity's render, lowered as that entity's: a notify inside it is one
-// of every entity it is drawn in.
 struct Entered {
     entity: u64,
     inner: AnyElement,

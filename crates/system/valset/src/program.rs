@@ -39,7 +39,6 @@ impl Program for Valset {
             }
             Query::Membership { key } => Reply::Membership(MEMBERS.get(ctx, &key)?),
             Query::Motions { page } => motions(ctx, &page)?,
-            // a query has no sender: the account is the key's own
             Query::Voices { key } => {
                 let voices = voices(ctx, &validators(ctx)?, &key, || account_of(ctx, &key))?;
                 Reply::Voices(voices)

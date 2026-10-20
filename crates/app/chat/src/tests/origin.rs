@@ -6,12 +6,9 @@ use ::program::{Env, Origin};
 use super::*;
 use crate::{Category, Kind, Profile, Standing};
 
-/// Ada's key; it holds account 1.
 const ADA_KEY: [u8; 32] = [1; 32];
-/// Bo's key: it holds account 2 once identity seats it.
 const LONE_KEY: [u8; 32] = [2; 32];
 
-/// The identity role's roster: three accounts, the third an agent Ada manages.
 fn identity() -> Vec<Profile> {
     let profile = |number: u64, kind| Profile {
         number,
@@ -33,7 +30,6 @@ fn identity() -> Vec<Profile> {
     ]
 }
 
-/// A store with identity beside it.
 fn store() -> MockHost {
     let store = MockHost::default();
     store.identity(identity());
@@ -49,8 +45,6 @@ fn env(origin: Origin, sender: Option<Principal>) -> Env {
     }
 }
 
-/// A frame signed by `key`, acting as the account it holds (if any), as the
-/// host resolves it.
 fn key(key: &[u8], account: Option<u64>) -> Env {
     Env {
         time: 1000,
@@ -66,14 +60,12 @@ fn root() -> Env {
     env(Origin::Root, Some(Principal::Root))
 }
 
-/// The refusal's reason; the store is untouched by it.
 #[track_caller]
 fn refused(store: &MockHost, env: Env, op: Op) -> String {
     let ctx = store.exec(env);
     store.refused(|| crate::Chat::execute(&ctx, op)).code
 }
 
-/// A read of `store`.
 fn reads(store: &MockHost) -> ::program::QueryCtx {
     store.query(env(Origin::Root, None))
 }
@@ -87,7 +79,6 @@ fn a_write_acts_as_its_sender() {
     let store = store();
     crate::Chat::execute(&store.exec(ada()), create("a", PostPolicy::Open)).unwrap();
     assert_eq!(owner(&store, "a"), Principal::Account(1));
-    // forge's own frame acts as forge's account
     let forge = env(Origin::Program("forge".into()), Some(FORGE));
     crate::Chat::execute(&store.exec(forge), create("forge:c", PostPolicy::Open)).unwrap();
     assert_eq!(owner(&store, "forge:c"), FORGE);
@@ -95,7 +86,6 @@ fn a_write_acts_as_its_sender() {
     assert_eq!(owner(&store, "d"), Principal::Root);
 }
 
-/// Every op, one each, as a key would send it into `#general`.
 fn every_op() -> Vec<Op> {
     let general = || "general".to_string();
     vec![
@@ -150,8 +140,6 @@ fn every_op() -> Vec<Op> {
     ]
 }
 
-/// A key that holds no account writes nothing, whatever the op; once
-/// identity hands it an account, the same key writes as that account.
 #[test]
 fn a_key_writes_only_once_it_holds_an_account() {
     let store = store();

@@ -190,7 +190,7 @@ impl Config {
 
     pub fn parse_pinned(bytes: &[u8]) -> Result<(Config, Pin), Malformed> {
         let text = std::str::from_utf8(bytes).map_err(|_| Malformed::NotText)?;
-        let [_, front, _, body] = parts(text)?;
+        let [_, front, _, body] = front_matter_parts(text)?;
         let matter: FrontMatter = toml::from_str(front)
             .map_err(|error| Malformed::FrontMatter(error.message().to_owned()))?;
         if matter.max_tokens == 0 {
@@ -250,7 +250,6 @@ impl Config {
         format!("{FENCE}\n{front}{FENCE}\n{}\n", self.system)
     }
 
-    // the front matter between the fences: the fields it names, then what `pin` pins
     fn front(&self, pin: &Pin) -> String {
         let model = toml::Value::String(self.model.clone());
         let mut front = format!("model = {model}\nmax_tokens = {}\n", self.max_tokens);
@@ -289,9 +288,7 @@ impl Config {
     }
 }
 
-// a file's opening fence line, its front matter, its closing fence line and its body, each as
-// the file holds it
-fn parts(text: &str) -> Result<[&str; 4], Malformed> {
+fn front_matter_parts(text: &str) -> Result<[&str; 4], Malformed> {
     let Some(open) = text.split_inclusive('\n').next().filter(|line| fence(line)) else {
         return Err(Malformed::NoOpeningFence);
     };
@@ -311,14 +308,14 @@ fn parts(text: &str) -> Result<[&str; 4], Malformed> {
 pub fn with_front(file: &[u8], config: &Config) -> Result<String, Malformed> {
     let (_, pin) = Config::parse_pinned(file)?;
     let text = std::str::from_utf8(file).map_err(|_| Malformed::NotText)?;
-    let [open, _, close, body] = parts(text)?;
+    let [open, _, close, body] = front_matter_parts(text)?;
     Ok(format!("{open}{}{close}{body}", config.front(&pin)))
 }
 
 // `file` with `system` as its body, its front matter kept byte for byte
 pub fn with_body(file: &[u8], system: &str) -> Result<String, Malformed> {
     let text = std::str::from_utf8(file).map_err(|_| Malformed::NotText)?;
-    let [open, front, close, _] = parts(text)?;
+    let [open, front, close, _] = front_matter_parts(text)?;
     let close = close.trim_end();
     Ok(format!("{open}{front}{close}\n{system}\n"))
 }

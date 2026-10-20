@@ -76,8 +76,6 @@ fn primitive_geometry_and_state_children_are_bounded_in_the_main_walk() {
     ));
 }
 
-/// An aria field a view did not set costs no bytes: the default is the
-/// empty map, and one field set alone is a map of one.
 #[test]
 fn an_unset_aria_field_sends_no_bytes() {
     assert_eq!(encode(&Aria::default()), [0x80]);
@@ -126,9 +124,6 @@ fn an_unset_aria_field_sends_no_bytes() {
     }
 }
 
-/// A web, camera or microphone piece the view's manifest leaves out is
-/// found wherever a frame carries a node: deep in its tree, in a patch, in
-/// a tooltip's content; declared, it is not.
 #[test]
 fn an_undeclared_piece_is_found_in_the_tree_a_patch_and_a_tooltip() {
     use crate::methods::Capability;
@@ -219,8 +214,6 @@ fn voice(room: &str, name: &str) -> Node {
     }
 }
 
-/// A piece that publishes or plays a live track needs `live` beside its
-/// device's capability; a remote piece needs `live` alone.
 #[test]
 fn a_piece_on_a_live_track_needs_the_live_capability() {
     use crate::methods::Capability::{Live, Microphone};
@@ -253,9 +246,6 @@ fn a_piece_on_a_live_track_needs_the_live_capability() {
     assert_eq!(publishing.undeclared(&[Microphone, Live]), None);
 }
 
-/// A piece's track is held to the rule `live.publish` holds a track to: a
-/// room of one line of plain text, a name of `/`-separated segments within
-/// the node's cap. A track out of it refuses the frame.
 #[test]
 fn a_piece_on_a_track_out_of_its_rule_refuses_the_frame() {
     use program::live::{MAX_NAMESPACE, MAX_TRACK_NAME};

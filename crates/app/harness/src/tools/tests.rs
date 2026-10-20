@@ -10,7 +10,6 @@ use super::{CATALOG, Entry, find};
 use crate::wire::{self, Answered};
 use crate::{Partial, Said, Wire};
 
-// each part of `value` its schema does not take, and why
 fn unfit(schema: &Value, value: &Value, at: &str, faults: &mut Vec<String>) {
     if let Some(kind) = schema["type"].as_str() {
         let fits = match kind {
@@ -60,7 +59,6 @@ fn unfit(schema: &Value, value: &Value, at: &str, faults: &mut Vec<String>) {
     }
 }
 
-// the fields the tool's schema gives no type, which the API streams as JSON text
 fn untyped(entry: &Entry) -> Vec<String> {
     let schema = (entry.schema)();
     let typed = ["type", "enum", "const", "anyOf", "oneOf", "allOf", "$ref"];
@@ -75,8 +73,6 @@ fn untyped(entry: &Entry) -> Vec<String> {
         .collect()
 }
 
-// the input's JSON text as a model writes it, compact and spaced, and as the API streams it with
-// each untyped field written as JSON text
 fn written(sample: &Value, untyped: &[String]) -> Vec<(&'static str, String)> {
     let spaced = serde_json::to_string_pretty(sample).unwrap();
     let mut forms = vec![("compact", sample.to_string()), ("spaced", spaced)];
@@ -96,7 +92,6 @@ fn written(sample: &Value, untyped: &[String]) -> Vec<(&'static str, String)> {
     forms
 }
 
-// the text in pieces: cut in two at every char boundary, whole, and one char a piece
 fn splits(text: &str) -> Vec<(String, Vec<&str>)> {
     let mut all: Vec<(String, Vec<&str>)> = text
         .char_indices()
@@ -122,7 +117,6 @@ fn input_of(said: &[Said]) -> Result<Value, String> {
     serde_json::from_str(input).map_err(|error| format!("its input is no JSON ({error}): {input}"))
 }
 
-// the call's input once a whole reply carrying it is read
 fn whole(tool: &str, sample: &Value) -> Result<Value, String> {
     let call = json!({ "type": "tool_use", "id": "toolu_1", "name": tool, "input": sample });
     let body = json!({
@@ -149,7 +143,6 @@ fn event(data: &Value) -> Vec<u8> {
     format!("data: {data}").into_bytes()
 }
 
-// the call's input once its block streamed in `pieces` and stopped
 fn streamed(tool: &str, pieces: &[&str]) -> Result<Value, String> {
     let mut partial = Partial::new(Wire::AnthropicMessages);
     let started = json!({
@@ -176,7 +169,6 @@ fn streamed(tool: &str, pieces: &[&str]) -> Result<Value, String> {
     input_of(&partial.said)
 }
 
-// what keeps one sample from reaching its tool as written, by each path
 fn missed(entry: &Entry, named: &str, sample: &Value) -> Vec<String> {
     let mut faults = Vec::new();
     unfit(&(entry.schema)(), sample, named, &mut faults);

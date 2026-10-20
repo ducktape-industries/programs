@@ -92,8 +92,6 @@ fn sensor(key: &str, on_bounds: Option<u32>, content: Node) -> Node {
     }
 }
 
-/// Building and encoding a chain this deep recurses as far as decoding
-/// it would, so the hostile frame is made where there is stack for it.
 fn deep_chain_bytes(depth: usize) -> Vec<u8> {
     std::thread::Builder::new()
         .stack_size(512 << 20)
@@ -110,8 +108,6 @@ fn deep_chain_bytes(depth: usize) -> Vec<u8> {
                 ..Frame::default()
             };
             let bytes = encode(&frame);
-            // Dropping it recurses too, and this thread is the one with
-            // the stack to do it.
             drop(frame);
             bytes
         })

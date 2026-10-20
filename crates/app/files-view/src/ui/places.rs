@@ -7,7 +7,6 @@ use super::*;
 use crate::menu::On;
 use crate::state::{HOME_GLYPH, Place};
 
-/// How many of the newest snapshots the page lists.
 const LATEST: usize = 5;
 
 pub(super) fn places(view: &Files, cx: Cx, k: &Kit) -> AnyElement {
@@ -36,8 +35,6 @@ pub(super) fn places(view: &Files, cx: Cx, k: &Kit) -> AnyElement {
         .into_any_element()
 }
 
-/// The reader's home, a place like the others once identity names it,
-/// else a row that says why there is none.
 fn home(view: &Files, cx: Cx, k: &Kit) -> Stateful<Div> {
     match view.reader.home() {
         Ok(path) => {
@@ -76,8 +73,6 @@ fn place_row(
     )
 }
 
-// The row of the place keyed `key` at `path` opens its menu (Open, Copy
-// link) as a folder's row opens its own; the keys go back to the row.
 fn place_menu(view: &Files, row: Stateful<Div>, key: &str, path: &str, cx: Cx) -> Stateful<Div> {
     let on = On::Place {
         path: path.to_owned(),
@@ -86,7 +81,6 @@ fn place_menu(view: &Files, row: Stateful<Div>, key: &str, path: &str, cx: Cx) -
     menu::opens(row, on, view, cx)
 }
 
-/// The newest snapshots, each opening its page.
 fn latest(view: &Files, cx: Cx, k: &Kit) -> AnyElement {
     let history = match &view.history {
         Loadable::Ready(history) | Loadable::Reloading(history, _) => history,

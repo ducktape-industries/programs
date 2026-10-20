@@ -19,7 +19,6 @@ use crate::tools::edits::{EditArg, applied, edit_schema, steps};
 use crate::tools::files::{beneath, read_all, resolved, snapshot, stat};
 use crate::tools::{Run, Seat, Tool, Write, object, unexpected};
 
-/// The objects a commit adds, by id: two files of the same bytes are one blob.
 type Objects = BTreeMap<Oid, Object>;
 
 fn kept(objects: &mut Objects, hash: Hash, kind: Kind, body: Vec<u8>) -> Result<Oid, Error> {
@@ -36,7 +35,6 @@ pub(crate) fn oid(hash: Hash, hex: &str) -> Result<Oid, Error> {
         .map_err(|_| invalid(format!("{hex} is not an object id of this repository")))
 }
 
-/// The repository named `name` and forge's bounds, or `None` while no repository is named so.
 pub(crate) fn found(ctx: &ExecCtx, name: &str) -> Result<Option<(Repo, Bounds)>, Error> {
     match ask(ctx, Query::Repo { repo: name.into() }) {
         Ok(Reply::Repo { repo, bounds, .. }) => Ok(Some((repo.repo, bounds))),
@@ -56,10 +54,8 @@ fn mode(kind: EntryKind) -> Mode {
     }
 }
 
-/// One directory's entries, by name.
 type Entries = BTreeMap<Vec<u8>, (Mode, Oid)>;
 
-/// A repository as forge answers it.
 struct Reading<'a> {
     ctx: &'a ExecCtx,
     repo: &'a str,
@@ -67,7 +63,6 @@ struct Reading<'a> {
 }
 
 impl Reading<'_> {
-    /// Every ref of the repository and the object it names.
     fn refs(&self) -> Result<BTreeMap<Vec<u8>, Oid>, Error> {
         let refs = every(|page| {
             let asked = Query::Refs {
@@ -84,7 +79,6 @@ impl Reading<'_> {
             .collect()
     }
 
-    /// The entries of the tree `at` names, or of a commit's root tree.
     fn entries(&self, at: Oid) -> Result<Entries, Error> {
         let entries = every(|page| {
             let asked = Query::Tree {
@@ -104,7 +98,6 @@ impl Reading<'_> {
             .collect()
     }
 
-    // The mode and blob of the file at `path` in the commit `at`.
     fn file(&self, at: Oid, path: &str) -> Result<(Mode, Oid), Error> {
         let (dirs, name) = split(path)?;
         let missing = || not_found(format!("there is no file at {path} to edit"));
@@ -122,7 +115,6 @@ impl Reading<'_> {
         }
     }
 
-    // The text of the blob `id` at `path`, whole.
     fn text(&self, id: Oid, path: &str) -> Result<String, Error> {
         let asked = Query::Blob {
             repo: self.repo.into(),
@@ -146,8 +138,6 @@ impl Reading<'_> {
     }
 }
 
-/// What a commit changes in one directory: files put in it, names removed from it, and the
-/// directories beneath it that change.
 #[derive(Default)]
 struct Edits {
     put: BTreeMap<Vec<u8>, (Mode, Oid)>,
@@ -163,8 +153,6 @@ impl Edits {
     }
 }
 
-/// A path inside a repository as its directories and its name: no empty, `.`, `..` or `.git`
-/// part. A leading `/` is the repository's root.
 fn split(path: &str) -> Result<(Vec<&str>, &str), Error> {
     let parts: Vec<&str> = path.strip_prefix('/').unwrap_or(path).split('/').collect();
     let bad = |part: &&str| matches!(*part, "" | "." | ".." | ".git") || part.contains('\0');
@@ -185,8 +173,6 @@ fn joined(dir: &str, name: &[u8]) -> String {
     }
 }
 
-/// The tree of the directory `dir` once `edits` apply over `entries`, its entries in the parent
-/// commit; `None` once it holds nothing, as git keeps no empty directory.
 fn rebuilt(
     reading: &Reading,
     dir: &str,
@@ -244,9 +230,6 @@ fn rebuilt(
     kept(objects, reading.hash, Kind::Tree, tree.serialize()).map(Some)
 }
 
-/// Who the commit names as its author and committer: the agent by its name as identity knows
-/// it (git's `<` and `>` and control characters left out), at an address no mail reaches (its
-/// number at the network), at the block's time.
 fn signature(ctx: &ExecCtx, agent: AccountNumber) -> Result<Signature, Error> {
     let name: String = profile(ctx, agent)?
         .map(|profile| profile.name)
@@ -267,7 +250,6 @@ fn signature(ctx: &ExecCtx, agent: AccountNumber) -> Result<Signature, Error> {
     })
 }
 
-/// Git's receive-pack request moving `branch` from `old` to `new`, asking for git's report.
 pub(crate) fn request(old: Oid, new: Oid, branch: &[u8]) -> Vec<u8> {
     let mut line = format!("{old} {new} ").into_bytes();
     line.extend_from_slice(branch);
@@ -278,7 +260,6 @@ pub(crate) fn request(old: Oid, new: Oid, branch: &[u8]) -> Vec<u8> {
     request
 }
 
-/// `branch` as the ref it names: `main` is `refs/heads/main`; omitted, the default branch.
 pub(crate) fn branch_ref(branch: Option<&str>, default: &[u8]) -> Result<Vec<u8>, Error> {
     let Some(branch) = branch else {
         return Ok(default.to_vec());
@@ -291,7 +272,6 @@ pub(crate) fn branch_ref(branch: Option<&str>, default: &[u8]) -> Result<Vec<u8>
     Ok(reference)
 }
 
-// A file the commit writes: its path in the repository, its mode and its bytes.
 struct Put {
     path: String,
     mode: Mode,
@@ -305,8 +285,6 @@ fn file_mode(executable: bool) -> Mode {
     }
 }
 
-// `inside`, a path below a source directory, beneath the repository directory `dir`; `""` is
-// the repository's root.
 fn under(dir: &str, inside: &str) -> String {
     match dir.trim_matches('/') {
         "" => inside.to_owned(),
@@ -314,8 +292,6 @@ fn under(dir: &str, inside: &str) -> String {
     }
 }
 
-// What the files entry `entry` commits at `path`: a file's bytes in its files mode, or a
-// symlink's target; a directory commits nothing of its own, as git keeps no empty one.
 fn put_of(
     ctx: &ExecCtx,
     path: String,
@@ -330,8 +306,6 @@ fn put_of(
     Ok(Some(Put { path, mode, bytes }))
 }
 
-// The files the files path `source` holds at `at`, put at `path`: a file there, or every file
-// beneath a directory there at its place below `path`.
 fn sourced(
     ctx: &ExecCtx,
     path: &str,
@@ -371,15 +345,11 @@ fn sourced(
     Ok(puts)
 }
 
-// A file the commit edits by span: its path and the edits, applied to it as the parent holds it.
 struct Edited {
     path: String,
     steps: Vec<crate::tools::edits::Step>,
 }
 
-// Every file the call writes, whole: inline content as given, and every source read from files
-// at the one snapshot the call names, or the newest; and every file it edits, to be read at the
-// commit's parent.
 fn gathered(
     ctx: &ExecCtx,
     files: Vec<FileArg>,
@@ -441,8 +411,6 @@ fn gathered(
     Ok((puts, edited))
 }
 
-// Forge's bound on one file's size, checked before any object is made, so a file over it is
-// refused in the tool's words.
 fn sized(bounds: &Bounds, puts: &[Put]) -> Result<(), Error> {
     match puts
         .iter()
@@ -458,7 +426,6 @@ fn sized(bounds: &Bounds, puts: &[Put]) -> Result<(), Error> {
     }
 }
 
-// Forge's bound on the objects one push carries, checked before the pack is made.
 fn counted(bounds: &Bounds, objects: usize) -> Result<(), Error> {
     if objects as u64 > bounds.max_objects {
         return Err(capacity(format!(
@@ -666,16 +633,11 @@ impl Tool for Commit {
     }
 }
 
-// Git's report of the push: the branch it moved, to `commit` on `parent`.
 fn reported(output: &[u8], commit: &str, parent: Option<&str>) -> Result<Value, Error> {
     let branch = moved(output)?;
     Ok(json!({ "ok": true, "pushed": branch, "commit": commit, "parent": parent }))
 }
 
-// The branch git's report of a push says forge moved. A report that refuses it fails the call in
-// forge's words: objects forge did not take (a commit over its bounds, which a new repository's
-// first commit cannot be checked against before the repository exists) or a branch it did not
-// move (`ng`: a push that does not fast-forward, a stale old head).
 pub(crate) fn moved(output: &[u8]) -> Result<String, Error> {
     let lines = pktline::Reader::new(output).filter_map(|pkt| match pkt {
         Ok(Pkt::Data(data)) => Some(String::from_utf8_lossy(pktline::strip_newline(data))),

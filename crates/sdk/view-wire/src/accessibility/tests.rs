@@ -28,7 +28,6 @@ fn roled(role: Role) -> Interactivity {
     }
 }
 
-/// Roled, a Tab stop and answering a click.
 fn control(role: Role) -> Interactivity {
     Interactivity {
         on_click: Some(1),
@@ -36,7 +35,6 @@ fn control(role: Role) -> Interactivity {
     }
 }
 
-/// Focusable and in the Tab order, as `focusable()` lowers.
 fn stop(interactivity: Interactivity) -> Interactivity {
     Interactivity {
         focusable: true,
@@ -82,7 +80,6 @@ fn input(label: &str) -> Node {
     }
 }
 
-/// A paragraph with one clickable byte range.
 fn rich(text: &str, clickable: std::ops::Range<usize>) -> Node {
     Node::RichText {
         id: None,
@@ -137,7 +134,6 @@ fn fails(kind: FaultKind, tree: Node) {
     assert!(kinds.contains(&kind), "{kind:?} not among {kinds:?}");
 }
 
-/// Nothing in the tree breaks any rule.
 fn passes(tree: Node) {
     assert_eq!(audit(&tree), Vec::new());
 }
@@ -206,7 +202,6 @@ fn an_interactive_node_of_any_kind_without_a_role_fails() {
             Some("Avatar"),
         ),
     );
-    // A role the host drops is no role.
     fails(
         NoRole,
         el("open", control(Role::GenericContainer), vec![text("Open")]),
@@ -430,7 +425,6 @@ fn a_click_no_key_reaches_fails() {
     fails(Unreachable, el("open", unfocusable, vec![text("Open")]));
 }
 
-/// A focusable list box of one pressable row; `keys` routes its arrows.
 fn rooms(keys: Option<u32>) -> Node {
     let option = Interactivity {
         focusable: false,
@@ -465,7 +459,6 @@ fn a_row_of_a_focused_composite_no_key_walks_fails() {
     fails(Unreachable, rooms(None));
 }
 
-/// A list box whose options claim the active descendant as `claims` says.
 fn claimed(claims: [Interactivity; 2]) -> Node {
     let list = labelled(
         Interactivity {
@@ -558,7 +551,6 @@ fn a_state_its_role_reads_passes() {
         ..control(Role::Button)
     };
     passes(el("bold", pressed, vec![text("Bold")]));
-    // WAI-ARIA gives an option and a tree item aria-checked
     let checked = |role| Interactivity {
         aria: Aria {
             selected: Some(false),
@@ -593,13 +585,10 @@ fn an_active_descendant_the_host_drops_fails() {
 #[test]
 fn one_active_descendant_that_takes_no_focus_passes() {
     passes(claimed([claim(false, None), roled(Role::ListBoxOption)]));
-    // a dropped claim spends nothing
     let quiet = claimed([claim(true, None), claim(false, None)]);
     assert_eq!(kinds(&quiet), [ActiveDescendant]);
 }
 
-/// A screen with two composites, each claiming its own active row: gpui
-/// budgets claims per focused node, so both pass.
 #[test]
 fn two_composites_on_one_screen_each_keep_their_claim() {
     let tab = Interactivity {
@@ -630,8 +619,6 @@ fn two_composites_on_one_screen_each_keep_their_claim() {
     passes(screen);
 }
 
-/// Two claims with the same nearest focusable ancestor are one too many,
-/// however many roleless boxes sit between.
 #[test]
 fn a_second_claim_under_the_same_focusable_ancestor_fails() {
     let option = |key: &str| {
@@ -662,9 +649,6 @@ fn a_second_claim_under_the_same_focusable_ancestor_fails() {
     assert_eq!(kinds(&list), [ActiveDescendant]);
 }
 
-/// A roleless focusable box pushes no accessibility node, so it restarts
-/// no budget: two claims under two such boxes share the focused ancestor
-/// and one is one too many.
 #[test]
 fn a_roleless_focusable_box_between_two_claims_does_not_restart_the_budget() {
     let option = |key: &str| {
@@ -705,8 +689,6 @@ fn a_roleless_focusable_box_between_two_claims_does_not_restart_the_budget() {
     fails(ActiveDescendant, list);
 }
 
-/// A composite outside the Tab order reaches nobody: its rows are as
-/// unreachable as a `tab_stop(false)` button.
 #[test]
 fn a_keyed_composite_out_of_the_tab_order_fails() {
     let mut list = rooms(Some(2));
@@ -721,7 +703,6 @@ fn a_keyed_composite_out_of_the_tab_order_fails() {
     fails(Unreachable, list);
 }
 
-/// A click on a focusable node Tab skips is a click no key reaches.
 #[test]
 fn a_focusable_click_out_of_the_tab_order_fails() {
     let skipped = Interactivity {
@@ -811,7 +792,6 @@ fn an_action_the_node_cannot_answer_fails() {
         ..control(Role::Button)
     };
     fails(ActionUnhandled, el("more", expand, vec![text("More")]));
-    // the host keeps a click, and hears one listener per action
     for actions in [
         vec![(Action::Click, 2)],
         vec![(Action::Expand, 2), (Action::Expand, 3)],

@@ -18,9 +18,6 @@ pub(crate) const WEB_SEARCH: &str = "web_search_20250305";
 pub(crate) const WEB_FETCH: &str = "web_fetch_20250910";
 pub(crate) const CLOSE: &str = r#"],"stream":true}"#;
 pub(crate) const SUMMARIZE: &str = r#"],"compaction":{"type":"summarize"}}"#;
-// Anthropic's own limits on one image, from its vision guide
-// (https://docs.anthropic.com/en/docs/build-with-claude/vision): at most 5 MB as base64, and at
-// most 8000 px on either side
 const IMAGE_BASE64: u64 = 5 * 1024 * 1024;
 const IMAGE_SIDE: u32 = 8000;
 
@@ -47,8 +44,6 @@ pub(crate) fn model(name: &str) -> Head {
     }
 }
 
-// what a whole request asks of the model, read back from its head: a model's window or a
-// thread's summary
 pub(crate) fn awaited(asked: &Head) -> Option<Awaited> {
     if let Some(name) = asked.target.strip_prefix("/v1/models/")
         && *asked == model(name)
@@ -64,7 +59,6 @@ fn cached() -> Value {
     json!({ "type": "ephemeral" })
 }
 
-// harness's own tools, then the agent's tool files, each naming the file it is read from
 fn definitions(files: &[tools::file::FileTool]) -> Vec<Value> {
     let native = tools::CATALOG.iter().map(|entry| {
         json!({
@@ -181,7 +175,6 @@ fn blocks(body: &Body, looks: &[Look], foreign: bool) -> Vec<Value> {
     }
 }
 
-// a picture's blocks: the line naming it, then the image; or the sentence saying why not
 fn seen(look: &Look) -> Vec<Value> {
     match look {
         Look::Image { label, media, data } => vec![
@@ -192,7 +185,6 @@ fn seen(look: &Look) -> Vec<Value> {
     }
 }
 
-// a tool result's content: its text alone, or with what it shows after it
 fn result_content(text: &str, looks: &[Look]) -> Value {
     if looks.is_empty() {
         return json!(text);
@@ -561,7 +553,6 @@ fn block_stopped(partial: &mut Partial, event: &Value) {
         false => serde_json::from_str::<Value>(input),
     };
     if let Ok(mut value) = written {
-        // a field its tool gives no type streams as JSON text: it is read as the JSON it holds
         if let Some(tool) = tool {
             tools::untyped_read(tool, &mut value);
         }
@@ -593,8 +584,6 @@ fn overflowed(response: &Response) -> bool {
     response.status == 400 && invalid && too_long
 }
 
-// a request the model refused over its images, in its words: an image, or a request of many, too
-// large, or a request too large in all
 fn refused_pictures(response: &Response) -> bool {
     let value: Value = serde_json::from_slice(&response.body).unwrap_or(Value::Null);
     let invalid = value["error"]["type"] == "invalid_request_error";

@@ -41,13 +41,10 @@ fn last_said(chain: &MockChain) -> String {
     texts.join("\n")
 }
 
-// two seconds a block from block 4, where the listening starts
 fn block(chain: &MockChain, height: u64) {
     chain.at(height, SETTLE + (height - 4) * 2_000);
 }
 
-// the configuration names `listen` and `settle`; a mention asks the model, whose call starts the
-// listening, and the agent answers it
 fn listening(world: &World, settle: Option<u64>) -> u64 {
     let chain = &world.chain;
     let hears = Config {
@@ -211,8 +208,6 @@ fn listened_to(chain: &MockChain, agent: AccountNumber) -> Vec<String> {
     page.items
 }
 
-// a `listen` entry ending in `*` seeds every open room whose id starts with what comes before it,
-// a room opened later at the agent's next model call, and never an archived one
 #[test]
 fn a_listen_pattern_seeds_every_open_room_it_names_as_it_appears() {
     let world = world();

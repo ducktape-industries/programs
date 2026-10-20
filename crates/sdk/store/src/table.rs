@@ -343,7 +343,6 @@ mod tests {
     use super::*;
     use program::MockHost;
 
-    /// A context over a fresh host.
     fn exec() -> ExecCtx {
         MockHost::default().exec(MockHost::env("test"))
     }
@@ -393,8 +392,6 @@ mod tests {
         assert!(refusal.message.starts_with("n/["), "{refusal}");
     }
 
-    /// String heads list by name, not by length, and a whole-element prefix
-    /// or `below` never reaches a longer name.
     #[test]
     fn string_keys_list_by_name_and_a_prefix_is_a_whole_element() {
         const NAMED: Map<(String, u64), ()> = Map::new("x/");
@@ -429,7 +426,6 @@ mod tests {
         assert_eq!(order(NAMED.below(&"abc".to_string())).len(), 2);
     }
 
-    /// A page answers at the height of the ctx that asked it.
     #[test]
     fn a_range_pages_with_lookahead() {
         let host = MockHost::default();

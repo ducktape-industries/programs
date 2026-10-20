@@ -105,7 +105,6 @@ pub(super) fn block(
         .into_any_element()
 }
 
-/// The block's height, its link, and the steps to the blocks either side.
 fn title(view: &Explorer, height: u64, cx: Cx, theme: &Theme) -> impl IntoElement {
     let head = view.status.ready().map_or(0, |status| status.height);
     let previous = height.checked_sub(1);
@@ -133,7 +132,6 @@ fn title(view: &Explorer, height: u64, cx: Cx, theme: &Theme) -> impl IntoElemen
         )
 }
 
-/// A step to the block at `to`; none there, it stands disabled.
 fn step(
     id: &'static str,
     text: String,
@@ -168,7 +166,6 @@ fn step(
     }
 }
 
-/// The parent's height, a link, then its hash.
 fn parent(block: &BlockRow, cx: Cx, theme: &Theme) -> impl IntoElement {
     let hash = mono(short(&block.parent)).text_color(theme.muted);
     let Some(previous) = block.height.checked_sub(1) else {
@@ -192,7 +189,6 @@ fn parent(block: &BlockRow, cx: Cx, theme: &Theme) -> impl IntoElement {
         .child(hash)
 }
 
-/// Who proposed the block: its place in the validator set, then its key.
 fn proposer(view: &Explorer, block: &BlockRow, theme: &Theme) -> Option<impl IntoElement> {
     let key = block.proposer.as_ref()?;
     let place = view

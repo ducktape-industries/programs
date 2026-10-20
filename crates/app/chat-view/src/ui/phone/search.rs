@@ -11,7 +11,6 @@ use crate::{Chat, Hits};
 use chat::MsgRow;
 use view::design::Ladder;
 
-/// A kit `Chips` chip (mobile `src/design/theme.ts:78`, `size.chip`).
 const CHIP: Pixels = px(32.);
 
 pub(super) fn screen(
@@ -34,7 +33,6 @@ pub(super) fn screen(
         .into_any_element()
 }
 
-/// Back, the field, Clear: the page's title row is the search.
 fn title_row(
     chat: &Chat,
     back: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -57,9 +55,6 @@ fn title_row(
         .input_action(TextInputAction::Search)
         .placeholder(words::SEARCH_MESSAGES)
         .on_submit(submit);
-    // the page opens with the field focused, so it wears the focused
-    // kit field's edge (mobile `app/(tabs)/chat/search.tsx:84` draws it
-    // fixed)
     let field = div()
         .flex_1()
         .min_w(px(0.))
@@ -95,8 +90,6 @@ fn title_row(
         ))
 }
 
-/// The one scope there is, drawn chosen (the kit `Chips`); with nothing
-/// else to choose it is no control.
 fn scope(theme: &Theme, ladder: &Ladder) -> Div {
     div()
         .flex()
@@ -222,8 +215,6 @@ fn list(chat: &Chat, hits: &Hits, cx: &mut Context<Chat>, theme: &Theme, ladder:
         })
 }
 
-/// One hit (the kit `Row`, tall): its author's face; the author, then
-/// where it sits and when; its words under, the searched ones in medium.
 fn hit(
     chat: &Chat,
     row: &MsgRow,
@@ -267,7 +258,6 @@ fn hit(
         .from
         .account()
         .and_then(|account| chat.faces.of(account, cx));
-    // seq is per channel: two channels' hits at one seq are two rows
     design::row(
         format!("chat-search-hit-{}-{seq}", row.channel_id),
         ladder,
@@ -297,8 +287,6 @@ fn hit(
     .into_any_element()
 }
 
-/// `body` with each word of `query` in medium and the foreground; a tag
-/// search (`#tag`) marks nothing.
 fn marked(body: &str, query: &str, theme: &Theme) -> StyledText {
     let words: Vec<&str> = match query.trim_start().starts_with('#') {
         true => Vec::new(),

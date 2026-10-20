@@ -19,9 +19,7 @@ enum Step {
         steps: Vec<Step>,
         reply: bool,
     },
-    /// Emits `Recurse(n - 1)` to itself while `n > 0`.
     Recurse(u32),
-    /// Records what `target` holds under `key`, as `peek:<key>`.
     Peek(String, String),
     Named(AccountNumber),
     Blob,
@@ -44,7 +42,6 @@ impl Program for Bot {
     type Query = String;
     type Reply = Option<Vec<u8>>;
 
-    /// Genesis runs a script too.
     fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
         Bot::execute(ctx, crate::decoded("bot", "init", params)?)
     }
@@ -97,8 +94,6 @@ impl Program for Bot {
         Ok(())
     }
 
-    /// Logged like a run; absorbed when the host holds `absorb`, else the
-    /// default (a refusal comes back).
     fn reply(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), Error> {
         log(ctx)?;
         if ctx.get("absorb").is_some() {
@@ -123,11 +118,6 @@ fn log(ctx: &ExecCtx) -> Result<(), Error> {
     Ok(())
 }
 
-/// The identity program the chain asks when one is seated: a key of one
-/// byte holds that account, an empty key none; a program's account is 100
-/// past its name's first byte; program `bad` has none it will name. Asked
-/// any other way than the kernel's (origin `Root`, no sender), it answers
-/// account 0, so the env the chain asks with shows.
 struct Ident;
 
 impl Program for Ident {
@@ -167,8 +157,6 @@ impl Program for Ident {
     }
 }
 
-/// `a`, `b` and `c` seated, each with a program account in the roster (100,
-/// 101, 102), and `ada-key` holding account 1.
 fn chain() -> MockChain {
     let mut chain = MockChain::default();
     for (name, number) in [("a", 100), ("b", 101), ("c", 102)] {
@@ -214,7 +202,6 @@ fn account(number: AccountNumber) -> Option<Principal> {
     Some(Principal::Account(number))
 }
 
-/// A host's state, blobs, output, emissions and events, for a before/after.
 #[allow(clippy::type_complexity)]
 fn left(
     chain: &MockChain,
@@ -234,7 +221,6 @@ fn left(
 fn messages_run_after_the_emitter_in_emit_order_depth_first_as_the_emitters_account() {
     let chain = chain();
     chain.at(9, 90);
-    // a emits twice to b; b's first run emits to c, b's second peeks at c
     let script = vec![
         emit(
             "b",
@@ -268,7 +254,6 @@ fn messages_run_after_the_emitter_in_emit_order_depth_first_as_the_emitters_acco
     assert_eq!(c.len(), 1);
     assert_eq!(c[0].origin, Origin::Program("b".into()));
     assert_eq!(c[0].sender, account(101));
-    // ids are numbered frame-wide, each naming its emitter
     assert_eq!(c[0].cause, Cause::Message(id("b", 2)));
     let emitted = |program: &str| -> Vec<MessageId> {
         chain
@@ -280,7 +265,6 @@ fn messages_run_after_the_emitter_in_emit_order_depth_first_as_the_emitters_acco
     };
     assert_eq!(emitted("a"), [id("a", 0), id("a", 1)]);
     assert_eq!(emitted("b"), [id("b", 2)]);
-    // depth first: b's second run saw what c wrote in b's first
     assert_eq!(
         chain.host("b").borrow().state[b"peek:seen".as_slice()],
         b"by b"
@@ -295,7 +279,6 @@ fn messages_run_after_the_emitter_in_emit_order_depth_first_as_the_emitters_acco
 #[test]
 fn a_wanted_reply_brings_the_outcome_back_as_the_targets_message() {
     let chain = chain();
-    // applied: the target's output comes back
     let script = vec![emit("b", vec![Step::Output(b"hi".to_vec())], true)];
     chain.submit(ada(), "a", &script).unwrap();
     let a = logged(&chain, "a");
@@ -314,7 +297,6 @@ fn a_wanted_reply_brings_the_outcome_back_as_the_targets_message() {
             ..chain.env("a")
         }
     );
-    // rejected and absorbed: the target's writes are undone, the emitter's stand
     chain
         .host("a")
         .borrow_mut()
@@ -361,7 +343,6 @@ fn a_wanted_reply_brings_the_outcome_back_as_the_targets_message() {
 fn a_rejection_not_absorbed_undoes_the_emitter_whole_and_propagates_up() {
     let chain = chain();
     let before = left(&chain, "a");
-    // no reply wanted: c's refusal fails b, which fails a
     let script = vec![
         put("mine", "undone"),
         emit(
@@ -379,13 +360,11 @@ fn a_rejection_not_absorbed_undoes_the_emitter_whole_and_propagates_up() {
     for program in ["a", "b", "c"] {
         assert!(logged(&chain, program).is_empty(), "{program} was undone");
     }
-    // a reply run that refuses (the default, on a rejected outcome) does the same
     let script = vec![put("mine", "undone"), emit("b", vec![Step::Refuse], true)];
     let refusal = chain.submit(ada(), "a", &script).unwrap_err();
     assert_eq!(refusal.code, code::WRONG_STATE);
     assert!(refusal.message.contains("seq: 2"), "{refusal}");
     assert_eq!(left(&chain, "a"), before);
-    // the emitter's own refusal after emitting: nothing it emitted runs
     let script = vec![emit("b", vec![], false), Step::Refuse];
     chain.submit(ada(), "a", &script).unwrap_err();
     assert!(logged(&chain, "b").is_empty());
@@ -414,7 +393,6 @@ fn undo_covers_every_hosts_state_blobs_output_events_and_emissions() {
     ];
     chain.submit(ada(), "a", &script).unwrap_err();
     assert_eq!(all(), before);
-    // and the same script, its refusal gone, leaves all of it
     let script = vec![
         put("k", "v"),
         Step::Blob,
@@ -470,9 +448,7 @@ fn a_submission_acts_as_the_account_its_key_holds_or_as_no_one() {
     let refused = chain
         .submit_raw(Origin::Signed(b"agent-key".to_vec()), "a", &nothing)
         .unwrap_err();
-    // identity's own refusal of a key whose account does not act
     assert_eq!(refused.code, code::UNAUTHORIZED);
-    // the chain's own conveniences: a message by hand, a root call
     chain
         .submit_raw(Origin::Program("b".into()), "a", &nothing)
         .unwrap();
@@ -553,7 +529,6 @@ fn the_roster_answers_programs_as_the_identity_role_does() {
         .submit(ada(), "a", &vec![Step::Named(999)])
         .unwrap_err();
     assert_eq!(refused.code, code::INVALID_INPUT, "no account 999");
-    // the chain reads a program's account off its profile
     assert_eq!(
         chain
             .roster()
@@ -587,14 +562,11 @@ fn a_seated_identity_program_is_asked_as_the_kernel_asks_it() {
         logged(&chain, "b")[0].sender,
         account(100 + u64::from(b'a'))
     );
-    // ada's key in the roster means nothing now: identity answers
     chain.submit(ada(), "a", &script).unwrap();
     assert_eq!(logged(&chain, "a")[2].sender, account(u64::from(b'a')));
-    // an emitter identity refuses to name: its message is rejected...
     let refused = chain.submit(Origin::Root, "bad", &script).unwrap_err();
     assert_eq!(refused.code, code::NOT_FOUND);
     assert!(logged(&chain, "b").len() == 3 && logged(&chain, "bad").is_empty());
-    // ...which, with a reply wanted, comes back as its outcome
     chain
         .host("bad")
         .borrow_mut()
@@ -609,7 +581,6 @@ fn a_seated_identity_program_is_asked_as_the_kernel_asks_it() {
         "{:?}",
         bad[1].cause
     );
-    // identity answering anything but Account is an unexpected reply
     let mut wrong = MockChain::default();
     wrong.seat::<Bot>("a");
     wrong.seat::<Wrong>(MockHost::role(abi::role::IDENTITY));
@@ -617,8 +588,6 @@ fn a_seated_identity_program_is_asked_as_the_kernel_asks_it() {
     assert_eq!(refused.code, code::UNEXPECTED_REPLY);
 }
 
-/// A chain asks the program genesis bound to the identity role, under
-/// whatever id it runs, and every frame carries that binding.
 #[test]
 fn the_chain_asks_the_roles_it_was_founded_with() {
     let roles = MockHost::roles_with(abi::role::IDENTITY, "people");
@@ -632,7 +601,6 @@ fn the_chain_asks_the_roles_it_was_founded_with() {
     assert_eq!((ran.sender.clone(), &ran.roles), (account(7), &roles));
 }
 
-/// An identity that answers every question with a profile.
 struct Wrong;
 
 impl Program for Wrong {

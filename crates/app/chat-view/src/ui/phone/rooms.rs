@@ -11,7 +11,6 @@ use crate::words;
 use chat::{ChannelInfo, Principal};
 use view::design::Ladder;
 
-/// The unread dot (mobile `src/kit/Badge.tsx:31`).
 const DOT: Pixels = px(8.);
 
 pub(super) fn screen(
@@ -83,8 +82,6 @@ pub(super) fn screen(
     .into_any_element()
 }
 
-/// The title's caption: the network, then the reader's name, the one the
-/// avatar reads (Expo `chat/index.tsx:116`, `[network, myName]`).
 fn caption(chat: &Chat) -> String {
     [chat.network().to_owned(), chat.reader_name()]
         .into_iter()
@@ -140,7 +137,6 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         .children(dms)
 }
 
-// `channels` as rows, each under the folders its name gives.
 fn lines(
     chat: &Chat,
     channels: &[&ChannelInfo],
@@ -157,7 +153,6 @@ fn lines(
         .collect()
 }
 
-// New message at the Direct messages head: the page of whom to write to.
 fn new_message(cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> impl IntoElement {
     let open = cx.listener(|chat, _: &ClickEvent, window, cx| {
         chat.begin_dm();
@@ -174,8 +169,6 @@ fn new_message(cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> impl I
     )
 }
 
-// A channel's row: its hash muted in the lead column, the name, Members
-// only, and the dot while it holds what the reader has not read.
 fn channel_row(
     chat: &Chat,
     info: &ChannelInfo,
@@ -211,14 +204,10 @@ fn channel_row(
         .into_any_element()
 }
 
-// Where a row `depth` folders deep starts: a lead column further each.
 fn indent(depth: usize) -> Pixels {
     design::space::BLOCK + design::space::XL * depth as f32
 }
 
-// A folder's row: its chevron, its name, and while it is closed how many
-// rooms inside are unread; a press opens or closes it. A folder named as a
-// channel opens that channel, and its chevron opens or closes the folder.
 fn folder_row(
     chat: &Chat,
     folder: &FolderLine,
@@ -301,8 +290,6 @@ fn folder_row(
     line.child(fold).child(opens).into_any_element()
 }
 
-// A direct room's row: the other person's face and name, Agent for an
-// agent, and the unread dot.
 fn dm_row(
     chat: &Chat,
     entry: &DmEntry,
@@ -347,7 +334,6 @@ fn dm_row(
         .into_any_element()
 }
 
-/// The kit `Row` as a room's: the whole row opens `room`.
 fn row(
     id: &str,
     name: String,
@@ -367,7 +353,6 @@ fn row(
         .on_click(open)
 }
 
-// A row's title (the kit `Row`'s): body text on one line.
 fn title(name: String, theme: &Theme, ladder: &Ladder) -> Div {
     div()
         .flex_1()
@@ -378,8 +363,6 @@ fn title(name: String, theme: &Theme, ladder: &Ladder) -> Div {
         .child(name)
 }
 
-// SDK gap: the kit Dot, kept local until the kit takes it (kit.md §2)
-/// The unread dot (the kit `Dot`): the accent, never a count.
 fn dot(row: &str, theme: &Theme) -> Stateful<Div> {
     div()
         .id(format!("{row}-unread"))
@@ -389,9 +372,6 @@ fn dot(row: &str, theme: &Theme) -> Stateful<Div> {
         .bg(theme.accent)
 }
 
-/// No channel on the network yet (the kit `EmptyState`, mobile
-/// `app/(tabs)/chat/index.tsx:142-148`): what is missing, what would fill
-/// it, and New channel.
 fn no_rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
     let create = cx.listener(|chat, _: &ClickEvent, _window, cx| {
         chat.begin_create();

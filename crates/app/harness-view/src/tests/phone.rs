@@ -5,7 +5,6 @@
 use super::*;
 use view::wire;
 
-/// The view as a phone draws it: a finger, 390 wide, seated as `me`.
 fn phone(net: Net, me: u64) -> (TestAppContext, Shared) {
     let (mut cx, shared) = seated(net, me);
     cx.simulate_touch(true);
@@ -14,7 +13,6 @@ fn phone(net: Net, me: u64) -> (TestAppContext, Shared) {
     (cx, shared)
 }
 
-/// `taps` pressed in turn, each settled.
 fn tap(cx: &mut TestAppContext, taps: &[&str]) {
     for key in taps {
         cx.simulate_click(key);
@@ -22,7 +20,6 @@ fn tap(cx: &mut TestAppContext, taps: &[&str]) {
     }
 }
 
-/// A finger on `key`, held (`long`) or lifted at once: the touch click its route hears.
 fn touch(cx: &mut TestAppContext, key: &str, long: bool) {
     let handler = cx
         .interactivity(key)
@@ -53,7 +50,6 @@ fn the_root_lists_the_agents_with_their_state_then_what_else_the_view_holds() {
         "Scout",
         "Working",
         "in #general · waiting for the model",
-        // how long ago, in a phone's few letters
         "5m",
         "Pager",
         "Not handed to harness",
@@ -66,7 +62,6 @@ fn the_root_lists_the_agents_with_their_state_then_what_else_the_view_holds() {
     ] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
     }
-    // the desktop's columns are not drawn: no manager, no counts
     assert!(!cx.has_text("1 open · 1 closed"));
     assert!(
         cx.find("agents-page-account").is_some(),
@@ -90,7 +85,6 @@ fn an_empty_network_says_so_and_offers_create() {
     let (mut cx, _) = phone(net, EDDY);
     assert!(cx.has_text("No agents yet"), "{:?}", cx.texts());
     tap(&mut cx, &["agents-empty-create"]);
-    // the form is its own page over the root, Back to it
     assert!(cx.find("create-page-back").is_some(), "{:?}", cx.texts());
     assert!(cx.find("create-name").is_some());
 }
@@ -172,7 +166,6 @@ fn the_managers_sheet_edits_starts_forks_and_takes_back_on_a_second_press() {
     ] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
     }
-    // Back closes the sheet before the page
     cx.simulate_back();
     cx.run_until_parked();
     assert!(cx.find("agent-sheet").is_none());
@@ -206,7 +199,6 @@ fn the_managers_sheet_edits_starts_forks_and_takes_back_on_a_second_press() {
     );
     assert!(cx.has_text("My agents"), "{:?}", cx.texts());
 
-    // a visitor has no writes on it
     let (mut cx, _) = phone(Net::default(), ADA);
     tap(&mut cx, &["agent-12"]);
     assert!(cx.find("agent-actions").is_none());
@@ -232,7 +224,6 @@ fn a_conversation_hides_where_each_entry_is_and_a_long_press_opens_its_facts() {
         "a finger reads it in the facts"
     );
     assert!(cx.find("meta-1").is_none());
-    // a tap on an entry does nothing; a long press opens its facts
     touch(&mut cx, "entry-1", false);
     assert!(cx.find("frame-sheet").is_none());
     long_press(&mut cx, "entry-1");
@@ -243,7 +234,6 @@ fn a_conversation_hides_where_each_entry_is_and_a_long_press_opens_its_facts() {
     assert_eq!(cx.host().requests::<ClipboardWrite>(), ["#1"]);
     cx.simulate_back();
     cx.run_until_parked();
-    // a burst's facts are its frames, its blocks and its calls' ids
     long_press(&mut cx, "entry-2");
     for text in ["#2–#3", "9,002–9,003", "forge_log", "toolu_01"] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
@@ -376,7 +366,6 @@ fn the_models_open_the_form_that_sets_one_as_its_own_page() {
             name: "claude-opus-5-5".into(),
         }]
     );
-    // a set record goes back to the models it was set over
     assert!(cx.find("models-list").is_some(), "{:?}", cx.texts());
 }
 
@@ -396,7 +385,6 @@ fn a_record_opens_its_form_page_and_is_removed_after_a_yes() {
         cx.host().requests::<Submit<harness::Harness>>(),
         [harness::Op::RemoveModel { id: SONNET.into() }]
     );
-    // a removed record goes back to the models
     assert!(cx.find("models-list").is_some(), "{:?}", cx.texts());
 }
 
@@ -423,9 +411,6 @@ fn the_create_form_is_one_page_and_says_how_far_a_create_got() {
     assert!(cx.has_text("Continue"), "{:?}", cx.texts());
 }
 
-/// The sweep: the root, an agent, its parts and sheet, a conversation, its sheet, facts and
-/// usage page, the models and their form, the create form, at 360/390/430 under a finger,
-/// every frame audited and fitted.
 #[test]
 fn sweep() {
     let (mut cx, _) = phone(Net::default(), EDDY);

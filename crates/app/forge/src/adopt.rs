@@ -9,9 +9,6 @@ use crate::contract::{Op, change_key, repo_key};
 use crate::ops::resource;
 use crate::state::{AUTHORSHIP, Authorship, CHANGES, CUSTODY, Custody, REPOS, REVIEWS};
 
-// A batch of `kind`'s rows after `after`. Sent by anyone, it answers where the next batch starts
-// and sends forge the same op; forge's own run records them, so the rows it writes for changes
-// and repositories from before step 5 and 6 are forge's until ownership reassigns them.
 pub(crate) fn adopt_owners(
     ctx: &ExecCtx,
     kind: &str,

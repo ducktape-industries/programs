@@ -24,10 +24,8 @@ mod rooms;
 const ADA: Principal = Principal::Account(1);
 const BO: Principal = Principal::Account(2);
 const CY: Principal = Principal::Account(3);
-/// forge's account; `for` and `bot` are programs too ([`program_of`]).
 const FORGE: Principal = Principal::Account(900);
 
-/// The program an account is the account of, as identity registered it.
 fn program_of(who: &Principal) -> Option<&'static str> {
     match who {
         Principal::Account(900) => Some("forge"),
@@ -37,19 +35,15 @@ fn program_of(who: &Principal) -> Option<&'static str> {
     }
 }
 
-/// A chat store and a clock: every op runs one block later.
 struct Chat {
     store: MockHost,
     height: u64,
 }
 
-/// An agent Ada manages that acts; one suspended; one revoked.
 const AGENT: u64 = 10;
 const SUSPENDED: u64 = 11;
 const REVOKED: u64 = 12;
 
-/// The identity role over the accounts the suite names: people 1 to 7, the
-/// programs of [`program_of`], and Ada's agents.
 fn roster() -> Vec<crate::Profile> {
     use crate::{Category, Kind, Profile, Standing};
     let profile = |number: u64, kind| Profile {
@@ -82,9 +76,6 @@ fn roster() -> Vec<crate::Profile> {
 }
 
 impl Default for Chat {
-    /// An empty store, the identity role over [`roster`] beside it, and a
-    /// verifier that takes every node proof (`origin.rs` checks the proof
-    /// itself).
     fn default() -> Chat {
         let store = MockHost::default();
         store.borrow_mut().verifier = Some(Box::new(|_, _, _, _, _| true));
@@ -93,8 +84,6 @@ impl Default for Chat {
     }
 }
 
-/// The origin that acts as `who`: a program's own frame, an account's key
-/// (account `n` holds `n.to_be_bytes()`), the system.
 fn signer(who: &Principal) -> Origin {
     if let Some(program) = program_of(who) {
         return Origin::Program(program.into());
@@ -106,7 +95,6 @@ fn signer(who: &Principal) -> Origin {
 }
 
 impl Chat {
-    /// A store holding `#general`, owned by Ada, open or members-only.
     fn with_channel(post_policy: PostPolicy) -> Chat {
         let mut chat = Chat::default();
         chat.ok(&ADA, create("general", post_policy));
@@ -123,13 +111,11 @@ impl Chat {
         }
     }
 
-    /// The context of the next block, signed by `who`.
     fn next(&mut self, who: &Principal) -> ExecCtx {
         self.height += 1;
         self.store.exec(self.env(signer(who), Some(who.clone())))
     }
 
-    /// A read at the current block.
     fn reads(&self) -> QueryCtx {
         self.store.query(self.env(Origin::Root, None))
     }
@@ -146,7 +132,6 @@ impl Chat {
         }
     }
 
-    /// The refusal's reason; the store is untouched by it.
     #[track_caller]
     fn refused(&mut self, who: &Principal, op: Op) -> String {
         let ctx = self.next(who);
@@ -169,7 +154,6 @@ impl Chat {
         crate::state::channel(&self.reads(), "general").unwrap()
     }
 
-    /// The seqs a search for `text` finds, newest first.
     fn search(&self, text: &str) -> Vec<u64> {
         let Reply::Hits(hits) = self.ask(Query::Search {
             text: text.into(),

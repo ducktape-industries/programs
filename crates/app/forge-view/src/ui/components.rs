@@ -15,16 +15,12 @@ use view::wire::{
 };
 use view::{AnchoredPositionMode, Div, Edges, Point, Stateful, accesskit};
 
-/// The smallest box a pointer presses, each way (the door's AX-017).
 pub(crate) const PRESS_TARGET: Pixels = px(24.);
 
 pub(crate) use crate::id;
 pub(crate) use crate::list::{cursor, list, walked, window};
 pub(crate) use crate::words::{path_text, ref_label};
 
-/// A list row: the one interactive line every list of this view uses. A
-/// row that acts is a list item holding a button of its cells, its
-/// controls beside that button.
 #[derive(IntoElement)]
 pub(crate) struct Row<F>
 where
@@ -33,20 +29,14 @@ where
     key: String,
     theme: Theme,
     selected: bool,
-    /// `Some(cell)`: the arrows are on this row, at that cell
     active: Option<usize>,
-    /// the arrows have walked this list: the active row is drawn, not
-    /// only claimed
     walked: bool,
-    /// a row of a [`grid`]: a `Row` of cells even with no control
     in_grid: bool,
     children: Vec<AnyElement>,
     controls: Vec<AnyElement>,
     click: Option<F>,
 }
 
-/// A row keyed `key` of a [`list`] or a [`grid`]; its press, when it has
-/// one, is `{key}-open`.
 pub(crate) fn row<F>(key: impl Into<String>, theme: &Theme) -> Row<F>
 where
     F: Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -134,7 +124,6 @@ where
                 .children(self.children)
                 .children(self.controls);
         };
-        // no controls, in a list: the row is the option, and its press
         if self.controls.is_empty() && !self.in_grid {
             let option = item
                 .hover(move |style| style.bg(hovered))
@@ -143,7 +132,6 @@ where
                 .children(self.children);
             return design::item(option, Role::ListBoxOption, self.active.is_some());
         }
-        // a grid row whose first cell is the press
         let press = div()
             .id(id(format!("{}-open", self.key)))
             .size_full()
@@ -180,12 +168,6 @@ where
     }
 }
 
-/// A grid of [`row`]s (each [`Row::in_grid`]) as one Tab stop: ↑ ↓ walk the rows,
-/// ← → a row's cells (its press, then each control), Enter presses the
-/// active cell (`on_press(row, cell)`). `cells` is the active row's count.
-/// The rows go in as [`list`]'s do: drawn whole (no `scroll`) they scroll
-/// here; a virtual list tracking `scroll` scrolls itself, to the active
-/// row before it claims.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn grid(
     id_: &'static str,
@@ -240,7 +222,6 @@ pub(crate) fn loading(id: impl Into<ElementId>, text: &str, theme: &Theme) -> An
         .into_any_element()
 }
 
-/// A scrolling virtual list of `count` rows.
 pub(crate) fn rows(
     element_id: &str,
     count: usize,
@@ -253,24 +234,15 @@ pub(crate) fn rows(
     })
 }
 
-/// [`design::quiet`], as the screens that return it hand it on.
 pub(crate) fn quiet(text: impl Into<SharedString>, theme: &Theme) -> AnyElement {
     design::quiet(text, theme).into_any_element()
 }
 
-/// A dropdown's width, at most: a narrower window takes it in.
 const MENU_W: Pixels = px(320.);
-/// The rows a dropdown's list shows before it scrolls.
 const MENU_ROWS: usize = 12;
-/// With fewer rows than this free under the press, the list takes the
-/// window's height instead and the menu is lifted to fit.
 const MENU_MIN_ROWS: usize = 5;
-/// The picked item's check, a column of its own.
 const CHECK_W: Pixels = px(12.);
 
-/// A button that names what is picked (`main ⌄`) and says whether its
-/// menu is open; the menu itself ([`menu`]) floats in the view's modal
-/// overlay while it is. A long name is cut in its middle, whole on hover.
 pub(crate) fn dropdown(
     key: &str,
     label: String,
@@ -303,16 +275,12 @@ pub(crate) fn dropdown(
         .on_click(on_open)
         .child(name_cell(label.clone()))
         .child(div().text_color(theme.faint).child("⌄"));
-    // open, its menu says every name: no tip over it
     match open {
         true => button.into_any_element(),
         false => whole_name(button, label, theme).into_any_element(),
     }
 }
 
-/// A ref's name in a column that may be too narrow for it: cut in the
-/// middle, so both the prefix and the distinguishing end stay
-/// (`people/ada/a-rath…-work-89`).
 pub(crate) fn name_cell(label: impl Into<SharedString>) -> Div {
     div()
         .min_w(px(0.))
@@ -321,17 +289,8 @@ pub(crate) fn name_cell(label: impl Into<SharedString>) -> Div {
         .child(label.into())
 }
 
-/// The longest name every column that shows one holds whole: the Refs
-/// tab's name column holds some 30 characters, a menu row more.
 const WHOLE_UP_TO: usize = 24;
 
-/// `element`, which shows `name` in a column that may cut it short, says
-/// it whole on hover; a name short enough to be shown whole says nothing
-/// more.
-// ponytail: counts characters, not the drawn width (the view does not
-// measure text); a name of wide glyphs, or a menu squeezed by a window
-// under ~340 px, can be cut below the count with no tip. The host knows
-// when it cut a text: a tip it shows only then would replace the count.
 pub(crate) fn whole_name<E: StatefulInteractiveElement>(
     element: E,
     name: impl Into<SharedString>,
@@ -350,7 +309,6 @@ pub(crate) fn whole_name<E: StatefulInteractiveElement>(
     })
 }
 
-/// A hover's whole name, mono on the view's own surface.
 struct WholeName {
     text: SharedString,
     theme: Theme,
@@ -372,8 +330,6 @@ impl Render for WholeName {
     }
 }
 
-/// A key the filter box hears instead of its text: ↑ ↓ walk the list, Esc
-/// closes it.
 fn claimed(key: Named) -> wire::KeyClaim {
     wire::KeyClaim {
         key: Key::Named(key),
@@ -382,15 +338,6 @@ fn claimed(key: Named) -> wire::KeyClaim {
     }
 }
 
-/// The open dropdown of `menu`, a list of refs. Its filter box takes the
-/// keys on open: what is typed narrows the list by name, in any case, ↑ ↓
-/// walk it, Enter picks the active item and Esc closes the menu, giving
-/// the keys back to its button. The ref picker splits branches from tags
-/// under it. The list scrolls past [`MENU_ROWS`] and keeps to the window;
-/// the default branch is first and marked, the picked ref checked. The
-/// list is a Tab stop of its own whose keys do the same. The menu floats
-/// in the view's modal overlay, so Tab never leaves it and a press outside
-/// closes it.
 pub(crate) fn menu(
     menu: Menu,
     label: &str,
@@ -423,7 +370,6 @@ pub(crate) fn menu(
             _ => {}
         }
     }))
-    // a new filter starts the arrows at its first match
     .on_change(cx.listener(|forge, _: &wire::TextChange, _, cx| forge.menu_step(0, cx)))
     .on_submit(cx.listener(move |forge, _: &(), window, cx| {
         let refs = forge.menu_list(menu);
@@ -448,8 +394,6 @@ pub(crate) fn menu(
         .border_b_1()
         .border_color(theme.border)
         .child(filter);
-    // the rows the list has room for: the frame keeps one height as the
-    // filter narrows it and as the tabs switch, and stays in the window
     let mut chrome = 2. * BORDER + 2. * design::spacing::SM as f32 + ROW + 2. * LIST_PAD + BORDER;
     if menu != Menu::Head {
         let counts = [false, true].map(|tags| forge.menu_refs(tags).len());
@@ -477,13 +421,10 @@ pub(crate) fn menu(
                 pick,
             )
             .self_start()
-            // a press focuses the tabs: it hands the keys back to the
-            // filter, where the typing goes on; ← → keep them on the tabs
             .on_click(move |_: &ClickEvent, window: &mut Window, _: &mut App| {
                 window.focus(filter_id.clone())
             }),
         );
-        // the segments' box draws its top and bottom edges around them
         chrome += design::spacing::SM as f32 + ROW + 2. * BORDER;
     }
     let total = match menu {
@@ -543,14 +484,10 @@ pub(crate) fn menu(
         .into_any_element()
 }
 
-/// A dropdown's row, its frame's edge and the list's inset, as the
-/// arithmetic that fits the menu in the window reads them.
 const ROW: f32 = design::height::ROW as f32;
 const BORDER: f32 = 1.;
 const LIST_PAD: f32 = design::spacing::XXS as f32;
 
-/// The items of an open dropdown: one Tab stop, a virtual list scrolled to
-/// the active item, ↑ ↓ walking it and Enter or Space picking.
 fn menu_list(
     menu: Menu,
     label: &str,
@@ -612,7 +549,6 @@ fn menu_list(
     }))
     .on_press(move |index, window, app| pressed(refs[index].clone(), window, app))
     .build()
-    // Escape is the menu's: the overlay around it does not close it again
     .on_key_down(escape)
     .consumes_keys(["escape"])
     .size_full()
@@ -620,9 +556,6 @@ fn menu_list(
     .into_any_element()
 }
 
-/// One ref of a dropdown, mono: its check when it is the picked one, its
-/// name cut in the middle and whole on hover, `note` faint on its right;
-/// the arrows' item raised.
 fn menu_item(
     element_id: ElementId,
     label: String,
@@ -633,7 +566,6 @@ fn menu_item(
     click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
     let theme = *theme;
-    // the check is drawn, not said: `aria_toggled` says it
     let name = match note {
         Some(note) => format!("{label} ({note})"),
         None => label.clone(),
@@ -664,9 +596,6 @@ fn menu_item(
     design::item(whole_name(item, label, &theme), Role::MenuItemRadio, active)
 }
 
-/// A tab with its count beside the label, faint: `Changes 3`. Tabs sit
-/// on a bar's hairline, full height, in a manual tab list: `selected` is
-/// the open one, `active` the one the arrows are on, which Enter opens.
 #[allow(
     clippy::too_many_arguments,
     reason = "the ladder rides beside the theme into every sized helper; the phone rework of this view reshapes the row"
@@ -687,7 +616,6 @@ pub(crate) fn tab(
         .gap(design::space::XS)
         .text_size(design::text::BODY)
         .font_weight(view::FontWeight::NORMAL)
-        // the arrows' tab, not yet open: a quiet fill says where they are
         .when(active && !selected, |tab| tab.bg(theme.surface_raised))
         .children(count.map(|count| {
             div()

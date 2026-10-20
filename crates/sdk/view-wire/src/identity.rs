@@ -77,7 +77,6 @@ impl fmt::Display for DuplicateIdentity {
 
 impl std::error::Error for DuplicateIdentity {}
 
-/// A name as written; any other id as its variant.
 struct Shown<'a>(&'a ElementIdWire);
 
 impl fmt::Display for Shown<'_> {
@@ -96,10 +95,7 @@ impl fmt::Display for Shown<'_> {
 #[derive(Default)]
 pub struct Scopes {
     claimed: HashSet<(usize, ElementIdWire)>,
-    /// The number of the scope each entered node opened, innermost last;
-    /// the root's is 0.
     open: Vec<usize>,
-    /// The scopes opened so far.
     opened: usize,
     path: Vec<ElementIdWire>,
 }

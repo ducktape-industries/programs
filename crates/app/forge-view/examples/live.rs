@@ -41,8 +41,6 @@ fn main() {
                 },
             )?;
         }
-        // one repository of my own, so its Settings (owner only) can be
-        // tried: pushed the same history
         net.submit(
             net.me(),
             forge::PROGRAM,
@@ -92,12 +90,8 @@ fn main() {
     })
 }
 
-/// How many changes `web` holds past the three above.
 const PAST: usize = 300;
 
-/// `web`'s past: [`PAST`] changes from its small branches, each fifth one
-/// left open, each fifth closed, the rest merged into `dev` (a branch of
-/// its own, so `main` and the three changes above keep their diffs).
 fn past(
     net: &rig::Network,
     ada: program::AccountNumber,
@@ -148,7 +142,6 @@ fn past(
             panic!("ChangeOpen answers its change");
         };
         let op = match (merged, i % 5) {
-            // the source's tip becomes `dev`: forge checks both heads
             (true, _) => {
                 let op = Op::Merge {
                     repo: "web".into(),
@@ -173,17 +166,12 @@ fn past(
     Ok(())
 }
 
-/// How many programs `src/` holds, and the lines of each.
 const PROGRAMS: usize = 30;
 const LINES: usize = 400;
-/// How many files `legacy/` holds on `main`; the release deletes them.
 const LEGACY: usize = 52;
 
-/// A file's path and blob.
 type File = (String, Oid);
 
-/// `web`'s push and its pack, with `main`'s commit and the small branches'
-/// names and tips for the changes opened from them.
 struct History {
     request: Vec<u8>,
     pack: Vec<u8>,
@@ -214,7 +202,7 @@ fn history() -> History {
         .collect();
     let fonts: Vec<(String, Oid)> = ["Sans", "Mono"]
         .iter()
-        .map(|name| (format!("{name}.ttf"), blob(s, &binary(name.len()))))
+        .map(|name| (format!("{name}.ttf"), blob(s, &binary_megabyte(name.len()))))
         .collect();
     let lock = blob(s, &source("lock", 0, 3600));
     let base = |fonts_dir: &str, lock: Oid, programs: &[File]| {
@@ -290,20 +278,16 @@ fn history() -> History {
         "refs/heads/refactor/split-every-module".to_owned(),
     ));
 
-    // the release: every program touched in places (the first one rewritten
-    // line by line, past any search), the lock file regenerated, the fonts
-    // moved, `legacy/` gone, and 192 files added across 48 directories,
-    // 15 of them over a thousand lines
     let mut touched = Vec::new();
     for (n, (path, _)) in programs.iter().enumerate() {
         let text = match n {
-            0 => interleaved("m", n, LINES),
-            n if n < 15 => edited("m", n, LINES),
+            0 => insert_after_every_line("m", n, LINES),
+            n if n < 15 => edit_every_fortieth_line("m", n, LINES),
             _ => source("m", n, LINES),
         };
         touched.push((path.clone(), blob(s, &text)));
     }
-    let lock = blob(s, &edited("lock", 0, 3600));
+    let lock = blob(s, &edit_every_fortieth_line("lock", 0, 3600));
     let mut files = base("app/assets/fonts", lock, &touched);
     let areas = [
         "ax", "render", "shell", "runtime", "editor", "backend", "tree", "ops",
@@ -351,7 +335,6 @@ fn history() -> History {
     }
 }
 
-/// `lines` lines of Rust-looking source, distinct per `prefix` and `n`.
 fn source(prefix: &str, n: usize, lines: usize) -> Vec<u8> {
     let mut out = format!("//! {prefix} {n}: generated for the live example.\n\n");
     for line in 0..lines {
@@ -363,8 +346,7 @@ fn source(prefix: &str, n: usize, lines: usize) -> Vec<u8> {
     out.into_bytes()
 }
 
-/// [`source`] with every fortieth line changed: a file touched in places.
-fn edited(prefix: &str, n: usize, lines: usize) -> Vec<u8> {
+fn edit_every_fortieth_line(prefix: &str, n: usize, lines: usize) -> Vec<u8> {
     let text = String::from_utf8(source(prefix, n, lines)).unwrap();
     text.lines()
         .enumerate()
@@ -376,9 +358,7 @@ fn edited(prefix: &str, n: usize, lines: usize) -> Vec<u8> {
         .into_bytes()
 }
 
-/// [`source`] with a line inserted after every line: an edit no search
-/// under a founding's cost finds.
-fn interleaved(prefix: &str, n: usize, lines: usize) -> Vec<u8> {
+fn insert_after_every_line(prefix: &str, n: usize, lines: usize) -> Vec<u8> {
     let text = String::from_utf8(source(prefix, n, lines)).unwrap();
     text.lines()
         .map(|line| format!("{line}\n// between\n"))
@@ -386,8 +366,7 @@ fn interleaved(prefix: &str, n: usize, lines: usize) -> Vec<u8> {
         .into_bytes()
 }
 
-/// A megabyte that is not text, distinct per `seed`.
-fn binary(seed: usize) -> Vec<u8> {
+fn binary_megabyte(seed: usize) -> Vec<u8> {
     let mut state = seed as u32 + 1;
     (0..1 << 20)
         .map(|_| {
@@ -401,7 +380,6 @@ fn blob(store: &mut MemoryObjects, content: &[u8]) -> Oid {
     store.put(Kind::Blob, content).unwrap()
 }
 
-/// The tree holding `files`, each at its slash-separated path.
 fn tree_of(store: &mut MemoryObjects, files: &[File]) -> Oid {
     let mut dirs: std::collections::BTreeMap<&str, Vec<File>> = Default::default();
     let mut entries = Vec::new();

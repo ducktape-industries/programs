@@ -11,15 +11,10 @@ use crate::chain::{self, BlockRow, TxRow};
 use crate::state::{Listing, Route, blob_ref};
 use crate::{Explorer, WINDOW, decode, queries};
 
-/// The newest frames of an account a phone reads the transactions of
-/// (Expo `ACTED`, `query/page.ts:12`): its first page.
 const ACTED: usize = queries::PAGE as usize;
-/// The payload a row's transaction is read with (Expo `ROW_PAYLOAD`,
-/// `query/page.ts:10`): past it, the row is titled by its size.
 const ROW_PAYLOAD: u32 = 4 << 10;
 
 impl Explorer {
-    /// Everything, again: the boot, a restore, a retry.
     pub(crate) fn read_all(&mut self, cx: &mut Context<Self>) {
         self.read_head(cx);
         self.read_accounts(cx);
@@ -34,11 +29,6 @@ impl Explorer {
         self.pull(cx);
     }
 
-    /// What the code behind the program page on screen declares, asked once
-    /// per code id (`blob.manifest`): on every draw, so a page opened before
-    /// the roster landed asks when it does, and a page that names other
-    /// code blanks the one shown. Nothing to ask while no program page is
-    /// open or the roster does not name it.
     pub(crate) fn read_manifest(&mut self, cx: &mut Context<Self>) {
         let Route::Program(name) = self.pages.top() else {
             return;
@@ -56,11 +46,6 @@ impl Explorer {
         cx.load(self, ask, |view| &mut view.manifest);
     }
 
-    /// A head `chain.heads` pushed: the window follows it without a read,
-    /// and the status moves to it when the page lands. A head is not drawn
-    /// on its own: that redraw changed nothing (the page lands a tick later
-    /// and draws once) and cost a full render of the page that was up, 74M
-    /// fuel on Transactions, every block.
     pub(crate) fn at_head(&mut self, head: Head, cx: &mut Context<Self>) {
         // a change lands at its height without a write to the programs role, so
         // the programs role's live heads say nothing: the head that reaches it
@@ -82,8 +67,6 @@ impl Explorer {
         }
     }
 
-    /// The node's status, and the window it moves. A status on screen stays
-    /// while it is read again; a refused re-read is logged and leaves it.
     pub(crate) fn read_head(&mut self, cx: &mut Context<Self>) {
         let ask = cx.host().ask::<ChainStatus>(());
         if self.status.ready().is_some() {
@@ -100,7 +83,6 @@ impl Explorer {
         } else if !self.status.is_loading() {
             cx.load(self, ask, |view| &mut view.status);
         }
-        // a failed window is read again with the head, not in a loop
         if self.chain.failed.is_some() {
             self.pull(cx);
         }
@@ -145,9 +127,6 @@ impl Explorer {
         );
     }
 
-    /// What the account page on screen did, newest first, a page at a time;
-    /// its first page again when it is asked again, as
-    /// [`reread_first`](Self::reread_first) says.
     pub(crate) fn read_acted(&mut self, cx: &mut Context<Self>) {
         let Route::Account(number) = *self.pages.top() else {
             return;
@@ -168,18 +147,6 @@ impl Explorer {
         self.acted = Some((number, Listing::new(page, cx)));
     }
 
-    /// A write to activity, for the listing `listing` picks: its first page
-    /// again. While that is all it holds, it is read again in place
-    /// ([`Paged::reread`]), the rows on screen staying until it lands. A
-    /// listing read on past it is not: `reread` reads every page held from
-    /// the first, and with a write nearly every block (garage's bots) a
-    /// listing read far enough never lands that read before the next write
-    /// starts it again, nor reads on while it is out. Its first page is
-    /// asked alone instead (`first`), and one that starts with a row it
-    /// does not hold marks it [`behind`](Listing::behind) until it starts
-    /// over ([`show_newest`](Self::show_newest), or arriving on a page), or
-    /// is back to one page (a page refused empties it). A listing whose
-    /// first page is still on its way is left to land.
     fn reread_first<F>(
         &mut self,
         first: impl FnOnce() -> F,
@@ -194,8 +161,6 @@ impl Explorer {
         if held.rows.read(Paged::is_loading) {
             return;
         }
-        // a listing back to one page (a refused page empties it) is read
-        // again whatever it was told before
         if !held.past_first_page() {
             held.behind = false;
             return held.rows.update(cx, |rows, cx| rows.reread(cx));
@@ -219,14 +184,10 @@ impl Explorer {
         held.checking = Some(checked);
     }
 
-    /// A listing read on past its first page starts over at it: the page
-    /// the reader arrives on opens at its top.
     pub(crate) fn start_over(&mut self, cx: &mut Context<Self>) {
         self.start_over_where(Listing::past_first_page, cx);
     }
 
-    /// Show newest: a listing behind the rows written above it starts over
-    /// at its first page, its list at the top.
     pub(crate) fn show_newest(&mut self, cx: &mut Context<Self>) {
         self.start_over_where(|listing| listing.behind, cx);
         self.scroll.scroll_to_item(0, ScrollStrategy::Top);
@@ -249,10 +210,6 @@ impl Explorer {
             .status
             .ready()
             .map(|status| status.height.max(self.head));
-        // a page asks for the blocks the window lacks, never more: the node
-        // lists every block it keeps to a page that asks for them all
-        // (garage's 56k, 14.6 MB decoded in one call to keep the newest
-        // 1,000, ran the view out of fuel)
         let (before, lacking) = match (self.chain.top(), head) {
             (None, _) => (None, WINDOW),
             (Some(top), Some(head)) if head > top => (
@@ -265,7 +222,6 @@ impl Explorer {
             ),
             _ => return,
         };
-        // at most the window
         let limit = lacking as u32;
         self.pulling = true;
         let (host, top) = (cx.host(), self.chain.top());
@@ -277,11 +233,6 @@ impl Explorer {
                     most: 0,
                 })
                 .await?;
-            // the node's tip moves on while the ask travels, so a page read
-            // down from it can stop short of the window: read on below it
-            // until it joins (Expo `advance`), and the window, the rows on
-            // screen, stays whole until it lands. An answer a whole window
-            // past the top starts it again.
             let Some(top) = top.filter(|_| before.is_none()) else {
                 return Ok(page);
             };
@@ -298,10 +249,7 @@ impl Explorer {
                     })
                     .await?;
                 match below.blocks.last() {
-                    // the archive moved past the window: it starts again
                     None => break,
-                    // an answer that reaches no lower moves nothing: the
-                    // window stays, and the next head reads again
                     Some(block) if block.height >= oldest => {
                         page.blocks.clear();
                         break;
@@ -319,7 +267,6 @@ impl Explorer {
                 Ok(page) => {
                     let was = (view.chain.top(), view.chain.blocks.len());
                     view.chain.land(before, page);
-                    // the status moves with the page that reached the head
                     if let (Loadable::Ready(status) | Loadable::Reloading(status, _), Some(top)) =
                         (&mut view.status, view.chain.blocks.first())
                         && top.height > status.height
@@ -327,8 +274,6 @@ impl Explorer {
                         status.height = top.height;
                         status.tip = top.id;
                     }
-                    // a page that moved nothing is not asked for again
-                    // until the head moves
                     if (view.chain.top(), view.chain.blocks.len()) != was {
                         view.pull(cx);
                     }
@@ -340,8 +285,6 @@ impl Explorer {
         .detach();
     }
 
-    /// Asks the host what `tx` does, once, the first time it is drawn; a
-    /// program that says nothing, or a refusal, leaves its bytes.
     pub(crate) fn describe(&self, tx: &TxRow, cx: &mut Context<Self>) {
         let Some(payload) = &tx.payload else {
             return;
@@ -400,8 +343,6 @@ impl Explorer {
     }
 
     fn described(&mut self, hash: [u8; 32], op: Description, cx: &mut Context<Self>) {
-        // every row of the hash: a frame the node landed again is
-        // the same op, drawn once per landing
         for tx in self.held().filter(|tx| tx.hash == hash) {
             let _ = tx.op.set(op.clone());
         }
@@ -432,11 +373,6 @@ impl Explorer {
             .find(|tx| (tx.height, tx.index) == (height, position))
     }
 
-    /// A phone's Activity rows: the transactions behind the account page's
-    /// newest frames, each read by its place, one after another (Expo
-    /// `query/activity.ts:26-31`), so a row says what its transaction did.
-    /// Asked on every draw under a finger, once per frames read; the
-    /// desktop lists the frames and reads no transaction.
     pub(crate) fn read_rows(&mut self, cx: &mut Context<Self>) {
         let Route::Account(number) = *self.pages.top() else {
             return;
@@ -468,8 +404,6 @@ impl Explorer {
                     tx: TxRef::At { height, position },
                     most: ROW_PAYLOAD,
                 };
-                // a frame whose transaction the node no longer holds is
-                // left out, as Expo leaves it
                 if let Some(located) = host.ask::<ChainTx>(at).await? {
                     rows.push(chain::located(located));
                 }
@@ -480,8 +414,6 @@ impl Explorer {
         cx.load(self, read, |view| &mut view.acted_rows);
     }
 
-    /// What the page on screen reads past the window: a block or a
-    /// transaction the window does not hold. On arriving, and on a retry.
     pub(crate) fn read_page(&mut self, cx: &mut Context<Self>) {
         match *self.pages.top() {
             Route::Block(height) => self.open_block(height, cx),
@@ -500,7 +432,6 @@ impl Explorer {
             by: BlockRef::Height(height),
             most: 0,
         });
-        // another block: the one opened before is not shown under it
         self.opened = Loadable::Idle;
         cx.load(
             self,
@@ -527,7 +458,6 @@ impl Explorer {
         );
     }
 
-    /// A block and its transactions, in the window or opened outside it.
     pub(crate) fn block(&self, height: u64) -> Option<(BlockRow, Vec<&TxRow>)> {
         if let Some(row) = self.chain.block(height) {
             let txs = self.chain.txs.iter().filter(|tx| tx.height == height);

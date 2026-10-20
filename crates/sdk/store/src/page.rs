@@ -105,8 +105,6 @@ pub struct Listing {
     after: Option<Vec<u8>>,
     scope: Vec<u8>,
     height: u64,
-    /// What every `next` is pinned to: the answering height, or what
-    /// [`Listing::pinned`] set.
     pin: u64,
     /// What the cursor was pinned to, for a program whose listings are
     /// rewritten (forge refuses a cursor pinned to another write count).
@@ -235,7 +233,6 @@ impl<T> PageResponse<T> {
 mod tests {
     use super::*;
 
-    /// A read at `height`.
     fn at(height: u64) -> QueryCtx {
         program::MockHost::default().query(program::Env {
             height,

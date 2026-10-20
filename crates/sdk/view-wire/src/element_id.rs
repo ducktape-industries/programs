@@ -54,8 +54,6 @@ pub enum ElementIdWire {
     OpaqueId(#[serde(serialize_with = "crate::codec::bin::serialize_fixed")] [u8; 20]),
 }
 
-/// The atom as it is read: a fixed-length id is a `bin` here, and its
-/// length is checked on the bytes read.
 impl<'de> Deserialize<'de> for ElementIdAtom {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -213,7 +211,6 @@ impl ElementIdWire {
         }
     }
 
-    /// The inverse of [`Self::from_atom`]: every variant but `NamedChild`.
     fn atom(&self) -> Option<ElementIdAtom> {
         Some(match self {
             Self::View(id) => ElementIdAtom::View(*id),

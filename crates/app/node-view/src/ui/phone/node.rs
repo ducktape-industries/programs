@@ -21,15 +21,10 @@ use crate::recent::Recent;
 use crate::row;
 use crate::{Nodes, voting, words};
 
-// SDK gap: the kit's `KeyValue` (with `key_value`); the SDK builds it later
-/// How wide a key's label runs (Expo `src/kit/Facts.tsx:64`).
 const KEY_LABEL_W: Pixels = px(96.);
-/// How tall a block's mark is in the strip (Expo `[key].tsx:80`).
 const MARK: Pixels = px(14.);
-/// How far the tip's frame sits from its mark (Expo `[key].tsx:79`).
 const TIP_FRAME: Pixels = px(1.);
 
-/// The page of the member `key`, or why there is none.
 pub(super) fn render(view: &Nodes, key: &[u8], cx: &mut Context<Nodes>, theme: &Theme) -> Page {
     let back = cx.listener(|view: &mut Nodes, _: &ClickEvent, _, cx| {
         view.close_page();
@@ -60,8 +55,6 @@ pub(super) fn render(view: &Nodes, key: &[u8], cx: &mut Context<Nodes>, theme: &
     .child(scroller("nodes-node-scroll", body))
 }
 
-/// A key the page cannot show: one the members, once read, do not hold;
-/// or the members still being read.
 fn missing(view: &Nodes, theme: &Theme) -> AnyElement {
     match view.nodes.ready() {
         Some(_) => design::empty_state(
@@ -77,7 +70,6 @@ fn missing(view: &Nodes, theme: &Theme) -> AnyElement {
     }
 }
 
-/// The member's seat under its key: `validator 3`, or `resident`.
 fn seat(node: &Node) -> String {
     match (node.validator, node.seat) {
         (true, Some(seat)) => format!("validator {}", seat + 1),
@@ -86,8 +78,6 @@ fn seat(node: &Node) -> String {
     }
 }
 
-/// Who the member is: its key, its address (`this node` on the one this
-/// app talks to), and who operates it.
 fn identity(view: &Nodes, node: &Node, theme: &Theme) -> Div {
     let address = view.address_line(node);
     div()
@@ -100,8 +90,6 @@ fn identity(view: &Nodes, node: &Node, theme: &Theme) -> Div {
         )
 }
 
-/// A validator's vote: its newest finalize vote, how far that is behind
-/// this node's tip, and its status as a badge.
 fn vote_facts(view: &Nodes, node: &Node, theme: &Theme) -> Div {
     let row::Row {
         signed,
@@ -123,8 +111,6 @@ fn vote_facts(view: &Nodes, node: &Node, theme: &Theme) -> Div {
     div()
         .child(key_value("height", words::HEIGHT, mono(height), theme))
         .child(key_value("behind", words::BEHIND, mono(behind), theme))
-        // the badge fits its word, centred in the value's column (Expo
-        // `Badge.tsx:20` `alignSelf: 'center'` in `Facts.tsx:67`'s column)
         .child(key_value(
             "status",
             words::STATUS,
@@ -133,9 +119,6 @@ fn vote_facts(view: &Nodes, node: &Node, theme: &Theme) -> Div {
         ))
 }
 
-/// The kit's `KeyValue` (Expo `src/kit/Facts.tsx:50-75`): at least a
-/// control tall, its label muted in a column of its own, its value taking
-/// the rest, a hairline under it.
 fn key_value(key: &str, label: &str, value: impl IntoElement, theme: &Theme) -> Stateful<Div> {
     div()
         .id(ElementId::Name(format!("nodes-node-{key}").into()))
@@ -158,32 +141,25 @@ fn key_value(key: &str, label: &str, value: impl IntoElement, theme: &Theme) -> 
         .child(div().flex_1().min_w_0().child(value))
 }
 
-/// A value in small type, wrapping.
 fn plain(value: String) -> Div {
     div().text_type(LADDER.small).child(value)
 }
 
-/// A value in small type in the data face, wrapping.
 fn mono(value: String) -> Div {
     plain(value).font_family(design::fonts::FAMILY_MONO)
 }
 
-/// The blocks the strip spans: the last 64 to the tip, once the node
-/// says where its tip is.
 fn span(view: &Nodes) -> Option<RangeInclusive<u64>> {
     view.status
         .ready()
         .map(|status| Recent::span(status.height))
 }
 
-/// `Proposed`, and at its right which blocks the strip spans.
 fn proposed_head(view: &Nodes, theme: &Theme) -> impl IntoElement {
     let range = span(view).map(|span| words::span(&span));
     design::section_head("nodes-node-proposed", words::PROPOSED, &LADDER, theme).children(range)
 }
 
-/// What the member proposed: a validator's strip once the tip is known; a
-/// resident proposes none.
 fn proposed(view: &Nodes, node: &Node, theme: &Theme) -> Option<AnyElement> {
     match node.validator {
         true => span(view).map(|span| strip(node, span, &view.recent, theme).into_any_element()),
@@ -194,9 +170,6 @@ fn proposed(view: &Nodes, node: &Node, theme: &Theme) -> Option<AnyElement> {
     }
 }
 
-/// The blocks of `span`, one mark each sharing the width, oldest first:
-/// ink where this key led, grey where another did, the surface where the
-/// node names no proposer; the tip framed.
 fn strip(node: &Node, span: RangeInclusive<u64>, recent: &Recent, theme: &Theme) -> Stateful<Div> {
     let tip = *span.end();
     let marks = span.map(|height| {
@@ -221,8 +194,6 @@ fn strip(node: &Node, span: RangeInclusive<u64>, recent: &Recent, theme: &Theme)
         .children(marks)
 }
 
-/// For a reader who votes, the motions on this member: Demote and Remove
-/// a validator, Promote a resident.
 fn presses(view: &Nodes, node: &Node, cx: &Context<Nodes>, theme: &Theme) -> Option<Div> {
     if !view.voting.votes() {
         return None;

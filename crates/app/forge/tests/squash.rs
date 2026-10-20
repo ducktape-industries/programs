@@ -4,7 +4,6 @@ use common::*;
 const MAIN: &str = "refs/heads/main";
 const FEATURE: &str = "refs/heads/feature";
 
-// A repository with main at `main` and feature at `feature`, every object of `store` pushed.
 fn seeded(store: &MemoryObjects, main: Oid, feature: Oid) -> MemorySandbox {
     let sandbox = founded();
     create(&sandbox, "project", HashKind::Sha1);
@@ -28,7 +27,6 @@ fn squash(heads: (Oid, Oid), message: Option<&str>, change: Option<u64>) -> Op {
     }
 }
 
-// The change WRITER opens from feature into main.
 fn opened(sandbox: &MemorySandbox) -> u64 {
     let op = Op::ChangeOpen {
         repo: "project".into(),
@@ -44,7 +42,6 @@ fn opened(sandbox: &MemorySandbox) -> u64 {
     }
 }
 
-// The commit a squash answered, and the commit as forge stored it.
 fn squashed(sandbox: &MemorySandbox, output: &[u8]) -> (Oid, Commit) {
     let forge::OpReply::Merged { oid, .. } = abi::decode(output).unwrap() else {
         panic!("a squash answers Merged");
@@ -78,8 +75,6 @@ fn change_of(sandbox: &MemorySandbox, n: u64) -> forge::Change {
     change
 }
 
-// main and feature both moved on from root: feature in two commits (b changed, c added),
-// main in one (a changed).
 fn diverged(store: &mut MemoryObjects) -> (Oid, Oid) {
     let root = file_commit(store, &[], 1, &[("a", b"1\n"), ("b", b"1\n")]);
     let first = file_commit(store, &[root], 2, &[("a", b"1\n"), ("b", b"2\n")]);
@@ -89,7 +84,6 @@ fn diverged(store: &mut MemoryObjects) -> (Oid, Oid) {
     (main, feature)
 }
 
-// The squash of a change on two diverged branches, in a sandbox of its own.
 fn landed() -> (MemorySandbox, MemoryObjects, u64, Oid, Commit) {
     let mut store = MemoryObjects::new(Hash::Sha1);
     let (main, feature) = diverged(&mut store);

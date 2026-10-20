@@ -4,7 +4,6 @@
 use super::*;
 use identity::Ownership;
 
-/// An agent ada (10) manages, its script calling `calls`.
 fn agent(number: u64, name: &str, calls: Option<&str>) -> chat::Profile {
     chat::Profile {
         kind: chat::Kind::Program {
@@ -20,9 +19,6 @@ fn agent(number: u64, name: &str, calls: Option<&str>) -> chat::Profile {
     }
 }
 
-/// eddy (7) reads `general`, where he, scout, atlas and sage wrote. ada
-/// manages the three agents: scout answers her only, atlas her and bo,
-/// sage anyone; scout's and atlas's scripts call harness, sage has none.
 fn agents() -> (TestAppContext, Entity<Chat>) {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
@@ -78,7 +74,6 @@ fn opened_link(cx: &TestAppContext) -> Option<String> {
     cx.host().requests::<view::methods::LinkOpen>().pop()
 }
 
-/// The node the view last gave the keys to.
 fn focus_given(cx: &TestAppContext) -> Option<wire::ElementIdWire> {
     let asked = cx.host().requests::<view::methods::HostWidget>();
     asked.into_iter().rev().find_map(|command| match command {
@@ -91,10 +86,6 @@ fn named(key: &str) -> Option<wire::ElementIdWire> {
     Some(wire::ElementIdWire::Name(key.into()))
 }
 
-// The mention menu's choices say why an agent would not answer the
-// writer: scout answers its manager only, atlas the people it lists, and
-// sage, open to anyone, says nothing; a person says nothing. (The menu
-// draws the hint as a badge: `composer/binding/tests.rs`.)
 #[test]
 fn the_mention_menu_says_which_agents_would_not_answer_the_writer() {
     let (_cx, view) = agents();
@@ -112,9 +103,6 @@ fn the_mention_menu_says_which_agents_would_not_answer_the_writer() {
     assert_eq!(hint("ada"), None);
 }
 
-/// A dm with an agent that would not answer the reader says so in its
-/// header, and the composer stays open; one open to anyone says nothing,
-/// and neither does a channel.
 #[test]
 fn a_dm_header_says_when_the_agent_will_not_reply() {
     let (mut cx, _) = agents();
@@ -140,9 +128,6 @@ fn a_dm_header_says_when_the_agent_will_not_reply() {
     }
 }
 
-/// An agent's message offers "View work record", which opens the room's
-/// place in the program the agent's script calls; a person's message and an
-/// agent's with no script do not offer it.
 #[test]
 fn an_agents_message_opens_its_work_record() {
     let (mut cx, view) = agents();
@@ -168,9 +153,6 @@ fn an_agents_message_opens_its_work_record() {
     }
 }
 
-/// An agent's face opens its card: its name, what it is and who manages
-/// it, whom it answers, its work record here and its profile, the link
-/// the face opened before. An agent with no script has no work record.
 #[test]
 fn an_agents_face_opens_its_card() {
     let (mut cx, view) = agents();
@@ -222,7 +204,6 @@ fn an_agents_face_opens_its_card() {
     assert_eq!(focus_given(&cx), named("chat-card-open-profile"));
 }
 
-/// A person's face still opens their profile, with no card.
 #[test]
 fn a_persons_face_opens_their_profile() {
     let (mut cx, view) = agents();
@@ -236,8 +217,6 @@ fn a_persons_face_opens_their_profile() {
     assert!(cx.find("chat-card").is_none());
 }
 
-// an agent whose script calls no harness says it runs outside harness on its card, and harness's
-// list on its key is never read for it
 #[test]
 fn an_agent_harness_does_not_run_says_so_on_its_card() {
     let (mut cx, _view) = agents();

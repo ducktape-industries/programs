@@ -6,11 +6,8 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
-// A sidebar of this many rooms besides #general, as a busy network lists.
 const ROOMS: usize = 30;
 
-// A desk window at chat's own width, #general open on its newest rows with
-// the newest twenty on screen, and thirty rooms in the sidebar.
 fn busy_room(newest: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
@@ -43,7 +40,6 @@ fn busy_room(newest: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
     (cx, view)
 }
 
-// One input's cost, summed over its runs.
 #[derive(Default)]
 struct Cost {
     runs: u32,
@@ -81,8 +77,6 @@ impl Cost {
     }
 }
 
-// The nodes the patches from `before` to `after` carry or touch: what
-// changed on screen, against which every node lowered is measured.
 fn changed(before: &wire::Node, after: &wire::Node) -> usize {
     let (mut before, mut after) = (before.clone(), after.clone());
     wire::diff(&mut before, &mut after)
@@ -94,7 +88,6 @@ fn changed(before: &wire::Node, after: &wire::Node) -> usize {
         .sum()
 }
 
-// `input` run `runs` times on `cx`, the `i`th run told its number.
 fn measure(
     cx: &mut TestAppContext,
     runs: u32,
@@ -124,14 +117,10 @@ fn measure(
     cost
 }
 
-// A hover lowers the row it lit and keeps every other row of the
-// timeline and the sidebar: nothing it lowered is a row it didn't touch.
 #[test]
 fn a_hover_keeps_every_row_it_did_not_touch() {
     let (mut cx, _) = busy_room(Rc::new(Cell::new(WINDOW as u64)));
     cx.memo_checks(false);
-    // a hover in and out first: what the room's opening frames kept is
-    // their own business, and the hover after it is the steady one
     cx.simulate_hover("chat-message-m250-row", true);
     cx.simulate_hover("chat-message-m250-row", false);
     let seq = WINDOW;
@@ -228,8 +217,6 @@ fn a_full_room_measured() {
         cx.run_until_parked();
     });
     rows.push(cost.row("a block that changes nothing"));
-    // last: the test host asks for no rows after a post lands, as the app
-    // does once it lays the list out, so the window grows with each post
     let cost = measure(&mut cx, RUNS, |cx, _| {
         newest.set(newest.get() + 1);
         height += 1;
@@ -238,7 +225,6 @@ fn a_full_room_measured() {
     });
     rows.push(cost.row("a message lands"));
     eprintln!("{}", rows.join("\n"));
-    // where the tree's nodes are: each keyed node of more than 20, by depth
     fn regions(node: &wire::Node, depth: usize, out: &mut Vec<String>) {
         if node.count() <= 20 || depth > 8 {
             return;

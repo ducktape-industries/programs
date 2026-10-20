@@ -33,9 +33,6 @@ use crate::words;
 
 pub(crate) use lines::Block;
 
-/// The phone's screen: the top page of the route (or the change form
-/// over it), the one overlay over that, and Back while there is somewhere
-/// to go back to (rule 13): the overlay drawn, the form, or a page.
 pub(crate) fn render(forge: &mut Forge, cx: &mut Context<Forge>) -> AnyElement {
     let theme = *cx.global::<Theme>();
     let ladder = &design::TOUCH;
@@ -60,8 +57,6 @@ pub(crate) fn render(forge: &mut Forge, cx: &mut Context<Forge>) -> AnyElement {
         .into_any_element()
 }
 
-/// The page on top: the change form while one is open, else the route's
-/// top page.
 fn page(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> AnyElement {
     if let Some(form) = forge.change_form() {
         return new_change::render(forge, form, cx, ladder, theme);
@@ -89,8 +84,6 @@ fn page(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) 
     }
 }
 
-/// The reader's account name, for the root's avatar: empty until the
-/// roster names them, when the avatar draws `•`.
 fn reader(forge: &Forge) -> String {
     match (forge.me_principal(), forge.names.ready()) {
         (Some(me), Some(names)) => names.name(&me).unwrap_or_default().to_owned(),
@@ -98,9 +91,6 @@ fn reader(forge: &Forge) -> String {
     }
 }
 
-/// The overlay's sheet, as long as what it shows is held: a ref picker, a change's actions, a member to
-/// grant or to ask for a review, About, New repository, or Finish your
-/// review.
 fn sheet(
     overlay: Overlay,
     forge: &Forge,

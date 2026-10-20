@@ -81,10 +81,6 @@ fn account_row(view: &Explorer, account: &Account, cx: Cx, theme: &Theme) -> Sta
     )
 }
 
-/// Its newest activity, a page at a time: the rows read so far, drawn in
-/// the page that scrolls, and a press that reads the page past them; over
-/// them, Newer transactions once rows were written above them
-/// (`Listing::behind`).
 fn acted(view: &Explorer, number: u64, cx: Cx, theme: &Theme, ladder: &Ladder) -> AnyElement {
     let acted = match landed(view.acted(number)) {
         Ok(acted) => acted,
@@ -177,7 +173,6 @@ pub(super) fn account(
         .into_any_element()
 }
 
-/// The account's name, what it is, and its link.
 fn title(view: &Explorer, account: &Account, cx: Cx, theme: &Theme) -> impl IntoElement {
     let name = &account.card.name;
     let about = format!(
@@ -249,7 +244,6 @@ fn side(view: &Explorer, account: &Account, theme: &Theme) -> impl IntoElement {
             )
     });
     let used = view.programs_used(account.number).unwrap_or_default();
-    // a heading over nothing says nothing: it comes with its rows
     let used_heading =
         (!used.is_empty()).then(|| heading("explorer-used-heading", "Programs used", None, theme));
     let programs = used.into_iter().map(|(program, count)| {

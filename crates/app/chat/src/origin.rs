@@ -7,9 +7,6 @@ use store::{PageRequest, PageResponse};
 
 use crate::Profile;
 
-/// One page of the identity role's profiles (asked of the program genesis
-/// bound to the role), so a view links one program. The cursor is the last
-/// account number, big-endian.
 pub(crate) fn accounts(ctx: &QueryCtx, page: PageRequest) -> Result<PageResponse<Profile>, Error> {
     let after = page
         .after

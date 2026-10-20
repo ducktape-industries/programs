@@ -2,9 +2,6 @@ use super::*;
 use crate::slots::Kind;
 
 impl Interactivity {
-    /// The interactivity of the node the element lowers to: none when it
-    /// declared none. The node's id is not made here: lowering filed the
-    /// element under it already ([`Lowering::own_id`]).
     pub(crate) fn into_wire(
         self: Box<Self>,
         lowering: &Lowering<'_>,
@@ -37,7 +34,6 @@ impl Interactions {
                 .a11y_actions
                 .into_iter()
                 .map(|(action, listener)| {
-                    // gpui's listener is FnMut; a route is called through `&`
                     let listener = std::cell::RefCell::new(listener);
                     let offered = offered.clone();
                     let route = lowering.route(
@@ -45,7 +41,6 @@ impl Interactions {
                         move |data: &Option<wire::ActionData>,
                               window: &mut Window,
                               app: &mut App| {
-                            // a custom action the node does not offer is not its to answer
                             if let Some(wire::ActionData::CustomAction(id)) = data
                                 && !offered.contains(id)
                             {
@@ -74,13 +69,11 @@ impl Interactions {
             role: self.role,
             aria,
             focusable: self.focusable,
-            // a focusable node is a Tab stop unless it said `tab_stop(false)`
             tab_stop: self.tab_stop.or(self.focusable.then_some(true)),
             tab_index: self.tab_index,
             tab_group: self.tab_group,
             focus: self.focus.map(|style| lowering.style(&style)),
             in_focus: self.in_focus.map(|style| lowering.style(&style)),
-            // a focusable node shows the focus ring unless it draws its own
             focus_visible: match self.focus_visible {
                 Some(style) => Some(lowering.style(&style)),
                 None => self
@@ -191,8 +184,6 @@ fn route_plain<E: 'static>(
     })
 }
 
-/// One route for a list of button listeners: each runs for its button, or
-/// for any button when it names none.
 fn route_buttons<E: 'static>(
     listeners: Vec<ButtonBinding<E>>,
     lowering: &Lowering<'_>,

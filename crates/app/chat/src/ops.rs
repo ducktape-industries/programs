@@ -18,8 +18,6 @@ use crate::{
     dm_channel_id,
 };
 
-// ── channels ────────────────────────────────────────────────────────────────
-
 pub(crate) fn create_channel(
     ctx: &ExecCtx,
     sender: &Principal,
@@ -40,7 +38,6 @@ pub(crate) fn create_channel(
     Ok(())
 }
 
-/// A new room the actor owns, unarchived.
 fn room(
     ctx: &ExecCtx,
     sender: &Principal,
@@ -58,8 +55,6 @@ fn room(
     }
 }
 
-/// The members-only room of the actor's account and `counterpart`, both
-/// seated. Opening it again changes nothing.
 pub(crate) fn open_dm(
     ctx: &ExecCtx,
     sender: &Principal,
@@ -101,16 +96,11 @@ pub(crate) fn set_archived(ctx: &ExecCtx, id: &str, archived: bool) -> Result<()
     Ok(())
 }
 
-// The channel's row, rewritten as it is: an op that reshapes the channel without changing the
-// row (its meta, its seats) writes it so the channel's policy decides it (programs.md §5).
-fn touch(ctx: &ExecCtx, channel: &ChannelRow) {
+fn touch_channel_for_policy(ctx: &ExecCtx, channel: &ChannelRow) {
     CHANNELS.put(ctx, &channel.id, channel);
 }
 
-// The message's id, rewritten as it is: its author's edit or delete writes it so the message's
-// policy decides it. A message whose id was never recorded gets none here (writing one would
-// make this writer its owner).
-fn authored(ctx: &ExecCtx, row: &MsgRow) -> Result<(), Error> {
+fn touch_message_for_author_policy(ctx: &ExecCtx, row: &MsgRow) -> Result<(), Error> {
     let at = MESSAGE_IDS.get(ctx, &row.message_id)?;
     if let Some(at) = at {
         MESSAGE_IDS.put(ctx, &row.message_id, &at);
@@ -121,7 +111,7 @@ fn authored(ctx: &ExecCtx, row: &MsgRow) -> Result<(), Error> {
 pub(crate) fn set_meta(ctx: &ExecCtx, id: &str, key: String, value: String) -> Result<(), Error> {
     let channel = channel(ctx, id)?;
     rules::not_dm(&channel)?;
-    touch(ctx, &channel);
+    touch_channel_for_policy(ctx, &channel);
     let mut meta = CHANNEL_META.get(ctx, &channel.id)?.unwrap_or_default();
     meta.insert(key, value);
     CHANNEL_META.put(ctx, &channel.id, &meta);
@@ -135,7 +125,7 @@ pub(crate) fn remove_meta(ctx: &ExecCtx, id: &str, key: &str) -> Result<(), Erro
     if meta.remove(key).is_none() {
         return Ok(());
     }
-    touch(ctx, &channel);
+    touch_channel_for_policy(ctx, &channel);
     if meta.is_empty() {
         CHANNEL_META.remove(ctx, &channel.id);
     } else {
@@ -152,7 +142,7 @@ pub(crate) fn set_membership(
 ) -> Result<(), Error> {
     let channel = channel(ctx, id)?;
     rules::not_dm(&channel)?;
-    touch(ctx, &channel);
+    touch_channel_for_policy(ctx, &channel);
     if member {
         seat(ctx, id, principal);
     } else {
@@ -169,8 +159,6 @@ fn seat(ctx: &ExecCtx, id: &str, principal: Principal) {
     };
     MEMBERS.put(ctx, &(id.to_owned(), principal), &row);
 }
-
-// ── messages ────────────────────────────────────────────────────────────────
 
 pub(crate) fn post(
     ctx: &ExecCtx,
@@ -210,8 +198,6 @@ pub(crate) fn post(
     undraft(ctx, sender, &channel_id)
 }
 
-/// Reply `seq` joins the thread under `root`: the root counts it, and its
-/// author's [`ANSWERED`] entry moves to this reply.
 fn answer(
     ctx: &ExecCtx,
     channel_id: &str,
@@ -238,7 +224,6 @@ fn answer(
     Ok(())
 }
 
-/// Drops the root's [`ANSWERED`] entry, if a reply made one.
 fn forget_answer(ctx: &ExecCtx, root: &MsgRow) {
     if let Some(last) = root.last_reply_seq {
         let key = (
@@ -271,7 +256,7 @@ pub(crate) fn edit(
         ..old.clone()
     };
     put_message(ctx, &row)?;
-    authored(ctx, &old)?;
+    touch_message_for_author_policy(ctx, &old)?;
     note(ctx, &row);
     report(ctx, sender, Some(&old), &row)?;
     Ok(())
@@ -288,11 +273,9 @@ pub(crate) fn delete(
     if old.deleted {
         return Ok(());
     }
-    // the author's own delete is the message's policy's to decide; anyone else's is moderation,
-    // the channel's policy's, and leaves the author's id as it is
     match old.author == *sender {
-        true => authored(ctx, &old)?,
-        false => touch(ctx, &room),
+        true => touch_message_for_author_policy(ctx, &old)?,
+        false => touch_channel_for_policy(ctx, &room),
     }
     forget_answer(ctx, &old);
     let reacted = REACTIONS.scan(ctx, REACTIONS.prefix_of(&(channel_id.to_owned(), seq)))?;
@@ -310,10 +293,6 @@ pub(crate) fn delete(
     Ok(())
 }
 
-// ── reactions ───────────────────────────────────────────────────────────────
-
-/// Adds or removes the actor's `emoji` on a message. Choosing what is
-/// already chosen, or dropping what is not, changes nothing.
 pub(crate) fn react(
     ctx: &ExecCtx,
     sender: &Principal,
@@ -342,7 +321,6 @@ pub(crate) fn react(
     Ok(())
 }
 
-/// One more `emoji`: its count grows, or it joins the list in emoji order.
 fn count_in(reactions: &mut Vec<Reaction>, emoji: &str) {
     if let Some(reaction) = reactions.iter_mut().find(|r| r.emoji == emoji) {
         reaction.count += 1;
@@ -356,7 +334,6 @@ fn count_in(reactions: &mut Vec<Reaction>, emoji: &str) {
     reactions.sort_by(|a, b| a.emoji.cmp(&b.emoji));
 }
 
-/// One fewer `emoji`: at zero it leaves the list.
 fn count_out(reactions: &mut Vec<Reaction>, emoji: &str) {
     if let Some(at) = reactions.iter().position(|r| r.emoji == emoji) {
         reactions[at].count -= 1;

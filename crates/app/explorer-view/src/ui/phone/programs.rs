@@ -44,14 +44,11 @@ pub(super) fn programs(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
         .flatten()
         .collect()
     };
-    // what a write came to, at the top of the page's own scroll (Expo
-    // `Outcomes`, `programs.tsx:150`)
     let outcome = view.note.as_ref().is_some_and(Note::of_a_write);
     scroller("explorer-page")
         .children(note(view, cx, k).filter(|_| outcome))
         .children(listed)
         .children(access(view, k))
-        // Expo's own foot past the page's (`programs.tsx:243`)
         .child(div().flex_none().h(space::BLOCK))
         .into_any_element()
 }
@@ -74,8 +71,6 @@ pub(super) fn add(view: &Explorer, page: design::Page, cx: Cx, k: &Look) -> desi
     ))
 }
 
-// ---------- the words ----------
-
 fn by_words(view: &Explorer, pending: &Pending) -> String {
     let Some(by) = pending.by else {
         return words::BY_VOTE.into();
@@ -88,9 +83,6 @@ fn by_words(view: &Explorer, pending: &Pending) -> String {
     )
 }
 
-// ---------- the sections ----------
-
-/// What the programs role will fold in, under its head with their count.
 fn scheduled(view: &Explorer, network: &Network, cx: Cx, k: &Look) -> Vec<AnyElement> {
     let count = (!network.changes.is_empty()).then(|| aside(network.changes.len().to_string()));
     let head = section("explorer-scheduled-header", "Scheduled", count, k);
@@ -109,8 +101,6 @@ fn scheduled(view: &Explorer, network: &Network, cx: Cx, k: &Look) -> Vec<AnyEle
         .collect()
 }
 
-/// One change the programs role will fold in: what it does, and whose it
-/// is. The program page draws the same row.
 pub(super) fn scheduled_row(
     view: &Explorer,
     network: &Network,
@@ -147,7 +137,6 @@ fn cancel(view: &Explorer, pending: &Pending, cx: Cx, k: &Look) -> Option<AnyEle
     Some(small(id, label, design::Kind::Quiet, press, k))
 }
 
-/// Each running program, under its head with their count (Expo's Running).
 fn running(network: &Network, cx: Cx, k: &Look) -> Vec<AnyElement> {
     let head = section(
         "explorer-running-header",
@@ -169,7 +158,6 @@ fn running(network: &Network, cx: Cx, k: &Look) -> Vec<AnyElement> {
     ]
 }
 
-/// Each view-only entry, under its head; none, no section (Expo's Views).
 fn views(network: &Network, cx: Cx, k: &Look) -> Vec<AnyElement> {
     if network.views.is_empty() {
         return Vec::new();
@@ -195,9 +183,6 @@ fn views(network: &Network, cx: Cx, k: &Look) -> Vec<AnyElement> {
     ]
 }
 
-/// A program's or a view's row: its square face, its name in the data
-/// face, the caption, a hook badge where it is one; the press opens its
-/// sheet.
 fn entry_row(
     network: &Network,
     name: &str,
@@ -250,20 +235,14 @@ fn access(view: &Explorer, k: &Look) -> Vec<AnyElement> {
     ]
 }
 
-/// A scheduled change's key: its height and its program, as the chain's
-/// Cancel names it.
 fn change_key(pending: &Pending) -> String {
     format!("{}-{}", pending.height, pending.change.program())
 }
 
-// ---------- the sheets ----------
-
-/// The press of a sheet row that leaves the sheet for `route`.
 fn leaves_for(route: Route, cx: Cx) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
     cx.listener(move |view: &mut Explorer, _: &ClickEvent, _, cx| view.go(route.clone(), cx))
 }
 
-/// The press of a sheet row that leaves the sheet for a form.
 fn opens_form(
     edit: Edit,
     path: Path,
@@ -275,7 +254,6 @@ fn opens_form(
     })
 }
 
-/// What closes a sheet: its scrim, its handle, Back.
 fn closes(cx: Cx) -> impl Fn(&(), &mut Window, &mut App) + 'static {
     cx.listener(|view: &mut Explorer, _: &(), _, cx| {
         view.sheet = None;
@@ -307,9 +285,6 @@ pub(super) fn add_sheet(view: &Explorer, cx: Cx, k: &Look) -> AnyElement {
         .into_any_element()
 }
 
-/// One program's or view-only entry's sheet (Expo `ProgramSheet`): its
-/// face, name and kind; About, its transactions, and the reader's Upgrade
-/// and Remove.
 pub(super) fn program_sheet(view: &Explorer, name: &str, cx: Cx, k: &Look) -> Option<AnyElement> {
     let network = view.network.ready()?;
     let listed = view.runs(name).is_none();
@@ -360,9 +335,6 @@ pub(super) fn program_sheet(view: &Explorer, name: &str, cx: Cx, k: &Look) -> Op
     )
 }
 
-// SDK gap: the sheet head with a face, the SDK builds it later
-/// What a program's sheet is about: its square face, its name in the data
-/// face, program or view only, and hook.
 fn sheet_head(name: &str, listed: bool, hook: bool, k: &Look) -> Stateful<Div> {
     let kind = words::entry_kind(listed);
     let kind = if hook {
@@ -391,8 +363,6 @@ fn sheet_head(name: &str, listed: bool, hook: bool, k: &Look) -> Stateful<Div> {
     )
 }
 
-/// Upgrade or Remove on the reader's path, opening its form; Remove in the
-/// danger tone.
 fn edit_row(offer: Offer, cx: Cx, k: &Look) -> AnyElement {
     let id = SharedString::from(offer.edit.press_id());
     let danger = matches!(offer.edit, Edit::Remove { .. });

@@ -20,8 +20,6 @@ fn founding(name: &str, cap: Class, pinned: bool) -> Founded {
     }
 }
 
-/// valset seating validators 1 and 2, and halo founded with `blobs` at 0, pinned, and `live`
-/// at 1.
 fn chain() -> MockChain {
     let mut chain = MockChain::default();
     chain.seat::<Valset>(valset::PROGRAM);
@@ -92,13 +90,11 @@ fn vote_raw(chain: &MockChain, voter: u8, op: Vec<u8>) -> Result<Voted, Error> {
     Ok(abi::decode(&output).unwrap())
 }
 
-/// `op` passed by both validators.
 fn pass(chain: &MockChain, op: &Op) {
     assert!(matches!(vote(chain, 1, op), Ok(Voted::Counted { .. })));
     assert_eq!(vote(chain, 2, op), Ok(Voted::Enacted));
 }
 
-/// `op` as the validators' program sends it once a vote passes, refused or not.
 fn enacted(chain: &MockChain, op: &Op) -> Result<(), Error> {
     let by_validators = Origin::Program(valset::PROGRAM.into());
     chain.submit(by_validators, PROGRAM, op).map(drop)
@@ -247,13 +243,12 @@ fn a_pinned_lane_is_never_paused_or_closed_and_its_cap_still_moves() {
         name: "blobs".into(),
     };
     for refused in [&pause, &close] {
-        // the vote passes, and halo refuses it as it is enacted
         pass(&chain, refused);
         let enacted = enacted(&chain, refused).unwrap_err();
         assert_eq!(enacted.code, code::INVALID_INPUT, "{refused:?}");
     }
     assert_eq!(lanes(&chain), founded());
-    assert_eq!(waiting(&chain), []);
+    assert_eq!(pending_halo_motions(&chain), []);
     let capped = Op::Set {
         name: "blobs".into(),
         cap: Class::Member,
@@ -287,8 +282,7 @@ fn every_id_is_handed_out_once_and_then_no_lane_opens() {
     );
 }
 
-/// The halo motions valset lists as waiting for votes, in no order of theirs.
-fn waiting(chain: &MockChain) -> Vec<Op> {
+fn pending_halo_motions(chain: &MockChain) -> Vec<Op> {
     let asked = valset::Query::Motions {
         page: store::PageRequest::first(16),
     };
@@ -304,8 +298,6 @@ fn waiting(chain: &MockChain) -> Vec<Op> {
         .collect()
 }
 
-/// valset reads no halo op: a stale one is counted like any other, and when its vote passes
-/// halo refuses it, writes nothing, and the motion is gone, never enacted again.
 #[test]
 fn a_stale_motion_passes_its_vote_is_refused_by_halo_and_leaves_the_pending_set() {
     let chain = chain();
@@ -317,24 +309,21 @@ fn a_stale_motion_passes_its_vote_is_refused_by_halo_and_leaves_the_pending_set(
     pass(&chain, &open("chat", Class::Client));
     let opened = lane("chat", 2, Class::Client, 1);
     assert_eq!(lanes(&chain), [founded(), vec![opened.clone()]].concat());
-    // chat is listed: the open at Member is stale, and its vote still passes
-    assert_eq!(waiting(&chain), std::slice::from_ref(&member));
+    assert_eq!(pending_halo_motions(&chain), std::slice::from_ref(&member));
     assert_eq!(vote(&chain, 2, &member), Ok(Voted::Enacted));
     assert_eq!(lanes(&chain), [founded(), vec![opened]].concat());
-    assert_eq!(waiting(&chain), []);
-    // a new vote on it starts from none
+    assert_eq!(pending_halo_motions(&chain), []);
     assert!(matches!(
         vote(&chain, 1, &member),
         Ok(Voted::Counted { votes: 1, .. })
     ));
-    // bytes that are no halo op go the same way
     let garbage = b"not an op".to_vec();
     assert!(matches!(
         vote_raw(&chain, 1, garbage.clone()),
         Ok(Voted::Counted { .. })
     ));
     assert_eq!(vote_raw(&chain, 2, garbage), Ok(Voted::Enacted));
-    assert_eq!(waiting(&chain), [member]);
+    assert_eq!(pending_halo_motions(&chain), [member]);
 }
 
 #[test]

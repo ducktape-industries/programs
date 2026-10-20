@@ -44,7 +44,6 @@ fn row(channel: &str, seq: u64, author: u64, blocks: Vec<Block>) -> MsgRow {
     }
 }
 
-/// A reply under `root`.
 fn reply(channel: &str, seq: u64, author: u64, root: u64, blocks: Vec<Block>) -> MsgRow {
     MsgRow {
         thread: Some(root),
@@ -59,7 +58,6 @@ fn said(text: &str, marks: Vec<Mark>) -> Vec<Block> {
     }])]
 }
 
-/// A message from account 8 that mentions account 7, the reader.
 fn mention(channel: &str, seq: u64) -> MsgRow {
     row(
         channel,
@@ -69,7 +67,6 @@ fn mention(channel: &str, seq: u64) -> MsgRow {
     )
 }
 
-/// The reader the host seats: key `0102`, account 7, on testnet.
 fn session() -> Session {
     Session {
         signer: "0102".into(),
@@ -80,21 +77,14 @@ fn session() -> Session {
     }
 }
 
-/// The node as the notifier reads it, and the device's store, all of which
-/// outlive the notifier's runs.
 #[derive(Clone, Default)]
 struct World {
     rooms: Rc<RefCell<Vec<ChannelInfo>>>,
     rows: Rc<RefCell<Vec<MsgRow>>>,
-    /// Where the reader is in each room, as chat keeps it on chain.
     followed: Rc<RefCell<BTreeMap<String, Followed>>>,
-    /// The roots each `Followed` read asked about, in order.
     asked_roots: Rc<RefCell<Vec<Vec<u64>>>>,
-    /// Whether a `Followed` read is refused.
     refuse_followed: Rc<Cell<bool>>,
-    // whether an `Accounts` read is refused
     refuse_accounts: Rc<Cell<bool>>,
-    /// What the reader chose, room by room, as chat keeps it on chain.
     choices: Rc<RefCell<BTreeMap<String, Choice>>>,
     kept: Rc<RefCell<BTreeMap<String, Vec<u8>>>>,
 }
@@ -133,7 +123,6 @@ impl World {
                     let room = rooms.iter().find(|room| room.channel.id == channel_id);
                     Reply::Channel(room.cloned())
                 }
-                // as the program pages it: half before `seq`, half from it
                 Query::MessagesAround {
                     channel_id,
                     seq,
@@ -195,8 +184,6 @@ impl World {
         notifier
     }
 
-    /// A run started as a connect starts it: the reader seated, nothing on
-    /// screen.
     fn start(&self, notifier: &mut TestNotifier<ChatNotices>) {
         notifier.start();
         let host = notifier.host();
@@ -211,8 +198,6 @@ impl World {
             .insert(key.into(), methods::encode(value));
     }
 
-    /// `rows` posted: each room's head moves to its newest, and a block
-    /// that wrote the heads reaches the notifier.
     fn post(&self, notifier: &mut TestNotifier<ChatNotices>, rows: Vec<MsgRow>) {
         for row in rows {
             for info in self.rooms.borrow_mut().iter_mut() {
@@ -233,8 +218,6 @@ impl World {
         notifier.run_until_parked();
     }
 
-    /// The reader chose `choice` for `room`: a block that wrote what chat
-    /// keeps of it reaches the notifier.
     fn choose(&self, notifier: &mut TestNotifier<ChatNotices>, room: &str, choice: Choice) {
         self.choices.borrow_mut().insert(room.into(), choice);
         let key = chat::tables::NOTICES.key(&(7_u64, room.to_owned()));
@@ -257,18 +240,14 @@ fn badge(notifier: &TestNotifier<ChatNotices>) -> Option<i64> {
     notifier.host().requests::<HostBadge>().last().copied()
 }
 
-/// Why a message from someone else is meant for me: my direct room, a
-/// mention of me, a thread I am in, a room's timeline I am in; the first
-/// that holds names the notice. My own words, a mention of another, a
-/// plain message in a room I am not in, one from before I came in, or a
-/// reply in a thread I am not in: none.
 #[test]
 fn what_is_meant_for_me_and_why() {
     let names = Names::default();
     let chain = "testnet-0a1b2c3d";
     let me = Mark::Mention(Principal::Account(3));
     let nowhere = Followed::default();
-    let why = |row: &MsgRow, followed: &Followed| meant_for(row, 3, followed, Choice::Default);
+    let why =
+        |row: &MsgRow, followed: &Followed| notification_reason(row, 3, followed, Choice::Default);
 
     let mention = row("design", 7, 5, said("@me", vec![me.clone()]));
     assert_eq!(why(&mention, &nowhere), Some(Why::Mention));
@@ -301,7 +280,6 @@ fn what_is_meant_for_me_and_why() {
         None
     );
 
-    // in the room since 8, and in thread 10 since 11
     let there = Followed {
         room: Some(8),
         threads: vec![(10, 11)],
@@ -319,8 +297,6 @@ fn what_is_meant_for_me_and_why() {
     assert_eq!(post.title, "account 5 replied in a thread");
 }
 
-/// What I chose for a room goes over where I am: every message, a reply in
-/// a stranger's thread too; mentions and my direct room only; or nothing.
 #[test]
 fn a_choice_goes_over_where_i_am() {
     let me = Mark::Mention(Principal::Account(3));
@@ -334,7 +310,8 @@ fn a_choice_goes_over_where_i_am() {
     let mine = reply("design", 12, 5, 10, said("done", vec![]));
     let mention = row("design", 12, 5, said("@me", vec![me]));
     let direct = row("dm-3-5", 12, 5, said("hi", vec![]));
-    let why = |row: &MsgRow, followed: &Followed, choice| meant_for(row, 3, followed, choice);
+    let why =
+        |row: &MsgRow, followed: &Followed, choice| notification_reason(row, 3, followed, choice);
 
     let every = Choice::Every;
     assert_eq!(why(&plain, &nowhere, every), Some(Why::Room));
@@ -353,10 +330,6 @@ fn a_choice_goes_over_where_i_am() {
     }
 }
 
-/// No pane is open: what was there at the first run is history, a mention
-/// that lands after is one notice and counts on the badge, and the reader
-/// reading the room in a pane (its cursor moved in the store) takes the
-/// badge down.
 #[test]
 fn a_mention_with_no_pane_open_is_one_notice_and_the_badge_until_read() {
     let world = World::default();
@@ -378,7 +351,6 @@ fn a_mention_with_no_pane_open_is_one_notice_and_the_badge_until_read() {
     assert_eq!(posted[0].link, "duck://testnet-0a1b2c3d/chat/general/2");
     assert_eq!(badge(&notifier), Some(1));
 
-    // a pane read the room: another instance moved the cursor
     world.keep("reads/0102", &BTreeMap::from([("general".into(), 2)]));
     notifier
         .host()
@@ -389,16 +361,10 @@ fn a_mention_with_no_pane_open_is_one_notice_and_the_badge_until_read() {
     assert_eq!(posts(&notifier).len(), 1);
 }
 
-/// What came for the reader while nothing ran (the app closed) is
-/// announced once at the next run: past both what was announced and the
-/// reader's cursor, a room first seen read from its start, and not again
-/// at the run after. The run waits for the reader's account.
 #[test]
 fn what_came_while_closed_is_announced_once() {
     let world = World::default();
     world.keep("notified/0102", &BTreeMap::from([("general".into(), 1)]));
-    // the reader has the direct room listed, unread, but it was never
-    // announced: new since the last run
     world.keep(
         "reads/0102",
         &BTreeMap::from([("general".into(), 1), ("dm-7-8".into(), 0)]),
@@ -433,15 +399,12 @@ fn what_came_while_closed_is_announced_once() {
     );
     assert_eq!(badge(&notifier), Some(2));
 
-    // the next launch: nothing new, nothing posted, the badge counted again
     let mut relaunched = world.notifier();
     world.start(&mut relaunched);
     assert!(posts(&relaunched).is_empty(), "announced once");
     assert_eq!(badge(&relaunched), Some(2));
 }
 
-/// The room a pane shows on screen is in front of the reader: a mention in
-/// it is no notice and no badge, and stays none once the pane leaves it.
 #[test]
 fn a_room_on_screen_gets_no_notice() {
     let world = World::default();
@@ -461,14 +424,11 @@ fn a_room_on_screen_gets_no_notice() {
     assert!(posts(&notifier).is_empty());
     assert_eq!(badge(&notifier), Some(0));
 
-    // a room off screen still is news
     world.post(&mut notifier, vec![mention("random", 1)]);
     assert_eq!(posts(&notifier).len(), 1);
     assert_eq!(badge(&notifier), Some(1));
 }
 
-// A catch-up of many rooms reads every room that moved, all at once, and
-// announces each, once.
 #[test]
 fn a_catch_up_announces_every_room_once() {
     let world = World::default();
@@ -502,9 +462,6 @@ fn titles(notifier: &TestNotifier<ChatNotices>) -> Vec<String> {
     posts(notifier).into_iter().map(|post| post.title).collect()
 }
 
-/// A room I am in tells me of every message in its timeline after I came
-/// in, not of a reply in a thread I am not in; a room I am not in, of
-/// mentions only.
 #[test]
 fn a_room_i_am_in_tells_me_of_its_timeline() {
     let world = World::default();
@@ -536,9 +493,6 @@ fn a_room_i_am_in_tells_me_of_its_timeline() {
     assert_eq!(badge(&notifier), Some(1));
 }
 
-/// A thread I am in tells me of every reply after I came in, though I am
-/// not in its room; a stranger's thread does not. Each read asks chat once
-/// where I am, about the threads its new messages reply in.
 #[test]
 fn a_thread_i_am_in_tells_me_of_every_reply() {
     let world = World::default();
@@ -588,9 +542,6 @@ fn a_thread_i_am_in_tells_me_of_every_reply() {
     assert!(asked.contains(&vec![1, 3, 4]), "{asked:?}");
 }
 
-/// A choice made while the notifier runs counts the room again from the
-/// reader's cursor: a room cut to nothing leaves the badge, one opened to
-/// every message counts what came and tells of the next.
 #[test]
 fn a_choice_counts_its_room_again() {
     let world = World::default();
@@ -606,8 +557,6 @@ fn a_choice_counts_its_room_again() {
     world.post(&mut notifier, vec![mention("general", 3)]);
     assert_eq!(posts(&notifier).len(), 1, "nothing from a room cut off");
 
-    // counted again from the cursor, with no cursor kept (as on a server):
-    // both mentions count, and neither is posted again
     world.choose(&mut notifier, "general", Choice::Every);
     assert_eq!(badge(&notifier), Some(2));
     assert_eq!(posts(&notifier).len(), 1);
@@ -615,8 +564,6 @@ fn a_choice_counts_its_room_again() {
     assert_eq!(titles(&notifier)[1..], ["reviewer in #General"]);
 }
 
-/// Where I am will not read: what is meant for me whatever room it is in,
-/// a mention, is still told.
 #[test]
 fn a_mention_is_told_though_where_i_am_will_not_read() {
     let world = World::default();
@@ -628,7 +575,6 @@ fn a_mention_is_told_though_where_i_am_will_not_read() {
     assert_eq!(titles(&notifier), ["reviewer mentioned you"]);
 }
 
-// A notice names its sender as the roster does, a person and an agent that does not act alike.
 #[test]
 fn a_notice_names_a_person_and_a_suspended_agent() {
     let world = World::default();
@@ -646,9 +592,6 @@ fn a_notice_names_a_person_and_a_suspended_agent() {
     );
 }
 
-// The roster will not read as the run starts (a node busy with every notifier a server starts
-// at once): nothing is announced until it reads, the next block reads it again, and what came
-// meanwhile is announced then, by name.
 #[test]
 fn a_roster_that_would_not_read_is_read_again_before_any_notice() {
     let world = World::default();
@@ -672,8 +615,6 @@ fn say_hi() -> Vec<Block> {
     said("hi", vec![])
 }
 
-// A message reads its own room alone (`Channel`): the whole channel list is read when the run
-// starts, and again only when the feed comes back.
 #[test]
 fn a_message_reads_its_room_alone_and_not_the_channel_list() {
     let world = World::default();

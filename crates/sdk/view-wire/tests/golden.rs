@@ -52,8 +52,6 @@ fn golden(name: &str) -> PathBuf {
         .join(name)
 }
 
-/// Compares `actual` to the committed fixture, or rewrites it under
-/// `WIRE_GOLDEN_WRITE=1`. `json` is the readable twin, never compared.
 fn check(name: &str, actual: &[u8], json: &str) {
     let bin = golden(&format!("{name}.bin"));
     if std::env::var_os("WIRE_GOLDEN_WRITE").is_some() {
@@ -82,8 +80,6 @@ fn id(name: &str) -> ElementIdWire {
     ElementIdWire::Name(name.into())
 }
 
-/// The style of a sample node whose style is not what it samples: the
-/// empty one, the first entry of the frame's table (`nodes::every_style`).
 fn style() -> StyleId {
     StyleId(0)
 }
@@ -114,9 +110,6 @@ fn key_state() -> keyboard::KeyState {
     }
 }
 
-/// [`key_state`] on a different native platform: every [`keyboard::NativeCode`]
-/// variant besides `MacOS` (already [`key_state`]'s) and `Unidentified`
-/// (a unit variant, sampled in `golden/units.rs`).
 fn key_state_on(physical: keyboard::NativeCode) -> keyboard::KeyState {
     keyboard::KeyState {
         physical_key: keyboard::Physical::Unidentified(physical),
@@ -128,26 +121,16 @@ fn at(x: f32, y: f32) -> gpui::Point<Pixels> {
     point(px(x), px(y))
 }
 
-/// The mechanical completeness gate: every field and variant `schema.rs`
-/// says the wire reaches, checked against what the samples show.
 #[path = "golden/coverage.rs"]
 mod coverage;
 #[path = "golden/events.rs"]
 mod events_fixture;
-/// Every `Node` variant at least once, in one tree. Exhaustive by
-/// construction: a variant added to `Node` must be added here, or
-/// `node_variant` will not build.
 #[path = "golden/nodes.rs"]
 mod nodes;
-/// The wire's shape, hashed into `WIRE_ID` beside the bytes.
 #[path = "golden/schema.rs"]
 mod schema;
-/// Every unit variant the samples in place leave out: the fourth value
-/// `frame.bin` pins.
 #[path = "golden/units.rs"]
 mod units_fixture;
-/// Every `WidgetCommand` variant once: the third value `frame.bin` pins,
-/// tree-side like `Frame` and `Event` but never nested under either.
 #[path = "golden/widget.rs"]
 mod widget_fixture;
 use events_fixture::{event_variant, every_event, every_frame};
@@ -174,9 +157,6 @@ fn frame_and_events_are_the_committed_bytes() {
         "every Event variant: {kinds:?}"
     );
 
-    // every style field survives the table: an entry reads back as the
-    // style it was written from, and `coverage.rs` holds the samples to
-    // setting every field
     for (entry, style) in frame.styles.iter().zip(every_style()) {
         assert_eq!(entry.read(), Ok(style));
     }
@@ -191,7 +171,6 @@ fn frame_and_events_are_the_committed_bytes() {
     );
 }
 
-/// The program a golden `program.query`/`op.submit`/`program.changes` addresses.
 struct Golden;
 impl Program for Golden {
     const NAME: &'static str = "golden";
@@ -208,10 +187,8 @@ impl Program for Golden {
     }
 }
 
-/// The kind, the request bytes and the reply bytes of one exchange.
 type Exchange = (String, Vec<u8>, Vec<u8>);
 
-/// One exchange, plus the values as JSON for the readable twin.
 fn exchange<D: Method>(request: D::Request, reply: D::Reply) -> (Exchange, serde_json::Value)
 where
     D::Request: serde::Serialize,
@@ -399,7 +376,6 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
             None,
         ),
         exchange::<BlobGet>("sha256:00".into(), Some(b"blob".to_vec())),
-        // a view this host cannot read the manifest of
         exchange::<BlobManifest>(
             "sha256:01".into(),
             Some(Manifested {
@@ -410,7 +386,6 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
                 }),
             }),
         ),
-        // a program that draws nothing
         exchange::<BlobManifest>(
             "sha256:02".into(),
             Some(Manifested {
@@ -814,8 +789,6 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
         ),
     ]
     .into_iter()
-    // a view's manifest in every tint, and once with a width: the borsh
-    // rule samples each tint and the width both present and absent
     .chain(
         Tint::ALL
             .map(|tint| carried_view(tint, None))
@@ -826,8 +799,6 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
     .collect()
 }
 
-/// A program's code carrying a view, its manifest in `tint` and opening
-/// desk windows `width` wide.
 fn carried_view(tint: Tint, width: Option<u32>) -> methods::Manifested {
     methods::Manifested {
         size: 2_048,
@@ -867,7 +838,6 @@ fn notification() -> methods::Notification {
     }
 }
 
-/// The request and reply bytes of each exchange, by kind.
 type Methods = BTreeMap<String, Vec<(Vec<u8>, Vec<u8>)>>;
 
 #[test]
@@ -898,9 +868,6 @@ fn every_method_carries_the_committed_bytes() {
     assert_eq!(moved(&committed, &built), Vec::<String>::new(), "{MESSAGE}");
 }
 
-/// The committed kinds whose bytes `built` changed or dropped. A kind only
-/// `built` has is new, and passes here: the shape names every kind, so
-/// `schema.txt` fails for it instead.
 fn moved(committed: &Methods, built: &Methods) -> Vec<String> {
     committed
         .iter()

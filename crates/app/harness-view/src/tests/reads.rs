@@ -1,6 +1,5 @@
 use super::*;
 
-// what the view asked harness for of a timeline: all of it, or a span from a seq
 fn frames_asked(cx: &TestAppContext) -> Vec<harness::Query> {
     let asked = cx.host().requests::<Query<harness::Harness>>();
     asked
@@ -14,7 +13,6 @@ fn frames_asked(cx: &TestAppContext) -> Vec<harness::Query> {
         .collect()
 }
 
-// a block of harness that wrote `written`
 fn wrote(height: u64, written: &[Written]) -> Option<Change> {
     Some(Change {
         height,
@@ -22,7 +20,6 @@ fn wrote(height: u64, written: &[Written]) -> Option<Change> {
     })
 }
 
-// how many times the view read `agent`'s list of conversations
 fn lists_read(cx: &TestAppContext, agent: u64) -> usize {
     let asked = cx.host().requests::<Query<harness::Harness>>();
     let lists = asked
@@ -147,10 +144,6 @@ fn a_block_of_another_program_reads_the_setup_and_no_frames() {
     assert!(setups(&cx) > read, "the configuration file may have moved");
 }
 
-// The list reads each agent's card again on a block of another program, and
-// never the setup with its prompt (`Agent`), which only the agent's own
-// screen reads: a phone's list of agents read every agent's whole prompt on
-// every block.
 #[test]
 fn the_list_reads_cards_and_no_prompts() {
     let (mut cx, _) = seated(Net::default(), EDDY);
@@ -167,8 +160,6 @@ fn the_list_reads_cards_and_no_prompts() {
     assert!(!asked.iter().any(prompt), "{asked:?}");
 }
 
-// The roster read every agent's whole list of conversations on each block of harness, egress,
-// identity, files or access: it now reads alone each conversation harness wrote.
 #[test]
 fn a_block_that_writes_a_conversation_reads_it_alone_and_no_agents_list() {
     let (mut cx, shared) = seated(Net::default(), EDDY);

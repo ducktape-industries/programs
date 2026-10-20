@@ -10,10 +10,8 @@ use crate::{Chat, Menu, Pane};
 use chat::view::Names;
 use view::design::Ladder;
 
-/// The card's buttons; the first drawn takes the keys on open.
 const WORK_RECORD: &str = "chat-card-work-record";
 const OPEN_PROFILE: &str = "chat-card-open-profile";
-/// One width, the words wrapping inside it.
 const WIDTH: f32 = 280.;
 
 /// The card's first button, which takes the keys on open.

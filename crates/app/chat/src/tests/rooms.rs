@@ -25,7 +25,6 @@ fn a_dm_title_names_no_account_numbers_and_its_accounts_are_fields() {
         base_rev: None,
     });
     assert_eq!(edit.title, "Edit message · DM");
-    // a channel keeps the name a person picked, and no `between`
     let channel = describe(&Op::DeleteMessage {
         channel_id: "old-launch".into(),
         seq: 1,
@@ -33,7 +32,6 @@ fn a_dm_title_names_no_account_numbers_and_its_accounts_are_fields() {
     assert_eq!(channel.title, "Delete message · #old-launch");
     assert!(channel.fields.iter().all(|f| f.label != "between"));
     assert_eq!(describe(&open_dm(3)).title, "Open a DM");
-    // a created channel is titled by the name a person picked, not its id
     let created = describe(&Op::CreateChannel {
         channel_id: "channel-18d8db5b".into(),
         name: "[qa] probe".into(),

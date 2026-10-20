@@ -22,7 +22,7 @@ pub fn change(
     listing: &Listing,
 ) -> Result<Reply, Error> {
     let change = load_change(ctx, repo, n)?;
-    let (source_head, target_head) = heads(ctx, repo, &change)?;
+    let (source_head, target_head) = change_endpoints(ctx, repo, &change)?;
     let reviews = REVIEWS
         .page_of(ctx, &(repo.to_owned(), n), listing)?
         .map(|(_, review)| review);
@@ -89,7 +89,8 @@ pub fn judgment(
         if change.state != ChangeState::Open {
             continue;
         }
-        if let Some(judgment) = judge(ctx, repo, change, principal, &mut budget)? {
+        if let Some(judgment) = review_owed_by_principal(ctx, repo, change, principal, &mut budget)?
+        {
             items.push(judgment);
         }
     }
@@ -100,15 +101,14 @@ pub fn judgment(
     })
 }
 
-/// What `principal` owes one open change, if anything.
-fn judge(
+fn review_owed_by_principal(
     ctx: &QueryCtx,
     repo: &str,
     change: &Change,
     principal: &Principal,
     budget: &mut u64,
 ) -> Result<Option<Judgment>, Error> {
-    let (source, _) = heads(ctx, repo, change)?;
+    let (source, _) = change_endpoints(ctx, repo, change)?;
     let authored = authored_newest_first(ctx, repo, change.n, principal, budget)?;
     let latest = authored
         .first()
@@ -152,8 +152,6 @@ fn judge(
     }))
 }
 
-/// The ids of the reviews `principal` submitted on a change, newest first,
-/// each one spent from the query's `Bounds.log_walk` budget.
 fn authored_newest_first(
     ctx: &QueryCtx,
     repo: &str,
@@ -174,13 +172,11 @@ fn authored_newest_first(
     Ok(ids)
 }
 
-/// The change's two current endpoints; either can be gone.
-fn heads(
+fn change_endpoints(
     ctx: &QueryCtx,
     repo: &str,
     change: &Change,
 ) -> Result<(Option<String>, Option<String>), Error> {
-    // a merged change keeps the heads it merged; later pushes move the refs
     if let Some(MergedHeads { source, target }) = &change.merged_heads {
         return Ok((Some(source.clone()), Some(target.clone())));
     }

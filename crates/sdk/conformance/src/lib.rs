@@ -44,19 +44,15 @@ pub fn root(program: &str, height: u64) -> Env {
     env(program, height, Origin::Root, Some(Principal::Root))
 }
 
-/// `M`'s init with the role's genesis, as founding runs it.
 fn init<M: Program>(host: &MockHost, program: &str, genesis: &impl BorshSerialize) {
     M::init(&host.exec(root(program, 0)), &abi::encode(genesis))
         .unwrap_or_else(|e| panic!("{program}: init refused the role's genesis: {e:?}"));
 }
 
-/// `op`, in the role's bytes, run by `M` in `env`.
 fn execute<M: Program>(host: &MockHost, env: Env, op: &impl BorshSerialize) -> Result<(), Error> {
     program::execute::<M>(&host.exec(env), &abi::encode(op))
 }
 
-/// `query`, in the role's bytes, asked of `M` at `height`; its answer read
-/// as the role's reply.
 fn ask<M: Program, R: BorshDeserialize + std::fmt::Debug>(
     host: &MockHost,
     program: &str,

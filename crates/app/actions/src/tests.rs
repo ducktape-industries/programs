@@ -71,7 +71,6 @@ image = "toolchain"
 steps = ["make review"]
 "#;
 
-// A job that states what its pod asks, beside one that states nothing.
 const SIXTEEN: &str = r#"
 [on]
 push = ["main"]
@@ -92,7 +91,6 @@ image = "toolchain"
 steps = ["make lint"]
 "#;
 
-// A job no container runs: the `claude` runner is its own environment.
 const CLAUDE: &str = r#"
 [on]
 change = ["opened"]
@@ -103,7 +101,6 @@ runs-on = ["claude"]
 steps = ["Review the diff."]
 "#;
 
-// A program runner: it registers with actions and keeps each check it is offered.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 enum Runs {
     Register(Vec<String>),
@@ -223,13 +220,10 @@ impl World {
         self.store.put(Kind::Tree, &tree.serialize()).unwrap()
     }
 
-    // A commit whose tree holds `.forge/workflows/<name>` for each workflow, and a file of its
-    // own (`t<time>`), so two branches' commits merge cleanly.
     fn commit(&mut self, parents: &[Oid], workflows: &[(&str, &str)]) -> Oid {
         self.commit_files(parents, workflows, &[])
     }
 
-    // `commit`'s tree with each of `extra` at its path in the root.
     fn commit_files(
         &mut self,
         parents: &[Oid],
@@ -345,14 +339,12 @@ impl World {
         check
     }
 
-    // The next block, to its end: what actions scheduled for it runs.
     fn tick(&self) {
         let height = self.height.get() + 2;
         self.height.set(height);
         self.chain.at(height, height * 1000);
     }
 
-    // The commit change `n`'s latest Preview made, the block after actions asked for it.
     fn preview(&self, n: u64) -> Oid {
         self.tick();
         let asked = forge::Query::Preview {
@@ -370,7 +362,6 @@ impl World {
         Oid::from_hex(Hash::Sha1, &made.merge).unwrap()
     }
 
-    // What forge holds of a commit's statuses: each context and its state.
     fn statuses(&self, commit: Oid) -> Vec<(String, forge::CheckState)> {
         let asked = forge::Query::Statuses {
             repo: REPO.into(),
@@ -878,7 +869,6 @@ fn a_change_opened_before_actions_watched_joins_on_its_first_preview() {
     };
     world.forge(&open).unwrap();
     world.tick();
-    // as if actions came after the change: it holds no rows for it
     let actions = world.chain.host(PROGRAM);
     let ctx = actions.exec(::program::MockHost::env(PROGRAM));
     crate::state::SOURCES.remove(&ctx, &(REPO.to_owned(), b"refs/heads/feature".to_vec()));
@@ -950,7 +940,6 @@ fn a_queued_check_ends_errored_unclaimed_but_passes_only_once_claimed() {
     );
 }
 
-// Two jobs a change runs on its Preview.
 const PAIR: &str = r#"
 [on]
 change = ["opened", "updated"]
@@ -975,7 +964,6 @@ fn ends(checks: &[CheckRow]) -> Vec<(State, &str)> {
         .collect()
 }
 
-// `main` and `feature` both hold PAIR, and change 1 asks to merge `feature` into `main`.
 fn paired(world: &mut World) -> (Oid, Oid) {
     let root = world.commit(&[], &[("pair.toml", PAIR)]);
     world.push(None, root, "main");
@@ -993,8 +981,6 @@ fn paired(world: &mut World) -> (Oid, Oid) {
     (root, feature)
 }
 
-// A queued and a running check of change 1's Preview are superseded by its next Preview, and
-// the next Preview's by the change's close; forge hears each as errored.
 #[test]
 fn a_newer_preview_and_then_the_close_supersede_the_changes_open_checks() {
     let mut world = world();
@@ -1045,8 +1031,6 @@ fn a_change_that_merges_supersedes_its_open_checks() {
     );
 }
 
-// A running check of a push to main is superseded by the next push to main, not by a push to
-// another branch, and posts no line; a queued one may be superseded by hand, unclaimed.
 #[test]
 fn a_newer_push_to_the_branch_supersedes_its_open_checks_and_says_nothing_in_the_channel() {
     let mut world = world();

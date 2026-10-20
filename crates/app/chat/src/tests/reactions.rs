@@ -49,7 +49,6 @@ fn removing_a_reaction_uncounts_it_and_the_last_one_leaves() {
     assert!(chat.message(1).reactions.is_empty());
 }
 
-/// Adding and removing are one op with one set of guards.
 #[test]
 fn a_reaction_needs_an_emoji_a_standing_message_and_a_seat() {
     for on in [true, false] {
@@ -69,8 +68,6 @@ fn a_reaction_needs_an_emoji_a_standing_message_and_a_seat() {
     }
 }
 
-// A chip's tooltip names who chose it: each message's emoji in order,
-// each with its principals, and one who drops it leaves the list.
 #[test]
 fn reactors_name_who_chose_each_emoji() {
     let mut chat = Chat::with_channel(PostPolicy::Open);
@@ -85,7 +82,6 @@ fn reactors_name_who_chose_each_emoji() {
     chat.ok(&ADA, react(2, "👀", true));
     let Reply::Reactors(reactors) = chat.ask(Query::Reactors {
         channel_id: "general".into(),
-        // a seq named twice, out of order, answers once and in order
         seqs: vec![2, 1, 3, 2],
     }) else {
         panic!("reactors answer reactors");

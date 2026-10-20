@@ -13,26 +13,15 @@ use crate::{Chat, Mode, Pane};
 use chat::Reaction;
 use view::design::Ladder;
 
-/// A post on its way, faded (mobile `src/chat/MessageRow.tsx:82`).
 const FADED: f32 = 0.5;
-/// A reaction chip: 30 tall, at least 40 wide (mobile
-/// `src/chat/MessageRow.tsx:155`), the emoji 14 on an 18 line (`:177`),
-/// the "+" 14 (`:184`).
 const CHIP_HEIGHT: Pixels = px(30.);
 const CHIP_WIDTH: Pixels = px(40.);
 const CHIP_EMOJI: design::Type = design::Type::lined(14., 18.);
 const CHIP_PLUS: Pixels = px(14.);
-/// The button into a thread: 32 tall, its icons 16 (mobile
-/// `src/chat/MessageRow.tsx:137` and `:139`).
 const THREAD_BUTTON: Pixels = px(32.);
 const THREAD_ICON: Pixels = px(16.);
-/// The custom action a screen reader offers on a row: the long press's
-/// twin (rule 5).
 const ACTIONS: i32 = 1;
 
-/// One message's row; `set` is where it sits among the pane's messages
-/// (position, count), which the row says itself: a row under its day's
-/// separator is not the list's own item, so the host cannot number it.
 pub(super) fn row(
     chat: &Chat,
     message: &ChatMessage,
@@ -43,18 +32,15 @@ pub(super) fn row(
     ladder: &Ladder,
 ) -> AnyElement {
     let (seq, rev) = (message.seq, message.rev);
-    // the row the actions sheet is open for, lit behind the scrim
     let chosen = chat.menu.as_ref().is_some_and(|menu| {
         menu.pane == pane && menu.seq == seq && matches!(menu.mode, Mode::Toolbar | Mode::More)
     });
-    // the keyboard's press on the row opens the actions; a tap does nothing
     let actions = cx.listener(move |chat, event: &ClickEvent, _window, cx| {
         if matches!(event, ClickEvent::Keyboard(_)) {
             cx.notify();
             chat.show_menu(pane, seq, rev, Mode::More);
         }
     });
-    // a finger's long press is the row's aux click, as a right press is
     let held = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
         cx.notify();
         chat.show_menu(pane, seq, rev, Mode::More);
@@ -99,8 +85,6 @@ pub(super) fn row(
                 })),
         )
         .child(content(chat, message, pane, cx, theme, ladder));
-    // a message list is a dense list: the row keeps its own box, as Expo's
-    // (a one-line continuation is ~26), under a finger's 44 (chief, 10-16)
     let row = design::dense(row);
     match message.pending {
         true => row.into_any_element(),
@@ -110,7 +94,6 @@ pub(super) fn row(
                 .on_a11y_action(
                     view::wire::Action::CustomAction,
                     move |_: Option<&view::wire::ActionData>, _: &mut Window, app: &mut App| {
-                        // a released view answers no action
                         let _ = chat.update(app, |chat, cx| {
                             cx.notify();
                             chat.show_menu(pane, seq, rev, Mode::More);
@@ -122,8 +105,6 @@ pub(super) fn row(
     }
 }
 
-/// The column beside the face: the byline on a run's first message, the
-/// body, the reactions, the way into the thread.
 fn content(
     chat: &Chat,
     message: &ChatMessage,
@@ -146,7 +127,6 @@ fn content(
         .children(threaded.then(|| thread_button(message, cx, theme, ladder)))
 }
 
-/// The name in body medium, Agent for an agent, the time.
 fn byline(message: &ChatMessage, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
     let badge = message
         .badge
@@ -187,8 +167,6 @@ fn byline(message: &ChatMessage, theme: &Theme, ladder: &Ladder) -> Stateful<Div
         }))
 }
 
-/// What the message says, faded while it is on its way: its blocks, a
-/// program's own line, or the tombstone; "edited" under an edited one.
 fn body(
     chat: &Chat,
     message: &ChatMessage,
@@ -269,8 +247,6 @@ fn program_line(
     div().text_color(theme.muted).child(line).into_any_element()
 }
 
-/// The reactions: a chip per emoji (the reader's own on the accent), then
-/// "+" for the picker.
 fn reactions(
     chat: &Chat,
     message: &ChatMessage,
@@ -320,9 +296,6 @@ fn reactions(
         .child(add)
 }
 
-/// A chip's frame: 30 tall, at least 40 wide, 8 in, a hairline edge; it
-/// only draws, its press is `design::hit` over it, reaching to `hit`, so
-/// the row keeps Expo's spacing.
 fn chip(mine: bool, theme: &Theme) -> Div {
     div()
         .relative()
@@ -338,14 +311,11 @@ fn chip(mine: bool, theme: &Theme) -> Div {
         .when(mine, |chip| chip.bg(theme.accent_soft))
 }
 
-// A chip's two presses: a tap's, and a long press's.
 struct Presses<R, H> {
     react: R,
     held: H,
 }
 
-// One emoji and how many chose it; a press adds the reader's or takes it
-// back, a long press names who chose it (`who`, also its description).
 fn emoji_chip<R, H>(
     id: String,
     reaction: &Reaction,
@@ -380,7 +350,6 @@ where
         .into_any_element()
 }
 
-/// The "+" that opens the picker.
 fn add_chip(
     id: String,
     click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
@@ -399,8 +368,6 @@ fn add_chip(
         .into_any_element()
 }
 
-/// Under a root in the room: a speech square, how many replies, a
-/// chevron; it opens the thread.
 fn thread_button(
     message: &ChatMessage,
     cx: &mut Context<Chat>,

@@ -18,10 +18,7 @@ use super::parts::{
     scroller, section, tail, title_and_caption, tx_line,
 };
 
-/// A chip of the programs an account used (Expo `src/design/theme.ts:78`
-/// `size.chip`).
 const CHIP_H: Pixels = px(32.);
-/// A chip's count (Expo `src/kit/Choice.tsx:72`).
 const CHIP_COUNT_TEXT: Pixels = px(11.);
 
 pub(super) fn account(view: &Explorer, number: u64, cx: Cx, k: &Look) -> AnyElement {
@@ -53,8 +50,6 @@ pub(super) fn account(view: &Explorer, number: u64, cx: Cx, k: &Look) -> AnyElem
     .into_any_element()
 }
 
-/// Open DM (Expo `account/[number].tsx:59,69`): chat opens on the reader's
-/// DM room with this account.
 fn open_dm(link: String, k: &Look) -> AnyElement {
     design::icon_button(
         "explorer-open-dm",
@@ -67,8 +62,6 @@ fn open_dm(link: String, k: &Look) -> AnyElement {
     .into_any_element()
 }
 
-/// An account not in hand: the accounts being read, refused, or none by
-/// this number.
 fn missing(view: &Explorer, number: u64, cx: Cx, k: &Look) -> AnyElement {
     match &*view.accounts {
         Loadable::Ready(_) | Loadable::Reloading(_, _) => empty(
@@ -85,8 +78,6 @@ fn missing(view: &Explorer, number: u64, cx: Cx, k: &Look) -> AnyElement {
     }
 }
 
-/// Its face at the detail size, its name, `account n · what it is · its
-/// devices`.
 fn head(
     account: &identity::Account,
     picture: Option<std::sync::Arc<view::Image>>,
@@ -126,7 +117,6 @@ fn head(
         )
 }
 
-/// The transactions activity recorded for it, and its devices.
 fn figures(view: &Explorer, account: &identity::Account, k: &Look) -> Stateful<Div> {
     let total = view.sent_by(account.number);
     facts(
@@ -149,8 +139,6 @@ fn figures(view: &Explorer, account: &identity::Account, k: &Look) -> Stateful<D
     )
 }
 
-/// Each key it signs with, under their head: its label, its scheme and
-/// short key, when activity last saw it sign.
 fn devices(view: &Explorer, account: &identity::Account, k: &Look) -> Vec<AnyElement> {
     let keys = account.keys();
     let now = view.chain.now();
@@ -185,8 +173,6 @@ fn devices(view: &Explorer, account: &identity::Account, k: &Look) -> Vec<AnyEle
         .collect()
 }
 
-/// The programs it used, most first, a chip each with its count; a chip
-/// opens the program's transactions (Expo `Chips`). None used, no section.
 fn programs_used(view: &Explorer, number: u64, cx: Cx, k: &Look) -> Option<Div> {
     let used = view.programs_used(number)?;
     if used.is_empty() {
@@ -211,9 +197,6 @@ fn programs_used(view: &Explorer, number: u64, cx: Cx, k: &Look) -> Option<Div> 
     )
 }
 
-// SDK gap: Chips, the SDK builds it later
-/// One program it used, and how many transactions it sent there; the
-/// press reaches past the chip to `ladder.hit`.
 fn chip(program: String, count: u64, cx: Cx, k: &Look) -> Div {
     let route = Route::Transactions(Some(program.clone()));
     let go =
@@ -232,14 +215,11 @@ fn chip(program: String, count: u64, cx: Cx, k: &Look) -> Div {
         .whitespace_nowrap()
         .child(program.clone())
         .child(
-            // two spaces before the count, as Expo's `kit/Choice.tsx:73` `{'  '}`
             mono(format!("  {count}"))
                 .text_size(CHIP_COUNT_TEXT)
                 .text_color(k.theme.muted),
         )
         .child(
-            // never under 44 wide (a name, its count and `gap.md` each
-            // side), so its press reaches up and down only
             design::hit(
                 SharedString::from(format!("explorer-used-{program}")),
                 k.ladder.hit,
@@ -254,8 +234,6 @@ fn chip(program: String, count: u64, cx: Cx, k: &Look) -> Div {
         )
 }
 
-/// What it signed, newest first, under its head (Expo `TxLine
-/// who={false}`).
 fn activity(view: &Explorer, number: u64, cx: Cx, k: &Look) -> Vec<AnyElement> {
     let recorded = view.sent_by(number).map(words::recorded);
     let head = section(
@@ -264,8 +242,6 @@ fn activity(view: &Explorer, number: u64, cx: Cx, k: &Look) -> Vec<AnyElement> {
         recorded.map(aside),
         k,
     );
-    // the newest frames, then each one's transaction (`read_rows`), as
-    // Expo reads them in one query
     let rows = match landed(view.acted(number)) {
         Ok(acted) if acted.rows.read(|acted| acted.rows().is_empty()) => Ok(&[][..]),
         Ok(_) => match &view.acted_rows {

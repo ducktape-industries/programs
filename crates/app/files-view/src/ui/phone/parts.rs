@@ -7,12 +7,8 @@ use view::{Div, Stateful};
 
 use super::*;
 
-/// A key's column in a key/value row (Expo `src/kit/Facts.tsx:64`).
 const KEY_W: Pixels = px(96.);
 
-/// A page: its title row (Back by where it sits, the page's writes behind
-/// one control when it offers any), the line the last write left, then
-/// what the caller adds.
 pub(super) fn page(
     id: &'static str,
     title: impl Into<SharedString>,
@@ -32,8 +28,6 @@ pub(super) fn page(
     }
 }
 
-/// The line the last write left (Expo `Notice`): a quiet strip under the
-/// title row.
 fn note(view: &Files, k: &Kit) -> Option<Stateful<Div>> {
     let note = view.note.as_ref()?;
     Some(
@@ -50,7 +44,6 @@ fn note(view: &Files, k: &Kit) -> Option<Stateful<Div>> {
     )
 }
 
-/// What scrolls under a page's title row.
 pub(super) fn scroller(id: &'static str) -> Stateful<Div> {
     div()
         .id(id)
@@ -62,8 +55,6 @@ pub(super) fn scroller(id: &'static str) -> Stateful<Div> {
         .pb(space::BLOCK)
 }
 
-/// A row that opens a page (Expo `Row` with `chevron`): a still row with
-/// its glyph in the muted tone, the chevron; the whole row the press.
 pub(super) fn opening_row(
     id: impl Into<ElementId>,
     glyph: &'static str,
@@ -80,7 +71,6 @@ pub(super) fn opening_row(
         .on_click(press)
 }
 
-/// A row that opens nothing: a glyph, faint, its title over its caption.
 pub(super) fn still_row(
     id: impl Into<ElementId>,
     glyph: &'static str,
@@ -91,7 +81,6 @@ pub(super) fn still_row(
     lined(id, glyph, k.theme.faint, title, caption, k)
 }
 
-/// A row's glyph in `tint`, then its title over its caption.
 fn lined(
     id: impl Into<ElementId>,
     glyph: &'static str,
@@ -111,7 +100,6 @@ fn lined(
         )
 }
 
-/// A key and its value, on one row (Expo `KeyValue`).
 pub(super) fn key_value(key: &'static str, value: impl IntoElement, k: &Kit) -> Div {
     div()
         .flex()
@@ -138,7 +126,6 @@ pub(super) fn key_value(key: &'static str, value: impl IntoElement, k: &Kit) -> 
         )
 }
 
-/// Text in the data face: a path, an id.
 pub(super) fn data(text: impl Into<SharedString>, k: &Kit) -> Div {
     div()
         .font_family(design::fonts::FAMILY_MONO)
@@ -146,8 +133,6 @@ pub(super) fn data(text: impl Into<SharedString>, k: &Kit) -> Div {
         .child(text.into())
 }
 
-/// One quiet line (Expo `Quiet`): a page still reading, a list with
-/// nothing to say.
 pub(super) fn quiet(id: &'static str, sentence: impl Into<SharedString>, k: &Kit) -> AnyElement {
     div()
         .id(id)
@@ -158,7 +143,6 @@ pub(super) fn quiet(id: &'static str, sentence: impl Into<SharedString>, k: &Kit
         .into_any_element()
 }
 
-/// A refused read, and Retry.
 pub(super) fn refused(name: &str, refusal: &Error, cx: Cx, k: &Kit) -> AnyElement {
     let retry = cx.listener(|view: &mut Files, _: &ClickEvent, _, cx| view.read_page(cx));
     design::refused(name, design::sentence(refusal), &k.ladder, &k.theme, retry)
@@ -166,10 +150,6 @@ pub(super) fn refused(name: &str, refusal: &Error, cx: Cx, k: &Kit) -> AnyElemen
         .into_any_element()
 }
 
-/// The page's writes behind one control in its title row, when it has
-/// any (Expo `Header` right `Hit`). They are a mix (new, edit, rename,
-/// remove), so it draws `ellipsis-vertical`: the host's capsule beside
-/// it draws `ellipsis` ([`design::Page::trailing`]).
 fn actions_control(view: &Files, cx: Cx, k: &Kit) -> Option<AnyElement> {
     if view.offered().is_empty() {
         return None;

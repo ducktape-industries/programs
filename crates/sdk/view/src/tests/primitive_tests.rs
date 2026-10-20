@@ -50,7 +50,6 @@ fn patches_reconstruct_the_rendered_tree_and_picture_bytes_are_not_retained() {
     assert!(!frame.patches.is_empty());
     styles.extend(frame.styles).unwrap();
     wire::apply(&mut mounted, frame.patches, &styles).unwrap();
-    // The host stores picture data separately after applying a patch.
     mounted.for_each_mut(&mut |node| {
         if let wire::Node::Image { data, .. } = node {
             *data = None;
@@ -79,11 +78,6 @@ fn patches_reconstruct_the_rendered_tree_and_picture_bytes_are_not_retained() {
     );
 }
 
-/// A page switch is a structural patch frame whose subtrees are moved out
-/// of the rendered tree and back after the frame is encoded: the bytes the
-/// host gets are the bytes a copying diff gives, and the tree the driver
-/// keeps is whole again, so the frames after it still patch to the tree
-/// the view rendered.
 #[test]
 fn a_page_switch_sends_the_bytes_a_copying_diff_sends_and_keeps_the_tree_whole() {
     #[derive(Default, Serialize, Deserialize)]
@@ -111,10 +105,6 @@ fn a_page_switch_sends_the_bytes_a_copying_diff_sends_and_keeps_the_tree_whole()
                         .child("…")
                 })),
             };
-            // Chrome around the page survives the switch, keyed or not
-            // (matched by position), so the frame is the page's patches; a
-            // page alone in its shell is the whole tree, so its switch
-            // carries the tree whole.
             match self.chrome {
                 true => div()
                     .id("shell")
@@ -125,8 +115,6 @@ fn a_page_switch_sends_the_bytes_a_copying_diff_sends_and_keeps_the_tree_whole()
             }
         }
     }
-    // A frame that goes whole puts the taken subtrees back before it is
-    // sent: the host gets the tree the view rendered, without a stand-in.
     let mut whole = Driver::<Pages>::new();
     whole.tick_with(vec![], wire::Frame::clone);
     whole.entity().update(whole.app_mut(), |view, cx| {
@@ -167,11 +155,9 @@ fn a_page_switch_sends_the_bytes_a_copying_diff_sends_and_keeps_the_tree_whole()
     styles.extend(first.styles).unwrap();
     let mut held = first.root.expect("a first tree");
     let overview = held.clone();
-    // The rows page as a copying diff sees it: against a driver of its own.
     let mut reference = Driver::<Pages>::new();
     reference.tick_with(vec![], wire::Frame::clone);
     show(&mut reference, true);
-    // the styles the rows bring cross with the patches that name them
     let brought = reference.tick_with(vec![], wire::Frame::clone).styles;
     let rows = reference.last_root.clone().expect("the rows tree");
     let expected = wire::Frame {

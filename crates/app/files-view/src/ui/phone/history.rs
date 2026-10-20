@@ -67,7 +67,6 @@ fn listed(view: &Files, history: &History, cx: Cx, k: &Kit) -> AnyElement {
         .into_any_element()
 }
 
-/// One snapshot: its message over who made it and when.
 fn snapshot_row(view: &Files, snapshot: &SnapshotRow, cx: Cx, k: &Kit) -> Stateful<Div> {
     let id = snapshot.id;
     let open = cx.listener(move |view: &mut Files, _: &ClickEvent, _, cx| {
@@ -85,8 +84,6 @@ fn snapshot_row(view: &Files, snapshot: &SnapshotRow, cx: Cx, k: &Kit) -> Statef
     )
 }
 
-/// One pin: its name over the snapshot it names and who pinned it; it
-/// opens that snapshot.
 fn pin_row(view: &Files, history: &History, pin: &PinRow, cx: Cx, k: &Kit) -> Stateful<Div> {
     let seq = history.named(pin).map(|named| named.seq);
     let caption = words::pin_caption(seq, words::author(&pin.owner, view.names.ready()));

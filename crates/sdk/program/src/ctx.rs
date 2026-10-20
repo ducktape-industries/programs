@@ -320,7 +320,6 @@ impl QueryCtx {
         }
     }
 
-    /// A query's answer, handed to the host once by [`crate::query`].
     pub(crate) fn respond(&self, bytes: impl Into<Vec<u8>>) {
         self.done(HostOp::Respond(bytes.into()))
     }

@@ -41,8 +41,6 @@ fn is_archived(sandbox: &MemorySandbox) -> bool {
     archived
 }
 
-// `project` with `main` and `feature` (one commit past main) pushed, and `other` beside it;
-// the source's objects and the two tips.
 fn pushed() -> (MemorySandbox, MemoryObjects, [String; 2]) {
     let sandbox = founded();
     create(&sandbox, REPO, HashKind::Sha1);

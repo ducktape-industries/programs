@@ -78,7 +78,6 @@ pub(super) fn screen(
         .into_any_element()
 }
 
-// the room's rules as they read, under a head of their own, when it has any
 fn rules(chat: &Chat, theme: &Theme, ladder: &Ladder) -> Vec<AnyElement> {
     let Some(said) = crate::ui::rules::said(chat, theme, ladder) else {
         return Vec::new();
@@ -90,7 +89,6 @@ fn rules(chat: &Chat, theme: &Theme, ladder: &Ladder) -> Vec<AnyElement> {
     ]
 }
 
-/// The name, then who may post, when it was made and by whom.
 fn head(chat: &Chat, info: &ChannelInfo, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
     let channel = &info.channel;
     let policy = words::policy(channel);
@@ -121,8 +119,6 @@ fn head(chat: &Chat, info: &ChannelInfo, theme: &Theme, ladder: &Ladder) -> Stat
         )
 }
 
-/// Members and how many; a row each (the owner's press opens a member's
-/// way out); Add a member… for the owner.
 fn members(
     chat: &Chat,
     room: &Room,
@@ -180,9 +176,6 @@ fn members(
     rows
 }
 
-/// One member, by principal and name: face, name, what they are here
-/// (owner, you), Agent; the owner's press on anyone else opens their way
-/// out.
 fn member_row(
     chat: &Chat,
     info: &ChannelInfo,
@@ -263,7 +256,6 @@ fn member_row(
         .into_any_element()
 }
 
-/// The owner's actions: rename, and archive or unarchive.
 fn owner_actions(
     chat: &Chat,
     info: &ChannelInfo,
@@ -318,7 +310,6 @@ fn owner_actions(
     ]
 }
 
-/// A row that does something, its icon muted in the lead column.
 fn action_row(
     id: &'static str,
     icon: &'static str,
@@ -333,7 +324,6 @@ fn action_row(
         ))
 }
 
-/// The sheet open over the page, if any.
 pub(super) fn sheet(
     chat: &Chat,
     cx: &mut Context<Chat>,
@@ -392,7 +382,6 @@ pub(super) fn sheet(
     )
 }
 
-/// Add a member: the account number and Add, then the people not seated.
 fn add_body(
     chat: &Chat,
     details: &Details,
@@ -461,7 +450,6 @@ fn add_body(
         .collect()
 }
 
-/// Rename the channel: the name and Rename.
 fn rename_body(
     details: &Details,
     cx: &mut Context<Chat>,

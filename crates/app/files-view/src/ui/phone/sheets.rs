@@ -14,20 +14,12 @@ use crate::state::file_glyph;
 use crate::upload;
 use crate::write::{Form, ListChoice, Write};
 
-/// Where the list of writes stops when it opens, and how far it may be
-/// pulled. Expo's `Sheet` sizes a short list to its content
-/// (`src/kit/Sheet.tsx:27`); a host sheet stops at fixed fractions, and
-/// half the body holds the four writes a page offers at most.
 const DETENTS: [f32; 2] = [0.5, 1.0];
 
-/// A form opens at the body's full height, so Commit shows under its
-/// fields without a pull.
 const FORM_DETENTS: [f32; 1] = [1.0];
 
-/// How tall the text field starts: about ten lines.
 const TEXT_H: Pixels = px(200.);
 
-/// The page's writes, each opening its form; none to offer, no sheet.
 pub(super) fn actions(view: &Files, cx: Cx, k: &Kit) -> Option<AnyElement> {
     let offered = view.offered();
     if offered.is_empty() {
@@ -54,7 +46,6 @@ pub(super) fn actions(view: &Files, cx: Cx, k: &Kit) -> Option<AnyElement> {
     )
 }
 
-/// One write's form.
 pub(super) fn form(form: &Form, cx: Cx, k: &Kit) -> AnyElement {
     let title = words::form_title(&form.write);
     let dismiss = cx.listener(|view: &mut Files, _: &(), _, cx| view.close_sheet(cx));
@@ -110,8 +101,6 @@ pub(super) fn form(form: &Form, cx: Cx, k: &Kit) -> AnyElement {
         .into_any_element()
 }
 
-/// A new name, or a rename's new path. Return commits, unless the form
-/// takes text still to be typed below it.
 fn naming(form: &Form, cx: Cx, k: &Kit) -> Option<impl IntoElement> {
     let naming = form.write.naming()?;
     let label = words::naming(naming);
@@ -130,8 +119,6 @@ fn naming(form: &Form, cx: Cx, k: &Kit) -> Option<impl IntoElement> {
     )
 }
 
-/// A new file's text, or an edit's, in the data face: many lines, so
-/// Return is a new line and Commit is the only send.
 fn text(form: &Form, k: &Kit) -> Option<impl IntoElement> {
     if !form.write.takes_text() {
         return None;
@@ -184,8 +171,6 @@ fn list(form: &Form, cx: Cx, k: &Kit) -> Option<Div> {
     )
 }
 
-/// An upload's files, each a row: its name over its size, whether it
-/// replaces one there, or why it is left out.
 fn picked(form: &Form, k: &Kit) -> Option<Div> {
     if form.upload.is_empty() {
         return None;
@@ -211,7 +196,6 @@ fn picked(form: &Form, k: &Kit) -> Option<Div> {
     Some(div().flex().flex_col().children(rows).children(none))
 }
 
-/// The commit's message; its placeholder is what it says left empty.
 fn message(form: &Form, cx: Cx, k: &Kit) -> impl IntoElement {
     let submit = cx.listener(|view: &mut Files, _: &(), _, cx| view.submit(cx));
     let input = Input::new("files/write/message", &form.message, words::MESSAGE)
@@ -221,7 +205,6 @@ fn message(form: &Form, cx: Cx, k: &Kit) -> impl IntoElement {
     design::field(input, &k.ladder, &k.theme).label(words::MESSAGE)
 }
 
-/// Cancel, then Commit, which waits on its answer.
 fn verbs(form: &Form, cx: Cx, k: &Kit) -> Div {
     let cancel = cx.listener(|view: &mut Files, _: &ClickEvent, _, cx| view.close_sheet(cx));
     let commit = cx.listener(|view: &mut Files, _: &ClickEvent, _, cx| view.submit(cx));

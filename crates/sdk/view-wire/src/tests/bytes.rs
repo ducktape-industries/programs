@@ -1,13 +1,9 @@
 use super::*;
 
-/// 50,000 bytes of every value, so an array of integers would spend one
-/// byte on some and two on the rest.
 fn mixed() -> Vec<u8> {
     (0..50_000u32).map(|at| (at * 31 % 256) as u8).collect()
 }
 
-/// `value` holds `payload`, and on the wire that is a `bin`: its marker,
-/// its length and the bytes as they are, in a value its own fields larger.
 fn crosses_as_bin<T>(value: T, payload: &[u8])
 where
     T: serde::Serialize + serde::de::DeserializeOwned + PartialEq + std::fmt::Debug,
@@ -53,9 +49,6 @@ fn a_request_payload_crosses_as_bin() {
         },
         &mixed(),
     );
-    // A node method's envelope crosses as borsh (`methods::encode`), never
-    // through this codec. Its serde derive is what `schema.txt` traces, so
-    // its body is marked like any other byte field, and reads back.
     crosses_as_bin(
         methods::Call {
             target: "chat".into(),
@@ -102,19 +95,14 @@ fn an_element_id_crosses_as_bin() {
         },
         &[0xc8; 20],
     );
-    // {3: bin} of the wrong length for what it names.
     let error = decode::<ElementIdWire>(&[0x81, 0x03, 0xc4, 0x02, 9, 9]).unwrap_err();
     assert!(error.contains("invalid length 2"), "{error}");
-    // {3: bin} one byte longer than a Uuid: refused by its bound.
     let mut long = vec![0x81, 0x03, 0xc4, 17];
     long.extend([9; 17]);
     let error = decode::<ElementIdWire>(&long).unwrap_err();
     assert!(error.contains("a Uuid is 16 bytes"), "{error}");
 }
 
-/// `bin` is MessagePack's. A wire type written as JSON (a screen export,
-/// read back by the app's `--render-tree`) holds its bytes the way JSON
-/// does, and reads them back under the same bounds.
 #[test]
 fn bytes_read_back_from_json() {
     fn json<T>(value: T)
@@ -152,11 +140,8 @@ fn bytes_read_back_from_json() {
     assert!(error.to_string().contains("a Uuid is 16 bytes"), "{error}");
 }
 
-/// The one shape a byte field reads is `bin`: the array of integers it
-/// crossed as before is refused, not read an element at a time.
 #[test]
 fn an_array_of_integers_is_not_bytes() {
-    // {0: [1, 2]} where `ImageData::Encoded` holds a `bin`.
     let error = decode::<ImageData>(&[0x81, 0x00, 0x92, 0x01, 0x02]).unwrap_err();
     assert!(error.contains("expected bytes"), "{error}");
 }
@@ -168,7 +153,6 @@ fn a_bin_longer_than_its_bytes_is_refused() {
     assert!(start.elapsed() < std::time::Duration::from_secs(1));
 }
 
-/// One value is the whole of what was sent: anything after it refuses it.
 #[test]
 fn bytes_after_the_value_are_refused() {
     let mut wire = encode(&Event::Resync);
@@ -180,9 +164,6 @@ fn bytes_after_the_value_are_refused() {
     );
 }
 
-/// A text drawn in another case still crosses with its words as written. A
-/// text from a build before the field reads as drawn as written, and a
-/// transform this build does not know does not decode.
 #[test]
 fn a_text_transform_reads_absent_from_an_older_text_and_refused_unknown() {
     #[derive(serde::Serialize)]

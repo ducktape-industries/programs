@@ -23,8 +23,6 @@ pub enum Event {
 }
 
 impl Event {
-    /// The code a `forge` block carries: `opened`, `closed`, `merged` or
-    /// `review <id>`.
     fn code(&self) -> String {
         match self {
             Event::Opened => "opened".into(),

@@ -29,12 +29,10 @@ const MESSAGES: &str = "https://api.anthropic.com/v1/messages";
 enum Ask {
     Call(Request, Option<u64>),
     Emit(Request),
-    /// A call that hears its reply as events, each as `Heard`.
     Stream(Request, Option<u64>),
     Heard(Event),
 }
 
-/// `Ask::Heard`'s tag, read off its encoding: the prefix the asker hears an event under.
 fn heard_tag() -> u8 {
     let event = Event {
         id: 0,
@@ -44,7 +42,6 @@ fn heard_tag() -> u8 {
     abi::encode(&Ask::Heard(event))[0]
 }
 
-/// An event the asker refuses, so its frame is refused.
 const REFUSED_EVENT: &[u8] = b"refuse me";
 
 type Answers = Vec<Result<Vec<u8>, Error>>;
@@ -639,7 +636,6 @@ fn an_events_request_hears_each_event_and_its_call_answers_the_streams_end() {
     let other = submit(&chain, &BO, &Op::Events(vec![event(0, b"a")])).unwrap_err();
     assert_eq!(other.code, code::UNAUTHORIZED);
     submit(&chain, &ADA, &Op::Events(vec![event(0, b"data: one")])).unwrap();
-    // the expiry moved its wait past this block: from 6 to 8
     let moved = request_row(&chain, 1).unwrap();
     assert_eq!(entry(&chain, row.expiry), None);
     assert_eq!(entry(&chain, moved.expiry).unwrap().height, 3 + 5);
@@ -771,8 +767,6 @@ fn a_cut_stream_fails_its_call_and_a_whole_request_takes_no_event_or_end() {
     assert!(request_row(&chain, 1).is_some());
 }
 
-/// An `Http` call answers one type: an events request whose reply came whole (a 429 before any
-/// stream) and one whose stream completed both decode as `http::Response`.
 #[test]
 fn an_http_call_answers_a_response_whether_its_reply_came_whole_or_as_events() {
     let chain = chain();
@@ -834,7 +828,6 @@ fn an_event_the_requester_refuses_is_passed_over_and_the_next_one_is_heard() {
     assert_eq!(heard(&chain), [event(1, b"two"), event(0, b"new")]);
 }
 
-/// A relay is answered whole: asking it as events is refused.
 #[test]
 fn a_relay_asked_as_events_is_refused() {
     let chain = chain();
@@ -852,7 +845,6 @@ fn a_relay_asked_as_events_is_refused() {
     assert_eq!(request_row(&chain, 1), None);
 }
 
-/// Only the egress role's program hands the asker an event.
 #[test]
 fn an_event_from_another_program_is_refused() {
     let chain = chain();

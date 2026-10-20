@@ -52,8 +52,6 @@ pub(super) fn render(
         .into_any_element()
 }
 
-/// The header's caption: the network, then the reader (`network ·
-/// account`).
 fn place(forge: &Forge) -> String {
     let chain = forge.session.chain_id.as_str();
     let network = chain.split_once('#').map_or(chain, |(label, _)| label);
@@ -66,7 +64,6 @@ fn place(forge: &Forge) -> String {
         .join(" · ")
 }
 
-/// "Filter by name", 16 in, 8 under.
 fn filter(forge: &Forge, ladder: &Ladder, theme: &Theme) -> Div {
     let input = Input::new(
         id("forge-repos-search"),
@@ -83,8 +80,6 @@ fn filter(forge: &Forge, ladder: &Ladder, theme: &Theme) -> Div {
         .child(design::field(input, ladder, theme).lead("search"))
 }
 
-/// "Needs my judgment" and its changes, each opening its change; nothing
-/// while none waits. A refused read says so in its place.
 fn judgment(
     forge: &Forge,
     cx: &mut Context<Forge>,
@@ -94,7 +89,6 @@ fn judgment(
     let Some(query) = forge.judgment_query() else {
         return Vec::new();
     };
-    // while it is read nothing shows here: only a refusal says so
     if matches!(forge.stage(&query), Stage::Loading) {
         return Vec::new();
     }
@@ -160,8 +154,6 @@ fn judgment_list(
     )
 }
 
-/// "Repositories" and every one the filter keeps; until the read lands
-/// its quiet line, and once it has, why the list is empty when it is.
 fn repositories(
     forge: &Forge,
     cx: &mut Context<Forge>,
@@ -210,7 +202,6 @@ fn repositories(
     vec![section(shown.len(), ladder, theme), body]
 }
 
-/// "Repositories" and how many show (no count at none).
 fn section(count: usize, ladder: &Ladder, theme: &Theme) -> AnyElement {
     design::section_head(id("forge-repos-head"), "Repositories", ladder, theme)
         .children((count > 0).then(|| count.to_string()))
@@ -247,8 +238,6 @@ fn repo_list(
     )
 }
 
-/// A repository (`RepoRow`): its name, `owner <name> · N refs · active
-/// block <height>`, the height as it is, not grouped.
 fn repo_row(info: &RepoInfo, forge: &Forge, ladder: &Ladder, theme: &Theme) -> Row {
     let facts = words::repo_facts(
         &forge.principal_name(&info.repo.owner),
@@ -261,10 +250,6 @@ fn repo_row(info: &RepoInfo, forge: &Forge, ladder: &Ladder, theme: &Theme) -> R
         .chevron()
 }
 
-// ------------------------------------------------------------------ New repository
-
-/// The New repository sheet (`NewRepository`): a name, the object format
-/// (fixed once created), Cancel and Create.
 pub(super) fn new_repository(
     form: &NewRepo,
     cx: &mut Context<Forge>,
@@ -281,7 +266,6 @@ pub(super) fn new_repository(
         .child(name_field(form, cx, ladder, theme))
         .child(format_choice(form, cx, ladder, theme))
         .child(new_repository_actions(cx, ladder, theme));
-    // a sheet holds one child: the head goes in the column with the form
     let form = div()
         .id(id("forge-new-repo-form"))
         .size_full()
@@ -306,14 +290,12 @@ pub(super) fn new_repository(
     .into_any_element()
 }
 
-/// "Name": the field, its rule, and why a name was refused.
 fn name_field(
     form: &NewRepo,
     cx: &mut Context<Forge>,
     ladder: &Ladder,
     theme: &Theme,
 ) -> impl IntoElement {
-    // a name typed again takes the last refusal with it
     let typed = cx.listener(|forge, _: &wire::TextChange, _, cx| {
         if let Some(form) = &mut forge.new_repo {
             form.error.clear();
@@ -335,7 +317,6 @@ fn name_field(
         })
 }
 
-/// "Object format": SHA-1 | SHA-256, and what picking SHA-1 is for.
 fn format_choice(form: &NewRepo, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> Div {
     let pick = cx.processor(|forge, picked: usize, _, cx| {
         if let Some(form) = &mut forge.new_repo {
@@ -370,7 +351,6 @@ fn format_choice(form: &NewRepo, cx: &mut Context<Forge>, ladder: &Ladder, theme
         .child(line(words::FORMAT_RULE))
 }
 
-/// Cancel and Create, at the right.
 fn new_repository_actions(cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> Div {
     let cancel = cx.listener(|forge, _: &ClickEvent, _, cx| forge.cancel_repo(cx));
     let create = cx.listener(|forge, _: &ClickEvent, _, cx| forge.create_repo(cx));

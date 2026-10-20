@@ -12,8 +12,6 @@ pub(crate) fn id(what: &str, id: &str) -> Result<(), Error> {
     Ok(())
 }
 
-/// An id with a `:` belongs to the program its prefix names: `forge:web:3`
-/// is for forge's own frames alone. The system may use any.
 pub(crate) fn namespace(id: &str, env: &Env) -> Result<(), Error> {
     let Some(prefix) = crate::namespace::program(id) else {
         return Ok(());
@@ -29,9 +27,6 @@ pub(crate) fn namespace(id: &str, env: &Env) -> Result<(), Error> {
     Ok(())
 }
 
-/// A plain channel id: an [`id`] in the actor's [`namespace`], and never a
-/// dm id, which opens only through `CreateDmChannel` with both peers
-/// seated (a plain create would let anyone own the room first).
 pub(crate) fn channel_id(channel_id: &str, env: &Env) -> Result<(), Error> {
     id("channel_id", channel_id)?;
     namespace(channel_id, env)?;
@@ -55,8 +50,6 @@ pub(crate) fn emoji(emoji: &str) -> Result<(), Error> {
     Ok(())
 }
 
-/// `principal` may write in `channel`: it is not archived, and posting is open,
-/// or `principal` owns it or is a member.
 pub(crate) fn writable(
     ctx: &QueryCtx,
     channel: &ChannelRow,
@@ -76,8 +69,6 @@ pub(crate) fn writable(
     Ok(())
 }
 
-/// A dm belongs to its two peers alike: no one seats a third, removes
-/// either, renames or archives it, the peer who opened it included.
 pub(crate) fn not_dm(channel: &ChannelRow) -> Result<(), Error> {
     if dm_peers(&channel.id).is_some() {
         return Err(unauthorized(format!(
@@ -95,7 +86,6 @@ pub(crate) fn standing(row: &MsgRow) -> Result<(), Error> {
     Ok(())
 }
 
-/// How a refusal sentence names a principal.
 fn handle(principal: &Principal) -> String {
     match principal {
         Principal::Account(account) => format!("acct:{account}"),

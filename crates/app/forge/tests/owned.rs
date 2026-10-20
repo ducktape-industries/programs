@@ -3,7 +3,6 @@ use common::*;
 
 use forge::tables::{AUTHORSHIP, CUSTODY, REPOS, REVIEWS};
 
-// A change WRITER opened on a pushed repository, with the ownership program seated at its role.
 fn reviewed() -> (MemorySandbox, u64, Oid) {
     let mut sandbox = founded();
     sandbox
@@ -77,8 +76,6 @@ fn a_review_is_its_authors_on_their_default_policy() {
     let first = record(&sandbox, n, 1).expect("the guard recorded the review");
     assert_eq!(first.owner, ownership::Party::Account(11));
     assert_eq!(first.kind.as_deref(), Some("forge.review"));
-    // a stranger's own default narrowed: their review is still theirs to write, and the
-    // change, repository and indexes others' reviews touch stay shared
     let strict = ownership::Op::Create {
         name: "mine".into(),
         write: ownership::Writers::Owner,
@@ -122,7 +119,6 @@ fn a_changes_policy_decides_its_authors_side_and_others_still_review_and_close()
     };
     assert_eq!(owned.owner, ownership::Party::Account(12));
     assert_eq!(owned.kind.as_deref(), Some("forge.change"));
-    // the change's access list lets anyone edit it; its own policy is what narrows it now
     let anyone = access::Op::Set {
         program: forge::PROGRAM.into(),
         key: forge::change_key("project", n),
@@ -171,8 +167,6 @@ fn a_changes_policy_decides_its_authors_side_and_others_still_review_and_close()
         );
     }
     act(&sandbox, WRITER, &retitle("Teach a, again")).unwrap();
-    // reviews, and a close by another account, write only the shared record: the repository's
-    // policy decides who closes another's change
     act(&sandbox, STRANGER, &review(n, head)).unwrap();
     let close = Op::ChangeClose {
         repo: "project".into(),
@@ -195,7 +189,6 @@ fn a_repositorys_policy_decides_pushes_rules_and_closing_anothers_change() {
     };
     assert_eq!(owned.owner, ownership::Party::Account(11));
     assert_eq!(owned.kind.as_deref(), Some("forge.repo"));
-    // a branch of the stranger's own, pushed while the repository's policy is open
     let mut store = MemoryObjects::new(Hash::Sha1);
     let theirs = file_commit(&mut store, &[head], 3, &[("a", b"3\n")]);
     let pack = pack_of(&store, &all_ids(&store));
@@ -248,14 +241,12 @@ fn a_repositorys_policy_decides_pushes_rules_and_closing_anothers_change() {
             "{op:?}"
         );
     }
-    // a stranger still reviews; the owner deletes and protects; the author closes their own
     act(&sandbox, STRANGER, &review(n, head)).unwrap();
     act(&sandbox, OWNER, &delete).unwrap();
     act(&sandbox, OWNER, &protect).unwrap();
     act(&sandbox, WRITER, &close).unwrap();
 }
 
-// One-time (J-011 ⑥): forge's rows from before the ownership program was seated.
 #[test]
 fn adopt_owners_records_forges_rows_from_before_the_guard_as_access_enforces_them_today() {
     let mut sandbox = founded();
@@ -280,7 +271,6 @@ fn adopt_owners_records_forges_rows_from_before_the_guard_as_access_enforces_the
     };
     act(&sandbox, WRITER, &open).unwrap();
     act(&sandbox, OWNER, &review(1, feature)).unwrap();
-    // a change and a repository from before steps 5 and 6: no authorship, no custody
     let change = AUTHORSHIP.key(&("project".to_owned(), 1u64));
     let repo = CUSTODY.key(&"project".to_owned());
     for key in [&change, &repo] {
@@ -316,7 +306,6 @@ fn adopt_owners_records_forges_rows_from_before_the_guard_as_access_enforces_the
         policy
     };
     let owner = |key: &[u8]| record_at(&sandbox, key).unwrap().owner;
-    // the change was its author's alone; the repository anyone's (its default); a review is open
     assert_eq!(owner(&change), ownership::Party::Account(12));
     assert_eq!(policy(&change).name, ownership::AS_BEFORE);
     assert_eq!(owner(&repo), ownership::Party::Account(11));
@@ -324,7 +313,6 @@ fn adopt_owners_records_forges_rows_from_before_the_guard_as_access_enforces_the
     let review = REVIEWS.key(&("project".to_owned(), 1u64, 1u64));
     assert_eq!(owner(&review), ownership::Party::Account(11));
     assert_eq!(policy(&review).name, ownership::OPEN_POLICY);
-    // run again: nothing changes
     let before = [&change, &repo, &review].map(|key| record_at(&sandbox, key));
     for kind in ["forge.review", "forge.change", "forge.repo"] {
         adopt(kind, None, 10);

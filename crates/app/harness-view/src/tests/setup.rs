@@ -1,7 +1,5 @@
 use super::*;
 
-// Scout's file as its manager wrote it by hand: a pinned service, a blank line and an indented
-// line in its body
 const PINNED: &str = "+++\nmodel = \"sonnet\"\nmax_tokens = 4096\nservice = \"ccs\"\n+++\n\nYou are Scout.\n\n  Kept as it is.\n";
 
 fn pinned() -> Net {
@@ -11,7 +9,6 @@ fn pinned() -> Net {
     }
 }
 
-// the commit of `text` at `path`, over the snapshot harness read
 fn commit_of(path: &str, text: &str) -> files::Op {
     files::Op::Commit {
         base: Some(SNAPSHOT),
@@ -56,7 +53,6 @@ fn a_save_rewrites_the_front_matter_alone_and_keeps_the_pins_and_the_body() {
         cx.host().requests::<Submit<files::Files>>(),
         [commit_of(&path_of(EDDY, "Scout"), written)]
     );
-    // the file was read at the snapshot harness read, and the editor closed once it landed
     let reads = cx.host().requests::<Query<files::Files>>();
     let at_snapshot = |query: &files::Query| matches!(query, files::Query::Read { at: Some(at), .. } if *at == SNAPSHOT);
     assert!(reads.iter().all(at_snapshot), "{reads:?}");
@@ -111,7 +107,6 @@ fn the_setup_says_how_harness_read_the_file_and_why_not() {
     cx.run_until_parked();
     let malformed = "Malformed: its front matter has no closing +++ line";
     assert!(cx.has_text(malformed), "{:?}", cx.texts());
-    // no front matter is read to edit
     assert!(cx.find("setup-edit").is_none());
 }
 

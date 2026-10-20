@@ -188,9 +188,6 @@ fn choosing_someone_opens_their_room() {
     view.read(|chat| assert_eq!(chat.room.as_ref().unwrap().id, dm_id(8)));
 }
 
-// ---------- on a phone ----------
-
-// Boots on a phone with `rooms` and seats a reader: the rooms page.
 fn hand(rooms: Vec<ChannelInfo>, newest: Vec<(u64, u64)>) -> (TestAppContext, Entity<Chat>) {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
@@ -208,7 +205,6 @@ fn held() -> Vec<ChannelInfo> {
     vec![channel("general", "General", 3), dm(8, 1, 0)]
 }
 
-// The direct rooms' rows the rooms page draws, top to bottom.
 fn drawn_dms(cx: &TestAppContext) -> Vec<String> {
     cx.node("chat-rooms")
         .children()

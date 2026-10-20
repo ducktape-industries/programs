@@ -8,12 +8,10 @@ use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-/// `None` is a notify, `Some` an event of that type.
 pub(crate) type Kind = Option<TypeId>;
 
 type Hear = Rc<RefCell<dyn FnMut(&dyn Any, &mut App)>>;
 
-/// A notify or an event, as raised: who raised it, its kind, its payload.
 type Raised = (u64, Kind, Box<dyn Any>);
 
 struct Hearer {
@@ -28,13 +26,10 @@ pub(crate) struct Events {
     next: Cell<u64>,
     hearers: RefCell<Vec<Hearer>>,
     raised: RefCell<VecDeque<Raised>>,
-    /// How many updates are running, nested: the outermost delivers.
     depth: Cell<usize>,
 }
 
 impl Events {
-    /// `hear` runs on each `kind` the entity `emitter` raises, until
-    /// [`forget`](Self::forget) is called with the id this returns.
     pub(crate) fn listen(
         &self,
         emitter: u64,
@@ -58,12 +53,9 @@ impl Events {
             let at = hearers.iter().position(|hearer| hearer.id == id);
             at.map(|at| hearers.remove(at))
         };
-        // dropped once the table is free: what the closure held may forget
-        // another hearer as it goes
         drop(gone);
     }
 
-    /// Queues `kind` from `emitter` for delivery, if anything hears it.
     pub(crate) fn raise(&self, emitter: u64, kind: Kind, payload: impl FnOnce() -> Box<dyn Any>) {
         let heard = self
             .hearers
@@ -79,8 +71,6 @@ impl Events {
 }
 
 impl App {
-    /// Runs `f` as one update of the entity graph: what it raises is heard
-    /// when the outermost update ends.
     pub(crate) fn update<R>(&mut self, f: impl FnOnce(&mut App) -> R) -> R {
         let depth = self.inner.events.depth.get();
         self.inner.events.depth.set(depth + 1);
@@ -92,8 +82,6 @@ impl App {
         result
     }
 
-    /// Hands every raised notify and event to what hears it, in order,
-    /// including what the hearers raise as they run.
     fn deliver(&mut self) {
         loop {
             let Some((emitter, kind, payload)) = self.inner.events.raised.borrow_mut().pop_front()
@@ -110,7 +98,6 @@ impl App {
                 .map(|hearer| (hearer.id, hearer.hear.clone()))
                 .collect();
             for (id, hear) in hearers {
-                // one an earlier hearer forgot hears nothing more
                 let listening = self
                     .inner
                     .events

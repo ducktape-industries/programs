@@ -8,8 +8,6 @@
 use super::{authored_path, chain};
 use crate::wire::{ElementIdWire, Node, WidgetCommand};
 
-/// The node that holds focus, as the host keeps it: by the ids it is filed
-/// under, or by the view's own focus handle.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum Focus {
     Path(Vec<ElementIdWire>),
@@ -17,8 +15,6 @@ pub(super) enum Focus {
 }
 
 impl Focus {
-    /// The chain from the root down to the focused node, while it is in
-    /// the tree.
     pub(super) fn chain<'a>(&self, root: &'a Node) -> Option<Vec<&'a Node>> {
         chain(root, &mut |chain| {
             let node = chain.last().unwrap();
@@ -31,7 +27,6 @@ impl Focus {
         })
     }
 
-    /// Focus on the last node of `chain`.
     pub(super) fn at(chain: &[&Node]) -> Self {
         let node = chain.last().expect("a node");
         match node.interactivity().and_then(|i| i.focus_handle) {
@@ -40,11 +35,6 @@ impl Focus {
         }
     }
 
-    /// Where a widget command the view sent moves focus, if it does, by
-    /// the host's rules: a `Focus` names one node by its whole path and
-    /// must be a container or a field; `FocusNext` and
-    /// `FocusPrevious` move as Tab and Shift-Tab do ([`tab`]). A focus the
-    /// host refuses fails the test.
     pub(super) fn moved_by(
         command: &WidgetCommand,
         root: &Node,
@@ -88,7 +78,6 @@ impl Focus {
     }
 }
 
-/// Whether a person can put the keyboard on `node`: by click or Tab.
 pub(super) fn holds_focus(node: &Node) -> bool {
     match node {
         Node::Field { .. } => true,
@@ -98,7 +87,6 @@ pub(super) fn holds_focus(node: &Node) -> bool {
     }
 }
 
-/// Whether Tab stops at `node`.
 fn tab_stop(node: &Node) -> bool {
     match node {
         Node::Field { .. } => true,
@@ -111,15 +99,6 @@ fn tab_stop(node: &Node) -> bool {
     }
 }
 
-/// Where Tab (`forward`) or Shift-Tab moves the keyboard from `focus`: to
-/// the next Tab stop in document order, around to the first after the
-/// last, inside the open dialog that holds `focus` (the host's focus trap
-/// holding the keys); focus outside every dialog walks the whole view.
-// ponytail: document order, and the view's own stops only: gpui orders
-// stops as they paint (a deferred popover's after the rest, which only
-// shows when focus walks outside a dialog), by `tab_index` and Tab groups,
-// which no shipped view uses, and Tab out of the last stop leaves the pane
-// for the shell's next one.
 pub(super) fn tab(root: &Node, focus: Option<&Focus>, forward: bool) -> Option<Focus> {
     let held = focus.and_then(|focus| focus.chain(root));
     let trap = held.and_then(|held| {
@@ -148,8 +127,6 @@ pub(super) fn tab(root: &Node, focus: Option<&Focus>, forward: bool) -> Option<F
     stops.into_iter().nth(next)
 }
 
-/// Whether the last node of `chain` is in the modal layer of the dialog
-/// at `dialog`: the overlay's second child, not the base under it.
 fn in_modal_layer(chain: &[&Node], dialog: &[ElementIdWire]) -> bool {
     chain
         .windows(2)
@@ -167,8 +144,6 @@ fn in_modal_layer(chain: &[&Node], dialog: &[ElementIdWire]) -> bool {
         })
 }
 
-/// Where a press on the last node of `chain` puts the keyboard: on the
-/// innermost node of the chain that can hold it (gpui's mouse-down rule).
 pub(super) fn pressed(chain: &[&Node]) -> Option<Focus> {
     (1..=chain.len())
         .rev()
@@ -176,8 +151,6 @@ pub(super) fn pressed(chain: &[&Node]) -> Option<Focus> {
         .map(|end| Focus::at(&chain[..end]))
 }
 
-/// The dialogs open in `root`, by the ids they are filed under: named
-/// overlays showing their modal layer.
 pub(super) fn open_dialogs(root: &Node) -> Vec<Vec<ElementIdWire>> {
     let mut out = Vec::new();
     chain(root, &mut |chain| {
@@ -195,8 +168,6 @@ pub(super) fn open_dialogs(root: &Node) -> Vec<Vec<ElementIdWire>> {
     out
 }
 
-/// Where a dialog that just opened at `dialog` puts the keyboard: on its
-/// first Tab stop, unless focus is in the dialog already.
 pub(super) fn entered(
     root: &Node,
     dialog: &[ElementIdWire],
@@ -209,8 +180,6 @@ pub(super) fn entered(
     {
         return None;
     }
-    // ponytail: Tab order is document order here; gpui also orders by
-    // `tab_index` and Tab groups, which no shipped dialog uses.
     chain(root, &mut |chain| {
         inside(chain) && tab_stop(chain.last().unwrap())
     })

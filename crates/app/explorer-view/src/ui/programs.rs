@@ -95,7 +95,6 @@ fn edits_a_view(edit: &Edit) -> bool {
     )
 }
 
-/// What sits on a heading's right, in a row.
 fn beside(parts: impl IntoIterator<Item = Option<AnyElement>>) -> AnyElement {
     div()
         .flex()
@@ -144,8 +143,6 @@ fn running(
         .build(cx)
 }
 
-/// The view-only entries, each a row that opens its page; `None` where the
-/// programs role lists none.
 fn listed(
     view: &Explorer,
     network: &Network,
@@ -175,8 +172,6 @@ fn listed(
     Some(list.build(cx))
 }
 
-// The commit a program's code was built from, on its row; nothing for
-// code that names none.
 fn stamp(network: &Network, name: &str, theme: &Theme) -> Option<AnyElement> {
     let source @ ::programs::Provenance::Commit(_) = network.source_of(name)? else {
         return None;
@@ -325,7 +320,6 @@ pub(super) fn program(
     });
     let blocks = view.chain.blocks.len() as u64;
     let sent = view.sent_to(name);
-    // no window yet: the way to its transactions, without a count of nothing
     let transactions = (!listed).then(|| {
         line("explorer-program-transactions".into(), theme).child(link(
             "explorer-program-txs".into(),
@@ -395,9 +389,6 @@ pub(super) fn program(
         .into_any_element()
 }
 
-/// The capabilities the code's view declares, a line each, or why none are
-/// shown: unread yet, refused (with a retry), code the node does not hold,
-/// a program that draws nothing, a manifest this app cannot read.
 fn capabilities(
     view: &Explorer,
     listed: bool,
@@ -465,7 +456,6 @@ fn chip(id: String, label: &str, theme: &Theme, ladder: &Ladder) -> AnyElement {
     .into_any_element()
 }
 
-/// [`Explorer::edits`] as presses beside a row or a title.
 fn presses(
     view: &Explorer,
     network: &Network,
@@ -574,7 +564,6 @@ fn access(view: &Explorer, theme: &Theme) -> Div {
         ))
 }
 
-/// The open form, when `here` says it belongs under this list.
 fn form(
     view: &Explorer,
     here: impl Fn(&Edit) -> bool,
@@ -675,7 +664,6 @@ fn form(
     )
 }
 
-/// How wide a field is drawn, for what it takes.
 fn field_width(field: FormField) -> f32 {
     match field {
         FormField::Height => 140.,
@@ -684,7 +672,6 @@ fn field_width(field: FormField) -> f32 {
     }
 }
 
-/// A list row that opens nothing.
 fn line(id: ElementId, theme: &Theme) -> Stateful<Div> {
     div()
         .id(id)

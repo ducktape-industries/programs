@@ -1,13 +1,10 @@
 use super::*;
 use crate::state::MODEL_SERVICES;
 
-// a second egress service the node serves, beside the model's first
 const TWO: &str = "ccs-two";
-// a reset long after every block these tests make, in seconds and as ccs writes it
 const FAR: &str = "4000000000";
 const FAR_AT: &str = "2096-01-01T00:00:00Z";
 
-// the node serves both services, and the model is reached through both, `ccs` first
 fn two_services(world: &World) {
     let chain = &world.chain;
     let register = egress::Op::Register {
@@ -33,7 +30,6 @@ fn two_services(world: &World) {
     chain.submit(signed(ADA), PROGRAM, &set).unwrap();
 }
 
-// the one request open on `service` at `target`, its head, and the account it is pinned to
 fn open(
     chain: &MockChain,
     service: &str,
@@ -63,8 +59,6 @@ fn none_open(chain: &MockChain, service: &str, target: &str) -> bool {
     !assigned(chain, service).iter().any(at)
 }
 
-// ccs's status of `service`'s accounts, each with its 5-hour window at a percent, read at
-// `height` and answered a block later
 fn status(chain: &MockChain, height: u64, service: &str, accounts: &[(&str, u64)]) {
     chain.at(height, 0);
     let op = Op::ReadBudget {
@@ -95,7 +89,6 @@ fn read(accounts: &[(&str, u64)]) -> Vec<u8> {
     response(200, json!({ "accounts": accounts }))
 }
 
-// the model's window, learned through `service` from `account`
 fn learned(chain: &MockChain, service: &str, account: Option<&str>) {
     let (request, _, pinned) = open(chain, service, "/v1/models/claude-test");
     assert_eq!(pinned.as_deref(), account);
@@ -103,7 +96,6 @@ fn learned(chain: &MockChain, service: &str, account: Option<&str>) {
     answer(chain, request.id, Answer::Output(response(200, info)));
 }
 
-// how `account` answers the turn asked of it through `service`
 struct Says {
     status: u16,
     used: &'static str,
@@ -222,7 +214,6 @@ fn a_new_conversation_goes_to_the_account_with_the_most_room_and_stays_on_it() {
     chain.at(7, 0);
     says(chain, TWO, "c", FINE);
     assert_eq!(route(chain, thread), on(TWO, "c"));
-    // c fills past a and b, short of the whole: the conversation stays where its cache is
     status(chain, 8, TWO, &[("c", 95)]);
     world.mention("m2", "again");
     chain.at(10, 0);
@@ -240,7 +231,6 @@ fn a_new_conversation_goes_to_the_account_with_the_most_room_and_stays_on_it() {
         .map(|row| row.moved)
         .collect();
     assert_eq!(moved, [false, false]);
-    // a new conversation goes where the room is now
     let fresh = Op::NewThread { agent: world.agent };
     chain.submit(signed(ADA), PROGRAM, &fresh).unwrap();
     let second = world.mention("m3", "a new one");
@@ -290,7 +280,6 @@ fn a_429_moves_the_turn_to_another_account_at_once_and_the_move_shows_its_cache_
         ]
     );
     assert_eq!(cache_writes(chain, thread), [1000, 1200]);
-    // the 429 holds c for every conversation, not only this one
     let fresh = Op::NewThread { agent: world.agent };
     chain.submit(signed(ADA), PROGRAM, &fresh).unwrap();
     let second = world.mention("m3", "a new one");
@@ -407,7 +396,6 @@ fn a_forced_move_near_a_compaction_compacts_first_on_the_new_account() {
     let world = world();
     let chain = &world.chain;
     two_services(&world);
-    // a context of 1,015 tokens: under 2,000, but not with one more answer of up to 1,024
     configured(chain, "compact_at = 2000\n");
     status(chain, 2, SERVICE, &[("a", 50)]);
     status(chain, 4, TWO, &[("c", 20)]);

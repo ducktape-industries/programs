@@ -204,8 +204,6 @@ pub(super) fn sanitize(
     });
     for range in clickable_ranges {
         if !valid_range(text, range) || range.start >= range.end {
-            // Preserve the authored value index: an invalid range must never
-            // retarget a later callback value after sanitization.
             *range = 0..0;
         }
     }
@@ -239,8 +237,6 @@ mod tests {
         assert_eq!(runs, Runs::Highlights(vec![]));
     }
 
-    /// A rich text's id enters the sibling scope as any node's does (the
-    /// hostile generator builds no rich text, so this is its one pin).
     #[test]
     fn a_rich_texts_id_is_a_sibling_identity() {
         let rich = || Node::RichText {

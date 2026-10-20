@@ -8,8 +8,6 @@ use view::{Div, Stateful};
 
 use crate::{Forge, id};
 
-/// Which row of the list `id` the arrows are on, and which of its cells:
-/// the view's cursor there, else the first row.
 pub(crate) fn cursor(forge: &Forge, id: &'static str) -> (usize, usize) {
     match forge.list_cursor {
         Some((list, row, cell)) if list == id => (row, cell),
@@ -17,18 +15,10 @@ pub(crate) fn cursor(forge: &Forge, id: &'static str) -> (usize, usize) {
     }
 }
 
-/// Whether the arrows have walked the list `id`: only then is its active
-/// row drawn. At rest every list claims its first row for the keys and
-/// draws none, as a view cannot see whether the list holds the focus.
 pub(crate) fn walked(forge: &Forge, id: &'static str) -> bool {
     matches!(forge.list_cursor, Some((list, ..)) if list == id)
 }
 
-/// A list of rows as one Tab stop: ↑ ↓ walk the rows (a virtual list
-/// tracking `scroll` is scrolled to the active one before it claims), Enter
-/// presses the active one (`on_press`). The rows go in as the list's
-/// children: drawn whole (no `scroll`) they scroll here; a virtual list
-/// scrolls itself, and the one bar and its gutter are that list's.
 pub(crate) fn list(
     id_: &'static str,
     label: &str,
@@ -63,9 +53,6 @@ pub(crate) fn list(
     }
 }
 
-/// A scrolling virtual list of `count` rows, painted a window at a time:
-/// `paint` is handed the rows the list lowers, so a list that reads on as
-/// it is scrolled hears how far.
 pub(crate) fn window(
     element_id: &str,
     count: usize,

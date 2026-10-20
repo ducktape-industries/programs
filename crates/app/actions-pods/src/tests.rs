@@ -24,11 +24,8 @@ const COMMIT: &str = "1111111111111111111111111111111111111111";
 
 type Report = (u64, State, String, Option<String>);
 
-// The check the stand-in refuses to let anyone claim, with a refusal that is not wrong_state.
 const REFUSED: u64 = 9;
-// Check 1's rerun: the same run and job, attempt 2, known to the stand-in once a Rerun asks it.
 const AGAIN: u64 = 3;
-// The check whose job states its CPUs, memory and scratch.
 const SIXTEEN: u64 = 4;
 // A check that needs job `build`, met by check BUILT; and one whose need, met by STRAYED, names an
 // output that climbs out of its folder.
@@ -42,8 +39,6 @@ const REPORTS: Item<Vec<Report>> = Item::new("reports");
 const RERUN: Item<bool> = Item::new("rerun");
 const OUTS: Item<Vec<(u64, Vec<Output>)>> = Item::new("outs");
 
-// actions as a runner meets it: a check to read, a claim taken once, a report taken once from a
-// running check (or an errored one from a queued check), and a rerun.
 struct Stand;
 
 impl Program for Stand {
@@ -211,7 +206,6 @@ fn check_row(id: u64) -> CheckRow {
     }
 }
 
-// The chain, and the block the node answers in next.
 struct Node {
     chain: MockChain,
     height: u64,
@@ -275,7 +269,6 @@ fn node() -> Node {
     }
 }
 
-// A module whose one custom section names its build, so two builds are two codes.
 fn code(build: &[u8]) -> Vec<u8> {
     let name = b"ducktape.build";
     let mut body = vec![name.len() as u8];
@@ -287,7 +280,6 @@ fn code(build: &[u8]) -> Vec<u8> {
     code
 }
 
-// The programs role lists this program's code, as a deploy lists it.
 fn listed(chain: &MockChain, build: &[u8]) {
     let entry = |program: &str, code: Vec<u8>| Entry {
         program: program.into(),
@@ -304,7 +296,6 @@ fn listed(chain: &MockChain, build: &[u8]) {
 }
 
 impl Node {
-    // The next block, `ms` after this one.
     fn after(&mut self, ms: u64) {
         self.height += 1;
         self.time += ms;
@@ -331,13 +322,11 @@ impl Node {
         rows
     }
 
-    // The one request egress assigned the node and it has not answered.
     fn pending(&self) -> RequestRow {
         let [row] = self.open().try_into().expect("one request in flight");
         row
     }
 
-    // The one open request aimed at `method target`.
     fn pending_to(&self, method: &str, target: &str) -> RequestRow {
         let rows: Vec<RequestRow> = self
             .open()
@@ -370,7 +359,6 @@ impl Node {
         self.node(&answer);
     }
 
-    // The pending request answered whole in the next block: its method and target.
     fn answer(&mut self, ms: u64, status: u16, body: Value) -> (String, String) {
         self.after(ms);
         let row = self.pending();
@@ -378,14 +366,12 @@ impl Node {
         aimed(&row)
     }
 
-    // The open request aimed at `method target`, answered whole in the next block.
     fn answer_to(&mut self, ms: u64, method: &str, target: &str, status: u16, body: Value) {
         self.after(ms);
         let row = self.pending_to(method, target);
         self.reply(&row, status, body);
     }
 
-    // A wait's `ended` event and the stream's end, in the next block.
     fn ended(&mut self, wait: &RequestRow, seq: u64, exit_code: Value) {
         self.after(1_000);
         let line = "pod duckpond-7 ended: exit code 0 (Completed)";
@@ -482,9 +468,6 @@ fn pod(name: &str) -> Value {
     json!({"pod": {"name": name}})
 }
 
-// Check 1 offered at 1000 ms and run the block after at 3000 ms: a block of 2000 ms. Its pod's
-// creation lands 500 ms later, the check is claimed, and the wait opens: a request lasts
-// 64 × 2000 ms, so alive events come every 128000 / 2 / 1000 = 64 s.
 fn waiting_on_its_pod(node: &mut Node) -> RequestRow {
     node.offer(1).unwrap();
     node.after(2_000);
@@ -595,7 +578,6 @@ fn a_pod_the_service_refuses_errs_the_check_and_leaves_nothing_to_delete() {
     assert!(node.held().is_empty() && node.waiting().is_empty());
 }
 
-// A block of 10 ms: a request lasts 640 ms, and the pod's creation took 490 ms to land.
 #[test]
 fn a_wait_with_no_whole_second_to_beat_errs_the_check_and_deletes_the_pod() {
     let mut node = node();
@@ -653,9 +635,7 @@ fn a_check_another_runner_claimed_is_left_alone_and_only_its_senders_are_heard()
     assert_eq!(heard.code, code::UNAUTHORIZED);
 }
 
-// The wait opens after the creation's answer; 65 blocks of 1 s pass with no event, so egress
-// expires it, and the pod is read.
-fn outlived(node: &mut Node) {
+fn expire_wait_and_read_pod(node: &mut Node) {
     node.offer(1).unwrap();
     node.after(2_000);
     node.after(0);
@@ -676,7 +656,6 @@ fn run_status(state: &str, exit_code: Value) -> Value {
     json!({"pod": {"name": "duckpond-7", "phase": "Running", "containers": [run]}})
 }
 
-// What follows a pod's end: /out listed (its log alone), copied, and the pod deleted.
 fn copied_and_deleted(node: &mut Node) {
     let listed = json!({"exit_code": 0, "stdout": "/out/log\n", "stderr": ""});
     let find = node.answer(1_000, 200, listed);
@@ -691,11 +670,10 @@ fn copied_and_deleted(node: &mut Node) {
 #[test]
 fn a_pod_that_outlives_its_wait_is_read_and_waited_on_again_at_the_beat_its_blocks_measured() {
     let mut node = node();
-    outlived(&mut node);
+    expire_wait_and_read_pod(&mut node);
     let read = node.answer(1_000, 200, run_status("running", Value::Null));
     assert_eq!(read, sent("GET", "/v1/pods/duckpond-7"));
     let again = node.pending();
-    // 66 blocks over 66 s since the first wait opened: blocks of 1000 ms, 64000 / 2 / 1000
     assert_eq!(
         aimed(&again),
         sent("GET", "/v1/pods/duckpond-7/wait?every=32")
@@ -715,7 +693,7 @@ fn a_pod_that_outlives_its_wait_is_read_and_waited_on_again_at_the_beat_its_bloc
 #[test]
 fn a_pod_that_ended_while_its_wait_was_broken_reports_how_it_ended() {
     let mut node = node();
-    outlived(&mut node);
+    expire_wait_and_read_pod(&mut node);
     let terminated = run_status("terminated", json!(2));
     let read = node.answer(1_000, 200, terminated);
     assert_eq!(read, sent("GET", "/v1/pods/duckpond-7"));
@@ -725,8 +703,6 @@ fn a_pod_that_ended_while_its_wait_was_broken_reports_how_it_ended() {
     assert_eq!(node.reports(), [(1, State::Failed, line, Some(log))]);
 }
 
-// The pod is made before the claim: a check already taken makes none, and a claim refused for
-// another reason deletes the pod it made and errs the check.
 #[test]
 fn a_claim_refused_for_any_reason_but_its_state_errs_the_check_and_one_already_taken_is_left() {
     let mut node = node();
@@ -751,8 +727,6 @@ fn a_claim_refused_for_any_reason_but_its_state_errs_the_check_and_one_already_t
     assert!(node.held().is_empty());
 }
 
-// A creation that took longer to land than a whole request lasts (scheduling, an image pull)
-// still waits at half the window: the trip says nothing of how late a beat lands.
 #[test]
 fn a_creation_slower_than_a_whole_request_still_waits_at_half_the_window() {
     let mut node = node();
@@ -785,8 +759,6 @@ fn a_job_that_states_what_it_asks_gets_it_for_its_pod_and_cargo_runs_as_many_job
 
 const FULL: &str = "pods \"duckpond-8\" is forbidden: exceeded quota: hardcap, requested: requests.cpu=16, used: requests.cpu=40, limited: requests.cpu=48";
 
-// Check 1 runs; check 2's pod finds the quota full, so check 2 stays queued, unclaimed and
-// unreported, until check 1's pod ends and its room is free.
 #[test]
 fn a_quota_with_no_room_leaves_the_check_queued_until_a_pod_of_this_runner_ends() {
     let mut node = node();
@@ -808,7 +780,6 @@ fn a_quota_with_no_room_leaves_the_check_queued_until_a_pod_of_this_runner_ends(
     assert_eq!(aimed(&made), sent("POST", "/v1/pods"));
     node.answer(500, 201, pod("duckpond-9"));
     let wait = node.pending();
-    // offered again as the pod ended, run a block of 1000 ms later: 64000 / 2 / 1000
     assert_eq!(
         aimed(&wait),
         sent("GET", "/v1/pods/duckpond-9/wait?every=32")
@@ -835,9 +806,6 @@ fn a_pod_that_asks_more_than_the_whole_quota_errs_its_check() {
     );
 }
 
-// An update of this program cancels the run parked on check 1's pod; the cut-off wait expires,
-// and nobody reports the check. A Sweep takes the pod up in a Resume the block after, which waits
-// on it, copies `/out`, reports how it ended and deletes it.
 #[test]
 fn a_run_an_update_cut_off_is_taken_up_by_a_sweep_and_reports_how_its_pod_ended() {
     let mut node = node();
@@ -879,8 +847,6 @@ fn a_run_an_update_cut_off_is_taken_up_by_a_sweep_and_reports_how_its_pod_ended(
     assert!(node.held().is_empty());
 }
 
-// Check 1 is rerun as check 3 while its pod still runs: check 3's run deletes check 1's pod and
-// reports check 1 superseded before it counts its room and makes its own.
 #[test]
 fn a_rerun_deletes_the_earlier_attempts_pod_and_reports_it_superseded() {
     let mut node = node();
@@ -906,8 +872,6 @@ fn a_rerun_deletes_the_earlier_attempts_pod_and_reports_it_superseded() {
     node.pending_to("GET", "/v1/pods/duckpond-8/wait?every=32");
 }
 
-// Check 1 ended under another reporter while its pod ran, and check 2 still runs: a Sweep deletes
-// check 1's pod and leaves check 2's alone.
 #[test]
 fn a_sweep_deletes_the_pod_of_a_check_that_ended_and_leaves_a_live_run_alone() {
     let mut node = node();
@@ -944,8 +908,6 @@ fn a_sweep_deletes_the_pod_of_a_check_that_ended_and_leaves_a_live_run_alone() {
     assert_eq!(deletes, 0, "check 2's pod is left alone");
 }
 
-// Unset, the runner holds one pod at once: two checks offered together make one pod, and the
-// second runs once the first's pod ends. A runner set to two makes both.
 #[test]
 fn a_check_past_the_runners_concurrency_waits_for_one_of_its_pods_to_end() {
     let mut node = node();
@@ -988,8 +950,6 @@ fn a_check_past_the_runners_concurrency_waits_for_one_of_its_pods_to_end() {
     assert_eq!(none.code, code::INVALID_INPUT);
 }
 
-// Check 1 is superseded while its pod runs: check 2's run deletes that pod before it counts the
-// pods it holds, and takes the room.
 #[test]
 fn a_superseded_checks_pod_is_deleted_by_the_next_run_which_takes_its_room() {
     let mut node = node();

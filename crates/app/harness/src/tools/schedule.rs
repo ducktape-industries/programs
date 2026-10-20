@@ -63,10 +63,8 @@ pub(crate) struct ListArgs {
     cursor: Option<String>,
 }
 
-// how many runs a list answers where the agent names no limit, as its requester ruled (J-066)
 const LISTED: u64 = 20;
 
-// the entry a cursor names: the hex `next` of the page before
 fn below(cursor: &str) -> Result<u64, Error> {
     let bytes = design::unhex(cursor).and_then(|bytes| <[u8; 8]>::try_from(bytes).ok());
     bytes
@@ -83,8 +81,6 @@ fn op_of(ctx: &ExecCtx, booking: &Booking) -> Value {
     read.unwrap_or_else(|| json!({ "hex": abi::hex(&booking.payload) }))
 }
 
-// a run that applied keeps its answer as JSON text and lists it as that JSON; a refusal, and a
-// run kept before answers were read, list as their text
 fn told(ran: &Ran) -> Value {
     let answer = (!ran.failed).then(|| serde_json::from_str(&ran.text).ok());
     answer.flatten().unwrap_or_else(|| json!(ran.text))

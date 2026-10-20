@@ -26,8 +26,6 @@ pub(crate) fn render(
     ladder: &Ladder,
 ) -> AnyElement {
     let mut columns = div().id(id("forge-code")).flex().flex_1().min_h(px(0.));
-    // wide, the tree stands beside the file; narrow, an open file takes
-    // its place until closed (the rail's toggle is the rail's alone)
     if !forge.layout.narrow() || forge.nav().blob.is_none() {
         columns = columns
             .child(tree(forge, cx, theme, ladder))
@@ -47,17 +45,12 @@ pub(crate) fn render(
         .into_any_element()
 }
 
-/// How far each tree level indents its rows.
 const INDENT_STEP: f32 = 14.;
-/// The column a row's expand/kind glyph sits in.
 const GLYPH: Pixels = px(12.);
 
 fn tree(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     let column = tree_column(forge, theme);
     let Some(query) = forge.tree_query(Vec::new()) else {
-        // `refs()` lands (even empty) before `head_oid()` ever resolves for
-        // a repo with no commits: without this, a freshly created repo sat
-        // on "Resolving the ref…" forever instead of saying so.
         let waiting = match forge.refs() {
             Some(_) => no_commits(forge, theme, ladder),
             None => quiet(words::RESOLVING_REF, theme).into_any_element(),
@@ -93,7 +86,6 @@ fn tree(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) 
         .into_any_element()
 }
 
-/// The tree's column and its filter field.
 fn tree_column(forge: &Forge, theme: &Theme) -> Stateful<Div> {
     div()
         .id(id("forge-tree"))
@@ -121,20 +113,15 @@ fn tree_column(forge: &Forge, theme: &Theme) -> Stateful<Div> {
         )
 }
 
-/// What marks a row: the open file, the keyboard cursor, open folders.
 struct Marks {
     open: Option<Vec<u8>>,
-    /// where the keys put the cursor, drawn
     cursor: Option<Vec<u8>>,
-    /// the row the keys start from, claimed for them
     claimed: Option<Vec<u8>>,
     expanded: BTreeSet<Vec<u8>>,
 }
 
-/// The rows, drawn whole or as a virtual list, under the tree's keys.
 fn tree_rows(forge: &Forge, rows: Vec<Row>, cx: &mut Context<Forge>, theme: &Theme) -> AnyElement {
     let pressed = cx.listener(|forge, event: &KeyDownEvent, _, cx| {
-        // unmodified keys only: a chord is the shell's or the editor's
         if event.keystroke.modifiers.modified() {
             return;
         }
@@ -142,11 +129,6 @@ fn tree_rows(forge: &Forge, rows: Vec<Row>, cx: &mut Context<Forge>, theme: &The
             forge.tree_key(key, cx);
         }
     });
-    // the tree claims a row before any key: the cursor, else the open
-    // file, else the first entry, which is where `tree_key` starts too.
-    // The cursor is drawn once the arrows walk the tree: a press moves it
-    // (the keys go on from there) and lights nothing, and at rest nothing
-    // is lit, as the tree cannot see whether it holds the focus
     let open = forge.nav().blob.as_ref().map(|(path, _)| path.clone());
     let claimed = forge
         .nav()
@@ -175,7 +157,6 @@ fn tree_rows(forge: &Forge, rows: Vec<Row>, cx: &mut Context<Forge>, theme: &The
     }));
     let count = rows.len();
     let paint = move |index: usize| tree_row(&rows[index], &marks, press.clone(), &theme);
-    // a virtual list, whose scroll handle keeps the keyboard cursor in view
     let list = uniform_list(
         id("forge-tree-list"),
         count,
@@ -199,7 +180,6 @@ fn tree_rows(forge: &Forge, rows: Vec<Row>, cx: &mut Context<Forge>, theme: &The
         .into_any_element()
 }
 
-/// One tree row: an entry, or a folder still reading or refused.
 fn tree_row(
     entry: &Row,
     marks: &Marks,
@@ -214,7 +194,6 @@ fn tree_row(
                 Slot::Failed(sentence) => sentence.clone(),
                 _ => words::READING.to_owned(),
             };
-            // a row's height, so a virtual tree measures one and knows all
             return div()
                 .min_h(design::size::ROW)
                 .flex()
@@ -234,8 +213,6 @@ fn tree_row(
         EntryKind::Executable | EntryKind::File => "",
     };
     let row = entry.clone();
-    // A row is pressed, never focused: the list holds focus, so Enter
-    // reaches the tree's key handler alone and not a focused row too.
     let selected = marks.open.as_deref() == Some(&entry.path[..]);
     let cursor = marks.cursor.as_deref() == Some(&entry.path[..]);
     let claimed = marks.claimed.as_deref() == Some(&entry.path[..]);
@@ -249,7 +226,6 @@ fn tree_row(
         .pl(indent)
         .pr_2()
         .role(Role::TreeItem)
-        // the entry's name alone: the glyph is drawn, `aria_expanded` says it
         .aria_label(entry.name.clone())
         .aria_level(entry.depth + 1)
         .aria_selected(selected)
@@ -340,7 +316,6 @@ fn body(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) 
         .into_any_element()
 }
 
-/// The open file's path, id and close button.
 fn blob_header(
     path: &[u8],
     oid: &str,
@@ -372,8 +347,6 @@ fn blob_header(
         ))
 }
 
-/// A blob as its content reads: markdown rendered, text highlighted, or
-/// the header the program returned for anything else.
 fn blob_content(
     forge: &Forge,
     path: &[u8],
@@ -436,24 +409,18 @@ fn is_markdown(name: &str) -> bool {
     lower.ends_with(".md") || lower.ends_with(".markdown")
 }
 
-/// One digit's advance in [`design::fonts::FAMILY_MONO`], in ems: the
-/// font's published metric, since no text measurement reaches a view. The
-/// gutter is sized from it before any line is laid out.
 const MONO_DIGIT_EM: f32 = 0.6;
 
-/// Source lines, highlighted, numbered in a mono gutter.
 fn lines(lines: Rc<crate::blob::Lines>, theme: &Theme) -> AnyElement {
     let count = lines.rows.len();
     let digit = design::type_scale::SECONDARY as f32 * MONO_DIGIT_EM;
-    let gutter = px(count.to_string().len() as f32 * digit) + space::BLOCK; // plus its padding and edge
+    let gutter = px(count.to_string().len() as f32 * digit) + space::BLOCK;
     let theme = *theme;
     crate::ui::components::rows("forge-blob-lines", count, None, None, move |index| {
         div()
             .id(id(format!("forge-blob-line-{}", index + 1)))
             .flex()
             .gap_3()
-            // the line's number is its marker, not its code: a drag down
-            // the file copies the code alone
             .child(
                 div()
                     .id(id(format!("forge-blob-number-{}", index + 1)))
@@ -480,7 +447,6 @@ fn lines(lines: Rc<crate::blob::Lines>, theme: &Theme) -> AnyElement {
     })
 }
 
-/// The full path of an entry inside the directory on screen.
 pub(crate) fn join(dir: &[u8], name: &[u8]) -> Vec<u8> {
     if dir.is_empty() {
         return name.to_vec();

@@ -80,10 +80,8 @@ pub(crate) fn render(
         .into_any_element()
 }
 
-/// The widest a README runs, a comfortable reading measure.
 const MEASURE: Pixels = px(880.);
 
-/// The README's path over its rendered body.
 fn document(
     forge: &Forge,
     name: &[u8],

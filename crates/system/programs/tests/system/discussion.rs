@@ -40,7 +40,6 @@ fn apps() -> Vec<Founding> {
     ]
 }
 
-/// One commit holding `files`, on top of `parents`.
 fn commit(store: &mut MemoryObjects, parents: &[Oid], files: &[(&str, &[u8])]) -> Oid {
     let entries = files
         .iter()
@@ -70,7 +69,6 @@ fn commit(store: &mut MemoryObjects, parents: &[Oid], files: &[(&str, &[u8])]) -
     store.put(Kind::Commit, &commit.serialize()).unwrap()
 }
 
-/// A receive-pack request: `refs` set from nothing, every object packed.
 fn push_request(store: &MemoryObjects, refs: &[(Oid, &str)]) -> (Vec<u8>, Vec<u8>) {
     let zero = Oid::Sha1([0; 20]);
     let mut request = Vec::new();
@@ -204,7 +202,6 @@ fn a_change_and_its_channel_land_in_one_block() {
             matches!(receipt.outcome, Outcome::Applied { .. }),
             "{receipt:?}"
         );
-        // chat created the channel in forge's frame
         let in_frame = |nested: &Receipt| {
             nested.program == chat::PROGRAM && matches!(nested.outcome, Outcome::Applied { .. })
         };

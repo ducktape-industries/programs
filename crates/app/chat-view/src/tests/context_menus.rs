@@ -19,8 +19,6 @@ fn right_press(cx: &mut TestAppContext, key: &str) {
     cx.run_until_parked();
 }
 
-// The open message menu: its message, mode, place and whether a right
-// press opened it.
 fn menu_of(view: &Entity<Chat>) -> Option<(u64, Mode, (f32, f32), bool)> {
     view.read(|chat| {
         let menu = chat.menu.as_ref()?;

@@ -23,31 +23,16 @@ use crate::words::{self, file_status, why_no_lines};
 use forge::{Content, FileDiff, LineKind, Query, Reply};
 use view::design::Ladder;
 
-/// A route an event of a virtual row takes back into the view.
 pub(crate) type Route<E> = Rc<dyn Fn(&E, &mut Window, &mut App)>;
 
-/// A line-number gutter column, and the +/− marker's.
 const GUTTER_W: Pixels = px(44.);
 const MARKER_W: Pixels = px(12.);
 
-/// A reviewable diff's row: its gutter's press target. Every row of it,
-/// a note's included, is this tall, so a note's rows meet edge to edge.
 const ROW_H: Pixels = PRESS_TARGET;
-/// The composer's buttons' label line: on it an SDK button, its padding
-/// and edge around the label, is a row tall (measured on the host: Cancel
-/// 24 px, Stage 22). On the text's own line it is 27 px, sized for a
-/// control's 28 px row (`design::size::CONTROL`), and stood past this
-/// shorter row onto the field's edge above and the box's below.
 const BUTTON_LINE: Pixels = px(16.);
-/// How wide a note box grows.
 const NOTE_W: Pixels = px(520.);
-/// What one line of a note box holds, in character widths (a wide CJK
-/// character counts two): a line of capitals, about 8 px a character at
-/// the note's size, still fits the box's 498 px of text.
 const NOTE_CHARS: usize = 60;
 
-/// One row of the diff as it is painted: a file's header, a hunk's, or a
-/// line. Built for the rows on screen, from the held reply.
 struct Painted {
     kind: Kind,
     text: String,
@@ -64,22 +49,14 @@ enum Kind {
     Line,
 }
 
-/// A diff laid out as rows, once: where each file's and each hunk's rows
-/// start in the held reply. No line is copied: a row is found by its index
-/// and its text read from the reply when it is painted.
 struct Rows {
     reply: Rc<Reply>,
     files: Vec<FileRows>,
     count: usize,
-    /// the rows that are lines with a number: the grid a review walks
     lines: usize,
-    /// the longest line, the row the list measures its width by
     widest: Option<usize>,
 }
 
-/// One file's place in the rows: its index in the reply's page, its first
-/// row and first numbered line, and each hunk's (its header row, its first
-/// line). A file without hunks has one row after its header saying why.
 struct FileRows {
     file: usize,
     first_row: usize,
@@ -87,8 +64,6 @@ struct FileRows {
     hunks: Vec<(usize, usize)>,
 }
 
-/// The rows of the diff on screen, by the reply landed and the one file
-/// shown, if one: the same reply lays out the same, so a frame reuses them.
 #[derive(Default)]
 pub(crate) struct DiffCache(RefCell<Option<(Key, Rc<Rows>)>>);
 
@@ -108,9 +83,6 @@ impl DiffCache {
         rows
     }
 
-    /// Forgets the rows once the reply they index is no longer held: a
-    /// screen left drops its read, and the layout must not keep the diff
-    /// in memory in its place.
     pub(crate) fn drop_unshared(&self) {
         let mut slot = self.0.borrow_mut();
         if slot
@@ -171,7 +143,6 @@ impl Rows {
         }
     }
 
-    /// The row `index` is, found through the file and hunk it falls in.
     fn painted(&self, index: usize) -> Painted {
         let at = self.files.partition_point(|file| file.first_row <= index);
         let Some(laid) = at.checked_sub(1).map(|at| &self.files[at]) else {
@@ -208,7 +179,6 @@ impl Rows {
         }
     }
 
-    /// The row of the `line`th numbered line.
     fn row_of_line(&self, line: usize) -> usize {
         let at = self.files.partition_point(|file| file.first_line <= line);
         let Some(laid) = at.checked_sub(1).map(|at| &self.files[at]) else {
@@ -221,8 +191,6 @@ impl Rows {
         row + 1 + (line - first)
     }
 
-    /// The row of the line whose `new_side` gutter carries `number` in the
-    /// file at `path`, when that line is laid out.
     fn row_of_anchor(&self, path: &[u8], new_side: bool, number: u64) -> Option<usize> {
         let page = self.page();
         let at = self.files.iter().position(|laid| {
@@ -255,24 +223,14 @@ impl Rows {
     }
 }
 
-/// What readers wrote on the lines laid out, as rows of the list: each
-/// line's notes (its published comments, this reader's draft or the open
-/// composer) follow it, a box drawn a row at a time. The diff's own rows
-/// keep their indices ([`Rows`]); a list index is found through these.
 #[derive(Default)]
 struct Notes {
-    /// in row order: the row of the line, and the rows after it
     zones: Vec<(usize, Vec<NoteRow>)>,
-    /// how many note rows come before each zone, and after the last
     before: Vec<usize>,
-    /// each zone's first list index
     starts: Vec<usize>,
-    /// the list index of the open composer's last row, when it is drawn
     composer: Option<usize>,
 }
 
-/// One row of a note box: its key, what it holds, and whether it is the
-/// box's top or bottom edge.
 struct NoteRow {
     key: String,
     kind: NoteKind,
@@ -281,17 +239,13 @@ struct NoteRow {
 }
 
 enum NoteKind {
-    /// who wrote it (or where the composer anchors), and whether the
-    /// review was pinned at another head
     Head(String, bool),
     Text(String),
-    /// the composer's field, the line its error shows on, and its buttons
     Field,
     Error,
     Actions,
 }
 
-/// A list index: one of the diff's own rows, or a row of a note.
 enum Slot<'a> {
     Row(usize),
     Note(&'a NoteRow),
@@ -361,23 +315,19 @@ impl Notes {
         notes
     }
 
-    /// The note rows in the list.
     fn added(&self) -> usize {
         self.before.last().copied().unwrap_or(0)
     }
 
-    /// The note rows before zone `zone` (all of them past the last).
     fn added_before(&self, zone: usize) -> usize {
         self.before.get(zone).copied().unwrap_or(0)
     }
 
-    /// The list index of the diff's row `row`.
     fn index_of(&self, row: usize) -> usize {
         let zones = self.zones.partition_point(|(after, _)| *after < row);
         row + self.added_before(zones)
     }
 
-    /// What list index `index` draws.
     fn slot(&self, index: usize) -> Slot<'_> {
         let at = self.starts.partition_point(|start| *start <= index);
         if let Some(zone) = at.checked_sub(1)
@@ -389,10 +339,6 @@ impl Notes {
     }
 }
 
-/// The open composer's rows, under where it anchors: its field, its error's
-/// line, its buttons, then a row of room. On rows one height the gaps are
-/// rows too: the buttons clear the field by the error's line and the box's
-/// edge by the last row, and typing or an error moves none of them.
 fn composer_parts(anchor: String) -> [NoteKind; 5] {
     [
         NoteKind::Head(anchor, false),
@@ -403,8 +349,6 @@ fn composer_parts(anchor: String) -> [NoteKind; 5] {
     ]
 }
 
-/// A box's rows, keyed under `key`: its parts in order, the first its top
-/// edge and the last its bottom.
 fn boxed(key: &str, parts: impl IntoIterator<Item = NoteKind>) -> Vec<NoteRow> {
     let mut rows: Vec<NoteRow> = parts
         .into_iter()
@@ -422,10 +366,6 @@ fn boxed(key: &str, parts: impl IntoIterator<Item = NoteKind>) -> Vec<NoteRow> {
     rows
 }
 
-/// `text` as the lines a note box draws, broken between words.
-// ponytail: breaks by a character budget, not by the font's widths (a
-// view cannot measure text); a line that still runs past the box is cut
-// with an ellipsis, and the whole comment reads in the Conversation tab.
 fn wrap(text: &str) -> Vec<String> {
     let width = |word: &str| -> usize {
         word.chars()
@@ -454,8 +394,6 @@ fn wrap(text: &str) -> Vec<String> {
     lines
 }
 
-/// The open composer's field and the routes of its buttons, for the rows
-/// that draw it.
 struct Composer {
     body: TextField,
     error: String,
@@ -463,8 +401,6 @@ struct Composer {
     cancel: Route<()>,
 }
 
-/// Scrolls the open composer into view: it follows its line, and its field
-/// must be in the frame that gives it the keys.
 pub(crate) fn reveal_composer(forge: &Forge) {
     let Some(shared) = forge.diff_query().and_then(|query| forge.shared(&query)) else {
         return;
@@ -479,7 +415,6 @@ pub(crate) fn reveal_composer(forge: &Forge) {
     }
 }
 
-/// `reviewable` turns the gutter into comment buttons.
 pub(crate) fn render(
     forge: &Forge,
     query: &Query,
@@ -514,8 +449,6 @@ pub(crate) fn render(
     let only = forge.nav().diff_path.clone();
     let shown = |file: &FileDiff| only.is_none() || only.as_deref() == path_of(file).as_deref();
     if !page.items.iter().any(shown) {
-        // Expo's: a change's diff `send` (`forge/change.tsx:342`), a
-        // commit's `git-commit-horizontal` (`commit/[oid].tsx:96`)
         let glyph = match reviewable {
             true => "send",
             false => "git-commit-horizontal",
@@ -534,14 +467,9 @@ pub(crate) fn render(
         )
         .into_any_element();
     }
-    // A screen with no file tree beside it (a commit's own diff) carries the
-    // file headers above the virtual list, where they stay in view. It lists
-    // every file, the one shown alone marked, as the Files tab's list does:
-    // a press narrows the diff, not the list.
     let strip =
         (!reviewable).then(|| file_strip(shared.clone(), page.items.len(), forge, cx, theme));
     let rows = forge.diff_cache.rows(&shared, only);
-    // what readers have written on these lines, as rows after each line
     let notes = Rc::new(match reviewable {
         true => Notes::of(forge, &rows),
         false => Notes::default(),
@@ -564,11 +492,6 @@ pub(crate) fn render(
             cancel: Rc::new(cx.listener(|forge, _: &(), _, cx| forge.discard_comment(cx))),
         });
     let handle = forge.diff_scroll.clone();
-    // Under a review the lines are a grid: ↑ ↓ walk the lines with a
-    // gutter, ← → a line's gutters (old, new), Enter comments there. The
-    // active line is scrolled into view before its gutter claims, since a
-    // virtual row off screen has no node to claim with. At rest the first
-    // gutter is claimed and drawn like any other.
     let lines = if reviewable { rows.lines } else { 0 };
     let walked = forge.diff_cursor.is_some();
     let (at, cell) = forge.diff_cursor.unwrap_or_default();
@@ -610,10 +533,6 @@ pub(crate) fn render(
         _ => {
             let reveal = rows.clone();
             let pressed = rows.clone();
-            // An open composer is the grid's edit mode: the keys typed in
-            // its field reach the grid around it too, where Space and Enter
-            // would press the active gutter and move the composer away, so
-            // the grid walks nothing until it is staged or cancelled.
             let walkable = if notes.composer.is_some() { 0 } else { lines };
             design::composite(id(format!("{element_id}-lines")), Role::Grid, "Diff")
                 .active(at, walkable)
@@ -660,21 +579,11 @@ pub(crate) fn render(
         .into_any_element()
 }
 
-/// The file strip's rows, each this tall.
 const STRIP_ROW_H: f32 = 21.;
-/// The rows the strip shows before it scrolls, so a commit touching many
-/// files still shows its diff beneath.
 const STRIP_ROWS: usize = 8;
-/// The strip's inset above and below its rows.
 const STRIP_PAD: f32 = 4.;
-/// The strip's list: its id, and its cursor's.
 pub(crate) const STRIP_ID: &str = "forge-commit-diff-files";
 
-/// Which files a commit's diff touches (`count` of them), above the rows
-/// themselves. Each one shows its file alone; the commit's All files shows
-/// them all again. A virtual list, so a commit touching a release's files
-/// draws the ones on screen; one Tab stop: ↑ ↓ walk the files, Enter shows
-/// the active one.
 fn file_strip(
     shared: Rc<Reply>,
     count: usize,
@@ -751,7 +660,6 @@ fn file_strip(
     list.child(rows).into_any_element()
 }
 
-/// File `index` of a diff reply.
 pub(crate) fn file_at(reply: &Reply, index: usize) -> Option<&FileDiff> {
     match reply {
         Reply::Diff { page, .. } => page.items.get(index),
@@ -759,8 +667,6 @@ pub(crate) fn file_at(reply: &Reply, index: usize) -> Option<&FileDiff> {
     }
 }
 
-/// A line's gutters as anchors, in paint order: the old side, then the
-/// new; a line with one number has one.
 fn anchors(row: &Painted) -> Vec<Anchor> {
     [(false, row.old), (true, row.new)]
         .into_iter()
@@ -781,7 +687,6 @@ impl Painted {
     }
 }
 
-/// A file's header row: its path (old → new when renamed), status, counts.
 fn file_header(file: &FileDiff) -> String {
     let header = words::file_path(file);
     let status = file_status(file.status);
@@ -791,15 +696,10 @@ fn file_header(file: &FileDiff) -> String {
     }
 }
 
-/// The lines a file adds and removes, when they were counted: a binary,
-/// an oversize file or a submodule has none to count, not zero.
 fn counts(file: &FileDiff) -> Option<String> {
     (file.content == Content::Text).then(|| format!("+{} −{}", file.additions, file.deletions))
 }
 
-/// One of the diff's own rows. Each is one line high, as the list draws
-/// every row the height of the one it measures: a header padded taller
-/// spilled into the row under it and was drawn over by it.
 fn paint_row(
     row: &Painted,
     index: usize,
@@ -831,8 +731,6 @@ fn paint_row(
     }
 }
 
-/// `active`: which of the line's gutters the arrows are on, under a review,
-/// and whether they have walked there: only then is it drawn.
 fn line_row(
     row: &Painted,
     index: usize,
@@ -851,8 +749,6 @@ fn line_row(
         LineKind::Deleted => "−",
         LineKind::Context => " ",
     };
-    // the gutters are the row's cells, in paint order: the old side, then
-    // the new; a line with one number has one cell
     let cells = usize::from(row.old.is_some());
     let (claimed, walked) = match active {
         Some((cell, walked)) => (Some(cell), walked),
@@ -902,8 +798,6 @@ fn line_row(
         .into_any_element()
 }
 
-/// One row of a note box, under the line it is on: the box's edges, and
-/// what this row of it holds.
 fn note_row(
     note: &NoteRow,
     composer: Option<&Composer>,
@@ -1004,21 +898,16 @@ fn note_row(
         .w_full()
         .h(ROW_H)
         .flex()
-        // under the code, past the gutters and the marker
         .pl(GUTTER_W * 2. + MARKER_W + design::space::BLOCK + design::space::SM)
         .pr(design::space::BLOCK)
         .child(slice)
         .into_any_element()
 }
 
-/// A gutter number. Under a review it is the button that anchors a comment
-/// at `path:line (side)`; otherwise it is the line's marker. Either way a
-/// drag down the diff copies the code without it.
 fn gutter(
     row: &Painted,
     new_side: bool,
     reviewable: bool,
-    // the keys' claim is on it; it is drawn once the arrows walked there
     (active, walked): (bool, bool),
     comment: &Route<Anchor>,
     theme: &Theme,
@@ -1125,8 +1014,6 @@ mod tests {
         })
     }
 
-    /// The same reply is laid out once: a frame gets the rows the last one
-    /// had. Another reply, or one file of it, is laid out anew.
     #[test]
     fn rows_are_kept_per_reply() {
         let cache = DiffCache::default();
@@ -1137,7 +1024,6 @@ mod tests {
         assert!(!Rc::ptr_eq(&first, &cache.rows(&a, Some(b"a.rs".to_vec()))));
         let again = reply(vec![file("a.rs", &["one"])]);
         assert!(!Rc::ptr_eq(&first, &cache.rows(&again, None)));
-        // the reply still held elsewhere keeps its rows; dropped, they go
         cache.drop_unshared();
         assert!(cache.0.borrow().is_some());
         drop(again);
@@ -1145,8 +1031,6 @@ mod tests {
         assert!(cache.0.borrow().is_none());
     }
 
-    /// Every row is found by its index: headers, hunks, lines, a file with
-    /// no hunks, and the grid of numbered lines walks the lines alone.
     #[test]
     fn rows_are_found_by_index() {
         let mut empty = file("b.bin", &[]);
@@ -1188,9 +1072,6 @@ mod tests {
         assert_eq!(rows.painted(8).path, b"c.rs");
     }
 
-    /// A comment sits on the line whose gutter on its side carries its
-    /// number: a context line by either, an added line by its new number
-    /// alone, a removed line by its old; never another file's line.
     #[test]
     fn a_note_finds_its_line() {
         let line = |kind, old, new| forge::DiffLine {
@@ -1217,8 +1098,6 @@ mod tests {
         assert_eq!(anchors(&rows.painted(2)).len(), 2, "both gutters");
     }
 
-    /// Note rows follow their line in the list and the diff's own rows keep
-    /// theirs: a list index finds either, and a row finds its list index.
     #[test]
     fn note_rows_follow_their_line() {
         let zone = |rows: usize| boxed("n", (0..rows).map(|_| NoteKind::Text(String::new())));
@@ -1278,8 +1157,6 @@ mod tests {
         assert_eq!(notes.composer, Some(18));
     }
 
-    /// A note's text breaks between words under the budget, keeps its own
-    /// line breaks, and counts a wide character twice.
     #[test]
     fn a_note_breaks_between_words() {
         let words = "word ".repeat(30);

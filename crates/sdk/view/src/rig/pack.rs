@@ -11,7 +11,6 @@ pub fn wrapper(sections: &[(&str, &[u8])]) -> Vec<u8> {
         leb128(&mut body, name.len() as u64);
         body.extend_from_slice(name.as_bytes());
         body.extend_from_slice(data);
-        // custom section id, then its size
         program.push(0);
         leb128(&mut program, body.len() as u64);
         program.extend_from_slice(&body);
@@ -25,13 +24,13 @@ pub fn wrapper(sections: &[(&str, &[u8])]) -> Vec<u8> {
 pub fn section<'a>(bytes: &'a [u8], name: &str) -> Option<&'a [u8]> {
     let mut rest = bytes.strip_prefix(b"\0asm\x01\0\0\0")?;
     while let Some((&id, after)) = rest.split_first() {
-        let (size, after) = unleb128(after)?;
+        let (size, after) = read_leb128_length(after)?;
         let (body, after) = after.split_at_checked(size)?;
         rest = after;
         if id != 0 {
             continue;
         }
-        let (len, body) = unleb128(body)?;
+        let (len, body) = read_leb128_length(body)?;
         let (found, data) = body.split_at_checked(len)?;
         if found == name.as_bytes() {
             return Some(data);
@@ -40,8 +39,7 @@ pub fn section<'a>(bytes: &'a [u8], name: &str) -> Option<&'a [u8]> {
     None
 }
 
-/// A LEB128 length and the bytes after it.
-fn unleb128(bytes: &[u8]) -> Option<(usize, &[u8])> {
+fn read_leb128_length(bytes: &[u8]) -> Option<(usize, &[u8])> {
     let mut value: u64 = 0;
     for (at, byte) in bytes.iter().enumerate().take(10) {
         value |= u64::from(byte & 0x7f) << (7 * at);
@@ -68,7 +66,6 @@ fn leb128(out: &mut Vec<u8>, mut value: u64) {
 mod tests {
     use super::*;
 
-    /// The one layout the app's own test pins (`the_view_section_is_read_out_of_a_core_module`).
     #[test]
     fn a_wrapper_is_a_module_of_named_custom_sections() {
         let program = wrapper(&[("ducktape.view", b"view bytes")]);
@@ -83,9 +80,6 @@ mod tests {
         assert_eq!(program, expected);
     }
 
-    /// `section` reads back what `wrapper` wrote, by name, past a section
-    /// long enough for a two-byte size, and nothing out of a module that
-    /// is not one or ends mid-section.
     #[test]
     fn a_section_is_read_back_by_name() {
         let long = vec![7u8; 200];
@@ -104,7 +98,6 @@ mod tests {
     fn a_long_section_takes_a_two_byte_size() {
         let data = vec![7u8; 200];
         let program = wrapper(&[("d", &data)]);
-        // 1 (name len) + 1 (name) + 200 = 202 = 0xca: LEB128 `ca 01`
         assert_eq!(&program[8..12], &[0, 0xca, 0x01, 1]);
         assert_eq!(program.len(), 8 + 3 + 202);
     }

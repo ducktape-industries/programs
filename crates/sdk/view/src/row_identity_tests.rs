@@ -14,7 +14,6 @@ use std::rc::Rc;
 
 type Log = Rc<RefCell<Vec<usize>>>;
 
-/// Row `index` as a list draws it: no id of its own, an `open` button in it.
 fn row(index: usize, log: &Log) -> AnyElement {
     let log = log.clone();
     div()
@@ -31,7 +30,6 @@ fn row(index: usize, log: &Log) -> AnyElement {
         .into_any_element()
 }
 
-/// The `open` buttons' click routes, in tree order.
 fn opens(node: &wire::Node, out: &mut Vec<u32>) {
     if let wire::Node::Container(wire::ContainerNode {
         interactivity: Some(interactivity),
@@ -86,8 +84,6 @@ impl Render for Rows {
     }
 }
 
-/// P28's shape: rows of one data-driven list author one id inside them.
-/// The view lives, and each press runs its own row's listener.
 #[test]
 fn rows_of_a_list_may_author_the_same_id_inside_them() {
     let mut cx = TestAppContext::new();
@@ -97,9 +93,6 @@ fn rows_of_a_list_may_author_the_same_id_inside_them() {
     assert_eq!(*log.borrow(), [0, 1, 2]);
 }
 
-/// Two lists under one identified parent, told apart by their ids, their
-/// rows with no id at all, beside a sibling named by the integer a first
-/// row is filed under: the second list's rows log ten past their index.
 #[derive(Default, Serialize, Deserialize)]
 struct TwoLists {
     #[serde(skip)]
@@ -134,10 +127,6 @@ impl Render for TwoLists {
     }
 }
 
-/// A list is a scope of its own: the rows of two lists under one parent,
-/// each filed under its index, meet neither each other nor a sibling of
-/// the lists named by that integer. Every row keeps its own route from
-/// frame to frame, and a list that grows leaves the other's alone.
 #[test]
 fn two_lists_under_one_parent_each_file_their_own_rows() {
     let mut cx = TestAppContext::new();
@@ -204,8 +193,6 @@ fn rows_of_a_uniform_list_may_author_the_same_id_inside_them() {
     assert_eq!(*log.borrow(), [0, 1, 2]);
 }
 
-/// Two children of `rows`: `x`, and `second` under an id-less wrapper,
-/// which is transparent to the scope.
 #[derive(Default, Serialize, Deserialize)]
 struct Twice {
     second: String,
@@ -230,7 +217,6 @@ impl Render for Twice {
     }
 }
 
-/// The author writes `x` twice among the children of `rows`.
 fn write_twice(cx: &mut TestAppContext, view: &Entity<Twice>) {
     cx.update(view, |view, _, cx| {
         view.second = "x".into();
@@ -239,7 +225,6 @@ fn write_twice(cx: &mut TestAppContext, view: &Entity<Twice>) {
     cx.run_until_parked();
 }
 
-/// The panic `f` ends in, as text.
 fn panic_message(f: impl FnOnce()) -> String {
     let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f))
         .expect_err("the test host refuses a duplicate");
@@ -250,15 +235,12 @@ fn panic_message(f: impl FnOnce()) -> String {
         .unwrap_or_default()
 }
 
-/// What a view's test fails with when the host's sanitizer refuses
-/// `frame`, a whole one with the styles its tree names.
 fn refusal(mut frame: wire::Frame) -> String {
     let refused =
         wire::sanitize(&mut frame, &mut wire::Styles::default()).expect_err("the host refuses it");
     format!("the host refuses this frame: {refused}")
 }
 
-/// `name` wherever an id in the frame's tree names it is `to`.
 fn rename(frame: &mut wire::Frame, name: &str, to: &str) {
     let root = frame.root.as_mut().expect("a whole frame");
     root.for_each_mut(&mut |node| {
@@ -270,10 +252,6 @@ fn rename(frame: &mut wire::Frame, name: &str, to: &str) {
     });
 }
 
-/// A view's test and the host refuse a duplicate in one place, the
-/// sanitizer: the tree the view lowers with `y`, renamed `x` on the wire,
-/// is refused by it in the words the test of the view that writes `x`
-/// fails with.
 #[test]
 fn a_views_test_fails_a_duplicate_with_the_hosts_refusal() {
     let mut cx = TestAppContext::new();
@@ -284,9 +262,6 @@ fn a_views_test_fails_a_duplicate_with_the_hosts_refusal() {
     assert_eq!(refused, refusal(sent));
 }
 
-/// The same for rows: two rows of a list each filed under its own id `m`
-/// (a key the data repeated) are one id twice in one scope, the list's,
-/// refused in the view's test as the host refuses them.
 #[derive(Default, Serialize, Deserialize)]
 struct Keyed {
     keys: Vec<String>,
@@ -335,12 +310,9 @@ fn rows_named_by_one_key_fail_a_views_test_with_the_hosts_refusal() {
 }
 
 thread_local! {
-    /// Whether the next `Panes` makes its thread's list state first.
     static THREAD_FIRST: Cell<bool> = const { Cell::new(false) };
 }
 
-/// Chat's shape: one message `m`, with a field `edit` in it, drawn in two
-/// panes, each a list `rows`, and a button per way of naming a field.
 #[derive(Default, Serialize, Deserialize)]
 struct Panes {
     #[serde(skip)]
@@ -394,17 +366,12 @@ impl Render for Panes {
     }
 }
 
-/// The path of `pane`'s field: every segment one its author wrote.
 fn edit(pane: &'static str) -> Vec<wire::ElementIdWire> {
     ["page", pane, "rows", "m", "edit"]
         .map(|id| wire::ElementIdWire::Name(id.into()))
         .to_vec()
 }
 
-/// A widget target names a list by its id like any other segment: the
-/// same message's field is focused in either pane by the path through
-/// that pane's list. The row alone names both, so the host is asked for
-/// neither.
 #[test]
 fn a_field_in_a_list_row_is_focused_by_a_path_through_its_list() {
     let mut cx = TestAppContext::new();
@@ -421,10 +388,6 @@ fn a_field_in_a_list_row_is_focused_by_a_path_through_its_list() {
     assert!(refused.contains("2 end with it"), "{refused}");
 }
 
-/// A new instance of a view files its list rows under the paths the last
-/// one did, whatever order it makes its list states in: what the host
-/// holds for a field in a row (its text, its selection, focus) is kept by
-/// that path, and finds the field again.
 #[test]
 fn a_new_instance_files_its_list_rows_under_the_same_paths() {
     let fields = || {

@@ -166,12 +166,10 @@ fn a_programs_transactions_are_the_windows_sent_to_it() {
     assert!(!asks_for_frames(&cx));
 }
 
-/// The height of the frame a cursor names (activity's key, newest first).
 fn below(cursor: Vec<u8>) -> u64 {
     u64::MAX - u64::from_be_bytes(cursor[..8].try_into().expect("a key"))
 }
 
-/// Ada's transaction in block `height`, sent to `to`.
 fn recorded(height: u64, to: &str) -> Block {
     Block {
         height,
@@ -184,9 +182,6 @@ fn recorded(height: u64, to: &str) -> Block {
     }
 }
 
-/// An activity of `frames` transactions, one a block from block 1, each
-/// Ada's, sent where `to` says by its height, and the blocks it holds,
-/// which a test lands more in; the window is the short chain's.
 fn long_activity(
     frames: u64,
     to: fn(u64) -> &'static str,
@@ -200,7 +195,6 @@ fn long_activity(
     (cx, blocks)
 }
 
-/// Activity's writes, as the host tells of them: `write` tells of one.
 fn writes(cx: &TestAppContext) -> impl Fn(&mut TestAppContext) + use<> {
     let writes = cx.host().stream::<Changes<Activity>>();
     move |cx: &mut TestAppContext| {
@@ -212,7 +206,6 @@ fn writes(cx: &TestAppContext) -> impl Fn(&mut TestAppContext) + use<> {
     }
 }
 
-/// The row of the transaction in block `height`.
 fn frame(height: u64) -> String {
     format!("explorer-tx-{height}-0")
 }

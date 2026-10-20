@@ -26,8 +26,6 @@ pub fn mention_choices(names: &Names, members: &[Principal]) -> Vec<MentionChoic
     choices
 }
 
-// Whom `@` offers: a person, or an agent that acts. A program's own
-// account and an agent suspended or revoked are named, not offered.
 fn offered(names: &Names, principal: &Principal) -> bool {
     matches!(
         names.kind(principal),
@@ -116,8 +114,6 @@ pub fn dm_peer_of(mine: u64, channel_id: &str) -> Option<u64> {
 
 #[cfg(not(feature = "notifier"))]
 impl crate::Chat {
-    /// The open direct room's other person: their name, and whether they
-    /// are an agent. None for a channel, or before the roster is read.
     pub(crate) fn dm_peer(&self) -> Option<(String, bool)> {
         let room = self.room.as_ref()?;
         let names = self.names.ready()?;
@@ -125,9 +121,6 @@ impl crate::Chat {
         Some((names.member(&peer), crate::message::agent(names, &peer)))
     }
 
-    /// The name a person knows room `id` by: a direct room's other person,
-    /// else the channel's `#name`; a direct room the roster cannot name yet
-    /// keeps its own name, and a room not listed yet its short id.
     pub(crate) fn room_name(&self, id: &str) -> String {
         let peer = self
             .my_account()
@@ -144,8 +137,6 @@ impl crate::Chat {
         })
     }
 
-    /// What the top of the open room's history says: where it starts, by
-    /// the channel's name or the direct room's other person.
     pub(crate) fn intro(&self) -> Option<String> {
         let room = self.room.as_ref()?;
         Some(match self.dm_peer() {
@@ -187,7 +178,6 @@ mod tests {
         }
     }
 
-    /// Each wears the one badge and note its kind gives it.
     #[test]
     fn the_pickers_offer_every_account() {
         let names = Names::from_roster([
@@ -221,10 +211,6 @@ mod tests {
         assert!(!crate::message::agent(&names, &account(3)));
     }
 
-    // `@` offers people and the agents that act. A program's own account,
-    // an agent suspended or revoked, and a member the roster does not name
-    // are each still a choice, so a mention written of them keeps its name,
-    // but none is offered.
     #[test]
     fn the_mention_menu_offers_people_and_active_agents_only() {
         let names = Names::from_roster([
@@ -253,9 +239,6 @@ mod tests {
         );
     }
 
-    /// An active agent answers its manager always, and anyone else as its
-    /// `Ownership` says; nothing is said of a person, a program, an agent
-    /// that does not act, or one whose `Ownership` is unread.
     #[test]
     fn who_an_agent_leaves_unanswered() {
         let names = Names::from_roster([

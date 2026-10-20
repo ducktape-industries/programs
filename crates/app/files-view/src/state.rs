@@ -223,8 +223,6 @@ pub struct Opened {
     pub bytes: Vec<u8>,
     /// `bytes` is the whole file
     pub whole: bool,
-    // the whole picture, when the file is one. Never kept: a restored
-    // view reads it again
     #[serde(skip)]
     pub picture: Option<Arc<Image>>,
     /// who writes it
@@ -371,27 +369,19 @@ pub enum Sheet {
 pub struct Files {
     pub(crate) pages: Pages<Route>,
     pub(crate) reader: Reader,
-    /// the folder on screen, or the last one read
     pub(crate) folder: Loadable<Folder>,
     pub(crate) file: Loadable<Opened>,
     pub(crate) history: Loadable<History>,
-    /// the snapshot on screen, or the last one read
     pub(crate) snapshot: Loadable<Snapshot>,
     pub(crate) names: Loadable<Names>,
-    /// the session's chain id (`<label>#<salt>`), which links are minted in
     pub(crate) chain: String,
     pub(crate) note: Option<Note>,
-    /// never kept: a restored view comes back with nothing half filled
     #[serde(skip)]
     pub(crate) sheet: Option<Sheet>,
-    /// how many forms have opened: the next one's [`Form::id`]
     #[serde(skip)]
     pub(crate) forms: u64,
-    /// the pane's width, as the host lays the frame out: a desktop lays
-    /// its pages out by it (`ui::Layout`)
     #[serde(skip)]
     pub(crate) width: f32,
-    /// the host's picker is open for an upload: a second press waits
     #[serde(skip)]
     pub(crate) picking: bool,
 }
@@ -421,24 +411,18 @@ impl Files {
         self.pages.top()
     }
 
-    /// The folder at `path`, once it is read; another folder's entries
-    /// never stand in for it.
     pub(crate) fn folder_at(&self, path: &str) -> Option<&Folder> {
         self.folder.ready().filter(|folder| folder.path == path)
     }
 
-    /// The file at `path`, once it is read.
     pub(crate) fn file_at(&self, path: &str) -> Option<&Opened> {
         self.file.ready().filter(|file| file.path == path)
     }
 
-    /// The snapshot `id`, once it is read.
     pub(crate) fn snapshot_at(&self, id: BlobId) -> Option<&Snapshot> {
         self.snapshot.ready().filter(|snapshot| snapshot.id == id)
     }
 
-    /// The sheet on screen: the page's writes, or a menu's items, count
-    /// only while there are any, so Back never closes a sheet no one sees.
     pub(crate) fn sheet_shown(&self) -> Option<&Sheet> {
         match &self.sheet {
             Some(Sheet::Actions) if self.offered().is_empty() => None,
@@ -447,7 +431,6 @@ impl Files {
         }
     }
 
-    /// The page's form, while one is open.
     pub(crate) fn form(&self) -> Option<&Form> {
         match &self.sheet {
             Some(Sheet::Write(form)) => Some(form),

@@ -4,7 +4,6 @@ use common::*;
 const MAIN: &str = "refs/heads/main";
 const FEATURE: &str = "refs/heads/feature";
 
-// main at a root commit and feature one commit ahead of it, every object pushed.
 fn seeded() -> (MemorySandbox, Oid, Oid) {
     let mut store = MemoryObjects::new(Hash::Sha1);
     let root = file_commit(&mut store, &[], 1, &[("a", b"1\n")]);
@@ -18,7 +17,6 @@ fn seeded() -> (MemorySandbox, Oid, Oid) {
     (sandbox, root, feature)
 }
 
-// The change WRITER opens from feature into main.
 fn opened(sandbox: &MemorySandbox) -> u64 {
     let op = Op::ChangeOpen {
         repo: "project".into(),
@@ -59,7 +57,6 @@ fn archived(sandbox: &MemorySandbox, n: u64) -> bool {
     channel(sandbox, n).expect("the change's channel").archived
 }
 
-// chat's row for the change's channel, rewritten by `change`.
 fn rewrite(sandbox: &MemorySandbox, n: u64, change: impl FnOnce(&mut chat::ChannelRow)) {
     let ctx = sandbox.chat.exec(MockHost::env("chat"));
     let mut row = channel(sandbox, n).unwrap();
@@ -67,7 +64,6 @@ fn rewrite(sandbox: &MemorySandbox, n: u64, change: impl FnOnce(&mut chat::Chann
     chat::tables::CHANNELS.put(&ctx, &row.id, &row);
 }
 
-// The archives and refusal lines forge still waits on chat's answer to.
 fn pending(sandbox: &MemorySandbox) -> (usize, usize) {
     let ctx = sandbox.reads(1);
     let archiving = forge::tables::ARCHIVING.all(&ctx).unwrap();
@@ -77,7 +73,6 @@ fn pending(sandbox: &MemorySandbox) -> (usize, usize) {
     )
 }
 
-// The code of every line forge posted into the change's channel, oldest first.
 fn lines(sandbox: &MemorySandbox, n: u64) -> Vec<String> {
     let query = chat::Query::Roots {
         channel_id: channel_id(n),
@@ -123,7 +118,6 @@ fn archive_ended(after: Option<u64>, limit: u64) -> Op {
     }
 }
 
-// What `ArchiveEnded` archived, and its `next`.
 fn backlog(sandbox: &MemorySandbox, after: Option<u64>, limit: u64) -> (Vec<u64>, Option<u64>) {
     let output = act(sandbox, STRANGER, &archive_ended(after, limit)).unwrap();
     match abi::decode(&output).unwrap() {
@@ -185,7 +179,6 @@ fn a_close_archives_the_change_channel() {
 fn a_refused_archive_still_closes_and_is_said_in_the_channel() {
     let (sandbox, _, _) = seeded();
     let n = opened(&sandbox);
-    // someone else owns the channel now, so chat refuses forge's archive
     rewrite(&sandbox, n, |row| row.owner = Principal::Account(13));
     act(&sandbox, WRITER, &close(n)).unwrap();
     assert_eq!(state_of(&sandbox, n), forge::ChangeState::Closed);
@@ -205,7 +198,6 @@ fn archive_ended_archives_what_ended_before_and_only_once() {
     let third = opened(&sandbox);
     for n in [first, third] {
         act(&sandbox, WRITER, &close(n)).unwrap();
-        // as a change that ended before forge archived channels left it
         rewrite(&sandbox, n, |row| row.archived = false);
     }
     assert_eq!(backlog(&sandbox, None, 2), (vec![first], Some(open)));

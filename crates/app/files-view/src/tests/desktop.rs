@@ -16,7 +16,6 @@ use crate::menu::MENU;
 use crate::state::Holds;
 use crate::words;
 
-/// The place in the texts on screen of the first text containing `part`.
 fn place_of(cx: &TestAppContext, part: &str) -> usize {
     cx.texts()
         .iter()
@@ -35,7 +34,6 @@ fn open_notes(cx: &mut TestAppContext) {
     cx.run_until_parked();
 }
 
-/// Opens `write`'s form from the page on screen.
 fn begin(cx: &mut TestAppContext, write: &str) {
     cx.simulate_click(&format!("files/begin/{write}"));
     cx.run_until_parked();
@@ -305,7 +303,6 @@ fn a_commit_refused_as_stale_says_why_in_its_form() {
     let mut cx = desktop(&net);
     open_home(&mut cx);
     begin(&mut cx, "new-file");
-    // dev writes the same path from another device meanwhile
     commit(
         &net,
         net.me(),
@@ -542,7 +539,6 @@ fn an_image_shows_as_its_picture() {
     );
 }
 
-/// Whether the side's row for `key` is the one picked.
 fn picked(cx: &TestAppContext, key: &str) -> bool {
     cx.interactivity(&format!("files/side/{key}")).aria.selected == Some(true)
 }
@@ -610,7 +606,6 @@ fn the_side_picks_the_place_or_the_pin_the_page_is_under() {
     cx.simulate_click("files/side/pin/v1");
     cx.run_until_parked();
     assert!(picked(&cx, "pin/v1") && !picked(&cx, "history"));
-    // one Tab stop: the arrows open the item over or under
     cx.simulate_focus("files-side-list");
     cx.simulate_key_down("files-side-list", "up");
     cx.run_until_parked();
@@ -621,11 +616,8 @@ fn the_side_picks_the_place_or_the_pin_the_page_is_under() {
     assert!(picked(&cx, "pin/v1"));
 }
 
-/// The snapshot each `Read` a page asked was at.
 type Reads = Rc<RefCell<Vec<Option<BlobId>>>>;
 
-/// A file at `/shared/big.png` that begins as a PNG and is `size` bytes in
-/// all, committed by dev; then its page, the `Read`s it asked kept.
 fn picture_page(size: usize) -> (TestAppContext, Network, Reads) {
     let net = seeded();
     let mut bytes = PNG.to_vec();
@@ -657,7 +649,6 @@ fn picture_page(size: usize) -> (TestAppContext, Network, Reads) {
 fn a_picture_larger_than_one_read_is_read_whole_at_one_snapshot() {
     let size = 2 * files::CHUNK_SIZE as usize + 8;
     let (cx, _, reads) = picture_page(size);
-    // the first 64 KiB, then a chunk at a time
     let reads = reads.borrow();
     assert_eq!(reads.len(), 3);
     assert!(reads[0].is_some() && reads.iter().all(|at| *at == reads[0]));
@@ -703,7 +694,6 @@ fn a_picture_read_short_of_its_size_says_so() {
     );
     let mut cx = desktop(&net);
     let chain = net.clone();
-    // every read past the first brings nothing
     cx.host().handle::<Ask<files::Files>>(move |query| {
         let past = matches!(query, files::Query::Read { offset, .. } if offset > 0);
         match chain.query(files::PROGRAM, &query) {
@@ -744,7 +734,6 @@ fn a_picture_of_any_size_is_read_whole_and_drawn() {
     assert_eq!(bytes.len(), size);
 }
 
-/// What files holds at `path` now, read whole.
 fn held(net: &Network, path: &str) -> Vec<u8> {
     let read = files::Query::Read {
         path: path.into(),
@@ -758,14 +747,10 @@ fn held(net: &Network, path: &str) -> Vec<u8> {
     }
 }
 
-/// `size` bytes no two chunks of which are alike.
 fn film(size: usize) -> Vec<u8> {
     (0..size).map(|at| (at % 251) as u8).collect()
 }
 
-/// Every `op.put` the view asks, by its blobs, answered by `answer` (by
-/// the ask's count from 1, then the blobs); and every op it submits to
-/// `files`, run on `net`.
 struct Sends {
     puts: Rc<RefCell<Vec<Vec<NewBlob>>>>,
     ops: Rc<RefCell<Vec<files::Op>>>,
@@ -802,7 +787,6 @@ fn sends(
     Sends { puts, ops }
 }
 
-/// Whether any op the view sent carries a file's bytes: none may.
 fn carries_bytes(op: &files::Op) -> bool {
     match op {
         files::Op::Stage { .. } => true,
@@ -917,7 +901,6 @@ fn a_text_file_goes_up_as_a_chunk_and_its_commit_names_it() {
             body: BlobBody::Bytes(b"buy milk".to_vec()),
         }]]
     );
-    // the id the network holds those bytes by
     let chunk = net.put_blob(files::CHUNK, b"buy milk".to_vec()).unwrap();
     let ops = sends.ops.borrow();
     let [files::Op::Commit { changes, .. }] = ops.as_slice() else {
@@ -948,7 +931,6 @@ fn a_file_past_32_mib_goes_up_in_chunks_as_any_other_does() {
     let net = seeded();
     let mut cx = desktop(&net);
     open_home(&mut cx);
-    // past the 32 MiB files-view once refused
     let huge = film((32 << 20) + 1);
     net.device(&[("huge.iso", &huge), ("notes.txt", b"new")]);
     let sends = sends(&cx, &net, |_, _| None);
@@ -1029,10 +1011,6 @@ fn a_cancel_opens_nothing_and_a_refused_pick_says_why() {
     );
 }
 
-// The menu a right press opens.
-
-/// The session on a chain links are minted in: the rig's own, `live`, has
-/// no salt, so it names none.
 fn on_a_chain(net: &Network) -> Session {
     Session {
         chain_id: "live#0a1b2c3d".into(),
@@ -1040,15 +1018,12 @@ fn on_a_chain(net: &Network) -> Session {
     }
 }
 
-/// The view over `net`, read by dev on a chain links are minted in.
 fn linked(net: &Network) -> TestAppContext {
     opened_as(net, on_a_chain(net), false)
 }
 
-/// Where the pointer is pressed in the window.
 const PRESS: (f32, f32) = (240., 180.);
 
-/// A right press on `key`, at [`PRESS`].
 fn right_press(cx: &mut TestAppContext, key: &str) {
     let event = MouseDownEvent {
         button: MouseButton::Right,
@@ -1064,8 +1039,6 @@ fn right_press(cx: &mut TestAppContext, key: &str) {
     cx.run_until_parked();
 }
 
-/// The open menu: where it is, and its items by the slug of their keys
-/// (`files/menu/<slug>`), in order; `None` while none shows.
 fn menu(cx: &TestAppContext) -> Option<((f32, f32), Vec<String>)> {
     fn find(node: &wire::Node) -> Option<((f32, f32), Vec<String>)> {
         if let wire::Node::Anchored {
@@ -1086,7 +1059,6 @@ fn menu(cx: &TestAppContext) -> Option<((f32, f32), Vec<String>)> {
     find(cx.root())
 }
 
-/// The open menu's items.
 fn items(cx: &TestAppContext) -> Vec<String> {
     menu(cx).map(|(_, items)| items).unwrap_or_default()
 }
@@ -1192,7 +1164,6 @@ fn a_refused_copy_says_why() {
 #[test]
 fn before_the_session_names_a_chain_no_link_is_offered() {
     let net = seeded();
-    // the rig's chain id, `live`, has no salt: no link names a place on it
     let mut cx = desktop(&net);
     open_home(&mut cx);
     right_press(&mut cx, "files/entry/notes.txt");
@@ -1325,8 +1296,6 @@ fn escape_or_a_press_outside_closes_the_menu_and_the_keys_go_back_to_its_row() {
     assert_eq!(focused(&cx), Some("files/entry/docs"));
 }
 
-/// The menu the keys open waits for its row to say where it is, then
-/// opens under it.
 fn opened_under_the_row(cx: &mut TestAppContext) {
     assert_eq!(menu(cx), None, "not before the row says where it is");
     cx.simulate_bounds("files-menu-anchor", (20., 300.), (600., 40.));
@@ -1345,7 +1314,6 @@ fn shift_f10_or_the_menu_key_opens_the_focused_rows_menu_under_it() {
     cx.simulate_key_down(MENU, "escape");
     cx.simulate_key_down("files/entry/notes.txt", "menu");
     opened_under_the_row(&mut cx);
-    // ↓ ↓ walks to Rename, Enter runs it
     cx.simulate_key_down(MENU, "down");
     cx.simulate_key_down(MENU, "down");
     cx.simulate_key_down(MENU, "enter");
@@ -1378,7 +1346,6 @@ fn a_link_opened_into_files_opens_what_is_at_its_path() {
     let net = seeded();
     let mut cx = linked(&net);
     let routes = cx.host().stream::<HostRoute>();
-    // the tail of the link a row's menu copies
     let link = crate::actions::link(&on_a_chain(&net).chain_id, "/home/dev/notes.txt")
         .expect("a link on a chain");
     let tail = ducklink::Link::parse(&link)
@@ -1428,7 +1395,6 @@ fn the_keys_open_a_places_row_menu_and_give_the_keys_back() {
 #[test]
 fn a_place_down_the_side_opens_its_menu_and_the_history_none() {
     let net = seeded();
-    // the rig's chain names no salt, so this session mints no link
     let mut cx = desktop_at(&net, 1440.);
     right_press(&mut cx, "files/side/shared");
     assert_eq!(items(&cx), ["open"]);

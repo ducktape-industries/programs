@@ -1,9 +1,6 @@
 //! Every `Node` variant at least once, in one tree.
 use super::*;
 
-/// Every `StyleRefinement`/`TextStyleRefinement` field set once, so each
-/// field's bytes in a table entry are in `frame.bin` and its place in
-/// `schema.txt`. gpui's `debug`/`debug_below` do not cross and are not set.
 // One field at a time is far more readable here than one `StyleRefinement`
 // literal with ~50 named fields, several nested (`overflow.x`, `text.color`).
 #[allow(clippy::field_reassign_with_default)]
@@ -105,8 +102,6 @@ fn full_style() -> gpui::StyleRefinement {
     style
 }
 
-/// A style of one background alone: the gradient [`full_style`]'s solid
-/// one leaves out.
 fn backdrop(background: gpui::Background) -> StyleRefinement {
     StyleRefinement {
         background: Some(gpui::Fill::Color(background)),
@@ -114,8 +109,6 @@ fn backdrop(background: gpui::Background) -> StyleRefinement {
     }
 }
 
-/// A backdrop that also truncates: the `TextOverflow`s [`full_style`]'s
-/// `TruncateMiddle` leaves out.
 fn truncating(background: gpui::Background, overflow: gpui::TextOverflow) -> StyleRefinement {
     let mut style = backdrop(background);
     style.text.text_overflow = Some(overflow);
@@ -143,9 +136,6 @@ pub fn every_style() -> Vec<StyleRefinement> {
     ]
 }
 
-/// A non-default `Interactivity`: every field present, each conditional
-/// style an entry of [`every_style`]. Reused wherever a node's own
-/// `interactivity` only needs to be non-default, not this specific one.
 fn full_interactivity() -> Interactivity {
     Interactivity {
         role: Some(gpui::Role::ListBox),
@@ -219,9 +209,6 @@ pub fn every_node() -> Node {
     })
 }
 
-/// The nodes the fixture first pinned, one of each variant but the root's
-/// `Container`, kept verbatim so every value they pin stays pinned: a
-/// sample is added beside them, in [`full_nodes`], never swapped in.
 fn first_nodes() -> Vec<Node> {
     vec![
         Node::RichText {
@@ -401,7 +388,6 @@ fn first_nodes() -> Vec<Node> {
             style: style(),
         },
         text("plain"),
-        // drawn in capitals, named as written
         Node::Text(TextNode {
             id: Some(id("capitals")),
             style: style(),
@@ -506,8 +492,6 @@ fn first_nodes() -> Vec<Node> {
     ]
 }
 
-/// The nodes beside [`first_nodes`] that show every field present and
-/// every variant entered.
 fn full_nodes() -> Vec<Node> {
     vec![
         Node::RichText {
@@ -543,9 +527,6 @@ fn full_nodes() -> Vec<Node> {
             id: None,
             style: style(),
             text: "runs".into(),
-            // `rich_text::TextRun` is crate-private; go through gpui's own
-            // (public) `TextRun` and the crate's `From` impl instead of
-            // naming it.
             runs: RichTextRuns::Runs(vec![
                 gpui::TextRun {
                     len: 4,
@@ -884,8 +865,6 @@ fn full_nodes() -> Vec<Node> {
     ]
 }
 
-/// Every `Aria` field the host reads past phase 1, set: `Invalid::True` and
-/// `AriaCurrent::False` are the strings `"true"` and `"false"`, not booleans.
 fn every_aria() -> Aria {
     Aria {
         author_id: Some("author-1".into()),

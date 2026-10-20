@@ -45,9 +45,6 @@ mod tests {
         params: Vec<u8>,
     }
 
-    /// A borsh value is one byte string in a snapshot: its size is its own
-    /// bytes, not a number a byte (two bytes each past 127), and it reads
-    /// back as it was.
     #[test]
     fn a_borsh_value_is_kept_as_one_byte_string() {
         let kept = Kept {

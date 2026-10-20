@@ -13,16 +13,10 @@ use view::{Div, Stateful};
 use super::parts::{face, name_line, quiet};
 use crate::{Group, Members, Roster, Row, name_or_number, standing_badge, words};
 
-/// The filter field's id: opened, the view gives it the keyboard.
 const FILTER_ID: &str = "members-filter";
-/// A filter chip is this tall (`theme.ts:78`, `size.chip`).
-// SDK gap: the kit's `Chips`; the SDK builds it later
 const CHIP: Pixels = px(32.);
-/// A chosen chip's count shows at this opacity on the ink (`Choice.tsx:72`).
 const COUNT_ON_INK: f32 = 0.7;
 
-/// `Members` over the network and how many accounts it holds, Filter in
-/// the title row; the chips while anyone is listed, then the rows.
 pub(super) fn page(
     view: &Members,
     cx: &mut Context<Members>,
@@ -63,7 +57,6 @@ pub(super) fn page(
         ladder,
         theme,
     );
-    // SDK gap: the network caption; the SDK builds it later
     let page = match view.network() {
         "" => page,
         network => page.caption(format!("{network} · {}", words::accounts(count))),
@@ -80,9 +73,6 @@ pub(super) fn page(
     .into_any_element()
 }
 
-/// The reader's name for the first page's avatar, as the roster names
-/// their account (Expo `members/index.tsx:84` `me.name`); empty until the
-/// session and the roster both say who the reader is.
 fn reader(view: &Members) -> String {
     let rows = view.rows.ready().map(Vec::as_slice).unwrap_or_default();
     view.me
@@ -90,10 +80,6 @@ fn reader(view: &Members) -> String {
         .map_or_else(String::new, |row| row.name.clone())
 }
 
-/// The title row while the filter is open (the kit's `Header` with its
-/// `center`): the field, its magnifier inside the edge, and Close filter,
-/// which empties it.
-// SDK gap: a `center` slot on `design::page`; the SDK builds it later
 fn filter_row(
     view: &Members,
     cx: &mut Context<Members>,
@@ -106,13 +92,10 @@ fn filter_row(
         view.cursor = None;
         cx.notify();
     });
-    // Expo's testID; a name or a number wants no autocorrection and no
-    // capitals
     let input = Input::new(FILTER_ID, &view.filter, words::FILTER_LABEL)
         .autocorrect(false)
         .autocapitalize(Autocapitalize::None)
         .placeholder(words::FILTER_HINT);
-    // the kit's `Field`, its magnifier the lead (Expo `app/(tabs)/members/index.tsx:90-98`)
     let field = design::field(input, ladder, theme).lead("search");
     div()
         .id("members-roster-title")
@@ -135,9 +118,6 @@ fn filter_row(
         ))
 }
 
-/// The kit's `Chips`, one per `Members::choices`; the row scrolls
-/// sideways.
-// SDK gap: the kit's `Chips`; the SDK builds it later
 fn chips(
     view: &Members,
     cx: &mut Context<Members>,
@@ -161,9 +141,6 @@ fn chips(
         .children(chips)
 }
 
-/// One chip: an outline, the chosen one in ink, its count in the data face
-/// two spaces after the label (`Choice.tsx:51-78`); its press reaches 44
-/// up and down.
 fn chip(
     view: &Members,
     index: usize,
@@ -186,10 +163,6 @@ fn chip(
         view.cursor = None;
         cx.notify();
     });
-    // the press reaches 6 past the 32 chip, its hairline included, into
-    // the row's 8 above and below (44), never over the row's neighbours;
-    // it is as wide as the chip, every chip being wider than 44, so it
-    // never reaches the next chip either
     div()
         .relative()
         .flex_none()
@@ -227,9 +200,6 @@ fn chip(
         )
 }
 
-/// The rows under their groups' section heads, or why there are none: the
-/// first read, a refusal with Retry, nobody on the network, nobody the
-/// filter and the chip let through.
 fn list(view: &Members, cx: &mut Context<Members>, ladder: &Ladder, theme: &Theme) -> AnyElement {
     let shown = match view.roster() {
         Roster::Rows(shown) => shown,
@@ -238,13 +208,10 @@ fn list(view: &Members, cx: &mut Context<Members>, ladder: &Ladder, theme: &Them
             return crate::refused(refusal, cx, ladder, theme).into_any_element();
         }
         Roster::Empty { id, title, detail } => {
-            // Expo's `Users` (`app/(tabs)/members/index.tsx:33`, `:37`)
             return design::empty_state(id, "users", title, detail, ladder, theme)
                 .into_any_element();
         }
     };
-    // one Tab stop: the arrows move a cursor, shown only once they have
-    // moved, and a press or Enter opens the member
     let numbers: Vec<u64> = shown.iter().map(|row| row.number).collect();
     let cursor = view.cursor.filter(|index| *index < numbers.len());
     let active = cursor.unwrap_or(0);
@@ -289,23 +256,16 @@ fn list(view: &Members, cx: &mut Context<Members>, ladder: &Ladder, theme: &Them
             index += 1;
         }
     }
-    // the list's foot (`index.tsx:46`)
     list.child(div().flex_none().h(space::BLOCK))
         .into_any_element()
 }
 
-/// Where a row stands in the list the arrows walk.
 #[derive(Clone, Copy)]
 struct Place {
-    /// the list's active row: the one Enter opens
     active: bool,
-    /// the arrows have moved onto it
     cursor: bool,
 }
 
-/// One account (the kit's `Row`): its face, its name (`you` after mine),
-/// who manages an agent, then an agent's standing or what the account is,
-/// and the chevron; the press opens the member.
 fn member_row(
     view: &Members,
     row: &Row,
@@ -320,11 +280,8 @@ fn member_row(
     let managed_by = row
         .manager()
         .map(|manager| format!("{} {}", words::MANAGED_BY, name_or_number(all, manager)));
-    // an agent's standing, else what the account is (`index.tsx:64-71`)
     let (tail, what) = match standing_badge("members-row-standing", row, ladder, theme) {
         Some(badge) => (badge.into_any_element(), row.life()),
-        // a person or a program: no standing. The roster says only which
-        // (`index.tsx:69`), never the program a program account runs
         None => {
             let word = row.group().word();
             let tail = design::row_caption(word, ladder, theme).flex_none();
@@ -342,11 +299,8 @@ fn member_row(
     )
     .when(managed_by.is_some(), |row| row.min_h(ladder.row_tall))
     .when(place.cursor, |row| row.bg(theme.surface_raised))
-    // the name, not the avatar's initial drawn before it
     .aria_label(row.name.clone())
     .aria_description(description)
-    // a press opens the member: the option the arrows rest on is the
-    // chosen one
     .aria_selected(place.cursor)
     .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.open(number, cx)))
     .child(design::lead(face(

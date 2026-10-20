@@ -10,11 +10,7 @@ use forge::{EntryKind, Query, Reply, TreeInfo};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Slot {
-    Entry {
-        kind: EntryKind,
-        oid: String,
-    },
-    /// an expanded directory whose read is still in flight
+    Entry { kind: EntryKind, oid: String },
     Loading,
     Failed(String),
 }
@@ -39,7 +35,6 @@ impl Row {
     }
 }
 
-/// A key the focused tree understands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Key {
     Up,
@@ -76,8 +71,6 @@ impl Forge {
         })
     }
 
-    /// The root, every expanded directory and the phone's open folder:
-    /// what the tree reads.
     pub(crate) fn tree_queries(&self) -> Vec<Query> {
         std::iter::once(Vec::new())
             .chain(self.nav.expanded.iter().cloned())
@@ -86,15 +79,10 @@ impl Forge {
             .collect()
     }
 
-    /// The rows on screen: directories first, an expanded one followed by
-    /// its own children. The filter keeps every directory and the files
-    /// whose name holds it.
     pub(crate) fn tree_rows(&self) -> Vec<Row> {
         self.tree_rows_at(Vec::new())
     }
 
-    /// The rows of the folder at `dir` as [`Self::tree_rows`] walks the
-    /// root: the phone's folder page lists one.
     pub(crate) fn tree_rows_at(&self, dir: Vec<u8>) -> Vec<Row> {
         let mut rows = Vec::new();
         let needle = self.tree_search.text().trim().to_lowercase();
@@ -106,7 +94,6 @@ impl Forge {
         let Some(query) = self.tree_query(dir.clone()) else {
             return;
         };
-        // the root's own loading and refusal are the pane's, not a row's
         let mut items: Vec<&TreeInfo> = match self.stage(&query) {
             Stage::Ready(Reply::Tree { page, .. }) => page.items.iter().collect(),
             _ if depth == 0 => return,
@@ -140,8 +127,6 @@ impl Forge {
         }
     }
 
-    /// Opens a closed directory, closes an open one. Nothing else moves:
-    /// the rows above stay, the children appear (or go) beneath it.
     pub(crate) fn toggle_dir(&mut self, path: Vec<u8>, cx: &mut Context<Self>) {
         if !self.nav.expanded.remove(&path) {
             self.nav.expanded.insert(path.clone());
@@ -151,10 +136,6 @@ impl Forge {
         self.sync(cx);
     }
 
-    /// One key on the focused tree. Up/down move the cursor, Home/End take
-    /// it to the ends, right opens a directory (or steps into an open one),
-    /// left closes it (or steps out to its parent), enter opens the file
-    /// or toggles the directory.
     pub(crate) fn tree_key(&mut self, key: Key, cx: &mut Context<Self>) {
         let rows: Vec<Row> = self
             .tree_rows()
@@ -169,13 +150,11 @@ impl Forge {
             .cursor
             .clone()
             .or_else(|| self.nav.blob.as_ref().map(|(path, _)| path.clone()));
-        // no cursor yet: the first row is the active one the tree shows
         let at = cursor
             .and_then(|path| rows.iter().position(|row| row.path == path))
             .unwrap_or(0);
         let row = &rows[at];
         let open = self.nav.expanded.contains(&row.path);
-        // the keys act on the row the tree claims, and draw it from now on
         self.nav.cursor = Some(row.path.clone());
         self.tree_walked = true;
         match key {

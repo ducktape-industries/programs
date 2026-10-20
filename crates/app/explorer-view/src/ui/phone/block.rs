@@ -31,8 +31,6 @@ pub(super) fn block(view: &Explorer, height: u64, cx: Cx, k: &Look) -> AnyElemen
     page.child(body).into_any_element()
 }
 
-/// A block link's hash that nothing here has (Expo `block/[height].tsx:36-43`
-/// `ByHash`).
 pub(super) fn by_hash(note: &Note, cx: Cx, k: &Look) -> AnyElement {
     gone(
         "explorer-block-unfound",
@@ -45,8 +43,6 @@ pub(super) fn by_hash(note: &Note, cx: Cx, k: &Look) -> AnyElement {
     )
 }
 
-/// A block not in hand: being read, refused, or not on this node (below
-/// where its archive starts, or never finalized).
 fn missing(view: &Explorer, height: u64, cx: Cx, k: &Look) -> AnyElement {
     match &view.opened {
         Loadable::Ready(None) | Loadable::Reloading(None, _) => {
@@ -118,12 +114,8 @@ fn found(view: &Explorer, block: &BlockRow, txs: &[&TxRow], cx: Cx, k: &Look) ->
         .into_any_element()
 }
 
-/// The parent's height, a link, then its short id; the first block's
-/// parent is its id alone.
 fn parent(block: &BlockRow, cx: Cx, k: &Look) -> Div {
     let id = short(&block.parent);
-    // block 0's parent is words, in the body face (Expo
-    // `block/[height].tsx:86`)
     let Some(previous) = block.height.checked_sub(1) else {
         return div().child(id);
     };
@@ -144,8 +136,6 @@ fn parent(block: &BlockRow, cx: Cx, k: &Look) -> Div {
         .child(data(format!(" {id}")).text_color(k.theme.muted))
 }
 
-/// Who proposed the block: its place in the validator set, then its key,
-/// faint.
 fn proposer(view: &Explorer, block: &BlockRow, k: &Look) -> Option<Stateful<Div>> {
     let key = block.proposer.as_ref()?;
     let place = view
@@ -160,9 +150,6 @@ fn proposer(view: &Explorer, block: &BlockRow, k: &Look) -> Option<Stateful<Div>
     Some(key_value("explorer-field-proposer", "Proposer", value, k))
 }
 
-/// The steps to the blocks either side (Expo's two small outline buttons):
-/// each opens its block in this page's place; off at the first block and
-/// at the head.
 fn steps(view: &Explorer, height: u64, cx: Cx, k: &Look) -> Div {
     let head = view.status.ready().map(|status| status.height);
     let previous = height.checked_sub(1);

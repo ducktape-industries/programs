@@ -11,8 +11,6 @@ use crate::queries::Agent;
 use crate::state::Choice;
 use crate::words;
 
-// An agent's face in the agent tint: its initial, or its picture once read,
-// ringed in the tint.
 pub(crate) fn agent_face(
     agent: &Agent,
     picture: Option<Arc<Image>>,
@@ -26,8 +24,6 @@ pub(crate) fn agent_face(
         .when(ringed, |face| face.border_2().border_color(theme.agent))
 }
 
-/// Whom an agent answers, `shown` picked: one press sends Only me or
-/// Anyone; Specific opens the people it lists.
 pub(crate) fn ownership_choices(
     agent: &Agent,
     shown: Choice,

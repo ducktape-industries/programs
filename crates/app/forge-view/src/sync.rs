@@ -20,8 +20,6 @@ impl Forge {
         let reader_changed = next.signer != self.session.signer;
         self.session = next;
         if reader_changed {
-            // another reader: the names shown are read as theirs until
-            // the roster lands again
             self.names = Loadable::Idle;
             cx.load(self, queries::roster(cx.host()), |forge| &mut forge.names);
             self.data.clear();
@@ -33,8 +31,6 @@ impl Forge {
         self.sync(cx);
     }
 
-    /// One read, once. Landing it advances whatever depends on it. A log
-    /// reads its first page, and on from there as its list is scrolled.
     pub(crate) fn read(&mut self, query: Query, cx: &mut Context<Self>) {
         if self.data.contains_key(&query) || self.logs.contains_key(&query) {
             return;
@@ -58,7 +54,6 @@ impl Forge {
         self.data.insert(query, Loadable::Loading(task));
     }
 
-    /// Everything on screen, asked again: the view came back into sight.
     pub(crate) fn refresh(&mut self, cx: &mut Context<Self>) {
         self.reread(|_| true, cx);
         self.reread_conversations(None, cx);
@@ -89,9 +84,6 @@ impl Forge {
         cx.notify();
     }
 
-    /// A forge block landed: retire the ops it carried, then ask again for
-    /// the reads it wrote to. `None` is a reopened node link: everything is
-    /// asked again.
     pub(crate) fn reconcile(&mut self, change: Option<&Change>, cx: &mut Context<Self>) {
         if let Some(change) = change {
             self.block = self.block.max(change.height);
@@ -108,9 +100,6 @@ impl Forge {
         );
     }
 
-    /// A chat block landed: the forge reads answered partly from chat (a
-    /// judgment waits on chat's threads) and the change conversations it
-    /// wrote to are read again. `None` is a reopened chat link: all of them.
     pub(crate) fn chat_changed(&mut self, change: Option<&Change>, cx: &mut Context<Self>) {
         self.reread(
             |query| change.is_none_or(|change| change.touches::<chat::Chat, _>(query)),
@@ -136,8 +125,6 @@ impl Forge {
                 log.update(cx, |log, cx| log.reread(cx));
             }
         }
-        // the reads to ask again, named before any is asked: `load` takes
-        // the view, which this loop would otherwise still hold
         let again: Vec<(Query, bool)> = self
             .data
             .iter()
@@ -169,8 +156,6 @@ impl Forge {
         self.sync(cx);
     }
 
-    /// A chat block landed: the change conversations it wrote to are read
-    /// again (`None`: every one), on the same terms as [`Self::reread`].
     pub(crate) fn reread_conversations(&mut self, change: Option<&Change>, cx: &mut Context<Self>) {
         if self.hidden {
             return;
@@ -215,7 +200,6 @@ impl Forge {
         }
     }
 
-    /// An identity block landed: the names are read again.
     pub(crate) fn reread_names(&mut self, cx: &mut Context<Self>) {
         if self.hidden {
             return;
@@ -244,8 +228,6 @@ impl Forge {
         .detach();
     }
 
-    /// Read the open change's conversation again, as the reader asked
-    /// after a refusal.
     pub(crate) fn retry_conversation(&mut self, cx: &mut Context<Self>) {
         if let Some(channel) = self.open_talk() {
             self.rereading_messages.remove(&channel);
@@ -255,7 +237,6 @@ impl Forge {
         cx.notify();
     }
 
-    /// Retry one read the reader asked to retry.
     pub(crate) fn retry(&mut self, query: Query, cx: &mut Context<Self>) {
         self.rereading.remove(&query);
         self.data.remove(&query);
@@ -264,7 +245,6 @@ impl Forge {
         cx.notify();
     }
 
-    /// Issue what this screen needs and drop what it does not.
     pub(crate) fn sync(&mut self, cx: &mut Context<Self>) {
         if self.hidden {
             return;
@@ -311,10 +291,6 @@ impl Forge {
         });
     }
 
-    /// The host's badge for this program: a dot (1) while a change waits
-    /// on my judgment, none (0) otherwise; never a count. Posted when it
-    /// changes, from the judgment read every screen keeps (the next block
-    /// re-reads it, so the dot follows the chain).
     fn settle_badge(&mut self, cx: &mut Context<Self>) {
         let waiting = self
             .judgment_query()
@@ -330,13 +306,7 @@ impl Forge {
         }
     }
 
-    /// Every question the current screen has. A question whose arguments are
-    /// not known yet (a tree needs its commit) simply is not asked until the
-    /// read that answers it lands.
     fn needed(&self) -> Vec<Query> {
-        // what waits on my judgment, on every screen: the repositories
-        // page lists it first, and the host's badge (`host.badge`) says
-        // whether anything does while the view ticks (rule 16)
         let mut wanted = vec![Query::Repos { page: PAGE }];
         wanted.extend(self.judgment_query());
         let Some(repo) = self.nav.repo.clone() else {
@@ -346,9 +316,7 @@ impl Forge {
         wanted.push(self.archived_query());
         wanted.push(self.refs_query());
         wanted.push(Query::Activity { repo: repo.clone() });
-        // the tab bar says how many changes are open, whichever tab shows
         wanted.extend(self.open_changes_query());
-        // the phone's new change form says how its endpoints compare
         if self.touch {
             wanted.extend(self.form_compare_query());
         }
@@ -359,7 +327,6 @@ impl Forge {
         wanted
     }
 
-    /// The reads of the repository tab on screen.
     fn tab_reads(&self, repo: String) -> Vec<Query> {
         let blob = |oid: String| Query::Blob {
             repo: repo.clone(),
@@ -378,7 +345,6 @@ impl Forge {
                 let open = self.nav.blob.as_ref().map(|(_, oid)| blob(oid.clone()));
                 self.tree_queries().into_iter().chain(open).collect()
             }
-            // an unborn ref has no log to ask for
             RepoTab::Commits if self.tree_query(Vec::new()).is_none() => Vec::new(),
             RepoTab::Commits => {
                 let open = self.nav.commit.as_deref();
@@ -392,10 +358,6 @@ impl Forge {
         }
     }
 
-    /// The reads the open commit's page needs beside the log: its own row
-    /// when the log on screen does not hold it (a restored view holds the
-    /// first page again), and its diff once the commit, and so its parent,
-    /// is known.
     fn commit_reads(&self, oid: &str) -> Vec<Query> {
         let mut wanted = Vec::new();
         let shown = self.shown_log().and_then(|log| self.logs.get(&log));
@@ -409,8 +371,6 @@ impl Forge {
         wanted
     }
 
-    /// The reads one open change needs: its record, how it compares with its
-    /// target, and the diff of that comparison.
     fn change_reads(&self, repo: &str, n: u64) -> Vec<Query> {
         let mut wanted = vec![Query::Change {
             repo: repo.to_owned(),
@@ -422,20 +382,16 @@ impl Forge {
         };
         wanted.extend(self.compare_query());
         if self.nav.change_tab == ChangeTab::Commits {
-            // the change's own commits, and the one open from them
             wanted.extend(self.shown_log());
             let open = self.nav.commit.as_deref();
             wanted.extend(open.into_iter().flat_map(|oid| self.commit_reads(oid)));
         }
-        // the phone's strip counts the files on every tab, as Expo's does
         if self.touch || self.nav.change_tab == ChangeTab::Files {
             wanted.extend(self.diff_query());
         }
         wanted
     }
 
-    /// The Changes tab's question. A filter about "me" asks nothing while
-    /// the reader is nobody (no account): there is no one to judge.
     pub(crate) fn changes_query(&self, repo: &str) -> Option<Query> {
         let me = self.me_principal();
         let state = match self.filter {
@@ -461,10 +417,6 @@ impl Forge {
     }
 }
 
-/// Lands a refusal's new answer on the slot that showed it: a value, or
-/// another refusal, replaces it, and the same refusal again changes
-/// nothing. A slot no longer showing a refusal (left, or retried) takes
-/// nothing. Says whether the slot changed.
 fn replaces_refusal<T>(slot: Option<&mut Loadable<T>>, result: Result<T, Error>) -> bool {
     let Some(slot) = slot.filter(|slot| slot.failed().is_some()) else {
         return false;

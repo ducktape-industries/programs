@@ -40,8 +40,6 @@ pub(crate) async fn open(
     }))
 }
 
-// a stream whose heartbeat harness measures: its watch opens the block after, as any does, and
-// first reads the pod, which measures the trip and refuses a pod the service doesn't know
 pub(crate) async fn open_measured(
     ctx: &Ctx,
     thread: &ThreadRow,
@@ -72,8 +70,6 @@ pub(crate) async fn open_measured(
     Ok(opened)
 }
 
-// the request a measured stream sends: its body with the heartbeat a request's lifetime leaves
-// (`waits::alive_every`), from the block time since it was made
 async fn measured(ctx: &Ctx, row: &Watching, measure: &Measure) -> Result<egress::Request, String> {
     let env = ctx.env();
     let blocks = env.height.saturating_sub(measure.height).max(1);
@@ -164,7 +160,6 @@ pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
         .call_raw_as(row.agent, bound(&ctx)?, abi::encode(&op))
         .await;
     crate::resume::unlistened(&ctx, row.thread, watch);
-    // an event that said the end woke the conversation already
     if !WATCHES.has(&ctx, &watch) {
         return Ok(());
     }
@@ -174,9 +169,6 @@ pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
     woken(&ctx, &row, text).await
 }
 
-// what became of a stream that ended before any event said its end: a stream lost on its way
-// (broken off, or closed with no end event, as a service that stops mid-stream closes it) is no
-// result, and says so; a service that answered without streaming ended it
 const LOST: &str = "this is not its result: what it ran may still be running, so re-attach with \
                     build.sh wait <run> (a build.sh run keeps its status on the pod's disk), or look \
                     at the pod, before running it again";

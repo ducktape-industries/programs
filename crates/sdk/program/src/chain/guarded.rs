@@ -217,7 +217,6 @@ fn the_chain_the_vote_and_an_unseated_role_are_not_guarded() {
         .submit(Origin::Program(validators), "keeper", &vec![set("o/b")])
         .unwrap();
     assert!(guards(&chain).is_empty());
-    // a message from another program is guarded as that program's account
     chain.seat::<Keeper>("other");
     chain.register("other", 101);
     let emit = vec![Step::Emit("keeper".into(), vec![set("o/c")])];

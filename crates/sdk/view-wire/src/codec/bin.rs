@@ -11,8 +11,6 @@
 use serde::de::{Deserialize, Deserializer, Error, Visitor};
 use serde::ser::{Serialize, Serializer};
 
-/// What crosses as a `bin`: the bytes, or the bytes inside an `Option` or a
-/// `Result`.
 pub(crate) trait Bin: Sized {
     fn write<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error>;
     fn read<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error>;
@@ -31,12 +29,6 @@ pub(crate) fn deserialize<'de, T: Bin, D: Deserializer<'de>>(
     T::read(deserializer)
 }
 
-/// Reads a `bin` of at most `limit` bytes and refuses a longer one as
-/// `message`, before anything is allocated for it.
-///
-/// `bin` is MessagePack's. A format people read (the JSON a screen export
-/// writes a frame as) has no byte string: `serialize_bytes` writes its own
-/// list there, and that list is read back under the same bound.
 pub(crate) fn bounded<'de, D: Deserializer<'de>>(
     deserializer: D,
     limit: usize,
@@ -61,8 +53,6 @@ pub(crate) fn bounded<'de, D: Deserializer<'de>>(
     }
 }
 
-/// Bounded by what holds it: a `bin` is never longer than the bytes it was
-/// decoded from.
 impl Bin for Vec<u8> {
     fn write<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_bytes(self)
@@ -72,10 +62,6 @@ impl Bin for Vec<u8> {
     }
 }
 
-/// Bytes of a fixed length cross as a `bin` too. A `bin` says its own
-/// length, so the shape the type decodes through reads one as a `Vec<u8>`
-/// [`bounded`] by that length (a longer one is refused before the copy),
-/// and [`fixed`] refuses a shorter one: an element id's `Uuid` does.
 pub(crate) fn serialize_fixed<const N: usize, S: Serializer>(
     bytes: &[u8; N],
     serializer: S,
@@ -88,8 +74,6 @@ pub(crate) fn fixed<const N: usize, E: Error>(bytes: Vec<u8>) -> Result<[u8; N],
         .map_err(|bytes| E::invalid_length(bytes.len(), &format!("{N} bytes").as_str()))
 }
 
-/// A [`Bin`] where serde wants a value of its own: inside the `Option` or
-/// the `Result` that holds it.
 struct Inner<T>(T);
 
 impl<T: Bin> Serialize for Inner<&T> {

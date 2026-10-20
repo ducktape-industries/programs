@@ -1,10 +1,6 @@
 //! Who reads: the seated key, the account it gains, the names it learns.
 use super::*;
 
-/// A key with no account reads: it may not write and may not create a
-/// channel. The reader creates the account in Account, then switches to
-/// Chat: the seated key never changes; the host resolves its new account
-/// and hands it over as a session change.
 #[test]
 fn an_account_gained_later_re_enables_create_channel() {
     let mut cx = TestAppContext::new();
@@ -29,13 +25,6 @@ fn an_account_gained_later_re_enables_create_channel() {
     view.read(|chat| assert_eq!(chat.my_account(), Some(7)));
 }
 
-/// A peer who registers their account AFTER this room's roster was first
-/// read still shows up under "account N" unless the roster naming everyone
-/// is re-read on identity's live stream: so a fresh signer's messages stayed numbered forever
-/// (regression: a two-account chat never named the other side's reply).
-/// The same roster gates the `@` mention menu's candidates, which draw on
-/// every named account, not the room's rows (regression: typing
-/// `@qa-mention-b-...` right after account B onboarded never offered it).
 #[test]
 fn a_peers_name_gained_later_replaces_its_numeric_fallback() {
     let known = std::rc::Rc::new(std::cell::Cell::new(false));
@@ -101,8 +90,6 @@ fn a_peers_name_gained_later_replaces_its_numeric_fallback() {
     assert!(offered(&view), "the re-read roster offers the peer too");
 }
 
-/// A roster longer than one page (identity pages at 256) is read to its
-/// end: the view follows `next` rather than naming only the first page.
 #[test]
 fn the_roster_is_read_past_its_first_page() {
     let mut cx = TestAppContext::new();

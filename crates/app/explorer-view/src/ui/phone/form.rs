@@ -45,8 +45,6 @@ pub(super) fn sheet(view: &Explorer, cx: Cx, k: &Look) -> Option<AnyElement> {
         design::sheet("explorer-form-sheet", form.title(), &k.ladder, &k.theme)
             .on_dismiss(dismiss)
             .child(
-                // as tall as what it holds, as Expo's form sheet has no
-                // snaps (`programs.tsx:459`)
                 div()
                     .id("explorer-form")
                     .flex()
@@ -63,7 +61,6 @@ pub(super) fn sheet(view: &Explorer, cx: Cx, k: &Look) -> Option<AnyElement> {
     )
 }
 
-/// What its edit asks for, in the Expo form's order.
 fn fields(form: &Form, cx: Cx, k: &Look) -> Vec<AnyElement> {
     form.asks()
         .into_iter()
@@ -74,10 +71,6 @@ fn fields(form: &Form, cx: Cx, k: &Look) -> Vec<AnyElement> {
         .collect()
 }
 
-/// One labelled field (Expo `Field label` + `mono`): the label over the
-/// box, the text in the data face, the keys it takes. A problem that is
-/// the field's marks it invalid and says why to assistive tech; the eye
-/// reads it once, under the form, as Expo draws it (`programs.tsx:500`).
 fn labelled(form: &Form, field: FormField, k: &Look) -> AnyElement {
     let input = Input::new(field.id(), form.text(field), field.label()).placeholder(field.hint());
     let input = match field.takes() {
@@ -99,7 +92,6 @@ fn labelled(form: &Form, field: FormField, k: &Look) -> AnyElement {
         .into_any_element()
 }
 
-/// What an Add adds: a program, or a view (Expo `Segmented`).
 fn program_or_view(form: &Form, cx: Cx, k: &Look) -> AnyElement {
     let pick =
         cx.processor(|view: &mut Explorer, index: usize, _, cx| view.add_view(index == 1, cx));
@@ -124,8 +116,6 @@ fn program_or_view(form: &Form, cx: Cx, k: &Look) -> AnyElement {
     .into_any_element()
 }
 
-/// Close, quiet; and Schedule or Propose, the primary, busy while a write
-/// is out.
 fn buttons(view: &Explorer, form: &Form, cx: Cx, k: &Look) -> Div {
     let send = cx.listener(|view: &mut Explorer, _: &ClickEvent, _, cx| view.submit_form(cx));
     let close = cx.listener(|view: &mut Explorer, _: &ClickEvent, _, cx| view.close_form(cx));

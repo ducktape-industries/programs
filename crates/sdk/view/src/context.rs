@@ -17,8 +17,6 @@ pub type Callback<V> = Rc<dyn Fn(&mut V, &mut Window, &mut Context<V>)>;
 
 pub(crate) type Globals = std::collections::HashMap<TypeId, Rc<dyn Any>>;
 
-/// The root view's id and how its snapshot encodes: the debug check that a
-/// change to the snapshot notified.
 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
 pub(crate) type Root = (u64, fn(&dyn Any) -> Vec<u8>);
 
@@ -60,8 +58,6 @@ pub(crate) struct AppState {
     pub touch: Cell<bool>,
 }
 impl App {
-    /// The style table a host holds after the trees lowered so far, for a
-    /// test that lowers by hand and reads what a node's style id names.
     pub(crate) fn styles(&self) -> crate::wire::Styles {
         let mut styles = crate::wire::Styles::default();
         styles
@@ -122,9 +118,6 @@ impl App {
     pub(crate) fn window(&self) -> Window {
         Window::new(self.inner.clone())
     }
-    /// Polls every task that was woken, and the tasks they spawn, until
-    /// none is left to poll this round; whether one is still woken (out of
-    /// this tick's turns: the driver says busy).
     pub(crate) fn settle(&mut self) -> bool {
         loop {
             let mut tasks = std::mem::take(&mut *self.inner.tasks.borrow_mut());
@@ -155,7 +148,6 @@ impl App {
         self.set_shared_global(TypeId::of::<G>(), Rc::new(global));
     }
     pub(crate) fn set_shared_global(&mut self, kind: TypeId, global: Rc<dyn Any>) {
-        // any subtree may read a global
         self.inner.memos.borrow_mut().forget();
         self.refresh_globals();
         Rc::make_mut(&mut self.globals).insert(kind, global);
@@ -366,8 +358,6 @@ impl<T: 'static> Entity<T> {
             app.refresh_globals();
             let mut value = self.value.borrow_mut();
             let state = value.as_mut().expect("entity initialized");
-            // The root's snapshot is what a test can compare; a child's
-            // state is no part of it.
             #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
             let check = app
                 .inner

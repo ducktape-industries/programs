@@ -11,7 +11,6 @@ use crate::state::{
     PREVIEWS, REQUIRED, STATUSES, load_bounds, load_repo, parse_oid, ref_key, repo_hash,
 };
 
-// What `Status` carries besides its repository.
 pub(crate) struct Report {
     pub commit: String,
     pub context: String,
@@ -72,7 +71,6 @@ pub(crate) fn require(
     Ok(())
 }
 
-// A push never moves a branch with required checks: only a gated merge does.
 pub(crate) fn refuse_push(ctx: &QueryCtx, repo: &str, reference: &[u8]) -> Result<(), Error> {
     if !REQUIRED.has(ctx, &ref_key(repo, reference)) {
         return Ok(());
@@ -84,8 +82,6 @@ pub(crate) fn refuse_push(ctx: &QueryCtx, repo: &str, reference: &[u8]) -> Resul
     )))
 }
 
-// A merge into a branch with required checks names its change, whose latest Preview read the
-// two heads being merged and has the reporter's Passed in every context.
 pub(crate) fn gate(
     ctx: &QueryCtx,
     repo: &str,

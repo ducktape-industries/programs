@@ -30,7 +30,6 @@ pub(super) fn page(
         .into_any_element()
 }
 
-// A press that opens the form page with `press`.
 fn opening(
     press: Press,
     cx: &mut Context<Agents>,
@@ -93,7 +92,6 @@ fn rows(
         }))
 }
 
-// A record: whose it is and its policy; a press opens its form.
 fn row(
     view: &Agents,
     model: &Model,
@@ -108,7 +106,6 @@ fn row(
         0 | 1 => String::new(),
         services => format!(" +{}", services - 1),
     };
-    // one line: the service, how many nodes serve it in its tone, the window
     let caption = div()
         .flex()
         .min_w_0()
@@ -152,7 +149,6 @@ fn row(
         .on_click(opening(open(model), cx))
 }
 
-// The form that sets, edits or removes a record, its own page over the models.
 pub(super) fn form(
     view: &Agents,
     cx: &mut Context<Agents>,
@@ -182,13 +178,11 @@ pub(super) fn form(
             .text_color(theme.muted)
             .child(words)
     };
-    // its first press shows what it sends for a yes, its second sends it
     let (verb_id, verb_words, verb_press) = match draft.asking {
         None => ("model-next", "Save…", Press::Ask(Yes::Save)),
         Some(Yes::Save) => ("model-set", "Save", Press::Yes),
         Some(Yes::Remove) => ("model-remove-yes", "Remove", Press::Yes),
     };
-    // Cancel leaves the yes, else the page
     let cancel =
         cx.listener(
             |view: &mut Agents, _: &ClickEvent, _, cx| match view.model_draft.asking {
@@ -297,8 +291,6 @@ pub(super) fn form(
         .into_any_element()
 }
 
-// The registered services, one pick each: its name, its owner, how many member nodes serve it
-// now, and a picked one's place in the list.
 fn services(
     view: &Agents,
     cx: &mut Context<Agents>,

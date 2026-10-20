@@ -24,7 +24,6 @@ fn clear_rules(world: &World) {
     world.chain.submit(signed(ADA), chat::PROGRAM, &op).unwrap();
 }
 
-// every post the agent's conversations hold, framed or held, in order
 fn posts(world: &World) -> Vec<String> {
     let chain = &world.chain;
     let threads = world.threads().into_iter();

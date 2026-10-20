@@ -25,7 +25,6 @@ mod timeline;
 pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> AnyElement {
     let theme = *cx.global::<Theme>();
     let ladder = &design::TOUCH;
-    // what is drawn, decided once: the page on top and what is over it
     let page = page(chat);
     let sheet = actions::sheet(chat, cx, &theme, ladder)
         .or_else(|| actions::reactors(chat, cx, &theme, ladder))
@@ -33,9 +32,6 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> AnyElement {
         .or_else(|| details::sheet(chat, cx, &theme, ladder))
         .or_else(|| crate::policies::sheet(chat, cx, ladder, &theme));
     let confirm = actions::confirm(chat, cx, &theme, ladder);
-    // Back goes somewhere exactly while a page is over the rooms or a sheet
-    // or the dialog is over the page (rule 13); the host leaves the
-    // program else
     let back = (page != Page::Rooms || sheet.is_some() || confirm.is_some()).then(|| {
         cx.listener(|chat, _: &BackEvent, _window, cx| {
             chat.back();
@@ -75,7 +71,6 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> AnyElement {
         .into_any_element()
 }
 
-/// The page on top: the stack's, or the rooms alone without a node.
 fn page(chat: &Chat) -> Page {
     match chat.session.connected {
         true => *chat.pages().top(),
@@ -83,7 +78,6 @@ fn page(chat: &Chat) -> Page {
     }
 }
 
-/// `page`, drawn.
 fn screen(
     chat: &Chat,
     page: Page,
@@ -95,7 +89,6 @@ fn screen(
         chat.back();
         cx.notify();
     });
-    // the stack holds a room's pages only while a room is open
     match (page, &chat.room) {
         (Page::Room, Some(room)) => room::screen(chat, room, back, cx, theme, ladder),
         (Page::Thread, Some(room)) => thread::screen(chat, room, back, cx, theme, ladder),

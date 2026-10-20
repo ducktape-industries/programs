@@ -141,8 +141,6 @@ pub fn modules(program: &str) -> Option<(Option<&'static str>, Option<&'static s
 pub fn pack(release: &Path, program: &str, source: Option<&Source>) -> Result<Vec<u8>> {
     let (view, notifier) =
         modules(program).ok_or_else(|| format!("{program} is not a program a founding packs"))?;
-    // cargo names a crate's wasm with `_` for `-`, and wasm-describes names the describe
-    // module so; the schema keeps the program's own name
     let stem = program.replace('-', "_");
     let mut packed = read(release, &stem, "wasm")?;
     if let Some(view) = view {

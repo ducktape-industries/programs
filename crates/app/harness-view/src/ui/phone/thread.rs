@@ -20,10 +20,8 @@ use crate::words::{
 };
 use crate::{Agents, Arm, Screen, Sheet, State, links, thread_state};
 
-/// What nothing recovers, under a stuck conversation's strip.
 const STUCK: &str = "Nothing recovers a stuck conversation today. Its manager can close it.";
 
-/// How wide the strip's meter is.
 const METER: f32 = 80.;
 
 pub(super) fn page(
@@ -61,7 +59,6 @@ pub(super) fn page(
         .into_any_element()
 }
 
-/// Whose conversation it is, and whether it is the agent's current one or closed.
 fn heading_caption(view: &Agents, shown: &Transcript) -> String {
     let agent = view.agent_name(shown.thread.agent);
     let current = shown
@@ -124,7 +121,6 @@ fn thread(
                     )
             }))
     });
-    // the agent's own words on what the conversation is about, never its name
     let topic = shown.topic.as_ref().map(|topic| {
         div()
             .id("thread-topic")
@@ -134,7 +130,6 @@ fn thread(
             .text_color(theme.muted)
             .child(quoted(topic))
     });
-    // the page's height, which the transcript's list fills under the strip
     div()
         .flex_1()
         .min_h(px(0.))
@@ -159,8 +154,6 @@ fn thread(
         .into_any_element()
 }
 
-/// The conversation's state on one line: its badge, what it does, how full its context is. A
-/// stuck one wears the warning ground.
 fn strip(
     shown: &Transcript,
     relaying: usize,
@@ -183,7 +176,6 @@ fn strip(
             .text_color(theme.muted)
             .child(words)
     };
-    // a stuck one says what it is still doing, and how many wait, where the meter goes
     let (words, meter, fill) = match stuck {
         true => (
             format!("Still {}", asking_lower(row.asking)),
@@ -225,8 +217,6 @@ fn strip(
         .children(fill)
 }
 
-/// The conversation's usage and context, its own page over it: how full the context is, what
-/// every turn used, and each turn's own.
 pub(super) fn usage(
     view: &Agents,
     id: u64,
@@ -308,8 +298,6 @@ pub(super) fn usage(
         .into_any_element()
 }
 
-/// A link in a sheet row's hint: its network left out, `duck://…/harness/12/chat/general`, so
-/// the row's label keeps its room.
 fn short_link(link: &str) -> String {
     match link
         .strip_prefix("duck://")
@@ -320,7 +308,6 @@ fn short_link(link: &str) -> String {
     }
 }
 
-/// The sheet over the conversation: its writes, or one entry's facts.
 pub(super) fn sheet(
     view: &Agents,
     cx: &mut Context<Agents>,
@@ -468,8 +455,6 @@ fn actions_sheet(
         .into_any_element()
 }
 
-/// One entry's facts, each a row whose press copies it: where it is in the transcript, its
-/// blocks, the configuration it read, its calls' ids, its tokens.
 fn facts_sheet(
     shown: &Transcript,
     seq: u64,
@@ -515,7 +500,6 @@ fn facts_sheet(
     )
 }
 
-/// An entry's facts, each a label and the words a press copies, under the entry's place.
 fn facts(entry: &Entry) -> (String, Vec<(String, String)>) {
     match entry {
         Entry::Worked(work) => {

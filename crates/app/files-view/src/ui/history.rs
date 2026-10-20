@@ -11,7 +11,6 @@ use view::{Div, Stateful};
 use super::*;
 use crate::state::{History, PIN_GLYPH, SNAPSHOT_GLYPH, Snapshot};
 
-/// The history, the rows of `marked` marked: the snapshot open beside it.
 pub(super) fn history(view: &Files, marked: Option<BlobId>, cx: Cx, k: &Kit) -> AnyElement {
     let history = match &view.history {
         Loadable::Ready(history) | Loadable::Reloading(history, _) => history,
@@ -71,7 +70,6 @@ fn snapshots(
         .into_any_element()
 }
 
-/// One snapshot: its message, who made it and when.
 pub(super) fn snapshot_row(view: &Files, snapshot: &SnapshotRow, cx: Cx, k: &Kit) -> Stateful<Div> {
     let id = snapshot.id;
     let open = cx.listener(move |view: &mut Files, _: &ClickEvent, _, cx| {
@@ -107,8 +105,6 @@ fn pins(view: &Files, history: &History, marked: Option<BlobId>, cx: Cx, k: &Kit
     div().flex().flex_col().children(rows).into_any_element()
 }
 
-/// One pin: its name, the snapshot it names and who pinned it; it opens
-/// that snapshot.
 fn pin_row(view: &Files, history: &History, pin: &PinRow, cx: Cx, k: &Kit) -> Stateful<Div> {
     let seq = history.named(pin).map(|named| named.seq);
     let aside = words::pin_caption(seq, words::author(&pin.owner, view.names.ready()));
@@ -126,7 +122,6 @@ fn pin_row(view: &Files, history: &History, pin: &PinRow, cx: Cx, k: &Kit) -> St
     )
 }
 
-/// One snapshot's page.
 pub(super) fn snapshot(view: &Files, id: BlobId, cx: Cx, k: &Kit) -> AnyElement {
     let page = div().id("files-snapshot").flex().flex_col();
     let Some(snapshot) = view.snapshot_at(id) else {
@@ -165,7 +160,6 @@ pub(super) fn snapshot(view: &Files, id: BlobId, cx: Cx, k: &Kit) -> AnyElement 
     .into_any_element()
 }
 
-/// What the snapshot changed, path by path.
 fn changes(row: &SnapshotRow, snapshot: &Snapshot, k: &Kit) -> AnyElement {
     if let Some(note) = words::changes_note(row, &snapshot.changes) {
         return design::quiet(note, &k.theme)

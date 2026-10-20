@@ -92,7 +92,6 @@ fn the_strip_asks_the_highest_missing_run_then_keeps_its_span() {
     recent.land(100, led(37, 40, |_| 2));
     assert_eq!(recent.next(100), None);
     assert_eq!(recent.led.len() as u64, WINDOW);
-    // a head two blocks on asks for those two, and 37 and 38 fall out
     let fresh = recent.next(102).unwrap();
     assert_eq!(
         fresh,
@@ -146,7 +145,6 @@ fn a_node_that_lists_nothing_is_asked_again_at_the_next_head() {
     );
 }
 
-/// A resident's cells say nothing, whatever the reply says of it.
 #[test]
 fn a_residents_row_is_blank() {
     let resident = node(2, false);
@@ -174,10 +172,6 @@ fn peer(key: u8, signed: Option<u64>) -> Peer {
     }
 }
 
-/// In sync within 2 blocks, then N behind, then Quiet at 20: the
-/// footnote's "none for 20 blocks", 4,276..=4,295 without its vote, for a
-/// set of any size. One this node has heard no vote from is Quiet too. No
-/// vote counts before its block is applied, so none reads ahead.
 #[test]
 fn every_word_a_validators_vote_gives() {
     let cases = [
@@ -199,7 +193,6 @@ fn every_word_a_validators_vote_gives() {
             }
         );
     }
-    // a validator the reply does not list reads as one that signed nothing
     let row = synced(&node(9, true), &network(vec![]));
     assert_eq!(row.status.word(), "Quiet");
     assert_eq!(Status::Behind(1_200).word(), "1,200 behind");

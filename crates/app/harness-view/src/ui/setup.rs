@@ -11,7 +11,6 @@ use crate::Agents;
 use crate::setup::Press;
 use crate::words::{serving_words, window_short};
 
-// A press that hands `press` to the editor.
 fn pressing(
     press: Press,
     cx: &mut Context<Agents>,
@@ -19,7 +18,6 @@ fn pressing(
     cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.press_setup(press.clone(), cx))
 }
 
-// A field's label, over what it holds.
 fn labelled(label: &'static str, held: impl IntoElement, theme: &Theme, ladder: &Ladder) -> Div {
     div()
         .flex()
@@ -50,8 +48,6 @@ pub(crate) fn editor(
             view.press_setup(Press::Thinking(thinking), cx)
         }),
     );
-    // under a finger the six segments share the form's width, so the box stretches to it; under
-    // a pointer each is as wide as its word
     let thinking = match ladder.touch {
         true => div().flex().flex_col().child(thinking),
         false => div().flex().child(thinking),
@@ -148,8 +144,6 @@ pub(crate) fn editor(
         .child(design::form_verbs(cancel, save))
 }
 
-// Harness's model records, one pick each; a model the file names that harness keeps no record
-// of is said under them.
 fn models(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     if let Some(shown) = waiting("setup-models", &view.models, cx, theme, ladder) {
         return shown;
@@ -212,8 +206,6 @@ fn models(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladde
         .into_any_element()
 }
 
-// The rooms it listens to, each a press that drops it, then the finder: every room whose name
-// holds what is typed, a press adding it. Names are shown, channel ids written.
 fn rooms(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder) -> Div {
     let draft = &view.setup_draft;
     let roster = view.roster.ready();

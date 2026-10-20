@@ -33,40 +33,27 @@ pub struct Forge {
     pub(crate) nav: Nav,
     pub(crate) session: Session,
     pub(crate) filter: Filter,
-    /// the repo-list filter box
     pub(crate) search: TextField,
-    /// the change-list search box, apart from the repo filter so a name
-    /// typed to find a repository never hides that repository's changes
     pub(crate) change_search: TextField,
-    /// the file-tree filter box
     pub(crate) tree_search: TextField,
     pub(crate) reviews: BTreeMap<String, ReviewSession>,
-    /// `<repo>#<n>:<path>` of every file the reader ticked off
     pub(crate) viewed: BTreeSet<String>,
     pub(crate) new_repo: Option<NewRepo>,
     pub(crate) form: Option<ChangeForm>,
     pub(crate) repo_settings: Option<SettingsForm>,
-    /// the conversation composer of the open change, multi-line
     pub(crate) reply: TextField,
     pub(crate) notice: String,
-    /// the repository whose address was copied last, so its row says so
     #[serde(skip)]
     pub(crate) copied: Option<String>,
-    /// the window's title last sent
     #[serde(skip)]
     pub(crate) title: Option<String>,
-    /// the route last named to the host as the one shown (`host.showing`)
     #[serde(skip)]
     pub(crate) showing: Option<String>,
-    /// the host badge last posted: 1 while a change waits on my judgment
     #[serde(skip)]
     pub(crate) badge: Option<i64>,
     pub(crate) layout: Layout,
     #[serde(skip)]
-    /// every read on screen, keyed by the query that asked it
     pub(crate) data: BTreeMap<Query, Loadable<Rc<Reply>>>,
-    /// every log on screen, keyed like `data`: read a page at a time, as
-    /// far as its list is scrolled. Beside each, the view hearing it land.
     #[serde(skip)]
     pub(crate) logs: BTreeMap<Query, (Entity<Paged<CommitInfo>>, Subscription)>,
     #[serde(skip)]
@@ -91,8 +78,6 @@ pub struct Forge {
     pub(crate) rereading_messages: BTreeMap<Talk, Task<()>>,
     #[serde(skip)]
     pub(crate) pending: Vec<Pending>,
-    /// the height of the last forge block heard: an op issued before it
-    /// is carried by the time its receipt lands
     #[serde(skip)]
     pub(crate) block: u64,
     // out of sight (`host.visible` false): nothing is read until it shows again
@@ -104,112 +89,72 @@ pub struct Forge {
     pub(crate) log_scroll: UniformListScrollHandle,
     #[serde(skip)]
     pub(crate) tree_scroll: UniformListScrollHandle,
-    /// the Files tab's list, kept on the file picked and the row the
-    /// arrows are on
     #[serde(skip)]
     pub(crate) files_scroll: UniformListScrollHandle,
-    /// the Refs tab's list, kept on the row the arrows are on
     #[serde(skip)]
     pub(crate) refs_scroll: UniformListScrollHandle,
-    /// the Changes tab's list, kept on the row the arrows are on
     #[serde(skip)]
     pub(crate) changes_scroll: UniformListScrollHandle,
-    /// a commit's file strip, kept on the row the arrows are on
     #[serde(skip)]
     pub(crate) strip_scroll: UniformListScrollHandle,
-    /// a file picked to show alone whose row the Files tab's list has
-    /// not yet been scrolled to: its diff is on its way
     #[serde(skip)]
     pub(crate) reveal: Option<Vec<u8>>,
     #[serde(skip)]
     pub(crate) next_pending: u64,
-    /// the change whose Close waits for a second press: closing is final
     #[serde(skip)]
     pub(crate) closing: Option<String>,
-    /// drawn under a finger (`window.touch()`): the phone's screens,
-    /// whose change strip counts every tab as Expo's does, so a change's
-    /// conversation and diff are read whichever tab is open
     #[serde(skip)]
     pub(crate) touch: bool,
-    /// the dropdown open under its button, if any
     #[serde(skip)]
     pub(crate) menu: Option<Menu>,
-    /// the sheet open over the phone's page, if any (boards 21, 23)
     #[serde(skip)]
     pub(crate) sheet: Option<Sheet>,
-    /// the phone's change page shows its Details tab (board 23)
     #[serde(skip)]
     pub(crate) details: bool,
-    /// the phone's Refs tab lists the tags, not the branches
     #[serde(skip)]
     pub(crate) refs_tags: bool,
-    /// the phone's file page wraps its lines
     #[serde(skip)]
     pub(crate) wrap: bool,
-    /// the phone's file page shows a markdown file's source, not the
-    /// document
     #[serde(skip)]
     pub(crate) source: bool,
-    /// the list the phone's code and diff rows are drawn in
     #[serde(skip)]
     pub(crate) lines: crate::ui::phone::Block,
-    /// the phone's people sheet's filter (reviewers, a writer to grant)
     #[serde(skip)]
     pub(crate) people_search: TextField,
-    /// where the open dropdown sits: under the press that opened it
     #[serde(skip)]
     pub(crate) menu_at: (f32, f32),
-    /// the dropdown item the arrows are on
     #[serde(skip)]
     pub(crate) menu_cursor: usize,
-    /// the open dropdown's filter box, empty on every open
     #[serde(skip)]
     pub(crate) menu_search: TextField,
-    /// the ref picker lists tags rather than branches
     #[serde(skip)]
     pub(crate) menu_tags: bool,
-    /// the open dropdown's list, kept on the item the arrows are on
     #[serde(skip)]
     pub(crate) menu_scroll: UniformListScrollHandle,
-    /// the repository the arrows are on in the list, and which of its
-    /// cells: Open, Copy, activity
     #[serde(skip)]
     pub(crate) repos_cursor: Option<(String, usize)>,
-    /// the reviewable diff line the arrows are on, and which of its
-    /// gutters; none until they walk it, when the first gutter is claimed
-    /// for the keys and none is drawn
     #[serde(skip)]
     pub(crate) diff_cursor: Option<(usize, usize)>,
-    /// the repository the arrows are on in the rail
     #[serde(skip)]
     pub(crate) rail_cursor: Option<String>,
-    /// the row the arrows are on in a commit, change or ref list, and
-    /// which of its cells: the list's id, the row, the cell
     #[serde(skip)]
     pub(crate) list_cursor: Option<(&'static str, usize, usize)>,
-    /// the arrows have walked the file tree since the last move: its
-    /// cursor is drawn
     #[serde(skip)]
     pub(crate) tree_walked: bool,
-    /// the repository tab the arrows are on but have not opened
     #[serde(skip)]
     pub(crate) tab_cursor: Option<RepoTab>,
-    /// the change tab the arrows are on but have not opened
     #[serde(skip)]
     pub(crate) change_tab_cursor: Option<ChangeTab>,
     #[serde(skip)]
     pub(crate) blob_cache: crate::blob::BlobCache,
     #[serde(skip)]
     pub(crate) diff_cache: crate::ui::diff::DiffCache,
-    // who can edit the open repository and the open change (`policies.rs`)
     #[serde(skip)]
     pub(crate) repo_policy: policy_view::Editing,
     #[serde(skip)]
     pub(crate) change_policy: policy_view::Editing,
 }
 
-/// Where the reader is. One flat record: every screen is a projection of it,
-/// and a snapshot restores the same screen.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Nav {
     pub repo: Option<String>,
@@ -277,9 +222,6 @@ impl Nav {
         }
         match self.tab {
             RepoTab::Code => {
-                // a page per folder level, as Expo pushes a screen per
-                // folder: `a/b` is `b`'s page over `a`'s, so Back walks
-                // up one and a link into `a/b` lands with `a` under it
                 let levels = self
                     .folder
                     .as_ref()
@@ -305,63 +247,38 @@ impl Nav {
     }
 }
 
-/// One page of the stack [`Nav::pages`] projects, the screen the phone
-/// shows alone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Page {
     Repos,
     Repo,
     Change,
-    /// one file of a change's diff, shown alone, or all of them (the
-    /// phone's All files)
     File,
-    /// one commit of a repository's or a change's log
     Commit,
-    /// one level of the phone's open folder in the Code tab: `a/b` is two
     Folder,
-    /// one file of the Code tab
     Blob,
-    /// a path a link named that the ref does not hold
     Missing,
-    /// a path a link named, until its folder's tree says what it is: it
-    /// stands where its folder, file or missing page will, so the link
-    /// slides once (Expo `code/[...path].tsx` before its `entry` is read)
     Landing,
 }
 
-/// What lies over the phone's page, read from the model each frame
-/// ([`Forge::overlay`](crate::Forge::overlay)): the one the phone draws, and
-/// the one its Back closes first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Overlay {
-    /// a ref picker (`menu`)
     Menu(Menu),
-    /// a sheet a page opened (`sheet`)
     Sheet(Sheet),
-    /// the New repository form
     NewRepository,
-    /// Finish your review
     FinishReview,
-    // who can edit the open repository or change (`policies.rs`)
     Policy,
 }
 
-/// A sheet a phone page opens over itself; Back closes it first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Sheet {
-    /// a repository's About (the desktop docks it, `Nav::dock`)
     About,
-    /// what an open change offers its author and writers: Edit, Close
     ChangeActions,
-    /// a member to grant write access to (the Settings tab)
     Grant,
-    /// a member to ask for a review (the change form)
     Reviewers,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum RepoTab {
-    /// the repository's front page: its README, rendered
     #[default]
     Readme,
     Code,
@@ -428,8 +345,6 @@ impl ChangeTab {
     }
 }
 
-/// The panel a repository docks beside its tabs. A change carries its own
-/// details sidebar instead.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Dock {
     About,
@@ -443,16 +358,11 @@ impl Dock {
     }
 }
 
-/// A dropdown open under the button that opened it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Menu {
-    /// the ref every repository tab reads
     Ref,
-    /// the default head in the repository's settings
     Head,
-    /// a new change's source (the phone's change form)
     Source,
-    /// a new change's target (the phone's change form)
     Target,
 }
 
@@ -469,8 +379,6 @@ impl Menu {
     }
 }
 
-/// The change-list filters. "Needs my judgment" is its own query, not a
-/// `ChangeFilter`: the program answers it from the reader's key.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Filter {
     Judgment,
@@ -505,12 +413,8 @@ impl Filter {
     }
 }
 
-/// Where a line comment sits: the file's path, the new side (or the old),
-/// the line; what a diff line's comment button carries.
 pub(crate) type Anchor = (Vec<u8>, bool, u64);
 
-/// A review being written: pending comments staged against one pinned pair
-/// of endpoints, published as exactly one `ReviewSubmit`.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct ReviewSession {
     pub commit: String,
@@ -529,10 +433,8 @@ pub(crate) struct ReviewSession {
     pub refused: Option<ReviewRefusal>,
 }
 
-/// Why a review was refused before it was sent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum ReviewRefusal {
-    /// a comment review with no body and no line comment
     EmptyComment,
 }
 
@@ -596,7 +498,6 @@ pub(crate) fn verdict_label(verdict: Verdict) -> &'static str {
     }
 }
 
-/// What a reviewer did, as the conversation says it after their name.
 pub(crate) fn verdict_verb(verdict: Verdict) -> &'static str {
     match verdict {
         Verdict::Approve => "approved",
@@ -636,8 +537,6 @@ pub(crate) struct SettingsForm {
     pub grant: TextField,
 }
 
-/// An operation the reader issued: shown where they issued it until the
-/// next query reconciles it, or refused with the reason inline.
 #[derive(Clone, Debug)]
 pub(crate) struct Pending {
     pub id: u64,
@@ -650,19 +549,13 @@ pub(crate) struct Pending {
     pub progress: Progress,
 }
 
-/// Where an issued operation stands.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Progress {
     Submitting,
-    /// accepted by the node, waiting for the block that carries it
     Accepted,
-    /// it did not land: the host's answer (refused, in doubt, or never
-    /// sent), which both designs word as every view does
-    /// (`design::failure`)
     Refused(Answer),
 }
 
-/// What the host answered a write.
 pub(crate) type Answer = Result<view::methods::Submitted, view::host::Error>;
 
 #[derive(Serialize, Deserialize)]
@@ -694,13 +587,10 @@ impl Default for Layout {
     }
 }
 
-/// The repositories rail and the Code tab's file tree, dragged, stay
-/// within these widths so the pane beside them stays usable.
 const TREE_MIN: f32 = 160.;
 const TREE_MAX: f32 = 480.;
 const FILES_MIN: f32 = 180.;
 const FILES_MAX: f32 = 640.;
-/// Under this window width the side panes fold away behind toggles.
 const NARROW_BELOW: f32 = 880.;
 
 impl Layout {
@@ -720,7 +610,6 @@ impl Layout {
     }
 }
 
-/// The key a change's screens and drafts hang on.
 pub(crate) fn change_key(repo: &str, n: u64) -> String {
     format!("{repo}#{n}")
 }

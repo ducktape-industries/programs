@@ -264,7 +264,6 @@ impl MockHost {
         self.attempt(write).expect_err("the write was refused")
     }
 
-    /// Everything a write leaves on this host, copied.
     pub(crate) fn written(&self) -> Written {
         let mock = self.borrow();
         Written {
@@ -279,7 +278,6 @@ impl MockHost {
         }
     }
 
-    /// Puts back what [`written`](MockHost::written) copied: the undo.
     pub(crate) fn restore(&self, written: Written) {
         let mut mock = self.borrow_mut();
         mock.state = written.state;
@@ -288,9 +286,6 @@ impl MockHost {
         (mock.calls, mock.deferred, mock.resumes) = written.waits;
     }
 
-    /// One host call from a context whose env is `env`, as the real host
-    /// answers it. An emitted message is kept, numbered from 0, for the
-    /// test to run.
     pub(crate) fn serve(&self, env: &Env, op: HostOp) -> HostReply {
         if let HostOp::Resource { program, key } = op {
             let owners = self.borrow_mut().owners.remove(&program);
@@ -311,8 +306,6 @@ impl MockHost {
             });
         }
         if let HostOp::Query { program, request } = op {
-            // The sibling leaves the map while it answers, so it may use
-            // this host itself.
             let sibling = self.borrow_mut().siblings.remove(&program);
             return HostReply::Query(match sibling {
                 Some(sibling) => {
@@ -509,8 +502,6 @@ impl MockState {
     }
 }
 
-/// The origins a test sends from, each with the sender the host would
-/// resolve for it (an account, or `None` when the key or program holds none).
 impl Env {
     /// Sent by the chain itself, as genesis and the kernel's own calls are:
     /// the most trusted frame, which no person's write ever is.
@@ -562,7 +553,6 @@ mod tests {
     use super::*;
     use crate::Program;
 
-    /// Answers who asked it, and at what height.
     struct Echo;
 
     impl Program for Echo {
@@ -580,8 +570,6 @@ mod tests {
         }
     }
 
-    /// A test's frame acts as a person, as every frame the chain sends a
-    /// program outside genesis does; the chain itself is asked for by name.
     #[test]
     fn a_test_frame_acts_as_a_person_unless_it_says_root() {
         let host = MockHost::default();

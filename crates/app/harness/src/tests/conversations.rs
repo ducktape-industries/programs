@@ -436,7 +436,6 @@ fn the_agent_says_in_one_line_what_its_conversation_is_about_and_the_manual_name
         "the system prompt stays as it was, so its cache holds"
     );
 
-    // a fork goes on with what it was about
     chain.at(5, 0);
     model_says(
         chain,

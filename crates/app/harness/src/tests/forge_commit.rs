@@ -7,7 +7,6 @@ use forge::{Bounds, CommitInfo, Revision, TreeInfo};
 
 use super::*;
 
-/// When the agent's calls run: the commit's time is this, in seconds.
 const TIME_MS: u64 = 1_760_000_000_000;
 
 pub(super) fn bounds(max_objects: u64) -> Bounds {
@@ -37,8 +36,6 @@ pub(super) fn forged(max_objects: u64) -> World {
     world
 }
 
-/// One model turn of `forge_commit` calls at `height`, each run in the order given once its
-/// relay comes back, a block later.
 fn turn(chain: &MockChain, height: u64, calls: &[(&str, Value)]) {
     chain.at(height, TIME_MS);
     let uses: Vec<Value> = calls
@@ -175,7 +172,6 @@ fn an_agent_commits_to_a_repository_it_creates_and_then_on_top_of_its_commit() {
     turn(chain, 5, &[("c2", next), ("c3", stale)]);
     let (text, failed) = result_of(chain, thread, "c2");
     assert!(!failed, "{text}");
-    // both commits carry one time, so the log may list them in either order
     let log = log(chain, "notes");
     assert!(log.len() == 2 && log.contains(&started), "{log:?}");
     let second = log.iter().find(|commit| *commit != &started).unwrap();
@@ -255,9 +251,6 @@ fn a_commit_over_forges_bounds_is_refused_in_the_tools_words() {
     assert_eq!(log(chain, "notes").len(), 1);
 }
 
-/// A new repository's bounds are unknown until it exists, so only forge's push checks its first
-/// commit: over them, the call fails in forge's words, and the repository stays, the agent's and
-/// empty.
 #[test]
 fn a_first_commit_over_forges_bounds_fails_and_leaves_its_new_repository_empty() {
     let world = forged(4);

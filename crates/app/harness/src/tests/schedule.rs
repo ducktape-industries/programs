@@ -157,13 +157,11 @@ fn a_booked_run_posts_as_the_agent_at_its_block_and_wakes_its_conversation() {
     );
 }
 
-// a booked run of `run` (a program and an op) at `height`
 fn at(height: u64, mut run: Value) -> Value {
     run["height"] = json!(height);
     run
 }
 
-// what the one run that ran answered, as the report in `thread` tells it and the booking keeps it
 fn answer_of(chain: &MockChain, thread: u64, program: &str, entry: u64) -> Value {
     let ran = booking(chain, entry).unwrap().ran.expect("the run ran");
     assert!(!ran.failed, "{}", ran.text);
@@ -173,7 +171,6 @@ fn answer_of(chain: &MockChain, thread: u64, program: &str, entry: u64) -> Value
     serde_json::from_str(&ran.text).unwrap()
 }
 
-// books a files commit for block 10 in a new conversation and lets it run
 fn committed_at_10(world: &World) -> (u64, u64) {
     let chain = &world.chain;
     let thread = world.opened("m1", "commit notes at block 10", Some(WINDOW));
@@ -382,7 +379,6 @@ fn only_the_scheduler_runs_a_booked_run_and_only_its_booker_cancels_it() {
     assert!(due(chain, 40).is_empty());
 }
 
-// each of these would act as harness, so harness sends none of them for an agent
 fn refused_to_an_agent(tool: &str, input: impl FnOnce(&World, u64) -> Value) -> (World, u64) {
     let world = schemed();
     let thread = world.opened("m1", "act as harness", Some(WINDOW));

@@ -147,7 +147,6 @@ fn a_new_key_is_its_writers_and_links_to_their_open_policy() {
         (policy.name.as_str(), &policy.write, &policy.owner),
         (OPEN_POLICY, &Writers::Anyone, &ADA)
     );
-    // open: anyone changes it, and its record stays ada's
     note(&chain, "bob", "n/a", Some("his")).unwrap();
     assert_eq!(record(&chain, "n/a").unwrap().owner, ADA);
     assert_eq!(record(&chain, "c/count"), None, "a shared key has no owner");
@@ -181,7 +180,6 @@ fn a_narrowed_default_refuses_others_and_their_whole_frame() {
         count,
         "the shared write went with the frame"
     );
-    // bob's own new key is his, on his open policy
     note(&chain, "bob", "n/c", Some("his")).unwrap();
     assert_eq!(record(&chain, "n/c").unwrap().owner, BOB);
     note(&chain, "ada", "n/b", Some("again")).unwrap();
@@ -256,7 +254,6 @@ fn a_listed_program_counts_only_as_its_own_account() {
 #[test]
 fn a_retired_policy_still_protects_until_its_items_are_switched() {
     let chain = chain();
-    // ada's first item makes her open policy
     note(&chain, "ada", "n/first", Some("x")).unwrap();
     let strict = made(&chain, "ada", "strict", Writers::Owner);
     default(&chain, "ada", Scope::Global, Some(strict));
@@ -298,7 +295,6 @@ fn a_retired_policy_still_protects_until_its_items_are_switched() {
         act(&chain, "ada", &switch).unwrap_err().code,
         code::WRONG_STATE
     );
-    // the open policy never changes
     let Reply::Open(Some(open)) = ask(&chain, Query::Open { owner: ADA }) else {
         panic!("made when ada's first item was")
     };
@@ -352,14 +348,12 @@ fn only_an_items_owner_relinks_or_transfers_it() {
         code::NOT_FOUND
     );
     act(&chain, "ada", &transfer(BOB)).unwrap();
-    // bob owns it now, under ada's policy, which admits its owner alone
     assert_eq!(record(&chain, "n/f").unwrap().owner, BOB);
     note(&chain, "bob", "n/f", Some("his")).unwrap();
     assert_eq!(
         note(&chain, "ada", "n/f", Some("hers")).unwrap_err().code,
         code::UNAUTHORIZED
     );
-    // and links it only to a policy of his own
     assert_eq!(
         act(&chain, "bob", &relink).unwrap_err().code,
         code::INVALID_INPUT
@@ -410,7 +404,6 @@ fn only_the_kernel_guards_and_its_bytes_are_the_kernels() {
     assert_eq!(record(&chain, "n/z"), None);
 }
 
-// One-time (J-011 ⑥): a program that writes keys and sends ownership `Adopt` for them.
 #[derive(Debug, borsh::BorshSerialize, borsh::BorshDeserialize)]
 enum Adopting {
     Write(String),
@@ -513,11 +506,9 @@ fn a_program_records_owners_from_before_the_guard_once_and_on_todays_rule() {
     assert_eq!(first.policy, second.policy, "one policy per list");
     assert_eq!(second.owner, BOB);
     assert_eq!(listed.name, "adopter room (as before)");
-    // run again, with other owners: nothing changes
     let again = vec![item("n/mine", BOB, Rule::Open)];
     send(&chain, &Adopting::Adopt(again)).unwrap();
     assert_eq!(adopted(&chain, "n/mine").0, mine);
-    // a row the program wrote itself is the program's until it says whose it is
     send(&chain, &Adopting::Write("n/written".into())).unwrap();
     assert_eq!(
         adopted(&chain, "n/written").0.owner,
@@ -542,7 +533,6 @@ fn a_program_records_owners_from_before_the_guard_once_and_on_todays_rule() {
         ADA,
         "ada's stays hers"
     );
-    // only a program records owners, for its own keys
     let direct = Op::Adopt {
         items: vec![item("n/else", ADA, Rule::Open)],
     };
@@ -609,7 +599,6 @@ fn todays_access_answer_reads_as_a_rule() {
             by: ADA,
         }
     );
-    // a list its owner set above another's row admits that owner too
     assert_eq!(
         rule_of(&ADA, &listed(Some(Lister::Account(2)), Listing::Owner)),
         Rule::List {

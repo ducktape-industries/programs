@@ -15,8 +15,6 @@ pub enum Told {
     File { path: String, file: BlobId },
 }
 
-// the room's rules, written into `thread` ahead of a message from the room, when they are not what
-// the conversation was last told of them; rules removed since are told as gone
 pub(crate) fn tell(ctx: &ExecCtx, thread: &mut ThreadRow, channel: &str) -> Result<(), Error> {
     let asked = chat::Query::Channel {
         channel_id: channel.to_owned(),
@@ -62,8 +60,6 @@ pub(crate) fn tell(ctx: &ExecCtx, thread: &mut ThreadRow, channel: &str) -> Resu
     Ok(())
 }
 
-// a value that starts with `/` and names a file files holds is that file; any other value, a path
-// naming no file or no path files takes included, is the text itself
 fn told(ctx: &QueryCtx, rules: &str) -> Result<Told, Error> {
     let text = || Told::Text(rules.to_owned());
     if !rules.starts_with('/') {
@@ -88,7 +84,6 @@ fn told(ctx: &QueryCtx, rules: &str) -> Result<Told, Error> {
     })
 }
 
-// a summary may leave the rules out: the next message from each room tells them again
 pub(crate) fn forget(ctx: &ExecCtx, thread: u64) -> Result<(), Error> {
     for (key, _) in RULES_TOLD.scan(ctx, RULES_TOLD.prefix_of(&thread))? {
         RULES_TOLD.remove(ctx, &key);

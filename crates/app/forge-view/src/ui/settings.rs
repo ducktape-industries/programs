@@ -14,9 +14,7 @@ use crate::{Forge, Stage};
 use forge::Reply;
 use view::design::Ladder;
 
-/// The widest the rows run.
 const ROWS_W: Pixels = px(664.);
-/// The grant field.
 const GRANT_W: Pixels = px(220.);
 
 pub(crate) fn render(
@@ -86,7 +84,6 @@ pub(crate) fn render(
     column.child(rows).into_any_element()
 }
 
-/// A group's heading, a hairline under it.
 fn group(key: &str, title: &str, theme: &Theme) -> Stateful<Div> {
     div()
         .id(id(key.to_owned()))
@@ -101,8 +98,6 @@ fn group(key: &str, title: &str, theme: &Theme) -> Stateful<Div> {
         .child(title.to_owned())
 }
 
-/// The branches a default head may name, as a dropdown
-/// ([`crate::ui::components::menu`]).
 fn heads(forge: &Forge, form: &SettingsForm, cx: &mut Context<Forge>, theme: &Theme) -> AnyElement {
     dropdown(
         Menu::Head.key(),
@@ -115,7 +110,6 @@ fn heads(forge: &Forge, form: &SettingsForm, cx: &mut Context<Forge>, theme: &Th
     )
 }
 
-/// The force and delete switches.
 fn flags(
     forge: &Forge,
     form: &SettingsForm,
@@ -172,8 +166,6 @@ fn flags(
     ]
 }
 
-/// One person with access: avatar, name over what they may do, and what
-/// the owner can take back.
 fn access_row(
     key: &str,
     name: String,
@@ -213,8 +205,6 @@ fn access_row(
         .children(action)
 }
 
-/// Who to grant write access to, and Grant: an account number typed, or a
-/// name searched and picked from the roster, which fills in its number.
 fn grant_field(
     forge: &Forge,
     form: &SettingsForm,
@@ -223,7 +213,6 @@ fn grant_field(
     ladder: &Ladder,
 ) -> Stateful<Div> {
     let grant = cx.listener(|forge, _: &ClickEvent, _, cx| forge.grant(cx));
-    // a typed number needs no search; a name does
     let typed = form.grant.text();
     let needle = typed.trim();
     let searching = !needle.is_empty() && forge::Principal::parse(needle).is_none();
@@ -331,7 +320,6 @@ fn writers(
     }
 }
 
-/// One row per writer with its Revoke.
 fn writer_rows(
     forge: &Forge,
     writers: &[Writer],

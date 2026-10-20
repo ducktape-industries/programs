@@ -11,18 +11,11 @@ use crate::{CANCEL_DELETE, CONFIRM_DELETE, Chat, Mode, Pane, emoji};
 use view::FontWeight;
 use view::design::Ladder;
 
-/// How many of the reader's reactions the sheet offers (mobile
-/// `src/chat/Actions.tsx:91`), and the all-reactions button's plus
-/// (`:102`).
 const QUICK: usize = 6;
 const ALL_REACTIONS_ICON: Pixels = px(20.);
-// SDK gap: the scrim token, kept local until the kit takes it (kit.md §2)
-/// The scrim under a dialog, by appearance (mobile
-/// `src/design/theme.ts:12` and `:13`).
 const SCRIM_LIGHT: f32 = 0.4;
 const SCRIM_DARK: f32 = 0.55;
 
-/// The actions sheet, while a message's menu is open.
 pub(super) fn sheet(
     chat: &Chat,
     cx: &mut Context<Chat>,
@@ -55,9 +48,6 @@ pub(super) fn sheet(
     )
 }
 
-// Who chose one reaction, while a chip's long press holds the menu on it
-// (the desktop's hover names them): the emoji and its count, then a name
-// a row.
 pub(super) fn reactors(
     chat: &Chat,
     cx: &mut Context<Chat>,
@@ -113,7 +103,6 @@ pub(super) fn reactors(
     )
 }
 
-/// Who wrote it, when and in which block; what it says, on one line.
 fn head(message: &ChatMessage, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
     let when = (message.time > 0).then(|| design::clock(message.time));
     let about = [
@@ -141,8 +130,6 @@ fn head(message: &ChatMessage, theme: &Theme, ladder: &Ladder) -> Stateful<Div> 
         )
 }
 
-/// The reader's six reactions (theirs on this message on the accent), and
-/// the way to all of them.
 fn quick(
     chat: &Chat,
     message: &ChatMessage,
@@ -202,7 +189,6 @@ fn quick(
         .child(all)
 }
 
-/// The sheet's rows: only what the reader may do to this message.
 fn rows(
     chat: &Chat,
     message: &ChatMessage,
@@ -303,9 +289,6 @@ fn rows(
     rows
 }
 
-/// Turns the open sheet into an edit or a delete: an edit hands the keys
-/// to its field, a delete to the dialog's Cancel, so a stray Enter keeps
-/// the message.
 fn open(chat: &mut Chat, pane: Pane, seq: u64, rev: u32, mode: Mode, window: &mut Window) {
     if !chat.show_menu(pane, seq, rev, mode) {
         return;
@@ -316,10 +299,8 @@ fn open(chat: &mut Chat, pane: Pane, seq: u64, rev: u32, mode: Mode, window: &mu
     }
 }
 
-/// A press on one of the sheet's rows.
 type Press = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
-/// The delete dialog, while a delete asks.
 pub(super) fn confirm(
     chat: &Chat,
     cx: &mut Context<Chat>,
@@ -332,10 +313,6 @@ pub(super) fn confirm(
         .map(|_| delete_dialog(cx, theme, ladder))
 }
 
-/// `screen` under `dialog`, while there is one: dimmed, a press on the
-/// scrim (or Back) keeps the message. The dialog is centred top to bottom
-/// and stretches across, `gap.xl` in from each side (mobile
-/// `src/kit/Dialog.tsx:29`), so its words wrap at the phone's width.
 pub(super) fn with_confirm(
     screen: AnyElement,
     dialog: Option<Stateful<Div>>,
@@ -365,8 +342,6 @@ pub(super) fn with_confirm(
     .into_any_element()
 }
 
-/// The kit `Dialog` for a delete: its question, what it does, then Cancel
-/// (quiet, where the keys land) and Delete (danger) at the right.
 fn delete_dialog(cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
     let cancel = cx.listener(|chat, _: &ClickEvent, _window, cx| {
         chat.close_menu();
@@ -376,7 +351,6 @@ fn delete_dialog(cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Stat
         cx.notify();
         chat.delete_armed(cx)
     });
-    // the kit's danger button: its words and edge in the danger tone
     let delete = div()
         .id(CONFIRM_DELETE)
         .h(ladder.control)
@@ -398,7 +372,6 @@ fn delete_dialog(cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Stat
         .w_full()
         .flex()
         .flex_col()
-        // the kit's sheet inset, 20 (mobile `src/kit/Dialog.tsx:32`)
         .pt(design::SHEET_INSET)
         .px(design::SHEET_INSET)
         .pb(design::space::LG)

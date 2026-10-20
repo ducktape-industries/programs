@@ -8,7 +8,6 @@ use forge::{CommitInfo, PageResponse, Query, Reply, Revision};
 use view::testing::TestAppContext;
 use view::wire::Node;
 
-/// The history the tests browse: eight pages of 64.
 const COMMITS: usize = 500;
 
 const PAGE_SIZE: u64 = 64;
@@ -42,8 +41,6 @@ fn long_log(query: &Query) -> Reply {
     }
 }
 
-/// `project`'s history is the long one; the bytes of its replies are
-/// counted into what this returns.
 fn serve_long_log(cx: &TestAppContext) -> Rc<Cell<usize>> {
     let bytes = Rc::new(Cell::new(0));
     let counted = bytes.clone();
@@ -58,7 +55,6 @@ fn serve_long_log(cx: &TestAppContext) -> Rc<Cell<usize>> {
     bytes
 }
 
-/// The log of the ref the reader browses, not a commit's own row.
 fn browsed(query: &Query) -> bool {
     matches!(
         query,
@@ -69,7 +65,6 @@ fn browsed(query: &Query) -> bool {
     )
 }
 
-/// Where each page of the browsed log asked so far starts.
 fn pages(cx: &TestAppContext) -> Vec<usize> {
     cx.host()
         .requests::<Ask>()
@@ -86,7 +81,6 @@ fn pages(cx: &TestAppContext) -> Vec<usize> {
         .collect()
 }
 
-/// How many rows the log's list has.
 fn listed(cx: &TestAppContext) -> usize {
     match cx.node("forge-log") {
         Node::UniformList { count, .. } => *count,
@@ -94,10 +88,6 @@ fn listed(cx: &TestAppContext) -> usize {
     }
 }
 
-/// Opening a history of 500 commits reads the page its window covers, not
-/// all eight; scrolling to the end of what is held reads exactly the next
-/// page, once; a block that moved a ref reads the two pages held again, and
-/// one that wrote a review reads nothing.
 #[test]
 fn a_long_log_reads_the_pages_its_list_shows() {
     let (mut cx, heads) = followed("default");
@@ -111,16 +101,13 @@ fn a_long_log_reads_the_pages_its_list_shows() {
         opened.1
     );
     assert!(cx.has_text("Commit 0"), "{:?}", cx.texts());
-    // rows inside the page held ask nothing
     cx.simulate_range("forge-log", 20..34);
     let inside = pages(&cx).len();
-    // the end of the page comes into the window: the next page, once
     cx.simulate_range("forge-log", 50..64);
     let scrolled = (pages(&cx), listed(&cx));
     cx.simulate_range("forge-log", 50..64);
     cx.simulate_range("forge-log", 60..74);
     let held = (pages(&cx).len(), bytes.get());
-    // a push: the pages held are read again, from the first
     heads.forge.send(block(100, vec![ref_key()]));
     cx.run_until_parked();
     let pushed = (pages(&cx), bytes.get(), listed(&cx));
@@ -129,7 +116,6 @@ fn a_long_log_reads_the_pages_its_list_shows() {
         pushed.0.len() - held.0,
         pushed.1 - held.1
     );
-    // a review reads no log
     heads.forge.send(block(101, vec![review_key()]));
     cx.run_until_parked();
     let reviewed = pages(&cx).len();
@@ -146,10 +132,6 @@ fn a_long_log_reads_the_pages_its_list_shows() {
     assert_eq!(reviewed, 4, "a review moves no history");
 }
 
-/// While the next page is on its way the log's last row says so, in the
-/// loading line's words: a row of the list, not one of its options, and
-/// the page is asked for once however often the list is drawn (here again,
-/// for a theme change).
 #[test]
 fn the_row_past_the_commits_held_reads_on() {
     let (mut cx, _heads) = followed("default");
@@ -169,21 +151,15 @@ fn the_row_past_the_commits_held_reads_on() {
     assert_eq!(pages(&cx), [0, 64], "one page out");
 }
 
-/// The last row of a history is its last commit: the row that reads on is
-/// gone once the listing ends.
 #[test]
 fn a_log_read_to_its_end_has_no_row_that_reads_on() {
     let (mut cx, _heads) = followed("default");
     cx.simulate_click("forge-tab-commits");
     cx.run_until_parked();
-    // the fixture's history is two pages of one: the window covers both
     assert_eq!(listed(&cx), 2);
     assert!(!cx.has_text("Reading the history…"), "{:?}", cx.texts());
 }
 
-/// A commit opened from a page past the first is still its own page after
-/// a restore, where the log holds the first page again: the commit page
-/// reads its own row, and its diff is against its parent.
 #[test]
 fn a_commit_past_the_first_page_is_read_by_itself_after_a_restore() {
     let (mut cx, _heads) = followed("default");

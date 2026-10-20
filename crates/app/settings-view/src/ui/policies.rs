@@ -12,7 +12,6 @@ use crate::policies::problem_text;
 use crate::state::{Choice, Form, PolicyForm, PolicySheet};
 use crate::words;
 
-// Every policy sheet is this one sheet, in the mode `PolicySheet` says.
 const SHEET: &str = "settings/policies/sheet";
 const HELP: &str = "A policy says who may change what you own: your channels, messages, \
     repositories, changes, reviews, models and agents' conversations. You always may.";
@@ -58,7 +57,6 @@ pub(crate) fn pane(
     }
 }
 
-// The reader's policies, then what new items in each scope use.
 fn listed(
     holdings: &Holdings,
     cx: &mut Context<Settings>,
@@ -122,8 +120,6 @@ fn listed(
         .children(defaults)
 }
 
-// One policy: its name over who may write. A press opens its actions, except on the open policy,
-// which never changes, and on one whose items were switched to another.
 fn policy_row(
     holdings: &Holdings,
     policy: &Policy,
@@ -168,8 +164,6 @@ fn policy_row(
         .child(design::chevron(ladder, theme))
 }
 
-// Each scope a default can name: everything, each program that keeps owned items and any other
-// the reader set a default for, then each kind (and any other kind they set one for).
 fn scopes(holdings: &Holdings) -> Vec<Scope> {
     let mut programs: Vec<String> = PROGRAMS.iter().map(|program| program.to_string()).collect();
     let mut kinds: Vec<String> = KINDS.iter().map(|kind| kind.name.to_owned()).collect();
@@ -196,8 +190,6 @@ fn slug(scope: &Scope) -> String {
     }
 }
 
-// One scope: what new items there use, its own choice or what it inherits. A press opens its
-// picker.
 fn default_row(
     holdings: &Holdings,
     scope: Scope,
@@ -229,7 +221,6 @@ fn default_row(
         .child(design::chevron(ladder, theme))
 }
 
-// A policy by its name; none is the open policy, which ownership makes when it first needs it.
 fn name_of(holdings: &Holdings, id: Option<PolicyId>) -> String {
     match id {
         None => ownership::OPEN_POLICY.to_owned(),
@@ -239,7 +230,6 @@ fn name_of(holdings: &Holdings, id: Option<PolicyId>) -> String {
     }
 }
 
-// The policy sheet open over the pane, if one is drawn: while what it is about is still there.
 pub(crate) fn sheet(
     view: &Settings,
     cx: &mut Context<Settings>,
@@ -287,7 +277,6 @@ pub(crate) fn sheet(
     Some(sheet.into_any_element())
 }
 
-// One policy's actions: Edit, Move everything on it to…, Remove. A removed one only moves.
 fn actions(
     holdings: &Holdings,
     policy: &Policy,
@@ -340,7 +329,6 @@ fn actions(
         .into_any_element()
 }
 
-// A policy's form: its name, who may write, and under Specific people the parties it lists.
 fn edit(
     view: &Settings,
     title: &str,
@@ -418,7 +406,6 @@ fn edit(
         .into_any_element()
 }
 
-// The parties a Specific policy lists, each with Remove, then the field that adds one.
 fn people(
     form: &PolicyForm,
     cx: &mut Context<Settings>,
@@ -515,7 +502,6 @@ fn party_id(party: &Party) -> String {
     }
 }
 
-// How many items are on the sheet's policy, as far as it was read.
 fn items(view: &Settings) -> String {
     match &view.policy_items {
         Loadable::Ready(count) | Loadable::Reloading(count, _) => format!(
@@ -527,7 +513,6 @@ fn items(view: &Settings) -> String {
     }
 }
 
-// Remove: how many items are on the policy, what removing it does, Cancel and Remove.
 fn remove(
     view: &Settings,
     policy: &Policy,
@@ -573,7 +558,6 @@ fn remove(
         .into_any_element()
 }
 
-// Move everything on a policy to another: how many items, then each policy they can move to.
 fn switch(
     view: &Settings,
     holdings: &Holdings,
@@ -636,7 +620,6 @@ fn switch(
         .into_any_element()
 }
 
-// What new items in a scope use: Inherit (the wider scope's), or one of the reader's policies.
 fn default(
     view: &Settings,
     holdings: &Holdings,
@@ -697,7 +680,6 @@ fn default(
         .into_any_element()
 }
 
-// One muted sentence across the pane.
 fn line(
     id: impl Into<ElementId>,
     text: impl Into<SharedString>,
@@ -713,7 +695,6 @@ fn line(
         .child(text.into())
 }
 
-// A sentence in the secondary size, in `tone`.
 fn note(text: impl Into<SharedString>, tone: Hsla, ladder: &Ladder) -> Div {
     div()
         .text_type(ladder.secondary)
@@ -721,7 +702,6 @@ fn note(text: impl Into<SharedString>, tone: Hsla, ladder: &Ladder) -> Div {
         .child(text.into())
 }
 
-// What stopped a sheet's write, under it.
 fn refused(form: &Form, ladder: &Ladder, theme: &Theme) -> Option<Div> {
     let said = problem_text(form, "")?;
     Some(
@@ -732,13 +712,10 @@ fn refused(form: &Form, ladder: &Ladder, theme: &Theme) -> Option<Div> {
     )
 }
 
-// A row's leading glyph, muted.
 fn glyph(name: &str, ladder: &Ladder, theme: &Theme) -> Svg {
     design::icon(name, ladder.icon_row).text_color(theme.muted)
 }
 
-// A sheet form's buttons, `{base}/cancel` then `{base}/submit` taking the rest; the verb says
-// `busy` and takes no press while its write is in flight.
 fn verbs(
     base: &str,
     verb: &str,

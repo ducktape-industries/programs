@@ -11,7 +11,6 @@ use crate::Chat;
 use crate::notifier::Choice;
 use crate::words;
 
-/// What a room offers, in order; a direct room is on or off.
 fn offered(dm: bool) -> &'static [Choice] {
     const ROOM: &[Choice] = &[
         Choice::Every,
@@ -23,10 +22,6 @@ fn offered(dm: bool) -> &'static [Choice] {
     if dm { DIRECT } else { ROOM }
 }
 
-/// `room`'s notices, a row per choice with the chosen one checked; none is
-/// checked until the reader's choices are read, and none presses without
-/// an account to write as. The arrows move among them and Enter or Space
-/// chooses: each choice is a write, so a step is not one.
 pub(crate) fn choices(
     chat: &Chat,
     room: &str,
@@ -35,7 +30,6 @@ pub(crate) fn choices(
     theme: &Theme,
     ladder: &Ladder,
 ) -> Stateful<Div> {
-    // every message, or mentions, in a direct room is every message
     let chosen = chat.choice(room).map(|choice| match choice {
         Choice::Every | Choice::Cut(Notices::Mentions) if dm => Choice::Default,
         choice => choice,
@@ -56,8 +50,6 @@ pub(crate) fn choices(
     radios(group, cx, theme, ladder)
 }
 
-// each account the reader manages, in a room it may choose for: a head naming it over its own
-// group of every choice, read with the reader's. None in a direct room, which always reaches it.
 pub(crate) fn managed(
     chat: &Chat,
     room: &str,
@@ -106,8 +98,6 @@ pub(crate) fn managed(
     groups
 }
 
-// one radio group: its rows, the one chosen, the row the arrows are on until one is chosen, and
-// whose choice it is (the reader's when none)
 struct Group {
     id: String,
     label: String,
@@ -170,7 +160,6 @@ fn radios(group: Group, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) 
     radios
 }
 
-/// What a choice's row is keyed by: `chat-details-notices-<slug>`.
 fn slug(choice: Choice) -> &'static str {
     match choice {
         Choice::Every => "every",
@@ -180,7 +169,6 @@ fn slug(choice: Choice) -> &'static str {
     }
 }
 
-/// The radio's dot: filled when chosen.
 fn mark(on: bool, theme: &Theme) -> Div {
     div()
         .size(px(14.))

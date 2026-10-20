@@ -16,7 +16,6 @@ fn account(number: u64) -> ownership::Party {
     ownership::Party::Account(number)
 }
 
-// A policy of account `owner`'s.
 fn a_policy(id: u64, owner: u64, name: &str, write: Writers) -> ownership::Policy {
     ownership::Policy {
         id,
@@ -28,11 +27,8 @@ fn a_policy(id: u64, owner: u64, name: &str, write: Writers) -> ownership::Polic
     }
 }
 
-// An item on record: forge's key, its owner's account and its policy.
 type Held = (Vec<u8>, u64, ownership::Policy);
 
-// What ownership answers: each of `records` on record and any other key with none, `policies` as
-// the owner's; identity names the accounts as chat's roster does, and every ownership write lands.
 fn owned(cx: &TestAppContext, records: Vec<Held>, policies: Vec<ownership::Policy>) {
     cx.host()
         .handle::<ProgramQuery<ownership::Ownership>>(move |query| {
@@ -93,7 +89,6 @@ fn owned(cx: &TestAppContext, records: Vec<Held>, policies: Vec<ownership::Polic
         .handle::<Submit<ownership::Ownership>>(|_| Ok(view::testing::applied(Vec::new())));
 }
 
-// `project` open as `account`, ownership answering with `records` on record before it opens.
 fn opened_owned(
     account: u64,
     records: Vec<Held>,
@@ -106,7 +101,6 @@ fn opened_owned(
     (cx, view)
 }
 
-// Change 1 of `project`, on its Conversation tab, the details beside it.
 fn change_owned(
     account: u64,
     records: Vec<Held>,
@@ -156,7 +150,6 @@ fn the_settings_say_who_can_edit_the_repository_and_its_owner_relinks_it() {
 fn the_repository_policy_decides_merge_and_settings_over_the_access_list() {
     let team = a_policy(5, 1, "Team", Writers::Listed(vec![account(2)]));
     let records = || vec![(custody(), 1, team.clone())];
-    // Rae holds no write in access's list, but the repository's policy lists her
     let (cx, _) = change_owned(2, records(), vec![team.clone()]);
     assert!(!disabled(&cx, "forge-merge"), "the policy admits Rae");
     let (mut cx, _) = opened_owned(2, records(), vec![team.clone()]);
@@ -166,7 +159,6 @@ fn the_repository_policy_decides_merge_and_settings_over_the_access_list() {
         disabled(&cx, "forge-settings-grant"),
         "access's list stays its owner's to set"
     );
-    // access lists Wren, but the policy does not
     let (cx, _) = change_owned(9, records(), vec![team]);
     assert!(disabled(&cx, "forge-merge"), "the policy leaves Wren out");
 }
@@ -189,8 +181,6 @@ fn the_change_details_say_who_can_edit_it_and_its_policy_decides_edit() {
 
 #[test]
 fn the_owner_on_record_decides_and_an_author_still_closes_their_own_change() {
-    // Tal holds `project` on record, on a policy only Tal writes under: Ada, whom forge names its
-    // owner and who wrote change 1, merges and configures nothing, and still closes her change
     let tals = a_policy(6, 4, "Only me", Writers::Owner);
     let records = || vec![(custody(), 4, tals.clone())];
     let (cx, _) = change_owned(1, records(), vec![tals.clone()]);

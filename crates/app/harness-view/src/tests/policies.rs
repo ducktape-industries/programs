@@ -4,7 +4,6 @@
 use super::*;
 use ownership::{Op as Owned, Writers};
 
-// An item on record: harness's key, its owner's account and its policy.
 type Held = (Vec<u8>, u64, ownership::Policy);
 
 fn a_policy(id: u64, owner: u64, name: &str, write: Writers) -> ownership::Policy {
@@ -26,8 +25,6 @@ fn sonnet() -> Vec<u8> {
     harness::tables::MODELS.key(&SONNET.to_owned())
 }
 
-// What ownership answers: each of `records` on record and any other key with none, `policies` as
-// every owner's; every ownership write lands.
 fn owned(cx: &TestAppContext, records: Vec<Held>, policies: Vec<ownership::Policy>) {
     cx.host()
         .handle::<Query<ownership::Ownership>>(move |query| {

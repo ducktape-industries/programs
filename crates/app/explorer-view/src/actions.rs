@@ -13,10 +13,6 @@ enum Found {
 }
 
 impl Explorer {
-    /// Opens `route`: a tab's own list becomes the root, any other page
-    /// goes over the page it was opened from (Expo's `router.push`). The
-    /// desktop has no Back to walk the pages under the top: it keeps only
-    /// the page shown over the root, so its stack never grows.
     pub(crate) fn go(&mut self, route: Route, cx: &mut Context<Self>) {
         if route.listed() {
             self.pages = Pages::root(route);
@@ -29,40 +25,28 @@ impl Explorer {
         self.arrive(cx);
     }
 
-    /// A block's step to the one before or after: it takes the page's
-    /// place, so Back leaves the blocks (Expo's `router.setParams`,
-    /// `block/[height].tsx:57`).
     pub(crate) fn step(&mut self, height: u64, cx: &mut Context<Self>) {
         self.pages.replace(Route::Block(height));
         self.arrive(cx);
     }
 
-    /// The line under the title row goes (its Dismiss), and with it a page
-    /// a link opened that shows nothing.
     pub(crate) fn dismiss_note(&mut self, cx: &mut Context<Self>) {
         self.note = None;
         cx.notify();
     }
 
-    /// Back over a drawn sheet: Add, a program's sheet or a form closes.
     pub(crate) fn close_sheet(&mut self, cx: &mut Context<Self>) {
         self.sheet = None;
         self.acting.form = None;
         cx.notify();
     }
 
-    /// Back with no sheet drawn: the top page goes and the one it was
-    /// opened from shows, read again. A sheet held but not drawn (its
-    /// network still reading) goes with the page, so it never opens over
-    /// the one under it.
     pub(crate) fn leave_page(&mut self, cx: &mut Context<Self>) {
         self.acting.form = None;
         self.pages.pop();
         self.arrive(cx);
     }
 
-    /// The top page shows: what it reads past the window is asked, and
-    /// what belonged to the page before goes.
     fn arrive(&mut self, cx: &mut Context<Self>) {
         let top = self.pages.top();
         self.left[top.tab()] = Some(top.clone());
@@ -74,18 +58,12 @@ impl Explorer {
         self.searching = false;
         self.sheet = None;
         self.scroll.scroll_to_item(0, ScrollStrategy::Top);
-        // the field holds only what is being typed: a search that lands, a
-        // tab, prev/next and a row all leave it empty
         self.search.reset("");
         cx.notify();
     }
 
-    /// A height, a block or transaction hash, an account (`#3` or a name)
-    /// or a program name.
     pub(crate) fn search(&mut self, cx: &mut Context<Self>) {
         let query = self.search.text().trim().to_string();
-        // the line before goes now, though a hash the node is asked for
-        // lands later
         self.note = None;
         cx.notify();
         if query.is_empty() {
@@ -122,9 +100,6 @@ impl Explorer {
         cx.notify();
     }
 
-    /// A hash, as search and a link (`link`, the page it named) read it: a
-    /// transaction or a block in the window, else a block or a transaction
-    /// the node finds by it.
     fn find_hash(&mut self, hash: [u8; 32], link: Option<Linked>, cx: &mut Context<Self>) {
         if let Some(tx) = self.tx(&hash) {
             let at = Route::Tx {
@@ -201,7 +176,6 @@ impl Explorer {
         cx.notify();
     }
 
-    /// `duck://<chain>/explorer/<route>`, while the session names a chain.
     pub(crate) fn link(&self, route: &Route) -> Option<String> {
         let path = route.path();
         let tail: Vec<&str> = path
@@ -211,9 +185,6 @@ impl Explorer {
         ducklink::mint(&self.session_chain, "explorer", &tail)
     }
 
-    /// The reader's DM room with `account` in chat, as members-view opens
-    /// it: for an account other than the reader, once the session names
-    /// the reader and the chain.
     pub(crate) fn dm_link(&self, account: &identity::Account) -> Option<String> {
         let me = self.acting.account?;
         if me == account.number {
@@ -223,7 +194,6 @@ impl Explorer {
         ducklink::mint(&self.session_chain, chat::PROGRAM, &[&room])
     }
 
-    /// `text` onto the clipboard; the note says `what` was copied.
     pub(crate) fn copy(&mut self, text: String, what: &'static str, cx: &mut Context<Self>) {
         let ask = cx.host().ask::<ClipboardWrite>(text);
         cx.land(ask, move |view, copied, cx| {

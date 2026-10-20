@@ -8,7 +8,6 @@ use super::*;
 
 const TIME_MS: u64 = 1_760_000_000_000;
 
-// One model turn of calls at `height`, each run once its relay comes back, a block later.
 pub(super) fn turn(chain: &MockChain, height: u64, calls: &[(&str, &str, Value)]) {
     chain.at(height, TIME_MS);
     let uses: Vec<Value> = calls
@@ -22,8 +21,6 @@ pub(super) fn turn(chain: &MockChain, height: u64, calls: &[(&str, &str, Value)]
     }
 }
 
-// `forged` with forge's own account registered, as identity registers it when forge is admitted,
-// so the chat channel a change opens is made as forge.
 pub(super) fn world() -> World {
     let seated = forged(10_000);
     let register = identity::Op::RegisterProgram {
@@ -61,7 +58,6 @@ pub(super) fn head(chain: &MockChain, repo: &str, branch: &str) -> String {
     tip
 }
 
-// The bytes and object id of the file at `path` in the commit `at`.
 fn file_at(chain: &MockChain, repo: &str, at: &str, path: &str) -> (String, String) {
     let (dir, name) = path.rsplit_once('/').unwrap_or(("", path));
     let asked = forge::Query::Tree {
@@ -91,8 +87,6 @@ fn file_at(chain: &MockChain, repo: &str, at: &str, path: &str) -> (String, Stri
 
 const LIB: &str = "pub mod a;\npub mod b;\n\nfn one() {}\nfn two() {}\n";
 
-// A repository `notes` whose main holds `src/lib.rs` and `README.md`, and whose `dev` is one
-// commit on top that adds `src/a.rs`. Answers dev's head.
 pub(super) fn seeded(world: &World, thread: u64) -> String {
     let chain = &world.chain;
     let start = json!({
@@ -287,7 +281,6 @@ fn a_change_is_opened_commented_on_and_closed_by_its_number() {
     assert_eq!(review.draft.body, "Replaced by #2.");
 }
 
-// `world`, with forge serving a blob whole only up to `blob_bytes`.
 fn narrow(blob_bytes: u64) -> World {
     let mut seated = super::world();
     seated.chain.seat::<forge::Forge>(forge::PROGRAM);

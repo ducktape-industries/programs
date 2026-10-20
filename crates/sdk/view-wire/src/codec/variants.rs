@@ -7,7 +7,6 @@ use serde::ser::{SerializeStructVariant, Serializer};
 use crate::Interactivity;
 use crate::node::{Node, NodeDiscriminants};
 
-// A field written through a wrapper, as a derived field's `with` is.
 macro_rules! wrapped {
     ($field:ident) => {
         $field
@@ -17,12 +16,6 @@ macro_rules! wrapped {
     };
 }
 
-// A derived `Serialize` is one function over every variant's fields, and
-// unoptimized its frame keeps a slot for each (some 30 KB), which a tree
-// takes once per level: 64 levels outgrew a test thread's 2 MiB stack.
-// Here the match picks the variant and a variant's function holds its own
-// fields alone. A variant lists its fields in declaration order: the order
-// the wire writes them in and the derived `Deserialize` reads them.
 macro_rules! by_variant {
     (
         unit: [$($unit:ident),* $(,)?],
@@ -66,7 +59,6 @@ macro_rules! by_variant {
     };
 }
 
-// An element's interactivity, as `style::optional` writes it.
 struct Optional<'a>(&'a Option<Box<Interactivity>>);
 
 impl Serialize for Optional<'_> {

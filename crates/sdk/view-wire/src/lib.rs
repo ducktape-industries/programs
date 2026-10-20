@@ -52,7 +52,6 @@ pub const WIRE_ID: &str = include!(concat!(env!("OUT_DIR"), "/wire_id.rs"));
 // `Node::Artifact` and the `artifact` capability.
 pub const WIRE_LEVEL: u32 = 4;
 
-/// For `skip_serializing_if`: a value that says nothing is left out.
 pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {
     *value == T::default()
 }

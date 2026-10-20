@@ -38,8 +38,7 @@ fn member(n: u8) -> Member {
     }
 }
 
-/// A host founded with validators 1 and 2, under a cap of three members.
-fn founded<F: Fixture>() -> MockHost {
+fn founded_with_two_validators<F: Fixture>() -> MockHost {
     let host = MockHost::default();
     let genesis = Genesis {
         validators: vec![member(2), member(1)],
@@ -49,8 +48,6 @@ fn founded<F: Fixture>() -> MockHost {
     host
 }
 
-/// Validators and Members answer, every key is 32 bytes, and every
-/// validator is a member. The validators' keys, sorted.
 fn answers<F: Fixture>(host: &MockHost) -> (Vec<Vec<u8>>, Vec<Member>) {
     let m = program();
     let mut validators = match ask::<F::Program, Reply>(host, &m, 1, &Query::Validators) {
@@ -93,7 +90,7 @@ pub fn the_role_is_the_first_variants<F: Fixture>(_: &F) {
 /// Init with the role's genesis seats exactly its validators, each a
 /// member at its address.
 pub fn genesis_seats_the_given_set<F: Fixture>(_: &F) {
-    let host = founded::<F>();
+    let host = founded_with_two_validators::<F>();
     let (validators, members) = answers::<F>(&host);
     assert_eq!(
         validators,
@@ -111,7 +108,7 @@ pub fn genesis_seats_the_given_set<F: Fixture>(_: &F) {
 /// Seating and unseating through the program's update path change what
 /// Validators and Members answer.
 pub fn an_update_changes_the_answer<F: Fixture>(fixture: &F) {
-    let host = founded::<F>();
+    let host = founded_with_two_validators::<F>();
     fixture
         .seat(&host, member(3))
         .unwrap_or_else(|e| panic!("validators: seating a validator: {e:?}"));
@@ -139,7 +136,7 @@ pub fn an_update_changes_the_answer<F: Fixture>(fixture: &F) {
 /// Past the cap genesis names, a newcomer is not seated: the third member
 /// fills the cap of three, the fourth errs and Members stays at three.
 pub fn the_cap_bounds_the_members<F: Fixture>(fixture: &F) {
-    let host = founded::<F>();
+    let host = founded_with_two_validators::<F>();
     fixture
         .seat(&host, member(3))
         .unwrap_or_else(|e| panic!("validators: seating the third of three: {e:?}"));

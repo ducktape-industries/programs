@@ -8,8 +8,6 @@ use view::Theme;
 use view::methods::Query;
 use view::testing::TestAppContext;
 
-/// `FORGE_SCREEN_EXPORT=1` writes each screen's frame for the app's
-/// node-less renderer (`ducktape-app --render-tree <json>`), light and dark.
 #[test]
 fn export_forge_screens() {
     if std::env::var_os("FORGE_SCREEN_EXPORT").is_none() {
@@ -48,8 +46,6 @@ fn export_forge_screens() {
     .unwrap();
 }
 
-/// The `blob` screen is README.md opened from the Code tab's tree: the
-/// repository opens on its README page, which has no tree to press.
 #[test]
 fn the_blob_screen_opens_readme_from_the_code_tab() {
     let cx = screen("blob");
@@ -72,7 +68,6 @@ const SCREENS: [&str; 12] = [
     "change-files",
 ];
 
-/// One named screen, in the state the plan names it.
 fn screen(state: &str) -> TestAppContext {
     match state {
         "repos" => booted("default").0,

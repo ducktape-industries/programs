@@ -9,14 +9,12 @@ const HEIGHT: u64 = 4295;
 const VALIDATORS: usize = 5;
 const MEMBERS: usize = 8;
 
-/// A member's key: 32 bytes that read apart in their short hex.
 fn key(index: usize) -> Vec<u8> {
     (0..32u32)
         .map(|byte| (byte * 151 + index as u32 * 89 + 36) as u8)
         .collect()
 }
 
-/// The connected node's status; `this` is its member index.
 fn sheet_status(this: usize) -> NodeStatus {
     NodeStatus {
         chain_id: "testkit".into(),
@@ -32,7 +30,6 @@ fn sheet_status(this: usize) -> NodeStatus {
     }
 }
 
-/// Who led `height`: the first four in turn, the fourth only up to 4,250.
 fn leader(height: u64) -> Vec<u8> {
     let turn = match height > 4250 {
         true => height % 3,
@@ -70,8 +67,6 @@ fn sheet_valset(cx: &TestAppContext) {
     serve_set(cx, (0..VALIDATORS).map(key).collect(), members);
 }
 
-/// The validators' newest votes in the design's network; the fifth's
-/// stopped at 3,871.
 const SYNCED: [Option<u64>; VALIDATORS] = [
     Some(HEIGHT),
     Some(HEIGHT - 1),
@@ -79,8 +74,6 @@ const SYNCED: [Option<u64>; VALIDATORS] = [
     Some(HEIGHT - 2),
     Some(3871),
 ];
-/// Around Quiet's edge (20 blocks): 5 and 19 behind, 20 behind, and one
-/// never heard.
 const BEHIND: [Option<u64>; VALIDATORS] = [
     Some(HEIGHT),
     Some(HEIGHT - 5),
@@ -89,7 +82,6 @@ const BEHIND: [Option<u64>; VALIDATORS] = [
     None,
 ];
 
-/// Each validator's newest vote as this node heard it (None: not heard).
 fn sheet_network(signed: [Option<u64>; VALIDATORS]) -> NetworkStatus {
     NetworkStatus {
         height: HEIGHT,
@@ -102,8 +94,6 @@ fn sheet_network(signed: [Option<u64>; VALIDATORS]) -> NetworkStatus {
     }
 }
 
-/// The sheet over canned answers from member `this`: `network` None is a
-/// node that does not serve `chain.network`.
 fn sheet(
     network: Option<NetworkStatus>,
     this: usize,
@@ -128,7 +118,6 @@ fn sheet(
     (cx, ticks)
 }
 
-/// A node that stops answering after the sheet is up.
 fn silent((mut cx, ticks): (TestAppContext, StreamSender<ClockTicks>)) -> TestAppContext {
     cx.host().never::<ChainStatus>();
     cx.host().never::<ChainNetwork>();
@@ -139,10 +128,8 @@ fn silent((mut cx, ticks): (TestAppContext, StreamSender<ClockTicks>)) -> TestAp
     cx
 }
 
-/// One named state, and the window it is drawn in.
 fn screen(state: &str) -> TestAppContext {
     let quiet_unsigned = [SYNCED[0], SYNCED[1], SYNCED[2], SYNCED[3], None];
-    // a resident is not seated: its node hears no votes
     let resident = || sheet(Some(sheet_network([None; VALIDATORS])), VALIDATORS);
     match state {
         "synced" | "synced-680" | "synced-narrow" => sheet(Some(sheet_network(SYNCED)), 0).0,
@@ -152,12 +139,10 @@ fn screen(state: &str) -> TestAppContext {
         "behind-quiet" => sheet(Some(sheet_network(BEHIND)), 0).0,
         "resident" => resident().0,
         "resident-not-answering" => silent(resident()),
-        // a validator in valset not seated yet: no vote of its own
         "promoted" => {
             let own = [None, SYNCED[1], SYNCED[2], SYNCED[3], SYNCED[4]];
             sheet(Some(sheet_network(own)), 0).0
         }
-        // the node restarts past the app's retries: the votes stay
         "refused-after-answer" => {
             let (mut cx, ticks) = sheet(Some(sheet_network(SYNCED)), 0);
             cx.host()
@@ -209,7 +194,6 @@ fn screen(state: &str) -> TestAppContext {
 const SCREENS: [(&str, u32, u32); 15] = [
     ("synced", 1100, 680),
     ("synced-680", 680, 620),
-    // drawn in the app's frame: laid out at 480, scrolled sideways
     ("synced-narrow", 320, 800),
     ("quiet-unsigned", 1100, 680),
     ("unknown-request", 1100, 680),
@@ -225,13 +209,9 @@ const SCREENS: [(&str, u32, u32); 15] = [
     ("refused-after-answer", 1100, 680),
 ];
 
-/// The states drawn at every width the desk gives a view, from the app's
-/// narrowest layout up.
 const SWEEP: [&str; 4] = ["synced", "resident", "not-answering", "behind-quiet"];
 const WIDTHS: [u32; 8] = [480, 560, 680, 768, 960, 1000, 1064, 1280];
 
-/// The app's frame around a view (`runtime/widget.rs`): laid out at 480
-/// at the least, a narrower window scrolls it sideways.
 const APP_MIN_WIDTH: f32 = 480.;
 
 fn in_app_frame(mut frame: view::wire::Frame) -> view::wire::Frame {
@@ -241,9 +221,7 @@ fn in_app_frame(mut frame: view::wire::Frame) -> view::wire::Frame {
         .size_full()
         .min_w(px(APP_MIN_WIDTH));
     let mut outer = StyleRefinement::default().size_full().overflow_hidden();
-    // `overflow_x_scroll`, which the SDK keeps to interactive elements
     outer.overflow.x = serde_json::from_value(serde_json::json!("Scroll")).unwrap();
-    // the two boxes' styles go after the view's own in the frame's table
     let first = frame.styles.len() as u32;
     frame
         .styles
@@ -263,8 +241,6 @@ fn in_app_frame(mut frame: view::wire::Frame) -> view::wire::Frame {
     frame
 }
 
-/// `NODE_SCREEN_EXPORT=1` writes each state's frame, light and dark, and a
-/// manifest for the app's `dev/screens` capture.
 #[test]
 fn export_node_screens() {
     if std::env::var_os("NODE_SCREEN_EXPORT").is_none() {

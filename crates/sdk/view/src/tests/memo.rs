@@ -3,8 +3,6 @@
 //! debug build finds a reuse that would draw something else.
 use super::*;
 
-// A column of rows, each a memo over its label and whether it is hovered.
-// `loose` leaves the label out of the deps, as a mistake would.
 #[derive(Default, Serialize, Deserialize)]
 struct Rows {
     labels: Vec<String>,
@@ -53,8 +51,6 @@ impl Render for Rows {
     }
 }
 
-// A frame lowers the memos whose deps moved and keeps every other one:
-// a hover lowers the column and the one row it lit.
 #[test]
 fn a_hover_lowers_only_the_row_it_changed() {
     let mut cx = TestAppContext::new();
@@ -76,7 +72,6 @@ fn a_hover_lowers_only_the_row_it_changed() {
     assert!(cx.style("row-3").background.is_none());
 }
 
-// A kept row's routes are the ones it was lowered with, and they answer.
 #[test]
 fn a_kept_row_keeps_its_routes_and_they_answer() {
     let mut cx = TestAppContext::new();
@@ -91,8 +86,6 @@ fn a_kept_row_keeps_its_routes_and_they_answer() {
     rows.read(|rows| assert_eq!(rows.pressed, [7]));
 }
 
-// Without the debug check, a memo whose deps leave out what it reads keeps
-// what it drew: the stale screen the check is there to fail.
 #[test]
 fn a_memo_whose_deps_leave_out_its_label_keeps_the_old_one() {
     let mut cx = TestAppContext::new();
@@ -102,8 +95,6 @@ fn a_memo_whose_deps_leave_out_its_label_keeps_the_old_one() {
     assert!(cx.has_text("row 2") && !cx.has_text("renamed"));
 }
 
-// In a debug build every reuse lowers again and is held to what was kept:
-// the same mistake fails, naming the memo.
 #[test]
 #[should_panic(expected = "draws something else")]
 fn a_memo_whose_deps_leave_out_its_label_fails_a_debug_build() {
@@ -125,9 +116,6 @@ fn loosen_and_rename(cx: &mut TestAppContext, rows: &Entity<Rows>) {
     cx.run_until_parked();
 }
 
-// A kept row moved under a wrapper with no id is filed where it was, so it
-// is still kept: the frame sends the wrapper whole, with the row's node
-// from the last tree in it.
 #[derive(Default, Serialize, Deserialize)]
 struct Wrapped {
     wrapped: bool,
@@ -176,7 +164,6 @@ fn a_kept_row_moved_under_a_wrapper_comes_from_the_last_tree() {
     wrap_and_unwrap(true);
 }
 
-// The page with its other part, and its row when `row` is.
 fn page(row: bool) -> wire::Node {
     let page = div().id("page").child(div().id("other").child("other"));
     let page = match row {
@@ -186,7 +173,6 @@ fn page(row: bool) -> wire::Node {
     crate::testing::lower::<(), _>(move |_| page).0
 }
 
-// The page with its row standing as its shell, kept as memo "row".
 fn kept_row() -> (wire::Node, Vec<crate::memo::Hit>) {
     let mut new = page(true);
     let shell = crate::memo::shell(&mut new.children_mut()[1]);
@@ -210,9 +196,6 @@ fn a_kept_row_takes_the_last_trees_node_and_sends_nothing() {
     assert_eq!(new, page(true));
 }
 
-// A memo kept with no node at its place in the last tree never takes
-// another: checks fail naming it, and without them the frame is drawn
-// whole.
 #[test]
 #[should_panic(expected = "memo row at")]
 fn a_kept_row_the_last_tree_lacks_fails_with_checks() {
@@ -226,7 +209,6 @@ fn a_kept_row_the_last_tree_lacks_draws_the_frame_whole() {
     assert!(crate::memo::keeping(&mut page(false), &mut new, &hits, false).is_none());
 }
 
-// What any subtree may read, the theme, lowers every memo again.
 #[test]
 fn a_new_theme_lowers_every_memo_again() {
     let mut cx = TestAppContext::new();
@@ -237,8 +219,6 @@ fn a_new_theme_lowers_every_memo_again() {
     assert_eq!(cx.reports()[0].lowered, whole);
 }
 
-// A picture inside a memo crosses once: a kept memo names it by hash, and
-// a host that lost its tree is sent it again.
 #[derive(Default, Serialize, Deserialize)]
 struct Framed {
     count: usize,
@@ -268,7 +248,6 @@ impl Render for Framed {
     }
 }
 
-// The pictures a frame carries the bytes of.
 fn pictures_carried(frame: &wire::Frame) -> usize {
     let mut nodes: Vec<wire::Node> = frame.root.iter().cloned().collect();
     nodes.extend(frame.patches.iter().filter_map(|patch| match patch {
@@ -303,8 +282,6 @@ fn a_kept_picture_crosses_once_and_again_after_a_resync() {
     assert_eq!(pictures_carried(cx.last_frame()), 1, "the host lost it");
 }
 
-// A child entity drawn `cached()` lowers again only when it, or an entity
-// drawn inside it, notified.
 struct Counter {
     name: &'static str,
     count: usize,
@@ -317,8 +294,6 @@ impl Render for Counter {
     }
 }
 
-// A cached counter inside a cached box: what the inner one draws reaches
-// the screen through the outer one.
 struct Boxed {
     inner: Entity<Counter>,
 }
@@ -384,15 +359,12 @@ fn a_cached_view_lowers_again_only_when_it_or_one_inside_it_notified() {
     let (left, inner) = (left.unwrap(), inner.unwrap());
     bump(&mut cx, &left);
     assert!(cx.has_text("left 1"));
-    // the pair's column, and the left counter with its text
     assert_eq!(cx.reports()[0].lowered, 3);
     bump(&mut cx, &inner);
     assert!(cx.has_text("inner 1"), "{:?}", cx.texts());
-    // the column, the box, and the counter in it with its text
     assert_eq!(cx.reports()[0].lowered, 4);
 }
 
-// The same views with the debug check on: every reuse holds.
 #[test]
 fn cached_views_pass_the_debug_check() {
     let mut cx = TestAppContext::new();

@@ -17,7 +17,6 @@ fn founding_seats_the_validators_and_every_program_answers() {
         };
         let names: Vec<&str> = views.iter().map(|view| view.name.as_str()).collect();
         assert_eq!(names, ["lens"]);
-        // the host fills a query's env with the genesis bindings
         let programs::Reply::Roles(roles) =
             net.ask(programs::PROGRAM, &programs::Query::Roles).await
         else {
@@ -69,7 +68,6 @@ fn founding_seats_the_validators_and_every_program_answers() {
         };
         assert_eq!(accounts.height, net.height);
         assert_eq!(accounts.next, None);
-        // every founding program, and only they: each has its account
         let programs: Vec<_> = accounts
             .items
             .iter()

@@ -28,11 +28,6 @@ use view::design::Ladder;
 pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> impl IntoElement {
     let theme = *cx.global::<Theme>();
     let ladder = &design::POINTER;
-    // A chosen message has no popup of its own (its strip sits in the
-    // row), so no overlay dismisses it: the screen lets it and the copy
-    // range go on Escape from anywhere in the view and on a press
-    // anywhere in it — a press on a message chooses it again after
-    // (click follows mouse down), with shift it grows the range instead
     let escape = cx.listener(|chat, event: &KeyDownEvent, _window, cx| {
         if event.keystroke.key == "escape" && !event.keystroke.modifiers.modified() && chat.holds()
         {
@@ -58,7 +53,6 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> impl IntoElement {
         .bg(theme.background)
         .text_color(theme.foreground)
         .text_size(design::text::BODY)
-        // a node that hears a key or a press says what it is
         .role(Role::Group)
         .aria_label(words::CHAT)
         .on_key_down(escape)
@@ -92,7 +86,6 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> impl IntoElement {
     with_dm_pick(chat, screen, cx, &theme, ladder)
 }
 
-/// The screen under the open message menu, if any.
 fn with_menu(
     chat: &Chat,
     screen: AnyElement,
@@ -105,8 +98,6 @@ fn with_menu(
         cx.notify();
     });
     let mode = chat.menu.as_ref().map(|menu| menu.mode);
-    // the picker is named by the host's modal layer, the one dialog the
-    // audit knows is modal; its frame inside carries no dialog of its own
     let label = match mode {
         Some(crate::Mode::Reactions) => words::ADD_REACTION,
         Some(crate::Mode::Profile) => "Agent profile",
@@ -119,7 +110,6 @@ fn with_menu(
         menu::floating(chat, cx, theme, ladder),
     )
     .on_dismiss(dismiss);
-    // a confirm asks before anything else happens: it dims the room
     let confirming = mode == Some(crate::Mode::Delete);
     match confirming {
         true => overlay.backdrop(hsla(0., 0., 0., 0.35)).into_any_element(),
@@ -127,8 +117,6 @@ fn with_menu(
     }
 }
 
-/// The screen under the create-channel dialog, if it is open; a busy
-/// dialog is not dismissed.
 fn with_create(
     chat: &Chat,
     screen: AnyElement,
@@ -205,7 +193,6 @@ fn connected(
         (false, false, true) => (widget::side(chat, cx, theme, ladder), layout.details),
         (false, false, false) => return panes,
     };
-    // too narrow for the room beside it: the pane covers the whole screen
     if !layout.docks(width) {
         return panes.child(design::over("chat-side-over", pane, theme));
     }

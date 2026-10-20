@@ -40,14 +40,12 @@ fn a_channel_id_is_well_formed_and_a_colon_id_is_its_programs_alone() {
 #[test]
 fn nobody_squats_a_dm_id_with_a_plain_create() {
     let dm = dm_channel_id(3, 5);
-    // a third account, and each peer, try the plain creates on the dm id
     for who in [7, 3, 5] {
         let mut chat = Chat::default();
         let who = Principal::Account(who);
         let op = create(&dm, PostPolicy::Open);
         assert_eq!(chat.refused(&who, op), code::UNAUTHORIZED, "{who:?}");
         assert!(chat.store.borrow().state.is_empty());
-        // the real dm still opens with both peers seated
         chat.ok(&Principal::Account(3), open_dm(5));
         for peer in [3, 5] {
             assert!(is_member(&chat, &dm, Principal::Account(peer)));
@@ -107,7 +105,6 @@ fn a_dm_stays_open_once_its_counterpart_is_suspended() {
     let mut chat = Chat::default();
     chat.ok(&BO, open_dm(AGENT));
     let dm = dm_channel_id(2, AGENT);
-    // identity suspends the agent after the room opened
     let mut roster = roster();
     for profile in &mut roster {
         if let crate::Kind::Program { standing, .. } = &mut profile.kind
@@ -123,8 +120,6 @@ fn a_dm_stays_open_once_its_counterpart_is_suspended() {
     chat.ok(&BO, post(&dm, "m1", "still here", None));
 }
 
-/// The peer who opened a dm owns it, but owning it gives nothing: neither
-/// peer adds a third account, removes the other, renames or archives it.
 #[test]
 fn neither_dm_peer_reshapes_the_room() {
     let mut chat = Chat::default();
@@ -221,8 +216,6 @@ fn members_are_seated_and_unseated() {
     );
 }
 
-/// A room of 300 members lists them by account number, page after page:
-/// account 256 after 255, not first.
 #[test]
 fn members_list_by_account_number_across_pages() {
     let mut chat = Chat::with_channel(PostPolicy::MembersOnly);

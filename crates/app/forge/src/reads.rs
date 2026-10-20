@@ -111,8 +111,6 @@ impl Reading<'_> {
         Ok(blob)
     }
 
-    // A range of a blob too big to read whole, read alone and judged on its own bytes: text when
-    // it holds no NUL and is UTF-8 but for a code point cut at an edge, else binary in that range.
     fn judged_range(&self, id: &Oid, blob: &mut BlobView, len: u64) -> Result<(), Error> {
         let bytes = self
             .store
@@ -129,8 +127,6 @@ impl Reading<'_> {
     }
 }
 
-// UTF-8 but for the code points a range's edges cut: continuation bytes at its start, an
-// unfinished sequence at its end.
 fn utf8_within(bytes: &[u8]) -> bool {
     let cut = bytes
         .iter()
@@ -160,7 +156,6 @@ pub fn entry_kind(mode: Mode) -> EntryKind {
         Mode::Gitlink => EntryKind::Gitlink,
     }
 }
-/// A repository's objects, read within `reads` object reads of `bounds`.
 fn reading<'a>(
     ctx: &'a QueryCtx,
     name: &str,
@@ -185,8 +180,6 @@ pub fn log(
     exclude: Option<&Revision>,
     listing: &Listing,
 ) -> Result<Reply, Error> {
-    // a listed commit is one read; an excluded one two (its presence, then
-    // its body), under its own log_walk budget; plus the two revisions
     let reads = bounds.log_walk.saturating_mul(3).saturating_add(2);
     let r = reading(ctx, name, bounds, reads)?;
     let tip = r.commit_id(resolve(ctx, name, from, r.hash)?)?;
@@ -194,7 +187,6 @@ pub fn log(
         Some(exclude) => vec![r.commit_id(resolve(ctx, name, exclude, r.hash)?)?],
         None => Vec::new(),
     };
-    // ponytail: repeat the complete walk up to log_walk; index history if larger repos need it.
     let ids = r.result(gitcore::walk::commits(
         &r.store,
         &[tip],
@@ -369,8 +361,6 @@ fn counted(
         &into,
         cap(r.bounds.log_walk),
     ))?;
-    // Ancestry facts only: whether the endpoints merge cleanly is the git
-    // client's to find out, so a change is mergeable here when it fast-forwards.
     let mergeability = match base {
         None => Mergeability::Unrelated,
         Some(b) if b == from => Mergeability::UpToDate,

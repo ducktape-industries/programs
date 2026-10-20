@@ -10,13 +10,10 @@ use crate::state::{Choice, Form, PolicyForm, PolicySheet, Problem, Section};
 use crate::{Settings, words};
 
 impl Settings {
-    // The reader as ownership knows an owner: their account.
     fn owner(&self) -> Option<Party> {
         self.session.account.map(Party::Account)
     }
 
-    // The reader's policies and defaults, read again with what is on screen kept: the pane
-    // opened, ownership wrote, an op landed, a retry.
     pub(crate) fn refresh_policies(&mut self, cx: &mut Context<Self>) {
         let Some(owner) = self.owner() else {
             self.holdings = Loadable::Idle;
@@ -26,7 +23,6 @@ impl Settings {
         cx.load(self, work, |view| &mut view.holdings);
     }
 
-    // Another reader is seated: nothing of the last one's policies stays.
     pub(crate) fn policies_reseated(&mut self, cx: &mut Context<Self>) {
         self.holdings = Loadable::Idle;
         self.policy_sheet = None;
@@ -35,7 +31,6 @@ impl Settings {
         }
     }
 
-    // Ownership wrote: the open pane reads again when the block touched what it shows.
     pub(crate) fn ownership_moved(&mut self, change: Option<Change>, cx: &mut Context<Self>) {
         if self.shown() != Section::Policies {
             return;
@@ -81,7 +76,6 @@ impl Settings {
         cx.notify();
     }
 
-    // A new policy's form (no `id`), or one holding policy `id` as it is.
     fn form_for(&self, id: Option<u64>) -> PolicyForm {
         let Some(holdings) = self.holdings.ready() else {
             return PolicyForm::default();
@@ -110,8 +104,6 @@ impl Settings {
         }
     }
 
-    // Closes the policy sheet (its Cancel, a dismiss, Back); what it held and did not send goes
-    // with it. A write in flight keeps going, and its landing settles it.
     pub(crate) fn close_policy_sheet(&mut self, cx: &mut Context<Self>) {
         self.policy_sheet = None;
         if !self.policy_form.name.busy && !self.policy_form.person.busy {
@@ -124,8 +116,6 @@ impl Settings {
         cx.notify();
     }
 
-    // Back on the phone: the crop sheet closes, else the policy sheet, else
-    // the Agents pane's.
     pub(crate) fn back(&mut self, cx: &mut Context<Self>) {
         if self.photo.is_some() {
             return self.cancel_photo(cx);
@@ -141,7 +131,6 @@ impl Settings {
         cx.notify();
     }
 
-    // The person typed in the policy form, found by name or number, joins its list.
     pub(crate) fn add_policy_person(&mut self, cx: &mut Context<Self>) {
         let person = &mut self.policy_form.person;
         if person.busy {
@@ -162,7 +151,6 @@ impl Settings {
             form.person.busy = false;
             form.person.problem = match found {
                 Ok(Found::Party(identity::Party::Account(number))) => {
-                    // a name typed is the name it goes by until the policies are read again
                     if typed.trim_start_matches('#').parse::<u64>().is_err() {
                         form.names.insert(number, typed);
                     }
@@ -189,7 +177,6 @@ impl Settings {
         cx.notify();
     }
 
-    // Saves what the policy form holds: a new policy, or the one its sheet edits.
     pub(crate) fn save_policy(&mut self, cx: &mut Context<Self>) {
         let Some(PolicySheet::Edit(editing)) = self.policy_sheet.clone() else {
             return;
@@ -227,7 +214,6 @@ impl Settings {
         self.land_policy_op(op, |view| &mut view.policy_write, cx);
     }
 
-    // What new items in `scope` use: one of the reader's policies, or (none) the wider scope's.
     pub(crate) fn set_default(
         &mut self,
         scope: Scope,
@@ -246,8 +232,6 @@ impl Settings {
         self.land_policy_op(op, |view| &mut view.policy_write, cx);
     }
 
-    // Sends `op` from `form`; landed, the sheet it was sent from closes while it is still the one
-    // open, and the pane reads again.
     fn land_policy_op(
         &mut self,
         op: ownership::Op,
@@ -280,7 +264,6 @@ impl Settings {
 }
 
 impl PolicyForm {
-    // `party` joins the list, once; the field it was typed in empties.
     fn listed(&mut self, party: Party) {
         if !self.listed.contains(&party) {
             self.listed.push(party);
@@ -289,7 +272,6 @@ impl PolicyForm {
     }
 }
 
-// What a refused or empty policy write says, under the control that sent it.
 pub(crate) fn problem_text(form: &Form, empty: &str) -> Option<String> {
     form.problem
         .as_ref()

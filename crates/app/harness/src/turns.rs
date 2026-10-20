@@ -65,7 +65,6 @@ pub(crate) fn say(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body) {
     say_with(ctx, thread, body, Vec::new());
 }
 
-// an input and the pictures it came with
 pub(crate) fn say_with(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body, pictures: Vec<Picture>) {
     let looping = thread.asking != Asking::Idle || thread.paused();
     if !looping {
@@ -79,7 +78,6 @@ pub(crate) fn say_with(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body, pictur
 }
 
 pub(crate) fn settle(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
-    // a turn that armed a wait ends here: what it saw needs no answer, input held behind it does
     let armed_a_wait = ENDING.has(ctx, &thread.id);
     if armed_a_wait && thread.asking == Asking::Running {
         thread.seen = thread.frames;
@@ -157,7 +155,6 @@ async fn call_model(
     parts: Vec<BlobId>,
     delivery: egress::Delivery,
 ) -> Result<http::Response, Failure> {
-    // pinned to the account harness picked, so ccs neither chooses another nor falls over to one
     if let Some(account) = &asked.account {
         head.headers.push((CCS_ACCOUNT.into(), account.clone()));
     }
@@ -586,8 +583,6 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         max_tokens: config.max_tokens,
         header,
     };
-    // a move off the account that holds the cache re-writes the whole prompt: a thread that would
-    // compact after one more answer anyway compacts first, on the new account
     let grown = grown(thread.context, turn.max_tokens);
     let soon = forced && crowded(grown, window, turn.max_tokens, threshold);
     match crowded(thread.context, window, turn.max_tokens, threshold) || soon {
@@ -674,8 +669,6 @@ fn largest_unseen(ctx: &ExecCtx, thread: &ThreadRow, wire: Wire) -> Result<Optio
     Ok(sized.max_by_key(|(size, _)| *size).map(|(_, frame)| frame))
 }
 
-// compact once the context reaches the threshold in effect, or when the next answer would not
-// fit the window, which holds whatever the threshold
 fn crowded(context: Context, window: Option<u64>, max_tokens: u32, threshold: Option<u64>) -> bool {
     match (context, window) {
         (Context::Overflowed, _) => true,
@@ -687,7 +680,6 @@ fn crowded(context: Context, window: Option<u64>, max_tokens: u32, threshold: Op
     }
 }
 
-// the context one more answer of up to `max_tokens` would leave
 fn grown(context: Context, max_tokens: u32) -> Context {
     match context {
         Context::Measured(tokens) => {
@@ -721,7 +713,6 @@ async fn learn(ctx: &Ctx, id: u64, asked: Asked, model: ModelRow) -> Result<(), 
     retried(ctx, id, again).await
 }
 
-// a failure worth asking again waits until the thread is settled; any other ends the turn here
 fn failed(ctx: &ExecCtx, thread: &mut ThreadRow, failure: Failure) -> Option<Failure> {
     let again = failure.again.is_some() && !thread.closed;
     if again {
@@ -814,7 +805,6 @@ async fn ask(
     conclude(ctx, id, upto, asked.config, read).await
 }
 
-// what follows a model call's answer, or the answer harness found lost (`resume::recover`)
 pub(crate) async fn conclude(
     ctx: &Ctx,
     id: u64,
@@ -854,7 +844,6 @@ fn read_answer(
 ) -> Result<Answered, Failure> {
     let stream_ended = response.status == 200 && response.body.is_empty();
     let streamed = partial.filter(|partial| stream_ended && partial.next_seq > 0);
-    // a stream that broke, stopped short or failed is the model's to answer again
     match streamed {
         Some(partial) => match wire::folded(partial) {
             Answered::Failed(text) => Err(Failure::broke(text)),
@@ -982,8 +971,6 @@ fn stall(ctx: &ExecCtx, id: u64, error: &Error) {
     }
 }
 
-// the model refused the request over its images: each one so far reaches it as words from now
-// on, and it is asked again; false when every one was words already
 fn unpictured(ctx: &ExecCtx, thread: &mut ThreadRow, text: &str) -> Result<bool, Error> {
     if !pictures::hide(ctx, thread.id, text)? {
         return Ok(false);

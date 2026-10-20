@@ -9,24 +9,16 @@ use crate::state::Note;
 use crate::write::{Write, path_in};
 use crate::{Files, words};
 
-/// One picked file, as the upload's form holds it.
 pub(crate) struct Upload {
-    /// its own name on the reader's device
     pub(crate) name: String,
     pub(crate) size: u64,
-    /// the handle the host reads it by
     file: u64,
-    /// where it goes, or why it is left out
     pub(crate) path: Result<String, String>,
-    /// a file of its name is in the folder: this one replaces it
     pub(crate) replaces: bool,
-    // why its put was refused, in the host's or the network's words
     pub(crate) refused: Option<String>,
 }
 
 impl Upload {
-    /// Its blobs: a `chunk` per [`files::CHUNK_SIZE`] of it, in order, each
-    /// read by the host from the file picked.
     pub(crate) fn blobs(&self) -> Vec<NewBlob> {
         (0..self.size.div_ceil(files::CHUNK_SIZE))
             .map(|index| {
@@ -44,8 +36,6 @@ impl Upload {
     }
 }
 
-/// The files picked, as the form holds them: each one's path in `folder`
-/// or why it is left out. `listed` is what the folder holds already.
 pub(crate) fn uploads(folder: &str, picked: Vec<Picked>, listed: &[EntryInfo]) -> Vec<Upload> {
     let mut named: Vec<String> = Vec::new();
     picked
@@ -57,7 +47,6 @@ pub(crate) fn uploads(folder: &str, picked: Vec<Picked>, listed: &[EntryInfo]) -
                 .ok()
                 .and_then(|path| listed.iter().find(|entry| entry.path == *path));
             let path = path.and_then(|path| match there.map(|entry| &entry.node) {
-                // a file in its place is replaced; a folder or a link is not
                 Some(node @ (Node::Dir { .. } | Node::Symlink { .. })) => Err(words::held_by(node)),
                 _ if named.contains(&path) => Err(words::PICKED_TWICE.into()),
                 _ => Ok(path),
@@ -77,15 +66,12 @@ pub(crate) fn uploads(folder: &str, picked: Vec<Picked>, listed: &[EntryInfo]) -
         .collect()
 }
 
-/// The files the upload sends, in order, each with its path: every one
-/// not left out.
 pub(crate) fn going(uploads: &[Upload]) -> impl Iterator<Item = (&Upload, &str)> {
     uploads
         .iter()
         .filter_map(|upload| Some((upload, upload.path.as_deref().ok()?)))
 }
 
-/// The names of the files the upload sends.
 pub(crate) fn sent(uploads: &[Upload]) -> Vec<&str> {
     going(uploads)
         .map(|(upload, _)| upload.name.as_str())
@@ -96,8 +82,6 @@ pub(crate) fn handles(uploads: &[Upload]) -> Vec<u64> {
     uploads.iter().map(|upload| upload.file).collect()
 }
 
-/// What the upload's commit puts: each file it sends, with its content
-/// (`content(n)` for the `n`th); or why it puts nothing.
 pub(crate) fn puts(
     uploads: &[Upload],
     content: impl Fn(usize) -> Content,
@@ -118,9 +102,6 @@ pub(crate) fn puts(
 }
 
 impl Files {
-    /// Asks the reader for files on their device, to upload into `folder`;
-    /// picked, their form opens. Only a press reaches here: the host opens
-    /// its picker for nothing else.
     pub(crate) fn pick(&mut self, folder: String, cx: &mut Context<Self>) {
         if self.picking {
             return;
@@ -131,7 +112,6 @@ impl Files {
             .detach();
     }
 
-    /// The reader picked files, or none; or the host could not ask.
     fn picked(
         &mut self,
         folder: String,
@@ -147,12 +127,9 @@ impl Files {
                 return;
             }
         };
-        // cancelled
         if picked.is_empty() {
             return;
         }
-        // the folder left the screen while the picker was open: what it
-        // holds, and so what a file would replace, is not known
         let Some(listed) = self.folder_at(&folder) else {
             self.note = Some(Note::Refused(words::FOLDER_LEFT.into()));
             cx.notify();

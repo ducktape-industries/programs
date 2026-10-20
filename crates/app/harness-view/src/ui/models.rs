@@ -59,10 +59,8 @@ pub(super) fn render(
         .into_any_element()
 }
 
-// What the models are, under their title.
 pub(crate) const ABOUT: &str = "What an agent’s configuration names. A row opens its record: its services, its compact_at default, or removing it.";
 
-// A press that hands `press` to the models form.
 pub(super) fn pressing(
     press: Press,
     cx: &mut Context<Agents>,
@@ -70,7 +68,6 @@ pub(super) fn pressing(
     cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.press_model(press.clone(), cx))
 }
 
-// What opens a record's form: the record and the services that reach it.
 pub(super) fn open(model: &Model) -> Press {
     let services = model.services.iter().map(|(name, _)| name.clone());
     Press::Open(model.row.clone(), services.collect())
@@ -172,7 +169,6 @@ fn labelled(
         .child(caption(hint, theme))
 }
 
-// What the form says of each field, both trees alike.
 pub(crate) const ID_HINT: &str =
     "What an agent's configuration names: lowercase letters, digits, -, _ and .";
 pub(crate) const KEPT_ID: &str = "A record keeps its id: set another id for another record.";
@@ -293,8 +289,6 @@ fn form(
         })
 }
 
-// The registered services, one press each: its owner, the nodes assigned to it, and how
-// many member nodes serve it now; a picked one says its place in the list.
 fn services(
     view: &Agents,
     cx: &mut Context<Agents>,
@@ -363,7 +357,6 @@ fn services(
         .child(list)
 }
 
-// A picked service's place in the list.
 pub(crate) fn place_words(place: usize) -> String {
     match place {
         0 => "first · the record's".to_owned(),

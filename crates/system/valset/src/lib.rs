@@ -140,8 +140,6 @@ pub fn describe(op: &Op) -> describe::Description {
                 Motion::Remove { key: removed } => ("remove".into(), key(removed)),
                 Motion::Door { open: true } => ("open the door".into(), vec![]),
                 Motion::Door { open: false } => ("close the door".into(), vec![]),
-                // in the words of the program this repo binds to the role, which the app's
-                // confirm shows; another role's op as its bytes
                 Motion::Role { role, op } => described_op(role, op),
             };
             (format!("Vote · {verb}"), fields)
@@ -150,8 +148,6 @@ pub fn describe(op: &Op) -> describe::Description {
     describe::Description { title, fields }
 }
 
-/// A `Role` motion's op in the words of the program this repo binds to the role (programs,
-/// halo); another role's op, or one that does not decode, as its bytes.
 fn described_op(role: &str, op: &[u8]) -> (String, Vec<describe::Field>) {
     use describe::{Value, field};
     let described = match role {
@@ -167,8 +163,6 @@ fn described_op(role: &str, op: &[u8]) -> (String, Vec<describe::Field>) {
 
 describe::export!(Op, describe);
 
-/// Old op bytes are described with the current code (`describe`): the op
-/// enum only grows at its end. Append a new variant here; never reorder.
 #[test]
 fn op_variants_only_append() {
     assert_eq!(

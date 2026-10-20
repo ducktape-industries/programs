@@ -8,7 +8,6 @@ use store::{Item, Map};
 use crate::{Class, Founded, Genesis, Lane, LaneId, MAX_NAME};
 
 const LANES: Map<String, Lane> = Map::new("l/");
-/// The next id ever handed out; past `LaneId::MAX` every id is spent.
 const NEXT: Item<u16> = Item::new("next");
 
 pub(crate) fn init(ctx: &ExecCtx, genesis: Genesis) -> Result<(), Error> {
@@ -26,7 +25,7 @@ pub(crate) fn set(ctx: &ExecCtx, name: String, cap: Class, enabled: bool) -> Res
     let held = listed(ctx, &name)?;
     let pauses = !enabled;
     if pauses {
-        unpinned(&held, "paused")?;
+        refuse_pinned_lane_removal(&held, "paused")?;
     }
     let set = Lane {
         cap,
@@ -38,7 +37,7 @@ pub(crate) fn set(ctx: &ExecCtx, name: String, cap: Class, enabled: bool) -> Res
 }
 
 pub(crate) fn close(ctx: &ExecCtx, name: String) -> Result<(), Error> {
-    unpinned(&listed(ctx, &name)?, "closed")?;
+    refuse_pinned_lane_removal(&listed(ctx, &name)?, "closed")?;
     LANES.remove(ctx, &name);
     Ok(())
 }
@@ -54,7 +53,7 @@ pub(crate) fn lane(ctx: &QueryCtx, name: &str) -> Result<Option<Lane>, Error> {
 }
 
 fn list(ctx: &ExecCtx, name: String, cap: Class, pinned: bool, since: u64) -> Result<(), Error> {
-    named(&name)?;
+    printable_lane_name(&name)?;
     if LANES.has(ctx, &name) {
         return Err(already_listed(&name));
     }
@@ -79,8 +78,7 @@ fn listed(ctx: &QueryCtx, name: &str) -> Result<Lane, Error> {
     lane(ctx, name)?.ok_or_else(|| unlisted(name))
 }
 
-/// A lane's name: 1 to `MAX_NAME` printable ASCII bytes, so a log line carries it as it is.
-fn named(name: &str) -> Result<(), Error> {
+fn printable_lane_name(name: &str) -> Result<(), Error> {
     let sized = (1..=MAX_NAME).contains(&name.len());
     let printable = name.bytes().all(|byte| byte.is_ascii_graphic());
     if !(sized && printable) {
@@ -91,9 +89,7 @@ fn named(name: &str) -> Result<(), Error> {
     Ok(())
 }
 
-/// A pinned lane is `done` by no vote: it is served for the network's life, so a node that
-/// needs it to apply blocks is never cut off from the block that would undo the vote.
-fn unpinned(lane: &Lane, done: &str) -> Result<(), Error> {
+fn refuse_pinned_lane_removal(lane: &Lane, done: &str) -> Result<(), Error> {
     if lane.pinned {
         return Err(invalid(format!(
             "the lane {} is pinned at founding: it is never {done}",

@@ -41,8 +41,6 @@ pub(crate) fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
-/// Every accepted op marks its repository active at this height and counts
-/// as a write, which every listing cursor is pinned to.
 pub(crate) fn touch(ctx: &ExecCtx, name: &str, height: u64) -> Result<(), Error> {
     let mut repo = load_repo(ctx, name)?;
     repo.last_activity = height;
@@ -87,8 +85,6 @@ pub(crate) fn configure(ctx: &ExecCtx, name: &str, settings: Settings) -> Result
     save_repo(ctx, name, &repo)
 }
 
-// Archives the repository `name`, or restores it: an archived one leaves the activity index, so
-// `Repos` lists it no more, and every op on it but this one is refused (`writable`).
 pub(crate) fn archive(ctx: &ExecCtx, name: &str, archived: bool) -> Result<(), Error> {
     let repo = load_repo(ctx, name)?;
     let key = name.to_owned();
@@ -101,8 +97,6 @@ pub(crate) fn archive(ctx: &ExecCtx, name: &str, archived: bool) -> Result<(), E
     save_repo(ctx, name, &repo)
 }
 
-// Refuses, before it writes anything, an op on an archived repository: only `Archive` restores
-// one, and `Create` still says the name is taken.
 pub(crate) fn writable(ctx: &QueryCtx, op: &Op) -> Result<(), Error> {
     let exempt = matches!(op, Op::Archive { .. } | Op::Create { .. });
     match op.repo() {
@@ -119,8 +113,6 @@ pub(crate) fn retired() -> Error {
     )
 }
 
-// The repository whose policy decides `op`, if any: the ops `needs` asks a repository's list for
-// (its `repo_key` or `settings_key`), so that each writes the repository's custody.
 pub(crate) fn governed<'o>(ctx: &QueryCtx, op: &'o Op) -> Option<&'o str> {
     match op {
         Op::Configure { repo, .. }
@@ -188,7 +180,6 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
                 Err(_) => Vec::new(),
             }
         }
-        // a rebase rewrites the change, as an edit does, and moves a ref, as a push does
         Op::Rebase { repo, n, .. } => {
             let mut needs = vec![Need::write(repo_key(repo))];
             if load_change(ctx, repo, *n).is_ok() {
@@ -225,12 +216,6 @@ pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
     Ok(Resource { owner, default })
 }
 
-/// A git receive-pack: once the pack unpacks, its objects land as blobs and
-/// each accepted ref moves; git's own report is the op's output. The
-/// objects land even when every ref is refused, as git's receive-pack keeps
-/// what it unpacked: a stage stores objects no ref reaches as well, and a
-/// client that pushes again after a refusal (a branch moved meanwhile)
-/// sends less. A pack that does not unpack stores nothing.
 pub(crate) fn push(
     ctx: &ExecCtx,
     name: &str,
@@ -286,9 +271,6 @@ pub(crate) fn push(
     Ok(())
 }
 
-// A branch goes when it is still at `expected`, no protection covers it and no open change
-// names it as its source; `allow_delete` governs only what a git push deletes. Its objects
-// stay, so it can be pushed again.
 pub(crate) fn delete_branch(
     ctx: &ExecCtx,
     name: &str,
@@ -323,8 +305,6 @@ pub(crate) fn delete_branch(
     save_repo(ctx, name, &repo)
 }
 
-// Marks `branch` protected or not. The head is protected whatever the set holds, so it is
-// never unprotected.
 pub(crate) fn protect(
     ctx: &ExecCtx,
     name: &str,
@@ -344,9 +324,6 @@ pub(crate) fn protect(
     Ok(())
 }
 
-/// The objects half of a push: the pack's objects land as blobs, checked as
-/// a push checks them (bounds, deltas against what is held, every object
-/// they name held), and no ref moves.
 pub(crate) fn stage(ctx: &ExecCtx, name: &str, pack: BlobId) -> Result<(), Error> {
     let repo = load_repo(ctx, name)?;
     let pack = held_pack(ctx, pack)?;
@@ -372,7 +349,6 @@ fn held_pack(ctx: &ExecCtx, id: BlobId) -> Result<Vec<u8>, Error> {
     Ok(blob.body)
 }
 
-/// Whom an op names (a writer, a reviewer): an account, never the system.
 pub(crate) fn require_named(principal: &Principal) -> Result<AccountNumber, Error> {
     principal
         .account()

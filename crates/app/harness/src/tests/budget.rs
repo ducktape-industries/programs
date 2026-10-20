@@ -7,8 +7,6 @@ fn budget(chain: &MockChain) -> BudgetReport {
     report
 }
 
-// the open model call answered as `account` would, named by ccs as `label`, its 5-hour window at
-// `used` until `reset`
 fn answered(chain: &MockChain, label: Option<&str>, account: &str, used: &str, reset: &str) {
     let (request, _) = open_request(chain);
     let body = json!({
@@ -91,7 +89,6 @@ fn each_account_keeps_one_row_with_its_pace_and_when_it_runs_out() {
         ),
         ("5h", "0.4", 400_000, 1000)
     );
-    // 0.2 → 0.4 from 60 s to 180 s: the last 0.6 takes 360 s more
     assert_eq!((five.since, five.runs_out), (60_000, Some(540_000)));
     let b = account(&report, "org-b");
     assert_eq!(b.windows[0].runs_out, None, "one answer is no pace");
@@ -120,7 +117,6 @@ fn each_account_keeps_one_row_with_its_pace_and_when_it_runs_out() {
     assert_eq!(written(&Written::Budget.key()), Some(Written::Budget));
 }
 
-// ccs's status: one account read whole, one it could not read
 fn status() -> Vec<u8> {
     let at = "2000-03-01T00:00:00Z";
     json!({
@@ -223,8 +219,6 @@ fn a_status_read_fills_every_account_and_a_404_is_only_unavailable() {
     let signed_out = account(&report, "jesse.claude.ext.5");
     assert_eq!(signed_out.error.as_deref(), Some("signed_out"));
     assert!(signed_out.windows.is_empty());
-    // the account answers once ccs names it: its row is the one ccs's status filled, and the row
-    // the model's id kept goes
     chain.at(10, 250_000);
     world.mention("m2", "again");
     chain.at(11, 300_000);
@@ -239,7 +233,6 @@ fn a_status_read_fills_every_account_and_a_404_is_only_unavailable() {
     let names: Vec<_> = eph.windows.iter().map(|w| w.name.as_str()).collect();
     assert_eq!(names, ["5h", "7d", "opus weekly"]);
     let five = &eph.windows[0];
-    // 0.535 → 0.54 from 200 s to 300 s: the last 0.46 takes 9 200 s more
     assert_eq!(
         (five.used, five.since, five.status.as_deref()),
         (540_000, 200_000, Some("allowed"))

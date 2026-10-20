@@ -19,10 +19,6 @@ use view::design::Ladder;
 
 const PENDING_OPACITY: f32 = 0.5;
 
-// What a message's row reads: the message, where it stands in the pane,
-// what the reader is doing with it, and what every row reads alike. A row
-// whose deps are the ones it was drawn with is drawn as it was
-// (`Context::memo`).
 #[derive(PartialEq)]
 pub(crate) struct RowDeps {
     pub message: ChatMessage,
@@ -37,10 +33,6 @@ pub(crate) struct RowDeps {
     pub face: Option<(Option<abi::BlobId>, bool)>,
 }
 
-// What the reader is doing with one message: its menu is open, it is in
-// the copy range, the pointer is on it, who chose its reactions, and how
-// far each file it carries has been read (its picture, by the image held,
-// and whether Save has its chunks).
 #[derive(PartialEq)]
 pub(crate) struct Seen {
     chosen: bool,
@@ -86,8 +78,6 @@ impl Seen {
     }
 }
 
-// What every row of a frame reads alike: the names, whether the reader
-// may write, and the room a program's post links to. Made once a frame.
 #[derive(PartialEq)]
 pub(crate) struct Shared {
     names: Option<Names>,
@@ -106,25 +96,15 @@ impl Shared {
         })
     }
 }
-/// How far the action strip hangs over the card's top edge: half of the
-/// strip, which is 26 tall (24 px buttons inside a 1 px border).
 const STRIP_OVERHANG: f32 = 13.;
-/// The quiet above a run's first message, outside its card: the card's
-/// ground (hover, chosen) hugs the message, and the strip hangs over the
-/// card, not over the gap.
 const RUN_GAP: Pixels = design::space::SM;
 
-/// The cells of the message row being drawn: the message is cell 0, each
-/// enabled control the next in paint order. `active` is the cell the
-/// pane's arrows are on, when this is their row; the controls are handed
-/// back so Enter knows what the active cell does.
 struct Cells {
     active: Option<usize>,
     controls: Vec<Control>,
 }
 
 impl Cells {
-    /// Records `control` as the next cell; whether it is the active one.
     fn push(&mut self, control: Control) -> bool {
         self.controls.push(control);
         self.active == Some(self.controls.len())
@@ -168,10 +148,6 @@ pub fn card(
             .is_some_and(|menu| menu.pane == pane && menu.seq == seq);
     let ranged = !message.deleted && chat.copy.is_some_and(|range| range.holds(pane, seq));
     let key = (pane, seq);
-    // cell 0 of the row: the message, the cell the arrows land on and
-    // claimed while they are on it. It lies under the whole card, as a
-    // cell may not hold the controls' cells drawn over it. The pointer's
-    // click is here; the keys' Enter comes through the grid
     let message_cell = div()
         .id(format!("chat-message-{id}"))
         .absolute()
@@ -198,9 +174,6 @@ pub fn card(
             design::space::HAIR
         })
         .pb(design::space::HAIR)
-        // the pointer on the strip is not on the card (the strip occludes
-        // it): the card keeps its hover ground from state, not from
-        // `hover`, so it does not drop while the pointer is on the strip
         .bg(if chosen {
             theme.accent_soft
         } else if ranged || chat.pointer_on(key) {
@@ -220,12 +193,6 @@ pub fn card(
             theme,
             ladder,
         ));
-    // Controls are siblings of the selection target: their native click must
-    // not also replace the opened menu with the message-selection toolbar.
-    // The row says when the pointer is over it, and only that row (and a
-    // chosen one) carries the action strip: drawn invisible under every
-    // row, the strips were most of each frame the view sends — over half
-    // its bytes in a busy room — and every frame is paid for in fuel.
     let row_hover = hovers(key, false, cx);
     let mut outer = div()
         .id(format!("chat-message-{id}-row"))
@@ -233,7 +200,6 @@ pub fn card(
         .w_full()
         .pt(gap(&message))
         .on_hover(row_hover)
-        // a row of the pane's grid; it never claims
         .role(view::Role::Row)
         .aria_label(format!(
             "Select message, shows its actions: {}: {}",
@@ -252,9 +218,6 @@ pub fn card(
     (outer.into_any_element(), cells.controls)
 }
 
-// A right press on the message's row opens its menu at the pointer, as
-// ⋯ opens it under the strip; assistive tech's "show menu" opens it where
-// the keys do ([`Chat::key_spot`]).
 fn pointed(
     row: Stateful<Div>,
     pane: Pane,
@@ -282,7 +245,6 @@ fn pointed(
         })
 }
 
-/// The row's quiet above its card: a run's first message has one.
 fn gap(message: &ChatMessage) -> Pixels {
     match message.show_author {
         true => RUN_GAP,
@@ -290,9 +252,6 @@ fn gap(message: &ChatMessage) -> Pixels {
     }
 }
 
-/// A control's click: it does what Enter on its cell does
-/// ([`Chat::act`]); the control consumes the press, so the card beneath
-/// does not hear it.
 fn acts(
     pane: Pane,
     seq: u64,
@@ -308,9 +267,6 @@ fn acts(
     })
 }
 
-/// A press on the card selects the message (with shift held, the copy
-/// range grows to it); a control on it consumes its own press, so the
-/// card never hears it.
 fn press(
     pane: Pane,
     seq: u64,
@@ -325,10 +281,6 @@ fn press(
     })
 }
 
-/// The row, or its strip, takes `hovered` as the pointer enters it and
-/// gives it up as the pointer leaves, if it still holds it: the host says
-/// the row's leave and the strip's enter in either order
-/// ([`Chat::pointer_on`]).
 fn hovers(
     key: (Pane, u64),
     strip: bool,
@@ -346,9 +298,6 @@ fn hovers(
     })
 }
 
-/// The grid cell of the row that holds `control`, whose id is
-/// `control_id`: `{control_id}-cell`. A disabled control's cell says so,
-/// as the arrows skip it.
 fn cell(control_id: &str, enabled: bool, control: impl IntoElement) -> AnyElement {
     div()
         .id(format!("{control_id}-cell"))
@@ -358,9 +307,6 @@ fn cell(control_id: &str, enabled: bool, control: impl IntoElement) -> AnyElemen
         .into_any_element()
 }
 
-// A run's first message wears its author's initials, or their picture
-// once read (an agent's ringed in its tint), which open the author's
-// identity page as a mention does; the rest keep the column.
 fn avatar(
     message: &ChatMessage,
     picture: Option<std::sync::Arc<view::Image>>,
@@ -418,7 +364,6 @@ fn avatar(
     let control = Control::Profile(account);
     let active = cells.push(control.clone());
     let open = acts(pane, message.seq, message.rev, control, cx);
-    // an agent's face opens its card in place; a person's opens the profile link
     let (label, role) = match message.agent {
         true => (
             format!("Open {}’s card", message.author),
@@ -437,8 +382,6 @@ fn avatar(
     cell(&id, true, design::item(face, role, active))
 }
 
-/// The strip over a row the pointer is on (or a chosen one): thread,
-/// 👍, the picker and the "More" menu.
 fn action_strip(
     chat: &Chat,
     message: &ChatMessage,
@@ -455,12 +398,6 @@ fn action_strip(
         .id(format!("chat-message-{id}-actions"))
         .absolute()
         .right_2()
-        // Half over the card's top edge, as Slack hangs it: the message
-        // under it stays where it is. The wire keeps a negative inset. The
-        // upper half lies over the row above, whose hover would otherwise take the strip
-        // away as the pointer reached it: the strip occludes, so no row
-        // is hovered while the pointer is on it, and says itself that it
-        // is (`hovered`), which keeps it drawn.
         .top(gap(message) - px(STRIP_OVERHANG))
         .flex()
         .bg(theme.background)
@@ -468,7 +405,6 @@ fn action_strip(
         .border_color(theme.border)
         .occlude()
         .on_hover(strip_hover);
-    // each button is a cell of the row, beside the card
     let cell = |button: AnyElement, key: &str, enabled: bool| {
         cell(&format!("chat-message-{id}-{key}"), enabled, button)
     };
@@ -482,7 +418,6 @@ fn action_strip(
             true,
         )
     });
-    // a disabled button's cell is not counted: the arrows skip it
     let thumbs = writable && cells.push(Control::ThumbsUp);
     let react = writable && cells.push(Control::React);
     let more = cells.push(Control::More);
@@ -533,8 +468,6 @@ fn action_strip(
         .into_any_element()
 }
 
-/// The card's content: the header, the blocks, the marks, the reactions and
-/// the way into the thread, in that order (the controls' cell order too).
 fn content(
     chat: &Chat,
     message: ChatMessage,
@@ -569,7 +502,6 @@ fn content(
         .into_any_element()
 }
 
-/// The message's blocks, or its plain body where it has none.
 fn blocks(
     chat: &Chat,
     message: &ChatMessage,
@@ -614,8 +546,6 @@ fn edited_mark(message: &ChatMessage, theme: &Theme) -> Option<AnyElement> {
     })
 }
 
-/// A root's replies: in the timeline, the button into its thread; atop
-/// the thread pane, the count over a rule.
 fn replies(
     message: &ChatMessage,
     pane: Pane,
@@ -655,8 +585,6 @@ fn replies(
     Some(separator.into_any_element())
 }
 
-/// A run's first message names its author, what the author is (an agent
-/// and its manager, a program), when it was posted and its block.
 fn header(message: &ChatMessage, cells: &mut Cells, theme: &Theme, ladder: &Ladder) -> AnyElement {
     let mut header = div()
         .id(format!("chat-message-{}-header", message.id))
@@ -697,8 +625,6 @@ fn header(message: &ChatMessage, cells: &mut Cells, theme: &Theme, ladder: &Ladd
         );
     }
     if message.height > 0 {
-        // the link opens Explorer at its block, and the card under it
-        // stays unchosen
         let href = crate::links::block_link(message.height);
         let active = cells.push(Control::Height(href.clone()));
         let id = format!("chat-message-{}-height", message.id);
@@ -760,7 +686,6 @@ fn program_post(
     line.into_any_element()
 }
 
-/// The reactions under a message, and the `+` that opens the picker.
 fn reactions(
     chat: &Chat,
     message: &ChatMessage,
@@ -809,8 +734,6 @@ fn reactions(
         );
         reactions = reactions.child(cell(&id, writable, chip));
     }
-    // the card under the `+` would otherwise take the same click and put
-    // the row's toolbar over the picker just opened: the `+` consumes it
     let active = writable && cells.push(Control::AddReaction);
     let id = format!("chat-message-{}-reaction-add", message.id);
     let add = reaction_button(
@@ -876,7 +799,6 @@ fn block_view(
             crate::ui::attachment::view(chat, id, file, cx, theme, &design::POINTER)
         }
         Block::Paragraph(spans) => match chat::list_item(spans) {
-            // a list item: its marker in a hanging gutter, the item beside it
             Some((marker, item)) => div()
                 .id(format!("chat-message-{}-block-{index}-item", message.id))
                 .cursor_text()
@@ -891,10 +813,6 @@ fn block_view(
                             chat::ListMarker::Ordered(number) => format!("{number}."),
                         }),
                 )
-                // the item takes what the gutter leaves of the row and wraps
-                // there: a line is as wide as its parent (`w_full`), and a
-                // flex item is no narrower than its unwrapped words unless
-                // its floor is 0
                 .child(
                     rich_line(id, &item, names, cx, theme)
                         .flex_1()

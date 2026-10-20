@@ -29,7 +29,6 @@ struct TooltipBuilder {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BackEvent;
 
-/// An assistive-technology action's listener, as gpui takes it.
 type A11yListener = Box<dyn FnMut(Option<&accesskit::ActionData>, &mut Window, &mut App)>;
 
 /// What a view element declares besides its children: its style, its id
@@ -44,15 +43,11 @@ pub struct Interactivity {
 }
 
 impl Interactivity {
-    /// The element's interactions, there from the first one it declares.
     pub(crate) fn interactions(&mut self) -> &mut Interactions {
         self.interactions.get_or_insert_default()
     }
 }
 
-/// What an element answers to and how it presents itself: its role and
-/// aria, focus, conditional styles, listeners and tooltip. The node it
-/// lowers to carries these as its [`wire::Interactivity`].
 #[derive(Default)]
 pub(crate) struct Interactions {
     pub(crate) role: Option<gpui::Role>,
@@ -104,12 +99,7 @@ pub(crate) struct Interactions {
     tooltip_show_delay: Option<Duration>,
     occlude: bool,
     block_mouse_except_scroll: bool,
-    /// A press in a dense list ([`design::dense`](crate::design::dense)):
-    /// nothing drawn or sent, only what the sweep lets press under a
-    /// finger's height.
     pub(crate) dense: bool,
-    /// The page on top of the view's stack, at this depth: set by
-    /// [`design::page`](crate::design::page) alone, from its [`Nav`](crate::design::Nav).
     pub(crate) page: Option<u32>,
 }
 
@@ -406,13 +396,6 @@ pub trait InteractiveElement: Sized {
         self
     }
 
-    /// The keystrokes, in gpui's words (`"escape"`, `"shift-tab"`), this
-    /// element takes, with its `on_key_down` listeners or its keyboard
-    /// click (Enter, Space): the host stops each one here once they have
-    /// heard it, so no element around it hears it too.
-    /// gpui decides that inside the listener with `cx.stop_propagation()`;
-    /// a view listener runs after the host has dispatched the key, so it
-    /// says which keys it takes up front.
     fn consumes_keys<'a>(mut self, keys: impl IntoIterator<Item = &'a str>) -> Self {
         self.interactivity().interactions().consumes_keys.extend(
             keys.into_iter()
@@ -555,7 +538,6 @@ pub trait StatefulInteractiveElement: InteractiveElement {
         self.interactivity().interactions().role = Some(role);
         self
     }
-    /// Takes focus, and sits in the Tab order unless `tab_stop(false)`.
     fn focusable(mut self) -> Self {
         self.interactivity().interactions().focusable = true;
         self
@@ -652,9 +634,6 @@ pub trait StatefulInteractiveElement: InteractiveElement {
         self.interactivity().interactions().aria.orientation = Some(value);
         self
     }
-    // `aria_live` through `aria_current` and `custom_action` are the
-    // names planned for the fork, which has none of them yet; the host
-    // delivers each through its aria patch until it does.
     fn aria_live(mut self, value: accesskit::Live) -> Self {
         self.interactivity().interactions().aria.live = Some(value);
         self
@@ -683,10 +662,6 @@ pub trait StatefulInteractiveElement: InteractiveElement {
         self.interactivity().interactions().aria.current = Some(value);
         self
     }
-    /// A custom action assistive technology offers by `description`. Its
-    /// request is [`accesskit::Action::CustomAction`] with
-    /// `ActionData::CustomAction(id)`: one [`Self::on_a11y_action`]
-    /// handler answers every custom action a node has.
     fn custom_action(mut self, id: i32, description: impl Into<String>) -> Self {
         self.interactivity()
             .interactions()
@@ -695,11 +670,6 @@ pub trait StatefulInteractiveElement: InteractiveElement {
             .push((id, description.into()));
         self
     }
-    /// Answers `action` when assistive technology requests it: gpui's own
-    /// setter and signature. Unlike gpui, the host keeps Click, Focus, Blur,
-    /// SetValue, ReplaceSelectedText and SetTextSelection, and hears only
-    /// the first listener per action; `view_wire::audit` faults the rest
-    /// (ActionUnhandled).
     fn on_a11y_action(
         mut self,
         action: accesskit::Action,
@@ -728,8 +698,6 @@ pub trait StatefulInteractiveElement: InteractiveElement {
         self.interactivity().base_style.restrict_scroll_to_axis = Some(true);
         self
     }
-    /// The div `handle` moves: it scrolls (`overflow_y_scroll`) and has
-    /// an id, as gpui's does.
     fn track_scroll(mut self, handle: &ScrollHandle) -> Self {
         self.interactivity().interactions().scroll_handle = Some(handle.clone());
         self
@@ -748,7 +716,6 @@ pub trait StatefulInteractiveElement: InteractiveElement {
             Some((group.into(), Box::new(f(StyleRefinement::default()))));
         self
     }
-    /// Every listener given runs, in order, as gpui's do.
     fn on_click(mut self, listener: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.interactivity()
             .interactions()
@@ -766,15 +733,6 @@ pub trait StatefulInteractiveElement: InteractiveElement {
             .push(Box::new(listener));
         self
     }
-    /// This element's click consumes its press: the host stops the
-    /// pointer's click here, so an element under it (a card's own click)
-    /// does not take the same press. gpui calls `cx.stop_propagation()` in
-    /// the listener; a view listener runs too late for that, so it says
-    /// so up front. A focusable element whose keyboard click must not
-    /// reach a composite around it consumes Enter and Space too, with
-    /// [`InteractiveElement::consumes_keys`]. It needs an `on_click`, in
-    /// whose listener the host stops the press: without one the host
-    /// refuses the frame, and the view's test fails.
     fn consumes_click(mut self) -> Self {
         self.interactivity().interactions().consumes_click = true;
         self
@@ -783,15 +741,6 @@ pub trait StatefulInteractiveElement: InteractiveElement {
         self.interactivity().interactions().on_hover = Some(Box::new(listener));
         self
     }
-    /// Hears Back (a phone's gesture or its bar) while the view has
-    /// somewhere to go back to. On the ROOT element only, and set exactly
-    /// when a page sits under the root of the view's [`Pages`] or a sheet
-    /// is open (`.when(pages.depth() > 0, |root| root.on_back(..))`):
-    /// absent, the host leaves the program instead; below the root the
-    /// host refuses the frame. A host with no Back (the desktop) never
-    /// sends it.
-    ///
-    /// [`Pages`]: crate::design::Pages
     fn on_back(mut self, listener: impl Fn(&BackEvent, &mut Window, &mut App) + 'static) -> Self {
         self.interactivity().interactions().on_back = Some(Box::new(listener));
         self

@@ -42,9 +42,6 @@ pub(crate) fn render(view: &Nodes, cx: &mut Context<Nodes>) -> impl IntoElement 
         )
 }
 
-/// The network's name, and whether this node answers, with its key; the
-/// latter on a row of its own where both do not fit. For a reader who
-/// votes, the door's two motions.
 fn head(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme, ladder: &Ladder) -> impl IntoElement {
     let status = view.status.ready();
     let title = status.map_or(words::NODES.into(), |status| status.chain_id.clone());
@@ -92,7 +89,6 @@ fn head(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme, ladder: &Ladder) -
         .children(door)
 }
 
-/// A dot and the word: In sync or Not answering, then this node's key.
 fn pulse(answering: bool, status: &NodeStatus, theme: &Theme) -> impl IntoElement {
     let color = match answering {
         true => theme.success,
@@ -114,9 +110,6 @@ fn pulse(answering: bool, status: &NodeStatus, theme: &Theme) -> impl IntoElemen
         .child(design::mono(design::short_hex(&hex(&status.identity))).text_color(theme.muted))
 }
 
-/// This node's numbers, the epoch's progress, and when the next one starts,
-/// wrapping onto a second row where they do not fit; or why they are not
-/// here.
 fn numbers(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     let status = match &view.status {
         Loadable::Ready(status) | Loadable::Reloading(status, _) => status,
@@ -169,7 +162,6 @@ fn numbers(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme, ladder: &Ladder
         .into_any_element()
 }
 
-/// One of the node's numbers: its label over its value.
 fn fact(key: &str, label: &str, value: String, mono: bool, theme: &Theme) -> impl IntoElement {
     let value = match mono {
         true => design::mono(value).text_size(design::text::SECTION),
@@ -191,8 +183,6 @@ fn quiet_label(label: impl Into<SharedString>, theme: &Theme) -> Div {
         .child(label.into())
 }
 
-/// `Epoch 67 · 8 / 64` over a bar, and `Next epoch in 56 blocks` at the
-/// right ([`EpochPlace`]).
 fn epoch(status: &NodeStatus, theme: &Theme) -> Option<[AnyElement; 2]> {
     let epoch = EpochPlace::of(status)?;
     let share = epoch.into as f32 / epoch.length as f32;
@@ -219,7 +209,6 @@ fn epoch(status: &NodeStatus, theme: &Theme) -> Option<[AnyElement; 2]> {
     Some([progress, next])
 }
 
-/// The four states of the members: loading, refused, empty, ready.
 fn body(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     match &view.nodes {
         Loadable::Idle | Loadable::Loading(_) => design::quiet(words::READING_MEMBERS, theme)
@@ -241,8 +230,6 @@ fn body(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme, ladder: &Ladder) -
             )
             .into_any_element()
         }
-        // the table reads the node's height: nothing until it answers,
-        // and the numbers above say why
         Loadable::Ready(_) | Loadable::Reloading(_, _) if view.status.ready().is_none() => {
             div().into_any_element()
         }
@@ -252,7 +239,6 @@ fn body(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme, ladder: &Ladder) -
     }
 }
 
-/// A group's or a section's heading, quieter than the title.
 pub(crate) fn section(id: &'static str, label: String, theme: &Theme) -> impl IntoElement {
     div()
         .id(id)

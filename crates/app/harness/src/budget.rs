@@ -15,16 +15,11 @@ use crate::{
 
 const PREFIX: &str = "anthropic-ratelimit-unified-";
 const UTILIZATION: &str = "-utilization";
-// the account that answered, as Anthropic names it
 pub(crate) const ORGANIZATION: &str = "anthropic-organization-id";
-// ccs's own name for that account; sent on a request it pins the request to that account, with no
-// fall-over, which is how harness picks the account each model call goes to (`routes.rs`)
 pub(crate) const CCS_ACCOUNT: &str = "x-ccs-account";
-// where ccs answers the windows of every account it holds
 const STATUS: &str = "/ccs/status";
 const MINUTE: u64 = 60_000;
 
-// a utilization as the headers send it ("0.53"), in millionths; none for anything else
 pub(crate) fn millionths(text: &str) -> Option<u64> {
     let (whole, fraction) = match text.split_once('.') {
         Some((whole, fraction)) if !fraction.is_empty() => (whole, fraction),
@@ -44,13 +39,11 @@ pub(crate) fn millionths(text: &str) -> Option<u64> {
     Some(used)
 }
 
-// a percent as ccs sends it ("53" or "53.5"), in millionths of the whole
-fn from_percent(text: &str) -> Option<u64> {
+fn percent_to_millionths(text: &str) -> Option<u64> {
     millionths(text).map(|hundredths| hundredths / 100)
 }
 
-// millionths written as the headers write a utilization ("0.535")
-fn fraction(used: u64) -> String {
+fn utilization_decimal(used: u64) -> String {
     let (whole, part) = (used / WHOLE, used % WHOLE);
     match part {
         0 => whole.to_string(),
@@ -78,8 +71,7 @@ fn days_in(year: i64, month: i64) -> i64 {
     }
 }
 
-// days from 1970-01-01 to a date of the proleptic Gregorian calendar
-fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+fn days_since_unix_epoch(year: i64, month: i64, day: i64) -> i64 {
     let year = if month <= 2 { year - 1 } else { year };
     let era = year.div_euclid(400);
     let of_era = year - era * 400;
@@ -88,8 +80,6 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     era * 146_097 + of_cycle - 719_468
 }
 
-// an RFC 3339 time ("2026-10-18T23:00:00Z", "2026-10-18T23:00:00.5+02:00") in whole seconds
-// since the epoch; none for anything else or for a time before the epoch
 pub(crate) fn epoch_seconds(text: &str) -> Option<u64> {
     let bytes = text.as_bytes();
     let at = |index: usize, byte: u8| bytes.get(index) == Some(&byte);
@@ -131,12 +121,11 @@ pub(crate) fn epoch_seconds(text: &str) -> Option<u64> {
             sign * (hours * 3_600 + minutes * 60)
         }
     };
-    let days = days_from_civil(year, month, day);
+    let days = days_since_unix_epoch(year, month, day);
     let seconds = days * 86_400 + hour * 3_600 + minute * 60 + second - offset;
     u64::try_from(seconds).ok()
 }
 
-// every window an answer names whose utilization and reset both read, by name
 fn windows(response: &http::Response, time: u64) -> Vec<BudgetWindow> {
     let mut found: Vec<BudgetWindow> = Vec::new();
     for (key, value) in &response.headers {
@@ -169,10 +158,11 @@ fn windows(response: &http::Response, time: u64) -> Vec<BudgetWindow> {
     found
 }
 
-// the windows a reading names over the ones the row held, by name: each keeps where harness first
-// saw it until its reset passes, and its status while the reading gives none; the windows the
-// reading does not name stay as they were
-fn merged(before: Option<&Budget>, mut windows: Vec<BudgetWindow>, time: u64) -> Vec<BudgetWindow> {
+fn merge_budget_windows(
+    before: Option<&Budget>,
+    mut windows: Vec<BudgetWindow>,
+    time: u64,
+) -> Vec<BudgetWindow> {
     let held = before.map_or(&[][..], |row| &row.windows[..]);
     for window in &mut windows {
         let Some(last) = held.iter().find(|last| last.name == window.name) else {
@@ -194,8 +184,6 @@ fn merged(before: Option<&Budget>, mut windows: Vec<BudgetWindow>, time: u64) ->
     windows
 }
 
-// an answer from `service`: one more call this minute, and the windows it names on its account's
-// row, kept under ccs's name for the account when the answer gives one, else under the model's
 pub(crate) fn seen(ctx: &ExecCtx, service: &str, response: &http::Response) {
     let env = ctx.env();
     paced(ctx, service, env.time);
@@ -207,9 +195,7 @@ pub(crate) fn seen(ctx: &ExecCtx, service: &str, response: &http::Response) {
     let label = header(response, CCS_ACCOUNT).filter(|label| !label.is_empty());
     let account = label.or(organization).unwrap_or_default();
     let key = (service.to_owned(), account.to_owned());
-    // a row that no longer reads is written anew
     let before = BUDGETS.get(ctx, &key).ok().flatten();
-    // the row the account had before ccs named it goes: one account, one row
     if let (Some(_), Some(organization)) = (label, organization) {
         let unnamed = (service.to_owned(), organization.to_owned());
         if unnamed != key {
@@ -222,21 +208,18 @@ pub(crate) fn seen(ctx: &ExecCtx, service: &str, response: &http::Response) {
         status: header(response, &format!("{PREFIX}status")).map(str::to_owned),
         fallback: header(response, &format!("{PREFIX}fallback")).map(str::to_owned),
         error: None,
-        windows: merged(before.as_ref(), windows, env.time),
+        windows: merge_budget_windows(before.as_ref(), windows, env.time),
         height: env.height,
         time: env.time,
     };
     BUDGETS.put(ctx, &key, &row);
 }
 
-// ccs's status of every account it holds, idle ones too, read when someone asks (chief's
-// heartbeat, the strip's Refresh). A service with no status (404) is noted as such, quietly.
 pub(crate) async fn read(ctx: Ctx, service: String) -> Result<(), Error> {
     read_one(&ctx, service).await;
     Ok(())
 }
 
-// every service a model is reached through, each read as `read` reads one, at once (J-090)
 pub(crate) async fn read_all(ctx: Ctx) -> Result<(), Error> {
     let mut services: Vec<String> = Vec::new();
     for (id, model) in MODELS.all(&ctx)? {
@@ -320,7 +303,8 @@ fn status_read(ctx: &ExecCtx, service: &str, response: &http::Response) -> Statu
     for reading in &status.accounts {
         let key = (service.to_owned(), reading.label.clone());
         let before = BUDGETS.get(ctx, &key).ok().flatten();
-        let windows = merged(before.as_ref(), read_windows(reading, env.time), env.time);
+        let windows =
+            merge_budget_windows(before.as_ref(), read_windows(reading, env.time), env.time);
         let row = Budget {
             label: Some(reading.label.clone()),
             error: reading.error.clone(),
@@ -337,8 +321,6 @@ fn status_read(ctx: &ExecCtx, service: &str, response: &http::Response) -> Statu
     }
 }
 
-// the windows ccs read for an account, named as the headers name them (5h, 7d), and each model's
-// own window by its model and kind
 fn read_windows(reading: &Reading, time: u64) -> Vec<BudgetWindow> {
     let named = [("5h", &reading.five_hour), ("7d", &reading.weekly)];
     let mut found: Vec<BudgetWindow> = named
@@ -359,11 +341,11 @@ fn read_windows(reading: &Reading, time: u64) -> Vec<BudgetWindow> {
 }
 
 fn window_of(name: String, usage: &Usage, time: u64) -> Option<BudgetWindow> {
-    let used = from_percent(&usage.percent.as_ref()?.to_string())?;
+    let used = percent_to_millionths(&usage.percent.as_ref()?.to_string())?;
     let reset = epoch_seconds(usage.resets_at.as_deref()?)?;
     Some(BudgetWindow {
         name,
-        utilization: fraction(used),
+        utilization: utilization_decimal(used),
         used,
         reset,
         status: None,
@@ -393,8 +375,7 @@ fn paced(ctx: &ExecCtx, service: &str, time: u64) {
     PACES.put(ctx, &service, &pace);
 }
 
-// the calls in the last whole minute before `time`, and in the minute `time` is in so far
-fn calls(pace: &Pace, time: u64) -> (u64, u64) {
+fn calls_in_adjacent_minutes(pace: &Pace, time: u64) -> (u64, u64) {
     let minute = time / MINUTE;
     match minute.checked_sub(pace.minute) {
         Some(0) => (pace.before, pace.calls),
@@ -403,8 +384,6 @@ fn calls(pace: &Pace, time: u64) -> (u64, u64) {
     }
 }
 
-// when `window` reaches all of its budget at the pace it climbed at from where harness first saw
-// it to `at`, the last answer's time; none while it has not climbed
 pub(crate) fn runs_out(window: &BudgetWindow, at: u64) -> Option<u64> {
     if window.used >= WHOLE {
         return Some(at);
@@ -424,7 +403,7 @@ pub(crate) fn report(ctx: &QueryCtx) -> Result<BudgetReport, Error> {
         .all(ctx)?
         .into_iter()
         .map(|(service, pace)| {
-            let (last_minute, this_minute) = calls(&pace, time);
+            let (last_minute, this_minute) = calls_in_adjacent_minutes(&pace, time);
             ServicePace {
                 service,
                 last_minute,
@@ -536,11 +515,11 @@ mod tests {
             ("-1", None),
         ];
         for (text, used) in read {
-            assert_eq!(from_percent(text), used, "{text}");
+            assert_eq!(percent_to_millionths(text), used, "{text}");
         }
         let written = [(535_000, "0.535"), (WHOLE, "1"), (0, "0"), (1, "0.000001")];
         for (used, text) in written {
-            assert_eq!(fraction(used), text, "{used}");
+            assert_eq!(utilization_decimal(used), text, "{used}");
         }
     }
 
@@ -580,7 +559,7 @@ mod tests {
             ("anthropic-ratelimit-unified-2d-utilization", "0.1"),
             ("anthropic-ratelimit-unified-2d-reset", "soon"),
         ]);
-        let found = merged(None, windows(&heard, 9), 9);
+        let found = merge_budget_windows(None, windows(&heard, 9), 9);
         let read: Vec<_> = found
             .iter()
             .map(|w| (w.name.as_str(), w.used, w.reset, w.status.as_deref()))
@@ -632,11 +611,11 @@ mod tests {
             reset: 11,
             ..window(490_000, now)
         };
-        let kept = merged(Some(&row), vec![read.clone()], 5_000);
+        let kept = merge_budget_windows(Some(&row), vec![read.clone()], 5_000);
         assert_eq!(kept.len(), 2, "the window the reading left out stays");
         assert_eq!((kept[0].since, kept[0].used), (first, 490_000));
         assert_eq!(kept[0].status.as_deref(), Some("allowed"));
-        let renewed = merged(Some(&row), vec![read], 10_000);
+        let renewed = merge_budget_windows(Some(&row), vec![read], 10_000);
         assert_eq!(renewed[0].since, now, "its reset passed");
     }
 
@@ -646,7 +625,6 @@ mod tests {
             used: 200_000,
             time: 1_000,
         };
-        // 0.2 → 0.6 in 4 000 ms: the last 0.4 takes 4 000 ms more
         assert_eq!(runs_out(&window(600_000, since), 5_000), Some(9_000));
         assert_eq!(runs_out(&window(200_000, since), 5_000), None, "flat");
         assert_eq!(runs_out(&window(600_000, since), 1_000), None, "no time");
@@ -665,15 +643,14 @@ mod tests {
             calls: 4,
             before: 7,
         };
-        assert_eq!(calls(&pace, 10 * MINUTE + 5), (7, 4));
-        assert_eq!(calls(&pace, 11 * MINUTE), (4, 0));
-        assert_eq!(calls(&pace, 12 * MINUTE), (0, 0));
-        assert_eq!(calls(&pace, 9 * MINUTE), (0, 0));
+        assert_eq!(calls_in_adjacent_minutes(&pace, 10 * MINUTE + 5), (7, 4));
+        assert_eq!(calls_in_adjacent_minutes(&pace, 11 * MINUTE), (4, 0));
+        assert_eq!(calls_in_adjacent_minutes(&pace, 12 * MINUTE), (0, 0));
+        assert_eq!(calls_in_adjacent_minutes(&pace, 9 * MINUTE), (0, 0));
     }
 
     #[test]
     fn ccs_live_status_reads_into_windows() {
-        // GET /ccs/status on duckpond's anthropic service, as ccs 41cfbbd answered it
         let live = r#"{"accounts":[{"error":null,"five_hour":{"percent":100.0,"resets_at":"2026-10-18T22:19:59.703348+00:00"},"label":"anthropic3-eph","models":[{"kind":"weekly_scoped","model":"Fable","percent":0.0,"resets_at":"2026-10-21T11:00:00+00:00"}],"provider":"claude","read_at":"2026-10-18T21:24:39.83298049Z","weekly":{"percent":57.0,"resets_at":"2026-10-21T10:59:59.703379+00:00"}}]}"#;
         let status: Status = serde_json::from_str(live).unwrap();
         let read: Vec<_> = read_windows(&status.accounts[0], 9)

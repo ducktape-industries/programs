@@ -17,7 +17,6 @@ pub(super) fn phone() -> (TestAppContext, Entity<Chat>) {
     (cx, view)
 }
 
-/// `general` opened from the rooms page.
 fn in_general() -> (TestAppContext, Entity<Chat>) {
     let (mut cx, view) = phone();
     cx.simulate_click("chat-rooms-channel-general");
@@ -25,8 +24,6 @@ fn in_general() -> (TestAppContext, Entity<Chat>) {
     (cx, view)
 }
 
-// A finger held on `key`: the aux click the host hands its route, as a
-// long press is touch's twin of the right button.
 fn long_press(cx: &mut TestAppContext, key: &str) {
     let handler = cx
         .interactivity(key)
@@ -42,7 +39,6 @@ fn long_press(cx: &mut TestAppContext, key: &str) {
     }]);
 }
 
-/// A finger lifted from `key` at once: a tap.
 fn tap(cx: &mut TestAppContext, key: &str) {
     let handler = cx.interactivity(key).on_click.expect("a click route");
     cx.tick(vec![wire::Event::Click {
@@ -55,7 +51,6 @@ fn tap(cx: &mut TestAppContext, key: &str) {
     }]);
 }
 
-/// The chat program's answer to the channel list replaced by `reply`.
 fn channels_answer(cx: &TestAppContext, reply: fn() -> Result<Vec<ChannelInfo>, String>) {
     cx.host()
         .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| match query {
@@ -66,12 +61,10 @@ fn channels_answer(cx: &TestAppContext, reply: fn() -> Result<Vec<ChannelInfo>, 
         }));
 }
 
-/// The ops the reader's writes submitted, in order.
 fn submitted(cx: &TestAppContext) -> Vec<Op> {
     cx.host().requests::<Submit<::chat::Chat>>()
 }
 
-/// `general` changed in place, and the frame drawn again.
 fn general_is(cx: &mut TestAppContext, view: &Entity<Chat>, change: impl FnOnce(&mut ChannelInfo)) {
     cx.update(view, |chat, _, cx| {
         let rooms = chat.channels.ready_mut().expect("the rooms are read");
@@ -85,7 +78,6 @@ fn general_is(cx: &mut TestAppContext, view: &Entity<Chat>, change: impl FnOnce(
     cx.run_until_parked();
 }
 
-/// The open room's rows replaced by `rows`, and the frame drawn again.
 fn rows_are(cx: &mut TestAppContext, view: &Entity<Chat>, rows: Vec<MsgRow>) {
     cx.update(view, |chat, _, cx| {
         let room = chat.room.as_mut().expect("a room is open");
@@ -94,8 +86,6 @@ fn rows_are(cx: &mut TestAppContext, view: &Entity<Chat>, rows: Vec<MsgRow>) {
     });
     cx.run_until_parked();
 }
-
-// ---------- the rooms (`app/(tabs)/chat/index.tsx`) ----------
 
 #[test]
 fn the_rooms_page_lists_channels_and_direct_messages_with_their_counts() {
@@ -221,7 +211,6 @@ fn without_a_node_the_rooms_page_says_so() {
     cx.simulate_touch(true);
     cx.run_until_parked();
     assert!(cx.has_text("Not connected to a node."));
-    // the title row keeps its buttons, as the Expo header's does
     assert!(cx.find("chat-rooms-search").is_some());
     assert_eq!(cx.back_handler(), None);
 }
@@ -235,12 +224,9 @@ fn a_row_opens_its_room_and_back_returns_to_the_rooms() {
     view.read(|chat| assert!(chat.room.is_none()));
 }
 
-// ---------- search (`app/(tabs)/chat/search.tsx`) ----------
-
 #[test]
 fn search_asks_on_the_search_key_and_a_hit_opens_its_room_over_the_page() {
     let (mut cx, _) = phone();
-    // a hit lands the room on its message, read around it
     cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
         Ok(match query {
             Query::MessagesAround {
@@ -292,7 +278,6 @@ fn a_landed_room_offers_latest_until_it_reaches_the_newest_and_latest_reads_the_
     cx.simulate_submit("search");
     cx.run_until_parked();
     land(&mut cx);
-    // the reader at the newest message: nothing newer, Latest goes
     cx.simulate_range("chat-timeline", 0..3);
     assert!(cx.find("chat-jump-latest-button").is_none());
     view.read(|chat| assert!(!chat.room.as_ref().unwrap().landed));
@@ -345,8 +330,6 @@ fn a_search_field_is_one_box_with_its_magnifier_in_it() {
     let (mut cx, _view) = phone();
     cx.simulate_click("chat-rooms-search");
     cx.run_until_parked();
-    // the field's own hairline is its edge (the host draws the focused
-    // one); the box around it draws none, so no edge is doubled
     let hairline = view::StyleRefinement::default().border_1();
     assert_eq!(
         cx.style("search").border_widths.left,
@@ -387,8 +370,6 @@ fn a_refused_search_says_why_and_retry_asks_again() {
     cx.run_until_parked();
     assert!(cx.has_text("too many words"));
 }
-
-// ---------- new channel (`app/(tabs)/chat/new.tsx`) ----------
 
 #[test]
 fn create_is_faint_until_the_channel_has_a_name() {
@@ -438,7 +419,6 @@ fn a_refused_create_says_why_under_the_name() {
     cx.run_until_parked();
     assert!(cx.has_text("That didn’t go through: the name is taken"));
     assert!(cx.find("chat-new-page").is_some());
-    // the field says so to assistive technology as well
     let wire::Node::Field { options, .. } = cx.node("chat-new-name") else {
         panic!("the name is a field");
     };
@@ -448,8 +428,6 @@ fn a_refused_create_says_why_under_the_name() {
         Some("That didn’t go through: the name is taken")
     );
 }
-
-// ---------- a room (`app/(tabs)/chat/[channel]/index.tsx`) ----------
 
 #[test]
 fn a_channel_names_itself_its_members_and_who_may_post() {
@@ -516,7 +494,6 @@ fn a_day_opens_under_its_separator_and_the_chains_today_says_today() {
     };
     rows_are(&mut cx, &view, vec![at(1, 20 * day), at(2, 21 * day)]);
     assert!(cx.find("chat-day-m1").is_some() && cx.find("chat-day-m2").is_some());
-    // a row under its separator still says where it sits (AX-112)
     for (key, place) in [("chat-message-m1-row", 1), ("chat-message-m2-row", 2)] {
         let aria = &cx.interactivity(key).aria;
         assert_eq!(
@@ -623,8 +600,6 @@ fn at_offers_the_people_with_their_accounts() {
         cx.texts()
     );
 }
-
-// ---------- a message (`src/chat/MessageRow.tsx`, `Rich.tsx`) ----------
 
 #[test]
 fn a_keyboard_press_on_a_message_opens_its_actions() {
@@ -749,7 +724,6 @@ fn a_root_with_replies_has_its_thread_button_and_it_opens_the_thread() {
     cx.simulate_click("chat-message-m1-replies");
     cx.run_until_parked();
     assert!(cx.find("chat-thread-page").is_some());
-    // reading a thread raises no keyboard (Expo autofocuses only a reply)
     assert_ne!(
         cx.focused().and_then(|node| node.key()),
         Some("draft-general-1/editor")
@@ -789,8 +763,6 @@ fn rich_text_draws_its_quote_code_list_and_divider() {
     assert!(cx.find("chat-message-m1-block-3").is_some(), "the divider");
 }
 
-// A room link on the phone reads as the room's name now, and a press on
-// it opens the room in place, not through the app.
 #[test]
 fn a_room_link_opens_the_room_in_place() {
     let (mut cx, view) = in_general();
@@ -806,8 +778,6 @@ fn a_room_link_opens_the_room_in_place() {
     view.read(|chat| assert_eq!(chat.room.as_ref().unwrap().id, "forge:web:3"));
     assert!(cx.host().requests::<view::methods::LinkOpen>().is_empty());
 }
-
-// ---------- the actions sheet and the delete dialog (`src/chat/Actions.tsx`) ----------
 
 #[test]
 fn the_actions_offer_only_what_the_reader_may_do() {
@@ -928,7 +898,6 @@ fn reply_in_thread_opens_the_thread() {
     );
 }
 
-// The app hands the view the route of a link opened into it (a notice's).
 fn route(cx: &mut TestAppContext, route: &str) {
     cx.host()
         .stream::<view::methods::HostRoute>()
@@ -936,7 +905,6 @@ fn route(cx: &mut TestAppContext, route: &str) {
     cx.run_until_parked();
 }
 
-// A phone seated on #general up to `head`, threaded as `thread` says.
 fn threaded_phone(
     head: u64,
     thread: impl Fn(u64) -> Option<u64> + 'static,
@@ -958,11 +926,9 @@ fn a_link_to_a_reply_opens_its_thread_page_on_it_over_the_room() {
     let (mut cx, view) = threaded_phone(300, |seq| (101..=200).contains(&seq).then_some(100));
     route(&mut cx, "general/150");
     assert!(cx.find("chat-thread-page").is_some());
-    // the root, then the replies from 101
     assert_eq!(scrolled_to(&view, Pane::Thread), Some(50));
     cx.simulate_back();
     assert!(cx.find("chat-room-page").is_some());
-    // the roots 86 to 99 above the root
     assert_eq!(scrolled_to(&view, Pane::Timeline), Some(14));
 }
 
@@ -974,7 +940,6 @@ fn a_link_to_a_reply_off_its_roots_window_opens_the_thread_page_on_it() {
     assert_eq!(scrolled_to(&view, Pane::Thread), Some(840));
     cx.simulate_back();
     assert!(cx.find("chat-room-page").is_some());
-    // the intro, then the roots 1 to 9
     assert_eq!(scrolled_to(&view, Pane::Timeline), Some(10));
 }
 
@@ -986,11 +951,8 @@ fn a_link_to_a_root_opens_the_room_page_on_it_over_an_open_thread() {
     route(&mut cx, "general/250");
     assert!(cx.find("chat-thread-page").is_none());
     assert!(cx.find("chat-room-page").is_some());
-    // the roots 201 to 249 above it
     assert_eq!(scrolled_to(&view, Pane::Timeline), Some(49));
 }
-
-// ---------- the picker (`src/chat/Actions.tsx` `Picker`) ----------
 
 #[test]
 fn the_picker_browses_by_tab_and_a_pick_reacts_and_closes() {
@@ -1031,7 +993,6 @@ fn the_picker_draws_one_cell_fewer_a_row_than_fit_as_the_expo_app_does() {
     view.read(|chat| assert_eq!(chat.layout.viewport.0, 402.));
     long_press(&mut cx, "chat-message-m1-row");
     cx.simulate_click("All reactions");
-    // 370 between the gutters holds eight 44 cells; Expo's rows carry seven
     let row = cx.node("chat-reaction-frequent-row-0");
     assert_eq!(row.children().len(), 7);
     assert!(
@@ -1039,8 +1000,6 @@ fn the_picker_draws_one_cell_fewer_a_row_than_fit_as_the_expo_app_does() {
         "the eighth wraps"
     );
 }
-
-// ---------- a thread (`app/(tabs)/chat/[channel]/thread/[root].tsx`) ----------
 
 #[test]
 fn a_thread_shows_its_root_its_count_and_no_replies_yet() {
@@ -1089,8 +1048,6 @@ fn a_thread_says_it_is_loading_and_a_refused_one_retries() {
     cx.run_until_parked();
     assert!(cx.has_text("No replies yet"));
 }
-
-// ---------- channel details (`app/(tabs)/chat/[channel]/details.tsx`) ----------
 
 #[test]
 fn details_name_the_channel_its_facts_members_and_the_owners_actions() {
@@ -1244,8 +1201,6 @@ fn the_owner_removes_a_member_from_their_sheet() {
     ));
 }
 
-// ---------- the sweep ----------
-
 #[test]
 fn every_screen_and_sheet_fits_a_phone() {
     let (mut cx, view) = phone();
@@ -1292,8 +1247,6 @@ fn every_screen_and_sheet_fits_a_phone() {
     });
 }
 
-/// The one pick (STRUCTURE v2): a finger draws the phone's tree, a
-/// pointer the desktop's, from the same state.
 #[test]
 fn a_finger_draws_the_phone_tree_and_a_pointer_the_desktop() {
     let (mut cx, _) = phone();
@@ -1302,7 +1255,6 @@ fn a_finger_draws_the_phone_tree_and_a_pointer_the_desktop() {
     assert!(cx.find("chat-sidebar").is_some() && cx.find("chat-rooms-page").is_none());
 }
 
-/// The node whose child `key` is.
 fn parent<'a>(node: &'a wire::Node, key: &str) -> Option<&'a wire::Node> {
     node.children()
         .iter()
@@ -1346,8 +1298,6 @@ fn at_lists_every_match_in_the_room_above_the_band() {
     view::testing::assert_fits(cx.root(), cx.styles(), &dense, 390., &design::TOUCH);
 }
 
-// `@` offers the roster's people and agents, never a program's own
-// account: forge is no row, and typing its name opens no menu.
 #[test]
 fn at_offers_people_and_agents_and_no_program() {
     let (mut cx, _) = in_general();
@@ -1362,8 +1312,6 @@ fn at_offers_people_and_agents_and_no_program() {
     cx.simulate_input("draft-general/editor", "@fo");
     assert!(cx.find("draft-general/mentions").is_none());
 }
-
-// ---------- who can edit (`policies.rs`) ----------
 
 #[test]
 fn a_reader_a_channels_policy_lists_has_its_actions_and_its_row_says_whose_it_is() {
@@ -1394,7 +1342,6 @@ fn a_reader_a_channels_policy_lists_has_its_actions_and_its_row_says_whose_it_is
 #[test]
 fn the_channels_owner_on_record_decides_not_the_owner_the_row_names() {
     let (mut cx, _) = in_general();
-    // eddy is the owner chat names, and the record says forge, on its own Only me
     let close = a_policy(4, 9, "Close", ownership::Writers::Owner);
     let general = chat::tables::CHANNELS.key(&"general".to_owned());
     owned(&cx, general, 9, close.clone(), vec![close]);

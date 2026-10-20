@@ -35,7 +35,6 @@ pub fn work_link(chain: &str, agent: u64, place: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// A work-record link round-trips through the app's route: the tail, decoded, joined.
     #[test]
     fn a_work_link_lands_on_its_agent_and_place() {
         for channel in ["general", "dm-3-12", "forge:web:3", "보고서 #1"] {

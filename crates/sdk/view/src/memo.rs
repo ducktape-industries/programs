@@ -7,8 +7,6 @@ use std::collections::HashMap;
 use crate::element::{AnyElement, Element, IntoElement, Lowering};
 use crate::{App, Window, slots, wire};
 
-// What a memo is kept by in its parent: the id its author gave it, or the
-// entity a cached view draws.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum MemoId {
     Named(wire::ElementIdWire),
@@ -84,8 +82,6 @@ impl IntoElement for Memo {
 
 impl gpui::prelude::FluentBuilder for Memo {}
 
-// Where a memo sits: the authored path around it, the list row it is the
-// root of, and its id.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct Key {
     pub path: Vec<wire::ElementIdWire>,
@@ -93,12 +89,6 @@ pub(crate) struct Key {
     pub id: MemoId,
 }
 
-// One kept subtree: the deps it was lowered with, its node's own fields
-// (its shell: the node with no children, and without the picture bytes it
-// first carried), what its lowering did besides (its routes, the scope
-// around them, its dense marks), and the frame that last drew it. The
-// node itself is kept nowhere but in the last tree: a frame that keeps it
-// lowers to its shell, and the shell is swapped for the last tree's node.
 pub(crate) struct Entry {
     pub deps: Box<dyn Any>,
     pub shell: wire::Node,
@@ -107,8 +97,6 @@ pub(crate) struct Entry {
     pub seen: u64,
 }
 
-// A memo the frame kept: the path its node is filed under, its id, and,
-// with checks on, the node its build lowers to now.
 pub(crate) struct Hit {
     pub path: Vec<wire::ElementIdWire>,
     pub id: MemoId,
@@ -167,8 +155,6 @@ impl Cache {
     }
 }
 
-// The node as a later frame sends it: the pictures it carried are the
-// host's by then, named by hash alone.
 pub(crate) fn without_pictures(node: &mut wire::Node) {
     node.for_each_mut(&mut |node| match node {
         wire::Node::Svg {
@@ -180,8 +166,6 @@ pub(crate) fn without_pictures(node: &mut wire::Node) {
     });
 }
 
-// `node`'s own fields: a copy of it with no children (an empty list, or
-// an empty stand-in per slot), its children never copied.
 pub(crate) fn shell(node: &mut wire::Node) -> wire::Node {
     let mut shell = match node.child_list_mut() {
         Some(list) => {
@@ -207,8 +191,6 @@ pub(crate) fn shell(node: &mut wire::Node) -> wire::Node {
     shell
 }
 
-// Where each of `targets` stands in `root`, by the path it is filed under
-// (`wire::identity`): its position, as child indices from the root.
 fn find(
     root: &wire::Node,
     targets: &HashMap<&[wire::ElementIdWire], usize>,
@@ -261,8 +243,6 @@ fn find(
     found
 }
 
-// Fails, naming the memo, where what it lowers to now is not the node it
-// kept.
 fn check(hit: &Hit, kept: &wire::Node) {
     let Some(now) = &hit.check else {
         return;
@@ -280,7 +260,6 @@ fn check(hit: &Hit, kept: &wire::Node) {
     );
 }
 
-// The node at `at` of `root`.
 fn at_mut<'a>(mut node: &'a mut wire::Node, at: &[u32]) -> Option<&'a mut wire::Node> {
     for index in at {
         node = node.children_mut().get_mut(*index as usize)?;
@@ -288,8 +267,6 @@ fn at_mut<'a>(mut node: &'a mut wire::Node, at: &[u32]) -> Option<&'a mut wire::
     Some(node)
 }
 
-// Where the node at `at` of the new tree is now: in a subtree a patch
-// carries out of it, or in the tree.
 fn placed<'a>(
     new: &'a mut wire::Node,
     patches: &'a mut [wire::Patch],
@@ -312,13 +289,6 @@ fn placed<'a>(
     at_mut(new, at)
 }
 
-// The patches from `last` to `new`, as `wire::diff_taking` answers them,
-// where `new` holds the shells of the memos `hits` kept: each shell takes
-// the node of `last` that stands where it stands (moved, never copied,
-// and never diffed). With `checks` on, each is held to what its memo
-// lowers to now, and a shell with no node of `last` at its place fails;
-// with them off that answers None, and the frame must be drawn whole.
-// `last` is left with what `new` gave up.
 pub(crate) fn keeping(
     last: &mut wire::Node,
     new: &mut wire::Node,

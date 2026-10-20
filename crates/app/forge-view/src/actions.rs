@@ -50,7 +50,6 @@ fn without_writer(list: &Ownership, writer: &Writer) -> Ownership {
     }
 }
 
-/// Why a change cannot merge from this view.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MergeBlock {
     Loading,
@@ -79,10 +78,7 @@ impl MergeBlock {
 }
 
 impl Forge {
-    /// One operation, optimistic in `scope` until a query reconciles it.
     pub(crate) fn submit(&mut self, op: Op, scope: String, label: &str, cx: &mut Context<Self>) {
-        // a landed review is done: its session goes, or it stays pinned at
-        // the old head and Finish would send it again
         let review = matches!(op, Op::ReviewSubmit { .. }).then(|| scope.clone());
         let id = self.issue(scope, label, cx);
         let submit = cx.host().ask::<SubmitForge>(op);
@@ -98,7 +94,6 @@ impl Forge {
         .detach();
     }
 
-    /// A write's row in `scope`, saying it is on its way; its id.
     fn issue(&mut self, scope: String, label: &str, cx: &mut Context<Self>) -> u64 {
         self.next_pending += 1;
         let id = self.next_pending;
@@ -113,11 +108,6 @@ impl Forge {
         id
     }
 
-    /// Lands the host's answer on write `id`'s row: applied, it waits for
-    /// the block that carries it (or goes, when a block heard since it
-    /// went out carried it); else the row keeps the answer (a doubt reads
-    /// as a refusal the person may retry) until dismissed. Says whether
-    /// it was applied.
     fn settle(&mut self, id: u64, answer: Answer) -> bool {
         let block = self.block;
         let Some(op) = self.pending.iter_mut().find(|op| op.id == id) else {
@@ -127,8 +117,6 @@ impl Forge {
             op.progress = Progress::Refused(answer);
             return false;
         }
-        // the receipt can land after the block on a fast node, and no
-        // later block would retire the row
         if block > op.issued {
             self.pending.retain(|op| op.id != id);
         } else {
@@ -137,7 +125,6 @@ impl Forge {
         true
     }
 
-    /// A write that did not land, taken off its screen (its Dismiss).
     pub(crate) fn dismiss(&mut self, id: u64, cx: &mut Context<Self>) {
         self.pending
             .retain(|op| op.id != id || !matches!(op.progress, Progress::Refused(_)));
@@ -182,7 +169,6 @@ impl Forge {
         cx.notify();
     }
 
-    /// A Change draft from a ref comparison, or an edit of an open change.
     pub(crate) fn start_change(
         &mut self,
         from: Vec<u8>,
@@ -232,7 +218,6 @@ impl Forge {
             cx.notify();
             return;
         }
-        // a new change opens from a source: Open waits for one
         if form.edit.is_none() && form.from.is_empty() {
             return;
         }
@@ -267,7 +252,6 @@ impl Forge {
         self.submit(op, scope, &label, cx);
     }
 
-    /// Closes the open change on the second press: the first only asks.
     pub(crate) fn close_change(&mut self, cx: &mut Context<Self>) {
         let (Some(repo), Some(n)) = (self.nav().repo.clone(), self.nav().change) else {
             return;
@@ -289,11 +273,6 @@ impl Forge {
         );
     }
 
-    /// Why merging is not offered, or `None` when it is.
-    ///
-    /// The program CASes both heads over a result the client publishes, and
-    /// a view holds no Git: it can name the source commit as the result of a
-    /// fast-forward and nothing else.
     pub(crate) fn merge_block(&self) -> Option<MergeBlock> {
         let Some((change, source, target, _)) = self.change() else {
             return Some(MergeBlock::Loading);
@@ -342,7 +321,6 @@ impl Forge {
             cx,
         );
     }
-    // ------------------------------------------------------ repo settings
 
     pub(crate) fn configure(&mut self, cx: &mut Context<Self>) {
         let repo = self.repo_name();
@@ -364,9 +342,6 @@ impl Forge {
         );
     }
 
-    /// Saves the open repository's settings as they are on screen, with
-    /// `change` made (Expo `repo.tsx:449`, `{...settings, ...change}`):
-    /// the phone's switches and default head save as they are flipped.
     pub(crate) fn configure_with(
         &mut self,
         change: impl FnOnce(&mut Settings),
@@ -386,7 +361,6 @@ impl Forge {
         );
     }
 
-    /// The desktop's Grant: the account number typed in its field.
     pub(crate) fn grant(&mut self, cx: &mut Context<Self>) {
         let typed = self
             .repo_settings
@@ -404,7 +378,6 @@ impl Forge {
         self.grant_to(principal, cx);
     }
 
-    /// Write access for `principal` in the open repository.
     pub(crate) fn grant_to(&mut self, principal: Principal, cx: &mut Context<Self>) {
         let Some(number) = principal.account() else {
             self.notice = "Grant takes an account number".into();
@@ -490,10 +463,7 @@ impl Forge {
             if !forge.settle(id, answer) {
                 return;
             }
-            // a chat write: no forge block retires its row, and the room
-            // read again shows the reply
             forge.pending.retain(|op| op.id != id);
-            // a box changed while the reply was out is left as it is
             if forge.reply.text().trim() == sent {
                 forge.reply.reset("");
             }

@@ -596,9 +596,6 @@ mod tests {
         }
     }
 
-    /// The pieces carry their devices and flags; a recording crosses once,
-    /// under a revision the host has not seen; a camera's state reaches the
-    /// view's listener.
     #[test]
     fn media_pieces_carry_their_devices_and_a_recording_once() {
         let mut cx = TestAppContext::new();
@@ -659,7 +656,6 @@ mod tests {
         });
     }
 
-    /// Places a microphone and keeps what it hears.
     #[derive(Default, serde::Deserialize, serde::Serialize)]
     struct Meter {
         heard: Vec<(MediaStatus, Playback, bool)>,
@@ -683,8 +679,6 @@ mod tests {
         }
     }
 
-    /// A microphone's state route carries its device, its recording and
-    /// whether the person speaks to the view's listener.
     #[test]
     fn a_microphone_hears_its_device_and_its_recording() {
         let mut cx = TestAppContext::new();
@@ -703,7 +697,6 @@ mod tests {
         });
     }
 
-    /// Places a camera, which its manifest leaves out.
     #[derive(Default, serde::Deserialize, serde::Serialize)]
     struct NoCamera;
 
@@ -727,7 +720,6 @@ mod tests {
         TestAppContext::new().open::<NoCamera>();
     }
 
-    /// Places a microphone, which its manifest leaves out.
     #[derive(Default, serde::Deserialize, serde::Serialize)]
     struct NoMicrophone;
 
@@ -758,8 +750,6 @@ mod tests {
         }
     }
 
-    /// One side of a call: its own camera and microphone publishing, and a
-    /// picture and a voice of someone else's.
     #[derive(Default, serde::Deserialize, serde::Serialize)]
     struct Huddle {
         muted: bool,
@@ -797,10 +787,6 @@ mod tests {
         }
     }
 
-    /// The pieces carry their tracks: a camera's and a microphone's to
-    /// publish into, a microphone's mute, a remote picture's fit and a
-    /// remote voice's speaker; a remote piece's state reaches its listener
-    /// by its id, its first report too, and only as it changes.
     #[test]
     fn call_pieces_carry_their_tracks() {
         let mut cx = TestAppContext::new();
@@ -857,7 +843,6 @@ mod tests {
             ]
         );
         let voice = ("voice", 2_u64);
-        // the first report is told, though it is the default
         cx.simulate_media_state(voice, MediaState::default());
         let up = TrackState::Up { subscribers: 0 };
         let state = MediaState {
@@ -865,9 +850,7 @@ mod tests {
             ..Default::default()
         };
         cx.simulate_media_state(voice, state.clone());
-        // told once: the host tells a state again only when it changes
         cx.simulate_media_state(voice, state);
-        // a status with no track keeps the track the host holds
         let live = MediaState {
             status: MediaStatus::Live,
             ..Default::default()
@@ -885,7 +868,6 @@ mod tests {
         });
     }
 
-    /// Plays someone's voice, and its manifest leaves `live` out.
     #[derive(Default, serde::Deserialize, serde::Serialize)]
     struct NoLive;
 

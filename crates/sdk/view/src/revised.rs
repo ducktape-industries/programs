@@ -25,8 +25,6 @@ impl<C> Revised<C> {
         self.commands.push(command);
     }
 
-    /// The revision and the commands, for the frame being lowered: the
-    /// next frame carries only what comes after.
     pub(crate) fn take(&mut self) -> (u64, Vec<C>) {
         (self.revision, std::mem::take(&mut self.commands))
     }

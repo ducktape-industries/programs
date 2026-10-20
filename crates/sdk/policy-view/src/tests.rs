@@ -41,7 +41,6 @@ fn a_policy_says_who_may_write_beside_its_owner() {
     assert_eq!(to_maya(team.clone()), "You, Ada and board");
     let stranger = Writers::Listed(vec![Party::Account(12)]);
     assert_eq!(to_maya(stranger), "You and account 12");
-    // the owner listed again adds nobody
     assert_eq!(to_maya(Writers::Listed(vec![maya.clone()])), "Only you");
     let to_ada = writers(&team, &maya, Some(&Party::Account(9)), &names);
     assert_eq!(to_ada, "Maya, Ada and board");

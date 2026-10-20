@@ -15,7 +15,6 @@ fn tick<V: View>(driver: &mut Driver<V>, events: Vec<wire::Event>) -> wire::Fram
     driver.tick_with(events, |frame| frame.clone())
 }
 
-/// The tree the driver keeps after its last tick: what the host holds.
 fn root<V: View>(driver: &Driver<V>) -> wire::Node {
     driver.last_root.clone().expect("a tree")
 }
@@ -54,7 +53,6 @@ impl Render for Tip {
     }
 }
 
-/// A button with every mouse-side route kind, each logging `name:kind`.
 fn button(name: &'static str, log: &Log) -> impl IntoElement {
     let l = |kind: &'static str| {
         let log = log.clone();
@@ -78,9 +76,7 @@ fn button(name: &'static str, log: &Log) -> impl IntoElement {
 enum Before {
     #[default]
     Nothing,
-    /// a full button lowered before `a`: every kind of route is taken once more
     Button,
-    /// a node with one hover route before `a`
     HoverOnly,
 }
 
@@ -172,7 +168,6 @@ fn scroll() -> gpui::ScrollWheelEvent {
     }
 }
 
-/// The events the host emits for a node from the frame it painted, by kind.
 fn painted_events(routes: &Routes) -> Vec<(&'static str, wire::Event)> {
     vec![
         (
@@ -221,8 +216,6 @@ fn painted_events(routes: &Routes) -> Vec<(&'static str, wire::Event)> {
     ]
 }
 
-/// Drives one painted event at a time into the current tables and reports
-/// which listener ran, per route kind.
 fn ran_for(driver: &mut Driver<Shifting>, routes: &Routes) -> Vec<(&'static str, Vec<String>)> {
     let log = driver.entity().read(|v| v.log.clone());
     let mut out = Vec::new();
@@ -234,8 +227,6 @@ fn ran_for(driver: &mut Driver<Shifting>, routes: &Routes) -> Vec<(&'static str,
     out
 }
 
-/// The tooltip the view builds for a painted request, as text; `None`
-/// when the request names no route.
 fn painted_tooltip(driver: &mut Driver<Shifting>, request: u32) -> Option<Vec<String>> {
     let frame = tick(
         driver,
@@ -260,13 +251,6 @@ fn assert_ran(ran: &[(&'static str, Vec<String>)], who: &str) {
     }
 }
 
-/// A node inserted before `a` and `b` between the paint and the next tick
-/// (a reply, a clock item, a `Loadable` going ready): the routes `b` was
-/// painted with still name `b`, so every event the host took from that
-/// paint runs `b`, and its tooltip request builds `b`'s tooltip. A full
-/// button takes every kind of route once more; a one-route node is the
-/// shape that used to drop the mouse-down silently, as the slot then held
-/// another payload type.
 #[test]
 fn a_painted_route_crossing_an_insert_runs_the_pressed_nodes_listener() {
     for before in [Before::Button, Before::HoverOnly] {
@@ -291,9 +275,6 @@ fn a_painted_route_crossing_an_insert_runs_the_pressed_nodes_listener() {
     }
 }
 
-/// A node BEFORE the target leaving (a spinner, an empty state giving way):
-/// `b` and `after` still run themselves, and the routes of the node that
-/// left run nothing and answer no tooltip.
 #[test]
 fn a_painted_route_crossing_a_removal_runs_the_pressed_node_or_nothing() {
     let mut driver = Driver::<Shifting>::new();
@@ -322,8 +303,6 @@ fn a_painted_route_crossing_a_removal_runs_the_pressed_node_or_nothing() {
     );
 }
 
-/// A node that leaves and comes back takes a new route: an event painted
-/// before it left names nothing, never the node that came back.
 #[test]
 fn a_node_that_comes_back_takes_a_fresh_route() {
     let mut driver = Driver::<Shifting>::new();
@@ -345,9 +324,6 @@ fn a_node_that_comes_back_takes_a_fresh_route() {
     }
 }
 
-// ---- fields: keyed by the field's own id --------------------------------
-
-/// A form whose fields hear changes and Enter, each logging `name:kind`.
 #[derive(Default, Serialize, Deserialize)]
 struct Form {
     extra: bool,
@@ -376,7 +352,6 @@ impl Render for Form {
     }
 }
 
-/// `(on_change, on_submit)` of the field `key`.
 fn field_routes(root: &wire::Node, key: &str) -> (u32, u32) {
     let Some(wire::Node::Field {
         on_change: Some(change),
@@ -389,9 +364,6 @@ fn field_routes(root: &wire::Node, key: &str) -> (u32, u32) {
     (*change, *submit)
 }
 
-/// A field showing up above two others in one form (a conditional field
-/// going visible): the routes `second` was painted with still name it, so
-/// Enter and the text the host took from that paint reach `second`.
 #[test]
 fn a_field_inserted_above_leaves_the_fields_below_their_routes() {
     let mut driver = Driver::<Form>::new();
@@ -432,9 +404,6 @@ fn a_field_inserted_above_leaves_the_fields_below_their_routes() {
     );
 }
 
-// ---- lists: rows keyed by the row element's own id -----------------------
-
-/// A chat-like keyed list: rows named by item.
 #[derive(Default, Serialize, Deserialize)]
 struct Keyed {
     items: Vec<String>,
@@ -472,8 +441,6 @@ impl Render for Keyed {
     }
 }
 
-/// Older history landing above (chat's splice at the top) moves every
-/// row's index and no row's route: a press painted on `m9` runs `m9`.
 #[test]
 fn a_row_prepended_to_a_list_leaves_the_rows_below_their_routes() {
     let mut driver = Driver::<Keyed>::new();
@@ -501,9 +468,6 @@ fn a_row_prepended_to_a_list_leaves_the_rows_below_their_routes() {
     assert_eq!(*log.borrow(), vec!["m9:click".to_owned()]);
 }
 
-// ---- what a change costs on the wire ---------------------------------------
-
-/// A forge-style row: a button with a label and a hash, two listeners.
 fn tx_row(index: usize) -> impl IntoElement {
     div()
         .id(format!("row-{index}"))
@@ -554,7 +518,6 @@ struct Sent {
     bytes: usize,
 }
 
-/// What the host receives for one tick: the wire frame as encoded.
 fn sent<V: View>(driver: &mut Driver<V>, events: Vec<wire::Event>) -> Sent {
     driver.tick_with(events, |frame| {
         let mut out = Sent {
@@ -574,11 +537,6 @@ fn sent<V: View>(driver: &mut Driver<V>, events: Vec<wire::Event>) -> Sent {
     })
 }
 
-/// One notch of a uniform list inside the window the view holds sends
-/// nothing: the rows are there already. A scroll past the window's margin
-/// moves the window: the list node's own `indices` move (one `Props`), the
-/// rows that left are removed and the rows that came in are inserted; the
-/// rows both windows hold are not sent again.
 #[test]
 fn scrolling_a_uniform_list_sends_only_the_rows_that_moved_in() {
     use crate::list::MARGIN_ROWS as M;
@@ -610,7 +568,6 @@ fn scrolling_a_uniform_list_sends_only_the_rows_that_moved_in() {
         "a notch inside the window: {notch:?}"
     );
     assert!(!page.whole, "{page:?}");
-    // the window moved from 100-M..124+M to 137-M..161+M
     let moved = (137 - 100) as usize;
     assert_eq!(
         (page.props, page.inserts, page.removes),
@@ -619,8 +576,6 @@ fn scrolling_a_uniform_list_sends_only_the_rows_that_moved_in() {
     );
 }
 
-/// A plain column of keyed rows (forge under 200 rows, explorer's pages):
-/// one row landing at the top is one `Insert`, the rows under it unchanged.
 #[derive(Default, Serialize, Deserialize)]
 struct Column {
     rows: Vec<usize>,

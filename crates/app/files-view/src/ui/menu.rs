@@ -11,7 +11,6 @@ use crate::menu::{Item, MENU, Menu, On};
 use crate::state::Sheet;
 use crate::write::Write;
 
-/// `screen` under the menu while one is open, at its place.
 pub(super) fn over(view: &Files, screen: impl IntoElement, cx: Cx, k: &Kit) -> AnyElement {
     let menu = match view.sheet_shown() {
         Some(Sheet::Menu(menu)) => popup(view, menu, cx, k),
@@ -23,7 +22,6 @@ pub(super) fn over(view: &Files, screen: impl IntoElement, cx: Cx, k: &Kit) -> A
         .into_any_element()
 }
 
-/// The menu at its place; none while its row has not said where it is.
 fn popup(view: &Files, menu: &Menu, cx: Cx, k: &Kit) -> Option<design::Menu> {
     let at = menu.at?;
     let popup = design::menu(MENU, words::ACTIONS, at, &k.theme)
@@ -50,7 +48,6 @@ fn menu_item(item: Item, cx: Cx, k: &Kit) -> design::MenuItem {
         .when(removes, |item| item.danger())
 }
 
-/// `element` opens the menu of `on` under a right press, at the pointer.
 pub(super) fn pointed(element: Stateful<Div>, on: On, cx: Cx) -> Stateful<Div> {
     let open = cx.listener(
         move |view: &mut Files, event: &MouseDownEvent, window, cx| {
@@ -60,17 +57,10 @@ pub(super) fn pointed(element: Stateful<Div>, on: On, cx: Cx) -> Stateful<Div> {
     element.on_mouse_down(MouseButton::Right, open)
 }
 
-/// The row of the entry at `path` opens its menu: under a right press at
-/// the pointer, and from the Menu key, Shift+F10 or assistive tech's
-/// "show menu" under the row, which says where it is while the menu waits
-/// to open there. The row keeps the pointer from the list around it, its
-/// scroll aside, so a press on a row is never the list's empty room.
 pub(super) fn row(row: Stateful<Div>, path: &str, view: &Files, cx: Cx) -> Stateful<Div> {
     opens(row, On::Entry(path.to_owned()), view, cx)
 }
 
-// A row that opens the menu of `on` as an entry's row opens its own
-// ([`row`]): a place's.
 pub(super) fn opens(row: Stateful<Div>, on: On, view: &Files, cx: Cx) -> Stateful<Div> {
     let keyed = on.clone();
     let keys = cx.listener(move |view: &mut Files, event: &KeyDownEvent, window, cx| {

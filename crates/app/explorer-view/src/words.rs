@@ -17,21 +17,14 @@ pub(crate) const READING_ACTIVITY: &str = "Reading its activity…";
 pub(crate) const READING_ROLE: &str = "Reading the programs role…";
 pub(crate) const READING_CODE: &str = "Reading the code…";
 
-/// The search field's name, and what it takes.
 pub(crate) const SEARCH: &str = "Search the chain";
 pub(crate) const SEARCH_HINT: &str = "Search by height, hash, account or program";
 
-/// A figure not read yet.
 pub(crate) const NO_VALUE: &str = "—";
-/// A count not read yet.
 pub(crate) const NO_COUNT: &str = "–";
-/// A view-only entry: a view with no program behind it.
 pub(crate) const VIEW_ONLY: &str = "view only";
-/// A program that runs with no params.
 pub(crate) const NO_PARAMS: &str = "none";
 
-// Where a program's code was built from: `programs@4cd6980`, the
-// repository and the commit's first seven digits; else why it names none.
 pub(crate) fn built_from(source: &::programs::Provenance) -> String {
     use ::programs::Provenance;
     match source {
@@ -54,8 +47,6 @@ pub(crate) const NO_ACCOUNT_HERE: &str = "Identity holds no account by this numb
 pub(crate) const NO_ACTIVITY: &str = "No activity recorded.";
 /// The press under an account's newest activity that reads the page past it.
 pub(crate) const SHOW_OLDER: &str = "Show older";
-/// Over a list read on past its first page once rows were written above
-/// it, and the press that reads it anew from them.
 pub(crate) const NEWER: &str = "Newer transactions";
 pub(crate) const SHOW_NEWEST: &str = "Show newest";
 // Under the transactions while the window does not reach the chain's start: where older ones are.
@@ -67,21 +58,15 @@ pub(crate) const NOTHING_SCHEDULED_FOR_IT: &str = "Nothing is scheduled for it."
 pub(crate) const OPEN_TO_ACCOUNTS: &str = "Any account changes a program that fills no role. Only the validators' vote changes a role's program.";
 pub(crate) const VALIDATORS_VOTE: &str = "validators' vote";
 pub(crate) const ANY_ACCOUNT: &str = "any account";
-/// A change the validators' vote makes.
 pub(crate) const BY_VOTE: &str = "by vote";
 pub(crate) const ADD: &str = "Add";
-/// What a Copy put on the clipboard, as its note names it.
 pub(crate) const CODE_ID: &str = "the code id";
 pub(crate) const LINK: &str = "the link";
 
-/// What a programs role entry is: a program, or a view with none behind it.
 pub(crate) fn entry_kind(listed: bool) -> &'static str {
     if listed { VIEW_ONLY } else { "program" }
 }
 
-/// How big the code is, and for a program whose code carries a view
-/// (`listed`: a view-only entry, which is all view) how much of it the
-/// view: `2.3 MB of code, 1.8 MB of it the view`.
 pub(crate) fn code_size(blob: &Manifested, listed: bool) -> String {
     match &blob.view {
         Some(carried) if !listed => format!(
@@ -93,13 +78,10 @@ pub(crate) fn code_size(blob: &Manifested, listed: bool) -> String {
     }
 }
 
-/// A block by its height: `Block 8,342`.
 pub(crate) fn block(height: u64) -> String {
     format!("Block {}", grouped(height))
 }
 
-/// A run of empty blocks folded into one line: `8,343–8,400 · 58 empty
-/// blocks`.
 pub(crate) fn empty_run(oldest: u64, newest: u64) -> String {
     format!(
         "{}–{} · {} empty blocks",
@@ -109,33 +91,26 @@ pub(crate) fn empty_run(oldest: u64, newest: u64) -> String {
     )
 }
 
-/// A count of transactions, short: `12 tx`.
 pub(crate) fn tx_count(transactions: u64) -> String {
     format!("{} tx", grouped(transactions))
 }
 
-/// How long ago a block or a transaction was: `3m ago`.
 pub(crate) fn age(now: u64, time: u64) -> String {
     format!("{} ago", ago(now, time))
 }
 
-/// The narrowest window a view's manifest asks for: `480 px`.
 pub(crate) fn min_width(pixels: u32) -> String {
     format!("{pixels} px")
 }
 
-/// The step to the block before: `← 8,341`; none before, the arrow alone.
 pub(crate) fn step_back(previous: Option<u64>) -> String {
     format!("← {}", previous.map_or(String::new(), grouped))
 }
 
-/// The step to the block after: `8,343 →`.
 pub(crate) fn step_on(next: u64) -> String {
     format!("{} →", grouped(next))
 }
 
-/// An account's transactions activity recorded: `12 transactions
-/// recorded`.
 pub(crate) fn recorded(transactions: u64) -> String {
     format!(
         "{} recorded",
@@ -143,7 +118,6 @@ pub(crate) fn recorded(transactions: u64) -> String {
     )
 }
 
-/// The accounts list's count: `15 · tx recorded`.
 pub(crate) fn tx_recorded(accounts: u64) -> String {
     format!("{} · tx recorded", grouped(accounts))
 }
@@ -164,7 +138,6 @@ pub(crate) fn changed_by(fills_a_role: bool) -> String {
     }
 }
 
-/// `words` with its first letter a capital, to open a line.
 fn first_up(words: &str) -> String {
     let mut letters = words.chars();
     letters.next().map_or_else(String::new, |first| {
@@ -172,14 +145,10 @@ fn first_up(words: &str) -> String {
     })
 }
 
-/// A code id as the screens show it (Expo `words.ts` `codeWords`):
-/// `sha256:1a2b3c4d…9f0e`.
 pub(crate) fn code_words(code: &abi::BlobId) -> String {
     format!("{}:{}", blob_kind(code), short(code.digest()))
 }
 
-/// A scheduled change (Expo `words.ts` `scheduledWords`): a set against
-/// what runs now, anything else by its verb.
 pub(crate) fn scheduled_words(pending: &Pending, network: &Network) -> String {
     let at = grouped(pending.height);
     let Change::Set(entry) = &pending.change else {
@@ -224,12 +193,10 @@ pub(crate) fn nothing_called(name: &str) -> String {
     format!("Nothing called {name}")
 }
 
-/// The link from a transaction to the block it is in.
 pub(crate) fn in_block(height: u64) -> String {
     format!("In block {}", grouped(height))
 }
 
-/// A device's name where its key carries no label: `Device 2`.
 pub(crate) fn device(index: usize) -> String {
     format!("Device {}", index + 1)
 }
@@ -238,22 +205,18 @@ pub(crate) fn transactions_to(program: &str) -> String {
     format!("Transactions · {program}")
 }
 
-/// The node's block time: `Block every 1.0 s`.
 pub(crate) fn block_every(block_time_ms: u64) -> String {
     format!("Block every {:.1} s", block_time_ms as f64 / 1000.)
 }
 
-/// How far the next epoch is: `Next in 7 blocks`.
 pub(crate) fn next_in(blocks: u64) -> String {
     format!("Next in {}", plural(blocks, "block", "blocks"))
 }
 
-/// How far back the window reaches: `the last 1,000 blocks`.
 pub(crate) fn last_blocks(blocks: u64) -> String {
     format!("the last {}", plural(blocks, "block", "blocks"))
 }
 
-/// The window's transactions: `2 transactions in the last 13 blocks`.
 pub(crate) fn transactions_in(count: u64, blocks: u64) -> String {
     format!(
         "{} in {}",
@@ -266,8 +229,6 @@ pub(crate) fn no_transactions_in(blocks: u64) -> String {
     format!("No transactions in {}.", last_blocks(blocks))
 }
 
-/// A program's way to its transactions, `sent` of them in the window's
-/// `blocks`; with no block yet, no count of nothing.
 pub(crate) fn to_transactions(sent: u64, blocks: u64) -> String {
     match blocks {
         0 => "Transactions →".into(),
@@ -275,8 +236,6 @@ pub(crate) fn to_transactions(sent: u64, blocks: u64) -> String {
     }
 }
 
-/// A block's proposer by its place in the validator set, `validator 1`;
-/// a key the set no longer holds, `validator`.
 pub(crate) fn validator(place: Option<usize>) -> String {
     match place {
         Some(place) => format!("validator {}", place + 1),
@@ -284,14 +243,10 @@ pub(crate) fn validator(place: Option<usize>) -> String {
     }
 }
 
-/// A validator's key: validators sign with ed25519.
 pub(crate) fn validator_key(key: &[u8]) -> String {
     format!("ed25519 {}", short(key))
 }
 
-/// Which of `account`'s keys signed, its `at`th: `#8 device 1 · ed25519
-/// 623b55d3…efd0`; a key with no label named as a device is, inside the
-/// line (Expo `tx/[hash].tsx:166`).
 pub(crate) fn key_line(account: &identity::Account, at: usize, signer: &[u8]) -> String {
     let key = &account.keys()[at];
     let label = key
@@ -306,7 +261,6 @@ pub(crate) fn key_line(account: &identity::Account, at: usize, signer: &[u8]) ->
     )
 }
 
-/// When a device last signed, by the time of its newest frame.
 pub(crate) fn last_used(now: u64, last: Option<u64>) -> String {
     match last {
         Some(time) => format!("last used {} ago", ago(now, time)),
@@ -321,7 +275,6 @@ pub(crate) fn unindexed(from: u64) -> String {
     )
 }
 
-/// The line under the page strip, in words.
 pub(crate) fn note(note: &Note) -> String {
     match note {
         Note::NotFound(query) => format!("Nothing here is called “{query}”."),
@@ -342,9 +295,6 @@ pub(crate) fn note(note: &Note) -> String {
     }
 }
 
-/// What a capability lets a view do, in a line a person reads: the phone's
-/// "uses camera" for a view. Every capability is worded here, so a new one
-/// is worded before it ships.
 pub(crate) fn allows(capability: Capability) -> &'static str {
     match capability {
         Capability::Chain => "reads the chain: blocks, transactions and the node's status",

@@ -16,8 +16,6 @@ fn model_compacts_at(chain: &MockChain, compact_at: Option<u64>) {
     chain.submit(signed(ADA), PROGRAM, &op).unwrap();
 }
 
-// the agent answers once with a context of 1,008 tokens, far inside the window, and hears again:
-// whether harness then asks the model for a summary rather than a turn
 fn summarizes_next(world: &World) -> bool {
     let chain = &world.chain;
     let thread = world.opened("m1", "remember the plan", Some(WINDOW));

@@ -1,6 +1,5 @@
 use super::*;
 
-/// What `sanitize` refuses a tree for on a field's account (`validate_field`).
 const FIELD_REFUSALS: [&str; 5] = [
     "field text is longer than a u32 offset reaches",
     "field cursor is off its text",
@@ -9,8 +8,6 @@ const FIELD_REFUSALS: [&str; 5] = [
     "field claims a key the engine owns",
 ];
 
-/// What `sanitize` refuses a tree for on a sheet's or the root's account:
-/// a shape the generator draws at random too.
 const SHAPE_REFUSALS: [&str; 6] = [
     "a sheet has at most eight detents",
     "a sheet detent is a fraction of the body",
@@ -20,8 +17,6 @@ const SHAPE_REFUSALS: [&str; 6] = [
     "on_back below the root",
 ];
 
-/// What `sanitize` refuses a tree for on a piece's live track's account
-/// (`LiveTrack::check`).
 const TRACK_REFUSALS: [&str; 2] = [
     "a live room is one line of plain text",
     "a live track's name is `/`-separated segments, none empty or `..`",
@@ -33,8 +28,6 @@ fn field_refusal(refused: &Refused) -> bool {
             || SHAPE_REFUSALS.contains(reason)
             || TRACK_REFUSALS.contains(reason))
 }
-
-// --------------------------------------------------------------- test 1
 
 #[test]
 fn random_trees_come_out_of_sanitize_well_formed() {
@@ -94,8 +87,6 @@ fn random_trees_come_out_of_sanitize_well_formed() {
     }
 }
 
-// --------------------------------------------------------------- test 2
-
 fn corrupt_length_prefix(rng: &mut Rng, bytes: &mut [u8]) {
     if bytes.len() < 8 {
         return;
@@ -105,10 +96,6 @@ fn corrupt_length_prefix(rng: &mut Rng, bytes: &mut [u8]) {
     bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
 }
 
-/// One random mutation applied to a copy of a sound frame's bytes: a bit
-/// flip, a byte overwrite, a truncation, an insertion of random bytes, or a
-/// length-prefix corruption (an 8-byte little-endian window overwritten
-/// with a value a real `Vec`/`String` length prefix would never hold).
 fn mutate_once(rng: &mut Rng, bytes: &mut Vec<u8>) {
     if bytes.is_empty() {
         bytes.push(rng.next_range(256) as u8);
@@ -178,8 +165,6 @@ fn mutated_bytes_never_panic() {
     }
 }
 
-// --------------------------------------------------------------- test 2b
-
 #[test]
 fn a_patched_sanitized_tree_is_a_sanitized_tree() {
     const SEED: u64 = 0x9A7C_4E5D_0B1A_2F3E;
@@ -205,12 +190,7 @@ fn a_patched_sanitized_tree_is_a_sanitized_tree() {
             let mut staged = root.clone();
             for _ in 0..rng.next_range(PATCHES_PER_TREE + 1) {
                 let patch = gen_patch(&mut rng, &staged, hostile);
-                // the styles its subtree names reach the table first, as
-                // the patch frame's own entries do
                 styles.extend(take_styles()).unwrap();
-                // Paths are drawn against the tree as the patches so far
-                // leave it, so a well-behaved sequence applies whole and
-                // a hostile one is refused somewhere along it.
                 let mut candidate = staged.clone();
                 let applied = view_wire::apply(&mut candidate, vec![patch.clone()], &styles);
                 if matches!(
@@ -248,10 +228,6 @@ fn a_patched_sanitized_tree_is_a_sanitized_tree() {
                 }
             };
             let outcome = view_wire::apply(&mut root, decoded.patches, &styles);
-            // Each patch was drawn against the tree `apply` had sanitized so
-            // far; the batch sanitizes once, at the end, so a well-behaved
-            // sequence can still collide in it. `apply` leaves the tree it
-            // refused as the batch made it, collision included.
             if matches!(
                 outcome.as_ref().map_err(Refused::reason),
                 Err(Refused::Duplicate(_))
@@ -291,8 +267,6 @@ fn a_patched_sanitized_tree_is_a_sanitized_tree() {
     }
 }
 
-// --------------------------------------------------------------- test 2c
-
 #[test]
 fn a_diff_applied_to_the_old_tree_is_the_new_tree_for_random_pairs() {
     const SEED: u64 = 0xD1FF_0000_A99B_1E5A;
@@ -304,7 +278,6 @@ fn a_diff_applied_to_the_old_tree_is_the_new_tree_for_random_pairs() {
         let ctx = format!("seed={seed:#x} pair={i}");
         on_big_stack(move || {
             let mut rng = Rng::new(seed);
-            // a tree, and the table it names its styles in
             let tree = |rng: &mut Rng| {
                 let (depth, width) = (rng.skewed(MAX_DEPTH / 2, 3), rng.skewed(48, 2));
                 let mut frame = gen_frame_with(rng, depth, width);
@@ -316,8 +289,6 @@ fn a_diff_applied_to_the_old_tree_is_the_new_tree_for_random_pairs() {
             };
             let mut new = match rng.next_range(8) {
                 0 => {
-                    // an unrelated tree is all the result holds, so its
-                    // table is the one the result is checked against
                     let Some((tree, table)) = tree(&mut rng) else {
                         return;
                     };
@@ -359,10 +330,6 @@ fn a_diff_applied_to_the_old_tree_is_the_new_tree_for_random_pairs() {
     }
 }
 
-// --------------------------------------------------------------- test 3
-
-/// A valid MessagePack array32 header claims u32::MAX children with no
-/// payload. Decode must refuse without preallocating the claimed vector.
 #[test]
 fn a_length_prefix_bomb_is_refused_without_the_allocation() {
     let frame = |children| Frame {
@@ -380,11 +347,10 @@ fn a_length_prefix_bomb_is_refused_without_the_allocation() {
     assert_eq!(empty[offset], 0x90, "empty fixarray marker");
     assert_eq!(one[offset], 0x91, "one-child fixarray marker");
     let mut bomb = empty[..offset].to_vec();
-    bomb.push(0xdd); // array32, followed by its big-endian length
+    bomb.push(0xdd);
     bomb.extend_from_slice(&u32::MAX.to_be_bytes());
     let start = std::time::Instant::now();
     let error = decode::<Frame>(&bomb).unwrap_err();
-    // the count is more than the bytes left could hold: refused at the header
     assert!(
         error.contains("the bytes end inside a value"),
         "must refuse the count the bytes cannot hold: {error}"
@@ -395,11 +361,6 @@ fn a_length_prefix_bomb_is_refused_without_the_allocation() {
     );
 }
 
-// --------------------------------------------------------------- test 4
-
-/// `sanitize` is idempotent: running it again on its own output changes
-/// nothing, which is what lets a host call it on every frame without
-/// worrying whether the view already sent a clean one.
 #[test]
 fn sanitize_is_idempotent() {
     const SEED: u64 = 0x1DE4_1DE4_5EED_5EED;
@@ -412,8 +373,6 @@ fn sanitize_is_idempotent() {
         let Ok(styles) = sanitized(&mut once) else {
             continue;
         };
-        // a second pass over what the first left: the tree as it stands,
-        // with the table the host holds as the table it brings
         let mut twice = once.clone();
         twice.styles = (0..styles.len() as u32)
             .map(|id| Style::new(&styles[StyleId(id)]))
@@ -463,9 +422,6 @@ fn resize_handle_round_trip_retains_routes_and_checks_its_child() {
     assert_eq!(cursor, Some(mouse::Cursor::ResizingHorizontally));
 }
 
-/// Every node kind that carries a typed id has it checked: a tree with a
-/// host-local id where the walk reaches is refused, and a tree that passes
-/// holds none (`check_frame` validates every surviving identity).
 #[test]
 fn a_host_local_id_on_any_node_kind_is_refused() {
     const SEED: u64 = 0xF0C5_1D1D_5EED_0001;
@@ -485,10 +441,6 @@ fn a_host_local_id_on_any_node_kind_is_refused() {
     assert!(refused > 0, "no poisoned id reached the check");
 }
 
-/// A tooltip response's content is a tree of its own, decoded on the same
-/// depth budget as the frame's tree: content nested past what the host
-/// walks is refused, not decoded down the host's stack. Uncounted, 100
-/// levels (9.5 KB of frame) aborted the app.
 #[test]
 fn tooltip_content_nested_past_what_the_host_walks_is_refused() {
     let decoded = |levels: usize| {

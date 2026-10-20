@@ -40,11 +40,8 @@ pub(crate) fn render(view: &Files, cx: Cx) -> AnyElement {
     let sheet = match view.sheet_shown() {
         Some(Sheet::Actions) => sheets::actions(view, cx, k),
         Some(Sheet::Write(form)) => Some(sheets::form(form, cx, k)),
-        // a desktop's right press opens it; a finger has none
         Some(Sheet::Menu(_)) | None => None,
     };
-    // Back undoes what is drawn: the sheet on screen, else the page over
-    // the places; with neither, the host leaves the program
     let back = (sheet.is_some() || view.pages.depth() > 0)
         .then(|| cx.listener(|view: &mut Files, _: &BackEvent, _, cx| view.back(cx)));
     div()
@@ -61,9 +58,6 @@ pub(crate) fn render(view: &Files, cx: Cx) -> AnyElement {
         .into_any_element()
 }
 
-/// Where a page sits: the places are the root, led by the reader (their
-/// name, empty while it is read or when identity gives none), every other
-/// page has Back.
 fn nav(view: &Files, cx: Cx) -> Nav {
     match view.pages.depth() {
         0 => Nav::root(

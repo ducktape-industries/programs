@@ -39,8 +39,6 @@ pub(super) fn transactions(
         .min_h_0()
         .flex()
         .flex_col()
-        // the heading ends where the rows do, short of the gutter the host
-        // keeps beside the list, as it does under a page that scrolls
         .child(
             heading("explorer-transactions-heading", &title, Some(count), theme)
                 .mr(design::size::SCROLLBAR),
@@ -170,8 +168,6 @@ pub(super) fn tx(
         .into_any_element()
 }
 
-/// A run's outcome as a badge and, where it was rejected, the refusal's
-/// sentence and reason. `id` keeps the badge's id its own.
 fn status(run: &Receipt, id: &str, theme: &Theme, ladder: &Ladder) -> Div {
     let (word, color, soft) = outcome(run, theme);
     let refusal = match &run.outcome {
@@ -201,8 +197,6 @@ fn status(run: &Receipt, id: &str, theme: &Theme, ladder: &Ladder) -> Div {
         .children(refusal)
 }
 
-/// The runs a transaction's messages caused, each under the run that sent
-/// it; `None` where it sent none.
 fn messages(run: &Receipt, theme: &Theme, ladder: &Ladder) -> Option<impl IntoElement> {
     if run.nested.is_empty() {
         return None;
@@ -226,7 +220,6 @@ fn messages(run: &Receipt, theme: &Theme, ladder: &Ladder) -> Option<impl IntoEl
     )
 }
 
-/// `runs` and theirs below them, one row each, stepped in by `depth`.
 fn nested(
     runs: &[Receipt],
     depth: usize,
@@ -254,8 +247,6 @@ fn nested(
     }
 }
 
-/// Who signed: the account holding the key and which of its keys, or the
-/// key alone.
 fn from(view: &Explorer, tx: &TxRow, cx: Cx, theme: &Theme) -> Div {
     let Some((account, at)) = view.holder(&tx.signer) else {
         return div().child(mono(abi::hex(&tx.signer)));
@@ -281,7 +272,6 @@ fn from(view: &Explorer, tx: &TxRow, cx: Cx, theme: &Theme) -> Div {
         .child(mono(words::key_line(account, at, &tx.signer)).text_color(theme.faint))
 }
 
-/// The op's fields, as its program described them; empty until it has.
 fn operation(view: &Explorer, tx: &TxRow, cx: Cx, theme: &Theme) -> impl IntoElement {
     let fields: Vec<AnyElement> = tx
         .op()
@@ -324,9 +314,6 @@ fn operation(view: &Explorer, tx: &TxRow, cx: Cx, theme: &Theme) -> impl IntoEle
         .children(fields)
 }
 
-/// One described value, shown as what it is: an account by its name, a
-/// key by the account holding it, a program as a link to its
-/// transactions, a hash short. `at` keeps each link's id its own.
 fn value(view: &Explorer, shown: &Value, at: &str, cx: Cx, theme: &Theme) -> AnyElement {
     match shown {
         Value::Text(text) => div().child(clip(text)).into_any_element(),
@@ -365,8 +352,6 @@ fn value(view: &Explorer, shown: &Value, at: &str, cx: Cx, theme: &Theme) -> Any
     }
 }
 
-/// An account as its avatar and name, a link to its page; its number
-/// where the window has no such account.
 fn account(view: &Explorer, number: u64, at: &str, cx: Cx, theme: &Theme) -> AnyElement {
     let face = view.account(number).map(|account| {
         let picture = view.picture(account, cx);

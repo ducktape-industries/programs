@@ -24,8 +24,6 @@ mod models;
 mod parts;
 mod thread;
 
-/// The page the screen is, and the sheet over it; Back undoes what is drawn: the sheet, else
-/// the page, and at the root the host leaves the program.
 pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
     let theme = *cx.global::<Theme>();
     let ladder = &TOUCH;
@@ -62,7 +60,6 @@ pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
         .into_any_element()
 }
 
-/// How many pages the screen sits over: the agents are the root.
 fn depth(view: &Agents) -> usize {
     match view.screen {
         Screen::List => 0,
@@ -76,8 +73,6 @@ fn depth(view: &Agents) -> usize {
     }
 }
 
-/// Where the page sits: the root leads with the reader (a visitor has none to show), every
-/// other page has Back.
 fn nav(view: &Agents, cx: &mut Context<Agents>) -> Nav {
     match (depth(view), view.me) {
         (0, Some(me)) => Nav::root_with(
@@ -92,8 +87,6 @@ fn nav(view: &Agents, cx: &mut Context<Agents>) -> Nav {
     }
 }
 
-/// A page of the stack: its title row (Back by where it sits), what the last write left under
-/// it, then what the caller adds.
 fn page(
     id: &'static str,
     title: impl Into<SharedString>,

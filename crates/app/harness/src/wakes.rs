@@ -37,7 +37,6 @@ pub(crate) fn wakes(ctx: &QueryCtx, id: u64) -> Result<Vec<Wake>, Error> {
     for ((_, watch), _) in STREAMING.scan(ctx, STREAMING.prefix_of(&id))? {
         wakes.push(Wake::Stream { watch });
     }
-    // a run booked from this conversation tells it what the run did once it has run
     for (_, entry) in BOOKED.scan(ctx, BOOKED.prefix_of(&row.agent))? {
         let pending = BOOKINGS
             .get(ctx, &entry)?

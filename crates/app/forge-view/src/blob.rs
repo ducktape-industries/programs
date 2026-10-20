@@ -8,16 +8,11 @@ use std::rc::Rc;
 use markdown::highlight::{self, Token};
 use markdown::{Block, parse};
 
-/// A text blob's rows and their highlight tokens.
 pub(crate) struct Lines {
     pub(crate) rows: Vec<String>,
     pub(crate) tokens: Vec<Vec<(Range<usize>, Token)>>,
 }
 
-/// The open blob decoded once: its lines and tokens (by blob id and name,
-/// since the name picks the language) and its markdown blocks (by blob id),
-/// so a frame redraws a file without decoding and tokenizing it again. One
-/// entry each: the pane shows one file at a time.
 #[derive(Default)]
 pub(crate) struct BlobCache {
     lines: RefCell<Option<(String, String, Rc<Lines>)>>,

@@ -15,9 +15,6 @@ pub fn channel_link(chain: &str, channel: &str, seq: Option<u64>) -> Option<Stri
     ducklink::mint(chain, ::chat::PROGRAM, &tail)
 }
 
-// `duck://<chain>/files/<segment>/…`: where Files shows what is at `path`
-// (`/chat/general/m3/tape.png` is `duck://<chain>/files/chat/general/m3/tape.png`);
-// none without a chain.
 pub(crate) fn file_link(chain: &str, path: &str) -> Option<String> {
     let tail: Vec<&str> = path
         .split('/')
@@ -59,7 +56,6 @@ pub fn route_target(route: &str) -> Option<(String, u64)> {
     (!channel.is_empty()).then_some((channel, seq))
 }
 
-// The room and message `url` names, when it is a chat link of `chain`.
 pub fn room_route(chain: &str, url: &str) -> Option<(String, u64)> {
     let link = ducklink::Link::parse(url).ok()?;
     let tail: Vec<&str> = link.tail.iter().map(String::as_str).collect();
@@ -86,7 +82,6 @@ impl Rooms {
         }
     }
 
-    // A message's blocks as it is drawn.
     pub fn blocks(&self, blocks: Vec<Block>) -> Vec<Block> {
         blocks
             .into_iter()
@@ -114,7 +109,6 @@ impl Rooms {
         out
     }
 
-    // A link to a listed room, no message of it, as the room's name now.
     fn labelled(&self, span: &Span, url: &str) -> Span {
         let name = room_route(&self.chain, url)
             .filter(|(_, seq)| *seq == 0)
@@ -128,7 +122,6 @@ impl Rooms {
         }
     }
 
-    // `span`, each `#word` in it that names one room a link to that room.
     fn tagged(&self, span: &Span, out: &mut Vec<Span>) {
         let part = |range: Range<usize>, marks: Vec<Mark>| Span {
             text: span.text[range].to_owned(),
@@ -155,8 +148,6 @@ impl Rooms {
         }
     }
 
-    // The one room named `word`, whatever its case; none when no room or
-    // two are.
     fn named(&self, word: &str) -> Option<&str> {
         let word = word.to_lowercase();
         let mut named = self
@@ -215,10 +206,6 @@ mod tests {
         assert_eq!(work_record("", "harness", 12, "general"), None);
     }
 
-    // A link to a listed room reads as its name now, and opens it here; a
-    // `#word` that is one listed room's name links to it, and one two rooms
-    // share or none has stays text, as does one in code. A link to a message
-    // keeps its label, and another chain's link is no room of this one.
     #[test]
     fn rooms_name_their_links_and_link_their_names() {
         let chain = "testnet#0a1b2c3d";
@@ -263,9 +250,6 @@ mod tests {
         );
     }
 
-    /// Any room lands, a forge room's `:` included: the link spells the id
-    /// percent-encoded, and the view reads the route the app hands it
-    /// (the tail, decoded and joined) back to the same id and message.
     #[test]
     fn a_channel_link_round_trips_through_the_apps_route() {
         let long = format!("forge:{}:{}", "r".repeat(37), u64::MAX);
@@ -280,7 +264,6 @@ mod tests {
             long.as_str(),
         ] {
             let link = channel_link("testnet#0a1b2c3d", channel, Some(42)).unwrap();
-            // what the app does with a chain link: the tail, decoded, joined
             let route = ducklink::Link::parse(&link).unwrap().tail.join("/");
             assert_eq!(route_target(&route), Some((channel.to_owned(), 42)));
         }

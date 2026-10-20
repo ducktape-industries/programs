@@ -55,17 +55,11 @@ pub(super) fn sanitize_node(
         if interactivity.on_back.is_some() && depth > 0 {
             return Err("on_back below the root".into());
         }
-        // gpui panics (debug) on a second claim under one focused node;
-        // the first in tree order keeps it. The budget restarts under
-        // every node with a role that takes focus (`sanitize_children`),
-        // as gpui counts claims per nearest focusable ancestor and a
-        // roleless focusable pushes no node there.
         let aria = &mut interactivity.aria;
         if aria.active_descendant {
             aria.active_descendant = !std::mem::replace(&mut walk.active_descendant, true);
         }
     }
-    // Every id a node is filed under (its own, a row's index) is checked.
     if let Some(id) = entered.then(|| scopes.path().last()).flatten() {
         id.validate_host()?;
     }
@@ -86,7 +80,6 @@ pub(super) fn sanitize_node(
     Ok(())
 }
 
-/// A node's own fields, one arm per kind; its id is already checked.
 fn sanitize_fields(
     node: &mut Node,
     walk: &mut Walk,
@@ -146,7 +139,7 @@ fn sanitize_fields(
         }
         Node::Sheet { style, detents, .. } => {
             walk.style(*style)?;
-            sheet_detents(detents)?;
+            ascending_sheet_detents(detents)?;
         }
         Node::Canvas { style, commands } => {
             walk.style(*style)?;
@@ -235,11 +228,7 @@ fn sanitize_fields(
     Ok(())
 }
 
-/// A sheet opens at its first detent and is dragged up through the rest:
-/// each a fraction of the body in `0..=1` above zero (a sheet at zero
-/// height is none), strictly ascending, no more than a host keeps snap
-/// points for. None is a sheet as tall as what it holds.
-fn sheet_detents(detents: &[f32]) -> Result<(), &'static str> {
+fn ascending_sheet_detents(detents: &[f32]) -> Result<(), &'static str> {
     const MOST: usize = 8;
     if detents.len() > MOST {
         return Err("a sheet has at most eight detents");
@@ -256,15 +245,12 @@ fn sheet_detents(detents: &[f32]) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// Keeps the first `keep` children and reports the rest as cut nodes.
 fn cut_children(children: &mut Vec<Node>, keep: usize, walk: &mut Walk) {
     let dropped: usize = children.iter().skip(keep).map(Node::count).sum();
     walk.cut(|cuts| &mut cuts.nodes, dropped);
     children.truncate(keep);
 }
 
-/// A uniform list names the path of ids that authored it, ending in its own,
-/// and it must be the path the walk actually took to reach it.
 fn uniform_list_path(
     id: &ElementIdWire,
     path: &[ElementIdWire],

@@ -16,7 +16,6 @@ use gpui::{
     TextStyleRefinement, px,
 };
 
-/// Clamps in place; a non-finite value becomes `min`.
 pub(crate) fn clamp_finite(value: &mut f32, min: f32, max: f32) {
     *value = if value.is_finite() {
         value.clamp(min, max)
@@ -57,9 +56,6 @@ pub(crate) fn sanitize_hsla(value: &mut Hsla) {
         clamp_finite(number, 0., 1.);
     }
 }
-/// A solid keeps its colour and a linear gradient its angle, stops and
-/// colour space, each bounded; a pattern's payload has no public read, so
-/// it is refused rather than forwarded unchecked to the shader.
 fn background(value: Background) -> Result<Background, &'static str> {
     if let Some(mut color) = value.as_solid() {
         sanitize_hsla(&mut color);
@@ -84,10 +80,6 @@ fn grid(value: &mut GridPlacement) {
     }
 }
 
-/// Apply once to each base and conditional refinement during the tree's
-/// existing sanitize walk. This pinned GPUI revision has no z-index field in
-/// StyleRefinement. Deferred painting must be bounded separately by the
-/// host's slot content mask.
 pub(crate) fn sanitize(style: &mut StyleRefinement) -> Result<(), &'static str> {
     for value in [
         &mut style.size.width,
@@ -173,8 +165,6 @@ pub(crate) fn sanitize(style: &mut StyleRefinement) -> Result<(), &'static str> 
                 bound(&mut number, true);
                 *offset = px(number);
             }
-            // a blur only widens; a spread may shrink the shadow inside its
-            // box, as gpui's own `shadow_sm`..`shadow_2xl` do (-3 px on lg)
             let mut blur = f32::from(shadow.blur_radius);
             bound(&mut blur, false);
             shadow.blur_radius = px(blur);
@@ -208,8 +198,6 @@ pub(crate) fn sanitize(style: &mut StyleRefinement) -> Result<(), &'static str> 
     Ok(())
 }
 
-/// A text style's own bounds: colours, sizes, letter spacing, font lookup
-/// lists, ellipsis.
 pub(crate) fn sanitize_text(text: &mut TextStyleRefinement) {
     if let Some(value) = &mut text.color {
         sanitize_hsla(value);
@@ -229,7 +217,6 @@ pub(crate) fn sanitize_text(text: &mut TextStyleRefinement) {
     if let Some(value) = &mut text.line_clamp {
         *value = (*value).max(1);
     }
-    // signed, as CSS `letter-spacing`: a negative one tightens the line
     if let Some(value) = &mut text.letter_spacing {
         let mut number = f32::from(*value);
         bound(&mut number, true);
@@ -280,7 +267,6 @@ mod tests {
         assert_eq!(style.margin.right, Some(relative(-3.).into()));
         assert_eq!(style.margin.bottom, Some(px(0.).into()));
         assert_eq!(style.flex_basis, Some(px(-1e9).into()));
-        // a size may not point backwards
         let mut size = StyleRefinement::default().w(px(-5.));
         sanitize(&mut size).unwrap();
         assert_eq!(size.size.width, Some(px(0.).into()));
@@ -389,8 +375,6 @@ mod tests {
             GridPlacement::Span(1)..GridPlacement::Line(i16::MIN)
         );
     }
-    /// A value inside its bound, or a field no bound reads (overflow),
-    /// is left as authored; a second pass changes nothing.
     #[test]
     fn preserves_normal_line_spacing_and_is_idempotent() {
         let mut style = StyleRefinement::default()

@@ -28,7 +28,6 @@ fn desk(rooms: Vec<ChannelInfo>) -> (TestAppContext, Entity<Chat>) {
     (cx, view)
 }
 
-// what archiving or unarchiving `id` writes: its channel row
 fn archiving(id: &str) -> Vec<Vec<u8>> {
     vec![chat::tables::CHANNELS.key(&id.to_owned())]
 }
@@ -76,8 +75,6 @@ fn archiving_hides_a_room_as_its_block_lands_and_unarchiving_brings_it_back() {
     assert_eq!(listed(&view), ["general", "other"]);
 }
 
-// The open room archived stays open, read-only, and leaves the list; the
-// arrows stand on the channel that took its row and walk on from there.
 #[test]
 fn the_open_room_archived_stays_open_and_the_arrows_take_the_next_room() {
     let rooms = vec![
@@ -109,8 +106,6 @@ fn the_open_room_archived_stays_open_and_the_arrows_take_the_next_room() {
     view.read(|chat| assert_eq!(chat.room.as_ref().unwrap().id, "dm-7-8"));
 }
 
-// The last channel hidden has no channel after it: the one before takes
-// its row.
 #[test]
 fn the_last_channel_hidden_hands_its_row_to_the_one_before() {
     let rooms = vec![

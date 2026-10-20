@@ -11,12 +11,9 @@ use view::{Div, Stateful};
 use crate::read::Model;
 use crate::{Agents, Screen};
 
-// The conversations' row and sheet, and the model's: every id in them starts so.
 const CONVERSATIONS: &str = "agent-conversations-policy";
 const MODEL: &str = "model-policy";
-// The conversations' row title: their policy decides who starts one.
 const STARTS: &str = "Who can start its conversations";
-// Claim, for the agent's manager while nobody holds its conversations.
 pub(crate) const CLAIM: &str = "Claim who starts them";
 pub(crate) const CLAIM_HINT: &str = "Your policies decide it from then on.";
 
@@ -28,7 +25,6 @@ pub(crate) fn model_policy(view: &mut Agents) -> &mut Editing {
     &mut view.model_policy
 }
 
-// A model as ownership records it: its record.
 pub(crate) fn model_item(id: &str) -> Item {
     Item {
         program: harness::PROGRAM.to_owned(),
@@ -38,12 +34,10 @@ pub(crate) fn model_item(id: &str) -> Item {
 }
 
 impl Agents {
-    // The reader as ownership knows a party: their account.
     pub(crate) fn reader(&self) -> Option<Party> {
         self.me.map(Party::Account)
     }
 
-    // Agent `agent`'s conversations as ownership records them: the row its manager claims.
     fn conversations_item(&self, agent: u64) -> Item {
         Item {
             program: harness::PROGRAM.to_owned(),
@@ -52,8 +46,6 @@ impl Agents {
         }
     }
 
-    // Each frame: the open agent's conversations are held while its page is open, and the model
-    // whose form is open while it is.
     pub(crate) fn settle_policies(&mut self, cx: &mut Context<Self>) {
         let reader = self.reader();
         match self.screen.agent() {
@@ -75,8 +67,6 @@ impl Agents {
         }
     }
 
-    // Whether the reader may start or fork agent `agent`'s conversations: their policy's answer
-    // once read, else `before`, the rule from before policies.
     pub(crate) fn may_start(&self, agent: u64, before: bool) -> bool {
         let read = self
             .conversations_policy
@@ -87,8 +77,6 @@ impl Agents {
         }
     }
 
-    // Whether the reader, agent `agent`'s manager, may claim its conversations: once read, nobody
-    // holds them.
     pub(crate) fn claims(&self, agent: u64, manager: u64) -> bool {
         let editing = &self.conversations_policy;
         let key = self.conversations_item(agent).key;
@@ -100,7 +88,6 @@ impl Agents {
         self.me == Some(manager) && held && none
     }
 
-    // Whether a policy sheet is open over the view (the phone's Back closes it first).
     pub(crate) fn policy_sheet_open(&self) -> bool {
         self.model_policy.sheet.is_some() || self.conversations_policy.sheet.is_some()
     }
@@ -110,8 +97,6 @@ impl Agents {
         item::close_sheet(self, conversations_policy, cx);
     }
 
-    // Ownership wrote: what is held is read again where the block touched it, and the models
-    // where it touched one listed.
     pub(crate) fn ownership_moved(&mut self, change: Option<Change>, cx: &mut Context<Self>) {
         item::moved(self, conversations_policy, change.as_ref(), cx);
         item::moved(self, model_policy, change.as_ref(), cx);
@@ -139,7 +124,6 @@ impl Agents {
     }
 }
 
-// The open agent's conversations row: whose they are and their policy.
 pub(crate) fn conversations_row(
     view: &Agents,
     cx: &mut Context<Agents>,
@@ -158,7 +142,6 @@ pub(crate) fn conversations_row(
     )
 }
 
-// The model whose form is open: whose it is and its policy.
 pub(crate) fn model_row(
     view: &Agents,
     cx: &mut Context<Agents>,
@@ -168,7 +151,6 @@ pub(crate) fn model_row(
     item::row(&view.model_policy, MODEL, model_policy, cx, ladder, theme)
 }
 
-// A listed model's words: whose it is and its policy once on record, else its owner's name.
 pub(crate) fn model_words(view: &Agents, model: &Model) -> String {
     let owned = model.standing.record.is_some();
     match owned {
@@ -186,7 +168,6 @@ pub(crate) fn model_words(view: &Agents, model: &Model) -> String {
     }
 }
 
-// The policy sheet open over the view, if any: the model's, else the conversations'.
 pub(crate) fn sheet(
     view: &Agents,
     cx: &mut Context<Agents>,

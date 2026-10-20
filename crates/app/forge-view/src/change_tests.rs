@@ -10,8 +10,6 @@ use view::methods::Submit;
 use view::wire;
 use view::wire::Node;
 
-/// The change tabs read a log or a whole diff on open, so → only moves and
-/// Enter opens; the state filter is a radio group and checks on the arrow.
 #[test]
 fn the_change_tabs_move_on_an_arrow_and_open_on_enter() {
     let (mut cx, view) = change_screen("default", ChangeTab::Conversation);
@@ -45,8 +43,6 @@ fn the_change_state_filter_checks_on_an_arrow() {
     assert!(merged.aria.active_descendant);
 }
 
-/// A list about me is no state: the state filter checks no segment, and
-/// its arrows still start at Open.
 #[test]
 fn a_filter_about_me_checks_no_state() {
     let (mut cx, view) = opened("judgment");
@@ -112,7 +108,6 @@ fn the_change_header_carries_its_endpoints_and_a_merge_the_program_allows() {
     assert!(cx.has_text("Review this change"), "{:?}", cx.texts());
     assert!(cx.has_text("#1") && cx.has_text("open"));
     assert!(cx.has_text("Ada wants feature → main · head 26607f52…a84d"));
-    // `compare` says FastForward, so the merge is offered.
     let Some(view::wire::Node::Container(node)) = cx.find("forge-merge") else {
         panic!("the merge button is a native container");
     };
@@ -121,7 +116,6 @@ fn the_change_header_carries_its_endpoints_and_a_merge_the_program_allows() {
         node.interactivity.as_ref().unwrap().aria.disabled,
         Some(true)
     );
-    // The reader is not the author, so editing is closed to them.
     let Some(view::wire::Node::Container(edit)) = cx.find("forge-edit-change") else {
         panic!("the edit button stays visible")
     };
@@ -199,15 +193,11 @@ fn an_operation_shows_its_submission_then_a_refusal_reverts_it_with_the_reason()
     assert!(cx.has_text("Closing this change"), "the row stays in place");
 }
 
-/// An op's receipt can land after the block that carries it (a fast
-/// node): the row must not wait for a next block that never comes.
 #[test]
 fn an_op_whose_block_lands_before_its_receipt_leaves_the_screen() {
     use super::{Changes, block};
     let (mut cx, view) = change_screen_as("default", ChangeTab::Conversation, 9);
     let heads = cx.host().stream::<Changes<forge::Forge>>();
-    // the op goes out, and the block carrying it is heard before the
-    // node's receipt lands
     cx.update(&view, |forge, _, cx| forge.merge(cx));
     heads.send(block(200, Vec::new()));
     cx.run_until_parked();
@@ -280,13 +270,11 @@ fn the_conversation_is_the_hidden_chat_channel_and_the_forge_body() {
         cx.find("forge-change-body-text").is_some(),
         "the body is markdown"
     );
-    // forge's own lines read from its records, never from their text
     assert!(cx.has_text("Ada") && cx.has_text("opened this change"));
     assert!(!cx.has_text("raw forge text"), "{:?}", cx.texts());
     assert!(!cx.texts().iter().any(|text| text.contains("program:")));
     assert!(cx.has_text("Reading it now"));
     assert!(cx.has_text("Rae"), "a chat handle resolves to a name");
-    // Three reviews across two pages of the Change reply.
     view.read(|forge| {
         let (_, _, _, reviews) = forge.change().expect("the change landed");
         assert_eq!(reviews.items.len(), 3, "the review cursor was followed");
@@ -297,7 +285,6 @@ fn the_conversation_is_the_hidden_chat_channel_and_the_forge_body() {
         "a line comment is quoted under its review: {:?}",
         cx.texts()
     );
-    // the change is still open: forge's last line has no ending to name yet
     assert!(
         !cx.texts()
             .iter()
@@ -313,7 +300,6 @@ fn the_conversation_is_the_hidden_chat_channel_and_the_forge_body() {
         ),
         "the reply is the host's multi-line editor"
     );
-    // what the host's editor holds once the reply is typed
     cx.update(&view, |forge, _, cx| {
         forge.reply = view::TextField::new("looks right to me");
         cx.notify();
@@ -333,10 +319,6 @@ fn the_conversation_is_the_hidden_chat_channel_and_the_forge_body() {
     view.read(|forge| assert!(forge.reply.text().is_empty()));
 }
 
-/// A forge op accepted between two pages of a read makes the cursor its
-/// first page handed out `stale`. The read starts over from its first page:
-/// the change lands whole and the reader never sees "the listing changed;
-/// restart it", which stood in the change's place until the next block.
 #[test]
 fn a_write_between_two_pages_of_a_change_starts_the_read_over() {
     let (mut cx, view) = opened("reviewed");
@@ -405,8 +387,6 @@ fn the_files_tab_marks_comments_and_viewed_files_and_can_show_one() {
             Some(b"src/lib.rs".as_slice())
         )
     });
-    // the row holds the tick beside its press, each a cell of a grid row;
-    // the shown file is current
     let row = super::control(&cx, "forge-file-src/lib.rs");
     assert_eq!(
         row.interactivity.as_ref().unwrap().role,
@@ -432,7 +412,6 @@ fn the_files_tab_marks_comments_and_viewed_files_and_can_show_one() {
     cx.simulate_click("forge-files-all");
     cx.run_until_parked();
     view.read(|forge| assert!(forge.nav().diff_path.is_none()));
-    // the arrows never walked the list: no file is left lit
     assert_eq!(
         super::lit_rows(&cx, "forge-file-tree-list", view::Role::Row),
         Vec::<String>::new()
@@ -463,8 +442,6 @@ fn a_release_sized_diff_opens_with_its_files_and_first_lines() {
     cx.run_until_parked();
     cx.simulate_click("forge-file-src/gen/file_099.rs-open");
     cx.run_until_parked();
-    // "100 files · +100000 −0" gives way to All files, which keeps its
-    // width in the 240 px column instead of being cut off its edge
     assert_eq!(cx.style("forge-files-all-box").flex_shrink, Some(0.));
     assert_eq!(
         super::pixels(cx.style("forge-files-title").min_size.width),
@@ -479,7 +456,6 @@ fn a_release_sized_diff_opens_with_its_files_and_first_lines() {
     );
 }
 
-/// The file rows the Files tab's list has drawn.
 fn file_rows_drawn(cx: &view::testing::TestAppContext) -> usize {
     fn count(node: &Node) -> usize {
         let own = node
@@ -490,11 +466,6 @@ fn file_rows_drawn(cx: &view::testing::TestAppContext) -> usize {
     count(cx.root())
 }
 
-/// The owner's release touched 280 files. On a change of 264, the Files
-/// tab's list draws the rows on screen, not one per file on every render
-/// (a key typed in a comment paid ~110k fuel a file); the keys still reach
-/// every file: ↓ walks the list, scrolled to the row it reaches, Enter
-/// opens that file, and → then Space tick it read.
 #[test]
 fn a_264_file_change_lists_the_files_on_screen_and_opens_one_by_keyboard() {
     let (mut cx, view) = change_screen("wide", ChangeTab::Files);
@@ -554,8 +525,6 @@ fn a_264_file_change_lists_the_files_on_screen_and_opens_one_by_keyboard() {
     assert!(drawn < 64, "{drawn} of 264 files drawn");
 }
 
-/// A file picked outside the list (a line comment pressed in the details)
-/// is scrolled into the list, its row the one the keys go on from.
 #[test]
 fn a_file_picked_elsewhere_is_scrolled_into_the_list() {
     let (mut cx, view) = change_screen("wide", ChangeTab::Conversation);
@@ -613,8 +582,6 @@ fn every_comment_on_a_release_sized_diff_is_laid_out() {
 fn the_diff_draws_typed_lines_and_believes_the_program_about_a_literal_plus_plus() {
     let (cx, _view) = change_screen("reviewed", ChangeTab::Files);
     assert!(cx.find("forge-diff").is_some());
-    // A diff this small is drawn whole, so the screen carries every row of
-    // the hunk and not only the one the list would have measured.
     assert!(
         cx.find("forge-diff-hunk-1").is_some(),
         "the hunk header is a row: {:?}",
@@ -644,9 +611,6 @@ fn the_diff_draws_typed_lines_and_believes_the_program_about_a_literal_plus_plus
     assert!(gutter.interactivity.as_ref().unwrap().on_click.is_some());
 }
 
-/// Under a review the diff is one grid: ↓ moves to the next line with a
-/// gutter (scrolled into view), ← → between its old and new gutters, and
-/// Enter comments at the active gutter.
 #[test]
 fn the_diff_gutters_are_a_grid_the_arrows_walk() {
     let (mut cx, view) = change_screen("reviewed", ChangeTab::Files);
@@ -703,7 +667,6 @@ fn the_diff_gutters_are_a_grid_the_arrows_walk() {
     });
 }
 
-/// The diff list's row count, and its rows held, by index.
 fn diff_rows(cx: &view::testing::TestAppContext) -> (usize, Vec<(usize, &Node)>) {
     let Some(Node::UniformList {
         count,
@@ -723,7 +686,6 @@ fn diff_rows(cx: &view::testing::TestAppContext) -> (usize, Vec<(usize, &Node)>)
     (*count, rows)
 }
 
-/// The keys of the diff list's rows from `index`, `n` of them.
 fn keys_from(cx: &view::testing::TestAppContext, index: usize, n: usize) -> Vec<String> {
     let (_, rows) = diff_rows(cx);
     (index..index + n)
@@ -736,7 +698,6 @@ fn keys_from(cx: &view::testing::TestAppContext, index: usize, n: usize) -> Vec<
         .collect()
 }
 
-/// The list index of the diff row that holds `key`.
 fn row_holding(cx: &view::testing::TestAppContext, key: &str) -> usize {
     fn holds(node: &Node, key: &str) -> bool {
         node.key() == Some(key) || node.children().iter().any(|child| holds(child, key))
@@ -748,11 +709,6 @@ fn row_holding(cx: &view::testing::TestAppContext, key: &str) -> usize {
         .unwrap_or_else(|| panic!("no row holds {key}"))
 }
 
-/// What a reader writes on a line takes rows of its own right after it,
-/// and the lines below move down: in a list that draws every row one
-/// height, a box nested in its line's row spilled under the lines after
-/// it, which drew over it (a staged comment vanished but on a last line).
-/// The composer opens there too, not above the diff.
 #[test]
 fn a_comment_takes_rows_of_its_own_under_its_line() {
     let (mut cx, _) = change_screen("reviewed", ChangeTab::Files);
@@ -774,8 +730,6 @@ fn a_comment_takes_rows_of_its_own_under_its_line() {
         ],
         "the composer, then the next line"
     );
-    // where it anchors, the field, its error's line, the buttons, and a row
-    // of room: the buttons clear both the field and the box's edge
     assert_eq!(row_holding(&cx, "forge-comment-body"), line + 2);
     assert_eq!(row_holding(&cx, "forge-comment-error"), line + 3);
     assert_eq!(row_holding(&cx, "forge-comment-save"), line + 4);
@@ -793,9 +747,6 @@ fn a_comment_takes_rows_of_its_own_under_its_line() {
     assert!(cx.has_text("Your pending comment") && cx.has_text("rename this"));
 }
 
-/// The keys typed in the composer's field reach the grid around it too:
-/// while the composer is open the grid walks and presses nothing, so a
-/// Space or an Enter typed there leaves the composer on its line.
 #[test]
 fn the_grid_keeps_still_while_its_composer_is_open() {
     let (mut cx, view) = change_screen("reviewed", ChangeTab::Files);
@@ -820,10 +771,6 @@ fn the_grid_keeps_still_while_its_composer_is_open() {
     view.read(|forge| assert!(forge.diff_cursor.is_some(), "walks again"));
 }
 
-/// At rest no gutter of the diff is lit: the first is claimed for the
-/// keys, but a reader who has not touched the arrows sees no line picked,
-/// nor one left lit after pressing another line's number. The arrows
-/// light the gutter they walk to.
 #[test]
 fn no_gutter_is_lit_until_the_arrows_walk_it() {
     let (mut cx, _) = change_screen("reviewed", ChangeTab::Files);
@@ -841,7 +788,6 @@ fn no_gutter_is_lit_until_the_arrows_walk_it() {
     cx.simulate_focus("forge-diff-lines");
     cx.simulate_key_down("forge-diff-lines", "down");
     assert_eq!(lit(&cx).len(), 1, "{:?}", lit(&cx));
-    // a move elsewhere and back: the walk is over, nothing stays lit
     cx.simulate_click("forge-change-tab-conversation");
     cx.run_until_parked();
     cx.simulate_click("forge-change-tab-files");
@@ -870,7 +816,6 @@ fn the_gutter_of_a_drawn_line_is_the_comment_button() {
     assert!(cx.has_text("src/lib.rs:5 (new)"));
 }
 
-/// The verdicts are a radio group: one Tab stop, ↓ checks the next one.
 #[test]
 fn the_verdicts_check_on_an_arrow() {
     let (mut cx, view) = change_screen("reviewed", ChangeTab::Files);
@@ -904,7 +849,6 @@ fn a_review_batches_every_anchor_into_exactly_one_operation() {
     cx.simulate_click("forge-start-review");
     cx.run_until_parked();
 
-    // Two anchors, one of them re-staged: one draft per anchor.
     for (path, new_side, line, body) in [
         (b"src/lib.rs".as_slice(), true, 3u64, "first thought"),
         (b"src/lib.rs".as_slice(), true, 3, "second thought"),
@@ -1026,8 +970,6 @@ fn a_refused_review_keeps_every_draft() {
     });
 }
 
-/// A line comment's composer opens with the keys in it; Enter stages the
-/// comment like the Stage button.
 #[test]
 fn a_line_comment_composer_opens_focused_and_enter_stages() {
     let (mut cx, view) = change_screen("reviewed", ChangeTab::Files);
@@ -1069,9 +1011,6 @@ fn an_empty_comment_verdict_is_refused_before_it_reaches_the_program() {
     view.read(|forge| assert!(forge.review().is_some()));
 }
 
-/// Wide, a change's details stand beside its conversation: its reviews,
-/// its merge status, every line comment (each opening its file in Files)
-/// and its channel. Narrow, one "Details" toggle lays them over the screen.
 #[test]
 fn the_details_sidebar_holds_reviews_merge_status_and_line_comments() {
     let (mut cx, view) = change_screen("reviewed", ChangeTab::Conversation);
@@ -1095,7 +1034,6 @@ fn the_details_sidebar_holds_reviews_merge_status_and_line_comments() {
             Some(b"src/lib.rs".as_slice())
         )
     });
-    // the Files tab keeps its width for the diff
     assert!(cx.find("forge-dock").is_none());
     cx.update(&view, |forge, _, cx| {
         forge.open_change_tab(ChangeTab::Conversation, cx);
@@ -1108,15 +1046,12 @@ fn the_details_sidebar_holds_reviews_merge_status_and_line_comments() {
     assert!(cx.find("forge-merge-status").is_some());
 }
 
-/// The edit form's body is a multi-line editor: a body of paragraphs comes
-/// back from the form with its breaks, not as one line.
 #[test]
 fn editing_a_change_keeps_the_paragraphs_of_its_body() {
     let (mut cx, view) = change_screen("default", ChangeTab::Conversation);
     let body = "What: a body.\n\nWhy: it reads.\n\nTest: this one.";
     cx.update(&view, |forge, window, cx| {
         forge.start_edit(window, cx);
-        // what the host's editor holds once the paragraphs are typed
         forge.form.as_mut().unwrap().body = view::TextField::new(body);
     });
     cx.run_until_parked();
@@ -1139,8 +1074,6 @@ fn editing_a_change_keeps_the_paragraphs_of_its_body() {
     );
 }
 
-/// A new-change draft begun in Refs stays in Refs and Changes: a change's
-/// own page does not wear it.
 #[test]
 fn a_new_change_draft_does_not_show_inside_another_change() {
     let (mut cx, _) = opened_as("default", 9);
@@ -1169,8 +1102,6 @@ fn count_keys(node: &Node, key: &str) -> usize {
             .sum::<usize>()
 }
 
-/// A change draft (from Compare) and an edit of a change open with the keys
-/// in the title; Enter there opens or saves the change.
 #[test]
 fn a_change_form_opens_focused_on_its_title_and_enter_submits() {
     let (mut cx, view) = opened_as("default", 1);
@@ -1213,8 +1144,6 @@ fn a_change_form_opens_focused_on_its_title_and_enter_submits() {
     );
 }
 
-/// An edit left open on a change's page belongs to that page: the Changes
-/// list and the Refs tab do not show "Edit change #n" after backing out.
 #[test]
 fn an_edit_left_open_does_not_show_on_the_list_tabs() {
     let (mut cx, _) = change_screen_as("default", ChangeTab::Conversation, 1);
@@ -1247,9 +1176,6 @@ fn an_edit_left_open_does_not_show_on_the_list_tabs() {
     );
 }
 
-/// A change form stays in the repository it was opened in: an edit of one
-/// repository's #1 is not drawn on another's #1, where Save would write
-/// over that change, and a draft compared in one is not offered in another.
 #[test]
 fn a_change_form_stays_in_the_repository_it_was_opened_in() {
     let (mut cx, view) = change_screen_as("default", ChangeTab::Conversation, 1);
@@ -1288,8 +1214,6 @@ fn a_change_form_stays_in_the_repository_it_was_opened_in() {
     );
 }
 
-/// A change's Commits tab lists the change's own commits: the log of its
-/// source less what its target reaches, not the target's whole history.
 #[test]
 fn a_change_lists_its_own_commits() {
     let (cx, view) = change_screen("default", ChangeTab::Commits);
@@ -1305,8 +1229,6 @@ fn a_change_lists_its_own_commits() {
     );
 }
 
-/// A merged change's Commits read between the two heads the merge joined,
-/// not its refs, which move on after the merge.
 #[test]
 fn a_merged_change_lists_the_commits_it_merged() {
     let (cx, view) = change_screen("merged", ChangeTab::Commits);
@@ -1330,9 +1252,6 @@ fn a_merged_change_lists_the_commits_it_merged() {
     );
 }
 
-/// A commit pressed on a change's Commits tab opens its page in the
-/// change, as the repository's Commits tab does: its message, its parent
-/// and its diff. Back, or another tab, returns to the change's commits.
 #[test]
 fn a_change_opens_one_of_its_commits_and_comes_back() {
     let (mut cx, view) = change_screen("default", ChangeTab::Commits);
@@ -1371,8 +1290,6 @@ fn a_change_opens_one_of_its_commits_and_comes_back() {
     );
 }
 
-/// The finish form is a dialog: Tab from its last stop comes round to its
-/// first, and Shift-Tab back, instead of walking out into the diff.
 #[test]
 fn tab_stays_inside_the_finish_form() {
     let (mut cx, _) = change_screen("reviewed", ChangeTab::Files);
@@ -1387,7 +1304,6 @@ fn tab_stays_inside_the_finish_form() {
     assert_eq!(focused(&cx).as_deref(), Some("forge-submit-review"));
 }
 
-/// Opening the finish form puts the keys in it, and Escape folds it.
 #[test]
 fn the_finish_form_takes_the_keys_and_escape_folds_it() {
     let (mut cx, view) = change_screen("reviewed", ChangeTab::Files);
@@ -1401,8 +1317,6 @@ fn the_finish_form_takes_the_keys_and_escape_folds_it() {
     view.read(|forge| assert!(!forge.review().unwrap().finishing));
 }
 
-/// A reader who cannot write (the session dropped) sees the verdicts, and
-/// picks none.
 #[test]
 fn a_reader_without_write_picks_no_verdict() {
     let (mut cx, view) = change_screen("default", ChangeTab::Files);
@@ -1415,8 +1329,6 @@ fn a_reader_without_write_picks_no_verdict() {
     assert!(super::disabled(&cx, "forge-verdict-approve"));
 }
 
-/// A reader who neither owns nor writes the repository sees Close and Merge
-/// off: forge refuses both to them.
 #[test]
 fn a_reader_without_write_gets_no_close_or_merge() {
     let (cx, _) = change_screen("default", ChangeTab::Conversation);
@@ -1432,9 +1344,6 @@ fn a_reader_without_write_gets_no_close_or_merge() {
     }
 }
 
-/// A gutter's comment button is a 24 px press target, the door's AX-017
-/// floor: its box is at least 24 px tall, the number centred down it, in
-/// a gutter column wider than that.
 #[test]
 fn a_gutter_comment_button_is_at_least_24_px_each_way() {
     use super::pixels;

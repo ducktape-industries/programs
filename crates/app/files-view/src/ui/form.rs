@@ -12,7 +12,6 @@ use crate::state::file_glyph;
 use crate::upload;
 use crate::write::{Form, ListChoice, Write};
 
-/// How tall the text field starts.
 const TEXT_H: Pixels = px(220.);
 
 pub(super) fn sheet(view: &Files, cx: Cx, k: &Kit) -> Option<AnyElement> {
@@ -59,7 +58,6 @@ pub(super) fn sheet(view: &Files, cx: Cx, k: &Kit) -> Option<AnyElement> {
     )
 }
 
-/// A field under its label.
 fn labelled(label: &'static str, field: impl IntoElement, k: &Kit) -> Div {
     div()
         .flex()
@@ -74,9 +72,6 @@ fn labelled(label: &'static str, field: impl IntoElement, k: &Kit) -> Div {
         .child(field)
 }
 
-/// A new name, or a rename's new path; a problem with it is the field's,
-/// said to assistive tech too. Return commits, unless the form takes text
-/// still to be typed below it.
 fn naming(form: &Form, cx: Cx, k: &Kit) -> Option<Div> {
     let naming = form.write.naming()?;
     let label = words::naming(naming);
@@ -102,7 +97,6 @@ fn naming(form: &Form, cx: Cx, k: &Kit) -> Option<Div> {
     Some(labelled(label, design::field(input, &k.ladder, &k.theme), k).children(problem))
 }
 
-/// A new file's text, or an edit's.
 fn text(form: &Form, k: &Kit) -> Option<Div> {
     if !form.write.takes_text() {
         return None;
@@ -146,8 +140,6 @@ fn list(form: &Form, cx: Cx, k: &Kit) -> Option<Div> {
     Some(labelled(words::WHO_WRITES, field, k))
 }
 
-/// An upload's files: each one's name and size, whether it replaces one
-/// there, or why it is left out.
 fn picked(form: &Form, k: &Kit) -> Option<Stateful<Div>> {
     if form.upload.is_empty() {
         return None;
@@ -200,7 +192,6 @@ fn picked(form: &Form, k: &Kit) -> Option<Stateful<Div>> {
     )
 }
 
-/// The commit's message; its placeholder is what it says left empty.
 fn message(form: &Form, cx: Cx, k: &Kit) -> Div {
     let submit = cx.listener(|view: &mut Files, _: &(), _, cx| view.submit(cx));
     let input = Input::new("files/write/message", &form.message, words::MESSAGE)
@@ -210,7 +201,6 @@ fn message(form: &Form, cx: Cx, k: &Kit) -> Div {
     labelled(words::MESSAGE, design::field(input, &k.ladder, &k.theme), k)
 }
 
-/// Cancel, then Commit, which waits on its answer.
 fn buttons(form: &Form, cx: Cx, k: &Kit) -> Div {
     let cancel = cx.listener(|view: &mut Files, _: &ClickEvent, _, cx| view.close_sheet(cx));
     let commit = cx.listener(|view: &mut Files, _: &ClickEvent, _, cx| view.submit(cx));

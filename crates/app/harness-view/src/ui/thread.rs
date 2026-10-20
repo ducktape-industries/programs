@@ -40,7 +40,6 @@ pub(super) fn render(
         (None, None) => thread_gone(id, theme, ladder).into_any_element(),
         (None, Some(shown)) => thread(view, shown, cx, theme, ladder),
     };
-    // the screen's height, which the transcript's list fills under the strip
     div()
         .flex_1()
         .min_h(px(0.))
@@ -100,7 +99,6 @@ fn thread(
                             head.child(current_badge("thread-current", theme, ladder))
                         }),
                 )
-                // the agent's own words on what the conversation is about, never its name
                 .children(shown.topic.as_ref().map(|topic| {
                     div()
                         .id("thread-topic")
@@ -161,8 +159,6 @@ fn thread(
         .into_any_element()
 }
 
-/// The conversation's state on one line: its badge, what it does, how full its context is, and
-/// its usage behind a press. A stuck one wears the warning ground.
 fn strip(
     view: &Agents,
     shown: &Transcript,
@@ -176,7 +172,6 @@ fn strip(
     let threshold = shown.threshold();
     let status = status(shown, relaying);
     let stuck = thread_state(row) == State::Stuck && !row.closed;
-    // what it waits on; a turn no request is open for wears the stuck one's ground
     let wait = waiting_words(shown);
     let lost = wait.as_ref().is_some_and(|(_, lost)| *lost);
     let badge = match status.state {
@@ -256,7 +251,6 @@ fn strip(
         })
 }
 
-/// Close's second press, and what it costs.
 fn closing(
     view: &Agents,
     shown: &Transcript,
@@ -300,7 +294,6 @@ fn closing(
     )
 }
 
-/// The input that arrived while the loop ran: it follows when the turn ends.
 fn held(
     shown: &Transcript,
     roster: Option<&Roster>,

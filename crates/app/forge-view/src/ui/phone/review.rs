@@ -63,8 +63,6 @@ pub(super) fn render(
     .into_any_element()
 }
 
-/// Why finishing the review was refused, in Expo's words
-/// (`review.tsx:46`); empty while it was not.
 pub(super) fn refusal(review: &ReviewSession) -> &'static str {
     match review.refused {
         Some(ReviewRefusal::EmptyComment) => "Say something, or discard.",
@@ -72,7 +70,6 @@ pub(super) fn refusal(review: &ReviewSession) -> &'static str {
     }
 }
 
-/// What the review says overall, and why it was refused; 16 in, 4 under.
 fn overall(review: &ReviewSession, ladder: &Ladder, theme: &Theme) -> Div {
     let field = Textarea::new(id("forge-review-body"), &review.body, words::REVIEW_BODY)
         .autocorrect(true)
@@ -86,8 +83,6 @@ fn overall(review: &ReviewSession, ladder: &Ladder, theme: &Theme) -> Div {
     )
 }
 
-/// The verdicts as a radio group, a row each with its mark at the right:
-/// one Tab stop, ↑ ↓ pick the next; a press picks one.
 fn verdicts(
     review: &ReviewSession,
     cx: &mut Context<Forge>,
@@ -129,7 +124,6 @@ fn verdicts(
     )
 }
 
-/// Discard (one part) and Submit review (two), 12 apart, 16 in.
 fn actions(
     forge: &Forge,
     review: &ReviewSession,

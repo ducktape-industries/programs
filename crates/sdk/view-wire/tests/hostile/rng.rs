@@ -9,7 +9,6 @@ impl Rng {
         Self(seed, false)
     }
 
-    /// A generator whose ids are sometimes ones the host must refuse.
     pub(super) fn poisoning_ids(seed: u64) -> Self {
         Self(seed, true)
     }
@@ -37,16 +36,10 @@ impl Rng {
         self.next_u64() & 1 == 1
     }
 
-    /// A fraction in `0.0..1.0`, from the PRNG's top 24 bits.
     pub(super) fn next_unit(&mut self) -> f64 {
         ((self.next_u64() >> 40) as f64) / ((1u64 << 24) as f64)
     }
 
-    /// A value in `0..=max`, biased toward small values by raising a
-    /// uniform fraction to `exponent` before scaling: the higher the
-    /// exponent, the more the mass sits near zero. Keeps most generated
-    /// trees and strings cheap while still drawing the occasional value
-    /// near `max` to exercise the wire's ceilings.
     pub(super) fn skewed(&mut self, max: usize, exponent: i32) -> usize {
         if max == 0 {
             return 0;

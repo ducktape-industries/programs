@@ -6,10 +6,8 @@ pub struct Counter;
 
 impl Program for Counter {
     const NAME: &'static str = "counter";
-    /// How much to add.
     type Op = u64;
     type Query = ();
-    /// The count.
     type Reply = u64;
 
     fn execute(ctx: &ExecCtx, by: u64) -> Result<(), Error> {
@@ -42,30 +40,38 @@ mod tests {
 
     use super::*;
 
-    /// Signed by account 1's key.
-    fn env() -> Env {
+    fn signed_by_account_one() -> Env {
         MockHost::env(Counter::NAME).signed([1; 32], Some(1))
     }
 
     #[test]
     fn adds_and_answers_and_a_refusal_writes_nothing() {
         let host = MockHost::default();
-        Counter::execute(&host.exec(env()), 2).unwrap();
-        Counter::execute(&host.exec(env()), 3).unwrap();
-        assert_eq!(Counter::query(&host.query(env()), ()).unwrap(), 5);
+        Counter::execute(&host.exec(signed_by_account_one()), 2).unwrap();
+        Counter::execute(&host.exec(signed_by_account_one()), 3).unwrap();
+        assert_eq!(
+            Counter::query(&host.query(signed_by_account_one()), ()).unwrap(),
+            5
+        );
         assert_eq!(host.take_output(), program::abi::encode(&5u64));
 
-        let overflow = host.refused(|| Counter::execute(&host.exec(env()), u64::MAX));
+        let overflow =
+            host.refused(|| Counter::execute(&host.exec(signed_by_account_one()), u64::MAX));
         assert_eq!(overflow.code, code::INVALID_INPUT);
 
-        // The bytes path `export!`'s `call` takes: decode, run, respond.
-        program::execute::<Counter>(&host.exec(env()), &program::abi::encode(&1u64)).unwrap();
-        program::query::<Counter>(&host.query(env()), &program::abi::encode(&())).unwrap();
+        program::execute::<Counter>(
+            &host.exec(signed_by_account_one()),
+            &program::abi::encode(&1u64),
+        )
+        .unwrap();
+        program::query::<Counter>(
+            &host.query(signed_by_account_one()),
+            &program::abi::encode(&()),
+        )
+        .unwrap();
         assert_eq!(host.take_response(), program::abi::encode(&6u64));
-        let garbage = program::execute::<Counter>(&host.exec(env()), &[1]).unwrap_err();
+        let garbage =
+            program::execute::<Counter>(&host.exec(signed_by_account_one()), &[1]).unwrap_err();
         assert_eq!(garbage.code, code::INVALID_INPUT);
     }
 }
-
-// An example is a binary unless it has a `main`; as a cdylib it needs none,
-// but `cargo test` builds it as a test harness, which brings its own.

@@ -19,13 +19,9 @@ mod member;
 mod members;
 mod parts;
 
-/// The page on top of the stack, under a root that hears Back while it
-/// draws a member (SPEC §9 rule 13; the host leaves the program else).
 pub(crate) fn render(view: &Members, cx: &mut Context<Members>) -> Stateful<Div> {
     let theme = *cx.global::<Theme>();
     let ladder = &TOUCH;
-    // Back follows the page drawn: a member's page has its Back, the roster
-    // none
     let (page, back) = match *view.pages.top() {
         Page::Roster => (members::page(view, cx, ladder, &theme), false),
         Page::Member(number) => (member::page(view, number, cx, ladder, &theme), true),

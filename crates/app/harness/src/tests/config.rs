@@ -183,8 +183,6 @@ fn harness_registers_with_attribution_at_its_init() {
     assert_eq!(registered, [PROGRAM.to_owned()]);
 }
 
-// `Card` is `Agent` with the system prompt left out: a list of agents, read
-// again on every block, carries no agent's prompt
 #[test]
 fn a_card_is_the_setup_without_its_system_prompt() {
     let world = world();

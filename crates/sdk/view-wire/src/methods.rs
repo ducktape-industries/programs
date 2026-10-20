@@ -87,9 +87,6 @@ pub trait Listed {
         M::Reply: borsh::BorshSchema;
 }
 
-/// Every [`method!`] below, and [`ALL`] from the same list, so a method is
-/// never declared without being listed. `also` names the kinds written by
-/// hand: the three node methods generic over a [`Program`], and [`HostWidget`].
 macro_rules! methods {
     (
         also: [$($also:expr),* $(,)?];

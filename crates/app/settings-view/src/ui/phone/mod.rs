@@ -20,8 +20,6 @@ mod account;
 mod agents;
 mod parts;
 
-/// The screen, and the sheet drawn over it; Back closes that sheet, and is
-/// there exactly while one is drawn.
 pub(crate) fn render(view: &Settings, cx: &mut Context<Settings>) -> impl IntoElement {
     let theme = *cx.global::<Theme>();
     let ladder = &design::TOUCH;

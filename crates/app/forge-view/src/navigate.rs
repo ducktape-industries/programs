@@ -17,7 +17,6 @@ impl Forge {
         self.details = false;
         self.repo_policy.sheet = None;
         self.change_policy.sheet = None;
-        // a walk of a list ends where the reader moves: none stays lit
         self.list_cursor = None;
         self.repos_cursor = None;
         self.rail_cursor = None;
@@ -33,10 +32,6 @@ impl Forge {
         self.moved(cx);
     }
 
-    /// What lies over the phone's page, the one sheet at a time: a ref
-    /// picker, a sheet a page opened (About among them), New repository,
-    /// or Finish your review. The phone draws this and its Back closes
-    /// this, so the two never disagree (rule 13).
     pub(crate) fn overlay(&self) -> Option<Overlay> {
         if self.policy_sheet_open() {
             return Some(Overlay::Policy);
@@ -54,9 +49,6 @@ impl Forge {
         finishing.then_some(Overlay::FinishReview)
     }
 
-    /// The phone's Back: the overlay closes, else the open change form;
-    /// else the top page pops to the one under it
-    /// ([`crate::state::Nav::pages`]). Nothing at the root.
     pub(crate) fn back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match self.overlay() {
             Some(Overlay::Menu(menu)) => return self.close_dropdown(menu, window, cx),
@@ -76,7 +68,6 @@ impl Forge {
             Page::File => self.single_file(None, cx),
             Page::Commit => self.open_commit(None, cx),
             Page::Folder => {
-                // one folder up, or the tab's root
                 let up = self.nav.folder.as_deref().and_then(|path| {
                     let at = path.iter().rposition(|byte| *byte == b'/')?;
                     Some(path[..at].to_vec())
@@ -84,7 +75,6 @@ impl Forge {
                 self.open_folder(up, cx);
             }
             Page::Blob | Page::Missing => self.nav_close_blob(cx),
-            // the link is forgotten, so its read landing later moves nothing
             Page::Landing => {
                 self.nav.goto = None;
                 self.moved(cx);
@@ -97,19 +87,12 @@ impl Forge {
         cx.notify();
     }
 
-    /// The sheet closes, and a Close it was asking about again with it:
-    /// the next Actions opens on its list.
     pub(crate) fn close_sheet(&mut self, cx: &mut Context<Self>) {
         self.sheet = None;
         self.closing = None;
         cx.notify();
     }
 
-    /// A `host.route` item: `<name>` opens that repository, `<name>/<n>`
-    /// its change `n` (the path chat links a change's room by, its id
-    /// `forge:<name>:<n>`), `<name>/<path…>` that file or folder of its
-    /// Code tab (a file page's Copy link) at the path's depth; anything
-    /// else opens the list.
     pub(crate) fn open_route(&mut self, route: &str, cx: &mut Context<Self>) {
         match route.split('/').collect::<Vec<_>>().as_slice() {
             [name] if !name.is_empty() => self.open_repo((*name).to_owned(), cx),
@@ -134,7 +117,6 @@ impl Forge {
     pub(crate) fn open_tab(&mut self, tab: RepoTab, cx: &mut Context<Self>) {
         self.menu = None;
         self.tab_cursor = None;
-        // the tree keeps what it had open across tabs
         let kept = std::mem::take(&mut self.nav);
         self.nav.repo = kept.repo;
         self.nav.rev = kept.rev;
@@ -144,15 +126,10 @@ impl Forge {
         self.nav.folder = kept.folder;
         self.nav.goto = kept.goto;
         self.nav.tab = tab;
-        // the phone's folder and file pages stand over the Code tab alone:
-        // another tab (a README link from a file among them) leaves them,
-        // so the Code tab opens on its root again, not on a page left under
         if self.touch && tab != RepoTab::Code {
             self.nav.folder = None;
             self.nav.blob = None;
         }
-        // the desktop stages its settings in a form saved by Save; the
-        // phone saves each flip from what is on screen (`configure_with`)
         if tab == RepoTab::Settings && !self.touch {
             let head = self.default_head();
             let (allow_force, allow_delete) = self
@@ -174,17 +151,11 @@ impl Forge {
         self.moved(cx);
     }
 
-    /// Opens a dropdown under its button; a press anywhere else closes it.
     pub(crate) fn open_menu(&mut self, menu: Option<Menu>, cx: &mut Context<Self>) {
         self.menu = menu;
         cx.notify();
     }
 
-    /// Opens `menu` under the press that asked for it, its filter box
-    /// empty and (under a pointer) holding the keys, on the tab and the item
-    /// it has picked,
-    /// scrolled to the middle; Esc or a pick gives the keys back to the button
-    /// ([`crate::ui::components::dropdown`]).
     pub(crate) fn open_dropdown(
         &mut self,
         menu: Menu,
@@ -199,18 +170,14 @@ impl Forge {
         self.menu_tags = self.menu_offers_tags(menu) && picked.starts_with(b"refs/tags/");
         let index = self.menu_list(menu).iter().position(|name| *name == picked);
         self.menu_cursor = index.unwrap_or(0);
-        // centred, so the pick shows with its neighbours; arrows keep Nearest
         self.menu_scroll
             .scroll_to_item(self.menu_cursor, ScrollStrategy::Center);
         self.open_menu(Some(menu), cx);
-        // under a finger the sheet opens with the keyboard down, as Expo's
-        // `RefSheet` does (its filter sets no `autoFocus`)
         if !self.touch {
             window.focus(crate::id(format!("{}-filter", menu.key())));
         }
     }
 
-    /// The arrows are on item `index` of the open dropdown, scrolled to.
     pub(crate) fn menu_step(&mut self, index: usize, cx: &mut Context<Self>) {
         self.menu_cursor = index;
         self.menu_scroll
@@ -218,10 +185,6 @@ impl Forge {
         cx.notify();
     }
 
-    /// `name` picked in `menu`: the ref every tab reads, the default head
-    /// (the desktop's settings form; on the phone saved at once), or the
-    /// change form's source or target. The menu closes and gives the keys
-    /// back.
     pub(crate) fn menu_pick(
         &mut self,
         menu: Menu,
@@ -244,14 +207,12 @@ impl Forge {
                         _ => form.into = name,
                     }
                 }
-                // the form reads how its new ends compare
                 self.sync(cx);
             }
         }
         self.close_dropdown(menu, window, cx);
     }
 
-    /// Closes `menu` and gives the keys back to its button.
     pub(crate) fn close_dropdown(
         &mut self,
         menu: Menu,
@@ -275,8 +236,6 @@ impl Forge {
         self.moved(cx);
     }
 
-    /// The phone's Code tab opens the folder at `path` on its own page;
-    /// `None` goes back to the tab's root.
     pub(crate) fn open_folder(&mut self, path: Option<Vec<u8>>, cx: &mut Context<Self>) {
         self.tree_search.reset("");
         self.nav.folder = path;
@@ -286,7 +245,6 @@ impl Forge {
     }
 
     pub(crate) fn open_file(&mut self, path: Vec<u8>, oid: String, cx: &mut Context<Self>) {
-        // a file opens unwrapped, a markdown one as its document
         self.wrap = false;
         self.source = false;
         self.nav.cursor = Some(path.clone());
@@ -294,9 +252,6 @@ impl Forge {
         self.moved(cx);
     }
 
-    /// A pressed link in a document whose folder is `dir`: the web through
-    /// the host, a file of this repository in the Code tab (the root README
-    /// in its own tab).
     pub(crate) fn follow_link(&mut self, dir: &[u8], dest: &str, cx: &mut Context<Self>) {
         match crate::markdown::target(dir, dest) {
             Some(Target::Web(url)) => cx.host().open_link(&url),
@@ -305,10 +260,6 @@ impl Forge {
         }
     }
 
-    /// Opens a file or folder by its path alone, once the tree that holds
-    /// it says which it is: on the desktop its folders unfold in the tree;
-    /// on the phone it opens on its own page over its folder's (Expo
-    /// `code/[...path].tsx`).
     pub(crate) fn open_path(&mut self, path: Vec<u8>, cx: &mut Context<Self>) {
         if self.readme().is_some_and(|(name, _)| name == path) {
             return self.open_tab(RepoTab::Readme, cx);
@@ -330,10 +281,6 @@ impl Forge {
         self.open_tab(RepoTab::Code, cx);
     }
 
-    /// Lands a pending [`Self::open_path`] once its folder's tree is read:
-    /// a folder opens (the phone's page, the desktop's tree row), a file
-    /// opens, and a path the ref does not hold says so (the phone's page,
-    /// the desktop's notice).
     pub(crate) fn land_goto(&mut self) {
         let Some(path) = self.nav.goto.clone() else {
             return;
@@ -376,7 +323,6 @@ impl Forge {
     }
 
     pub(crate) fn open_commit(&mut self, oid: Option<String>, cx: &mut Context<Self>) {
-        // a commit opens on all its files, not on one another showed alone
         self.nav.diff_path = None;
         self.nav.commit = oid;
         self.moved(cx);
@@ -404,8 +350,6 @@ impl Forge {
         self.moved(cx);
     }
 
-    /// The phone's Details tab: the change's sidebar as a page of its own
-    /// (board 23). Any move leaves it.
     pub(crate) fn open_details(&mut self, cx: &mut Context<Self>) {
         self.change_tab_cursor = None;
         self.details = true;
@@ -424,8 +368,6 @@ impl Forge {
     }
 
     pub(crate) fn single_file(&mut self, path: Option<Vec<u8>>, cx: &mut Context<Self>) {
-        // all files again: the file list's keys (a change's, a commit's
-        // strip) start over, no row left lit
         let lists = [crate::ui::change::FILE_LIST_ID, crate::ui::diff::STRIP_ID];
         if path.is_none() && matches!(self.list_cursor, Some((on, ..)) if lists.contains(&on)) {
             self.list_cursor = None;
@@ -439,15 +381,12 @@ impl Forge {
         cx.notify();
     }
 
-    /// The phone's All files: every file of the change's diff on a page
-    /// of its own (Expo `diff.tsx` without a path).
     pub(crate) fn open_all_files(&mut self, cx: &mut Context<Self>) {
         self.nav.diff_path = None;
         self.nav.all_files = true;
         cx.notify();
     }
 
-    /// A line comment pressed in the details: its file, alone, in Files.
     pub(crate) fn open_file_comment(&mut self, path: Vec<u8>, cx: &mut Context<Self>) {
         self.nav.change_tab = ChangeTab::Files;
         self.nav.diff_path = Some(path.clone());
@@ -456,9 +395,6 @@ impl Forge {
         self.land_reveal();
     }
 
-    /// The file picked to show alone (its row, a comment in the details),
-    /// scrolled into the Files tab's list and made the row its keys go on
-    /// from, once the diff that lists it has landed.
     pub(crate) fn land_reveal(&mut self) {
         let Some(path) = self.reveal.clone() else {
             return;

@@ -5,7 +5,6 @@ use crate::{CANCEL_DELETE, CONFIRM_DELETE, Chat, Menu, Mode, Pane};
 use view::prelude::*;
 use view::{Anchor, AnchoredPositionMode, Edges, Point};
 
-// A popup's size is fixed from these, so it never jumps under the pointer.
 const ROW: f32 = design::height::CONTROL as f32;
 const ROW_GAP: f32 = design::spacing::HAIR as f32;
 const MENU_INSET: f32 = design::spacing::XS as f32;
@@ -13,17 +12,12 @@ const CELL: f32 = 32.;
 const PICKER_GAP: f32 = design::spacing::HAIR as f32;
 const PICKER_INSET: f32 = design::spacing::SM as f32;
 const COLUMNS: u16 = 8;
-/// Rows of the picker's grid: a tab's `emoji::PER_TAB` in rows of
-/// `COLUMNS`.
 const GRID_ROWS: f32 = emoji::PER_TAB.div_ceil(COLUMNS as usize) as f32;
 const SEARCH: f32 = design::height::CONTROL as f32;
 const CAPTION: f32 = 14.;
-/// A menu row's glyph column: one glyph, centred.
 const GLYPH_W: f32 = 20.;
 const TABS: f32 = design::height::CONTROL as f32;
 const STACK_GAP: f32 = design::spacing::XS as f32;
-/// From a press on the action strip to past its edge, either way: the
-/// strip is 26 tall, and a gap keeps the menu off it.
 const STRIP_CLEAR: f32 = 26. + design::spacing::XS as f32;
 type Press = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 
@@ -41,8 +35,6 @@ fn prefix(pane: Pane) -> &'static str {
 pub fn focus_key(pane: Pane, mode: Mode) -> String {
     let suffix = match mode {
         Mode::Reactions => "reaction-focus",
-        // the confirmation's first button, Cancel: a stray Enter on open
-        // keeps the message
         Mode::Delete => return CANCEL_DELETE.into(),
         _ => "action-focus",
     };
@@ -57,36 +49,19 @@ pub fn floating(
 ) -> Option<AnyElement> {
     let menu = chat.menu.as_ref()?;
     let (at, size) = popup_geometry(menu, more_items(chat, menu).len())?;
-    // a fixed size where the popup must not jump under the pointer; the
-    // delete confirmation sizes to its words and buttons
     let content = message_menu(chat, menu, cx, theme, ladder);
-    // the picker's focus key names its search field, which takes the keys
     let id = match menu.mode {
         Mode::Reactions => format!("{}reaction-frame", prefix(menu.pane)),
         Mode::Delete => format!("{}delete-frame", prefix(menu.pane)),
         _ => focus_key(menu.pane, menu.mode),
     };
     let frame = match menu.mode {
-        // the picker: its search field takes the keys on open (`open_menu`
-        // focuses `focus_key`, the field), so the frame offers no focus of
-        // its own — a focus it offered and no Tab reached was the census's
-        // AX-021 on it. The overlay around it is the dialog, named "Add
-        // reaction": an inner Dialog the wire cannot mark modal held Tab
-        // and read as non-modal (AX-103)
         Mode::Reactions => div().id(id),
-        // the confirmation's dialog: its first button takes the keys on
-        // open (`open_menu` focuses `focus_key`, Cancel), so the frame
-        // offers no focus either — the same AX-021 as the picker's
         Mode::Delete => div()
             .id(id)
             .role(Role::AlertDialog)
             .aria_label(words::DELETE_QUESTION),
-        // the card's first button takes the keys on open, as the
-        // confirmation's does; the overlay around it is the dialog, named
-        // "Agent profile", as the picker's is
         Mode::Profile => div().id(format!("{}card-frame", prefix(menu.pane))),
-        // the actions are a menu: one stop whose ↑ ↓ walk the items and
-        // Enter runs the active one
         _ => {
             let items = more_items(chat, menu);
             let (pane, seq, rev) = (menu.pane, menu.seq, menu.rev);
@@ -115,10 +90,6 @@ pub fn floating(
         .border_color(theme.border)
         .bg(theme.background)
         .shadow_lg()
-        // Anchored near the row it was opened from, this popup can overlap
-        // the message card beneath it; without occlude a click here (e.g.
-        // "Delete") also fires the card's row-select handler, which resets
-        // `self.menu` before this popup's own handler gets to read it.
         .occlude()
         .child(content);
     let popup = anchored()
@@ -129,22 +100,15 @@ pub fn floating(
         .position_mode(AnchoredPositionMode::Window)
         .snap_to_window_with_margin(Edges::all(design::space::SM));
     let popup = match menu.mode {
-        // More opens from the action strip: below the strip, right-aligned
-        // to the press, or above it where the window ends; never over it
-        Mode::More if !chat.menu_at_pointer => popup
-            .anchor(Anchor::TopRight)
-            // the host mirrors the offset when it flips the menu above
-            .offset(Point {
-                x: px(0.),
-                y: px(STRIP_CLEAR),
-            }),
-        // a right press's hangs from the press
+        Mode::More if !chat.menu_at_pointer => popup.anchor(Anchor::TopRight).offset(Point {
+            x: px(0.),
+            y: px(STRIP_CLEAR),
+        }),
         _ => popup.anchor(Anchor::TopLeft),
     };
     Some(popup.child(frame).into_any_element())
 }
 
-/// A width and height, or a point, in pixels.
 type Pair = (f32, f32);
 
 fn popup_geometry(menu: &Menu, items: usize) -> Option<(Pair, Option<Pair>)> {
@@ -162,7 +126,6 @@ pub fn editing(chat: &Chat, pane: Pane, cx: &mut Context<Chat>) -> Option<AnyEle
     if chat.menu.as_ref()?.pane != pane {
         return None;
     }
-    // laid out as the composer under the stream: Cancel beside Save
     Some(
         div()
             .id("chat-message-editing")
@@ -195,9 +158,6 @@ fn message_menu(
     }
 }
 
-/// What the "More" menu offers on this message: only what the reader may
-/// do to it — an edit or a delete the chat program would refuse is not
-/// offered, and "Reply in thread" not for the thread already open.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Action {
     Reply,
@@ -253,7 +213,6 @@ fn actions(chat: &Chat, menu: &Menu, cx: &mut Context<Chat>, theme: &Theme) -> A
         .into_any_element()
 }
 
-/// One row of the "More" menu; pressing it runs its action ([`act`]).
 fn action_item(
     action: Action,
     _chat: &Chat,
@@ -315,9 +274,6 @@ fn action_item(
     }
 }
 
-/// What a "More" action does to the message at `seq`: open its thread,
-/// open the same menu again in another mode, or put the message's link on
-/// the clipboard (the host's log says why when the session names no chain).
 fn act(
     action: Action,
     pane: Pane,
@@ -358,16 +314,12 @@ fn act(
     }
 }
 
-// What the message at `seq` says, as its card shows it; none for a
-// message deleted or with nothing to say.
 fn text_of(chat: &Chat, pane: Pane, seq: u64) -> Option<String> {
     let messages = chat.messages(pane);
     let message = messages.iter().find(|message| message.seq == seq)?;
     (!message.deleted && !message.body.is_empty()).then(|| message.body.clone())
 }
 
-/// Where the agent that wrote the message at `seq` shows its work in this
-/// room ([`Chat::work_record`]).
 fn work_record(chat: &Chat, pane: Pane, seq: u64) -> Option<String> {
     chat.work_record(&chat.author(pane, seq)?)
 }
@@ -430,7 +382,6 @@ fn menu_size(items: usize) -> (f32, f32) {
 struct Item {
     id: ElementId,
     role: Role,
-    /// a menu item the menu's arrows are on
     active: bool,
     glyph: Option<String>,
     label: String,
@@ -520,7 +471,6 @@ impl RenderOnce for Item {
             .when(self.active, |row| row.bg(self.theme.surface_raised))
             .child(div().whitespace_nowrap().child(self.label));
         match (self.press, self.role) {
-            // the menu holds the focus; its item claims when active
             (Some(press), Role::MenuItem) => design::item(
                 row.cursor_pointer()
                     .hover(|s| s.bg(self.theme.surface_raised))
@@ -530,7 +480,6 @@ impl RenderOnce for Item {
                 self.active,
             )
             .into_any_element(),
-            // a dialog's button: a stop of its own
             (Some(press), _) => row
                 .focusable()
                 .cursor_pointer()
@@ -546,10 +495,6 @@ impl RenderOnce for Item {
 #[cfg(test)]
 mod tests {
     use super::*;
-    /// A popup opens where its menu says. The message menu is one width
-    /// and grows with its items; the picker keeps one size; the delete
-    /// confirmation sizes to its words (a1b7fbf7); the strip and the edit
-    /// field are no popup.
     #[test]
     fn menu_and_picker_dimensions() {
         let at = |mode| Menu {

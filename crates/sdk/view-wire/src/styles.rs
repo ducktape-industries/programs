@@ -88,7 +88,6 @@ pub fn entry_fields() -> [(&'static str, &'static [&'static str]); 6] {
     entry::fields()
 }
 
-/// A key that is already a hash.
 #[derive(Default)]
 struct Hashed(u64);
 
@@ -104,7 +103,6 @@ impl Hasher for Hashed {
     }
 }
 
-/// An entry's bytes, eight at a time.
 fn hash(bytes: &[u8]) -> u64 {
     const PRIME: u64 = 0x9e37_79b9_7f4a_7c15;
     let mut hash = bytes.len() as u64;
@@ -128,16 +126,11 @@ const NONE: u32 = u32::MAX;
 /// by id. Two styles are one entry when their entry bytes are equal.
 #[derive(Default)]
 pub struct Interner {
-    /// Every entry's bytes end to end, and where each entry ends.
     bytes: Vec<u8>,
     ends: Vec<u32>,
-    /// The latest id whose bytes hash to a key, and for each id the one
-    /// before it with the same hash.
     latest: HashMap<u64, u32, BuildHasherDefault<Hashed>>,
     before: Vec<u32>,
-    /// The entries from here on have not crossed.
     sent: usize,
-    /// The entry being looked up.
     scratch: Vec<u8>,
 }
 
@@ -215,9 +208,6 @@ impl Interner {
         let mut renumbered = vec![NONE; self.len()];
         visit(&mut |id| {
             let old = id.0 as usize;
-            // an id this table never issued has no entry to keep: it stays
-            // as written, past the end of the table kept, and the host
-            // refuses the frame that names it
             let Some(new) = renumbered.get_mut(old) else {
                 return;
             };
@@ -238,9 +228,7 @@ impl Interner {
 /// keeps the table it came with.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Styles {
-    /// The tree's own entries, by id.
     held: Vec<Arc<StyleRefinement>>,
-    /// The host's own ([`Self::host`]), named from the far end of the ids.
     host: Vec<Arc<StyleRefinement>>,
 }
 
@@ -295,8 +283,6 @@ impl Styles {
         StyleId(u32::MAX - (self.host.len() - 1) as u32)
     }
 
-    /// Forgets the entries past the first `len`: the frame that brought
-    /// them was refused.
     pub(crate) fn truncate(&mut self, len: usize) {
         self.held.truncate(len);
     }
@@ -323,7 +309,6 @@ impl Styles {
     }
 }
 
-/// The style a tree the sanitizer passed names.
 impl std::ops::Index<StyleId> for Styles {
     type Output = StyleRefinement;
 
@@ -333,10 +318,6 @@ impl std::ops::Index<StyleId> for Styles {
     }
 }
 
-/// The table of a test whose nodes' styles are not what it is about: an
-/// empty style, which every such node names as `StyleId(0)`, and a second
-/// one, `StyleId(1)`, for a node that must differ from another by style
-/// alone.
 #[cfg(test)]
 pub(crate) mod testing {
     use super::*;
@@ -352,15 +333,12 @@ pub(crate) mod testing {
         styles
     }
 
-    /// [`sanitize`](crate::sanitize), for a frame whose nodes name the
-    /// plain style and which did not bring a table of its own.
     pub(crate) fn sanitize_plain(
         frame: &mut crate::Frame,
     ) -> Result<crate::SanitizeReport, crate::Refused> {
         if frame.styles.is_empty() {
             frame.styles = plain();
         }
-        // what is refused: where is the location tests' business
         crate::sanitize(frame, &mut Styles::default()).map_err(|refused| refused.reason().clone())
     }
 }

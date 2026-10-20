@@ -54,7 +54,6 @@ fn attached(path: &str, at: BlobId, content_type: &str, size: usize) -> chat::Bl
     })
 }
 
-// a mention of the agent carrying `files`: the conversation it opens, its model's window learned
 fn mentioned(world: &World, files: Vec<chat::Block>) -> u64 {
     let mut blocks = chat::parse_message(&format!("<@{}> look at this", world.agent));
     blocks.extend(files);

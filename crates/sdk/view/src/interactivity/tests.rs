@@ -33,9 +33,6 @@ fn a_focusable_node_is_a_tab_stop_unless_it_says_otherwise() {
     assert_eq!(interactivity(&tracked).tab_stop, Some(true));
 }
 
-/// A div pays for what it declares: its style and its id are not
-/// interactions, so a div with only those lowers to a node that carries no
-/// interactivity; the first listener, role or aria property makes one.
 #[test]
 fn a_div_that_declares_no_interaction_carries_no_interactivity() {
     let plain = [
@@ -121,7 +118,6 @@ impl Render for Stepper {
                     view.data = data.clone();
                     cx.notify();
                 });
-                // gpui's shape: FnMut, handed the data by reference
                 let mut asked = Vec::new();
                 move |data: Option<&ActionData>, window: &mut Window, app: &mut App| {
                     asked.push(data.cloned());
@@ -146,7 +142,6 @@ fn an_a11y_action_reaches_the_listener_its_route_names_with_its_data() {
     });
 }
 
-/// A message that offers one custom action, Pin, as id 1.
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 struct Pinned {
     heard: Vec<i32>,
@@ -195,8 +190,6 @@ fn a_custom_action_the_node_does_not_offer_is_not_heard() {
     view.read(|view| assert_eq!(view.heard, [1]));
 }
 
-/// A log that scrolls inside a pane, and a press that sends it to its end
-/// or back to its top.
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 struct Log {
     #[serde(skip)]
@@ -230,8 +223,6 @@ impl Render for Log {
     }
 }
 
-/// gpui's `track_scroll`: the handle moves the div it tracks, named by
-/// the whole path the frame drew it at.
 #[test]
 fn a_scroll_handle_moves_the_div_it_tracks() {
     let mut cx = TestAppContext::new();

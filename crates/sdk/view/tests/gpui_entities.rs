@@ -6,12 +6,10 @@ use serde::{Deserialize, Serialize};
 use view::prelude::*;
 use view::{Entity, EventEmitter, Subscription, View, testing::TestAppContext, wire};
 
-/// Three rows, one of them selected: a plain struct, no `View`, no serde.
 struct Sidebar {
     selected: Option<usize>,
 }
 
-/// What the sidebar tells whoever holds it.
 struct Selected(usize);
 impl EventEmitter<Selected> for Sidebar {}
 
@@ -43,12 +41,9 @@ impl Render for Sidebar {
     }
 }
 
-/// The root: what it shows is its snapshot (`picked`); the sidebar is no
-/// part of it, and `attach` builds it on every mount.
 #[derive(Default, Serialize, Deserialize)]
 struct Shell {
     picked: Option<usize>,
-    /// How many times the sidebar notified.
     #[serde(skip)]
     heard: usize,
     #[serde(skip)]
@@ -187,7 +182,6 @@ fn a_restored_snapshot_builds_the_children_again() {
     );
 }
 
-/// A tooltip's content: a plain struct that renders.
 struct Tip(&'static str);
 impl Render for Tip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {

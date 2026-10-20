@@ -17,13 +17,10 @@ use gpui::SharedString;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(bound(deserialize = "P: Deserialize<'de>"))]
 pub struct Pages<P> {
-    /// Never empty: a restore of an empty stack is refused, as `top()`
-    /// has nothing to answer and `depth()` nothing to count from.
     #[serde(deserialize_with = "rooted")]
     stack: Vec<P>,
 }
 
-/// A stack at the page's own default: a view's state derives `Default`.
 impl<P: Default> Default for Pages<P> {
     fn default() -> Self {
         Self::root(P::default())
@@ -83,8 +80,7 @@ impl<P> Pages<P> {
 /// Back).
 pub const CAPSULE_CLEARANCE: Pixels = px(96.);
 
-/// The key of one part of page `id`: `{id}-{part}`.
-fn named(id: &ElementId, part: &str) -> ElementId {
+fn page_part_key(id: &ElementId, part: &str) -> ElementId {
     ElementId::Name(format!("{id}-{part}").into())
 }
 
@@ -202,7 +198,6 @@ pub fn page(
     }
 }
 
-/// The reader's avatar on a first page under a finger ([`Nav::Root`]).
 fn account(
     id: &ElementId,
     reader: &str,
@@ -214,7 +209,7 @@ fn account(
         cx.host().notify::<HostShow>(Place::Account);
     };
     div()
-        .id(named(id, "account"))
+        .id(page_part_key(id, "account"))
         .size(ladder.hit)
         .flex_none()
         .flex()
@@ -228,7 +223,6 @@ fn account(
         .into_any_element()
 }
 
-/// A page's Back control ([`Nav::Back`]).
 fn back_control(
     id: &ElementId,
     back: EventListener<ClickEvent>,
@@ -236,7 +230,7 @@ fn back_control(
     theme: &Theme,
 ) -> AnyElement {
     let theme = *theme;
-    let id = named(id, "back");
+    let id = page_part_key(id, "back");
     match ladder.touch {
         true => super::icon_button(
             id,
@@ -277,13 +271,10 @@ fn back_control(
 /// keeps clear for the capsule under touch.
 pub struct Page {
     id: ElementId,
-    /// the view's first page ([`Nav::Root`])
     root: bool,
-    /// its place over the root, from its [`Nav`]; none for [`Nav::Child`]
     depth: Option<u32>,
     title: SharedString,
     caption: Option<SharedString>,
-    /// Back, or the reader's avatar on a first page under a finger
     nav: Option<AnyElement>,
     leading: Vec<AnyElement>,
     trailing: Vec<AnyElement>,
@@ -342,30 +333,26 @@ impl IntoElement for Page {
             .flex()
             .flex_col()
             .child(
-                heading(named(&id, "heading"), self.title, 1, &theme)
+                heading(page_part_key(&id, "heading"), self.title, 1, &theme)
                     .truncate()
                     .text_type(title)
                     .when(ladder.touch, |title| title.font_weight(FontWeight::MEDIUM)),
             )
             .children(self.caption.map(|caption| {
                 div()
-                    .id(named(&id, "caption"))
+                    .id(page_part_key(&id, "caption"))
                     .text_type(ladder.caption)
                     .text_color(theme.muted)
                     .truncate()
                     .child(caption)
             }));
         let title_row = div()
-            .id(named(&id, "title"))
+            .id(page_part_key(&id, "title"))
             .flex_none()
             .min_h(ladder.header)
             .flex()
             .items_center()
             .map(|row| match ladder.touch {
-                // its own band (`Header.tsx:33-43`): the body scrolls under
-                // it, never through it. A root's hairline is drawn clear
-                // (`Header.tsx:40-41`), so the row is one height on every
-                // page and the title does not move when the stack deepens.
                 true => row
                     .gap(space::XXS)
                     .px(space::SM)
@@ -380,8 +367,6 @@ impl IntoElement for Page {
             })
             .children(self.nav)
             .map(|row| match ladder.touch {
-                // the kit's title block (`Header.tsx:57`): 8 in, an avatar 8
-                // from the words
                 true => row.child(
                     div()
                         .flex_1()
@@ -397,8 +382,6 @@ impl IntoElement for Page {
             })
             .children(self.trailing);
         let mut page = div().id(id);
-        // under a finger the host moves between pages by their depth; a
-        // pointer's frames carry none and keep their bytes
         if ladder.touch
             && let Some(depth) = self.depth
         {

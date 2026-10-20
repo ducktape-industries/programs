@@ -17,7 +17,6 @@ use crate::timeline::{self, Work};
 use crate::ui::budget::ended;
 use crate::{Agents, State, agent_state, links, thread_state};
 
-/// What a thread is doing, in words.
 pub(crate) fn asking(asking: Asking) -> String {
     match asking {
         Asking::Idle => "Idle".into(),
@@ -28,12 +27,10 @@ pub(crate) fn asking(asking: Asking) -> String {
     }
 }
 
-/// [`asking`] inside a sentence: "in #general · waiting for the model".
 pub(crate) fn asking_lower(state: Asking) -> String {
     lower(&asking(state))
 }
 
-/// `words` with its first letter in capitals: a sentence that opens a line.
 pub(crate) fn upper_first(words: &str) -> String {
     let mut chars = words.chars();
     chars
@@ -42,7 +39,6 @@ pub(crate) fn upper_first(words: &str) -> String {
         .unwrap_or_default()
 }
 
-/// `words` with its first letter small: a word that goes inside a sentence.
 pub(crate) fn lower(words: &str) -> String {
     let mut chars = words.chars();
     chars
@@ -51,7 +47,6 @@ pub(crate) fn lower(words: &str) -> String {
         .unwrap_or_default()
 }
 
-/// How a model's turn ended, after its author's name: "answered".
 pub(crate) fn stop_words(stop: Stop) -> &'static str {
     match stop {
         Stop::EndTurn => "answered",
@@ -63,10 +58,6 @@ pub(crate) fn stop_words(stop: Stop) -> &'static str {
     }
 }
 
-/// A conversation as people read it, everywhere it is named: where it is and its number,
-/// `#general · 7`, `DM · Ada · 7`; one with no place yet (a new conversation before its first
-/// message) is `Conversation 7`. Its stored title is what harness tells the model, and one
-/// opened before an agent kept one conversation names its room there by the room's id.
 pub(crate) fn conversation_label(thread: &ThreadRow, roster: Option<&Roster>) -> String {
     match thread.place.is_empty() {
         true => format!("Conversation {}", thread.id),
@@ -78,8 +69,6 @@ pub(crate) fn conversation_label(thread: &ThreadRow, roster: Option<&Roster>) ->
     }
 }
 
-/// Where a conversation is, without its number: what an agent's sentence names, `#general`;
-/// one with no place yet keeps its heading, `Conversation 7`.
 fn conversation_place(thread: &ThreadRow, roster: &Roster) -> String {
     match thread.place.is_empty() {
         true => conversation_label(thread, Some(roster)),
@@ -87,8 +76,6 @@ fn conversation_place(thread: &ThreadRow, roster: &Roster) -> String {
     }
 }
 
-/// A place of `agent`'s as people read it: `#general` by the room's name in chat, `DM · Ada`,
-/// else the place as is.
 pub(crate) fn place_label(agent: u64, place: &str, roster: Option<&Roster>) -> String {
     let Some(channel) = place.strip_prefix("chat/") else {
         return place.to_owned();
@@ -105,8 +92,6 @@ pub(crate) fn place_label(agent: u64, place: &str, roster: Option<&Roster>) -> S
     }
 }
 
-/// What an agent is doing, in one sentence after its badge: what is wrong before anything,
-/// then its busiest open conversation and what it waits for, else where it last spoke.
 pub(crate) fn agent_sentence(card: &Card, roster: &Roster) -> String {
     let state = agent_state(card, roster);
     let busiest = busiest(&card.threads);
@@ -133,7 +118,6 @@ pub(crate) fn agent_sentence(card: &Card, roster: &Roster) -> String {
     }
 }
 
-/// An agent's busiest open conversation: a stuck one, else one at work.
 fn busiest(threads: &[ThreadRow]) -> Option<&ThreadRow> {
     let open = threads.iter().filter(|thread| !thread.closed);
     open.clone()
@@ -144,13 +128,10 @@ fn busiest(threads: &[ThreadRow]) -> Option<&ThreadRow> {
         })
 }
 
-/// The conversation an agent's sentence names once it runs: its busiest, else its newest.
 pub(crate) fn spoken_of(threads: &[ThreadRow]) -> Option<&ThreadRow> {
     busiest(threads).or_else(|| threads.first())
 }
 
-/// [`agent_sentence`] with the topic of the conversation it names, where it names one: the
-/// agent's own words, quoted, after the sentence.
 pub(crate) fn agent_sentence_topic(card: &Card, roster: &Roster) -> String {
     let sentence = agent_sentence(card, roster);
     let names = matches!(
@@ -163,22 +144,18 @@ pub(crate) fn agent_sentence_topic(card: &Card, roster: &Roster) -> String {
     }
 }
 
-/// An agent's topic as its own words, quoted: “Finding why payments is slow”.
 pub(crate) fn quoted(topic: &str) -> String {
     format!("“{topic}”")
 }
 
-/// When the agent's newest conversation last moved.
 pub(crate) fn last_moved(card: &Card) -> Option<u64> {
     card.threads.iter().map(|thread| thread.last_time).max()
 }
 
-/// How long ago `then` was, in a desktop's column: "5m ago".
 pub(crate) fn ago(now: u64, then: u64) -> String {
     format!("{} ago", design::ago(now, then))
 }
 
-/// A post's text with each mention `<@17>` read as the account's name, `@Scout`.
 pub(crate) fn mentions(text: &str, roster: Option<&Roster>) -> String {
     let mut read = String::with_capacity(text.len());
     let mut rest = text;
@@ -205,7 +182,6 @@ pub(crate) fn mentions(text: &str, roster: Option<&Roster>) -> String {
     read
 }
 
-/// What a thread's context holds, against its model's window once harness learned it.
 pub(crate) fn context_words(context: harness::Context, window: Option<u64>) -> String {
     match (context, window) {
         (harness::Context::Measured(tokens), Some(window)) if window > 0 => format!(
@@ -219,7 +195,6 @@ pub(crate) fn context_words(context: harness::Context, window: Option<u64>) -> S
     }
 }
 
-/// A count of tokens in few characters: `71K`, `1M`, `950`.
 pub(crate) fn short(tokens: u64) -> String {
     match tokens {
         0..1_000 => tokens.to_string(),
@@ -228,7 +203,6 @@ pub(crate) fn short(tokens: u64) -> String {
     }
 }
 
-/// How full the context is, against the window once harness learned it: `7%`.
 pub(crate) fn full(context: harness::Context, window: Option<u64>) -> Option<u64> {
     let window = window.filter(|window| *window > 0)?;
     Some(match context {
@@ -237,7 +211,6 @@ pub(crate) fn full(context: harness::Context, window: Option<u64>) -> Option<u64
     })
 }
 
-/// [`context_words`] in few characters: `71K of 1M · 7%`.
 pub(crate) fn context_short(context: harness::Context, window: Option<u64>) -> String {
     match (context, window.filter(|window| *window > 0)) {
         (harness::Context::Measured(tokens), Some(window)) => format!(
@@ -262,8 +235,6 @@ pub(crate) fn thinking_words(thinking: Option<Thinking>) -> &'static str {
     }
 }
 
-/// [`thinking_words`] in few letters, for a segment of a phone's width: the six share it, so
-/// the model's default is "Auto".
 pub(crate) fn thinking_short(thinking: Option<Thinking>) -> &'static str {
     match thinking {
         None => "Auto",
@@ -290,7 +261,6 @@ pub(crate) fn snapshot_words(snapshot: &harness::BlobId) -> String {
     format!("snapshot {short}")
 }
 
-/// Every token a usage counts, cache included.
 pub(crate) fn all_tokens(usage: &Usage) -> u64 {
     usage.input + usage.output + usage.cache_read + usage.cache_write
 }
@@ -307,7 +277,6 @@ pub(crate) fn usage_words(usage: &Usage) -> String {
     )
 }
 
-/// Where to talk to an agent: its current conversation's place, and a DM with the reader.
 pub(crate) struct Reach {
     pub chat: Option<String>,
     pub dm: Option<String>,
@@ -332,7 +301,6 @@ pub(crate) fn reach(view: &Agents, detail: &Detail, agent: u64) -> Reach {
     }
 }
 
-/// Who the agent is, after its kind: its account, its manager, its model, its tools.
 pub(crate) fn about(setup: &AgentSetup, detail: &Detail, roster: &Roster) -> String {
     let mut about = format!(
         "account {} · managed by {}",
@@ -352,10 +320,8 @@ pub(crate) fn about(setup: &AgentSetup, detail: &Detail, roster: &Roster) -> Str
     about
 }
 
-/// What harness does while an agent's configuration cannot run.
 pub(crate) const PROBLEM_CAPTION: &str = "Harness says so in a thread once for each message that reaches the agent, and asks no model until the file is fixed.";
 
-/// What the file is read at: its snapshot, once harness read one.
 pub(crate) fn read_at(configured: &Configured) -> String {
     match configured {
         Configured::Unreadable { .. } => "read at each model call".to_owned(),
@@ -367,8 +333,6 @@ pub(crate) fn read_at(configured: &Configured) -> String {
     }
 }
 
-/// The model fact after its id: the vendor's name when it is another, the wire, the service
-/// and how many nodes serve it.
 pub(crate) fn model_more(setup: &AgentSetup, roster: &Roster) -> Option<String> {
     let model = setup.configured.model()?;
     let serving = roster
@@ -395,7 +359,6 @@ pub(crate) fn wait_words(wait: Option<u64>) -> String {
     )
 }
 
-// how harness read the agent's configuration, and why it cannot run it
 pub(crate) fn configured_words(configured: &Configured) -> String {
     match configured {
         Configured::Ready { .. } => "Ready".to_owned(),
@@ -418,7 +381,6 @@ pub(crate) fn server_tools_words(tools: &[ServerTool]) -> String {
     }
 }
 
-// the rooms it hears every message of, each by its name where the roster holds the room
 pub(crate) fn listen_words(listen: &[String], roster: &Roster) -> String {
     let rooms: Vec<String> = listen
         .iter()
@@ -447,13 +409,11 @@ pub(crate) fn tools_words(detail: &Detail, name: &str) -> String {
     format!("{} · {writes} write as {name}", detail.tools.len())
 }
 
-/// The file's link in files, where the chain mints one.
 pub(crate) fn file_link(chain: &str, path: &str) -> Option<String> {
     let segments: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
     ducklink::mint(chain, files::PROGRAM, &segments)
 }
 
-/// The prompt's lines and its first words: what the fold says closed.
 pub(crate) fn prompt_words(configured: &Configured) -> String {
     match prompt(configured) {
         Ok("") => "No system prompt: harness sends its ducktape resource manual alone.".to_owned(),
@@ -466,7 +426,6 @@ pub(crate) fn prompt_words(configured: &Configured) -> String {
     }
 }
 
-/// The system prompt the file names, or why none is read.
 pub(crate) fn prompt(configured: &Configured) -> Result<&str, &'static str> {
     match configured {
         Configured::Ready { config, .. } | Configured::UnknownModel { config, .. } => {
@@ -478,14 +437,12 @@ pub(crate) fn prompt(configured: &Configured) -> Result<&str, &'static str> {
     }
 }
 
-// a prompt's first sentence, whole: the row that shows it clips it to the room it has
 fn first_words(prompt: &str) -> String {
     let line = prompt.lines().next().unwrap_or_default();
     let sentence = line.find(['.', '!', '?']).map_or(line, |end| &line[..=end]);
     sentence.to_owned()
 }
 
-/// Every turn's usage in every conversation, added up: tokens, not money.
 pub(crate) fn usage_total(detail: &Detail) -> String {
     let total = read::sum(detail.threads.iter().map(|(_, usage)| usage));
     format!(
@@ -518,7 +475,6 @@ fn party_name(party: &Party, roster: &Roster) -> String {
     }
 }
 
-/// Who may change the configuration file, as a sentence: "only Eddy may change it".
 pub(crate) fn may_change(writers: &Writers, config: &str, roster: &Roster) -> String {
     let named = |owner: &Option<Party>| match owner {
         Some(owner) => party_name(owner, roster),
@@ -542,14 +498,12 @@ pub(crate) fn may_change(writers: &Writers, config: &str, roster: &Roster) -> St
     }
 }
 
-/// What taking an agent back from harness does.
 pub(crate) fn removes(name: &str) -> String {
     format!(
         "Take {name} back from harness? Its script is cleared, so harness stops answering for it. Its conversations and its configuration file stay."
     )
 }
 
-/// A conversation's state after its badge: what an open one waits for, when a closed one closed.
 pub(crate) fn thread_words(thread: &harness::ThreadRow) -> Option<String> {
     match (thread.closed, thread_state(thread)) {
         (true, _) => Some(format!(
@@ -566,8 +520,6 @@ pub(crate) fn thread_words(thread: &harness::ThreadRow) -> Option<String> {
     }
 }
 
-// Whether the reader may start or fork the agent's conversation: its conversations' policy's
-// answer once read, else as before policies, access's writers.
 pub(crate) fn starts(view: &Agents, detail: &Detail) -> bool {
     let before = match (&detail.conversation_writers, view.me) {
         (Some(writers), Some(me)) => writers.allows(&[Party::Account(me)]),
@@ -579,15 +531,12 @@ pub(crate) fn starts(view: &Agents, detail: &Detail) -> bool {
     }
 }
 
-/// A conversation's state, as its strip says it: its badge (none once closed), what it is doing
-/// in a few words, and a caption after them. A stuck one says so in its words.
 pub(crate) struct Status {
     pub state: Option<State>,
     pub words: String,
     pub caption: String,
 }
 
-/// The state a conversation's badge says: what keeps its agent from running before anything.
 pub(crate) fn conversation_state(shown: &Transcript, relaying: usize) -> State {
     match (shown.serving, relaying) {
         (None, _) => State::Unconfigured,
@@ -655,8 +604,6 @@ pub(crate) fn status(shown: &Transcript, relaying: usize) -> Status {
     }
 }
 
-// an idle conversation: collecting general input in its settle window, else how its last turn
-// ended
 fn idle_words(shown: &Transcript) -> String {
     if let Some(window) = &shown.settling {
         return format!(
@@ -670,8 +617,6 @@ fn idle_words(shown: &Transcript) -> String {
     )
 }
 
-/// Who the conversation is with and where it began, after its heading: "Scout · opened 16 Oct
-/// at block 4,530 · sonnet".
 pub(crate) fn opened_words(shown: &Transcript, roster: Option<&Roster>) -> String {
     let agent = roster.map_or_else(
         || format!("account {}", shown.thread.agent),
@@ -691,7 +636,6 @@ pub(crate) fn opened_words(shown: &Transcript, roster: Option<&Roster>) -> Strin
     )
 }
 
-/// Who wrote a post: an account by its name, else the chain.
 pub(crate) fn author(author: &harness::Principal, roster: Option<&Roster>) -> String {
     match author {
         harness::Principal::Account(number) => {
@@ -701,7 +645,6 @@ pub(crate) fn author(author: &harness::Principal, roster: Option<&Roster>) -> St
     }
 }
 
-/// Who an input waiting behind the loop is from.
 pub(crate) fn held_author(body: &Body, roster: Option<&Roster>) -> String {
     match body {
         Body::Post { author: who, .. } => author(who, roster),
@@ -714,7 +657,6 @@ pub(crate) fn first_line(text: &str) -> String {
     text.lines().next().unwrap_or_default().to_owned()
 }
 
-/// Where a frame is: its place in the transcript, its block and the configuration it read.
 pub(crate) fn frame_meta(frame: &Frame) -> String {
     let mut meta = format!("#{} · block {}", frame.seq, design::grouped(frame.height));
     if let Body::Turn { config, .. } = &frame.body {
@@ -723,7 +665,6 @@ pub(crate) fn frame_meta(frame: &Frame) -> String {
     meta
 }
 
-/// Where a burst of calls is: its frames, its blocks and the configuration its first turn read.
 pub(crate) fn work_meta(work: &Work) -> String {
     let (first, last) = (work.first(), work.last());
     let mut meta = format!(
@@ -739,7 +680,6 @@ pub(crate) fn work_meta(work: &Work) -> String {
     meta
 }
 
-/// What the burst's fold says after its summary: "6 calls · 2 min".
 pub(crate) fn work_size(work: &Work) -> String {
     format!(
         "{} · {}",
@@ -748,7 +688,6 @@ pub(crate) fn work_size(work: &Work) -> String {
     )
 }
 
-/// How the reply the model is streaming back is going.
 pub(crate) fn flow_words(partial: &Partial) -> (String, Option<String>) {
     let events = design::plural(partial.next_seq, "event", "events");
     match &partial.flow {
@@ -760,7 +699,6 @@ pub(crate) fn flow_words(partial: &Partial) -> (String, Option<String>) {
     }
 }
 
-/// The reply broke off or failed: its words wear the danger tone.
 pub(crate) fn flow_failed(partial: &Partial) -> bool {
     matches!(
         partial.flow,
@@ -768,7 +706,6 @@ pub(crate) fn flow_failed(partial: &Partial) -> bool {
     )
 }
 
-/// How far a call got, in its badge's word and colours.
 pub(crate) fn call_state(state: Option<&CallState>, theme: &Theme) -> (&'static str, Hsla, Hsla) {
     match state {
         None => ("Not placed", theme.muted, theme.surface_raised),
@@ -781,7 +718,6 @@ pub(crate) fn call_state(state: Option<&CallState>, theme: &Theme) -> (&'static 
     }
 }
 
-/// The blocks a call ran at.
 pub(crate) fn ran(call: &CallRow) -> String {
     let made = design::grouped(call.made);
     match call.state {
@@ -799,7 +735,6 @@ pub(crate) fn ran(call: &CallRow) -> String {
     }
 }
 
-/// A result's size: "1,372 bytes · 1 line".
 pub(crate) fn size_words(text: &str) -> String {
     format!(
         "{} · {}",
@@ -808,7 +743,6 @@ pub(crate) fn size_words(text: &str) -> String {
     )
 }
 
-/// What a compaction stands for: "the model sees frames 1–120 only as this summary".
 pub(crate) fn summary_words(frame: &Frame) -> String {
     format!(
         "the model sees frames 1–{} only as this summary",
@@ -816,7 +750,6 @@ pub(crate) fn summary_words(frame: &Frame) -> String {
     )
 }
 
-/// Where a conversation's agent is reached about it: its place's link, by its program.
 pub(crate) fn open_label(program: &str) -> String {
     match program == chat::PROGRAM {
         true => "Open in chat".to_owned(),
@@ -824,7 +757,6 @@ pub(crate) fn open_label(program: &str) -> String {
     }
 }
 
-/// How many member nodes serve a model's service, in its colour.
 pub(crate) fn serving_words(serving: usize, theme: &Theme) -> (String, Hsla) {
     match serving {
         0 => ("no node serves it".to_owned(), theme.danger),
@@ -838,7 +770,6 @@ pub(crate) fn serving_words(serving: usize, theme: &Theme) -> (String, Hsla) {
     }
 }
 
-/// A model's window in few characters, as a pick shows it: "1M window".
 pub(crate) fn window_short(window: Window) -> String {
     match window {
         Window::Tokens(tokens) => format!("{} window", short(tokens)),
@@ -846,8 +777,6 @@ pub(crate) fn window_short(window: Window) -> String {
     }
 }
 
-/// What closing a conversation does: the next message opens a new one, or nothing more reaches
-/// it, and what waits does not carry over.
 pub(crate) fn closes(shown: &Transcript) -> String {
     let current = shown
         .setup
@@ -867,13 +796,10 @@ pub(crate) fn closes(shown: &Transcript) -> String {
     cost
 }
 
-/// The network a chain id names, its label before the `#`: "duckpond".
 pub(crate) fn network(chain: &str) -> &str {
     chain.split_once('#').map_or(chain, |(label, _)| label)
 }
 
-/// Why an agent is silent, on a phone's strip: no member node serves its model's service, or
-/// relay; none when both are served.
 pub(crate) fn no_node_words(serving: usize, relaying: usize) -> Option<&'static str> {
     match (serving, relaying) {
         (0, _) => Some(
@@ -886,7 +812,6 @@ pub(crate) fn no_node_words(serving: usize, relaying: usize) -> Option<&'static 
     }
 }
 
-// an egress request as a wait names it: its id, its block, its node's key
 fn request_words(wait: &Wait) -> String {
     let node: String = wait.node.iter().map(|byte| format!("{byte:02x}")).collect();
     format!(
@@ -896,8 +821,6 @@ fn request_words(wait: &Wait) -> String {
     )
 }
 
-// what an open conversation's turn, window or summary waits on at egress, under its strip;
-// true when it waits and no request is open for it, which nothing will answer
 pub(crate) fn waiting_words(shown: &Transcript) -> Option<(String, bool)> {
     let row = &shown.thread;
     let waiting = matches!(
@@ -934,7 +857,6 @@ pub(crate) fn waiting_words(shown: &Transcript) -> Option<(String, bool)> {
     })
 }
 
-// what the conversation's agent waits for (`wait_for`), each since the block it was made
 pub(crate) fn armed_words(shown: &Transcript) -> Option<String> {
     if shown.thread.closed || shown.armed.is_empty() {
         return None;
@@ -961,7 +883,6 @@ pub(crate) fn armed_words(shown: &Transcript) -> Option<String> {
     Some(format!("Waits for {}", each.join(" · ")))
 }
 
-// what a relaying call waits on at egress, in its box after the blocks it ran at
 pub(crate) fn call_wait(call: &CallRow, waits: &[Wait]) -> Option<String> {
     if call.state != CallState::Relaying {
         return None;
@@ -976,7 +897,6 @@ pub(crate) fn call_wait(call: &CallRow, waits: &[Wait]) -> Option<String> {
     })
 }
 
-// when a conversation starts compacting: at its threshold, else once its window fills
 pub(crate) fn compacts_words(threshold: Option<harness::Threshold>) -> String {
     match threshold {
         Some(threshold) => format!("{} tokens", design::grouped(threshold.tokens())),
@@ -984,7 +904,6 @@ pub(crate) fn compacts_words(threshold: Option<harness::Threshold>) -> String {
     }
 }
 
-// where the threshold in effect comes from
 pub(crate) fn threshold_source(threshold: Option<harness::Threshold>) -> Option<String> {
     match threshold? {
         harness::Threshold::Agent(_) => Some("the agent's configuration".to_owned()),
@@ -992,7 +911,6 @@ pub(crate) fn threshold_source(threshold: Option<harness::Threshold>) -> Option<
     }
 }
 
-// both on one line: `650,000 tokens · the agent's configuration`
 pub(crate) fn compacts_line(threshold: Option<harness::Threshold>) -> String {
     match threshold_source(threshold) {
         Some(source) => format!("{} · {source}", compacts_words(threshold)),
@@ -1000,12 +918,10 @@ pub(crate) fn compacts_line(threshold: Option<harness::Threshold>) -> String {
     }
 }
 
-// a model's own default, short: `compacts at 650K`
 pub(crate) fn compact_short(compact_at: Option<u64>) -> Option<String> {
     compact_at.map(|tokens| format!("compacts at {}", short(tokens)))
 }
 
-// a usage window as people say it: Anthropic's 5h and 7d, else by the name the model gives it
 pub(crate) fn budget_window_words(name: &str) -> String {
     match name {
         "5h" => "5-hour window".into(),
@@ -1014,7 +930,6 @@ pub(crate) fn budget_window_words(name: &str) -> String {
     }
 }
 
-// whose windows a budget row holds: ccs's name for the account, else the model's id for it
 pub(crate) fn budget_account(row: &AccountBudget) -> String {
     let named = match (&row.label, &row.organization) {
         (Some(label), _) => format!("Account {label}"),
@@ -1024,12 +939,10 @@ pub(crate) fn budget_account(row: &AccountBudget) -> String {
     format!("{named} · {}", row.service)
 }
 
-// a word as the model or ccs writes it ("allowed_warning"), as people read it
 fn spaced(word: &str) -> String {
     word.replace('_', " ")
 }
 
-// what the model last said of the account: its status and its fallback
 pub(crate) fn budget_state(row: &AccountBudget) -> Option<String> {
     let status = row
         .status
@@ -1045,7 +958,6 @@ pub(crate) fn budget_state(row: &AccountBudget) -> Option<String> {
     }
 }
 
-// why ccs could not read the account, when it could not
 pub(crate) fn budget_error(row: &AccountBudget) -> Option<String> {
     let error = row.error.as_deref()?;
     Some(format!(
@@ -1054,7 +966,6 @@ pub(crate) fn budget_error(row: &AccountBudget) -> Option<String> {
     ))
 }
 
-// a service's last status reading; one that keeps no status says so and no more
 pub(crate) fn budget_read(read: &StatusRead, now: u64) -> String {
     let service = &read.service;
     match &read.outcome {
@@ -1068,7 +979,6 @@ pub(crate) fn budget_read(read: &StatusRead, now: u64) -> String {
     }
 }
 
-// a time in milliseconds as the reader's clock, with its day when that is not today
 fn clock_from(now: u64, then: u64) -> String {
     match design::day(now) == design::day(then) {
         true => design::clock(then),
@@ -1076,7 +986,6 @@ fn clock_from(now: u64, then: u64) -> String {
     }
 }
 
-// the budget's first line: how hard the network is calling its models now
 pub(crate) fn budget_calls(report: &BudgetReport) -> String {
     let calls = report.services.iter().map(|pace| pace.last_minute).sum();
     format!(
@@ -1086,7 +995,6 @@ pub(crate) fn budget_calls(report: &BudgetReport) -> String {
     )
 }
 
-// how much of a window is used and when it resets, or that it reset since its last answer
 pub(crate) fn budget_used(window: &WindowOutlook, now: u64) -> String {
     let name = budget_window_words(&window.name);
     let reset = clock_from(now, window.reset.saturating_mul(1000));
@@ -1096,7 +1004,6 @@ pub(crate) fn budget_used(window: &WindowOutlook, now: u64) -> String {
     }
 }
 
-// when a window runs out at the pace it climbed at, beside its reset
 pub(crate) fn budget_outlook(window: &WindowOutlook, now: u64) -> Option<String> {
     if ended(window, now) {
         return None;

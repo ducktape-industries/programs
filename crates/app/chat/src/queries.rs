@@ -15,8 +15,6 @@ use crate::{
     tags,
 };
 
-/// `reply` as `viewer` reads it: each reaction learns whether one of
-/// `viewer` chose it.
 pub(crate) fn seen_by(
     ctx: &QueryCtx,
     mut reply: Reply,
@@ -72,7 +70,6 @@ pub(crate) fn by_id(ctx: &QueryCtx, message_id: &String) -> Result<Option<MsgRow
         .transpose()
 }
 
-/// The root of the author's most recently answered thread.
 pub(crate) fn attention(
     ctx: &QueryCtx,
     channel_id: &str,
@@ -125,10 +122,6 @@ pub(crate) fn around(
     Ok(rows.into_iter().map(Stored::row).collect())
 }
 
-// The messages holding every whitespace-separated term of `text` as a
-// substring of their flat text, both [`fold`]ed: newest first, at most
-// `page.limit`, `capped` when more matched. No index: each channel is
-// walked from its newest message until it has a page or reaches its first.
 pub(crate) fn search(
     ctx: &QueryCtx,
     text: &str,
@@ -160,9 +153,6 @@ pub(crate) fn search(
     })
 }
 
-// One page of the messages tagged `tag`, newest first. No index: each
-// channel is walked from its newest message, or from below the page's
-// cursor.
 pub(crate) fn tagged(
     ctx: &QueryCtx,
     tag: &str,
@@ -191,9 +181,6 @@ pub(crate) fn tagged(
     Ok(listing.reply((rows.into_iter()).map(|row| (place(&row).key_bytes(), row.row()))))
 }
 
-// Where a row sorts in a newest-first listing across channels:
-// `(newest_first(time), newest_first(seq), channel)`. A block's time never
-// goes back, so one channel's rows newest first by seq are in this order.
 type Place = (u64, u64, String);
 
 fn place(row: &Stored) -> Place {
@@ -201,9 +188,6 @@ fn place(row: &Stored) -> Place {
     (newest_first(row.time), newest_first(row.seq), channel_id)
 }
 
-// Up to `want` rows that `keep` admits and that sort after `after`, in
-// [`Place`] order: `channel_id`, or every channel that has a message,
-// each [`walk`]ed newest first.
 fn newest(
     ctx: &QueryCtx,
     channel_id: Option<String>,
@@ -221,9 +205,6 @@ fn newest(
     };
     let mut found = Vec::new();
     for (channel_id, head) in heads {
-        // ponytail: a page across channels walks every channel but the
-        // cursor's from its head again; find each one's place by a binary
-        // search on time if deep pages across channels ever matter.
         let from = match after {
             Some((_, seq, at)) if *at == channel_id => newest_first(*seq).saturating_sub(1),
             _ => head,
@@ -240,12 +221,8 @@ fn newest(
     Ok(found)
 }
 
-// How many seqs one scan of a [`walk`] reads: a batch, not a bound.
 const STRIDE: u64 = 128;
 
-// `channel_id`'s messages from seq `from` down to its first, newest
-// first. The store scans forward only, so the walk reads a [`STRIDE`] of
-// seqs at a time, each below the last.
 fn walk<'a>(
     ctx: &'a QueryCtx,
     channel_id: &'a str,
@@ -270,7 +247,6 @@ fn walk<'a>(
     })
 }
 
-/// A page of message addresses as the page of rows they name.
 fn rows_at(
     ctx: &QueryCtx,
     keys: PageResponse<(String, u64)>,
@@ -282,9 +258,6 @@ fn rows_at(
     })
 }
 
-// Who chose each reaction on the messages at `seqs`, each message once
-// and in seq order however `seqs` names them: a message's emoji in order,
-// each with its principals in key order.
 pub(crate) fn reactors(
     ctx: &QueryCtx,
     channel_id: String,
@@ -350,7 +323,6 @@ fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
     }
 }
 
-/// Each reaction on `row` learns whether one of `viewer` chose it.
 fn mark_reacted(ctx: &QueryCtx, viewer: &[Principal], row: &mut MsgRow) {
     for reaction in &mut row.reactions {
         reaction.reacted_by_me = viewer.iter().any(|principal| {

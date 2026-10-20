@@ -8,8 +8,6 @@ use files::Node;
 use super::*;
 use crate::state::{Holds, Opened, name_of};
 
-/// The tallest a picture draws: a tall one fits this, a small one keeps
-/// its own size.
 const PICTURE_H: Pixels = px(560.);
 
 pub(super) fn file(view: &Files, path: &str, cx: Cx, k: &Kit) -> AnyElement {
@@ -22,7 +20,6 @@ pub(super) fn file(view: &Files, path: &str, cx: Cx, k: &Kit) -> AnyElement {
         .into_any_element()
 }
 
-/// The file without its crumbs.
 pub(super) fn detail(view: &Files, path: &str, cx: Cx, k: &Kit) -> AnyElement {
     let page = div().id("files-file-detail").flex().flex_col();
     let Some(file) = view.file_at(path) else {
@@ -94,8 +91,6 @@ fn body(file: &Opened, node: &Node, k: &Kit) -> AnyElement {
         .into_any_element()
 }
 
-/// The picture, at most as wide as the pane and [`PICTURE_H`] tall, never
-/// grown past its own size; or why it does not show.
 fn picture(file: &Opened, k: &Kit) -> AnyElement {
     let theme = k.theme;
     let quiet = move |sentence: String| {

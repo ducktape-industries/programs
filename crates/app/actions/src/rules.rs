@@ -18,7 +18,6 @@ use crate::{
     RunnerRow, State, WORKFLOWS,
 };
 
-// What started a run: a repository's commit, the event and who made it.
 struct Started<'a> {
     repo: &'a str,
     commit: &'a str,
@@ -29,7 +28,6 @@ struct Started<'a> {
 pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
     ctx.env().sent_by(forge::PROGRAM)?;
     match event {
-        // a Preview's own ref: its checks start from `Previewed`
         Watched::Moved { reference, .. } if reference.starts_with(b"refs/changes/") => Ok(()),
         Watched::Moved {
             repo,
@@ -41,14 +39,14 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             let source = (repo.clone(), reference.clone());
             if let Some(n) = SOURCES.get(ctx, &source)? {
                 match still_open(ctx, &repo, n)? {
-                    true => preview(ctx, &repo, n)?,
+                    true => schedule_preview_next_block(ctx, &repo, n)?,
                     false => SOURCES.remove(ctx, &source),
                 }
             }
             let into = TARGETS.range_of(ctx, &source, &PageRequest::default())?;
             for (_, _, n) in into.items {
                 match still_open(ctx, &repo, n)? {
-                    true => preview(ctx, &repo, n)?,
+                    true => schedule_preview_next_block(ctx, &repo, n)?,
                     false => TARGETS.remove(ctx, &(repo.clone(), reference.clone(), n)),
                 }
             }
@@ -57,17 +55,17 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
                 short(&commit),
                 branch(&reference)
             );
-            supersede(ctx, &repo, &reference, &why)?;
-            start(ctx, &started(&repo, &commit, Event::Push { reference }, by))
+            supersede_earlier_runs(ctx, &repo, &reference, &why)?;
+            start_matching_workflows(ctx, &started(&repo, &commit, Event::Push { reference }, by))
         }
         Watched::Moved { new: None, .. } => Ok(()),
         Watched::Closed { repo, n, .. } => {
             let why = format!("change #{n} closed");
-            supersede(ctx, &repo, preview_ref(n).as_bytes(), &why)
+            supersede_earlier_runs(ctx, &repo, preview_ref(n).as_bytes(), &why)
         }
         Watched::Merged { repo, n, .. } => {
             let why = format!("change #{n} merged");
-            supersede(ctx, &repo, preview_ref(n).as_bytes(), &why)
+            supersede_earlier_runs(ctx, &repo, preview_ref(n).as_bytes(), &why)
         }
         Watched::Opened {
             repo,
@@ -80,22 +78,20 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
                 SOURCES.put(ctx, &(repo.clone(), reference), &n);
             }
             TARGETS.insert(ctx, &(repo.clone(), into, n));
-            preview(ctx, &repo, n)
+            schedule_preview_next_block(ctx, &repo, n)
         }
         Watched::Previewed {
             repo, n, merge, by, ..
         } => {
-            adopt(ctx, &repo, n)?;
+            adopt_untracked_change(ctx, &repo, n)?;
             let why = format!("superseded by Preview {} of #{n}", short(&merge));
-            supersede(ctx, &repo, preview_ref(n).as_bytes(), &why)?;
-            start(ctx, &started(&repo, &merge, Event::Preview { n }, Some(by)))
+            supersede_earlier_runs(ctx, &repo, preview_ref(n).as_bytes(), &why)?;
+            start_matching_workflows(ctx, &started(&repo, &merge, Event::Preview { n }, Some(by)))
         }
     }
 }
 
-// The change's Preview is asked for in actions' own run the block after (`Op::Preview`), so its
-// checks' offers start a frame of their own rather than nest under the op that moved a head.
-fn preview(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
+fn schedule_preview_next_block(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
     let env = ctx.env();
     let scheduler = env.role(abi::role::SCHEDULER)?.clone();
     let height = env
@@ -115,9 +111,6 @@ fn preview(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
     Ok(())
 }
 
-// forge builds the change's Preview, the squash its merge would land, and says so with
-// `Previewed`; one it refuses (a conflict) makes an errored run that says why (`replied`). Open:
-// anyone may ask actions to preview a change.
 pub(crate) fn previewing(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
     let op = forge::Op::Preview {
         repo: repo.to_owned(),
@@ -128,9 +121,7 @@ pub(crate) fn previewing(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error>
     Ok(())
 }
 
-// A change previewed that actions holds no rows for (one opened before actions watched forge)
-// joins: its source and target are kept, so their moves preview it again.
-fn adopt(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
+fn adopt_untracked_change(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
     let asked = forge::Query::Change {
         repo: repo.to_owned(),
         n,
@@ -147,8 +138,6 @@ fn adopt(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
     Ok(())
 }
 
-// forge's answer to what actions sent it: a Preview it refused makes a run on the change's head,
-// errored, that names why (a conflict names every path); any other answer changes nothing.
 pub(crate) fn replied(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), Error> {
     if let Some((check, runner)) = OFFERING.get(ctx, &id.seq)? {
         OFFERING.remove(ctx, &id.seq);
@@ -164,7 +153,7 @@ pub(crate) fn replied(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Resul
     let Outcome::Rejected(refused) = outcome else {
         return Ok(());
     };
-    let Some(head) = open_head(ctx, &repo, n)? else {
+    let Some(head) = open_change_head(ctx, &repo, n)? else {
         return Ok(());
     };
     let why = format!("change {n} does not preview: {}", refused.message);
@@ -174,8 +163,6 @@ pub(crate) fn replied(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Resul
     Ok(())
 }
 
-// A runner refused the offer of a check: unless another runner's offer of it is still out or it
-// left the queue, it ends errored, saying why, never silently queued.
 fn refused_offer(ctx: &ExecCtx, id: u64, runner: &str, why: &str) -> Result<(), Error> {
     let pending = OFFERING
         .all(ctx)?
@@ -190,19 +177,18 @@ fn refused_offer(ctx: &ExecCtx, id: u64, runner: &str, why: &str) -> Result<(), 
     check.summary = format!("{runner} refused the offer: {why}");
     QUEUED.remove(ctx, &id);
     CHECKS.put(ctx, &id, &check);
-    tell_forge(ctx, &check);
+    report_commit_status(ctx, &check);
     release(ctx, check.run)?;
     let run = RUNS
         .get(ctx, &check.run)?
         .ok_or_else(|| corrupt("r/", &check.run.to_be_bytes(), "a check's run is missing"))?;
     if let (Event::Push { reference }, Some(channel)) = (&run.event, &run.notify) {
-        red(ctx, &run, &check, reference, channel);
+        notify_failed_push(ctx, &run, &check, reference, channel);
     }
     Ok(())
 }
 
-// An open change's head, as forge resolves its source now.
-fn open_head(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<String>, Error> {
+fn open_change_head(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<String>, Error> {
     let asked = forge::Query::Change {
         repo: repo.to_owned(),
         n,
@@ -220,9 +206,7 @@ fn open_head(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<String>, Error
     }
 }
 
-// forge hears each check's state as its commit's status in `<workflow>#<job>`, which a branch's
-// required checks name.
-fn tell_forge(ctx: &ExecCtx, check: &CheckRow) {
+fn report_commit_status(ctx: &ExecCtx, check: &CheckRow) {
     let state = match check.state {
         State::Queued | State::Running | State::Waiting => CheckState::Pending,
         State::Passed => CheckState::Passed,
@@ -252,7 +236,7 @@ fn started<'a>(repo: &'a str, commit: &'a str, event: Event, by: Option<Principa
 
 pub(crate) fn trigger(ctx: &ExecCtx, repo: &str, commit: &str) -> Result<(), Error> {
     let by = Principal::Account(ctx.sender_account()?);
-    start(ctx, &started(repo, commit, Event::Manual, Some(by)))
+    start_matching_workflows(ctx, &started(repo, commit, Event::Manual, Some(by)))
 }
 
 fn still_open(ctx: &QueryCtx, repo: &str, n: u64) -> Result<bool, Error> {
@@ -269,9 +253,7 @@ fn still_open(ctx: &QueryCtx, repo: &str, n: u64) -> Result<bool, Error> {
     }
 }
 
-// Each workflow at the commit: a run of the jobs of each that the event starts, and a run with
-// its error for each that does not read.
-fn start(ctx: &ExecCtx, started: &Started) -> Result<(), Error> {
+fn start_matching_workflows(ctx: &ExecCtx, started: &Started) -> Result<(), Error> {
     let files = match workflow_files(ctx, started.repo, started.commit) {
         Ok(files) => files,
         Err(refused) => {
@@ -308,8 +290,6 @@ fn start(ctx: &ExecCtx, started: &Started) -> Result<(), Error> {
 
 type Files = Vec<(String, Result<String, String>)>;
 
-// Every `.toml` file directly in the commit's workflows folder, with its text or why it has
-// none; a commit with no such folder has no workflows.
 fn workflow_files(ctx: &QueryCtx, repo: &str, commit: &str) -> Result<Files, Error> {
     let mut files = Vec::new();
     let mut after = None;
@@ -361,7 +341,6 @@ fn text_of(ctx: &QueryCtx, repo: &str, oid: &str) -> Result<Result<String, Strin
     })
 }
 
-// What a workflow that reads says of itself.
 #[derive(Default)]
 struct Named {
     name: Option<String>,
@@ -390,11 +369,10 @@ fn record(
     };
     RUNS.put(ctx, &id, &run);
     BY_EVENT.insert(ctx, &(run.repo.clone(), abi::encode(&run.event), id));
-    if let Some(line) = line_of(&run.event) {
+    if let Some(line) = superseding_ref(&run.event) {
         LINES.insert(ctx, &(run.repo.clone(), line, id));
     }
     if run.error.is_some() {
-        // a workflow that does not read is its file's status, errored
         let op = forge::Op::Status {
             repo: run.repo.clone(),
             commit: run.commit.clone(),
@@ -455,7 +433,7 @@ fn queue(ctx: &ExecCtx, run: &RunRow, planned: Planned, attempt: u32) -> Result<
     BY_RUN.insert(ctx, &(run.id, id));
     if waits {
         NEEDS.put(ctx, &id, &needs);
-        tell_forge(ctx, &check);
+        report_commit_status(ctx, &check);
         return release(ctx, run.id);
     }
     offered(ctx, &check)
@@ -464,7 +442,7 @@ fn queue(ctx: &ExecCtx, run: &RunRow, planned: Planned, attempt: u32) -> Result<
 // A check nothing holds back: queued, told to forge and offered to every runner.
 fn offered(ctx: &ExecCtx, check: &CheckRow) -> Result<(), Error> {
     QUEUED.insert(ctx, &check.id);
-    tell_forge(ctx, check);
+    report_commit_status(ctx, check);
     for (_, runner) in RUNNERS.all(ctx)? {
         offer(ctx, &runner, check);
     }
@@ -494,7 +472,7 @@ fn release(ctx: &ExecCtx, run: u64) -> Result<(), Error> {
                     check.finished = Some(ctx.env().height);
                     check.summary = why;
                     CHECKS.put(ctx, &check.id, &check);
-                    tell_forge(ctx, &check);
+                    report_commit_status(ctx, &check);
                 }
             }
             moved = true;
@@ -621,7 +599,7 @@ pub(crate) fn claim(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     check.started = Some(ctx.env().height);
     QUEUED.remove(ctx, &id);
     CHECKS.put(ctx, &id, &check);
-    tell_forge(ctx, &check);
+    report_commit_status(ctx, &check);
     Ok(())
 }
 
@@ -634,8 +612,6 @@ pub(crate) fn report(
 ) -> Result<(), Error> {
     let account = ctx.sender_account()?;
     let mut check = load(ctx, id)?;
-    // a runner whose claim was refused says so, and a check made moot is superseded: a queued
-    // check may end either way unclaimed
     let moot = matches!(state, State::Errored | State::Superseded);
     let unclaimed = check.state == State::Queued && moot;
     if check.state != State::Running && !unclaimed {
@@ -667,23 +643,20 @@ pub(crate) fn report(
     check.summary = summary;
     check.log = log;
     CHECKS.put(ctx, &id, &check);
-    tell_forge(ctx, &check);
+    report_commit_status(ctx, &check);
     release(ctx, check.run)?;
     if matches!(state, State::Failed | State::Errored) {
         let run = RUNS
             .get(ctx, &check.run)?
             .ok_or_else(|| corrupt("r/", &check.run.to_be_bytes(), "a check's run is missing"))?;
         if let (Event::Push { reference }, Some(channel)) = (&run.event, &run.notify) {
-            red(ctx, &run, &check, reference, channel);
+            notify_failed_push(ctx, &run, &check, reference, channel);
         }
     }
     Ok(())
 }
 
-// A newer run on a line (a push to the branch, a Preview of the change), or the change's merge
-// or close, makes the checks of the line's earlier runs moot: each still queued or running ends
-// superseded, saying why, and posts no line. Those runs leave the line.
-fn supersede(ctx: &ExecCtx, repo: &str, line: &[u8], why: &str) -> Result<(), Error> {
+fn supersede_earlier_runs(ctx: &ExecCtx, repo: &str, line: &[u8], why: &str) -> Result<(), Error> {
     let on = (repo.to_owned(), line.to_vec());
     for (_, _, run) in LINES.scan(ctx, LINES.prefix_of(&on))? {
         for (_, id) in BY_RUN.scan(ctx, BY_RUN.prefix_of(&run))? {
@@ -696,15 +669,14 @@ fn supersede(ctx: &ExecCtx, repo: &str, line: &[u8], why: &str) -> Result<(), Er
             check.summary = why.to_owned();
             QUEUED.remove(ctx, &id);
             CHECKS.put(ctx, &id, &check);
-            tell_forge(ctx, &check);
+            report_commit_status(ctx, &check);
         }
         LINES.remove(ctx, &(repo.to_owned(), line.to_vec(), run));
     }
     Ok(())
 }
 
-// The line a run is on, whose next run supersedes it: a push's branch, or a Preview's ref.
-fn line_of(event: &Event) -> Option<Vec<u8>> {
+fn superseding_ref(event: &Event) -> Option<Vec<u8>> {
     match event {
         Event::Push { reference } => Some(reference.clone()),
         Event::Preview { n } => Some(preview_ref(*n).into_bytes()),
@@ -728,9 +700,13 @@ fn branch(reference: &[u8]) -> String {
         .to_owned()
 }
 
-// A push's check ended red: one line in the workflow's channel, naming who pushed. A channel
-// that refuses it leaves the report as it is (`Program::reply` absorbs the refusal).
-fn red(ctx: &ExecCtx, run: &RunRow, check: &CheckRow, reference: &[u8], channel: &str) {
+fn notify_failed_push(
+    ctx: &ExecCtx,
+    run: &RunRow,
+    check: &CheckRow,
+    reference: &[u8],
+    channel: &str,
+) {
     let branch = branch(reference);
     let workflow = run.name.as_deref().unwrap_or(&run.workflow);
     let commit = short(&check.commit);

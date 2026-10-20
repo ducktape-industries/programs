@@ -3,8 +3,6 @@
 //! (`super`): the same network, read the same way.
 use super::*;
 
-/// The view as a phone draws it: a finger, 390 wide, the reader's device
-/// signing with eddy's laptop key; chat describes its `hi` as a post.
 fn phone() -> TestAppContext {
     let (mut cx, _) = ready();
     cx.host()
@@ -31,7 +29,6 @@ fn on_a_phone(cx: &mut TestAppContext) {
     cx.run_until_parked();
 }
 
-/// The link the host was last asked to open.
 fn last_link(cx: &TestAppContext) -> Option<String> {
     cx.host()
         .requests::<view::methods::LinkOpen>()
@@ -39,10 +36,6 @@ fn last_link(cx: &TestAppContext) -> Option<String> {
         .cloned()
 }
 
-/// The sweep (SPEC §8.1d-1): the roster, a person's, an agent's and a
-/// program's member page at
-/// 360/390/430 under a finger, every frame audited and fitted. It lives
-/// here, not in `tests/sweep.rs`, because the fixture does.
 #[test]
 fn sweep() {
     let mut cx = phone();
@@ -75,10 +68,8 @@ fn sweep() {
 #[test]
 fn the_root_picks_the_phone_screens_by_the_pointer_alone() {
     let (mut cx, _) = ready();
-    // a narrow desk window keeps the desk's list
     cx.simulate_resize(360., 780.);
     assert!(cx.find("members-list-pane").is_some());
-    // a finger draws the phone's roster at any width
     cx.simulate_touch(true);
     assert!(cx.find("members-list-pane").is_none());
     assert!(cx.find("members-roster").is_some());
@@ -91,7 +82,6 @@ fn the_root_picks_the_phone_screens_by_the_pointer_alone() {
 fn the_phone_roster_groups_people_agents_and_programs_and_says_what_each_is() {
     let cx = phone();
     let texts = cx.texts();
-    // the last of each, past the chips of the same names
     let at = |text: &str| texts.iter().rposition(|t| t == text).unwrap();
     assert!(at("Members") < at("All") && at("All") < at("People"));
     assert!(at("People") < at("eddy") && at("eddy") < at("ada"));
@@ -109,7 +99,6 @@ fn the_phone_roster_groups_people_agents_and_programs_and_says_what_each_is() {
     ] {
         assert!(cx.has_text(text), "{text}: {texts:?}");
     }
-    // the desk's words and its detail are not the phone's
     for gone in ["5 accounts", "Choose a member", "Agent · managed by eddy"] {
         assert!(!texts.iter().any(|t| t == gone), "{gone}");
     }
@@ -189,9 +178,6 @@ fn the_filter_carries_its_keyboard_hints() {
     );
 }
 
-/// The filter's edge is the field's own hairline, the edge the host draws
-/// 2 wide in the ink while the field is focused: the box around it draws
-/// no second one.
 #[test]
 fn the_filter_edge_is_the_fields_own() {
     let mut cx = phone();
@@ -257,7 +243,6 @@ fn a_phone_row_opens_its_member_and_back_returns() {
         !cx.has_text("newest first"),
         "Expo's head has no count here"
     );
-    // the reader has no one to DM in their own page
     assert!(cx.find("members-open-dm").is_none());
     cx.simulate_back();
     assert!(cx.find("members-list").is_some());
@@ -277,7 +262,6 @@ fn a_member_page_marks_this_phone_and_links_its_blocks_explorer_and_a_dm() {
     assert_eq!(last_link(&cx).as_deref(), Some("duck://explorer/account/7"));
     cx.simulate_click("members-explorer");
     assert_eq!(last_link(&cx).as_deref(), Some("duck://explorer/account/7"));
-    // another person's key is a key, and a DM opens
     cx.simulate_back();
     cx.simulate_click("members-row-11");
     cx.run_until_parked();
@@ -325,8 +309,6 @@ fn a_program_page_has_no_devices_and_opens_a_dm() {
 #[test]
 fn a_refused_activity_read_is_said_quietly() {
     let mut cx = phone();
-    // what a network with no activity program answers: the code and the
-    // program's bare name, said in full as Expo's core says it
     cx.host()
         .refuse::<Query<Activity>>("unknown_program", "activity");
     cx.simulate_click("members-row-11");
@@ -361,9 +343,6 @@ fn a_member_page_with_no_such_account_says_so() {
     assert!(cx.find("members-row-7").is_some());
 }
 
-/// The phone on ada's page (#11) before the roster has landed, its
-/// identity answering as `answer` sets it up: a page the roster cannot
-/// show yet (Expo's `/members/11` opened straight).
 fn ada_before_the_roster(answer: impl FnOnce(&mut TestAppContext)) -> TestAppContext {
     let mut cx = TestAppContext::new();
     answer(&mut cx);
@@ -394,10 +373,6 @@ fn a_member_page_says_why_the_roster_was_refused_and_retry_reads_it_again() {
     assert!(cx.has_text("account 11 · User · 1 device"));
 }
 
-/// A phone titles each frame by what its transaction did, as the Expo
-/// app does: its transaction read by its place, its payload as its
-/// program describes it, else its program and size. The desk reads no
-/// transaction (`recent_activity_lists_frames_and_reads_no_transaction`).
 #[test]
 fn a_phone_titles_activity_by_what_each_transaction_did() {
     let mut cx = phone();
@@ -405,7 +380,6 @@ fn a_phone_titles_activity_by_what_each_transaction_did() {
     cx.run_until_parked();
     let row = format!("{:?}", cx.node("members-signed-0"));
     assert!(row.contains("\"Post in #general\""), "{row}");
-    // read by its place, up to Expo's 4 KiB of payload
     let places: Vec<_> = cx
         .host()
         .requests::<ChainTx>()
@@ -431,7 +405,6 @@ fn a_phone_titles_activity_by_what_each_transaction_did() {
             ),
         ]
     );
-    // a program whose code cannot read the bytes leaves their size
     cx.host().handle::<ProgramDescribe>(|_| Ok(None));
     cx.simulate_back();
     cx.simulate_click("members-row-9");
@@ -439,8 +412,6 @@ fn a_phone_titles_activity_by_what_each_transaction_did() {
     assert!(cx.has_text("chat · 2 bytes"), "{:?}", cx.texts());
 }
 
-/// A frame whose transaction the chain does not hold is left out, as
-/// Expo leaves it (`query/activity.ts:29-30`).
 #[test]
 fn a_frame_whose_transaction_the_chain_lacks_is_left_out() {
     let mut cx = phone();
@@ -450,8 +421,6 @@ fn a_frame_whose_transaction_the_chain_lacks_is_left_out() {
     assert!(cx.has_text("No activity recorded."), "{:?}", cx.texts());
 }
 
-/// A description the host refuses leaves the size, as Expo's (which
-/// cannot refuse) would show for bytes it cannot read, and is logged.
 #[test]
 fn a_refused_description_leaves_the_size_and_is_logged() {
     let mut cx = phone();
@@ -469,8 +438,6 @@ fn a_refused_description_leaves_the_size_and_is_logged() {
     );
 }
 
-/// A phone restored onto a member page titles its activity as before:
-/// the read the restore starts knows it is a phone's.
 #[test]
 fn a_restored_phone_titles_its_activity() {
     let mut cx = phone();
@@ -494,7 +461,6 @@ fn a_member_page_says_it_is_reading_its_activity() {
 #[test]
 fn a_member_page_with_nothing_signed_says_no_activity_was_recorded() {
     let mut cx = phone();
-    // ada's key signed none of the chain's frames
     cx.simulate_click("members-row-11");
     cx.run_until_parked();
     assert!(cx.has_text("No activity recorded."));
@@ -517,14 +483,12 @@ fn a_program_named_apart_from_its_program_says_which_it_runs() {
     });
     cx.host().stream::<Changes<Identity>>().send(None);
     cx.run_until_parked();
-    // the roster says only that it is a program
     assert!(cx.has_text("Program") && !cx.has_text("Program · relay"));
     cx.simulate_click("members-row-12");
     cx.run_until_parked();
     assert!(cx.has_text("account 12 · Program · relay"));
 }
 
-/// The node whose child `key` is.
 fn parent<'a>(node: &'a Node, key: &str) -> Option<&'a Node> {
     node.children()
         .iter()
@@ -534,9 +498,6 @@ fn parent<'a>(node: &'a Node, key: &str) -> Option<&'a Node> {
         })
 }
 
-/// The press `key` reaches 44 tall from a frame `drawn` tall with a
-/// hairline edge: the frame declares that height, and the press, placed
-/// inside the edge, reaches past it and half the difference beyond.
 fn presses_44(cx: &TestAppContext, key: &str, drawn: f32) {
     let frame = parent(cx.root(), key).unwrap_or_else(|| panic!("no {key}"));
     let frame = &cx.styles()[frame.style().expect("a styled frame")];
@@ -564,7 +525,6 @@ fn every_chip_and_small_button_presses_44_tall_within_its_row() {
     for chip in 0..4 {
         presses_44(&cx, &format!("members-chip-{chip}"), 32.);
     }
-    // the chips' row keeps 8 above and below, the 6 each press reaches
     let row = style(&cx, "members-chips");
     let padded = StyleRefinement::default().py(view::px(8.));
     assert_eq!(
@@ -577,8 +537,6 @@ fn every_chip_and_small_button_presses_44_tall_within_its_row() {
     small_presses_44(&cx, "members-explorer");
 }
 
-/// The kit's small button `key`: its press is 44 tall and hands back the
-/// 4 it reaches past each edge of the 36 face it holds.
 fn small_presses_44(cx: &TestAppContext, key: &str) {
     let press = style(cx, key);
     let kit = StyleRefinement::default()

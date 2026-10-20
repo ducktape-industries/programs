@@ -28,7 +28,7 @@ impl Pictures {
         if self.reading.contains_key(blob) {
             return None;
         }
-        let ask = cx.host().ask::<BlobGet>(name(blob));
+        let ask = cx.host().ask::<BlobGet>(blob_get_id(blob));
         let id = *blob;
         let task = cx.spawn(async move |this, cx| {
             let picture = ask.await.ok().flatten().and_then(|bytes| {
@@ -46,8 +46,7 @@ impl Pictures {
     }
 }
 
-// The id as `blob.get` reads it.
-fn name(blob: &BlobId) -> String {
+fn blob_get_id(blob: &BlobId) -> String {
     let hash = match blob {
         BlobId::Sha256(_) => "sha256",
         BlobId::Sha1(_) => "sha1",

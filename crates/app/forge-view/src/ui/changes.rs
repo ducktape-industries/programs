@@ -60,8 +60,6 @@ pub(crate) fn render(
     let Some(shared) = forge.shared(&query) else {
         return column.into_any_element();
     };
-    // the changes shown, by their place in the reply: the title search
-    // keeps them; a render reads none of the rest
     let needle = forge.change_search.text().trim().to_lowercase();
     let shown: Vec<usize> = (0..listed(reply))
         .filter(|at| {
@@ -90,7 +88,6 @@ pub(crate) fn render(
             ))
             .into_any_element();
     }
-    // the names of the people who wrote them: few, each read once
     let mut authors = BTreeMap::new();
     for (summary, _) in shown.iter().filter_map(|at| summary_at(reply, *at)) {
         if !authors.contains_key(&summary.author) {
@@ -100,8 +97,6 @@ pub(crate) fn render(
             );
         }
     }
-    // one Tab stop: ↑ ↓ walk the changes (a virtual list, scrolled to the
-    // one moved to), Enter opens the active one
     let count = shown.len();
     let shown = Rc::new(shown);
     let (at, _) = crate::ui::components::cursor(forge, "forge-changes-list");
@@ -147,7 +142,6 @@ pub(crate) fn render(
     column.child(list.child(rows)).into_any_element()
 }
 
-/// How many changes a changes or judgment reply lists.
 fn listed(reply: &Reply) -> usize {
     match reply {
         Reply::Changes { page, .. } => page.items.len(),
@@ -156,8 +150,6 @@ fn listed(reply: &Reply) -> usize {
     }
 }
 
-/// Change `at` of a changes or judgment reply, and what it asks of me when
-/// listed by judgment.
 fn summary_at(reply: &Reply, at: usize) -> Option<(&ChangeSummary, Option<&Judgment>)> {
     match reply {
         Reply::Changes { page, .. } => page.items.get(at).map(|summary| (summary, None)),
@@ -169,22 +161,15 @@ fn summary_at(reply: &Reply, at: usize) -> Option<(&ChangeSummary, Option<&Judgm
     }
 }
 
-/// What marks the changes' rows: their authors' names, the row the arrows
-/// are on, and whether they have walked the list.
 struct Marks {
     authors: BTreeMap<forge::Principal, String>,
     active: usize,
     walked: bool,
 }
 
-/// The title search field.
 const SEARCH_W: Pixels = px(220.);
-/// A row's state dot.
 const DOT: Pixels = px(6.);
 
-/// One change: its state dot, title and number, `from → into · author`
-/// under it, and on the right its verdicts, its comments, and what it asks
-/// of me when listed by judgment.
 fn change_row(
     summary: &ChangeSummary,
     judgment: Option<&Judgment>,
@@ -211,7 +196,6 @@ fn change_row(
         ChangeState::Closed => theme.faint,
     };
     let theme_ = *theme;
-    // as wide as the list: its counts on the right, its rule across
     let mut line = div()
         .id(id(format!("forge-change-{n}")))
         .w_full()
@@ -315,7 +299,6 @@ pub(crate) fn state_chip(state: ChangeState, n: u64, theme: &Theme, ladder: &Lad
     .into_any_element()
 }
 
-/// `1 approved · 1 asked for changes`, when anyone has reviewed.
 fn verdicts(counts: &ReviewCounts, n: u64, theme: &Theme) -> AnyElement {
     if counts.approve + counts.request_changes + counts.comment == 0 {
         return div().into_any_element();
@@ -331,8 +314,6 @@ fn verdicts(counts: &ReviewCounts, n: u64, theme: &Theme) -> AnyElement {
         .into_any_element()
 }
 
-/// The state as one segmented choice (Open with its count), the lists
-/// about me as quiet buttons, and the title search on the right.
 fn filters(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     const STATES: [Filter; 3] = [Filter::Open, Filter::Merged, Filter::Closed];
     let states = design::segmented(
@@ -377,7 +358,6 @@ fn filters(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladde
             .enabled(forge.me_principal().is_some()),
         );
     }
-    // the Input sits in a box of its own: pushed right, it keeps its width
     bar.child(
         div().ml_auto().flex_none().w(SEARCH_W).child(
             Input::new(
@@ -398,7 +378,6 @@ fn filters(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladde
     .into_any_element()
 }
 
-/// The Change draft: a comparison turned into a title, a body and reviewers.
 pub(crate) fn form(
     form: &ChangeForm,
     forge: &Forge,
@@ -466,9 +445,7 @@ pub(crate) fn form(
     .into_any_element()
 }
 
-/// The draft's title and body fields.
 fn form_fields(form: &ChangeForm, forge: &Forge, cx: &mut Context<Forge>, theme: &Theme) -> Div {
-    // a title typed again takes the last refusal with it
     let title = cx.listener(|forge, _: &wire::TextChange, _, cx| {
         if let Some(form) = &mut forge.form {
             form.error.clear();
@@ -507,7 +484,6 @@ fn form_fields(form: &ChangeForm, forge: &Forge, cx: &mut Context<Forge>, theme:
         )
 }
 
-/// The Change's reviewers, picked from the roster.
 fn reviewers(
     form: &ChangeForm,
     forge: &Forge,
@@ -547,10 +523,6 @@ fn reviewers(
         .into_any_element()
 }
 
-/// The identity picker: the accounts chat's mentions offer
-/// ([`chat::view::Names::people`]) whose name holds `needle`, each a
-/// button `{key}-{number}` that `pick`s it.
-/// Nothing while the roster is still being read.
 #[allow(
     clippy::too_many_arguments,
     reason = "the ladder rides beside the theme into every sized helper; the phone rework of this view reshapes the row"

@@ -16,8 +16,6 @@ pub fn canvas() -> Canvas {
     }
 }
 
-// ponytail: rectangles, circles and lines only; the wire's paths, strokes
-// with dashes and transforms get a call when a view draws one.
 impl Canvas {
     /// `bounds`, filled with `color`.
     pub fn rect(self, bounds: Bounds<Pixels>, color: impl Into<Hsla>) -> Self {

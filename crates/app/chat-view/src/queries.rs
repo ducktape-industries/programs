@@ -15,7 +15,6 @@ fn page(after: Option<Vec<u8>>, limit: usize) -> PageRequest {
     }
 }
 
-/// Every room.
 pub(crate) async fn channels(host: Host) -> Result<Vec<ChannelInfo>, Error> {
     host.query_all(|after| ask::Channels {
         page: page(after, PAGE),
@@ -23,8 +22,6 @@ pub(crate) async fn channels(host: Host) -> Result<Vec<ChannelInfo>, Error> {
     .await
 }
 
-/// The `limit` roots below `below` (or the newest), oldest first, with
-/// whether older ones remain.
 pub(crate) async fn roots(
     host: Host,
     channel_id: String,
@@ -37,7 +34,6 @@ pub(crate) async fn roots(
     ::chat::view::roots(ask, channel_id, viewer, below, limit, per_page).await
 }
 
-/// Every account's profile, folded into [`Names`].
 pub(crate) async fn roster(host: Host) -> Result<Names, Error> {
     ::chat::view::roster(move |ask| host.query(ask)).await
 }
@@ -58,7 +54,6 @@ pub(crate) async fn ownerships(
                     key: harness::agent_key(number),
                 })
                 .await?;
-            // an agent with no list answers anyone
             let ownership = list.unwrap_or(Ownership::Anyone);
             Ok::<_, Error>((number, ownership))
         }
@@ -69,7 +64,6 @@ pub(crate) async fn ownerships(
         .collect())
 }
 
-// Who chose each reaction on the rows at `seqs`.
 pub(crate) async fn reactors(
     host: Host,
     channel_id: String,
@@ -85,7 +79,6 @@ pub(crate) async fn reactors(
     Ok(reactors)
 }
 
-/// The rows around a landing seq, oldest first.
 pub(crate) async fn around(
     host: Host,
     channel_id: String,
@@ -156,8 +149,6 @@ pub(crate) async fn beside(
     Ok(sorted(rows.into_iter().filter(past).collect()))
 }
 
-// The rows `first..=last`, and only as many as that: around the span's
-// middle, half its width each way.
 pub(crate) async fn span(
     host: Host,
     channel_id: String,
@@ -182,7 +173,6 @@ pub(crate) fn sorted(mut rows: Vec<MsgRow>) -> Vec<MsgRow> {
     rows
 }
 
-// The rooms `account` listens to.
 pub(crate) async fn listening(host: Host, account: u64) -> Result<Vec<String>, Error> {
     host.query_all(|after| ask::Listening {
         account,
@@ -191,7 +181,6 @@ pub(crate) async fn listening(host: Host, account: u64) -> Result<Vec<String>, E
     .await
 }
 
-/// Every member of a room, in account order.
 pub(crate) async fn members(host: Host, channel_id: String) -> Result<Vec<MemberRow>, Error> {
     host.query_all(|after| ask::Members {
         channel_id: channel_id.clone(),
@@ -200,7 +189,6 @@ pub(crate) async fn members(host: Host, channel_id: String) -> Result<Vec<Member
     .await
 }
 
-// One page of `limit` of a thread's replies after `after`, and the cursor to page on.
 pub(crate) async fn thread(
     host: Host,
     channel_id: String,
@@ -220,9 +208,6 @@ pub(crate) async fn thread(
     Ok((sorted(replies.items), replies.next))
 }
 
-// A search: `#tag` pages through the messages tagged so, anything else
-// is a substring search of every term, capped at one page. Returns the
-// hits, whether the search was capped, and the cursor of the next tag page.
 pub(crate) async fn search_hits(
     host: Host,
     text: String,

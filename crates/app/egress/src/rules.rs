@@ -318,8 +318,6 @@ fn drop_early(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     Ok(())
 }
 
-/// Request `id`, open, from the node it was elected to, in a later block than the one that
-/// made it: what each of the node's frames for it must be.
 fn from_its_node(ctx: &Ctx, id: u64) -> Result<Stored, Error> {
     let key = ctx.env().signer()?;
     let stored = open(ctx, id)?;
@@ -337,8 +335,7 @@ fn from_its_node(ctx: &Ctx, id: u64) -> Result<Stored, Error> {
     Ok(stored)
 }
 
-/// The prefix an events request's requester hears each event under; a whole request has none.
-fn streamed(stored: &Stored) -> Result<&[u8], Error> {
+fn stream_event_prefix(stored: &Stored) -> Result<&[u8], Error> {
     match &stored.row.delivery {
         Delivery::Events { deliver } => Ok(deliver),
         Delivery::Whole => Err(wrong_state(format!(
@@ -366,7 +363,7 @@ pub(crate) async fn events(ctx: &Ctx, events: Vec<Event>) -> Result<(), Error> {
     while let Some(first) = events.next() {
         let id = first.id;
         let stored = from_its_node(ctx, id)?;
-        let deliver = streamed(&stored)?.to_vec();
+        let deliver = stream_event_prefix(&stored)?.to_vec();
         let mut stream = STREAMS.get(ctx, &id)?.unwrap_or_default();
         let height = ctx.env().height;
         let unmoved = stream.moved != height;
@@ -476,7 +473,7 @@ pub(crate) async fn end_stream(
     end: StreamEnd,
 ) -> Result<(), Error> {
     let stored = from_its_node(ctx, id)?;
-    streamed(&stored)?;
+    stream_event_prefix(&stored)?;
     let mut stream = STREAMS.get(ctx, &id)?.unwrap_or_default();
     let ending = Ending { events, end };
     let unheard = stream.next < events;
@@ -488,10 +485,6 @@ pub(crate) async fn end_stream(
     finish(ctx, stored, ending).await
 }
 
-/// An events request's stream ended: its call answers `Complete` as the encoded
-/// `http::Response` with the stream's status and headers and an empty body (the events were the
-/// body), so an `Http` request's call answers one type whether its reply came whole or as
-/// events; a cut answers the service's failure.
 async fn finish(ctx: &Ctx, stored: Stored, ending: Ending) -> Result<(), Error> {
     ctx.cancel(expiry_of(ctx, &stored.row)?).await?;
     let Ending { events, end } = ending;

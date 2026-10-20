@@ -380,7 +380,6 @@ impl From<abi::Scan> for Range {
 mod tests {
     use super::*;
 
-    /// Every renamed type is its kernel twin's bytes, both ways.
     #[test]
     fn every_sdk_type_is_its_kernel_twins_bytes() {
         let replies = [
@@ -480,7 +479,6 @@ mod tests {
         for (code, reason) in pairs {
             assert_eq!(code, reason);
         }
-        // one for one: a token added on either side is missing here
         let count = |text: &str| text.matches("pub const").count();
         let metadata = std::process::Command::new(env!("CARGO"))
             .args(["metadata", "--format-version", "1", "--manifest-path"])

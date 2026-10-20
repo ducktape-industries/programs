@@ -235,7 +235,6 @@ impl Builder {
                 };
                 self.push(&text, marks);
             }
-            // raw HTML is text: shown, never interpreted
             Event::Html(text) | Event::InlineHtml(text) => self.push(&text, self.marks()),
             Event::InlineMath(text) | Event::DisplayMath(text) => {
                 self.push(&text, self.marks());
@@ -271,8 +270,6 @@ pub fn parse(text: &str) -> Vec<Block> {
         frames: vec![(Frame::Root, Vec::new())],
         ..Builder::default()
     };
-    // the parser splits a text run at a stray `~`, `*`, `_` or entity; one
-    // run again, so a bare URL in it links whole
     for event in TextMergeStream::new(Parser::new_ext(text, options)) {
         builder.event(event);
     }

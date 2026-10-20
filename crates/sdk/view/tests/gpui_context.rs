@@ -84,7 +84,6 @@ fn pointer_listener_preserves_payload_and_routes_after_frame_reset() {
     view.read(|view| {
         assert_eq!(view.seen, vec![(2, true, 12.5)]);
     });
-    // a route no node holds reaches nothing
     other.simulate_event(wire::Event::MouseDown {
         handler: handler + 1,
         phase: wire::DispatchPhase::Bubble,
@@ -183,7 +182,6 @@ impl View for FocusSurface {
         Self
     }
 }
-/// A button named `key` holding `handle`.
 fn focused(key: &'static str, handle: &FocusHandle) -> view::Stateful<view::Div> {
     div()
         .id(key)

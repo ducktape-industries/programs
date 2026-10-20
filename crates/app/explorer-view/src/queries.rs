@@ -6,7 +6,6 @@ use view::prelude::*;
 
 use crate::state::{Accounts, Network, Used};
 
-/// Every account.
 pub(crate) async fn accounts(host: Host) -> Result<Accounts, Error> {
     let list = host
         .query_all(|after| identity::ask::List {
@@ -30,7 +29,6 @@ pub(crate) async fn network(host: Host) -> Result<Network, Error> {
         })
         .await?;
     changes.retain(|change| change.height > height);
-    // a programs role whose code predates `Sources` refuses it: its programs name no source
     let sources = host.query(programs::ask::Sources).await;
     let sources = sources.map(|(_, built)| built).unwrap_or_default();
     Ok(Network {

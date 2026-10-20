@@ -9,7 +9,6 @@ pub(crate) fn tally(ctx: &QueryCtx, thread: u64) -> Result<Tally, Error> {
     if let Some(tally) = TALLIES.get(ctx, &thread)? {
         return Ok(tally);
     }
-    // a thread older than its tally: its frames, added up
     let mut tally = Tally::default();
     for (_, frame) in FRAMES.scan(ctx, FRAMES.prefix_of(&thread))? {
         tally.count(&frame.body);
@@ -31,7 +30,6 @@ fn counted(ctx: &ExecCtx, thread: u64, usage: &Usage, summaries: u64) -> Result<
             tally.add(usage, summaries);
             tally
         }
-        // the frame just appended is among those a missing tally adds up
         None => tally(ctx, thread)?,
     };
     TALLIES.put(ctx, &thread, &tally);

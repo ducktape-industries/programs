@@ -8,7 +8,6 @@ fn row_style() -> StyleRefinement {
     StyleRefinement::default().flex().gap_2().p_4()
 }
 
-/// Rows of one style, and one more row of its own style once `marked`.
 #[derive(Default, Serialize, Deserialize)]
 struct Rows {
     rows: usize,
@@ -41,7 +40,6 @@ impl Render for Rows {
     }
 }
 
-/// An element that names a style no table holds.
 struct Rogue;
 impl Element for Rogue {
     fn lower(self: Box<Self>, _: &mut Lowering<'_>) -> wire::Node {
@@ -64,8 +62,6 @@ impl IntoElement for Rogue {
 fn forty_rows_of_one_style_send_it_once_and_a_new_row_brings_only_its_own() {
     let mut driver = Driver::<Rows>::new();
     let first = driver.tick_with(vec![], wire::Frame::clone);
-    // 81 nodes name two styles: the one that sets nothing (the root's and
-    // every text's) and the rows'
     assert_eq!(first.root.as_ref().unwrap().count(), 81);
     assert_eq!(
         first.styles,
@@ -93,7 +89,6 @@ fn forty_rows_of_one_style_send_it_once_and_a_new_row_brings_only_its_own() {
         )]
     );
 
-    // a frame that changes no style brings none
     driver.entity().update(driver.app_mut(), |view, cx| {
         view.rows = 41;
         cx.notify();
@@ -102,8 +97,6 @@ fn forty_rows_of_one_style_send_it_once_and_a_new_row_brings_only_its_own() {
     assert!(!patch.patches.is_empty() && patch.styles.is_empty());
 }
 
-/// The test host holds a frame to the host's rule: a node that names a
-/// style the table does not hold is a refused frame.
 #[test]
 #[should_panic(
     expected = "the host refuses this frame: Text at [40]: a node names a style its table does not hold"
@@ -118,7 +111,6 @@ fn the_test_host_refuses_a_style_its_table_does_not_hold() {
     cx.run_until_parked();
 }
 
-/// A view whose first frame, a whole one, names a style no table holds.
 #[derive(Default, Serialize, Deserialize)]
 struct RogueFromTheStart;
 impl View for RogueFromTheStart {
@@ -130,9 +122,6 @@ impl Render for RogueFromTheStart {
     }
 }
 
-/// A whole frame gives every style its tree names a new number. A style
-/// the table never issued has none to be given: it crosses as it was
-/// written and the host refuses the frame by name, as it does a patch's.
 #[test]
 #[should_panic(
     expected = "the host refuses this frame: Text at [0]: a node names a style its table does not hold"
@@ -143,7 +132,6 @@ fn the_test_host_refuses_a_whole_frame_naming_a_style_its_table_does_not_hold() 
     cx.run_until_parked();
 }
 
-/// A tooltip built in the tick a tree goes whole is renumbered with it.
 #[derive(Default, Serialize, Deserialize)]
 struct Tipped;
 impl View for Tipped {
@@ -178,13 +166,11 @@ fn a_tooltip_names_its_styles_in_the_table_of_the_frame_it_crosses_in() {
         *response.content.clone().unwrap()
     };
 
-    // in a frame that changes nothing else: its entry joins the table
     cx.simulate_hover("tipped", true);
     assert!(cx.last_frame().root.is_none());
     assert_eq!(cx.last_frame().styles.len(), 1);
     assert_eq!(width(&cx, &tip(&cx)), Some(px(9.).into()));
 
-    // in a frame that brings the tree whole: numbered with the tree's
     let request = cx.interactivity("tipped").tooltip.as_ref().unwrap().request;
     cx.tick(vec![
         Event::TooltipRequest {
@@ -199,7 +185,6 @@ fn a_tooltip_names_its_styles_in_the_table_of_the_frame_it_crosses_in() {
     assert_eq!(width(&cx, cx.root()), Some(px(7.).into()));
 }
 
-/// Two texts, one spaced out and one tightened.
 #[derive(Default, Serialize, Deserialize)]
 struct Tracked;
 impl View for Tracked {
@@ -221,8 +206,6 @@ impl Render for Tracked {
     }
 }
 
-/// gpui's letter spacing is a text style field like the rest: the host's
-/// table holds what the view set, its sign kept.
 #[test]
 fn a_texts_letter_spacing_reaches_the_host() {
     let mut cx = TestAppContext::new();

@@ -25,7 +25,6 @@ pub fn picture_format(bytes: &[u8]) -> Option<ImageFormat> {
             b'P',
             ..,
         ] => Some(ImageFormat::Webp),
-        // a bitmap's reserved bytes are zero, which no text has
         [b'B', b'M', _, _, _, _, 0, 0, 0, 0, ..] => Some(ImageFormat::Bmp),
         _ => None,
     }
@@ -39,9 +38,9 @@ pub fn picture_size(bytes: &[u8]) -> Option<(u32, u32)> {
     let size = match picture_format(bytes)? {
         ImageFormat::Png => (be32(bytes, 16)?, be32(bytes, 20)?),
         ImageFormat::Gif => (le16(bytes, 6)?, le16(bytes, 8)?),
-        ImageFormat::Bmp => bmp(bytes)?,
-        ImageFormat::Jpeg => jpeg(bytes)?,
-        ImageFormat::Webp => webp(bytes)?,
+        ImageFormat::Bmp => bmp_dimensions(bytes)?,
+        ImageFormat::Jpeg => jpeg_frame_dimensions(bytes)?,
+        ImageFormat::Webp => webp_canvas_dimensions(bytes)?,
         _ => return None,
     };
     (size.0 > 0 && size.1 > 0).then_some(size)
@@ -84,10 +83,7 @@ fn le24(bytes: &[u8], at: usize) -> Option<u32> {
     Some(u32::from_le_bytes([three[0], three[1], three[2], 0]))
 }
 
-// the info header after the 14-byte file header: a core header's sides
-// are 16 bits, every later one's 32, its height negative for a top-down
-// bitmap
-fn bmp(bytes: &[u8]) -> Option<(u32, u32)> {
+fn bmp_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     match le32(bytes, 14)? {
         12 => Some((le16(bytes, 18)?, le16(bytes, 20)?)),
         _ => {
@@ -98,9 +94,7 @@ fn bmp(bytes: &[u8]) -> Option<(u32, u32)> {
     }
 }
 
-// the first start-of-frame marker's lines and samples per line, walking
-// the segments before it by their lengths
-fn jpeg(bytes: &[u8]) -> Option<(u32, u32)> {
+fn jpeg_frame_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     let mut at = 2;
     loop {
         if *bytes.get(at)? != 0xff {
@@ -118,10 +112,7 @@ fn jpeg(bytes: &[u8]) -> Option<(u32, u32)> {
     }
 }
 
-// the first chunk after `WEBP`: a lossy key frame's 14-bit sides after
-// its start code, a lossless stream's 14-bit sides less one after its
-// signature, an extended file's 24-bit canvas sides less one
-fn webp(bytes: &[u8]) -> Option<(u32, u32)> {
+fn webp_canvas_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     match bytes.get(12..16)? {
         b"VP8 " if bytes.get(23..26)? == [0x9d, 0x01, 0x2a] => {
             Some((le16(bytes, 26)? & 0x3fff, le16(bytes, 28)? & 0x3fff))

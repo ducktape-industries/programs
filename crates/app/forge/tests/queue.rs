@@ -21,8 +21,6 @@ struct Repo {
     two: Oid,
 }
 
-// main at root; one changes b and two changes c, each a change into main that requires the
-// stranger's gates.
 fn repo() -> Repo {
     let mut store = MemoryObjects::new(Hash::Sha1);
     let files: &[(&str, &[u8])] = &[("a", b"1\n"), ("b", b"1\n"), ("c", b"1\n")];
@@ -132,7 +130,6 @@ impl Repo {
         change.state
     }
 
-    // The text of every message in change `n`'s channel.
     fn said(&self, n: u64) -> Vec<String> {
         let query = chat::Query::Roots {
             channel_id: chat::namespace::id("forge", &format!("project:{n}")),

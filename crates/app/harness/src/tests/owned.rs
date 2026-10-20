@@ -40,7 +40,6 @@ fn a_models_policy_decides_its_record_and_default_and_any_turn_still_learns_its_
     let mut world = world();
     world.chain.seat::<ownership::Ownership>(ownership::PROGRAM);
     let chain = &world.chain;
-    // a record made before the guard was seated has no owner on record: make it again
     let removed = Op::RemoveModel { id: MODEL.into() };
     chain.submit(signed(ADA), PROGRAM, &removed).unwrap();
     chain
@@ -50,7 +49,6 @@ fn a_models_policy_decides_its_record_and_default_and_any_turn_still_learns_its_
     assert_eq!(owned.owner, ownership::Party::Account(world.ada));
     assert_eq!(owned.kind.as_deref(), Some("harness.model"));
 
-    // the access list lets anyone write it; the record's own policy is what narrows it now
     let anyone = access::Op::Set {
         program: PROGRAM.into(),
         key: crate::model_key(MODEL),
@@ -85,7 +83,6 @@ fn a_models_policy_decides_its_record_and_default_and_any_turn_still_learns_its_
         .unwrap();
     assert_eq!(model_row(chain, MODEL).compact_at, Some(3000));
 
-    // an agent's turn learns the window of a model it doesn't own
     world.opened("m1", "hello", Some(WINDOW));
     assert_eq!(model_row(chain, MODEL).window, Window::Tokens(WINDOW));
     assert_eq!(record(chain, MODEL).unwrap().policy, policy);
@@ -116,7 +113,6 @@ fn an_agents_manager_claims_who_starts_its_conversations_and_its_policy_decides(
     };
     assert_eq!(owned.owner, ownership::Party::Account(world.ada));
     assert_eq!(owned.kind.as_deref(), Some("harness.agent-conversation"));
-    // the access list lets anyone start one; the claimed row's policy is what narrows it now
     let anyone = access::Op::Set {
         program: PROGRAM.into(),
         key: crate::conversation_key(agent),
@@ -148,8 +144,6 @@ fn an_agents_manager_claims_who_starts_its_conversations_and_its_policy_decides(
     chain.submit(signed(ADA), PROGRAM, &new).unwrap();
 }
 
-// One-time (J-011 ⑥): harness's models and every agent's conversations row, from before the
-// ownership program was seated.
 #[test]
 fn adopt_owners_records_models_and_gives_every_agent_its_managers_conversations_row() {
     let mut world = world();
@@ -193,7 +187,6 @@ fn adopt_owners_records_models_and_gives_every_agent_its_managers_conversations_
         (conversations.name.as_str(), &conversations.owner),
         (ownership::AS_BEFORE, &ownership::Party::Account(world.ada))
     );
-    // its manager's alone, as before: another account's start is refused, the manager's applies
     let new = Op::NewThread { agent: world.agent };
     let refused = chain.submit(signed(BO), PROGRAM, &new).unwrap_err();
     assert_eq!(refused.code, code::UNAUTHORIZED);

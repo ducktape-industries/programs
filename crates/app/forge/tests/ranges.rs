@@ -4,7 +4,6 @@ mod common;
 use common::*;
 use forge::{BlobView, ByteRange, Content};
 
-// A repository whose blobs forge serves whole only up to 64 bytes, holding `content` at `big`.
 fn seeded(content: &[u8]) -> (MemorySandbox, Oid) {
     let mut store = MemoryObjects::new(Hash::Sha1);
     let id = blob(&mut store, content);

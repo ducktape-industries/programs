@@ -23,7 +23,6 @@ pub(crate) struct SetupDraft {
     pub server_tools: Vec<ServerTool>,
     // the channel ids it hears every message of
     pub listen: Vec<String>,
-    // what the room finder holds
     pub rooms: TextField,
     pub settle: TextField,
     pub compact_at: TextField,
@@ -38,17 +37,14 @@ pub(crate) enum Press {
     Close,
     Model(String),
     Thinking(Option<Thinking>),
-    // a server tool, or a room it listens to, on or off
     Tool(ServerTool),
     Listen(String),
     Save,
-    // what the save came to: nothing, or why not in words
     Sent(Option<String>),
 }
 
 pub(crate) enum Then {
     Stay,
-    // the model picker reads harness's records
     Models,
     Write(Config),
     Done,
@@ -88,7 +84,6 @@ impl SetupDraft {
         Then::Stay
     }
 
-    // the fields at the configuration harness read; none to edit while it reads none
     fn opened(setup: &AgentSetup) -> SetupDraft {
         let Some((_, config)) = setup.configured.config() else {
             return SetupDraft::default();
@@ -120,15 +115,15 @@ impl SetupDraft {
             Ok(max) if max > 0 => max,
             _ => return Err("Max output tokens is a whole number, at least 1.".into()),
         };
-        let wait = number(
+        let wait = optional_positive_integer(
             &self.wait,
             "Wait is a whole number of blocks, at least 1, or empty.",
         )?;
-        let settle = number(
+        let settle = optional_positive_integer(
             &self.settle,
             "Settle is a whole number of milliseconds, at least 1, or empty.",
         )?;
-        let compact_at = number(
+        let compact_at = optional_positive_integer(
             &self.compact_at,
             "Compacts at is a whole number of tokens, at least 1, or empty.",
         )?;
@@ -155,8 +150,7 @@ fn toggle<T: PartialEq>(list: &mut Vec<T>, item: T) {
     }
 }
 
-// a field that holds a whole number above zero, or nothing
-fn number(field: &TextField, problem: &str) -> Result<Option<u64>, String> {
+fn optional_positive_integer(field: &TextField, problem: &str) -> Result<Option<u64>, String> {
     let text = field.text();
     let text = text.trim();
     if text.is_empty() {
@@ -169,8 +163,6 @@ fn number(field: &TextField, problem: &str) -> Result<Option<u64>, String> {
 }
 
 impl Agents {
-    // the front-matter editor's one controller: the draft answers each press, this does what
-    // it says
     pub(crate) fn press_setup(&mut self, press: Press, cx: &mut Context<Self>) {
         match self.setup_draft.press(press) {
             Then::Stay => {}

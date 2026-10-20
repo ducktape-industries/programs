@@ -36,7 +36,6 @@ pub(crate) struct Record {
     pub compact_at: Option<u64>,
 }
 
-// what a yes is asked for
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Yes {
     Save,
@@ -45,20 +44,14 @@ pub(crate) enum Yes {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Press {
-    // the desktop's title: the form opens empty, or closes
     Toggle,
-    // the phone's new record
     New,
-    // a record, with the services that reach it
     Open(ModelRow, Vec<String>),
     Wire(usize),
-    // a service picked onto the end of the list, or off it
     Service(String),
-    // Save's or Remove's first press: what it sends, shown for a yes
     Ask(Yes),
     Yes,
     Unask,
-    // what the ops sent came to: nothing, or the refusal in words
     Sent(Option<String>),
 }
 
@@ -170,8 +163,6 @@ impl ModelDraft {
         }
     }
 
-    // what Save sends: the record when it is new or its wire or name moved, then the services
-    // and the compact_at default each where it moved
     pub fn ops(&self) -> Result<Vec<harness::Op>, String> {
         let id = self.id();
         if id.is_empty() {
@@ -234,7 +225,7 @@ impl ModelDraft {
                 (format!("Save {id}"), ops.iter().map(op_words).collect())
             }
             Yes::Remove => {
-                let naming = naming(roster, &id);
+                let naming = agents_using_model(roster, &id);
                 (format!("Remove {id}?"), vec![removes_words(naming)])
             }
         })
@@ -269,8 +260,7 @@ fn op_words(op: &harness::Op) -> String {
     }
 }
 
-// the agents whose configuration names model `id`, once the roster is read
-fn naming(roster: Option<&Roster>, id: &str) -> Option<Vec<String>> {
+fn agents_using_model(roster: Option<&Roster>, id: &str) -> Option<Vec<String>> {
     let roster = roster?;
     let names = roster.agents.iter().filter(|card| {
         let config = card.setup.configured.config();
@@ -296,7 +286,6 @@ fn removes_words(naming: Option<Vec<String>>) -> String {
 }
 
 impl Agents {
-    // the models form's one controller: the draft answers each press, and this does what it says
     pub(crate) fn press_model(&mut self, press: Press, cx: &mut Context<Self>) {
         match self.model_draft.press(press) {
             Then::Stay => {}
@@ -318,7 +307,6 @@ impl Agents {
                 self.model_draft.sending = Some(task);
             }
             Then::Done => match self.screen {
-                // the phone's form page goes back to the models it was opened over
                 Screen::SetModel => self.go(Screen::Models, cx),
                 _ => self.read_screen(cx),
             },

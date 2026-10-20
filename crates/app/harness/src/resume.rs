@@ -33,8 +33,6 @@ pub(crate) enum Again {
     Busy,
 }
 
-// what a busy model asked for: seconds from now (`retry-after`), or a time (its usage window's
-// reset, in seconds since the epoch)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Wait {
     after: Option<u64>,
@@ -51,8 +49,6 @@ impl Wait {
     }
 }
 
-// what a failed call says of the account it went to: it refused the call (a 429), or failed it
-// (a 5xx, a broken stream, a service egress could not reach)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Fault {
     Refused,
@@ -141,8 +137,6 @@ pub(crate) fn header<'a>(response: &'a http::Response, name: &str) -> Option<&'a
     found.map(|(_, value)| value.trim())
 }
 
-// every answer names how much of the model's usage window is spent and when it resets: the last
-// one stands, for whatever paces turns by it
 pub(crate) fn window_seen(ctx: &ExecCtx, service: &str, response: &http::Response) {
     crate::budget::seen(ctx, service, response);
     let utilization = header(response, UTILIZATION);
@@ -166,8 +160,6 @@ fn wake(id: u64) -> Op {
     Op::Resume { thread: id }
 }
 
-// egress answers a call by the end of its deadline's block, so a run after it that still finds
-// the call open knows its frame is gone; with no scheduler, the thread's next input finds it
 pub(crate) async fn watch(ctx: &Ctx, id: u64, wait: Option<u64>, config: Option<BlobId>) {
     let made = ctx.env().height;
     let mut flight = Flight {
@@ -182,13 +174,9 @@ pub(crate) async fn watch(ctx: &Ctx, id: u64, wait: Option<u64>, config: Option<
     FLIGHTS.put(ctx, &id, &flight);
 }
 
-// a tool call's write that awaits its answer: a harness update cancels the frame awaiting it (the
-// kernel's `cancel_parked`), and egress answers a whole request by its deadline, so a run after
-// either that finds the call still writing knows its answer is lost; harness wakes itself then
 pub(crate) async fn awaiting(ctx: &Ctx, id: u64, call: &str, writes: &[Write]) {
     let key = (id, call.to_owned());
     let height = ctx.env().height;
-    // a frame that came back to write again still runs the code it first wrote with
     let code = match AWAITED.get(ctx, &key) {
         Ok(Some(awaited)) => awaited.code,
         _ => code_of(ctx, PROGRAM).ok(),
@@ -206,8 +194,6 @@ pub(crate) async fn awaiting(ctx: &Ctx, id: u64, call: &str, writes: &[Write]) {
     AWAITED.put(ctx, &key, &awaited);
 }
 
-// the block egress has answered every write by, when each asks it for an answer whole: they run
-// one after another, so their waits add up
 fn answered_by(ctx: &QueryCtx, height: u64, writes: &[Write]) -> Option<u64> {
     let egress = ctx.env().roles.get(abi::role::EGRESS).cloned()?;
     let mut blocks = 0u64;
@@ -229,7 +215,6 @@ fn answered_by(ctx: &QueryCtx, height: u64, writes: &[Write]) -> Option<u64> {
     (blocks > 0).then_some(height.saturating_add(blocks))
 }
 
-// why a call's write will never hear its answer, if it won't
 fn lost_why(awaited: &Awaited, code: Option<BlobId>, height: u64) -> Option<String> {
     let sent = awaited.height;
     let updated = matches!((awaited.code, code), (Some(then), Some(now)) if then != now);
@@ -244,8 +229,6 @@ fn lost_why(awaited: &Awaited, code: Option<BlobId>, height: u64) -> Option<Stri
     ))
 }
 
-// each call whose answer can no longer come fails with what happened; none runs again by itself,
-// as its write may have done its work before the answer was lost
 async fn lost_writes(ctx: &Ctx, id: u64) -> Result<(), Error> {
     let open = AWAITED.scan(ctx, AWAITED.prefix_of(&id))?;
     if open.is_empty() {
@@ -279,8 +262,6 @@ async fn lost_writes(ctx: &Ctx, id: u64) -> Result<(), Error> {
     tell(ctx, &row, line, "a tool call's answer was lost").await
 }
 
-// a watch's stream: egress ends it by its deadline, which each block of its events moves, and the
-// run awaiting it hears an end no event said; a harness update cancels that run
 pub(crate) async fn listening(ctx: &Ctx, id: u64, watch: u64) {
     let made = ctx.env().height;
     let mut flight = Flight {
@@ -316,8 +297,6 @@ pub(crate) fn unlistened(ctx: &ExecCtx, id: u64, watch: u64) {
     STREAMING.remove(ctx, &(id, watch));
 }
 
-// a stream egress has ended with no one to hear its end, as the run awaiting it was cut off: its
-// conversation hears that instead; one still going is watched again past its moved deadline
 async fn lost_streams(ctx: &Ctx, id: u64) -> Result<(), Error> {
     let env = ctx.env();
     let height = env.height;
@@ -346,7 +325,6 @@ async fn lost_streams(ctx: &Ctx, id: u64) -> Result<(), Error> {
             "{} call {} ({}) ended unheard: harness heard nothing more of it by block {end}, egress's deadline for its stream, as a harness update cut off the run that listened for its end; what it ran may still be running",
             row.tool, row.call, row.about
         );
-        // a closed conversation's line goes to the agent's current one, which wakes a block later
         if let Some(told) = note(ctx, row.agent, Some(row.thread), text)?
             && told != id
         {
@@ -357,7 +335,6 @@ async fn lost_streams(ctx: &Ctx, id: u64) -> Result<(), Error> {
     Ok(())
 }
 
-// egress moves a streaming call's deadline past each block that carries its events
 pub(crate) fn moved(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     let height = ctx.env().height;
     let Some(flight) = FLIGHTS
@@ -384,8 +361,6 @@ pub(crate) fn waits(ctx: &QueryCtx, id: u64) -> Result<bool, Error> {
     Ok(early || held)
 }
 
-// new input asks at once, however long the wait between attempts has grown; a time the model
-// asked for still holds, as asking before it only spends a call
 pub(crate) fn heard(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     let Some(retry) = RETRIES.get(ctx, &id)? else {
         return Ok(());
@@ -412,15 +387,11 @@ pub(crate) async fn again(ctx: &Ctx, id: u64, failure: Failure) -> Result<(), Er
         .get(ctx, &id)?
         .map_or(1, |retry| retry.attempt.saturating_add(1));
     let until = failure.wait.and_then(|wait| wait.until(now));
-    // an account that refused or failed the call is passed over while another the call may go to
-    // is free: asked there at the next block, whatever the wait the first one named
     let moved = match failure.fault {
         Some(fault) => routes::failed(ctx, id, fault == Fault::Refused, until)?,
         None => false,
     };
     let until = until.filter(|_| !moved);
-    // the wait doubles from one block, with no last attempt; a time the model named is waited
-    // out from the next block on, by the pace the chain keeps
     let gap = match until {
         Some(_) => 1,
         None if moved => 1,
@@ -471,8 +442,6 @@ pub(crate) async fn again(ctx: &Ctx, id: u64, failure: Failure) -> Result<(), Er
     Ok(())
 }
 
-// the scheduler wakes by height and the model's wait ends in time: the pace the chain kept since
-// the wait began says how many blocks the rest of it takes, never fewer than one
 async fn repace(ctx: &Ctx, id: u64) {
     let Ok(Some(retry)) = RETRIES.get(ctx, &id) else {
         return;
@@ -496,7 +465,6 @@ async fn repace(ctx: &Ctx, id: u64) {
             entry: Some(entry),
             ..retry
         },
-        // with no wake left the wait can't be kept: the next input asks
         Err(_) => Retry {
             until: None,
             entry: None,
@@ -506,9 +474,6 @@ async fn repace(ctx: &Ctx, id: u64) {
     RETRIES.put(ctx, &id, &paced);
 }
 
-// the block harness first ran the code that runs now; a switch to new code cancels every frame
-// that awaited a model call or a relay (the kernel's `cancel_parked`), so new code's first run
-// wakes, at the next block, each conversation whose turn was under way before it
 async fn switched(ctx: &Ctx) -> Result<Option<u64>, Error> {
     let Ok(code) = code_of(ctx, PROGRAM) else {
         return Ok(None);
@@ -534,8 +499,6 @@ async fn switched(ctx: &Ctx) -> Result<Option<u64>, Error> {
     Ok(Some(since))
 }
 
-// a reply that may still stream after the run awaiting it was cut off: egress still holds its
-// call, whose events and end reach harness whatever run awaited them, and its end records it
 fn still_streaming(ctx: &QueryCtx, row: &ThreadRow) -> Result<bool, Error> {
     let asked = matches!(row.asking, Asking::Asked { .. });
     let whole = PARTIALS
@@ -547,7 +510,6 @@ fn still_streaming(ctx: &QueryCtx, row: &ThreadRow) -> Result<bool, Error> {
     held_by_egress(ctx, row.id)
 }
 
-// whether egress holds the thread's streamed model call, on whichever member node it went to
 fn held_by_egress(ctx: &QueryCtx, id: u64) -> Result<bool, Error> {
     use abi::role::validators::{Query, Reply};
     let validators = ctx.env().role(abi::role::VALIDATORS)?.clone();
@@ -585,11 +547,9 @@ pub(crate) async fn recover(ctx: &Ctx, id: u64) -> Result<(), Error> {
     }
     let flight = FLIGHTS.get(ctx, &id)?;
     let height = ctx.env().height;
-    // a call made before harness kept flights was cut off by the update that brought this code
     let lapsed = flight
         .as_ref()
         .is_none_or(|flight| height > deadline(flight));
-    // one made before the code that runs now lost the run awaiting it to the switch
     let switch = since.filter(|since| flight.as_ref().is_some_and(|flight| flight.made < *since));
     let cut = match (lapsed, switch) {
         (true, _) => true,
@@ -658,8 +618,6 @@ fn configured_now(ctx: &QueryCtx, row: &ThreadRow) -> Result<BlobId, Error> {
     })
 }
 
-// a relay egress lost never let its call run, so relaying it again runs it once; a write still
-// out is the awaited program's to answer
 async fn rerun(ctx: &Ctx, id: u64, config: Option<BlobId>) -> Result<(), Error> {
     let cut: Vec<String> = CALLS
         .scan(ctx, CALLS.prefix_of(&id))?
@@ -681,7 +639,6 @@ async fn rerun(ctx: &Ctx, id: u64, config: Option<BlobId>) -> Result<(), Error> 
         cut.len()
     );
     tell(ctx, &row, line, "its tool calls' relays were lost").await?;
-    // the turn is recorded, so no live place reads the index
     let runs = cut.into_iter().map(|call| run_call(ctx, id, 0, call));
     let mut settled = Settled::default();
     for ran in all(runs).await {
@@ -715,8 +672,6 @@ async fn tell(ctx: &Ctx, row: &ThreadRow, line: String, why: &str) -> Result<(),
     Ok(())
 }
 
-// one line in the room a bound conversation answers in, for whoever watches it; a room that
-// refuses it loses nothing, as the thread's notice and the manager's line say the same
 async fn post(ctx: &Ctx, row: &ThreadRow, place: &Place, why: &str) {
     let height = ctx.env().height;
     let thread = match place {
@@ -745,9 +700,6 @@ pub(crate) async fn resume(ctx: Ctx, id: u64) -> Result<(), Error> {
     Ok(())
 }
 
-// a Resume someone sends to an idle conversation whose newest input no turn answered, as a turn
-// gave up on it, asks the model about it again; harness's own wakes never do, so a refusal that
-// is final is not asked again on every wake
 fn reask(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     let env = ctx.env();
     if matches!(env.cause, Cause::Scheduled { .. }) {
@@ -777,7 +729,6 @@ fn reask(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     Ok(())
 }
 
-// a stream still coming moved egress's deadline past this run: watch again from there
 async fn rewatch(ctx: &Ctx, id: u64) {
     let Ok(Some(flight)) = FLIGHTS.get(ctx, &id) else {
         return;
@@ -798,7 +749,6 @@ pub(crate) async fn report(ctx: Ctx, manager: AccountNumber) -> Result<(), Error
         REPORTS.remove(&ctx, &key);
         lines.push(format!("- {line}"));
     }
-    // a person holds no conversation here: each thread's notice is the record
     let Some(agent) = running(&ctx, manager)?.filter(|_| !lines.is_empty()) else {
         return Ok(());
     };

@@ -11,9 +11,6 @@ fn owner_of(sandbox: &MemorySandbox, repo: &str) -> Principal {
     repo.repo.owner
 }
 
-/// An op acts as an account: a key's, or a program's own when the program
-/// sends it for itself. The chain and a key that holds no account act as
-/// none.
 #[test]
 fn founding_requires_bounds_and_an_op_acts_as_an_account() {
     let sandbox = MemorySandbox::default();
@@ -38,10 +35,6 @@ fn founding_requires_bounds_and_an_op_acts_as_an_account() {
     assert_eq!(owner_of(&sandbox, "r"), Principal::Account(chat));
 }
 
-/// An agent writes through the program that runs it, as harness sends an
-/// agent's writes: the frame comes from that program and acts as the
-/// agent's account, so the agent owns the repository it creates and pushes
-/// to it as its owner.
 #[test]
 fn an_agent_creates_and_pushes_through_the_program_that_runs_it() {
     const AGENT: u64 = 20;
@@ -72,7 +65,6 @@ fn an_agent_creates_and_pushes_through_the_program_that_runs_it() {
     assert_eq!(refs_of(&sandbox, "notes")["refs/heads/main"], tip.to_hex());
 }
 
-/// Git's two queries are `answer`'s, raw; `query` has no `Reply` for them.
 #[test]
 fn a_git_wire_query_answers_raw_bytes_and_is_no_reply() {
     let sandbox = MemorySandbox::default();
@@ -83,7 +75,6 @@ fn a_git_wire_query_answers_raw_bytes_and_is_no_reply() {
     };
     let refusal = Forge::query(&sandbox.reads(1), advertise.clone()).unwrap_err();
     assert_eq!(refusal.code, code::INVALID_INPUT);
-    // `answer` serves it: refused for the repo, not for the shape
     let answered = Forge::answer(&sandbox.reads(1), advertise).unwrap_err();
     assert_eq!(answered.code, code::NOT_FOUND);
     let repos = Query::Repos {
@@ -362,8 +353,6 @@ fn a_walk_past_the_bound_asks_for_smaller_steps() {
     );
 }
 
-/// A walk outlives the blocks that wrote nothing to forge, so a long log
-/// finishes while the chain moves; forge writing mid-walk restarts it.
 #[test]
 fn a_cursor_outlives_empty_blocks_and_a_forge_write_restarts_it() {
     use common::story::*;
@@ -396,7 +385,6 @@ fn a_cursor_outlives_empty_blocks_and_a_forge_write_restarts_it() {
     assert_eq!(rig.query(&log(first.next)).unwrap_err().code, code::STALE);
 }
 
-/// A change's commits are its source's history less its target's.
 #[test]
 fn a_log_leaves_out_what_its_exclude_reaches() {
     use common::story::*;
@@ -417,9 +405,6 @@ fn a_log_leaves_out_what_its_exclude_reaches() {
     assert_eq!(oids, [story.feature]);
 }
 
-/// The app reads at the preconfirmed layer, whose height is the one its
-/// next ops run at: a push in the block that answered the cursor rewrites
-/// the log at the same height, and the cursor still tells.
 #[test]
 fn a_forge_write_at_the_answering_height_restarts_the_walk() {
     use common::story::*;
@@ -438,7 +423,6 @@ fn a_forge_write_at_the_answering_height_restarts_the_walk() {
         panic!("a log");
     };
     assert_eq!(page.items[0].oid, story.feature);
-    // no advance: the same height the page was answered at
     let (actor, height) = (rig.actor.clone(), rig.height);
     signed_op(
         &rig.sandbox,
@@ -453,8 +437,6 @@ fn a_forge_write_at_the_answering_height_restarts_the_walk() {
     assert_eq!(rig.query(&log(page.next)).unwrap_err().code, code::STALE);
 }
 
-/// What `exclude` reaches walks under its own budget: a target with more
-/// history than the change's own commits does not refuse the listing.
 #[test]
 fn a_log_exclude_spends_its_own_walk_budget() {
     use common::story::*;
@@ -491,8 +473,6 @@ fn stage(sandbox: &MemorySandbox, actor: &[u8], pack: Vec<u8>) -> Result<Vec<u8>
     })
 }
 
-/// The ids under `commit` that `source` gained for it: its tree and blobs,
-/// the commit itself last.
 fn objects_of(source: &MemoryObjects, commit: Oid) -> (Vec<Oid>, Oid) {
     let object = source.get(&commit).unwrap().unwrap();
     let parsed = Commit::parse(&object.body, Hash::Sha1).unwrap();
@@ -516,7 +496,6 @@ fn a_stage_stores_objects_and_moves_no_ref() {
     let tip = file_commit(&mut source, &[], 1, &[("a", b"1"), ("b", b"2")]);
     let (below, _) = objects_of(&source, tip);
 
-    // a commit whose tree is not held, alone: refused, nothing stored
     let open = stage(&sandbox, OWNER, pack_of(&source, &[tip]));
     assert_eq!(open.unwrap_err().code, code::NOT_FOUND);
     assert_eq!(sandbox.blob_count(), 0);
@@ -527,7 +506,6 @@ fn a_stage_stores_objects_and_moves_no_ref() {
     assert_eq!(sandbox.blob_count(), source.count());
     assert!(refs_of(&sandbox, "project").is_empty());
 
-    // a pack that is no pack is refused as one
     let garbage = stage(&sandbox, OWNER, b"PACK not really".to_vec());
     assert_eq!(garbage.unwrap_err().code, code::INVALID_INPUT);
 }
@@ -597,9 +575,6 @@ fn anyone_stages_until_the_owner_lists_writers() {
     assert_eq!(sandbox.blob_count(), source.count());
 }
 
-/// Every object a stage stored had what it names held when it landed, so
-/// the push that moves the ref brings only what is left: the commit alone
-/// (thin, its tree staged), or nothing at all.
 #[test]
 fn a_push_moves_a_ref_onto_staged_objects() {
     let sandbox = founded();
@@ -641,8 +616,6 @@ fn a_push_moves_a_ref_onto_staged_objects() {
     assert_eq!(sandbox.blob_count(), source.count());
 }
 
-/// A push whose ref is refused keeps the objects it unpacked, as git's
-/// receive-pack does: a push again after the refusal brings none of them.
 #[test]
 fn a_refused_ref_keeps_the_objects_its_pack_brought() {
     let sandbox = founded();
@@ -671,7 +644,6 @@ fn a_refused_ref_keeps_the_objects_its_pack_brought() {
     assert_eq!(again, ["unpack ok", "ok refs/heads/main"]);
 }
 
-/// Incompressible bytes.
 fn noise(len: usize, seed: u64) -> Vec<u8> {
     let mut state = seed | 1;
     (0..len)
@@ -729,9 +701,6 @@ fn a_commit_bigger_than_one_part_lands_in_parts() {
     assert_eq!(sandbox.blob_count(), source.count());
 }
 
-/// A forge founded with `bounds` holding `project` with a history: c1 ← c2 ←
-/// c3 ← c4, a side commit merged at c4, each with a file of its own; and the
-/// source the pack came from.
 fn history(bounds: Bounds) -> (MemorySandbox, MemoryObjects, [Oid; 5]) {
     let sandbox = MemorySandbox::default();
     Forge::init(&sandbox.exec(1), &abi::encode(&bounds)).unwrap();
@@ -822,7 +791,6 @@ fn a_closure_names_each_object_by_the_blob_the_node_holds_it_as() {
     }
 }
 
-// What a client lists from `History` pages, expanding the trees itself from `source`.
 fn history_of(
     sandbox: &MemorySandbox,
     source: &MemoryObjects,
@@ -905,10 +873,6 @@ fn a_closure_of_an_object_the_node_does_not_hold_is_refused() {
     assert_eq!(ask(&sandbox, &query).unwrap_err().code, code::NOT_FOUND);
 }
 
-/// A diff is held to `merge_cost` per file, and only an interleaved edit
-/// pays it: a file added, deleted or grown in one place shows whole at any
-/// length, a file whose edit is too long to search is answered `Oversize`,
-/// and either way the page it is on still comes.
 #[test]
 fn a_long_one_sided_edit_shows_and_a_too_long_search_marks_the_file() {
     let sandbox = MemorySandbox::default();

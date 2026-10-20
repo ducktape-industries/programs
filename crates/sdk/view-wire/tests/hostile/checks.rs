@@ -1,11 +1,5 @@
 use super::*;
 
-// -------------------------------------------------------- bound assertions
-
-/// The nesting depth `sanitize` would count for this node (root is 0, each
-/// container-like or one-child node adds one) — the same metric
-/// `decode`'s own depth budget counts, so it doubles as "was this tree
-/// really over the budget" evidence when `decode` refuses one.
 pub(super) fn tree_depth(node: &Node) -> usize {
     match node {
         Node::Sensor { child: content, .. }
@@ -222,8 +216,6 @@ pub(super) fn check_bounds(node: &Node, styles: &Styles, depth: usize, ctx: &str
     }
 }
 
-/// Every field's text in the tree, in one fixed walk order, so the same
-/// tree before and after `sanitize` compares element for element.
 pub(super) fn field_texts(root: &Node) -> Vec<String> {
     let mut pending = vec![root];
     let mut texts = Vec::new();
@@ -250,8 +242,6 @@ pub(super) fn check_frame(frame: &Frame, styles: &Styles, ctx: &str) {
 }
 
 pub(super) fn has_duplicate_typed_siblings(node: &Node) -> bool {
-    // Filed under its own id, or as a list's row under its index; unique
-    // among the filed nodes under the nearest filed ancestor.
     fn walk(node: &Node, row: Option<usize>, scope: &mut HashSet<ElementIdWire>) -> bool {
         let row_of = |at: usize| match node {
             Node::List { range_start, .. } => Some(range_start + at),

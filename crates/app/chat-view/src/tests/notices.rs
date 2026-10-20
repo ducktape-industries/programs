@@ -3,11 +3,6 @@
 //! screen to the host, and keeps the read cursors between runs.
 use super::*;
 
-/// A direct message landing in a room the reader is not in is no notice
-/// and no badge from the pane, however many panes are open: that is the
-/// notifier's, which the host runs once. Opening the room reads the host's
-/// rows under the tag the notifier's notices carry, and names the room as
-/// the one on screen.
 #[test]
 fn a_pane_posts_nothing_and_takes_a_read_rooms_notices_down() {
     use view::methods::{HostBadge, HostShowing, NotifyPost, NotifySeen};
@@ -48,9 +43,6 @@ fn a_pane_posts_nothing_and_takes_a_read_rooms_notices_down() {
     assert!(cx.host().requests::<NotifyPost>().is_empty());
 }
 
-/// A relaunch starts with no cursors in memory: the ones kept on the device
-/// come back, so rooms still unread are dotted, and reading a room keeps its
-/// new cursor, which the notifier counts from.
 #[test]
 fn kept_cursors_bring_the_badge_back_after_a_relaunch() {
     use std::collections::BTreeMap;
@@ -142,9 +134,6 @@ fn a_refused_store_read_still_keeps_cursors() {
     assert_eq!(kept, BTreeMap::from([("general".into(), 3)]));
 }
 
-/// The room's details offer its notices as one radio group, read as they
-/// open: the reader's choice checked, the arrows moving among them, and
-/// each press, Enter or Space one op that makes it the room's.
 #[test]
 fn the_details_choose_a_rooms_notices() {
     use view::methods::Submit;
@@ -169,7 +158,6 @@ fn the_details_choose_a_rooms_notices() {
     assert_eq!(checked(&cx, "default"), Some(view::Toggled::False));
     assert!(cx.has_text("All messages"));
 
-    // an arrow moves among them and writes nothing; Enter chooses
     let sent = |cx: &TestAppContext| cx.host().requests::<Submit<::chat::Chat>>();
     let before = sent(&cx).len();
     cx.simulate_focus("chat-details-notices");
@@ -208,9 +196,6 @@ fn the_details_choose_a_rooms_notices() {
     );
 }
 
-// the details offer each account the reader manages a group of its own in a room, checked as chat
-// holds its choice, beside the reader's own; a press writes the choice for it, and a direct room
-// offers none
 #[test]
 fn the_details_choose_a_managed_agents_notices() {
     use view::methods::Submit;

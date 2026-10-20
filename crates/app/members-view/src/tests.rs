@@ -118,8 +118,6 @@ fn account_of(signer: &[u8]) -> Option<u64> {
     }
 }
 
-/// `blocks`, oldest first, as the node serves them and the `activity`
-/// program indexes them.
 fn chain(cx: &mut TestAppContext, blocks: Vec<Block>) {
     let tip = blocks.last().cloned();
     let txs = blocks.clone();
@@ -168,8 +166,6 @@ fn chain(cx: &mut TestAppContext, blocks: Vec<Block>) {
     });
 }
 
-/// eddy (#7, the reader, a validator) manages scout (#9, active) and relay
-/// (#10, revoked); chat (#8) is a program; ada (#11) is another person.
 fn respond(cx: &mut TestAppContext) {
     cx.host().handle::<Query<Identity>>(|query| {
         assert!(matches!(query, identity::Query::List { .. }));
@@ -197,7 +193,6 @@ fn respond(cx: &mut TestAppContext) {
             role: valset::Role::Validator,
         }])))
     });
-    // two blocks: scout posted at 12, eddy at 11 and 12
     chain(
         cx,
         vec![
@@ -207,7 +202,6 @@ fn respond(cx: &mut TestAppContext) {
     );
 }
 
-/// The view open on [`respond`]'s host, seated as eddy (#7).
 fn ready() -> (TestAppContext, Entity<Members>) {
     let mut cx = TestAppContext::new();
     respond(&mut cx);
@@ -221,7 +215,6 @@ fn ready() -> (TestAppContext, Entity<Members>) {
     (cx, view)
 }
 
-/// The colour `text` is drawn in under `key`, inherited down the tree.
 fn color_of(cx: &TestAppContext, key: &str, text: &str) -> Option<Hsla> {
     fn walk(
         cx: &TestAppContext,
@@ -245,7 +238,6 @@ fn color_of(cx: &TestAppContext, key: &str, text: &str) -> Option<Hsla> {
 fn the_list_groups_people_then_agents_then_programs_and_chooses_no_one() {
     let (cx, _) = ready();
     let texts = cx.texts();
-    // the last of each, past the chips of the same names
     let at = |text: &str| texts.iter().rposition(|t| t == text).unwrap();
     assert!(at("People") < at("eddy") && at("eddy") < at("ada"));
     assert!(at("ada") < at("Agents") && at("Agents") < at("scout"));
@@ -261,7 +253,6 @@ fn the_list_groups_people_then_agents_then_programs_and_chooses_no_one() {
     ] {
         assert!(cx.has_text(text), "{text}: {texts:?}");
     }
-    // nothing chosen, nothing read of the chain
     assert!(cx.host().requests::<Query<Activity>>().is_empty());
     assert_eq!(cx.host().requests::<Changes<Identity>>().len(), 1);
 }
@@ -292,10 +283,8 @@ fn choosing_a_person_shows_their_devices_the_agents_they_manage_and_their_activi
     ] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
     }
-    // scout's post is scout's, not eddy's
     assert!(!cx.has_text("block 12 · 1"));
     assert!(cx.host().requests::<ChainBlock>().is_empty());
-    // the reader's own account has no one to DM
     assert!(cx.find("members-open-dm").is_none());
     cx.simulate_click("members-explorer");
     assert_eq!(
@@ -310,7 +299,6 @@ fn choosing_a_person_shows_their_devices_the_agents_they_manage_and_their_activi
             .map(String::as_str),
         Some("duck://explorer/tx/12/0")
     );
-    // a managed agent is chosen in place
     cx.simulate_click("members-manages-9");
     cx.run_until_parked();
     assert!(cx.has_text("scout's bio"));
@@ -339,7 +327,6 @@ fn an_agent_names_its_manager_its_standing_and_its_devices() {
         cx.host().requests::<view::methods::LinkOpen>(),
         vec![ducklink::mint("testnet#0a1b2c3d", "chat", &["dm-7-9"]).unwrap()]
     );
-    // the manager's name chooses the manager
     cx.simulate_click("members-manager");
     cx.run_until_parked();
     assert!(cx.has_text("eddy's bio"));
@@ -376,16 +363,12 @@ fn the_filter_and_the_chips_narrow_together_and_keep_the_choice() {
     cx.simulate_click("members-row-9");
     cx.run_until_parked();
     let reads = cx.host().requests::<Query<Identity>>().len();
-    // Programs: only chat
     cx.simulate_click("members-chip-3");
     assert!(cx.find("members-row-8").is_some() && cx.find("members-row-7").is_none());
-    // and a filter on top: nothing is both a program and "ed"
     cx.simulate_input("members-filter", "ed");
     assert!(cx.has_text("Nothing matches"));
-    // People and "ed": eddy alone
     cx.simulate_click("members-chip-1");
     assert!(cx.find("members-row-7").is_some() && cx.find("members-row-11").is_none());
-    // the chosen agent is hidden from the list, not from the detail
     assert!(cx.has_text("scout's bio"));
     cx.simulate_click("members-chip-0");
     cx.simulate_input("members-filter", "");
@@ -473,12 +456,9 @@ fn a_live_bump_re_reads_and_a_snapshot_restores_the_choice() {
         assert_eq!(view.selected(), Some(9));
     });
     assert_eq!(restored.host().requests::<Query<Identity>>().len(), 1);
-    // the activity is read again for the restored choice
     assert_eq!(restored.host().requests::<ChainBlocks>().len(), 1);
 }
 
-/// A block that changed no account: identity's head re-reads the roster,
-/// the same rows land, and the view draws nothing for either.
 #[test]
 fn a_live_bump_that_lands_the_same_roster_draws_nothing() {
     let (mut cx, _) = ready();
@@ -496,8 +476,6 @@ fn a_live_bump_that_lands_the_same_roster_draws_nothing() {
     assert!(cx.has_text("scout's bio"));
 }
 
-/// A key seated or unseated is valset's block, not identity's: the standing
-/// in the list follows it with no identity bump.
 #[test]
 fn a_valset_block_reaches_the_standing_without_an_identity_bump() {
     let (mut cx, _) = ready();
@@ -525,7 +503,6 @@ fn a_valset_block_reaches_the_standing_without_an_identity_bump() {
     );
 }
 
-/// The detail's activity read again lands what it shows: nothing draws.
 #[test]
 fn an_activity_read_anew_that_lands_the_same_draws_nothing() {
     let (mut cx, view) = ready();
@@ -543,8 +520,6 @@ fn an_activity_read_anew_that_lands_the_same_draws_nothing() {
     assert_eq!(cx.renders(), renders, "the same activity drew nothing");
 }
 
-/// Nothing selected, the list still has an active row — its first shown —
-/// so Tab lands on a row, not on the box; End selects the last shown row.
 #[test]
 fn the_first_row_is_active_before_a_choice_and_end_selects_the_last() {
     let (mut cx, _) = ready();
@@ -567,7 +542,6 @@ fn the_first_row_is_active_before_a_choice_and_end_selects_the_last() {
             .iter()
             .all(|row| !cx.interactivity(row).aria.active_descendant)
     );
-    // Enter selects the default row, which Home could not reach (it is there)
     cx.simulate_focus("members-list");
     cx.simulate_key_down("members-list", "enter");
     cx.run_until_parked();
@@ -596,8 +570,6 @@ fn the_arrows_walk_the_list_and_the_chosen_row_is_its_active_one() {
     let list = of(&cx, "members-list");
     assert_eq!(list.role, Some(view::Role::ListBox));
     assert!(list.focusable);
-    // the first shown row is active before any choice, so ↓ selects the
-    // second, and ↑ comes back
     cx.simulate_focus("members-list");
     for (key, number, other) in [("down", 11, 7), ("up", 7, 11)] {
         cx.simulate_key_down("members-list", key);
@@ -606,7 +578,6 @@ fn the_arrows_walk_the_list_and_the_chosen_row_is_its_active_one() {
             of(&cx, &format!("members-row-{other}")),
         );
         assert_eq!(row.role, Some(view::Role::ListBoxOption));
-        // a focusable row would lose the flag to the host's sanitizer
         assert!(!row.focusable && row.aria.active_descendant);
         assert_eq!(row.aria.selected, Some(true));
         assert!(!other.aria.active_descendant);
@@ -614,24 +585,17 @@ fn the_arrows_walk_the_list_and_the_chosen_row_is_its_active_one() {
     }
 }
 
-/// ↓ then ↑ (a reader trying the next member, the door's arrow probe)
-/// comes back to an account whose block links are there at once, not to
-/// "Reading…" for the length of a scan: what was read of it shows while it
-/// is read anew, and the new read replaces it.
 #[test]
 fn an_account_chosen_again_shows_its_activity_at_once_and_reads_it_anew() {
     let (mut cx, _) = ready();
     cx.simulate_click("members-row-7");
     cx.run_until_parked();
     assert!(cx.has_text("block 12 · 0"), "{:?}", cx.texts());
-    // eddy signs again at 13, and the index holds only that
     chain(&mut cx, vec![block(13, vec![tx(EDDY)])]);
-    // ↓ ↑: read anew, the new read shows
     cx.simulate_key_down("members-list", "down");
     cx.simulate_key_down("members-list", "up");
     cx.run_until_parked();
     assert!(cx.has_text("block 13 · 0") && !cx.has_text("block 12 · 0"));
-    // the chain stops answering: ↓ ↑ still shows eddy's links at once
     cx.host().never::<ChainBlocks>();
     cx.simulate_key_down("members-list", "down");
     cx.run_until_parked();
@@ -699,8 +663,6 @@ fn recent_activity_lists_frames_and_reads_no_transaction() {
     );
 }
 
-/// A row is called by the member's name, not the avatar's initial drawn
-/// before it; what else the row says is its description.
 #[test]
 fn a_row_is_named_by_the_member_not_the_avatar() {
     let (cx, _) = ready();
@@ -723,8 +685,6 @@ fn a_row_is_named_by_the_member_not_the_avatar() {
     }
 }
 
-/// A Manages row is called by the agent, not the avatar's initial either;
-/// its account and standing are its description.
 #[test]
 fn a_managed_agent_is_named_by_the_agent_not_the_avatar() {
     let (mut cx, _) = ready();
@@ -805,12 +765,10 @@ fn the_docked_list_drags_within_its_bounds_and_leaves_the_detail_its_narrowest()
     assert!(list_is(&cx, 400.));
     cx.simulate_drag("members-list-resize", 60., 0.);
     assert!(list_is(&cx, 460.));
-    // never past the detail's 440 in 1000
     cx.simulate_drag("members-list-resize", 400., 0.);
     assert!(list_is(&cx, 560.));
     cx.simulate_drag("members-list-resize", -900., 0.);
     assert!(list_is(&cx, 320.));
-    // the window shrinks: the list gives way before the detail floats
     cx.simulate_drag("members-list-resize", 200., 0.);
     cx.simulate_resize(800., 640.);
     assert!(cx.find("members-list-resize").is_some());
@@ -821,7 +779,6 @@ fn style(cx: &TestAppContext, key: &str) -> StyleRefinement {
     cx.style(key).clone()
 }
 
-/// Whether the docked list is `width` wide.
 fn list_is(cx: &TestAppContext, width: f32) -> bool {
     style(cx, "members-list-pane").size.width
         == StyleRefinement::default().w(view::px(width)).size.width

@@ -22,17 +22,10 @@ use crate::queries::{Account, Key, Seat};
 use crate::state::Section;
 use crate::words;
 
-/// The page element's id; `design::page` names its title row after it.
 const PAGE: &str = "settings/page";
-/// This device's key, where no account names it (Expo
-/// `app/account/index.tsx:97`).
 const THIS_DEVICE: &str = "Phone";
-/// A phone runs no node, and only the machine running one mints its
-/// invites: the Invites pane is this line (the Expo app's, from the app's
-/// `invite_unsupported` refusal).
 const NO_INVITES: &str = "Only the machine running this node can mint its invites.";
 
-/// The screen: the title row, the strip, the open pane under it.
 pub(super) fn screen(
     view: &Settings,
     cx: &mut Context<Settings>,
@@ -48,11 +41,7 @@ pub(super) fn screen(
             quiet("settings/invite/unsupported", NO_INVITES, ladder, theme).into_any_element()
         }
     };
-    // Expo's Account screen is a page with Back (`app/account/index.tsx:38`);
-    // here the shell's capsule closes it, so it is a child page with no Back
-    // of its own. It is the account place itself: it draws no avatar.
     let page = design::page(PAGE, "Account", Nav::Child, ladder, theme);
-    // SDK gap: the network caption, swap when the SDK builds it (kit.md §2)
     let page = match words::network(&view.session) {
         Some(network) => page.caption(network.to_owned()),
         None => page,
@@ -68,8 +57,6 @@ pub(super) fn screen(
     )
 }
 
-/// The panes under the title row (the Expo kit's `Strip`,
-/// `src/kit/Choice.tsx:114`): one Tab stop, ← → open the next.
 fn strip(
     view: &Settings,
     shown: Section,
@@ -111,8 +98,6 @@ fn strip(
         .children(tabs)
 }
 
-/// The Account pane: who the seated key is and its keys, or what stands in
-/// for them while they are read, refused or missing.
 fn account_pane(
     view: &Settings,
     cx: &mut Context<Settings>,
@@ -143,8 +128,6 @@ fn account_pane(
     }
 }
 
-/// A seat: an account and its keys; a bare key and the form that gives it
-/// an account; a stopped agent's key and why it does not act.
 fn seat_pane(
     view: &Settings,
     seat: &Seat,
@@ -152,7 +135,6 @@ fn seat_pane(
     ladder: &Ladder,
     theme: &Theme,
 ) -> Stateful<Div> {
-    // a signer that is not hex is no key: no row is this device's
     let mine = design::unhex(&view.session.signer).unwrap_or_default();
     let pane = column("settings/account/data");
     match seat {
@@ -204,8 +186,6 @@ fn seat_pane(
     }
 }
 
-/// No seat: the session names an account identity does not hold, or no
-/// key is seated at all.
 fn no_account(view: &Settings, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
     match view.session.account {
         Some(number) if !view.session.signer.is_empty() => quiet(
@@ -225,7 +205,6 @@ fn no_account(view: &Settings, ladder: &Ladder, theme: &Theme) -> Stateful<Div> 
     }
 }
 
-/// The line under an account's name: `account 7 · Person · 1 key`.
 fn about(account: &Account) -> String {
     format!(
         "{} · {} · {}",
@@ -235,8 +214,6 @@ fn about(account: &Account) -> String {
     )
 }
 
-/// Who the seated key is: its face, its name, one mono line under it.
-// An account's picture fills the face once read; its photo presses follow.
 fn who(
     name: &str,
     about: String,
@@ -265,8 +242,6 @@ fn keys_head(count: usize, ladder: &Ladder, theme: &Theme) -> Stateful<Div> {
     design::section_head("settings/keys", words::KEYS, ladder, theme).child(count.to_string())
 }
 
-/// One key: a phone for this device's, a key for the rest; its name over
-/// its short hex (and this device's fingerprint); Validator at the right.
 fn key_row(
     i: usize,
     label: &str,
@@ -299,7 +274,6 @@ fn key_row(
         })
 }
 
-/// A bare key's account: what it is for, its name, then Create.
 fn create_account(
     view: &Settings,
     cx: &mut Context<Settings>,
@@ -314,7 +288,6 @@ fn create_account(
         words::ACCOUNT_NAME,
         words::CREATE_ACCOUNT.prompt,
     )
-    // Return creates it (Expo `app/account/index.tsx:189`)
     .on_submit(cx.listener(|v: &mut Settings, _: &(), _, cx| v.submit_create_account(cx)));
     let pressed =
         cx.listener(|v: &mut Settings, _: &ClickEvent, _, cx| v.submit_create_account(cx));

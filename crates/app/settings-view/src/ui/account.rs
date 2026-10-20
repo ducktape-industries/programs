@@ -7,7 +7,6 @@ use crate::state::{Answering, Choice};
 use identity::{Ownership, Standing};
 use view::design::Ladder;
 
-/// The identity header's avatar.
 const AVATAR_XL: Pixels = px(40.);
 
 pub(super) fn account(
@@ -32,7 +31,6 @@ pub(super) fn account(
                 .child(create_account(view, cx, theme, ladder))
                 .into_any_element()
         }
-        // a key held by an agent that does not act goes by the agent
         Loadable::Ready(Some(Seat::Stopped { key, name, note }))
         | Loadable::Reloading(Some(Seat::Stopped { key, name, note }), _) => {
             column("settings/account/data")
@@ -101,9 +99,6 @@ pub(super) fn account(
     }
 }
 
-/// Who the seated key is: an avatar, the name, one mono line under it.
-// An account's picture fills the avatar once read; its photo presses sit
-// at the right.
 fn who(
     name: &str,
     about: &str,
@@ -146,7 +141,6 @@ fn who(
         .children(presses)
 }
 
-/// One key: its label over its short hex, a Validator tag on the right.
 fn key_row(i: usize, label: &str, key: &Key, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
     let hex = design::short_hex(&abi::hex(&key.key));
     div()
@@ -237,8 +231,6 @@ fn create_account(
         .into_any_element()
 }
 
-/// The Agents pane: every agent this account manages, one row each, then
-/// the forms that create one and add a key to one.
 pub(super) fn agents_pane(
     view: &Settings,
     cx: &mut Context<Settings>,
@@ -247,7 +239,6 @@ pub(super) fn agents_pane(
 ) -> AnyElement {
     match view.account.ready() {
         Some(Some(Seat::Account(account))) => agents(view, account, cx, theme, ladder),
-        // the menu lists Agents only for such an account
         _ => div().into_any_element(),
     }
 }
@@ -341,9 +332,6 @@ fn agents(
         .into_any_element()
 }
 
-/// One agent's row: its avatar, name (a field while renamed) and standing,
-/// `account n · k keys`, and what its manager does to it. Revoked, it only
-/// reads as such.
 fn agent(
     view: &Settings,
     agent: &Agent,
@@ -384,7 +372,6 @@ fn agent(
             .child(agent.name.clone())
             .into_any_element(),
     };
-    // as wide as the rename field at least; narrower, the actions wrap below
     let body = div()
         .flex_1()
         .min_w(super::FIELD_W)
@@ -397,7 +384,6 @@ fn agent(
                 .items_center()
                 .gap(design::space::SM)
                 .child(name)
-                // the field takes the row while renaming; the standing waits
                 .when(!editing, |line| {
                     line.child(design::badge(
                         format!("settings/agents/{number}/standing"),
@@ -592,7 +578,6 @@ fn people(
                 &answering.form,
                 theme,
             )
-            // a choice out holds the field too, as dev's one form did
             .disabled(busy);
             let input = match busy {
                 true => input.into_any_element(),
@@ -632,10 +617,6 @@ fn people(
         .child(adding)
 }
 
-// An agent's presses: Rename (Save while its field is open, with
-// Cancel), Change photo and Remove photo, Suspend or Resume, Revoke.
-// Suspend and Revoke are confirmed by the host before the key signs them:
-// one press here.
 fn actions(
     view: &Settings,
     agent: &Agent,
@@ -651,7 +632,6 @@ fn actions(
     let revoke = cx.listener(move |v: &mut Settings, _: &ClickEvent, _, cx| {
         v.set_standing(identity::Op::Revoke { account: number }, cx)
     });
-    // Rename opens the field; Save, beside it, sends the name
     let open = renaming.is_some();
     let renamed = cx.listener(move |v: &mut Settings, _: &ClickEvent, _, cx| match open {
         true => v.submit_rename_agent(number, cx),

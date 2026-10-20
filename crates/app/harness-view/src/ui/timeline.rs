@@ -19,11 +19,8 @@ use crate::words::{
 };
 use crate::{Agents, Picture, Sheet, State, thread_state};
 
-/// How wide an entry's avatar is.
 const AVATAR: f32 = 24.;
 
-/// How tall a call's header is at least under a pointer; under a finger it is a press's
-/// [`Ladder::hit`].
 const CALL_HEADER: f32 = 32.;
 
 pub(crate) fn transcript(
@@ -34,8 +31,6 @@ pub(crate) fn transcript(
     ladder: &Ladder,
 ) -> impl IntoElement + use<> {
     let (theme, ladder) = (*theme, *ladder);
-    // a row a frame: an entry draws on the row of the frame it begins with, the frames it holds
-    // draw nothing, and the row after the last is the reply the model is streaming back
     let rows = view.rows_for(&shown.thread);
     list(
         "thread-transcript",
@@ -52,7 +47,6 @@ pub(crate) fn transcript(
     .w_full()
 }
 
-/// The frame an entry begins with: what its row's key and its sheet name it by.
 pub(crate) fn first_seq(entry: &Entry) -> u64 {
     match entry {
         Entry::Worked(work) => work.first().seq,
@@ -64,8 +58,6 @@ pub(crate) fn first_seq(entry: &Entry) -> u64 {
     }
 }
 
-// the list's row of frame `seq`, or past the last frame the streaming reply's; a frame above
-// those read asks for them
 fn row(
     view: &Agents,
     seq: u64,
@@ -101,14 +93,12 @@ fn row(
     let Some(entry) = entries.iter().find(|entry| first_seq(entry) == seq) else {
         return div().into_any_element();
     };
-    // the burst the loop is still in opens of itself
     let working = !shown.thread.closed && thread_state(&shown.thread) != State::Idle;
     let live = working && entries.last().map(first_seq) == Some(seq);
     let roster = view.roster.ready();
     entry_row(view, entry, live, shown, roster, &agent, cx, theme, ladder)
 }
 
-// a frame on its way: one muted line, so the list has a row to show while it is read
 fn reading(seq: u64, theme: &Theme, ladder: &Ladder) -> AnyElement {
     small("Reading…", theme, ladder)
         .id(SharedString::from(format!("entry-{seq}-reading")))
@@ -117,7 +107,6 @@ fn reading(seq: u64, theme: &Theme, ladder: &Ladder) -> AnyElement {
         .into_any_element()
 }
 
-/// One muted line at the ladder's caption size.
 fn small(words: impl Into<SharedString>, theme: &Theme, ladder: &Ladder) -> Div {
     div()
         .text_type(ladder.caption)
@@ -125,9 +114,6 @@ fn small(words: impl Into<SharedString>, theme: &Theme, ladder: &Ladder) -> Div 
         .child(words.into())
 }
 
-/// An entry: its author's face beside a head (name, what they did, when, and under a pointer
-/// where in the transcript), and what it holds under the head. Under a finger a long press on
-/// it opens the facts of the entry, which begins at frame `seq`.
 #[allow(clippy::too_many_arguments)]
 fn entry(
     seq: u64,
@@ -140,7 +126,6 @@ fn entry(
     ladder: &Ladder,
 ) -> Stateful<Div> {
     let facts = ladder.touch.then(|| {
-        // a press of a call or a fold inside passes out to here: only a finger held opens it
         cx.listener(move |view: &mut Agents, event: &ClickEvent, _, cx| {
             if let ClickEvent::Touch(touch) = event
                 && touch.long_press
@@ -160,7 +145,6 @@ fn entry(
         .py(space::LG)
         .border_b_1()
         .border_color(theme.border)
-        // a press as tall as a finger's, whatever the entry holds
         .when_some(facts, |entry, facts| {
             entry
                 .min_h(ladder.hit)
@@ -190,7 +174,6 @@ fn entry(
         )
 }
 
-/// What an entry's head says: its author, then what they did and when, muted.
 fn said_by(
     name: String,
     what: String,
@@ -220,7 +203,6 @@ fn entry_row(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
-    // where the entry is, a press that copies it: a pointer's alone
     let meta = |seq: u64, words: String, cx: &mut Context<Agents>| {
         (!ladder.touch).then(|| {
             copy_chip(
@@ -244,7 +226,6 @@ fn entry_row(
             let face = design::avatar_with(&name, picture, px(AVATAR), theme);
             let meta = meta(frame.seq, frame_meta(frame), cx);
             let head = said_by(name, "wrote".into(), frame.time, theme, ladder);
-            // the post whole, harness's framing line included (owner, 10-18)
             let text = div().child(mentions(text, roster));
             entry(frame.seq, face, head, meta, text, cx, theme, ladder).into_any_element()
         }
@@ -293,7 +274,6 @@ fn entry_row(
                     said_block(view, frame.seq, index, said, shown, cx, theme, ladder)
                 })
                 .collect::<Vec<_>>();
-            // a turn's tokens: a pointer's faint line; a finger reads them in its facts
             let usage = (!ladder.touch).then(|| {
                 div()
                     .text_type(ladder.caption)
@@ -350,8 +330,6 @@ fn entry_row(
     }
 }
 
-/// A burst of calls: the model's words while it worked, the fold line that says what the
-/// burst did, and, open, each call with its result.
 #[allow(clippy::too_many_arguments)]
 fn worked(
     view: &Agents,
@@ -407,7 +385,6 @@ fn worked(
         .when(open, |work| work.child(calls))
 }
 
-/// One block of what the model said in a turn: its words, its thinking folded, a call.
 #[allow(clippy::too_many_arguments)]
 fn said_block(
     view: &Agents,
@@ -445,7 +422,6 @@ fn said_block(
         Said::RedactedThinking(_) => small("Thinking, redacted", theme, ladder).into_any_element(),
         Said::ToolUse { id, name, input } => {
             let call = shown.calls.iter().find(|call| &call.id == id);
-            // a call drawn is read, once
             if call.is_none() {
                 view.want_call(id);
             }
@@ -469,7 +445,6 @@ fn said_block(
         Said::ServerToolResult(block) => {
             let call = timeline::result_of(block);
             match timeline::server_use_in(&shown.frames, &call) {
-                // its call's line draws it
                 true => div().into_any_element(),
                 false => {
                     let words = timeline::server_outcome(block).words;
@@ -480,8 +455,6 @@ fn said_block(
     }
 }
 
-// a call the model vendor ran (web search, web fetch): what it did and what came back, and,
-// opened, each source; harness neither runs it nor keeps a row for it
 fn server_box(
     view: &Agents,
     (id, name, input): (&str, &str, &str),
@@ -557,8 +530,6 @@ fn server_box(
         })
 }
 
-/// A tool call: its name, its input on one line and how far it got; opened, its whole input,
-/// its result, the blocks it ran at and (under a pointer) its id.
 #[allow(clippy::too_many_arguments)]
 fn call_box(
     view: &Agents,
@@ -663,8 +634,6 @@ fn call_box(
         .children(opened_body)
 }
 
-/// A call's result inside its box: its size (and that the model reads it in parts, when it
-/// does), then its first lines, and all of it behind a press.
 fn result_part(
     view: &Agents,
     frame: &Frame,
@@ -705,7 +674,6 @@ fn result_part(
     };
     let body = match whole {
         true => mono(&text).into_any_element(),
-        // one line, clipped by the room the box gives it; a press shows it whole
         false => mono(&first_line(&text))
             .id(SharedString::from(key.clone()))
             .truncate()
@@ -746,8 +714,6 @@ fn result_part(
         .children(less)
 }
 
-/// The divider a summary draws: the model sees what is above it only as the summary, which a
-/// press shows.
 fn summary_mark(
     view: &Agents,
     frame: &Frame,
@@ -793,8 +759,6 @@ fn summary_mark(
         .into_any_element()
 }
 
-/// The reply the model is streaming back, as it grows: its words, its thinking, each call as it
-/// forms.
 fn partial_row(
     partial: &Partial,
     calls: &[CallRow],

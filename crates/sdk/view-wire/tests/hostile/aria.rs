@@ -53,7 +53,6 @@ fn sanitize_refuses_a_consumed_click_with_no_click() {
     );
 }
 
-/// One container carrying `interactivity`, sanitized; what survives.
 fn sanitized(interactivity: Interactivity) -> Result<Interactivity, Refused> {
     let mut frame = Frame {
         root: Some(Node::Container(ContainerNode {
@@ -127,7 +126,6 @@ fn a_heading_level_outside_1_to_6_is_no_level() {
         });
         assert_eq!(heading.unwrap().aria.level, kept, "level {level}");
     }
-    // A tree item's level is its depth, not a heading's.
     let item = sanitized(Interactivity {
         role: Some(gpui::Role::TreeItem),
         aria: Aria {
@@ -159,7 +157,6 @@ fn a_focusable_node_is_not_its_own_active_descendant() {
     }
 }
 
-/// A list box option that claims to be the active descendant.
 fn claiming_option(key: &str) -> Node {
     Node::Container(ContainerNode {
         id: Some(ElementIdWire::Name(key.into())),
@@ -201,8 +198,6 @@ fn only_the_first_active_descendant_in_a_frame_is_kept() {
     assert_eq!(claims, [true, false]);
 }
 
-/// Each focusable node restarts the budget: two composites on one screen
-/// both keep their claim, as gpui counts claims per focused node.
 #[test]
 fn a_claim_under_each_focusable_ancestor_is_kept() {
     let list = |key: &str, rows: Vec<Node>| {
@@ -256,9 +251,6 @@ fn a_claim_under_each_focusable_ancestor_is_kept() {
     );
 }
 
-/// A focusable box with no role pushes no accessibility node, so gpui
-/// counts a claim under it against the roled ancestor above: two such boxes
-/// over two claims keep one claim, not two.
 #[test]
 fn a_roleless_focusable_box_does_not_restart_the_claim_budget() {
     let box_ = |key: &str, row: Node| {
@@ -357,7 +349,6 @@ fn custom_actions_are_unique() {
     );
 }
 
-/// A list's and a divider's interactivity are walked like a container's.
 #[test]
 fn list_and_resize_handle_interactivity_is_sanitized() {
     let hostile = || Interactivity {
@@ -428,7 +419,6 @@ fn list_and_resize_handle_interactivity_is_sanitized() {
     }
 }
 
-/// Back is the root's alone: the host has one `on_back` to deliver to.
 #[test]
 fn sanitize_refuses_on_back_below_the_root() {
     let container = |on_back, children| {
@@ -463,9 +453,6 @@ fn sanitize_refuses_on_back_below_the_root() {
     );
 }
 
-/// A sheet the host cannot present: detents it cannot rest at, or a sheet
-/// inside a sheet (one dialog layer). No detents is a sheet fitted to what
-/// it holds.
 #[test]
 fn sanitize_refuses_a_sheet_the_host_cannot_present() {
     let named = |name: &str, detents: &[f32], child: Node| Node::Sheet {
@@ -542,8 +529,6 @@ fn sanitize_refuses_a_sheet_the_host_cannot_present() {
     );
 }
 
-/// A tooltip's content hangs under a node: it is no root and opens no
-/// layer of its own.
 #[test]
 fn sanitize_refuses_a_root_shape_inside_a_tooltip() {
     let leaf = |on_back| {

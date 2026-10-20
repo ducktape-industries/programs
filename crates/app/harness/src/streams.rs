@@ -37,8 +37,6 @@ pub(crate) async fn streamed(ctx: &Ctx, thread: u64, event: Event) -> Result<(),
         Step::Formed { index } => dispatch(ctx, thread, index).await?,
     };
     hear_again(ctx, settled.hearings);
-    // a reply that ends after a switch to new code has no run awaiting its answer: its
-    // conversation records it as it ends (`resume::recover`)
     let ended = !crate::resume::streamed(&partial) && crate::resume::streamed(&folded);
     if settled.carry_on || ended {
         converse(ctx, thread).await;

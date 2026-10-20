@@ -33,9 +33,6 @@
 
 use crate::wire::{Node, TooltipResponse};
 
-/// Every text the tree shows, depth first: text nodes and the value or
-/// placeholder of a field (the view's copy of it: the host's engine holds
-/// the text, and a view that follows it shows the same).
 pub(crate) fn texts(root: Option<&Node>) -> Vec<String> {
     let mut out = Vec::new();
     if let Some(root) = root {
@@ -64,8 +61,6 @@ fn collect_texts(node: &Node, out: &mut Vec<String>) {
     }
 }
 
-/// What the host's sanitizer answered for a frame, which it must take
-/// whole: no refusal, and nothing cut (a clamp is no cut).
 pub(crate) fn assert_taken_whole(taken: Result<crate::wire::SanitizeReport, crate::wire::Refused>) {
     match taken {
         Err(refused) => panic!("the host refuses this frame: {refused}"),
@@ -76,8 +71,6 @@ pub(crate) fn assert_taken_whole(taken: Result<crate::wire::SanitizeReport, crat
     }
 }
 
-/// [`assert_accessible`] on the tree the host holds and on the content of
-/// every tooltip a frame answered, which the host renders too.
 pub(crate) fn assert_frame_accessible(root: Option<&Node>, tooltips: &[TooltipResponse]) {
     let tooltips = tooltips
         .iter()
@@ -127,8 +120,6 @@ pub fn assert_accessible(tree: &Node) {
     );
 }
 
-/// The nodes from the root down to the first node, depth first, whose
-/// chain `matches` accepts.
 pub(crate) fn chain<'a>(
     root: &'a Node,
     matches: &mut dyn FnMut(&[&'a Node]) -> bool,
@@ -154,13 +145,10 @@ pub(crate) fn chain<'a>(
     walk(root, &mut out, matches).then_some(out)
 }
 
-/// The chain down to the node under `key`.
 pub(crate) fn chain_to<'a>(root: &'a Node, key: &str) -> Option<Vec<&'a Node>> {
     chain(root, &mut |chain| chain.last().unwrap().key() == Some(key))
 }
 
-/// The ids the host files a node under: its own and its ancestors', a
-/// list row's index for a row with none ([`crate::wire::identity`]).
 pub(crate) fn authored_path(chain: &[&Node]) -> Vec<crate::wire::ElementIdWire> {
     let row = |at: usize| {
         let parent = chain[at.checked_sub(1)?];
@@ -175,9 +163,6 @@ pub(crate) fn authored_path(chain: &[&Node]) -> Vec<crate::wire::ElementIdWire> 
         .collect()
 }
 
-/// Every camera, microphone and remote piece in the tree, depth first, by
-/// the path the host files it under: what the host keeps a device or a
-/// track for.
 pub(crate) fn pieces(root: &Node) -> Vec<(Vec<crate::wire::ElementIdWire>, &Node)> {
     fn walk<'a>(
         chain: &mut Vec<&'a Node>,
@@ -201,7 +186,6 @@ pub(crate) fn pieces(root: &Node) -> Vec<(Vec<crate::wire::ElementIdWire>, &Node
     out
 }
 
-/// The button whose key, label or accessible name is `name`.
 pub(crate) fn button<'a>(root: &'a Node, name: &str) -> Option<Vec<&'a Node>> {
     chain(root, &mut |chain| match chain.last().unwrap() {
         node @ Node::Container(crate::wire::ContainerNode {
@@ -218,7 +202,6 @@ pub(crate) fn button<'a>(root: &'a Node, name: &str) -> Option<Vec<&'a Node>> {
     })
 }
 
-/// The field whose key or placeholder is `name`.
 pub(crate) fn input<'a>(root: &'a Node, name: &str) -> Option<Vec<&'a Node>> {
     chain(root, &mut |chain| match chain.last().unwrap() {
         Node::Field {
@@ -228,7 +211,6 @@ pub(crate) fn input<'a>(root: &'a Node, name: &str) -> Option<Vec<&'a Node>> {
     })
 }
 
-/// Every node key in the tree, depth first.
 pub(crate) fn keys(root: Option<&Node>) -> Vec<String> {
     fn collect(node: &Node, out: &mut Vec<String>) {
         if let Some(key) = node.key() {
@@ -281,18 +263,10 @@ pub fn sweep(cx: &mut TestAppContext, mut drive: impl FnMut(&mut TestAppContext)
     cx.fits = None;
 }
 
-/// How tall a press is, as [`assert_fits`] reads its declared sizes.
 enum Press {
-    /// the press's own declared height (`h`, else `min_h`)
     Declared(f32),
-    /// a box reaching past its parent: the parent inside its border, and
-    /// the reach
     Reaches(f32),
-    /// no declared height on the press, so it is read off the nearest
-    /// declared row above it
     Undeclared,
-    /// a box reaching past a parent whose height is left to layout, which
-    /// the sweep cannot read
     ReachesPastAnUndeclaredParent,
 }
 
@@ -354,7 +328,6 @@ pub fn assert_fits(
         let style = declared(node.style())?;
         px_of(&style.size.height).or_else(|| px_of(&style.min_size.height))
     };
-    // what a node's top and bottom borders take off its height
     let border_of = |node: &Node| {
         let edge = |width: Option<gpui::AbsoluteLength>| match width {
             Some(gpui::AbsoluteLength::Pixels(px)) => f32::from(px),
@@ -364,8 +337,6 @@ pub fn assert_fits(
             edge(style.border_widths.top) + edge(style.border_widths.bottom)
         })
     };
-    // what an absolute node pinned top and bottom takes off its parent's
-    // height (negative when it reaches past it)
     let pinned = |node: &Node| {
         let style = declared(node.style())?;
         if style.position != Some(gpui::Position::Absolute) {
@@ -373,10 +344,6 @@ pub fn assert_fits(
         }
         Some(px_of(&style.inset.top)? + px_of(&style.inset.bottom)?)
     };
-    // how tall the last node of `chain` presses: its own declared height;
-    // for a box reaching past its parent (`design::hit`), the parent's
-    // inside its border and the reach; else the nearest declared row above
-    // it, less what it is pinned in by
     let press_height = |chain: &[&Node]| {
         let node = *chain.last().expect("a chain ends at its node");
         if let Some(own) = height_of(node) {
@@ -429,7 +396,6 @@ pub fn assert_fits(
             }
             let marked = dense.contains(&authored_path(chain));
             match press_height(chain) {
-                // a dense list's press keeps its own box
                 _ if marked => {}
                 Press::Declared(height) | Press::Reaches(height) if height >= hit => {}
                 Press::Reaches(height) => faults.push(format!(
@@ -503,7 +469,6 @@ pub use fake_host::{FakeHost, StreamSender};
 pub use notifier::TestNotifier;
 pub use relay::Relay;
 
-/// A program for the SDK's own tests to follow with `Changes<Probe>`.
 #[cfg(test)]
 pub(crate) struct Probe;
 #[cfg(test)]

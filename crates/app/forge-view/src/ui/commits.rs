@@ -13,7 +13,6 @@ use crate::words;
 use forge::{CommitInfo, Query};
 use view::design::Ladder;
 
-/// The log of `from`, less what `exclude` reaches.
 pub(crate) fn query(
     forge: &Forge,
     from: forge::Revision,
@@ -36,8 +35,6 @@ pub(crate) fn render(
     if let Some(oid) = forge.nav().commit.clone() {
         return detail(forge, &oid, cx, theme, ladder);
     }
-    // no commit under the ref: nothing to log, and the program would
-    // refuse the read
     if forge.tree_query(Vec::new()).is_none() {
         return match forge.refs() {
             Some(_) => crate::ui::code::no_commits(forge, theme, ladder),
@@ -47,8 +44,6 @@ pub(crate) fn render(
     log(forge, &forge.log_query(), "forge-log", cx, theme, ladder)
 }
 
-/// The log `query` asks, once its first page has landed; until then, what
-/// the screen shows in its place: `reading`, or its refusal with a Retry.
 fn landed<'a>(
     forge: &'a Forge,
     query: &Query,
@@ -67,9 +62,6 @@ fn landed<'a>(
     }
 }
 
-/// One log, virtualized: the commits read so far and, while the history
-/// goes on, a row that reads on. The next page is asked for as that row
-/// comes into the list's window.
 pub(crate) fn log(
     forge: &Forge,
     query: &Query,
@@ -99,8 +91,6 @@ pub(crate) fn log(
     let open: crate::ui::diff::Route<String> =
         Rc::new(cx.listener(|forge, oid: &String, _, cx| forge.open_commit(Some(oid.clone()), cx)));
     let handle = forge.log_scroll.clone();
-    // one Tab stop: ↑ ↓ walk the commits (the virtual list scrolled to the
-    // active one before it claims), Enter opens it
     let list_id: &'static str = match element_id {
         "forge-change-log" => "forge-change-log-list",
         _ => "forge-log-list",
@@ -142,10 +132,8 @@ pub(crate) fn log(
     list.child(rows).into_any_element()
 }
 
-/// What a log says while a page of it is on its way.
 const READING: &str = words::READING_HISTORY;
 
-/// The row past the commits held: the loading line, at a row's height.
 fn reading_on(key: &str, theme: &Theme) -> AnyElement {
     div()
         .id(id(key.to_owned()))
@@ -158,7 +146,6 @@ fn reading_on(key: &str, theme: &Theme) -> AnyElement {
         .into_any_element()
 }
 
-/// One commit of a log: its short id, summary, author and date.
 fn row(
     commit: &CommitInfo,
     active: bool,
@@ -203,7 +190,6 @@ fn row(
     row.into_any_element()
 }
 
-/// A commit's ids, parents, author and message.
 fn facts(commit: &CommitInfo, theme: &Theme) -> Stateful<Div> {
     let parents = if commit.parents.is_empty() {
         words::ROOT_COMMIT.to_owned()
@@ -238,7 +224,6 @@ fn facts(commit: &CommitInfo, theme: &Theme) -> Stateful<Div> {
         ))
 }
 
-/// When the commit was authored, as a date (git keeps seconds).
 fn authored(commit: &CommitInfo) -> String {
     design::date(
         u64::try_from(commit.author.time)
@@ -247,11 +232,8 @@ fn authored(commit: &CommitInfo) -> String {
     )
 }
 
-/// The short commit id column.
 const OID_W: Pixels = px(100.);
 
-/// One commit's page: its facts over its diff against its first parent,
-/// with a Back to the log it was opened from.
 pub(crate) fn detail(
     forge: &Forge,
     oid: &str,
@@ -285,8 +267,6 @@ pub(crate) fn detail(
                     theme,
                 ))
                 .child(div().flex_1())
-                // one file shown alone: the way back to every file, as the
-                // Files tab's list has it
                 .when(forge.nav().diff_path.is_some(), |header| {
                     header.child(
                         button(
@@ -312,8 +292,6 @@ pub(crate) fn detail(
     }
     let diff = match forge.commit_diff_query(oid) {
         Some(query) => diff::render(forge, &query, "forge-commit-diff", false, cx, theme, ladder),
-        // the diff is against the commit's parent: the commit comes first,
-        // by its own row where the log on screen does not hold it
         None => {
             let own = forge.commit_query(oid);
             landed(

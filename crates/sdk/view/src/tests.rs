@@ -265,12 +265,6 @@ fn uniform_rows(cx: &TestAppContext) -> (usize, Vec<u32>, usize) {
     }
 }
 
-/// A uniform list's first frame holds a screenful: the rows that fill the
-/// viewport the host sent ahead of the tick, at the design system's row
-/// height until the host has measured one, and a margin past them. The
-/// host's first range, inside that window, changes nothing; a range past
-/// it moves the window there, margin and all; a request the window holds
-/// draws nothing new.
 #[test]
 fn uniform_list_lowers_a_screenful_before_the_host_asks_and_grows_to_what_it_shows() {
     let (mut cx, _) = opened::<UniformProbe>();
@@ -318,7 +312,6 @@ fn uniform_list_lowers_a_screenful_before_the_host_asks_and_grows_to_what_it_sho
 }
 
 thread_local! {
-    /// The rows [`CountedRows`] painted, in order.
     static PAINTED: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -347,10 +340,6 @@ impl Render for CountedRows {
     }
 }
 
-/// Each row a frame sends is painted once: the measurement row, which is
-/// sent whatever the window, is painted on its own only when the window
-/// does not hold it (a list at its top painted its first row twice a
-/// render, the copy thrown away).
 #[test]
 fn a_uniform_list_paints_each_row_it_sends_once() {
     let painted = || PAINTED.with(|painted| std::mem::take(&mut *painted.borrow_mut()));
@@ -376,9 +365,6 @@ fn a_uniform_list_paints_each_row_it_sends_once() {
     );
 }
 
-/// A filter leaves one row and is cleared: the rows that came back are in
-/// the frame that shows them, a screenful of them, with no host ask
-/// between.
 #[test]
 fn a_uniform_list_whose_rows_come_back_holds_a_screenful_again() {
     #[derive(Default, Serialize, Deserialize)]
@@ -421,7 +407,6 @@ fn a_uniform_list_whose_rows_come_back_holds_a_screenful_again() {
     assert_eq!(uniform_rows(&cx).1, before);
 }
 
-/// A list of 2,000 rows that tracks its scroll.
 #[derive(Default, Serialize, Deserialize)]
 struct Scrolled {
     #[serde(skip)]
@@ -447,8 +432,6 @@ impl Render for Scrolled {
     }
 }
 
-/// The view scrolls its list to `index`, and the frame that carries the
-/// scroll is lowered: the rows in it.
 fn scrolled_to(
     cx: &mut TestAppContext,
     view: &Entity<Scrolled>,
@@ -463,14 +446,10 @@ fn scrolled_to(
     uniform_rows(cx).1
 }
 
-/// The rows of `shown` the frame does not hold.
 fn missing(rows: &[u32], shown: Range<u32>) -> Vec<u32> {
     shown.filter(|row| !rows.contains(row)).collect()
 }
 
-/// A row the view scrolls to is in the frame that carries the scroll: the
-/// window is anchored on it, so a composite's active row claims in the
-/// frame that answers the key, with no claimless frame between.
 #[test]
 fn a_uniform_list_lowers_the_row_it_is_scrolled_to_in_the_same_frame() {
     let (mut cx, view) = opened::<Scrolled>();
@@ -488,9 +467,6 @@ fn a_uniform_list_lowers_the_row_it_is_scrolled_to_in_the_same_frame() {
     };
     assert_eq!(scroll_request.map(|request| request.index), Some(1_500));
     assert_eq!(*revision, 1);
-    // the request crosses once: the next frame carries none, under the
-    // same revision, so a host that applied it does not again; the list
-    // stays where the scroll left it
     cx.update(&view, |_, _, cx| cx.notify());
     cx.run_until_parked();
     let wire::Node::UniformList {
@@ -505,12 +481,6 @@ fn a_uniform_list_lowers_the_row_it_is_scrolled_to_in_the_same_frame() {
     assert_eq!(uniform_rows(&cx).1, indices, "the window keeps its place");
 }
 
-/// The host shows rows 100..120 and the view scrolls to a row among them
-/// (`Nearest`, a composite's every arrow): the host does not move for a row
-/// on screen, its range stays, and it never asks again, so every row on
-/// screen stays in the frame. A row above the shown lands at their top and
-/// one below at their bottom, as gpui's own `Nearest` puts them, and the
-/// rows on screen until the host has scrolled stay with them.
 #[test]
 fn a_scroll_to_a_row_on_screen_keeps_the_rows_on_screen() {
     use gpui::ScrollStrategy::{Nearest, Top};
@@ -525,17 +495,13 @@ fn a_scroll_to_a_row_on_screen_keeps_the_rows_on_screen() {
     let rows = scrolled_to(&mut cx, &view, 110, Top);
     assert_eq!(rows, held, "a row on screen is left where it is");
 
-    // a row above the rows shown lands at their top: the window grows to
-    // it with a margin, and keeps the rows on screen until the host moves
     let rows = scrolled_to(&mut cx, &view, 85, Nearest);
     assert_eq!(rows[1..], (85 - margin..120 + margin).collect::<Vec<u32>>());
     cx.simulate_range("rows", 85..105);
-    // a row below them lands at their bottom
     let rows = scrolled_to(&mut cx, &view, 125, Nearest);
     assert_eq!(missing(&rows, 85..126), [0u32; 0], "{rows:?}");
     assert_eq!(rows.last(), Some(&(126 + margin - 1)), "a margin below it");
 
-    // a row far from the rows shown is a jump: the window goes with it
     let rows = scrolled_to(&mut cx, &view, 1_500, Nearest);
     assert_eq!(missing(&rows, 1_481..1_501), [0u32; 0], "{rows:?}");
     assert!(!rows.contains(&125), "the rows left behind are let go");
@@ -565,9 +531,6 @@ fn a_uniform_window_grown_by_a_scroll_is_trimmed_by_the_hosts_range() {
     );
 }
 
-/// A pane resized taller while its list is scrolled shows more rows below
-/// the ones it showed: they are in the frame that answers the resize,
-/// counted from the rows the host shows, not from the window's first row.
 #[test]
 fn a_pane_resized_taller_lowers_the_rows_it_now_shows() {
     let (mut cx, _) = opened::<Scrolled>();
@@ -784,8 +747,6 @@ fn the_manifest_bytes_are_what_the_view_trait_says() {
     assert_eq!(manifest.tint, Tint::Orange);
     assert_eq!(manifest.width, Some(1180));
     assert_eq!((&*manifest.name, &*manifest.description), ("App", "Words"));
-    // a view that declares nothing is laid out from 480, opens at the
-    // app's share, reaches no method and has no icon and no tint
     assert_eq!(<UniformProbe as View>::MIN_WINDOW_WIDTH, 480);
     assert_eq!(<UniformProbe as View>::WINDOW_WIDTH, None);
     assert_eq!(<UniformProbe as View>::DESCRIPTION, "");

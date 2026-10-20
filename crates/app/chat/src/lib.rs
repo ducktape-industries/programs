@@ -728,8 +728,6 @@ pub fn program_post<'a>(
     }
 }
 
-/// Old op bytes are described with the current code (`describe`): the op
-/// enum only grows at its end. Append a new variant here; never reorder.
 #[test]
 fn op_variants_only_append() {
     assert_eq!(
@@ -773,7 +771,6 @@ fn a_programs_own_code_block_is_its_post_in_any_room() {
         blocks,
         ..MsgRow::by(author)
     };
-    // forge's account is 9; account 1 is a user's
     let forge = || Principal::Account(9);
     let program_of = |row: &MsgRow| (row.author == forge()).then_some("forge");
     let post = row("forge:web:3", forge(), vec![code("forge")]);

@@ -26,8 +26,6 @@ pub fn thread(
         .h_full()
         .flex()
         .flex_col()
-        // one ground under the header, the replies and the field: the
-        // rows are drawn on `background`, so the pane is too
         .bg(theme.background)
         .child(
             div()
@@ -138,7 +136,6 @@ pub fn details(
             ))
             .child(rule(theme))
     };
-    // a dm is its two people alike: nothing to rename, archive or seat
     let pane = match dm {
         true => {
             let pane = pane
@@ -196,7 +193,6 @@ fn details_header(
         .child(button("chat-details-close", "Close", ladder, theme, close))
 }
 
-/// The name field, Rename, and Archive or Unarchive.
 fn name_section(
     draft: &TextField,
     archived: bool,
@@ -238,8 +234,6 @@ fn name_section(
     ]
 }
 
-// the room's rules as they read, then the field their owner sets them in: the text itself, or a
-// files path whose file holds them
 fn rules_section(
     chat: &Chat,
     draft: &TextField,
@@ -283,7 +277,6 @@ fn rules_section(
     controls
 }
 
-/// The field and button that seat a member, and how one is removed.
 fn member_adder(
     draft: &TextField,
     cx: &mut Context<Chat>,
@@ -333,8 +326,6 @@ fn field(id: &'static str, value: &TextField, label: &'static str, theme: &Theme
         .bg(theme.background)
 }
 
-/// A row per member, each with its way out where the room has one; a word
-/// when there are none.
 fn members(chat: &Chat, removable: bool, cx: &mut Context<Chat>, theme: &Theme) -> Vec<AnyElement> {
     let roster = chat.roster();
     if roster.is_empty() {

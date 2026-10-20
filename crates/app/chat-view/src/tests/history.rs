@@ -7,10 +7,6 @@ use std::cell::Cell;
 use std::rc::Rc;
 use view::{ListOffset, px};
 
-// #general with `head` roots (marked rows, each with a reaction), its roots
-// paged by the limit asked; #random with none; under any root one reply.
-// Anything else as `chat_reply` answers it. The pane is 260 tall: a
-// screenful is ten 26-tall rows and one cut at the edge.
 fn history(head: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
@@ -133,7 +129,6 @@ fn a_block_reads_again_only_the_rows_it_wrote_and_a_new_root_one_page() {
         since.iter().any(reactors),
         "who chose on it alone: {since:?}"
     );
-    // a root past the newest: one page, over the rows held
     head.set(601);
     let before = asked(&cx).len();
     changes.send(block(5, posted("general")));
@@ -197,7 +192,6 @@ fn a_thread_opened_again_shows_its_replies_at_once_and_reads_them_behind() {
     assert_eq!(reads, 1, "read again behind");
 }
 
-// The list `name` in the frame, as the host is sent it.
 fn list_named<'a>(node: &'a wire::Node, name: &str) -> Option<&'a wire::Node> {
     if let wire::Node::List {
         id: wire::ElementIdWire::Name(id),
@@ -212,7 +206,6 @@ fn list_named<'a>(node: &'a wire::Node, name: &str) -> Option<&'a wire::Node> {
         .find_map(|child| list_named(child, name))
 }
 
-// Whether the host is told the list `name` follows its end.
 fn follows(cx: &TestAppContext, name: &str) -> bool {
     match list_named(cx.root(), name) {
         Some(wire::Node::List { following_tail, .. }) => *following_tail,
@@ -255,7 +248,6 @@ fn an_arrival_moves_nothing_and_the_readers_own_post_goes_to_the_end() {
     let changes = cx.host().stream::<Changes<::chat::Chat>>();
     open(&mut cx, "chat-sidebar-channel-general");
     assert!(follows(&cx, "chat-message-rows"), "a room at its head");
-    // the reader scrolled up: where the list stands is the host's to say
     let rows = state(&view, Pane::Timeline);
     rows.scroll_to(ListOffset {
         item_ix: 0,

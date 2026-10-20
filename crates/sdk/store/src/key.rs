@@ -35,9 +35,6 @@ macro_rules! integers {
 }
 integers!(u8, u16, u32, u64, u128);
 
-/// Bytes that sort as they compare: each NUL escaped to `00 FF`, then an
-/// `00 00` terminator, so a shorter string sorts before its extensions and
-/// a prefix scan on a whole element never reaches a longer one.
 fn put_bytes(out: &mut Vec<u8>, bytes: &[u8]) {
     for &b in bytes {
         out.push(b);
@@ -97,8 +94,6 @@ impl<const N: usize> KeyCodec for [u8; N] {
     }
 }
 
-/// A principal in a table key: a tag byte, then an account's number
-/// big-endian, so accounts list by number and the chain after them.
 impl KeyCodec for program::Principal {
     fn encode_key(&self, out: &mut Vec<u8>) {
         match self {
@@ -173,8 +168,6 @@ mod tests {
         );
     }
 
-    /// Encoded order is value order for bytes and strings (no length first),
-    /// alone and as a tuple's head, NULs and prefixes included.
     #[test]
     fn bytes_and_strings_sort_as_they_compare() {
         let mut values: Vec<Vec<u8>> = vec![
@@ -194,7 +187,6 @@ mod tests {
             b"general".to_vec(),
             b"zz".to_vec(),
         ];
-        // Every pair, plus a deterministic sweep of short byte strings.
         for a in 0..=3u8 {
             for b in [0u8, 1, 0xFE, 0xFF] {
                 values.push(vec![a, b]);

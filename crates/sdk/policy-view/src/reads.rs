@@ -87,7 +87,7 @@ pub async fn holdings(host: Host, owner: Party) -> Result<Holdings, Error> {
         })
         .await?;
     let mut names = BTreeMap::new();
-    for number in listed(&policies) {
+    for number in listed_accounts_once(&policies) {
         if let Some(profile) = host.query(identity::ask::Profile { number }).await? {
             names.insert(number, profile.name);
         }
@@ -116,8 +116,7 @@ fn page(after: Option<Vec<u8>>) -> PageRequest {
     PageRequest { after, limit: None }
 }
 
-// Every account a policy lists, each once.
-fn listed(policies: &[Policy]) -> BTreeSet<u64> {
+fn listed_accounts_once(policies: &[Policy]) -> BTreeSet<u64> {
     let mut numbers = BTreeSet::new();
     for policy in policies {
         if let Writers::Listed(parties) = &policy.write {

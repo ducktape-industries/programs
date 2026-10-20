@@ -15,7 +15,6 @@ fn env(height: u64, origin: Origin) -> Env {
     Env {
         height,
         origin,
-        // these rules read the origin alone
         sender: None,
         ..MockHost::env(crate::PROGRAM)
     }
@@ -255,8 +254,6 @@ fn roster(store: &MockHost, height: u64) -> (u64, Vec<String>, Vec<String>) {
     }
 }
 
-/// What a client lists: no op runs here after the schedule, so nothing is
-/// folded, and the changes still land at their height.
 #[test]
 fn the_roster_is_answered_at_the_querys_own_height() {
     let (store, code) = founded();
@@ -288,7 +285,6 @@ fn a_program_bound_to_a_role_is_never_removed() {
         let removed = schedule(&store, 5, Change::Remove(program.clone())).unwrap_err();
         assert_eq!(removed.code, code::INVALID_INPUT, "{role}: {program}");
     }
-    // its code still changes
     schedule(&store, 5, Change::Set(entry("identity", code))).unwrap();
 }
 
@@ -331,7 +327,6 @@ fn the_schedule_pages_in_height_order_and_a_cancel_removes_one_change() {
         },
     )
     .unwrap();
-    // the vote's cancel of a change already gone is done, not refused
     Programs::execute(
         &store.exec(authority(2)),
         Op::Cancel {
@@ -446,8 +441,6 @@ fn a_name_is_one_kind_whatever_order_the_changes_are_scheduled_in() {
     assert_eq!(programs(&store, 10), ["y"]);
 }
 
-/// A removal of the other kind is refused; the vote's removal of a name
-/// nothing holds has its goal met: done, and nothing waits.
 #[test]
 fn a_removal_names_one_of_its_own_kind() {
     let (store, code) = founded();
@@ -470,7 +463,6 @@ fn a_removal_names_one_of_its_own_kind() {
     }
     schedule(&store, 5, Change::Set(entry("new", code))).unwrap();
     schedule(&store, 6, Change::Remove("new".into())).unwrap();
-    // not yet seated at 4
     schedule(&store, 4, Change::Remove("new".into())).unwrap();
     assert_eq!(scheduled_heights(&store), [5, 6]);
 }
@@ -587,7 +579,6 @@ fn an_id_lands_only_in_its_one_spelling() {
     }
     schedule(&store, 5, Change::Set(entry("system", code))).unwrap();
     schedule(&store, 5, view("a-view_2")).unwrap();
-    // an id that landed before the rule can still be removed
     let store = MockHost::default();
     crate::rules::init(
         &store.exec(env(0, Origin::Root)),

@@ -34,7 +34,6 @@ pub(super) fn screen(
     .into_any_element()
 }
 
-// The search by name or number; the keyboard's return opens the first match.
 fn field(pick: &DmPick, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Div {
     let submit = cx.listener(|chat, _: &(), _window, cx| {
         cx.notify();
@@ -51,8 +50,6 @@ fn field(pick: &DmPick, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) 
         .child(design::field(input, ladder, theme).lead("search"))
 }
 
-// Each person and agent who matches, a row that opens their room; or why
-// there is none.
 fn choices_list(
     chat: &Chat,
     choices: &[DmChoice],
@@ -84,8 +81,6 @@ fn choices_list(
         .into_any_element()
 }
 
-// One person or agent (the kit `Row`): their face, name and number, Agent
-// for an agent.
 fn choice_row(
     choice: &DmChoice,
     picture: Option<std::sync::Arc<view::Image>>,

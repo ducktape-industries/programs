@@ -2,9 +2,6 @@
 //! on or past a bound `sanitize` promises.
 use super::*;
 
-/// A hostile f32: sometimes a normal-looking value, sometimes one of the
-/// exact values `sanitize` exists to handle (NaN, both infinities, the
-/// float extremes, and out-of-range negatives).
 pub(super) fn gen_f32(rng: &mut Rng) -> f32 {
     match rng.next_range(20) {
         0 => f32::NAN,
@@ -17,8 +14,6 @@ pub(super) fn gen_f32(rng: &mut Rng) -> f32 {
     }
 }
 
-/// A node's typed id; from a [`Rng::poisoning_ids`] generator, one in
-/// eight is a focus handle, which never crosses the wire.
 pub(super) fn gen_id(rng: &mut Rng) -> ElementIdWire {
     if rng.poisons_ids() && rng.next_range(8) == 0 {
         return ElementIdWire::FocusHandle(rng.next_u64());
@@ -26,8 +21,6 @@ pub(super) fn gen_id(rng: &mut Rng) -> ElementIdWire {
     ElementIdWire::Name(gen_key(rng).into())
 }
 
-/// A key drawn from a small fixed pool: with only five options across a
-/// whole tree, collisions are the common case rather than the exception.
 pub(super) fn gen_key(rng: &mut Rng) -> String {
     const POOL: [&str; 5] = ["App/a", "App/b", "dup", "x", "same-key"];
     (*rng.choose(&POOL)).to_string()
@@ -47,9 +40,6 @@ pub(super) fn gen_string(rng: &mut Rng) -> String {
     s
 }
 
-/// A field whose cursor and tokens sit on its own text: the host engine's
-/// copy to adopt, which `sanitize` keeps whole. One in four draws a cursor
-/// or a token off the text, or a claim on an engine key, which is refused.
 pub(super) fn gen_field(rng: &mut Rng) -> Node {
     let value = gen_string(rng);
     let boundary = |rng: &mut Rng, text: &str| {
@@ -199,15 +189,10 @@ pub(super) fn gen_svg(rng: &mut Rng) -> Node {
     }
 }
 
-/// A leaf with no children, for filling out a wide container: every leaf
-/// variant except `Space` carries a string, a colour or a number worth
-/// pulling into range.
 pub(super) fn gen_leaf(rng: &mut Rng) -> Node {
     match rng.next_range(5) {
         0 => gen_text(rng),
         1 => {
-            // `Space` carried a style once: the draws it took still are,
-            // so every seed's tree is the one it was
             gen_native_style(rng);
             Node::Space
         }
@@ -253,9 +238,6 @@ fn gen_device(rng: &mut Rng) -> Option<String> {
         .then(|| "d".repeat(rng.next_range(2 * LONG_DEVICE)))
 }
 
-/// A live track a piece publishes into or plays, one in two out of the
-/// rule `live.publish` holds a track to: a room empty, over-long or with a
-/// line break; a name over-long, empty, or with an empty or `..` segment.
 fn gen_track(rng: &mut Rng) -> view_wire::methods::LiveTrack {
     use program::live::{MAX_NAMESPACE, MAX_TRACK_NAME};
     let room = match rng.next_range(6) {
@@ -274,8 +256,6 @@ fn gen_track(rng: &mut Rng) -> view_wire::methods::LiveTrack {
     view_wire::methods::LiveTrack { room, name }
 }
 
-/// A camera, microphone or remote piece: hostile device ids, commands
-/// recording any length, and hostile tracks to publish into or play.
 pub(super) fn gen_media(rng: &mut Rng) -> Node {
     let on_state = |rng: &mut Rng| rng.next_bool().then(|| rng.next_u64() as u32);
     let object_fit = |rng: &mut Rng| {
@@ -336,9 +316,6 @@ pub(super) fn gen_media(rng: &mut Rng) -> Node {
     }
 }
 
-/// A current wire node holding a child list, around `children`. One in
-/// eight carries a hostile base style and every conditional refinement, so
-/// the bounds are exercised on the node kind views style most.
 pub(super) fn gen_container(rng: &mut Rng, children: Vec<Node>) -> Node {
     let styled = rng.next_range(8) == 0;
     let refinement = |rng: &mut Rng| styled.then(|| gen_style(rng));
@@ -363,9 +340,6 @@ pub(super) fn gen_container(rng: &mut Rng, children: Vec<Node>) -> Node {
     })
 }
 
-/// A node holding a child list: an overlay about one time in seven, a
-/// container otherwise. Two draws, in this order, so every seed's tree is
-/// the one it was.
 pub(super) fn gen_list(rng: &mut Rng, children: Vec<Node>) -> Node {
     let overlay = rng.next_range(3) != 0 && rng.next_range(5) == 1;
     if overlay {

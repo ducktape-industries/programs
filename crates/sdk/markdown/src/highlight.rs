@@ -249,7 +249,6 @@ fn scan(lang: &Lang, line: &str, open: &mut bool) -> Vec<(Range<usize>, Token)> 
             at = end;
             continue;
         }
-        // one whole char, so a range never splits UTF-8
         at += rest.chars().next().map_or(1, char::len_utf8);
     }
     out
@@ -259,7 +258,7 @@ fn scan(lang: &Lang, line: &str, open: &mut bool) -> Vec<(Range<usize>, Token)> 
 // key; `None` for a lone quote, a Rust lifetime (`'a`) among them.
 fn quoted(lang: &Lang, bytes: &[u8], at: usize) -> Option<(usize, Token)> {
     let byte = bytes[at];
-    let end = close_quote(bytes, at)
+    let end = escaped_quote_end(bytes, at)
         .filter(|end| byte != b'\'' || !std::ptr::eq(lang, &RUST) || end - at <= 4)?;
     let key = bytes[end..].iter().find(|byte| !byte.is_ascii_whitespace()) == Some(&b':');
     let token = if key && std::ptr::eq(lang, &JSON) {
@@ -298,7 +297,7 @@ fn word_len(bytes: &[u8], number: bool) -> usize {
 }
 
 // The end (exclusive) of the quoted run opening at `at`, backslash-escaped.
-fn close_quote(bytes: &[u8], at: usize) -> Option<usize> {
+fn escaped_quote_end(bytes: &[u8], at: usize) -> Option<usize> {
     let quote = bytes[at];
     let mut index = at + 1;
     while index < bytes.len() {

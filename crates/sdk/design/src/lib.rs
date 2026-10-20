@@ -700,7 +700,6 @@ mod tests {
     }
     #[test]
     fn a_fingerprint_is_the_first_four_bytes_of_the_keys_sha256() {
-        // SHA-256 of 32 zero bytes is 66687aad…
         assert_eq!(fingerprint(&[0; 32]), "6668 7AAD");
     }
     #[test]

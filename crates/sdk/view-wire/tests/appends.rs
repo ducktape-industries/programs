@@ -7,7 +7,6 @@ use view_wire::{
     TextTransform, decode, encode,
 };
 
-// A variant no build has, carrying an array of two: `{127: [1, 2]}`.
 const LATER: [u8; 5] = [0x81, 0x7f, 0x92, 0x01, 0x02];
 
 fn text(transform: Option<TextTransform>) -> Node {
@@ -45,7 +44,6 @@ fn a_node_of_a_later_kind_is_unknown_and_its_siblings_read() {
 
 #[test]
 fn a_later_variant_inside_a_node_blanks_that_node_alone() {
-    // the text's transform is its last byte, a unit variant's index
     let mut later = encode(&text(Some(TextTransform::Uppercase)));
     *later.last_mut().unwrap() = 0x05;
     let parent = Node::Container(ContainerNode {
@@ -55,7 +53,6 @@ fn a_later_variant_inside_a_node_blanks_that_node_alone() {
         children: vec![Node::Space],
     });
     let mut bytes = encode(&parent);
-    // the parent's children list, `[Space]`, is its last two bytes
     let at = bytes.len() - 2;
     assert_eq!(bytes[at..], [0x91, encode(&Node::Space)[0]]);
     bytes.truncate(at);
@@ -74,7 +71,6 @@ fn a_later_variant_inside_a_node_blanks_that_node_alone() {
 #[test]
 fn a_field_a_later_build_appended_is_stepped_over() {
     let mut bytes = encode(&text(None));
-    // {Text: [id, style, content, transform]}: one field more, at the end
     let header = bytes.iter().position(|byte| *byte == 0x94).unwrap();
     bytes[header] = 0x95;
     bytes.extend([0x92, 0x2a, 0xa1, b'x']);
@@ -110,7 +106,6 @@ fn an_event_of_a_later_kind_is_unknown_and_the_others_read() {
         events[1]
     );
     assert_eq!(events[2], theme);
-    // a field appended to a known event
     let mut longer = encode(&hover);
     let header = longer.iter().position(|byte| *byte == 0x92).unwrap();
     longer[header] = 0x93;
@@ -126,8 +121,6 @@ fn a_style_field_a_later_build_appended_is_stepped_over() {
     };
     let mut bytes = encode(&Style::new(&style));
     assert_eq!(bytes[0], 0xc4, "an entry is a bin");
-    // a record after the fields: field 1000 (past every one this build
-    // has), two bytes
     bytes.extend([0xe8, 0x07, 2, 0xaa, 0xbb]);
     bytes[1] += 5;
     assert_eq!(decode::<Style>(&bytes).unwrap().read(), Ok(style));
@@ -168,13 +161,11 @@ fn a_patch_into_an_unknown_node_changes_nothing() {
 
 #[test]
 fn an_unknown_value_is_stepped_over_without_recursion_or_trust() {
-    // a later node nested deeper than any decode would descend
     let mut deep = vec![0x91, 0x81, 0x7f];
     deep.extend(std::iter::repeat_n(0x91, 100_000));
     deep.push(0xc0);
     let nodes: Vec<Node> = decode(&deep).unwrap();
     assert!(unknown(&nodes[0]));
-    // a count no bytes hold is refused, not reserved
     let lying = [0x91, 0x81, 0x7f, 0xdd, 0xff, 0xff, 0xff, 0xff];
     assert!(decode::<Vec<Node>>(&lying).is_err());
 }

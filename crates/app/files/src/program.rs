@@ -19,7 +19,6 @@ impl Program for Files {
     const RETURNS: &'static [Return] = <Op as Described>::RETURNS;
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
-        // a watcher is the program that sends it; every other op acts as an account
         if let Op::Watch { deliver } = op {
             return crate::watchers::watch(ctx, deliver);
         }

@@ -34,7 +34,6 @@ pub struct Hidden {
     pub why: String,
 }
 
-// a picture as one request shows it: the image, after a line naming it, or why it is not shown
 pub(crate) enum Look {
     Image {
         label: String,
@@ -44,7 +43,6 @@ pub(crate) enum Look {
     Words(String),
 }
 
-// each frame's pictures as one request shows them, by the frame's seq
 pub(crate) type Looks = BTreeMap<u64, Vec<Look>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,8 +64,6 @@ impl Format {
     }
 }
 
-// what kind of image the bytes are, read from their own signature, never from a name or a type
-// someone gave them
 pub(crate) fn format(bytes: &[u8]) -> Option<Format> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         return Some(Format::Png);
@@ -104,7 +100,6 @@ fn le32(bytes: &[u8], at: usize) -> Option<u32> {
     Some(le16(bytes, at)? | (le16(bytes, at + 2)? << 16))
 }
 
-// the image's width and height in pixels, from its header; none where the header doesn't say
 pub(crate) fn dimensions(bytes: &[u8], format: Format) -> Option<(u32, u32)> {
     match format {
         Format::Png => match bytes.get(12..16)? == b"IHDR" {
@@ -117,8 +112,6 @@ pub(crate) fn dimensions(bytes: &[u8], format: Format) -> Option<(u32, u32)> {
     }
 }
 
-// a JPEG says its size in its first start-of-frame segment; each segment before it is skipped
-// by the length it states
 fn jpeg(bytes: &[u8]) -> Option<(u32, u32)> {
     let mut at = 2;
     loop {
@@ -137,7 +130,6 @@ fn jpeg(bytes: &[u8]) -> Option<(u32, u32)> {
     }
 }
 
-// a WebP says its size in its first chunk: lossy (`VP8 `), lossless (`VP8L`) or extended (`VP8X`)
 fn webp(bytes: &[u8]) -> Option<(u32, u32)> {
     match bytes.get(12..16)? {
         b"VP8 " => Some((le16(bytes, 26)? & 0x3FFF, le16(bytes, 28)? & 0x3FFF)),
@@ -150,8 +142,6 @@ fn webp(bytes: &[u8]) -> Option<(u32, u32)> {
     }
 }
 
-// the images a chat message carries: each attachment whose type says image; the bytes alone
-// decide later whether it is one the model reads
 pub(crate) fn of_message(blocks: &[chat::Block]) -> Vec<Picture> {
     blocks
         .iter()
@@ -172,14 +162,12 @@ pub(crate) fn of_message(blocks: &[chat::Block]) -> Vec<Picture> {
         .collect()
 }
 
-// the pictures frame `seq` was appended with
 pub(crate) fn keep(ctx: &ExecCtx, thread: u64, seq: u64, pictures: Vec<Picture>) {
     if !pictures.is_empty() {
         PICTURES.put(ctx, &(thread, seq), &pictures);
     }
 }
 
-// a held input's pictures, until it is appended
 pub(crate) fn hold(ctx: &ExecCtx, thread: u64, index: u64, pictures: Vec<Picture>) {
     if !pictures.is_empty() {
         HELD_PICTURES.put(ctx, &(thread, index), &pictures);
@@ -194,8 +182,6 @@ pub(crate) fn unhold(ctx: &ExecCtx, thread: u64, index: u64, seq: u64) -> Result
     Ok(())
 }
 
-// what a tool call opened, until its result is appended as frame `seq` (`called`) or the call
-// is voided (`dropped`)
 pub(crate) fn opened(ctx: &ExecCtx, thread: u64, call: &str, pictures: Vec<Picture>) {
     CALL_PICTURES.put(ctx, &(thread, call.to_owned()), &pictures);
 }
@@ -213,7 +199,6 @@ pub(crate) fn dropped(ctx: &ExecCtx, thread: u64, call: &str) {
     CALL_PICTURES.remove(ctx, &(thread, call.to_owned()));
 }
 
-// a fork sees what its frames came with, and what the model refused, as its source did
 pub(crate) fn forked(ctx: &ExecCtx, from: u64, to: u64, frames: &[Frame]) -> Result<(), Error> {
     for frame in frames {
         if let Some(pictures) = PICTURES.get(ctx, &(from, frame.seq))? {
@@ -226,8 +211,6 @@ pub(crate) fn forked(ctx: &ExecCtx, from: u64, to: u64, frames: &[Frame]) -> Res
     Ok(())
 }
 
-// the model refused a request over its images (`why`, in its words): every picture the thread
-// holds so far is that sentence from now on; false when none was left to turn into words
 pub(crate) fn hide(ctx: &ExecCtx, thread: u64, why: &str) -> Result<bool, Error> {
     let held = PICTURES.scan(ctx, PICTURES.prefix_of(&thread))?;
     let newest = held.into_iter().map(|((_, seq), _)| seq).max();
@@ -240,8 +223,6 @@ pub(crate) fn hide(ctx: &ExecCtx, thread: u64, why: &str) -> Result<bool, Error>
     Ok(true)
 }
 
-// each of `frames`' pictures as a request in `wire` shows it now, read from files at the
-// snapshot it names; a frame left out of the context shows none
 pub(crate) fn looks(
     ctx: &ExecCtx,
     thread: u64,
@@ -327,7 +308,6 @@ fn image(ctx: &ExecCtx, wire: Wire, picture: &Picture) -> Result<Image, String> 
     })
 }
 
-// a file's size in the unit people read it in
 fn amount(bytes: u64) -> String {
     let kilo = 1024;
     if bytes < kilo {

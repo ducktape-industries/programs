@@ -26,8 +26,6 @@ pub(super) fn file(view: &Files, path: &str, cx: Cx, k: &Kit) -> AnyElement {
 fn opened(file: &Opened, k: &Kit) -> AnyElement {
     let Some(entry) = file.file() else {
         let name = name_of(&file.path).to_owned();
-        // the glyph Expo's forge gives a path that is not there
-        // (`app/(tabs)/forge/[repo]/code/[...path].tsx:70`)
         return design::empty_state(
             "files-gone",
             "file-question-mark",
@@ -63,7 +61,6 @@ fn opened(file: &Opened, k: &Kit) -> AnyElement {
         .into_any_element()
 }
 
-/// The text in the data face, and, read only in part, how much shows.
 fn text_block(text: &str, file: &Opened, k: &Kit) -> AnyElement {
     let cut = (!file.whole).then(|| {
         div()
@@ -82,8 +79,6 @@ fn text_block(text: &str, file: &Opened, k: &Kit) -> AnyElement {
         .into_any_element()
 }
 
-/// The picture, the screen's width at most, never grown past its own
-/// size; or why it does not show.
 fn picture(file: &Opened, k: &Kit) -> AnyElement {
     let theme = k.theme;
     let ladder = k.ladder;

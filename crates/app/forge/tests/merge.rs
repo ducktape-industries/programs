@@ -114,8 +114,6 @@ fn client_merge_fast_forwards_or_lands_the_merge_commit_the_client_built() {
     assert_eq!(diverged.mergeability, forge::Mergeability::Diverged);
     assert_eq!((diverged.ahead, diverged.behind), (1, 1));
     assert_eq!(diverged.base, Some(root.to_hex()));
-    // The merge itself is the client's: it builds the merge commit, pushes
-    // it, then asks forge to land it under CAS.
     let tree = file_commit(&mut source, &[], 5, &[("a", b"2\n"), ("b", b"2\n")]);
     let tree = Commit::parse(&source.get(&tree).unwrap().unwrap().body, Hash::Sha1)
         .unwrap()

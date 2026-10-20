@@ -9,14 +9,12 @@ use valset::{Motion, Op, Pending, Voted};
 use view::methods::{HostSession, Session, Submit, Submitted};
 use view::testing;
 
-/// The view as a phone 390 wide shows it.
 fn phone(cx: &mut TestAppContext) {
     cx.simulate_touch(true);
     cx.simulate_resize(390., 844.);
     cx.run_until_parked();
 }
 
-/// Every text in `expected` is on screen.
 fn shows(cx: &TestAppContext, expected: &[&str]) {
     for text in expected {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
@@ -28,8 +26,6 @@ fn click(cx: &mut TestAppContext, id: &str) {
     cx.run_until_parked();
 }
 
-/// A change to valset's code the programs role holds for height 4,500,
-/// made by a vote.
 fn valset_upgrade() -> programs::Pending {
     programs::Pending {
         height: 4500,
@@ -42,14 +38,10 @@ fn valset_upgrade() -> programs::Pending {
     }
 }
 
-/// A reader who votes (one voice of the two a motion needs), with a
-/// promotion of the resident waiting on OTHER's vote, so the reader's own
-/// vote enacts it, and [`valset_upgrade`] scheduled.
 fn voter() -> TestAppContext {
     voter_view().0
 }
 
-/// [`voter`], and the view, for a test that sets what a read left.
 fn voter_view() -> (TestAppContext, Entity<Nodes>) {
     let waiting = Pending {
         motion: Motion::Promote {
@@ -62,7 +54,6 @@ fn voter_view() -> (TestAppContext, Entity<Nodes>) {
     (cx, nodes)
 }
 
-/// Changes the view as a read would have left it, and draws it again.
 fn set(cx: &mut TestAppContext, nodes: &Entity<Nodes>, change: impl FnOnce(&mut Nodes)) {
     cx.update(nodes, |view, _, cx| {
         change(view);
@@ -71,7 +62,6 @@ fn set(cx: &mut TestAppContext, nodes: &Entity<Nodes>, change: impl FnOnce(&mut 
     cx.run_until_parked();
 }
 
-/// What the node says of the network: [`seen`] at 4,200, with `change`.
 fn network_where(cx: &TestAppContext, change: fn(&mut NetworkStatus)) {
     cx.host().handle::<ChainNetwork>(move |()| {
         let mut network = seen(4200);
@@ -80,8 +70,6 @@ fn network_where(cx: &TestAppContext, change: fn(&mut NetworkStatus)) {
     });
 }
 
-/// The view on a phone over a node that answers every ask, but the one
-/// `serve` answers its own way.
 fn phone_where(serve: impl FnOnce(&TestAppContext)) -> TestAppContext {
     let mut cx = TestAppContext::new();
     node(&mut cx);
@@ -91,8 +79,6 @@ fn phone_where(serve: impl FnOnce(&TestAppContext)) -> TestAppContext {
     phone(&mut cx);
     cx
 }
-
-// The list (Expo `app/(tabs)/nodes/index.tsx`)
 
 #[test]
 fn the_list_reads_the_network_its_numbers_and_every_member() {
@@ -377,8 +363,6 @@ fn a_vote_in_flight_greys_every_vote() {
     }
 }
 
-/// The host's capsule beside the title row draws `ellipsis`: the door's
-/// own control is a door, named The door.
 #[test]
 fn the_door_is_drawn_as_a_door_not_the_capsules_ellipsis() {
     let cx = voter();
@@ -510,8 +494,6 @@ fn propose_cancel_votes_to_cancel_that_change() {
     assert_eq!(submitted(&cx), [Op::Vote(cancel(&valset_upgrade()))]);
 }
 
-// A member's page (Expo `app/(tabs)/nodes/[key].tsx`)
-
 #[test]
 fn a_validator_page_reads_its_key_address_vote_and_the_blocks_it_led() {
     let (mut cx, _) = ready();
@@ -610,7 +592,6 @@ fn a_voter_promotes_a_resident_from_its_page() {
     click(&mut cx, "nodes-member-0102");
     assert!(cx.find("nodes-node-demote").is_none());
     click(&mut cx, "nodes-node-promote");
-    // OTHER voted for it already: the reader's vote enacts, so it asks
     click(&mut cx, "nodes-confirm/submit");
     let promote = Motion::Promote {
         key: RESIDENT.to_vec(),
@@ -618,12 +599,6 @@ fn a_voter_promotes_a_resident_from_its_page() {
     assert_eq!(submitted(&cx), [Op::Vote(promote)]);
 }
 
-// Both screens
-
-/// Under a finger at 360, 390 and 430 every frame fits and every press is
-/// at least 44 each way, through the list, the door, the confirm sheet and
-/// both kinds of member page; Back is set exactly while there is somewhere
-/// to go back to.
 #[test]
 fn every_screen_fits_a_phone_360_390_and_430_wide() {
     let (mut cx, nodes) = voter_view();

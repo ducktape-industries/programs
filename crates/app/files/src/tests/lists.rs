@@ -313,8 +313,6 @@ fn setting_a_list_in_a_commit_is_retired_and_a_pin_is_its_makers_to_drop() {
     chain.submit(signed(ADA), PROGRAM, &unpin).unwrap();
 }
 
-// A file beneath a chat message is its creator's alone with no list set:
-// another account may add a file beside it, but not write or remove it.
 #[test]
 fn a_file_beneath_a_chat_message_is_its_creators_alone_with_no_list() {
     let chain = chain();

@@ -32,8 +32,6 @@ fn bo() -> Env {
     MockHost::env(PROGRAM).signed(vec![2; 32], Some(2))
 }
 
-/// `bytes` as the network holds a file's bytes: chunk blobs, put apart
-/// from any transaction.
 fn chunks(host: &MockHost, bytes: &[u8]) -> Content {
     let chunks = bytes
         .chunks(CHUNK_SIZE as usize)

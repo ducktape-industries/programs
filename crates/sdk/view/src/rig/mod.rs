@@ -54,48 +54,32 @@ const ANCHOR_WINDOW: u64 = 256;
 
 type Override = Box<dyn FnMut(&[u8]) -> Result<Vec<u8>, Error>>;
 type Writes = Vec<(Vec<u8>, Option<Vec<u8>>)>;
-/// A seat the roster lists as a hook.
 struct Hook {
     name: ProgramId,
     host: MockHost,
-    /// Its `hook` entry, which the kernel calls with each frame a block
-    /// carries.
     entry: HookEntry,
 }
 type HookEntry = fn(&ExecCtx, hook::Record) -> Result<(), Error>;
 
 struct State {
     chain: MockChain,
-    /// Every seated program and its host, in seating order.
     seats: Vec<(ProgramId, MockHost)>,
-    /// The seats the roster lists as hooks, in seating order.
     hooks: Vec<Hook>,
     keys: BTreeMap<AccountNumber, ed25519::PrivateKey>,
     names: BTreeMap<String, AccountNumber>,
     me: AccountNumber,
-    /// The one validator's key: the dev key, which proposes every block.
     validator: Vec<u8>,
-    /// The genesis block's time, unix ms.
     founded: u64,
-    /// The next block's time, when pinned by [`Network::at`].
     pinned: Option<u64>,
-    /// The archive: the genesis block first, one block per submission.
     blocks: Vec<methods::Block>,
-    /// What each submission wrote, by program, until taken.
     changes: Vec<(String, wire::Change)>,
-    /// The open `/v1/changes/<program>` sockets.
     subscribers: Vec<(String, std::sync::mpsc::Sender<Vec<u8>>)>,
     spent: BTreeSet<[u8; 32]>,
-    /// Each program's packed code blob (framed) and its id; a program
-    /// nothing packed gets a placeholder id the app never fetches.
     codes: BTreeMap<ProgramId, (abi::BlobId, Vec<u8>)>,
-    /// A view-only roster entry: its name, and the view blob itself.
     bare: Option<(String, abi::BlobId, Vec<u8>)>,
     overrides: HashMap<(String, Option<String>), Override>,
     invites: u64,
     founded_roster: bool,
-    /// The files a person picks on this device ([`Network::device`]): each
-    /// one's name and bytes.
     device: Vec<(String, Vec<u8>)>,
     pick: Vec<(u64, Vec<u8>)>,
     handles: u64,
@@ -132,8 +116,6 @@ fn key_from_seed(seed: u64) -> ed25519::PrivateKey {
     ed25519::PrivateKey::from_seed(seed)
 }
 
-/// A signature as a node checks it: an ed25519 key's, under its namespace.
-/// No other scheme signs on this chain.
 fn verify(scheme: abi::Scheme, key: &[u8], namespace: &[u8], message: &[u8], proof: &[u8]) -> bool {
     scheme == abi::Scheme::Ed25519
         && wire::KeyScheme::Ed25519.verify(key, namespace, message, proof)
@@ -200,7 +182,6 @@ impl Network {
             .expect("valset founds with the dev validator");
         let me = net.account(dev, "dev");
         net.0.borrow_mut().me = me;
-        // the founding is history, not a change a view hears
         net.take_changes();
         net
     }
@@ -299,7 +280,6 @@ impl Network {
             network: self.0.borrow().chain.env(identity::PROGRAM).chain_id,
             scheme: abi::Scheme::Ed25519,
             key: public.clone(),
-            // a fresh key: none of its consents was spent before
             generation: 0,
             account: number,
             expires_at,
@@ -472,8 +452,6 @@ impl Network {
     /// frame. A typed `handle` on `host` for one program still wins.
     pub fn back(&self, host: &FakeHost) {
         self.found_roster();
-        // what was seeded before the view opened is what it reads first,
-        // not a change
         self.take_changes();
         for kind in [
             "program.query",
@@ -546,9 +524,6 @@ impl Network {
         self.answer_as(self.key_of(self.me()), kind, target, payload)
     }
 
-    /// [`answer`](Self::answer), asked by `signer`: the key a submission
-    /// runs under. Every node method either front serves comes through
-    /// here, so an override answers the live window as it answers a test.
     pub(crate) fn answer_as(
         &self,
         signer: Vec<u8>,
@@ -577,8 +552,6 @@ impl Network {
                 let call: methods::Call =
                     methods::decode(payload).map_err(|error| malformed(&error))?;
                 let receipt = self.run(Origin::Signed(signer), call.target, call.body);
-                // the live node lands the block in the same breath, so
-                // the answer is the prediction and the fact at once
                 let state = self.0.borrow();
                 let tx = state.blocks.last().and_then(|block| block.txs.last());
                 let tx = tx.expect("the block just landed holds its tx");
@@ -712,7 +685,6 @@ impl Network {
                 Ok(methods::encode(&()))
             }
             "op.put" => {
-                // refused as the host refuses it
                 let malformed =
                     |sentence: &str| Error::new(methods::refusal::MALFORMED_REQUEST, sentence);
                 let ask: methods::PutBlobs =
@@ -720,7 +692,6 @@ impl Network {
                 if ask.blobs.is_empty() {
                     return Err(malformed("an op.put names at least one blob"));
                 }
-                // the bundle is put whole or not at all
                 let mut bodies = Vec::with_capacity(ask.blobs.len());
                 for blob in ask.blobs {
                     let body = match blob.body {
@@ -746,10 +717,6 @@ impl Network {
                     .map(|framed| unframe(&framed).unwrap_or_default().to_vec());
                 Ok(methods::encode(&body))
             }
-            // as the app answers it: the blob the chain names (`blob` serves
-            // the roster's code and what a seat holds, nothing else), the
-            // view in its `ducktape.view` section or the blob itself when it
-            // carries a manifest, and that manifest as the loader reads it
             "blob.manifest" => {
                 use view_wire::manifest::{MANIFEST_SECTION, Manifest};
                 let blob = self.blob(&blob_id(payload)?).map(|framed| {
@@ -781,8 +748,6 @@ impl Network {
                     notes: Vec::new(),
                 }))
             }
-            // the app answers it from the program's own describe module; a
-            // test that wants one answers it itself
             "program.describe" => Ok(methods::encode(&None::<methods::Description>)),
             other => Err(Error::new(
                 methods::refusal::UNKNOWN_REQUEST,
@@ -804,7 +769,6 @@ impl Network {
             tip: tip.id,
             root: [0; 32],
             epoch: 0,
-            // this node is the one validator, as a real node names its own key
             identity: state.validator.clone(),
             contract: wire::NODE_CONTRACT,
         }
@@ -814,7 +778,6 @@ impl Network {
         self.0.borrow().blocks.len() as u64
     }
 
-    /// The genesis block's id.
     pub(crate) fn genesis(&self) -> [u8; 32] {
         self.0.borrow().blocks[0].id
     }
@@ -853,7 +816,6 @@ impl Network {
         self.0.borrow_mut().spent.insert(id);
     }
 
-    /// A blob by id, framed: a program's packed code, or one a program put.
     pub(crate) fn blob(&self, id: &abi::BlobId) -> Option<Vec<u8>> {
         let state = self.0.borrow();
         if let Some((_, framed)) = state.codes.values().find(|(code, _)| code == id) {
@@ -871,8 +833,6 @@ impl Network {
         })
     }
 
-    /// `program`'s code blob is `body`: the roster lists it by the blob's
-    /// id, and `/v1/blob/get` serves it.
     pub(crate) fn code(&self, program: &str, body: &[u8]) {
         let framed = wire::framed(programs::CODE_KIND, body);
         let id = wire::blob_id(&framed);
@@ -882,15 +842,12 @@ impl Network {
             .insert(program.to_owned(), (id, framed));
     }
 
-    /// `name` is a view-only entry whose view is `body`.
     pub(crate) fn code_bare(&self, name: &str, body: &[u8]) {
         let framed = wire::framed("view", body);
         let id = wire::blob_id(&framed);
         self.0.borrow_mut().bare = Some((name.to_owned(), id, framed));
     }
 
-    /// Founds the programs role with every seated program and the view-only
-    /// entry, once: what the app reads as the roster.
     pub(crate) fn found_roster(&self) {
         let mut state = self.0.borrow_mut();
         if std::mem::replace(&mut state.founded_roster, true) {
@@ -934,8 +891,6 @@ impl Network {
             .expect("the programs role founds with the seated programs");
     }
 
-    /// A socket on `program.changes` of `program`: each block that writes
-    /// to it is sent, encoded, until the receiver is gone.
     pub(crate) fn subscribe(&self, program: &str, sender: std::sync::mpsc::Sender<Vec<u8>>) {
         self.0
             .borrow_mut()
@@ -943,18 +898,11 @@ impl Network {
             .push((program.to_owned(), sender));
     }
 
-    /// What was written since the last take, by program.
     pub(crate) fn take_changes(&self) -> Vec<(String, wire::Change)> {
         std::mem::take(&mut self.0.borrow_mut().changes)
     }
 
-    /// One submission as one block: `payload` to `target`, signed by
-    /// `signer` (an account's key, or none: the program hears nobody), at
-    /// the next height; the block archived with the tx and its receipt
-    /// whether the program applied or refused it, and what the run wrote
-    /// recorded as the block's changes.
     pub(crate) fn run(&self, origin: Origin, target: String, payload: Vec<u8>) -> methods::Receipt {
-        // the kernel tells hooks of signed frames only
         let (signer, signed) = match &origin {
             Origin::Signed(key) => (key.clone(), true),
             Origin::Program(_) | Origin::Root => (Vec::new(), false),
@@ -995,7 +943,7 @@ impl Network {
             applied: ran.is_ok(),
         };
         for hook in state.hooks.iter().filter(|_| signed) {
-            tell(&state.chain, hook, record.clone());
+            tell_hook_and_rollback_refusal(&state.chain, hook, record.clone());
         }
         let outcome = match ran {
             Ok(output) => methods::Outcome::Applied { output },
@@ -1055,10 +1003,6 @@ impl Network {
         tx.receipt.expect("the receipt just made")
     }
 
-    /// Every change since the last flush to the sockets following its
-    /// program, and gone. A node preconfirms a submission before the
-    /// block that carries it lands, so the front flushes only after the
-    /// answer that caused a change is on its way.
     pub(crate) fn flush(&self) {
         let mut state = self.0.borrow_mut();
         for (program, change) in std::mem::take(&mut state.changes) {
@@ -1070,9 +1014,6 @@ impl Network {
     }
 }
 
-/// The account a frame signed by `key` acts as, asked of identity as the
-/// kernel asks it; none for a key that holds none, or that identity
-/// refuses (`submit_raw` then refuses the frame itself).
 fn acting(chain: &MockChain, key: &[u8]) -> Option<AccountNumber> {
     let asked = abi::role::identity::Query::Account(key.to_vec());
     match chain.query(identity::PROGRAM, &asked) {
@@ -1081,10 +1022,7 @@ fn acting(chain: &MockChain, key: &[u8]) -> Option<AccountNumber> {
     }
 }
 
-/// Hook `name` told of a frame as the kernel tells it: by the chain itself,
-/// its writes undone when it refuses or sends a message (a hook sends
-/// none), and the frame kept either way.
-fn tell(chain: &MockChain, hook: &Hook, record: hook::Record) {
+fn tell_hook_and_rollback_refusal(chain: &MockChain, hook: &Hook, record: hook::Record) {
     let Hook { name, host, entry } = hook;
     let kept = host.borrow().state.clone();
     let height = record.height;
@@ -1114,8 +1052,6 @@ fn capped(tx: &methods::Tx, most: u32) -> methods::Tx {
     }
 }
 
-/// The program a node method addresses, read off its payload as the
-/// app reads it.
 fn target_of(kind: &str, payload: &[u8]) -> Option<String> {
     match kind {
         "program.query" | "op.submit" => methods::decode::<methods::Call>(payload)
@@ -1125,7 +1061,6 @@ fn target_of(kind: &str, payload: &[u8]) -> Option<String> {
     }
 }
 
-/// The blob id a `blob.*` ask spells, `sha256:<hex>` or `sha1:<hex>`.
 fn blob_id(payload: &[u8]) -> Result<abi::BlobId, Error> {
     let malformed = |error: &str| crate::host::malformed(error.to_owned());
     let id: String = methods::decode(payload).map_err(|error| malformed(&error))?;
@@ -1140,7 +1075,6 @@ fn blob_id(payload: &[u8]) -> Result<abi::BlobId, Error> {
     })
 }
 
-/// `kind len\0body` → body.
 pub(crate) fn unframe(framed: &[u8]) -> Option<&[u8]> {
     let nul = framed.iter().position(|byte| *byte == 0)?;
     Some(&framed[nul + 1..])

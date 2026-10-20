@@ -242,11 +242,11 @@ pub fn inline_spans(text: &str) -> Vec<Span> {
     let mut plain = String::new();
     let mut index = 0;
     while index < chars.len() {
-        let url = url_len(&chars, index);
-        let reference = reference_at(&chars, index);
+        let url = bare_link_char_count(&chars, index);
+        let reference = labelled_link_at(&chars, index);
         let bold = fenced(&chars, index, "**").or_else(|| fenced(&chars, index, "__"));
         let italic = fenced(&chars, index, "*").or_else(|| fenced(&chars, index, "_"));
-        if let Some((inner, len)) = code_at(&chars, index) {
+        if let Some((inner, len)) = code_span_at(&chars, index) {
             flush_plain(&mut plain, &mut spans);
             spans.push(Span {
                 text: inner,
@@ -258,7 +258,6 @@ pub fn inline_spans(text: &str) -> Vec<Span> {
             let handle: String = chars[index..index + len].iter().collect();
             spans.push(Span {
                 text: handle,
-                // A directory account is one mark, regardless of its keys.
                 marks: vec![Mark::Mention(target)],
             });
             index += len;
@@ -309,13 +308,7 @@ fn flush_plain(plain: &mut String, spans: &mut Vec<Span>) {
     }
 }
 
-/// If `chars[at..]` opens a bare link, its length in chars; else `None`.
-///
-/// `duck://` is a link scheme here exactly as `http(s)://` is: the app
-/// classifies a pressed link through its own program table
-/// (`backend/duck_uri.rs`) and refuses what it cannot open, so the tokenizer
-/// marks the run and decides nothing about where it points.
-fn url_len(chars: &[char], at: usize) -> Option<usize> {
+fn bare_link_char_count(chars: &[char], at: usize) -> Option<usize> {
     let starts_link = LINK_SCHEMES.iter().any(|scheme| {
         let mut rest = chars[at..].iter();
         scheme.chars().all(|c| rest.next() == Some(&c))
@@ -327,29 +320,20 @@ fn url_len(chars: &[char], at: usize) -> Option<usize> {
         .iter()
         .take_while(|c| !c.is_whitespace())
         .count();
-    // A run stops at whitespace, but the `)` that closes `[x](duck://page/p1)`
-    // or `(see https://x)` belongs to the prose around the address, not to it.
-    while dangling_close(&chars[at..at + len]) {
+    while unmatched_closing_parenthesis(&chars[at..at + len]) {
         len -= 1;
     }
     (len > 0).then_some(len)
 }
 
-/// Does this run end in a `)` that opens nowhere inside it? A balanced one
-/// (`…/wiki/Foo_(bar)`) is part of the address and stays.
-fn dangling_close(run: &[char]) -> bool {
+fn unmatched_closing_parenthesis(run: &[char]) -> bool {
     let closed = run.last() == Some(&')');
     let opens = run.iter().filter(|c| **c == '(').count();
     let closes = run.iter().filter(|c| **c == ')').count();
     closed && closes > opens
 }
 
-/// If `chars[at..]` opens a `[label](url)` reference — the form agents already
-/// emit for `duck://` refs (`runs::inject`) — the label, the target, and the
-/// total consumed length. The label is one line with no nested brackets and
-/// the target is one whitespace-free run in a known scheme; anything else is
-/// not a reference and stays the plain text it was typed as.
-fn reference_at(chars: &[char], at: usize) -> Option<(String, String, usize)> {
+fn labelled_link_at(chars: &[char], at: usize) -> Option<(String, String, usize)> {
     if chars[at] != '[' {
         return None;
     }
@@ -392,11 +376,7 @@ pub fn mention_at(chars: &[char], at: usize) -> Option<(Principal, usize)> {
     Some((Principal::Account(id.parse().ok()?), end + 1 - at))
 }
 
-/// If `chars[at..]` opens a backtick run that a later run of exactly the same
-/// length closes (CommonMark's code span), the enclosed text and the total
-/// consumed length. One space is stripped from both ends when both are there,
-/// so ``` `` `a` `` ``` is `` `a` ``.
-fn code_at(chars: &[char], at: usize) -> Option<(String, usize)> {
+fn code_span_at(chars: &[char], at: usize) -> Option<(String, usize)> {
     let open = chars[at..].iter().take_while(|&&c| c == '`').count();
     if open == 0 {
         return None;
@@ -422,14 +402,6 @@ fn code_at(chars: &[char], at: usize) -> Option<(String, usize)> {
     None
 }
 
-/// If `chars[at..]` opens with `marker` and has a later closing `marker`, the
-/// enclosed text and the total consumed length (markers included).
-///
-/// CommonMark's flanking rule decides what opens and what closes: a marker
-/// opens only with no space after it and closes only with no space before it,
-/// and a `_` marker additionally neither opens after a letter or digit nor
-/// closes before one. So `my_var_name` and `a * b * c` are plain text, while
-/// `*` may still emphasise part of a word (`un*believ*able`).
 fn fenced(chars: &[char], at: usize, marker: &str) -> Option<(String, usize)> {
     let marks: Vec<char> = marker.chars().collect();
     if !chars[at..].starts_with(marks.as_slice()) {
@@ -443,8 +415,6 @@ fn fenced(chars: &[char], at: usize, marker: &str) -> Option<(String, usize)> {
     {
         return None;
     }
-    // the word rule looks outside the whole RUN of markers, so the second
-    // `_` of `a__b` still sees the `a`.
     let run_start = (0..at).rev().take_while(|&i| chars[i] == marks[0]).count();
     if word_bound && at > run_start && chars[at - run_start - 1].is_alphanumeric() {
         return None;

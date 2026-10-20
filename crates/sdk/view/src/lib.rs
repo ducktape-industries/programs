@@ -2,8 +2,6 @@
 //! to `view_wire::Node`, and the host methods a wasm view asks through.
 pub use gpui::prelude::FluentBuilder;
 pub use gpui::{AccessibleAction, accesskit};
-// `#[derive(IntoElement)]` names this crate by its absolute path; this lets
-// that path resolve inside the crate too, so its own components derive.
 extern crate self as view;
 
 pub use gpui::{
@@ -223,7 +221,6 @@ impl Manifested {
         at = put(&mut out, at, b"\n");
         at = put_number(&mut out, at, wire::WIRE_LEVEL);
         at = put(&mut out, at, b"\n");
-        // line 7, which views before J-054 listed their targets on
         at = put(&mut out, at, b"\n");
         at = put(&mut out, at, self.icon.as_bytes());
         at = put(&mut out, at, b"\n");
@@ -242,8 +239,6 @@ pub const fn manifest_len<V: View>() -> usize {
     Manifested::of_view::<V>().encoded_len()
 }
 
-// the lines written above, in this order: a line added to the manifest
-// is added here and to `Manifest::parse` together
 const _: () = assert!(wire::manifest::LINES.len() == 10);
 
 // The manifest text of a view ([`Manifested::bytes`]), from what its
@@ -344,8 +339,6 @@ pub mod exports {
     }
 
     thread_local! {
-        // The last answer, kept until the next export is entered: the host
-        // copies it out before it calls again.
         static ANSWER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
         static DRIVER: RefCell<Option<Box<dyn Any>>> = const { RefCell::new(None) };
         static NOTIFIER: RefCell<Option<Box<dyn Any>>> = const { RefCell::new(None) };
@@ -387,8 +380,6 @@ pub mod exports {
     pub fn tick<A: View>(ptr: u32, len: u32) -> u64 {
         let events: Vec<wire::Event> =
             wire::decode(&take(ptr, len)).expect("invalid host event frame");
-        // The host keeps the tree it has, or patches it; the whole tree
-        // crosses only when neither will do (the driver leaves it out then).
         answer(driver::<A, _>(|driver| {
             driver.tick_with(events, wire::encode)
         }))
@@ -419,7 +410,6 @@ pub mod exports {
         Box::into_raw(vec![0u8; len as usize].into_boxed_slice()) as *mut u8 as u32
     }
 
-    /// The argument the host wrote into what [`alloc`] gave it.
     fn take(ptr: u32, len: u32) -> Vec<u8> {
         if len == 0 {
             return Vec::new();
@@ -435,8 +425,6 @@ pub mod exports {
         })
     }
 
-    /// A trapped instance can never be entered again, so the message leaves
-    /// through the host's import before the abort that follows the hook.
     fn install_panic_hook() {
         std::panic::set_hook(Box::new(|info| {
             let payload = info.payload();

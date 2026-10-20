@@ -16,7 +16,6 @@ struct File {
     notify: Option<NotifyFile>,
 }
 
-// The chat channel told when a check of a push run ends failed or errored.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct NotifyFile {
@@ -37,7 +36,6 @@ struct On {
 struct JobFile {
     id: String,
     runs_on: Vec<String>,
-    // empty for a runner that is its own environment (an account runner such as `claude`)
     #[serde(default)]
     image: String,
     steps: Vec<String>,
@@ -45,7 +43,6 @@ struct JobFile {
     env: BTreeMap<String, String>,
     #[serde(default)]
     inputs: Vec<InputFile>,
-    // Kubernetes quantities ("16", "40Gi"), and the paths a pod holds in memory
     cpu: Option<String>,
     memory: Option<String>,
     #[serde(default)]

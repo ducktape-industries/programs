@@ -1,9 +1,5 @@
 use super::*;
 
-/// `diff` then `apply` is the identity on the new tree, and the patches
-/// are the ones a reader expects: a changed field is `Props`, a moved
-/// key is `Move`, a new key `Insert`, a gone key `Remove`, and a node
-/// of another kind `Replace`.
 #[test]
 fn a_diff_applied_to_the_old_tree_is_the_new_tree() {
     let old = column(vec![
@@ -48,16 +44,12 @@ fn a_diff_applied_to_the_old_tree_is_the_new_tree() {
     );
     apply(&mut applied, patches, &held()).unwrap();
     assert_eq!(applied, new);
-    // Nothing changed hands: both inputs of the diff are as they were.
     let mut untouched = old.clone();
     diff(&mut untouched, &mut new);
     assert_eq!(untouched, old);
     assert!(diff(&mut new.clone(), &mut new).is_empty());
 }
 
-// A keyed list edited in its middle sends the edit and nothing more: a
-// row inserted is one `Insert`, a row taken out one `Remove`, a row moved
-// one `Move`, and the rows around it are never sent again (J-086).
 #[test]
 fn a_keyed_list_edited_in_its_middle_sends_only_the_edit() {
     let rows = |keys: &[usize]| {
@@ -102,8 +94,6 @@ fn a_keyed_list_edited_in_its_middle_sends_only_the_edit() {
     }
 }
 
-// A node `kept` keeps is moved in from the old tree and sends nothing; one
-// it carries is sent whole; the rest are diffed as `diff_taking` diffs them.
 #[test]
 fn a_kept_node_is_moved_in_and_a_carried_one_sent_whole() {
     let old = column(vec![
@@ -136,9 +126,6 @@ fn a_kept_node_is_moved_in_and_a_carried_one_sent_whole() {
     );
 }
 
-/// A node that gains its first interaction, or loses its last, is the
-/// same node with other fields: one `Props` that carries the interactivity
-/// it has now (or none), and its children stay where they are.
 #[test]
 fn a_node_that_gains_or_loses_its_interactivity_is_one_props_patch() {
     let boxed = |interactivity| {
@@ -171,16 +158,11 @@ fn a_node_that_gains_or_loses_its_interactivity_is_one_props_patch() {
     assert!(diff(&mut plain(), &mut plain()).is_empty());
 }
 
-/// One child shown or hidden beside unkeyed siblings is one patch: the
-/// siblings before and after it match by position, so a `.when(..)`
-/// banner beside a 1,080-row body does not send the body again (it did:
-/// two removes and three inserts, 138 KB).
 #[test]
 fn an_unkeyed_child_shown_beside_its_siblings_is_one_insert() {
     let body = || column((0..1_080).map(|row| text(&format!("row {row}"))).collect());
     let header = || text("header");
     let notice = || text("offline");
-    // a div beside a div: the kind alone does not say which one is new
     let banner = || {
         Node::Container(crate::ContainerNode {
             id: None,
@@ -225,9 +207,6 @@ fn an_unkeyed_child_shown_beside_its_siblings_is_one_insert() {
     }
 }
 
-/// The runs a list shares at the front and the back are diffed in place
-/// and the middle by key, and the patches still rebuild the new tree, as
-/// `diff_taking`'s do.
 #[test]
 fn a_list_matches_its_ends_by_position_and_its_middle_by_key() {
     let old = column(vec![
@@ -249,7 +228,6 @@ fn a_list_matches_its_ends_by_position_and_its_middle_by_key() {
     let mut applied = old.clone();
     apply(&mut applied, patches.clone(), &held()).unwrap();
     assert_eq!(applied, new);
-    // the ends were diffed in place, not sent again
     assert!(
         patches
             .iter()
@@ -264,8 +242,6 @@ fn a_list_matches_its_ends_by_position_and_its_middle_by_key() {
     assert_eq!(diff_taking(&mut old.clone(), &mut hollow), patches);
 }
 
-/// `diff_taking` emits the patches `diff` does, but the subtrees they carry
-/// are moved out of the new tree, one empty stand-in left for each.
 #[test]
 fn a_taking_diff_moves_the_carried_subtrees_out() {
     let old = column(vec![

@@ -13,11 +13,8 @@ mod rows;
 mod screens;
 mod voting;
 
-/// This node: a validator in seat 1.
 const THIS: [u8; 2] = [0xab, 0xcd];
-/// A validator in seat 2 that leads every other block with this node.
 const OTHER: [u8; 2] = [0x9c, 0x1e];
-/// A validator in seat 3 that valset holds no membership for.
 const UNLISTED: [u8; 2] = [0x5f, 0x0a];
 const RESIDENT: [u8; 2] = [0x01, 0x02];
 
@@ -36,8 +33,6 @@ fn status() -> NodeStatus {
     }
 }
 
-/// The node's archive: every height up to the tip, led in turn by this
-/// node and OTHER; UNLISTED leads none.
 fn blocks(page: BlockPage) -> BlockList {
     let below = page.before.unwrap_or(4201);
     let blocks = (below.saturating_sub(page.limit as u64)..below)
@@ -54,9 +49,6 @@ fn blocks(page: BlockPage) -> BlockList {
     }
 }
 
-/// Each validator's newest vote as the node heard it: this node at its
-/// tip, OTHER one behind, UNLISTED stopped at 3,871; the resident votes on
-/// nothing.
 fn seen(height: u64) -> NetworkStatus {
     let peer = |key: [u8; 2], signed| Peer {
         key: key.to_vec(),
@@ -73,10 +65,6 @@ fn seen(height: u64) -> NetworkStatus {
     }
 }
 
-/// The node: its status, its blocks, the clock, and the votes it heard;
-/// identity holding none of the members' keys.
-/// A node answering every ask, in a sheet with room for every column
-/// (from 1073 px).
 fn node(cx: &mut TestAppContext) {
     cx.simulate_resize(1200., 680.);
     cx.host().handle::<ChainStatus>(|()| Ok(status()));
@@ -85,8 +73,6 @@ fn node(cx: &mut TestAppContext) {
     serve_identity(cx, Vec::new(), Vec::new());
 }
 
-/// identity answering the role's asks: the account each of `keys` holds,
-/// and `profiles`.
 fn serve_identity(
     cx: &TestAppContext,
     keys: Vec<(Vec<u8>, u64)>,
@@ -122,7 +108,6 @@ fn page<T>(items: Vec<T>) -> valset::PageResponse<T> {
     }
 }
 
-/// valset answering its consensus keys and one page of memberships.
 fn serve_set(cx: &TestAppContext, validators: Vec<Vec<u8>>, members: Vec<valset::Membership>) {
     cx.host().handle::<Query<Valset>>(move |query| {
         Ok(match query {
@@ -133,8 +118,6 @@ fn serve_set(cx: &TestAppContext, validators: Vec<Vec<u8>>, members: Vec<valset:
     });
 }
 
-/// The set: three seated keys, UNLISTED without a membership, and a
-/// resident.
 fn respond(cx: &mut TestAppContext) {
     serve_set(
         cx,
@@ -147,7 +130,6 @@ fn respond(cx: &mut TestAppContext) {
     );
 }
 
-/// The sheet over the node, and its clock.
 fn ready() -> (TestAppContext, StreamSender<ClockTicks>) {
     let mut cx = TestAppContext::new();
     node(&mut cx);
@@ -195,9 +177,6 @@ fn the_root_tracks_the_shared_theme() {
     assert_eq!(style.text.color, Some(dark.foreground));
 }
 
-/// The network's name and this node's pulse head the sheet, its numbers
-/// under them in the popover's words, re-read on the clock; a refusal
-/// retries.
 #[test]
 fn the_head_names_the_network_and_this_node() {
     let mut cx = TestAppContext::new();
@@ -209,7 +188,6 @@ fn the_head_names_the_network_and_this_node() {
     cx.open::<Nodes>();
     cx.run_until_parked();
     assert!(cx.has_text("The node is unavailable. Try again."));
-    // no table without the height it reads
     assert!(cx.find("nodes-table").is_none());
     cx.host().handle::<ChainStatus>(|()| Ok(status()));
     cx.simulate_click("nodes-status-retry");
@@ -225,7 +203,6 @@ fn the_head_names_the_network_and_this_node() {
         "just now",
         "Block time",
         "1.0 s",
-        // 4,200 closes nothing: (4,200 + 1) % 100 blocks into epoch 42
         "Epoch 42 · 1 / 100",
         "Next epoch in 99 blocks",
     ] {
@@ -242,8 +219,6 @@ fn the_head_names_the_network_and_this_node() {
     assert!(cx.has_text("4,201"));
 }
 
-/// One table, each key once: validators in seat order (a seated key valset
-/// holds no membership for among them), then residents.
 #[test]
 fn every_key_is_one_row_validators_first() {
     let (cx, _) = ready();
@@ -284,7 +259,6 @@ fn the_strip_reads_the_last_64() {
     );
 }
 
-/// A new head asks for that block alone; the strip keeps 64.
 #[test]
 fn a_new_head_reads_one_block() {
     let (mut cx, ticks) = ready();
@@ -340,7 +314,6 @@ fn a_refusal_shows_its_sentence_and_retry_asks_again() {
     respond(&mut cx);
     cx.simulate_click("nodes-retry");
     cx.run_until_parked();
-    // only a read asked after the press lands the members
     assert!(cx.has_text("10.0.0.1:4000"), "{:?}", cx.texts());
 }
 

@@ -54,14 +54,12 @@ pub(crate) enum Answers {
     Listed,
 }
 
-/// Who may change the configuration file besides its manager, as an edit picks it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Changers {
     Manager,
     Listed,
 }
 
-/// Whom the agent answers and who may change its file, in the form's own words.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Lists {
     pub answers: Answers,
@@ -78,7 +76,6 @@ pub(crate) struct Form {
     pub changers: Option<Ownership>,
 }
 
-// what a save writes: a new agent's file whole, or an edit's with its body, where it moved
 pub(crate) enum Writes {
     Whole(Config),
     Edit { body: Option<String> },
@@ -99,7 +96,6 @@ enum Next {
     Done(u64),
 }
 
-/// What the form says it does, under its title.
 pub(crate) const CREATE_INTRO: &str = "A new account you manage, handed to harness.";
 pub(crate) const EDIT_INTRO: &str = "Saving writes the configuration file's system prompt and keeps its front matter, which the agent's Setup edits; the next model call reads it.";
 
@@ -157,7 +153,6 @@ impl Draft {
         };
         let system = self.system.text().trim().to_owned();
         let writes = match self.again {
-            // an edit writes the prompt alone: the front matter is the setup's to edit
             true => Writes::Edit {
                 body: (system != self.prompt).then_some(system),
             },
@@ -166,7 +161,7 @@ impl Draft {
         let ownership = match self.answers {
             Answers::Manager => Ownership::Owner,
             Answers::Anyone => Ownership::Anyone,
-            Answers::Listed => match parties(&self.listed.text()) {
+            Answers::Listed => match parse_listed_parties(&self.listed.text()) {
                 Some(parties) => Ownership::Listed(parties),
                 None => {
                     return Err(
@@ -179,7 +174,7 @@ impl Draft {
         let changers = match self.changers {
             None => None,
             Some(Changers::Manager) => Some(Ownership::Owner),
-            Some(Changers::Listed) => match parties(&self.changers_listed.text()) {
+            Some(Changers::Listed) => match parse_listed_parties(&self.changers_listed.text()) {
                 Some(parties) => Some(Ownership::Listed(parties)),
                 None => {
                     return Err(
@@ -197,7 +192,6 @@ impl Draft {
         })
     }
 
-    // a new agent's configuration, its prompt `system`
     fn config(&self, system: String) -> Result<Config, String> {
         let Some(model) = self.model.clone() else {
             return Err("Pick the model it asks.".into());
@@ -227,7 +221,6 @@ impl Draft {
         })
     }
 
-    /// The two lists as the form holds them now.
     fn lists(&self) -> Lists {
         Lists {
             answers: self.answers,
@@ -246,7 +239,6 @@ impl Draft {
         }
         let moved = self.script_path.as_deref() != Some(form.path.as_str());
         let (now, was) = (self.lists(), self.was.clone().unwrap_or_default());
-        // an edit sends a list only where it changes one; a new file is its manager's alone
         let relisted = self.again
             && now.changers.is_some()
             && (now.changers, &now.changers_listed) != (was.changers, &was.changers_listed);
@@ -269,9 +261,7 @@ impl Draft {
 }
 
 impl Draft {
-    /// The form at an agent's configuration, whom it answers and who may change its file.
     fn editing(detail: &Detail, setup: &AgentSetup, name: &str) -> Draft {
-        // the prompt harness read; empty while it reads none
         let prompt = setup
             .configured
             .config()
@@ -280,13 +270,14 @@ impl Draft {
         let (answers, listed) = match &detail.ownership {
             Ownership::Owner => (Answers::Manager, String::new()),
             Ownership::Anyone => (Answers::Anyone, String::new()),
-            Ownership::Listed(parties) => (Answers::Listed, words(parties)),
+            Ownership::Listed(parties) => (Answers::Listed, parties_as_field_text(parties)),
         };
-        // the file's own list; one it inherits from a folder's is not the form's to show
         let (changers, changers_listed) = match &detail.config_writers {
             Some(Writers::Listed { at, list, .. }) if *at == setup.path => match list {
                 Ownership::Owner => (Some(Changers::Manager), String::new()),
-                Ownership::Listed(parties) => (Some(Changers::Listed), words(parties)),
+                Ownership::Listed(parties) => {
+                    (Some(Changers::Listed), parties_as_field_text(parties))
+                }
                 Ownership::Anyone => (None, String::new()),
             },
             Some(_) | None => (None, String::new()),
@@ -323,8 +314,7 @@ fn party(word: &str) -> Party {
     }
 }
 
-/// The parties a list field names, none when it names none.
-fn parties(listed: &str) -> Option<Vec<Party>> {
+fn parse_listed_parties(listed: &str) -> Option<Vec<Party>> {
     let parties: Vec<Party> = listed
         .split([',', ' '])
         .filter(|word| !word.is_empty())
@@ -333,8 +323,7 @@ fn parties(listed: &str) -> Option<Vec<Party>> {
     (!parties.is_empty()).then_some(parties)
 }
 
-/// A list's parties as a field writes them: `7, forge`.
-fn words(parties: &[Party]) -> String {
+fn parties_as_field_text(parties: &[Party]) -> String {
     let words: Vec<String> = parties
         .iter()
         .map(|party| match party {
@@ -358,7 +347,6 @@ pub(crate) fn base_of(configured: &Configured) -> Option<[u8; 32]> {
     }
 }
 
-// `bytes` put as `chunk` blobs, then committed at `path` over snapshot `base`
 pub(crate) async fn write_file(
     host: &Host,
     path: String,
@@ -374,7 +362,6 @@ pub(crate) async fn write_file(
             body: BlobBody::Bytes(chunk.to_vec()),
         })
         .collect();
-    // an empty file has no chunk to put
     let digests = match blobs.is_empty() {
         true => Vec::new(),
         false => host
@@ -411,7 +398,6 @@ impl Agents {
         self.go(Screen::Create, cx);
     }
 
-    /// The form at the agent on screen, read in full.
     fn editing(&self, name: &str) -> Option<Draft> {
         let detail = self.detail.ready()?;
         Some(Draft::editing(detail, detail.setup.as_ref()?, name))
@@ -474,9 +460,6 @@ impl Agents {
         let submit = cx.host().ask::<Submit<Identity>>(op.clone());
         self.draft.sending = Some(cx.land(submit, move |view, answer, cx| {
             view.draft.sending = None;
-            // a create in doubt may have made the account, and nothing here
-            // reads the chain for it: say so before Next makes a second one
-            // (follow-up: settle a doubt by its frame, as Expo does)
             let in_doubt = matches!(answer, Ok(view::methods::Submitted::InDoubt { .. }));
             let landed = applied(answer)
                 .map_err(|said| match &op {
@@ -516,8 +499,6 @@ impl Agents {
         cx.notify();
     }
 
-    // the configuration written at the form's path: a new agent's whole, an edit's file read at
-    // its snapshot with its body, where that moved
     fn commit(&mut self, agent: u64, form: Form, cx: &mut Context<Self>) {
         let message = format!(
             "Configure agent {} (account {agent})",

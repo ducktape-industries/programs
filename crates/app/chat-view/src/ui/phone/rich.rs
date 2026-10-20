@@ -16,13 +16,8 @@ use chat::view::Names;
 use chat::{Block, Span};
 use view::design::Ladder;
 
-/// A quote's inset past its 2 rule (mobile `src/chat/Rich.tsx:34`).
 const QUOTE_INSET: Pixels = px(10.);
-/// A list line's marker column, 22 less the line's inset (mobile
-/// `src/chat/Rich.tsx:26`).
 const MARKER: Pixels = px(16.);
-/// A code block's language: the eyebrow at 10 (mobile
-/// `src/chat/Rich.tsx:42`).
 const CODE_LANG: Pixels = px(10.);
 
 pub(super) fn blocks(
@@ -124,7 +119,6 @@ fn code(id: String, lang: Option<&str>, text: &str, theme: &Theme, ladder: &Ladd
         .into_any_element()
 }
 
-/// One line of runs in the phone's styles.
 fn runs(
     id: ElementId,
     spans: &[Span],
@@ -175,7 +169,6 @@ fn run(span: &ChatSpan, theme: &Theme) -> Run {
             },
             Some(account),
         ),
-        // a space either side, as the Expo span pads it
         SpanStyle::Code => Run {
             text: format!(" {} ", span.text),
             mono: true,

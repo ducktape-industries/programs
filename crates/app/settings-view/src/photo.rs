@@ -7,22 +7,16 @@ use std::io::Cursor;
 use std::sync::Arc;
 use view::{Image, ImageFormat};
 
-// The saved picture's side, in pixels (orthory, #engineering 950).
 pub(crate) const SIDE: u32 = 256;
-// The crop frame's side on screen: one point for each saved pixel.
 pub(crate) const FRAME: f32 = SIDE as f32;
 
 pub(crate) struct Photo {
     upright: RgbaImage,
-    // the whole picture at the frame's size for zoom 1, which layout moves
-    // and scales: a drag or a zoom costs no pixels
     pub(crate) preview: Arc<Image>,
     pub(crate) crop: Crop,
 }
 
 impl Photo {
-    // The picture in `bytes`, upright; `None` for bytes `image` reads as no
-    // picture (a HEIC, a document).
     pub(crate) fn decode(bytes: &[u8]) -> Option<Self> {
         let reader = ImageReader::new(Cursor::new(bytes))
             .with_guessed_format()
@@ -32,7 +26,7 @@ impl Photo {
         let mut picture = DynamicImage::from_decoder(decoder).ok()?;
         picture.apply_orientation(orientation);
         let upright = picture.into_rgba8();
-        let preview = jpeg(&shrunk(&upright, SIDE));
+        let preview = encode_opaque_jpeg(&shrink_to_short_side(&upright, SIDE));
         Some(Self {
             crop: Crop::whole(upright.dimensions()),
             preview: Arc::new(Image::from_bytes(ImageFormat::Jpeg, preview)),
@@ -44,15 +38,12 @@ impl Photo {
         self.upright.dimensions()
     }
 
-    // The square cut from the whole picture, at most `SIDE` across, as JPEG.
     pub(crate) fn saved(&self) -> Vec<u8> {
         let (x, y, side) = self.crop.square(self.size());
         let cut = imageops::crop_imm(&self.upright, x, y, side, side).to_image();
-        jpeg(&shrunk(&cut, SIDE))
+        encode_opaque_jpeg(&shrink_to_short_side(&cut, SIDE))
     }
 
-    // The square moved as a drag of `by` points over the frame moves the
-    // picture under it.
     pub(crate) fn dragged(&mut self, by: (f32, f32)) {
         let size = self.size();
         let scale = self.crop.side(size) / FRAME;
@@ -61,8 +52,6 @@ impl Photo {
         self.crop = self.crop.held(size);
     }
 
-    // Zoomed by `fraction` of the slider's travel: equal travel, equal
-    // ratio of zoom.
     pub(crate) fn slid(&mut self, fraction: f32) {
         let size = self.size();
         let most = Crop::most(size);
@@ -74,15 +63,12 @@ impl Photo {
         self.crop = self.crop.held(size);
     }
 
-    // Zoomed as a pinch of `delta` zooms (0.1: a tenth more).
     pub(crate) fn pinched(&mut self, delta: f32) {
         self.crop.zoom *= 1. + delta;
         self.crop = self.crop.held(self.size());
     }
 }
 
-// The square cut from a picture: at `zoom` 1 it is the picture's short side
-// across, and `centre` is where its middle sits, in the picture's pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Crop {
     pub(crate) zoom: f32,
@@ -97,19 +83,14 @@ impl Crop {
         }
     }
 
-    // The most a picture of `size` zooms: until the square is `SIDE` pixels
-    // across, so a saved picture is never enlarged. One no wider than that
-    // does not zoom.
     pub(crate) fn most((width, height): (u32, u32)) -> f32 {
         (width.min(height) as f32 / SIDE as f32).max(1.)
     }
 
-    // The square's side, in the picture's pixels.
     pub(crate) fn side(&self, (width, height): (u32, u32)) -> f32 {
         width.min(height) as f32 / self.zoom
     }
 
-    // The zoom within 1 and the most, and the square within the picture.
     pub(crate) fn held(self, size @ (width, height): (u32, u32)) -> Self {
         let zoom = self.zoom.clamp(1., Self::most(size));
         let half = width.min(height) as f32 / zoom / 2.;
@@ -120,7 +101,6 @@ impl Crop {
         }
     }
 
-    // The square in whole pixels, its corner and side, inside the picture.
     pub(crate) fn square(&self, size @ (width, height): (u32, u32)) -> (u32, u32, u32) {
         let side = (self.side(size).round() as u32).clamp(1, width.min(height));
         let corner = |at: f32, length: u32| {
@@ -134,9 +114,7 @@ impl Crop {
     }
 }
 
-// `picture` made smaller in proportion until its short side is `side`; one
-// already no bigger, as it is.
-fn shrunk(picture: &RgbaImage, side: u32) -> RgbaImage {
+fn shrink_to_short_side(picture: &RgbaImage, side: u32) -> RgbaImage {
     let (width, height) = picture.dimensions();
     let short = width.min(height);
     if short <= side {
@@ -146,8 +124,7 @@ fn shrunk(picture: &RgbaImage, side: u32) -> RgbaImage {
     imageops::thumbnail(picture, scaled(width).max(1), scaled(height).max(1))
 }
 
-// `picture` as JPEG at the encoder's own quality; a JPEG holds no alpha.
-fn jpeg(picture: &RgbaImage) -> Vec<u8> {
+fn encode_opaque_jpeg(picture: &RgbaImage) -> Vec<u8> {
     let opaque: RgbImage = DynamicImage::ImageRgba8(picture.clone()).into_rgb8();
     let mut bytes = Vec::new();
     opaque
@@ -207,14 +184,11 @@ mod tests {
         bytes.windows(part.len()).any(|window| window == part)
     }
 
-    // A JPEG `width` by `height`, with an EXIF orientation when given: an
-    // APP1 segment after the start of image holding one TIFF entry,
-    // Orientation (0x0112), a SHORT.
     fn encoded(width: u32, height: u32, orientation: Option<u8>) -> Vec<u8> {
         let picture = RgbaImage::from_fn(width, height, |x, y| {
             image::Rgba([x as u8, y as u8, 0, 255])
         });
-        let jpeg = jpeg(&picture);
+        let jpeg = encode_opaque_jpeg(&picture);
         let Some(orientation) = orientation else {
             return jpeg;
         };

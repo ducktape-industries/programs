@@ -43,7 +43,6 @@ fn a_turn_no_request_is_open_for_says_so_and_a_write_to_its_row_reads_the_waits_
     let (mut cx, shared) = opened(Net::default());
     let changes = cx.host().stream::<Changes<harness::Harness>>();
     shared.borrow_mut().requests.clear();
-    // egress's block alone moves no wait
     cx.host()
         .stream::<Changes<egress::Egress>>()
         .send(Some(Change {
@@ -88,7 +87,6 @@ fn a_relaying_call_says_its_relay_and_one_without_says_none_is_open() {
     net.requests.push(relay(42, "toolu_01", 9002));
     let (mut cx, shared) = opened(net);
     let changes = cx.host().stream::<Changes<harness::Harness>>();
-    // the burst the loop is still in is open of itself
     cx.simulate_click("call-toolu_01");
     cx.run_until_parked();
     let relaying = "relaying on egress request 42 since block 9,002 at node abababab";
@@ -160,7 +158,6 @@ fn a_result_shows_its_first_line_until_a_press_shows_it_whole() {
         failed: false,
     };
     let (mut cx, _) = opened(net);
-    // the burst the loop is still in is open of itself
     cx.simulate_click("call-toolu_01");
     cx.run_until_parked();
     let first = "c41a90e2 payments: timeout 3s -> 0.8s";

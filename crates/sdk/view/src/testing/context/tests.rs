@@ -16,7 +16,6 @@ struct LiveView {
 impl View for LiveView {
     const NAME: &'static str = "LiveView";
     const CAPABILITIES: &'static [Capability] = &[Capability::Program];
-    // subscribes in `attach` alone: `new` is the default
     fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         let mut stream = cx.host().subscribe::<Changes<Probe>>(());
         self.task = Some(cx.spawn(async move |this, cx| {
@@ -37,9 +36,6 @@ impl Render for LiveView {
     }
 }
 
-/// A view that follows the host in `attach` alone keeps following it
-/// after a redeploy restores it from its snapshot, and hears each item
-/// once.
 #[test]
 fn a_view_that_subscribes_in_attach_keeps_its_followers_across_a_restore() {
     let mut cx = TestAppContext::new();
@@ -59,7 +55,6 @@ fn a_view_that_subscribes_in_attach_keeps_its_followers_across_a_restore() {
     assert_eq!(cx.host().requests::<Changes<Probe>>().len(), 2);
 }
 
-/// Logs through `host`, which its manifest leaves out.
 #[derive(Default, Serialize, Deserialize)]
 struct Undeclared;
 impl View for Undeclared {
@@ -82,7 +77,6 @@ fn a_method_the_manifest_leaves_out_fails_the_test() {
     TestAppContext::new().open::<Undeclared>();
 }
 
-/// A button with nothing to say for itself.
 #[derive(Default, Serialize, Deserialize)]
 struct Nameless;
 impl View for Nameless {
@@ -129,8 +123,6 @@ fn a_frame_the_host_would_cut_fails_its_test() {
     TestAppContext::new().open::<Nested>();
 }
 
-/// A card a click selects, with a button on it that deletes; what stands
-/// between them is `stop`.
 #[derive(Default, Serialize, Deserialize)]
 struct Card {
     stop: Stop,
@@ -140,13 +132,9 @@ struct Card {
 enum Stop {
     #[default]
     Nothing,
-    /// The button consumes its click.
     Consumes,
-    /// The button hides what is behind it from the pointer.
     Occludes,
-    /// The button is in a dialog opened over the card's content.
     Dialog,
-    /// The button is in a toolbar that consumes a click it does not take.
     Toolbar,
 }
 impl View for Card {
@@ -190,9 +178,6 @@ impl Render for Card {
     }
 }
 
-/// A click goes out from the node pressed through every node around it
-/// that listens, as gpui passes it, until a node consumes it, a node hides
-/// what is behind it, or it leaves a dialog's layer.
 #[test]
 fn a_click_reaches_the_nodes_around_it_until_one_consumes_it() {
     let mut cx = TestAppContext::new();
@@ -214,9 +199,6 @@ fn a_click_reaches_the_nodes_around_it_until_one_consumes_it() {
     }
 }
 
-/// A node that consumes a click with no click of its own: the host stops a
-/// click in the click's listener, so in the app the card would still hear
-/// the press. The host refuses the frame, and so the view's test fails.
 #[test]
 #[should_panic(expected = "consumes a click it does not take")]
 fn a_click_consumed_where_no_click_is_taken_fails_the_test() {
@@ -229,8 +211,6 @@ fn a_click_consumed_where_no_click_is_taken_fails_the_test() {
     cx.run_until_parked();
 }
 
-/// Twins: two siblings with one typed id, which the audit (it keys on
-/// names) passes and the host refuses.
 #[derive(Default, Serialize, Deserialize)]
 struct Twins;
 impl View for Twins {
@@ -256,7 +236,6 @@ fn every_frame_is_held_to_the_host_sanitizer() {
     TestAppContext::new().open::<Twins>();
 }
 
-/// A target whose tooltip is the nameless button.
 #[derive(Default, Serialize, Deserialize)]
 struct NamelessTip;
 impl View for NamelessTip {
@@ -282,7 +261,6 @@ fn a_tooltip_the_host_draws_is_audited() {
     cx.simulate_hover("target", true);
 }
 
-/// A hundred rows in a uniform list.
 #[derive(Default, Serialize, Deserialize)]
 struct Rows;
 impl View for Rows {
@@ -302,9 +280,6 @@ fn rows(rows: impl Iterator<Item = usize>) -> Vec<String> {
     rows.map(|row| format!("row {row}")).collect()
 }
 
-/// A test sees the rows the host shows: on the first frame the rows that
-/// fill the viewport the host opened the view in (and a margin past
-/// them), then the ones scrolled to with the measurement row.
 #[test]
 fn a_uniform_list_shows_the_rows_its_viewport_shows() {
     let mut cx = TestAppContext::new();
@@ -322,9 +297,6 @@ fn a_uniform_list_shows_the_rows_its_viewport_shows() {
     );
 }
 
-/// A pane that hears every key on its way down and back up, around a list
-/// that hears the arrows, a button beside it, and one that moves the
-/// keyboard to the list.
 #[derive(Default, Serialize, Deserialize)]
 struct Keys {
     heard: Vec<String>,
@@ -384,8 +356,6 @@ impl Render for Keys {
     }
 }
 
-/// Nothing has the keyboard: the host delivers the key to no node, and
-/// the test fails instead of firing the list's listener.
 #[test]
 #[should_panic(
     expected = "the host refuses this key: \"list\" is not on the focus path (nothing has focus)"
@@ -405,9 +375,6 @@ fn a_key_at_a_sibling_of_the_focused_node_is_refused() {
     cx.simulate_key_down("list", "down");
 }
 
-/// A key goes down the focus path to the capture listeners, then back up
-/// it, focused node first; a press moves the keyboard, and so does the
-/// view's own `Window::focus`.
 #[test]
 fn keys_go_down_the_focus_path_and_back_up_it() {
     let mut cx = TestAppContext::new();
@@ -431,7 +398,6 @@ fn a_node_that_cannot_hold_focus_is_not_focused() {
     cx.simulate_focus("note");
 }
 
-/// A screen with a dialog that opens over it, holding one button.
 #[derive(Default, Serialize, Deserialize)]
 struct Dialog {
     open: bool,
@@ -468,8 +434,6 @@ impl Render for Dialog {
     }
 }
 
-/// A dialog that opens takes the keyboard to its first Tab stop, as the
-/// host's focus trap does.
 #[test]
 fn a_dialog_that_opens_takes_the_keyboard() {
     let mut cx = TestAppContext::new();
@@ -478,8 +442,6 @@ fn a_dialog_that_opens_takes_the_keyboard() {
     assert_eq!(cx.focused().and_then(Node::key), Some("confirm"));
 }
 
-/// Tab walks the view's Tab stops in document order; in an open dialog it
-/// goes round the dialog's, never out to the screen under it.
 #[test]
 fn tab_stays_in_an_open_dialog() {
     let mut cx = TestAppContext::new();
@@ -498,9 +460,6 @@ fn tab_stays_in_an_open_dialog() {
     }
 }
 
-/// Three buttons; the first moves the keyboard on as Tab does, and a list
-/// that asks for the keys by id is refused: the host focuses a container
-/// or a field.
 #[derive(Default, Serialize, Deserialize)]
 struct Moves;
 impl View for Moves {
@@ -548,7 +507,6 @@ fn a_focus_on_a_uniform_list_is_refused() {
     cx.simulate_click("rows");
 }
 
-/// Asks the host three hundred times on its first tick.
 #[derive(Default, Serialize, Deserialize)]
 struct Fanout {
     answers: usize,
@@ -593,8 +551,6 @@ fn three_hundred_asks_go_out_in_one_frame_and_every_one_is_answered() {
     assert_eq!(asked.last().map(String::as_str), Some("n299"));
 }
 
-/// What a tick cost: the first one renders the tree whole, a tick that
-/// changes nothing sends nothing.
 #[test]
 fn a_tick_reports_what_it_rendered_and_sent() {
     let mut cx = TestAppContext::new();
@@ -615,12 +571,9 @@ fn a_tick_reports_what_it_rendered_and_sent() {
     assert!(key.rendered && key.patches > 0 && key.bytes < first.bytes);
 }
 
-/// A note with a button that starts it over.
 #[derive(Default, Serialize, Deserialize)]
 struct Note {
     text: crate::TextField,
-    /// Every change the host told: the span it edited, if it edited one,
-    /// and the text after it.
     #[serde(skip)]
     heard: Vec<(Option<std::ops::Range<usize>>, String)>,
 }
@@ -650,10 +603,6 @@ impl Render for Note {
     }
 }
 
-/// The host's engine holds a field's text; a frame's text is the view's
-/// copy of it. A frame whose field is a new generation is a new document:
-/// the engine's text becomes the frame's, the view hears it with no edit,
-/// and the next thing typed is typed into it.
 #[test]
 fn a_new_generation_replaces_the_hosts_text_and_the_view_hears_it() {
     let mut cx = TestAppContext::new();

@@ -25,8 +25,6 @@ fn env(origin: Origin, sender: Option<Principal>, time: u64) -> Env {
     }
 }
 
-/// A frame signed by `key` at `time`, acting as the account identity says
-/// it holds, as the host resolves it: a refusal rejects the frame.
 fn signed_at(store: &MockHost, key: &[u8], time: u64) -> Result<Env, ::program::Error> {
     let origin = Origin::Signed(key.to_vec());
     let asked = Query::OfKey { key: key.to_vec() };
@@ -41,7 +39,6 @@ fn signed(store: &MockHost, key: &[u8]) -> Env {
     signed_at(store, key, 100).unwrap()
 }
 
-/// A message from `program`, acting as its account.
 fn from_program(store: &MockHost, program: &str) -> Env {
     let asked = Query::OfProgram {
         program: program.into(),
@@ -60,9 +57,6 @@ fn root() -> Env {
     env(Origin::Root, Some(Principal::Root), 100)
 }
 
-/// A proof, natively: the signature is the namespace then the preimage
-/// ([`proof`]), so a signature made under one namespace verifies under no
-/// other; the verifier checks it names a key.
 fn memory() -> MockHost {
     let host = MockHost::default();
     host.borrow_mut().verifier = Some(Box::new(|_, key, namespace, message, signature| {
@@ -71,7 +65,6 @@ fn memory() -> MockHost {
     host
 }
 
-/// What [`memory`]'s verifier takes as a signature under `namespace`.
 fn proof(namespace: &[u8], preimage: &[u8]) -> Vec<u8> {
     [namespace, preimage].concat()
 }
@@ -86,7 +79,6 @@ fn run(store: &MockHost, env: &Env, op: Op) -> Result<u64, ::program::Error> {
     })
 }
 
-/// `op` as `env`, which must refuse and leave the store as it was.
 #[track_caller]
 fn refused(store: &MockHost, env: &Env, op: Op) -> ::program::Error {
     store.refused(|| run(store, env, op))
@@ -120,7 +112,6 @@ fn create_agent(store: &MockHost, manager: &[u8], name: &str) -> u64 {
     run(store, &signed(store, manager), op).unwrap()
 }
 
-/// The manager signs, `key` consents to joining `agent`.
 fn add_agent_key(
     store: &MockHost,
     manager: &[u8],
@@ -130,8 +121,6 @@ fn add_agent_key(
     run(store, &signed(store, manager), agent_key(agent, key, 0))
 }
 
-/// `key`'s consent to joining `agent`, proved over its `generation`,
-/// expiring at 200.
 fn agent_key(agent: u64, key: &[u8], generation: u64) -> Op {
     consented_by(key, agent, key, generation)
 }
@@ -157,7 +146,6 @@ fn consented_by(consenting: &[u8], account: u64, key: &[u8], generation: u64) ->
     }
 }
 
-/// An agent's keys, whatever its life.
 fn owner_of(store: &MockHost, number: u64) -> Option<Party> {
     let ctx = store.query(env(Origin::Root, None, 100));
     Identity::resource(&ctx, &crate::account_key(number))
@@ -498,8 +486,6 @@ fn a_suspended_or_revoked_agent_creates_no_agent() {
     assert!(managed.items.is_empty());
 }
 
-/// A card (name, avatar, bio) is a user's own, an agent's own and its
-/// manager's, and a system account's program's alone.
 #[test]
 fn a_card_is_edited_by_its_user_its_agent_its_manager_or_its_program() {
     let store = memory();
@@ -572,9 +558,6 @@ fn a_card_is_edited_by_its_user_its_agent_its_manager_or_its_program() {
     }
 }
 
-/// Suspended, an agent acts as no one and keeps its keys for its resume;
-/// revoked, it is done for good: its keys are gone, its every op refused,
-/// and its manager's list still names it.
 #[test]
 fn an_agent_is_suspended_resumed_or_revoked_and_its_manager_owns_it() {
     let store = memory();
@@ -602,7 +585,6 @@ fn an_agent_is_suspended_resumed_or_revoked_and_its_manager_owns_it() {
     assert_eq!(design::note(&get(&store, agent).kind()), Some("suspended"));
     let again = refused(&store, &signed(&store, ALICE), suspend());
     assert_eq!(again.code, code::WRONG_STATE);
-    // a suspended agent's manager still works its keys and its card
     run(
         &store,
         &signed(&store, ALICE),
@@ -654,7 +636,6 @@ fn an_agent_is_suspended_resumed_or_revoked_and_its_manager_owns_it() {
         let refused = refused(&store, &signed(&store, ALICE), op);
         assert_eq!(refused.code, code::WRONG_STATE, "{why}");
     }
-    // its key is free for another account, and the manager's list keeps it
     create(&store, BOT, "Reborn");
     let Reply::Accounts(managed) = query(
         &store,
@@ -670,17 +651,12 @@ fn an_agent_is_suspended_resumed_or_revoked_and_its_manager_owns_it() {
         [agent]
     );
 
-    // a user is no one's program account: no one suspends them
     let alice = refused(&store, &signed(&store, ALICE), Op::Suspend { account: 1 });
     assert_eq!(alice.code, code::WRONG_STATE);
     let bob = refused(&store, &signed(&store, BOB), Op::Suspend { account: 1 });
     assert_eq!(bob.code, code::WRONG_STATE);
 }
 
-/// Who may register a program, and that registering twice keeps one
-/// account, is the identity role's (`conformance::identity`, run on this
-/// program by `conformance/tests/reference.rs`); what the account is, is
-/// identity's own.
 #[test]
 fn the_system_registers_a_program_which_alone_names_its_account() {
     let store = memory();
@@ -701,7 +677,6 @@ fn the_system_registers_a_program_which_alone_names_its_account() {
     );
     assert!(account.keys().is_empty());
 
-    // a system account holds no keys
     let key = refused(&store, &signed(&store, ALICE), agent_key(2, BOT, 0));
     assert_eq!(key.code, code::WRONG_STATE);
     let key = refused(&store, &forge, agent_key(2, BOT, 0));
@@ -781,8 +756,6 @@ fn lists_page_in_number_order_and_managed_lists_one_manager() {
     );
 }
 
-/// Profiles page in number order and say what each account is; one is
-/// asked by number.
 #[test]
 fn profiles_page_in_number_order_and_say_what_each_is() {
     let store = memory();
@@ -838,8 +811,6 @@ fn profiles_page_in_number_order_and_say_what_each_is() {
     assert_eq!(one(9), None);
 }
 
-/// An agent's new key consents over its generation and before it expires:
-/// a consent past its time, or replayed once the key has left, is refused.
 #[test]
 fn an_agents_key_consent_expires_and_is_not_replayed() {
     let store = memory();

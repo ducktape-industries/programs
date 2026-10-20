@@ -13,43 +13,24 @@ use crate::words::{self, unindexed};
 use crate::{BlockRow, Cx, Explorer, Route, TxRow};
 use design::{empty_state, mono};
 
-/// The rows each Overview panel draws.
 const LATEST: usize = 12;
 
-/// The bar's height, each line of it once the search wraps under the tabs, and a section heading's.
 const BAR_H: Pixels = px(44.);
-/// The search field grows to this; the tabs keep their room first.
 const SEARCH_W: Pixels = px(360.);
-/// The search field keeps this much of the bar: past it, it wraps under the tabs.
 const SEARCH_MIN_W: Pixels = px(160.);
-/// A list row's height, and a detail field's least.
 const ROW_H: Pixels = px(40.);
-/// The smallest box a pointer presses, each way (the door's AX-017).
 const PRESS_TARGET: Pixels = px(24.);
-/// The signer column.
 const SIGNER_W: Pixels = px(180.);
-/// A block list's height column.
 const HEIGHT_W: Pixels = px(72.);
-/// The age column: `59s`, `3h`.
 const AGE_W: Pixels = px(36.);
-/// A transaction row's outcome mark.
 const MARK: Pixels = px(6.);
-/// Each level a nested run steps in.
 const NEST_W: Pixels = px(20.);
-/// A transaction row's short hash.
-/// A detail page's field labels.
 const LABEL_W: Pixels = px(110.);
-/// An operation's field labels.
 const OP_LABEL_W: Pixels = px(90.);
-/// The Accounts list's device count.
 const DEVICES_W: Pixels = px(90.);
-/// The Accounts list's transaction count.
 const COUNT_W: Pixels = px(60.);
-/// An account page's side column: devices and programs used.
 const SIDE_W: Pixels = px(380.);
-/// The Overview's latest blocks at their widest, beside the latest transactions.
 const LATEST_BLOCKS_W: Pixels = px(420.);
-/// The avatar an account page opens with.
 const PAGE_AVATAR: Pixels = px(40.);
 
 mod accounts;
@@ -132,7 +113,6 @@ fn bar(view: &Explorer, cx: Cx, theme: &Theme, ladder: &Ladder) -> impl IntoElem
             active,
         )
     });
-    // on a narrow window the search wraps under the tabs, a line of its own
     div()
         .id("explorer-bar")
         .w_full()
@@ -144,8 +124,6 @@ fn bar(view: &Explorer, cx: Cx, theme: &Theme, ladder: &Ladder) -> impl IntoElem
         .border_b_1()
         .border_color(theme.border)
         .child(
-            // one Tab stop; ← → open the next tab's page as it was left (a
-            // click, or Enter or Space on the active tab, opens its list)
             design::composite("explorer-tabs", Role::TabList, "Pages")
                 .orientation(design::Orientation::Horizontal)
                 .wrap()
@@ -214,8 +192,6 @@ fn page(view: &Explorer, cx: Cx, theme: &Theme, ladder: &Ladder) -> AnyElement {
     }
 }
 
-// ---------- pieces ----------
-
 fn quiet(id: &'static str, text: impl Into<SharedString>, theme: &Theme) -> AnyElement {
     design::quiet(text, theme)
         .id(id)
@@ -231,7 +207,6 @@ fn failed(sentence: &str, cx: Cx, theme: &Theme, ladder: &Ladder) -> AnyElement 
         .into_any_element()
 }
 
-/// A section's title row: its name, then what sits on its right.
 fn heading(id: &str, title: &str, right: Option<AnyElement>, theme: &Theme) -> Stateful<Div> {
     div()
         .id(SharedString::from(id.to_string()))
@@ -253,8 +228,6 @@ fn caption(text: impl Into<SharedString>, theme: &Theme) -> AnyElement {
         .into_any_element()
 }
 
-/// A link that goes somewhere inside the explorer, in a box no smaller
-/// than [`PRESS_TARGET`] with the text centred down it.
 fn link(id: String, text: String, route: Route, cx: Cx, theme: &Theme) -> Stateful<Div> {
     let go =
         cx.listener(move |view: &mut Explorer, _: &ClickEvent, _, cx| view.go(route.clone(), cx));
@@ -272,9 +245,6 @@ fn link(id: String, text: String, route: Route, cx: Cx, theme: &Theme) -> Statef
         .child(text)
 }
 
-/// A clickable row of a list: an option of the [`Rows`] it goes in, which
-/// holds the focus and the arrows; nothing is ever selected, the press
-/// navigates.
 fn row(id: ElementId, label: String, route: Route, cx: Cx, theme: &Theme) -> Stateful<Div> {
     let go =
         cx.listener(move |view: &mut Explorer, _: &ClickEvent, _, cx| view.go(route.clone(), cx));
@@ -294,14 +264,6 @@ fn row(id: ElementId, label: String, route: Route, cx: Cx, theme: &Theme) -> Sta
         .on_click(go)
 }
 
-/// A list of [`row`]s: one Tab stop, ↑ ↓ walk the rows, Home/End reach the
-/// ends, Enter opens the active row. The active row is the view's cursor in
-/// this list, else the first. Rows handed over built ([`Rows::row`]) are
-/// drawn whole, with notes (a run of empty blocks) between them unroled;
-/// rows the list paints when asked ([`Rows::shown`]) are drawn as a
-/// `uniform_list` that scrolls for its page: the screenful the host shows
-/// and a margin, scrolled to the row the arrows move to ahead of the frame
-/// that claims it.
 struct Rows {
     id: &'static str,
     label: &'static str,
@@ -312,8 +274,6 @@ struct Rows {
     paint: Option<Painter>,
 }
 
-/// Paints a range of a list's rows, each a [`row`], off the view they are
-/// read from: the host asks for a window at a time.
 type Painter = Box<dyn Fn(&Explorer, Range<usize>, Cx, &Theme) -> Vec<Stateful<Div>>>;
 
 fn rows(id: &'static str, label: &'static str, view: &Explorer) -> Rows {
@@ -332,8 +292,6 @@ fn rows(id: &'static str, label: &'static str, view: &Explorer) -> Rows {
     }
 }
 
-/// A row as its list's option: roled, and the claim when it is the active
-/// one.
 fn option(row: Stateful<Div>, active: bool, theme: &Theme) -> AnyElement {
     design::item(row, Role::ListBoxOption, active)
         .when(active, |row| row.bg(theme.surface_raised))
@@ -347,11 +305,6 @@ impl Rows {
         self.children.push(option(row, active, theme));
         self
     }
-    /// `routes.len()` rows the host asks for by index, painted as it shows
-    /// them. They scroll for their page, which is no scroller then
-    /// ([`render`]): the list reaches the pane's edge, where the host keeps
-    /// the bar's gutter beside the rows, as a page that scrolls is given
-    /// one.
     fn shown(
         mut self,
         routes: Vec<Route>,
@@ -429,7 +382,6 @@ impl Rows {
     }
 }
 
-/// Who signed: the account holding the key, or the key itself.
 fn signer(view: &Explorer, key: &[u8], cx: Cx, theme: &Theme) -> impl IntoElement {
     let (name, number, picture) = match view.holder(key) {
         Some((account, _)) => (
@@ -531,9 +483,6 @@ fn block_lines(list: Rows, view: &Explorer, rows: usize) -> Rows {
     })
 }
 
-/// `tx_row`s as a [`Rows`] list. `select` picks the transactions, in
-/// order, off the view: once here for their routes, and again for each
-/// window the host asks for, since a row borrows the view it is read from.
 fn tx_rows(
     list: Rows,
     view: &Explorer,
@@ -548,8 +497,6 @@ fn tx_rows(
     })
 }
 
-/// Its id is its place on the chain, which a frame the node landed again
-/// (the same hash) does not share.
 fn tx_row(view: &Explorer, tx: &TxRow, cx: Cx, theme: &Theme) -> Stateful<Div> {
     let (height, position) = (tx.height, tx.index);
     let id = SharedString::from(format!("explorer-tx-{height}-{position}"));
@@ -617,8 +564,6 @@ fn frame_rows(
     })
 }
 
-/// The line over a list whose listing is behind the rows written above
-/// it: Show newest reads it anew from its first page.
 fn newer(cx: Cx, theme: &Theme) -> impl IntoElement {
     let show = |view: &mut Explorer, cx: &mut Context<Explorer>| view.show_newest(cx);
     div()
@@ -642,8 +587,6 @@ fn newer(cx: Cx, theme: &Theme) -> impl IntoElement {
         ))
 }
 
-/// The listing's next page, if it goes on: asked as the page past the
-/// rows held, which [`Paged::show`] reads once.
 fn read_older(listing: &mut Paged<activity::Frame>, cx: &mut Context<Paged<activity::Frame>>) {
     let held = listing.rows().len();
     listing.show(held..held + 1, cx);
@@ -683,7 +626,6 @@ fn frame_row(view: &Explorer, frame: &activity::Frame, cx: Cx, theme: &Theme) ->
         )
 }
 
-/// A run's outcome in a word, its colour and its soft background.
 fn outcome(run: &Receipt, theme: &Theme) -> (&'static str, Hsla, Hsla) {
     let applied = matches!(run.outcome, Outcome::Applied { .. });
     verdict(applied, theme)
@@ -698,7 +640,6 @@ fn verdict(applied: bool, theme: &Theme) -> (&'static str, Hsla, Hsla) {
     }
 }
 
-/// A label and its value, one row of a detail page.
 fn field(label: &str, value: impl IntoElement, theme: &Theme) -> impl IntoElement {
     div()
         .flex()
@@ -739,8 +680,6 @@ fn titled(kind: &str, title: String, theme: &Theme) -> impl IntoElement {
         )
 }
 
-/// A press on a page: an outlined button that takes its own click and
-/// Enter or Space, so a row it sits in does not open too.
 fn press(
     id: impl Into<SharedString>,
     label: &str,
@@ -771,8 +710,6 @@ fn press(
         .into_any_element()
 }
 
-/// "Copy link": this page's `duck://<chain>/explorer/…` link, onto the
-/// clipboard. Absent while the session names no chain.
 fn copy_button(view: &Explorer, route: &Route, cx: Cx, theme: &Theme) -> Option<AnyElement> {
     let link = view.link(route)?;
     let copy = cx.listener(move |view: &mut Explorer, _: &ClickEvent, _, cx| {

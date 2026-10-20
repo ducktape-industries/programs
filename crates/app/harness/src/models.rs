@@ -38,8 +38,6 @@ fn checked(id: &str, service: &str, name: &str) -> Result<(), Error> {
     Ok(())
 }
 
-// A stored record as a row: its `compact_at`, and the window a turn learned since, else the one
-// the record was stored with.
 fn row(ctx: &QueryCtx, id: &String, stored: StoredModel) -> Result<ModelRow, Error> {
     let mut row = stored.row(COMPACT_AT.get(ctx, id)?);
     if let Some(window) = WINDOWS.get(ctx, id)? {
@@ -111,7 +109,6 @@ pub(crate) fn set_compact_at(
     let Some(record) = MODELS.get(ctx, &id)? else {
         return Err(not_found(format!("no model {id}")));
     };
-    // the record, rewritten as it is: the default is its owner's, so the record's policy decides
     MODELS.put(ctx, &id, &record);
     match compact_at {
         Some(0) => return Err(invalid("compact_at, when given, is at least 1 token")),
@@ -121,8 +118,6 @@ pub(crate) fn set_compact_at(
     Ok(())
 }
 
-// What a thread's turn learned of the model's window, which any agent's turn writes: beside the
-// record, never in it.
 pub(crate) fn learned(ctx: &ExecCtx, asked: &ModelRow, window: Window) -> Result<(), Error> {
     let Some(row) = MODELS.get(ctx, &asked.id)? else {
         return Ok(());
@@ -134,8 +129,6 @@ pub(crate) fn learned(ctx: &ExecCtx, asked: &ModelRow, window: Window) -> Result
     Ok(())
 }
 
-// every service that reaches a model, in order, the first its record's: the record is rewritten
-// with it, so the record's policy decides who sets the list
 pub(crate) fn set_services(ctx: &ExecCtx, id: String, services: Vec<String>) -> Result<(), Error> {
     let Some(record) = MODELS.get(ctx, &id)? else {
         return Err(not_found(format!("no model {id}")));

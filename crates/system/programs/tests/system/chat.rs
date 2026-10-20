@@ -9,7 +9,6 @@ use chat::tables::{HEADS, MESSAGE_IDS, MESSAGES, POSTED, ROOTS};
 
 const ADA: u64 = 11;
 
-// The keys of chat's state that one block wrote, `op` signed by Ada.
 async fn chat_writes(net: &mut Net, op: &chat::Op) -> (BTreeSet<Vec<u8>>, Applied) {
     let submission = net.submission(&public(ADA), chat::PROGRAM, abi::encode(op));
     let applied = net.block(vec![submission]).await;
@@ -62,7 +61,6 @@ fn a_message_writes_its_point_keys_and_an_edit_its_row_alone() {
             MESSAGE_IDS.key(&"m1".to_owned()),
             HEADS.key(&channel()),
             ROOTS.key(&(channel(), u64::MAX - 1)),
-            // her first message in the room
             POSTED.key(&(channel(), author)),
         ]);
         assert_eq!(keys, points, "a root post writes its point keys alone");

@@ -9,7 +9,6 @@ use view::{Div, Stateful};
 use crate::{Nodes, ui, voting, words};
 use view::design::Ladder;
 
-/// A press about to enact: what will happen, asked once.
 pub(crate) fn confirm(
     view: &Nodes,
     cx: &mut Context<Nodes>,
@@ -65,7 +64,6 @@ pub(crate) fn confirm(
     )
 }
 
-/// What the last vote did, or the refusal it met, until dismissed.
 pub(crate) fn outcome(
     view: &Nodes,
     cx: &mut Context<Nodes>,
@@ -101,8 +99,6 @@ pub(crate) fn outcome(
     )
 }
 
-/// The vote's sections under the table, and where a program is changed:
-/// nothing for a reader who does not vote.
 pub(crate) fn sections(
     view: &Nodes,
     cx: &mut Context<Nodes>,
@@ -128,7 +124,6 @@ pub(crate) fn sections(
     )
 }
 
-/// One line of a section: what it is, a quiet caption, a press.
 fn line(id: impl Into<ElementId>, title: String, caption: String, theme: &Theme) -> Stateful<Div> {
     div()
         .id(id)
@@ -147,8 +142,6 @@ fn line(id: impl Into<ElementId>, title: String, caption: String, theme: &Theme)
         .child(div().text_color(theme.muted).child(caption))
 }
 
-/// Each motion that waits: its words, its votes of the quorum, which of the
-/// reader's validators voted, and Vote while one has not.
 fn pending(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme, ladder: &Ladder) -> Div {
     let voting = &view.voting;
     let lines: Vec<AnyElement> = match &voting.motions {

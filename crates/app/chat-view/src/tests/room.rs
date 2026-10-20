@@ -17,7 +17,6 @@ fn the_room_shows_its_rows_intro_and_actions() {
             .any(|t| t.starts_with("This is the very beginning of #General")),
         "{texts:?}"
     );
-    // Each paragraph keeps a stable typed element id for interaction queries.
     for seq in [1, 2] {
         assert!(cx.find(&format!("chat-message-m{seq}-block-0")).is_some());
     }
@@ -85,9 +84,6 @@ fn the_room_shows_its_rows_intro_and_actions() {
     );
 }
 
-/// The panes lay out to the window the host says the view is in, in the
-/// frame that shows it: a narrower window clamps the sidebar before it
-/// is drawn, and the dividers keep their drag routes.
 #[test]
 fn the_panes_clamp_to_the_viewport_and_the_dividers_keep_their_behavior_routes() {
     let (mut cx, view) = opened();
@@ -128,8 +124,6 @@ fn the_panes_clamp_to_the_viewport_and_the_dividers_keep_their_behavior_routes()
     ));
     assert!(cx.find("chat-side-over").is_none());
 
-    // too narrow for the room beside it: the details cover the whole
-    // screen, sidebar and room alike, with their close, and nothing to drag
     cx.simulate_resize(720., 480.);
     assert!(cx.find("chat-details-resize").is_none());
     let Some(wire::Node::Container(view::wire::ContainerNode { style, .. })) =
@@ -201,9 +195,6 @@ fn unread_rooms_carry_a_dot_and_the_open_room_a_divider() {
     assert!(cx.has_text("New messages"));
 }
 
-/// A full room (one window of rows), each with markup, a reaction and a
-/// thread, renders inside the host's frame budget and under a regression
-/// guard on its bytes: the native proxy for a render's fuel.
 #[test]
 fn a_full_room_renders_inside_the_frame_budget() {
     let mut cx = TestAppContext::new();
@@ -235,9 +226,6 @@ fn a_full_room_renders_inside_the_frame_budget() {
         cx.texts()
     );
     let bytes = cx.frame_bytes();
-    // A regression guard, not a host limit: about 1.5x what a full room drew
-    // when measured. The host's own limits are the sanitize check inside
-    // `frame_bytes`. Tighten when the room slims, raise only on purpose.
     const REGRESSION_GUARD: usize = 47_000;
     assert!(
         bytes < REGRESSION_GUARD,
@@ -245,9 +233,6 @@ fn a_full_room_renders_inside_the_frame_budget() {
     );
 }
 
-/// The timeline's list keeps its path when a message menu opens over the
-/// room: the host keys the list's scroll by it, and a new path started the
-/// room over at its latest message.
 #[test]
 fn a_menu_opening_leaves_the_timeline_where_it_was() {
     fn list_path(node: &wire::Node) -> Option<Vec<wire::ElementIdWire>> {
@@ -267,10 +252,6 @@ fn a_menu_opening_leaves_the_timeline_where_it_was() {
     assert_eq!(list_path(cx.root()), Some(closed));
 }
 
-/// Every element of the room keeps its path while Create channel is open
-/// and after it is cancelled: the host keys the timeline's scroll and the
-/// composer's field by the ids above them, and a dialog that moved the
-/// room under itself started the timeline over at its latest message.
 #[test]
 fn create_channel_leaves_the_room_where_it_was() {
     fn paths(
@@ -316,9 +297,6 @@ fn create_channel_leaves_the_room_where_it_was() {
     assert_eq!(room(&cx), closed);
 }
 
-/// Every field is named for what it is, apart from the hint drawn in it:
-/// the room's and a thread's composers, the emoji search, a new channel's
-/// name.
 #[test]
 fn a_field_is_named_apart_from_its_hint() {
     let (mut cx, view) = opened();
@@ -356,8 +334,6 @@ fn a_field_is_named_apart_from_its_hint() {
     );
 }
 
-/// A thread with nothing under its root says so, and its reply field takes
-/// the keys once the replies are read.
 #[test]
 fn an_empty_thread_says_so_and_its_field_takes_focus() {
     let (mut cx, view) = opened();
@@ -372,8 +348,6 @@ fn an_empty_thread_says_so_and_its_field_takes_focus() {
     );
 }
 
-/// A forge room's link spells its `:` as `%3A`; the app hands the view the
-/// route decoded, and the view lands in that room.
 #[test]
 fn a_link_to_a_forge_room_lands_in_it() {
     let mut cx = TestAppContext::new();
@@ -383,12 +357,9 @@ fn a_link_to_a_forge_room_lands_in_it() {
     seat(&mut cx);
     let link = crate::links::channel_link("testnet#0a1b2c3d", "forge:web:3", None).unwrap();
     assert!(link.ends_with("/chat/forge%3Aweb%3A3"), "{link}");
-    // what the app does with a chain link: the tail, decoded, joined
     routes.send(ducklink::Link::parse(&link).unwrap().tail.join("/"));
     cx.run_until_parked();
     view.read(|chat| assert_eq!(chat.room.as_ref().unwrap().id, "forge:web:3"));
-    // forge's own line reads as its event with a way to where forge shows
-    // the change, not as a code block
     cx.update(&view, |chat, _, cx| {
         let line = chat::MsgRow {
             channel_id: "forge:web:3".into(),
@@ -399,7 +370,6 @@ fn a_link_to_a_forge_room_lands_in_it() {
                 lang: Some("forge".into()),
                 text: "review 7".into(),
             }],
-            // forge's own account (9)
             ..chat::MsgRow::by(Principal::Account(9))
         };
         let room = chat.room.as_mut().unwrap();
@@ -409,7 +379,6 @@ fn a_link_to_a_forge_room_lands_in_it() {
     cx.run_until_parked();
     assert!(cx.has_text("review 7"), "{:?}", cx.texts());
     assert!(cx.find("chat-message-forge-line-block-0-code").is_none());
-    // the link is a cell of the message's row, beside the message's own
     let cell = cx
         .find("chat-message-forge-line-program-open-cell")
         .expect("the link's cell");
@@ -481,9 +450,6 @@ fn a_dm_row_is_named_by_its_peer_not_the_avatar() {
     assert_eq!(interactivity.aria.description.as_deref(), Some("Agent"));
 }
 
-/// A dm belongs to its two peers alike: its details list them, with no way
-/// to add a third, remove either, rename or archive it, as the program
-/// refuses each.
 #[test]
 fn a_dms_details_show_its_two_people_and_nothing_to_reshape() {
     let (mut cx, view) = opened();
@@ -521,8 +487,6 @@ fn a_dms_details_show_its_two_people_and_nothing_to_reshape() {
     assert!(!cx.has_text("Remove"));
 }
 
-/// A room of 300 members lists every one, in the order the program
-/// answers: the read follows `next` past its first page of 256.
 #[test]
 fn a_room_lists_every_member_past_the_first_page() {
     let mut cx = TestAppContext::new();
@@ -568,8 +532,6 @@ fn a_room_lists_every_member_past_the_first_page() {
     assert_eq!(listed, numbers);
 }
 
-/// A room opened around a landing seq (a notification, a link) re-reads its
-/// window on a chat write, so an edit or a reaction shows there too.
 #[test]
 fn a_landed_room_rereads_its_window() {
     let (mut cx, view) = opened();
@@ -600,9 +562,6 @@ fn a_landed_room_rereads_its_window() {
     assert!(cx.has_text("edited since"), "{:?}", cx.texts());
 }
 
-/// Off the live tail, "Jump to latest" floats over the list's foot: it
-/// takes no row of its own, so the list keeps its height, and it lets a
-/// click beside the button through to the row under it.
 #[test]
 fn jump_to_latest_floats_over_the_list() {
     let (mut cx, view) = opened();
@@ -633,10 +592,6 @@ fn jump_to_latest_floats_over_the_list() {
     assert!(cx.find("chat-jump-latest-button").is_some());
 }
 
-/// The rooms are one list box: ↓ reaches the direct message under the
-/// channels, and Enter opens it here. No link goes to the host: the host
-/// hands a link's route to a chat seat, so another chat window would
-/// switch rooms with this one.
 #[test]
 fn an_arrow_and_enter_on_the_rooms_opens_the_next_room() {
     let (mut cx, view) = opened();
@@ -667,16 +622,12 @@ fn an_arrow_and_enter_on_the_rooms_opens_the_next_room() {
     );
 }
 
-/// Whether the node `key` names claims the active descendant; a row the
-/// list no longer draws claims nothing.
 pub(super) fn claims(cx: &TestAppContext, key: &str) -> bool {
     cx.find(key)
         .and_then(wire::Node::interactivity)
         .is_some_and(|node| node.aria.active_descendant)
 }
 
-/// The thread pane is a grid of its own: its arrows move in the thread,
-/// and the room's active message stays.
 #[test]
 fn an_arrow_in_the_thread_moves_in_the_thread_not_the_room() {
     let (mut cx, view) = opened();
@@ -697,7 +648,6 @@ fn an_arrow_in_the_thread_moves_in_the_thread_not_the_room() {
     let thread = cx.interactivity("chat-thread-list");
     assert_eq!(thread.role, Some(view::Role::Grid));
     assert!(thread.focusable && thread.tab_stop == Some(true));
-    // the thread's newest is its reply; the room's is still m2
     assert!(cx.interactivity("chat-message-m3").aria.active_descendant);
     assert!(cx.interactivity("chat-message-m2").aria.active_descendant);
     cx.simulate_focus("chat-thread-list");
@@ -706,7 +656,6 @@ fn an_arrow_in_the_thread_moves_in_the_thread_not_the_room() {
         assert_eq!(chat.thread_cursor.id.as_deref(), Some("m1"));
         assert_eq!(chat.timeline_cursor.id, None);
     });
-    // the list draws the revealed row until the host asks for more
     assert!(!claims(&cx, "chat-message-m3"));
     assert!(cx.interactivity("chat-message-m2").aria.active_descendant);
     cx.simulate_key_down("chat-thread-list", "enter");
@@ -719,9 +668,6 @@ fn an_arrow_in_the_thread_moves_in_the_thread_not_the_room() {
     });
 }
 
-/// Older history landing above leaves a marked row its routes: the row
-/// under a day marker is wrapped, and the wrapper carries the message's key,
-/// so the row is filed by its message wherever it moves.
 #[test]
 fn older_history_leaves_a_marked_rows_routes_alone() {
     let (mut cx, view) = opened();
@@ -751,10 +697,6 @@ fn older_history_leaves_a_marked_rows_routes_alone() {
     );
 }
 
-/// Every message row says its place in its pane's set, the one under a
-/// day marker too: the host positions only a list item's own node, and a
-/// marked message is wrapped, so the thread's root (always the first of
-/// its day) said nothing (census AX-112).
 #[test]
 fn every_message_row_says_its_place_in_its_set() {
     let (mut cx, view) = opened();
@@ -780,7 +722,6 @@ fn every_message_row_says_its_place_in_its_set() {
         cx.notify();
     });
     cx.run_until_parked();
-    // the root opens its day in both panes: it is wrapped with the marker
     assert!(cx.find("chat-day-m1").is_some(), "the day marker shows");
     fn rows<'a>(node: &'a wire::Node, key: &str, out: &mut Vec<&'a wire::Node>) {
         if node.key() == Some(key) {
@@ -801,7 +742,6 @@ fn every_message_row_says_its_place_in_its_set() {
             })
             .collect()
     };
-    // m1 heads the room (of m1, m2) and the thread (of m1, m3)
     assert_eq!(
         places("chat-message-m1-row"),
         vec![(Some(1), Some(2)), (Some(1), Some(2))]
@@ -810,10 +750,6 @@ fn every_message_row_says_its_place_in_its_set() {
     assert_eq!(places("chat-message-m3-row"), vec![(Some(2), Some(2))]);
 }
 
-/// A search hit in the room already open lands the room on other rows:
-/// the rows and the roster shown go, and the room reads as loading until
-/// the window around the hit lands. (`open_at` blanks both slots on
-/// purpose; `load` alone would keep what is shown.)
 #[test]
 fn a_jump_to_a_hit_in_the_open_room_shows_the_room_loading() {
     let (mut cx, view) = opened();
@@ -821,7 +757,6 @@ fn a_jump_to_a_hit_in_the_open_room_shows_the_room_loading() {
     cx.simulate_input("chat-sidebar-search", "hello");
     cx.simulate_submit("chat-sidebar-search");
     cx.run_until_parked();
-    // the window around the hit is asked and not answered yet
     cx.host().never::<Ask<::chat::Chat>>();
     cx.simulate_click("chat-search-hit-general-1");
     view.read(|chat| {
@@ -837,8 +772,6 @@ fn a_jump_to_a_hit_in_the_open_room_shows_the_room_loading() {
     );
 }
 
-/// The link to the node comes back: the rooms are read afresh, and the
-/// sidebar says so instead of showing the list from before the drop.
 #[test]
 fn a_reconnect_shows_the_rooms_loading() {
     let (mut cx, view) = opened();
@@ -860,20 +793,14 @@ fn a_reconnect_shows_the_rooms_loading() {
     );
 }
 
-/// The window is named for the open room as its header names it: `#name`
-/// for a channel, the peer for a direct room; nothing while the name is
-/// still out, never the room's id. Each name goes to the host once.
 #[test]
 fn the_window_is_named_for_the_open_room() {
     use view::methods::HostTitle;
     let (mut cx, view) = opened();
-    // no room at boot clears it; the room's name follows, once however
-    // often the room is drawn
     assert_eq!(cx.host().requests::<HostTitle>(), ["", "#General"]);
     cx.simulate_click("chat-sidebar-channel-general");
     cx.run_until_parked();
     assert_eq!(cx.host().requests::<HostTitle>(), ["", "#General"]);
-    // a direct room before the names land: no name yet
     cx.update(&view, |chat, _, cx| {
         cx.notify();
         chat.names = Loadable::Idle;

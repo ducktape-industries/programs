@@ -6,7 +6,6 @@ use forge::EntryKind::{Directory, Executable, File};
 use super::forge_commit::{forged, log, names};
 use super::*;
 
-// Ada puts `text` at `path` in files, in mode `exec` with `meta`: the snapshot it makes.
 fn put(chain: &MockChain, path: &str, text: &str, exec: bool, meta: &[(&str, &str)]) -> BlobId {
     let base = match chain.query(files::PROGRAM, &files::Query::Head).unwrap() {
         files::Reply::Head(head) => head.map(|row| row.id),
@@ -35,8 +34,6 @@ fn put(chain: &MockChain, path: &str, text: &str, exec: bool, meta: &[(&str, &st
     abi::decode(&chain.submit(signed(ADA), files::PROGRAM, &commit).unwrap()).unwrap()
 }
 
-// One model turn of `calls` (id, tool, input) at `height`, each run once its relay comes
-// back, a block later.
 fn turn(chain: &MockChain, height: u64, calls: &[(&str, &str, Value)]) {
     chain.at(height, 0);
     let uses: Vec<Value> = calls
@@ -89,7 +86,6 @@ fn read_at(chain: &MockChain, path: &str) -> String {
     String::from_utf8(contents.bytes).unwrap()
 }
 
-// The text of the file `name` in the directory `dir` of the commit `at`.
 fn committed(chain: &MockChain, repo: &str, at: &str, dir: &str, name: &str) -> String {
     let asked = forge::Query::Tree {
         repo: repo.into(),
@@ -116,7 +112,6 @@ fn committed(chain: &MockChain, repo: &str, at: &str, dir: &str, name: &str) -> 
     String::from_utf8(blob.bytes).unwrap()
 }
 
-// The commit of `repo`'s main branch whose parent is `parent`.
 fn child(chain: &MockChain, repo: &str, parent: &str) -> String {
     log(chain, repo)
         .into_iter()

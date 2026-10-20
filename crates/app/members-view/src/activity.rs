@@ -7,9 +7,6 @@ use serde::{Deserialize, Serialize};
 use view::prelude::*;
 
 pub const SHOWN: usize = 8;
-/// A transaction's payload is read up to this many bytes for its title
-/// (Expo's `ROW_PAYLOAD`, `query/page.ts:9`); past it, it is titled by
-/// its size.
 const ROW_PAYLOAD: u32 = 4 << 10;
 
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -71,9 +68,8 @@ pub async fn recent(host: Host, account: u64, titled: bool) -> Result<Recent, Er
     for frame in frames {
         let title = match titled {
             false => None,
-            true => match title(&host, &frame).await? {
+            true => match frame_transaction_title(&host, &frame).await? {
                 Some(title) => Some(title),
-                // Expo lists only the frames whose transaction it found
                 None => continue,
             },
         };
@@ -88,12 +84,7 @@ pub async fn recent(host: Host, account: u64, titled: bool) -> Result<Recent, Er
     })
 }
 
-/// What `frame`'s transaction did: its payload as its program describes
-/// it, else its program and size; `None` where the chain has no
-/// transaction at its place. Read one after another, as Expo reads them
-/// (`query/activity.ts:26-31`); the describe is the host's, read from the
-/// program's own code, and costs no node read.
-async fn title(host: &Host, frame: &Frame) -> Result<Option<String>, Error> {
+async fn frame_transaction_title(host: &Host, frame: &Frame) -> Result<Option<String>, Error> {
     let at = TxAsk {
         tx: TxRef::At {
             height: frame.height,
@@ -111,10 +102,7 @@ async fn title(host: &Host, frame: &Frame) -> Result<Option<String>, Error> {
         }
         None => Ok(None),
     };
-    // a describe that cannot read the bytes leaves the size, as Expo's does
     let described = described.unwrap_or_else(|refusal| {
-        // SDK gap: Context::log_refused's line; a read holds a Host, not a
-        // Context; the SDK builds it later
         let name = <crate::Members as View>::NAME;
         host.log(format!("{name}: a description refused: {refusal}"));
         None

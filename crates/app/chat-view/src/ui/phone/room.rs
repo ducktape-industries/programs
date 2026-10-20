@@ -32,7 +32,6 @@ pub(super) fn screen(
     .trailing(info(chat, cx, theme, ladder));
     let picture = chat.dm_peer_picture(cx);
     let page = match chat.dm_peer() {
-        // a direct room's title is the person: their face beside the name
         Some((peer, agent)) => page.leading(
             parts::face(&peer, agent, picture, ladder.avatar_inline, theme).id("chat-room-avatar"),
         ),
@@ -64,7 +63,6 @@ pub(super) fn screen(
         .into_any_element()
 }
 
-/// A channel's caption: how many members it seats, and who may post.
 fn caption(chat: &Chat, room: &Room) -> Option<String> {
     let channel = &chat.info(&room.id)?.channel;
     let policy = words::policy(channel);
@@ -78,8 +76,6 @@ fn caption(chat: &Chat, room: &Room) -> Option<String> {
     })
 }
 
-/// The title row's info button: a direct room's opens the other person's
-/// profile, a channel's its details.
 fn info(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     let glyph = design::icon("info", ladder.icon);
     let peer = chat

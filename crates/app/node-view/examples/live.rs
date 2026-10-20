@@ -15,7 +15,6 @@ fn main() {
             halo: format!("{host}:9100"),
             invite: None,
         };
-        // a validator's node key, on an agent the dev account operates
         let vps = net.agent(me, "validator vps")?;
         net.submit(vps, valset::PROGRAM, &enroll("10.0.0.3"))?;
         let seat = Motion::Promote {
@@ -24,7 +23,6 @@ fn main() {
         net.submit(me, valset::PROGRAM, &Op::Vote(seat))?;
         let ada = net.person("ada");
         net.submit(ada, valset::PROGRAM, &enroll("10.0.0.2"))?;
-        // two validators now: each of the dev key's votes waits for the other
         let promote = Motion::Promote {
             key: net.key_of(ada),
         };

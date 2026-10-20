@@ -80,7 +80,6 @@ impl View for Forge {
         // each card's picture (`blob.get`)
         Capability::Blob,
     ];
-    // at 560 the repository tab bar's About toggle is past the right edge
     const MIN_WINDOW_WIDTH: u32 = 640;
 
     /// Every stream this view follows, on a first mount and after a
@@ -94,8 +93,6 @@ impl View for Forge {
             }
         })
         .detach();
-        // `duck://<chain>/forge/<name>`: a link opened into this view names
-        // the repository to open
         cx.follow::<HostRoute>((), |forge, route, cx| match route {
             Ok(route) => forge.open_route(&route, cx),
             Err(refusal) => {
@@ -104,11 +101,6 @@ impl View for Forge {
             }
         })
         .detach();
-        // a block re-reads what it wrote to: forge's its reads on screen,
-        // chat's the change conversations and the reads answered from chat
-        // (a judgment), identity's the names. A refused item is a block this
-        // view cannot see into: the host's log keeps why, and the next block
-        // reconciles
         cx.follow::<Changes<forge::Forge>>((), |forge, change, cx| match change {
             Ok(change) => forge.reconcile(change.as_ref(), cx),
             Err(refusal) => cx.log_refused("forge's live heads", &refusal),
@@ -129,7 +121,6 @@ impl View for Forge {
             Err(refusal) => cx.log_refused("access's live heads", &refusal),
         })
         .detach();
-        // who can edit the open repository or change may be among what it wrote
         cx.follow::<Changes<ownership::Ownership>>((), |forge, change, cx| match change {
             Ok(change) => forge.ownership_moved(change, cx),
             Err(refusal) => cx.log_refused("ownership's live heads", &refusal),
@@ -155,20 +146,12 @@ impl View for Forge {
 #[cfg(not(feature = "notifier"))]
 impl Render for Forge {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // the pane's size, as the host lays the frame out: the rail and
-        // the dock fold to its width in the frame that shows them, and a
-        // dropdown keeps to its height
         let viewport = window.viewport_size();
         self.layout.width = viewport.width.into();
         self.layout.height = viewport.height.into();
-        // a change's title lands async: the frame is the one place that
-        // sees each
         self.settle_title(cx);
         self.settle_showing(cx);
         self.settle_policies(cx);
-        // the one pick between the two designs: under a finger the Expo
-        // app's screens (`ui::phone`), under a pointer the desktop's; the
-        // phone's screens read a little more (`Forge::touch`)
         if self.touch != window.touch() {
             self.touch = window.touch();
             self.sync(cx);
@@ -182,17 +165,12 @@ impl Render for Forge {
 }
 
 #[cfg(not(feature = "notifier"))]
-/// An element id from its name: every id in this view is a name, so a test
-/// or the host finds it by what it says.
 pub(crate) fn id(text: impl Into<String>) -> ElementId {
     ElementId::Name(text.into().into())
 }
 
 #[cfg(not(feature = "notifier"))]
 impl Forge {
-    /// The window's title: `Repositories` over the list, a repository's
-    /// name, a change as `<repo> · #<n>` and its title once it lands. Sent
-    /// when it changes.
     fn settle_title(&mut self, cx: &mut Context<Self>) {
         let title = match (&self.nav.repo, self.nav.change) {
             (None, _) => "Repositories".to_owned(),
@@ -208,9 +186,6 @@ impl Forge {
         }
     }
 
-    /// Names the change or repository open to the host when it changed
-    /// (`<repo>/<n>`, `<repo>`, empty over the list), as a route opens it:
-    /// a change on screen is one forge's notifier leaves alone.
     fn settle_showing(&mut self, cx: &mut Context<Self>) {
         let showing = match (&self.nav.repo, self.nav.change) {
             (None, _) => String::new(),

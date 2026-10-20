@@ -12,16 +12,12 @@ use view::prelude::*;
 use crate::composer::{Target, Upload, attachments, editor_id};
 use crate::{Chat, Pane, words};
 
-// What a file a message carries is, once read: its chunks, which Save
-// hands the host, and its picture where it is one the app draws.
 #[derive(Clone, Default)]
 pub(crate) struct Shown {
     pub(crate) chunks: Option<Vec<[u8; 32]>>,
     pub(crate) picture: Option<Picture>,
 }
 
-// A picture a message carries: the image, and its width and height as its
-// header names them, which every place that draws it fits to its room.
 #[derive(Clone)]
 pub(crate) struct Picture {
     pub(crate) image: Arc<Image>,
@@ -54,8 +50,6 @@ impl Chat {
         .detach();
     }
 
-    // The paste key: the clipboard's files attach; else its text goes in
-    // over the selection.
     pub(crate) fn paste(&mut self, target: Target, cx: &mut Context<Self>) {
         let ask = cx.host().ask::<ClipboardFiles>(());
         cx.spawn(async move |this, cx| {
@@ -78,7 +72,6 @@ impl Chat {
         if matches!(target, Target::Post { .. }) && !pasted.files.is_empty() {
             return self.attach(target, pasted.files, cx);
         }
-        // an edit takes no files: what it pastes is the text
         release_all(&pasted.files, cx);
         let key = target.key();
         let edit = self
@@ -98,8 +91,6 @@ impl Chat {
         cx.notify();
     }
 
-    // Files the host holds for the draft of `target`, each put on the
-    // network at once; an edit's composer takes none, and lets them go.
     pub(crate) fn attach(&mut self, target: &Target, files: Vec<Picked>, cx: &mut Context<Self>) {
         let posts = matches!(target, Target::Post { .. });
         let Some(draft) = self.drafts.get_mut(&target.key()).filter(|_| posts) else {
@@ -114,7 +105,6 @@ impl Chat {
     }
 
     fn put(&mut self, target: &Target, id: u64, file: u64, size: u64, cx: &mut Context<Self>) {
-        // an empty file has no chunk to put
         if size == 0 {
             return self.putting(target, id, Ok(Putting::Held(Vec::new())), cx);
         }
@@ -164,10 +154,6 @@ impl Chat {
         cx.notify();
     }
 
-    // Moves the draft's files on: the message id their folder is named by,
-    // minted with the first; a commit for each one held; and a send that
-    // waited, once every file it waited on is up, or back to the reader
-    // when one failed.
     fn advance(&mut self, target: &Target, cx: &mut Context<Self>) {
         let uploader = self.my_account();
         let Some(draft) = self.drafts.get_mut(&target.key()) else {
@@ -242,13 +228,10 @@ impl Chat {
         };
         draft.minting = false;
         match minted {
-            // a new message's folder holds nothing yet
             Ok(id) => {
                 draft.message_id = Some(id);
                 draft.filed.clear();
             }
-            // nothing is filed under no message: each file not up says why
-            // and is let go; the next one attached asks again
             Err(refusal) => {
                 let why = design::sentence(&refusal);
                 for file in &mut draft.attachments {
@@ -273,7 +256,6 @@ impl Chat {
         said: String,
         cx: &mut Context<Self>,
     ) {
-        // `base: None` only creates: a taken path is refused, never written over
         let op = files::Op::Commit {
             base: None,
             message: said,
@@ -284,8 +266,6 @@ impl Chat {
         cx.spawn(async move |this, cx| {
             let host = cx.host();
             let landed = async {
-                // files keeps a file under a chat message its uploader's
-                // alone, so the commit is all an upload asks of a program
                 if let Some(why) = design::failure(&ask.await) {
                     return Err(words::not_up_because(&why, &path));
                 }
@@ -336,7 +316,6 @@ impl Chat {
                 };
                 None
             }
-            // taken out while its commit was out: what it left goes too
             None => landed.ok().map(|_| path),
         };
         if let Some(path) = left {
@@ -346,9 +325,6 @@ impl Chat {
         cx.notify();
     }
 
-    // Removes a file the draft no longer carries from files: the uploader's
-    // own, at the files head (the snapshot it went up in is the node's
-    // prediction, which a block may have minted under another id).
     fn unlink(&mut self, target: &Target, path: String, cx: &mut Context<Self>) {
         let name = path.rsplit('/').next().unwrap_or_default().to_owned();
         let host = cx.host();
@@ -375,8 +351,6 @@ impl Chat {
         .detach();
     }
 
-    // A file taken out of the draft before it is sent: its put stops, the
-    // host lets it go, and a committed one is removed again.
     pub(crate) fn remove_file(&mut self, target: &Target, id: u64, cx: &mut Context<Self>) {
         let key = target.key();
         let Some(draft) = self.drafts.get_mut(&key) else {
@@ -399,7 +373,6 @@ impl Chat {
         cx.notify();
     }
 
-    // The files the message at `seq` carries: an edit keeps them.
     pub(crate) fn kept_files(&self, pane: Pane, seq: u64) -> Vec<Attachment> {
         let messages = self.messages(pane);
         let Some(message) = messages.iter().find(|message| message.seq == seq) else {
@@ -415,8 +388,6 @@ impl Chat {
             .collect()
     }
 
-    // Reads each file the room's messages carry, once it is on screen: the
-    // frame sees every way the rows arrive.
     pub(crate) fn settle_files(&mut self, cx: &mut Context<Self>) {
         let Some(room) = &self.room else {
             return;
@@ -448,7 +419,9 @@ impl Chat {
             self.shown_files.insert(key.clone(), Shown::default());
             let host = cx.host();
             cx.spawn(async move |this, cx| {
-                let shown = shown(host, &file).await.unwrap_or_default();
+                let shown = read_attachment_snapshot(host, &file)
+                    .await
+                    .unwrap_or_default();
                 let _ = this.update(cx, |chat, cx| {
                     chat.shown_files.insert(key, shown);
                     cx.notify();
@@ -458,7 +431,6 @@ impl Chat {
         }
     }
 
-    // Save: the host writes the file's chunks to where the person says.
     pub(crate) fn save_file(&mut self, file: &Attachment, cx: &mut Context<Self>) {
         let shown = self.shown_files.get(&(file.path.clone(), file.snapshot));
         let Some(blobs) = shown.and_then(|shown| shown.chunks.clone()) else {
@@ -485,8 +457,6 @@ impl Chat {
         cx.notify();
     }
 
-    // Files shows the file by the link to its path, beside the room, so the
-    // picture over the room closes
     pub(crate) fn open_in_files(&mut self, path: &str, cx: &mut Context<Self>) {
         self.enlarged = None;
         match crate::links::file_link(&self.session.chain_id, path) {
@@ -497,14 +467,7 @@ impl Chat {
     }
 }
 
-// The file at the snapshot its message names: its chunks, from the file
-// object files keeps, and the whole picture when it is one.
-async fn shown(host: Host, file: &Attachment) -> Result<Shown, Error> {
-    // the file at its path as it stands: the path is the message's own,
-    // and only its uploader writes it (`commit` lists it so). The snapshot
-    // a message names is the one the node predicted as the file went up (a
-    // view reads the preconfirmed layer); the block that carried it may
-    // have minted it under another id
+async fn read_attachment_snapshot(host: Host, file: &Attachment) -> Result<Shown, Error> {
     let at: Option<BlobId> = None;
     let stat = files::ask::Stat {
         path: file.path.clone(),
@@ -554,7 +517,6 @@ async fn picture(
             len: files::CHUNK_SIZE,
         };
         let contents = host.query(read).await?;
-        // a read short of the size it states would never end
         if contents.bytes.is_empty() && !contents.eof {
             return Err(view::host::malformed(words::NOT_THERE.into()));
         }

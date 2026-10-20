@@ -51,8 +51,6 @@ pub(super) fn render(
         .into_any_element()
 }
 
-/// The facts and the files as the block's head, the diff's rows under
-/// them.
 fn body(
     forge: &Forge,
     oid: &str,
@@ -70,7 +68,6 @@ fn body(
     let rows: Vec<Item> = std::iter::once(Item::Head)
         .chain(lines::diff_rows(&files, &Notes::default()))
         .collect();
-    // where each file's head sits in the rows, for its row to scroll to
     let heads: Rc<Vec<usize>> = Rc::new(
         rows.iter()
             .enumerate()
@@ -90,9 +87,6 @@ fn body(
     lines::block(shown, forge, cx, ladder, theme)
 }
 
-/// The block's head: the commit's facts (or the read in their place: the
-/// quiet line, or the refusal and Retry), then its files (or the diff's
-/// read), each scrolling to its head among the rows, `heads`.
 fn head(forge: &Forge, oid: &str, heads: &[usize], cx: &mut Context<Forge>) -> AnyElement {
     let theme = *cx.global::<Theme>();
     let ladder = &design::TOUCH;
@@ -146,8 +140,6 @@ fn head(forge: &Forge, oid: &str, heads: &[usize], cx: &mut Context<Forge>) -> A
         .into_any_element()
 }
 
-/// Commit, Tree, Parents, Author; the whole message when it says more
-/// than its first line.
 fn facts(commit: &CommitInfo, ladder: &Ladder, theme: &Theme) -> Div {
     let parents = match commit.parents.is_empty() {
         true => words::ROOT_COMMIT.to_owned(),
@@ -201,9 +193,6 @@ fn facts(commit: &CommitInfo, ladder: &Ladder, theme: &Theme) -> Div {
         .children(more)
 }
 
-/// "Files" with how many and their delta, a row per file (its delta in
-/// the data face) scrolling to its diff; or that the commit changes
-/// nothing.
 fn file_rows(
     files: &[FileDiff],
     heads: &[usize],
@@ -235,8 +224,6 @@ fn file_rows(
         .collect()
 }
 
-/// A file: its icon, its path in the data face, its delta; a press
-/// scrolls the block to the file's head, row `at`.
 fn file_row(
     file: &FileDiff,
     at: usize,

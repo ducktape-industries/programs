@@ -24,7 +24,6 @@ fn key(slot: Slot, part: impl std::fmt::Display) -> String {
     format!("chat-widget-{}-{part}", slot.name())
 }
 
-// The header's widget in one line: its title, and what it says in short.
 pub(crate) fn line(chat: &Chat, theme: &Theme, ladder: &Ladder) -> Option<AnyElement> {
     let shown = chat.widget(Slot::Header)?;
     let said = match shown {
@@ -79,7 +78,6 @@ fn summary(chat: &Chat, shape: &Shape, reply: &Value, rows: &[Value]) -> String 
     }
 }
 
-// A stat's figure and its label.
 fn figure(chat: &Chat, shape: &Shape, reply: &Value, count: usize) -> String {
     let scope = scope(chat, Some(count));
     let value = fill(shape.value.as_deref().unwrap_or_default(), reply, &scope);
@@ -89,7 +87,6 @@ fn figure(chat: &Chat, shape: &Shape, reply: &Value, count: usize) -> String {
     }
 }
 
-// The pinned card over the room's messages, which the reader folds.
 pub(crate) fn pinned(
     chat: &Chat,
     cx: &mut Context<Chat>,
@@ -145,8 +142,6 @@ pub(crate) fn pinned(
     )
 }
 
-// The room header's button that opens and closes the side widget's pane,
-// named by the widget.
 pub(crate) fn side_button(
     chat: &Chat,
     cx: &mut Context<Chat>,
@@ -163,7 +158,6 @@ pub(crate) fn side_button(
     Some(button.into_any_element())
 }
 
-// The desktop's side pane, beside the room as details is.
 pub(crate) fn side(
     chat: &Chat,
     cx: &mut Context<Chat>,
@@ -219,7 +213,6 @@ pub(crate) fn side(
         )
 }
 
-// The side widget as a section of the phone's details page.
 pub(crate) fn section(
     chat: &Chat,
     cx: &mut Context<Chat>,
@@ -248,8 +241,6 @@ pub(crate) fn section(
     )
 }
 
-// What the widget in `slot` draws: its rows in its kind's shape, or why
-// it has none.
 pub(crate) fn body(
     chat: &Chat,
     slot: Slot,
@@ -316,7 +307,6 @@ impl Draw<'_> {
         fill(item, row, &scope(self.chat, None))
     }
 
-    // A row's text, a link where the widget says where a press goes.
     fn entry(
         &self,
         part: String,
@@ -358,8 +348,6 @@ impl Draw<'_> {
         div().flex().flex_col().children(entries).into_any_element()
     }
 
-    // A row each with its box: ticked where `checked` holds; it shows the
-    // state and sends nothing.
     fn checklist(&self, rows: &[&Value], cx: &mut Context<Chat>) -> AnyElement {
         let entries: Vec<AnyElement> = rows
             .iter()
@@ -375,7 +363,6 @@ impl Draw<'_> {
         div().flex().flex_col().children(entries).into_any_element()
     }
 
-    // A column per `group_by` value, headed by it and its count.
     fn columns(&self, rows: &[&Value], cx: &mut Context<Chat>) -> AnyElement {
         let theme = self.theme;
         let mut columns = Vec::new();
@@ -411,8 +398,6 @@ impl Draw<'_> {
             .into_any_element()
     }
 
-    // A header row of the columns' titles and a row per item; the first
-    // cell is the row's link.
     fn table(&self, title: &str, rows: &[&Value], cx: &mut Context<Chat>) -> AnyElement {
         let scope = scope(self.chat, None);
         let columns = &self.shape.columns;
@@ -502,5 +487,4 @@ impl Draw<'_> {
     }
 }
 
-// A column's width on the board's lanes.
 const COLUMN_W: f32 = 200.;

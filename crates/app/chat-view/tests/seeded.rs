@@ -9,8 +9,6 @@ use view::methods::{HostId, HostSession, HostVisible, StoreGet};
 use view::rig::Network;
 use view::testing::TestAppContext;
 
-/// The time of the test's `n`th block (unix ms), a minute apart: pinned
-/// with `Network::at`, so the times the room draws are the same every run.
 fn minute(n: u64) -> u64 {
     1_790_000_000_000 + n * 60_000
 }
@@ -63,7 +61,6 @@ fn a_seeded_room_is_read_off_the_chain_and_a_post_comes_back_through_it() {
 
     let mut cx = TestAppContext::new();
     net.back(&cx.host());
-    // the host's own methods stay the test's: no store, ids minted here
     cx.host().handle::<StoreGet>(|_| Ok(None));
     let mut minted = 0;
     cx.host().handle::<HostId>(move |prefix| {
@@ -84,9 +81,6 @@ fn a_seeded_room_is_read_off_the_chain_and_a_post_comes_back_through_it() {
     assert!(cx.has_text("and from me"));
     assert!(cx.has_text("ada"), "the author's name is identity's");
 
-    // ada posts while the room is open: the view asked nothing, so her
-    // post reaches it only as the block's `program.changes` item and the
-    // re-read that item causes
     net.at(minute(4));
     post(&net, ada, "m3", "ada again, while the room is open");
     cx.run_until_parked();
@@ -96,8 +90,6 @@ fn a_seeded_room_is_read_off_the_chain_and_a_post_comes_back_through_it() {
         cx.texts()
     );
 
-    // a post through the composer: chat's rules run it, as the signed-in
-    // account
     cx.simulate_input("draft-general/editor", "typed in the live test");
     net.at(minute(5));
     cx.simulate_click("draft-general/send");

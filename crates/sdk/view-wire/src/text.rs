@@ -49,7 +49,6 @@ pub struct Edit {
 }
 
 impl Edit {
-    /// Where an offset at or after the replaced span stands after it.
     fn shift(self, offset: u32) -> u32 {
         offset - self.range.end + self.range.start + self.len
     }
@@ -147,7 +146,6 @@ pub fn rebase(
             .into_iter()
             .fold(offset, |at, edit| edit.map_after(at))
     };
-    // the bytes the view read that still stand, as pieces of the text now
     let mut pieces = if range.is_empty() {
         Vec::new()
     } else {
@@ -173,8 +171,6 @@ pub fn rebase(
                 })
                 .collect(),
         ),
-        // a caret stays before what was typed at it since; a span typed
-        // over whole lands after what replaced it
         _ => {
             let at = match range.is_empty() {
                 true => map(range.start),
@@ -185,10 +181,6 @@ pub fn rebase(
     };
     let removed: u32 = pieces.iter().map(|piece| piece.end - piece.start).sum();
     let own_end = range.start + len;
-    // a cursor before the replace's own edit moves as any offset; one in
-    // the replaced text keeps its place in it; one at or past its end stands
-    // after what was typed at the span's end since, then past the edit's own
-    // growth and the bytes it took
     let place = |at: u32| {
         if at >= own_end {
             (map_after(range.end + (at - own_end)) + len).saturating_sub(removed)
@@ -366,24 +358,16 @@ mod tests {
         assert_eq!(span("abc", "abc"), None);
         assert_eq!(span("", "abc"), Some((0..0, "abc".into())));
         assert_eq!(span("abc", ""), Some((0..3, String::new())));
-        // a shared lead byte never splits a character
         assert_eq!(span("aé", "aè"), Some((1..3, "è".into())));
         assert_eq!(span("é", "e"), Some((0..2, "e".into())));
-        // a long text pays for its neighbourhood only
         let long = "x".repeat(10_000);
         assert_eq!(
             span(&long, &format!("{long}y")),
             Some((10_000..10_000, "y".into()))
         );
-        // a repeated letter typed inside a run lands at the run's end,
-        // the one place both texts still agree on
         assert_eq!(span("aaa", "aaaa"), Some((3..3, "a".into())));
     }
 
-    /// The asks a composer makes, each rebased over what the engine did
-    /// since the view read the text: the ask takes only the bytes the view
-    /// read, what was typed into or at the end of them since stays, and the
-    /// caret lands after it.
     #[test]
     fn a_stale_replace_is_carried_over_the_edits_made_since() {
         let edit = |range: Range<usize>, len| Edit {
@@ -402,13 +386,8 @@ mod tests {
                 rebased.cursor.range(),
             )
         };
-        // Enter cleared "hello" while "x" was typed at its end: "x" stays,
-        // the caret after it
         assert_eq!(at(0..5, 0, 0, &[edit(5..5, 1)]), (0..5, vec![], 1..1));
-        // "x" typed at the start: the clear moves past it
         assert_eq!(at(0..5, 0, 0, &[edit(0..0, 1)]), (1..6, vec![], 1..1));
-        // "x" typed inside "hel|lo": the clear covers "helxlo" and keeps the
-        // "x" (3..4) in it, the caret after it
         assert_eq!(at(0..5, 0, 0, &[edit(3..3, 1)]), (0..6, vec![(3, 4)], 1..1));
         assert_eq!(
             rebase(
@@ -420,25 +399,15 @@ mod tests {
             .replacement("helxlo", ""),
             "x"
         );
-        // "ll" typed over as "L": "he" and "o" are the clear's, "L" stays
         assert_eq!(at(0..5, 0, 0, &[edit(2..4, 1)]), (0..4, vec![(2, 3)], 1..1));
-        // a mention over "@na" (4..7) became "@Label" (6 bytes); the space
-        // the view asked for at 7, cursor 8, lands after the label
         assert_eq!(at(7..7, 1, 8, &[edit(4..7, 6)]), (10..10, vec![], 11..11));
-        // "z" typed right after "@na" before the label landed: the label
-        // takes "@na" only, the caret lands after "z"; the space then goes in
-        // before "z", which starts the next word, the caret after it
         assert_eq!(at(4..7, 6, 10, &[edit(7..7, 1)]), (4..7, vec![], 11..11));
         assert_eq!(
             at(7..7, 1, 8, &[edit(7..7, 1), edit(4..7, 6)]),
             (10..10, vec![], 12..12)
         );
-        // markers round a selection 2..5: the opening "**" went in at 2,
-        // so the closing one asked for at 5, cursor 7, moves by two
         assert_eq!(at(5..5, 2, 7, &[edit(2..2, 2)]), (7..7, vec![], 9..9));
-        // a span wholly typed over lands after what replaced it
         assert_eq!(at(2..4, 1, 3, &[edit(1..6, 2)]), (3..3, vec![], 4..4));
-        // the typing since is on the far side: nothing moves
         assert_eq!(at(2..4, 1, 3, &[edit(9..9, 3)]), (2..4, vec![], 3..3));
     }
 
@@ -492,7 +461,6 @@ mod tests {
             ..claim(Key::Character("z".into()))
         };
         assert!(undo.engine_owned());
-        // the chord under either key the command stands for, on any host
         for (control, platform, shift) in [
             (true, false, false),
             (false, true, false),

@@ -28,9 +28,6 @@ mod tx;
 mod txs;
 mod unlinked;
 
-/// What every piece draws with: the theme, the touch ladder (the Expo
-/// app's sizes, `design::TOUCH`), and the stack's depth, which a page's
-/// `Nav` says.
 #[derive(Clone, Copy)]
 struct Look {
     theme: Theme,
@@ -44,7 +41,6 @@ pub(crate) fn render(view: &Explorer, cx: Cx) -> AnyElement {
         ladder: design::TOUCH,
         depth: view.pages.depth(),
     };
-    // a link that opened nothing is a page of its own over the stack
     let gone = match &view.note {
         Some(note @ Note::Unlinked(_)) => Some(unlinked::unlinked(note, cx, k)),
         Some(
@@ -75,9 +71,6 @@ pub(crate) fn render(view: &Explorer, cx: Cx) -> AnyElement {
         Some(Sheet::Program(name)) => programs::program_sheet(view, name, cx, k),
         None => form::sheet(view, cx, k),
     };
-    // Back undoes what is drawn: the sheet on screen, else a link's page
-    // that shows nothing, else the top page; with none, the host leaves the
-    // program
     let drawn = sheet.is_some();
     let back = (drawn || lost || view.pages.depth() > 0).then(|| {
         cx.listener(move |view: &mut Explorer, _: &BackEvent, _, cx| {
@@ -104,7 +97,6 @@ pub(crate) fn render(view: &Explorer, cx: Cx) -> AnyElement {
         .into_any_element()
 }
 
-/// Back on a page's title row: the page goes.
 fn back(cx: Cx) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
     cx.listener(|view: &mut Explorer, _: &ClickEvent, _, cx| view.leave_page(cx))
 }

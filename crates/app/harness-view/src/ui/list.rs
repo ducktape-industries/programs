@@ -10,10 +10,8 @@ use crate::read::{Card, Roster, Unscripted};
 use crate::words::{agent_sentence_topic, ago, last_moved};
 use crate::{Agents, Picture, Screen, agent_state};
 
-/// How tall a row is at least.
 pub(super) const ROW: Pixels = px(44.);
 
-/// How wide an agent's avatar is in a row.
 const AVATAR: f32 = 32.;
 
 pub(super) fn render(
@@ -135,7 +133,6 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
         );
     }
     if !others.is_empty() {
-        // with none of the reader's above them, the others are the one list
         let label = match mine.is_empty() && roster.unscripted.is_empty() {
             true => "Agents",
             false => "Other agents",
@@ -157,7 +154,6 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
     list.into_any_element()
 }
 
-/// A group of rows under its name and how many it holds.
 pub(super) fn group(
     id: &'static str,
     label: &'static str,
@@ -185,7 +181,6 @@ pub(super) fn group(
     )
 }
 
-/// A row that opens what it names.
 pub(super) fn pressable(id: String, theme: &Theme) -> Stateful<view::Div> {
     let theme = *theme;
     div()
@@ -293,8 +288,6 @@ fn row(
         .child(design::chevron(ladder, theme))
 }
 
-/// An agent account of the reader's that no script hands to harness: Continue picks up the
-/// form at its configuration.
 fn unscripted_row(
     unscripted: &Unscripted,
     picture: Picture,
@@ -304,7 +297,6 @@ fn unscripted_row(
 ) -> impl IntoElement + use<> {
     let (agent, name) = (unscripted.number, unscripted.name.clone());
     let resumed = name.clone();
-    // the row holds its one press, Continue, so the row itself presses nothing
     div()
         .id(SharedString::from(format!("unscripted-{agent}")))
         .flex()

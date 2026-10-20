@@ -36,8 +36,6 @@ fn color_in(value: Hsla) {
         in_range(value, 0., 1.);
     }
 }
-/// Every field [`gen_native_style`] fills is inside the bound `sanitize`
-/// promises for it.
 pub(super) fn check_native_style(style: &StyleRefinement) {
     let sizes = [
         style.size.width,
@@ -180,8 +178,6 @@ pub(super) fn check_native_style(style: &StyleRefinement) {
     }
 }
 
-/// A whole hostile refinement: every field `sanitize` bounds, drawn from
-/// [`gen_f32`], so a tree exercises each clamp on every styled node.
 pub(super) fn gen_native_style(rng: &mut Rng) -> gpui::StyleRefinement {
     use gpui::{AbsoluteLength, DefiniteLength, px, rems};
     let number = gen_f32;
@@ -309,13 +305,6 @@ pub(super) fn gen_color(rng: &mut Rng) -> gpui::Hsla {
     }
 }
 
-/// The bytes of a style entry are what a table tells two styles apart by,
-/// so the writer may change how it gets to them and never what they are.
-/// A corpus of styles, from the one that sets nothing to ones that set
-/// every bounded field, with nested refinements (an edge set, the text
-/// style) set, half set and emptied again, writes these bytes: their
-/// digest was taken from the writer that wrote each field and then removed
-/// the nested refinements that had set nothing.
 #[test]
 fn a_style_entry_is_the_same_bytes_however_the_writer_walks_it() {
     use gpui::{Styled, px};
@@ -331,7 +320,6 @@ fn a_style_entry_is_the_same_bytes_however_the_writer_walks_it() {
     let mut rng = Rng::new(0x5717);
     for round in 0..256u32 {
         let mut style = gen_native_style(&mut rng);
-        // a nested refinement left as it was, emptied, or holding one field
         let mut emptied = |bit: u32, empty: &mut dyn FnMut(&mut StyleRefinement)| {
             if round >> bit & 1 == 1 {
                 empty(&mut style);
@@ -351,7 +339,6 @@ fn a_style_entry_is_the_same_bytes_however_the_writer_walks_it() {
         emptied(3, &mut |style| style.box_shadow = None);
         corpus.push(style);
     }
-    // FNV-1a 64 over each entry's length and bytes
     let mut digest = 0xcbf2_9ce4_8422_2325u64;
     let mut feed = |bytes: &[u8]| {
         for byte in bytes {

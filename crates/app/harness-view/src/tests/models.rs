@@ -1,6 +1,5 @@
 use super::*;
 
-// a second registered service the form can pick, served by one node
 fn with_ccs() -> Net {
     let mut net = Net::default();
     net.services.push(egress::ServiceRow {
@@ -63,7 +62,6 @@ fn an_edit_sends_only_what_moved_after_a_yes() {
             },
         ]
     );
-    // a saved record closes its form
     assert!(cx.find("model-compact-at").is_none(), "{:?}", cx.texts());
 }
 
@@ -77,7 +75,6 @@ fn a_record_reached_through_more_services_lists_them_in_order() {
     for text in [" · then ccs-b", "first · the record's", "then, 2"] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
     }
-    // dropping the first makes the next one the record's
     cx.simulate_click("service-anthropic");
     cx.simulate_click("model-next");
     cx.run_until_parked();

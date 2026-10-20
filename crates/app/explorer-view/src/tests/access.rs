@@ -35,8 +35,6 @@ pub(super) fn reader(
     reader_on(account, signer, votes, scheduled, Vec::new(), 1000)
 }
 
-/// [`reader`] on a node whose blocks come every `block_ms`, the programs role
-/// listing `hooks`.
 fn reader_on(
     account: Option<u64>,
     signer: [u8; 32],
@@ -161,7 +159,6 @@ fn every_account_changes_a_program_that_fills_no_role_and_a_voter_proposes_a_rol
 fn a_reader_with_voices_and_no_account_proposes_the_same_change_to_the_vote() {
     let mut cx = reader(None, VALIDATOR, true, waiting());
     assert!(cx.has_text("Propose upgrade") && cx.has_text("Propose remove"));
-    // a role's program is never removed
     assert!(cx.find("explorer-upgrade-identity").is_some());
     assert!(cx.find("explorer-remove-identity").is_none());
     cx.simulate_click("explorer-upgrade-chat");
@@ -170,7 +167,6 @@ fn a_reader_with_voices_and_no_account_proposes_the_same_change_to_the_vote() {
     cx.simulate_input("explorer-form-code", &abi::hex(&CODE));
     cx.simulate_click("explorer-form-submit");
     cx.run_until_parked();
-    // about ten minutes at the node's 1 s blocks
     let op = abi::encode(&upgrade(12 + 600));
     assert_eq!(
         cx.host().requests::<Submit<Valset>>(),
@@ -212,7 +208,6 @@ fn access_says_any_account_changes_a_program_that_fills_no_role() {
     ));
 }
 
-/// Minutes are the node's: 60 blocks at 2 s are about 2 min.
 #[test]
 fn the_waits_read_in_minutes_at_the_nodes_block_time() {
     let cx = reader_on(Some(3), ADA, false, waiting(), Vec::new(), 2000);
@@ -221,7 +216,6 @@ fn the_waits_read_in_minutes_at_the_nodes_block_time() {
         "{:?}",
         cx.texts()
     );
-    // 688 blocks at 2 s
     assert!(cx.has_text("validators can cancel for 23 min"));
 }
 
@@ -256,7 +250,6 @@ fn a_hook_is_upgraded_by_any_account_and_removed_only_by_vote() {
 #[test]
 fn a_refusal_shows_in_the_form_in_the_hosts_words() {
     let mut cx = ada();
-    // the host's own refusal: never sent (`design::failure`)
     let refusal = "Unlock a key first.";
     cx.host()
         .refuse::<Submit<Programs>>(view::methods::refusal::SESSION_LOCKED, refusal);
@@ -274,8 +267,6 @@ fn a_refusal_shows_in_the_form_in_the_hosts_words() {
         "{:?}",
         cx.texts()
     );
-    // pressed again, the old refusal goes at the press, not when the
-    // answer lands: the app's confirm card waits over the form meanwhile
     cx.host().never::<Submit<Programs>>();
     cx.simulate_click("explorer-form-submit");
     cx.run_until_parked();
@@ -288,7 +279,6 @@ fn a_refusal_shows_in_the_form_in_the_hosts_words() {
 
 #[test]
 fn a_scheduled_change_says_who_made_it_and_any_account_cancels_it() {
-    // the vote's change of chat, made after Ada's
     let mut scheduled = waiting();
     scheduled.push(Pending {
         height: 800,
@@ -297,7 +287,6 @@ fn a_scheduled_change_says_who_made_it_and_any_account_cancels_it() {
     });
     let mut cx = reader(Some(6), STRANGER, false, scheduled);
     assert!(cx.has_text("by Ada") && cx.has_text("by vote"));
-    // 688 blocks at 1 s
     assert!(cx.has_text("validators can cancel for 12 min"));
     assert!(
         cx.find("explorer-cancel-2").is_none(),
@@ -336,8 +325,6 @@ fn any_account_adds_a_program_and_a_reader_with_none_does_not() {
     assert!(cx.find("explorer-add").is_none());
 }
 
-/// A form's op, built from what was typed: the code, the height, the
-/// params a running program keeps.
 #[test]
 fn a_form_builds_its_op_or_says_why_not() {
     let network = Network {

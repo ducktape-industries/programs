@@ -9,7 +9,6 @@ use crate::ui::{agent_face, state_badge, waiting};
 use crate::words::{agent_sentence_topic, last_moved, network};
 use crate::{Agents, Picture, Screen, agent_state};
 
-/// How the root's page is named in its parts' keys.
 const PAGE: &str = "agents-page";
 
 pub(super) fn page(
@@ -92,7 +91,6 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
             }));
     }
     if !others.is_empty() {
-        // with none of the reader's above them, the others are the one list
         let label = match mine.is_empty() && roster.unscripted.is_empty() {
             true => "Agents",
             false => "Other agents",
@@ -159,8 +157,6 @@ fn row(
     )
 }
 
-/// An agent account of the reader's that no script hands to harness: the row picks up the
-/// form at its configuration.
 fn unscripted_row(
     unscripted: &Unscripted,
     picture: Picture,
@@ -197,7 +193,6 @@ fn unscripted_row(
     )
 }
 
-/// What else the view holds: the create form, for an account, and the model records.
 fn more(
     view: &Agents,
     cx: &mut Context<Agents>,
@@ -207,7 +202,6 @@ fn more(
     let create = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.start_create(cx));
     let models =
         cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.go(Screen::Models, cx));
-    // the records once the models page read them; until then what they are
     let records = match view.models.ready() {
         Some(models) if !models.is_empty() => {
             let ids: Vec<&str> = models.iter().map(|model| model.row.id.as_str()).collect();

@@ -133,16 +133,10 @@ pub struct TooltipResponse {
     pub content: Option<Box<crate::Node>>,
 }
 
-// The conversions between these payloads and the gpui events and keystrokes
-// they describe. Key names and modifiers round-trip; `key_char` is carried
-// only when gpui sent one, else the key itself stands in, so a chord
-// (`cmd-s`, `key_char: None`) comes back with `key_char: Some("s")`.
-
 fn point(x: f32, y: f32) -> Point<Pixels> {
     gpui::point(gpui::px(x), gpui::px(y))
 }
 
-/// The name gpui gives a key in a `Keystroke`: the inverse of [`wire_key`].
 fn key_name(value: &keyboard::Key) -> String {
     match value {
         keyboard::Key::Character(value) => value.clone(),
@@ -209,8 +203,6 @@ impl From<TouchPhase> for gpui::TouchPhase {
     }
 }
 
-/// The key behind a gpui `Keystroke` name: every name gpui emits, and a
-/// character for anything else.
 fn wire_key(value: &str) -> keyboard::Key {
     use keyboard::Named;
     let named = match value {
@@ -548,8 +540,6 @@ mod tests {
         .map(str::to_owned)
         .chain((1..=35).map(|n| format!("f{n}")));
         for name in names {
-            // gpui fills `key_char` for a printable key outside a chord and
-            // leaves it empty for a named one.
             let printable = name.chars().count() == 1;
             let keystroke = gpui::Keystroke {
                 modifiers: gpui::Modifiers {

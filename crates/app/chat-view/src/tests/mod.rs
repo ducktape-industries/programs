@@ -80,8 +80,6 @@ fn the_root_tracks_the_shared_theme_and_is_accessible() {
     assert_eq!(style.text.color, Some(dark.foreground));
 }
 
-/// A desk opens chat wide enough for a thread beside the room: its
-/// manifest, as the host reads it, asks 1200 px.
 #[test]
 fn a_desk_window_opens_chat_at_its_width() {
     let text = std::str::from_utf8(&MANIFEST_SECTION).unwrap();
@@ -108,8 +106,6 @@ fn row(seq: u64, author: u64, text: &str) -> MsgRow {
     }
 }
 
-// `row` with `text` parsed as chat keeps a post: its marks, links and
-// mentions as chat reads them.
 fn parsed_row(seq: u64, author: u64, text: &str) -> MsgRow {
     MsgRow {
         blocks: chat::parse_message(text),
@@ -130,8 +126,6 @@ fn marked_row(seq: u64) -> MsgRow {
     row
 }
 
-// Who chose the 👍 on each of `seqs`, as a marked row wears it: eddy and
-// ada.
 fn reactors(seqs: Vec<u64>) -> Reply {
     let by = vec![Principal::Account(7), Principal::Account(10)];
     Reply::Reactors(
@@ -145,10 +139,8 @@ fn reactors(seqs: Vec<u64>) -> Reply {
     )
 }
 
-/// The host methods chat only talks to, never hears back from here.
 fn quiet_methods(cx: &mut TestAppContext) {
     cx.host().handle::<view::methods::StoreGet>(|_| Ok(None));
-    // no card holds a picture
     cx.host().handle::<Ask<Identity>>(|query| match query {
         identity::Query::List { .. } => Ok(no_cards()),
         query => panic!("unexpected identity query: {query:?}"),
@@ -167,7 +159,6 @@ fn configure(cx: &mut TestAppContext) {
     quiet_methods(cx);
     cx.host()
         .handle::<Ask<::chat::Chat>>(rooms_alone(|query| Ok(chat_reply(query))));
-    // the one agent, eddy's own, keeps no list: it answers anyone
     cx.host().handle::<Ask<access::Access>>(|query| {
         Ok(match query {
             access::Query::List { program, key }
@@ -178,7 +169,6 @@ fn configure(cx: &mut TestAppContext) {
             query => panic!("unexpected access query: {query:?}"),
         })
     });
-    // no item chat keeps has an owner on record: each keeps the rule from before policies
     cx.host().handle::<Ask<ownership::Ownership>>(|query| {
         Ok(match query {
             ownership::Query::Record { .. } => ownership::Reply::Record(None),
@@ -190,7 +180,6 @@ fn configure(cx: &mut TestAppContext) {
         .handle::<Submit<::chat::Chat>>(|_| Ok(view::testing::applied(Vec::new())));
 }
 
-// A policy of account `owner`'s.
 fn a_policy(id: u64, owner: u64, name: &str, write: ownership::Writers) -> ownership::Policy {
     ownership::Policy {
         id,
@@ -202,9 +191,6 @@ fn a_policy(id: u64, owner: u64, name: &str, write: ownership::Writers) -> owner
     }
 }
 
-// What ownership answers: chat's `key` owned by account `owner` on `policy`, among the owner's
-// `policies`; any other key has no record. Identity names eddy (7), reviewer (8), forge (9) and
-// ada (anyone else), and every ownership write lands.
 fn owned(
     cx: &TestAppContext,
     key: Vec<u8>,
@@ -256,9 +242,6 @@ fn owned(
         .handle::<Submit<ownership::Ownership>>(|_| Ok(view::testing::applied(Vec::new())));
 }
 
-// A test host's chat answers with `Channel` answered as its own `Channels` lists the room: the
-// read a block that writes a room makes (`notifier::Moved`). Every fake here is wrapped in it, so
-// none needs an arm of its own.
 fn rooms_alone(
     mut answer: impl FnMut(Query) -> Result<Reply, view::host::Error> + 'static,
 ) -> impl FnMut(Query) -> Result<Reply, view::host::Error> + 'static {
@@ -282,13 +265,10 @@ fn rooms_alone(
     }
 }
 
-/// What the fake chat program answers: three rooms, two rows in `general`
-/// and a roster of eddy, his agent, forge and ada.
 fn chat_reply(query: Query) -> Reply {
     match query {
         Query::Accounts { .. } => Reply::Accounts(page(vec![
             person(7, "eddy"),
-            // an agent eddy manages
             chat::Profile {
                 kind: chat::Kind::Program {
                     script: None,
@@ -298,12 +278,10 @@ fn chat_reply(query: Query) -> Reply {
                 },
                 ..person(8, "reviewer")
             },
-            // forge's own account
             chat::Profile {
                 kind: chat::Kind::System("forge".into()),
                 ..person(9, "forge")
             },
-            // a person eddy has no room with yet
             person(10, "ada"),
         ])),
         Query::Channels { .. } => Reply::Channels(page(vec![
@@ -330,7 +308,6 @@ fn chat_reply(query: Query) -> Reply {
         Query::Search { text, .. } => {
             assert_eq!(text, "hello");
             Reply::Hits(MessageHits {
-                // two channels, one seq: the dm's first line says it too
                 hits: vec![
                     row(1, 7, "hello"),
                     MsgRow {
@@ -342,16 +319,12 @@ fn chat_reply(query: Query) -> Reply {
             })
         }
         Query::Reactors { seqs, .. } => reactors(seqs),
-        // eddy chose nothing for any room
         Query::Listening { .. } => Reply::Listening(page(Vec::new())),
         Query::Notices { .. } => Reply::Notices(page(Vec::new())),
         query => panic!("unexpected chat query: {query:?}"),
     }
 }
 
-// #general up to `head` as the chat program answers it: each message a
-// reply to the root `thread` names, or a root itself, a thread's replies
-// paged by the limit asked. Anything else as `chat_reply` answers it.
 fn threaded(cx: &TestAppContext, head: u64, thread: impl Fn(u64) -> Option<u64> + 'static) {
     let message = move |seq: u64| MsgRow {
         thread: thread(seq),
@@ -405,8 +378,6 @@ fn threaded(cx: &TestAppContext, head: u64, thread: impl Fn(u64) -> Option<u64> 
         }));
 }
 
-// The row `pane`'s list was last scrolled to: where it opened, until the
-// reader scrolls it.
 fn scrolled_to(view: &Entity<Chat>, pane: Pane) -> Option<usize> {
     view.read(|chat| {
         let drawn = chat.drawn(pane).borrow();
@@ -418,7 +389,6 @@ fn scrolled_to(view: &Entity<Chat>, pane: Pane) -> Option<usize> {
     })
 }
 
-/// The reader the host seats: key `0102`, account 7, on testnet.
 fn session() -> Session {
     Session {
         signer: "0102".into(),
@@ -429,14 +399,12 @@ fn session() -> Session {
     }
 }
 
-/// The host seats [`session`] in the open view and shows its tab.
 fn seat(cx: &mut TestAppContext) {
     cx.host().stream::<HostSession>().send(session());
     cx.host().stream::<HostVisible>().send(true);
     cx.run_until_parked();
 }
 
-/// The view `cx` holds, saved and restored on a host configured afresh.
 fn restored(cx: &TestAppContext) -> (TestAppContext, Entity<Chat>) {
     let bytes = cx.snapshot().unwrap();
     let mut restored = TestAppContext::new();
@@ -446,8 +414,6 @@ fn restored(cx: &TestAppContext) -> (TestAppContext, Entity<Chat>) {
     (restored, view)
 }
 
-/// The thread under message `root` opened beside the room, as the desktop
-/// opens one: its reply field takes the keys.
 fn thread(cx: &mut TestAppContext, view: &Entity<Chat>, root: u64) {
     cx.update(view, |chat, _, cx| {
         cx.notify();
@@ -456,7 +422,6 @@ fn thread(cx: &mut TestAppContext, view: &Entity<Chat>, root: u64) {
     cx.run_until_parked();
 }
 
-/// Message `seq`'s edit field opened in the timeline.
 fn edit(cx: &mut TestAppContext, view: &Entity<Chat>, seq: u64) {
     cx.update(view, |chat, window, cx| {
         cx.notify();
@@ -465,7 +430,6 @@ fn edit(cx: &mut TestAppContext, view: &Entity<Chat>, seq: u64) {
     cx.run_until_parked();
 }
 
-/// Boots, seats a reader, lists rooms and opens `general` with two rows.
 fn opened() -> (TestAppContext, Entity<Chat>) {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
@@ -502,13 +466,10 @@ fn opened() -> (TestAppContext, Entity<Chat>) {
     (cx, view)
 }
 
-/// A block at `height` that wrote `keys`, as `program.changes` carries it.
 fn block(height: u64, keys: Vec<Vec<u8>>) -> Option<Change> {
     Some(Change { height, keys })
 }
 
-/// What a message posted in `channel` writes: its root and the channel's
-/// head.
 fn posted(channel: &str) -> Vec<Vec<u8>> {
     vec![
         chat::tables::ROOTS.key(&(channel.to_owned(), 0u64)),
@@ -516,10 +477,6 @@ fn posted(channel: &str) -> Vec<Vec<u8>> {
     ]
 }
 
-/// A block that changed nothing chat shows: a chat block that wrote a room
-/// re-reads the channel list, the room and its roster, identity's block
-/// re-reads the names, the same answers land, and the view draws nothing
-/// for the items or the landings.
 #[test]
 fn a_block_whose_rereads_land_the_same_rows_draws_nothing() {
     let (mut cx, _) = opened();
@@ -549,11 +506,6 @@ fn a_block_whose_rereads_land_the_same_rows_draws_nothing() {
     assert_eq!(cx.renders(), renders, "the same names drew nothing");
 }
 
-// A block re-reads only what it wrote to, as the program declares it: a
-// member seated re-reads the room's roster and nothing else, a message
-// posted re-reads the rows and its own room in the channel list (its head
-// moved) and not the roster or the whole list, and a reopened link (`None`)
-// re-reads the whole list, the rows and the roster.
 #[test]
 fn a_block_re_reads_only_the_tables_it_wrote_to() {
     let (mut cx, _) = opened();
@@ -598,8 +550,6 @@ fn a_block_re_reads_only_the_tables_it_wrote_to() {
     );
 }
 
-/// `CHAT_SCREEN_EXPORT=1` writes the opened room's frame for the app's
-/// node-less renderer (`ducktape-app --render-tree`), light and dark.
 #[test]
 fn export_chat_screens() {
     if std::env::var_os("CHAT_SCREEN_EXPORT").is_none() {
@@ -616,8 +566,6 @@ fn export_chat_screens() {
     .unwrap();
 }
 
-// Every room's id in the list's order, folders aside: the channels, then
-// the direct rooms.
 impl crate::room_list::RoomList<'_> {
     fn ids(&self) -> Vec<String> {
         let channels = self.channels.iter().map(|info| info.channel.id.clone());
@@ -627,7 +575,6 @@ impl crate::room_list::RoomList<'_> {
     }
 }
 
-/// A person's profile in the roster.
 fn person(number: u64, name: &str) -> chat::Profile {
     chat::Profile {
         number,

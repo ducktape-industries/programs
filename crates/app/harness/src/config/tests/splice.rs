@@ -1,6 +1,5 @@
 use super::*;
 
-// a file whose front matter pins a service and keeps a comment, its body indented and spaced
 const PINNED: &str = "+++\nmodel = \"sonnet\"\n# the long one\nmax_tokens = 4096\nservice = \"ccs\"\naccount = \"b\"\n+++\n\nYou keep notes.\r\n\n  Indented, kept.\n";
 
 fn pinned() -> Pin {

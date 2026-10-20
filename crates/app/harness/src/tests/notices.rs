@@ -15,7 +15,6 @@ enum Choice {
     Off,
 }
 
-// its manager makes the agent's choice for `channel`
 fn choose(world: &World, channel: &str, choice: Choice) {
     let account = world.agent;
     let cut = |notices| chat::Op::SetNoticesFor {
@@ -36,7 +35,6 @@ fn choose(world: &World, channel: &str, choice: Choice) {
     world.chain.submit(signed(ADA), chat::PROGRAM, &op).unwrap();
 }
 
-// every body any conversation of the agent holds, framed or held
 fn bodies(world: &World) -> Vec<Body> {
     let chain = &world.chain;
     let threads = world.threads().into_iter();
@@ -55,8 +53,6 @@ fn posts(world: &World) -> Vec<String> {
         .collect()
 }
 
-// in #general, where the agent answered in the thread of its manager's first message: a plain
-// post, a mention of it, and a reply in that thread, each by its manager
 fn talk(world: &World, choice: Choice) {
     let chain = &world.chain;
     world.opened("m0", "start a thread", Some(WINDOW));
@@ -135,8 +131,6 @@ fn each_choice_delivers_what_it_names_and_nothing_else_reaches_the_model() {
     }
 }
 
-// a room turned off leaves no trace of what was said there, not even a notice of a mention from
-// someone the agent doesn't answer, while a direct message reaches it though its room is off too
 #[test]
 fn a_direct_message_reaches_the_agent_whatever_its_rooms_say() {
     let world = world();
@@ -166,8 +160,6 @@ fn a_direct_message_reaches_the_agent_whatever_its_rooms_say() {
     assert!(noticed.is_empty(), "{noticed:?}");
 }
 
-// an agent with no list on its key answers anyone, a stranger's mention included; a list its
-// manager sets narrows it, and what it no longer answers leaves a notice and asks nothing
 #[test]
 fn a_new_agent_answers_a_stranger_and_a_list_narrows_it() {
     let world = world();

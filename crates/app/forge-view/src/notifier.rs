@@ -23,33 +23,23 @@ use view::host::{all_pages, malformed};
 use view::prelude::*;
 use view::{Notifier, store};
 
-/// Forge's one read method.
 type Ask = view::methods::Query<forge::Forge>;
 
-/// Where the notifier keeps what it announced, change by change.
 fn notified_key(signer: &str) -> String {
     format!("notified/{signer}")
 }
 
-/// What was announced of one change: a review asked, and the seq of the
-/// newest reply to the reader (0 for none).
 type Announced = (bool, u64);
 
 /// Forge's notifier.
 #[derive(Default)]
 pub struct ForgeNotices {
     session: Session,
-    /// Moves with every new reader: what lands for an earlier one is dropped.
     run: u64,
-    /// What was announced; `None` until read off the store, `Some(None)`
-    /// when nothing was ever kept on this device.
     announced: Option<Option<BTreeMap<String, Announced>>>,
-    /// What the reader owes, as the last read said.
     owed: Option<Vec<Judgment>>,
-    /// A read is out; `again` when a block landed meanwhile.
     reading: bool,
     again: bool,
-    /// The changes a forge pane shows on screen now.
     screen: BTreeSet<(String, u64)>,
 }
 
@@ -68,7 +58,6 @@ impl Notifier for ForgeNotices {
             Err(refusal) => log_refused(cx, "the session", &refusal),
         })
         .detach();
-        // what the reader owes is forge's, and the threads it waits on chat's
         cx.follow::<Changes<forge::Forge>>((), |notices, change, cx| match change {
             Ok(change) => {
                 let touched = notices.owed_query().is_some_and(|query| {
@@ -110,7 +99,6 @@ fn log_refused(cx: &mut Context<ForgeNotices>, what: &str, refusal: &Error) {
         .log(format!("{}: {what} refused: {refusal}", ForgeNotices::NAME));
 }
 
-/// The change a forge route shows: `<repo>/<n>`.
 fn on_screen(route: &str) -> Option<(String, u64)> {
     let (repo, n) = route.split_once('/')?;
     Some((repo.to_owned(), n.parse().ok()?))
@@ -121,7 +109,6 @@ impl ForgeNotices {
         Principal::writer(self.session.account)
     }
 
-    /// What the reader owes, asked of forge from its first page.
     fn owed_query(&self) -> Option<Query> {
         Some(Query::Judgment {
             principal: self.me()?,
@@ -141,7 +128,6 @@ impl ForgeNotices {
             self.session = next;
             return;
         }
-        // another reader, network or account: nothing known carries over
         *self = Self {
             session: next,
             run: self.run + 1,
@@ -171,8 +157,6 @@ impl ForgeNotices {
         self.read(cx);
     }
 
-    /// Reads what the reader owes, every page; one read at a time, and a
-    /// block that lands meanwhile reads again after it.
     fn read(&mut self, cx: &mut Context<Self>) {
         let Some(me) = self.me() else { return };
         if std::mem::replace(&mut self.reading, true) {
@@ -214,13 +198,10 @@ impl ForgeNotices {
         .detach();
     }
 
-    /// Both known: what moved since it was announced is posted, unless its
-    /// change is on screen, and what is announced is kept.
     fn settle(&mut self, cx: &mut Context<Self>) {
         let (Some(owed), Some(kept)) = (&self.owed, &self.announced) else {
             return;
         };
-        // the first run on this device: what is owed now is history
         let first = kept.is_none();
         let mut announced = BTreeMap::new();
         let mut posts = Vec::new();
@@ -271,7 +252,6 @@ impl ForgeNotices {
             title: title.into(),
             body: format!("{} #{n}: {}", change.repo, change.title),
             tag: tag(&change.repo, change.n),
-            // a notice without a link is one the centre cannot open, not a bad one
             link: ducklink::mint(&self.session.chain_id, forge::PROGRAM, &[&change.repo, &n])
                 .unwrap_or_default(),
             ..Notification::default()
@@ -279,7 +259,6 @@ impl ForgeNotices {
     }
 }
 
-/// The tag a change's notices go under.
 fn tag(repo: &str, n: u64) -> String {
     format!("{repo}#{n}")
 }

@@ -75,8 +75,6 @@ pub(super) fn list(
                 ladder,
             ))
         })
-        // a refused read of older messages, said where they would be
-        // (mobile `app/(tabs)/chat/[channel]/index.tsx:240`)
         .when_some(
             room.older_failed
                 .as_deref()
@@ -97,7 +95,6 @@ pub(super) fn list(
         .into_any_element()
 }
 
-/// The native list over the pane's messages.
 fn rows(
     chat: &Chat,
     pane: Pane,
@@ -136,7 +133,6 @@ fn rows(
                     None => div().into_any_element(),
                 };
             };
-            // a thread runs without separators, as the Expo thread's list
             let marks = match pane {
                 Pane::Timeline => marks(chat, &messages, at, unread, &theme, &ladder),
                 Pane::Thread => Vec::new(),
@@ -160,9 +156,6 @@ fn rows(
         }),
     )
     .with_sizing_behavior(ListSizingBehavior::Auto)
-    // the list's own inset: a room's `gap.sm` at both ends (mobile
-    // `app/(tabs)/chat/[channel]/index.tsx:235`), a thread's `gap.lg` under
-    // its last reply (`thread/[root].tsx:90`)
     .map(|list| match pane {
         Pane::Timeline => list.py(design::space::SM),
         Pane::Thread => list.pb(design::space::LG),
@@ -172,8 +165,6 @@ fn rows(
     .w_full()
 }
 
-/// What opens above message `at`: its day's separator when it is the
-/// first of its day, "New" when it is the first unread one.
 fn marks(
     chat: &Chat,
     messages: &[ChatMessage],
@@ -206,8 +197,6 @@ fn marks(
     day.into_iter().chain(new).collect()
 }
 
-/// A hairline, a caption, a hairline (Expo `Separator`): a day, or in
-/// danger the unread "New".
 fn separator(
     id: String,
     label: String,
@@ -240,7 +229,6 @@ fn separator(
         .into_any_element()
 }
 
-/// Under a thread's root: how many replies it has, over a hairline.
 fn replies(root: &ChatMessage, theme: &Theme, ladder: &Ladder) -> AnyElement {
     div()
         .id(format!("chat-message-{}-reply-separator", root.id))
@@ -258,9 +246,6 @@ fn replies(root: &ChatMessage, theme: &Theme, ladder: &Ladder) -> AnyElement {
         .into_any_element()
 }
 
-/// "Latest" over the list's foot (Expo `Latest`): back to the room's
-/// newest message. The strip only centres it, so a press beside it still
-/// reaches the row under it.
 fn latest(room: String, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     let open = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
         cx.notify();

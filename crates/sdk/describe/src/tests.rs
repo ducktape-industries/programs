@@ -40,7 +40,6 @@ fn an_op_round_trips_to_its_description() {
     };
     let bytes = describe_bytes(&borsh::to_vec(&op).unwrap(), describe).unwrap();
     assert_eq!(Description::decode(&bytes), Some(describe(&op)));
-    // not an op of this program, or one with bytes after it
     assert_eq!(describe_bytes(&[9], describe), None);
     let mut long = borsh::to_vec(&Op::Say("hi".into())).unwrap();
     long.push(0);
@@ -90,7 +89,6 @@ fn a_description_nests_lists_only_so_deep() {
         bomb.extend([8, 1, 0, 0, 0]);
     }
     assert_eq!(Description::decode(&bomb), None);
-    // and the depth count is back at zero after a refusal
     let ok = nest(MAX_DEPTH);
     assert_eq!(Description::decode(&borsh::to_vec(&ok).unwrap()), Some(ok));
 }
@@ -99,8 +97,6 @@ fn a_description_nests_lists_only_so_deep() {
 fn variants_read_in_tag_order() {
     assert_eq!(variants::<Op>(), ["Say", "Pay"]);
 }
-
-// ---------- the host ----------
 
 fn engine() -> wasmtime::Engine {
     let mut config = wasmtime::Config::new();
@@ -112,7 +108,6 @@ fn module(wat: &str) -> Vec<u8> {
     wat::parse_str(wat).unwrap()
 }
 
-/// A module whose `describe` answers `body` (a WAT expression for the i64).
 fn answering(data: &str, body: &str) -> Vec<u8> {
     module(&format!(
         r#"(module
@@ -123,14 +118,12 @@ fn answering(data: &str, body: &str) -> Vec<u8> {
     ))
 }
 
-/// `Description { title: "hi", fields: [] }`, borsh, at 1024.
 const HI: &str = "\\02\\00\\00\\00hi\\00\\00\\00\\00";
 
 #[test]
 fn a_section_is_read_out_of_a_program_and_run() {
     let engine = engine();
     let section = answering(HI, "i64.const 0x4000000000a");
-    // a program: a core module with the describe module in its section
     let mut program = module("(module)");
     let name = SECTION.as_bytes();
     let mut body = vec![name.len() as u8];
@@ -160,9 +153,7 @@ fn a_hostile_section_describes_nothing() {
         host::compile(&engine, &section)
             .and_then(|compiled| host::run(&engine, &compiled, &[1, 2, 3]))
     };
-    // loops forever: the fuel ends it
     assert_eq!(runs(answering("", "(loop (br 0)) i64.const 0")), None);
-    // asks for more memory than the ceiling
     let huge = module(
         r#"(module
             (memory (export "memory") 1)
@@ -171,22 +162,17 @@ fn a_hostile_section_describes_nothing() {
             (func (export "describe") (param i32 i32) (result i64) i64.const 0))"#,
     );
     assert_eq!(runs(huge), None);
-    // declares it up front
     let declared = module(
         r#"(module (memory (export "memory") 2000)
             (func (export "alloc") (param i32) (result i32) i32.const 0)
             (func (export "describe") (param i32 i32) (result i64) i64.const 0))"#,
     );
     assert_eq!(runs(declared), None);
-    // answers outside its memory, too long, or not a description
     assert_eq!(runs(answering(HI, "i64.const 0xffff00000010")), None);
     assert_eq!(runs(answering(HI, "i64.const 0x40000100000")), None);
     assert_eq!(runs(answering("\\ff\\ff", "i64.const 0x40000000002")), None);
-    // one byte past a good answer is no answer
     assert_eq!(runs(answering(HI, "i64.const 0x4000000000b")), None);
-    // traps
     assert_eq!(runs(answering("", "unreachable")), None);
-    // imports anything
     let importing = module(
         r#"(module (import "env" "f" (func))
             (memory (export "memory") 1)
@@ -194,14 +180,11 @@ fn a_hostile_section_describes_nothing() {
             (func (export "describe") (param i32 i32) (result i64) i64.const 0))"#,
     );
     assert!(host::compile(&engine, &importing).is_none());
-    // text is not a module, whatever the engine parses
     assert!(host::compile(&engine, b"(module)").is_none());
-    // exports the wrong shape
     assert_eq!(
         runs(module("(module (memory (export \"memory\") 1))")),
         None
     );
-    // an engine that counts no fuel runs nothing
     let free = wasmtime::Engine::default();
     let compiled = host::compile(&free, &answering(HI, "i64.const 0x4000000000a")).unwrap();
     assert_eq!(host::run(&free, &compiled, &[]), None);

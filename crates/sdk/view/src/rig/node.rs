@@ -17,10 +17,8 @@ use super::wire::{self, route};
 use super::{Network, now_ms};
 use view_wire::methods;
 
-/// One request's turn on the chain thread.
 type Job = Box<dyn FnOnce(&Network) + Send>;
 
-/// What the chain thread hears: a job, or the end.
 pub(super) enum Msg {
     Job(Job),
     Stop,
@@ -74,8 +72,6 @@ impl Response {
     }
 }
 
-/// Binds the node on a loopback port: the address, and the acceptor's
-/// side of the chain thread's channel is spawned.
 pub(super) fn bind(jobs: Sender<Msg>) -> std::io::Result<SocketAddr> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let addr = listener.local_addr()?;
@@ -92,14 +88,12 @@ pub(super) fn bind(jobs: Sender<Msg>) -> std::io::Result<SocketAddr> {
     Ok(addr)
 }
 
-/// The chain thread: every job in turn, until `Stop`.
 pub(super) fn serve(net: &Network, msgs: Receiver<Msg>) {
     while let Ok(Msg::Job(job)) = msgs.recv() {
         job(net);
     }
 }
 
-/// Runs `work` on the chain thread and waits for what it answers.
 fn on_chain<T: Send + 'static>(
     jobs: &Sender<Msg>,
     work: impl FnOnce(&Network) -> T + Send + 'static,
@@ -134,7 +128,6 @@ fn connection(stream: TcpStream, jobs: Sender<Msg>) {
         if write_response(&mut writer, &response).is_err() {
             return;
         }
-        // the answer is on its way: the block it made may land now
         let _ = jobs.send(Msg::Job(Box::new(|net| net.flush())));
     }
 }
@@ -205,9 +198,6 @@ fn refusal(error: &crate::host::Error) -> abi::Refusal {
     abi::Refusal::new(&error.code, &error.message)
 }
 
-/// One route, answered on the chain thread: the request read as the node
-/// method it is, [`Network::answer`] (an override, else the chain), and
-/// the answer in the node's shape.
 fn respond(net: &Network, method: &str, path: &str, body: Vec<u8>) -> Response {
     match (method, path) {
         ("GET", route::STATUS) => match net.answer("chain.status", None, &[]) {
@@ -252,7 +242,7 @@ fn respond(net: &Network, method: &str, path: &str, body: Vec<u8>) -> Response {
                 Ok(query) => query,
                 Err(error) => return malformed(error.sentence),
             };
-            let frame = match opened(&query.frame) {
+            let frame = match verify_signed_frame(&query.frame) {
                 Ok(frame) => frame,
                 Err(response) => return response,
             };
@@ -260,7 +250,6 @@ fn respond(net: &Network, method: &str, path: &str, body: Vec<u8>) -> Response {
                 target: frame.body.target.clone(),
                 body: frame.body.payload,
             });
-            // the program's bytes, as one borsh `Vec<u8>` answer
             match net.answer_as(
                 frame.body.signer,
                 "program.query",
@@ -272,7 +261,7 @@ fn respond(net: &Network, method: &str, path: &str, body: Vec<u8>) -> Response {
             }
         }
         ("POST", route::SUBMIT) => {
-            let frame = match opened(&body) {
+            let frame = match verify_signed_frame(&body) {
                 Ok(frame) => frame,
                 Err(response) => return response,
             };
@@ -284,10 +273,6 @@ fn respond(net: &Network, method: &str, path: &str, body: Vec<u8>) -> Response {
                 target: frame.body.target.clone(),
                 body: frame.body.payload,
             });
-            // the program's refusal travels in the receipt, as the node
-            // sends it; the receipt's events are the archived block's. The
-            // answer is the window's `Submitted` (an override's, else the
-            // chain's): its doubt is this route's transport failure.
             let outcome = match net.answer_as(
                 frame.body.signer,
                 "op.submit",
@@ -331,9 +316,6 @@ fn respond(net: &Network, method: &str, path: &str, body: Vec<u8>) -> Response {
             match net.answer("blob.get", None, &methods::encode(&name)) {
                 Ok(bytes) => {
                     let body: Option<Vec<u8>> = methods::decode(&bytes).expect("own bytes");
-                    // a view reads the body; the node serves it framed: as
-                    // the chain framed it when it is the chain's (the app
-                    // hashes a code blob's frame), else as a plain blob
                     Response::borsh(&body.map(|body| {
                         net.blob(&id)
                             .filter(|framed| super::unframe(framed) == Some(&body[..]))
@@ -441,8 +423,7 @@ fn respond(net: &Network, method: &str, path: &str, body: Vec<u8>) -> Response {
     }
 }
 
-/// A signed frame, its proof checked: the signer is who the body says.
-fn opened(bytes: &[u8]) -> Result<wire::Frame, Response> {
+fn verify_signed_frame(bytes: &[u8]) -> Result<wire::Frame, Response> {
     let frame: wire::Frame = abi::decode(bytes).map_err(|error| malformed(error.sentence))?;
     let verified = frame.body.scheme.verify(
         &frame.body.signer,
@@ -459,12 +440,8 @@ fn opened(bytes: &[u8]) -> Result<wire::Frame, Response> {
     Ok(frame)
 }
 
-// ---------- the changes socket ----------
-
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-/// `/v1/changes/<program>` as a websocket: the handshake, then one binary
-/// frame per block that wrote to the program, until the client closes.
 fn changes_socket(
     mut reader: BufReader<TcpStream>,
     mut writer: TcpStream,
@@ -479,8 +456,6 @@ fn changes_socket(
     };
     let accept = base64::engine::general_purpose::STANDARD
         .encode(sha1::Sha1::digest(format!("{key}{WS_GUID}").as_bytes()));
-    // subscribed before the upgrade is answered, as the node does: a block
-    // that lands in between is not lost
     let (send, items) = channel::<Vec<u8>>();
     let program = program.to_owned();
     if on_chain(jobs, move |net| net.subscribe(&program, send)).is_none() {
@@ -495,27 +470,24 @@ fn changes_socket(
     {
         return;
     }
-    // the writer: every item the chain sends, as one binary frame
     let mut out = match writer.try_clone() {
         Ok(out) => out,
         Err(_) => return,
     };
     let writing = std::thread::spawn(move || {
         for item in items {
-            if ws_write(&mut out, 0x2, &item).is_err() {
+            if write_unmasked_server_frame(&mut out, 0x2, &item).is_err() {
                 break;
             }
         }
     });
-    // the reader: a ping is answered, a close ends it, anything else is
-    // the client's to send and not ours to read
-    while let Some((opcode, payload)) = ws_read(&mut reader) {
+    while let Some((opcode, payload)) = read_masked_client_frame(&mut reader) {
         match opcode {
             0x8 => {
-                let _ = ws_write(&mut writer, 0x8, &payload);
+                let _ = write_unmasked_server_frame(&mut writer, 0x8, &payload);
                 break;
             }
-            0x9 if ws_write(&mut writer, 0xA, &payload).is_err() => break,
+            0x9 if write_unmasked_server_frame(&mut writer, 0xA, &payload).is_err() => break,
             _ => {}
         }
     }
@@ -523,8 +495,11 @@ fn changes_socket(
     let _ = writing.join();
 }
 
-/// One unmasked server frame.
-fn ws_write(out: &mut TcpStream, opcode: u8, payload: &[u8]) -> std::io::Result<()> {
+fn write_unmasked_server_frame(
+    out: &mut TcpStream,
+    opcode: u8,
+    payload: &[u8],
+) -> std::io::Result<()> {
     let mut frame = vec![0x80 | opcode];
     match payload.len() {
         len if len < 126 => frame.push(len as u8),
@@ -542,9 +517,7 @@ fn ws_write(out: &mut TcpStream, opcode: u8, payload: &[u8]) -> std::io::Result<
     out.flush()
 }
 
-/// One masked client frame: its opcode and payload; `None` once the
-/// socket is gone.
-fn ws_read(reader: &mut BufReader<TcpStream>) -> Option<(u8, Vec<u8>)> {
+fn read_masked_client_frame(reader: &mut BufReader<TcpStream>) -> Option<(u8, Vec<u8>)> {
     let mut head = [0u8; 2];
     reader.read_exact(&mut head).ok()?;
     let opcode = head[0] & 0x0f;
@@ -573,7 +546,6 @@ fn ws_read(reader: &mut BufReader<TcpStream>) -> Option<(u8, Vec<u8>)> {
     Some((opcode, payload))
 }
 
-/// A line of the node's own log, timed.
 pub(super) fn say(line: impl std::fmt::Display) {
     println!("[live {}] {line}", now_ms() % 100_000);
 }
@@ -634,8 +606,6 @@ mod tests {
         refusal.reason
     }
 
-    /// A real write and a real refusal through the route: the chain's
-    /// `Submitted` becomes the receipt's outcome, not its output.
     #[test]
     fn the_chain_answers_the_windows_submit_as_a_receipt() {
         let net = Network::new();

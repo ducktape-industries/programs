@@ -210,7 +210,6 @@ impl Element for ModalOverlay {
 
     fn lower(self: Box<Self>, lowering: &mut Lowering<'_>) -> wire::Node {
         let Some(modal) = self.modal else {
-            // the id is already on the path: lower the container in place
             let base = div().id(self.id).size_full().child(self.base);
             return Element::lower(Box::new(base), lowering);
         };
@@ -314,7 +313,6 @@ impl Element for Sheet {
     }
 
     fn lower(self: Box<Self>, lowering: &mut Lowering<'_>) -> wire::Node {
-        // the wire's sheet holds one node: two or more go in one column
         let mut children = self.children;
         let child = match children.len() {
             0 => wire::Node::empty(),

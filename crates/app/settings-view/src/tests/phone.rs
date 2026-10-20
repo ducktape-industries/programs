@@ -4,7 +4,6 @@
 //! 390 and 430.
 use super::*;
 
-/// The fixture's `state` on a phone: a finger, 390 wide.
 fn phone(state: &str) -> TestAppContext {
     let mut cx = fixture(state, false);
     on_phone(&mut cx);
@@ -16,14 +15,12 @@ fn on_phone(cx: &mut TestAppContext) {
     cx.simulate_resize(390., 844.);
 }
 
-/// Maya on her phone, the Agents pane open.
 fn agents() -> TestAppContext {
     let mut cx = phone("ready");
     cx.simulate_click("settings/strip/agents");
     cx
 }
 
-/// Identity's live head moves on, and the account is read again.
 fn identity_moves(cx: &mut TestAppContext, height: u64) {
     let heads = cx.host().stream::<Changes<Identity>>();
     heads.send(Some(Change {
@@ -43,9 +40,6 @@ fn has_all(cx: &TestAppContext, texts: &[&str]) {
     }
 }
 
-/// The sweep (SPEC §8.1d-1): every pane of the strip and every mode of the
-/// sheets, every frame audited and fitted at each phone width. It lives
-/// here, not in `tests/sweep.rs`, because the fixture does.
 #[test]
 fn sweep() {
     let mut cx = fixture("ready", false);
@@ -81,8 +75,6 @@ fn sweep() {
     });
 }
 
-/// The pointer picks the design, not the width: a finger gets the phone's
-/// screen on a wide window, a mouse the desktop's menu on a narrow one.
 #[test]
 fn the_pointer_picks_the_design_not_the_width() {
     let mut cx = fixture("ready", false);
@@ -110,14 +102,12 @@ fn a_person_reads_who_they_are_and_each_key() {
             "Validator",
         ],
     );
-    // an account has the Agents pane
     for pane in ["account", "agents", "invites"] {
         assert!(
             cx.find(&format!("settings/strip/{pane}")).is_some(),
             "{pane}"
         );
     }
-    // the phone says what the Expo app says, not the desktop's `User`
     assert!(!cx.has_text("account 7 · User"));
 }
 
@@ -205,7 +195,6 @@ fn an_unregistered_key_creates_its_account() {
         sent(&cx)[..],
         [identity::Op::Create { ref name, scheme: abi::Scheme::Ed25519 }] if name == "Maya"
     ));
-    // busy until the host's session names the new account
     assert!(cx.has_text("Creating…"), "{:?}", cx.texts());
 }
 
@@ -224,8 +213,6 @@ fn a_refused_account_keeps_its_name_and_says_why() {
     assert_eq!(value, "Maya");
 }
 
-/// A field that stopped says why to assistive tech too, not only in red
-/// under it (rule 18).
 #[test]
 fn a_stopped_field_tells_assistive_tech_why() {
     let mut cx = phone("unregistered");
@@ -359,8 +346,6 @@ fn closing_the_sheet_drops_a_rename_not_sent() {
     assert_eq!(value, "Scout");
 }
 
-/// Suspend and Revoke are one press each: the host confirms before the
-/// key signs, not the view.
 #[test]
 fn suspend_and_revoke_are_one_press_each() {
     let mut cx = agents();
@@ -437,7 +422,6 @@ fn whom_an_agent_answers_is_picked_in_its_sheet() {
     assert_eq!(*answers.borrow(), listed(&[9]));
     assert!(cx.has_text("Eve"), "{:?}", cx.texts());
 
-    // Done goes back to the actions, which now say whom it answers
     cx.simulate_click("settings/agents/12/answers/done");
     assert!(cx.find("settings/agents/12/answers/name").is_none());
     assert!(cx.has_text("Specific people"), "{:?}", cx.texts());
@@ -529,8 +513,6 @@ fn an_added_key_closes_its_sheet() {
     assert!(cx.find("settings/agents/key/sheet").is_none());
 }
 
-/// An op settles the sheet it was sent from, not one opened while it was
-/// out: a Suspend that lands keeps a Rename opened meanwhile.
 #[test]
 fn a_landing_leaves_a_sheet_opened_meanwhile() {
     let mut cx = agents();
@@ -549,8 +531,6 @@ fn a_landing_leaves_a_sheet_opened_meanwhile() {
     );
 }
 
-/// A create that lands after its sheet was cancelled leaves the add-key
-/// sheet opened meanwhile open.
 #[test]
 fn a_create_landing_leaves_the_add_key_sheet_open() {
     let mut cx = agents();
@@ -571,8 +551,6 @@ fn a_create_landing_leaves_the_add_key_sheet_open() {
     );
 }
 
-/// Back is there exactly while a sheet is drawn: an agent gone from a
-/// failed read takes its sheet, and Back, with it.
 #[test]
 fn back_goes_with_the_sheet_a_failed_read_took() {
     let mut cx = agents();
@@ -585,7 +563,6 @@ fn back_goes_with_the_sheet_a_failed_read_took() {
     assert_eq!(cx.back_handler(), None);
 }
 
-/// A sheet closed with something typed and not sent opens empty again.
 #[test]
 fn a_closed_sheet_forgets_what_was_not_sent() {
     let mut cx = agents();
@@ -607,8 +584,6 @@ fn a_closed_sheet_forgets_what_was_not_sent() {
     assert!(!cx.has_text("That isn’t a key request for one of your agents."));
 }
 
-/// The create and rename fields take the keyboard as they open (Expo
-/// `autoFocus`).
 #[test]
 fn a_name_field_takes_the_keyboard_as_it_opens() {
     let mut cx = agents();
@@ -620,7 +595,6 @@ fn a_name_field_takes_the_keyboard_as_it_opens() {
     assert_eq!(focused(&cx).as_deref(), Some("settings/agents/12/name"));
 }
 
-/// A refused choice says why on its own line, not in the person field.
 #[test]
 fn a_refused_choice_has_its_own_line() {
     let (mut cx, _) = answering(listed(&[8]));
@@ -641,8 +615,6 @@ fn a_refused_choice_has_its_own_line() {
     );
 }
 
-/// Whom it answers opens tall, its body scrolling (Expo opens it at 85%);
-/// the agent's other sheets are as tall as what they hold.
 #[test]
 fn whom_it_answers_opens_tall_and_scrolls() {
     let mut cx = agents();
@@ -659,16 +631,12 @@ fn whom_it_answers_opens_tall_and_scrolls() {
     assert!(cx.find("settings/agents/12/scroll").is_some());
 }
 
-/// A Remove pressed while a choice is out goes nowhere: sent, it would
-/// undo the choice. The model drops it, and its button is off until the
-/// choice lands.
 #[test]
 fn a_remove_waits_for_a_choice_that_is_out() {
     let (mut cx, answers) = answering(listed(&[8, 9]));
     on_phone(&mut cx);
     cx.simulate_click("settings/agents/12");
     cx.simulate_click("settings/agents/12/answers/open");
-    // both pressed before the choice's frame is drawn
     let anyone = press(&cx, "settings/agents/12/answers/anyone");
     let remove = press(&cx, "settings/agents/12/answers/8/remove");
     cx.tick(vec![anyone, remove]);
@@ -688,8 +656,6 @@ fn a_remove_waits_for_a_choice_that_is_out() {
     assert_eq!(*answers.borrow(), identity::Ownership::Anyone);
 }
 
-/// A person added from the sheet, then the sheet dismissed and Create
-/// opened before the person is found: the add's landing leaves Create.
 #[test]
 fn a_person_add_landing_leaves_a_sheet_opened_meanwhile() {
     let (mut cx, answers) = answering(identity::Ownership::Owner);
@@ -718,9 +684,6 @@ fn a_person_add_landing_leaves_a_sheet_opened_meanwhile() {
     );
 }
 
-/// While any write is out, not only a change to whom it answers, the
-/// sheet says "· Saving…", Remove and Add are off and Add reads
-/// "Adding…" (Expo's one busy scope).
 #[test]
 fn whom_it_answers_waits_while_any_write_is_out() {
     let (mut cx, _) = answering(listed(&[8]));
@@ -738,8 +701,6 @@ fn whom_it_answers_waits_while_any_write_is_out() {
     }
 }
 
-/// Return sends the create fields only; rename and the person field wait
-/// for their button (Expo sets `onSubmitEditing` on the creates alone).
 #[test]
 fn return_sends_only_the_create_fields() {
     let submits = |cx: &TestAppContext, key: &str| {
@@ -765,7 +726,6 @@ fn return_sends_only_the_create_fields() {
     assert!(!submits(&cx, "settings/agents/12/answers/name"));
 }
 
-/// Every phone field says what keyboard it wants (rule 7).
 #[test]
 fn the_phones_fields_carry_their_keyboard_hints() {
     let hints = |cx: &TestAppContext, key: &str| {
@@ -775,7 +735,6 @@ fn the_phones_fields_carry_their_keyboard_hints() {
         options.text_input
     };
     let account = phone("unregistered");
-    // Expo's fields set none: React Native's default, sentences
     let name = hints(&account, "settings/account/create/name");
     assert_eq!(name.autocapitalize, wire::Autocapitalize::Sentences);
 

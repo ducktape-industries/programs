@@ -9,7 +9,6 @@ use view::{Div, Stateful};
 use crate::room_menu::{ROOM_MENU, RoomItem};
 use crate::{Chat, RoomMenu, words};
 
-// `screen` under a room's menu while one is open, at its place.
 pub fn over(
     chat: &Chat,
     screen: AnyElement,
@@ -27,7 +26,6 @@ pub fn over(
         .into_any_element()
 }
 
-// The menu at its place; none while its row has not said where it is.
 fn popup(
     chat: &Chat,
     menu: &RoomMenu,
@@ -62,10 +60,6 @@ fn room_item(
     design::menu_item(id, label, ladder, theme, run).icon(glyph)
 }
 
-// The sidebar row of `room` opens its menu under a right press, at the
-// pointer, and from assistive tech's "show menu" under the row, which
-// says where it is while the menu waits to open there.
-// The room's menu waits to open under its row, which says where it is.
 pub fn waits(chat: &Chat, room: &str) -> bool {
     chat.room_menu
         .as_ref()

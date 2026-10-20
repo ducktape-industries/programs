@@ -28,8 +28,7 @@ fn program() -> String {
     MockHost::role(abi::role::HALO)
 }
 
-/// The founding lanes: `blobs` at 0, pinned, and `live` at 1.
-fn genesis() -> Genesis {
+fn genesis_with_pinned_blobs() -> Genesis {
     Genesis {
         lanes: vec![
             Founded {
@@ -57,8 +56,7 @@ fn lane(name: &str, id: u8, cap: Class, enabled: bool, since: u64) -> Lane {
     }
 }
 
-/// `blobs` as founded: pinned.
-fn blobs() -> Lane {
+fn pinned_blobs_lane() -> Lane {
     Lane {
         pinned: true,
         ..lane("blobs", 0, Class::Critical, true, 0)
@@ -67,11 +65,10 @@ fn blobs() -> Lane {
 
 fn founded<F: Fixture>(fixture: &F) -> MockHost {
     let host = fixture.host();
-    init::<F::Program>(&host, &program(), &genesis());
+    init::<F::Program>(&host, &program(), &genesis_with_pinned_blobs());
     host
 }
 
-/// `op` from `origin` at `height`, its writes kept only when it is taken.
 fn send<F: Fixture>(host: &MockHost, origin: Origin, height: u64, op: &Op) -> Result<(), Error> {
     let sender = match origin {
         Origin::Root => Principal::Root,
@@ -81,8 +78,7 @@ fn send<F: Fixture>(host: &MockHost, origin: Origin, height: u64, op: &Op) -> Re
     host.attempt(|| execute::<F::Program>(host, env, op))
 }
 
-/// `op` as the validators' vote enacts it: sent by the program bound to the validators role.
-fn voted<F: Fixture>(host: &MockHost, height: u64, op: &Op) -> Result<(), Error> {
+fn enacted_by_validators<F: Fixture>(host: &MockHost, height: u64, op: &Op) -> Result<(), Error> {
     let validators = Origin::Program(MockHost::role(abi::role::VALIDATORS));
     send::<F>(host, validators, height, op)
 }
@@ -145,7 +141,7 @@ pub fn the_role_is_the_first_variants<F: Fixture>(_: &F) {
 /// name.
 pub fn genesis_lists_its_lanes_in_order_from_id_0<F: Fixture>(fixture: &F) {
     let host = founded(fixture);
-    let founded = [blobs(), lane("live", 1, Class::Client, true, 0)];
+    let founded = [pinned_blobs_lane(), lane("live", 1, Class::Client, true, 0)];
     assert_eq!(
         lanes::<F>(&host),
         founded,
@@ -193,7 +189,7 @@ pub fn only_the_validators_vote_changes_the_table<F: Fixture>(fixture: &F) {
 /// already is refused and keeps its lane.
 pub fn open_lists_a_name_at_the_next_id<F: Fixture>(fixture: &F) {
     let host = founded(fixture);
-    voted::<F>(&host, 7, &open("chat", Class::Member))
+    enacted_by_validators::<F>(&host, 7, &open("chat", Class::Member))
         .unwrap_or_else(|e| panic!("halo: the vote opens a lane: {e:?}"));
     let chat = lane("chat", 2, Class::Member, true, 7);
     assert_eq!(
@@ -203,11 +199,15 @@ pub fn open_lists_a_name_at_the_next_id<F: Fixture>(fixture: &F) {
     );
     assert_eq!(
         lanes::<F>(&host),
-        [blobs(), lane("live", 1, Class::Client, true, 0), chat],
+        [
+            pinned_blobs_lane(),
+            lane("live", 1, Class::Client, true, 0),
+            chat
+        ],
         "halo: Lanes answers in id order, not by name"
     );
     assert!(
-        voted::<F>(&host, 8, &open("live", Class::Member)).is_err(),
+        enacted_by_validators::<F>(&host, 8, &open("live", Class::Member)).is_err(),
         "halo: Open of a listed name is refused"
     );
     assert_eq!(
@@ -227,14 +227,17 @@ pub fn set_keeps_the_id_and_a_paused_lane_stays_listed<F: Fixture>(fixture: &F) 
         cap,
         enabled,
     };
-    voted::<F>(&host, 7, &set(Class::Member, false))
+    enacted_by_validators::<F>(&host, 7, &set(Class::Member, false))
         .unwrap_or_else(|e| panic!("halo: the vote pauses a lane: {e:?}"));
     assert_eq!(
         lanes::<F>(&host),
-        [blobs(), lane("live", 1, Class::Member, false, 0)],
+        [
+            pinned_blobs_lane(),
+            lane("live", 1, Class::Member, false, 0)
+        ],
         "halo: a paused lane stays listed at its id, enabled: false"
     );
-    voted::<F>(&host, 8, &set(Class::Client, true))
+    enacted_by_validators::<F>(&host, 8, &set(Class::Client, true))
         .unwrap_or_else(|e| panic!("halo: the vote serves a paused lane again: {e:?}"));
     assert_eq!(
         one::<F>(&host, "live"),
@@ -247,7 +250,7 @@ pub fn set_keeps_the_id_and_a_paused_lane_stays_listed<F: Fixture>(fixture: &F) 
         enabled: true,
     };
     assert!(
-        voted::<F>(&host, 9, &unlisted).is_err(),
+        enacted_by_validators::<F>(&host, 9, &unlisted).is_err(),
         "halo: Set of an unlisted name is refused"
     );
 }
@@ -259,17 +262,18 @@ pub fn a_closed_lanes_id_is_never_handed_out_again<F: Fixture>(fixture: &F) {
     let close = Op::Close {
         name: "live".into(),
     };
-    voted::<F>(&host, 7, &close).unwrap_or_else(|e| panic!("halo: the vote closes a lane: {e:?}"));
+    enacted_by_validators::<F>(&host, 7, &close)
+        .unwrap_or_else(|e| panic!("halo: the vote closes a lane: {e:?}"));
     assert_eq!(
         lanes::<F>(&host),
-        [blobs()],
+        [pinned_blobs_lane()],
         "halo: a closed lane is not listed"
     );
     assert!(
-        voted::<F>(&host, 8, &close).is_err(),
+        enacted_by_validators::<F>(&host, 8, &close).is_err(),
         "halo: Close of an unlisted name is refused"
     );
-    voted::<F>(&host, 9, &open("live", Class::Client))
+    enacted_by_validators::<F>(&host, 9, &open("live", Class::Client))
         .unwrap_or_else(|e| panic!("halo: the vote opens a closed name again: {e:?}"));
     assert_eq!(
         one::<F>(&host, "live"),
@@ -293,7 +297,7 @@ pub fn a_pinned_lane_is_never_paused_or_closed<F: Fixture>(fixture: &F) {
             name: "blobs".into(),
         },
     ] {
-        let refusal = voted::<F>(&host, 7, &refused)
+        let refusal = enacted_by_validators::<F>(&host, 7, &refused)
             .expect_err("halo: no vote pauses or closes a pinned lane");
         assert_eq!(
             refusal.code,
@@ -303,7 +307,7 @@ pub fn a_pinned_lane_is_never_paused_or_closed<F: Fixture>(fixture: &F) {
     }
     assert_eq!(
         one::<F>(&host, "blobs"),
-        Some(blobs()),
+        Some(pinned_blobs_lane()),
         "halo: a refused op keeps the pinned lane as it was"
     );
     let capped = Op::Set {
@@ -311,11 +315,11 @@ pub fn a_pinned_lane_is_never_paused_or_closed<F: Fixture>(fixture: &F) {
         cap: Class::Member,
         enabled: true,
     };
-    voted::<F>(&host, 8, &capped)
+    enacted_by_validators::<F>(&host, 8, &capped)
         .unwrap_or_else(|e| panic!("halo: the vote moves a pinned lane's cap: {e:?}"));
     let moved = Lane {
         cap: Class::Member,
-        ..blobs()
+        ..pinned_blobs_lane()
     };
     assert_eq!(
         one::<F>(&host, "blobs"),

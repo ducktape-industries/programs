@@ -1,8 +1,6 @@
 use super::*;
 use crate::methods::{ChainBlocks, ChainStatus, Query as Ask};
 
-/// The boot set is seated, the dev key holds an account identity knows,
-/// and the programs role lists every seat.
 #[test]
 fn a_network_is_founded_with_the_boot_set_and_a_signed_in_person() {
     let net = Network::new();
@@ -38,8 +36,6 @@ fn a_network_is_founded_with_the_boot_set_and_a_signed_in_person() {
     assert_eq!(net.session().account, Some(me));
 }
 
-/// An agent holds a key of its own, put there by its manager with the
-/// key's own consent, which identity checks; the agent signs as itself.
 #[test]
 fn an_agent_holds_a_key_its_consent_put_there() {
     let net = Network::new();
@@ -63,16 +59,12 @@ fn an_agent_holds_a_key_its_consent_put_there() {
         account: vps,
         name: "renamed".into(),
     };
-    // the agent signs as itself and renames its own account, as its
-    // manager may; an account that is neither is refused
     net.submit(vps, identity::PROGRAM, &rename).unwrap();
     let ada = net.person("ada");
     let refused = net.submit(ada, identity::PROGRAM, &rename).unwrap_err();
     assert_eq!(refused.code, "unauthorized");
 }
 
-/// A submission is one block: the archive grows, and the keys the program
-/// wrote are the block's changes.
 #[test]
 fn a_submission_is_a_block_with_its_changes() {
     let net = Network::new();
@@ -132,7 +124,6 @@ fn a_submission_is_a_block_with_its_changes() {
     );
 }
 
-/// A hook keeping the last frame the chain told it of.
 struct Tap;
 
 impl Program for Tap {
@@ -155,8 +146,6 @@ impl Program for Tap {
     }
 }
 
-/// A hook is told of each frame, with the account its key acts as, and
-/// its writes are the block's changes; the roster lists it.
 #[test]
 fn a_hook_is_told_of_each_frame_as_the_kernel_tells_it() {
     let net = Network::new();
@@ -188,7 +177,6 @@ fn a_hook_is_told_of_each_frame_as_the_kernel_tells_it() {
     assert_eq!(hooks, programs::Reply::Hooks(vec!["tap".into()]));
 }
 
-/// A hook that writes and then refuses.
 struct Balk;
 
 impl Program for Balk {
@@ -211,8 +199,6 @@ impl Program for Balk {
     }
 }
 
-/// A hook that refuses is undone, as the kernel undoes it, and the frame
-/// it was told of stands.
 #[test]
 fn a_hook_that_refuses_is_undone_and_the_frame_stands() {
     let net = Network::new();
@@ -225,7 +211,6 @@ fn a_hook_that_refuses_is_undone_and_the_frame_stands() {
     assert_eq!(told, None, "its writes are undone");
 }
 
-/// A typed override answers before the chain; a refused one refuses.
 #[test]
 fn an_override_answers_in_place_of_the_chain() {
     let net = Network::new();
@@ -249,8 +234,6 @@ fn an_override_answers_in_place_of_the_chain() {
     assert_eq!(refused.code, "down");
 }
 
-/// Behind a FakeHost, a view's query reaches the program and a submit's
-/// writes reach its `program.changes` subscription after the frame.
 #[test]
 fn the_chain_backs_a_fake_host() {
     use crate::methods::{Changes, Submit};
@@ -296,7 +279,6 @@ fn the_chain_backs_a_fake_host() {
     assert!(!change.keys.is_empty());
 }
 
-/// A query the test answers itself wins over the chain for that program.
 #[test]
 fn a_typed_handler_on_the_host_wins_over_the_chain() {
     let net = Network::new();
@@ -336,10 +318,6 @@ fn a_held_blob_is_put_receipted_by_the_dev_validator_and_served() {
     assert_eq!(net.blob(&id), Some(wire::framed("pack", b"PACK")));
 }
 
-/// `blob.manifest` answers off the roster's code as the app does: a
-/// program's view out of its `ducktape.view` section with the manifest it
-/// carries, a view-only blob as the view itself, a program with no view
-/// as none, and a blob the chain does not name as `None`.
 #[test]
 fn blob_manifest_answers_what_the_rosters_code_declares() {
     let net = Network::new();
@@ -415,11 +393,6 @@ fn the_dev_validator_opens_the_door_alone_and_a_person_enrolls_as_a_resident() {
     assert_eq!(held.role, valset::Role::Resident);
 }
 
-/// The rig speaks the contract core's node speaks: ducktape
-/// `crates/noded/src/wire.rs` `NODE_CONTRACT`, 9 since ducktape #2883,
-/// whose `/v1/status` carries the roles as a table (`Status::roles`). The
-/// app refuses a node on another contract, so a rig a number behind opens
-/// no live window at all. Core's number moves, this one moves with it.
 #[test]
 fn the_rig_speaks_the_node_contract_core_speaks() {
     assert_eq!(wire::NODE_CONTRACT, 9);

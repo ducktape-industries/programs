@@ -22,7 +22,6 @@ fn policy(id: u64, name: &str, write: Writers) -> Policy {
     }
 }
 
-// Ada (9), whom Maya's Team policy lists.
 pub(super) fn ada() -> identity::Profile {
     identity::Profile {
         number: 9,
@@ -31,8 +30,6 @@ pub(super) fn ada() -> identity::Profile {
     }
 }
 
-// Maya's side of ownership: her open policy and Team (Ada and board), Team the default for chat
-// messages and for everything in files, and three items on Team.
 pub(super) fn owning(cx: &TestAppContext) {
     cx.host().handle::<Query<Ownership>>(|q| {
         Ok(match q {
@@ -74,7 +71,6 @@ pub(super) fn owning(cx: &TestAppContext) {
     });
 }
 
-// Maya's Policies pane on the desktop, ownership answering each op as applied.
 fn policies() -> TestAppContext {
     let mut cx = fixture("ready", false);
     cx.host()
@@ -111,10 +107,8 @@ fn the_pane_says_each_policy_in_words_and_what_new_items_use() {
     ] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
     }
-    // the open policy never changes: its row opens nothing
     assert!(cx.interactivity("settings/policies/1").on_click.is_none());
     assert!(cx.interactivity("settings/policies/2").on_click.is_some());
-    // every kind has its row, and a program the reader set a default for joins the programs
     for scope in [
         "all",
         "program-egress",
@@ -130,7 +124,6 @@ fn the_pane_says_each_policy_in_words_and_what_new_items_use() {
 fn a_new_policy_is_named_and_lists_whom_it_lets_write() {
     let mut cx = policies();
     click(&mut cx, "settings/policies/new");
-    // nothing typed: nothing sent
     click(&mut cx, "settings/policies/edit/submit");
     assert!(cx.has_text("Name the policy."), "{:?}", cx.texts());
     assert!(sent(&cx).is_empty());
@@ -146,7 +139,6 @@ fn a_new_policy_is_named_and_lists_whom_it_lets_write() {
         write,
     };
     assert_eq!(sent(&cx), [created]);
-    // landed: the sheet closes
     assert!(cx.find("settings/policies/sheet").is_none());
 }
 
@@ -187,7 +179,6 @@ fn move_switches_everything_to_the_policy_picked() {
     click(&mut cx, "settings/policies/2");
     click(&mut cx, "settings/policies/2/move");
     assert!(cx.has_text("On it now: 3 items."), "{:?}", cx.texts());
-    // Team itself is no place to move to
     assert!(cx.find("settings/policies/move/2").is_none());
     click(&mut cx, "settings/policies/move/1");
     assert_eq!(sent(&cx), [ownership::Op::Switch { from: 2, to: 1 }]);
@@ -209,7 +200,6 @@ fn a_default_is_picked_and_put_back_to_inherit() {
     let message = Scope::Kind("chat.message".into());
     let set = |scope, policy| ownership::Op::SetDefault { scope, policy };
     assert_eq!(sent(&cx), [set(channel, Some(2)), set(message, None)]);
-    // the choice already made sends nothing
     click(&mut cx, "settings/policies/default/kind-chat.message");
     click(&mut cx, "settings/policies/default/pick/2");
     assert_eq!(sent(&cx).len(), 2);
@@ -237,7 +227,6 @@ fn a_block_that_writes_the_readers_policies_reads_them_again() {
     let read = |cx: &TestAppContext| cx.host().requests::<Query<Ownership>>().len();
     let before = read(&cx);
     let heads = cx.host().stream::<Changes<Ownership>>();
-    // a record changed: nothing the pane shows
     heads.send(Some(Change {
         height: 50,
         keys: vec![b"record/x".to_vec()],

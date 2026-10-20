@@ -187,8 +187,6 @@ fn told(
     }
 }
 
-// a line from the network in the conversation `thread` names, else the agent's current one: the
-// conversation it went to
 pub(crate) fn note(
     ctx: &ExecCtx,
     agent: AccountNumber,
@@ -210,15 +208,12 @@ pub(crate) fn note(
     Ok(Some(row.id))
 }
 
-// what was meant to wake a conversation that is closed: a notice on it, which wakes nothing, and
-// never a line in another conversation, which knows nothing of what was asked
 pub(crate) fn undelivered(ctx: &ExecCtx, row: &mut ThreadRow, text: String) {
     let text = format!("Not delivered, as this conversation is closed: {text}");
     append(ctx, row, Body::Notice { text });
     THREADS.put(ctx, &row.id, row);
 }
 
-// that line, which wakes the conversation
 pub(crate) async fn tell(
     ctx: &Ctx,
     agent: AccountNumber,
@@ -243,8 +238,6 @@ pub(crate) fn bookings(
     })
 }
 
-// an account's runs newest first: `limit` of them booked before the run `below`, only those
-// still waiting where `pending` asks so; and the last run read where older ones follow it
 pub(crate) fn newest(
     ctx: &QueryCtx,
     agent: AccountNumber,

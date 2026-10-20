@@ -7,7 +7,6 @@
 //! size and a short hex preview: [`bytes`].
 use view::prelude::*;
 
-/// The longest a field's value runs before it is clipped.
 const MAX_VALUE: usize = 160;
 
 /// An op no describe module read: its program, its size, its first bytes.
@@ -38,8 +37,6 @@ pub fn size(bytes: u64) -> String {
 /// (`Value::bytes`): a longer run shows its length and its ends.
 pub const PREVIEW: usize = 32;
 
-// `Value::Bytes` as `design::preview` reads bytes: all of a short run, the
-// length and the ends of a long one.
 pub fn preview(len: u64, preview: &[u8]) -> String {
     match len {
         0 => "0 bytes".into(),

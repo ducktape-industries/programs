@@ -53,8 +53,6 @@ fn a_kept_number_is_not_a_cut() {
     );
 }
 
-/// A frame comes back as it went at every width a child list's length
-/// header takes.
 #[test]
 fn a_frame_round_trips_at_every_header_width() {
     for count in [0, 1, 16, 256, 2000, 70_000] {

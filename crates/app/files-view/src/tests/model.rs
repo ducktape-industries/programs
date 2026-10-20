@@ -56,7 +56,6 @@ fn form(write: Write, name: &str, text: &str, message: &str) -> Form {
     }
 }
 
-/// A form's message and its one change.
 fn one(built: Result<(String, Vec<Change>), String>) -> (String, [Change; 1]) {
     let (message, changes) = built.unwrap();
     let changes: [Change; 1] = changes.try_into().expect("one change");
@@ -232,7 +231,6 @@ fn a_new_folder_is_made_by_its_name_in_the_folder_on_screen() {
     );
 }
 
-/// A file's content as `files` holds it once its one chunk is put.
 fn one_chunk(size: u64) -> Content {
     Content::Chunks {
         size,
@@ -342,7 +340,6 @@ fn a_folder_made_at_a_files_path_is_no_file_to_show_or_write() {
 
 #[test]
 fn a_read_cut_inside_a_character_is_text_up_to_it() {
-    // "é" is two bytes: the read ends after the first
     let cut = opened(&[b'a', 0xc3], false);
     assert_eq!(cut.text(), Some("a"));
     assert!(!cut.editable(), "a file read in part is not edited here");
@@ -382,7 +379,6 @@ fn a_picture_is_known_by_its_first_bytes_and_is_never_text() {
         picture_format(b"BM\x36\0\0\0\0\0\0\0"),
         Some(ImageFormat::Bmp)
     );
-    // a text that starts as a bitmap's mark has no zero bytes after it
     assert_eq!(picture_format(b"BMW owners' notes"), None);
     let picture = opened(&PNG, true);
     assert_eq!(picture.holds(), Holds::Picture);
@@ -452,12 +448,9 @@ fn an_upload_puts_each_file_it_sends_as_chunks_read_from_the_device() {
             picked("a.png", 700 << 10),
             picked("b.png", 700 << 10),
             picked("big.mov", 2 * chunk + 1),
-            // past the 32 MiB files-view once refused
             picked("huge.mov", (32 << 20) + 1),
             picked("old.txt", 3),
-            // a folder of its name is there: never written over
             picked("photos", 3),
-            // picked twice: the second is left out
             picked("a.png", 1),
         ],
         &listed,
