@@ -23,6 +23,7 @@ mod faces;
 mod folders;
 mod held;
 mod history;
+mod measure;
 mod menus;
 mod message;
 mod notices;
@@ -349,16 +350,14 @@ fn threaded(cx: &TestAppContext, head: u64, thread: impl Fn(u64) -> Option<u64> 
                     next: None,
                 }),
                 Query::Thread { root_seq, page, .. } => {
-                    let after = page.after.as_deref().map_or(root_seq, |after| {
-                        u64::from_le_bytes(after.try_into().expect("a seq"))
-                    });
+                    let after = page.after.as_deref().map_or(root_seq, cursor_seq);
                     let mut replies = (after + 1..=head)
                         .map(&message)
                         .filter(|row| row.thread == Some(root_seq));
                     let items: Vec<MsgRow> = replies.by_ref().take(page.limit() as usize).collect();
                     let more = replies.next().is_some();
                     let next = items.last().filter(|_| more);
-                    let next = next.map(|row| row.seq.to_le_bytes().to_vec());
+                    let next = next.map(|row| chat::replies_after("general", root_seq, row.seq));
                     Reply::Thread {
                         root: Some(message(root_seq)),
                         replies: ::chat::PageResponse {
@@ -372,6 +371,18 @@ fn threaded(cx: &TestAppContext, head: u64, thread: impl Fn(u64) -> Option<u64> 
                 query => chat_reply(query),
             })
         }));
+}
+
+fn cursor_seq(after: &[u8]) -> u64 {
+    let tail: [u8; 8] = after[after.len() - 8..].try_into().expect("a chat cursor");
+    u64::from_be_bytes(tail)
+}
+
+fn reach_first(cx: &mut TestAppContext, view: &Entity<Chat>) {
+    cx.simulate_range("chat-message-list", 0..10);
+    let sensor = view.read(|chat| crate::listing::first_row(chat, Pane::Timeline));
+    cx.simulate_bounds(&sensor, (0., 0.), (400., 26.));
+    cx.run_until_parked();
 }
 
 fn scrolled_to(view: &Entity<Chat>, pane: Pane) -> Option<usize> {

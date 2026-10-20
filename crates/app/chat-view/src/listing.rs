@@ -8,7 +8,7 @@ use std::ops::Range;
 use view::prelude::*;
 
 use crate::message::{ChatMessage, unread_seq};
-use crate::{Chat, Pane, Shape};
+use crate::{Chat, Drawn, Pane, Shape};
 
 pub(crate) const OVERDRAW: f32 = 600.;
 
@@ -162,22 +162,74 @@ fn list_state(
         if std::mem::take(&mut drawn.follow) {
             state.scroll_to_end();
         }
+        restore(&mut drawn, &state, keys);
         return state;
     }
     let state = ListState::new(keys.len(), shape.alignment(), px(OVERDRAW));
     state.set_follow_mode(shape.follow(whole));
-    match landing() {
-        Some(item_ix) => state.scroll_to(at(item_ix)),
-        None if shape == Shape::Thread && whole => state.scroll_to(at(0)),
-        None => {}
+    if let Some(item_ix) = landing() {
+        state.scroll_to(at(item_ix));
     }
     if std::mem::take(&mut drawn.follow) {
         state.scroll_to_end();
     }
+    restore(&mut drawn, &state, keys);
     drawn.whole = whole;
     drawn.list = Some((shape, state.clone()));
     drawn.keys = keys.to_vec();
     state
+}
+
+fn restore(drawn: &mut Drawn, state: &ListState, keys: &[String]) {
+    let held = drawn.restore.as_ref();
+    let Some(item_ix) = held.and_then(|(id, _)| keys.iter().position(|key| key == id)) else {
+        return;
+    };
+    let Some((_, offset)) = drawn.restore.take() else {
+        return;
+    };
+    state.scroll_to(ListOffset {
+        item_ix,
+        offset_in_item: px(offset),
+    });
+}
+
+pub(crate) fn first_row(chat: &Chat, pane: Pane) -> String {
+    let room = chat.room.as_ref();
+    let oldest = match pane {
+        Pane::Timeline => room.and_then(|room| room.messages.ready()?.first()),
+        Pane::Thread => room.and_then(|room| room.thread.as_ref()?.replies.ready()?.first()),
+    };
+    format!("chat-first-row-{}", oldest.map_or(0, |row| row.seq))
+}
+
+pub(crate) fn edged(
+    chat: &Chat,
+    pane: Pane,
+    at: usize,
+    id: &str,
+    row: AnyElement,
+    cx: &mut Context<Chat>,
+) -> AnyElement {
+    if !chat.before_first(pane, at) {
+        return row;
+    }
+    let seen = cx.listener(move |chat, _: &Bounds<Pixels>, _window, cx| {
+        chat.reached_first(pane, cx);
+    });
+    let sensor = sensor(first_row(chat, pane), div().size_full())
+        .absolute()
+        .inset_0()
+        .on_bounds(seen);
+    div()
+        .id(format!("chat-message-{id}-first"))
+        .relative()
+        .w_full()
+        .flex()
+        .flex_col()
+        .child(sensor)
+        .child(row)
+        .into_any_element()
 }
 
 pub(crate) fn splices(old: &[String], new: &[String]) -> Vec<(Range<usize>, usize)> {

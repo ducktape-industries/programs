@@ -328,14 +328,17 @@ fn a_landed_room_opens_on_its_message_and_pages_both_ways() {
         "{:?}",
         commands(&cx)
     );
-    assert!(cx.has_text("Load older messages"));
+    assert!(
+        !cx.has_text("Load older messages"),
+        "the list reads older rows itself"
+    );
 
     let wire::Node::List { item_count, .. } = timeline(&cx) else {
         unreachable!()
     };
     cx.simulate_range("chat-message-list", item_count - 10..item_count);
     assert_eq!(seqs(&view), (436, 629, 194), "a page below the last row");
-    cx.simulate_range("chat-message-list", 0..10);
+    reach_first(&mut cx, &view);
     assert_eq!(
         seqs(&view),
         (371, 626, 256),
@@ -530,7 +533,7 @@ fn an_older_page_of_replies_keeps_the_rows_the_reader_is_on() {
     let (mut cx, view) = threaded_room(600, |seq| (11..=500).contains(&seq).then_some(10));
     open_link(&mut cx, 550);
     assert_eq!(seqs(&view), (486, 600, 115));
-    cx.simulate_range("chat-message-list", 0..10);
+    reach_first(&mut cx, &view);
     assert_eq!(seqs(&view), (421, 600, 180), "a page above, the rest kept");
 }
 
@@ -540,7 +543,7 @@ fn older_pages_that_trim_the_newer_end_read_it_again() {
     read_to_the_foot(&mut cx, 280);
     view.read(|chat| assert!(chat.room.as_ref().unwrap().landed));
     for _ in 0..3 {
-        cx.simulate_range("chat-message-list", 0..10);
+        reach_first(&mut cx, &view);
     }
     assert!(seqs(&view).1 < 300, "the newer end let go");
     let wire::Node::List { item_count, .. } = timeline(&cx) else {

@@ -47,6 +47,19 @@ members, thread), `details`, `menu`, `search`, `create`, `dm_pick`, `layout`,
 `reads` (unread cursors, kept in the view store), `closed_folders` (the room
 list's closed folders, kept in the view store under `folders`), `drafts` (the
 composers).
+The session keeps each room it opened and left in `visited` (`Visited`): its
+newest page of rows (`Chat::screenful`, the tallest pane placed this session
+over the shortest row), the thread open beside it with its newest page of
+replies, and where each list stood (`Anchor`: a row's id and how far into it).
+Pages read further up are never kept, so a room costs one page however far it
+was read, and nothing of it outlives the session. Opening it again draws that
+at once and reads only what blocks wrote since; a reader who stood above the
+kept page lands where they stood. A room opens at its newest row and a thread
+at its newest reply. A list reads the page before its first row once layout
+puts that row in view (`listing::edged`): a scroll up to it, or a list too
+short to fill its pane, until the room's first message. The reader's own posts
+never count as unread: a list that shows a newer head of a room they posted in
+moves the cursor past their own posts up to the first anyone else wrote.
 Reads land in `Loadable` slots. `room_policy` and `message_policy` are
 `policy_view::Editing` slots: the room's is read while its details, a
 message's menu or its archived strip ask it, the message's while its menu or

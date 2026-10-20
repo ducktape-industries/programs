@@ -1,11 +1,6 @@
-//! A pane's messages (Expo `app/(tabs)/chat/[channel]/index.tsx`
-//! `Timeline`, and the list of `thread/[root].tsx`): the room's newest at
-//! the foot, its intro at the top once its history is all here, a day's
-//! separator over its first message ("Today" for the chain's today), "New"
-//! over the first unread one, "Latest" back to the newest; a thread's root
-//! over how many replies it has, then the replies, with no separators. Reads the pane's rows,
-//! the read boundary and the chain's day; scrolling pages older history in
-//! (`Chat::list_scrolled`).
+//! A pane's messages (Expo `chat/[channel]/index.tsx` `Timeline`, `thread/[root].tsx`): the room's
+//! newest at the foot, a day's separator, "New" over the first unread, "Latest"; a thread's root
+//! over its reply count, then its replies. The first row in view pages older in (`listing::edged`).
 use view::list as gpui_list;
 use view::prelude::*;
 
@@ -141,18 +136,19 @@ fn rows(
                 (pane == Pane::Thread && at == 0).then(|| replies(message, &theme, &ladder));
             let set = (at + 1, messages.len());
             let row = message::row(chat, message, pane, set, cx, &theme, &ladder);
-            if marks.is_empty() && count.is_none() {
-                return row;
-            }
-            div()
-                .id(format!("chat-message-{}-marked", message.id))
-                .w_full()
-                .flex()
-                .flex_col()
-                .children(marks)
-                .child(row)
-                .children(count)
-                .into_any_element()
+            let row = match marks.is_empty() && count.is_none() {
+                true => row,
+                false => div()
+                    .id(format!("chat-message-{}-marked", message.id))
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .children(marks)
+                    .child(row)
+                    .children(count)
+                    .into_any_element(),
+            };
+            crate::listing::edged(chat, pane, at, &message.id, row, cx)
         }),
     )
     .with_sizing_behavior(ListSizingBehavior::Auto)

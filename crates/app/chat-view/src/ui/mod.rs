@@ -42,7 +42,7 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> impl IntoElement {
         }
     });
     let placed = cx.listener(|chat, bounds: &Bounds<Pixels>, _window, cx| {
-        chat.layout.pane = Some(bounds.into());
+        chat.layout.placed(bounds.into());
         cx.notify();
     });
     let screen = div()

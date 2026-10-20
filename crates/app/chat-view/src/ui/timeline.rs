@@ -42,10 +42,9 @@ pub fn list(
     }
     let timeline = pane == Pane::Timeline;
     content
-        .when_some(
-            older(chat, cx, theme, ladder).filter(|_| timeline),
-            |el, older| el.child(older),
-        )
+        .when_some(older(chat, theme).filter(|_| timeline), |el, older| {
+            el.child(older)
+        })
         .when(!messages.is_empty(), |el| {
             el.child(
                 div()
@@ -97,39 +96,15 @@ fn nothing_yet(chat: &Chat, pane: Pane, theme: &Theme) -> Option<AnyElement> {
     })
 }
 
-fn older(
-    chat: &Chat,
-    cx: &mut Context<Chat>,
-    theme: &Theme,
-    ladder: &Ladder,
-) -> Option<AnyElement> {
-    let room = chat.room.as_ref().filter(|room| room.has_older)?;
-    let control = if room.older_loading {
-        div()
-            .id("chat-load-older-button")
-            .text_color(theme.muted)
-            .child(words::LOADING_OLDER)
-            .into_any_element()
-    } else {
-        let older = cx.listener(|chat, _: &ClickEvent, _window, cx| {
-            cx.notify();
-            chat.load_older(cx)
-        });
-        super::button(
-            "chat-load-older-button",
-            "Load older messages",
-            ladder,
-            theme,
-            older,
-        )
-        .into_any_element()
-    };
+fn older(chat: &Chat, theme: &Theme) -> Option<AnyElement> {
+    chat.room.as_ref().filter(|room| room.older_loading)?;
     let row = div()
         .id("chat-load-older")
         .flex()
         .justify_center()
         .p_2()
-        .child(control);
+        .text_color(theme.muted)
+        .child(words::LOADING_OLDER);
     Some(row.into_any_element())
 }
 
@@ -275,7 +250,7 @@ fn rows(
             };
             let id = message.id.clone();
             let row = format!("chat-message-{id}-drawn");
-            cx.memo(row, deps, move |chat, _, cx| {
+            let drawn = cx.memo(row, deps, move |chat, _, cx| {
                 row_of(
                     chat,
                     message,
@@ -287,8 +262,8 @@ fn rows(
                     &theme,
                     &ladder,
                 )
-            })
-            .into_any_element()
+            });
+            crate::listing::edged(chat, pane, at, &id, drawn.into_any_element(), cx)
         }),
     )
     .with_sizing_behavior(ListSizingBehavior::Auto)

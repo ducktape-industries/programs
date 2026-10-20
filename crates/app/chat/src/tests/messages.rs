@@ -1,7 +1,7 @@
 //! Messages: posting, threads, editing, deleting, and the reads over them.
 use super::channels::edit;
 use super::*;
-use crate::roots_below;
+use crate::{replies_after, roots_below};
 
 #[test]
 fn posts_land_as_roots_newest_first_and_page_older() {
@@ -27,6 +27,28 @@ fn posts_land_as_roots_newest_first_and_page_older() {
     assert_eq!(seqs(&roots(newest.next).items), [3, 2]);
     assert_eq!(seqs(&roots(Some(roots_below("general", 2))).items), [1]);
     assert_eq!(chat.message(5).author, BO);
+}
+
+#[test]
+fn a_thread_read_past_its_newest_reply_answers_only_the_replies_since() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    chat.post(&ADA, "m1", "question", None);
+    chat.post(&BO, "m2", "answer", Some(1));
+    chat.post(&CY, "m3", "another", Some(1));
+    chat.post(&BO, "m4", "a root", None);
+    chat.post(&ADA, "m5", "and more", Some(1));
+    let Reply::Thread { replies, .. } = chat.ask(Query::Thread {
+        channel_id: "general".into(),
+        root_seq: 1,
+        viewer: vec![],
+        page: PageRequest {
+            after: Some(replies_after("general", 1, 3)),
+            limit: None,
+        },
+    }) else {
+        panic!("a thread answers a thread");
+    };
+    assert_eq!(seqs(&replies.items), [5]);
 }
 
 #[test]

@@ -54,7 +54,7 @@ pub use description::describe;
 pub use gate::message_key;
 pub use message::{Block, ListMarker, Mark, Span, list_item, parse_message};
 pub use program::Chat;
-pub use queries::roots_below;
+pub use queries::{replies_after, roots_below};
 pub use store::{Cursor, PageRequest, PageResponse};
 pub use text::{plain_text, tag_ranges, tags};
 

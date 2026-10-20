@@ -37,6 +37,15 @@ pub fn roots_below(channel_id: &str, seq: u64) -> Vec<u8> {
     })
 }
 
+pub fn replies_after(channel_id: &str, root: u64, seq: u64) -> Vec<u8> {
+    let channel_id = channel_id.to_owned();
+    abi::encode(&store::Cursor {
+        height: 0,
+        scope: REPLIES.key(&(channel_id.clone(), root)),
+        after: REPLIES.key(&(channel_id, root, seq)),
+    })
+}
+
 fn info(ctx: &QueryCtx, channel: ChannelRow) -> Result<ChannelInfo, Error> {
     let head_seq = HEADS.get(ctx, &channel.id)?.unwrap_or(0);
     let meta = CHANNEL_META.get(ctx, &channel.id)?.unwrap_or_default();

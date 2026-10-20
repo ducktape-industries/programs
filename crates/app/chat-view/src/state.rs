@@ -302,8 +302,8 @@ pub struct Drawn {
     pub(crate) list: Option<(Shape, view::ListState)>,
     // the thread's every reply is in: its list follows its end
     pub(crate) whole: bool,
-    // the reader's own post: the list goes to its end at the next frame
     pub(crate) follow: bool,
+    pub(crate) restore: Option<(String, f32)>,
     pub(crate) keys: Vec<String>,
     pub(crate) folded: Option<Folded>,
 }
@@ -361,9 +361,8 @@ pub struct Room {
     // the read of who chose them, until it lands
     #[serde(skip)]
     pub(crate) reading_reactors: Option<view::Task<()>>,
-    // the threads opened in this room this session and closed, by root
     #[serde(skip)]
-    pub(crate) kept_threads: BTreeMap<u64, KeptThread>,
+    pub(crate) kept_thread: Option<KeptThread>,
     // the reads of what blocks wrote still out, and what they read again
     #[serde(skip)]
     pub(crate) reading: usize,
@@ -378,17 +377,16 @@ pub struct Room {
     pub(crate) answering: Loadable<Vec<chat::Draft>>,
 }
 
-// A thread opened this session and closed: its replies, shown at once when
-// it opens again.
 #[derive(Default)]
 pub struct KeptThread {
+    pub(crate) root: u64,
     pub(crate) replies: Vec<MsgRow>,
+    pub(crate) earlier: bool,
     pub(crate) has_more: bool,
     pub(crate) next: Option<Vec<u8>>,
+    pub(crate) anchor: Option<Anchor>,
 }
 
-// A room opened this session and left: what it showed, and what the blocks
-// since wrote to it (`Chat::changed`), read again when it opens.
 #[derive(Default)]
 pub struct Visited {
     pub(crate) rows: Vec<MsgRow>,
@@ -396,8 +394,25 @@ pub struct Visited {
     pub(crate) members: Vec<MemberRow>,
     pub(crate) members_moved: bool,
     pub(crate) reactors: Reactors,
-    pub(crate) threads: BTreeMap<u64, KeptThread>,
+    pub(crate) thread: Option<KeptThread>,
+    pub(crate) thread_open: bool,
+    pub(crate) anchor: Option<Anchor>,
     pub(crate) written: chat::view::Written,
+}
+
+impl Visited {
+    pub(crate) fn landing(&self) -> Option<u64> {
+        let anchor = self.anchor.as_ref()?;
+        let held = self.rows.iter().any(|row| row.message_id == anchor.id);
+        (!held).then_some(anchor.seq)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Anchor {
+    pub(crate) id: String,
+    pub(crate) seq: u64,
+    pub(crate) offset: f32,
 }
 
 // Who chose each reaction, by message seq and emoji.
@@ -413,6 +428,8 @@ pub struct Thread {
     pub(crate) replies: Loadable<Vec<MsgRow>>,
     pub(crate) has_more: bool,
     pub(crate) next: Option<Vec<u8>>,
+    #[serde(skip)]
+    pub(crate) earlier: bool,
     #[serde(skip)]
     pub(crate) more_loading: bool,
     /// the replies read again while the ones on screen stay
@@ -503,6 +520,8 @@ pub struct Layout {
     pub(crate) press: (f32, f32),
     #[serde(default)]
     pub(crate) pane: Option<Place>,
+    #[serde(skip)]
+    pub(crate) tallest: f32,
 }
 
 impl Default for Layout {
@@ -514,6 +533,7 @@ impl Default for Layout {
             thread: 330.,
             press: (0., 0.),
             pane: None,
+            tallest: 0.,
         }
     }
 }
@@ -546,6 +566,11 @@ impl Layout {
             thread,
             ..*self
         }
+    }
+
+    pub(crate) fn placed(&mut self, pane: Place) {
+        self.tallest = self.tallest.max(pane.height);
+        self.pane = Some(pane);
     }
 
     /// A drag's new width, kept inside the pane's own bounds: what the
@@ -585,6 +610,8 @@ pub struct Reads {
     /// The cursors last written to the store.
     #[serde(skip)]
     pub(crate) written: BTreeMap<String, u64>,
+    #[serde(skip)]
+    pub(crate) posted: BTreeMap<String, u64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]

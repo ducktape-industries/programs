@@ -58,6 +58,60 @@ fn a_send_shows_greyed_then_lands_and_a_refusal_is_a_banner() {
     assert!(restored.host().requests::<Ask<::chat::Chat>>().len() >= 2);
 }
 
+#[test]
+fn your_own_post_leaves_the_room_read_when_you_go() {
+    let read = |view: &Entity<Chat>| {
+        view.read(|chat| {
+            let cursor = chat.reads.cursors["general"];
+            (chat.unread(chat.info("general").unwrap()), cursor)
+        })
+    };
+    let (cx, view) = posted_then_left(false);
+    assert_eq!(read(&view), (false, 4));
+    assert!(cx.find("chat-sidebar-channel-general-unread").is_none());
+    let (cx, view) = posted_then_left(true);
+    assert_eq!(read(&view), (true, 4), "one unread: seq 5, another's");
+    assert!(cx.find("chat-sidebar-channel-general-unread").is_some());
+}
+
+fn posted_then_left(others: bool) -> (TestAppContext, Entity<Chat>) {
+    let (mut cx, view) = opened();
+    cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
+    cx.simulate_focus("draft-general/editor");
+    cx.simulate_input("draft-general/editor", "mine");
+    cx.simulate_field_key("draft-general/editor", "enter");
+    cx.run_until_parked();
+    cx.simulate_click("chat-sidebar-dm-8");
+    cx.run_until_parked();
+    view.read(|chat| assert_eq!(chat.room.as_ref().unwrap().id, "dm-7-8"));
+    let head = if others { 5 } else { 4 };
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Channels { .. } => Reply::Channels(page(vec![
+                    channel("general", "General", head),
+                    channel("dm-7-8", "dm", 1),
+                    channel("forge:web:3", "Review web#3", 2),
+                ])),
+                Query::MessagesAround { channel_id, .. } if channel_id == "general" => {
+                    let mine = MsgRow {
+                        message_id: "message-1".into(),
+                        ..row(4, 7, "mine")
+                    };
+                    let theirs = row(5, 8, "theirs");
+                    let rows = [row(3, 7, "hello"), mine, theirs];
+                    Reply::Messages(rows.into_iter().filter(|row| row.seq <= head).collect())
+                }
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(5, posted("general")));
+    cx.run_until_parked();
+    (cx, view)
+}
+
 /// How many timeline rows carry `message_id`.
 fn shown(view: &Entity<Chat>, message_id: &str) -> usize {
     view.read(|chat| {

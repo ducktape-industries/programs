@@ -192,14 +192,13 @@ pub(crate) async fn thread(
     root_seq: u64,
     viewer: Vec<Principal>,
     after: Option<Vec<u8>>,
-    limit: usize,
 ) -> Result<(Vec<MsgRow>, Option<Vec<u8>>), Error> {
     let (_root, replies) = host
         .query(ask::Thread {
             channel_id,
             root_seq,
             viewer,
-            page: page(after, limit),
+            page: PageRequest { after, limit: None },
         })
         .await?;
     Ok((sorted(replies.items), replies.next))
