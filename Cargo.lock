@@ -709,6 +709,7 @@ dependencies = [
  "ducklink",
  "ownership",
  "program",
+ "proptest",
  "serde",
  "store",
  "unicode-normalization",

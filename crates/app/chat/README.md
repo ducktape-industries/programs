@@ -71,6 +71,41 @@ under another thread moves it and starts its text over.
 harness keeps one for each turn of an agent's conversation that answers in a chat place, and
 chat-view draws each at the foot of the list it answers in ("tech is answering…").
 
+## Holding a place
+
+An account about to answer in a place, a channel's foot or one thread (`thread` its root's seq),
+takes it first with `Op::Take { channel_id, thread }`. chat grants it while no one else holds that
+place or has a draft open there (a place is exact: a thread is not its channel's foot, and a draft
+counts only under the thread it answers in). Taking one you already hold is ok, whoever drafts there
+meanwhile; one anyone else holds is refused `wrong_state`, `busy: <who> holds <place>` or `busy:
+<who> is drafting in <place>`. Take is allowed where the sender may post, the rule `Drafting`
+follows. A hold is advisory: it never refuses a post, so people and clients that never take one
+post as before. chat keeps a row per held place (`lease/`, keyed by channel and `Option` root), and
+nothing draws it.
+
+A hold ends on an event, never on a timer, and every end is told to watchers:
+- its holder's post in that place, or its holder's `Op::Release` (letting go of one you do not hold
+  does nothing);
+- `Op::Break { channel_id, thread }`, which ends the place's hold, whoever took it, and takes down
+  every draft open there; whoever may rename the channel may send it (the channel's write policy);
+- an op that takes away the holder's right to post there, in the same op: `SetChannelArchived`
+  archiving the room ends every hold and draft in it, and `SetMembership` unseating someone from a
+  members-only room ends their holds and their draft there. Bringing the room back or seating them
+  again brings nothing back.
+
+`Query::Busy { channel_id, thread, for_account }` answers who else is in the place: its holder
+(`Holding::Lease`), else an open draft there (`Holding::Draft`), by anyone but `for_account`, as a
+`Holder { principal, kind, height }` with the block it began; null when the place is free for
+`for_account`. The height lets a reader see a place held long, and `Break` it.
+
+A program that sends `Op::WatchPlaces { deliver }` hears each time a hold or a draft ends, as
+`deliver ++ borsh(PlaceEvent::Cleared { channel_id, thread })`, once per place: a `Release`, a
+`Break`, an archive or an unseat that ends them, an `Undraft`, a post that ends its author's hold or
+takes down its draft there, and a draft moving to another thread (told for the place it left).
+`PlaceEvent` only grows at its end. An empty `deliver` stops it, and its refusal never fails the op
+that cleared. With no program watching, chat sends nothing. A place told cleared may still be held
+or drafted in by someone else: the watcher reads `Busy` again.
+
 ## Each reader's own lists
 
 An account puts its rooms and folders in its own order with `Op::SetRoomOrder { order }`: a list

@@ -28,6 +28,7 @@ pub mod attributed;
 mod description;
 mod examples;
 mod gate;
+mod leases;
 mod listen;
 mod mentions;
 pub mod message;
@@ -64,9 +65,9 @@ pub use text::{notice_text, plain_text, tag_ranges, tags};
 /// of `program.changes` plays back in a test to say which a block touched.
 pub mod tables {
     pub use crate::state::{
-        ANSWERED, CHANNEL_META, CHANNELS, DRAFT_PIECES, DRAFTS, HEADS, LISTENERS, LISTENING,
-        MEMBERS, MENTIONED, MESSAGE_IDS, MESSAGES, NOTICES, ORDERS, PARTICIPANTS, POSTED,
-        POSTED_IN, REACTIONS, REPLIES, ROOTS,
+        ANSWERED, CHANNEL_META, CHANNELS, DRAFT_PIECES, DRAFTS, HEADS, LEASES, LISTENERS,
+        LISTENING, MEMBERS, MENTIONED, MESSAGE_IDS, MESSAGES, NOTICES, ORDERS, PARTICIPANTS,
+        PLACE_WATCHERS, POSTED, POSTED_IN, REACTIONS, REPLIES, ROOTS,
     };
 }
 
@@ -101,7 +102,7 @@ pub enum Op {
     },
     #[tool_op(description = "Rename a channel. Its owner, or whom the owner lists; never a direct room.", example = examples::rename)]
     RenameChannel { channel_id: String, name: String },
-    #[tool_op(description = "Archive a channel (no one posts there) or bring it back. Its owner, or whom the owner lists; never a direct room.", example = examples::archive)]
+    #[tool_op(description = "Archive a channel (no one posts there) or bring it back. Archiving ends every hold and draft in it. Its owner, or whom the owner lists; never a direct room.", example = examples::archive)]
     SetChannelArchived { channel_id: String, archived: bool },
     /// `thread` names the root this message replies to.
     #[tool_op(description = "Post in a channel, or reply in a thread when thread is its root's seq. message_id is yours to choose, unique across chat, no '/'; a second post with it is refused. blocks are markdown as Paragraph spans with marks (Bold, Italic, Code, Link, Mention), Quote, Code, Divider. Posting needs the room open to you and not archived.", example = examples::post)]
@@ -133,7 +134,7 @@ pub enum Op {
         seq: u64,
         emoji: String,
     },
-    #[tool_op(description = "Seat or unseat a principal in a channel's members. Its owner, or whom the owner lists; never a direct room.", example = examples::seat)]
+    #[tool_op(description = "Seat or unseat a principal in a channel's members. Unseating someone who may then no longer post there ends their holds and draft in it. Its owner, or whom the owner lists; never a direct room.", example = examples::seat)]
     SetMembership {
         channel_id: String,
         principal: Principal,
@@ -236,6 +237,23 @@ pub enum Op {
         message_id: String,
         thread: Option<u64>,
         notice: Notice,
+    },
+    #[tool_op(description = "Hold a place: a channel's foot, or a thread when thread is its root's seq. Granted while no one else holds that exact place or has a draft open there; taking one you already hold is ok, and one anyone else holds is refused busy, naming who. Allowed where you may post. Your post there, Release, Break, an archive of the room or an unseat that takes your posting there ends it, and it never stops anyone posting.", example = examples::take)]
+    Take {
+        channel_id: String,
+        thread: Option<u64>,
+    },
+    #[tool_op(description = "Let go of a place you hold: a channel's foot, or a thread when thread is its root's seq. Letting go of one you do not hold does nothing.", example = examples::release)]
+    Release {
+        channel_id: String,
+        thread: Option<u64>,
+    },
+    #[tool_op(description = "From a program only: be told each time a hold or a draft ends in any place (a Release, a Break, an archive or an unseat that ends them, an Undraft, a post that ends its author's hold or draft there, a draft moving to another thread), each as a message of deliver followed by PlaceEvent::Cleared { channel_id, thread } in borsh. An empty deliver stops it.", example = examples::watch_places)]
+    WatchPlaces { deliver: Vec<u8> },
+    #[tool_op(description = "End whatever holds a place, a channel's foot or a thread when thread is its root's seq: its hold, whoever took it, and every draft open there. Whoever may rename the channel.", example = examples::break_place)]
+    Break {
+        channel_id: String,
+        thread: Option<u64>,
     },
 }
 
@@ -470,6 +488,14 @@ pub enum Query {
         channel_id: Option<String>,
         page: PageRequest,
     },
+    #[ask(Reply::Busy(Option<Holder>))]
+    #[reads(state::LEASES, state::DRAFTS)]
+    #[tool_query(description = "Who else is in a place, a channel's foot or a thread when thread is its root's seq: its holder (Lease, from Take), else an open draft there (Draft), by anyone but for_account, with the block each began; null when the place is free for for_account.", example = examples::busy)]
+    Busy {
+        channel_id: String,
+        thread: Option<u64>,
+        for_account: AccountNumber,
+    },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -505,6 +531,7 @@ pub enum Reply {
     ChosenBy(Vec<AccountChoice>),
     Unread(Vec<UnreadCount>),
     TextHits(PageResponse<MsgRow>),
+    Busy(Option<Holder>),
 }
 
 // One room's count ([`Query::Unread`]): what came after the cursor asked, up to `to`, meant for
@@ -840,6 +867,48 @@ pub struct Draft {
     pub text: String,
 }
 
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+pub struct Holder {
+    pub principal: Principal,
+    pub kind: Holding,
+    pub height: u64,
+}
+
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+)]
+pub enum Holding {
+    Lease,
+    Draft,
+}
+
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
+pub enum PlaceEvent {
+    Cleared {
+        channel_id: String,
+        thread: Option<u64>,
+    },
+}
+
 /// The room two accounts share: `dm-<lower>-<higher>`.
 pub fn dm_channel_id(a: AccountNumber, b: AccountNumber) -> String {
     format!("dm-{}-{}", a.min(b), a.max(b))
@@ -915,6 +984,10 @@ fn op_variants_only_append() {
             "Post",
             "ChooseForMany",
             "Notify",
+            "Take",
+            "Release",
+            "WatchPlaces",
+            "Break",
         ]
     );
 }

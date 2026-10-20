@@ -410,3 +410,36 @@ pub(crate) fn notify() -> Op {
         },
     }
 }
+
+pub(crate) fn take() -> Op {
+    Op::Take {
+        channel_id: room(),
+        thread: Some(4),
+    }
+}
+
+pub(crate) fn release() -> Op {
+    Op::Release {
+        channel_id: room(),
+        thread: Some(4),
+    }
+}
+
+pub(crate) fn watch_places() -> Op {
+    Op::WatchPlaces { deliver: vec![0] }
+}
+
+pub(crate) fn busy() -> Query {
+    Query::Busy {
+        channel_id: room(),
+        thread: Some(4),
+        for_account: 21,
+    }
+}
+
+pub(crate) fn break_place() -> Op {
+    Op::Break {
+        channel_id: room(),
+        thread: Some(4),
+    }
+}

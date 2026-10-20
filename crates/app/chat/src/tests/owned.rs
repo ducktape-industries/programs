@@ -75,6 +75,10 @@ fn reshapes(n: u64) -> Vec<Op> {
             channel_id: channel_id(),
             archived: false,
         },
+        Op::Break {
+            channel_id: channel_id(),
+            thread: None,
+        },
     ]
 }
 

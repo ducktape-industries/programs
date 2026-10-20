@@ -266,6 +266,19 @@ pub fn describe(op: &Op) -> Description {
                 .push(field("for", Value::List(concerns.collect())));
             return described;
         }
+        Op::Take { channel_id, thread } => ("Hold place", channel_id, vec![under(*thread)]),
+        Op::Release { channel_id, thread } => ("Let go of place", channel_id, vec![under(*thread)]),
+        Op::Break { channel_id, thread } => ("Clear place", channel_id, vec![under(*thread)]),
+        Op::WatchPlaces { deliver } => {
+            let title = match deliver.is_empty() {
+                true => "Stop hearing when places clear",
+                false => "Hear when places clear",
+            };
+            return Description {
+                title: title.into(),
+                fields: Vec::new(),
+            };
+        }
     };
     let mut all = channel_description_fields(channel);
     all.extend(fields);
@@ -344,4 +357,9 @@ fn principal_description(principal: &Principal) -> Value {
         Principal::Account(number) => Value::Account(*number),
         Principal::Root => Value::text("system"),
     }
+}
+
+fn under(thread: Option<u64>) -> Field {
+    let root = thread.map_or_else(|| "—".into(), |root| root.to_string());
+    field("thread", Value::Text(root))
 }

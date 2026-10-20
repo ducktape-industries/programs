@@ -1,7 +1,6 @@
-//! How a typed key becomes bytes, so byte order is value order: integers
-//! big-endian and fixed width, bytes and strings NUL-escaped and
-//! NUL-terminated, tuples concatenated (a prefix scan on the leading
-//! elements works), fixed arrays as they are.
+//! How a typed key becomes bytes, so byte order is value order: integers big-endian and fixed
+//! width, bytes and strings NUL-escaped and NUL-terminated, an option a 0 or a 1 then its value,
+//! tuples concatenated (a prefix scan on the leading elements works), fixed arrays as they are.
 
 pub trait KeyCodec: Sized {
     fn encode_key(&self, out: &mut Vec<u8>);
@@ -113,6 +112,25 @@ impl KeyCodec for program::Principal {
     }
 }
 
+impl<T: KeyCodec> KeyCodec for Option<T> {
+    fn encode_key(&self, out: &mut Vec<u8>) {
+        match self {
+            None => out.push(0),
+            Some(value) => {
+                out.push(1);
+                value.encode_key(out);
+            }
+        }
+    }
+    fn decode_key(bytes: &mut &[u8]) -> Option<Self> {
+        match take(bytes, 1)? {
+            [0] => Some(None),
+            [1] => T::decode_key(bytes).map(Some),
+            _ => None,
+        }
+    }
+}
+
 impl KeyCodec for () {
     fn encode_key(&self, _out: &mut Vec<u8>) {}
     fn decode_key(_bytes: &mut &[u8]) -> Option<Self> {
@@ -166,6 +184,17 @@ mod tests {
             None,
             "not utf-8"
         );
+    }
+
+    #[test]
+    fn an_option_sorts_none_first_then_by_its_value() {
+        let keys = [None, Some(0u64), Some(1), Some(u64::MAX)].map(round_trip);
+        assert!(keys.is_sorted());
+        let scoped = [(7u64, None), (7, Some(2u64)), (8, None)].map(round_trip);
+        assert!(scoped.is_sorted());
+        assert!(scoped[1].starts_with(&7u64.key_bytes()));
+        assert_eq!(Option::<u64>::decode_key(&mut &[2u8][..]), None);
+        assert_eq!(Option::<u64>::decode_key(&mut &[1u8, 0][..]), None);
     }
 
     #[test]

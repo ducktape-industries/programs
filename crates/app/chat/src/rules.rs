@@ -116,7 +116,7 @@ pub(crate) fn notice(ctx: &QueryCtx, notice: &Notice) -> Result<(), Error> {
     Ok(())
 }
 
-fn handle(principal: &Principal) -> String {
+pub(crate) fn handle(principal: &Principal) -> String {
     match principal {
         Principal::Account(account) => format!("acct:{account}"),
         Principal::Root => "system".to_string(),

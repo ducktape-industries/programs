@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use ::program::Range;
-use ::program::{Error, ExecCtx, QueryCtx, not_found};
+use ::program::{Error, ExecCtx, ProgramId, QueryCtx, not_found};
 use borsh::{BorshDeserialize, BorshSerialize};
 use store::{Kind, Map, Owned, Set};
 
@@ -68,6 +68,8 @@ pub const WATCHING: Set<(AccountNumber, ChannelId)> = Set::new("watching/");
 pub const DRAFTS: Map<(ChannelId, Principal), Drafted> = Map::new("draft/");
 // a draft's text, a row per piece, folded on read: a growing draft adds a row, never rewrites one
 pub const DRAFT_PIECES: Map<(ChannelId, Principal, u64), String> = Map::new("draft-piece/");
+pub const LEASES: Map<(ChannelId, Option<Seq>), Lease> = Map::new("lease/");
+pub const PLACE_WATCHERS: Map<ProgramId, Vec<u8>> = Map::new("place-watcher/");
 
 // A message as chat keeps it: the [`MsgRow`] a read answers, less what a
 // read derives (its flat text and `#tags`, from `blocks`; whether the
@@ -244,4 +246,10 @@ pub struct Drafted {
     pub(crate) time: u64,
     pub(crate) doing: String,
     pub(crate) pieces: u64,
+}
+
+#[derive(BorshSerialize, BorshDeserialize)]
+pub struct Lease {
+    pub(crate) holder: Principal,
+    pub(crate) height: u64,
 }

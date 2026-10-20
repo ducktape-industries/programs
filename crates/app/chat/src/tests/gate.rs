@@ -79,6 +79,13 @@ fn edit(seq: u64) -> Op {
     }
 }
 
+fn clear() -> Op {
+    Op::Break {
+        channel_id: "general".into(),
+        thread: None,
+    }
+}
+
 fn delete(seq: u64) -> Op {
     Op::DeleteMessage {
         channel_id: "general".into(),
@@ -123,18 +130,18 @@ fn a_channel_is_its_openers_to_rename_archive_and_seat_until_it_lists_others() {
 }
 
 #[test]
-fn a_channels_meta_is_set_and_removed_by_whoever_may_rename_it() {
+fn a_channels_meta_is_set_and_removed_and_its_places_cleared_by_whoever_may_rename_it() {
     let chain = chain();
     let unauthorized = Err(code::UNAUTHORIZED.to_owned());
-    for op in [rename("mine"), set_meta("Jobs"), remove_meta()] {
+    for op in [rename("mine"), set_meta("Jobs"), remove_meta(), clear()] {
         assert_eq!(run(&chain, BO, &op), unauthorized, "{op:?}");
     }
-    for op in [rename("General"), set_meta("Jobs"), remove_meta()] {
+    for op in [rename("General"), set_meta("Jobs"), remove_meta(), clear()] {
         run(&chain, ADA, &op).unwrap();
     }
     let bo = Ownership::Listed(vec![Party::Account(2)]);
     list(&chain, ADA, "general".into(), bo).unwrap();
-    for op in [rename("Bo's"), set_meta("Teams"), remove_meta()] {
+    for op in [rename("Bo's"), set_meta("Teams"), remove_meta(), clear()] {
         run(&chain, BO, &op).unwrap();
         assert_eq!(run(&chain, CY, &op), unauthorized, "{op:?}");
     }

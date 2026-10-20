@@ -95,10 +95,13 @@ pub(crate) fn set_archived(ctx: &ExecCtx, id: &str, archived: bool) -> Result<()
     rules::not_dm(&channel)?;
     channel.archived = archived;
     CHANNELS.put(ctx, &channel.id, &channel);
-    Ok(())
+    match archived {
+        true => crate::leases::vacate(ctx, id, None),
+        false => Ok(()),
+    }
 }
 
-fn touch_channel_for_policy(ctx: &ExecCtx, channel: &ChannelRow) {
+pub(crate) fn touch_channel_for_policy(ctx: &ExecCtx, channel: &ChannelRow) {
     CHANNELS.put(ctx, &channel.id, channel);
 }
 
@@ -147,10 +150,14 @@ pub(crate) fn set_membership(
     touch_channel_for_policy(ctx, &channel);
     if member {
         seat(ctx, id, principal);
-    } else {
-        MEMBERS.remove(ctx, &(id.to_owned(), principal));
+        return Ok(());
     }
-    Ok(())
+    MEMBERS.remove(ctx, &(id.to_owned(), principal.clone()));
+    let still_posts = rules::writable(ctx, &channel, &principal).is_ok();
+    match still_posts {
+        true => Ok(()),
+        false => crate::leases::vacate(ctx, id, Some(&principal)),
+    }
 }
 
 fn seat(ctx: &ExecCtx, id: &str, principal: Principal) {
@@ -224,7 +231,8 @@ fn write(
     report(ctx, sender, None, &row)?;
     MESSAGE_IDS.put(ctx, &message_id, &(channel_id.clone(), seq));
     HEADS.put(ctx, &channel_id, &seq);
-    undraft(ctx, sender, &channel_id)
+    undraft(ctx, sender, &channel_id)?;
+    crate::leases::release(ctx, sender, &channel_id, thread)
 }
 
 fn answer(
@@ -397,6 +405,10 @@ pub(crate) fn drafting(
     {
         return Err(invalid("a draft answers under a thread's root"));
     }
+    let left = (held.as_ref().map(|held| held.thread)).filter(|left| *left != thread);
+    if let Some(left) = left {
+        crate::leases::cleared(ctx, channel_id, left)?;
+    }
     let mut draft = held.unwrap_or(Drafted {
         thread,
         height: ctx.env().height,
@@ -429,10 +441,10 @@ pub(crate) fn undraft(ctx: &ExecCtx, sender: &Principal, channel_id: &str) -> Re
     };
     drop_pieces(ctx, &key, draft.pieces);
     DRAFTS.remove(ctx, &key);
-    Ok(())
+    crate::leases::cleared(ctx, channel_id, draft.thread)
 }
 
-fn drop_pieces(ctx: &ExecCtx, (channel_id, author): &(String, Principal), pieces: u64) {
+pub(crate) fn drop_pieces(ctx: &ExecCtx, (channel_id, author): &(String, Principal), pieces: u64) {
     for piece in 0..pieces {
         DRAFT_PIECES.remove(ctx, &(channel_id.clone(), author.clone(), piece));
     }

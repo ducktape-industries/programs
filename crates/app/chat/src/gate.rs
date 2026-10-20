@@ -16,7 +16,8 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::SetChannelArchived { channel_id, .. }
         | Op::SetMembership { channel_id, .. }
         | Op::SetChannelMeta { channel_id, .. }
-        | Op::RemoveChannelMeta { channel_id, .. } => vec![Need::write(channel_id.clone())],
+        | Op::RemoveChannelMeta { channel_id, .. }
+        | Op::Break { channel_id, .. } => vec![Need::write(channel_id.clone())],
         Op::EditMessage {
             channel_id, seq, ..
         } => vec![Need::write(message_key(channel_id, *seq))],
@@ -40,7 +41,10 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::Undraft { .. }
         | Op::SetRoomOrder { .. }
         | Op::ChooseForMany { .. }
-        | Op::Notify { .. } => Vec::new(),
+        | Op::Notify { .. }
+        | Op::Take { .. }
+        | Op::Release { .. }
+        | Op::WatchPlaces { .. } => Vec::new(),
     }
 }
 

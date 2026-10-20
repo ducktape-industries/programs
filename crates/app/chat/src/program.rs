@@ -150,6 +150,16 @@ impl Program for Chat {
                 thread,
                 notice,
             } => crate::ops::notify(ctx, &sender, channel_id, message_id, thread, notice),
+            Op::Take { channel_id, thread } => {
+                crate::leases::take(ctx, &sender, &channel_id, thread)
+            }
+            Op::Release { channel_id, thread } => {
+                crate::leases::release(ctx, &sender, &channel_id, thread)
+            }
+            Op::WatchPlaces { deliver } => crate::leases::watch_places(ctx, deliver),
+            Op::Break { channel_id, thread } => {
+                crate::leases::break_place(ctx, &channel_id, thread)
+            }
         }
     }
 
@@ -278,6 +288,15 @@ impl Program for Chat {
                 Reply::TextHits(text_search(ctx, &text, channel_id, &page)?),
                 viewer,
             ),
+            Query::Busy {
+                channel_id,
+                thread,
+                for_account,
+            } => {
+                let me = crate::Principal::Account(for_account);
+                let holder = crate::leases::busy(ctx, &channel_id, thread, &me)?;
+                (Reply::Busy(holder), vec![])
+            }
         };
         seen_by(ctx, reply, viewer)
     }

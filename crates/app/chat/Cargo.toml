@@ -32,4 +32,5 @@ unicode-normalization = { workspace = true }
 
 [dev-dependencies]
 access = { workspace = true }
+proptest = { version = "=1.11.0", default-features = false, features = ["std"] }
 store = { workspace = true }

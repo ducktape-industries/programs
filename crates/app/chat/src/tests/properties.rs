@@ -123,3 +123,42 @@ fn in_step(chat: &Chat, seed: u64) {
     let shipped = newest_first(&|row| row.tags.iter().any(|tag| tag == "ship"));
     assert_eq!(tagged(chat, "ship"), shipped, "seed {seed}: #ship");
 }
+
+#[test]
+fn todays_ops_write_no_hold_and_tell_only_attribution() {
+    for seed in 1..=24 {
+        let mut rng = Rng(seed);
+        let mut chat = Chat::with_channel(PostPolicy::Open);
+        chat.post(&ADA, "root", "root", None);
+        for step in 0..80 {
+            let thread = *rng.pick(&[None, Some(1)]);
+            let op = match rng.below(4) {
+                0 => post("general", &format!("m{step}"), "hi <@2>", thread),
+                1 => Op::Drafting {
+                    channel_id: "general".into(),
+                    thread,
+                    text: "x".into(),
+                    anew: rng.below(2) == 0,
+                    doing: None,
+                },
+                2 => Op::Undraft {
+                    channel_id: "general".into(),
+                },
+                _ => react(1, "👍", rng.below(2) == 0),
+            };
+            let who = rng.pick(&[ADA, BO, CY]).clone();
+            let _ = chat.run(&who, op);
+            for told in chat.store.take_emissions() {
+                assert_eq!(
+                    told.target,
+                    attribution::PROGRAM,
+                    "seed {seed}: step {step} told another program"
+                );
+            }
+        }
+        let host = chat.store.borrow();
+        let held = (host.state.keys())
+            .find(|key| key.starts_with(b"lease/") || key.starts_with(b"place-watcher/"));
+        assert_eq!(held, None, "seed {seed}: today's ops wrote a hold");
+    }
+}
