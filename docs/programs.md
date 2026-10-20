@@ -451,12 +451,16 @@ A program whose items nest need not claim each one. files keeps a
 `guarded/<path>` row only where a path's owner guards it (`Guard`), and each
 write rewrites the nearest one at or above the path it touches, so that row's
 policy decides the write and everything beneath it; with no row above, anyone
-writes. A file created beneath a chat message claims its own row, so it is its
-uploader's as their message is. A program that moves an owned row to another
+writes. A file or link put over a folder replaces it, so it answers to every
+guard beneath it as a Remove does, and those guards go with it. A file created
+beneath a chat message claims its own row, so it is its uploader's as their
+message is. A program that moves an owned row to another
 key (a renamed path) writes the new key unclaimed, sends the ownership role
 `Moved { from_key, to_key }` in its own message, as its own account, which
 moves the record with its owner and policy, and then deletes the old key
-(files' own `Vacate`), which no record guards any more.
+(files' own `Vacate`), which no record guards any more. The records move only
+once the run ends, so files refuses a move that carries guards beside any other
+change in the same commit.
 
 Rows a program kept before the ownership role was seated have no record, and
 the guard leaves a key with no record alone. Each program that owns kinds has

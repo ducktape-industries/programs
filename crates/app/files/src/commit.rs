@@ -77,6 +77,7 @@ pub(crate) fn commit(
     let head = HEAD.get(ctx)?;
     let head_root = head.as_ref().map(|row| row.root);
     let steps = plan(ctx, changes)?;
+    let alone = steps.len() == 1;
     let by = author.account();
     let mut edit = TreeEdit::over(head_root);
     for step in steps {
@@ -84,7 +85,7 @@ pub(crate) fn commit(
             step.paths().into_iter().try_for_each(beneath_the_roots)?;
         }
         unchanged_since_base(ctx, base_root, head_root, &step.paths())?;
-        apply(ctx, by, &mut edit, step)?;
+        apply(ctx, by, alone, &mut edit, step)?;
     }
     let (root, _) = edit.build(ctx)?;
     let snapshot = SnapshotObj {
@@ -208,18 +209,25 @@ fn unchanged_since_base(
 fn apply(
     ctx: &ExecCtx,
     by: Option<AccountNumber>,
+    alone: bool,
     edit: &mut TreeEdit,
     step: Step,
 ) -> Result<(), Error> {
     match &step {
-        Step::Put { segments, .. } | Step::Mkdir(segments) | Step::Symlink { segments, .. } => {
+        Step::Put { segments, .. } | Step::Symlink { segments, .. } => {
+            crate::guards::replace(ctx, segments)?;
+            if by.is_some() {
+                crate::guards::claim_carried(ctx, segments)?;
+            }
+        }
+        Step::Mkdir(segments) => {
             crate::guards::touch(ctx, segments)?;
             if by.is_some() {
                 crate::guards::claim_carried(ctx, segments)?;
             }
         }
         Step::Remove(segments) => crate::guards::remove(ctx, segments)?,
-        Step::Rename { from, to } => crate::guards::rename(ctx, from, to)?,
+        Step::Rename { from, to } => crate::guards::rename(ctx, from, to, alone)?,
     }
     match step {
         Step::Put {

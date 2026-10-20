@@ -295,3 +295,66 @@ fn adoption_guards_each_listed_path_and_chat_attachment_as_before() {
     assert_eq!(abi::decode::<Option<Vec<u8>>>(&again).unwrap(), None);
     assert_eq!(policy_name(&chain, "/docs/a"), ownership::AS_BEFORE);
 }
+
+#[test]
+fn a_file_or_link_put_over_a_guarded_folder_answers_to_every_guard_beneath_it() {
+    let chain = chain();
+    write(&chain, ADA, "/docs/a").unwrap();
+    guard(&chain, ADA, "/docs/a").unwrap();
+    only_me(&chain, ADA, "/docs/a");
+    assert_eq!(
+        write(&chain, BO, "/docs"),
+        Err(code::UNAUTHORIZED.to_string()),
+        "a file over /docs would drop ada's guarded /docs/a"
+    );
+    let linked = Change::Symlink {
+        path: "/docs".into(),
+        target: "/elsewhere".into(),
+    };
+    assert_eq!(
+        commit(&chain, BO, vec![linked]),
+        Err(code::UNAUTHORIZED.to_string())
+    );
+    assert_eq!(guarded(&chain, "/docs/a"), Some("/docs/a".into()));
+    assert_eq!(
+        write(&chain, ADA, "/docs"),
+        Ok(()),
+        "its owner may replace it"
+    );
+    assert_eq!(
+        guarded(&chain, "/docs/a"),
+        None,
+        "the guard went with what it guarded"
+    );
+}
+
+#[test]
+fn a_move_that_carries_guards_goes_in_a_commit_of_its_own() {
+    let chain = chain();
+    write(&chain, ADA, "/docs/a").unwrap();
+    guard(&chain, ADA, "/docs/a").unwrap();
+    only_me(&chain, ADA, "/docs/a");
+    let moved = || Change::Move {
+        from: "/docs".into(),
+        to: "/kept".into(),
+    };
+    let chunk = chain.put_blob(CHUNK, ADA.to_vec()).unwrap();
+    let written = Change::Put {
+        path: "/kept/b".into(),
+        exec: false,
+        meta: BTreeMap::new(),
+        content: Content::Chunks {
+            size: ADA.len() as u64,
+            chunks: vec![chunk],
+        },
+    };
+    assert_eq!(
+        commit(&chain, ADA, vec![moved(), written]),
+        Err(code::WRONG_STATE.to_string()),
+        "the guards' records move only once the commit ends"
+    );
+    assert_eq!(guarded(&chain, "/docs/a"), Some("/docs/a".into()));
+    assert_eq!(commit(&chain, ADA, vec![moved()]), Ok(()));
+    assert_eq!(guarded(&chain, "/kept/a"), Some("/kept/a".into()));
+    assert!(record(&chain, "/kept/a").is_some());
+}

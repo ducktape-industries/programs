@@ -60,6 +60,17 @@ pub(crate) fn claim_carried(ctx: &ExecCtx, segments: &[String]) -> Result<(), Er
     Ok(())
 }
 
+pub(crate) fn replace(ctx: &ExecCtx, segments: &[String]) -> Result<(), Error> {
+    touch(ctx, segments)?;
+    let path = join(segments);
+    for (beneath, _) in at_or_beneath(ctx, segments)? {
+        if beneath != path {
+            GUARDED.remove(ctx, &beneath);
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn remove(ctx: &ExecCtx, segments: &[String]) -> Result<(), Error> {
     touch(ctx, segments)?;
     for (path, _) in at_or_beneath(ctx, segments)? {
@@ -68,7 +79,12 @@ pub(crate) fn remove(ctx: &ExecCtx, segments: &[String]) -> Result<(), Error> {
     Ok(())
 }
 
-pub(crate) fn rename(ctx: &ExecCtx, from: &[String], to: &[String]) -> Result<(), Error> {
+pub(crate) fn rename(
+    ctx: &ExecCtx,
+    from: &[String],
+    to: &[String],
+    alone: bool,
+) -> Result<(), Error> {
     if let Some((path, _)) = at_or_beneath(ctx, to)?.into_iter().next() {
         return Err(wrong_state(format!(
             "{path} keeps a guard of its own: Unguard it before moving a path there"
@@ -81,6 +97,12 @@ pub(crate) fn rename(ctx: &ExecCtx, from: &[String], to: &[String]) -> Result<()
         return Ok(());
     }
     let (old, new) = (join(from), join(to));
+    if !alone {
+        return Err(wrong_state(format!(
+            "{old} keeps guards beneath it, whose owners and policies move only once this commit \
+             ends: move it in a commit of its own, then write there"
+        )));
+    }
     let ownership = ctx.env().role(abi::role::OWNERSHIP).ok().cloned();
     let mut vacated = Vec::with_capacity(moved.len());
     for (path, row) in moved {
