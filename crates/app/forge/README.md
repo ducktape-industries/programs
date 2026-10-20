@@ -419,6 +419,23 @@ the room's name from chat and renames it (`RenameChannel`, its answer absorbed) 
 differs: a room named before this, or a change whose title was edited, takes the name at its
 next notice.
 
+### Watchers
+
+A program that sends `Watch { deliver }` (a program only: `sending_program`) hears each
+event below as a message of its own, `deliver ++ borsh(Watched)`, sent with
+`Reply::Wanted`: forge absorbs the answer, so a watcher's refusal never fails forge's
+write. An empty `deliver` stops it. Each event names who acted.
+
+| `Watched` | when |
+|---|---|
+| `Moved { reference, old, new, by }` | a push, a merge or a squash moved a ref (`old` or `new` None where it was made or deleted) |
+| `Opened { n, from, into, head, by }` | `ChangeOpen` |
+| `Previewed { n, merge, by }` | a `Preview` made a new commit |
+| `Closed { n, by }` | `ChangeClose` |
+| `Merged { n, oid, by }` | a merge naming the change |
+| `Reviewed { n, id, verdict, by }` | `ReviewSubmit` |
+| `LeftQueue { n, into, why, queued_by }` | forge took the change out of a merge queue for the reason it names (its head moved, it no longer previews, a required check went red); `queued_by` queued it |
+
 ### A job's room
 
 `ChangeOpen` from a branch whose name under `refs/heads/` starts with a `j-<digits>/`

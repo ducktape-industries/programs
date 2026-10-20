@@ -499,7 +499,10 @@ pub(crate) fn forged(ctx: &ExecCtx, event: forge::Watched) -> Result<(), Error> 
             };
             fire(ctx, key, fired)
         }
-        forge::Watched::Opened { .. } | forge::Watched::Previewed { .. } => Ok(()),
+        forge::Watched::Opened { .. }
+        | forge::Watched::Previewed { .. }
+        | forge::Watched::Reviewed { .. }
+        | forge::Watched::LeftQueue { .. } => Ok(()),
         forge::Watched::Closed { repo, n, by } => {
             let how = format!("was closed by {}", who(Some(&by)));
             ended_change(ctx, repo, n, how, Until::Closed)

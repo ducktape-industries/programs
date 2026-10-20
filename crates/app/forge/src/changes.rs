@@ -208,6 +208,14 @@ pub(crate) fn submit_review(
         verdict: review.draft.verdict,
     };
     discussion::post(ctx, repo, &change, message, reviewed, Some(actor))?;
+    let told = Watched::Reviewed {
+        repo: repo.to_owned(),
+        n,
+        id,
+        verdict: review.draft.verdict,
+        by: actor.clone(),
+    };
+    crate::watchers::tell(ctx, &told)?;
     Ok(OpReply::Review {
         height: env.height,
         n,

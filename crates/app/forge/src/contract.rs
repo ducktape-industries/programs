@@ -161,9 +161,7 @@ pub enum Op {
         branch: Vec<u8>,
         protected: bool,
     },
-    // A program hears of every ref forge moves and every change it opens, each as
-    // `deliver ++ borsh(Watched)`; an empty `deliver` stops it.
-    #[tool_op(description = "From a program only: be told of every ref forge moves and every change it opens, each as deliver followed by the borsh of what happened. An empty deliver stops it.", example = crate::examples::watch)]
+    #[tool_op(description = "From a program only: be told of every ref forge moves and every change it opens, reviews, closes, merges or takes out of a merge queue, each as deliver followed by the borsh of what happened. An empty deliver stops it.", example = crate::examples::watch)]
     Watch { deliver: Vec<u8> },
     // Archives the channels of `repo`'s merged and closed changes numbered above `after`,
     // `limit` numbers of them, that chat still shows unarchived; open to anyone.
@@ -952,8 +950,6 @@ pub enum OpReply {
     },
 }
 
-// What a watcher hears (`Op::Watch`): a ref a push, a merge or a squash moved, `old` or `new`
-// None where it was made or deleted, and a change opened, closed or merged; each names who did it.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum Watched {
     Moved {
@@ -988,6 +984,20 @@ pub enum Watched {
         n: u64,
         oid: String,
         by: Principal,
+    },
+    Reviewed {
+        repo: String,
+        n: u64,
+        id: u64,
+        verdict: Verdict,
+        by: Principal,
+    },
+    LeftQueue {
+        repo: String,
+        n: u64,
+        into: Vec<u8>,
+        why: String,
+        queued_by: Principal,
     },
 }
 

@@ -93,3 +93,19 @@ fn op_variants_only_append() {
         ]
     );
 }
+
+#[test]
+fn watched_variants_only_append() {
+    assert_eq!(
+        describe::variants::<Watched>(),
+        [
+            "Moved",
+            "Opened",
+            "Previewed",
+            "Closed",
+            "Merged",
+            "Reviewed",
+            "LeftQueue",
+        ]
+    );
+}

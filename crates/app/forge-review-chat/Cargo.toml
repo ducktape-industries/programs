@@ -1,0 +1,24 @@
+[package]
+name = "forge-review-chat"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+program = []
+describe = []
+
+[dependencies]
+borsh = { workspace = true }
+chat = { workspace = true }
+describe = { workspace = true }
+forge = { workspace = true }
+program = { workspace = true }
+store = { workspace = true }
+
+[dev-dependencies]
+abi = { workspace = true }
+access = { workspace = true }
+ownership = { workspace = true }

@@ -335,6 +335,13 @@ pub fn describe(op: &Op) -> describe::Description {
         Op::Watched(forge::Watched::Previewed { repo, n, .. }) => {
             (format!("Hear change {repo}#{n} previewed"), Vec::new())
         }
+        Op::Watched(forge::Watched::Reviewed { repo, n, .. }) => {
+            (format!("Hear change {repo}#{n} reviewed"), Vec::new())
+        }
+        Op::Watched(forge::Watched::LeftQueue { repo, n, .. }) => (
+            format!("Hear change {repo}#{n} leave its merge queue"),
+            Vec::new(),
+        ),
         Op::Trigger { repo, commit } => (
             format!("Run the workflows of {repo}"),
             vec![field("commit", Value::text(commit))],

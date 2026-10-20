@@ -2255,6 +2255,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-review-chat"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "access",
+ "borsh",
+ "chat",
+ "describe",
+ "forge",
+ "ownership",
+ "program",
+ "store",
+]
+
+[[package]]
 name = "forge-view"
 version = "0.1.0"
 dependencies = [
@@ -2306,6 +2321,7 @@ dependencies = [
  "files",
  "fleet",
  "forge",
+ "forge-review-chat",
  "halo",
  "harness",
  "identity",

@@ -76,6 +76,7 @@ members = [
     "crates/app/actions",
     "crates/app/actions-pods",
     "crates/app/fleet",
+    "crates/app/forge-review-chat",
     "crates/app/wake",
     "crates/lib/gitcore",
     "crates/lib/borsh-json",
@@ -121,6 +122,7 @@ forge = { path = "crates/app/forge" }
 actions-pods = { path = "crates/app/actions-pods" }
 actions = { path = "crates/app/actions" }
 fleet = { path = "crates/app/fleet" }
+forge-review-chat = { path = "crates/app/forge-review-chat" }
 wake = { path = "crates/app/wake" }
 attribution = { path = "crates/app/attribution" }
 harness = { path = "crates/app/harness" }

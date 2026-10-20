@@ -88,6 +88,7 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             supersede_earlier_runs(ctx, &repo, preview_ref(n).as_bytes(), &why)?;
             start_matching_workflows(ctx, &started(&repo, &merge, Event::Preview { n }, Some(by)))
         }
+        Watched::Reviewed { .. } | Watched::LeftQueue { .. } => Ok(()),
     }
 }
 

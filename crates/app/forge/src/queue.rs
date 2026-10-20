@@ -176,7 +176,15 @@ fn left(
     };
     let env = ctx.env();
     let message = next_message(ctx)?;
-    crate::discussion::post(ctx, repo, &change, message, event, env.sender.as_ref())
+    crate::discussion::post(ctx, repo, &change, message, event, env.sender.as_ref())?;
+    let told = crate::contract::Watched::LeftQueue {
+        repo: repo.to_owned(),
+        n: entry.n,
+        into: into.to_vec(),
+        why: why.to_owned(),
+        queued_by: entry.by.clone(),
+    };
+    crate::watchers::tell(ctx, &told)
 }
 
 pub(crate) fn queue(

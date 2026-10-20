@@ -28,6 +28,7 @@ harness = { workspace = true }
 actions-pods = { workspace = true }
 actions = { workspace = true }
 fleet = { workspace = true }
+forge-review-chat = { workspace = true }
 wake = { workspace = true }
 wasm-encoder = "0.251"
 wasmparser = "0.251"
