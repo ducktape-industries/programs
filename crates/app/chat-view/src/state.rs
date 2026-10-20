@@ -389,6 +389,8 @@ pub struct Room {
     pub(crate) reading: usize,
     #[serde(skip)]
     pub(crate) unsettled: chat::view::Written,
+    #[serde(skip)]
+    pub(crate) unread: chat::view::Written,
     // the whole window read again, until it lands
     #[serde(skip)]
     pub(crate) rereading_all: bool,

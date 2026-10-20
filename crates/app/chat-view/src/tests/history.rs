@@ -296,6 +296,79 @@ fn more_replies_out_when_the_room_is_left_land_in_no_other_rooms_thread() {
     assert_eq!(a_page_out_when_the_room_is_left(false), (0, true));
 }
 
+fn refusing_rows(cx: &mut TestAppContext) -> Rc<Cell<bool>> {
+    let refusing = Rc::new(Cell::new(true));
+    let refuses = refusing.clone();
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| match query {
+            Query::MessagesAround { .. } if refuses.get() => {
+                Err(view::host::Error::new("node_failed", "the node went away"))
+            }
+            query => Ok(chat_reply(query)),
+        }));
+    refusing
+}
+
+fn asked_row(cx: &TestAppContext, seq: u64) -> usize {
+    let asks = cx.host().requests::<Ask<::chat::Chat>>();
+    let covers = |query: &&Query| match query {
+        Query::MessagesAround {
+            channel_id,
+            seq: at,
+            page,
+            ..
+        } if channel_id == "general" => (*at..*at + page.limit.unwrap_or(1)).contains(&seq),
+        _ => false,
+    };
+    asks.iter().filter(covers).count()
+}
+
+fn a_refused_catch_up_read(cx: &mut TestAppContext) -> (Rc<Cell<bool>>, usize) {
+    let changes = cx.host().stream::<Changes<::chat::Chat>>();
+    let refusing = refusing_rows(cx);
+    let edited = chat::tables::MESSAGES.key(&("general".to_owned(), 2u64));
+    changes.send(block(4, vec![edited]));
+    cx.run_until_parked();
+    let refused = asked_row(cx, 2);
+    assert!(refused > 0, "the row the block wrote was asked");
+    (refusing, refused)
+}
+
+#[test]
+fn a_refused_catch_up_read_is_read_again_by_the_next_block_that_writes_the_room() {
+    let (mut cx, _view) = opened();
+    let (refusing, refused) = a_refused_catch_up_read(&mut cx);
+    refusing.set(false);
+    let changes = cx.host().stream::<Changes<::chat::Chat>>();
+    let elsewhere = chat::tables::MESSAGES.key(&("dm-7-8".to_owned(), 1u64));
+    changes.send(block(5, vec![elsewhere]));
+    cx.run_until_parked();
+    assert_eq!(asked_row(&cx, 2), refused, "a block elsewhere asks nothing");
+    let here = chat::tables::MESSAGES.key(&("general".to_owned(), 1u64));
+    changes.send(block(6, vec![here]));
+    cx.run_until_parked();
+    assert!(
+        asked_row(&cx, 2) > refused,
+        "asked again by the room's next block"
+    );
+}
+
+#[test]
+fn a_refused_catch_up_read_is_read_again_when_the_room_opens_again() {
+    let (mut cx, view) = opened();
+    let (refusing, refused) = a_refused_catch_up_read(&mut cx);
+    refusing.set(false);
+    for room in ["dm-7-8", "general"] {
+        cx.update(&view, |chat, _, cx| {
+            cx.notify();
+            chat.choose(room.into(), cx)
+        });
+        cx.run_until_parked();
+    }
+    view.read(|chat| assert_eq!(chat.room.as_ref().unwrap().id, "general"));
+    assert!(asked_row(&cx, 2) > refused, "asked again as the room opens");
+}
+
 fn list_named<'a>(node: &'a wire::Node, name: &str) -> Option<&'a wire::Node> {
     if let wire::Node::List {
         id: wire::ElementIdWire::Name(id),

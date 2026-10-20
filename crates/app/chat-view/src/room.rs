@@ -582,10 +582,14 @@ impl Chat {
     // row it holds, in the room or its thread, that `written` names (a span
     // at a time), and the newest page when a root came past its newest row.
     // A read still out when the room is left is the kept room's to make.
-    fn catch_up(&mut self, written: Written, cx: &mut Context<Self>) {
+    fn catch_up(&mut self, mut written: Written, cx: &mut Context<Self>) {
         let first = self.screenful();
         let viewer = self.viewer();
         let Some(room) = &mut self.room else { return };
+        let wrote_here = written != Written::default();
+        if wrote_here {
+            written.merge(std::mem::take(&mut room.unread));
+        }
         let replies = room
             .thread
             .as_ref()
@@ -613,7 +617,10 @@ impl Chat {
                 room.settled();
                 match rows {
                     Ok((fresh, has_older)) => room.tail_landed(fresh, has_older, cx),
-                    Err(refusal) => cx.log_refused("the room", &refusal),
+                    Err(refusal) => {
+                        room.unread.roots = true;
+                        cx.log_refused("the room", &refusal)
+                    }
                 }
             })
             .detach();
@@ -629,7 +636,10 @@ impl Chat {
                 room.settled();
                 match rows {
                     Ok(fresh) => room.rows_landed(fresh, cx),
-                    Err(refusal) => cx.log_refused("the room", &refusal),
+                    Err(refusal) => {
+                        room.unread.seqs.extend(span.0..=span.1);
+                        cx.log_refused("the room", &refusal)
+                    }
                 }
             })
             .detach();
@@ -685,10 +695,11 @@ impl Chat {
             Loadable::Ready(members) => (members, false),
             _ => (Vec::new(), true),
         };
-        let written = match room.reading {
+        let mut written = match room.reading {
             0 => Written::default(),
             _ => room.unsettled,
         };
+        written.merge(room.unread);
         let visited = Visited {
             rows,
             has_older: room.has_older || over > 0,
