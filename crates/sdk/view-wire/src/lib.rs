@@ -49,7 +49,8 @@ pub const WIRE_ID: &str = include!(concat!(env!("OUT_DIR"), "/wire_id.rs"));
 // [`WIRE_ID`] there, and is level 0. `tests/golden/levels/<level>.bin`
 // keeps each level's frame, and every one must still read. Level 2:
 // `op.put` takes a blob of any size. Level 3: `file.read`. Level 4:
-// `Node::Artifact` and the `artifact` capability.
+// `Node::Artifact` and the `artifact` capability; `socket.open`,
+// `socket.send`, `host.random` and the manifest's `hosts` line.
 pub const WIRE_LEVEL: u32 = 4;
 
 pub(crate) fn is_default<T: Default + PartialEq>(value: &T) -> bool {

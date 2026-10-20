@@ -525,7 +525,10 @@ manifest section `ducktape.view.manifest` from the trait's consts
 `CAPABILITIES`, `MIN_WINDOW_WIDTH` in decimal, `WIRE_LEVEL` in decimal (a view
 built before J-085 wrote `WIRE_ID` there), an empty line (views
 built before J-054 listed their targets there; a host reads it past), `ICON`, `TINT`,
-`WINDOW_WIDTH` in decimal or empty for none; the line list is
+`WINDOW_WIDTH` in decimal or empty for none, and, when `HOSTS` lists any,
+those host names, each followed by a comma (`manifest::hosts`: the hosts
+`socket.open` may reach; lowercase DNS names, no address, port or
+wildcard, or the build fails); the line list is
 `manifest::LINES`, part of `schema.txt` and so of `WIRE_ID`).
 
 **Deploy order (J-054).** A view built from this SDK that declares `op` or
@@ -571,7 +574,16 @@ know is left out and logged.
 sends a view only the events its level reads (`Event::level`), because a
 view built before J-085 reads strictly. What each level added is listed
 beside it (`view-wire/src/lib.rs`): level 2, `op.put` takes a blob of any
-size; level 3, `file.read`, a read of any file the view holds. What a host answers is
+size; level 3, `file.read`, a read of any file the view holds; level 4,
+`Node::Artifact` and the `artifact` capability, and the `socket`
+capability: `socket.open` (a subscription of `SocketItem`s, a WebSocket
+from this device to a `wss://` url whose host the manifest's `HOSTS`
+lists, closed when dropped; the host reads the next message only once the
+view took the last; refused `undeclared_host` for any other url,
+`consent_refused` when the person says no to the one-time ask that names
+every listed host), `socket.send` (one binary message onto an open
+socket), `host.random` (bytes from the system's secure random source,
+under `host`) and the manifest's hosts line. What a host answers is
 `host.methods` (`methods::Hosted`): `cx.host().hosted()` asks it once, and
 `Hosted::has("link.window")` says whether to offer what needs it. A host
 before J-085 refuses `host.methods`, and `hosted()` answers `None`: ask the

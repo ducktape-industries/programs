@@ -10,7 +10,7 @@ pub const MANIFEST_SECTION: &str = "ducktape.view.manifest";
 /// The manifest's lines, in order: what `export_view!` writes and
 /// [`Manifest::parse`] reads, listed in `tests/golden/schema.txt` so a
 /// line added or moved moves [`crate::WIRE_ID`] like any other shape.
-pub const LINES: [&str; 10] = [
+pub const LINES: [&str; 11] = [
     "ducktape.view.manifest",
     "name",
     "description",
@@ -21,6 +21,7 @@ pub const LINES: [&str; 10] = [
     "icon",
     "tint",
     "width",
+    "hosts",
 ];
 
 /// Crosses the wire as `blob.manifest`'s answer, so its shape is in
@@ -116,6 +117,47 @@ impl Tint {
     }
 }
 
+pub const fn is_host(host: &str) -> bool {
+    let bytes = host.as_bytes();
+    if bytes.is_empty() || bytes.len() > 253 {
+        return false;
+    }
+    let (mut i, mut label, mut letters) = (0, 0, false);
+    while i < bytes.len() {
+        let byte = bytes[i];
+        let end = i + 1 == bytes.len() || bytes[i + 1] == b'.';
+        match byte {
+            b'.' => label = 0,
+            b'a'..=b'z' | b'0'..=b'9' | b'-' => {
+                let first = label == 0;
+                label += 1;
+                if label > 63 || (byte == b'-' && (first || end)) {
+                    return false;
+                }
+                letters |= byte.is_ascii_lowercase() || byte == b'-';
+            }
+            _ => return false,
+        }
+        if byte == b'.' && (i == 0 || end) {
+            return false;
+        }
+        i += 1;
+    }
+    letters
+}
+
+pub fn hosts(text: &str) -> Vec<String> {
+    let listed = text
+        .split('\n')
+        .nth(10)
+        .and_then(comma_terminated_items)
+        .unwrap_or_default();
+    match listed.iter().all(|host| is_host(host)) {
+        true => listed.into_iter().map(str::to_owned).collect(),
+        false => Vec::new(),
+    }
+}
+
 pub const fn is_icon(icon: &str) -> bool {
     icon.is_empty() || (crate::safe_asset_path(icon) && !has_control(icon))
 }
@@ -145,6 +187,16 @@ pub fn read_manifest(bytes: &[u8]) -> Option<Manifest> {
 // ([`Manifest::parse_noting`]).
 #[cfg(feature = "manifest")]
 pub fn read_manifest_noting(bytes: &[u8]) -> Option<(Manifest, Vec<String>)> {
+    Manifest::parse_noting(manifest_section_text(bytes)?)
+}
+
+#[cfg(feature = "manifest")]
+pub fn read_hosts(bytes: &[u8]) -> Vec<String> {
+    manifest_section_text(bytes).map(hosts).unwrap_or_default()
+}
+
+#[cfg(feature = "manifest")]
+fn manifest_section_text(bytes: &[u8]) -> Option<&str> {
     let mut payloads = wasmparser::Parser::new(0).parse_all(bytes);
     let Some(Ok(wasmparser::Payload::Version {
         encoding: wasmparser::Encoding::Module,
@@ -161,9 +213,7 @@ pub fn read_manifest_noting(bytes: &[u8]) -> Option<(Manifest, Vec<String>)> {
             if manifest.is_some() {
                 return None;
             }
-            manifest = Some(Manifest::parse_noting(
-                std::str::from_utf8(section.data()).ok()?,
-            )?);
+            manifest = Some(std::str::from_utf8(section.data()).ok()?);
         }
     }
     manifest
@@ -486,6 +536,46 @@ mod tests {
         for before in ["cd5911c62028048f", "ce6c54ef404b8852", "01", "0123abcd"] {
             assert_eq!(level(before), 0, "{before}");
         }
+    }
+
+    #[test]
+    fn a_manifest_lists_its_hosts_and_an_unreadable_line_lists_none() {
+        let text = |hosts: &str| {
+            format!("ducktape.view.manifest\nApp\n\nsocket,\n480\n4\n\n\nnone\n\n{hosts}")
+        };
+        assert_eq!(
+            hosts(&text("venus.web.telegram.org,flora.web.telegram.org,")),
+            ["venus.web.telegram.org", "flora.web.telegram.org"]
+        );
+        assert!(Manifest::parse(&text("venus.web.telegram.org,")).is_some());
+        assert!(hosts(&text("")).is_empty());
+        assert!(hosts("ducktape.view.manifest\nApp\n\n\n480\n4\n\n\nnone\n").is_empty());
+        for unreadable in [
+            "venus.web.telegram.org",
+            "Venus.web.telegram.org,",
+            "venus.web.telegram.org:443,",
+            "*.telegram.org,",
+            "127.0.0.1,",
+            "a..b,",
+            ".a,",
+            "a.,",
+            "-a.b,",
+            "a-.b,",
+            "a b,",
+            "ok.example,bad host,",
+        ] {
+            assert!(hosts(&text(unreadable)).is_empty(), "{unreadable:?}");
+            assert!(
+                Manifest::parse(&text(unreadable)).is_some(),
+                "{unreadable:?}"
+            );
+        }
+        assert!(is_host(&format!("{}.b", "a".repeat(63))));
+        assert!(!is_host(&format!("{}.b", "a".repeat(64))));
+        let long = vec!["a".repeat(63); 4].join(".");
+        assert!(!is_host(&long));
+        assert!(is_host(&long[..253]));
+        assert!(is_host("xn--bcher-kva.example"));
     }
 
     #[test]

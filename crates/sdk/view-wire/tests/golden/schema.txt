@@ -22,6 +22,7 @@ host.id None String -> String
 host.log None String -> ()
 host.methods None () -> Hosted
 host.placement None () -> Placement
+host.random None u32 -> Vec<u8>
 host.route None () -> String
 host.screen None () -> Vec<String>
 host.session None () -> Session
@@ -47,6 +48,8 @@ op.submit Some("P") ProgramOp -> Submitted
 program.changes Some("P") () -> Option<Change>
 program.describe None (String, Vec<u8>) -> Option<Description>
 program.query Some("P") ProgramQuery -> ProgramReply
+socket.open None SocketOpen -> SocketItem
+socket.send None SocketSend -> ()
 store.changes None () -> String
 store.get None String -> Option<Vec<u8>>
 store.list None String -> Vec<String>
@@ -74,7 +77,7 @@ BlockRef = Enum { tag_width: 1, variants: [(0, "Height", "BlockRef__Height"), (1
 BlockRef__Height = Struct { fields: UnnamedFields(["u64"]) }
 BlockRef__Id = Struct { fields: UnnamedFields(["[u8; 32]"]) }
 CameraDevice = Struct { fields: NamedFields([("id", "String"), ("name", "String"), ("default", "bool"), ("facing", "Facing")]) }
-Capability = Enum { tag_width: 1, variants: [(0, "Chain", "Capability__Chain"), (1, "Program", "Capability__Program"), (2, "Op", "Capability__Op"), (3, "Invite", "Capability__Invite"), (4, "Link", "Capability__Link"), (5, "Blob", "Capability__Blob"), (6, "Host", "Capability__Host"), (7, "Clock", "Capability__Clock"), (8, "Clipboard", "Capability__Clipboard"), (9, "Notify", "Capability__Notify"), (10, "Store", "Capability__Store"), (11, "Web", "Capability__Web"), (12, "Live", "Capability__Live"), (13, "Camera", "Capability__Camera"), (14, "Microphone", "Capability__Microphone"), (15, "File", "Capability__File"), (16, "Artifact", "Capability__Artifact")] }
+Capability = Enum { tag_width: 1, variants: [(0, "Chain", "Capability__Chain"), (1, "Program", "Capability__Program"), (2, "Op", "Capability__Op"), (3, "Invite", "Capability__Invite"), (4, "Link", "Capability__Link"), (5, "Blob", "Capability__Blob"), (6, "Host", "Capability__Host"), (7, "Clock", "Capability__Clock"), (8, "Clipboard", "Capability__Clipboard"), (9, "Notify", "Capability__Notify"), (10, "Store", "Capability__Store"), (11, "Web", "Capability__Web"), (12, "Live", "Capability__Live"), (13, "Camera", "Capability__Camera"), (14, "Microphone", "Capability__Microphone"), (15, "File", "Capability__File"), (16, "Artifact", "Capability__Artifact"), (17, "Socket", "Capability__Socket")] }
 Capability__Artifact = Struct { fields: Empty }
 Capability__Blob = Struct { fields: Empty }
 Capability__Camera = Struct { fields: Empty }
@@ -90,6 +93,7 @@ Capability__Microphone = Struct { fields: Empty }
 Capability__Notify = Struct { fields: Empty }
 Capability__Op = Struct { fields: Empty }
 Capability__Program = Struct { fields: Empty }
+Capability__Socket = Struct { fields: Empty }
 Capability__Store = Struct { fields: Empty }
 Capability__Web = Struct { fields: Empty }
 CarriedView = Struct { fields: NamedFields([("size", "u64"), ("manifest", "Option<Manifest>")]) }
@@ -176,6 +180,13 @@ ReadFile = Struct { fields: NamedFields([("file", "u64"), ("offset", "u64"), ("l
 Receipt = Struct { fields: NamedFields([("program", "String"), ("outcome", "Outcome"), ("events", "Vec<Vec<u8>>"), ("nested", "Vec<Receipt>")]) }
 SaveFile = Struct { fields: NamedFields([("name", "String"), ("blobs", "Vec<[u8; 32]>")]) }
 Session = Struct { fields: NamedFields([("connected", "bool"), ("chain_id", "String"), ("signer", "String"), ("account", "Option<u64>"), ("endpoint", "String")]) }
+SocketItem = Enum { tag_width: 1, variants: [(0, "Opened", "SocketItem__Opened"), (1, "Binary", "SocketItem__Binary"), (2, "Text", "SocketItem__Text"), (3, "Closed", "SocketItem__Closed")] }
+SocketItem__Binary = Struct { fields: UnnamedFields(["Vec<u8>"]) }
+SocketItem__Closed = Struct { fields: NamedFields([("code", "u16"), ("reason", "String")]) }
+SocketItem__Opened = Struct { fields: NamedFields([("protocol", "Option<String>")]) }
+SocketItem__Text = Struct { fields: UnnamedFields(["String"]) }
+SocketOpen = Struct { fields: NamedFields([("socket", "u64"), ("url", "String"), ("protocols", "Vec<String>")]) }
+SocketSend = Struct { fields: NamedFields([("socket", "u64"), ("body", "Vec<u8>")]) }
 String = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "u8" }
 Submitted = Enum { tag_width: 1, variants: [(0, "Applied", "Submitted__Applied"), (1, "Refused", "Submitted__Refused"), (2, "InDoubt", "Submitted__InDoubt")] }
 Submitted__Applied = Struct { fields: NamedFields([("frame", "[u8; 32]"), ("until", "u64"), ("output", "Vec<u8>")]) }
@@ -232,6 +243,7 @@ Watching__Waiting = Struct { fields: Empty }
 bool = Primitive(1)
 i64 = Primitive(8)
 u128 = Primitive(16)
+u16 = Primitive(2)
 u32 = Primitive(4)
 u64 = Primitive(8)
 u8 = Primitive(1)
@@ -1764,3 +1776,4 @@ targets
 icon
 tint
 width
+hosts

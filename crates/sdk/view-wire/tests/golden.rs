@@ -561,6 +561,35 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
             },
             b"ap".to_vec(),
         ),
+        exchange::<methods::SocketConnect>(
+            telegram_socket(),
+            methods::SocketItem::Opened {
+                protocol: Some("binary".into()),
+            },
+        ),
+        exchange::<methods::SocketConnect>(
+            telegram_socket(),
+            methods::SocketItem::Binary(vec![0xef, 1, 2]),
+        ),
+        exchange::<methods::SocketConnect>(
+            telegram_socket(),
+            methods::SocketItem::Text("hello".into()),
+        ),
+        exchange::<methods::SocketConnect>(
+            telegram_socket(),
+            methods::SocketItem::Closed {
+                code: 1000,
+                reason: "bye".into(),
+            },
+        ),
+        exchange::<methods::SocketSendMessage>(
+            methods::SocketSend {
+                socket: 1,
+                body: vec![1, 2, 3],
+            },
+            (),
+        ),
+        exchange::<methods::HostRandom>(4, vec![9, 8, 7, 6]),
         exchange::<FileSave>(
             SaveFile {
                 name: "tape.png".into(),
@@ -816,6 +845,14 @@ fn carried_view(tint: Tint, width: Option<u32>) -> methods::Manifested {
                 width,
             }),
         }),
+    }
+}
+
+fn telegram_socket() -> methods::SocketOpen {
+    methods::SocketOpen {
+        socket: 1,
+        url: "wss://venus.web.telegram.org/apiws".into(),
+        protocols: vec!["binary".into()],
     }
 }
 

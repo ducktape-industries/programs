@@ -131,6 +131,7 @@ pub trait View: Render + Serialize + DeserializeOwned + Default {
     /// # fn main() {}
     /// ```
     const WINDOW_WIDTH: Option<u32> = None;
+    const HOSTS: &'static [&'static str] = &[];
     fn new(_window: &mut Window, _cx: &mut Context<Self>) -> Self {
         Self::default()
     }

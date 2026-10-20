@@ -138,6 +138,7 @@ pub struct Manifested {
     pub icon: &'static str,
     pub tint: Tint,
     pub width: Option<u32>,
+    pub hosts: &'static [&'static str],
 }
 
 impl Manifested {
@@ -150,6 +151,7 @@ impl Manifested {
             icon: V::ICON,
             tint: V::TINT,
             width: V::WINDOW_WIDTH,
+            hosts: V::HOSTS,
         }
     }
 
@@ -162,6 +164,7 @@ impl Manifested {
             icon: "",
             tint: Tint::None,
             width: None,
+            hosts: &[],
         }
     }
 
@@ -183,10 +186,18 @@ impl Manifested {
         }
         len += 1;
         len += 1 + self.icon.len() + 1 + self.tint.as_str().len() + 1;
-        match self.width {
-            Some(width) => len + digits(width),
-            None => len,
+        if let Some(width) = self.width {
+            len += digits(width);
         }
+        if !self.hosts.is_empty() {
+            len += 1;
+            let mut i = 0;
+            while i < self.hosts.len() {
+                len += self.hosts[i].len() + 1;
+                i += 1;
+            }
+        }
+        len
     }
 
     // The manifest text (`view_wire::manifest`: header, name, description,
@@ -229,6 +240,19 @@ impl Manifested {
         if let Some(width) = self.width {
             at = put_number(&mut out, at, width);
         }
+        if !self.hosts.is_empty() {
+            at = put(&mut out, at, b"\n");
+            let mut i = 0;
+            while i < self.hosts.len() {
+                assert!(
+                    wire::manifest::is_host(self.hosts[i]),
+                    "HOSTS lists host names in lowercase (venus.web.telegram.org)"
+                );
+                at = put(&mut out, at, self.hosts[i].as_bytes());
+                at = put(&mut out, at, b",");
+                i += 1;
+            }
+        }
         assert!(at == N);
         out
     }
@@ -239,7 +263,7 @@ pub const fn manifest_len<V: View>() -> usize {
     Manifested::of_view::<V>().encoded_len()
 }
 
-const _: () = assert!(wire::manifest::LINES.len() == 10);
+const _: () = assert!(wire::manifest::LINES.len() == 11);
 
 // The manifest text of a view ([`Manifested::bytes`]), from what its
 // [`View`] impl says: [`View::NAME`], [`View::DESCRIPTION`],

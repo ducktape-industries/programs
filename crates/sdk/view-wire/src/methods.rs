@@ -1053,6 +1053,31 @@ impl Hosted {
         self.kinds.iter().any(|known| known == kind)
     }
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub struct SocketOpen {
+    pub socket: u64,
+    pub url: String,
+    pub protocols: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub enum SocketItem {
+    Opened { protocol: Option<String> },
+    Binary(#[serde(with = "crate::codec::bin")] Vec<u8>),
+    Text(String),
+    Closed { code: u16, reason: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+pub struct SocketSend {
+    pub socket: u64,
+    #[serde(with = "crate::codec::bin")]
+    pub body: Vec<u8>,
+}
 methods! {
     also: ["program.query", "op.submit", "program.changes", HostWidget::KIND];
     /// `chain.status`: the connected node's status.
@@ -1309,6 +1334,9 @@ methods! {
     // [`refusal::HOST_FAULT`]: the file cannot be read, or its size changed
     // since it was held.
     FileRead, "file.read", ReadFile, Vec<u8>;
+    SocketConnect, "socket.open", SocketOpen, SocketItem;
+    SocketSendMessage, "socket.send", SocketSend, ();
+    HostRandom, "host.random", u32, Vec<u8>;
 }
 
 // The `<capability>` half of every kind in [`ALL`]: what a view's manifest
@@ -1374,10 +1402,11 @@ pub enum Capability {
     // view and shown as their link where it has none. Unlike `web`, it takes
     // none of the links the app opens.
     Artifact,
+    Socket,
 }
 
 impl Capability {
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::Chain,
         Self::Program,
         Self::Op,
@@ -1395,6 +1424,7 @@ impl Capability {
         Self::Microphone,
         Self::File,
         Self::Artifact,
+        Self::Socket,
     ];
 
     /// The name a manifest and a kind spell it with.
@@ -1417,6 +1447,7 @@ impl Capability {
             Self::Microphone => "microphone",
             Self::File => "file",
             Self::Artifact => "artifact",
+            Self::Socket => "socket",
         }
     }
 
@@ -1506,10 +1537,11 @@ pub mod refusal {
     /// the track up, the same account published it again elsewhere, or the
     /// room's program took the publisher's grant back.
     pub const PUBLISHER_GONE: &str = "publisher_gone";
+    pub const UNDECLARED_HOST: &str = "undeclared_host";
 
     /// Every code above: what a view tells apart from a node's or a
     /// program's refusal (`design::failure` words these as the host's).
-    pub const ALL: [&str; 26] = [
+    pub const ALL: [&str; 27] = [
         UNKNOWN_REQUEST,
         UNDECLARED_CAPABILITY,
         UNDECLARED_TARGET,
@@ -1536,6 +1568,7 @@ pub mod refusal {
         UNKNOWN_TRACK,
         TRACK_ENDED,
         PUBLISHER_GONE,
+        UNDECLARED_HOST,
     ];
 }
 
@@ -1664,6 +1697,7 @@ mod tests {
             (UNKNOWN_TRACK, "unknown_track"),
             (TRACK_ENDED, "track_ended"),
             (PUBLISHER_GONE, "publisher_gone"),
+            (UNDECLARED_HOST, "undeclared_host"),
         ];
         for (code, wire) in codes {
             assert_eq!(code, wire);

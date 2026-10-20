@@ -1330,6 +1330,89 @@
     ]
   },
   {
+    "kind": "socket.open",
+    "request": {
+      "socket": 1,
+      "url": "wss://venus.web.telegram.org/apiws",
+      "protocols": [
+        "binary"
+      ]
+    },
+    "reply": {
+      "Opened": {
+        "protocol": "binary"
+      }
+    }
+  },
+  {
+    "kind": "socket.open",
+    "request": {
+      "socket": 1,
+      "url": "wss://venus.web.telegram.org/apiws",
+      "protocols": [
+        "binary"
+      ]
+    },
+    "reply": {
+      "Binary": [
+        239,
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "kind": "socket.open",
+    "request": {
+      "socket": 1,
+      "url": "wss://venus.web.telegram.org/apiws",
+      "protocols": [
+        "binary"
+      ]
+    },
+    "reply": {
+      "Text": "hello"
+    }
+  },
+  {
+    "kind": "socket.open",
+    "request": {
+      "socket": 1,
+      "url": "wss://venus.web.telegram.org/apiws",
+      "protocols": [
+        "binary"
+      ]
+    },
+    "reply": {
+      "Closed": {
+        "code": 1000,
+        "reason": "bye"
+      }
+    }
+  },
+  {
+    "kind": "socket.send",
+    "request": {
+      "socket": 1,
+      "body": [
+        1,
+        2,
+        3
+      ]
+    },
+    "reply": null
+  },
+  {
+    "kind": "host.random",
+    "request": 4,
+    "reply": [
+      9,
+      8,
+      7,
+      6
+    ]
+  },
+  {
     "kind": "file.save",
     "request": {
       "name": "tape.png",
@@ -1994,7 +2077,8 @@
             "Camera",
             "Microphone",
             "File",
-            "Artifact"
+            "Artifact",
+            "Socket"
           ],
           "min_width": 480,
           "targets": [
@@ -2035,7 +2119,8 @@
             "Camera",
             "Microphone",
             "File",
-            "Artifact"
+            "Artifact",
+            "Socket"
           ],
           "min_width": 480,
           "targets": [
@@ -2076,7 +2161,8 @@
             "Camera",
             "Microphone",
             "File",
-            "Artifact"
+            "Artifact",
+            "Socket"
           ],
           "min_width": 480,
           "targets": [
@@ -2117,7 +2203,8 @@
             "Camera",
             "Microphone",
             "File",
-            "Artifact"
+            "Artifact",
+            "Socket"
           ],
           "min_width": 480,
           "targets": [
@@ -2158,7 +2245,8 @@
             "Camera",
             "Microphone",
             "File",
-            "Artifact"
+            "Artifact",
+            "Socket"
           ],
           "min_width": 480,
           "targets": [
@@ -2199,7 +2287,8 @@
             "Camera",
             "Microphone",
             "File",
-            "Artifact"
+            "Artifact",
+            "Socket"
           ],
           "min_width": 480,
           "targets": [
@@ -2240,7 +2329,8 @@
             "Camera",
             "Microphone",
             "File",
-            "Artifact"
+            "Artifact",
+            "Socket"
           ],
           "min_width": 480,
           "targets": [
@@ -2281,7 +2371,8 @@
             "Camera",
             "Microphone",
             "File",
-            "Artifact"
+            "Artifact",
+            "Socket"
           ],
           "min_width": 480,
           "targets": [
@@ -2322,7 +2413,8 @@
             "Camera",
             "Microphone",
             "File",
-            "Artifact"
+            "Artifact",
+            "Socket"
           ],
           "min_width": 480,
           "targets": [
@@ -2363,7 +2455,8 @@
             "Camera",
             "Microphone",
             "File",
-            "Artifact"
+            "Artifact",
+            "Socket"
           ],
           "min_width": 480,
           "targets": [
@@ -2404,7 +2497,8 @@
             "Camera",
             "Microphone",
             "File",
-            "Artifact"
+            "Artifact",
+            "Socket"
           ],
           "min_width": 480,
           "targets": [

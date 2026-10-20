@@ -322,5 +322,8 @@ pub(crate) fn allows(capability: Capability) -> &'static str {
             "lets you pick files on this device: it sees their names and sizes, never where they are"
         }
         Capability::Artifact => "shows pages kept on the network, which the app draws",
+        Capability::Socket => {
+            "connects from this device to the hosts it names, once you said yes: nothing passes through the network"
+        }
     }
 }
