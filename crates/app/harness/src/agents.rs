@@ -243,6 +243,9 @@ pub(crate) async fn close(ctx: &Ctx, id: u64) -> Result<(), Error> {
         BOUND.remove(ctx, &(thread.agent, thread.place.clone()));
     }
     thread.closed = true;
+    if thread.asking == crate::Asking::Idle {
+        crate::turns::let_go(ctx, &mut thread)?;
+    }
     THREADS.put(ctx, &id, &thread);
     converse(ctx, id).await;
     Ok(())

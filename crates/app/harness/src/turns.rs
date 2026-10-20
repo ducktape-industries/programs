@@ -91,6 +91,9 @@ pub(crate) fn settle(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error>
     }
     thread.asking = Asking::Idle;
     FLIGHTS.remove(ctx, &thread.id);
+    if thread.closed {
+        let_go(ctx, thread)?;
+    }
     Ok(())
 }
 
@@ -221,6 +224,19 @@ fn put_part(ctx: &ExecCtx, text: String) -> Result<BlobId, Error> {
     ctx.blob_put(HashKind::Sha256, PART, text.into_bytes())
 }
 
+fn put_on(ctx: &ExecCtx, thread: u64, line: &[u8], text: String) -> Result<BlobId, Error> {
+    ctx.blob_put_on(
+        HashKind::Sha256,
+        PART,
+        text.into_bytes(),
+        held_on(thread, line),
+    )
+}
+
+fn held_on(thread: u64, line: &[u8]) -> Vec<u8> {
+    [thread.to_be_bytes().as_slice(), b"/", line].concat()
+}
+
 fn grouped(frames: impl IntoIterator<Item = Frame>) -> Vec<(Role, Vec<Frame>)> {
     let mut groups: Vec<(Role, Vec<Frame>)> = Vec::new();
     for frame in frames {
@@ -256,7 +272,7 @@ fn summary_part(ctx: &ExecCtx, thread: &ThreadRow, wire: Wire) -> Result<Option<
     };
     let text = wire::summary_words(written, &block);
     let summary = wire::summary(wire, written, &block, &text);
-    Ok(Some(put_part(ctx, summary)?))
+    Ok(Some(put_on(ctx, thread.id, b"summary", summary)?))
 }
 
 fn lanes(ctx: &ExecCtx, thread: u64, wire: Wire, frames: &[Frame]) -> Result<Lanes, Error> {
@@ -377,7 +393,8 @@ fn seal(
         let lanes = lanes(ctx, thread.id, wire, &frames)?;
         let shown = (&looks, &foreign);
         let message = wire::message(wire, role, &frames, shown, &lanes, opens(thread), false);
-        let part = put_part(ctx, message)?;
+        let line = [b"sealed/".as_slice(), &thread.sealed.to_be_bytes()].concat();
+        let part = put_on(ctx, thread.id, &line, message)?;
         let sealed = Sealed {
             end,
             role,
@@ -408,6 +425,13 @@ fn unseal(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
     }
     thread.sealed = 0;
     thread.tail_from = thread.base;
+    ctx.blob_release_lines(held_on(thread.id, b"sealed/"));
+    Ok(())
+}
+
+pub(crate) fn let_go(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
+    unseal(ctx, thread)?;
+    ctx.blob_release_lines(held_on(thread.id, b""));
     Ok(())
 }
 
@@ -449,7 +473,7 @@ fn turn_parts(ctx: &ExecCtx, thread: &mut ThreadRow, turn: &Turn) -> Result<Vec<
     let lanes = lanes(ctx, thread.id, wire, &frames)?;
     let shown = (&looks, &foreign);
     let last = wire::message(wire, role, &frames, shown, &lanes, opens(thread), true);
-    parts.push(put_part(ctx, last)?);
+    parts.push(put_on(ctx, thread.id, b"last", last)?);
     parts.push(put_part(ctx, wire::close(wire).into())?);
     Ok(parts)
 }
@@ -684,7 +708,7 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         system: &system,
         file_tools: &files.tools,
     };
-    let header = put_part(ctx, wire::header(spoken, &header))?;
+    let header = put_on(ctx, thread.id, b"header", wire::header(spoken, &header))?;
     let threshold = config.compact_at.or(model.compact_at);
     let turn = Turn {
         asked,

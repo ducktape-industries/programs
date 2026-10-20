@@ -1252,6 +1252,112 @@ fn summarized(chain: &MockChain, summary: &str) {
     answer(chain, request.id, Answer::Output(response(200, body)));
 }
 
+fn lines_of(chain: &MockChain, thread: u64) -> Vec<BlobId> {
+    let mine = [thread.to_be_bytes().as_slice(), b"/"].concat();
+    let host = chain.host(PROGRAM).borrow();
+    host.lines
+        .iter()
+        .filter(|((holder, at), _)| holder == PROGRAM && at.starts_with(&mine))
+        .map(|(_, id)| *id)
+        .collect()
+}
+
+#[test]
+fn an_idle_thread_closed_or_retired_holds_no_line() {
+    let world = world();
+    let chain = &world.chain;
+    let closed = world.opened("m1", "remember the plan", Some(WINDOW));
+    chain.at(3, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Noted." }]),
+        "end_turn",
+    );
+    assert!(!lines_of(chain, closed).is_empty());
+    let close = Op::Close { thread: closed };
+    chain.submit(signed(ADA), PROGRAM, &close).unwrap();
+    assert_eq!(
+        lines_of(chain, closed),
+        Vec::<BlobId>::new(),
+        "an idle thread lets go of its lines when it closes"
+    );
+
+    let retired = world.mention("m2", "a fresh start");
+    chain.at(5, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Noted." }]),
+        "end_turn",
+    );
+    assert!(!lines_of(chain, retired).is_empty());
+    let new = Op::NewThread { agent: world.agent };
+    chain.submit(signed(ADA), PROGRAM, &new).unwrap();
+    assert!(thread_row(chain, retired).closed);
+    assert_eq!(
+        lines_of(chain, retired),
+        Vec::<BlobId>::new(),
+        "an idle thread lets go of its lines when a new conversation retires it"
+    );
+}
+
+#[test]
+fn a_threads_request_parts_leave_its_lines_at_compaction_and_at_its_close() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "remember the plan", Some(2_000));
+    chain.at(3, 0);
+    model_says_after(
+        chain,
+        json!([{ "type": "text", "text": "Noted." }]),
+        "end_turn",
+        1000,
+    );
+    world.mention("m2", "and now?");
+    let mine = [thread.to_be_bytes().as_slice(), b"/"].concat();
+    let held = |line: &[u8]| -> Vec<BlobId> {
+        let under = [mine.as_slice(), line].concat();
+        let host = chain.host(PROGRAM).borrow();
+        host.lines
+            .iter()
+            .filter(|((holder, at), _)| holder == PROGRAM && at.starts_with(&under))
+            .map(|(_, id)| *id)
+            .collect()
+    };
+    let sealed = held(b"sealed/");
+    assert!(
+        !sealed.is_empty(),
+        "the summary request is made of sealed parts"
+    );
+    assert_eq!((held(b"header").len(), held(b"last").len()), (1, 1));
+
+    chain.at(4, 0);
+    summarized(chain, "Ada set out the plan.");
+    assert_eq!(held(b"summary").len(), 1);
+    assert!(
+        !held(b"sealed/").contains(&sealed[0]),
+        "the compaction lets go of the part it summarized"
+    );
+
+    let close = Op::Close { thread };
+    chain.submit(signed(ADA), PROGRAM, &close).unwrap();
+    assert!(
+        !held(b"").is_empty(),
+        "the open request still needs its parts"
+    );
+    chain.at(5, 0);
+    model_says_after(
+        chain,
+        json!([{ "type": "text", "text": "Done." }]),
+        "end_turn",
+        300,
+    );
+    assert_eq!(
+        held(b""),
+        Vec::<BlobId>::new(),
+        "a closed thread holds no part"
+    );
+}
+
 #[test]
 fn a_thread_whose_next_answer_would_not_fit_the_window_is_summarized_first() {
     let world = world();
