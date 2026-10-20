@@ -245,7 +245,11 @@ pub(crate) fn presses<V: 'static>(
     let editor = ElementId::Name(editor.to_owned().into());
     Some(Rc::new(cx.listener(
         move |view: &mut V, tag: &str, window: &mut Window, cx: &mut Context<V>| {
-            window.focus(editor.clone());
+            // a finger's 📎 leaves the keys off the field: the picker's sheet comes up where the
+            // keyboard would
+            if tag != "attach" || !window.touch() {
+                window.focus(editor.clone());
+            }
             handle(view, Event::Action(tag.to_owned()), window, cx);
             cx.notify();
         },

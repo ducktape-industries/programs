@@ -199,13 +199,13 @@ fn unread_rooms_carry_a_dot_and_the_open_room_a_divider() {
 fn a_full_room_renders_inside_the_frame_budget() {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
-    let rows: Vec<MsgRow> = (1..=WINDOW as u64).map(marked_row).collect();
+    let rows: Vec<MsgRow> = (1..=ROOM_ROWS as u64).map(marked_row).collect();
     cx.host()
         .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
             Ok(match query {
                 Query::Accounts { .. } => Reply::Accounts(page(Vec::new())),
                 Query::Channels { .. } => {
-                    Reply::Channels(page(vec![channel("general", "General", WINDOW as u64)]))
+                    Reply::Channels(page(vec![channel("general", "General", ROOM_ROWS as u64)]))
                 }
                 Query::Roots { .. } => Reply::Roots(page(rows.clone())),
                 Query::Members { .. } => Reply::Members(page(Vec::new())),
@@ -223,7 +223,7 @@ fn a_full_room_renders_inside_the_frame_budget() {
     assert!(
         cx.texts()
             .iter()
-            .any(|text| text.contains(&format!("row {WINDOW}"))),
+            .any(|text| text.contains(&format!("row {ROOM_ROWS}"))),
         "{:?}",
         cx.texts()
     );
@@ -231,7 +231,7 @@ fn a_full_room_renders_inside_the_frame_budget() {
     const REGRESSION_GUARD: usize = 47_000;
     assert!(
         bytes < REGRESSION_GUARD,
-        "a {WINDOW}-row room drew {bytes} bytes, over its guard {REGRESSION_GUARD}"
+        "a {ROOM_ROWS}-row room drew {bytes} bytes, over its guard {REGRESSION_GUARD}"
     );
 }
 

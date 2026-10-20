@@ -7,7 +7,7 @@ use view::prelude::*;
 use super::message;
 use super::parts::{self, HAIRLINE, quiet};
 use crate::listing::{Listing, listing};
-use crate::message::{ChatMessage, day_of, new_day};
+use crate::message::{ChatMessage, new_day};
 use crate::words;
 use crate::{Chat, Pane};
 use view::FontWeight;
@@ -178,9 +178,7 @@ fn marks(
     ladder: &Ladder,
 ) -> Vec<AnyElement> {
     let message = &messages[at];
-    let day = new_day(messages, at).map(|day| {
-        let today = chat.today == Some(day_of(message.time));
-        let label = if today { "Today".to_owned() } else { day };
+    let day = new_day(messages, at, chat.today).map(|label| {
         separator(
             format!("chat-day-{}", message.id),
             label,

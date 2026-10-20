@@ -132,6 +132,27 @@ fn a_room_opens_on_one_screenful_of_its_newest_roots() {
 }
 
 #[test]
+fn before_any_pane_is_placed_a_room_reads_a_screenful_of_the_window() {
+    let (mut cx, view) = history(Rc::new(Cell::new(600)));
+    cx.simulate_resize(766., 640.);
+    cx.update(&view, |chat, _, cx| {
+        chat.layout.pane = None;
+        chat.layout.tallest = 0.;
+        cx.notify();
+    });
+    let before = asked(&cx).len();
+    open(&mut cx, "chat-sidebar-channel-general");
+    let limits: Vec<_> = asked(&cx)[before..]
+        .iter()
+        .filter_map(|query| match query {
+            Query::Roots { page, .. } => Some(page.limit),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(limits, [Some(screenful(640.))], "the window's height");
+}
+
+#[test]
 fn a_block_reads_again_only_the_rows_it_wrote_and_a_new_root_one_page() {
     let head = Rc::new(Cell::new(600));
     let (mut cx, view) = history(head.clone());
@@ -378,14 +399,14 @@ fn the_first_row_in_view_reads_the_page_before_it_once() {
     let before = asked(&cx).len();
     reach_first(&mut cx, &view);
     assert_eq!(older_reads(&cx, before), 1);
-    assert_eq!(held(&view), (75, 526, 600), "a page above the screenful");
+    assert_eq!(held(&view), (22, 579, 600), "a screenful above the first");
     let Some(wire::Node::List { commands, .. }) = list_named(cx.root(), "chat-message-rows") else {
         panic!("no timeline");
     };
     let above = wire::ListCommand::Splice {
         start: 0,
         end: 0,
-        count: 64,
+        count: 11,
     };
     assert_eq!(commands, &[above], "nothing but the page above moves");
     cx.run_until_parked();
@@ -411,7 +432,7 @@ fn a_list_at_its_end_reads_nothing_older() {
 
 #[test]
 fn a_first_page_shorter_than_its_pane_fills_it() {
-    let (mut cx, view) = history(Rc::new(Cell::new(100)));
+    let (mut cx, view) = history(Rc::new(Cell::new(30)));
     open(&mut cx, "chat-sidebar-channel-general");
     let before = asked(&cx).len();
     let mut reached = 0;
@@ -427,7 +448,7 @@ fn a_first_page_shorter_than_its_pane_fills_it() {
         assert!(reached <= 2, "two pages before the first hold the room");
     }
     assert_eq!(older_reads(&cx, before), 2);
-    assert_eq!(held(&view), (100, 1, 100), "the room whole");
+    assert_eq!(held(&view), (30, 1, 30), "the room whole");
     view.read(|chat| {
         assert!(
             !chat.room.as_ref().unwrap().has_older,
@@ -449,7 +470,7 @@ fn a_room_left_keeps_its_newest_page_however_far_up_it_was_read() {
     open(&mut cx, "chat-sidebar-channel-general");
     reach_first(&mut cx, &view);
     reach_first(&mut cx, &view);
-    assert_eq!(held(&view).0, 139, "two pages above the first");
+    assert_eq!(held(&view).0, 33, "two pages above the first");
     open(&mut cx, "chat-sidebar-channel-random");
     assert_eq!(kept(&view, "general"), (11, 590, 600));
     view.read(|chat| assert!(chat.visited["general"].has_older));
@@ -539,6 +560,6 @@ fn a_room_left_above_its_newest_page_lands_where_the_reader_stood() {
     view.read(|chat| {
         let room = chat.room.as_ref().unwrap();
         assert!(room.landed);
-        assert_eq!(room.target, 530);
+        assert_eq!(room.target, 583);
     });
 }

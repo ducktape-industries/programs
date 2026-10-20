@@ -24,7 +24,7 @@ fn busy_room(newest: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
                 Query::Roots { channel_id, .. } if channel_id == "general" => {
                     Reply::Roots(::chat::PageResponse {
                         height: 1,
-                        items: (top + 1 - WINDOW as u64..=top).map(marked_row).collect(),
+                        items: (top + 1 - ROOM_ROWS as u64..=top).map(marked_row).collect(),
                         next: Some(vec![1]),
                     })
                 }
@@ -36,7 +36,7 @@ fn busy_room(newest: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
     seat(&mut cx);
     cx.simulate_click("chat-sidebar-channel-general");
     cx.run_until_parked();
-    cx.simulate_range("chat-message-list", WINDOW - 20..WINDOW);
+    cx.simulate_range("chat-message-list", ROOM_ROWS - 20..ROOM_ROWS);
     (cx, view)
 }
 
@@ -119,11 +119,11 @@ fn measure(
 
 #[test]
 fn a_hover_keeps_every_row_it_did_not_touch() {
-    let (mut cx, _) = busy_room(Rc::new(Cell::new(WINDOW as u64)));
+    let (mut cx, _) = busy_room(Rc::new(Cell::new(ROOM_ROWS as u64)));
     cx.memo_checks(false);
     cx.simulate_hover("chat-message-m250-row", true);
     cx.simulate_hover("chat-message-m250-row", false);
-    let seq = WINDOW;
+    let seq = ROOM_ROWS;
     cx.simulate_hover(&format!("chat-message-m{seq}-row"), true);
     let tick = cx.reports()[0];
     assert!(tick.rendered);
@@ -165,7 +165,7 @@ fn list_in(node: &wire::Node) -> Option<&wire::Node> {
 #[ignore = "measurement: prints what each input costs a full room, asserts nothing of it"]
 fn a_full_room_measured() {
     const RUNS: u32 = 40;
-    let newest = Rc::new(Cell::new(WINDOW as u64));
+    let newest = Rc::new(Cell::new(ROOM_ROWS as u64));
     let (mut cx, view) = busy_room(newest.clone());
     cx.memo_checks(false);
     let changes = cx.host().stream::<Changes<::chat::Chat>>();
@@ -173,7 +173,7 @@ fn a_full_room_measured() {
         "| input | ticks | renders | nodes in tree | nodes lowered | nodes changed | patches | bytes sent | render µs | lower µs | diff µs | encode µs |".to_owned(),
         "|---|---|---|---|---|---|---|---|---|---|---|---|".to_owned(),
     ];
-    let top = WINDOW as u64;
+    let top = ROOM_ROWS as u64;
     let cost = measure(&mut cx, RUNS, |cx, run| {
         let seq = top - u64::from(run / 2 % 10);
         cx.simulate_hover(&format!("chat-message-m{seq}-row"), run % 2 == 0);
@@ -196,7 +196,7 @@ fn a_full_room_measured() {
     });
     rows.push(cost.row("a reaction on one row"));
     let cost = measure(&mut cx, RUNS, |cx, run| {
-        let end = WINDOW - (run % 2) as usize;
+        let end = ROOM_ROWS - (run % 2) as usize;
         cx.simulate_range("chat-message-list", end - 20..end);
     });
     rows.push(cost.row("scroll by one row"));

@@ -8,7 +8,7 @@ use view::prelude::*;
 use crate::composer::Target;
 use crate::queries::{self, Side};
 use crate::words;
-use crate::{Anchor, Chat, Drawn, KeptThread, PAGE, Pane, Room, SPAN, Thread, Visited, WINDOW};
+use crate::{Anchor, Chat, Drawn, KeptThread, Pane, Room, Thread, Visited};
 
 enum Reread {
     Tail,
@@ -140,7 +140,7 @@ impl Chat {
             room_of(chat).answering = answering.into();
         }));
         if land > 0 {
-            let rows = queries::around(cx.host(), id.clone(), land, viewer);
+            let rows = queries::around(cx.host(), id.clone(), land, viewer, first);
             room.messages = Loadable::Loading(cx.land(rows, move |chat, result, cx| {
                 cx.notify();
                 // a reply opens in its thread, on it, and the room lands on
@@ -477,13 +477,17 @@ impl Chat {
         }));
     }
 
+    // The rows of the shortest height one pane shows: the tallest pane placed this session, and
+    // before any is placed the window's own height, which no pane outgrows. Every read of rows
+    // is one; a list short of its pane reads the page before (`listing::edged`).
     pub(crate) fn screenful(&self) -> usize {
         let row = design::height::ROW as f32;
         let placed = self.layout.pane.as_ref().map_or(0., |pane| pane.height);
-        match placed.max(self.layout.tallest) {
-            height if height >= row => (height / row).ceil() as usize + 1,
-            _ => PAGE,
-        }
+        let height = match placed.max(self.layout.tallest) {
+            height if height >= row => height,
+            _ => self.layout.viewport.1,
+        };
+        (height / row).ceil() as usize + 1
     }
 
     // What a block wrote of the open room, read again and nothing more: each
@@ -670,6 +674,7 @@ impl Chat {
 
     fn page_roots(&mut self, cx: &mut Context<Self>) {
         let viewer = self.viewer();
+        let page = self.screenful();
         let Some(room) = &mut self.room else { return };
         let Some(oldest) = room
             .messages
@@ -685,7 +690,7 @@ impl Chat {
         room.older_loading = true;
         let id = room.id.clone();
         let below = chat::roots_below(&id, oldest);
-        let older = queries::roots(cx.host(), id.clone(), viewer, Some(below), PAGE);
+        let older = queries::roots(cx.host(), id.clone(), viewer, Some(below), page);
         cx.land(older, move |chat, result, cx| {
             cx.notify();
             let Some(room) = &mut chat.room else { return };
@@ -715,6 +720,7 @@ impl Chat {
 
     fn page_landed(&mut self, side: Side, cx: &mut Context<Self>) {
         let viewer = self.viewer();
+        let screenful = self.screenful();
         let Some(room) = &mut self.room else { return };
         let Some(at) = edge(room, side) else { return };
         let busy = match side {
@@ -729,7 +735,7 @@ impl Chat {
             Side::Newer => room.newer_loading = true,
         }
         let id = room.id.clone();
-        let page = queries::beside(cx.host(), id.clone(), at, side, viewer);
+        let page = queries::beside(cx.host(), id.clone(), at, side, viewer, screenful);
         cx.land(page, move |chat, result, cx| {
             cx.notify();
             let Some(room) = chat.room.as_mut() else {
@@ -766,20 +772,10 @@ impl Chat {
             if side == Side::Newer {
                 // replies alone draw no row: the list does not move, so the
                 // host reports nothing new and the reader is still at the
-                // foot. The window keeps them out and reads on.
+                // foot. The room keeps them out and reads on.
                 if page.iter().all(|row| row.thread.is_some()) {
                     room.read_to = last;
                     chat.page_landed(side, cx);
-                    return;
-                }
-                // roots past a run of replies longer than the window: it
-                // cannot hold them beside its newest root, the rows the
-                // reader is on, so the room stays a landing
-                let newest_root = room
-                    .messages
-                    .ready()
-                    .and_then(|rows| rows.iter().rev().find(|row| row.thread.is_none()));
-                if newest_root.is_some_and(|root| last - root.seq >= SPAN as u64) {
                     return;
                 }
             }
@@ -1313,25 +1309,8 @@ impl Room {
             Side::Older => {
                 self.has_older = page.first().is_some_and(|row| row.seq > 1);
                 rows.splice(0..0, page);
-                let Some(first) = rows.first().map(|row| row.seq) else {
-                    return;
-                };
-                let held = rows.len();
-                rows.retain(|row| row.seq - first < SPAN as u64);
-                // the newer end let go: newer pages read it again
-                if rows.len() < held {
-                    self.read_to = 0;
-                }
             }
-            Side::Newer => {
-                rows.extend(page);
-                let Some(last) = rows.last().map(|row| row.seq) else {
-                    return;
-                };
-                let held = rows.len();
-                rows.retain(|row| last - row.seq < SPAN as u64);
-                self.has_older |= rows.len() < held;
-            }
+            Side::Newer => rows.extend(page),
         }
         self.settle();
     }
@@ -1352,9 +1331,6 @@ impl Room {
             return;
         };
         let seqs = reacted(&fresh);
-        // the window keeps as many rows as it held, or a window's worth: the
-        // oldest go as new ones come
-        let window = rows.len().max(WINDOW);
         let from = fresh.first().map_or(u64::MAX, |row| row.seq);
         let reaches = !has_older || rows.last().is_some_and(|row| row.seq >= from);
         let mut merged: Vec<MsgRow> = match reaches {
@@ -1362,8 +1338,6 @@ impl Room {
             false => Vec::new(),
         };
         merged.extend(fresh);
-        let over = merged.len().saturating_sub(window);
-        merged.drain(..over);
         let moved = *rows != merged;
         if moved {
             *rows = merged;
@@ -1373,7 +1347,7 @@ impl Room {
             (true, false) => false,
             (false, older) => older,
         };
-        self.has_older = older || over > 0;
+        self.has_older = older;
         self.landed_some(moved, seqs, cx);
     }
 

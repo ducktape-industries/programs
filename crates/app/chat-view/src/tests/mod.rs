@@ -38,6 +38,14 @@ mod scroll;
 mod widgets;
 mod writing;
 
+// a room many screens tall: the size the frame-cost guards were taken on
+const ROOM_ROWS: usize = 256;
+
+// The rows a pane `height` tall shows, counted from the row height as `Chat::screenful` does.
+fn screenful(height: f32) -> u64 {
+    (height / view::design::height::ROW as f32).ceil() as u64 + 1
+}
+
 fn page<T>(items: Vec<T>) -> ::chat::PageResponse<T> {
     ::chat::PageResponse {
         height: 1,

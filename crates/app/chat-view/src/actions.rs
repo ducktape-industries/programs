@@ -10,6 +10,7 @@ use crate::notifier::Choice;
 use crate::room_list::{Chip, chip, chipped};
 use crate::{Chat, Control, CopyRange, Folded, Menu, Mode, Pane, links};
 use chat::view::Names;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 /// A refusal the archive gives every reaction, said before it is asked.
@@ -247,9 +248,23 @@ impl Chat {
             return folded.messages.clone();
         }
         let rows: Vec<MsgRow> = self.shown(pane).cloned().collect();
+        // a row as it was folded last, under the same names and rooms, keeps its message: a
+        // change folds only the rows it moved, however many the room holds
+        let before = drawn
+            .folded
+            .as_ref()
+            .filter(|folded| folded.names == *names && folded.rooms == rooms);
+        let before: BTreeMap<&str, (&MsgRow, &ChatMessage)> = before
+            .into_iter()
+            .flat_map(|folded| folded.rows.iter().zip(folded.messages.iter()))
+            .map(|(row, message)| (row.message_id.as_str(), (row, message)))
+            .collect();
         let mut messages: Vec<ChatMessage> = rows
             .iter()
-            .map(|row| chat_message(row.clone(), names, &rooms))
+            .map(|row| match before.get(row.message_id.as_str()) {
+                Some((was, message)) if *was == row => (*message).clone(),
+                _ => chat_message(row.clone(), names, &rooms),
+            })
             .collect();
         mark_message_groups(&mut messages, boundary);
         let messages: Rc<[ChatMessage]> = messages.into();

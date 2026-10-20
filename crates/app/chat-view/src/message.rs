@@ -193,16 +193,27 @@ pub fn day_of(millis: u64) -> u64 {
     design::local(millis) / DAY_MS
 }
 
-/// The day message `index` opens, when it is the first of its day: a
-/// served row whose day differs from the served row above it (or that has
-/// none above). Pending rows carry no time and open nothing.
-pub fn new_day(messages: &[ChatMessage], index: usize) -> Option<String> {
+// The day message `index` opens, as its separator says it ([`day_label`]), when it is the first
+// of its day: a served row whose day differs from the served row above it (or that has none
+// above). Pending rows carry no time and open nothing.
+pub fn new_day(messages: &[ChatMessage], index: usize, today: Option<u64>) -> Option<String> {
     let time = messages.get(index)?.time;
     let above = messages[..index].iter().rev().find(|above| above.time > 0);
     let opens = time > 0
         && above
             .is_none_or(|above| design::local(above.time) / DAY_MS != design::local(time) / DAY_MS);
-    opens.then(|| design::day(time))
+    opens.then(|| day_label(time, today))
+}
+
+// A day as both designs' separators say it: Today and Yesterday by `today`, the chain's day in
+// the reader's zone ([`day_of`]), and any other day by its date.
+pub fn day_label(time: u64, today: Option<u64>) -> String {
+    let day = day_of(time);
+    match today {
+        Some(today) if today == day => words::TODAY.into(),
+        Some(today) if today == day + 1 => words::YESTERDAY.into(),
+        _ => design::day(time),
+    }
 }
 
 /// Slack-style grouping: a message shows its author header only when it

@@ -219,6 +219,39 @@ fn a_header_tells_the_time_and_a_new_day_opens_under_a_divider() {
     assert!(cx.has_text("25 Sep 2026"));
 }
 
+// Two rows an hour apart that UTC puts on one day: two hours east of it, the reader's midnight
+// falls between them, and on the desktop the later opens Today under the earlier's Yesterday.
+#[test]
+fn a_day_turns_at_the_readers_midnight_and_says_today_and_yesterday() {
+    let (mut cx, view) = opened();
+    let hour = 3_600_000;
+    let evening = 20 * 24 * hour + 21 * hour + hour / 2;
+    let morning = evening + hour;
+    cx.simulate_offset(120);
+    cx.update(&view, |chat, _, cx| {
+        let messages = chat.room.as_mut().unwrap().messages.ready_mut().unwrap();
+        *messages = vec![
+            MsgRow {
+                time: evening,
+                ..row(1, 7, "late")
+            },
+            MsgRow {
+                time: morning,
+                ..row(2, 7, "early")
+            },
+        ];
+        chat.today = Some(crate::message::day_of(morning));
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(cx.find("chat-day-m1").is_some() && cx.find("chat-day-m2").is_some());
+    assert!(
+        cx.has_text("Yesterday") && cx.has_text("Today"),
+        "{:?}",
+        cx.texts()
+    );
+}
+
 /// A line typed as `- x` or `1. x` renders as a list row: its marker in a
 /// gutter and the item, marks and all, beside it, wrapping in what the
 /// gutter leaves of the row. The room and the thread draw a message

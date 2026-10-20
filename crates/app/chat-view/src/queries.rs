@@ -6,7 +6,7 @@ use identity::Ownership;
 use std::collections::BTreeMap;
 use view::prelude::*;
 
-use crate::{PAGE, Reactors, WINDOW};
+use crate::Reactors;
 
 fn page(after: Option<Vec<u8>>, limit: usize) -> PageRequest {
     PageRequest {
@@ -15,11 +15,14 @@ fn page(after: Option<Vec<u8>>, limit: usize) -> PageRequest {
     }
 }
 
+// Every row of a listing in one answer: no limit is the program's own "every row".
+fn every(after: Option<Vec<u8>>) -> PageRequest {
+    PageRequest { after, limit: None }
+}
+
 pub(crate) async fn channels(host: Host) -> Result<Vec<ChannelInfo>, Error> {
-    host.query_all(|after| ask::Channels {
-        page: page(after, PAGE),
-    })
-    .await
+    host.query_all(|after| ask::Channels { page: every(after) })
+        .await
 }
 
 pub(crate) async fn roots(
@@ -30,8 +33,7 @@ pub(crate) async fn roots(
     limit: usize,
 ) -> Result<(Vec<MsgRow>, bool), Error> {
     let ask = move |ask| host.query(ask);
-    let per_page = limit.min(PAGE) as u64;
-    ::chat::view::roots(ask, channel_id, viewer, below, limit, per_page).await
+    ::chat::view::roots(ask, channel_id, viewer, below, limit, limit as u64).await
 }
 
 pub(crate) async fn roster(host: Host) -> Result<Names, Error> {
@@ -76,18 +78,20 @@ pub(crate) async fn reactors(
     Ok(reactors)
 }
 
+// A screenful on each side of `seq`: the pane fills wherever the row is drawn in it.
 pub(crate) async fn around(
     host: Host,
     channel_id: String,
     seq: u64,
     viewer: Vec<Principal>,
+    screenful: usize,
 ) -> Result<Vec<MsgRow>, Error> {
     let rows = host
         .query(ask::MessagesAround {
             channel_id,
             seq,
             viewer,
-            page: page(None, WINDOW / 2),
+            page: page(None, 2 * screenful),
         })
         .await?;
     Ok(sorted(rows))
@@ -125,8 +129,9 @@ pub(crate) async fn beside(
     seq: u64,
     side: Side,
     viewer: Vec<Principal>,
+    screenful: usize,
 ) -> Result<Vec<MsgRow>, Error> {
-    let half = PAGE as u64 / 2;
+    let half = screenful as u64 / 2;
     let centre = match side {
         Side::Older => seq.saturating_sub(half + 1),
         Side::Newer => seq.saturating_add(half + 1),
@@ -136,7 +141,7 @@ pub(crate) async fn beside(
             channel_id,
             seq: centre,
             viewer,
-            page: page(None, PAGE),
+            page: page(None, screenful),
         })
         .await?;
     let past = |row: &MsgRow| match side {
@@ -173,7 +178,7 @@ pub(crate) fn sorted(mut rows: Vec<MsgRow>) -> Vec<MsgRow> {
 pub(crate) async fn listening(host: Host, account: u64) -> Result<Vec<String>, Error> {
     host.query_all(|after| ask::Listening {
         account,
-        page: page(after, PAGE),
+        page: every(after),
     })
     .await
 }
@@ -182,7 +187,7 @@ pub(crate) async fn listening(host: Host, account: u64) -> Result<Vec<String>, E
 pub(crate) async fn posted_in(host: Host, account: u64) -> Result<Vec<String>, Error> {
     host.query_all(|after| ask::PostedIn {
         account,
-        page: page(after, PAGE),
+        page: every(after),
     })
     .await
 }
@@ -195,7 +200,7 @@ pub(crate) async fn room_order(host: Host, account: u64) -> Result<Vec<chat::Ent
 pub(crate) async fn members(host: Host, channel_id: String) -> Result<Vec<MemberRow>, Error> {
     host.query_all(|after| ask::Members {
         channel_id: channel_id.clone(),
-        page: page(after, WINDOW),
+        page: every(after),
     })
     .await
 }
@@ -224,6 +229,7 @@ pub(crate) async fn search_hits(
     channel_id: Option<String>,
     viewer: Vec<Principal>,
     after: Option<Vec<u8>>,
+    screenful: usize,
 ) -> Result<(Vec<MsgRow>, bool, Option<Vec<u8>>), Error> {
     match text.strip_prefix('#') {
         Some(tag) if !tag.is_empty() => {
@@ -232,7 +238,7 @@ pub(crate) async fn search_hits(
                     tag: tag.to_owned(),
                     viewer,
                     channel_id,
-                    page: page(after, PAGE),
+                    page: page(after, screenful),
                 })
                 .await?;
             Ok((tagged.items, false, tagged.next))
@@ -243,7 +249,7 @@ pub(crate) async fn search_hits(
                     text,
                     viewer,
                     channel_id,
-                    page: page(None, PAGE),
+                    page: page(None, screenful),
                 })
                 .await?;
             Ok((hits, capped, None))

@@ -20,6 +20,8 @@ pub(crate) const NAME: &str = "Name";
 pub(crate) const RENAME: &str = "Rename";
 pub(crate) const PEOPLE: &str = "People";
 pub(crate) const NEW_CHANNEL: &str = "New channel";
+pub(crate) const TODAY: &str = "Today";
+pub(crate) const YESTERDAY: &str = "Yesterday";
 
 pub(crate) const CHAT: &str = "Chat";
 pub(crate) const CHANNELS: &str = "Channels";

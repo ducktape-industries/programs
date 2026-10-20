@@ -59,7 +59,7 @@ fn full_room(newest: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
                     let top = newest.get();
                     Reply::Roots(::chat::PageResponse {
                         height: 1,
-                        items: (top + 1 - WINDOW as u64..=top).map(marked_row).collect(),
+                        items: (top + 1 - ROOM_ROWS as u64..=top).map(marked_row).collect(),
                         next: Some(vec![1]),
                     })
                 }
@@ -78,40 +78,39 @@ fn full_room(newest: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
     (cx, view)
 }
 
+// A pane 63 rows tall: a screenful of 64 rows, the page these fixtures' seqs are drawn at.
+fn tall(cx: &mut TestAppContext) {
+    let row = view::design::height::ROW as f32;
+    cx.simulate_resize(view::testing::VIEWPORT.0, 63. * row);
+}
+
 #[test]
-fn a_post_above_a_reader_scrolled_up_slides_the_list_by_two_edits() {
-    let newest = Rc::new(Cell::new(WINDOW as u64));
+fn a_post_above_a_reader_scrolled_up_adds_its_row_alone() {
+    let newest = Rc::new(Cell::new(ROOM_ROWS as u64));
     let (mut cx, _) = full_room(newest.clone());
     let changes = cx.host().stream::<Changes<::chat::Chat>>();
     cx.simulate_range("chat-message-list", 100..130);
     let (id, start, shown) = window(&cx);
     assert_eq!(id, "chat-message-rows");
-    newest.set(WINDOW as u64 + 1);
+    newest.set(ROOM_ROWS as u64 + 1);
     changes.send(block(4, posted("general")));
     cx.run_until_parked();
     assert_eq!(
         commands(&cx),
-        [
-            wire::ListCommand::Splice {
-                start: WINDOW,
-                end: WINDOW,
-                count: 1,
-            },
-            wire::ListCommand::Splice {
-                start: 0,
-                end: 1,
-                count: 0,
-            },
-        ]
+        [wire::ListCommand::Splice {
+            start: ROOM_ROWS,
+            end: ROOM_ROWS,
+            count: 1,
+        },]
     );
     let (_, after, kept) = window(&cx);
-    assert_eq!(after, start - 1, "the window moved with its rows");
+    assert_eq!(after, start, "the rows on screen stay where they were");
     assert_eq!(kept, shown, "the rows on screen are the rows it holds");
 }
 
 #[test]
 fn an_older_page_lands_only_in_the_room_it_was_read_for() {
-    let (mut cx, view) = full_room(Rc::new(Cell::new(WINDOW as u64)));
+    let (mut cx, view) = full_room(Rc::new(Cell::new(ROOM_ROWS as u64)));
     let older = Rc::new(Cell::new(0));
     let paged = older.clone();
     cx.host()
@@ -122,7 +121,7 @@ fn an_older_page_lands_only_in_the_room_it_was_read_for() {
                     ..
                 } => Reply::Roots(::chat::PageResponse {
                     height: 1,
-                    items: (1..=WINDOW as u64).map(marked_row).collect(),
+                    items: (1..=ROOM_ROWS as u64).map(marked_row).collect(),
                     next: Some(vec![1]),
                 }),
                 Query::Roots { .. } => {
@@ -148,7 +147,7 @@ fn an_older_page_lands_only_in_the_room_it_was_read_for() {
     view.read(|chat| {
         let room = chat.room.as_ref().unwrap();
         assert_eq!(room.id, "dm-7-8");
-        assert_eq!(room.messages.ready().map(Vec::len), Some(WINDOW));
+        assert_eq!(room.messages.ready().map(Vec::len), Some(ROOM_ROWS));
     });
     assert_eq!(older.get(), 4, "the older page was read through");
 }
@@ -241,6 +240,13 @@ fn a_hover_folds_no_message_again() {
     cx.run_until_parked();
     assert!(!Rc::ptr_eq(&before, &folded(&view)), "a reaction moved m2");
     assert!(cx.has_text("🎉"), "{:?}", cx.texts());
+    let after = folded(&view);
+    assert_eq!(before.len(), after.len());
+    let moved: Vec<u64> = (before.iter().zip(after.iter()))
+        .filter(|(was, now)| was != now)
+        .map(|(_, now)| now.seq)
+        .collect();
+    assert_eq!(moved, [2], "the row it moved, folded again alone");
 }
 
 #[test]
@@ -291,7 +297,9 @@ fn long_room(head: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
                 }
                 Query::Roots { .. } => Reply::Roots(::chat::PageResponse {
                     height: 1,
-                    items: (head + 1 - WINDOW as u64..=head).map(marked_row).collect(),
+                    items: (head + 1 - ROOM_ROWS as u64..=head)
+                        .map(marked_row)
+                        .collect(),
                     next: Some(vec![1]),
                 }),
                 Query::Members { .. } => Reply::Members(page(Vec::new())),
@@ -302,6 +310,7 @@ fn long_room(head: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
                 query => panic!("unexpected chat query: {query:?}"),
             })
         }));
+    tall(&mut cx);
     let view = cx.open::<Chat>();
     seat(&mut cx);
     (cx, view)
@@ -345,8 +354,8 @@ fn a_landed_room_opens_on_its_message_and_pages_both_ways() {
     reach_first(&mut cx, &view);
     assert_eq!(
         seqs(&view),
-        (371, 626, 256),
-        "a page above, the far end let go"
+        (371, 629, 259),
+        "a page above, the newer end kept"
     );
     view.read(|chat| assert!(chat.room.as_ref().unwrap().landed));
 
@@ -409,6 +418,7 @@ fn seeded_room(listed: Option<u64>) -> (TestAppContext, Entity<Chat>) {
                 query => panic!("unexpected chat query: {query:?}"),
             })
         }));
+    tall(&mut cx);
     let view = cx.open::<Chat>();
     (cx, view)
 }
@@ -500,6 +510,7 @@ fn threaded_room(
     let mut cx = TestAppContext::new();
     configure(&mut cx);
     threaded(&cx, head, thread);
+    tall(&mut cx);
     let view = cx.open::<Chat>();
     seat(&mut cx);
     (cx, view)
@@ -526,12 +537,20 @@ fn newer_pages_of_replies_alone_read_on_to_the_head() {
 }
 
 #[test]
-fn roots_past_a_run_of_replies_longer_than_the_window_stay_out() {
+fn roots_past_a_run_of_replies_join_the_rows_the_reader_is_on() {
     let (mut cx, view) = threaded_room(510, |seq| (101..=500).contains(&seq).then_some(100));
     read_to_the_foot(&mut cx, 60);
     view.read(|chat| assert!(chat.room.as_ref().unwrap().landed));
-    assert_eq!(seqs(&view), (1, 124, 124), "the window around 60, whole");
-    assert!(cx.find("chat-jump-latest").is_some());
+    assert_eq!(
+        seqs(&view),
+        (1, 510, 185),
+        "the window around 60, then the page past the run"
+    );
+    let wire::Node::List { item_count, .. } = timeline(&cx) else {
+        unreachable!()
+    };
+    cx.simulate_range("chat-message-list", item_count - 10..item_count);
+    at_its_head(&cx, &view);
 }
 
 #[test]
@@ -544,21 +563,21 @@ fn an_older_page_of_replies_keeps_the_rows_the_reader_is_on() {
 }
 
 #[test]
-fn older_pages_that_trim_the_newer_end_read_it_again() {
+fn older_pages_keep_the_newer_end() {
     let (mut cx, view) = threaded_room(700, |seq| (301..=600).contains(&seq).then_some(300));
     read_to_the_foot(&mut cx, 280);
     view.read(|chat| assert!(chat.room.as_ref().unwrap().landed));
+    let newest = seqs(&view).1;
     for _ in 0..3 {
         reach_first(&mut cx, &view);
     }
-    assert!(seqs(&view).1 < 300, "the newer end let go");
-    let wire::Node::List { item_count, .. } = timeline(&cx) else {
-        unreachable!()
-    };
-    cx.simulate_range("chat-message-list", item_count - 10..item_count);
+    assert_eq!(seqs(&view).1, newest, "the newer end stays");
     view.read(|chat| {
         let rows = chat.room.as_ref().unwrap().messages.ready().unwrap();
-        assert!(rows.iter().any(|row| row.seq == 300), "root 300 read again");
+        assert!(
+            rows.iter().any(|row| row.seq == 300),
+            "root 300 held throughout"
+        );
     });
 }
 
@@ -631,18 +650,18 @@ fn a_link_to_a_root_closes_the_thread_beside_the_room() {
 #[ignore = "measurement: prints a hover's render time over a full room, asserts nothing of it"]
 fn a_hover_over_a_full_room_measured() {
     for shown in [12, 40, 64] {
-        let (mut cx, _) = full_room(Rc::new(Cell::new(WINDOW as u64)));
-        cx.simulate_range("chat-message-list", WINDOW - shown..WINDOW);
+        let (mut cx, _) = full_room(Rc::new(Cell::new(ROOM_ROWS as u64)));
+        cx.simulate_range("chat-message-list", ROOM_ROWS - shown..ROOM_ROWS);
         let hovers = 200;
         let clock = std::time::Instant::now();
         for at in 0..hovers {
-            let seq = WINDOW as u64 - (at % 10) as u64;
+            let seq = ROOM_ROWS as u64 - (at % 10) as u64;
             cx.simulate_hover(&format!("chat-message-m{seq}-row"), true);
         }
         let each = clock.elapsed() / hovers as u32;
         let (_, start, rows) = window(&cx);
         eprintln!(
-            "a hover over a {WINDOW}-row room, {} rows lowered from {start}: {each:?} per hover",
+            "a hover over a {ROOM_ROWS}-row room, {} rows lowered from {start}: {each:?} per hover",
             rows.len()
         );
     }

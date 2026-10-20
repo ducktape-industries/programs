@@ -238,7 +238,7 @@ fn rows(
                     None => div().into_any_element(),
                 };
             };
-            let day = new_day(&messages, at);
+            let day = new_day(&messages, at, chat.today);
             let unread = unread == Some(message.seq);
             let active = (active_id.as_ref() == Some(&message.id)).then_some(cell);
             let set = (at + 1, messages.len());

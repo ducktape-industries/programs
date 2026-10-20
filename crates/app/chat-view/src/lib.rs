@@ -71,15 +71,6 @@ pub use state::*;
 #[cfg(not(feature = "notifier"))]
 use view::prelude::*;
 
-/// Rows asked per page.
-#[cfg(not(feature = "notifier"))]
-const PAGE: usize = 64;
-/// Rows a room keeps on screen before paging older.
-#[cfg(not(feature = "notifier"))]
-const WINDOW: usize = 256;
-#[cfg(not(feature = "notifier"))]
-const SPAN: usize = WINDOW;
-
 #[cfg(not(feature = "notifier"))]
 impl View for Chat {
     const NAME: &'static str = words::CHAT;
@@ -108,7 +99,9 @@ impl View for Chat {
 
     /// Follows the host and reads what the screen shows: on a first mount,
     /// and again after a snapshot, whose in-flight work it parks.
-    fn attach(&mut self, _: &mut Window, cx: &mut Context<Self>) {
+    fn attach(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // in hand from the first tick: a room read before any frame is sized by it
+        self.take_viewport(window);
         // a send in flight when the snapshot was taken never came back:
         // park its body as a failed send the composer can restore
         for draft in self.drafts.values_mut() {
@@ -140,10 +133,8 @@ impl View for Chat {
 #[cfg(not(feature = "notifier"))]
 impl Render for Chat {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // the pane's size, as the host lays the frame out: the panes
-        // clamp to it before the frame that shows them
-        let size = window.viewport_size();
-        self.layout.viewport = (size.width.into(), size.height.into());
+        // the panes clamp to it before the frame that shows them
+        self.take_viewport(window);
         self.seat_drafts();
         // names land async: the frame is the one place that sees each
         self.settle_title(cx);
@@ -165,6 +156,15 @@ impl Render for Chat {
         } else {
             ui::render(self, cx).into_any_element()
         }
+    }
+}
+
+#[cfg(not(feature = "notifier"))]
+impl Chat {
+    // The pane's size, as the host lays the frame out.
+    fn take_viewport(&mut self, window: &Window) {
+        let size = window.viewport_size();
+        self.layout.viewport = (size.width.into(), size.height.into());
     }
 }
 

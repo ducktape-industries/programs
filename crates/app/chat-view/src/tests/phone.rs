@@ -507,7 +507,7 @@ fn a_day_opens_under_its_separator_and_the_chains_today_says_today() {
         cx.notify();
     });
     cx.run_until_parked();
-    assert!(cx.has_text("Today"));
+    assert!(cx.has_text("Today") && cx.has_text("Yesterday"));
 }
 
 #[test]
@@ -712,6 +712,25 @@ fn a_reaction_chip_takes_the_readers_own_back_and_plus_opens_the_picker() {
         submitted(&cx).pop(),
         Some(Op::RemoveReaction { emoji, .. }) if emoji == "👍"
     ));
+}
+
+#[test]
+fn the_paperclip_opens_the_picker_and_leaves_the_keyboard_down() {
+    let (mut cx, _) = in_general();
+    cx.host()
+        .handle::<view::methods::FilePick>(|_| Ok(Vec::new()));
+    tap(&mut cx, "draft-general/attach");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.host().requests::<view::methods::FilePick>().len(),
+        1,
+        "the picker opened"
+    );
+    assert_ne!(
+        cx.focused().and_then(|node| node.key()),
+        Some("draft-general/editor"),
+        "no keyboard under the picker's sheet"
+    );
 }
 
 #[test]
@@ -929,7 +948,11 @@ fn a_link_to_a_reply_opens_its_thread_page_on_it_over_the_room() {
     assert_eq!(scrolled_to(&view, Pane::Thread), Some(50));
     cx.simulate_back();
     assert!(cx.find("chat-room-page").is_some());
-    assert_eq!(scrolled_to(&view, Pane::Timeline), Some(14));
+    assert_eq!(
+        scrolled_to(&view, Pane::Timeline),
+        Some(34),
+        "a screenful above the root"
+    );
 }
 
 #[test]
@@ -951,7 +974,11 @@ fn a_link_to_a_root_opens_the_room_page_on_it_over_an_open_thread() {
     route(&mut cx, "general/250");
     assert!(cx.find("chat-thread-page").is_none());
     assert!(cx.find("chat-room-page").is_some());
-    assert_eq!(scrolled_to(&view, Pane::Timeline), Some(49));
+    assert_eq!(
+        scrolled_to(&view, Pane::Timeline),
+        Some(34),
+        "a screenful above it"
+    );
 }
 
 #[test]

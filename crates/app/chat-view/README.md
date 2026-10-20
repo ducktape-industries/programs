@@ -55,14 +55,18 @@ members, thread), `details`, `menu`, `search`, `create`, `dm_pick`, `layout`,
 list's closed folders, kept in the view store under `folders`), `drafts` (the
 composers).
 The session keeps each room it opened and left in `visited` (`Visited`): its
-newest page of rows (`Chat::screenful`, the tallest pane placed this session
-over the shortest row), the thread open beside it with its newest page of
+newest page of rows (`Chat::screenful`: the tallest pane placed this session,
+or before any the window's viewport, over the shortest row), the thread open beside it with its newest page of
 replies, and where each list stood (`Anchor`: a row's id and how far into it).
 Pages read further up are never kept, so a room costs one page however far it
 was read, and nothing of it outlives the session. Opening it again draws that
 at once and reads only what blocks wrote since; a reader who stood above the
 kept page lands where they stood. A room opens at its newest row and a thread
-at its newest reply. A list reads the page before its first row once layout
+at its newest reply. Every read of rows is a screenful, and a link lands on a
+screenful each side of its message; an open room keeps every page read in it
+(the reader's scroll bounds it), and its list draws only the rows in view. Rooms,
+members, and the rooms listened to and written in are read whole, one request
+each (`limit: None`). A list reads the page before its first row once layout
 puts that row in view (`listing::edged`): a scroll up to it, or a list too
 short to fill its pane, until the room's first message. The reader's own posts
 never count as unread: a list that shows a newer head of a room they posted in

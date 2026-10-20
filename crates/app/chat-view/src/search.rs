@@ -19,12 +19,13 @@ impl Chat {
     pub(crate) fn search_now(&mut self, cx: &mut Context<Self>) {
         let (text, viewer) = (self.search.query.clone(), self.viewer());
         let host = cx.host();
+        let screenful = self.screenful();
         self.search.hits = Loadable::Idle;
         cx.load(
             self,
             async move {
                 let (rows, capped, next_after) =
-                    search_hits(host, text, None, viewer, None).await?;
+                    search_hits(host, text, None, viewer, None, screenful).await?;
                 Ok(Hits {
                     rows,
                     capped,
@@ -45,7 +46,8 @@ impl Chat {
         }
         self.search.more_loading = true;
         let (text, viewer) = (self.search.query.clone(), self.viewer());
-        let more = search_hits(cx.host(), text, None, viewer, Some(after));
+        let screenful = self.screenful();
+        let more = search_hits(cx.host(), text, None, viewer, Some(after), screenful);
         cx.land(more, |chat, result, cx| {
             cx.notify();
             chat.search.more_loading = false;
