@@ -385,6 +385,47 @@ fn a_name_with_no_record_that_runs_is_listed_or_waits_is_the_votes() {
 }
 
 #[test]
+fn every_account_a_holder_lists_changes_the_name_and_hands_it_on() {
+    let (store, code) = seated();
+    let both = Holder::Accounts(vec![CAROL, DAN]);
+    run(&store, vote(), own("files", both.clone())).unwrap();
+    assert_eq!(owner(&store, "files"), Some(both));
+    run(&store, by(CAROL), at(EARLIEST, set("files", code))).unwrap();
+    run(&store, by(DAN), at(EARLIEST + 1, set("files", code))).unwrap();
+    let stranger = refusal(&store, by(EVE), at(EARLIEST + 2, set("files", code)));
+    assert_eq!(stranger.code, code::UNAUTHORIZED);
+    let says = &stranger.message;
+    assert!(
+        says.contains("accounts 7, 8") && says.contains("Own"),
+        "{says}"
+    );
+    run(&store, by(DAN), cancel_at(EARLIEST, "files")).unwrap();
+    assert_eq!(
+        refused(&store, by(EVE), own("files", Holder::Account(EVE))),
+        code::UNAUTHORIZED
+    );
+    for who in [vote(), by(CAROL)] {
+        assert_eq!(
+            refused(&store, who, own("files", Holder::Accounts(Vec::new()))),
+            code::INVALID_INPUT,
+            "a list of no accounts"
+        );
+    }
+    run(
+        &store,
+        by(DAN),
+        own("files", Holder::Accounts(vec![DAN, EVE])),
+    )
+    .unwrap();
+    assert_eq!(
+        refused(&store, by(CAROL), at(EARLIEST + 3, set("files", code))),
+        code::UNAUTHORIZED,
+        "an account the new list leaves out"
+    );
+    run(&store, by(EVE), at(EARLIEST + 3, set("files", code))).unwrap();
+}
+
+#[test]
 fn a_change_the_vote_left_waiting_holds_the_name_against_accounts() {
     let (store, code) = seated();
     run(&store, vote(), at(5_000, set("chat", code))).unwrap();

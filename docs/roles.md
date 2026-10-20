@@ -280,8 +280,10 @@ Who may schedule or cancel (putting a blob is open to any account):
   holders were recorded; the first account to `Set`, `Publish` or
   `SetView` a free id holds it from the block it schedules that change,
   so no second account claims it during the notice; a removal keeps the
-  holder. `Own { program, holder }` hands an id to an account or to the
-  vote, sent by the account that holds it or by the vote. Another
+  holder. `Own { program, holder }` hands an id to an account, to a list
+  of accounts (`Holder::Accounts`, any of which acts as the holder; never
+  an empty list) or to the vote, sent by an account that holds it or by
+  the vote. Another
   account's change is refused `unauthorized`, naming the holder. The
   holder sets, publishes with an empty role list and removes its id, but
   never the id of a program that fills a role, and its change lands at

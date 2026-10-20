@@ -258,6 +258,10 @@ pub(crate) fn words(motion: &Motion, roster: &[Entry]) -> String {
                 programs::Holder::Account(account) => {
                     format!("Hand {program} to account {account}")
                 }
+                programs::Holder::Accounts(accounts) => {
+                    let listed: Vec<String> = accounts.iter().map(u64::to_string).collect();
+                    format!("Hand {program} to accounts {}", listed.join(", "))
+                }
             },
             Err(_) => "A program change this screen can't read".into(),
         },

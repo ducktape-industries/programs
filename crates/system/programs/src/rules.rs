@@ -111,6 +111,13 @@ fn belongs(name: &str, holder: &Holder) -> String {
         Holder::Account(account) => format!(
             "{name} belongs to account {account}: only account {account} or the validators' vote changes it, and either hands it on (`Own`)"
         ),
+        Holder::Accounts(accounts) => {
+            let listed: Vec<String> = accounts.iter().map(u64::to_string).collect();
+            let listed = listed.join(", ");
+            format!(
+                "{name} belongs to accounts {listed}: only one of them or the validators' vote changes it, and any of them hands it on (`Own`)"
+            )
+        }
     }
 }
 
@@ -118,15 +125,20 @@ fn belongs(name: &str, holder: &Holder) -> String {
 fn held_by(ctx: &QueryCtx, name: &str, account: AccountNumber) -> Result<(), Error> {
     match holder_of(ctx, name)? {
         None => Ok(()),
-        Some(Holder::Account(held)) if held == account => Ok(()),
+        Some(holder) if holder.lists(account) => Ok(()),
         Some(holder) => Err(unauthorized(belongs(name, &holder))),
     }
 }
 
 pub(crate) fn own(ctx: &ExecCtx, program: ProgramId, to: Holder) -> Result<(), Error> {
+    if to == Holder::Accounts(Vec::new()) {
+        return Err(invalid(format!(
+            "a list of no accounts holds nothing: hand {program} to the validators' vote instead"
+        )));
+    }
     if let Some(account) = actor(&ctx.env(), &program)? {
         match holder_of(ctx, &program)? {
-            Some(Holder::Account(held)) if held == account => {}
+            Some(holder) if holder.lists(account) => {}
             Some(holder) => return Err(unauthorized(belongs(&program, &holder))),
             None => {
                 return Err(not_found(format!(

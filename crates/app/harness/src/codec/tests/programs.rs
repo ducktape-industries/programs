@@ -229,6 +229,10 @@ fn programs_round_trips() {
         program: "chat".into(),
         holder: ::programs::Holder::Account(17),
     });
+    programs.op(&::programs::Op::Own {
+        program: "chat".into(),
+        holder: ::programs::Holder::Accounts(vec![17, 21]),
+    });
     programs.query(&::programs::Query::Owner("chat".into()));
     programs.reply(&::programs::Reply::Owner {
         height: 5,

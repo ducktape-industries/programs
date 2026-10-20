@@ -33,6 +33,18 @@ pub struct Pending {
 pub enum Holder {
     Vote,
     Account(AccountNumber),
+    // several accounts, any of which acts as the holder
+    Accounts(Vec<AccountNumber>),
+}
+
+impl Holder {
+    pub fn lists(&self, account: AccountNumber) -> bool {
+        match self {
+            Holder::Vote => false,
+            Holder::Account(held) => *held == account,
+            Holder::Accounts(held) => held.contains(&account),
+        }
+    }
 }
 
 pub fn role_bound(roles: &Roles, program: &str) -> bool {
@@ -231,6 +243,9 @@ pub fn describe(op: &Op) -> describe::Description {
             let holder = match holder {
                 Holder::Vote => Value::text("the validators' vote"),
                 Holder::Account(account) => Value::Account(*account),
+                Holder::Accounts(accounts) => {
+                    Value::List(accounts.iter().copied().map(Value::Account).collect())
+                }
             };
             (
                 format!("Own · {program}"),
