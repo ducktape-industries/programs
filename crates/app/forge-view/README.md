@@ -50,4 +50,6 @@ Ada owns `project` and wrote change 1, 2 Rae reviews and holds no write, 9 Wren
 is access's granted writer. `change_tests.rs`, `screen_tests.rs`,
 `log_tests.rs` and `phone_tests.rs` (the phone at 390 wide) share its helpers;
 `policies_tests.rs` puts keys on record (`owned`). `notifier/` tests forge's
-notifier on its own host.
+notifier on its own host: it asks `Judgment` again on a forge block that wrote
+what it reads, and on a chat block only when a reply answered a thread the
+reader started or a line forge posted (a review's root).

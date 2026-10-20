@@ -26,6 +26,8 @@ chat.workspace = true
 ducklink.workspace = true
 forge.workspace = true
 identity.workspace = true
+# a chat block's keys read back (`notifier.rs`): which thread a reply answered
+store.workspace = true
 # who can edit a repository or a change: ownership's answers, in policy-view's words
 ownership.workspace = true
 policy-view.workspace = true

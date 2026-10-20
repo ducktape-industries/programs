@@ -5,7 +5,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use forge::{ChangeState, ChangeSummary, PageResponse, ReplyAttention, ReviewCounts, Revision};
-use view::methods::{Changes, HostScreen, HostSession, StoreGet, StoreSet};
+use view::methods::{Change, Changes, HostScreen, HostSession, StoreGet, StoreSet};
+
+const FORGE: u64 = 9;
 use view::testing::TestNotifier;
 
 fn owed(n: u64, requested: bool, reply: u64) -> Judgment {
@@ -46,16 +48,18 @@ fn session() -> Session {
 struct World {
     owed: Rc<RefCell<Vec<Judgment>>>,
     kept: Rc<RefCell<BTreeMap<String, Vec<u8>>>>,
+    asked: Rc<RefCell<usize>>,
 }
 
 impl World {
     fn start(&self) -> TestNotifier<ForgeNotices> {
         let mut notifier = TestNotifier::new();
         let host = notifier.host();
-        let owed = self.owed.clone();
+        let (owed, asked) = (self.owed.clone(), self.asked.clone());
         host.handle::<Ask>(move |query| match query {
             Query::Judgment { principal, .. } => {
                 assert_eq!(principal, Principal::Account(2));
+                *asked.borrow_mut() += 1;
                 Ok(Reply::Judgment {
                     height: 1,
                     page: PageResponse {
@@ -66,6 +70,13 @@ impl World {
                 })
             }
             query => panic!("unexpected forge query: {query:?}"),
+        });
+        host.handle::<Who>(|query| match query {
+            identity::Query::OfProgram { program } => {
+                assert_eq!(program, forge::PROGRAM);
+                Ok(identity::Reply::Number(Some(FORGE)))
+            }
+            query => panic!("unexpected identity query: {query:?}"),
         });
         let kept = self.kept.clone();
         host.handle::<StoreGet>(move |key| Ok(kept.borrow().get(&key).cloned()));
@@ -146,4 +157,44 @@ fn a_change_on_screen_gets_no_notice() {
 
     world.block(&mut notifier, vec![owed(3, true, 0), owed(4, true, 0)]);
     assert_eq!(posts(&notifier).len(), 1);
+}
+
+fn answered(author: u64) -> Vec<u8> {
+    chat::tables::ANSWERED.key(&("forge:web:3".to_owned(), Principal::Account(author), 7u64))
+}
+
+#[test]
+fn a_chat_block_asks_only_when_it_answered_the_readers_thread_or_a_review() {
+    let world = World::default();
+    let mut notifier = world.start();
+    let chat = notifier.host().stream::<Changes<chat::Chat>>();
+    let asked = |keys: Vec<Vec<u8>>, notifier: &mut TestNotifier<ForgeNotices>| {
+        let before = *world.asked.borrow();
+        chat.send(Some(Change { height: 5, keys }));
+        notifier.run_until_parked();
+        *world.asked.borrow() - before
+    };
+    let posted = vec![
+        chat::tables::MESSAGES.key(&("general".to_owned(), 7u64)),
+        chat::tables::MESSAGE_IDS.key(&"m7".to_owned()),
+    ];
+    assert_eq!(asked(posted, &mut notifier), 0, "a post in a room");
+    assert_eq!(
+        asked(vec![answered(5)], &mut notifier),
+        0,
+        "a reply to someone else"
+    );
+    assert_eq!(
+        asked(vec![answered(2)], &mut notifier),
+        1,
+        "a reply to the reader"
+    );
+    assert_eq!(
+        asked(vec![answered(FORGE)], &mut notifier),
+        1,
+        "a reply to a review"
+    );
+    chat.send(None);
+    notifier.run_until_parked();
+    assert_eq!(*world.asked.borrow(), 4, "a reopened link reads everything");
 }
