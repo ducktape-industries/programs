@@ -202,30 +202,22 @@ fn configured(chain: &MockChain, more: &str) {
 }
 
 #[test]
-fn a_new_conversation_goes_to_the_account_with_the_most_room_and_stays_on_it() {
+fn a_new_conversation_goes_to_the_first_account_ccs_names_and_stays_whatever_its_budget_reads() {
     let world = world();
     let chain = &world.chain;
     two_services(&world);
-    status(chain, 2, SERVICE, &[("a", 80), ("b", 90)]);
-    status(chain, 4, TWO, &[("c", 20)]);
+    status(chain, 2, SERVICE, &[("a", 80), ("b", 10)]);
+    status(chain, 4, TWO, &[("c", 0)]);
     let thread = world.mention("m1", "hello");
     chain.at(6, 0);
-    learned(chain, TWO, Some("c"));
+    learned(chain, SERVICE, Some("a"));
     chain.at(7, 0);
-    says(chain, TWO, "c", FINE);
-    assert_eq!(route(chain, thread), on(TWO, "c"));
-    status(chain, 8, TWO, &[("c", 95)]);
+    says(chain, SERVICE, "a", FINE);
+    assert_eq!(route(chain, thread), on(SERVICE, "a"));
+    status(chain, 8, SERVICE, &[("a", 100), ("b", 10)]);
     world.mention("m2", "again");
     chain.at(10, 0);
-    says(
-        chain,
-        TWO,
-        "c",
-        Says {
-            used: "0.96",
-            ..FINE
-        },
-    );
+    says(chain, SERVICE, "a", Says { used: "1", ..FINE });
     let moved: Vec<bool> = answerers(chain, thread)
         .iter()
         .map(|row| row.moved)
@@ -241,7 +233,7 @@ fn a_new_conversation_goes_to_the_account_with_the_most_room_and_stays_on_it() {
 }
 
 #[test]
-fn a_429_moves_the_turn_to_another_account_at_once_and_the_move_shows_its_cache_write() {
+fn a_429_moves_only_that_call_and_the_next_call_tries_the_threads_own_account_first() {
     let world = world();
     let chain = &world.chain;
     two_services(&world);
@@ -249,25 +241,32 @@ fn a_429_moves_the_turn_to_another_account_at_once_and_the_move_shows_its_cache_
     status(chain, 4, TWO, &[("c", 20)]);
     let thread = world.mention("m1", "hello");
     chain.at(6, 0);
-    learned(chain, TWO, Some("c"));
+    learned(chain, SERVICE, Some("a"));
     chain.at(7, 0);
     let written = |cache_write| Says {
         cache_write,
         ..FINE
     };
-    says(chain, TWO, "c", written(1000));
+    says(chain, SERVICE, "a", written(1000));
     world.mention("m2", "and now?");
     chain.at(8, 0);
-    says(chain, TWO, "c", LIMITED);
+    says(chain, SERVICE, "a", LIMITED);
     let told = notices(chain, thread);
     let again =
         "harness asks the model again at block 9 on another of its model's accounts (attempt 1)";
     assert!(told.last().unwrap().ends_with(again), "{told:?}");
     chain.at(9, 0);
     chain.at(10, 0);
-    assert!(none_open(chain, TWO, "/v1/messages"));
-    says(chain, SERVICE, "a", written(1200));
+    assert!(none_open(chain, SERVICE, "/v1/messages"));
+    says(chain, TWO, "c", written(1200));
     assert_eq!(route(chain, thread), on(SERVICE, "a"));
+    world.mention("m3", "once more");
+    chain.at(11, 0);
+    assert!(
+        none_open(chain, TWO, "/v1/messages"),
+        "no 429 is remembered"
+    );
+    says(chain, SERVICE, "a", written(0));
     let rows: Vec<(String, Option<String>, bool)> = answerers(chain, thread)
         .into_iter()
         .map(|row| (row.service, row.account, row.moved))
@@ -275,21 +274,16 @@ fn a_429_moves_the_turn_to_another_account_at_once_and_the_move_shows_its_cache_
     assert_eq!(
         rows,
         [
-            (TWO.to_owned(), Some("c".to_owned()), false),
-            (SERVICE.to_owned(), Some("a".to_owned()), true)
+            (SERVICE.to_owned(), Some("a".to_owned()), false),
+            (TWO.to_owned(), Some("c".to_owned()), true),
+            (SERVICE.to_owned(), Some("a".to_owned()), false)
         ]
     );
-    assert_eq!(cache_writes(chain, thread), [1000, 1200]);
-    let fresh = Op::NewThread { agent: world.agent };
-    chain.submit(signed(ADA), PROGRAM, &fresh).unwrap();
-    let second = world.mention("m3", "a new one");
-    chain.at(11, 0);
-    says(chain, SERVICE, "a", FINE);
-    assert_eq!(route(chain, second), on(SERVICE, "a"));
+    assert_eq!(cache_writes(chain, thread), [1000, 1200, 0]);
 }
 
 #[test]
-fn a_failed_answer_moves_on_but_a_call_cut_off_by_an_update_stays() {
+fn a_failed_answer_moves_that_call_on_but_a_call_cut_off_by_an_update_stays() {
     let world = world();
     let chain = &world.chain;
     two_services(&world);
@@ -297,12 +291,12 @@ fn a_failed_answer_moves_on_but_a_call_cut_off_by_an_update_stays() {
     status(chain, 4, TWO, &[("c", 20)]);
     let thread = world.mention("m1", "hello");
     chain.at(6, 0);
-    learned(chain, TWO, Some("c"));
+    learned(chain, SERVICE, Some("a"));
     chain.at(7, 0);
-    says(chain, TWO, "c", FINE);
+    says(chain, SERVICE, "a", FINE);
     world.mention("m2", "and now?");
     chain.at(8, 0);
-    let (request, _, _) = open(chain, TWO, "/v1/messages");
+    let (request, _, _) = open(chain, SERVICE, "/v1/messages");
     answer(
         chain,
         request.id,
@@ -310,7 +304,7 @@ fn a_failed_answer_moves_on_but_a_call_cut_off_by_an_update_stays() {
     );
     chain.at(9, 0);
     chain.at(10, 0);
-    says(chain, SERVICE, "a", FINE);
+    says(chain, TWO, "c", FINE);
     assert_eq!(route(chain, thread), on(SERVICE, "a"));
     world.mention("m3", "once more");
     let (request, _, pinned) = open(chain, SERVICE, "/v1/messages");
@@ -363,9 +357,9 @@ fn a_pinned_service_keeps_to_its_accounts_and_one_the_model_lists_not_gives_up()
     status(chain, 4, TWO, &[("c", 20)]);
     let thread = world.mention("m1", "hello");
     chain.at(6, 0);
-    learned(chain, SERVICE, Some("b"));
+    learned(chain, SERVICE, Some("a"));
     chain.at(7, 0);
-    says(chain, SERVICE, "b", FINE);
+    says(chain, SERVICE, "a", FINE);
     configured(chain, "service = \"elsewhere\"\n");
     world.mention("m2", "and now?");
     let told = notices(chain, thread);
@@ -401,22 +395,25 @@ fn a_forced_move_near_a_compaction_compacts_first_on_the_new_account() {
     status(chain, 4, TWO, &[("c", 20)]);
     let thread = world.mention("m1", "remember the plan");
     chain.at(6, 0);
-    learned(chain, TWO, Some("c"));
+    learned(chain, SERVICE, Some("a"));
     chain.at(7, 0);
     says(
         chain,
-        TWO,
-        "c",
+        SERVICE,
+        "a",
         Says {
             cache_write: 1000,
             ..FINE
         },
     );
     assert_eq!(thread_row(chain, thread).context, Context::Measured(1015));
-    status(chain, 8, TWO, &[("c", 100)]);
     world.mention("m2", "and now?");
-    let (request, _, pinned) = open(chain, SERVICE, "/v1/messages");
-    assert_eq!(pinned.as_deref(), Some("a"));
+    chain.at(8, 0);
+    says(chain, SERVICE, "a", LIMITED);
+    chain.at(9, 0);
+    chain.at(10, 0);
+    let (request, _, pinned) = open(chain, TWO, "/v1/messages");
+    assert_eq!(pinned.as_deref(), Some("c"));
     assert_eq!(
         body(chain, &request)["compaction"],
         json!({ "type": "summarize" })
@@ -548,22 +545,22 @@ fn a_search_one_account_answered_reaches_another_as_plain_text_after_a_429() {
     status(chain, 4, TWO, &[("c", 20)]);
     let thread = world.mention("m1", "look it up");
     chain.at(6, 0);
-    learned(chain, TWO, Some("c"));
+    learned(chain, SERVICE, Some("a"));
     chain.at(7, 0);
-    searched(chain, TWO, "c");
+    searched(chain, SERVICE, "a");
     world.mention("m2", "and now?");
     chain.at(8, 0);
-    let (own, _, _) = open(chain, TWO, "/v1/messages");
+    let (own, _, _) = open(chain, SERVICE, "/v1/messages");
     let sent = body(chain, &own).to_string();
     assert!(
         sent.contains("EqgfCioIARgB") && sent.contains("server_tool_use"),
         "the account that minted it reads it as sent: {sent}"
     );
-    says(chain, TWO, "c", LIMITED);
+    says(chain, SERVICE, "a", LIMITED);
     chain.at(9, 0);
     chain.at(10, 0);
-    let (moved, _, pinned) = open(chain, SERVICE, "/v1/messages");
-    assert_eq!(pinned.as_deref(), Some("a"));
+    let (moved, _, pinned) = open(chain, TWO, "/v1/messages");
+    assert_eq!(pinned.as_deref(), Some("c"));
     let sent = body(chain, &moved).to_string();
     for minted in [
         "EqgfCioIARgB",
@@ -578,6 +575,14 @@ fn a_search_one_account_answered_reaches_another_as_plain_text_after_a_429() {
     }
     assert!(sent.contains("Ducktape https://ducktape.example"), "{sent}");
     assert!(sent.contains("Ducktape is a network."), "{sent}");
-    says(chain, SERVICE, "a", FINE);
+    says(chain, TWO, "c", FINE);
     assert_eq!(route(chain, thread), on(SERVICE, "a"));
+    world.mention("m3", "back again");
+    let (home, _, pinned) = open(chain, SERVICE, "/v1/messages");
+    assert_eq!(pinned.as_deref(), Some("a"));
+    let sent = body(chain, &home).to_string();
+    assert!(
+        sent.contains("EqgfCioIARgB"),
+        "back on the account that minted it, it reads as sent: {sent}"
+    );
 }

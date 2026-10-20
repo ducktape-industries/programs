@@ -314,7 +314,6 @@ fn status_read(ctx: &ExecCtx, service: &str, response: &http::Response) -> Statu
             ..before.unwrap_or_default()
         };
         BUDGETS.put(ctx, &key, &row);
-        crate::routes::read(ctx, service, &reading.label, &row);
     }
     StatusOutcome::Read {
         accounts: status.accounts.len() as u64,

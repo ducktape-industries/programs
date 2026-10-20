@@ -1,6 +1,6 @@
-//! Which model service and ccs account answers a thread's next call (J-090): its route while that
-//! account has room, as its prompt cache lives there, else the listed account with the least used;
-//! an account that refused or failed the call is passed over, and harness pins the call to it.
+//! Which model service and ccs account answers a thread's next call: its route first, as its prompt
+//! cache lives there, then every other listed account in ccs's order; an account that refused or
+//! failed this call is passed over for it alone, and harness pins the call to the one picked.
 use ::program::{Error, ExecCtx, QueryCtx};
 use abi::role::egress::http;
 use store::{PageRequest, PageResponse};
@@ -8,15 +8,9 @@ use store::{PageRequest, PageResponse};
 use crate::budget::{CCS_ACCOUNT, ORGANIZATION};
 use crate::config::Pin;
 use crate::resume::header;
-use crate::state::{
-    ANSWERED, BUDGETS, Budget, MODEL_SERVICES, PICKS, Pick, REFUSED, ROUTES, TRIED,
-};
+use crate::state::{ANSWERED, BUDGETS, MODEL_SERVICES, PICKS, Pick, ROUTES, TRIED};
 use crate::turns::serves;
-use crate::{Answerer, ModelRow, Route, Routed, ThreadRow, WHOLE_WINDOW};
-
-const ROOM: [&str; 2] = ["5h", "7d"];
-const REJECTED: &str = "rejected";
-const SIGNED_OUT: &str = "signed_out";
+use crate::{Answerer, ModelRow, Route, Routed, ThreadRow};
 
 type Candidate = (String, Option<String>);
 
@@ -65,54 +59,13 @@ fn tried(thread: u64, service: &str, account: Option<&str>) -> (u64, (String, St
     (thread, key(service, account))
 }
 
-fn rows(ctx: &QueryCtx, service: &str, account: Option<&str>) -> Result<Vec<Budget>, Error> {
-    let all = BUDGETS.scan(ctx, BUDGETS.prefix_of(&service.to_owned()))?;
-    let own = all
-        .into_iter()
-        .map(|(_, row)| row)
-        .filter(|row| row.label.as_deref() == account);
-    Ok(own.collect())
-}
-
 fn labels(ctx: &QueryCtx, service: &str) -> Result<Vec<String>, Error> {
     let all = BUDGETS.scan(ctx, BUDGETS.prefix_of(&service.to_owned()))?;
     Ok(all.into_iter().filter_map(|(_, row)| row.label).collect())
 }
 
-fn open(reset: u64, now: u64) -> bool {
-    now < reset.saturating_mul(1000)
-}
-
-fn out(row: &Budget, now: u64) -> bool {
-    let signed_out = row.error.as_deref() == Some(SIGNED_OUT);
-    let whole = row.windows.iter().any(|window| {
-        let full = window.status.as_deref() == Some(REJECTED) || window.used >= WHOLE_WINDOW;
-        ROOM.contains(&window.name.as_str()) && open(window.reset, now) && full
-    });
-    signed_out || whole
-}
-
-fn limited(ctx: &QueryCtx, service: &str, account: Option<&str>) -> Result<bool, Error> {
-    let now = ctx.env().time;
-    let refused = REFUSED.get(ctx, &key(service, account))?;
-    if refused.is_some_and(|until| until.is_none_or(|until| now < until)) {
-        return Ok(true);
-    }
-    Ok(rows(ctx, service, account)?.iter().any(|row| out(row, now)))
-}
-
-fn used(ctx: &QueryCtx, service: &str, account: Option<&str>) -> Result<u64, Error> {
-    let now = ctx.env().time;
-    let rows = rows(ctx, service, account)?;
-    let windows = rows.iter().flat_map(|row| &row.windows);
-    let counted =
-        windows.filter(|window| ROOM.contains(&window.name.as_str()) && open(window.reset, now));
-    Ok(counted.map(|window| window.used).max().unwrap_or(0))
-}
-
-fn free(ctx: &QueryCtx, thread: u64, service: &str, account: Option<&str>) -> Result<bool, Error> {
-    let passed = TRIED.has(ctx, &tried(thread, service, account));
-    Ok(!passed && !limited(ctx, service, account)?)
+fn untried_by(ctx: &QueryCtx, thread: u64, (service, account): &Candidate) -> bool {
+    !TRIED.has(ctx, &tried(thread, service, account.as_deref()))
 }
 
 fn candidates(
@@ -178,12 +131,6 @@ pub(crate) fn pick(
         return Ok(Picked::Unserved(services));
     }
     let candidates = candidates(ctx, &served, pin.account.as_deref())?;
-    let mut room = Vec::new();
-    for (index, (service, account)) in candidates.iter().enumerate() {
-        if free(ctx, thread.id, service, account.as_deref())? {
-            room.push((used(ctx, service, account.as_deref())?, index));
-        }
-    }
     let route = ROUTES.get(ctx, &thread.id)?;
     let at = |route: &Route| {
         let routed = (route.service.clone(), route.account.clone());
@@ -193,13 +140,11 @@ pub(crate) fn pick(
         .as_ref()
         .filter(|route| route.summary == thread.summary);
     let sticky = cached.and_then(at);
-    let free_at = |index: usize| room.iter().any(|(_, free)| *free == index);
-    let (index, forced) = match sticky.filter(|index| free_at(*index)) {
-        Some(index) => (index, false),
-        None => match room.iter().min() {
-            Some((_, index)) => (*index, cached.is_some()),
-            None => (route.as_ref().and_then(at).unwrap_or(0), false),
-        },
+    let order = sticky.into_iter().chain(0..candidates.len());
+    let mut open = order.filter(|index| untried_by(ctx, thread.id, &candidates[*index]));
+    let (index, forced) = match open.next() {
+        Some(index) => (index, cached.is_some() && Some(index) != sticky),
+        None => (route.as_ref().and_then(at).unwrap_or(0), false),
     };
     let (service, account) = candidates[index].clone();
     let pick = Pick {
@@ -224,12 +169,6 @@ pub(crate) fn heard(ctx: &ExecCtx, thread: u64, response: &http::Response) {
     };
     pick.label = named(CCS_ACCOUNT);
     pick.organization = named(ORGANIZATION);
-    if (200..300).contains(&response.status) {
-        REFUSED.remove(ctx, &key(&pick.service, pick.account.as_deref()));
-        if let Some(label) = &pick.label {
-            REFUSED.remove(ctx, &key(&pick.service, Some(label)));
-        }
-    }
     PICKS.put(ctx, &thread, &pick);
 }
 
@@ -239,8 +178,9 @@ pub(crate) fn answered(ctx: &ExecCtx, thread: u64, seq: u64) -> Result<(), Error
     };
     let account = pick.label.clone().or(pick.account.clone());
     let before = ROUTES.get(ctx, &thread)?;
-    let moved =
-        before.is_some_and(|route| route.service != pick.service || route.account != account);
+    let moved = before
+        .as_ref()
+        .is_some_and(|route| route.service != pick.service || route.account != account);
     let answerer = Answerer {
         seq,
         service: pick.service.clone(),
@@ -249,6 +189,15 @@ pub(crate) fn answered(ctx: &ExecCtx, thread: u64, seq: u64) -> Result<(), Error
         moved,
     };
     ANSWERED.put(ctx, &(thread, seq), &answerer);
+    untried(ctx, thread);
+    let passed_over = before.as_ref().is_some_and(|route| {
+        let routed = (route.service.clone(), route.account.clone());
+        let listed = pick.candidates.contains(&routed);
+        moved && listed && route.summary == pick.summary
+    });
+    if passed_over {
+        return Ok(());
+    }
     let route = Route {
         service: pick.service,
         account,
@@ -259,26 +208,17 @@ pub(crate) fn answered(ctx: &ExecCtx, thread: u64, seq: u64) -> Result<(), Error
     Ok(())
 }
 
-pub(crate) fn failed(
-    ctx: &ExecCtx,
-    thread: u64,
-    refused: bool,
-    until: Option<u64>,
-) -> Result<bool, Error> {
+pub(crate) fn failed(ctx: &ExecCtx, thread: u64) -> Result<bool, Error> {
     let Some(pick) = PICKS.get(ctx, &thread)? else {
         return Ok(false);
     };
     TRIED.insert(ctx, &tried(thread, &pick.service, pick.account.as_deref()));
-    if refused {
-        REFUSED.put(ctx, &key(&pick.service, pick.account.as_deref()), &until);
-        if let Some(label) = pick.label.as_deref() {
-            REFUSED.put(ctx, &key(&pick.service, Some(label)), &until);
-        }
-    }
-    for (service, account) in &pick.candidates {
-        if free(ctx, thread, service, account.as_deref())? {
-            return Ok(true);
-        }
+    if pick
+        .candidates
+        .iter()
+        .any(|candidate| untried_by(ctx, thread, candidate))
+    {
+        return Ok(true);
     }
     untried(ctx, thread);
     Ok(false)
@@ -290,11 +230,5 @@ pub(crate) fn untried(ctx: &ExecCtx, thread: u64) {
     };
     for key in passed {
         TRIED.remove(ctx, &key);
-    }
-}
-
-pub(crate) fn read(ctx: &ExecCtx, service: &str, label: &str, row: &Budget) {
-    if !out(row, ctx.env().time) {
-        REFUSED.remove(ctx, &key(service, Some(label)));
     }
 }

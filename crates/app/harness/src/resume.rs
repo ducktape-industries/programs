@@ -49,17 +49,11 @@ impl Wait {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Fault {
-    Refused,
-    Failed,
-}
-
 pub(crate) struct Failure {
     pub text: String,
     pub again: Option<Again>,
     pub wait: Option<Wait>,
-    pub fault: Option<Fault>,
+    pub moves: bool,
 }
 
 impl Failure {
@@ -68,7 +62,7 @@ impl Failure {
             text: text.into(),
             again,
             wait: None,
-            fault: None,
+            moves: false,
         }
     }
 
@@ -87,7 +81,7 @@ impl Failure {
     // a stream the model's service broke or failed
     pub fn broke(text: impl Into<String>) -> Failure {
         Failure {
-            fault: Some(Fault::Failed),
+            moves: true,
             ..Failure::busy(text)
         }
     }
@@ -104,13 +98,9 @@ impl Failure {
             reset: seconds(RESET),
         };
         let asked = wait.after.is_some() || wait.reset.is_some();
-        let fault = match response.status {
-            429 => Fault::Refused,
-            _ => Fault::Failed,
-        };
         Failure {
             wait: asked.then_some(wait),
-            fault: Some(fault),
+            moves: true,
             ..Failure::busy(text)
         }
     }
@@ -122,7 +112,7 @@ impl Failure {
         match unchanged {
             true => Failure::last(text),
             false => Failure {
-                fault: Some(Fault::Failed),
+                moves: true,
                 ..Failure::lost(text)
             },
         }
@@ -387,10 +377,7 @@ pub(crate) async fn again(ctx: &Ctx, id: u64, failure: Failure) -> Result<(), Er
         .get(ctx, &id)?
         .map_or(1, |retry| retry.attempt.saturating_add(1));
     let until = failure.wait.and_then(|wait| wait.until(now));
-    let moved = match failure.fault {
-        Some(fault) => routes::failed(ctx, id, fault == Fault::Refused, until)?,
-        None => false,
-    };
+    let moved = failure.moves && routes::failed(ctx, id)?;
     let until = until.filter(|_| !moved);
     let gap = match until {
         Some(_) => 1,

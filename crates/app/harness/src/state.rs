@@ -99,14 +99,12 @@ pub const RUNNING: Item<(BlobId, u64)> = Item::new("running");
 // the services a model is reached through after its record's first (J-090): `SetServices`
 // rewrites the record too, so the record's policy governs it
 pub const MODEL_SERVICES: Map<String, Vec<String>> = Map::new("model-services/");
-// the service and ccs account each thread's prompt cache was last written on
+// the service and ccs account each thread's calls go to first, where its prompt cache was written
 pub const ROUTES: Map<u64, crate::Route> = Map::new("route/");
 // the account each thread's latest model call went to, and who answered it
 pub const PICKS: Map<u64, Pick> = Map::new("pick/");
 // the (service, account) pairs a thread's failed call passed over until it is answered
 pub const TRIED: Set<(u64, (String, String))> = Set::new("tried/");
-// an account that answered a 429, until the time (ms) its wait named, if it named one
-pub const REFUSED: Map<(String, String), Option<u64>> = Map::new("refused/");
 // who answered each of a thread's turns and summaries, by frame
 pub const ANSWERED: Map<(u64, u64), crate::Answerer> = Map::new("answered/");
 // the rooms harness seeded from an agent's `listen` (`listening::seed`): chat's choice stands after
