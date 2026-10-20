@@ -15,4 +15,9 @@ them, whole or as events. Shapes: `src/lib.rs`; checks: `src/rules.rs`.
 | `Answer`, `Events`, `EndStream` | the node the request was elected to, signed by its key, in a later block than the request |
 | `Expire { id }` | egress's own scheduled run for that request |
 
-Every query is answered for anyone.
+Every query is answered for anyone. `Sender { id }` answers the account an open
+request was sent as: the agent's when a program sends it as an agent (harness for
+an agent's tool call), else the sending program's own, or `None` when the frame
+acted as no account. Its row goes when the request closes. A service the request
+reaches reads it to know who asked, unforgeably, by the `ducktape-request` number
+the node puts on the call.

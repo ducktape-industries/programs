@@ -31,6 +31,7 @@ enum Ask {
     Emit(Request),
     Stream(Request, Option<u64>),
     Heard(Event),
+    CallAs(AccountNumber, Request),
 }
 
 fn heard_tag() -> u8 {
@@ -92,6 +93,20 @@ impl Awaiting for Asker {
                 let mut heard = HEARD.get(&ctx)?.unwrap_or_default();
                 heard.push(event);
                 HEARD.put(&ctx, &heard);
+                return Ok(());
+            }
+            Ask::CallAs(account, request) => {
+                let request = Op::Request {
+                    request,
+                    delivery: whole,
+                    wait: None,
+                };
+                let answer = ctx
+                    .call_raw_as(account, egress, abi::encode(&request))
+                    .await;
+                let mut answers = ANSWERS.get(&ctx)?.unwrap_or_default();
+                answers.push(answer);
+                ANSWERS.put(&ctx, &answers);
                 return Ok(());
             }
             Ask::Emit(request) => {
@@ -861,4 +876,50 @@ fn an_event_from_another_program_is_refused() {
         (code::UNAUTHORIZED, "an event comes from the egress role")
     );
     assert!(heard(&chain).is_empty());
+}
+
+fn sender(chain: &MockChain, id: u64) -> Option<AccountNumber> {
+    let Reply::Sender(account) = chain.query(PROGRAM, &Query::Sender { id }).unwrap() else {
+        panic!()
+    };
+    account
+}
+
+#[test]
+fn a_request_names_the_account_it_was_sent_as_until_it_closes() {
+    let chain = chain();
+    serve(&chain, ADA, &[RELAY]).unwrap();
+    let register = identity::Op::RegisterProgram {
+        program: ASKER.into(),
+    };
+    chain
+        .submit(Origin::Root, identity::PROGRAM, &register)
+        .unwrap();
+    let owner = Origin::Signed(OWNER.to_vec());
+    let create = identity::Op::CreateAgent {
+        name: "Scout".into(),
+    };
+    let made = chain
+        .submit(owner.clone(), identity::PROGRAM, &create)
+        .unwrap();
+    let agent: AccountNumber = abi::decode(&made).unwrap();
+    let script = identity::Op::SetScript {
+        account: agent,
+        script: Some(identity::Script {
+            calls: ASKER.into(),
+            config: "/scout.md".into(),
+        }),
+    };
+    chain.submit(owner, identity::PROGRAM, &script).unwrap();
+    let as_agent = Ask::CallAs(agent, relay(b"ping"));
+    chain
+        .submit(Origin::Signed(STRANGER.to_vec()), ASKER, &as_agent)
+        .unwrap();
+    ask(&chain, relay(b"pong"));
+    assert_eq!(sender(&chain, 1), Some(agent));
+    assert_ne!(sender(&chain, 2), Some(agent));
+    chain.at(2, 0);
+    answer(&chain, ADA, 1, Answer::Output(b"done".to_vec())).unwrap();
+    assert_eq!(sender(&chain, 1), None);
+    assert!(request_row(&chain, 1).is_none());
 }

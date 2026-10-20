@@ -52,6 +52,9 @@ pub enum Query {
     #[ask(Reply::Services(PageResponse<ServiceRow>))]
     #[reads(state::SERVICES)]
     Services { page: PageRequest },
+    #[ask(Reply::Sender(Option<AccountNumber>))]
+    #[reads(state::SENDERS)]
+    Sender { id: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -63,6 +66,7 @@ pub enum Reply {
     Nodes(PageResponse<NodeRow>),
     Service(Option<ServiceRow>),
     Services(PageResponse<ServiceRow>),
+    Sender(Option<AccountNumber>),
 }
 
 pub fn describe(op: &Op) -> describe::Description {

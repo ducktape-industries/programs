@@ -9,12 +9,12 @@ use abi::role::validators;
 use store::{PageRequest, PageResponse};
 
 use crate::state::{
-    ASSIGNED, COUNT, EARLY, EXPIRIES, Ending, NODES, REQUESTS, SERVICES, SERVING, STREAMS, Stored,
-    Stream, TURNS,
+    ASSIGNED, COUNT, EARLY, EXPIRIES, Ending, NODES, REQUESTS, SENDERS, SERVICES, SERVING, STREAMS,
+    Stored, Stream, TURNS,
 };
 use crate::{
-    Answer, DEFAULT_WAIT, Delivery, Event, HTTP, NodeRow, Op, PROGRAM, RELAY, RESERVED, Request,
-    RequestRow, ServiceRow, StreamEnd, http,
+    AccountNumber, Answer, DEFAULT_WAIT, Delivery, Event, HTTP, NodeRow, Op, PROGRAM, RELAY,
+    RESERVED, Request, RequestRow, ServiceRow, StreamEnd, http,
 };
 
 fn members(ctx: &QueryCtx) -> Result<Vec<Vec<u8>>, Error> {
@@ -274,6 +274,9 @@ pub(crate) async fn request(
     };
     ASSIGNED.insert(ctx, &(row.node.clone(), id));
     REQUESTS.put(ctx, &id, &Stored { row, ticket, wait });
+    if let Some(account) = ctx.env().sender.clone().and_then(|sender| sender.account()) {
+        SENDERS.put(ctx, &id, &account);
+    }
     Ok(())
 }
 
@@ -295,6 +298,7 @@ fn open(ctx: &QueryCtx, id: u64) -> Result<Stored, Error> {
 fn close(ctx: &ExecCtx, stored: Stored, answer: Result<Vec<u8>, Error>) -> Result<(), Error> {
     let row = stored.row;
     REQUESTS.remove(ctx, &row.id);
+    SENDERS.remove(ctx, &row.id);
     EXPIRIES.remove(ctx, &row.id);
     ASSIGNED.remove(ctx, &(row.node.clone(), row.id));
     STREAMS.remove(ctx, &row.id);
@@ -536,6 +540,10 @@ pub(crate) fn request_row(ctx: &QueryCtx, id: u64) -> Result<Option<RequestRow>,
         .get(ctx, &id)?
         .map(|stored| current(ctx, stored.row))
         .transpose()
+}
+
+pub(crate) fn sender(ctx: &QueryCtx, id: u64) -> Result<Option<AccountNumber>, Error> {
+    SENDERS.get(ctx, &id)
 }
 
 pub(crate) fn node(ctx: &QueryCtx, key: &Vec<u8>) -> Result<Option<NodeRow>, Error> {

@@ -3,7 +3,7 @@ use ::program::{Awaiting, Ctx, Error, ExecCtx, MessageId, Outcome, Program, Quer
 
 use crate::rules::{
     answer, assign, assigned, end_stream, events, expire, node, nodes, register, request,
-    request_row, serve, service, services, serving,
+    request_row, sender, serve, service, services, serving,
 };
 use crate::{Op, PROGRAM, Query, Reply};
 
@@ -36,6 +36,7 @@ impl Program for Egress {
             Query::Service { name } => Ok(Reply::Service(service(ctx, &name)?)),
             Query::Services { page } => Ok(Reply::Services(services(ctx, &page)?)),
             Query::Serving { service: name } => Ok(Reply::Serving(serving(ctx, &name)?)),
+            Query::Sender { id } => Ok(Reply::Sender(sender(ctx, id)?)),
         }
     }
 }

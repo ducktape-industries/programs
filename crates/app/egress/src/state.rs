@@ -1,12 +1,12 @@
 //! Everything egress keeps: each registered service with its owner and assigned nodes, which
 //! node serves which service, each service's next turn in the election, every open request with
-//! its ticket, wait and expiry by its node, and an events request's place in its stream.
+//! its ticket, wait, expiry, node and the account it was sent as, and an events request's stream.
 use borsh::{BorshDeserialize, BorshSerialize};
 use store::{Item, Kind, Map, Owned, Set};
 
 use ::program::Ticket;
 
-use crate::{NodeRow, RequestRow, ServiceRow, StreamEnd};
+use crate::{AccountNumber, NodeRow, RequestRow, ServiceRow, StreamEnd};
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Stored {
@@ -31,6 +31,7 @@ pub const SERVING: Set<(String, Vec<u8>)> = Set::new("serving/");
 pub const TURNS: Map<String, u64> = Map::new("turn/");
 pub const REQUESTS: Map<u64, Stored> = Map::new("request/");
 pub const ASSIGNED: Set<(Vec<u8>, u64)> = Set::new("assigned/");
+pub const SENDERS: Map<u64, AccountNumber> = Map::new("sender/");
 pub const COUNT: Item<u64> = Item::new("count");
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
