@@ -12,6 +12,7 @@ mod compact_at;
 mod config;
 mod conversations;
 mod file_tools;
+mod final_errors;
 mod forge_commit;
 mod forge_copy;
 mod forge_tools;

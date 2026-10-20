@@ -101,6 +101,9 @@ impl Program for Harness {
             Query::ProviderRoutes { page } => {
                 Ok(Reply::ProviderRoutes(crate::providers::routes(ctx, &page)?))
             }
+            Query::FinalErrors { agent, page } => Ok(Reply::FinalErrors(
+                crate::failures::of_agent(ctx, agent, &page)?,
+            )),
         }
     }
 }

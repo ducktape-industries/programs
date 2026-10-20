@@ -128,7 +128,8 @@ pub(crate) fn give_up(ctx: &ExecCtx, thread: &mut ThreadRow, text: String) -> Re
     if thread.paused() {
         unpause(ctx, thread)?;
     }
-    append(ctx, thread, Body::Notice { text });
+    append(ctx, thread, Body::Notice { text: text.clone() });
+    crate::failures::failed(ctx, thread, text)?;
     thread.seen = thread.seen.max(thread.last_input);
     thread.last_stop = None;
     RETRIES.remove(ctx, &thread.id);
@@ -449,6 +450,7 @@ fn unseal(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
 }
 
 pub(crate) fn let_go(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
+    crate::failures::cleared(ctx, thread)?;
     unseal(ctx, thread)?;
     ctx.blob_release_lines(held_on(thread.id, b""));
     Ok(())
@@ -1129,6 +1131,7 @@ fn record(
 ) -> Result<Vec<(u64, String)>, Error> {
     thread.seen = upto;
     thread.last_stop = Some(reply.stop);
+    crate::failures::cleared(ctx, thread)?;
     let usage = reply.usage;
     let summed = usage.input + usage.cache_read + usage.cache_write + usage.output;
     let tokens = PASSES.get(ctx, &thread.id)?.unwrap_or(summed);

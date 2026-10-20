@@ -221,7 +221,14 @@ fn threads(
                 })
                 .when(detail.bound.contains(&id), |title| {
                     title.child(bound_badge(format!("thread-{id}-bound"), theme, ladder))
-                });
+                })
+                .children(crate::ui::failing_badge(
+                    format!("thread-{id}-failing"),
+                    detail.failing.get(&id),
+                    thread.closed,
+                    theme,
+                    ladder,
+                ));
             let frames = design::plural(thread.frames, "frame", "frames");
             let topic = detail.topics.get(&id).map(|topic| quoted(topic));
             let (badge, words) = match thread.closed {

@@ -208,6 +208,22 @@ pub(crate) fn closed_badge(
     design::badge(id, "Closed", ladder, theme.muted, theme.surface_raised)
 }
 
+pub(crate) fn failing_badge(
+    id: impl Into<ElementId>,
+    failing: Option<&harness::FinalError>,
+    closed: bool,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Option<Stateful<Div>> {
+    let failing = failing.filter(|_| !closed)?;
+    let badge = design::badge(id, "Failing", ladder, theme.danger, theme.surface_raised)
+        .role(Role::Status)
+        .aria_live(view::accesskit::Live::Polite)
+        .aria_label("Failing")
+        .aria_description(crate::words::failing_words(failing));
+    Some(badge)
+}
+
 pub(crate) fn agent_gone(agent: u64, theme: &Theme, ladder: &Ladder) -> impl IntoElement + use<> {
     design::empty_state(
         "agent-gone",

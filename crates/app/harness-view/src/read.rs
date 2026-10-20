@@ -7,8 +7,9 @@ use std::rc::Rc;
 
 use egress::{RELAY, ServiceRow};
 use harness::{
-    AgentSetup, Asking, Awaited, BlobId, Body, CallRow, Frame, Partial, ProviderRouteRow,
-    SettleWindow, Spoken, Tally, ThreadRow, ToolInfo, Usage, WaitRow, WithheldFrame,
+    AgentSetup, Asking, Awaited, BlobId, Body, CallRow, FinalError, Frame, Partial,
+    ProviderRouteRow, SettleWindow, Spoken, Tally, ThreadRow, ToolInfo, Usage, WaitRow,
+    WithheldFrame,
 };
 use identity::{Category, Kind, Ownership, PageRequest};
 use policy_view::link;
@@ -283,6 +284,7 @@ pub(crate) struct Detail {
     pub topics: HashMap<u64, String>,
     pub bound: Vec<u64>,
     pub tools: Vec<ToolInfo>,
+    pub failing: HashMap<u64, FinalError>,
 }
 
 pub(crate) async fn detail(host: Host, agent: u64, rooms: Rooms) -> Result<Detail, Error> {
@@ -323,6 +325,11 @@ pub(crate) async fn detail(host: Host, agent: u64, rooms: Rooms) -> Result<Detai
         .into_iter()
         .map(|thread| thread.id)
         .collect();
+    let failing = final_errors(&host, agent)
+        .await?
+        .into_iter()
+        .map(|error| (error.thread, error))
+        .collect();
     let mut used = Vec::new();
     let mut topics = HashMap::new();
     for thread in threads {
@@ -342,7 +349,21 @@ pub(crate) async fn detail(host: Host, agent: u64, rooms: Rooms) -> Result<Detai
         topics,
         bound,
         tools,
+        failing,
     })
+}
+
+async fn final_errors(host: &Host, agent: u64) -> Result<Vec<FinalError>, Error> {
+    host.query_all(|after| harness::ask::FinalErrors {
+        agent,
+        page: page(after),
+    })
+    .await
+}
+
+async fn failing_of(host: &Host, thread: &ThreadRow) -> Result<Option<FinalError>, Error> {
+    let errors = final_errors(host, thread.agent).await?;
+    Ok(errors.into_iter().find(|error| error.thread == thread.id))
 }
 
 #[derive(PartialEq)]
@@ -372,6 +393,7 @@ pub(crate) struct Transcript {
     pub settling: Option<SettleWindow>,
     // what its agent waits for (`wait_for`), each until it is over
     pub armed: Vec<WaitRow>,
+    pub failing: Option<FinalError>,
 }
 
 impl Transcript {
@@ -442,6 +464,9 @@ impl Transcript {
         }
         if let Some(armed) = delta.armed {
             self.armed = armed;
+        }
+        if let Some(failing) = delta.failing {
+            self.failing = failing;
         }
         if let Some((setup, serving)) = delta.setup {
             self.setup = setup;
@@ -525,6 +550,7 @@ pub(crate) async fn transcript(
     let (setup, serving) = served_setup(&host, thread.agent).await?;
     let waits = waits(&host, &thread).await?;
     let armed = armed(&host, id).await?;
+    let failing = failing_of(&host, &thread).await?;
     Ok(Some(Transcript {
         thread,
         frames,
@@ -542,6 +568,7 @@ pub(crate) async fn transcript(
         waits,
         settling,
         armed,
+        failing,
     }))
 }
 
@@ -568,6 +595,7 @@ pub(crate) struct Touched {
     pub settling: bool,
     pub setup: bool,
     pub armed: bool,
+    pub failing: bool,
 }
 
 impl Touched {
@@ -583,6 +611,7 @@ impl Touched {
             || self.settling
             || self.setup
             || self.armed
+            || self.failing
     }
 
     pub fn add(&mut self, more: Touched) {
@@ -597,6 +626,7 @@ impl Touched {
         self.settling |= more.settling;
         self.setup |= more.setup;
         self.armed |= more.armed;
+        self.failing |= more.failing;
     }
 }
 
@@ -614,6 +644,7 @@ pub(crate) struct Delta {
     pub setup: Option<(Option<AgentSetup>, Option<usize>)>,
     pub waits: Option<Vec<Wait>>,
     pub armed: Option<Vec<WaitRow>>,
+    pub failing: Option<Option<FinalError>>,
 }
 
 pub(crate) async fn delta(
@@ -668,6 +699,10 @@ pub(crate) async fn delta(
         true => Some(armed(&host, id).await?),
         false => None,
     };
+    let failing = match (&thread, touched.failing) {
+        (Some(row), true) => Some(failing_of(&host, row).await?),
+        _ => None,
+    };
     Ok(Delta {
         thread,
         frames,
@@ -681,6 +716,7 @@ pub(crate) async fn delta(
         setup,
         waits,
         armed,
+        failing,
     })
 }
 

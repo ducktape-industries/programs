@@ -12,6 +12,7 @@ pub mod config;
 mod conversations;
 mod drafts;
 mod examples;
+mod failures;
 mod gate;
 mod listening;
 mod pictures;
@@ -631,6 +632,17 @@ pub struct ThreadRow {
     pub last_time: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct FinalError {
+    pub thread: u64,
+    pub text: String,
+    pub frame: u64,
+    pub height: u64,
+    pub time: u64,
+    pub since: u64,
+    pub count: u64,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Sealed {
     pub end: u64,
@@ -1104,6 +1116,13 @@ pub enum Query {
     #[reads(state::PROVIDER_ROUTES)]
     #[tool_query(description = "Every provider's route.", example = examples::provider_routes)]
     ProviderRoutes { page: PageRequest },
+    #[ask(Reply::FinalErrors(PageResponse<FinalError>))]
+    #[reads(state::FINAL_ERRORS)]
+    #[tool_query(description = "An agent's conversations whose inputs end in final errors, each with its newest error, that error's notice frame, the block the run of them began, and how many came in a row; a conversation leaves the list at its next answered turn or once it is closed.", example = examples::final_errors)]
+    FinalErrors {
+        agent: AccountNumber,
+        page: PageRequest,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1138,6 +1157,7 @@ pub enum Reply {
     Cards(PageResponse<AgentCard>),
     ProviderRoute(Option<ProviderRouteRow>),
     ProviderRoutes(PageResponse<ProviderRouteRow>),
+    FinalErrors(PageResponse<FinalError>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -1457,7 +1477,8 @@ fn query_variants_only_append() {
             "AgentTools",
             "Cards",
             "ProviderRoute",
-            "ProviderRoutes"
+            "ProviderRoutes",
+            "FinalErrors"
         ]
     );
 }

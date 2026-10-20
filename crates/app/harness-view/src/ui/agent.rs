@@ -510,7 +510,14 @@ fn threads(
                                     &theme,
                                     ladder,
                                 ))
-                            }),
+                            })
+                            .children(super::failing_badge(
+                                SharedString::from(format!("thread-{id}-failing")),
+                                detail.failing.get(&id),
+                                thread.closed,
+                                &theme,
+                                ladder,
+                            )),
                     )
                     .children(topic),
             )

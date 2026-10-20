@@ -202,6 +202,13 @@ fn strip(
             false => theme.surface,
         })
         .child(badge)
+        .children(crate::ui::failing_badge(
+            "thread-failing",
+            shown.failing.as_ref(),
+            row.closed,
+            theme,
+            ladder,
+        ))
         .child(
             div()
                 .id("thread-asking")

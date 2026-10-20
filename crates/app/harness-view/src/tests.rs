@@ -3,6 +3,7 @@ mod budget;
 mod compact_at;
 mod conversations;
 mod faces;
+mod failing;
 mod live_calls;
 mod phone;
 mod policies;
@@ -306,6 +307,7 @@ struct Net {
     armed: Vec<harness::WaitRow>,
     // configuration files by path where one is not its setup's configuration as `write` puts it
     files: Vec<(String, String)>,
+    failing: Vec<harness::FinalError>,
 }
 
 // The one node the fake egress lists.
@@ -453,6 +455,7 @@ impl Default for Net {
             budget: harness::BudgetReport::default(),
             armed: Vec::new(),
             files: Vec::new(),
+            failing: Vec::new(),
         }
     }
 }
@@ -624,6 +627,16 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             harness::Query::ProviderRoutes { .. } => {
                 harness::Reply::ProviderRoutes(page(net.routes.clone()))
             }
+            harness::Query::FinalErrors { agent, .. } => harness::Reply::FinalErrors(page(
+                net.failing
+                    .iter()
+                    .filter(|error| {
+                        let row = net.threads.iter().find(|row| row.id == error.thread);
+                        row.is_some_and(|row| row.agent == agent)
+                    })
+                    .cloned()
+                    .collect(),
+            )),
             harness::Query::Tools => harness::Reply::Tools(vec![
                 ToolInfo {
                     name: "forge_log".into(),

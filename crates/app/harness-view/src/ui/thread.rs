@@ -194,6 +194,13 @@ fn strip(
         .items_center()
         .gap(space::LG)
         .child(badge)
+        .children(super::failing_badge(
+            "thread-failing",
+            shown.failing.as_ref(),
+            row.closed,
+            theme,
+            ladder,
+        ))
         .child(
             div()
                 .id("thread-asking")

@@ -9,8 +9,8 @@ use store::{Item, KeyCodec, Kind, Map, Owned, Set};
 
 use crate::pictures::{Hidden, Picture};
 use crate::{
-    Body, Booking, CallRow, Frame, Partial, Place, ProviderRouteRow, Sealed, SettleWindow, Tally,
-    ThreadRow, UsageWindow, WaitRow, Window,
+    Body, Booking, CallRow, FinalError, Frame, Partial, Place, ProviderRouteRow, Sealed,
+    SettleWindow, Tally, ThreadRow, UsageWindow, WaitRow, Window,
 };
 
 // Who may start an agent's conversations, of the kind `harness.agent-conversation`: its manager's
@@ -119,6 +119,7 @@ pub const SEALED_FOR: Map<u64, (String, Option<String>)> = Map::new("sealed-for/
 // the chat place each conversation's turn keeps its live draft in, where its forming post goes, and
 // what the draft says the turn is doing (`drafts.rs`)
 pub const DRAFTING: Map<u64, Drafted> = Map::new("drafting/");
+pub const FINAL_ERRORS: Map<(AccountNumber, u64), FinalError> = Map::new("final-error/");
 
 // a wait for a files path: the path, and its node when the wait was armed (none: nothing there)
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -320,6 +321,7 @@ pub enum Written {
     Route,
     Budget,
     Armed(u64),
+    FinalError { agent: AccountNumber, thread: u64 },
 }
 
 impl Written {
@@ -334,7 +336,8 @@ impl Written {
             | Written::Settling(thread)
             | Written::Armed(thread)
             | Written::Frame { thread, .. }
-            | Written::Call { thread, .. } => Some(*thread),
+            | Written::Call { thread, .. }
+            | Written::FinalError { thread, .. } => Some(*thread),
             Written::Agent(_) | Written::Route | Written::Budget => None,
         }
     }
@@ -355,6 +358,7 @@ impl Written {
             Written::Route => PROVIDER_ROUTES.key(&()),
             Written::Budget => BUDGETS.key(&()),
             Written::Armed(thread) => ARMED.key(thread),
+            Written::FinalError { agent, thread } => FINAL_ERRORS.key(&(*agent, *thread)),
         }
     }
 }
@@ -373,6 +377,9 @@ pub fn written(key: &[u8]) -> Option<Written> {
     }
     if let Some((thread, call)) = under::<(u64, String)>(&CALLS.key(&()), key) {
         return Some(Written::Call { thread, call });
+    }
+    if let Some((agent, thread)) = under::<(AccountNumber, u64)>(&FINAL_ERRORS.key(&()), key) {
+        return Some(Written::FinalError { agent, thread });
     }
     let threads: [(Vec<u8>, OfThread); 9] = [
         (THREADS.key(&()), Written::Thread),

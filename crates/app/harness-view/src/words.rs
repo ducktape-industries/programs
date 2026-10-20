@@ -1024,3 +1024,16 @@ pub(crate) fn budget_outlook(window: &WindowOutlook, now: u64) -> Option<String>
         None => "No climb seen yet".into(),
     })
 }
+
+pub(crate) fn failing_words(failing: &harness::FinalError) -> String {
+    match failing.count {
+        1 => format!(
+            "Its last input ended in a final error at block {}: {}",
+            failing.height, failing.text
+        ),
+        count => format!(
+            "Its last {count} inputs ended in final errors since block {}, the newest at block {}: {}",
+            failing.since, failing.height, failing.text
+        ),
+    }
+}

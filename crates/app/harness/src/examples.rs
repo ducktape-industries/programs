@@ -297,3 +297,10 @@ pub(crate) fn provider_route() -> Query {
 pub(crate) fn provider_routes() -> Query {
     Query::ProviderRoutes { page: page() }
 }
+
+pub(crate) fn final_errors() -> Query {
+    Query::FinalErrors {
+        agent: 21,
+        page: page(),
+    }
+}
