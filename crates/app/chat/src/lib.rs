@@ -384,6 +384,12 @@ pub enum Query {
     #[reads(state::DRAFTS, state::DRAFT_PIECES)]
     #[tool_query(description = "Who is answering in a channel right now, before they post: each draft's author, the thread root it answers under, the block and time it opened, what it says it is doing and its text so far.", example = examples::drafts)]
     Drafts { channel_id: String },
+    // the names of the rooms `ids` names, each as (id, name), with nothing else of a room's: a
+    // reader names the rooms it holds ids of in one read; an id no room has is left out
+    #[ask(Reply::Names(Vec<(String, String)>))]
+    #[reads(state::CHANNELS)]
+    #[tool_query(description = "The names of the channels ids names, each as (id, name) and nothing else of the channel; an id no channel has is left out.", example = examples::names)]
+    Names { ids: Vec<String> },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -413,6 +419,7 @@ pub enum Reply {
         notices: Option<Notices>,
     },
     Drafts(Vec<Draft>),
+    Names(Vec<(String, String)>),
 }
 
 /// Where an account is in a room ([`Query::Followed`]): what comes after the

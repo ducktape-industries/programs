@@ -33,6 +33,13 @@ harness's: every runtime and every person reads the same meta through `Query::Ch
 - chat-view shows them in the room's details, where they are set and cleared, and says "This room
   has rules" over the composer.
 
+## Names
+
+`Query::Names { ids }` answers the name of each room `ids` names, as `(id, name)` in the order
+asked, and nothing else of the room (no meta, no head): a reader that holds room ids (harness's
+conversations name their place as `chat/<channel>`) names them in one read. An id no room has is
+left out.
+
 ## Drafts
 
 Someone answering in a room before they post keeps a draft there (`Op::Drafting`): its text, a

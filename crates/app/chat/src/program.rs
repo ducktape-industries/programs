@@ -13,8 +13,8 @@ use crate::ops::{
     set_archived, set_membership, set_meta, undraft,
 };
 use crate::queries::{
-    around, attention, by_id, channel, channels, drafts, reactors, roots, search, seen_by, tagged,
-    thread,
+    around, attention, by_id, channel, channels, drafts, names, reactors, roots, search, seen_by,
+    tagged, thread,
 };
 use crate::state::MEMBERS;
 use crate::{Op, Query, Reply};
@@ -230,6 +230,7 @@ impl Program for Chat {
                 channel_id,
             } => (chosen(ctx, account, &channel_id)?, vec![]),
             Query::Drafts { channel_id } => (Reply::Drafts(drafts(ctx, &channel_id)?), vec![]),
+            Query::Names { ids } => (Reply::Names(names(ctx, &ids)?), vec![]),
         };
         seen_by(ctx, reply, viewer)
     }

@@ -267,3 +267,7 @@ pub(crate) fn wakes() -> Query {
 pub(crate) fn agent_tools() -> Query {
     Query::AgentTools { agent: 21 }
 }
+
+pub(crate) fn cards() -> Query {
+    Query::Cards { page: page() }
+}

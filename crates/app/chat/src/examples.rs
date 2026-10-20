@@ -328,3 +328,7 @@ pub(crate) fn undraft() -> Op {
 pub(crate) fn drafts() -> Query {
     Query::Drafts { channel_id: room() }
 }
+
+pub(crate) fn names() -> Query {
+    Query::Names { ids: vec![room()] }
+}

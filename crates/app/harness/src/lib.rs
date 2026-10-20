@@ -6,6 +6,7 @@ mod agents;
 mod bookings;
 mod budget;
 mod calls;
+mod cards;
 mod codec;
 pub mod config;
 mod conversations;
@@ -256,6 +257,27 @@ pub struct AgentSetup {
     pub path: String,
     pub configured: Configured,
     pub current: Option<u64>,
+}
+
+// An agent as a list of agents draws it (`Query::Cards`): its setup with the system prompt left
+// out, its conversations counted, when one last moved, its newest and each open one asking, and
+// how many member nodes serve its model's service (`None` while its configuration names no model).
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct AgentCard {
+    pub setup: AgentSetup,
+    pub open: u64,
+    pub closed: u64,
+    pub last_time: u64,
+    pub newest: Option<Spoken>,
+    pub asking: Vec<Spoken>,
+    pub serving: Option<u64>,
+}
+
+// A conversation a card names, with the line its agent last set with `thread_topic`.
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Spoken {
+    pub thread: ThreadRow,
+    pub topic: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1009,6 +1031,10 @@ pub enum Query {
     #[ask(Reply::AgentTools(AgentTools))]
     #[tool_query(description = "Every tool an agent gets on its next model call, each with where it comes from (harness's own, or a tool file's path and the snapshot it was read at), the shared tool files one of its own takes the place of, and why each tool file left out does not load.", example = examples::agent_tools)]
     AgentTools { agent: AccountNumber },
+    // every agent harness runs, as a list of agents draws each, in one read
+    #[ask(Reply::Cards(PageResponse<AgentCard>))]
+    #[tool_query(description = "Every agent harness runs, as a list of agents draws each: its setup without the system prompt, how many conversations it has open and closed, when one last moved, its newest and each open one asking with their topics, and how many member nodes serve its model's service.", example = examples::cards)]
+    Cards { page: PageRequest },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1040,6 +1066,7 @@ pub enum Reply {
     Answerers(PageResponse<Answerer>),
     Wakes(Vec<Wake>),
     AgentTools(AgentTools),
+    Cards(PageResponse<AgentCard>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -1337,7 +1364,8 @@ fn query_variants_only_append() {
             "Routes",
             "Answerers",
             "Wakes",
-            "AgentTools"
+            "AgentTools",
+            "Cards"
         ]
     );
 }

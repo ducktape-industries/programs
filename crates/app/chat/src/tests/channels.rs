@@ -373,6 +373,29 @@ fn set_meta(key: &str, value: &str) -> Op {
     }
 }
 
+// A reader names the rooms it holds ids of in one read: each room's name and nothing else of it,
+// and an id no room has is left out
+#[test]
+fn names_answer_each_room_an_id_names_and_leave_out_the_rest() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    chat.ok(
+        &ADA,
+        create_with_meta("design", meta(&[("rules", "be brief")])),
+    );
+    let general = chat.ask_channel("general").channel.name;
+    let ids = vec!["design".into(), "gone".into(), "general".into()];
+    let Reply::Names(names) = chat.ask(Query::Names { ids }) else {
+        panic!()
+    };
+    assert_eq!(
+        names,
+        [
+            ("design".to_owned(), "design".to_owned()),
+            ("general".to_owned(), general)
+        ]
+    );
+}
+
 fn remove_meta(key: &str) -> Op {
     Op::RemoveChannelMeta {
         channel_id: "general".into(),

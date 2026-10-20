@@ -200,3 +200,39 @@ fn a_card_is_the_setup_without_its_system_prompt() {
     assert_ne!(expected, whole, "the agent's setup has a prompt");
     assert_eq!(card, expected);
 }
+
+// `Cards` is what a list of agents draws, in one read: each agent's card, its conversations
+// counted, its newest and each open one asking, and the nodes serving its model's service
+#[test]
+fn cards_hold_each_agents_card_and_its_conversations() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "hello", Some(WINDOW));
+    let asked = Query::Cards {
+        page: PageRequest::default(),
+    };
+    let Reply::Cards(cards) = chain.query(PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    let asked = Query::Card { agent: world.agent };
+    let Reply::Agent(Some(card)) = chain.query(PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    let listed = cards
+        .items
+        .iter()
+        .find(|listed| listed.setup.agent == world.agent)
+        .expect("the agent is listed");
+    assert_eq!(listed.setup, card);
+    assert_eq!((listed.open, listed.closed), (1, 0));
+    let newest = listed.newest.as_ref().expect("its conversation");
+    assert_eq!(newest.thread.id, thread);
+    assert_eq!(listed.last_time, newest.thread.last_time);
+    let asking: Vec<u64> = listed
+        .asking
+        .iter()
+        .map(|spoken| spoken.thread.id)
+        .collect();
+    assert_eq!(asking, [thread]);
+    assert!(listed.serving.is_some_and(|nodes| nodes > 0), "{listed:?}");
+}

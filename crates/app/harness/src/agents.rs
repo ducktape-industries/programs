@@ -35,7 +35,7 @@ pub(crate) fn profile(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<Pr
     }
 }
 
-fn harnessed(profile: &Profile) -> Option<(Agent, Standing)> {
+pub(crate) fn harnessed(profile: &Profile) -> Option<(Agent, Standing)> {
     let Kind::Program {
         manager,
         category: Category::Agent,

@@ -63,6 +63,16 @@ pub(crate) fn channel(ctx: &QueryCtx, id: &String) -> Result<Option<ChannelInfo>
         .transpose()
 }
 
+pub(crate) fn names(ctx: &QueryCtx, ids: &[String]) -> Result<Vec<(String, String)>, Error> {
+    let mut named = Vec::new();
+    for id in ids {
+        if let Some(channel) = CHANNELS.get(ctx, id)? {
+            named.push((channel.id, channel.name));
+        }
+    }
+    Ok(named)
+}
+
 pub(crate) fn by_id(ctx: &QueryCtx, message_id: &String) -> Result<Option<MsgRow>, Error> {
     MESSAGE_IDS
         .get(ctx, message_id)?
@@ -319,7 +329,8 @@ fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
         | Reply::Followed(_)
         | Reply::Watching(_)
         | Reply::Chosen { .. }
-        | Reply::Drafts(_) => vec![],
+        | Reply::Drafts(_)
+        | Reply::Names(_) => vec![],
     }
 }
 
