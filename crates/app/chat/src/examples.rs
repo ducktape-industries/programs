@@ -2,7 +2,7 @@
 //! an agent edits rather than build one from the schema.
 use std::collections::BTreeMap;
 
-use crate::{Block, Mark, Notices, Op, PageRequest, PostPolicy, Principal, Query, Span};
+use crate::{Block, Entry, Mark, Notices, Op, PageRequest, PostPolicy, Principal, Query, Span};
 
 const ROOM: &str = "design";
 
@@ -331,4 +331,21 @@ pub(crate) fn drafts() -> Query {
 
 pub(crate) fn names() -> Query {
     Query::Names { ids: vec![room()] }
+}
+
+pub(crate) fn room_order() -> Op {
+    Op::SetRoomOrder {
+        order: vec![Entry::Folder("jobs".into()), Entry::Room(room())],
+    }
+}
+
+pub(crate) fn room_order_of() -> Query {
+    Query::RoomOrder { account: 21 }
+}
+
+pub(crate) fn posted_in() -> Query {
+    Query::PostedIn {
+        account: 21,
+        page: every(),
+    }
 }

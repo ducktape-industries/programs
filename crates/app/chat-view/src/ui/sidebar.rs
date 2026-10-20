@@ -139,6 +139,16 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         {
             return chat.open_room_menu(room.to_owned(), None, window, cx);
         }
+        // Alt+↑ and Alt+↓ move the active row up or down its level
+        let up = match event.keystroke.key.as_str() {
+            "up" => Some(true),
+            "down" => Some(false),
+            _ => None,
+        };
+        if let Some(up) = up.filter(|_| event.keystroke.modifiers.alt) {
+            chat.rooms_cursor = Some(spot.clone());
+            return chat.step(&spot.entry(), up, cx);
+        }
         let Spot::Folder { path, .. } = spot else {
             return;
         };
@@ -152,6 +162,16 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
             cx.notify();
         }
     });
+    // a left press on a channel or folder row holds it; dragged onto another row of its level and
+    // let go, it takes that row's place
+    let drawn: std::rc::Rc<[chat::Entry]> = plain.iter().map(|line| line.spot().entry()).collect();
+    let (held, over) = (drawn.clone(), drawn);
+    let hold =
+        cx.listener(move |chat, event: &MouseDownEvent, _, _| chat.hold_row(event.position, &held));
+    let drag = cx.listener(move |chat, event: &MouseMoveEvent, _, cx| {
+        chat.drag_row(event.position, &over, cx)
+    });
+    let land = cx.listener(|chat, _: &MouseUpEvent, _, cx| chat.drop_row(cx));
     let mut box_ = design::composite("chat-sidebar-rooms-list", Role::ListBox, "Rooms")
         .active(at, spots.len())
         .on_move(cx.processor(move |chat, index: usize, _, cx| {
@@ -164,6 +184,9 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         }))
         .build()
         .on_key_down(keys)
+        .on_mouse_down(MouseButton::Left, hold)
+        .on_mouse_move(drag)
+        .on_mouse_up(MouseButton::Left, land)
         .flex()
         .flex_col()
         .gap_1();
@@ -305,26 +328,29 @@ fn line_row(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
+    let landing = chat.landing(&line.spot().entry());
     match line {
-        Line::Room { info, .. } => {
+        Line::Room { info, depth } => {
             let selected = open == Some(info.channel.id.as_str());
-            channel_row(chat, info, selected, active, cx, theme)
+            channel_row(chat, info, *depth, selected, active, landing, cx, theme)
         }
-        Line::Folder(folder) => folder_row(chat, folder, open, active, cx, theme, ladder),
+        Line::Folder(folder) => folder_row(chat, folder, open, active, landing, cx, theme, ladder),
     }
 }
 
 // A folder's chevron, the smallest box a pointer presses (the door's AX-017).
 const FOLD: Pixels = px(24.);
 
-// A folder's row: its name with its `/` after the lead column, while it is closed how many rooms
-// inside are unread, and its chevron at the row's end. A folder named as a channel is that channel's row too: a press
+// A folder's row: its `/` in the lead column, where a room's `#` goes, and its name, flush with the
+// rooms beside it; while it is closed how many rooms inside are unread, and its chevron at the row's end. A folder named as a channel is that channel's row too: a press
 // opens the channel, and the chevron opens or closes it.
+#[allow(clippy::too_many_arguments)]
 fn folder_row(
     chat: &Chat,
     folder: &FolderLine,
     open: Option<&str>,
     active: bool,
+    landing: Option<bool>,
     cx: &mut Context<Chat>,
     theme: &Theme,
     ladder: &Ladder,
@@ -364,6 +390,7 @@ fn folder_row(
         .hover(|s| s.bg(theme.sidebar_raised))
         .when(active && !selected, |row| row.bg(theme.sidebar_raised))
         .aria_selected(selected)
+        .when_some(landing, |row, after| lands(row, after, theme))
         .when(folder.unread > 0, |row| {
             row.aria_description(words::unread_rooms(folder.unread))
         });
@@ -394,19 +421,22 @@ fn folder_row(
             (row, glyph)
         }
     };
-    // the kit row's lead column, empty, as a room row's holds its `#`: the folder's name starts
-    // where its rooms' names do
-    let mut row = row.child(design::lead(div())).child(
-        div()
-            .flex_1()
-            .truncate()
-            .text_color(if unread || folder.unread > 0 {
-                theme.sidebar_foreground
-            } else {
-                theme.sidebar_muted
-            })
-            .child(format!("{}/", folder.name)),
-    );
+    let mut row = row
+        .children((0..folder.depth).map(|_| design::lead(div())))
+        .child(design::lead(
+            div().text_color(theme.sidebar_muted).child("/"),
+        ))
+        .child(
+            div()
+                .flex_1()
+                .truncate()
+                .text_color(if unread || folder.unread > 0 {
+                    theme.sidebar_foreground
+                } else {
+                    theme.sidebar_muted
+                })
+                .child(folder.name.to_owned()),
+        );
     if own.is_some_and(|own| own.channel.members_only()) {
         row = row.child(
             div()
@@ -433,7 +463,7 @@ fn folder_row(
                 .bg(theme.accent),
         );
     }
-    let row = row.child(glyph);
+    let row = placed(row, chat::Entry::Folder(folder.path.clone()), cx).child(glyph);
     let row = match own {
         Some(own) => super::room_menu::row(row, &own.channel.id, chat, cx),
         None => row,
@@ -441,31 +471,39 @@ fn folder_row(
     design::item(row, Role::ListBoxOption, active).into_any_element()
 }
 
-// A channel's row, drawn again only when what it shows moved.
+// A channel's row, `depth` folders in, drawn again only when what it shows moved.
+#[allow(clippy::too_many_arguments)]
 fn channel_row(
     chat: &Chat,
     info: &ChannelInfo,
+    depth: usize,
     selected: bool,
     active: bool,
+    landing: Option<bool>,
     cx: &mut Context<Chat>,
     theme: &Theme,
 ) -> AnyElement {
     let room = &info.channel.id;
     let read = (chat.unread(info), super::room_menu::waits(chat, room));
-    let deps = (info.clone(), selected, active, read);
+    let deps = (info.clone(), depth, selected, active, landing, read);
     let (info, theme) = (info.clone(), *theme);
     let id = format!("chat-sidebar-channel-{}", info.channel.id);
     cx.memo(id, deps, move |chat, _, cx| {
-        channel_button(chat, &info, selected, active, cx, &theme)
+        channel_button(chat, &info, depth, selected, active, landing, cx, &theme)
     })
     .into_any_element()
 }
 
+// A channel's row: an empty lead column for each folder it sits in, then its `#`, its name,
+// Members only and the unread dot; an accent edge where a held row lands on it.
+#[allow(clippy::too_many_arguments)]
 fn channel_button(
     chat: &Chat,
     info: &ChannelInfo,
+    depth: usize,
     selected: bool,
     active: bool,
+    landing: Option<bool>,
     cx: &mut Context<Chat>,
     theme: &Theme,
 ) -> AnyElement {
@@ -493,6 +531,8 @@ fn channel_button(
         .when(active && !selected, |row| row.bg(theme.sidebar_raised))
         .aria_selected(selected)
         .on_click(click)
+        .when_some(landing, |row, after| lands(row, after, theme))
+        .children((0..depth).map(|_| design::lead(div())))
         .child(design::lead(
             div().text_color(theme.sidebar_muted).child("#"),
         ))
@@ -525,6 +565,7 @@ fn channel_button(
         );
     }
     let row = super::room_menu::row(row, &info.channel.id, chat, cx);
+    let row = placed(row, chat::Entry::Room(info.channel.id.clone()), cx);
     design::item(row, Role::ListBoxOption, active).into_any_element()
 }
 
@@ -633,4 +674,34 @@ pub fn avatar(
         .text_color(theme.foreground)
         .text_size(design::text::CAPTION)
         .when(ringed, |face| face.border_2().border_color(theme.agent))
+}
+
+// A row a held row lands on: an accent edge on the side it lands, below when it comes from above.
+pub(crate) fn lands(row: Stateful<Div>, after: bool, theme: &Theme) -> Stateful<Div> {
+    let row = match after {
+        true => row.border_b_2(),
+        false => row.border_t_2(),
+    };
+    row.border_color(theme.accent)
+}
+
+// `row` tells the view where layout put it, so a drag finds the row under the pointer.
+pub(crate) fn placed(
+    row: Stateful<Div>,
+    entry: chat::Entry,
+    cx: &mut Context<Chat>,
+) -> Stateful<Div> {
+    let id = match &entry {
+        chat::Entry::Room(room) => format!("chat-sidebar-bounds-{room}"),
+        chat::Entry::Folder(path) => format!("chat-sidebar-bounds-folder-{path}"),
+    };
+    let heard = cx.listener(move |chat, bounds: &Bounds<Pixels>, _, _| {
+        chat.drawn_row(entry.clone(), *bounds)
+    });
+    row.relative().child(
+        sensor(id, div().size_full())
+            .absolute()
+            .inset_0()
+            .on_bounds(heard),
+    )
 }

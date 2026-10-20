@@ -54,3 +54,16 @@ under another thread moves it and starts its text over.
 
 harness keeps one for each turn of an agent's conversation that answers in a chat place, and
 chat-view draws each at the foot of the list it answers in ("tech is answering…").
+
+## Each reader's own lists
+
+An account puts its rooms and folders in its own order with `Op::SetRoomOrder { order }`: a list
+of `Entry::Room(channel_id)` and `Entry::Folder(name)`, a folder being the text before a channel
+name's first `/`. The op writes the sender's own order whole, and an empty list takes it off.
+`Query::RoomOrder { account }` answers it, empty for an account that set none. chat gives the
+order no meaning of its own: chat-view lists, at each level, what the order leaves out first in
+chat's order, then what it names in its order, so the reader's lists follow it across devices.
+
+`Query::PostedIn { account, page }` answers the channels an account wrote in the timeline of, kept
+as each post is noted (beside `Followed`'s room seq). It starts from the code that keeps it: posts
+made before are not listed.

@@ -342,7 +342,9 @@ fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
         | Reply::Watching(_)
         | Reply::Chosen { .. }
         | Reply::Drafts(_)
-        | Reply::Names(_) => vec![],
+        | Reply::Names(_)
+        | Reply::RoomOrder(_)
+        | Reply::PostedIn(_) => vec![],
     }
 }
 

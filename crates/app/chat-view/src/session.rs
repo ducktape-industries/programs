@@ -135,8 +135,8 @@ impl Chat {
         self.listening_asked = false;
     }
 
-    // The rooms the reader listens to, which both lists hold as theirs and
-    // `#` offers.
+    // The rooms the reader listens to and wrote in, which both lists hold as theirs and `#`
+    // offers, and the order the reader put them in.
     pub(crate) fn load_listening(&mut self, cx: &mut Context<Self>) {
         let Some(me) = self.my_account() else {
             return;
@@ -152,6 +152,29 @@ impl Chat {
                 }
             }
             Err(refusal) => cx.log_refused("the rooms listened to", &refusal),
+        })
+        .detach();
+        let posted = crate::queries::posted_in(cx.host(), me);
+        cx.land(posted, |chat, read, cx| match read {
+            Ok(rooms) => {
+                let rooms: std::collections::BTreeSet<String> = rooms.into_iter().collect();
+                if rooms != chat.posted {
+                    chat.posted = rooms;
+                    cx.notify();
+                }
+            }
+            Err(refusal) => cx.log_refused("the rooms written in", &refusal),
+        })
+        .detach();
+        let order = crate::queries::room_order(cx.host(), me);
+        cx.land(order, |chat, read, cx| match read {
+            Ok(order) => {
+                if order != chat.order {
+                    chat.order = order;
+                    cx.notify();
+                }
+            }
+            Err(refusal) => cx.log_refused("the order of the rooms", &refusal),
         })
         .detach();
     }

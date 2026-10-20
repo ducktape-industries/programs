@@ -11,8 +11,8 @@ use borsh::{BorshDeserialize, BorshSerialize};
 use store::{Kind, Map, Owned, Set};
 
 use crate::{
-    AccountNumber, Block, ChannelRow, MemberRow, MsgRow, Notices, Principal, Reaction, plain_text,
-    tags,
+    AccountNumber, Block, ChannelRow, Entry, MemberRow, MsgRow, Notices, Principal, Reaction,
+    plain_text, tags,
 };
 
 type ChannelId = String;
@@ -51,6 +51,10 @@ pub const LISTENERS: Map<(ChannelId, AccountNumber), u64> = Map::new("listener/"
 pub const LISTENING: Set<(AccountNumber, ChannelId)> = Set::new("listening/");
 // each principal's first message in each channel's timeline: `(channel, principal)` → its seq
 pub const POSTED: Map<(ChannelId, Principal), Seq> = Map::new("posted/");
+// the channels each account wrote in the timeline of, beside `POSTED`: `(account, channel)`
+pub const POSTED_IN: Set<(AccountNumber, ChannelId)> = Set::new("posted-in/");
+// each account's own order of its rooms and folders in the lists (`Op::SetRoomOrder`)
+pub const ORDERS: Map<AccountNumber, Vec<Entry>> = Map::new("order/");
 // each principal's first mention in each thread's replies (its root says its own):
 // `(channel, root, principal)` → the seq of the reply that mentioned it
 pub const MENTIONED: Map<(ChannelId, Seq, Principal), Seq> = Map::new("mentioned/");

@@ -126,6 +126,8 @@ pub(crate) fn open(name: &str) -> String {
 pub(crate) const ADD_REACTION: &str = "Add reaction";
 pub(crate) const REPLY_IN_THREAD: &str = "Reply in thread";
 pub(crate) const COPY_LINK: &str = "Copy link";
+pub(crate) const MOVE_UP: &str = "Move up";
+pub(crate) const MOVE_DOWN: &str = "Move down";
 pub(crate) const EDIT_MESSAGE: &str = "Edit message";
 pub(crate) const DELETE_MESSAGE: &str = "Delete message";
 pub(crate) const DELETE_QUESTION: &str = "Delete this message?";

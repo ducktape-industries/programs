@@ -27,6 +27,7 @@ mod measure;
 mod menus;
 mod message;
 mod notices;
+mod order;
 mod phone;
 mod policies;
 mod reader;
@@ -318,6 +319,9 @@ fn chat_reply(query: Query) -> Reply {
         Query::Reactors { seqs, .. } => reactors(seqs),
         Query::Listening { .. } => Reply::Listening(page(Vec::new())),
         Query::Notices { .. } => Reply::Notices(page(Vec::new())),
+        // eddy wrote in no room and keeps chat's order
+        Query::PostedIn { .. } => Reply::PostedIn(page(Vec::new())),
+        Query::RoomOrder { .. } => Reply::RoomOrder(Vec::new()),
         query => panic!("unexpected chat query: {query:?}"),
     }
 }

@@ -1,10 +1,11 @@
-//! The menu a right press opens on a room in the sidebar, as the Menu key,
-//! Shift+F10 or assistive tech's "show menu" opens it on the active room:
-//! Open, Copy link and the room's details (`ui/room_menu.rs` draws it).
+//! The menu a right press, the Menu key, Shift+F10 or assistive tech's "show menu" opens on a
+//! sidebar room: Open, Copy link, its details, and Move up and Move down its level
+//! (`ui/room_menu.rs` draws it).
 use view::Point;
 use view::prelude::*;
 
 use crate::{Chat, RoomMenu, links, words};
+use chat::Entry;
 
 pub(crate) const ROOM_MENU: &str = "chat-room-menu";
 const ROOMS_LIST: &str = "chat-sidebar-rooms-list";
@@ -14,14 +15,22 @@ pub(crate) enum RoomItem {
     Open,
     CopyLink(String),
     Details,
+    // the room, one place up or down its level of the lists
+    MoveUp,
+    MoveDown,
 }
 
 impl Chat {
+    // What the menu of `room` offers, in order: the room, its link once
+    // the session names a chain, its details, and a move up or down where its level has room.
     pub(crate) fn room_items(&self, room: &str) -> Vec<RoomItem> {
         let link = links::channel_link(&self.session.chain_id, room, None);
         let mut items = vec![RoomItem::Open];
         items.extend(link.map(RoomItem::CopyLink));
         items.push(RoomItem::Details);
+        let (up, down) = self.steps(&Entry::Room(room.to_owned()));
+        items.extend(up.then_some(RoomItem::MoveUp));
+        items.extend(down.then_some(RoomItem::MoveDown));
         items
     }
 
@@ -90,6 +99,8 @@ impl Chat {
                     self.toggle_details(cx);
                 }
             }
+            RoomItem::MoveUp => self.step(&Entry::Room(room), true, cx),
+            RoomItem::MoveDown => self.step(&Entry::Room(room), false, cx),
         }
     }
 }
@@ -100,6 +111,8 @@ impl RoomItem {
             RoomItem::Open => "open",
             RoomItem::CopyLink(_) => "copy-link",
             RoomItem::Details => "details",
+            RoomItem::MoveUp => "move-up",
+            RoomItem::MoveDown => "move-down",
         }
     }
 
@@ -108,6 +121,8 @@ impl RoomItem {
             RoomItem::Open => words::OPEN,
             RoomItem::CopyLink(_) => words::COPY_LINK,
             RoomItem::Details => words::CHANNEL_DETAILS,
+            RoomItem::MoveUp => words::MOVE_UP,
+            RoomItem::MoveDown => words::MOVE_DOWN,
         }
     }
 
@@ -116,6 +131,8 @@ impl RoomItem {
             RoomItem::Open => "message-square",
             RoomItem::CopyLink(_) => "link",
             RoomItem::Details => "info",
+            RoomItem::MoveUp => "arrow-up",
+            RoomItem::MoveDown => "arrow-down",
         }
     }
 }

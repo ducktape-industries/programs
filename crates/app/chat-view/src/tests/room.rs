@@ -210,6 +210,8 @@ fn a_full_room_renders_inside_the_frame_budget() {
                 Query::Roots { .. } => Reply::Roots(page(rows.clone())),
                 Query::Members { .. } => Reply::Members(page(Vec::new())),
                 Query::Reactors { seqs, .. } => reactors(seqs),
+                Query::PostedIn { .. } => Reply::PostedIn(page(Vec::new())),
+                Query::RoomOrder { .. } => Reply::RoomOrder(Vec::new()),
                 Query::Listening { .. } => Reply::Listening(page(Vec::new())),
                 query => panic!("unexpected chat query: {query:?}"),
             })
@@ -514,7 +516,10 @@ fn a_room_lists_every_member_past_the_first_page() {
                         Some(after) => panic!("a cursor no page named: {after:?}"),
                     })
                 }
-                query @ (Query::Listening { .. } | Query::Notices { .. }) => chat_reply(query),
+                query @ (Query::Listening { .. }
+                | Query::Notices { .. }
+                | Query::PostedIn { .. }
+                | Query::RoomOrder { .. }) => chat_reply(query),
                 query => panic!("unexpected chat query: {query:?}"),
             })
         }));
@@ -549,6 +554,8 @@ fn a_landed_room_rereads_its_window() {
             }
             Query::Channels { .. } => Reply::Channels(page(vec![channel("general", "General", 3)])),
             Query::Members { .. } => Reply::Members(page(Vec::new())),
+            Query::PostedIn { .. } => Reply::PostedIn(page(Vec::new())),
+            Query::RoomOrder { .. } => Reply::RoomOrder(Vec::new()),
             Query::Listening { .. } => Reply::Listening(page(Vec::new())),
             query => panic!("unexpected chat query: {query:?}"),
         })

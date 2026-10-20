@@ -218,6 +218,8 @@ fn a_post_the_room_shows_before_its_receipt_is_shown_once() {
             ])),
             // the receipt reads everything again, the roster too
             Query::Members { .. } => Reply::Members(page(Vec::new())),
+            Query::PostedIn { .. } => Reply::PostedIn(page(Vec::new())),
+            Query::RoomOrder { .. } => Reply::RoomOrder(Vec::new()),
             Query::Listening { .. } => Reply::Listening(page(Vec::new())),
             query => panic!("unexpected chat query: {query:?}"),
         })
@@ -743,6 +745,8 @@ fn hash_offers_the_rooms_you_are_in_and_the_rest_when_typed() {
                     rooms.extend((100..150).map(job));
                     Reply::Channels(page(rooms))
                 }
+                Query::PostedIn { .. } => Reply::PostedIn(page(Vec::new())),
+                Query::RoomOrder { .. } => Reply::RoomOrder(Vec::new()),
                 Query::Listening { .. } => Reply::Listening(page(vec!["design".into()])),
                 query => chat_reply(query),
             })

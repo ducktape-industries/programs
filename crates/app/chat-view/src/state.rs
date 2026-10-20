@@ -95,6 +95,17 @@ pub struct Chat {
     // asked this session: both lists and `#` read them
     #[serde(skip)]
     pub(crate) listening_asked: bool,
+    // the rooms the reader wrote in, and the order they put their rooms and folders in: chat's,
+    // asked with `listening`
+    #[serde(skip)]
+    pub(crate) posted: BTreeSet<String>,
+    #[serde(skip)]
+    pub(crate) order: Vec<chat::Entry>,
+    // the sidebar's channel rows where layout last put them, and the row held down to drag
+    #[serde(skip)]
+    pub(crate) drawn_rows: crate::room_list::Drawn,
+    #[serde(skip)]
+    pub(crate) drag: Option<crate::room_list::Drag>,
     // the block height each room's newest message last moved at, as this
     // session heard it: what `#` offers first
     #[serde(skip)]

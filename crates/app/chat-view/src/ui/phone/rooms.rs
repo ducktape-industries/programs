@@ -1,17 +1,21 @@
 //! The rooms, the chat's first page (Expo `app/(tabs)/chat/index.tsx`, boards 10-12): the title
 //! row, the channels the reader is in, in their folders, then their direct rooms newest first; a
-//! folder's row opens or closes it.
+//! folder's row opens or closes it, and a long press lifts a channel or folder row to move it.
 use view::prelude::*;
+use view::wire::{Action, ActionData};
 use view::{Div, Stateful};
 
 use super::parts::{face, quiet};
 use crate::Chat;
 use crate::room_list::{DmEntry, FolderLine, Line, label};
+use crate::ui::sidebar::{lands, placed};
 use crate::words;
-use chat::{ChannelInfo, Principal};
+use chat::{ChannelInfo, Entry, Principal};
 use view::design::Ladder;
 
 const DOT: Pixels = px(8.);
+const MOVE_UP: i32 = 1;
+const MOVE_DOWN: i32 = 2;
 
 pub(super) fn screen(
     chat: &Chat,
@@ -102,7 +106,20 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     let empty = (!loading && none).then(|| no_rooms(chat, cx, theme, ladder));
     let elsewhere = (list.channels.is_empty() && list.left_out > 0)
         .then(|| quiet("chat-rooms-none-held", words::NONE_HELD, theme, ladder));
-    let mine = lines(chat, &list.channels, cx, theme, ladder);
+    let lines = chat.lines(&list.channels);
+    // a long press lifts the channel or folder row under it; the finger dragged onto another row
+    // of its level and lifted, it takes that row's place
+    let drawn: std::rc::Rc<[Entry]> = lines.iter().map(|line| line.spot().entry()).collect();
+    let (held, over) = (drawn.clone(), drawn);
+    let lift = cx.listener(move |chat, event: &ClickEvent, _, cx| {
+        chat.hold_row(event.position(), &held);
+        cx.notify();
+    });
+    let drag = cx.listener(move |chat, event: &MouseMoveEvent, _, cx| {
+        chat.drag_row(event.position, &over, cx)
+    });
+    let land = cx.listener(|chat, _: &MouseUpEvent, _, cx| chat.drop_row(cx));
+    let mine = rows(chat, lines, cx, theme, ladder);
     let mut dms = Vec::new();
     for dm in &list.dms {
         dms.push(dm_row(chat, dm, cx, theme, ladder));
@@ -114,6 +131,11 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         .overflow_y_scroll()
         .flex()
         .flex_col()
+        .role(Role::Group)
+        .aria_label(words::ROOMS)
+        .on_aux_click(lift)
+        .on_mouse_move(drag)
+        .on_mouse_up(MouseButton::Left, land)
         .child(
             design::section_head("chat-rooms-channels-head", words::CHANNELS, ladder, theme)
                 .children(count(list.channels.len())),
@@ -137,15 +159,15 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         .children(dms)
 }
 
-fn lines(
+fn rows(
     chat: &Chat,
-    channels: &[&ChannelInfo],
+    lines: Vec<Line<'_>>,
     cx: &mut Context<Chat>,
     theme: &Theme,
     ladder: &Ladder,
 ) -> Vec<AnyElement> {
-    let lines = chat.lines(channels).into_iter();
     lines
+        .into_iter()
         .map(|line| match line {
             Line::Room { info, depth } => channel_row(chat, info, depth, cx, theme, ladder),
             Line::Folder(folder) => folder_row(chat, &folder, cx, theme, ladder),
@@ -196,7 +218,10 @@ fn channel_row(
         })
         .when(chat.unread(info), |tail| tail.child(dot(&id, theme)));
     let name = label(&channel.name).to_owned();
-    row(&id, name.clone(), channel.id.clone(), cx, theme, ladder)
+    let entry = Entry::Room(channel.id.clone());
+    let row = row(&id, name.clone(), channel.id.clone(), cx, theme, ladder);
+    let row = movable(row, entry.clone(), chat, cx, theme);
+    steps(row, entry, chat, cx)
         .pl(indent(depth))
         .child(design::lead(hash.text_color(theme.muted)))
         .child(title(name, theme, ladder))
@@ -244,10 +269,12 @@ fn folder_row(
         })
         .when(unread, |tail| tail.child(dot(&id, theme)));
     let counted = (folder.unread > 0).then(|| words::unread_rooms(folder.unread));
+    let entry = Entry::Folder(folder.path.clone());
     let line = design::row(id.clone(), ladder, theme).pl(indent(folder.depth));
+    let line = movable(line, entry.clone(), chat, cx, theme);
     let name = title(folder.name.to_owned(), theme, ladder);
     let Some(own) = folder.own else {
-        return line
+        return steps(line, entry, chat, cx)
             .role(Role::Button)
             .aria_label(words::folder(folder.name))
             .aria_expanded(folder.open)
@@ -287,7 +314,46 @@ fn folder_row(
         .on_click(choose)
         .child(name)
         .child(tail);
+    let opens = steps(opens, entry, chat, cx);
     line.child(fold).child(opens).into_any_element()
+}
+
+// A channel or folder row the reader moves: where layout put it, raised while lifted, and an accent
+// edge on the side a lifted row lands on it.
+fn movable(
+    row: Stateful<Div>,
+    entry: Entry,
+    chat: &Chat,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+) -> Stateful<Div> {
+    let lifted = chat.drag.as_ref().is_some_and(|drag| drag.entry == entry);
+    let landing = chat.landing(&entry);
+    placed(row, entry, cx)
+        .when(lifted, |row| row.bg(theme.accent_soft))
+        .when_some(landing, |row, after| lands(row, after, theme))
+}
+
+// A screen reader's way to move `entry`: Move up and Move down, where its level has room.
+fn steps(row: Stateful<Div>, entry: Entry, chat: &Chat, cx: &mut Context<Chat>) -> Stateful<Div> {
+    let (up, down) = chat.steps(&entry);
+    if !up && !down {
+        return row;
+    }
+    let chat = cx.weak_entity();
+    row.when(up, |row| row.custom_action(MOVE_UP, words::MOVE_UP))
+        .when(down, |row| row.custom_action(MOVE_DOWN, words::MOVE_DOWN))
+        .on_a11y_action(
+            Action::CustomAction,
+            move |data: Option<&ActionData>, _: &mut Window, app: &mut App| {
+                let up = match data {
+                    Some(ActionData::CustomAction(MOVE_UP)) => true,
+                    Some(ActionData::CustomAction(MOVE_DOWN)) => false,
+                    _ => return,
+                };
+                let _ = chat.update(app, |chat, cx| chat.step(&entry, up, cx));
+            },
+        )
 }
 
 fn dm_row(

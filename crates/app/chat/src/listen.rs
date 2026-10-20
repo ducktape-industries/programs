@@ -9,8 +9,8 @@ use abi::role::identity as role;
 
 use crate::attributed::mentioned;
 use crate::state::{
-    CHANNELS, LISTENERS, LISTENING, MEMBERS, MENTIONED, NOTICES, PARTICIPANTS, POSTED, Stored,
-    WATCHERS, WATCHING, channel, stored,
+    CHANNELS, LISTENERS, LISTENING, MEMBERS, MENTIONED, NOTICES, PARTICIPANTS, POSTED, POSTED_IN,
+    Stored, WATCHERS, WATCHING, channel, stored,
 };
 use crate::{AccountNumber, Followed, MsgRow, Notices, PageRequest, PageResponse, Principal};
 
@@ -139,6 +139,9 @@ pub(crate) fn note(ctx: &ExecCtx, row: &MsgRow) {
         let posted = (row.channel_id.clone(), row.author.clone());
         if !POSTED.has(ctx, &posted) {
             POSTED.put(ctx, &posted, &row.seq);
+            if let Principal::Account(account) = row.author {
+                POSTED_IN.insert(ctx, &(account, row.channel_id.clone()));
+            }
         }
         return;
     };

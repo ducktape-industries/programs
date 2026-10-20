@@ -1,11 +1,12 @@
 //! The rooms the reader is in, as both lists draw them: their channels (opened on this device,
-//! listened to, or owned), then their direct rooms newest first; search finds the rest by name. A
-//! `/` in a channel's name files it under folders.
+//! listened to, written in or owned) under the folders a `/` in a name files, in the reader's own
+//! order, then their direct rooms newest first; search finds the rest by name.
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
 use chat::view::Names;
-use chat::{Category, ChannelInfo, Kind, Principal};
+use chat::{Category, ChannelInfo, Entry, Kind, Principal};
+use view::Point;
 use view::prelude::*;
 use view::wire;
 
@@ -43,6 +44,14 @@ pub(crate) enum Spot {
 }
 
 impl Spot {
+    // what the reader's order names the row by
+    pub(crate) fn entry(&self) -> Entry {
+        match self {
+            Spot::Room(room) => Entry::Room(room.clone()),
+            Spot::Folder { path, .. } => Entry::Folder(path.clone()),
+        }
+    }
+
     // the room the row opens: none for a folder alone
     pub(crate) fn room(&self) -> Option<&str> {
         match self {
@@ -232,6 +241,47 @@ impl<'a> Tree<'a> {
         above
     }
 
+    // Each level, the top and each folder's, in the reader's `order`: what it leaves out first, in
+    // the order it stood, then what it names, in its order.
+    fn arrange(&mut self, order: &[Entry]) {
+        let top = std::mem::take(&mut self.top);
+        self.top = self.ranked(top, order);
+        for at in 0..self.folders.len() {
+            let nodes = std::mem::take(&mut self.folders[at].nodes);
+            self.folders[at].nodes = self.ranked(nodes, order);
+        }
+    }
+
+    fn ranked(&self, mut nodes: Vec<Node<'a>>, order: &[Entry]) -> Vec<Node<'a>> {
+        let rank = |node: &Node| {
+            let entry = self.entry(node);
+            order.iter().position(|listed| *listed == entry)
+        };
+        nodes.sort_by_cached_key(|node| rank(node).map_or((false, 0), |at| (true, at)));
+        nodes
+    }
+
+    fn entry(&self, node: &Node) -> Entry {
+        match *node {
+            Node::Room(info) => Entry::Room(info.channel.id.clone()),
+            Node::Folder(at) => Entry::Folder(self.folders[at].path.clone()),
+        }
+    }
+
+    // the entries of the level that holds `entry`, as drawn
+    fn level(&self, entry: &Entry) -> Option<Vec<Entry>> {
+        let folders = self.folders.iter().map(|folder| &folder.nodes);
+        std::iter::once(&self.top)
+            .chain(folders)
+            .map(|nodes| {
+                nodes
+                    .iter()
+                    .map(|node| self.entry(node))
+                    .collect::<Vec<_>>()
+            })
+            .find(|level| level.contains(entry))
+    }
+
     fn nodes(&mut self, folder: Option<usize>) -> &mut Vec<Node<'a>> {
         match folder {
             Some(at) => &mut self.folders[at].nodes,
@@ -295,6 +345,31 @@ impl<'a> Tree<'a> {
     }
 }
 
+// The reader's `order` once `level`'s entry at `from` moved to `to`: the level as drawn, written
+// whole after what the order says of every other level.
+pub(crate) fn moved(order: &[Entry], level: &[Entry], from: usize, to: usize) -> Vec<Entry> {
+    let mut level = level.to_vec();
+    let entry = level.remove(from);
+    level.insert(to.min(level.len()), entry);
+    let mut order: Vec<Entry> = order
+        .iter()
+        .filter(|entry| !level.contains(entry))
+        .cloned()
+        .collect();
+    order.extend(level);
+    order
+}
+
+// Where layout put each channel row of the sidebar.
+pub(crate) type Drawn = BTreeMap<Entry, Bounds<Pixels>>;
+
+// A sidebar row held down: the row, and the row of its level it lands on once let go.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Drag {
+    pub entry: Entry,
+    pub onto: Option<Entry>,
+}
+
 pub(crate) struct DmChoice {
     pub peer: u64,
     pub name: String,
@@ -329,24 +404,145 @@ impl Chat {
         list
     }
 
-    // Whether the reader is in `info`'s room: opened on this device,
-    // listened to, or theirs.
+    // Whether the reader is in `info`'s room: opened on this device, listened to, written in, or
+    // theirs.
     pub(crate) fn is_in(&self, info: &ChannelInfo) -> bool {
         let id = info.channel.id.as_str();
         let owner = self.my_account().map(Principal::Account);
         self.opened.contains(id)
             || self.listening.contains(id)
+            || self.posted.contains(id)
             || owner.as_ref() == Some(&info.channel.owner)
     }
 
     // `channels` as the list draws them: each under the folders its name
-    // gives, a closed folder's rooms left out
+    // gives, in the reader's order, a closed folder's rooms left out
     pub(crate) fn lines<'a>(&self, channels: &[&'a ChannelInfo]) -> Vec<Line<'a>> {
-        let tree = Tree::of(channels);
+        let mut tree = Tree::of(channels);
+        tree.arrange(&self.order);
         let mut lines = Vec::new();
         let unread = |info: &ChannelInfo| self.unread(info);
         tree.lines(&tree.top, 0, &self.closed_folders, &unread, &mut lines);
         lines
+    }
+
+    // The entries of the level of the lists that holds `entry`, as drawn: none for a direct room.
+    pub(crate) fn level(&self, entry: &Entry) -> Option<Vec<Entry>> {
+        let list = self.held_rooms();
+        let mut tree = Tree::of(&list.channels);
+        tree.arrange(&self.order);
+        tree.level(entry)
+    }
+
+    // Whether `entry` has a place before it and after it in its level.
+    pub(crate) fn steps(&self, entry: &Entry) -> (bool, bool) {
+        let Some(level) = self.level(entry) else {
+            return (false, false);
+        };
+        let at = level.iter().position(|held| held == entry);
+        at.map_or((false, false), |at| (at > 0, at + 1 < level.len()))
+    }
+
+    // `entry` one place up or down its level.
+    pub(crate) fn step(&mut self, entry: &Entry, up: bool, cx: &mut Context<Self>) {
+        let Some(at) = self
+            .level(entry)
+            .and_then(|level| level.iter().position(|held| held == entry))
+        else {
+            return;
+        };
+        let to = match up {
+            true => at.checked_sub(1),
+            false => Some(at + 1),
+        };
+        if let Some(to) = to {
+            self.place(entry, to, cx);
+        }
+    }
+
+    // `entry` put at `to` in its level, and the reader's whole order written.
+    pub(crate) fn place(&mut self, entry: &Entry, to: usize, cx: &mut Context<Self>) {
+        let Some(level) = self.level(entry) else {
+            return;
+        };
+        let Some(from) = level.iter().position(|held| held == entry) else {
+            return;
+        };
+        if from == to || to >= level.len() {
+            return;
+        }
+        self.order = moved(&self.order, &level, from, to);
+        cx.notify();
+        let order = self.order.clone();
+        self.submit(chat::Op::SetRoomOrder { order }, cx);
+    }
+
+    // The row under `at`, of the rows `drawn` now.
+    fn row_at(&self, at: Point<Pixels>, drawn: &[Entry]) -> Option<Entry> {
+        let under = |entry: &&Entry| {
+            let bounds = self.drawn_rows.get(*entry);
+            bounds.is_some_and(|bounds| bounds.contains(&at))
+        };
+        drawn.iter().find(under).cloned()
+    }
+
+    // A left press on the channel rows: the row under it is held.
+    pub(crate) fn hold_row(&mut self, at: Point<Pixels>, drawn: &[Entry]) {
+        self.drag = self
+            .row_at(at, drawn)
+            .map(|entry| Drag { entry, onto: None });
+    }
+
+    // The pointer moved while a row is held: over another row of its level, that row is where it
+    // lands; over itself or another level, nowhere; between rows, where it was.
+    pub(crate) fn drag_row(&mut self, at: Point<Pixels>, drawn: &[Entry], cx: &mut Context<Self>) {
+        let Some(drag) = &self.drag else {
+            return;
+        };
+        let Some(over) = self.row_at(at, drawn) else {
+            return;
+        };
+        let level = self.level(&drag.entry).unwrap_or_default();
+        let onto = (over != drag.entry && level.contains(&over)).then_some(over);
+        if let Some(drag) = self.drag.as_mut().filter(|drag| drag.onto != onto) {
+            drag.onto = onto;
+            cx.notify();
+        }
+    }
+
+    // Let go: a row held and dragged onto another of its level takes that row's place.
+    pub(crate) fn drop_row(&mut self, cx: &mut Context<Self>) {
+        let Some(drag) = self.drag.take() else {
+            return;
+        };
+        cx.notify();
+        let Drag {
+            entry,
+            onto: Some(onto),
+        } = drag
+        else {
+            return;
+        };
+        let level = self.level(&entry).unwrap_or_default();
+        if let Some(to) = level.iter().position(|held| *held == onto) {
+            self.place(&entry, to, cx);
+        }
+    }
+
+    // The sidebar row of `entry` was laid out at `bounds`.
+    pub(crate) fn drawn_row(&mut self, entry: Entry, bounds: Bounds<Pixels>) {
+        self.drawn_rows.insert(entry, bounds);
+    }
+
+    // Where the held row lands on `entry`'s row: after it (`true`) when it comes from above.
+    pub(crate) fn landing(&self, entry: &Entry) -> Option<bool> {
+        let drag = self.drag.as_ref()?;
+        if drag.onto.as_ref() != Some(entry) {
+            return None;
+        }
+        let level = self.level(entry)?;
+        let at = |entry: &Entry| level.iter().position(|held| held == entry);
+        Some(at(&drag.entry)? < at(entry)?)
     }
 
     // The folder at `path` opened or closed, and kept so on the device.

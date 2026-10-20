@@ -32,6 +32,7 @@ mod listen;
 mod mentions;
 pub mod message;
 mod ops;
+mod order;
 mod origin;
 mod program;
 mod queries;
@@ -63,8 +64,8 @@ pub use text::{plain_text, tag_ranges, tags};
 pub mod tables {
     pub use crate::state::{
         ANSWERED, CHANNEL_META, CHANNELS, DRAFT_PIECES, DRAFTS, HEADS, LISTENERS, LISTENING,
-        MEMBERS, MENTIONED, MESSAGE_IDS, MESSAGES, NOTICES, PARTICIPANTS, POSTED, REACTIONS,
-        REPLIES, ROOTS,
+        MEMBERS, MENTIONED, MESSAGE_IDS, MESSAGES, NOTICES, ORDERS, PARTICIPANTS, POSTED,
+        POSTED_IN, REACTIONS, REPLIES, ROOTS,
     };
 }
 
@@ -208,6 +209,10 @@ pub enum Op {
     },
     #[tool_op(description = "Take down your draft in a channel.", example = examples::undraft)]
     Undraft { channel_id: String },
+    // the sender's own order of its rooms and folders in the lists, written whole: an empty order
+    // goes back to chat's
+    #[tool_op(description = "Put your rooms and folders in your own order in the lists: a room by its channel id, a folder by its name (the text before a channel name's first '/'). Writes your whole order; an empty list goes back to chat's order.", example = examples::room_order)]
+    SetRoomOrder { order: Vec<Entry> },
 }
 
 /// A read. `viewer` is the reader's principals: they decide
@@ -390,6 +395,19 @@ pub enum Query {
     #[reads(state::CHANNELS)]
     #[tool_query(description = "The names of the channels ids names, each as (id, name) and nothing else of the channel; an id no channel has is left out.", example = examples::names)]
     Names { ids: Vec<String> },
+    // the order `account` put its rooms and folders in (`Op::SetRoomOrder`): empty for none
+    #[ask(Reply::RoomOrder(Vec<Entry>))]
+    #[reads(state::ORDERS)]
+    #[tool_query(description = "The order an account put its rooms and folders in, or an empty list.", example = examples::room_order_of)]
+    RoomOrder { account: AccountNumber },
+    // the channels `account` wrote in the timeline of
+    #[ask(Reply::PostedIn(PageResponse<String>))]
+    #[reads(state::POSTED_IN)]
+    #[tool_query(description = "The channels an account has written in.", example = examples::posted_in)]
+    PostedIn {
+        account: AccountNumber,
+        page: PageRequest,
+    },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -420,6 +438,28 @@ pub enum Reply {
     },
     Drafts(Vec<Draft>),
     Names(Vec<(String, String)>),
+    RoomOrder(Vec<Entry>),
+    PostedIn(PageResponse<String>),
+}
+
+// One place in an account's own order of its lists (`Op::SetRoomOrder`): a room by its channel id,
+// or a folder by its name, the text before a channel name's first `/`.
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+)]
+pub enum Entry {
+    Room(String),
+    Folder(String),
 }
 
 /// Where an account is in a room ([`Query::Followed`]): what comes after the
@@ -763,6 +803,7 @@ fn op_variants_only_append() {
             "Watch",
             "Drafting",
             "Undraft",
+            "SetRoomOrder",
         ]
     );
 }

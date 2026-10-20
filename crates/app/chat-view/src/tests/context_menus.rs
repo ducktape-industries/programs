@@ -4,7 +4,7 @@ use super::*;
 use view::CursorStyle;
 use view::methods::ClipboardWrite;
 
-fn right_press(cx: &mut TestAppContext, key: &str) {
+pub(super) fn right_press(cx: &mut TestAppContext, key: &str) {
     let event = view::MouseDownEvent {
         button: view::MouseButton::Right,
         position: view::Point {

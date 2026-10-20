@@ -65,6 +65,8 @@ fn full_room(newest: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
                 }
                 Query::Members { .. } => Reply::Members(page(Vec::new())),
                 Query::Reactors { .. } => Reply::Reactors(Vec::new()),
+                Query::PostedIn { .. } => Reply::PostedIn(page(Vec::new())),
+                Query::RoomOrder { .. } => Reply::RoomOrder(Vec::new()),
                 Query::Listening { .. } => Reply::Listening(page(Vec::new())),
                 query => panic!("unexpected chat query: {query:?}"),
             })
@@ -294,6 +296,8 @@ fn long_room(head: Rc<Cell<u64>>) -> (TestAppContext, Entity<Chat>) {
                 }),
                 Query::Members { .. } => Reply::Members(page(Vec::new())),
                 Query::Reactors { .. } => Reply::Reactors(Vec::new()),
+                Query::PostedIn { .. } => Reply::PostedIn(page(Vec::new())),
+                Query::RoomOrder { .. } => Reply::RoomOrder(Vec::new()),
                 Query::Listening { .. } => Reply::Listening(page(Vec::new())),
                 query => panic!("unexpected chat query: {query:?}"),
             })
@@ -399,6 +403,8 @@ fn seeded_room(listed: Option<u64>) -> (TestAppContext, Entity<Chat>) {
                     next: None,
                 }),
                 Query::Members { .. } => Reply::Members(page(Vec::new())),
+                Query::PostedIn { .. } => Reply::PostedIn(page(Vec::new())),
+                Query::RoomOrder { .. } => Reply::RoomOrder(Vec::new()),
                 Query::Listening { .. } => Reply::Listening(page(Vec::new())),
                 query => panic!("unexpected chat query: {query:?}"),
             })

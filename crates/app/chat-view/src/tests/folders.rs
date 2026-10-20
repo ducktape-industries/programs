@@ -60,7 +60,7 @@ fn a_slash_files_a_channel_under_its_folder_by_its_first_slash() {
     let (mut cx, _) = desk(&[]);
     for shown in [
         "general",
-        "jobs/",
+        "jobs",
         "j-097 · channel folders",
         "j-098 · board",
         "b/c",
@@ -303,13 +303,16 @@ fn a_category_files_nothing_and_new_channels_carry_none() {
     );
 }
 
-// A folder's header reads its name with its `/`, and its chevron ends the row: the lead column
-// first, as a room row's, then the name taking the slack, the chevron last.
+// A folder's header reads `/` in the lead column, where a room row's `#` goes, then its name, and
+// its chevron ends the row: the name taking the slack, the chevron last.
 #[test]
-fn a_folders_header_keeps_its_slash_and_its_chevron_ends_the_row() {
+fn a_folders_header_leads_with_its_slash_and_its_chevron_ends_the_row() {
     let (cx, _) = desk(&[]);
-    assert!(cx.has_text("jobs/"), "{:?}", cx.texts());
-    assert!(!cx.has_text("jobs"), "the header keeps its delimiter");
+    assert!(cx.has_text("jobs") && cx.has_text("/"), "{:?}", cx.texts());
+    assert!(
+        !cx.has_text("jobs/"),
+        "the slash leads the row, not the name"
+    );
     for row in [
         "chat-sidebar-folder-jobs",
         "chat-sidebar-folder-engineering",
@@ -329,6 +332,25 @@ fn a_folders_header_keeps_its_slash_and_its_chevron_ends_the_row() {
         let grow = cx.styles()[*style].flex_grow;
         assert_eq!(grow, Some(1.), "{row}'s name takes the slack before it");
     }
+}
+
+// A folder's header is flush with the rooms beside it, its name where theirs is; the rooms in it
+// start one lead column further in.
+#[test]
+fn a_folders_rooms_sit_one_lead_column_in_under_its_header() {
+    let (cx, _) = desk(&[]);
+    let name_at = |row: &str| {
+        let Some(wire::Node::Container(wire::ContainerNode { children, .. })) = cx.find(row) else {
+            panic!("{row} is a row");
+        };
+        children.iter().position(|child| {
+            matches!(child, wire::Node::Container(wire::ContainerNode { style, .. })
+                if cx.styles()[*style].flex_grow == Some(1.))
+        })
+    };
+    assert_eq!(name_at("chat-sidebar-channel-general"), Some(1));
+    assert_eq!(name_at("chat-sidebar-folder-jobs"), Some(1));
+    assert_eq!(name_at("chat-sidebar-channel-j-097"), Some(2));
 }
 
 fn field_of(cx: &TestAppContext, key: &str) -> (String, Vec<wire::TextToken>) {
