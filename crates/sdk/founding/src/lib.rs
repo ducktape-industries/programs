@@ -56,7 +56,7 @@ pub const UNVIEWED: &[&str] = &[
 ];
 // Programs `make wasm-program` packs that no founding holds: each is deployed to a network that
 // runs, as a new program (actions-pods needs the pods egress service and its runner labels).
-pub const UNFOUNDED: &[&str] = &["actions", "actions-pods", "fleet"];
+pub const UNFOUNDED: &[&str] = &["actions", "actions-pods", "fleet", "wake"];
 pub const VIEWS: [&str; 1] = ["explorer_view"];
 /// The programs that ship a notifier, and the module `make wasm-notifiers`
 /// builds it as (`<view>.notify.wasm`).

@@ -2316,6 +2316,7 @@ dependencies = [
  "tempfile",
  "toml 0.9.12+spec-1.1.0",
  "valset",
+ "wake",
  "wasm-encoder 0.251.0",
  "wasmparser 0.251.0",
 ]
@@ -6371,6 +6372,28 @@ dependencies = [
  "uuid",
  "view-wire",
  "wasmparser 0.251.0",
+]
+
+[[package]]
+name = "wake"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "access",
+ "attribution",
+ "awaits",
+ "borsh",
+ "describe",
+ "egress",
+ "files",
+ "forge",
+ "identity",
+ "program",
+ "programs",
+ "scheduler",
+ "serde_json",
+ "store",
+ "valset",
 ]
 
 [[package]]
