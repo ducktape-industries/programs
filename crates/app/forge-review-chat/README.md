@@ -32,7 +32,7 @@ Each notice is a chat `Notify` in the room, at top level, with the kind `change`
 - `Watched(event)`: forge only (its watch deliveries, `sent_by`). The program sends forge `Watch { deliver: [0] }` from `init`, so it hears every event from its admission on.
 
 ## Queries
-`Rules`: the rules, in the order they are tried. `Room { repo, n }`: the room change `n` is mirrored into, or null.
+`Rules`: the rules, in the order they are tried. `Room { repo, n }`: the room change `n` is mirrored into, or null. `Mirrored { page }`: a page of every open mirrored change (`Mirror { repo, n, room }`), by repository then number: the `room/` rows, so it costs what is open, never what has ended. A reader that wants a room's changes (a board telling two rooms their changes touch one path) reads them here.
 
 ## Interface
 `Op`, `Query` and `Reply` only grow at their end. `Op::Watched` stays tag 0: it is the prefix forge delivers under.

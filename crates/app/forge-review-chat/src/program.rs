@@ -4,7 +4,7 @@ use ::program::schema::Return;
 use ::program::tools::{Described, Tools};
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx, Reply as Wanted};
 
-use crate::rules::{room_of, rules_of, set_rules, watched};
+use crate::rules::{mirrored, room_of, rules_of, set_rules, watched};
 use crate::{Op, PROGRAM, Query, Reply};
 
 pub struct ForgeReviewChat;
@@ -43,6 +43,7 @@ impl Program for ForgeReviewChat {
         Ok(match query {
             Query::Rules => Reply::Rules(rules_of(ctx)?),
             Query::Room { repo, n } => Reply::Room(room_of(ctx, repo, n)?),
+            Query::Mirrored { page } => Reply::Mirrored(mirrored(ctx, &page)?),
         })
     }
 }

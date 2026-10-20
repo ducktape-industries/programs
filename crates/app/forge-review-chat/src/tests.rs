@@ -398,3 +398,47 @@ fn a_rule_fills_its_room_from_one_branch_segment_and_the_first_match_wins() {
         assert_eq!(room(&chain, n).as_deref(), Some(expected), "{name}");
     }
 }
+
+fn mirrored(chain: &MockChain) -> Vec<Mirror> {
+    let asked = Query::Mirrored {
+        page: PageRequest::default(),
+    };
+    let Reply::Mirrored(page) = chain.query(PROGRAM, &asked).unwrap() else {
+        panic!("Mirrored answers a page of mirrored changes");
+    };
+    assert_eq!(page.next, None, "a page with no limit holds every one");
+    page.items
+}
+
+#[test]
+fn every_open_mirrored_change_is_listed_with_its_room_until_it_ends() {
+    let chain = world();
+    create(&chain, "j-11");
+    tell(&chain, opened(1, branch("j-7/teach"))).unwrap();
+    tell(&chain, opened(2, branch("feature/teach"))).unwrap();
+    tell(&chain, opened(3, branch("j-11/learn"))).unwrap();
+    tell(&chain, opened(4, branch("j-7/again"))).unwrap();
+    let mirror = |n: u64, room: &str| Mirror {
+        repo: "project".into(),
+        n,
+        room: room.into(),
+    };
+    assert_eq!(
+        mirrored(&chain),
+        [mirror(1, "j-7"), mirror(3, "j-11"), mirror(4, "j-7")]
+    );
+    let merged = Watched::Merged {
+        repo: "project".into(),
+        n: 1,
+        oid: "2".repeat(40),
+        by: Principal::Account(ADA_ACCOUNT),
+    };
+    tell(&chain, merged).unwrap();
+    let closed = Watched::Closed {
+        repo: "project".into(),
+        n: 3,
+        by: Principal::Account(ADA_ACCOUNT),
+    };
+    tell(&chain, closed).unwrap();
+    assert_eq!(mirrored(&chain), [mirror(4, "j-7")]);
+}

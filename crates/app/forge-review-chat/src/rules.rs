@@ -5,10 +5,10 @@ use ::program::{
 };
 use chat::message::Status;
 use forge::{Change, Revision, Verdict, Watched};
-use store::PageRequest;
+use store::{PageRequest, PageResponse};
 
-use crate::Rule;
 use crate::state::{POSTED, ROOMS, RULES};
+use crate::{Mirror, Rule};
 
 const CAPTURE: &str = "{}";
 
@@ -229,4 +229,10 @@ pub(crate) fn rules_of(ctx: &QueryCtx) -> Result<Vec<Rule>, Error> {
 
 pub(crate) fn room_of(ctx: &QueryCtx, repo: String, n: u64) -> Result<Option<String>, Error> {
     ROOMS.get(ctx, &(repo, n))
+}
+
+pub(crate) fn mirrored(ctx: &QueryCtx, page: &PageRequest) -> Result<PageResponse<Mirror>, Error> {
+    Ok(ROOMS
+        .range(ctx, page)?
+        .map(|((repo, n), room)| Mirror { repo, n, room }))
 }

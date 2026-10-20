@@ -19,6 +19,13 @@ pub struct Rule {
     pub room: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Mirror {
+    pub repo: String,
+    pub n: u64,
+    pub room: String,
+}
+
 #[derive(
     Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
 )]
@@ -49,7 +56,9 @@ pub enum Op {
     ::program::Ask,
     ::program::Described,
 )]
-#[tool_about("The network's rules, and the room each open change is mirrored into.")]
+#[tool_about(
+    "The network's rules, the room each open change is mirrored into, and every open mirrored change."
+)]
 #[ask(ForgeReviewChat)]
 pub enum Query {
     #[ask(Reply::Rules(Vec<Rule>))]
@@ -64,12 +73,19 @@ pub enum Query {
         example = crate::examples::room
     )]
     Room { repo: String, n: u64 },
+    #[ask(Reply::Mirrored(store::PageResponse<Mirror>))]
+    #[tool_query(
+        description = "A page of every open change mirrored into a room, by repository then number, each with its room: what a room's changes are read from.",
+        example = crate::examples::mirrored
+    )]
+    Mirrored { page: store::PageRequest },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum Reply {
     Rules(Vec<Rule>),
     Room(Option<String>),
+    Mirrored(store::PageResponse<Mirror>),
 }
 
 pub fn watching() -> Vec<u8> {
@@ -108,5 +124,5 @@ fn op_variants_only_append() {
 
 #[test]
 fn query_variants_only_append() {
-    assert_eq!(describe::variants::<Query>(), ["Rules", "Room"]);
+    assert_eq!(describe::variants::<Query>(), ["Rules", "Room", "Mirrored"]);
 }

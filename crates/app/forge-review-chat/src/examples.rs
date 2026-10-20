@@ -25,6 +25,12 @@ pub(crate) fn rules() -> Query {
     Query::Rules
 }
 
+pub(crate) fn mirrored() -> Query {
+    Query::Mirrored {
+        page: store::PageRequest::default(),
+    }
+}
+
 pub(crate) fn room() -> Query {
     Query::Room {
         repo: "project".into(),
