@@ -930,6 +930,17 @@ fn edit_puts_the_message_in_the_composer_under_its_bar() {
 }
 
 #[test]
+fn a_notice_of_the_readers_own_offers_no_edit() {
+    let (mut cx, view) = in_general();
+    with_menu_on(&mut cx, &view, notice_row(3, 7));
+    assert!(cx.find("chat-actions-delete").is_some(), "{:?}", cx.texts());
+    assert!(
+        cx.find("chat-actions-edit").is_none(),
+        "chat never edits a notice"
+    );
+}
+
+#[test]
 fn delete_asks_first_cancel_keeps_the_message_and_delete_sends() {
     let (mut cx, _) = in_general();
     long_press(&mut cx, "chat-message-m1-row");

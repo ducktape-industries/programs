@@ -199,7 +199,7 @@ impl Chat {
         let names = self.names.ready().cloned().unwrap_or_default();
         let row = self.shown(pane).find(|row| row.seq == seq)?.clone();
         let message = chat_message(row, &names, &links::Rooms::default());
-        (!message.edit_body.is_empty()).then_some(message.edit_body)
+        self.editable(pane, seq).then_some(message.edit_body)
     }
 
     /// The rows one pane shows, fetched and pending, as the index served them.
@@ -290,6 +290,11 @@ impl Chat {
         let Some(me) = self.me() else { return false };
         self.shown(pane)
             .any(|row| row.seq == seq && row.author == me)
+    }
+
+    pub(crate) fn editable(&self, pane: Pane, seq: u64) -> bool {
+        self.shown(pane)
+            .any(|row| row.seq == seq && !row.deleted && row.notice().is_none())
     }
 
     // Whether the reader may delete the message at `seq`: its author's delete is the message's

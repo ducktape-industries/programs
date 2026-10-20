@@ -635,6 +635,81 @@ fn an_edit_emptied_keeps_its_draft_while_it_is_open() {
     types(&mut cx, &view, "edit-general-1", "again");
 }
 
+#[test]
+fn a_message_of_files_alone_opens_its_edit_and_the_save_keeps_its_files() {
+    let (mut cx, view) = opened();
+    cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
+    let file = chat::message::Attachment {
+        path: "/chat/general/m1/notes.txt".into(),
+        snapshot: [5; 32],
+        name: "notes.txt".into(),
+        size: 3,
+        content_type: "text/plain".into(),
+    };
+    let files_alone = MsgRow {
+        blocks: vec![chat::Block::Attachment(file.clone())],
+        ..row(1, 7, "")
+    };
+    cx.host().handle::<Ask<files::Files>>(|_| {
+        Ok(files::Reply::Stat {
+            snapshot: None,
+            entry: None,
+        })
+    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![files_alone.clone()])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(4, posted("general")));
+    cx.run_until_parked();
+    cx.update(&view, |chat, _, cx| {
+        chat.menu = Some(Menu {
+            pane: Pane::Timeline,
+            seq: 1,
+            rev: 0,
+            mode: Mode::More,
+            at: (611., 455.),
+        });
+        cx.notify();
+    });
+    cx.run_until_parked();
+    cx.simulate_click("chat-menu-edit");
+    cx.run_until_parked();
+    assert!(
+        cx.find("chat-message-editing").is_some(),
+        "Edit opens its field"
+    );
+    cx.simulate_input("edit-general-1/editor", "the notes");
+    cx.simulate_field_key("edit-general-1/editor", "enter");
+    cx.run_until_parked();
+    let sent = cx.host().requests::<Submit<::chat::Chat>>();
+    let Some(Op::EditMessage { seq: 1, blocks, .. }) = sent.last() else {
+        panic!("an edit: {sent:?}")
+    };
+    let mut kept = chat::parse_message("the notes");
+    kept.push(chat::Block::Attachment(file));
+    assert_eq!(blocks, &kept);
+}
+
+#[test]
+fn a_notice_of_the_readers_own_offers_no_edit_and_opens_none() {
+    let (mut cx, view) = opened();
+    with_menu_on(&mut cx, &view, notice_row(3, 7));
+    assert!(cx.find("chat-menu-delete").is_some(), "its menu is drawn");
+    assert!(
+        cx.find("chat-menu-edit").is_none(),
+        "chat never edits a notice"
+    );
+    edit(&mut cx, &view, 3);
+    assert!(cx.find("chat-message-editing").is_none());
+    view.read(|chat| assert!(chat.editing().is_none()));
+}
+
 /// An edit left without saving leaves no draft behind: opening it again
 /// starts from the message, so there is nothing of it to keep.
 #[test]

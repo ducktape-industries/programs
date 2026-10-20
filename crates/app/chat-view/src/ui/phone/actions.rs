@@ -199,7 +199,8 @@ fn rows(
 ) -> Vec<AnyElement> {
     let (seq, rev, deleted) = (message.seq, message.rev, message.deleted);
     let in_thread = pane == Pane::Thread || message.thread.is_some();
-    let (edit, delete) = (chat.may_edit(pane, seq), chat.may_delete(pane, seq));
+    let edit = chat.editable(pane, seq) && chat.may_edit(pane, seq);
+    let delete = chat.may_delete(pane, seq);
     let link = chat.message_link(seq);
     let row =
         |id: &'static str, icon: &'static str, label: &'static str, danger: bool, click: Press| {

@@ -125,6 +125,42 @@ fn parsed_row(seq: u64, author: u64, text: &str) -> MsgRow {
     }
 }
 
+fn notice_row(seq: u64, author: u64) -> MsgRow {
+    let notice = chat::Notice {
+        kind: "pod".into(),
+        group: "builds-1".into(),
+        subject: "pod builds-1".into(),
+        link: None,
+        status: chat::message::Status::Failed,
+        detail: "exit code 1".into(),
+        concerns: Vec::new(),
+    };
+    MsgRow {
+        blocks: vec![chat::Block::Notice(notice)],
+        ..row(seq, author, "")
+    }
+}
+
+fn with_menu_on(cx: &mut TestAppContext, view: &Entity<Chat>, row: MsgRow) {
+    let seq = row.seq;
+    cx.update(view, |chat, _, cx| {
+        let room = chat.room.as_mut().expect("a room is open");
+        room.messages
+            .ready_mut()
+            .expect("its rows are read")
+            .push(row);
+        chat.menu = Some(Menu {
+            pane: Pane::Timeline,
+            seq,
+            rev: 0,
+            mode: Mode::More,
+            at: (611., 455.),
+        });
+        cx.notify();
+    });
+    cx.run_until_parked();
+}
+
 fn marked_row(seq: u64) -> MsgRow {
     let text = format!("row {seq}: **bold**, `code` and a [link](https://x.example/{seq})");
     let even = seq.is_multiple_of(2);

@@ -185,7 +185,10 @@ fn more_items(chat: &Chat, menu: &Menu) -> Vec<Action> {
         (Action::CopyLink, chat.message_link(seq).is_some()),
         (Action::WorkRecord, work_record(chat, pane, seq).is_some()),
         (Action::WhoCanEdit, chat.message_item(pane, seq).is_some()),
-        (Action::Edit, writable && chat.may_edit(pane, seq)),
+        (
+            Action::Edit,
+            writable && chat.editable(pane, seq) && chat.may_edit(pane, seq),
+        ),
         (Action::Delete, writable && chat.may_delete(pane, seq)),
     ]
     .into_iter()
