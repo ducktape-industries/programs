@@ -128,8 +128,8 @@ fn detail(
         );
     let window = setup
         .configured
-        .model()
-        .and_then(|model| model.window.tokens());
+        .reached()
+        .and_then(|reached| reached.window.tokens());
     div()
         .flex()
         .flex_col()
@@ -137,10 +137,10 @@ fn detail(
         .child(head)
         .children(removing(view, &name, agent, cx, theme, ladder))
         .children(problem(&setup, theme))
-        .children(setup.configured.model().and_then(|model| {
+        .children(setup.configured.reached().and_then(|reached| {
             no_node(
                 "agent-no-node",
-                &model.service,
+                reached.service,
                 card.and_then(|card| card.serving).unwrap_or_default(),
                 roster.relaying,
                 theme,
@@ -254,11 +254,11 @@ fn setup_fold(
         )
         .w(px(300.)),
     );
-    if let Some(model) = setup.configured.model() {
-        facts = facts.child(fact("Window", window_words(model.window), &theme).w(FACT));
+    if let Some(reached) = setup.configured.reached() {
+        facts = facts.child(fact("Window", window_words(reached.window), &theme).w(FACT));
     }
     if setup.configured.config().is_some() {
-        let threshold = setup.configured.threshold();
+        let threshold = setup.configured.compact_at();
         let compacts = div()
             .child(compacts_words(threshold))
             .children(threshold_source(threshold).map(muted));
@@ -436,8 +436,7 @@ fn threads(
     let threshold = detail
         .setup
         .as_ref()
-        .and_then(|setup| setup.configured.threshold());
-    let threshold = threshold.map(harness::Threshold::tokens);
+        .and_then(|setup| setup.configured.compact_at());
     let rows = detail.threads.iter().map(|(thread, _)| {
         let id = thread.id;
         let theme = *theme;

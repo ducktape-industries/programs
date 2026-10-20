@@ -1,15 +1,18 @@
 //! The create form: the ops a new agent takes, each with how far it got, the configuration
-//! file it writes (where, the model from harness's records, thinking, max output, wait, the
+//! file it writes (where, the model and its provider from harness's routes, thinking, max output, wait, the
 //! system prompt) and who it answers. Editing is the same form, filled from the agent's file.
 use view::design::Ladder;
 use view::design::{size, space};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
 
-use super::{back, caption, thinking_picker, waiting};
+use super::routes::providers;
+use super::{back, caption, thinking_picker};
 use crate::Agents;
-use crate::create::{Answers, CREATE_INTRO, Changers, Draft, EDIT_INTRO, proposed_path};
-use crate::words::{serving_words, window_short};
+use crate::create::{
+    Answers, CREATE_INTRO, Changers, Draft, EDIT_INTRO, PROVIDER_PICK_HINT, VENDOR_HINT,
+    proposed_path,
+};
 use harness::Thinking;
 
 pub(super) fn render(
@@ -183,7 +186,7 @@ fn fields(
         theme,
     ))
     .when(!draft.again, |form| {
-        form.child(models(view, cx, theme, ladder))
+        form.child(model(view, cx, theme, ladder))
             .child(labelled(
                 "Thinking",
                 "How hard the model thinks before it answers.",
@@ -255,66 +258,30 @@ fn fields(
     })
 }
 
-fn models(
+fn model(
     view: &Agents,
     cx: &mut Context<Agents>,
     theme: &Theme,
     ladder: &Ladder,
 ) -> impl IntoElement + use<> {
-    let list = match waiting("create-models", &view.models, cx, theme, ladder) {
-        Some(shown) => shown,
-        None => {
-            let models = view.models.ready().map_or(&[][..], Vec::as_slice);
-            let rows = models.iter().map(|model| {
-                let id = model.row.id.clone();
-                let picked = view.draft.model.as_deref() == Some(id.as_str());
-                let (now, tone) = serving_words(model.serving(), theme);
-                let pick = id.clone();
-                pickable(format!("model-{id}"), picked, theme)
-                    .on_click(
-                        cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
-                            view.draft.model = Some(pick.clone());
-                            cx.notify();
-                        }),
-                    )
-                    .child(
-                        design::mono(id)
-                            .flex_none()
-                            .w(px(150.))
-                            .truncate()
-                            .font_weight(FontWeight::MEDIUM),
-                    )
-                    .child(div().flex_none().w(px(140.)).child(model.row.wire.label()))
-                    .child(
-                        caption(
-                            format!("{} · {}", model.row.service, window_short(model.row.window)),
-                            theme,
-                        )
-                        .flex_1()
-                        .min_w_0()
-                        .truncate(),
-                    )
-                    .child(caption(now, theme).flex_none().text_color(tone))
-            });
-            div()
-                .flex()
-                .flex_col()
-                .children(rows)
-                .when(models.is_empty(), |list| {
-                    list.child(design::quiet(
-                        "Harness keeps no model yet: set one on the Models page.",
-                        theme,
-                    ))
-                })
-                .into_any_element()
-        }
+    let draft = &view.draft;
+    let set = |view: &mut Agents, provider: String, _: &mut Context<Agents>| {
+        view.draft.provider = Some(provider);
     };
+    let picked = draft.provider.as_deref();
+    let providers = providers(view, picked, "create-provider", set, cx, theme, ladder);
     div()
         .flex()
         .flex_col()
-        .gap(space::XXS)
-        .child(div().font_weight(FontWeight::MEDIUM).child("Model"))
-        .child(list)
+        .gap(space::LG)
+        .child(labelled(
+            "Model",
+            VENDOR_HINT,
+            input(Input::new("create-model", &draft.vendor, "Model"), theme)
+                .placeholder("claude-opus-5-5"),
+            theme,
+        ))
+        .child(labelled("Provider", PROVIDER_PICK_HINT, providers, theme))
 }
 
 pub(super) fn pickable(id: String, picked: bool, theme: &Theme) -> Stateful<Div> {

@@ -41,7 +41,7 @@ fn each_model_call_reads_the_configuration_at_the_head_and_its_turn_names_that_s
         system: "Answer in French.".into(),
         ..scout()
     };
-    let second = commit(chain, ADA, CONFIG, &french.write());
+    let second = commit(chain, ADA, CONFIG, &md(&french));
     chain.at(3, 0);
     model_says(
         chain,
@@ -103,26 +103,22 @@ fn a_missing_or_malformed_configuration_or_an_unknown_model_is_noticed_once_and_
     );
     assert!(assigned(chain, SERVICE).is_empty());
 
-    let elsewhere = Config {
-        model: "nobody".into(),
-        ..scout()
-    };
-    commit(chain, ADA, path, &elsewhere.write());
+    commit(chain, ADA, path, &scout().write(&Pin::default()));
     world.mention("m3", "and again");
     let told = notices(chain, thread);
     assert_eq!(told.len(), 3);
     assert!(
-        told[2].contains(path) && told[2].contains("names model nobody"),
+        told[2].contains(path) && told[2].contains("names no provider"),
         "{}",
         told[2]
     );
     assert!(assigned(chain, SERVICE).is_empty());
     assert!(matches!(
         setup(chain, world.agent).unwrap().configured,
-        Configured::UnknownModel { config, .. } if config == elsewhere
+        Configured::Unprovided { config, .. } if config == scout()
     ));
 
-    commit(chain, ADA, path, &scout().write());
+    commit(chain, ADA, path, &md(&scout()));
     world.mention("m4", "now?");
     let (_, asked) = open_request(chain);
     assert_eq!(super::path(&asked), "/v1/models/claude-test");
@@ -140,10 +136,12 @@ fn the_agent_query_resolves_what_harness_runs_an_account_with() {
         standing,
         path,
         configured:
-            Configured::Ready {
+            Configured::Routed {
                 snapshot: read,
                 config,
-                model,
+                provider,
+                route,
+                window: Window::Unasked,
             },
         current: None,
     }) = setup(chain, world.agent)
@@ -155,10 +153,11 @@ fn the_agent_query_resolves_what_harness_runs_an_account_with() {
         (world.agent, world.ada, Standing::Active, CONFIG, snapshot)
     );
     assert_eq!(config, scout());
-    assert_eq!(
-        (model.id.as_str(), model.wire, model.service.as_str()),
-        (MODEL, Wire::AnthropicMessages, SERVICE)
-    );
+    let ccs = [RouteService {
+        service: SERVICE.into(),
+        wire: Wire::AnthropicMessages,
+    }];
+    assert_eq!((provider.as_str(), route.as_slice()), (PROVIDER, &ccs[..]));
     assert_eq!(setup(chain, world.bo), None, "a user is no agent");
     let suspend = identity::Op::Suspend {
         account: world.agent,
@@ -193,7 +192,7 @@ fn a_card_is_the_setup_without_its_system_prompt() {
         panic!()
     };
     let mut expected = whole.clone();
-    if let Configured::Ready { config, .. } = &mut expected.configured {
+    if let Configured::Routed { config, .. } = &mut expected.configured {
         assert_eq!(config.system, "Keep notes in /shared.");
         config.system = String::new();
     }

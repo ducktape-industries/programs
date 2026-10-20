@@ -5,8 +5,8 @@ mod agent;
 pub(crate) mod budget;
 mod create;
 mod list;
-mod models;
 pub(crate) mod phone;
+mod routes;
 mod setup;
 mod thread;
 mod timeline;
@@ -30,7 +30,7 @@ pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
             agent::render(view, agent, cx, &theme, ladder)
         }
         Screen::Thread(id) | Screen::Usage(id) => thread::render(view, id, cx, &theme, ladder),
-        Screen::Models | Screen::SetModel => models::render(view, cx, &theme, ladder),
+        Screen::Routes | Screen::SetRoute => routes::render(view, cx, &theme, ladder),
     };
     div()
         .id("agents")

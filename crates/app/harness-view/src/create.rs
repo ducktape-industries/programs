@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use view::methods::{BlobBody, NewBlob, PutBlobs};
 use view::prelude::*;
 
-use harness::{AgentSetup, BlobId, Config, Configured, Thinking};
+use harness::{AgentSetup, BlobId, Config, Configured, Pin, Thinking};
 use identity::{Identity, Ownership, Party, Script};
 use policy_view::link;
 use program::Writers;
@@ -19,7 +19,11 @@ use crate::{Agents, Screen, applied};
 pub(crate) struct Draft {
     pub name: TextField,
     pub path: TextField,
-    pub model: Option<String>,
+    // the model as its vendor names it, and the provider whose route reaches it
+    #[serde(default)]
+    pub vendor: TextField,
+    #[serde(default)]
+    pub provider: Option<String>,
     pub max_tokens: TextField,
     pub wait: TextField,
     pub thinking: Option<Thinking>,
@@ -78,7 +82,7 @@ pub(crate) struct Form {
 }
 
 pub(crate) enum Writes {
-    Whole(Config),
+    Whole { config: Config, provider: String },
     Edit { body: Option<String> },
 }
 
@@ -91,6 +95,9 @@ enum Next {
     Done(u64),
 }
 
+pub(crate) const VENDOR_HINT: &str = "The model as its vendor names it, like claude-opus-5-5.";
+pub(crate) const PROVIDER_PICK_HINT: &str =
+    "The provider whose route reaches it: the Routes page lists each one's services.";
 pub(crate) const CREATE_INTRO: &str = "A new account you manage, handed to harness.";
 pub(crate) const EDIT_INTRO: &str = "Saving writes the configuration file's system prompt and keeps its front matter, which the agent's Setup edits; the next model call reads it.";
 
@@ -151,7 +158,13 @@ impl Draft {
             true => Writes::Edit {
                 body: (system != self.prompt).then_some(system),
             },
-            false => Writes::Whole(self.config(system)?),
+            false => {
+                let config = self.config(system)?;
+                let Some(provider) = self.provider.clone() else {
+                    return Err(crate::setup::PICK_PROVIDER.into());
+                };
+                Writes::Whole { config, provider }
+            }
         };
         let ownership = match self.answers {
             Answers::Manager => Ownership::Owner,
@@ -188,9 +201,10 @@ impl Draft {
     }
 
     fn config(&self, system: String) -> Result<Config, String> {
-        let Some(model) = self.model.clone() else {
-            return Err("Pick the model it asks.".into());
-        };
+        let model = self.vendor.text().trim().to_owned();
+        if model.is_empty() {
+            return Err(crate::setup::NAME_MODEL.into());
+        }
         let max_tokens = match self.max_tokens.text().trim().parse::<u32>() {
             Ok(max) if max > 0 => max,
             _ => return Err("Max output tokens is a whole number, at least 1.".into()),
@@ -336,7 +350,8 @@ pub(crate) fn base_of(configured: &Configured) -> Option<[u8; 32]> {
         | Configured::UnknownModel { snapshot, .. }
         | Configured::Ready { snapshot, .. }
         | Configured::Routed { snapshot, .. }
-        | Configured::NoRoute { snapshot, .. } => Some(*snapshot),
+        | Configured::NoRoute { snapshot, .. }
+        | Configured::Unprovided { snapshot, .. } => Some(*snapshot),
     };
     match snapshot {
         Some(BlobId::Sha256(digest)) => Some(digest),
@@ -525,7 +540,13 @@ impl Agents {
             .unwrap_or_else(|| form.path.clone());
         let writing = async move {
             let bytes = match form.writes {
-                Writes::Whole(config) => config.write().into_bytes(),
+                Writes::Whole { config, provider } => {
+                    let pin = Pin {
+                        service: None,
+                        provider: Some(provider),
+                    };
+                    config.write(&pin).into_bytes()
+                }
                 Writes::Edit { body } => {
                     let file = read::file(&host, &from, base.map(BlobId::Sha256)).await?;
                     match body {

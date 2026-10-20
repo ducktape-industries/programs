@@ -122,14 +122,7 @@ pub(crate) fn configured_pinned(ctx: &QueryCtx, path: &str) -> Result<(Configure
     };
     let configured = match &pin.provider {
         Some(provider) => routed(ctx, snapshot, config, provider.clone())?,
-        None => match crate::models::model(ctx, &config.model)? {
-            Some(model) => Configured::Ready {
-                snapshot,
-                config,
-                model,
-            },
-            None => Configured::UnknownModel { snapshot, config },
-        },
+        None => Configured::Unprovided { snapshot, config },
     };
     Ok((configured, pin))
 }
@@ -177,9 +170,8 @@ pub(crate) fn setup(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<Agen
 pub(crate) fn card(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<AgentSetup>, Error> {
     let mut setup = setup(ctx, number)?;
     if let Some(setup) = &mut setup
-        && let Configured::Ready { config, .. }
-        | Configured::UnknownModel { config, .. }
-        | Configured::Routed { config, .. }
+        && let Configured::Routed { config, .. }
+        | Configured::Unprovided { config, .. }
         | Configured::NoRoute { config, .. } = &mut setup.configured
     {
         config.system = String::new();

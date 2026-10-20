@@ -88,12 +88,18 @@ fn what_it_writes_parses_back_to_itself() {
         compact_at: None,
         system: "Line one.\n\n+++ is not a fence inside a line.".into(),
     };
-    assert_eq!(Config::parse(config.write().as_bytes()), Ok(config.clone()));
+    assert_eq!(
+        Config::parse(config.write(&Pin::default()).as_bytes()),
+        Ok(config.clone())
+    );
     let waits = Config {
         wait: Some(30),
         ..config
     };
-    assert_eq!(Config::parse(waits.write().as_bytes()), Ok(waits));
+    assert_eq!(
+        Config::parse(waits.write(&Pin::default()).as_bytes()),
+        Ok(waits)
+    );
 }
 
 #[test]

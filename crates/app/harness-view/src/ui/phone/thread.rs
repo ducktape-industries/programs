@@ -84,7 +84,7 @@ fn thread(
     let relaying = roster.map_or(1, |roster| roster.relaying);
     let stuck = !row.closed && thread_state(row) == State::Stuck;
     let stopped = shown
-        .model()
+        .reach()
         .and_then(|_| no_node_words(shown.serving.unwrap_or_default(), relaying));
     let problem = shown
         .setup
@@ -161,7 +161,7 @@ fn strip(
     ladder: &Ladder,
 ) -> impl IntoElement + use<> {
     let row = &shown.thread;
-    let window = shown.model().and_then(|model| model.window.tokens());
+    let window = shown.reach().and_then(|reached| reached.window.tokens());
     let threshold = shown.threshold();
     let status = status(shown, relaying);
     let stuck = !row.closed && thread_state(row) == State::Stuck;
@@ -238,7 +238,7 @@ pub(super) fn usage(
         (None, None) => thread_gone(id, theme, ladder).into_any_element(),
         (None, Some(shown)) => {
             let row = &shown.thread;
-            let window = shown.model().and_then(|model| model.window.tokens());
+            let window = shown.reach().and_then(|reached| reached.window.tokens());
             let threshold = shown.threshold();
             let summaries = shown.tally.summaries;
             let turns = shown.frames.iter().filter_map(|frame| match &frame.body {

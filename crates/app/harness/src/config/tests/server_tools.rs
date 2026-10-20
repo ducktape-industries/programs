@@ -42,14 +42,17 @@ fn server_tools_write_and_parse_back() {
         compact_at: None,
         system: "Search.".into(),
     };
-    assert!(!plain.write().contains("server_tools"));
+    assert!(!plain.write(&Pin::default()).contains("server_tools"));
     let both = Config {
         server_tools: ServerTool::ALL.to_vec(),
         ..plain
     };
     assert!(
-        both.write()
+        both.write(&Pin::default())
             .contains("server_tools = [\"web_search\", \"web_fetch\"]\n")
     );
-    assert_eq!(Config::parse(both.write().as_bytes()), Ok(both));
+    assert_eq!(
+        Config::parse(both.write(&Pin::default()).as_bytes()),
+        Ok(both)
+    );
 }

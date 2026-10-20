@@ -1,79 +1,30 @@
 //! Routes per provider: the egress services, in order and each with the wire it speaks, that reach
-//! a provider's models; the first account to set a provider's route owns it. An agent that names
-//! its provider is reached through that route, its window learned per provider and vendor's name.
+//! a provider's models; the first account to set a provider's route owns it. An agent names its
+//! provider and is reached through that route, its window learned per provider and vendor's name.
 use ::program::{Error, ExecCtx, QueryCtx, invalid, not_found};
 use store::{PageRequest, PageResponse};
 
-use crate::models::lowercase_name;
-use crate::state::{PROVIDER_ROUTES, PROVIDER_WINDOWS, PROVIDERS};
-use crate::{ModelRow, ProviderRouteRow, RouteService, Window, Wire};
-
-pub(crate) enum Origin {
-    Record(ModelRow),
-    Route(String),
-}
+use crate::state::{PROVIDER_ROUTES, PROVIDER_WINDOWS};
+use crate::{ProviderRouteRow, RouteService, Window, Wire};
 
 pub(crate) struct Reach {
-    pub origin: Origin,
-    pub provider: Option<String>,
+    pub provider: String,
     pub name: String,
     pub services: Vec<RouteService>,
     pub window: Window,
-    pub compact_at: Option<u64>,
 }
 
 impl Reach {
-    pub fn id(&self) -> String {
-        match &self.origin {
-            Origin::Record(row) => row.id.clone(),
-            Origin::Route(_) => self.name.clone(),
-        }
-    }
-
     pub fn label(&self) -> String {
-        match &self.origin {
-            Origin::Record(row) => format!("model {}", row.id),
-            Origin::Route(provider) => format!("provider {provider}'s route"),
-        }
+        format!("provider {}'s route", self.provider)
     }
 }
 
-pub(crate) fn of_record(ctx: &QueryCtx, row: ModelRow) -> Result<Reach, Error> {
-    let services = crate::routes::services_of(ctx, &row.id, &row.service)?
-        .into_iter()
-        .map(|service| RouteService {
-            service,
-            wire: row.wire,
+pub(crate) fn lowercase_name(text: &str) -> bool {
+    !text.is_empty()
+        && text.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"-_.".contains(&byte)
         })
-        .collect();
-    let provider = match row.wire {
-        Wire::AnthropicMessages => Some(model_wire::anthropic::PROVIDER.to_owned()),
-        Wire::Harness => PROVIDERS.get(ctx, &row.id)?,
-    };
-    Ok(Reach {
-        provider,
-        name: row.name.clone(),
-        services,
-        window: row.window,
-        compact_at: row.compact_at,
-        origin: Origin::Record(row),
-    })
-}
-
-pub(crate) fn of_route(
-    provider: String,
-    name: &str,
-    services: Vec<RouteService>,
-    window: Window,
-) -> Reach {
-    Reach {
-        origin: Origin::Route(provider.clone()),
-        provider: Some(provider),
-        name: name.to_owned(),
-        services,
-        window,
-        compact_at: None,
-    }
 }
 
 pub(crate) fn route(ctx: &QueryCtx, provider: &str) -> Result<Option<ProviderRouteRow>, Error> {
@@ -99,13 +50,7 @@ pub(crate) fn learned(
     window: Window,
     provider: String,
 ) -> Result<Option<String>, Error> {
-    let routed = match &reach.origin {
-        Origin::Record(row) => {
-            crate::models::learned(ctx, row, window, provider)?;
-            return Ok(None);
-        }
-        Origin::Route(routed) => routed,
-    };
+    let routed = &reach.provider;
     if provider != *routed {
         return Ok(Some(format!(
             "service {service} answers for provider {provider}, not {routed}: provider {routed}'s route lists a service that reaches another provider"
@@ -167,4 +112,10 @@ pub(crate) fn remove_route(ctx: &ExecCtx, provider: String) -> Result<(), Error>
     }
     PROVIDER_ROUTES.remove(ctx, &provider);
     Ok(())
+}
+
+pub(crate) fn retired() -> Error {
+    invalid(
+        "model records are retired: an agent's configuration names its vendor's model and its provider (model = \"claude-opus-5-5\" and provider = \"anthropic\"), and the provider's route (SetRoute) names the services that reach it",
+    )
 }

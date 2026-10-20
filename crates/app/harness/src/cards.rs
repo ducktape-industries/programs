@@ -65,12 +65,8 @@ fn agent_card(ctx: &QueryCtx, number: AccountNumber) -> Result<AgentCard, Error>
         .filter(|row| !row.closed && row.asking != Asking::Idle)
         .map(spoken)
         .collect::<Result<Vec<_>, _>>()?;
-    let first = match &setup.configured {
-        crate::Configured::Routed { route, .. } => route.first().map(|entry| entry.service.clone()),
-        configured => configured.model().map(|model| model.service.clone()),
-    };
-    let serving = match first {
-        Some(service) => Some(serving(ctx, &service)?),
+    let serving = match setup.configured.reached() {
+        Some(reached) => Some(serving(ctx, reached.service)?),
         None => None,
     };
     Ok(AgentCard {

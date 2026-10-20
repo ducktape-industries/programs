@@ -1,4 +1,4 @@
-//! Who can start an agent's conversations and who can edit a model, as the ownership program says
+//! Who can start an agent's conversations and who can edit a provider's route, as ownership says
 //! (through `policy_view::item`), and what the reader may do by it. An item with no record keeps
 //! the rule it had before policies (J-011 Q8).
 use ownership::Party;
@@ -8,11 +8,11 @@ use view::methods::Change;
 use view::prelude::*;
 use view::{Div, Stateful};
 
-use crate::read::Model;
+use crate::read::Route;
 use crate::{Agents, Screen};
 
 const CONVERSATIONS: &str = "agent-conversations-policy";
-const MODEL: &str = "model-policy";
+const ROUTE: &str = "route-policy";
 const STARTS: &str = "Who can start its conversations";
 pub(crate) const CLAIM: &str = "Claim who starts them";
 pub(crate) const CLAIM_HINT: &str = "Your policies decide it from then on.";
@@ -21,15 +21,15 @@ pub(crate) fn conversations_policy(view: &mut Agents) -> &mut Editing {
     &mut view.conversations_policy
 }
 
-pub(crate) fn model_policy(view: &mut Agents) -> &mut Editing {
-    &mut view.model_policy
+pub(crate) fn route_policy(view: &mut Agents) -> &mut Editing {
+    &mut view.route_policy
 }
 
-pub(crate) fn model_item(id: &str) -> Item {
+pub(crate) fn route_item(provider: &str) -> Item {
     Item {
         program: harness::PROGRAM.to_owned(),
-        key: harness::tables::MODELS.key(&id.to_owned()),
-        label: format!("model {id}"),
+        key: harness::tables::PROVIDER_ROUTES.key(&provider.to_owned()),
+        label: format!("provider {provider}'s route"),
     }
 }
 
@@ -56,14 +56,18 @@ impl Agents {
             None => item::let_go(self, conversations_policy),
         }
         let form = match self.screen {
-            Screen::Models => self.model_draft.shown,
-            Screen::SetModel => true,
+            Screen::Routes => self.route_draft.shown,
+            Screen::SetRoute => true,
             _ => false,
         };
-        let existing = self.model_draft.was.as_ref().map(|_| self.model_draft.id());
+        let existing = self
+            .route_draft
+            .was
+            .as_ref()
+            .map(|_| self.route_draft.provider());
         match existing.filter(|_| form) {
-            Some(id) => item::hold(self, model_policy, model_item(&id), reader, cx),
-            None => item::let_go(self, model_policy),
+            Some(id) => item::hold(self, route_policy, route_item(&id), reader, cx),
+            None => item::let_go(self, route_policy),
         }
     }
 
@@ -89,21 +93,21 @@ impl Agents {
     }
 
     pub(crate) fn policy_sheet_open(&self) -> bool {
-        self.model_policy.sheet.is_some() || self.conversations_policy.sheet.is_some()
+        self.route_policy.sheet.is_some() || self.conversations_policy.sheet.is_some()
     }
 
     pub(crate) fn close_policy_sheet(&mut self, cx: &mut Context<Self>) {
-        item::close_sheet(self, model_policy, cx);
+        item::close_sheet(self, route_policy, cx);
         item::close_sheet(self, conversations_policy, cx);
     }
 
     pub(crate) fn ownership_moved(&mut self, change: Option<Change>, cx: &mut Context<Self>) {
         item::moved(self, conversations_policy, change.as_ref(), cx);
-        item::moved(self, model_policy, change.as_ref(), cx);
-        let listed = self.screen == Screen::Models
-            && self.models.ready().is_some_and(|models| {
-                models.iter().any(|model| {
-                    let held = model_item(&model.row.id);
+        item::moved(self, route_policy, change.as_ref(), cx);
+        let listed = self.screen == Screen::Routes
+            && self.routes.ready().is_some_and(|routes| {
+                routes.iter().any(|route| {
+                    let held = route_item(&route.row.provider);
                     let touched = |query: ownership::Query| {
                         change
                             .as_ref()
@@ -165,25 +169,25 @@ pub(crate) fn conversations_row(
     )
 }
 
-pub(crate) fn model_row(
+pub(crate) fn route_row(
     view: &Agents,
     cx: &mut Context<Agents>,
     ladder: &Ladder,
     theme: &Theme,
 ) -> Option<Stateful<Div>> {
-    item::row(&view.model_policy, MODEL, model_policy, cx, ladder, theme)
+    item::row(&view.route_policy, ROUTE, route_policy, cx, ladder, theme)
 }
 
-pub(crate) fn model_words(view: &Agents, model: &Model) -> String {
-    let owned = model.standing.record.is_some();
+pub(crate) fn route_words(view: &Agents, route: &Route) -> String {
+    let owned = route.standing.record.is_some();
     match owned {
-        true => item::about(&model.standing, view.reader().as_ref()),
+        true => item::about(&route.standing, view.reader().as_ref()),
         false => {
             let named = view.roster.ready().map_or_else(
-                || format!("account {}", model.row.owner),
-                |roster| roster.name(model.row.owner),
+                || format!("account {}", route.row.owner),
+                |roster| roster.name(route.row.owner),
             );
-            match view.me == Some(model.row.owner) {
+            match view.me == Some(route.row.owner) {
                 true => format!("{named} (you)"),
                 false => named,
             }
@@ -197,7 +201,7 @@ pub(crate) fn sheet(
     ladder: &Ladder,
     theme: &Theme,
 ) -> Option<AnyElement> {
-    item::sheet(&view.model_policy, MODEL, model_policy, cx, ladder, theme).or_else(|| {
+    item::sheet(&view.route_policy, ROUTE, route_policy, cx, ladder, theme).or_else(|| {
         let editing = &view.conversations_policy;
         item::sheet(
             editing,

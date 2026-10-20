@@ -129,7 +129,7 @@ fn thread(
                     )
                 }),
         );
-    let model = shown.model();
+    let reached = shown.reach();
     div()
         .flex_1()
         .min_h(px(0.))
@@ -139,10 +139,10 @@ fn thread(
         .child(head)
         .children(closing(view, shown, cx, theme, ladder))
         .child(strip(view, shown, relaying, cx, theme, ladder))
-        .children(model.and_then(|model| {
+        .children(reached.and_then(|reached| {
             no_node(
                 "thread-no-node",
-                &model.service,
+                reached.service,
                 shown.serving.unwrap_or_default(),
                 relaying,
                 theme,
@@ -168,7 +168,7 @@ fn strip(
     ladder: &Ladder,
 ) -> impl IntoElement + use<> {
     let row = &shown.thread;
-    let window = shown.model().and_then(|model| model.window.tokens());
+    let window = shown.reach().and_then(|reached| reached.window.tokens());
     let threshold = shown.threshold();
     let status = status(shown, relaying);
     let stuck = thread_state(row) == State::Stuck && !row.closed;

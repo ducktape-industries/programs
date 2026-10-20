@@ -1,10 +1,10 @@
 use super::*;
-use crate::state::{CONVERSATIONS, MODELS};
+use crate::state::{CONVERSATIONS, PROVIDER_ROUTES};
 
-fn record(chain: &MockChain, id: &str) -> Option<ownership::Record> {
+fn record(chain: &MockChain, provider: &str) -> Option<ownership::Record> {
     let query = ownership::Query::Record {
         program: PROGRAM.into(),
-        key: MODELS.key(&id.to_owned()),
+        key: PROVIDER_ROUTES.key(&provider.to_owned()),
     };
     let ownership::Reply::Record(record) = chain.query(ownership::PROGRAM, &query).unwrap() else {
         panic!("Record answers a record");
@@ -12,52 +12,41 @@ fn record(chain: &MockChain, id: &str) -> Option<ownership::Record> {
     record
 }
 
-fn model_row(chain: &MockChain, id: &str) -> ModelRow {
-    let Reply::Model(Some(row)) = chain
-        .query(PROGRAM, &Query::Model { id: id.into() })
-        .unwrap()
-    else {
-        panic!("the model is set");
+fn window(chain: &MockChain, agent: AccountNumber) -> Window {
+    let asked = Query::Card { agent };
+    let Reply::Agent(Some(setup)) = chain.query(PROGRAM, &asked).unwrap() else {
+        panic!("the agent has a card");
     };
-    row
-}
-
-fn compact_at(tokens: u64) -> Op {
-    Op::SetCompactAt {
-        id: MODEL.into(),
-        compact_at: Some(tokens),
-    }
+    setup
+        .configured
+        .reached()
+        .expect("the agent is routed")
+        .window
 }
 
 #[test]
-fn harness_claims_its_models_and_agents_conversations() {
-    assert_eq!(MODELS.kind(), Some("harness.model"));
+fn harness_claims_its_routes_and_agents_conversations() {
+    assert_eq!(PROVIDER_ROUTES.kind(), Some("harness.route"));
     assert_eq!(CONVERSATIONS.kind(), Some("harness.agent-conversation"));
 }
 
 #[test]
-fn a_models_policy_decides_its_record_and_default_and_any_turn_still_learns_its_window() {
+fn a_routes_policy_decides_who_sets_it_and_any_turn_still_learns_its_window() {
     let mut world = world();
     world.chain.seat::<ownership::Ownership>(ownership::PROGRAM);
     let chain = &world.chain;
-    let removed = Op::RemoveModel { id: MODEL.into() };
-    chain.submit(signed(ADA), PROGRAM, &removed).unwrap();
-    chain
-        .submit(signed(ADA), PROGRAM, &set_model(MODEL, MODEL))
-        .unwrap();
-    let owned = record(chain, MODEL).expect("the guard recorded the model");
-    assert_eq!(owned.owner, ownership::Party::Account(world.ada));
-    assert_eq!(owned.kind.as_deref(), Some("harness.model"));
-
-    let anyone = access::Op::Set {
-        program: PROGRAM.into(),
-        key: crate::model_key(MODEL),
-        list: Some(::program::Ownership::Anyone),
+    let removed = Op::RemoveRoute {
+        provider: PROVIDER.into(),
     };
-    chain.submit(signed(ADA), "access", &anyone).unwrap();
+    chain.submit(signed(ADA), PROGRAM, &removed).unwrap();
+    let ccs = [(SERVICE, Wire::AnthropicMessages)];
     chain
-        .submit(signed(BO), PROGRAM, &compact_at(1000))
+        .submit(signed(ADA), PROGRAM, &set_route(&ccs))
         .unwrap();
+    let owned = record(chain, PROVIDER).expect("the guard recorded the route");
+    assert_eq!(owned.owner, ownership::Party::Account(world.ada));
+    assert_eq!(owned.kind.as_deref(), Some("harness.route"));
+
     let strict = ownership::Op::Create {
         name: "mine".into(),
         write: ownership::Writers::Owner,
@@ -68,24 +57,23 @@ fn a_models_policy_decides_its_record_and_default_and_any_turn_still_learns_its_
     let policy: ownership::PolicyId = abi::decode(&made).unwrap();
     let relink = ownership::Op::Relink {
         program: PROGRAM.into(),
-        key: MODELS.key(&MODEL.to_owned()),
+        key: PROVIDER_ROUTES.key(&PROVIDER.to_owned()),
         policy,
     };
     chain
         .submit(signed(ADA), ownership::PROGRAM, &relink)
         .unwrap();
-    for refused in [compact_at(2000), set_model(MODEL, "claude-bo")] {
-        let error = chain.submit(signed(BO), PROGRAM, &refused).unwrap_err();
-        assert_eq!(error.code, code::UNAUTHORIZED, "{refused:?}");
-    }
+    let error = chain
+        .submit(signed(BO), PROGRAM, &set_route(&ccs))
+        .unwrap_err();
+    assert_eq!(error.code, code::UNAUTHORIZED);
     chain
-        .submit(signed(ADA), PROGRAM, &compact_at(3000))
+        .submit(signed(ADA), PROGRAM, &set_route(&ccs))
         .unwrap();
-    assert_eq!(model_row(chain, MODEL).compact_at, Some(3000));
 
     world.opened("m1", "hello", Some(WINDOW));
-    assert_eq!(model_row(chain, MODEL).window, Window::Tokens(WINDOW));
-    assert_eq!(record(chain, MODEL).unwrap().policy, policy);
+    assert_eq!(window(chain, world.agent), Window::Tokens(WINDOW));
+    assert_eq!(record(chain, PROVIDER).unwrap().policy, policy);
 }
 
 #[test]
@@ -145,44 +133,40 @@ fn an_agents_manager_claims_who_starts_its_conversations_and_its_policy_decides(
 }
 
 #[test]
-fn adopt_owners_records_models_and_gives_every_agent_its_managers_conversations_row() {
+fn adopt_owners_gives_every_agent_its_managers_conversations_row_and_knows_no_model_kind() {
     let mut world = world();
     world.chain.seat::<ownership::Ownership>(ownership::PROGRAM);
     let chain = &world.chain;
-    for kind in ["harness.model", "harness.agent-conversation"] {
-        let mut after = None;
-        loop {
-            let op = Op::AdoptOwners {
-                kind: kind.into(),
-                after,
-                limit: 2,
-            };
-            let next: Option<Vec<u8>> =
-                abi::decode(&chain.submit(signed(BO), PROGRAM, &op).unwrap()).unwrap();
-            if next.is_none() {
-                break;
-            }
-            after = next;
+    let mut after = None;
+    loop {
+        let op = Op::AdoptOwners {
+            kind: "harness.agent-conversation".into(),
+            after,
+            limit: 2,
+        };
+        let next: Option<Vec<u8>> =
+            abi::decode(&chain.submit(signed(BO), PROGRAM, &op).unwrap()).unwrap();
+        if next.is_none() {
+            break;
         }
+        after = next;
     }
-    let effective = |key: Vec<u8>| {
-        let query = ownership::Query::Effective {
-            program: PROGRAM.into(),
-            key,
-        };
-        let ownership::Reply::Policy(Some(policy)) =
-            chain.query(ownership::PROGRAM, &query).unwrap()
-        else {
-            panic!("the row is recorded");
-        };
-        policy
+    let models = Op::AdoptOwners {
+        kind: "harness.model".into(),
+        after: None,
+        limit: 2,
     };
-    let model = effective(MODELS.key(&MODEL.to_owned()));
-    assert_eq!(
-        (model.name.as_str(), &model.owner),
-        (ownership::AS_BEFORE, &ownership::Party::Account(world.ada))
-    );
-    let conversations = effective(CONVERSATIONS.key(&world.agent));
+    let refused = chain.submit(signed(BO), PROGRAM, &models).unwrap_err();
+    assert_eq!(refused.code, code::INVALID_INPUT);
+    let query = ownership::Query::Effective {
+        program: PROGRAM.into(),
+        key: CONVERSATIONS.key(&world.agent),
+    };
+    let ownership::Reply::Policy(Some(conversations)) =
+        chain.query(ownership::PROGRAM, &query).unwrap()
+    else {
+        panic!("the row is recorded");
+    };
     assert_eq!(
         (conversations.name.as_str(), &conversations.owner),
         (ownership::AS_BEFORE, &ownership::Party::Account(world.ada))

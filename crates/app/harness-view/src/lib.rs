@@ -1,11 +1,11 @@
 //! Agents: harness's agents and how each worked: the list, an agent (its conversations, its setup,
-//! its front matter edited by `setup`), a transcript (`timeline`), the models (`models`), the create
+//! its front matter edited by `setup`), a transcript (`timeline`), the routes (`routes`), the create
 //! and edit form (`create`), who may act (`policies`); `read` reads, `ui` draws desktop and phone.
 mod create;
 mod links;
-mod models;
 mod policies;
 mod read;
+mod routes;
 mod setup;
 mod timeline;
 mod ui;
@@ -23,15 +23,16 @@ use view::prelude::*;
 use create::Draft;
 use harness::{Asking, ThreadRow, Written};
 use identity::Identity;
-use models::ModelDraft;
-use read::{Detail, Model, Offer, Roster, Touched, Transcript};
+use read::{Detail, Offer, Roster, Route, Touched, Transcript};
+use routes::RouteDraft;
 use setup::SetupDraft;
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Agents {
     screen: Screen,
     draft: Draft,
-    model_draft: ModelDraft,
+    #[serde(default)]
+    route_draft: RouteDraft,
     #[serde(default)]
     setup_draft: SetupDraft,
     arming: Option<Arm>,
@@ -50,7 +51,7 @@ pub struct Agents {
     #[serde(skip)]
     transcript: Loadable<Option<Transcript>>,
     #[serde(skip)]
-    models: Loadable<Vec<Model>>,
+    routes: Loadable<Vec<Route>>,
     #[serde(skip)]
     offers: Loadable<Vec<Offer>>,
     #[serde(skip)]
@@ -85,7 +86,7 @@ pub struct Agents {
     #[serde(skip)]
     conversations_policy: policy_view::Editing,
     #[serde(skip)]
-    model_policy: policy_view::Editing,
+    route_policy: policy_view::Editing,
     #[serde(skip)]
     pictures: Option<Entity<view::pictures::Pictures>>,
 }
@@ -105,10 +106,12 @@ pub(crate) enum Screen {
     Create,
     Agent(u64),
     Thread(u64),
-    Models,
+    #[serde(alias = "Models")]
+    Routes,
     Part(u64, Part),
     Usage(u64),
-    SetModel,
+    #[serde(alias = "SetModel")]
+    SetRoute,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,7 +201,7 @@ fn shown_mut(slot: &mut Loadable<Option<Transcript>>) -> Option<&mut Transcript>
 fn moves_detail(detail: &Loadable<Detail>, agent: u64, wrote: &Written) -> bool {
     match wrote {
         Written::Agent(number) => *number == agent,
-        Written::Model => true,
+        Written::Route => true,
         Written::Thread(id) | Written::Tally(id) | Written::Topic(id) => match detail.ready() {
             Some(detail) => detail.threads.iter().any(|(thread, _)| thread.id == *id),
             None => true,
@@ -232,7 +235,7 @@ fn touched_of(thread: u64, agent: Option<u64>, written: &[Written]) -> Touched {
             Written::Tally(id) => touched.tally |= *id == thread,
             Written::Settling(id) => touched.settling |= *id == thread,
             Written::Agent(number) => touched.setup |= agent == Some(*number),
-            Written::Model => touched.setup = true,
+            Written::Route => touched.setup = true,
             Written::Budget => {}
             Written::Armed(id) => touched.armed |= *id == thread,
         }
@@ -354,7 +357,7 @@ impl Agents {
         let roster = written.iter().any(|wrote| {
             matches!(
                 wrote,
-                Written::Thread(_) | Written::Agent(_) | Written::Topic(_) | Written::Model
+                Written::Thread(_) | Written::Agent(_) | Written::Topic(_) | Written::Route
             )
         });
         if roster {
@@ -380,8 +383,8 @@ impl Agents {
                     .map(|shown| shown.thread.agent);
                 self.follow_transcript(touched_of(thread, agent, &written), cx);
             }
-            Screen::Create | Screen::Models | Screen::SetModel => {
-                if written.contains(&Written::Model) {
+            Screen::Create | Screen::Routes | Screen::SetRoute => {
+                if written.contains(&Written::Route) {
                     self.read_screen(cx);
                 }
             }
@@ -451,14 +454,14 @@ impl Agents {
         let me = self.me;
         match self.screen {
             Screen::List => {}
-            Screen::Create => cx.load(self, read::models(host, me), |view| &mut view.models),
-            Screen::Models => {
-                cx.load(self, read::models(host.clone(), me), |view| {
-                    &mut view.models
+            Screen::Create => cx.load(self, read::routes(host, me), |view| &mut view.routes),
+            Screen::Routes => {
+                cx.load(self, read::routes(host.clone(), me), |view| {
+                    &mut view.routes
                 });
                 cx.load(self, read::offers(host), |view| &mut view.offers);
             }
-            Screen::SetModel => cx.load(self, read::offers(host), |view| &mut view.offers),
+            Screen::SetRoute => cx.load(self, read::offers(host), |view| &mut view.offers),
             Screen::Agent(agent) | Screen::Part(agent, _) => self.read_detail(agent, cx),
             Screen::Thread(thread) | Screen::Usage(thread) => self.open_transcript(thread, cx),
         }
@@ -636,7 +639,7 @@ impl Agents {
         self.arming = None;
         self.sheet = None;
         self.conversations_policy.sheet = None;
-        self.model_policy.sheet = None;
+        self.route_policy.sheet = None;
         self.notice = None;
         self.read_screen(cx);
         cx.notify();
@@ -645,7 +648,7 @@ impl Agents {
     pub(crate) fn parent(&self) -> Screen {
         match self.screen {
             Screen::List => Screen::List,
-            Screen::Agent(_) | Screen::Models => Screen::List,
+            Screen::Agent(_) | Screen::Routes => Screen::List,
             Screen::Create => match (self.draft.again, self.draft.created) {
                 (true, Some(agent)) => Screen::Agent(agent),
                 _ => Screen::List,
@@ -656,7 +659,7 @@ impl Agents {
             },
             Screen::Part(agent, _) => Screen::Agent(agent),
             Screen::Usage(thread) => Screen::Thread(thread),
-            Screen::SetModel => Screen::Models,
+            Screen::SetRoute => Screen::Routes,
         }
     }
 
@@ -849,8 +852,8 @@ impl Agents {
             Screen::List => "Agents".to_owned(),
             Screen::Create if self.draft.again => format!("Edit {}", self.draft.name.text()),
             Screen::Create => "Create an agent".to_owned(),
-            Screen::Models => "Models".to_owned(),
-            Screen::SetModel => "Set a model".to_owned(),
+            Screen::Routes => "Routes".to_owned(),
+            Screen::SetRoute => "Set a route".to_owned(),
             Screen::Agent(agent) | Screen::Part(agent, _) => self.agent_name(agent),
             Screen::Thread(id) | Screen::Usage(id) => match self.transcript.ready() {
                 Some(Some(shown)) => format!(

@@ -21,8 +21,8 @@ pub(super) fn render(
     ladder: &Ladder,
 ) -> AnyElement {
     let create = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.start_create(cx));
-    let models =
-        cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.go(Screen::Models, cx));
+    let routes =
+        cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.go(Screen::Routes, cx));
     let head = div()
         .flex()
         .flex_wrap()
@@ -53,7 +53,7 @@ pub(super) fn render(
                     )
                 }))
                 .child(
-                    design::button("agents-models", "Models", ladder, theme, models)
+                    design::button("agents-routes", "Routes", ladder, theme, routes)
                         .kind(design::Kind::Outline),
                 )
                 .children(view.me.map(|_| {

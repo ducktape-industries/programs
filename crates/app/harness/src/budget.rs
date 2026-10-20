@@ -7,7 +7,7 @@ use serde::Deserialize;
 
 use crate::calls::refusal;
 use crate::resume::header;
-use crate::state::{BUDGETS, Budget, BudgetWindow, FLIGHTS, MODELS, PACES, Pace, READS, Seen};
+use crate::state::{BUDGETS, Budget, BudgetWindow, FLIGHTS, PACES, Pace, READS, Seen};
 use crate::{
     AccountBudget, BudgetReport, ServicePace, StatusOutcome, StatusRead, WHOLE_WINDOW as WHOLE,
     WindowOutlook,
@@ -222,13 +222,6 @@ pub(crate) async fn read(ctx: Ctx, service: String) -> Result<(), Error> {
 
 pub(crate) async fn read_all(ctx: Ctx) -> Result<(), Error> {
     let mut services: Vec<String> = Vec::new();
-    for (id, model) in MODELS.all(&ctx)? {
-        for service in crate::routes::services_of(&ctx, &id, &model.service)? {
-            if !services.contains(&service) {
-                services.push(service);
-            }
-        }
-    }
     for (_, route) in crate::state::PROVIDER_ROUTES.all(&ctx)? {
         for entry in route.services {
             if !services.contains(&entry.service) {

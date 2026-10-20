@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use view::prelude::*;
 
-use harness::{AgentSetup, BlobId, Config, ServerTool, Thinking};
+use harness::{AgentSetup, BlobId, Config, Configured, ServerTool, Thinking};
 
 use crate::create::{base_of, write_file};
 use crate::{Agents, read};
@@ -16,7 +16,9 @@ pub(crate) struct SetupDraft {
     pub agent: Option<u64>,
     pub path: String,
     pub snapshot: Option<[u8; 32]>,
-    pub model: Option<String>,
+    // the model as its vendor names it, and the provider whose route reaches it
+    pub vendor: TextField,
+    pub provider: Option<String>,
     pub max_tokens: TextField,
     pub wait: TextField,
     pub thinking: Option<Thinking>,
@@ -35,7 +37,7 @@ pub(crate) struct SetupDraft {
 pub(crate) enum Press {
     Open(Box<AgentSetup>),
     Close,
-    Model(String),
+    Provider(String),
     Thinking(Option<Thinking>),
     Tool(ServerTool),
     Listen(String),
@@ -45,8 +47,8 @@ pub(crate) enum Press {
 
 pub(crate) enum Then {
     Stay,
-    Models,
-    Write(Config),
+    Routes,
+    Write(Config, String),
     Done,
 }
 
@@ -58,19 +60,20 @@ impl SetupDraft {
         match press {
             Press::Open(setup) => {
                 *self = SetupDraft::opened(&setup);
-                return Then::Models;
+                return Then::Routes;
             }
             Press::Close => *self = SetupDraft::default(),
-            Press::Model(id) => self.model = Some(id),
+            Press::Provider(provider) => self.provider = Some(provider),
             Press::Thinking(thinking) => self.thinking = thinking,
             Press::Tool(tool) => toggle(&mut self.server_tools, tool),
             Press::Listen(channel) => toggle(&mut self.listen, channel),
-            Press::Save => match self.config() {
-                Ok(config) => {
+            Press::Save => match (self.config(), self.provider.clone()) {
+                (Ok(config), Some(provider)) => {
                     self.problem = None;
-                    return Then::Write(config);
+                    return Then::Write(config, provider);
                 }
-                Err(problem) => self.problem = Some(problem),
+                (Ok(_), None) => self.problem = Some(PICK_PROVIDER.into()),
+                (Err(problem), _) => self.problem = Some(problem),
             },
             Press::Sent(None) => {
                 *self = SetupDraft::default();
@@ -94,7 +97,8 @@ impl SetupDraft {
             agent: Some(setup.agent),
             path: setup.path.clone(),
             snapshot: base_of(&setup.configured),
-            model: Some(config.model.clone()),
+            vendor: TextField::new(config.model.clone()),
+            provider: provider_of(&setup.configured),
             max_tokens: TextField::new(config.max_tokens.to_string()),
             wait: field(config.wait),
             thinking: config.thinking,
@@ -108,9 +112,10 @@ impl SetupDraft {
 
     // the front matter as the fields hold it; its `system` is empty, as the file keeps its body
     pub fn config(&self) -> Result<Config, String> {
-        let Some(model) = self.model.clone() else {
-            return Err("Pick the model it asks.".into());
-        };
+        let model = self.vendor.text().trim().to_owned();
+        if model.is_empty() {
+            return Err(NAME_MODEL.into());
+        }
         let max_tokens = match self.max_tokens.text().trim().parse::<u32>() {
             Ok(max) if max > 0 => max,
             _ => return Err("Max output tokens is a whole number, at least 1.".into()),
@@ -141,6 +146,22 @@ impl SetupDraft {
     }
 }
 
+pub(crate) const NAME_MODEL: &str = "Write the model it asks, as its vendor names it.";
+pub(crate) const PICK_PROVIDER: &str = "Pick the provider whose route reaches it.";
+
+fn provider_of(configured: &Configured) -> Option<String> {
+    match configured {
+        Configured::Routed { provider, .. } | Configured::NoRoute { provider, .. } => {
+            Some(provider.clone())
+        }
+        Configured::Unreadable { .. }
+        | Configured::Malformed { .. }
+        | Configured::UnknownModel { .. }
+        | Configured::Ready { .. }
+        | Configured::Unprovided { .. } => None,
+    }
+}
+
 fn toggle<T: PartialEq>(list: &mut Vec<T>, item: T) {
     match list.iter().position(|held| *held == item) {
         Some(at) => {
@@ -166,10 +187,10 @@ impl Agents {
     pub(crate) fn press_setup(&mut self, press: Press, cx: &mut Context<Self>) {
         match self.setup_draft.press(press) {
             Then::Stay => {}
-            Then::Models => {
+            Then::Routes => {
                 let (host, me) = (cx.host(), self.me);
-                cx.load(self, read::models(host.clone(), me), |view| {
-                    &mut view.models
+                cx.load(self, read::routes(host.clone(), me), |view| {
+                    &mut view.routes
                 });
                 let named = read::every_room(host, self.rooms.clone());
                 cx.land(named, |_, named, cx| match named {
@@ -178,7 +199,7 @@ impl Agents {
                 })
                 .detach();
             }
-            Then::Write(config) => {
+            Then::Write(config, provider) => {
                 let draft = &self.setup_draft;
                 let (path, at) = (draft.path.clone(), draft.snapshot);
                 let agent = draft.agent.unwrap_or_default();
@@ -189,10 +210,9 @@ impl Agents {
                 let host = cx.host();
                 let writing = async move {
                     let file = read::file(&host, &path, at.map(BlobId::Sha256)).await?;
-                    let written =
-                        harness::config::with_front(&file, &config).map_err(|malformed| {
-                            format!("The file takes no new front matter: {malformed}.")
-                        })?;
+                    let written = harness::config::with_front(&file, &config, &provider).map_err(
+                        |malformed| format!("The file takes no new front matter: {malformed}."),
+                    )?;
                     write_file(&host, path, at, written.into_bytes(), message).await
                 };
                 let sent = async move { Ok::<_, Error>(writing.await) };

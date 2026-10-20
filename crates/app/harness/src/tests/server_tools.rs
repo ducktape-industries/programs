@@ -89,7 +89,7 @@ fn server_tools_are_offered_only_to_an_agent_that_lists_them() {
         "end_turn",
     );
 
-    commit(chain, ADA, CONFIG, &searcher().write());
+    commit(chain, ADA, CONFIG, &md(&searcher()));
     world.mention("m2", "look it up");
     let (request, searching) = open_request(chain);
     let tools = body(chain, &request)["tools"].as_array().unwrap().clone();
@@ -115,7 +115,7 @@ fn server_tools_are_offered_only_to_an_agent_that_lists_them() {
 fn a_search_and_a_fetch_are_kept_as_sent_never_run_and_sent_back() {
     let world = world();
     let chain = &world.chain;
-    commit(chain, ADA, CONFIG, &searcher().write());
+    commit(chain, ADA, CONFIG, &md(&searcher()));
     let thread = world.opened("m1", "what is ducktape?", Some(WINDOW));
     chain.at(3, 0);
     model_says_after(chain, searched_and_fetched(), "end_turn", 40);
@@ -152,7 +152,7 @@ fn a_search_and_a_fetch_are_kept_as_sent_never_run_and_sent_back() {
 fn input_heard_while_a_turn_pauses_mid_fetch_waits_until_the_continuation_is_answered() {
     let world = world();
     let chain = &world.chain;
-    commit(chain, ADA, CONFIG, &searcher().write());
+    commit(chain, ADA, CONFIG, &md(&searcher()));
     let thread = world.opened("m1", "fetch it", Some(WINDOW));
     world.mention("m2", "and this too");
     chain.at(3, 0);
@@ -216,7 +216,7 @@ fn continuation_refused(chain: &MockChain) {
 fn a_paused_turn_given_up_keeps_no_unanswered_server_tool_use_ahead_of_the_input_held_behind_it() {
     let world = world();
     let chain = &world.chain;
-    commit(chain, ADA, CONFIG, &searcher().write());
+    commit(chain, ADA, CONFIG, &md(&searcher()));
     let thread = world.opened("m1", "search and fetch it", Some(WINDOW));
     world.mention("m2", "and this too");
     chain.at(3, 0);
@@ -247,7 +247,7 @@ fn a_paused_turn_given_up_keeps_no_unanswered_server_tool_use_ahead_of_the_input
 fn a_paused_turn_given_up_with_nothing_but_an_unanswered_use_is_left_out_as_a_notice() {
     let world = world();
     let chain = &world.chain;
-    commit(chain, ADA, CONFIG, &searcher().write());
+    commit(chain, ADA, CONFIG, &md(&searcher()));
     let thread = world.opened("m1", "fetch it", Some(WINDOW));
     world.mention("m2", "and this too");
     chain.at(3, 0);
@@ -285,7 +285,7 @@ fn a_summary_never_ends_between_a_server_tools_use_and_its_result() {
         compact_at: Some(1000),
         ..searcher()
     };
-    commit(chain, ADA, CONFIG, &config.write());
+    commit(chain, ADA, CONFIG, &md(&config));
     world.opened("m1", "look it up", Some(WINDOW));
     chain.at(3, 0);
     let all = searched_and_fetched();

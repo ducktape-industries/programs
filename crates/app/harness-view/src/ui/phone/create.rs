@@ -1,16 +1,16 @@
-//! The create and edit form, one page: its fields full width, the model a pick from harness's
-//! records, thinking and whom it answers as segments, then its one verb. The title row's caption
+//! The create and edit form, one page: its fields full width, the model named and its provider a
+//! pick from harness's routes, thinking and whom it answers as segments, then its one verb. The title row's caption
 //! says what a create sends; once its first op lands, how far it got is said over the verb.
 use harness::Thinking;
+use view::Div;
 use view::design::{Ladder, space};
 use view::prelude::*;
-use view::{Div, FontWeight};
 
 use super::parts::scroller;
 use crate::Agents;
-use crate::create::{Answers, Changers, proposed_path};
-use crate::ui::{pick, thinking_picker, waiting};
-use crate::words::{serving_words, window_short};
+use crate::create::{Answers, Changers, PROVIDER_PICK_HINT, VENDOR_HINT, proposed_path};
+use crate::ui::routes::providers;
+use crate::ui::thinking_picker;
 
 pub(super) fn page(
     view: &Agents,
@@ -117,9 +117,33 @@ fn fields(
         .caption("Read at each model call. Only you may change it."),
     )
     .when(!draft.again, |form| {
-        form.child(labelled(
-            "Model",
-            models(view, cx, theme, ladder),
+        let set = |view: &mut Agents, provider: String, _: &mut Context<Agents>| {
+            view.draft.provider = Some(provider);
+        };
+        let picked = draft.provider.as_deref();
+        let providers = providers(view, picked, "create-provider", set, cx, theme, ladder);
+        form.child(
+            design::field(
+                Input::new("create-model", &draft.vendor, "Model").placeholder("claude-opus-5-5"),
+                ladder,
+                theme,
+            )
+            .label("Model")
+            .caption(VENDOR_HINT),
+        )
+        .child(labelled(
+            "Provider",
+            div()
+                .flex()
+                .flex_col()
+                .gap(space::XS)
+                .child(providers)
+                .child(
+                    div()
+                        .text_type(ladder.caption)
+                        .text_color(theme.muted)
+                        .child(PROVIDER_PICK_HINT),
+                ),
             theme,
             ladder,
         ))
@@ -183,67 +207,6 @@ fn fields(
     .when(draft.again, |form| {
         form.child(changers(view, cx, theme, ladder))
     })
-}
-
-fn models(
-    view: &Agents,
-    cx: &mut Context<Agents>,
-    theme: &Theme,
-    ladder: &Ladder,
-) -> impl IntoElement + use<> {
-    if let Some(shown) = waiting("create-models", &view.models, cx, theme, ladder) {
-        return shown;
-    }
-    let models = view.models.ready().map_or(&[][..], Vec::as_slice);
-    let rows = models.iter().map(|model| {
-        let id = model.row.id.clone();
-        let picked = view.draft.model.as_deref() == Some(id.as_str());
-        let (now, tone) = serving_words(model.serving(), theme);
-        let chose = id.clone();
-        let choose = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
-            view.draft.model = Some(chose.clone());
-            cx.notify();
-        });
-        pick(format!("model-{id}"), picked, theme, ladder)
-            .on_click(choose)
-            .child(
-                design::mono(id)
-                    .text_type(ladder.small)
-                    .font_weight(FontWeight::MEDIUM),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_type(ladder.caption)
-                    .text_color(theme.muted)
-                    .child(format!(
-                        "{} · {}",
-                        model.row.service,
-                        window_short(model.row.window)
-                    )),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .text_type(ladder.caption)
-                    .text_color(tone)
-                    .child(now),
-            )
-    });
-    div()
-        .flex()
-        .flex_col()
-        .gap(space::XS)
-        .children(rows)
-        .when(models.is_empty(), |list| {
-            list.child(design::quiet(
-                "Harness keeps no model yet: set one on the Models page.",
-                theme,
-            ))
-        })
-        .into_any_element()
 }
 
 #[allow(clippy::too_many_arguments)]

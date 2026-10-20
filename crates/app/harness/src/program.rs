@@ -8,7 +8,7 @@ use ::program::{Awaiting, Ctx, Error, ExecCtx, Program, QueryCtx};
 use crate::agents::{attributed, card, close, setup};
 use crate::bookings::{book, run_booked, unbook};
 use crate::conversations::{fork_thread, new_thread, open_thread};
-use crate::models::{remove_model, set_compact_at, set_model, set_services};
+use crate::providers::retired;
 use crate::streams::streamed;
 use crate::waiting::due;
 use crate::waits::{pod_event, pod_wait, unwait, wait, wait_due};
@@ -62,8 +62,8 @@ impl Program for Harness {
             Query::ThreadAt { agent, place } => {
                 Ok(Reply::Thread(queries::thread_at(ctx, agent, place)?))
             }
-            Query::Model { id } => Ok(Reply::Model(queries::model(ctx, id)?)),
-            Query::Models { page } => Ok(Reply::Models(queries::models(ctx, &page)?)),
+            Query::Model { .. } => Ok(Reply::Model(None)),
+            Query::Models { .. } => Ok(Reply::Models(queries::none(ctx))),
             Query::Withheld { thread } => Ok(Reply::Withheld(queries::withheld(ctx, thread)?)),
             Query::Partial { thread } => Ok(Reply::Partial(queries::partial(ctx, thread)?)),
             Query::Topic { thread } => Ok(Reply::Topic(queries::topic(ctx, thread)?)),
@@ -89,7 +89,7 @@ impl Program for Harness {
             Query::Wakes { thread } => Ok(Reply::Wakes(crate::wakes::wakes(ctx, thread)?)),
             Query::AgentTools { agent } => Ok(Reply::AgentTools(tools::of_agent(ctx, agent)?)),
             Query::Cards { page } => Ok(Reply::Cards(crate::cards::cards(ctx, &page)?)),
-            Query::Services { model } => Ok(Reply::Services(crate::routes::services(ctx, &model)?)),
+            Query::Services { .. } => Ok(Reply::Services(None)),
             Query::Route { thread } => Ok(Reply::Route(crate::routes::route(ctx, thread)?)),
             Query::Routes { page } => Ok(Reply::Routes(crate::routes::routes(ctx, &page)?)),
             Query::Answerers { thread, page } => Ok(Reply::Answerers(crate::routes::answerers(
@@ -110,14 +110,9 @@ impl Awaiting for Harness {
         match op {
             Op::Close { thread } => close(&ctx, thread).await,
             Op::Attributed(change) => attributed(ctx, *change).await,
-            Op::SetModel {
-                id,
-                wire,
-                service,
-                name,
-            } => set_model(&ctx, id, wire, service, name),
-            Op::RemoveModel { id } => remove_model(&ctx, id),
-            Op::SetCompactAt { id, compact_at } => set_compact_at(&ctx, id, compact_at),
+            Op::SetModel { .. } | Op::RemoveModel { .. } | Op::SetCompactAt { .. } => {
+                Err(retired())
+            }
             Op::Streamed { thread, event } => streamed(&ctx, thread, event).await,
             Op::NewThread { agent } => new_thread(&ctx, agent),
             Op::ForkThread { agent } => fork_thread(&ctx, agent),
@@ -147,7 +142,7 @@ impl Awaiting for Harness {
                 crate::adopt::adopt_owners(&ctx, &kind, after, limit)
             }
             Op::Filed(row) => waits::filed(&ctx, row).await,
-            Op::SetServices { id, services } => set_services(&ctx, id, services),
+            Op::SetServices { .. } => Err(retired()),
             Op::ReadBudgets => budget::read_all(ctx).await,
             Op::SetRoute { provider, services } => {
                 crate::providers::set_route(&ctx, provider, services)

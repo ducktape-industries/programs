@@ -95,7 +95,7 @@ pub(crate) fn place_label(agent: u64, place: &str, roster: Option<&Roster>) -> S
 pub(crate) fn agent_sentence(card: &Card, roster: &Roster) -> String {
     let state = agent_state(card, roster);
     let busiest = busiest(card).map(|said| &said.thread);
-    let model = card.setup.configured.model();
+    let model = card.setup.configured.reached();
     match (state, busiest, model) {
         (State::Unconfigured, _, _) => card
             .setup
@@ -332,43 +332,30 @@ pub(crate) fn read_at(configured: &Configured) -> String {
         | Configured::UnknownModel { snapshot, .. }
         | Configured::Ready { snapshot, .. }
         | Configured::Routed { snapshot, .. }
-        | Configured::NoRoute { snapshot, .. } => {
+        | Configured::NoRoute { snapshot, .. }
+        | Configured::Unprovided { snapshot, .. } => {
             format!("read at each model call · {}", snapshot_words(snapshot))
         }
     }
 }
 
 pub(crate) fn model_more(setup: &AgentSetup, roster: &Roster) -> Option<String> {
+    let reached = setup.configured.reached()?;
     let serving = roster
         .card(setup.agent)
         .and_then(|card| card.serving)
         .unwrap_or_default();
-    if let Configured::Routed {
-        provider, route, ..
-    } = &setup.configured
-    {
-        let services: Vec<String> = route
-            .iter()
-            .map(|entry| format!("{} ({})", entry.service, entry.wire.label()))
-            .collect();
-        let nodes = design::plural(serving as u64, "node", "nodes");
-        return Some(format!(
-            " · {provider} · {}, {nodes} serving",
-            services.join(", ")
-        ));
-    }
-    let model = setup.configured.model()?;
-    let mut more = String::new();
-    if model.name != model.id {
-        more.push_str(&format!(" · {}", model.name));
-    }
-    more.push_str(&format!(
-        " · {} · {}, {} serving",
-        model.wire.label(),
-        model.service,
-        design::plural(serving as u64, "node", "nodes")
-    ));
-    Some(more)
+    let services: Vec<String> = reached
+        .route
+        .iter()
+        .map(|entry| format!("{} ({})", entry.service, entry.wire.label()))
+        .collect();
+    let nodes = design::plural(serving as u64, "node", "nodes");
+    Some(format!(
+        " · {} · {}, {nodes} serving",
+        reached.provider,
+        services.join(", ")
+    ))
 }
 
 pub(crate) fn wait_words(wait: Option<u64>) -> String {
@@ -381,6 +368,10 @@ pub(crate) fn wait_words(wait: Option<u64>) -> String {
 pub(crate) fn configured_words(configured: &Configured) -> String {
     match configured {
         Configured::Ready { .. } | Configured::Routed { .. } => "Ready".to_owned(),
+        Configured::Unprovided { .. } => {
+            "No provider: it names none, so harness asks no model; pick one in its front matter"
+                .to_owned()
+        }
         Configured::NoRoute { provider, .. } => {
             format!("No route: it names provider {provider}, which harness keeps no route for")
         }
@@ -454,7 +445,8 @@ pub(crate) fn prompt(configured: &Configured) -> Result<&str, &'static str> {
         Configured::Ready { config, .. }
         | Configured::UnknownModel { config, .. }
         | Configured::Routed { config, .. }
-        | Configured::NoRoute { config, .. } => Ok(&config.system),
+        | Configured::NoRoute { config, .. }
+        | Configured::Unprovided { config, .. } => Ok(&config.system),
         Configured::Unreadable { .. } | Configured::Malformed { .. } => {
             Err("No system prompt is read until the file is fixed.")
         }
@@ -650,8 +642,8 @@ pub(crate) fn opened_words(shown: &Transcript, roster: Option<&Roster>) -> Strin
         .first
         .map(|time| format!(" {}", design::day(time)))
         .unwrap_or_default();
-    let asks = match shown.model() {
-        Some(model) => model.id.clone(),
+    let asks = match shown.reach() {
+        Some(reached) => reached.name.to_owned(),
         None => "asks no model until its configuration is fixed".to_owned(),
     };
     format!(
@@ -794,13 +786,6 @@ pub(crate) fn serving_words(serving: usize, theme: &Theme) -> (String, Hsla) {
     }
 }
 
-pub(crate) fn window_short(window: Window) -> String {
-    match window {
-        Window::Tokens(tokens) => format!("{} window", short(tokens)),
-        Window::Unasked | Window::Unreported => "window unknown".to_owned(),
-    }
-}
-
 pub(crate) fn closes(shown: &Transcript) -> String {
     let current = shown
         .setup
@@ -854,7 +839,7 @@ pub(crate) fn waiting_words(shown: &Transcript) -> Option<(String, bool)> {
     if row.closed || !waiting {
         return None;
     }
-    let name = shown.model().map(|model| model.name.as_str());
+    let name = shown.reach().map(|reached| reached.name);
     let open: Vec<&Wait> = shown
         .waits
         .iter()
@@ -922,29 +907,22 @@ pub(crate) fn call_wait(call: &CallRow, waits: &[Wait]) -> Option<String> {
     })
 }
 
-pub(crate) fn compacts_words(threshold: Option<harness::Threshold>) -> String {
+pub(crate) fn compacts_words(threshold: Option<u64>) -> String {
     match threshold {
-        Some(threshold) => format!("{} tokens", design::grouped(threshold.tokens())),
+        Some(tokens) => format!("{} tokens", design::grouped(tokens)),
         None => "when the window fills".to_owned(),
     }
 }
 
-pub(crate) fn threshold_source(threshold: Option<harness::Threshold>) -> Option<String> {
-    match threshold? {
-        harness::Threshold::Agent(_) => Some("the agent's configuration".to_owned()),
-        harness::Threshold::Model(_) => Some("the model's default".to_owned()),
-    }
+pub(crate) fn threshold_source(threshold: Option<u64>) -> Option<String> {
+    threshold.map(|_| "the agent's configuration".to_owned())
 }
 
-pub(crate) fn compacts_line(threshold: Option<harness::Threshold>) -> String {
+pub(crate) fn compacts_line(threshold: Option<u64>) -> String {
     match threshold_source(threshold) {
         Some(source) => format!("{} · {source}", compacts_words(threshold)),
         None => compacts_words(threshold),
     }
-}
-
-pub(crate) fn compact_short(compact_at: Option<u64>) -> Option<String> {
-    compact_at.map(|tokens| format!("compacts at {}", short(tokens)))
 }
 
 pub(crate) fn budget_window_words(name: &str) -> String {

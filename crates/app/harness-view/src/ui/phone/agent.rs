@@ -130,7 +130,7 @@ fn detail(
     let serving = card.and_then(|card| card.serving).unwrap_or_default();
     let stopped = setup
         .configured
-        .model()
+        .reached()
         .and_then(|_| no_node_words(serving, roster.relaying));
     div()
         .flex()
@@ -470,11 +470,11 @@ fn model_part(
                 ladder,
             ));
     }
-    if let Some(model) = setup.configured.model() {
+    if let Some(reached) = setup.configured.reached() {
         facts = facts.child(fact(
             "part-window",
             "Window",
-            window_words(model.window),
+            window_words(reached.window),
             theme,
             ladder,
         ));
@@ -483,7 +483,7 @@ fn model_part(
         facts = facts.child(fact(
             "part-compacts",
             "Compacts at",
-            compacts_line(setup.configured.threshold()),
+            compacts_line(setup.configured.compact_at()),
             theme,
             ladder,
         ));

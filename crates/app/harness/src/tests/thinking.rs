@@ -8,7 +8,7 @@ fn the_thinking_level_the_configuration_names_reaches_the_model_and_its_thinking
         thinking: Some(Thinking::High),
         ..scout()
     };
-    commit(chain, ADA, CONFIG, &deep.write());
+    commit(chain, ADA, CONFIG, &md(&deep));
     let thread = world.opened("m1", "think about it", Some(WINDOW));
     let (request, _) = open_request(chain);
     let sent = body(chain, &request);

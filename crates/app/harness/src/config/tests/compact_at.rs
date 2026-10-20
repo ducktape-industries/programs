@@ -10,10 +10,22 @@ fn parsed(more: &str) -> Result<Config, Malformed> {
 fn compact_at_parses_and_writes_back() {
     let config = parsed("compact_at = 650000\n").unwrap();
     assert_eq!(config.compact_at, Some(650_000));
-    assert!(config.write().contains("\ncompact_at = 650000\n"));
-    assert_eq!(Config::parse(config.write().as_bytes()), Ok(config.clone()));
+    assert!(
+        config
+            .write(&Pin::default())
+            .contains("\ncompact_at = 650000\n")
+    );
+    assert_eq!(
+        Config::parse(config.write(&Pin::default()).as_bytes()),
+        Ok(config.clone())
+    );
     assert_eq!(parsed("").map(|config| config.compact_at), Ok(None));
-    assert!(!parsed("").unwrap().write().contains("compact_at"));
+    assert!(
+        !parsed("")
+            .unwrap()
+            .write(&Pin::default())
+            .contains("compact_at")
+    );
 }
 
 #[test]

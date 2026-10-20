@@ -63,7 +63,7 @@ fn listen_and_settle_write_and_parse_back() {
         compact_at: None,
         system: "Hear.".into(),
     };
-    let written = plain.write();
+    let written = plain.write(&Pin::default());
     assert!(!written.contains("listen") && !written.contains("settle"));
     for settle in [10_000, 250, 120_000, 1_500] {
         let config = Config {
@@ -71,6 +71,9 @@ fn listen_and_settle_write_and_parse_back() {
             settle: Some(settle),
             ..plain.clone()
         };
-        assert_eq!(Config::parse(config.write().as_bytes()), Ok(config));
+        assert_eq!(
+            Config::parse(config.write(&Pin::default()).as_bytes()),
+            Ok(config)
+        );
     }
 }

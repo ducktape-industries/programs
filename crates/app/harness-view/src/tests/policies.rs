@@ -1,4 +1,4 @@
-//! Who can start an agent's conversations and who can edit a model (`policies.rs`): the rows say
+//! Who can start an agent's conversations and who can edit a route (`policies.rs`): the rows say
 //! what ownership records, the manager claims an agent's conversations nobody holds, and what the
 //! reader may do follows the item's policy once read, the rule from before policies without one.
 use super::*;
@@ -21,8 +21,8 @@ fn scouts() -> Vec<u8> {
     harness::tables::CONVERSATIONS.key(&SCOUT)
 }
 
-fn sonnet() -> Vec<u8> {
-    harness::tables::MODELS.key(&SONNET.to_owned())
+fn anthropic() -> Vec<u8> {
+    harness::tables::PROVIDER_ROUTES.key(&ANTHROPIC.to_owned())
 }
 
 fn owned(cx: &TestAppContext, records: Vec<Held>, policies: Vec<ownership::Policy>) {
@@ -122,49 +122,49 @@ fn a_reader_the_conversations_policy_lists_starts_them_and_a_claimed_agent_offer
 }
 
 #[test]
-fn a_model_on_record_says_whose_it_is_in_its_row_and_its_form() {
+fn a_route_on_record_says_whose_it_is_in_its_row_and_its_form() {
     let open_to_all = a_policy(3, ADA, "Open", Writers::Anyone);
     let (mut cx, _) = seated(Net::default(), EDDY);
     owned(
         &cx,
-        vec![(sonnet(), ADA, open_to_all.clone())],
+        vec![(anthropic(), ADA, open_to_all.clone())],
         vec![open_to_all],
     );
-    open(&mut cx, "agents-models");
+    open(&mut cx, "agents-routes");
     assert!(cx.has_text("Anyone"), "{:?}", cx.texts());
-    open(&mut cx, "model-sonnet");
+    open(&mut cx, "route-anthropic");
     assert!(
-        cx.find("model-id-kept").is_some(),
-        "the form opens at the record"
+        cx.find("route-provider-kept").is_some(),
+        "the form opens at the route"
     );
-    assert!(cx.find("model-policy").is_some());
+    assert!(cx.find("route-policy").is_some());
     assert!(cx.has_text("Who can edit"), "{:?}", cx.texts());
     assert!(
-        cx.interactivity("model-policy").on_click.is_none(),
+        cx.interactivity("route-policy").on_click.is_none(),
         "only its owner presses the row"
     );
 }
 
 #[test]
-fn a_models_owner_relinks_it_from_its_form() {
+fn a_routes_owner_relinks_it_from_its_form() {
     let open_to_all = a_policy(3, ADA, "Open", Writers::Anyone);
     let only = a_policy(4, ADA, "Only me", Writers::Owner);
     let (mut cx, _) = seated(Net::default(), ADA);
     owned(
         &cx,
-        vec![(sonnet(), ADA, open_to_all.clone())],
+        vec![(anthropic(), ADA, open_to_all.clone())],
         vec![open_to_all, only],
     );
-    open(&mut cx, "agents-models");
-    open(&mut cx, "model-sonnet");
-    open(&mut cx, "model-policy");
-    assert!(cx.find("model-policy/sheet").is_some());
-    open(&mut cx, "model-policy/relink");
+    open(&mut cx, "agents-routes");
+    open(&mut cx, "route-anthropic");
+    open(&mut cx, "route-policy");
+    assert!(cx.find("route-policy/sheet").is_some());
+    open(&mut cx, "route-policy/relink");
     assert!(cx.has_text("In use · Anyone"), "{:?}", cx.texts());
-    open(&mut cx, "model-policy/relink/4");
+    open(&mut cx, "route-policy/relink/4");
     let sent = cx.host().requests::<Submit<ownership::Ownership>>();
     assert!(
-        matches!(sent.as_slice(), [Owned::Relink { program, key, policy: 4 }] if program == harness::PROGRAM && *key == sonnet()),
+        matches!(sent.as_slice(), [Owned::Relink { program, key, policy: 4 }] if program == harness::PROGRAM && *key == anthropic()),
         "{sent:?}"
     );
 }

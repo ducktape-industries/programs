@@ -244,8 +244,8 @@ impl Config {
         paragraphs
     }
 
-    pub fn write(&self) -> String {
-        let front = self.front(&Pin::default());
+    pub fn write(&self, pin: &Pin) -> String {
+        let front = self.front(pin);
         format!("{FENCE}\n{front}{FENCE}\n{}\n", self.system)
     }
 
@@ -304,10 +304,16 @@ fn front_matter_parts(text: &str) -> Result<[&str; 4], Malformed> {
     Err(Malformed::NoClosingFence)
 }
 
-// `file` with the front matter `config` names and the service the file pins, its
-// body kept byte for byte; `config.system` is not read
-pub fn with_front(file: &[u8], config: &Config) -> Result<String, Malformed> {
+// `file` with the front matter `config` names and the provider given, its body kept byte for
+// byte; the service the file pins stays only while the provider does, as another provider's route
+// lists other services; `config.system` is not read
+pub fn with_front(file: &[u8], config: &Config, provider: &str) -> Result<String, Malformed> {
     let (_, pin) = Config::parse_pinned(file)?;
+    let kept = pin.provider.as_deref() == Some(provider);
+    let pin = Pin {
+        service: pin.service.filter(|_| kept),
+        provider: Some(provider.to_owned()),
+    };
     let text = std::str::from_utf8(file).map_err(|_| Malformed::NotText)?;
     let [open, _, close, body] = front_matter_parts(text)?;
     Ok(format!("{open}{}{close}{body}", config.front(&pin)))

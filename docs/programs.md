@@ -423,8 +423,8 @@ defines names its kind through a marker type of the program's own
 (`Map<String, Owned<ServiceRow, Service>>`, `impl Kind for Service`). Every
 other table, and a raw `ctx.set`, is shared, and a program that never claims
 pays nothing for the guard. This repo's programs own these kinds (forge's reviews,
-`forge.review`, egress's services, `egress.service`, harness's models,
-`harness.model`, chat's channels and messages, `chat.channel` and
+`forge.review`, egress's services, `egress.service`, harness's provider routes,
+`harness.route`, chat's channels and messages, `chat.channel` and
 `chat.message`, forge's changes and repositories, `forge.change` and
 `forge.repo`, and who starts an agent's conversations,
 `harness.agent-conversation`, and files' guarded paths and pins, `files.path`

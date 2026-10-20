@@ -4,10 +4,10 @@ mod compact_at;
 mod conversations;
 mod faces;
 mod live_calls;
-mod models;
 mod phone;
 mod policies;
 mod reads;
+mod routes;
 mod server_tools;
 mod setup;
 mod thinking;
@@ -19,8 +19,8 @@ use std::rc::Rc;
 use super::*;
 use harness::{
     AgentSetup, BlobId, Body, CallRow, CallState, Config, Configured, Context as Fill, Flow,
-    Forming, Frame, ModelRow, Partial, Principal, Said, Standing, Stop, ToolInfo, Usage, Window,
-    Wire, WithheldFrame,
+    Forming, Frame, Partial, Principal, ProviderRouteRow, RouteService, Said, Standing, Stop,
+    ToolInfo, Usage, Window, Wire, WithheldFrame,
 };
 use view::methods::{
     BlobBody, ChainHeads, Change, Changes, ClipboardWrite, Head, LinkOpen, OpPut, Putting, Query,
@@ -93,17 +93,29 @@ fn agent(number: u64, name: &str, manager: u64, scripted: bool) -> identity::Acc
 }
 
 const SNAPSHOT: BlobId = BlobId::Sha256([0xab; 32]);
-const SONNET: &str = "sonnet";
+const SONNET: &str = "claude-sonnet-5-5";
+const ANTHROPIC: &str = "anthropic";
 
-fn model_row(window: Window) -> ModelRow {
-    ModelRow {
-        id: SONNET.into(),
-        owner: ADA,
+fn anthropic_route() -> Vec<RouteService> {
+    vec![RouteService {
+        service: ANTHROPIC.into(),
         wire: Wire::AnthropicMessages,
-        service: "anthropic".into(),
-        name: "claude-sonnet-5-5".into(),
-        window,
-        compact_at: None,
+    }]
+}
+
+fn route_row() -> ProviderRouteRow {
+    ProviderRouteRow {
+        provider: ANTHROPIC.into(),
+        owner: ADA,
+        services: anthropic_route(),
+    }
+}
+
+// the pin a configuration file names: the provider whose route reaches its model
+fn provided() -> harness::Pin {
+    harness::Pin {
+        service: None,
+        provider: Some(ANTHROPIC.into()),
     }
 }
 
@@ -127,10 +139,12 @@ fn setup(agent: u64, name: &str, manager: u64, window: Window) -> AgentSetup {
         manager,
         standing: Standing::Active,
         path: path_of(manager, name),
-        configured: Configured::Ready {
+        configured: Configured::Routed {
             snapshot: SNAPSHOT,
             config: config_of(name),
-            model: model_row(window),
+            provider: ANTHROPIC.into(),
+            route: anthropic_route(),
+            window,
         },
         current: None,
     }
@@ -138,7 +152,7 @@ fn setup(agent: u64, name: &str, manager: u64, window: Window) -> AgentSetup {
 
 // a setup as harness's `Card` answers it: the system prompt left out
 fn card(mut setup: AgentSetup) -> AgentSetup {
-    if let Configured::Ready { config, .. } = &mut setup.configured {
+    if let Configured::Routed { config, .. } = &mut setup.configured {
         config.system = String::new();
     }
     setup
@@ -172,7 +186,7 @@ fn cards_of(net: &Net) -> Vec<harness::AgentCard> {
                 .map(|(_, topic)| topic.clone()),
         };
         let open = rows.iter().filter(|thread| !thread.closed).count() as u64;
-        let service = setup.configured.model().map(|model| &model.service);
+        let service = setup.configured.reached().map(|reached| reached.service);
         Some(harness::AgentCard {
             setup: card(setup.clone()),
             open,
@@ -268,7 +282,7 @@ fn post(seq: u64, text: &str) -> Frame {
 struct Net {
     accounts: Vec<identity::Account>,
     setups: Vec<AgentSetup>,
-    models: Vec<ModelRow>,
+    routes: Vec<ProviderRouteRow>,
     threads: Vec<ThreadRow>,
     frames: Vec<(u64, Frame)>,
     calls: Vec<CallRow>,
@@ -290,8 +304,6 @@ struct Net {
     budget: harness::BudgetReport,
     // the open thread's armed waits
     armed: Vec<harness::WaitRow>,
-    // the services that reach each record after its first, by its id
-    model_services: Vec<(String, Vec<String>)>,
     // configuration files by path where one is not its setup's configuration as `write` puts it
     files: Vec<(String, String)>,
 }
@@ -334,9 +346,9 @@ fn turn_request(id: u64, thread: u64, made: u64) -> egress::RequestRow {
 }
 
 impl Default for Net {
-    /// Eddy manages Scout (working in #general, a closed thread in #release) and Pager
-    /// (no script hands it to harness yet); Ada manages Atlas (idle) and the model record
-    /// sonnet. One node serves anthropic and relay.
+    // Eddy manages Scout (working in #general, a closed thread in #release) and Pager
+    // (no script hands it to harness yet); Ada manages Atlas (idle) and the route
+    // anthropic. One node serves anthropic and relay.
     fn default() -> Self {
         let mut general = thread(7, SCOUT, EDDY, "chat/general");
         general.asking = Asking::Asked { upto: 3 };
@@ -361,7 +373,7 @@ impl Default for Net {
                     ..setup(ATLAS, "Atlas", ADA, Window::Tokens(200_000))
                 },
             ],
-            models: vec![model_row(Window::Tokens(200_000))],
+            routes: vec![route_row()],
             threads: vec![general, release, thread(9, ATLAS, ADA, "chat/deploys")],
             frames: vec![
                 (
@@ -440,7 +452,6 @@ impl Default for Net {
             settling: Vec::new(),
             budget: harness::BudgetReport::default(),
             armed: Vec::new(),
-            model_services: Vec::new(),
             files: Vec::new(),
         }
     }
@@ -486,10 +497,8 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                     .cloned()
                     .map(card),
             ),
-            harness::Query::Models { .. } => harness::Reply::Models(page(net.models.clone())),
-            harness::Query::Model { id } => {
-                harness::Reply::Model(net.models.iter().find(|row| row.id == id).cloned())
-            }
+            harness::Query::Models { .. } => harness::Reply::Models(page(Vec::new())),
+            harness::Query::Model { .. } => harness::Reply::Model(None),
             harness::Query::Threads { agent, .. } => {
                 let mut threads: Vec<ThreadRow> = net
                     .threads
@@ -600,22 +609,20 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             )),
             harness::Query::Wait { .. } => harness::Reply::Wait(None),
             harness::Query::Wakes { .. } => harness::Reply::Wakes(Vec::new()),
-            harness::Query::Services { model } => {
-                let record = net.models.iter().find(|row| row.id == model);
-                harness::Reply::Services(record.map(|row| {
-                    let more = net.model_services.iter().find(|(id, _)| *id == model);
-                    let more = more.map(|(_, services)| services.clone());
-                    [vec![row.service.clone()], more.unwrap_or_default()].concat()
-                }))
-            }
+            harness::Query::Services { .. } => harness::Reply::Services(None),
             harness::Query::Route { .. } => harness::Reply::Route(None),
             harness::Query::Routes { .. } => harness::Reply::Routes(page(Vec::new())),
             harness::Query::Answerers { .. } => harness::Reply::Answerers(page(Vec::new())),
             harness::Query::AgentTools { .. } => harness::Reply::AgentTools(Default::default()),
             harness::Query::Cards { .. } => harness::Reply::Cards(page(cards_of(&net))),
-            harness::Query::ProviderRoute { .. } => harness::Reply::ProviderRoute(None),
+            harness::Query::ProviderRoute { provider } => harness::Reply::ProviderRoute(
+                net.routes
+                    .iter()
+                    .find(|row| row.provider == provider)
+                    .cloned(),
+            ),
             harness::Query::ProviderRoutes { .. } => {
-                harness::Reply::ProviderRoutes(page(Vec::new()))
+                harness::Reply::ProviderRoutes(page(net.routes.clone()))
             }
             harness::Query::Tools => harness::Reply::Tools(vec![
                 ToolInfo {
@@ -762,7 +769,7 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                 let setup = net.setups.iter().find(|setup| setup.path == path);
                 let written = setup
                     .and_then(|setup| setup.configured.config())
-                    .map(|(_, config)| config.write());
+                    .map(|(_, config)| config.write(&provided()));
                 let text = named.map(|(_, text)| text.clone()).or(written);
                 let text = text.unwrap_or_else(|| panic!("no file at {path}"));
                 files::Reply::Contents(files::Contents {
@@ -798,7 +805,7 @@ fn the_list_shows_each_agent_with_its_state() {
     for text in [
         "My agents",
         "Scout",
-        "account 12 · sonnet",
+        "account 12 · claude-sonnet-5-5",
         "Eddy",
         "(you)",
         "Working",
@@ -1187,8 +1194,10 @@ fn edit_of(path: &str, config: &Config, base: Option<BlobId>, message: String) -
             exec: false,
             meta: Default::default(),
             content: files::Content::Chunks {
-                size: config.write().len() as u64,
-                chunks: vec![BlobId::Sha256(held_as(config.write().as_bytes()))],
+                size: config.write(&provided()).len() as u64,
+                chunks: vec![BlobId::Sha256(held_as(
+                    config.write(&provided()).as_bytes(),
+                ))],
             },
         }],
     }
@@ -1229,7 +1238,8 @@ fn answering(account: u64, ownership: identity::Ownership) -> identity::Op {
 
 fn fill(cx: &mut TestAppContext) {
     cx.simulate_input("create-system", "Answer about deploys.");
-    cx.simulate_click("model-sonnet");
+    cx.simulate_input("create-model", SONNET);
+    cx.simulate_click("create-provider-anthropic");
     cx.simulate_input("create-max-tokens", "8192");
 }
 
@@ -1255,7 +1265,11 @@ fn the_create_flow_sends_its_ops_in_order() {
     cx.simulate_click("agents-create");
     cx.run_until_parked();
     assert!(cx.has_text("1 node serving"), "{:?}", cx.texts());
-    assert!(cx.has_text("anthropic · 200K window"), "{:?}", cx.texts());
+    assert!(
+        cx.has_text("anthropic (Anthropic Messages)"),
+        "{:?}",
+        cx.texts()
+    );
     cx.simulate_input("create-name", "Rover");
     fill(&mut cx);
     cx.simulate_click("create-answers-0");
@@ -1647,7 +1661,7 @@ fn the_agent_shows_its_configuration_model_threads_and_usage() {
     cx.simulate_click("agent-12");
     cx.run_until_parked();
     for text in [
-        "agent · account 12 · managed by Eddy · sonnet · 2 tools",
+        "agent · account 12 · managed by Eddy · claude-sonnet-5-5 · 2 tools",
         "#general · 7",
         "Current",
         "waiting for the model",
@@ -1656,8 +1670,8 @@ fn the_agent_shows_its_configuration_model_threads_and_usage() {
         "closed at block 9,003",
         // the setup opens for its manager
         "read at each model call · snapshot abababababab",
-        "sonnet",
-        " · claude-sonnet-5-5 · Anthropic Messages · anthropic, 1 node serving",
+        "claude-sonnet-5-5",
+        " · anthropic · anthropic (Anthropic Messages), 1 node serving",
         "200,000 tokens",
         "4,096 tokens",
         "egress's default",
@@ -1727,48 +1741,6 @@ fn an_agent_whose_configuration_harness_cannot_run_says_what_is_wrong() {
         view::design::day(post(1, "").time)
     );
     assert!(cx.has_text(&opened), "{opened}: {:?}", cx.texts());
-}
-
-#[test]
-fn the_models_page_lists_the_records_and_sets_one_after_a_yes() {
-    let (mut cx, _) = seated(Net::default(), EDDY);
-    cx.host()
-        .handle::<Submit<harness::Harness>>(|_| Ok(applied(Vec::new())));
-    cx.simulate_click("agents-models");
-    cx.run_until_parked();
-    for text in [
-        "Models",
-        "sonnet",
-        "Anthropic Messages",
-        "anthropic · ",
-        "1 node serving",
-        "window 200,000 tokens",
-        "Ada",
-    ] {
-        assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
-    }
-    // the form is closed until Set a model opens it
-    assert!(cx.find("model-id").is_none());
-    cx.simulate_click("models-set");
-    cx.run_until_parked();
-    cx.simulate_input("model-id", "opus");
-    cx.simulate_click("service-anthropic");
-    cx.simulate_input("model-name", "claude-opus-5-5");
-    cx.simulate_click("model-next");
-    cx.run_until_parked();
-    assert!(cx.has_text("Save opus"), "{:?}", cx.texts());
-    assert!(cx.host().requests::<Submit<harness::Harness>>().is_empty());
-    cx.simulate_click("model-set");
-    cx.run_until_parked();
-    assert_eq!(
-        cx.host().requests::<Submit<harness::Harness>>(),
-        [harness::Op::SetModel {
-            id: "opus".into(),
-            wire: Wire::AnthropicMessages,
-            service: "anthropic".into(),
-            name: "claude-opus-5-5".into(),
-        }]
-    );
 }
 
 #[test]
@@ -1919,21 +1891,21 @@ fn screens() -> Vec<(&'static str, TestAppContext, (u32, u32))> {
         ),
         ("D2-no-node", open(unserved(), false, &["agent-12"]), DESK),
         (
-            "D4-models",
-            open(Net::default(), false, &["agents-models"]),
+            "D4-routes",
+            open(Net::default(), false, &["agents-routes"]),
             DESK,
         ),
         (
-            "D4-model-edit",
-            open(Net::default(), false, &["agents-models", "model-sonnet"]),
+            "D4-route-edit",
+            open(Net::default(), false, &["agents-routes", "route-anthropic"]),
             DESK,
         ),
         (
-            "D4-model-remove",
+            "D4-route-remove",
             open(
                 Net::default(),
                 false,
-                &["agents-models", "model-sonnet", "model-remove"],
+                &["agents-routes", "route-anthropic", "route-remove"],
             ),
             DESK,
         ),
@@ -1992,13 +1964,13 @@ fn screens() -> Vec<(&'static str, TestAppContext, (u32, u32))> {
             PHONE,
         ),
         (
-            "P4-models",
-            open(Net::default(), true, &["agents-models"]),
+            "P4-routes",
+            open(Net::default(), true, &["agents-routes"]),
             PHONE,
         ),
         (
-            "P4-model-edit",
-            open(Net::default(), true, &["agents-models", "model-sonnet"]),
+            "P4-route-edit",
+            open(Net::default(), true, &["agents-routes", "route-anthropic"]),
             PHONE,
         ),
         ("P5-create", create(true), PHONE),

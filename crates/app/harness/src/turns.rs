@@ -635,14 +635,6 @@ fn claim(ctx: &ExecCtx, id: u64) -> Result<Option<Step>, Error> {
 fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<Step>, Error> {
     let (configured, pin) = configured_pinned(ctx, &agent.path)?;
     let (snapshot, config, model) = match configured {
-        Configured::Ready {
-            snapshot,
-            config,
-            model,
-        } => {
-            let reach = providers::of_record(ctx, model)?;
-            (snapshot, config, reach)
-        }
         Configured::Routed {
             snapshot,
             config,
@@ -650,13 +642,20 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
             route,
             window,
         } => {
-            let reach = providers::of_route(provider, &config.model, route, window);
+            let reach = Reach {
+                provider,
+                name: config.model.clone(),
+                services: route,
+                window,
+            };
             (snapshot, config, reach)
         }
         unready @ (Configured::Unreadable { .. }
         | Configured::Malformed { .. }
         | Configured::UnknownModel { .. }
-        | Configured::NoRoute { .. }) => {
+        | Configured::Ready { .. }
+        | Configured::NoRoute { .. }
+        | Configured::Unprovided { .. }) => {
             let text = unready.problem(&agent.path).unwrap_or_default();
             give_up(ctx, thread, text)?;
             return Ok(None);
@@ -685,10 +684,7 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         wait: config.wait,
         config: snapshot,
     };
-    let learnt = model
-        .provider
-        .clone()
-        .filter(|_| model.window != Window::Unasked);
+    let learnt = (model.window != Window::Unasked).then(|| model.provider.clone());
     let Some(provider) = learnt else {
         thread.asking = Asking::Learning;
         return Ok(Some(Step::Learn { asked, model }));
@@ -709,14 +705,14 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         file_tools: &files.tools,
     };
     let header = put_on(ctx, thread.id, b"header", wire::header(spoken, &header))?;
-    let threshold = config.compact_at.or(model.compact_at);
+    let threshold = config.compact_at;
     let turn = Turn {
         asked,
         lane: Lane {
             provider,
             model: model.name.clone(),
         },
-        model: model.id(),
+        model: model.name.clone(),
         max_tokens: config.max_tokens,
         header,
     };

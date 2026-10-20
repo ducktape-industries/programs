@@ -178,7 +178,7 @@ fn a_result_shows_its_first_line_until_a_press_shows_it_whole() {
 fn a_long_prompt_sentence_is_kept_whole_for_its_row_to_clip() {
     let mut net = Net::default();
     let long = "You are Scout, who reads every deploy log of the payments service before it answers anyone.";
-    let Configured::Ready { config, .. } = &mut net.setups[0].configured else {
+    let Configured::Routed { config, .. } = &mut net.setups[0].configured else {
         panic!()
     };
     config.system = long.into();

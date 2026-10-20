@@ -1,6 +1,6 @@
 use super::*;
 
-const PINNED: &str = "+++\nmodel = \"sonnet\"\nmax_tokens = 4096\nservice = \"ccs\"\n+++\n\nYou are Scout.\n\n  Kept as it is.\n";
+const PINNED: &str = "+++\nmodel = \"claude-sonnet-5-5\"\nmax_tokens = 4096\nservice = \"ccs\"\nprovider = \"anthropic\"\n+++\n\nYou are Scout.\n\n  Kept as it is.\n";
 
 fn pinned() -> Net {
     Net {
@@ -48,7 +48,7 @@ fn a_save_rewrites_the_front_matter_alone_and_keeps_the_pins_and_the_body() {
     assert!(cx.has_text("#deploys"), "{:?}", cx.texts());
     cx.simulate_click("setup-save");
     cx.run_until_parked();
-    let written = "+++\nmodel = \"sonnet\"\nmax_tokens = 4096\nthinking = \"high\"\nserver_tools = [\"web_search\"]\nlisten = [\"deploys\"]\nsettle = \"10s\"\ncompact_at = 650000\nservice = \"ccs\"\n+++\n\nYou are Scout.\n\n  Kept as it is.\n";
+    let written = "+++\nmodel = \"claude-sonnet-5-5\"\nmax_tokens = 4096\nthinking = \"high\"\nserver_tools = [\"web_search\"]\nlisten = [\"deploys\"]\nsettle = \"10s\"\ncompact_at = 650000\nservice = \"ccs\"\nprovider = \"anthropic\"\n+++\n\nYou are Scout.\n\n  Kept as it is.\n";
     assert_eq!(commits(&cx), [commit_of(&path_of(EDDY, "Scout"), written)]);
     let reads: Vec<files::Query> = cx
         .host()
@@ -125,7 +125,7 @@ fn the_edit_form_writes_the_prompt_and_keeps_the_front_matter() {
     cx.simulate_input("create-system", "You are Scout, on call.");
     cx.simulate_click("create-next");
     cx.run_until_parked();
-    let written = "+++\nmodel = \"sonnet\"\nmax_tokens = 4096\nservice = \"ccs\"\n+++\nYou are Scout, on call.\n";
+    let written = "+++\nmodel = \"claude-sonnet-5-5\"\nmax_tokens = 4096\nservice = \"ccs\"\nprovider = \"anthropic\"\n+++\nYou are Scout, on call.\n";
     assert_eq!(commits(&cx), [commit_of(&path_of(EDDY, "Scout"), written)]);
 }
 
@@ -143,7 +143,34 @@ fn on_a_phone_the_model_page_edits_the_front_matter() {
     cx.simulate_input("setup-wait", "600");
     cx.simulate_click("setup-save");
     cx.run_until_parked();
-    let written = "+++\nmodel = \"sonnet\"\nmax_tokens = 4096\nwait = 600\nservice = \"ccs\"\n+++\n\nYou are Scout.\n\n  Kept as it is.\n";
+    let written = "+++\nmodel = \"claude-sonnet-5-5\"\nmax_tokens = 4096\nwait = 600\nservice = \"ccs\"\nprovider = \"anthropic\"\n+++\n\nYou are Scout.\n\n  Kept as it is.\n";
     assert_eq!(commits(&cx), [commit_of(&path_of(EDDY, "Scout"), written)]);
     assert!(cx.find("part-model").is_some(), "{:?}", cx.texts());
+}
+
+const UNPROVIDED: &str = "+++\nmodel = \"claude-sonnet-5-5\"\nmax_tokens = 4096\nservice = \"ccs\"\n+++\n\nYou are Scout.\n";
+
+#[test]
+fn an_agent_whose_file_names_no_provider_opens_its_setup_to_pick_one() {
+    let mut net = Net {
+        files: vec![(path_of(EDDY, "Scout"), UNPROVIDED.into())],
+        ..Net::default()
+    };
+    net.setups[0].configured = Configured::Unprovided {
+        snapshot: SNAPSHOT,
+        config: config_of("Scout"),
+    };
+    let (mut cx, _) = seated(net, EDDY);
+    files_take(&cx);
+    open_setup(&mut cx);
+    cx.simulate_click("setup-save");
+    cx.run_until_parked();
+    let pick = "Pick the provider whose route reaches it.";
+    assert!(cx.has_text(pick), "{:?}", cx.texts());
+    assert!(commits(&cx).is_empty());
+    cx.simulate_click("setup-provider-anthropic");
+    cx.simulate_click("setup-save");
+    cx.run_until_parked();
+    let written = "+++\nmodel = \"claude-sonnet-5-5\"\nmax_tokens = 4096\nprovider = \"anthropic\"\n+++\n\nYou are Scout.\n";
+    assert_eq!(commits(&cx), [commit_of(&path_of(EDDY, "Scout"), written)]);
 }

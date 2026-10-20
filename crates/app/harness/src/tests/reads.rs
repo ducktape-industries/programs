@@ -1,5 +1,5 @@
 use super::*;
-use crate::state::{CALLS, CURRENT, FRAMES, HELD, MODELS, SETTLING, TALLIES, THREADS};
+use crate::state::{CALLS, CURRENT, FRAMES, HELD, PROVIDER_ROUTES, SETTLING, TALLIES, THREADS};
 
 fn tally(chain: &MockChain, thread: u64) -> Tally {
     let Reply::Tally(tally) = chain.query(PROGRAM, &Query::Tally { thread }).unwrap() else {
@@ -128,6 +128,7 @@ fn a_written_key_names_the_thread_or_agent_it_belongs_to() {
     assert_eq!(written(&TALLIES.key(&7u64)), Some(Written::Tally(7)));
     assert_eq!(written(&SETTLING.key(&7u64)), Some(Written::Settling(7)));
     assert_eq!(written(&CURRENT.key(&12u64)), Some(Written::Agent(12)));
-    assert_eq!(written(&MODELS.key(&"m".to_owned())), Some(Written::Model));
+    let route = PROVIDER_ROUTES.key(&"anthropic".to_owned());
+    assert_eq!(written(&route), Some(Written::Route));
     assert_eq!(written(b"count"), None);
 }

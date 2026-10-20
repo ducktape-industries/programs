@@ -14,7 +14,6 @@ mod drafts;
 mod examples;
 mod gate;
 mod listening;
-mod models;
 mod pictures;
 mod program;
 mod providers;
@@ -41,18 +40,18 @@ pub use ::program::{BlobId, Principal};
 pub use abi::role::egress::Event;
 pub use abi::role::identity::{AccountNumber, Standing};
 pub use attribution::Change;
-pub use config::{Config, Malformed, ServerTool, Thinking};
+pub use config::{Config, Malformed, Pin, ServerTool, Thinking};
 pub use program::Harness;
 pub use store::{PageRequest, PageResponse};
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
-pub use gate::{agent_key, conversation_key, model_key, thread_key};
+pub use gate::{agent_key, conversation_key, thread_key};
 pub use state::{Written, written};
 
-// The owned tables: the keys ownership records a model and an agent's conversations under.
+// The owned tables: the keys ownership records a provider's route and an agent's conversations under.
 pub mod tables {
-    pub use crate::state::{CONVERSATIONS, MODELS};
+    pub use crate::state::{CONVERSATIONS, PROVIDER_ROUTES};
 }
 
 pub const PROGRAM: &str = "harness";
@@ -62,7 +61,7 @@ pub const PART: &str = "part";
     Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
 )]
 #[tool_about(
-    "Agents that consensus runs: each agent's conversations (threads) with its model, the models harness reaches through egress, the runs agents book, and the waits that wake them. An agent is a program account whose script calls harness and names its configuration file in files."
+    "Agents that consensus runs: each agent's conversations (threads) with its model, the routes harness reaches each provider's models through egress by, the runs agents book, and the waits that wake them. An agent is a program account whose script calls harness and names its configuration file in files."
 )]
 pub enum Op {
     #[tool_op(description = "Close a conversation; it stays readable. Its agent's manager, or whom the manager lists; a conversation bound to a place (OpenThread) anyone may close.", example = examples::close)]
@@ -71,14 +70,14 @@ pub enum Op {
         description = "From attribution only (and harness itself for one it held back): a change about an agent, such as a mention, a direct message or a reply in its thread, which reaches its conversation when the agent's list allows the author."
     )]
     Attributed(Box<Change>),
-    #[tool_op(description = "Set a model record: the wire it speaks, the egress service that reaches it and the vendor's name for it. The first account to set an id owns it; after that its owner, or whom the owner lists.", example = examples::set_model)]
+    #[tool_op(description = "Retired: an agent's configuration names its vendor's model and its provider, and SetRoute names the services that reach the provider, so it is always refused.", example = examples::set_model)]
     SetModel {
         id: String,
         wire: Wire,
         service: String,
         name: String,
     },
-    #[tool_op(description = "Remove a model record. Its owner, or whom the owner lists.", example = examples::remove_model)]
+    #[tool_op(description = "Retired with SetModel: always refused.", example = examples::remove_model)]
     RemoveModel { id: String },
     #[tool_op(
         description = "From the program bound to the egress role only: one event of a model's streamed reply for a conversation waiting on it."
@@ -117,7 +116,7 @@ pub enum Op {
         description = "From the program bound to the egress role only: one event of a watched tool call's stream."
     )]
     Heard { watch: u64, event: Event },
-    #[tool_op(description = "Set or clear (null) the tokens at which a model's conversations summarize, unless an agent's config sets its own. The model's owner, or whom the owner lists.", example = examples::set_compact_at)]
+    #[tool_op(description = "Retired with SetModel: an agent's configuration names its own compact_at, so it is always refused.", example = examples::set_compact_at)]
     SetCompactAt { id: String, compact_at: Option<u64> },
     #[tool_op(description = "Read a service's usage windows from its ccs status into harness's budget rows. Anyone may.", example = examples::read_budget)]
     ReadBudget { service: String },
@@ -250,26 +249,14 @@ pub struct ProviderRouteRow {
     pub services: Vec<RouteService>,
 }
 
-// when a thread starts compacting: the agent's `compact_at`, else its model's
+// how an agent's model is reached, as its configuration and its provider's route say
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Threshold {
-    Agent(u64),
-    Model(u64),
-}
-
-impl Threshold {
-    pub fn of(config: &Config, model: Option<&ModelRow>) -> Option<Threshold> {
-        let model = model
-            .and_then(|model| model.compact_at)
-            .map(Threshold::Model);
-        config.compact_at.map(Threshold::Agent).or(model)
-    }
-
-    pub fn tokens(self) -> u64 {
-        match self {
-            Threshold::Agent(tokens) | Threshold::Model(tokens) => tokens,
-        }
-    }
+pub struct Reached<'a> {
+    pub name: &'a str,
+    pub provider: &'a str,
+    pub route: &'a [RouteService],
+    pub service: &'a str,
+    pub window: Window,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -333,6 +320,10 @@ pub enum Configured {
         config: Config,
         provider: String,
     },
+    Unprovided {
+        snapshot: BlobId,
+        config: Config,
+    },
 }
 
 impl Configured {
@@ -351,6 +342,9 @@ impl Configured {
             Configured::NoRoute { provider, .. } => Some(format!(
                 "the agent's configuration {path} names provider {provider}, which harness has no route for"
             )),
+            Configured::Unprovided { .. } => Some(format!(
+                "the agent's configuration {path} names no provider: add a line like provider = \"anthropic\", whose route reaches its model"
+            )),
             Configured::Ready { .. } | Configured::Routed { .. } => None,
         }
     }
@@ -366,25 +360,35 @@ impl Configured {
             }
             | Configured::NoRoute {
                 snapshot, config, ..
-            } => Some((*snapshot, config)),
+            }
+            | Configured::Unprovided { snapshot, config } => Some((*snapshot, config)),
             Configured::Unreadable { .. } | Configured::Malformed { .. } => None,
         }
     }
 
-    pub fn threshold(&self) -> Option<Threshold> {
-        let (_, config) = self.config()?;
-        Threshold::of(config, self.model())
+    // the tokens of context at which its conversations start compacting
+    pub fn compact_at(&self) -> Option<u64> {
+        self.config()?.1.compact_at
     }
 
-    pub fn model(&self) -> Option<&ModelRow> {
-        match self {
-            Configured::Ready { model, .. } => Some(model),
-            Configured::Unreadable { .. }
-            | Configured::Malformed { .. }
-            | Configured::UnknownModel { .. }
-            | Configured::Routed { .. }
-            | Configured::NoRoute { .. } => None,
-        }
+    pub fn reached(&self) -> Option<Reached<'_>> {
+        let Configured::Routed {
+            config,
+            provider,
+            route,
+            window,
+            ..
+        } = self
+        else {
+            return None;
+        };
+        Some(Reached {
+            name: &config.model,
+            provider,
+            route,
+            service: &route.first()?.service,
+            window: *window,
+        })
     }
 }
 
@@ -972,12 +976,10 @@ pub enum Query {
     #[tool_query(description = "The conversation an agent's input from a place (chat/<channel> or chat/<channel>/<root>) last reached.", example = examples::thread_at)]
     ThreadAt { agent: AccountNumber, place: String },
     #[ask(Reply::Model(Option<ModelRow>))]
-    #[reads(state::MODELS, state::COMPACT_AT, state::WINDOWS)]
-    #[tool_query(description = "One model record with the context window harness learned, or null.", example = examples::model)]
+    #[tool_query(description = "Retired with SetModel: answers null.", example = examples::model)]
     Model { id: String },
     #[ask(Reply::Models(PageResponse<ModelRow>))]
-    #[reads(state::MODELS, state::COMPACT_AT, state::WINDOWS)]
-    #[tool_query(description = "Every model record.", example = examples::models)]
+    #[tool_query(description = "Retired with SetModel: answers no record.", example = examples::models)]
     Models { page: PageRequest },
     #[ask(Reply::Withheld(Vec<WithheldFrame>))]
     #[reads(state::WITHHELD, state::FRAMES)]
@@ -1058,10 +1060,8 @@ pub enum Query {
     #[ask(Reply::Agent(Option<AgentSetup>))]
     #[tool_query(description = "Agent, with the system prompt left out: what a list of agents needs of each.", example = examples::card)]
     Card { agent: AccountNumber },
-    // every service a model is reached through, its record's first
     #[ask(Reply::Services(Option<Vec<String>>))]
-    #[reads(state::MODELS, state::MODEL_SERVICES)]
-    #[tool_query(description = "Every service a model is reached through, its record's first, or null.", example = examples::services)]
+    #[tool_query(description = "Retired with SetModel: answers null; ProviderRoute names a provider's services.", example = examples::services)]
     Services { model: String },
     #[ask(Reply::Route(Option<Route>))]
     #[reads(state::ROUTES)]
@@ -1226,7 +1226,7 @@ pub fn describe(op: &Op) -> describe::Description {
             service,
             name,
         } => (
-            format!("Set model · {id}"),
+            format!("Retired, always refused: set model · {id}"),
             vec![
                 field("model", Value::text(id)),
                 field("wire", Value::text(wire.label())),
@@ -1235,7 +1235,7 @@ pub fn describe(op: &Op) -> describe::Description {
             ],
         ),
         Op::RemoveModel { id } => (
-            format!("Remove model · {id}"),
+            format!("Retired, always refused: remove model · {id}"),
             vec![field("model", Value::text(id))],
         ),
         Op::NewThread { agent } => (
@@ -1300,7 +1300,7 @@ pub fn describe(op: &Op) -> describe::Description {
                 None => "when the window fills".to_owned(),
             };
             (
-                format!("Set when model {id} starts compacting"),
+                format!("Retired, always refused: set when model {id} starts compacting"),
                 vec![
                     field("model", Value::text(id)),
                     field("compacts at", Value::text(at)),
@@ -1345,7 +1345,7 @@ pub fn describe(op: &Op) -> describe::Description {
             vec![field("message", Value::text(&row.message))],
         ),
         Op::SetServices { id, services } => (
-            format!("Set the services that reach model {id}"),
+            format!("Retired, always refused: set the services that reach model {id}"),
             vec![
                 field("model", Value::text(id)),
                 field("services", Value::text(services.join(", "))),

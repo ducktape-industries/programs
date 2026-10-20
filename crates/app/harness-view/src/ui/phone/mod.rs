@@ -1,17 +1,6 @@
-//! Agents under a finger: the phone's pages, in the kit's touch look (`design::TOUCH`). The
-//! root picks this tree once, from the device (`lib.rs`); nothing in it asks again. The screens
-//! are the desktop's, drawn as a stack of pages whose depth the screen fixes: the agents are the
-//! root; an agent, the models and the create form go over it; a conversation, a part of an
-//! agent's setup and the model form go over those; a conversation's usage over that. A page's
-//! writes open as a sheet from its title row, and a frame's facts as a sheet from a long press.
-//! Reads what the desktop reads; writes the screen, the sheet and the folds.
-//!
-//! - [`agents`]: the root, the reader's agents and the network's.
-//! - [`agent`]: one agent, its setup's pages and its manager's sheet.
-//! - [`thread`]: one conversation, its usage page and its sheets.
-//! - [`models`]: the model records, and the form that sets one.
-//! - [`create`]: the create and edit form.
-//! - [`parts`]: what two or more of them draw the same way.
+//! Agents under a finger, in the kit's touch look: the desktop's screens as a stack of pages whose
+//! depth the screen fixes (`agents`, `agent`, `thread`, `routes`, `create`, with `parts` they share);
+//! a page's writes open as a sheet from its title row, a frame's facts from a long press.
 use view::design::{Ladder, Nav, TOUCH};
 use view::prelude::*;
 
@@ -20,8 +9,8 @@ use crate::{Agents, Screen};
 mod agent;
 mod agents;
 mod create;
-mod models;
 mod parts;
+mod routes;
 mod thread;
 
 pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
@@ -39,8 +28,8 @@ pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
             thread::sheet(view, cx, &theme, ladder),
         ),
         Screen::Usage(id) => (thread::usage(view, id, cx, &theme, ladder), None),
-        Screen::Models => (models::page(view, cx, &theme, ladder), None),
-        Screen::SetModel => (models::form(view, cx, &theme, ladder), None),
+        Screen::Routes => (routes::page(view, cx, &theme, ladder), None),
+        Screen::SetRoute => (routes::form(view, cx, &theme, ladder), None),
         Screen::Create => (create::page(view, cx, &theme, ladder), None),
     };
     let sheet = crate::policies::sheet(view, cx, ladder, &theme).or(sheet);
@@ -63,12 +52,12 @@ pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
 fn depth(view: &Agents) -> usize {
     match view.screen {
         Screen::List => 0,
-        Screen::Agent(_) | Screen::Models => 1,
+        Screen::Agent(_) | Screen::Routes => 1,
         Screen::Create => match view.draft.again {
             true => 2,
             false => 1,
         },
-        Screen::Thread(_) | Screen::Part(..) | Screen::SetModel => 2,
+        Screen::Thread(_) | Screen::Part(..) | Screen::SetRoute => 2,
         Screen::Usage(_) => 3,
     }
 }

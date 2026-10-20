@@ -11,7 +11,7 @@ fn the_kinds_are_the_ones_the_programs_claim() {
         ("forge", forge::tables::REVIEWS.kind()),
         ("forge", forge::tables::AUTHORSHIP.kind()),
         ("forge", forge::tables::CUSTODY.kind()),
-        ("harness", harness::tables::MODELS.kind()),
+        ("harness", harness::tables::PROVIDER_ROUTES.kind()),
         ("harness", harness::tables::CONVERSATIONS.kind()),
         ("egress", egress::tables::SERVICES.kind()),
         ("files", files::tables::GUARDED.kind()),

@@ -31,7 +31,7 @@ fn the_create_form_writes_the_thinking_level_it_picks() {
 #[test]
 fn the_agent_shows_its_thinking_and_its_manager_sets_it_there() {
     let mut net = Net::default();
-    let Configured::Ready { config, .. } = &mut net.setups[0].configured else {
+    let Configured::Routed { config, .. } = &mut net.setups[0].configured else {
         unreachable!()
     };
     config.thinking = Some(Thinking::Low);
@@ -96,7 +96,7 @@ fn a_visitor_reads_the_setup_and_may_open_its_editor() {
 #[test]
 fn an_edit_and_a_thinking_pick_keep_the_channels_it_listens_to_and_its_settle() {
     let mut net = Net::default();
-    let Configured::Ready { config, .. } = &mut net.setups[0].configured else {
+    let Configured::Routed { config, .. } = &mut net.setups[0].configured else {
         unreachable!()
     };
     config.listen = vec!["general".into()];

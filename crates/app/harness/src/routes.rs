@@ -9,28 +9,11 @@ use crate::budget::{CCS_ACCOUNT, ORGANIZATION};
 use crate::config::Pin;
 use crate::providers::Reach;
 use crate::resume::header;
-use crate::state::{ANSWERED, MODEL_SERVICES, PICKS, Pick, ROUTES, TRIED};
+use crate::state::{ANSWERED, PICKS, Pick, ROUTES, TRIED};
 use crate::turns::serves;
 use crate::{Answerer, Route, Routed, ThreadRow, Wire};
 
 type Candidate = (String, Option<String>);
-
-pub(crate) fn services_of(ctx: &QueryCtx, id: &str, first: &str) -> Result<Vec<String>, Error> {
-    let mut services = vec![first.to_owned()];
-    for service in MODEL_SERVICES.get(ctx, &id.to_owned())?.unwrap_or_default() {
-        if !services.contains(&service) {
-            services.push(service);
-        }
-    }
-    Ok(services)
-}
-
-pub(crate) fn services(ctx: &QueryCtx, model: &str) -> Result<Option<Vec<String>>, Error> {
-    let Some(row) = crate::models::model(ctx, model)? else {
-        return Ok(None);
-    };
-    services_of(ctx, &row.id, &row.service).map(Some)
-}
 
 pub(crate) fn route(ctx: &QueryCtx, thread: u64) -> Result<Option<Route>, Error> {
     ROUTES.get(ctx, &thread)

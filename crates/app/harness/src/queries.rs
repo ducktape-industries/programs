@@ -1,6 +1,6 @@
 //! Every read: an agent, a thread, an agent's threads and bound conversations, a transcript or a
 //! span of it from a frame on, held input, tool calls or one call, the tool catalog, a place's
-//! last thread, the models, withheld frames with their size, a streaming reply and a topic.
+//! last thread, withheld frames with their size, a streaming reply and a topic.
 use ::program::{Error, QueryCtx, corrupt};
 use abi::role::identity::AccountNumber;
 use store::{PageRequest, PageResponse};
@@ -8,7 +8,7 @@ use store::{PageRequest, PageResponse};
 use crate::state::{
     BOUND, BY_AGENT, CALLS, FRAMES, HELD, PLACES, SETTLING, THREADS, TOPICS, WITHHELD,
 };
-use crate::{Body, CallRow, Frame, ModelRow, Partial, SettleWindow, ThreadRow, WithheldFrame};
+use crate::{Body, CallRow, Frame, Partial, SettleWindow, ThreadRow, WithheldFrame};
 
 pub(crate) fn partial(ctx: &QueryCtx, thread: u64) -> Result<Option<Partial>, Error> {
     crate::replies::read(ctx, thread)
@@ -22,12 +22,13 @@ pub(crate) fn settling(ctx: &QueryCtx, thread: u64) -> Result<Option<SettleWindo
     SETTLING.get(ctx, &thread)
 }
 
-pub(crate) fn model(ctx: &QueryCtx, id: String) -> Result<Option<ModelRow>, Error> {
-    crate::models::model(ctx, &id)
-}
-
-pub(crate) fn models(ctx: &QueryCtx, page: &PageRequest) -> Result<PageResponse<ModelRow>, Error> {
-    crate::models::models(ctx, page)
+// a page of nothing, for a retired listing
+pub(crate) fn none<T>(ctx: &QueryCtx) -> PageResponse<T> {
+    PageResponse {
+        height: ctx.env().height,
+        items: Vec::new(),
+        next: None,
+    }
 }
 
 pub(crate) fn thread(ctx: &QueryCtx, id: u64) -> Result<Option<ThreadRow>, Error> {

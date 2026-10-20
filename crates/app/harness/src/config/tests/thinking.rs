@@ -39,12 +39,15 @@ fn every_thinking_level_writes_and_parses_back() {
         compact_at: None,
         system: "Think.".into(),
     };
-    assert!(!plain.write().contains("thinking"));
+    assert!(!plain.write(&Pin::default()).contains("thinking"));
     for level in Thinking::ALL {
         let config = Config {
             thinking: Some(*level),
             ..plain.clone()
         };
-        assert_eq!(Config::parse(config.write().as_bytes()), Ok(config));
+        assert_eq!(
+            Config::parse(config.write(&Pin::default()).as_bytes()),
+            Ok(config)
+        );
     }
 }

@@ -23,7 +23,7 @@ pub static KINDS: [Kind; 10] = [
     of("forge.repo", "forge", "Forge repositories"),
     of("forge.change", "forge", "Forge changes"),
     of("forge.review", "forge", "Forge reviews"),
-    of("harness.model", "harness", "Harness models"),
+    of("harness.route", "harness", "Harness provider routes"),
     of(
         "harness.agent-conversation",
         "harness",

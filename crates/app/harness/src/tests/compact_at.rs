@@ -5,15 +5,7 @@ fn configured(chain: &MockChain, compact_at: Option<u64>) {
         compact_at,
         ..scout()
     };
-    commit(chain, ADA, CONFIG, &config.write());
-}
-
-fn model_compacts_at(chain: &MockChain, compact_at: Option<u64>) {
-    let op = Op::SetCompactAt {
-        id: MODEL.into(),
-        compact_at,
-    };
-    chain.submit(signed(ADA), PROGRAM, &op).unwrap();
+    commit(chain, ADA, CONFIG, &md(&config));
 }
 
 fn summarizes_next(world: &World) -> bool {
@@ -32,22 +24,6 @@ fn summarizes_next(world: &World) -> bool {
 fn a_thread_compacts_once_its_context_reaches_the_agents_compact_at() {
     let world = world();
     configured(&world.chain, Some(1000));
-    assert!(summarizes_next(&world));
-}
-
-#[test]
-fn an_agents_compact_at_wins_over_its_models() {
-    let world = world();
-    configured(&world.chain, Some(5000));
-    model_compacts_at(&world.chain, Some(1000));
-    assert!(!summarizes_next(&world));
-}
-
-#[test]
-fn with_no_compact_at_of_its_own_the_agent_compacts_at_its_models() {
-    let world = world();
-    configured(&world.chain, None);
-    model_compacts_at(&world.chain, Some(1000));
     assert!(summarizes_next(&world));
 }
 

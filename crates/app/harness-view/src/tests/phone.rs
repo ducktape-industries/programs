@@ -57,7 +57,7 @@ fn the_root_lists_the_agents_with_their_state_then_what_else_the_view_holds() {
         "Atlas",
         "More",
         "Create an agent",
-        "Models",
+        "Routes",
         "To talk to an agent, mention it or send it a DM in Chat.",
     ] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
@@ -96,7 +96,7 @@ fn an_agent_page_says_what_it_does_and_opens_each_part_of_its_setup() {
     for text in [
         "account 12 · managed by Eddy",
         "In #general · waiting for the model",
-        "sonnet · 2 tools",
+        "claude-sonnet-5-5 · 2 tools",
         "Send a DM",
         "Conversations",
         "#general · 7",
@@ -105,7 +105,7 @@ fn an_agent_page_says_what_it_does_and_opens_each_part_of_its_setup() {
         "#release · 3",
         "Setup",
         "Model, thinking, tools",
-        "sonnet · model's default · 2 tools",
+        "claude-sonnet-5-5 · model's default · 2 tools",
         "Configuration file",
         "/home/Eddy/agents/scout.md · only Eddy may change it",
         "System prompt",
@@ -335,57 +335,53 @@ fn no_node_and_a_refused_read_say_so_on_a_phone() {
 }
 
 #[test]
-fn the_models_open_the_form_that_sets_one_as_its_own_page() {
+fn the_routes_open_the_form_that_sets_one_as_its_own_page() {
     let (mut cx, _) = phone(Net::default(), EDDY);
     cx.host()
         .handle::<Submit<harness::Harness>>(|_| Ok(applied(Vec::new())));
-    tap(&mut cx, &["agents-models"]);
-    for text in [
-        "Models",
-        "sonnet",
-        "anthropic · ",
-        "1 node serving",
-        " · 200K window",
-        "Ada",
-    ] {
+    tap(&mut cx, &["agents-routes"]);
+    for text in ["Routes", "anthropic", "1 node serving", "Ada"] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
     }
-    tap(&mut cx, &["models-set"]);
-    cx.simulate_input("model-id", "opus");
+    tap(&mut cx, &["routes-set"]);
+    cx.simulate_input("route-provider", "claude-direct");
     tap(&mut cx, &["service-anthropic"]);
-    cx.simulate_input("model-name", "claude-opus-5-5");
-    tap(&mut cx, &["model-next"]);
-    assert!(cx.has_text("Save opus"), "{:?}", cx.texts());
-    tap(&mut cx, &["model-set"]);
+    tap(&mut cx, &["route-next"]);
+    assert!(
+        cx.has_text("Save claude-direct's route"),
+        "{:?}",
+        cx.texts()
+    );
+    tap(&mut cx, &["route-set"]);
     assert_eq!(
         cx.host().requests::<Submit<harness::Harness>>(),
-        [harness::Op::SetModel {
-            id: "opus".into(),
-            wire: Wire::AnthropicMessages,
-            service: "anthropic".into(),
-            name: "claude-opus-5-5".into(),
+        [harness::Op::SetRoute {
+            provider: "claude-direct".into(),
+            services: anthropic_route(),
         }]
     );
-    assert!(cx.find("models-list").is_some(), "{:?}", cx.texts());
+    assert!(cx.find("routes-list").is_some(), "{:?}", cx.texts());
 }
 
 #[test]
-fn a_record_opens_its_form_page_and_is_removed_after_a_yes() {
+fn a_route_opens_its_form_page_and_is_removed_after_a_yes() {
     let (mut cx, _) = phone(Net::default(), EDDY);
     cx.host()
         .handle::<Submit<harness::Harness>>(|_| Ok(applied(Vec::new())));
-    tap(&mut cx, &["agents-models", "model-sonnet"]);
-    assert!(cx.has_text("Edit sonnet"), "{:?}", cx.texts());
-    tap(&mut cx, &["model-remove"]);
-    let naming = "Scout and Atlas still name it in their configuration: each asks no model until it names another.";
+    tap(&mut cx, &["agents-routes", "route-anthropic"]);
+    assert!(cx.has_text("Edit anthropic's route"), "{:?}", cx.texts());
+    tap(&mut cx, &["route-remove"]);
+    let naming = "Scout and Atlas still name it in their configuration: each asks no model until a route reaches it again.";
     assert!(cx.has_text(naming), "{:?}", cx.texts());
     assert!(cx.host().requests::<Submit<harness::Harness>>().is_empty());
-    tap(&mut cx, &["model-remove-yes"]);
+    tap(&mut cx, &["route-remove-yes"]);
     assert_eq!(
         cx.host().requests::<Submit<harness::Harness>>(),
-        [harness::Op::RemoveModel { id: SONNET.into() }]
+        [harness::Op::RemoveRoute {
+            provider: ANTHROPIC.into(),
+        }]
     );
-    assert!(cx.find("models-list").is_some(), "{:?}", cx.texts());
+    assert!(cx.find("routes-list").is_some(), "{:?}", cx.texts());
 }
 
 #[test]
@@ -431,9 +427,9 @@ fn sweep() {
         cx.simulate_back();
         cx.simulate_back();
         cx.run_until_parked();
-        tap(cx, &["agents-models", "models-set"]);
+        tap(cx, &["agents-routes", "routes-set"]);
         cx.simulate_back();
-        tap(cx, &["model-sonnet", "model-remove"]);
+        tap(cx, &["route-anthropic", "route-remove"]);
         cx.simulate_back();
         cx.simulate_back();
         cx.run_until_parked();

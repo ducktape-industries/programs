@@ -1,15 +1,16 @@
-//! The front-matter editor both trees draw where an agent's setup shows: the model from harness's
-//! records, thinking, max output and wait, the server tools, the rooms it hears every message of
+//! The front-matter editor both trees draw where an agent's setup shows: the model, its provider
+//! from harness's routes, thinking, max output and wait, the server tools, the rooms it hears every message of
 //! (a finder adds more), settle and compact_at, then Cancel and Save.
 use harness::{ServerTool, Thinking};
+use view::Div;
 use view::design::{Ladder, space};
 use view::prelude::*;
-use view::{Div, FontWeight};
 
-use super::{pick, thinking_picker, waiting};
+use super::routes::providers;
+use super::{pick, thinking_picker};
 use crate::Agents;
+use crate::create::{PROVIDER_PICK_HINT, VENDOR_HINT};
 use crate::setup::Press;
-use crate::words::{serving_words, window_short};
 
 fn pressing(
     press: Press,
@@ -91,13 +92,39 @@ pub(crate) fn editor(
         pressing(Press::Close, cx),
     )
     .kind(design::Kind::Quiet);
-    let models = models(view, cx, theme, ladder);
+    let set = |view: &mut Agents, provider: String, cx: &mut Context<Agents>| {
+        view.press_setup(Press::Provider(provider), cx)
+    };
+    let picked = draft.provider.as_deref();
+    let providers = providers(view, picked, "setup-provider", set, cx, theme, ladder);
     let rooms = rooms(view, cx, theme, ladder);
     div()
         .flex()
         .flex_col()
         .gap(space::LG)
-        .child(labelled("Model", models, theme, ladder))
+        .child(number(
+            "setup-model",
+            &draft.vendor,
+            "Model",
+            VENDOR_HINT,
+            "claude-opus-5-5",
+        ))
+        .child(labelled(
+            "Provider",
+            div()
+                .flex()
+                .flex_col()
+                .gap(space::XS)
+                .child(providers)
+                .child(
+                    div()
+                        .text_type(ladder.caption)
+                        .text_color(theme.muted)
+                        .child(PROVIDER_PICK_HINT),
+                ),
+            theme,
+            ladder,
+        ))
         .child(labelled("Thinking", thinking, theme, ladder))
         .child(number(
             "setup-max-tokens",
@@ -131,7 +158,7 @@ pub(crate) fn editor(
             "setup-compact-at",
             &draft.compact_at,
             "Compacts at",
-            "The tokens of context at which its conversations start compacting; empty: the model's default.",
+            "The tokens of context at which its conversations start compacting; empty: when the window fills.",
             "650000",
         ))
         .children(draft.problem.clone().map(|problem| {
@@ -142,68 +169,6 @@ pub(crate) fn editor(
                 .child(problem)
         }))
         .child(design::form_verbs(cancel, save))
-}
-
-fn models(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder) -> AnyElement {
-    if let Some(shown) = waiting("setup-models", &view.models, cx, theme, ladder) {
-        return shown;
-    }
-    let models = view.models.ready().map_or(&[][..], Vec::as_slice);
-    let picked = view.setup_draft.model.clone();
-    let rows: Vec<_> = models
-        .iter()
-        .map(|model| {
-            let id = model.row.id.clone();
-            let (now, tone) = serving_words(model.serving(), theme);
-            let shown = format!("{} · {}", model.row.service, window_short(model.row.window));
-            pick(
-                format!("setup-model-{id}"),
-                picked.as_deref() == Some(id.as_str()),
-                theme,
-                ladder,
-            )
-            .on_click(pressing(Press::Model(id.clone()), cx))
-            .child(
-                design::mono(id)
-                    .text_type(ladder.small)
-                    .font_weight(FontWeight::MEDIUM),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_type(ladder.caption)
-                    .text_color(theme.muted)
-                    .child(shown),
-            )
-            .child(
-                div()
-                    .flex_none()
-                    .text_type(ladder.caption)
-                    .text_color(tone)
-                    .child(now),
-            )
-        })
-        .collect();
-    let unknown = picked
-        .filter(|id| !models.iter().any(|model| model.row.id == *id))
-        .map(|id| {
-            div()
-                .id("setup-model-unknown")
-                .text_type(ladder.caption)
-                .text_color(theme.danger)
-                .child(format!(
-                    "The file names {id}, which harness keeps no record of: pick one above."
-                ))
-        });
-    div()
-        .flex()
-        .flex_col()
-        .gap(space::XS)
-        .children(rows)
-        .children(unknown)
-        .into_any_element()
 }
 
 fn rooms(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder) -> Div {

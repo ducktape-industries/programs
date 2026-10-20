@@ -52,7 +52,7 @@ fn listening(world: &World, settle: Option<u64>) -> u64 {
         settle,
         ..scout()
     };
-    commit(chain, ADA, CONFIG, &hears.write());
+    commit(chain, ADA, CONFIG, &md(&hears));
     let thread = world.opened("m1", "hello", Some(WINDOW));
     chain.at(3, 0);
     model_says(chain, says("Hi."), "end_turn");
@@ -232,7 +232,7 @@ fn a_listen_pattern_seeds_every_open_room_it_names_as_it_appears() {
         listen: vec!["j-*".into()],
         ..scout()
     };
-    commit(chain, ADA, CONFIG, &hears.write());
+    commit(chain, ADA, CONFIG, &md(&hears));
     world.opened("m1", "hello", Some(WINDOW));
     assert_eq!(listened_to(chain, world.agent), ["j-1"]);
     chain.at(3, 0);

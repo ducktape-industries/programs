@@ -1,4 +1,4 @@
-//! Everything harness keeps: models, threads by agent, current and bound threads, each place's
+//! Everything harness keeps: provider routes, threads by agent, current and bound threads, each place's
 //! last thread, frames, held input, sealed parts, tool and live calls, withheld frames, streaming
 //! replies, each thread's topic and tally, booked runs, watched streams, what a written key names.
 use ::program::{BlobId, EntryId};
@@ -9,24 +9,18 @@ use store::{Item, KeyCodec, Kind, Map, Owned, Set};
 
 use crate::pictures::{Hidden, Picture};
 use crate::{
-    Body, Booking, CallRow, Frame, ModelRow, Partial, Place, ProviderRouteRow, Sealed,
-    SettleWindow, Tally, ThreadRow, UsageWindow, WaitRow, Window, Wire,
+    Body, Booking, CallRow, Frame, Partial, Place, ProviderRouteRow, Sealed, SettleWindow, Tally,
+    ThreadRow, UsageWindow, WaitRow, Window,
 };
 
-// Each model record is its owner's, of the kind `harness.model`: only its owner's ops write it.
-pub const MODELS: Map<String, Owned<StoredModel>> = Map::new("model/");
-// a model's `compact_at` default, beside its record; `SetCompactAt` rewrites the record too, so
-// the record's policy governs it
-pub const COMPACT_AT: Map<String, u64> = Map::new("compact/");
 // Who may start an agent's conversations, of the kind `harness.agent-conversation`: its manager's
 // once they claim it (`ClaimConversations`). `NewThread` and `ForkThread` write it, so its policy
 // decides them; an agent whose manager never claimed it has none, and stays open.
 pub const CONVERSATIONS: Map<AccountNumber, Owned<Conversations>> = Map::new("conversations/");
-// the context window a thread's turn learned for a model: any agent's turn writes it, so it lives
-// beside the owned record (a record stored before it still carries the window it had)
-pub const WINDOWS: Map<String, Window> = Map::new("model-window/");
-pub const PROVIDERS: Map<String, String> = Map::new("model-provider/");
+// Each provider's route is its owner's, of the kind `harness.route`: only its owner's ops write it.
 pub const PROVIDER_ROUTES: Map<String, Owned<ProviderRouteRow>> = Map::new("provider-route/");
+// the context window a turn learned for a provider's model: any agent's turn writes it, so it lives
+// beside the owned route
 pub const PROVIDER_WINDOWS: Map<(String, String), Window> = Map::new("provider-window/");
 pub const LAST: Map<AccountNumber, (Source, u64)> = Map::new("last/");
 pub const THREADS: Map<u64, ThreadRow> = Map::new("thread/");
@@ -102,9 +96,6 @@ pub const AWAITED: Map<(u64, String), Awaited> = Map::new("awaited/");
 pub const STREAMING: Map<(u64, u64), Flight> = Map::new("streaming/");
 // the harness code that runs, and the block harness first ran it at (`resume::switched`)
 pub const RUNNING: Item<(BlobId, u64)> = Item::new("running");
-// the services a model is reached through after its record's first (J-090): `SetServices`
-// rewrites the record too, so the record's policy governs it
-pub const MODEL_SERVICES: Map<String, Vec<String>> = Map::new("model-services/");
 // the service and ccs account each thread's calls go to first, where its prompt cache was written
 pub const ROUTES: Map<u64, crate::Route> = Map::new("route/");
 // the account each thread's latest model call went to, and who answered it
@@ -157,17 +148,6 @@ pub struct Binding {
     pub place: Place,
 }
 
-// a model's record as harness stored it before `compact_at`, which `COMPACT_AT` holds
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub struct StoredModel {
-    pub id: String,
-    pub owner: AccountNumber,
-    pub wire: Wire,
-    pub service: String,
-    pub name: String,
-    pub window: Window,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Conversations {
     pub manager: AccountNumber,
@@ -179,26 +159,8 @@ impl Kind for Conversations {
     const KIND: &'static str = "harness.agent-conversation";
 }
 
-impl Kind for StoredModel {
-    const KIND: &'static str = "harness.model";
-}
-
 impl Kind for ProviderRouteRow {
     const KIND: &'static str = "harness.route";
-}
-
-impl StoredModel {
-    pub fn row(self, compact_at: Option<u64>) -> ModelRow {
-        ModelRow {
-            id: self.id,
-            owner: self.owner,
-            wire: self.wire,
-            service: self.service,
-            name: self.name,
-            window: self.window,
-            compact_at,
-        }
-    }
 }
 
 // a model call in flight, or a turn's relays: egress answers it by its deadline, and `watch` is
@@ -333,7 +295,7 @@ pub enum Written {
     Tally(u64),
     Settling(u64),
     Agent(AccountNumber),
-    Model,
+    Route,
     Budget,
     Armed(u64),
 }
@@ -351,7 +313,7 @@ impl Written {
             | Written::Armed(thread)
             | Written::Frame { thread, .. }
             | Written::Call { thread, .. } => Some(*thread),
-            Written::Agent(_) | Written::Model | Written::Budget => None,
+            Written::Agent(_) | Written::Route | Written::Budget => None,
         }
     }
 
@@ -368,7 +330,7 @@ impl Written {
             Written::Tally(thread) => TALLIES.key(thread),
             Written::Settling(thread) => SETTLING.key(thread),
             Written::Agent(agent) => CURRENT.key(agent),
-            Written::Model => MODELS.key(&()),
+            Written::Route => PROVIDER_ROUTES.key(&()),
             Written::Budget => BUDGETS.key(&()),
             Written::Armed(thread) => ARMED.key(thread),
         }
@@ -427,15 +389,7 @@ pub fn written(key: &[u8]) -> Option<Written> {
     if budget.iter().any(|prefix| key.starts_with(prefix)) {
         return Some(Written::Budget);
     }
-    let models = [
-        MODELS.key(&()),
-        COMPACT_AT.key(&()),
-        WINDOWS.key(&()),
-        PROVIDERS.key(&()),
-        MODEL_SERVICES.key(&()),
-        PROVIDER_ROUTES.key(&()),
-        PROVIDER_WINDOWS.key(&()),
-    ];
-    let model = models.iter().any(|prefix| key.starts_with(prefix));
-    model.then_some(Written::Model)
+    let routes = [PROVIDER_ROUTES.key(&()), PROVIDER_WINDOWS.key(&())];
+    let route = routes.iter().any(|prefix| key.starts_with(prefix));
+    route.then_some(Written::Route)
 }

@@ -1,5 +1,4 @@
 use super::*;
-use crate::state::MODEL_SERVICES;
 
 const TWO: &str = "ccs-two";
 const FAR: &str = "4000000000";
@@ -23,11 +22,13 @@ fn two_services(world: &World) {
     chain
         .submit(signed(&NODE), egress::PROGRAM, &serve)
         .unwrap();
-    let set = Op::SetServices {
-        id: MODEL.into(),
-        services: vec![SERVICE.into(), TWO.into()],
-    };
-    chain.submit(signed(ADA), PROGRAM, &set).unwrap();
+    let both = [
+        (SERVICE, Wire::AnthropicMessages),
+        (TWO, Wire::AnthropicMessages),
+    ];
+    chain
+        .submit(signed(ADA), PROGRAM, &set_route(&both))
+        .unwrap();
 }
 
 fn open(
@@ -209,17 +210,8 @@ fn cache_writes(chain: &MockChain, thread: u64) -> Vec<u64> {
     turns.collect()
 }
 
-fn services(chain: &MockChain) -> Reply {
-    let asked = Query::Services {
-        model: MODEL.into(),
-    };
-    chain.query::<_, Reply>(PROGRAM, &asked).unwrap()
-}
-
 fn configured(chain: &MockChain, more: &str) {
-    let text = scout()
-        .write()
-        .replace("max_tokens = 1024\n", &format!("max_tokens = 1024\n{more}"));
+    let text = md(&scout()).replace("max_tokens = 1024\n", &format!("max_tokens = 1024\n{more}"));
     commit(chain, ADA, CONFIG, &text);
 }
 
@@ -472,18 +464,16 @@ fn a_pinned_service_keeps_to_its_accounts_and_one_the_model_lists_not_gives_up()
     configured(chain, "service = \"elsewhere\"\n");
     world.mention("m2", "and now?");
     let told = notices(chain, thread);
-    let why = "the agent's configuration pins service elsewhere, which model claude-test is not reached through (ccs, ccs-two)";
+    let why = "the agent's configuration pins service elsewhere, which provider anthropic's route is not reached through (ccs, ccs-two)";
     assert_eq!(told.last().map(String::as_str), Some(why));
     assert!(none_open(chain, SERVICE, "/v1/messages"));
     assert!(none_open(chain, TWO, "/v1/messages"));
 }
 
 #[test]
-fn an_old_one_service_row_is_asked_as_before_unpinned() {
+fn a_one_service_route_is_asked_unpinned() {
     let world = world();
     let chain = &world.chain;
-    let listed = services(chain);
-    assert_eq!(listed, Reply::Services(Some(vec![SERVICE.to_owned()])));
     let thread = world.opened("m1", "hello", Some(WINDOW));
     chain.at(3, 0);
     let (_, _, pinned) = open(chain, SERVICE, "/v1/messages");
@@ -537,32 +527,35 @@ fn a_call_moved_near_the_threshold_does_not_compact_on_the_account_ccs_picks() {
 }
 
 #[test]
-fn only_the_models_owner_sets_its_services_and_budgets_read_every_one() {
+fn a_route_lists_its_services_in_order_once_each_and_budgets_read_every_one() {
     let world = world();
     let chain = &world.chain;
     two_services(&world);
-    let set = |services: &[&str]| Op::SetServices {
-        id: MODEL.into(),
-        services: services.iter().map(|service| service.to_string()).collect(),
+    let set = |services: &[&str]| {
+        let listed: Vec<(&str, Wire)> = services
+            .iter()
+            .map(|service| (*service, Wire::AnthropicMessages))
+            .collect();
+        set_route(&listed)
     };
-    assert!(chain.submit(signed(BO), PROGRAM, &set(&[TWO])).is_err());
-    let both = Reply::Services(Some(vec![SERVICE.to_owned(), TWO.to_owned()]));
-    assert_eq!(services(chain), both);
+    let listed = || {
+        let asked = Query::ProviderRoute {
+            provider: PROVIDER.into(),
+        };
+        let Reply::ProviderRoute(Some(row)) = chain.query(PROGRAM, &asked).unwrap() else {
+            panic!("the route is set")
+        };
+        let services = row.services.into_iter().map(|entry| entry.service);
+        services.collect::<Vec<String>>()
+    };
+    assert_eq!(listed(), [SERVICE, TWO]);
     chain
         .submit(signed(ADA), PROGRAM, &set(&[TWO, TWO, SERVICE]))
         .unwrap();
-    let turned = Reply::Services(Some(vec![TWO.to_owned(), SERVICE.to_owned()]));
-    assert_eq!(services(chain), turned);
-    let Reply::Model(Some(row)) = chain
-        .query(PROGRAM, &Query::Model { id: MODEL.into() })
-        .unwrap()
-    else {
-        panic!("the model has a record")
-    };
-    assert_eq!(row.service, TWO);
+    assert_eq!(listed(), [TWO, SERVICE]);
     assert!(chain.submit(signed(ADA), PROGRAM, &set(&[])).is_err());
-    let key = MODEL_SERVICES.key(&MODEL.to_owned());
-    assert_eq!(written(&key), Some(Written::Model));
+    let key = crate::state::PROVIDER_ROUTES.key(&PROVIDER.to_owned());
+    assert_eq!(written(&key), Some(Written::Route));
     chain.at(2, 0);
     chain.submit(signed(BO), PROGRAM, &Op::ReadBudgets).unwrap();
     let (first, _, _) = open(chain, SERVICE, "/ccs/status");
@@ -580,7 +573,7 @@ fn only_the_models_owner_sets_its_services_and_budgets_read_every_one() {
 
 #[test]
 fn a_pin_reads_from_the_front_matter_and_leaves_the_config_as_it_was() {
-    let text = scout().write().replace(
+    let text = md(&scout()).replace(
         "max_tokens = 1024\n",
         "max_tokens = 1024\nservice = \"ccs\"\n",
     );
@@ -588,7 +581,7 @@ fn a_pin_reads_from_the_front_matter_and_leaves_the_config_as_it_was() {
     assert_eq!(config, scout());
     let pinned = crate::config::Pin {
         service: Some(SERVICE.into()),
-        provider: None,
+        provider: Some(PROVIDER.into()),
     };
     assert_eq!(pin, pinned);
 }

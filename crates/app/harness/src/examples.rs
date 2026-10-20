@@ -85,7 +85,7 @@ pub(crate) fn claim() -> Op {
 
 pub(crate) fn adopt() -> Op {
     Op::AdoptOwners {
-        kind: "harness.model".into(),
+        kind: "harness.agent-conversation".into(),
         after: None,
         limit: 100,
     }

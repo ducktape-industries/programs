@@ -71,12 +71,31 @@ fn identity_op(chain: &MockChain, key: &[u8], op: identity::Op) -> Result<Vec<u8
     chain.submit(signed(key), identity::PROGRAM, &op)
 }
 
-fn set_model(id: &str, name: &str) -> Op {
-    Op::SetModel {
-        id: id.into(),
-        wire: Wire::AnthropicMessages,
-        service: SERVICE.into(),
-        name: name.into(),
+const PROVIDER: &str = "anthropic";
+
+fn pin_of(provider: &str) -> Pin {
+    Pin {
+        service: None,
+        provider: Some(provider.into()),
+    }
+}
+
+// the configuration as its file says it, naming the provider whose route reaches its model
+fn md(config: &Config) -> String {
+    config.write(&pin_of(PROVIDER))
+}
+
+fn set_route(services: &[(&str, Wire)]) -> Op {
+    let services = services
+        .iter()
+        .map(|(service, wire)| RouteService {
+            service: (*service).into(),
+            wire: *wire,
+        })
+        .collect();
+    Op::SetRoute {
+        provider: PROVIDER.into(),
+        services,
     }
 }
 
@@ -232,10 +251,9 @@ fn world() -> World {
         name: "Scout".into(),
     };
     let agent = number(identity_op(&chain, ADA, create).unwrap());
-    chain
-        .submit(signed(ADA), PROGRAM, &set_model(MODEL, MODEL))
-        .unwrap();
-    commit(&chain, ADA, CONFIG, &scout().write());
+    let ccs = set_route(&[(SERVICE, Wire::AnthropicMessages)]);
+    chain.submit(signed(ADA), PROGRAM, &ccs).unwrap();
+    commit(&chain, ADA, CONFIG, &md(&scout()));
     list(&chain, ADA, CONFIG, ::program::Ownership::Owner);
     scripted(&chain, agent, CONFIG);
     let general = chat::Op::CreateChannel {
@@ -1175,7 +1193,7 @@ fn a_model_call_waits_the_blocks_its_configuration_names_then_ends_with_the_expi
         wait: Some(WAIT),
         ..scout()
     };
-    commit(chain, ADA, CONFIG, &waits.write());
+    commit(chain, ADA, CONFIG, &md(&waits));
     let thread = world.opened("m1", "hello", Some(WINDOW));
     let (request, head) = open_request(chain);
     assert_eq!(path(&head), "/v1/messages");
@@ -1810,11 +1828,11 @@ fn a_place_resolves_to_its_thread_a_model_to_its_window_and_a_thread_says_when_i
     let world = world();
     let chain = &world.chain;
     let window = || {
-        let asked = Query::Model { id: MODEL.into() };
-        let Reply::Model(Some(row)) = chain.query(PROGRAM, &asked).unwrap() else {
+        let asked = Query::Card { agent: world.agent };
+        let Reply::Agent(Some(setup)) = chain.query(PROGRAM, &asked).unwrap() else {
             panic!()
         };
-        row.window
+        setup.configured.reached().unwrap().window
     };
     chain.at(1, 10);
     let thread = world.mention("m1", "hello");

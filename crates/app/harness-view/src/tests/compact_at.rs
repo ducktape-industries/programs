@@ -1,15 +1,11 @@
 use super::*;
 
-fn compacting(agent: Option<u64>, model: Option<u64>) -> Net {
+fn compacting(agent: Option<u64>) -> Net {
     let mut net = Net::default();
-    let Configured::Ready {
-        config, model: row, ..
-    } = &mut net.setups[0].configured
-    else {
+    let Configured::Routed { config, .. } = &mut net.setups[0].configured else {
         unreachable!()
     };
     config.compact_at = agent;
-    row.compact_at = model;
     net
 }
 
@@ -18,20 +14,13 @@ fn the_agent_page_says_when_its_conversations_compact_and_where_that_comes_from(
     let cases = [
         (
             Some(650_000),
-            Some(800_000),
             "650,000 tokens",
             Some("the agent's configuration"),
         ),
-        (
-            None,
-            Some(800_000),
-            "800,000 tokens",
-            Some("the model's default"),
-        ),
-        (None, None, "when the window fills", None),
+        (None, "when the window fills", None),
     ];
-    for (agent, model, words, source) in cases {
-        let (mut cx, _) = seated(compacting(agent, model), EDDY);
+    for (agent, words, source) in cases {
+        let (mut cx, _) = seated(compacting(agent), EDDY);
         files_take(&cx);
         cx.simulate_click("agent-12");
         cx.run_until_parked();
@@ -45,7 +34,7 @@ fn the_agent_page_says_when_its_conversations_compact_and_where_that_comes_from(
 
 #[test]
 fn an_edit_keeps_the_compact_at_the_file_names() {
-    let (mut cx, _) = seated(compacting(Some(650_000), None), EDDY);
+    let (mut cx, _) = seated(compacting(Some(650_000)), EDDY);
     files_take(&cx);
     cx.simulate_click("agent-12");
     cx.run_until_parked();

@@ -173,12 +173,20 @@ fn model_reply(content: Value, stop: &str) -> Vec<u8> {
     })
 }
 
+// the pin the agent's file names: the provider whose route reaches its model
+fn provided() -> harness::Pin {
+    harness::Pin {
+        service: None,
+        provider: Some("anthropic".into()),
+    }
+}
+
 async fn configured(net: &mut Net, config: &harness::Config) -> Vec<files::Change> {
     vec![files::Change::Put {
         path: CONFIG.into(),
         exec: false,
         meta: Default::default(),
-        content: net.chunks(config.write().as_bytes()).await,
+        content: net.chunks(config.write(&provided()).as_bytes()).await,
     }]
 }
 
@@ -249,13 +257,14 @@ async fn mentioned(net: &mut Net) -> Scout {
         }),
     };
     net.apply(&public(ADA), identity::PROGRAM, &script).await;
-    let model = Op::SetModel {
-        id: "claude-test".into(),
-        wire: harness::Wire::AnthropicMessages,
-        service: SERVICE.into(),
-        name: "claude-test".into(),
+    let route = Op::SetRoute {
+        provider: "anthropic".into(),
+        services: vec![harness::RouteService {
+            service: SERVICE.into(),
+            wire: harness::Wire::AnthropicMessages,
+        }],
     };
-    net.apply(&public(ADA), harness::PROGRAM, &model).await;
+    net.apply(&public(ADA), harness::PROGRAM, &route).await;
     let general = chat::Op::CreateChannel {
         channel_id: "general".into(),
         name: "general".into(),

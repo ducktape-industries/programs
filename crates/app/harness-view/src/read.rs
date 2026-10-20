@@ -7,8 +7,8 @@ use std::rc::Rc;
 
 use egress::{RELAY, ServiceRow};
 use harness::{
-    AgentSetup, Asking, Awaited, BlobId, Body, CallRow, Frame, ModelRow, Partial, SettleWindow,
-    Spoken, Tally, ThreadRow, ToolInfo, Usage, WaitRow, WithheldFrame,
+    AgentSetup, Asking, Awaited, BlobId, Body, CallRow, Frame, Partial, ProviderRouteRow,
+    SettleWindow, Spoken, Tally, ThreadRow, ToolInfo, Usage, WaitRow, WithheldFrame,
 };
 use identity::{Category, Kind, Ownership, PageRequest};
 use policy_view::link;
@@ -375,15 +375,14 @@ pub(crate) struct Transcript {
 }
 
 impl Transcript {
-    pub fn model(&self) -> Option<&ModelRow> {
+    pub fn reach(&self) -> Option<harness::Reached<'_>> {
         self.setup
             .as_ref()
-            .and_then(|setup| setup.configured.model())
+            .and_then(|setup| setup.configured.reached())
     }
 
     pub fn threshold(&self) -> Option<u64> {
-        let setup = self.setup.as_ref()?;
-        setup.configured.threshold().map(harness::Threshold::tokens)
+        self.setup.as_ref()?.configured.compact_at()
     }
 
     // the frame after those read
@@ -490,8 +489,8 @@ async fn served_setup(
     let setup = card(host, agent).await?;
     let service = setup
         .as_ref()
-        .and_then(|setup| setup.configured.model())
-        .map(|model| model.service.clone());
+        .and_then(|setup| setup.configured.reached())
+        .map(|reached| reached.service.to_owned());
     let serving = match service {
         Some(service) => Some(served(host, &service).await?),
         None => None,
@@ -723,50 +722,43 @@ pub(crate) async fn calls(
 }
 
 #[derive(PartialEq)]
-pub(crate) struct Model {
-    pub row: ModelRow,
-    // every service that reaches it, the record's first, each with the member nodes serving it
-    pub services: Vec<(String, usize)>,
+pub(crate) struct Route {
+    pub row: ProviderRouteRow,
+    // the member nodes serving each of its services, in its order
+    pub nodes: Vec<usize>,
     // whose it is and its policy, as ownership says, for the reader
     pub standing: policy_view::Standing,
 }
 
-impl Model {
+impl Route {
     pub fn serving(&self) -> usize {
-        self.services.first().map_or(0, |(_, serving)| *serving)
+        self.nodes.first().copied().unwrap_or_default()
     }
 }
 
-pub(crate) async fn models(host: Host, me: Option<u64>) -> Result<Vec<Model>, Error> {
+pub(crate) async fn routes(host: Host, me: Option<u64>) -> Result<Vec<Route>, Error> {
     let reader = me.map(ownership::Party::Account);
     let rows = host
-        .query_all(|after| harness::ask::Models { page: page(after) })
+        .query_all(|after| harness::ask::ProviderRoutes { page: page(after) })
         .await?;
-    let mut models = Vec::new();
+    let mut routes = Vec::new();
     for row in rows {
-        let asked = harness::ask::Services {
-            model: row.id.clone(),
-        };
-        // none once the record went since its page was read: its own service
-        let listed = host.query(asked).await?;
-        let listed = listed.unwrap_or_else(|| vec![row.service.clone()]);
-        let mut services = Vec::new();
-        for service in listed {
-            let serving = served(&host, &service).await?;
-            services.push((service, serving));
+        let mut nodes = Vec::new();
+        for entry in &row.services {
+            nodes.push(served(&host, &entry.service).await?);
         }
-        let held = crate::policies::model_item(&row.id);
+        let held = crate::policies::route_item(&row.provider);
         let standing = policy_view::item::standing(host.clone(), held, reader.clone()).await?;
-        models.push(Model {
+        routes.push(Route {
             row,
-            services,
+            nodes,
             standing,
         });
     }
-    Ok(models)
+    Ok(routes)
 }
 
-/// A service the models form offers, with how many member nodes serve it now.
+// a service the routes form offers, with how many member nodes serve it now.
 #[derive(PartialEq)]
 pub(crate) struct Offer {
     pub row: ServiceRow,

@@ -200,18 +200,21 @@ fn more(
     ladder: &Ladder,
 ) -> impl IntoElement + use<> {
     let create = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.start_create(cx));
-    let models =
-        cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.go(Screen::Models, cx));
-    let records = match view.models.ready() {
-        Some(models) if !models.is_empty() => {
-            let ids: Vec<&str> = models.iter().map(|model| model.row.id.as_str()).collect();
+    let routes =
+        cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.go(Screen::Routes, cx));
+    let records = match view.routes.ready() {
+        Some(routes) if !routes.is_empty() => {
+            let named: Vec<&str> = routes
+                .iter()
+                .map(|route| route.row.provider.as_str())
+                .collect();
             format!(
                 "{} · {}",
-                design::plural(models.len() as u64, "record", "records"),
-                ids.join(", ")
+                design::plural(routes.len() as u64, "route", "routes"),
+                named.join(", ")
             )
         }
-        _ => "What an agent’s configuration names".to_owned(),
+        _ => "How harness reaches each provider".to_owned(),
     };
     let line = |title: &'static str, caption: String| {
         design::row_words(design::row_title(title, ladder, theme))
@@ -233,12 +236,12 @@ fn more(
             )
         }))
         .child(opening_row(
-            "agents-models",
+            "agents-routes",
             glyph("server", theme, ladder),
-            line("Models", records),
+            line("Routes", records),
             None,
             theme,
             ladder,
-            models,
+            routes,
         ))
 }

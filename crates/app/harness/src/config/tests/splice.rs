@@ -19,7 +19,7 @@ fn a_new_front_matter_keeps_the_pins_and_the_body_byte_for_byte() {
         system: "not written: the body is the file's".into(),
         ..config
     };
-    let written = with_front(PINNED.as_bytes(), &thinks).unwrap();
+    let written = with_front(PINNED.as_bytes(), &thinks, "anthropic").unwrap();
     let body = "\nYou keep notes.\r\n\n  Indented, kept.\n";
     let front = "model = \"sonnet\"\nmax_tokens = 4096\nthinking = \"high\"\ncompact_at = 650000\nservice = \"ccs\"\nprovider = \"anthropic\"\n";
     assert_eq!(written, format!("+++\n{front}+++\n{body}"));
@@ -27,6 +27,29 @@ fn a_new_front_matter_keeps_the_pins_and_the_body_byte_for_byte() {
     assert_eq!(pin, pinned());
     let system = "You keep notes.\r\n\n  Indented, kept.".to_owned();
     assert_eq!(read, Config { system, ..thinks });
+}
+
+#[test]
+fn another_provider_drops_the_service_its_route_may_not_list() {
+    let (config, _) = Config::parse_pinned(PINNED.as_bytes()).unwrap();
+    let written = with_front(PINNED.as_bytes(), &config, "openai").unwrap();
+    let (_, pin) = Config::parse_pinned(written.as_bytes()).unwrap();
+    let openai = Pin {
+        service: None,
+        provider: Some("openai".into()),
+    };
+    assert_eq!(pin, openai);
+    let unprovided = PINNED.replace("provider = \"anthropic\"\n", "");
+    let written = with_front(unprovided.as_bytes(), &config, "anthropic").unwrap();
+    let (_, pin) = Config::parse_pinned(written.as_bytes()).unwrap();
+    let anthropic = Pin {
+        service: None,
+        provider: Some("anthropic".into()),
+    };
+    assert_eq!(
+        pin, anthropic,
+        "a file that named no provider keeps no pin either"
+    );
 }
 
 #[test]
@@ -59,6 +82,9 @@ fn a_file_with_no_front_matter_takes_neither() {
     ];
     for (file, malformed) in cases {
         assert_eq!(with_body(file.as_bytes(), "x"), Err(malformed.clone()));
-        assert_eq!(with_front(file.as_bytes(), &config), Err(malformed));
+        assert_eq!(
+            with_front(file.as_bytes(), &config, "anthropic"),
+            Err(malformed)
+        );
     }
 }
