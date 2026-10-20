@@ -34,8 +34,10 @@ pub(crate) const SEARCH_MESSAGES: &str = "Search messages";
 pub(crate) const AGENT: &str = "Agent";
 
 // someone answering in a room before they post: who, and what they say they are doing
+pub(crate) const ANSWERING: &str = "is answering…";
+
 pub(crate) fn answering(name: &str) -> String {
-    format!("{name} is answering…")
+    format!("{name} {ANSWERING}")
 }
 
 pub(crate) fn doing(what: &str) -> String {

@@ -126,9 +126,12 @@ fn rows(
                 return match answering.get(after - usize::from(bare)) {
                     Some(draft) => {
                         let seen: &Chat = chat;
-                        crate::ui::answering::row(seen, draft, &theme, &ladder, |key, blocks| {
+                        let face = message::still_face(seen, &draft.author, cx, &theme, &ladder);
+                        let frame = |row: view::Stateful<view::Div>| row.px(design::space::BLOCK);
+                        let draw = |key: &str, blocks: &[chat::Block]| {
                             super::rich::drawn(seen, key, blocks, cx, &theme, &ladder)
-                        })
+                        };
+                        crate::ui::answering::row(seen, draft, (&theme, &ladder), frame, face, draw)
                     }
                     None => div().into_any_element(),
                 };

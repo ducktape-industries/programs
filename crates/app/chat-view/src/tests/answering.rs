@@ -34,7 +34,7 @@ fn a_draft_is_drawn_at_the_rooms_foot_until_chat_drops_it() {
     seat(&mut cx);
     cx.simulate_click("chat-sidebar-channel-general");
     cx.run_until_parked();
-    assert!(cx.has_text("reviewer is answering…"), "{:?}", cx.texts());
+    assert!(cx.has_text("is answering…"), "{:?}", cx.texts());
     assert!(cx.has_text("running forge_read…"));
     assert!(cx.has_text("Looking at the build"));
     assert!(
@@ -46,7 +46,7 @@ fn a_draft_is_drawn_at_the_rooms_foot_until_chat_drops_it() {
     let changes = cx.host().stream::<Changes<::chat::Chat>>();
     changes.send(block(4, vec![dropped]));
     cx.run_until_parked();
-    assert!(!cx.has_text("reviewer is answering…"), "{:?}", cx.texts());
+    assert!(!cx.has_text("is answering…"), "{:?}", cx.texts());
     assert!(!cx.has_text("Looking at the build"));
 }
 
@@ -74,7 +74,18 @@ fn a_drafts_text_is_drawn_as_its_post_will_be_never_as_its_raw_marks() {
         cx.has_text("hi there"),
         "the post as chat keeps it: {texts:?}"
     );
-    assert!(cx.has_text("reviewer is answering…"), "{texts:?}");
+    assert!(cx.has_text("is answering…"), "{texts:?}");
+    let posted = texts.iter().position(|text| text == "hi there");
+    let draft = texts.iter().position(|text| text == "is answering…");
+    let named = draft
+        .and_then(|at| at.checked_sub(1))
+        .map(|at| texts[at].as_str());
+    assert_eq!(
+        named,
+        Some("reviewer"),
+        "the draft has its author line: {texts:?}"
+    );
+    assert!(posted < draft, "{texts:?}");
     assert!(texts.iter().any(|text| text.contains("build")), "{texts:?}");
     assert!(
         !texts

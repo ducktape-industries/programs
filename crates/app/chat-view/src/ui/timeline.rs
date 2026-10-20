@@ -228,9 +228,12 @@ fn rows(
                 return match answering.get(after - usize::from(bare)) {
                     Some(draft) => {
                         let seen: &Chat = chat;
-                        super::answering::row(seen, draft, &theme, &ladder, |key, blocks| {
+                        let face = message::still_face(seen, &draft.author, cx, &theme);
+                        let frame = |row: Stateful<Div>| row.px_4();
+                        let draw = |key: &str, blocks: &[chat::Block]| {
                             message::drawn(seen, key, blocks, cx, &theme)
-                        })
+                        };
+                        super::answering::row(seen, draft, (&theme, &ladder), frame, face, draw)
                     }
                     None => div().into_any_element(),
                 };

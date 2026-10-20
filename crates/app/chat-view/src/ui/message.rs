@@ -382,6 +382,49 @@ fn avatar(
     cell(&id, true, design::item(face, role, active))
 }
 
+// the face over a draft, as a post's author wears it, with nothing to press
+pub(super) fn still_face(
+    chat: &Chat,
+    author: &Principal,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+) -> AnyElement {
+    let agent = crate::ui::answering::agent(chat, author);
+    let initial = design::initial(&crate::ui::answering::name(chat, author));
+    let picture = author
+        .account()
+        .and_then(|account| chat.faces.of(account, cx));
+    let face = div()
+        .size_7()
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(design::space::XS)
+        .bg(if agent {
+            theme.agent_soft
+        } else {
+            theme.surface_raised
+        })
+        .text_color(if agent { theme.agent } else { theme.muted })
+        .font_weight(view::FontWeight::SEMIBOLD)
+        .text_size(design::text::CAPTION)
+        .when(agent && picture.is_some(), |face| {
+            face.border_2().border_color(theme.agent)
+        });
+    match picture {
+        Some(picture) => face
+            .child(
+                img(picture)
+                    .size_full()
+                    .rounded(design::space::XS)
+                    .object_fit(ObjectFit::Cover),
+            )
+            .into_any_element(),
+        None => face.child(initial).into_any_element(),
+    }
+}
+
 fn action_strip(
     chat: &Chat,
     message: &ChatMessage,

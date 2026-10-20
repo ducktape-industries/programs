@@ -105,6 +105,26 @@ pub(super) fn row(
     }
 }
 
+// the face over a draft, in the column a post's face takes
+pub(super) fn still_face(
+    chat: &Chat,
+    author: &chat::Principal,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    let name = crate::ui::answering::name(chat, author);
+    let agent = crate::ui::answering::agent(chat, author);
+    let picture = author
+        .account()
+        .and_then(|account| chat.faces.of(account, cx));
+    div()
+        .w(ladder.avatar.side)
+        .flex_none()
+        .child(face(&name, agent, picture, ladder.avatar, theme))
+        .into_any_element()
+}
+
 fn content(
     chat: &Chat,
     message: &ChatMessage,
