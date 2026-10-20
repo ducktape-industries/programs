@@ -496,6 +496,14 @@ pub enum Query {
         thread: Option<u64>,
         for_account: AccountNumber,
     },
+    #[ask(Reply::Holders(PageResponse<Holder>))]
+    #[reads(state::LEASES, state::DRAFTS)]
+    #[tool_query(description = "Everyone in a place, a channel's foot or a thread when thread is its root's seq: its holder (Lease, from Take) first, then every open draft there (Draft), each with the block it began; empty when no one is there. Pages resume with next.", example = examples::holders)]
+    Holders {
+        channel_id: String,
+        thread: Option<u64>,
+        page: PageRequest,
+    },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -532,6 +540,7 @@ pub enum Reply {
     Unread(Vec<UnreadCount>),
     TextHits(PageResponse<MsgRow>),
     Busy(Option<Holder>),
+    Holders(PageResponse<Holder>),
 }
 
 // One room's count ([`Query::Unread`]): what came after the cursor asked, up to `to`, meant for

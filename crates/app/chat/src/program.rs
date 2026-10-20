@@ -297,6 +297,14 @@ impl Program for Chat {
                 let holder = crate::leases::busy(ctx, &channel_id, thread, &me)?;
                 (Reply::Busy(holder), vec![])
             }
+            Query::Holders {
+                channel_id,
+                thread,
+                page,
+            } => {
+                let holders = crate::leases::holders(ctx, &channel_id, thread, &page)?;
+                (Reply::Holders(holders), vec![])
+            }
         };
         seen_by(ctx, reply, viewer)
     }

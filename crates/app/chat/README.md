@@ -97,6 +97,10 @@ A hold ends on an event, never on a timer, and every end is told to watchers:
 (`Holding::Lease`), else an open draft there (`Holding::Draft`), by anyone but `for_account`, as a
 `Holder { principal, kind, height }` with the block it began; null when the place is free for
 `for_account`. The height lets a reader see a place held long, and `Break` it.
+`Query::Holders { channel_id, thread, page }` pages everyone there, as `Holder`s: the hold first,
+then every open draft in that exact place; empty when no one is. `Busy` is the first of them
+that isn't `for_account`. A reader that must discount
+some of them (a wake whose waiters wait on each other) reads it rather than `Busy`.
 
 A program that sends `Op::WatchPlaces { deliver }` hears each time a hold or a draft ends, as
 `deliver ++ borsh(PlaceEvent::Cleared { channel_id, thread })`, once per place: a `Release`, a

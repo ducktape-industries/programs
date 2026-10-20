@@ -170,6 +170,43 @@ fn a_hold_is_taken_where_its_taker_may_post_under_a_threads_root() {
 }
 
 #[test]
+fn holders_pages_the_hold_then_every_draft_in_that_exact_place() {
+    let mut chat = Chat::rooted();
+    let holders = |chat: &Chat, thread| {
+        let mut named = Vec::new();
+        let mut after = None;
+        loop {
+            let asked = Query::Holders {
+                channel_id: "general".into(),
+                thread,
+                page: crate::PageRequest::resume(after, 1),
+            };
+            let Reply::Holders(page) = chat.ask(asked) else {
+                panic!("Holders answers holders");
+            };
+            assert!(page.items.len() <= 1, "a page holds at most its limit");
+            let holders = page.items.into_iter();
+            named.extend(holders.map(|holder| (holder.principal, holder.kind)));
+            match page.next {
+                Some(next) => after = Some(next),
+                None => return named,
+            }
+        }
+    };
+    assert!(holders(&chat, None).is_empty(), "no one is there");
+    chat.ok(&BO, take("general", None));
+    chat.ok(&ADA, drafting("general", None));
+    chat.ok(&CY, drafting("general", Some(1)));
+    let foot = holders(&chat, None);
+    assert_eq!(foot[0], (BO, Holding::Lease), "the hold comes first");
+    assert_eq!(foot.len(), 2, "{foot:?}");
+    assert!(foot.contains(&(ADA, Holding::Draft)), "{foot:?}");
+    assert_eq!(holders(&chat, Some(1)), [(CY, Holding::Draft)]);
+    chat.ok(&BO, release("general", None));
+    assert_eq!(holders(&chat, None), [(ADA, Holding::Draft)]);
+}
+
+#[test]
 fn a_busy_refusal_names_who_is_there_and_how() {
     let mut chat = Chat::rooted();
     chat.ok(&BO, take("general", None));

@@ -1,6 +1,6 @@
 //! A place's hold: `Take` grants an account a channel's foot or one thread while no one else holds
 //! it or drafts there; its post there, `Release`, `Break`, or losing the right to post there ends
-//! it, `Busy` names who else is there, and each end is told to the programs watching places.
+//! it, `Busy` names who else is there and `Holders` everyone, and each end is told to watchers.
 use std::collections::BTreeSet;
 
 use ::program::{Error, ExecCtx, QueryCtx, Reply, invalid, wrong_state};
@@ -8,7 +8,7 @@ use ::program::{Error, ExecCtx, QueryCtx, Reply, invalid, wrong_state};
 use crate::ops::{drop_pieces, touch_channel_for_policy};
 use crate::rules;
 use crate::state::{DRAFTS, LEASES, Lease, PLACE_WATCHERS, channel, message};
-use crate::{Holder, Holding, PlaceEvent, Principal};
+use crate::{Holder, Holding, PageRequest, PageResponse, PlaceEvent, Principal};
 
 fn place(channel_id: &str, thread: Option<u64>) -> (String, Option<u64>) {
     (channel_id.to_owned(), thread)
@@ -132,22 +132,49 @@ pub(crate) fn busy(
     thread: Option<u64>,
     me: &Principal,
 ) -> Result<Option<Holder>, Error> {
+    let everyone = everyone(ctx, channel_id, thread)?.into_iter();
+    Ok(everyone
+        .map(|(_, holder)| holder)
+        .find(|holder| holder.principal != *me))
+}
+
+pub(crate) fn holders(
+    ctx: &QueryCtx,
+    channel_id: &str,
+    thread: Option<u64>,
+    page: &PageRequest,
+) -> Result<PageResponse<Holder>, Error> {
+    let listing = page.listing(ctx, PageRequest::scope_of(&(channel_id, thread)))?;
+    Ok(listing.reply(everyone(ctx, channel_id, thread)?))
+}
+
+fn everyone(
+    ctx: &QueryCtx,
+    channel_id: &str,
+    thread: Option<u64>,
+) -> Result<Vec<(Vec<u8>, Holder)>, Error> {
     let lease = LEASES.get(ctx, &place(channel_id, thread))?;
-    if let Some(lease) = lease.filter(|lease| lease.holder != *me) {
-        return Ok(Some(Holder {
+    let held = lease.into_iter().map(|lease| {
+        let holder = Holder {
             principal: lease.holder,
             kind: Holding::Lease,
             height: lease.height,
-        }));
-    }
+        };
+        (Vec::new(), holder)
+    });
     let drafts = DRAFTS.scan(ctx, DRAFTS.prefix_of(&channel_id.to_owned()))?;
-    let other =
-        (drafts.into_iter()).find(|((_, author), draft)| author != me && draft.thread == thread);
-    Ok(other.map(|((_, author), draft)| Holder {
-        principal: author,
-        kind: Holding::Draft,
-        height: draft.height,
-    }))
+    let drafting = (drafts.into_iter())
+        .filter(|(_, draft)| draft.thread == thread)
+        .map(|(key, draft)| {
+            let raw = DRAFTS.key(&key);
+            let holder = Holder {
+                principal: key.1,
+                kind: Holding::Draft,
+                height: draft.height,
+            };
+            (raw, holder)
+        });
+    Ok(held.chain(drafting).collect())
 }
 
 pub(crate) fn watch_places(ctx: &ExecCtx, deliver: Vec<u8>) -> Result<(), Error> {

@@ -437,6 +437,14 @@ pub(crate) fn busy() -> Query {
     }
 }
 
+pub(crate) fn holders() -> Query {
+    Query::Holders {
+        channel_id: room(),
+        thread: Some(4),
+        page: every(),
+    }
+}
+
 pub(crate) fn break_place() -> Op {
     Op::Break {
         channel_id: room(),
