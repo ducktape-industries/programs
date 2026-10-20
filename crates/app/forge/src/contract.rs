@@ -186,9 +186,7 @@ pub enum Op {
         state: CheckState,
         url: Option<String>,
     },
-    // `branch` moves only by a merge of a change whose Preview the reporter marks Passed in
-    // every context; None drops the requirement.
-    #[tool_op(description = "Make branch move only by merging a change whose Preview the reporter marks Passed in every context; null drops the requirement. Whoever the repository's policy admits.", example = crate::examples::require)]
+    #[tool_op(description = "Make branch move only by merging a change the reporter marks Passed in every context, on its Preview or on its head while the target has changed nothing inside that status's reach (Gated) since their merge base; null drops the requirement. Whoever the repository's policy admits.", example = crate::examples::require)]
     RequireChecks {
         repo: String,
         branch: Vec<u8>,
@@ -215,6 +213,15 @@ pub enum Op {
     // every read and clone; `archived: false` restores it.
     #[tool_op(description = "Archive a repository (it leaves Repos and refuses every op but this one, while every read and clone still answers) or restore it with archived false. Whoever its policy admits.", example = crate::examples::archive)]
     Archive { repo: String, archived: bool },
+    #[tool_op(description = "Report your status of a commit in one context, as Status does, with the paths the result depends on (its reach: directories or files from the repository's root, such as crates/app/forge or Cargo.lock; an empty reach is the whole tree): a required context then passes on a change's head while the target has changed none of them since their merge base. A later Status of the same commit and context drops the reach. Recorded as yours; anyone may report.", example = crate::examples::gated)]
+    Gated {
+        repo: String,
+        commit: String,
+        context: String,
+        state: CheckState,
+        url: Option<String>,
+        reach: Vec<Vec<u8>>,
+    },
 }
 
 impl Op {
@@ -242,7 +249,8 @@ impl Op {
             | Op::RequireChecks { repo, .. }
             | Op::Enqueue { repo, .. }
             | Op::Dequeue { repo, .. }
-            | Op::Archive { repo, .. } => Some(repo),
+            | Op::Archive { repo, .. }
+            | Op::Gated { repo, .. } => Some(repo),
             Op::Watch { .. } | Op::AdoptOwners { .. } => None,
         }
     }

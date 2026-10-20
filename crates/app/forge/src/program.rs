@@ -67,6 +67,7 @@ impl Program for Forge {
                 | Op::ChangeRepoint { .. }
                 | Op::ChangeClose { .. }
                 | Op::Status { .. }
+                | Op::Gated { .. }
                 | Op::RequireChecks { .. }
         );
         let actor = &Principal::Account(ctx.sender_account()?);
@@ -196,6 +197,7 @@ impl Program for Forge {
                     context,
                     state,
                     url,
+                    reach: None,
                 };
                 status(ctx, actor, &repo, report).map(|()| None)
             }
@@ -215,6 +217,23 @@ impl Program for Forge {
             }
             Op::Archive { repo, archived } => {
                 crate::ops::archive(ctx, &repo, archived).map(|()| None)
+            }
+            Op::Gated {
+                repo,
+                commit,
+                context,
+                state,
+                url,
+                reach,
+            } => {
+                let report = Report {
+                    commit,
+                    context,
+                    state,
+                    url,
+                    reach: Some(reach),
+                };
+                status(ctx, actor, &repo, report).map(|()| None)
             }
         }?;
         if let Some(repo) = &governed {

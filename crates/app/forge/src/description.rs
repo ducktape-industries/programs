@@ -211,6 +211,26 @@ pub fn describe(op: &Op) -> Description {
                 field("state", Value::text(state.word())),
             ],
         ),
+        Op::Gated {
+            repo,
+            commit,
+            context,
+            state,
+            reach,
+            ..
+        } => (
+            "Report status with its reach",
+            repo,
+            vec![
+                field("commit", Value::text(commit)),
+                field("context", Value::text(context)),
+                field("state", Value::text(state.word())),
+                field(
+                    "reach",
+                    Value::List(reach.iter().map(|path| text(path)).collect()),
+                ),
+            ],
+        ),
         Op::RequireChecks {
             repo,
             branch,

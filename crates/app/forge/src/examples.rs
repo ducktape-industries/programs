@@ -196,6 +196,17 @@ pub(crate) fn status() -> Op {
     }
 }
 
+pub(crate) fn gated() -> Op {
+    Op::Gated {
+        repo: repo(),
+        commit: oid(),
+        context: "build.sh#lane".into(),
+        state: CheckState::Passed,
+        url: None,
+        reach: vec![b"crates/app/forge".to_vec(), b"Cargo.lock".to_vec()],
+    }
+}
+
 pub(crate) fn require() -> Op {
     let required = Required {
         reporter: Principal::Account(37),

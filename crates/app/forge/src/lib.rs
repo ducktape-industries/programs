@@ -55,8 +55,8 @@ pub use program::Forge;
 pub mod tables {
     pub use crate::state::{
         ACTIVITY, ARCHIVED, ARCHIVING, AUTHORED, AUTHORSHIP, BOUNDS, CHANGES, CUSTODY, INVOLVED,
-        LOGGING, MESSAGES, NUMBERS, PREVIEWS, PROTECTED, QUEUE, QUEUED, REFS, REPOS, REQUIRED,
-        REVIEWS, STATUSES, WATCHERS, WRITES,
+        LOGGING, MESSAGES, NUMBERS, PREVIEWS, PROTECTED, QUEUE, QUEUED, REACHES, REFS, REPOS,
+        REQUIRED, REVIEWS, STATUSES, WATCHERS, WRITES,
     };
 }
 
@@ -90,6 +90,7 @@ fn op_variants_only_append() {
             "Dequeue",
             "AdoptOwners",
             "Archive",
+            "Gated",
         ]
     );
 }
