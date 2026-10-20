@@ -239,6 +239,7 @@ fn world() -> World {
     chain.seat_awaiting::<egress::Egress>(egress::PROGRAM);
     chain.seat::<attribution::Attribution>(attribution::PROGRAM);
     chain.seat::<files::Files>(files::PROGRAM);
+    chain.seat::<chat::Chat>(chat::PROGRAM);
     chain.seat::<ForgeStand>(forge::PROGRAM);
     chain.seat::<ProgramsStand>(programs::PROGRAM);
     chain.seat_awaiting::<Wake>(PROGRAM);
@@ -263,6 +264,14 @@ fn world() -> World {
     };
     let ada = person(ADA, "Ada");
     let bo = person(BO, "Bo");
+    for program in [PROGRAM, chat::PROGRAM] {
+        let register = identity::Op::RegisterProgram {
+            program: program.into(),
+        };
+        chain
+            .submit(Origin::Root, identity::PROGRAM, &register)
+            .unwrap();
+    }
     let register = Egress::Register {
         service: "pods".into(),
     };
@@ -279,6 +288,12 @@ fn world() -> World {
     chain
         .submit(signed(&NODE), egress::PROGRAM, &serve)
         .unwrap();
+    let general = chat::Op::CreateChannel {
+        channel_id: "general".into(),
+        name: "general".into(),
+        post_policy: chat::PostPolicy::Open,
+    };
+    chain.submit(signed(ADA), chat::PROGRAM, &general).unwrap();
     chain.at(2, 1_000);
     World {
         chain,
@@ -971,4 +986,121 @@ fn a_thousand_wakes_on_one_ref_end_one_frame_each_and_every_one_is_told_once() {
         "a wake armed after the move is not ended by it"
     );
     assert!(world.row(later).unwrap().ended.is_none());
+}
+
+const CY: &[u8] = b"cy-key";
+
+fn clear_in(thread: Option<u64>) -> WaitFor {
+    WaitFor::Clear {
+        channel_id: "general".into(),
+        thread,
+    }
+}
+
+impl World {
+    fn chat(&self, key: &[u8], op: chat::Op) {
+        self.chain.submit(signed(key), chat::PROGRAM, &op).unwrap();
+    }
+
+    fn drafting(&self, key: &[u8]) {
+        let draft = chat::Op::Drafting {
+            channel_id: "general".into(),
+            thread: None,
+            text: "x".into(),
+            anew: false,
+            doing: None,
+        };
+        self.chat(key, draft);
+    }
+
+    fn undraft(&self, key: &[u8]) {
+        let undraft = chat::Op::Undraft {
+            channel_id: "general".into(),
+        };
+        self.chat(key, undraft);
+    }
+
+    fn cy(&self) -> AccountNumber {
+        let create = identity::Op::Create {
+            name: "Cy".into(),
+            scheme: Scheme::Ed25519,
+        };
+        let made = self
+            .chain
+            .submit(signed(CY), identity::PROGRAM, &create)
+            .unwrap();
+        abi::decode(&made).unwrap()
+    }
+}
+
+#[test]
+fn a_clear_wake_on_a_free_place_ends_at_once_and_one_on_a_draft_ends_when_it_does() {
+    let mut world = world();
+    let free = world.wake_on(ADA, clear_in(None)).unwrap();
+    assert_eq!(
+        world.told(world.ada),
+        [format!("Wake {free} is over: #general is clear.")]
+    );
+    world.drafting(BO);
+    let held = world.wake_on(ADA, clear_in(None)).unwrap();
+    let elsewhere = world.wake_on(BO, clear_in(Some(9))).unwrap();
+    assert_eq!(
+        world.told(world.ada).len(),
+        1,
+        "a draft keeps the foot busy"
+    );
+    assert!(
+        world.row(elsewhere).unwrap().ended.is_some(),
+        "a thread is not its foot"
+    );
+    world.after(1_000);
+    world.undraft(BO);
+    let told = world.told(world.ada);
+    assert_eq!(told.len(), 2, "{told:?}");
+    assert_eq!(told[1], format!("Wake {held} is over: #general is clear."));
+}
+
+#[test]
+fn two_waiting_on_each_other_go_free_together_unless_a_third_is_drafting() {
+    let mut world = world();
+    let cy = world.cy();
+    let take = chat::Op::Take {
+        channel_id: "general".into(),
+        thread: None,
+    };
+    world.chat(ADA, take);
+    world.drafting(BO);
+    world.drafting(CY);
+    let ada = world.wake_on(ADA, clear_in(None)).unwrap();
+    let bo = world.wake_on(BO, clear_in(None)).unwrap();
+    world.after(1_000);
+    world.after(0);
+    assert!(
+        world.told(world.ada).is_empty(),
+        "cy's draft keeps it open for ada"
+    );
+    assert!(world.told(world.bo).is_empty(), "and for bo");
+    assert!(world.told(cy).is_empty());
+    world.undraft(CY);
+    world.after(1_000);
+    world.after(0);
+    assert_eq!(
+        world.told(world.ada),
+        [format!("Wake {ada} is over: #general is clear.")]
+    );
+    assert_eq!(
+        world.told(world.bo),
+        [format!("Wake {bo} is over: #general is clear.")]
+    );
+}
+
+#[test]
+fn only_chat_tells_a_place_cleared() {
+    let world = world();
+    let cleared = chat::PlaceEvent::Cleared {
+        channel_id: "general".into(),
+        thread: None,
+    };
+    let refused = world.act(ADA, &Op::Placed(cleared)).unwrap_err();
+    assert_eq!(refused.code, code::UNAUTHORIZED);
 }

@@ -24,7 +24,8 @@ store = { workspace = true }
 serde_json = { workspace = true }
 # where an end is told
 attribution = { workspace = true }
-# what a forge, files or program wake reads and hears
+# what a forge, files, program or place wake reads and hears
+chat = { workspace = true }
 forge = { workspace = true }
 files = { workspace = true }
 programs = { workspace = true }

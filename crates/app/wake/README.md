@@ -12,6 +12,7 @@ Wakes an account once on one event, wherever it runs: a harness agent, a bridge 
 | `File { path }` | files' watchers (`Filed`): a commit that changes, makes or removes the path or anything below it. wake reads the commit's changed paths (files' `Diff` from its parent, or `Find` for a first commit) and looks up only the wakes on those paths and their folders (`path/`) | `<path> changed in files snapshot <id> by … ("<message>")`, `was made`, `was removed` |
 | `Settled { repo, n, until }` | forge's watchers: its close and merge only | as `Change`, with `, so it will not be merged` (or `closed`) when it ends the other way |
 | `Program { program }` | the programs role's `Scheduled`: armed only while a `Set`, `Publish` or `Remove` of that program is still to land, else refused. It keeps the program's entry when armed and books its own `Due` at the earliest such height; there it reads `Program` again | `program P's code changed at block H from <old> to <new>`, `was set at block H, code <new>`, `was set again … with new params`, `was removed`; a change that did not land books the next one, or says `did not land, and none is scheduled now` |
+| `Clear { channel_id, thread }` | chat's `Holders` for the place (a channel's foot, or a thread by its root's seq), read at arming and again on each `Placed` (chat's `PlaceEvent::Cleared`, watched only while a clear wake is open). The place is clear when every hold and draft there belongs to an account that itself waits for it to clear (its own included), so two accounts waiting on each other both go free while a third one drafting keeps them waiting. Clear at arming ends at once | `#<channel> is clear`, `thread R of #<channel> is clear` |
 | `Message { … }` | refused: attribution already tells an account each message for it | |
 
 An event ends its ref's, change's or path's wakes one scheduled frame each, never all in one op: the op that hears it ends the first open wake armed before it, then books `Fan` for the two halves of the ids left for the next block, and each `Fan` frame does the same with its half. One frame's work is one wake on any network, metered or not, and N wakes end within about log2 of the id span in blocks. Only wakes armed before the event are in its range (`fired/` keeps, per key, the last id an event reached), so a wake armed while the fan runs waits for the next event.
@@ -33,8 +34,9 @@ wake hears forge (`Watch { deliver: [5] }`) only while a forge wake is open, and
 | `PodEvent { id, event }` | the program bound to the egress role alone |
 | `Forged(Watched)` | forge alone (`sent_by`) |
 | `Filed(SnapshotRow)` | files alone (`sent_by`) |
+| `Placed(PlaceEvent)` | chat alone (`sent_by`) |
 
-The deliver prefixes are borsh's tags of these ops: `PodEvent` is `[4] ++ id u64 LE`, `Forged` `[5]`, `Filed` `[6]`.
+The deliver prefixes are borsh's tags of these ops: `PodEvent` is `[4] ++ id u64 LE`, `Forged` `[5]`, `Filed` `[6]`, `Placed` `[8]`.
 
 A told end is a message wake wants answered: if attribution refuses it, the wake's ended text keeps `; not told: <why>`.
 
@@ -56,6 +58,8 @@ Answered for anyone: `Wake { id }` (the row, `null` for a cancelled or unknown w
 | `path/` | (path, id) | file wakes by path |
 | `fired/` | borsh of a ref, change or path key | the last wake id an event of that key reached |
 | `program/` | id | a program wake's entry when armed |
+| `clear/`, `clear-by/` | (place, id), (place, account, id) | clear wakes by place, and by place and account |
+| `clear-count` | | how many clear wakes are open |
 | `telling/` | message seq | an end told and not answered yet |
 
 ## Interface

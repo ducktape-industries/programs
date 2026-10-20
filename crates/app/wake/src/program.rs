@@ -5,7 +5,8 @@ use ::program::tools::{Described, Tools};
 use ::program::{Awaiting, Ctx, Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::rules::{
-    cancel, due, fanned, filed, forged, pod_event, pod_wait, replied, wake_on, wake_row, wakes,
+    cancel, due, fanned, filed, forged, placed, pod_event, pod_wait, replied, wake_on, wake_row,
+    wakes,
 };
 use crate::{Op, PROGRAM, Query, Reply};
 
@@ -45,6 +46,7 @@ impl Awaiting for Wake {
             Op::Forged(event) => forged(&ctx, event),
             Op::Filed(row) => filed(&ctx, row),
             Op::Fan { firing } => fanned(&ctx, firing),
+            Op::Placed(event) => placed(&ctx, event),
         }
     }
 }

@@ -1,6 +1,6 @@
 //! The `wake` program: an account arms a wake on one event (a block's height, a pod's end, a forge
-//! ref or change, a files path, a program's code), and the first time it happens wake tells that
-//! account, through attribution, as a `Result` on its object `wake/<id>` (`rules.rs`).
+//! ref or change, a files path, a program's code, a clear chat place), and the first time it happens
+//! wake tells that account, through attribution, as a `Result` on its object `wake/<id>` (`rules.rs`).
 mod examples;
 mod program;
 mod rules;
@@ -52,6 +52,10 @@ pub enum WaitFor {
     Program {
         program: ProgramId,
     },
+    Clear {
+        channel_id: String,
+        thread: Option<u64>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -63,9 +67,21 @@ pub enum Until {
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum Key {
-    Ref { repo: String, reference: String },
-    Change { repo: String, n: u64 },
-    Path { path: String },
+    Ref {
+        repo: String,
+        reference: String,
+    },
+    Change {
+        repo: String,
+        n: u64,
+    },
+    Path {
+        path: String,
+    },
+    Place {
+        channel_id: String,
+        thread: Option<u64>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -82,6 +98,10 @@ pub enum Fired {
         ending: Until,
     },
     Filed(files::SnapshotRow),
+    Cleared {
+        channel_id: String,
+        thread: Option<u64>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -111,10 +131,10 @@ pub struct Ended {
     Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
 )]
 #[tool_about(
-    "Wakes an account once on one event: a block's height, a pod of the pods service ending, a forge ref moving, a forge change moving, closing or merging, a files path changing, or a program's code changing. When it happens the account is told through attribution, as a Result on the object wake/<id>, which ChangesTo reads back."
+    "Wakes an account once on one event: a block's height, a pod of the pods service ending, a forge ref moving, a forge change moving, closing or merging, a files path changing, a program's code changing, or a chat place clearing of everyone else's hold and draft. When it happens the account is told through attribution, as a Result on the object wake/<id>, which ChangesTo reads back."
 )]
 pub enum Op {
-    #[tool_op(description = "Arm a wake for your account on a height, a pod's end, a forge change or ref, a files path, a change settling as until says, or a program's next scheduled code change (refused while none is scheduled). A chat message is refused: attribution already tells you each message for you. Returns the wake's id.", returns = u64, example = crate::examples::wake_on)]
+    #[tool_op(description = "Arm a wake for your account on a height, a pod's end, a forge change or ref, a files path, a change settling as until says, a program's next scheduled code change (refused while none is scheduled), or a chat place (a channel's foot, or a thread by its root's seq) holding no one else's hold or draft, not counting those whose holder waits there too (at once when it already is). A chat message is refused: attribution already tells you each message for you. Returns the wake's id.", returns = u64, example = crate::examples::wake_on)]
     WakeOn { event: WaitFor },
     #[tool_op(description = "Cancel an open wake. Its account only.", example = crate::examples::cancel)]
     Cancel { id: u64 },
@@ -134,6 +154,10 @@ pub enum Op {
         description = "This program's own scheduled entry only: ends the first open wake on a ref, change or path with an id in (lo, hi] as what happened, and books the two halves of the rest for the next block."
     )]
     Fan { firing: Firing },
+    #[tool_op(
+        description = "From chat only: a hold or a draft ended in a place, for the wakes waiting for it to clear."
+    )]
+    Placed(chat::PlaceEvent),
 }
 
 #[derive(
@@ -183,6 +207,10 @@ pub fn filed_as() -> Vec<u8> {
     vec![6]
 }
 
+pub fn placed_as() -> Vec<u8> {
+    vec![8]
+}
+
 pub fn describe(op: &Op) -> describe::Description {
     use describe::{Value, field};
     let wake = |id: &u64| field("wake", Value::count(*id));
@@ -195,6 +223,7 @@ pub fn describe(op: &Op) -> describe::Description {
         Op::Forged(_) => ("Hear a ref or a change forge moved".to_owned(), Vec::new()),
         Op::Filed(_) => ("Hear a files commit".to_owned(), Vec::new()),
         Op::Fan { firing } => (format!("End the next wake up to {}", firing.hi), Vec::new()),
+        Op::Placed(_) => ("Hear a place's hold or draft end".to_owned(), Vec::new()),
     };
     describe::Description { title, fields }
 }
@@ -206,7 +235,7 @@ fn op_variants_only_append() {
     assert_eq!(
         describe::variants::<Op>(),
         [
-            "WakeOn", "Cancel", "Due", "PodWait", "PodEvent", "Forged", "Filed", "Fan"
+            "WakeOn", "Cancel", "Due", "PodWait", "PodEvent", "Forged", "Filed", "Fan", "Placed"
         ]
     );
 }
@@ -216,7 +245,7 @@ fn wait_for_variants_only_append() {
     assert_eq!(
         describe::variants::<WaitFor>(),
         [
-            "Height", "Pod", "Message", "Change", "Ref", "File", "Settled", "Program"
+            "Height", "Pod", "Message", "Change", "Ref", "File", "Settled", "Program", "Clear"
         ]
     );
 }
@@ -236,4 +265,9 @@ fn the_tags_are_the_ops_own() {
         by: ::program::Principal::Root,
     };
     assert_eq!(abi::encode(&Op::Forged(closed))[..1], forged_as());
+    let cleared = chat::PlaceEvent::Cleared {
+        channel_id: "general".into(),
+        thread: None,
+    };
+    assert_eq!(abi::encode(&Op::Placed(cleared))[..1], placed_as());
 }

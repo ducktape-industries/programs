@@ -13,12 +13,13 @@ use attribution::{Actor, Object, Reason, Relation, Update};
 use serde_json::Value;
 
 use crate::state::{
-    BY_ACCOUNT, CHANGE_WAKES, ENTRIES, FILE_COUNT, FILE_WAKES, FIRED, FORGE_COUNT, FileWatch, LAST,
-    PATH_WAKES, PODS, PROGRAM_WAKES, PodWatch, REF_WAKES, SCHEDULED, TELLING, WAKE_REFS, WAKES,
+    BY_ACCOUNT, CHANGE_WAKES, CLEAR_BY, CLEAR_COUNT, CLEAR_WAKES, ENTRIES, FILE_COUNT, FILE_WAKES,
+    FIRED, FORGE_COUNT, FileWatch, LAST, PATH_WAKES, PODS, PROGRAM_WAKES, PodWatch, REF_WAKES,
+    SCHEDULED, TELLING, WAKE_REFS, WAKES,
 };
 use crate::{
     AccountNumber, Ended, Fired, Firing, KIND, Key, Op, PROGRAM, PageRequest, PageResponse, Until,
-    WaitFor, WakeRow, filed_as, forged_as, pod_event_as,
+    WaitFor, WakeRow, filed_as, forged_as, placed_as, pod_event_as,
 };
 
 const PODS_SERVICE: &str = "pods";
@@ -40,6 +41,9 @@ pub(crate) fn what(event: &WaitFor) -> String {
             format!("change {n} in {repo} to {how}")
         }
         WaitFor::Program { program } => format!("program {program}'s code to change"),
+        WaitFor::Clear { channel_id, thread } => {
+            format!("{} to clear", place_words(channel_id, *thread))
+        }
     }
 }
 
@@ -136,6 +140,12 @@ pub(crate) async fn wake_on(ctx: &Ctx, event: WaitFor) -> Result<(), Error> {
             PROGRAM_WAKES.put(ctx, &id, &running(ctx, program)?);
             book(ctx, id, at).await?;
         }
+        WaitFor::Clear { channel_id, thread } => {
+            let place = (channel_id.clone(), *thread);
+            CLEAR_WAKES.insert(ctx, &(place.clone(), id));
+            CLEAR_BY.insert(ctx, &(place, account, id));
+            clear_wakes(ctx, true)?;
+        }
     }
     let row = WakeRow {
         id,
@@ -147,6 +157,9 @@ pub(crate) async fn wake_on(ctx: &Ctx, event: WaitFor) -> Result<(), Error> {
     WAKES.put(ctx, &id, &row);
     BY_ACCOUNT.insert(ctx, &(account, id));
     ctx.set_return_data(abi::encode(&id));
+    if let WaitFor::Clear { channel_id, thread } = row.event {
+        settle_place(ctx, channel_id, thread)?;
+    }
     Ok(())
 }
 
@@ -207,6 +220,12 @@ fn disarm(ctx: &ExecCtx, row: &WakeRow) -> Result<(), Error> {
             FILE_WAKES.remove(ctx, &row.id);
             PATH_WAKES.remove(ctx, &(path.clone(), row.id));
             files_wakes(ctx, false)
+        }
+        WaitFor::Clear { channel_id, thread } => {
+            let place = (channel_id.clone(), *thread);
+            CLEAR_WAKES.remove(ctx, &(place.clone(), row.id));
+            CLEAR_BY.remove(ctx, &(place, row.account, row.id));
+            clear_wakes(ctx, false)
         }
         WaitFor::Height { .. }
         | WaitFor::Pod { .. }
@@ -663,6 +682,14 @@ fn first_in(ctx: &QueryCtx, key: &Key, lo: u64, hi: u64) -> Result<Option<u64>, 
                 .limit(1);
             PATH_WAKES.scan(ctx, range)?.first().map(|(_, id)| *id)
         }
+        Key::Place { channel_id, thread } => {
+            let head = (channel_id.clone(), *thread);
+            let range = CLEAR_WAKES
+                .prefix_of(&head)
+                .after(CLEAR_WAKES.key(&(head, lo)))
+                .limit(1);
+            CLEAR_WAKES.scan(ctx, range)?.first().map(|(_, id)| *id)
+        }
     };
     Ok(found.filter(|id| *id <= hi))
 }
@@ -702,6 +729,9 @@ fn fired_words(ctx: &QueryCtx, row: &WakeRow, fired: &Fired) -> Result<String, E
             };
             let there = node_at(ctx, &watch.path, Some(snapshot.id))?.is_some();
             filed_words(&watch, there, snapshot)
+        }
+        Fired::Cleared { channel_id, thread } => {
+            format!("{} is clear", place_words(channel_id, *thread))
         }
     })
 }
@@ -746,6 +776,76 @@ pub(crate) fn fanned(ctx: &ExecCtx, firing: Firing) -> Result<(), Error> {
         )));
     }
     fan(ctx, firing)
+}
+
+fn place_words(channel_id: &str, thread: Option<u64>) -> String {
+    match thread {
+        Some(root) => format!("thread {root} of #{channel_id}"),
+        None => format!("#{channel_id}"),
+    }
+}
+
+fn clear_wakes(ctx: &ExecCtx, opened: bool) -> Result<(), Error> {
+    let before = CLEAR_COUNT.get(ctx)?.unwrap_or(0);
+    let after = match opened {
+        true => before + 1,
+        false => before.saturating_sub(1),
+    };
+    CLEAR_COUNT.put(ctx, &after);
+    let deliver = match (before, after) {
+        (0, 1) => placed_as(),
+        (1, 0) => Vec::new(),
+        _ => return Ok(()),
+    };
+    let watch = chat::Op::WatchPlaces { deliver };
+    ctx.emit(chat::PROGRAM, &watch, Wanted::None);
+    Ok(())
+}
+
+fn clear(ctx: &QueryCtx, channel_id: &str, thread: Option<u64>) -> Result<bool, Error> {
+    let place = (channel_id.to_owned(), thread);
+    let mut after = None;
+    loop {
+        let asked = chat::Query::Holders {
+            channel_id: channel_id.to_owned(),
+            thread,
+            page: PageRequest { after, limit: None },
+        };
+        let page = match ctx.query(chat::PROGRAM, &asked)? {
+            chat::Reply::Holders(page) => page,
+            other => return Err(unexpected_reply(chat::PROGRAM, "Holders", &other)),
+        };
+        for holder in page.items {
+            let Some(account) = holder.principal.account() else {
+                return Ok(false);
+            };
+            let range = CLEAR_BY.prefix_of(&(place.clone(), account)).limit(1);
+            if CLEAR_BY.scan(ctx, range)?.is_empty() {
+                return Ok(false);
+            }
+        }
+        match page.next {
+            Some(next) => after = Some(next),
+            None => return Ok(true),
+        }
+    }
+}
+
+fn settle_place(ctx: &ExecCtx, channel_id: String, thread: Option<u64>) -> Result<(), Error> {
+    if !clear(ctx, &channel_id, thread)? {
+        return Ok(());
+    }
+    let key = Key::Place {
+        channel_id: channel_id.clone(),
+        thread,
+    };
+    fire(ctx, key, Fired::Cleared { channel_id, thread })
+}
+
+pub(crate) fn placed(ctx: &ExecCtx, event: chat::PlaceEvent) -> Result<(), Error> {
+    ctx.env().sent_by(chat::PROGRAM)?;
+    let chat::PlaceEvent::Cleared { channel_id, thread } = event;
+    settle_place(ctx, channel_id, thread)
 }
 
 fn named_pod(name: &str) -> Result<(), Error> {

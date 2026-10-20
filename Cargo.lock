@@ -6417,6 +6417,7 @@ dependencies = [
  "attribution",
  "awaits",
  "borsh",
+ "chat",
  "describe",
  "egress",
  "files",
