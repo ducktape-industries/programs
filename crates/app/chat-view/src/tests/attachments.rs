@@ -32,7 +32,7 @@ fn picked(name: &str, size: u64, file: u64) -> Picked {
 fn files_host(cx: &mut TestAppContext) {
     cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
     cx.host()
-        .handle::<Submit<files::Files>>(|_| Ok(view::testing::applied(Vec::new())));
+        .handle::<Submit<files::Files>>(|_| Ok(committed()));
     cx.host()
         .handle::<Ask<files::Files>>(|query| Ok(files_reply(query)));
     let object = files::FileObj {
@@ -42,6 +42,11 @@ fn files_host(cx: &mut TestAppContext) {
     };
     cx.host()
         .handle::<BlobGet>(move |_| Ok(Some(abi::encode(&object))));
+}
+
+// what files answers a commit: the snapshot it made
+fn committed() -> view::methods::Submitted {
+    view::testing::applied(abi::encode(&BlobId::Sha256(SNAPSHOT)))
 }
 
 fn holds_puts(cx: &mut TestAppContext) {
@@ -611,7 +616,7 @@ fn a_name_filed_under_the_message_stays_taken_after_its_chip_is_gone() {
                 frame: [0; 32],
                 until: 9,
             },
-            false => view::testing::applied(Vec::new()),
+            false => committed(),
         })
     });
     cx.simulate_file_drop("draft-general/drop", vec![picked("image.png", 3, 1)]);
@@ -653,4 +658,53 @@ fn a_long_refusal_shows_whole_on_the_files_chip() {
         status.text.text_overflow, None,
         "never cut with an ellipsis"
     );
+}
+
+// The node may answer a commit before the layer views read holds it: a file's chip lands on the
+// commit's own snapshot, nothing reads the file's path once its chunks are held, and the chips
+// leave with the post that carries them.
+#[test]
+fn a_file_lands_on_its_commits_snapshot_and_its_path_is_never_read_again() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    holds_puts(&mut cx);
+    cx.host().handle::<Ask<files::Files>>(|query| match query {
+        files::Query::Stat { .. } => Ok(files::Reply::Stat {
+            snapshot: Some(BlobId::Sha256(SNAPSHOT)),
+            entry: None,
+        }),
+        query => Ok(files_reply(query)),
+    });
+    cx.host().handle::<ClipboardFiles>(|()| {
+        Ok(Pasted {
+            files: vec![picked("image.png", 3, 1), picked("image.png", 3, 2)],
+            text: String::new(),
+        })
+    });
+    cx.simulate_focus("draft-general/editor");
+    cx.simulate_field_key("draft-general/editor", "cmd-v");
+    cx.run_until_parked();
+    assert!(!cx.has_text(crate::words::NOT_THERE), "{:?}", cx.texts());
+    let asked = cx.host().requests::<Ask<files::Files>>();
+    let stat = asked
+        .iter()
+        .any(|query| matches!(query, files::Query::Stat { .. }));
+    assert!(!stat, "no path is read once the chunks are held: {asked:?}");
+    cx.simulate_input("draft-general/editor", "two pictures");
+    cx.simulate_field_key("draft-general/editor", "enter");
+    cx.run_until_parked();
+    let posted = cx.host().requests::<Submit<::chat::Chat>>();
+    let [Op::PostMessage { blocks, .. }] = posted.as_slice() else {
+        panic!("one post: {posted:?}")
+    };
+    let folder = "/chat/general/message-1";
+    let both = [
+        format!("{folder}/image.png"),
+        format!("{folder}/image (2).png"),
+    ];
+    assert_eq!(carried(blocks), [both[0].as_str(), both[1].as_str()]);
+    view.read(|chat| {
+        let left = &chat.drafts["draft-general"].attachments;
+        assert!(left.is_empty(), "the chips leave with the post: {left:?}");
+    });
 }

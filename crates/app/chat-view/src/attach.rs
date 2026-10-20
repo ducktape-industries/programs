@@ -264,24 +264,17 @@ impl Chat {
         let ask = cx.host().ask::<Submit<files::Files>>(op);
         let on = target.clone();
         cx.spawn(async move |this, cx| {
-            let host = cx.host();
             let landed = async {
-                if let Some(why) = design::failure(&ask.await) {
+                let answer = ask.await;
+                if let Some(why) = design::failure(&answer) {
                     return Err(words::not_up_because(&why, &path));
                 }
-                let read = files::ask::Stat {
-                    path: path.clone(),
-                    at: None,
+                let Ok(view::methods::Submitted::Applied { output, .. }) = answer else {
+                    return Err(words::NO_SNAPSHOT.to_owned());
                 };
-                let (snapshot, entry) = host
-                    .query(read)
-                    .await
-                    .map_err(|refusal| design::sentence(&refusal))?;
-                match (snapshot, entry.map(|entry| entry.node)) {
-                    (Some(BlobId::Sha256(snapshot)), Some(files::Node::File { .. })) => {
-                        Ok(snapshot)
-                    }
-                    _ => Err(words::NOT_THERE.to_owned()),
+                match abi::decode::<BlobId>(&output) {
+                    Ok(BlobId::Sha256(snapshot)) => Ok(snapshot),
+                    _ => Err(words::NO_SNAPSHOT.to_owned()),
                 }
             }
             .await;

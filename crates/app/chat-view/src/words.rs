@@ -216,6 +216,7 @@ pub(crate) const OPEN_IN_FILES: &str = "Open in Files";
 pub(crate) const UPLOADING: &str = "Uploading…";
 pub(crate) const PUT_CLOSED: &str = "The upload stopped before the network held the file";
 pub(crate) const NOT_THERE: &str = "The file isn’t there";
+pub(crate) const NO_SNAPSHOT: &str = "Files answered the upload with no snapshot";
 
 pub(crate) fn uploading((sent, all): (u64, u64)) -> String {
     let percent = match all {
