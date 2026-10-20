@@ -392,11 +392,26 @@ impl ExecCtx {
         kind: impl Into<String>,
         body: impl Into<Vec<u8>>,
     ) -> Result<BlobId, Error> {
-        match self.host(HostOp::BlobPut {
+        self.stored(HostOp::put(hash, kind.into(), body.into(), None))
+    }
+
+    pub fn blob_put_on(
+        &self,
+        hash: HashKind,
+        kind: impl Into<String>,
+        body: impl Into<Vec<u8>>,
+        line: impl Into<Vec<u8>>,
+    ) -> Result<BlobId, Error> {
+        self.stored(HostOp::put(
             hash,
-            kind: kind.into(),
-            body: body.into(),
-        }) {
+            kind.into(),
+            body.into(),
+            Some(line.into()),
+        ))
+    }
+
+    fn stored(&self, put: HostOp) -> Result<BlobId, Error> {
+        match self.host(put) {
             HostReply::BlobId(id) => Ok(id),
             HostReply::Refused(refusal) => Err(crate::kernel::error_from(refusal)),
             other => protocol("blob id", other),
@@ -408,6 +423,12 @@ impl ExecCtx {
     // is, as does one put before holds were kept.
     pub fn blob_release(&self, id: BlobId) {
         self.done(HostOp::BlobRelease(id))
+    }
+
+    pub fn blob_release_lines(&self, prefix: impl Into<Vec<u8>>) {
+        self.done(HostOp::BlobReleaseLines {
+            prefix: prefix.into(),
+        })
     }
 
     /// Has `target` run `op` (its own `Op`, borsh) in this frame, once this

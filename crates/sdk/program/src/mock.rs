@@ -79,6 +79,8 @@ pub struct MockState {
     // the programs that hold each blob they put, as the host's roster keeps them; a blob in
     // `blobs` with no entry here has unknown holders and is never released
     pub holders: BTreeMap<BlobId, BTreeSet<ProgramId>>,
+    pub lines: BTreeMap<(ProgramId, Vec<u8>), BlobId>,
+    pub puts: Vec<Vec<u8>>,
     /// The last `set_return_data`.
     pub output: Vec<u8>,
     /// The last query's response.
@@ -130,6 +132,7 @@ pub(crate) struct Written {
     state: BTreeMap<Vec<u8>, Vec<u8>>,
     blobs: BTreeMap<BlobId, Blob>,
     holders: BTreeMap<BlobId, BTreeSet<ProgramId>>,
+    lines: BTreeMap<(ProgramId, Vec<u8>), BlobId>,
     sent: (Vec<u8>, Vec<Message>, Vec<Vec<u8>>),
     waits: (Vec<Called>, bool, Vec<Resumed>),
 }
@@ -284,6 +287,7 @@ impl MockHost {
             state: mock.state.clone(),
             blobs: mock.blobs.clone(),
             holders: mock.holders.clone(),
+            lines: mock.lines.clone(),
             sent: (
                 mock.output.clone(),
                 mock.emissions.clone(),
@@ -298,6 +302,7 @@ impl MockHost {
         mock.state = written.state;
         mock.blobs = written.blobs;
         mock.holders = written.holders;
+        mock.lines = written.lines;
         (mock.output, mock.emissions, mock.events) = written.sent;
         (mock.calls, mock.deferred, mock.resumes) = written.waits;
     }
@@ -338,6 +343,10 @@ impl MockHost {
                 }
                 None => Err(abi::Refusal::new(code::UNKNOWN_PROGRAM, program)),
             });
+        }
+        if let Some(put) = op.as_put() {
+            self.borrow_mut().puts.push(abi::encode(&op));
+            return self.put(env, put);
         }
         let mut mock = self.borrow_mut();
         match op {
@@ -403,24 +412,27 @@ impl MockHost {
                 mock.state.remove(&key);
                 HostReply::Done
             }
-            HostOp::BlobPut { hash, kind, body } => match blob_id(hash, &kind, &body) {
-                Ok(id) => {
-                    let unknown = mock.blobs.contains_key(&id) && !mock.holders.contains_key(&id);
-                    if !unknown {
-                        let held = mock.holders.entry(id).or_default();
-                        held.insert(env.program.clone());
-                    }
-                    mock.blobs.insert(id, Blob { kind, body });
-                    HostReply::BlobId(id)
-                }
-                Err(error) => HostReply::Refused(crate::kernel::refusal_from(error)),
-            },
             HostOp::BlobRelease(id) => {
-                let held = mock.holders.get_mut(&id);
-                let let_go = held.is_some_and(|held| held.remove(&env.program) && held.is_empty());
-                if let_go {
-                    mock.holders.remove(&id);
-                    mock.blobs.remove(&id);
+                if let Some(held) = mock.holders.get_mut(&id) {
+                    held.remove(&env.program);
+                }
+                mock.lines
+                    .retain(|(holder, _), held| *holder != env.program || *held != id);
+                mock.let_go(&id);
+                HostReply::Done
+            }
+            HostOp::BlobReleaseLines { prefix } => {
+                let under: Vec<(Vec<u8>, BlobId)> = mock
+                    .lines
+                    .iter()
+                    .filter(|((holder, line), _)| {
+                        *holder == env.program && line.starts_with(&prefix)
+                    })
+                    .map(|((_, line), id)| (line.clone(), *id))
+                    .collect();
+                for (line, id) in under {
+                    mock.lines.remove(&(env.program.clone(), line));
+                    mock.let_go(&id);
                 }
                 HostReply::Done
             }
@@ -500,6 +512,37 @@ impl MockHost {
         }
     }
 
+    fn put(&self, env: &Env, put: abi::Put<'_>) -> HostReply {
+        let id = match blob_id(put.hash, put.kind, put.body) {
+            Ok(id) => id,
+            Err(error) => return HostReply::Refused(crate::kernel::refusal_from(error)),
+        };
+        let mut mock = self.borrow_mut();
+        let unknown = mock.blobs.contains_key(&id) && !mock.holders.contains_key(&id);
+        let blob = Blob {
+            kind: put.kind.to_owned(),
+            body: put.body.to_vec(),
+        };
+        mock.blobs.insert(id, blob);
+        if !unknown {
+            mock.holders.entry(id).or_default();
+        }
+        match put.line {
+            None => {
+                if let Some(held) = mock.holders.get_mut(&id) {
+                    held.insert(env.program.clone());
+                }
+            }
+            Some(line) => {
+                let on = (env.program.clone(), line.to_vec());
+                if let Some(old) = mock.lines.insert(on, id).filter(|old| *old != id) {
+                    mock.let_go(&old);
+                }
+            }
+        }
+        HostReply::BlobId(id)
+    }
+
     pub fn take_calls(&self) -> Vec<Called> {
         std::mem::take(&mut self.borrow_mut().calls)
     }
@@ -514,6 +557,15 @@ impl MockHost {
 }
 
 impl MockState {
+    fn let_go(&mut self, id: &BlobId) {
+        let unheld = self.holders.get(id).is_some_and(BTreeSet::is_empty);
+        let on_a_line = self.lines.values().any(|held| held == id);
+        if unheld && !on_a_line {
+            self.holders.remove(id);
+            self.blobs.remove(id);
+        }
+    }
+
     fn touch(&mut self, key: &[u8], claim: Option<String>) {
         let existed = self.state.contains_key(key);
         let touch = self.touched.entry(key.to_vec()).or_insert(Touch {
@@ -668,6 +720,99 @@ mod tests {
             host.borrow().blobs.contains_key(&unknown),
             "a blob whose holders are unknown is never released"
         );
+    }
+
+    #[test]
+    fn a_put_on_a_line_holds_its_blob_until_a_newer_put_there_or_a_release() {
+        let host = MockHost::default();
+        let on = |program: &str, body: &[u8], line: &[u8]| {
+            let ctx = host.exec(MockHost::env(program));
+            ctx.blob_put_on(HashKind::Sha256, "file", body.to_vec(), line.to_vec())
+                .unwrap()
+        };
+        let kept = |body: &[u8]| {
+            let id = blob_id(HashKind::Sha256, "file", body).unwrap();
+            host.borrow().blobs.contains_key(&id)
+        };
+        let release = |program: &str, body: &[u8]| {
+            let id = blob_id(HashKind::Sha256, "file", body).unwrap();
+            host.exec(MockHost::env(program)).blob_release(id)
+        };
+        let release_lines = |program: &str, prefix: &[u8]| {
+            host.exec(MockHost::env(program))
+                .blob_release_lines(prefix.to_vec())
+        };
+
+        on("files", b"v1", b"a");
+        on("files", b"v2", b"a");
+        assert_eq!(
+            (kept(b"v1"), kept(b"v2")),
+            (false, true),
+            "a newer put on a lets v1 go"
+        );
+
+        on("files", b"v2", b"b");
+        on("files", b"v3", b"a");
+        assert!(kept(b"v2"), "line b still holds what line a let go of");
+        release("files", b"v2");
+        assert!(!kept(b"v2"), "a release lets go on every line");
+
+        on("files", b"w", b"c");
+        let alone = host.exec(MockHost::env("files"));
+        alone
+            .blob_put(HashKind::Sha256, "file", b"w".to_vec())
+            .unwrap();
+        on("files", b"w2", b"c");
+        assert!(kept(b"w"), "its own put still holds it");
+        on("forge", b"x", b"c");
+        on("files", b"x", b"d");
+        on("files", b"x2", b"d");
+        assert!(kept(b"x"), "forge holds x on its own line c");
+
+        on("files", b"s1", b"scratch/b/1");
+        on("files", b"s2", b"scratch/bc");
+        on("files", b"s3", b"scratch/b0");
+        on("files", b"s4", b"scratch/b/2");
+        on("files", b"s4", b"kept/s4");
+        on("forge", b"s5", b"scratch/b/1");
+        release_lines("files", b"scratch/b/");
+        assert_eq!(
+            [&b"s1"[..], b"s2", b"s3", b"s4", b"s5"].map(kept),
+            [false, true, true, true, true],
+            "a prefix lets go of the caller's lines under it and no others"
+        );
+        release_lines("files", b"scratch/b");
+        assert_eq!(
+            [&b"s2"[..], b"s3"].map(kept),
+            [false, false],
+            "a prefix is bytes, not a folder"
+        );
+        release_lines("files", b"");
+        assert_eq!(
+            [&b"s4"[..], b"v3", b"w", b"x", b"s5"].map(kept),
+            [false, false, true, true, true],
+            "an empty prefix lets go of every line; a blob held alone or by another stays"
+        );
+        assert!(
+            host.borrow()
+                .lines
+                .keys()
+                .all(|(holder, _)| holder == "forge")
+        );
+    }
+
+    #[test]
+    fn a_put_with_no_line_sends_the_bytes_a_node_before_lines_reads() {
+        let host = MockHost::default();
+        let ctx = host.exec(MockHost::env("harness"));
+        ctx.blob_put(HashKind::Sha256, "part", b"x".to_vec())
+            .unwrap();
+        ctx.blob_put_on(HashKind::Sha256, "part", b"x".to_vec(), b"l".to_vec())
+            .unwrap();
+        let alone = [&[6u8, 0, 4, 0, 0, 0][..], b"part", &[1, 0, 0, 0], b"x"].concat();
+        let on = [alone.as_slice(), &[1, 0, 0, 0], b"l"].concat();
+        let on = [&[23u8][..], &on[1..]].concat();
+        assert_eq!(host.borrow().puts, vec![alone, on]);
     }
 
     #[test]
