@@ -26,6 +26,60 @@ pub struct Told {
 // "queries": …}`. An example is the variant's own value as JSON, or one `examples`
 // makes where it gives none; `returns` is the shape of what comes back (an op's declared return
 // type, the `Reply` variant answering a query), with the types it reaches.
+pub fn sections<P: program::Program>() -> Result<(Vec<u8>, Vec<u8>), String>
+where
+    P::Op: borsh::BorshSchema,
+    P::Query: borsh::BorshSchema,
+    P::Reply: borsh::BorshSchema,
+{
+    sections_of(&program::schema::interface::<P>(), &P::tools())
+}
+
+pub fn sections_of(
+    schema: &borsh::schema::BorshSchemaContainer,
+    tools: &Tools,
+) -> Result<(Vec<u8>, Vec<u8>), String> {
+    let schema =
+        borsh::to_vec(schema).map_err(|error| format!("the schema does not encode: {error}"))?;
+    let interface = Interface::read(&schema).map_err(|why| format!("the schema {why}"))?;
+    let tools = section(&interface, tools).map_err(|why| format!("the tools: {why}"))?;
+    Ok((schema, tools))
+}
+
+pub fn interface_main<P: program::Program>() -> std::process::ExitCode
+where
+    P::Op: borsh::BorshSchema,
+    P::Query: borsh::BorshSchema,
+    P::Reply: borsh::BorshSchema,
+{
+    let Some(folder) = std::env::args_os().nth(1).map(std::path::PathBuf::from) else {
+        eprintln!("usage: interface FOLDER (writes interface.schema and interface.tools there)");
+        return std::process::ExitCode::FAILURE;
+    };
+    match write_sections::<P>(&folder) {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(why) => {
+            eprintln!("interface: {why}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+fn write_sections<P: program::Program>(folder: &std::path::Path) -> Result<(), String>
+where
+    P::Op: borsh::BorshSchema,
+    P::Query: borsh::BorshSchema,
+    P::Reply: borsh::BorshSchema,
+{
+    let (schema, tools) = sections::<P>()?;
+    std::fs::create_dir_all(folder).map_err(|error| format!("{}: {error}", folder.display()))?;
+    for (name, bytes) in [("interface.schema", schema), ("interface.tools", tools)] {
+        let path = folder.join(name);
+        std::fs::write(&path, bytes).map_err(|error| format!("{}: {error}", path.display()))?;
+    }
+    Ok(())
+}
+
 pub fn section(interface: &Interface, tools: &Tools) -> Result<Vec<u8>, String> {
     if tools.is_empty() {
         return Ok(b"{}".to_vec());

@@ -834,3 +834,8 @@ A program added to a running network goes through the programs role instead
 program"): its `init` runs with the scheduled params when the height comes.
 A program that fills a role is scheduled as `Change::Publish` with its
 roles, which only the validators' vote may do.
+
+A program kept in a repository of its own packs the same way, with
+`tools/pack.sh` (the README's Building): the same sections, embedded in the
+same order by the same `founding::pack_parts`, so its code reads as a
+founding's does to `network_schema`, `Sources` and `schema-diff`.

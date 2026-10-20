@@ -66,11 +66,8 @@ pub fn write_schemas(release: &Path, programs: &[impl AsRef<str>]) -> Result<()>
                 "{program} has no schema: name its interface in crates/sdk/founding/src/schema.rs"
             )
         })?;
-        let schema = borsh::to_vec(&schema)?;
-        let read = borsh_json::Interface::read(&schema)
-            .map_err(|why| format!("{program}'s schema {why}"))?;
-        let tools = borsh_json::tools::section(&read, &tools)
-            .map_err(|why| format!("{program}'s tools: {why}"))?;
+        let (schema, tools) = borsh_json::tools::sections_of(&schema, &tools)
+            .map_err(|why| format!("{program}: {why}"))?;
         fs::write(release.join(format!("{program}.schema")), schema)?;
         fs::write(release.join(format!("{program}.tools")), tools)?;
     }

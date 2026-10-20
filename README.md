@@ -217,6 +217,19 @@ too: `make wasm-publish` and `.github/workflows/release.yml`, which published
 the GitHub release `wasm-<commit>`, are still in the tree, but the workflow
 is disabled.
 
+A program built outside this repository packs to code the same way:
+`tools/pack.sh [--view VIEW_CRATE [--notifier]] PROGRAM_CRATE OUT`, run from a
+checkout of the program's own repository, builds the program (`program`), its
+describe module (`describe`), its interface and any view and notifier, embeds
+each as a founding does (`founding::pack_parts`, through founding's `pack`
+bin), stamps the checkout's HEAD as built from the forge repository `REPO`
+names when git sees no change there, and prints its code id
+(`founding::code_id`: the id the blobs contract gives the code framed as a
+`program` blob, never the file's own sha256). The crate writes its interface with an `examples/interface.rs` whose whole
+`main` is `borsh_json::tools::interface_main::<poll::Poll>()`, `borsh-json` a
+dev-dependency, and its workspace's `[profile.release]` (and `[profile.notify]`
+for a notifier) are this one's.
+
 `make dev`'s view gate requires `wasm-tools` and Python 3; view releases,
 and every notifier build (`make wasm-modules`, `fast` too), also need [Binaryen wasm-opt 132](https://github.com/WebAssembly/binaryen/releases/tag/version_132).
 `make wasm-views` builds, optimizes, and checks the exact view ABI, printing

@@ -310,6 +310,7 @@ wasm-views:
 # not rustc's 1 MiB: chat's catch-up over 100 rooms and 5,600 notices
 # went 6 KiB deep.
 NOTIFY_TARGET = $(BUILD_TARGET)/notify/$1
+# tools/pack.sh reads this line too, so out-of-tree notifiers get the same stack.
 NOTIFY_STACK = 65536
 notifier_build = RUSTFLAGS="$(WASM_RUSTFLAGS)" $(CARGO) rustc --target wasm32-unknown-unknown --profile notify \
   --target-dir $(call NOTIFY_TARGET,$1) -p $1 --features notifier --lib --crate-type cdylib -- -C link-arg=-zstack-size=$(NOTIFY_STACK)

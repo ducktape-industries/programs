@@ -6,6 +6,7 @@ default-run = "founding"
 
 [dependencies]
 abi = { workspace = true }
+blob = { workspace = true }
 borsh = { workspace = true }
 borsh-json = { workspace = true }
 program = { workspace = true }

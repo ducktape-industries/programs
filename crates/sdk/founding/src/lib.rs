@@ -149,18 +149,49 @@ pub fn pack(release: &Path, program: &str, source: Option<&Source>) -> Result<Ve
     let (view, notifier) =
         modules(program).ok_or_else(|| format!("{program} is not a program a founding packs"))?;
     let stem = program.replace('-', "_");
-    let mut packed = read(release, &stem, "wasm")?;
-    if let Some(view) = view {
-        packed = embed(&packed, &read(release, view, "wasm")?)?;
+    let view = view.map(|view| read(release, view, "wasm")).transpose()?;
+    let notify = notifier
+        .map(|view| read(release, &format!("{view}.notify"), "wasm"))
+        .transpose()?;
+    pack_parts(&Parts {
+        code: &read(release, &stem, "wasm")?,
+        view: view.as_deref(),
+        describe: &read(release, &format!("{stem}.describe"), "wasm")?,
+        schema: &read(release, program, "schema")?,
+        tools: &read(release, program, "tools")?,
+        notify: notify.as_deref(),
+        source,
+    })
+}
+
+pub fn code_id(code: &[u8]) -> Result<abi::BlobId> {
+    let framed = blob::frame(programs::CODE_KIND, code).map_err(|refusal| refusal.sentence)?;
+    let entry = blob::contract::Entry::of(&framed).ok_or("the framed code does not parse")?;
+    Ok(entry.id)
+}
+
+pub struct Parts<'a> {
+    pub code: &'a [u8],
+    pub view: Option<&'a [u8]>,
+    pub describe: &'a [u8],
+    pub schema: &'a [u8],
+    pub tools: &'a [u8],
+    pub notify: Option<&'a [u8]>,
+    pub source: Option<&'a Source>,
+}
+
+pub fn pack_parts(parts: &Parts) -> Result<Vec<u8>> {
+    let mut packed = parts.code.to_vec();
+    if let Some(view) = parts.view {
+        packed = embed(&packed, view)?;
     }
-    let describe = read(release, &format!("{stem}.describe"), "wasm")?;
-    packed = embed_describe(&packed, &describe)?;
-    packed = embed_schema(&packed, &read(release, program, "schema")?)?;
-    packed = embed_tools(&packed, &read(release, program, "tools")?)?;
-    if let Some(view) = notifier {
-        packed = embed_notify(&packed, &read(release, &format!("{view}.notify"), "wasm")?)?;
+    packed = embed_describe(&packed, parts.describe)?;
+    packed = embed_schema(&packed, parts.schema)?;
+    packed = embed_tools(&packed, parts.tools)?;
+    if let Some(notifier) = parts.notify {
+        packed = embed_notify(&packed, notifier)?;
     }
-    if let Some(source) = source {
+    if let Some(source) = parts.source {
         packed = embed_source(&packed, source)?;
     }
     Ok(packed)

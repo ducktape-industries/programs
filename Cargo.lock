@@ -2329,6 +2329,7 @@ dependencies = [
  "activity",
  "attribution",
  "awaits",
+ "blob",
  "blobs",
  "borsh",
  "borsh-json",
