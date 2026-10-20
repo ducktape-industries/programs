@@ -625,3 +625,56 @@ fn a_manager_chooses_for_several_accounts_at_once() {
     choose(ADA, vec![4, 5], false, None).unwrap();
     assert_eq!(chosen_by(vec![4, 5]), [(4, false, None), (5, false, None)]);
 }
+
+fn unread(chain: &MockChain, account: u64, rooms: &[(&str, u64)]) -> Vec<(String, u64, u64)> {
+    let asked = crate::Query::Unread {
+        account,
+        rooms: rooms
+            .iter()
+            .map(|(room, since)| ((*room).to_owned(), *since))
+            .collect(),
+    };
+    let crate::Reply::Unread(counted) = chain.query(crate::PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    counted
+        .into_iter()
+        .map(|count| (count.channel_id, count.to, count.meant))
+        .collect()
+}
+
+#[test]
+fn unread_counts_what_is_meant_after_the_cursor_as_the_choice_allows() {
+    let chain = chain();
+    open_general(&chain);
+    post(&chain, BO, "general", "m1", "a topic");
+    post(&chain, CY, "general", "m2", "hello");
+    post_in(&chain, BO, "general", "m3", "an aside", Some(1));
+    post_in(&chain, BO, "general", "m4", "on yours", Some(2));
+    post(&chain, BO, "general", "m5", "next topic");
+    post(&chain, CY, "general", "m6", "mine");
+    post(&chain, ADA, "general", "m7", "<@3> have a look");
+    let general = |to, meant| vec![("general".to_owned(), to, meant)];
+    assert_eq!(
+        unread(&chain, 3, &[("general", 1)]),
+        general(7, 3),
+        "a reply in Cy's thread, a root after Cy came in, a mention"
+    );
+    assert_eq!(unread(&chain, 3, &[("general", 5)]), general(7, 1));
+    assert_eq!(unread(&chain, 3, &[("general", 7)]), general(7, 0));
+    assert_eq!(
+        unread(&chain, 3, &[("nowhere", 4), ("general", 6)]),
+        [("nowhere".to_owned(), 4, 0), ("general".to_owned(), 7, 1)],
+        "in the order asked, a room no channel has counting nothing"
+    );
+    set_notices(&chain, CY, "general", Some(Notices::Mentions));
+    assert_eq!(unread(&chain, 3, &[("general", 1)]), general(7, 1));
+    set_notices(&chain, CY, "general", Some(Notices::Off));
+    assert_eq!(unread(&chain, 3, &[("general", 1)]), general(7, 0));
+    listen(&chain, CY, "general", true).unwrap();
+    assert_eq!(
+        unread(&chain, 3, &[("general", 1)]),
+        general(7, 4),
+        "listening, the aside in a thread Cy is not in counts too"
+    );
+}

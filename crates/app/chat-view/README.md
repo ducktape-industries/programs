@@ -94,3 +94,32 @@ pictures, every agent answering anyone), and ownership with no records; `opened(
 `owned(cx, key, owner, policy, policies)` puts one key on record, with
 identity's names. Every unhandled ask panics, so a new query needs an arm
 there. `tests/phone.rs` holds the phone screens and the 360/390/430 sweep.
+
+## The notifier
+
+`notifier.rs` is chat's NOTIFIER: the host runs it once per network, whether or not a chat pane is
+open, and the panes post nothing. It hands the host's notification centre a message from someone
+else, landing in a room the reader is not looking at, that is meant for them, as chat's
+`notice::why` decides: in a direct room of theirs; a mention of them, in any room; a reply in a
+thread they are in (they wrote its root, replied in it, or were mentioned in it, before this reply);
+or in the timeline of a room they are in (they wrote in it before, opened it, or hold a seat in it,
+for a members-only room). Where the reader is in a room chat keeps on chain, so every device and
+every server that runs the notifier tells the same: each read of a room's new messages asks it
+(`Query::Followed`) for the room and the threads those messages reply in. What the reader chose
+for a room in its details goes over all of that: every message there, mentions only, or nothing.
+
+A notice's title is the sender and why (`<sender> mentioned you`), its body the message, its tag
+the room (`@peer`, `#channel`), its link the message.
+
+The tab badge counts such messages in rooms the reader has not read, as chat counts them
+(`Query::Unread`, one read for every room behind): no message is read to count them, so a launch
+costs the same however much the reader left unread. The read cursors are the panes'
+(`reads/<signer>`, kept by `kept.rs`); a pane that reads a room moves its cursor, the host tells
+the notifier (`store.changes`), and the pane takes the room's notices down itself (`notify.seen`).
+The room a pane shows on screen (`host.screen`) gets no notice and leaves the badge.
+
+What it announced it keeps under `notified/<signer>`: the seq announced up to in each room. A run
+that starts (a launch, a reconnect, a new deployment) posts, once, what came for the reader past
+both that and their cursor while nothing ran, reading only those messages; a room it never saw is
+new, read from its start. The very first run on a device has nothing kept: what is there is
+history, not news.

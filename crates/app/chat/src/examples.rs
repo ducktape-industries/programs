@@ -374,3 +374,10 @@ pub(crate) fn chosen_by() -> Query {
         accounts: vec![21, 22],
     }
 }
+
+pub(crate) fn unread() -> Query {
+    Query::Unread {
+        account: 21,
+        rooms: vec![(room(), 40)],
+    }
+}

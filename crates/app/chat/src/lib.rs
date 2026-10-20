@@ -31,6 +31,7 @@ mod gate;
 mod listen;
 mod mentions;
 pub mod message;
+pub mod notice;
 mod ops;
 mod order;
 mod origin;
@@ -431,6 +432,26 @@ pub enum Query {
         channel_id: String,
         accounts: Vec<AccountNumber>,
     },
+    // for each `(channel_id, since)` of `rooms`, what came after `since` that is meant for
+    // `account` (`notice::why`), less what its choice for the room leaves out: the head counted to
+    // and how many, in the order asked; a room no channel has counts nothing
+    #[ask(Reply::Unread(Vec<UnreadCount>))]
+    #[reads(
+        state::HEADS,
+        state::MESSAGES,
+        state::CHANNELS,
+        state::MEMBERS,
+        state::POSTED,
+        state::PARTICIPANTS,
+        state::MENTIONED,
+        state::LISTENING,
+        state::NOTICES
+    )]
+    #[tool_query(description = "For each (channel_id, since) of rooms, how many messages after since are meant for account: in its direct rooms, mentioning it, replies in threads it is in, or in the timeline of rooms it is in, as its choice for each room allows. Answers each room's head counted to and the count, in the order asked.", example = examples::unread)]
+    Unread {
+        account: AccountNumber,
+        rooms: Vec<(String, u64)>,
+    },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -464,6 +485,26 @@ pub enum Reply {
     RoomOrder(Vec<Entry>),
     PostedIn(PageResponse<String>),
     ChosenBy(Vec<AccountChoice>),
+    Unread(Vec<UnreadCount>),
+}
+
+// One room's count ([`Query::Unread`]): what came after the cursor asked, up to `to`, meant for
+// the reader.
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+pub struct UnreadCount {
+    pub channel_id: String,
+    pub to: u64,
+    pub meant: u64,
 }
 
 // One place in an account's own order of its lists (`Op::SetRoomOrder`): a room by its channel id,

@@ -1,44 +1,11 @@
-//! What chat hands the host's notification centre, decided here and
-//! nowhere else: a message from someone else, landing in a room the reader
-//! is not looking at, that is meant for them ([`Why`]). It is meant for
-//! them when it is
-//!
-//! - in a direct room of theirs;
-//! - a mention of them, in any room;
-//! - a reply in a thread they are in: they wrote its root, replied in it,
-//!   or were mentioned in it, before this reply;
-//! - in the timeline of a room they are in: they wrote in it before, opened
-//!   it, or hold a seat in it, for a members-only room.
-//!
-//! Where the reader is in a room chat keeps on chain, so every device and
-//! every server that runs this notifier tells the same: each read of a
-//! room's new messages asks it (`Query::Followed`) for the room and the
-//! threads those messages reply in. What the reader chose for a room in
-//! its details ([`Choice`]) goes over all of that: every message there,
-//! mentions only, or nothing.
-//!
-//! Its title is the sender and why (`<sender> mentioned you`), its body the
-//! message, its tag the room (`@peer`, `#channel`), its link the message.
-//! The tab badge counts such messages in rooms the reader has not read.
-//!
-//! This is chat's NOTIFIER: the host runs it once per network, whether or
-//! not a chat pane is open, and the panes post nothing. The read cursors
-//! are the panes' (`reads/<signer>`, kept by `kept.rs`); a pane that reads
-//! a room moves its cursor, the host tells the notifier (`store.changes`),
-//! and the pane takes the room's notices down itself (`notify.seen`). The
-//! room a pane shows on screen (`host.screen`) gets no notice and leaves
-//! the badge.
-//!
-//! What it announced it keeps under `notified/<signer>`: the seq announced
-//! up to in each room. A run that starts (a launch, a reconnect, a new
-//! deployment) posts, once, what came for the reader past both that and
-//! their cursor while nothing ran; a room it never saw is new, read from
-//! its start. The very first run on a device has nothing kept: what is
-//! there is history, not news.
+//! Chat's notifier: the notices it hands the host's centre (`chat::notice::why` says what is meant
+//! for the reader), the tab badge as chat counts it (`Query::Unread`), and what it announced, kept
+//! under `notified/<signer>` so a run posts what came while none ran, once (README, "The notifier").
 use std::collections::{BTreeMap, BTreeSet};
 
+use chat::notice::Why;
 use chat::view::Names;
-use chat::{Block, ChannelInfo, Followed, Mark, MsgRow, Notices, PageRequest, Principal};
+use chat::{ChannelInfo, Followed, MsgRow, Notices, PageRequest, Principal};
 use identity::Identity;
 use view::prelude::*;
 use view::{Notifier, store};
@@ -72,6 +39,7 @@ pub struct ChatNotices {
     choices: Option<BTreeMap<String, Choice>>,
     counted: BTreeMap<String, Count>,
     reading: BTreeSet<String>,
+    counting: BTreeSet<String>,
     screen: BTreeSet<String>,
     badge: Option<i64>,
 }
@@ -333,6 +301,7 @@ impl ChatNotices {
         let first = kept.is_none();
         let mut announced = kept.clone().unwrap_or_default();
         let mut due = Vec::new();
+        let mut uncounted = Vec::new();
         for info in rooms {
             let (room, head) = (info.channel.id.clone(), info.head_seq);
             if self.screen.contains(&room) {
@@ -366,17 +335,23 @@ impl ChatNotices {
                     meant: 0,
                 };
             }
-            let cursor = count.cursor;
-            if head <= count.to || self.reading.contains(&room) {
+            if head > count.to && !self.counting.contains(&room) {
+                uncounted.push((room.clone(), count.to));
+            }
+            let news = was.max(count.cursor);
+            if head <= news || self.reading.contains(&room) {
                 continue;
             }
             announced.insert(room.clone(), head);
-            due.push((room, count.to, head, was.max(cursor)));
+            due.push((room, news, head));
         }
         let moved = Some(&announced) != kept.as_ref();
         self.announced = Some(Some(announced));
-        for (room, from, head, news) in due {
-            self.read(room, from, head, news, me, cx);
+        if !uncounted.is_empty() {
+            self.count(uncounted, me, cx);
+        }
+        for (room, news, head) in due {
+            self.read(room, news, head, me, cx);
         }
         if moved {
             self.save_announced(cx);
@@ -384,15 +359,53 @@ impl ChatNotices {
         self.settle_badge(cx);
     }
 
-    fn read(
-        &mut self,
-        room: String,
-        from: u64,
-        head: u64,
-        news: u64,
-        me: u64,
-        cx: &mut Context<Self>,
-    ) {
+    fn count(&mut self, rooms: Vec<(String, u64)>, me: u64, cx: &mut Context<Self>) {
+        self.counting
+            .extend(rooms.iter().map(|(room, _)| room.clone()));
+        let host = cx.host();
+        let asked = rooms.clone();
+        let counts = async move {
+            host.query(chat::ask::Unread {
+                account: me,
+                rooms: asked,
+            })
+            .await
+        };
+        self.load(
+            counts,
+            move |notices, counts, cx| {
+                for (room, _) in &rooms {
+                    notices.counting.remove(room);
+                }
+                let counts = match counts {
+                    Ok(counts) => counts,
+                    Err(refusal) => {
+                        log_refused(cx, "the unread counts", &refusal);
+                        return notices.settle_badge(cx);
+                    }
+                };
+                let mut moved = false;
+                for counted in counts {
+                    let since = rooms.iter().find(|(room, _)| *room == counted.channel_id);
+                    if let Some(count) = notices.counted.get_mut(&counted.channel_id)
+                        && since.is_some_and(|(_, since)| *since == count.to)
+                        && counted.to > count.to
+                    {
+                        count.to = counted.to;
+                        count.meant += counted.meant as i64;
+                        moved = true;
+                    }
+                }
+                match moved {
+                    true => notices.settle(cx),
+                    false => notices.settle_badge(cx),
+                }
+            },
+            cx,
+        );
+    }
+
+    fn read(&mut self, room: String, from: u64, head: u64, me: u64, cx: &mut Context<Self>) {
         let fresh = head - from;
         let host = cx.host();
         let channel_id = room.clone();
@@ -432,7 +445,7 @@ impl ChatNotices {
                     Err(refusal) => {
                         log_refused(cx, "the new messages", &refusal);
                         if let Some(Some(announced)) = &mut notices.announced {
-                            announced.insert(room.clone(), news);
+                            announced.insert(room.clone(), from);
                         }
                         return;
                     }
@@ -461,20 +474,14 @@ impl ChatNotices {
                     .filter(|row| row.seq > from && row.seq <= head)
                     .filter_map(|row| Some((row, notification_reason(row, me, &followed, choice)?)))
                     .collect();
-                if let Some(count) = notices.counted.get_mut(&room)
-                    && count.to == from
-                {
-                    count.to = head;
-                    count.meant += meant.len() as i64;
-                }
                 let cursor = notices
                     .counted
                     .get(&room)
-                    .map_or(news, |count| count.cursor);
+                    .map_or(from, |count| count.cursor);
                 if !notices.screen.contains(&room) {
                     for (row, why) in meant
                         .into_iter()
-                        .filter(|(row, _)| row.seq > news && row.seq > cursor)
+                        .filter(|(row, _)| row.seq > from && row.seq > cursor)
                     {
                         let post = notice(row, why, me, &name, &notices.session.chain_id, names);
                         cx.host().notify::<NotifyPost>(post);
@@ -512,37 +519,13 @@ impl ChatNotices {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Why {
-    Direct,
-    Mention,
-    Thread,
-    Room,
-}
-
 fn notification_reason(row: &MsgRow, me: u64, followed: &Followed, choice: Choice) -> Option<Why> {
-    let cut = |notices| choice == Choice::Cut(notices);
-    let after = |since: u64| row.seq > since;
-    let thread_since = |root| {
-        let mut threads = followed.threads.iter();
-        threads.find_map(|&(at, since)| (at == root).then_some(since))
+    let (listening, cut) = match choice {
+        Choice::Every => (true, None),
+        Choice::Default => (false, None),
+        Choice::Cut(notices) => (false, Some(notices)),
     };
-    if row.deleted || row.author == Principal::Account(me) || cut(Notices::Off) {
-        None
-    } else if dm_peer_of(me, &row.channel_id).is_some() {
-        Some(Why::Direct)
-    } else if mentions(&row.blocks, me) {
-        Some(Why::Mention)
-    } else if cut(Notices::Mentions) {
-        None
-    } else if row.thread.and_then(thread_since).is_some_and(after) {
-        Some(Why::Thread)
-    } else if choice == Choice::Every || (row.thread.is_none() && followed.room.is_some_and(after))
-    {
-        Some(Why::Room)
-    } else {
-        None
-    }
+    chat::notice::why(row, me, followed, listening, cut)
 }
 
 fn notice(row: &MsgRow, why: Why, me: u64, name: &str, chain: &str, names: &Names) -> Notification {
@@ -648,15 +631,6 @@ pub(crate) fn choices_moved(change: &Change, me: u64) -> bool {
         .keys
         .iter()
         .any(|key| mine.iter().any(|head| key.starts_with(head)))
-}
-
-fn mentions(blocks: &[Block], me: u64) -> bool {
-    blocks.iter().any(|block| match block {
-        Block::Paragraph(spans) | Block::Quote(spans) => spans
-            .iter()
-            .any(|span| span.marks.contains(&Mark::Mention(Principal::Account(me)))),
-        Block::Code { .. } | Block::Divider | Block::Attachment(_) => false,
-    })
 }
 
 #[cfg(test)]

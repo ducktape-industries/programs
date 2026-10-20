@@ -4,7 +4,7 @@ use super::*;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use chat::{ChannelRow, PageResponse, PostPolicy, Query, Reply, Span};
+use chat::{Block, ChannelRow, Mark, PageResponse, PostPolicy, Query, Reply, Span};
 use view::methods::{
     self, Change, Changes, HostBadge, HostScreen, HostSession, NotifyPost, Query as Ask, Session,
     StoreChanges, StoreGet, StoreSet,
@@ -167,6 +167,34 @@ impl World {
                         })
                         .collect(),
                 )),
+                Query::Unread { account, rooms } => Reply::Unread(
+                    rooms
+                        .into_iter()
+                        .map(|(channel_id, since)| {
+                            let held = world.rooms.borrow();
+                            let head = (held.iter())
+                                .find(|info| info.channel.id == channel_id)
+                                .map_or(0, |info| info.head_seq)
+                                .max(since);
+                            let followed = world.followed.borrow();
+                            let followed = followed.get(&channel_id).cloned().unwrap_or_default();
+                            let choices = world.choices.borrow();
+                            let choice = choices.get(&channel_id).copied().unwrap_or_default();
+                            let meant = (world.rows.borrow().iter())
+                                .filter(|row| row.channel_id == channel_id)
+                                .filter(|row| row.seq > since && row.seq <= head)
+                                .filter(|row| {
+                                    notification_reason(row, account, &followed, choice).is_some()
+                                })
+                                .count();
+                            chat::UnreadCount {
+                                channel_id,
+                                to: head,
+                                meant: meant as u64,
+                            }
+                        })
+                        .collect(),
+                ),
                 query => panic!("unexpected chat query: {query:?}"),
             })
         });
@@ -640,4 +668,40 @@ fn a_message_reads_its_room_alone_and_not_the_channel_list() {
     notifier.host().stream::<Changes<chat::Chat>>().send(None);
     notifier.run_until_parked();
     assert_eq!(asked(&notifier).0, 2);
+}
+
+#[test]
+fn a_relaunch_counts_every_room_in_one_read_and_reads_no_message() {
+    let world = World::default();
+    let ids: Vec<String> = (0..12).map(|n| format!("c{n}")).collect();
+    *world.rooms.borrow_mut() = ids.iter().map(|id| room(id, id, 3)).collect();
+    for id in &ids {
+        let rows = [mention(id, 1), mention(id, 2), row(id, 3, 8, say_hi())];
+        world.rows.borrow_mut().extend(rows);
+    }
+    world.keep(
+        "notified/0102",
+        &ids.iter().map(|id| (id.clone(), 3)).collect(),
+    );
+    world.keep(
+        "reads/0102",
+        &ids.iter().map(|id| (id.clone(), 0)).collect(),
+    );
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    let asked = notifier.host().requests::<Ask<chat::Chat>>();
+    let read = asked
+        .iter()
+        .filter(|query| matches!(query, Query::MessagesAround { .. }))
+        .count();
+    let counts: Vec<usize> = (asked.iter())
+        .filter_map(|query| match query {
+            Query::Unread { rooms, .. } => Some(rooms.len()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(read, 0, "messages read to count them");
+    assert_eq!(counts, [ids.len()], "not one count for every room");
+    assert!(posts(&notifier).is_empty(), "announced before");
+    assert_eq!(badge(&notifier), Some(2 * ids.len() as i64));
 }

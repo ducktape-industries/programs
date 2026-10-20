@@ -259,6 +259,10 @@ impl Program for Chat {
                 channel_id,
                 accounts,
             } => (chosen_by(ctx, &channel_id, &accounts)?, vec![]),
+            Query::Unread { account, rooms } => (
+                Reply::Unread(crate::notice::unread(ctx, account, &rooms)?),
+                vec![],
+            ),
         };
         seen_by(ctx, reply, viewer)
     }

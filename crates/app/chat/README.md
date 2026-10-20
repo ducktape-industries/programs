@@ -75,6 +75,20 @@ chat's order, then what it names in its order, so the reader's lists follow it a
 as each post is noted (beside `Followed`'s room seq). It starts from the code that keeps it: posts
 made before are not listed.
 
+## What is meant for a reader
+
+`notice::why` says whether a message is meant for an account, and why: it is in a direct room of
+theirs, mentions them, replies in a thread they are in (they wrote its root, replied, or were
+mentioned there before it), or is in the timeline of a room they are in (`Query::Followed`). What
+they chose for the room goes over it: listening is every message, `SetNotices` mentions only (and
+direct rooms) or nothing. chat-view's notifier tells by it.
+
+`Query::Unread { account, rooms }` counts by it: for each `(channel_id, since)`, the messages after
+`since` meant for `account`, answered as `UnreadCount { channel_id, to, meant }` in the order asked,
+`to` being the room's head it counted to (a room no channel has counts nothing). The cursors are the
+reader's own (chat-view keeps them on the device), so it names them. It answers a count, not the
+messages, so a reader's badge costs one small read however much it left unread.
+
 ## Who hears a room
 
 Each account chooses what a room tells it: every message (`Listen`), or what `SetNotices` cuts it
