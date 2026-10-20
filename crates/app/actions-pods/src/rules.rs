@@ -545,7 +545,10 @@ fn pod_body(check: &CheckRow, asks: &Asks, needed: Vec<Value>) -> Value {
     for path in &asks.scratch {
         inputs.push(json!({"path": path, "scratch": {"medium": "Memory"}}));
     }
+    // where a step writes what it keeps and finds what it needs, as every runner names them
     let mut env = serde_json::Map::new();
+    env.insert("OUT".to_owned(), Value::from("/out"));
+    env.insert("NEEDS".to_owned(), Value::from("/needs"));
     let jobs = asks
         .cpu
         .as_deref()

@@ -492,7 +492,11 @@ fn ran_to_its_end(exit_code: Value) -> Node {
     assert_eq!(body["inputs"][0], forged);
     let gates = json!({"path": "/tools/gates.sh", "files": {"path": "/shared/tools/gates.sh"}});
     assert_eq!(body["inputs"][1], gates);
-    assert_eq!(body["env"], json!({"FEATURE_SETS": "forge:program"}));
+    let env = json!({"FEATURE_SETS": "forge:program", "NEEDS": "/needs", "OUT": "/out"});
+    assert_eq!(
+        body["env"], env,
+        "OUT and NEEDS name the folders as every runner does"
+    );
     assert_eq!(body["resources"], Value::Null, "the job states no CPUs");
     let script = body["command"][2].as_str().unwrap();
     assert!(
@@ -751,7 +755,7 @@ fn a_job_that_states_what_it_asks_gets_it_for_its_pod_and_cargo_runs_as_many_job
     let body = node.body(&made);
     let requests = json!({"requests": {"cpu": "16", "memory": "40Gi"}});
     assert_eq!(body["resources"], requests);
-    let env = json!({"CARGO_BUILD_JOBS": "16", "FEATURE_SETS": "forge:program"});
+    let env = json!({"CARGO_BUILD_JOBS": "16", "FEATURE_SETS": "forge:program", "NEEDS": "/needs", "OUT": "/out"});
     assert_eq!(body["env"], env);
     let scratch = json!({"path": "/var/tmp/target", "scratch": {"medium": "Memory"}});
     assert_eq!(body["inputs"][2], scratch);
