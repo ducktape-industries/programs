@@ -123,7 +123,7 @@ fn status() -> Vec<u8> {
         "accounts": [
             {
                 "label": "anthropic3-eph",
-                "provider": "anthropic",
+                "provider": "claude",
                 "read_at": at,
                 "five_hour": { "percent": 53.5, "resets_at": at },
                 "weekly": { "percent": 12, "resets_at": "2000-03-01T02:00:00+02:00" },
@@ -134,7 +134,7 @@ fn status() -> Vec<u8> {
             },
             {
                 "label": "jesse.claude.ext.5",
-                "provider": "anthropic",
+                "provider": "claude",
                 "read_at": at,
                 "five_hour": null,
                 "weekly": null,

@@ -328,7 +328,11 @@ fn status_read(
         let windows =
             merge_budget_windows(before.as_ref(), read_windows(reading, env.time), env.time);
         let spared = reading.error.is_none() && spare(&windows);
-        let provider = reading.provider.clone().filter(|_| spared);
+        let provider = reading
+            .provider
+            .as_deref()
+            .and_then(model_wire::ccs_provider);
+        let provider = provider.filter(|_| spared).map(str::to_owned);
         if let Some(provider) = provider.filter(|provider| !room.contains(provider)) {
             room.push(provider);
         }

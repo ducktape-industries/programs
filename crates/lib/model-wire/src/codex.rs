@@ -11,6 +11,7 @@ use crate::{
 };
 
 pub const PROVIDER: &str = "openai";
+pub const CCS_PROVIDER: &str = "codex";
 pub const INSTRUCTIONS: &str = "The developer message that opens this conversation, when there is one, carries your instructions.";
 pub const RESPONSES: &str = "/backend-api/codex/responses";
 pub const MODELS: &str = "/backend-api/codex/models";

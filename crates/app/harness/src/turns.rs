@@ -17,8 +17,8 @@ use crate::pictures::{self, Looks, Picture};
 use crate::resume::{self, Failure};
 use crate::routes::{self, Picked};
 use crate::state::{
-    ANSWERED, ASKED, ENDING, FLIGHTS, FRAMES, HELD, LANES, LIVE, Lane, Live, PARTIALS, PROVIDERS,
-    RETRIES, SEALED, SEALED_FOR, SHOWN, THREADS, WITHHELD,
+    ANSWERED, ASKED, ENDING, FLIGHTS, FRAMES, HELD, LANES, LIVE, Lane, Live, PARTIALS, PICKS,
+    PROVIDERS, RETRIES, SEALED, SEALED_FOR, SHOWN, THREADS, WITHHELD,
 };
 use crate::tallies;
 use crate::waiting::settling;
@@ -818,6 +818,10 @@ fn failed(
     thread: &mut ThreadRow,
     failure: Failure,
 ) -> Result<Option<Failure>, Error> {
+    let pinned = PICKS
+        .get(ctx, &thread.id)?
+        .is_some_and(|pick| pick.account.is_some());
+    let failure = failure.unpinned(pinned);
     let again = failure.again.is_some() && !thread.closed;
     if again {
         return Ok(Some(failure));

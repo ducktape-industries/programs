@@ -9,6 +9,7 @@ use crate::{
 };
 
 pub const PROVIDER: &str = "anthropic";
+pub const CCS_PROVIDER: &str = "claude";
 pub const MESSAGES: &str = "/v1/messages";
 pub const VERSION: &str = "2023-06-01";
 pub const COMPACTION_BETA: &str = "compact-2026-09-04";

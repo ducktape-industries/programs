@@ -60,7 +60,7 @@ fn none_open(chain: &MockChain, service: &str, target: &str) -> bool {
 }
 
 fn status(chain: &MockChain, height: u64, service: &str, accounts: &[(&str, u64)]) {
-    status_of(chain, height, service, "anthropic", accounts);
+    status_of(chain, height, service, "claude", accounts);
 }
 
 fn status_of(
@@ -86,7 +86,7 @@ fn status_of(
 }
 
 fn read(accounts: &[(&str, u64)]) -> Vec<u8> {
-    read_of("anthropic", accounts)
+    read_of("claude", accounts)
 }
 
 fn read_of(provider: &str, accounts: &[(&str, u64)]) -> Vec<u8> {
@@ -167,6 +167,14 @@ fn says(chain: &MockChain, service: &str, pinned: Option<&str>, account: &str, s
         body: body.to_string().into_bytes(),
     };
     answer(chain, request.id, Answer::Output(abi::encode(&response)));
+}
+
+fn refused(chain: &MockChain, pinned: Option<&str>, message: &str) {
+    let (request, _, sent) = open(chain, SERVICE, "/v1/messages");
+    assert_eq!(sent.as_deref(), pinned, "the account the call names");
+    let error = json!({ "type": "invalid_request_error", "message": message });
+    let body = json!({ "type": "error", "error": error });
+    answer(chain, request.id, Answer::Output(response(400, body)));
 }
 
 fn route(chain: &MockChain, thread: u64) -> Option<(String, Option<String>)> {
@@ -365,6 +373,46 @@ fn a_status_read_that_shows_an_account_with_room_ends_a_wait_for_the_reset() {
     let wakes = wakes_of(chain, thread);
     let held = |wake: &Wake| matches!(wake, Wake::RetryAfter { .. });
     assert!(!wakes.iter().any(held), "{wakes:?}");
+}
+
+#[test]
+fn a_pin_to_an_account_ccs_no_longer_holds_asks_again_naming_none_and_only_an_unpinned_refusal_is_final()
+ {
+    let world = world();
+    let chain = &world.chain;
+    status(chain, 2, SERVICE, &[("a", 50)]);
+    let thread = world.mention("m1", "hello");
+    chain.at(4, 0);
+    learned(chain, SERVICE);
+    chain.at(5, 0);
+    says(chain, SERVICE, None, "a", FINE);
+    assert_eq!(route(chain, thread), on(SERVICE, "a"));
+    world.mention("m2", "and now?");
+    chain.at(6, 0);
+    refused(chain, Some("a"), "no such account for claude: a");
+    let told = notices(chain, thread);
+    let again = "harness asks the model again at block 7 with no account named, so its service picks one (attempt 1)";
+    assert!(told.last().unwrap().ends_with(again), "{told:?}");
+    chain.at(7, 0);
+    chain.at(8, 0);
+    says(chain, SERVICE, None, "b", FINE);
+    assert_eq!(route(chain, thread), on(SERVICE, "b"));
+    world.mention("m3", "a request no account takes");
+    chain.at(9, 0);
+    refused(chain, Some("b"), "bad request");
+    chain.at(10, 0);
+    chain.at(11, 0);
+    refused(chain, None, "bad request");
+    chain.at(12, 0);
+    chain.at(13, 0);
+    assert!(
+        none_open(chain, SERVICE, "/v1/messages"),
+        "an unpinned refusal is final"
+    );
+    let told = notices(chain, thread);
+    let last = told.last().unwrap();
+    let gave_up = last.contains("bad request") && !last.contains("asks the model again");
+    assert!(gave_up, "{told:?}");
 }
 
 #[test]

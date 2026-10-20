@@ -87,6 +87,16 @@ impl Failure {
         }
     }
 
+    pub fn unpinned(self, pinned: bool) -> Failure {
+        match self.again {
+            None if pinned => Failure {
+                moves: true,
+                ..Failure::busy(self.text)
+            },
+            _ => self,
+        }
+    }
+
     // the model's own answer: a 429 or a 5xx says it was busy, anything else is final
     pub fn answered(text: String, response: &http::Response) -> Failure {
         let busy = response.status == 429 || response.status >= 500;
