@@ -8,7 +8,10 @@
 #   tools/view-gate.sh [--fast] <view> <artifact> [notifier]
 set -eu
 fast=
-if [ "$1" = --fast ]; then fast=yes; shift; fi
+usage() { echo "usage: tools/view-gate.sh [--fast] <view> <artifact> [notifier]" >&2; exit 2; }
+if [ "${1:-}" = --fast ]; then fast=yes; shift; fi
+case $# in 2 | 3) ;; *) usage ;; esac
+case ${3:-view} in view | notifier) ;; *) usage ;; esac
 view=$1
 artifact=$2
 kind=${3:-view}
