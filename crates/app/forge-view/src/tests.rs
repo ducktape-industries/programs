@@ -396,14 +396,41 @@ pub(crate) fn configure(cx: &mut TestAppContext, mode: &'static str) {
         .handle::<ProgramQuery<ownership::Ownership>>(|query| {
             Ok(match query {
                 ownership::Query::Record { .. } => ownership::Reply::Record(None),
-                ownership::Query::Effective { .. } => ownership::Reply::Policy(None),
+                ownership::Query::Effective { key, .. } => {
+                    ownership::Reply::Policy(project_writers(&key))
+                }
                 query => panic!("unexpected ownership query: {query:?}"),
+            })
+        });
+    cx.host()
+        .handle::<ProgramQuery<programs::Programs>>(|query| {
+            Ok(match query {
+                programs::Query::Roles => {
+                    programs::Reply::Roles(abi::Roles::from_iter([(abi::role::ACCESS, "access")]))
+                }
+                query => panic!("unexpected programs query: {query:?}"),
             })
         });
     cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
     // each card's picture: no account holds one
-    cx.host()
-        .handle::<ProgramQuery<Identity>>(|_| Ok(no_accounts()));
+    cx.host().handle::<ProgramQuery<Identity>>(|query| {
+        Ok(match query {
+            identity::Query::Profile { .. } => identity::Reply::Profile(None),
+            _ => no_accounts(),
+        })
+    });
+}
+
+fn project_writers(key: &[u8]) -> Option<ownership::Policy> {
+    let project = forge::tables::CUSTODY.key(&"project".to_owned());
+    (key == project.as_slice()).then(|| ownership::Policy {
+        id: 2,
+        owner: ownership::Party::Account(1),
+        name: "project writers".into(),
+        write: ownership::Writers::Listed(vec![ownership::Party::Account(9)]),
+        retired: false,
+        switched_to: None,
+    })
 }
 
 // identity's accounts with none listed: no picture to draw.

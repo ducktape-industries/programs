@@ -1,5 +1,5 @@
 //! Every read the screens make: the roster (harness's cards, the accounts, the relay nodes, the
-//! rooms its conversations sit in), one agent in full (access lists, topics, tallies, bound
+//! rooms its conversations sit in), one agent in full (who writes, topics, tallies, bound
 //! conversations), one transcript as far as its list shows it, the models and services.
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeSet, HashMap};
@@ -11,6 +11,7 @@ use harness::{
     Spoken, Tally, ThreadRow, ToolInfo, Usage, WaitRow, WithheldFrame,
 };
 use identity::{Category, Kind, Ownership, PageRequest};
+use policy_view::link;
 use program::Writers;
 use view::prelude::*;
 
@@ -237,6 +238,38 @@ pub(crate) fn sum<'a>(usages: impl IntoIterator<Item = &'a Usage>) -> Usage {
     total
 }
 
+async fn owned_writers(
+    host: &Host,
+    program: &str,
+    key: Vec<u8>,
+    at: String,
+) -> Result<Writers, Error> {
+    let asked = ownership::ask::Effective {
+        program: program.to_owned(),
+        key,
+    };
+    Ok(match host.query(asked).await? {
+        Some(policy) => Writers::Listed {
+            at,
+            owner: Some(link::listed(&policy.owner)),
+            list: link::list(&policy.write),
+        },
+        None => Writers::Anyone,
+    })
+}
+
+async fn file_writers(host: &Host, path: &str) -> Result<Writers, Error> {
+    let guarded = host
+        .query(files::ask::Guarded {
+            path: path.to_owned(),
+        })
+        .await?;
+    match guarded {
+        Some(at) => owned_writers(host, files::PROGRAM, files::guard_key(&at), at).await,
+        None => Ok(Writers::Anyone),
+    }
+}
+
 #[derive(PartialEq)]
 pub(crate) struct Detail {
     /// `None` once no script hands the account to harness
@@ -259,23 +292,15 @@ pub(crate) async fn detail(host: Host, agent: u64, rooms: Rooms) -> Result<Detai
         .await?
         .unwrap_or(Ownership::Anyone);
     let config_writers = match &setup {
-        Some(setup) => Some(
-            host.query(access::ask::Writers {
-                program: files::PROGRAM.to_owned(),
-                key: setup.path.clone(),
-            })
-            .await?,
-        ),
+        Some(setup) => Some(file_writers(&host, &setup.path).await?),
         None => None,
     };
     let conversation_writers = match &setup {
-        Some(_) => Some(
-            host.query(access::ask::Writers {
-                program: harness::PROGRAM.to_owned(),
-                key: harness::conversation_key(agent),
-            })
-            .await?,
-        ),
+        Some(_) => {
+            let key = harness::tables::CONVERSATIONS.key(&agent);
+            let at = harness::conversation_key(agent);
+            Some(owned_writers(&host, harness::PROGRAM, key, at).await?)
+        }
         None => None,
     };
     let threads = host

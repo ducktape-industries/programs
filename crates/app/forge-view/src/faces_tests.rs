@@ -18,12 +18,15 @@ fn pictured(cx: &mut TestAppContext) {
         control: identity::Control::User { keys: Vec::new() },
     };
     cx.host().handle::<ProgramQuery<Identity>>(move |query| {
-        assert!(matches!(query, identity::Query::List { .. }));
-        Ok(identity::Reply::Accounts(identity::PageResponse {
-            height: 1,
-            items: [1, 2, 4, 9].map(account).into(),
-            next: None,
-        }))
+        Ok(match query {
+            identity::Query::List { .. } => identity::Reply::Accounts(identity::PageResponse {
+                height: 1,
+                items: [1, 2, 4, 9].map(account).into(),
+                next: None,
+            }),
+            identity::Query::Profile { .. } => identity::Reply::Profile(None),
+            query => panic!("unexpected identity query: {query:?}"),
+        })
     });
     cx.host()
         .handle::<BlobGet>(|_| Ok(Some(b"\x89PNG\r\n\x1a\nface".to_vec())));

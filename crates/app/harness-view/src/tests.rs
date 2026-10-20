@@ -659,45 +659,43 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             other => panic!("unexpected query: {other:?}"),
         })
     });
-    let shared = net.clone();
-    cx.host().handle::<Query<access::Access>>(move |query| {
-        let net = shared.borrow();
-        Ok(match query {
-            access::Query::Writers { program, key } if program == files::PROGRAM => {
-                let owner = net
-                    .setups
-                    .iter()
-                    .find(|setup| setup.path == key)
-                    .map(|setup| identity::Party::Account(setup.manager));
-                access::Reply::Writers(program::Writers::Listed {
-                    at: key,
-                    owner,
-                    list: identity::Ownership::Owner,
-                })
-            }
-            access::Query::Writers { program, key } if program == harness::PROGRAM => {
-                let owner = net
-                    .setups
-                    .iter()
-                    .find(|setup| harness::conversation_key(setup.agent) == key)
-                    .map(|setup| identity::Party::Account(setup.manager));
-                access::Reply::Writers(program::Writers::Listed {
-                    at: key,
-                    owner,
-                    list: identity::Ownership::Owner,
-                })
-            }
-            other => panic!("unexpected query: {other:?}"),
-        })
-    });
     cx.host()
         .handle::<Submit<access::Access>>(|_| Ok(applied(Vec::new())));
-    // nothing harness keeps has an owner on record: each keeps the rule from before policies
-    cx.host().handle::<Query<ownership::Ownership>>(|query| {
+    let shared = net.clone();
+    cx.host()
+        .handle::<Query<ownership::Ownership>>(move |query| {
+            let net = shared.borrow();
+            Ok(match query {
+                ownership::Query::Record { .. } => ownership::Reply::Record(None),
+                ownership::Query::Effective { program, key } => {
+                    let managed = net.setups.iter().find(|setup| {
+                        let file =
+                            program == files::PROGRAM && key == files::guard_key(&setup.path);
+                        let starts = program == harness::PROGRAM
+                            && key == harness::tables::CONVERSATIONS.key(&setup.agent);
+                        file || starts
+                    });
+                    ownership::Reply::Policy(managed.map(|setup| managers_alone(setup.manager)))
+                }
+                ownership::Query::Policies { .. } => ownership::Reply::Policies(page(Vec::new())),
+                ownership::Query::Defaults { .. } => ownership::Reply::Defaults(page(Vec::new())),
+                ownership::Query::Open { .. } => ownership::Reply::Open(None),
+                query => panic!("unexpected ownership query: {query:?}"),
+            })
+        });
+    cx.host().handle::<Submit<ownership::Ownership>>(|op| {
+        let output = match op {
+            ownership::Op::Create { .. } => abi::encode(&POLICY),
+            _ => Vec::new(),
+        };
+        Ok(applied(output))
+    });
+    cx.host().handle::<Query<programs::Programs>>(|query| {
         Ok(match query {
-            ownership::Query::Record { .. } => ownership::Reply::Record(None),
-            ownership::Query::Effective { .. } => ownership::Reply::Policy(None),
-            query => panic!("unexpected ownership query: {query:?}"),
+            programs::Query::Roles => {
+                programs::Reply::Roles(abi::Roles::from_iter([(abi::role::ACCESS, "access")]))
+            }
+            query => panic!("unexpected programs query: {query:?}"),
         })
     });
     let shared = net.clone();
@@ -749,6 +747,12 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
     cx.host().handle::<Query<files::Files>>(move |query| {
         let net = shared.borrow();
         Ok(match query {
+            files::Query::Guarded { path } => files::Reply::Guarded(
+                net.setups
+                    .iter()
+                    .any(|setup| setup.path == path)
+                    .then_some(path),
+            ),
             files::Query::Read { path, offset, .. } => {
                 let named = net.files.iter().find(|(at, _)| *at == path);
                 let setup = net.setups.iter().find(|setup| setup.path == path);
@@ -1186,6 +1190,27 @@ fn edit_of(path: &str, config: &Config, base: Option<BlobId>, message: String) -
     }
 }
 
+const POLICY: u64 = 41;
+
+fn managers_alone(manager: u64) -> ownership::Policy {
+    ownership::Policy {
+        id: 1,
+        owner: ownership::Party::Account(manager),
+        name: "Only me".into(),
+        write: ownership::Writers::Owner,
+        retired: false,
+        switched_to: None,
+    }
+}
+
+fn commits(cx: &TestAppContext) -> Vec<files::Op> {
+    cx.host()
+        .requests::<Submit<files::Files>>()
+        .into_iter()
+        .filter(|op| matches!(op, files::Op::Commit { .. }))
+        .collect()
+}
+
 fn kept(path: &str) -> access::Op {
     access::Op::Set {
         program: files::PROGRAM.into(),
@@ -1233,7 +1258,7 @@ fn the_create_flow_sends_its_ops_in_order() {
     cx.simulate_click("create-next");
     cx.run_until_parked();
     assert_eq!(
-        cx.host().requests::<Submit<files::Files>>(),
+        commits(&cx),
         [edit_of(
             "/home/Eddy/agents/rover.md",
             &rover(),
@@ -1260,6 +1285,27 @@ fn the_create_flow_sends_its_ops_in_order() {
     assert_eq!(
         cx.host().requests::<Submit<access::Access>>(),
         [kept("/home/Eddy/agents/rover.md")]
+    );
+    assert_eq!(
+        cx.host().requests::<Submit<files::Files>>().last(),
+        Some(&files::Op::Guard {
+            path: "/home/Eddy/agents/rover.md".into()
+        }),
+        "the new file keeps a guard of its own"
+    );
+    let owned = cx.host().requests::<Submit<ownership::Ownership>>();
+    assert!(
+        matches!(
+            owned.as_slice(),
+            [
+                ownership::Op::Create {
+                    write: ownership::Writers::Owner,
+                    ..
+                },
+                ownership::Op::Relink { policy: POLICY, .. },
+            ]
+        ),
+        "{owned:?}"
     );
     assert!(cx.host().requests::<Submit<harness::Harness>>().is_empty());
 }
@@ -1308,7 +1354,7 @@ fn a_path_typed_in_the_form_is_the_one_committed_and_scripted() {
         ..rover()
     };
     assert_eq!(
-        cx.host().requests::<Submit<files::Files>>(),
+        commits(&cx),
         [edit_of(
             "/home/Eddy/rover.md",
             &waits,
@@ -1359,7 +1405,7 @@ fn a_refused_commit_resumes_without_a_second_account() {
         .filter(|op| matches!(op, identity::Op::CreateAgent { .. }))
         .count();
     assert_eq!(created, 1);
-    assert_eq!(cx.host().requests::<Submit<files::Files>>().len(), 2);
+    assert_eq!(commits(&cx).len(), 2);
     assert!(
         cx.host()
             .requests::<Submit<Identity>>()
@@ -1404,7 +1450,7 @@ fn an_unscripted_agent_continues_at_its_configuration() {
     fill(&mut cx);
     cx.simulate_click("create-next");
     cx.run_until_parked();
-    assert_eq!(cx.host().requests::<Submit<files::Files>>().len(), 1);
+    assert_eq!(commits(&cx).len(), 1);
     assert_eq!(
         cx.host().requests::<Submit<Identity>>(),
         [identity::Op::SetScript {
@@ -1434,7 +1480,7 @@ fn edit_commits_a_new_version_of_the_file_and_scripts_only_a_moved_path() {
         ..config_of("Scout")
     };
     assert_eq!(
-        cx.host().requests::<Submit<files::Files>>(),
+        commits(&cx),
         [edit_of(
             "/home/Eddy/agents/scout.md",
             &smaller,
@@ -1456,7 +1502,7 @@ fn edit_commits_a_new_version_of_the_file_and_scripts_only_a_moved_path() {
     cx.simulate_click("create-next");
     cx.run_until_parked();
     assert_eq!(
-        cx.host().requests::<Submit<files::Files>>().last(),
+        commits(&cx).last(),
         Some(&edit_of(
             "/home/Eddy/scout.md",
             &config_of("Scout"),
@@ -1555,7 +1601,7 @@ fn editing_a_configuration_in_another_accounts_home_shows_the_refusal_files_retu
         ..config_of("Scout")
     };
     assert_eq!(
-        cx.host().requests::<Submit<files::Files>>(),
+        commits(&cx),
         [edit_of(
             "/home/Ada/agents/scout.md",
             &smaller,

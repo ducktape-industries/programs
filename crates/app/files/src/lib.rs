@@ -293,6 +293,10 @@ pub enum Query {
     #[reads(state::GUARDED)]
     #[tool_query(description = "The nearest guarded path at or above path, whose policy in the ownership program decides who writes it, or null where anyone does.", example = examples::guarded)]
     Guarded { path: String },
+    #[ask(Reply::Owner(Option<Party>))]
+    #[reads(state::HEAD, state::HISTORY, state::SNAPSHOTS)]
+    #[tool_query(description = "Who owns path by files' rule, and so alone may guard it: the account that made it, the account named <name> for /home/<name>, chat for its folders; null where nothing owns it.", example = examples::owner)]
+    Owner { path: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -317,6 +321,7 @@ pub enum Reply {
     Pins(PageResponse<PinRow>),
     Pin(Option<PinRow>),
     Guarded(Option<String>),
+    Owner(Option<Party>),
 }
 
 pub fn describe(op: &Op) -> describe::Description {

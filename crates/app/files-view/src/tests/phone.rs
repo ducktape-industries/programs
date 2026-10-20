@@ -186,6 +186,13 @@ fn a_new_text_file_from_its_sheet_carries_the_list_picked() {
     assert!(cx.find("files/write").is_none());
     let (list, _) = list_at(&net, "/shared/open.md");
     assert_eq!(list, Some(files::Ownership::Anyone));
+    assert_eq!(
+        guard_at(&net, "/shared/open.md"),
+        (
+            Some("/shared/open.md".into()),
+            Some(ownership::Writers::Anyone)
+        )
+    );
 }
 
 #[test]

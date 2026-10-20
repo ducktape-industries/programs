@@ -1,7 +1,7 @@
 //! Who can edit the open repository and the open change, as the ownership program says (through
 //! `policy_view::item`), and what the reader may do by it. An item with no record keeps the rule
 //! it had before policies (J-011 Q8).
-use ownership::Party;
+use ownership::{Ownership, Party};
 use policy_view::{Editing, Item, item};
 use view::design::Ladder;
 use view::methods::Change;
@@ -84,6 +84,20 @@ impl Forge {
         self.by_policy(read, self.authored())
     }
 
+    pub(crate) fn repo_owner_on_record(&self) -> Option<Party> {
+        let repo = self.repo_item()?;
+        self.repo_policy.admits(&repo)?;
+        let standing = self.repo_policy.standing.ready()?;
+        standing.record.as_ref().map(|record| record.owner.clone())
+    }
+
+    pub(crate) fn may_grant(&self) -> bool {
+        match self.repo_owner_on_record() {
+            Some(_) => self.may_write() && self.repo_policy.owns(),
+            None => self.owns_repo(),
+        }
+    }
+
     pub(crate) fn may_close_change(&self) -> bool {
         (self.may_write() && self.authored()) || self.may_change_repo()
     }
@@ -106,6 +120,18 @@ impl Forge {
     pub(crate) fn ownership_moved(&mut self, change: Option<Change>, cx: &mut Context<Self>) {
         if self.hidden {
             return;
+        }
+        if let Some(repo) = self.repo_item() {
+            let effective = ownership::Query::Effective {
+                program: repo.program,
+                key: repo.key,
+            };
+            let touched = change
+                .as_ref()
+                .is_none_or(|change| change.touches::<Ownership, _>(&effective));
+            if touched {
+                self.reread_writers(cx);
+            }
         }
         item::moved(self, repo_policy, change.as_ref(), cx);
         item::moved(self, change_policy, change.as_ref(), cx);

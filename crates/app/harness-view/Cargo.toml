@@ -32,3 +32,8 @@ ducklink.workspace = true
 serde.workspace = true
 # a tool call's input is JSON: the file a files_write names
 serde_json.workspace = true
+
+[dev-dependencies]
+# what a test answers for the roster's roles and ownership's new policy id
+abi.workspace = true
+programs.workspace = true

@@ -174,8 +174,8 @@ fn the_change_details_say_who_can_edit_it_and_its_policy_decides_edit() {
         "the change's policy admits Rae"
     );
     assert!(
-        disabled(&cx, "forge-merge"),
-        "the repository has no record: as before policies, Rae writes nothing"
+        !disabled(&cx, "forge-merge"),
+        "the repository has no record, so no policy narrows it: the guard leaves it open"
     );
 }
 
@@ -191,8 +191,82 @@ fn the_owner_on_record_decides_and_an_author_still_closes_their_own_change() {
     assert!(cx.has_text("Only Tal"), "{:?}", cx.texts());
     assert!(disabled(&cx, "forge-settings-save"));
     assert!(
-        !disabled(&cx, "forge-settings-grant"),
-        "access's list is still the one forge names its owner's"
+        disabled(&cx, "forge-settings-grant"),
+        "the owner on record sets who writes it"
+    );
+}
+
+fn roles(cx: &TestAppContext, access: bool) {
+    cx.host()
+        .handle::<ProgramQuery<programs::Programs>>(move |query| {
+            Ok(match query {
+                programs::Query::Roles => {
+                    let bound = access.then_some((abi::role::ACCESS, "access"));
+                    programs::Reply::Roles(abi::Roles::from_iter(bound))
+                }
+                query => panic!("unexpected programs query: {query:?}"),
+            })
+        });
+}
+
+fn makes_policy_seven(cx: &TestAppContext) {
+    cx.host().handle::<Submit<ownership::Ownership>>(|op| {
+        let output = match op {
+            Owned::Create { .. } => abi::encode(&7u64),
+            _ => Vec::new(),
+        };
+        Ok(view::testing::applied(output))
+    });
+}
+
+fn grant_rae(cx: &mut TestAppContext) {
+    settings(cx);
+    cx.simulate_input("forge-settings-grant-input", "2");
+    cx.simulate_click("forge-settings-grant");
+    cx.run_until_parked();
+}
+
+#[test]
+fn a_grant_relinks_the_repository_to_its_owners_policy_with_those_writers() {
+    let mine = a_policy(4, 1, "Only me", Writers::Owner);
+    let team = a_policy(5, 1, "Team", Writers::Listed(vec![account(2)]));
+    let records = vec![(custody(), 1, mine.clone())];
+    let (mut cx, _) = opened_owned(1, records, vec![mine, team]);
+    grant_rae(&mut cx);
+    assert_eq!(
+        set_lists(&cx),
+        [listed(&[2])],
+        "access's list too, while access gates"
+    );
+    let sent = cx.host().requests::<Submit<ownership::Ownership>>();
+    assert!(
+        matches!(sent.as_slice(), [Owned::Relink { key, policy: 5, .. }] if *key == custody()),
+        "{sent:?}"
+    );
+}
+
+#[test]
+fn with_access_unbound_a_grant_sends_no_access_list_and_makes_the_policy_it_needs() {
+    let mine = a_policy(4, 1, "Only me", Writers::Owner);
+    let (mut cx, _) = opened_owned(1, vec![(custody(), 1, mine.clone())], vec![mine]);
+    roles(&cx, false);
+    makes_policy_seven(&cx);
+    grant_rae(&mut cx);
+    assert!(
+        cx.host().requests::<Submit<access::Access>>().is_empty(),
+        "access is unbound: nothing is sent to it"
+    );
+    let sent = cx.host().requests::<Submit<ownership::Ownership>>();
+    let rae = Writers::Listed(vec![account(2)]);
+    assert!(
+        matches!(
+            sent.as_slice(),
+            [
+                Owned::Create { name, write },
+                Owned::Relink { key, policy: 7, .. },
+            ] if name == "project writers" && *write == rae && *key == custody()
+        ),
+        "{sent:?}"
     );
 }
 

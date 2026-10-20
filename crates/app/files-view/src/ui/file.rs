@@ -46,6 +46,7 @@ pub(super) fn detail(view: &Files, path: &str, cx: Cx, k: &Kit) -> AnyElement {
     );
     page.child(title("files-file-title", name_of(path), Some(under), k))
         .children(writes(view, cx, k))
+        .children(crate::policies::row(view, cx, &k.ladder, &k.theme))
         .child(body(file, &entry.node, cx, k))
         .into_any_element()
 }

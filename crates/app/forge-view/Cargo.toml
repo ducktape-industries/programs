@@ -43,3 +43,5 @@ view = { workspace = true, features = ["rig"] }
 gitcore.workspace = true
 founding = { path = "../../sdk/founding" }
 program.workspace = true
+# the roster's roles a test answers: whether access still gates
+programs.workspace = true

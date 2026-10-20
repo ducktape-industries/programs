@@ -18,7 +18,7 @@ fn the_create_form_writes_the_thinking_level_it_picks() {
         ..rover()
     };
     assert_eq!(
-        cx.host().requests::<Submit<files::Files>>(),
+        commits(&cx),
         [edit_of(
             "/home/Eddy/agents/rover.md",
             &thinks,
@@ -51,7 +51,7 @@ fn the_agent_shows_its_thinking_and_its_manager_sets_it_there() {
         ..config_of("Scout")
     };
     assert_eq!(
-        cx.host().requests::<Submit<files::Files>>(),
+        commits(&cx),
         [edit_of(
             "/home/Eddy/agents/scout.md",
             &deeper,
@@ -70,7 +70,7 @@ fn the_agent_shows_its_thinking_and_its_manager_sets_it_there() {
         ..config_of("Scout")
     };
     assert_eq!(
-        cx.host().requests::<Submit<files::Files>>().last(),
+        commits(&cx).last(),
         Some(&edit_of(
             "/home/Eddy/agents/scout.md",
             &kept,
@@ -118,7 +118,7 @@ fn an_edit_and_a_thinking_pick_keep_the_channels_it_listens_to_and_its_settle() 
     let message = "Configure agent Scout (account 12)";
     let path = "/home/Eddy/agents/scout.md";
     assert_eq!(
-        cx.host().requests::<Submit<files::Files>>(),
+        commits(&cx),
         [edit_of(path, &thinks, Some(SNAPSHOT), message.into())]
     );
     cx.simulate_click("agent-edit");
@@ -126,7 +126,7 @@ fn an_edit_and_a_thinking_pick_keep_the_channels_it_listens_to_and_its_settle() 
     cx.simulate_click("create-next");
     cx.run_until_parked();
     assert_eq!(
-        cx.host().requests::<Submit<files::Files>>().last(),
+        commits(&cx).last(),
         Some(&edit_of(path, &hears, Some(SNAPSHOT), message.into())),
     );
 }

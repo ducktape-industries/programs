@@ -1,26 +1,10 @@
-//! Files: duckfs, the network's versioned filesystem (the `files`
-//! program), as a file browser. A folder lists its entries at the newest
-//! snapshot, a file shows its picture or its text (else its size), and
-//! the history lists the snapshots every commit made and the pins that
-//! name some of them. Where the access program lets the reader write
-//! (anywhere no write list covers, else where the nearest list allows
-//! them), they make folders and text files, with an optional write list of
-//! their own set in access once the commit lands, upload files from their
-//! device, edit text, rename, move and remove, each one commit with a
-//! message.
-//!
-//! The state is one struct (`state.rs`) and a stack of pages both designs
-//! draw. Reads are typed (`queries.rs`) and loaded in `load.rs`, read again
-//! on every commit `watch.rs` hears of; where the reader goes (a link
-//! opened into Files too) is `actions.rs`, what they write `write.rs`,
-//! what a right press offers `menu.rs`; every sentence is in `words.rs`.
-//! `ui/` draws the desktop's pages, `ui/phone/` the phone's screens: the
-//! root picks one, once, by the device. Element ids: a container is
-//! `files-<name>`, a control or a row `files/<what>/<key>`, or
-//! `files/<what>:<path>` where a path is the key.
+//! Files: duckfs (the `files` program) as a file browser: folders, files, the snapshot history and
+//! its pins, and the writes a path's guard lets the reader make (`policies.rs`). State `state.rs`,
+//! reads `queries.rs`/`load.rs`/`watch.rs`, writes `write.rs`, words `words.rs`, pages `ui/`.
 mod actions;
 mod load;
 mod menu;
+mod policies;
 mod queries;
 mod state;
 mod ui;
@@ -66,6 +50,7 @@ impl View for Files {
 impl Render for Files {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.width = window.viewport_size().width.into();
+        self.settle_policy(cx);
         if window.touch() {
             ui::phone::render(self, cx)
         } else {

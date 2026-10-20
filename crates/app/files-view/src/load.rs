@@ -50,7 +50,7 @@ impl Files {
         cx.reread(
             self,
             |view| &mut view.folder,
-            |_, cx| queries::folder(cx.host(), path),
+            |view, cx| queries::folder(cx.host(), path, view.reader.account),
             Self::reread_folder,
         );
     }
@@ -76,7 +76,7 @@ impl Files {
         cx.reread(
             self,
             |view| &mut view.file,
-            move |_, cx| queries::file(cx.host(), path, kept),
+            move |view, cx| queries::file(cx.host(), path, view.reader.account, kept),
             Self::reread_file,
         );
     }

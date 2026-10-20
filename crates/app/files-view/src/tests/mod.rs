@@ -70,6 +70,7 @@ pub(crate) fn seeded() -> Network {
     let net = Network::new();
     net.seat::<files::Files>(files::PROGRAM);
     net.seat::<access::Access>(access::PROGRAM);
+    net.seat::<ownership::Ownership>(ownership::PROGRAM);
     let dev = net.me();
     let ada = net.person("ada");
     net.at(T0);
@@ -105,6 +106,26 @@ pub(crate) fn seeded() -> Network {
     };
     net.submit(ada, access::PROGRAM, &only_ada)
         .expect("ada lists her home for herself");
+    let guard = Op::Guard {
+        path: "/home/ada".into(),
+    };
+    net.submit(ada, files::PROGRAM, &guard)
+        .expect("ada guards her home");
+    let only_me = ownership::Op::Create {
+        name: "Only me".into(),
+        write: ownership::Writers::Owner,
+    };
+    let made = net
+        .submit(ada, ownership::PROGRAM, &only_me)
+        .expect("ada makes a policy");
+    let policy: ownership::PolicyId = abi::decode(&made).expect("a policy id");
+    let relink = ownership::Op::Relink {
+        program: files::PROGRAM.into(),
+        key: files::guard_key("/home/ada"),
+        policy,
+    };
+    net.submit(ada, ownership::PROGRAM, &relink)
+        .expect("ada's home is hers alone");
     net.at(T0 + 120_000);
     commit(
         &net,
@@ -137,6 +158,21 @@ pub(crate) fn list_at(net: &Network, path: &str) -> (Option<Ownership>, Option<P
         panic!("access answers who owns a path")
     };
     (list, resource.owner)
+}
+
+pub(crate) fn guard_at(net: &Network, path: &str) -> (Option<String>, Option<ownership::Writers>) {
+    let asked = files::Query::Guarded { path: path.into() };
+    let Ok(files::Reply::Guarded(at)) = net.query(files::PROGRAM, &asked) else {
+        panic!("files answers a path's guard")
+    };
+    let asked = ownership::Query::Effective {
+        program: files::PROGRAM.into(),
+        key: files::guard_key(path),
+    };
+    let Ok(ownership::Reply::Policy(policy)) = net.query(ownership::PROGRAM, &asked) else {
+        panic!("ownership answers a guard's policy")
+    };
+    (at, policy.map(|policy| policy.write))
 }
 
 pub(crate) fn file() -> files::Node {

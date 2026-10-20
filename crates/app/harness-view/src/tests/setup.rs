@@ -49,11 +49,13 @@ fn a_save_rewrites_the_front_matter_alone_and_keeps_the_pins_and_the_body() {
     cx.simulate_click("setup-save");
     cx.run_until_parked();
     let written = "+++\nmodel = \"sonnet\"\nmax_tokens = 4096\nthinking = \"high\"\nserver_tools = [\"web_search\"]\nlisten = [\"deploys\"]\nsettle = \"10s\"\ncompact_at = 650000\nservice = \"ccs\"\n+++\n\nYou are Scout.\n\n  Kept as it is.\n";
-    assert_eq!(
-        cx.host().requests::<Submit<files::Files>>(),
-        [commit_of(&path_of(EDDY, "Scout"), written)]
-    );
-    let reads = cx.host().requests::<Query<files::Files>>();
+    assert_eq!(commits(&cx), [commit_of(&path_of(EDDY, "Scout"), written)]);
+    let reads: Vec<files::Query> = cx
+        .host()
+        .requests::<Query<files::Files>>()
+        .into_iter()
+        .filter(|query| matches!(query, files::Query::Read { .. }))
+        .collect();
     let at_snapshot = |query: &files::Query| matches!(query, files::Query::Read { at: Some(at), .. } if *at == SNAPSHOT);
     assert!(reads.iter().all(at_snapshot), "{reads:?}");
     assert!(cx.find("setup-save").is_none(), "{:?}", cx.texts());
@@ -88,7 +90,7 @@ fn a_number_that_is_none_says_so_and_sends_nothing() {
         "{:?}",
         cx.texts()
     );
-    assert!(cx.host().requests::<Submit<files::Files>>().is_empty());
+    assert!(commits(&cx).is_empty());
 }
 
 #[test]
@@ -124,10 +126,7 @@ fn the_edit_form_writes_the_prompt_and_keeps_the_front_matter() {
     cx.simulate_click("create-next");
     cx.run_until_parked();
     let written = "+++\nmodel = \"sonnet\"\nmax_tokens = 4096\nservice = \"ccs\"\n+++\nYou are Scout, on call.\n";
-    assert_eq!(
-        cx.host().requests::<Submit<files::Files>>(),
-        [commit_of(&path_of(EDDY, "Scout"), written)]
-    );
+    assert_eq!(commits(&cx), [commit_of(&path_of(EDDY, "Scout"), written)]);
 }
 
 #[test]
@@ -145,9 +144,6 @@ fn on_a_phone_the_model_page_edits_the_front_matter() {
     cx.simulate_click("setup-save");
     cx.run_until_parked();
     let written = "+++\nmodel = \"sonnet\"\nmax_tokens = 4096\nwait = 600\nservice = \"ccs\"\n+++\n\nYou are Scout.\n\n  Kept as it is.\n";
-    assert_eq!(
-        cx.host().requests::<Submit<files::Files>>(),
-        [commit_of(&path_of(EDDY, "Scout"), written)]
-    );
+    assert_eq!(commits(&cx), [commit_of(&path_of(EDDY, "Scout"), written)]);
     assert!(cx.find("part-model").is_some(), "{:?}", cx.texts());
 }

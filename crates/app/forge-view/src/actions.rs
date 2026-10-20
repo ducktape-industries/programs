@@ -13,6 +13,7 @@ use crate::state::{Answer, ChangeForm, Forge, NewRepo, Pending, Progress, change
 use crate::words;
 use forge::{Mergeability, Op, Principal, Revision, Settings, valid_repo_name};
 use identity::{Ownership, Party};
+use policy_view::link;
 
 fn with_writer(list: &Ownership, party: Party) -> Option<Ownership> {
     match list {
@@ -414,14 +415,31 @@ impl Forge {
     }
 
     fn set_writers(&mut self, list: Ownership, label: &str, cx: &mut Context<Self>) {
-        let op = access::Op::Set {
+        let repo = self.repo_name();
+        let item = policy_view::Item {
             program: forge::PROGRAM.to_owned(),
-            key: forge::repo_key(&self.repo_name()),
-            list: Some(list),
+            key: forge::tables::CUSTODY.key(&repo),
+            label: format!("{repo} writers"),
         };
+        let owner = self.repo_owner_on_record();
+        let write = link::writers(&list);
         let id = self.issue("settings".into(), label, cx);
-        let submit = cx.host().ask::<Submit<access::Access>>(op);
-        cx.land(submit, move |forge, answer, cx| {
+        let host = cx.host();
+        let work = async move {
+            let key = forge::repo_key(&repo);
+            let listed = link::access_list(&host, forge::PROGRAM, &key, &write).await?;
+            match (owner, listed) {
+                (Some(owner), None) => link::link(&host, item, owner, write).await,
+                (Some(owner), Some(listed)) if link::landed(&listed) => {
+                    link::link(&host, item, owner, write).await
+                }
+                (_, Some(listed)) => Ok(listed),
+                (None, None) => Err(view::host::malformed(format!(
+                    "{repo} has no owner on record to set who writes it"
+                ))),
+            }
+        };
+        cx.land(work, move |forge, answer, cx| {
             cx.notify();
             if !forge.settle(id, answer) {
                 return;

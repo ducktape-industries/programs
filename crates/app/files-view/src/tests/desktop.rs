@@ -165,6 +165,31 @@ fn another_accounts_listed_home_offers_no_writes() {
     cx.run_until_parked();
     assert!(cx.has_text("diary.txt"));
     assert!(cx.find("files/begin/new-folder").is_none());
+    assert!(cx.has_text("Only ada"), "{:?}", cx.texts());
+    assert!(
+        cx.find("files/guard").is_none(),
+        "the home is ada's to guard"
+    );
+}
+
+#[test]
+fn the_owner_guards_a_path_of_their_own_and_its_row_says_who_can_edit() {
+    let net = seeded();
+    let mut cx = desktop(&net);
+    open_notes(&mut cx);
+    assert!(cx.has_text(policy_view::item::WHO), "{:?}", cx.texts());
+    assert!(cx.has_text(words::ANYONE_WRITES));
+    cx.simulate_click("files/guard");
+    cx.run_until_parked();
+    assert_eq!(
+        guard_at(&net, "/home/dev/notes.txt").0,
+        Some("/home/dev/notes.txt".into())
+    );
+    assert!(
+        cx.find("files/guard").is_none(),
+        "it keeps a guard of its own now"
+    );
+    assert!(cx.find("files-policy").is_some());
 }
 
 #[test]
@@ -198,6 +223,14 @@ fn a_new_text_file_picked_only_mine_is_committed_with_its_list() {
     let (list, owner) = list_at(&net, "/shared/mine.txt");
     assert_eq!(list, Some(files::Ownership::Owner));
     assert_eq!(owner, Some(files::Party::Account(net.me())));
+    assert_eq!(
+        guard_at(&net, "/shared/mine.txt"),
+        (
+            Some("/shared/mine.txt".into()),
+            Some(ownership::Writers::Owner)
+        ),
+        "its own guard, on a policy of the reader's that says the same"
+    );
 }
 
 #[test]
@@ -221,6 +254,13 @@ fn a_new_folder_listed_for_accounts_and_programs_is_made_with_its_list() {
         Some(files::Ownership::Listed(vec![
             files::Party::Account(ada),
             files::Party::Program(files::PROGRAM.into()),
+        ]))
+    );
+    assert_eq!(
+        guard_at(&net, "/home/dev/team").1,
+        Some(ownership::Writers::Listed(vec![
+            ownership::Party::Account(ada),
+            ownership::Party::Program(files::PROGRAM.into()),
         ]))
     );
 }

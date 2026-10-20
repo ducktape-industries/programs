@@ -4,7 +4,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use abi::role::access::Writers;
 use files::{BlobId, DiffEntry, EntryInfo, Node, Party, PinRow, SnapshotRow};
 use serde::{Deserialize, Serialize};
 use view::borsh_bytes;
@@ -170,12 +169,22 @@ impl Reader {
         }
     }
 
-    pub fn writes(&self, writers: &Writers) -> bool {
-        let Some(account) = self.account else {
-            return false;
-        };
-        writers.allows(&[Party::Account(account)])
+    pub fn writes(&self, guard: &Guard) -> bool {
+        self.account.is_some() && guard.admits.unwrap_or(true)
     }
+
+    pub fn owns(&self, guard: &Guard) -> bool {
+        self.account
+            .is_some_and(|account| guard.owner == Some(Party::Account(account)))
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Guard {
+    pub at: Option<String>,
+    pub admits: Option<bool>,
+    #[serde(with = "borsh_bytes")]
+    pub owner: Option<Party>,
 }
 
 /// A folder as `files` listed it at one snapshot.
@@ -191,13 +200,12 @@ pub struct Folder {
     #[serde(with = "borsh_bytes")]
     pub entries: Vec<EntryInfo>,
     /// who writes the folder itself; `None` for `/`, which no change names
-    #[serde(with = "borsh_bytes")]
-    pub writers: Option<Writers>,
+    pub guard: Option<Guard>,
 }
 
 impl Folder {
-    pub fn children(&self) -> Writers {
-        self.writers.clone().unwrap_or(Writers::Anyone)
+    pub fn children(&self) -> Guard {
+        self.guard.clone().unwrap_or_default()
     }
 
     pub fn holds_namespace_roots(&self) -> bool {
@@ -226,8 +234,7 @@ pub struct Opened {
     #[serde(skip)]
     pub picture: Option<Arc<Image>>,
     /// who writes it
-    #[serde(with = "borsh_bytes")]
-    pub writers: Option<Writers>,
+    pub guard: Option<Guard>,
     // a markdown file's text as its blocks, read once as it lands. Never
     // kept: a restored view reads the file again
     #[serde(skip)]
@@ -396,6 +403,8 @@ pub struct Files {
     pub(crate) width: f32,
     #[serde(skip)]
     pub(crate) picking: bool,
+    #[serde(skip)]
+    pub(crate) path_policy: policy_view::Editing,
 }
 
 impl Default for Files {
@@ -414,6 +423,7 @@ impl Default for Files {
             forms: 0,
             width: 0.,
             picking: false,
+            path_policy: policy_view::Editing::default(),
         }
     }
 }

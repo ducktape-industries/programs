@@ -356,3 +356,6 @@ pub fn note(note: &Note) -> String {
         Note::Refused(why) => why.clone(),
     }
 }
+
+pub const GUARD: &str = "Guard";
+pub const ANYONE_WRITES: &str = "Anyone";

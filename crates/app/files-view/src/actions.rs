@@ -81,6 +81,9 @@ impl Files {
     }
 
     pub(crate) fn back(&mut self, cx: &mut Context<Self>) {
+        if self.policy_sheet_open() {
+            return self.close_policy_sheet(cx);
+        }
         if self.sheet_shown().is_some() {
             self.sheet = None;
             cx.notify();

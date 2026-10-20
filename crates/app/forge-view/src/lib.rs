@@ -116,11 +116,6 @@ impl View for Forge {
             Err(refusal) => cx.log_refused("identity's live heads", &refusal),
         })
         .detach();
-        cx.follow::<Changes<access::Access>>((), |forge, change, cx| match change {
-            Ok(_) => forge.reread_writers(cx),
-            Err(refusal) => cx.log_refused("access's live heads", &refusal),
-        })
-        .detach();
         cx.follow::<Changes<ownership::Ownership>>((), |forge, change, cx| match change {
             Ok(change) => forge.ownership_moved(change, cx),
             Err(refusal) => cx.log_refused("ownership's live heads", &refusal),

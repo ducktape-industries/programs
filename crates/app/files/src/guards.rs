@@ -169,6 +169,11 @@ pub(crate) fn unguard(ctx: &ExecCtx, path: String) -> Result<(), Error> {
     Ok(())
 }
 
+pub(crate) fn owner(ctx: &QueryCtx, path: &str) -> Result<Option<Party>, Error> {
+    let path = join(&change_path(path)?);
+    Ok(resource(ctx, &path)?.owner)
+}
+
 pub(crate) fn guarded(ctx: &QueryCtx, path: &str) -> Result<Option<String>, Error> {
     let segments = change_path(path)?;
     Ok(nearest(ctx, &segments)?.map(|(path, _)| path))

@@ -3,14 +3,14 @@
 //! its pages out.
 use std::collections::BTreeMap;
 
-use abi::role::access::Writers;
 use files::{BlobId, Change, Content, EntryInfo, Node, Ownership, Party};
 use view::ImageFormat;
 use view::TextField;
 use view::prelude::Loadable;
 
 use crate::state::{
-    Folder, Holds, Opened, Reader, child_of, holds_by_name, name_of, parent_of, picture_format,
+    Folder, Guard, Holds, Opened, Reader, child_of, holds_by_name, name_of, parent_of,
+    picture_format,
 };
 use crate::tests::{PNG, file};
 use crate::ui::Layout;
@@ -29,12 +29,12 @@ fn dev() -> Reader {
     }
 }
 
-fn folder(path: &str, writers: Option<Writers>) -> Folder {
+fn folder(path: &str, guard: Option<Guard>) -> Folder {
     Folder {
         path: path.into(),
         snapshot: None,
         entries: Vec::new(),
-        writers,
+        guard,
     }
 }
 
@@ -78,13 +78,13 @@ fn opened(bytes: &[u8], whole: bool) -> Opened {
         bytes: bytes.to_vec(),
         whole,
         picture: None,
-        writers: None,
+        guard: None,
         doc: None,
     }
 }
 
 #[test]
-fn what_is_made_where_no_list_covers_is_anyones_to_write() {
+fn what_is_made_where_no_guard_covers_is_anyones_to_write() {
     for path in [
         "/",
         "/shared",
@@ -92,11 +92,11 @@ fn what_is_made_where_no_list_covers_is_anyones_to_write() {
         "/home/ada",
         "/elsewhere",
     ] {
-        let children = folder(path, Some(Writers::Anyone)).children();
-        assert_eq!(children, Writers::Anyone, "{path}");
+        let children = folder(path, Some(Guard::default())).children();
+        assert_eq!(children, Guard::default(), "{path}");
         assert!(dev().writes(&children), "{path}");
     }
-    assert_eq!(folder("/", None).children(), Writers::Anyone);
+    assert_eq!(folder("/", None).children(), Guard::default());
 }
 
 #[test]
@@ -108,39 +108,53 @@ fn only_the_folder_of_homes_holds_namespace_roots() {
 }
 
 #[test]
-fn a_write_list_over_a_folder_decides_for_what_is_made_in_it() {
-    let team = Writers::Listed {
-        at: "/home/ada/team".into(),
+fn a_guard_over_a_folder_decides_by_its_policy_for_what_is_made_in_it() {
+    let admitted = Guard {
+        at: Some("/home/ada/team".into()),
+        admits: Some(true),
         owner: Some(Party::Account(ADA)),
-        list: Ownership::Listed(vec![Party::Account(DEV)]),
     };
-    let children = folder("/home/ada/team/plans", Some(team.clone())).children();
-    assert_eq!(children, team);
+    let children = folder("/home/ada/team/plans", Some(admitted.clone())).children();
+    assert_eq!(children, admitted);
     assert!(
         dev().writes(&children),
-        "the list names dev, though the home is ada's"
+        "the policy admits dev, though the home is ada's"
     );
-    let owners_only = Writers::Listed {
-        at: "/shared/ada".into(),
-        owner: Some(Party::Account(ADA)),
-        list: Ownership::Owner,
+    let refused = Guard {
+        admits: Some(false),
+        ..admitted
     };
-    assert!(!dev().writes(&folder("/shared/ada", Some(owners_only)).children()));
-    let a_program = Writers::Listed {
-        at: "/shared/bots".into(),
-        owner: Some(Party::Account(ADA)),
-        list: Ownership::Listed(vec![Party::Program("harness".into())]),
+    assert!(!dev().writes(&folder("/shared/ada", Some(refused)).children()));
+    let unrecorded = Guard {
+        at: Some("/shared/old".into()),
+        admits: None,
+        owner: None,
     };
     assert!(
-        !dev().writes(&a_program),
-        "a person's signed write is never the program's"
+        dev().writes(&unrecorded),
+        "a guard with no record keeps no one out"
     );
+}
+
+#[test]
+fn only_a_paths_owner_by_files_rule_may_guard_it() {
+    let mine = Guard {
+        owner: Some(Party::Account(DEV)),
+        ..Guard::default()
+    };
+    assert!(dev().owns(&mine));
+    let chats = Guard {
+        owner: Some(Party::Program("chat".into())),
+        ..Guard::default()
+    };
+    assert!(!dev().owns(&chats));
+    assert!(!Reader::default().owns(&mine));
 }
 
 #[test]
 fn a_reader_signed_out_writes_nothing() {
     let nobody = Reader::default();
-    assert!(!nobody.writes(&Writers::Anyone));
+    assert!(!nobody.writes(&Guard::default()));
 }
 
 #[test]
@@ -149,7 +163,7 @@ fn a_reader_identity_names_no_way_writes_where_anyone_may() {
         account: Some(DEV),
         name: Loadable::Ready(None).into(),
     };
-    assert!(unnamed.writes(&Writers::Anyone));
+    assert!(unnamed.writes(&Guard::default()));
 }
 
 #[test]
@@ -168,11 +182,7 @@ fn a_new_file_or_folder_sets_the_write_list_picked_once_it_is_made() {
         assert_eq!(changes.len(), 1, "the commit makes the path alone");
         write_list(&form)
     };
-    let set = |list: Ownership| access::Op::Set {
-        program: files::PROGRAM.into(),
-        key: "/shared/x".into(),
-        list: Some(list),
-    };
+    let set = |list: Ownership| ("/shared/x".to_owned(), list);
     assert_eq!(
         picked(new_file.clone(), ListChoice::AsItsFolder, ""),
         Ok(None),

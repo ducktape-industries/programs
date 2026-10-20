@@ -51,8 +51,13 @@ fn listed(view: &Files, path: &str, listing: Listing, cx: Cx, k: &Kit) -> AnyEle
         .child(crumbs(listing.crumbs, cx, k));
     if let Some(folder) = view.folder_at(path) {
         let writes = listing.writes.then(|| writes(view, cx, k)).flatten();
+        let policy = listing
+            .writes
+            .then(|| crate::policies::row(view, cx, &k.ladder, &k.theme))
+            .flatten();
         return page
             .children(writes)
+            .children(policy)
             .child(entries(view, folder, &listing, cx, k))
             .into_any_element();
     }

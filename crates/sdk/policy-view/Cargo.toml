@@ -10,6 +10,11 @@ publish = false
 [dependencies]
 identity.workspace = true
 ownership.workspace = true
+# `link`: access's own list, set beside a policy while programs' Roles still binds access
+abi.workspace = true
+access.workspace = true
+program.workspace = true
+programs.workspace = true
 serde.workspace = true
 view.workspace = true
 

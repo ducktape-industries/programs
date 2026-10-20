@@ -1,7 +1,6 @@
-//! What Files follows while it is open: the session (who reads, on which
-//! chain), the links opened into it, and every block that wrote to `files`,
-//! access or identity. Every follower says what a refusal means to it; none
-//! ends on one.
+//! What Files follows while it is open: the session (who reads, on which chain), the links opened
+//! into it, and every block that wrote to `files`, ownership or identity. Every follower says what
+//! a refusal means to it; none ends on one.
 use identity::Identity;
 use view::prelude::*;
 
@@ -24,9 +23,9 @@ impl Files {
             Err(refusal) => cx.log_refused("files' live heads", &refusal),
         })
         .detach();
-        cx.follow::<Changes<access::Access>>((), |view, change, cx| match change {
-            Ok(_) => view.read_all(cx),
-            Err(refusal) => cx.log_refused("access's live heads", &refusal),
+        cx.follow::<Changes<ownership::Ownership>>((), |view, change, cx| match change {
+            Ok(change) => view.ownership_moved(change, cx),
+            Err(refusal) => cx.log_refused("ownership's live heads", &refusal),
         })
         .detach();
         cx.follow::<Changes<Identity>>((), |view, change, cx| match change {

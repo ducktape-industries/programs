@@ -3,8 +3,8 @@
 What a view shows of the `ownership` program's policies, written once for every
 view that links it (settings-view's Policies pane; chat-view's, forge-view's
 and harness-view's "Who can edit" rows). It links `ownership` and `identity`
-with `program` off, and `view`; its only writes are the item sheets' `Relink`
-and `Transfer`.
+with `program` off, and `view`; its writes are the item sheets' `Relink` and `Transfer`, and `link`'s
+`Create`, `Relink` and access `Set`.
 
 - `KINDS`: every kind of owned item (`chat.channel`, `chat.message`,
   `forge.repo`, `forge.change`, `forge.review`, `harness.model`,
@@ -44,3 +44,13 @@ and `Transfer`.
   `item::row_titled` is the row under another title (harness-view's "Who can
   start its conversations"), and `item::about(standing, reader)` what a
   `Standing` read with `item::standing` says, for a list that reads one per row.
+- `link`: who writes an item, set to what a person picked ("Only me", a list,
+  anyone). `link::link(host, item, owner, write)` relinks it to one of its
+  owner's live policies whose writers are exactly `write` (`link::same`), made
+  first with `Create` under the item's label when they keep none, and answers
+  the last write, or the first that didn't land. `link::access_list` sets
+  access's own list beside it while programs' `Roles` still binds the access
+  role, which gates every write until the vote that unbinds it, and sends
+  nothing once it's unbound. `link::list`/`link::writers` convert between
+  access's lists and ownership's writers. files-view, forge-view and
+  harness-view narrow who writes through it.

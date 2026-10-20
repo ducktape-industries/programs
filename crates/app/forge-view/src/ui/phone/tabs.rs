@@ -830,7 +830,7 @@ fn settings(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &The
         Ok(_) => return page.into_any_element(),
         Err(state) => return page.child(state).into_any_element(),
     };
-    let owner = forge.owns_repo();
+    let owner = forge.may_grant();
     let configures = forge.may_configure();
     let section = |key: &str, label: &str| {
         design::section_head(id(key.to_owned()), label.to_owned(), ladder, theme)

@@ -118,7 +118,30 @@ impl Agents {
                     })
                 })
             });
-        if listed {
+        let touched = |program: &str, key: Vec<u8>| {
+            let query = ownership::Query::Effective {
+                program: program.to_owned(),
+                key,
+            };
+            change
+                .as_ref()
+                .is_none_or(|change| change.touches::<ownership::Ownership, _>(&query))
+        };
+        let conversations = self
+            .screen
+            .agent()
+            .is_some_and(|agent| touched(harness::PROGRAM, self.conversations_item(agent).key));
+        let config = self
+            .detail
+            .ready()
+            .and_then(|detail| detail.config_writers.as_ref())
+            .is_some_and(|writers| match writers {
+                program::Writers::Listed { at, .. } => {
+                    touched(files::PROGRAM, files::guard_key(at))
+                }
+                _ => false,
+            });
+        if listed || conversations || config {
             self.read_screen(cx);
         }
     }

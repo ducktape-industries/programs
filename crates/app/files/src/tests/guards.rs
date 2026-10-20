@@ -358,3 +358,19 @@ fn a_move_that_carries_guards_goes_in_a_commit_of_its_own() {
     assert_eq!(guarded(&chain, "/kept/a"), Some("/kept/a".into()));
     assert!(record(&chain, "/kept/a").is_some());
 }
+
+#[test]
+fn owner_names_who_alone_may_guard_a_path() {
+    let chain = chain();
+    write(&chain, ADA, "/shared/ada.txt").unwrap();
+    let owner = |path: &str| {
+        let asked = Query::Owner { path: path.into() };
+        let Reply::Owner(owner) = chain.query(PROGRAM, &asked).unwrap() else {
+            panic!("Owner answers a path");
+        };
+        owner
+    };
+    assert_eq!(owner("/shared/ada.txt"), Some(::program::Party::Account(1)));
+    assert_eq!(owner("/home/bo"), Some(::program::Party::Account(2)));
+    assert_eq!(owner("/shared/nobody.txt"), None);
+}

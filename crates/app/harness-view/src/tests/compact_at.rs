@@ -58,7 +58,7 @@ fn an_edit_keeps_the_compact_at_the_file_names() {
         ..config_of("Scout")
     };
     assert_eq!(
-        cx.host().requests::<Submit<files::Files>>().last(),
+        commits(&cx).last(),
         Some(&edit_of(
             "/home/Eddy/agents/scout.md",
             &kept,

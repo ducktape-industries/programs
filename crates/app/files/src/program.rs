@@ -103,6 +103,7 @@ impl Program for Files {
             Query::Pins { page } => Ok(Reply::Pins(queries::pins(ctx, &page)?)),
             Query::Pin { name } => Ok(Reply::Pin(queries::pin(ctx, &name)?)),
             Query::Guarded { path } => Ok(Reply::Guarded(crate::guards::guarded(ctx, &path)?)),
+            Query::Owner { path } => Ok(Reply::Owner(crate::guards::owner(ctx, &path)?)),
         }
     }
 }

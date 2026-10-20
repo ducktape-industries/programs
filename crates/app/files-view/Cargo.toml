@@ -17,6 +17,9 @@ view.workspace = true
 serde.workspace = true
 # the program this view draws: its ops, its asks and its path rule
 files.workspace = true
+# who writes a path: its guard's policy, read and set as every view does
+ownership.workspace = true
+policy-view.workspace = true
 # the reader's name, which names their home, and every author's
 identity.workspace = true
 # a row's `duck://` link

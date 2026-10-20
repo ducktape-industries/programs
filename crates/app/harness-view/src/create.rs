@@ -1,5 +1,5 @@
 //! The create form: identity's `CreateAgent`, a files commit of its configuration (chunk blobs put
-//! first), access's `Set` of the file's list, identity's `SetScript`, identity's `SetOwnership` of
+//! first), the file's own guard and policy, identity's `SetScript`, identity's `SetOwnership` of
 //! whom it answers; a refused step resumes there. An edit writes the file's body alone, and moved lists.
 use std::collections::BTreeMap;
 
@@ -9,6 +9,7 @@ use view::prelude::*;
 
 use harness::{AgentSetup, BlobId, Config, Configured, Thinking};
 use identity::{Identity, Ownership, Party, Script};
+use policy_view::link;
 use program::Writers;
 
 use crate::read::{self, Detail};
@@ -427,14 +428,7 @@ impl Agents {
                 });
                 self.send(identity::Op::SetScript { account, script }, cx)
             }
-            Next::Keep(path, list) => {
-                let op = access::Op::Set {
-                    program: files::PROGRAM.to_owned(),
-                    key: path,
-                    list: Some(list),
-                };
-                self.set_list(op, cx)
-            }
+            Next::Keep(path, list) => self.keep(path, list, cx),
             Next::Answer(account, ownership) => {
                 self.send(identity::Op::SetOwnership { account, ownership }, cx)
             }
@@ -479,9 +473,36 @@ impl Agents {
         cx.notify();
     }
 
-    fn set_list(&mut self, op: access::Op, cx: &mut Context<Self>) {
-        let submit = cx.host().ask::<Submit<access::Access>>(op);
-        self.draft.sending = Some(cx.land(submit, |view, answer, cx| {
+    fn keep(&mut self, path: String, list: Ownership, cx: &mut Context<Self>) {
+        let Some(me) = self.me else {
+            return;
+        };
+        let host = cx.host();
+        let write = link::writers(&list);
+        let work = async move {
+            if let Some(listed) = link::access_list(&host, files::PROGRAM, &path, &write).await?
+                && !link::landed(&listed)
+            {
+                return Ok(listed);
+            }
+            let guarded = host
+                .query(files::ask::Guarded { path: path.clone() })
+                .await?;
+            if guarded.as_deref() != Some(path.as_str()) {
+                let guard = files::Op::Guard { path: path.clone() };
+                let made = host.ask::<Submit<files::Files>>(guard).await?;
+                if !link::landed(&made) {
+                    return Ok(made);
+                }
+            }
+            let item = policy_view::Item {
+                program: files::PROGRAM.to_owned(),
+                key: files::guard_key(&path),
+                label: path,
+            };
+            link::link(&host, item, ownership::Party::Account(me), write).await
+        };
+        self.draft.sending = Some(cx.land(work, |view, answer, cx| {
             view.draft.sending = None;
             let landed = applied(answer).map(|_| view.draft.kept = true);
             view.landed(landed, cx);

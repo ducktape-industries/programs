@@ -85,7 +85,8 @@ pub(crate) fn render(view: &Files, cx: Cx) -> AnyElement {
         ),
     };
     let form = form::sheet(view, cx, k);
-    menu::over(view, files.children(form), cx, k)
+    let policy = crate::policies::sheet(view, cx, &k.ladder, &k.theme);
+    menu::over(view, files.children(form).children(policy), cx, k)
 }
 
 fn page(view: &Files, layout: Layout, cx: Cx, k: &Kit) -> AnyElement {

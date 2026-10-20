@@ -1,18 +1,18 @@
-//! Typed reads of `files`, access and identity. A folder or a file is read at one
-//! snapshot: the first answer names it, and every later page and read of
-//! the same screen asks that snapshot, so a commit landing in between never
-//! mixes two trees on one page.
+//! Typed reads of `files`, ownership and identity. A folder or a file is read at one snapshot,
+//! the one its first answer names, for every later page and read of the same screen, so a commit
+//! landing in between never mixes two trees on one page.
 use std::sync::Arc;
 
-use abi::role::access::Writers;
 use files::{BlobId, PageRequest};
+use policy_view::item;
 use view::prelude::*;
 
+use crate::policies::guard_item;
 use crate::state::{
-    Folder, HISTORY_PAGE, History, Names, Opened, PREVIEW, ROOT, Snapshot, picture_format,
+    Folder, Guard, HISTORY_PAGE, History, Names, Opened, PREVIEW, ROOT, Snapshot, picture_format,
 };
 
-pub(crate) async fn folder(host: Host, path: String) -> Result<Folder, Error> {
+pub(crate) async fn folder(host: Host, path: String, reader: Option<u64>) -> Result<Folder, Error> {
     let mut snapshot = None;
     let mut entries = Vec::new();
     let mut after = None;
@@ -32,25 +32,38 @@ pub(crate) async fn folder(host: Host, path: String) -> Result<Folder, Error> {
         }
     }
     entries.sort_by_key(|entry| !matches!(entry.node, files::Node::Dir { .. }));
-    let writers = writers(&host, &path).await?;
+    let guard = guard(&host, &path, reader).await?;
     Ok(Folder {
         path,
         snapshot,
         entries,
-        writers,
+        guard,
     })
 }
 
-async fn writers(host: &Host, path: &str) -> Result<Option<Writers>, Error> {
+async fn guard(host: &Host, path: &str, reader: Option<u64>) -> Result<Option<Guard>, Error> {
     if path == ROOT {
         return Ok(None);
     }
-    host.query(access::ask::Writers {
-        program: files::PROGRAM.into(),
-        key: path.to_owned(),
-    })
-    .await
-    .map(Some)
+    let at = host
+        .query(files::ask::Guarded {
+            path: path.to_owned(),
+        })
+        .await?;
+    let owner = host
+        .query(files::ask::Owner {
+            path: path.to_owned(),
+        })
+        .await?;
+    let admits = match &at {
+        Some(at) => {
+            let reader = reader.map(ownership::Party::Account);
+            let standing = item::standing(host.clone(), guard_item(at), reader).await?;
+            standing.admits
+        }
+        None => None,
+    };
+    Ok(Some(Guard { at, admits, owner }))
 }
 
 pub(crate) async fn entry(host: Host, path: String) -> Result<Option<files::EntryInfo>, Error> {
@@ -61,6 +74,7 @@ pub(crate) async fn entry(host: Host, path: String) -> Result<Option<files::Entr
 pub(crate) async fn file(
     host: Host,
     path: String,
+    reader: Option<u64>,
     kept: Option<(BlobId, Arc<Image>)>,
 ) -> Result<Opened, Error> {
     let (snapshot, entry) = host
@@ -90,8 +104,8 @@ pub(crate) async fn file(
             (contents.bytes, contents.eof, picture)
         }
     };
-    let writers = match entry {
-        Some(_) => writers(&host, &path).await?,
+    let guard = match entry {
+        Some(_) => guard(&host, &path, reader).await?,
         None => None,
     };
     let mut opened = Opened {
@@ -101,7 +115,7 @@ pub(crate) async fn file(
         bytes,
         whole,
         picture,
-        writers,
+        guard,
         doc: None,
     };
     opened.doc = opened.parsed();

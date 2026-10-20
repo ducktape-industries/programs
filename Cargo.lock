@@ -2094,6 +2094,8 @@ dependencies = [
  "files",
  "identity",
  "markdown",
+ "ownership",
+ "policy-view",
  "serde",
  "serde_json",
  "view",
@@ -2259,6 +2261,7 @@ dependencies = [
  "ownership",
  "policy-view",
  "program",
+ "programs",
  "serde",
  "serde_json",
  "store",
@@ -2812,6 +2815,7 @@ dependencies = [
 name = "harness-view"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "access",
  "chat",
  "ducklink",
@@ -2822,6 +2826,7 @@ dependencies = [
  "ownership",
  "policy-view",
  "program",
+ "programs",
  "serde",
  "serde_json",
  "view",
@@ -4254,6 +4259,8 @@ dependencies = [
 name = "policy-view"
 version = "0.1.0"
 dependencies = [
+ "abi",
+ "access",
  "chat",
  "egress",
  "files",
@@ -4261,6 +4268,8 @@ dependencies = [
  "harness",
  "identity",
  "ownership",
+ "program",
+ "programs",
  "serde",
  "view",
 ]

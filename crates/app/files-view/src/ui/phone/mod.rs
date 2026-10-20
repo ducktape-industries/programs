@@ -42,7 +42,7 @@ pub(crate) fn render(view: &Files, cx: Cx) -> AnyElement {
         Some(Sheet::Write(form)) => Some(sheets::form(form, cx, k)),
         Some(Sheet::Menu(_)) | None => None,
     };
-    let back = (sheet.is_some() || view.pages.depth() > 0)
+    let back = (sheet.is_some() || view.policy_sheet_open() || view.pages.depth() > 0)
         .then(|| cx.listener(|view: &mut Files, _: &BackEvent, _, cx| view.back(cx)));
     div()
         .id("files")
@@ -54,6 +54,7 @@ pub(crate) fn render(view: &Files, cx: Cx) -> AnyElement {
         .text_type(k.ladder.body)
         .child(page)
         .children(sheet)
+        .children(crate::policies::sheet(view, cx, &k.ladder, &k.theme))
         .when_some(back, |root, back| root.on_back(back))
         .into_any_element()
 }

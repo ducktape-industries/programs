@@ -21,7 +21,8 @@ pub(super) fn folder(view: &Files, path: &str, cx: Cx, k: &Kit) -> AnyElement {
             None => quiet("files-folder-reading", words::READING_FOLDER, k),
         },
     };
-    page.child(scroller("files-page").child(body))
+    let policy = crate::policies::row(view, cx, &k.ladder, &k.theme);
+    page.child(scroller("files-page").children(policy).child(body))
         .into_any_element()
 }
 

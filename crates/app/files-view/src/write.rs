@@ -14,6 +14,7 @@
 use std::collections::BTreeMap;
 
 use files::{BlobId, Change, Content, Node, Ownership, Party};
+use policy_view::link;
 use view::methods::{BlobBody, FileRelease, NewBlob, PutBlobs, Submitted};
 use view::prelude::*;
 
@@ -210,7 +211,7 @@ struct Sent {
     form: u64,
     changes: Vec<Change>,
     message: String,
-    list: Option<access::Op>,
+    list: Option<(String, Ownership)>,
 }
 
 impl Files {
@@ -247,7 +248,7 @@ impl Files {
 
     pub(crate) fn own(&self, path: &str) -> Vec<Write> {
         if let Some(file) = self.file_at(path) {
-            let (Some(entry), Some(own)) = (file.file(), &file.writers) else {
+            let (Some(entry), Some(own)) = (file.file(), &file.guard) else {
                 return Vec::new();
             };
             if !self.reader.writes(own) || is_namespace_root(path) {
@@ -265,7 +266,7 @@ impl Files {
             return writes;
         }
         if let Some(folder) = self.folder_at(path) {
-            let own = folder.writers.as_ref();
+            let own = folder.guard.as_ref();
             let moves = own.is_some_and(|own| self.reader.writes(own));
             return match moves && !is_namespace_root(path) {
                 true => moved(path, true),
@@ -487,8 +488,8 @@ impl Files {
                 sent.changes.iter().for_each(|change| self.follow(change));
                 self.note = Some(Note::Committed(sent.message));
                 self.read_all(cx);
-                if let Some(op) = sent.list {
-                    self.set_list(op, cx);
+                if let Some((path, list)) = sent.list {
+                    self.narrow(path, link::writers(&list), cx);
                 }
             }
             (Some(problem), Some(form)) => {
@@ -496,20 +497,6 @@ impl Files {
                 form.refused = Some(problem);
             }
             (Some(problem), None) => self.note = Some(Note::Refused(problem)),
-        }
-        cx.notify();
-    }
-
-    fn set_list(&mut self, op: access::Op, cx: &mut Context<Self>) {
-        let ask = cx.host().ask::<Submit<access::Access>>(op);
-        cx.land(ask, |view, answer, cx| view.list_set(answer, cx))
-            .detach();
-    }
-
-    fn list_set(&mut self, answer: Result<Submitted, Error>, cx: &mut Context<Self>) {
-        match design::failure(&answer) {
-            None => self.read_all(cx),
-            Some(problem) => self.note = Some(Note::Refused(problem)),
         }
         cx.notify();
     }
@@ -590,7 +577,7 @@ pub(crate) fn built(form: &Form) -> Result<(String, Vec<Change>), String> {
     Ok((message(form, words::message(&change)), vec![change]))
 }
 
-pub(crate) fn write_list(form: &Form) -> Result<Option<access::Op>, String> {
+pub(crate) fn write_list(form: &Form) -> Result<Option<(String, Ownership)>, String> {
     let folder = match &form.write {
         Write::NewFolder { folder } | Write::NewFile { folder } => folder,
         Write::Upload { .. } | Write::Edit { .. } | Write::Rename { .. } | Write::Remove { .. } => {
@@ -609,11 +596,7 @@ pub(crate) fn write_list(form: &Form) -> Result<Option<access::Op>, String> {
             Ownership::Listed(parties)
         }
     };
-    Ok(Some(access::Op::Set {
-        program: files::PROGRAM.into(),
-        key: path_in(folder, &form.name.text())?,
-        list: Some(list),
-    }))
+    Ok(Some((path_in(folder, &form.name.text())?, list)))
 }
 
 pub(crate) fn parties(typed: &str) -> Vec<Party> {

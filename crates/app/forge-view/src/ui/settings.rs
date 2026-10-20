@@ -254,14 +254,14 @@ fn grant_field(
             .bg(theme.background)
             .text_color(theme.foreground)
             .placeholder(words::SEARCH_MEMBERS)
-            .when(forge.owns_repo(), |input| {
+            .when(forge.may_grant(), |input| {
                 input.on_submit(cx.listener(|forge, _: &(), _, cx| forge.grant(cx)))
             }),
         )
         .child(
             button(id("forge-settings-grant"), "Grant", ladder, theme, grant)
                 .kind(design::Kind::Outline)
-                .enabled(forge.owns_repo()),
+                .enabled(forge.may_grant()),
         );
     div()
         .id(id("forge-settings-access"))
@@ -333,7 +333,7 @@ fn writer_rows(
                 let key = key.clone();
                 move |forge, _: &ClickEvent, _, cx| forge.revoke(key.clone(), cx)
             });
-            let owns = forge.owns_repo();
+            let owns = forge.may_grant();
             let danger = theme.danger;
             let action = div()
                 .id(id(format!("forge-settings-revoke-{}", key.key())))

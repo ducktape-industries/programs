@@ -3,6 +3,7 @@
 //! owner's side read whole (`reads.rs`), and "Who can edit" on one item with its sheets (`item.rs`).
 pub mod item;
 mod kinds;
+pub mod link;
 mod reads;
 mod words;
 

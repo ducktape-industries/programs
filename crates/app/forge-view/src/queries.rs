@@ -124,11 +124,13 @@ fn extend(into: &mut Reply, more: Reply) {
 }
 
 pub(crate) async fn writers(host: Host, repo: String) -> Result<Option<Ownership>, Error> {
-    host.query(access::ask::List {
-        program: forge::PROGRAM.to_owned(),
-        key: forge::repo_key(&repo),
-    })
-    .await
+    let policy = host
+        .query(ownership::ask::Effective {
+            program: forge::PROGRAM.to_owned(),
+            key: forge::tables::CUSTODY.key(&repo),
+        })
+        .await?;
+    Ok(policy.map(|policy| policy_view::link::list(&policy.write)))
 }
 
 // A change's conversation ([`Talk`]), oldest first: the whole of its own room, or, in a job's

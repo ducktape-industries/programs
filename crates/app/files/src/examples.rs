@@ -162,3 +162,9 @@ pub(crate) fn guarded() -> Query {
         path: "/home/tech/notes/today.md".into(),
     }
 }
+
+pub(crate) fn owner() -> Query {
+    Query::Owner {
+        path: "/home/tech/notes".into(),
+    }
+}
