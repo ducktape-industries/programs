@@ -99,7 +99,7 @@ fn candidates(
 }
 
 pub(crate) enum Picked {
-    Chosen { pick: Pick, forced: bool },
+    Chosen(Pick),
     Unlisted(String),
     Unserved(Vec<String>),
 }
@@ -142,9 +142,9 @@ pub(crate) fn pick(
     let sticky = cached.and_then(at);
     let order = sticky.into_iter().chain(0..candidates.len());
     let mut open = order.filter(|index| untried_by(ctx, thread.id, &candidates[*index]));
-    let (index, forced) = match open.next() {
-        Some(index) => (index, cached.is_some() && Some(index) != sticky),
-        None => (route.as_ref().and_then(at).unwrap_or(0), false),
+    let index = match open.next() {
+        Some(index) => index,
+        None => route.as_ref().and_then(at).unwrap_or(0),
     };
     let (service, account) = candidates[index].clone();
     let pick = Pick {
@@ -156,7 +156,7 @@ pub(crate) fn pick(
         organization: None,
     };
     PICKS.put(ctx, &thread.id, &pick);
-    Ok(Picked::Chosen { pick, forced })
+    Ok(Picked::Chosen(pick))
 }
 
 pub(crate) fn heard(ctx: &ExecCtx, thread: u64, response: &http::Response) {

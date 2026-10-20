@@ -577,8 +577,8 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         }
     };
     seed(ctx, thread, agent, &config.listen);
-    let (pick, forced) = match routes::pick(ctx, thread, &model, &pin)? {
-        Picked::Chosen { pick, forced } => (pick, forced),
+    let pick = match routes::pick(ctx, thread, &model, &pin)? {
+        Picked::Chosen(pick) => pick,
         Picked::Unlisted(text) => {
             give_up(ctx, thread, text)?;
             return Ok(None);
@@ -629,9 +629,7 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         max_tokens: config.max_tokens,
         header,
     };
-    let grown = grown(thread.context, turn.max_tokens);
-    let soon = forced && crowded(grown, window, turn.max_tokens, threshold);
-    match crowded(thread.context, window, turn.max_tokens, threshold) || soon {
+    match crowded(thread.context, window, turn.max_tokens, threshold) {
         true => plan_summary(ctx, thread, turn),
         false => plan_turn(ctx, thread, turn),
     }
@@ -723,15 +721,6 @@ fn crowded(context: Context, window: Option<u64>, max_tokens: u32, threshold: Op
         (Context::Measured(tokens), Some(window)) => {
             tokens.saturating_add(u64::from(max_tokens)) > window
         }
-    }
-}
-
-fn grown(context: Context, max_tokens: u32) -> Context {
-    match context {
-        Context::Measured(tokens) => {
-            Context::Measured(tokens.saturating_add(u64::from(max_tokens)))
-        }
-        Context::Overflowed => Context::Overflowed,
     }
 }
 

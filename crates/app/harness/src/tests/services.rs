@@ -386,7 +386,7 @@ fn an_old_one_service_row_is_asked_as_before_unpinned() {
 }
 
 #[test]
-fn a_forced_move_near_a_compaction_compacts_first_on_the_new_account() {
+fn a_call_moved_near_the_threshold_does_not_compact_on_the_new_account() {
     let world = world();
     let chain = &world.chain;
     two_services(&world);
@@ -414,12 +414,16 @@ fn a_forced_move_near_a_compaction_compacts_first_on_the_new_account() {
     chain.at(10, 0);
     let (request, _, pinned) = open(chain, TWO, "/v1/messages");
     assert_eq!(pinned.as_deref(), Some("c"));
-    assert_eq!(
-        body(chain, &request)["compaction"],
-        json!({ "type": "summarize" })
+    let sent = body(chain, &request);
+    assert!(
+        sent["compaction"].is_null(),
+        "a turn, not a summary: {sent}"
     );
-    let whole = abi::role::egress::Delivery::Whole;
-    assert_eq!(awaited(&request.request, &whole), Some(Awaited::Summary));
+    says(chain, TWO, "c", FINE);
+    assert_eq!(route(chain, thread), on(SERVICE, "a"));
+    world.mention("m3", "back again");
+    let (_, _, pinned) = open(chain, SERVICE, "/v1/messages");
+    assert_eq!(pinned.as_deref(), Some("a"), "the move lasted one call");
 }
 
 #[test]
