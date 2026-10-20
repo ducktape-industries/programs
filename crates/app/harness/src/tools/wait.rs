@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{Run, Seat, Tool, cursor_schema, next, object, page, write};
-use crate::waits::{waits, what};
+use crate::waits::{armed, waits, what};
 use crate::{Op, PROGRAM, WaitFor, WaitRow};
 
 #[derive(Deserialize)]
@@ -144,6 +144,7 @@ impl Tool for For {
 #[derive(Deserialize)]
 pub(crate) struct ListArgs {
     cursor: Option<String>,
+    all: Option<bool>,
 }
 
 pub(crate) struct List;
@@ -164,15 +165,25 @@ fn listed(row: &WaitRow) -> Value {
 
 impl Tool for List {
     const NAME: &'static str = "wait_list";
-    const DESCRIPTION: &'static str = "Your waits, in the order you made them: each one's number, the conversation it wakes, the block it was made at, what it waits for, and once it is over, when and what happened (`ended`), or null while it waits.";
+    const DESCRIPTION: &'static str = "This conversation's waits that are not over yet, in the order you made them: each one's number, the conversation it wakes, the block it was made at and what it waits for. With all, every wait you made in any conversation instead, over or not, and once one is over, when and what happened (`ended`), or null while it waits.";
     type Args = ListArgs;
 
     fn schema() -> Value {
-        object(json!({ "cursor": cursor_schema() }), &[])
+        object(
+            json!({
+                "cursor": cursor_schema(),
+                "all": { "type": "boolean", "description": "every wait you made, in every conversation, over ones included; this conversation's open waits if omitted" },
+            }),
+            &[],
+        )
     }
 
     fn run(ctx: &ExecCtx, seat: &Seat, args: ListArgs) -> Result<Run, Error> {
-        let found = waits(ctx, seat.agent, &page(&args.cursor)?)?;
+        let page = page(&args.cursor)?;
+        let found = match args.all.unwrap_or(false) {
+            true => waits(ctx, seat.agent, &page)?,
+            false => armed(ctx, seat.thread, &page)?,
+        };
         let rows: Vec<Value> = found.items.iter().map(listed).collect();
         Ok(Run::Done(
             json!({ "waits": rows, "next": next(&found.next) }),

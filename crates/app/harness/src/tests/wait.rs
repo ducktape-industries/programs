@@ -622,3 +622,58 @@ fn a_wait_in_a_room_turned_off_ends_with_its_message_and_nothing_else_arrives() 
     assert_eq!(world.threads().len(), 1);
     assert_eq!(asking(chain), 0);
 }
+
+#[test]
+fn wait_list_names_this_conversations_open_waits_and_every_wait_with_all() {
+    let world = schemed();
+    let chain = &world.chain;
+    let first = world.opened("m1", "wait here", Some(WINDOW));
+    turn(&world, 3, &[("w1", "wait_for", height(40))]);
+    let elsewhere = waited(chain, first, "w1");
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Close { thread: first })
+        .unwrap();
+    chain.at(6, 0);
+    let here = world.mention("m2", "a fresh start");
+    assert_ne!(here, first);
+    turn(&world, 7, &[("w2", "wait_for", height(12))]);
+    let over = waited(chain, here, "w2");
+    chain.at(13, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Up." }]),
+        "end_turn",
+    );
+    chain.at(14, 0);
+    world.mention("m3", "what do you wait for?");
+    turn(&world, 15, &[("w3", "wait_for", height(50))]);
+    let open = waited(chain, here, "w3");
+    chain.at(17, 0);
+    world.mention("m4", "list them");
+    turn(
+        &world,
+        18,
+        &[
+            ("l1", "wait_list", json!({})),
+            ("l2", "wait_list", json!({ "all": true })),
+        ],
+    );
+    let listed = |id: &str| -> Vec<Value> {
+        answered(chain, here, id)["waits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["wait"].clone())
+            .collect()
+    };
+    assert_eq!(
+        listed("l1"),
+        [json!(open)],
+        "this conversation's waits not over yet"
+    );
+    assert_eq!(
+        listed("l2"),
+        [json!(elsewhere), json!(over), json!(open)],
+        "every wait the agent made, in every conversation, over ones included"
+    );
+}

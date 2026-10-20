@@ -332,7 +332,14 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
                 json!({ "event": { "file": { "path": "/shared/tools/warm-pod" } } }),
             ],
         ),
-        ("wait_list", vec![json!({}), json!({ "cursor": null })]),
+        (
+            "wait_list",
+            vec![
+                json!({}),
+                json!({ "cursor": null }),
+                json!({ "all": true, "cursor": null }),
+            ],
+        ),
         ("wait_cancel", vec![json!({ "wait": 3 })]),
     ]
 }
