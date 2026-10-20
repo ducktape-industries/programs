@@ -153,3 +153,27 @@ fn a_paragraph_opening_with_a_marker_reads_as_a_list_item() {
             .all(|block| matches!(block, Block::Paragraph(spans) if list_item(spans).is_some()))
     );
 }
+
+// A bare link typed at a sentence's end leaves its full stop to the sentence.
+#[test]
+fn a_bare_links_trailing_punctuation_stays_prose() {
+    let spans = inline_spans(
+        "see duck://n-b5b6ea90/files/a/before-whole.png. Then (https://x.example/q?a=1.) too",
+    );
+    let links: Vec<&str> = spans
+        .iter()
+        .filter_map(|span| {
+            span.marks.iter().find_map(|mark| match mark {
+                Mark::Link(url) => Some(url.as_str()),
+                _ => None,
+            })
+        })
+        .collect();
+    assert_eq!(
+        links,
+        [
+            "duck://n-b5b6ea90/files/a/before-whole.png",
+            "https://x.example/q?a=1."
+        ]
+    );
+}

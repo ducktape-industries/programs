@@ -228,9 +228,21 @@ pub struct Opened {
     /// who writes it
     #[serde(with = "borsh_bytes")]
     pub writers: Option<Writers>,
+    // a markdown file's text as its blocks, read once as it lands. Never
+    // kept: a restored view reads the file again
+    #[serde(skip)]
+    pub doc: Option<Arc<Vec<markdown::Block>>>,
 }
 
 impl Opened {
+    // Its text as markdown's blocks, when its name says it is markdown
+    // (`.md`, `.markdown`) and it reads as text.
+    pub fn parsed(&self) -> Option<Arc<Vec<markdown::Block>>> {
+        let named = markdown::highlight::language_of(name_of(&self.path)) == Some("markdown");
+        let text = self.text().filter(|_| named)?;
+        Some(Arc::new(markdown::parse(text)))
+    }
+
     /// What is at the path, while it is a file or a link: a folder made at
     /// the path since the page opened is not a file to show.
     pub fn file(&self) -> Option<&EntryInfo> {

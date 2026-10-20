@@ -316,21 +316,14 @@ fn bare_link_char_count(chars: &[char], at: usize) -> Option<usize> {
     if !starts_link {
         return None;
     }
-    let mut len = chars[at..]
+    // A run stops at whitespace, and the sentence's punctuation after it (a
+    // closing `.`, `,` or a `)` that opens nowhere in it) is the prose's
+    let run: String = chars[at..]
         .iter()
         .take_while(|c| !c.is_whitespace())
-        .count();
-    while unmatched_closing_parenthesis(&chars[at..at + len]) {
-        len -= 1;
-    }
+        .collect();
+    let len = run[..ducklink::bare_end(&run)].chars().count();
     (len > 0).then_some(len)
-}
-
-fn unmatched_closing_parenthesis(run: &[char]) -> bool {
-    let closed = run.last() == Some(&')');
-    let opens = run.iter().filter(|c| **c == '(').count();
-    let closes = run.iter().filter(|c| **c == ')').count();
-    closed && closes > opens
 }
 
 fn labelled_link_at(chars: &[char], at: usize) -> Option<(String, String, usize)> {

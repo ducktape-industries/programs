@@ -1,9 +1,6 @@
-//! A file's screen: its name over its path, its writes behind the title
-//! row's control, what it is and how big, then its picture, its text,
-//! where a link points, or that it is neither. New design in the kit's look; nearest
-//! Expo screen `mobile/app/(tabs)/forge/[repo]/code/[...path].tsx` (a
-//! file's view). Reads the file; writes the route and opens the page's
-//! writes.
+//! A file's screen: its name over its path, its writes behind the title row's control, what it is
+//! and how big, then its picture, a markdown file drawn, its text, where a link points, or that it
+//! is neither; nearest Expo screen `mobile/app/(tabs)/forge/[repo]/code/[...path].tsx`.
 use files::Node;
 use view::design::space;
 
@@ -13,7 +10,7 @@ use crate::state::{Holds, Opened, name_of};
 pub(super) fn file(view: &Files, path: &str, cx: Cx, k: &Kit) -> AnyElement {
     let page = page("files-file", name_of(path).to_owned(), view, cx, k).caption(path.to_owned());
     let body = match view.file_at(path) {
-        Some(file) => opened(file, k),
+        Some(file) => opened(file, cx, k),
         None => match view.file.failed() {
             Some(refusal) => refused("files-file", refusal, cx, k),
             None => quiet("files-file-reading", words::READING_FILE, k),
@@ -23,7 +20,7 @@ pub(super) fn file(view: &Files, path: &str, cx: Cx, k: &Kit) -> AnyElement {
         .into_any_element()
 }
 
-fn opened(file: &Opened, k: &Kit) -> AnyElement {
+fn opened(file: &Opened, cx: Cx, k: &Kit) -> AnyElement {
     let Some(entry) = file.file() else {
         let name = name_of(&file.path).to_owned();
         return design::empty_state(
@@ -50,7 +47,7 @@ fn opened(file: &Opened, k: &Kit) -> AnyElement {
             key_value(words::TARGET, data(target.clone(), k), k).into_any_element()
         }
         (_, Holds::Picture, _) => picture(file, k),
-        (_, _, Some(text)) => text_block(text, file, k),
+        (_, _, Some(text)) => text_block(text, file, cx, k),
         (_, _, None) => quiet("files-not-text", words::not_text(file.size()), k),
     };
     div()
@@ -61,7 +58,9 @@ fn opened(file: &Opened, k: &Kit) -> AnyElement {
         .into_any_element()
 }
 
-fn text_block(text: &str, file: &Opened, k: &Kit) -> AnyElement {
+// The text in the data face, or a markdown file drawn, and, read only in
+// part, how much shows.
+fn text_block(text: &str, file: &Opened, cx: Cx, k: &Kit) -> AnyElement {
     let cut = (!file.whole).then(|| {
         div()
             .pb(space::SM)
@@ -69,13 +68,20 @@ fn text_block(text: &str, file: &Opened, k: &Kit) -> AnyElement {
             .text_color(k.theme.muted)
             .child(words::cut(file.size()))
     });
+    let shown = match &file.doc {
+        Some(doc) => {
+            let links = crate::actions::links(&file.path, cx);
+            markdown::phone::markdown("files-markdown", doc, &links, &k.ladder, &k.theme)
+        }
+        None => data(text.to_owned(), k).into_any_element(),
+    };
     div()
         .id("files-text")
         .p(space::BLOCK)
         .flex()
         .flex_col()
         .children(cut)
-        .child(data(text.to_owned(), k))
+        .child(shown)
         .into_any_element()
 }
 

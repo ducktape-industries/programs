@@ -1,16 +1,16 @@
-//! Where a pressed link goes. A web or `duck://` link leaves through the
-//! host; a relative one names a file of the repository, resolved against
-//! the folder of the document it sits in.
+//! Where a pressed link goes: a web or `duck://` link leaves through the host; a relative one
+//! names a file of the tree the document sits in (a repository, the network's files), resolved
+//! against the document's folder, its `%XX` escapes read by ducklink.
 
-/// Where a link goes: the web (or a `duck://` link) through the host, or a
-/// file of this repository by its full path.
+// Where a link goes: the web (or a `duck://` link) through the host, or a
+// file of this repository by its full path.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Target {
+pub enum Target {
     Web(String),
     Path(Vec<u8>),
 }
 
-pub(crate) fn target(dir: &[u8], dest: &str) -> Option<Target> {
+pub fn target(dir: &[u8], dest: &str) -> Option<Target> {
     if ["duck://", "http://", "https://"]
         .iter()
         .any(|scheme| dest.starts_with(scheme))

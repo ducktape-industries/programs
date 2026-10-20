@@ -175,7 +175,9 @@ fn item(
 }
 
 // A table: a hairline around and between its cells, the header row on
-// `surface` and medium; cells secondary, 8 in, 4 over and under.
+// `surface` and medium; cells secondary, 8 in, 4 over and under. Each
+// column is as wide as its widest cell on one line; a table wider than the
+// screen scrolls sideways, its words unbroken.
 fn table(
     key: &str,
     rows: &[Vec<Text>],
@@ -185,37 +187,39 @@ fn table(
 ) -> AnyElement {
     let width = rows.iter().map(Vec::len).max().unwrap_or(0);
     let blank = Text::default();
-    let lines = rows.iter().enumerate().map(|(r, row)| {
-        let cells = (0..width).map(|c| {
+    let cells = rows.iter().enumerate().flat_map(|(r, row)| {
+        let blank = &blank;
+        (0..width).map(move |c| {
             div()
-                .flex_1()
-                .min_w(px(0.))
                 .px(design::space::SM)
                 .py(design::space::XXS)
+                .whitespace_nowrap()
+                .when(r > 0, |cell| cell.border_t_1().border_color(theme.border))
                 .when(c > 0, |cell| cell.border_l_1().border_color(theme.border))
+                .when(r == 0, |cell| {
+                    cell.bg(theme.surface).font_weight(FontWeight::MEDIUM)
+                })
                 .child(runs(
                     &format!("{key}-{r}-{c}"),
-                    row.get(c).unwrap_or(&blank),
+                    row.get(c).unwrap_or(blank),
                     on_link,
                     theme,
                 ))
-        });
-        div()
-            .flex()
-            .when(r > 0, |line| line.border_t_1().border_color(theme.border))
-            .when(r == 0, |line| {
-                line.bg(theme.surface).font_weight(FontWeight::MEDIUM)
-            })
-            .children(cells)
+        })
     });
+    let grid = div()
+        .flex_none()
+        .grid()
+        .grid_cols_max_content(width as u16)
+        .children(cells.collect::<Vec<_>>());
     div()
         .id(id(format!("{key}-table")))
         .flex()
-        .flex_col()
+        .overflow_x_scroll()
         .border_1()
         .border_color(theme.border)
         .text_type(ladder.secondary)
-        .children(lines)
+        .child(grid)
         .into_any_element()
 }
 

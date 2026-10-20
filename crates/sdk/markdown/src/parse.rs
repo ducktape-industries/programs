@@ -58,8 +58,7 @@ impl Builder {
             let end = rest[at..]
                 .find(char::is_whitespace)
                 .map_or(rest.len(), |len| at + len);
-            let url =
-                rest[at..end].trim_end_matches(['.', ',', ';', ':', '!', '?', ')', '\'', '"']);
+            let url = &rest[at..at + ducklink::bare_end(&rest[at..end])];
             self.push(&rest[..at], marks.clone());
             self.push(
                 url,
@@ -412,6 +411,20 @@ mod tests {
                 link("https://x.example/~me/a"),
                 link("https://x.example/a*b?c=1&d=2"),
             ]
+        );
+    }
+
+    #[test]
+    fn a_bare_links_closing_punctuation_is_the_sentences_but_a_querys_dot_is_its_own() {
+        let text = only("see https://x.example/a.png. or https://x.example/s?q=a. now");
+        let links: Vec<&str> = text
+            .runs
+            .iter()
+            .filter_map(|(_, marks)| marks.link.as_deref())
+            .collect();
+        assert_eq!(
+            links,
+            ["https://x.example/a.png", "https://x.example/s?q=a."]
         );
     }
 

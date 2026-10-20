@@ -19,6 +19,8 @@ describe = []
 ownership = { workspace = true }
 abi = { workspace = true }
 design = { workspace = true }
+# where a bare link typed in prose ends (`ducklink::bare_end`)
+ducklink = { workspace = true }
 attribution = { workspace = true }
 describe = { workspace = true }
 borsh = { workspace = true }

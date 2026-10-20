@@ -9,7 +9,9 @@ than writing it twice.
 - **Markdown.** `markdown::parse(text)` (feature `parse`, pulldown-cmark) reads CommonMark plus GFM
   tables, task lists, strikethrough and footnotes into `Block`s of rich `Text`. Drawn with
   `markdown::desktop::render_blocks` or `markdown::phone::markdown`; a link press goes to the
-  caller's `OnLink`. forge-view's READMEs, markdown files and change bodies draw this way.
+  caller's `OnLink`. forge-view's READMEs, markdown files and change bodies draw this way, and so do files-view's
+  `.md` files. `markdown::links::target(dir, dest)` says where a pressed link goes: the web, or a
+  path of the document's own tree resolved against its folder.
 - **Highlighting.** `markdown::highlight::tokens(name, lines)` colours source by a file name or a
   fence's language (Rust, JS/TS, shell, TOML/YAML, JSON, markdown source), `style(token, theme)`
   is a token's colour, `language_of(name)` a file's language. Lines draw with

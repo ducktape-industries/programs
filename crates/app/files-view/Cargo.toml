@@ -21,7 +21,11 @@ files.workspace = true
 identity.workspace = true
 # a row's `duck://` link
 ducklink.workspace = true
+# a `.md` file read, drawn and its links followed as forge-view does a repository's
+markdown = { workspace = true, features = ["parse"] }
 
 [dev-dependencies]
 # `examples/live.rs` and the tests: the real `files` program on the fake node
 view = { workspace = true, features = ["rig"] }
+# a screen's frame written for the app's node-less renderer
+serde_json.workspace = true

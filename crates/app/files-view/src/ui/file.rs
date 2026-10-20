@@ -1,8 +1,6 @@
-//! A file: the path as crumbs, its name over its kind and size, the writes
-//! the reader may make to it, then what it holds: its picture, its text,
-//! where a link points, or how big it is when it is neither. Split, the
-//! same without the crumbs, beside the folder it is in. Reads the file;
-//! writes the route and opens a write's form.
+//! A file: the path as crumbs, its name over its kind and size, the writes the reader may make to
+//! it, then what it holds: its picture, a markdown file drawn, its text, where a link points, or
+//! how big it is. Split, the same without the crumbs, beside the folder it is in.
 use files::Node;
 
 use super::*;
@@ -48,11 +46,11 @@ pub(super) fn detail(view: &Files, path: &str, cx: Cx, k: &Kit) -> AnyElement {
     );
     page.child(title("files-file-title", name_of(path), Some(under), k))
         .children(writes(view, cx, k))
-        .child(body(file, &entry.node, k))
+        .child(body(file, &entry.node, cx, k))
         .into_any_element()
 }
 
-fn body(file: &Opened, node: &Node, k: &Kit) -> AnyElement {
+fn body(file: &Opened, node: &Node, cx: Cx, k: &Kit) -> AnyElement {
     let body = div().id("files-file-body").px_5().py_3();
     if let Node::Symlink { target } = node {
         return body
@@ -75,6 +73,18 @@ fn body(file: &Opened, node: &Node, k: &Kit) -> AnyElement {
             .text_color(k.theme.muted)
             .child(words::cut(file.size()))
     });
+    if let Some(doc) = &file.doc {
+        let links = crate::actions::links(&file.path, cx);
+        return body
+            .children(cut)
+            .child(markdown::desktop::render_blocks(
+                "files-markdown",
+                doc,
+                &k.theme,
+                &links,
+            ))
+            .into_any_element();
+    }
     body.children(cut)
         .child(
             div()

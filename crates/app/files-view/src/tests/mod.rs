@@ -176,3 +176,33 @@ pub(crate) fn phone(net: &Network) -> TestAppContext {
 pub(crate) fn shows(cx: &TestAppContext, part: &str) -> bool {
     cx.texts().iter().any(|text| text.contains(part))
 }
+
+// A markdown file: a heading, a paragraph with a relative link, a table
+// whose first cell is bold, nested lists and a quote.
+pub(crate) const GUIDE: &str = "# Guide
+
+Read [the notes](../notes.txt) first.
+
+| step | who |
+|---|---|
+| **plan** | dev |
+| ship | ada |
+
+- one
+  - nested
+- two
+
+> quoted
+";
+
+// The seeded network with `GUIDE` at `/home/dev/docs/guide.md`.
+pub(crate) fn with_guide() -> Network {
+    let net = seeded();
+    commit(
+        &net,
+        net.me(),
+        "Write the guide",
+        vec![put(&net, "/home/dev/docs/guide.md", GUIDE.as_bytes())],
+    );
+    net
+}

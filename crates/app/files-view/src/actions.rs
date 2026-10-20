@@ -8,8 +8,16 @@ use files::Node;
 use view::design::Pages;
 use view::prelude::*;
 
-use crate::state::{Note, Route, Sheet};
+use crate::state::{Note, Route, Sheet, name_of};
 use crate::{Files, queries};
+
+// What a markdown file at `path` hands a pressed link to: its folder's.
+pub(crate) fn links(path: &str, cx: &mut Context<Files>) -> markdown::OnLink {
+    let dir = path[..path.len() - name_of(path).len()].to_owned();
+    std::rc::Rc::new(
+        cx.listener(move |view, dest: &String, _, cx| view.follow_link(&dir, dest, cx)),
+    )
+}
 
 pub(crate) fn link(chain: &str, path: &str) -> Option<String> {
     let tail: Vec<&str> = path
@@ -58,6 +66,18 @@ impl Files {
             }
         })
         .detach();
+    }
+
+    // A link pressed in a markdown file in `dir`: the web through the host,
+    // a path of the network's files opened as a link into Files is.
+    pub(crate) fn follow_link(&mut self, dir: &str, dest: &str, cx: &mut Context<Self>) {
+        match markdown::links::target(dir.as_bytes(), dest) {
+            Some(markdown::links::Target::Web(url)) => cx.host().open_link(&url),
+            Some(markdown::links::Target::Path(path)) => {
+                self.open_link(&String::from_utf8_lossy(&path), cx)
+            }
+            None => {}
+        }
     }
 
     pub(crate) fn back(&mut self, cx: &mut Context<Self>) {

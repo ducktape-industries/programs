@@ -1447,3 +1447,72 @@ fn the_history_lands_though_a_commit_comes_in_every_block() {
     let landed = (0..2 * one_read).any(|tick| shows(&cx, &format!("Tick {tick}")));
     assert!(landed, "{:?}", cx.texts());
 }
+
+// A markdown file draws as its document: its heading, its table (the
+// separator gone, the bold cell kept), its nested list and its quote; a
+// relative link opens the file it names, beside its folder.
+#[test]
+fn a_markdown_file_draws_as_its_document_and_a_relative_link_opens_its_file() {
+    let net = with_guide();
+    let mut cx = desktop(&net);
+    open_home(&mut cx);
+    cx.simulate_click("files/entry/docs");
+    cx.run_until_parked();
+    cx.simulate_click("files/entry/guide.md");
+    cx.run_until_parked();
+    assert!(cx.find("files-markdown-0-h").is_some(), "{:?}", cx.texts());
+    assert!(cx.find("files-markdown-2-table").is_some());
+    assert!(!shows(&cx, "|---|"), "{:?}", cx.texts());
+    let Some(wire::Node::RichText { text, runs, .. }) = cx.find("files-markdown-2-1-0") else {
+        panic!("a body cell is one rich text node");
+    };
+    assert_eq!(text, "plan");
+    let wire::RichTextRuns::Highlights(highlights) = runs else {
+        panic!("the cell's marks are highlight ranges");
+    };
+    assert!(highlights[0].1.font_weight.is_some(), "plan stays bold");
+    assert!(
+        cx.find("files-markdown-3-1-li").is_some(),
+        "the nested item"
+    );
+    assert!(cx.find("files-markdown-5-quote").is_some());
+    cx.simulate_rich_click("files-markdown-1", 0);
+    cx.run_until_parked();
+    assert!(cx.has_text(NOTES), "{:?}", cx.texts());
+}
+
+// A text file that is not markdown keeps its text as written.
+#[test]
+fn a_text_file_not_named_markdown_is_not_drawn_as_one() {
+    let net = seeded();
+    let mut cx = desktop(&net);
+    commit(
+        &net,
+        net.me(),
+        "Hash notes",
+        vec![put(&net, "/home/dev/hash.txt", b"# not a heading")],
+    );
+    open_home(&mut cx);
+    cx.simulate_click("files/entry/hash.txt");
+    cx.run_until_parked();
+    assert!(cx.has_text("# not a heading"), "{:?}", cx.texts());
+    assert!(cx.find("files-markdown").is_none());
+}
+
+// `FILES_SCREEN_EXPORT=<dir>` writes the guide's page as the desktop draws
+// it, for the app's node-less renderer.
+#[test]
+fn export_markdown_screen() {
+    let Some(dir) = std::env::var_os("FILES_SCREEN_EXPORT") else {
+        return;
+    };
+    let net = with_guide();
+    let mut cx = desktop_at(&net, 1100.);
+    open_home(&mut cx);
+    cx.simulate_click("files/entry/docs");
+    cx.run_until_parked();
+    cx.simulate_click("files/entry/guide.md");
+    cx.run_until_parked();
+    let out = std::path::Path::new(&dir).join("desktop.json");
+    std::fs::write(out, serde_json::to_vec(&cx.whole_frame()).unwrap()).unwrap();
+}

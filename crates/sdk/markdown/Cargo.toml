@@ -14,6 +14,8 @@ parse = ["dep:pulldown-cmark"]
 
 [dependencies]
 view.workspace = true
+# a relative link's path segments, read as the `duck://` grammar reads them
+ducklink.workspace = true
 pulldown-cmark = { workspace = true, optional = true }
 
 # `desktop`'s view test: the document view it opens is serde, as every view is

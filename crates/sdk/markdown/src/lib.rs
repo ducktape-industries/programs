@@ -3,6 +3,7 @@
 //! handed to the caller's [`OnLink`]. [`parse`] (feature `parse`) reads markdown text into blocks.
 pub mod desktop;
 pub mod highlight;
+pub mod links;
 #[cfg(feature = "parse")]
 mod parse;
 pub mod phone;

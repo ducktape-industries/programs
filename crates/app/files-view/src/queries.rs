@@ -94,7 +94,7 @@ pub(crate) async fn file(
         Some(_) => writers(&host, &path).await?,
         None => None,
     };
-    Ok(Opened {
+    let mut opened = Opened {
         path,
         snapshot,
         entry,
@@ -102,7 +102,10 @@ pub(crate) async fn file(
         whole,
         picture,
         writers,
-    })
+        doc: None,
+    };
+    opened.doc = opened.parsed();
+    Ok(opened)
 }
 
 async fn read_picture_at_snapshot(

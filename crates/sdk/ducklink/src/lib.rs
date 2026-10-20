@@ -387,9 +387,57 @@ fn empty(text: &str) -> Refused {
     )
 }
 
+// The length of a bare link typed in prose (`run` up to the whitespace
+// after it), less the sentence's punctuation trailing it: `.`, `,`, `;`,
+// `:`, `!`, `?` and a quote mark, and a `)` that opens nowhere in the run
+// (`(see https://x)`; `…/Foo_(bar)` keeps its own). A `.` after a `?`
+// is the query's and stays.
+pub fn bare_end(run: &str) -> usize {
+    let mut end = run.len();
+    while let Some(last) = run[..end].chars().next_back() {
+        let before = &run[..end - last.len_utf8()];
+        let trailing = match last {
+            ',' | ';' | ':' | '!' | '?' | '\'' | '"' => true,
+            '.' => !before.contains('?'),
+            ')' => before.matches(')').count() >= before.matches('(').count(),
+            _ => false,
+        };
+        if !trailing {
+            break;
+        }
+        end = before.len();
+    }
+    end
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bare_link_leaves_the_sentences_punctuation_behind() {
+        fn kept(run: &str) -> &str {
+            &run[..bare_end(run)]
+        }
+        assert_eq!(
+            kept("duck://n-b5b6ea90/files/shared/before-whole.png."),
+            "duck://n-b5b6ea90/files/shared/before-whole.png"
+        );
+        assert_eq!(kept("https://x.example/a,"), "https://x.example/a");
+        assert_eq!(kept("https://x.example/a)."), "https://x.example/a");
+        assert_eq!(kept("https://x.example/a!?"), "https://x.example/a");
+        assert_eq!(kept("https://x.example/a:"), "https://x.example/a");
+        assert_eq!(
+            kept("https://x.example/Foo_(bar)"),
+            "https://x.example/Foo_(bar)"
+        );
+        assert_eq!(
+            kept("https://x.example/s?q=a."),
+            "https://x.example/s?q=a.",
+            "a query's dot is the query's"
+        );
+        assert_eq!(kept("https://x.example/s?"), "https://x.example/s");
+    }
 
     #[test]
     fn a_network_and_its_genesis_name_one_chain() {

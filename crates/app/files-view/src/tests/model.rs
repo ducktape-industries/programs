@@ -79,6 +79,7 @@ fn opened(bytes: &[u8], whole: bool) -> Opened {
         whole,
         picture: None,
         writers: None,
+        doc: None,
     }
 }
 

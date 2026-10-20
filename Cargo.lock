@@ -697,6 +697,7 @@ dependencies = [
  "borsh",
  "describe",
  "design",
+ "ducklink",
  "ownership",
  "program",
  "serde",
@@ -2091,7 +2092,9 @@ dependencies = [
  "ducklink",
  "files",
  "identity",
+ "markdown",
  "serde",
+ "serde_json",
  "view",
 ]
 
@@ -3556,6 +3559,7 @@ checksum = "dae608c151f68243f2b000364e1f7b186d9c29845f7d2d85bd31b9ad77ad552b"
 name = "markdown"
 version = "0.1.0"
 dependencies = [
+ "ducklink",
  "pulldown-cmark",
  "serde",
  "view",

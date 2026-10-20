@@ -1,7 +1,7 @@
 # markdown
 
 Markdown as a document, drawn the same way in every view that links it (forge-view's READMEs,
-files and change bodies; chat-view's code blocks, tables and headings). It links `view` and, with
+files and change bodies; files-view's `.md` files; chat-view's code blocks, tables and headings). It links `view` and, with
 its `parse` feature, pulldown-cmark. It reads nothing from a network and writes nothing.
 
 - The model: `Block` (`Heading(level, Text)`, `Paragraph(Text)`, `Item(marker, body)`,
@@ -25,7 +25,10 @@ its `parse` feature, pulldown-cmark. It reads nothing from a network and writes 
 - `phone`: the same at the touch ladder (Expo `src/forge/Document.tsx`): `markdown(name, blocks,
   on_link, ladder, theme)`, `block`, `code_box` and `code_line`.
 - Links: a pressed link calls the caller's `OnLink` with its raw destination. Where it goes is the
-  caller's (forge-view resolves a relative link against the document's folder; chat-view opens a
-  link or a mention as it opens one in a paragraph).
+  caller's. `links::target(dir, dest)` reads one: `Web` (an `https://`, `http://` or `duck://`
+  link, for the host) or `Path` (a file of the document's own tree, resolved against `dir`, its
+  folder, each segment's `%XX` read by ducklink; never above the root). forge-view opens a path
+  in the repository, files-view in the network's files; chat-view opens a link or a mention as it
+  opens one in a paragraph.
 - Element ids: a document named `name` keys block `i` as `name-i`; a heading's box is `-h`, a
   table `-table` (cell `-r-c`), a code block `-code` (line `-n`), a list item `-li`.

@@ -287,3 +287,31 @@ fn every_screen_and_sheet_fits_a_phone() {
         cx.run_until_parked();
     });
 }
+
+#[test]
+fn a_markdown_file_screen_draws_its_document() {
+    let net = with_guide();
+    let mut cx = phone(&net);
+    tap(&mut cx, "files/place/home");
+    tap(&mut cx, "files/entry/docs");
+    tap(&mut cx, "files/entry/guide.md");
+    assert!(cx.find("files-markdown-0-h").is_some(), "{:?}", cx.texts());
+    assert!(cx.find("files-markdown-2-table").is_some());
+    assert!(cx.find("files-markdown-5-quote").is_some());
+    assert!(!cx.texts().iter().any(|text| text.contains("|---|")));
+}
+
+// `FILES_SCREEN_EXPORT=<dir>` writes the guide's screen as the phone draws it.
+#[test]
+fn export_markdown_phone_screen() {
+    let Some(dir) = std::env::var_os("FILES_SCREEN_EXPORT") else {
+        return;
+    };
+    let net = with_guide();
+    let mut cx = phone(&net);
+    tap(&mut cx, "files/place/home");
+    tap(&mut cx, "files/entry/docs");
+    tap(&mut cx, "files/entry/guide.md");
+    let out = std::path::Path::new(&dir).join("phone.json");
+    std::fs::write(out, serde_json::to_vec(&cx.whole_frame()).unwrap()).unwrap();
+}
