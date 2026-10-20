@@ -1,0 +1,72 @@
+# The decoders that read bytes someone else wrote, fuzzed: borsh-json against
+# every program's committed interface, gitcore's pack and upload-request
+# readers, and one view-wire frame. Each must answer Err for bytes it can't
+# read, never panic, hang or allocate what the bytes only claim.
+# `cargo +nightly fuzz run <target> <dir> fuzz/corpus/<target>` from the tree
+# root: libFuzzer writes what it finds to the first dir, so the seeds stay as
+# they are, cut from the tree's own fixtures and encoders.
+# Its own workspace, so the tree's is untouched and nightly builds only this.
+[package]
+name = "programs-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+borsh-json = { path = "../crates/lib/borsh-json" }
+gitcore = { path = "../crates/lib/gitcore" }
+view-wire = { path = "../crates/sdk/view-wire" }
+# a pack's trailing checksum and each entry's zlib stream, which the pack
+# target writes so the reader gets past them to the entries and the deltas
+miniz_oxide = { version = "0.8", default-features = false, features = ["with-alloc"] }
+sha1-checked = { version = "0.10", default-features = false }
+sha2 = { version = "0.10", default-features = false }
+
+[[bin]]
+name = "borsh_json"
+path = "fuzz_targets/borsh_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gitcore_pack"
+path = "fuzz_targets/gitcore_pack.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gitcore_upload"
+path = "fuzz_targets/gitcore_upload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "view_wire_frame"
+path = "fuzz_targets/view_wire_frame.rs"
+test = false
+doc = false
+bench = false
+
+# the root's, which this workspace does not inherit: the same graph as the tree
+[patch.crates-io]
+gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "eef11e96c9fcf7e0389d31f125013370a1b02d92" }
+
+# symbols for a stop's stack
+[profile.release]
+debug = 1
+
+# cargo-fuzz turns debug assertions on for the targets' code only, and
+# gpui-pre's code calls a derive gpui-macros (a proc macro, built for the
+# host) defines only under them: on for the host too.
+[profile.release.build-override]
+debug-assertions = true
+
+[workspace]
+members = ["."]

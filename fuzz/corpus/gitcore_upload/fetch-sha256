@@ -1,0 +1,6 @@
+0012command=fetch
+0015agent=git/2.55.0
+0019object-format=sha256
+0001004awant cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+0009done
+0000

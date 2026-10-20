@@ -14,7 +14,8 @@ pub(crate) fn apply(base: &[u8], delta: &[u8], max_result_size: usize) -> Result
     if too_large {
         return Err(Error::ObjectTooLarge);
     }
-    let mut out = Vec::with_capacity(result_size);
+    // room for what the base and the delta hold, at most: the header only claims the result size
+    let mut out = Vec::with_capacity(result_size.min(base.len().saturating_add(delta.len())));
     while cursor < delta.len() {
         let command = delta[cursor];
         cursor += 1;
@@ -24,7 +25,9 @@ pub(crate) fn apply(base: &[u8], delta: &[u8], max_result_size: usize) -> Result
             let in_base = offset
                 .checked_add(length)
                 .is_some_and(|end| end <= base.len());
-            if !in_base {
+            // each copy can repeat the whole base, so the claimed size is held to as the result grows
+            let fits = out.len() + length <= result_size;
+            if !in_base || !fits {
                 return Err(Error::BadDelta);
             }
             out.extend_from_slice(&base[offset..offset + length]);
@@ -38,6 +41,10 @@ pub(crate) fn apply(base: &[u8], delta: &[u8], max_result_size: usize) -> Result
         let available = cursor + length <= delta.len();
         if !available {
             return Err(Error::Truncated);
+        }
+        let fits = out.len() + length <= result_size;
+        if !fits {
+            return Err(Error::BadDelta);
         }
         out.extend_from_slice(&delta[cursor..cursor + length]);
         cursor += length;
@@ -127,5 +134,24 @@ mod tests {
     #[test]
     fn copy_past_base_is_rejected() {
         assert_eq!(apply(b"abc", &[3, 5, 0x90, 5], 100), Err(Error::BadDelta));
+    }
+
+    #[test]
+    fn a_result_past_its_claimed_size_is_refused_at_once() {
+        // 1 byte claimed, and the copy alone makes 3: it stops there, before the truncated insert after it
+        assert_eq!(
+            apply(b"abc", &[3, 1, 0x90, 3, 5, b'x'], 100),
+            Err(Error::BadDelta)
+        );
+    }
+
+    #[test]
+    fn claimed_result_size_is_not_allocated() {
+        // a result of 2^63 - 1 bytes claimed, nothing to make it: room for it was asked for first
+        let delta = [12, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f];
+        assert_eq!(
+            apply(b"hello world\n", &delta, usize::MAX),
+            Err(Error::BadDelta)
+        );
     }
 }

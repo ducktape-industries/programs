@@ -117,7 +117,8 @@ fn parse_entries(body: &[u8], count: usize, hash: Hash, limits: &Limits) -> Resu
         bytes: body,
         pos: 12,
     };
-    let mut entries = Vec::with_capacity(count);
+    // grown as entries are read: the header only claims the count
+    let mut entries = Vec::new();
     for _ in 0..count {
         let offset = cursor.pos;
         let (type_code, size) = read_entry_header(&mut cursor)?;
@@ -195,16 +196,27 @@ fn inflate_at(cursor: &mut Cursor<'_>, expected_size: usize) -> Result<Vec<u8>> 
     Ok(data)
 }
 
+// The output grows as the stream fills it, up to `expected_size`: the entry header only claims
+// the size, so room for it all is not asked for before the stream gives it.
 pub(crate) fn inflate(input: &[u8], expected_size: usize) -> Result<(Vec<u8>, usize)> {
-    let mut out = vec![0u8; expected_size];
+    let mut out = vec![0u8; expected_size.min(input.len().saturating_mul(2))];
     let mut state = DecompressorOxide::new();
     let flags = TINFL_FLAG_PARSE_ZLIB_HEADER | TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
-    let (status, consumed, written) = decompress(&mut state, input, &mut out, 0, flags);
-    let finished = status == TINFLStatus::Done && written == expected_size;
-    if !finished {
-        return Err(Error::Inflate);
+    let (mut consumed, mut written) = (0, 0);
+    loop {
+        let rest = input.get(consumed..).ok_or(Error::Inflate)?;
+        let (status, read, wrote) = decompress(&mut state, rest, &mut out, written, flags);
+        consumed += read;
+        written += wrote;
+        match status {
+            TINFLStatus::Done if written == expected_size => return Ok((out, consumed)),
+            TINFLStatus::HasMoreOutput if out.len() < expected_size => {
+                let grown = out.len().saturating_mul(2).max(1).min(expected_size);
+                out.resize(grown, 0);
+            }
+            _ => return Err(Error::Inflate),
+        }
     }
-    Ok((out, consumed))
 }
 
 fn resolve_all<F>(
@@ -357,6 +369,36 @@ mod tests {
     fn truncated_pack_is_truncated() {
         assert_eq!(
             read(b"PACK", Hash::Sha1, &Limits::generous(), |_| Ok(None)),
+            Err(Error::Truncated)
+        );
+    }
+
+    #[test]
+    fn output_grows_to_an_object_compressed_far_below_it() {
+        let blob = Object::new(Kind::Blob, vec![0; 1 << 20]);
+        for hash in [Hash::Sha1, Hash::Sha256] {
+            let pack = crate::pack::write([blob.clone()], hash).unwrap();
+            let read = read(&pack, hash, &Limits::generous(), |_| Ok(None)).unwrap();
+            assert_eq!(read, [(blob.id(hash).unwrap(), blob.clone())]);
+        }
+    }
+
+    #[test]
+    fn claimed_size_is_not_allocated() {
+        // one blob of 0x50549a2e91 bytes claimed, no stream after: room for it was asked for first
+        let pack = b"PACK\0\0\0\x02\0\0\0\x7a\xb1\xe9\xc5\xa6\xaa\x50\xfe\xe6\x18\x08\x74\x23\x90\x5f\xd9\xa3\x84\xe2\xa5\x4e\xee\xd4\x03\x2d\x9e\x89";
+        assert_eq!(
+            read(pack, Hash::Sha1, &Limits::generous(), |_| Ok(None)),
+            Err(Error::Inflate)
+        );
+    }
+
+    #[test]
+    fn claimed_count_is_not_allocated() {
+        // 2^32 - 1 objects claimed, none there: room for them all was asked for first
+        let pack = b"PACK\0\0\0\x02\xff\xff\xff\xff\x80\xb6\x91\xb3\x01\xf3\x96\x89\x52\x1b\x5b\xb8\x13\xb9\x92\x9e\xb4\x35\x1e\x73";
+        assert_eq!(
+            read(pack, Hash::Sha1, &Limits::generous(), |_| Ok(None)),
             Err(Error::Truncated)
         );
     }
