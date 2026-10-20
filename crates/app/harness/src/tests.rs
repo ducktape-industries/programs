@@ -12,6 +12,7 @@ mod config;
 mod conversations;
 mod file_tools;
 mod forge_commit;
+mod forge_copy;
 mod forge_tools;
 mod listen;
 mod models;

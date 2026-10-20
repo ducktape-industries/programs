@@ -260,10 +260,10 @@ fn a_missing_source_or_an_item_that_is_not_one_file_is_refused_and_nothing_is_co
         "the refusal names the source and the snapshot it was read at: {missing}"
     );
     for (call, says) in [
-        ("c2", "not both"),
+        ("c2", "give only one of"),
         ("c3", "executable goes with content"),
         ("c4", "a.md is written twice"),
-        ("c5", "give content, source or edits"),
+        ("c5", "give content, source, copy, blob or edits"),
     ] {
         let (text, failed) = result_of(chain, thread, call);
         assert!(failed && text.contains(says), "{call}: {text}");
