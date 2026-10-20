@@ -7,7 +7,7 @@
 //! [`MockHost::env`] is the env a test starts from.
 
 use std::cell::{Ref, RefCell, RefMut};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use abi::role::{self, identity::Profile};
@@ -76,6 +76,9 @@ pub struct MockState {
     // before each run)
     pub touched: BTreeMap<Vec<u8>, Touch>,
     pub blobs: BTreeMap<BlobId, Blob>,
+    // the programs that hold each blob they put, as the host's roster keeps them; a blob in
+    // `blobs` with no entry here has unknown holders and is never released
+    pub holders: BTreeMap<BlobId, BTreeSet<ProgramId>>,
     /// The last `set_return_data`.
     pub output: Vec<u8>,
     /// The last query's response.
@@ -116,6 +119,7 @@ pub struct MockHost(Rc<RefCell<MockState>>);
 pub(crate) struct Written {
     state: BTreeMap<Vec<u8>, Vec<u8>>,
     blobs: BTreeMap<BlobId, Blob>,
+    holders: BTreeMap<BlobId, BTreeSet<ProgramId>>,
     sent: (Vec<u8>, Vec<Message>, Vec<Vec<u8>>),
     waits: (Vec<Called>, bool, Vec<Resumed>),
 }
@@ -269,6 +273,7 @@ impl MockHost {
         Written {
             state: mock.state.clone(),
             blobs: mock.blobs.clone(),
+            holders: mock.holders.clone(),
             sent: (
                 mock.output.clone(),
                 mock.emissions.clone(),
@@ -282,6 +287,7 @@ impl MockHost {
         let mut mock = self.borrow_mut();
         mock.state = written.state;
         mock.blobs = written.blobs;
+        mock.holders = written.holders;
         (mock.output, mock.emissions, mock.events) = written.sent;
         (mock.calls, mock.deferred, mock.resumes) = written.waits;
     }
@@ -381,11 +387,25 @@ impl MockHost {
             }
             HostOp::BlobPut { hash, kind, body } => match blob_id(hash, &kind, &body) {
                 Ok(id) => {
+                    let unknown = mock.blobs.contains_key(&id) && !mock.holders.contains_key(&id);
+                    if !unknown {
+                        let held = mock.holders.entry(id).or_default();
+                        held.insert(env.program.clone());
+                    }
                     mock.blobs.insert(id, Blob { kind, body });
                     HostReply::BlobId(id)
                 }
                 Err(error) => HostReply::Refused(crate::kernel::refusal_from(error)),
             },
+            HostOp::BlobRelease(id) => {
+                let held = mock.holders.get_mut(&id);
+                let let_go = held.is_some_and(|held| held.remove(&env.program) && held.is_empty());
+                if let_go {
+                    mock.holders.remove(&id);
+                    mock.blobs.remove(&id);
+                }
+                HostReply::Done
+            }
             HostOp::Emit(message) => {
                 let item = mock.next_message;
                 mock.next_message += 1;
@@ -591,6 +611,41 @@ mod tests {
         let unknown = ctx.query_raw("nobody", Vec::new()).unwrap_err();
         assert_eq!(unknown.code, code::UNKNOWN_PROGRAM);
     }
+    #[test]
+    fn a_blob_goes_once_no_program_that_put_it_holds_it() {
+        let host = MockHost::default();
+        let put = |program: &str, body: &[u8]| {
+            let ctx = host.exec(MockHost::env(program));
+            ctx.blob_put(HashKind::Sha256, "part", body.to_vec())
+                .unwrap()
+        };
+        let release = |program: &str, id| host.exec(MockHost::env(program)).blob_release(id);
+        let id = put("harness", b"same");
+        assert_eq!(put("files", b"same"), id);
+        release("harness", id);
+        assert!(
+            host.borrow().blobs.contains_key(&id),
+            "files holds it still"
+        );
+        release("chat", id);
+        assert!(host.borrow().blobs.contains_key(&id), "chat never put it");
+        release("files", id);
+        assert!(!host.borrow().blobs.contains_key(&id));
+
+        let unknown = blob_id(HashKind::Sha256, "part", b"from before").unwrap();
+        let before = Blob {
+            kind: "part".into(),
+            body: b"from before".to_vec(),
+        };
+        host.borrow_mut().blobs.insert(unknown, before);
+        assert_eq!(put("harness", b"from before"), unknown);
+        release("harness", unknown);
+        assert!(
+            host.borrow().blobs.contains_key(&unknown),
+            "a blob whose holders are unknown is never released"
+        );
+    }
+
     #[test]
     fn a_sha1_blob_gets_git_s_id_and_a_shattered_half_is_refused() {
         let hello = blob_id(HashKind::Sha1, "blob", b"hello\n").unwrap();

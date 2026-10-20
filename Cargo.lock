@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "abi"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=facd3c32542a6dcd90f8320a81d1a6e5f534de5f#facd3c32542a6dcd90f8320a81d1a6e5f534de5f"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=f836730c6a3adeb1657bbe61f6c04524149bfcc3#f836730c6a3adeb1657bbe61f6c04524149bfcc3"
 dependencies = [
  "borsh",
 ]
@@ -508,10 +508,11 @@ dependencies = [
 [[package]]
 name = "blob"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=facd3c32542a6dcd90f8320a81d1a6e5f534de5f#facd3c32542a6dcd90f8320a81d1a6e5f534de5f"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=f836730c6a3adeb1657bbe61f6c04524149bfcc3#f836730c6a3adeb1657bbe61f6c04524149bfcc3"
 dependencies = [
  "abi",
  "borsh",
+ "rustix",
  "sha1-checked",
  "sha2 0.10.9",
  "thiserror 2.0.20",
@@ -2115,7 +2116,7 @@ checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 [[package]]
 name = "fixture-wasm"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=facd3c32542a6dcd90f8320a81d1a6e5f534de5f#facd3c32542a6dcd90f8320a81d1a6e5f534de5f"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=f836730c6a3adeb1657bbe61f6c04524149bfcc3#f836730c6a3adeb1657bbe61f6c04524149bfcc3"
 dependencies = [
  "serde",
  "serde_json",
@@ -2900,7 +2901,7 @@ dependencies = [
 [[package]]
 name = "host"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=facd3c32542a6dcd90f8320a81d1a6e5f534de5f#facd3c32542a6dcd90f8320a81d1a6e5f534de5f"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=f836730c6a3adeb1657bbe61f6c04524149bfcc3#f836730c6a3adeb1657bbe61f6c04524149bfcc3"
 dependencies = [
  "abi",
  "async-trait",
@@ -3358,7 +3359,7 @@ dependencies = [
 [[package]]
 name = "keyscheme"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=facd3c32542a6dcd90f8320a81d1a6e5f534de5f#facd3c32542a6dcd90f8320a81d1a6e5f534de5f"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=f836730c6a3adeb1657bbe61f6c04524149bfcc3#f836730c6a3adeb1657bbe61f6c04524149bfcc3"
 dependencies = [
  "abi",
  "base64 0.22.1",
@@ -4985,7 +4986,7 @@ dependencies = [
 [[package]]
 name = "runtime"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=facd3c32542a6dcd90f8320a81d1a6e5f534de5f#facd3c32542a6dcd90f8320a81d1a6e5f534de5f"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=f836730c6a3adeb1657bbe61f6c04524149bfcc3#f836730c6a3adeb1657bbe61f6c04524149bfcc3"
 dependencies = [
  "abi",
  "async-trait",
@@ -4993,6 +4994,9 @@ dependencies = [
  "futures",
  "tokio",
  "wasmtime",
+ "zstd",
+ "zstd-safe",
+ "zstd-sys",
 ]
 
 [[package]]
@@ -5516,7 +5520,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 [[package]]
 name = "state"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=facd3c32542a6dcd90f8320a81d1a6e5f534de5f#facd3c32542a6dcd90f8320a81d1a6e5f534de5f"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=f836730c6a3adeb1657bbe61f6c04524149bfcc3#f836730c6a3adeb1657bbe61f6c04524149bfcc3"
 dependencies = [
  "abi",
  "borsh",
@@ -5676,7 +5680,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys",
@@ -7176,18 +7180,18 @@ dependencies = [
 
 [[package]]
 name = "zstd-safe"
-version = "7.3.0"
+version = "7.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64d80649ab6db9d9f6f9c80a40becd948eda4714a0a5ac8c4d157a32231c7882"
+checksum = "8f49c4d5f0abb602a93fb8736af2a4f4dd9512e36f7f570d66e65ff867ed3b9d"
 dependencies = [
  "zstd-sys",
 ]
 
 [[package]]
 name = "zstd-sys"
-version = "2.1.0+zstd.1.5.7"
+version = "2.0.16+zstd.1.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ef0a8027ec3ee71300ab3bcbcd0393f434aa72b91ca6d635a39941deae8eea0"
+checksum = "91e19ebc2adc8f83e43039e79776e3fda8ca919132d68a1fed6a5faca2683748"
 dependencies = [
  "cc",
  "pkg-config",

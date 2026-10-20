@@ -403,6 +403,13 @@ impl ExecCtx {
         }
     }
 
+    // Lets go of this program's hold on the blob `id`, which its `blob_put` took: once no program
+    // that put it holds it, the node drops it. A blob this program holds no hold on stays as it
+    // is, as does one put before holds were kept.
+    pub fn blob_release(&self, id: BlobId) {
+        self.done(HostOp::BlobRelease(id))
+    }
+
     /// Has `target` run `op` (its own `Op`, borsh) in this frame, once this
     /// handler returns Ok, as a message from this program. Messages run in
     /// the order emitted, each before the next, and `reply` says what the
