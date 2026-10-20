@@ -1,11 +1,19 @@
 //! Tools over the network's people and what they did: accounts as the identity role
-//! profiles them, and an account's recent frames as `activity` indexes them.
-use ::program::{Error, ExecCtx, invalid};
+//! profiles them, and an account's recent frames as the node's activity index keeps them.
+use ::program::{Error, ExecCtx, HashKind, code, invalid};
+use abi::role::egress::{self, http};
 use abi::role::identity::{self as role, Category, Kind, Profile, Standing};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use super::pods::whole;
 use super::{Run, Seat, Tool, cursor_schema, next, object, page, unexpected};
+use crate::PART;
+
+const NODE: &str = "node";
+const ACTIVITY: &str = "/activity";
+const REFUSAL: u8 = 5;
+const REFUSED: u8 = 3;
 
 fn kind(kind: &Kind) -> Value {
     match kind {
@@ -107,47 +115,123 @@ impl Tool for Account {
 pub(crate) struct ActivityArgs {
     account: u64,
     cursor: Option<String>,
+    height: Option<u64>,
+    position: Option<u32>,
+}
+
+fn node_answer(output: &[u8]) -> Result<Vec<u8>, Error> {
+    let response: http::Response = abi::decode(output).map_err(|fault| {
+        let why = format!("the answer is no HTTP response: {}", fault.sentence);
+        Error::new(code::UNEXPECTED_REPLY, why)
+    })?;
+    match response.status {
+        200 => Ok(response.body),
+        400 => {
+            let refusal: abi::Refusal = abi::decode(&response.body).map_err(|fault| {
+                let why = format!("the node's refusal does not decode: {}", fault.sentence);
+                Error::new(code::UNEXPECTED_REPLY, why)
+            })?;
+            Err(Error::new(refusal.reason, refusal.sentence))
+        }
+        status => Err(Error::new(
+            code::WRONG_STATE,
+            format!(
+                "the node answered {status}: {}",
+                String::from_utf8_lossy(&response.body)
+            ),
+        )),
+    }
+}
+
+fn frames_of(output: &[u8]) -> Result<Value, Error> {
+    let body = node_answer(output)?;
+    let reply: activity::Reply = abi::decode(&body).map_err(|fault| {
+        let why = format!("the node's activity does not decode: {}", fault.sentence);
+        Error::new(code::UNEXPECTED_REPLY, why)
+    })?;
+    let activity::Reply::Frames(frames) = reply else {
+        return Err(unexpected("node", "Acted", &reply));
+    };
+    let acted: Vec<Value> = frames
+        .items
+        .iter()
+        .map(|frame| {
+            json!({
+                "height": frame.height,
+                "position": frame.position,
+                "time": frame.time,
+                "program": frame.target,
+                "applied": frame.applied,
+            })
+        })
+        .collect();
+    Ok(json!({ "frames": acted, "next": next(&frames.next) }))
+}
+
+fn refusal_of(output: &[u8]) -> Result<Value, Error> {
+    let body = node_answer(output)?;
+    let unread = || Error::new(code::UNEXPECTED_REPLY, "the node answered no refusal");
+    let (tag, rest) = body.split_first().ok_or_else(unread)?;
+    if *tag != REFUSED {
+        return Err(unread());
+    }
+    let refusal: Option<Error> = abi::decode(rest).map_err(|_| unread())?;
+    let why = refusal.map(|refusal| json!({ "code": refusal.code, "message": refusal.message }));
+    Ok(json!({ "refusal": why }))
 }
 
 pub(crate) struct Activity;
 
 impl Tool for Activity {
     const NAME: &'static str = "network_activity";
-    const DESCRIPTION: &'static str = "An account's recent frames on the network, newest first: the block, the program it targeted, and whether it applied.";
+    const DESCRIPTION: &'static str = "An account's recent frames on the network, newest first, as the connected node's activity index keeps them: the block, the program it targeted, and whether it applied. With height and position (a frame it listed), why that frame did not apply instead: its code and message, or null where it applied or the node kept no reason for it.";
+    const WRITES: bool = true;
     type Args = ActivityArgs;
 
     fn schema() -> Value {
         object(
-            json!({ "account": { "type": "integer" }, "cursor": cursor_schema() }),
+            json!({
+                "account": { "type": "integer" },
+                "cursor": cursor_schema(),
+                "height": { "type": "integer", "description": "with position: the block of a frame to say why it did not apply" },
+                "position": { "type": "integer", "description": "with height: the frame's place in its block" },
+            }),
             &["account"],
         )
     }
 
     fn run(ctx: &ExecCtx, _: &Seat, args: ActivityArgs) -> Result<Run, Error> {
-        let asked = activity::Query::Acted {
-            account: args.account,
-            page: page(&args.cursor)?,
-        };
-        match ctx.query(activity::PROGRAM, &asked)? {
-            activity::Reply::Frames(frames) => {
-                let acted: Vec<Value> = frames
-                    .items
-                    .iter()
-                    .map(|frame| {
-                        json!({
-                            "height": frame.height,
-                            "position": frame.position,
-                            "time": frame.time,
-                            "program": frame.target,
-                            "applied": frame.applied,
-                        })
-                    })
-                    .collect();
-                Ok(Run::Done(
-                    json!({ "frames": acted, "next": next(&frames.next) }),
-                ))
+        let (body, read): (Vec<u8>, super::Reading) = match (args.height, args.position) {
+            (None, None) => {
+                let asked = activity::Query::Acted {
+                    account: args.account,
+                    page: page(&args.cursor)?,
+                };
+                (abi::encode(&asked), Box::new(frames_of))
             }
-            other => Err(unexpected(activity::PROGRAM, "Acted", &other)),
-        }
+            (Some(height), Some(position)) => {
+                let asked = [vec![REFUSAL], abi::encode(&(height, position))].concat();
+                (asked, Box::new(refusal_of))
+            }
+            _ => {
+                return Err(invalid(
+                    "a frame is named by its height and its position together",
+                ));
+            }
+        };
+        let part = ctx.blob_put(HashKind::Sha256, PART, body)?;
+        let request = egress::Request::Http {
+            service: NODE.into(),
+            head: http::Head {
+                method: http::Method::Post,
+                target: ACTIVITY.into(),
+                headers: Vec::new(),
+            },
+            body: vec![part],
+        };
+        Ok(Run::Read {
+            writes: whole(ctx, request)?,
+            read,
+        })
     }
 }

@@ -67,7 +67,7 @@ pub(crate) fn posted(
     })
 }
 
-fn whole(ctx: &ExecCtx, request: egress::Request) -> Result<Vec<Write>, Error> {
+pub(crate) fn whole(ctx: &ExecCtx, request: egress::Request) -> Result<Vec<Write>, Error> {
     let target = ctx.env().role(abi::role::EGRESS)?.clone();
     let op = egress::Op::Request {
         request,

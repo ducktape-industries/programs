@@ -212,7 +212,10 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
         ("network_account", vec![json!({ "number": 21 })]),
         (
             "network_activity",
-            vec![json!({ "account": 21, "cursor": "00" })],
+            vec![
+                json!({ "account": 21, "cursor": "00" }),
+                json!({ "account": 21, "height": 171181, "position": 3 }),
+            ],
         ),
         (
             "network_schema",
