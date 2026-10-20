@@ -119,6 +119,8 @@ pub struct Chat {
     // the channels the reader is not in, listed under the room list's last row
     #[serde(skip)]
     pub(crate) others_open: bool,
+    #[serde(skip)]
+    pub(crate) more_open: BTreeSet<String>,
     /// Where the pointer is among the message rows: the row that carries
     /// the action strip, beside a chosen one. One slot whatever the pointer
     /// entered took last, so a strip that vanished under the pointer (its

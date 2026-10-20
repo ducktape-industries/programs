@@ -253,7 +253,14 @@ fn the_channels_the_reader_is_not_in_unfold_under_the_lists_last_row() {
     assert!(others_listed(&cx, "rooms").is_empty(), "folded");
     cx.simulate_click("chat-rooms-more");
     cx.run_until_parked();
-    assert_eq!(others_listed(&cx, "rooms"), OTHERS, "unfolded");
+    assert_eq!(
+        others_listed(&cx, "rooms"),
+        ["j-075", "forge:web:3", "random"],
+        "unfolded, j-101 in its folder, closed"
+    );
+    cx.simulate_click("chat-rooms-more-folder-jobs");
+    cx.run_until_parked();
+    assert_eq!(others_listed(&cx, "rooms"), OTHERS, "its folder opened");
     view.read(|chat| {
         let list = chat.room_list();
         let ids: Vec<&str> = (list.others.iter())
@@ -274,4 +281,162 @@ fn the_channels_the_reader_is_not_in_unfold_under_the_lists_last_row() {
         "opened, Random is the reader's"
     );
     assert!(cx.find("chat-sidebar-channel-random").is_some());
+}
+
+#[test]
+fn the_rooms_the_reader_is_not_in_unfold_into_their_folders() {
+    let (mut cx, view) = phone();
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
+        let theirs = |id: &str, name: &str| {
+            let mut info = channel(id, name, 1);
+            info.channel.owner = Principal::Account(9);
+            info
+        };
+        Ok(match query {
+            Query::Channels { .. } => Reply::Channels(page(vec![
+                channel("j-140", "jobs/j-140 · phone no loading", 1),
+                theirs("j-097", "jobs/j-097 · new nodes join fast"),
+                theirs("j-111", "jobs/j-111 · chat round"),
+                theirs("forge:programs:340", "pr/programs#340 forge notices"),
+                theirs("forge:programs:341", "pr/programs#341 folders"),
+                theirs("random", "Random"),
+            ])),
+            Query::Listening { .. } => Reply::Listening(page(Vec::new())),
+            query => chat_reply(query),
+        })
+    }));
+    cx.update(&view, |chat, _, cx| chat.load_channels(cx));
+    cx.run_until_parked();
+    let shown = |cx: &TestAppContext, id: &str| cx.find(id).is_some();
+    let rooms = |cx: &TestAppContext, tree: &str| -> Vec<&'static str> {
+        [
+            "j-097",
+            "j-111",
+            "forge:programs:340",
+            "forge:programs:341",
+            "random",
+        ]
+        .into_iter()
+        .filter(|room| shown(cx, &format!("chat-{tree}-channel-{room}")))
+        .collect()
+    };
+    assert!(shown(&cx, "chat-rooms-channel-j-140"), "the reader's own");
+    assert!(rooms(&cx, "rooms").is_empty(), "none of theirs");
+    assert!(cx.has_text("5 more channels"), "{:?}", cx.texts());
+    cx.simulate_click("chat-rooms-more");
+    cx.run_until_parked();
+    assert!(
+        shown(&cx, "chat-rooms-more-folder-jobs"),
+        "{:?}",
+        cx.texts()
+    );
+    assert!(shown(&cx, "chat-rooms-more-folder-pr"), "{:?}", cx.texts());
+    assert_eq!(
+        rooms(&cx, "rooms"),
+        ["random"],
+        "the folders closed, the unfiled loose"
+    );
+    cx.simulate_click("chat-rooms-more-folder-jobs");
+    cx.run_until_parked();
+    assert_eq!(
+        rooms(&cx, "rooms"),
+        ["j-097", "j-111", "random"],
+        "jobs/ opened"
+    );
+    view.read(|chat| {
+        assert!(
+            chat.closed_folders.is_empty(),
+            "the reader's own jobs/ untouched"
+        )
+    });
+    cx.simulate_touch(false);
+    cx.simulate_resize(1200., 800.);
+    assert_eq!(
+        rooms(&cx, "sidebar"),
+        ["j-097", "j-111", "random"],
+        "the desk's the same"
+    );
+    cx.simulate_click("chat-sidebar-more-folder-pr");
+    cx.run_until_parked();
+    cx.simulate_click("chat-sidebar-more-folder-jobs");
+    cx.run_until_parked();
+    assert_eq!(
+        rooms(&cx, "sidebar"),
+        ["forge:programs:340", "forge:programs:341", "random"],
+        "pr/ opened, jobs/ closed again"
+    );
+    assert!(
+        shown(&cx, "chat-sidebar-channel-j-140"),
+        "the reader's jobs/ stays open"
+    );
+}
+
+#[test]
+fn a_more_folder_named_as_a_channel_opens_it_from_the_keys() {
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
+        let theirs = |id: &str, name: &str| {
+            let mut info = channel(id, name, 1);
+            info.channel.owner = Principal::Account(9);
+            info
+        };
+        Ok(match query {
+            Query::Channels { .. } => Reply::Channels(page(vec![
+                channel("general", "General", 1),
+                theirs("jobs", "jobs"),
+                theirs("jobs-x", "jobs/x"),
+            ])),
+            Query::Listening { .. } => Reply::Listening(page(Vec::new())),
+            query => chat_reply(query),
+        })
+    }));
+    let view = cx.open::<Chat>();
+    seat(&mut cx);
+    cx.run_until_parked();
+    cx.simulate_click("chat-sidebar-more");
+    cx.run_until_parked();
+    let row = "chat-sidebar-more-folder-jobs";
+    assert!(cx.find(row).is_some(), "{:?}", cx.texts());
+    let spot = crate::room_list::Spot::MoreFolder {
+        path: "jobs".into(),
+        own: Some("jobs".into()),
+    };
+    cx.update(&view, |chat, _, cx| {
+        chat.rooms_cursor = Some(spot);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(
+        cx.interactivity(row).aria.active_descendant,
+        "the arrows stand on it"
+    );
+    cx.simulate_focus("chat-sidebar-rooms-list");
+    cx.simulate_key_down("chat-sidebar-rooms-list", "shift-f10");
+    let menu = view.read(|chat| chat.room_menu.as_ref().map(|menu| menu.room.clone()));
+    assert_eq!(menu.as_deref(), Some("jobs"), "the menu key opens its menu");
+    cx.update(&view, |chat, _, cx| {
+        chat.room_menu = None;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    cx.simulate_focus("chat-sidebar-rooms-list");
+    cx.simulate_key_down("chat-sidebar-rooms-list", "enter");
+    cx.run_until_parked();
+    view.read(|chat| {
+        assert_eq!(
+            chat.room.as_ref().map(|room| room.id.as_str()),
+            Some("jobs")
+        )
+    });
+    cx.update(&view, |chat, _, cx| {
+        chat.rooms_cursor = None;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let mine = "chat-sidebar-channel-jobs";
+    assert!(
+        cx.interactivity(mine).aria.active_descendant,
+        "opened, it is the reader's, and its row stands active"
+    );
 }

@@ -13,7 +13,9 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
   the reader is in (opened on this device, listened to, owned, or written in:
   chat's `PostedIn`), then their direct rooms. The channels they are not in,
   a change's or a job's too, wait under the channels' last row, "N more
-  channels", which a press unfolds, by name (archived rooms never). Search
+  channels", which a press unfolds, by name, into the folders their names give
+  (`jobs/`, `pr/`, …), each closed until opened there and apart from the
+  reader's own folder of that name (archived rooms never). Search
   finds any room too: it lists the rooms whose names hold the words above the message hits
   (`Chat::found_rooms`; archived and direct rooms never). In both lists, a `/`
   in a channel's name files it under

@@ -127,14 +127,12 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     // one Tab stop under the header: ↑ ↓ walk the channels, their folders
     // and the direct messages, Enter opens the active room or folder, → and
     // ← open and close the active folder
-    let others: &[&ChannelInfo] = match chat.others_open {
-        true => &room_list.others,
-        false => &[],
+    let others = match chat.others_open {
+        true => chat.more_lines(&room_list.others),
+        false => Vec::new(),
     };
     let more = (!room_list.others.is_empty()).then_some(Spot::More);
-    let unfolded = others
-        .iter()
-        .map(|info| Spot::Room(info.channel.id.clone()));
+    let unfolded = others.iter().map(Line::spot);
     let dms = room_list.dms.iter();
     let dms = dms.map(|dm| Spot::Room(dm.info.channel.id.clone()));
     let spots: Vec<Spot> = plain
@@ -179,6 +177,7 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         match spot {
             Spot::Folder { path, .. } => chat.fold(path, open, cx),
             Spot::More => chat.fold_others(open),
+            Spot::MoreFolder { path, .. } => chat.fold_more(path, open),
             Spot::Room(_) => return,
         }
         cx.notify();
@@ -221,12 +220,16 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         box_ = box_.child(more_row(chat, count, index == at, cx, theme));
         index += 1;
     }
-    for info in others {
-        let selected = open == Some(info.channel.id.as_str());
+    for line in &others {
         let active = index == at;
-        box_ = box_.child(channel_row(
-            chat, info, 0, selected, active, None, cx, theme,
-        ));
+        let row = match line {
+            Line::Room { info, depth } => {
+                let selected = open == Some(info.channel.id.as_str());
+                channel_row(chat, info, *depth, selected, active, None, cx, theme)
+            }
+            Line::Folder(folder) => folder_row(chat, folder, open, active, None, cx, theme, ladder),
+        };
+        box_ = box_.child(row);
         index += 1;
     }
     box_ = box_.child(section_header(
@@ -435,10 +438,16 @@ fn folder_row(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
-    let id = format!("chat-sidebar-folder-{}", folder.path);
-    let path = folder.path.clone();
+    let id = match folder.more {
+        true => format!("chat-sidebar-more-folder-{}", folder.path),
+        false => format!("chat-sidebar-folder-{}", folder.path),
+    };
+    let (path, more) = (folder.path.clone(), folder.more);
     let toggle = cx.listener(move |chat, _: &ClickEvent, _, cx| {
-        chat.toggle_folder(&path, cx);
+        match more {
+            true => chat.toggle_more_folder(&path),
+            false => chat.toggle_folder(&path, cx),
+        }
         cx.notify();
     });
     let own = folder.own;
@@ -543,7 +552,11 @@ fn folder_row(
                 .bg(theme.accent),
         );
     }
-    let row = placed(row, chat::Entry::Folder(folder.path.clone()), cx).child(glyph);
+    let row = match folder.more {
+        true => row,
+        false => placed(row, chat::Entry::Folder(folder.path.clone()), cx),
+    };
+    let row = row.child(glyph);
     let row = match own {
         Some(own) => super::room_menu::row(row, &own.channel.id, chat, cx),
         None => row,

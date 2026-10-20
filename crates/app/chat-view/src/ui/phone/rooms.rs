@@ -1,6 +1,6 @@
 //! The rooms, the chat's first page (Expo `app/(tabs)/chat/index.tsx`, boards 10-12): the title
-//! row, the channels the reader is in, in their folders, and a row unfolding the rest, then their
-//! direct rooms newest first; a long press lifts a channel or folder row to move it.
+//! row, the channels the reader is in, in their folders, and a row unfolding the rest into theirs,
+//! then their direct rooms newest first; a long press lifts a channel or folder row to move it.
 use view::prelude::*;
 use view::wire::{Action, ActionData};
 use view::{Div, Stateful};
@@ -139,9 +139,7 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     let more =
         (!list.others.is_empty()).then(|| more_row(chat, list.others.len(), cx, theme, ladder));
     let unfolded: Vec<AnyElement> = match chat.others_open {
-        true => (list.others.iter())
-            .map(|info| channel_row(chat, info, 0, cx, theme, ladder))
-            .collect(),
+        true => rows(chat, chat.more_lines(&list.others), cx, theme, ladder),
         false => Vec::new(),
     };
     let mut dms = Vec::new();
@@ -291,10 +289,16 @@ fn folder_row(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
-    let id = format!("chat-rooms-folder-{}", folder.path);
-    let path = folder.path.clone();
+    let id = match folder.more {
+        true => format!("chat-rooms-more-folder-{}", folder.path),
+        false => format!("chat-rooms-folder-{}", folder.path),
+    };
+    let (path, more) = (folder.path.clone(), folder.more);
     let toggle = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
-        chat.toggle_folder(&path, cx);
+        match more {
+            true => chat.toggle_more_folder(&path),
+            false => chat.toggle_folder(&path, cx),
+        }
         cx.notify();
     });
     let shape = if folder.open {
@@ -322,10 +326,13 @@ fn folder_row(
     let counted = (folder.unread > 0).then(|| words::unread_rooms(folder.unread));
     let entry = Entry::Folder(folder.path.clone());
     let line = design::row(id.clone(), ladder, theme).pl(indent(folder.depth));
-    let line = movable(line, entry.clone(), chat, cx, theme);
+    let line = match folder.more {
+        true => line,
+        false => movable(line, entry.clone(), chat, cx, theme),
+    };
     let name = title(folder.name.to_owned(), theme, ladder);
     let Some(own) = folder.own else {
-        return steps(line, entry, chat, cx)
+        return steps_unless(folder.more, line, entry, chat, cx)
             .role(Role::Button)
             .aria_label(words::folder(folder.name))
             .aria_expanded(folder.open)
@@ -365,7 +372,7 @@ fn folder_row(
         .on_click(choose)
         .child(name)
         .child(tail);
-    let opens = steps(opens, entry, chat, cx);
+    let opens = steps_unless(folder.more, opens, entry, chat, cx);
     line.child(fold).child(opens).into_any_element()
 }
 
@@ -383,6 +390,19 @@ fn movable(
     placed(row, entry, cx)
         .when(lifted, |row| row.bg(theme.accent_soft))
         .when_some(landing, |row, after| lands(row, after, theme))
+}
+
+fn steps_unless(
+    more: bool,
+    row: Stateful<Div>,
+    entry: Entry,
+    chat: &Chat,
+    cx: &mut Context<Chat>,
+) -> Stateful<Div> {
+    match more {
+        true => row,
+        false => steps(row, entry, chat, cx),
+    }
 }
 
 // A screen reader's way to move `entry`: Move up and Move down, where its level has room.
