@@ -748,7 +748,7 @@ fn a_variant_the_program_lacks_or_a_mixed_ask_is_refused_with_what_there_is() {
         (
             "r_variant",
             "network_schema",
-            json!({ "program": "chat", "op": "Post" }),
+            json!({ "program": "chat", "op": "Shout" }),
         ),
         (
             "r_side",
@@ -767,7 +767,7 @@ fn a_variant_the_program_lacks_or_a_mixed_ask_is_refused_with_what_there_is() {
     let variant = refusal(chain, thread, "r_variant");
     assert!(
         variant.starts_with(code::INVALID_INPUT)
-            && variant.contains("program chat has no op Post; its ops are ")
+            && variant.contains("program chat has no op Shout; its ops are ")
             && variant.contains("PostMessage"),
         "{variant}"
     );
