@@ -28,6 +28,7 @@ mod rules;
 mod schedule;
 mod server_tools;
 mod services;
+mod stale;
 mod stranded;
 mod streams;
 mod thinking;

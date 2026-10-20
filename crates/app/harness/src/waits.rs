@@ -20,7 +20,7 @@ use crate::state::{
     MESSAGE_WAITS, POD_WAITS, PodWatch, REF_WAITS, SCHEDULED, THREADS, WAIT_COUNT, WAIT_ENTRIES,
     WAIT_REFS, WAITING, WAITS, WATCHED,
 };
-use crate::turns::{bound, converse, request, say_with};
+use crate::turns::{bound, converse, request, say_from};
 use crate::{
     Asking, Body, Ended, Op, PROGRAM, ThreadRow, Until, WaitFor, WaitRow, filed_as, forged_as,
     listening, pod_event_as,
@@ -250,7 +250,7 @@ fn disarm(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
 }
 
 pub(crate) fn end(ctx: &ExecCtx, wait: u64, what: String) -> Result<Option<u64>, Error> {
-    ended(ctx, wait, what, Vec::new(), None)
+    ended(ctx, wait, what, Vec::new(), None, None)
 }
 
 pub(crate) fn end_seen(
@@ -259,8 +259,9 @@ pub(crate) fn end_seen(
     what: String,
     pictures: Vec<Picture>,
     room: &str,
+    place: Option<String>,
 ) -> Result<Option<u64>, Error> {
-    ended(ctx, wait, what, pictures, Some(room))
+    ended(ctx, wait, what, pictures, Some(room), place)
 }
 
 fn ended(
@@ -269,6 +270,7 @@ fn ended(
     what: String,
     pictures: Vec<Picture>,
     room: Option<&str>,
+    place: Option<String>,
 ) -> Result<Option<u64>, Error> {
     let Some(mut row) = open(ctx, wait)? else {
         return Ok(None);
@@ -294,7 +296,7 @@ fn ended(
         crate::room_rules::tell(ctx, &mut told, room)?;
     }
     let author = Principal::Root;
-    say_with(ctx, &mut told, Body::Post { author, text }, pictures);
+    say_from(ctx, &mut told, Body::Post { author, text }, pictures, place);
     THREADS.put(ctx, &told.id, &told);
     Ok(Some(told.id))
 }

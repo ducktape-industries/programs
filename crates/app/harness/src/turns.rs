@@ -17,8 +17,8 @@ use crate::providers::{self, Reach};
 use crate::resume::{self, Failure};
 use crate::routes::{self, Picked};
 use crate::state::{
-    ANSWERED, ASKED, ENDING, FLIGHTS, FRAMES, HELD, LANES, LIVE, Lane, Live, PARTIALS, PASSES,
-    PICKS, RETRIES, SEALED, SEALED_FOR, SHOWN, THREADS, WITHHELD,
+    ANSWERED, ASKED, ENDING, FLIGHTS, FRAMES, HELD, HELD_AT, LANES, LIVE, Lane, Live, PARTIALS,
+    PASSES, PICKS, RETRIES, SEALED, SEALED_FOR, SHOWN, THREADS, WITHHELD,
 };
 use crate::tallies;
 use crate::waiting::settling;
@@ -67,6 +67,16 @@ pub(crate) fn say(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body) {
 }
 
 pub(crate) fn say_with(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body, pictures: Vec<Picture>) {
+    say_from(ctx, thread, body, pictures, None);
+}
+
+pub(crate) fn say_from(
+    ctx: &ExecCtx,
+    thread: &mut ThreadRow,
+    body: Body,
+    pictures: Vec<Picture>,
+    place: Option<String>,
+) {
     let looping = thread.asking != Asking::Idle || thread.paused();
     if !looping {
         append(ctx, thread, body);
@@ -75,6 +85,9 @@ pub(crate) fn say_with(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body, pictur
     }
     pictures::hold(ctx, thread.id, thread.held, pictures);
     HELD.put(ctx, &(thread.id, thread.held), &body);
+    if let Some(place) = place {
+        HELD_AT.put(ctx, &(thread.id, thread.held), &place);
+    }
     thread.held += 1;
 }
 
@@ -105,6 +118,7 @@ fn unhold(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
             pictures::unhold(ctx, thread.id, index, thread.frames)?;
         }
         HELD.remove(ctx, &key);
+        HELD_AT.remove(ctx, &key);
     }
     thread.held = 0;
     Ok(())

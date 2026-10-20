@@ -14,7 +14,7 @@ use crate::listening::chosen;
 use crate::pictures::{self, Picture};
 use crate::resume;
 use crate::state::{BOUND, LAST, PLACES, THREADS};
-use crate::turns::{converse, say, say_with};
+use crate::turns::{converse, say, say_from};
 use crate::waiting;
 use crate::{AgentSetup, Body, Config, Configured, Op, PROGRAM, Place, ThreadRow};
 
@@ -543,7 +543,14 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
     }
     let text = text + &crate::waits::still_armed(ctx, thread.id)?;
     let author = Principal::Account(actor);
-    say_with(ctx, &mut thread, Body::Post { author, text }, pictures);
+    let from = places.first().cloned();
+    say_from(
+        ctx,
+        &mut thread,
+        Body::Post { author, text },
+        pictures,
+        from,
+    );
     THREADS.put(ctx, &thread.id, &thread);
     resume::heard(ctx, thread.id)?;
     Ok(Hearing {
@@ -637,8 +644,14 @@ fn waited(
             Heard::Listen | Heard::Watch => Heard::Waited,
             other => other,
         };
-        let Designation { text, pictures, .. } = designation(ctx, change, actor, quoted)?;
-        return crate::waits::end_seen(ctx, wait, text, pictures, &channel);
+        let Designation {
+            text,
+            pictures,
+            places,
+            ..
+        } = designation(ctx, change, actor, quoted)?;
+        let from = places.into_iter().next();
+        return crate::waits::end_seen(ctx, wait, text, pictures, &channel, from);
     }
     Ok(None)
 }

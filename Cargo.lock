@@ -2812,6 +2812,7 @@ dependencies = [
  "ownership",
  "program",
  "programs",
+ "proptest",
  "scheduler",
  "serde",
  "serde_json",

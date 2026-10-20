@@ -1,7 +1,7 @@
 //! Tools over `chat`: channels, messages, threads and search read as the agent reads them, and
 //! posts and reactions the agent makes as itself. A post lands whole once its call runs (its draft
 //! shows the text as it arrives), a reaction once its input is whole.
-use ::program::{Error, ExecCtx, Principal};
+use ::program::{Error, ExecCtx, Principal, stale};
 use attribution::Source;
 use chat::attributed::MESSAGE;
 use chat::{ChannelInfo, MsgRow, Query, Reply};
@@ -13,6 +13,8 @@ use super::prefix::prefix;
 use super::{
     Run, Seat, Show, Tool, Undo, Write, cursor_schema, next, object, page, principal, unexpected,
 };
+use crate::Place;
+use crate::state::HELD_AT;
 
 fn ask(ctx: &ExecCtx, query: Query) -> Result<Reply, Error> {
     ctx.query(chat::PROGRAM, &query)
@@ -255,6 +257,29 @@ struct Posted {
     text: String,
 }
 
+impl Posted {
+    fn place(&self) -> Place {
+        let channel = self.channel.clone();
+        match self.reply_to {
+            Some(root) => Place::Thread { channel, root },
+            None => Place::Channel { channel },
+        }
+    }
+}
+
+fn read_since(ctx: &ExecCtx, thread: u64, posted: &Posted) -> Result<(), Error> {
+    let place = posted.place();
+    let key = place.key();
+    let held = HELD_AT.scan(ctx, HELD_AT.prefix_of(&thread))?;
+    if !held.iter().any(|(_, at)| *at == key) {
+        return Ok(());
+    }
+    Err(stale(format!(
+        "not posted: a message in {} reached you after your reply read it; you read it before your next model call, so post again if it still needs saying",
+        place.words()
+    )))
+}
+
 pub(crate) fn message_id(thread: u64, call: &str) -> String {
     format!("harness-{thread}-{call}")
 }
@@ -341,7 +366,7 @@ pub(crate) struct Post;
 
 impl Tool for Post {
     const NAME: &'static str = "chat_post";
-    const DESCRIPTION: &'static str = "Post a message to a chat channel, or a reply in a message's thread. Markdown works; `<@N>` mentions account N, and `@name` mentions the one account named so. The message is yours, and chat allows it where it allows your account. It lands whole once you finish it, and your draft shows where it goes as soon as channel and reply_to are given, then its text as you write it, so give channel and reply_to before text.";
+    const DESCRIPTION: &'static str = "Post a message to a chat channel, or a reply in a message's thread. Markdown works; `<@N>` mentions account N, and `@name` mentions the one account named so. The message is yours, and chat allows it where it allows your account. It lands whole once you finish it, and your draft shows where it goes as soon as channel and reply_to are given, then its text as you write it, so give channel and reply_to before text. If a message in that same place (the channel itself, or that one thread) reaches you after your reply read it, the post is refused unsent: you read the message before your next model call, and post again if it still needs saying.";
     const WRITES: bool = true;
     type Args = PostArgs;
 
@@ -364,6 +389,7 @@ impl Tool for Post {
         };
         let own = message_id(seat.thread, seat.call);
         let Some(row) = standing(ctx, own.clone())? else {
+            read_since(ctx, seat.thread, &posted)?;
             return Ok(Run::Write(vec![post(own, &posted)]));
         };
         let same_place = row.channel_id == posted.channel && row.thread == posted.reply_to;
@@ -371,10 +397,13 @@ impl Tool for Post {
         match (same_place, same_text) {
             (true, true) => Ok(Run::Done(json!({ "ok": true }))),
             (true, false) => Ok(Run::Write(vec![edit(&row, &posted.text)])),
-            (false, _) => Ok(Run::Write(vec![
-                delete(&row),
-                post(moved_id(&own), &posted),
-            ])),
+            (false, _) => {
+                read_since(ctx, seat.thread, &posted)?;
+                Ok(Run::Write(vec![
+                    delete(&row),
+                    post(moved_id(&own), &posted),
+                ]))
+            }
         }
     }
 

@@ -30,6 +30,7 @@ pub const BOUND: Map<(AccountNumber, String), Binding> = Map::new("bound/");
 pub const CURRENT: Map<AccountNumber, u64> = Map::new("current/");
 pub const FRAMES: Map<(u64, u64), Frame> = Map::new("frame/");
 pub const HELD: Map<(u64, u64), Body> = Map::new("held/");
+pub const HELD_AT: Map<(u64, u64), String> = Map::new("held-at/");
 pub const SEALED: Map<(u64, u64), Sealed> = Map::new("sealed/");
 pub const LANES: Map<(u64, u64), Lane> = Map::new("lane/");
 pub const ASKED: Map<u64, Lane> = Map::new("asked-lane/");
