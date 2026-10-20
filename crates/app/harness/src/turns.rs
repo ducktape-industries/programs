@@ -372,7 +372,9 @@ fn reseal(ctx: &ExecCtx, thread: &mut ThreadRow, asked: &Asked) -> Result<(), Er
 fn turn_parts(ctx: &ExecCtx, thread: &mut ThreadRow, turn: &Turn) -> Result<Vec<BlobId>, Error> {
     let wire = turn.asked.wire;
     let Some((role, frames)) = seal(ctx, thread, &turn.asked)? else {
-        return Err(wrong_state("a thread with nothing said asks no model"));
+        return Err(wrong_state(
+            "a thread with nothing said asks no model: send a message before asking the model",
+        ));
     };
     let mut parts = opening(ctx, thread, turn)?;
     parts.extend(
@@ -628,7 +630,7 @@ fn plan_without_largest(
 ) -> Result<Option<Step>, Error> {
     let Some(frame) = largest_unseen(ctx, thread, turn.asked.wire)? else {
         let text = format!(
-            "the conversation does not fit {}'s context window, even summarized and with everything new left out",
+            "the conversation does not fit {}'s context window, even summarized and with everything new left out: start a new conversation or choose a model with a larger context window",
             turn.model
         );
         give_up(ctx, thread, text);
@@ -646,7 +648,7 @@ fn plan_without_largest(
         }
     };
     let text = format!(
-        "{what} alone does not fit {}'s context window, so the model reads it in parts",
+        "{what} alone does not fit {}'s context window, so the model reads it in parts: use thread_search and thread_read to inspect the omitted content",
         turn.model
     );
     append(ctx, thread, Body::Notice { text });

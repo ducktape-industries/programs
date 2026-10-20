@@ -202,7 +202,9 @@ fn text_of(ctx: &ExecCtx, repo: &str, id: &str, path: &str) -> Result<String, Er
                 let part = blob_of(ctx, repo, id, Some(range))?;
                 if part.content != Content::Text || part.bytes.is_empty() {
                     let end = at + part.range.len;
-                    return Err(invalid(format!("{path} is binary in bytes {at}..{end}")));
+                    return Err(invalid(format!(
+                        "{path} is binary in bytes {at}..{end}: read the bytes as a blob or choose a text range"
+                    )));
                 }
                 bytes.extend(part.bytes);
             }
@@ -532,7 +534,11 @@ impl Tool for Changes {
             Some("open") => Some(ChangeState::Open),
             Some("closed") => Some(ChangeState::Closed),
             Some("merged") => Some(ChangeState::Merged),
-            Some(other) => return Err(::program::invalid(format!("no change state {other}"))),
+            Some(other) => {
+                return Err(::program::invalid(format!(
+                    "no change state {other}: choose open, closed or merged"
+                )));
+            }
         };
         let asked = Query::Changes {
             repo: args.repo,

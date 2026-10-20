@@ -109,7 +109,7 @@ fn plan(ctx: &QueryCtx, changes: Vec<Change>) -> Result<Vec<Step>, Error> {
         let fresh = seen.insert(segments.clone());
         if !fresh {
             return Err(invalid(format!(
-                "{} is touched twice in one commit",
+                "{} is touched twice in one commit: combine its changes into a single entry",
                 join(segments)
             )));
         }

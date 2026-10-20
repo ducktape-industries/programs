@@ -19,7 +19,11 @@ fn accounts(ctx: &QueryCtx, after: Option<&[u8]>, limit: u64) -> Result<Accounts
     let after = after
         .map(|bytes| <[u8; 8]>::try_from(bytes).map(u64::from_be_bytes))
         .transpose()
-        .map_err(|_| invalid("an account cursor is 8 bytes"))?;
+        .map_err(|_| {
+            invalid(
+                "an account cursor is 8 bytes: use the next account cursor returned by the listing",
+            )
+        })?;
     let asked = identity::Query::Profiles {
         after,
         limit: u32::try_from(limit).unwrap_or(u32::MAX),

@@ -55,10 +55,14 @@ pub(crate) fn create(
     hash: HashKind,
 ) -> Result<(), Error> {
     if !valid_repo_name(name) {
-        return Err(invalid(format!("{name:?} is not a repository name")));
+        return Err(invalid(format!(
+            "{name:?} is not a repository name: choose a repository name using letters, digits, dots, underscores or hyphens"
+        )));
     }
     if repo_exists(ctx, name) {
-        return Err(already_exists(format!("a repository named {name} exists")));
+        return Err(already_exists(format!(
+            "a repository named {name} exists: choose a new name or open the existing repository"
+        )));
     }
     let repo = Repo {
         hash,
@@ -296,7 +300,7 @@ pub(crate) fn delete_branch(
     if !named.is_empty() {
         let changes: Vec<String> = named.iter().map(|n| format!("#{n}")).collect();
         return Err(wrong_state(format!(
-            "open change {} names {shown} as its source",
+            "open change {} names {shown} as its source: close or merge the change before deleting the branch",
             changes.join(", ")
         )));
     }
@@ -317,7 +321,9 @@ pub(crate) fn protect(
     match protected {
         true => PROTECTED.insert(ctx, &key),
         false if repo.settings.head == branch => {
-            return Err(wrong_state("the repository's head is always protected"));
+            return Err(wrong_state(
+                "the repository's head is always protected: set a different head before removing its protection",
+            ));
         }
         false => PROTECTED.remove(ctx, &key),
     }
@@ -342,7 +348,7 @@ fn held_pack(ctx: &ExecCtx, id: BlobId) -> Result<Vec<u8>, Error> {
     };
     if blob.kind != PACK_KIND {
         return Err(invalid(format!(
-            "pack {id:?} is a {:?} blob, not {PACK_KIND:?}",
+            "pack {id:?} is a {:?} blob, not {PACK_KIND:?}: upload the pack using the expected blob kind",
             blob.kind
         )));
     }

@@ -56,7 +56,7 @@ fn well_formed(update: &Update) -> Result<(), Error> {
         let distinct = seen.insert((relation.recipient, relation.reason.clone()));
         if !distinct {
             return Err(invalid(format!(
-                "account {} relates twice for {:?}",
+                "account {} relates twice for {:?}: list each account once for each reason",
                 relation.recipient, relation.reason
             )));
         }
@@ -160,7 +160,7 @@ fn attribute_one(ctx: &ExecCtx, program: &ProgramId, update: Update) -> Result<(
         .is_some_and(|previous| update.revision <= previous.revision);
     if reported {
         return Err(stale(format!(
-            "{program}/{}/{} was already reported at revision {}",
+            "{program}/{}/{} was already reported at revision {}: read the latest revision before reporting a newer one",
             source.object.kind, source.object.id, update.revision
         )));
     }

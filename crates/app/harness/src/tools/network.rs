@@ -62,7 +62,7 @@ impl Tool for Accounts {
             .cursor
             .map(|cursor| cursor.parse::<u64>())
             .transpose()
-            .map_err(|_| invalid("an accounts cursor is the account number to list after"))?;
+            .map_err(|_| invalid("an accounts cursor is the account number to list after: use the next account number returned by the listing"))?;
         let asked = role::Query::Profiles {
             after,
             limit: u32::MAX,

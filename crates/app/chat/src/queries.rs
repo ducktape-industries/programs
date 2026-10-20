@@ -175,8 +175,11 @@ pub(crate) fn tagged(
     let after = match page.open(&scope)? {
         None => None,
         Some(cursor) => Some(
-            Place::decode_key(&mut cursor.after.as_slice())
-                .ok_or_else(|| invalid("a tag page cursor does not decode"))?,
+            Place::decode_key(&mut cursor.after.as_slice()).ok_or_else(|| {
+                invalid(
+                    "a tag page cursor does not decode: restart the tag listing without a cursor",
+                )
+            })?,
         ),
     };
     let want = usize::try_from(listing.limit()).unwrap_or(usize::MAX);

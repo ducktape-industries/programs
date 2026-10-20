@@ -590,7 +590,7 @@ pub(crate) fn claim(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     }
     if check.state != State::Queued {
         return Err(wrong_state(format!(
-            "check {id} is {}, not queued",
+            "check {id} is {}, not queued: read the check again and claim a queued check",
             check.state.word()
         )));
     }
@@ -616,7 +616,7 @@ pub(crate) fn report(
     let unclaimed = check.state == State::Queued && moot;
     if check.state != State::Running && !unclaimed {
         return Err(wrong_state(format!(
-            "check {id} is {}, not running",
+            "check {id} is {}, not running: read the check again and report only its current running attempt",
             check.state.word()
         )));
     }
@@ -741,7 +741,7 @@ pub(crate) fn rerun(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     let check = load(ctx, id)?;
     if matches!(check.state, State::Queued | State::Waiting) {
         return Err(wrong_state(format!(
-            "check {id} is still {}",
+            "check {id} is still {}: wait for it to end before rerunning it",
             check.state.word()
         )));
     }
@@ -767,7 +767,7 @@ pub(crate) fn outputs(ctx: &ExecCtx, id: u64, files: Vec<Output>) -> Result<(), 
     let check = load(ctx, id)?;
     if check.state != State::Running {
         return Err(wrong_state(format!(
-            "check {id} is {}, not running",
+            "check {id} is {}, not running: read the check again and report only its current running attempt",
             check.state.word()
         )));
     }

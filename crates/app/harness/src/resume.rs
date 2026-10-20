@@ -254,9 +254,9 @@ async fn lost_writes(ctx: &Ctx, id: u64) -> Result<(), Error> {
     }
     let row = thread(ctx, id)?;
     let line = match failed {
-        1 => "a tool call's answer was lost to a harness update; harness failed the call, and the model hears why".to_owned(),
+        1 => "a tool call's answer was lost to a harness update; harness failed the call, and the model hears why: read the failed call before retrying it".to_owned(),
         count => format!(
-            "{count} tool calls' answers were lost to a harness update; harness failed them, and the model hears why"
+            "{count} tool calls' answers were lost to a harness update; harness failed them, and the model hears why: read the failed calls before retrying them"
         ),
     };
     tell(ctx, &row, line, "a tool call's answer was lost").await

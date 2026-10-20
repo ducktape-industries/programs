@@ -117,7 +117,7 @@ pub(crate) fn check_chunks(ctx: &QueryCtx, size: u64, chunks: &[BlobId]) -> Resu
         };
         if header.kind != CHUNK {
             return Err(invalid(format!(
-                "{} is a {} blob, not a chunk",
+                "{} is a {} blob, not a chunk: upload the data as a chunk blob",
                 abi::hex(id.digest()),
                 header.kind
             )));

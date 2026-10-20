@@ -56,7 +56,8 @@ pub const NO_SNAPSHOTS_DETAIL: &str = "The first commit to files makes one.";
 pub const NO_PINS: &str = "No snapshot is pinned.";
 pub const OLDER: &str = "Older snapshots are not shown.";
 pub const OLDER_SNAPSHOT: &str = "an older snapshot";
-pub const NO_SUCH_SNAPSHOT: &str = "Files names no such snapshot.";
+pub const NO_SUCH_SNAPSHOT: &str =
+    "Files names no such snapshot: choose a snapshot from the history list";
 pub const FIRST_SNAPSHOT: &str = "The first snapshot: everything in it is new.";
 pub const NOTHING_CHANGED: &str = "It changed nothing.";
 pub const GONE: &str = "Nothing is at this path any more.";

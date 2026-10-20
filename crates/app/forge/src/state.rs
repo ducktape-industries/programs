@@ -100,7 +100,9 @@ pub fn repo_exists(ctx: &QueryCtx, name: &str) -> bool {
 
 pub fn load_repo(ctx: &QueryCtx, name: &str) -> Result<Repo, Error> {
     if !valid_repo_name(name) {
-        return Err(invalid(format!("{name:?} is not a repository name")));
+        return Err(invalid(format!(
+            "{name:?} is not a repository name: choose a repository name using letters, digits, dots, underscores or hyphens"
+        )));
     }
     REPOS
         .get(ctx, &name.to_owned())?
@@ -223,7 +225,9 @@ pub fn resolve(ctx: &QueryCtx, name: &str, revision: &Revision, hash: Hash) -> R
         Revision::Oid(hex) => parse_oid(hash, hex),
         Revision::Ref(reference) => {
             if !gitcore::server::valid_ref_name(reference) {
-                return Err(invalid("revision must name a full ref"));
+                return Err(invalid(
+                    "revision must name a full ref: supply the full ref name under refs/",
+                ));
             }
             let missing = || {
                 let shown = String::from_utf8_lossy(reference);

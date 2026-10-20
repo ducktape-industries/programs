@@ -506,7 +506,7 @@ impl Fold {
 
     fn stopped(&mut self) -> Event {
         if self.overflowed {
-            let message = "the conversation does not fit the model's context window";
+            let message = "the conversation does not fit the model's context window: summarize the conversation or use a model with a larger context window";
             return Event::Failed(Failure::new(Class::Overflow, message));
         }
         Event::Reply(Reply {

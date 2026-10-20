@@ -64,12 +64,18 @@ pub(crate) enum MergeBlock {
 impl MergeBlock {
     pub fn sentence(self) -> &'static str {
         match self {
-            Self::Loading => "This change has not loaded yet",
+            Self::Loading => "This change has not loaded yet: wait for it to load before merging",
             Self::NotOpen => "This change is no longer open",
-            Self::EndpointGone => "One of the endpoints of this change no longer exists",
+            Self::EndpointGone => {
+                "One of the endpoints of this change no longer exists: restore the missing branch or open a change with existing endpoints"
+            }
             Self::Comparing => "Comparing the endpoints…",
-            Self::UpToDate => "The target already contains this change",
-            Self::Unrelated => "The endpoints share no history",
+            Self::UpToDate => {
+                "The target already contains this change: close the change or push new changes before merging"
+            }
+            Self::Unrelated => {
+                "The endpoints share no history: choose endpoints with shared history or apply the changes manually"
+            }
             Self::Diverged => {
                 "The endpoints diverged. Merge with git and push the result, then Merge turns on."
             }

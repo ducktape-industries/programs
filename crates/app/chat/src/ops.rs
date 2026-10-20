@@ -63,7 +63,9 @@ pub(crate) fn open_dm(
 ) -> Result<(), Error> {
     let me = ctx.sender_account()?;
     if me == counterpart {
-        return Err(invalid("a dm needs two accounts"));
+        return Err(invalid(
+            "a dm needs two accounts: name a different account as the counterpart",
+        ));
     }
     let id = dm_channel_id(me, counterpart);
     if CHANNELS.has(ctx, &id) {
@@ -172,7 +174,9 @@ pub(crate) fn post(
     rules::namespace(&message_id, &ctx.env())?;
     rules::writable(ctx, &channel(ctx, &channel_id)?, sender)?;
     if MESSAGE_IDS.has(ctx, &message_id) {
-        return Err(already_exists(format!("message {message_id} exists")));
+        return Err(already_exists(format!(
+            "message {message_id} exists: choose a new message id"
+        )));
     }
     let blocks = resolve_typed(ctx, blocks)?;
     let seq = HEADS.get(ctx, &channel_id)?.unwrap_or(0) + 1;

@@ -131,7 +131,10 @@ impl TreeEdit {
         let (to_name, to_dirs) = split(to)?;
         let into_itself = to.len() >= from.len() && to[..from.len()] == *from;
         if into_itself {
-            return Err(invalid(format!("{} cannot move into itself", join(from))));
+            return Err(invalid(format!(
+                "{} cannot move into itself: choose a destination outside that directory",
+                join(from)
+            )));
         }
         let gone = || not_found(format!("nothing is at {}", join(from)));
         let source = open_dir(&mut self.root, ctx, from_dirs, Create::Never)?;
@@ -221,9 +224,9 @@ enum Create {
 }
 
 fn split(segments: &[String]) -> Result<(&String, &[String]), Error> {
-    segments
-        .split_last()
-        .ok_or_else(|| invalid("the root is not a path a change names"))
+    segments.split_last().ok_or_else(|| {
+        invalid("the root is not a path a change names: name a path beneath the root")
+    })
 }
 
 fn open(slot: &mut Slot, ctx: &QueryCtx, path: &[String]) -> Result<(), Error> {

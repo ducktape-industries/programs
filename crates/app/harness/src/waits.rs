@@ -104,11 +104,13 @@ pub(crate) async fn wait(ctx: &Ctx, thread_id: u64, event: WaitFor) -> Result<()
     let row = thread(ctx, thread_id)?;
     if row.agent != agent {
         return Err(invalid(format!(
-            "conversation {thread_id} is not account {agent}'s"
+            "conversation {thread_id} is not account {agent}'s: choose a conversation owned by the acting account"
         )));
     }
     if row.closed {
-        return Err(wrong_state(format!("conversation {thread_id} is closed")));
+        return Err(wrong_state(format!(
+            "conversation {thread_id} is closed: open a new conversation before waiting"
+        )));
     }
     let event = normalized(event);
     let id = WAIT_COUNT.get(ctx)?.unwrap_or(0) + 1;
@@ -183,7 +185,7 @@ pub(crate) async fn unwait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
     }
     if let Some(ended) = &row.ended {
         return Err(wrong_state(format!(
-            "wait {wait} ended at block {}",
+            "wait {wait} ended at block {}: create a new wait instead of cancelling the ended one",
             ended.height
         )));
     }
@@ -367,7 +369,7 @@ fn open_change(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<String>, Err
         forge::ChangeState::Merged => "merged",
     };
     Err(wrong_state(format!(
-        "change {n} in {repo} is already {ended}"
+        "change {n} in {repo} is already {ended}: read the change's final state or wait on an open change"
     )))
 }
 

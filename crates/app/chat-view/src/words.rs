@@ -246,7 +246,8 @@ pub(crate) fn size(bytes: u64) -> String {
 pub(crate) const WIDGET: &str = "Widget";
 pub(crate) const WIDGET_LOADING: &str = "Loading…";
 pub(crate) const WIDGET_EMPTY: &str = "Nothing to show.";
-pub(crate) const WIDGET_NOT_TEXT: &str = "The widget’s file is not text.";
+pub(crate) const WIDGET_NOT_TEXT: &str =
+    "The widget’s file is not text: save the widget file as UTF-8 text";
 
 pub(crate) fn widget_heads(program: &str) -> String {
     format!("{program}'s live heads for a widget")
@@ -273,7 +274,9 @@ pub(crate) fn widget_code_unread(program: &str, why: &str) -> String {
 }
 
 pub(crate) fn widget_no_next(path: &str) -> String {
-    format!("there is no `{path}` to read the next page from")
+    format!(
+        "there is no `{path}` to read the next page from: point the widget at the reply field containing the next cursor"
+    )
 }
 
 pub(crate) fn widget_not_a_list(path: &str) -> String {
@@ -293,7 +296,9 @@ pub(crate) fn widget_no_code(program: &str) -> String {
 }
 
 pub(crate) fn widget_no_schema(program: &str) -> String {
-    format!("{program}’s code carries no schema, so a widget can’t read it.")
+    format!(
+        "{program}’s code carries no schema, so a widget can’t read it: rebuild the program with its schema before using it in a widget"
+    )
 }
 
 pub(crate) fn widget_bad_schema(program: &str) -> String {

@@ -19,7 +19,9 @@ pub(crate) fn pin(
     }
     minted(ctx, &snapshot)?;
     if PINS.has(ctx, &name) {
-        return Err(already_exists(format!("a pin named {name} exists")));
+        return Err(already_exists(format!(
+            "a pin named {name} exists: choose a different pin name or remove the existing pin"
+        )));
     }
     let row = PinRow {
         name: name.clone(),

@@ -89,10 +89,12 @@ impl Refusal {
     pub fn as_bytes(self) -> &'static [u8] {
         match self {
             Refusal::Invalid => b"invalid command",
-            Refusal::Duplicate => b"duplicate ref",
-            Refusal::BadName => b"funny refname",
+            Refusal::Duplicate => b"duplicate ref: send each ref update once",
+            Refusal::BadName => b"funny refname: choose a valid full Git ref name",
             Refusal::StaleOld => b"stale info",
-            Refusal::NotHeld => b"missing necessary objects",
+            Refusal::NotHeld => {
+                b"missing necessary objects: upload the referenced objects before moving the ref"
+            }
             Refusal::NotACommit => b"branch must point at a commit",
             Refusal::NonFastForward => b"non-fast-forward",
             Refusal::DeleteRefused => b"deletion prohibited",

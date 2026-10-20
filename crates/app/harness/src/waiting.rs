@@ -74,7 +74,10 @@ pub(crate) async fn due(ctx: Ctx, id: u64) -> Result<(), Error> {
     if !(over || its_own) {
         return Err(Error::new(
             code::NOT_YET,
-            format!("thread {id}'s settle window ends at time {}", window.until),
+            format!(
+                "thread {id}'s settle window ends at time {}: wait until the settle window ends",
+                window.until
+            ),
         ));
     }
     if !over {

@@ -29,7 +29,7 @@ fn runs(ctx: &QueryCtx, account: AccountNumber) -> Result<(), Error> {
     match ctx.query::<identity::Query, identity::Reply>(&role, &asked)? {
         identity::Reply::Number(Some(number)) if number == account => Ok(()),
         identity::Reply::Number(_) => Err(unauthorized(format!(
-            "harness does not run account {account}"
+            "harness does not run account {account}: set the account's script to call harness before booking a run"
         ))),
         other => Err(unexpected_reply(&role, "Runs", &other)),
     }
@@ -46,7 +46,7 @@ fn unran(booking: &Booking) -> Result<(), Error> {
         return Ok(());
     };
     Err(wrong_state(format!(
-        "run {} ran at block {}",
+        "run {} ran at block {}: book a new run instead of cancelling the completed run",
         booking.entry, ran.height
     )))
 }
@@ -63,7 +63,7 @@ pub(crate) async fn book(
         let theirs = crate::agents::thread(ctx, id)?.agent == agent;
         if !theirs {
             return Err(invalid(format!(
-                "conversation {id} is not account {agent}'s"
+                "conversation {id} is not account {agent}'s: choose a conversation owned by the acting account"
             )));
         }
     }
@@ -166,7 +166,7 @@ fn report(booking: &Booking, ran: &Ran) -> String {
             ran.text
         ),
         true => format!(
-            "Your run {entry}, booked at block {booked} for block {height}, was refused: {}. It does not run again.",
+            "Your run {entry}, booked at block {booked} for block {height}, was refused with {}: correct the problem and book a new run",
             ran.text
         ),
     }

@@ -117,7 +117,7 @@ pub(crate) fn claim(ctx: &ExecCtx, id: u64, attempt: u32) -> Result<(), Error> {
         }
         _ => {
             return Err(wrong_state(format!(
-                "run {id} is not assigned to a machine of account {sender} at attempt {attempt}"
+                "run {id} is not assigned to a machine of account {sender} at attempt {attempt}: read the current assignment and report from its assigned machine"
             )));
         }
     };
@@ -169,7 +169,7 @@ pub(crate) fn report(
         }
         _ => {
             return Err(wrong_state(format!(
-                "run {id} is {} and not held by a machine of account {sender} at attempt {attempt}",
+                "run {id} is {} and not held by a machine of account {sender} at attempt {attempt}: read the current assignment and report from its assigned machine",
                 run.state.word()
             )));
         }
@@ -206,7 +206,7 @@ pub(crate) fn decline(ctx: &ExecCtx, id: u64, attempt: u32, why: String) -> Resu
         }
         _ => {
             return Err(wrong_state(format!(
-                "run {id} is not assigned to a machine of account {sender} at attempt {attempt}"
+                "run {id} is not assigned to a machine of account {sender} at attempt {attempt}: read the current assignment and report from its assigned machine"
             )));
         }
     };
@@ -221,7 +221,7 @@ pub(crate) fn cancel(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     let mut run = load(ctx, id)?;
     if run.state.ended() {
         return Err(wrong_state(format!(
-            "run {id} already ended {}",
+            "run {id} already ended {}: ask for a rerun to start another attempt",
             run.state.word()
         )));
     }

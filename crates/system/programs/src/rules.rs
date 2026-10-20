@@ -62,7 +62,7 @@ fn held_code(ctx: &QueryCtx, code: BlobId) -> Result<(), Error> {
     let program = holding.kind == CODE_KIND;
     if !program {
         return Err(invalid(format!(
-            "code {code:?} is held as a {:?} blob, not {CODE_KIND:?}",
+            "code {code:?} is held as a {:?} blob, not {CODE_KIND:?}: upload the code using the expected blob kind",
             holding.kind
         )));
     }
@@ -275,7 +275,7 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
     };
     if clash {
         return Err(already_exists(format!(
-            "{name} already names a program or a view"
+            "{name} already names a program or a view: choose a different name or change the existing entry"
         )));
     }
     let unhooks = matches!(scheduled.change, Change::Remove(_)) && hooks.contains(name);
@@ -360,7 +360,7 @@ pub(crate) fn cancel(ctx: &ExecCtx, height: u64, program: ProgramId) -> Result<(
         && matching_change_waits(ctx, &key.1, &[], other)?
     {
         return Err(already_exists(format!(
-            "{} is claimed by a pending change of the other kind",
+            "{} is claimed by a pending change of the other kind: wait for or cancel the pending change before reusing the name",
             key.1
         )));
     }
@@ -436,7 +436,7 @@ fn declarable(roles: &[String]) -> Result<(), Error> {
 fn fillable(roster: &Roster) -> Result<(), Error> {
     if let Some(role) = table(&roster.roles).unfilled() {
         return Err(invalid(format!(
-            "the change leaves the {role} role, which the kernel calls, unfilled"
+            "the change leaves the {role} role, which the kernel calls, unfilled: assign a running program to that role"
         )));
     }
     let unlisted = roster
@@ -445,7 +445,7 @@ fn fillable(roster: &Roster) -> Result<(), Error> {
         .find(|(_, program)| !roster.programs.contains_key(*program));
     if let Some((role, program)) = unlisted {
         return Err(invalid(format!(
-            "the {role} role names {program}, which no entry runs"
+            "the {role} role names {program}, which no entry runs: publish that program or choose a running program for the role"
         )));
     }
     Ok(())

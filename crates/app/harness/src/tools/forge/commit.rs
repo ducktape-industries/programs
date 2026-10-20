@@ -185,7 +185,12 @@ fn rebuilt(
         removed,
         below,
     } = edits;
-    let twice = |name: &[u8]| invalid(format!("{} is changed twice", joined(dir, name)));
+    let twice = |name: &[u8]| {
+        invalid(format!(
+            "{} is changed twice: combine its changes into one file entry",
+            joined(dir, name)
+        ))
+    };
     for name in removed {
         if put.contains_key(&name) || below.contains_key(&name) {
             return Err(twice(&name));
@@ -205,7 +210,11 @@ fn rebuilt(
         let inside = match entries.get(&name) {
             None => Entries::new(),
             Some((Mode::Directory, tree)) => reading.entries(*tree)?,
-            Some(_) => return Err(invalid(format!("{path} is a file, not a directory"))),
+            Some(_) => {
+                return Err(invalid(format!(
+                    "{path} is a file, not a directory: choose a directory or write directly to the file"
+                )));
+            }
         };
         match rebuilt(reading, &path, inside, edits, objects)? {
             Some(tree) => entries.insert(name, (Mode::Directory, tree)),
@@ -267,7 +276,9 @@ pub(crate) fn branch_ref(branch: Option<&str>, default: &[u8]) -> Result<Vec<u8>
     let name = branch.strip_prefix("refs/heads/").unwrap_or(branch);
     let reference = format!("refs/heads/{name}").into_bytes();
     if !gitcore::server::valid_ref_name(&reference) {
-        return Err(invalid(format!("{branch:?} is not a branch name")));
+        return Err(invalid(format!(
+            "{branch:?} is not a branch name: use a valid branch name under refs/heads/"
+        )));
     }
     Ok(reference)
 }
@@ -532,7 +543,7 @@ impl Tool for Commit {
             (None, _) => head.or_else(|| refs.get(&default).copied()),
             (Some(_), Some(head)) => {
                 return Err(invalid(format!(
-                    "{} exists, at {head}; from only starts a new branch",
+                    "{} exists, at {head}; from only starts a new branch: omit from to commit on the existing branch or choose a new branch",
                     String::from_utf8_lossy(&branch)
                 )));
             }
@@ -574,7 +585,9 @@ impl Tool for Commit {
                 .insert(name.into(), (mode, blob))
                 .is_some()
             {
-                return Err(invalid(format!("{path} is written twice")));
+                return Err(invalid(format!(
+                    "{path} is written twice: combine its changes into one file entry"
+                )));
             }
         }
         for path in &args.remove {

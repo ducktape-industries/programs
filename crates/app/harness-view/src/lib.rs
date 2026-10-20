@@ -686,7 +686,9 @@ impl Agents {
 
     fn open_route(&mut self, route: &str, cx: &mut Context<Self>) {
         let Some((agent, place)) = links::route_target(route) else {
-            self.notice = Some(format!("This view opens no link like “{route}”."));
+            self.notice = Some(format!(
+                "This view opens no link like “{route}”: open a harness conversation link"
+            ));
             cx.notify();
             return;
         };

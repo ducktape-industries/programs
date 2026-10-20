@@ -32,7 +32,7 @@ impl fmt::Display for Unreadable {
             Unreadable::NotBorsh => "is no borsh schema",
             Unreadable::Invalid => "is no valid schema",
             Unreadable::NoRoots => "names no op, query and reply",
-            Unreadable::NoReturns => "names what its ops return in no struct of them",
+            Unreadable::NoReturns => "names what its ops return in no struct of them: declare a returns struct with one field per returning op",
         })
     }
 }

@@ -22,7 +22,9 @@ pub(crate) fn namespace(id: &str, env: &Env) -> Result<(), Error> {
         Origin::Signed(_) => false,
     };
     if !allowed {
-        return Err(unauthorized("colon ids belong to their program namespace"));
+        return Err(unauthorized(
+            "colon ids belong to their program namespace: use your program namespace or an id without a colon",
+        ));
     }
     Ok(())
 }
@@ -61,7 +63,7 @@ pub(crate) fn writable(
     let seated = MEMBERS.has(ctx, &(channel.id.clone(), principal.clone()));
     if !channel.admits(principal, seated) {
         return Err(unauthorized(format!(
-            "{} is not a member of {}",
+            "{} is not a member of {}: ask the channel owner to add the account as a member",
             handle(principal),
             channel.id
         )));
@@ -72,7 +74,7 @@ pub(crate) fn writable(
 pub(crate) fn not_dm(channel: &ChannelRow) -> Result<(), Error> {
     if dm_peers(&channel.id).is_some() {
         return Err(unauthorized(format!(
-            "{} is a dm; neither peer reshapes it",
+            "{} is a dm; neither peer reshapes it: open a regular channel to change its shape",
             channel.id
         )));
     }

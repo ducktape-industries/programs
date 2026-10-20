@@ -118,11 +118,13 @@ fn redeem(ctx: &ExecCtx, invite: &Invite) -> Result<(), Error> {
     let grant = &invite.grant;
     let for_this_network = grant.network == env.chain_id;
     if !for_this_network {
-        return Err(invalid("the invite names another network"));
+        return Err(invalid(
+            "the invite names another network: obtain an invite for this network",
+        ));
     }
     let expired = grant.expires <= env.time;
     if expired {
-        return Err(invalid("the invite expired"));
+        return Err(invalid("the invite expired: obtain a fresh invite"));
     }
     let signed = ctx.verify(
         Scheme::Ed25519,
@@ -140,7 +142,9 @@ fn redeem(ctx: &ExecCtx, invite: &Invite) -> Result<(), Error> {
     }
     let nonce = [invite.issuer.as_slice(), &grant.nonce].concat();
     if SPENT.has(ctx, &nonce) {
-        return Err(wrong_state("the invite was already redeemed"));
+        return Err(wrong_state(
+            "the invite was already redeemed: obtain a new invite or use the enrolled member",
+        ));
     }
     SPENT.insert(ctx, &nonce);
     Ok(())
@@ -341,7 +345,9 @@ fn unseatable(ctx: &QueryCtx, held: &Membership) -> Result<(), Error> {
     let seated = held.role == Role::Validator;
     let last = seated && validators(ctx)?.len() == 1;
     if last {
-        return Err(wrong_state("the last validator cannot be unseated"));
+        return Err(wrong_state(
+            "the last validator cannot be unseated: seat another validator before unseating this one",
+        ));
     }
     Ok(())
 }

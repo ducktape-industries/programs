@@ -64,7 +64,7 @@ pub(crate) fn beneath_the_roots(segments: &[String]) -> Result<(), Error> {
     Err(unauthorized(format!(
         "{} is a namespace root: /home, /shared, each /home/<name>, and /chat with its channel \
          and message folders are written by the chain alone, and anyone writes beneath them \
-         where no write list says otherwise",
+         where no write list says otherwise: write beneath the namespace root instead",
         join(segments)
     )))
 }
@@ -79,7 +79,9 @@ pub fn is_home(segments: &[String]) -> Option<&str> {
 pub fn change_path(path: &str) -> Result<Vec<String>, Error> {
     let segments = segments(path)?;
     if segments.is_empty() {
-        return Err(invalid("the root is not a path a change names"));
+        return Err(invalid(
+            "the root is not a path a change names: name a path beneath the root",
+        ));
     }
     Ok(segments)
 }

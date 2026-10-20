@@ -13,7 +13,7 @@ pub(crate) fn accounts(ctx: &QueryCtx, page: PageRequest) -> Result<PageResponse
         .as_deref()
         .map(|bytes| <[u8; 8]>::try_from(bytes).map(u64::from_be_bytes))
         .transpose()
-        .map_err(|_| invalid("an account cursor is an account number"))?;
+        .map_err(|_| invalid("an account cursor is an account number: use the next account number returned by the listing"))?;
     let profiles = role::Query::Profiles {
         after,
         limit: page.limit() as u32,

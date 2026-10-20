@@ -191,7 +191,7 @@ pub(crate) fn fork_thread(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Er
     touch_claimed_conversations(ctx, number)?;
     let Some(from) = current(ctx, number)? else {
         return Err(not_found(format!(
-            "agent {number} has no conversation to fork"
+            "agent {number} has no conversation to fork: open a conversation before forking it"
         )));
     };
     let opening = Opening::Fork { from: from.id };
@@ -249,7 +249,7 @@ fn located(ctx: &QueryCtx, agent: &Agent, place: &Place) -> Result<(), Error> {
     let is_root = opened.is_some_and(|row| row.thread.is_none());
     if !is_root {
         return Err(not_found(format!(
-            "message {root} is no thread's first message in chat channel {channel}"
+            "message {root} is no thread's first message in chat channel {channel}: read the thread and use its root message"
         )));
     }
     Ok(())

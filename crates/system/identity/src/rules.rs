@@ -202,7 +202,9 @@ fn managing(ctx: &ExecCtx, manager: AccountNumber, number: AccountNumber) -> Res
 }
 
 fn revoked(number: AccountNumber) -> Error {
-    wrong_state(format!("account {number} is revoked for good"))
+    wrong_state(format!(
+        "account {number} is revoked for good: use an active account instead"
+    ))
 }
 
 fn suspended(number: AccountNumber) -> Error {
@@ -229,7 +231,7 @@ pub(crate) fn add_key(
     let (keys, key, consenting_scheme) = match &mut account.control {
         Control::User { keys } => {
             let consenting_scheme = consenting(keys)
-                .ok_or_else(|| unauthorized("the consenting key is not on this account"))?;
+                .ok_or_else(|| unauthorized("the consenting key is not on this account: sign the consent with a key currently held by the account"))?;
             (keys, env.signer()?, consenting_scheme)
         }
         Control::Program {
@@ -285,7 +287,9 @@ pub(crate) fn add_key(
         consent.proof,
     )?;
     if !consented {
-        return Err(unauthorized("the consent does not verify"));
+        return Err(unauthorized(
+            "the consent does not verify: obtain a new consent signed by the account's key",
+        ));
     }
     admit_key(ctx, &key, consent.account)?;
     keys.push(Key {
@@ -301,10 +305,16 @@ pub(crate) fn add_key(
 
 fn remove_own(keys: &[Key], signer: &[u8], key: &[u8]) -> Result<(), Error> {
     let held = |wanted: &[u8]| keys.iter().find(|held| held.key == wanted);
-    let removed = held(key).ok_or_else(|| not_found("that key is not on this account"))?;
+    let removed = held(key).ok_or_else(|| {
+        not_found(
+            "that key is not on this account: read the account's keys and choose one it holds",
+        )
+    })?;
     let remover = held(signer).ok_or_else(|| unauthorized("the signer is not on this account"))?;
     if keys.len() == 1 {
-        return Err(wrong_state("an account keeps its last key"));
+        return Err(wrong_state(
+            "an account keeps its last key: add another key before removing this one",
+        ));
     }
     if removed.added_at < remover.added_at {
         return Err(unauthorized("a key removes only itself or a junior key"));
@@ -321,7 +331,9 @@ fn remove_managed(
 ) -> Result<(), Error> {
     managing(ctx, manager, number)?;
     if !keys.iter().any(|held| held.key == key) {
-        return Err(not_found("that key is not on this account"));
+        return Err(not_found(
+            "that key is not on this account: read the account's keys and choose one it holds",
+        ));
     }
     Ok(())
 }
@@ -478,7 +490,9 @@ pub(crate) fn suspend(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error>
 pub(crate) fn resume(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Error> {
     relive(ctx, number, |life| match life {
         Life::Suspended { keys } => Ok(Life::Active { keys }),
-        Life::Active { .. } => Err(wrong_state(format!("account {number} is active"))),
+        Life::Active { .. } => Err(wrong_state(format!(
+            "account {number} is active: use the active account without resuming it"
+        ))),
         Life::Revoked => Err(revoked(number)),
     })
 }

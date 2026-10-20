@@ -35,7 +35,9 @@ impl Tool for View {
 
     fn run(ctx: &ExecCtx, seat: &Seat, args: ViewArgs) -> Result<Run, Error> {
         let Some(at) = resolved(ctx, snapshot(&args.snapshot)?)? else {
-            return Err(not_found("files holds nothing yet"));
+            return Err(not_found(
+                "files holds nothing yet: commit an image file before trying to view it",
+            ));
         };
         let path = args.path;
         let Some(EntryInfo {

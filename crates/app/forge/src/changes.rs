@@ -44,7 +44,9 @@ pub(crate) fn open(
     let source = resolve(ctx, repo, &draft.from, hash)?;
     let target = resolve(ctx, repo, &Revision::Ref(draft.into.clone()), hash)?;
     if source == target {
-        return Err(wrong_state("source and target already agree"));
+        return Err(wrong_state(
+            "source and target already agree: choose a source with changes absent from the target",
+        ));
     }
     if matches!(draft.from, Revision::Oid(_)) {
         draft.from = Revision::Oid(source.to_hex());
@@ -555,7 +557,7 @@ pub(crate) fn rebase(
     };
     if moves_protected {
         return Err(wrong_state(
-            "the change's source is a protected branch, which no rebase moves",
+            "the change's source is a protected branch, which no rebase moves: choose an unprotected source branch",
         ));
     }
     let onto = resolve(ctx, repo, &request.onto, hash)?;
@@ -624,7 +626,9 @@ pub(crate) fn repoint(ctx: &ExecCtx, repo: &str, n: u64, from: Revision) -> Resu
     let source = resolve(ctx, repo, &from, hash)?;
     let target = resolve(ctx, repo, &Revision::Ref(change.into.clone()), hash)?;
     if source == target {
-        return Err(wrong_state("source and target already agree"));
+        return Err(wrong_state(
+            "source and target already agree: choose a source with changes absent from the target",
+        ));
     }
     change.from = match from {
         Revision::Oid(_) => Revision::Oid(source.to_hex()),
@@ -751,10 +755,10 @@ fn conflict_paths_and_reasons(conflicts: &[Conflict]) -> String {
         .map(|conflict| {
             let why = match conflict.clash {
                 Clash::Lines => "both sides changed the same or adjacent lines",
-                Clash::Searched => "edits too interleaved to merge within Bounds.merge_cost",
-                Clash::Binary => "a binary file both sides changed",
+                Clash::Searched => "edits too interleaved to merge within Bounds.merge_cost: resolve the interleaved edits with git and push the result",
+                Clash::Binary => "a binary file both sides changed: choose the desired binary version and push the resolved merge",
                 Clash::Mode => "both sides changed its mode",
-                Clash::Deleted => "deleted on one side, changed on the other",
+                Clash::Deleted => "deleted on one side, changed on the other: choose whether to keep the file and push the resolved merge",
                 Clash::Kind => "changed on both sides, and not as two files",
             };
             format!("{} ({why})", String::from_utf8_lossy(&conflict.path))
@@ -783,7 +787,9 @@ fn count_verdict(counts: &mut ReviewCounts, verdict: Verdict) -> Result<(), Erro
 
 fn require_open(change: &Change) -> Result<(), Error> {
     if change.state != ChangeState::Open {
-        return Err(wrong_state("change is not open"));
+        return Err(wrong_state(
+            "change is not open: open a new change for further work",
+        ));
     }
     Ok(())
 }
@@ -846,7 +852,9 @@ fn check_comments(draft: &ReviewDraft) -> Result<(), Error> {
             ));
         }
         if !anchors.insert((&comment.path, comment.side, comment.line)) {
-            return Err(invalid("duplicate line anchor in one review"));
+            return Err(invalid(
+                "duplicate line anchor in one review: combine comments at the same line anchor",
+            ));
         }
     }
     let says_nothing = draft.verdict == Verdict::Comment

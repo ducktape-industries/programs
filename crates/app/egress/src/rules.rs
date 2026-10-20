@@ -54,7 +54,7 @@ pub(crate) fn register(ctx: &ExecCtx, name: String) -> Result<(), Error> {
     service_name(&name)?;
     if RESERVED.contains(&name.as_str()) {
         return Err(invalid(format!(
-            "{name} is egress's own service, never registered"
+            "{name} is egress's own service, never registered: use the built-in service without registering it"
         )));
     }
     if SERVICES.has(ctx, &name) {
@@ -125,7 +125,9 @@ pub(crate) fn serve(ctx: &ExecCtx, mut services: Vec<String>) -> Result<(), Erro
     }
     let stopping = services.is_empty();
     if !stopping && !members(ctx)?.contains(&key) {
-        return Err(unauthorized("only a member node of this network serves"));
+        return Err(unauthorized(
+            "only a member node of this network serves: enroll the serving node in this network",
+        ));
     }
     let since = match NODES.get(ctx, &key)? {
         Some(previous) => {
@@ -227,7 +229,7 @@ fn expiry_height(made: u64, wait: u64) -> Result<u64, Error> {
     }
     made.checked_add(wait).ok_or_else(|| {
         invalid(format!(
-            "a wait of {wait} blocks from height {made} passes the last height"
+            "a wait of {wait} blocks from height {made} passes the last height: reduce the wait to fit the remaining heights"
         ))
     })
 }
@@ -250,7 +252,7 @@ pub(crate) async fn request(
         return Err(Error::new(
             code::UNSUPPORTED,
             "egress expires a request through the scheduler role, and this network binds no \
-             scheduler",
+             scheduler: bind a scheduler before sending the request",
         ));
     }
     let made = ctx.env().height;
@@ -329,7 +331,7 @@ fn from_its_node(ctx: &Ctx, id: u64) -> Result<Stored, Error> {
     let same_block = ctx.env().height <= stored.row.made;
     if same_block {
         return Err(wrong_state(format!(
-            "request {id} is answered in a later block than the one that made it"
+            "request {id} is answered in a later block than the one that made it: wait for the next block before answering"
         )));
     }
     Ok(stored)
@@ -339,7 +341,7 @@ fn stream_event_prefix(stored: &Stored) -> Result<&[u8], Error> {
     match &stored.row.delivery {
         Delivery::Events { deliver } => Ok(deliver),
         Delivery::Whole => Err(wrong_state(format!(
-            "request {} asked for its answer whole",
+            "request {} asked for its answer whole: send a whole answer instead of events",
             stored.row.id
         ))),
     }

@@ -100,7 +100,9 @@ fn refuse_pinned_lane_removal(lane: &Lane, done: &str) -> Result<(), Error> {
 }
 
 fn already_listed(name: &str) -> Error {
-    already_exists(format!("the lane {name} is listed"))
+    already_exists(format!(
+        "the lane {name} is listed: choose a new lane name or update the existing lane"
+    ))
 }
 
 fn unlisted(name: &str) -> Error {

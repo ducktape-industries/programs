@@ -23,7 +23,9 @@ pub(crate) fn enqueue(
     let hash = repo_hash(&load_repo(ctx, repo)?);
     let change = load_change(ctx, repo, n)?;
     if change.state != ChangeState::Open {
-        return Err(wrong_state("change is not open"));
+        return Err(wrong_state(
+            "change is not open: open a new change for further work",
+        ));
     }
     if resolve(ctx, repo, &change.from, hash)? != parse_oid(hash, expected_head)? {
         return Err(stale("the change's head moved; read it again"));

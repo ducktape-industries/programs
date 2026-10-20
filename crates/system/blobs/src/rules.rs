@@ -50,10 +50,14 @@ pub(crate) fn receipt(ctx: &ExecCtx, n: u64) -> Result<(), Error> {
         return Err(not_found(format!("no bundle {n}")));
     };
     let Custody::Receipted(mut keys) = bundle.custody else {
-        return Err(wrong_state(format!("bundle {n} is held")));
+        return Err(wrong_state(format!(
+            "bundle {n} is held: read the held bundle instead of receipting it again"
+        )));
     };
     if keys.contains(&key) {
-        return Err(already_exists(format!("this key receipted bundle {n}")));
+        return Err(already_exists(format!(
+            "this key receipted bundle {n}: read the existing receipt instead of sending it again"
+        )));
     }
     keys.push(key);
     let counted = keys.iter().filter(|key| seated.contains(key)).count();

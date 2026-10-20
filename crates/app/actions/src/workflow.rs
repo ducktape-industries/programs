@@ -97,7 +97,10 @@ pub(crate) fn parse(text: &str) -> Result<Workflow, String> {
     let mut jobs = Vec::new();
     for job in file.jobs {
         if !ids.insert(job.id.clone()) {
-            return Err(format!("two jobs are named {:?}", job.id));
+            return Err(format!(
+                "two jobs are named {:?}: give each job a distinct name",
+                job.id
+            ));
         }
         let quantities = [
             (
