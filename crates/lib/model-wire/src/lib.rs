@@ -2,6 +2,7 @@
 //! that translates it to that provider's own wire and back. A provider's field names appear only
 //! in its adapter's module.
 pub mod anthropic;
+pub mod codex;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

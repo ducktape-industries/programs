@@ -3,7 +3,10 @@
 The harness wire: the one vocabulary harness speaks to a model, and an adapter per provider that
 translates it to that provider's own wire and back. harness (on chain) writes requests and reads
 events in it; the adapter service (forge repo `harness-model-adapter`, beside ccs) runs the
-adapters. A provider's field names appear only in its adapter's module (`anthropic`).
+adapters. A provider's field names appear only in its adapter's module: `anthropic` (Messages,
+through ccs's `/v1/`) and `codex` (OpenAI's Responses on the Codex surface a ChatGPT plan opens,
+through ccs's `/backend-api/`: the system prompt rides as the developer's message, no
+`max_output_tokens`, `store: false`).
 
 ## Endpoints the adapter service answers
 

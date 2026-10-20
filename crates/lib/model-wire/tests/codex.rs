@@ -1,0 +1,334 @@
+//! The Codex adapter against streams in the shape of OpenAI's documented Responses events (no live
+//! Codex stream is recorded yet): text, a function call, reasoning summaries, usage with a cached
+//! share, an incomplete reply, a failure, a stream cut short, and a request under the surface's rules.
+use model_wire::codex::{self, Fold};
+use model_wire::{
+    Block, Class, Event, Lane, Message, Reply, Request, Shown, Stop, Thinking, Tool, Usage,
+    UserBlock,
+};
+use serde_json::{Value, json};
+
+const MODEL: &str = "gpt-test";
+
+fn lines(events: &[Value]) -> Vec<String> {
+    events.iter().map(Value::to_string).collect()
+}
+
+fn folded(events: &[Value]) -> Vec<Event> {
+    let mut fold = Fold::new(MODEL);
+    let mut out: Vec<Event> = lines(events)
+        .iter()
+        .flat_map(|line| fold.event(line))
+        .collect();
+    out.extend(fold.end());
+    out
+}
+
+fn created() -> Value {
+    json!({ "type": "response.created", "response": { "id": "resp_1", "model": MODEL, "status": "in_progress" } })
+}
+
+fn usage(input: u64, cached: u64, output: u64) -> Value {
+    json!({
+        "input_tokens": input,
+        "input_tokens_details": { "cached_tokens": cached },
+        "output_tokens": output,
+        "output_tokens_details": { "reasoning_tokens": 0 },
+        "total_tokens": input + output,
+    })
+}
+
+fn completed(output: Value, usage: Value) -> Value {
+    json!({
+        "type": "response.completed",
+        "response": { "id": "resp_1", "model": MODEL, "status": "completed", "output": output, "usage": usage },
+    })
+}
+
+fn message_item(text: &str) -> Value {
+    json!({
+        "type": "message", "id": "msg_1", "role": "assistant", "status": "completed",
+        "content": [{ "type": "output_text", "text": text, "annotations": [] }],
+    })
+}
+
+fn call_item(arguments: &str) -> Value {
+    json!({
+        "type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "files_read",
+        "arguments": arguments, "status": "completed",
+    })
+}
+
+fn text_stream() -> Vec<Value> {
+    let opened = json!({ "type": "message", "id": "msg_1", "role": "assistant", "status": "in_progress", "content": [] });
+    vec![
+        created(),
+        json!({ "type": "response.output_item.added", "output_index": 0, "item": opened }),
+        json!({ "type": "response.output_text.delta", "output_index": 0, "content_index": 0, "item_id": "msg_1", "delta": "Hello" }),
+        json!({ "type": "response.output_text.delta", "output_index": 0, "content_index": 0, "item_id": "msg_1", "delta": ", world" }),
+        json!({ "type": "response.output_item.done", "output_index": 0, "item": message_item("Hello, world") }),
+        completed(json!([message_item("Hello, world")]), usage(1000, 800, 5)),
+    ]
+}
+
+fn text(text: &str) -> Block {
+    Block::Text {
+        text: text.into(),
+        citations: Vec::new(),
+    }
+}
+
+#[test]
+fn a_text_reply_streams_its_pieces_and_ends_in_the_whole_turn() {
+    let events = folded(&text_stream());
+    let streamed = &events[..events.len() - 1];
+    let expected = [
+        Event::Block {
+            index: 0,
+            block: text(""),
+        },
+        Event::Delta {
+            index: 0,
+            text: "Hello".into(),
+        },
+        Event::Delta {
+            index: 0,
+            text: ", world".into(),
+        },
+        Event::End { index: 0 },
+    ];
+    assert_eq!(streamed, expected);
+    let whole = Reply {
+        model: MODEL.into(),
+        lane: Lane {
+            provider: codex::PROVIDER.into(),
+            model: MODEL.into(),
+        },
+        said: vec![text("Hello, world")],
+        stop: Stop::EndTurn,
+        usage: Usage {
+            input: 200,
+            output: 5,
+            cache_read: 800,
+            cache_write: 0,
+        },
+        prompt: Some(1000),
+    };
+    assert_eq!(events.last(), Some(&Event::Reply(whole)));
+}
+
+#[test]
+fn a_function_call_streams_its_arguments_and_ends_the_turn_as_tool_use() {
+    let opened = json!({ "type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "files_read", "arguments": "", "status": "in_progress" });
+    let stream = vec![
+        created(),
+        json!({ "type": "response.output_item.added", "output_index": 0, "item": opened }),
+        json!({ "type": "response.function_call_arguments.delta", "output_index": 0, "item_id": "fc_1", "delta": "{\"path\":" }),
+        json!({ "type": "response.function_call_arguments.delta", "output_index": 0, "item_id": "fc_1", "delta": "\"/a\"}" }),
+        json!({ "type": "response.function_call_arguments.done", "output_index": 0, "item_id": "fc_1", "arguments": "{\"path\":\"/a\"}" }),
+        json!({ "type": "response.output_item.done", "output_index": 0, "item": call_item("{\"path\":\"/a\"}") }),
+        completed(json!([call_item("{\"path\":\"/a\"}")]), usage(10, 0, 5)),
+    ];
+    let events = folded(&stream);
+    let pieces: Vec<&str> = events
+        .iter()
+        .filter_map(|event| match event {
+            Event::Delta { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pieces, ["{\"path\":", "\"/a\"}"]);
+    let Some(Event::Reply(reply)) = events.last() else {
+        panic!("a reply: {events:?}");
+    };
+    assert_eq!(reply.stop, Stop::ToolUse);
+    let call = Block::ToolUse {
+        id: "call_1".into(),
+        name: "files_read".into(),
+        input: "{\"path\":\"/a\"}".into(),
+    };
+    assert_eq!(reply.said, [call]);
+}
+
+#[test]
+fn reasoning_summaries_stream_as_reasoning_with_their_parts_apart() {
+    let opened = json!({ "type": "reasoning", "id": "rs_1", "summary": [] });
+    let done = json!({
+        "type": "reasoning", "id": "rs_1",
+        "summary": [{ "type": "summary_text", "text": "First." }, { "type": "summary_text", "text": "Second." }],
+    });
+    let delta = |part: u64, text: &str| json!({ "type": "response.reasoning_summary_text.delta", "output_index": 0, "item_id": "rs_1", "summary_index": part, "delta": text });
+    let stream = vec![
+        created(),
+        json!({ "type": "response.output_item.added", "output_index": 0, "item": opened }),
+        delta(0, "First."),
+        delta(1, "Second."),
+        json!({ "type": "response.output_item.done", "output_index": 0, "item": done }),
+        completed(json!([]), usage(10, 0, 5)),
+    ];
+    let events = folded(&stream);
+    let streamed: String = events
+        .iter()
+        .filter_map(|event| match event {
+            Event::Delta { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(streamed, "First.\n\nSecond.");
+    let Some(Event::Reply(reply)) = events.last() else {
+        panic!("a reply: {events:?}");
+    };
+    let thought = Block::Reasoning {
+        text: "First.\n\nSecond.".into(),
+        sealed: None,
+    };
+    assert_eq!(reply.said, [thought]);
+}
+
+#[test]
+fn an_incomplete_reply_stops_at_max_tokens_and_a_failure_reads_by_its_code() {
+    let incomplete = json!({
+        "type": "response.incomplete",
+        "response": { "model": MODEL, "status": "incomplete", "incomplete_details": { "reason": "max_output_tokens" }, "usage": usage(10, 0, 5) },
+    });
+    let Some(Event::Reply(reply)) = folded(&[created(), incomplete]).pop() else {
+        panic!("an incomplete reply still answers");
+    };
+    assert_eq!(reply.stop, Stop::MaxTokens);
+    let failed = |code: &str| {
+        json!({
+            "type": "response.failed",
+            "response": { "status": "failed", "error": { "code": code, "message": "no" } },
+        })
+    };
+    let classes = [
+        ("context_length_exceeded", Class::Overflow),
+        ("rate_limit_exceeded", Class::Limited),
+        ("server_error", Class::Overloaded),
+        ("invalid_prompt", Class::Provider),
+    ];
+    for (code, class) in classes {
+        let Some(Event::Failed(failure)) = folded(&[created(), failed(code)]).pop() else {
+            panic!("{code} fails");
+        };
+        assert_eq!(failure.class, class, "{code}");
+    }
+}
+
+#[test]
+fn a_stream_cut_short_is_dropped() {
+    let stream = text_stream();
+    let events = folded(&stream[..4]);
+    let Some(Event::Failed(failure)) = events.last() else {
+        panic!("a cut stream fails");
+    };
+    assert_eq!(failure.class, Class::Dropped);
+}
+
+#[test]
+fn a_request_goes_out_under_the_codex_surfaces_rules() {
+    let request = Request {
+        model: MODEL.into(),
+        max_tokens: 1024,
+        thinking: Some(Thinking::High),
+        system: vec!["You keep notes.".into()],
+        tools: vec![Tool {
+            name: "files_read".into(),
+            description: "Read a file.".into(),
+            schema: json!({ "type": "object" }),
+        }],
+        server_tools: Vec::new(),
+        messages: vec![
+            Message::User {
+                blocks: vec![UserBlock::Text { text: "hi".into() }],
+            },
+            Message::Assistant {
+                lane: Lane {
+                    provider: "anthropic".into(),
+                    model: "claude".into(),
+                },
+                blocks: vec![
+                    Block::Reasoning {
+                        text: "thought".into(),
+                        sealed: Some("sig".into()),
+                    },
+                    Block::ToolUse {
+                        id: "call_1".into(),
+                        name: "files_read".into(),
+                        input: "{\"path\":\"/a\"}".into(),
+                    },
+                ],
+            },
+            Message::User {
+                blocks: vec![UserBlock::Result {
+                    call: "call_1".into(),
+                    failed: false,
+                    content: vec![Shown::Text {
+                        text: "read".into(),
+                    }],
+                }],
+            },
+        ],
+    };
+    let body = codex::body(&request, Some("thread-7"));
+    assert_eq!(body["instructions"], codex::INSTRUCTIONS);
+    assert_eq!(body["input"][0]["content"][0]["text"], "You keep notes.");
+    assert_eq!(
+        (body["store"].clone(), body["stream"].clone()),
+        (json!(false), json!(true))
+    );
+    assert!(body.get("max_output_tokens").is_none());
+    assert_eq!(body["reasoning"]["effort"], "high");
+    assert_eq!(body["prompt_cache_key"], "thread-7");
+    assert_eq!(body["tools"][0]["type"], "function");
+    assert_eq!(body["tools"][0]["parameters"], json!({ "type": "object" }));
+    let kinds: Vec<Value> = body["input"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| json!([item["type"], item["role"]]))
+        .collect();
+    let expected = [
+        json!(["message", "developer"]),
+        json!(["message", "user"]),
+        json!(["message", "assistant"]),
+        json!(["function_call", null]),
+        json!(["function_call_output", null]),
+    ];
+    assert_eq!(kinds, expected);
+    let input = &body["input"];
+    assert_eq!(input[2]["content"][0]["text"], "thought");
+    assert!(
+        !body.to_string().contains("sig"),
+        "another provider's seal never goes out"
+    );
+    assert_eq!(input[4]["output"], "read");
+}
+
+#[test]
+fn a_refusal_reads_as_the_class_harness_acts_on() {
+    let headers = [("retry-after".to_owned(), "30".to_owned())];
+    let limited = codex::refused(429, &headers, br#"{"detail":"Usage limit reached"}"#, 1000);
+    assert_eq!((limited.class, limited.reset), (Class::Limited, Some(1030)));
+    assert_eq!(
+        limited.message,
+        "the model answered 429: Usage limit reached"
+    );
+    let overflow = br#"{"error":{"code":"context_length_exceeded","message":"too long"}}"#;
+    assert_eq!(codex::refused(400, &[], overflow, 0).class, Class::Overflow);
+    assert_eq!(codex::refused(400, &[], b"{}", 0).class, Class::Provider);
+}
+
+#[test]
+fn a_model_reads_its_window_from_the_accounts_catalog() {
+    let catalog =
+        json!({ "models": [{ "slug": MODEL, "context_window": 272000 }, { "slug": "other" }] });
+    let body = catalog.to_string();
+    let model = codex::model(MODEL, 200, &[], body.as_bytes(), 0).unwrap();
+    assert_eq!(
+        (model.provider.as_str(), model.window),
+        (codex::PROVIDER, Some(272_000))
+    );
+    let missing = codex::model("absent", 200, &[], body.as_bytes(), 0).unwrap_err();
+    assert_eq!(missing.class, Class::Provider);
+}
