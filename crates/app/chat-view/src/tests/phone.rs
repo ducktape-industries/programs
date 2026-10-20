@@ -388,6 +388,31 @@ fn create_is_faint_until_the_channel_has_a_name() {
 }
 
 #[test]
+fn create_with_no_account_says_why_and_neither_a_tap_nor_return_sends() {
+    let (mut cx, view) = phone();
+    cx.simulate_click("New channel");
+    cx.simulate_input("chat-new-name", "random");
+    assert!(!cx.has_text("Create an account to create a channel"));
+    cx.update(&view, |chat, _, cx| {
+        chat.session.account = None;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("Create an account to create a channel"),
+        "{:?}",
+        cx.texts()
+    );
+    let create = cx.interactivity("create");
+    assert_eq!(create.aria.disabled, Some(true));
+    assert!(create.on_click.is_none());
+    let Some(wire::Node::Field { on_submit, .. }) = cx.find("chat-new-name") else {
+        panic!("the name is a field");
+    };
+    assert!(on_submit.is_none());
+}
+
+#[test]
 fn a_new_channel_who_may_post_and_create_opens_it_in_the_forms_place() {
     let (mut cx, view) = phone();
     cx.simulate_click("New channel");

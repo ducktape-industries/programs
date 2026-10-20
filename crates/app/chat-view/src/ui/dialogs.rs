@@ -158,7 +158,7 @@ fn notes(chat: &Chat, create: &ChannelCreate, theme: &Theme) -> Vec<AnyElement> 
         notes.push(note(create.error.clone(), theme.danger));
     }
     if !chat.holds_account() {
-        let why = "Create an account to create a channel".to_owned();
+        let why = words::CREATE_NEEDS_ACCOUNT.to_owned();
         notes.push(note(why, theme.muted));
     }
     notes
