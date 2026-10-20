@@ -10,15 +10,22 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
 ## Panes and screens
 - Rooms: the desktop sidebar (`ui/sidebar.rs`) and the phone's rooms page
   (`ui/phone/rooms.rs`) list the same rooms (`Chat::room_list`): the channels
-  the reader is in (opened on this device, listened to, or owned), then their
-  direct rooms. Any other room, a change's or a job's too, is found by search,
+  the reader is in (opened on this device, listened to, owned, or written in:
+  chat's `PostedIn`), then their direct rooms. Any other room, a change's or a job's too, is found by search,
   which lists the rooms whose names hold the words above the message hits
   (`Chat::found_rooms`; archived and direct rooms never). In both lists, a `/`
   in a channel's name files it under
   folders (`Chat::lines`): `jobs/j-097` is listed as `j-097` under **jobs**,
   each folder where its first channel would be, a channel named as a folder
   is that folder's row, and a closed folder counts the unread rooms inside.
-  Only the first `/` makes a folder (`a/b/c` is `b/c` under **a/**). In the
+  Only the first `/` makes a folder (`a/b/c` is `b/c` under **a/**). Each
+  level (the top, and inside a folder) lists what the reader's own order
+  (chat's `RoomOrder`) leaves out first, as chat lists it, then what it names,
+  in its order. A row moves only within its level: Alt+↑/↓ on the active row,
+  Move up/down in a room's menu, a drag on the desktop, a long press then the
+  finger on the phone (the host relays the held finger's moves and lift), or a
+  phone row's Move up/down actions for a screen reader; each move writes the
+  whole order in one `SetRoomOrder`. In the
   new-channel form, the text before the first `/` typed becomes one chip at
   the field's start (a token whose id starts `wire::CHIP`); Backspace right
   after it makes it text again, and the whole text is the channel's name.
