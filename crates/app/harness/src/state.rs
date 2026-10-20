@@ -68,6 +68,8 @@ pub const COUNT: Item<u64> = Item::new("count");
 pub const WATCHES: Map<u64, Watching> = Map::new("watch/");
 pub const WATCH_COUNT: Item<u64> = Item::new("watch-count");
 pub const MEASURES: Map<u64, Measure> = Map::new("watch-measure/");
+pub const HEARTBEATS: Map<u64, Heartbeat> = Map::new("watch-heartbeat/");
+pub const CLOCK: Item<Clock> = Item::new("clock");
 pub const WAITS: Map<u64, WaitRow> = Map::new("wait/");
 pub const WAITING: Set<(AccountNumber, u64)> = Set::new("waiting/");
 // each conversation's waits not over yet
@@ -217,6 +219,25 @@ pub struct Measure {
     pub time: u64,
     pub pod: String,
     pub body: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Heartbeat {
+    pub height: u64,
+    pub time: u64,
+    pub body: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Clock {
+    pub older: Tick,
+    pub newer: Tick,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Tick {
+    pub height: u64,
+    pub time: u64,
 }
 
 // one model account's usage windows, as its last answer or status reading named them, at

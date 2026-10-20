@@ -82,6 +82,11 @@ pub(crate) enum Run {
         body: Value,
         about: String,
     },
+    Paced {
+        request: egress::Request,
+        body: Option<String>,
+        about: String,
+    },
 }
 
 pub(crate) fn write(target: impl Into<ProgramId>, payload: Vec<u8>) -> Run {

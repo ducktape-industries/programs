@@ -1,15 +1,17 @@
 //! Tool calls that wake their conversation later: a tool whose run streams (`Run::Stream`, or
 //! `Run::Measured` at a measured heartbeat) is answered at once, harness's own scheduled run
 //! (`Op::Watch`) sends the stream's request, each event is `Op::Heard`, the conversation hears once.
-use ::program::{Cause, Ctx, Error, unauthorized};
+use ::program::{Cause, Ctx, Error, ExecCtx, HashKind, unauthorized};
 use abi::role::egress::{self, Event, http};
 use serde_json::{Value, json};
 
 use crate::bookings::tell;
 use crate::calls::refusal;
-use crate::state::{MEASURES, Measure, WATCH_COUNT, WATCHES, Watching};
+use crate::state::{
+    HEARTBEATS, Heartbeat, MEASURES, Measure, Tick, WATCH_COUNT, WATCHES, Watching,
+};
 use crate::turns::bound;
-use crate::{Op, PROGRAM, ThreadRow, heard_as, tools};
+use crate::{Op, PART, PROGRAM, ThreadRow, heard_as, tools};
 
 pub(crate) async fn open(
     ctx: &Ctx,
@@ -70,10 +72,69 @@ pub(crate) async fn open_measured(
     Ok(opened)
 }
 
-async fn measured(ctx: &Ctx, row: &Watching, measure: &Measure) -> Result<egress::Request, String> {
-    let env = ctx.env();
-    let blocks = env.height.saturating_sub(measure.height).max(1);
-    let block_ms = env.time.saturating_sub(measure.time) / blocks;
+pub(crate) async fn open_paced(
+    ctx: &Ctx,
+    thread: &ThreadRow,
+    call: &str,
+    tool: &str,
+    request: egress::Request,
+    body: Option<String>,
+    about: String,
+) -> Result<Value, Error> {
+    let opened = open(ctx, thread, call, tool, request, about).await?;
+    let watch = WATCH_COUNT.get(ctx)?.unwrap_or(0);
+    let beat = Heartbeat {
+        height: ctx.env().height,
+        time: ctx.env().time,
+        body,
+    };
+    HEARTBEATS.put(ctx, &watch, &beat);
+    Ok(opened)
+}
+
+fn paced(
+    ctx: &ExecCtx,
+    row: &Watching,
+    beat: &Heartbeat,
+) -> Result<Option<egress::Request>, String> {
+    let opened = Tick {
+        height: beat.height,
+        time: beat.time,
+    };
+    let Some(every) = crate::waits::alive_every(ctx, opened)? else {
+        return Ok(None);
+    };
+    let egress::Request::Http { service, head, .. } = &row.request else {
+        return Err("a paced stream is an HTTP request".to_owned());
+    };
+    let mut head = head.clone();
+    head.headers.push(("every".to_owned(), every.to_string()));
+    let body = match &beat.body {
+        Some(text) => {
+            let part = ctx.blob_put(HashKind::Sha256, PART, text.clone().into_bytes());
+            vec![part.map_err(|error| refusal(&error))?]
+        }
+        None => Vec::new(),
+    };
+    Ok(Some(egress::Request::Http {
+        service: service.clone(),
+        head,
+        body,
+    }))
+}
+
+async fn measured(
+    ctx: &Ctx,
+    row: &Watching,
+    measure: &Measure,
+) -> Result<Option<egress::Request>, String> {
+    let opened = Tick {
+        height: measure.height,
+        time: measure.time,
+    };
+    let Some(every) = crate::waits::alive_every(ctx, opened)? else {
+        return Ok(None);
+    };
     let egress::Request::Http { head, .. } = &row.request else {
         return Err("a measured stream is an HTTP request".to_owned());
     };
@@ -106,10 +167,11 @@ async fn measured(ctx: &Ctx, row: &Watching, measure: &Measure) -> Result<egress
             response.status
         ));
     }
-    let every = crate::waits::alive_every(block_ms)?;
     let mut body: Value = serde_json::from_str(&measure.body).map_err(|error| error.to_string())?;
     body["every"] = json!(every);
-    crate::tools::pods::posted(ctx, target, &body).map_err(|error| refusal(&error))
+    crate::tools::pods::posted(ctx, target, &body)
+        .map(Some)
+        .map_err(|error| refusal(&error))
 }
 
 pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
@@ -132,7 +194,48 @@ pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
         Some(measure) => {
             MEASURES.remove(&ctx, &watch);
             match measured(&ctx, &row, &measure).await {
-                Ok(request) => {
+                Ok(None) => {
+                    let env = ctx.env();
+                    let later = Measure {
+                        height: env.height,
+                        time: env.time,
+                        ..measure
+                    };
+                    MEASURES.put(&ctx, &watch, &later);
+                    return next_block(&ctx, row.thread, watch).await;
+                }
+                Ok(Some(request)) => {
+                    let row = Watching { request, ..row };
+                    WATCHES.put(&ctx, &watch, &row);
+                    row
+                }
+                Err(why) => {
+                    WATCHES.remove(&ctx, &watch);
+                    let text = format!(
+                        "{} call {} ({}) did not start: {why}",
+                        row.tool, row.call, row.about
+                    );
+                    return woken(&ctx, &row, text).await;
+                }
+            }
+        }
+    };
+    let row = match HEARTBEATS.get(&ctx, &watch)? {
+        None => row,
+        Some(beat) => {
+            HEARTBEATS.remove(&ctx, &watch);
+            match paced(&ctx, &row, &beat) {
+                Ok(None) => {
+                    let env = ctx.env();
+                    let later = Heartbeat {
+                        height: env.height,
+                        time: env.time,
+                        ..beat
+                    };
+                    HEARTBEATS.put(&ctx, &watch, &later);
+                    return next_block(&ctx, row.thread, watch).await;
+                }
+                Ok(Some(request)) => {
                     let row = Watching { request, ..row };
                     WATCHES.put(&ctx, &watch, &row);
                     row
@@ -164,27 +267,43 @@ pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
         return Ok(());
     }
     WATCHES.remove(&ctx, &watch);
-    let why = unheard(answered);
+    let why = unheard(answered, &lost(&row));
     let text = format!("{} call {} ({}) {why}", row.tool, row.call, row.about);
     woken(&ctx, &row, text).await
 }
 
-pub(crate) const LOST: &str = "this is not its result: what it ran may still be running, so re-attach with \
+async fn next_block(ctx: &Ctx, thread: u64, watch: u64) -> Result<(), Error> {
+    crate::resume::unlistened(ctx, thread, watch);
+    let next = ctx.env().height.saturating_add(1);
+    ctx.schedule(next, PROGRAM, &Op::Watch { watch }).await?;
+    Ok(())
+}
+
+const LOST: &str = "this is not its result: what it ran may still be running, so re-attach with \
                     build.sh wait <run> (a build.sh run keeps its status on the pod's disk), or look \
                     at the pod, before running it again";
 
-fn unheard(answered: Result<Vec<u8>, Error>) -> String {
+pub(crate) fn lost(row: &Watching) -> String {
+    match (tools::find(&row.tool), &row.request) {
+        (None, egress::Request::Http { service, .. }) => format!(
+            "this is not its result: what it ran may still be running on {service}, so check there before running it again"
+        ),
+        _ => LOST.to_owned(),
+    }
+}
+
+fn unheard(answered: Result<Vec<u8>, Error>, lost: &str) -> String {
     let output = match answered {
         Ok(output) => output,
         Err(error) => {
             let why = refusal(&error);
-            return format!("lost its stream, which broke off ({why}): {LOST}");
+            return format!("lost its stream, which broke off ({why}): {lost}");
         }
     };
     match abi::decode::<http::Response>(&output) {
         Ok(response) if response.body.is_empty() => format!(
             "lost its stream, which closed with status {} before its end event (the service \
-             that streamed it stopped before the end, as a restart there does): {LOST}",
+             that streamed it stopped before the end, as a restart there does): {lost}",
             response.status
         ),
         Ok(response) => format!(
@@ -216,7 +335,7 @@ pub(crate) async fn heard(ctx: &Ctx, watch: u64, event: Event) -> Result<(), Err
     crate::resume::stream_moved(ctx, row.thread, watch)?;
     let said = match tools::find(&row.tool) {
         Some(entry) => (entry.heard)(&event.data)?,
-        None => None,
+        None => tools::file::heard(&event.data),
     };
     let Some(said) = said else {
         return Ok(());

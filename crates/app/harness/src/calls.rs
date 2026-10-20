@@ -683,7 +683,7 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
     };
     let mut next = match tool {
         Resolved::Native(entry) => (entry.run)(ctx, &seat, input),
-        Resolved::File(file) => tools::file::run(ctx, *file, input),
+        Resolved::File(file) => tools::file::run(ctx, &seat, *file, input),
     };
     loop {
         let (writes, after, step) = match next {
@@ -704,6 +704,18 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
                 let measured = (pod, target, body);
                 let opened =
                     watches::open_measured(ctx, &owner, call, &row.tool, measured, about).await;
+                return Ok(match opened {
+                    Ok(value) => (value.to_string(), false),
+                    Err(error) => (refusal(&error), true),
+                });
+            }
+            Ok(Run::Paced {
+                request,
+                body,
+                about,
+            }) => {
+                let opened =
+                    watches::open_paced(ctx, &owner, call, &row.tool, request, body, about).await;
                 return Ok(match opened {
                     Ok(value) => (value.to_string(), false),
                     Err(error) => (refusal(&error), true),

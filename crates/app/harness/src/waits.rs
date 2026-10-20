@@ -16,9 +16,9 @@ use crate::calls::refusal;
 use crate::conversations::current;
 use crate::pictures::Picture;
 use crate::state::{
-    ARMED, CHANGE_WAITS, ENDING, FILE_WAIT_COUNT, FILE_WAITS, FORGE_WAITS, FileWatch,
-    MESSAGE_WAITS, POD_WAITS, PodWatch, REF_WAITS, SCHEDULED, THREADS, WAIT_COUNT, WAIT_ENTRIES,
-    WAIT_REFS, WAITING, WAITS, WATCHED,
+    ARMED, CHANGE_WAITS, CLOCK, Clock, ENDING, FILE_WAIT_COUNT, FILE_WAITS, FORGE_WAITS, FileWatch,
+    MESSAGE_WAITS, POD_WAITS, PodWatch, REF_WAITS, SCHEDULED, THREADS, Tick, WAIT_COUNT,
+    WAIT_ENTRIES, WAIT_REFS, WAITING, WAITS, WATCHED,
 };
 use crate::turns::{bound, converse, request, say_from};
 use crate::{
@@ -626,14 +626,44 @@ fn refused_by_pods(what: &str, answer: &http::Response) -> String {
     format!("{what} answered {}: {error}", answer.status)
 }
 
-pub(crate) fn alive_every(block_ms: u64) -> Result<u64, String> {
+pub(crate) fn alive_every(ctx: &ExecCtx, opened: Tick) -> Result<Option<u64>, String> {
+    let clock = clock(ctx, opened).map_err(|error| refusal(&error))?;
+    let spanned = opened.height.saturating_sub(clock.older.height);
+    if spanned == 0 {
+        return Ok(None);
+    }
+    let steady = opened.time.saturating_sub(clock.older.time) / spanned;
+    let env = ctx.env();
+    let blocks = env.height.saturating_sub(opened.height).max(1);
+    let block_ms = (env.time.saturating_sub(opened.time) / blocks).min(steady);
     let lasts = DEFAULT_WAIT.saturating_mul(block_ms);
     if lasts < 2000 {
         return Err(format!(
             "a request lasts {lasts} ms ({DEFAULT_WAIT} blocks of {block_ms} ms), under the 2 s two whole-second beats need"
         ));
     }
-    Ok(lasts / 2 / 1000)
+    Ok(Some(lasts / 2 / 1000))
+}
+
+fn clock(ctx: &ExecCtx, opened: Tick) -> Result<Clock, Error> {
+    let env = ctx.env();
+    let now = Tick {
+        height: env.height,
+        time: env.time,
+    };
+    let clock = match CLOCK.get(ctx)? {
+        None => Clock {
+            older: opened,
+            newer: now,
+        },
+        Some(clock) if now.height.saturating_sub(clock.newer.height) >= DEFAULT_WAIT => Clock {
+            older: clock.newer,
+            newer: now,
+        },
+        Some(clock) => return Ok(clock),
+    };
+    CLOCK.put(ctx, &clock);
+    Ok(clock)
 }
 
 async fn watch_from_next_block(ctx: &Ctx, wait: u64) -> Result<(), Error> {
@@ -673,9 +703,15 @@ pub(crate) async fn pod_wait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
             return watch_from_next_block(ctx, wait).await;
         }
     }
-    let env = ctx.env();
-    let blocks = env.height.saturating_sub(watch.height).max(1);
-    let block_ms = env.time.saturating_sub(watch.time) / blocks;
+    let opened = Tick {
+        height: watch.height,
+        time: watch.time,
+    };
+    let paced = match alive_every(ctx, opened) {
+        Ok(None) => return watch_from_next_block(ctx, wait).await,
+        Ok(Some(every)) => Ok(every),
+        Err(why) => Err(why),
+    };
     let streaming = PodWatch {
         entry: None,
         ..watch
@@ -685,7 +721,7 @@ pub(crate) async fn pod_wait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
     if let Some(over) = unwatchable(name, read) {
         return fire(ctx, wait, over).await;
     }
-    let every = match alive_every(block_ms) {
+    let every = match paced {
         Ok(every) => every,
         Err(why) => {
             let over = format!("harness can't wait on pod {name}: {why}");

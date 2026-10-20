@@ -674,7 +674,7 @@ impl Tool for SetList {
 
 /// `bytes` as `files` keeps a file's: `chunk` blobs this program puts,
 /// which the commit names; its bytes never ride in the commit.
-fn chunked(ctx: &ExecCtx, bytes: &[u8]) -> Result<Content, Error> {
+pub(crate) fn chunked(ctx: &ExecCtx, bytes: &[u8]) -> Result<Content, Error> {
     let chunks = bytes
         .chunks(files::CHUNK_SIZE as usize)
         .map(|chunk| ctx.blob_put(HashKind::Sha256, files::CHUNK, chunk))

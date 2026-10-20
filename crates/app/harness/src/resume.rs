@@ -332,7 +332,7 @@ async fn lost_streams(ctx: &Ctx, id: u64, since: Option<u64>) -> Result<(), Erro
             row.tool,
             row.call,
             row.about,
-            crate::watches::LOST
+            crate::watches::lost(&row)
         );
         if let Some(told) = note(ctx, row.agent, Some(row.thread), text)?
             && told != id

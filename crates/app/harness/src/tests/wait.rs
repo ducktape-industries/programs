@@ -309,6 +309,7 @@ fn streaming(world: &World, thread: u64) -> (u64, RequestRow) {
     assert!(assigned(chain, crate::waits::PODS).is_empty());
     chain.at(5, 1000);
     chain.at(6, 2000);
+    chain.at(7, 3000);
     let (read, target) = pod_request(chain);
     assert_eq!(target, "/v1/pods/duckpond-7");
     answer(chain, read.id, Answer::Output(response(200, json!({}))));
@@ -318,7 +319,7 @@ fn streaming(world: &World, thread: u64) -> (u64, RequestRow) {
         deliver: pod_event_as(wait),
     };
     assert_eq!(stream.delivery, pod_event);
-    chain.at(7, 3000);
+    chain.at(8, 4000);
     (wait, stream)
 }
 
@@ -352,8 +353,8 @@ fn a_pod_stream_that_ends_without_its_end_opens_again_and_an_unknown_pod_ends_th
     stream_ends(chain, &stream, 0);
     assert!(wakes(chain, thread).is_empty());
     assert_eq!(armed(chain, thread), [wait], "the wait stays");
-    chain.at(8, 4000);
     chain.at(9, 5000);
+    chain.at(10, 6000);
     let (read, target) = pod_request(chain);
     assert_eq!(target, "/v1/pods/duckpond-7", "the pod is read again");
     let gone = json!({ "error": "no pod duckpond-7" });

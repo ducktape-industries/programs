@@ -1,16 +1,22 @@
 //! Tools written as files: a TOML file in an agent's `/home/<name>/tools/` or in `/shared/tools/`
-//! names its input and the queries and ops it sends in their programs' own shapes, `$` naming the
-//! input and earlier steps' results; checked against the programs' live schemas each time it's read.
+//! names its input and the queries, ops and egress service calls it sends, `$` naming the input
+//! and earlier steps' results; checked against the programs' live schemas each time it's read.
 use std::collections::{BTreeMap, BTreeSet};
 
-use ::program::{BlobId, Error, ExecCtx, QueryCtx, code, invalid, unexpected_reply};
+use ::program::{
+    BlobId, Error, ExecCtx, HashKind, QueryCtx, code, invalid, not_found, unexpected_reply,
+};
+use abi::role::egress::{self, http};
+use abi::role::identity::AccountNumber;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use store::PageRequest;
 
-use super::{Run, Write, object};
+use super::{Run, Seat, Write, object};
+use crate::PART;
 use crate::agents::read;
 use crate::calls::refusal;
+use crate::pictures::{self, Format, Picture};
 use crate::schema::{Interface, schema_of};
 
 pub(crate) const SHARED: &str = "/shared/tools";
@@ -39,6 +45,8 @@ struct Field {
     kind: String,
     #[serde(default)]
     description: String,
+    #[serde(default)]
+    optional: bool,
 }
 
 #[derive(Deserialize)]
@@ -46,7 +54,11 @@ struct Field {
 struct Step {
     query: Option<String>,
     op: Option<String>,
-    body: Value,
+    service: Option<String>,
+    method: Option<String>,
+    target: Option<String>,
+    stream: Option<bool>,
+    body: Option<Value>,
     #[serde(rename = "as")]
     bind: Option<String>,
 }
@@ -72,27 +84,36 @@ impl Field {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone)]
 enum Sends {
-    Query,
-    Op,
+    Query(Interface),
+    Op(Interface),
+    Service {
+        method: http::Method,
+        target: String,
+        stream: bool,
+    },
 }
 
 struct Checked {
     sends: Sends,
     program: String,
-    body: Value,
+    body: Option<Value>,
     bind: Option<String>,
-    interface: Interface,
 }
 
 impl Checked {
     fn label(&self, n: usize) -> String {
-        let sends = match self.sends {
-            Sends::Query => "query",
-            Sends::Op => "op",
+        let sends = match &self.sends {
+            Sends::Query(_) => "query",
+            Sends::Op(_) => "op",
+            Sends::Service { .. } => "service",
         };
         format!("step {n} ({sends} {})", self.program)
+    }
+
+    fn streams(&self) -> bool {
+        matches!(self.sends, Sends::Service { stream: true, .. })
     }
 }
 
@@ -116,7 +137,12 @@ impl FileTool {
                 (name.clone(), property)
             })
             .collect();
-        let required: Vec<&str> = self.input.keys().map(String::as_str).collect();
+        let required: Vec<&str> = self
+            .input
+            .iter()
+            .filter(|(_, field)| !field.optional)
+            .map(|(name, _)| name.as_str())
+            .collect();
         object(Value::Object(properties), &required)
     }
 
@@ -134,6 +160,7 @@ impl FileTool {
             .input
             .iter()
             .filter_map(|(field, wanted)| match fields.get(field) {
+                None if wanted.optional => None,
                 None => Some(format!("field {field} is missing")),
                 Some(value) if !wanted.fits(value) => {
                     Some(format!("field {field} is no {}", wanted.kind))
@@ -288,17 +315,62 @@ fn written(pieces: &[Piece], bound: &Map<String, Value>) -> Result<String, Strin
     Ok(text)
 }
 
-fn filled(value: &Value, bound: &Map<String, Value>) -> Result<Value, String> {
+fn encoded(text: &str, kept: &[u8]) -> String {
+    let mut out = String::new();
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) || kept.contains(&byte) {
+            out.push(char::from(byte));
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+fn targeted(pieces: &[Piece], bound: &Map<String, Value>) -> Result<String, String> {
+    let mut target = String::new();
+    let mut query = false;
+    for piece in pieces {
+        match piece {
+            Piece::Text(plain) => {
+                target.push_str(plain);
+                query |= plain.contains('?');
+            }
+            Piece::Ref(path) => {
+                let kept: &[u8] = if query { b"" } else { b"/" };
+                target.push_str(&encoded(&text_of(lookup(path, bound)?), kept));
+            }
+        }
+    }
+    Ok(target)
+}
+
+fn dropped(value: &Value, absent: &BTreeSet<String>) -> bool {
+    let Some(text) = value.as_str() else {
+        return false;
+    };
+    matches!(
+        pieces(text).as_deref(),
+        Ok([Piece::Ref(path)]) if path.len() == 1 && absent.contains(path[0])
+    )
+}
+
+fn filled(
+    value: &Value,
+    bound: &Map<String, Value>,
+    absent: &BTreeSet<String>,
+) -> Result<Value, String> {
     match value {
         Value::String(text) => said(text, bound),
         Value::Array(items) => items
             .iter()
-            .map(|item| filled(item, bound))
+            .map(|item| filled(item, bound, absent))
             .collect::<Result<_, _>>()
             .map(Value::Array),
         Value::Object(fields) => fields
             .iter()
-            .map(|(key, field)| Ok((key.clone(), filled(field, bound)?)))
+            .filter(|(_, field)| !dropped(field, absent))
+            .map(|(key, field)| Ok((key.clone(), filled(field, bound, absent)?)))
             .collect::<Result<Map<_, _>, String>>()
             .map(Value::Object),
         Value::Null | Value::Bool(_) | Value::Number(_) => Ok(value.clone()),
@@ -384,12 +456,20 @@ fn checked(
     if written.step.is_empty() {
         return Err("it has no [[step]]".to_owned());
     }
+    let last = written.step.len();
     let mut known: BTreeSet<String> = written.input.keys().cloned().collect();
     let mut steps = Vec::new();
     for (index, step) in written.step.into_iter().enumerate() {
-        steps.push(step_checked(ctx, index + 1, step, &mut known, schemas)?);
+        let n = index + 1;
+        steps.push(step_checked(ctx, n, n == last, step, &mut known, schemas)?);
     }
     if let Some(returns) = &written.returns {
+        if steps.last().is_some_and(Checked::streams) {
+            return Err(
+                "its last step streams, and a stream's end is the call's result: there is no [returns]"
+                    .to_owned(),
+            );
+        }
         references(&Value::String(returns.text.clone()), &known)
             .map_err(|why| format!("returns: {why}"))?;
     }
@@ -404,40 +484,116 @@ fn checked(
     })
 }
 
+fn service_sends(
+    n: usize,
+    last: bool,
+    service: &str,
+    method: Option<String>,
+    target: Option<String>,
+    stream: Option<bool>,
+) -> Result<Sends, String> {
+    let reserved = egress::RESERVED.contains(&service);
+    if !crate::providers::lowercase_name(service) || reserved {
+        return Err(format!(
+            "step {n}: {service} is no egress service's name: a registered service, lowercase letters, digits, -, _ and ., and not http or relay"
+        ));
+    }
+    let method = match method.as_deref().unwrap_or("POST") {
+        "GET" => http::Method::Get,
+        "POST" => http::Method::Post,
+        "PUT" => http::Method::Put,
+        "PATCH" => http::Method::Patch,
+        "DELETE" => http::Method::Delete,
+        other => {
+            return Err(format!(
+                "step {n}: method {other} is none of GET, POST, PUT, PATCH and DELETE"
+            ));
+        }
+    };
+    let Some(target) = target.filter(|target| target.starts_with('/')) else {
+        return Err(format!(
+            "step {n}: a service step names its target, a path on the service like /v1/run"
+        ));
+    };
+    let stream = stream.unwrap_or(false);
+    if stream && !last {
+        return Err(format!(
+            "step {n}: only the last step streams, since a stream's end is the call's result"
+        ));
+    }
+    Ok(Sends::Service {
+        method,
+        target,
+        stream,
+    })
+}
+
 fn step_checked(
     ctx: &QueryCtx,
     n: usize,
+    last: bool,
     step: Step,
     known: &mut BTreeSet<String>,
     schemas: &mut Schemas,
 ) -> Result<Checked, String> {
-    let (sends, program) = match (step.query, step.op) {
-        (Some(program), None) => (Sends::Query, program),
-        (None, Some(program)) => (Sends::Op, program),
+    let served = step.method.is_some() || step.target.is_some() || step.stream.is_some();
+    let program_step = step.query.is_some() || step.op.is_some();
+    if program_step && served {
+        return Err(format!(
+            "step {n}: method, target and stream belong to a service step"
+        ));
+    }
+    if program_step && step.body.is_none() {
+        return Err(format!("step {n}: a query or op step has a body"));
+    }
+    let interface = |program: &str, schemas: &mut Schemas| {
+        schemas
+            .of(ctx, program)
+            .map_err(|why| format!("step {n}: {why}"))
+    };
+    let (sends, program) = match (step.query, step.op, step.service) {
+        (Some(program), None, None) => (Sends::Query(interface(&program, schemas)?), program),
+        (None, Some(program), None) => (Sends::Op(interface(&program, schemas)?), program),
+        (None, None, Some(service)) => {
+            let sends = service_sends(n, last, &service, step.method, step.target, step.stream)?;
+            (sends, service)
+        }
         _ => {
             return Err(format!(
-                "step {n}: a step names one program, as query = \"<program>\" or op = \"<program>\""
+                "step {n}: a step names one program or service, as query = \"<program>\", op = \"<program>\" or service = \"<egress service>\""
             ));
         }
     };
-    let interface = schemas
-        .of(ctx, &program)
-        .map_err(|why| format!("step {n}: {why}"))?;
     let checked = Checked {
         sends,
         program,
         body: step.body,
         bind: step.bind,
-        interface,
     };
     let label = checked.label(n);
-    references(&checked.body, known).map_err(|why| format!("{label}: {why}"))?;
-    let fits = match sends {
-        Sends::Query => checked.interface.query_fits(&checked.body, hole),
-        Sends::Op => checked.interface.op_fits(&checked.body, hole),
+    if let Some(body) = &checked.body {
+        references(body, known).map_err(|why| format!("{label}: {why}"))?;
+    }
+    if let Sends::Service { target, .. } = &checked.sends {
+        references(&Value::String(target.clone()), known)
+            .map_err(|why| format!("{label}: {why}"))?;
+    }
+    let fits = match (&checked.sends, &checked.body) {
+        (Sends::Query(interface), Some(body)) => interface
+            .query_fits(body, hole)
+            .map_err(|fault| fault.to_string()),
+        (Sends::Op(interface), Some(body)) => interface
+            .op_fits(body, hole)
+            .map_err(|fault| fault.to_string()),
+        _ => Ok(()),
     };
     fits.map_err(|fault| format!("{label}: {fault}"))?;
     if let Some(bind) = &checked.bind {
+        if checked.streams() {
+            return Err(format!(
+                "{label}: a streamed step's end is the call's result, so it has no `as`"
+            ));
+        }
         if !ident(bind) {
             return Err(format!(
                 "{label}: `as` is a letter or _, then letters, digits and _"
@@ -567,23 +723,37 @@ struct Walk {
     tool: FileTool,
     next: usize,
     bound: Map<String, Value>,
+    absent: BTreeSet<String>,
+    thread: u64,
+    call: String,
+    agent: AccountNumber,
 }
 
 // the tool's steps from the first, as the agent: a query answers in place, an op is a write
 // whose output the next steps read
-pub(crate) fn run(ctx: &QueryCtx, tool: FileTool, input: Value) -> Result<Run, Error> {
+pub(crate) fn run(ctx: &ExecCtx, seat: &Seat, tool: FileTool, input: Value) -> Result<Run, Error> {
     let Value::Object(bound) = input else {
         return Err(invalid(format!(
             "{} input: expected an object of its fields",
             tool.name
         )));
     };
+    let absent = tool
+        .input
+        .iter()
+        .filter(|(name, field)| field.optional && !bound.contains_key(name.as_str()))
+        .map(|(name, _)| name.clone())
+        .collect();
     walk(
         ctx,
         Walk {
             tool,
             next: 0,
             bound,
+            absent,
+            thread: seat.thread,
+            call: seat.call.to_owned(),
+            agent: seat.agent,
         },
     )
 }
@@ -592,47 +762,294 @@ fn labelled(label: &str, error: Error) -> Error {
     Error::new(error.code, format!("{label}: {}", error.message))
 }
 
-fn walk(ctx: &QueryCtx, mut walk: Walk) -> Result<Run, Error> {
+fn headed(method: http::Method, target: String, body: bool) -> http::Head {
+    let headers = match body {
+        true => vec![("content-type".to_owned(), "application/json".to_owned())],
+        false => Vec::new(),
+    };
+    http::Head {
+        method,
+        target,
+        headers,
+    }
+}
+
+fn walk(ctx: &ExecCtx, mut walk: Walk) -> Result<Run, Error> {
     while let Some(step) = walk.tool.steps.get(walk.next) {
         let index = walk.next;
         walk.next += 1;
         let label = step.label(walk.next);
-        let body =
-            filled(&step.body, &walk.bound).map_err(|why| invalid(format!("{label}: {why}")))?;
-        let encoded = match step.sends {
-            Sends::Query => step.interface.encode_query(&body),
-            Sends::Op => step.interface.encode_op(&body),
+        let body = match &step.body {
+            Some(body) => Some(
+                filled(body, &walk.bound, &walk.absent)
+                    .map_err(|why| invalid(format!("{label}: {why}")))?,
+            ),
+            None => None,
         };
-        let payload = encoded.map_err(|fault| invalid(format!("{label}: {fault}")))?;
-        if step.sends == Sends::Op {
-            let write = Write {
-                target: step.program.clone(),
-                payload: payload.clone(),
-            };
-            let then = move |ctx: &ExecCtx, output: &[u8]| {
-                let step = &walk.tool.steps[index];
-                let answer = step.interface.returned(&step.program, &payload, output);
-                let value = answer.get("returned").cloned().unwrap_or(Value::Null);
-                bind(&mut walk.bound, step.bind.clone(), value);
-                self::walk(ctx, walk)
-            };
-            return Ok(Run::Step {
-                step: label,
-                writes: vec![write],
-                then: Box::new(then),
-            });
+        match &step.sends {
+            Sends::Query(interface) => {
+                let payload = interface
+                    .encode_query(&body.unwrap_or_default())
+                    .map_err(|fault| invalid(format!("{label}: {fault}")))?;
+                let answer = ctx
+                    .query_raw(step.program.clone(), payload)
+                    .map_err(|error| labelled(&label, error))?;
+                let reply = interface.decode_reply(&answer).map_err(|fault| {
+                    let why = format!("{label}: the reply does not read: {fault}");
+                    Error::new(code::CORRUPT, why)
+                })?;
+                let name = step.bind.clone();
+                bind(&mut walk.bound, name, reply);
+            }
+            Sends::Op(interface) => {
+                let payload = interface
+                    .encode_op(&body.unwrap_or_default())
+                    .map_err(|fault| invalid(format!("{label}: {fault}")))?;
+                let write = Write {
+                    target: step.program.clone(),
+                    payload: payload.clone(),
+                };
+                let interface = interface.clone();
+                let then = move |ctx: &ExecCtx, output: &[u8]| {
+                    let step = &walk.tool.steps[index];
+                    let answer = interface.returned(&step.program, &payload, output);
+                    let value = answer.get("returned").cloned().unwrap_or(Value::Null);
+                    bind(&mut walk.bound, step.bind.clone(), value);
+                    self::walk(ctx, walk)
+                };
+                return Ok(Run::Step {
+                    step: label,
+                    writes: vec![write],
+                    then: Box::new(then),
+                });
+            }
+            Sends::Service {
+                method,
+                target,
+                stream,
+            } => {
+                let target = pieces(target)
+                    .and_then(|pieces| targeted(&pieces, &walk.bound))
+                    .map_err(|why| invalid(format!("{label}: {why}")))?;
+                let service = step.program.clone();
+                let about = format!("{service} {target}");
+                let head = headed(*method, target, body.is_some());
+                if *stream {
+                    let request = egress::Request::Http {
+                        service,
+                        head,
+                        body: Vec::new(),
+                    };
+                    let body = body.map(|body| body.to_string());
+                    return Ok(Run::Paced {
+                        request,
+                        body,
+                        about,
+                    });
+                }
+                let parts = match &body {
+                    Some(body) => {
+                        let text = body.to_string().into_bytes();
+                        vec![ctx.blob_put(HashKind::Sha256, PART, text)?]
+                    }
+                    None => Vec::new(),
+                };
+                let request = egress::Request::Http {
+                    service: service.clone(),
+                    head,
+                    body: parts,
+                };
+                let writes = super::pods::whole(ctx, request)?;
+                let step = label.clone();
+                let then = move |ctx: &ExecCtx, output: &[u8]| {
+                    let answer =
+                        served(&service, output).map_err(|error| labelled(&label, error))?;
+                    heard_back(ctx, walk, index, label, answer)
+                };
+                return Ok(Run::Step {
+                    step,
+                    writes,
+                    then: Box::new(then),
+                });
+            }
         }
-        let answer = ctx
-            .query_raw(step.program.clone(), payload)
-            .map_err(|error| labelled(&label, error))?;
-        let reply = step.interface.decode_reply(&answer).map_err(|fault| {
-            let why = format!("{label}: the reply does not read: {fault}");
-            Error::new(code::CORRUPT, why)
-        })?;
-        let name = step.bind.clone();
-        bind(&mut walk.bound, name, reply);
     }
     Ok(Run::Done(finished(&walk)))
+}
+
+enum Served {
+    Said(Value),
+    Image(Vec<u8>, Format),
+}
+
+fn served(service: &str, output: &[u8]) -> Result<Served, Error> {
+    let response: http::Response = abi::decode(output).map_err(|fault| {
+        let why = format!("the answer is no HTTP response: {}", fault.sentence);
+        Error::new(code::UNEXPECTED_REPLY, why)
+    })?;
+    let media = crate::resume::header(&response, "content-type")
+        .map(|value| value.split(';').next().unwrap_or_default().trim())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let json = serde_json::from_slice::<Value>(&response.body).ok();
+    let status = response.status;
+    if (200..300).contains(&status) {
+        if !media.starts_with("image/") {
+            let text = || json!(String::from_utf8_lossy(&response.body));
+            return Ok(Served::Said(json.unwrap_or_else(text)));
+        }
+        return match pictures::format(&response.body) {
+            Some(format) => Ok(Served::Image(response.body, format)),
+            None => Err(invalid(format!(
+                "{service} answered {media}, and its bytes are no png, jpeg, gif or webp image"
+            ))),
+        };
+    }
+    let why = match json {
+        Some(body) => match body.get("error").and_then(Value::as_str) {
+            Some(error) => format!(": {error}"),
+            None => format!(": {body}"),
+        },
+        None if response.body.is_empty() => " with no body".to_owned(),
+        None if media.is_empty() => " with a body of no media type, not JSON".to_owned(),
+        None => format!(" with a {media} body, not JSON"),
+    };
+    Err(Error::new(
+        super::pods::refused_as(status),
+        format!("{service} answered {status}{why}"),
+    ))
+}
+
+fn heard_back(
+    ctx: &ExecCtx,
+    mut walk: Walk,
+    index: usize,
+    label: String,
+    answer: Served,
+) -> Result<Run, Error> {
+    let name = walk.tool.steps[index].bind.clone();
+    let (bytes, format) = match answer {
+        Served::Said(value) => {
+            bind(&mut walk.bound, name, value);
+            return self::walk(ctx, walk);
+        }
+        Served::Image(bytes, format) => (bytes, format),
+    };
+    let profile = crate::agents::profile(ctx, walk.agent)?
+        .ok_or_else(|| not_found(format!("no account {}", walk.agent)))?;
+    let file = format!(
+        "{}-{}-{}.{}",
+        walk.thread,
+        walk.call,
+        index + 1,
+        format.extension()
+    );
+    let seen = Seen {
+        path: format!("/home/{}/seen/{file}", profile.name),
+        file,
+        format,
+        size: bytes.len() as u64,
+        side: pictures::dimensions(&bytes, format),
+    };
+    let head = super::files::resolved(ctx, None)?;
+    let held = match head.as_ref() {
+        Some(at) => held_at(ctx, &seen.path, at)?,
+        None => None,
+    };
+    if let (Some(at), Some(held)) = (head, &held)
+        && *held == bytes
+    {
+        return shown(ctx, walk, name, seen, at);
+    }
+    let base = head.filter(|_| held.is_some());
+    let put = files::Change::Put {
+        path: seen.path.clone(),
+        exec: false,
+        meta: BTreeMap::new(),
+        content: super::files::chunked(ctx, &bytes)?,
+    };
+    let message = format!(
+        "harness thread {} call {}: what {} answered",
+        walk.thread, walk.call, walk.tool.steps[index].program
+    );
+    let commit = files::Op::Commit {
+        base,
+        message,
+        changes: vec![put],
+    };
+    let write = Write {
+        target: files::PROGRAM.into(),
+        payload: abi::encode(&commit),
+    };
+    let then = move |ctx: &ExecCtx, output: &[u8]| {
+        let snapshot = abi::decode::<BlobId>(output).map_err(|fault| {
+            let why = format!(
+                "files named no snapshot for {}: {}",
+                seen.path, fault.sentence
+            );
+            Error::new(code::UNEXPECTED_REPLY, why)
+        })?;
+        shown(ctx, walk, name, seen, snapshot)
+    };
+    Ok(Run::Step {
+        step: label,
+        writes: vec![write],
+        then: Box::new(then),
+    })
+}
+
+struct Seen {
+    path: String,
+    file: String,
+    format: Format,
+    size: u64,
+    side: Option<(u32, u32)>,
+}
+
+fn held_at(ctx: &ExecCtx, path: &str, at: &BlobId) -> Result<Option<Vec<u8>>, Error> {
+    let file = super::files::stat(ctx, path, Some(at))?
+        .is_some_and(|entry| matches!(entry.node, files::Node::File { .. }));
+    match file {
+        true => super::files::read_all(ctx, path, Some(at)).map(Some),
+        false => Ok(None),
+    }
+}
+
+fn shown(
+    ctx: &ExecCtx,
+    mut walk: Walk,
+    name: Option<String>,
+    seen: Seen,
+    snapshot: BlobId,
+) -> Result<Run, Error> {
+    let mut said = json!({
+        "path": seen.path,
+        "snapshot": super::blob(&snapshot),
+        "media_type": seen.format.media(),
+        "size": seen.size,
+    });
+    if let Some((width, height)) = seen.side {
+        said["width"] = json!(width);
+        said["height"] = json!(height);
+    }
+    let picture = Picture {
+        name: seen.file,
+        path: seen.path,
+        snapshot,
+    };
+    pictures::added(ctx, walk.thread, &walk.call, picture)?;
+    bind(&mut walk.bound, name, said);
+    self::walk(ctx, walk)
+}
+
+pub(crate) fn heard(data: &[u8]) -> Option<Value> {
+    let (name, data) = super::pods::event(data);
+    let said = serde_json::from_str(&data).unwrap_or_else(|_| json!(data));
+    match name.as_str() {
+        "ended" => Some(said),
+        "refused" => Some(json!({ "refused": said })),
+        _ => None,
+    }
 }
 
 fn bind(bound: &mut Map<String, Value>, name: Option<String>, value: Value) {

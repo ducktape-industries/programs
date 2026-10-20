@@ -29,6 +29,7 @@ mod routes;
 mod rules;
 mod schedule;
 mod server_tools;
+mod service_tools;
 mod services;
 mod stale;
 mod stranded;

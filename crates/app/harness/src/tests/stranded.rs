@@ -269,8 +269,8 @@ fn a_measured_stream_an_update_cut_off_before_its_stream_opened_wakes_its_conver
     let thread = world.opened("m1", "build it", Some(WINDOW));
     let input = json!({ "pod": POD, "script": "cargo test", "stream": true });
     turn(chain, 3, "s1", "pod_exec", input);
-    chain.at(5, 0);
-    chain.at(6, 0);
+    chain.at(5, 1000);
+    chain.at(6, 2000);
     updated(chain, 7);
     chain.cancel_parked(PROGRAM);
     resumed(chain, thread);

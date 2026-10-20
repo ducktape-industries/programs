@@ -31,7 +31,7 @@ fn podded(world: World) -> World {
     world
 }
 
-fn turn(chain: &MockChain, height: u64, calls: &[(&str, &str, Value)]) {
+pub(super) fn turn(chain: &MockChain, height: u64, calls: &[(&str, &str, Value)]) {
     chain.at(height, 0);
     let uses: Vec<Value> = calls
         .iter()
@@ -44,19 +44,19 @@ fn turn(chain: &MockChain, height: u64, calls: &[(&str, &str, Value)]) {
     }
 }
 
-fn json_result(chain: &MockChain, thread: u64, call: &str) -> Value {
+pub(super) fn json_result(chain: &MockChain, thread: u64, call: &str) -> Value {
     let (text, failed) = result_of(chain, thread, call);
     assert!(!failed, "{call}: {text}");
     serde_json::from_str(&text).unwrap()
 }
 
-fn refusal(chain: &MockChain, thread: u64, call: &str) -> String {
+pub(super) fn refusal(chain: &MockChain, thread: u64, call: &str) -> String {
     let (text, failed) = result_of(chain, thread, call);
     assert!(failed, "{call}: {text}");
     text
 }
 
-fn target(row: &RequestRow) -> String {
+pub(super) fn target(row: &RequestRow) -> String {
     match &row.request {
         Request::Http { head, .. } => head.target.clone(),
         Request::Relay { .. } => String::new(),
@@ -71,7 +71,7 @@ fn ok(body: Value) -> Answer {
     Answer::Output(response(200, body))
 }
 
-fn told(chain: &MockChain, thread: u64) -> Vec<String> {
+pub(super) fn told(chain: &MockChain, thread: u64) -> Vec<String> {
     frames(chain, thread)
         .into_iter()
         .chain(held(chain, thread))
@@ -85,7 +85,7 @@ fn told(chain: &MockChain, thread: u64) -> Vec<String> {
         .collect()
 }
 
-fn event(chain: &MockChain, row: &RequestRow, seq: u64, data: &str) {
+pub(super) fn event(chain: &MockChain, row: &RequestRow, seq: u64, data: &str) {
     let event = egress::Event {
         id: row.id,
         seq,
@@ -639,6 +639,7 @@ fn measured_stream(world: &World) -> (u64, RequestRow) {
     assert!(asked(chain).is_empty(), "the stream opens a block later");
     chain.at(5, 1000);
     chain.at(6, 2000);
+    chain.at(7, 3000);
     let [read]: [RequestRow; 1] = asked(chain).try_into().unwrap();
     assert_eq!(target(&read), format!("/v1/pods/{POD}"));
     (thread, read)
@@ -657,7 +658,7 @@ fn a_stream_without_every_streams_at_the_heartbeat_harness_measures() {
         body(chain, &row),
         json!({ "command": ["sh", "-c", "cargo test"], "every": every })
     );
-    chain.at(7, 3000);
+    chain.at(8, 4000);
     let ended = r#"event: ended
 data: {"exit_code": 0, "stdout": "ok", "stderr": ""}"#;
     event(chain, &row, 0, ended);

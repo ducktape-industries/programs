@@ -62,6 +62,15 @@ impl Format {
             Format::Webp => "image/webp",
         }
     }
+
+    pub(crate) fn extension(self) -> &'static str {
+        match self {
+            Format::Png => "png",
+            Format::Jpeg => "jpg",
+            Format::Gif => "gif",
+            Format::Webp => "webp",
+        }
+    }
 }
 
 pub(crate) fn format(bytes: &[u8]) -> Option<Format> {
@@ -185,6 +194,14 @@ pub(crate) fn unhold(ctx: &ExecCtx, thread: u64, index: u64, seq: u64) -> Result
 
 pub(crate) fn opened(ctx: &ExecCtx, thread: u64, call: &str, pictures: Vec<Picture>) {
     CALL_PICTURES.put(ctx, &(thread, call.to_owned()), &pictures);
+}
+
+pub(crate) fn added(ctx: &ExecCtx, thread: u64, call: &str, picture: Picture) -> Result<(), Error> {
+    let key = (thread, call.to_owned());
+    let mut pictures = CALL_PICTURES.get(ctx, &key)?.unwrap_or_default();
+    pictures.push(picture);
+    CALL_PICTURES.put(ctx, &key, &pictures);
+    Ok(())
 }
 
 pub(crate) fn called(ctx: &ExecCtx, thread: u64, call: &str, seq: u64) -> Result<(), Error> {

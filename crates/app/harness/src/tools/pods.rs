@@ -78,7 +78,7 @@ pub(crate) fn whole(ctx: &ExecCtx, request: egress::Request) -> Result<Vec<Write
     Ok(vec![Write { target, payload }])
 }
 
-fn refused_as(status: u16) -> &'static str {
+pub(crate) fn refused_as(status: u16) -> &'static str {
     match status {
         400 | 422 => code::INVALID_INPUT,
         403 => code::UNAUTHORIZED,
@@ -111,7 +111,7 @@ fn answered(output: &[u8]) -> Result<Value, Error> {
 }
 
 // one event of a text/event-stream answer as the node hands it: its name and its data
-fn event(data: &[u8]) -> (String, String) {
+pub(crate) fn event(data: &[u8]) -> (String, String) {
     let text = String::from_utf8_lossy(data);
     let mut name = "message".to_owned();
     let mut lines = Vec::new();
