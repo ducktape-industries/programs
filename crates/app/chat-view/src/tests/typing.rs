@@ -149,7 +149,7 @@ fn a_view_restored_with_words_in_its_composer_sends_nothing() {
 fn the_composer_typed_into_last_is_where_the_reader_types() {
     let (mut cx, view) = opened();
     thread(&mut cx, &view, 2);
-    cx.simulate_input("draft-general-2/editor", "a reply");
+    cx.simulate_input("draft-general/2/editor", "a reply");
     cx.run_until_parked();
     assert_eq!(told(&cx), vec![typing("general", Some(2))]);
     cx.simulate_input("draft-general/editor", "and a post");
