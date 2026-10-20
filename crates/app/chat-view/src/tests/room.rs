@@ -317,7 +317,7 @@ fn a_field_is_named_apart_from_its_hint() {
     thread(&mut cx, &view, 1);
     for (key, name, hint) in [
         ("draft-general/editor", "New message", "Message #General"),
-        ("draft-general-1/editor", "Reply", "Reply in thread"),
+        ("draft-general/1/editor", "Reply", "Reply in thread"),
     ] {
         assert_eq!(named(&cx, key), (name.into(), hint.into(), true), "{key}");
     }
@@ -341,7 +341,7 @@ fn an_empty_thread_says_so_and_its_field_takes_focus() {
     let (mut cx, view) = opened();
     thread(&mut cx, &view, 1);
     assert!(cx.has_text("No replies yet"));
-    let field = wire::ElementIdWire::Name("draft-general-1/editor".into());
+    let field = wire::ElementIdWire::Name("draft-general/1/editor".into());
     assert!(
         cx.host()
             .requests::<view::methods::HostWidget>()

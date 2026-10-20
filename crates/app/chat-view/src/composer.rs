@@ -49,7 +49,7 @@ impl Target {
             Target::Post {
                 channel,
                 thread: Some(root),
-            } => format!("draft-{channel}-{root}"),
+            } => format!("draft-{channel}/{root}"),
             Target::Edit { channel, seq, .. } => format!("edit-{channel}-{seq}"),
         }
     }

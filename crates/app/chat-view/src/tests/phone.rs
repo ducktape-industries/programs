@@ -815,7 +815,7 @@ fn a_root_with_replies_has_its_thread_button_and_it_opens_the_thread() {
     assert!(cx.find("chat-thread-page").is_some());
     assert_ne!(
         cx.focused().and_then(|node| node.key()),
-        Some("draft-general-1/editor")
+        Some("draft-general/1/editor")
     );
 }
 
@@ -1012,7 +1012,7 @@ fn reply_in_thread_opens_the_thread() {
     assert!(cx.has_text("Reply in thread"), "the thread's composer");
     assert_eq!(
         cx.focused().and_then(|node| node.key()),
-        Some("draft-general-2/editor"),
+        Some("draft-general/2/editor"),
         "the reply field takes the keys"
     );
 }
@@ -1136,7 +1136,7 @@ fn a_thread_shows_its_root_its_count_and_no_replies_yet() {
     assert!(cx.has_text("Thread") && cx.has_text("#General"));
     assert!(cx.has_text("0 replies"), "{:?}", cx.texts());
     assert!(cx.has_text("No replies yet"));
-    assert!(cx.find("draft-general-1/editor").is_some());
+    assert!(cx.find("draft-general/1/editor").is_some());
     cx.simulate_back();
     assert!(cx.find("chat-room-page").is_some());
 }

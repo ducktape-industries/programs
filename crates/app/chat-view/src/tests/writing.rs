@@ -569,7 +569,7 @@ fn the_first_key_is_kept_in_a_thread_restored_open() {
     let (mut cx, view) = opened();
     thread(&mut cx, &view, 1);
     let (mut restored, view) = restored(&cx);
-    types(&mut restored, &view, "draft-general-1", "a");
+    types(&mut restored, &view, "draft-general/1", "a");
     types(&mut restored, &view, "draft-general", "a");
 }
 
@@ -589,6 +589,30 @@ fn a_render_leaves_the_composer_the_document_it_was() {
     cx.update(&view, |_, _, cx| cx.notify());
     cx.run_until_parked();
     assert_eq!(generation(&cx), drawn);
+}
+
+#[test]
+fn a_thread_draft_stays_out_of_a_room_whose_name_ends_in_its_root() {
+    let (mut cx, view) = opened();
+    thread(&mut cx, &view, 1);
+    let reply = crate::composer::Target::Post {
+        channel: "general".into(),
+        thread: Some(1),
+    }
+    .key();
+    types(&mut cx, &view, &reply, "half a reply");
+    cx.update(&view, |chat, _, cx| {
+        cx.notify();
+        chat.choose("general-1".into(), cx)
+    });
+    cx.run_until_parked();
+    let room = crate::composer::Target::Post {
+        channel: "general-1".into(),
+        thread: None,
+    }
+    .key();
+    assert_eq!(held(&cx, &room), "", "general-1 opens blank");
+    view.read(|chat| assert_eq!(chat.drafts[&reply].body(), "half a reply"));
 }
 
 /// The drafts are saved with the view, so a room or a thread left with
@@ -612,7 +636,7 @@ fn a_draft_left_blank_goes_and_one_with_text_stays() {
     choose(&mut cx, "general");
     assert_eq!(kept(&view), ["draft-dm-7-8", "draft-general"]);
     thread(&mut cx, &view, 1);
-    assert!(kept(&view).contains(&"draft-general-1".to_owned()));
+    assert!(kept(&view).contains(&"draft-general/1".to_owned()));
     cx.simulate_click("chat-thread-close");
     assert_eq!(kept(&view), ["draft-dm-7-8", "draft-general"]);
     choose(&mut cx, "dm-7-8");
