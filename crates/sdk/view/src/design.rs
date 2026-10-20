@@ -29,6 +29,7 @@ pub use ::design::*;
 
 mod format;
 mod pages;
+pub mod placeholder;
 mod words;
 pub(crate) use format::set_utc_offset;
 pub use format::{ago, clock, date, day, grouped, initial, local, plural};

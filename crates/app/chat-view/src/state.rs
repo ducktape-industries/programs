@@ -47,6 +47,10 @@ impl Faces {
 #[derive(Serialize, Deserialize, Default)]
 pub struct Chat {
     pub(crate) session: Session,
+    // whether the host has handed a session yet: until it has, the panes draw their
+    // placeholders, never "Not connected"
+    #[serde(skip)]
+    pub(crate) session_heard: bool,
     #[serde(skip)]
     pub(crate) names: Loadable<Names>,
     /// whom each agent of the roster answers besides its manager, by

@@ -77,11 +77,7 @@ fn nothing_yet(chat: &Chat, pane: Pane, theme: &Theme) -> Option<AnyElement> {
         Pane::Thread => room.thread.as_ref().map(|thread| &thread.replies),
     };
     if rows.is_some_and(|rows| matches!(rows, Loadable::Loading(_))) {
-        return Some(
-            quiet(words::LOADING_MESSAGES, theme)
-                .p_4()
-                .into_any_element(),
-        );
+        return Some(super::placeholders::messages(pane, theme).into_any_element());
     }
     if let Some(refusal) = rows.and_then(Loadable::failed) {
         return Some(

@@ -56,7 +56,7 @@ pub(super) fn screen(
         theme,
         create,
     ));
-    if !chat.session.connected {
+    if !chat.session.connected && chat.session_heard {
         return page
             .child(quiet(
                 "chat-rooms-offline",
@@ -97,6 +97,22 @@ fn caption(chat: &Chat) -> String {
 // The channels the reader is in (their loading line, the empty state, or where the rest are, under
 // them), then Direct messages always.
 fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
+    // which rooms are the reader's waits on who reads
+    if !chat.session_heard {
+        return div()
+            .id("chat-rooms")
+            .flex_1()
+            .min_h(px(0.))
+            .flex()
+            .flex_col()
+            .child(design::section_head(
+                "chat-rooms-channels-head",
+                words::CHANNELS,
+                ladder,
+                theme,
+            ))
+            .child(crate::ui::placeholders::phone_rooms(theme, ladder));
+    }
     let list = chat.room_list();
     let count = |rows: usize| (rows > 0).then(|| rows.to_string());
     let loading = matches!(chat.channels, Loadable::Idle | Loadable::Loading(_));
@@ -150,12 +166,7 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         )
         .children(mine)
         .when(loading, |rooms| {
-            rooms.child(quiet(
-                "chat-rooms-loading",
-                words::LOADING_ROOMS,
-                theme,
-                ladder,
-            ))
+            rooms.child(crate::ui::placeholders::phone_rooms(theme, ladder))
         })
         .children(empty)
         .children(elsewhere)

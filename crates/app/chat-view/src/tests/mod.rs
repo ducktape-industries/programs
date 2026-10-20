@@ -29,6 +29,7 @@ mod message;
 mod notices;
 mod order;
 mod phone;
+mod placeholders;
 mod policies;
 mod reader;
 mod rich;
@@ -466,7 +467,10 @@ fn opened() -> (TestAppContext, Entity<Chat>) {
     configure(&mut cx);
     let view = cx.open::<Chat>();
     cx.run_until_parked();
-    assert!(cx.has_text("Not connected"));
+    assert!(
+        !cx.has_text("Not connected"),
+        "a session not handed yet is no verdict"
+    );
     seat(&mut cx);
     assert!(cx.has_text("General"));
     assert!(cx.has_text("No channel open"));

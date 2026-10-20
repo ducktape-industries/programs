@@ -93,6 +93,7 @@ with these; the rest of this page is reference.
 | `let theme = *cx.global::<Theme>();` | 6/6 | The host's colors, light or dark: gpui's `cx.theme()`. The first line of a render; `design`'s functions take `&theme`. |
 | `design::space`, `design::size`, `design::text` | 6/6 | The spacing, control and type tokens every screen is laid out in. |
 | `design::empty_state(id, glyph, title, detail, &ladder, &theme)` | 6/6 | What a list says when it has no rows; under a finger the Expo kit's, the Lucide `glyph` over the words. |
+| `design::placeholder::region(id, label)` of `placeholder::line(role, width, fill)`, `placeholder::face(face, fill)`, `placeholder::bar(fill)` | 1/6 | What stands where a read has not landed: static shapes in the raised tone of their ground, no words, no pictures, laid out as the rows that replace them; the region says it is busy and names what is read. |
 | `design::badge(..)` | 6/6 | A small labelled state: "agent", "suspended". |
 | `design::refused(name, message, &ladder, &theme, retry)` | 5/6 | A refused read: the reason and a Retry, under the ids `<name>-refused` and `<name>-retry`. |
 | `design::composite(..)` | 5/6 | A group one Tab stop holds and the arrows move in: a tab bar, a list of rows. |

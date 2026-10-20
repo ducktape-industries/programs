@@ -100,12 +100,16 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
             new_channel(chat, cx, theme),
             theme,
         ));
+    // which rooms are the reader's waits on who reads
+    if !chat.session_heard {
+        return list.child(super::placeholders::sidebar_rooms(theme));
+    }
     let no_channels = chat
         .channels
         .ready()
         .is_none_or(|channels| channels.is_empty());
-    if chat.channels.is_loading() && no_channels {
-        list = list.child(quiet("chat-sidebar-loading", words::LOADING_ROOMS, theme));
+    if matches!(chat.channels, Loadable::Idle | Loadable::Loading(_)) && no_channels {
+        list = list.child(super::placeholders::sidebar_rooms(theme));
     }
     if let Some(refusal) = chat.channels.failed() {
         list = list.child(quiet(

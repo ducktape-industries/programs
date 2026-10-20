@@ -37,13 +37,9 @@ pub(super) fn list(
         Pane::Timeline => Some(&room.messages),
         Pane::Thread => room.thread.as_ref().map(|thread| &thread.replies),
     };
-    let loading = match pane {
-        Pane::Timeline => words::LOADING_MESSAGES,
-        Pane::Thread => "Loading the thread…",
-    };
     if read.is_some_and(|read| matches!(read, Loadable::Loading(_))) {
         return frame
-            .child(quiet("chat-messages-loading", loading, theme, ladder))
+            .child(crate::ui::placeholders::phone_messages(pane, theme, ladder))
             .into_any_element();
     }
     if let Some(refusal) = read.and_then(Loadable::failed) {

@@ -20,6 +20,10 @@ pub(crate) enum Gate {
 
 impl Chat {
     pub(crate) fn session_changed(&mut self, next: Session, cx: &mut Context<Self>) {
+        if !self.session_heard {
+            self.session_heard = true;
+            cx.notify();
+        }
         if next == self.session {
             return;
         }

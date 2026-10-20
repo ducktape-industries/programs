@@ -41,6 +41,7 @@ pub(crate) fn more_channels(count: usize) -> String {
 // search's head over the rooms whose names match
 pub(crate) const ROOMS: &str = "Rooms";
 pub(crate) const LOADING_ROOMS: &str = "Loading rooms…";
+pub(crate) const LOADING_CHANNELS: &str = "Loading channels…";
 pub(crate) const SEARCH_MESSAGES: &str = "Search messages";
 pub(crate) const MORE_RESULTS: &str = "More results";
 pub(crate) const AGENT: &str = "Agent";
@@ -102,6 +103,7 @@ pub(crate) fn account(number: u64) -> String {
 pub(crate) const CHANNEL_DETAILS: &str = "Channel details";
 pub(crate) const THREAD: &str = "Thread";
 pub(crate) const LOADING_MESSAGES: &str = "Loading messages…";
+pub(crate) const LOADING_THREAD: &str = "Loading the thread…";
 pub(crate) const LOADING_OLDER: &str = "Loading older messages…";
 pub(crate) const NO_REPLIES: &str = "No replies yet";
 

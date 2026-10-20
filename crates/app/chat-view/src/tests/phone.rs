@@ -166,7 +166,12 @@ fn the_rooms_page_says_it_is_loading_until_the_channels_land() {
     cx.open::<Chat>();
     cx.simulate_touch(true);
     seat(&mut cx);
-    assert!(cx.has_text("Loading rooms…"), "{:?}", cx.texts());
+    let region = cx.interactivity("chat-rooms-loading");
+    assert!(region.aria.busy && region.aria.label.as_deref() == Some("Loading rooms…"));
+    assert!(
+        !cx.has_text("Loading rooms…"),
+        "its placeholders draw no words"
+    );
 }
 
 #[test]
@@ -209,6 +214,7 @@ fn without_a_node_the_rooms_page_says_so() {
     configure(&mut cx);
     cx.open::<Chat>();
     cx.simulate_touch(true);
+    cx.host().stream::<HostSession>().send(Session::default());
     cx.run_until_parked();
     assert!(cx.has_text("Not connected to a node."));
     assert!(cx.find("chat-rooms-search").is_some());
@@ -461,7 +467,8 @@ fn a_room_says_it_is_loading_then_shows_its_history_from_its_intro() {
     cx.host().never::<Ask<::chat::Chat>>();
     cx.simulate_click("chat-rooms-channel-general");
     cx.run_until_parked();
-    assert!(cx.has_text("Loading messages…"), "{:?}", cx.texts());
+    let region = cx.interactivity("chat-messages-loading");
+    assert!(region.aria.busy && region.aria.label.as_deref() == Some("Loading messages…"));
     rows_are(&mut cx, &view, vec![row(1, 7, "hello")]);
     assert!(cx.has_text(
         "This is the very beginning of #General. Say hello, or pin what the room is for."
@@ -1061,7 +1068,8 @@ fn a_thread_says_it_is_loading_and_a_refused_one_retries() {
     let (mut cx, view) = in_general();
     cx.host().never::<Ask<::chat::Chat>>();
     thread(&mut cx, &view, 1);
-    assert!(cx.has_text("Loading the thread…"));
+    let region = cx.interactivity("chat-replies-loading");
+    assert!(region.aria.busy && region.aria.label.as_deref() == Some("Loading the thread…"));
     cx.host()
         .handle::<Ask<::chat::Chat>>(rooms_alone(|query| match query {
             Query::Thread { .. } => Err(view::host::Error::new("refused", "the thread is gone")),

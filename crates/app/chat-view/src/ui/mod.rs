@@ -8,6 +8,7 @@ pub mod menu;
 pub mod message;
 pub(crate) mod notices;
 pub(crate) mod phone;
+pub(crate) mod placeholders;
 pub mod room;
 pub mod room_menu;
 pub(crate) mod rules;
@@ -58,7 +59,8 @@ pub fn render(chat: &Chat, cx: &mut Context<Chat>) -> impl IntoElement {
         .on_key_down(escape)
         .when(chat.holds(), |screen| screen.consumes_keys(["escape"]))
         .on_any_mouse_down(press)
-        .child(if chat.session.connected {
+        // until the host hands a session, the panes draw their placeholders
+        .child(if chat.session.connected || !chat.session_heard {
             connected(chat, cx, &theme, ladder).into_any_element()
         } else {
             empty_state(

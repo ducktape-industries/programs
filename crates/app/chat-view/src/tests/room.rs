@@ -776,7 +776,7 @@ fn a_jump_to_a_hit_in_the_open_room_shows_the_room_loading() {
         assert!(room.messages.is_loading(), "{:?}", room.messages);
         assert!(room.members.is_loading(), "{:?}", room.members);
     });
-    assert!(cx.has_text("Loading messages…"), "{:?}", cx.texts());
+    assert!(cx.interactivity("chat-messages-loading").aria.busy);
     assert!(
         cx.find("chat-message-m2-block-0").is_none(),
         "the rows of the window before are gone"
@@ -797,7 +797,7 @@ fn a_reconnect_shows_the_rooms_loading() {
     props.send(session);
     cx.run_until_parked();
     view.read(|chat| assert!(chat.channels.is_loading(), "{:?}", chat.channels));
-    assert!(cx.has_text("Loading rooms…"), "{:?}", cx.texts());
+    assert!(cx.interactivity("chat-sidebar-loading").aria.busy);
     assert!(
         cx.find("chat-sidebar-channel-general").is_none(),
         "the list from before the drop is not shown as the node's"

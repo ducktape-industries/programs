@@ -270,15 +270,8 @@ fn header(
 
 fn no_room(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> AnyElement {
     match &chat.channels {
-        Loadable::Idle | Loadable::Loading(_) => empty_state(
-            "chat-no-room-loading",
-            "message-square",
-            "Loading channels…",
-            "Choose a room when they arrive.",
-            ladder,
-            theme,
-        )
-        .into_any_element(),
+        _ if !chat.session_heard => super::placeholders::no_room().into_any_element(),
+        Loadable::Idle | Loadable::Loading(_) => super::placeholders::no_room().into_any_element(),
         Loadable::Failed(refusal) => empty_state(
             "chat-no-room-failed",
             "message-square",
