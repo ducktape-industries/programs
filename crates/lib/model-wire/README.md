@@ -12,7 +12,7 @@ through ccs's `/backend-api/`: the system prompt rides as the developer's messag
 
 | | request | answer |
 |---|---|---|
-| `POST /turn` | a `Request` | server-sent events, each `data:` one `Event`; the stream ends with exactly one `reply` or `failed` |
+| `POST /turn` | a `Request` | server-sent events, each `data:` one `Event`; the stream ends with exactly one `reply` or `failed`. A comment line (`: <name>`) carries no `Event`: the adapter sends one for each provider event that makes none, so egress hears a model that thinks in silence |
 | `POST /summary` | a `Request` | a `Summarized` (200), else a `Failure` |
 | `GET /models/{name}` | | a `Model` (200), else a `Failure` |
 | `GET /ccs/status` | | ccs's own status, passed through |

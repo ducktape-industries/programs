@@ -169,6 +169,30 @@ fn a_gap_in_the_stream_is_noticed_once_and_the_thread_goes_idle() {
 }
 
 #[test]
+fn a_reply_slower_than_the_wait_lands_while_each_event_comes_within_it() {
+    let world = world();
+    let chain = &world.chain;
+    let (thread, request) = asked(&world);
+    let text = events(TEXT);
+    let alive = b": ping\n".to_vec();
+    let mut flowing = vec![text[0].clone(), alive.clone(), alive];
+    flowing.extend(text[1..].iter().cloned());
+    let mut height = request.made;
+    for seq in 0..flowing.len() as u64 {
+        height += egress::DEFAULT_WAIT - 1;
+        chain.at(height, 0);
+        stream(chain, &request, &flowing, &[seq]);
+    }
+    end(chain, &request, flowing.len() as u64);
+    assert!(height - request.made > 2 * egress::DEFAULT_WAIT);
+    assert_eq!(notices(chain, thread), Vec::<String>::new());
+    let [Body::Turn { said, .. }] = &turns(chain, thread)[..] else {
+        panic!("one turn");
+    };
+    assert_eq!(said, &[Said::Text("Hello, world".into())]);
+}
+
+#[test]
 fn an_error_event_is_noticed_once_and_the_next_input_asks_again() {
     let world = world();
     let chain = &world.chain;
