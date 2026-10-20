@@ -14,7 +14,7 @@ pub use abi::role::egress::{
 };
 pub use abi::role::identity::AccountNumber;
 pub use program::Egress;
-pub use rules::{lend_key, service_key};
+pub use rules::service_key;
 pub use store::{PageRequest, PageResponse};
 
 // The table of the services egress claims, for what reads its owned kinds.

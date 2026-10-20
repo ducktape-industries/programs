@@ -1,5 +1,4 @@
-//! Who owns a service's keys: the guard's record of it, the policy that narrows assigning it, and
-//! the list its owner lends it with.
+//! Who owns a service's key: the guard's record of it and the policy that narrows assigning it.
 use super::*;
 use crate::state::{SERVICES, Service};
 
@@ -20,65 +19,11 @@ fn record(chain: &MockChain) -> Option<ownership::Record> {
     record
 }
 
-fn account(chain: &MockChain, key: &[u8]) -> u64 {
-    let asked = identity::Query::OfKey { key: key.to_vec() };
-    let identity::Reply::Number(Some(number)) = chain.query(identity::PROGRAM, &asked).unwrap()
-    else {
-        panic!("the key holds an account");
-    };
-    number
-}
-
-fn lent_to(chain: &MockChain, number: u64) -> bool {
-    let asked = access::Query::Writers {
-        program: PROGRAM.into(),
-        key: lend_key(SERVICE),
-    };
-    let access::Reply::Writers(writers) = chain.query("access", &asked).unwrap() else {
-        panic!("Writers answers who writes the key");
-    };
-    writers.allows(&[::program::Party::Account(number)])
-}
-
-fn lend(
-    chain: &MockChain,
-    key: &[u8],
-    list: Option<::program::Ownership>,
-) -> Result<Vec<u8>, Error> {
-    let set = access::Op::Set {
-        program: PROGRAM.into(),
-        key: lend_key(SERVICE),
-        list,
-    };
-    chain.submit(Origin::Signed(key.to_vec()), "access", &set)
-}
-
 fn assign(nodes: &[[u8; 32]]) -> Op {
     Op::Assign {
         service: SERVICE.into(),
         nodes: nodes.iter().map(|key| key.to_vec()).collect(),
     }
-}
-
-#[test]
-fn a_service_is_lent_by_its_owner_to_the_accounts_its_lend_list_names() {
-    let chain = chain();
-    let register = Op::Register {
-        service: SERVICE.into(),
-    };
-    submit(&chain, OWNER, &register).unwrap();
-    let other = account(&chain, OTHER);
-    assert!(
-        !lent_to(&chain, other),
-        "a service is lent to no one at first"
-    );
-    let refused = lend(&chain, OTHER, Some(::program::Ownership::Anyone)).unwrap_err();
-    assert_eq!(refused.code, code::UNAUTHORIZED);
-    let listed = ::program::Ownership::Listed(vec![::program::Party::Account(other)]);
-    lend(&chain, OWNER, Some(listed)).unwrap();
-    assert!(lent_to(&chain, other));
-    lend(&chain, OWNER, None).unwrap();
-    assert!(!lent_to(&chain, other), "clearing the list ends the loan");
 }
 
 #[test]
