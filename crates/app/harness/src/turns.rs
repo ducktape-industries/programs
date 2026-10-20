@@ -17,8 +17,8 @@ use crate::providers::{self, Reach};
 use crate::resume::{self, Failure};
 use crate::routes::{self, Picked};
 use crate::state::{
-    ANSWERED, ASKED, ENDING, FLIGHTS, FRAMES, HELD, LANES, LIVE, Lane, Live, PARTIALS, PICKS,
-    RETRIES, SEALED, SEALED_FOR, SHOWN, THREADS, WITHHELD,
+    ANSWERED, ASKED, ENDING, FLIGHTS, FRAMES, HELD, LANES, LIVE, Lane, Live, PARTIALS, PASSES,
+    PICKS, RETRIES, SEALED, SEALED_FOR, SHOWN, THREADS, WITHHELD,
 };
 use crate::tallies;
 use crate::waiting::settling;
@@ -534,7 +534,6 @@ enum Step {
     Ask {
         asked: Asked,
         upto: u64,
-        summarized: bool,
         parts: Vec<BlobId>,
     },
     Again(Failure),
@@ -582,12 +581,7 @@ async fn drive(ctx: &Ctx, id: u64) -> Result<(), Error> {
                 through,
                 parts,
             } => compact(ctx, id, asked, through, parts).await?,
-            Step::Ask {
-                asked,
-                upto,
-                summarized,
-                parts,
-            } => ask(ctx, id, asked, upto, summarized, parts).await?,
+            Step::Ask { asked, upto, parts } => ask(ctx, id, asked, upto, parts).await?,
             Step::Again(failure) => resume::again(ctx, id, failure).await?,
         }
     }
@@ -717,13 +711,12 @@ fn plan_turn(ctx: &ExecCtx, thread: &mut ThreadRow, turn: Turn) -> Result<Option
     let upto = thread.frames;
     thread.asking = Asking::Asked { upto };
     crate::replies::clear(ctx, thread.id)?;
+    PASSES.remove(ctx, &thread.id);
     PARTIALS.put(ctx, &thread.id, &Partial::new(turn.asked.wire));
     ASKED.put(ctx, &thread.id, &turn.lane);
-    let summarized = thread.summary.is_some();
     Ok(Some(Step::Ask {
         asked: turn.asked,
         upto,
-        summarized,
         parts,
     }))
 }
@@ -905,15 +898,8 @@ fn summarize(
     unseal(ctx, thread)
 }
 
-async fn ask(
-    ctx: &Ctx,
-    id: u64,
-    asked: Asked,
-    upto: u64,
-    summarized: bool,
-    parts: Vec<BlobId>,
-) -> Result<(), Error> {
-    let head = wire::turn_head(asked.wire, summarized);
+async fn ask(ctx: &Ctx, id: u64, asked: Asked, upto: u64, parts: Vec<BlobId>) -> Result<(), Error> {
+    let head = wire::turn_head(asked.wire);
     let delivery = egress::Delivery::Events {
         deliver: streamed_as(id),
     };
@@ -1110,7 +1096,9 @@ fn record(
     thread.seen = upto;
     thread.last_stop = Some(reply.stop);
     let usage = reply.usage;
-    let tokens = usage.input + usage.cache_read + usage.cache_write + usage.output;
+    let summed = usage.input + usage.cache_read + usage.cache_write + usage.output;
+    let tokens = PASSES.get(ctx, &thread.id)?.unwrap_or(summed);
+    PASSES.remove(ctx, &thread.id);
     thread.context = Context::Measured(tokens);
     let asked: Vec<(u64, String, String, String)> = (0u64..)
         .zip(&reply.said)

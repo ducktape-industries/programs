@@ -134,16 +134,16 @@ pub(crate) fn summary_words(written: Wire, block: &str) -> String {
     }
 }
 
-pub(crate) fn turn_head(wire: Wire, summarized: bool) -> Head {
+pub(crate) fn turn_head(wire: Wire) -> Head {
     match wire {
-        Wire::AnthropicMessages => anthropic::head(summarized),
+        Wire::AnthropicMessages => anthropic::head(),
         Wire::Harness => harness::turn_head(),
     }
 }
 
 pub(crate) fn summary_head(wire: Wire) -> Head {
     match wire {
-        Wire::AnthropicMessages => anthropic::head(true),
+        Wire::AnthropicMessages => anthropic::head(),
         Wire::Harness => harness::summary_head(),
     }
 }
@@ -195,6 +195,14 @@ pub(crate) fn fold(partial: &mut Partial, data: &[u8]) {
     match partial.wire {
         Wire::AnthropicMessages => anthropic::fold(partial, &data),
         Wire::Harness => harness::fold(partial, &data),
+    }
+}
+
+pub(crate) fn last_pass(wire: Wire, data: &[u8]) -> Option<u64> {
+    let data = model_wire::event_data(data)?;
+    match wire {
+        Wire::AnthropicMessages => anthropic::last_pass(&data),
+        Wire::Harness => None,
     }
 }
 

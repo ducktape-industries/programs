@@ -21,14 +21,12 @@ pub(crate) const SUMMARIZE: &str = r#"],"compaction":{"type":"summarize"}}"#;
 const IMAGE_BASE64: u64 = 5 * 1024 * 1024;
 const IMAGE_SIDE: u32 = 8000;
 
-pub(crate) fn head(summarized: bool) -> Head {
-    let mut headers = vec![
+pub(crate) fn head() -> Head {
+    let headers = vec![
         ("anthropic-version".into(), VERSION.into()),
         ("content-type".into(), "application/json".into()),
+        ("anthropic-beta".into(), COMPACTION_BETA.into()),
     ];
-    if summarized {
-        headers.push(("anthropic-beta".into(), COMPACTION_BETA.into()));
-    }
     Head {
         method: Method::Post,
         target: "/v1/messages".into(),
@@ -52,7 +50,7 @@ pub(crate) fn awaited(asked: &Head) -> Option<Awaited> {
             name: name.to_owned(),
         });
     }
-    (*asked == head(true)).then_some(Awaited::Summary)
+    (*asked == head()).then_some(Awaited::Summary)
 }
 
 fn cached() -> Value {
@@ -405,6 +403,19 @@ fn counted(usage: &mut Usage, value: &Value) {
             *count = reported;
         }
     }
+}
+
+pub(crate) fn last_pass(data: &str) -> Option<u64> {
+    let event: Value = serde_json::from_str(data).ok()?;
+    let passes = event["usage"]["iterations"].as_array()?;
+    let pass = passes.iter().rev().find(|pass| pass["type"] == "message")?;
+    let counted = [
+        "input_tokens",
+        "cache_read_input_tokens",
+        "cache_creation_input_tokens",
+        "output_tokens",
+    ];
+    Some(counted.iter().filter_map(|key| pass[*key].as_u64()).sum())
 }
 
 const OVERFLOWED: &str = "model_context_window_exceeded";

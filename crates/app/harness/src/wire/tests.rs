@@ -246,7 +246,7 @@ fn each_request_harness_makes_reads_back_as_what_it_waits_for() {
     let events = Delivery::Events {
         deliver: streamed_as(7),
     };
-    let turn = http(super::turn_head(wire, true));
+    let turn = http(super::turn_head(wire));
     assert_eq!(awaited(&turn, &events), Some(Awaited::Reply { thread: 7 }));
     let window = http(super::model_head(wire, "claude-sonnet-5"));
     let name = "claude-sonnet-5".to_owned();
@@ -262,8 +262,6 @@ fn each_request_harness_makes_reads_back_as_what_it_waits_for() {
         awaited(&relay, &Delivery::Whole),
         Some(Awaited::Relay { call })
     );
-    let whole_turn = http(super::turn_head(wire, false));
-    assert_eq!(awaited(&whole_turn, &Delivery::Whole), None);
     let attributed = Delivery::Events {
         deliver: attributed_as(),
     };

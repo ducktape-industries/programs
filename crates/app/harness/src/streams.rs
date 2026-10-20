@@ -6,7 +6,7 @@ use ::program::{Ctx, Error, unauthorized, wrong_state};
 
 use crate::agents::hear_again;
 use crate::calls::{Settled, dispatch, show, void_reply};
-use crate::state::THREADS;
+use crate::state::{PASSES, THREADS};
 use crate::turns::{bound, converse};
 use crate::{Asking, Event, Flow, Forming, Partial, Said, wire};
 
@@ -27,6 +27,12 @@ pub(crate) async fn streamed(ctx: &Ctx, thread: u64, event: Event) -> Result<(),
     };
     let restarted = matches!(arrival(partial.next_seq, event.seq), Arrival::Restart);
     let folded = fold(partial.clone(), &event);
+    if partial.stop.is_none()
+        && folded.stop.is_some()
+        && let Some(tokens) = wire::last_pass(folded.wire, &event.data)
+    {
+        PASSES.put(ctx, &thread, &tokens);
+    }
     crate::replies::keep(ctx, thread, event.seq, &partial, &folded)?;
     crate::resume::moved(ctx, thread)?;
     crate::drafts::wrote(ctx, thread, &partial, &folded, restarted).await;

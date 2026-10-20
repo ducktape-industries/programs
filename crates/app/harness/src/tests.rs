@@ -1352,9 +1352,9 @@ fn a_request_the_model_finds_too_long_is_summarized_even_with_no_window_known() 
     );
     world.mention("m2", "second");
     let (request, head) = open_request(chain);
-    assert_eq!(
-        (path(&head), beta(&head)),
-        ("/v1/messages", None),
+    assert_eq!(path(&head), "/v1/messages");
+    assert!(
+        body(chain, &request).get("compaction").is_none(),
         "no window, no early summary"
     );
     chain.at(4, 0);

@@ -42,6 +42,7 @@ pub const ASKED: Map<u64, Lane> = Map::new("asked-lane/");
 pub const CALLS: Map<(u64, String), CallRow> = Map::new("call/");
 pub const WITHHELD: Set<(u64, u64)> = Set::new("withheld/");
 pub const PARTIALS: Map<u64, Partial> = Map::new("partial/");
+pub const PASSES: Map<u64, u64> = Map::new("last-pass/");
 // a streaming reply's text as each event added it (`replies.rs`): by thread, block and event
 pub const PIECES: Map<(u64, u64, u64), String> = Map::new("piece/");
 pub const LIVE: Map<(u64, u64), Live> = Map::new("live/");

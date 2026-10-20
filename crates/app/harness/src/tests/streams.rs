@@ -298,3 +298,54 @@ fn a_head_that_kept_its_text_whole_reads_whole_and_keeps_growing() {
     assert_eq!(head.unwrap().said, [Said::Text(String::new())]);
     assert_eq!(pieces, ["Hello, world"]);
 }
+
+#[test]
+fn a_reply_that_ran_server_tools_measures_its_context_from_its_last_pass() {
+    let world = world();
+    let chain = &world.chain;
+    let (thread, request) = asked(&world);
+    let Request::Http { head, .. } = request.request.clone() else {
+        panic!("the model is asked over http");
+    };
+    let delta = json!({
+        "type": "message_delta",
+        "delta": { "stop_reason": "end_turn", "stop_sequence": null },
+        "usage": {
+            "input_tokens": 21006,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 316,
+            "iterations": [
+                {
+                    "type": "message",
+                    "input_tokens": 2824,
+                    "output_tokens": 104,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0
+                },
+                {
+                    "type": "message",
+                    "input_tokens": 18182,
+                    "output_tokens": 212,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0
+                }
+            ]
+        }
+    });
+    let last = TEXT.lines().nth(6).unwrap();
+    let fixture = TEXT.replace(last, &delta.to_string());
+    let events = events(&fixture);
+    stream(chain, &request, &events, &[0, 1, 2, 3, 4, 5, 6, 7]);
+    end(chain, &request, 8);
+    assert_eq!(
+        thread_row(chain, thread).context,
+        Context::Measured(18182 + 212),
+        "the last pass's input and output, not the sum over both passes"
+    );
+    assert_eq!(
+        beta(&head),
+        Some(wire::anthropic::COMPACTION_BETA),
+        "every turn asks for the usage of each pass"
+    );
+}
