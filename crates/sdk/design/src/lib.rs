@@ -519,7 +519,7 @@ pub fn kit_theme_json() -> String {
             border = c(p.border),
             border_strong = c(p.border_strong),
             accent = c(p.accent),
-            selection = c([p.accent[0], p.accent[1], p.accent[2], 0.35]),
+            selection = c([p.accent[0], p.accent[1], p.accent[2], 0.28]),
             surface = c(p.surface),
             surface_raised = c(p.surface_raised),
             muted = c(p.muted),
