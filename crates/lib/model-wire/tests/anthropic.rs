@@ -85,8 +85,40 @@ fn a_text_reply_streams_its_pieces_and_ends_in_the_whole_turn() {
         stop: Stop::EndTurn,
         usage: usage(5),
         prompt: Some(10),
+        context: None,
     };
     assert_eq!(reply(TEXT), whole);
+}
+
+#[test]
+fn a_reply_that_ran_server_tools_names_the_context_its_last_pass_left() {
+    let delta = json!({
+        "type": "message_delta",
+        "delta": { "stop_reason": "end_turn", "stop_sequence": null },
+        "usage": {
+            "input_tokens": 21006,
+            "output_tokens": 316,
+            "iterations": [
+                { "type": "message", "input_tokens": 2824, "output_tokens": 104 },
+                {
+                    "type": "message",
+                    "input_tokens": 18182,
+                    "output_tokens": 212,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0
+                }
+            ]
+        }
+    });
+    let last = TEXT.lines().nth(6).unwrap();
+    let fixture = TEXT.replace(last, &delta.to_string());
+    let reply = reply(&fixture);
+    assert_eq!(reply.context, Some(18182 + 212));
+    assert_eq!(
+        (reply.usage.input, reply.usage.output),
+        (21006, 316),
+        "usage stays what the reply cost"
+    );
 }
 
 #[test]

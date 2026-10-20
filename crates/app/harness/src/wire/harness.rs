@@ -362,6 +362,13 @@ fn broken(partial: &mut Partial, reason: String) {
     partial.flow = Flow::Broken { reason };
 }
 
+pub(crate) fn last_pass(data: &str) -> Option<u64> {
+    match serde_json::from_str::<Event>(data).ok()? {
+        Event::Reply(reply) => reply.context,
+        _ => None,
+    }
+}
+
 pub(crate) fn fold(partial: &mut Partial, data: &str) {
     let event = match serde_json::from_str::<Event>(data) {
         Ok(event) => event,

@@ -407,15 +407,7 @@ fn counted(usage: &mut Usage, value: &Value) {
 
 pub(crate) fn last_pass(data: &str) -> Option<u64> {
     let event: Value = serde_json::from_str(data).ok()?;
-    let passes = event["usage"]["iterations"].as_array()?;
-    let pass = passes.iter().rev().find(|pass| pass["type"] == "message")?;
-    let counted = [
-        "input_tokens",
-        "cache_read_input_tokens",
-        "cache_creation_input_tokens",
-        "output_tokens",
-    ];
-    Some(counted.iter().filter_map(|key| pass[*key].as_u64()).sum())
+    model_wire::anthropic::last_pass(&event["usage"])
 }
 
 const OVERFLOWED: &str = "model_context_window_exceeded";

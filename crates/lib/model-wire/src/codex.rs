@@ -366,6 +366,7 @@ impl Fold {
             stop,
             usage,
             prompt,
+            context: None,
         })
     }
 

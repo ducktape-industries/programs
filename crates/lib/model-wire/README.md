@@ -34,7 +34,9 @@ sides to it.
   reasoning or its input's JSON) and ends (`end`); then `reply` (the authority on the turn) or
   `failed`. A signature or other seal never streams: it arrives in the reply.
 - `Usage`: input (the prompt's uncached share), output (reasoning included), cache read and write.
-  `Reply.prompt` is the prompt's own size where the provider reports it before answering.
+  `Reply.prompt` is the prompt's own size where the provider reports it before answering, and
+  `Reply.context` the tokens a reply's last pass left in context where it ran in several (server
+  tools), while `usage` stays the sum, what the reply cost.
 - `Failure`: a `Class` (dropped, provider, overloaded, wire, overflow, pictures, limited), the
   words, and for a limited or busy account the reset it waits for (seconds since the epoch).
 

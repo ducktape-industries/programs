@@ -75,6 +75,33 @@ fn a_stream_cut_short_fails_through_the_adapter() {
     );
 }
 
+#[test]
+fn a_reply_that_ran_server_tools_reaches_the_harness_wire_with_the_context_of_its_last_pass() {
+    let delta = json!({
+        "type": "message_delta",
+        "delta": { "stop_reason": "end_turn", "stop_sequence": null },
+        "usage": {
+            "input_tokens": 21006,
+            "output_tokens": 316,
+            "iterations": [
+                { "type": "message", "input_tokens": 2824, "output_tokens": 104 },
+                { "type": "message", "input_tokens": 18182, "output_tokens": 212 }
+            ]
+        }
+    });
+    let last = TEXT.lines().nth(6).unwrap();
+    let fixture = TEXT.replace(last, &delta.to_string());
+    let own = &events(&fixture)[6];
+    let adapted = adapted(&fixture);
+    let reply = adapted.last().unwrap();
+    assert_eq!(last_pass(Wire::AnthropicMessages, own), Some(18394));
+    assert_eq!(
+        last_pass(Wire::Harness, reply),
+        Some(18394),
+        "the adapter's reply names what anthropic's own wire reads"
+    );
+}
+
 fn frame(seq: u64, body: Body) -> Frame {
     Frame {
         seq,

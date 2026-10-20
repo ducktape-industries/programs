@@ -202,7 +202,7 @@ pub(crate) fn last_pass(wire: Wire, data: &[u8]) -> Option<u64> {
     let data = model_wire::event_data(data)?;
     match wire {
         Wire::AnthropicMessages => anthropic::last_pass(&data),
-        Wire::Harness => None,
+        Wire::Harness => harness::last_pass(&data),
     }
 }
 

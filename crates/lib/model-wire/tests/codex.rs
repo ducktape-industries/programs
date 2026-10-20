@@ -113,6 +113,7 @@ fn a_text_reply_streams_its_pieces_and_ends_in_the_whole_turn() {
             cache_write: 0,
         },
         prompt: Some(1000),
+        context: None,
     };
     assert_eq!(events.last(), Some(&Event::Reply(whole)));
 }

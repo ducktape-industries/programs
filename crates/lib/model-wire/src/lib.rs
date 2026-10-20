@@ -183,6 +183,8 @@ pub struct Reply {
     pub usage: Usage,
     #[serde(default)]
     pub prompt: Option<u64>,
+    #[serde(default)]
+    pub context: Option<u64>,
 }
 
 // one server-sent event of a turn: a block opens at its place in the reply, grows by text (its

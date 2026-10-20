@@ -318,6 +318,18 @@ fn counted(usage: &mut Usage, value: &Value) {
     }
 }
 
+pub fn last_pass(usage: &Value) -> Option<u64> {
+    let passes = usage["iterations"].as_array()?;
+    let pass = passes.iter().rev().find(|pass| pass["type"] == "message")?;
+    let counted = [
+        "input_tokens",
+        "cache_read_input_tokens",
+        "cache_creation_input_tokens",
+        "output_tokens",
+    ];
+    Some(counted.iter().filter_map(|key| pass[*key].as_u64()).sum())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Forming {
     Nothing,
@@ -334,6 +346,7 @@ pub struct Fold {
     forming: Forming,
     usage: Usage,
     prompt: Option<u64>,
+    context: Option<u64>,
     stop: Option<Stop>,
     overflowed: bool,
     events: u64,
@@ -349,6 +362,7 @@ impl Fold {
             forming: Forming::Nothing,
             usage: Usage::default(),
             prompt: None,
+            context: None,
             stop: None,
             overflowed: false,
             events: 0,
@@ -396,6 +410,7 @@ impl Fold {
             "content_block_stop" => self.block_stopped(&event),
             "message_delta" => {
                 counted(&mut self.usage, &event["usage"]);
+                self.context = last_pass(&event["usage"]).or(self.context);
                 match event["delta"]["stop_reason"].as_str() {
                     Some(OVERFLOWED) => self.overflowed = true,
                     reason @ Some(_) => self.stop = Some(stop(reason)),
@@ -542,6 +557,7 @@ impl Fold {
             stop: self.stop.unwrap_or(Stop::EndTurn),
             usage: self.usage,
             prompt: self.prompt,
+            context: self.context,
         })
     }
 }
