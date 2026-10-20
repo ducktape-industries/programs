@@ -575,10 +575,13 @@ pub(super) fn drawn(
 ) -> Vec<AnyElement> {
     let empty = Names::empty();
     let names = chat.names.ready().unwrap_or(&empty);
-    pieces(blocks, names)
+    pieces(blocks, names, &chat.session.chain_id)
         .into_iter()
         .map(|(index, piece)| match piece {
             Piece::Chat(block) => block_view(chat, key, index, block, names, cx, theme),
+            Piece::Artifact(link) => artifact(format!("{key}-block-{index}"), link)
+                .w_full()
+                .into_any_element(),
             Piece::Markdown(block) => {
                 let key = format!("{key}-block-{index}");
                 div()

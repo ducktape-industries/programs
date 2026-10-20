@@ -35,7 +35,13 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
   composer; a message's menu (desktop `ui/menu.rs` at the pointer, phone
   `ui/phone/actions.rs` as a sheet), the reaction picker and the delete
   confirm. A message's blocks draw as chat keeps them, and a run of `| … |`
-  lines under a `|---|` row as a table, a `# ` line as a heading (`markup.rs`);
+  lines under a `|---|` row as a table, a `# ` line as a heading (`markup.rs`),
+  and a line that is one `duck://` link on the reader's chain to a page (a
+  files path ending `.html` or `.htm`, or a blob `duck://<chain>/blobs/<hex>`)
+  as the artifact it names (the SDK's `artifact`, so the manifest declares
+  `artifact`): the app draws the page as tall as it is and reloads it when the
+  file changes, or the link alone where it has no web view; a link inside a
+  sentence stays a link;
   code blocks, tables and headings draw through the SDK's `markdown` crate,
   coloured by a block's language, with no parser linked.
 - Beside the room (desktop) or as a page (phone): the thread, the channel's

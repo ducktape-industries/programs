@@ -1389,6 +1389,21 @@ fn a_typed_table_and_heading_draw_as_the_shared_ones_on_the_phone() {
     assert!(cx.has_text("104.8") && !cx.has_text("| total | 104.8 |"));
 }
 
+#[test]
+fn a_page_link_alone_on_its_line_draws_the_page_on_the_phone() {
+    let (mut cx, view) = in_general();
+    let page = "duck://testnet-0a1b2c3d/files/shared/artifacts/plan.html";
+    rows_are(&mut cx, &view, vec![parsed_row(1, 7, page)]);
+    assert!(
+        matches!(
+            cx.find("chat-message-m1-block-0"),
+            Some(wire::Node::Artifact { link, .. }) if link.as_str() == page
+        ),
+        "{:?}",
+        cx.texts()
+    );
+}
+
 // `CHAT_SCREEN_EXPORT=1` writes the same room as the phone draws it.
 #[test]
 fn export_markdown_phone_screens() {

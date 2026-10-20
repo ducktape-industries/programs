@@ -47,12 +47,13 @@ pub(crate) fn drawn(
 ) -> Vec<AnyElement> {
     let empty = Names::empty();
     let names = chat.names.ready().unwrap_or(&empty);
-    pieces(blocks, names)
+    pieces(blocks, names, &chat.session.chain_id)
         .into_iter()
         .map(|(index, piece)| {
             let id = format!("{key}-block-{index}");
             match piece {
                 Piece::Chat(block) => block_view(chat, id, block, names, cx, theme, ladder),
+                Piece::Artifact(link) => artifact(id, link).w_full().into_any_element(),
                 Piece::Markdown(block) => {
                     markdown::phone::block(&id, &block, &opens(cx), ladder, theme)
                 }

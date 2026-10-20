@@ -359,6 +359,51 @@ fn a_typed_table_and_heading_draw_as_the_shared_ones() {
     assert!(cx.find("chat-message-table-block-5").is_some());
 }
 
+#[test]
+fn a_page_link_alone_on_its_line_draws_the_page_and_any_other_link_stays_a_link() {
+    let (mut cx, view) = opened();
+    let page = "duck://testnet-0a1b2c3d/files/shared/artifacts/plan.html";
+    let blob = format!("duck://testnet-0a1b2c3d/blobs/{}", "ab".repeat(32));
+    let lines = [
+        page.to_owned(),
+        format!("see {page} here"),
+        blob.clone(),
+        "duck://testnet-0a1b2c3d/files/shared/notes.md".to_owned(),
+        "duck://testnet-0a1b2c3e/files/shared/artifacts/plan.html".to_owned(),
+        format!("[The plan]({page})"),
+        "duck://testnet-0a1b2c3d/blobs/abab".to_owned(),
+    ];
+    cx.update(&view, |chat, _, cx| {
+        let mut pages = parsed_row(3, 7, &lines.join("\n"));
+        pages.message_id = "pages".into();
+        let room = chat.room.as_mut().unwrap();
+        room.messages.ready_mut().unwrap().push(pages);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let drawn: Vec<Option<String>> = (0..lines.len())
+        .map(
+            |index| match cx.find(&format!("chat-message-pages-block-{index}")) {
+                Some(wire::Node::Artifact { link, .. }) => Some(link.clone()),
+                Some(_) => None,
+                None => panic!("block {index} is not drawn"),
+            },
+        )
+        .collect();
+    assert_eq!(
+        drawn,
+        [
+            Some(page.to_owned()),
+            None,
+            Some(blob),
+            None,
+            None,
+            Some(page.to_owned()),
+            None,
+        ]
+    );
+}
+
 // `CHAT_SCREEN_EXPORT=1` writes a room holding a typed table, a heading and
 // a fenced block for the app's node-less renderer, as the desktop draws it.
 #[test]

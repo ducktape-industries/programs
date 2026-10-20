@@ -15,9 +15,14 @@ use crate::Chat;
 pub(crate) enum Piece<'a> {
     Chat(&'a Block),
     Markdown(markdown::Block),
+    Artifact(String),
 }
 
-pub(crate) fn pieces<'a>(blocks: &'a [Block], names: &Names) -> Vec<(usize, Piece<'a>)> {
+pub(crate) fn pieces<'a>(
+    blocks: &'a [Block],
+    names: &Names,
+    chain: &str,
+) -> Vec<(usize, Piece<'a>)> {
     let mut out = Vec::new();
     let mut at = 0;
     while at < blocks.len() {
@@ -28,7 +33,10 @@ pub(crate) fn pieces<'a>(blocks: &'a [Block], names: &Names) -> Vec<(usize, Piec
         }
         let piece = match heading(&blocks[at], names) {
             Some((level, text)) => Piece::Markdown(markdown::Block::Heading(level, text)),
-            None => Piece::Chat(&blocks[at]),
+            None => match artifact(&blocks[at], chain) {
+                Some(link) => Piece::Artifact(link),
+                None => Piece::Chat(&blocks[at]),
+            },
         };
         out.push((at, piece));
         at += 1;
@@ -43,6 +51,39 @@ pub(crate) fn opens(cx: &mut Context<Chat>) -> OnLink {
         cx.notify();
         chat.open_pressed(target.clone(), cx);
     }))
+}
+
+fn artifact(block: &Block, chain: &str) -> Option<String> {
+    let Block::Paragraph(spans) = block else {
+        return None;
+    };
+    let mut url = None;
+    for span in spans {
+        let link = span.marks.iter().find_map(|mark| match mark {
+            Mark::Link(target) => Some(target),
+            _ => None,
+        });
+        match link {
+            Some(link) if url.is_none_or(|url| url == link) => url = Some(link),
+            Some(_) => return None,
+            None if span.text.trim().is_empty() => {}
+            None => return None,
+        }
+    }
+    let url = url?;
+    let link = ducklink::Link::parse(url).ok()?;
+    if chain.parse::<ducklink::ChainId>().ok()? != link.chain {
+        return None;
+    }
+    let page = match (link.program.as_str(), link.tail.as_slice()) {
+        (::files::PROGRAM, [.., name]) => {
+            let name = name.to_ascii_lowercase();
+            name.ends_with(".html") || name.ends_with(".htm")
+        }
+        ("blobs", [hex]) => hex.len() == 64 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        _ => false,
+    };
+    page.then(|| url.clone())
 }
 
 // The table the blocks open with, GFM's: a row, a separator row of as many
@@ -215,7 +256,7 @@ mod tests {
     #[test]
     fn a_posted_table_reads_as_one_table_its_marks_kept() {
         let blocks = j131_message_15();
-        let pieces = pieces(&blocks, &Names::empty());
+        let pieces = pieces(&blocks, &Names::empty(), "");
         let opens: Vec<usize> = pieces.iter().map(|(at, _)| *at).collect();
         assert_eq!(opens, [0, 1, 11, 12], "the table takes blocks 1 to 10");
         let (_, Piece::Markdown(markdown::Block::Table(rows))) = &pieces[1] else {
@@ -252,7 +293,7 @@ mod tests {
     #[test]
     fn pipes_without_a_separator_under_them_stay_paragraphs() {
         let blocks = vec![plain("| a | b |"), plain("| 1 | 2 |"), plain("|---|")];
-        let pieces = pieces(&blocks, &Names::empty());
+        let pieces = pieces(&blocks, &Names::empty(), "");
         assert_eq!(pieces.len(), 3);
         assert!(
             pieces
@@ -264,7 +305,7 @@ mod tests {
     #[test]
     fn an_escaped_pipe_stays_in_its_cell_and_a_short_row_is_padded() {
         let blocks = vec![plain("| a \\| b | c |"), plain("|:--|--:|"), plain("| 1")];
-        let pieces = pieces(&blocks, &Names::empty());
+        let pieces = pieces(&blocks, &Names::empty(), "");
         let [(_, Piece::Markdown(markdown::Block::Table(rows)))] = &pieces[..] else {
             panic!("one table");
         };
@@ -280,7 +321,7 @@ mod tests {
             plain("####### seven"),
             plain("#"),
         ];
-        let pieces = pieces(&blocks, &Names::empty());
+        let pieces = pieces(&blocks, &Names::empty(), "");
         let (_, Piece::Markdown(markdown::Block::Heading(2, text))) = &pieces[0] else {
             panic!("a level-2 heading");
         };
@@ -305,7 +346,7 @@ mod tests {
             ]),
             plain("|---|"),
         ];
-        let pieces = pieces(&blocks, &Names::empty());
+        let pieces = pieces(&blocks, &Names::empty(), "");
         let [(_, Piece::Markdown(markdown::Block::Table(rows)))] = &pieces[..] else {
             panic!("one table");
         };

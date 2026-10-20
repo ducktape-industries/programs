@@ -91,6 +91,7 @@ impl View for Chat {
         // a file object, read for the chunks Save hands the host
         Capability::Blob,
         Capability::File,
+        Capability::Artifact,
     ];
     // at 480 an agent message's head line is cut at the room's edge
     const MIN_WINDOW_WIDTH: u32 = 560;
