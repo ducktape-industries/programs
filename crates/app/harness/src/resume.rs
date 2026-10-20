@@ -377,7 +377,7 @@ pub(crate) fn answered(ctx: &ExecCtx, id: u64) {
 pub(crate) async fn again(ctx: &Ctx, id: u64, failure: Failure) -> Result<(), Error> {
     let mut row = thread(ctx, id)?;
     let Some(why) = failure.again.filter(|_| !row.closed) else {
-        give_up(ctx, &mut row, failure.text);
+        give_up(ctx, &mut row, failure.text)?;
         THREADS.put(ctx, &id, &row);
         return Ok(());
     };
@@ -406,7 +406,7 @@ pub(crate) async fn again(ctx: &Ctx, id: u64, failure: Failure) -> Result<(), Er
                 failure.text,
                 refusal(&error)
             );
-            give_up(ctx, &mut row, text);
+            give_up(ctx, &mut row, text)?;
             THREADS.put(ctx, &id, &row);
             return Ok(());
         }

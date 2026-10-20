@@ -106,12 +106,56 @@ fn unhold(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
     Ok(())
 }
 
-pub(crate) fn give_up(ctx: &ExecCtx, thread: &mut ThreadRow, text: String) {
+pub(crate) fn give_up(ctx: &ExecCtx, thread: &mut ThreadRow, text: String) -> Result<(), Error> {
+    if thread.paused() {
+        unpause(ctx, thread)?;
+    }
     append(ctx, thread, Body::Notice { text });
     thread.seen = thread.seen.max(thread.last_input);
     thread.last_stop = None;
     RETRIES.remove(ctx, &thread.id);
     routes::untried(ctx, thread.id);
+    Ok(())
+}
+
+fn unpause(ctx: &ExecCtx, thread: &mut ThreadRow) -> Result<(), Error> {
+    let mut paused = None;
+    for seq in (thread.base..=thread.frames).rev() {
+        if let Some(frame) = FRAMES.get(ctx, &(thread.id, seq))?
+            && matches!(frame.body, Body::Turn { .. })
+        {
+            paused = Some(frame);
+            break;
+        }
+    }
+    let Some(mut frame) = paused else {
+        return Ok(());
+    };
+    let Body::Turn { said, .. } = &mut frame.body else {
+        return Ok(());
+    };
+    let answered: std::collections::BTreeSet<String> = said
+        .iter()
+        .filter_map(|said| {
+            let Said::ServerToolResult(block) = said else {
+                return None;
+            };
+            wire::answers(block)
+        })
+        .collect();
+    said.retain(|said| !matches!(said, Said::ServerToolUse { id, .. } if !answered.contains(id)));
+    let spoken = said
+        .iter()
+        .any(|said| !matches!(said, Said::Thinking { .. } | Said::RedactedThinking(_)));
+    if !spoken {
+        let text = "the model paused its turn mid server tool and the turn was given up before the tool answered, so it is left out".into();
+        frame.body = Body::Notice { text };
+    }
+    if !spoken || frame.seq < thread.tail_from {
+        unseal(ctx, thread)?;
+    }
+    FRAMES.put(ctx, &(thread.id, frame.seq), &frame);
+    Ok(())
 }
 
 pub(crate) fn bound(ctx: &QueryCtx) -> Result<ProgramId, Error> {
@@ -528,7 +572,7 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         | Configured::Malformed { .. }
         | Configured::UnknownModel { .. }) => {
             let text = unready.problem(&agent.path).unwrap_or_default();
-            give_up(ctx, thread, text);
+            give_up(ctx, thread, text)?;
             return Ok(None);
         }
     };
@@ -536,7 +580,7 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
     let (pick, forced) = match routes::pick(ctx, thread, &model, &pin)? {
         Picked::Chosen { pick, forced } => (pick, forced),
         Picked::Unlisted(text) => {
-            give_up(ctx, thread, text);
+            give_up(ctx, thread, text)?;
             return Ok(None);
         }
         Picked::Unserved(services) => {
@@ -633,7 +677,7 @@ fn plan_without_largest(
             "the conversation does not fit {}'s context window, even summarized and with everything new left out: start a new conversation or choose a model with a larger context window",
             turn.model
         );
-        give_up(ctx, thread, text);
+        give_up(ctx, thread, text)?;
         thread.context = Context::Measured(0);
         thread.compact_before = None;
         return Ok(None);
@@ -708,20 +752,24 @@ async fn learn(ctx: &Ctx, id: u64, asked: Asked, model: ModelRow) -> Result<(), 
             learned(ctx, &model, Window::Unreported)?;
             None
         }
-        Err(failure) => failed(ctx, &mut thread, failure),
+        Err(failure) => failed(ctx, &mut thread, failure)?,
     };
     settle(ctx, &mut thread)?;
     THREADS.put(ctx, &id, &thread);
     retried(ctx, id, again).await
 }
 
-fn failed(ctx: &ExecCtx, thread: &mut ThreadRow, failure: Failure) -> Option<Failure> {
+fn failed(
+    ctx: &ExecCtx,
+    thread: &mut ThreadRow,
+    failure: Failure,
+) -> Result<Option<Failure>, Error> {
     let again = failure.again.is_some() && !thread.closed;
     if again {
-        return Some(failure);
+        return Ok(Some(failure));
     }
-    give_up(ctx, thread, failure.text);
-    None
+    give_up(ctx, thread, failure.text)?;
+    Ok(None)
 }
 
 async fn retried(ctx: &Ctx, id: u64, again: Option<Failure>) -> Result<(), Error> {
@@ -756,12 +804,12 @@ async fn compact(
         }
         Ok((Summarized::Pictures(text), response)) => match unpictured(ctx, &mut thread, &text)? {
             true => None,
-            false => failed(ctx, &mut thread, Failure::answered(text, &response)),
+            false => failed(ctx, &mut thread, Failure::answered(text, &response))?,
         },
         Ok((Summarized::Failed(text), response)) => {
-            failed(ctx, &mut thread, Failure::answered(text, &response))
+            failed(ctx, &mut thread, Failure::answered(text, &response))?
         }
-        Err(failure) => failed(ctx, &mut thread, failure),
+        Err(failure) => failed(ctx, &mut thread, failure)?,
     };
     settle(ctx, &mut thread)?;
     THREADS.put(ctx, &id, &thread);
@@ -931,7 +979,7 @@ fn turned(
         }
         Ending::Pictures(text) => {
             if !unpictured(ctx, &mut thread, &text)? {
-                again = failed(ctx, &mut thread, Failure::last(text));
+                again = failed(ctx, &mut thread, Failure::last(text))?;
             }
             Vec::new()
         }
@@ -943,7 +991,7 @@ fn turned(
                 calls
             }
             None => {
-                again = failed(ctx, &mut thread, failure);
+                again = failed(ctx, &mut thread, failure)?;
                 Vec::new()
             }
         },
@@ -963,12 +1011,9 @@ fn stall(ctx: &ExecCtx, id: u64, error: &Error) {
     let Ok(Some(mut thread)) = cleared.and_then(|()| THREADS.get(ctx, &id)) else {
         return;
     };
-    give_up(
-        ctx,
-        &mut thread,
-        format!("the agent stopped: {}", refusal(error)),
-    );
-    if settle(ctx, &mut thread).is_ok() {
+    let text = format!("the agent stopped: {}", refusal(error));
+    let ended = give_up(ctx, &mut thread, text).and_then(|()| settle(ctx, &mut thread));
+    if ended.is_ok() {
         THREADS.put(ctx, &id, &thread);
     }
 }

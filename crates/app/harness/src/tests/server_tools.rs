@@ -202,3 +202,77 @@ fn input_heard_while_a_turn_pauses_mid_fetch_waits_until_the_continuation_is_ans
             .contains("and this too")
     );
 }
+
+fn continuation_refused(chain: &MockChain) {
+    let (request, _) = open_request(chain);
+    let refused = json!({
+        "type": "error",
+        "error": { "type": "invalid_request_error", "message": "continuation refused" },
+    });
+    answer(chain, request.id, Answer::Output(response(400, refused)));
+}
+
+#[test]
+fn a_paused_turn_given_up_keeps_no_unanswered_server_tool_use_ahead_of_the_input_held_behind_it() {
+    let world = world();
+    let chain = &world.chain;
+    commit(chain, ADA, CONFIG, &searcher().write());
+    let thread = world.opened("m1", "search and fetch it", Some(WINDOW));
+    world.mention("m2", "and this too");
+    chain.at(3, 0);
+    let all = searched_and_fetched();
+    let blocks = all.as_array().unwrap();
+    model_says(chain, json!(blocks[..4].to_vec()), "pause_turn");
+    assert_eq!(held(chain, thread).len(), 1);
+    chain.at(4, 0);
+    continuation_refused(chain);
+    assert!(held(chain, thread).is_empty(), "the turn was given up");
+    let (request, _) = open_request(chain);
+    let sent = body(chain, &request);
+    let messages = sent["messages"].as_array().unwrap();
+    assert_eq!(messages[1]["role"], "assistant", "{messages:?}");
+    assert_eq!(
+        messages[1]["content"],
+        json!(blocks[..3].to_vec()),
+        "the search its result answers stays, the fetch nothing answered goes"
+    );
+    assert!(
+        messages[2].to_string().contains("and this too"),
+        "{messages:?}"
+    );
+    assert!(!sent["messages"].to_string().contains("srvtoolu_2"));
+}
+
+#[test]
+fn a_paused_turn_given_up_with_nothing_but_an_unanswered_use_is_left_out_as_a_notice() {
+    let world = world();
+    let chain = &world.chain;
+    commit(chain, ADA, CONFIG, &searcher().write());
+    let thread = world.opened("m1", "fetch it", Some(WINDOW));
+    world.mention("m2", "and this too");
+    chain.at(3, 0);
+    let all = searched_and_fetched();
+    let blocks = all.as_array().unwrap();
+    model_says(chain, json!(blocks[3..4].to_vec()), "pause_turn");
+    chain.at(4, 0);
+    continuation_refused(chain);
+    let (request, _) = open_request(chain);
+    let sent = body(chain, &request);
+    let messages = sent["messages"].as_array().unwrap();
+    assert_eq!(
+        messages.len(),
+        1,
+        "both inputs are one message: {messages:?}"
+    );
+    let text = messages[0].to_string();
+    assert!(
+        text.contains("fetch it") && text.contains("and this too"),
+        "{text}"
+    );
+    assert!(!sent["messages"].to_string().contains("server_tool_use"));
+    let bodies = frames(chain, thread);
+    assert!(
+        !bodies.iter().any(|body| matches!(body, Body::Turn { .. })),
+        "{bodies:?}"
+    );
+}

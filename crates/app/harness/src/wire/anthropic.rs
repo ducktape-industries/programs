@@ -238,6 +238,11 @@ fn plain_block(said: &Said) -> Option<Value> {
     (!text.is_empty()).then(|| json!({ "type": "text", "text": text }))
 }
 
+pub(crate) fn answers(block: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(block).ok()?;
+    value["tool_use_id"].as_str().map(str::to_owned)
+}
+
 // a server tool's result as text: each page it found (its title and address), or the page it
 // fetched and its plain text; never its encrypted content
 fn plain_result(block: &str) -> String {

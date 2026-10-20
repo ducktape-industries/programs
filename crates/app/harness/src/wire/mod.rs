@@ -69,6 +69,12 @@ pub(crate) fn message(
 
 pub(crate) type Foreign = std::collections::BTreeSet<u64>;
 
+pub(crate) fn answers(block: &str) -> Option<String> {
+    Wire::ALL.iter().find_map(|wire| match wire {
+        Wire::AnthropicMessages => anthropic::answers(block),
+    })
+}
+
 // whether the model takes one image of `size` bytes, else why not
 pub(crate) fn image_size(wire: Wire, size: u64) -> Result<(), String> {
     match wire {
