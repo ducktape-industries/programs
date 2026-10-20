@@ -14,7 +14,7 @@ use crate::conversations::current;
 use crate::state::{BOOKED, BOOKINGS, THREADS};
 use crate::tools::interface::answered;
 use crate::turns::{append, converse, say};
-use crate::{Body, Booking, Op, PROGRAM, Ran, ThreadRow};
+use crate::{Body, Booking, Op, Ran, ThreadRow};
 
 fn bound_scheduler(ctx: &QueryCtx) -> Result<String, Error> {
     Ok(ctx.env().role(abi::role::SCHEDULER)?.clone())
@@ -23,7 +23,7 @@ fn bound_scheduler(ctx: &QueryCtx) -> Result<String, Error> {
 fn runs(ctx: &QueryCtx, account: AccountNumber) -> Result<(), Error> {
     let role = ctx.env().role(abi::role::IDENTITY)?.clone();
     let asked = identity::Query::Runs {
-        program: PROGRAM.into(),
+        program: ctx.env().program.clone(),
         account,
     };
     match ctx.query::<identity::Query, identity::Reply>(&role, &asked)? {
@@ -71,7 +71,7 @@ pub(crate) async fn book(
     relayable(ctx, &target, &payload)?;
     let schedule = scheduler::Op::Schedule {
         height,
-        target: PROGRAM.into(),
+        target: ctx.env().program.clone(),
         payload: abi::encode(&Op::RunBooked),
     };
     let bound = bound_scheduler(ctx)?;
@@ -117,7 +117,7 @@ pub(crate) async fn run_booked(ctx: &Ctx) -> Result<(), Error> {
     let by_harness = ctx
         .env()
         .sending_program()
-        .is_ok_and(|program| program == PROGRAM);
+        .is_ok_and(|program| program == ctx.env().program);
     let (Cause::Scheduled { entry }, true) = (cause, by_harness) else {
         return Err(unauthorized(
             "a booked run runs only as harness's own scheduled entry, at its block",

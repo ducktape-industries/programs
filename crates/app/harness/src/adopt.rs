@@ -4,10 +4,10 @@ use ::program::{Error, ExecCtx, QueryCtx, Reply, invalid, unexpected_reply};
 use abi::role::identity::{self, AccountNumber};
 use ownership::{Adopted, Party, adopt, by_itself, rule_of, writers_of};
 
+use crate::Op;
 use crate::agents::harnessed_agent;
 use crate::gate::{conversation_key, resource};
 use crate::state::{CONVERSATIONS, Conversations};
-use crate::{Op, PROGRAM};
 
 struct Accounts {
     numbers: Vec<AccountNumber>,
@@ -55,10 +55,10 @@ pub(crate) fn adopt_owners(
             after,
             limit,
         };
-        ctx.emit(PROGRAM, &again, Reply::None);
+        ctx.emit(&ctx.env().program, &again, Reply::None);
         return Ok(());
     }
-    let today = |key: &str| writers_of(ctx, PROGRAM, key, |at| resource(ctx, at));
+    let today = |key: &str| writers_of(ctx, &ctx.env().program, key, |at| resource(ctx, at));
     let mut items = Vec::new();
     match kind {
         "harness.agent-conversation" => {

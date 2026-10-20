@@ -157,12 +157,12 @@ impl Tool for For {
         object(json!({ "event": event }), &["event"])
     }
 
-    fn run(_: &ExecCtx, seat: &Seat, args: ForArgs) -> Result<Run, Error> {
+    fn run(ctx: &ExecCtx, seat: &Seat, args: ForArgs) -> Result<Run, Error> {
         let wait = Op::Wait {
             thread: seat.thread,
             event: args.event.into(),
         };
-        Ok(write(PROGRAM, abi::encode(&wait)))
+        Ok(write(ctx.env().program.clone(), abi::encode(&wait)))
     }
 
     fn render(output: &[u8]) -> Result<Value, Error> {
@@ -245,8 +245,8 @@ impl Tool for Cancel {
         )
     }
 
-    fn run(_: &ExecCtx, _: &Seat, args: CancelArgs) -> Result<Run, Error> {
+    fn run(ctx: &ExecCtx, _: &Seat, args: CancelArgs) -> Result<Run, Error> {
         let unwait = Op::Unwait { wait: args.wait };
-        Ok(write(PROGRAM, abi::encode(&unwait)))
+        Ok(write(ctx.env().program.clone(), abi::encode(&unwait)))
     }
 }

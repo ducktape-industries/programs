@@ -16,7 +16,7 @@ use crate::resume;
 use crate::state::{BOUND, LAST, PLACES, THREADS};
 use crate::turns::{converse, say, say_from};
 use crate::waiting;
-use crate::{AgentSetup, Body, Config, Configured, Op, PROGRAM, Place, ThreadRow};
+use crate::{AgentSetup, Body, Config, Configured, Op, Place, ThreadRow};
 
 pub(crate) struct Agent {
     pub number: AccountNumber,
@@ -34,7 +34,7 @@ pub(crate) fn profile(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<Pr
     }
 }
 
-pub(crate) fn harnessed(profile: &Profile) -> Option<(Agent, Standing)> {
+pub(crate) fn harnessed(profile: &Profile, me: &str) -> Option<(Agent, Standing)> {
     let Kind::Program {
         manager,
         category: Category::Agent,
@@ -44,7 +44,7 @@ pub(crate) fn harnessed(profile: &Profile) -> Option<(Agent, Standing)> {
     else {
         return None;
     };
-    let calls_harness = script.calls == PROGRAM;
+    let calls_harness = script.calls == me;
     let agent = Agent {
         number: profile.number,
         name: profile.name.clone(),
@@ -54,14 +54,16 @@ pub(crate) fn harnessed(profile: &Profile) -> Option<(Agent, Standing)> {
     calls_harness.then_some((agent, *standing))
 }
 
-fn runs_here(profile: &Profile) -> Option<Agent> {
-    let (agent, standing) = harnessed(profile)?;
+fn runs_here(profile: &Profile, me: &str) -> Option<Agent> {
+    let (agent, standing) = harnessed(profile, me)?;
     let active = standing == Standing::Active;
     active.then_some(agent)
 }
 
 pub(crate) fn running(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<Agent>, Error> {
-    Ok(profile(ctx, number)?.as_ref().and_then(runs_here))
+    Ok(profile(ctx, number)?
+        .as_ref()
+        .and_then(|profile| runs_here(profile, &ctx.env().program)))
 }
 
 pub(crate) fn read(
@@ -151,7 +153,10 @@ fn routed(
 }
 
 pub(crate) fn setup(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<AgentSetup>, Error> {
-    let Some((agent, standing)) = profile(ctx, number)?.as_ref().and_then(harnessed) else {
+    let Some((agent, standing)) = profile(ctx, number)?
+        .as_ref()
+        .and_then(|profile| harnessed(profile, &ctx.env().program))
+    else {
         return Ok(None);
     };
     let configured = configured(ctx, &agent.path)?;
@@ -185,7 +190,7 @@ pub(crate) fn harnessed_agent(
 ) -> Result<Option<Agent>, Error> {
     Ok(profile(ctx, number)?
         .as_ref()
-        .and_then(harnessed)
+        .and_then(|profile| harnessed(profile, &ctx.env().program))
         .map(|(agent, _)| agent))
 }
 
@@ -475,13 +480,13 @@ pub(crate) async fn attributed(ctx: Ctx, change: Change) -> Result<(), Error> {
 pub(crate) fn hear_again(ctx: &ExecCtx, changes: Vec<Change>) {
     for change in changes {
         let resent = Op::Attributed(Box::new(change));
-        ctx.emit(PROGRAM, &resent, ::program::Reply::None);
+        ctx.emit(&ctx.env().program, &resent, ::program::Reply::None);
     }
 }
 
 fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
     let from_attribution = ctx.env().sent_by(attribution::PROGRAM).is_ok();
-    let held_back_by_harness = ctx.env().sent_by(PROGRAM).is_ok();
+    let held_back_by_harness = ctx.env().sent_by(&ctx.env().program).is_ok();
     if !(from_attribution || held_back_by_harness) {
         return Err(unauthorized(
             "only attribution delivers a change, and harness one it held back",

@@ -20,7 +20,7 @@ use crate::tools::Write;
 use crate::turns::{append, bound, conclude, converse, give_up, say, settle};
 use crate::wire;
 use crate::{
-    Asking, Body, CallState, Flow, Op, PROGRAM, Partial, Place, ThreadRow, UsageWindow, heard_as,
+    Asking, Body, CallState, Flow, Op, Partial, Place, ThreadRow, UsageWindow, heard_as,
     streamed_as,
 };
 
@@ -171,7 +171,10 @@ pub(crate) async fn watch(ctx: &Ctx, id: u64, wait: Option<u64>, config: Option<
         watch: None,
     };
     let after = deadline(&flight).saturating_add(1);
-    flight.watch = ctx.schedule(after, PROGRAM, &wake(id)).await.ok();
+    flight.watch = ctx
+        .schedule(after, &ctx.env().program, &wake(id))
+        .await
+        .ok();
     FLIGHTS.put(ctx, &id, &flight);
 }
 
@@ -180,12 +183,12 @@ pub(crate) async fn awaiting(ctx: &Ctx, id: u64, call: &str, writes: &[Write]) {
     let height = ctx.env().height;
     let code = match AWAITED.get(ctx, &key) {
         Ok(Some(awaited)) => awaited.code,
-        _ => code_of(ctx, PROGRAM).ok(),
+        _ => code_of(ctx, &ctx.env().program).ok(),
     };
     let deadline = answered_by(ctx, height, writes);
     if let Some(deadline) = deadline {
         let after = deadline.saturating_add(1);
-        let _ = ctx.schedule(after, PROGRAM, &wake(id)).await;
+        let _ = ctx.schedule(after, &ctx.env().program, &wake(id)).await;
     }
     let awaited = Awaited {
         height,
@@ -236,7 +239,7 @@ async fn lost_writes(ctx: &Ctx, id: u64) -> Result<(), Error> {
         return Ok(());
     }
     let height = ctx.env().height;
-    let code = code_of(ctx, PROGRAM).ok();
+    let code = code_of(ctx, &ctx.env().program).ok();
     let mut failed = 0usize;
     for ((_, call), awaited) in open {
         let Some(why) = lost_why(&awaited, code, height) else {
@@ -273,7 +276,10 @@ pub(crate) async fn listening(ctx: &Ctx, id: u64, watch: u64) {
         watch: None,
     };
     let after = deadline(&flight).saturating_add(1);
-    flight.watch = ctx.schedule(after, PROGRAM, &wake(id)).await.ok();
+    flight.watch = ctx
+        .schedule(after, &ctx.env().program, &wake(id))
+        .await
+        .ok();
     STREAMING.put(ctx, &(id, watch), &flight);
 }
 
@@ -320,7 +326,10 @@ async fn lost_streams(ctx: &Ctx, id: u64, since: Option<u64>) -> Result<(), Erro
                     ..flight
                 };
                 let after = deadline(&moved).saturating_add(1);
-                let watch = ctx.schedule(after, PROGRAM, &wake(id)).await.ok();
+                let watch = ctx
+                    .schedule(after, &ctx.env().program, &wake(id))
+                    .await
+                    .ok();
                 STREAMING.put(ctx, &key, &Flight { watch, ..moved });
             }
             continue;
@@ -338,7 +347,7 @@ async fn lost_streams(ctx: &Ctx, id: u64, since: Option<u64>) -> Result<(), Erro
             && told != id
         {
             let next = height.saturating_add(1);
-            let _ = ctx.schedule(next, PROGRAM, &wake(told)).await;
+            let _ = ctx.schedule(next, &ctx.env().program, &wake(told)).await;
         }
     }
     Ok(())
@@ -408,7 +417,10 @@ pub(crate) async fn room(ctx: &Ctx, service: &str, providers: &[String]) {
             wakes.push(wake(id));
         }
     }
-    all(wakes.iter().map(|op| ctx.schedule(next, PROGRAM, op))).await;
+    all(wakes
+        .iter()
+        .map(|op| ctx.schedule(next, ctx.env().program.clone(), op)))
+    .await;
 }
 
 pub(crate) async fn answered_on(ctx: &Ctx, service: &str, id: u64) {
@@ -443,7 +455,7 @@ pub(crate) async fn again(ctx: &Ctx, id: u64, failure: Failure) -> Result<(), Er
         None => 1u64.checked_shl(attempt - 1).unwrap_or(u64::MAX),
     };
     let at = height.saturating_add(gap);
-    let entry = match ctx.schedule(at, PROGRAM, &wake(id)).await {
+    let entry = match ctx.schedule(at, &ctx.env().program, &wake(id)).await {
         Ok(entry) => entry,
         Err(error) => {
             let text = format!(
@@ -504,7 +516,7 @@ async fn repace(ctx: &Ctx, id: u64) {
         took => left.saturating_mul(blocks).div_ceil(took).max(1),
     };
     let at = env.height.saturating_add(more);
-    let paced = match ctx.schedule(at, PROGRAM, &wake(id)).await {
+    let paced = match ctx.schedule(at, &ctx.env().program, &wake(id)).await {
         Ok(entry) => Retry {
             at,
             entry: Some(entry),
@@ -520,7 +532,7 @@ async fn repace(ctx: &Ctx, id: u64) {
 }
 
 async fn switched(ctx: &Ctx) -> Result<Option<u64>, Error> {
-    let Ok(code) = code_of(ctx, PROGRAM) else {
+    let Ok(code) = code_of(ctx, &ctx.env().program) else {
         return Ok(None);
     };
     if let Some((running, since)) = RUNNING.get(ctx)?
@@ -541,7 +553,10 @@ async fn switched(ctx: &Ctx) -> Result<Option<u64>, Error> {
         }
     }
     let next = since.saturating_add(1);
-    all(wakes.iter().map(|op| ctx.schedule(next, PROGRAM, op))).await;
+    all(wakes
+        .iter()
+        .map(|op| ctx.schedule(next, ctx.env().program.clone(), op)))
+    .await;
     Ok(Some(since))
 }
 
@@ -707,10 +722,10 @@ async fn tell(ctx: &Ctx, row: &ThreadRow, line: String, why: &str) -> Result<(),
             manager: row.manager,
         };
         let next = ctx.env().height.saturating_add(1);
-        match ctx.schedule(next, PROGRAM, &report).await {
+        match ctx.schedule(next, &ctx.env().program, &report).await {
             Ok(_) => REPORTING.insert(ctx, &row.manager),
             Err(_) => {
-                ctx.emit(PROGRAM, &report, ::program::Reply::None);
+                ctx.emit(&ctx.env().program, &report, ::program::Reply::None);
             }
         }
     }
@@ -793,7 +808,10 @@ async fn rewatch(ctx: &Ctx, id: u64) {
     if !(own && after > ctx.env().height) {
         return;
     }
-    let watch: Option<EntryId> = ctx.schedule(after, PROGRAM, &wake(id)).await.ok();
+    let watch: Option<EntryId> = ctx
+        .schedule(after, &ctx.env().program, &wake(id))
+        .await
+        .ok();
     FLIGHTS.put(ctx, &id, &Flight { watch, ..flight });
 }
 
@@ -826,7 +844,7 @@ pub(crate) async fn report(ctx: Ctx, manager: AccountNumber) -> Result<(), Error
 fn own_account(ctx: &QueryCtx) -> Result<Principal, Error> {
     use abi::role::identity::{Query, Reply};
     let identity = &ctx.env().role(abi::role::IDENTITY)?.clone();
-    let asked = Query::OfProgram(PROGRAM.into());
+    let asked = Query::OfProgram(ctx.env().program.clone());
     match ctx.query::<Query, Reply>(identity, &asked)? {
         Reply::Account(Some(number)) => Ok(Principal::Account(number)),
         Reply::Account(None) => Ok(Principal::Root),

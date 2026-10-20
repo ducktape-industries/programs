@@ -1,4 +1,4 @@
-use super::schedule::{answered, refused, schemed, turn};
+use super::schedule::{answered, refused, schemed, schemed_as, turn};
 use super::*;
 
 fn waited(chain: &MockChain, thread: u64, call: &str) -> u64 {
@@ -24,7 +24,7 @@ fn asking(chain: &MockChain) -> usize {
 }
 
 fn wait_row(chain: &MockChain, wait: u64) -> Option<WaitRow> {
-    let Reply::Wait(found) = chain.query(PROGRAM, &Query::Wait { wait }).unwrap() else {
+    let Reply::Wait(found) = chain.query(&harness(), &Query::Wait { wait }).unwrap() else {
         panic!("harness answers a wait")
     };
     found
@@ -35,7 +35,7 @@ fn armed(chain: &MockChain, thread: u64) -> Vec<u64> {
         thread,
         page: PageRequest::default(),
     };
-    let Reply::Waits(page) = chain.query(PROGRAM, &asked).unwrap() else {
+    let Reply::Waits(page) = chain.query(&harness(), &asked).unwrap() else {
         panic!("harness answers waits")
     };
     page.items.iter().map(|row| row.id).collect()
@@ -51,7 +51,15 @@ fn pod(name: &str) -> Value {
 
 #[test]
 fn a_wait_for_a_height_ends_the_turn_and_wakes_its_conversation_once_at_its_block() {
-    let world = schemed();
+    waits_for_a_height(schemed());
+}
+
+#[test]
+fn a_wait_for_a_height_wakes_its_conversation_under_any_id_harness_is_seated_at() {
+    waits_for_a_height(schemed_as(ELSEWHERE));
+}
+
+fn waits_for_a_height(world: World) {
     let chain = &world.chain;
     let thread = world.opened("m1", "wake me at block 10", Some(WINDOW));
     turn(&world, 3, &[("w1", "wait_for", height(10))]);

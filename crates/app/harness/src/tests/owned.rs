@@ -134,7 +134,16 @@ fn an_agents_manager_claims_who_starts_its_conversations_and_its_policy_decides(
 
 #[test]
 fn adopt_owners_gives_every_agent_its_managers_conversations_row_and_knows_no_model_kind() {
-    let mut world = world();
+    adopts_owners(world());
+}
+
+#[test]
+fn adopt_owners_records_its_rows_under_any_id_harness_is_seated_at() {
+    adopts_owners(world_as(ELSEWHERE));
+}
+
+fn adopts_owners(mut world: World) {
+    let id = harness();
     world.chain.seat::<ownership::Ownership>(ownership::PROGRAM);
     let chain = &world.chain;
     let mut after = None;
@@ -145,7 +154,7 @@ fn adopt_owners_gives_every_agent_its_managers_conversations_row_and_knows_no_mo
             limit: 2,
         };
         let next: Option<Vec<u8>> =
-            abi::decode(&chain.submit(signed(BO), PROGRAM, &op).unwrap()).unwrap();
+            abi::decode(&chain.submit(signed(BO), &id, &op).unwrap()).unwrap();
         if next.is_none() {
             break;
         }
@@ -156,10 +165,10 @@ fn adopt_owners_gives_every_agent_its_managers_conversations_row_and_knows_no_mo
         after: None,
         limit: 2,
     };
-    let refused = chain.submit(signed(BO), PROGRAM, &models).unwrap_err();
+    let refused = chain.submit(signed(BO), &id, &models).unwrap_err();
     assert_eq!(refused.code, code::INVALID_INPUT);
     let query = ownership::Query::Effective {
-        program: PROGRAM.into(),
+        program: id.clone(),
         key: CONVERSATIONS.key(&world.agent),
     };
     let ownership::Reply::Policy(Some(conversations)) =
@@ -172,7 +181,7 @@ fn adopt_owners_gives_every_agent_its_managers_conversations_row_and_knows_no_mo
         (ownership::AS_BEFORE, &ownership::Party::Account(world.ada))
     );
     let new = Op::NewThread { agent: world.agent };
-    let refused = chain.submit(signed(BO), PROGRAM, &new).unwrap_err();
+    let refused = chain.submit(signed(BO), &id, &new).unwrap_err();
     assert_eq!(refused.code, code::UNAUTHORIZED);
-    chain.submit(signed(ADA), PROGRAM, &new).unwrap();
+    chain.submit(signed(ADA), &id, &new).unwrap();
 }

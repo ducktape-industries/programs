@@ -13,7 +13,7 @@ fn calls(chain: &MockChain, thread: u64) -> Vec<CallRow> {
         thread,
         page: PageRequest::default(),
     };
-    let Reply::Calls(page) = chain.query(PROGRAM, &asked).unwrap() else {
+    let Reply::Calls(page) = chain.query(&harness(), &asked).unwrap() else {
         panic!()
     };
     page.items
@@ -30,7 +30,15 @@ fn fail(chain: &MockChain, request: &RequestRow) {
 
 #[test]
 fn a_model_call_the_node_failed_is_asked_again_at_the_next_block_and_answered_once() {
-    let world = world();
+    failed_call_is_asked_again_once(world());
+}
+
+#[test]
+fn a_failed_model_call_is_asked_again_under_any_id_harness_is_seated_at() {
+    failed_call_is_asked_again_once(world_as(ELSEWHERE));
+}
+
+fn failed_call_is_asked_again_once(world: World) {
     let chain = &world.chain;
     let thread = world.opened("m1", "hello", Some(WINDOW));
     chain.at(3, 0);

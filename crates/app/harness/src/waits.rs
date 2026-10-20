@@ -72,7 +72,7 @@ fn open(ctx: &QueryCtx, wait: u64) -> Result<Option<WaitRow>, Error> {
 fn by_harness(ctx: &QueryCtx) -> bool {
     ctx.env()
         .sending_program()
-        .is_ok_and(|program| program == PROGRAM)
+        .is_ok_and(|program| program == ctx.env().program)
 }
 
 fn scheduler_of(ctx: &QueryCtx) -> Result<String, Error> {
@@ -82,7 +82,7 @@ fn scheduler_of(ctx: &QueryCtx) -> Result<String, Error> {
 async fn schedule(ctx: &Ctx, height: u64, op: &Op) -> Result<u64, Error> {
     let schedule = scheduler::Op::Schedule {
         height,
-        target: PROGRAM.into(),
+        target: ctx.env().program.clone(),
         payload: abi::encode(op),
     };
     let bound = scheduler_of(ctx)?;

@@ -22,7 +22,7 @@ fn posts(chain: &MockChain, thread: u64) -> Vec<String> {
 
 fn settling(chain: &MockChain, thread: u64) -> Option<SettleWindow> {
     let asked = Query::Settling { thread };
-    let Reply::Settling(window) = chain.query(PROGRAM, &asked).unwrap() else {
+    let Reply::Settling(window) = chain.query(&harness(), &asked).unwrap() else {
         panic!()
     };
     window
@@ -62,7 +62,15 @@ fn listening(world: &World, settle: Option<u64>) -> u64 {
 
 #[test]
 fn a_listened_burst_waits_out_the_settle_window_and_makes_one_turn() {
-    let world = world();
+    listened_burst_makes_one_turn(world());
+}
+
+#[test]
+fn a_listened_burst_settles_into_one_turn_under_any_id_harness_is_seated_at() {
+    listened_burst_makes_one_turn(world_as(ELSEWHERE));
+}
+
+fn listened_burst_makes_one_turn(world: World) {
     let chain = &world.chain;
     let thread = listening(&world, Some(SETTLE));
     block(chain, 4);
@@ -80,7 +88,7 @@ fn a_listened_burst_waits_out_the_settle_window_and_makes_one_turn() {
         (window.opened, window.opened_time, window.until),
         (4, SETTLE, 2 * SETTLE)
     );
-    let early = chain.submit(signed(BO), PROGRAM, &Op::Settle { thread });
+    let early = chain.submit(signed(BO), harness(), &Op::Settle { thread });
     assert_eq!(early.unwrap_err().code, code::NOT_YET);
 
     block(chain, 5);

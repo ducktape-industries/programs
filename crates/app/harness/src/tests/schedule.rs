@@ -10,12 +10,20 @@ pub(super) fn schemed() -> World {
 }
 
 fn schemed_with(files_code: Vec<u8>) -> World {
-    let mut world = world();
+    seated_with(PROGRAM, files_code)
+}
+
+pub(super) fn schemed_as(id: &str) -> World {
+    seated_with(id, code_with(&interface::<files::Files>()))
+}
+
+fn seated_with(id: &str, files_code: Vec<u8>) -> World {
+    let mut world = world_as(id);
     world.chain.seat::<Programs>(programs::PROGRAM);
     let codes = [
         (chat::PROGRAM, code_with(&interface::<chat::Chat>())),
         (files::PROGRAM, files_code),
-        (PROGRAM, code_with(&interface::<Harness>())),
+        (id, code_with(&interface::<Harness>())),
         (
             scheduler::PROGRAM,
             code_with(&interface::<scheduler::Scheduler>()),
@@ -84,7 +92,7 @@ fn author(chain: &MockChain, id: &str) -> Option<Principal> {
 }
 
 fn booking(chain: &MockChain, entry: u64) -> Option<Booking> {
-    let Reply::Booking(found) = chain.query(PROGRAM, &Query::Booking { entry }).unwrap() else {
+    let Reply::Booking(found) = chain.query(&harness(), &Query::Booking { entry }).unwrap() else {
         panic!("harness answers a booking")
     };
     found
@@ -125,7 +133,15 @@ fn said(chain: &MockChain, at: u64, text: &str) {
 
 #[test]
 fn a_booked_run_posts_as_the_agent_at_its_block_and_wakes_its_conversation() {
-    let world = schemed();
+    booked_run_posts_as_the_agent(schemed());
+}
+
+#[test]
+fn a_booked_run_posts_as_the_agent_under_any_id_harness_is_seated_at() {
+    booked_run_posts_as_the_agent(schemed_as(ELSEWHERE));
+}
+
+fn booked_run_posts_as_the_agent(world: World) {
     let chain = &world.chain;
     let thread = world.opened("m1", "wake yourself at block 10", Some(WINDOW));
     turn(
@@ -380,7 +396,14 @@ fn only_the_scheduler_runs_a_booked_run_and_only_its_booker_cancels_it() {
 }
 
 fn refused_to_an_agent(tool: &str, input: impl FnOnce(&World, u64) -> Value) -> (World, u64) {
-    let world = schemed();
+    refused_to_an_agent_in(schemed(), tool, input)
+}
+
+fn refused_to_an_agent_in(
+    world: World,
+    tool: &str,
+    input: impl FnOnce(&World, u64) -> Value,
+) -> (World, u64) {
     let thread = world.opened("m1", "act as harness", Some(WINDOW));
     let input = input(&world, thread);
     turn(&world, 3, &[("f1", tool, input)]);
@@ -452,6 +475,14 @@ fn an_egress_request_streamed_to_harness_is_never_made() {
 #[test]
 fn an_agent_runs_no_booked_run_itself() {
     refused_to_an_agent("network_call", |_, _| call(PROGRAM, json!("RunBooked")));
+}
+
+#[test]
+fn an_agent_relays_no_booked_run_to_harness_under_any_id_harness_is_seated_at() {
+    let world = schemed_as(ELSEWHERE);
+    refused_to_an_agent_in(world, "network_call", |_, _| {
+        call(ELSEWHERE, json!("RunBooked"))
+    });
 }
 
 #[test]

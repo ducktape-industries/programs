@@ -50,6 +50,15 @@ use crate::*;
 
 const NODE: [u8; 32] = [1; 32];
 const WINDOW: u64 = 200_000;
+const ELSEWHERE: &str = "acme-harness";
+
+thread_local! {
+    static SEATED: std::cell::RefCell<String> = std::cell::RefCell::new(PROGRAM.to_owned());
+}
+
+fn harness() -> String {
+    SEATED.with(|seated| seated.borrow().clone())
+}
 const SERVICE: &str = "ccs";
 const ADA: &[u8] = b"ada-key";
 const BO: &[u8] = b"bo-key";
@@ -181,7 +190,7 @@ fn scripted(chain: &MockChain, agent: AccountNumber, path: &str) {
     let script = identity::Op::SetScript {
         account: agent,
         script: Some(identity::Script {
-            calls: PROGRAM.into(),
+            calls: harness(),
             config: path.into(),
         }),
     };
@@ -189,6 +198,11 @@ fn scripted(chain: &MockChain, agent: AccountNumber, path: &str) {
 }
 
 fn world() -> World {
+    world_as(PROGRAM)
+}
+
+fn world_as(id: &str) -> World {
+    SEATED.with(|seated| *seated.borrow_mut() = id.to_owned());
     let mut chain = MockChain::default();
     chain.seat::<identity::Identity>(identity::PROGRAM);
     chain.seat::<Valset>("valset");
@@ -196,7 +210,7 @@ fn world() -> World {
     chain.seat::<scheduler::Scheduler>(scheduler::PROGRAM);
     chain.seat_awaiting::<Egress>(egress::PROGRAM);
     chain.seat::<attribution::Attribution>(attribution::PROGRAM);
-    chain.seat_awaiting::<Harness>(PROGRAM);
+    chain.seat_awaiting::<Harness>(id);
     chain.seat::<files::Files>(files::PROGRAM);
     chain.seat::<chat::Chat>(chat::PROGRAM);
     chain.seat::<access::Access>("access");
@@ -205,7 +219,7 @@ fn world() -> World {
         "valset",
         egress::PROGRAM,
         attribution::PROGRAM,
-        PROGRAM,
+        id,
         files::PROGRAM,
         chat::PROGRAM,
     ] {
@@ -225,7 +239,7 @@ fn world() -> World {
         member_cap: 8,
     };
     chain.init("valset", &genesis).unwrap();
-    chain.init(PROGRAM, &()).unwrap();
+    chain.init(id, &()).unwrap();
     let serve = egress::Op::Serve {
         services: vec![SERVICE.into(), RELAY.into()],
     };
@@ -256,7 +270,7 @@ fn world() -> World {
     };
     let agent = number(identity_op(&chain, ADA, create).unwrap());
     let ccs = set_route(&[(SERVICE, Wire::AnthropicMessages)]);
-    chain.submit(signed(ADA), PROGRAM, &ccs).unwrap();
+    chain.submit(signed(ADA), id, &ccs).unwrap();
     commit(&chain, ADA, CONFIG, &md(&scout()));
     list(&chain, ADA, CONFIG, ::program::Ownership::Owner);
     scripted(&chain, agent, CONFIG);
@@ -302,7 +316,7 @@ impl World {
             agent: self.agent,
             page: PageRequest::default(),
         };
-        let Reply::Threads(page) = self.chain.query(PROGRAM, &asked).unwrap() else {
+        let Reply::Threads(page) = self.chain.query(&harness(), &asked).unwrap() else {
             panic!()
         };
         page.items
@@ -422,14 +436,14 @@ fn frames(chain: &MockChain, thread: u64) -> Vec<Body> {
         thread,
         page: PageRequest::default(),
     };
-    let Reply::Frames(page) = chain.query(PROGRAM, &asked).unwrap() else {
+    let Reply::Frames(page) = chain.query(&harness(), &asked).unwrap() else {
         panic!()
     };
     page.items.into_iter().map(|frame| frame.body).collect()
 }
 
 fn held(chain: &MockChain, thread: u64) -> Vec<Body> {
-    let Reply::Held(held) = chain.query(PROGRAM, &Query::Held { thread }).unwrap() else {
+    let Reply::Held(held) = chain.query(&harness(), &Query::Held { thread }).unwrap() else {
         panic!()
     };
     held
@@ -452,7 +466,8 @@ fn result_of(chain: &MockChain, thread: u64, call: &str) -> (String, bool) {
 }
 
 fn thread_row(chain: &MockChain, thread: u64) -> ThreadRow {
-    let Reply::Thread(Some(row)) = chain.query(PROGRAM, &Query::Thread { thread }).unwrap() else {
+    let Reply::Thread(Some(row)) = chain.query(&harness(), &Query::Thread { thread }).unwrap()
+    else {
         panic!()
     };
     row
@@ -1883,4 +1898,13 @@ fn every_tool_schema_is_an_object_and_names_its_required_fields() {
         assert_eq!(empty.is_ok(), required.is_empty(), "{}", entry.name);
         assert!(entry.name.len() <= 64 && !entry.description.is_empty());
     }
+}
+
+#[test]
+fn a_mention_reaches_the_agent_under_any_id_harness_is_seated_at() {
+    let world = world_as(ELSEWHERE);
+    world.post(ADA, "general", "m1", &format!("<@{}> hello", world.agent));
+    assert_eq!(world.threads().len(), 1, "the agent hears its mention");
+    world.chain.at(2, 0);
+    learn(&world.chain, Some(WINDOW));
 }

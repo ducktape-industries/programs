@@ -37,7 +37,7 @@ fn agents(ctx: &QueryCtx) -> Result<Vec<AccountNumber>, Error> {
         };
         let harnessing = profiles
             .iter()
-            .filter(|profile| harnessed(profile).is_some());
+            .filter(|profile| harnessed(profile, &ctx.env().program).is_some());
         numbers.extend(harnessing.map(|profile| profile.number));
         match next {
             Some(number) => after = Some(number),

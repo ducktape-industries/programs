@@ -6,7 +6,7 @@ use ::program::{Cause, Ctx, Error, QueryCtx, code};
 use crate::agents::{configured, running, thread};
 use crate::state::SETTLING;
 use crate::turns::converse;
-use crate::{Asking, Op, PROGRAM, SettleWindow};
+use crate::{Asking, Op, SettleWindow};
 
 pub(crate) fn settling(ctx: &QueryCtx, id: u64) -> bool {
     SETTLING.has(ctx, &id)
@@ -36,7 +36,10 @@ pub(crate) async fn wait(ctx: &Ctx, id: u64) -> Result<bool, Error> {
     };
     let env = ctx.env();
     let wake = Op::Settle { thread: id };
-    let Ok(entry) = ctx.schedule(env.height + 1, PROGRAM, &wake).await else {
+    let Ok(entry) = ctx
+        .schedule(env.height + 1, &ctx.env().program, &wake)
+        .await
+    else {
         return Ok(false);
     };
     let window = SettleWindow {
@@ -83,7 +86,7 @@ pub(crate) async fn due(ctx: Ctx, id: u64) -> Result<(), Error> {
     if !over {
         let next = env.height + blocks_left(&window, env.height, env.time);
         let wake = Op::Settle { thread: id };
-        if let Ok(entry) = ctx.schedule(next, PROGRAM, &wake).await {
+        if let Ok(entry) = ctx.schedule(next, &ctx.env().program, &wake).await {
             SETTLING.put(&ctx, &id, &SettleWindow { entry, ..window });
             return Ok(());
         }

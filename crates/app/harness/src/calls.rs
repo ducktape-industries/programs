@@ -12,7 +12,7 @@ use crate::state::{AWAITED, CALLS, DEFERRED, LIVE, Live, SHOWN, THREADS};
 use crate::tools::{self, Resolved, Run, Seat, Show, Undo, Write};
 use crate::turns::{append, request, serves, settle};
 use crate::watches;
-use crate::{Asking, Body, CallRow, CallState, Op, PROGRAM, Said, ThreadRow};
+use crate::{Asking, Body, CallRow, CallState, Op, Said, ThreadRow};
 
 pub(crate) fn refusal(error: &Error) -> String {
     format!("{}: {}", error.code, error.message)
@@ -158,13 +158,14 @@ async fn written(ctx: &Ctx, agent: u64, writes: Vec<Write>) -> Result<Vec<u8>, E
 pub(crate) fn relayable(ctx: &QueryCtx, target: &str, payload: &[u8]) -> Result<(), Error> {
     let env = ctx.env();
     let bound = |role: &str| env.roles.get(role).is_some_and(|program| program == target);
+    let an_op_of_harness_itself = target == env.program && harness_own(payload);
     let why = if bound(abi::role::SCHEDULER) {
         "the scheduler would run what it schedules as harness: book a run with schedule_run, list runs with schedule_list and cancel one with schedule_cancel"
     } else if bound(abi::role::AWAITS) {
         "awaits would take it as harness answering a call"
     } else if target == attribution::PROGRAM {
         "attribution would take it as harness's own registration or attribution"
-    } else if target == PROGRAM && harness_own(payload) {
+    } else if an_op_of_harness_itself {
         "harness takes this op only from attribution, egress, forge, files or the scheduler"
     } else if target == forge::PROGRAM && watches(payload) {
         "forge would take it as harness's own watcher: wait for a ref or a change with wait_for"

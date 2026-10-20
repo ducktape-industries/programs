@@ -629,6 +629,23 @@ fn a_push_that_brings_an_unlanded_parent_along_is_refused_unless_asked_for() {
     assert_eq!(tip(chain, "carried"), made);
 }
 
+fn watches_due(chain: &MockChain, height: u64) -> Vec<String> {
+    let asked = scheduler::Query::Due {
+        height,
+        after: None,
+        limit: None,
+    };
+    let scheduler::Reply::Due { entries, .. } = chain.query(scheduler::PROGRAM, &asked).unwrap()
+    else {
+        panic!("the scheduler answers what is due")
+    };
+    entries
+        .into_iter()
+        .filter(|entry| matches!(abi::decode::<Op>(&entry.payload), Ok(Op::Watch { .. })))
+        .map(|entry| entry.target)
+        .collect()
+}
+
 fn measured_stream(world: &World) -> (u64, RequestRow) {
     let chain = &world.chain;
     let thread = world.opened("m1", "build it", Some(WINDOW));
@@ -639,7 +656,13 @@ fn measured_stream(world: &World) -> (u64, RequestRow) {
     assert!(asked(chain).is_empty(), "the stream opens a block later");
     chain.at(5, 1000);
     chain.at(6, 2000);
+    let rearmed = watches_due(chain, 6);
     chain.at(7, 3000);
+    assert_eq!(
+        rearmed,
+        [harness()],
+        "the watch that ran at block 5 re-arms itself at 6, on harness's own id"
+    );
     let [read]: [RequestRow; 1] = asked(chain).try_into().unwrap();
     assert_eq!(target(&read), format!("/v1/pods/{POD}"));
     (thread, read)
@@ -647,7 +670,15 @@ fn measured_stream(world: &World) -> (u64, RequestRow) {
 
 #[test]
 fn a_stream_without_every_streams_at_the_heartbeat_harness_measures() {
-    let world = podded(world());
+    streams_at_the_measured_heartbeat(podded(world()));
+}
+
+#[test]
+fn a_measured_stream_opens_and_rearms_its_watch_under_any_id_harness_is_seated_at() {
+    streams_at_the_measured_heartbeat(podded(world_as(ELSEWHERE)));
+}
+
+fn streams_at_the_measured_heartbeat(world: World) {
     let chain = &world.chain;
     let (thread, read) = measured_stream(&world);
     answer(chain, read.id, ok(json!({ "pod": { "name": POD } })));

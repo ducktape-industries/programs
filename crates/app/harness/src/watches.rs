@@ -11,7 +11,7 @@ use crate::state::{
     HEARTBEATS, Heartbeat, MEASURES, Measure, Tick, WATCH_COUNT, WATCHES, Watching,
 };
 use crate::turns::bound;
-use crate::{Op, PART, PROGRAM, ThreadRow, heard_as, tools};
+use crate::{Op, PART, ThreadRow, heard_as, tools};
 
 pub(crate) async fn open(
     ctx: &Ctx,
@@ -23,7 +23,8 @@ pub(crate) async fn open(
 ) -> Result<Value, Error> {
     let watch = WATCH_COUNT.get(ctx)?.unwrap_or(0) + 1;
     let next = ctx.env().height.saturating_add(1);
-    ctx.schedule(next, PROGRAM, &Op::Watch { watch }).await?;
+    let me = ctx.env().program.clone();
+    ctx.schedule(next, me, &Op::Watch { watch }).await?;
     WATCH_COUNT.put(ctx, &watch);
     let row = Watching {
         thread: thread.id,
@@ -179,7 +180,7 @@ pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
     let scheduled = matches!(env.cause, Cause::Scheduled { .. });
     let by_harness = env
         .sending_program()
-        .is_ok_and(|program| program == PROGRAM);
+        .is_ok_and(|program| program == env.program);
     if !(scheduled && by_harness) {
         return Err(unauthorized(
             "a watch opens only as harness's own scheduled run",
@@ -275,7 +276,8 @@ pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
 async fn next_block(ctx: &Ctx, thread: u64, watch: u64) -> Result<(), Error> {
     crate::resume::unlistened(ctx, thread, watch);
     let next = ctx.env().height.saturating_add(1);
-    ctx.schedule(next, PROGRAM, &Op::Watch { watch }).await?;
+    let me = ctx.env().program.clone();
+    ctx.schedule(next, me, &Op::Watch { watch }).await?;
     Ok(())
 }
 

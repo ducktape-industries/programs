@@ -46,7 +46,7 @@ impl Tool for Book {
             payload,
             thread: Some(seat.thread),
         };
-        Ok(write(PROGRAM, abi::encode(&book)))
+        Ok(write(ctx.env().program.clone(), abi::encode(&book)))
     }
 
     fn render(output: &[u8]) -> Result<Value, Error> {
@@ -152,8 +152,8 @@ impl Tool for Cancel {
         )
     }
 
-    fn run(_: &ExecCtx, _: &Seat, args: CancelArgs) -> Result<Run, Error> {
+    fn run(ctx: &ExecCtx, _: &Seat, args: CancelArgs) -> Result<Run, Error> {
         let unbook = Op::Unbook { entry: args.entry };
-        Ok(write(PROGRAM, abi::encode(&unbook)))
+        Ok(write(ctx.env().program.clone(), abi::encode(&unbook)))
     }
 }
