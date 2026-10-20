@@ -22,6 +22,10 @@ fn notified_key(signer: &str) -> String {
     format!("notified/{signer}")
 }
 
+fn since_key(signer: &str) -> String {
+    format!("unread-since/{signer}")
+}
+
 /// Chat's notifier: what it knows of the reader and the rooms, and what it
 /// has counted and announced.
 #[derive(Default)]
@@ -36,9 +40,11 @@ pub struct ChatNotices {
     reading_rooms: bool,
     reads: Option<BTreeMap<String, u64>>,
     announced: Option<Option<BTreeMap<String, u64>>>,
+    saved: Option<BTreeMap<String, u64>>,
+    since: Option<BTreeMap<String, u64>>,
     choices: Option<BTreeMap<String, Choice>>,
     counted: BTreeMap<String, Count>,
-    reading: BTreeSet<String>,
+    reading: BTreeMap<String, u64>,
     counting: BTreeSet<String>,
     told: BTreeMap<String, Told>,
     unsure: BTreeSet<String>,
@@ -153,6 +159,7 @@ impl ChatNotices {
         self.load_names(cx);
         self.load_reads(cx);
         self.load_announced(cx);
+        self.load_since(cx);
         self.load_choices(cx);
         self.load_rooms(cx);
     }
@@ -226,7 +233,25 @@ impl ChatNotices {
                     log_refused(cx, "what was announced", &refusal);
                     None
                 });
+                notices.saved = kept.clone();
                 notices.announced = Some(kept);
+                notices.settle(cx);
+            },
+            cx,
+        );
+    }
+
+    fn load_since(&mut self, cx: &mut Context<Self>) {
+        let since =
+            store::get::<BTreeMap<String, u64>>(&cx.host(), &since_key(&self.session.signer));
+        self.load(
+            since,
+            |notices, since, cx| {
+                let since = since.unwrap_or_else(|refusal| {
+                    log_refused(cx, "where the badge counts from", &refusal);
+                    None
+                });
+                notices.since = Some(since.unwrap_or_default());
                 notices.settle(cx);
             },
             cx,
@@ -307,21 +332,24 @@ impl ChatNotices {
         let Some(me) = self.session.account else {
             return self.settle_badge(cx);
         };
-        let (Some(_), Some(rooms), Some(reads), Some(kept), Some(_)) = (
+        let (Some(_), Some(rooms), Some(reads), Some(kept), Some(_), Some(held)) = (
             &self.names,
             &self.rooms,
             &self.reads,
             &self.announced,
             &self.choices,
+            &self.since,
         ) else {
             return;
         };
         let first = kept.is_none();
         let mut announced = kept.clone().unwrap_or_default();
+        let mut since = BTreeMap::new();
         let mut due = Vec::new();
         let mut uncounted = Vec::new();
         for info in rooms {
             let (room, head) = (info.channel.id.clone(), info.head_seq);
+            let kept = reads.get(&room).copied();
             if self.screen.contains(&room) {
                 self.counted.insert(
                     room.clone(),
@@ -331,14 +359,21 @@ impl ChatNotices {
                         meant: 0,
                     },
                 );
+                if kept.is_none() {
+                    since.insert(room.clone(), head);
+                }
                 announced.insert(room, head);
                 continue;
             }
             let was = *announced
                 .entry(room.clone())
                 .or_insert(if first { head } else { 0 });
-            let kept = reads.get(&room).copied();
-            let start = kept.unwrap_or(was);
+            let start = match kept {
+                Some(cursor) => cursor,
+                None => *since
+                    .entry(room.clone())
+                    .or_insert(held.get(&room).copied().unwrap_or(was)),
+            };
             let count = self.counted.entry(room.clone()).or_insert(Count {
                 cursor: start,
                 to: start,
@@ -360,7 +395,7 @@ impl ChatNotices {
                 uncounted.push((room.clone(), count.to));
             }
             let news = was.max(count.cursor);
-            if head <= news || self.reading.contains(&room) {
+            if head <= news || self.reading.contains_key(&room) {
                 continue;
             }
             let meant = self
@@ -376,17 +411,19 @@ impl ChatNotices {
                 due.push((room, news, head));
             }
         }
-        let moved = Some(&announced) != kept.as_ref();
+        let since_moved = Some(&since) != self.since.as_ref();
         self.announced = Some(Some(announced));
+        if since_moved {
+            store::set(&cx.host(), &since_key(&self.session.signer), Some(&since));
+        }
+        self.since = Some(since);
         if !uncounted.is_empty() {
             self.count(uncounted, me, cx);
         }
         for (room, news, head) in due {
             self.read(room, news, head, me, cx);
         }
-        if moved {
-            self.save_announced(cx);
-        }
+        self.save_announced(cx);
         self.settle_badge(cx);
     }
 
@@ -475,10 +512,10 @@ impl ChatNotices {
                     account: me,
                     roots: roots.into_iter().collect(),
                 })
-                .await;
+                .await?;
             Ok((rows, followed))
         };
-        self.reading.insert(room.clone());
+        self.reading.insert(room.clone(), from);
         self.load(
             asked,
             move |notices, read, cx| {
@@ -493,10 +530,6 @@ impl ChatNotices {
                         return;
                     }
                 };
-                let followed = followed.unwrap_or_else(|refusal| {
-                    log_refused(cx, "where the reader is", &refusal);
-                    Followed::default()
-                });
                 let choice = notices
                     .choices
                     .iter()
@@ -536,13 +569,19 @@ impl ChatNotices {
         );
     }
 
-    fn save_announced(&self, cx: &mut Context<Self>) {
-        if let Some(Some(announced)) = &self.announced {
-            store::set(
-                &cx.host(),
-                &notified_key(&self.session.signer),
-                Some(announced),
-            );
+    fn save_announced(&mut self, cx: &mut Context<Self>) {
+        let Some(Some(announced)) = &self.announced else {
+            return;
+        };
+        let mut kept = announced.clone();
+        kept.extend(
+            self.reading
+                .iter()
+                .map(|(room, from)| (room.clone(), *from)),
+        );
+        if self.saved.as_ref() != Some(&kept) {
+            store::set(&cx.host(), &notified_key(&self.session.signer), Some(&kept));
+            self.saved = Some(kept);
         }
     }
 

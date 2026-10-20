@@ -126,8 +126,13 @@ costs the same however much the reader left unread. The read cursors are the pan
 the notifier (`store.changes`), and the pane takes the room's notices down itself (`notify.seen`).
 The room a pane shows on screen (`host.screen`) gets no notice and leaves the badge.
 
-What it announced it keeps under `notified/<signer>`: the seq announced up to in each room. A run
-that starts (a launch, a reconnect, a new deployment) posts, once, what came for the reader past
-both that and their cursor while nothing ran, reading only those messages; a room it never saw is
-new, read from its start. The very first run on a device has nothing kept: what is there is
-history, not news.
+What it announced it keeps under `notified/<signer>`: the seq announced up to in each room. That
+seq moves only once the read of those messages, their rows and where the reader is
+(`Query::Followed`), has landed whole in the run that asked it: a read that fails, either half,
+leaves them to the room's next head, and a run that ends while it reads (a disconnect, a
+switch of key) leaves them to the next run. A run that starts (a launch, a reconnect, a new
+deployment) posts, once, what came for the reader past both that and their cursor while nothing
+ran, reading only those messages; a room it never saw is new, read from its start. The very first
+run on a device has nothing kept: what is there is history, not news. A room with no read cursor
+on this device (never opened here) is counted for the badge from where this device first saw it,
+kept under `unread-since/<signer>`, not from what was announced, so its count outlives a launch.

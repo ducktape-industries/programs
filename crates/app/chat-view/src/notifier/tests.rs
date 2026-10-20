@@ -9,7 +9,7 @@ use view::methods::{
     self, Change, Changes, HostBadge, HostScreen, HostSession, NotifyPost, Query as Ask, Session,
     StoreChanges, StoreGet, StoreSet,
 };
-use view::testing::TestNotifier;
+use view::testing::{FakeHost, TestNotifier};
 
 fn page<T>(items: Vec<T>) -> PageResponse<T> {
     PageResponse {
@@ -86,6 +86,7 @@ struct World {
     refuse_followed: Rc<Cell<bool>>,
     refuse_accounts: Rc<Cell<bool>>,
     refuse_unread: Rc<Cell<bool>>,
+    refuse_messages: Rc<Cell<bool>>,
     choices: Rc<RefCell<BTreeMap<String, Choice>>>,
     kept: Rc<RefCell<BTreeMap<String, Vec<u8>>>>,
 }
@@ -94,6 +95,22 @@ impl World {
     fn notifier(&self) -> TestNotifier<ChatNotices> {
         let notifier = TestNotifier::new();
         let host = notifier.host();
+        self.answer(&host);
+        host.handle::<Ask<Identity>>(|query| panic!("unexpected identity query: {query:?}"));
+        let kept = self.kept.clone();
+        host.handle::<StoreGet>(move |key| Ok(kept.borrow().get(&key).cloned()));
+        let kept = self.kept.clone();
+        host.handle::<StoreSet>(move |(key, value)| {
+            match value {
+                Some(value) => kept.borrow_mut().insert(key, value),
+                None => kept.borrow_mut().remove(&key),
+            };
+            Ok(())
+        });
+        notifier
+    }
+
+    fn answer(&self, host: &FakeHost) {
         let world = self.clone();
         host.handle::<Ask<chat::Chat>>(move |query| {
             Ok(match query {
@@ -123,6 +140,9 @@ impl World {
                     let rooms = world.rooms.borrow();
                     let room = rooms.iter().find(|room| room.channel.id == channel_id);
                     Reply::Channel(room.cloned())
+                }
+                Query::MessagesAround { .. } if world.refuse_messages.get() => {
+                    return Err(view::host::Error::new("refused", "the node is busy"));
                 }
                 Query::MessagesAround {
                     channel_id,
@@ -202,18 +222,6 @@ impl World {
                 query => panic!("unexpected chat query: {query:?}"),
             })
         });
-        host.handle::<Ask<Identity>>(|query| panic!("unexpected identity query: {query:?}"));
-        let kept = self.kept.clone();
-        host.handle::<StoreGet>(move |key| Ok(kept.borrow().get(&key).cloned()));
-        let kept = self.kept.clone();
-        host.handle::<StoreSet>(move |(key, value)| {
-            match value {
-                Some(value) => kept.borrow_mut().insert(key, value),
-                None => kept.borrow_mut().remove(&key),
-            };
-            Ok(())
-        });
-        notifier
     }
 
     fn start(&self, notifier: &mut TestNotifier<ChatNotices>) {
@@ -597,14 +605,46 @@ fn a_choice_counts_its_room_again() {
 }
 
 #[test]
-fn a_mention_is_told_though_where_i_am_will_not_read() {
+fn a_mention_waits_for_where_i_am_and_is_told_once_the_read_is_whole() {
     let world = World::default();
     *world.rooms.borrow_mut() = vec![room("general", "General", 0)];
     world.refuse_followed.set(true);
     let mut notifier = world.notifier();
     world.start(&mut notifier);
     world.post(&mut notifier, vec![mention("general", 1)]);
-    assert_eq!(titles(&notifier), ["reviewer mentioned you"]);
+    assert!(posts(&notifier).is_empty(), "{:?}", titles(&notifier));
+
+    world.refuse_followed.set(false);
+    world.post(&mut notifier, vec![mention("general", 2)]);
+    assert_eq!(
+        titles(&notifier),
+        ["reviewer mentioned you", "reviewer mentioned you"]
+    );
+}
+
+#[test]
+fn a_read_whose_where_i_am_fails_leaves_a_followed_reply_to_the_next_run() {
+    let world = World::default();
+    *world.rooms.borrow_mut() = vec![room("general", "General", 1)];
+    (world.rows.borrow_mut()).push(row("general", 1, 7, said("ship it?", vec![])));
+    world.followed.borrow_mut().insert(
+        "general".into(),
+        Followed {
+            room: None,
+            threads: vec![(1, 1)],
+        },
+    );
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    world.refuse_followed.set(true);
+    let answer = reply("general", 2, 8, 1, said("why not?", vec![]));
+    world.post(&mut notifier, vec![answer]);
+    assert!(posts(&notifier).is_empty(), "{:?}", titles(&notifier));
+
+    world.refuse_followed.set(false);
+    let mut relaunched = world.notifier();
+    world.start(&mut relaunched);
+    assert_eq!(titles(&relaunched), ["reviewer replied in a thread"]);
 }
 
 #[test]
@@ -738,6 +778,97 @@ fn a_message_meant_for_no_one_here_reads_no_message() {
     world.post(&mut notifier, vec![mention("general", 3)]);
     assert_eq!(reads(&notifier).0, read + 2, "a mention is read and told");
     assert_eq!(posts(&notifier).len(), 1);
+}
+
+#[test]
+fn a_read_that_fails_leaves_its_notice_to_the_next_head_and_the_next_run() {
+    let world = World::default();
+    *world.rooms.borrow_mut() = vec![room("general", "General", 0)];
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    world.refuse_messages.set(true);
+    world.post(&mut notifier, vec![mention("general", 1)]);
+    assert!(posts(&notifier).is_empty(), "{:?}", posts(&notifier));
+
+    world.refuse_messages.set(false);
+    let mut relaunched = world.notifier();
+    world.start(&mut relaunched);
+    assert_eq!(titles(&relaunched), ["reviewer mentioned you"]);
+
+    world.refuse_messages.set(true);
+    world.post(&mut relaunched, vec![mention("general", 2)]);
+    world.refuse_messages.set(false);
+    world.post(&mut relaunched, vec![mention("general", 3)]);
+    let links: Vec<String> = posts(&relaunched)
+        .into_iter()
+        .map(|post| post.link)
+        .collect();
+    assert_eq!(
+        links,
+        [
+            "duck://testnet-0a1b2c3d/chat/general/1",
+            "duck://testnet-0a1b2c3d/chat/general/2",
+            "duck://testnet-0a1b2c3d/chat/general/3"
+        ]
+    );
+}
+
+#[test]
+fn a_run_that_ends_while_it_reads_leaves_the_read_to_the_next_run() {
+    let world = World::default();
+    world.keep("notified/0102", &BTreeMap::from([("general".into(), 0)]));
+    *world.rooms.borrow_mut() = vec![room("general", "General", 1)];
+    world.rows.borrow_mut().push(mention("general", 1));
+    let mut notifier = world.notifier();
+    let host = notifier.host();
+    host.never::<Ask<chat::Chat>>();
+    world.start(&mut notifier);
+    let reading = |host: &FakeHost| {
+        (host.requests::<Ask<chat::Chat>>().iter())
+            .any(|query| matches!(query, Query::MessagesAround { .. }))
+    };
+    let mut asked = 0;
+    while !reading(&host) {
+        let now = host.requests::<Ask<chat::Chat>>().len();
+        assert!(
+            now > asked,
+            "the notifier stopped before reading the mention"
+        );
+        asked = now;
+        world.answer(&host);
+        host.answer_held::<Ask<chat::Chat>>();
+        host.never::<Ask<chat::Chat>>();
+        notifier.run_until_parked();
+    }
+    assert!(posts(&notifier).is_empty(), "the read is still out");
+
+    world.answer(&host);
+    let feed = host.stream::<HostSession>();
+    feed.send(Session {
+        connected: false,
+        ..session()
+    });
+    notifier.run_until_parked();
+    feed.send(session());
+    notifier.run_until_parked();
+    assert_eq!(titles(&notifier), ["reviewer mentioned you"]);
+}
+
+#[test]
+fn a_room_never_opened_here_keeps_its_badge_across_a_relaunch() {
+    let world = World::default();
+    *world.rooms.borrow_mut() = vec![room("general", "General", 1)];
+    world.rows.borrow_mut().push(row("general", 1, 8, say_hi()));
+    let mut notifier = world.notifier();
+    world.start(&mut notifier);
+    world.post(&mut notifier, vec![mention("general", 2)]);
+    assert_eq!(posts(&notifier).len(), 1);
+    assert_eq!(badge(&notifier), Some(1));
+
+    let mut relaunched = world.notifier();
+    world.start(&mut relaunched);
+    assert!(posts(&relaunched).is_empty(), "announced once");
+    assert_eq!(badge(&relaunched), Some(1));
 }
 
 #[test]
