@@ -54,7 +54,8 @@ impl Chat {
     pub(crate) fn settle_policies(&mut self, cx: &mut Context<Self>) {
         let reader = self.reader();
         let archived = self.room_info().is_some_and(|info| info.channel.archived);
-        let asked = self.details.is_some() || self.menu.is_some() || archived;
+        let busy = self.busy(Pane::Timeline).is_some() || self.busy(Pane::Thread).is_some();
+        let asked = self.details.is_some() || self.menu.is_some() || archived || busy;
         match self.room_item().filter(|_| asked) {
             Some(room) => item::hold(self, room_policy, room, reader.clone(), cx),
             None => item::let_go(self, room_policy),

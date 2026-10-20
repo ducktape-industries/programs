@@ -43,6 +43,7 @@ impl Chat {
             }
         }
         if reader_changed {
+            self.typing = Default::default();
             self.load_names(cx);
             self.load_avatars(cx);
             self.choices = Loadable::Idle;

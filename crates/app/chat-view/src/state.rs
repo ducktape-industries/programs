@@ -196,6 +196,8 @@ pub struct Chat {
     // the open room's rules as its details read them (`rules.rs`)
     #[serde(skip)]
     pub(crate) rules: crate::rules::Rules,
+    #[serde(skip)]
+    pub(crate) typing: crate::typing::Typing,
 }
 
 /// A page of the view's [`Pages`]: the room list, search, the new-channel
@@ -394,6 +396,8 @@ pub struct Room {
     // list it answers in
     #[serde(skip)]
     pub(crate) answering: Loadable<Vec<chat::Draft>>,
+    #[serde(skip)]
+    pub(crate) busy: Reread<Option<chat::Holder>>,
 }
 
 #[derive(Default)]
@@ -454,6 +458,8 @@ pub struct Thread {
     /// the replies read again while the ones on screen stay
     #[serde(skip)]
     pub(crate) rereading: Option<view::Task<()>>,
+    #[serde(skip)]
+    pub(crate) busy: Reread<Option<chat::Holder>>,
 }
 
 #[derive(Serialize, Deserialize, Default)]

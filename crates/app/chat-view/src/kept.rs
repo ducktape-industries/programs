@@ -47,6 +47,7 @@ impl Chat {
         })
         .detach();
         self.load_opened(cx);
+        self.load_typed(cx);
         self.load_reads(key, cx);
     }
 

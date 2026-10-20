@@ -44,6 +44,18 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
   sentence stays a link;
   code blocks, tables and headings draw through the SDK's `markdown` crate,
   coloured by a block's language, with no parser linked.
+- Answering (`ui/answering.rs`): at the foot of the room and of an open
+  thread, each draft chat holds there (`Drafts`) but the reader's own. Who
+  holds the place by chat's `Busy` is said with the block they began at, and
+  Break for whoever may change the room: on the holder's draft row, or on a
+  line of its own for a hold (`Take`). The reader's own typing (`typing.rs`) is
+  chat's empty draft, `doing` "typing": a keystroke that takes a composer on
+  screen from empty to words sends it, and that composer emptying or leaving
+  the screen takes it down (a post does itself). Words already in a composer
+  send nothing. The rooms it was sent in are kept under
+  `reads/<signer>/typing`, each until its `Undraft` lands, and each start takes
+  it down in every room kept there but one typed in this session. A switch of
+  account leaves the old account's typing up until it next starts here.
 - Beside the room (desktop) or as a page (phone): the thread, the channel's
   details (`ui/side.rs::details`, `ui/phone/details.rs`) and a widget.
 - Rules: a channel's `rules` meta (`rules.rs`, `ui/rules.rs`), the text or the

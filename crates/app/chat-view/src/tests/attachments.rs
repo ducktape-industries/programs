@@ -148,7 +148,7 @@ fn picked_files_go_up_at_once_under_the_drafts_message_and_the_post_carries_them
     cx.simulate_input("draft-general/editor", "two files");
     cx.simulate_field_key("draft-general/editor", "enter");
     cx.run_until_parked();
-    let posted = cx.host().requests::<Submit<::chat::Chat>>();
+    let posted = posts_of(&cx);
     let Some(Op::PostMessage {
         message_id, blocks, ..
     }) = posted.last()
@@ -179,11 +179,10 @@ fn a_send_waits_for_a_file_still_going_up_and_its_chip_says_how_far() {
     cx.simulate_input("draft-general/editor", "wait for it");
     cx.simulate_field_key("draft-general/editor", "enter");
     cx.run_until_parked();
-    let posts = || cx.host().requests::<Submit<::chat::Chat>>();
-    assert!(posts().is_empty(), "the send waits for the file");
+    assert!(posts_of(&cx).is_empty(), "the send waits for the file");
     putting.send(Putting::Held(vec![CHUNK; 3]));
     cx.run_until_parked();
-    let posted = cx.host().requests::<Submit<::chat::Chat>>();
+    let posted = posts_of(&cx);
     let [Op::PostMessage { blocks, .. }] = posted.as_slice() else {
         panic!("one post: {posted:?}")
     };
@@ -555,7 +554,7 @@ fn sends_the_picture(cx: &mut TestAppContext) {
     cx.simulate_input("draft-general/editor", "look");
     cx.simulate_field_key("draft-general/editor", "enter");
     cx.run_until_parked();
-    let posted = cx.host().requests::<Submit<::chat::Chat>>();
+    let posted = posts_of(cx);
     let [
         Op::PostMessage {
             message_id, blocks, ..
@@ -693,7 +692,7 @@ fn a_file_lands_on_its_commits_snapshot_and_its_path_is_never_read_again() {
     cx.simulate_input("draft-general/editor", "two pictures");
     cx.simulate_field_key("draft-general/editor", "enter");
     cx.run_until_parked();
-    let posted = cx.host().requests::<Submit<::chat::Chat>>();
+    let posted = posts_of(&cx);
     let [Op::PostMessage { blocks, .. }] = posted.as_slice() else {
         panic!("one post: {posted:?}")
     };
@@ -707,4 +706,12 @@ fn a_file_lands_on_its_commits_snapshot_and_its_path_is_never_read_again() {
         let left = &chat.drafts["draft-general"].attachments;
         assert!(left.is_empty(), "the chips leave with the post: {left:?}");
     });
+}
+
+fn posts_of(cx: &TestAppContext) -> Vec<Op> {
+    let ops = cx.host().requests::<Submit<::chat::Chat>>();
+    let posts = ops
+        .into_iter()
+        .filter(|op| matches!(op, Op::PostMessage { .. }));
+    posts.collect()
 }

@@ -90,7 +90,21 @@ impl Chat {
         if let Event::Dropped(files) = event {
             return self.attach(&target, files, cx);
         }
-        let Outcome::Action(tag) = draft.handle(event, &key, &choices, window) else {
+        let changed = matches!(event, Event::Changed(_));
+        let outcome = draft.handle(event, &key, &choices, window);
+        let words = !draft.body().is_empty();
+        if let Target::Post { channel, thread } = &target {
+            let had = self
+                .typing
+                .words
+                .insert(key.clone(), words)
+                .unwrap_or(words);
+            let began = changed && words && !had;
+            if began {
+                self.typing.began = Some((channel.clone(), *thread));
+            }
+        }
+        let Outcome::Action(tag) = outcome else {
             return;
         };
         match tag.as_str() {
@@ -238,6 +252,7 @@ impl Chat {
                         {
                             chat.menu = None;
                         }
+                        chat.typing_sent(&target, cx);
                         chat.refresh(cx);
                     }
                     // a refusal, and a doubt alike, hold the draft for the

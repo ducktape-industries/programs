@@ -203,6 +203,8 @@ fn rows(
         state,
         unread,
         answering,
+        busy,
+        held_draft,
     } = listing(chat, pane, &messages, cx);
     let lead = lead_text.is_some();
     let (grid, active_id, cell) = grid(chat, pane, &messages, lead, &state, cx);
@@ -224,14 +226,26 @@ fn rows(
                 return match answering.get(after - usize::from(bare)) {
                     Some(draft) => {
                         let seen: &Chat = chat;
+                        let held = held_draft.as_ref().filter(|h| h.principal == draft.author);
+                        let held = held.map(|holder| {
+                            let said = crate::words::since(holder.height);
+                            super::answering::hold(seen, pane, said, (&theme, &ladder), cx)
+                        });
                         let face = message::still_face(seen, &draft.author, cx, &theme);
                         let frame = |row: Stateful<Div>| row.px_4();
                         let draw = |key: &str, blocks: &[chat::Block]| {
                             message::drawn(seen, key, blocks, cx, &theme)
                         };
-                        super::answering::row(seen, draft, (&theme, &ladder), frame, face, draw)
+                        let look = (&theme, &ladder);
+                        super::answering::row(seen, draft, look, frame, face, draw, held)
                     }
-                    None => div().into_any_element(),
+                    None => match &busy {
+                        Some(holder) => {
+                            let frame = |row: Stateful<Div>| row.px_4();
+                            super::answering::busy(chat, pane, holder, (&theme, &ladder), frame, cx)
+                        }
+                        None => div().into_any_element(),
+                    },
                 };
             };
             let day = new_day(&messages, at, chat.today);

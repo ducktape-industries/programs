@@ -246,3 +246,17 @@ pub(crate) async fn search_hits(
 pub(crate) async fn answering(host: Host, channel_id: String) -> Result<Vec<chat::Draft>, Error> {
     host.query(ask::Drafts { channel_id }).await
 }
+
+pub(crate) async fn busy(
+    host: Host,
+    channel_id: String,
+    thread: Option<u64>,
+    for_account: u64,
+) -> Result<Option<chat::Holder>, Error> {
+    let asked = ask::Busy {
+        channel_id,
+        thread,
+        for_account,
+    };
+    host.query(asked).await
+}

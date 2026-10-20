@@ -1,13 +1,13 @@
-//! Someone answering in the room before they post (chat's `Drafting`), framed as their post will be
-//! at the foot of the list it answers in, while chat holds the draft. A draft under a thread is drawn
-//! in the thread; in the channel its root's reply row only says who is answering there.
-use chat::{Block, Draft, Principal};
+//! Someone answering in a place: a draft chat holds, framed as its post will be at the foot of its
+//! list (its thread's, the channel marking only the root's reply row), and who holds the place as
+//! chat's `Busy` names them, since which block, with Break for whoever may change the room.
+use chat::{Block, Draft, Holder, Principal};
 use view::design::Ladder;
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
 
 use crate::listing::answering_key;
-use crate::{Chat, words};
+use crate::{Chat, Pane, words};
 
 pub(crate) fn name(chat: &Chat, author: &Principal) -> String {
     match (chat.names.ready(), author) {
@@ -45,6 +45,7 @@ pub(crate) fn row(
     frame: impl FnOnce(Stateful<Div>) -> Stateful<Div>,
     face: AnyElement,
     draw: impl FnOnce(&str, &[Block]) -> Vec<AnyElement>,
+    held: Option<Stateful<Div>>,
 ) -> AnyElement {
     let name = name(chat, &draft.author);
     let head = words::answering(&name);
@@ -81,7 +82,8 @@ pub(crate) fn row(
         .gap(design::space::XXS)
         .child(author)
         .children(doing.map(muted))
-        .children(said);
+        .children(said)
+        .children(held);
     let row = div()
         .id(key)
         .w_full()
@@ -92,4 +94,60 @@ pub(crate) fn row(
         .aria_live(view::accesskit::Live::Polite)
         .aria_label(head);
     frame(row).child(face).child(column).into_any_element()
+}
+
+pub(crate) fn busy(
+    chat: &Chat,
+    pane: Pane,
+    holder: &Holder,
+    (theme, ladder): (&Theme, &Ladder),
+    frame: impl FnOnce(Stateful<Div>) -> Stateful<Div>,
+    cx: &mut Context<Chat>,
+) -> AnyElement {
+    let said = words::busy(&name(chat, &holder.principal), holder.height);
+    frame(hold(chat, pane, said, (theme, ladder), cx)).into_any_element()
+}
+
+pub(crate) fn hold(
+    chat: &Chat,
+    pane: Pane,
+    said: String,
+    (theme, ladder): (&Theme, &Ladder),
+    cx: &mut Context<Chat>,
+) -> Stateful<Div> {
+    let (id, thread) = match pane {
+        Pane::Timeline => ("chat-busy-timeline", None),
+        Pane::Thread => {
+            let thread = chat.room.as_ref().and_then(|room| room.thread.as_ref());
+            ("chat-busy-thread", thread.map(|thread| thread.root))
+        }
+    };
+    let line = div()
+        .id(id)
+        .w_full()
+        .flex()
+        .items_center()
+        .gap(design::space::SM)
+        .py(design::space::SM)
+        .role(Role::Status)
+        .aria_live(view::accesskit::Live::Polite)
+        .aria_label(said.clone())
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.))
+                .text_type(ladder.caption)
+                .text_color(theme.muted)
+                .child(said),
+        );
+    if !chat.may_change_room() {
+        return line;
+    }
+    let channel_id = chat.room_id();
+    let broke = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
+        let channel_id = channel_id.clone();
+        chat.submit(chat::Op::Break { channel_id, thread }, cx);
+    });
+    let button = design::button(format!("{id}-break"), words::BREAK, ladder, theme, broke);
+    line.child(button.small())
 }

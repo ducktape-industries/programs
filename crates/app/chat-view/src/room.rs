@@ -36,6 +36,7 @@ impl Chat {
         let drafts = room.answering.ready().into_iter().flatten();
         drafts
             .filter(|draft| draft.thread == under)
+            .filter(|draft| !self.wrote_it(draft))
             .cloned()
             .collect()
     }
@@ -49,8 +50,67 @@ impl Chat {
         let drafts = room.answering.ready().into_iter().flatten();
         drafts
             .filter(|draft| draft.thread == Some(seq))
+            .filter(|draft| !self.wrote_it(draft))
             .map(|draft| crate::ui::answering::name(self, &draft.author))
             .collect()
+    }
+
+    fn wrote_it(&self, draft: &chat::Draft) -> bool {
+        self.me().as_ref() == Some(&draft.author)
+    }
+
+    pub(crate) fn busy(&self, pane: Pane) -> Option<chat::Holder> {
+        let room = self.room.as_ref()?;
+        let held = match (pane, &room.thread) {
+            (Pane::Timeline, _) if !room.landed => &room.busy,
+            (Pane::Thread, Some(thread)) if !thread.has_more => &thread.busy,
+            (Pane::Timeline | Pane::Thread, _) => return None,
+        };
+        held.ready().cloned().flatten()
+    }
+
+    pub(crate) fn settle_busy(&mut self, cx: &mut Context<Self>) {
+        let Some(room) = &self.room else { return };
+        let thread = room.thread.as_ref();
+        let (foot, under) = (
+            room.busy.is_idle(),
+            thread.is_some_and(|t| t.busy.is_idle()),
+        );
+        if foot {
+            self.read_foot_busy(cx);
+        }
+        if under {
+            self.read_thread_busy(cx);
+        }
+    }
+
+    fn read_foot_busy(&mut self, cx: &mut Context<Self>) {
+        let (Some(me), Some(room)) = (self.my_account(), &self.room) else {
+            return;
+        };
+        let channel = room.id.clone();
+        cx.reread(
+            self,
+            |chat| &mut room_of(chat).busy,
+            move |_, cx| queries::busy(cx.host(), channel, None, me),
+            Self::read_foot_busy,
+        );
+    }
+
+    fn read_thread_busy(&mut self, cx: &mut Context<Self>) {
+        let (Some(me), Some(room)) = (self.my_account(), &self.room) else {
+            return;
+        };
+        let Some(root) = room.thread.as_ref().map(|thread| thread.root) else {
+            return;
+        };
+        let channel = room.id.clone();
+        cx.reread(
+            self,
+            |chat| &mut room_of(chat).thread.get_or_insert_default().busy,
+            move |_, cx| queries::busy(cx.host(), channel, Some(root), me),
+            Self::read_thread_busy,
+        );
     }
 
     /// A pane's refused read, asked again: the open thread, or the room
@@ -131,6 +191,10 @@ impl Chat {
                 ..Room::default()
             };
         }
+        if !same {
+            self.read_foot_busy(cx);
+        }
+        let room = self.room.get_or_insert_default();
         room.landed = land > 0;
         room.target = land;
         room.at_tail = land == 0;
@@ -421,6 +485,17 @@ impl Chat {
         }) {
             let answering = queries::answering(cx.host(), id.clone());
             cx.load(self, answering, |chat| &mut room_of(chat).answering);
+        }
+        let busy_moved = self.my_account().is_some_and(|me| {
+            touched(&ask::Busy {
+                channel_id: id.clone(),
+                thread: None,
+                for_account: me,
+            })
+        });
+        if busy_moved {
+            self.read_foot_busy(cx);
+            self.read_thread_busy(cx);
         }
         if let Some(written) = catch_up {
             self.catch_up(written, cx);

@@ -54,6 +54,8 @@ mod session;
 #[cfg(not(feature = "notifier"))]
 mod state;
 #[cfg(not(feature = "notifier"))]
+mod typing;
+#[cfg(not(feature = "notifier"))]
 mod ui;
 #[cfg(not(feature = "notifier"))]
 mod watch;
@@ -146,6 +148,8 @@ impl Render for Chat {
         self.settle_widgets(cx);
         self.settle_rules(cx);
         self.settle_policies(cx);
+        self.settle_busy(cx);
+        self.settle_typing(cx);
         // the one pick: a phone draws the Expo app's own screens, every
         // other window the desktop's (STRUCTURE v2)
         // the rooms the reader listens to: both lists hold them, and `#` offers them

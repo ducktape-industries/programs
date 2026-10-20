@@ -50,6 +50,8 @@ pub(crate) struct Listing {
     pub unread: Option<u64>,
     // who is answering in the pane, after its rows (`Chat::answering`)
     pub answering: Vec<chat::Draft>,
+    pub busy: Option<chat::Holder>,
+    pub held_draft: Option<chat::Holder>,
 }
 
 pub(crate) fn listing(
@@ -68,12 +70,17 @@ pub(crate) fn listing(
             .and_then(|room| room.thread.as_ref())
             .is_some_and(|thread| thread.replies.ready().is_some_and(Vec::is_empty));
     let answering = chat.answering(pane);
+    let (held_draft, busy) = match chat.busy(pane) {
+        Some(holder) if drawn_in(&answering, &holder) => (Some(holder), None),
+        busy => (None, busy),
+    };
     let keys = lead
         .then_some("intro".to_owned())
         .into_iter()
         .chain(messages.iter().map(|message| message.id.clone()))
         .chain(bare.then_some("no-replies".to_owned()))
         .chain(answering.iter().map(answering_key))
+        .chain(busy.as_ref().map(|_| "busy".to_owned()))
         .collect::<Vec<_>>();
     let landing = || match shape {
         Shape::Landed => Some(landing(chat, messages) + usize::from(lead)),
@@ -98,7 +105,17 @@ pub(crate) fn listing(
         state,
         unread,
         answering,
+        busy,
+        held_draft,
     }
+}
+
+fn drawn_in(answering: &[chat::Draft], holder: &chat::Holder) -> bool {
+    let a_draft = holder.kind == chat::Holding::Draft;
+    a_draft
+        && answering
+            .iter()
+            .any(|draft| draft.author == holder.principal)
 }
 
 // a draft's row key, by its author: one draft per author in a room

@@ -101,6 +101,8 @@ fn rows(
         state,
         unread,
         answering,
+        busy,
+        held_draft,
     } = listing(chat, pane, &messages, cx);
     let lead = usize::from(intro.is_some());
     let (theme, ladder) = (*theme, *ladder);
@@ -122,14 +124,34 @@ fn rows(
                 return match answering.get(after - usize::from(bare)) {
                     Some(draft) => {
                         let seen: &Chat = chat;
+                        let held = held_draft.as_ref().filter(|h| h.principal == draft.author);
+                        let held = held.map(|holder| {
+                            let said = crate::words::since(holder.height);
+                            crate::ui::answering::hold(seen, pane, said, (&theme, &ladder), cx)
+                        });
                         let face = message::still_face(seen, &draft.author, cx, &theme, &ladder);
                         let frame = |row: view::Stateful<view::Div>| row.px(design::space::BLOCK);
                         let draw = |key: &str, blocks: &[chat::Block]| {
                             super::rich::drawn(seen, key, blocks, cx, &theme, &ladder)
                         };
-                        crate::ui::answering::row(seen, draft, (&theme, &ladder), frame, face, draw)
+                        let look = (&theme, &ladder);
+                        crate::ui::answering::row(seen, draft, look, frame, face, draw, held)
                     }
-                    None => div().into_any_element(),
+                    None => match &busy {
+                        Some(holder) => {
+                            let frame =
+                                |row: view::Stateful<view::Div>| row.px(design::space::BLOCK);
+                            crate::ui::answering::busy(
+                                chat,
+                                pane,
+                                holder,
+                                (&theme, &ladder),
+                                frame,
+                                cx,
+                            )
+                        }
+                        None => div().into_any_element(),
+                    },
                 };
             };
             let marks = match pane {

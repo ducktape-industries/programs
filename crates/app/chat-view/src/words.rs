@@ -66,6 +66,16 @@ pub(crate) fn doing(what: &str) -> String {
     format!("{what}…")
 }
 
+pub(crate) fn busy(name: &str, height: u64) -> String {
+    format!("{name} is answering here since block {height}")
+}
+
+pub(crate) fn since(height: u64) -> String {
+    format!("since block {height}")
+}
+
+pub(crate) const BREAK: &str = "Break";
+
 pub(crate) const FIND_SOMEONE: &str = "Find a person or agent";
 pub(crate) const SEARCH_PEOPLE: &str = "Search by name or number";
 pub(crate) const NO_ONE_MATCHES: &str = "Nobody matches that name or number";
