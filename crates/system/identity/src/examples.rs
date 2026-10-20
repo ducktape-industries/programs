@@ -155,6 +155,15 @@ pub(crate) fn hears() -> Query {
     }
 }
 
+pub(crate) fn narrowed() -> Query {
+    Query::Narrowed {
+        page: PageRequest {
+            after: None,
+            limit: None,
+        },
+    }
+}
+
 pub(crate) fn managed() -> Query {
     Query::Managed {
         by: 15,

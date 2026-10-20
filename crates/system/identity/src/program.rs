@@ -5,9 +5,9 @@ use ::program::tools::{Described, Tools};
 use ::program::{Error, ExecCtx, Program, QueryCtx};
 
 use crate::rules::{
-    ACCOUNTS, MANAGED, OF_PROGRAM, account, add_key, answers, create, create_agent, generation,
-    hears, needs, of_key, profiles, register_program, remove_key, resolve, resource, resume,
-    revoke, runs, set_name, set_ownership, set_profile, set_script, suspend,
+    ACCOUNTS, ANSWERS, MANAGED, OF_PROGRAM, account, add_key, answers, create, create_agent,
+    generation, hears, needs, of_key, profiles, register_program, remove_key, resolve, resource,
+    resume, revoke, runs, set_name, set_ownership, set_profile, set_script, suspend,
 };
 use crate::{Op, Query, Reply};
 
@@ -84,6 +84,7 @@ impl Program for Identity {
             ),
             Query::Answers { account } => Reply::Answers(answers(ctx, account)?),
             Query::Hears { account, from } => Reply::Hears(hears(ctx, account, from)?),
+            Query::Narrowed { page } => Reply::Narrowed(ANSWERS.range(ctx, &page)?),
         })
     }
 }

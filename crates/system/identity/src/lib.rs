@@ -294,6 +294,9 @@ pub enum Query {
         account: AccountNumber,
         from: AccountNumber,
     },
+    #[ask(Reply::Narrowed(PageResponse<(AccountNumber, Ownership)>))]
+    #[tool_query(description = "Every program account that narrowed whom it answers, with what Answers says for it, in number order a page at a time; an account not listed answers Anyone.", example = examples::narrowed)]
+    Narrowed { page: PageRequest },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -312,6 +315,7 @@ pub enum Reply {
     Accounts(PageResponse<Account>),
     Answers(Option<Ownership>),
     Hears(bool),
+    Narrowed(PageResponse<(AccountNumber, Ownership)>),
 }
 
 /// An op as a person reads it: a title and its fields. The source of the
@@ -470,6 +474,7 @@ fn query_and_reply_variants_only_append() {
             "Managed",
             "Answers",
             "Hears",
+            "Narrowed",
         ]
     );
     assert_eq!(
@@ -484,6 +489,7 @@ fn query_and_reply_variants_only_append() {
             "Accounts",
             "Answers",
             "Hears",
+            "Narrowed",
         ]
     );
 }

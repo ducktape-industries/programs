@@ -912,6 +912,51 @@ fn an_agent_answers_anyone_until_it_or_its_manager_narrows_it() {
     assert!(hears(&store, agent, bob).unwrap());
 }
 
+fn narrowed(store: &MockHost) -> Vec<(u64, Ownership)> {
+    let page = crate::PageRequest {
+        after: None,
+        limit: None,
+    };
+    match query(store, Query::Narrowed { page }) {
+        Reply::Narrowed(page) => page.items,
+        other => panic!("{other:?}"),
+    }
+}
+
+// one page answers every agent that narrowed whom it answers, settled as Answers says it; the rest,
+// and one opened again to anyone, answer Anyone and are not listed
+#[test]
+fn every_narrowed_agent_is_one_page() {
+    let store = memory();
+    let alice = create(&store, ALICE, "Alice");
+    let bob = create(&store, BOB, "Bob");
+    let scout = create_agent(&store, ALICE, "Scout");
+    let atlas = create_agent(&store, ALICE, "Atlas");
+    let sage = create_agent(&store, ALICE, "Sage");
+    assert_eq!(narrowed(&store), []);
+    let set = |account, ownership| Op::SetOwnership { account, ownership };
+    let listed = Ownership::Listed(vec![Party::Account(bob), Party::Account(alice)]);
+    for (account, ownership) in [(sage, listed), (scout, Ownership::Owner)] {
+        run(&store, &signed(&store, ALICE), set(account, ownership)).unwrap();
+    }
+    let bob_only = Ownership::Listed(vec![Party::Account(bob)]);
+    assert_eq!(
+        narrowed(&store),
+        [(scout, Ownership::Owner), (sage, bob_only.clone())]
+    );
+    for (account, ownership) in narrowed(&store) {
+        assert_eq!(answers(&store, account), Some(ownership));
+    }
+    assert_eq!(answers(&store, atlas), Some(Ownership::Anyone));
+    run(
+        &store,
+        &signed(&store, ALICE),
+        set(scout, Ownership::Anyone),
+    )
+    .unwrap();
+    assert_eq!(narrowed(&store), [(sage, bob_only)]);
+}
+
 #[test]
 fn only_a_program_account_answers_and_not_once_revoked() {
     let store = memory();

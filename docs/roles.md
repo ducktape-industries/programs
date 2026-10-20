@@ -139,7 +139,10 @@ program account). And `Hears { account, from }`: whether that account takes
 a message from `from`, its manager always, anyone else as `Answers` says,
 and a program's own account also as that program (`Party::Program`). It is
 the one rule every runtime that delivers messages to an agent asks, harness
-and agents run off the chain alike.
+and agents run off the chain alike. `Narrowed { page }` answers every program
+account that narrowed whom it answers, with its `Answers`, a page at a time,
+so a view reads them all in one paged query; an account it doesn't list
+answers `Anyone`.
 
 ## Who may write a key
 

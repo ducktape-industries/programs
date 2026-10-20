@@ -18,7 +18,7 @@ const GENERATION: Map<Vec<u8>, u64> = Map::new("g/");
 pub(crate) const MANAGED: Set<(AccountNumber, AccountNumber)> = Set::new("d/");
 const NEXT: Item<AccountNumber> = Item::new("next");
 // whom a program account answers, where it narrowed it: no row answers anyone
-const ANSWERS: Map<AccountNumber, Ownership> = Map::new("answers/");
+pub(crate) const ANSWERS: Map<AccountNumber, Ownership> = Map::new("answers/");
 
 pub(crate) fn account(ctx: &QueryCtx, number: AccountNumber) -> Result<Account, Error> {
     ACCOUNTS
