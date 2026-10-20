@@ -1,0 +1,25 @@
+[package]
+name = "forge-reach"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+program = []
+describe = []
+
+[dependencies]
+abi = { workspace = true }
+borsh = { workspace = true }
+describe = { workspace = true }
+ducklink = { workspace = true }
+forge = { workspace = true }
+program = { workspace = true }
+store = { workspace = true }
+
+[dev-dependencies]
+access = { workspace = true }
+chat = { workspace = true }
+gitcore = { workspace = true }

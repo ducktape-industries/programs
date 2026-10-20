@@ -13,7 +13,7 @@ PROGRAM_LINKABLE := abi program store
 # One cargo invocation per program: forge links chat and identity links
 # programs, and `-p a -p b --features program` in one call would unify
 # `program` into the other's link (two `alloc`/`call`).
-PROGRAMS := programs valset identity blobs awaits halo scheduler access ownership chat forge activity files egress attribution harness actions actions-pods fleet wake forge-review-chat
+PROGRAMS := programs valset identity blobs awaits halo scheduler access ownership chat forge activity files egress attribution harness actions actions-pods fleet wake forge-review-chat forge-reach
 
 # Views are wasm32 cdylibs. Chat, Forge and Files ride their own programs;
 # Settings rides the programs role. These are the views that ship: `wasm-views`

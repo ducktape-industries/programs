@@ -41,6 +41,7 @@ fn interface(program: &str) -> Option<(BorshSchemaContainer, Tools)> {
         "actions-pods" => of::<actions_pods::ActionsPods>(),
         "fleet" => of::<fleet::Fleet>(),
         "forge-review-chat" => of::<forge_review_chat::ForgeReviewChat>(),
+        "forge-reach" => of::<forge_reach::ForgeReach>(),
         "wake" => of::<wake::Wake>(),
         _ => return None,
     };

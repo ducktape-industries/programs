@@ -62,6 +62,7 @@ pub const UNFOUNDED: &[&str] = &[
     "fleet",
     "wake",
     "forge-review-chat",
+    "forge-reach",
 ];
 pub const VIEWS: [&str; 1] = ["explorer_view"];
 /// The programs that ship a notifier, and the module `make wasm-notifiers`
