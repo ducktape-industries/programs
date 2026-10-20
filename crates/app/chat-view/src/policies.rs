@@ -21,6 +21,13 @@ pub(crate) fn message_policy(chat: &mut Chat) -> &mut Editing {
     &mut chat.message_policy
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Offered {
+    pub(crate) react: bool,
+    pub(crate) edit: bool,
+    pub(crate) delete: bool,
+}
+
 impl Chat {
     fn reader(&self) -> Option<Party> {
         self.my_account().map(Party::Account)
@@ -75,6 +82,16 @@ impl Chat {
             .message_item(pane, seq)
             .and_then(|message| self.message_policy.admits(&message));
         read.unwrap_or_else(|| self.wrote(pane, seq))
+    }
+
+    pub(crate) fn offered(&self, pane: Pane, seq: u64) -> Offered {
+        let standing = self.shown(pane).any(|row| row.seq == seq && !row.deleted);
+        let writes = standing && self.may_write();
+        Offered {
+            react: writes,
+            edit: writes && self.editable(pane, seq) && self.may_edit(pane, seq),
+            delete: standing && self.may_delete(pane, seq),
+        }
     }
 
     pub(crate) fn who_can_edit(&mut self, pane: Pane, seq: u64, cx: &mut Context<Self>) {

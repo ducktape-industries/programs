@@ -87,7 +87,11 @@ them: `may_change_room` (rename, archive, seat and remove members, delete
 others' messages) and `may_edit` (edit) answer the item's policy once read,
 and the rule from before policies (the channel's owner, the message's author)
 until then and for an item with no record. `may_delete` follows chat: the
-author's delete is `may_edit`, anyone else's `may_change_room`.
+author's delete is `may_edit`, anyone else's `may_change_room`. Both shells
+offer a message's actions through one `offered`, as chat checks them: react
+and edit only where the reader may write (`may_write`, chat's `writable`),
+delete by `may_delete` alone, archived or not; edit only where `editable` (no
+notice), and none of the three on a deleted message.
 
 ## Follows
 The session, routes, visibility, the chain's heads, and the live heads of

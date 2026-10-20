@@ -445,7 +445,7 @@ fn action_strip(
 ) -> AnyElement {
     let (id, seq) = (&message.id, message.seq);
     let rev = message.rev;
-    let writable = chat.may_write();
+    let reacts = chat.offered(pane, seq).react;
     let strip_hover = hovers((pane, seq), true, cx);
     let actions = div()
         .id(format!("chat-message-{id}-actions"))
@@ -471,8 +471,8 @@ fn action_strip(
             true,
         )
     });
-    let thumbs = writable && cells.push(Control::ThumbsUp);
-    let react = writable && cells.push(Control::React);
+    let thumbs = reacts && cells.push(Control::ThumbsUp);
+    let react = reacts && cells.push(Control::React);
     let more = cells.push(Control::More);
     actions
         .children(thread)
@@ -482,13 +482,13 @@ fn action_strip(
                 "👍",
                 "React with 👍",
                 theme,
-                writable,
+                reacts,
                 thumbs,
                 acts(pane, seq, rev, Control::ThumbsUp, cx),
             )
             .into_any_element(),
             "thumbs-up",
-            writable,
+            reacts,
         ))
         .child(cell(
             action_button(
@@ -496,13 +496,13 @@ fn action_strip(
                 "😀",
                 "Manage reactions",
                 theme,
-                writable,
+                reacts,
                 react,
                 acts(pane, seq, rev, Control::React, cx),
             )
             .into_any_element(),
             "react",
-            writable,
+            reacts,
         ))
         .child(cell(
             action_button(
@@ -769,7 +769,7 @@ fn reactions(
     theme: &Theme,
 ) -> AnyElement {
     let (seq, rev) = (message.seq, message.rev);
-    let writable = chat.may_write();
+    let reacts = chat.offered(pane, seq).react;
     let reactors = chat.room.as_ref().and_then(|room| room.reactors.get(&seq));
     let empty = Names::empty();
     let names = chat.names.ready().unwrap_or(&empty);
@@ -783,7 +783,7 @@ fn reactions(
             emoji: reaction.emoji.clone(),
             add: !reaction.reacted_by_me,
         };
-        let active = writable && cells.push(control.clone());
+        let active = reacts && cells.push(control.clone());
         let id = format!("chat-message-{}-reaction-{}", message.id, reaction.emoji);
         let who = reactors
             .and_then(|reactors| reactors.get(&reaction.emoji))
@@ -802,24 +802,24 @@ fn reactions(
             face,
             reaction.reacted_by_me,
             theme,
-            writable,
+            reacts,
             active,
             click,
         );
-        reactions = reactions.child(cell(&id, writable, chip));
+        reactions = reactions.child(cell(&id, reacts, chip));
     }
-    let active = writable && cells.push(Control::AddReaction);
+    let active = reacts && cells.push(Control::AddReaction);
     let id = format!("chat-message-{}-reaction-add", message.id);
     let add = reaction_button(
         id.clone(),
         Face::Add,
         false,
         theme,
-        writable,
+        reacts,
         active,
         acts(pane, seq, rev, Control::AddReaction, cx),
     );
-    reactions = reactions.child(cell(&id, writable, add));
+    reactions = reactions.child(cell(&id, reacts, add));
     reactions.into_any_element()
 }
 

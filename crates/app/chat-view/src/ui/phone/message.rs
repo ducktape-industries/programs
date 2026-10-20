@@ -284,14 +284,17 @@ fn reactions(
     ladder: &Ladder,
 ) -> Div {
     let (seq, rev) = (message.seq, message.rev);
+    let reacts = chat.offered(pane, seq).react;
     let chips: Vec<AnyElement> = message
         .reactions
         .iter()
         .map(|reaction| {
             let (emoji, add) = (reaction.emoji.clone(), !reaction.reacted_by_me);
-            let react = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
-                cx.notify();
-                chat.react(seq, emoji.clone(), add, cx)
+            let react = reacts.then(|| {
+                cx.listener(move |chat, _: &ClickEvent, _window, cx| {
+                    cx.notify();
+                    chat.react(seq, emoji.clone(), add, cx)
+                })
             });
             let shown = reaction.emoji.clone();
             let held = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
@@ -305,23 +308,25 @@ fn reactions(
             emoji_chip(id, reaction, &who, presses, theme, ladder)
         })
         .collect();
-    let pick = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
-        cx.notify();
-        chat.show_menu(pane, seq, rev, Mode::Reactions);
+    let add = reacts.then(|| {
+        let pick = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
+            cx.notify();
+            chat.show_menu(pane, seq, rev, Mode::Reactions);
+        });
+        add_chip(
+            format!("chat-message-{}-reaction-add", message.id),
+            pick,
+            theme,
+            ladder,
+        )
     });
-    let add = add_chip(
-        format!("chat-message-{}-reaction-add", message.id),
-        pick,
-        theme,
-        ladder,
-    );
     div()
         .flex()
         .flex_wrap()
         .gap(design::space::XS)
         .mt(design::space::XXS)
         .children(chips)
-        .child(add)
+        .children(add)
 }
 
 fn chip(mine: bool, theme: &Theme) -> Div {
@@ -340,7 +345,7 @@ fn chip(mine: bool, theme: &Theme) -> Div {
 }
 
 struct Presses<R, H> {
-    react: R,
+    react: Option<R>,
     held: H,
 }
 
@@ -357,14 +362,17 @@ where
     H: Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 {
     let mine = reaction.reacted_by_me;
+    let reacts = presses.react.is_some();
     let hit = design::hit(id, CHIP_WIDTH, CHIP_HEIGHT, HAIRLINE, ladder)
         .role(Role::Button)
         .aria_label(format!("{} {}", reaction.emoji, reaction.count))
         .when(!who.is_empty(), |hit| hit.aria_description(who.to_owned()))
         .aria_toggled(mine.into())
+        .when(!reacts, |hit| hit.aria_disabled(true))
         .focusable()
-        .on_click(presses.react)
-        .consumes_click()
+        .when_some(presses.react, |hit, react| {
+            hit.on_click(react).consumes_click()
+        })
         .on_aux_click(presses.held);
     chip(mine, theme)
         .child(div().text_type(CHIP_EMOJI).child(reaction.emoji.clone()))

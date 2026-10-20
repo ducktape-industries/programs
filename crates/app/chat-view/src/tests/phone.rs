@@ -729,6 +729,27 @@ fn a_long_press_on_a_reaction_names_who_chose_it_and_not_the_rows_actions() {
 }
 
 #[test]
+fn an_archived_room_keeps_who_reacted_and_takes_no_reaction() {
+    let (mut cx, view) = in_general();
+    let mut liked = row(1, 7, "hello");
+    liked.reactions = vec![::chat::Reaction {
+        emoji: "👍".into(),
+        count: 2,
+        reacted_by_me: true,
+    }];
+    rows_are(&mut cx, &view, vec![liked]);
+    general_is(&mut cx, &view, |general| general.channel.archived = true);
+    assert!(
+        cx.find("chat-message-m1-reaction-add").is_none(),
+        "no picker where chat takes no reaction"
+    );
+    let chip = cx.interactivity("chat-message-m1-reaction-👍");
+    assert!(chip.on_click.is_none(), "a tap takes no reaction");
+    assert_eq!(chip.aria.disabled, Some(true));
+    assert!(chip.on_aux_click.is_some(), "a long press still names who");
+}
+
+#[test]
 fn a_screen_reader_opens_the_same_actions_from_the_row() {
     let (mut cx, _) = in_general();
     cx.simulate_a11y_action(
@@ -938,6 +959,25 @@ fn a_notice_of_the_readers_own_offers_no_edit() {
         cx.find("chat-actions-edit").is_none(),
         "chat never edits a notice"
     );
+}
+
+#[test]
+fn an_archived_room_offers_the_author_delete_and_neither_a_reaction_nor_an_edit() {
+    let (mut cx, view) = in_general();
+    general_is(&mut cx, &view, |general| general.channel.archived = true);
+    long_press(&mut cx, "chat-message-m1-row");
+    assert!(
+        cx.find("chat-actions-delete").is_some(),
+        "chat lets the author delete in an archived room: {:?}",
+        cx.texts()
+    );
+    for id in [
+        "chat-actions-quick",
+        "chat-actions-all-reactions",
+        "chat-actions-edit",
+    ] {
+        assert!(cx.find(id).is_none(), "{id} offered where chat refuses it");
+    }
 }
 
 #[test]

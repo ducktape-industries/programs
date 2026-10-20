@@ -172,7 +172,7 @@ enum Action {
 
 fn more_items(chat: &Chat, menu: &Menu) -> Vec<Action> {
     let (pane, seq) = (menu.pane, menu.seq);
-    let writable = chat.may_write();
+    let offers = chat.offered(pane, seq);
     let open = chat
         .room
         .as_ref()
@@ -180,16 +180,13 @@ fn more_items(chat: &Chat, menu: &Menu) -> Vec<Action> {
         .is_some_and(|thread| thread.root == seq);
     [
         (Action::Reply, pane == Pane::Timeline && !open),
-        (Action::React, writable),
+        (Action::React, offers.react),
         (Action::CopyText, text_of(chat, pane, seq).is_some()),
         (Action::CopyLink, chat.message_link(seq).is_some()),
         (Action::WorkRecord, work_record(chat, pane, seq).is_some()),
         (Action::WhoCanEdit, chat.message_item(pane, seq).is_some()),
-        (
-            Action::Edit,
-            writable && chat.editable(pane, seq) && chat.may_edit(pane, seq),
-        ),
-        (Action::Delete, writable && chat.may_delete(pane, seq)),
+        (Action::Edit, offers.edit),
+        (Action::Delete, offers.delete),
     ]
     .into_iter()
     .filter_map(|(action, offered)| offered.then_some(action))

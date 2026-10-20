@@ -311,6 +311,63 @@ fn reaction_picker_keeps_labels_and_its_stable_action_id() {
 }
 
 #[test]
+fn an_archived_room_offers_the_author_delete_and_neither_a_reaction_nor_an_edit() {
+    let (mut cx, view) = opened();
+    cx.update(&view, |chat, _, cx| {
+        let rooms = chat.channels.ready_mut().expect("the rooms are read");
+        let general = rooms
+            .iter_mut()
+            .find(|info| info.channel.id == "general")
+            .expect("general is listed");
+        general.channel.archived = true;
+        chat.menu = Some(Menu {
+            pane: Pane::Timeline,
+            seq: 1,
+            rev: 0,
+            mode: Mode::More,
+            at: (611., 455.),
+        });
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(
+        cx.find("chat-menu-delete").is_some(),
+        "chat lets the author delete in an archived room"
+    );
+    for id in ["chat-menu-add-reaction", "chat-menu-edit"] {
+        assert!(cx.find(id).is_none(), "{id} offered where chat refuses it");
+    }
+}
+
+#[test]
+fn an_archived_room_draws_the_strip_and_the_chips_with_no_live_reaction() {
+    let (mut cx, view) = opened();
+    cx.update(&view, |chat, _, cx| {
+        let rooms = chat.channels.ready_mut().expect("the rooms are read");
+        let general = rooms
+            .iter_mut()
+            .find(|info| info.channel.id == "general")
+            .expect("general is listed");
+        general.channel.archived = true;
+        let room = chat.room.as_mut().expect("a room is open");
+        let rows = room.messages.ready_mut().expect("its rows are read");
+        let first = rows.iter_mut().find(|row| row.seq == 1).expect("row 1");
+        first.reactions = vec![::chat::Reaction {
+            emoji: "👍".into(),
+            count: 1,
+            reacted_by_me: false,
+        }];
+        cx.notify();
+    });
+    cx.run_until_parked();
+    message::hover(&mut cx, &view, 1);
+    for key in ["thumbs-up", "react", "reaction-👍", "reaction-add"] {
+        let id = format!("chat-message-m1-{key}");
+        assert_eq!(cx.interactivity(&id).aria.disabled, Some(true), "{id}");
+    }
+}
+
+#[test]
 fn an_emoji_search_shows_every_match() {
     let (mut cx, view) = opened();
     let found = crate::emoji::search("c");

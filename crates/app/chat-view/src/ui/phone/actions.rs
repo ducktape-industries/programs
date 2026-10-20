@@ -38,7 +38,11 @@ pub(super) fn sheet(
         .flex()
         .flex_col()
         .child(head(message, theme, ladder))
-        .children((!message.deleted).then(|| quick(chat, message, pane, cx, theme)))
+        .children(
+            chat.offered(pane, message.seq)
+                .react
+                .then(|| quick(chat, message, pane, cx, theme)),
+        )
         .children(rows(chat, message, pane, cx, theme, ladder));
     Some(
         design::sheet("chat-actions-sheet", words::MESSAGE_ACTIONS, ladder, theme)
@@ -199,8 +203,7 @@ fn rows(
 ) -> Vec<AnyElement> {
     let (seq, rev, deleted) = (message.seq, message.rev, message.deleted);
     let in_thread = pane == Pane::Thread || message.thread.is_some();
-    let edit = chat.editable(pane, seq) && chat.may_edit(pane, seq);
-    let delete = chat.may_delete(pane, seq);
+    let offered = chat.offered(pane, seq);
     let link = chat.message_link(seq);
     let row =
         |id: &'static str, icon: &'static str, label: &'static str, danger: bool, click: Press| {
@@ -269,7 +272,7 @@ fn rows(
         false,
         Box::new(who),
     ));
-    if !deleted && edit {
+    if offered.edit {
         rows.push(row(
             "chat-actions-edit",
             "pencil",
@@ -278,7 +281,7 @@ fn rows(
             reopen(Mode::Editing, cx),
         ));
     }
-    if !deleted && delete {
+    if offered.delete {
         rows.push(row(
             "chat-actions-delete",
             "trash",
