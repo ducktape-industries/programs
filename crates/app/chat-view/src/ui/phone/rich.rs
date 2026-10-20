@@ -37,7 +37,7 @@ pub(super) fn blocks(
     drawn(chat, &key, &message.blocks, cx, theme, ladder)
 }
 
-pub(super) fn drawn(
+pub(crate) fn drawn(
     chat: &Chat,
     key: &str,
     blocks: &[Block],

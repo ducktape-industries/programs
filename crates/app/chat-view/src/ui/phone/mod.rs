@@ -15,7 +15,7 @@ mod message;
 mod new;
 mod parts;
 mod picker;
-mod rich;
+pub(crate) mod rich;
 mod room;
 mod rooms;
 mod search;

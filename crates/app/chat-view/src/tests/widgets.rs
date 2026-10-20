@@ -526,6 +526,7 @@ fn templates_fill_paths_names_and_the_reader() {
         names: Some(&names),
         count: None,
         now: None,
+        room: None,
     };
     let filled = widget::fill(
         "J-{id} {title} {tags.1}{none} {me} {missing}|{open",
@@ -870,6 +871,7 @@ fn ago_counts_from_the_chains_newest_block() {
         names: None,
         count: None,
         now: Some(NOW),
+        room: None,
     };
     assert_eq!(widget::fill("{at|ago} ago", &row, &scope), "5m ago");
     let before = Scope { now: None, ..scope };
@@ -909,4 +911,147 @@ fn export_board_widget_screens() {
     }
     let listed = serde_json::to_vec_pretty(&manifest).unwrap();
     std::fs::write(out.join("board-manifest.json"), listed).unwrap();
+}
+
+const JOB: &str = "/shared/widgets/job.toml";
+
+// The job pane's shape over chat's own reply: the open room's channel as one
+// row, and a file named for it beside it, drawn as markdown.
+const JOBBED: &str = r#"
+title = "This job"
+[source]
+program = "chat"
+query = { Channel = { channel_id = "{room}" } }
+rows = "Channel"
+[source.text]
+path = "/shared//notes/{channel.id}.md"
+[view]
+kind = "text"
+"#;
+
+const NOTES: &str = "/shared/notes/general.md";
+
+const SUMMARY: &str = "**What:** the chat board widget as a list grouped by status, and a pane in every job room.
+**Why:** orthory found the old board widget useless and too dry; eddy wants a room that explains itself.
+**Decided:** status sections with icons, counts and tone bars; ● a turn, ◐ a build; this pane reads `summary.md`.
+**State now:** the grouped list is green (#155); board `Working` is green; the PNG tool landed.
+**Next:** board `JobIn` and the room meta upkeep, then screenshots for eddy.
+**Waiting on:** nothing.";
+
+#[test]
+fn a_text_widget_draws_the_file_its_row_names_as_markdown_for_the_open_room() {
+    let held = held(&[(JOB, JOBBED), (NOTES, SUMMARY)]);
+    let (mut cx, _) = desk(rooms(&[("widget.side", JOB)]), held.clone());
+    cx.simulate_click("chat-room-widget");
+    cx.run_until_parked();
+    let asked = cx.host().requests::<Ask<::chat::Chat>>();
+    let room = Query::Channel {
+        channel_id: "general".into(),
+    };
+    assert!(
+        asked.contains(&room),
+        "{{room}} is the open room: {asked:?}"
+    );
+    let first =
+        "What: the chat board widget as a list grouped by status, and a pane in every job room.";
+    assert!(cx.has_text(first), "{:?}", cx.texts());
+    assert!(cx.has_text("Waiting on: nothing."));
+    let blocks = cx.find("chat-widget-side-text-block-5").is_some();
+    assert!(blocks, "a line is a block: {:?}", cx.texts());
+
+    // the file moved: the next files block reads it again
+    let moved = SUMMARY.replace("Waiting on:** nothing.", "Waiting on:** chief's merge.");
+    held.borrow_mut().insert(NOTES.into(), (2, moved));
+    let files = cx.host().stream::<Changes<files::Files>>();
+    files.send(block(12, Vec::new()));
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("Waiting on: chief's merge."),
+        "{:?}",
+        cx.texts()
+    );
+}
+
+#[test]
+fn a_text_widget_with_no_file_yet_says_so_and_its_header_says_the_first_line() {
+    let bare = held(&[(JOB, JOBBED)]);
+    let (mut cx, _) = desk(rooms(&[("widget.side", JOB)]), bare);
+    cx.simulate_click("chat-room-widget");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("Nothing at /shared/notes/general.md yet."),
+        "{:?}",
+        cx.texts()
+    );
+    let held = held(&[(JOB, JOBBED), (NOTES, SUMMARY)]);
+    let (cx, _) = desk(rooms(&[("widget.header", JOB)]), held);
+    let line = "This job: What: the chat board widget as a list grouped by status, and a pane in every job room.";
+    assert!(cx.has_text(line), "{:?}", cx.texts());
+    let bare = JOBBED.replace(
+        "[source.text]\npath = \"/shared//notes/{channel.id}.md\"\n",
+        "",
+    );
+    assert_ne!(bare, JOBBED, "the bare file drops [source.text]");
+    assert_eq!(
+        widget::parse(&bare).unwrap_err(),
+        "a text widget needs `[source.text]`"
+    );
+}
+
+#[test]
+fn room_fills_queries_and_templates() {
+    let query = json!({ "JobIn": { "channel": "{room}" } });
+    assert_eq!(
+        widget::with_room(&query, Some("j-088")),
+        json!({ "JobIn": { "channel": "j-088" } })
+    );
+    let scope = Scope {
+        me: None,
+        names: None,
+        count: None,
+        now: None,
+        room: Some("j-088"),
+    };
+    assert_eq!(widget::fill("#{room}", &json!({}), &scope), "#j-088");
+}
+
+// `CHAT_SCREEN_EXPORT=1` writes the job pane's frames: the desktop's side
+// pane and the phone's details page, listed in `pane-manifest.json`.
+#[test]
+fn export_job_pane_screens() {
+    if std::env::var_os("CHAT_SCREEN_EXPORT").is_none() {
+        return;
+    }
+    let out =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../target/chat/fixtures");
+    std::fs::create_dir_all(&out).unwrap();
+    let mut manifest = Vec::new();
+    for (touch, (width, height)) in [(false, (1280, 800)), (true, (390, 1400))] {
+        let held = held(&[(JOB, JOBBED), (NOTES, SUMMARY)]);
+        let rooms = rooms(&[("widget.side", JOB)]);
+        let mut cx = TestAppContext::new();
+        configure(&mut cx);
+        serve(&cx, rooms, held);
+        cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
+        let _view = cx.open::<Chat>();
+        if touch {
+            cx.simulate_touch(true);
+        }
+        cx.simulate_resize(width as f32, height as f32);
+        seat(&mut cx);
+        let (room, open) = match touch {
+            true => ("chat-rooms-channel-general", "chat-room-details"),
+            false => ("chat-sidebar-channel-general", "chat-room-widget"),
+        };
+        cx.simulate_click(room);
+        cx.run_until_parked();
+        cx.simulate_click(open);
+        cx.run_until_parked();
+        let name = format!("pane-{}-light", if touch { "phone" } else { "desktop" });
+        let frame = serde_json::to_vec(&cx.whole_frame()).unwrap();
+        std::fs::write(out.join(format!("{name}.json")), frame).unwrap();
+        manifest.push(json!({ "name": name, "width": width, "height": height, "theme": "light" }));
+    }
+    let listed = serde_json::to_vec_pretty(&manifest).unwrap();
+    std::fs::write(out.join("pane-manifest.json"), listed).unwrap();
 }

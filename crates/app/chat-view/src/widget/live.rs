@@ -12,7 +12,7 @@ use view::methods::{BlobGet, Call, NamedChanges, NamedQuery};
 use view::prelude::*;
 use view::{Host, Task, store};
 
-use super::{Shape, Slot, Widget, at, parse, put, with_me};
+use super::{Scope, Shape, Slot, TextSource, Widget, at, fill, parse, put, with_me, with_room};
 use crate::{Chat, words};
 
 // Every widget the open room names, by file path, and what they read.
@@ -30,6 +30,8 @@ pub(crate) struct Widgets {
     // the sections the reader folded or opened against the file's `fold`,
     // by file and value
     pub(crate) flipped: BTreeSet<(String, String)>,
+    // the room the widgets were read for: `{room}` reads anew in another
+    room: Option<String>,
 }
 
 // What `|ago` says no finer than once the time is past a minute: a new
@@ -80,7 +82,17 @@ pub(crate) enum Shown {
         widget: Rc<Widget>,
         reply: Value,
         rows: Vec<Value>,
+        text: Option<Text>,
     },
+}
+
+// What a widget's `[source.text]` read: the file's path, its object as read,
+// and its text, or why it didn't read.
+#[derive(Clone, PartialEq, Debug)]
+pub(crate) struct Text {
+    pub(crate) path: String,
+    pub(crate) object: Option<BlobId>,
+    pub(crate) text: Result<String, String>,
 }
 
 impl Shown {
@@ -172,6 +184,11 @@ impl Chat {
     // names dropped, and the programs they read followed: settled each
     // frame, since the room and its meta arrive by many paths.
     pub(crate) fn settle_widgets(&mut self, cx: &mut Context<Self>) {
+        let room = self.room.as_ref().map(|room| room.id.clone());
+        if self.widgets.room != room {
+            self.widgets.room = room;
+            self.widgets.files.clear();
+        }
         let named: BTreeSet<String> = Slot::ALL
             .into_iter()
             .filter_map(|slot| self.widget_path(slot).map(str::to_owned))
@@ -211,7 +228,8 @@ impl Chat {
 
     // A block of `program`: the widgets that read it ask again, and on a
     // block of files every widget looks whether its file moved. A widget
-    // whose read failed asks again on any block it hears.
+    // whose read failed asks again on any block it hears, and one reading a
+    // file beside its source on every block of files.
     fn widgets_moved(&mut self, program: &str, cx: &mut Context<Self>) {
         let moved: Vec<(String, bool)> = self
             .widgets
@@ -220,7 +238,9 @@ impl Chat {
             .map(|(path, live)| {
                 let failed = matches!(live.shown, Shown::Failed { .. });
                 let reads = live.follows.as_deref() == Some(program);
-                (path.clone(), failed || reads)
+                let texts = matches!(&live.shown, Shown::Ready { text: Some(_), .. });
+                let texts = texts && program == files::PROGRAM;
+                (path.clone(), failed || reads || texts)
             })
             .collect();
         for (path, reads) in moved {
@@ -238,8 +258,17 @@ impl Chat {
         };
         live.asking |= ask;
         let (ask, known, host, path) = (live.asking, live.file.clone(), cx.host(), path.to_owned());
+        let text = match &live.shown {
+            Shown::Ready { text, .. } => text.clone(),
+            _ => None,
+        };
+        let reader = Reader {
+            me,
+            room: self.widgets.room.clone(),
+            text,
+        };
         let task = cx.spawn(async move |this, cx| {
-            let landed = read(&host, &path, known, ask, me, &schemas).await;
+            let landed = read(&host, &path, known, ask, &reader, &schemas).await;
             let _ = this.update(cx, |chat, cx| chat.widget_landed(&path, landed, cx));
         });
         live.reading = Some(task);
@@ -265,6 +294,14 @@ impl Chat {
     }
 }
 
+// Who reads a widget, and where: the reader's number, the open room, and
+// the text last read beside the source, kept while its file stays.
+struct Reader {
+    me: Option<u64>,
+    room: Option<String>,
+    text: Option<Text>,
+}
+
 // The widget at `path` as it is now: its file looked at, read again when
 // it moved, and its source asked when `ask` says or the file moved.
 async fn read(
@@ -272,7 +309,7 @@ async fn read(
     path: &str,
     known: Option<File>,
     ask: bool,
-    me: Option<u64>,
+    reader: &Reader,
     schemas: &Schemas,
 ) -> Landed {
     let failed = |file: Option<File>, title: Option<String>, why: String| Landed {
@@ -318,12 +355,19 @@ async fn read(
     let program = &widget.source.program;
     let (shown, follows) = match interface(host, program, schemas).await {
         Ok(interface) => {
-            let shown = match source(host, &interface, &widget, me).await {
-                Ok((reply, rows)) => Shown::Ready {
-                    widget: widget.clone(),
-                    reply,
-                    rows,
-                },
+            let shown = match source(host, &interface, &widget, reader).await {
+                Ok((reply, rows)) => {
+                    let text = match &widget.source.text {
+                        Some(source) => beside(host, source, &rows, reader).await,
+                        None => None,
+                    };
+                    Shown::Ready {
+                        widget: widget.clone(),
+                        reply,
+                        rows,
+                        text,
+                    }
+                }
                 Err(why) => Shown::Failed {
                     title: Some(widget.title.clone()),
                     why,
@@ -378,16 +422,64 @@ pub(crate) async fn file_bytes(
     }
 }
 
+// The file `source` names for the first row, read again only once its
+// object moved; none without a row or with an empty path.
+async fn beside(host: &Host, source: &TextSource, rows: &[Value], reader: &Reader) -> Option<Text> {
+    let scope = Scope {
+        me: reader.me,
+        names: None,
+        count: None,
+        now: None,
+        room: reader.room.as_deref(),
+    };
+    let path = fill(&source.path, rows.first()?, &scope);
+    if path.trim().is_empty() {
+        return None;
+    }
+    // a folder written with or without its last `/` names one file either way
+    let path = match path.strip_prefix('/') {
+        Some(rest) => {
+            let steps: Vec<&str> = rest.split('/').filter(|step| !step.is_empty()).collect();
+            format!("/{}", steps.join("/"))
+        }
+        None => path,
+    };
+    let read = |object: Option<BlobId>, text: Result<String, String>| Text {
+        path: path.clone(),
+        object,
+        text,
+    };
+    let stat = files::ask::Stat {
+        path: path.clone(),
+        at: None,
+    };
+    let (snapshot, object) = match host.query(stat).await {
+        Ok((snapshot, Some(entry))) => match entry.node {
+            files::Node::File { file, .. } => (snapshot, file),
+            _ => return Some(read(None, Err(words::widget_no_text(&path)))),
+        },
+        Ok((_, None)) => return Some(read(None, Err(words::widget_no_text(&path)))),
+        Err(refusal) => return Some(read(None, Err(design::sentence(&refusal)))),
+    };
+    if let Some(known) = &reader.text
+        && known.path == path
+        && known.object == Some(object)
+    {
+        return Some(known.clone());
+    }
+    Some(read(Some(object), contents(host, &path, snapshot).await))
+}
+
 // The source's reply and the rows it lists: every page of them when the
 // source names a cursor.
 async fn source(
     host: &Host,
     interface: &Rc<Interface>,
     widget: &Widget,
-    me: Option<u64>,
+    reader: &Reader,
 ) -> Result<(Value, Vec<Value>), String> {
     let source = &widget.source;
-    let query = with_me(&source.query, me);
+    let query = with_room(&with_me(&source.query, reader.me), reader.room.as_deref());
     let Some(cursor) = source.cursor.clone() else {
         let reply = ask(host, interface, &source.program, query)
             .await
@@ -430,12 +522,15 @@ async fn source(
     Ok((reply, pages))
 }
 
-// The list at `path` in the reply; the empty path names the reply itself,
-// which need not be a list (a stat reads it whole).
+// The list at `path` in the reply, the one row an object there is, or none
+// for null; the empty path names the reply itself, which need not be a list
+// (a stat reads it whole).
 fn rows_of(reply: &Value, path: &str) -> Result<Vec<Value>, String> {
     match at(reply, path) {
         Some(Value::Array(items)) => Ok(items.clone()),
         Some(_) if path.is_empty() => Ok(Vec::new()),
+        Some(Value::Null) => Ok(Vec::new()),
+        Some(row @ Value::Object(_)) => Ok(vec![row.clone()]),
         Some(_) => Err(words::widget_not_a_list(path)),
         None => Err(words::widget_nothing_at(path)),
     }

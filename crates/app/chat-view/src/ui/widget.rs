@@ -8,7 +8,7 @@ use view::design::Ladder;
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
 
-use crate::widget::{Kind, Scope, Shape, Shown, Slot, fill, holds};
+use crate::widget::{Kind, Scope, Shape, Shown, Slot, Text, fill, holds};
 use crate::{Chat, words};
 
 fn scope(chat: &Chat, count: Option<usize>) -> Scope<'_> {
@@ -17,6 +17,7 @@ fn scope(chat: &Chat, count: Option<usize>) -> Scope<'_> {
         names: chat.names.ready(),
         count,
         now: chat.widgets.now,
+        room: chat.room.as_ref().map(|room| room.id.as_str()),
     }
 }
 
@@ -33,7 +34,11 @@ pub(crate) fn line(chat: &Chat, theme: &Theme, ladder: &Ladder) -> Option<AnyEle
             widget,
             reply,
             rows,
-        } => summary(chat, &widget.view, reply, rows),
+            text,
+        } => match (&widget.view.kind, text) {
+            (Kind::Text, Some(text)) => first_line(text),
+            _ => summary(chat, &widget.view, reply, rows),
+        },
     };
     Some(
         div()
@@ -44,6 +49,26 @@ pub(crate) fn line(chat: &Chat, theme: &Theme, ladder: &Ladder) -> Option<AnyEle
             .child(format!("{}: {said}", shown.title()))
             .into_any_element(),
     )
+}
+
+// A text widget's header line: the words of the file's first paragraph or
+// quote, its markup left out, or why it has none.
+fn first_line(text: &Text) -> String {
+    let markdown = match &text.text {
+        Ok(markdown) => markdown,
+        Err(why) => return why.clone(),
+    };
+    let blocks = ::chat::parse_message(markdown);
+    let said = blocks.iter().find_map(|block| match block {
+        ::chat::Block::Paragraph(spans) | ::chat::Block::Quote(spans) => Some(
+            spans
+                .iter()
+                .map(|span| span.text.as_str())
+                .collect::<String>(),
+        ),
+        _ => None,
+    });
+    said.unwrap_or_else(|| words::WIDGET_EMPTY.to_owned())
 }
 
 fn summary(chat: &Chat, shape: &Shape, reply: &Value, rows: &[Value]) -> String {
@@ -66,6 +91,7 @@ fn summary(chat: &Chat, shape: &Shape, reply: &Value, rows: &[Value]) -> String 
             })
             .collect::<Vec<_>>()
             .join(" · "),
+        Kind::Text => String::new(),
         Kind::List | Kind::Checklist => {
             let (item, scope) = (shape.item.as_deref().unwrap_or_default(), scope(chat, None));
             let items: Vec<String> = rows.iter().map(|row| fill(item, row, &scope)).collect();
@@ -259,15 +285,23 @@ pub(crate) fn body(
     let Some(shown) = chat.widget(slot) else {
         return div().into_any_element();
     };
-    let (widget, reply, rows) = match shown {
+    let (widget, reply, rows, text) = match shown {
         Shown::Loading => return quiet("loading", words::WIDGET_LOADING.into(), theme.muted),
         Shown::Failed { why, .. } => return quiet("failed", why.clone(), theme.danger),
         Shown::Ready {
             widget,
             reply,
             rows,
-        } => (widget, reply, rows),
+            text,
+        } => (widget, reply, rows, text),
     };
+    if widget.view.kind == Kind::Text {
+        return match text.as_ref().map(|text| &text.text) {
+            Some(Ok(markdown)) => markdown_view(chat, slot, markdown, cx, theme, ladder),
+            Some(Err(why)) => quiet("empty", why.clone(), theme.muted),
+            None => quiet("empty", widget.view.nothing(), theme.muted),
+        };
+    }
     let shape = &widget.view;
     let rows = shape.rows(rows);
     if rows.is_empty() && !matches!(shape.kind, Kind::Stat | Kind::Columns) {
@@ -288,7 +322,34 @@ pub(crate) fn body(
         Kind::Columns => draw.columns(&rows, cx),
         Kind::Table => draw.table(&widget.title, &rows, cx),
         Kind::Stat => draw.stat(reply, rows.len()),
+        Kind::Text => div().into_any_element(),
     }
+}
+
+// A file's markdown as chat draws a message's: chat's own parse, a block
+// each, in the slot's tree's style.
+fn markdown_view(
+    chat: &Chat,
+    slot: Slot,
+    markdown: &str,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    let parsed = ::chat::parse_message(markdown);
+    let id = key(slot, "text");
+    let blocks = match ladder.touch {
+        true => crate::ui::phone::rich::drawn(chat, &id, &parsed, cx, theme, ladder),
+        false => crate::ui::message::drawn(chat, &id, &parsed, cx, theme),
+    };
+    div()
+        .id(key(slot, "text"))
+        .flex()
+        .flex_col()
+        .gap(design::space::XS)
+        .text_type(ladder.body)
+        .children(blocks)
+        .into_any_element()
 }
 
 struct Draw<'a> {

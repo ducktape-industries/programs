@@ -1,7 +1,7 @@
 # Chat widgets
 
 A widget is a TOML file in files that a chat channel names in its meta. chat-view reads the file,
-asks its one read-only query of any program, and draws the reply in one of five shapes. Nothing is
+asks its one read-only query of any program, and draws the reply in one of six shapes. Nothing is
 compiled or deployed per widget: writing the file and setting the meta is the whole of it.
 
 ## Where a widget shows
@@ -29,7 +29,7 @@ cursor = "Jobs.page.after"            # optional: read every page, putting each 
                                       # (the field beside `rows`' list) at this path of the query
 
 [view]
-kind = "columns"                      # list | columns | table | stat | checklist
+kind = "columns"                      # list | columns | table | stat | checklist | text
 except = { status = ["done", "merged"] }   # optional: drop rows whose field is one of these
                                       # `where`, the same form, keeps only them
 group_by = "status"                   # columns: one column per value
@@ -46,6 +46,10 @@ Per kind:
   the first cell is the row's link.
 - `stat`: one figure, `value` (a template over the reply; `{count}` is the number of rows left
   after `where` and `except`) and an optional `label`.
+- `text`: the file `[source.text]` reads (below), drawn as markdown as chat draws a message
+  (paragraphs, `**bold**`, `*italic*`, `` `code` ``, links, lists, quotes, fences, dividers,
+  `#` headings and `|` tables; a line is its own paragraph). The header slot says its first
+  paragraph.
 - `checklist`: a row per item with a box; `checked = { status = "done" }` (the form of `where`)
   ticks it. It shows state and sends nothing.
 
@@ -60,6 +64,22 @@ the source query's strings (a string that is `{me}` alone becomes the number).
 
 `on_press.open`: a `duck://` or `https://` result opens through the host; anything else is a chat
 channel id, opened in chat. No widget ever sends an op.
+
+## The room, one row, and a file beside the source
+
+`{room}` is the open room's id, in templates and in the source query's strings, so one widget file
+named by many rooms asks about each room's own thing (`query = { JobIn = { channel = "{room}" } }`).
+`rows` may name an object, which is one row, or null, which is none, as well as a list.
+
+```toml
+[source.text]                         # optional: a file read beside the source
+path = "{folder}/summary.md"          # a template over the first row (and `{room}`, `{me}`);
+                                      # an absolute path's doubled `/` count as one
+```
+
+A path with nothing at it says so in the widget's place ("Nothing at … yet."). The file is looked
+at again on every files block and read again only once its object moved. The job rooms' pane
+(`/shared/widgets/job.toml`) is board's `JobIn` and the job folder's `summary.md`.
 
 ## A list in parts
 

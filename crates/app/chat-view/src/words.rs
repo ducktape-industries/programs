@@ -282,6 +282,11 @@ pub(crate) fn widget_no_next(path: &str) -> String {
     )
 }
 
+// the file a widget reads beside its source, not there
+pub(crate) fn widget_no_text(path: &str) -> String {
+    format!("Nothing at {path} yet.")
+}
+
 pub(crate) fn widget_not_a_list(path: &str) -> String {
     format!("`{path}` is not a list")
 }

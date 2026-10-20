@@ -13,7 +13,7 @@ use view::{Hsla, Theme};
 
 #[cfg(test)]
 pub(crate) use live::module_with;
-pub(crate) use live::{Shown, Widgets, file_bytes};
+pub(crate) use live::{Shown, Text, Widgets, file_bytes};
 
 // Where a channel shows a widget: the meta key that names its file.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -61,6 +61,15 @@ pub(crate) struct Source {
     pub(crate) rows: String,
     #[serde(default)]
     pub(crate) cursor: Option<String>,
+    // a file read beside the source, its path a template over the first row
+    #[serde(default)]
+    pub(crate) text: Option<TextSource>,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TextSource {
+    pub(crate) path: String,
 }
 
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +80,7 @@ pub(crate) enum Kind {
     Table,
     Stat,
     Checklist,
+    Text,
 }
 
 impl Kind {
@@ -81,6 +91,7 @@ impl Kind {
             Kind::Table => "table",
             Kind::Stat => "stat",
             Kind::Checklist => "checklist",
+            Kind::Text => "text",
         }
     }
 }
@@ -202,6 +213,7 @@ pub(crate) fn parse(text: &str) -> Result<Widget, String> {
         Kind::Columns if shape.item.is_none() => Err(needs("item")),
         Kind::Table if shape.columns.is_empty() => Err(needs("columns")),
         Kind::Stat if shape.value.is_none() => Err(needs("value")),
+        Kind::Text if widget.source.text.is_none() => Err(needs("[source.text]")),
         _ if widget.source.cursor.is_some() && widget.source.rows.is_empty() => {
             Err("`cursor` needs `rows` to name the list beside the reply's `next`".into())
         }
@@ -239,19 +251,20 @@ pub(crate) fn text(value: Option<&Value>) -> String {
 }
 
 // What a template is filled from besides its value: the reader, the
-// names chat knows, for a stat how many rows there are, and the chain's
-// newest block time (ms), which `|ago` counts from.
+// names chat knows, for a stat how many rows there are, the chain's
+// newest block time (ms), which `|ago` counts from, and the open room.
 pub(crate) struct Scope<'a> {
     pub(crate) me: Option<u64>,
     pub(crate) names: Option<&'a Names>,
     pub(crate) count: Option<usize>,
     pub(crate) now: Option<u64>,
+    pub(crate) room: Option<&'a str>,
 }
 
 // `{path}` the value there, `{path|name}` an account number's name,
 // `{path|ago}` how long before the chain's newest block a time (ms) was,
-// `{me}` the reader's number, `{count}` a stat's rows; a `{` with no `}`
-// after it is written as it is.
+// `{me}` the reader's number, `{room}` the open room's id, `{count}` a
+// stat's rows; a `{` with no `}` after it is written as it is.
 pub(crate) fn fill(template: &str, value: &Value, scope: &Scope) -> String {
     let mut out = String::new();
     let mut rest = template;
@@ -276,8 +289,10 @@ fn placeholder(inside: &str, value: &Value, scope: &Scope) -> String {
     };
     let me = scope.me.map(Value::from);
     let count = scope.count.map(Value::from);
+    let room = scope.room.map(Value::from);
     let found = match path {
         "me" => me.as_ref(),
+        "room" => room.as_ref(),
         "count" if count.is_some() => count.as_ref(),
         path => at(value, path),
     };
@@ -306,6 +321,23 @@ pub(crate) fn with_me(query: &Value, me: Option<u64>) -> Value {
             fields
                 .iter()
                 .map(|(name, field)| (name.clone(), with_me(field, me)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+// The query with `{room}` in its strings as the open room's id.
+pub(crate) fn with_room(query: &Value, room: Option<&str>) -> Value {
+    match query {
+        Value::String(text) => Value::String(text.replace("{room}", room.unwrap_or_default())),
+        Value::Array(items) => {
+            Value::Array(items.iter().map(|item| with_room(item, room)).collect())
+        }
+        Value::Object(fields) => Value::Object(
+            fields
+                .iter()
+                .map(|(name, field)| (name.clone(), with_room(field, room)))
                 .collect(),
         ),
         other => other.clone(),
