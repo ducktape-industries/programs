@@ -69,7 +69,6 @@ pub const LOGGING: Set<u64> = Set::new("l/");
 pub const PREVIEWS: Map<(String, u64), PreviewInfo> = Map::new("m/");
 // Every status a reporter gave a commit: by repository, commit, reporter and context.
 pub const STATUSES: Map<(String, String, Principal, String), CommitStatus> = Map::new("s/");
-pub const REACHES: Map<(String, String, Principal, String), Vec<Vec<u8>>> = Map::new("t/");
 // The branches that move only by a merge whose Preview is green.
 pub const REQUIRED: Map<(String, Vec<u8>), Required> = Map::new("q/");
 // Each branch's merge queue, in the order its changes joined: by repository, branch and place.

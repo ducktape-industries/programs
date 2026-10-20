@@ -19,8 +19,7 @@ only.
   number through a rebase. `Preview` builds, without moving the target, the squash
   a change's merge would land on its target's current head; a branch with required
   checks (`RequireChecks`) moves only by a merge of a change whose latest Preview
-  its reporter's `Status`es mark Passed, or whose head it marks Passed while the target
-  has changed nothing inside that status's reach (`Gated`) since their merge base.
+  its reporter's `Status`es mark Passed.
 - Changes keep their title, body, author account, and lifecycle on the forge record.
   A change's authorship is its own owned row (`o/`, kind `forge.change`), its author's
   from `ChangeOpen`: `ChangeEdit`, `ChangeRepoint` and `Rebase` write it, so the change's
@@ -233,7 +232,7 @@ A repository's writers are whoever its list in the access program allows, at
 (`access::Op::Set`). `Push`, `Merge`, `SquashMerge`, `Stage`, `DeleteBranch` and
 a `ChangeClose` by anyone but the change's author need that key; `Configure`,
 `Protect`, `RequireChecks` and `Archive` need `forge::settings_key(repo)`, which follows the same list unless the
-owner sets one of its own. `Preview`, `Status` and `Gated` need no key: anyone previews an open
+owner sets one of its own. `Preview` and `Status` need no key: anyone previews an open
 change, and anyone reports a status, under their own account.
 Reviews remain appendable on closed/merged changes.
 Closing is terminal; there is no reopen operation.
@@ -257,7 +256,6 @@ Closing is terminal; there is no reopen operation.
 | `Protect { repo: r, branch: b"refs/heads/dev".to_vec(), protected: true }` | adds (`false`: removes) a protected branch; empty output |
 | `Preview { repo: r, n: 1 }` | change 1's squash on its target's head, under `refs/changes/1/merge`; `OpReply::Previewed { height, n, oid }` |
 | `Status { repo: r, commit: c, context: "gates.toml#gates".into(), state: CheckState::Passed, url: Some(log) }` | the sender's status of `c` in that context; empty output |
-| `Gated { repo: r, commit: c, context: "build.sh#lane".into(), state: CheckState::Passed, url: None, reach: vec![b"crates/app/forge".to_vec(), b"Cargo.lock".to_vec()] }` | the sender's status of `c` in that context, as `Status`, with the paths the result depends on (its reach); empty output |
 | `RequireChecks { repo: r, branch: b"refs/heads/dev".to_vec(), required: Some(Required { reporter, contexts }) }` | the branch moves only by a gated merge (`None` drops it); empty output |
 | `Enqueue { repo: r, n: 1, expected_head: b }` | change 1 joins its target's merge queue; empty output |
 | `Dequeue { repo: r, n: 1 }` | change 1 leaves its queue; empty output |
@@ -338,25 +336,11 @@ commit and writes nothing; a watcher hears `Watched::Previewed` for each new one
 `Errored`) in a context, with a url: each reporter's own, so no one writes another's.
 `RequireChecks { branch, required }` names a reporter and its contexts for a branch.
 From then on a push that moves the branch is refused, and a `SquashMerge` or `Merge`
-into it is refused `wrong_state` unless it names its change and every context is
-`Passed` one of two ways. On the Preview: the change's latest Preview read the very
-heads being merged (else it is stale: preview again) and the reporter's status of the
-Preview's commit is `Passed`; a status there that is not `Passed` refuses the merge, since
-the Preview is the very tree that lands. Or, where the Preview is stale, missing or has no
-status from the reporter, on the head: the reporter's status of the change's head
-being merged is `Passed`, and the target has changed none of the paths that status
-depends on (its reach) between the two heads' merge base and the target's head. A
-`Gated` status names its reach (a build that knows what it compiled: its crates'
-directories and the root build files); a `Status` names none, so its reach is the whole
-tree and it stands only while the target has not moved since the merge base, and a
-`Status` sent after a `Gated` of the same commit and context drops its reach. A reach
-fails closed: an empty one is the whole tree, and a `Gated` whose path has a leading,
-trailing or doubled `/` or a `.` or `..` part is refused `invalid`, naming it. The paths
-are compared by tree entry id from the root down, reading only the trees that differ,
-within `Bounds.tree_walk` reads, and the merge base is walked within `log_walk`; a path
-neither side holds has not moved. The refusal names each context that is pending,
-failed or errored, says "no status from <reporter>" for one never reported (the checker
-is down, not the code), and names each reach path the target changed. The squash a
+into it is refused `wrong_state` unless it names its change, that change's latest
+Preview read the very heads being merged (else it is stale: preview again), and the
+reporter's status of the Preview's commit is `Passed` in every context. The refusal
+names each context that is pending, failed or errored, and says "no status from
+<reporter>" for one never reported (the checker is down, not the code). The squash a
 gated merge lands has the Preview's parent and tree, since the same merge runs on the
 same commits. The break-glass is the settings owner sending `RequireChecks` with
 `required: None`, one op on chain; the refusals say so.

@@ -151,7 +151,6 @@ pub(crate) fn governed<'o>(ctx: &QueryCtx, op: &'o Op) -> Option<&'o str> {
         | Op::ArchiveEnded { .. }
         | Op::Preview { .. }
         | Op::Status { .. }
-        | Op::Gated { .. }
         | Op::AdoptOwners { .. } => None,
     }
 }
@@ -204,7 +203,6 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::ArchiveEnded { .. }
         | Op::Preview { .. }
         | Op::Status { .. }
-        | Op::Gated { .. }
         | Op::AdoptOwners { .. } => Vec::new(),
     };
     Ok(needs)
