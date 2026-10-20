@@ -144,7 +144,7 @@ fn line(id: impl Into<ElementId>, title: String, caption: String, theme: &Theme)
 
 fn pending(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme, ladder: &Ladder) -> Div {
     let voting = &view.voting;
-    let lines: Vec<AnyElement> = match &voting.motions {
+    let lines: Vec<AnyElement> = match &*voting.motions {
         Loadable::Ready(motions) | Loadable::Reloading(motions, _)
             if motions.pending.is_empty() =>
         {
@@ -204,7 +204,7 @@ fn scheduled(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme, ladder: &Ladd
     let voting = &view.voting;
     let status = view.status.ready();
     let entries = voting.entries();
-    let lines: Vec<AnyElement> = match &voting.scheduled {
+    let lines: Vec<AnyElement> = match &*voting.scheduled {
         Loadable::Ready(schedule) | Loadable::Reloading(schedule, _) => {
             let ahead = view.scheduled_ahead().unwrap_or_default();
             if ahead.is_empty() {

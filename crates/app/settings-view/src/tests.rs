@@ -810,6 +810,7 @@ fn an_identity_head_re_reads_the_account_in_place() {
             q => panic!("unexpected query: {q:?}"),
         })
     });
+    cx.host().answer_held::<Query<Identity>>();
     heads.send(head());
     cx.run_until_parked();
     assert!(cx.has_text("Maya R"), "{:?}", cx.texts());

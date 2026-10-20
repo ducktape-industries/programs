@@ -300,7 +300,7 @@ fn a_voter_with_nothing_waiting_reads_no_motion_and_no_change() {
 fn a_refused_motions_read_says_why_and_retry_reads_it_again() {
     let (mut cx, nodes) = voter_view();
     set(&mut cx, &nodes, |view| {
-        view.voting.motions = Loadable::Failed(Error::new("unavailable", "valset is restarting"));
+        *view.voting.motions = Loadable::Failed(Error::new("unavailable", "valset is restarting"));
     });
     shows(&cx, &["valset is restarting", "Retry"]);
     assert!(cx.find("nodes-motion-0").is_none());
@@ -313,7 +313,7 @@ fn a_refused_motions_read_says_why_and_retry_reads_it_again() {
 fn a_refused_schedule_read_says_why_and_retry_reads_it_again() {
     let (mut cx, nodes) = voter_view();
     set(&mut cx, &nodes, |view| {
-        view.voting.scheduled =
+        *view.voting.scheduled =
             Loadable::Failed(Error::new("unavailable", "programs is restarting"));
     });
     shows(&cx, &["programs is restarting", "Retry"]);
@@ -327,8 +327,8 @@ fn a_refused_schedule_read_says_why_and_retry_reads_it_again() {
 fn the_motions_and_the_schedule_wait_for_their_reads() {
     let (mut cx, nodes) = voter_view();
     set(&mut cx, &nodes, |view| {
-        view.voting.motions = Loadable::Idle;
-        view.voting.scheduled = Loadable::Idle;
+        *view.voting.motions = Loadable::Idle;
+        *view.voting.scheduled = Loadable::Idle;
     });
     shows(&cx, &["Reading the motions…", "Reading the schedule…"]);
 }
@@ -612,7 +612,7 @@ fn every_screen_fits_a_phone_360_390_and_430_wide() {
         );
         set(cx, &nodes, |view| {
             let refusal = Error::new("unavailable", "valset is restarting");
-            view.voting.motions = Loadable::Failed(refusal);
+            *view.voting.motions = Loadable::Failed(refusal);
             let said = "That didn’t go through: only a validator votes";
             view.voting.outcome = Some(Err(said.into()));
         });

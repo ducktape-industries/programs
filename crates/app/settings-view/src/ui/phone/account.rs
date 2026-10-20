@@ -104,7 +104,7 @@ fn account_pane(
     ladder: &Ladder,
     theme: &Theme,
 ) -> AnyElement {
-    match &view.account {
+    match &*view.account {
         Loadable::Ready(Some(seat)) | Loadable::Reloading(Some(seat), _) => {
             seat_pane(view, seat, cx, ladder, theme).into_any_element()
         }

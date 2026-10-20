@@ -13,7 +13,7 @@ use view::prelude::*;
 // the new build, so what is here survives one.
 #[derive(Default, Serialize, Deserialize)]
 pub struct Agents {
-    agents: Loadable<Vec<Agent>>,
+    agents: Reread<Vec<Agent>>,
     name: TextField,
     me: Option<u64>,
     failed: Option<String>,
@@ -42,12 +42,12 @@ impl View for Agents {
         cx.follow::<HostSession>((), |view, session, cx| match session {
             Ok(session) if session.account != view.me => {
                 view.me = session.account;
-                view.agents = Loadable::Idle;
+                *view.agents = Loadable::Idle;
                 view.reread(cx);
             }
             Ok(_) => view.reread(cx),
             Err(refusal) => {
-                view.agents = Loadable::Failed(refusal);
+                *view.agents = Loadable::Failed(refusal);
                 cx.notify();
             }
         })
@@ -62,8 +62,12 @@ impl View for Agents {
 
 impl Agents {
     fn reread(&mut self, cx: &mut Context<Self>) {
-        let read = managed_accounts_all_pages(cx.host(), self.me);
-        cx.load(self, read, |view| &mut view.agents);
+        cx.reread(
+            self,
+            |view| &mut view.agents,
+            |view, cx| managed_accounts_all_pages(cx.host(), view.me),
+            Self::reread,
+        );
     }
 
     fn create(&mut self, cx: &mut Context<Self>) {
@@ -135,7 +139,7 @@ impl Render for Agents {
             .aria_disabled(creating)
             .when(!creating, |button| button.on_click(pressed))
             .child(if creating { "Creating…" } else { "Create" });
-        let agents = match &self.agents {
+        let agents = match &*self.agents {
             Loadable::Idle | Loadable::Loading(_) => {
                 design::quiet("Reading…", &theme).into_any_element()
             }
@@ -260,6 +264,32 @@ mod tests {
         cx.host().stream::<Changes<Identity>>().send(None);
         cx.run_until_parked();
         assert_eq!(cx.host().requests::<Query<Identity>>().len(), reads + 1);
+    }
+
+    #[test]
+    fn the_rows_land_though_a_head_comes_before_every_answer() {
+        let mut cx = seated();
+        let changes = cx.host().stream::<Changes<Identity>>();
+        cx.host().never::<Query<Identity>>();
+        changes.send(None);
+        cx.run_until_parked();
+        let mut rover = scout();
+        rover.card.name = "Rover".into();
+        for _ in 0..2 {
+            changes.send(None);
+            let rows = vec![rover.clone()];
+            cx.host().handle::<Query<Identity>>(move |_| {
+                Ok(identity::Reply::Accounts(identity::PageResponse {
+                    height: 2,
+                    items: rows.clone(),
+                    next: None,
+                }))
+            });
+            cx.host().answer_held::<Query<Identity>>();
+            cx.host().never::<Query<Identity>>();
+            cx.tick(Vec::new());
+        }
+        assert!(cx.has_text("Rover"), "{:?}", cx.texts());
     }
 
     #[test]

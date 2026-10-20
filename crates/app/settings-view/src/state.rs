@@ -13,7 +13,7 @@ pub struct Settings {
     pub(crate) session: Session,
     pub(crate) section: Section,
     pub(crate) sheet: Option<Sheet>,
-    pub(crate) account: Loadable<Option<Seat>>,
+    pub(crate) account: Reread<Option<Seat>>,
     pub(crate) invite: Loadable<Invite>,
     pub(crate) ttl: usize,
     pub(crate) copied: Loadable<()>,

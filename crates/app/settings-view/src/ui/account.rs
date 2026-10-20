@@ -15,7 +15,7 @@ pub(super) fn account(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
-    match &view.account {
+    match &*view.account {
         Loadable::Ready(Some(Seat::Bare(key))) | Loadable::Reloading(Some(Seat::Bare(key)), _) => {
             column("settings/account/data")
                 .gap_0()

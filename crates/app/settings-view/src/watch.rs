@@ -13,7 +13,7 @@ impl Settings {
         cx.follow::<HostSession>((), |view, session, cx| match session {
             Ok(session) => view.session_changed(session, cx),
             Err(refusal) => {
-                view.account = Loadable::Failed(refusal);
+                *view.account = Loadable::Failed(refusal);
                 cx.notify();
             }
         })

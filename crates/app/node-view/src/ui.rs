@@ -210,7 +210,7 @@ fn epoch(status: &NodeStatus, theme: &Theme) -> Option<[AnyElement; 2]> {
 }
 
 fn body(view: &Nodes, cx: &mut Context<Nodes>, theme: &Theme, ladder: &Ladder) -> AnyElement {
-    match &view.nodes {
+    match &*view.nodes {
         Loadable::Idle | Loadable::Loading(_) => design::quiet(words::READING_MEMBERS, theme)
             .id("nodes-loading")
             .into_any_element(),

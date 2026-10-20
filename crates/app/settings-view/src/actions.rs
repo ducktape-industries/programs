@@ -67,19 +67,24 @@ impl Settings {
 
     pub(crate) fn read_account(&mut self, cx: &mut Context<Self>) {
         let work = self.account_query(cx);
-        self.account = Loadable::Idle;
-        cx.load(self, work, |view| &mut view.account);
+        *self.account = Loadable::Idle;
+        cx.load(self, work, |view| &mut *view.account);
     }
 
     pub(crate) fn refresh_account(&mut self, cx: &mut Context<Self>) {
-        let work = self.account_query(cx);
-        cx.load(self, work, |view| &mut view.account);
+        cx.reread(
+            self,
+            |view| &mut view.account,
+            |view, cx| view.account_query(cx),
+            Self::refresh_account,
+        );
     }
 
     fn account_query(
         &self,
         cx: &mut Context<Self>,
-    ) -> impl Future<Output = Result<Option<queries::Seat>, view::host::Error>> + 'static {
+    ) -> impl Future<Output = Result<Option<queries::Seat>, view::host::Error>> + 'static + use<>
+    {
         let (signer, number) = (self.session.signer.clone(), self.session.account);
         queries::account(cx.host(), signer, number)
     }

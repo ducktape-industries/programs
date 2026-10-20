@@ -45,7 +45,7 @@ use voting::Voting;
 #[derive(Serialize, Deserialize, Default)]
 pub struct Nodes {
     pub(crate) status: Loadable<NodeStatus>,
-    pub(crate) nodes: Loadable<Vec<Node>>,
+    pub(crate) nodes: Reread<Vec<Node>>,
     pub(crate) network: Loadable<NetworkStatus>,
     pub(crate) recent: Recent,
     pub(crate) open: Option<Vec<u8>>,
@@ -157,8 +157,12 @@ impl Render for Nodes {
 
 impl Nodes {
     pub(crate) fn read(&mut self, cx: &mut Context<Self>) {
-        let work = queries::nodes(cx.host());
-        cx.load(self, work, |view| &mut view.nodes);
+        cx.reread(
+            self,
+            |view| &mut view.nodes,
+            |_, cx| queries::nodes(cx.host()),
+            Self::read,
+        );
     }
 
     pub(crate) fn read_status(&mut self, cx: &mut Context<Self>) {

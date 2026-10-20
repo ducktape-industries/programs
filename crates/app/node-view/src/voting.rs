@@ -21,9 +21,9 @@ use crate::queries::{self, Motions, Names, Node, Schedule};
 pub(crate) struct Voting {
     pub(crate) signer: Option<Vec<u8>>,
     pub(crate) voices: Vec<Vec<u8>>,
-    pub(crate) motions: Loadable<Motions>,
-    pub(crate) roster: Loadable<Vec<Entry>>,
-    pub(crate) scheduled: Loadable<Schedule>,
+    pub(crate) motions: Reread<Motions>,
+    pub(crate) roster: Reread<Vec<Entry>>,
+    pub(crate) scheduled: Reread<Schedule>,
     pub(crate) confirming: Option<Motion>,
     pub(crate) busy: bool,
     pub(crate) outcome: Option<Result<String, String>>,
@@ -125,18 +125,38 @@ impl Nodes {
     }
 
     pub(crate) fn read_motions(&mut self, cx: &mut Context<Self>) {
-        let work = queries::motions(cx.host());
-        cx.load(self, work, |view| &mut view.voting.motions);
+        cx.reread(
+            self,
+            |view| &mut view.voting.motions,
+            |_, cx| queries::motions(cx.host()),
+            Self::read_motions,
+        );
     }
 
     pub(crate) fn read_programs(&mut self, cx: &mut Context<Self>) {
         if !self.voting.votes() {
             return;
         }
-        let roster = queries::roster(cx.host());
-        cx.load(self, roster, |view| &mut view.voting.roster);
-        let scheduled = queries::scheduled(cx.host());
-        cx.load(self, scheduled, |view| &mut view.voting.scheduled);
+        self.read_roster(cx);
+        self.read_scheduled(cx);
+    }
+
+    fn read_roster(&mut self, cx: &mut Context<Self>) {
+        cx.reread(
+            self,
+            |view| &mut view.voting.roster,
+            |_, cx| queries::roster(cx.host()),
+            Self::read_roster,
+        );
+    }
+
+    fn read_scheduled(&mut self, cx: &mut Context<Self>) {
+        cx.reread(
+            self,
+            |view| &mut view.voting.scheduled,
+            |_, cx| queries::scheduled(cx.host()),
+            Self::read_scheduled,
+        );
     }
 
     pub(crate) fn press(&mut self, motion: Motion, cx: &mut Context<Self>) {

@@ -343,6 +343,26 @@ fn a_live_bump_re_reads_and_a_snapshot_restores_the_screen() {
 }
 
 #[test]
+fn the_set_lands_though_a_valset_head_comes_in_every_block() {
+    let mut cx = TestAppContext::new();
+    node(&mut cx);
+    let feed = cx.host().stream::<Changes<Valset>>();
+    respond(&mut cx);
+    cx.open::<Nodes>();
+    cx.run_until_parked();
+    feed.send(None);
+    cx.run_until_parked();
+    let one_read = cx.reports().len();
+    let moved = membership(&THIS, "10.9.9.9:4000", valset::Role::Validator);
+    serve_set(&cx, vec![THIS.to_vec()], vec![moved]);
+    for _ in 0..2 * one_read {
+        feed.send(None);
+        cx.tick(Vec::new());
+    }
+    assert!(cx.has_text("10.9.9.9:4000"), "{:?}", cx.texts());
+}
+
+#[test]
 fn a_refused_live_head_is_logged_and_the_set_stays() {
     let mut cx = TestAppContext::new();
     node(&mut cx);
