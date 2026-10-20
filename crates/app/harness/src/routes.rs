@@ -7,10 +7,11 @@ use store::{PageRequest, PageResponse};
 
 use crate::budget::{CCS_ACCOUNT, ORGANIZATION};
 use crate::config::Pin;
+use crate::providers::Reach;
 use crate::resume::header;
 use crate::state::{ANSWERED, MODEL_SERVICES, PICKS, Pick, ROUTES, TRIED};
 use crate::turns::serves;
-use crate::{Answerer, ModelRow, Route, Routed, ThreadRow};
+use crate::{Answerer, Route, Routed, ThreadRow, Wire};
 
 type Candidate = (String, Option<String>);
 
@@ -71,7 +72,7 @@ fn candidates(cached: Option<&Route>, served: &[String]) -> Vec<Candidate> {
 }
 
 pub(crate) enum Picked {
-    Chosen(Pick),
+    Chosen(Pick, Wire),
     Unlisted(String),
     Unserved(Vec<String>),
 }
@@ -79,29 +80,32 @@ pub(crate) enum Picked {
 pub(crate) fn pick(
     ctx: &ExecCtx,
     thread: &ThreadRow,
-    model: &ModelRow,
+    reach: &Reach,
     pin: &Pin,
 ) -> Result<Picked, Error> {
-    let mut services = services_of(ctx, &model.id, &model.service)?;
+    let mut entries = reach.services.clone();
     if let Some(pinned) = &pin.service {
-        if !services.contains(pinned) {
+        if !entries.iter().any(|entry| entry.service == *pinned) {
+            let listed: Vec<&str> = entries.iter().map(|entry| entry.service.as_str()).collect();
             return Ok(Picked::Unlisted(format!(
-                "the agent's configuration pins service {pinned}, which model {} is not reached through ({})",
-                model.id,
-                services.join(", ")
+                "the agent's configuration pins service {pinned}, which {} is not reached through ({})",
+                reach.label(),
+                listed.join(", ")
             )));
         }
-        services = vec![pinned.clone()];
+        entries.retain(|entry| entry.service == *pinned);
     }
-    let mut served = Vec::new();
-    for service in &services {
-        if serves(ctx, service)? {
-            served.push(service.clone());
+    let mut spoken = Vec::new();
+    for entry in &entries {
+        if serves(ctx, &entry.service)? {
+            spoken.push(entry.clone());
         }
     }
-    if served.is_empty() {
+    if spoken.is_empty() {
+        let services = entries.into_iter().map(|entry| entry.service).collect();
         return Ok(Picked::Unserved(services));
     }
+    let served: Vec<String> = spoken.iter().map(|entry| entry.service.clone()).collect();
     let route = ROUTES.get(ctx, &thread.id)?;
     let cached = route
         .as_ref()
@@ -109,6 +113,10 @@ pub(crate) fn pick(
     let candidates = candidates(cached, &served);
     let open = (0..candidates.len()).find(|index| untried_by(ctx, thread.id, &candidates[*index]));
     let (service, account) = candidates[open.unwrap_or(0)].clone();
+    let wire = spoken
+        .iter()
+        .find(|entry| entry.service == service)
+        .map_or(spoken[0].wire, |entry| entry.wire);
     let pick = Pick {
         service,
         account,
@@ -118,7 +126,7 @@ pub(crate) fn pick(
         organization: None,
     };
     PICKS.put(ctx, &thread.id, &pick);
-    Ok(Picked::Chosen(pick))
+    Ok(Picked::Chosen(pick, wire))
 }
 
 pub(crate) fn heard(ctx: &ExecCtx, thread: u64, response: &http::Response) {

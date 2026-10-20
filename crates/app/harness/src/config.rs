@@ -1,6 +1,6 @@
 //! An agent's configuration file: Markdown whose TOML front matter, between `+++` lines, names
 //! the model, `max_tokens`, `wait`, `thinking`, `server_tools`, `listen`, `settle`, `compact_at`
-//! and the `service` it pins (`Pin`); its body is the system prompt (`with_front`, `with_body`).
+//! and the `service` and `provider` it pins (`Pin`); its body is the system prompt (`with_front`, `with_body`).
 use std::fmt;
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
@@ -31,6 +31,7 @@ pub struct Config {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Pin {
     pub service: Option<String>,
+    pub provider: Option<String>,
 }
 
 #[derive(
@@ -154,6 +155,7 @@ struct FrontMatter {
     settle: Option<String>,
     compact_at: Option<u64>,
     service: Option<String>,
+    provider: Option<String>,
 }
 
 fn fence(line: &str) -> bool {
@@ -212,6 +214,7 @@ impl Config {
         let named = |name: Option<String>| name.filter(|name| !name.is_empty());
         let pin = Pin {
             service: named(matter.service),
+            provider: named(matter.provider),
         };
         let config = Config {
             model: matter.model,
@@ -277,6 +280,10 @@ impl Config {
         if let Some(service) = &pin.service {
             let service = toml::Value::String(service.clone());
             front.push_str(&format!("service = {service}\n"));
+        }
+        if let Some(provider) = &pin.provider {
+            let provider = toml::Value::String(provider.clone());
+            front.push_str(&format!("provider = {provider}\n"));
         }
         front
     }

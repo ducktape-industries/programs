@@ -9,8 +9,8 @@ use store::{Item, KeyCodec, Kind, Map, Owned, Set};
 
 use crate::pictures::{Hidden, Picture};
 use crate::{
-    Body, Booking, CallRow, Frame, ModelRow, Partial, Place, Sealed, SettleWindow, Tally,
-    ThreadRow, UsageWindow, WaitRow, Window, Wire,
+    Body, Booking, CallRow, Frame, ModelRow, Partial, Place, ProviderRouteRow, Sealed,
+    SettleWindow, Tally, ThreadRow, UsageWindow, WaitRow, Window, Wire,
 };
 
 // Each model record is its owner's, of the kind `harness.model`: only its owner's ops write it.
@@ -26,6 +26,8 @@ pub const CONVERSATIONS: Map<AccountNumber, Owned<Conversations>> = Map::new("co
 // beside the owned record (a record stored before it still carries the window it had)
 pub const WINDOWS: Map<String, Window> = Map::new("model-window/");
 pub const PROVIDERS: Map<String, String> = Map::new("model-provider/");
+pub const PROVIDER_ROUTES: Map<String, Owned<ProviderRouteRow>> = Map::new("provider-route/");
+pub const PROVIDER_WINDOWS: Map<(String, String), Window> = Map::new("provider-window/");
 pub const LAST: Map<AccountNumber, (Source, u64)> = Map::new("last/");
 pub const THREADS: Map<u64, ThreadRow> = Map::new("thread/");
 pub const BY_AGENT: Set<(AccountNumber, u64)> = Set::new("by-agent/");
@@ -181,6 +183,10 @@ impl Kind for Conversations {
 
 impl Kind for StoredModel {
     const KIND: &'static str = "harness.model";
+}
+
+impl Kind for ProviderRouteRow {
+    const KIND: &'static str = "harness.route";
 }
 
 impl StoredModel {
@@ -429,6 +435,8 @@ pub fn written(key: &[u8]) -> Option<Written> {
         WINDOWS.key(&()),
         PROVIDERS.key(&()),
         MODEL_SERVICES.key(&()),
+        PROVIDER_ROUTES.key(&()),
+        PROVIDER_WINDOWS.key(&()),
     ];
     let model = models.iter().any(|prefix| key.starts_with(prefix));
     model.then_some(Written::Model)

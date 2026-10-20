@@ -120,15 +120,41 @@ pub(crate) fn configured_pinned(ctx: &QueryCtx, path: &str) -> Result<(Configure
             return Ok((configured, Pin::default()));
         }
     };
-    let configured = match crate::models::model(ctx, &config.model)? {
-        Some(model) => Configured::Ready {
-            snapshot,
-            config,
-            model,
+    let configured = match &pin.provider {
+        Some(provider) => routed(ctx, snapshot, config, provider.clone())?,
+        None => match crate::models::model(ctx, &config.model)? {
+            Some(model) => Configured::Ready {
+                snapshot,
+                config,
+                model,
+            },
+            None => Configured::UnknownModel { snapshot, config },
         },
-        None => Configured::UnknownModel { snapshot, config },
     };
     Ok((configured, pin))
+}
+
+fn routed(
+    ctx: &QueryCtx,
+    snapshot: BlobId,
+    config: Config,
+    provider: String,
+) -> Result<Configured, Error> {
+    let Some(route) = crate::providers::route(ctx, &provider)? else {
+        return Ok(Configured::NoRoute {
+            snapshot,
+            config,
+            provider,
+        });
+    };
+    let window = crate::providers::window(ctx, &provider, &config.model)?;
+    Ok(Configured::Routed {
+        snapshot,
+        config,
+        provider,
+        route: route.services,
+        window,
+    })
 }
 
 pub(crate) fn setup(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<AgentSetup>, Error> {
@@ -151,8 +177,10 @@ pub(crate) fn setup(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<Agen
 pub(crate) fn card(ctx: &QueryCtx, number: AccountNumber) -> Result<Option<AgentSetup>, Error> {
     let mut setup = setup(ctx, number)?;
     if let Some(setup) = &mut setup
-        && let Configured::Ready { config, .. } | Configured::UnknownModel { config, .. } =
-            &mut setup.configured
+        && let Configured::Ready { config, .. }
+        | Configured::UnknownModel { config, .. }
+        | Configured::Routed { config, .. }
+        | Configured::NoRoute { config, .. } = &mut setup.configured
     {
         config.system = String::new();
     }

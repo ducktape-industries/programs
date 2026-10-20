@@ -588,6 +588,7 @@ fn a_pin_reads_from_the_front_matter_and_leaves_the_config_as_it_was() {
     assert_eq!(config, scout());
     let pinned = crate::config::Pin {
         service: Some(SERVICE.into()),
+        provider: None,
     };
     assert_eq!(pin, pinned);
 }

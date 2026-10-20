@@ -271,3 +271,29 @@ pub(crate) fn agent_tools() -> Query {
 pub(crate) fn cards() -> Query {
     Query::Cards { page: page() }
 }
+
+pub(crate) fn set_route() -> Op {
+    Op::SetRoute {
+        provider: "anthropic".into(),
+        services: vec![crate::RouteService {
+            service: "models".into(),
+            wire: Wire::Harness,
+        }],
+    }
+}
+
+pub(crate) fn remove_route() -> Op {
+    Op::RemoveRoute {
+        provider: "openai".into(),
+    }
+}
+
+pub(crate) fn provider_route() -> Query {
+    Query::ProviderRoute {
+        provider: "anthropic".into(),
+    }
+}
+
+pub(crate) fn provider_routes() -> Query {
+    Query::ProviderRoutes { page: page() }
+}

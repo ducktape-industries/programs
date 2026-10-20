@@ -1,10 +1,11 @@
 use super::*;
 
-const PINNED: &str = "+++\nmodel = \"sonnet\"\n# the long one\nmax_tokens = 4096\nservice = \"ccs\"\n+++\n\nYou keep notes.\r\n\n  Indented, kept.\n";
+const PINNED: &str = "+++\nmodel = \"sonnet\"\n# the long one\nmax_tokens = 4096\nservice = \"ccs\"\nprovider = \"anthropic\"\n+++\n\nYou keep notes.\r\n\n  Indented, kept.\n";
 
 fn pinned() -> Pin {
     Pin {
         service: Some("ccs".into()),
+        provider: Some("anthropic".into()),
     }
 }
 
@@ -20,7 +21,7 @@ fn a_new_front_matter_keeps_the_pins_and_the_body_byte_for_byte() {
     };
     let written = with_front(PINNED.as_bytes(), &thinks).unwrap();
     let body = "\nYou keep notes.\r\n\n  Indented, kept.\n";
-    let front = "model = \"sonnet\"\nmax_tokens = 4096\nthinking = \"high\"\ncompact_at = 650000\nservice = \"ccs\"\n";
+    let front = "model = \"sonnet\"\nmax_tokens = 4096\nthinking = \"high\"\ncompact_at = 650000\nservice = \"ccs\"\nprovider = \"anthropic\"\n";
     assert_eq!(written, format!("+++\n{front}+++\n{body}"));
     let (read, pin) = Config::parse_pinned(written.as_bytes()).unwrap();
     assert_eq!(pin, pinned());

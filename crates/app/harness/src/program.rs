@@ -95,6 +95,12 @@ impl Program for Harness {
             Query::Answerers { thread, page } => Ok(Reply::Answerers(crate::routes::answerers(
                 ctx, thread, &page,
             )?)),
+            Query::ProviderRoute { provider } => Ok(Reply::ProviderRoute(crate::providers::route(
+                ctx, &provider,
+            )?)),
+            Query::ProviderRoutes { page } => {
+                Ok(Reply::ProviderRoutes(crate::providers::routes(ctx, &page)?))
+            }
         }
     }
 }
@@ -143,6 +149,10 @@ impl Awaiting for Harness {
             Op::Filed(row) => waits::filed(&ctx, row).await,
             Op::SetServices { id, services } => set_services(&ctx, id, services),
             Op::ReadBudgets => budget::read_all(ctx).await,
+            Op::SetRoute { provider, services } => {
+                crate::providers::set_route(&ctx, provider, services)
+            }
+            Op::RemoveRoute { provider } => crate::providers::remove_route(&ctx, provider),
         }
     }
 }

@@ -7,7 +7,7 @@ use store::{PageRequest, PageResponse};
 use crate::state::{COMPACT_AT, MODEL_SERVICES, MODELS, PROVIDERS, StoredModel, WINDOWS};
 use crate::{ModelRow, Window, Wire};
 
-fn lowercase_name(text: &str) -> bool {
+pub(crate) fn lowercase_name(text: &str) -> bool {
     !text.is_empty()
         && text.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"-_.".contains(&byte)

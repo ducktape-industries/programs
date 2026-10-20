@@ -17,6 +17,7 @@ mod listening;
 mod models;
 mod pictures;
 mod program;
+mod providers;
 mod queries;
 mod replies;
 mod resume;
@@ -153,6 +154,13 @@ pub enum Op {
     // a commit files made, told to harness while a wait for a files path is open
     #[tool_op(description = "From files only: a commit, for the waits on a files path.")]
     Filed(files::SnapshotRow),
+    #[tool_op(description = "Set every egress service, in order and each with the wire it speaks, that reaches a provider's models: an agent whose configuration names the provider (provider = \"anthropic\") is reached through them. The first account to set a provider's route owns it; after that its owner, or whom the owner lists.", example = examples::set_route)]
+    SetRoute {
+        provider: String,
+        services: Vec<RouteService>,
+    },
+    #[tool_op(description = "Remove a provider's route. Its owner, or whom the owner lists.", example = examples::remove_route)]
+    RemoveRoute { provider: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -229,6 +237,19 @@ pub struct ModelRow {
     pub compact_at: Option<u64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct RouteService {
+    pub service: String,
+    pub wire: Wire,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct ProviderRouteRow {
+    pub provider: String,
+    pub owner: AccountNumber,
+    pub services: Vec<RouteService>,
+}
+
 // when a thread starts compacting: the agent's `compact_at`, else its model's
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Threshold {
@@ -300,6 +321,18 @@ pub enum Configured {
         config: Config,
         model: ModelRow,
     },
+    Routed {
+        snapshot: BlobId,
+        config: Config,
+        provider: String,
+        route: Vec<RouteService>,
+        window: Window,
+    },
+    NoRoute {
+        snapshot: BlobId,
+        config: Config,
+        provider: String,
+    },
 }
 
 impl Configured {
@@ -315,7 +348,10 @@ impl Configured {
                 "the agent's configuration {path} names model {}, which harness has no record of",
                 config.model
             )),
-            Configured::Ready { .. } => None,
+            Configured::NoRoute { provider, .. } => Some(format!(
+                "the agent's configuration {path} names provider {provider}, which harness has no route for"
+            )),
+            Configured::Ready { .. } | Configured::Routed { .. } => None,
         }
     }
 
@@ -323,6 +359,12 @@ impl Configured {
         match self {
             Configured::UnknownModel { snapshot, config }
             | Configured::Ready {
+                snapshot, config, ..
+            }
+            | Configured::Routed {
+                snapshot, config, ..
+            }
+            | Configured::NoRoute {
                 snapshot, config, ..
             } => Some((*snapshot, config)),
             Configured::Unreadable { .. } | Configured::Malformed { .. } => None,
@@ -339,7 +381,9 @@ impl Configured {
             Configured::Ready { model, .. } => Some(model),
             Configured::Unreadable { .. }
             | Configured::Malformed { .. }
-            | Configured::UnknownModel { .. } => None,
+            | Configured::UnknownModel { .. }
+            | Configured::Routed { .. }
+            | Configured::NoRoute { .. } => None,
         }
     }
 }
@@ -1052,6 +1096,14 @@ pub enum Query {
     #[ask(Reply::Cards(PageResponse<AgentCard>))]
     #[tool_query(description = "Every agent harness runs, as a list of agents draws each: its setup without the system prompt, how many conversations it has open and closed, when one last moved, its newest and each open one asking with their topics, and how many member nodes serve its model's service.", example = examples::cards)]
     Cards { page: PageRequest },
+    #[ask(Reply::ProviderRoute(Option<ProviderRouteRow>))]
+    #[reads(state::PROVIDER_ROUTES)]
+    #[tool_query(description = "A provider's route: the egress services, in order and each with its wire, that reach its models, and who owns it; or null.", example = examples::provider_route)]
+    ProviderRoute { provider: String },
+    #[ask(Reply::ProviderRoutes(PageResponse<ProviderRouteRow>))]
+    #[reads(state::PROVIDER_ROUTES)]
+    #[tool_query(description = "Every provider's route.", example = examples::provider_routes)]
+    ProviderRoutes { page: PageRequest },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1084,6 +1136,8 @@ pub enum Reply {
     Wakes(Vec<Wake>),
     AgentTools(AgentTools),
     Cards(PageResponse<AgentCard>),
+    ProviderRoute(Option<ProviderRouteRow>),
+    ProviderRoutes(PageResponse<ProviderRouteRow>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -1301,6 +1355,23 @@ pub fn describe(op: &Op) -> describe::Description {
             "Read every model service's status of the model accounts it holds".to_owned(),
             Vec::new(),
         ),
+        Op::SetRoute { provider, services } => {
+            let listed: Vec<String> = services
+                .iter()
+                .map(|entry| format!("{} ({})", entry.service, entry.wire.label()))
+                .collect();
+            (
+                format!("Set the services that reach provider {provider}"),
+                vec![
+                    field("provider", Value::text(provider)),
+                    field("services", Value::text(listed.join(", "))),
+                ],
+            )
+        }
+        Op::RemoveRoute { provider } => (
+            format!("Remove provider {provider}'s route"),
+            vec![field("provider", Value::text(provider))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -1341,6 +1412,8 @@ fn op_variants_only_append() {
             "SetServices",
             "ReadBudgets",
             "Filed",
+            "SetRoute",
+            "RemoveRoute",
         ]
     );
 }
@@ -1382,7 +1455,9 @@ fn query_variants_only_append() {
             "Answerers",
             "Wakes",
             "AgentTools",
-            "Cards"
+            "Cards",
+            "ProviderRoute",
+            "ProviderRoutes"
         ]
     );
 }

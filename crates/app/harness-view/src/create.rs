@@ -334,7 +334,9 @@ pub(crate) fn base_of(configured: &Configured) -> Option<[u8; 32]> {
         Configured::Unreadable { .. } => None,
         Configured::Malformed { snapshot, .. }
         | Configured::UnknownModel { snapshot, .. }
-        | Configured::Ready { snapshot, .. } => Some(*snapshot),
+        | Configured::Ready { snapshot, .. }
+        | Configured::Routed { snapshot, .. }
+        | Configured::NoRoute { snapshot, .. } => Some(*snapshot),
     };
     match snapshot {
         Some(BlobId::Sha256(digest)) => Some(digest),

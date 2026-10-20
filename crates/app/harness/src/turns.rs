@@ -12,20 +12,20 @@ use crate::budget::CCS_ACCOUNT;
 use crate::calls::{Placed, place, refusal, run_call, take_back_showing};
 use crate::conversations::{binding, retire};
 use crate::listening::seed;
-use crate::models::learned;
 use crate::pictures::{self, Looks, Picture};
+use crate::providers::{self, Reach};
 use crate::resume::{self, Failure};
 use crate::routes::{self, Picked};
 use crate::state::{
     ANSWERED, ASKED, ENDING, FLIGHTS, FRAMES, HELD, LANES, LIVE, Lane, Live, PARTIALS, PICKS,
-    PROVIDERS, RETRIES, SEALED, SEALED_FOR, SHOWN, THREADS, WITHHELD,
+    RETRIES, SEALED, SEALED_FOR, SHOWN, THREADS, WITHHELD,
 };
 use crate::tallies;
 use crate::waiting::settling;
 use crate::wire::{self, Answered, Foreign, Header, Lanes, Summarized, Summary};
 use crate::{
-    Asking, Body, Configured, Context, Forming, Frame, ModelRow, PART, Partial, Role, Said, Sealed,
-    Stop, ThreadRow, Threshold, Window, Wire, streamed_as,
+    Asking, Body, Configured, Context, Forming, Frame, PART, Partial, Role, Said, Sealed, Stop,
+    ThreadRow, Window, Wire, streamed_as,
 };
 
 struct Asked {
@@ -273,13 +273,6 @@ fn lanes(ctx: &ExecCtx, thread: u64, wire: Wire, frames: &[Frame]) -> Result<Lan
         }
     }
     Ok(lanes)
-}
-
-fn provider_of(ctx: &ExecCtx, model: &ModelRow) -> Result<Option<String>, Error> {
-    match model.wire {
-        Wire::AnthropicMessages => Ok(Some(model_wire::anthropic::PROVIDER.into())),
-        Wire::Harness => PROVIDERS.get(ctx, &model.id),
-    }
 }
 
 fn opens(thread: &ThreadRow) -> bool {
@@ -531,7 +524,7 @@ fn settled(
 enum Step {
     Learn {
         asked: Asked,
-        model: ModelRow,
+        model: Reach,
     },
     Compact {
         asked: Asked,
@@ -632,18 +625,32 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
             snapshot,
             config,
             model,
-        } => (snapshot, config, model),
+        } => {
+            let reach = providers::of_record(ctx, model)?;
+            (snapshot, config, reach)
+        }
+        Configured::Routed {
+            snapshot,
+            config,
+            provider,
+            route,
+            window,
+        } => {
+            let reach = providers::of_route(provider, &config.model, route, window);
+            (snapshot, config, reach)
+        }
         unready @ (Configured::Unreadable { .. }
         | Configured::Malformed { .. }
-        | Configured::UnknownModel { .. }) => {
+        | Configured::UnknownModel { .. }
+        | Configured::NoRoute { .. }) => {
             let text = unready.problem(&agent.path).unwrap_or_default();
             give_up(ctx, thread, text)?;
             return Ok(None);
         }
     };
     seed(ctx, thread, agent, &config.listen);
-    let pick = match routes::pick(ctx, thread, &model, &pin)? {
-        Picked::Chosen(pick) => pick,
+    let (pick, spoken) = match routes::pick(ctx, thread, &model, &pin)? {
+        Picked::Chosen(pick, spoken) => (pick, spoken),
         Picked::Unlisted(text) => {
             give_up(ctx, thread, text)?;
             return Ok(None);
@@ -657,14 +664,17 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         }
     };
     let asked = Asked {
-        wire: model.wire,
+        wire: spoken,
         service: pick.service,
         account: pick.account,
         thread: thread.id,
         wait: config.wait,
         config: snapshot,
     };
-    let learnt = provider_of(ctx, &model)?.filter(|_| model.window != Window::Unasked);
+    let learnt = model
+        .provider
+        .clone()
+        .filter(|_| model.window != Window::Unasked);
     let Some(provider) = learnt else {
         thread.asking = Asking::Learning;
         return Ok(Some(Step::Learn { asked, model }));
@@ -684,15 +694,15 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         system: &system,
         file_tools: &files.tools,
     };
-    let header = put_part(ctx, wire::header(model.wire, &header))?;
-    let threshold = Threshold::of(&config, Some(&model)).map(Threshold::tokens);
+    let header = put_part(ctx, wire::header(spoken, &header))?;
+    let threshold = config.compact_at.or(model.compact_at);
     let turn = Turn {
         asked,
         lane: Lane {
             provider,
             model: model.name.clone(),
         },
-        model: model.id,
+        model: model.id(),
         max_tokens: config.max_tokens,
         header,
     };
@@ -792,7 +802,7 @@ fn crowded(context: Context, window: Option<u64>, max_tokens: u32, threshold: Op
     }
 }
 
-async fn learn(ctx: &Ctx, id: u64, asked: Asked, model: ModelRow) -> Result<(), Error> {
+async fn learn(ctx: &Ctx, id: u64, asked: Asked, model: Reach) -> Result<(), Error> {
     let head = wire::model_head(asked.wire, &model.name);
     let answer = call_model(ctx, &asked, head, Vec::new(), egress::Delivery::Whole).await;
     let mut thread = thread(ctx, id)?;
@@ -803,8 +813,10 @@ async fn learn(ctx: &Ctx, id: u64, asked: Asked, model: ModelRow) -> Result<(), 
     let again = match read {
         Ok(read) => {
             let window = read.window.map_or(Window::Unreported, Window::Tokens);
-            learned(ctx, &model, window, read.provider)?;
-            None
+            match providers::learned(ctx, &model, &asked.service, window, read.provider)? {
+                None => None,
+                Some(text) => failed(ctx, &mut thread, Failure::last(text))?,
+            }
         }
         Err(failure) => failed(ctx, &mut thread, failure)?,
     };

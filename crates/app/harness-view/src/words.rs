@@ -330,18 +330,34 @@ pub(crate) fn read_at(configured: &Configured) -> String {
         Configured::Unreadable { .. } => "read at each model call".to_owned(),
         Configured::Malformed { snapshot, .. }
         | Configured::UnknownModel { snapshot, .. }
-        | Configured::Ready { snapshot, .. } => {
+        | Configured::Ready { snapshot, .. }
+        | Configured::Routed { snapshot, .. }
+        | Configured::NoRoute { snapshot, .. } => {
             format!("read at each model call · {}", snapshot_words(snapshot))
         }
     }
 }
 
 pub(crate) fn model_more(setup: &AgentSetup, roster: &Roster) -> Option<String> {
-    let model = setup.configured.model()?;
     let serving = roster
         .card(setup.agent)
         .and_then(|card| card.serving)
         .unwrap_or_default();
+    if let Configured::Routed {
+        provider, route, ..
+    } = &setup.configured
+    {
+        let services: Vec<String> = route
+            .iter()
+            .map(|entry| format!("{} ({})", entry.service, entry.wire.label()))
+            .collect();
+        let nodes = design::plural(serving as u64, "node", "nodes");
+        return Some(format!(
+            " · {provider} · {}, {nodes} serving",
+            services.join(", ")
+        ));
+    }
+    let model = setup.configured.model()?;
     let mut more = String::new();
     if model.name != model.id {
         more.push_str(&format!(" · {}", model.name));
@@ -364,7 +380,10 @@ pub(crate) fn wait_words(wait: Option<u64>) -> String {
 
 pub(crate) fn configured_words(configured: &Configured) -> String {
     match configured {
-        Configured::Ready { .. } => "Ready".to_owned(),
+        Configured::Ready { .. } | Configured::Routed { .. } => "Ready".to_owned(),
+        Configured::NoRoute { provider, .. } => {
+            format!("No route: it names provider {provider}, which harness keeps no route for")
+        }
         Configured::UnknownModel { config, .. } => format!(
             "Unknown model: it names {}, which harness keeps no record of",
             config.model
@@ -432,9 +451,10 @@ pub(crate) fn prompt_words(configured: &Configured) -> String {
 
 pub(crate) fn prompt(configured: &Configured) -> Result<&str, &'static str> {
     match configured {
-        Configured::Ready { config, .. } | Configured::UnknownModel { config, .. } => {
-            Ok(&config.system)
-        }
+        Configured::Ready { config, .. }
+        | Configured::UnknownModel { config, .. }
+        | Configured::Routed { config, .. }
+        | Configured::NoRoute { config, .. } => Ok(&config.system),
         Configured::Unreadable { .. } | Configured::Malformed { .. } => {
             Err("No system prompt is read until the file is fixed.")
         }

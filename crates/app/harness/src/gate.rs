@@ -66,7 +66,9 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::ClaimConversations { .. }
         | Op::AdoptOwners { .. }
         | Op::ReadBudgets
-        | Op::Filed(_) => Vec::new(),
+        | Op::Filed(_)
+        | Op::SetRoute { .. }
+        | Op::RemoveRoute { .. } => Vec::new(),
     })
 }
 

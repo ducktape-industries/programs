@@ -613,6 +613,10 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             harness::Query::Answerers { .. } => harness::Reply::Answerers(page(Vec::new())),
             harness::Query::AgentTools { .. } => harness::Reply::AgentTools(Default::default()),
             harness::Query::Cards { .. } => harness::Reply::Cards(page(cards_of(&net))),
+            harness::Query::ProviderRoute { .. } => harness::Reply::ProviderRoute(None),
+            harness::Query::ProviderRoutes { .. } => {
+                harness::Reply::ProviderRoutes(page(Vec::new()))
+            }
             harness::Query::Tools => harness::Reply::Tools(vec![
                 ToolInfo {
                     name: "forge_log".into(),

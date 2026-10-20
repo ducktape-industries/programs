@@ -229,6 +229,13 @@ pub(crate) async fn read_all(ctx: Ctx) -> Result<(), Error> {
             }
         }
     }
+    for (_, route) in crate::state::PROVIDER_ROUTES.all(&ctx)? {
+        for entry in route.services {
+            if !services.contains(&entry.service) {
+                services.push(entry.service);
+            }
+        }
+    }
     all(services.into_iter().map(|service| read_one(&ctx, service))).await;
     Ok(())
 }
