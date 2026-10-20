@@ -2,8 +2,7 @@
 //! what it hears from whom it answers, routed to the conversation bound to its chat thread or
 //! channel, else its canonical one; anyone closes a bound one, its manager the canonical one.
 use ::program::{
-    BlobId, Ctx, Error, ExecCtx, Ownership, Party, Principal, QueryCtx, not_found, unauthorized,
-    unexpected_reply,
+    BlobId, Ctx, Error, ExecCtx, Principal, QueryCtx, not_found, unauthorized, unexpected_reply,
 };
 use abi::role::identity::{AccountNumber, Category, Kind, Profile, Standing};
 use attribution::{Actor, Change, Kind as Changed, Reason, Source};
@@ -187,39 +186,18 @@ pub(crate) fn managed(ctx: &ExecCtx, number: AccountNumber) -> Result<Agent, Err
     agent_named(ctx, number)
 }
 
-fn listed(ctx: &QueryCtx, agent: AccountNumber) -> Result<Option<Ownership>, Error> {
-    let checker = &ctx.env().role(abi::role::ACCESS)?.clone();
-    let asked = access::Query::List {
-        program: PROGRAM.into(),
-        key: crate::agent_key(agent),
-    };
-    match ctx.query::<access::Query, access::Reply>(checker, &asked)? {
-        access::Reply::List(list) => Ok(list),
-        other => Err(unexpected_reply(checker, "List", &other)),
-    }
-}
-
-// an agent answers its manager always, and with no list on its key anyone: a list its manager sets
-// narrows it
+// whom an agent answers is identity's to say: its manager always, anyone else as it or its manager
+// set it (`SetOwnership`), asked as every runtime that delivers to an agent asks it (`Hears`)
 fn answers(ctx: &QueryCtx, agent: &Agent, actor: AccountNumber) -> Result<bool, Error> {
-    let by_manager = actor == agent.manager;
-    if by_manager {
-        return Ok(true);
-    }
-    let Some(list) = listed(ctx, agent.number)? else {
-        return Ok(true);
+    let role = ctx.env().role(abi::role::IDENTITY)?.clone();
+    let asked = identity::Query::Hears {
+        account: agent.number,
+        from: actor,
     };
-    let manager = Party::Account(agent.manager);
-    Ok(list.allows(Some(&manager), &caller(ctx, actor)?))
-}
-
-fn caller(ctx: &QueryCtx, actor: AccountNumber) -> Result<Vec<Party>, Error> {
-    let account = Party::Account(actor);
-    let program = profile(ctx, actor)?.and_then(|profile| match profile.kind {
-        Kind::System(program) => Some(Party::Program(program)),
-        Kind::User | Kind::Program { .. } => None,
-    });
-    Ok(std::iter::once(account).chain(program).collect())
+    match ctx.query::<identity::Query, identity::Reply>(&role, &asked)? {
+        identity::Reply::Hears(hears) => Ok(hears),
+        other => Err(unexpected_reply(&role, "Hears", &other)),
+    }
 }
 
 pub(crate) fn thread(ctx: &QueryCtx, id: u64) -> Result<ThreadRow, Error> {
@@ -655,7 +633,7 @@ fn waited(
     Ok(None)
 }
 
-// who an agent answers is its list's to say; what it did not answer still leaves a trace
+// who an agent answers is identity's to say; what it did not answer still leaves a trace
 fn dropped(
     ctx: &ExecCtx,
     agent: &Agent,
@@ -673,7 +651,7 @@ fn dropped(
     };
     let Source { program, object } = &change.source;
     let text = format!(
-        "dropped {what} from account {actor} ({program} {} {}): it isn't on this agent's list",
+        "dropped {what} from account {actor} ({program} {} {}): this agent doesn't answer it (identity: Answers)",
         object.kind, object.id
     );
     let Designation { place, .. } = designation(ctx, change, actor, heard)?;

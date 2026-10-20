@@ -59,14 +59,14 @@ author's delete is `may_edit`, anyone else's `may_change_room`.
 
 ## Follows
 The session, routes, visibility, the chain's heads, and the live heads of
-chat, identity, access and ownership (`watch.rs`); a chat block re-reads only
+chat, identity and ownership (`watch.rs`); a chat block re-reads only
 what its `#[reads]` say it wrote.
 
 ## Tests
 `src/tests/` drives the view against the SDK's fake host. `tests/mod.rs`
 `configure` answers chat (`chat_reply`: three rooms, two rows in #general,
-a roster of eddy 7, his agent reviewer 8, forge 9 and ada 10), access, and
-ownership with no records; `opened()` seats eddy and opens #general.
+a roster of eddy 7, his agent reviewer 8, forge 9 and ada 10), identity (no
+pictures, every agent answering anyone), and ownership with no records; `opened()` seats eddy and opens #general.
 `owned(cx, key, owner, policy, policies)` puts one key on record, with
 identity's names. Every unhandled ask panics, so a new query needs an arm
 there. `tests/phone.rs` holds the phone screens and the 360/390/430 sweep.

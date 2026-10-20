@@ -245,7 +245,10 @@ fn a_mention_from_someone_the_agent_does_not_answer_leaves_a_notice() {
     let [told]: [String; 1] = notices(chain, row.id).try_into().unwrap();
     let from = format!("dropped a mention from account {} ", world.bo);
     assert!(told.starts_with(&from), "{told}");
-    assert!(told.ends_with("it isn't on this agent's list"), "{told}");
+    assert!(
+        told.ends_with("this agent doesn't answer it (identity: Answers)"),
+        "{told}"
+    );
     assert!(assigned(chain, SERVICE).is_empty(), "a notice asks nothing");
 }
 

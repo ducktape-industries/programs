@@ -1,6 +1,6 @@
 //! The create form: identity's `CreateAgent`, a files commit of its configuration (chunk blobs put
-//! first), access's `Set` of the file's list, identity's `SetScript`, access's `Set` of whom it
-//! answers; a refused step resumes there. An edit writes the file's body alone, and moved lists.
+//! first), access's `Set` of the file's list, identity's `SetScript`, identity's `SetOwnership` of
+//! whom it answers; a refused step resumes there. An edit writes the file's body alone, and moved lists.
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -79,12 +79,6 @@ pub(crate) struct Form {
 pub(crate) enum Writes {
     Whole(Config),
     Edit { body: Option<String> },
-}
-
-#[derive(Clone, Copy)]
-enum Listing {
-    Config,
-    Answers,
 }
 
 enum Next {
@@ -439,15 +433,10 @@ impl Agents {
                     key: path,
                     list: Some(list),
                 };
-                self.set_list(op, Listing::Config, cx)
+                self.set_list(op, cx)
             }
-            Next::Answer(agent, ownership) => {
-                let op = access::Op::Set {
-                    program: harness::PROGRAM.to_owned(),
-                    key: harness::agent_key(agent),
-                    list: Some(ownership),
-                };
-                self.set_list(op, Listing::Answers, cx)
+            Next::Answer(account, ownership) => {
+                self.send(identity::Op::SetOwnership { account, ownership }, cx)
             }
             Next::Done(agent) => {
                 self.draft = Draft::default();
@@ -479,6 +468,10 @@ impl Agents {
                         view.draft.scripted = true;
                         Ok(())
                     }
+                    identity::Op::SetOwnership { .. } => {
+                        view.draft.answered = true;
+                        Ok(())
+                    }
                     _ => Ok(()),
                 });
             view.landed(landed, cx);
@@ -486,14 +479,11 @@ impl Agents {
         cx.notify();
     }
 
-    fn set_list(&mut self, op: access::Op, listing: Listing, cx: &mut Context<Self>) {
+    fn set_list(&mut self, op: access::Op, cx: &mut Context<Self>) {
         let submit = cx.host().ask::<Submit<access::Access>>(op);
-        self.draft.sending = Some(cx.land(submit, move |view, answer, cx| {
+        self.draft.sending = Some(cx.land(submit, |view, answer, cx| {
             view.draft.sending = None;
-            let landed = applied(answer).map(|_| match listing {
-                Listing::Config => view.draft.kept = true,
-                Listing::Answers => view.draft.answered = true,
-            });
+            let landed = applied(answer).map(|_| view.draft.kept = true);
             view.landed(landed, cx);
         }));
         cx.notify();

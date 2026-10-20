@@ -33,6 +33,7 @@ fn pictured(touch: bool) -> TestAppContext {
             items: vec![card(7), card(8)],
             next: None,
         })),
+        identity::Query::Answers { .. } => Ok(anyone()),
         query => panic!("unexpected identity query: {query:?}"),
     });
     cx.host().handle::<BlobGet>(|_| Ok(Some(PNG.to_vec())));

@@ -320,10 +320,7 @@ pub(crate) struct Detail {
 pub(crate) async fn detail(host: Host, agent: u64) -> Result<Detail, Error> {
     let setup = setup(&host, agent).await?;
     let ownership = host
-        .query(access::ask::List {
-            program: harness::PROGRAM.to_owned(),
-            key: harness::agent_key(agent),
-        })
+        .query(identity::ask::Answers { account: agent })
         .await?
         .unwrap_or(Ownership::Anyone);
     let config_writers = match &setup {

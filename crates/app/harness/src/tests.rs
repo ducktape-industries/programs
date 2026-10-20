@@ -285,9 +285,16 @@ impl World {
     }
 }
 
+fn answering(world: &World, ownership: ::program::Ownership) {
+    let set = identity::Op::SetOwnership {
+        account: world.agent,
+        ownership,
+    };
+    identity_op(&world.chain, ADA, set).unwrap();
+}
+
 fn manager_only(world: &World) {
-    let key = crate::agent_key(world.agent);
-    set_list(&world.chain, ADA, PROGRAM, key, ::program::Ownership::Owner);
+    answering(world, ::program::Ownership::Owner);
 }
 
 fn assigned(chain: &MockChain, service: &str) -> Vec<RequestRow> {
@@ -554,11 +561,8 @@ fn a_direct_message_reaches_the_agent_and_only_those_it_answers_are_heard() {
     );
     assert!(posts[0].contains("mentioned you"), "{}", posts[0]);
 
-    set_list(
-        chain,
-        ADA,
-        PROGRAM,
-        crate::agent_key(world.agent),
+    answering(
+        &world,
         ::program::Ownership::Listed(vec![::program::Party::Account(world.bo)]),
     );
     world.post(BO, "general", "b2", &format!("<@{}> now?", world.agent));
@@ -674,11 +678,8 @@ fn an_agent_that_answers_a_program_hears_what_that_program_posts_as_itself() {
     let [row]: [ThreadRow; 1] = world.threads().try_into().unwrap();
     let told = notices(chain, row.id);
     assert_eq!(told.len(), 1, "Scout answers its manager only");
-    set_list(
-        chain,
-        ADA,
-        PROGRAM,
-        crate::agent_key(world.agent),
+    answering(
+        &world,
         ::program::Ownership::Listed(vec![::program::Party::Program(egress::PROGRAM.into())]),
     );
     world.post(BO, "general", "b1", &format!("<@{}> me too?", world.agent));
@@ -691,6 +692,42 @@ fn an_agent_that_answers_a_program_hears_what_that_program_posts_as_itself() {
         .filter(|body| matches!(body, Body::Post { .. }))
         .count();
     assert_eq!(heard, 1);
+}
+
+// a runtime off the chain asks identity `Hears`, the one rule harness delivers by: a stranger is
+// heard until the manager narrows whom the agent answers, dropped then, and heard again once listed
+#[test]
+fn identity_hears_whom_harness_delivers() {
+    let world = world();
+    let chain = &world.chain;
+    let hears = |from: AccountNumber| {
+        let asked = identity::Query::Hears {
+            account: world.agent,
+            from,
+        };
+        match chain.query(identity::PROGRAM, &asked).unwrap() {
+            identity::Reply::Hears(hears) => hears,
+            other => panic!("{other:?}"),
+        }
+    };
+    assert!(hears(world.bo) && hears(world.ada));
+    manager_only(&world);
+    assert!(!hears(world.bo) && hears(world.ada));
+    world.post(BO, "general", "b1", &format!("<@{}> psst", world.agent));
+    let [row]: [ThreadRow; 1] = world.threads().try_into().unwrap();
+    assert_eq!(notices(chain, row.id).len(), 1, "Bo's mention is dropped");
+    answering(
+        &world,
+        ::program::Ownership::Listed(vec![::program::Party::Account(world.bo)]),
+    );
+    assert!(hears(world.bo));
+    world.post(BO, "general", "b2", &format!("<@{}> now?", world.agent));
+    let heard = frames(chain, row.id)
+        .into_iter()
+        .chain(held(chain, row.id))
+        .filter(|body| matches!(body, Body::Post { .. }))
+        .count();
+    assert_eq!(heard, 1, "Bo is heard once listed");
 }
 
 #[test]

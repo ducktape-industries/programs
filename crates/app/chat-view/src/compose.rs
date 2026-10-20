@@ -24,12 +24,9 @@ impl Chat {
             .into_iter()
             .map(|choice| MentionChoice {
                 token: mention_token(&choice.principal),
-                hint: match self.outside_harness(&choice.principal) {
-                    true => Some(crate::words::OUTSIDE_HARNESS.to_owned()),
-                    false => self
-                        .unanswered(&choice.principal)
-                        .map(|why| format!("Answers {why}")),
-                },
+                hint: self
+                    .unanswered(&choice.principal)
+                    .map(|why| format!("Answers {why}")),
                 label: choice.label,
                 offered: choice.offered,
                 sigil: '@',

@@ -213,16 +213,7 @@ impl Chat {
         self.write_gate().is_none()
     }
 
-    /// Why the agent `principal` would give the reader no answer
-    /// ([`crate::names::unanswered`]).
-    // an agent harness doesn't run: what it answers is no rule of harness's
-    pub(crate) fn outside_harness(&self, principal: &Principal) -> bool {
-        let Some(names) = self.names.ready() else {
-            return false;
-        };
-        crate::message::agent(names, principal) && !crate::queries::run_by_harness(names, principal)
-    }
-
+    // why the agent `principal` would give the reader no answer (`crate::names::unanswered`)
     pub(crate) fn unanswered(&self, principal: &Principal) -> Option<&'static str> {
         let names = self.names.ready()?;
         let ownerships = self.ownerships.ready()?;

@@ -608,6 +608,12 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                         kind: identity::Kind::User,
                     }),
             ),
+            identity::Query::Answers { account } => identity::Reply::Answers(Some(
+                net.answers
+                    .iter()
+                    .find(|(agent, _)| *agent == account)
+                    .map_or(identity::Ownership::Anyone, |(_, list)| list.clone()),
+            )),
             other => panic!("unexpected query: {other:?}"),
         })
     });
@@ -615,14 +621,6 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
     cx.host().handle::<Query<access::Access>>(move |query| {
         let net = shared.borrow();
         Ok(match query {
-            access::Query::List { program, key } if program == harness::PROGRAM => {
-                let answers = net
-                    .answers
-                    .iter()
-                    .find(|(agent, _)| harness::agent_key(*agent) == key)
-                    .map(|(_, list)| list.clone());
-                access::Reply::List(answers)
-            }
             access::Query::Writers { program, key } if program == files::PROGRAM => {
                 let owner = net
                     .setups
@@ -1141,12 +1139,8 @@ fn kept(path: &str) -> access::Op {
     }
 }
 
-fn answering(agent: u64, list: identity::Ownership) -> access::Op {
-    access::Op::Set {
-        program: harness::PROGRAM.into(),
-        key: harness::agent_key(agent),
-        list: Some(list),
-    }
+fn answering(account: u64, ownership: identity::Ownership) -> identity::Op {
+    identity::Op::SetOwnership { account, ownership }
 }
 
 fn fill(cx: &mut TestAppContext) {
@@ -1205,14 +1199,12 @@ fn the_create_flow_sends_its_ops_in_order() {
                     config: "/home/Eddy/agents/rover.md".into(),
                 })
             },
+            answering(ROVER, identity::Ownership::Owner),
         ]
     );
     assert_eq!(
         cx.host().requests::<Submit<access::Access>>(),
-        [
-            kept("/home/Eddy/agents/rover.md"),
-            answering(ROVER, identity::Ownership::Owner),
-        ]
+        [kept("/home/Eddy/agents/rover.md")]
     );
     assert!(cx.host().requests::<Submit<harness::Harness>>().is_empty());
 }
@@ -1230,7 +1222,7 @@ fn the_create_flow_lists_accounts_and_programs_it_answers() {
     cx.simulate_input("create-accounts", "7, forge");
     cx.simulate_click("create-next");
     cx.run_until_parked();
-    let answered = cx.host().requests::<Submit<access::Access>>().pop();
+    let answered = cx.host().requests::<Submit<Identity>>().pop();
     assert_eq!(
         answered,
         Some(answering(
@@ -1459,18 +1451,18 @@ fn an_edit_sends_who_may_change_the_file_and_whom_it_answers_only_when_they_chan
     cx.run_until_parked();
     assert_eq!(
         cx.host().requests::<Submit<access::Access>>(),
-        [
-            access::Op::Set {
-                program: files::PROGRAM.into(),
-                key: "/home/Eddy/agents/scout.md".into(),
-                list: Some(identity::Ownership::Listed(vec![identity::Party::Account(
-                    ADA
-                )])),
-            },
-            answering(SCOUT, identity::Ownership::Anyone),
-        ]
+        [access::Op::Set {
+            program: files::PROGRAM.into(),
+            key: "/home/Eddy/agents/scout.md".into(),
+            list: Some(identity::Ownership::Listed(vec![identity::Party::Account(
+                ADA
+            )])),
+        },]
     );
-    assert!(cx.host().requests::<Submit<Identity>>().is_empty());
+    assert_eq!(
+        cx.host().requests::<Submit<Identity>>(),
+        [answering(SCOUT, identity::Ownership::Anyone)]
+    );
 }
 
 #[test]

@@ -1,5 +1,5 @@
 //! What chat follows while it is open: the session, routes opened into
-//! it, whether it is on screen, and the live heads of chat, identity, access and ownership.
+//! it, whether it is on screen, and the live heads of chat, identity and ownership.
 //! Every follower says what a refusal means to it; none ends on one.
 use view::prelude::*;
 
@@ -55,11 +55,6 @@ impl Chat {
                 chat.load_avatars(cx);
             }
             Err(refusal) => cx.log_refused("identity's live heads", &refusal),
-        })
-        .detach();
-        cx.follow::<Changes<access::Access>>((), |chat, head, cx| match head {
-            Ok(_) => chat.load_names(cx),
-            Err(refusal) => cx.log_refused("access's live heads", &refusal),
         })
         .detach();
         cx.follow::<Changes<ownership::Ownership>>((), |chat, head, cx| match head {

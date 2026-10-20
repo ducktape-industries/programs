@@ -47,19 +47,16 @@ fn agents() -> (TestAppContext, Entity<Chat>) {
             query => chat_reply(query),
         })
     }));
-    cx.host().handle::<Ask<access::Access>>(|query| {
+    cx.host().handle::<Ask<Identity>>(|query| {
         Ok(match query {
-            access::Query::List { program, key } if program == harness::PROGRAM => {
-                access::Reply::List(match key {
-                    key if key == harness::agent_key(11) => Some(Ownership::Owner),
-                    key if key == harness::agent_key(12) => {
-                        Some(Ownership::Listed(vec![identity::Party::Account(14)]))
-                    }
-                    key if key == harness::agent_key(13) => Some(Ownership::Anyone),
-                    key => panic!("{key} is no agent's"),
-                })
-            }
-            query => panic!("unexpected access query: {query:?}"),
+            identity::Query::List { .. } => no_cards(),
+            identity::Query::Answers { account } => identity::Reply::Answers(Some(match account {
+                11 => Ownership::Owner,
+                12 => Ownership::Listed(vec![identity::Party::Account(14)]),
+                13 => Ownership::Anyone,
+                account => panic!("{account} is no agent's"),
+            })),
+            query => panic!("unexpected identity query: {query:?}"),
         })
     });
     let view = cx.open::<Chat>();
@@ -99,7 +96,7 @@ fn the_mention_menu_says_which_agents_would_not_answer_the_writer() {
     };
     assert_eq!(hint("scout").as_deref(), Some("Answers its manager only"));
     assert_eq!(hint("atlas").as_deref(), Some("Answers listed people only"));
-    assert_eq!(hint("sage").as_deref(), Some("Runs outside harness"));
+    assert_eq!(hint("sage"), None);
     assert_eq!(hint("ada"), None);
 }
 
@@ -116,7 +113,7 @@ fn a_dm_header_says_when_the_agent_will_not_reply() {
             12,
             Some("atlas answers listed people only. Messages here get no reply."),
         ),
-        (13, Some("sage runs outside harness.")),
+        (13, None),
     ] {
         cx.simulate_click(&format!("chat-sidebar-dm-{peer}"));
         cx.run_until_parked();
@@ -199,7 +196,7 @@ fn an_agents_face_opens_its_card() {
 
     cx.simulate_click("chat-message-m4-avatar");
     cx.run_until_parked();
-    assert!(cx.has_text("Runs outside harness"));
+    assert!(cx.has_text("Answers anyone"), "{:?}", cx.texts());
     assert!(cx.find("chat-card-work-record").is_none());
     assert_eq!(focus_given(&cx), named("chat-card-open-profile"));
 }
@@ -215,14 +212,4 @@ fn a_persons_face_opens_their_profile() {
     );
     view.read(|chat| assert!(chat.menu.is_none()));
     assert!(cx.find("chat-card").is_none());
-}
-
-#[test]
-fn an_agent_harness_does_not_run_says_so_on_its_card() {
-    let (mut cx, _view) = agents();
-    cx.simulate_click("chat-message-m4-avatar");
-    cx.run_until_parked();
-    assert!(cx.find("chat-card-answers").is_some());
-    assert!(cx.has_text("Runs outside harness"), "{:?}", cx.texts());
-    assert!(!cx.has_text("Answers anyone"), "{:?}", cx.texts());
 }

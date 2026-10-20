@@ -717,12 +717,6 @@ fn a_streamed_post_forms_in_the_draft_lands_whole_and_a_mention_in_it_is_heard_o
             }),
         };
         net.apply(&public(ADA), identity::PROGRAM, &script).await;
-        let anyone = access::Op::Set {
-            program: harness::PROGRAM.into(),
-            key: harness::agent_key(echo),
-            list: Some(identity::Ownership::Anyone),
-        };
-        net.apply(&public(ADA), access::PROGRAM, &anyone).await;
 
         let piece = |json: String| {
             json!({

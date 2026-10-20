@@ -10,10 +10,8 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 abi.workspace = true
 view.workspace = true
-access.workspace = true
 ownership.workspace = true
 policy-view.workspace = true
-harness.workspace = true
 identity.workspace = true
 valset.workspace = true
 serde.workspace = true

@@ -66,6 +66,9 @@ fn cards(
             identity::Query::Profile { number: 9 } => {
                 identity::Reply::Profile(Some(policies::ada()))
             }
+            identity::Query::Answers { .. } => {
+                identity::Reply::Answers(Some(identity::Ownership::Owner))
+            }
             q => panic!("unexpected query: {q:?}"),
         })
     });

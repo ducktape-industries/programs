@@ -143,8 +143,13 @@ fn quiet_methods(cx: &mut TestAppContext) {
     cx.host().handle::<view::methods::StoreGet>(|_| Ok(None));
     cx.host().handle::<Ask<Identity>>(|query| match query {
         identity::Query::List { .. } => Ok(no_cards()),
+        identity::Query::Answers { .. } => Ok(anyone()),
         query => panic!("unexpected identity query: {query:?}"),
     });
+}
+
+fn anyone() -> identity::Reply {
+    identity::Reply::Answers(Some(identity::Ownership::Anyone))
 }
 
 fn no_cards() -> identity::Reply {
@@ -159,16 +164,6 @@ fn configure(cx: &mut TestAppContext) {
     quiet_methods(cx);
     cx.host()
         .handle::<Ask<::chat::Chat>>(rooms_alone(|query| Ok(chat_reply(query))));
-    cx.host().handle::<Ask<access::Access>>(|query| {
-        Ok(match query {
-            access::Query::List { program, key }
-                if program == harness::PROGRAM && key == harness::agent_key(8) =>
-            {
-                access::Reply::List(None)
-            }
-            query => panic!("unexpected access query: {query:?}"),
-        })
-    });
     cx.host().handle::<Ask<ownership::Ownership>>(|query| {
         Ok(match query {
             ownership::Query::Record { .. } => ownership::Reply::Record(None),
@@ -235,6 +230,7 @@ fn owned(
                 }))
             }
             identity::Query::List { .. } => no_cards(),
+            identity::Query::Answers { .. } => anyone(),
             query => panic!("unexpected identity query: {query:?}"),
         })
     });

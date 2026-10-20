@@ -140,11 +140,8 @@ fn every_person_and_every_place_continue_the_agents_canonical_conversation() {
     chain.submit(signed(ADA), chat::PROGRAM, &open).unwrap();
     let room = chat::dm_channel_id(world.ada, world.agent);
     world.post(ADA, &room, "d1", "and a word in private");
-    set_list(
-        chain,
-        ADA,
-        PROGRAM,
-        crate::agent_key(world.agent),
+    answering(
+        &world,
         ::program::Ownership::Listed(vec![::program::Party::Account(world.bo)]),
     );
     world.post(BO, "general", "b1", &format!("<@{}> me too", world.agent));
@@ -223,13 +220,7 @@ fn whom_the_agent_answers_does_not_start_its_conversation_but_a_list_on_the_conv
     let world = world();
     let chain = &world.chain;
     let new = Op::NewThread { agent: world.agent };
-    set_list(
-        chain,
-        ADA,
-        PROGRAM,
-        crate::agent_key(world.agent),
-        ::program::Ownership::Anyone,
-    );
+    answering(&world, ::program::Ownership::Anyone);
     let refused = renewed(chain, BO, &new).unwrap_err();
     assert_eq!(refused.code, code::UNAUTHORIZED);
 

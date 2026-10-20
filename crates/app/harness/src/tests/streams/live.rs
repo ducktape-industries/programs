@@ -418,13 +418,6 @@ fn a_mention_in_a_post_still_forming_is_heard_once_the_post_is_whole() {
     };
     let echo = number(identity_op(chain, ADA, create).unwrap());
     scripted(chain, echo, CONFIG);
-    set_list(
-        chain,
-        ADA,
-        PROGRAM,
-        crate::agent_key(echo),
-        ::program::Ownership::Anyone,
-    );
     let (_, request) = asked(&world);
     let opening = format!(r#"{{"channel":"general","text":"<@{echo}> pl"#);
     let events = post_events("toolu_p", &[&opening, r#"ease check"}"#]);

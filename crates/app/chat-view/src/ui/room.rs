@@ -226,9 +226,6 @@ fn header(
         .map(chat::Principal::Account)
         .and_then(|peer| {
             let name = chat.names.ready()?.member(&peer);
-            if chat.outside_harness(&peer) {
-                return Some(words::runs_outside_harness(&name));
-            }
             let why = chat.unanswered(&peer)?;
             Some(format!("{name} answers {why}. Messages here get no reply."))
         })

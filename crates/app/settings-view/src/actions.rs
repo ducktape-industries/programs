@@ -5,7 +5,6 @@ use view::prelude::*;
 use crate::queries::Found;
 use crate::state::{Answering, Choice, Form, Problem, Section, Sheet, TTL};
 use crate::{Settings, queries};
-use access::Access;
 use identity::{Identity, Ownership, Party};
 
 impl Settings {
@@ -297,17 +296,12 @@ impl Settings {
         }
         answering.pick.problem = None;
         answering.form.problem = None;
-        let list = match ownership {
-            Ownership::Owner => None,
-            Ownership::Listed(_) | Ownership::Anyone => Some(ownership),
-        };
-        let op = access::Op::Set {
-            program: harness::PROGRAM.into(),
-            key: harness::agent_key(number),
-            list,
+        let op = identity::Op::SetOwnership {
+            account: number,
+            ownership,
         };
         self.land_agent_op(
-            move |host| host.ask::<Submit<Access>>(op),
+            move |host| host.ask::<Submit<Identity>>(op),
             move |v| which(v.answering.entry(number).or_default()),
             from,
             Some(number),

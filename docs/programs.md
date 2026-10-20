@@ -381,9 +381,9 @@ program, never in the program whose keys they cover: a key's owner, or the
 program itself, sets one with `access::Op::Set`, and a program never copies
 an owner into it. A list holds account numbers and program ids, never
 names, so renaming an account changes nothing it allows. A program that
-reads a list for a rule of its own asks the access program (harness asks
-`access::Query::List` at `harness::agent_key(agent)` for whom an agent
-answers).
+reads a list for a rule of its own asks the access program. Whom an agent
+answers is no access list: it is identity's (`SetOwnership`, `Answers`,
+`Hears`; [roles.md](roles.md)).
 
 `Env::authority()` admits only a message from the program bound to the
 validators role, which sends one when its validators' vote passes a

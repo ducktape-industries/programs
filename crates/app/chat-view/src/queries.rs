@@ -44,23 +44,20 @@ pub(crate) async fn ownerships(
 ) -> Result<BTreeMap<u64, Ownership>, Error> {
     let agents = names
         .people()
-        .filter(|number| run_by_harness(names, &Principal::Account(*number)));
+        .filter(|number| crate::message::agent(names, &Principal::Account(*number)));
     let asks = agents.map(|number| {
         let host = host.clone();
         async move {
-            let list = host
-                .query(access::ask::List {
-                    program: harness::PROGRAM.to_owned(),
-                    key: harness::agent_key(number),
-                })
+            let answers = host
+                .query(identity::ask::Answers { account: number })
                 .await?;
-            let ownership = list.unwrap_or(Ownership::Anyone);
-            Ok::<_, Error>((number, ownership))
+            Ok::<_, Error>(answers.map(|ownership| (number, ownership)))
         }
     });
     Ok(futures::future::try_join_all(asks)
         .await?
         .into_iter()
+        .flatten()
         .collect())
 }
 
@@ -244,17 +241,4 @@ pub(crate) async fn search_hits(
 // Who is answering in a room right now: each draft, with its text so far.
 pub(crate) async fn answering(host: Host, channel_id: String) -> Result<Vec<chat::Draft>, Error> {
     host.query(ask::Drafts { channel_id }).await
-}
-
-// an agent whose script calls harness: harness keeps whom it answers; any other agent runs
-// outside harness, and no rule of harness's says whom it answers
-pub(crate) fn run_by_harness(names: &Names, principal: &Principal) -> bool {
-    matches!(
-        names.kind(principal),
-        Some(chat::Kind::Program {
-            category: chat::Category::Agent,
-            script: Some(script),
-            ..
-        }) if script.calls == harness::PROGRAM
-    )
 }

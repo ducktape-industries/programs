@@ -55,14 +55,11 @@ pub(super) fn card(
             theme.agent_soft,
         ));
     }
-    let answers = match chat.outside_harness(&author) {
-        true => Some(crate::words::OUTSIDE_HARNESS.to_owned()),
-        false => chat
-            .ownerships
-            .ready()
-            .and_then(|ownerships| ownerships.get(&account))
-            .map(|ownership| crate::names::answers(names, ownership)),
-    };
+    let answers = chat
+        .ownerships
+        .ready()
+        .and_then(|ownerships| ownerships.get(&account))
+        .map(|ownership| crate::names::answers(names, ownership));
     let answers = answers.map(|line| {
         div()
             .id("chat-card-answers")

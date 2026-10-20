@@ -5275,8 +5275,6 @@ name = "settings-view"
 version = "0.1.0"
 dependencies = [
  "abi",
- "access",
- "harness",
  "identity",
  "image",
  "ownership",

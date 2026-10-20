@@ -1,5 +1,4 @@
 use crate::Settings;
-use access::Access;
 use identity::Identity;
 use valset::Valset;
 use view::methods::{Change, Changes, ClipboardWrite, Query};
@@ -79,13 +78,12 @@ fn scout_is(cx: &TestAppContext, life: identity::Life) {
                     next: None,
                 })
             }
+            identity::Query::Answers { account: 12 } => {
+                identity::Reply::Answers(Some(identity::Ownership::Owner))
+            }
             q => panic!("unexpected query: {q:?}"),
         })
     });
-}
-
-fn is_scout(program: &str, key: &str) -> bool {
-    program == harness::PROGRAM && key == harness::agent_key(12)
 }
 
 fn respond(cx: &TestAppContext) {
@@ -110,18 +108,13 @@ fn respond(cx: &TestAppContext) {
             {
                 identity::Reply::Resolved(vec![Some(9)])
             }
-            q => panic!("unexpected query: {q:?}"),
-        })
-    });
-    policies::owning(cx);
-    cx.host().handle::<Query<Access>>(|q| {
-        Ok(match q {
-            access::Query::List { program, key } if is_scout(&program, &key) => {
-                access::Reply::List(None)
+            identity::Query::Answers { account: 12 } => {
+                identity::Reply::Answers(Some(identity::Ownership::Owner))
             }
             q => panic!("unexpected query: {q:?}"),
         })
     });
+    policies::owning(cx);
     cx.host().handle::<Query<Valset>>(|q| {
         Ok(match q {
             valset::Query::Membership { key } => {
@@ -176,15 +169,8 @@ fn scout_seated(cx: &TestAppContext) {
                     next: None,
                 })
             }
-            q => panic!("unexpected query: {q:?}"),
-        })
-    });
-    cx.host().handle::<Query<Access>>(|q| {
-        Ok(match q {
-            access::Query::List { program, key }
-                if program == harness::PROGRAM && key == harness::agent_key(13) =>
-            {
-                access::Reply::List(None)
+            identity::Query::Answers { account: 13 } => {
+                identity::Reply::Answers(Some(identity::Ownership::Owner))
             }
             q => panic!("unexpected query: {q:?}"),
         })
@@ -818,6 +804,9 @@ fn an_identity_head_re_reads_the_account_in_place() {
                     next: None,
                 })
             }
+            identity::Query::Answers { account: 12 } => {
+                identity::Reply::Answers(Some(identity::Ownership::Owner))
+            }
             q => panic!("unexpected query: {q:?}"),
         })
     });
@@ -903,25 +892,22 @@ fn answering(ownership: identity::Ownership) -> (TestAppContext, Answers) {
                     })
                     .collect(),
             ),
-            q => panic!("unexpected query: {q:?}"),
-        })
-    });
-    cx.host().handle::<Query<Access>>(move |q| {
-        Ok(match q {
-            access::Query::List { program, key } if is_scout(&program, &key) => {
-                let list = read.borrow().clone();
-                access::Reply::List(Some(list).filter(|list| *list != identity::Ownership::Owner))
+            identity::Query::Answers { account: 12 } => {
+                identity::Reply::Answers(Some(read.borrow().clone()))
             }
             q => panic!("unexpected query: {q:?}"),
         })
     });
     let landed = answers.clone();
-    cx.host().handle::<Submit<Access>>(move |op| {
-        let access::Op::Set { program, key, list } = op else {
+    cx.host().handle::<Submit<Identity>>(move |op| {
+        let identity::Op::SetOwnership {
+            account: 12,
+            ownership,
+        } = op
+        else {
             panic!("unexpected op: {op:?}");
         };
-        assert!(is_scout(&program, &key), "{program} {key}");
-        *landed.borrow_mut() = list.unwrap_or(identity::Ownership::Owner);
+        *landed.borrow_mut() = ownership;
         Ok(view::testing::applied(Vec::new()))
     });
     let heads = cx.host().stream::<Changes<Identity>>();
@@ -948,15 +934,15 @@ fn sent(cx: &TestAppContext) -> Vec<identity::Op> {
     cx.host().requests::<Submit<Identity>>()
 }
 
-fn answers_sent(cx: &TestAppContext) -> Vec<access::Op> {
-    cx.host().requests::<Submit<Access>>()
+fn answers_sent(cx: &TestAppContext) -> Vec<identity::Op> {
+    let answers = |op: &identity::Op| matches!(op, identity::Op::SetOwnership { .. });
+    sent(cx).into_iter().filter(answers).collect()
 }
 
-fn scout_answers(list: Option<identity::Ownership>) -> access::Op {
-    access::Op::Set {
-        program: harness::PROGRAM.into(),
-        key: harness::agent_key(12),
-        list,
+fn scout_answers(ownership: identity::Ownership) -> identity::Op {
+    identity::Op::SetOwnership {
+        account: 12,
+        ownership,
     }
 }
 
@@ -1016,8 +1002,8 @@ fn only_me_and_anyone_each_take_one_press() {
     assert_eq!(
         answers_sent(&cx),
         [
-            scout_answers(Some(identity::Ownership::Anyone)),
-            scout_answers(None),
+            scout_answers(identity::Ownership::Anyone),
+            scout_answers(identity::Ownership::Owner),
         ],
         "the choice it already has sends nothing"
     );
@@ -1110,7 +1096,7 @@ fn a_person_typed_goes_with_a_choice_that_lands() {
 
     cx.simulate_input("settings/agents/12/answers/name", "Eve");
     cx.host()
-        .refuse::<Submit<Access>>("unauthorized", "account 7 does not manage account 12");
+        .refuse::<Submit<Identity>>("unauthorized", "account 7 does not manage account 12");
     cx.simulate_click("settings/agents/12/answers/manager");
     cx.run_until_parked();
     cx.simulate_click("settings/agents/12/answers/specific");
@@ -1138,13 +1124,13 @@ fn the_person_field_waits_for_a_choice_that_is_out() {
 fn a_landed_remove_takes_a_refused_choices_sentence() {
     let (mut cx, _) = answering(listed(&[8, 9]));
     cx.host()
-        .refuse::<Submit<Access>>("unauthorized", "account 7 does not manage account 12");
+        .refuse::<Submit<Identity>>("unauthorized", "account 7 does not manage account 12");
     cx.simulate_click("settings/agents/12/answers/anyone");
     cx.run_until_parked();
     let refused = "That didn’t go through: account 7 does not manage account 12";
     assert!(cx.has_text(refused));
     cx.host()
-        .handle::<Submit<Access>>(|_| Ok(view::testing::applied(Vec::new())));
+        .handle::<Submit<Identity>>(|_| Ok(view::testing::applied(Vec::new())));
     cx.simulate_click("settings/agents/12/answers/8/remove");
     cx.run_until_parked();
     assert!(!cx.has_text(refused), "{:?}", cx.texts());
@@ -1154,7 +1140,7 @@ fn a_landed_remove_takes_a_refused_choices_sentence() {
 fn a_refused_choice_shows_in_its_agents_row() {
     let (mut cx, answers) = answering(identity::Ownership::Owner);
     cx.host()
-        .refuse::<Submit<Access>>("unauthorized", "account 7 does not manage account 12");
+        .refuse::<Submit<Identity>>("unauthorized", "account 7 does not manage account 12");
     cx.simulate_click("settings/agents/12/answers/anyone");
     cx.run_until_parked();
     assert_eq!(*answers.borrow(), identity::Ownership::Owner);
