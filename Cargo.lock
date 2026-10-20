@@ -2795,6 +2795,7 @@ dependencies = [
  "gitcore",
  "halo",
  "identity",
+ "model-wire",
  "ownership",
  "program",
  "programs",

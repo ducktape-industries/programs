@@ -2,6 +2,7 @@
 //! content: recorded Anthropic streams of text, thinking with its signature, a tool call whose
 //! input arrives in pieces, a commit whose files arrive as the model writes them, a call cut off
 //! mid-input by max_tokens, and an error part way.
+mod harness;
 mod server_tools;
 mod thinking;
 

@@ -35,6 +35,7 @@ forge = { workspace = true }
 gitcore = { workspace = true }
 # network_query and network_call: JSON to a program's borsh and back
 borsh-json = { workspace = true }
+model-wire = { workspace = true }
 # what a model is shown of an image: its bytes as base64
 base64 = { workspace = true }
 serde = { workspace = true }

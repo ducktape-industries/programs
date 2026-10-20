@@ -4,7 +4,7 @@
 use ::program::{Error, ExecCtx, QueryCtx, invalid, not_found};
 use store::{PageRequest, PageResponse};
 
-use crate::state::{COMPACT_AT, MODEL_SERVICES, MODELS, StoredModel, WINDOWS};
+use crate::state::{COMPACT_AT, MODEL_SERVICES, MODELS, PROVIDERS, StoredModel, WINDOWS};
 use crate::{ModelRow, Window, Wire};
 
 fn lowercase_name(text: &str) -> bool {
@@ -76,6 +76,7 @@ pub(crate) fn set_model(
     let kept = existing.filter(same_model);
     if kept.is_none() {
         WINDOWS.remove(ctx, &id);
+        PROVIDERS.remove(ctx, &id);
     }
     let window = kept.map_or(Window::Unasked, |row| row.window);
     let row = StoredModel {
@@ -97,6 +98,7 @@ pub(crate) fn remove_model(ctx: &ExecCtx, id: String) -> Result<(), Error> {
     MODELS.remove(ctx, &id);
     COMPACT_AT.remove(ctx, &id);
     WINDOWS.remove(ctx, &id);
+    PROVIDERS.remove(ctx, &id);
     MODEL_SERVICES.remove(ctx, &id);
     Ok(())
 }
@@ -118,13 +120,19 @@ pub(crate) fn set_compact_at(
     Ok(())
 }
 
-pub(crate) fn learned(ctx: &ExecCtx, asked: &ModelRow, window: Window) -> Result<(), Error> {
+pub(crate) fn learned(
+    ctx: &ExecCtx,
+    asked: &ModelRow,
+    window: Window,
+    provider: String,
+) -> Result<(), Error> {
     let Some(row) = MODELS.get(ctx, &asked.id)? else {
         return Ok(());
     };
     let still_asked = row.wire == asked.wire && row.name == asked.name;
     if still_asked {
         WINDOWS.put(ctx, &asked.id, &window);
+        PROVIDERS.put(ctx, &asked.id, &provider);
     }
     Ok(())
 }

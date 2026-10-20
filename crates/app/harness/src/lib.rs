@@ -188,14 +188,16 @@ impl Place {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum Wire {
     AnthropicMessages,
+    Harness,
 }
 
 impl Wire {
-    pub const ALL: &'static [Wire] = &[Wire::AnthropicMessages];
+    pub const ALL: &'static [Wire] = &[Wire::AnthropicMessages, Wire::Harness];
 
     pub fn label(self) -> &'static str {
         match self {
             Wire::AnthropicMessages => "Anthropic Messages",
+            Wire::Harness => "Harness",
         }
     }
 }

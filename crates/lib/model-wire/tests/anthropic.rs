@@ -441,7 +441,8 @@ fn a_summary_reads_back_its_compaction_block_and_its_words() {
         "content": [{ "type": "compaction", "content": "We did things.", "encrypted": null }],
         "usage": { "iterations": [{ "type": "compaction", "output_tokens": 42 }] },
     });
-    let summary = anthropic::summarized(200, &[], answer.to_string().as_bytes(), 0).unwrap();
+    let summary = anthropic::summarized(MODEL, 200, &[], answer.to_string().as_bytes(), 0).unwrap();
+    assert_eq!(summary.lane, lane());
     assert_eq!(summary.text, "We did things.");
     assert_eq!(summary.tokens, 42);
     let sealed = json!({ "type": "compaction", "content": "We did things." }).to_string();

@@ -17,12 +17,12 @@ use crate::pictures::{self, Looks, Picture};
 use crate::resume::{self, Failure};
 use crate::routes::{self, Picked};
 use crate::state::{
-    ANSWERED, ENDING, FLIGHTS, FRAMES, HELD, LIVE, Live, PARTIALS, RETRIES, SEALED, SEALED_FOR,
-    SHOWN, THREADS, WITHHELD,
+    ANSWERED, ASKED, ENDING, FLIGHTS, FRAMES, HELD, LANES, LIVE, Lane, Live, PARTIALS, PROVIDERS,
+    RETRIES, SEALED, SEALED_FOR, SHOWN, THREADS, WITHHELD,
 };
 use crate::tallies;
 use crate::waiting::settling;
-use crate::wire::{self, Answered, Foreign, Header, Summarized, Summary};
+use crate::wire::{self, Answered, Foreign, Header, Lanes, Summarized, Summary};
 use crate::{
     Asking, Body, Configured, Context, Forming, Frame, ModelRow, PART, Partial, Role, Said, Sealed,
     Stop, ThreadRow, Threshold, Window, Wire, streamed_as,
@@ -39,6 +39,7 @@ struct Asked {
 
 struct Turn {
     asked: Asked,
+    lane: Lane,
     model: String,
     max_tokens: u32,
     header: BlobId,
@@ -258,6 +259,29 @@ fn summary_part(ctx: &ExecCtx, thread: &ThreadRow, wire: Wire) -> Result<Option<
     Ok(Some(put_part(ctx, summary)?))
 }
 
+fn lanes(ctx: &ExecCtx, thread: u64, wire: Wire, frames: &[Frame]) -> Result<Lanes, Error> {
+    let mut lanes = Lanes::new();
+    if wire != Wire::Harness {
+        return Ok(lanes);
+    }
+    for frame in frames
+        .iter()
+        .filter(|frame| frame.body.role() == Some(Role::Assistant))
+    {
+        if let Some(lane) = LANES.get(ctx, &(thread, frame.seq))? {
+            lanes.insert(frame.seq, lane);
+        }
+    }
+    Ok(lanes)
+}
+
+fn provider_of(ctx: &ExecCtx, model: &ModelRow) -> Result<Option<String>, Error> {
+    match model.wire {
+        Wire::AnthropicMessages => Ok(Some(model_wire::anthropic::PROVIDER.into())),
+        Wire::Harness => PROVIDERS.get(ctx, &model.id),
+    }
+}
+
 fn opens(thread: &ThreadRow) -> bool {
     thread.sealed == 0 && thread.summary.is_none()
 }
@@ -357,8 +381,9 @@ fn seal(
         let end = frames[frames.len() - 1].seq;
         let looks = pictures::looks(ctx, thread.id, wire, &frames)?;
         let foreign = foreign(ctx, thread.id, &frames, asked)?;
+        let lanes = lanes(ctx, thread.id, wire, &frames)?;
         let shown = (&looks, &foreign);
-        let message = wire::message(wire, role, &frames, shown, opens(thread), false);
+        let message = wire::message(wire, role, &frames, shown, &lanes, opens(thread), false);
         let part = put_part(ctx, message)?;
         let sealed = Sealed {
             end,
@@ -428,7 +453,9 @@ fn turn_parts(ctx: &ExecCtx, thread: &mut ThreadRow, turn: &Turn) -> Result<Vec<
     );
     let looks = pictures::looks(ctx, thread.id, wire, &frames)?;
     let foreign = foreign(ctx, thread.id, &frames, &turn.asked)?;
-    let last = wire::message(wire, role, &frames, (&looks, &foreign), opens(thread), true);
+    let lanes = lanes(ctx, thread.id, wire, &frames)?;
+    let shown = (&looks, &foreign);
+    let last = wire::message(wire, role, &frames, shown, &lanes, opens(thread), true);
     parts.push(put_part(ctx, last)?);
     parts.push(put_part(ctx, wire::close(wire).into())?);
     Ok(parts)
@@ -599,14 +626,12 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         wait: config.wait,
         config: snapshot,
     };
-    let window = match model.window {
-        Window::Unasked => {
-            thread.asking = Asking::Learning;
-            return Ok(Some(Step::Learn { asked, model }));
-        }
-        Window::Unreported => None,
-        Window::Tokens(tokens) => Some(tokens),
+    let learnt = provider_of(ctx, &model)?.filter(|_| model.window != Window::Unasked);
+    let Some(provider) = learnt else {
+        thread.asking = Asking::Learning;
+        return Ok(Some(Step::Learn { asked, model }));
     };
+    let window = model.window.tokens();
     reseal(ctx, thread, &asked)?;
     let mut system = config.paragraphs();
     let bound = binding(ctx, thread)?;
@@ -625,6 +650,10 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
     let threshold = Threshold::of(&config, Some(&model)).map(Threshold::tokens);
     let turn = Turn {
         asked,
+        lane: Lane {
+            provider,
+            model: model.name.clone(),
+        },
         model: model.id,
         max_tokens: config.max_tokens,
         header,
@@ -641,6 +670,7 @@ fn plan_turn(ctx: &ExecCtx, thread: &mut ThreadRow, turn: Turn) -> Result<Option
     thread.asking = Asking::Asked { upto };
     crate::replies::clear(ctx, thread.id)?;
     PARTIALS.put(ctx, &thread.id, &Partial::new(turn.asked.wire));
+    ASKED.put(ctx, &thread.id, &turn.lane);
     let summarized = thread.summary.is_some();
     Ok(Some(Step::Ask {
         asked: turn.asked,
@@ -707,7 +737,7 @@ fn largest_unseen(ctx: &ExecCtx, thread: &ThreadRow, wire: Wire) -> Result<Optio
     let sized = unseen.map(|frame| {
         let one = std::slice::from_ref(&frame);
         let none = (&Looks::new(), &Foreign::new());
-        let message = wire::message(wire, Role::User, one, none, true, false);
+        let message = wire::message(wire, Role::User, one, none, &Lanes::new(), true, false);
         (message.len(), frame)
     });
     Ok(sized.max_by_key(|(size, _)| *size).map(|(_, frame)| frame))
@@ -729,16 +759,13 @@ async fn learn(ctx: &Ctx, id: u64, asked: Asked, model: ModelRow) -> Result<(), 
     let answer = call_model(ctx, &asked, head, Vec::new(), egress::Delivery::Whole).await;
     let mut thread = thread(ctx, id)?;
     let read = answer.and_then(|response| {
-        let window = wire::window(asked.wire, &response);
-        window.map_err(|text| Failure::answered(text, &response))
+        let read = wire::learned(asked.wire, &response);
+        read.map_err(|text| Failure::answered(text, &response))
     });
     let again = match read {
-        Ok(Some(tokens)) => {
-            learned(ctx, &model, Window::Tokens(tokens))?;
-            None
-        }
-        Ok(None) => {
-            learned(ctx, &model, Window::Unreported)?;
+        Ok(read) => {
+            let window = read.window.map_or(Window::Unreported, Window::Tokens);
+            learned(ctx, &model, window, read.provider)?;
             None
         }
         Err(failure) => failed(ctx, &mut thread, failure)?,
@@ -1053,6 +1080,9 @@ fn record(
         usage,
     };
     append(ctx, thread, turn);
+    if let Some(lane) = ASKED.get(ctx, &thread.id)? {
+        LANES.put(ctx, &(thread.id, thread.frames), &lane);
+    }
     routes::answered(ctx, thread.id, thread.frames)?;
     tallies::turned(ctx, thread.id, &usage)?;
     let mut calls = Vec::new();

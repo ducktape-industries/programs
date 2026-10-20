@@ -576,6 +576,7 @@ pub fn refused(status: u16, headers: &[(String, String)], body: &[u8], now: u64)
 
 // a summary's whole answer: the compaction block this provider takes back, and its words
 pub fn summarized(
+    asked: &str,
     status: u16,
     headers: &[(String, String)],
     body: &[u8],
@@ -618,6 +619,10 @@ pub fn summarized(
     Ok(Summarized {
         text: text_of(block, "content"),
         sealed: Some(Value::Object(present).to_string()),
+        lane: Lane {
+            provider: PROVIDER.to_owned(),
+            model: asked.to_owned(),
+        },
         tokens,
     })
 }

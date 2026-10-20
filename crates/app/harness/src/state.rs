@@ -25,6 +25,7 @@ pub const CONVERSATIONS: Map<AccountNumber, Owned<Conversations>> = Map::new("co
 // the context window a thread's turn learned for a model: any agent's turn writes it, so it lives
 // beside the owned record (a record stored before it still carries the window it had)
 pub const WINDOWS: Map<String, Window> = Map::new("model-window/");
+pub const PROVIDERS: Map<String, String> = Map::new("model-provider/");
 pub const LAST: Map<AccountNumber, (Source, u64)> = Map::new("last/");
 pub const THREADS: Map<u64, ThreadRow> = Map::new("thread/");
 pub const BY_AGENT: Set<(AccountNumber, u64)> = Set::new("by-agent/");
@@ -34,6 +35,8 @@ pub const CURRENT: Map<AccountNumber, u64> = Map::new("current/");
 pub const FRAMES: Map<(u64, u64), Frame> = Map::new("frame/");
 pub const HELD: Map<(u64, u64), Body> = Map::new("held/");
 pub const SEALED: Map<(u64, u64), Sealed> = Map::new("sealed/");
+pub const LANES: Map<(u64, u64), Lane> = Map::new("lane/");
+pub const ASKED: Map<u64, Lane> = Map::new("asked-lane/");
 pub const CALLS: Map<(u64, String), CallRow> = Map::new("call/");
 pub const WITHHELD: Set<(u64, u64)> = Set::new("withheld/");
 pub const PARTIALS: Map<u64, Partial> = Map::new("partial/");
@@ -134,6 +137,12 @@ pub struct FileWatch {
 pub struct Drafted {
     pub place: Place,
     pub doing: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Lane {
+    pub provider: String,
+    pub model: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -418,6 +427,7 @@ pub fn written(key: &[u8]) -> Option<Written> {
         MODELS.key(&()),
         COMPACT_AT.key(&()),
         WINDOWS.key(&()),
+        PROVIDERS.key(&()),
         MODEL_SERVICES.key(&()),
     ];
     let model = models.iter().any(|prefix| key.starts_with(prefix));

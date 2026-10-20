@@ -240,6 +240,7 @@ pub struct Summarized {
     pub text: String,
     #[serde(default)]
     pub sealed: Option<String>,
+    pub lane: Lane,
     pub tokens: u64,
 }
 

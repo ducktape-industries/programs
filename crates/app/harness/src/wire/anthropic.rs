@@ -225,7 +225,7 @@ fn said_block(said: &Said) -> Option<Value> {
 
 // a block of a turn another account answered: a server tool's use and result, and a cited run,
 // carry what only that account reads (encrypted content, an encrypted index), so they go as text
-fn plain_block(said: &Said) -> Option<Value> {
+pub(crate) fn plain_block(said: &Said) -> Option<Value> {
     let text = match said {
         Said::ServerToolUse { name, input, .. } => format!("[{name} {input}]"),
         Said::ServerToolResult(block) => plain_result(block),
