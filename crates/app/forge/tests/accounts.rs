@@ -1,6 +1,6 @@
 //! Forge names people by account: one person with two device keys is one
 //! owner, author, reviewer and writer; a key that holds no account writes
-//! nothing. The system lines forge posts into chat name no one.
+//! nothing. forge's notices in chat are told to the accounts they concern, never the actor.
 
 mod common;
 use common::story::*;
@@ -237,7 +237,7 @@ fn an_ended_change_is_not_edited() {
 }
 
 #[test]
-fn system_lines_carry_an_event_code_and_no_name() {
+fn a_changes_notices_concern_its_people_but_never_the_one_who_acted() {
     let (mut rig, story) = story();
     let n = opened(&mut rig, &story);
     let approve = review(&story.feature, &story.root, Verdict::Approve);
@@ -247,10 +247,6 @@ fn system_lines_carry_an_event_code_and_no_name() {
         n,
     })
     .unwrap();
-    let code = |text: &str| chat::Block::Code {
-        lang: Some("forge".into()),
-        text: text.into(),
-    };
     let chat::Reply::Roots(page) = rig
         .sandbox
         .chat_query(chat::Query::Roots {
@@ -262,9 +258,29 @@ fn system_lines_carry_an_event_code_and_no_name() {
     else {
         panic!()
     };
-    let texts: Vec<&str> = page.items.iter().map(|row| row.text.as_str()).collect();
-    assert_eq!(texts, ["closed", "review 1", "opened"]);
-    assert_eq!(page.items[0].blocks, [code("closed")]);
+    let notices: Vec<&chat::Notice> = page.items.iter().filter_map(|row| row.notice()).collect();
+    let told: Vec<(&str, chat::message::Status, &[u64])> = notices
+        .iter()
+        .map(|notice| {
+            let concerns = notice.concerns.as_slice();
+            (notice.group.as_str(), notice.status, concerns)
+        })
+        .collect();
+    let closed = format!("closed {REPO} {n}");
+    let reviewed = format!("review 1 {REPO} {n}");
+    let opened = format!("opened {REPO} {n}");
+    use chat::message::Status;
+    assert_eq!(
+        told,
+        [
+            (closed.as_str(), Status::Note, &[2][..]),
+            (reviewed.as_str(), Status::Passed, &[1][..]),
+            (opened.as_str(), Status::Running, &[2][..]),
+        ]
+    );
+    assert_eq!(notices[0].kind, forge::NOTICE);
+    assert_eq!(notices[0].subject, format!("{REPO} #{n}: Feature"));
+    assert_eq!(notices[1].detail, "review 1: approved");
 }
 
 fn opened(rig: &mut Rig, story: &Story) -> u64 {

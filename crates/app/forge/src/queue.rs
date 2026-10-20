@@ -1,6 +1,6 @@
 //! The merge queue: changes wait in line for a branch with required checks, and the first lands
 //! in the op that marks its Preview green, as the very commit its checks ran on.
-use ::program::{Error, ExecCtx, QueryCtx, Reply, not_found, stale, wrong_state};
+use ::program::{Error, ExecCtx, QueryCtx, not_found, stale, wrong_state};
 use store::Listing;
 
 use crate::changes::{merged, previewed};
@@ -9,8 +9,8 @@ use crate::contract::{
     Required,
 };
 use crate::state::{
-    LOGGING, QUEUE, QUEUE_SEQ, QUEUED, REQUIRED, STATUSES, load_change, load_repo, next,
-    next_message, parse_oid, ref_key, repo_hash, resolve, set_ref,
+    QUEUE, QUEUE_SEQ, QUEUED, REQUIRED, STATUSES, load_change, load_repo, next, next_message,
+    parse_oid, ref_key, repo_hash, resolve, set_ref,
 };
 
 pub(crate) fn enqueue(
@@ -159,9 +159,6 @@ fn leave(ctx: &ExecCtx, repo: &str, into: &[u8], seq: u64, n: u64) {
     QUEUED.remove(ctx, &(repo.to_owned(), n));
 }
 
-// The entry leaves the queue, and its change's room hears why, naming whoever queued it (and, in
-// a job room, the change);
-// chat's answer is absorbed (`discussion::replied`).
 fn left(
     ctx: &ExecCtx,
     repo: &str,
@@ -171,28 +168,15 @@ fn left(
     why: &str,
 ) -> Result<(), Error> {
     leave(ctx, repo, into, seq, entry.n);
-    let who = match &entry.by {
-        Principal::Account(number) => format!("<@{number}> "),
-        Principal::Root => String::new(),
-    };
     let change = load_change(ctx, repo, entry.n)?;
-    let named = match crate::discussion::in_job_room(repo, &change) {
-        true => format!("{repo} #{}", entry.n),
-        false => entry.n.to_string(),
+    let event = crate::discussion::Event::LeftQueue {
+        into: into.to_vec(),
+        why: why.to_owned(),
+        by: entry.by.clone(),
     };
-    let text = format!(
-        "{who}change {named} left the merge queue of {}: {why}",
-        String::from_utf8_lossy(into)
-    );
-    let line = chat::Op::PostMessage {
-        channel_id: change.channel,
-        message_id: next_message(ctx)?,
-        blocks: chat::parse_message(&text),
-        thread: None,
-    };
-    let posted = ctx.emit(chat::PROGRAM, &line, Reply::Wanted);
-    LOGGING.insert(ctx, &posted.seq);
-    Ok(())
+    let env = ctx.env();
+    let message = next_message(ctx)?;
+    crate::discussion::post(ctx, repo, &change, message, event, env.sender.as_ref())
 }
 
 pub(crate) fn queue(

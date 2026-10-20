@@ -1,5 +1,5 @@
 //! A merge queue lands its changes one after another, each as the very Preview commit its checks
-//! passed on, and an entry that goes red or moves leaves with a line naming who queued it.
+//! passed on, and an entry that goes red or moves leaves with a notice for whoever queued it.
 mod common;
 use common::*;
 use forge::{CheckState, OpReply, PreviewInfo, Required};
@@ -130,7 +130,7 @@ impl Repo {
         change.state
     }
 
-    fn said(&self, n: u64) -> Vec<String> {
+    fn rows(&self, n: u64) -> Vec<chat::MsgRow> {
         let query = chat::Query::Roots {
             channel_id: chat::namespace::id("forge", &format!("project:{n}")),
             page: PageRequest::first(64),
@@ -139,7 +139,20 @@ impl Repo {
         let chat::Reply::Roots(page) = self.sandbox.chat_query(query).unwrap() else {
             panic!("roots");
         };
-        page.items.into_iter().map(|row| row.text).collect()
+        page.items
+    }
+
+    fn said(&self, n: u64) -> Vec<String> {
+        self.rows(n).into_iter().map(|row| row.text).collect()
+    }
+
+    fn left_for(&self, n: u64) -> Vec<Vec<u64>> {
+        self.rows(n)
+            .iter()
+            .filter_map(|row| row.notice())
+            .filter(|notice| notice.group.starts_with("left queue "))
+            .map(|notice| notice.concerns.clone())
+            .collect()
     }
 }
 
@@ -189,7 +202,7 @@ fn an_entry_that_goes_red_or_moves_leaves_and_its_channel_hears_why_naming_who_q
     assert_eq!(repo.state(1), forge::ChangeState::Open);
     assert_eq!(repo.main(), repo.root.to_hex());
     let said = repo.said(1).join("\n");
-    assert!(said.contains("<@11>"), "{said}");
+    assert_eq!(repo.left_for(1), [vec![11]], "{said}");
     assert!(said.contains("left the merge queue"), "{said}");
     assert!(
         said.contains("gates.toml#gates failed (/shared/actions/log)"),

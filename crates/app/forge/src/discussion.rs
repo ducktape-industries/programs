@@ -1,37 +1,124 @@
 //! Chat owns conversations: forge opens a change's channel, or talks in its job's room, posts
-//! its system lines there, and asks chat about the replies a review drew.
+//! its notices there, and asks chat about the replies a review drew.
 
-use ::program::{Error, ExecCtx, QueryCtx, unexpected_reply};
+use std::collections::BTreeSet;
+
+use ::program::{AccountNumber, Error, ExecCtx, QueryCtx, unexpected_reply};
 use ::program::{MessageId, Outcome, Principal};
-use chat::{Block, MsgRow, Op, PostPolicy, Query, Reply};
+use chat::message::Status;
+use chat::{MsgRow, Notice, Op, PostPolicy, Query, Reply};
 
 use crate::Change;
-use crate::contract::Revision;
-use crate::state::{ARCHIVING, LOGGING, channel_id, load_change, next_message};
+use crate::contract::{Revision, Verdict};
+use crate::state::{ARCHIVING, LOGGING, channel_id, load_change, load_repo, next_message};
 
-/// What a system line marks in a change's timeline. The line carries this
-/// event's code and nothing else: who acted and what they concluded live
-/// on forge's records, which the view words in the reader's language.
+pub const NOTICE: &str = "change";
+
 pub enum Event {
     Opened,
     Closed,
     Merged,
-    /// The review of this id; its line is the root its discussion hangs on.
-    Reviewed(u64),
-    // chat refused to archive the channel: its reason and sentence.
+    Reviewed {
+        id: u64,
+        verdict: Verdict,
+    },
     ArchiveRefused(String),
+    LeftQueue {
+        into: Vec<u8>,
+        why: String,
+        by: Principal,
+    },
 }
 
 impl Event {
-    fn code(&self) -> String {
+    fn word(&self) -> String {
         match self {
             Event::Opened => "opened".into(),
             Event::Closed => "closed".into(),
             Event::Merged => "merged".into(),
-            Event::Reviewed(id) => format!("review {id}"),
-            Event::ArchiveRefused(why) => format!("archive refused: {why}"),
+            Event::Reviewed { id, .. } => format!("review {id}"),
+            Event::ArchiveRefused(_) => "archive refused".into(),
+            Event::LeftQueue { .. } => "left queue".into(),
         }
     }
+
+    fn status(&self) -> Status {
+        match self {
+            Event::Opened => Status::Running,
+            Event::Merged => Status::Passed,
+            Event::Closed => Status::Note,
+            Event::Reviewed { verdict, .. } => match verdict {
+                Verdict::Approve => Status::Passed,
+                Verdict::RequestChanges => Status::Failed,
+                Verdict::Comment => Status::Note,
+            },
+            Event::ArchiveRefused(_) | Event::LeftQueue { .. } => Status::Failed,
+        }
+    }
+
+    fn detail(&self, change: &Change) -> String {
+        match self {
+            Event::Opened => "opened".into(),
+            Event::Closed => "closed".into(),
+            Event::Merged => format!("merged into {}", branch(&change.into)),
+            Event::Reviewed { id, verdict } => {
+                let said = match verdict {
+                    Verdict::Approve => "approved",
+                    Verdict::RequestChanges => "changes requested",
+                    Verdict::Comment => "commented",
+                };
+                format!("review {id}: {said}")
+            }
+            Event::ArchiveRefused(why) => format!("archive refused: {why}"),
+            Event::LeftQueue { into, why, .. } => {
+                format!("left the merge queue of {}: {why}", branch(into))
+            }
+        }
+    }
+
+    fn concerns(
+        &self,
+        ctx: &QueryCtx,
+        repo: &str,
+        change: &Change,
+    ) -> Result<Vec<Principal>, Error> {
+        Ok(match self {
+            Event::Opened if change.reviewers.is_empty() => vec![load_repo(ctx, repo)?.owner],
+            Event::Opened => change.reviewers.clone(),
+            Event::Closed | Event::Merged | Event::Reviewed { .. } => {
+                std::iter::once(&change.author)
+                    .chain(&change.reviewers)
+                    .cloned()
+                    .collect()
+            }
+            Event::ArchiveRefused(_) => change
+                .closed_by
+                .iter()
+                .chain(&change.merged_by)
+                .cloned()
+                .collect(),
+            Event::LeftQueue { by, .. } => vec![by.clone()],
+        })
+    }
+}
+
+fn branch(name: &[u8]) -> String {
+    let name = name.strip_prefix(b"refs/heads/").unwrap_or(name);
+    String::from_utf8_lossy(name).into_owned()
+}
+
+fn accounts(who: Vec<Principal>, actor: Option<&Principal>) -> Vec<AccountNumber> {
+    let acted = actor.and_then(Principal::account);
+    let told: BTreeSet<AccountNumber> = who
+        .iter()
+        .filter_map(Principal::account)
+        .filter(|number| Some(*number) != acted)
+        .collect();
+    told.into_iter().collect()
+}
+
+fn room_name(repo: &str, change: &Change) -> String {
+    format!("pr/{repo}#{} {}", change.n, change.title)
 }
 
 // Change `n`'s room: the job room `j-NNN` its `j-NNN/…` branch names while chat holds that room
@@ -81,37 +168,65 @@ pub fn create(ctx: &ExecCtx, repo: &str, change: &Change) {
         ctx,
         Op::CreateChannel {
             channel_id: change.channel.clone(),
-            name: format!("{repo}#{}", change.n),
+            name: room_name(repo, change),
             post_policy: PostPolicy::Open,
         },
     );
 }
 
-// Posts one system line into the change's room, in this frame: the event's code in a `forge`
-// block, no name and no sentence. In a job room the code names the change after it (`opened
-// programs 213`), and chat's answer is absorbed (`replied`): the room may have been archived
-// since the change opened, which never fails the op.
-pub fn post(ctx: &ExecCtx, repo: &str, change: &Change, message_id: String, event: Event) {
+pub fn post(
+    ctx: &ExecCtx,
+    repo: &str,
+    change: &Change,
+    message_id: String,
+    event: Event,
+    actor: Option<&Principal>,
+) -> Result<(), Error> {
     let job_room = in_job_room(repo, change);
-    let text = match job_room {
-        true => format!("{} {repo} {}", event.code(), change.n),
-        false => event.code(),
+    let notice = Notice {
+        kind: NOTICE.into(),
+        group: format!("{} {repo} {}", event.word(), change.n),
+        subject: format!("{repo} #{}: {}", change.n, change.title),
+        link: None,
+        status: event.status(),
+        detail: event.detail(change),
+        concerns: accounts(event.concerns(ctx, repo, change)?, actor),
     };
-    let line = Op::PostMessage {
+    let line = Op::Notify {
         channel_id: change.channel.clone(),
         message_id,
-        blocks: vec![Block::Code {
-            lang: Some(crate::PROGRAM.into()),
-            text,
-        }],
         thread: None,
+        notice,
     };
-    if job_room {
+    if !job_room && !matches!(event, Event::Opened | Event::ArchiveRefused(_)) {
+        named(ctx, repo, change)?;
+    }
+    if job_room || matches!(event, Event::ArchiveRefused(_) | Event::LeftQueue { .. }) {
         let posted = ctx.emit(chat::PROGRAM, &line, ::program::Reply::Wanted);
         LOGGING.insert(ctx, &posted.seq);
-        return;
+        return Ok(());
     }
     emit(ctx, line);
+    Ok(())
+}
+
+fn named(ctx: &ExecCtx, repo: &str, change: &Change) -> Result<(), Error> {
+    let name = room_name(repo, change);
+    let query = Query::Channel {
+        channel_id: change.channel.clone(),
+    };
+    let held = match ctx.query::<Query, Reply>(chat::PROGRAM, &query)? {
+        Reply::Channel(info) => info.map(|info| info.channel.name),
+        other => return Err(unexpected_reply(chat::PROGRAM, "Channel", &other)),
+    };
+    if held.is_some_and(|held| held != name) {
+        let rename = Op::RenameChannel {
+            channel_id: change.channel.clone(),
+            name,
+        };
+        ctx.emit(chat::PROGRAM, &rename, ::program::Reply::Wanted);
+    }
+    Ok(())
 }
 
 // Archives the change's channel. chat's answer comes back to `replied`, so its refusal never
@@ -153,17 +268,9 @@ pub fn replied(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), E
     ARCHIVING.remove(ctx, &id.seq);
     if let Outcome::Rejected(refusal) = outcome {
         let why = format!("{}: {}", refusal.code, refusal.message);
-        let line = Op::PostMessage {
-            channel_id: load_change(ctx, &repo, n)?.channel,
-            message_id: next_message(ctx)?,
-            blocks: vec![Block::Code {
-                lang: Some(crate::PROGRAM.into()),
-                text: Event::ArchiveRefused(why).code(),
-            }],
-            thread: None,
-        };
-        let posted = ctx.emit(chat::PROGRAM, &line, ::program::Reply::Wanted);
-        LOGGING.insert(ctx, &posted.seq);
+        let change = load_change(ctx, &repo, n)?;
+        let event = Event::ArchiveRefused(why);
+        post(ctx, &repo, &change, next_message(ctx)?, event, None)?;
     }
     Ok(())
 }

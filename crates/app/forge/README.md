@@ -35,8 +35,9 @@ only.
   involvement, authored reviews) and the counters. A remove path takes its index
   rows with it. Git objects are the one exception: an object is the blob whose
   id is its oid, with no table between them (`src/objects.rs`).
-- Forge emits chat creation for `forge:<repo>:<n>` and system lines for opening,
-  closing, merging, and submitting a review. Chat owns all conversation replies.
+- Forge emits chat creation for `forge:<repo>:<n>`, named `pr/<repo>#<n> <title>`, and a
+  notice (chat `Notify`) for opening, closing, merging and submitting a review, told only to
+  the accounts it concerns (see "A change's notices"). Chat owns all conversation replies.
   A change from a `j-NNN/…` branch talks in its job's room `j-NNN` instead, while chat
   holds that room unarchived and open to post as it opens (see "A job's room").
   The kernel runs each emission once the handler returns Ok, in the same frame,
@@ -243,9 +244,9 @@ Closing is terminal; there is no reopen operation.
 | `Grant { repo: r, principal: writer }`, `Revoke { .. }` | always refused: a repository's writers are its list in the access program |
 | `Push { repo: r, request: receive_pack_commands, pack: Some(pack) }` | Git receive-pack: the ref commands in `request`, the objects in the held `pack`; Git's report |
 | `Stage { repo: r, pack }` | stores the held pack's objects and moves no ref; empty output |
-| `ChangeOpen { repo: r, from: feature, into: b"refs/heads/main".to_vec(), title: "Fix parser".into(), body: "Why this changes".into(), reviewers: vec![reviewer] }` | assigns `n`, stores body, queues channel/opened line; `OpReply::Change { height, n }` |
+| `ChangeOpen { repo: r, from: feature, into: b"refs/heads/main".to_vec(), title: "Fix parser".into(), body: "Why this changes".into(), reviewers: vec![reviewer] }` | assigns `n`, stores body, queues channel/opened notice; `OpReply::Change { height, n }` |
 | `ChangeEdit { repo: r, n: 1, title: None, body: Some("Updated rationale".into()), reviewers: None }` | `None` leaves a field unchanged; `Some(vec![])` clears requests; `OpReply::Change` |
-| `ChangeClose { repo: r, n: 1 }` | open to closed, queues system line; `OpReply::Change` |
+| `ChangeClose { repo: r, n: 1 }` | open to closed, queues a notice; `OpReply::Change` |
 | `ReviewSubmit { repo: r, n: 1, review: ReviewDraft { commit_oid: b, base_oid: Some(a), verdict: Verdict::RequestChanges, body: "Please check this".into(), comments: vec![LineComment { path: b"src/lib.rs".to_vec(), side: Side::New, line: 12, body: "Check this bound".into() }] } }` | one immutable review and all comments, one chat root; `OpReply::Review { height, n, id }` |
 | `Merge { repo: r, into: b"refs/heads/main".to_vec(), from: feature, expected_into: a, expected_from: b, result: client_result_oid, change: Some(1) }` | both-head CAS and open to merged together; `OpReply::Merged { height, oid, change }` |
 | `SquashMerge { repo: r, into: b"refs/heads/main".to_vec(), from: feature, expected_into: a, expected_from: b, message: None, change: Some(1) }` | one squash commit built in consensus on `a`, the same CAS, open to merged together; `OpReply::Merged { height, oid, change }` |
@@ -351,7 +352,7 @@ with whoever queued it as committer (a Preview of the same heads made already is
 is). The op that makes that Preview green in every required context, a `Status` usually,
 lands it: the branch moves to the Preview's very commit, so what landed is what was
 tested, the change is merged by whoever queued it, and the next in line is previewed on
-the new head. An entry leaves the queue, with one line in its change's channel naming
+the new head. An entry leaves the queue, with a `left queue` notice in its change's channel for
 whoever queued it, when a required context goes `Failed` or `Errored`, when its Preview
 is refused (a conflict names its paths), or when its head moves; a change that merged or
 closed otherwise just leaves. Each op that moves a ref, ends or re-points a change,
@@ -379,8 +380,8 @@ forge sends chat `SetChannelArchived { channel_id, archived: true }` for its
 `forge:<repo>:<n>` channel, as forge's own account, which owns the channel and so
 is the one account chat lets archive it. It asks for chat's answer
 (`Reply::Wanted`): a refusal is absorbed, so the merge or close still lands, and
-forge posts a `forge` system line `archive refused: <reason>: <sentence>` into the
-channel; that line's own refusal (a channel that is gone) is absorbed too. Closing
+forge posts an `archive refused` notice (detail `archive refused: <reason>: <sentence>`)
+into the channel; that notice's own refusal (a channel that is gone) is absorbed too. Closing
 is terminal, so nothing un-archives a channel.
 
 `ArchiveEnded { repo, after, limit }` clears the channels changes left open before
@@ -393,23 +394,46 @@ run, `None` once it reached the repository's last number. It takes its own
 `after`, not a listing cursor, because a cursor is pinned to forge's write count
 and the op is a write. A second run archives nothing.
 
+### A change's notices
+
+Each thing that happens to a change is one chat notice (`Notify`, a `Block::Notice`) in the
+change's room, a root and never a thread reply, under the message id forge gives it: a
+review's card finds its notice by `Review.message_id`, and replies hang under it.
+
+| event | group | status | detail | concerns |
+|---|---|---|---|---|
+| `ChangeOpen` | `opened <repo> <n>` | Running | `opened` | the reviewers, or the repository's owner when none is asked |
+| `ReviewSubmit` | `review <id> <repo> <n>` | Passed (approve), Failed (request changes), Note (comment) | `review <id>: approved`, `changes requested` or `commented` | the author and the reviewers |
+| a merge naming the change | `merged <repo> <n>` | Passed | `merged into <branch>` | the author and the reviewers |
+| `ChangeClose` | `closed <repo> <n>` | Note | `closed` | the author and the reviewers |
+| a refused archive | `archive refused <repo> <n>` | Failed | `archive refused: <reason>: <sentence>` | whoever closed or merged it |
+| a merge queue's leave | `left queue <repo> <n>` | Failed | `left the merge queue of <branch>: <why>` | whoever queued it |
+
+Every notice's kind is `change` (`forge::NOTICE`) and its subject `<repo> #<n>: <title>`;
+it carries no link. The account that acted is never among its concerns, nor is the chain
+(`Root`): only the accounts it concerns are told, and everyone else in the room sees it.
+
+A change's own room opens named `pr/<repo>#<n> <title>`, so change rooms group under `pr` in
+the lists. Whenever forge posts a notice into a change's own room after it opened, it reads
+the room's name from chat and renames it (`RenameChannel`, its answer absorbed) when it
+differs: a room named before this, or a change whose title was edited, takes the name at its
+next notice.
+
 ### A job's room
 
 `ChangeOpen` from a branch whose name under `refs/heads/` starts with a `j-<digits>/`
 segment (`refs/heads/j-101/folders`) asks chat for the room `j-<digits>`. While chat
 holds it unarchived and open to post (not members-only), the change talks there: its
-`channel` is `j-101`, forge creates no `forge:<repo>:<n>` channel, and each system line
-names the change after its code (`opened programs 213`, `review 2 programs 213`,
-`merged programs 213`, `closed programs 213`). Otherwise (another branch, a room chat
+`channel` is `j-101`, forge creates no `forge:<repo>:<n>` channel, and its notices go
+there. Otherwise (another branch, a room chat
 does not hold, an archived or members-only one) the change gets its own channel as
 above. The room is decided once, at open, and kept on the change.
 
 forge posts into a job room with `Reply::Wanted` and absorbs chat's answer, so a room
-archived after the change opened never fails a review, a merge or a close: the line is
+archived after the change opened never fails a review, a merge or a close: the notice is
 just not there. forge never archives a job room: an ending change leaves it, and
-`ArchiveEnded` skips it. A merge queue's leave line names the change there (`change
-<repo> #<n> left …`). `Judgment` counts only the replies to the change's own review lines
-in a job room, never the room's other threads.
+`ArchiveEnded` skips it. `Judgment` counts only the replies to the change's own review
+notices in a job room, never the room's other threads.
 
 Review OIDs and anchors receive syntactic validation, not object reads in
 consensus. Paths must be relative, lines positive, bodies nonblank, and anchors

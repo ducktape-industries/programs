@@ -36,7 +36,7 @@ fn refusal(name: &str) -> view::host::Error {
 
 fn change_fixture(mode: &str) -> &'static str {
     match mode {
-        "reviewed" | "job" => "change-reviewed",
+        "reviewed" | "job" | "job-notices" => "change-reviewed",
         "merged" => "change-merged",
         "closed" => "change-closed",
         "outdated" => "change-outdated",
@@ -113,10 +113,13 @@ fn answer(query: &Query, mode: &str) -> Reply {
 // In mode `job`, change 1 as forge holds it once opened from a `j-7/…` branch while chat held
 // room `j-7` open: it talks there.
 fn in_job_room(mode: &str, mut read: Reply) -> Reply {
-    if let Reply::Change { change, .. } = &mut read
-        && mode == "job"
-    {
-        change.channel = "j-7".into();
+    let room = match mode {
+        "job" => "j-7",
+        "job-notices" => "j-8",
+        _ => return read,
+    };
+    if let Reply::Change { change, .. } = &mut read {
+        change.channel = room.into();
     }
     read
 }
@@ -306,6 +309,31 @@ fn job_room() -> Vec<chat::MsgRow> {
     rows
 }
 
+fn job_room_notices() -> Vec<chat::MsgRow> {
+    job_room()
+        .into_iter()
+        .map(|row| {
+            let blocks = match row.blocks.as_slice() {
+                [chat::Block::Code { text, .. }] => vec![chat::Block::Notice(chat::Notice {
+                    kind: "change".into(),
+                    group: text.clone(),
+                    subject: "project #1: Teach a".into(),
+                    link: None,
+                    status: chat::message::Status::Note,
+                    detail: String::new(),
+                    concerns: Vec::new(),
+                })],
+                _ => row.blocks.clone(),
+            };
+            chat::MsgRow {
+                channel_id: "j-8".into(),
+                blocks,
+                ..row
+            }
+        })
+        .collect()
+}
+
 /// Chat's answers: the roster, and each change channel's rows.
 fn chat_answer(query: chat::Query) -> chat::Reply {
     match query {
@@ -322,6 +350,7 @@ fn chat_answer(query: chat::Query) -> chat::Reply {
                     })
                     .collect(),
                 "j-7" => job_room(),
+                "j-8" => job_room_notices(),
                 _ => Vec::new(),
             },
             next: None,
@@ -330,7 +359,7 @@ fn chat_answer(query: chat::Query) -> chat::Reply {
             channel_id,
             root_seq: 2,
             ..
-        } if channel_id == "j-7" => chat::Reply::Thread {
+        } if channel_id == "j-7" || channel_id == "j-8" => chat::Reply::Thread {
             root: None,
             replies: PageResponse {
                 height: 1,

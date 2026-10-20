@@ -73,7 +73,7 @@ fn pending(sandbox: &MemorySandbox) -> (usize, usize) {
     )
 }
 
-fn lines(sandbox: &MemorySandbox, n: u64) -> Vec<String> {
+fn notices(sandbox: &MemorySandbox, n: u64) -> Vec<chat::Notice> {
     let query = chat::Query::Roots {
         channel_id: channel_id(n),
         page: PageRequest::first(64),
@@ -82,19 +82,18 @@ fn lines(sandbox: &MemorySandbox, n: u64) -> Vec<String> {
     let chat::Reply::Roots(page) = sandbox.chat_query(query).unwrap() else {
         panic!("roots");
     };
-    let mut codes: Vec<(u64, String)> = page
-        .items
+    let mut rows = page.items;
+    rows.sort_by_key(|row| row.seq);
+    rows.iter()
+        .filter_map(|row| row.notice().cloned())
+        .collect()
+}
+
+fn lines(sandbox: &MemorySandbox, n: u64) -> Vec<String> {
+    notices(sandbox, n)
         .into_iter()
-        .flat_map(|row| {
-            let seq = row.seq;
-            row.blocks.into_iter().filter_map(move |block| match block {
-                chat::Block::Code { text, .. } => Some((seq, text)),
-                _ => None,
-            })
-        })
-        .collect();
-    codes.sort();
-    codes.into_iter().map(|(_, code)| code).collect()
+        .map(|notice| notice.group)
+        .collect()
 }
 
 fn state_of(sandbox: &MemorySandbox, n: u64) -> forge::ChangeState {
@@ -143,7 +142,7 @@ fn a_merge_archives_the_change_channel() {
     act(&sandbox, OWNER, &merge).unwrap();
     assert_eq!(state_of(&sandbox, n), forge::ChangeState::Merged);
     assert!(archived(&sandbox, n));
-    assert_eq!(lines(&sandbox, n), ["opened", "merged"]);
+    assert_eq!(lines(&sandbox, n), ["opened project 1", "merged project 1"]);
 }
 
 #[test]
@@ -171,7 +170,7 @@ fn a_close_archives_the_change_channel() {
     act(&sandbox, WRITER, &close(n)).unwrap();
     assert_eq!(state_of(&sandbox, n), forge::ChangeState::Closed);
     assert!(archived(&sandbox, n));
-    assert_eq!(lines(&sandbox, n), ["opened", "closed"]);
+    assert_eq!(lines(&sandbox, n), ["opened project 1", "closed project 1"]);
     assert_eq!(pending(&sandbox), (0, 0));
 }
 
@@ -183,10 +182,23 @@ fn a_refused_archive_still_closes_and_is_said_in_the_channel() {
     act(&sandbox, WRITER, &close(n)).unwrap();
     assert_eq!(state_of(&sandbox, n), forge::ChangeState::Closed);
     assert!(!archived(&sandbox, n));
-    let lines = lines(&sandbox, n);
-    assert_eq!(lines.len(), 3, "{lines:?}");
-    assert_eq!(lines[1], "closed");
-    assert!(lines[2].starts_with("archive refused: "), "{lines:?}");
+    let notices = notices(&sandbox, n);
+    let groups: Vec<&str> = notices.iter().map(|notice| notice.group.as_str()).collect();
+    assert_eq!(
+        groups,
+        [
+            "opened project 1",
+            "closed project 1",
+            "archive refused project 1"
+        ]
+    );
+    let refused = &notices[2];
+    assert!(
+        refused.detail.starts_with("archive refused: "),
+        "{refused:?}"
+    );
+    assert_eq!(refused.status, chat::message::Status::Failed);
+    assert_eq!(refused.concerns, [12]);
     assert_eq!(pending(&sandbox), (0, 0));
 }
 
@@ -228,4 +240,16 @@ fn archive_ended_takes_a_limit_up_to_the_page_size() {
         },
     );
     assert_eq!(error.code, code::NOT_FOUND, "{}", error.message);
+}
+
+#[test]
+fn a_change_room_opens_under_pr_and_an_old_name_takes_it_at_the_next_notice() {
+    let (sandbox, _, _) = seeded();
+    let n = opened(&sandbox);
+    let named = format!("pr/project#{n} Teach a");
+    assert_eq!(channel(&sandbox, n).unwrap().name, named);
+    rewrite(&sandbox, n, |row| row.name = format!("project#{n}"));
+    act(&sandbox, WRITER, &close(n)).unwrap();
+    assert_eq!(channel(&sandbox, n).unwrap().name, named);
+    assert_eq!(pending(&sandbox), (0, 0));
 }

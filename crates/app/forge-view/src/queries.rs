@@ -187,8 +187,10 @@ pub(crate) async fn conversation(
     Ok(rows)
 }
 
-// The code of a `forge` block that is the whole of `row`.
 fn forge_code(row: &chat::MsgRow) -> Option<&str> {
+    if let Some(notice) = row.notice() {
+        return (notice.kind == forge::NOTICE).then_some(notice.group.as_str());
+    }
     match row.blocks.as_slice() {
         [
             chat::Block::Code {

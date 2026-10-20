@@ -1391,3 +1391,19 @@ fn a_change_in_a_job_room_shows_its_own_lines_and_their_thread() {
         "the reply goes under the opening line"
     );
 }
+
+#[test]
+fn a_change_in_a_job_room_reads_the_same_from_notices_as_from_forge_code_lines() {
+    let read = |mode| {
+        let (cx, view) = change_screen(mode, ChangeTab::Conversation);
+        let count = view.read(|forge| forge.change_tab_count(ChangeTab::Conversation));
+        (cx.texts(), count)
+    };
+    let (texts, count) = read("job-notices");
+    assert_eq!(count, Some(5), "{texts:?}");
+    let in_j7: Vec<String> = texts
+        .iter()
+        .map(|text| text.replace("# j-8", "# j-7"))
+        .collect();
+    assert_eq!((in_j7, count), read("job"));
+}

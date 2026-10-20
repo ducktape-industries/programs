@@ -87,7 +87,7 @@ pub(crate) fn open(
     if !discussion::in_job_room(repo, &change) {
         discussion::create(ctx, repo, &change);
     }
-    discussion::post(ctx, repo, &change, message, Event::Opened);
+    discussion::post(ctx, repo, &change, message, Event::Opened, Some(actor))?;
     let opened = Watched::Opened {
         repo: repo.to_owned(),
         n,
@@ -150,7 +150,7 @@ pub(crate) fn close(
     change.system_seq = next(change.system_seq)?;
     let message = next_message(ctx)?;
     save_change(ctx, repo, &change)?;
-    discussion::post(ctx, repo, &change, message, Event::Closed);
+    discussion::post(ctx, repo, &change, message, Event::Closed, Some(actor))?;
     discussion::archive(ctx, repo, &change);
     let closed = Watched::Closed {
         repo: repo.to_owned(),
@@ -203,7 +203,11 @@ pub(crate) fn submit_review(
     let message = next_message(ctx)?;
     save_review(ctx, repo, n, &review);
     save_change(ctx, repo, &change)?;
-    discussion::post(ctx, repo, &change, message, Event::Reviewed(id));
+    let reviewed = Event::Reviewed {
+        id,
+        verdict: review.draft.verdict,
+    };
+    discussion::post(ctx, repo, &change, message, reviewed, Some(actor))?;
     Ok(OpReply::Review {
         height: env.height,
         n,
@@ -308,7 +312,7 @@ pub(crate) fn merged(
     enforce_record_size(ctx, &change)?;
     let message = next_message(ctx)?;
     save_change(ctx, repo, &change)?;
-    discussion::post(ctx, repo, &change, message, Event::Merged);
+    discussion::post(ctx, repo, &change, message, Event::Merged, Some(actor))?;
     discussion::archive(ctx, repo, &change);
     let merged = Watched::Merged {
         repo: repo.to_owned(),

@@ -674,6 +674,24 @@ impl Forge {
         {
             return Some(ChangeEvent::Review(review));
         }
+        let ended = match (change.state, &change.merge_oid) {
+            (ChangeState::Merged, Some(oid)) => Some(ChangeEvent::Merged {
+                by: change.merged_by.as_ref(),
+                oid,
+            }),
+            (ChangeState::Closed, _) => Some(ChangeEvent::Closed {
+                by: change.closed_by.as_ref(),
+            }),
+            _ => None,
+        };
+        if let Some(notice) = row.notice() {
+            return match notice.group.split(' ').next() {
+                Some("opened") => Some(ChangeEvent::Opened),
+                Some("merged") => ended.filter(|event| matches!(event, ChangeEvent::Merged { .. })),
+                Some("closed") => ended.filter(|event| matches!(event, ChangeEvent::Closed { .. })),
+                _ => None,
+            };
+        }
         let first = self
             .conversation()?
             .iter()
@@ -686,16 +704,7 @@ impl Forge {
         if reviews.next.is_some() {
             return None;
         }
-        match (change.state, &change.merge_oid) {
-            (ChangeState::Merged, Some(oid)) => Some(ChangeEvent::Merged {
-                by: change.merged_by.as_ref(),
-                oid,
-            }),
-            (ChangeState::Closed, _) => Some(ChangeEvent::Closed {
-                by: change.closed_by.as_ref(),
-            }),
-            _ => None,
-        }
+        ended
     }
 
     /// What a change tab holds, where the view has read it: the lines of

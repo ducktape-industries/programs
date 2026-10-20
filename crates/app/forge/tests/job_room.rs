@@ -90,7 +90,6 @@ fn channel(sandbox: &MemorySandbox, id: &str) -> Option<chat::ChannelRow> {
     }
 }
 
-// The roots of `room`, oldest first: each one's seq and, for a `forge` block, its code.
 fn roots(sandbox: &MemorySandbox, room: &str) -> Vec<(u64, Option<String>)> {
     let query = chat::Query::Roots {
         channel_id: room.into(),
@@ -104,15 +103,10 @@ fn roots(sandbox: &MemorySandbox, room: &str) -> Vec<(u64, Option<String>)> {
         .items
         .into_iter()
         .map(|row| {
-            let code = match row.blocks.as_slice() {
-                [
-                    chat::Block::Code {
-                        lang: Some(lang),
-                        text,
-                    },
-                ] if lang == forge::PROGRAM => Some(text.clone()),
-                _ => None,
-            };
+            let code = row
+                .notice()
+                .filter(|notice| notice.kind == forge::NOTICE)
+                .map(|notice| notice.group.clone());
             (row.seq, code)
         })
         .collect();
@@ -243,7 +237,7 @@ fn without_its_room_open_a_job_branch_talks_in_its_own() {
         setup(&sandbox);
         let n = opened(&sandbox, JOB);
         assert_eq!(change_of(&sandbox, n).channel, OWN, "setup {at}");
-        assert_eq!(lines(&sandbox, OWN), ["opened"], "setup {at}");
+        assert_eq!(lines(&sandbox, OWN), ["opened project 1"], "setup {at}");
     }
 }
 
