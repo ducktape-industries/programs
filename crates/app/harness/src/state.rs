@@ -122,12 +122,9 @@ pub const RULES_TOLD: Map<(u64, String), crate::room_rules::Told> = Map::new("ru
 // the service and ccs account each thread's sealed parts were written for: a server tool's blocks
 // minted on one account reach another only as plain text, so a move writes them again
 pub const SEALED_FOR: Map<u64, (String, Option<String>)> = Map::new("sealed-for/");
-// the chat place each conversation's turn keeps its live draft in, and what the draft last said
-// the turn was doing (`drafts.rs`)
+// the chat place each conversation's turn keeps its live draft in, where its forming post goes, and
+// what the draft says the turn is doing (`drafts.rs`)
 pub const DRAFTING: Map<u64, Drafted> = Map::new("drafting/");
-// the chat place of the last input each conversation heard, where its next turn answers unless
-// the conversation is bound to one
-pub const HEARD_AT: Map<u64, Place> = Map::new("heard-at/");
 
 // a wait for a files path: the path, and its node when the wait was armed (none: nothing there)
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]

@@ -40,6 +40,7 @@ pub(crate) struct Seen {
     pointed: bool,
     reactors: Option<std::collections::BTreeMap<String, Vec<Principal>>>,
     files: Vec<Option<(Option<usize>, bool)>>,
+    answering: Vec<String>,
 }
 
 impl Seen {
@@ -74,7 +75,16 @@ impl Seen {
                     })
                 })
                 .collect(),
+            answering: answering_under(chat, pane, seq),
         }
+    }
+}
+
+// who is answering under a message, as the channel draws it on the message's reply row
+fn answering_under(chat: &Chat, pane: Pane, seq: u64) -> Vec<String> {
+    match pane {
+        Pane::Timeline => chat.answering_under(seq),
+        Pane::Thread => Vec::new(),
     }
 }
 
@@ -529,7 +539,8 @@ fn content(
         true => None,
         false => Some(reactions(chat, &message, pane, cells, cx, theme)),
     };
-    let replies = replies(&message, pane, cells, cx, theme);
+    let answering = answering_under(chat, pane, message.seq);
+    let replies = replies(&message, pane, &answering, cells, cx, theme);
     div()
         .id(format!("chat-message-{}-contents", message.id))
         .flex_1()
@@ -606,12 +617,15 @@ fn edited_mark(message: &ChatMessage, theme: &Theme) -> Option<AnyElement> {
 fn replies(
     message: &ChatMessage,
     pane: Pane,
+    answering: &[String],
     cells: &mut Cells,
     cx: &mut Context<Chat>,
     theme: &Theme,
 ) -> Option<AnyElement> {
+    let mark = crate::ui::answering::mark(&message.id, answering, theme)
+        .map(|mark| mark.text_size(design::text::CAPTION));
     if message.reply_count == 0 {
-        return None;
+        return mark.map(|mark| div().flex().pt_1().child(mark).into_any_element());
     }
     if pane == Pane::Timeline {
         let active = cells.push(Control::Replies);
@@ -621,8 +635,11 @@ fn replies(
         return Some(
             div()
                 .flex()
+                .items_center()
+                .gap_2()
                 .pt_1()
                 .child(cell(&id, true, button))
+                .children(mark)
                 .into_any_element(),
         );
     }

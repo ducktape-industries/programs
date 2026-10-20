@@ -19,10 +19,10 @@ mod wait;
 
 pub(crate) use chat::shown_by;
 
-// the text so far of a chat_post call into `channel`, for the agent's draft there
-pub(crate) fn posting(tool: &str, input: &str, channel: &str) -> Option<String> {
+// where a chat_post call posts and its text so far, once its input says where, for the agent's draft
+pub(crate) fn posting(tool: &str, input: &str) -> Option<(String, Option<u64>, String)> {
     let posts = tool == <chat::Post as Tool>::NAME;
-    posts.then(|| chat::posting_in(input, channel)).flatten()
+    posts.then(|| chat::posting_at(input)).flatten()
 }
 
 use ::program::{

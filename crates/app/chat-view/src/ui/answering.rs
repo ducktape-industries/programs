@@ -1,6 +1,6 @@
-//! Someone answering in the room before they post (chat's `Drafting`), framed as their post will be:
-//! their face, their name and what they are doing, muted, over their text so far in the post's own
-//! column. It is drawn while chat holds the draft and goes when chat drops it.
+//! Someone answering in the room before they post (chat's `Drafting`), framed as their post will be
+//! at the foot of the list it answers in, while chat holds the draft. A draft under a thread is drawn
+//! in the thread; in the channel its root's reply row only says who is answering there.
 use chat::{Block, Draft, Principal};
 use view::design::Ladder;
 use view::prelude::*;
@@ -21,6 +21,19 @@ pub(crate) fn agent(chat: &Chat, author: &Principal) -> bool {
     chat.names
         .ready()
         .is_some_and(|names| crate::message::agent(names, author))
+}
+
+// who is answering under the root `id`, on its reply row in the channel; none when nobody is
+pub(crate) fn mark(id: &str, names: &[String], theme: &Theme) -> Option<Stateful<Div>> {
+    let said = words::answering_under(names)?;
+    let mark = div()
+        .id(format!("chat-message-{id}-answering"))
+        .role(Role::Status)
+        .aria_live(view::accesskit::Live::Polite)
+        .aria_label(said.clone())
+        .text_color(theme.muted)
+        .child(said);
+    Some(mark)
 }
 
 // the draft's row: `frame` sets the padding its list's posts take, `face` sits where their faces

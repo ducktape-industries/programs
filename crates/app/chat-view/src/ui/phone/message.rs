@@ -134,7 +134,14 @@ fn content(
     ladder: &Ladder,
 ) -> Div {
     let reacted = !message.deleted && !message.pending && !message.reactions.is_empty();
-    let threaded = pane == Pane::Timeline && message.thread.is_none() && message.reply_count > 0;
+    let root = pane == Pane::Timeline && message.thread.is_none();
+    let threaded = root && message.reply_count > 0;
+    let answering = match root {
+        true => chat.answering_under(message.seq),
+        false => Vec::new(),
+    };
+    let mark = crate::ui::answering::mark(&message.id, &answering, theme)
+        .map(|mark| mark.text_type(ladder.caption));
     div()
         .flex_1()
         .min_w(px(0.))
@@ -145,6 +152,7 @@ fn content(
         .child(body(chat, message, cx, theme, ladder))
         .children(reacted.then(|| reactions(chat, message, pane, cx, theme, ladder)))
         .children(threaded.then(|| thread_button(message, cx, theme, ladder)))
+        .children(mark)
 }
 
 fn byline(message: &ChatMessage, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {

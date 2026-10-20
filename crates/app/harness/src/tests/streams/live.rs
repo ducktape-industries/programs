@@ -226,14 +226,14 @@ fn a_streamed_post_lands_once_whole_and_is_never_edited_while_the_draft_shows_it
     );
     let id = format!("harness-{thread}-toolu_p");
     through(chain, &request, &events, 6);
-    assert_eq!(drafts(chain), [draft("", "On it.\n\nHel")]);
+    assert_eq!(drafts(chain), [writing("Hel")], "the post's text alone");
     from(chain, &request, &events, 6);
     end(chain, &request, events.len() as u64);
     assert!(
         message(chain, &id).is_none(),
         "nothing is posted while the call forms"
     );
-    assert_eq!(drafts(chain), [draft("", "On it.\n\nHello **world**")]);
+    assert_eq!(drafts(chain), [writing("Hello **world**")]);
     ran(chain, "toolu_p");
     let [posted] = posts_by(chain, world.agent).try_into().unwrap();
     assert_eq!(posted.message_id, id);
@@ -315,11 +315,11 @@ fn a_reply_that_starts_over_before_its_post_is_whole_posts_only_the_new_one() {
     through(chain, &request, &first, 5);
     let old = format!("harness-{thread}-toolu_a");
     assert!(message(chain, &old).is_none());
-    assert_eq!(drafts(chain), [draft("", "On it.\n\nDraft one")]);
+    assert_eq!(drafts(chain), [writing("Draft one")]);
     let second = post_events("toolu_b", &[r#"{"channel":"general","text":"Final"}"#]);
     from(chain, &request, &second, 0);
     end(chain, &request, second.len() as u64);
-    assert_eq!(drafts(chain), [draft("", "On it.\n\nFinal")]);
+    assert_eq!(drafts(chain), [writing("Final")]);
     assert_eq!(call_state(chain, thread, "toolu_a"), None);
     ran(chain, "toolu_b");
     let [posted] = posts_by(chain, world.agent).try_into().unwrap();
@@ -611,21 +611,34 @@ fn draft(doing: &str, text: &str) -> (String, String) {
     (doing.into(), text.into())
 }
 
+fn writing(text: &str) -> (String, String) {
+    draft("writing an answer", text)
+}
+
+// each draft in #general: the thread root it answers under, and its text
+fn placed(chain: &MockChain) -> Vec<(Option<u64>, String)> {
+    let asked = chat::Query::Drafts {
+        channel_id: "general".into(),
+    };
+    let chat::Reply::Drafts(drafts) = chain.query(chat::PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    drafts
+        .into_iter()
+        .map(|draft| (draft.thread, draft.text))
+        .collect()
+}
+
 #[test]
-fn a_turn_drafts_its_text_and_its_calls_where_it_was_woken_and_its_post_takes_their_place() {
+fn a_turn_that_posts_nothing_drafts_nothing() {
     let world = world();
     let chain = &world.chain;
     let (_, request) = asked(&world);
-    assert_eq!(drafts(chain), [draft("thinking", "")]);
-    let more = sse(json!({
-        "type": "content_block_delta", "index": 0,
-        "delta": { "type": "text_delta", "text": " now." }
-    }));
+    assert!(drafts(chain).is_empty(), "nothing while the model is asked");
     let events = [
         vec![
             began(),
             writes(0, "Looking"),
-            more,
             stops(0),
             calls(1, "toolu_c", "chat_channels"),
             input(1, "{}"),
@@ -634,102 +647,92 @@ fn a_turn_drafts_its_text_and_its_calls_where_it_was_woken_and_its_post_takes_th
         ended("tool_use").to_vec(),
     ]
     .concat();
-    stream(chain, &request, &events, &[0, 1]);
-    assert_eq!(drafts(chain), [draft("", "Looking")]);
-    stream(chain, &request, &events, &[2]);
-    assert_eq!(drafts(chain), [draft("", "Looking now.")]);
-    stream(chain, &request, &events, &[3, 4, 5, 6]);
-    assert_eq!(
-        drafts(chain),
-        [draft("running chat_channels", "Looking now.")]
-    );
-    from(chain, &request, &events, 7);
+    from(chain, &request, &events, 0);
     end(chain, &request, events.len() as u64);
-    assert_eq!(
-        drafts(chain),
-        [draft("running chat_channels", "Looking now.")],
-        "its call still runs"
+    assert!(
+        drafts(chain).is_empty(),
+        "its text and its calls draft nothing"
     );
     ran(chain, "toolu_c");
-    assert_eq!(
-        drafts(chain),
-        [draft("thinking", "")],
-        "the next model call"
-    );
+    assert!(drafts(chain).is_empty(), "the next model call");
     chain.at(5, 0);
-    let (next, _) = open_request(chain);
-    let posting = post_events("toolu_p", &[r#"{"channel":"general","text":"Done"}"#]);
-    through(chain, &next, &posting, 2);
-    assert_eq!(drafts(chain), [draft("", "On it.")]);
-    from(chain, &next, &posting, 2);
-    end(chain, &next, posting.len() as u64);
-    assert_eq!(
-        drafts(chain),
-        [draft("", "On it.\n\nDone")],
-        "the post's text shows in the draft, and its own call is not drawn running"
-    );
-    chain.at(6, 0);
-    relay_back(chain, "toolu_p");
-    let [posted] = posts_by(chain, world.agent).try_into().unwrap();
-    assert_eq!(text_of(&posted), "Done");
-    assert_eq!(
-        drafts(chain),
-        [draft("thinking", "")],
-        "the post took the draft's place, and the next model call opened it again"
-    );
-    chain.at(7, 0);
     model_says(
         chain,
-        json!([{ "type": "text", "text": "Posted." }]),
+        json!([{ "type": "text", "text": "Nothing to post." }]),
         "end_turn",
     );
     assert!(drafts(chain).is_empty(), "the turn is over");
 }
 
 #[test]
-fn a_turn_waiting_to_ask_its_model_again_keeps_its_draft_and_says_so() {
+fn a_post_at_the_rooms_foot_drafts_there_once_its_text_begins_and_the_post_takes_its_place() {
+    let world = world();
+    let chain = &world.chain;
+    let (_, request) = asked(&world);
+    let posting = post_events(
+        "toolu_p",
+        &[r#"{"channel":"general","#, r#""text":"Do"#, r#"ne"}"#],
+    );
+    through(chain, &request, &posting, 5);
+    assert!(
+        drafts(chain).is_empty(),
+        "the room alone does not say whether it answers in a thread"
+    );
+    stream(chain, &request, &posting, &[5]);
+    assert_eq!(
+        placed(chain),
+        [(None, "Do".to_owned())],
+        "at the room's foot"
+    );
+    assert_eq!(drafts(chain), [writing("Do")]);
+    from(chain, &request, &posting, 6);
+    end(chain, &request, posting.len() as u64);
+    assert_eq!(drafts(chain), [writing("Done")]);
+    ran(chain, "toolu_p");
+    let [posted] = posts_by(chain, world.agent).try_into().unwrap();
+    assert_eq!(text_of(&posted), "Done");
+    assert!(drafts(chain).is_empty(), "the post took the draft's place");
+}
+
+#[test]
+fn a_reply_in_a_thread_drafts_under_its_root_as_reply_to_arrives_before_any_text() {
+    let world = world();
+    let chain = &world.chain;
+    let (_, request) = asked(&world);
+    let posting = post_events(
+        "toolu_t",
+        &[
+            r#"{"channel":"general","#,
+            r#""reply_to":1,"#,
+            r#""text":"In the"#,
+            r#" thread"}"#,
+        ],
+    );
+    through(chain, &request, &posting, 5);
+    assert!(placed(chain).is_empty(), "the room alone");
+    stream(chain, &request, &posting, &[5]);
+    assert_eq!(
+        placed(chain),
+        [(Some(1), String::new())],
+        "the thread opens as reply_to arrives, before any text"
+    );
+    assert_eq!(drafts(chain), [writing("")]);
+    stream(chain, &request, &posting, &[6]);
+    assert_eq!(placed(chain), [(Some(1), "In the".to_owned())]);
+    from(chain, &request, &posting, 7);
+    end(chain, &request, posting.len() as u64);
+    assert_eq!(placed(chain), [(Some(1), "In the thread".to_owned())]);
+    ran(chain, "toolu_t");
+    assert!(placed(chain).is_empty(), "the reply took the draft's place");
+}
+
+#[test]
+fn a_turn_waiting_to_ask_its_model_again_drafts_nothing() {
     let world = world();
     let chain = &world.chain;
     let (_, request) = asked(&world);
     let limited =
         json!({ "type": "error", "error": { "type": "rate_limit_error", "message": "Slow down" } });
     answer(chain, request.id, Answer::Output(response(429, limited)));
-    assert_eq!(drafts(chain), [draft("waiting to retry", "")]);
-}
-
-#[test]
-fn a_draft_follows_the_input_heard_while_the_turn_ran_to_its_place() {
-    let world = world();
-    let chain = &world.chain;
-    let (_, _) = asked(&world);
-    let under = |chain: &MockChain| {
-        let asked = chat::Query::Drafts {
-            channel_id: "general".into(),
-        };
-        let chat::Reply::Drafts(drafts) = chain.query(chat::PROGRAM, &asked).unwrap() else {
-            panic!()
-        };
-        drafts
-            .into_iter()
-            .map(|draft| draft.thread)
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(under(chain), [None], "the room it was woken in");
-    let reply = chat::Op::PostMessage {
-        channel_id: "general".into(),
-        message_id: "m2".into(),
-        blocks: chat::parse_message(&format!("<@{}> and here", world.agent)),
-        thread: Some(1),
-    };
-    chain.submit(signed(BO), chat::PROGRAM, &reply).unwrap();
-    model_says(
-        chain,
-        json!([{ "type": "text", "text": "Done." }]),
-        "end_turn",
-    );
-    assert_eq!(
-        under(chain),
-        [Some(1)],
-        "the next model call answers in the thread it heard from"
-    );
+    assert!(drafts(chain).is_empty());
 }

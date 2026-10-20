@@ -40,6 +40,19 @@ impl Chat {
             .collect()
     }
 
+    // who is answering under the root `seq` of the open room, by name: its reply row in the
+    // channel says so, while the draft itself is drawn in the thread
+    pub(crate) fn answering_under(&self, seq: u64) -> Vec<String> {
+        let Some(room) = &self.room else {
+            return Vec::new();
+        };
+        let drafts = room.answering.ready().into_iter().flatten();
+        drafts
+            .filter(|draft| draft.thread == Some(seq))
+            .map(|draft| crate::ui::answering::name(self, &draft.author))
+            .collect()
+    }
+
     /// A pane's refused read, asked again: the open thread, or the room
     /// from its newest message.
     pub(crate) fn retry_read(&mut self, pane: Pane, cx: &mut Context<Self>) {

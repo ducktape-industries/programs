@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use store::PageRequest;
 
-use super::prefix::{Prefix, prefix};
+use super::prefix::prefix;
 use super::{
     Run, Seat, Show, Tool, Undo, Write, cursor_schema, next, object, page, principal, unexpected,
 };
@@ -323,30 +323,25 @@ fn delete(row: &MsgRow) -> Write {
     }
 }
 
-fn arrived(input: &Prefix) -> Option<Posted> {
+// where a chat_post call's input says it posts, once it says so, and its text so far: under its
+// reply_to's thread as soon as reply_to is whole, at the room's foot once the text begins without
+// one
+pub(crate) fn posting_at(input: &str) -> Option<(String, Option<u64>, String)> {
+    let input = prefix(input);
     let channel = input.settled("channel")?.as_str()?.to_owned();
-    let text = input.arriving("text")?.as_str()?.to_owned();
     let reply_to = input.settled("reply_to").and_then(Value::as_u64);
-    let started = !text.trim().is_empty();
-    started.then_some(Posted {
-        channel,
-        reply_to,
-        text,
-    })
-}
-
-// the text a chat_post call's input says so far, when it posts in `channel`: what the agent's
-// draft there shows while the call forms
-pub(crate) fn posting_in(input: &str, channel: &str) -> Option<String> {
-    let posted = arrived(&prefix(input))?;
-    (posted.channel == channel).then_some(posted.text)
+    let text = input.arriving("text").and_then(Value::as_str);
+    if reply_to.is_none() && text.is_none() {
+        return None;
+    }
+    Some((channel, reply_to, text.unwrap_or_default().to_owned()))
 }
 
 pub(crate) struct Post;
 
 impl Tool for Post {
     const NAME: &'static str = "chat_post";
-    const DESCRIPTION: &'static str = "Post a message to a chat channel, or a reply in a message's thread. Markdown works; `<@N>` mentions account N, and `@name` mentions the one account named so. The message is yours, and chat allows it where it allows your account. It lands whole once you finish it, and your draft in the channel shows its text as you write it, so give channel and reply_to before text.";
+    const DESCRIPTION: &'static str = "Post a message to a chat channel, or a reply in a message's thread. Markdown works; `<@N>` mentions account N, and `@name` mentions the one account named so. The message is yours, and chat allows it where it allows your account. It lands whole once you finish it, and your draft shows where it goes as soon as channel and reply_to are given, then its text as you write it, so give channel and reply_to before text.";
     const WRITES: bool = true;
     type Args = PostArgs;
 

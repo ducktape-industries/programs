@@ -52,6 +52,15 @@ pub(crate) fn answering(name: &str) -> String {
     format!("{name} {ANSWERING}")
 }
 
+// who is answering under a root, on its reply row in the channel
+pub(crate) fn answering_under(names: &[String]) -> Option<String> {
+    match names {
+        [] => None,
+        [name] => Some(answering(name)),
+        [names @ .., last] => Some(format!("{} and {last} are answering…", names.join(", "))),
+    }
+}
+
 pub(crate) fn doing(what: &str) -> String {
     format!("{what}…")
 }

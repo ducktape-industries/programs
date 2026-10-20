@@ -1,5 +1,6 @@
 //! Who is answering in a room: a draft chat holds is drawn at the foot of the list it answers in,
-//! with what its author is doing and its text so far, and goes once chat drops it.
+//! with what its author is doing and its text so far, and goes once chat drops it. A draft under a
+//! thread is the thread's: the channel only marks its root's reply row.
 use super::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -92,5 +93,96 @@ fn a_drafts_text_is_drawn_as_its_post_will_be_never_as_its_raw_marks() {
             .iter()
             .any(|text| text.contains("**") || text.contains('`')),
         "{texts:?}"
+    );
+}
+
+// reviewer answers at the room's foot and ada under #general's second message, whose thread has no
+// reply yet
+fn answering_in_both(cx: &TestAppContext) {
+    let held = vec![
+        draft(8, None, "", "Looking at the build"),
+        draft(10, Some(2), "", "Under the second message"),
+    ];
+    let mut room = rooms_alone(|query| Ok(chat_reply(query)));
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(move |query| match query {
+            Query::Drafts { .. } => Ok(Reply::Drafts(held.clone())),
+            Query::Thread { .. } => Ok(Reply::Thread {
+                root: Some(row(2, 8, "**hi** there")),
+                replies: page(Vec::new()),
+            }),
+            query => room(query),
+        });
+}
+
+fn drawn(cx: &TestAppContext, text: &str) -> usize {
+    cx.texts().iter().filter(|said| *said == text).count()
+}
+
+#[test]
+fn a_threaded_draft_is_drawn_in_its_thread_and_marked_on_its_roots_reply_row() {
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    answering_in_both(&cx);
+    let view = cx.open::<Chat>();
+    seat(&mut cx);
+    cx.simulate_click("chat-sidebar-channel-general");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("Looking at the build"),
+        "a draft with no thread is the channel's"
+    );
+    assert!(!cx.has_text("Under the second message"), "{:?}", cx.texts());
+    let mark = cx.interactivity("chat-message-m2-answering");
+    assert_eq!(mark.role, Some(view::Role::Status));
+    assert_eq!(drawn(&cx, "ada is answering…"), 1, "{:?}", cx.texts());
+    assert!(cx.find("chat-message-m1-answering").is_none());
+    thread(&mut cx, &view, 2);
+    assert_eq!(
+        drawn(&cx, "Under the second message"),
+        1,
+        "in the thread alone"
+    );
+    assert_eq!(
+        drawn(&cx, "Looking at the build"),
+        1,
+        "the channel's stays at its foot"
+    );
+}
+
+#[test]
+fn on_a_phone_a_threaded_draft_is_drawn_in_its_thread_and_marked_on_its_root() {
+    let (mut cx, view) = super::phone::phone();
+    answering_in_both(&cx);
+    cx.simulate_click("chat-rooms-channel-general");
+    cx.run_until_parked();
+    assert!(cx.has_text("Looking at the build"), "{:?}", cx.texts());
+    assert!(!cx.has_text("Under the second message"), "{:?}", cx.texts());
+    assert!(cx.find("chat-message-m2-answering").is_some());
+    assert_eq!(drawn(&cx, "ada is answering…"), 1, "{:?}", cx.texts());
+    thread(&mut cx, &view, 2);
+    assert!(cx.has_text("Under the second message"), "{:?}", cx.texts());
+    assert!(
+        !cx.has_text("Looking at the build"),
+        "the thread holds its own draft alone"
+    );
+}
+
+#[test]
+fn the_mark_names_everyone_answering_under_a_root() {
+    let names = |names: &[&str]| {
+        names
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(crate::words::answering_under(&[]), None);
+    assert_eq!(
+        crate::words::answering_under(&names(&["ada"])).as_deref(),
+        Some("ada is answering…")
+    );
+    assert_eq!(
+        crate::words::answering_under(&names(&["ada", "rex", "tech"])).as_deref(),
+        Some("ada, rex and tech are answering…")
     );
 }

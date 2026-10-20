@@ -318,8 +318,6 @@ struct Designation {
     pictures: Vec<Picture>,
     // the chat room a message came from
     room: Option<String>,
-    // where an answer to the message goes: its thread, or its room
-    answered: Option<Place>,
 }
 
 fn name_of(ctx: &QueryCtx, number: AccountNumber) -> String {
@@ -386,15 +384,6 @@ fn chat_places(channel: &str, thread: Option<u64>) -> Vec<String> {
     vec![within.key(), whole.key()]
 }
 
-// where an answer to `row` goes: the thread it is in, else its room
-fn answer_place(row: &chat::MsgRow) -> Place {
-    let channel = row.channel_id.clone();
-    match row.thread {
-        Some(root) => Place::Thread { channel, root },
-        None => Place::Channel { channel },
-    }
-}
-
 fn designation(
     ctx: &QueryCtx,
     change: &Change,
@@ -429,7 +418,6 @@ fn designation(
             text,
             pictures: Vec::new(),
             room: None,
-            answered: None,
         });
     };
     let verb = match heard {
@@ -463,7 +451,6 @@ fn designation(
         places: chat_places(&row.channel_id, row.thread),
         text,
         pictures: pictures::of_message(&row.blocks),
-        answered: Some(answer_place(&row)),
         room: Some(row.channel_id),
     })
 }
@@ -549,13 +536,9 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
         text,
         pictures,
         room,
-        answered,
     } = designation(ctx, &change, actor, why)?;
     let (mut thread, reached) = route(ctx, &agent, &places, place)?;
     PLACES.put(ctx, &(agent.number, reached), &thread.id);
-    if let Some(answered) = answered {
-        crate::drafts::heard(ctx, thread.id, answered);
-    }
     // the wake that conversation heard already quotes the message
     if woke == Some(thread.id) {
         return Ok(Hearing { told: None, woke });
@@ -659,17 +642,8 @@ fn waited(
             Heard::Listen | Heard::Watch => Heard::Waited,
             other => other,
         };
-        let Designation {
-            text,
-            pictures,
-            answered,
-            ..
-        } = designation(ctx, change, actor, quoted)?;
-        let woke = crate::waits::end_seen(ctx, wait, text, pictures, &channel)?;
-        if let (Some(thread), Some(answered)) = (woke, answered) {
-            crate::drafts::heard(ctx, thread, answered);
-        }
-        return Ok(woke);
+        let Designation { text, pictures, .. } = designation(ctx, change, actor, quoted)?;
+        return crate::waits::end_seen(ctx, wait, text, pictures, &channel);
     }
     Ok(None)
 }

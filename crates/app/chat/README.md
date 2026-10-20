@@ -59,7 +59,7 @@ tool reads it.
 ## Drafts
 
 Someone answering in a room before they post keeps a draft there (`Op::Drafting`): its text, a
-piece at a time, what they say they are doing (`doing`, such as `running forge_read`), and the
+piece at a time, what they say they are doing (`doing`, such as `writing an answer`), and the
 thread root it answers under, if any. `anew` starts the text over and keeps the block the draft
 opened at. Drafting is allowed where the author may post, and a draft under a thread names that
 thread's root. The author's post in the room takes their draft there down, and so does
