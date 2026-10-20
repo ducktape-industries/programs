@@ -124,11 +124,14 @@ pub enum Op {
 pub enum Query {
     #[ask(Reply::Programs(Vec<Entry>))]
     At(u64),
+    // The changes still to land, in height order: those above the query's own height. One at or
+    // below it has landed, whether or not an op has folded it since.
     #[ask(Reply::Scheduled(PageResponse<Pending>))]
     Scheduled { page: PageRequest },
     #[ask(Reply::Program { height: u64, entry: Option<Entry> })]
     Program(ProgramId),
-    /// The view-only entries at a height, by name.
+    // Retired for `ViewsAt`, which names its height; still answered. The view-only entries at a
+    // height, by name.
     #[ask(Reply::Views(Vec<View>))]
     Views(u64),
     #[ask(Reply::Roles(abi::Roles))]
@@ -148,6 +151,16 @@ pub enum Query {
     // is listed or has a change waiting, else none (free: an account's first set claims it).
     #[ask(Reply::Owner { height: u64, holder: Option<Holder> })]
     Owner(ProgramId),
+    // The programs that run at block `at_height`, as the kernel's `At` answers: 0 is genesis, not
+    // now. `Roster` answers at the query's own height.
+    #[ask(Reply::Programs(Vec<Entry>))]
+    ProgramsAt { at_height: u64 },
+    // The view-only entries listed at block `at_height`, by name.
+    #[ask(Reply::Views(Vec<View>))]
+    ViewsAt { at_height: u64 },
+    // The hooks at block `at_height`, as the kernel's `Hooks` answers.
+    #[ask(Reply::Hooks(Vec<ProgramId>))]
+    HooksAt { at_height: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]

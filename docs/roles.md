@@ -293,7 +293,9 @@ Who may schedule or cancel (putting a blob is open to any account):
   program under a view being removed, or the reverse) before that
   removal lands. It cancels any change an account made to an id it holds
   that fills no role, never one the vote made. `Scheduled` answers who
-  made each change (`Pending.by`, `None` for the vote).
+  made each change (`Pending.by`, `None` for the vote), and lists only
+  the changes still to land: one at or below the answering height has
+  landed, whether or not an op on the programs role has folded it since.
 - Hooks: the account that holds a hook's id may replace its code (`Set`
   of a hooked id).
   The hook keeps its status: it still cannot emit and runs on the kernel's
@@ -345,5 +347,9 @@ README has the steps). What the kernel does with the answers: identity's
 it fails a founding or undoes a later admission; a refusal of
 `Account(key)` or `OfProgram(program)` rejects the frame or the message.
 The programs role's `At(height)` answers every program that runs at that height; one
-it leaves out is dropped. A refusal of validators' `Members` stops the
+it leaves out is dropped. A client names the height it asks about:
+`ProgramsAt`, `ViewsAt` and `HooksAt { at_height }` answer the lists at block
+`at_height` (0 is genesis, not now), and `Roster` answers at the query's own
+height. `At` and `Hooks` are the kernel's role queries and answer the same;
+`Views(height)` is retired for `ViewsAt` and still answers. A refusal of validators' `Members` stops the
 node.

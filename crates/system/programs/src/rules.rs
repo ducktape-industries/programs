@@ -11,7 +11,7 @@ use ::program::{
     Error, ExecCtx, QueryCtx, already_exists, invalid, not_found, unauthorized, unexpected_reply,
     wrong_state,
 };
-use store::{Item, KeyCodec, Map, Set};
+use store::{Item, KeyCodec, Map, PageRequest, PageResponse, Set};
 
 use crate::{
     Built, CODE_KIND, Change, Entry, Genesis, Holder, NOTICE, Provenance, Scheduled, Source, View,
@@ -472,6 +472,19 @@ fn table(roles: &BTreeMap<String, ProgramId>) -> Roles {
 
 pub(crate) fn roles_at(ctx: &QueryCtx, height: u64) -> Result<Roles, Error> {
     Ok(table(&roster(ctx, height, &[])?.roles))
+}
+
+pub(crate) fn to_land(
+    ctx: &QueryCtx,
+    page: &PageRequest,
+) -> Result<PageResponse<(At, Change)>, Error> {
+    let table = SCHEDULE.key(&());
+    let listing = page.listing(ctx, table.clone())?;
+    let mut scan = listing.scan_ahead(&table);
+    let unlanded = SCHEDULE.key(&ctx.env().height.saturating_add(1));
+    scan.start = scan.start.max(unlanded);
+    let rows = SCHEDULE.scan(ctx, scan)?;
+    Ok(listing.reply(rows.into_iter().map(|row| (SCHEDULE.key(&row.0), row))))
 }
 
 fn due(ctx: &QueryCtx, height: u64) -> Result<Vec<(At, Change)>, Error> {

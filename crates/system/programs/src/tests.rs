@@ -668,3 +668,66 @@ fn a_schedule_is_refused_until_the_blobs_role_holds_its_code_as_a_program() {
     let refused = store.refused(|| schedule(&store, 6, Change::Set(entry("pack", pack))));
     assert_eq!(refused.code, code::INVALID_INPUT);
 }
+
+#[test]
+fn the_schedule_lists_only_changes_still_to_land_folded_or_not() {
+    let (store, code) = founded();
+    for height in [5u64, 6, 9] {
+        let set = Change::Set(entry(&format!("p{height}"), code));
+        schedule(&store, height, set).unwrap();
+    }
+    let ask = |at: u64, page: PageRequest| match Programs::query(
+        &store.query(env(at, Origin::Root)),
+        Query::Scheduled { page },
+    )
+    .unwrap()
+    {
+        Reply::Scheduled(page) => {
+            let heights: Vec<u64> = page.items.iter().map(|s| s.height).collect();
+            (heights, page.next)
+        }
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(ask(4, PageRequest::default()).0, [5, 6, 9]);
+    assert_eq!(
+        ask(6, PageRequest::default()).0,
+        [9],
+        "5 and 6 have landed, though no op has folded them"
+    );
+    let (first, next) = ask(5, PageRequest::first(1));
+    assert_eq!(first, [6]);
+    let rest = PageRequest {
+        after: next,
+        limit: Some(1),
+    };
+    assert_eq!(ask(5, rest), (vec![9], None));
+    assert_eq!(ask(9, PageRequest::default()).0, Vec::<u64>::new());
+}
+
+#[test]
+fn a_list_at_a_named_height_answers_as_the_kernels_queries_do() {
+    let (store, code) = founded();
+    schedule(&store, 5, Change::Set(entry("new", code))).unwrap();
+    let explorer = View {
+        name: "explorer".into(),
+        view: code,
+    };
+    schedule(&store, 5, Change::SetView(explorer)).unwrap();
+    schedule(&store, 6, Change::SetHook("new".into())).unwrap();
+    let ask = |query: Query| Programs::query(&store.query(env(7, Origin::Root)), query).unwrap();
+    for at_height in [0, 4, 5, 6] {
+        let pairs = [
+            (Query::ProgramsAt { at_height }, Query::At(at_height)),
+            (Query::ViewsAt { at_height }, Query::Views(at_height)),
+            (Query::HooksAt { at_height }, Query::Hooks(at_height)),
+        ];
+        for (named, unnamed) in pairs {
+            assert_eq!(ask(named.clone()), ask(unnamed), "{named:?}");
+        }
+    }
+    assert_ne!(
+        ask(Query::ViewsAt { at_height: 0 }),
+        ask(Query::ViewsAt { at_height: 7 }),
+        "0 is genesis, not the query's own height"
+    );
+}

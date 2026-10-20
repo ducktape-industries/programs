@@ -291,7 +291,7 @@ impl conformance::programs::Fixture for Programs {
 
     fn views(&self, host: &MockHost, height: u64) -> Vec<View> {
         let env = env("programs", height, Origin::Root, None);
-        let query = programs::Query::Views(height);
+        let query = programs::Query::ViewsAt { at_height: height };
         match programs::Programs::query(&host.query(env), query).unwrap() {
             programs::Reply::Views(views) => views,
             other => panic!("Views answers Views, not {other:?}"),

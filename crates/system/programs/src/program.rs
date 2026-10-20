@@ -4,8 +4,8 @@
 use ::program::{Error, ExecCtx, Program, QueryCtx, decoded};
 
 use crate::rules::{
-    BY, Roster, SCHEDULE, at, cancel, fold, holder_of, hooks_at, init, own, roles_at, roster,
-    schedule, sources, views_at,
+    BY, Roster, at, cancel, fold, holder_of, hooks_at, init, own, roles_at, roster, schedule,
+    sources, to_land, views_at,
 };
 use crate::{Genesis, Op, PROGRAM, PageResponse, Pending, Query, Reply};
 
@@ -34,14 +34,18 @@ impl Program for Programs {
     fn query(ctx: &QueryCtx, query: Query) -> Result<Reply, Error> {
         let height = ctx.env().height;
         Ok(match query {
-            Query::At(height) => Reply::Programs(at(ctx, height)?),
-            Query::Views(height) => Reply::Views(views_at(ctx, height)?),
+            Query::At(height) | Query::ProgramsAt { at_height: height } => {
+                Reply::Programs(at(ctx, height)?)
+            }
+            Query::Views(height) | Query::ViewsAt { at_height: height } => {
+                Reply::Views(views_at(ctx, height)?)
+            }
             Query::Scheduled { page } => {
                 let PageResponse {
                     height,
                     items,
                     next,
-                } = SCHEDULE.range(ctx, &page)?;
+                } = to_land(ctx, &page)?;
                 let items = items
                     .into_iter()
                     .map(|(at, change)| {
@@ -66,7 +70,9 @@ impl Program for Programs {
                     .find(|entry| entry.program == program),
             },
             Query::Roles => Reply::Roles(roles_at(ctx, height)?),
-            Query::Hooks(height) => Reply::Hooks(hooks_at(ctx, height)?),
+            Query::Hooks(height) | Query::HooksAt { at_height: height } => {
+                Reply::Hooks(hooks_at(ctx, height)?)
+            }
             Query::Roster => {
                 let Roster {
                     programs, views, ..
