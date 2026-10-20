@@ -19,3 +19,4 @@ chat.workspace = true
 forge.workspace = true
 harness.workspace = true
 egress.workspace = true
+files.workspace = true

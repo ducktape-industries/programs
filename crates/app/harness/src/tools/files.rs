@@ -8,6 +8,7 @@ pub(crate) use edit::Edit;
 use std::collections::BTreeMap;
 
 use ::program::{BlobId, Error, ExecCtx, HashKind, invalid};
+use abi::role::identity::AccountNumber;
 use files::{Change, Content, EntryInfo, Node, Ownership, Party, Query, Reply};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -404,6 +405,125 @@ fn list_set(ctx: &ExecCtx, path: String, list: Option<WriteList>) -> Result<supe
     })
 }
 
+fn writers(list: &WriteList) -> ownership::Writers {
+    match list {
+        WriteList::Creator => ownership::Writers::Owner,
+        WriteList::Listed { accounts, programs } => ownership::Writers::Listed(
+            accounts
+                .iter()
+                .map(|number| ownership::Party::Account(*number))
+                .chain(programs.iter().cloned().map(ownership::Party::Program))
+                .collect(),
+        ),
+        WriteList::Anyone => ownership::Writers::Anyone,
+    }
+}
+
+fn guarded_at(ctx: &ExecCtx, path: &str) -> Result<bool, Error> {
+    match ask(ctx, Query::Guarded { path: path.into() })? {
+        Reply::Guarded(nearest) => Ok(nearest.as_deref() == Some(path)),
+        other => Err(unexpected(files::PROGRAM, "Guarded", &other)),
+    }
+}
+
+fn policy_with(
+    ctx: &ExecCtx,
+    owner: &ownership::Party,
+    write: &ownership::Writers,
+) -> Result<Option<ownership::PolicyId>, Error> {
+    let role = ctx.env().role(abi::role::OWNERSHIP)?.clone();
+    let mut page = PageRequest::default();
+    loop {
+        let asked = ownership::Query::Policies {
+            owner: owner.clone(),
+            page,
+        };
+        let policies = match ctx.query(role.clone(), &asked)? {
+            ownership::Reply::Policies(policies) => policies,
+            other => return Err(unexpected(&role, "Policies", &other)),
+        };
+        let same = |policy: &&ownership::Policy| {
+            policy.write == *write && !policy.retired && policy.switched_to.is_none()
+        };
+        if let Some(policy) = policies.items.iter().find(same) {
+            return Ok(Some(policy.id));
+        }
+        let Some(after) = policies.next else {
+            return Ok(None);
+        };
+        page = PageRequest {
+            after: Some(after),
+            ..PageRequest::default()
+        };
+    }
+}
+
+fn owned(ctx: &ExecCtx, op: &ownership::Op) -> Result<super::Write, Error> {
+    Ok(super::Write {
+        target: ctx.env().role(abi::role::OWNERSHIP)?.clone(),
+        payload: abi::encode(op),
+    })
+}
+
+fn relinked(ctx: &ExecCtx, path: &str, policy: ownership::PolicyId) -> Result<super::Write, Error> {
+    let relink = ownership::Op::Relink {
+        program: files::PROGRAM.into(),
+        key: files::guard_key(path),
+        policy,
+    };
+    owned(ctx, &relink)
+}
+
+fn answered(writes: Vec<super::Write>, answer: Value) -> Run {
+    Run::Read {
+        writes,
+        read: Box::new(move |_: &[u8]| Ok(answer)),
+    }
+}
+
+fn set_list(
+    ctx: &ExecCtx,
+    agent: AccountNumber,
+    path: String,
+    list: Option<WriteList>,
+    answer: Value,
+) -> Result<Run, Error> {
+    let write = list.as_ref().map(writers);
+    let guarded = guarded_at(ctx, &path)?;
+    let mut writes = vec![list_set(ctx, path.clone(), list)?];
+    let files_op = |op: files::Op| super::Write {
+        target: files::PROGRAM.into(),
+        payload: abi::encode(&op),
+    };
+    let Some(write) = write else {
+        if guarded {
+            writes.push(files_op(files::Op::Unguard { path }));
+        }
+        return Ok(answered(writes, answer));
+    };
+    if !guarded {
+        writes.push(files_op(files::Op::Guard { path: path.clone() }));
+    }
+    if let Some(policy) = policy_with(ctx, &ownership::Party::Account(agent), &write)? {
+        writes.push(relinked(ctx, &path, policy)?);
+        return Ok(answered(writes, answer));
+    }
+    let create = ownership::Op::Create {
+        name: path.clone(),
+        write,
+    };
+    writes.push(owned(ctx, &create)?);
+    let then = move |ctx: &ExecCtx, output: &[u8]| {
+        let policy =
+            abi::decode::<ownership::PolicyId>(output).map_err(::program::kernel::error_from)?;
+        Ok(answered(vec![relinked(ctx, &path, policy)?], answer))
+    };
+    Ok(Run::Then {
+        writes,
+        then: Box::new(then),
+    })
+}
+
 fn committed(output: &[u8]) -> Result<Value, Error> {
     Ok(match abi::decode::<BlobId>(output) {
         Ok(snapshot) => json!({ "snapshot": blob(&snapshot) }),
@@ -487,7 +607,7 @@ pub(crate) struct SetList;
 
 impl Tool for SetList {
     const NAME: &'static str = "files_set_list";
-    const DESCRIPTION: &'static str = "Set who may write a path of the network's filesystem and everything beneath it that sets no list of its own, or clear its list with no `write`. Only the path's owner sets it: the account that made it, or for /home/<name> the account named so. The list lives in the access program, which checks every write against the nearest list at or above a path.";
+    const DESCRIPTION: &'static str = "Set who may write a path of the network's filesystem and everything beneath it that keeps no guard of its own, or clear it with no `write`. Only the path's owner sets it: the account that made it, or for /home/<name> the account named so. It guards the path in files and links the guard to a policy of yours in the ownership program with those writers (one is made if you have none), and sets the same write list in the access program, which still gates files.";
     const WRITES: bool = true;
     type Args = SetListArgs;
 
@@ -501,8 +621,12 @@ impl Tool for SetList {
         )
     }
 
-    fn run(ctx: &ExecCtx, _seat: &Seat, args: SetListArgs) -> Result<Run, Error> {
-        Ok(Run::Write(vec![list_set(ctx, args.path, args.write)?]))
+    fn run(ctx: &ExecCtx, seat: &Seat, args: SetListArgs) -> Result<Run, Error> {
+        let answer = match args.write {
+            Some(_) => json!({ "write": "set" }),
+            None => json!({ "write": "cleared" }),
+        };
+        set_list(ctx, seat.agent, args.path, args.write, answer)
     }
 }
 
@@ -521,7 +645,7 @@ fn chunked(ctx: &ExecCtx, bytes: &[u8]) -> Result<Content, Error> {
 
 impl Tool for Write {
     const NAME: &'static str = "files_write";
-    const DESCRIPTION: &'static str = "Write a text file to the network's filesystem, creating its directories, in one commit. A file already there keeps its meta, and its mode unless executable is given; files_edit changes part of a file without re-sending the rest. Anyone writes a path that no write list covers; where the path or a folder above it carries a write list, the nearest list decides: its owner alone, its owner and the accounts and programs it lists, or anyone. A program on a list allows every write harness makes, for any agent. A refusal names the list and whom it allows. /home, /shared and each /home/<name> folder itself are the network's; write inside them. Give write to set the path's write list in the same call, as files_set_list does: the file is written first, then the list is set, so a list the access program refuses fails the call with the file already written.";
+    const DESCRIPTION: &'static str = "Write a text file to the network's filesystem, creating its directories, in one commit. A file already there keeps its meta, and its mode unless executable is given; files_edit changes part of a file without re-sending the rest. Anyone writes a path that no write list covers; where the path or a folder above it carries a write list, the nearest list decides: its owner alone, its owner and the accounts and programs it lists, or anyone. A program on a list allows every write harness makes, for any agent. A refusal names the list and whom it allows. /home, /shared and each /home/<name> folder itself are the network's; write inside them. Give write to set who may write the path in the same call, as files_set_list does: the file is written first, then its guard and list are set, so a refusal there fails the call with the file already written.";
     const WRITES: bool = true;
     type Args = WriteArgs;
 
@@ -562,16 +686,11 @@ impl Tool for Write {
         let Some(list) = args.write else {
             return Ok(Run::Write(vec![commit]));
         };
-        // the list is set once the commit has made the path, so a new file's creator sets it
-        let set = list_set(ctx, path, Some(list))?;
-        let then = move |_: &ExecCtx, output: &[u8]| {
+        let agent = seat.agent;
+        let then = move |ctx: &ExecCtx, output: &[u8]| {
             let mut answer = committed(output)?;
             answer["write"] = json!("set");
-            let read = move |_: &[u8]| Ok(answer);
-            Ok(Run::Read {
-                writes: vec![set],
-                read: Box::new(read),
-            })
+            set_list(ctx, agent, path, Some(list), answer)
         };
         Ok(Run::Then {
             writes: vec![commit],

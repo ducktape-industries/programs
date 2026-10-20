@@ -435,7 +435,8 @@ fn a_rewrite_keeps_the_files_meta_and_its_mode_unless_the_call_gives_one() {
 
 #[test]
 fn a_write_that_names_a_list_writes_the_file_then_sets_its_list() {
-    let world = world();
+    let mut world = world();
+    world.chain.seat::<ownership::Ownership>(ownership::PROGRAM);
     let chain = &world.chain;
     let thread = world.opened("m1", "write and list", Some(WINDOW));
     let listed = json!({ "who": "listed", "accounts": [world.bo], "programs": ["chat"] });
@@ -460,6 +461,13 @@ fn a_write_that_names_a_list_writes_the_file_then_sets_its_list() {
     ];
     let set = files::Ownership::Listed(parties.into_iter().collect());
     assert_eq!(list, Some(set));
+    let asked = files::Query::Guarded {
+        path: "/shared/listed.md".into(),
+    };
+    let files::Reply::Guarded(nearest) = chain.query(files::PROGRAM, &asked).unwrap() else {
+        panic!("Guarded answers a path");
+    };
+    assert_eq!(nearest.as_deref(), Some("/shared/listed.md"));
 
     let plain = json!({ "path": "/shared/listed.md", "content": "again\n" });
     turn(chain, 5, &[("c2", "files_write", plain)]);

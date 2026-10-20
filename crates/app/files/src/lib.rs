@@ -1,12 +1,13 @@
-//! The `files` program: duckfs, the network's versioned filesystem. Its wire types live
-//! here; `program.rs` dispatches them, `ops.rs`/`commit.rs` write and `queries.rs` reads. Who
-//! writes a path is its nearest write list in the access program, else anyone; `gate.rs`
-//! answers what each op needs there and who owns each path.
+//! The `files` program: duckfs, the network's versioned filesystem. `program.rs` dispatches its
+//! wire types to `ops.rs`/`commit.rs`, which write, and `queries.rs`, which reads. Who writes a
+//! path is the policy of its nearest guard at or above it (`guards.rs`), else anyone.
+mod adopt;
 mod commit;
 mod cursor;
 mod examples;
 mod gate;
 pub mod grep;
+mod guards;
 mod objects;
 mod ops;
 pub mod paths;
@@ -26,7 +27,12 @@ pub use ::program::{AccountNumber, BlobId, Ownership, Party, Principal};
 pub use gate::pin_key;
 pub use objects::{Access, CHUNK, FILE, FileObj, SNAPSHOT, SnapshotObj, TREE, Tree};
 pub use program::Files;
+pub use state::{PathGuard, guard_key};
 pub use store::{PageRequest, PageResponse};
+
+pub mod tables {
+    pub use crate::state::{GUARDED, PINS};
+}
 
 pub const PROGRAM: &str = "files";
 
@@ -36,7 +42,7 @@ pub const CHUNK_SIZE: u64 = 1 << 20;
     Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
 )]
 #[tool_about(
-    "The network's versioned filesystem: every commit is a snapshot, and a path's writers are its nearest write list in the access program, else anyone. /home, /shared and each /home/<name> are the network's: write inside them."
+    "The network's versioned filesystem: every commit is a snapshot. A path's writers are the policy of its nearest guard at or above it in the ownership program, else anyone. /home, /shared and each /home/<name> are the network's: write inside them."
 )]
 pub enum Op {
     /// Retired: file bytes never ride in a transaction ([`carried`]), so
@@ -58,6 +64,18 @@ pub enum Op {
     // `deliver` stops it.
     #[tool_op(description = "From a program only: be told of every commit, each as a message of deliver followed by the snapshot's row in borsh. An empty deliver stops it.", example = examples::watch)]
     Watch { deliver: Vec<u8> },
+    #[tool_op(description = "Guard a path: from then on the ownership program's policy for it decides who writes it and everything beneath it that keeps no guard of its own. Its owner alone guards it: the account that made it, the account named <name> for /home/<name>, chat for its folders. The guard starts on the owner's default policy for files.path; change it with ownership Relink.", example = examples::guard)]
+    Guard { path: String },
+    #[tool_op(description = "Drop a path's guard, so the guard above it decides again, else anyone. Whom the guard's policy admits.", example = examples::unguard)]
+    Unguard { path: String },
+    #[tool_op(description = "One-time backfill of owners for files' guarded paths (files.path: each write list the access program keeps for files, and each file beneath a chat message) and pins (files.pin), a page at a time; returns the key to resume after, or null when done.", returns = Option<Vec<u8>>, example = examples::adopt)]
+    AdoptOwners {
+        kind: String,
+        after: Option<Vec<u8>>,
+        limit: u64,
+    },
+    #[tool_op(description = "From files itself only: drop the guards a move carried away from their old paths, once ownership moved their records.", example = examples::vacate)]
+    Vacate { paths: Vec<String> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -271,6 +289,10 @@ pub enum Query {
     #[reads(state::PINS)]
     #[tool_query(description = "One pin by name, or null.", example = examples::one_pin)]
     Pin { name: String },
+    #[ask(Reply::Guarded(Option<String>))]
+    #[reads(state::GUARDED)]
+    #[tool_query(description = "The nearest guarded path at or above path, whose policy in the ownership program decides who writes it, or null where anyone does.", example = examples::guarded)]
+    Guarded { path: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -294,6 +316,7 @@ pub enum Reply {
     Diff(Vec<DiffEntry>),
     Pins(PageResponse<PinRow>),
     Pin(Option<PinRow>),
+    Guarded(Option<String>),
 }
 
 pub fn describe(op: &Op) -> describe::Description {
@@ -333,6 +356,16 @@ pub fn describe(op: &Op) -> describe::Description {
             true => ("Stop hearing of every commit".to_owned(), Vec::new()),
             false => ("Hear of every commit".to_owned(), Vec::new()),
         },
+        Op::Guard { path } => (format!("Guard {path}"), Vec::new()),
+        Op::Unguard { path } => (format!("Unguard {path}"), Vec::new()),
+        Op::AdoptOwners { kind, .. } => (format!("Record owners · {kind}"), Vec::new()),
+        Op::Vacate { paths } => (
+            "Drop moved guards".to_owned(),
+            vec![field(
+                "paths",
+                Value::List(paths.iter().map(Value::text).collect()),
+            )],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -372,6 +405,16 @@ describe::export!(Op, describe);
 fn op_variants_only_append() {
     assert_eq!(
         describe::variants::<Op>(),
-        ["Stage", "Commit", "Pin", "Unpin", "Watch"]
+        [
+            "Stage",
+            "Commit",
+            "Pin",
+            "Unpin",
+            "Watch",
+            "Guard",
+            "Unguard",
+            "AdoptOwners",
+            "Vacate"
+        ]
     );
 }

@@ -1034,7 +1034,8 @@ fn a_write_is_the_agents_and_reaches_only_where_the_agent_may_write() {
 
 #[test]
 fn an_agent_writes_a_file_and_lists_who_else_writes_it() {
-    let world = world();
+    let mut world = world();
+    world.chain.seat::<ownership::Ownership>(ownership::PROGRAM);
     let chain = &world.chain;
     let thread = world.opened("m1", "write", Some(WINDOW));
     chain.at(3, 0);
@@ -1096,6 +1097,28 @@ fn an_agent_writes_a_file_and_lists_who_else_writes_it() {
             ::program::Party::Program(PROGRAM.into()),
         ]))
     );
+    let guard = |path: &str| {
+        let asked = ownership::Query::Effective {
+            program: files::PROGRAM.into(),
+            key: files::guard_key(path),
+        };
+        let ownership::Reply::Policy(Some(policy)) =
+            chain.query(ownership::PROGRAM, &asked).unwrap()
+        else {
+            panic!("{path} is guarded");
+        };
+        (policy.owner, policy.write)
+    };
+    let agent = ownership::Party::Account(world.agent);
+    assert_eq!(
+        guard("/shared/mine.md"),
+        (agent.clone(), ownership::Writers::Owner)
+    );
+    let listed_too = ownership::Writers::Listed(vec![
+        ownership::Party::Account(world.bo),
+        ownership::Party::Program(PROGRAM.into()),
+    ]);
+    assert_eq!(guard("/shared/agents.md"), (agent, listed_too));
     let by_ada = files::Op::Commit {
         base: None,
         message: "ada".into(),

@@ -15,6 +15,7 @@ access = { workspace = true }
 abi = { workspace = true }
 borsh = { workspace = true }
 describe = { workspace = true }
+ownership = { workspace = true }
 program = { workspace = true }
 store = { workspace = true }
 unicode-normalization = { workspace = true }

@@ -14,6 +14,8 @@ fn the_kinds_are_the_ones_the_programs_claim() {
         ("harness", harness::tables::MODELS.kind()),
         ("harness", harness::tables::CONVERSATIONS.kind()),
         ("egress", egress::tables::SERVICES.kind()),
+        ("files", files::tables::GUARDED.kind()),
+        ("files", files::tables::PINS.kind()),
     ];
     let declared: BTreeSet<_> = claimed
         .into_iter()

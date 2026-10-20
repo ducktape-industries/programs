@@ -799,7 +799,13 @@ fn carries_bytes(op: &files::Op) -> bool {
                 }
             )
         }),
-        files::Op::Pin { .. } | files::Op::Unpin { .. } | files::Op::Watch { .. } => false,
+        files::Op::Pin { .. }
+        | files::Op::Unpin { .. }
+        | files::Op::Watch { .. }
+        | files::Op::Guard { .. }
+        | files::Op::Unguard { .. }
+        | files::Op::AdoptOwners { .. }
+        | files::Op::Vacate { .. } => false,
     }
 }
 

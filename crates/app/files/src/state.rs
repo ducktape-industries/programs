@@ -1,7 +1,8 @@
-//! Everything files keeps in its own state: the head, every snapshot it minted in
-//! commit order, and named pins. Trees and bytes live in blobs, never here.
+//! Everything files keeps in its own state: the head, every snapshot it minted in commit order,
+//! named pins (files.pin) and guarded paths (files.path). Trees and bytes live in blobs.
 use ::program::{BlobId, Error, ProgramId, QueryCtx, not_found};
-use store::{Item, Map};
+use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
+use store::{Item, Kind, Map, Owned};
 
 use crate::objects::digest;
 use crate::{PinRow, SnapshotRow};
@@ -9,10 +10,28 @@ use crate::{PinRow, SnapshotRow};
 pub const HEAD: Item<SnapshotRow> = Item::new("head");
 pub const HISTORY: Map<u64, SnapshotRow> = Map::new("history/");
 pub const SNAPSHOTS: Map<[u8; 32], u64> = Map::new("snapshot/");
-pub const PINS: Map<String, PinRow> = Map::new("pin/");
+pub const PINS: Map<String, Owned<PinRow>> = Map::new("pin/");
+pub const GUARDED: Map<String, Owned<PathGuard>> = Map::new("guarded/");
 pub const COUNT: Item<u64> = Item::new("count");
 // each program told of every commit, and the prefix it hears them under
 pub const WATCHERS: Map<ProgramId, Vec<u8>> = Map::new("watchers/");
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct PathGuard {
+    pub rev: u64,
+}
+
+impl Kind for PathGuard {
+    const KIND: &'static str = "files.path";
+}
+
+impl Kind for PinRow {
+    const KIND: &'static str = "files.pin";
+}
+
+pub fn guard_key(path: &str) -> Vec<u8> {
+    GUARDED.key(&path.to_owned())
+}
 
 pub(crate) fn newest_first(seq: u64) -> u64 {
     u64::MAX - seq

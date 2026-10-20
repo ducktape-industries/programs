@@ -130,3 +130,35 @@ pub(crate) fn one_pin() -> Query {
         name: "release-1".into(),
     }
 }
+
+pub(crate) fn guard() -> Op {
+    Op::Guard {
+        path: "/home/tech/notes".into(),
+    }
+}
+
+pub(crate) fn unguard() -> Op {
+    Op::Unguard {
+        path: "/home/tech/notes".into(),
+    }
+}
+
+pub(crate) fn adopt() -> Op {
+    Op::AdoptOwners {
+        kind: "files.path".into(),
+        after: None,
+        limit: 100,
+    }
+}
+
+pub(crate) fn vacate() -> Op {
+    Op::Vacate {
+        paths: vec!["/home/tech/notes".into()],
+    }
+}
+
+pub(crate) fn guarded() -> Query {
+    Query::Guarded {
+        path: "/home/tech/notes/today.md".into(),
+    }
+}

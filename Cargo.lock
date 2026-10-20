@@ -2078,6 +2078,7 @@ dependencies = [
  "access",
  "borsh",
  "describe",
+ "ownership",
  "program",
  "store",
  "unicode-normalization",
@@ -4255,6 +4256,7 @@ version = "0.1.0"
 dependencies = [
  "chat",
  "egress",
+ "files",
  "forge",
  "harness",
  "identity",

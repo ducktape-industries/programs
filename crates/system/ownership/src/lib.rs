@@ -135,6 +135,10 @@ pub enum Op {
     Adopt {
         items: Vec<Adopted>,
     },
+    Moved {
+        from_key: Vec<u8>,
+        to_key: Vec<u8>,
+    },
 }
 
 #[derive(
@@ -234,6 +238,13 @@ pub fn describe(op: &Op) -> describe::Description {
             "Record owners from before the guard".into(),
             vec![field("items", Value::count(items.len() as u64))],
         ),
+        Op::Moved { from_key, to_key } => (
+            "Move a record to another key".into(),
+            vec![
+                field("from", Value::bytes(from_key)),
+                field("to", Value::bytes(to_key)),
+            ],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -273,7 +284,8 @@ fn op_variants_only_append() {
             "Relink",
             "Transfer",
             "SetDefault",
-            "Adopt"
+            "Adopt",
+            "Moved"
         ]
     );
 }

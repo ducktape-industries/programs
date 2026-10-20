@@ -7,6 +7,7 @@ use abi::role::identity::{Kind, Profile};
 
 use crate::*;
 
+mod guards;
 mod lists;
 mod watchers;
 

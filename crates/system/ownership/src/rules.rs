@@ -3,8 +3,8 @@
 
 use ::program::kernel::error_from;
 use ::program::{
-    AccountNumber, Error, ExecCtx, ProgramId, QueryCtx, corrupt, invalid, not_found, unauthorized,
-    wrong_state,
+    AccountNumber, Error, ExecCtx, Principal, ProgramId, QueryCtx, already_exists, corrupt,
+    invalid, not_found, unauthorized, wrong_state,
 };
 use abi::role::{self, identity, ownership::Guard};
 use store::{Item, Map, PageRequest, PageResponse, Set};
@@ -375,6 +375,37 @@ pub(crate) fn transfer(
             ..record
         },
     );
+    Ok(())
+}
+
+pub(crate) fn moved(ctx: &ExecCtx, from_key: Vec<u8>, to_key: Vec<u8>) -> Result<(), Error> {
+    let program = ctx.env().sending_program()?;
+    let own = account_of(ctx, &program)?;
+    let as_itself =
+        matches!(ctx.env().sender, Some(Principal::Account(number)) if Some(number) == own);
+    if !as_itself {
+        return Err(unauthorized(
+            "a program moves its own keys' records, in its own message as its own account",
+        ));
+    }
+    let from = (program.clone(), from_key);
+    let to = (program.clone(), to_key);
+    let record = RECORDS.get(ctx, &from)?.ok_or_else(|| {
+        not_found(format!(
+            "{program} keeps no owned {}",
+            design::preview(&from.1)
+        ))
+    })?;
+    if RECORDS.has(ctx, &to) {
+        return Err(already_exists(format!(
+            "{program}'s {} is recorded already",
+            design::preview(&to.1)
+        )));
+    }
+    LINKED.remove(ctx, &(record.policy, program.clone(), from.1.clone()));
+    LINKED.insert(ctx, &(record.policy, program, to.1.clone()));
+    RECORDS.remove(ctx, &from);
+    RECORDS.put(ctx, &to, &record);
     Ok(())
 }
 

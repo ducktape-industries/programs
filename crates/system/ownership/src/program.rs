@@ -34,6 +34,7 @@ impl Program for Ownership {
             Op::Transfer { program, key, to } => transfer(ctx, program, key, to),
             Op::SetDefault { scope, policy } => set_default(ctx, scope, policy),
             Op::Adopt { items } => rules::adopt(ctx, items),
+            Op::Moved { from_key, to_key } => rules::moved(ctx, from_key, to_key),
         }
     }
 

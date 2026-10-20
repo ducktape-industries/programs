@@ -1,7 +1,6 @@
-//! One commit: every change checked, every touched path compared between the base
-//! and the head, then the head's tree edited change by change, written back and named by a
-//! new snapshot. What each change needs of the access program is [`needs`]; a move carries
-//! the lists at and below its path to where it lands.
+//! One commit: every change checked, every touched path compared between base and head, then the
+//! head's tree edited change by change and named by a new snapshot. Each change rewrites the
+//! nearest guard at or above its path (`guards.rs`); a move carries the guards and lists beneath it.
 use std::collections::{BTreeMap, BTreeSet};
 
 use ::program::{
@@ -212,6 +211,16 @@ fn apply(
     edit: &mut TreeEdit,
     step: Step,
 ) -> Result<(), Error> {
+    match &step {
+        Step::Put { segments, .. } | Step::Mkdir(segments) | Step::Symlink { segments, .. } => {
+            crate::guards::touch(ctx, segments)?;
+            if by.is_some() {
+                crate::guards::claim_carried(ctx, segments)?;
+            }
+        }
+        Step::Remove(segments) => crate::guards::remove(ctx, segments)?,
+        Step::Rename { from, to } => crate::guards::rename(ctx, from, to)?,
+    }
     match step {
         Step::Put {
             segments,

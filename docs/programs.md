@@ -427,7 +427,8 @@ pays nothing for the guard. This repo's programs own these kinds (forge's review
 `harness.model`, chat's channels and messages, `chat.channel` and
 `chat.message`, forge's changes and repositories, `forge.change` and
 `forge.repo`, and who starts an agent's conversations,
-`harness.agent-conversation`). When others' ops write an item's record (a change's reviews, close
+`harness.agent-conversation`, and files' guarded paths and pins, `files.path`
+and `files.pin`). When others' ops write an item's record (a change's reviews, close
 and merge), the owned row is a small row of its own beside the shared record
 (forge's `Authorship`), which the item's own ops write.
 
@@ -445,6 +446,17 @@ Four rules hold for every owned table:
 - **Never delete an owned row to mean "empty".** A key's owner is whoever
   created it, so a row deleted and written again belongs to its new writer.
   Keep an empty value, or fold the row into the item's own.
+
+A program whose items nest need not claim each one. files keeps a
+`guarded/<path>` row only where a path's owner guards it (`Guard`), and each
+write rewrites the nearest one at or above the path it touches, so that row's
+policy decides the write and everything beneath it; with no row above, anyone
+writes. A file created beneath a chat message claims its own row, so it is its
+uploader's as their message is. A program that moves an owned row to another
+key (a renamed path) writes the new key unclaimed, sends the ownership role
+`Moved { from_key, to_key }` in its own message, as its own account, which
+moves the record with its owner and policy, and then deletes the old key
+(files' own `Vacate`), which no record guards any more.
 
 Rows a program kept before the ownership role was seated have no record, and
 the guard leaves a key with no record alone. Each program that owns kinds has

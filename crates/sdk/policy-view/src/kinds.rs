@@ -17,7 +17,7 @@ const fn of(name: &'static str, program: &'static str, label: &'static str) -> K
     }
 }
 
-pub static KINDS: [Kind; 8] = [
+pub static KINDS: [Kind; 10] = [
     of("chat.channel", "chat", "Chat channels"),
     of("chat.message", "chat", "Chat messages"),
     of("forge.repo", "forge", "Forge repositories"),
@@ -30,10 +30,12 @@ pub static KINDS: [Kind; 8] = [
         "Agents' conversations",
     ),
     of("egress.service", "egress", "Egress services"),
+    of("files.path", "files", "Files and folders"),
+    of("files.pin", "files", "Pinned snapshots"),
 ];
 
 // The programs that keep owned items, each once, in the order `KINDS` names them.
-pub static PROGRAMS: [&str; 4] = ["chat", "forge", "harness", "egress"];
+pub static PROGRAMS: [&str; 5] = ["chat", "forge", "harness", "egress", "files"];
 
 pub fn kind(name: &str) -> Option<&'static Kind> {
     KINDS.iter().find(|kind| kind.name == name)
