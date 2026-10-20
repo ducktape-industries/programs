@@ -14,7 +14,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use store::PageRequest;
 
-use super::{Run, Seat, Tool, blob, cursor_schema, next, object, page, principal, unexpected};
+use super::{
+    Run, Seat, Tool, blob, cursor_schema, lines, next, object, page, principal, unexpected,
+};
 
 pub(super) fn snapshot(text: &Option<String>) -> Result<Option<BlobId>, Error> {
     let Some(text) = text else {
@@ -188,13 +190,38 @@ pub(crate) struct ReadArgs {
     snapshot: Option<String>,
     offset: Option<u64>,
     length: Option<u64>,
+    lines: Option<(u64, u64)>,
+    heading: Option<String>,
+}
+
+fn by_lines(
+    ctx: &ExecCtx,
+    path: &str,
+    at: Option<BlobId>,
+    pick: impl FnOnce(&str) -> Result<lines::Picked, Error>,
+) -> Result<Run, Error> {
+    let at = resolved(ctx, at)?;
+    let text = String::from_utf8(read_all(ctx, path, at.as_ref())?).map_err(|_| {
+        invalid(format!(
+            "{path} is not UTF-8 text: read it by offset and length"
+        ))
+    })?;
+    let picked = pick(&text)?;
+    Ok(Run::Done(json!({
+        "snapshot": at.as_ref().map(blob),
+        "size": text.len(),
+        "lines": [picked.first, picked.last],
+        "total_lines": picked.total,
+        "eof": picked.last >= picked.total,
+        "text": picked.text,
+    })))
 }
 
 pub(crate) struct Read;
 
 impl Tool for Read {
     const NAME: &'static str = "files_read";
-    const DESCRIPTION: &'static str = "Read a file of the network's filesystem as text, from an offset, as much as files answers in one read; `eof` says whether the file goes on. The answer names the snapshot it read, which an edit can pass as its base.";
+    const DESCRIPTION: &'static str = "Read a file of the network's filesystem as text: from an offset, as much as files answers in one read; some of its lines; or the section under a markdown heading. `eof` says whether the file goes on, and a read by lines or heading names the lines it answered and how many the file has. The answer names the snapshot it read, which an edit can pass as its base.";
     type Args = ReadArgs;
 
     fn schema() -> Value {
@@ -204,15 +231,30 @@ impl Tool for Read {
                 "snapshot": snapshot_schema(),
                 "offset": { "type": "integer", "minimum": 0, "description": "the first byte to read; 0 if omitted" },
                 "length": { "type": "integer", "minimum": 1, "description": "how many bytes; the rest of the file if omitted" },
+                "lines": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "minItems": 2, "maxItems": 2, "description": "instead of offset and length: [from, to], these lines only, counted from 1, both included" },
+                "heading": { "type": "string", "description": "instead of offset and length, or lines: a markdown heading line of the file, like \"## Step 2\"; reads from it to the next heading of its level or a higher one, fenced code skipped" },
             }),
             &["path"],
         )
     }
 
     fn run(ctx: &ExecCtx, _: &Seat, args: ReadArgs) -> Result<Run, Error> {
+        let at = snapshot(&args.snapshot)?;
+        let ranged = args.offset.is_some() || args.length.is_some();
+        match (args.lines, args.heading) {
+            (None, None) => {}
+            (Some(_), Some(_)) => return Err(invalid("lines or a heading, not both")),
+            _ if ranged => return Err(invalid("lines or a heading, or a byte range, not both")),
+            (Some((from, to)), None) => {
+                return by_lines(ctx, &args.path, at, |text| lines::range(text, from, to));
+            }
+            (None, Some(heading)) => {
+                return by_lines(ctx, &args.path, at, |text| lines::section(text, &heading));
+            }
+        }
         let query = Query::Read {
             path: args.path,
-            at: snapshot(&args.snapshot)?,
+            at,
             offset: args.offset.unwrap_or(0),
             len: args.length.unwrap_or(u64::MAX),
         };

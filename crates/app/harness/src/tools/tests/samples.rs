@@ -24,6 +24,8 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             vec![
                 json!({ "path": "/home/tech/\"quoted\".md", "offset": 0, "length": 1048576 }),
                 json!({ "path": "/a", "snapshot": SNAPSHOT, "offset": null, "length": null }),
+                json!({ "path": "/shared/jobs/J-147/design.md", "lines": [1, 40], "snapshot": null }),
+                json!({ "path": "/a.md", "heading": "## Step 2: it's \"done\" 🦆", "lines": null, "offset": null }),
             ],
         ),
         (

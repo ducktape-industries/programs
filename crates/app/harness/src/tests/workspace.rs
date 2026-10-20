@@ -1,6 +1,6 @@
 //! An agent's workspace in files: `forge_commit` takes a files file or a whole directory, read
-//! at one snapshot, beside inline content; `files_edit` changes part of a file and keeps its mode
-//! and meta; `files_write` over a file keeps what the file carries.
+//! at one snapshot; `files_edit` and `files_write` keep the mode and meta a file carries; and
+//! `files_read` reads a file by its lines or by the section under one of its headings.
 use forge::EntryKind::{Directory, Executable, File};
 
 use super::forge_commit::{forged, log, names};
@@ -23,11 +23,11 @@ fn put(chain: &MockChain, path: &str, text: &str, exec: bool, meta: &[(&str, &st
                 .collect(),
             content: files::Content::Chunks {
                 size: text.len() as u64,
-                chunks: vec![
-                    chain
-                        .put_blob(files::CHUNK, text.as_bytes().to_vec())
-                        .unwrap(),
-                ],
+                chunks: text
+                    .as_bytes()
+                    .chunks(files::CHUNK_SIZE as usize)
+                    .map(|chunk| chain.put_blob(files::CHUNK, chunk.to_vec()).unwrap())
+                    .collect(),
             },
         }],
     };
@@ -475,4 +475,101 @@ fn a_write_that_names_a_list_writes_the_file_then_sets_its_list() {
     assert!(!failed, "{text}");
     let answer: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(answer["write"], Value::Null, "no list, no list set");
+}
+
+fn said_by(chain: &MockChain, thread: u64, call: &str) -> Value {
+    let (text, failed) = result_of(chain, thread, call);
+    assert!(!failed, "{call}: {text}");
+    serde_json::from_str(&text).unwrap()
+}
+
+#[test]
+fn a_read_by_lines_answers_them_whole_where_a_chunk_cuts_a_character() {
+    let world = world();
+    let chain = &world.chain;
+    let long = "x".repeat(files::CHUNK_SIZE as usize - 4);
+    let text = format!("{long}\né🦆\nend\n");
+    let at = put(chain, "/shared/wide.md", &text, false, &[]);
+    let thread = world.opened("m1", "read by lines", Some(WINDOW));
+    let by_lines = json!({ "path": "/shared/wide.md", "lines": [2, 9] });
+    let cut = json!({ "path": "/shared/wide.md", "offset": files::CHUNK_SIZE - 1, "length": 2 });
+    turn(
+        chain,
+        3,
+        &[("c1", "files_read", by_lines), ("c2", "files_read", cut)],
+    );
+    assert_eq!(
+        said_by(chain, thread, "c1"),
+        json!({
+            "snapshot": abi::hex(at.digest()),
+            "size": text.len(),
+            "lines": [2, 3],
+            "total_lines": 3,
+            "eof": true,
+            "text": "é🦆\nend\n",
+        })
+    );
+    assert_eq!(
+        said_by(chain, thread, "c2")["binary_bytes"],
+        json!(2),
+        "a byte range that cuts a character reads as bytes"
+    );
+}
+
+#[test]
+fn a_read_by_heading_answers_its_section_and_one_way_of_cutting_the_file_is_taken() {
+    let world = world();
+    let chain = &world.chain;
+    let design = "# Design\n## Step 1\none\n```md\n## Step 2\n```\n## Step 2\ntwo\n### Detail\nthree\n## Step 3\nfour\n";
+    let path = "/shared/design.md";
+    put(chain, path, design, false, &[]);
+    let thread = world.opened("m1", "read a section", Some(WINDOW));
+    let calls = [
+        (
+            "c1",
+            "files_read",
+            json!({ "path": path, "heading": "## Step 2" }),
+        ),
+        (
+            "c2",
+            "files_read",
+            json!({ "path": path, "heading": "## Step 9" }),
+        ),
+        (
+            "c3",
+            "files_read",
+            json!({ "path": path, "lines": [2, 3], "heading": "## Step 2" }),
+        ),
+        (
+            "c4",
+            "files_read",
+            json!({ "path": path, "lines": [2, 3], "offset": 0 }),
+        ),
+        ("c5", "files_read", json!({ "path": path, "lines": [3, 2] })),
+    ];
+    turn(chain, 3, &calls);
+    let said = said_by(chain, thread, "c1");
+    assert_eq!(
+        said["text"],
+        json!("## Step 2\ntwo\n### Detail\nthree\n"),
+        "the section runs past a deeper heading, and a fenced copy heads nothing"
+    );
+    assert_eq!(
+        (
+            said["lines"].clone(),
+            said["total_lines"].clone(),
+            said["eof"].clone()
+        ),
+        (json!([7, 10]), json!(12), json!(false))
+    );
+    let (missing, failed) = result_of(chain, thread, "c2");
+    assert!(failed && missing.starts_with(code::NOT_FOUND), "{missing}");
+    for (call, says) in [
+        ("c3", "lines or a heading, not both"),
+        ("c4", "or a byte range, not both"),
+        ("c5", "with to at least from"),
+    ] {
+        let (text, failed) = result_of(chain, thread, call);
+        assert!(failed && text.contains(says), "{call}: {text}");
+    }
 }

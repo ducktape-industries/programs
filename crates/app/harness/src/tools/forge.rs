@@ -13,7 +13,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use store::{PageRequest, PageResponse};
 
-use super::{Run, Seat, Tool, cursor_schema, next, object, page, principal, unexpected};
+use super::{Run, Seat, Tool, cursor_schema, lines, next, object, page, principal, unexpected};
 
 fn range(offset: Option<u64>, length: Option<u64>) -> Result<Option<forge::ByteRange>, Error> {
     match (offset, length) {
@@ -399,25 +399,6 @@ pub(crate) struct ReadArgs {
     lines: Option<(u64, u64)>,
 }
 
-fn lines_of(text: &str, from: u64, to: u64) -> Result<(String, u64, u64, u64), Error> {
-    if from == 0 || to < from {
-        return Err(invalid(
-            "lines is [from, to], counted from 1, with to at least from",
-        ));
-    }
-    let all: Vec<&str> = text.split_inclusive('\n').collect();
-    let total = all.len() as u64;
-    let first = from.min(total + 1);
-    let last = to.min(total);
-    let picked: String = all
-        .iter()
-        .skip(first as usize - 1)
-        .take((last + 1).saturating_sub(first) as usize)
-        .copied()
-        .collect();
-    Ok((picked, first, last, total))
-}
-
 pub(crate) struct Read;
 
 impl Tool for Read {
@@ -465,14 +446,14 @@ impl Tool for Read {
             }
             let shown = path.clone().unwrap_or_else(|| id.clone());
             let text = text_of(ctx, &args.repo, &id, &shown)?;
-            let (picked, first, last, total) = lines_of(&text, from, to)?;
+            let picked = lines::range(&text, from, to)?;
             return Ok(Run::Done(json!({
                 "id": id,
                 "path": path,
                 "size": text.len(),
-                "lines": [first, last],
-                "total_lines": total,
-                "text": picked,
+                "lines": [picked.first, picked.last],
+                "total_lines": picked.total,
+                "text": picked.text,
             })));
         }
         let asked = Query::Blob {

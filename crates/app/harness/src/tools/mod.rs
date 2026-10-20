@@ -9,6 +9,7 @@ pub(crate) mod files;
 mod forge;
 mod image;
 pub(crate) mod interface;
+mod lines;
 mod network;
 pub(crate) mod pods;
 pub(crate) mod prefix;
