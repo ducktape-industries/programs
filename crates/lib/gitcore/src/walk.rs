@@ -182,6 +182,53 @@ pub fn commits<S: Objects + ?Sized>(
     Ok(found.into_iter().map(|(_, id)| id).collect())
 }
 
+pub fn newest<S: Objects + ?Sized>(
+    store: &S,
+    from: &[Oid],
+    most: usize,
+    cap: usize,
+) -> Result<Vec<Oid>> {
+    let mut parents: BTreeMap<Oid, Vec<Oid>> = BTreeMap::new();
+    let mut queue = BinaryHeap::new();
+    for tip in from {
+        reach(store, &mut parents, &mut queue, *tip, cap)?;
+    }
+    let mut listed = Vec::new();
+    while listed.len() < most {
+        let Some((_, Reverse(id))) = queue.pop() else {
+            break;
+        };
+        listed.push(id);
+        if listed.len() == most {
+            break;
+        }
+        let next = parents.get_mut(&id).map(std::mem::take).unwrap_or_default();
+        for parent in next {
+            reach(store, &mut parents, &mut queue, parent, cap)?;
+        }
+    }
+    Ok(listed)
+}
+
+fn reach<S: Objects + ?Sized>(
+    store: &S,
+    parents: &mut BTreeMap<Oid, Vec<Oid>>,
+    queue: &mut BinaryHeap<(i64, Reverse<Oid>)>,
+    id: Oid,
+    cap: usize,
+) -> Result<()> {
+    if parents.contains_key(&id) {
+        return Ok(());
+    }
+    if parents.len() >= cap {
+        return Err(Error::CapReached);
+    }
+    let commit = commit_of(store, &id)?;
+    queue.push((commit.committer.time, Reverse(id)));
+    parents.insert(id, commit.parents);
+    Ok(())
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Walk {
     pub haves: Vec<Oid>,

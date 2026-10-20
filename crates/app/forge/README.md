@@ -422,10 +422,14 @@ anchor, and preserve drafts on failed submission.
 
 New bounds are `page_size`, `log_walk`, `tree_walk`, `diff_bytes`, `blob_bytes`,
 and `record_bytes`. Defaults live in qa's `forge_smoke::default_bounds()` (which also writes a founding's `forge.params`); founding
-chooses deployment values. `log_walk` bounds a complete DAG walk and the total
-review lookup count in one judgment query. A log beyond that complete-walk bound
-refuses rather than inventing partial ancestry; each page repeats the bounded
-walk. `tree_walk` bounds object reads in tree/blob/diff queries; log and compare
+chooses deployment values. `log_walk` bounds a DAG walk and the total
+review lookup count in one judgment query. A log with no `exclude` walks only as
+far as its page: the commits before its cursor, the page and one more, in the
+walk's own order. A log with `exclude` walks to where the two histories meet.
+Either refuses past `log_walk` commits rather than inventing partial ancestry,
+and each page repeats its walk. A push reads the objects its pack brings and
+only the refs its commands name; moving an existing branch walks from the new
+tip until it meets the old one, within `push_walk`. `tree_walk` bounds object reads in tree/blob/diff queries; log and compare
 have derived read budgets (`2 * log_walk + 1` and `8 * log_walk + tree_walk`).
 `diff_bytes` bounds aggregate object bytes read, including metadata; existing
 `merge_cost` bounds the Myers edit distance searched per file: the common head and

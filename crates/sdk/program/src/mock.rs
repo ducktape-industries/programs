@@ -95,6 +95,16 @@ pub struct MockState {
     pub siblings: BTreeMap<ProgramId, Sibling>,
     pub owners: BTreeMap<ProgramId, Owners>,
     pub verifier: Option<Verifier>,
+    pub work: Work,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Work {
+    pub gets: u64,
+    pub scanned: u64,
+    pub blob_gets: u64,
+    pub blob_stats: u64,
+    pub blob_reads: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -332,19 +342,27 @@ impl MockHost {
         let mut mock = self.borrow_mut();
         match op {
             HostOp::Get(key) | HostOp::CommittedGet(key) => {
+                mock.work.gets += 1;
                 HostReply::Value(mock.state.get(&key).cloned())
             }
             HostOp::Scan(scan) | HostOp::CommittedScan(scan) => {
-                HostReply::Entries(mock.scan_state(&scan.into()))
+                let entries = mock.scan_state(&scan.into());
+                mock.work.scanned += entries.len() as u64;
+                HostReply::Entries(entries)
             }
-            HostOp::BlobGet(id) => HostReply::Blob(mock.blobs.get(&id).cloned()),
+            HostOp::BlobGet(id) => {
+                mock.work.blob_gets += 1;
+                HostReply::Blob(mock.blobs.get(&id).cloned())
+            }
             HostOp::BlobStat(id) => {
+                mock.work.blob_stats += 1;
                 HostReply::BlobHeader(mock.blobs.get(&id).map(|blob| BlobHeader {
                     kind: blob.kind.clone(),
                     len: blob.body.len() as u64,
                 }))
             }
             HostOp::BlobRead { id, offset, len } => {
+                mock.work.blob_reads += 1;
                 HostReply::Value(mock.blobs.get(&id).map(|b| {
                     let start = (offset as usize).min(b.body.len());
                     let end = start.saturating_add(len as usize).min(b.body.len());

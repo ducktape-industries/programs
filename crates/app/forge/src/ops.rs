@@ -7,8 +7,11 @@ use ::program::{
     ExecCtx, QueryCtx, already_exists, capacity, decoded, invalid, not_found, stale, unauthorized,
     wrong_state,
 };
+use std::collections::BTreeMap;
+
 use gitcore::server::{Policy, RefUpdate};
-use gitcore::{Error as GitError, Limits, server};
+use gitcore::wire::receive::parse_request;
+use gitcore::{Error as GitError, Hash, Limits, Oid, server};
 
 use crate::changes::check_branch;
 use crate::contract::{
@@ -17,9 +20,9 @@ use crate::contract::{
 };
 use crate::objects::{ObjectWriter, object_not_held};
 use crate::state::{
-    ARCHIVED, PROTECTED, delete_ref, load_bounds, load_change, load_ref, load_refs, load_repo,
-    parse_oid, protected, ref_key, repo_exists, repo_hash, save_bounds, save_repo, set_ref,
-    sourced_by, storage,
+    ARCHIVED, PROTECTED, delete_ref, load_bounds, load_change, load_ref, load_repo, parse_oid,
+    protected, ref_key, repo_exists, repo_hash, save_bounds, save_repo, set_ref, sourced_by,
+    storage,
 };
 
 pub const PROGRAM: &str = "forge";
@@ -233,7 +236,7 @@ pub(crate) fn push(
     };
     let bounds = load_bounds(ctx)?;
     let hash = repo_hash(&repo);
-    let refs = load_refs(ctx, name, hash)?;
+    let refs = named_refs(ctx, name, request, hash)?;
     let policy = Policy {
         allow_force: repo.settings.allow_force,
         allow_delete: repo.settings.allow_delete,
@@ -273,6 +276,24 @@ pub(crate) fn push(
     save_repo(ctx, name, &repo)?;
     ctx.set_return_data(outcome.report);
     Ok(())
+}
+
+fn named_refs(
+    ctx: &QueryCtx,
+    name: &str,
+    request: &[u8],
+    hash: Hash,
+) -> Result<BTreeMap<Vec<u8>, Oid>, Error> {
+    let Ok(parsed) = parse_request(request, hash) else {
+        return Ok(BTreeMap::new());
+    };
+    let mut refs = BTreeMap::new();
+    for command in parsed.commands {
+        if let Some(target) = load_ref(ctx, name, &command.name, hash)? {
+            refs.insert(command.name, target);
+        }
+    }
+    Ok(refs)
 }
 
 pub(crate) fn delete_branch(

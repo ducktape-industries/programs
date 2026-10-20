@@ -187,12 +187,26 @@ pub fn log(
         Some(exclude) => vec![r.commit_id(resolve(ctx, name, exclude, r.hash)?)?],
         None => Vec::new(),
     };
-    let ids = r.result(gitcore::walk::commits(
-        &r.store,
-        &[tip],
-        &hidden,
-        cap(bounds.log_walk),
-    ))?;
+    let ids = match hidden.is_empty() {
+        true => {
+            let most = listing
+                .offset()?
+                .saturating_add(listing.limit() as usize)
+                .saturating_add(1);
+            r.result(gitcore::walk::newest(
+                &r.store,
+                &[tip],
+                most,
+                cap(bounds.log_walk),
+            ))?
+        }
+        false => r.result(gitcore::walk::commits(
+            &r.store,
+            &[tip],
+            &hidden,
+            cap(bounds.log_walk),
+        ))?,
+    };
     let page = listing.slice(&ids)?.try_map(|id| {
         let c = r.commit(&id)?;
         Ok(CommitInfo {

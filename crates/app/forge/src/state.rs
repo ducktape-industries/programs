@@ -147,7 +147,6 @@ pub fn ref_key(name: &str, reference: &[u8]) -> (String, Vec<u8>) {
     (name.to_owned(), reference.to_vec())
 }
 
-/// Every ref of a repository: what a push is checked against and git is told.
 pub fn load_refs(ctx: &QueryCtx, name: &str, hash: Hash) -> Result<BTreeMap<Vec<u8>, Oid>, Error> {
     REFS.scan(ctx, REFS.prefix_of(&name.to_owned()))?
         .into_iter()

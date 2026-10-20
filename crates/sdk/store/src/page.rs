@@ -134,6 +134,15 @@ impl Listing {
         })
     }
 
+    pub fn offset(&self) -> Result<usize, Error> {
+        match &self.after {
+            None => Ok(0),
+            Some(bytes) => <[u8; 8]>::try_from(bytes.as_slice())
+                .map(|b| u64::from_be_bytes(b) as usize)
+                .map_err(|_| invalid("a list cursor is an 8-byte offset")),
+        }
+    }
+
     pub fn scan(&self, prefix: &[u8]) -> program::Range {
         let mut scan = program::Range::prefix(prefix);
         if let Some(after) = &self.after {
@@ -171,12 +180,7 @@ impl Listing {
     /// A page of an in-memory list: the cursor's position is the big-endian
     /// offset of the next item.
     pub fn slice<T: Clone>(&self, values: &[T]) -> Result<PageResponse<T>, Error> {
-        let start = match &self.after {
-            None => 0,
-            Some(bytes) => <[u8; 8]>::try_from(bytes.as_slice())
-                .map(|b| u64::from_be_bytes(b) as usize)
-                .map_err(|_| invalid("a list cursor is an 8-byte offset"))?,
-        };
+        let start = self.offset()?;
         if start > values.len() {
             return Err(invalid("cursor past the end of this listing"));
         }

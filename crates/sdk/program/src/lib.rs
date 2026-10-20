@@ -76,7 +76,7 @@ pub use kernel::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use mock::{
-    Called, MockHost, MockState, Resumed, Sibling, Touch, Verifier, blob_id, identity_role,
+    Called, MockHost, MockState, Resumed, Sibling, Touch, Verifier, Work, blob_id, identity_role,
 };
 #[cfg(target_arch = "wasm32")]
 pub use program::exports;
