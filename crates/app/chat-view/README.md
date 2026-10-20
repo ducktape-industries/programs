@@ -11,8 +11,10 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
 - Rooms: the desktop sidebar (`ui/sidebar.rs`) and the phone's rooms page
   (`ui/phone/rooms.rs`) list the same rooms (`Chat::room_list`): the channels
   the reader is in (opened on this device, listened to, owned, or written in:
-  chat's `PostedIn`), then their direct rooms. Any other room, a change's or a job's too, is found by search,
-  which lists the rooms whose names hold the words above the message hits
+  chat's `PostedIn`), then their direct rooms. The channels they are not in,
+  a change's or a job's too, wait under the channels' last row, "N more
+  channels", which a press unfolds, by name (archived rooms never). Search
+  finds any room too: it lists the rooms whose names hold the words above the message hits
   (`Chat::found_rooms`; archived and direct rooms never). In both lists, a `/`
   in a channel's name files it under
   folders (`Chat::lines`): `jobs/j-097` is listed as `j-097` under **jobs**,

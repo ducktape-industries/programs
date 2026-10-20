@@ -29,6 +29,13 @@ pub(crate) const DIRECT_MESSAGES: &str = "Direct messages";
 // what the room lists say while the reader is in no channel and the network holds some
 pub(crate) const NONE_HELD: &str =
     "Rooms you open, own or listen to are listed here. Search finds the rest by name.";
+// the room lists' last row: the channels the reader is not in, which it unfolds
+pub(crate) fn more_channels(count: usize) -> String {
+    match count {
+        1 => "1 more channel".to_owned(),
+        count => format!("{count} more channels"),
+    }
+}
 // search's head over the rooms whose names match
 pub(crate) const ROOMS: &str = "Rooms";
 pub(crate) const LOADING_ROOMS: &str = "Loading rooms…";

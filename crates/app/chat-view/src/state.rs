@@ -112,6 +112,9 @@ pub struct Chat {
     // the room list's folders the reader closed, by path; kept on the device
     #[serde(default)]
     pub(crate) closed_folders: BTreeSet<String>,
+    // the channels the reader is not in, listed under the room list's last row
+    #[serde(skip)]
+    pub(crate) others_open: bool,
     /// Where the pointer is among the message rows: the row that carries
     /// the action strip, beside a chosen one. One slot whatever the pointer
     /// entered took last, so a strip that vanished under the pointer (its

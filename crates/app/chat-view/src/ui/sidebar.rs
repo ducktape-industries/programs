@@ -123,9 +123,23 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     // one Tab stop under the header: ↑ ↓ walk the channels, their folders
     // and the direct messages, Enter opens the active room or folder, → and
     // ← open and close the active folder
+    let others: &[&ChannelInfo] = match chat.others_open {
+        true => &room_list.others,
+        false => &[],
+    };
+    let more = (!room_list.others.is_empty()).then_some(Spot::More);
+    let unfolded = others
+        .iter()
+        .map(|info| Spot::Room(info.channel.id.clone()));
     let dms = room_list.dms.iter();
     let dms = dms.map(|dm| Spot::Room(dm.info.channel.id.clone()));
-    let spots: Vec<Spot> = plain.iter().map(Line::spot).chain(dms).collect();
+    let spots: Vec<Spot> = plain
+        .iter()
+        .map(Line::spot)
+        .chain(more)
+        .chain(unfolded)
+        .chain(dms)
+        .collect();
     let at = chat.rooms_at(&spots);
     let picked = spots.clone();
     // the Menu key or Shift+F10 opens the active room's menu, under its row
@@ -145,26 +159,29 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
             "down" => Some(false),
             _ => None,
         };
-        if let Some(up) = up.filter(|_| event.keystroke.modifiers.alt) {
+        let alt = up.filter(|_| event.keystroke.modifiers.alt);
+        if let (Some(up), Some(entry)) = (alt, spot.entry()) {
             chat.rooms_cursor = Some(spot.clone());
-            return chat.step(&spot.entry(), up, cx);
+            return chat.step(&entry, up, cx);
         }
-        let Spot::Folder { path, .. } = spot else {
-            return;
-        };
         let open = match event.keystroke.key.as_str() {
             "right" => true,
             "left" => false,
             _ => return,
         };
-        if !event.keystroke.modifiers.modified() {
-            chat.fold(path, open, cx);
-            cx.notify();
+        if event.keystroke.modifiers.modified() {
+            return;
         }
+        match spot {
+            Spot::Folder { path, .. } => chat.fold(path, open, cx),
+            Spot::More => chat.fold_others(open),
+            Spot::Room(_) => return,
+        }
+        cx.notify();
     });
     // a left press on a channel or folder row holds it; dragged onto another row of its level and
     // let go, it takes that row's place
-    let drawn: std::rc::Rc<[chat::Entry]> = plain.iter().map(|line| line.spot().entry()).collect();
+    let drawn: std::rc::Rc<[chat::Entry]> = plain.iter().map(Line::entry).collect();
     let (held, over) = (drawn.clone(), drawn);
     let hold =
         cx.listener(move |chat, event: &MouseDownEvent, _, _| chat.hold_row(event.position, &held));
@@ -193,6 +210,19 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     let mut index = 0;
     for line in &plain {
         box_ = box_.child(line_row(chat, line, open, index == at, cx, theme, ladder));
+        index += 1;
+    }
+    if !room_list.others.is_empty() {
+        let count = room_list.others.len();
+        box_ = box_.child(more_row(chat, count, index == at, cx, theme));
+        index += 1;
+    }
+    for info in others {
+        let selected = open == Some(info.channel.id.as_str());
+        let active = index == at;
+        box_ = box_.child(channel_row(
+            chat, info, 0, selected, active, None, cx, theme,
+        ));
         index += 1;
     }
     box_ = box_.child(section_header(
@@ -328,7 +358,7 @@ fn line_row(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
-    let landing = chat.landing(&line.spot().entry());
+    let landing = chat.landing(&line.entry());
     match line {
         Line::Room { info, depth } => {
             let selected = open == Some(info.channel.id.as_str());
@@ -336,6 +366,52 @@ fn line_row(
         }
         Line::Folder(folder) => folder_row(chat, folder, open, active, landing, cx, theme, ladder),
     }
+}
+
+// The row at the channels' end: how many channels the reader is not in, which a press lists under
+// it, and its chevron.
+fn more_row(
+    chat: &Chat,
+    count: usize,
+    active: bool,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+) -> AnyElement {
+    let toggle = cx.listener(|chat, _: &ClickEvent, _, cx| {
+        chat.fold_others(!chat.others_open);
+        cx.notify();
+    });
+    let open = chat.others_open;
+    let text = words::more_channels(count);
+    let row = div()
+        .id("chat-sidebar-more")
+        .flex()
+        .w_full()
+        .items_center()
+        .gap_1()
+        .min_h(design::size::CONTROL)
+        .px_1()
+        .bg(theme.sidebar)
+        .cursor_pointer()
+        .hover(|s| s.bg(theme.sidebar_raised))
+        .when(active, |row| row.bg(theme.sidebar_raised))
+        .aria_label(text.clone())
+        .aria_expanded(open)
+        .aria_selected(false)
+        .on_click(toggle)
+        .child(design::lead(
+            div()
+                .text_color(theme.sidebar_muted)
+                .child(if open { "▾" } else { "▸" }),
+        ))
+        .child(
+            div()
+                .flex_1()
+                .truncate()
+                .text_color(theme.sidebar_muted)
+                .child(text),
+        );
+    design::item(row, Role::ListBoxOption, active).into_any_element()
 }
 
 // A folder's chevron, the smallest box a pointer presses (the door's AX-017).

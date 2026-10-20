@@ -1,6 +1,6 @@
 //! The rooms, the chat's first page (Expo `app/(tabs)/chat/index.tsx`, boards 10-12): the title
-//! row, the channels the reader is in, in their folders, then their direct rooms newest first; a
-//! folder's row opens or closes it, and a long press lifts a channel or folder row to move it.
+//! row, the channels the reader is in, in their folders, and a row unfolding the rest, then their
+//! direct rooms newest first; a long press lifts a channel or folder row to move it.
 use view::prelude::*;
 use view::wire::{Action, ActionData};
 use view::{Div, Stateful};
@@ -109,7 +109,7 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     let lines = chat.lines(&list.channels);
     // a long press lifts the channel or folder row under it; the finger dragged onto another row
     // of its level and lifted, it takes that row's place
-    let drawn: std::rc::Rc<[Entry]> = lines.iter().map(|line| line.spot().entry()).collect();
+    let drawn: std::rc::Rc<[Entry]> = lines.iter().map(Line::entry).collect();
     let (held, over) = (drawn.clone(), drawn);
     let lift = cx.listener(move |chat, event: &ClickEvent, _, cx| {
         chat.hold_row(event.position(), &held);
@@ -120,6 +120,14 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     });
     let land = cx.listener(|chat, _: &MouseUpEvent, _, cx| chat.drop_row(cx));
     let mine = rows(chat, lines, cx, theme, ladder);
+    let more =
+        (!list.others.is_empty()).then(|| more_row(chat, list.others.len(), cx, theme, ladder));
+    let unfolded: Vec<AnyElement> = match chat.others_open {
+        true => (list.others.iter())
+            .map(|info| channel_row(chat, info, 0, cx, theme, ladder))
+            .collect(),
+        false => Vec::new(),
+    };
     let mut dms = Vec::new();
     for dm in &list.dms {
         dms.push(dm_row(chat, dm, cx, theme, ladder));
@@ -151,6 +159,8 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         })
         .children(empty)
         .children(elsewhere)
+        .children(more)
+        .children(unfolded)
         .child(
             design::section_head("chat-rooms-dms-head", words::DIRECT_MESSAGES, ladder, theme)
                 .children(count(list.dms.len()))
@@ -226,6 +236,36 @@ fn channel_row(
         .child(design::lead(hash.text_color(theme.muted)))
         .child(title(name, theme, ladder))
         .child(tail)
+        .into_any_element()
+}
+
+// The row at the channels' end: how many channels the reader is not in, which a press lists under
+// it.
+fn more_row(
+    chat: &Chat,
+    count: usize,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    let toggle = cx.listener(|chat, _: &ClickEvent, _window, cx| {
+        chat.fold_others(!chat.others_open);
+        cx.notify();
+    });
+    let shape = match chat.others_open {
+        true => "chevron-down",
+        false => "chevron-right",
+    };
+    let chevron = design::lead(design::icon(shape, ladder.icon_row).text_color(theme.muted));
+    let text = words::more_channels(count);
+    design::row("chat-rooms-more".to_owned(), ladder, theme)
+        .role(Role::Button)
+        .aria_label(text.clone())
+        .aria_expanded(chat.others_open)
+        .focusable()
+        .on_click(toggle)
+        .child(chevron)
+        .child(title(text, theme, ladder).text_color(theme.muted))
         .into_any_element()
 }
 

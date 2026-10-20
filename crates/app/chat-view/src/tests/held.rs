@@ -1,5 +1,5 @@
-//! The rooms the reader is in: both lists hold them alone (opened on this device, listened to,
-//! owned), and search finds the rest by name, above the messages.
+//! The rooms the reader is in: both lists hold them (opened on this device, listened to, owned),
+//! the rest unfold under their last row, and search finds rooms by name, above the messages.
 use super::phone::phone;
 use super::*;
 
@@ -229,4 +229,49 @@ fn the_desks_search_finds_rooms_by_name_with_no_room_open() {
         cx.find("chat-sidebar-channel-forge:web:3").is_some(),
         "opened, it is the reader's"
     );
+}
+
+const OTHERS: [&str; 4] = ["j-075", "j-101", "forge:web:3", "random"];
+
+// The channels of `OTHERS` a tree lists (`rooms` the phone's, `sidebar` the desk's).
+fn others_listed(cx: &TestAppContext, tree: &str) -> Vec<&'static str> {
+    OTHERS
+        .into_iter()
+        .filter(|room| cx.find(&format!("chat-{tree}-channel-{room}")).is_some())
+        .collect()
+}
+
+// The channels the reader is not in wait under the list's last row, on both trees: it counts them,
+// a press lists them under it by name, and one opened from there is the reader's.
+#[test]
+fn the_channels_the_reader_is_not_in_unfold_under_the_lists_last_row() {
+    let (mut cx, view) = phone();
+    busy_network(&cx, &["design"]);
+    cx.update(&view, |chat, _, cx| chat.load_channels(cx));
+    cx.run_until_parked();
+    assert!(cx.has_text("4 more channels"), "{:?}", cx.texts());
+    assert!(others_listed(&cx, "rooms").is_empty(), "folded");
+    cx.simulate_click("chat-rooms-more");
+    cx.run_until_parked();
+    assert_eq!(others_listed(&cx, "rooms"), OTHERS, "unfolded");
+    view.read(|chat| {
+        let list = chat.room_list();
+        let ids: Vec<&str> = (list.others.iter())
+            .map(|info| info.channel.id.as_str())
+            .collect();
+        assert_eq!(ids, ["j-075", "j-101", "random", "forge:web:3"], "by name");
+    });
+    cx.simulate_touch(false);
+    cx.simulate_resize(1200., 800.);
+    assert_eq!(others_listed(&cx, "sidebar"), OTHERS, "the desk's too");
+    cx.simulate_click("chat-sidebar-more");
+    cx.run_until_parked();
+    assert!(others_listed(&cx, "sidebar").is_empty(), "folded again");
+    cx.update(&view, |chat, _, cx| chat.choose("random".into(), cx));
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("3 more channels"),
+        "opened, Random is the reader's"
+    );
+    assert!(cx.find("chat-sidebar-channel-random").is_some());
 }

@@ -103,6 +103,7 @@ fn names_without_a_slash_keep_their_rows_and_order() {
             .map(|line| match line.spot() {
                 crate::room_list::Spot::Room(room) => room,
                 crate::room_list::Spot::Folder { path, .. } => format!("{path}/"),
+                crate::room_list::Spot::More => "more".to_owned(),
             })
             .collect();
         assert_eq!(

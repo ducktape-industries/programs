@@ -1,6 +1,6 @@
 //! The rooms the reader is in, as both lists draw them: their channels (opened on this device,
 //! listened to, written in or owned) under the folders a `/` in a name files, in the reader's own
-//! order, then their direct rooms newest first; search finds the rest by name.
+//! order, then their direct rooms newest first; the rest unfold under the list's last row.
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -33,6 +33,8 @@ pub(crate) struct RoomList<'a> {
     // the channels left out, archived or not the reader's: what tells a network with no channel
     // from a reader in none yet
     pub left_out: usize,
+    // the channels not the reader's and not archived, by name: what the list's last row unfolds
+    pub others: Vec<&'a ChannelInfo>,
 }
 
 // A row of the desktop's list the arrows stand on: a room, or a folder,
@@ -41,14 +43,17 @@ pub(crate) struct RoomList<'a> {
 pub(crate) enum Spot {
     Room(String),
     Folder { path: String, own: Option<String> },
+    // the row at the channels' end that unfolds the ones the reader is not in
+    More,
 }
 
 impl Spot {
-    // what the reader's order names the row by
-    pub(crate) fn entry(&self) -> Entry {
+    // what the reader's order names the row by: none for the last row
+    pub(crate) fn entry(&self) -> Option<Entry> {
         match self {
-            Spot::Room(room) => Entry::Room(room.clone()),
-            Spot::Folder { path, .. } => Entry::Folder(path.clone()),
+            Spot::Room(room) => Some(Entry::Room(room.clone())),
+            Spot::Folder { path, .. } => Some(Entry::Folder(path.clone())),
+            Spot::More => None,
         }
     }
 
@@ -57,6 +62,7 @@ impl Spot {
         match self {
             Spot::Room(room) => Some(room),
             Spot::Folder { own, .. } => own.as_deref(),
+            Spot::More => None,
         }
     }
 }
@@ -74,6 +80,14 @@ pub(crate) enum Line<'a> {
 }
 
 impl Line<'_> {
+    // what the reader's order names the line by
+    pub(crate) fn entry(&self) -> Entry {
+        match self {
+            Line::Room { info, .. } => Entry::Room(info.channel.id.clone()),
+            Line::Folder(folder) => Entry::Folder(folder.path.clone()),
+        }
+    }
+
     pub(crate) fn spot(&self) -> Spot {
         match self {
             Line::Room { info, .. } => Spot::Room(info.channel.id.clone()),
@@ -561,6 +575,11 @@ impl Chat {
         self.fold(path, open, cx);
     }
 
+    // The channels the reader is not in listed under the last row, or folded away.
+    pub(crate) fn fold_others(&mut self, open: bool) {
+        self.others_open = open;
+    }
+
     // A press on the row at `spot`: its room opens, or a folder alone opens
     // or closes.
     pub(crate) fn press_spot(&mut self, spot: &Spot, cx: &mut Context<Self>) {
@@ -570,6 +589,7 @@ impl Chat {
                 own: Some(room), ..
             }
             | Spot::Room(room) => self.choose(room.clone(), cx),
+            Spot::More => self.fold_others(!self.others_open),
         }
     }
 
@@ -581,21 +601,25 @@ impl Chat {
             .unwrap_or(created)
     }
 
-    // The rooms both lists hold: the channels the reader is in and their direct rooms. An archived
-    // room leaves the lists as it is archived, and any other, a change's or a job's too, is found by
-    // search; a link or the open room still reaches either through `channels`.
+    // The rooms both lists hold: the channels the reader is in and their direct rooms, and the
+    // channels they are not in, a change's or a job's too, for the last row to unfold. An archived
+    // room leaves the lists as it is archived; a link, search or the open room still reaches it.
     fn held_rooms(&self) -> RoomList<'_> {
         let mine = self.my_account();
         let mut list = RoomList {
             channels: Vec::new(),
             dms: Vec::new(),
             left_out: 0,
+            others: Vec::new(),
         };
         for info in self.channels.ready().into_iter().flatten() {
             let id = info.channel.id.as_str();
             let direct = chat::dm_peers(id).is_some();
             if info.channel.archived || !(direct || self.is_in(info)) {
                 list.left_out += usize::from(!direct);
+                if !direct && !info.channel.archived {
+                    list.others.push(info);
+                }
                 continue;
             }
             if !direct {
@@ -607,6 +631,8 @@ impl Chat {
                     .map(|peer| DmEntry { info, peer }),
             );
         }
+        list.others
+            .sort_by_cached_key(|info| info.channel.name.to_lowercase());
         list
     }
 
@@ -705,6 +731,7 @@ impl Chat {
         let at = |room: &str| spots.iter().position(|listed| listed.room() == Some(room));
         let row = match spot {
             Spot::Folder { path, .. } => folder_at(spots, path),
+            Spot::More => spots.iter().position(|listed| *listed == Spot::More),
             // a room a closed folder hides hands its row to that folder
             Spot::Room(id) => at(id)
                 .or_else(|| self.folding(id, spots))
