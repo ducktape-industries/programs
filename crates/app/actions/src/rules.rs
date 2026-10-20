@@ -644,6 +644,9 @@ pub(crate) fn report(
     check.log = log;
     CHECKS.put(ctx, &id, &check);
     report_commit_status(ctx, &check);
+    if state == State::Passed {
+        bring_back_skipped(ctx, &check)?;
+    }
     release(ctx, check.run)?;
     if matches!(state, State::Failed | State::Errored) {
         let run = RUNS
@@ -748,17 +751,50 @@ pub(crate) fn rerun(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     let run = RUNS
         .get(ctx, &check.run)?
         .ok_or_else(|| corrupt("r/", &check.run.to_be_bytes(), "a check's run is missing"))?;
+    queue_again(ctx, &run, &check)
+}
+
+// The check's job queued as its next attempt, asking, needing and naming what the check did.
+fn queue_again(ctx: &ExecCtx, run: &RunRow, check: &CheckRow) -> Result<(), Error> {
     let attempt = check
         .attempt
         .checked_add(1)
         .ok_or_else(|| Error::new(code::EXHAUSTED, "attempts exhausted"))?;
     let planned = Planned {
-        job: check.job,
-        asks: ASKS.get(ctx, &id)?.unwrap_or_default(),
-        needs: NEEDS.get(ctx, &id)?.unwrap_or_default(),
-        runners: NAMED.get(ctx, &id)?.unwrap_or_default(),
+        job: check.job.clone(),
+        asks: ASKS.get(ctx, &check.id)?.unwrap_or_default(),
+        needs: NEEDS.get(ctx, &check.id)?.unwrap_or_default(),
+        runners: NAMED.get(ctx, &check.id)?.unwrap_or_default(),
     };
-    queue(ctx, &run, planned, attempt)
+    queue(ctx, run, planned, attempt)
+}
+
+// A passed attempt of a job brings back each job of its run whose newest attempt it had skipped:
+// a next attempt of each, waiting on the newest attempts of what it needs as a rerun does.
+fn bring_back_skipped(ctx: &ExecCtx, passed: &CheckRow) -> Result<(), Error> {
+    let checks = of_run(ctx, passed.run)?;
+    let newest = |check: &CheckRow| {
+        checks
+            .iter()
+            .all(|other| other.job.id != check.job.id || other.attempt <= check.attempt)
+    };
+    let mut skipped = Vec::new();
+    for check in checks.iter().filter(|check| check.state == State::Skipped) {
+        let needs = NEEDS.get(ctx, &check.id)?.unwrap_or_default();
+        if newest(check) && needs.contains(&passed.job.id) {
+            skipped.push(check);
+        }
+    }
+    if skipped.is_empty() {
+        return Ok(());
+    }
+    let run = RUNS
+        .get(ctx, &passed.run)?
+        .ok_or_else(|| corrupt("r/", &passed.run.to_be_bytes(), "a check's run is missing"))?;
+    for check in skipped {
+        queue_again(ctx, &run, check)?;
+    }
+    Ok(())
 }
 
 // The files a running check produced, as a runner says: who said so is kept with them.

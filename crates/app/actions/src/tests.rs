@@ -1451,3 +1451,38 @@ fn a_job_that_names_no_runner_in_its_list_is_an_errored_run() {
     let why = "job \"gates\": runners names at least one account; leave it out for any runner";
     assert_eq!(world.run(1).error.as_deref(), Some(why));
 }
+
+// A rerun of a need that passes brings back what its failure skipped, one job at a time down the
+// line, each as its next attempt.
+#[test]
+fn a_rerun_that_passes_brings_back_the_jobs_its_failure_skipped() {
+    let mut world = world();
+    let root = world.commit(&[], &[("line.toml", LINE)]);
+    world.push(None, root, "main");
+    end(&world, 1, State::Failed);
+    world.act(&Op::Rerun { check: 1 }).unwrap();
+    end(&world, 4, State::Passed);
+    let sign = world.check(5);
+    assert_eq!(
+        (sign.job.id.as_str(), sign.attempt, sign.state),
+        ("sign", 2, State::Queued)
+    );
+    let met = Need {
+        job: "build".into(),
+        check: Some(4),
+    };
+    assert_eq!(needs(&world, 5), [met]);
+    assert_eq!(
+        world.check(3).state,
+        State::Skipped,
+        "publish waits for sign to pass"
+    );
+    end(&world, 5, State::Passed);
+    let publish = world.check(6);
+    assert_eq!(
+        (publish.job.id.as_str(), publish.attempt, publish.state),
+        ("publish", 2, State::Queued)
+    );
+    end(&world, 6, State::Passed);
+    assert_eq!(world.checks(root).len(), 6, "nothing more comes back");
+}
