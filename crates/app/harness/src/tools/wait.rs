@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use super::{Run, Seat, Tool, cursor_schema, next, object, page, write};
 use crate::waits::{armed, waits, what};
-use crate::{Op, PROGRAM, WaitFor, WaitRow};
+use crate::{Op, PROGRAM, Until, WaitFor, WaitRow};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
@@ -26,6 +26,8 @@ enum EventArgs {
     Change {
         repo: String,
         n: u64,
+        #[serde(default)]
+        until: Option<UntilArgs>,
     },
     Ref {
         repo: String,
@@ -35,6 +37,24 @@ enum EventArgs {
     File {
         path: String,
     },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum UntilArgs {
+    Merged,
+    Closed,
+    Either,
+}
+
+impl From<UntilArgs> for Until {
+    fn from(until: UntilArgs) -> Until {
+        match until {
+            UntilArgs::Merged => Until::Merged,
+            UntilArgs::Closed => Until::Closed,
+            UntilArgs::Either => Until::Either,
+        }
+    }
 }
 
 impl From<EventArgs> for WaitFor {
@@ -51,7 +71,20 @@ impl From<EventArgs> for WaitFor {
                 from,
                 mentions_me,
             },
-            EventArgs::Change { repo, n } => WaitFor::Change { repo, n },
+            EventArgs::Change {
+                repo,
+                n,
+                until: None,
+            } => WaitFor::Change { repo, n },
+            EventArgs::Change {
+                repo,
+                n,
+                until: Some(until),
+            } => WaitFor::Settled {
+                repo,
+                n,
+                until: until.into(),
+            },
             EventArgs::Ref { repo, reference } => WaitFor::Ref { repo, reference },
             EventArgs::File { path } => WaitFor::File { path },
         }
@@ -71,7 +104,7 @@ fn repo_schema() -> Value {
 
 impl Tool for For {
     const NAME: &'static str = "wait_for";
-    const DESCRIPTION: &'static str = "Wake this conversation once when an event happens, and end this turn meanwhile: once this reply's tool calls are back, you are not asked again until the event, or any other message, arrives. The event comes as one message saying what happened. Events: a `message` in a chat channel (only from one account with `from`, only one that mentions you or writes to you directly with `mentions_me`; whoever writes it, even someone you don't otherwise hear); a forge `change` whose source branch moves, or that is closed or merged (one already closed or merged is refused); a forge `ref` that moves (a branch's name alone is its refs/heads/ ref); a block's `height` (later than the current one); a `pod` of the pods service ending (by its name; a pod that has ended already wakes you at once); or a `file` of files that a commit changes (a file's bytes, mode or meta; anything below a directory; or the path being made or removed). A message that arrives first wakes you as usual, and the wait stays. Answers the wait's number, which wait_list shows and wait_cancel takes.";
+    const DESCRIPTION: &'static str = "Wake this conversation once when an event happens, and end this turn meanwhile: once this reply's tool calls are back, you are not asked again until the event, or any other message, arrives. The event comes as one message saying what happened. Events: a `message` in a chat channel (only from one account with `from`, only one that mentions you or writes to you directly with `mentions_me`; whoever writes it, even someone you don't otherwise hear); a forge `change` whose source branch moves, or that is closed or merged (one already closed or merged is refused), or with `until` only once it is merged, closed or either, its pushes heard by nothing (a change that ends the other way still ends the wait, saying so); a forge `ref` that moves (a branch's name alone is its refs/heads/ ref); a block's `height` (later than the current one); a `pod` of the pods service ending (by its name; a pod that has ended already wakes you at once); or a `file` of files that a commit changes (a file's bytes, mode or meta; anything below a directory; or the path being made or removed). A message that arrives first wakes you as usual, and the wait stays. Answers the wait's number, which wait_list shows and wait_cancel takes.";
     const WRITES: bool = true;
     type Args = ForArgs;
 
@@ -92,6 +125,7 @@ impl Tool for For {
             json!({
                 "repo": repo_schema(),
                 "n": { "type": "integer", "description": "the change's number" },
+                "until": { "type": "string", "enum": ["merged", "closed", "either"], "description": "wake only when the change ends so, not when its source moves; omitted, a push wakes you too" },
             }),
             &["repo", "n"],
         );

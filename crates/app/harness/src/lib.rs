@@ -804,7 +804,8 @@ pub struct Ran {
 }
 
 // what a wait (`wait_for`) waits for: a block's height, a pod of the pods service to end, a chat
-// message, a forge change to move, close or merge, a forge ref to move, or a files path to change
+// message, a forge change to move, close or merge, a forge ref to move, a files path to change, or
+// a forge change to end as `until` says, its source's moves heard by nothing
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum WaitFor {
     Height {
@@ -829,6 +830,19 @@ pub enum WaitFor {
     File {
         path: String,
     },
+    Settled {
+        repo: String,
+        n: u64,
+        until: Until,
+    },
+}
+
+// how a change must end for a `Settled` wait to be over: merged, closed, or either
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum Until {
+    Merged,
+    Closed,
+    Either,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]

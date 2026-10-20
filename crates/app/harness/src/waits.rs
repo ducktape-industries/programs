@@ -22,8 +22,8 @@ use crate::state::{
 };
 use crate::turns::{bound, converse, request, say_with};
 use crate::{
-    Asking, Body, Ended, Op, PROGRAM, ThreadRow, WaitFor, WaitRow, filed_as, forged_as, listening,
-    pod_event_as,
+    Asking, Body, Ended, Op, PROGRAM, ThreadRow, Until, WaitFor, WaitRow, filed_as, forged_as,
+    listening, pod_event_as,
 };
 
 pub(crate) const PODS: &str = "pods";
@@ -48,6 +48,14 @@ pub(crate) fn what(event: &WaitFor) -> String {
         WaitFor::Change { repo, n } => format!("change {n} in {repo} to move, close or merge"),
         WaitFor::Ref { repo, reference } => format!("{reference} in {repo} to move"),
         WaitFor::File { path } => format!("{path} to change in files"),
+        WaitFor::Settled { repo, n, until } => {
+            let how = match until {
+                Until::Merged => "be merged",
+                Until::Closed => "be closed",
+                Until::Either => "be merged or closed",
+            };
+            format!("change {n} in {repo} to {how}")
+        }
     }
 }
 
@@ -140,6 +148,11 @@ pub(crate) async fn wait(ctx: &Ctx, thread_id: u64, event: WaitFor) -> Result<()
             CHANGE_WAITS.insert(ctx, &((repo.clone(), *n), id));
             forge_waits(ctx, true)?;
         }
+        WaitFor::Settled { repo, n, .. } => {
+            open_change(ctx, repo, *n)?;
+            CHANGE_WAITS.insert(ctx, &((repo.clone(), *n), id));
+            forge_waits(ctx, true)?;
+        }
         WaitFor::Ref { repo, reference } => {
             known_repo(ctx, repo)?;
             watch_ref(ctx, id, repo, reference.clone());
@@ -223,7 +236,7 @@ fn disarm(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
             WATCHED.remove(ctx, &row.id);
             unwatch(ctx, row.agent, channel, watched)?;
         }
-        WaitFor::Change { repo, n } => {
+        WaitFor::Change { repo, n } | WaitFor::Settled { repo, n, .. } => {
             CHANGE_WAITS.remove(ctx, &((repo.clone(), *n), row.id));
             forge_waits(ctx, false)?;
         }
@@ -428,13 +441,32 @@ fn change_ended(
     repo: &str,
     n: u64,
     how: &str,
+    ending: Until,
 ) -> Result<Vec<(u64, String)>, Error> {
     let key = (repo.to_owned(), n);
-    let waits = CHANGE_WAITS.scan(ctx, CHANGE_WAITS.prefix_of(&key))?;
-    Ok(waits
-        .into_iter()
-        .map(|(_, wait)| (wait, format!("change {n} in {repo} {how}")))
-        .collect())
+    let mut ended = Vec::new();
+    for (_, wait) in CHANGE_WAITS.scan(ctx, CHANGE_WAITS.prefix_of(&key))? {
+        let Some(row) = open(ctx, wait)? else {
+            continue;
+        };
+        let words = format!("change {n} in {repo} {how}");
+        let what = match row.event {
+            WaitFor::Settled { until, .. } => settled_words(until, ending, words),
+            _ => words,
+        };
+        ended.push((wait, what));
+    }
+    Ok(ended)
+}
+
+// a change ended as `ending`: the words for a wait until `until`, saying where it can no longer
+// end as asked
+fn settled_words(until: Until, ending: Until, words: String) -> String {
+    match (until, ending) {
+        (Until::Merged, Until::Closed) => format!("{words}, so it will not be merged"),
+        (Until::Closed, Until::Merged) => format!("{words}, so it will not be closed"),
+        _ => words,
+    }
 }
 
 pub(crate) async fn forged(ctx: &Ctx, event: forge::Watched) -> Result<(), Error> {
@@ -468,11 +500,11 @@ pub(crate) async fn forged(ctx: &Ctx, event: forge::Watched) -> Result<(), Error
         forge::Watched::Opened { .. } | forge::Watched::Previewed { .. } => Vec::new(),
         forge::Watched::Closed { repo, n, by } => {
             let how = format!("was closed by {}", who(Some(by)));
-            change_ended(ctx, repo, *n, &how)?
+            change_ended(ctx, repo, *n, &how, Until::Closed)?
         }
         forge::Watched::Merged { repo, n, oid, by } => {
             let how = format!("was merged by {} as {oid}", who(Some(by)));
-            change_ended(ctx, repo, *n, &how)?
+            change_ended(ctx, repo, *n, &how, Until::Merged)?
         }
     };
     let mut woken = Vec::new();

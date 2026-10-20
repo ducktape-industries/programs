@@ -156,3 +156,69 @@ fn a_change_merged_ends_its_wait_and_only_forge_tells_it() {
     );
     assert_eq!(wake, words);
 }
+
+#[test]
+fn a_wait_until_merged_hears_no_push_and_ends_when_the_change_merges() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "wait for the merge", Some(WINDOW));
+    seeded(&world, thread);
+    let open = json!({ "repo": "notes", "from": "dev", "into": "main", "title": "dev's own" });
+    turn(chain, 7, &[("o1", "forge_change_open", open)]);
+    let until =
+        |until: &str| json!({ "event": { "change": { "repo": "notes", "n": 1, "until": until } } });
+    turn(
+        chain,
+        9,
+        &[
+            ("w1", "wait_for", until("merged")),
+            ("w2", "wait_for", until("closed")),
+        ],
+    );
+    let merged = waited(chain, thread, "w1");
+    let closed = waited(chain, thread, "w2");
+
+    chain.at(11, TIME_MS);
+    world.mention("m2", "push twice");
+    turn(
+        chain,
+        12,
+        &[("c1", "forge_commit", commit("dev", "one.md"))],
+    );
+    turn(
+        chain,
+        14,
+        &[("c2", "forge_commit", commit("dev", "two.md"))],
+    );
+    assert!(
+        wakes(chain, thread).is_empty(),
+        "a push wakes no wait until merged"
+    );
+
+    chain.at(16, TIME_MS);
+    let merge = Op::Forged(forge::Watched::Merged {
+        repo: "notes".into(),
+        n: 1,
+        oid: "abc123".into(),
+        by: Principal::Account(world.ada),
+    });
+    chain
+        .submit(Origin::Program(forge::PROGRAM.into()), PROGRAM, &merge)
+        .unwrap();
+    let told = wakes(chain, thread);
+    let ada = world.ada;
+    let by_merge =
+        format!("Wait {merged} is over: change 1 in notes was merged by account {ada} as abc123.");
+    let not_closed = format!(
+        "Wait {closed} is over: change 1 in notes was merged by account {ada} as abc123, so it will not be closed"
+    );
+    assert!(
+        told.iter().any(|wake| wake.starts_with(&by_merge)),
+        "{told:?}"
+    );
+    assert!(
+        told.iter().any(|wake| wake.starts_with(&not_closed)),
+        "{told:?}"
+    );
+    assert_eq!(told.len(), 2, "each wait wakes once: {told:?}");
+}

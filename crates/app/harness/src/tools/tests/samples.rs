@@ -328,6 +328,7 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
                 json!({ "event": { "message": { "channel": "j-051", "from": 17, "mentions_me": true } } }),
                 json!({ "event": { "message": { "channel": "j-051" } } }),
                 json!({ "event": { "change": { "repo": "programs", "n": 88 } } }),
+                json!({ "event": { "change": { "repo": "programs", "n": 88, "until": "merged" } } }),
                 json!({ "event": { "ref": { "repo": "programs", "ref": "refs/heads/dev" } } }),
                 json!({ "event": { "file": { "path": "/shared/tools/warm-pod" } } }),
             ],
