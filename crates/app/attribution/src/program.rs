@@ -2,7 +2,9 @@
 //! change handed to it is absorbed, so it never fails the write that reported the change.
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
-use crate::rules::{attribute, changes, changes_of, changes_to, register, registered, relations};
+use crate::rules::{
+    attribute, change_at, changes, changes_of, changes_to, register, registered, relations,
+};
 use crate::{Op, PROGRAM, Query, Reply};
 
 pub struct Attribution;
@@ -36,6 +38,7 @@ impl Program for Attribution {
                 Ok(Reply::Changes(changes_of(ctx, &source, &page)?))
             }
             Query::Registered => Ok(Reply::Registered(registered(ctx)?)),
+            Query::Change { seq } => Ok(Reply::Change(change_at(ctx, seq)?)),
         }
     }
 }

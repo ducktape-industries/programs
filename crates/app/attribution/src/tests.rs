@@ -137,6 +137,13 @@ fn changes_to(chain: &MockChain, recipient: AccountNumber) -> Vec<(String, Reaso
         .collect()
 }
 
+fn change_at(chain: &MockChain, seq: u64) -> Option<Change> {
+    let Reply::Change(change) = chain.query(PROGRAM, &Query::Change { seq }).unwrap() else {
+        panic!()
+    };
+    change
+}
+
 fn update(id: &str, revision: u64, relations: Vec<Relation>, transfers: Vec<Transfer>) -> Op {
     Op::Attribute(Update {
         object: Object {
@@ -339,4 +346,15 @@ fn a_refusal_by_the_program_handed_a_change_changes_nothing() {
         changes_to(&chain, SCRIPTED),
         [("t".into(), Reason::Ownership, Kind::Added)]
     );
+}
+
+#[test]
+fn a_change_reads_back_by_its_seq() {
+    let chain = chain();
+    report(&chain, update("t", 1, vec![owner(1), owner(2)], Vec::new())).unwrap();
+    let second = change_at(&chain, 2).unwrap();
+    let read = (second.seq, second.recipient, second.source.object.id);
+    assert_eq!(read, (2, 2, "t".to_owned()));
+    assert_eq!(second.kind, Kind::Added);
+    assert_eq!(change_at(&chain, 3), None);
 }

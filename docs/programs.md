@@ -511,7 +511,9 @@ the program's own op variant. A change about an active program account whose
 script calls a registered program goes to that program alone, as
 `deliver ++ borsh(change)`; a change about a user, a suspended account, or an
 account whose script calls a program that never registered is recorded and
-handed to no one.
+handed to no one. Whoever acts for such an account off the network follows
+attribution's `to/<recipient>/<seq>` rows (each key is the recipient and the
+seq, both u64 big-endian) and reads each change with `Query::Change { seq }`.
 
 A reply names only the message's id. A program that wants to know *what* it
 was waiting for keeps that itself:

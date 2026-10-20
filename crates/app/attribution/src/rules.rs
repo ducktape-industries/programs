@@ -227,6 +227,10 @@ fn change(ctx: &QueryCtx, seq: u64) -> Result<Change, Error> {
         .ok_or_else(|| ::program::corrupt("change/", &seq.to_be_bytes(), "indexed but missing"))
 }
 
+pub(crate) fn change_at(ctx: &QueryCtx, seq: u64) -> Result<Option<Change>, Error> {
+    CHANGES.get(ctx, &seq)
+}
+
 pub(crate) fn changes_to(
     ctx: &QueryCtx,
     recipient: AccountNumber,

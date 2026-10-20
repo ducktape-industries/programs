@@ -135,6 +135,9 @@ pub enum Query {
     #[ask(Reply::Registered(Vec<ProgramId>))]
     #[reads(state::REGISTERED)]
     Registered,
+    #[ask(Reply::Change(Option<Change>))]
+    #[reads(state::CHANGES)]
+    Change { seq: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -142,6 +145,7 @@ pub enum Reply {
     Relations(Option<Relations>),
     Changes(PageResponse<Change>),
     Registered(Vec<ProgramId>),
+    Change(Option<Change>),
 }
 
 impl Change {
