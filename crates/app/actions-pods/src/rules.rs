@@ -1,6 +1,6 @@
 //! A check run as a pod: booked when actions offers it, run the block after, the pod made, then the
 //! check claimed, the pod's end heard as a stream, `/out` kept, the check reported and the pod
-//! deleted. A quota with no room leaves the check queued; `Sweep` settles the pods runs left.
+//! deleted. No room, or a pod not made, leaves the check queued; `Sweep` settles and retries.
 use ::program::{
     BlobId, Cause, Ctx, Error, ExecCtx, HashKind, ProgramId, QueryCtx, code, decoded, invalid,
     unauthorized, unexpected_reply, wrong_state,
@@ -22,6 +22,7 @@ pub(crate) const WAITING: Set<u64> = Set::new("w/");
 pub(crate) const MAKING: Set<u64> = Set::new("m/");
 pub(crate) const CONCURRENT: Item<u64> = Item::new("concurrent");
 pub(crate) const ADOPTING: Map<u64, Adopting> = Map::new("a/");
+pub(crate) const SWEEP_AT: Item<u64> = Item::new("sweep-at");
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub(crate) struct Adopting {
@@ -38,6 +39,7 @@ struct Ending {
 enum Made {
     Pod(String),
     Full,
+    Unmade,
     Refused(String),
 }
 
@@ -103,6 +105,11 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
             WAITING.insert(&ctx, &check);
             return Ok(());
         }
+        Made::Unmade => {
+            WAITING.insert(&ctx, &check);
+            book_sweep(&ctx).await;
+            return Ok(());
+        }
         Made::Refused(why) => {
             report(&ctx, check, Ending::errored(why)).await;
             return Ok(());
@@ -164,6 +171,24 @@ fn pods_counting_against_quota(ctx: &QueryCtx, check: &CheckRow) -> u64 {
             Err(_) => true,
         });
     (making + held.count()) as u64
+}
+
+async fn book_sweep(ctx: &Ctx) {
+    let height = ctx.env().height;
+    let booked = SWEEP_AT.get(ctx).ok().flatten();
+    if booked.is_some_and(|at| at > height) {
+        return;
+    }
+    let at = height.saturating_add(DEFAULT_WAIT);
+    let own = ctx.env().program.clone();
+    if ctx.schedule(at, own, &Op::Sweep).await.is_ok() {
+        SWEEP_AT.put(ctx, &at);
+    }
+}
+
+pub(crate) fn still_waiting(ctx: &QueryCtx) -> Result<Vec<u64>, Error> {
+    let queued = |id: &u64| check_row(ctx, *id).map_or(true, |row| row.state == State::Queued);
+    Ok(WAITING.all(ctx)?.into_iter().filter(queued).collect())
 }
 
 pub(crate) async fn sweep(ctx: Ctx) -> Result<(), Error> {
@@ -399,6 +424,9 @@ async fn create_pod_with_quota(ctx: &Ctx, check: &CheckRow) -> Made {
                 None => Made::Full,
             };
         }
+    }
+    if answer.status >= 500 {
+        return Made::Unmade;
     }
     if !(200..300).contains(&answer.status) {
         return Made::Refused(refusal("/v1/pods", &answer));

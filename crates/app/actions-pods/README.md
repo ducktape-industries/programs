@@ -11,7 +11,7 @@ Shapes: `src/lib.rs`; checks: `src/rules.rs`.
 | `Offer(offer)` | actions only |
 | `Run { check }`, `Resume { check }` | actions-pods' own scheduled run |
 | `Heard(event)` | the egress role's program only |
-| `Sweep` | anyone |
+| `Sweep` | anyone; actions-pods books its own a whole egress wait (`DEFAULT_WAIT`) out while a check waits on a pod the cluster did not make |
 | `SetConcurrent { most }` | anyone |
 
 Every query is answered for anyone.

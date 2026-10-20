@@ -1006,3 +1006,64 @@ fn a_needed_output_that_would_leave_its_folder_errs_the_check_and_makes_no_pod()
         [(ASTRAY, State::Errored, why.to_owned(), None)]
     );
 }
+
+const UNMADE: &str = "the pod was not created: Error from server (InternalError): error when creating \"STDIN\": Internal error occurred: resource quota evaluation timed out";
+
+#[test]
+fn a_pod_the_cluster_did_not_make_waits_and_the_sweep_it_books_makes_it_again() {
+    let mut node = node();
+    node.offer(1).unwrap();
+    node.after(2_000);
+    node.after(0);
+    node.answer(500, 502, json!({"error": UNMADE}));
+    assert!(
+        node.reports().is_empty(),
+        "a pod not made is not the check's end"
+    );
+    assert_eq!(node.waiting(), [1]);
+    for _ in 1..DEFAULT_WAIT {
+        node.after(1_000);
+    }
+    assert!(node.idle(), "nothing tries again before the booked Sweep");
+    node.after(1_000);
+    node.after(0);
+    node.answer_to(500, "POST", "/v1/pods", 502, json!({"error": UNMADE}));
+    assert_eq!(
+        node.waiting(),
+        [1],
+        "still waiting, so another Sweep is booked"
+    );
+    for _ in 0..DEFAULT_WAIT {
+        node.after(1_000);
+    }
+    node.after(0);
+    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-7"));
+    assert!(node.waiting().is_empty() && node.reports().is_empty());
+    assert_eq!(node.held(), [1]);
+}
+
+#[test]
+fn a_waiting_check_that_ended_elsewhere_is_not_counted_as_waiting() {
+    let mut node = node();
+    node.concurrent(2).unwrap();
+    waiting_on_its_pod(&mut node);
+    node.offer(2).unwrap();
+    node.after(1_000);
+    node.after(0);
+    node.answer_to(500, "POST", "/v1/pods", 403, json!({"error": FULL}));
+    assert_eq!(node.waiting(), [2]);
+    let superseded = actions::Op::Report {
+        check: 2,
+        state: State::Superseded,
+        summary: "superseded by a push".into(),
+        log: None,
+    };
+    let owner = Origin::Signed(OWNER.to_vec());
+    node.chain
+        .submit(owner, actions::PROGRAM, &superseded)
+        .unwrap();
+    assert!(
+        node.waiting().is_empty(),
+        "the queue says how deep it really is"
+    );
+}

@@ -2,7 +2,7 @@
 use ::program::{Awaiting, Ctx, Error, ExecCtx, Program, QueryCtx, Reply as Wanted, decoded};
 
 use crate::rules::{
-    PODS, RUNS, WAITING, concurrent, heard, offered, resume, run, set_concurrent, sweep,
+    PODS, RUNS, concurrent, heard, offered, resume, run, set_concurrent, still_waiting, sweep,
 };
 use crate::{Config, Op, PROGRAM, Query, Reply};
 
@@ -28,7 +28,7 @@ impl Program for ActionsPods {
         match query {
             Query::Run { check } => Ok(Reply::Run(RUNS.get(ctx, &check)?)),
             Query::Pods => Ok(Reply::Pods(PODS.all(ctx)?)),
-            Query::Waiting => Ok(Reply::Waiting(WAITING.all(ctx)?)),
+            Query::Waiting => Ok(Reply::Waiting(still_waiting(ctx)?)),
             Query::Concurrent => Ok(Reply::Concurrent(concurrent(ctx)?)),
         }
     }

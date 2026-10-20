@@ -81,7 +81,7 @@ pub enum Query {
     #[ask(Reply::Pods(Vec<(u64, PodRow)>))]
     #[reads(PODS)]
     Pods,
-    // The checks the quota had no room for, left queued until one of this runner's pods ends.
+    // The checks still queued that wait for room in the quota or for a pod the cluster did not make.
     #[ask(Reply::Waiting(Vec<u64>))]
     #[reads(WAITING)]
     Waiting,
