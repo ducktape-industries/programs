@@ -17,8 +17,6 @@ pub const LINES: Set<(String, Vec<u8>, u64)> = Set::new("l/");
 pub const QUEUED: Set<u64> = Set::new("q/");
 // The open change whose source a repository's ref is.
 pub const SOURCES: Map<(String, Vec<u8>), u64> = Map::new("o/");
-// Index: the open changes into each branch, previewed again when it moves.
-pub const TARGETS: Set<(String, Vec<u8>, u64)> = Set::new("t/");
 // The Previews actions asked forge for, by the message's seq, until forge answers in the
 // frame that asked.
 pub const PREVIEWING: Map<u64, (String, u64)> = Map::new("p/");

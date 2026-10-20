@@ -438,7 +438,7 @@ fn a_push_to_a_branch_a_workflow_names_queues_a_check_per_job_and_offers_it() {
 }
 
 #[test]
-fn a_change_runs_what_on_change_names_on_its_preview_each_time_either_head_moves() {
+fn a_change_runs_what_on_change_names_on_its_preview_each_time_its_source_moves_never_its_target() {
     let mut world = world();
     let root = world.commit(&[], &[("changes.toml", CHANGES)]);
     world.push(None, root, "main");
@@ -471,16 +471,41 @@ fn a_change_runs_what_on_change_names_on_its_preview_each_time_either_head_moves
     assert_eq!(jobs(&world.checks(second)), [("review", State::Queued)]);
     let moved = world.commit(&[root], &[("changes.toml", CHANGES)]);
     world.push(Some(root), moved, "main");
+    assert_eq!(
+        world.preview(1),
+        second,
+        "a move of the target previews nothing"
+    );
+    assert_eq!(jobs(&world.checks(second)), [("review", State::Queued)]);
+    let again = world.commit(&[later], &[("changes.toml", CHANGES)]);
+    world.push(Some(later), again, "feature");
     let third = world.preview(1);
-    assert_ne!(third, second, "the target moved");
+    assert_ne!(third, second, "the source moved");
+    let asked = forge::Query::Preview {
+        repo: REPO.into(),
+        n: 1,
+    };
+    let reply = world.chain.query(forge::PROGRAM, &asked).unwrap();
+    let forge::Reply::Preview {
+        preview: Some(made),
+        ..
+    } = reply
+    else {
+        panic!("change 1 has no Preview: {reply:?}");
+    };
+    assert_eq!(
+        made.into_head,
+        moved.to_hex(),
+        "on the target's newest head"
+    );
     assert_eq!(jobs(&world.checks(third)), [("review", State::Queued)]);
     let close = forge::Op::ChangeClose {
         repo: REPO.into(),
         n: 1,
     };
     world.forge(&close).unwrap();
-    let last = world.commit(&[later], &[("changes.toml", CHANGES)]);
-    world.push(Some(later), last, "feature");
+    let last = world.commit(&[again], &[("changes.toml", CHANGES)]);
+    world.push(Some(again), last, "feature");
     assert_eq!(world.preview(1), third, "the change is closed");
 }
 
@@ -872,7 +897,6 @@ fn a_change_opened_before_actions_watched_joins_on_its_first_preview() {
     let actions = world.chain.host(PROGRAM);
     let ctx = actions.exec(::program::MockHost::env(PROGRAM));
     crate::state::SOURCES.remove(&ctx, &(REPO.to_owned(), b"refs/heads/feature".to_vec()));
-    crate::state::TARGETS.remove(&ctx, &(REPO.to_owned(), b"refs/heads/main".to_vec(), 1));
     drop(ctx);
     let previewed = forge::Op::Preview {
         repo: REPO.into(),

@@ -19,3 +19,13 @@ commit's status. Shapes: `src/lib.rs`; checks: `src/rules.rs`.
 | `Outputs { check, files }` | the account that claimed the check, while it is running; who sent them is kept |
 
 Every query is answered for anyone.
+
+## When a change's checks run
+
+A workflow whose `on.change` names `opened` or `updated` runs on each Preview of a change: actions
+asks forge for one the block after the change opens and after each push to its source, and forge
+makes one for the change at the front of a merge queue. A move of the target previews nothing, so
+a change's checks say how it did on the target head its Preview was built on (forge
+`Query::Preview`'s `into_head`, the Preview commit's parent). A merge queue checks the change
+again on the target's tip before it lands, and the target's own `on.push` workflows check each
+landing.

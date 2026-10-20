@@ -10,7 +10,7 @@ use store::Item;
 
 use crate::state::{
     ASKS, BY_COMMIT, BY_EVENT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, LINES, MET, NAMED, NEEDS,
-    OFFERING, OUTPUTS, PREVIEWING, QUEUED, RUNNERS, RUNS, SOURCES, TARGETS,
+    OFFERING, OUTPUTS, PREVIEWING, QUEUED, RUNNERS, RUNS, SOURCES,
 };
 use crate::workflow::{self, Planned};
 use crate::{
@@ -43,13 +43,6 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
                     false => SOURCES.remove(ctx, &source),
                 }
             }
-            let into = TARGETS.range_of(ctx, &source, &PageRequest::default())?;
-            for (_, _, n) in into.items {
-                match still_open(ctx, &repo, n)? {
-                    true => schedule_preview_next_block(ctx, &repo, n)?,
-                    false => TARGETS.remove(ctx, &(repo.clone(), reference.clone(), n)),
-                }
-            }
             let why = format!(
                 "superseded by a push of {} to {}",
                 short(&commit),
@@ -67,17 +60,10 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             let why = format!("change #{n} merged");
             supersede_earlier_runs(ctx, &repo, preview_ref(n).as_bytes(), &why)
         }
-        Watched::Opened {
-            repo,
-            n,
-            from,
-            into,
-            ..
-        } => {
+        Watched::Opened { repo, n, from, .. } => {
             if let Revision::Ref(reference) = from {
                 SOURCES.put(ctx, &(repo.clone(), reference), &n);
             }
-            TARGETS.insert(ctx, &(repo.clone(), into, n));
             schedule_preview_next_block(ctx, &repo, n)
         }
         Watched::Previewed {
@@ -135,7 +121,6 @@ fn adopt_untracked_change(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error
     if let Revision::Ref(reference) = change.from {
         SOURCES.put(ctx, &(repo.to_owned(), reference), &n);
     }
-    TARGETS.insert(ctx, &(repo.to_owned(), change.into, n));
     Ok(())
 }
 
