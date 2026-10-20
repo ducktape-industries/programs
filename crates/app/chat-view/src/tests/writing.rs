@@ -801,3 +801,63 @@ fn the_pane_says_where_it_is_for_the_mention_menu() {
     };
     chat.read(|chat| assert_eq!(chat.layout.pane, Some(pane)));
 }
+
+fn refused_in_general() -> (TestAppContext, Entity<Chat>) {
+    let (mut cx, view) = opened();
+    cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
+    cx.host()
+        .refuse::<Submit<::chat::Chat>>("unauthorized", "not a member");
+    cx.simulate_focus("draft-general/editor");
+    cx.simulate_input("draft-general/editor", "turned away");
+    cx.simulate_field_key("draft-general/editor", "enter");
+    cx.run_until_parked();
+    let notice = cx.interactivity("draft-general/note");
+    assert_eq!(
+        notice.aria.label.as_deref(),
+        Some("That didn’t go through: not a member"),
+        "the whole refusal, said to assistive technology"
+    );
+    (cx, view)
+}
+
+#[test]
+fn a_refusal_notice_goes_on_a_click() {
+    let (mut cx, view) = refused_in_general();
+    cx.simulate_click("draft-general/note");
+    cx.run_until_parked();
+    assert!(cx.find("draft-general/note").is_none(), "{:?}", cx.texts());
+    assert!(
+        cx.has_text("An earlier message wasn’t sent"),
+        "the text to restore stays"
+    );
+    view.read(|chat| assert!(chat.drafts["draft-general"].note.is_empty()));
+}
+
+#[test]
+fn a_refusal_notice_goes_with_the_next_good_send() {
+    let (mut cx, _) = refused_in_general();
+    cx.host()
+        .handle::<Submit<::chat::Chat>>(|_| Ok(view::testing::applied(Vec::new())));
+    cx.simulate_focus("draft-general/editor");
+    cx.simulate_input("draft-general/editor", "let in");
+    cx.simulate_field_key("draft-general/editor", "enter");
+    cx.run_until_parked();
+    assert!(cx.find("draft-general/note").is_none(), "{:?}", cx.texts());
+}
+
+#[test]
+fn a_refusal_notice_goes_when_the_room_changes() {
+    let (mut cx, view) = refused_in_general();
+    cx.update(&view, |chat, _, cx| {
+        chat.open("dm-7-8".into(), cx);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    cx.simulate_click("chat-sidebar-channel-general");
+    cx.run_until_parked();
+    assert!(cx.find("draft-general/note").is_none(), "{:?}", cx.texts());
+    assert!(
+        cx.has_text("An earlier message wasn’t sent"),
+        "the text to restore stays"
+    );
+}

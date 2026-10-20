@@ -1379,3 +1379,31 @@ fn export_markdown_phone_screens() {
     )
     .unwrap();
 }
+
+#[test]
+fn a_refusal_on_a_phone_reads_whole_on_a_tap_and_its_cross_lets_it_go() {
+    let (mut cx, view) = in_general();
+    cx.host()
+        .refuse::<Submit<::chat::Chat>>("unauthorized", "not a member");
+    cx.simulate_focus("draft-general/editor");
+    cx.simulate_input("draft-general/editor", "turned away");
+    cx.simulate_field_key("draft-general/editor", "enter");
+    cx.run_until_parked();
+    assert!(
+        cx.has_text("That didn’t go through: not a member"),
+        "{:?}",
+        cx.texts()
+    );
+    view.read(|chat| assert!(!chat.drafts["draft-general"].note_whole));
+    cx.simulate_click("draft-general/note");
+    cx.run_until_parked();
+    view.read(|chat| assert!(chat.drafts["draft-general"].note_whole));
+    assert!(
+        cx.find("draft-general/note").is_some(),
+        "a tap reads it, keeps it"
+    );
+    cx.simulate_click("draft-general/note-dismiss");
+    cx.run_until_parked();
+    assert!(cx.find("draft-general/note").is_none(), "{:?}", cx.texts());
+    view.read(|chat| assert!(chat.drafts["draft-general"].note.is_empty()));
+}

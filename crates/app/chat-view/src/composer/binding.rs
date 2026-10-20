@@ -1,5 +1,5 @@
-//! The composer as drawn: the mention menu, the host's text area, a note,
-//! the Restore banner and the toolbar. Every press and key goes through
+//! The composer as drawn: the mention menu, the host's text area, a
+//! refusal's notice, the Restore banner and the toolbar. Every press and key goes through
 //! [`Draft::handle`], which asks the host for the edits.
 
 use super::draft::{Draft, MentionChoice, Place, matching_choices};
@@ -12,9 +12,9 @@ use view::{
     wire,
 };
 
-/// What the composer hears: the host's text moved, a key it claimed went
-/// down, or a control was pressed (`bold`, `italic`, `code`, `quote`,
-/// `send`, `restore`, `mention:<token>`).
+// What the composer hears: the host's text moved, a key it claimed went
+// down, or a control was pressed (`bold`, `italic`, `code`, `quote`,
+// `send`, `restore`, `mention:<token>`, `note-whole`, `note-dismiss`).
 #[derive(Clone, Debug)]
 pub enum Event {
     Changed(wire::TextChange),
@@ -434,16 +434,6 @@ pub fn view<V: 'static, F: Fn(&mut V, Event, &mut Window, &mut Context<V>) + 'st
     let chips = chips(draft, key, editable, &handle, cx, &design::POINTER);
     rows.extend(chips.map(IntoElement::into_any_element));
 
-    if !draft.note.is_empty() {
-        rows.push(
-            div()
-                .mx(design::space::MD)
-                .text_sm()
-                .text_color(cx.global::<Theme>().danger)
-                .child(draft.note.clone())
-                .into_any_element(),
-        );
-    }
     if draft.failed_send.is_some() {
         rows.push(
             div()
@@ -512,7 +502,18 @@ pub fn view<V: 'static, F: Fn(&mut V, Event, &mut Window, &mut Context<V>) + 'st
     });
     rows.push(toolbar.into_any_element());
 
+    let notice = (!draft.note.is_empty()).then(|| {
+        let dismiss = press(true, "note-dismiss".into(), &editor_id, &handle, cx);
+        refusal(
+            key,
+            &draft.note,
+            draft.placed,
+            dismiss,
+            cx.global::<Theme>(),
+        )
+    });
     let column = div()
+        .relative()
         .flex()
         .flex_col()
         .gap_1()
@@ -520,7 +521,8 @@ pub fn view<V: 'static, F: Fn(&mut V, Event, &mut Window, &mut Context<V>) + 'st
         .border_color(cx.global::<Theme>().border)
         .bg(cx.global::<Theme>().background)
         .pb(design::space::XXS)
-        .children(rows);
+        .children(rows)
+        .children(notice);
     let theme = *cx.global::<Theme>();
     let column = match attaches {
         true => column
@@ -537,6 +539,83 @@ pub fn view<V: 'static, F: Fn(&mut V, Event, &mut Window, &mut Context<V>) + 'st
             cx.notify();
         },
     ))
+}
+
+// A refusal, floating over the composer's top-left corner on one line, the
+// whole of it under the pointer, as wide as the composer at most; a click
+// lets it go.
+fn refusal(
+    key: &str,
+    note: &str,
+    placed: Option<Place>,
+    dismiss: Option<Click>,
+    theme: &Theme,
+) -> Stateful<Div> {
+    let theme = *theme;
+    let said = SharedString::from(note.to_owned());
+    let tip = said.clone();
+    let width = placed.map(|place| px(place.width));
+    let notice = div()
+        .id(ElementId::Name(format!("{key}/note").into()))
+        .absolute()
+        .bottom_full()
+        .left_0()
+        .mb(design::space::XXS)
+        .max_w_full()
+        .flex()
+        .items_center()
+        .gap(design::space::SM)
+        .px(design::space::SM)
+        .py(design::space::XXS)
+        .border_1()
+        .border_color(theme.danger)
+        .bg(theme.danger_soft)
+        .shadow_md()
+        .text_sm()
+        .text_color(theme.danger)
+        .role(Role::Button)
+        .aria_label(said.clone())
+        .focusable()
+        .cursor_pointer()
+        .child(div().min_w(px(0.)).truncate().child(said))
+        .child(
+            div()
+                .flex_none()
+                .child(design::icon("x", design::text::BODY)),
+        )
+        .tooltip(move |_, cx| {
+            cx.new(|_| Whole {
+                said: tip.clone(),
+                width,
+                theme,
+            })
+            .into()
+        });
+    match dismiss {
+        Some(dismiss) => notice.on_click(dismiss),
+        None => notice,
+    }
+}
+
+struct Whole {
+    said: SharedString,
+    width: Option<Pixels>,
+    theme: Theme,
+}
+
+impl Render for Whole {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .when_some(self.width, |tip, width| tip.max_w(width))
+            .px(design::space::SM)
+            .py(design::space::XXS)
+            .border_1()
+            .border_color(self.theme.border_strong)
+            .bg(self.theme.background)
+            .text_color(self.theme.foreground)
+            .text_size(design::text::CAPTION)
+            .child(self.said.clone())
+    }
 }
 
 // Files the host holds, dropped on the composer, to `handle`.

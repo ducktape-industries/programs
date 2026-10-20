@@ -120,6 +120,9 @@ pub struct Draft {
     pub submitted: Option<Send>,
     pub in_flight: Vec<Send>,
     pub note: String,
+    // the note read whole: a tap on the phone's one-line notice
+    #[serde(skip)]
+    pub note_whole: bool,
     pub menu_index: usize,
     pub menu_dismissed: bool,
     #[serde(default)]
@@ -484,6 +487,14 @@ impl Draft {
                 let clear = field.replace_all(target, "");
                 return (vec![clear], Outcome::Action("send".into()));
             }
+            "note-dismiss" => {
+                self.hush();
+                Vec::new()
+            }
+            "note-whole" => {
+                self.note_whole = true;
+                Vec::new()
+            }
             "restore" => {
                 if len > 0 {
                     return (Vec::new(), Outcome::Updated);
@@ -575,6 +586,13 @@ impl Draft {
             }
             None => self.failed_send = Some(send),
         }
+    }
+
+    // the note a refusal left, let go: dismissed, a send that went through,
+    // or another room
+    pub fn hush(&mut self) {
+        self.note.clear();
+        self.note_whole = false;
     }
 
     pub fn complete_send(&mut self, send: &Send) {

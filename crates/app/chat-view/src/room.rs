@@ -83,6 +83,10 @@ impl Chat {
             // the next room's row at the same seq is not the one under
             // the pointer
             self.hovered = None;
+            // a refusal is said where it happened: another room lets it go
+            for draft in self.drafts.values_mut() {
+                draft.hush();
+            }
         }
         // a link names one message: a thread or the details over the room
         // are not it, and a reply's own thread opens once its rows land

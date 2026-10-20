@@ -225,7 +225,7 @@ impl Chat {
                 match failed {
                     None => {
                         draft.sent_files(&files);
-                        draft.note.clear();
+                        draft.hush();
                         if let Target::Post { channel, .. } = &target {
                             let head = chat.info(channel).map_or(0, |info| info.head_seq);
                             chat.reads.posted.entry(channel.clone()).or_insert(head);

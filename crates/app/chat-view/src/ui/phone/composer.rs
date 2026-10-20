@@ -1,10 +1,6 @@
-//! The composer band at a room's or a thread's foot (Expo
-//! `src/chat/Composer.tsx`): the people `@` offers, the bar over an edit,
-//! one row of the field and Send (Save edit while editing), the note a
-//! refusal left, and the way back to a send a restart cut off. Or, where
-//! the reader may not write, the strip that says why. Reads the target's
-//! draft and the mention choices; every key and press goes through the
-//! draft ([`crate::composer`]), which writes it.
+//! The composer band at a room's or a thread's foot (Expo `src/chat/Composer.tsx`): `@`'s people,
+//! an edit's bar, the field and Send, a refusal's notice, the way back to a cut-off send; or the
+//! strip that says why the reader may not write. Every key and press goes through the draft.
 use std::rc::Rc;
 
 use view::prelude::*;
@@ -89,6 +85,7 @@ pub(super) fn band(
             .as_ref()
             .and(press(editable, "restore".into(), &editor_id, &handle, cx));
     let column = div()
+        .relative()
         .flex()
         .flex_col()
         .border_t_1()
@@ -101,12 +98,9 @@ pub(super) fn band(
         .children(chips)
         .child(field_row(draft, field, attach, send, edits, theme, ladder))
         .children((!draft.note.is_empty()).then(|| {
-            div()
-                .px(design::space::BLOCK)
-                .pb(design::space::SM)
-                .text_type(ladder.secondary)
-                .text_color(theme.danger)
-                .child(draft.note.clone())
+            let whole = press(true, "note-whole".into(), &editor_id, &handle, cx);
+            let dismiss = press(true, "note-dismiss".into(), &editor_id, &handle, cx);
+            refusal(&key, draft, whole, dismiss, theme, ladder)
         }))
         .children(restore.map(|restore| {
             let action =
@@ -365,5 +359,67 @@ fn attach_button(key: &str, click: Option<Click>, theme: &Theme, ladder: &Ladder
     let id = ElementId::Name(format!("{key}/attach").into());
     design::icon_button(id, glyph, words::ATTACH, ladder, theme, click)
         .enabled(enabled)
+        .into_any_element()
+}
+
+// A refusal, floating over the band's top-left corner on one line; a tap on
+// it reads it whole, its cross lets it go.
+fn refusal(
+    key: &str,
+    draft: &Draft,
+    whole: Option<Click>,
+    dismiss: Option<Click>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    let said = div()
+        .id(ElementId::Name(format!("{key}/note").into()))
+        .flex_1()
+        .min_w(px(0.))
+        .py(design::space::XS)
+        .role(Role::Button)
+        .aria_label(draft.note.clone())
+        .focusable()
+        .when(!draft.note_whole, |said| said.truncate())
+        .child(draft.note.clone());
+    let said = match whole {
+        Some(whole) => said.on_click(whole),
+        None => said,
+    };
+    let enabled = dismiss.is_some();
+    let dismiss: Click = dismiss.unwrap_or_else(|| Box::new(|_, _, _| {}));
+    let cross = design::icon_button(
+        ElementId::Name(format!("{key}/note-dismiss").into()),
+        design::icon("x", ladder.icon),
+        words::DISMISS,
+        ladder,
+        theme,
+        dismiss,
+    )
+    .enabled(enabled);
+    let notice = div()
+        .max_w_full()
+        .min_w(px(0.))
+        .flex()
+        .items_center()
+        .gap(design::space::SM)
+        .pl(design::space::MD)
+        .border_1()
+        .border_color(theme.danger)
+        .bg(theme.danger_soft)
+        .shadow_md()
+        .text_type(ladder.secondary)
+        .text_color(theme.danger)
+        .child(said)
+        .child(cross);
+    div()
+        .absolute()
+        .bottom_full()
+        .left_0()
+        .right_0()
+        .px(design::space::BLOCK)
+        .pb(design::space::XS)
+        .flex()
+        .child(notice)
         .into_any_element()
 }
