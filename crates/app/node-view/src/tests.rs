@@ -78,17 +78,68 @@ fn serve_identity(
     keys: Vec<(Vec<u8>, u64)>,
     profiles: Vec<identity::Profile>,
 ) {
+    let accounts: Vec<identity::Account> = profiles
+        .iter()
+        .map(|profile| account_of(profile, &keys))
+        .collect();
     cx.host().handle::<Query<identity::Identity>>(move |query| {
         Ok(match query {
-            identity::Query::OfKey { key } => {
-                identity::Reply::Number(keys.iter().find(|(held, _)| *held == key).map(|(_, n)| *n))
-            }
+            identity::Query::List { .. } => identity::Reply::Accounts(identity::PageResponse {
+                height: 1,
+                items: accounts.clone(),
+                next: None,
+            }),
             identity::Query::Profile { number } => {
                 identity::Reply::Profile(profiles.iter().find(|p| p.number == number).cloned())
             }
             other => panic!("unexpected query: {other:?}"),
         })
     });
+}
+
+// an account as identity keeps it: the profile's kind, holding the keys `keys` maps to its number
+fn account_of(profile: &identity::Profile, keys: &[(Vec<u8>, u64)]) -> identity::Account {
+    let held: Vec<identity::Key> = keys
+        .iter()
+        .filter(|(_, number)| *number == profile.number)
+        .map(|(key, _)| identity::Key {
+            scheme: abi::Scheme::Ed25519,
+            key: key.clone(),
+            label: None,
+            added_at: 0,
+        })
+        .collect();
+    let control = match &profile.kind {
+        identity::Kind::User => identity::Control::User { keys: held },
+        identity::Kind::Program {
+            manager,
+            category,
+            standing,
+            script,
+        } => identity::Control::Program {
+            manager: *manager,
+            category: *category,
+            life: match standing {
+                identity::Standing::Active => identity::Life::Active { keys: held },
+                identity::Standing::Suspended => identity::Life::Suspended { keys: held },
+                identity::Standing::Revoked => identity::Life::Revoked,
+            },
+            script: script.clone(),
+        },
+        identity::Kind::System(program) => identity::Control::System {
+            program: program.clone(),
+        },
+    };
+    identity::Account {
+        number: profile.number,
+        card: identity::Card {
+            name: profile.name.clone(),
+            avatar: None,
+            bio: None,
+            updated_at: 0,
+        },
+        control,
+    }
 }
 
 fn membership(key: &[u8], address: &str, role: valset::Role) -> valset::Membership {

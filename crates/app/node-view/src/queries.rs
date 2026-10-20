@@ -1,9 +1,9 @@
 //! Typed reads of valset, folded into one row per key; who operates each
 //! node, as identity says; and what the vote needs of the programs role, with
 //! the names of the accounts it shows.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use identity::Kind;
+use identity::{Account, Control, Life};
 use programs::Entry;
 use serde::{Deserialize, Serialize};
 use valset::{Membership, PageRequest, Pending, Role, ask};
@@ -72,37 +72,47 @@ pub(crate) async fn nodes(host: Host) -> Result<Vec<Node>, Error> {
         })
         .await?;
     let mut nodes = fold(&validators, members);
+    let read = accounts(&host).await;
     for node in &mut nodes {
-        node.operator = operator(&host, &node.key).await.unwrap_or_else(|refusal| {
-            Some(format!(
+        node.operator = match &read {
+            Ok(accounts) => operator(accounts, &node.key),
+            Err(refusal) => Some(format!(
                 "operator unreadable: {}",
-                design::sentence(&refusal)
-            ))
-        });
+                design::sentence(refusal)
+            )),
+        };
     }
     Ok(nodes)
 }
 
-pub(crate) async fn operator(host: &Host, key: &[u8]) -> Result<Option<String>, Error> {
-    let account = match host.query(identity::ask::OfKey { key: key.to_vec() }).await {
-        Ok(account) => account,
-        Err(refusal) if refusal.code == abi::reason::UNAUTHORIZED => return Ok(None),
-        Err(refusal) => return Err(refusal),
+// every account with the keys that act as it, in one paged read
+async fn accounts(host: &Host) -> Result<Vec<Account>, Error> {
+    host.query_all(|after| identity::ask::List {
+        page: identity::PageRequest { after, limit: None },
+    })
+    .await
+}
+
+// "operated by <manager> (<agent>)" for a key an acting agent holds; a suspended or revoked
+// account operates nothing, as identity's `OfKey` refuses it
+fn operator(accounts: &[Account], key: &[u8]) -> Option<String> {
+    let agent = accounts.iter().find(|account| account.holds(key))?;
+    let Control::Program {
+        manager,
+        life: Life::Active { .. },
+        ..
+    } = &agent.control
+    else {
+        return None;
     };
-    let Some(number) = account else {
-        return Ok(None);
-    };
-    let Some(agent) = host.query(identity::ask::Profile { number }).await? else {
-        return Ok(None);
-    };
-    let Kind::Program { manager, .. } = agent.kind else {
-        return Ok(None);
-    };
-    let manager = host
-        .query(identity::ask::Profile { number: manager })
-        .await?
-        .map_or_else(|| format!("account {manager}"), |profile| profile.name);
-    Ok(Some(format!("operated by {manager} ({})", agent.name)))
+    let manager = accounts
+        .iter()
+        .find(|account| account.number == *manager)
+        .map_or_else(
+            || format!("account {manager}"),
+            |account| account.card.name.clone(),
+        );
+    Some(format!("operated by {manager} ({})", agent.card.name))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -119,21 +129,22 @@ pub(crate) struct Schedule {
     pub(crate) names: Names,
 }
 
-async fn names(host: &Host, accounts: impl IntoIterator<Item = u64>) -> Result<Names, Error> {
-    let mut names = Names::new();
-    for number in accounts {
-        if names.contains_key(&number) {
-            continue;
-        }
-        if let Some(profile) = host.query(identity::ask::Profile { number }).await? {
-            names.insert(number, profile.name);
-        }
+// the names of `numbers`, from one read of the accounts when there are any
+async fn names(host: &Host, numbers: impl IntoIterator<Item = u64>) -> Result<Names, Error> {
+    let wanted: BTreeSet<u64> = numbers.into_iter().collect();
+    if wanted.is_empty() {
+        return Ok(Names::new());
     }
-    Ok(names)
+    let named = accounts(host).await?.into_iter();
+    let named = named.filter(|account| wanted.contains(&account.number));
+    Ok(named
+        .map(|account| (account.number, account.card.name))
+        .collect())
 }
 
 pub(crate) async fn name(host: Host, number: u64) -> Result<Option<String>, Error> {
-    Ok(names(&host, [number]).await?.remove(&number))
+    let profile = host.query(identity::ask::Profile { number }).await?;
+    Ok(profile.map(|profile| profile.name))
 }
 
 pub(crate) async fn voices(host: Host, key: Vec<u8>) -> Result<Vec<Vec<u8>>, Error> {

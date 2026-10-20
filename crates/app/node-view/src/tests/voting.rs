@@ -139,26 +139,27 @@ pub(super) fn operators() -> [identity::Profile; 2] {
     [agent, ada]
 }
 
+// Every row's operator comes from one read of the accounts, never an ask per row; a key on a
+// suspended agent operates nothing.
 #[test]
 fn a_row_says_who_operates_a_node_on_an_agent() {
     let mut cx = TestAppContext::new();
     node(&mut cx);
     respond(&mut cx);
-    cx.host()
-        .handle::<Query<identity::Identity>>(move |query| match query {
-            identity::Query::OfKey { key } if key == UNLISTED => {
-                Err(Error::new("unauthorized", "account 12 is suspended"))
-            }
-            identity::Query::OfKey { key } => {
-                Ok(identity::Reply::Number((key == OTHER).then_some(11)))
-            }
-            identity::Query::Profile { number } => Ok(identity::Reply::Profile(
-                operators()
-                    .into_iter()
-                    .find(|profile| profile.number == number),
-            )),
-            other => panic!("unexpected query: {other:?}"),
-        });
+    let parked = identity::Profile {
+        number: 12,
+        name: "parked".into(),
+        kind: identity::Kind::Program {
+            script: None,
+            manager: 10,
+            category: identity::Category::Agent,
+            standing: identity::Standing::Suspended,
+        },
+    };
+    let mut profiles = operators().to_vec();
+    profiles.push(parked);
+    let keys = vec![(OTHER.to_vec(), 11), (UNLISTED.to_vec(), 12)];
+    serve_identity(&cx, keys, profiles);
     cx.open::<Nodes>();
     cx.run_until_parked();
     assert_eq!(
@@ -169,29 +170,31 @@ fn a_row_says_who_operates_a_node_on_an_agent() {
         assert!(cx.find(&format!("nodes-operator-{row}")).is_none(), "{row}");
     }
     assert!(cx.has_text("10.0.0.1:4000"));
+    let asked = cx.host().requests::<Query<identity::Identity>>();
+    let listed = |query: &identity::Query| matches!(query, identity::Query::List { .. });
+    assert!(!asked.is_empty() && asked.iter().all(listed), "{asked:?}");
 }
 
 #[test]
-fn a_refused_operator_read_marks_its_row_and_keeps_the_list() {
+fn a_refused_operator_read_marks_every_row_and_keeps_the_list() {
     let mut cx = TestAppContext::new();
     node(&mut cx);
     respond(&mut cx);
     cx.host()
         .handle::<Query<identity::Identity>>(|query| match query {
-            identity::Query::OfKey { key } if key == OTHER => {
+            identity::Query::List { .. } => {
                 Err(Error::new("unavailable", "identity is restarting"))
             }
-            identity::Query::OfKey { .. } => Ok(identity::Reply::Number(None)),
             other => panic!("unexpected query: {other:?}"),
         });
     cx.open::<Nodes>();
     cx.run_until_parked();
-    assert_eq!(
-        texts_of(&cx, "nodes-operator-1"),
-        ["operator unreadable: identity is restarting"]
-    );
-    for row in [0, 2, 3] {
-        assert!(cx.find(&format!("nodes-operator-{row}")).is_none(), "{row}");
+    for row in 0..4 {
+        assert_eq!(
+            texts_of(&cx, &format!("nodes-operator-{row}")),
+            ["operator unreadable: identity is restarting"],
+            "{row}"
+        );
     }
     assert!(cx.has_text("10.0.0.1:4000"));
 }
