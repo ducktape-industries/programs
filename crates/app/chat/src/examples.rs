@@ -2,7 +2,10 @@
 //! an agent edits rather than build one from the schema.
 use std::collections::BTreeMap;
 
-use crate::{Block, Entry, Mark, Notices, Op, PageRequest, PostPolicy, Principal, Query, Span};
+use crate::message::Status;
+use crate::{
+    Block, Entry, Mark, Notice, Notices, Op, PageRequest, PostPolicy, Principal, Query, Span,
+};
 
 const ROOM: &str = "design";
 
@@ -388,5 +391,22 @@ pub(crate) fn text_search() -> Query {
         viewer: me(),
         channel_id: None,
         page: twenty(),
+    }
+}
+
+pub(crate) fn notify() -> Op {
+    Op::Notify {
+        channel_id: room(),
+        message_id: "pods-builds-1-ended".into(),
+        thread: None,
+        notice: Notice {
+            kind: "pod".into(),
+            group: "builds-1".into(),
+            subject: "pod builds-1".into(),
+            link: None,
+            status: Status::Failed,
+            detail: "exit code 1".into(),
+            concerns: vec![21],
+        },
     }
 }

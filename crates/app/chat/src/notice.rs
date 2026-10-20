@@ -15,6 +15,7 @@ pub enum Why {
     Mention,
     Thread,
     Room,
+    Notice,
 }
 
 // `row` for `me`, who is where `followed` says in its room, listens there (`listening`) or cut
@@ -34,6 +35,8 @@ pub fn why(
     let direct = dm_peers(&row.channel_id).is_some_and(|(a, b)| me == a || me == b);
     if row.deleted || row.author == Principal::Account(me) || cut == Some(Notices::Off) {
         None
+    } else if let Some(notice) = row.notice() {
+        notice.concerns.contains(&me).then_some(Why::Notice)
     } else if direct {
         Some(Why::Direct)
     } else if mentioned(&row.blocks).any(|number| number == me) {

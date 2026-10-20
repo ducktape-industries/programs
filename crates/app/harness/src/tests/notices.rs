@@ -190,3 +190,47 @@ fn a_new_agent_answers_a_stranger_and_a_list_narrows_it() {
     };
     assert!(text.starts_with("dropped a mention from account"), "{text}");
 }
+
+#[test]
+fn a_notice_reaches_the_agent_it_concerns_at_once_and_never_one_that_only_listens() {
+    let world = world();
+    let chain = &world.chain;
+    choose(&world, "general", Choice::Every);
+    let notify = |id: &str, concerns: Vec<u64>| chat::Op::Notify {
+        channel_id: "general".into(),
+        message_id: id.into(),
+        thread: None,
+        notice: chat::Notice {
+            kind: "pod".into(),
+            group: id.into(),
+            subject: format!("pod {id}"),
+            link: None,
+            status: chat::message::Status::Failed,
+            detail: "exit code 1".into(),
+            concerns,
+        },
+    };
+    let theirs = notify("theirs", vec![world.ada]);
+    chain.submit(signed(BO), chat::PROGRAM, &theirs).unwrap();
+    assert!(
+        posts(&world).is_empty(),
+        "a listener is told nothing of a notice for another"
+    );
+    let mine = notify("mine", vec![world.agent]);
+    chain.submit(signed(BO), chat::PROGRAM, &mine).unwrap();
+    let heard = posts(&world);
+    let [notice] = &heard[..] else {
+        panic!("{heard:?}")
+    };
+    let from = format!("Bo (account {}) sent you a notice", world.bo);
+    assert!(notice.starts_with(&from), "{notice}");
+    assert!(
+        notice.ends_with("pod mine failed — exit code 1"),
+        "{notice}"
+    );
+    assert_eq!(
+        assigned(chain, SERVICE).len(),
+        1,
+        "a notice asks the model at once"
+    );
+}

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use describe::{Description, Field, Value, field};
 
-use crate::{Entry, Notices, Op, PostPolicy, Principal, dm_peers, plain_text};
+use crate::{Entry, Notices, Op, PostPolicy, Principal, dm_peers, notice_text, plain_text};
 
 pub fn describe(op: &Op) -> Description {
     let seq = |seq: &u64| field("seq", Value::text(seq.to_string()));
@@ -249,6 +249,23 @@ pub fn describe(op: &Op) -> Description {
                 ),
             )],
         ),
+        Op::Notify {
+            channel_id,
+            message_id,
+            thread,
+            notice,
+        } => {
+            let mut described = posted(channel_id, message_id, notice_text(notice), thread);
+            described.title = format!("Notice in {}", room_title(channel_id));
+            let concerns = notice
+                .concerns
+                .iter()
+                .map(|account| Value::Account(*account));
+            described
+                .fields
+                .push(field("for", Value::List(concerns.collect())));
+            return described;
+        }
     };
     let mut all = channel_description_fields(channel);
     all.extend(fields);

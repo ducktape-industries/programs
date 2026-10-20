@@ -39,7 +39,8 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::Drafting { .. }
         | Op::Undraft { .. }
         | Op::SetRoomOrder { .. }
-        | Op::ChooseForMany { .. } => Vec::new(),
+        | Op::ChooseForMany { .. }
+        | Op::Notify { .. } => Vec::new(),
     }
 }
 

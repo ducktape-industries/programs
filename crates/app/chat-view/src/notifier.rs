@@ -580,6 +580,7 @@ fn notice(row: &MsgRow, why: Why, me: u64, name: &str, chain: &str, names: &Name
             Why::Mention => format!("{sender} mentioned you"),
             Why::Thread => format!("{sender} replied in a thread"),
             Why::Room => format!("{sender} in {tag}"),
+            Why::Notice => format!("{sender} sent you a notice"),
         },
         body: message_body(&row.blocks, names),
         tag,

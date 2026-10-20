@@ -76,6 +76,7 @@ pub enum Block {
     Quote(Vec<Span>),
     Divider,
     Attachment(Attachment),
+    Notice(Notice),
 }
 
 impl Block {
@@ -103,6 +104,59 @@ pub struct Attachment {
     pub name: String,
     pub size: u64,
     pub content_type: String,
+}
+
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+)]
+#[serde(deny_unknown_fields)]
+pub struct Notice {
+    pub kind: String,
+    pub group: String,
+    pub subject: String,
+    pub link: Option<String>,
+    pub status: Status,
+    pub detail: String,
+    pub concerns: Vec<crate::AccountNumber>,
+}
+
+#[derive(
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Status {
+    Note,
+    Running,
+    Passed,
+    Failed,
+}
+
+impl Status {
+    pub fn word(self) -> &'static str {
+        match self {
+            Status::Note => "note",
+            Status::Running => "running",
+            Status::Passed => "passed",
+            Status::Failed => "failed",
+        }
+    }
 }
 
 /// A one-level list item's marker: `- ` / `* ` bullets and `1. ` numbers.

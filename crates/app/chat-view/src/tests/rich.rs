@@ -427,3 +427,53 @@ fn export_markdown_screens() {
     )
     .unwrap();
 }
+
+#[test]
+fn a_notice_draws_as_one_line_naming_whom_it_is_for() {
+    let (mut cx, view) = opened();
+    let notice = chat::Notice {
+        kind: "pod".into(),
+        group: "builds-1".into(),
+        subject: "pod builds-1".into(),
+        link: Some("https://pods.example/builds-1".into()),
+        status: chat::message::Status::Failed,
+        detail: "exit code 1".into(),
+        concerns: vec![8],
+    };
+    cx.update(&view, |chat, _, cx| {
+        let room = chat.room.as_mut().unwrap();
+        room.messages.ready_mut().unwrap().push(MsgRow {
+            channel_id: "general".into(),
+            seq: 3,
+            message_id: "notice".into(),
+            height: 2,
+            blocks: vec![chat::Block::Notice(notice)],
+            ..MsgRow::by(Principal::Account(7))
+        });
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(cx.find("chat-message-notice-block-0-notice").is_some());
+    assert!(cx.has_text("●"));
+    let key = "chat-message-notice-block-0";
+    let Some(wire::Node::RichText {
+        text,
+        clickable_ranges,
+        ..
+    }) = cx.find(key)
+    else {
+        panic!("the notice is one rich text node");
+    };
+    assert_eq!(text, "pod builds-1 failed — exit code 1 · for @reviewer");
+    assert_eq!(clickable_ranges.len(), 2);
+    cx.simulate_rich_click(key, 0);
+    cx.simulate_rich_click(key, 1);
+    let opened = cx.host().requests::<view::methods::LinkOpen>();
+    assert_eq!(
+        opened[opened.len().saturating_sub(2)..],
+        [
+            "https://pods.example/builds-1",
+            "duck://testnet-0a1b2c3d/identity/8"
+        ]
+    );
+}

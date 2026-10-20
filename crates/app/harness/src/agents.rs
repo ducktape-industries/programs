@@ -339,13 +339,14 @@ enum Heard {
     Watch,
     // a message a wait listened for, quoted as the wake
     Waited,
+    Notice,
 }
 
 impl Heard {
     // a mention or a direct message starts a turn at once; the rest waits out the settle window
     fn direct(self) -> bool {
         match self {
-            Heard::Mention | Heard::Direct | Heard::Waited => true,
+            Heard::Mention | Heard::Direct | Heard::Waited | Heard::Notice => true,
             Heard::Thread | Heard::Listen | Heard::Watch => false,
         }
     }
@@ -359,6 +360,7 @@ fn heard_as(reason: &Reason) -> Option<Heard> {
             chat::attributed::THREAD => Some(Heard::Thread),
             chat::attributed::LISTEN => Some(Heard::Listen),
             chat::attributed::WATCH => Some(Heard::Watch),
+            chat::attributed::NOTICE => Some(Heard::Notice),
             _ => None,
         },
         Reason::Authorship
@@ -434,11 +436,17 @@ fn designation(
         Heard::Mention => "mentioned you",
         Heard::Direct => "wrote to you directly",
         Heard::Thread => "continued a thread with you",
+        Heard::Notice => "sent you a notice",
         Heard::Listen | Heard::Watch | Heard::Waited => "wrote",
     };
     let listened = match heard {
         Heard::Listen => ", which you listen to",
-        Heard::Mention | Heard::Direct | Heard::Thread | Heard::Watch | Heard::Waited => "",
+        Heard::Mention
+        | Heard::Direct
+        | Heard::Thread
+        | Heard::Watch
+        | Heard::Waited
+        | Heard::Notice => "",
     };
     let in_thread = match row.thread {
         Some(root) => format!(", in the thread of message {root} (reply_to {root})"),
@@ -604,8 +612,13 @@ fn chooses(ctx: &QueryCtx, agent: &Agent, change: &Change, why: Heard) -> Result
     }
     Ok(match chosen(ctx, agent.number, &channel)? {
         (true, _) => true,
-        (false, None) => matches!(why, Heard::Mention | Heard::Direct | Heard::Thread),
-        (false, Some(chat::Notices::Mentions)) => matches!(why, Heard::Mention | Heard::Direct),
+        (false, None) => matches!(
+            why,
+            Heard::Mention | Heard::Direct | Heard::Thread | Heard::Notice
+        ),
+        (false, Some(chat::Notices::Mentions)) => {
+            matches!(why, Heard::Mention | Heard::Direct | Heard::Notice)
+        }
         (false, Some(chat::Notices::Off)) => false,
     })
 }
@@ -627,7 +640,7 @@ fn waited(
     let Some(channel) = message_channel(ctx, change)? else {
         return Ok(None);
     };
-    let to_me = matches!(why, Heard::Mention | Heard::Direct);
+    let to_me = matches!(why, Heard::Mention | Heard::Direct | Heard::Notice);
     for (waited_in, wait) in waits {
         let Some(crate::WaitRow {
             event: crate::WaitFor::Message {
@@ -673,6 +686,7 @@ fn dropped(
         Heard::Mention => "a mention",
         Heard::Direct => "a direct message",
         Heard::Thread => "a thread reply",
+        Heard::Notice => "a notice",
         // a channel it listens to is talk around the agent, not to it: what it does not answer
         // there is left without a notice, or each such message would add one
         Heard::Listen | Heard::Watch | Heard::Waited => return Ok(()),

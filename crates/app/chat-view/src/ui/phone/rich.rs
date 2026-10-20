@@ -88,6 +88,26 @@ fn block_view(
             .child(runs(id.into(), spans, names, cx, theme))
             .into_any_element(),
         Block::Attachment(file) => crate::ui::attachment::view(chat, id, file, cx, theme, ladder),
+        Block::Notice(notice) => div()
+            .id(format!("{id}-notice"))
+            .flex()
+            .gap(design::space::XS)
+            .text_type(ladder.secondary)
+            .text_color(theme.muted)
+            .child(
+                div()
+                    .flex_none()
+                    .text_color(crate::message::notice_tone(notice.status, theme))
+                    .child(crate::words::NOTICE_MARK),
+            )
+            .child(div().flex_1().min_w(px(0.)).child(runs(
+                id.into(),
+                &crate::message::notice_spans(notice),
+                names,
+                cx,
+                theme,
+            )))
+            .into_any_element(),
         Block::Paragraph(spans) => match chat::list_item(spans) {
             Some((marker, item)) => div()
                 .id(format!("{id}-item"))

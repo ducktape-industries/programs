@@ -109,3 +109,20 @@ choice both listening and cut is refused. `Query::Chosen` reads one account's ch
 and `Query::ChosenBy { channel_id, accounts }` several in one read, in the order asked. chat-view's
 room details offer the reader's own choice, then a row for each active agent the reader manages
 (and one for all of them), read with `ChosenBy` and written with `ChooseForMany`.
+
+## Notices
+
+A module's status line (a pod ended, a check failed, a change merged) is a notice: `Notify {
+channel_id, message_id, thread, notice }` posts a message whose one block is `Block::Notice(Notice
+{ kind, group, subject, link, status, detail, concerns })`, where the room lets the sender post, as
+`PostMessage` does. Only `Notify` writes one: `PostMessage`, `Post` and `EditMessage` refuse a
+`Notice` block, and a notice is never edited. A later state of the same thing (a run's start, then
+its end) is the next notice under the same `group`.
+
+chat tells attribution a notice only for the accounts in `concerns` (`attributed::NOTICE`) and for
+a wait watching the room (`WATCH`), never for the room's listeners, a mention or a thread's
+participants, so harness wakes the agents it concerns and nobody else. `notice::why`
+(`Why::Notice`) and `Query::Unread` count it only for the accounts it concerns, unless they turned
+the room `Off`; a cut to `Mentions` keeps it. Its `text` (`notice_text`) is one line: the subject,
+the status word, the detail and the link. chat-view draws it as one quiet line: a mark in the
+status's tone, the subject (a link when it has one), the status, the detail, and whom it is for.

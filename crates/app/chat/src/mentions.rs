@@ -54,7 +54,7 @@ pub(crate) fn resolve(blocks: Vec<Block>, holders: &BTreeMap<String, AccountNumb
         .map(|block| match block {
             Block::Paragraph(spans) => Block::Paragraph(typed_spans(&spans, holder)),
             Block::Quote(spans) => Block::Quote(typed_spans(&spans, holder)),
-            Block::Code { .. } | Block::Divider | Block::Attachment(_) => block,
+            Block::Code { .. } | Block::Divider | Block::Attachment(_) | Block::Notice(_) => block,
         })
         .collect()
 }
@@ -62,7 +62,7 @@ pub(crate) fn resolve(blocks: Vec<Block>, holders: &BTreeMap<String, AccountNumb
 fn spans_of(block: &Block) -> &[Span] {
     match block {
         Block::Paragraph(spans) | Block::Quote(spans) => spans,
-        Block::Code { .. } | Block::Divider | Block::Attachment(_) => &[],
+        Block::Code { .. } | Block::Divider | Block::Attachment(_) | Block::Notice(_) => &[],
     }
 }
 

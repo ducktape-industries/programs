@@ -22,6 +22,8 @@ pub(crate) const PEOPLE: &str = "People";
 pub(crate) const NEW_CHANNEL: &str = "New channel";
 pub(crate) const TODAY: &str = "Today";
 pub(crate) const YESTERDAY: &str = "Yesterday";
+pub(crate) const NOTICE_MARK: &str = "●";
+pub(crate) const NOTICE_FOR: &str = "for";
 
 pub(crate) const CHAT: &str = "Chat";
 pub(crate) const CHANNELS: &str = "Channels";

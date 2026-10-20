@@ -1,7 +1,7 @@
 //! One message as the frame draws it: a row the program served, folded
 //! with the name directory into author lines, bodies and styled runs, and
 //! grouped into runs the way Slack groups them.
-use chat::{Block, Mark, MsgRow, Principal, Reaction, Span};
+use chat::{Block, Mark, MsgRow, Notice, Principal, Reaction, Span};
 use view::HighlightStyle;
 use view::prelude::*;
 
@@ -168,6 +168,42 @@ pub fn agent(names: &Names, principal: &chat::Principal) -> bool {
     )
 }
 
+pub(crate) fn notice_spans(notice: &Notice) -> Vec<Span> {
+    let subject = Span {
+        text: notice.subject.clone(),
+        marks: notice.link.iter().cloned().map(Mark::Link).collect(),
+    };
+    let status = Span {
+        text: notice.status.word().to_owned(),
+        marks: vec![Mark::Bold],
+    };
+    let mut spans = vec![subject, Span::plain(" "), status];
+    if !notice.detail.is_empty() {
+        spans.push(Span::plain(format!(" — {}", notice.detail)));
+    }
+    for (at, account) in notice.concerns.iter().enumerate() {
+        spans.push(Span::plain(match at {
+            0 => format!(" · {} ", words::NOTICE_FOR),
+            _ => ", ".to_owned(),
+        }));
+        spans.push(Span {
+            text: format!("<@{account}>"),
+            marks: vec![Mark::Mention(Principal::Account(*account))],
+        });
+    }
+    spans
+}
+
+pub(crate) fn notice_tone(status: chat::message::Status, theme: &view::Theme) -> view::Hsla {
+    use chat::message::Status;
+    match status {
+        Status::Note => theme.muted,
+        Status::Running => theme.accent,
+        Status::Passed => theme.success,
+        Status::Failed => theme.danger,
+    }
+}
+
 /// A quiet longer than this opens a new run, as Slack's does.
 pub const GROUP_GAP_MS: u64 = 5 * 60 * 1000;
 
@@ -252,6 +288,7 @@ pub fn message_body(blocks: &[Block], names: &Names) -> String {
             },
             Block::Divider => "────────".to_owned(),
             Block::Attachment(file) => file.name.clone(),
+            Block::Notice(notice) => chat::notice_text(notice),
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -268,7 +305,7 @@ fn editable_markdown_with_mention_ids(blocks: &[Block]) -> String {
                 format!("```{}\n{text}\n```", lang.clone().unwrap_or_default())
             }
             Block::Divider => "---".to_owned(),
-            Block::Attachment(_) => String::new(),
+            Block::Attachment(_) | Block::Notice(_) => String::new(),
         })
         .collect::<Vec<_>>()
         .join("\n")

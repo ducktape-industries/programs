@@ -144,6 +144,12 @@ impl Program for Chat {
                 listening,
                 notices,
             } => choose_for_many(ctx, &accounts, &channel_id, listening, notices),
+            Op::Notify {
+                channel_id,
+                message_id,
+                thread,
+                notice,
+            } => crate::ops::notify(ctx, &sender, channel_id, message_id, thread, notice),
         }
     }
 

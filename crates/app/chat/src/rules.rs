@@ -3,7 +3,7 @@
 use ::program::{Env, Error, Origin, QueryCtx, invalid, unauthorized, wrong_state};
 
 use crate::state::MEMBERS;
-use crate::{ChannelRow, MsgRow, Principal, dm_peers};
+use crate::{Block, ChannelRow, MsgRow, Notice, Principal, dm_peers};
 
 pub(crate) fn id(what: &str, id: &str) -> Result<(), Error> {
     if id.is_empty() || id.contains('/') {
@@ -84,6 +84,34 @@ pub(crate) fn not_dm(channel: &ChannelRow) -> Result<(), Error> {
 pub(crate) fn standing(row: &MsgRow) -> Result<(), Error> {
     if row.deleted {
         return Err(wrong_state("the message is deleted"));
+    }
+    Ok(())
+}
+
+pub(crate) fn no_notice(blocks: &[Block]) -> Result<(), Error> {
+    if blocks.iter().any(|block| matches!(block, Block::Notice(_))) {
+        return Err(invalid(
+            "a notice is posted whole with Notify, never as a block of another message",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn not_a_notice(row: &MsgRow) -> Result<(), Error> {
+    if row.notice().is_some() {
+        return Err(wrong_state(
+            "a notice is never edited: post its next state with Notify under the same group",
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn notice(ctx: &QueryCtx, notice: &Notice) -> Result<(), Error> {
+    if notice.kind.trim().is_empty() || notice.subject.trim().is_empty() {
+        return Err(invalid("a notice names its kind and its subject"));
+    }
+    for &account in &notice.concerns {
+        ctx.require_account(account)?;
     }
     Ok(())
 }

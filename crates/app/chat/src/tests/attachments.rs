@@ -19,7 +19,14 @@ fn attachment(name: &str) -> Block {
 fn block_variants_only_append() {
     assert_eq!(
         describe::variants::<Block>(),
-        ["Paragraph", "Code", "Quote", "Divider", "Attachment"]
+        [
+            "Paragraph",
+            "Code",
+            "Quote",
+            "Divider",
+            "Attachment",
+            "Notice"
+        ]
     );
     assert_eq!(borsh::to_vec(&Block::Divider).unwrap(), [3]);
     assert_eq!(borsh::to_vec(&attachment("a")).unwrap()[0], 4);

@@ -4,7 +4,7 @@ use std::ops::Range;
 
 use unicode_normalization::UnicodeNormalization;
 
-use crate::{Block, Mark};
+use crate::{Block, Mark, Notice};
 
 /// The message as one line of text, blocks joined by a space. A block's
 /// spans are runs of one text split where a mark starts or ends, so they
@@ -18,6 +18,7 @@ pub fn plain_text(blocks: &[Block]) -> String {
             }
             Block::Code { text, .. } => text.clone(),
             Block::Attachment(file) => file.name.clone(),
+            Block::Notice(notice) => notice_text(notice),
             Block::Divider => continue,
         };
         if !out.is_empty() {
@@ -28,6 +29,18 @@ pub fn plain_text(blocks: &[Block]) -> String {
     out
 }
 
+pub fn notice_text(notice: &Notice) -> String {
+    let mut text = format!("{} {}", notice.subject, notice.status.word());
+    if !notice.detail.is_empty() {
+        text.push_str(" — ");
+        text.push_str(&notice.detail);
+    }
+    if let Some(link) = &notice.link {
+        text.push_str(&format!(" ({link})"));
+    }
+    text
+}
+
 pub(crate) fn fold(text: &str) -> String {
     text.nfc().collect::<String>().to_lowercase()
 }
@@ -35,7 +48,7 @@ pub(crate) fn fold(text: &str) -> String {
 pub fn tags(blocks: &[Block]) -> Vec<String> {
     let spans = blocks.iter().flat_map(|block| match block {
         Block::Paragraph(spans) | Block::Quote(spans) => spans.as_slice(),
-        Block::Code { .. } | Block::Divider | Block::Attachment(_) => &[],
+        Block::Code { .. } | Block::Divider | Block::Attachment(_) | Block::Notice(_) => &[],
     });
     let mut out: Vec<String> = Vec::new();
     for span in spans.filter(|span| {

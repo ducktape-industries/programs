@@ -8,7 +8,7 @@ use attribution::{
     Source,
 };
 
-use crate::attributed::{DIRECT, LISTEN, MESSAGE, THREAD, WATCH};
+use crate::attributed::{DIRECT, LISTEN, MESSAGE, NOTICE, THREAD, WATCH};
 use crate::{Followed, Notices};
 
 const ADA: &[u8] = b"ada-key";
@@ -676,5 +676,91 @@ fn unread_counts_what_is_meant_after_the_cursor_as_the_choice_allows() {
         unread(&chain, 3, &[("general", 1)]),
         general(7, 4),
         "listening, the aside in a thread Cy is not in counts too"
+    );
+}
+
+fn notify(chain: &MockChain, key: &[u8], id: &str, concerns: Vec<u64>) -> Result<(), String> {
+    let op = crate::Op::Notify {
+        channel_id: "general".into(),
+        message_id: id.into(),
+        thread: None,
+        notice: crate::Notice {
+            kind: "pod".into(),
+            group: "builds-1".into(),
+            subject: "pod builds-1".into(),
+            link: None,
+            status: crate::message::Status::Failed,
+            detail: "exit code 1".into(),
+            concerns,
+        },
+    };
+    chain
+        .submit(signed(key), crate::PROGRAM, &op)
+        .map(drop)
+        .map_err(|refusal| refusal.code)
+}
+
+#[test]
+fn a_notice_is_told_to_the_accounts_it_concerns_and_to_no_listener() {
+    let chain = chain();
+    open_general(&chain);
+    chain.at(2, 0);
+    listen(&chain, BO, "general", true).unwrap();
+    watch(&chain, CY, "general", true).unwrap();
+    let noticed = || Reason::Defined(NOTICE.into());
+    notify(&chain, ADA, "n1", vec![3, 2]).unwrap();
+    assert_eq!(
+        held(&chain, chat_source("n1")),
+        [(2, noticed()), (3, noticed())]
+    );
+    notify(&chain, ADA, "n2", vec![1]).unwrap();
+    assert_eq!(
+        held(&chain, chat_source("n2")),
+        [(3, Reason::Defined(WATCH.into()))],
+        "its author is told nothing of its own, Bo only listens, and Cy's wait still sees it"
+    );
+    let general = |meant| vec![("general".to_owned(), 2, meant)];
+    assert_eq!(unread(&chain, 2, &[("general", 0)]), general(1));
+    assert_eq!(unread(&chain, 1, &[("general", 0)]), general(0));
+    set_notices(&chain, CY, "general", Some(Notices::Mentions));
+    assert_eq!(
+        unread(&chain, 3, &[("general", 0)]),
+        general(1),
+        "a notice is addressed: a cut to mentions keeps it"
+    );
+    set_notices(&chain, CY, "general", Some(Notices::Off));
+    assert_eq!(unread(&chain, 3, &[("general", 0)]), general(0));
+
+    let asked = crate::Query::MessageById {
+        message_id: "n1".into(),
+    };
+    let crate::Reply::Message(Some(row)) = chain.query(crate::PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    assert_eq!(row.text, "pod builds-1 failed — exit code 1");
+    let submit = |op: crate::Op| {
+        chain
+            .submit(signed(ADA), crate::PROGRAM, &op)
+            .map(drop)
+            .map_err(|refusal| refusal.code)
+    };
+    let as_block = crate::Op::PostMessage {
+        channel_id: "general".into(),
+        message_id: "forged".into(),
+        blocks: row.blocks.clone(),
+        thread: None,
+    };
+    assert_eq!(submit(as_block), Err(code::INVALID_INPUT.to_owned()));
+    let edit = crate::Op::EditMessage {
+        channel_id: "general".into(),
+        seq: row.seq,
+        blocks: crate::parse_message("changed"),
+        base_rev: Some(0),
+    };
+    assert_eq!(submit(edit), Err(code::WRONG_STATE.to_owned()));
+    assert_eq!(
+        notify(&chain, ADA, "n3", vec![99]),
+        Err(code::INVALID_INPUT.to_owned()),
+        "a notice concerns accounts that exist"
     );
 }

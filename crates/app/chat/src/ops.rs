@@ -14,7 +14,7 @@ use crate::state::{
     PARTICIPANTS, REACTIONS, REPLIES, ROOTS, channel, message, newest_first, put_message, toggle,
 };
 use crate::{
-    AccountNumber, Block, ChannelRow, MemberRow, MsgRow, PostPolicy, Principal, Reaction,
+    AccountNumber, Block, ChannelRow, MemberRow, MsgRow, Notice, PostPolicy, Principal, Reaction,
     dm_channel_id,
 };
 
@@ -170,6 +170,31 @@ pub(crate) fn post(
     blocks: Vec<Block>,
     thread: Option<u64>,
 ) -> Result<(), Error> {
+    rules::no_notice(&blocks)?;
+    write(ctx, sender, channel_id, message_id, blocks, thread)
+}
+
+pub(crate) fn notify(
+    ctx: &ExecCtx,
+    sender: &Principal,
+    channel_id: String,
+    message_id: String,
+    thread: Option<u64>,
+    notice: Notice,
+) -> Result<(), Error> {
+    rules::notice(ctx, &notice)?;
+    let blocks = vec![Block::Notice(notice)];
+    write(ctx, sender, channel_id, message_id, blocks, thread)
+}
+
+fn write(
+    ctx: &ExecCtx,
+    sender: &Principal,
+    channel_id: String,
+    message_id: String,
+    blocks: Vec<Block>,
+    thread: Option<u64>,
+) -> Result<(), Error> {
     rules::id("message_id", &message_id)?;
     rules::namespace(&message_id, &ctx.env())?;
     rules::writable(ctx, &channel(ctx, &channel_id)?, sender)?;
@@ -250,6 +275,8 @@ pub(crate) fn edit(
     rules::writable(ctx, &channel(ctx, channel_id)?, sender)?;
     let old = message(ctx, channel_id, seq)?;
     rules::standing(&old)?;
+    rules::not_a_notice(&old)?;
+    rules::no_notice(&blocks)?;
     let blocks = resolve_typed(ctx, blocks)?;
     let row = MsgRow {
         blocks,

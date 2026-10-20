@@ -855,6 +855,25 @@ fn block_view(
             let id = format!("{key}-block-{index}");
             crate::ui::attachment::view(chat, id, file, cx, theme, &design::POINTER)
         }
+        Block::Notice(notice) => div()
+            .id(format!("{key}-block-{index}-notice"))
+            .flex()
+            .gap_2()
+            .cursor_text()
+            .text_size(design::text::SECONDARY)
+            .text_color(theme.muted)
+            .child(
+                div()
+                    .flex_none()
+                    .text_color(crate::message::notice_tone(notice.status, theme))
+                    .child(words::NOTICE_MARK),
+            )
+            .child(
+                rich_line(id, &crate::message::notice_spans(notice), names, cx, theme)
+                    .flex_1()
+                    .min_w(px(0.)),
+            )
+            .into_any_element(),
         Block::Paragraph(spans) => match chat::list_item(spans) {
             Some((marker, item)) => div()
                 .id(format!("{key}-block-{index}-item"))

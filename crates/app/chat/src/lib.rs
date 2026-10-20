@@ -54,11 +54,11 @@ pub use abi::hex;
 pub use abi::role::identity::{Category, Kind, Profile, Standing};
 pub use description::describe;
 pub use gate::message_key;
-pub use message::{Block, ListMarker, Mark, Span, list_item, parse_message};
+pub use message::{Block, ListMarker, Mark, Notice, Span, list_item, parse_message};
 pub use program::Chat;
 pub use queries::{replies_after, roots_below};
 pub use store::{Cursor, PageRequest, PageResponse};
-pub use text::{plain_text, tag_ranges, tags};
+pub use text::{notice_text, plain_text, tag_ranges, tags};
 
 /// Every table chat keeps, as a block's writes name them: what a follower
 /// of `program.changes` plays back in a test to say which a block touched.
@@ -229,6 +229,13 @@ pub enum Op {
         channel_id: String,
         listening: bool,
         notices: Option<Notices>,
+    },
+    #[tool_op(description = "Post a notice: a module's status line (a pod ended, a check failed, a change merged) told only to the accounts it concerns, and to a wait watching the room; everyone else sees it in the room and is not told. notice is kind (the module's word for what it reports, such as pod), group (notices of one author in one room under one group are one thing's states, such as a run's start and end), subject (what it is about, in words), link (a duck:// link to it, or null), status (Note, Running, Passed or Failed), detail (one line) and concerns (account numbers). A notice is never edited: post its next state as a new notice under the same group. message_id and thread are as PostMessage's, and it needs the room open to you and not archived.", example = examples::notify)]
+    Notify {
+        channel_id: String,
+        message_id: String,
+        thread: Option<u64>,
+        notice: Notice,
     },
 }
 
@@ -749,6 +756,13 @@ impl MsgRow {
             tags: Vec::new(),
         }
     }
+
+    pub fn notice(&self) -> Option<&Notice> {
+        match self.blocks.as_slice() {
+            [Block::Notice(notice)] => Some(notice),
+            _ => None,
+        }
+    }
 }
 
 /// One emoji on a message: how many principals chose it.
@@ -900,6 +914,7 @@ fn op_variants_only_append() {
             "SetRoomOrder",
             "Post",
             "ChooseForMany",
+            "Notify",
         ]
     );
 }

@@ -17,13 +17,14 @@ pub const THREAD: &str = "thread";
 pub const LISTEN: &str = "listen";
 // each account watching the message's channel for a wait that it relates to in no other way
 pub const WATCH: &str = "watch";
+pub const NOTICE: &str = "notice";
 
 pub(crate) fn mentioned(blocks: &[Block]) -> impl Iterator<Item = AccountNumber> + '_ {
     blocks
         .iter()
         .flat_map(|block| match block {
             Block::Paragraph(spans) | Block::Quote(spans) => spans.as_slice(),
-            Block::Code { .. } | Block::Divider | Block::Attachment(_) => &[],
+            Block::Code { .. } | Block::Divider | Block::Attachment(_) | Block::Notice(_) => &[],
         })
         .flat_map(|span| &span.marks)
         .filter_map(|mark| match mark {
@@ -59,21 +60,30 @@ pub fn relations(
         return Vec::new();
     }
     let mut held = BTreeSet::new();
-    for number in thread {
-        held.insert((*number, Reason::Defined(THREAD.into())));
-    }
-    for number in mentioned(&row.blocks) {
-        held.insert((number, Reason::Mention));
-    }
-    if let Some((lo, hi)) = dm_peers(&row.channel_id) {
-        for peer in [lo, hi] {
-            held.insert((peer, Reason::Defined(DIRECT.into())));
+    match row.notice() {
+        Some(notice) => {
+            for number in &notice.concerns {
+                held.insert((*number, Reason::Defined(NOTICE.into())));
+            }
         }
-    }
-    for number in listeners {
-        let related = held.iter().any(|(account, _)| account == number);
-        if !related {
-            held.insert((*number, Reason::Defined(LISTEN.into())));
+        None => {
+            for number in thread {
+                held.insert((*number, Reason::Defined(THREAD.into())));
+            }
+            for number in mentioned(&row.blocks) {
+                held.insert((number, Reason::Mention));
+            }
+            if let Some((lo, hi)) = dm_peers(&row.channel_id) {
+                for peer in [lo, hi] {
+                    held.insert((peer, Reason::Defined(DIRECT.into())));
+                }
+            }
+            for number in listeners {
+                let related = held.iter().any(|(account, _)| account == number);
+                if !related {
+                    held.insert((*number, Reason::Defined(LISTEN.into())));
+                }
+            }
         }
     }
     for number in watchers {

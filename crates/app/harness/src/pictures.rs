@@ -157,7 +157,8 @@ pub(crate) fn of_message(blocks: &[chat::Block]) -> Vec<Picture> {
             | chat::Block::Paragraph(_)
             | chat::Block::Code { .. }
             | chat::Block::Quote(_)
-            | chat::Block::Divider => None,
+            | chat::Block::Divider
+            | chat::Block::Notice(_) => None,
         })
         .collect()
 }
