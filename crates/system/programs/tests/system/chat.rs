@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use super::*;
 
-use chat::tables::{HEADS, MESSAGE_IDS, MESSAGES, POSTED, ROOTS};
+use chat::tables::{HEADS, MESSAGE_IDS, MESSAGES, POSTED, POSTED_IN, ROOTS};
 
 const ADA: u64 = 11;
 
@@ -62,6 +62,7 @@ fn a_message_writes_its_point_keys_and_an_edit_its_row_alone() {
             HEADS.key(&channel()),
             ROOTS.key(&(channel(), u64::MAX - 1)),
             POSTED.key(&(channel(), author)),
+            POSTED_IN.key(&(ada, channel())),
         ]);
         assert_eq!(keys, points, "a root post writes its point keys alone");
         let stored = applied.writes.programs[chat::PROGRAM][&row]
