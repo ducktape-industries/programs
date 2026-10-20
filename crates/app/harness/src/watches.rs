@@ -169,7 +169,7 @@ pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
     woken(&ctx, &row, text).await
 }
 
-const LOST: &str = "this is not its result: what it ran may still be running, so re-attach with \
+pub(crate) const LOST: &str = "this is not its result: what it ran may still be running, so re-attach with \
                     build.sh wait <run> (a build.sh run keeps its status on the pod's disk), or look \
                     at the pod, before running it again";
 

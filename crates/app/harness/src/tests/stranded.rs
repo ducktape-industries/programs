@@ -224,14 +224,23 @@ data: {"exit_code": 0, "stdout": "test result: ok", "stderr": ""}"#;
     assert!(assigned(chain, SERVICE).is_empty());
 }
 
+fn resumed(chain: &MockChain, thread: u64) {
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Resume { thread })
+        .unwrap();
+}
+
 #[test]
-fn a_stream_whose_end_an_update_cut_off_wakes_its_conversation_past_egress_deadline() {
+fn a_stream_whose_end_an_update_cut_off_wakes_its_conversation_once_egress_no_longer_holds_it() {
     let world = listed_world();
     let chain = &world.chain;
     let (thread, row) = streaming(&world);
     updated(chain, 8);
     chain.cancel_parked(PROGRAM);
     event(chain, &row, 0, "event: alive\ndata: {}");
+    resumed(chain, thread);
+    assert!(told(chain, thread).is_empty(), "egress still holds it");
+    chain.at(9, 0);
     let cut = egress::StreamEnd::Cut {
         reason: "stream_broken".into(),
     };
@@ -242,26 +251,19 @@ fn a_stream_whose_end_an_update_cut_off_wakes_its_conversation_past_egress_deadl
     };
     chain.submit(signed(&NODE), egress::PROGRAM, &end).unwrap();
     assert!(told(chain, thread).is_empty(), "no run heard the end");
-
-    let deadline = 8 + egress::DEFAULT_WAIT;
-    chain.at(deadline + 1, 0);
-    assert!(
-        told(chain, thread).is_empty(),
-        "its events moved the deadline"
-    );
-    chain.at(deadline + 2, 0);
+    chain.at(10, 0);
+    resumed(chain, thread);
     let [woke]: [String; 1] = told(chain, thread).try_into().unwrap();
-    let unheard = format!(
-        "pod_exec call s1 (pod duckpond-7: sh -c cargo test) ended unheard: harness heard nothing more of it by block {deadline}"
-    );
-    assert!(woke.starts_with(&unheard), "{woke}");
-    assert!(woke.ends_with("what it ran may still be running"), "{woke}");
-    assert_eq!(assigned(chain, SERVICE).len(), 1, "the wake asks the model");
+    let unheard = "pod_exec call s1 (pod duckpond-7: sh -c cargo test) ended unheard: egress no longer holds its stream";
+    assert!(woke.starts_with(unheard), "{woke}");
+    assert!(woke.contains("this is not its result"), "{woke}");
     assert!(assigned(chain, PODS).is_empty(), "nothing runs again");
+    chain.at(8 + egress::DEFAULT_WAIT + 2, 0);
+    assert_eq!(told(chain, thread).len(), 1, "it wakes once");
 }
 
 #[test]
-fn a_measured_stream_an_update_cut_off_before_its_stream_opened_wakes_its_conversation() {
+fn a_measured_stream_an_update_cut_off_before_its_stream_opened_wakes_its_conversation_at_once() {
     let world = listed_world();
     let chain = &world.chain;
     let thread = world.opened("m1", "build it", Some(WINDOW));
@@ -269,20 +271,18 @@ fn a_measured_stream_an_update_cut_off_before_its_stream_opened_wakes_its_conver
     turn(chain, 3, "s1", "pod_exec", input);
     chain.at(5, 0);
     chain.at(6, 0);
-    let read = pods_request(chain);
     updated(chain, 7);
     chain.cancel_parked(PROGRAM);
-
-    let deadline = read.made + egress::DEFAULT_WAIT;
-    chain.at(deadline + 1, 0);
-    assert!(told(chain, thread).is_empty(), "egress answers by then");
-    chain.at(deadline + 2, 0);
+    resumed(chain, thread);
     let [woke]: [String; 1] = told(chain, thread).try_into().unwrap();
-    let unheard = format!(
-        "pod_exec call s1 (pod duckpond-7: sh -c cargo test) ended unheard: harness heard nothing more of it by block {deadline}"
+    let unheard = "pod_exec call s1 (pod duckpond-7: sh -c cargo test) ended unheard: egress no longer holds its stream";
+    assert!(woke.starts_with(unheard), "{woke}");
+    assert!(
+        !assigned(chain, PODS)
+            .iter()
+            .any(|row| matches!(row.delivery, egress::Delivery::Events { .. })),
+        "no exec is sent"
     );
-    assert!(woke.starts_with(&unheard), "{woke}");
-    assert!(assigned(chain, PODS).is_empty(), "no exec is sent");
 }
 
 fn reply_streams(chain: &MockChain, request: &RequestRow, fixture: &str) {

@@ -20,7 +20,8 @@ use crate::tools::Write;
 use crate::turns::{append, bound, conclude, converse, give_up, say, settle};
 use crate::wire;
 use crate::{
-    Asking, Body, CallState, Flow, Op, PROGRAM, Partial, Place, ThreadRow, UsageWindow, streamed_as,
+    Asking, Body, CallState, Flow, Op, PROGRAM, Partial, Place, ThreadRow, UsageWindow, heard_as,
+    streamed_as,
 };
 
 const RETRY_AFTER: &str = "retry-after";
@@ -287,7 +288,7 @@ pub(crate) fn unlistened(ctx: &ExecCtx, id: u64, watch: u64) {
     STREAMING.remove(ctx, &(id, watch));
 }
 
-async fn lost_streams(ctx: &Ctx, id: u64) -> Result<(), Error> {
+async fn lost_streams(ctx: &Ctx, id: u64, since: Option<u64>) -> Result<(), Error> {
     let env = ctx.env();
     let height = env.height;
     for ((_, watch), flight) in STREAMING.scan(ctx, STREAMING.prefix_of(&id))? {
@@ -296,24 +297,32 @@ async fn lost_streams(ctx: &Ctx, id: u64) -> Result<(), Error> {
             STREAMING.remove(ctx, &key);
             continue;
         };
+        let cut = since.is_some_and(|since| flight.made < since);
         let end = deadline(&flight);
-        if height <= end {
-            let own =
-                matches!(env.cause, Cause::Scheduled { entry } if Some(entry) == flight.watch);
-            if own {
-                let watch = ctx
-                    .schedule(end.saturating_add(1), PROGRAM, &wake(id))
-                    .await
-                    .ok();
-                STREAMING.put(ctx, &key, &Flight { watch, ..flight });
+        if !cut && height <= end {
+            continue;
+        }
+        let own = matches!(env.cause, Cause::Scheduled { entry } if Some(entry) == flight.watch);
+        if delivered(ctx, &heard_as(watch))? {
+            if own || height > end {
+                let moved = Flight {
+                    moved: height.max(flight.moved),
+                    ..flight
+                };
+                let after = deadline(&moved).saturating_add(1);
+                let watch = ctx.schedule(after, PROGRAM, &wake(id)).await.ok();
+                STREAMING.put(ctx, &key, &Flight { watch, ..moved });
             }
             continue;
         }
         STREAMING.remove(ctx, &key);
         WATCHES.remove(ctx, &watch);
         let text = format!(
-            "{} call {} ({}) ended unheard: harness heard nothing more of it by block {end}, egress's deadline for its stream, as a harness update cut off the run that listened for its end; what it ran may still be running",
-            row.tool, row.call, row.about
+            "{} call {} ({}) ended unheard: egress no longer holds its stream, and a harness update cut off the run that listened for its end, so {}",
+            row.tool,
+            row.call,
+            row.about,
+            crate::watches::LOST
         );
         if let Some(told) = note(ctx, row.agent, Some(row.thread), text)?
             && told != id
@@ -477,7 +486,8 @@ async fn switched(ctx: &Ctx) -> Result<Option<u64>, Error> {
         let before = FLIGHTS
             .get(ctx, &id)?
             .is_none_or(|flight| flight.made < since);
-        if row.asking != Asking::Idle && before {
+        let listened = !STREAMING.scan(ctx, STREAMING.prefix_of(&id))?.is_empty();
+        if (row.asking != Asking::Idle && before) || listened {
             wakes.push(wake(id));
         }
     }
@@ -498,6 +508,10 @@ fn still_streaming(ctx: &QueryCtx, row: &ThreadRow) -> Result<bool, Error> {
 }
 
 fn held_by_egress(ctx: &QueryCtx, id: u64) -> Result<bool, Error> {
+    delivered(ctx, &streamed_as(id))
+}
+
+fn delivered(ctx: &QueryCtx, deliver: &[u8]) -> Result<bool, Error> {
     use abi::role::validators::{Query, Reply};
     let validators = ctx.env().role(abi::role::VALIDATORS)?.clone();
     let members = match ctx.query::<Query, Reply>(&validators, &Query::Members)? {
@@ -506,7 +520,7 @@ fn held_by_egress(ctx: &QueryCtx, id: u64) -> Result<bool, Error> {
     };
     let program = bound(ctx)?;
     let ours = egress::Delivery::Events {
-        deliver: streamed_as(id),
+        deliver: deliver.to_vec(),
     };
     for member in members {
         let asked = egress::Query::Assigned { key: member.key };
@@ -514,9 +528,7 @@ fn held_by_egress(ctx: &QueryCtx, id: u64) -> Result<bool, Error> {
             egress::Reply::Requests(rows) => rows,
             other => return Err(unexpected_reply(&program, "Assigned", &other)),
         };
-        let held = rows
-            .iter()
-            .any(|row| row.requester == PROGRAM && row.delivery == ours);
+        let held = rows.iter().any(|row| row.delivery == ours);
         if held {
             return Ok(true);
         }
@@ -527,7 +539,7 @@ fn held_by_egress(ctx: &QueryCtx, id: u64) -> Result<bool, Error> {
 pub(crate) async fn recover(ctx: &Ctx, id: u64) -> Result<(), Error> {
     let since = switched(ctx).await?;
     lost_writes(ctx, id).await?;
-    lost_streams(ctx, id).await?;
+    lost_streams(ctx, id, since).await?;
     let row = thread(ctx, id)?;
     if row.asking == Asking::Idle {
         return Ok(());
