@@ -184,7 +184,6 @@ fn unread_rooms_carry_a_dot_and_the_open_room_a_divider() {
             id: "general".into(),
             messages: Loadable::Ready(vec![row(3, 7, "old"), row(9, 8, "new")]),
             at_tail: true,
-            reaches_head: true,
             ..Room::default()
         });
         chat.channels_arrived(vec![channel("general", "General", 9)], cx);

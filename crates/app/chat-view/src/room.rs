@@ -187,7 +187,6 @@ impl Chat {
             *room = Room {
                 id: id.clone(),
                 at_tail: true,
-                reaches_head: true,
                 ..Room::default()
             };
         }
@@ -299,7 +298,6 @@ impl Chat {
         match result {
             Ok((rows, has_older)) => {
                 room.has_older = has_older;
-                room.reaches_head = true;
                 room.messages = Loadable::Ready(rows);
                 room.settle();
             }

@@ -41,7 +41,6 @@ fn snapshot(count: u64) -> serde_json::Value {
     room["messages"] = json!({"ready": rows});
     room["members"] = json!({"ready": []});
     room["at_tail"] = json!(true);
-    room["reaches_head"] = json!(true);
     let mut state = serde_json::to_value(Chat::default()).unwrap();
     state["session"]["connected"] = json!(true);
     state["room"] = room;
