@@ -2327,7 +2327,7 @@ fn touch_segment(
         .on_click(click);
     div()
         .relative()
-        .flex_1()
+        .flex_auto()
         .min_w_0()
         .h(SEGMENT_HEIGHT)
         .px(space::MD)
@@ -3393,6 +3393,7 @@ mod tests {
             let look = style(segment);
             assert_eq!(look.size.height, Some(px(34.).into()));
             assert_eq!(look.flex_grow, Some(1.));
+            assert_eq!(look.flex_basis, Some(gpui::Length::Auto));
             assert_eq!(look.text.font_size, Some(px(13.).into()));
             assert_eq!(look.text.line_height, Some(px(18.).into()));
             assert_eq!(segment.interactivity().and_then(|i| i.on_click), None);
