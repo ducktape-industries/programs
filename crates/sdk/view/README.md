@@ -86,6 +86,7 @@ with these; the rest of this page is reference.
 | `cx.log_refused(what, &refusal)` | 6/6 | A refusal nothing on screen waits for, to the host's log under the view's `NAME`. It asks `host.log`, so the view declares `Capability::Host`. |
 | `Loadable<T>`; `cx.load(self, work, \|view\| &mut view.slot)` | 6/6; 5/6 | An answer and its states, and the read that fills it. |
 | `Reread<T>`; `cx.reread(self, \|view\| &mut view.slot, \|view, cx\| work, Self::read)` | 1/6 | A `Loadable` read again on every change heard: a read out lands, and one more follows it. |
+| `Live<T>`; `cx.live(self, \|view\| &mut view.slot, ask, land, Self::read)` | 0/6 | A `Reread` the node keeps current: the question stands (`program.watch`) and each answer a block moves lands, with no read; `Self::read` runs when the node can't answer or stands nothing. |
 | `cx.land(work, \|view, answer, cx\| ..)` | 6/6 | The answer to your own closure: a write, or a read that does more than fill a slot. |
 | `host.query(ask)`, `host.query_all(\|after\| ask)` | 5/6 | A typed question to a program: one page, or the listing whole. |
 | `cx.notify()` | 6/6 | The view decides when it renders ("When a view renders"). |
@@ -467,6 +468,25 @@ for something only the view can judge.
   kept, and once it has landed `Self::read` runs once, however many changes
   came in meanwhile. A read replaced for every write heard while it runs never
   lands on a network that writes every block.
+- `cx.watch(ask, |view, pushed, cx| ..)` stands a typed question on the node
+  (`program.watch`, the bytes `host.query` sends): the node answers it at
+  once and again on each block that moves the answer, until the `Standing`
+  it returns is dropped. `pushed` is `Answer` (each new answer), `Refused` (the
+  program refused this block's run; it still stands), `Moved` (the node could
+  not run it: read it yourself) or `Ended` (nothing stands: read it where
+  `program.changes` says, as before). A host or node that stands no question
+  at all (`unsupported`, `unknown_request`) is remembered for the view's
+  session, and every later question ends at once without asking. `Live<T>` is
+  the slot form: `cx.live(self, |view| &mut view.slot, ask, land, Self::read)`
+  lands each answer `land` maps (`None`: the answer is not the whole value,
+  read it), lands a refused run as `Failed`, and runs `Self::read`, the
+  slot's own `cx.reread`, on `Moved` and once it ended. The view's change
+  handler re-reads a slot only while `!slot.stands()`. Asking the same
+  question again keeps it standing; another one lets go of the old. In tests,
+  `FakeHost` refuses `program.watch` `unsupported` unless the test calls
+  `host.stand::<P>()`, which answers each question from the `Query<P>`
+  handler and again on `moved()`, sending only answers whose bytes changed,
+  as the node does.
 - `cx.land(work, |view, answer, cx| ..)` hands the answer, the value or the
   refusal, to the closure and does nothing else; the closure notifies if it
   moved anything. It is for a write, or a read that does more than fill a

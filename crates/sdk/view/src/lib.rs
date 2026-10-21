@@ -77,16 +77,16 @@ pub mod prelude {
         Global, Host, HoverListenerMode, Hsla, Image, ImageFormat, Input, InteractiveElement,
         InteractiveText, IntoElement, KeyDownEvent, KeyUpEvent, List, ListAlignment,
         ListHorizontalSizingBehavior, ListOffset, ListScrollEvent, ListSizingBehavior, ListState,
-        Loadable, MediaState, MediaStatus, Memo, MicHandle, ModifiersChangedEvent, MouseButton,
-        MouseDownEvent, MouseExitEvent, MouseMoveEvent, MousePressureEvent, MouseUpEvent,
-        ObjectFit, ParentElement, PinchEvent, Pixels, Playback, Render, RenderOnce, Reread, Role,
-        ScrollHandle, ScrollStrategy, ScrollWheelEvent, SharedString, StatefulInteractiveElement,
-        Styled, StyledImage, StyledText, Subscription, Task, TextField, TextInputAction, Textarea,
-        Theme, Tint, TrackState, UniformListScrollHandle, View, VirtualKeyboard, WebHandle,
-        WebState, Window, anchored, artifact, camera, canvas, deferred, design, div,
-        export_notifier, export_view, hsla, img, list, memo, microphone, modal_overlay, px,
-        remote_audio, remote_video, rems, resize_handle, rgb, sensor, sheet, svg, uniform_list,
-        web,
+        Live, Loadable, MediaState, MediaStatus, Memo, MicHandle, ModifiersChangedEvent,
+        MouseButton, MouseDownEvent, MouseExitEvent, MouseMoveEvent, MousePressureEvent,
+        MouseUpEvent, ObjectFit, ParentElement, PinchEvent, Pixels, Playback, Pushed, Render,
+        RenderOnce, Reread, Role, ScrollHandle, ScrollStrategy, ScrollWheelEvent, SharedString,
+        Standing, StatefulInteractiveElement, Styled, StyledImage, StyledText, Subscription, Task,
+        TextField, TextInputAction, Textarea, Theme, Tint, TrackState, UniformListScrollHandle,
+        View, VirtualKeyboard, WebHandle, WebState, Window, anchored, artifact, camera, canvas,
+        deferred, design, div, export_notifier, export_view, hsla, img, list, memo, microphone,
+        modal_overlay, px, remote_audio, remote_video, rems, resize_handle, rgb, sensor, sheet,
+        svg, uniform_list, web,
     };
 }
 mod text;
@@ -109,6 +109,8 @@ mod snapshot;
 pub use root::{Loadable, Render, Reread, View};
 mod paged;
 pub use paged::Paged;
+mod standing;
+pub use standing::{Live, Pushed, Standing};
 pub use wire::methods;
 mod context;
 pub use context::{App, AppContext, AsyncApp, Callback, Context, Entity, Released, WeakEntity};

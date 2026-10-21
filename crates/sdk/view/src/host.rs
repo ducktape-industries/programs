@@ -28,7 +28,7 @@ pub fn malformed(error: String) -> Error {
     Error::new(::error::code::UNEXPECTED_REPLY, error)
 }
 
-fn unexpected_reply_variant() -> Error {
+pub(crate) fn unexpected_reply_variant() -> Error {
     malformed("the program answered another question".into())
 }
 
@@ -107,6 +107,7 @@ struct Registry {
     hosted: Option<Vec<String>>,
     asked_hosted: bool,
     unknown: std::collections::BTreeSet<String>,
+    stands_no_question: Option<Error>,
 }
 
 impl Registry {
@@ -398,7 +399,22 @@ impl Stream for Subscription {
     }
 }
 
+impl Subscription {
+    pub(crate) fn ended(&self) -> bool {
+        let slot = self.slot.borrow();
+        slot.closed && slot.answers.is_empty()
+    }
+}
+
 impl Host {
+    pub(crate) fn stands_no_question(&self) -> Option<Error> {
+        self.0.borrow().stands_no_question.clone()
+    }
+
+    pub(crate) fn stood_no_question(&self, refusal: Error) {
+        self.0.borrow_mut().stands_no_question = Some(refusal);
+    }
+
     pub(crate) fn drain_outbox(&self) -> Vec<Request> {
         let mut registry = self.0.borrow_mut();
         let keep: std::collections::HashSet<_> = registry

@@ -30,6 +30,7 @@ struct State {
     pieces: Vec<Piece>,
     kept: BTreeMap<String, Vec<u8>>,
     secrets: BTreeMap<String, Vec<u8>>,
+    standing: HashMap<String, Vec<Watcher>>,
 }
 
 struct Piece {
@@ -156,6 +157,15 @@ impl FakeHost {
         }
     }
 
+    pub fn stand<P: methods::Program>(&self) -> Standings<P> {
+        let mut state = self.0.borrow_mut();
+        state.standing.entry(P::NAME.to_owned()).or_default();
+        Standings {
+            host: self.clone(),
+            marker: PhantomData,
+        }
+    }
+
     /// Every `C` the view asked, subscribed to or notified, in order.
     pub fn requests<C: Method>(&self) -> Vec<C::Request> {
         self.0
@@ -266,6 +276,9 @@ impl FakeHost {
     pub(super) fn reset_connection(&self) {
         let mut state = self.0.borrow_mut();
         state.events.clear();
+        for watchers in state.standing.values_mut() {
+            watchers.clear();
+        }
         for stream in state.streams.values() {
             let mut stream = stream.borrow_mut();
             if let Some(host) = stream.host.take() {
@@ -342,6 +355,9 @@ impl FakeHost {
         state
             .held
             .retain(|request| !frame.cancels.contains(&request.id));
+        for watchers in state.standing.values_mut() {
+            watchers.retain(|watcher| !frame.cancels.contains(&watcher.id));
+        }
         for request in &frame.requests {
             state.requests.push(request.clone());
             if let (Some(declared), Some((capability, _)), false) = (
@@ -394,6 +410,8 @@ impl FakeHost {
                 Shape::Subscription => {
                     if let Some(refuse) = find(&mut state.refusals, kind, target) {
                         refuse(request)
+                    } else if let Some(answer) = stood(&mut state, request, target) {
+                        Some(answer)
                     } else {
                         if find(&mut state.streams, kind, target).is_none() {
                             assert!(
@@ -531,7 +549,7 @@ fn kept(state: &mut State, request: &Request) -> Option<Event> {
 fn target_of(request: &Request) -> Option<String> {
     match request.kind.as_str() {
         "program.changes" => methods::decode::<String>(&request.payload).ok(),
-        "program.query" | "op.submit" => methods::decode::<methods::Call>(&request.payload)
+        "program.query" | "op.submit" | WATCH => methods::decode::<methods::Call>(&request.payload)
             .ok()
             .map(|call| call.target),
         _ => None,
@@ -541,6 +559,124 @@ fn target_of(request: &Request) -> Option<String> {
 fn matches<C: Method>(request: &Request) -> bool {
     request.kind == C::KIND
         && C::TARGET.is_none_or(|target| target_of(request).as_deref() == Some(target))
+}
+
+const WATCH: &str = "program.watch";
+
+struct Watcher {
+    id: u64,
+    question: Request,
+    last: Option<Vec<u8>>,
+}
+
+fn stood(state: &mut State, request: &Request, target: Option<&str>) -> Option<Event> {
+    let fed = find(&mut state.streams, &request.kind, target).is_some();
+    let stands_here = request.kind == WATCH && !fed;
+    if !stands_here {
+        return None;
+    }
+    let target = target.unwrap_or_default().to_owned();
+    if !state.standing.contains_key(&target) {
+        return Some(Event::Response {
+            id: request.id,
+            result: Err(Error::new(
+                ::error::code::UNSUPPORTED,
+                "this host stands no question: the view reads it",
+            )),
+            done: true,
+        });
+    }
+    let question = Request {
+        id: request.id,
+        kind: "program.query".to_owned(),
+        payload: request.payload.clone(),
+    };
+    Some(match answered(state, &target, &question) {
+        Ok(answer) => {
+            let watcher = Watcher {
+                id: request.id,
+                question,
+                last: Some(answer.clone()),
+            };
+            state.standing.entry(target).or_default().push(watcher);
+            Event::Response {
+                id: request.id,
+                result: Ok(pushed_answer(answer)),
+                done: false,
+            }
+        }
+        Err(refusal) => Event::Response {
+            id: request.id,
+            result: Err(refusal),
+            done: true,
+        },
+    })
+}
+
+fn answered(state: &mut State, target: &str, question: &Request) -> Result<Vec<u8>, Error> {
+    let answer = find(&mut state.asks, "program.query", Some(target)).expect(
+        "a standing question is answered by the program's `Query` handler: give it one with `handle`",
+    );
+    match answer(question) {
+        Some(Event::Response { result, .. }) => result,
+        _ => panic!("a standing question is answered at once: `never` holds none"),
+    }
+}
+
+fn pushed_answer(answer: Vec<u8>) -> Vec<u8> {
+    let mut pushed = vec![1];
+    pushed.extend(answer);
+    pushed
+}
+
+/// The node's side of a program's standing questions in a test: each is answered at once by the program's `Query` handler, and again when the test says a block moved it.
+#[must_use = "the node's side is how a test moves the answers: keep it"]
+pub struct Standings<P> {
+    host: FakeHost,
+    marker: PhantomData<P>,
+}
+
+impl<P: methods::Program> Standings<P> {
+    pub fn moved(&self) {
+        let mut state = self.host.0.borrow_mut();
+        let state = &mut *state;
+        let mut watchers = state.standing.remove(P::NAME).unwrap_or_default();
+        for watcher in &mut watchers {
+            let (result, last) = match answered(state, P::NAME, &watcher.question) {
+                Ok(answer) if watcher.last.as_ref() == Some(&answer) => continue,
+                Ok(answer) => (Ok(pushed_answer(answer.clone())), Some(answer)),
+                Err(refusal) => (Err(refusal), None),
+            };
+            watcher.last = last;
+            state.events.push(Event::Response {
+                id: watcher.id,
+                result,
+                done: false,
+            });
+        }
+        state.standing.insert(P::NAME.to_owned(), watchers);
+    }
+
+    pub fn could_not_answer(&self) {
+        let mut state = self.host.0.borrow_mut();
+        let state = &mut *state;
+        let watchers = state.standing.get(P::NAME).into_iter().flatten();
+        let moved = watchers.map(|watcher| Event::Response {
+            id: watcher.id,
+            result: Ok(vec![0]),
+            done: false,
+        });
+        state.events.extend(moved.collect::<Vec<_>>());
+    }
+
+    pub fn standing(&self) -> usize {
+        self.host
+            .0
+            .borrow()
+            .standing
+            .get(P::NAME)
+            .map_or(0, Vec::len)
+    }
 }
 
 #[derive(Default)]

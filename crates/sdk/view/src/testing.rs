@@ -465,7 +465,7 @@ pub fn applied(output: Vec<u8>) -> crate::methods::Submitted {
         output,
     }
 }
-pub use fake_host::{FakeHost, StreamSender};
+pub use fake_host::{FakeHost, Standings, StreamSender};
 pub use notifier::TestNotifier;
 pub use relay::Relay;
 
