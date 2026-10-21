@@ -1,6 +1,7 @@
 //! The `attribution` program: which accounts each program's objects relate to (a mention,
 //! an author, an owner, an assignee), every change to those relations, and the program each
 //! change is handed to: the one a scripted recipient's script calls, once it has registered.
+mod examples;
 mod program;
 mod rules;
 mod state;
@@ -105,38 +106,60 @@ pub struct Relations {
     pub relations: Vec<Relation>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
+)]
+#[tool_about(
+    "Which accounts each program's objects relate to (a mention, an author, an owner, an assignee, a credit, a result, a report, or a reason of the program's own), every change to those relations, and the program each change is handed to: the one a scripted recipient's script calls, once it has registered."
+)]
 pub enum Op {
+    #[tool_op(description = "From a program, about one of its objects (a kind and an id, each named and with no /): replace the accounts it relates to, at a revision later than the last one reported, each account once per reason, with any transfers that match a withdrawal and an addition. Each account added or withdrawn is recorded as a change (a new detail alone records none), and each change is handed to the registered program a recipient's script calls when that recipient is an active program account.", example = crate::examples::attribute)]
     Attribute(Update),
+    #[tool_op(description = "Attribute several of the sending program's objects in one op, each as Attribute does, in order; one refused refuses them all.", example = crate::examples::attribute_batch)]
     AttributeBatch { updates: Vec<Update> },
+    #[tool_op(description = "From a program: be handed each change about an account whose script calls it, as deliver followed by the borsh of the Change; registering again replaces deliver.", example = crate::examples::register)]
     Register { deliver: Vec<u8> },
 }
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Ask,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    ::program::Ask,
+    ::program::Described,
 )]
 #[ask(Attribution)]
 pub enum Query {
     #[ask(Reply::Relations(Option<Relations>))]
     #[reads(state::OBJECTS)]
+    #[tool_query(description = "The accounts a program's object relates to at its latest revision, each with its reason and detail; null for an object never reported.", example = crate::examples::relations)]
     Relations { source: Source },
     #[ask(Reply::Changes(PageResponse<Change>))]
     #[reads(state::CHANGES)]
+    #[tool_query(description = "A page of every change to relations, oldest first: each with its object, revision, recipient, reason, kind (added, withdrawn, transferred in or out), actor, cause and height.", example = crate::examples::changes)]
     Changes { page: PageRequest },
     #[ask(Reply::Changes(PageResponse<Change>))]
     #[reads(state::TO, state::CHANGES)]
+    #[tool_query(description = "A page of the changes about one account, oldest first: what an account's inbox reads.", example = crate::examples::changes_to)]
     ChangesTo {
         recipient: AccountNumber,
         page: PageRequest,
     },
     #[ask(Reply::Changes(PageResponse<Change>))]
     #[reads(state::OF, state::CHANGES)]
+    #[tool_query(description = "A page of the changes to one program's object, oldest first.", example = crate::examples::changes_of)]
     ChangesOf { source: Source, page: PageRequest },
     #[ask(Reply::Registered(Vec<ProgramId>))]
     #[reads(state::REGISTERED)]
+    #[tool_query(description = "The programs registered to be handed changes.", example = crate::examples::registered)]
     Registered,
     #[ask(Reply::Change(Option<Change>))]
     #[reads(state::CHANGES)]
+    #[tool_query(description = "One change by its number; null for none.", example = crate::examples::change)]
     Change { seq: u64 },
 }
 

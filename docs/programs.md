@@ -140,8 +140,7 @@ grows by new keys. `borsh_json::tools::check` holds a section to the
 interface: every variant listed once, each with a description and an example
 that encodes as its own variant. founding's
 `every_program_describes_each_op_and_query_with_examples_of_its_own` runs it
-for every program here (`UNDESCRIBED` lists the ones not described yet; a
-program leaves it as its enums derive `Described`). An op enum a program takes
+for every program here, so a program a founding packs ships described. An op enum a program takes
 from elsewhere, such as a role's in abi (egress's), is described by a marker
 the program implements `Described` for by hand, gathered as
 `Tools::of::<Ops, Query>()`. A retired variant is deleted (below), so

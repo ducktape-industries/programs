@@ -1,5 +1,6 @@
 //! The program: every op and every query, each handed to its rule. A program that refuses a
 //! change handed to it is absorbed, so it never fails the write that reported the change.
+use ::program::tools::Tools;
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::rules::{
@@ -14,6 +15,10 @@ impl Program for Attribution {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+
+    fn tools() -> Tools {
+        Tools::of::<Op, Query>()
+    }
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         match op {
