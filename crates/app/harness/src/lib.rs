@@ -147,8 +147,7 @@ pub enum Op {
         after: Option<Vec<u8>>,
         limit: u64,
     },
-    // the services a model is reached through, its record's first: harness picks among them
-    #[tool_op(description = "Set every egress service a model is reached through, in order; the first becomes its record's service. The model's owner, or whom the owner lists.", example = examples::set_services)]
+    #[tool_op(description = "Retired with SetModel: SetRoute names the services that reach a provider, so it is always refused.", example = examples::set_services)]
     SetServices { id: String, services: Vec<String> },
     #[tool_op(description = "ReadBudget for every service any model lists. Anyone may.", example = examples::read_budgets)]
     ReadBudgets,

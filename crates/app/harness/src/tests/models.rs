@@ -75,6 +75,21 @@ fn retired() -> [Op; 4] {
 }
 
 #[test]
+fn every_retired_op_says_so_in_its_description() {
+    let tools = <Op as ::program::tools::Described>::tools();
+    for op in retired() {
+        let debug = format!("{op:?}");
+        let name = debug.split([' ', '(']).next().unwrap();
+        let tool = tools.iter().find(|tool| tool.variant == name).unwrap();
+        assert!(
+            tool.description.starts_with("Retired"),
+            "{name}: {}",
+            tool.description
+        );
+    }
+}
+
+#[test]
 fn a_retired_op_reads_as_retired_where_it_is_signed_and_its_bytes_still_decode() {
     let titles: Vec<String> = retired().iter().map(|op| describe(op).title).collect();
     assert_eq!(
