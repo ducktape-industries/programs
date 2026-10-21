@@ -12,6 +12,8 @@ Shapes: `src/lib.rs`; checks: `src/rules.rs`.
 | `Run { check }`, `Resume { check }` | actions-pods' own scheduled run |
 | `Heard(event)` | the egress role's program only |
 | `Sweep` | anyone; actions-pods books its own a whole egress wait (`DEFAULT_WAIT`) out while a check waits on a pod the cluster did not make |
-| `SetConcurrent { most }` | anyone |
+| `SetConcurrent { most }` | the validators' vote, or an account holding the name `actions-pods` in the programs role (`programs::Query::Owner`) |
+
+`SetConcurrent { most }` sets how many pods this runner holds at once (unset: 1; 0 is refused). A check offered past it waits, as one the quota had no room for does, until one of this runner's pods ends.
 
 Every query is answered for anyone.

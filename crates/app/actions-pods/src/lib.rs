@@ -36,7 +36,7 @@ pub enum Op {
     Sweep,
     #[tool_op(description = "This program's own scheduled run alone, the block after a Sweep found a pod an update cut off: wait for that pod again and finish its check.", example = crate::examples::resume)]
     Resume { check: u64 },
-    #[tool_op(description = "How many pods this runner holds at once (unset: 1), at least 1; a check offered past it waits until one of its pods ends. Open to anyone.", example = crate::examples::set_concurrent)]
+    #[tool_op(description = "How many pods this runner holds at once (unset: 1), at least 1; a check offered past it waits until one of its pods ends. The validators' vote, or an account holding this program's name in the programs role (programs Owner).", example = crate::examples::set_concurrent)]
     SetConcurrent { most: u64 },
 }
 

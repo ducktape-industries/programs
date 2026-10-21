@@ -2,8 +2,8 @@
 //! check claimed, the pod's end heard as a stream, `/out` kept, the check reported and the pod
 //! deleted. No room, or a pod not made, leaves the check queued; `Sweep` settles and retries.
 use ::program::{
-    BlobId, Cause, Ctx, Error, ExecCtx, HashKind, ProgramId, QueryCtx, code, decoded, invalid,
-    unauthorized, unexpected_reply, wrong_state,
+    BlobId, Cause, Ctx, Error, ExecCtx, HashKind, Principal, ProgramId, QueryCtx, code, decoded,
+    invalid, unauthorized, unexpected_reply, wrong_state,
 };
 use abi::role::egress::{DEFAULT_WAIT, Delivery, Event, Op as Egress, Request, http};
 use abi::role::programs as role;
@@ -147,6 +147,7 @@ pub(crate) fn concurrent(ctx: &QueryCtx) -> Result<u64, Error> {
 }
 
 pub(crate) async fn set_concurrent(ctx: Ctx, most: u64) -> Result<(), Error> {
+    set_by_the_vote_or_the_names_holder(&ctx)?;
     if most == 0 {
         return Err(invalid(
             "a runner holds at least one pod at once, or it runs no check",
@@ -155,6 +156,28 @@ pub(crate) async fn set_concurrent(ctx: Ctx, most: u64) -> Result<(), Error> {
     CONCURRENT.put(&ctx, &most);
     retry_waiting_next_block(&ctx).await;
     Ok(())
+}
+
+fn set_by_the_vote_or_the_names_holder(ctx: &QueryCtx) -> Result<(), Error> {
+    let env = ctx.env();
+    if env.authority().is_ok() {
+        return Ok(());
+    }
+    let programs = env.role(abi::role::PROGRAMS)?.clone();
+    let asked = ::programs::Query::Owner(env.program.clone());
+    let holder =
+        match ctx.query::<::programs::Query, ::programs::Reply>(programs.clone(), &asked)? {
+            ::programs::Reply::Owner { holder, .. } => holder,
+            other => return Err(unexpected_reply(&programs, "Owner", &other)),
+        };
+    let account = env.sender.as_ref().and_then(Principal::account);
+    match (account, holder) {
+        (Some(account), Some(holder)) if holder.lists(account) => Ok(()),
+        _ => Err(unauthorized(format!(
+            "only the validators' vote or an account holding the name {} (programs Owner) sets how many pods it holds at once",
+            env.program
+        ))),
+    }
 }
 
 fn pods_counting_against_quota(ctx: &QueryCtx, check: &CheckRow) -> u64 {

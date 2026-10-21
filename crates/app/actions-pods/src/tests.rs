@@ -20,6 +20,7 @@ use crate::*;
 const ADA: [u8; 32] = [1; 32];
 const BO: [u8; 32] = [2; 32];
 const OWNER: &[u8] = b"owner-key";
+const STRANGER: &[u8] = b"stranger-key";
 const COMMIT: &str = "1111111111111111111111111111111111111111";
 
 type Report = (u64, State, String, Option<String>);
@@ -433,9 +434,32 @@ impl Node {
     }
 
     fn concurrent(&self, most: u64) -> Result<Vec<u8>, Error> {
-        let anyone = Origin::Signed(OWNER.to_vec());
+        let owner = Origin::Signed(OWNER.to_vec());
         self.chain
-            .submit(anyone, PROGRAM, &Op::SetConcurrent { most })
+            .submit(owner, PROGRAM, &Op::SetConcurrent { most })
+    }
+
+    fn listed_by_the_vote(&mut self) {
+        self.chain.seat::<Programs>(programs::PROGRAM);
+        listed(&self.chain, b"0");
+    }
+
+    fn held_by_owner(&mut self) {
+        self.listed_by_the_vote();
+        let asked = identity::Query::OfKey {
+            key: OWNER.to_vec(),
+        };
+        let identity::Reply::Number(Some(owner)) =
+            self.chain.query(identity::PROGRAM, &asked).unwrap()
+        else {
+            panic!("the owner key acts as an account");
+        };
+        let own = programs::Op::Own {
+            program: PROGRAM.into(),
+            holder: programs::Holder::Account(owner),
+        };
+        let vote = Origin::Program(MockHost::role(abi::role::VALIDATORS));
+        self.chain.submit(vote, programs::PROGRAM, &own).unwrap();
     }
 
     fn concurrency(&self) -> u64 {
@@ -766,6 +790,7 @@ const FULL: &str = "pods \"duckpond-8\" is forbidden: exceeded quota: hardcap, r
 #[test]
 fn a_quota_with_no_room_leaves_the_check_queued_until_a_pod_of_this_runner_ends() {
     let mut node = node();
+    node.held_by_owner();
     node.concurrent(2).unwrap();
     let wait = waiting_on_its_pod(&mut node);
     node.offer(2).unwrap();
@@ -879,6 +904,7 @@ fn a_rerun_deletes_the_earlier_attempts_pod_and_reports_it_superseded() {
 #[test]
 fn a_sweep_deletes_the_pod_of_a_check_that_ended_and_leaves_a_live_run_alone() {
     let mut node = node();
+    node.held_by_owner();
     node.concurrent(2).unwrap();
     waiting_on_its_pod(&mut node);
     node.offer(2).unwrap();
@@ -938,6 +964,7 @@ fn a_check_past_the_runners_concurrency_waits_for_one_of_its_pods_to_end() {
     assert!(node.waiting().is_empty());
 
     let mut wide = crate::tests::node();
+    wide.held_by_owner();
     wide.concurrent(2).unwrap();
     assert_eq!(wide.concurrency(), 2);
     wide.offer(1).unwrap();
@@ -952,6 +979,35 @@ fn a_check_past_the_runners_concurrency_waits_for_one_of_its_pods_to_end() {
     assert_eq!(posts, 2, "two pods at once");
     let none = wide.concurrent(0).unwrap_err();
     assert_eq!(none.code, code::INVALID_INPUT);
+}
+
+#[test]
+fn only_the_vote_or_an_account_holding_the_name_sets_how_many_pods_it_holds() {
+    let mut held = node();
+    held.held_by_owner();
+    let stranger = Origin::Signed(STRANGER.to_vec());
+    let create = identity::Op::Create {
+        name: "Stranger".into(),
+        scheme: Scheme::Ed25519,
+    };
+    held.chain
+        .submit(stranger.clone(), identity::PROGRAM, &create)
+        .unwrap();
+    let eight = Op::SetConcurrent { most: 8 };
+    let refused = held.chain.submit(stranger, PROGRAM, &eight).unwrap_err();
+    assert_eq!(refused.code, code::UNAUTHORIZED, "{}", refused.message);
+    assert_eq!(held.concurrency(), 1);
+    held.concurrent(2).unwrap();
+    assert_eq!(held.concurrency(), 2);
+
+    let mut voted = node();
+    voted.listed_by_the_vote();
+    let refused = voted.concurrent(2).unwrap_err();
+    assert_eq!(refused.code, code::UNAUTHORIZED, "{}", refused.message);
+    let vote = Origin::Program(MockHost::role(abi::role::VALIDATORS));
+    let three = Op::SetConcurrent { most: 3 };
+    voted.chain.submit(vote, PROGRAM, &three).unwrap();
+    assert_eq!(voted.concurrency(), 3);
 }
 
 #[test]
@@ -1045,6 +1101,7 @@ fn a_pod_the_cluster_did_not_make_waits_and_the_sweep_it_books_makes_it_again() 
 #[test]
 fn a_waiting_check_that_ended_elsewhere_is_not_counted_as_waiting() {
     let mut node = node();
+    node.held_by_owner();
     node.concurrent(2).unwrap();
     waiting_on_its_pod(&mut node);
     node.offer(2).unwrap();

@@ -25,12 +25,12 @@ store = { workspace = true }
 actions = { workspace = true }
 egress = { workspace = true }
 serde_json = { workspace = true }
+# who holds this program's name, which decides SetConcurrent
+programs = { workspace = true }
 
 [dev-dependencies]
 access = { workspace = true }
 awaits = { workspace = true }
 identity = { workspace = true }
 scheduler = { workspace = true }
-# the programs role, which names the code this program runs
-programs = { workspace = true }
 valset = { workspace = true }
