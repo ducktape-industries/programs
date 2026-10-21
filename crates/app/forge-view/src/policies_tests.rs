@@ -310,3 +310,40 @@ fn on_a_phone_the_settings_and_the_details_carry_the_rows_and_back_closes_the_sh
     press(&mut cx, "forge-change-policy");
     assert!(cx.find("forge-change-policy/sheet").is_some());
 }
+
+fn access_closed_to_its_owner(cx: &TestAppContext) {
+    cx.host().handle::<ProgramQuery<access::Access>>(|query| {
+        Ok(match query {
+            access::Query::Writers { key, .. } => {
+                access::Reply::Writers(program::Writers::Listed {
+                    at: key,
+                    owner: Some(Party::Account(1)),
+                    list: Ownership::Owner,
+                })
+            }
+            access::Query::List { .. } => access::Reply::List(Some(Ownership::Owner)),
+            other => panic!("unexpected access query: {other:?}"),
+        })
+    });
+}
+
+#[test]
+fn an_access_list_narrower_than_the_policy_is_what_the_writers_row_and_merge_follow() {
+    let open = a_policy(3, 1, "Open", Writers::Anyone);
+    let (mut cx, _) = booted_as("default", 2);
+    owned(&cx, vec![(custody(), 1, open.clone())], vec![open]);
+    access_closed_to_its_owner(&cx);
+    cx.simulate_click("forge-repo-project-open");
+    cx.run_until_parked();
+    settings(&mut cx);
+    assert!(
+        cx.find("forge-writer-everyone").is_none(),
+        "access lets only the owner write: {:?}",
+        cx.texts()
+    );
+    cx.simulate_click("forge-tab-changes");
+    cx.run_until_parked();
+    cx.simulate_click("forge-change-1");
+    cx.run_until_parked();
+    assert!(disabled(&cx, "forge-merge"), "access refuses Rae's merge");
+}

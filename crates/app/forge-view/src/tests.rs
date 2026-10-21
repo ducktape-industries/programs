@@ -383,6 +383,7 @@ fn access_answer(query: access::Query) -> access::Reply {
             access::Reply::List(Some(Ownership::Listed(vec![Party::Account(9)])))
         }
         access::Query::List { .. } => access::Reply::List(None),
+        access::Query::Writers { .. } => access::Reply::Writers(program::Writers::Anyone),
         other => panic!("unexpected access query: {other:?}"),
     }
 }

@@ -1,6 +1,6 @@
 //! Who writes an item, set to what a person picked: one of its owner's live policies that says
 //! exactly that, else a new one named as the item, then a Relink; and access's own list beside it
-//! while the roster still binds the access role, which gates every write until it is unbound.
+//! while the roster binds the access role, which gates every write too: who writes is the narrower.
 use ::program::{Ownership as List, Party as Listed};
 use ownership::{Ownership, Party, PolicyId, Writers};
 use view::host::Error;
@@ -68,6 +68,37 @@ pub async fn access_list(
         list: Some(list(write)),
     };
     host.ask::<Submit<access::Access>>(set).await.map(Some)
+}
+
+pub async fn access_writers(host: &Host, program: &str, key: &str) -> Result<Option<List>, Error> {
+    if !access_gates(host).await? {
+        return Ok(None);
+    }
+    let asked = access::ask::Writers {
+        program: program.to_owned(),
+        key: key.to_owned(),
+    };
+    Ok(Some(match host.query(asked).await? {
+        ::program::Writers::Anyone => List::Anyone,
+        ::program::Writers::Listed { list, .. } => list,
+    }))
+}
+
+pub fn narrower(one: List, other: List) -> List {
+    match (one, other) {
+        (List::Anyone, list) | (list, List::Anyone) => list,
+        (List::Owner, _) | (_, List::Owner) => List::Owner,
+        (List::Listed(one), List::Listed(other)) => {
+            let both: Vec<Listed> = one
+                .into_iter()
+                .filter(|party| other.contains(party))
+                .collect();
+            match both.is_empty() {
+                true => List::Owner,
+                false => List::Listed(both),
+            }
+        }
+    }
 }
 
 pub fn list(write: &Writers) -> List {

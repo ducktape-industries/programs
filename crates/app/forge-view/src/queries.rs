@@ -130,7 +130,13 @@ pub(crate) async fn writers(host: Host, repo: String) -> Result<Option<Ownership
             key: forge::tables::CUSTODY.key(&repo),
         })
         .await?;
-    Ok(policy.map(|policy| policy_view::link::list(&policy.write)))
+    let by_policy = policy.map(|policy| policy_view::link::list(&policy.write));
+    let key = forge::repo_key(&repo);
+    let by_access = policy_view::link::access_writers(&host, forge::PROGRAM, &key).await?;
+    Ok(match (by_policy, by_access) {
+        (Some(policy), Some(access)) => Some(policy_view::link::narrower(policy, access)),
+        (policy, access) => policy.or(access),
+    })
 }
 
 // A change's conversation ([`Talk`]), oldest first: the whole of its own room, or, in a job's

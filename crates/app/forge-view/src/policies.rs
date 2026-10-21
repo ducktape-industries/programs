@@ -67,7 +67,8 @@ impl Forge {
         let read = self
             .repo_item()
             .and_then(|repo| self.repo_policy.admits(&repo));
-        self.by_policy(read, self.writes_repo())
+        let policy_admits = read.unwrap_or(true);
+        self.writes_repo() && policy_admits
     }
 
     pub(crate) fn may_configure(&self) -> bool {
