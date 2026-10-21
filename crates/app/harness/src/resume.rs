@@ -741,15 +741,26 @@ async fn post(ctx: &Ctx, row: &ThreadRow, place: &Place, why: &str) {
         Place::Channel { .. } => None,
         Place::Thread { root, .. } => Some(*root),
     };
-    let text = format!(
-        "harness: conversation {}'s turn resumed after block {height} ({why})",
-        row.id
-    );
-    let op = chat::Op::PostMessage {
+    let agent = row.agent.to_string();
+    let mut tail = vec![agent.as_str()];
+    tail.extend(row.place.split('/').filter(|part| !part.is_empty()));
+    let concerns = match running(ctx, row.manager) {
+        Ok(Some(_)) => Vec::new(),
+        _ => vec![row.manager],
+    };
+    let op = chat::Op::Notify {
         channel_id: place.channel().to_owned(),
         message_id: format!("harness-resume-{}-{height}", row.id),
-        blocks: chat::parse_message(&text),
         thread,
+        notice: chat::Notice {
+            kind: "turn".into(),
+            group: format!("resumed {}", row.id),
+            subject: format!("conversation {}", row.id),
+            link: ducklink::path(&ctx.env().program, &tail),
+            status: chat::message::Status::Note,
+            detail: format!("turn resumed after block {height} ({why})"),
+            concerns,
+        },
     };
     let _ = ctx.call_raw(chat::PROGRAM, abi::encode(&op)).await;
 }

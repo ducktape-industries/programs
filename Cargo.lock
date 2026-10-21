@@ -2842,6 +2842,7 @@ dependencies = [
  "criterion",
  "describe",
  "design",
+ "ducklink",
  "egress",
  "files",
  "forge",

@@ -29,6 +29,7 @@ activity = { workspace = true }
 attribution = { workspace = true }
 identity = { workspace = true }
 chat = { workspace = true }
+ducklink = { workspace = true }
 files = { workspace = true }
 forge = { workspace = true }
 # `forge_commit` builds a commit's git objects and pack

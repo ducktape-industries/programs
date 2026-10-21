@@ -239,8 +239,59 @@ fn the_manager_hears_one_line_for_a_blocks_cut_turns_and_a_bound_room_one_post()
     let chat::Reply::Message(Some(line)) = chain.query(chat::PROGRAM, &asked).unwrap() else {
         panic!("the bound room has the line")
     };
-    let resumed = format!("conversation {bound}'s turn resumed after block 3 (egress failed)");
-    assert!(line.text.contains(&resumed), "{}", line.text);
+    let notice = line.notice().expect("the resume line is a notice");
+    assert_eq!(notice.kind, "turn");
+    assert_eq!(notice.status, chat::message::Status::Note);
+    assert_eq!(notice.group, format!("resumed {bound}"));
+    assert_eq!(notice.subject, format!("conversation {bound}"));
+    assert_eq!(notice.detail, "turn resumed after block 3 (egress failed)");
+    assert_eq!(
+        notice.concerns,
+        Vec::<u64>::new(),
+        "a manager that is a running agent hears the report alone"
+    );
+    assert_eq!(
+        notice.link,
+        Some(format!("harness/{}/chat/j-1", world.agent))
+    );
+}
+
+#[test]
+fn a_manager_who_is_no_running_agent_is_told_by_the_rooms_notice() {
+    let world = world();
+    let chain = &world.chain;
+    let room = chat::Op::CreateChannel {
+        channel_id: "j-1".into(),
+        name: "j-1".into(),
+        post_policy: chat::PostPolicy::Open,
+    };
+    chain.submit(signed(ADA), chat::PROGRAM, &room).unwrap();
+    let open = Op::OpenThread {
+        agent: world.agent,
+        place: Place::Channel {
+            channel: "j-1".into(),
+        },
+    };
+    let bound: u64 = abi::decode(&chain.submit(signed(ADA), PROGRAM, &open).unwrap()).unwrap();
+    world.post(ADA, "j-1", "m2", &format!("<@{}> here", world.agent));
+    let host = chain.host(PROGRAM);
+    let ctx = host.exec(chain.env(PROGRAM));
+    let managed = ThreadRow {
+        manager: world.ada,
+        ..thread_row(chain, bound)
+    };
+    THREADS.put(&ctx, &bound, &managed);
+    chain.at(3, 0);
+    let [cut]: [RequestRow; 1] = assigned(chain, SERVICE).try_into().unwrap();
+    fail(chain, &cut);
+    chain.at(5, 0);
+    let message_id = format!("harness-resume-{bound}-3");
+    let asked = chat::Query::MessageById { message_id };
+    let chat::Reply::Message(Some(line)) = chain.query(chat::PROGRAM, &asked).unwrap() else {
+        panic!("the bound room has the line")
+    };
+    let notice = line.notice().expect("the resume line is a notice");
+    assert_eq!(notice.concerns, [world.ada], "the manager alone");
 }
 
 #[test]
