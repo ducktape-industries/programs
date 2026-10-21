@@ -156,18 +156,8 @@ pub(crate) fn booking() -> Query {
     Query::Booking { entry: 7 }
 }
 
-pub(crate) fn usage_window() -> Query {
-    Query::UsageWindow {
-        service: "anthropic".into(),
-    }
-}
-
 pub(crate) fn settling() -> Query {
     Query::Settling { thread: 144 }
-}
-
-pub(crate) fn budget() -> Query {
-    Query::Budget
 }
 
 pub(crate) fn waits() -> Query {

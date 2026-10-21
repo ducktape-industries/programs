@@ -697,15 +697,6 @@ pub struct AgentTools {
     pub problems: Vec<String>,
 }
 
-// how much of a model service's usage window the last answer said is spent, and when the window
-// resets (seconds since the epoch), as its headers put them
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
-pub struct UsageWindow {
-    pub utilization: String,
-    pub reset: u64,
-    pub height: u64,
-}
-
 // a whole usage window, in the millionths `WindowOutlook::used` counts
 pub const WHOLE_WINDOW: u64 = 1_000_000;
 
@@ -1010,25 +1001,17 @@ pub enum Query {
     #[reads(state::BOOKINGS)]
     #[tool_query(description = "One booked run by entry, and what it did once it ran, or null.", example = examples::booking)]
     Booking { entry: u64 },
-    #[ask(Reply::UsageWindow(Option<UsageWindow>))]
-    #[reads(state::USAGE)]
-    #[tool_query(description = "The last usage window a service's answers reported (utilization and reset), or null.", example = examples::usage_window)]
-    UsageWindow { service: String },
     #[ask(Reply::Settling(Option<SettleWindow>))]
     #[reads(state::SETTLING)]
     #[tool_query(description = "A conversation's settle window, or null.", example = examples::settling)]
-    Settling { thread: u64 },
-    #[ask(Reply::Budget(BudgetReport))]
-    #[reads(state::BUDGETS, state::PACES, state::FLIGHTS)]
-    #[tool_query(description = "Every model service account's usage windows, calls per minute and when it runs out.", example = examples::budget)]
-    Budget,
+    Settling { thread: u64 } = 20,
     #[ask(Reply::Waits(PageResponse<WaitRow>))]
     #[reads(state::WAITING, state::WAITS)]
     #[tool_query(description = "An agent's waits, open and ended.", example = examples::waits)]
     Waits {
         agent: AccountNumber,
         page: PageRequest,
-    },
+    } = 22,
     #[ask(Reply::Wait(Option<WaitRow>))]
     #[reads(state::WAITS)]
     #[tool_query(description = "One wait by id and how it ended, or null.", example = examples::wait)]
@@ -1103,7 +1086,7 @@ pub enum Query {
     },
     #[ask(Reply::BudgetFacts(BudgetFactsReport))]
     #[reads(state::BUDGETS, state::PACES, state::FLIGHTS, state::BUDGET_FACTS)]
-    #[tool_query(description = "Budget, with what harness learned of each service account: the provider its calls were for, the login its gate names behind it, and the login before that with when it changed.", example = examples::budget_facts)]
+    #[tool_query(description = "Every model service account's usage windows, calls per minute and when it runs out, with what harness learned of each: the provider its calls were for, the login its gate names behind it, and the login before that with when it changed.", example = examples::budget_facts)]
     BudgetFacts,
 }
 
@@ -1125,10 +1108,8 @@ pub enum Reply {
     Call(Option<CallRow>),
     Bookings(PageResponse<Booking>),
     Booking(Option<Booking>),
-    UsageWindow(Option<UsageWindow>),
-    Settling(Option<SettleWindow>),
-    Budget(BudgetReport),
-    Waits(PageResponse<WaitRow>),
+    Settling(Option<SettleWindow>) = 17,
+    Waits(PageResponse<WaitRow>) = 19,
     Wait(Option<WaitRow>),
     Route(Option<Route>) = 22,
     Routes(PageResponse<Routed>),
@@ -1395,9 +1376,9 @@ fn query_variants_only_append() {
             "Call",
             "Bookings",
             "Booking",
-            "UsageWindow",
+            "-",
             "Settling",
-            "Budget",
+            "-",
             "Waits",
             "Wait",
             "Armed",

@@ -339,13 +339,17 @@ fn a_429_holds_until_the_usage_window_resets_or_an_input_comes_and_the_window_is
     let [told]: [String; 1] = notices(chain, thread).try_into().unwrap();
     let held = "again once the model's wait ends at 1100 (seconds since the epoch) (attempt 1)";
     assert!(told.ends_with(held), "{told}");
-    let asked = Query::UsageWindow {
-        service: SERVICE.into(),
+    let Reply::BudgetFacts(report) = chain.query(PROGRAM, &Query::BudgetFacts).unwrap() else {
+        panic!("the budget answers as one")
     };
-    let Reply::UsageWindow(Some(window)) = chain.query(PROGRAM, &asked).unwrap() else {
-        panic!("the window is kept")
-    };
-    assert_eq!((window.utilization.as_str(), window.reset), ("1.0", 1100));
+    let kept = report.budget.accounts.iter().flat_map(|row| &row.windows);
+    let windows: Vec<_> = kept
+        .map(|seen| (seen.utilization.as_str(), seen.reset))
+        .collect();
+    assert!(
+        windows.contains(&("1.0", 1100)),
+        "the window is kept: {windows:?}"
+    );
     chain.at(4, 1_010_000);
     assert!(assigned(chain, SERVICE).is_empty(), "held for the reset");
     chain.at(5, 1_020_000);

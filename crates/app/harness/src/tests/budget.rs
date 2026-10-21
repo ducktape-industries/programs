@@ -3,10 +3,7 @@
 use super::*;
 
 fn budget(chain: &MockChain) -> BudgetReport {
-    let Reply::Budget(report) = chain.query(PROGRAM, &Query::Budget).unwrap() else {
-        panic!("the budget answers as one")
-    };
-    report
+    facts(chain).budget
 }
 
 fn answered(chain: &MockChain, account: &str, used: &str, reset: &str) {
@@ -149,11 +146,6 @@ fn each_account_keeps_its_provider_and_the_login_its_gate_names_with_the_one_bef
     let first = [("x-harness-identity", "login-1")];
     answered_with(chain, "a", "0.2", "1000", &first);
     let heard = facts(chain);
-    assert_eq!(
-        heard.budget,
-        budget(chain),
-        "the same report beside its facts"
-    );
     let a = fact_of(&heard, "a");
     assert_eq!(
         (

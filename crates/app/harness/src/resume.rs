@@ -14,18 +14,14 @@ use crate::routes;
 use crate::schema::code_of;
 use crate::state::{
     ASKED, AWAITED, Awaited, CALLS, FLIGHTS, FRAMES, Flight, PARTIALS, PICKS, REPORTING, REPORTS,
-    RETRIES, RUNNING, Retry, STREAMING, THREADS, USAGE, WATCHES,
+    RETRIES, RUNNING, Retry, STREAMING, THREADS, WATCHES,
 };
 use crate::tools::Write;
 use crate::turns::{append, bound, conclude, converse, give_up, say, settle};
 use crate::wire;
-use crate::{
-    Asking, Body, CallState, Flow, Op, Partial, Place, ThreadRow, UsageWindow, heard_as,
-    streamed_as,
-};
+use crate::{Asking, Body, CallState, Flow, Op, Partial, Place, ThreadRow, heard_as, streamed_as};
 
 const RETRY_AFTER: &str = "retry-after";
-const UTILIZATION: &str = "anthropic-ratelimit-unified-5h-utilization";
 const RESET: &str = "anthropic-ratelimit-unified-5h-reset";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -138,21 +134,6 @@ pub(crate) fn header<'a>(response: &'a http::Response, name: &str) -> Option<&'a
         .iter()
         .find(|(key, _)| key.eq_ignore_ascii_case(name));
     found.map(|(_, value)| value.trim())
-}
-
-pub(crate) fn window_seen(ctx: &ExecCtx, service: &str, provider: &str, response: &http::Response) {
-    crate::budget::seen(ctx, service, provider, response);
-    let utilization = header(response, UTILIZATION);
-    let reset = header(response, RESET).and_then(|value| value.parse().ok());
-    let (Some(utilization), Some(reset)) = (utilization, reset) else {
-        return;
-    };
-    let window = UsageWindow {
-        utilization: utilization.to_owned(),
-        reset,
-        height: ctx.env().height,
-    };
-    USAGE.put(ctx, &service.to_owned(), &window);
 }
 
 fn deadline(flight: &Flight) -> u64 {

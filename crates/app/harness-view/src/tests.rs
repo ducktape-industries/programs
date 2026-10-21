@@ -604,8 +604,6 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             ),
             harness::Query::Bookings { .. } => harness::Reply::Bookings(page(Vec::new())),
             harness::Query::Booking { .. } => harness::Reply::Booking(None),
-            harness::Query::UsageWindow { .. } => harness::Reply::UsageWindow(None),
-            harness::Query::Budget => harness::Reply::Budget(net.budget.clone()),
             harness::Query::BudgetFacts => {
                 harness::Reply::BudgetFacts(harness::BudgetFactsReport {
                     budget: net.budget.clone(),

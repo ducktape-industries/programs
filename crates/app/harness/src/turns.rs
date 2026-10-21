@@ -240,7 +240,7 @@ async fn call_model(
     let bytes = answer.map_err(|error| Failure::unreached(&error))?;
     let response: http::Response = abi::decode(&bytes)
         .map_err(|_| Failure::last("the egress answer is not an HTTP response"))?;
-    resume::window_seen(ctx, &asked.service, &asked.provider, &response);
+    crate::budget::seen(ctx, &asked.service, &asked.provider, &response);
     routes::heard(ctx, asked.thread, &response);
     let answered_a_prompt = prompted && response.status == 200;
     if answered_a_prompt {

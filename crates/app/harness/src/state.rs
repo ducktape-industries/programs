@@ -10,7 +10,7 @@ use store::{Item, KeyCodec, Kind, Map, Owned, Set};
 use crate::pictures::{Hidden, Picture};
 use crate::{
     Body, Booking, CallRow, FinalError, Frame, Partial, Place, ProviderRouteRow, Sealed,
-    SettleWindow, Tally, ThreadRow, UsageWindow, WaitRow, Window,
+    SettleWindow, Tally, ThreadRow, WaitRow, Window,
 };
 
 // Who may start an agent's conversations, of the kind `harness.agent-conversation`: its manager's
@@ -63,7 +63,6 @@ pub const FLIGHTS: Map<u64, Flight> = Map::new("flight/");
 pub const RETRIES: Map<u64, Retry> = Map::new("retry/");
 pub const REPORTS: Map<(AccountNumber, u64), String> = Map::new("report/");
 pub const REPORTING: Set<AccountNumber> = Set::new("reporting/");
-pub const USAGE: Map<String, UsageWindow> = Map::new("usage/");
 // a thread whose general input waits out its agent's `settle`, and the wake-up that ends it
 pub const SETTLING: Map<u64, SettleWindow> = Map::new("settling/");
 pub const BUDGETS: Map<(String, String), Budget> = Map::new("budget/");

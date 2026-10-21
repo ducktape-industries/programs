@@ -28,7 +28,7 @@ const LIVE_OPS: [(&str, i64); 22] = [
     ("HoldSealed", 33),
 ];
 
-const LIVE_QUERIES: [(&str, i64); 36] = [
+const LIVE_QUERIES: [(&str, i64); 34] = [
     ("Agent", 0),
     ("Thread", 1),
     ("Threads", 2),
@@ -46,9 +46,7 @@ const LIVE_QUERIES: [(&str, i64); 36] = [
     ("Call", 16),
     ("Bookings", 17),
     ("Booking", 18),
-    ("UsageWindow", 19),
     ("Settling", 20),
-    ("Budget", 21),
     ("Waits", 22),
     ("Wait", 23),
     ("Armed", 24),
@@ -67,7 +65,7 @@ const LIVE_QUERIES: [(&str, i64); 36] = [
     ("BudgetFacts", 38),
 ];
 
-const LIVE_REPLIES: [(&str, i64); 31] = [
+const LIVE_REPLIES: [(&str, i64); 29] = [
     ("Agent", 0),
     ("Thread", 1),
     ("Threads", 2),
@@ -82,9 +80,7 @@ const LIVE_REPLIES: [(&str, i64); 31] = [
     ("Call", 13),
     ("Bookings", 14),
     ("Booking", 15),
-    ("UsageWindow", 16),
     ("Settling", 17),
-    ("Budget", 18),
     ("Waits", 19),
     ("Wait", 20),
     ("Route", 22),
@@ -118,6 +114,8 @@ const READ_BUDGETS_TAG: u8 = 27;
 const MODEL_TAG: u8 = 8;
 const MODELS_TAG: u8 = 9;
 const SERVICES_TAG: u8 = 26;
+const USAGE_WINDOW_TAG: u8 = 19;
+const BUDGET_TAG: u8 = 21;
 
 fn encoded<T: BorshSerialize>(value: &T) -> Vec<u8> {
     borsh::to_vec(value).unwrap()
@@ -208,6 +206,31 @@ fn a_retired_model_or_services_query_tag_is_no_query() {
             .message
             .starts_with("harness: Query did not decode: ");
         assert!(undecoded, "{refused}");
+    }
+}
+
+#[test]
+fn a_retired_usage_window_or_budget_query_tag_is_no_query() {
+    let world = world();
+    let queries = [
+        tagged(USAGE_WINDOW_TAG, &[encoded(&"anthropic".to_owned())]),
+        tagged(BUDGET_TAG, &[]),
+    ];
+    for bytes in queries {
+        let refused = match world.chain.query_bytes(PROGRAM, &bytes) {
+            Ok(_) => panic!("tag {} answered as a query", bytes[0]),
+            Err(refused) => refused,
+        };
+        assert_eq!(
+            refused.code,
+            code::INVALID_INPUT,
+            "tag {}: {refused}",
+            bytes[0]
+        );
+        let undecoded = refused
+            .message
+            .starts_with("harness: Query did not decode: ");
+        assert!(undecoded, "tag {}: {refused}", bytes[0]);
     }
 }
 

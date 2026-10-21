@@ -187,10 +187,10 @@ fn limited_on(chain: &MockChain, service: &str, thread: u64, account: &str) {
 }
 
 fn budget_now(chain: &MockChain) -> BudgetReport {
-    let Reply::Budget(report) = chain.query(PROGRAM, &Query::Budget).unwrap() else {
+    let Reply::BudgetFacts(report) = chain.query(PROGRAM, &Query::BudgetFacts).unwrap() else {
         panic!("the budget answers as one")
     };
-    report
+    report.budget
 }
 
 fn rows(report: BudgetReport) -> Vec<Row> {

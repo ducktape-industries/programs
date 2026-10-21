@@ -74,11 +74,7 @@ impl Program for Harness {
                 Ok(Reply::Bookings(bookings::bookings(ctx, agent, &page)?))
             }
             Query::Booking { entry } => Ok(Reply::Booking(bookings::booking(ctx, entry)?)),
-            Query::UsageWindow { service } => {
-                Ok(Reply::UsageWindow(crate::state::USAGE.get(ctx, &service)?))
-            }
             Query::Settling { thread } => Ok(Reply::Settling(queries::settling(ctx, thread)?)),
-            Query::Budget => Ok(Reply::Budget(budget::report(ctx)?)),
             Query::Waits { agent, page } => Ok(Reply::Waits(waits::waits(ctx, agent, &page)?)),
             Query::Wait { wait } => Ok(Reply::Wait(waits::wait_row(ctx, wait)?)),
             Query::Armed { thread, page } => Ok(Reply::Waits(waits::armed(ctx, thread, &page)?)),
