@@ -2,6 +2,8 @@
 //! its schema, any view and any notifier embedded, forge's and halo's params, and a founding file
 //! `ducktape init` reads.
 
+#[cfg(test)]
+mod derive;
 mod diff;
 mod schema;
 
@@ -34,40 +36,7 @@ pub const TOOLS_SECTION: &str = program::tools::SECTION;
 pub const REPO: &str = "programs";
 pub const FOUNDING: &str = include_str!("../founding.toml");
 
-pub const PROGRAMS: [(&str, &str); 7] = [
-    ("programs", "settings_view"),
-    ("valset", "node_view"),
-    ("identity", "members_view"),
-    ("chat", "chat_view"),
-    ("forge", "forge_view"),
-    ("harness", "harness_view"),
-    ("files", "files_view"),
-];
-pub const UNVIEWED: &[&str] = &[
-    "blobs",
-    "awaits",
-    "halo",
-    "scheduler",
-    "access",
-    "ownership",
-    "activity",
-    "egress",
-    "attribution",
-];
-// Programs `make wasm-program` packs that no founding holds: each is deployed to a network that
-// runs, as a new program (actions-pods needs the pods egress service and its runner labels).
-pub const UNFOUNDED: &[&str] = &[
-    "actions",
-    "actions-pods",
-    "fleet",
-    "wake",
-    "forge-review-chat",
-    "forge-reach",
-];
-pub const VIEWS: [&str; 1] = ["explorer_view"];
-/// The programs that ship a notifier, and the module `make wasm-notifiers`
-/// builds it as (`<view>.notify.wasm`).
-pub const NOTIFIERS: [(&str, &str); 2] = [("chat", "chat_view"), ("forge", "forge_view")];
+include!(concat!(env!("OUT_DIR"), "/lists.rs"));
 
 pub fn forge_bounds() -> forge::Bounds {
     forge::Bounds {
@@ -133,13 +102,13 @@ pub fn modules(program: &str) -> Option<(Option<&'static str>, Option<&'static s
         .iter()
         .find(|(name, _)| *name == program)
         .map(|(_, view)| *view);
-    match PROGRAMS.iter().find(|(name, _)| *name == program) {
-        Some((_, view)) => Some((Some(*view), notifier)),
-        None => {
-            let packed = UNVIEWED.contains(&program) || UNFOUNDED.contains(&program);
-            packed.then_some((None, notifier))
-        }
-    }
+    let view = RIDES
+        .iter()
+        .find(|(name, _)| *name == program)
+        .map(|(_, view)| *view);
+    let founded = PROGRAMS.iter().any(|(name, _)| *name == program);
+    let packed = founded || UNVIEWED.contains(&program) || UNFOUNDED.contains(&program);
+    packed.then_some((view, notifier))
 }
 
 // One program's code as the bundle writes it: what `make wasm-modules` built for it under

@@ -10,4 +10,4 @@ version.workspace = true
 
 [dependencies]
 abi = { workspace = true }
-program = { workspace = true }
+program = { path = "../program" }

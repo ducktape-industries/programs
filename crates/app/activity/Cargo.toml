@@ -17,7 +17,7 @@ describe = []
 
 [dependencies]
 borsh = { workspace = true }
-describe = { workspace = true }
-program = { workspace = true }
+describe = { path = "../../sdk/describe" }
+program = { path = "../../sdk/program" }
 # `#[derive(program::Ask)]`: each query asked alone, typed by its reply
-store = { workspace = true }
+store = { path = "../../sdk/store" }

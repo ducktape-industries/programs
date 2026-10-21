@@ -13,8 +13,8 @@ describe = []
 [dependencies]
 abi = { workspace = true }
 blob = { workspace = true }
-describe = { workspace = true }
-program = { workspace = true }
+describe = { path = "../../sdk/describe" }
+program = { path = "../../sdk/program" }
 
 [dev-dependencies]
-valset = { workspace = true }
+valset = { path = "../valset" }

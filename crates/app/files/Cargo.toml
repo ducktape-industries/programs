@@ -11,11 +11,11 @@ program = []
 describe = []
 
 [dependencies]
-access = { workspace = true }
+access = { path = "../../system/access" }
 abi = { workspace = true }
 borsh = { workspace = true }
-describe = { workspace = true }
-ownership = { workspace = true }
-program = { workspace = true }
-store = { workspace = true }
+describe = { path = "../../sdk/describe" }
+ownership = { path = "../../system/ownership" }
+program = { path = "../../sdk/program" }
+store = { path = "../../sdk/store" }
 unicode-normalization = { workspace = true }

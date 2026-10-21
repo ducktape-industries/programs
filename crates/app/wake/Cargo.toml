@@ -18,22 +18,22 @@ describe = []
 [dependencies]
 abi = { workspace = true }
 borsh = { workspace = true }
-describe = { workspace = true }
-program = { workspace = true }
-store = { workspace = true }
+describe = { path = "../../sdk/describe" }
+program = { path = "../../sdk/program" }
+store = { path = "../../sdk/store" }
 serde_json = { workspace = true }
 # where an end is told
-attribution = { workspace = true }
+attribution = { path = "../attribution" }
 # what a forge, files, program or place wake reads and hears
-chat = { workspace = true }
-forge = { workspace = true }
-files = { workspace = true }
-programs = { workspace = true }
+chat = { path = "../chat" }
+forge = { path = "../forge" }
+files = { path = "../files" }
+programs = { path = "../../system/programs" }
 
 [dev-dependencies]
-access = { workspace = true }
-awaits = { workspace = true }
-egress = { workspace = true }
-identity = { workspace = true }
-scheduler = { workspace = true }
-valset = { workspace = true }
+access = { path = "../../system/access" }
+awaits = { path = "../../system/awaits" }
+egress = { path = "../egress" }
+identity = { path = "../../system/identity" }
+scheduler = { path = "../../system/scheduler" }
+valset = { path = "../../system/valset" }

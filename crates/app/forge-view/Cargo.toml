@@ -18,30 +18,34 @@ crate-type = ["cdylib", "rlib"]
 notifier = []
 
 [dependencies]
-view.workspace = true
+view = { path = "../../sdk/view" }
 abi.workspace = true
-access.workspace = true
+access = { path = "../../system/access" }
 borsh.workspace = true
-chat.workspace = true
-ducklink.workspace = true
-forge.workspace = true
-identity.workspace = true
+chat = { path = "../chat" }
+ducklink = { path = "../../sdk/ducklink" }
+forge = { path = "../forge" }
+identity = { path = "../../system/identity" }
 # a chat block's keys read back (`notifier.rs`): which thread a reply answered
-store.workspace = true
+store = { path = "../../sdk/store" }
 # who can edit a repository or a change: ownership's answers, in policy-view's words
-ownership.workspace = true
-policy-view.workspace = true
+ownership = { path = "../../system/ownership" }
+policy-view = { path = "../../sdk/policy-view" }
 # documents read, highlighted and drawn: the SDK's, with its parser
-markdown = { workspace = true, features = ["parse"] }
+markdown = { path = "../../sdk/markdown", features = ["parse"] }
 serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
 # `examples/live.rs`: the view in the real app over the fake node
-view = { workspace = true, features = ["rig"] }
+view = { path = "../../sdk/view", features = ["rig"] }
 # the example's seeded history, under the bounds a founding gives forge
-gitcore.workspace = true
+gitcore = { path = "../../lib/gitcore" }
 founding = { path = "../../sdk/founding" }
-program.workspace = true
+program = { path = "../../sdk/program" }
 # the roster's roles a test answers: whether access still gates
-programs.workspace = true
+programs = { path = "../../system/programs" }
+
+[package.metadata.ducktape]
+ships = true
+rides = "forge"

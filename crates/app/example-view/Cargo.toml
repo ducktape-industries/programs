@@ -9,8 +9,8 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-view.workspace = true
+view = { path = "../../sdk/view" }
 # The program this view talks to: its types. Its `program` feature, the
 # program's own wasm exports, stays off.
-identity.workspace = true
+identity = { path = "../../system/identity" }
 serde.workspace = true

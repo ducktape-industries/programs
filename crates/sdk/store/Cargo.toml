@@ -9,5 +9,5 @@ edition.workspace = true
 [dependencies]
 abi = { workspace = true }
 borsh = { workspace = true }
-program = { workspace = true }
+program = { path = "../program" }
 serde = { workspace = true }

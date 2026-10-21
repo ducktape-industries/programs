@@ -1,14 +1,7 @@
 #!/bin/sh
-# `make new-program NAME=x` / `make new-view NAME=x-view`: a program in
-# valset's shape (types and `describe` in lib.rs, the program in program.rs,
-# its rules over `store` in rules.rs, a native test over `program::MockHost`
-# in tests.rs; its wasm exports behind `program`, its describe module behind
-# `describe`, its schema in crates/sdk/founding) or a view in members-view's
-# shape (links its program with `program` off, `export_view!`, one screen
-# test), registered in the Makefile
-# and the workspace. `make scaffold-check` builds and tests both. Run from
-# the repo root.
-#   tools/scaffold.sh program <name> | view <name>-view
+# `make new-program NAME=x` / `make new-view NAME=x-view`, from the repo root: a program in valset's shape or
+# a view in members-view's shape under crates/app, which every list finds by its folder; a program adds its
+# line to founding's Cargo.toml. `make scaffold-check` builds and tests both. Usage: tools/scaffold.sh program <name> | view <name>-view
 set -eu
 kind=$1
 name=$2
@@ -19,38 +12,11 @@ esac
 test ! -e "$dir" || { echo "$dir exists" >&2; exit 1; }
 snake=$(echo "$name" | tr - _)
 
-# The lines registration edits, each of which must be there exactly once;
-# every one is checked before anything is written, so a scaffold never
-# half-registers.
-MEMBERS='^    "crates/lib/gitcore",$'
-DEPS='^forge = { path = "crates/app/forge" }$'
-SCHEMAS=crates/sdk/founding/src/schema.rs
-SCHEMA='^        _ => return None,$'
 FOUNDING=crates/sdk/founding/Cargo.toml
-FOUNDING_DEPS='^harness = { workspace = true }$'
-anchor() { # <file> <pattern>
-    test "$(grep -c "$2" "$1")" = 1 || { echo "$1: no single line matches '$2'; nothing was written. Fix the anchor in $0." >&2; exit 1; }
-}
-# <file> <sed script>: in place, the same with GNU and BSD sed (macOS has
-# no bare `-i`, nor `\n` in a replacement: a new line there is `\` and a
-# real line break).
-edit() {
-    sed -e "$2" "$1" > "$1.new" || { rm -f "$1.new"; exit 1; }
-    mv "$1.new" "$1"
-}
-register() { # <Makefile list> <name>
-    edit Makefile "s/^$1 := .*/& $2/"
-    edit Cargo.toml "s|$MEMBERS|    \"crates/app/$2\",\\
-&|"
-}
+LINKS='^[a-z0-9-]+ = \{ path = "\.\./\.\./(system|app)/'
 
 program() {
-    anchor Makefile '^PROGRAMS := '
-    anchor Makefile '^VIEW_LINKABLE := '
-    anchor Cargo.toml "$MEMBERS"
-    anchor Cargo.toml "$DEPS"
-    anchor "$SCHEMAS" "$SCHEMA"
-    anchor "$FOUNDING" "$FOUNDING_DEPS"
+    tail -n 1 "$FOUNDING" | grep -Eq "$LINKS" || { echo "$FOUNDING: its program links are not its last lines; nothing was written. Fix $0." >&2; exit 1; }
     # The program type: TitleCase of the program name.
     title=$(echo "$name" | awk -F- '{ for (i = 1; i <= NF; i++) printf "%s%s", toupper(substr($i, 1, 1)), substr($i, 2) }')
     mkdir -p "$dir/src"
@@ -75,9 +41,9 @@ describe = []
 [dependencies]
 abi = { workspace = true }
 borsh = { workspace = true }
-describe = { workspace = true }
-program = { workspace = true }
-store = { workspace = true }
+describe = { path = "../../sdk/describe" }
+program = { path = "../../sdk/program" }
+store = { path = "../../sdk/store" }
 EOF
     cat > "$dir/src/lib.rs" <<EOF
 //! The \`$name\` program: one count, to be replaced by what it keeps. The
@@ -227,21 +193,16 @@ fn a_key_that_holds_no_account_writes_nothing() {
     assert_eq!(refusal.code, code::UNAUTHORIZED);
 }
 EOF
-    register PROGRAMS "$name"
-    edit Makefile "s/^VIEW_LINKABLE := .*/& $name/"
-    edit Cargo.toml "s|$DEPS|&\\
-$name = { path = \"$dir\" }|"
-    edit "$SCHEMAS" "s|$SCHEMA|        \"$name\" => interface::<$snake::$title>(),\\
-&|"
-    edit "$FOUNDING" "s|$FOUNDING_DEPS|&\\
-$name = { workspace = true }|"
+    { grep -Ev "$LINKS" "$FOUNDING"; { grep -E "$LINKS" "$FOUNDING"; echo "$name = { path = \"../../app/$name\" }"; } | LC_ALL=C sort; } > "$FOUNDING.new"
+    mv "$FOUNDING.new" "$FOUNDING"
     cat <<EOF
-$dir/{Cargo.toml,src/{lib,program,rules,tests}.rs}, PROGRAMS, VIEW_LINKABLE, workspace members and dependencies, its schema in $SCHEMAS.
+$dir/{Cargo.toml,src/{lib,program,rules,tests}.rs} and its line in $FOUNDING; the workspace, the Makefile and founding find it by its folder.
 Next:
   1. write the contract (Op/Query/Reply and describe() in lib.rs, the program in program.rs, its rules in rules.rs); \`make dev P=$name\` builds and tests it
   2. \`make new-view NAME=$name-view\` for its screen
   3. found it: a [[programs]] entry (id "$name", code "$snake.wasm") in crates/sdk/founding/founding.toml, and in qa's founding.toml
-     (code "@PROGRAMS@/$snake.wasm"); its view goes in crates/sdk/founding's PROGRAMS (step 2 prints it)
+     (code "@PROGRAMS@/$snake.wasm"); a founding packs into it the view that rides it (step 2 writes one)
+  4. \`INTERFACES_WRITE=1 cargo test -p founding --test schema\` writes its interface, crates/sdk/founding/interfaces/$name.schema, which its change commits
 EOF
 }
 
@@ -250,8 +211,6 @@ view() {
     program=${name%-view}
     program_snake=$(echo "$program" | tr - _)
     test -d "crates/app/$program" || { echo "crates/app/$program is not there: make new-program NAME=$program first" >&2; exit 1; }
-    anchor Makefile '^VIEWS := '
-    anchor Cargo.toml "$MEMBERS"
     upper=$(echo "$program_snake" | tr a-z A-Z)
     # The view type: TitleCase of the program name.
     title=$(echo "$program" | awk -F- '{ for (i = 1; i <= NF; i++) printf "%s%s", toupper(substr($i, 1, 1)), substr($i, 2) }')
@@ -270,14 +229,18 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-view.workspace = true
+view = { path = "../../sdk/view" }
 # The program with \`program\` off: its types and the program this view
 # names it by, no host import.
-$program.workspace = true
+$program = { path = "../$program" }
 serde.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+
+[package.metadata.ducktape]
+ships = true
+rides = "$program"
 EOF
     cat > "$dir/src/lib.rs" <<EOF
 //! $title: the count the \`$program\` program keeps, re-read on every live
@@ -423,14 +386,13 @@ fn the_ready_screen_shows_the_count() {
     .unwrap();
 }
 EOF
-    register VIEWS "$name"
     grep -q 'Count' "crates/app/$program/src/lib.rs" || echo "note: $program has no Query::Count; the screen's count() in $dir/src/lib.rs asks it, so step 1 comes before step 2"
     cat <<EOF
-$dir/{Cargo.toml,src/lib.rs,src/tests.rs}, VIEWS and workspace members.
+$dir/{Cargo.toml,src/lib.rs,src/tests.rs}; it ships riding $program ([package.metadata.ducktape] in its Cargo.toml).
 Next:
   1. replace the screen in src/lib.rs with what the program's Query answers (it asks \`Query::Count\` until then)
   2. \`make dev P=$program V=$name\` tests both natively, then builds them and gates the view (ABI), which needs wasm-tools and python3 on PATH
-  3. pack it into its program: ("$program_snake", "$snake") in PROGRAMS (crates/sdk/founding/src/lib.rs); then in qa \`kit up NAME\`
+  3. a founding packs it into $program once founding.toml founds $program; then in qa \`kit up NAME\`
 EOF
 }
 

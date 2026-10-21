@@ -13,14 +13,18 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # `abi::hex` is how a key reaches the screen.
 abi.workspace = true
-view.workspace = true
+view = { path = "../../sdk/view" }
 # who operates a node (an agent's manager) and the roster a change names
-identity.workspace = true
-programs.workspace = true
-valset.workspace = true
+identity = { path = "../../system/identity" }
+programs = { path = "../../system/programs" }
+valset = { path = "../../system/valset" }
 serde.workspace = true
 
 [dev-dependencies]
 # `examples/live.rs`: the view in the real app over the fake node
-view = { workspace = true, features = ["rig"] }
+view = { path = "../../sdk/view", features = ["rig"] }
 serde_json.workspace = true
+
+[package.metadata.ducktape]
+ships = true
+rides = "valset"

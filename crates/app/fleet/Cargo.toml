@@ -18,15 +18,15 @@ describe = []
 [dependencies]
 abi = { workspace = true }
 borsh = { workspace = true }
-describe = { workspace = true }
-program = { workspace = true }
-store = { workspace = true }
+describe = { path = "../../sdk/describe" }
+program = { path = "../../sdk/program" }
+store = { path = "../../sdk/store" }
 # where a run's end is told
-chat = { workspace = true }
+chat = { path = "../chat" }
 # a run's out folder as a path on the reader's chain
-ducklink = { workspace = true }
+ducklink = { path = "../../sdk/ducklink" }
 # a run's claim policy, read before a run is assigned
-ownership = { workspace = true }
+ownership = { path = "../../system/ownership" }
 
 [dev-dependencies]
-scheduler = { workspace = true }
+scheduler = { path = "../../system/scheduler" }

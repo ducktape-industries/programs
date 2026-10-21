@@ -19,34 +19,34 @@ describe = []
 [dependencies]
 abi = { workspace = true }
 blob = { workspace = true }
-describe = { workspace = true }
+describe = { path = "../../sdk/describe" }
 borsh = { workspace = true }
-program = { workspace = true }
-store = { workspace = true }
+program = { path = "../../sdk/program" }
+store = { path = "../../sdk/store" }
 
 # The founding suite (`tests/system.rs`) drives the built boot set on the host.
 [dev-dependencies]
-design = { workspace = true }
-access = { workspace = true }
-ownership = { workspace = true }
-activity = { workspace = true }
-awaits = { workspace = true }
-halo = { workspace = true }
-scheduler = { workspace = true }
-chat = { workspace = true }
-files = { workspace = true }
-attribution = { workspace = true }
-harness = { workspace = true }
-egress = { workspace = true }
-forge = { workspace = true }
-gitcore = { workspace = true }
-identity = { workspace = true }
-valset = { workspace = true }
+design = { path = "../../sdk/design" }
+access = { path = "../access" }
+ownership = { path = "../ownership" }
+activity = { path = "../../app/activity" }
+awaits = { path = "../awaits" }
+halo = { path = "../halo" }
+scheduler = { path = "../scheduler" }
+chat = { path = "../../app/chat" }
+files = { path = "../../app/files" }
+attribution = { path = "../../app/attribution" }
+harness = { path = "../../app/harness" }
+egress = { path = "../../app/egress" }
+forge = { path = "../../app/forge" }
+gitcore = { path = "../../lib/gitcore" }
+identity = { path = "../identity" }
+valset = { path = "../valset" }
 commonware-cryptography = { workspace = true }
 commonware-runtime = { workspace = true }
 host = { workspace = true }
 fixture-wasm = { workspace = true }
-blobs = { workspace = true }
+blobs = { path = "../blobs" }
 keyscheme = { workspace = true, features = ["testkit"] }
 # the drift test reads `cargo metadata`
 serde_json = { workspace = true }

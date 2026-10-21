@@ -34,54 +34,10 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/sdk/error",
-    "crates/sdk/program",
-    "crates/sdk/program-derive",
-    "crates/sdk/store",
-    "crates/sdk/ducklink",
-    "crates/sdk/design",
-    "crates/sdk/describe",
-    "crates/sdk/conformance",
-    "crates/sdk/view-wire",
-    "crates/sdk/view",
-    "crates/sdk/view-derive",
-    "crates/sdk/policy-view",
-    "crates/sdk/markdown",
-    "crates/sdk/founding",
-    "crates/system/programs",
-    "crates/system/valset",
-    "crates/system/identity",
-    "crates/system/blobs",
-    "crates/system/awaits",
-    "crates/system/halo",
-    "crates/system/access",
-    "crates/system/ownership",
-    "crates/system/scheduler",
-    "crates/app/chat",
-    "crates/app/chat-view",
-    "crates/app/forge-view",
-    "crates/app/members-view",
-    "crates/app/node-view",
-    "crates/app/explorer-view",
-    "crates/app/settings-view",
-    "crates/app/example-view",
-    "crates/app/forge",
-    "crates/app/activity",
-    "crates/app/files",
-    "crates/app/files-view",
-    "crates/app/egress",
-    "crates/app/attribution",
-    "crates/app/harness",
-    "crates/app/harness-view",
-    "crates/app/actions",
-    "crates/app/actions-pods",
-    "crates/app/fleet",
-    "crates/app/forge-review-chat",
-    "crates/app/forge-reach",
-    "crates/app/wake",
-    "crates/lib/gitcore",
-    "crates/lib/borsh-json",
-    "crates/lib/model-wire",
+    "crates/sdk/*",
+    "crates/system/*",
+    "crates/app/*",
+    "crates/lib/*",
 ]
 # Third-party crates taken whole (crates/vendor/<crate>/README.ducktape.md
 # says from where and what differs). Path dependencies, not members: the
@@ -93,44 +49,7 @@ edition = "2024"
 version = "0.1.0"
 
 [workspace.dependencies]
-# ---- the contracts, in tree
-error = { path = "crates/sdk/error" }
-program = { path = "crates/sdk/program" }
-store = { path = "crates/sdk/store" }
-gitcore = { path = "crates/lib/gitcore" }
-borsh-json = { path = "crates/lib/borsh-json" }
-model-wire = { path = "crates/lib/model-wire" }
-ducklink = { path = "crates/sdk/ducklink" }
-design = { path = "crates/sdk/design" }
-view-wire = { path = "crates/sdk/view-wire" }
-describe = { path = "crates/sdk/describe" }
-conformance = { path = "crates/sdk/conformance" }
-view = { path = "crates/sdk/view" }
-policy-view = { path = "crates/sdk/policy-view" }
-markdown = { path = "crates/sdk/markdown" }
 gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpui-pre", rev = "eef11e96c9fcf7e0389d31f125013370a1b02d92", default-features = false }
-programs = { path = "crates/system/programs" }
-valset = { path = "crates/system/valset" }
-identity = { path = "crates/system/identity" }
-blobs = { path = "crates/system/blobs" }
-awaits = { path = "crates/system/awaits" }
-halo = { path = "crates/system/halo" }
-access = { path = "crates/system/access" }
-ownership = { path = "crates/system/ownership" }
-scheduler = { path = "crates/system/scheduler" }
-chat = { path = "crates/app/chat" }
-forge = { path = "crates/app/forge" }
-actions-pods = { path = "crates/app/actions-pods" }
-actions = { path = "crates/app/actions" }
-fleet = { path = "crates/app/fleet" }
-forge-review-chat = { path = "crates/app/forge-review-chat" }
-forge-reach = { path = "crates/app/forge-reach" }
-wake = { path = "crates/app/wake" }
-attribution = { path = "crates/app/attribution" }
-harness = { path = "crates/app/harness" }
-egress = { path = "crates/app/egress" }
-activity = { path = "crates/app/activity" }
-files = { path = "crates/app/files" }
 
 # ---- the kernel ABI a program and the host share: ducktape's own
 # `crates/kernel/abi`, at the rev the host below is pinned to

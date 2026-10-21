@@ -16,20 +16,20 @@ program = []
 describe = []
 
 [dependencies]
-ownership = { workspace = true }
+ownership = { path = "../../system/ownership" }
 abi = { workspace = true }
-describe = { workspace = true }
-program = { workspace = true, features = ["serde"] }
+describe = { path = "../../sdk/describe" }
+program = { path = "../../sdk/program", features = ["serde"] }
 borsh = { workspace = true }
-chat = { workspace = true }
-ducklink = { workspace = true }
-gitcore = { workspace = true }
+chat = { path = "../chat" }
+ducklink = { path = "../../sdk/ducklink" }
+gitcore = { path = "../../lib/gitcore" }
 # `#[derive(program::Ask)]` on `Query`: which tables each question reads
-store = { workspace = true }
+store = { path = "../../sdk/store" }
 
 [dev-dependencies]
 criterion = "=0.8.2"
-access = { workspace = true }
+access = { path = "../../system/access" }
 sha2 = { version = "0.10", default-features = false }
 
 [[bench]]

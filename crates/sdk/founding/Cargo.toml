@@ -4,37 +4,40 @@ edition.workspace = true
 version.workspace = true
 default-run = "founding"
 
-[dependencies]
-abi = { workspace = true }
-blob = { workspace = true }
-borsh = { workspace = true }
-borsh-json = { workspace = true }
-program = { workspace = true }
-programs = { workspace = true }
-valset = { workspace = true }
-identity = { workspace = true }
-blobs = { workspace = true }
-awaits = { workspace = true }
-halo = { workspace = true }
-access = { workspace = true }
-ownership = { workspace = true }
-scheduler = { workspace = true }
-chat = { workspace = true }
-forge = { workspace = true }
-files = { workspace = true }
-activity = { workspace = true }
-egress = { workspace = true }
-attribution = { workspace = true }
-harness = { workspace = true }
-actions-pods = { workspace = true }
-actions = { workspace = true }
-fleet = { workspace = true }
-forge-review-chat = { workspace = true }
-forge-reach = { workspace = true }
-wake = { workspace = true }
-wasm-encoder = "0.251"
-wasmparser = "0.251"
+[build-dependencies]
+toml = "0.9"
 
 [dev-dependencies]
 tempfile = { workspace = true }
 toml = "0.9"
+
+[dependencies]
+abi = { workspace = true }
+blob = { workspace = true }
+borsh = { workspace = true }
+borsh-json = { path = "../../lib/borsh-json" }
+program = { path = "../program" }
+wasm-encoder = "0.251"
+wasmparser = "0.251"
+access = { path = "../../system/access" }
+actions = { path = "../../app/actions" }
+actions-pods = { path = "../../app/actions-pods" }
+activity = { path = "../../app/activity" }
+attribution = { path = "../../app/attribution" }
+awaits = { path = "../../system/awaits" }
+blobs = { path = "../../system/blobs" }
+chat = { path = "../../app/chat" }
+egress = { path = "../../app/egress" }
+files = { path = "../../app/files" }
+fleet = { path = "../../app/fleet" }
+forge = { path = "../../app/forge" }
+forge-reach = { path = "../../app/forge-reach" }
+forge-review-chat = { path = "../../app/forge-review-chat" }
+halo = { path = "../../system/halo" }
+harness = { path = "../../app/harness" }
+identity = { path = "../../system/identity" }
+ownership = { path = "../../system/ownership" }
+programs = { path = "../../system/programs" }
+scheduler = { path = "../../system/scheduler" }
+valset = { path = "../../system/valset" }
+wake = { path = "../../app/wake" }

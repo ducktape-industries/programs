@@ -12,23 +12,27 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 abi.workspace = true
-access = { workspace = true }
-view.workspace = true
+access = { path = "../../system/access" }
+view = { path = "../../sdk/view" }
 serde.workspace = true
 # the program this view draws: its ops, its asks and its path rule
-files.workspace = true
+files = { path = "../files" }
 # who writes a path: its guard's policy, read and set as every view does
-ownership.workspace = true
-policy-view.workspace = true
+ownership = { path = "../../system/ownership" }
+policy-view = { path = "../../sdk/policy-view" }
 # the reader's name, which names their home, and every author's
-identity.workspace = true
+identity = { path = "../../system/identity" }
 # a row's `duck://` link
-ducklink.workspace = true
+ducklink = { path = "../../sdk/ducklink" }
 # a `.md` file read, drawn and its links followed as forge-view does a repository's
-markdown = { workspace = true, features = ["parse"] }
+markdown = { path = "../../sdk/markdown", features = ["parse"] }
 
 [dev-dependencies]
 # `examples/live.rs` and the tests: the real `files` program on the fake node
-view = { workspace = true, features = ["rig"] }
+view = { path = "../../sdk/view", features = ["rig"] }
 # a screen's frame written for the app's node-less renderer
 serde_json.workspace = true
+
+[package.metadata.ducktape]
+ships = true
+rides = "files"

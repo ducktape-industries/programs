@@ -19,34 +19,7 @@ pub fn tools(program: &str) -> Option<Tools> {
     interface(program).map(|(_, tools)| tools)
 }
 
-fn interface(program: &str) -> Option<(BorshSchemaContainer, Tools)> {
-    let interface = match program {
-        "programs" => of::<programs::Programs>(),
-        "valset" => of::<valset::Valset>(),
-        "identity" => of::<identity::Identity>(),
-        "blobs" => of::<blobs::Blobs>(),
-        "awaits" => of::<awaits::Awaits>(),
-        "halo" => of::<halo::Halo>(),
-        "scheduler" => of::<scheduler::Scheduler>(),
-        "access" => of::<access::Access>(),
-        "ownership" => of::<ownership::Ownership>(),
-        "chat" => of::<chat::Chat>(),
-        "forge" => of::<forge::Forge>(),
-        "files" => of::<files::Files>(),
-        "activity" => of::<activity::Activity>(),
-        "egress" => of::<egress::Egress>(),
-        "attribution" => of::<attribution::Attribution>(),
-        "harness" => of::<harness::Harness>(),
-        "actions" => of::<actions::Actions>(),
-        "actions-pods" => of::<actions_pods::ActionsPods>(),
-        "fleet" => of::<fleet::Fleet>(),
-        "forge-review-chat" => of::<forge_review_chat::ForgeReviewChat>(),
-        "forge-reach" => of::<forge_reach::ForgeReach>(),
-        "wake" => of::<wake::Wake>(),
-        _ => return None,
-    };
-    Some(interface)
-}
+include!(concat!(env!("OUT_DIR"), "/interfaces.rs"));
 
 fn of<P: Program>() -> (BorshSchemaContainer, Tools)
 where
@@ -63,7 +36,7 @@ pub fn write_schemas(release: &Path, programs: &[impl AsRef<str>]) -> Result<()>
         let program = program.as_ref();
         let (schema, tools) = interface(program).ok_or_else(|| {
             format!(
-                "{program} has no schema: name its interface in crates/sdk/founding/src/schema.rs"
+                "{program} has no schema: it is no crate under crates/system or crates/app with a `program` feature"
             )
         })?;
         let (schema, tools) = borsh_json::tools::sections_of(&schema, &tools)

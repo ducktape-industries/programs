@@ -8,20 +8,20 @@ publish = false
 # item a default names, a policy in words, and one owner's side read whole.
 # It links the program crates with `program` off, as every view does.
 [dependencies]
-identity.workspace = true
-ownership.workspace = true
+identity = { path = "../../system/identity" }
+ownership = { path = "../../system/ownership" }
 # `link`: access's own list, set beside a policy while programs' Roles still binds access
 abi.workspace = true
-access.workspace = true
-program.workspace = true
-programs.workspace = true
+access = { path = "../../system/access" }
+program = { path = "../program" }
+programs = { path = "../../system/programs" }
 serde.workspace = true
-view.workspace = true
+view = { path = "../view" }
 
 # The test that holds `KINDS` to the kinds each program's owned tables claim.
 [dev-dependencies]
-chat.workspace = true
-forge.workspace = true
-harness.workspace = true
-egress.workspace = true
-files.workspace = true
+chat = { path = "../../app/chat" }
+forge = { path = "../../app/forge" }
+harness = { path = "../../app/harness" }
+egress = { path = "../../app/egress" }
+files = { path = "../../app/files" }

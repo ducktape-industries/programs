@@ -9,11 +9,11 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 abi.workspace = true
-view.workspace = true
-ownership.workspace = true
-policy-view.workspace = true
-identity.workspace = true
-valset.workspace = true
+view = { path = "../../sdk/view" }
+ownership = { path = "../../system/ownership" }
+policy-view = { path = "../../sdk/policy-view" }
+identity = { path = "../../system/identity" }
+valset = { path = "../../system/valset" }
 serde.workspace = true
 # the picked picture decoded, cut and saved as the avatar's JPEG: the one
 # gpui-pre already links into every view
@@ -21,6 +21,10 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 
 [dev-dependencies]
 # `examples/live.rs`: the view in the real app over the fake node
-view = { workspace = true, features = ["rig"] }
+view = { path = "../../sdk/view", features = ["rig"] }
 # the screen export writes the fixtures as JSON
 serde_json.workspace = true
+
+[package.metadata.ducktape]
+ships = true
+rides = "programs"

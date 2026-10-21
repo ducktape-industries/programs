@@ -13,6 +13,6 @@ describe = []
 [dependencies]
 abi = { workspace = true }
 borsh = { workspace = true }
-describe = { workspace = true }
-program = { workspace = true }
-store = { workspace = true }
+describe = { path = "../../sdk/describe" }
+program = { path = "../../sdk/program" }
+store = { path = "../../sdk/store" }

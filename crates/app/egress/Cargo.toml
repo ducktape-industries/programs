@@ -18,15 +18,15 @@ describe = []
 [dependencies]
 abi = { workspace = true }
 borsh = { workspace = true }
-describe = { workspace = true }
-program = { workspace = true }
+describe = { path = "../../sdk/describe" }
+program = { path = "../../sdk/program" }
 # `#[derive(program::Ask)]`: each query asked alone, typed by its reply
-store = { workspace = true }
+store = { path = "../../sdk/store" }
 
 [dev-dependencies]
-access = { workspace = true }
-awaits = { workspace = true }
-identity = { workspace = true }
-ownership = { workspace = true }
-scheduler = { workspace = true }
-valset = { workspace = true }
+access = { path = "../../system/access" }
+awaits = { path = "../../system/awaits" }
+identity = { path = "../../system/identity" }
+ownership = { path = "../../system/ownership" }
+scheduler = { path = "../../system/scheduler" }
+valset = { path = "../../system/valset" }

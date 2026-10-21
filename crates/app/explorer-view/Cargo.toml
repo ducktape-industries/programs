@@ -13,29 +13,32 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # `abi::hex` is how a code blob id reaches the screen.
 abi.workspace = true
-view.workspace = true
+view = { path = "../../sdk/view" }
 # mints the `duck://<chain>/explorer/…` link a page copies
-ducklink.workspace = true
+ducklink = { path = "../../sdk/ducklink" }
 # The system programs the explorer asks: accounts, validators, the roster.
 # An op is described by its own program through `program.describe`, not
 # by a program crate linked here.
-identity.workspace = true
-programs.workspace = true
-activity.workspace = true
-valset.workspace = true
+identity = { path = "../../system/identity" }
+programs = { path = "../../system/programs" }
+activity = { path = "../activity" }
+valset = { path = "../../system/valset" }
 serde.workspace = true
 # the reader's DM room with an account (`chat::dm_channel_id`), the
 # `duck://<chain>/chat/<room>` link Open DM opens, as members-view mints it
-chat.workspace = true
+chat = { path = "../chat" }
 
 # What a test needs to play the node: the borsh replies the program would
 # write, and the envelope the host method would open.
 [dev-dependencies]
 # `examples/live.rs`: the view in the real app over the fake node
-view = { workspace = true, features = ["rig"] }
+view = { path = "../../sdk/view", features = ["rig"] }
 # the ops a test posts, and the describe functions its host answers with,
 # as the modules in those programs' code would
-blobs.workspace = true
+blobs = { path = "../../system/blobs" }
 borsh.workspace = true
-forge.workspace = true
-program.workspace = true
+forge = { path = "../forge" }
+program = { path = "../../sdk/program" }
+
+[package.metadata.ducktape]
+ships = true

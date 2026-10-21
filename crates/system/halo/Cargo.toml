@@ -16,9 +16,9 @@ describe = []
 
 [dependencies]
 abi = { workspace = true }
-describe = { workspace = true }
-program = { workspace = true }
-store = { workspace = true }
+describe = { path = "../../sdk/describe" }
+program = { path = "../../sdk/program" }
+store = { path = "../../sdk/store" }
 
 [dev-dependencies]
-valset = { workspace = true }
+valset = { path = "../valset" }

@@ -29,8 +29,10 @@ cd "$wt"
 
 make new-program NAME=$name
 make new-view NAME=$name-view
-grep -q "^PROGRAMS := .* $name\$" Makefile || { echo "new-program did not register $name in PROGRAMS" >&2; exit 1; }
-grep -q "^VIEWS := .* $name-view\$" Makefile || { echo "new-view did not register $name-view in VIEWS" >&2; exit 1; }
+lists=$(printf "lists:\n\t@echo \$(PROGRAMS) / \$(VIEWS)\n" | make -s --no-print-directory -f Makefile -f - lists)
+case " $lists " in *" $name "*" / "*" $name-view "*) ;; *) echo "the Makefile's lists miss $name or $name-view: $lists" >&2; exit 1 ;; esac
+modules=$(${CARGO:-cargo} run -q -p founding --bin modules -- "$name")
+test "$modules" = "VIEWS=$name-view NOTIFIERS=" || { echo "founding packs $name with $modules, not its view" >&2; exit 1; }
 make dev P=$name V=$name-view
 make wasm-describes PROGRAMS=$name
 echo "scaffold-check: $name and $name-view build, gate and test"

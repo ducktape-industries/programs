@@ -11,21 +11,25 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-view.workspace = true
-identity.workspace = true
-activity.workspace = true
-valset.workspace = true
-programs.workspace = true
+view = { path = "../../sdk/view" }
+identity = { path = "../../system/identity" }
+activity = { path = "../activity" }
+valset = { path = "../../system/valset" }
+programs = { path = "../../system/programs" }
 serde.workspace = true
 # `dm_channel_id`: the room Open DM opens
-chat.workspace = true
+chat = { path = "../chat" }
 # mints the `duck://<chain>/chat/<room>` link Open DM opens
-ducklink.workspace = true
+ducklink = { path = "../../sdk/ducklink" }
 # a card's picture, by its blob id
 abi.workspace = true
 
 # Typed fake-host tests use the program contracts.
 [dev-dependencies]
 # `examples/live.rs`: the view in the real app over the fake node
-view = { workspace = true, features = ["rig"] }
+view = { path = "../../sdk/view", features = ["rig"] }
 abi.workspace = true
+
+[package.metadata.ducktape]
+ships = true
+rides = "identity"

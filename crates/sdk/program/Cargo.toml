@@ -12,7 +12,7 @@ serde = ["dep:serde"]
 
 [dependencies]
 abi = { workspace = true }
-error = { workspace = true, features = ["schema"] }
+error = { path = "../error", features = ["schema"] }
 program-derive = { path = "../program-derive" }
 borsh = { workspace = true }
 serde = { workspace = true, optional = true }

@@ -28,24 +28,24 @@ rig = [
 ]
 
 [dependencies]
-error = { workspace = true }
+error = { path = "../error" }
 borsh.workspace = true
 futures.workspace = true
-view-wire.workspace = true
-program.workspace = true
+view-wire = { path = "../view-wire" }
+program = { path = "../program" }
 # `PageResponse`, the reply `Host::query_all` walks
-store.workspace = true
-design.workspace = true
+store = { path = "../store" }
+design = { path = "../design" }
 serde.workspace = true
 gpui.workspace = true
 view-derive = { path = "../view-derive" }
 unicode-segmentation = "1"
 # the `rig` feature alone
-identity = { workspace = true, optional = true }
-valset = { workspace = true, optional = true }
-programs = { workspace = true, optional = true }
-blobs = { workspace = true, optional = true }
-access = { workspace = true, optional = true }
+identity = { path = "../../system/identity", optional = true }
+valset = { path = "../../system/valset", optional = true }
+programs = { path = "../../system/programs", optional = true }
+blobs = { path = "../../system/blobs", optional = true }
+access = { path = "../../system/access", optional = true }
 commonware-cryptography = { workspace = true, optional = true }
 keyscheme = { workspace = true, optional = true }
 sha1 = { version = "0.10", optional = true }

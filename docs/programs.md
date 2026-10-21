@@ -15,10 +15,12 @@ Read [README.md](../README.md) for the map of the repository and
 make new-program NAME=poll
 ```
 
-writes `crates/app/poll/` in valset's shape, registers it (`PROGRAMS` and
-`VIEW_LINKABLE` in the Makefile, the workspace members and dependencies in
-`Cargo.toml`, its schema in `crates/sdk/founding/src/schema.rs`) and prints
-what to do next. The files, in reading order:
+writes `crates/app/poll/` in valset's shape, adds its line to
+`crates/sdk/founding/Cargo.toml` (founding links every program to read its
+schema) and prints what to do next. Nothing else lists it: the workspace
+(`crates/app/*`), the Makefile's `PROGRAMS` and founding's lists and schema
+table each find a crate under `crates/system` or `crates/app` by its
+`program` feature. The files, in reading order:
 
 | File | What |
 |---|---|
@@ -78,8 +80,9 @@ pub enum Reply {
 
 **Each type on the wire has a schema.** `Op`, `Query`, `Reply` and every
 type they carry derive `BorshSchema`, and a type with a hand-written borsh
-encoding writes its schema by hand to match. `crates/sdk/founding/src/schema.rs`
-names the program's interface (`program::schema::interface::<poll::Poll>()`),
+encoding writes its schema by hand to match. founding's build
+script names the program's interface (`program::schema::interface::<poll::Poll>()`,
+the type being its crate's name in TitleCase),
 `make wasm-schemas` writes it as `poll.schema`, and a founding packs it as the
 `ducktape.schema` section of the program's code. An agent reads it there:
 harness's `network_schema`, `network_query` and `network_call` speak any
@@ -516,7 +519,7 @@ fn room(ctx: &QueryCtx, id: &str) -> Result<Option<chat::ChannelInfo>, Error> {
 }
 ```
 
-Link the sibling's crate (`chat = { workspace = true }`, its `program`
+Link the sibling's crate (`chat = { path = "../chat" }`, its `program`
 feature off) for its types. The sibling's refusal is your `Err`.
 
 **An emit is a write** the target runs in this frame, as a message from
@@ -812,7 +815,9 @@ them for the crates a view may link).
 
 `make new-view NAME=poll-view` scaffolds the screen over the program
 (`Query<poll::Poll>`); replace its `count()` with what your `Query` answers before its
-first `make dev`. Where a view's bytes go: `make wasm-why V=poll-view`
+first `make dev`. Its Cargo.toml says it ships and rides poll
+(`[package.metadata.ducktape]`: `ships = true`, `rides = "poll"`): that is how
+`make wasm-views` finds it and a founding packs it into poll. Where a view's bytes go: `make wasm-why V=poll-view`
 (`twiggy top` over a build that keeps its names; `cargo install twiggy`).
 
 `make wasm-modules` builds every program, its describe module and schema and every
@@ -836,13 +841,12 @@ curl -fsS https://dl.ducktape.industries/programs/main/latest.json | jq '{displa
 
 To add poll to it:
 
-1. `crates/sdk/founding/src/lib.rs`: `("poll", "poll_view")` in `PROGRAMS`,
-   or `"poll"` in `UNVIEWED` for a program with no screen of its own.
-2. `crates/sdk/founding/founding.toml`: a `[[programs]]` entry,
+1. `crates/sdk/founding/founding.toml`: a `[[programs]]` entry,
    `id = "poll"`, `code = "poll.wasm"` (and `params = …` if `init` takes
    any). poll fills no role, so its entry names no `roles`; a program that
-   fills one names it there (`roles = ["scheduler"]`).
-3. qa's `founding.toml`: the same entry with `code = "@PROGRAMS@/poll.wasm"`.
+   fills one names it there (`roles = ["scheduler"]`). The founding packs
+   into it the view that rides it, poll-view.
+2. qa's `founding.toml`: the same entry with `code = "@PROGRAMS@/poll.wasm"`.
    `kit up NAME` founds a fresh network with the program admitted at
    genesis and its account registered with identity.
 

@@ -9,15 +9,15 @@ edition.workspace = true
 [dependencies]
 abi = { workspace = true }
 borsh = { workspace = true }
-program = { workspace = true }
+program = { path = "../program" }
 
 # The suite proven on the reference programs (tests/).
 [dev-dependencies]
-awaits = { workspace = true }
+awaits = { path = "../../system/awaits" }
 blob = { workspace = true }
-blobs = { workspace = true }
-halo = { workspace = true }
-identity = { workspace = true }
-valset = { workspace = true }
-programs = { workspace = true }
-scheduler = { workspace = true }
+blobs = { path = "../../system/blobs" }
+halo = { path = "../../system/halo" }
+identity = { path = "../../system/identity" }
+valset = { path = "../../system/valset" }
+programs = { path = "../../system/programs" }
+scheduler = { path = "../../system/scheduler" }

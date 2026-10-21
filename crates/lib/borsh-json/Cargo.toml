@@ -6,8 +6,8 @@ version.workspace = true
 [dependencies]
 # hex, the JSON form of bytes
 abi = { workspace = true }
-design = { workspace = true }
+design = { path = "../../sdk/design" }
 borsh = { workspace = true }
 # the interface a program's schema section packs (`program::schema`)
-program = { workspace = true }
+program = { path = "../../sdk/program" }
 serde_json = { workspace = true }

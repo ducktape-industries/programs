@@ -11,24 +11,24 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-view.workspace = true
+view = { path = "../../sdk/view" }
 # The programs with `program` off: their types and the programs this view
 # names them by, no host import.
-harness.workspace = true
-identity.workspace = true
-egress.workspace = true
+harness = { path = "../harness" }
+identity = { path = "../../system/identity" }
+egress = { path = "../egress" }
 # an agent's configuration is a file in files: the form commits it
-files.workspace = true
-access.workspace = true
+files = { path = "../files" }
+access = { path = "../../system/access" }
 # who can start an agent's conversations and edit a model: ownership's answers, in policy-view's
 # words
-ownership.workspace = true
-policy-view.workspace = true
-program.workspace = true
+ownership = { path = "../../system/ownership" }
+policy-view = { path = "../../sdk/policy-view" }
+program = { path = "../../sdk/program" }
 # `dm_peers`: a DM's place reads as the person it is with
-chat.workspace = true
+chat = { path = "../chat" }
 # mints the `duck://<chain>/<program>/<place>` link "Open in chat" opens
-ducklink.workspace = true
+ducklink = { path = "../../sdk/ducklink" }
 serde.workspace = true
 # a tool call's input is JSON: the file a files_write names
 serde_json.workspace = true
@@ -36,4 +36,8 @@ serde_json.workspace = true
 [dev-dependencies]
 # what a test answers for the roster's roles and ownership's new policy id
 abi.workspace = true
-programs.workspace = true
+programs = { path = "../../system/programs" }
+
+[package.metadata.ducktape]
+ships = true
+rides = "harness"

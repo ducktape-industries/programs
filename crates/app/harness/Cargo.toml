@@ -16,29 +16,29 @@ program = []
 describe = []
 
 [dependencies]
-ownership = { workspace = true }
-access = { workspace = true }
+ownership = { path = "../../system/ownership" }
+access = { path = "../../system/access" }
 abi = { workspace = true }
-design = { workspace = true }
+design = { path = "../../sdk/design" }
 borsh = { workspace = true }
-describe = { workspace = true }
-program = { workspace = true }
+describe = { path = "../../sdk/describe" }
+program = { path = "../../sdk/program" }
 # `#[derive(program::Ask)]`: each query asked alone, typed by its reply
-store = { workspace = true }
-activity = { workspace = true }
-attribution = { workspace = true }
-identity = { workspace = true }
-chat = { workspace = true }
-ducklink = { workspace = true }
-files = { workspace = true }
-forge = { workspace = true }
+store = { path = "../../sdk/store" }
+activity = { path = "../activity" }
+attribution = { path = "../attribution" }
+identity = { path = "../../system/identity" }
+chat = { path = "../chat" }
+ducklink = { path = "../../sdk/ducklink" }
+files = { path = "../files" }
+forge = { path = "../forge" }
 # a wake's end is heard in the conversation whose turn armed it
-wake = { workspace = true }
+wake = { path = "../wake" }
 # `forge_commit` builds a commit's git objects and pack
-gitcore = { workspace = true }
+gitcore = { path = "../../lib/gitcore" }
 # network_query and network_call: JSON to a program's borsh and back
-borsh-json = { workspace = true }
-model-wire = { workspace = true }
+borsh-json = { path = "../../lib/borsh-json" }
+model-wire = { path = "../../lib/model-wire" }
 # what a model is shown of an image: its bytes as base64
 base64 = { workspace = true }
 serde = { workspace = true }
@@ -48,13 +48,13 @@ toml = { workspace = true }
 [dev-dependencies]
 criterion = "=0.8.2"
 proptest = { version = "=1.11.0", default-features = false, features = ["std"] }
-blobs = { workspace = true }
-egress = { workspace = true }
-halo = { workspace = true }
-programs = { workspace = true }
-awaits = { workspace = true }
-scheduler = { workspace = true }
-valset = { workspace = true }
+blobs = { path = "../../system/blobs" }
+egress = { path = "../egress" }
+halo = { path = "../../system/halo" }
+programs = { path = "../../system/programs" }
+awaits = { path = "../../system/awaits" }
+scheduler = { path = "../../system/scheduler" }
+valset = { path = "../../system/valset" }
 
 [[bench]]
 name = "decode"

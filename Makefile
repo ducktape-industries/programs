@@ -6,37 +6,40 @@ WASM_OPT ?= wasm-opt
 # What a program links: abi, program and store build for wasm32 with nothing else.
 PROGRAM_LINKABLE := abi program store
 
-# Every program, system and app: root members whose program ABI (the SDK
-# glue, the `alloc`/`call` exports, the `ducktape.*` imports) sits behind their
-# `program` feature. Their views link the same crates with the feature off
+# Every program, system and app: each crate under crates/system or crates/app
+# whose program ABI (the SDK glue, the `alloc`/`call` exports, the `ducktape.*`
+# imports) sits behind a `program` feature, which is how this list finds it;
+# founding's build script reads the same. Their views link the same crates with the feature off
 # and name each program by its type (`Query<chat::Chat>`).
 # One cargo invocation per program: forge links chat and identity links
 # programs, and `-p a -p b --features program` in one call would unify
 # `program` into the other's link (two `alloc`/`call`).
-PROGRAMS := programs valset identity blobs awaits halo scheduler access ownership chat forge activity files egress attribution harness actions actions-pods fleet wake forge-review-chat forge-reach
+crates_with = $(sort $(notdir $(patsubst %/Cargo.toml,%,$(shell grep -l '$1' crates/system/*/Cargo.toml crates/app/*/Cargo.toml))))
+PROGRAMS := $(call crates_with,^program = \[)
 
-# Views are wasm32 cdylibs. Chat, Forge and Files ride their own programs;
-# Settings rides the programs role. These are the views that ship: `wasm-views`
-# builds them and a genesis packs each into its program. `example-view`, the
-# view a new author reads first, is a workspace member (fmt, clippy and its
-# tests are the workspace's) and is kept out of this list on purpose: it
-# rides identity, which ships members-view, and nothing packs it.
-# `view-wasm-check` builds it for wasm32 so its `export_view!` cannot rot.
-VIEWS := chat-view members-view node-view explorer-view settings-view forge-view harness-view files-view
+# Views are wasm32 cdylibs. A view that ships says so in its Cargo.toml,
+# `ships = true` under `[package.metadata.ducktape]`, and names the program a
+# founding packs it into with `rides` (chat-view rides chat, settings-view the
+# programs role; explorer-view ships alone): `wasm-views` builds them.
+# `example-view`, the view a new author reads first, is a workspace member
+# (fmt, clippy and its tests are the workspace's) that ships nothing: it would
+# ride identity, which ships members-view. `view-wasm-check` builds it for
+# wasm32 so its `export_view!` cannot rot.
+VIEWS := $(call crates_with,^ships = true)
 
-# The views whose crate also builds its program's notifier (`notifier`
-# feature, `export_notifier!`): `wasm-notifiers` builds each as
+# The shipped views whose crate also builds its program's notifier (a
+# `notifier` feature, `export_notifier!`): `wasm-notifiers` builds each as
 # <view>.notify.wasm, and a founding packs it as the program's
 # `ducktape.notify` section.
-NOTIFIERS := chat-view forge-view
+NOTIFIERS := $(filter $(VIEWS),$(call crates_with,^notifier = \[))
 
 # What a wasm32 view may link. A crate a view links must never reach the
 # signing/identity graph (blst does not build for wasm32, and a view has no
-# business holding keys). The system crates are here because the system views
-# read their contracts: `programs`'s signing deps are dev-only, and `-e
+# business holding keys). Every program crate is here, since a view may read
+# any program's contract: `programs`'s signing deps are dev-only, and `-e
 # normal` below is what says so. Every program crate is linked with `program`
 # off, which is what a plain `-p` build below checks.
-VIEW_LINKABLE := ducklink program view-wire view design store programs valset identity settings-view chat forge activity files egress attribution harness actions actions-pods ownership policy-view markdown
+VIEW_LINKABLE := ducklink program view-wire view design store policy-view markdown settings-view $(PROGRAMS)
 VIEW_FORBIDDEN := blst commonware-cryptography wasm-bindgen js-sys web-sys
 
 # Cargo uses this directory for both workspaces.
@@ -121,14 +124,15 @@ wasm-why:
 	@$(WASM_CARGO) --target-dir $(BUILD_TARGET) --profile why -p $V
 	twiggy top -n 25 $(BUILD_TARGET)/wasm32-unknown-unknown/why/$(subst -,_,$V).wasm
 
-## scaffolds crates/app/NAME in valset's shape and registers it (PROGRAMS,
-## workspace members and dependencies); `make dev P=NAME` must pass on it.
+## scaffolds crates/app/NAME in valset's shape and adds its line to founding's
+## Cargo.toml; every list finds it by its folder. `make dev P=NAME` must pass on it.
 new-program:
 	@test -n "$(NAME)" || { echo "usage: make new-program NAME=<program>"; exit 1; }
 	@tools/scaffold.sh program $(NAME)
 
 ## scaffolds crates/app/NAME (NAME ends in -view) over the program it names,
-## in members-view's shape, and registers it (VIEWS, workspace members).
+## in members-view's shape, shipping and riding that program (its Cargo.toml's
+## `[package.metadata.ducktape]`).
 new-view:
 	@test -n "$(NAME)" || { echo "usage: make new-view NAME=<program>-view"; exit 1; }
 	@tools/scaffold.sh view $(NAME)

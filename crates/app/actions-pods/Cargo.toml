@@ -18,19 +18,19 @@ describe = []
 [dependencies]
 abi = { workspace = true }
 borsh = { workspace = true }
-describe = { workspace = true }
-program = { workspace = true }
-store = { workspace = true }
+describe = { path = "../../sdk/describe" }
+program = { path = "../../sdk/program" }
+store = { path = "../../sdk/store" }
 # the checks it claims and reports, and the requests egress keeps for it
-actions = { workspace = true }
-egress = { workspace = true }
+actions = { path = "../actions" }
+egress = { path = "../egress" }
 serde_json = { workspace = true }
 # who holds this program's name, which decides SetConcurrent
-programs = { workspace = true }
+programs = { path = "../../system/programs" }
 
 [dev-dependencies]
-access = { workspace = true }
-awaits = { workspace = true }
-identity = { workspace = true }
-scheduler = { workspace = true }
-valset = { workspace = true }
+access = { path = "../../system/access" }
+awaits = { path = "../../system/awaits" }
+identity = { path = "../../system/identity" }
+scheduler = { path = "../../system/scheduler" }
+valset = { path = "../../system/valset" }

@@ -17,36 +17,40 @@ crate-type = ["cdylib", "rlib"]
 notifier = []
 
 [dependencies]
-view.workspace = true
+view = { path = "../../sdk/view" }
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-ducklink.workspace = true
+ducklink = { path = "../../sdk/ducklink" }
 chat = { path = "../chat" }
-files.workspace = true
+files = { path = "../files" }
 unicode-normalization.workspace = true
-identity.workspace = true
-access.workspace = true
-harness.workspace = true
-program.workspace = true
+identity = { path = "../../system/identity" }
+access = { path = "../../system/access" }
+harness = { path = "../harness" }
+program = { path = "../../sdk/program" }
 abi.workspace = true
 # who can edit a room or a message: ownership's answers, in policy-view's words
-ownership.workspace = true
-policy-view.workspace = true
+ownership = { path = "../../system/ownership" }
+policy-view = { path = "../../sdk/policy-view" }
 # code blocks, tables and headings drawn as forge-view draws them, with no parser
-markdown.workspace = true
+markdown = { path = "../../sdk/markdown" }
 # widgets: a widget file's TOML, and any program's query and reply as JSON
 # by the schema its code carries
 toml.workspace = true
 borsh.workspace = true
-borsh-json.workspace = true
-programs.workspace = true
+borsh-json = { path = "../../lib/borsh-json" }
+programs = { path = "../../system/programs" }
 
 [dev-dependencies]
 criterion = "=0.8.2"
 # `examples/live.rs` and the chain-backed tests: the fake node
-view = { workspace = true, features = ["rig"] }
+view = { path = "../../sdk/view", features = ["rig"] }
 
 [[bench]]
 name = "timeline"
 harness = false
+
+[package.metadata.ducktape]
+ships = true
+rides = "chat"

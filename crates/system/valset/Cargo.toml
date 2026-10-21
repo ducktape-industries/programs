@@ -18,10 +18,10 @@ describe = []
 
 [dependencies]
 abi = { workspace = true }
-describe = { workspace = true }
+describe = { path = "../../sdk/describe" }
 borsh = { workspace = true }
-program = { workspace = true }
+program = { path = "../../sdk/program" }
 # a Role motion's op, described in the words of the program bound to the role
-programs = { workspace = true }
-halo = { workspace = true }
-store = { workspace = true }
+programs = { path = "../programs" }
+halo = { path = "../halo" }
+store = { path = "../../sdk/store" }

@@ -13,13 +13,13 @@ describe = []
 [dependencies]
 abi = { workspace = true }
 borsh = { workspace = true }
-describe = { workspace = true }
-ducklink = { workspace = true }
-forge = { workspace = true }
-program = { workspace = true }
-store = { workspace = true }
+describe = { path = "../../sdk/describe" }
+ducklink = { path = "../../sdk/ducklink" }
+forge = { path = "../forge" }
+program = { path = "../../sdk/program" }
+store = { path = "../../sdk/store" }
 
 [dev-dependencies]
-access = { workspace = true }
-chat = { workspace = true }
-gitcore = { workspace = true }
+access = { path = "../../system/access" }
+chat = { path = "../chat" }
+gitcore = { path = "../../lib/gitcore" }

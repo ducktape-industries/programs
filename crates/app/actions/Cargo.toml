@@ -18,20 +18,20 @@ describe = []
 [dependencies]
 abi = { workspace = true }
 borsh = { workspace = true }
-describe = { workspace = true }
-program = { workspace = true }
-store = { workspace = true }
+describe = { path = "../../sdk/describe" }
+program = { path = "../../sdk/program" }
+store = { path = "../../sdk/store" }
 # the events forge tells a watcher, and the workflow files read through it
-forge = { workspace = true }
+forge = { path = "../forge" }
 # where a push's red check is told
-chat = { workspace = true }
+chat = { path = "../chat" }
 # a check's log as a path on the reader's chain
-ducklink = { workspace = true }
+ducklink = { path = "../../sdk/ducklink" }
 serde = { workspace = true }
 toml = { workspace = true }
 
 [dev-dependencies]
-access = { workspace = true }
-ownership = { workspace = true }
-scheduler = { workspace = true }
-gitcore = { workspace = true }
+access = { path = "../../system/access" }
+ownership = { path = "../../system/ownership" }
+scheduler = { path = "../../system/scheduler" }
+gitcore = { path = "../../lib/gitcore" }

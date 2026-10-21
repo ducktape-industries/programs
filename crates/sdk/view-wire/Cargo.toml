@@ -35,11 +35,11 @@ slotmap = "1.0.6"
 uuid = "1.1.2"
 # `Error` is the one error type: the same for an error a program wrote and one
 # the host wrote.
-error = { workspace = true, features = ["serde"] }
+error = { path = "../error", features = ["serde"] }
 # `program.describe` answers what a program says its op means.
-describe = { workspace = true, features = ["serde"] }
+describe = { path = "../describe", features = ["serde"] }
 # `Program`: the one trait a node method is addressed to.
-program = { workspace = true }
+program = { path = "../program" }
 memchr = "2"
 # A node's variant name for a report (`Refused::At`): already built for
 # gpui-pre, derive included.
