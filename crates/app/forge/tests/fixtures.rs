@@ -135,8 +135,8 @@ fn replay(tape: &mut Tape) {
     tape.capture(&rig, "changes-empty", changes());
     tape.capture(
         &rig,
-        "judgment-empty",
-        Query::Judgment {
+        "review-requests-empty",
+        Query::ReviewRequests {
             principal: Principal::Account(2),
             page: PageRequest::first(2),
         },
@@ -425,8 +425,8 @@ fn replay(tape: &mut Tape) {
     tape.capture(&rig, "changes", changes());
     tape.capture(
         &rig,
-        "judgment",
-        Query::Judgment {
+        "review-requests",
+        Query::ReviewRequests {
             principal: Principal::Account(2),
             page: PageRequest::first(2),
         },
@@ -462,7 +462,7 @@ fn replay(tape: &mut Tape) {
     ) else {
         panic!();
     };
-    let Reply::Change { reviews, .. } = tape.capture(
+    tape.capture(
         &rig,
         "change-reviews-next",
         Query::Change {
@@ -470,31 +470,11 @@ fn replay(tape: &mut Tape) {
             n: 1,
             page: PageRequest::resume(reviews.next, 2),
         },
-    ) else {
-        panic!();
-    };
-    let chat::Reply::Message(Some(root)) = rig
-        .sandbox
-        .chat_query(chat::Query::MessageById {
-            message_id: reviews.items[0].message_id.clone(),
-        })
-        .unwrap()
-    else {
-        panic!();
-    };
-    rig.chat_execute(
-        Principal::Account(1),
-        chat::Op::PostMessage {
-            channel_id: "forge:project:1".into(),
-            message_id: "fixture-reply".into(),
-            blocks: vec![chat::Block::paragraph("A reply about the anchored line")],
-            thread: Some(root.seq),
-        },
     );
     tape.capture(
         &rig,
-        "judgment-replies",
-        Query::Judgment {
+        "review-requests-reviewed",
+        Query::ReviewRequests {
             principal: Principal::Account(2),
             page: PageRequest::first(2),
         },
@@ -504,8 +484,8 @@ fn replay(tape: &mut Tape) {
     tape.capture(&rig, "change-outdated", change(1));
     tape.capture(
         &rig,
-        "judgment-head-moved",
-        Query::Judgment {
+        "review-requests-head-moved",
+        Query::ReviewRequests {
             principal: Principal::Account(2),
             page: PageRequest::first(2),
         },
@@ -550,34 +530,6 @@ fn replay(tape: &mut Tape) {
         },
     );
     tape.capture(&rig, "change-merged", change(1));
-    let mut conversation = story.open("Conversation attention");
-    if let Op::ChangeOpen { from, .. } = &mut conversation {
-        *from = reference("clean");
-    }
-    rig.execute(&conversation).unwrap();
-    rig.advance();
-    for (account, id, thread) in [
-        (4, "conversation-root", None),
-        (1, "conversation-reply", Some(2)),
-    ] {
-        rig.chat_execute(
-            Principal::Account(account),
-            chat::Op::PostMessage {
-                channel_id: "forge:project:3".into(),
-                message_id: id.into(),
-                blocks: vec![chat::Block::paragraph("Conversation")],
-                thread,
-            },
-        );
-    }
-    tape.capture(
-        &rig,
-        "judgment-conversation",
-        Query::Judgment {
-            principal: Principal::Account(4),
-            page: PageRequest::first(128),
-        },
-    );
     let mut narrow = Rig::start(
         Bounds {
             log_walk: 1,

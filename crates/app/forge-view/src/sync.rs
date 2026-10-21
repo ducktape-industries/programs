@@ -296,7 +296,7 @@ impl Forge {
         let waiting = self
             .judgment_query()
             .and_then(|query| match self.ready(&query)? {
-                Reply::Judgment { page, .. } => Some(!page.items.is_empty()),
+                Reply::ReviewRequests { page, .. } => Some(!page.items.is_empty()),
                 _ => None,
             })
             .unwrap_or(false);

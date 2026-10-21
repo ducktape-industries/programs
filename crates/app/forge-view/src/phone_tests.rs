@@ -916,16 +916,12 @@ fn the_judgment_chip_keeps_this_repositorys_changes() {
     let mut cx = repository("default");
     press(&mut cx, "forge-tab-changes");
     press(&mut cx, "forge-filter-judgment");
-    let Reply::Judgment { page, .. } = reply("judgment") else {
-        panic!("judgment is a judgment");
+    let Reply::ReviewRequests { page, .. } = reply("review-requests") else {
+        panic!("review requests answer review requests");
     };
     for item in &page.items {
-        let row = format!("forge-change-{}-{}", item.change.repo, item.change.n);
-        assert_eq!(
-            cx.find(&row).is_some(),
-            item.change.repo == "project",
-            "{row}"
-        );
+        let row = format!("forge-change-{}-{}", item.repo, item.n);
+        assert_eq!(cx.find(&row).is_some(), item.repo == "project", "{row}");
     }
 }
 

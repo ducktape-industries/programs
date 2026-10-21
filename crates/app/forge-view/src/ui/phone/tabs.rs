@@ -21,7 +21,7 @@ use crate::state::{Filter, Menu, RepoTab, Sheet};
 use crate::tree::{self, Slot};
 use crate::words::{self, ref_label};
 use crate::{Forge, Stage};
-use forge::{BlobView, ChangeSummary, CommitInfo, Content, Judgment, Query, Reply};
+use forge::{BlobView, ChangeSummary, CommitInfo, Content, Query, Reply};
 use markdown::phone as document;
 
 pub(super) fn render(
@@ -521,7 +521,7 @@ fn changes(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &Them
         Err(state) => return page.child(state).into_any_element(),
     };
     let needle = forge.change_search.text().trim().to_lowercase();
-    let shown: Vec<(&ChangeSummary, Option<&Judgment>)> = listed
+    let shown: Vec<(&ChangeSummary, bool)> = listed
         .into_iter()
         .filter(|(summary, _)| needle.is_empty() || summary.title.to_lowercase().contains(&needle))
         .collect();
@@ -557,14 +557,14 @@ fn filter_chips(
     parts::chips("forge-filters", chips, chosen, ladder, theme, pick)
 }
 
-fn listed<'a>(reply: &'a Reply, repo: &str) -> Vec<(&'a ChangeSummary, Option<&'a Judgment>)> {
+fn listed<'a>(reply: &'a Reply, repo: &str) -> Vec<(&'a ChangeSummary, bool)> {
     match reply {
-        Reply::Changes { page, .. } => page.items.iter().map(|summary| (summary, None)).collect(),
-        Reply::Judgment { page, .. } => page
+        Reply::Changes { page, .. } => page.items.iter().map(|summary| (summary, false)).collect(),
+        Reply::ReviewRequests { page, .. } => page
             .items
             .iter()
-            .filter(|item| item.change.repo == repo)
-            .map(|item| (&item.change, Some(item)))
+            .filter(|summary| summary.repo == repo)
+            .map(|summary| (summary, true))
             .collect(),
         _ => Vec::new(),
     }
@@ -587,7 +587,7 @@ fn no_changes(filter: Filter, ladder: &Ladder, theme: &Theme) -> AnyElement {
 }
 
 fn change_list(
-    shown: &[(&ChangeSummary, Option<&Judgment>)],
+    shown: &[(&ChangeSummary, bool)],
     forge: &Forge,
     cx: &mut Context<Forge>,
     ladder: &Ladder,
@@ -596,20 +596,13 @@ fn change_list(
     let numbers: Vec<u64> = shown.iter().map(|(summary, _)| summary.n).collect();
     let rows = shown
         .iter()
-        .map(|(summary, judgment)| {
+        .map(|(summary, asked)| {
             let n = summary.n;
             let open: parts::Press = Box::new(
                 cx.listener(move |forge, _: &ClickEvent, _, cx| forge.open_change(Some(n), cx)),
             );
             (
-                parts::change_row(
-                    summary,
-                    *judgment,
-                    parts::Listed::Repo,
-                    forge,
-                    ladder,
-                    theme,
-                ),
+                parts::change_row(summary, *asked, parts::Listed::Repo, forge, ladder, theme),
                 open,
             )
         })

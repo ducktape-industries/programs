@@ -34,6 +34,20 @@ const GRANT_TAG: u8 = 2;
 const REVOKE_TAG: u8 = 3;
 const ARCHIVE_ENDED_TAG: u8 = 17;
 const ACTIVITY_TAG: u8 = 10;
+const JUDGMENT_TAG: u8 = 13;
+
+const LIVE_QUERIES: [(&str, i64); 4] = [
+    ("Changes", 11),
+    ("Change", 12),
+    ("Closure", 14),
+    ("ReviewRequests", 27),
+];
+const LIVE_REPLIES: [(&str, i64); 4] = [
+    ("Changes", 9),
+    ("Change", 10),
+    ("Closure", 12),
+    ("ReviewRequests", 24),
+];
 
 fn encoded<T: BorshSerialize>(value: &T) -> Vec<u8> {
     borsh::to_vec(value).unwrap()
@@ -181,4 +195,39 @@ fn an_activity_tag_is_no_query() {
     assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
     let undecoded = refused.message.starts_with("forge: Query did not decode: ");
     assert!(undecoded, "{refused}");
+}
+
+#[test]
+fn a_judgment_tag_is_no_query() {
+    let sandbox = founded();
+    create(&sandbox, REPO, HashKind::Sha1);
+    let fields = [
+        encoded(&Principal::Account(2)),
+        encoded(&PageRequest::first(2)),
+    ];
+    let bytes = op_bytes(JUDGMENT_TAG, &fields);
+    let refused = program::query::<Forge>(&sandbox.reads(1), &bytes).unwrap_err();
+    assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
+    let undecoded = refused.message.starts_with("forge: Query did not decode: ");
+    assert!(undecoded, "{refused}");
+}
+
+#[test]
+fn the_queries_and_replies_beside_the_retired_judgment_keep_their_tags() {
+    let schema = program::schema::interface::<Forge>();
+    let roots = program::schema::roots(&schema).unwrap();
+    for (root, live) in [(roots.query, LIVE_QUERIES), (roots.reply, LIVE_REPLIES)] {
+        let Some(Definition::Enum { variants, .. }) = schema.get_definition(root) else {
+            panic!("{root} is an enum");
+        };
+        let tags: Vec<(&str, i64)> = variants
+            .iter()
+            .map(|(tag, name, _)| (name.as_str(), *tag))
+            .collect();
+        for live in live {
+            assert!(tags.contains(&live), "{live:?} in {tags:?}");
+        }
+        let judged = tags.iter().any(|(name, _)| *name == "Judgment");
+        assert!(!judged, "{root}: {tags:?}");
+    }
 }

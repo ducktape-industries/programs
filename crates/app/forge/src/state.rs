@@ -30,8 +30,6 @@ pub const ACTIVITY: Set<(u64, String)> = Set::new("a/");
 pub const REFS: Map<(String, Vec<u8>), Vec<u8>> = Map::new("r/");
 /// The last change number each repository gave out.
 pub const NUMBERS: Map<String, u64> = Map::new("n/");
-/// Changes by repository and number; a scan across repositories lists them
-/// by name (Judgment pages this table whole).
 pub const CHANGES: Map<(String, u64), Change> = Map::new("c/");
 /// Reviews by repository, change number and review id.
 // Each review is its author's, of the kind `forge.review`: no op rewrites or deletes one.

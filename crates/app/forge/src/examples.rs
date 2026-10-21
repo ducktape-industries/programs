@@ -327,8 +327,8 @@ pub(crate) fn change() -> Query {
     }
 }
 
-pub(crate) fn judgment() -> Query {
-    Query::Judgment {
+pub(crate) fn review_requests() -> Query {
+    Query::ReviewRequests {
         principal: Principal::Account(21),
         page: page(),
     }

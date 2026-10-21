@@ -1,12 +1,12 @@
-//! Chat owns conversations: forge opens a change's own room, posts its notices there, and asks
-//! chat about the replies a review drew.
+//! Chat owns conversations: forge opens a change's own room, posts its notices there, names it
+//! after the change and archives it once the change ends.
 
 use std::collections::BTreeSet;
 
 use ::program::{AccountNumber, Error, ExecCtx, QueryCtx, unexpected_reply};
 use ::program::{MessageId, Outcome, Principal};
 use chat::message::Status;
-use chat::{MsgRow, Notice, Op, PostPolicy, Query, Reply};
+use chat::{Notice, Op, PostPolicy, Query, Reply};
 
 use crate::Change;
 use crate::contract::Verdict;
@@ -297,31 +297,4 @@ pub fn replied(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), E
 
 fn emit(ctx: &ExecCtx, message: Op) {
     ctx.emit(chat::PROGRAM, &message, ::program::Reply::None);
-}
-
-/// The chat root a review posted, by its message id.
-pub fn message(ctx: &QueryCtx, id: &str) -> Result<Option<MsgRow>, Error> {
-    let query = Query::MessageById {
-        message_id: id.into(),
-    };
-    match ctx.query::<Query, Reply>(chat::PROGRAM, &query)? {
-        Reply::Message(row) => Ok(row),
-        other => Err(unexpected_reply(chat::PROGRAM, "MessageById", &other)),
-    }
-}
-
-/// The newest thread in `channel` that `principal` started and someone answered.
-pub fn attention(
-    ctx: &QueryCtx,
-    channel: &str,
-    principal: &Principal,
-) -> Result<Option<MsgRow>, Error> {
-    let query = Query::ThreadAttention {
-        channel_id: channel.into(),
-        author: principal.clone(),
-    };
-    match ctx.query::<Query, Reply>(chat::PROGRAM, &query)? {
-        Reply::Attention(row) => Ok(row),
-        other => Err(unexpected_reply(chat::PROGRAM, "ThreadAttention", &other)),
-    }
 }

@@ -103,8 +103,8 @@ fn answer(query: &Query, mode: &str) -> Reply {
             ..
         } => in_job_room(mode, moved_target(mode, reply(change_fixture(mode)))),
         Query::Change { .. } => in_job_room(mode, reply("change-reviews-next")),
-        Query::Judgment { .. } if mode == "judgment-empty" => reply("judgment-empty"),
-        Query::Judgment { .. } => reply("judgment"),
+        Query::ReviewRequests { .. } if mode == "judgment-empty" => reply("review-requests-empty"),
+        Query::ReviewRequests { .. } => reply("review-requests"),
         Query::Preview { .. } if mode == "unpreviewed" => reply("preview-none"),
         Query::Preview { .. } => reply("preview"),
         Query::Statuses { commit, .. } if *commit == previewed_merge() => reply("statuses-merge"),
@@ -750,7 +750,7 @@ fn judged(cx: &TestAppContext) -> Vec<forge::Principal> {
         .requests::<Ask>()
         .into_iter()
         .filter_map(|query| match query {
-            Query::Judgment { principal, .. } => Some(principal),
+            Query::ReviewRequests { principal, .. } => Some(principal),
             _ => None,
         })
         .collect()
@@ -1828,7 +1828,7 @@ fn judgment_is_its_own_query_keyed_by_the_readers_account() {
         cx.host()
             .requests::<Ask>()
             .iter()
-            .any(|query| matches!(query, Query::Judgment { principal, .. } if *principal == forge::Principal::Account(2))),
+            .any(|query| matches!(query, Query::ReviewRequests { principal, .. } if *principal == forge::Principal::Account(2))),
         "the reader is their account, from the session"
     );
     assert!(cx.has_text("review requested"), "{:?}", cx.texts());
@@ -2716,7 +2716,7 @@ fn a_block_costs_the_reads_of_the_tables_it_wrote_to() {
     });
     assert_eq!(
         review.keys().collect::<Vec<_>>(),
-        ["Judgment"],
+        ["ReviewRequests"],
         "the badge's read follows a review: {review:?}"
     );
     let real_review = costs(&mut costed, "Readme tab, a real review block", |c| {
@@ -2724,7 +2724,7 @@ fn a_block_costs_the_reads_of_the_tables_it_wrote_to() {
     });
     assert_eq!(
         real_review.keys().collect::<Vec<_>>(),
-        ["Changes", "Judgment", "Repo", "Repos"],
+        ["Changes", "Repo", "Repos", "ReviewRequests"],
         "{real_review:?}"
     );
     let pushed = costs(&mut costed, "Readme tab, a ref moved", |c| {
@@ -2732,7 +2732,7 @@ fn a_block_costs_the_reads_of_the_tables_it_wrote_to() {
     });
     assert_eq!(
         pushed.keys().collect::<Vec<_>>(),
-        ["Blob", "Judgment", "Refs", "Tree"],
+        ["Blob", "Refs", "ReviewRequests", "Tree"],
         "{pushed:?}"
     );
     let repo = forge::tables::REPOS.key(&"project".to_owned());
@@ -2772,7 +2772,14 @@ fn a_block_costs_the_reads_of_the_tables_it_wrote_to() {
     assert_eq!(
         all.keys().collect::<Vec<_>>(),
         [
-            "Archived", "Blob", "Changes", "Judgment", "Refs", "Repo", "Repos", "Tree"
+            "Archived",
+            "Blob",
+            "Changes",
+            "Refs",
+            "Repo",
+            "Repos",
+            "ReviewRequests",
+            "Tree"
         ],
         "{all:?}"
     );
@@ -2797,7 +2804,7 @@ fn a_block_costs_the_reads_of_the_tables_it_wrote_to() {
     );
     assert_eq!(
         judged.keys().collect::<Vec<_>>(),
-        ["Changes", "Judgment", "Repo", "Repos"],
+        ["Changes", "Repo", "Repos", "ReviewRequests"],
         "{judged:?}"
     );
     let posted = costs(
@@ -2809,42 +2816,37 @@ fn a_block_costs_the_reads_of_the_tables_it_wrote_to() {
                 .send(block(106, posted_line_keys("forge:project:1")))
         },
     );
-    assert_eq!(
-        posted.keys().collect::<Vec<_>>(),
-        ["Judgment"],
-        "{posted:?}"
+    assert!(
+        posted.is_empty(),
+        "a line forge posted asks nothing: {posted:?}"
     );
 }
 
 #[test]
-fn a_chat_block_that_answered_a_thread_re_reads_the_judgment() {
+fn a_chat_block_never_re_reads_the_review_requests() {
     let (mut cx, heads) = followed("judgment");
     cx.simulate_click("forge-tab-changes");
     cx.run_until_parked();
     cx.simulate_click("forge-filter-judgment");
     cx.run_until_parked();
-    let judgments = |cx: &TestAppContext| {
+    let requests = |cx: &TestAppContext| {
         cx.host()
             .requests::<Ask>()
             .iter()
-            .filter(|query| matches!(query, Query::Judgment { .. }))
+            .filter(|query| matches!(query, Query::ReviewRequests { .. }))
             .count()
     };
-    let asked = judgments(&cx);
+    let asked = requests(&cx);
     assert!(asked > 0, "the filter asked");
     heads
         .chat
         .send(block(100, vec![member_key("forge:project:1")]));
     cx.run_until_parked();
-    assert_eq!(judgments(&cx), asked, "a member seated moves no judgment");
     heads
         .chat
         .send(block(101, vec![answered_key("forge:project:1")]));
     cx.run_until_parked();
-    assert_eq!(judgments(&cx), asked + 1, "a thread answered");
-    heads.chat.send(None);
-    cx.run_until_parked();
-    assert_eq!(judgments(&cx), asked + 2, "a reopened chat link");
+    assert_eq!(requests(&cx), asked, "a thread answered is chat's to tell");
 }
 
 #[test]

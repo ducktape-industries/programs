@@ -189,12 +189,10 @@ pub(crate) const SEARCH_TITLES: &str = "Search titles";
 pub(crate) const NO_ACCOUNT: &str = "No account";
 pub(crate) const CREATE_AN_ACCOUNT: &str = "Create an account to see the changes that involve you.";
 pub(crate) const NOTHING_WAITS: &str = "Nothing waits on you";
-pub(crate) const NOTHING_ASKED: &str =
-    "No review is requested of you and no thread of yours has an answer.";
+pub(crate) const NOTHING_ASKED: &str = "No change asks for your review.";
 pub(crate) const NO_CHANGES_HERE: &str = "No changes here";
 pub(crate) const COMPARE_TO_OPEN: &str = "Compare a branch from the Refs tab to open one.";
 pub(crate) const REVIEW_REQUESTED: &str = "review requested";
-pub(crate) const NEW_REPLY: &str = "new reply";
 
 pub(crate) fn comments(count: u64) -> String {
     design::plural(count, "comment", "comments")

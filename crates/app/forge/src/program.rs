@@ -6,7 +6,7 @@ use ::program::schema::Return;
 use ::program::tools::{Described, Tools};
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
-use crate::change_queries::{change, changes, judgment};
+use crate::change_queries::{change, changes, review_requests};
 use crate::changes::{
     Draft, Edit, MergeRequest, RebaseRequest, SquashRequest, close, edit, merge_heads, open,
     preview, rebase, repoint, squash, submit_review,
@@ -329,9 +329,9 @@ impl Program for Forge {
                 page: changes(ctx, repo, filter, &listing(page)?)?,
             },
             Query::Change { repo, n, page } => change(ctx, height, repo, *n, &listing(page)?)?,
-            Query::Judgment { principal, page } => Reply::Judgment {
+            Query::ReviewRequests { principal, page } => Reply::ReviewRequests {
                 height,
-                page: judgment(ctx, principal, &listing(page)?)?,
+                page: review_requests(ctx, principal, &listing(page)?)?,
             },
             Query::Closure { repo, walk } => closure(ctx, height, &bounds, repo, walk)?,
             Query::History { repo, walk } => history(ctx, height, &bounds, repo, walk)?,

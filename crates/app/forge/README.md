@@ -76,13 +76,14 @@ and paths as text for a reader that wants them so.
 `PageResponse<T> = { items: Vec<T>, next: Option<Cursor> }`. Pass `next` back unchanged.
 The cursor is bound to the original query arguments and height; changing only
 `limit` is allowed. A changed height returns `stale`, so restart the list.
-Filtered change/judgment pages can be empty **with a next cursor**: continue until
+Filtered change and review-request pages can be empty **with a next cursor**: continue until
 `next == None`. Limits must be `1..=Bounds.page_size`; they are not silently clamped.
 
 Repos sort by descending activity height then name, and leave archived ones out
 (`ArchivedRepos` lists those, by name). Refs use byte-name order,
 trees use Git entry order, diffs use path-byte order, changes use ascending item
-number, and reviews use submission order. Judgment scans repo then item number.
+number, and reviews use submission order. ReviewRequests pages the account's own
+changes (`INVOLVED`) by repository then item number.
 Log covers all parents, ordered by descending committer time then OID, matching
 `gitcore`'s walk (not a promise of topological order under clock skew).
 
@@ -109,7 +110,7 @@ and decode a `forge::Reply` from the concatenated `Respond` bytes.
 | `Compares { repo: r, into: main, from: vec![feature, clean] }` | `into` resolved, and for each of `from` in order a `Compared`: `Tally::Counted(Comparison)` as `Compare` answers it, or `Tally::Refused(why)` for a branch past the walk bound or no such ref, each counted on a read budget of its own. A view's list of branches reads every standing in this one query |
 | `Changes { repo: r, filter: ChangeFilter { state: Some(ChangeState::Open), ..Default::default() }, cursor: None, limit: 20 }` | `page<ChangeSummary>` with author, endpoints, counts and historical verdict totals |
 | `Change { repo: r, n: 1, cursor: None, limit: 20 }` | full change record/body/channel, optional current source/target heads, `reviews: PageResponse<Review>` |
-| `Judgment { principal: reviewer, cursor: None, limit: 20 }` | `page<Judgment>`: open changes requesting this account at the current head or containing an answered thread it authored |
+| `ReviewRequests { principal: reviewer, page }` | `page<ChangeSummary>`: the open changes, across every repository, asking this account's review at their current source head; each page reads one page of the changes the account is involved in, so it can be empty with a next cursor |
 | `Advertise { repo: r, service: Service::UploadPack }` | raw Git protocol v2 advertisement |
 | `Upload { repo: r, request: git_v2_ls_refs_bytes }` | raw Git protocol v2 `ls-refs` response |
 | `Closure { repo: r, walk: Walk::of(gitcore::walk::Walk::of(&wants, &haves)) }` | `listed`: the ids and kinds of the objects `wants` reach less what `haves` reach, and `next`, the walk to send back for the next page |
@@ -175,11 +176,9 @@ does not make the conversation or review history unreadable.
 `ChangeFilter` combines optional state, author and involved account with AND.
 Involvement means author, requested reviewer, or submitted reviewer. A reviewer
 taken off the request stays involved only if they submitted a review. Chat-only participation is represented by chat itself.
-Judgment additionally joins ordinary chat-authored threads and **all** reviews
-by the account, not just its latest review. The newest answered root is returned as
-`ReplyAttention { review: Option<u64>, root_seq, last_reply_seq }`; `None` identifies
-a conversation root. Requested judgment clears when that account submits any verdict
-at the current source head, and returns when the head moves. Read/unread markers
+A review request clears when that account submits any verdict at the current
+source head, and returns when the head moves. Replies under anyone's line are
+chat's to tell: forge reads no chat table to answer a query. Read/unread markers
 and dismissals are local view state, not notification records or new operations.
 Authors, reviewers and filters are accounts (`Principal`), never keys:
 an account acts through any of its keys.
@@ -457,8 +456,7 @@ Every change `ChangeOpen` opens talks in its own `forge:<repo>:<n>`, whatever it
 is named. A change an earlier forge opened in another room keeps that room as its
 `channel`: forge posts its notices there with `Reply::Wanted` and absorbs chat's answer,
 so a room archived since never fails a review, a merge or a close (the notice is just not
-there). forge never archives or renames such a room, and `Judgment` counts only the replies to the change's own review notices there, never the
-room's other threads. A network that wants change events told in rooms of its own choosing
+there). forge never archives or renames such a room. A network that wants change events told in rooms of its own choosing
 runs forge-review-chat beside forge (`crates/app/forge-review-chat`).
 
 Review OIDs and anchors receive syntactic validation, not object reads in
@@ -472,8 +470,7 @@ anchor, and preserve drafts on failed submission.
 
 New bounds are `page_size`, `log_walk`, `tree_walk`, `diff_bytes`, `blob_bytes`,
 and `record_bytes`. Defaults live in qa's `forge_smoke::default_bounds()` (which also writes a founding's `forge.params`); founding
-chooses deployment values. `log_walk` bounds a DAG walk and the total
-review lookup count in one judgment query. A log with no `exclude` walks only as
+chooses deployment values. `log_walk` bounds a DAG walk. A log with no `exclude` walks only as
 far as its page: the commits before its cursor, the page and one more, in the
 walk's own order. A log with `exclude` walks to where the two histories meet.
 Either refuses past `log_walk` commits rather than inventing partial ancestry,

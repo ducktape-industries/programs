@@ -74,7 +74,6 @@ fn next_cursor(reply: &Reply) -> Option<&Vec<u8>> {
         Reply::Diff { page, .. } => page.next.as_ref(),
         Reply::Changes { page, .. } => page.next.as_ref(),
         Reply::Change { reviews, .. } => reviews.next.as_ref(),
-        Reply::Judgment { page, .. } => page.next.as_ref(),
         Reply::Protected { page, .. } => page.next.as_ref(),
         Reply::RefNames { page, .. } => page.next.as_ref(),
         Reply::DiffStat { page, .. } => page.next.as_ref(),
@@ -82,6 +81,7 @@ fn next_cursor(reply: &Reply) -> Option<&Vec<u8>> {
         Reply::Required { page, .. } => page.next.as_ref(),
         Reply::Queue { page, .. } => page.next.as_ref(),
         Reply::ArchivedRepos { page, .. } => page.next.as_ref(),
+        Reply::ReviewRequests { page, .. } => page.next.as_ref(),
         // a log is never read whole: `log_page`
         Reply::Log { .. }
         | Reply::Repo { .. }
@@ -117,8 +117,10 @@ fn extend(into: &mut Reply, more: Reply) {
         (Reply::Change { reviews, .. }, Reply::Change { reviews: more, .. }) => {
             absorb(reviews, more)
         }
-        (Reply::Judgment { page, .. }, Reply::Judgment { page: more, .. }) => absorb(page, more),
         (Reply::Statuses { page, .. }, Reply::Statuses { page: more, .. }) => absorb(page, more),
+        (Reply::ReviewRequests { page, .. }, Reply::ReviewRequests { page: more, .. }) => {
+            absorb(page, more)
+        }
         _ => {}
     }
 }

@@ -3,7 +3,7 @@
 //! filter, the changes that need my judgment across every repository,
 //! then every repository; and the New repository sheet.
 //!
-//! Reads `Query::Repos`, `Query::Judgment` (for me) and the filter box;
+//! Reads `Query::Repos`, `Query::ReviewRequests` (for me) and the filter box;
 //! writes a new repository (`create_repo`).
 use view::design::{Kind, Ladder, Nav, TextType};
 use view::prelude::*;
@@ -16,7 +16,7 @@ use crate::queries::PAGE;
 use crate::state::{Filter, NewRepo};
 use crate::words;
 use crate::{Forge, Stage};
-use forge::{Judgment, Query, Reply, RepoInfo};
+use forge::{ChangeSummary, Query, Reply, RepoInfo};
 
 pub(super) fn render(
     forge: &Forge,
@@ -93,7 +93,7 @@ fn judgment(
         return Vec::new();
     }
     let items = match parts::stage(forge, &query, "forge-judgment", "", cx, (ladder, theme)) {
-        Ok(Reply::Judgment { page, .. }) => &page.items,
+        Ok(Reply::ReviewRequests { page, .. }) => &page.items,
         Ok(_) => return Vec::new(),
         Err(refused) => return vec![refused],
     };
@@ -114,7 +114,7 @@ fn judgment(
 }
 
 fn judgment_list(
-    items: &[Judgment],
+    items: &[ChangeSummary],
     forge: &Forge,
     cx: &mut Context<Forge>,
     ladder: &Ladder,
@@ -122,20 +122,13 @@ fn judgment_list(
 ) -> Stateful<Div> {
     let routes: Vec<String> = items
         .iter()
-        .map(|item| format!("{}/{}", item.change.repo, item.change.n))
+        .map(|item| format!("{}/{}", item.repo, item.n))
         .collect();
     let rows = items
         .iter()
         .zip(&routes)
         .map(|(item, route)| {
-            let row = parts::change_row(
-                &item.change,
-                Some(item),
-                parts::Listed::Root,
-                forge,
-                ladder,
-                theme,
-            );
+            let row = parts::change_row(item, true, parts::Listed::Root, forge, ladder, theme);
             let route = route.clone();
             let open: parts::Press = Box::new(
                 cx.listener(move |forge, _: &ClickEvent, _, cx| forge.open_route(&route, cx)),

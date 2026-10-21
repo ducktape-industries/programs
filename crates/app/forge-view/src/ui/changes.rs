@@ -12,7 +12,7 @@ use crate::ui::components::{badge, button, empty_state, heading, id, quiet};
 use crate::ui::diff::Route;
 use crate::ui::{pending, staged};
 use crate::words;
-use forge::{ChangeState, ChangeSummary, Judgment, Reply, ReviewCounts};
+use forge::{ChangeState, ChangeSummary, Reply, ReviewCounts};
 use view::design::Ladder;
 
 pub(crate) fn render(
@@ -133,8 +133,8 @@ pub(crate) fn render(
         None,
         Some(&forge.changes_scroll),
         move |index| match shown.get(index).and_then(|at| summary_at(&shared, *at)) {
-            Some((summary, judgment)) => {
-                change_row(summary, judgment, index, &marks, &open, &theme, &ladder)
+            Some((summary, asked)) => {
+                change_row(summary, asked, index, &marks, &open, &theme, &ladder)
             }
             None => div().into_any_element(),
         },
@@ -145,18 +145,15 @@ pub(crate) fn render(
 fn listed(reply: &Reply) -> usize {
     match reply {
         Reply::Changes { page, .. } => page.items.len(),
-        Reply::Judgment { page, .. } => page.items.len(),
+        Reply::ReviewRequests { page, .. } => page.items.len(),
         _ => 0,
     }
 }
 
-fn summary_at(reply: &Reply, at: usize) -> Option<(&ChangeSummary, Option<&Judgment>)> {
+fn summary_at(reply: &Reply, at: usize) -> Option<(&ChangeSummary, bool)> {
     match reply {
-        Reply::Changes { page, .. } => page.items.get(at).map(|summary| (summary, None)),
-        Reply::Judgment { page, .. } => page
-            .items
-            .get(at)
-            .map(|judgment| (&judgment.change, Some(judgment))),
+        Reply::Changes { page, .. } => page.items.get(at).map(|summary| (summary, false)),
+        Reply::ReviewRequests { page, .. } => page.items.get(at).map(|summary| (summary, true)),
         _ => None,
     }
 }
@@ -172,7 +169,7 @@ const DOT: Pixels = px(6.);
 
 fn change_row(
     summary: &ChangeSummary,
-    judgment: Option<&Judgment>,
+    asked: bool,
     index: usize,
     marks: &Marks,
     open: &Route<u64>,
@@ -253,25 +250,14 @@ fn change_row(
                     .text_color(theme.muted),
                 ),
         );
-    if let Some(judgment) = judgment {
-        if judgment.requested {
-            line = line.child(badge(
-                id(format!("forge-change-requested-{n}")),
-                words::REVIEW_REQUESTED,
-                ladder,
-                theme.accent_foreground,
-                theme.accent_soft,
-            ));
-        }
-        if judgment.replies.is_some() {
-            line = line.child(badge(
-                id(format!("forge-change-unread-{n}")),
-                words::NEW_REPLY,
-                ladder,
-                theme.warning,
-                theme.warning_soft,
-            ));
-        }
+    if asked {
+        line = line.child(badge(
+            id(format!("forge-change-requested-{n}")),
+            words::REVIEW_REQUESTED,
+            ladder,
+            theme.accent_foreground,
+            theme.accent_soft,
+        ));
     }
     let line = line.child(verdicts(&summary.verdicts, n, theme)).child(
         div()

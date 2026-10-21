@@ -1,16 +1,13 @@
 //! The change queries: a repository's changes, one change with its
-//! reviews, and the judgment a person owes across every repository.
+//! reviews, and the reviews a person is asked for across every repository.
 
-use ::program::{Error, Range};
-use ::program::{QueryCtx, capacity};
+use ::program::{Error, QueryCtx};
 use store::Listing;
 
 use crate::contract::*;
-use crate::discussion;
 use crate::ops::require_named;
 use crate::state::{
-    AUTHORED, CHANGES, INVOLVED, REVIEWS, load_bounds, load_change, load_ref, load_repo,
-    load_review, repo_hash,
+    AUTHORED, CHANGES, INVOLVED, REVIEWS, load_change, load_ref, load_repo, load_review, repo_hash,
 };
 
 /// One change, its two heads, and a page of its reviews.
@@ -70,28 +67,18 @@ pub fn changes(
     })
 }
 
-/// One page of every open change, across repositories, that waits on
-/// `principal`: its review is requested at the current head, or a thread it
-/// started was answered. Chat participants need not have submitted a forge
-/// op, so every change is paged.
-// ponytail: pages every change of every repository and filters; an index of
-// open changes by waiting principal replaces the scan once forge holds many.
-pub fn judgment(
+pub fn review_requests(
     ctx: &QueryCtx,
     principal: &Principal,
     listing: &Listing,
-) -> Result<PageResponse<Judgment>, Error> {
+) -> Result<PageResponse<ChangeSummary>, Error> {
     require_named(principal)?;
-    let mut budget = load_bounds(ctx)?.log_walk;
-    let page = CHANGES.page_of(ctx, &(), listing)?;
+    let page = INVOLVED.page_of(ctx, principal, listing)?;
     let mut items = Vec::new();
-    for ((repo, _), change) in &page.items {
-        if change.state != ChangeState::Open {
-            continue;
-        }
-        if let Some(judgment) = review_owed_by_principal(ctx, repo, change, principal, &mut budget)?
-        {
-            items.push(judgment);
+    for (_, repo, n) in &page.items {
+        let change = load_change(ctx, repo, *n)?;
+        if asks_review(ctx, repo, &change, principal)? {
+            items.push(summary(repo, &change));
         }
     }
     Ok(PageResponse {
@@ -101,74 +88,23 @@ pub fn judgment(
     })
 }
 
-fn review_owed_by_principal(
+fn asks_review(
     ctx: &QueryCtx,
     repo: &str,
     change: &Change,
     principal: &Principal,
-    budget: &mut u64,
-) -> Result<Option<Judgment>, Error> {
-    let (source, _) = change_endpoints(ctx, repo, change)?;
-    let authored = authored_newest_first(ctx, repo, change.n, principal, budget)?;
-    let latest = authored
-        .first()
-        .map(|id| load_review(ctx, repo, change.n, *id))
-        .transpose()?;
-    let requested = change.reviewers.contains(principal)
-        && latest
-            .as_ref()
-            .is_none_or(|review| source.as_ref() != Some(&review.draft.commit_oid));
-    let started = match discussion::talks_elsewhere(repo, change) {
-        true => None,
-        false => discussion::attention(ctx, &change.channel, principal)?,
+) -> Result<bool, Error> {
+    let asked = change.state == ChangeState::Open && change.reviewers.contains(principal);
+    if !asked {
+        return Ok(false);
+    }
+    let theirs = AUTHORED.prefix_of(&(repo.to_owned(), change.n, principal.clone()));
+    let Some((_, _, _, newest)) = AUTHORED.scan(ctx, theirs.reverse().limit(1))?.pop() else {
+        return Ok(true);
     };
-    let mut replies = started.and_then(|root| {
-        root.last_reply_seq.map(|last_reply_seq| ReplyAttention {
-            review: None,
-            root_seq: root.seq,
-            last_reply_seq,
-        })
-    });
-    for id in authored {
-        let review = load_review(ctx, repo, change.n, id)?;
-        if let Some(root) = discussion::message(ctx, &review.message_id)?
-            && let Some(last_reply_seq) = root.last_reply_seq
-            && replies
-                .as_ref()
-                .is_none_or(|newest| newest.last_reply_seq < last_reply_seq)
-        {
-            replies = Some(ReplyAttention {
-                review: Some(id),
-                root_seq: root.seq,
-                last_reply_seq,
-            });
-        }
-    }
-    Ok((requested || replies.is_some()).then(|| Judgment {
-        change: summary(repo, change),
-        requested,
-        replies,
-    }))
-}
-
-fn authored_newest_first(
-    ctx: &QueryCtx,
-    repo: &str,
-    n: u64,
-    principal: &Principal,
-    budget: &mut u64,
-) -> Result<Vec<u64>, Error> {
-    let scan: Range = AUTHORED.prefix_of(&(repo.to_owned(), n, principal.clone()));
-    let ids: Vec<u64> = AUTHORED
-        .scan(ctx, scan.reverse().limit(budget.saturating_add(1)))?
-        .into_iter()
-        .map(|(_, _, _, id)| id)
-        .collect();
-    if ids.len() as u64 > *budget {
-        return Err(capacity("judgment review walk exceeds Bounds.log_walk"));
-    }
-    *budget -= ids.len() as u64;
-    Ok(ids)
+    let (source, _) = change_endpoints(ctx, repo, change)?;
+    let review = load_review(ctx, repo, change.n, newest)?;
+    Ok(source.as_ref() != Some(&review.draft.commit_oid))
 }
 
 fn change_endpoints(

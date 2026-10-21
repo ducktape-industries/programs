@@ -20,7 +20,7 @@ use crate::select::{revision_name, summary_of};
 use crate::state::{Menu, Progress};
 use crate::words::{self, ref_label};
 use crate::{Forge, Stage};
-use forge::{ChangeState, ChangeSummary, CommitInfo, Judgment, Query, Reply, Revision};
+use forge::{ChangeState, ChangeSummary, CommitInfo, Query, Reply, Revision};
 
 /// A press, as a row or a control takes it.
 pub(crate) type Press = Box<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
@@ -1014,7 +1014,7 @@ pub(crate) enum Listed {
 /// its caption.
 pub(crate) fn change_row(
     summary: &ChangeSummary,
-    judgment: Option<&Judgment>,
+    asked: bool,
     listed: Listed,
     forge: &Forge,
     ladder: &Ladder,
@@ -1022,16 +1022,7 @@ pub(crate) fn change_row(
 ) -> Row {
     let across = listed == Listed::Root;
     let author = forge.principal_name(&summary.author);
-    let asks = judgment.into_iter().flat_map(|judgment| {
-        let requested = judgment
-            .requested
-            .then_some(words::REVIEW_REQUESTED.to_owned());
-        let replied = judgment
-            .replies
-            .is_some()
-            .then(|| words::NEW_REPLY.to_owned());
-        requested.into_iter().chain(replied)
-    });
+    let asks = asked.then(|| words::REVIEW_REQUESTED.to_owned());
     let comments = words::comments(summary.comment_count);
     let words: Vec<String> = across
         .then(|| summary.repo.clone())

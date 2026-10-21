@@ -39,20 +39,17 @@ fn record(rig: &Rig, n: u64) -> (forge::Change, Vec<forge::Review>) {
     (change, reviews.items)
 }
 
-fn owed(rig: &Rig, principal: Principal) -> Vec<(u64, bool)> {
-    let Reply::Judgment { page, .. } = reply(
+fn owed(rig: &Rig, principal: Principal) -> Vec<u64> {
+    let Reply::ReviewRequests { page, .. } = reply(
         rig,
-        Query::Judgment {
+        Query::ReviewRequests {
             principal,
             page: PageRequest::first(8),
         },
     ) else {
         panic!()
     };
-    page.items
-        .iter()
-        .map(|judgment| (judgment.change.n, judgment.requested))
-        .collect()
+    page.items.iter().map(|summary| summary.n).collect()
 }
 
 fn involving(rig: &Rig, principal: Principal) -> Vec<u64> {
@@ -108,7 +105,7 @@ fn one_person_with_two_keys_is_one_owner_author_and_reviewer() {
     assert_eq!(record(&rig, n).0.author, Principal::Account(1));
     assert_eq!(involving(&rig, Principal::Account(1)), [n]);
 
-    assert_eq!(owed(&rig, Principal::Account(2)), [(n, true)]);
+    assert_eq!(owed(&rig, Principal::Account(2)), [n]);
     let approve = review(&story.feature, &story.root, Verdict::Approve);
     as_key(&mut rig, PHONE, &approve);
     as_key(&mut rig, b"reviewer", &approve);

@@ -19,7 +19,7 @@ fixtures`; without the variable the test must reproduce the committed bytes.
 | `refs-empty` | `Query` → `Reply` | Unborn repository with no refs. |
 | `log-unborn` | `Query` → `Refusal` | not_found for an unborn branch. |
 | `changes-empty` | `Query` → `Reply` | Empty list before any change exists. |
-| `judgment-empty` | `Query` → `Reply` | No outstanding work. |
+| `review-requests-empty` | `Query` → `Reply` | No change asks the account's review. |
 | `repos` | `Query` → `Reply` | Repository list with activity/ref count. |
 | `repo` | `Query` → `Reply` | Settings, owner, bounds, counts and granted writer page. |
 | `refs` | `Query` → `Reply` | First two refs with continuation. |
@@ -62,23 +62,22 @@ fixtures`; without the variable the test must reproduce the committed bytes.
 | `op-change-open` | `Op` → `OpReply` | Assigned first item number. |
 | `change` | `Query` → `Reply` | Open record with body, channel, current endpoints and empty review page. |
 | `changes` | `Query` → `Reply` | Change summary list. |
-| `judgment` | `Query` → `Reply` | Outstanding requested review. |
+| `review-requests` | `Query` → `Reply` | A change asks the account's review at its head. |
 | `op-change-edit` | `Op` → `OpReply` | Change edit receipt. |
 | `op-review-comment` | `Op` → `OpReply` | Batched comment review receipt. |
 | `op-review-request-changes` | `Op` → `OpReply` | Batched request-changes review receipt. |
 | `op-review-approve` | `Op` → `OpReply` | Batched approval receipt. |
 | `change-reviewed` | `Query` → `Reply` | First two submitted reviews with a continuation. |
 | `change-reviews-next` | `Query` → `Reply` | Final review page, including an approval. |
-| `judgment-replies` | `Query` → `Reply` | A reply under a submitted review root. |
+| `review-requests-reviewed` | `Query` → `Reply` | Reviewed at the head: nothing asked. |
 | `change-outdated` | `Query` → `Reply` | Pinned reviews plus a moved source head. |
-| `judgment-head-moved` | `Query` → `Reply` | Requested review becomes pending again after a push. |
+| `review-requests-head-moved` | `Query` → `Reply` | The review is asked again after a push. |
 | `op-change-open-second` | `Op` → `OpReply` | The next shared item number. |
 | `op-change-close` | `Op` → `OpReply` | Change close receipt. |
 | `change-closed` | `Query` → `Reply` | Closed record. |
 | `changes-filtered` | `Query` → `Reply` | Closed-state filter. |
 | `op-merge` | `Op` → `OpReply` | CAS merge receipt linked to a change. |
 | `change-merged` | `Query` → `Reply` | Merged record and result OID. |
-| `judgment-conversation` | `Query` → `Reply` | Chat-authored thread with a reply; no forge review ID. |
 | `refused-capacity` | `Query` → `Refusal` | Complete commit walk exceeds the founded bound. |
 | `unarchived` | `Query` → `Reply` | `Archived` of a repository that is not archived. |
 | `archived` | `Query` → `Reply` | `Archived` once `Archive` archived it. |

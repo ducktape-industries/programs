@@ -271,8 +271,7 @@ pub enum Service {
 
 /// A read. Each variant names the tables it is answered from (`#[reads]`,
 /// [`program::Reads`]), so a view following `program.changes` re-reads it
-/// only for a block that wrote to one of them; a judgment is answered
-/// partly from chat's and names those too. Git objects are not keys: a
+/// only for a block that wrote to one of them. Git objects are not keys: a
 /// view reaches one through a ref, and the push or merge that moves the ref
 /// brings it (a stage stores objects no ref reaches yet), so a read of
 /// objects follows `REFS`. The git client's own questions declare
@@ -374,22 +373,9 @@ pub enum Query {
         n: u64,
         page: PageRequest,
     },
-    /// What one person owes across every repository. The threads it waits
-    /// on are chat's (`discussion`): a reply moves the author's `ANSWERED`
-    /// entry and the root row's `last_reply_seq`, in chat's `MESSAGES`, and
-    /// a review's root is found through `MESSAGE_IDS`. The reply rows and
-    /// reactions are not read.
-    #[reads(CHANGES, REVIEWS, AUTHORED, REFS)]
-    #[reads(chat::Chat: chat::tables::ANSWERED, chat::tables::MESSAGE_IDS, chat::tables::MESSAGES)]
-    #[ask(Reply::Judgment { height: u64, page: PageResponse<Judgment> })]
-    #[tool_query(description = "What one account owes across every repository: open changes asking its review at their current head, or holding a thread it wrote that someone answered.", example = crate::examples::judgment)]
-    Judgment {
-        principal: Principal,
-        page: PageRequest,
-    },
     #[ask(Reply::Closure { height: u64, listed: Vec<Listed>, next: Walk })]
     #[tool_query(description = "For a fetch: the objects a walk's wants reach less what its haves reach, a page at a time; send next back for the rest.", example = crate::examples::closure)]
-    Closure { repo: String, walk: Walk },
+    Closure { repo: String, walk: Walk } = 14,
     // A repository's protected branches, in byte-name order; its head is protected besides.
     #[reads(PROTECTED, REPOS)]
     #[ask(Reply::Protected { height: u64, page: PageResponse<Vec<u8>> })]
@@ -473,6 +459,13 @@ pub enum Query {
         into: Revision,
         from: Vec<Revision>,
     },
+    #[reads(INVOLVED, CHANGES, AUTHORED, REVIEWS, REFS)]
+    #[ask(Reply::ReviewRequests { height: u64, page: PageResponse<ChangeSummary> })]
+    #[tool_query(description = "The open changes, across every repository, that ask principal's review at their current head, paged over the changes principal is involved in. A page can be empty with a next cursor: go on until next is null.", example = crate::examples::review_requests)]
+    ReviewRequests {
+        principal: Principal,
+        page: PageRequest,
+    },
 }
 
 impl Query {
@@ -496,7 +489,7 @@ impl Query {
             | Query::Diff { page, .. }
             | Query::Changes { page, .. }
             | Query::Change { page, .. }
-            | Query::Judgment { page, .. }
+            | Query::ReviewRequests { page, .. }
             | Query::Protected { page, .. }
             | Query::RefNames { page, .. }
             | Query::DiffStat { page, .. }
@@ -528,7 +521,7 @@ impl Query {
             | Query::Diff { page, .. }
             | Query::Changes { page, .. }
             | Query::Change { page, .. }
-            | Query::Judgment { page, .. }
+            | Query::ReviewRequests { page, .. }
             | Query::Protected { page, .. }
             | Query::RefNames { page, .. }
             | Query::DiffStat { page, .. }
@@ -639,15 +632,11 @@ pub enum Reply {
         target_head: Option<String>,
         reviews: PageResponse<Review>,
     },
-    Judgment {
-        height: u64,
-        page: PageResponse<Judgment>,
-    },
     Closure {
         height: u64,
         listed: Vec<Listed>,
         next: Walk,
-    },
+    } = 12,
     Protected {
         height: u64,
         page: PageResponse<Vec<u8>>,
@@ -701,6 +690,10 @@ pub enum Reply {
         height: u64,
         into: String,
         compared: Vec<Compared>,
+    },
+    ReviewRequests {
+        height: u64,
+        page: PageResponse<ChangeSummary>,
     },
 }
 

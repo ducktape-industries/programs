@@ -140,16 +140,3 @@ pub struct ChangeSummary {
     pub comment_count: u64,
     pub verdicts: ReviewCounts,
 }
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
-pub struct ReplyAttention {
-    /// None for a conversation thread authored directly in chat.
-    pub review: Option<u64>,
-    pub root_seq: u64,
-    pub last_reply_seq: u64,
-}
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
-pub struct Judgment {
-    pub change: ChangeSummary,
-    pub requested: bool,
-    pub replies: Option<ReplyAttention>,
-}
