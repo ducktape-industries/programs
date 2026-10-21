@@ -221,6 +221,12 @@ pub struct Chat {
     pub(crate) rules: crate::rules::Rules,
     #[serde(skip)]
     pub(crate) typing: crate::typing::Typing,
+    #[serde(skip)]
+    pub(crate) questions_answered: bool,
+    #[serde(skip)]
+    pub(crate) listening_question: Option<crate::questions::Question>,
+    #[serde(skip)]
+    pub(crate) posted_question: Option<crate::questions::Question>,
 }
 
 /// A page of the view's [`Pages`]: the room list, search, the new-channel
@@ -430,7 +436,7 @@ pub struct Room {
     #[serde(skip)]
     pub(crate) answering: Loadable<Vec<chat::Draft>>,
     #[serde(skip)]
-    pub(crate) busy: Reread<Option<chat::Holder>>,
+    pub(crate) busy: Live<Option<chat::Holder>>,
     #[serde(skip)]
     pub(crate) answering_read: Option<view::Task<()>>,
     #[serde(skip)]
@@ -441,6 +447,16 @@ pub struct Room {
     pub(crate) became: BTreeMap<String, String>,
     #[serde(skip)]
     pub(crate) filter: Option<crate::filters::Filter>,
+    #[serde(skip)]
+    pub(crate) rows_question: Option<(crate::questions::Question, crate::questions::RowsAsked)>,
+    #[serde(skip)]
+    pub(crate) drafts_question: Option<crate::questions::Question>,
+    #[serde(skip)]
+    pub(crate) members_question: Option<crate::questions::Question>,
+    #[serde(skip)]
+    pub(crate) reactors_question: Option<crate::questions::Question>,
+    #[serde(skip)]
+    pub(crate) drafts_left: Vec<chat::Draft>,
 }
 
 #[derive(Default)]
@@ -500,7 +516,9 @@ pub struct Thread {
     #[serde(skip)]
     pub(crate) rereading: Option<view::Task<()>>,
     #[serde(skip)]
-    pub(crate) busy: Reread<Option<chat::Holder>>,
+    pub(crate) busy: Live<Option<chat::Holder>>,
+    #[serde(skip)]
+    pub(crate) question: Option<crate::questions::Question>,
 }
 
 #[derive(Serialize, Deserialize, Default)]

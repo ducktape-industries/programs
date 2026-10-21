@@ -54,14 +54,20 @@ pub(crate) async fn reactors(
     channel_id: String,
     seqs: Vec<u64>,
 ) -> Result<Reactors, Error> {
+    Ok(reactors_of(
+        host.query(ask::Reactors { channel_id, seqs }).await?,
+    ))
+}
+
+pub(crate) fn reactors_of(chosen: Vec<chat::ReactedBy>) -> Reactors {
     let mut reactors = Reactors::new();
-    for chosen in host.query(ask::Reactors { channel_id, seqs }).await? {
+    for chosen in chosen {
         reactors
             .entry(chosen.seq)
             .or_default()
             .insert(chosen.emoji, chosen.by);
     }
-    Ok(reactors)
+    reactors
 }
 
 pub(crate) async fn answers(

@@ -158,10 +158,18 @@ impl Chat {
     }
 
     pub(crate) fn load_listening(&mut self, cx: &mut Context<Self>) {
+        if self.my_account().is_none() {
+            return;
+        }
+        self.listening_asked = true;
+        self.read_listening(cx);
+        self.read_posted(cx);
+    }
+
+    pub(crate) fn read_listening(&mut self, cx: &mut Context<Self>) {
         let Some(me) = self.my_account() else {
             return;
         };
-        self.listening_asked = true;
         let read = crate::queries::listening(cx.host(), me);
         cx.land(read, move |chat, read, cx| match read {
             _ if chat.my_account() != Some(me) => {}
@@ -175,6 +183,12 @@ impl Chat {
             Err(refusal) => cx.log_refused("the rooms listened to", &refusal),
         })
         .detach();
+    }
+
+    pub(crate) fn read_posted(&mut self, cx: &mut Context<Self>) {
+        let Some(me) = self.my_account() else {
+            return;
+        };
         let posted = crate::queries::posted_in(cx.host(), me);
         cx.land(posted, move |chat, read, cx| match read {
             _ if chat.my_account() != Some(me) => {}

@@ -7,12 +7,13 @@ use view::prelude::*;
 
 use crate::composer::Target;
 use crate::queries::{self, Side};
+use crate::questions::relied_on;
 use crate::words;
 use crate::{Anchor, Chat, Drawn, KeptThread, Pane, Room, Thread, Visited};
 
 enum Reread {
     Tail,
-    Span(u64, u64),
+    Span,
 }
 
 fn posted_places(written: &Written) -> Vec<Option<u64>> {
@@ -91,8 +92,10 @@ impl Chat {
         let frozen = room.frozen.iter().map(|(draft, _)| draft);
         let drafts: Vec<chat::Draft> = (room.answering.ready().into_iter().flatten())
             .chain(frozen)
+            .chain(&room.drafts_left)
             .cloned()
             .collect();
+        room.drafts_left.clear();
         for draft in drafts {
             let key = crate::listing::answering_key(&draft);
             if room.became.values().any(|held| *held == key) {
@@ -120,9 +123,10 @@ impl Chat {
         room.frozen = kept;
     }
 
-    fn answering_landed(
+    pub(crate) fn answering_landed(
         &mut self,
         answering: Result<Vec<chat::Draft>, view::host::Error>,
+        pushed: bool,
         cx: &mut Context<Self>,
     ) {
         let Some(room) = &mut self.room else {
@@ -137,15 +141,20 @@ impl Chat {
             .iter()
             .map(crate::listing::answering_key)
             .collect();
+        if pushed {
+            room.answering_read = None;
+        }
         let held = room.answering.ready().cloned().unwrap_or_default();
-        let gone: Vec<chat::Draft> = held
-            .into_iter()
-            .filter(|draft| {
-                !keys.contains(&crate::listing::answering_key(draft))
-                    && wrote.contains(&draft.thread)
-            })
-            .collect();
+        let gone = (held.into_iter())
+            .filter(|draft| !keys.contains(&crate::listing::answering_key(draft)));
         for draft in gone {
+            let posted_where_it_was = wrote.contains(&draft.thread);
+            if !posted_where_it_was {
+                if pushed {
+                    room.drafts_left.push(draft);
+                }
+                continue;
+            }
             let Some(rows) = place_rows(room, draft.thread) else {
                 continue;
             };
@@ -185,17 +194,50 @@ impl Chat {
 
     pub(crate) fn settle_busy(&mut self, cx: &mut Context<Self>) {
         let Some(room) = &self.room else { return };
-        let thread = room.thread.as_ref();
-        let (foot, under) = (
-            room.busy.is_idle(),
-            thread.is_some_and(|t| t.busy.is_idle()),
-        );
-        if foot {
-            self.read_foot_busy(cx);
-        }
+        let under = room.thread.is_some();
+        self.stand_foot_busy(cx);
         if under {
-            self.read_thread_busy(cx);
+            self.stand_thread_busy(cx);
         }
+    }
+
+    fn stand_foot_busy(&mut self, cx: &mut Context<Self>) {
+        let (Some(me), Some(room)) = (self.my_account(), &self.room) else {
+            return;
+        };
+        let asked = ask::Busy {
+            channel_id: room.id.clone(),
+            thread: None,
+            for_account: me,
+        };
+        cx.live(
+            self,
+            |chat| &mut room_of(chat).busy,
+            asked,
+            Some,
+            Self::read_foot_busy,
+        );
+    }
+
+    fn stand_thread_busy(&mut self, cx: &mut Context<Self>) {
+        let (Some(me), Some(room)) = (self.my_account(), &self.room) else {
+            return;
+        };
+        let Some(root) = room.thread.as_ref().map(|thread| thread.root) else {
+            return;
+        };
+        let asked = ask::Busy {
+            channel_id: room.id.clone(),
+            thread: Some(root),
+            for_account: me,
+        };
+        cx.live(
+            self,
+            |chat| &mut room_of(chat).thread.get_or_insert_default().busy,
+            asked,
+            Some,
+            Self::read_thread_busy,
+        );
     }
 
     fn read_foot_busy(&mut self, cx: &mut Context<Self>) {
@@ -205,7 +247,7 @@ impl Chat {
         let channel = room.id.clone();
         cx.reread(
             self,
-            |chat| &mut room_of(chat).busy,
+            |chat| &mut *room_of(chat).busy,
             move |_, cx| queries::busy(cx.host(), channel, None, me),
             Self::read_foot_busy,
         );
@@ -221,7 +263,7 @@ impl Chat {
         let channel = room.id.clone();
         cx.reread(
             self,
-            |chat| &mut room_of(chat).thread.get_or_insert_default().busy,
+            |chat| &mut *room_of(chat).thread.get_or_insert_default().busy,
             move |_, cx| queries::busy(cx.host(), channel, Some(root), me),
             Self::read_thread_busy,
         );
@@ -379,7 +421,7 @@ impl Chat {
             };
         }
         if !same {
-            self.read_foot_busy(cx);
+            self.stand_foot_busy(cx);
         }
         let reader = self.my_account();
         let room = self.room.get_or_insert_default();
@@ -394,17 +436,14 @@ impl Chat {
         // rows go over the new window or the read for it
         room.rereading = None;
         room.rereading_all = false;
+        room.rows_question = None;
         // the room is entered, or entered again at another row: the rows
         // and the roster shown go, and both read as loading
         room.messages = Loadable::Idle;
         room.members = Loadable::Idle;
+        room.members_question = None;
+        cx.notify();
         *self.timeline_drawn.borrow_mut() = Drawn::default();
-        let members_id = room.id.clone();
-        let answering = queries::answering(cx.host(), members_id.clone());
-        room.answering = Loadable::Loading(cx.land(answering, |chat, answering, cx| {
-            cx.notify();
-            room_of(chat).answering = answering.into();
-        }));
         if land > 0 {
             let rows = queries::around(cx.host(), id.clone(), land, viewer, first);
             room.messages = Loadable::Loading(cx.land(rows, move |chat, result, cx| {
@@ -468,6 +507,8 @@ impl Chat {
                 self.restore_thread(thread, newer, cx);
             }
             if held {
+                self.stand_drafts(cx);
+                self.stand_members(false, cx);
                 return;
             }
         } else {
@@ -495,9 +536,23 @@ impl Chat {
                 room_of(chat).read_marks(cx);
             }));
         }
-        cx.load(self, queries::members(cx.host(), members_id), |chat| {
-            &mut room_of(chat).members
+        self.stand_drafts(cx);
+        self.stand_members(true, cx);
+    }
+
+    pub(crate) fn read_answering(&mut self, cx: &mut Context<Self>) {
+        let Some(room) = &self.room else { return };
+        let answering = queries::answering(cx.host(), room.id.clone());
+        let read = cx.land(answering, |chat, answering, cx| {
+            chat.answering_landed(answering, false, cx)
         });
+        room_of(self).answering_read = Some(read);
+    }
+
+    pub(crate) fn read_members(&mut self, cx: &mut Context<Self>) {
+        let Some(room) = &self.room else { return };
+        let roster = queries::members(cx.host(), room.id.clone());
+        cx.load(self, roster, |chat| &mut room_of(chat).members);
     }
 
     /// The newest window landed: the rows, and whether older ones remain.
@@ -587,12 +642,17 @@ impl Chat {
                 account: me,
                 page: PageRequest::default(),
             };
-            if change.is_none_or(|change| {
-                change.touches::<chat::Chat, _>(&listening)
-                    || change.touches::<chat::Chat, _>(&posted)
-            }) {
-                self.load_listening(cx);
-            }
+            let moved = |read: &dyn program::Reads| {
+                change.is_none_or(|change| change.touches::<chat::Chat, _>(read))
+            };
+            let heard = change.is_some();
+            let answered =
+                |question: &Option<crate::questions::Question>| heard && relied_on(question);
+            let lists = [
+                (moved(&listening), answered(&self.listening_question)),
+                (moved(&posted), answered(&self.posted_question)),
+            ];
+            self.reread_lists(lists, cx);
             let seated = ask::Seated {
                 principal: chat::Principal::Account(me),
                 channel_ids: Vec::new(),
@@ -645,14 +705,20 @@ impl Chat {
             change.is_none_or(|change| change.touches::<chat::Chat, _>(read))
         };
         let viewer = self.viewer();
-        let first = self.screenful();
-        let Some(room) = &mut self.room else { return };
+        let Some(room) = &self.room else { return };
         let id = room.id.clone();
         let landed = room.landed;
         let written = change.map(|change| chat::view::messages_written(&change.keys, &id));
-        let mut catch_up = None;
+        let heard = change.is_some();
+        let thread = room.thread.as_ref();
+        let rows_answered = heard && room.rows_relied_on();
+        let thread_answered = heard && thread.is_some_and(|thread| relied_on(&thread.question));
+        let members_answered = heard && relied_on(&room.members_question);
+        let drafts_answered = heard && relied_on(&room.drafts_question);
+        let foot_busy_answered = heard && room.busy.stands();
+        let thread_busy_answered = heard && thread.is_some_and(|thread| thread.busy.stands());
         let page = PageRequest::default();
-        let reread = match room.landed {
+        let reread = match landed {
             true => room
                 .messages
                 .ready()
@@ -665,7 +731,7 @@ impl Chat {
                         page: page.clone(),
                     })
                 })
-                .map(|(first, last)| Reread::Span(first, last)),
+                .map(|_| Reread::Span),
             false => touched(&ask::Roots {
                 channel_id: id.clone(),
                 viewer: viewer.clone(),
@@ -673,70 +739,36 @@ impl Chat {
             })
             .then_some(Reread::Tail),
         };
-        match reread {
-            // a block: what it wrote, read again alone
-            Some(Reread::Tail) if written.is_some() => catch_up = written.clone(),
-            Some(Reread::Tail) => {
-                let shown = room
-                    .messages
-                    .ready()
-                    .map_or(first, |rows| rows.len().max(first));
-                let rows = queries::roots(cx.host(), id.clone(), viewer.clone(), None, shown);
-                room.rereading_all = true;
-                room.rereading = Some(cx.land(rows, |chat, rows, cx| {
-                    let room = room_of(chat);
-                    room.rereading_all = false;
-                    match rows {
-                        Ok((rows, has_older)) => {
-                            let moved =
-                                room.messages.ready() != Some(&rows) || room.has_older != has_older;
-                            if moved {
-                                room.has_older = has_older;
-                                room.messages = Loadable::Ready(rows);
-                            }
-                            room.landed_rows(moved, cx);
-                        }
-                        Err(refusal) => cx.log_refused("the room", &refusal),
-                    }
-                }));
-            }
-            Some(Reread::Span(first, last)) => {
-                let rows = queries::span(cx.host(), id.clone(), (first, last), viewer.clone());
-                room.rereading = Some(cx.land(rows, |chat, rows, cx| {
-                    let room = room_of(chat);
-                    match rows {
-                        Ok(rows) => {
-                            let moved = room.messages.ready() != Some(&rows);
-                            if moved {
-                                room.messages = Loadable::Ready(rows);
-                            }
-                            room.landed_rows(moved, cx);
-                        }
-                        Err(refusal) => cx.log_refused("the room", &refusal),
-                    }
-                }));
-            }
-            None => {}
+        let catch_up = match reread {
+            Some(Reread::Tail) => written
+                .clone()
+                .map(|written| room.uncovered(written, rows_answered, thread_answered)),
+            Some(Reread::Span) | None => None,
+        };
+        let rows_again = match reread {
+            Some(Reread::Tail) => written.is_none(),
+            Some(Reread::Span) => !rows_answered,
+            None => false,
+        };
+        if rows_again {
+            self.reread_rows(cx);
         }
-        if touched(&ask::Members {
+        let members = ask::Members {
             channel_id: id.clone(),
             page: page.clone(),
-        }) {
-            let roster = queries::members(cx.host(), id.clone());
-            cx.load(self, roster, |chat| &mut room_of(chat).members);
+        };
+        let members_again = touched(&members) && !members_answered;
+        if members_again {
+            self.read_members(cx);
         }
-        if touched(&ask::Drafts {
+        let drafts = ask::Drafts {
             channel_id: id.clone(),
-        }) {
+        };
+        let drafts_again = touched(&drafts) && !drafts_answered;
+        if drafts_again {
             let wrote = written.as_ref().map(posted_places).unwrap_or_default();
-            let answering = queries::answering(cx.host(), id.clone());
-            let read = cx.land(answering, |chat, answering, cx| {
-                chat.answering_landed(answering, cx)
-            });
-            if let Some(room) = &mut self.room {
-                room.posted_since_read.extend(wrote);
-                room.answering_read = Some(read);
-            }
+            room_of(self).posted_since_read.extend(wrote);
+            self.read_answering(cx);
         }
         let busy_moved = self.my_account().is_some_and(|me| {
             touched(&ask::Busy {
@@ -745,8 +777,12 @@ impl Chat {
                 for_account: me,
             })
         });
-        if busy_moved {
+        let foot_busy_again = busy_moved && !foot_busy_answered;
+        if foot_busy_again {
             self.read_foot_busy(cx);
+        }
+        let thread_busy_again = busy_moved && !thread_busy_answered;
+        if thread_busy_again {
             self.read_thread_busy(cx);
         }
         if let Some(written) = catch_up {
@@ -756,8 +792,6 @@ impl Chat {
             return;
         };
         let root = thread.root;
-        // a reply added, a landing's block or a reopened link: the replies;
-        // a block's other rows of it are the catch-up's
         let replied = match (&written, landed) {
             (Some(written), false) => written.replies.iter().any(|(at, _)| *at == root),
             _ => true,
@@ -768,12 +802,58 @@ impl Chat {
             viewer,
             page,
         };
-        if replied && touched(&asked) {
+        let thread_again = replied && touched(&asked) && !thread_answered;
+        if thread_again {
             self.reread_thread(written.is_some(), cx);
         }
     }
 
-    fn reread_thread(&mut self, newer: bool, cx: &mut Context<Self>) {
+    pub(crate) fn reread_rows(&mut self, cx: &mut Context<Self>) {
+        let viewer = self.viewer();
+        let screenful = self.screenful();
+        let Some(room) = &mut self.room else { return };
+        let id = room.id.clone();
+        if room.landed {
+            let held = (room.messages.ready())
+                .and_then(|rows| Some((rows.first()?.seq, rows.last()?.seq)));
+            let Some((first, last)) = held else { return };
+            let rows = queries::span(cx.host(), id, (first, last), viewer);
+            room.rereading = Some(cx.land(rows, |chat, rows, cx| {
+                let room = room_of(chat);
+                match rows {
+                    Ok(rows) => {
+                        let moved = room.messages.ready() != Some(&rows);
+                        if moved {
+                            room.messages = Loadable::Ready(rows);
+                        }
+                        room.landed_rows(moved, cx);
+                    }
+                    Err(refusal) => cx.log_refused("the room", &refusal),
+                }
+            }));
+            return;
+        }
+        let shown = (room.messages.ready()).map_or(screenful, |rows| rows.len().max(screenful));
+        let rows = queries::roots(cx.host(), id, viewer, None, shown);
+        room.rereading_all = true;
+        room.rereading = Some(cx.land(rows, |chat, rows, cx| {
+            let room = room_of(chat);
+            room.rereading_all = false;
+            match rows {
+                Ok((rows, has_older)) => {
+                    let moved = room.messages.ready() != Some(&rows) || room.has_older != has_older;
+                    if moved {
+                        room.has_older = has_older;
+                        room.messages = Loadable::Ready(rows);
+                    }
+                    room.landed_rows(moved, cx);
+                }
+                Err(refusal) => cx.log_refused("the room", &refusal),
+            }
+        }));
+    }
+
+    pub(crate) fn reread_thread(&mut self, newer: bool, cx: &mut Context<Self>) {
         let viewer = self.viewer();
         let Some(room) = &mut self.room else { return };
         let id = room.id.clone();
@@ -1067,6 +1147,7 @@ impl Chat {
                         *rows = all;
                     }
                     room.settle();
+                    room.rows_question = None;
                     room.read_marks_of(marks, cx);
                 }
                 Err(refusal) => room.older_failed = Some(design::sentence(&refusal)),
@@ -1709,7 +1790,7 @@ impl Room {
     // The newest page landed over the rows held: the rows from its oldest on
     // are its, the older ones stay. A page that does not reach the rows held
     // starts the room over from it; what lies between pages in on scroll.
-    fn tail_landed(
+    pub(crate) fn tail_landed(
         &mut self,
         fresh: Vec<MsgRow>,
         has_older: bool,
@@ -1780,7 +1861,7 @@ impl Room {
         self.landed_some(moved, marked(&fresh), cx);
     }
 
-    fn landed_some(&mut self, moved: bool, marks: Marked, cx: &mut Context<Chat>) {
+    pub(crate) fn landed_some(&mut self, moved: bool, marks: Marked, cx: &mut Context<Chat>) {
         let pending = self.pending.len();
         self.settle();
         if moved || self.pending.len() != pending {
@@ -1832,6 +1913,9 @@ impl Room {
         if seqs.is_empty() {
             return;
         }
+        if relied_on(&self.reactors_question) {
+            return;
+        }
         let id = self.id.clone();
         let read = queries::reactors(cx.host(), id.clone(), seqs.clone());
         cx.land(read, move |chat, read, cx| {
@@ -1858,7 +1942,7 @@ impl Room {
 
     /// A re-read landed: drops the sends it shows, and draws if the rows
     /// `moved` or a send left.
-    fn landed_rows(&mut self, moved: bool, cx: &mut Context<Chat>) {
+    pub(crate) fn landed_rows(&mut self, moved: bool, cx: &mut Context<Chat>) {
         let pending = self.pending.len();
         self.settle();
         if moved || self.pending.len() != pending {
@@ -1878,15 +1962,29 @@ impl Room {
     // Who chose each reaction on the rows shown, room and thread: read
     // again each time rows land, kept until the next read lands.
     fn read_reactors(&mut self, cx: &mut Context<Chat>) {
+        let answered = relied_on(&self.reactors_question);
+        let reacted = !self.reacted_seqs().is_empty();
+        let the_question_answers = answered && reacted;
+        if the_question_answers {
+            return;
+        }
+        self.read_all_reactors(cx);
+    }
+
+    pub(crate) fn reacted_seqs(&self) -> Vec<u64> {
         let replies = self
             .thread
             .as_ref()
             .and_then(|thread| thread.replies.ready());
-        let seqs: Vec<u64> = (self.messages.ready().into_iter().chain(replies))
+        (self.messages.ready().into_iter().chain(replies))
             .flatten()
             .filter(|row| !row.reactions.is_empty())
             .map(|row| row.seq)
-            .collect();
+            .collect()
+    }
+
+    pub(crate) fn read_all_reactors(&mut self, cx: &mut Context<Chat>) {
+        let seqs = self.reacted_seqs();
         if seqs.is_empty() {
             self.reactors.clear();
             self.reading_reactors = None;

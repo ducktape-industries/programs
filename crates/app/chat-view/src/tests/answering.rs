@@ -305,6 +305,53 @@ fn a_draft_becomes_its_post_in_one_node_when_the_row_lands_first() {
 }
 
 #[test]
+fn a_draft_becomes_its_post_in_one_render_with_no_read_when_the_room_stands_its_questions() {
+    let mut cx = TestAppContext::new();
+    let standings = cx.host().stand::<::chat::Chat>();
+    let (_view, drafts, rows) = drafting(&mut cx);
+    assert!(standings.standing() > 0, "the room stands its questions");
+    let changes = cx.host().stream::<Changes<::chat::Chat>>();
+    let asked = cx.host().requests::<Ask<::chat::Chat>>().len();
+    drafts.borrow_mut().clear();
+    rows.borrow_mut().push(post_row());
+    let mut wrote = posted("general");
+    wrote.push(drafts_key());
+    changes.send(block(5, wrote));
+    standings.moved();
+    every_frame_holds_one(&mut cx);
+    assert!(cx.has_text("posted words") && !cx.has_text("draft words"));
+    let read_after = cx.host().requests::<Ask<::chat::Chat>>().split_off(asked);
+    assert!(
+        read_after
+            .iter()
+            .all(|query| matches!(query, Query::Channel { .. })),
+        "the channel list's room alone: {read_after:?}"
+    );
+}
+
+#[test]
+fn a_question_the_node_could_not_answer_is_read_by_the_room() {
+    let mut cx = TestAppContext::new();
+    let standings = cx.host().stand::<::chat::Chat>();
+    let (_view, _drafts, rows) = drafting(&mut cx);
+    let asked = cx.host().requests::<Ask<::chat::Chat>>().len();
+    rows.borrow_mut().push(post_row());
+    standings.could_not_answer();
+    cx.run_until_parked();
+    assert!(cx.has_text("posted words"), "{:?}", cx.texts());
+    let read_after = cx.host().requests::<Ask<::chat::Chat>>().split_off(asked);
+    let read = |pick: fn(&Query) -> bool| read_after.iter().any(pick);
+    assert!(
+        read(|query| matches!(query, Query::Roots { .. })),
+        "{read_after:?}"
+    );
+    assert!(
+        read(|query| matches!(query, Query::Drafts { .. })),
+        "{read_after:?}"
+    );
+}
+
+#[test]
 fn a_draft_taken_down_with_no_post_leaves() {
     let mut cx = TestAppContext::new();
     let (_view, drafts, _rows) = drafting(&mut cx);

@@ -44,6 +44,8 @@ mod policies;
 #[cfg(not(feature = "notifier"))]
 mod queries;
 #[cfg(not(feature = "notifier"))]
+mod questions;
+#[cfg(not(feature = "notifier"))]
 mod room;
 #[cfg(not(feature = "notifier"))]
 mod room_list;
@@ -158,6 +160,7 @@ impl Render for Chat {
         self.settle_rules(cx);
         self.settle_policies(cx);
         self.settle_busy(cx);
+        self.settle_questions(cx);
         self.settle_typing(cx);
         self.load_seated(false, cx);
         // the one pick: a phone draws the Expo app's own screens, every

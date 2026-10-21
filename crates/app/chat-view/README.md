@@ -165,6 +165,18 @@ The session, routes, visibility, the chain's heads, and the live heads of
 chat, identity and ownership (`watch.rs`); a chat block re-reads only
 what its `#[reads]` say it wrote.
 
+While a room is open it stands its questions on the node (`program.watch`,
+`questions.rs`): its rows (the newest roots, as many as it holds and at least a
+screenful, or the span a landing holds), the open thread, who is answering, its
+members, who holds it busy, who reacted, and the rooms the reader listens to
+and wrote in. Each answer lands where its read would, so the
+answers a block moves land in one frame: a draft that becomes its post hands its
+node to the post's row. A block then reads again only what no answered question
+covers (a held row older than the newest roots the room asks), and the channel
+list still reads each room the block wrote (`Channel`). When the node can't
+answer a question this block, the room reads it itself; a host or node that
+stands none ends them, and the room reads each block as before.
+
 An agent's draft (chat's `Drafting`) is a row at the foot of the list it
 answers in, keyed by its author and opening block. When the block that posts
 takes it down, the row stays as it last was until the post's row lands, and that
