@@ -517,3 +517,110 @@ fn a_new_preview_touches_the_verdict_and_it_answers_from_that_preview() {
     assert_eq!(verdict.merge, second.to_hex());
     assert_eq!(world.statuses(second)[0].1, CheckState::Passed);
 }
+
+fn rebased(world: &World, feature: Oid) {
+    let rebase = forge::Op::Rebase {
+        repo: REPO.into(),
+        n: 1,
+        onto: forge::Revision::Ref(b"refs/heads/main".to_vec()),
+        expected_head: feature.to_hex(),
+    };
+    world.forge(&rebase).unwrap();
+}
+
+#[test]
+fn a_result_on_the_head_a_rebase_left_carries_when_dev_left_its_files_alone() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    world.report(feature, &["a/x.rs"], Some(1)).unwrap();
+    dev_moves(
+        &mut world,
+        base,
+        &[
+            ("Cargo.lock", "lock 1\n"),
+            ("a/x.rs", "1\n2\n3\n4\n5\n6\n7\n8\n"),
+            ("b/y.rs", "y 2\n"),
+        ],
+    );
+    rebased(&world, feature);
+    let merge = world.preview();
+    assert_eq!(
+        world.statuses(merge),
+        [(lane_context(), CheckState::Passed, Some("lane.log".into()))]
+    );
+    let verdict = world.verdict().unwrap();
+    assert_ne!(verdict.head, feature.to_hex(), "the rebase moved the head");
+    assert_eq!(verdict.carried[0].gated, feature.to_hex());
+    assert!(verdict.carried[0].differs.is_empty());
+}
+
+#[test]
+fn a_result_on_the_head_a_rebase_left_is_pending_when_dev_edited_its_file() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    world.report(feature, &["a/x.rs"], Some(1)).unwrap();
+    dev_moves(
+        &mut world,
+        base,
+        &[
+            ("Cargo.lock", "lock 1\n"),
+            ("a/x.rs", "1\n2\n3\n4\n5\n6\n7\neight\n"),
+            ("b/y.rs", "y 1\n"),
+        ],
+    );
+    rebased(&world, feature);
+    let merge = world.preview();
+    assert_eq!(
+        world.statuses(merge),
+        [(lane_context(), CheckState::Pending, None)]
+    );
+    let carried = &world.verdict().unwrap().carried[0];
+    assert_eq!(carried.gated, feature.to_hex());
+    assert_eq!(carried.differs, ["a/x.rs"]);
+}
+
+#[test]
+fn a_lane_on_a_previewed_head_carries_across_a_rebase() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    world.preview();
+    world.report(feature, &["a", "Cargo.lock"], None).unwrap();
+    dev_moves(
+        &mut world,
+        base,
+        &[
+            ("Cargo.lock", "lock 1\n"),
+            ("a/x.rs", "1\n2\n3\n4\n5\n6\n7\n8\n"),
+            ("b/y.rs", "y 2\n"),
+        ],
+    );
+    rebased(&world, feature);
+    let merge = world.preview();
+    assert_eq!(
+        world.statuses(merge),
+        [(lane_context(), CheckState::Passed, Some("lane.log".into()))]
+    );
+}
+
+#[test]
+fn a_result_on_an_earlier_head_is_pending_when_the_patch_grew() {
+    let mut world = world();
+    let (_, feature) = opened(&mut world);
+    world.report(feature, &["a/x.rs"], Some(1)).unwrap();
+    let grown = world.commit(
+        &[feature],
+        &[
+            ("Cargo.lock", "lock 1\n"),
+            ("a/x.rs", "one\n2\n3\n4\n5\n6\n7\n8\n"),
+            ("b/y.rs", "y 1\n"),
+            ("c.md", "new\n"),
+        ],
+    );
+    world.push(Some(feature), grown, "feature");
+    let merge = world.preview();
+    assert_eq!(
+        world.statuses(merge),
+        [(lane_context(), CheckState::Pending, None)]
+    );
+    assert_eq!(world.verdict().unwrap().carried[0].differs, ["c.md"]);
+}

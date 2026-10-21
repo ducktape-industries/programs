@@ -1,11 +1,12 @@
 //! What each op checks and writes: a reported result kept with its reach, and on each Preview
-//! every result reported for the change's head compared path by path and told forge as a status.
-use std::collections::BTreeMap;
+//! every result reported for the change's head, or for an earlier head with the same patch,
+//! compared path by path and told forge as a status.
+use std::collections::{BTreeMap, BTreeSet};
 
 use ::program::{Error, ExecCtx, QueryCtx, Reply as Wanted, code, invalid, unexpected_reply};
-use forge::{CheckState, EntryKind, PreviewInfo, Watched};
+use forge::{CheckState, EntryKind, FileStatus, PreviewInfo, Revision, Watched};
 
-use crate::state::{Kept, PREVIEWED, PREVIEWING, REACH, REPORTS, Reporting};
+use crate::state::{HEADS, Kept, PREVIEWED, PREVIEWING, REACH, REPORTS, Reporting};
 use crate::{AccountNumber, Carried, PROGRAM, PageRequest, PageResponse, PreviewVerdict, Report};
 
 pub(crate) struct Reported {
@@ -26,7 +27,8 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             tell(ctx, &repo, n)
         }
         Watched::Merged { repo, n, .. } | Watched::Closed { repo, n, .. } => {
-            forget_preview(ctx, &repo, n)
+            forget_preview(ctx, &repo, n)?;
+            forget_heads(ctx, &repo, n)
         }
         _ => Ok(()),
     }
@@ -39,6 +41,7 @@ fn heard_preview(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
     };
     for commit in [&preview.from_head, &preview.merge] {
         PREVIEWING.insert(ctx, &(repo.to_owned(), commit.clone(), n));
+        HEADS.insert(ctx, &(repo.to_owned(), n, commit.clone()));
     }
     let heads = (preview.from_head, preview.merge);
     PREVIEWED.put(ctx, &(repo.to_owned(), n), &heads);
@@ -57,6 +60,14 @@ fn forget_preview(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
         }
     }
     PREVIEWED.remove(ctx, &key);
+    Ok(())
+}
+
+fn forget_heads(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
+    let change = (repo.to_owned(), n);
+    for head in HEADS.scan(ctx, HEADS.prefix_of(&change))? {
+        HEADS.remove(ctx, &head);
+    }
     Ok(())
 }
 
@@ -102,6 +113,9 @@ pub(crate) fn report(ctx: &ExecCtx, reported: Reported) -> Result<(), Error> {
         height: ctx.env().height,
     };
     REPORTS.put(ctx, &key, &kept);
+    if let Some(n) = reported.change {
+        HEADS.insert(ctx, &(reported.repo.clone(), n, reported.commit.clone()));
+    }
     let changes = match reported.change {
         Some(n) => vec![n],
         None => previewing(ctx, &reported.repo, &reported.commit)?,
@@ -167,17 +181,31 @@ pub(crate) fn verdict(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Previ
     let Some(preview) = latest_preview(ctx, repo, n)? else {
         return Ok(None);
     };
-    let mut reported: BTreeMap<(AccountNumber, String), (String, Kept)> = BTreeMap::new();
+    let mut reported: BTreeMap<(AccountNumber, String), (String, Kept, bool)> =
+        reported_earlier(ctx, repo, n, &preview)?
+            .into_iter()
+            .map(|(key, (commit, kept))| (key, (commit, kept, true)))
+            .collect();
     for commit in [&preview.from_head, &preview.merge] {
         let head = (repo.to_owned(), commit.clone());
         for ((_, _, reporter, context), kept) in REPORTS.scan(ctx, REPORTS.prefix_of(&head))? {
-            reported.insert((reporter, context), (commit.clone(), kept));
+            reported.insert((reporter, context), (commit.clone(), kept, false));
         }
     }
+    let any_earlier = reported.values().any(|(_, _, earlier)| *earlier);
+    let ours = match any_earlier {
+        true => changed(ctx, repo, &preview.into_head, &preview.merge),
+        false => None,
+    };
     let mut carried = Vec::new();
-    for ((reporter, context), (gated, kept)) in reported {
+    for ((reporter, context), (gated, kept, earlier)) in reported {
         let key: Reporting = (repo.to_owned(), gated.clone(), reporter, context.clone());
-        let differs = differing_paths(ctx, repo, &key, &preview.merge)?;
+        let mut differs = differing_paths(ctx, repo, &key, &preview.merge)?;
+        let same_reach_elsewhere = earlier && differs.is_empty();
+        if same_reach_elsewhere {
+            let theirs = patch_of(ctx, repo, &gated, &preview.into_head);
+            differs = patch_differs(theirs.as_ref(), ours.as_ref());
+        }
         let state = match differs.is_empty() {
             true => kept.state,
             false => CheckState::Pending,
@@ -197,6 +225,90 @@ pub(crate) fn verdict(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Previ
         merge: preview.merge,
         carried,
     }))
+}
+
+type Gated = BTreeMap<(AccountNumber, String), (String, Kept)>;
+
+fn reported_earlier(
+    ctx: &QueryCtx,
+    repo: &str,
+    n: u64,
+    preview: &PreviewInfo,
+) -> Result<Gated, Error> {
+    let mut earlier = Gated::new();
+    let change = (repo.to_owned(), n);
+    for (_, _, commit) in HEADS.scan(ctx, HEADS.prefix_of(&change))? {
+        let previewed = commit == preview.from_head || commit == preview.merge;
+        if previewed {
+            continue;
+        }
+        let head = (repo.to_owned(), commit.clone());
+        for ((_, _, reporter, context), kept) in REPORTS.scan(ctx, REPORTS.prefix_of(&head))? {
+            let key = (reporter, context);
+            let newer = earlier
+                .get(&key)
+                .is_none_or(|(_, was)| kept.height > was.height);
+            if newer {
+                earlier.insert(key, (commit.clone(), kept));
+            }
+        }
+    }
+    Ok(earlier)
+}
+
+type Patch = BTreeMap<String, (FileStatus, Option<EntryKind>, Option<EntryKind>)>;
+
+fn patch_of(ctx: &QueryCtx, repo: &str, gated: &str, into: &str) -> Option<Patch> {
+    let asked = forge::Query::Compare {
+        repo: repo.to_owned(),
+        from: Revision::Oid(gated.to_owned()),
+        into: Revision::Oid(into.to_owned()),
+    };
+    let reply = ctx
+        .query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)
+        .ok()?;
+    let forge::Reply::Compare { comparison, .. } = reply else {
+        return None;
+    };
+    changed(ctx, repo, &comparison.base?, gated)
+}
+
+fn changed(ctx: &QueryCtx, repo: &str, base: &str, head: &str) -> Option<Patch> {
+    let mut patch = Patch::new();
+    let mut after = None;
+    loop {
+        let asked = forge::Query::DiffStat {
+            repo: repo.to_owned(),
+            base: Some(base.to_owned()),
+            head: head.to_owned(),
+            page: PageRequest { after, limit: None },
+        };
+        let reply = ctx
+            .query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)
+            .ok()?;
+        let forge::Reply::DiffStat { page, .. } = reply else {
+            return None;
+        };
+        for file in page.items {
+            patch.insert(file.path, (file.status, file.old_kind, file.new_kind));
+        }
+        match page.next {
+            Some(next) => after = Some(next),
+            None => return Some(patch),
+        }
+    }
+}
+
+fn patch_differs(theirs: Option<&Patch>, ours: Option<&Patch>) -> Vec<String> {
+    let (Some(theirs), Some(ours)) = (theirs, ours) else {
+        return vec![String::new()];
+    };
+    let paths: BTreeSet<&String> = theirs.keys().chain(ours.keys()).collect();
+    paths
+        .into_iter()
+        .filter(|path| theirs.get(*path) != ours.get(*path))
+        .cloned()
+        .collect()
 }
 
 fn latest_preview(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<PreviewInfo>, Error> {
