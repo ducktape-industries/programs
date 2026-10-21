@@ -275,6 +275,13 @@ impl MockChain {
         Ok(id)
     }
 
+    pub fn drop_blob(&self, id: &BlobId) {
+        self.held.borrow_mut().remove(id);
+        for seat in self.seats.values() {
+            seat.host.borrow_mut().blobs.remove(id);
+        }
+    }
+
     pub fn frames(&self) -> usize {
         self.parked.borrow().len()
     }

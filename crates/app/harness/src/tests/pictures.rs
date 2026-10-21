@@ -63,22 +63,7 @@ fn let_go_of_its_root(chain: &MockChain, snapshot: BlobId) {
         other => panic!("{other:?}"),
     };
     let root = rows.iter().find(|row| row.id == snapshot).unwrap().root;
-    let seated = [
-        identity::PROGRAM,
-        "valset",
-        awaits::PROGRAM,
-        scheduler::PROGRAM,
-        egress::PROGRAM,
-        attribution::PROGRAM,
-        PROGRAM,
-        files::PROGRAM,
-        chat::PROGRAM,
-        "access",
-        programs::PROGRAM,
-    ];
-    for program in seated {
-        chain.host(program).borrow_mut().blobs.remove(&root);
-    }
+    chain.drop_blob(&root);
 }
 
 fn mentioned(world: &World, files: Vec<chat::Block>) -> u64 {
