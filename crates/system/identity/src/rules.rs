@@ -260,6 +260,9 @@ pub(crate) fn create_agent(ctx: &ExecCtx, name: String) -> Result<(), Error> {
 }
 
 fn managing(ctx: &ExecCtx, manager: AccountNumber, number: AccountNumber) -> Result<(), Error> {
+    if manager == number {
+        return ctx.env().authority().map_err(|_| self_managed(number));
+    }
     let acting = acting(ctx)?;
     if acting != manager {
         return Err(unauthorized(format!(
@@ -283,6 +286,26 @@ fn not_managed(number: AccountNumber) -> Error {
     wrong_state(format!("account {number} is not a program account"))
 }
 
+fn self_managed(number: AccountNumber) -> Error {
+    unauthorized(format!(
+        "account {number} manages itself: only the validators' vote changes its standing"
+    ))
+}
+
+fn sovereign(account: &Account) -> bool {
+    matches!(account.control, Control::Program { manager, .. } if manager == account.number)
+}
+
+fn governed(ctx: &QueryCtx, account: &Account) -> Result<(), Error> {
+    match sovereign(account) {
+        true => ctx
+            .env()
+            .authority()
+            .map_err(|_| self_managed(account.number)),
+        false => Ok(()),
+    }
+}
+
 pub(crate) fn add_key(
     ctx: &ExecCtx,
     scheme: Scheme,
@@ -291,6 +314,7 @@ pub(crate) fn add_key(
 ) -> Result<(), Error> {
     let env = ctx.env();
     let mut account = account(ctx, consent.account)?;
+    governed(ctx, &account)?;
     let consenting = |keys: &[Key]| {
         keys.iter()
             .find(|key| key.key == consent.key)
@@ -484,6 +508,7 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         Op::RegisterProgram { .. }
         | Op::RenameProgram { .. }
         | Op::Migrate { .. }
+        | Op::SetManager { .. }
         | Op::Create { .. }
         | Op::CreateAgent { .. }
         | Op::AddKey { .. }
@@ -498,14 +523,17 @@ pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
     let Some(account) = ACCOUNTS.get(ctx, &number)? else {
         return Ok(Resource::default());
     };
+    let itself = Ownership::Listed(vec![Party::Account(number)]);
     let (owner, default) = match account.control {
-        Control::User { .. } | Control::System { .. } => (number, Ownership::Owner),
-        Control::Program { manager, .. } => {
-            (manager, Ownership::Listed(vec![Party::Account(number)]))
+        Control::User { .. } | Control::System { .. } => (Party::Account(number), Ownership::Owner),
+        Control::Program { manager, .. } if manager == number => {
+            let validators = ctx.env().role(abi::role::VALIDATORS)?.clone();
+            (Party::Program(validators), itself)
         }
+        Control::Program { manager, .. } => (Party::Account(manager), itself),
     };
     Ok(Resource {
-        owner: Some(Party::Account(owner)),
+        owner: Some(owner),
         default: Some(default),
     })
 }
@@ -538,6 +566,7 @@ fn relive(
     change: impl FnOnce(Life) -> Result<Life, Error>,
 ) -> Result<(), Error> {
     let mut account = account(ctx, number)?;
+    governed(ctx, &account)?;
     let Control::Program { life, .. } = &mut account.control else {
         return Err(not_managed(number));
     };
@@ -673,4 +702,63 @@ pub(crate) fn hears(
         .chain(program)
         .collect();
     Ok(answers.allows(Some(&Party::Account(manager)), &sender))
+}
+
+pub(crate) fn set_manager(
+    ctx: &ExecCtx,
+    number: AccountNumber,
+    manager: AccountNumber,
+) -> Result<(), Error> {
+    let mut account = account(ctx, number)?;
+    let Control::Program {
+        manager: current,
+        life,
+        ..
+    } = &mut account.control
+    else {
+        return Err(not_managed(number));
+    };
+    let was = *current;
+    managing(ctx, was, number)?;
+    if *life == Life::Revoked {
+        return Err(revoked(number));
+    }
+    if manager == was {
+        return Err(wrong_state(format!(
+            "account {manager} already manages account {number}"
+        )));
+    }
+    let named = ACCOUNTS
+        .get(ctx, &manager)?
+        .ok_or_else(|| not_found(format!("account {manager}")))?;
+    let gone = matches!(
+        named.control,
+        Control::Program {
+            life: Life::Revoked,
+            ..
+        }
+    );
+    if gone {
+        return Err(wrong_state(format!(
+            "account {manager} is revoked and manages nothing"
+        )));
+    }
+    *current = manager;
+    save(ctx, account);
+    MANAGED.remove(ctx, &(was, number));
+    MANAGED.insert(ctx, &(manager, number));
+    if let Some(answers) = ANSWERS.get(ctx, &number)? {
+        match answers.settled(Some(&Party::Account(manager))) {
+            Ownership::Anyone => ANSWERS.remove(ctx, &number),
+            settled => ANSWERS.put(ctx, &number, &settled),
+        }
+    }
+    let cleared = access::Op::Set {
+        program: ctx.env().program.clone(),
+        key: account_key(number),
+        list: None,
+    };
+    let checker = ctx.env().role(abi::role::ACCESS)?.clone();
+    ctx.emit(checker, &cleared, ::program::Reply::None);
+    Ok(())
 }

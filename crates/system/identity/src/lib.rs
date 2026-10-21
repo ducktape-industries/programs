@@ -179,7 +179,7 @@ pub enum Op {
     Create { name: String, scheme: Scheme },
     #[tool_op(description = "Create a program account of the Agent category that you manage, with no key and no script yet. Any account that acts may. Returns its number.", returns = AccountNumber, example = examples::create_agent)]
     CreateAgent { name: String },
-    #[tool_op(description = "Add the signing key to consent.account: a key already on it signs the consent (Admission under ducktape:identity:consent). Or a program account's manager signs and the new key consents to itself. Never a system account's or a revoked one's.", example = examples::add_key)]
+    #[tool_op(description = "Add the signing key to consent.account: a key already on it signs the consent (Admission under ducktape:identity:consent). Or a program account's manager signs and the new key consents to itself. Never a system account's or a revoked one's. For an account that manages itself, only the validators' vote.", example = examples::add_key)]
     AddKey {
         scheme: Scheme,
         label: Option<String>,
@@ -203,13 +203,13 @@ pub enum Op {
     },
     /// A program account stops acting; its keys stay for `Resume`. Its
     /// manager's.
-    #[tool_op(description = "Stop a program account acting; its keys stay for Resume. Its manager, or whom the manager lists.", example = examples::suspend)]
+    #[tool_op(description = "Stop a program account acting; its keys stay for Resume. Its manager, or whom the manager lists. For an account that manages itself, only the validators' vote.", example = examples::suspend)]
     Suspend { account: AccountNumber },
-    #[tool_op(description = "Let a suspended program account act again. Its manager, or whom the manager lists.", example = examples::resume)]
+    #[tool_op(description = "Let a suspended program account act again. Its manager, or whom the manager lists. For an account that manages itself, only the validators' vote.", example = examples::resume)]
     Resume { account: AccountNumber },
     /// A program account stops for good: its keys are dropped. Its
     /// manager's.
-    #[tool_op(description = "Stop a program account for good: its keys are dropped. Its manager, or whom the manager lists.", example = examples::revoke)]
+    #[tool_op(description = "Stop a program account for good: its keys are dropped. Its manager, or whom the manager lists. For an account that manages itself, only the validators' vote.", example = examples::revoke)]
     Revoke { account: AccountNumber },
     #[tool_op(description = "Set whom a program account answers: Anyone (the default), Owner (its manager only) or Listed (its manager and these accounts or programs). Whoever may write the account's key, not once revoked.", example = examples::set_ownership)]
     SetOwnership {
@@ -228,6 +228,11 @@ pub enum Op {
         height: u64,
         first: Option<AccountNumber>,
         last: Option<AccountNumber>,
+    },
+    #[tool_op(description = "Move a program account to a new manager at once, and clear the list on its key in the access program. Its manager sends it; for an account that manages itself, only the validators' vote. Naming the account itself makes it manage itself: it then runs its own name, profile, script and whom it answers, and only the validators' vote suspends, resumes, revokes, adds a key to or moves it. Not a user's, a system account's or a revoked one's, and never to a revoked account.", example = examples::set_manager)]
+    SetManager {
+        account: AccountNumber,
+        manager: AccountNumber,
     },
 }
 
@@ -462,6 +467,13 @@ pub fn describe(op: &Op) -> describe::Description {
                 ],
             )
         }
+        Op::SetManager {
+            account: number,
+            manager,
+        } => (
+            "Set manager".into(),
+            vec![account(number), field("manager", Value::Account(*manager))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -487,6 +499,7 @@ fn op_variants_only_append() {
             "SetScript",
             "RenameProgram",
             "Migrate",
+            "SetManager",
         ]
     );
 }

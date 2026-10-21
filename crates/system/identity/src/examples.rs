@@ -188,3 +188,10 @@ pub(crate) fn migrate() -> Op {
         last: None,
     }
 }
+
+pub(crate) fn set_manager() -> Op {
+    Op::SetManager {
+        account: 40,
+        manager: 15,
+    }
+}
