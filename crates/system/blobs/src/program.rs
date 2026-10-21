@@ -1,6 +1,7 @@
 //! The program: every op and every query, each handed to its rule.
 
 use ::program::schema::{Return, returns};
+use ::program::tools::Tools;
 use ::program::{Error, ExecCtx, Program, QueryCtx};
 
 use crate::rules::{bundle, held, put, receipt};
@@ -14,6 +15,10 @@ impl Program for Blobs {
     type Query = Query;
     type Reply = Reply;
     const RETURNS: &'static [Return] = &[returns::<u64>("Put")];
+
+    fn tools() -> Tools {
+        Tools::of::<crate::tools::Ops, crate::tools::Queries>()
+    }
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         match op {

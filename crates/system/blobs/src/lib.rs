@@ -5,6 +5,7 @@ mod program;
 mod rules;
 #[cfg(test)]
 mod tests;
+mod tools;
 
 pub use blob::contract::{Bundle, Custody, Entry, Holding, Op, Query, Reply, quorum};
 pub use program::Blobs;
