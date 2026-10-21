@@ -284,3 +284,80 @@ fn a_message_a_wait_heard_after_the_read_makes_a_post_into_its_place_stale() {
     let (text, failed) = result_of(chain, thread, "toolu_p");
     assert!(failed && text.contains("not posted"), "{text}");
 }
+
+fn notified(world: &World, id: &str) {
+    let op = chat::Op::Notify {
+        channel_id: "general".into(),
+        message_id: id.into(),
+        thread: None,
+        notice: chat::Notice {
+            kind: "pod".into(),
+            group: id.into(),
+            subject: format!("pod {id}"),
+            link: None,
+            status: chat::message::Status::Failed,
+            detail: "exit code 1".into(),
+            concerns: vec![world.agent],
+        },
+    };
+    world.chain.submit(signed(BO), chat::PROGRAM, &op).unwrap();
+}
+
+fn lands(world: &World, thread: u64, at: u64) {
+    let chain = &world.chain;
+    chain.at(at + 1, 0);
+    relay_back(chain, "toolu_p");
+    let (text, failed) = result_of(chain, thread, "toolu_p");
+    assert!(!failed, "{text}");
+    let asked = chat::Query::MessageById {
+        message_id: format!("harness-{thread}-toolu_p"),
+    };
+    let chat::Reply::Message(Some(row)) = chain.query(chat::PROGRAM, &asked).unwrap() else {
+        panic!("the post landed")
+    };
+    assert_eq!(row.blocks, chat::parse_message("first"));
+}
+
+#[test]
+fn a_notice_heard_from_its_place_after_the_read_leaves_a_post_to_land() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "post when you can", Some(WINDOW));
+    chain.at(3, 0);
+    let first = json!({ "channel": "general", "text": "first" });
+    model_says(
+        chain,
+        json!([tool_use("toolu_p", "chat_post", first)]),
+        "tool_use",
+    );
+    notified(&world, "n1");
+    let heard = held(chain, thread)
+        .iter()
+        .any(|body| body.text().ends_with("pod n1 failed — exit code 1"));
+    assert!(heard, "the notice reached the conversation after its read");
+    lands(&world, thread, 3);
+}
+
+#[test]
+fn a_notice_a_wait_heard_after_the_read_leaves_a_post_into_its_place_to_land() {
+    let world = super::schedule::schemed();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "wake me when Bo's pod ends", Some(WINDOW));
+    let wanted = json!({ "event": { "message": { "channel": "general", "from": world.bo } } });
+    super::schedule::turn(&world, 3, &[("w1", "wait_for", wanted)]);
+    chain.at(6, 0);
+    world.mention("m2", "and one more thing");
+    notified(&world, "n1");
+    let woke = held(chain, thread).into_iter().any(|body| {
+        matches!(body, Body::Post { author: Principal::Root, text } if text.contains("pod n1 failed"))
+    });
+    assert!(woke, "the notice ended the wait after the read");
+    chain.at(7, 0);
+    let first = json!({ "channel": "general", "text": "first" });
+    model_says(
+        chain,
+        json!([tool_use("toolu_p", "chat_post", first)]),
+        "tool_use",
+    );
+    lands(&world, thread, 7);
+}

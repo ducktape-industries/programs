@@ -316,6 +316,7 @@ pub(crate) fn manual(agent: &Agent, title: &str, bound: Option<&Place>) -> Strin
 struct Designation {
     place: String,
     places: Vec<String>,
+    from: Option<String>,
     text: String,
     pictures: Vec<Picture>,
     // the chat room a message came from
@@ -418,6 +419,7 @@ fn designation(
         return Ok(Designation {
             place,
             places: Vec::new(),
+            from: None,
             text,
             pictures: Vec::new(),
             room: None,
@@ -461,9 +463,15 @@ fn designation(
         seq = row.seq,
         body = row.text,
     );
+    let places = chat_places(&row.channel_id, row.thread);
+    let from = match row.notice() {
+        Some(_) => None,
+        None => places.first().cloned(),
+    };
     Ok(Designation {
         place: format!("{}/{}", chat::PROGRAM, row.channel_id),
-        places: chat_places(&row.channel_id, row.thread),
+        places,
+        from,
         text,
         pictures: pictures::of_message(&row.blocks),
         room: Some(row.channel_id),
@@ -553,6 +561,7 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
     let Designation {
         place,
         places,
+        from,
         text,
         pictures,
         room,
@@ -582,7 +591,6 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
     }
     let text = text + &crate::waits::still_armed(ctx, thread.id)?;
     let author = Principal::Account(actor);
-    let from = places.first().cloned();
     say_from(
         ctx,
         &mut thread,
@@ -710,10 +718,9 @@ fn waited(
         let Designation {
             text,
             pictures,
-            places,
+            from,
             ..
         } = designation(ctx, change, actor, quoted)?;
-        let from = places.into_iter().next();
         return crate::waits::end_seen(ctx, wait, text, pictures, &channel, from);
     }
     Ok(None)

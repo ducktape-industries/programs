@@ -366,7 +366,7 @@ pub(crate) struct Post;
 
 impl Tool for Post {
     const NAME: &'static str = "chat_post";
-    const DESCRIPTION: &'static str = "Post a message to a chat channel, or a reply in a message's thread. Markdown works; `<@N>` mentions account N, and `@name` mentions the one account named so. The message is yours, and chat allows it where it allows your account. It lands whole once you finish it, and your draft shows where it goes as soon as channel and reply_to are given, then its text as you write it, so give channel and reply_to before text. If a message in that same place (the channel itself, or that one thread) reaches you after your reply read it, the post is refused unsent: you read the message before your next model call, and post again if it still needs saying.";
+    const DESCRIPTION: &'static str = "Post a message to a chat channel, or a reply in a message's thread. Markdown works; `<@N>` mentions account N, and `@name` mentions the one account named so. The message is yours, and chat allows it where it allows your account. It lands whole once you finish it, and your draft shows where it goes as soon as channel and reply_to are given, then its text as you write it, so give channel and reply_to before text. If a message in that same place (the channel itself, or that one thread), other than a notice, reaches you after your reply read it, the post is refused unsent: you read the message before your next model call, and post again if it still needs saying.";
     const WRITES: bool = true;
     type Args = PostArgs;
 
