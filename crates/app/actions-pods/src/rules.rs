@@ -79,10 +79,12 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
         Ok(row) => row,
         Err(refused) => {
             report(&ctx, check, Ending::errored(refused.message)).await;
+            retry_waiting_next_block(&ctx).await;
             return Ok(());
         }
     };
     if row.state != State::Queued {
+        retry_waiting_next_block(&ctx).await;
         return Ok(());
     }
     let mut kept = RunRow {
@@ -91,8 +93,16 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
         ..RunRow::default()
     };
     settle(&ctx).await?;
-    if pods_counting_against_quota(&ctx, &row) >= concurrent(&ctx)? {
+    let taken = pods_counting_against_quota(&ctx, &row);
+    let free = concurrent(&ctx)?.saturating_sub(taken);
+    let ahead = waiting_ahead_of(&ctx, &row)?;
+    if ahead.len() as u64 >= free {
         WAITING.insert(&ctx, &check);
+        let unbooked = ahead.iter().any(|older| !OFFERED.has(&ctx, older));
+        let room_idles = free > 0 && unbooked;
+        if room_idles {
+            book_sweep(&ctx).await;
+        }
         return Ok(());
     }
     let made_at = ctx.env().time;
@@ -112,6 +122,7 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
         }
         Made::Refused(why) => {
             report(&ctx, check, Ending::errored(why)).await;
+            retry_waiting_next_block(&ctx).await;
             return Ok(());
         }
     };
@@ -130,6 +141,7 @@ pub(crate) async fn run(ctx: Ctx, check: u64) -> Result<(), Error> {
             let why = format!("the claim was refused: {}", refused.message);
             report(&ctx, check, Ending::errored(why)).await;
         }
+        retry_waiting_next_block(&ctx).await;
         return Ok(());
     }
     if supersede_earlier_attempts(&ctx, &row).await {
@@ -180,6 +192,21 @@ fn set_by_the_vote_or_the_names_holder(ctx: &QueryCtx) -> Result<(), Error> {
     }
 }
 
+fn waiting_ahead_of(ctx: &Ctx, check: &CheckRow) -> Result<Vec<u64>, Error> {
+    let mut ahead = Vec::new();
+    for id in WAITING.all(ctx)? {
+        match check_row(ctx, id) {
+            Ok(other) if other.state == State::Queued => {
+                if (other.queued, other.id) < (check.queued, check.id) {
+                    ahead.push(id);
+                }
+            }
+            _ => WAITING.remove(ctx, &id),
+        }
+    }
+    Ok(ahead)
+}
+
 fn pods_counting_against_quota(ctx: &QueryCtx, check: &CheckRow) -> u64 {
     let making = MAKING.all(ctx).map(|making| making.len()).unwrap_or(0);
     let held = PODS
@@ -211,7 +238,13 @@ async fn book_sweep(ctx: &Ctx) {
 
 pub(crate) fn still_waiting(ctx: &QueryCtx) -> Result<Vec<u64>, Error> {
     let queued = |id: &u64| check_row(ctx, *id).map_or(true, |row| row.state == State::Queued);
-    Ok(WAITING.all(ctx)?.into_iter().filter(queued).collect())
+    let unbooked = |id: &u64| !OFFERED.has(ctx, id);
+    Ok(WAITING
+        .all(ctx)?
+        .into_iter()
+        .filter(unbooked)
+        .filter(queued)
+        .collect())
 }
 
 pub(crate) async fn sweep(ctx: Ctx) -> Result<(), Error> {
@@ -222,21 +255,25 @@ pub(crate) async fn sweep(ctx: Ctx) -> Result<(), Error> {
 
 async fn settle(ctx: &Ctx) -> Result<(), Error> {
     let now = code_at_current_height(ctx);
+    let mut freed = false;
     for (check, held) in PODS.all(ctx)? {
-        swept(ctx, check, &held, now).await;
+        freed |= swept(ctx, check, &held, now).await;
+    }
+    if freed {
+        retry_waiting_next_block(ctx).await;
     }
     Ok(())
 }
 
-async fn swept(ctx: &Ctx, check: u64, held: &PodRow, now: Option<BlobId>) {
+async fn swept(ctx: &Ctx, check: u64, held: &PodRow, now: Option<BlobId>) -> bool {
     let Ok(found) = check_row(ctx, check) else {
-        return;
+        return false;
     };
     if found.state != State::Running {
         delete(ctx, &held.pod).await;
         PODS.remove(ctx, &check);
         ADOPTING.remove(ctx, &check);
-        return;
+        return true;
     }
     let newest = checks_of_commit(ctx, &found)
         .unwrap_or_default()
@@ -245,7 +282,7 @@ async fn swept(ctx: &Ctx, check: u64, held: &PodRow, now: Option<BlobId>) {
         .max_by_key(|other| other.attempt);
     if let Some(newest) = newest.filter(|newest| newest.attempt > found.attempt) {
         retire_superseded_check(ctx, &found, held, &newest).await;
-        return;
+        return true;
     }
     let cut_off = matches!((held.code, now), (Some(then), Some(now)) if then != now);
     let booked = ADOPTING
@@ -256,6 +293,7 @@ async fn swept(ctx: &Ctx, check: u64, held: &PodRow, now: Option<BlobId>) {
     if cut_off && !booked {
         adopt(ctx, check).await;
     }
+    false
 }
 
 async fn adopt(ctx: &Ctx, check: u64) {
@@ -349,12 +387,14 @@ async fn retry_waiting_next_block(ctx: &Ctx) {
     let own = ctx.env().program.clone();
     let (at, time) = (ctx.env().height + 1, ctx.env().time);
     for check in waiting {
+        if OFFERED.has(ctx, &check) {
+            continue;
+        }
         if ctx
             .schedule(at, own.clone(), &Op::Run { check })
             .await
             .is_ok()
         {
-            WAITING.remove(ctx, &check);
             OFFERED.put(ctx, &check, &time);
         }
     }

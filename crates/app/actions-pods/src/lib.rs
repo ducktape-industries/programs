@@ -28,7 +28,7 @@ pub const SERVICE: &str = "pods";
 pub enum Op {
     #[tool_op(description = "From actions only: a check offered to this runner, whose run it books for the block after (actions' Register deliver is this tag).", example = crate::examples::offer)]
     Offer(actions::Offer),
-    #[tool_op(description = "This program's own scheduled run alone: run an offered check in a pod, claim it, wait for the pod to end, record its outputs, report it and delete the pod. A check past the quota or the concurrent limit, or whose pod the cluster did not make, waits.", example = crate::examples::run)]
+    #[tool_op(description = "This program's own scheduled run alone: run an offered check in a pod, claim it, wait for the pod to end, record its outputs, report it and delete the pod. A check past the quota or the concurrent limit, or whose pod the cluster did not make, waits; waiting checks take room oldest first.", example = crate::examples::run)]
     Run { check: u64 },
     #[tool_op(description = "From the egress role only: an event of a pod's streamed wait; the ended event is kept for the run that waits on that pod.", example = crate::examples::heard)]
     Heard(Event),

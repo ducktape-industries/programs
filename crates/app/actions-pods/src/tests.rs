@@ -769,6 +769,60 @@ fn a_claim_refused_for_any_reason_but_its_state_errs_the_check_and_one_already_t
 }
 
 #[test]
+fn a_check_superseded_while_its_pod_is_made_gives_its_room_to_the_oldest_waiting_check() {
+    let mut node = node();
+    node.offer(1).unwrap();
+    node.offer(2).unwrap();
+    node.after(2_000);
+    node.after(0);
+    node.pending_to("POST", "/v1/pods");
+    assert_eq!(node.waiting(), [2]);
+    let superseded = actions::Op::Report {
+        check: 1,
+        state: State::Superseded,
+        summary: "superseded by a push".into(),
+        log: None,
+    };
+    let owner = Origin::Signed(OWNER.to_vec());
+    node.chain
+        .submit(owner, actions::PROGRAM, &superseded)
+        .unwrap();
+    node.answer(500, 201, pod("duckpond-7"));
+    let deleted = node.answer(1_000, 200, json!({"deleted": "duckpond-7"}));
+    assert_eq!(deleted, sent("DELETE", "/v1/pods/duckpond-7"));
+    assert!(node.held().is_empty());
+    node.after(1_000);
+    node.after(0);
+    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
+    assert_eq!(node.held(), [2], "the room check 1 left is check 2's");
+    assert!(node.waiting().is_empty());
+}
+
+#[test]
+fn a_check_offered_while_an_older_one_waits_runs_after_it() {
+    let mut node = node();
+    let wait = waiting_on_its_pod(&mut node);
+    node.offer(2).unwrap();
+    node.after(1_000);
+    node.after(0);
+    assert_eq!(node.waiting(), [2]);
+    node.ended(&wait, 0, json!(0));
+    let listed = json!({"exit_code": 0, "stdout": "/out/log\n", "stderr": ""});
+    node.answer_to(1_000, "POST", "/v1/pods/duckpond-7/exec", 200, listed);
+    let written = json!({"written": "/shared/…"});
+    node.answer_to(1_000, "POST", "/v1/pods/duckpond-7/file", 200, written);
+    node.after(1_000);
+    node.offer(3).unwrap();
+    let delete = node.pending_to("DELETE", "/v1/pods/duckpond-7");
+    node.reply(&delete, 200, json!({"deleted": "duckpond-7"}));
+    node.after(1_000);
+    node.after(0);
+    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
+    assert_eq!(node.held(), [2], "the older check takes the pod");
+    assert_eq!(node.waiting(), [3]);
+}
+
+#[test]
 fn a_creation_slower_than_a_whole_request_still_waits_at_half_the_window() {
     let mut node = node();
     node.offer(1).unwrap();
@@ -1162,4 +1216,39 @@ fn a_waiting_check_that_ended_elsewhere_is_not_counted_as_waiting() {
         node.waiting().is_empty(),
         "the queue says how deep it really is"
     );
+}
+
+#[test]
+fn a_newer_check_that_deferred_to_an_older_one_runs_once_that_one_drops_out_before_its_run() {
+    let mut node = node();
+    let _wait = waiting_on_its_pod(&mut node);
+    node.offer(2).unwrap();
+    node.after(1_000);
+    node.after(0);
+    assert_eq!(node.waiting(), [2]);
+    let owner = Origin::Signed(OWNER.to_vec());
+    let superseded = |check| actions::Op::Report {
+        check,
+        state: State::Superseded,
+        summary: "superseded by a push".into(),
+        log: None,
+    };
+    node.chain
+        .submit(owner.clone(), actions::PROGRAM, &superseded(1))
+        .unwrap();
+    node.offer(8).unwrap();
+    node.after(1_000);
+    node.after(0);
+    let delete = node.pending_to("DELETE", "/v1/pods/duckpond-7");
+    node.reply(&delete, 200, json!({"deleted": "duckpond-7"}));
+    assert!(node.held().is_empty());
+    assert_eq!(node.waiting(), [8], "8 waits behind 2, whose run is booked");
+    node.chain
+        .submit(owner, actions::PROGRAM, &superseded(2))
+        .unwrap();
+    node.after(1_000);
+    node.after(0);
+    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
+    assert_eq!(node.held(), [8], "the room check 2 never took is check 8's");
+    assert!(node.waiting().is_empty());
 }
