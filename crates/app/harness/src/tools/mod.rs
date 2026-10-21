@@ -47,6 +47,11 @@ pub(crate) struct Seat<'a> {
     pub shown: Option<&'a Value>,
 }
 
+pub(crate) fn held_for(thread: u64, call: &str) -> Vec<u8> {
+    let line = [b"tool/".as_slice(), call.as_bytes(), b"/"].concat();
+    crate::turns::held_on(thread, &line)
+}
+
 pub(crate) struct Write {
     pub target: ProgramId,
     pub payload: Vec<u8>,

@@ -112,7 +112,8 @@ fn paced(
     head.headers.push(("every".to_owned(), every.to_string()));
     let body = match &beat.body {
         Some(text) => {
-            let part = ctx.blob_put(HashKind::Sha256, PART, text.clone().into_bytes());
+            let held = tools::held_for(row.thread, &row.call);
+            let part = ctx.blob_put_on(HashKind::Sha256, PART, text.clone().into_bytes(), held);
             vec![part.map_err(|error| refusal(&error))?]
         }
         None => Vec::new(),
@@ -170,7 +171,8 @@ async fn measured(
     }
     let mut body: Value = serde_json::from_str(&measure.body).map_err(|error| error.to_string())?;
     body["every"] = json!(every);
-    crate::tools::pods::posted(ctx, target, &body)
+    let held = tools::held_for(row.thread, &row.call);
+    crate::tools::pods::posted(ctx, held, target, &body)
         .map(Some)
         .map_err(|error| refusal(&error))
 }
@@ -212,6 +214,7 @@ pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
                 }
                 Err(why) => {
                     WATCHES.remove(&ctx, &watch);
+                    ctx.blob_release_lines(tools::held_for(row.thread, &row.call));
                     let text = format!(
                         "{} call {} ({}) did not start: {why}",
                         row.tool, row.call, row.about
@@ -243,6 +246,7 @@ pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
                 }
                 Err(why) => {
                     WATCHES.remove(&ctx, &watch);
+                    ctx.blob_release_lines(tools::held_for(row.thread, &row.call));
                     let text = format!(
                         "{} call {} ({}) did not start: {why}",
                         row.tool, row.call, row.about
@@ -268,6 +272,7 @@ pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
         return Ok(());
     }
     WATCHES.remove(&ctx, &watch);
+    ctx.blob_release_lines(tools::held_for(row.thread, &row.call));
     let why = unheard(answered, &lost(&row));
     let text = format!("{} call {} ({}) {why}", row.tool, row.call, row.about);
     woken(&ctx, &row, text).await
@@ -343,6 +348,7 @@ pub(crate) async fn heard(ctx: &Ctx, watch: u64, event: Event) -> Result<(), Err
         return Ok(());
     };
     WATCHES.remove(ctx, &watch);
+    ctx.blob_release_lines(tools::held_for(row.thread, &row.call));
     crate::resume::unlistened(ctx, row.thread, watch);
     let text = format!(
         "{} call {} ({}) ended: {said}",

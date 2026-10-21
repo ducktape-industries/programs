@@ -19,6 +19,7 @@ mod pictures;
 mod program;
 mod providers;
 mod queries;
+mod relined;
 mod replies;
 mod resume;
 mod room_rules;
@@ -151,6 +152,8 @@ pub enum Op {
     AdoptTallies { after: Option<Vec<u8>>, limit: u64 },
     #[tool_op(description = "One-time move of the open waits harness watched itself onto wake: walks at most limit waits after the cursor and arms the first open one with no wake yet as a wake for its agent, under the wait's own number, then drops harness's own watch of it; a chat message wait stays harness's, and a wait wake refuses to watch ends at once with the reason. While a wait may be left, it books itself again for the next block, so one call moves every wait, one a block. Anyone may. Returns the key it resumes after, or null when done.", returns = Option<Vec<u8>>, example = examples::move_waits)]
     MoveWaits { after: Option<Vec<u8>>, limit: u64 },
+    #[tool_op(description = "One-time: put every part an open conversation sealed before harness held sealed parts on lines on its thread's line, and let a closed idle conversation go of its sealed parts, one thread a block from harness's own scheduled run until none is left. Anyone may start it; a start while it runs is refused.", example = examples::hold_sealed)]
+    HoldSealed,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1338,6 +1341,10 @@ pub fn describe(op: &Op) -> describe::Description {
             "Move the waits harness watches itself onto wake, one a block".to_owned(),
             vec![field("limit", Value::count(*limit))],
         ),
+        Op::HoldSealed => (
+            "Hold sealed parts on their threads' lines".to_owned(),
+            Vec::new(),
+        ),
     };
     describe::Description { title, fields }
 }
@@ -1382,6 +1389,7 @@ fn op_variants_only_append() {
             "RemoveRoute",
             "AdoptTallies",
             "MoveWaits",
+            "HoldSealed",
         ]
     );
 }

@@ -713,6 +713,7 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
         };
         crate::woken::sending(ctx, &arm, &arming);
         let wrote = written(ctx, owner.agent, writes).await;
+        ctx.blob_release_lines(tools::held_for(id, call));
         let output = wrote.as_ref().ok().map(Vec::as_slice);
         crate::woken::sent(ctx, &arm, arming, output)?;
         let output = match (wrote, step) {

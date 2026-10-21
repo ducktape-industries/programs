@@ -344,6 +344,7 @@ async fn lost_streams(ctx: &Ctx, id: u64, since: Option<u64>) -> Result<(), Erro
         }
         STREAMING.remove(ctx, &key);
         WATCHES.remove(ctx, &watch);
+        ctx.blob_release_lines(crate::tools::held_for(row.thread, &row.call));
         let text = format!(
             "{} call {} ({}) ended unheard: egress no longer holds its stream, and a harness update cut off the run that listened for its end, so {}",
             row.tool,

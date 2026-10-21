@@ -54,7 +54,8 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::SetRoute { .. }
         | Op::RemoveRoute { .. }
         | Op::AdoptTallies { .. }
-        | Op::MoveWaits { .. } => Vec::new(),
+        | Op::MoveWaits { .. }
+        | Op::HoldSealed => Vec::new(),
     })
 }
 

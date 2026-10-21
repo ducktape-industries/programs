@@ -200,7 +200,7 @@ impl Tool for Activity {
         )
     }
 
-    fn run(ctx: &ExecCtx, _: &Seat, args: ActivityArgs) -> Result<Run, Error> {
+    fn run(ctx: &ExecCtx, seat: &Seat, args: ActivityArgs) -> Result<Run, Error> {
         let (body, read): (Vec<u8>, super::Reading) = match (args.height, args.position) {
             (None, None) => {
                 let asked = activity::Query::Acted {
@@ -219,7 +219,8 @@ impl Tool for Activity {
                 ));
             }
         };
-        let part = ctx.blob_put(HashKind::Sha256, PART, body)?;
+        let held = super::held_for(seat.thread, seat.call);
+        let part = ctx.blob_put_on(HashKind::Sha256, PART, body, held)?;
         let request = egress::Request::Http {
             service: NODE.into(),
             head: http::Head {

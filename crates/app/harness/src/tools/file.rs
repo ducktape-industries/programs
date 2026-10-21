@@ -850,7 +850,8 @@ fn walk(ctx: &ExecCtx, mut walk: Walk) -> Result<Run, Error> {
                 let parts = match &body {
                     Some(body) => {
                         let text = body.to_string().into_bytes();
-                        vec![ctx.blob_put(HashKind::Sha256, PART, text)?]
+                        let held = super::held_for(walk.thread, &walk.call);
+                        vec![ctx.blob_put_on(HashKind::Sha256, PART, text, held)?]
                     }
                     None => Vec::new(),
                 };

@@ -280,3 +280,7 @@ pub(crate) fn move_waits() -> Op {
         limit: 100,
     }
 }
+
+pub(crate) fn hold_sealed() -> Op {
+    Op::HoldSealed
+}

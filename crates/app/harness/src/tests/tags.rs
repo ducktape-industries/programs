@@ -3,7 +3,7 @@ use borsh::schema::Definition;
 
 use super::*;
 
-const LIVE_OPS: [(&str, i64); 26] = [
+const LIVE_OPS: [(&str, i64); 28] = [
     ("Close", 0),
     ("Attributed", 1),
     ("Streamed", 4),
@@ -30,6 +30,8 @@ const LIVE_OPS: [(&str, i64); 26] = [
     ("SetRoute", 29),
     ("RemoveRoute", 30),
     ("AdoptTallies", 31),
+    ("MoveWaits", 32),
+    ("HoldSealed", 33),
 ];
 
 const LIVE_QUERIES: [(&str, i64); 36] = [

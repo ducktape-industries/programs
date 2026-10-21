@@ -51,10 +51,12 @@ fn absolute(path: &str) -> Result<(), Error> {
 // a POST to the pods service, its JSON body put as one part
 pub(crate) fn posted(
     ctx: &ExecCtx,
+    held: Vec<u8>,
     target: String,
     body: &Value,
 ) -> Result<egress::Request, Error> {
-    let part = ctx.blob_put(HashKind::Sha256, PART, body.to_string().into_bytes())?;
+    let body = body.to_string().into_bytes();
+    let part = ctx.blob_put_on(HashKind::Sha256, PART, body, held)?;
     let head = http::Head {
         method: http::Method::Post,
         target,
@@ -168,7 +170,7 @@ impl Tool for Exec {
         )
     }
 
-    fn run(ctx: &ExecCtx, _: &Seat, args: ExecArgs) -> Result<Run, Error> {
+    fn run(ctx: &ExecCtx, seat: &Seat, args: ExecArgs) -> Result<Run, Error> {
         let pod = named(&args.pod)?;
         let command = command(args.command, args.script)?;
         let first = command.join(" ");
@@ -188,7 +190,10 @@ impl Tool for Exec {
                     about,
                 });
             }
-            let writes = whole(ctx, posted(ctx, target, &body)?)?;
+            let writes = whole(
+                ctx,
+                posted(ctx, super::held_for(seat.thread, seat.call), target, &body)?,
+            )?;
             return Ok(Run::Read {
                 writes,
                 read: Box::new(answered),
@@ -198,7 +203,7 @@ impl Tool for Exec {
             return Err(invalid("every is a whole number of seconds from 1"));
         }
         body["every"] = json!(every);
-        let request = posted(ctx, target, &body)?;
+        let request = posted(ctx, super::held_for(seat.thread, seat.call), target, &body)?;
         Ok(Run::Stream { request, about })
     }
 
@@ -286,7 +291,7 @@ impl Tool for Read {
         )
     }
 
-    fn run(ctx: &ExecCtx, _: &Seat, args: ReadArgs) -> Result<Run, Error> {
+    fn run(ctx: &ExecCtx, seat: &Seat, args: ReadArgs) -> Result<Run, Error> {
         let pod = named(&args.pod)?;
         absolute(&args.path)?;
         let offset = args.offset.unwrap_or(0);
@@ -304,7 +309,15 @@ impl Tool for Read {
         if let Some(container) = args.container {
             body["container"] = json!(container);
         }
-        let writes = whole(ctx, posted(ctx, format!("/v1/pods/{pod}/exec"), &body)?)?;
+        let writes = whole(
+            ctx,
+            posted(
+                ctx,
+                super::held_for(seat.thread, seat.call),
+                format!("/v1/pods/{pod}/exec"),
+                &body,
+            )?,
+        )?;
         let path = args.path;
         let read = move |output: &[u8]| contents(&path, offset, &answered(output)?);
         Ok(Run::Read {
@@ -471,7 +484,7 @@ impl Tool for Push {
         )
     }
 
-    fn run(ctx: &ExecCtx, _: &Seat, args: PushArgs) -> Result<Run, Error> {
+    fn run(ctx: &ExecCtx, seat: &Seat, args: PushArgs) -> Result<Run, Error> {
         let pod = named(&args.pod)?;
         absolute(&args.path)?;
         let Some((repo, _)) = found(ctx, &args.repo)? else {
@@ -489,7 +502,15 @@ impl Tool for Push {
         if let Some(container) = args.container {
             body["container"] = json!(container);
         }
-        let writes = whole(ctx, posted(ctx, format!("/v1/pods/{pod}/push"), &body)?)?;
+        let writes = whole(
+            ctx,
+            posted(
+                ctx,
+                super::held_for(seat.thread, seat.call),
+                format!("/v1/pods/{pod}/push"),
+                &body,
+            )?,
+        )?;
         let pushing = Pushing {
             repo: args.repo,
             branch,

@@ -714,3 +714,55 @@ fn a_measured_stream_whose_pod_is_unknown_wakes_its_conversation_with_why() {
     );
     assert!(asked(chain).is_empty(), "no stream opens");
 }
+
+fn on_its_line(chain: &MockChain, thread: u64, call: &str) -> Option<BlobId> {
+    let line = [
+        thread.to_be_bytes().as_slice(),
+        b"/tool/",
+        call.as_bytes(),
+        b"/",
+    ]
+    .concat();
+    let host = chain.host(PROGRAM).borrow();
+    host.lines
+        .iter()
+        .find(|((holder, at), _)| holder == PROGRAM && *at == line)
+        .map(|(_, id)| *id)
+}
+
+fn body_part(row: &RequestRow) -> BlobId {
+    match &row.request {
+        Request::Http { body, .. } => body[0],
+        Request::Relay { .. } => panic!("an HTTP request"),
+    }
+}
+
+#[test]
+fn a_calls_request_body_is_held_on_its_line_until_its_answer_comes_back() {
+    let world = podded(world());
+    let chain = &world.chain;
+    let thread = world.opened("m1", "run it", Some(WINDOW));
+    let input = json!({ "pod": POD, "command": ["echo", "hi"] });
+    turn(chain, 3, &[("h_cmd", "pod_exec", input)]);
+    chain.at(5, 0);
+    let [row]: [RequestRow; 1] = asked(chain).try_into().unwrap();
+    assert_eq!(on_its_line(chain, thread, "h_cmd"), Some(body_part(&row)));
+    let out = json!({ "exit_code": 0, "stdout": "hi\n", "stderr": "" });
+    answer(chain, row.id, ok(out.clone()));
+    assert_eq!(json_result(chain, thread, "h_cmd"), out);
+    assert_eq!(on_its_line(chain, thread, "h_cmd"), None);
+}
+
+#[test]
+fn a_streamed_calls_request_body_is_held_until_its_stream_ends() {
+    let world = podded(world());
+    let chain = &world.chain;
+    let (thread, row) = streaming(&world);
+    assert_eq!(on_its_line(chain, thread, "s1"), Some(body_part(&row)));
+    event(chain, &row, 0, ALIVE);
+    assert_eq!(on_its_line(chain, thread, "s1"), Some(body_part(&row)));
+    let ended = r#"event: ended
+data: {"exit_code": 0, "stdout": "", "stderr": ""}"#;
+    event(chain, &row, 1, ended);
+    assert_eq!(on_its_line(chain, thread, "s1"), None);
+}

@@ -148,6 +148,7 @@ impl Awaiting for Harness {
             Op::RemoveRoute { provider } => crate::providers::remove_route(&ctx, provider),
             Op::AdoptTallies { after, limit } => tallies::adopt(&ctx, after, limit).await,
             Op::MoveWaits { after, limit } => waits::move_waits(&ctx, after, limit).await,
+            Op::HoldSealed => crate::relined::hold_sealed(&ctx).await,
         }
     }
 }

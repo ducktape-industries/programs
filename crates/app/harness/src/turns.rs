@@ -249,8 +249,29 @@ async fn call_model(
     Ok(response)
 }
 
-fn put_part(ctx: &ExecCtx, text: String) -> Result<BlobId, Error> {
-    ctx.blob_put(HashKind::Sha256, PART, text.into_bytes())
+fn put_constant(
+    ctx: &ExecCtx,
+    name: &[u8],
+    wire: Wire,
+    target: &model_wire::Target,
+    text: String,
+) -> Result<BlobId, Error> {
+    let aimed = match target {
+        model_wire::Target::Unnamed => vec![0],
+        model_wire::Target::Unpinned => vec![1],
+        model_wire::Target::Pinned { service, account } => {
+            [vec![2], abi::encode(&(service, account))].concat()
+        }
+    };
+    let line = [
+        b"const/".as_slice(),
+        name,
+        b"/",
+        &abi::encode(&wire),
+        &aimed,
+    ]
+    .concat();
+    ctx.blob_put_on(HashKind::Sha256, PART, text.into_bytes(), line)
 }
 
 fn put_on(ctx: &ExecCtx, thread: u64, line: &[u8], text: String) -> Result<BlobId, Error> {
@@ -262,7 +283,7 @@ fn put_on(ctx: &ExecCtx, thread: u64, line: &[u8], text: String) -> Result<BlobI
     )
 }
 
-fn held_on(thread: u64, line: &[u8]) -> Vec<u8> {
+pub(crate) fn held_on(thread: u64, line: &[u8]) -> Vec<u8> {
     [thread.to_be_bytes().as_slice(), b"/", line].concat()
 }
 
@@ -517,7 +538,9 @@ fn turn_parts(ctx: &ExecCtx, thread: &mut ThreadRow, turn: &Turn) -> Result<Vec<
     let shown = (&looks, &foreign);
     let last = wire::message(wire, role, &frames, shown, &lanes, opens(thread), true);
     parts.push(put_on(ctx, thread.id, b"last", last)?);
-    parts.push(put_part(ctx, wire::close(wire, &turn.asked.target()))?);
+    let target = turn.asked.target();
+    let close = wire::close(wire, &target);
+    parts.push(put_constant(ctx, b"close", wire, &target, close)?);
     Ok(parts)
 }
 
@@ -552,7 +575,9 @@ fn summarize_parts(
     };
     let mut parts = opening(ctx, thread, turn)?;
     parts.extend(covered.iter().map(|sealed| sealed.part));
-    parts.push(put_part(ctx, wire::summarize(wire, &turn.asked.target()))?);
+    let target = turn.asked.target();
+    let summarize = wire::summarize(wire, &target);
+    parts.push(put_constant(ctx, b"summarize", wire, &target, summarize)?);
     Ok(Some((through, parts)))
 }
 
