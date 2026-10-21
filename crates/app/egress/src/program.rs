@@ -1,4 +1,5 @@
 //! The program: every op and every query, each handed to its rule.
+use ::program::tools::Tools;
 use ::program::{Awaiting, Ctx, Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::rules::{
@@ -14,6 +15,10 @@ impl Program for Egress {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+
+    fn tools() -> Tools {
+        Tools::of::<crate::tools::Ops, Query>()
+    }
 
     fn access(_: &QueryCtx, op: &Op) -> Result<Vec<::program::Need>, Error> {
         Ok(crate::rules::needs(op))

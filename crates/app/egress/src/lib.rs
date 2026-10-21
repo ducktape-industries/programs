@@ -6,6 +6,7 @@ mod rules;
 mod state;
 #[cfg(test)]
 mod tests;
+mod tools;
 
 pub use ::program::{BlobId, ProgramId};
 pub use abi::role::egress::{
@@ -27,33 +28,49 @@ use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 pub const PROGRAM: &str = "egress";
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Ask,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    ::program::Ask,
+    ::program::Described,
 )]
 #[ask(Egress)]
 pub enum Query {
     #[ask(Reply::Requests(Vec<RequestRow>))]
     #[reads(state::ASSIGNED, state::REQUESTS)]
+    #[tool_query(description = "The open requests elected to a node, by its key.", example = crate::tools::assigned)]
     Assigned { key: Vec<u8> },
     #[ask(Reply::Node(Option<NodeRow>))]
     #[reads(state::NODES)]
+    #[tool_query(description = "A node's row, by its key: the services it serves and the block it began, or null.", example = crate::tools::node)]
     Node { key: Vec<u8> },
     #[ask(Reply::Serving(Vec<Vec<u8>>))]
     #[reads(state::SERVING, state::SERVICES)]
+    #[tool_query(description = "The member nodes that may serve a service now: serving it, and named by its Assign where it is registered.", example = crate::tools::serving)]
     Serving { service: String },
     #[ask(Reply::Request(Option<RequestRow>))]
     #[reads(state::REQUESTS)]
+    #[tool_query(description = "One open request, or null once it is answered or expired.", example = crate::tools::request)]
     Request { id: u64 },
     #[ask(Reply::Nodes(PageResponse<NodeRow>))]
     #[reads(state::NODES)]
+    #[tool_query(description = "Every serving node, a page at a time.", example = crate::tools::nodes)]
     Nodes { page: PageRequest },
     #[ask(Reply::Service(Option<ServiceRow>))]
     #[reads(state::SERVICES)]
+    #[tool_query(description = "One registered service: its owner, the nodes assigned to it and the block it was registered, or null.", example = crate::tools::service)]
     Service { name: String },
     #[ask(Reply::Services(PageResponse<ServiceRow>))]
     #[reads(state::SERVICES)]
+    #[tool_query(description = "Every registered service, a page at a time.", example = crate::tools::services)]
     Services { page: PageRequest },
     #[ask(Reply::Sender(Option<AccountNumber>))]
     #[reads(state::SENDERS)]
+    #[tool_query(description = "The account an open request was sent as, or null.", example = crate::tools::sender)]
     Sender { id: u64 },
 }
 

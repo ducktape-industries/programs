@@ -136,8 +136,11 @@ interface: every variant listed once, each with a description and an example
 that encodes as its own variant. founding's
 `every_program_describes_each_op_and_query_with_examples_of_its_own` runs it
 for every program here (`UNDESCRIBED` lists the ones not described yet; a
-program leaves it as its enums derive `Described`). A retired variant says it
-is retired and what replaced it.
+program leaves it as its enums derive `Described`). An op enum a program takes
+from elsewhere, such as a role's in abi (egress's), is described by a marker
+the program implements `Described` for by hand, gathered as
+`Tools::of::<Ops, Query>()`. A retired variant says it is retired and what
+replaced it.
 
 harness's `network_schema` reads both sections of the code a program runs.
 With no program it lists every program that runs with its `about`; with a

@@ -12,7 +12,6 @@ const UNDESCRIBED: &[&str] = &[
     "halo",
     "scheduler",
     "ownership",
-    "egress",
     "attribution",
     "actions",
     "actions-pods",
