@@ -370,7 +370,13 @@ fn scheduler_round_trips() {
 #[test]
 fn activity_round_trips() {
     let activity = roots(interface::<activity::Activity>());
-    assert_eq!(activity.op(&()), json!(null));
+    let migrated = activity.op(&activity::Op::Migrate {
+        height: 9,
+        first: Some((3, "chat".into())),
+        last: None,
+    });
+    assert_eq!(migrated["migrate"]["height"], 9);
+    assert_eq!(migrated["migrate"]["last"], json!(null));
     activity.query(&activity::Query::Acted {
         account: 3,
         page: first(),
