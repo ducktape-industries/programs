@@ -76,6 +76,11 @@ fn the_agents_text_is_put_as_a_part_and_an_egress_request_names_it_as_its_body()
     assert_eq!(put["size"], text.len());
     assert_eq!(put["kind"], "part");
     assert_eq!(put["in_network_call"], json!({ "Sha256": digest }));
+    let framed = ::blob::frame(PART, text.as_bytes()).unwrap();
+    let recorded = ::blob::contract::Entry::of(&framed).unwrap();
+    let entry = json!({ "id": { "Sha256": digest }, "kind": PART, "len": recorded.len });
+    assert_eq!(put["entry"], entry);
+    assert_eq!(recorded.id, id);
     let held = chain.host(egress::PROGRAM).borrow().blobs[&id].clone();
     assert_eq!((held.kind.as_str(), held.body), (PART, text.into_bytes()));
 

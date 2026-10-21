@@ -19,6 +19,7 @@ describe = []
 ownership = { path = "../../system/ownership" }
 access = { path = "../../system/access" }
 abi = { workspace = true }
+blob = { workspace = true }
 design = { path = "../../sdk/design" }
 borsh = { workspace = true }
 describe = { path = "../../sdk/describe" }
