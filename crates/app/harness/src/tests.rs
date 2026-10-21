@@ -14,6 +14,7 @@ mod compact_at;
 mod config;
 mod continued;
 mod conversations;
+mod depth;
 mod file_tools;
 mod final_errors;
 mod forge_commit;

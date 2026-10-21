@@ -120,9 +120,11 @@ impl Failure {
     pub fn unreached(error: &Error) -> Failure {
         let text = format!("the model was not reached: {}", refusal(error));
         let unchanged = error.code == code::INVALID_INPUT || error.code == code::UNAUTHORIZED;
-        match unchanged {
-            true => Failure::last(text),
-            false => Failure {
+        let framed = error.code == code::CAPACITY;
+        match (unchanged, framed) {
+            (true, _) => Failure::last(text),
+            (false, true) => Failure::lost(text),
+            (false, false) => Failure {
                 moves: true,
                 ..Failure::lost(text)
             },

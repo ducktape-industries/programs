@@ -25,7 +25,7 @@ fn asked_at(chain: &MockChain, service: &str, target: &str) -> Vec<RequestRow> {
     assigned(chain, service).into_iter().filter(at).collect()
 }
 
-fn model_read(chain: &MockChain) {
+pub(super) fn model_read(chain: &MockChain) {
     model_read_on(chain, SERVICE, MODEL, PROVIDER);
 }
 
@@ -55,7 +55,7 @@ fn turns_open_on(chain: &MockChain, service: &str, thread: u64) -> Vec<RequestRo
     open.filter(|row| row.delivery == deliver).collect()
 }
 
-fn turn_open(chain: &MockChain, thread: u64) -> (RequestRow, Option<String>) {
+pub(super) fn turn_open(chain: &MockChain, thread: u64) -> (RequestRow, Option<String>) {
     turn_open_on(chain, SERVICE, thread)
 }
 
@@ -147,7 +147,7 @@ pub(super) fn replied(
     from_node(chain, &ended);
 }
 
-fn says_as(chain: &MockChain, thread: u64, account: &str, used: &str) {
+pub(super) fn says_as(chain: &MockChain, thread: u64, account: &str, used: &str) {
     says_on(chain, SERVICE, thread, account, used);
 }
 
@@ -224,7 +224,7 @@ fn row(
     )
 }
 
-fn route_now(chain: &MockChain, thread: u64) -> Option<(String, Option<String>)> {
+pub(super) fn route_now(chain: &MockChain, thread: u64) -> Option<(String, Option<String>)> {
     let Reply::Route(route) = chain.query(PROGRAM, &Query::Route { thread }).unwrap() else {
         panic!("a route answers as one")
     };
@@ -260,7 +260,7 @@ fn by(account: &str, moved: bool) -> By {
     (SERVICE.to_owned(), Some(account.to_owned()), moved)
 }
 
-fn on(account: &str) -> Option<(String, Option<String>)> {
+pub(super) fn on(account: &str) -> Option<(String, Option<String>)> {
     Some((SERVICE.to_owned(), Some(account.to_owned())))
 }
 
