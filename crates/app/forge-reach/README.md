@@ -14,11 +14,13 @@ Known limit: forge's `RequireChecks` names one reporter per branch, so a branch 
 | --- | --- | --- |
 | `r/` | repo, commit, reporter, context | the reported state, url and height |
 | `p/` | repo, commit, reporter, context, path | one reached path |
+| `v/` | repo, change | the head and the commit of the change's latest Preview heard |
+| `h/` | repo, commit, change | a commit that is an open change's latest Preview's head or commit |
 
 ## Who may call each op
 
-- `Report { repo, commit, context, state, url, reach, change }`: any account; recorded as the sender's (`sender_account`). The commit is its full lowercase hex id, the context is not blank, and the reach names at least one path, each relative to the root with no empty, `.` or `..` segment (`""` alone is the whole tree). Saying it again replaces the state, url and reach. With `change`, it reports on that change's latest Preview at once.
-- `Watched(event)`: forge only (`sent_by(forge)`), as forge's `Watch` delivers it; forge-reach sends `Watch` from its `init`. A `Previewed` event reports on that Preview; every other event is heard and dropped.
+- `Report { repo, commit, context, state, url, reach, change }`: any account; recorded as the sender's (`sender_account`). The commit is its full lowercase hex id, the context is not blank, and the reach names at least one path, each relative to the root with no empty, `.` or `..` segment (`""` alone is the whole tree). Saying it again replaces the state, url and reach. With `change`, it reports on that change's latest Preview at once; without it, on the latest Preview of every open change whose head or Preview commit is the reported commit (`h/`), so a reporter that knows no change (the pods service's lane line) is carried to a Preview made before it reported.
+- `Watched(event)`: forge only (`sent_by(forge)`), as forge's `Watch` delivers it; forge-reach sends `Watch` from its `init`. A `Previewed` event keeps that Preview's head and commit (`v/`, `h/`) and reports on it; `Merged` and `Closed` drop what was kept for the change; every other event is heard and dropped. forge tells a Preview only when it makes a new commit (a Preview of heads already previewed answers the one made), which is why a later report must find the Preview itself.
 
 ## Queries
 

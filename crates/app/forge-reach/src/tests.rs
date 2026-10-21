@@ -341,6 +341,49 @@ fn a_report_after_the_preview_names_the_change_and_is_carried_at_once() {
 }
 
 #[test]
+fn a_report_that_names_no_change_after_the_preview_is_carried_to_it() {
+    let mut world = world();
+    let (_, feature) = opened(&mut world);
+    let merge = world.preview();
+    assert!(world.statuses(merge).is_empty());
+    world.report(feature, &["a"], None).unwrap();
+    assert_eq!(
+        world.statuses(merge),
+        [(lane_context(), CheckState::Passed, Some("lane.log".into()))]
+    );
+    assert_eq!(world.preview(), merge, "the same heads, the same Preview");
+}
+
+#[test]
+fn a_report_on_the_preview_commit_that_names_no_change_is_carried_to_it() {
+    let mut world = world();
+    opened(&mut world);
+    let merge = world.preview();
+    world.report(merge, &[""], None).unwrap();
+    assert_eq!(
+        world.statuses(merge),
+        [(lane_context(), CheckState::Passed, Some("lane.log".into()))]
+    );
+}
+
+#[test]
+fn a_report_on_a_head_the_change_moved_from_reaches_no_preview() {
+    let mut world = world();
+    let (_, feature) = opened(&mut world);
+    world.preview();
+    let pushed = world.commit(
+        &[feature],
+        &[("Cargo.lock", "lock 1\n"), ("a/x.rs", "two\n")],
+    );
+    world.push(Some(feature), pushed, "feature");
+    let moved = world.preview();
+    world.report(feature, &["a"], None).unwrap();
+    assert!(world.statuses(moved).is_empty(), "the old head's result");
+    world.report(pushed, &["a"], None).unwrap();
+    assert_eq!(world.statuses(moved)[0].1, CheckState::Passed);
+}
+
+#[test]
 fn a_whole_tree_reach_carries_only_while_dev_holds_still() {
     let mut world = world();
     let (base, feature) = opened(&mut world);

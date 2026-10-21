@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use ::program::{Error, ExecCtx, QueryCtx, Reply as Wanted, code, invalid, unexpected_reply};
 use forge::{CheckState, EntryKind, PreviewInfo, Watched};
 
-use crate::state::{Kept, REACH, REPORTS, Reporting};
+use crate::state::{Kept, PREVIEWED, PREVIEWING, REACH, REPORTS, Reporting};
 use crate::{AccountNumber, Carried, PROGRAM, PageRequest, PageResponse, PreviewVerdict, Report};
 
 pub(crate) struct Reported {
@@ -20,10 +20,50 @@ pub(crate) struct Reported {
 
 pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
     ctx.env().sent_by(forge::PROGRAM)?;
-    let Watched::Previewed { repo, n, .. } = event else {
+    match event {
+        Watched::Previewed { repo, n, .. } => {
+            heard_preview(ctx, &repo, n)?;
+            tell(ctx, &repo, n)
+        }
+        Watched::Merged { repo, n, .. } | Watched::Closed { repo, n, .. } => {
+            forget_preview(ctx, &repo, n)
+        }
+        _ => Ok(()),
+    }
+}
+
+fn heard_preview(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
+    forget_preview(ctx, repo, n)?;
+    let Some(preview) = latest_preview(ctx, repo, n)? else {
         return Ok(());
     };
-    tell(ctx, &repo, n)
+    for commit in [&preview.from_head, &preview.merge] {
+        PREVIEWING.insert(ctx, &(repo.to_owned(), commit.clone(), n));
+    }
+    let heads = (preview.from_head, preview.merge);
+    PREVIEWED.put(ctx, &(repo.to_owned(), n), &heads);
+    Ok(())
+}
+
+fn forget_preview(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
+    let key = (repo.to_owned(), n);
+    let Some((head, merge)) = PREVIEWED.get(ctx, &key)? else {
+        return Ok(());
+    };
+    for commit in [head, merge] {
+        let row = (repo.to_owned(), commit, n);
+        if PREVIEWING.has(ctx, &row) {
+            PREVIEWING.remove(ctx, &row);
+        }
+    }
+    PREVIEWED.remove(ctx, &key);
+    Ok(())
+}
+
+fn previewing(ctx: &QueryCtx, repo: &str, commit: &str) -> Result<Vec<u64>, Error> {
+    let head = (repo.to_owned(), commit.to_owned());
+    let rows = PREVIEWING.scan(ctx, PREVIEWING.prefix_of(&head))?;
+    Ok(rows.into_iter().map(|(_, _, n)| n).collect())
 }
 
 pub(crate) fn report(ctx: &ExecCtx, reported: Reported) -> Result<(), Error> {
@@ -62,10 +102,14 @@ pub(crate) fn report(ctx: &ExecCtx, reported: Reported) -> Result<(), Error> {
         height: ctx.env().height,
     };
     REPORTS.put(ctx, &key, &kept);
-    match reported.change {
-        Some(n) => tell(ctx, &reported.repo, n),
-        None => Ok(()),
+    let changes = match reported.change {
+        Some(n) => vec![n],
+        None => previewing(ctx, &reported.repo, &reported.commit)?,
+    };
+    for n in changes {
+        tell(ctx, &reported.repo, n)?;
     }
+    Ok(())
 }
 
 fn is_full_oid(commit: &str) -> bool {
