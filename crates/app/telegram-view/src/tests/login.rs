@@ -1,5 +1,5 @@
 use super::server::{self, Boxed, Server};
-use crate::{Session, Telegram, auth::decode, words};
+use crate::{Telegram, auth::decode, words};
 use grammers_tl_types::{self as tl, Identifiable, Serializable};
 use view::{methods::*, testing::TestAppContext};
 
@@ -75,7 +75,7 @@ fn phone_then_code_signs_in_and_logout_removes_device_keys() {
     let mut server = Server::default();
     server.open(&mut cx);
     sign_in(&mut cx, &mut server);
-    assert_eq!(cx.host().kept::<Session>("session").unwrap().user, Some(7));
+    assert_eq!(super::session(&cx).user, Some(7));
     assert!(
         !cx.snapshot()
             .unwrap()
@@ -85,7 +85,7 @@ fn phone_then_code_signs_in_and_logout_removes_device_keys() {
     cx.simulate_click("logout");
     server.pump(&mut cx);
     let (id, _) = server.take::<tl::functions::auth::LogOut>();
-    assert_eq!(cx.host().kept::<Session>("session").unwrap().user, Some(7));
+    assert_eq!(super::session(&cx).user, Some(7));
     assert!(!cx.has_text(words::SIGNED_OUT));
     server.reply(
         &mut cx,
@@ -95,7 +95,7 @@ fn phone_then_code_signs_in_and_logout_removes_device_keys() {
         }
         .boxed(),
     );
-    for key in ["session", "peers", "updates"] {
+    for key in ["account", "session", "peers", "updates"] {
         assert!(cx.host().kept::<Vec<u8>>(key).is_none());
     }
     assert!(cx.has_text(words::SIGNED_OUT));
@@ -143,7 +143,7 @@ fn a_wrong_code_can_be_corrected_without_losing_the_phone() {
     let (id, request) = server.take::<tl::functions::auth::SignIn>();
     assert_eq!(request.phone_number, "+9996612345");
     server.reply(&mut cx, id, authorized());
-    assert_eq!(cx.host().kept::<Session>("session").unwrap().user, Some(7));
+    assert_eq!(super::session(&cx).user, Some(7));
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn phone_migration_reconnects_to_the_named_test_dc_and_retries() {
     let (id, request) = server.take::<tl::functions::auth::SendCode>();
     assert_eq!(request.phone_number, "+9996612345");
     server.reply(&mut cx, id, sent_code());
-    let session = cx.host().kept::<Session>("session").unwrap();
+    let session = super::session(&cx);
     assert_eq!(session.home, 4);
     assert_eq!(session.keys.len(), 2);
 }
@@ -185,15 +185,12 @@ fn a_restart_reads_the_device_store_and_uses_the_same_auth_key() {
     let mut server = Server::default();
     server.open(&mut cx);
     sign_in(&mut cx, &mut server);
-    let key = cx.host().kept::<Session>("session").unwrap().keys[&2].key;
+    let key = super::session(&cx).keys[&2].key;
     let snapshot = cx.snapshot().unwrap();
     cx.restore::<Telegram>(&snapshot).unwrap();
     server::seat(&mut cx, "a key");
     server.opened(&mut cx);
-    assert_eq!(
-        cx.host().kept::<Session>("session").unwrap().keys[&2].key,
-        key
-    );
+    assert_eq!(super::session(&cx).keys[&2].key, key);
     cx.simulate_click("logout");
     server.pump(&mut cx);
     assert_eq!(server.headers, 2);
@@ -315,7 +312,7 @@ fn two_step_login_checks_srp_for_a_known_password_and_keeps_no_password() {
     ]);
     assert_eq!(proof.m1, expected);
     server.reply(&mut cx, id, authorized());
-    assert_eq!(cx.host().kept::<Session>("session").unwrap().user, Some(7));
+    assert_eq!(super::session(&cx).user, Some(7));
     for (_, bytes) in cx.host().requests::<StoreSet>() {
         if let Some(bytes) = bytes {
             assert!(!bytes.windows(13).any(|bytes| bytes == b"correct horse"));
@@ -371,11 +368,11 @@ fn replacing_a_connection_stops_its_event_batch() {
             ],
         );
         if logout {
-            for key in ["session", "peers", "updates"] {
+            for key in ["account", "session", "peers", "updates"] {
                 assert!(cx.host().kept::<Vec<u8>>(key).is_none());
             }
         } else {
-            let session = cx.host().kept::<Session>("session").unwrap();
+            let session = super::session(&cx);
             assert_eq!(session.home, 2);
             assert!(!session.keys.contains_key(&4));
             server.opened(&mut cx);
@@ -433,10 +430,15 @@ fn session_revoked_removes_all_stored_telegram_data() {
         }
         .boxed(),
     );
-    for key in ["session", "peers", "updates"] {
+    for key in ["account", "session", "peers", "updates"] {
         assert!(cx.host().kept::<Vec<u8>>(key).is_none());
     }
+    assert!(cx.host().secret::<Vec<u8>>("keys").is_none());
     assert!(cx.has_text(words::SESSION_ENDED));
+    assert!(
+        cx.has_text(words::SIGNED_OUT),
+        "a revoked session's confirmed key removal leaves its status on removing"
+    );
 }
 
 #[test]

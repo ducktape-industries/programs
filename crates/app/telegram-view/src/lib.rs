@@ -50,9 +50,26 @@ impl Default for Session {
     }
 }
 
+#[derive(BorshDeserialize, BorshSerialize)]
+struct Account {
+    home: u8,
+    user: Option<i64>,
+}
+
+impl Default for Account {
+    fn default() -> Self {
+        Self {
+            home: Session::default().home,
+            user: None,
+        }
+    }
+}
+
 #[derive(Default)]
 struct Live {
     session: Session,
+    keys_in_memory: bool,
+    unconfirmed_keys_removal: Option<login::UnconfirmedKeysRemoval>,
     scope: Option<(String, String)>,
     bootstrap: Option<Task<()>>,
     loaded: bool,
@@ -169,6 +186,8 @@ impl Telegram {
     fn load_device(&mut self, cx: &mut Context<Self>) {
         self.status = words::STARTING.into();
         let host = cx.host();
+        let store = cx.store();
+        store.remove("session");
         self.live.bootstrap = Some(cx.land(
             async move {
                 let bytes = host.ask::<HostRandom>(32).await?;
@@ -177,24 +196,60 @@ impl Telegram {
                     .map_err(|_| Error::new("host_fault", words::RANDOM_LENGTH))?;
                 let status = host.ask::<ChainStatus>(()).await?;
                 let mut warnings = Vec::new();
-                let session = stored::<Session>(&host, "session", &mut warnings)
+                let account = stored::<Account>(&host, "account", &mut warnings)
                     .await?
                     .unwrap_or_default();
-                let peers =
+                let (keys, keys_in_memory) =
+                    match store.secret_get::<BTreeMap<u8, DcKey>>("keys").await {
+                        Ok(keys) => (keys.unwrap_or_default(), false),
+                        Err(error) => match error.code.as_str() {
+                            "no_secret_store" => {
+                                warnings.push(words::NO_KEY_STORE.into());
+                                (BTreeMap::new(), true)
+                            }
+                            "unknown_request" => {
+                                return Err(Error::new(error.code, words::UPDATE_DUCKTAPE));
+                            }
+                            _ => return Err(error),
+                        },
+                    };
+                let mut session = Session {
+                    home: account.home,
+                    user: account.user,
+                    keys,
+                };
+                let mut peers =
                     stored::<BTreeMap<chats::Peer, chats::PeerInfo>>(&host, "peers", &mut warnings)
                         .await?
                         .unwrap_or_default();
-                let position = stored::<updates::Position>(&host, "updates", &mut warnings).await?;
-                Ok((seed, status.time, session, peers, position, warnings))
+                let mut position =
+                    stored::<updates::Position>(&host, "updates", &mut warnings).await?;
+                if !session.keys.contains_key(&session.home) {
+                    session.user = None;
+                    peers.clear();
+                    position = None;
+                    store.remove("peers");
+                    store.remove("updates");
+                }
+                Ok((
+                    seed,
+                    status.time,
+                    session,
+                    keys_in_memory,
+                    peers,
+                    position,
+                    warnings,
+                ))
             },
             |view, result, cx| {
                 match result {
-                    Ok((seed, time, session, peers, position, warnings)) => {
+                    Ok((seed, time, session, keys_in_memory, peers, position, warnings)) => {
                         random::seed(seed);
                         view.notice = (!warnings.is_empty()).then(|| warnings.join(" "));
                         view.live.loaded = true;
                         view.live.unix = (time / 1000) as i64;
                         view.live.session = session;
+                        view.live.keys_in_memory = keys_in_memory;
                         view.chats.peers = peers;
                         view.sync.position = position;
                         if view.live.session.user.is_some() {
@@ -208,6 +263,35 @@ impl Telegram {
                 cx.notify();
             },
         ));
+    }
+
+    fn persist(&mut self, cx: &mut Context<Self>) {
+        cx.store().set(
+            "account",
+            &Account {
+                home: self.live.session.home,
+                user: self.live.session.user,
+            },
+        );
+        if self.live.keys_in_memory {
+            return;
+        }
+        let written = cx.store().secret_set("keys", Some(&self.live.session.keys));
+        cx.land(written, Self::keys_written).detach();
+    }
+
+    fn keys_written(&mut self, result: Result<(), Error>, cx: &mut Context<Self>) {
+        match result {
+            Ok(()) => self.live.unconfirmed_keys_removal = None,
+            Err(error) if error.code == "no_secret_store" => {
+                self.live.keys_in_memory = true;
+                self.notice = Some(words::NO_KEY_STORE.into());
+            }
+            Err(error) => {
+                self.failed = Some(design::sentence(&error));
+            }
+        }
+        cx.notify();
     }
 
     fn cancel_reads_and_sockets_then_clear_device(&mut self) {
@@ -339,13 +423,13 @@ impl Telegram {
                     let keys = std::mem::take(&mut self.live.session.keys);
                     let ticks = self.live.ticks.take();
                     let retry_delay = self.live.retry_delay;
-                    self.forget(cx);
+                    self.forget(None, cx);
                     self.live.ticks = ticks;
                     self.live.retry_delay = retry_delay;
                     self.live.session.home = dc;
                     self.live.session.keys = keys;
                 }
-                cx.store().set("session", &self.live.session);
+                self.persist(cx);
                 self.disconnected(words::transport_status(-404), cx);
                 self.failed = None;
                 self.notice = Some(
@@ -403,7 +487,7 @@ impl Telegram {
                         .session
                         .keys
                         .insert(self.live.dc.unwrap_or(self.live.session.home), *key);
-                    cx.store().set("session", &self.live.session);
+                    self.persist(cx);
                 }
                 Event::Ready => {
                     if !self.live.ready {

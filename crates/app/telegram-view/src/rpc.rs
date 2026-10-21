@@ -157,7 +157,7 @@ impl Telegram {
                 }
                 match error.error_message.as_str() {
                     "SESSION_REVOKED" | "AUTH_KEY_UNREGISTERED" | "SESSION_EXPIRED" => {
-                        self.forget(cx);
+                        self.forget(Some(words::SIGNED_OUT), cx);
                         self.failed = Some(words::SESSION_ENDED.into());
                     }
                     "SESSION_PASSWORD_NEEDED" => self.call(
@@ -248,7 +248,7 @@ impl Telegram {
             Rpc::Send { peer, text } => self.sent(peer, text, body, cx)?,
             Rpc::Logout => {
                 let _: tl::enums::auth::LoggedOut = decode(body)?;
-                self.forget(cx);
+                self.forget(Some(words::SIGNED_OUT), cx);
             }
             Rpc::Export(dc, tag) => {
                 let tl::enums::auth::ExportedAuthorization::Authorization(transfer) = decode(body)?;

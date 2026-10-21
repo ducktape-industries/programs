@@ -1,4 +1,7 @@
 pub(crate) const LOCKED: &str = "Unlock ducktape to use Telegram.";
+pub(crate) const NO_KEY_STORE: &str =
+    "This device has no key store, so Telegram forgets this sign-in when ducktape closes.";
+pub(crate) const UPDATE_DUCKTAPE: &str = "Update ducktape to use Telegram.";
 pub(crate) const STARTING: &str = "Reading this device's Telegram session…";
 pub(crate) const CONNECTING: &str = "Connecting to Telegram…";
 pub(crate) const CONNECTED: &str = "Connected to Telegram";
@@ -19,6 +22,8 @@ pub(crate) const PASSWORD_NEEDED: &str = "Enter your Telegram two-step verificat
 pub(crate) const SIGNED_IN: &str = "Signed in to Telegram";
 pub(crate) const LOCAL_KEYS_REMOVED: &str = "This device's Telegram keys have been removed locally. Telegram still lists this device. End its session from Telegram's Settings > Devices on another device.";
 pub(crate) const SIGNED_OUT: &str = "Logged out. This device's Telegram keys have been removed.";
+pub(crate) const REMOVING_KEYS: &str = "Removing this device's Telegram keys…";
+pub(crate) const REMOVE_KEYS_AGAIN: &str = "Remove the keys again";
 
 pub(crate) const CONNECT: &str = "Connect";
 pub(crate) const HOME_KEY_LOST: &str =

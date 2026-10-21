@@ -12,19 +12,25 @@ pages. Text can be sent from the message field. Media appears as a short label.
 Live updates change the history and previews; missing updates are fetched after
 a gap or reconnect, including a channel's separate update counter.
 
-`session`, `updates` and `peers` in the device store hold DC auth keys and salts,
-clock offsets, Telegram user ID, update checkpoints and peer access hashes.
-The store is scoped by the host to the network and seated ducktape key. Changing
-either cancels the connection and reads the new store. Passwords exist only
-while computing the SRP proof; snapshots contain no session or message content.
-Log out calls `auth.logOut` and removes all three store keys. During reconnection
-it removes them locally; Connect can also retry immediately.
+`keys` in the OS key store holds every DC's auth key, salt and clock offset.
+`account`, `updates` and `peers` in the plain device store hold the home DC,
+Telegram user ID, update checkpoints and peer access hashes. Both stores are
+scoped by the host to the network and seated ducktape key. Changing either
+cancels the connection and reads the new stores. Each load removes the old
+plaintext `session` without reading it; an old sign-in starts signed out.
+With no key store, sign-in works in memory and the view explains that it will
+be forgotten when ducktape closes. An older app must be updated; other key store
+refusals show the host's sentence and Connect retries the load. Neither opens
+a socket until the key store can be read. Passwords exist only while computing
+the SRP proof; snapshots contain no session or message content. Log out calls
+`auth.logOut` and removes the secret keys and all four plain store keys.
+During reconnection it removes them locally; Connect can also retry immediately.
 
 This is a test-server build. The single API credential pair in `src/config.rs`
 awaits eddy's ducktape registration at my.telegram.org. Host names and the
 `/apiws_test` path follow J-133's ruled design §1, citing TDLib's
 `ConnectionCreator.cpp` (1245–1256). Production routing, QR login, sign-up,
-secret chats, media downloads, mirroring, a notifier and keychain storage are
+secret chats, media downloads, mirroring and a notifier are
 outside this build. It connects from an app release that carries the socket host
 (app #104).
 

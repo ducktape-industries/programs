@@ -138,6 +138,21 @@ pub(crate) fn render(view: &Telegram, window: &Window, cx: &mut Context<Telegram
                 .enabled(enabled),
             )
             .child(design::quiet(words::SIGNUP, &theme));
+        let refused_keys_removal_on_phone = matches!(view.screen, Screen::Phone)
+            && view
+                .live
+                .unconfirmed_keys_removal
+                .as_ref()
+                .is_some_and(|removal| removal.refused);
+        if refused_keys_removal_on_phone {
+            page = page.child(design::button(
+                "remove-keys-again",
+                words::REMOVE_KEYS_AGAIN,
+                &ladder,
+                &theme,
+                cx.listener(|view: &mut Telegram, _, _, cx| view.remove_keys_from_key_store(cx)),
+            ));
+        }
     }
     let connection_can_be_started = !view.live.ready && view.live.bootstrap.is_none();
     if connection_can_be_started {

@@ -8,6 +8,16 @@ mod server;
 mod updates;
 use super::*;
 use server::Boxed;
+
+fn session(cx: &view::testing::TestAppContext) -> Session {
+    let account = cx.host().kept::<Account>("account").unwrap_or_default();
+    Session {
+        home: account.home,
+        user: account.user,
+        keys: cx.host().secret("keys").unwrap_or_default(),
+    }
+}
+
 #[test]
 fn a_connection_refusal_is_explained() {
     for code in ["undeclared_host", "consent_refused"] {
@@ -35,7 +45,7 @@ fn the_obfuscated_dh_exchange_establishes_the_servers_key() {
     let mut cx = server::Server::context();
     let mut server = server::Server::default();
     server.open(&mut cx);
-    let session = cx.host().kept::<Session>("session").unwrap();
+    let session = self::session(&cx);
     assert_eq!(session.keys[&2].key, server.key.unwrap());
     assert_eq!(server.headers, 1);
     assert!(cx.has_text(words::CONNECTED), "{:?}", cx.texts());
@@ -81,10 +91,7 @@ fn a_bad_salt_resends_and_flood_wait_uses_protocol_ticks() {
     let retry = server.calls.pop().unwrap();
     assert_eq!(retry.body, body);
     assert_eq!(retry.salt, 1234);
-    assert_eq!(
-        cx.host().kept::<Session>("session").unwrap().keys[&2].salt,
-        1234
-    );
+    assert_eq!(self::session(&cx).keys[&2].salt, 1234);
     server.reply(
         &mut cx,
         retry.id,
@@ -160,10 +167,7 @@ fn partial_frames_containers_and_gzip_preserve_message_boundaries() {
         cx.run_until_parked();
     }
     server.pump(&mut cx);
-    assert_eq!(
-        cx.host().kept::<Session>("session").unwrap().keys[&2].salt,
-        9876
-    );
+    assert_eq!(self::session(&cx).keys[&2].salt, 9876);
 }
 
 #[test]
@@ -190,6 +194,8 @@ fn switching_to_a_store_without_telegram_keys_or_peer_hashes_clears_session_and_
     cx.simulate_input("compose", "Private draft");
     cx.host().handle::<view::methods::StoreGet>(|_| Ok(None));
     cx.host()
+        .handle::<view::methods::StoreSecretGet>(|_| Ok(None));
+    cx.host()
         .stream::<view::methods::HostSession>()
         .send(view::methods::Session {
             chain_id: "test#1".into(),
@@ -201,7 +207,7 @@ fn switching_to_a_store_without_telegram_keys_or_peer_hashes_clears_session_and_
     assert!(!cx.has_text("Private draft"));
     server.opened(&mut cx);
     assert!(cx.has_text(words::CONNECTED));
-    assert_eq!(cx.host().kept::<Session>("session").unwrap().user, None);
+    assert_eq!(self::session(&cx).user, None);
     assert_eq!(server.headers, 2);
 }
 
@@ -241,10 +247,7 @@ fn a_bad_message_time_corrects_the_offset_and_retries_the_rpc() {
         let retry = server.calls.pop().unwrap();
         assert_eq!(retry.body, call.body);
         assert_eq!(retry.id >> 32, server::UNIX);
-        assert_eq!(
-            cx.host().kept::<Session>("session").unwrap().keys[&2].offset,
-            600
-        );
+        assert_eq!(self::session(&cx).keys[&2].offset, 600);
     }
 }
 
@@ -284,11 +287,11 @@ fn unknown_transport_keys_retry_dh_without_reusing_rejected_key_only_on_affected
             let key = view.live.session.keys[&2].clone();
             view.live.session.keys.insert(dc, key);
             view.live.dc = Some(dc);
-            cx.store().set("session", &view.live.session);
+            view.persist(cx);
         });
         server.frame(&mut cx, (-404i32).to_le_bytes().to_vec());
         cx.run_until_parked();
-        let session = cx.host().kept::<Session>("session").unwrap();
+        let session = self::session(&cx);
         assert!(!session.keys.contains_key(&dc));
         if dc == 2 {
             assert_eq!(session.user, None);
@@ -302,13 +305,7 @@ fn unknown_transport_keys_retry_dh_without_reusing_rejected_key_only_on_affected
             cx.run_until_parked();
         }
         server.opened(&mut cx);
-        assert!(
-            cx.host()
-                .kept::<Session>("session")
-                .unwrap()
-                .keys
-                .contains_key(&dc)
-        );
+        assert!(self::session(&cx).keys.contains_key(&dc));
         let connects = cx.host().requests::<SocketConnect>().len();
         server.frame(&mut cx, (-404i32).to_le_bytes().to_vec());
         cx.run_until_parked();
@@ -321,13 +318,7 @@ fn unknown_transport_keys_retry_dh_without_reusing_rejected_key_only_on_affected
         cx.run_until_parked();
         assert_eq!(cx.host().requests::<SocketConnect>().len(), connects + 1);
         server.opened(&mut cx);
-        assert!(
-            cx.host()
-                .kept::<Session>("session")
-                .unwrap()
-                .keys
-                .contains_key(&dc)
-        );
+        assert!(self::session(&cx).keys.contains_key(&dc));
     }
 }
 
@@ -367,7 +358,7 @@ fn transport_floods_back_off_and_explicit_connect_retries_immediately() {
     cx.simulate_click("logout");
     cx.run_until_parked();
     assert_eq!(cx.host().requests::<SocketSendMessage>().len(), sent);
-    for key in ["session", "peers", "updates"] {
+    for key in ["account", "session", "peers", "updates"] {
         assert!(cx.host().kept::<Vec<u8>>(key).is_none());
     }
     assert!(cx.has_text(words::LOCAL_KEYS_REMOVED));
@@ -398,7 +389,7 @@ fn host_faults_back_off_without_a_socket_open_loop() {
 #[test]
 fn malformed_stored_values_are_removed_and_explained() {
     use view::methods::{StoreGet, StoreSet};
-    for key in ["session", "peers", "updates"] {
+    for key in ["account", "peers", "updates"] {
         let mut cx = server::Server::context();
         cx.host()
             .handle::<StoreGet>(move |asked| Ok((asked == key).then(|| vec![255])));

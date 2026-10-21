@@ -1,6 +1,9 @@
-use crate::{Session, Telegram, auth::check_public, config, random, rpc::Rpc, words};
+use crate::{
+    Session, Telegram, auth::check_public, config, protocol::DcKey, random, rpc::Rpc, words,
+};
 use grammers_tl_types::{self as tl, Serializable};
 use num_bigint::BigUint;
+use std::collections::BTreeMap;
 use view::prelude::*;
 
 #[derive(Default)]
@@ -10,6 +13,11 @@ pub(crate) enum Screen {
     Code,
     Password,
     Chats,
+}
+
+pub(crate) struct UnconfirmedKeysRemoval {
+    confirmed_status: Option<&'static str>,
+    pub(crate) refused: bool,
 }
 
 impl Telegram {
@@ -134,6 +142,12 @@ impl Telegram {
             tl::enums::User::User(user) => user.id,
             tl::enums::User::Empty(user) => user.id,
         };
+        if self.live.session.user != Some(id) {
+            self.sync = Default::default();
+            self.chats.peers.clear();
+            cx.store().remove("updates");
+            cx.store().remove("peers");
+        }
         self.live.session.user = Some(id);
         self.live.phone.clear();
         self.live.code_hash.clear();
@@ -144,22 +158,25 @@ impl Telegram {
         self.screen = Screen::Chats;
         self.status = words::SIGNED_IN.into();
         self.failed = None;
-        cx.store().set("session", &self.live.session);
+        self.persist(cx);
         self.start_updates(cx);
         Ok(())
     }
 
     pub(crate) fn logout(&mut self, cx: &mut Context<Self>) {
         if !self.live.ready {
-            self.forget(cx);
-            self.status = words::LOCAL_KEYS_REMOVED.into();
+            self.forget(Some(words::LOCAL_KEYS_REMOVED), cx);
             cx.notify();
         } else if !self.login_busy() {
             self.call(Rpc::Logout, tl::functions::auth::LogOut {}.to_bytes(), cx);
         }
     }
 
-    pub(crate) fn forget(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn forget(
+        &mut self,
+        confirmed_status: Option<&'static str>,
+        cx: &mut Context<Self>,
+    ) {
         self.live.subscription = None;
         self.live.ticks = None;
         self.live.connection = None;
@@ -182,11 +199,53 @@ impl Telegram {
         self.phone.reset("");
         self.code.reset("");
         self.password.reset("");
-        for key in ["session", "updates", "peers"] {
+        for key in ["account", "updates", "peers", "session"] {
             cx.store().remove(key);
         }
         self.screen = Screen::Phone;
         self.notice = None;
-        self.status = words::SIGNED_OUT.into();
+        if self.live.keys_in_memory {
+            self.live.unconfirmed_keys_removal = None;
+            if let Some(status) = confirmed_status {
+                self.status = status.into();
+            }
+        } else {
+            self.live.unconfirmed_keys_removal = Some(UnconfirmedKeysRemoval {
+                confirmed_status,
+                refused: false,
+            });
+            self.remove_keys_from_key_store(cx);
+        }
+    }
+
+    pub(crate) fn remove_keys_from_key_store(&mut self, cx: &mut Context<Self>) {
+        let Some(removal) = &mut self.live.unconfirmed_keys_removal else {
+            return;
+        };
+        removal.refused = false;
+        self.failed = None;
+        self.status = words::REMOVING_KEYS.into();
+        let removed = cx.store().secret_set::<BTreeMap<u8, DcKey>>("keys", None);
+        cx.land(removed, Self::keys_removed).detach();
+        cx.notify();
+    }
+
+    fn keys_removed(&mut self, result: Result<(), Error>, cx: &mut Context<Self>) {
+        let Some(removal) = &mut self.live.unconfirmed_keys_removal else {
+            return;
+        };
+        match result {
+            Ok(()) => {
+                if let Some(status) = removal.confirmed_status {
+                    self.status = status.into();
+                }
+                self.live.unconfirmed_keys_removal = None;
+            }
+            Err(error) => {
+                removal.refused = true;
+                self.failed = Some(design::sentence(&error));
+            }
+        }
+        cx.notify();
     }
 }

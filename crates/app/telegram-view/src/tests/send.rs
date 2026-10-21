@@ -131,9 +131,9 @@ fn signed_in_dc_migration_imports_authorization_and_retries_send_without_restori
     assert!(!server.calls.iter().any(|call| call.body.starts_with(
         &<tl::functions::messages::SendMessage as tl::Identifiable>::CONSTRUCTOR_ID.to_le_bytes()
     )));
-    assert_eq!(cx.host().kept::<crate::Session>("session").unwrap().home, 2);
+    assert_eq!(super::session(&cx).home, 2);
     server.reply(&mut cx, id, super::login::authorized());
-    assert_eq!(cx.host().kept::<crate::Session>("session").unwrap().home, 4);
+    assert_eq!(super::session(&cx).home, 4);
     assert_eq!(
         server
             .messages
@@ -194,7 +194,7 @@ fn repeated_import_errors_fail_send_until_explicit_connect_opens_old_home_withou
     assert!(!server.calls.iter().any(|call| call.body.starts_with(
         &<tl::functions::messages::SendMessage as tl::Identifiable>::CONSTRUCTOR_ID.to_le_bytes()
     )));
-    assert_eq!(cx.host().kept::<crate::Session>("session").unwrap().home, 2);
+    assert_eq!(super::session(&cx).home, 2);
     server.reply(
         &mut cx,
         id,
@@ -204,7 +204,7 @@ fn repeated_import_errors_fail_send_until_explicit_connect_opens_old_home_withou
         }
         .boxed(),
     );
-    assert_eq!(cx.host().kept::<crate::Session>("session").unwrap().home, 2);
+    assert_eq!(super::session(&cx).home, 2);
     for _ in 0..60 {
         cx.host().stream::<ClockTicks>().send(());
         server.pump(&mut cx);
@@ -265,7 +265,7 @@ fn repeated_import_errors_fail_send_until_explicit_connect_opens_old_home_withou
     assert!(cx.has_text(crate::words::CONNECT));
     cx.simulate_click("connect");
     cx.run_until_parked();
-    server.key = Some(cx.host().kept::<crate::Session>("session").unwrap().keys[&2].key);
+    server.key = Some(super::session(&cx).keys[&2].key);
     server.opened(&mut cx);
     assert!(!server.calls.iter().any(|call| call.body.starts_with(
         &<tl::functions::messages::SendMessage as tl::Identifiable>::CONSTRUCTOR_ID.to_le_bytes()

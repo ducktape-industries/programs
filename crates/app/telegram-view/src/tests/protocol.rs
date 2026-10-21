@@ -5,6 +5,7 @@ use super::{
 };
 use crate::{updates::Position, words};
 use grammers_tl_types::{self as tl, Serializable};
+use std::collections::BTreeMap;
 use view::methods::*;
 
 #[test]
@@ -219,10 +220,7 @@ fn a_skewed_initial_chain_clock_is_corrected_by_telegram() {
     let mut server = Server::default();
     server.open(&mut cx);
     login::sign_in(&mut cx, &mut server);
-    assert_eq!(
-        cx.host().kept::<crate::Session>("session").unwrap().keys[&2].offset,
-        -600
-    );
+    assert_eq!(super::session(&cx).keys[&2].offset, -600);
     assert!(
         server
             .messages
@@ -233,7 +231,7 @@ fn a_skewed_initial_chain_clock_is_corrected_by_telegram() {
 
 #[test]
 fn a_message_over_300_seconds_ahead_waits_for_bad_msg_16_clock_correction() {
-    use crate::{Session, protocol::DcKey};
+    use crate::{Account, protocol::DcKey};
     let mut cx = Server::context();
     cx.host().handle::<ChainStatus>(|_| {
         Ok(NodeStatus {
@@ -243,20 +241,22 @@ fn a_message_over_300_seconds_ahead_waits_for_bad_msg_16_clock_correction() {
     });
     let key = [71; 256];
     cx.host().keep(
-        "session",
-        &Session {
+        "account",
+        &Account {
             home: 2,
-            keys: [(
-                2,
-                DcKey {
-                    key,
-                    salt: 0,
-                    offset: 0,
-                },
-            )]
-            .into(),
             user: Some(7),
         },
+    );
+    cx.host().keep_secret(
+        "keys",
+        &BTreeMap::from([(
+            2u8,
+            DcKey {
+                key,
+                salt: 0,
+                offset: 0,
+            },
+        )]),
     );
     let mut server = Server::default();
     server.key = Some(key);
@@ -276,15 +276,12 @@ fn a_message_over_300_seconds_ahead_waits_for_bad_msg_16_clock_correction() {
         .boxed(),
     );
     assert!(cx.host().kept::<Position>("updates").is_none());
-    assert_eq!(
-        cx.host().kept::<Session>("session").unwrap().keys[&2].offset,
-        0
-    );
+    assert_eq!(super::session(&cx).keys[&2].offset, 0);
 }
 
 #[test]
 fn a_stored_key_recovers_from_a_chain_clock_120_seconds_behind() {
-    use crate::{Session, protocol::DcKey};
+    use crate::{Account, protocol::DcKey};
     use tl::Identifiable;
     let mut cx = Server::context();
     cx.host().handle::<ChainStatus>(|_| {
@@ -295,20 +292,22 @@ fn a_stored_key_recovers_from_a_chain_clock_120_seconds_behind() {
     });
     let key = [71; 256];
     cx.host().keep(
-        "session",
-        &Session {
+        "account",
+        &Account {
             home: 2,
-            keys: [(
-                2,
-                DcKey {
-                    key,
-                    salt: 0,
-                    offset: 0,
-                },
-            )]
-            .into(),
             user: Some(7),
         },
+    );
+    cx.host().keep_secret(
+        "keys",
+        &BTreeMap::from([(
+            2u8,
+            DcKey {
+                key,
+                salt: 0,
+                offset: 0,
+            },
+        )]),
     );
     let mut server = Server::default();
     server.key = Some(key);
@@ -328,10 +327,7 @@ fn a_stored_key_recovers_from_a_chain_clock_120_seconds_behind() {
         .boxed(),
     );
     assert_eq!(cx.host().kept::<Position>("updates").unwrap().pts, 10);
-    assert_eq!(
-        cx.host().kept::<Session>("session").unwrap().keys[&2].offset,
-        120
-    );
+    assert_eq!(super::session(&cx).keys[&2].offset, 120);
     for _ in 0..120 {
         server.message += 1i64 << 32;
         cx.host().stream::<ClockTicks>().send(());
@@ -349,10 +345,7 @@ fn a_stored_key_recovers_from_a_chain_clock_120_seconds_behind() {
     );
     assert_eq!(cx.host().requests::<SocketConnect>().len(), 1);
     assert_eq!(server.headers, 1, "the stored key needs no DH");
-    assert_eq!(
-        cx.host().kept::<Session>("session").unwrap().keys[&2].offset,
-        120
-    );
+    assert_eq!(super::session(&cx).keys[&2].offset, 120);
     cx.update(&entity, |view, _, _| {
         assert!(view.live.ready);
         assert!(view.failed.is_none());
@@ -366,10 +359,7 @@ fn future_plain_ids_have_no_window_and_only_dh_server_time_sets_offset() {
     server.message += 120i64 << 32;
     server.open(&mut cx);
     assert!(cx.has_text(words::CONNECTED));
-    assert_eq!(
-        cx.host().kept::<crate::Session>("session").unwrap().keys[&2].offset,
-        0
-    );
+    assert_eq!(super::session(&cx).keys[&2].offset, 0);
 }
 
 #[test]
