@@ -387,6 +387,10 @@ pub enum Body {
         wire: Wire,
         block: String,
     },
+    Light {
+        author: Principal,
+        text: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -398,17 +402,27 @@ pub enum Role {
 impl Body {
     pub fn role(&self) -> Option<Role> {
         match self {
-            Body::Post { .. } | Body::Refused { .. } | Body::Result { .. } => Some(Role::User),
+            Body::Post { .. } | Body::Light { .. } | Body::Refused { .. } | Body::Result { .. } => {
+                Some(Role::User)
+            }
             Body::Turn { .. } => Some(Role::Assistant),
             Body::Notice { .. } | Body::Compaction { .. } => None,
         }
     }
 
+    pub fn input(&self) -> bool {
+        match self {
+            Body::Light { .. } => false,
+            _ => self.role() == Some(Role::User),
+        }
+    }
+
     pub fn text(&self) -> String {
         match self {
-            Body::Post { text, .. } | Body::Result { text, .. } | Body::Notice { text } => {
-                text.clone()
-            }
+            Body::Post { text, .. }
+            | Body::Light { text, .. }
+            | Body::Result { text, .. }
+            | Body::Notice { text } => text.clone(),
             Body::Refused { problem, .. } => problem.clone(),
             Body::Turn { said, .. } => said
                 .iter()
@@ -502,6 +516,7 @@ impl Tally {
             Body::Turn { usage, .. } => self.add(usage, 0),
             Body::Compaction { .. } => self.add(&Usage::default(), 1),
             Body::Post { .. }
+            | Body::Light { .. }
             | Body::Refused { .. }
             | Body::Result { .. }
             | Body::Notice { .. } => {}

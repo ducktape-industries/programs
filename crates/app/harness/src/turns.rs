@@ -60,7 +60,7 @@ struct Turn {
 pub(crate) fn append(ctx: &ExecCtx, thread: &mut ThreadRow, body: Body) {
     thread.frames += 1;
     let seq = thread.frames;
-    if body.role() == Some(Role::User) {
+    if body.input() {
         thread.last_input = seq;
     }
     let frame = Frame {
@@ -383,6 +383,7 @@ fn withheld(seq: u64, body: Body) -> Body {
             problem: note,
         },
         Body::Post { author, .. } => Body::Post { author, text: note },
+        Body::Light { author, .. } => Body::Light { author, text: note },
         Body::Turn { .. } | Body::Notice { .. } | Body::Compaction { .. } => body,
     }
 }
@@ -849,7 +850,11 @@ fn named(frame: &Frame) -> String {
         Body::Result { call, tool, .. } | Body::Refused { call, tool, .. } => {
             format!("the result of {tool} call {call}")
         }
-        Body::Post { .. } | Body::Turn { .. } | Body::Notice { .. } | Body::Compaction { .. } => {
+        Body::Post { .. }
+        | Body::Light { .. }
+        | Body::Turn { .. }
+        | Body::Notice { .. }
+        | Body::Compaction { .. } => {
             format!("message {}", frame.seq)
         }
     }

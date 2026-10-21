@@ -962,6 +962,10 @@ impl Agents {
             harness::Body::Post {
                 author: harness::Principal::Account(number),
                 ..
+            }
+            | harness::Body::Light {
+                author: harness::Principal::Account(number),
+                ..
             } => self.picture(*number, cx),
             _ => None,
         }

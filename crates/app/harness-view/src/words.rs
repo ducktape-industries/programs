@@ -663,7 +663,7 @@ pub(crate) fn author(author: &harness::Principal, roster: Option<&Roster>) -> St
 
 pub(crate) fn held_author(body: &Body, roster: Option<&Roster>) -> String {
     match body {
-        Body::Post { author: who, .. } => author(who, roster),
+        Body::Post { author: who, .. } | Body::Light { author: who, .. } => author(who, roster),
         Body::Notice { .. } => "Notice".to_owned(),
         _ => "harness".to_owned(),
     }

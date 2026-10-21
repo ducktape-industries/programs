@@ -218,7 +218,9 @@ fn entry_row(
     };
     match entry_of {
         Entry::Wrote(frame) => {
-            let Body::Post { author: who, text } = &frame.body else {
+            let (Body::Post { author: who, text } | Body::Light { author: who, text }) =
+                &frame.body
+            else {
                 return div().into_any_element();
             };
             let name = author(who, roster);

@@ -148,7 +148,7 @@ pub(crate) fn image_side(width: u32, height: u32) -> Result<(), String> {
 
 fn blocks(body: &Body, looks: &[Look], foreign: bool) -> Vec<Value> {
     match body {
-        Body::Post { text, .. } => {
+        Body::Post { text, .. } | Body::Light { text, .. } => {
             let mut blocks = vec![json!({ "type": "text", "text": text })];
             blocks.extend(looks.iter().flat_map(seen));
             blocks

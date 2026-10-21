@@ -12,7 +12,7 @@ use crate::state::{
     BOUND, BY_AGENT, Binding, CONVERSATIONS, COUNT, CURRENT, Conversations, FRAMES, PLACES,
     THREADS, TOPICS, WITHHELD, newest_first,
 };
-use crate::{Asking, Body, Context, Frame, Place, Role, Said, ThreadRow};
+use crate::{Asking, Body, Context, Frame, Place, Said, ThreadRow};
 
 pub(crate) fn current(ctx: &QueryCtx, agent: AccountNumber) -> Result<Option<ThreadRow>, Error> {
     let Some(id) = CURRENT.get(ctx, &agent)? else {
@@ -288,6 +288,7 @@ fn answered(frames: &[Frame]) -> usize {
         .filter_map(|frame| match &frame.body {
             Body::Result { call, .. } | Body::Refused { call, .. } => Some(call.as_str()),
             Body::Post { .. }
+            | Body::Light { .. }
             | Body::Turn { .. }
             | Body::Notice { .. }
             | Body::Compaction { .. } => None,
@@ -319,12 +320,11 @@ fn copied(ctx: &ExecCtx, from: &ThreadRow, row: &mut ThreadRow) -> Result<(), Er
         }
     }
     crate::pictures::forked(ctx, from.id, row.id, &frames)?;
-    let inputs = frames
-        .iter()
-        .filter(|frame| frame.body.role() == Some(Role::User));
+    let inputs = frames.iter().filter(|frame| frame.body.input());
     let mut stops = frames.iter().filter_map(|frame| match &frame.body {
         Body::Turn { stop, .. } => Some(*stop),
         Body::Post { .. }
+        | Body::Light { .. }
         | Body::Refused { .. }
         | Body::Result { .. }
         | Body::Notice { .. }

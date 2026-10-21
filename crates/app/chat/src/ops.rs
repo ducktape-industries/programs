@@ -402,9 +402,15 @@ pub(crate) fn delete(
     }
     forget_answer(ctx, &old);
     let reacted = REACTIONS.scan(ctx, REACTIONS.prefix_of(&(channel_id.to_owned(), seq)))?;
+    let mut withdrawn = Vec::new();
     for key in reacted {
+        let (_, _, emoji, reactor) = &key;
+        withdrawn.extend(crate::attributed::reaction(
+            ctx, reactor, &old, emoji, false,
+        )?);
         REACTIONS.remove(ctx, &key);
     }
+    crate::attributed::reacted(ctx, withdrawn);
     let tombstone = MsgRow {
         blocks: Vec::new(),
         reactions: Vec::new(),
@@ -441,6 +447,8 @@ pub(crate) fn react(
     }
     toggle(ctx, &REACTIONS, &key, on);
     put_message(ctx, &row)?;
+    let told = crate::attributed::reaction(ctx, sender, &row, emoji, on)?;
+    crate::attributed::reacted(ctx, told.into_iter().collect());
     Ok(())
 }
 

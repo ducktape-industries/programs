@@ -297,7 +297,9 @@ pub(crate) fn manual(agent: &Agent, title: &str, bound: Option<&Place>) -> Strin
          your threads, the default), Mentions (mentions only) or Off (nothing). Direct messages \
          always reach you, and a message wait still ends with its message. After a post that \
          mentions you, its author's very next posts in that room reach you too, until anyone \
-         else posts there, you included.\n\
+         else posts there, you included. A reaction on one of your messages reaches you as \
+         a light input: it never starts a turn by itself and rides your next one, unless it \
+         ends a message wait (from its reactor, or mentions_me).\n\
          - Rules: a chat room's rules (its rules meta) reach you ahead of the first message you \
          hear from it, and again when they change; follow them there.\n\
          - Forge: forge_commit commits files to a git repository and pushes them as account \
@@ -344,6 +346,7 @@ enum Heard {
     Notice,
     Continued { mentioned: u64 },
     Own,
+    Reaction,
 }
 
 impl Heard {
@@ -351,8 +354,16 @@ impl Heard {
     fn direct(self) -> bool {
         match self {
             Heard::Mention | Heard::Direct | Heard::Waited | Heard::Notice | Heard::Own => true,
-            Heard::Thread | Heard::Listen | Heard::Watch | Heard::Continued { .. } => false,
+            Heard::Thread
+            | Heard::Listen
+            | Heard::Watch
+            | Heard::Continued { .. }
+            | Heard::Reaction => false,
         }
+    }
+
+    fn light(self) -> bool {
+        matches!(self, Heard::Reaction)
     }
 }
 
@@ -365,6 +376,7 @@ fn heard_as(reason: &Reason) -> Option<Heard> {
             chat::attributed::LISTEN => Some(Heard::Listen),
             chat::attributed::WATCH => Some(Heard::Watch),
             chat::attributed::NOTICE => Some(Heard::Notice),
+            chat::attributed::REACTION => Some(Heard::Reaction),
             _ => None,
         },
         Reason::Authorship
@@ -396,6 +408,9 @@ fn designation(
     actor: AccountNumber,
     heard: Heard,
 ) -> Result<Designation, Error> {
+    if let Some((row, emoji)) = reacted_on(ctx, change)? {
+        return Ok(reacted(ctx, row, actor, &emoji));
+    }
     let from_chat = change.source.program == chat::PROGRAM
         && change.source.object.kind == chat::attributed::MESSAGE;
     let message = match from_chat {
@@ -430,6 +445,45 @@ fn designation(
     said_in(ctx, row, actor, heard)
 }
 
+fn reacted_on(ctx: &QueryCtx, change: &Change) -> Result<Option<(chat::MsgRow, String)>, Error> {
+    let reaction = change.source.program == chat::PROGRAM
+        && change.source.object.kind == chat::attributed::REACTION;
+    if !reaction {
+        return Ok(None);
+    }
+    let Ok(chat::attributed::Reacted { message_id, emoji }) = abi::decode(&change.detail) else {
+        return Ok(None);
+    };
+    let asked = chat::Query::MessageById { message_id };
+    match ctx.query(chat::PROGRAM, &asked)? {
+        chat::Reply::Message(row) => Ok(row.map(|row| (row, emoji))),
+        other => Err(unexpected_reply(chat::PROGRAM, "MessageById", &other)),
+    }
+}
+
+fn reacted(ctx: &QueryCtx, row: chat::MsgRow, actor: AccountNumber, emoji: &str) -> Designation {
+    let who = name_of(ctx, actor);
+    let in_thread = match row.thread {
+        Some(root) => format!(", in the thread of message {root} (reply_to {root})"),
+        None => String::new(),
+    };
+    let quoted = row.text.lines().next().unwrap_or_default();
+    let text = format!(
+        "{who} reacted {emoji} to your message {seq} in chat channel {channel}{in_thread}:\n{quoted}",
+        seq = row.seq,
+        channel = row.channel_id,
+    );
+    let places = chat_places(&row.channel_id, row.thread);
+    Designation {
+        place: format!("{}/{}", chat::PROGRAM, row.channel_id),
+        from: places.first().cloned(),
+        places,
+        text,
+        pictures: Vec::new(),
+        room: Some(row.channel_id),
+    }
+}
+
 fn said_in(
     ctx: &QueryCtx,
     row: chat::MsgRow,
@@ -457,6 +511,7 @@ fn said_in(
         Heard::Continued { .. } => "went on",
         Heard::Listen | Heard::Watch | Heard::Waited => "wrote",
         Heard::Own => "wrote from another of your conversations",
+        Heard::Reaction => "reacted to your message",
     };
     let listened = match heard {
         Heard::Listen => ", which you listen to",
@@ -467,7 +522,8 @@ fn said_in(
         | Heard::Waited
         | Heard::Notice
         | Heard::Continued { .. }
-        | Heard::Own => "",
+        | Heard::Own
+        | Heard::Reaction => "",
     };
     let after = match heard {
         Heard::Continued { mentioned } => format!(", after mentioning you in message {mentioned}"),
@@ -478,7 +534,8 @@ fn said_in(
         | Heard::Watch
         | Heard::Waited
         | Heard::Notice
-        | Heard::Own => String::new(),
+        | Heard::Own
+        | Heard::Reaction => String::new(),
     };
     let in_thread = match row.thread {
         Some(root) => format!(", in the thread of message {root} (reply_to {root})"),
@@ -515,6 +572,9 @@ pub(crate) async fn attributed(ctx: Ctx, change: Change) -> Result<(), Error> {
     let Some((thread, heard)) = told else {
         return Ok(());
     };
+    if heard.light() {
+        return Ok(());
+    }
     match heard.direct() {
         true => waiting::end(&ctx, thread).await?,
         false => {
@@ -671,7 +731,8 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
             | Heard::Watch
             | Heard::Waited
             | Heard::Notice
-            | Heard::Own => {}
+            | Heard::Own
+            | Heard::Reaction => {}
         }
     }
     // the wake that conversation heard already quotes the message
@@ -683,15 +744,15 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
     }
     let text = text + &crate::waits::still_armed(ctx, thread.id)?;
     let author = Principal::Account(actor);
-    say_from(
-        ctx,
-        &mut thread,
-        Body::Post { author, text },
-        pictures,
-        from,
-    );
+    let body = match why.light() {
+        true => Body::Light { author, text },
+        false => Body::Post { author, text },
+    };
+    say_from(ctx, &mut thread, body, pictures, from);
     THREADS.put(ctx, &thread.id, &thread);
-    resume::heard(ctx, thread.id)?;
+    if !why.light() {
+        resume::heard(ctx, thread.id)?;
+    }
     Ok(Hearing {
         told: Some((thread.id, why)),
         woke,
@@ -706,6 +767,9 @@ struct Hearing {
 }
 
 fn posted(ctx: &QueryCtx, change: &Change) -> Result<Option<chat::MsgRow>, Error> {
+    if let Some((row, _)) = reacted_on(ctx, change)? {
+        return Ok(Some(row));
+    }
     let from_chat = change.source.program == chat::PROGRAM
         && change.source.object.kind == chat::attributed::MESSAGE;
     if !from_chat {
@@ -731,6 +795,9 @@ fn continued(
     actor: AccountNumber,
     why: Heard,
 ) -> Result<Heard, Error> {
+    if why.light() {
+        return Ok(why);
+    }
     let listened = matches!(why, Heard::Listen);
     let run = crate::runs::step(ctx, agent.number, row, actor, listened)?;
     Ok(match (run, why) {
@@ -762,10 +829,15 @@ fn chooses(ctx: &QueryCtx, agent: &Agent, change: &Change, why: Heard) -> Result
                 | Heard::Thread
                 | Heard::Notice
                 | Heard::Continued { .. }
+                | Heard::Reaction
         ),
         (false, Some(chat::Notices::Mentions)) => matches!(
             why,
-            Heard::Mention | Heard::Direct | Heard::Notice | Heard::Continued { .. }
+            Heard::Mention
+                | Heard::Direct
+                | Heard::Notice
+                | Heard::Continued { .. }
+                | Heard::Reaction
         ),
         (false, Some(chat::Notices::Off)) => false,
     })
@@ -788,7 +860,10 @@ fn waited(
     let Some(channel) = message_channel(ctx, change)? else {
         return Ok(None);
     };
-    let to_me = matches!(why, Heard::Mention | Heard::Direct | Heard::Notice);
+    let to_me = matches!(
+        why,
+        Heard::Mention | Heard::Direct | Heard::Notice | Heard::Reaction
+    );
     for (waited_in, wait) in waits {
         let Some(crate::WaitRow {
             event: crate::WaitFor::Message {
@@ -834,7 +909,9 @@ fn dropped(
         Heard::Continued { .. } => "a mention's continuation",
         // a channel it listens to is talk around the agent, not to it: what it does not answer
         // there is left without a notice, or each such message would add one
-        Heard::Listen | Heard::Watch | Heard::Waited | Heard::Own => return Ok(()),
+        Heard::Listen | Heard::Watch | Heard::Waited | Heard::Own | Heard::Reaction => {
+            return Ok(());
+        }
     };
     let Source { program, object } = &change.source;
     let text = format!(

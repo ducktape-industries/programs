@@ -64,7 +64,7 @@ pub(crate) fn entries(frames: &[Frame]) -> Vec<Entry<'_>> {
                     _ => entries.push(Entry::Stray(frame)),
                 }
             }
-            Body::Post { .. } => {
+            Body::Post { .. } | Body::Light { .. } => {
                 working = None;
                 entries.push(Entry::Wrote(frame));
             }

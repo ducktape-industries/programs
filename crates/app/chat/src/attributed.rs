@@ -3,8 +3,9 @@
 //! accounts that took part in the thread before it.
 use std::collections::BTreeSet;
 
-use ::program::{Error, ExecCtx, QueryCtx, Reply};
+use ::program::{Error, ExecCtx, QueryCtx, Reply, unexpected_reply};
 use attribution::{Actor, Object, Reason, Relation, Update};
+use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::listen::{listeners, watchers};
 use crate::state::{PARTICIPANTS, message};
@@ -18,6 +19,13 @@ pub const LISTEN: &str = "listen";
 // each account watching the message's channel for a wait that it relates to in no other way
 pub const WATCH: &str = "watch";
 pub const NOTICE: &str = "notice";
+pub const REACTION: &str = "reaction";
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Reacted {
+    pub message_id: String,
+    pub emoji: String,
+}
 
 pub(crate) fn mentioned(blocks: &[Block]) -> impl Iterator<Item = AccountNumber> + '_ {
     blocks
@@ -141,4 +149,72 @@ pub(crate) fn report(
         Reply::Wanted,
     );
     Ok(())
+}
+
+pub fn reaction_id(channel_id: &str, seq: u64, reactor: AccountNumber, emoji: &str) -> String {
+    let emoji: String = emoji.bytes().map(|byte| format!("{byte:02x}")).collect();
+    format!("{channel_id}:{seq}:{reactor}:{emoji}")
+}
+
+pub(crate) fn reaction(
+    ctx: &QueryCtx,
+    reactor: &Principal,
+    row: &MsgRow,
+    emoji: &str,
+    on: bool,
+) -> Result<Option<Update>, Error> {
+    let (Principal::Account(reactor), Principal::Account(author)) = (reactor, &row.author) else {
+        return Ok(None);
+    };
+    if reactor == author {
+        return Ok(None);
+    }
+    let object = Object {
+        kind: REACTION.into(),
+        id: reaction_id(&row.channel_id, row.seq, *reactor, emoji),
+    };
+    let source = attribution::Source {
+        program: ctx.env().program.clone(),
+        object: object.clone(),
+    };
+    let asked = attribution::Query::Relations { source };
+    let held = match ctx.query(attribution::PROGRAM, &asked) {
+        Ok(attribution::Reply::Relations(held)) => held,
+        Ok(other) => return Err(unexpected_reply(attribution::PROGRAM, "Relations", &other)),
+        Err(_) => return Ok(None),
+    };
+    let related = held.as_ref().is_some_and(|held| !held.relations.is_empty());
+    if related == on {
+        return Ok(None);
+    }
+    let reacted = Reacted {
+        message_id: row.message_id.clone(),
+        emoji: emoji.to_owned(),
+    };
+    let relations = match on {
+        true => vec![Relation {
+            recipient: *author,
+            reason: Reason::Defined(REACTION.into()),
+            detail: abi::encode(&reacted),
+        }],
+        false => Vec::new(),
+    };
+    Ok(Some(Update {
+        object,
+        revision: held.map_or(0, |held| held.revision) + 1,
+        actor: Actor::Account(*reactor),
+        relations,
+        transfers: Vec::new(),
+    }))
+}
+
+pub(crate) fn reacted(ctx: &ExecCtx, updates: Vec<Update>) {
+    if updates.is_empty() {
+        return;
+    }
+    ctx.emit(
+        attribution::PROGRAM,
+        &attribution::Op::AttributeBatch { updates },
+        Reply::Wanted,
+    );
 }

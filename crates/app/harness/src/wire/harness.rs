@@ -110,7 +110,7 @@ fn user_block(shown: Shown) -> UserBlock {
 fn user_blocks(body: &Body, looks: &[Look]) -> Vec<UserBlock> {
     let shows = || looks.iter().flat_map(shown);
     match body {
-        Body::Post { text, .. } => {
+        Body::Post { text, .. } | Body::Light { text, .. } => {
             let mut blocks = vec![UserBlock::Text { text: text.clone() }];
             blocks.extend(shows().map(user_block));
             blocks

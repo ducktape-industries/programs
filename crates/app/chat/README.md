@@ -225,6 +225,14 @@ attribution's `THREAD`), while the line itself is told only to `concerns`, which
 acted. It reaches no one a mention in a reply could not, so it is allowed wherever `Notify` is.
 `NotifyBy` (tag 32) is retired: `NotifyWith` with `text: null` does what it did.
 
+chat tells attribution each reaction as an object of its own, kind `reaction`
+(`attributed::REACTION`), one for each message, emoji and reacting account (`reaction_id`): it
+relates the message's author for `REACTION`, with the borsh of `Reacted { message_id, emoji }` as
+its detail, and taking the reaction back, or deleting the message, withdraws it. A reaction on
+one's own message, or on a message no account wrote, relates no one, and a network with no
+attribution seated takes the reaction all the same. harness hears it as a light input
+(`Body::Light`): it rides the agent's next turn and starts one only by ending a message wait.
+
 chat tells attribution a notice only for the accounts in `concerns` (`attributed::NOTICE`) and for
 a wait watching the room (`WATCH`), never for the room's listeners, a mention or a thread's
 participants, so harness wakes the agents it concerns and nobody else. `notice::why`

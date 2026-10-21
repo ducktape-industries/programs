@@ -4,11 +4,11 @@
 use ::program::{MockChain, Origin, code};
 use abi::role::identity::{Kind, Profile};
 use attribution::{
-    Actor, Attribution, Cause, Change, Kind as Changed, Object, PageRequest, Reason, Relations,
-    Source,
+    Actor, Attribution, Cause, Change, Kind as Changed, Object, PageRequest, Reason, Relation,
+    Relations, Source,
 };
 
-use crate::attributed::{DIRECT, LISTEN, MESSAGE, NOTICE, THREAD, WATCH};
+use crate::attributed::{DIRECT, LISTEN, MESSAGE, NOTICE, REACTION, THREAD, WATCH};
 use crate::{Followed, Notices};
 
 const ADA: &[u8] = b"ada-key";
@@ -893,4 +893,106 @@ fn notify_with_text_writes_it_under_the_notice_and_tells_only_its_concerns() {
         code::WRONG_STATE,
         "a notice with text is never edited"
     );
+}
+
+fn react(chain: &MockChain, key: &[u8], seq: u64, on: bool) {
+    let (channel_id, emoji) = ("general".to_owned(), "👍".to_owned());
+    let op = match on {
+        true => crate::Op::AddReaction {
+            channel_id,
+            seq,
+            emoji,
+        },
+        false => crate::Op::RemoveReaction {
+            channel_id,
+            seq,
+            emoji,
+        },
+    };
+    chain.submit(signed(key), crate::PROGRAM, &op).unwrap();
+}
+
+fn reaction_source(id: &str) -> Source {
+    Source {
+        program: crate::PROGRAM.into(),
+        object: Object {
+            kind: REACTION.into(),
+            id: id.into(),
+        },
+    }
+}
+
+#[test]
+fn a_reaction_relates_its_reactor_to_the_messages_author_until_it_is_taken_back() {
+    let chain = chain();
+    open_general(&chain);
+    post(&chain, BO, "general", "m1", "a topic");
+    react(&chain, ADA, 1, true);
+    let ada = "general:1:1:f09f918d";
+    let reacted = crate::attributed::Reacted {
+        message_id: "m1".into(),
+        emoji: "👍".into(),
+    };
+    let row = relations(&chain, reaction_source(ada)).expect("the reaction is reported");
+    assert_eq!(row.revision, 1);
+    assert_eq!(
+        row.relations,
+        [Relation {
+            recipient: 2,
+            reason: Reason::Defined(REACTION.into()),
+            detail: abi::encode(&reacted),
+        }]
+    );
+    react(&chain, ADA, 1, true);
+    react(&chain, ADA, 1, false);
+    react(&chain, ADA, 1, true);
+    let reaction = || Reason::Defined(REACTION.into());
+    assert_eq!(
+        changes_to(&chain, 2),
+        [
+            (ada.into(), reaction(), Changed::Added),
+            (ada.into(), reaction(), Changed::Withdrawn),
+            (ada.into(), reaction(), Changed::Added)
+        ]
+    );
+    assert!(
+        changes_to(&chain, 1).is_empty(),
+        "the reactor hears nothing"
+    );
+    react(&chain, BO, 1, true);
+    assert_eq!(
+        relations(&chain, reaction_source("general:1:2:f09f918d")),
+        None,
+        "a reaction on one's own message tells no one"
+    );
+    let delete = crate::Op::DeleteMessage {
+        channel_id: "general".into(),
+        seq: 1,
+    };
+    chain.submit(signed(BO), crate::PROGRAM, &delete).unwrap();
+    let row = relations(&chain, reaction_source(ada)).unwrap();
+    assert_eq!(
+        (row.revision, row.relations),
+        (4, Vec::new()),
+        "a deleted message takes its reactions back"
+    );
+}
+
+#[test]
+fn a_reaction_stands_when_no_attribution_is_seated() {
+    let mut chain = MockChain::default();
+    chain.seat::<crate::Chat>(crate::PROGRAM);
+    chain.seat::<access::Access>("access");
+    chain.hold(ADA.to_vec(), 1);
+    chain.hold(BO.to_vec(), 2);
+    open_general(&chain);
+    post(&chain, BO, "general", "m1", "a topic");
+    react(&chain, ADA, 1, true);
+    let asked = crate::Query::MessageById {
+        message_id: "m1".into(),
+    };
+    let crate::Reply::Message(Some(row)) = chain.query(crate::PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    assert_eq!(row.reactions.len(), 1);
 }
