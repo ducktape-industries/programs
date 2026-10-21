@@ -320,20 +320,6 @@ fn a_refusal_reads_as_the_class_harness_acts_on() {
 }
 
 #[test]
-fn a_model_reads_its_window_from_the_accounts_catalog() {
-    let catalog =
-        json!({ "models": [{ "slug": MODEL, "context_window": 272000 }, { "slug": "other" }] });
-    let body = catalog.to_string();
-    let model = codex::model(MODEL, 200, &[], body.as_bytes(), 0).unwrap();
-    assert_eq!(
-        (model.provider.as_str(), model.window),
-        (codex::PROVIDER, Some(272_000))
-    );
-    let missing = codex::model("absent", 200, &[], body.as_bytes(), 0).unwrap_err();
-    assert_eq!(missing.class, Class::Provider);
-}
-
-#[test]
 fn a_refusal_streams_its_words_and_ends_the_turn_refused() {
     let opened = json!({ "type": "message", "id": "msg_1", "role": "assistant", "status": "in_progress", "content": [] });
     let refused = json!({

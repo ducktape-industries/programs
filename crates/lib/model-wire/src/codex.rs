@@ -7,15 +7,14 @@ use serde_json::{Value, json};
 
 use crate::budget::{self, Budget, Window, header};
 use crate::{
-    Block, Class, Event, Failure, Lane, Message, Model, Reply, Request, Shown, Stop, Thinking,
-    Usage, UserBlock,
+    Block, Class, Event, Failure, Lane, Message, Reply, Request, Shown, Stop, Thinking, Usage,
+    UserBlock,
 };
 
 pub const PROVIDER: &str = "openai";
 pub const CCS_PROVIDER: &str = "codex";
 pub const INSTRUCTIONS: &str = "The developer message that opens this conversation, when there is one, carries your instructions.";
 pub const RESPONSES: &str = "/backend-api/codex/responses";
-pub const MODELS: &str = "/backend-api/codex/models";
 const RETRY_AFTER: &str = "retry-after";
 
 pub fn headers() -> Vec<(String, String)> {
@@ -28,10 +27,6 @@ pub fn headers() -> Vec<(String, String)> {
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect()
-}
-
-pub fn models_path(client_version: &str) -> String {
-    format!("{MODELS}?client_version={client_version}")
 }
 
 fn effort(thinking: Thinking) -> &'static str {
@@ -501,34 +496,4 @@ pub fn refused(status: u16, headers: &[(String, String)], body: &[u8], now: u64)
         message,
         reset,
     }
-}
-
-pub fn model(
-    name: &str,
-    status: u16,
-    headers: &[(String, String)],
-    body: &[u8],
-    now: u64,
-) -> Result<Model, Failure> {
-    if status != 200 {
-        return Err(refused(status, headers, body, now));
-    }
-    let value: Value = serde_json::from_slice(body)
-        .map_err(|error| Failure::new(Class::Wire, format!("the catalog is not JSON: {error}")))?;
-    let listed = value["models"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|model| model["slug"] == name);
-    let Some(listed) = listed else {
-        let message = format!("the account's Codex catalog lists no model {name}");
-        return Err(Failure::new(Class::Provider, message));
-    };
-    Ok(Model {
-        provider: PROVIDER.to_owned(),
-        pictures: None,
-        window: listed["context_window"]
-            .as_u64()
-            .filter(|tokens| *tokens > 0),
-    })
 }
