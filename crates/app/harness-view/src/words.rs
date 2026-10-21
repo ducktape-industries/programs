@@ -12,7 +12,7 @@ use view::prelude::*;
 
 use crate::read::{self, Card, Detail, Roster, Transcript, Wait};
 use crate::timeline::{self, Work};
-use crate::ui::budget::ended;
+use crate::ui::budget::{ended, shown_used};
 use crate::{Agents, State, agent_state, links, thread_state};
 
 pub(crate) fn asking(asking: Asking) -> String {
@@ -941,82 +941,70 @@ pub(crate) fn compacts_line(threshold: Option<u64>) -> String {
     }
 }
 
-pub(crate) fn budget_window_words(name: &str) -> String {
+pub(crate) fn budget_window_label(name: &str) -> String {
     match name {
-        "5h" => "5-hour window".into(),
-        "7d" => "weekly window".into(),
-        other => format!("{other} window"),
+        "5h" => "session".into(),
+        "7d" => "weekly".into(),
+        other => match other.strip_suffix("weekly_scoped").map(str::trim) {
+            Some("") => "scoped".into(),
+            Some(model) => model.to_owned(),
+            None => other.replace('_', " "),
+        },
     }
 }
 
-pub(crate) fn budget_account(row: &AccountBudget) -> String {
-    let named = match (&row.label, &row.organization) {
-        (Some(label), _) => format!("Account {label}"),
-        (None, Some(id)) => format!("Account {id}"),
-        (None, None) => "An account the model did not name".to_owned(),
-    };
-    format!("{named} · {}", row.service)
-}
-
-fn spaced(word: &str) -> String {
-    word.replace('_', " ")
-}
-
-pub(crate) fn budget_state(row: &AccountBudget) -> Option<String> {
-    let status = row
-        .status
-        .as_deref()
-        .map(|s| format!("Status {}", spaced(s)));
-    let fallback = row
-        .fallback
-        .as_deref()
-        .map(|f| format!("fallback {}", spaced(f)));
-    match (status, fallback) {
-        (Some(status), Some(fallback)) => Some(format!("{status} · {fallback}")),
-        (status, fallback) => status.or(fallback),
+pub(crate) fn budget_name(row: &AccountBudget) -> String {
+    match row.account.is_empty() {
+        true => "An account the model did not name".to_owned(),
+        false => row.account.clone(),
     }
 }
 
-fn clock_from(now: u64, then: u64) -> String {
-    match design::day(now) == design::day(then) {
-        true => design::clock(then),
-        false => format!("{}, {}", design::day(then), design::clock(then)),
-    }
+pub(crate) fn budget_via(row: &AccountBudget) -> String {
+    format!("via {}", row.service)
 }
 
-pub(crate) fn budget_calls(report: &BudgetReport) -> String {
+pub(crate) fn budget_calls(report: &BudgetReport, accounts: usize) -> String {
     let calls = report.services.iter().map(|pace| pace.last_minute).sum();
     format!(
-        "Model budget · {} in the last minute · {} in flight",
+        "Model budget · {} · {} in the last minute · {} in flight",
+        design::plural(accounts as u64, "account", "accounts"),
         design::plural(calls, "call", "calls"),
         design::plural(report.turns, "turn", "turns")
     )
 }
 
-pub(crate) fn budget_used(window: &WindowOutlook, now: u64) -> String {
-    let name = budget_window_words(&window.name);
-    let reset = clock_from(now, window.reset.saturating_mul(1000));
-    match ended(window, now) {
-        true => format!("{name} · reset at {reset}, no answer since"),
-        false => format!("{}% of the {name} · resets {reset}", window.used / 10_000),
+pub(crate) fn budget_percent(window: &WindowOutlook, now: u64) -> String {
+    format!("{}%", shown_used(window, now) / 10_000)
+}
+
+pub(crate) fn span(millis: u64) -> String {
+    let minutes = millis / 60_000;
+    let (days, hours, minutes) = (minutes / 1_440, minutes / 60 % 24, minutes % 60);
+    match (days, hours) {
+        (0, 0) => format!("{minutes}m"),
+        (0, hours) => format!("{hours}h {minutes}m"),
+        (days, hours) => format!("{days}d {hours}h"),
     }
 }
 
-pub(crate) fn budget_outlook(window: &WindowOutlook, now: u64) -> Option<String> {
-    if ended(window, now) {
+pub(crate) fn budget_left(window: &WindowOutlook, now: u64) -> String {
+    match ended(window, now) {
+        true => "reset".to_owned(),
+        false => span(window.reset.saturating_mul(1000) - now),
+    }
+}
+
+pub(crate) fn budget_runs_out(window: &WindowOutlook, now: u64) -> Option<String> {
+    let settled = ended(window, now) || window.used >= WHOLE_WINDOW;
+    if settled {
         return None;
     }
-    if window.used >= WHOLE_WINDOW {
-        return Some("Spent until it resets".into());
-    }
     let reset = window.reset.saturating_mul(1000);
-    Some(match window.runs_out {
-        Some(out) if out < reset => format!(
-            "At this pace it runs out at {}, before it resets",
-            clock_from(now, out)
-        ),
-        Some(_) => "At this pace it lasts until it resets".into(),
-        None => "No climb seen yet".into(),
+    let out = window.runs_out.filter(|out| *out < reset)?;
+    Some(match out > now {
+        true => format!("out in {}", span(out - now)),
+        false => "out now".to_owned(),
     })
 }
 

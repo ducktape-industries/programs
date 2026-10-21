@@ -1851,6 +1851,130 @@ fn answered() -> Net {
     net
 }
 
+fn budgeted() -> Net {
+    fn window(name: &str, used: u64, hours: u64, runs_out: Option<u64>) -> harness::WindowOutlook {
+        let status = if used >= 1_000_000 {
+            "rejected"
+        } else {
+            "allowed"
+        };
+        harness::WindowOutlook {
+            name: name.into(),
+            utilization: format!("{}", used as f64 / 1e6),
+            used,
+            reset: (NOW + hours * 3_600_000) / 1000,
+            status: Some(status.into()),
+            since: NOW - 3_600_000,
+            runs_out,
+        }
+    }
+    fn account(
+        service: &str,
+        name: &str,
+        ago: u64,
+        windows: Vec<harness::WindowOutlook>,
+    ) -> harness::AccountBudget {
+        let spent = windows.iter().any(|window| window.used >= 1_000_000);
+        let status = if spent { "rejected" } else { "allowed" };
+        harness::AccountBudget {
+            service: service.into(),
+            account: name.into(),
+            label: Some(name.into()),
+            organization: None,
+            status: Some(status.into()),
+            fallback: None,
+            error: None,
+            height: 9000,
+            time: NOW - ago * 60_000,
+            windows,
+        }
+    }
+    let scoped = "Fable weekly_scoped";
+    let hour = 3_600_000;
+    let accounts = vec![
+        account(
+            "anthropic",
+            "anthropic1-eph",
+            900,
+            vec![
+                window("5h", 1_000_000, 1, None),
+                window("7d", 270_000, 170, None),
+                window(scoped, 0, 170, None),
+            ],
+        ),
+        account(
+            "anthropic",
+            "jesse.claude.ext.5",
+            900,
+            vec![
+                window("5h", 280_000, 3, None),
+                window("7d", 610_000, 110, None),
+                window(scoped, 0, 110, None),
+            ],
+        ),
+        account(
+            "models",
+            "anthropic1-eph",
+            30,
+            vec![
+                window("5h", 1_010_000, 1, None),
+                window("7d", 860_000, 170, Some(NOW + 3 * hour)),
+                window(scoped, 0, 170, None),
+            ],
+        ),
+        account(
+            "models",
+            "anthropic3-eph",
+            10,
+            vec![
+                window("5h", 0, 5, None),
+                window("7d", 1_000_000, 7, None),
+                window(scoped, 0, 7, None),
+            ],
+        ),
+        account(
+            "models",
+            "jesse.claude.ext.5",
+            120,
+            vec![
+                window("5h", 0, 3, None),
+                window("7d", 1_000_000, 110, None),
+                window(scoped, 0, 110, None),
+            ],
+        ),
+        account(
+            "zk-claude",
+            "zk-dev",
+            0,
+            vec![
+                window("5h", 230_000, 4, Some(NOW + 2 * hour)),
+                window("7d", 170_000, 89, None),
+                window(scoped, 0, 110, None),
+            ],
+        ),
+        account(
+            "zk-claude",
+            "zk-dev-codex",
+            480,
+            vec![window("7d", 10_000, 147, None)],
+        ),
+    ];
+    Net {
+        budget: harness::BudgetReport {
+            time: NOW,
+            turns: 7,
+            services: vec![harness::ServicePace {
+                service: "zk-claude".into(),
+                last_minute: 21,
+                this_minute: 28,
+            }],
+            accounts,
+            reads: Vec::new(),
+        },
+        ..Net::default()
+    }
+}
+
 /// How wide and tall a screen is drawn: the desktop's view beside the app's sidebar, a phone.
 const DESK: (u32, u32) = (1044, 760);
 const PHONE: (u32, u32) = (390, 844);
@@ -1914,6 +2038,7 @@ fn screens() -> Vec<(&'static str, TestAppContext, (u32, u32))> {
     vec![
         ("D1-list", open(Net::default(), false, &[]), DESK),
         ("D1-visitor", visitor, DESK),
+        ("D1-budget", open(budgeted(), false, &[]), DESK),
         ("D2-agent", open(Net::default(), false, &["agent-12"]), DESK),
         (
             "D3-working",
@@ -1974,6 +2099,7 @@ fn screens() -> Vec<(&'static str, TestAppContext, (u32, u32))> {
             DESK,
         ),
         ("P1-list", open(Net::default(), true, &[]), PHONE),
+        ("P1-budget", open(budgeted(), true, &[]), PHONE),
         ("P2-agent", open(Net::default(), true, &["agent-12"]), PHONE),
         (
             "P2-setup-edit",
