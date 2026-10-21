@@ -113,6 +113,9 @@ impl View for Chat {
         self.menu = None;
         self.copy = None;
         self.watch(cx);
+        if self.session.connected {
+            self.load_kept(cx);
+        }
         if self.names.is_idle() {
             self.load_names(cx);
         }

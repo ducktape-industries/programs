@@ -440,3 +440,47 @@ fn a_more_folder_named_as_a_channel_opens_it_from_the_keys() {
         "opened, it is the reader's, and its row stands active"
     );
 }
+
+#[test]
+fn a_view_moved_into_new_code_keeps_what_the_reader_set() {
+    let (mut old, view) = phone();
+    old.update(&view, |chat, _, cx| {
+        chat.fold_others(true);
+        cx.notify();
+    });
+    let bytes = old.snapshot().unwrap();
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
+    busy_network(&cx, &["design"]);
+    let opened = std::collections::BTreeSet::from(["random".to_owned()]);
+    cx.host().handle::<view::methods::StoreGet>(move |key| {
+        Ok((key == "reads/0102/opened").then(|| view::methods::encode(&opened)))
+    });
+    let view = cx.restore::<Chat>(&bytes).unwrap();
+    cx.simulate_touch(true);
+    cx.simulate_resize(390., 844.);
+    seat(&mut cx);
+    cx.update(&view, |chat, _, cx| chat.load_channels(cx));
+    cx.run_until_parked();
+    assert!(view.read(|chat| chat.others_open), "still unfolded");
+    assert!(
+        view.read(|chat| chat.is_in(chat.info("random").expect("random"))),
+        "opened on the device before the swap"
+    );
+    cx.update(&view, |chat, _, cx| chat.choose("j-075".into(), cx));
+    cx.run_until_parked();
+    cx.simulate_back();
+    cx.run_until_parked();
+    let sets = cx.host().requests::<view::methods::StoreSet>();
+    let kept = sets
+        .into_iter()
+        .rfind(|(key, _)| key == "reads/0102/opened")
+        .and_then(|(_, value)| value)
+        .expect("the rooms opened here, kept");
+    let kept: std::collections::BTreeSet<String> = view::methods::decode(&kept).unwrap();
+    assert_eq!(
+        kept,
+        std::collections::BTreeSet::from(["j-075".to_owned(), "random".to_owned()])
+    );
+}

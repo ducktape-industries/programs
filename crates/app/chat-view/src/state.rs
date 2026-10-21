@@ -117,9 +117,9 @@ pub struct Chat {
     #[serde(default)]
     pub(crate) closed_folders: BTreeSet<String>,
     // the channels the reader is not in, listed under the room list's last row
-    #[serde(skip)]
+    #[serde(default)]
     pub(crate) others_open: bool,
-    #[serde(skip)]
+    #[serde(default)]
     pub(crate) more_open: BTreeSet<String>,
     /// Where the pointer is among the message rows: the row that carries
     /// the action strip, beside a chosen one. One slot whatever the pointer
