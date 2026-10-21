@@ -262,7 +262,7 @@ Closing is terminal; there is no reopen operation.
 | `DeleteBranch { repo: r, branch: b"refs/heads/old".to_vec(), expected: a }` | deletes an unprotected branch at `a` that no open change names; empty output |
 | `Protect { repo: r, branch: b"refs/heads/dev".to_vec(), protected: true }` | adds (`false`: removes) a protected branch; empty output |
 | `Preview { repo: r, n: 1 }` | change 1's squash on its target's head, under `refs/changes/1/merge`; `OpReply::Previewed { height, n, oid }` |
-| `Status { repo: r, commit: c, context: "gates.toml#gates".into(), state: CheckState::Passed, url: Some(log) }` | the sender's status of `c` in that context; empty output |
+| `Status { repo: r, commit: c, context: "ci/test".into(), state: CheckState::Passed, url: Some(log) }` | the sender's status of `c` in that context; empty output |
 | `RequireChecks { repo: r, branch: b"refs/heads/dev".to_vec(), required: Some(Required { reporter, contexts }) }` | the branch moves only by a gated merge (`None` drops it); empty output |
 | `Enqueue { repo: r, n: 1, expected_head: b }` | change 1 joins its target's merge queue; empty output |
 | `Dequeue { repo: r, n: 1 }` | change 1 leaves its queue; empty output |

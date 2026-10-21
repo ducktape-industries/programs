@@ -15,11 +15,11 @@ fn every() -> PageRequest {
     }
 }
 
-const README: &str = "/shared/tools/README.md";
+const README: &str = "/docs/README.md";
 
 pub(crate) fn commit() -> Op {
     let put = Change::Put {
-        path: "/home/tech/notes.md".into(),
+        path: "/home/ada/notes.md".into(),
         exec: false,
         meta: BTreeMap::new(),
         content: Content::Chunks {
@@ -77,7 +77,7 @@ pub(crate) fn stat() -> Query {
 
 pub(crate) fn list() -> Query {
     Query::List {
-        path: "/shared/jobs".into(),
+        path: "/docs".into(),
         at: None,
         page: every(),
     }
@@ -94,7 +94,7 @@ pub(crate) fn read() -> Query {
 
 pub(crate) fn find() -> Query {
     Query::Find {
-        prefix: "/shared/jobs/".into(),
+        prefix: "/docs/".into(),
         at: None,
         page: every(),
     }
@@ -102,8 +102,8 @@ pub(crate) fn find() -> Query {
 
 pub(crate) fn grep() -> Query {
     Query::Grep {
-        pattern: "warm pod".into(),
-        prefix: "/shared/tools/".into(),
+        pattern: "release".into(),
+        prefix: "/docs/".into(),
         at: None,
         page: every(),
     }
@@ -113,7 +113,7 @@ pub(crate) fn diff() -> Query {
     Query::Diff {
         from: id(),
         to: id(),
-        prefix: "/shared/".into(),
+        prefix: "/docs/".into(),
     }
 }
 
@@ -129,13 +129,13 @@ pub(crate) fn one_pin() -> Query {
 
 pub(crate) fn guard() -> Op {
     Op::Guard {
-        path: "/home/tech/notes".into(),
+        path: "/home/ada/notes".into(),
     }
 }
 
 pub(crate) fn unguard() -> Op {
     Op::Unguard {
-        path: "/home/tech/notes".into(),
+        path: "/home/ada/notes".into(),
     }
 }
 
@@ -149,19 +149,19 @@ pub(crate) fn adopt() -> Op {
 
 pub(crate) fn vacate() -> Op {
     Op::Vacate {
-        paths: vec!["/home/tech/notes".into()],
+        paths: vec!["/home/ada/notes".into()],
     }
 }
 
 pub(crate) fn guarded() -> Query {
     Query::Guarded {
-        path: "/home/tech/notes/today.md".into(),
+        path: "/home/ada/notes/today.md".into(),
     }
 }
 
 pub(crate) fn owner() -> Query {
     Query::Owner {
-        path: "/home/tech/notes".into(),
+        path: "/home/ada/notes".into(),
     }
 }
 

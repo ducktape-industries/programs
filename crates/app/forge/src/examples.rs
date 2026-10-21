@@ -168,7 +168,7 @@ pub(crate) fn status() -> Op {
     Op::Status {
         repo: repo(),
         commit: oid(),
-        context: "gates.toml#gates".into(),
+        context: "ci/test".into(),
         state: CheckState::Passed,
         url: None,
     }
@@ -177,7 +177,7 @@ pub(crate) fn status() -> Op {
 pub(crate) fn require() -> Op {
     let required = Required {
         reporter: Principal::Account(37),
-        contexts: vec!["gates.toml#gates".into()],
+        contexts: vec!["ci/test".into()],
     };
     Op::RequireChecks {
         repo: repo(),

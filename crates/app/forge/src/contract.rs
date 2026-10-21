@@ -165,8 +165,8 @@ pub enum Op {
     // points `refs/changes/<n>/merge` at it: the commit a gated merge's checks run on.
     #[tool_op(description = "Build, without moving the target, the squash change n would land on its target's current head, and point refs/changes/<n>/merge at it: the commit required checks run on. Anyone may. Returns the preview.", returns = OpReply, example = crate::examples::preview)]
     Preview { repo: String, n: u64 } = 18,
-    // The sender's status of a commit in one context (e.g. `gates.toml#gates`).
-    #[tool_op(description = "Report your status of a commit in one context (such as gates.toml#gates): Pending, Passed, Failed or Errored, with an optional url. Recorded as yours; anyone may report.", example = crate::examples::status)]
+    /// The sender's status of a commit in one context (e.g. `ci/test`).
+    #[tool_op(description = "Report your status of a commit in one context (such as ci/test): Pending, Passed, Failed or Errored, with an optional url. Recorded as yours; anyone may report.", example = crate::examples::status)]
     Status {
         repo: String,
         commit: String,
