@@ -333,7 +333,6 @@ fn replay(tape: &mut Tape) {
                 .to_vec(),
         },
     );
-    tape.capture(&rig, "activity", Query::Activity { repo: REPO.into() });
     tape.git_reply(
         &rig,
         "advertise-receive",
@@ -375,7 +374,7 @@ fn replay(tape: &mut Tape) {
     tape.refusal(
         &rig,
         "refused-not-found",
-        Query::Activity {
+        Query::Repo {
             repo: "absent".into(),
         },
     );

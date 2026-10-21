@@ -174,9 +174,9 @@ fn forge_round_trips() {
         oid: "ab".into(),
         range: None,
     });
-    forge.reply(&forge::Reply::Activity {
+    forge.reply(&forge::Reply::Archived {
         height: 3,
-        last_height: 2,
+        archived: false,
     });
     forge.shapes();
 }

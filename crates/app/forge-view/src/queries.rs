@@ -87,7 +87,6 @@ fn next_cursor(reply: &Reply) -> Option<&Vec<u8>> {
         | Reply::Repo { .. }
         | Reply::Compare { .. }
         | Reply::Blob { .. }
-        | Reply::Activity { .. }
         | Reply::Closure { .. }
         | Reply::Preview { .. }
         | Reply::Archived { .. }

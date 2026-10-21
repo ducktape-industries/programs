@@ -291,6 +291,8 @@ pub enum Service {
     ::program::Described,
 )]
 #[ask(crate::Forge)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Query {
     #[reads(ACTIVITY, REPOS)]
     #[ask(Reply::Repos { height: u64, page: PageResponse<RepoInfo> })]
@@ -355,10 +357,6 @@ pub enum Query {
         from: Revision,
         into: Revision,
     },
-    #[reads(REPOS)]
-    #[ask(Reply::Activity { height: u64, last_height: u64 })]
-    #[tool_query(description = "The height of a repository's last successful op.", example = crate::examples::activity)]
-    Activity { repo: String },
     #[reads(CHANGES, INVOLVED)]
     #[ask(Reply::Changes { height: u64, page: PageResponse<ChangeSummary> })]
     #[tool_query(description = "A repository's changes in number order, filtered by author, involvement or state: author, endpoints, counts and verdicts. A filtered page can be empty with a next cursor: go on until next is null.", example = crate::examples::changes)]
@@ -366,7 +364,7 @@ pub enum Query {
         repo: String,
         filter: ChangeFilter,
         page: PageRequest,
-    },
+    } = 11,
     /// The change, its two heads and a page of its reviews.
     #[reads(CHANGES, REVIEWS, REFS)]
     #[ask(Reply::Change { height: u64, change: Change, source_head: Option<String>, target_head: Option<String>, reviews: PageResponse<Review> })]
@@ -511,7 +509,6 @@ impl Query {
             | Query::Repo { .. }
             | Query::Blob { .. }
             | Query::Compare { .. }
-            | Query::Activity { .. }
             | Query::Closure { .. }
             | Query::Preview { .. }
             | Query::Archived { .. }
@@ -544,7 +541,6 @@ impl Query {
             | Query::Repo { .. }
             | Query::Blob { .. }
             | Query::Compare { .. }
-            | Query::Activity { .. }
             | Query::Closure { .. }
             | Query::Preview { .. }
             | Query::Archived { .. }
@@ -591,6 +587,8 @@ pub struct FileStat {
 /// widest variant (a whole change record) is not boxed.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Reply {
     Repos {
         height: u64,
@@ -630,14 +628,10 @@ pub enum Reply {
         height: u64,
         comparison: Comparison,
     },
-    Activity {
-        height: u64,
-        last_height: u64,
-    },
     Changes {
         height: u64,
         page: PageResponse<ChangeSummary>,
-    },
+    } = 9,
     Change {
         height: u64,
         change: Change,

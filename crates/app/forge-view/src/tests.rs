@@ -64,7 +64,6 @@ fn answer(query: &Query, mode: &str) -> Reply {
             ..
         } => reply("refs"),
         Query::Refs { .. } => reply("refs-next"),
-        Query::Activity { .. } => reply("activity"),
         Query::Tree {
             page: PageRequest { after: None, .. },
             path,
@@ -2725,7 +2724,7 @@ fn a_block_costs_the_reads_of_the_tables_it_wrote_to() {
     });
     assert_eq!(
         real_review.keys().collect::<Vec<_>>(),
-        ["Activity", "Changes", "Judgment", "Repo", "Repos"],
+        ["Changes", "Judgment", "Repo", "Repos"],
         "{real_review:?}"
     );
     let pushed = costs(&mut costed, "Readme tab, a ref moved", |c| {
@@ -2742,7 +2741,7 @@ fn a_block_costs_the_reads_of_the_tables_it_wrote_to() {
     });
     assert_eq!(
         configured.keys().collect::<Vec<_>>(),
-        ["Activity", "Repo", "Repos"],
+        ["Repo", "Repos"],
         "{configured:?}"
     );
     let chat = costs(&mut costed, "Readme tab, one Changes<chat> item", |c| {
@@ -2773,11 +2772,11 @@ fn a_block_costs_the_reads_of_the_tables_it_wrote_to() {
     assert_eq!(
         all.keys().collect::<Vec<_>>(),
         [
-            "Activity", "Archived", "Blob", "Changes", "Judgment", "Refs", "Repo", "Repos", "Tree"
+            "Archived", "Blob", "Changes", "Judgment", "Refs", "Repo", "Repos", "Tree"
         ],
         "{all:?}"
     );
-    assert_eq!(all.values().sum::<usize>(), 11);
+    assert_eq!(all.values().sum::<usize>(), 10);
     let archived = forge::tables::ARCHIVED.key(&"project".to_owned());
     let archiving = costs(&mut costed, "Readme tab, the repo archived", |c| {
         c.heads.forge.send(block(105, vec![archived]))
@@ -2798,7 +2797,7 @@ fn a_block_costs_the_reads_of_the_tables_it_wrote_to() {
     );
     assert_eq!(
         judged.keys().collect::<Vec<_>>(),
-        ["Activity", "Changes", "Judgment", "Repo", "Repos"],
+        ["Changes", "Judgment", "Repo", "Repos"],
         "{judged:?}"
     );
     let posted = costs(

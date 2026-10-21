@@ -316,7 +316,6 @@ impl Forge {
         wanted.push(self.repo_query());
         wanted.push(self.archived_query());
         wanted.push(self.refs_query());
-        wanted.push(Query::Activity { repo: repo.clone() });
         wanted.extend(self.open_changes_query());
         if self.touch {
             wanted.extend(self.form_compare_query());

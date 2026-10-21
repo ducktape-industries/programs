@@ -306,10 +306,6 @@ pub(crate) fn compares() -> Query {
     }
 }
 
-pub(crate) fn activity() -> Query {
-    Query::Activity { repo: repo() }
-}
-
 pub(crate) fn changes() -> Query {
     let filter = ChangeFilter {
         author: None,

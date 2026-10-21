@@ -284,10 +284,6 @@ impl Program for Forge {
                 height,
                 page: refs(ctx, repo, &listing(page)?)?,
             },
-            Query::Activity { repo } => Reply::Activity {
-                height,
-                last_height: load_repo(ctx, repo)?.last_activity,
-            },
             Query::Log {
                 repo,
                 from,

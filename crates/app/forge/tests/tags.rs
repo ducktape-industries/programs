@@ -33,6 +33,7 @@ const LIVE_OPS: [(&str, i64); 22] = [
 const GRANT_TAG: u8 = 2;
 const REVOKE_TAG: u8 = 3;
 const ARCHIVE_ENDED_TAG: u8 = 17;
+const ACTIVITY_TAG: u8 = 10;
 
 fn encoded<T: BorshSerialize>(value: &T) -> Vec<u8> {
     borsh::to_vec(value).unwrap()
@@ -147,4 +148,37 @@ fn an_archive_ended_tag_is_refused_and_writes_nothing() {
     let undecoded = refused.message.starts_with("forge: Op did not decode: ");
     assert!(undecoded, "{refused}");
     assert_eq!(repo_read(&sandbox), before);
+}
+
+#[test]
+fn a_repos_last_activity_reads_off_repo_at_the_height_of_its_last_op() {
+    let sandbox = founded();
+    create(&sandbox, REPO, HashKind::Sha1);
+    let settings = Settings {
+        head: b"refs/heads/dev".to_vec(),
+        ..Settings::default()
+    };
+    let configure = Op::Configure {
+        repo: REPO.into(),
+        settings,
+    };
+    sandbox.chain.at(7, TIME);
+    let origin = Origin::Signed(OWNER.to_vec());
+    let encoded = abi::encode(&configure);
+    sandbox.chain.submit_raw(origin, "forge", encoded).unwrap();
+    let Reply::Repo { repo, .. } = abi::decode::<Reply>(&repo_read(&sandbox)).unwrap() else {
+        panic!("Repo answers the repository");
+    };
+    assert_eq!(repo.repo.last_activity, 7);
+}
+
+#[test]
+fn an_activity_tag_is_no_query() {
+    let sandbox = founded();
+    create(&sandbox, REPO, HashKind::Sha1);
+    let bytes = op_bytes(ACTIVITY_TAG, &[encoded(&REPO.to_owned())]);
+    let refused = program::query::<Forge>(&sandbox.reads(1), &bytes).unwrap_err();
+    assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
+    let undecoded = refused.message.starts_with("forge: Query did not decode: ");
+    assert!(undecoded, "{refused}");
 }
