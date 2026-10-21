@@ -543,6 +543,13 @@ impl Chat {
             }) {
                 self.load_listening(cx);
             }
+            let seated = ask::Seated {
+                principal: chat::Principal::Account(me),
+                channel_ids: Vec::new(),
+            };
+            if change.is_some_and(|change| change.touches::<chat::Chat, _>(&seated)) {
+                self.load_seated(true, cx);
+            }
         }
     }
 

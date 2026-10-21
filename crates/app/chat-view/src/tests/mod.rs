@@ -372,6 +372,7 @@ fn chat_reply(query: Query) -> Reply {
         // eddy wrote in no room and keeps chat's order
         Query::PostedIn { .. } => Reply::PostedIn(page(Vec::new())),
         Query::RoomOrder { .. } => Reply::RoomOrder(Vec::new()),
+        Query::Seated { .. } => Reply::Seated(Vec::new()),
         Query::ChosenBy { accounts, .. } => Reply::ChosenBy(
             accounts
                 .into_iter()

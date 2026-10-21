@@ -103,6 +103,10 @@ pub struct Chat {
     #[serde(skip)]
     pub(crate) posted: BTreeSet<String>,
     #[serde(skip)]
+    pub(crate) seated: Option<BTreeSet<String>>,
+    #[serde(skip)]
+    pub(crate) seated_asked: Vec<String>,
+    #[serde(skip)]
     pub(crate) order: Vec<chat::Entry>,
     // the sidebar's channel rows where layout last put them, and the row held down to drag
     #[serde(skip)]

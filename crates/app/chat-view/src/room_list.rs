@@ -430,9 +430,19 @@ impl Chat {
         let id = info.channel.id.as_str();
         let owner = self.my_account().map(Principal::Account);
         self.opened.contains(id)
+            || self.seated.as_ref().is_some_and(|seats| seats.contains(id))
             || self.listening.contains(id)
             || self.posted.contains(id)
             || owner.as_ref() == Some(&info.channel.owner)
+    }
+
+    fn may_post_in(&self, info: &ChannelInfo) -> bool {
+        let Some(seats) = &self.seated else {
+            return true;
+        };
+        let seated = seats.contains(&info.channel.id);
+        let admitted = |me: Principal| info.channel.admits(&me, seated);
+        !info.channel.members_only() || self.me().is_some_and(admitted)
     }
 
     // `channels` as the list draws them: each under the folders its name
@@ -659,6 +669,10 @@ impl Chat {
         for info in self.channels.ready().into_iter().flatten() {
             let id = info.channel.id.as_str();
             let direct = chat::dm_peers(id).is_some();
+            let listed = direct || self.may_post_in(info);
+            if !listed {
+                continue;
+            }
             if info.channel.archived || !(direct || self.is_in(info)) {
                 list.left_out += usize::from(!direct);
                 if !direct && !info.channel.archived {

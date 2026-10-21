@@ -37,6 +37,8 @@ impl Chat {
             self.listening.clear();
             self.posted.clear();
             self.order.clear();
+            self.seated = None;
+            self.seated_asked.clear();
             self.listening_asked = false;
             if prev.connected && self.session.connected {
                 self.refresh(cx);
@@ -201,6 +203,40 @@ impl Chat {
                 }
             }
             Err(refusal) => cx.log_refused("the order of the rooms", &refusal),
+        })
+        .detach();
+    }
+
+    pub(crate) fn load_seated(&mut self, again: bool, cx: &mut Context<Self>) {
+        let Some(me) = self.me() else {
+            return;
+        };
+        let asked: Vec<String> = (self.channels.ready().into_iter().flatten())
+            .filter(|info| info.channel.members_only())
+            .filter(|info| chat::dm_peers(&info.channel.id).is_none())
+            .map(|info| info.channel.id.clone())
+            .collect();
+        let settled = !again && asked == self.seated_asked;
+        if settled {
+            return;
+        }
+        self.seated_asked = asked.clone();
+        if asked.is_empty() {
+            self.seated = Some(Default::default());
+            return;
+        }
+        let read = crate::queries::seated(cx.host(), me.clone(), asked.clone());
+        cx.land(read, move |chat, read, cx| match read {
+            _ if chat.me().as_ref() != Some(&me) => {}
+            _ if chat.seated_asked != asked => {}
+            Ok(rooms) => {
+                let rooms = Some(rooms.into_iter().collect());
+                if rooms != chat.seated {
+                    chat.seated = rooms;
+                    cx.notify();
+                }
+            }
+            Err(refusal) => cx.log_refused("the rooms the reader is seated in", &refusal),
         })
         .detach();
     }

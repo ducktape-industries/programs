@@ -484,3 +484,93 @@ fn a_view_moved_into_new_code_keeps_what_the_reader_set() {
         std::collections::BTreeSet::from(["j-075".to_owned(), "random".to_owned()])
     );
 }
+
+#[test]
+fn a_members_only_room_is_listed_only_where_the_reader_may_post() {
+    let (mut cx, view) = phone();
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
+        let members_only = |id: &str, owner: u64| {
+            let mut info = channel(id, id, 1);
+            info.channel.owner = Principal::Account(owner);
+            info.channel.post_policy = PostPolicy::MembersOnly;
+            info
+        };
+        Ok(match query {
+            Query::Channels { .. } => Reply::Channels(page(vec![
+                channel("general", "General", 1),
+                members_only("team", 9),
+                members_only("secret", 9),
+                members_only("mine", 7),
+            ])),
+            Query::Seated {
+                principal,
+                channel_ids,
+            } => {
+                assert_eq!(principal, Principal::Account(7));
+                let seats = channel_ids.into_iter().filter(|id| id == "team");
+                Reply::Seated(seats.collect())
+            }
+            query => chat_reply(query),
+        })
+    }));
+    cx.update(&view, |chat, _, cx| chat.load_channels(cx));
+    cx.run_until_parked();
+    let listed = |cx: &TestAppContext, tree: &str| -> Vec<&'static str> {
+        ["general", "team", "secret", "mine"]
+            .into_iter()
+            .filter(|room| cx.find(&format!("chat-{tree}-channel-{room}")).is_some())
+            .collect()
+    };
+    assert_eq!(
+        listed(&cx, "rooms"),
+        ["general", "team", "mine"],
+        "seated in team, owner of mine though not seated"
+    );
+    assert!(
+        cx.find("chat-rooms-more").is_none(),
+        "secret is no room the reader is not in yet: {:?}",
+        cx.texts()
+    );
+    cx.simulate_touch(false);
+    cx.simulate_resize(1200., 800.);
+    assert_eq!(listed(&cx, "sidebar"), ["general", "team", "mine"]);
+    assert!(cx.find("chat-sidebar-more").is_none());
+}
+
+#[test]
+fn a_refused_seated_read_hides_no_members_only_room() {
+    let (mut cx, view) = phone();
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
+        let members_only = |id: &str| {
+            let mut info = channel(id, id, 1);
+            info.channel.owner = Principal::Account(9);
+            info.channel.post_policy = PostPolicy::MembersOnly;
+            info
+        };
+        Ok(match query {
+            Query::Channels { .. } => Reply::Channels(page(vec![
+                channel("general", "General", 1),
+                members_only("team"),
+                members_only("secret"),
+            ])),
+            Query::Seated { .. } => {
+                return Err(view::host::Error::new("refused", "chat has no Seated yet"));
+            }
+            query => chat_reply(query),
+        })
+    }));
+    cx.update(&view, |chat, _, cx| chat.load_channels(cx));
+    cx.run_until_parked();
+    view.read(|chat| {
+        let list = chat.room_list();
+        let held = list.channels.iter().chain(&list.others);
+        let mut ids: Vec<&str> = held.map(|info| info.channel.id.as_str()).collect();
+        ids.sort_unstable();
+        assert_eq!(
+            ids,
+            ["general", "secret", "team"],
+            "seats unknown, nothing hidden"
+        );
+    });
+    assert!(cx.has_text("2 more channels"), "{:?}", cx.texts());
+}

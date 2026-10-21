@@ -197,6 +197,18 @@ pub(crate) async fn posted_in(host: Host, account: u64) -> Result<Vec<String>, E
     .await
 }
 
+pub(crate) async fn seated(
+    host: Host,
+    principal: Principal,
+    channel_ids: Vec<String>,
+) -> Result<Vec<String>, Error> {
+    host.query(ask::Seated {
+        principal,
+        channel_ids,
+    })
+    .await
+}
+
 // The order `account` put its rooms and folders in.
 pub(crate) async fn room_order(host: Host, account: u64) -> Result<Vec<chat::Entry>, Error> {
     host.query(ask::RoomOrder { account }).await
