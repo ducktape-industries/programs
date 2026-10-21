@@ -177,7 +177,9 @@ impl Chat {
             return;
         };
         let Some(message) = draft.message_id.clone() else {
-            if !draft.minting && !draft.attachments.is_empty() {
+            let filing = draft.attachments.iter().any(|file| file.failed().is_none());
+            let mints = !draft.minting && filing;
+            if mints {
                 draft.minting = true;
                 let ask = cx.host().ask::<HostId>("message".into());
                 let on = target.clone();

@@ -629,6 +629,27 @@ fn a_name_filed_under_the_message_stays_taken_after_its_chip_is_gone() {
 }
 
 #[test]
+fn a_refused_message_id_fails_the_files_once_and_asks_for_none_again() {
+    let (mut cx, _view) = opened();
+    files_host(&mut cx);
+    holds_puts(&mut cx);
+    cx.host().never::<HostId>();
+    cx.simulate_file_drop("draft-general/drop", vec![picked("image.png", 3, 1)]);
+    cx.run_until_parked();
+    assert_eq!(cx.host().requests::<HostId>().len(), 1, "one id asked");
+    cx.host().refuse::<HostId>("invalid", "no ids here");
+    cx.host().answer_held::<HostId>();
+    cx.host().never::<HostId>();
+    cx.run_until_parked();
+    assert_eq!(
+        cx.host().requests::<HostId>().len(),
+        1,
+        "a refusal asks for no other"
+    );
+    assert!(cx.has_text("no ids here"), "{:?}", cx.texts());
+}
+
+#[test]
 fn a_long_refusal_shows_whole_on_the_files_chip() {
     let (mut cx, _view) = opened();
     files_host(&mut cx);
