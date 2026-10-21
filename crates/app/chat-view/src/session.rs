@@ -212,7 +212,7 @@ impl Chat {
             return;
         };
         let asked: Vec<String> = (self.channels.ready().into_iter().flatten())
-            .filter(|info| info.channel.members_only())
+            .filter(|info| crate::room_list::seats_decide(info))
             .filter(|info| chat::dm_peers(&info.channel.id).is_none())
             .map(|info| info.channel.id.clone())
             .collect();

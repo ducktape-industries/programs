@@ -574,3 +574,56 @@ fn a_refused_seated_read_hides_no_members_only_room() {
     });
     assert!(cx.has_text("2 more channels"), "{:?}", cx.texts());
 }
+
+#[test]
+fn a_room_listed_for_the_involved_shows_only_once_the_reader_sits_in_it_or_owns_it() {
+    let (mut cx, view) = phone();
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
+        let involved = |id: &str, owner: u64| {
+            let mut info = channel(id, id, 1);
+            info.channel.owner = Principal::Account(owner);
+            let listed = (::chat::LISTED.to_owned(), ::chat::INVOLVED.to_owned());
+            info.meta.extend([listed]);
+            info
+        };
+        Ok(match query {
+            Query::Channels { .. } => Reply::Channels(page(vec![
+                channel("general", "General", 1),
+                involved("j-001", 9),
+                involved("j-002", 9),
+                involved("j-003", 7),
+            ])),
+            Query::Seated {
+                principal,
+                channel_ids,
+            } => {
+                assert_eq!(principal, Principal::Account(7));
+                let seats = channel_ids.into_iter().filter(|id| id == "j-001");
+                Reply::Seated(seats.collect())
+            }
+            query => chat_reply(query),
+        })
+    }));
+    cx.update(&view, |chat, _, cx| chat.load_channels(cx));
+    cx.run_until_parked();
+    let listed = |cx: &TestAppContext, tree: &str| -> Vec<&'static str> {
+        ["general", "j-001", "j-002", "j-003"]
+            .into_iter()
+            .filter(|room| cx.find(&format!("chat-{tree}-channel-{room}")).is_some())
+            .collect()
+    };
+    assert_eq!(
+        listed(&cx, "rooms"),
+        ["general", "j-001", "j-003"],
+        "seated in j-001, owner of j-003"
+    );
+    assert!(
+        cx.find("chat-rooms-more").is_none(),
+        "j-002 is not even among the rooms to unfold: {:?}",
+        cx.texts()
+    );
+    cx.simulate_touch(false);
+    cx.simulate_resize(1200., 800.);
+    assert_eq!(listed(&cx, "sidebar"), ["general", "j-001", "j-003"]);
+    assert!(cx.find("chat-sidebar-more").is_none());
+}

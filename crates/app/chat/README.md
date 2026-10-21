@@ -41,14 +41,26 @@ what `Seated` says.
 A channel's meta is a map of text keys to text values. Whoever may rename the channel sets a key
 with `SetChannelMeta` and removes it with `RemoveChannelMeta`; a direct room takes none. chat
 keeps what it is given and answers it in `Query::Channel` and `Query::Channels`
-(`ChannelInfo.meta`). It gives no key a meaning of its own: the keys below are conventions its
-readers share.
+(`ChannelInfo.meta`). It gives one key a meaning of its own, `listed`; the others below are
+conventions its readers share.
 
 | key | value | read by |
 |---|---|---|
 | `category` | a section name | nobody now: chat-view files rooms by the `/` in their names, and leaves the value as it is |
 | `widget.header`, `widget.pinned`, `widget.side` | a widget file's path | chat-view ([widgets.md](../../../docs/widgets.md)) |
 | `rules` (`chat::RULES`) | how to talk in the room | everyone who talks there |
+| `listed` (`chat::LISTED`) | `involved` (`chat::INVOLVED`) | chat, which seats whoever posts there (root or reply) and every account a message posted or edited there mentions, while the room is open to every poster; chat-view, which lists the room only for someone seated there or its owner |
+
+### `listed = involved`
+
+The program that makes a room that many accounts could follow but few take part in (board's job
+rooms, forge's change rooms) sets `listed = involved`. Posting stays as the room's post policy says.
+While the room is open to every poster, chat seats each poster and each account a message mentions
+there, once, in the op that posts or edits it, so a room someone was pulled into is one they sit
+in, and `Seated` answers it. A members-only room seats no one so, since a seat there lets its holder
+post; seats taken while the room was open stay if it goes members-only, and so let those accounts
+post there. A reader's
+sidebar lists such a room once they sit in it or own it; anyone else reaches it by a link or search.
 
 ### `rules`
 

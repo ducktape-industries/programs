@@ -80,6 +80,10 @@ pub const PROGRAM: &str = "chat";
 // holds them (README, "Channel meta"). Readers respect them; nothing enforces them.
 pub const RULES: &str = "rules";
 
+pub const LISTED: &str = "listed";
+
+pub const INVOLVED: &str = "involved";
+
 /// A write. The enum only grows at its end (see `op_variants_only_append`).
 #[derive(
     BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq, ::program::Described,

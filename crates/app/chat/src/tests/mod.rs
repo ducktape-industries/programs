@@ -12,6 +12,7 @@ mod attributed;
 mod channels;
 mod drafts;
 mod gate;
+mod involved;
 mod leases;
 mod mentions;
 mod messages;

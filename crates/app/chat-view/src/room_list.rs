@@ -417,6 +417,15 @@ impl DmChoice {
     }
 }
 
+pub(crate) fn listed_for_involved(info: &ChannelInfo) -> bool {
+    let listed = info.meta.get(chat::LISTED);
+    listed.is_some_and(|listed| listed == chat::INVOLVED)
+}
+
+pub(crate) fn seats_decide(info: &ChannelInfo) -> bool {
+    info.channel.members_only() || listed_for_involved(info)
+}
+
 impl Chat {
     pub(crate) fn room_list(&self) -> RoomList<'_> {
         let mut list = self.held_rooms();
@@ -436,13 +445,19 @@ impl Chat {
             || owner.as_ref() == Some(&info.channel.owner)
     }
 
-    fn may_post_in(&self, info: &ChannelInfo) -> bool {
+    fn listed_for_me(&self, info: &ChannelInfo) -> bool {
         let Some(seats) = &self.seated else {
             return true;
         };
         let seated = seats.contains(&info.channel.id);
+        let owns = self.me().is_some_and(|me| me == info.channel.owner);
+        let pulled_in = seated || owns;
         let admitted = |me: Principal| info.channel.admits(&me, seated);
-        !info.channel.members_only() || self.me().is_some_and(admitted)
+        let may_post = !info.channel.members_only() || self.me().is_some_and(admitted);
+        match listed_for_involved(info) {
+            true => pulled_in,
+            false => may_post,
+        }
     }
 
     // `channels` as the list draws them: each under the folders its name
@@ -669,7 +684,7 @@ impl Chat {
         for info in self.channels.ready().into_iter().flatten() {
             let id = info.channel.id.as_str();
             let direct = chat::dm_peers(id).is_some();
-            let listed = direct || self.may_post_in(info);
+            let listed = direct || self.listed_for_me(info);
             if !listed {
                 continue;
             }

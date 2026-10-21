@@ -182,6 +182,25 @@ fn seat(ctx: &ExecCtx, id: &str, principal: Principal) {
     MEMBERS.put(ctx, &(id.to_owned(), principal), &row);
 }
 
+fn seat_involved(ctx: &ExecCtx, row: &MsgRow) -> Result<(), Error> {
+    let meta = CHANNEL_META.get(ctx, &row.channel_id)?.unwrap_or_default();
+    let listed = meta.get(crate::LISTED);
+    let involved = listed.is_some_and(|listed| listed == crate::INVOLVED);
+    let open_to_every_poster = !channel(ctx, &row.channel_id)?.members_only();
+    let seats_who_takes_part = involved && open_to_every_poster;
+    if !seats_who_takes_part {
+        return Ok(());
+    }
+    let mentioned = crate::attributed::mentioned(&row.blocks).map(Principal::Account);
+    for principal in std::iter::once(row.author.clone()).chain(mentioned) {
+        let key = (row.channel_id.clone(), principal.clone());
+        if !MEMBERS.has(ctx, &key) {
+            seat(ctx, &row.channel_id, principal);
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn post(
     ctx: &ExecCtx,
     sender: &Principal,
@@ -277,6 +296,7 @@ fn write(
         crate::state::CLIENTS.put(ctx, &(channel_id.clone(), seq), &client);
     }
     note(ctx, &row);
+    seat_involved(ctx, &row)?;
     report(ctx, sender, None, &row)?;
     MESSAGE_IDS.put(ctx, &message_id, &(channel_id.clone(), seq));
     HEADS.put(ctx, &channel_id, &seq);
@@ -343,6 +363,7 @@ pub(crate) fn edit(
     put_message(ctx, &row)?;
     touch_message_for_author_policy(ctx, &old)?;
     note(ctx, &row);
+    seat_involved(ctx, &row)?;
     report(ctx, sender, Some(&old), &row)?;
     Ok(())
 }

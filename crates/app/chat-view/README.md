@@ -15,7 +15,11 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
   a change's or a job's too, wait under the channels' last row, "N more
   channels", which a press unfolds, by name, into the folders their names give
   (`jobs/`, `pr/`, …), each closed until opened there and apart from the
-  reader's own folder of that name (archived rooms never). Search
+  reader's own folder of that name (archived rooms never). A members-only
+  room is listed only where the reader may post (seated, or its owner), and a
+  room whose meta says `listed = involved` (a job's, a change's) only once the
+  reader sits in it or owns it: chat seats whoever posts or is mentioned
+  there (chat's `Seated`, one read for every such room). Search
   finds any room too: it lists the rooms whose names hold the words above the message hits
   (`Chat::found_rooms`; archived and direct rooms never). In both lists, a `/`
   in a channel's name files it under
