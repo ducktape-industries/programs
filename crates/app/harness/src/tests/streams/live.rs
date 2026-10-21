@@ -736,3 +736,46 @@ fn a_turn_waiting_to_ask_its_model_again_drafts_nothing() {
     answer(chain, request.id, Answer::Output(response(429, limited)));
     assert!(drafts(chain).is_empty());
 }
+
+#[test]
+fn a_mention_heard_while_a_reaction_shows_reaches_its_conversation_once() {
+    let world = world();
+    let chain = &world.chain;
+    world.post(BO, "general", "b1", "ship it");
+    let (thread, request) = asked(&world);
+    let seq = message(chain, "b1").unwrap().seq;
+    let reaction = format!(r#"{{"channel":"general","seq":{seq},"emoji":"eyes"}}"#);
+    let events = [
+        vec![
+            began(),
+            calls(0, "toolu_r", "chat_react"),
+            input(0, &reaction),
+            stops(0),
+        ],
+        ended("tool_use").to_vec(),
+    ]
+    .concat();
+    through(chain, &request, &events, 3);
+    assert_eq!(
+        call_state(chain, thread, "toolu_r"),
+        Some(CallState::Showing)
+    );
+    world.mention("m2", "and this");
+    from(chain, &request, &events, 3);
+    end(chain, &request, events.len() as u64);
+    ran(chain, "toolu_r");
+    let heard = |chain: &MockChain| {
+        frames(chain, thread)
+            .into_iter()
+            .filter(|body| matches!(body, Body::Post { text, .. } if text.contains("and this")))
+            .count()
+    };
+    assert_eq!(heard(chain), 1, "{:?}", frames(chain, thread));
+    chain.at(5, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Seen." }]),
+        "end_turn",
+    );
+    assert_eq!(heard(chain), 1, "{:?}", frames(chain, thread));
+}

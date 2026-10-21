@@ -4,7 +4,6 @@
 //! once its block is whole, and a reply that starts over takes back what the old one did.
 use ::program::{Ctx, Error, unauthorized, wrong_state};
 
-use crate::agents::hear_again;
 use crate::calls::{Settled, dispatch, show, void_reply};
 use crate::state::{PASSES, THREADS};
 use crate::turns::{bound, converse};
@@ -42,7 +41,6 @@ pub(crate) async fn streamed(ctx: &Ctx, thread: u64, event: Event) -> Result<(),
         Step::Showing { index } => show(ctx, thread, index).await?,
         Step::Formed { index } => dispatch(ctx, thread, index).await?,
     };
-    hear_again(ctx, settled.hearings);
     let ended = !crate::resume::streamed(&partial) && crate::resume::streamed(&folded);
     if settled.carry_on || ended {
         converse(ctx, thread).await;

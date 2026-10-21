@@ -2,8 +2,6 @@
 //! posts and reactions the agent makes as itself. A post lands whole once its call runs (its draft
 //! shows the text as it arrives), a reaction once its input is whole.
 use ::program::{Error, ExecCtx, Principal, stale};
-use attribution::Source;
-use chat::attributed::MESSAGE;
 use chat::{ChannelInfo, MsgRow, Query, Reply};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -286,17 +284,6 @@ fn read_since(ctx: &ExecCtx, thread: u64, posted: &Posted) -> Result<(), Error> 
 
 pub(crate) fn message_id(thread: u64, call: &str) -> String {
     format!("harness-{thread}-{call}")
-}
-
-pub(crate) fn shown_by(source: &Source) -> Option<(u64, String)> {
-    let is_message = source.program == chat::PROGRAM && source.object.kind == MESSAGE;
-    let rest = source
-        .object
-        .id
-        .strip_prefix("harness-")
-        .filter(|_| is_message)?;
-    let (thread, call) = rest.split_once('-')?;
-    Some((thread.parse().ok()?, call.to_owned()))
 }
 
 fn record<T: serde::de::DeserializeOwned>(seat: &Seat) -> Option<T> {

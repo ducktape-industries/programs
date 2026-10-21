@@ -6,9 +6,9 @@ use ::program::{Range, unexpected_reply, wrong_state};
 use abi::role::egress::{self, DEFAULT_WAIT, http};
 use abi::role::identity::AccountNumber;
 
-use crate::agents::{configured, harnessed_agent, hear_again, running, thread};
+use crate::agents::{configured, harnessed_agent, running, thread};
 use crate::bookings::note;
-use crate::calls::{Settled, lost, refusal, run_call};
+use crate::calls::{lost, refusal, run_call};
 use crate::conversations::{binding, conversation};
 use crate::routes;
 use crate::schema::code_of;
@@ -709,11 +709,9 @@ async fn rerun(ctx: &Ctx, id: u64, config: Option<BlobId>) -> Result<(), Error> 
     );
     tell(ctx, &row, line, "its tool calls' relays were lost").await?;
     let runs = cut.into_iter().map(|call| run_call(ctx, id, 0, call));
-    let mut settled = Settled::default();
     for ran in all(runs).await {
-        settled = settled.and(ran?);
+        ran?;
     }
-    hear_again(ctx, settled.hearings);
     Ok(())
 }
 

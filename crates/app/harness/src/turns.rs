@@ -7,7 +7,7 @@ use ::program::{
 };
 use abi::role::egress::{self, http};
 
-use crate::agents::{Agent, configured_pinned, hear_again, manual, running, thread};
+use crate::agents::{Agent, configured_pinned, manual, running, thread};
 use crate::calls::{Placed, place, refusal, run_call, take_back_showing};
 use crate::conversations::{binding, retire};
 use crate::listening::seed;
@@ -978,7 +978,7 @@ pub(crate) async fn conclude(
 ) -> Result<(), Error> {
     let partial = crate::replies::read(ctx, id)?;
     crate::replies::clear(ctx, id)?;
-    let mut settled = take_back_showing(ctx, id).await?;
+    take_back_showing(ctx, id).await?;
     let answered = read(partial.clone());
     let Turned { calls, again } = turned(ctx, id, upto, config, answered, partial)?;
     if thread(ctx, id)?.open_calls > 0 {
@@ -988,7 +988,7 @@ pub(crate) async fn conclude(
         .into_iter()
         .map(|(index, call)| run_call(ctx, id, index, call));
     for ran in all(runs).await {
-        settled = settled.and(ran?);
+        ran?;
     }
     let mut thread = thread(ctx, id)?;
     let finished = thread.asking == Asking::Running && thread.open_calls == 0;
@@ -996,7 +996,6 @@ pub(crate) async fn conclude(
         settle(ctx, &mut thread)?;
         THREADS.put(ctx, &id, &thread);
     }
-    hear_again(ctx, settled.hearings);
     retried(ctx, id, again).await
 }
 

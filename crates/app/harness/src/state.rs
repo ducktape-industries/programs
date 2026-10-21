@@ -42,7 +42,6 @@ pub const PASSES: Map<u64, u64> = Map::new("last-pass/");
 pub const PIECES: Map<(u64, u64, u64), String> = Map::new("piece/");
 pub const LIVE: Map<(u64, u64), Live> = Map::new("live/");
 pub const SHOWN: Map<(u64, String), String> = Map::new("shown/");
-pub const DEFERRED: Map<(u64, String, u64), Change> = Map::new("deferred/");
 // the pictures each frame came with (`pictures.rs`), where files holds each; a held input's
 // until it is appended, a tool call's until its result is; and how far the model refused them
 pub const PICTURES: Map<(u64, u64), Vec<Picture>> = Map::new("picture/");

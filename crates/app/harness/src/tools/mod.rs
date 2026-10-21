@@ -18,8 +18,6 @@ mod symbols;
 mod thread;
 mod wait;
 
-pub(crate) use chat::shown_by;
-
 // where a chat_post call posts and its text so far, once its input says where, for the agent's draft
 pub(crate) fn posting(tool: &str, input: &str) -> Option<(String, Option<u64>, String)> {
     let posts = tool == <chat::Post as Tool>::NAME;

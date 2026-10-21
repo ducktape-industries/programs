@@ -8,7 +8,6 @@ use ::program::{
 use abi::role::identity::{AccountNumber, Category, Kind, Profile, Standing};
 use attribution::{Actor, Change, Kind as Changed, Reason, Source};
 
-use crate::calls::deferred_while_shown;
 use crate::config::Pin;
 use crate::conversations::{binding, conversation, current, route};
 use crate::listening::chosen;
@@ -547,9 +546,6 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
         LAST.get(ctx, &change.recipient)? == Some((change.source.clone(), change.revision));
     let heeded = added && by_another && !told_already;
     if !heeded {
-        return Ok(Hearing::default());
-    }
-    if deferred_while_shown(ctx, &change)? {
         return Ok(Hearing::default());
     }
     let Some(agent) = running(ctx, change.recipient)? else {

@@ -4,11 +4,10 @@
 //! reply starts over or breaks, where its tool can take it back.
 use ::program::{Ctx, Error, ExecCtx, QueryCtx, unauthorized};
 use abi::role::egress::{self, RELAY};
-use attribution::Change;
 use serde_json::Value;
 
 use crate::agents::{running, thread};
-use crate::state::{AWAITED, CALLS, DEFERRED, LIVE, Live, SHOWN, THREADS};
+use crate::state::{AWAITED, CALLS, LIVE, Live, SHOWN, THREADS};
 use crate::tools::{self, Resolved, Run, Seat, Show, Undo, Write};
 use crate::turns::{append, request, serves, settle};
 use crate::watches;
@@ -21,13 +20,11 @@ pub(crate) fn refusal(error: &Error) -> String {
 #[derive(Default)]
 pub(crate) struct Settled {
     pub carry_on: bool,
-    pub hearings: Vec<Change>,
 }
 
 impl Settled {
     pub fn and(mut self, other: Settled) -> Settled {
         self.carry_on |= other.carry_on;
-        self.hearings.extend(other.hearings);
         self
     }
 }
@@ -257,30 +254,11 @@ fn notice(ctx: &ExecCtx, id: u64, text: String) -> Result<(), Error> {
     Ok(())
 }
 
-fn drop_hearings(ctx: &ExecCtx, id: u64, call: &str) -> Result<(), Error> {
-    for (key, _) in DEFERRED.scan(ctx, DEFERRED.prefix_of(&(id, call.to_owned())))? {
-        DEFERRED.remove(ctx, &key);
-    }
-    Ok(())
-}
-
-fn hearings(ctx: &ExecCtx, id: u64, call: &str) -> Result<Vec<Change>, Error> {
-    let deferred = DEFERRED.scan(ctx, DEFERRED.prefix_of(&(id, call.to_owned())))?;
-    Ok(deferred
-        .into_iter()
-        .map(|(key, change)| {
-            DEFERRED.remove(ctx, &key);
-            change
-        })
-        .collect())
-}
-
 async fn taken_back(ctx: &Ctx, id: u64, call: &str, why: &str) -> Result<(), Error> {
     let owner = thread(ctx, id)?;
     let Some(row) = CALLS.get(ctx, &(id, call.to_owned()))? else {
         return Ok(());
     };
-    drop_hearings(ctx, id, call)?;
     let words = match take_back(ctx, &owner, &row).await? {
         TakenBack::NothingShown => "it did not run".to_owned(),
         TakenBack::Stays => "what it showed stays".to_owned(),
@@ -312,10 +290,7 @@ fn release(ctx: &ExecCtx, id: u64) -> Result<Settled, Error> {
         settle(ctx, &mut thread)?;
     }
     THREADS.put(ctx, &id, &thread);
-    Ok(Settled {
-        carry_on,
-        hearings: Vec::new(),
-    })
+    Ok(Settled { carry_on })
 }
 
 pub(crate) async fn void_reply(ctx: &Ctx, id: u64) -> Result<Settled, Error> {
@@ -810,29 +785,5 @@ fn finish(
             THREADS.put(ctx, &id, &owner);
         }
     }
-    let heard = match failed {
-        true => {
-            drop_hearings(ctx, id, call)?;
-            Vec::new()
-        }
-        false => hearings(ctx, id, call)?,
-    };
-    let settled = release(ctx, id)?;
-    Ok(Settled {
-        hearings: heard,
-        ..settled
-    })
-}
-
-pub(crate) fn deferred_while_shown(ctx: &ExecCtx, change: &Change) -> Result<bool, Error> {
-    let Some((id, call)) = tools::shown_by(&change.source) else {
-        return Ok(false);
-    };
-    let showing = CALLS
-        .get(ctx, &(id, call.clone()))?
-        .is_some_and(|row| row.state == CallState::Showing);
-    if showing {
-        DEFERRED.put(ctx, &(id, call, change.seq), change);
-    }
-    Ok(showing)
+    release(ctx, id)
 }
