@@ -20,22 +20,38 @@ fn a_frame_no_account_signed_is_kept_nowhere() {
 }
 
 #[test]
-fn every_frame_and_the_frames_of_a_key_are_refused_naming_where_the_node_lists_them() {
+fn the_retired_signed_tag_is_no_query_and_every_frame_stays_refused_at_its_tag() {
     let (host, _) = told();
+    let key = borsh::to_vec(&ADA.to_vec()).unwrap();
+    let page = borsh::to_vec(&PageRequest::default()).unwrap();
+    let signed = [&[1u8][..], &key, &page].concat();
+    let refused =
+        ::program::query::<Activity>(&host.query(MockHost::env(PROGRAM)), &signed).unwrap_err();
+    assert_eq!(refused.code, code::INVALID_INPUT, "{refused:?}");
+    let undecoded = refused
+        .message
+        .starts_with("activity: Query did not decode: ");
+    assert!(undecoded, "{refused:?}");
     let every = Query::Frames {
         page: PageRequest::default(),
     };
-    let by_key = Query::Signed {
-        key: ADA.to_vec(),
+    let refused = Activity::query(&host.query(MockHost::env(PROGRAM)), every).unwrap_err();
+    assert_eq!(refused.code, code::UNSUPPORTED);
+    assert!(
+        refused.message.contains("/v1/blocks") && refused.message.contains("/v1/activity"),
+        "{}",
+        refused.message
+    );
+    let tag = |query: &Query| borsh::to_vec(query).unwrap()[0];
+    let acted = Query::Acted {
+        account: 5,
         page: PageRequest::default(),
     };
-    for query in [every, by_key] {
-        let refused = Activity::query(&host.query(MockHost::env(PROGRAM)), query).unwrap_err();
-        assert_eq!(refused.code, code::UNSUPPORTED);
-        assert!(
-            refused.message.contains("/v1/blocks") && refused.message.contains("/v1/activity"),
-            "{}",
-            refused.message
-        );
-    }
+    let used = Query::Used {
+        page: PageRequest::default(),
+    };
+    let frames = Query::Frames {
+        page: PageRequest::default(),
+    };
+    assert_eq!([tag(&acted), tag(&used), tag(&frames)], [0, 2, 3]);
 }

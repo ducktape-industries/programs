@@ -32,7 +32,6 @@ impl Program for Activity {
         Ok(match query {
             Query::Frames { .. } => return Err(unkept("every frame")),
             Query::Acted { account, page } => Reply::Frames(acted(ctx, account, &page)?),
-            Query::Signed { .. } => return Err(unkept("frames by signing key")),
             Query::Used { page } => Reply::Used(used(ctx, &page)?),
         })
     }

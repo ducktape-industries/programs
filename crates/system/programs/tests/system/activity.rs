@@ -80,14 +80,8 @@ fn a_founding_hook_is_told_of_every_frame_and_keeps_it_by_account() {
         let every = activity::Query::Frames {
             page: PageRequest::default(),
         };
-        let by_key = activity::Query::Signed {
-            key: public(ALICE_KEY).to_vec(),
-            page: PageRequest::default(),
-        };
-        for asked in [every, by_key] {
-            let refusal = net.refused(activity::PROGRAM, &asked).await;
-            assert_eq!(refusal.reason, reason::UNSUPPORTED, "the node lists them");
-        }
+        let refusal = net.refused(activity::PROGRAM, &every).await;
+        assert_eq!(refusal.reason, reason::UNSUPPORTED, "the node lists them");
         let asked = activity::Query::Used {
             page: PageRequest::default(),
         };

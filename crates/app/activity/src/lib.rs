@@ -50,6 +50,8 @@ pub struct Used {
     "The frames each account acted in, newest first, and how many it sent each program, as the kernel tells it. Every frame, and every frame by signing key, is the node's to list (/v1/blocks, /v1/activity). It takes no op."
 )]
 #[ask(Activity)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Query {
     #[ask(Reply::Frames(PageResponse<Frame>))]
     #[tool_query(description = "The frames an account acted in, newest first: height, position, time, signer, target program and whether it applied.", example = examples::acted)]
@@ -57,12 +59,9 @@ pub enum Query {
         account: AccountNumber,
         page: PageRequest,
     },
-    #[ask(Reply::Frames(PageResponse<Frame>))]
-    #[tool_query(description = "Refused: activity keeps no frame by signing key. The node lists them (/v1/activity).", example = examples::signed)]
-    Signed { key: Vec<u8>, page: PageRequest },
     #[ask(Reply::Used(PageResponse<Used>))]
     #[tool_query(description = "How many frames each account sent each program, a page at a time.", example = examples::used)]
-    Used { page: PageRequest },
+    Used { page: PageRequest } = 2,
     #[ask(Reply::Frames(PageResponse<Frame>))]
     #[tool_query(description = "Refused: activity keeps no network-wide list. Every frame is in the node's blocks (/v1/blocks).", example = examples::frames)]
     Frames { page: PageRequest },

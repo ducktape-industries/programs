@@ -16,13 +16,6 @@ pub(crate) fn acted() -> Query {
     }
 }
 
-pub(crate) fn signed() -> Query {
-    Query::Signed {
-        key: vec![0; 32],
-        page: page(),
-    }
-}
-
 pub(crate) fn used() -> Query {
     Query::Used { page: page() }
 }
