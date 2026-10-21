@@ -593,9 +593,10 @@ fn a_wait_in_a_room_turned_off_ends_with_its_message_and_nothing_else_arrives() 
     let world = schemed();
     let chain = &world.chain;
     channel(&world, "random");
-    let off = chat::Op::SetNoticesFor {
-        account: world.agent,
+    let off = chat::Op::ChooseForMany {
+        accounts: vec![world.agent],
         channel_id: "random".into(),
+        listening: false,
         notices: Some(chat::Notices::Off),
     };
     chain.submit(signed(ADA), chat::PROGRAM, &off).unwrap();

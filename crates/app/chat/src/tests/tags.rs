@@ -3,7 +3,7 @@ use borsh::schema::Definition;
 
 use super::*;
 
-const LIVE_OPS: [(&str, i64); 29] = [
+const LIVE_OPS: [(&str, i64); 27] = [
     ("CreateChannel", 0),
     ("CreateDmChannel", 1),
     ("RenameChannel", 2),
@@ -20,8 +20,6 @@ const LIVE_OPS: [(&str, i64); 29] = [
     ("Listen", 14),
     ("SetNotices", 16),
     ("AdoptOwners", 17),
-    ("ListenFor", 18),
-    ("SetNoticesFor", 19),
     ("Watch", 20),
     ("Drafting", 21),
     ("Undraft", 22),
@@ -98,6 +96,8 @@ const LISTEN_TAG: u8 = 14;
 const MIGRATE_SOME_TAG: u8 = 15;
 const SET_NOTICES_TAG: u8 = 16;
 const UNMIGRATED_TAG: u8 = 12;
+const LISTEN_FOR_TAG: u8 = 18;
+const SET_NOTICES_FOR_TAG: u8 = 19;
 
 fn encoded<T: BorshSerialize>(value: &T) -> Vec<u8> {
     borsh::to_vec(value).unwrap()
@@ -199,4 +199,37 @@ fn a_migrate_or_migrate_some_tag_is_refused_and_writes_nothing_and_an_unmigrated
     assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
     let undecoded = refused.message.starts_with("chat: Query did not decode: ");
     assert!(undecoded, "{refused}");
+}
+
+#[test]
+fn a_listen_for_or_set_notices_for_tag_is_refused_and_writes_nothing() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    let before = chat.store.borrow().state.clone();
+    let no_notices: Option<crate::Notices> = None;
+    let listen_for = tagged(
+        LISTEN_FOR_TAG,
+        &[
+            encoded(&2u64),
+            encoded(&"general".to_owned()),
+            encoded(&true),
+        ],
+    );
+    let set_notices_for = tagged(
+        SET_NOTICES_FOR_TAG,
+        &[
+            encoded(&2u64),
+            encoded(&"general".to_owned()),
+            encoded(&no_notices),
+        ],
+    );
+    for bytes in [listen_for, set_notices_for] {
+        let ctx = chat.next(&BO);
+        let refused = chat
+            .store
+            .refused(|| ::program::execute::<crate::Chat>(&ctx, &bytes));
+        assert_eq!(chat.store.borrow().state, before);
+        assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
+        let undecoded = refused.message.starts_with("chat: Op did not decode: ");
+        assert!(undecoded, "{refused}");
+    }
 }

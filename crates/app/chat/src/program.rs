@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::listen::{
-    choose_for_many, chooser, chosen, chosen_by, followed, listen, listened, notices_cut,
-    set_notices, watch, watched,
+    choose_for_many, chosen, chosen_by, followed, listen, listened, notices_cut, set_notices,
+    watch, watched,
 };
 use crate::ops::{
     create_channel, delete, drafting, edit, open_dm, post, react, remove_meta, rename,
@@ -97,22 +97,6 @@ impl Program for Chat {
             } => set_notices(ctx, ctx.sender_account()?, &channel_id, notices),
             Op::AdoptOwners { kind, after, limit } => {
                 crate::adopt::adopt_owners(ctx, &kind, after, limit)
-            }
-            Op::ListenFor {
-                account,
-                channel_id,
-                listening,
-            } => {
-                chooser(ctx, account)?;
-                listen(ctx, account, &channel_id, listening)
-            }
-            Op::SetNoticesFor {
-                account,
-                channel_id,
-                notices,
-            } => {
-                chooser(ctx, account)?;
-                set_notices(ctx, account, &channel_id, notices)
             }
             Op::Watch {
                 channel_id,

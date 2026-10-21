@@ -508,7 +508,7 @@ fn a_watcher_is_related_to_new_messages_and_its_choice_stays() {
 }
 
 #[test]
-fn an_account_or_its_manager_chooses_for_it() {
+fn choose_for_many_for_one_account_chooses_as_its_manager_or_itself() {
     let chain = chain();
     chain.profile(Profile {
         number: 4,
@@ -521,43 +521,40 @@ fn an_account_or_its_manager_chooses_for_it() {
         },
     });
     open_general(&chain);
-    let as_key = |key: &[u8], op: crate::Op| {
+    let choose_for = |key: &[u8], account: u64, listening, notices| {
+        let op = crate::Op::ChooseForMany {
+            accounts: vec![account],
+            channel_id: "general".into(),
+            listening,
+            notices,
+        };
         chain
             .submit(signed(key), crate::PROGRAM, &op)
             .map(drop)
             .map_err(|refusal| refusal.code)
     };
-    let listen_for = |account, listening| crate::Op::ListenFor {
-        account,
-        channel_id: "general".into(),
-        listening,
-    };
-    let cut_for = |account, notices| crate::Op::SetNoticesFor {
-        account,
-        channel_id: "general".into(),
-        notices,
-    };
-    as_key(ADA, listen_for(4, true)).unwrap();
+    choose_for(ADA, 4, true, None).unwrap();
     assert_eq!(listened(&chain, 4), ["general"]);
-    as_key(ADA, cut_for(4, Some(Notices::Off))).unwrap();
+    choose_for(ADA, 4, false, Some(Notices::Off)).unwrap();
     assert_eq!(chosen(&chain, 4, "general"), (false, Some(Notices::Off)));
     assert!(listened(&chain, 4).is_empty(), "one choice");
     let refused = [
-        (BO, listen_for(4, true)),
-        (CY, cut_for(4, None)),
-        (ADA, cut_for(2, Some(Notices::Off))),
+        (BO, 4, true, None),
+        (CY, 4, false, None),
+        (ADA, 2, false, Some(Notices::Off)),
     ];
-    for (key, op) in refused {
-        assert_eq!(as_key(key, op), Err(code::UNAUTHORIZED.to_owned()));
+    for (key, account, listening, notices) in refused {
+        let unauthorized = Err(code::UNAUTHORIZED.to_owned());
+        assert_eq!(choose_for(key, account, listening, notices), unauthorized);
     }
     assert_eq!(chosen(&chain, 4, "general"), (false, Some(Notices::Off)));
     assert_eq!(chosen(&chain, 2, "general"), (false, None));
-    as_key(BO, cut_for(2, Some(Notices::Mentions))).unwrap();
+    choose_for(BO, 2, false, Some(Notices::Mentions)).unwrap();
     assert_eq!(
         chosen(&chain, 2, "general"),
         (false, Some(Notices::Mentions))
     );
-    as_key(ADA, cut_for(4, None)).unwrap();
+    choose_for(ADA, 4, false, None).unwrap();
     assert_eq!(chosen(&chain, 4, "general"), (false, None));
 }
 

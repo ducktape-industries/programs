@@ -160,22 +160,6 @@ pub(crate) fn adopt() -> Op {
     }
 }
 
-pub(crate) fn listen_for() -> Op {
-    Op::ListenFor {
-        account: 21,
-        channel_id: room(),
-        listening: true,
-    }
-}
-
-pub(crate) fn notices_for() -> Op {
-    Op::SetNoticesFor {
-        account: 21,
-        channel_id: room(),
-        notices: Some(Notices::Off),
-    }
-}
-
 pub(crate) fn watch() -> Op {
     Op::Watch {
         channel_id: room(),

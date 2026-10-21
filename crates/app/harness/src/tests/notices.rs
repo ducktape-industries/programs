@@ -17,17 +17,15 @@ enum Choice {
 
 fn choose(world: &World, channel: &str, choice: Choice) {
     let account = world.agent;
-    let cut = |notices| chat::Op::SetNoticesFor {
-        account,
+    let choose = |listening, notices| chat::Op::ChooseForMany {
+        accounts: vec![account],
         channel_id: channel.into(),
+        listening,
         notices,
     };
+    let cut = |notices| choose(false, notices);
     let op = match choice {
-        Choice::Every => chat::Op::ListenFor {
-            account,
-            channel_id: channel.into(),
-            listening: true,
-        },
+        Choice::Every => choose(true, None),
         Choice::Default => cut(None),
         Choice::Mentions => cut(Some(chat::Notices::Mentions)),
         Choice::Off => cut(Some(chat::Notices::Off)),

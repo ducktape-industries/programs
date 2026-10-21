@@ -186,10 +186,11 @@ fn a_post_harness_never_heard_ends_the_run_at_the_authors_next() {
 fn in_a_room_the_agent_listens_to_a_post_after_a_mention_is_heard_once_as_it_is_today() {
     let world = world();
     let chain = &world.chain;
-    let listen = chat::Op::ListenFor {
-        account: world.agent,
+    let listen = chat::Op::ChooseForMany {
+        accounts: vec![world.agent],
         channel_id: "general".into(),
         listening: true,
+        notices: None,
     };
     chain.submit(signed(ADA), chat::PROGRAM, &listen).unwrap();
     let thread = idle(&world, scout());
@@ -415,9 +416,10 @@ fn cut_to_mentions_a_continuation_still_arrives_and_turned_off_no_run_opens() {
     for (notices, heard) in [(chat::Notices::Mentions, 1), (chat::Notices::Off, 0)] {
         let world = world();
         let chain = &world.chain;
-        let cut = chat::Op::SetNoticesFor {
-            account: world.agent,
+        let cut = chat::Op::ChooseForMany {
+            accounts: vec![world.agent],
             channel_id: "general".into(),
+            listening: false,
             notices: Some(notices),
         };
         chain.submit(signed(ADA), chat::PROGRAM, &cut).unwrap();

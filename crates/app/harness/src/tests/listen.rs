@@ -183,9 +183,10 @@ fn the_agents_own_posts_and_other_channels_reach_nothing_and_listen_seeds_the_ro
     assert_eq!(posts(chain, thread).len(), 2, "an unlisted channel");
     assert_eq!(settling(chain, thread), None);
 
-    let back = chat::Op::SetNoticesFor {
-        account: world.agent,
+    let back = chat::Op::ChooseForMany {
+        accounts: vec![world.agent],
         channel_id: "general".into(),
+        listening: false,
         notices: None,
     };
     chain.submit(signed(ADA), chat::PROGRAM, &back).unwrap();

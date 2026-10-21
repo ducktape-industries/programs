@@ -174,24 +174,10 @@ pub enum Op {
         after: Option<Vec<u8>>,
         limit: u64,
     },
-    // as `Listen`, for `account`: the account itself or its manager in identity
-    #[tool_op(description = "Listen, for another account: the account itself or its manager in identity.", example = examples::listen_for)]
-    ListenFor {
-        account: AccountNumber,
-        channel_id: String,
-        listening: bool,
-    },
-    // as `SetNotices`, for `account`: the account itself or its manager in identity
-    #[tool_op(description = "SetNotices, for another account: the account itself or its manager in identity.", example = examples::notices_for)]
-    SetNoticesFor {
-        account: AccountNumber,
-        channel_id: String,
-        notices: Option<Notices>,
-    },
     // hears every new message of `channel_id` for the sender's wait (a `watch` relation), leaving
     // what it chose for the room as it is
     #[tool_op(description = "Hear every new message of a channel for a wait, leaving what you chose for the room as it is.", example = examples::watch)]
-    Watch { channel_id: String, watching: bool },
+    Watch { channel_id: String, watching: bool } = 20,
     // the sender answering in a room before it posts: `text` joins its draft there (`anew`: in
     // place of the text so far), `doing` (when given) replaces what it says it is doing, and
     // `thread` is the root it answers under
@@ -976,8 +962,8 @@ fn op_variants_only_append() {
             "-",
             "SetNotices",
             "AdoptOwners",
-            "ListenFor",
-            "SetNoticesFor",
+            "-",
+            "-",
             "Watch",
             "Drafting",
             "Undraft",

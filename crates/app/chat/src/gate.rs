@@ -32,8 +32,6 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::Listen { .. }
         | Op::SetNotices { .. }
         | Op::AdoptOwners { .. }
-        | Op::ListenFor { .. }
-        | Op::SetNoticesFor { .. }
         | Op::Watch { .. }
         | Op::Drafting { .. }
         | Op::Undraft { .. }

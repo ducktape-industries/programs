@@ -158,32 +158,6 @@ pub fn describe(op: &Op) -> Description {
                 fields: vec![field("kind", Value::text(kind))],
             };
         }
-        Op::ListenFor {
-            account,
-            channel_id,
-            listening,
-        } => (
-            if *listening {
-                "Listen to channel for an account"
-            } else {
-                "Stop an account listening to channel"
-            },
-            channel_id,
-            vec![field("account", Value::Account(*account))],
-        ),
-        Op::SetNoticesFor {
-            account,
-            channel_id,
-            notices,
-        } => (
-            match notices {
-                None => "Default notices for an account in channel",
-                Some(Notices::Mentions) => "Notices of mentions only for an account in channel",
-                Some(Notices::Off) => "Turn off notices for an account in channel",
-            },
-            channel_id,
-            vec![field("account", Value::Account(*account))],
-        ),
         Op::Watch {
             channel_id,
             watching,
