@@ -25,12 +25,10 @@ pub(super) fn face(
     size: design::Face,
     theme: &Theme,
 ) -> Div {
-    let ringed = agent && picture.is_some();
-    design::avatar_with(name, picture, size, theme)
-        .when(agent, |face| {
-            face.bg(theme.agent_soft).text_color(theme.agent)
-        })
-        .when(ringed, |face| face.border_2().border_color(theme.agent))
+    match agent {
+        true => design::agent_avatar(name, picture, size, theme),
+        false => design::avatar_with(name, picture, size, theme),
+    }
 }
 
 pub(super) fn quiet(

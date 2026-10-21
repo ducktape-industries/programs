@@ -120,11 +120,7 @@ pub(crate) fn agent_face(
     side: impl Into<view::design::Face>,
     theme: &Theme,
 ) -> Div {
-    let pictured = picture.is_some();
-    design::avatar_with(name, picture, side, theme)
-        .bg(theme.agent_soft)
-        .text_color(theme.agent)
-        .when(pictured, |face| face.border_2().border_color(theme.agent))
+    design::agent_avatar(name, picture, side, theme)
 }
 
 pub(crate) fn fact(label: &'static str, value: impl Into<SharedString>, theme: &Theme) -> Div {

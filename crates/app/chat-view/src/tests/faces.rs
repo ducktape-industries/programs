@@ -4,7 +4,7 @@
 use super::*;
 use view::methods::BlobGet;
 
-const PNG: &[u8] = b"\x89PNG\r\n\x1a\nface";
+const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR\0\0\0\x60\0\0\0\x60";
 
 fn blob(byte: u8) -> String {
     format!("sha256:{}", format!("{byte:02x}").repeat(32))
@@ -79,6 +79,40 @@ fn a_persons_picture_is_their_face_in_the_room_and_the_sidebar() {
     cx.run_until_parked();
     assert!(pictured_at(&cx, "chat-room-avatar"), "over the direct room");
     read_once(&cx);
+}
+
+#[test]
+fn an_agents_picture_draws_with_no_frame() {
+    let mut cx = pictured(false);
+    let framed = |cx: &TestAppContext, key: &str| cx.style(key).border_widths.left.is_some();
+    assert!(!framed(&cx, "chat-sidebar-dm-8-avatar"), "the dm's agent");
+    cx.simulate_click("chat-sidebar-channel-general");
+    cx.run_until_parked();
+    assert!(
+        pictured_at(&cx, "chat-message-m2-avatar"),
+        "reviewer's picture"
+    );
+    assert!(!framed(&cx, "chat-message-m2-avatar"), "reviewer's message");
+}
+
+#[test]
+fn the_cards_picture_opens_whole_over_the_room() {
+    let mut cx = pictured(false);
+    cx.simulate_click("chat-sidebar-channel-general");
+    cx.run_until_parked();
+    cx.simulate_click("chat-message-m2-avatar");
+    cx.run_until_parked();
+    assert!(cx.find("chat-card").is_some(), "reviewer's card");
+    cx.simulate_click("chat-card-picture");
+    cx.run_until_parked();
+    assert!(cx.find("chat-card").is_none(), "the card gives way");
+    assert!(
+        pictured_at(&cx, "chat-picture/image"),
+        "the picture, whole: {:?}",
+        cx.texts()
+    );
+    assert!(cx.find("chat-picture/save").is_none(), "no file to save");
+    assert!(cx.find("chat-picture/open").is_none(), "no file to open");
 }
 
 #[test]

@@ -41,6 +41,12 @@ pub(crate) struct Picture {
     pub(crate) size: (u32, u32),
 }
 
+#[derive(Clone)]
+pub(crate) enum Enlarged {
+    File(Attachment),
+    Face { account: u64, name: String },
+}
+
 fn release(file: Option<u64>, cx: &mut Context<Chat>) {
     if let Some(file) = file {
         cx.host().notify::<FileRelease>(vec![file]);
@@ -657,7 +663,13 @@ impl Chat {
     }
 
     pub(crate) fn enlarge(&mut self, file: &Attachment, cx: &mut Context<Self>) {
-        self.enlarged = Some(file.clone());
+        self.enlarged = Some(Enlarged::File(file.clone()));
+        cx.notify();
+    }
+
+    pub(crate) fn enlarge_face(&mut self, account: u64, name: String, cx: &mut Context<Self>) {
+        self.close_menu();
+        self.enlarged = Some(Enlarged::Face { account, name });
         cx.notify();
     }
 

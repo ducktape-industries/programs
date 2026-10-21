@@ -2501,6 +2501,23 @@ pub fn avatar_with(
     )
 }
 
+pub fn agent_tint<E: crate::Styled>(face: E, pictured: bool, theme: &Theme) -> E {
+    match pictured {
+        true => face,
+        false => face.bg(theme.agent_soft).text_color(theme.agent),
+    }
+}
+
+pub fn agent_avatar(
+    name: &str,
+    picture: Option<std::sync::Arc<crate::Image>>,
+    size: impl Into<Face>,
+    theme: &Theme,
+) -> Div {
+    let pictured = picture.is_some();
+    agent_tint(avatar_with(name, picture, size, theme), pictured, theme)
+}
+
 const STEP: f32 = 8.;
 
 /// The line between two panes, dragged to move it: `drag` takes the

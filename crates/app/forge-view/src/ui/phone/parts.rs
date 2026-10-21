@@ -933,9 +933,6 @@ pub(crate) enum Tint {
     Agent,
 }
 
-// A name's initial, or its picture once read, at the list's size
-// (`Avatar.tsx`); in the agent tint for an agent, a picture ringed in it.
-// SDK gap: the kit's `Avatar` `agent`; the SDK builds it later
 pub(crate) fn avatar(
     name: &str,
     picture: crate::select::Picture,
@@ -943,12 +940,10 @@ pub(crate) fn avatar(
     ladder: &Ladder,
     theme: &Theme,
 ) -> Div {
-    let ringed = agent && picture.is_some();
-    design::avatar_with(name, picture, ladder.avatar, theme)
-        .when(agent, |face| {
-            face.bg(theme.agent_soft).text_color(theme.agent)
-        })
-        .when(ringed, |face| face.border_2().border_color(theme.agent))
+    match agent {
+        true => design::agent_avatar(name, picture, ladder.avatar, theme),
+        false => design::avatar_with(name, picture, ladder.avatar, theme),
+    }
 }
 
 /// A state word on the kit's 20 tall tag (`Badge.tsx`), in its tint.

@@ -749,9 +749,6 @@ fn dm_button(
     design::item(row, Role::ListBoxOption, active)
 }
 
-// A person's round initials, or their picture once read (an agent's
-// ringed in its tint): a direct room's face, in the sidebar and over the
-// room.
 pub fn avatar(
     id: impl Into<ElementId>,
     name: &str,
@@ -760,13 +757,15 @@ pub fn avatar(
     fill: view::Hsla,
     theme: &Theme,
 ) -> impl IntoElement {
-    let ringed = agent && picture.is_some();
-    design::avatar_with(name, picture, design::size::AVATAR_LG, theme)
-        .id(id)
-        .bg(if agent { theme.agent_soft } else { fill })
+    let pictured = picture.is_some();
+    let face = design::avatar_with(name, picture, design::size::AVATAR_LG, theme).bg(fill);
+    let face = match agent {
+        true => design::agent_tint(face, pictured, theme),
+        false => face,
+    };
+    face.id(id)
         .text_color(theme.foreground)
         .text_size(design::text::CAPTION)
-        .when(ringed, |face| face.border_2().border_color(theme.agent))
 }
 
 // A row a held row lands on: an accent edge on the side it lands, below when it comes from above.

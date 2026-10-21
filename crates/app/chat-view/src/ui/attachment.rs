@@ -8,7 +8,7 @@ use view::prelude::*;
 
 use super::button;
 use super::dialogs::INSET;
-use crate::attach::{Picture, Unread};
+use crate::attach::{Enlarged, Picture, Unread};
 use crate::{Chat, words};
 
 const FILE_W: Pixels = px(360.);
@@ -134,9 +134,11 @@ pub(crate) fn over(
         chat.enlarged = None;
         cx.notify();
     });
-    let enlarged = chat.enlarged.as_ref();
-    let label = enlarged.map(|file| file.name.clone()).unwrap_or_default();
-    let whole = enlarged.and_then(|file| whole(chat, file, cx, theme, ladder));
+    let (label, whole) = match chat.enlarged.as_ref() {
+        Some(Enlarged::File(file)) => (file.name.clone(), whole(chat, file, cx, theme, ladder)),
+        Some(Enlarged::Face { account, name }) => (name.clone(), face(chat, *account, name, cx)),
+        None => (String::new(), None),
+    };
     modal_overlay(WHOLE_OVERLAY, label, screen, whole)
         .flex()
         .items_center()
@@ -145,6 +147,24 @@ pub(crate) fn over(
         .backdrop(hsla(0., 0., 0., 0.55))
         .on_dismiss(dismiss)
         .into_any_element()
+}
+
+fn face(chat: &Chat, account: u64, name: &str, cx: &mut Context<Chat>) -> Option<AnyElement> {
+    let image = chat.faces.of(account, cx)?;
+    let size = view::picture::picture_size(image.bytes())?;
+    let inset = 2. * f32::from(INSET);
+    let (width, height) = chat.layout.viewport;
+    let picture = fitted(&Picture { image, size }, (width - inset, height - inset))
+        .id(format!("{WHOLE}/image"))
+        .role(Role::Image)
+        .aria_label(name.to_owned());
+    let whole = div()
+        .id(WHOLE)
+        .flex()
+        .flex_col()
+        .items_center()
+        .child(picture);
+    Some(whole.into_any_element())
 }
 
 fn whole(

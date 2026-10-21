@@ -17,11 +17,7 @@ pub(crate) fn agent_face(
     face: impl Into<Face>,
     theme: &Theme,
 ) -> Div {
-    let ringed = picture.is_some();
-    design::avatar_with(&agent.name, picture, face, theme)
-        .bg(theme.agent_soft)
-        .text_color(theme.agent)
-        .when(ringed, |face| face.border_2().border_color(theme.agent))
+    design::agent_avatar(&agent.name, picture, face, theme)
 }
 
 pub(crate) fn ownership_choices(

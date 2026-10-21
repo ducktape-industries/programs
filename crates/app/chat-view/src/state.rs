@@ -196,7 +196,7 @@ pub struct Chat {
     pub(crate) files_diff_again: bool,
     // the picture a click opened whole over the room
     #[serde(skip)]
-    pub(crate) enlarged: Option<chat::message::Attachment>,
+    pub(crate) enlarged: Option<crate::attach::Enlarged>,
     // the rooms opened this session and left, by id
     #[serde(skip)]
     pub(crate) visited: BTreeMap<String, Visited>,

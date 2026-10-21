@@ -12,6 +12,7 @@ use view::design::Ladder;
 
 const WORK_RECORD: &str = "chat-card-work-record";
 const OPEN_PROFILE: &str = "chat-card-open-profile";
+const PICTURE: &str = "chat-card-picture";
 const WIDTH: f32 = 280.;
 
 /// The card's first button, which takes the keys on open.
@@ -82,6 +83,36 @@ pub(super) fn card(
         open(account.to_string()),
         *theme,
     );
+    let picture = chat.faces.of(account, cx);
+    let pictured = picture.is_some();
+    let face = crate::ui::sidebar::avatar(
+        "chat-card-avatar",
+        &name,
+        true,
+        picture,
+        theme.surface_raised,
+        theme,
+    );
+    let face = match pictured {
+        true => {
+            let enlarge = {
+                let name = name.clone();
+                cx.listener(move |chat, _: &ClickEvent, _, cx| {
+                    chat.enlarge_face(account, name.clone(), cx)
+                })
+            };
+            div()
+                .id(PICTURE)
+                .role(Role::Button)
+                .aria_label(format!("Open {name}’s picture"))
+                .focusable()
+                .cursor_pointer()
+                .on_click(enlarge)
+                .child(face)
+                .into_any_element()
+        }
+        false => face.into_any_element(),
+    };
     div()
         .id("chat-card")
         .w(px(WIDTH))
@@ -89,21 +120,7 @@ pub(super) fn card(
         .flex_col()
         .gap_2()
         .p_3()
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(crate::ui::sidebar::avatar(
-                    "chat-card-avatar",
-                    &name,
-                    true,
-                    chat.faces.of(account, cx),
-                    theme.surface_raised,
-                    theme,
-                ))
-                .child(who),
-        )
+        .child(div().flex().items_center().gap_2().child(face).child(who))
         .children(answers)
         .child(
             div()

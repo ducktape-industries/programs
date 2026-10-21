@@ -489,13 +489,9 @@ pub(super) fn face(
     let kind = account.kind();
     let off = design::note(&kind).is_some();
     let name = &account.card.name;
-    let ringed = picture.is_some();
     let avatar = match kind {
         identity::Kind::System(_) => module_face(name, size, k),
-        identity::Kind::Program { .. } => design::avatar_with(name, picture, size, &k.theme)
-            .bg(k.theme.agent_soft)
-            .text_color(k.theme.agent)
-            .when(ringed, |face| face.border_2().border_color(k.theme.agent)),
+        identity::Kind::Program { .. } => design::agent_avatar(name, picture, size, &k.theme),
         identity::Kind::User => design::avatar_with(name, picture, size, &k.theme),
     };
     avatar.when(off, |avatar| avatar.opacity(OFF_OPACITY))

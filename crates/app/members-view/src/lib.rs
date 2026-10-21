@@ -190,16 +190,10 @@ impl Group {
         }
     }
 
-    // An avatar in this group's look: a person's as it is, an agent's in
-    // the agent tint (a picture ringed in it), a program's square in the
-    // data face.
     fn face(self, avatar: Div, pictured: bool, theme: &Theme) -> Div {
         match self {
             Group::People => avatar,
-            Group::Agents => avatar
-                .bg(theme.agent_soft)
-                .text_color(theme.agent)
-                .when(pictured, |face| face.border_2().border_color(theme.agent)),
+            Group::Agents => design::agent_tint(avatar, pictured, theme),
             Group::Programs => avatar
                 .rounded_none()
                 .font_family(design::fonts::FAMILY_MONO),

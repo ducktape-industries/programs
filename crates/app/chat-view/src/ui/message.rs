@@ -341,7 +341,6 @@ fn avatar(
             .into_any_element();
     }
     let id = format!("chat-message-{}-avatar", message.id);
-    let ringed = message.agent && picture.is_some();
     let face = div()
         .id(id.clone())
         .size_7()
@@ -349,19 +348,14 @@ fn avatar(
         .items_center()
         .justify_center()
         .rounded(design::space::XS)
-        .bg(if message.agent {
-            theme.agent_soft
-        } else {
-            theme.surface_raised
-        })
-        .text_color(if message.agent {
-            theme.agent
-        } else {
-            theme.muted
-        })
+        .bg(theme.surface_raised)
+        .text_color(theme.muted)
         .font_weight(view::FontWeight::SEMIBOLD)
-        .text_size(design::text::CAPTION)
-        .when(ringed, |face| face.border_2().border_color(theme.agent));
+        .text_size(design::text::CAPTION);
+    let face = match message.agent {
+        true => design::agent_tint(face, picture.is_some(), theme),
+        false => face,
+    };
     let face = match picture {
         Some(picture) => {
             let initial = message.initial.clone();
@@ -419,17 +413,14 @@ pub(super) fn still_face(
         .items_center()
         .justify_center()
         .rounded(design::space::XS)
-        .bg(if agent {
-            theme.agent_soft
-        } else {
-            theme.surface_raised
-        })
-        .text_color(if agent { theme.agent } else { theme.muted })
+        .bg(theme.surface_raised)
+        .text_color(theme.muted)
         .font_weight(view::FontWeight::SEMIBOLD)
-        .text_size(design::text::CAPTION)
-        .when(agent && picture.is_some(), |face| {
-            face.border_2().border_color(theme.agent)
-        });
+        .text_size(design::text::CAPTION);
+    let face = match agent {
+        true => design::agent_tint(face, picture.is_some(), theme),
+        false => face,
+    };
     match picture {
         Some(picture) => face
             .child(
