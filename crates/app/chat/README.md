@@ -191,6 +191,22 @@ and `Query::ChosenBy { channel_id, accounts }` several in one read, in the order
 room details offer the reader's own choice, then a row for each active agent the reader manages
 (and one for all of them), read with `ChosenBy` and written with `ChooseForMany`.
 
+## Asks
+
+An ask is a question put to accounts, with two to four options and one of them the default its
+asker goes on with (`chat::asking`). It is an ordinary message: chat keeps no ask state and has no ask
+op. `asking::blocks` writes it in blocks every reader already shows: a first line that mentions whom
+it asks, the question in bold and `#ask`; one numbered line per option (`N. label`, then
+` — detail` when it has one), the default's label alone in bold; and an italic line saying what goes
+ahead unless someone picks. A reader that draws no buttons shows it as text, and an answer is a
+reply in its thread, typed or pressed. `asking::read` finds an ask in any message of that form, one
+typed by hand included, and `asking::answer` reads a reply's words as an option: its label, case
+folded, or its number. `asking::check` refuses what `read` could not read back.
+
+`Query::Repliers { channel_id, roots }` answers, for each root asked and in the order asked, the
+first reply each account wrote in its thread that is no notice, in reply order (a deleted one included, marked
+deleted), so a reader learns who has answered which asks, and in what words, in one read.
+
 ## Notices
 
 A module's status line (a pod ended, a check failed, a change merged) is a notice: `Notify {

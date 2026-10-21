@@ -24,6 +24,7 @@
 //! [`program::MockHost`] exactly as the host does. The `program` feature adds
 //! its wasm exports.
 mod adopt;
+pub mod asking;
 pub mod attributed;
 mod description;
 mod examples;
@@ -496,6 +497,10 @@ pub enum Query {
         principal: Principal,
         channel_ids: Vec<String>,
     },
+    #[ask(Reply::Repliers(Vec<(u64, Vec<MsgRow>)>))]
+    #[reads(state::REPLIES, state::MESSAGES)]
+    #[tool_query(description = "For each thread of roots, by its root's seq and in the order asked, the first reply each account wrote in it that is no notice, in reply order (a deleted one included, marked deleted): who has answered which thread, and in what words, in one read. A seq no thread has answers no replies.", example = examples::repliers)]
+    Repliers { channel_id: String, roots: Vec<u64> },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -535,6 +540,7 @@ pub enum Reply {
     Holders(PageResponse<Holder>),
     Clients(Vec<(u64, Option<String>)>),
     Seated(Vec<String>),
+    Repliers(Vec<(u64, Vec<MsgRow>)>),
 }
 
 // One room's count ([`Query::Unread`]): what came after the cursor asked, up to `to`, meant for

@@ -298,6 +298,10 @@ impl Program for Chat {
                     .collect();
                 (Reply::Seated(seated), vec![])
             }
+            Query::Repliers { channel_id, roots } => (
+                Reply::Repliers(crate::queries::repliers(ctx, &channel_id, roots)?),
+                vec![],
+            ),
         };
         seen_by(ctx, reply, viewer)
     }

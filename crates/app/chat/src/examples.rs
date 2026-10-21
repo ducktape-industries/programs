@@ -449,3 +449,10 @@ pub(crate) fn seated() -> Query {
         channel_ids: vec![room(), "general".into()],
     }
 }
+
+pub(crate) fn repliers() -> Query {
+    Query::Repliers {
+        channel_id: room(),
+        roots: vec![4, 9],
+    }
+}

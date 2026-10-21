@@ -7,6 +7,7 @@ use ::program::{ExecCtx, MockHost, Program, QueryCtx};
 
 use crate::{Op, PageRequest, PostPolicy, Principal, Query, ReactedBy, Reply, parse_message};
 
+mod asks;
 mod attachments;
 mod attributed;
 mod channels;

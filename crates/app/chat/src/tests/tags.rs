@@ -35,7 +35,7 @@ const LIVE_OPS: [(&str, i64); 29] = [
     ("NotifyBy", 32),
 ];
 
-const LIVE_QUERIES: [(&str, i64); 27] = [
+const LIVE_QUERIES: [(&str, i64); 28] = [
     ("Channels", 0),
     ("Channel", 1),
     ("MessageById", 2),
@@ -63,9 +63,10 @@ const LIVE_QUERIES: [(&str, i64); 27] = [
     ("Holders", 26),
     ("Clients", 27),
     ("Seated", 28),
+    ("Repliers", 29),
 ];
 
-const LIVE_REPLIES: [(&str, i64); 27] = [
+const LIVE_REPLIES: [(&str, i64); 28] = [
     ("Channels", 0),
     ("Channel", 1),
     ("Message", 2),
@@ -93,6 +94,7 @@ const LIVE_REPLIES: [(&str, i64); 27] = [
     ("Holders", 26),
     ("Clients", 27),
     ("Seated", 28),
+    ("Repliers", 29),
 ];
 
 const MIGRATE_TAG: u8 = 13;

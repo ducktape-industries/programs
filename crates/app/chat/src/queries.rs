@@ -365,7 +365,8 @@ fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
         | Reply::Unread(_)
         | Reply::Busy(_)
         | Reply::Holders(_)
-        | Reply::Seated(_) => vec![],
+        | Reply::Seated(_)
+        | Reply::Repliers(_) => vec![],
     }
 }
 
@@ -381,4 +382,31 @@ fn mark_reacted(ctx: &QueryCtx, viewer: &[Principal], row: &mut MsgRow) {
             REACTIONS.has(ctx, &key)
         });
     }
+}
+
+pub(crate) fn repliers(
+    ctx: &QueryCtx,
+    channel_id: &str,
+    roots: Vec<u64>,
+) -> Result<Vec<(u64, Vec<MsgRow>)>, Error> {
+    let every = PageRequest::default();
+    roots
+        .into_iter()
+        .map(|root| {
+            let thread = REPLIES.range_of(ctx, &(channel_id.to_owned(), root), &every)?;
+            let at = thread
+                .items
+                .into_iter()
+                .map(|(channel, _, seq)| (channel, seq));
+            let mut answered: Vec<MsgRow> = Vec::new();
+            for row in messages(ctx, at)? {
+                let first = answered.iter().all(|kept| kept.author != row.author);
+                let answers = first && row.notice().is_none();
+                if answers {
+                    answered.push(row);
+                }
+            }
+            Ok((root, answered))
+        })
+        .collect()
 }
