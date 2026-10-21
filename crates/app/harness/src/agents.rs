@@ -9,7 +9,7 @@ use abi::role::identity::{AccountNumber, Category, Kind, Profile, Standing};
 use attribution::{Actor, Change, Kind as Changed, Reason, Source};
 
 use crate::config::Pin;
-use crate::conversations::{binding, conversation, current, route};
+use crate::conversations::{binding, bound_at, conversation, current, route};
 use crate::listening::chosen;
 use crate::pictures::{self, Picture};
 use crate::resume;
@@ -272,7 +272,8 @@ fn conversation_words(title: &str, bound: Option<&Place>) -> String {
     format!(
         "- Conversation: {title}. It is one of several conversations you hold at once, bound \
          to {words}: only messages from there arrive here, and messages from anywhere else go \
-         to your other conversations. Each names who wrote it. Answer there: {answer}.",
+         to your other conversations. Each names who wrote it, and a post of yours there from \
+         another of your conversations arrives here too. Answer there: {answer}.",
         words = place.words(),
     )
 }
@@ -342,13 +343,14 @@ enum Heard {
     Waited,
     Notice,
     Continued { mentioned: u64 },
+    Own,
 }
 
 impl Heard {
     // a mention or a direct message starts a turn at once; the rest waits out the settle window
     fn direct(self) -> bool {
         match self {
-            Heard::Mention | Heard::Direct | Heard::Waited | Heard::Notice => true,
+            Heard::Mention | Heard::Direct | Heard::Waited | Heard::Notice | Heard::Own => true,
             Heard::Thread | Heard::Listen | Heard::Watch | Heard::Continued { .. } => false,
         }
     }
@@ -394,7 +396,6 @@ fn designation(
     actor: AccountNumber,
     heard: Heard,
 ) -> Result<Designation, Error> {
-    let who = name_of(ctx, actor);
     let from_chat = change.source.program == chat::PROGRAM
         && change.source.object.kind == chat::attributed::MESSAGE;
     let message = match from_chat {
@@ -410,6 +411,7 @@ fn designation(
         false => None,
     };
     let Some(row) = message else {
+        let who = name_of(ctx, actor);
         let Source { program, object } = &change.source;
         let place = format!("{program}/{}/{}", object.kind, object.id);
         let text = format!(
@@ -425,6 +427,16 @@ fn designation(
             room: None,
         });
     };
+    said_in(ctx, row, actor, heard)
+}
+
+fn said_in(
+    ctx: &QueryCtx,
+    row: chat::MsgRow,
+    actor: AccountNumber,
+    heard: Heard,
+) -> Result<Designation, Error> {
+    let who = name_of(ctx, actor);
     let asked = chat::Query::Clients {
         channel_id: row.channel_id.clone(),
         seqs: vec![row.seq],
@@ -444,6 +456,7 @@ fn designation(
         Heard::Notice => "sent you a notice",
         Heard::Continued { .. } => "went on",
         Heard::Listen | Heard::Watch | Heard::Waited => "wrote",
+        Heard::Own => "wrote from another of your conversations",
     };
     let listened = match heard {
         Heard::Listen => ", which you listen to",
@@ -453,7 +466,8 @@ fn designation(
         | Heard::Watch
         | Heard::Waited
         | Heard::Notice
-        | Heard::Continued { .. } => "",
+        | Heard::Continued { .. }
+        | Heard::Own => "",
     };
     let after = match heard {
         Heard::Continued { mentioned } => format!(", after mentioning you in message {mentioned}"),
@@ -463,7 +477,8 @@ fn designation(
         | Heard::Listen
         | Heard::Watch
         | Heard::Waited
-        | Heard::Notice => String::new(),
+        | Heard::Notice
+        | Heard::Own => String::new(),
     };
     let in_thread = match row.thread {
         Some(root) => format!(", in the thread of message {root} (reply_to {root})"),
@@ -517,6 +532,69 @@ pub(crate) fn hear_again(ctx: &ExecCtx, changes: Vec<Change>) {
         let resent = Op::Attributed(Box::new(change));
         ctx.emit(&ctx.env().program, &resent, ::program::Reply::None);
     }
+}
+
+pub(crate) fn posts_in(writes: &[crate::tools::Write]) -> Vec<String> {
+    let to_chat = writes.iter().filter(|write| write.target == chat::PROGRAM);
+    to_chat
+        .filter_map(|write| match abi::decode::<chat::Op>(&write.payload) {
+            Ok(chat::Op::PostMessage { message_id, .. }) => Some(message_id),
+            _ => None,
+        })
+        .collect()
+}
+
+pub(crate) fn own_posts(ctx: &ExecCtx, agent: AccountNumber, writer: u64, posts: &[String]) {
+    for message_id in posts {
+        let asked = chat::Query::MessageById {
+            message_id: message_id.clone(),
+        };
+        let Ok(chat::Reply::Message(Some(row))) = ctx.query(chat::PROGRAM, &asked) else {
+            continue;
+        };
+        if let Ok(Some(thread)) = own_post(ctx, agent, writer, row) {
+            let resume = Op::Resume { thread };
+            ctx.emit(&ctx.env().program, &resume, ::program::Reply::None);
+        }
+    }
+}
+
+fn own_post(
+    ctx: &ExecCtx,
+    agent: AccountNumber,
+    writer: u64,
+    row: chat::MsgRow,
+) -> Result<Option<u64>, Error> {
+    let places = chat_places(&row.channel_id, row.thread);
+    let Some((mut thread, reached)) = bound_at(ctx, agent, &places)? else {
+        return Ok(None);
+    };
+    if thread.id == writer {
+        return Ok(None);
+    }
+    let Designation {
+        text,
+        pictures,
+        from,
+        room,
+        ..
+    } = said_in(ctx, row, agent, Heard::Own)?;
+    PLACES.put(ctx, &(agent, reached), &thread.id);
+    if let Some(room) = &room {
+        crate::room_rules::tell(ctx, &mut thread, room)?;
+    }
+    let text = text + &crate::waits::still_armed(ctx, thread.id)?;
+    let author = Principal::Account(agent);
+    say_from(
+        ctx,
+        &mut thread,
+        Body::Post { author, text },
+        pictures,
+        from,
+    );
+    THREADS.put(ctx, &thread.id, &thread);
+    resume::heard(ctx, thread.id)?;
+    Ok(Some(thread.id))
 }
 
 fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
@@ -592,7 +670,8 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
             | Heard::Listen
             | Heard::Watch
             | Heard::Waited
-            | Heard::Notice => {}
+            | Heard::Notice
+            | Heard::Own => {}
         }
     }
     // the wake that conversation heard already quotes the message
@@ -755,7 +834,7 @@ fn dropped(
         Heard::Continued { .. } => "a mention's continuation",
         // a channel it listens to is talk around the agent, not to it: what it does not answer
         // there is left without a notice, or each such message would add one
-        Heard::Listen | Heard::Watch | Heard::Waited => return Ok(()),
+        Heard::Listen | Heard::Watch | Heard::Waited | Heard::Own => return Ok(()),
     };
     let Source { program, object } = &change.source;
     let text = format!(

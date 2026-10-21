@@ -446,3 +446,22 @@ fn harness_own_wakes_never_ask_again_about_input_a_turn_gave_up_on() {
     assert_eq!(notices(chain, thread).len(), told);
     assert_eq!(thread_row(chain, thread).asking, Asking::Idle);
 }
+
+#[test]
+fn the_wait_stops_doubling_at_the_wait_egress_gives_one_request() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "hello", Some(WINDOW));
+    let past = egress::DEFAULT_WAIT.ilog2() + 2;
+    let mut height = 3;
+    chain.at(height, 0);
+    for attempt in 1..=past {
+        fail(chain, &open_request(chain).0);
+        let gap = (1u64 << (attempt - 1)).min(egress::DEFAULT_WAIT);
+        let told = notices(chain, thread);
+        let again = format!("again at block {} (attempt {attempt})", height + gap);
+        assert!(told.last().unwrap().ends_with(&again), "{told:?}");
+        height += gap + 1;
+        chain.at(height, 0);
+    }
+}

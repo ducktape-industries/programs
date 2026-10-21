@@ -61,17 +61,28 @@ pub(crate) fn route(
     places: &[String],
     place: String,
 ) -> Result<(ThreadRow, String), Error> {
+    if let Some(found) = bound_at(ctx, agent.number, places)? {
+        return Ok(found);
+    }
+    let row = conversation(ctx, agent, &place)?;
+    Ok((row, place))
+}
+
+pub(crate) fn bound_at(
+    ctx: &QueryCtx,
+    agent: AccountNumber,
+    places: &[String],
+) -> Result<Option<(ThreadRow, String)>, Error> {
     for key in places {
-        let Some(bound) = BOUND.get(ctx, &(agent.number, key.clone()))? else {
+        let Some(bound) = BOUND.get(ctx, &(agent, key.clone()))? else {
             continue;
         };
         let row = thread(ctx, bound.thread)?;
         if !row.closed {
-            return Ok((row, key.clone()));
+            return Ok(Some((row, key.clone())));
         }
     }
-    let row = conversation(ctx, agent, &place)?;
-    Ok((row, place))
+    Ok(None)
 }
 
 enum Opening {

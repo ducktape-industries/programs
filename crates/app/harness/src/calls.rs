@@ -687,7 +687,11 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
             call,
         };
         crate::woken::sending(ctx, &arm, &arming);
+        let posts = crate::agents::posts_in(&writes);
         let wrote = written(ctx, owner.agent, writes).await;
+        if wrote.is_ok() {
+            crate::agents::own_posts(ctx, owner.agent, id, &posts);
+        }
         ctx.blob_release_lines(tools::held_for(id, call));
         let output = wrote.as_ref().ok().map(Vec::as_slice);
         crate::woken::sent(ctx, &arm, arming, output)?;

@@ -533,3 +533,34 @@ fn a_conversation_held_for_its_reset_asks_again_once_a_turn_on_its_service_and_p
     let (_, pinned) = turn_open(chain, held);
     assert_eq!(pinned, None, "its service picks an account with room");
 }
+
+#[test]
+fn a_conversation_waiting_out_its_backoff_asks_again_once_a_turn_on_its_service_and_provider_is_answered()
+ {
+    let world = world();
+    let chain = &world.chain;
+    harness_wired(&world);
+    configured_as(chain, CONFIG, MODEL, SERVICE, PROVIDER);
+    let waiting = world.mention("m1", "hello");
+    chain.at(2, 0);
+    model_read(chain);
+    for height in [3, 5, 8] {
+        chain.at(height, 0);
+        let (request, _) = turn_open(chain, waiting);
+        answer(
+            chain,
+            request.id,
+            Answer::Failed("the service is down".into()),
+        );
+    }
+    let told = notices(chain, waiting);
+    let again = "again at block 12 (attempt 3)";
+    assert!(told.last().unwrap().ends_with(again), "{told:?}");
+    let ranger = agent_on(&world, "Ranger", MODEL, SERVICE, PROVIDER);
+    let ranging = mention_of(&world, ranger, "m2", "anyone there?");
+    chain.at(9, 0);
+    says_on(chain, SERVICE, ranging, "a", "0.1");
+    chain.at(11, 0);
+    let (_, pinned) = turn_open(chain, waiting);
+    assert_eq!(pinned, None, "pulled in before block 12, its service picks");
+}

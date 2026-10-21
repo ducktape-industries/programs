@@ -762,3 +762,64 @@ fn closing_a_conversation_closed_already_is_refused_as_closed_for_anyone() {
         );
     }
 }
+
+#[test]
+fn an_agents_own_post_reaches_its_conversation_bound_there_and_never_the_writer_or_the_canonical_one()
+ {
+    let world = world();
+    let chain = &world.chain;
+    let canonical = answered(&world, "m1", "hello");
+    let before = frames(chain, canonical);
+    room(&world, "j-a");
+    room(&world, "j-b");
+    let a = bind(&world, ADA, in_room("j-a")).unwrap();
+    let b = bind(&world, ADA, in_room("j-b")).unwrap();
+    say_in(&world, "j-a", "a1", "hand j-b a note");
+    chain.at(4, 0);
+    let note = tool_use(
+        "toolu_h",
+        "chat_post",
+        json!({ "channel": "j-b", "text": "note for b" }),
+    );
+    let handing = reply(json!([note]), "tool_use", 10);
+    answer(chain, asked_for(chain, a).id, Answer::Output(handing));
+    chain.at(5, 0);
+    relay_back(chain, "toolu_h");
+    assert!(!result_of(chain, a, "toolu_h").1);
+    let [heard] = &posts(chain, b)[..] else {
+        panic!("{:?}", posts(chain, b));
+    };
+    let own = format!(
+        "(account {}) wrote from another of your conversations in chat channel j-b",
+        world.agent
+    );
+    assert!(heard.contains(&own), "{heard}");
+    assert!(heard.ends_with("note for b"), "{heard}");
+    asked_for(chain, b);
+
+    chain.at(6, 0);
+    let mine = tool_use(
+        "toolu_m",
+        "chat_post",
+        json!({ "channel": "j-a", "text": "note for myself" }),
+    );
+    let general = tool_use(
+        "toolu_g",
+        "chat_post",
+        json!({ "channel": "general", "text": "note for all" }),
+    );
+    let both = reply(json!([mine, general]), "tool_use", 10);
+    answer(chain, asked_for(chain, a).id, Answer::Output(both));
+    chain.at(7, 0);
+    relay_back(chain, "toolu_m");
+    relay_back(chain, "toolu_g");
+    assert!(!result_of(chain, a, "toolu_m").1);
+    assert!(!result_of(chain, a, "toolu_g").1);
+    assert_eq!(
+        posts(chain, a).len(),
+        1,
+        "the writer never hears its own post"
+    );
+    assert_eq!(frames(chain, canonical), before, "nor the canonical one");
+    assert_eq!(posts(chain, b).len(), 1);
+}

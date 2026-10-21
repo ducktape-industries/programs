@@ -412,7 +412,9 @@ pub(crate) async fn room(ctx: &Ctx, service: &str, providers: &[String]) {
             .is_some_and(|pick| pick.service == service);
         let lane = ASKED.get(ctx, &id).ok().flatten();
         let spoken = lane.is_some_and(|lane| providers.contains(&lane.provider));
-        if retry.until.is_some() && on && spoken {
+        let later = retry.until.is_some() || retry.at > next;
+        let pulled = later && on && spoken;
+        if pulled {
             let until = None;
             RETRIES.put(
                 ctx,
@@ -461,7 +463,9 @@ pub(crate) async fn again(ctx: &Ctx, id: u64, failure: Failure) -> Result<(), Er
     let gap = match until {
         Some(_) => 1,
         None if moved => 1,
-        None => 1u64.checked_shl(attempt - 1).unwrap_or(u64::MAX),
+        None => 1u64
+            .checked_shl(attempt - 1)
+            .map_or(DEFAULT_WAIT, |gap| gap.min(DEFAULT_WAIT)),
     };
     let at = height.saturating_add(gap);
     let entry = match ctx.schedule(at, &ctx.env().program, &wake(id)).await {
