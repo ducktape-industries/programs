@@ -59,7 +59,7 @@ fn tooled() -> World {
 // the tools and the system prompt of the model call open now
 fn sent(chain: &MockChain) -> (Vec<Value>, String) {
     let (row, _) = open_request(chain);
-    let request = body(chain, &row);
+    let request = provider_body(chain, &row);
     let tools = request["tools"].as_array().unwrap().clone();
     let blocks = request["system"].as_array().unwrap();
     let texts: Vec<&str> = blocks

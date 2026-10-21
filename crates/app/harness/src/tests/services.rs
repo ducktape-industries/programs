@@ -402,13 +402,19 @@ fn a_one_service_route_is_asked_unpinned() {
 fn the_anthropic_wire_names_no_account_even_once_one_answered() {
     let world = world();
     let chain = &world.chain;
-    let thread = world.opened("m1", "hello", Some(WINDOW));
+    let anthropic = set_route(&[(SERVICE, Wire::AnthropicMessages)]);
+    chain.submit(signed(ADA), PROGRAM, &anthropic).unwrap();
+    let thread = world.mention("m1", "hello");
+    chain.at(2, 0);
+    let (request, _) = open_request(chain);
+    let info = json!({ "type": "model", "id": MODEL, "max_input_tokens": WINDOW });
+    answer_raw(chain, request.id, Answer::Output(response(200, info)));
     chain.at(3, 0);
     let (request, _) = open_request(chain);
     let said = reply(json!([{ "type": "text", "text": "hi" }]), "end_turn", 10);
     let mut said: http::Response = abi::decode(&said).unwrap();
     said.headers = answer_headers("a", "0.5", "allowed");
-    answer(chain, request.id, Answer::Output(abi::encode(&said)));
+    answer_raw(chain, request.id, Answer::Output(abi::encode(&said)));
     assert_eq!(route(chain, thread), on(SERVICE, "a"));
     world.mention("m2", "and now?");
     chain.at(4, 0);

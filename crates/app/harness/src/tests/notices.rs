@@ -113,7 +113,7 @@ fn each_choice_delivers_what_it_names_and_nothing_else_reaches_the_model() {
             continue;
         }
         let (request, _) = open_request(chain);
-        let sent = body(chain, &request).to_string();
+        let sent = provider_body(chain, &request).to_string();
         for (words, delivered) in words.into_iter().zip(delivered) {
             let reached = sent.contains(words);
             assert!(

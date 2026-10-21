@@ -11,7 +11,7 @@ fn the_thinking_level_the_configuration_names_reaches_the_model_and_its_thinking
     commit(chain, ADA, CONFIG, &md(&deep));
     let thread = world.opened("m1", "think about it", Some(WINDOW));
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request);
+    let sent = provider_body(chain, &request);
     assert_eq!(sent["thinking"], json!({ "type": "adaptive" }));
     assert_eq!(sent["output_config"], json!({ "effort": "high" }));
     chain.at(3, 0);
@@ -25,7 +25,7 @@ fn the_thinking_level_the_configuration_names_reaches_the_model_and_its_thinking
     );
     world.mention("m2", "and now?");
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request);
+    let sent = provider_body(chain, &request);
     let turn = &sent["messages"][1]["content"][0];
     assert_eq!(
         (&turn["type"], &turn["thinking"], &turn["signature"]),

@@ -62,7 +62,7 @@ fn rules_come_once_ahead_of_the_message_and_again_when_they_change() {
     set_rules(&world, FRENCH);
     world.opened("m1", "first", Some(WINDOW));
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request).to_string();
+    let sent = provider_body(chain, &request).to_string();
     assert!(sent.contains(FRENCH), "the model reads them: {sent}");
     world.mention("m2", "second");
     let heard = posts(&world);

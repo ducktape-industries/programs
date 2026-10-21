@@ -212,7 +212,7 @@ fn a_clear_wake_on_a_free_place_ends_inside_its_arming_and_still_reaches_the_con
         deliver: streamed_as(thread),
     };
     assert_eq!(request.delivery, deliver);
-    let asked = body(chain, &request).to_string();
+    let asked = provider_body(chain, &request).to_string();
     assert!(
         asked.contains("Wake 1 is over: #ops is clear."),
         "the bound conversation reads it with its call's result"

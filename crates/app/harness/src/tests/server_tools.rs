@@ -79,7 +79,10 @@ fn server_tools_are_offered_only_to_an_agent_that_lists_them() {
     let chain = &world.chain;
     world.opened("m1", "hello", Some(WINDOW));
     let (request, head) = open_request(chain);
-    let tools = body(chain, &request)["tools"].as_array().unwrap().clone();
+    let tools = provider_body(chain, &request)["tools"]
+        .as_array()
+        .unwrap()
+        .clone();
     assert_eq!(tools.len(), tools::CATALOG.len());
     assert!(typed(&tools).is_empty(), "{tools:?}");
     chain.at(3, 0);
@@ -92,7 +95,10 @@ fn server_tools_are_offered_only_to_an_agent_that_lists_them() {
     commit(chain, ADA, CONFIG, &md(&searcher()));
     world.mention("m2", "look it up");
     let (request, searching) = open_request(chain);
-    let tools = body(chain, &request)["tools"].as_array().unwrap().clone();
+    let tools = provider_body(chain, &request)["tools"]
+        .as_array()
+        .unwrap()
+        .clone();
     assert_eq!(tools.len(), tools::CATALOG.len() + 2);
     assert_eq!(
         typed(&tools),
@@ -111,6 +117,14 @@ fn server_tools_are_offered_only_to_an_agent_that_lists_them() {
     );
 }
 
+fn said_on_one_account(chain: &MockChain, content: Value, stop: &str, input_tokens: u64) {
+    let (request, _) = open_request(chain);
+    let said = reply(content, stop, input_tokens);
+    let mut said: http::Response = abi::decode(&said).unwrap();
+    said.headers.push(("x-ccs-account".into(), "a".into()));
+    answer(chain, request.id, Answer::Output(abi::encode(&said)));
+}
+
 #[test]
 fn a_search_and_a_fetch_are_kept_as_sent_never_run_and_sent_back() {
     let world = world();
@@ -118,7 +132,7 @@ fn a_search_and_a_fetch_are_kept_as_sent_never_run_and_sent_back() {
     commit(chain, ADA, CONFIG, &md(&searcher()));
     let thread = world.opened("m1", "what is ducktape?", Some(WINDOW));
     chain.at(3, 0);
-    model_says_after(chain, searched_and_fetched(), "end_turn", 40);
+    said_on_one_account(chain, searched_and_fetched(), "end_turn", 40);
 
     let asked = Query::Calls {
         thread,
@@ -143,7 +157,7 @@ fn a_search_and_a_fetch_are_kept_as_sent_never_run_and_sent_back() {
 
     world.mention("m2", "and then?");
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request);
+    let sent = provider_body(chain, &request);
     assert_eq!(sent["messages"][1]["role"], "assistant");
     assert_eq!(sent["messages"][1]["content"], searched_and_fetched());
 }
@@ -166,7 +180,7 @@ fn input_heard_while_a_turn_pauses_mid_fetch_waits_until_the_continuation_is_ans
         "the post waits behind the paused turn"
     );
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request);
+    let sent = provider_body(chain, &request);
     let messages = sent["messages"].as_array().unwrap();
     assert_eq!(
         messages.last().unwrap()["role"],
@@ -197,7 +211,7 @@ fn input_heard_while_a_turn_pauses_mid_fetch_waits_until_the_continuation_is_ans
     assert!(text.contains("and this too"), "{text}");
     let (request, _) = open_request(chain);
     assert!(
-        body(chain, &request)["messages"]
+        provider_body(chain, &request)["messages"]
             .to_string()
             .contains("and this too")
     );
@@ -222,13 +236,16 @@ fn a_paused_turn_given_up_keeps_no_unanswered_server_tool_use_ahead_of_the_input
     chain.at(3, 0);
     let all = searched_and_fetched();
     let blocks = all.as_array().unwrap();
-    model_says(chain, json!(blocks[..4].to_vec()), "pause_turn");
+    said_on_one_account(chain, json!(blocks[..4].to_vec()), "pause_turn", 10);
     assert_eq!(held(chain, thread).len(), 1);
     chain.at(4, 0);
     continuation_refused(chain);
+    chain.at(5, 0);
+    chain.at(6, 0);
+    continuation_refused(chain);
     assert!(held(chain, thread).is_empty(), "the turn was given up");
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request);
+    let sent = provider_body(chain, &request);
     let messages = sent["messages"].as_array().unwrap();
     assert_eq!(messages[1]["role"], "assistant", "{messages:?}");
     assert_eq!(
@@ -257,7 +274,7 @@ fn a_paused_turn_given_up_with_nothing_but_an_unanswered_use_is_left_out_as_a_no
     chain.at(4, 0);
     continuation_refused(chain);
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request);
+    let sent = provider_body(chain, &request);
     let messages = sent["messages"].as_array().unwrap();
     assert_eq!(
         messages.len(),
@@ -300,7 +317,7 @@ fn a_summary_never_ends_between_a_server_tools_use_and_its_result() {
     chain.at(6, 0);
     relay_back(chain, "toolu_m");
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request);
+    let sent = provider_body(chain, &request);
     assert_eq!(sent["compaction"], json!({ "type": "summarize" }));
     for message in sent["messages"].as_array().unwrap() {
         let content = message["content"].as_array().unwrap();

@@ -136,7 +136,7 @@ fn a_message_wakes_a_waiting_conversation_and_names_the_wait_which_stays() {
     world.mention("m2", "still there?");
     assert_eq!(asking(chain), 1, "a message wakes it at once");
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request).to_string();
+    let sent = provider_body(chain, &request).to_string();
     let named = format!("(This conversation still waits: wait {wait} for block 20.)");
     assert!(sent.contains(&named), "{sent}");
     chain.at(7, 0);

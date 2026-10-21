@@ -165,7 +165,7 @@ fn a_call_runs_once_its_block_is_whole_and_the_model_is_asked_once_the_turn_ends
     };
     assert_eq!((call.as_str(), *failed), ("toolu_c", false));
     let (_, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
+    assert_eq!(path(&head), model_wire::TURN);
     assert_eq!(
         thread_row(chain, thread).asking,
         Asking::Asked {
@@ -207,7 +207,7 @@ fn a_call_still_running_when_the_turn_ends_is_recorded_after_it_and_then_the_mod
     };
     assert!(text.contains("and this"), "{text}");
     let (_, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
+    assert_eq!(path(&head), model_wire::TURN);
 }
 
 #[test]
@@ -248,7 +248,7 @@ fn a_streamed_post_lands_once_whole_and_is_never_edited_while_the_draft_shows_it
     let (text, failed) = result_of(chain, thread, "toolu_p");
     assert!(!failed, "{text}");
     let (_, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
+    assert_eq!(path(&head), model_wire::TURN);
 }
 
 #[test]
@@ -303,7 +303,7 @@ fn a_post_the_target_refuses_becomes_the_calls_failed_result() {
     );
     assert!(posts_by(chain, world.agent).is_empty());
     let (_, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
+    assert_eq!(path(&head), model_wire::TURN);
 }
 
 #[test]
@@ -508,14 +508,11 @@ fn a_call_cut_off_mid_input_is_refused_with_its_input_as_written_and_the_model_i
     assert_eq!((call.as_str(), tool.as_str()), ("toolu_1", "forge_commit"));
     assert_eq!(problem, &refusal);
     assert!(notices(chain, thread).is_empty());
-    assert_eq!(
-        partial(chain, thread),
-        Some(Partial::new(Wire::AnthropicMessages))
-    );
+    assert_eq!(partial(chain, thread), Some(Partial::new(Wire::Harness)));
     assert!(assigned(chain, RELAY).is_empty());
     let (next, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
-    let sent = body(chain, &next);
+    assert_eq!(path(&head), model_wire::TURN);
+    let sent = provider_body(chain, &next);
     let messages = sent["messages"].as_array().unwrap();
     let [.., said, answered] = &messages[..] else {
         panic!("the turn and its refusal are sent: {messages:?}");

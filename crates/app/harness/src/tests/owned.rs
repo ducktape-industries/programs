@@ -39,7 +39,7 @@ fn a_routes_policy_decides_who_sets_it_and_any_turn_still_learns_its_window() {
         provider: PROVIDER.into(),
     };
     chain.submit(signed(ADA), PROGRAM, &removed).unwrap();
-    let ccs = [(SERVICE, Wire::AnthropicMessages)];
+    let ccs = [(SERVICE, Wire::Harness)];
     chain
         .submit(signed(ADA), PROGRAM, &set_route(&ccs))
         .unwrap();

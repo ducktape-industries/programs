@@ -30,7 +30,7 @@ fn settling(chain: &MockChain, thread: u64) -> Option<SettleWindow> {
 
 fn last_said(chain: &MockChain) -> String {
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request);
+    let sent = provider_body(chain, &request);
     let last = sent["messages"].as_array().unwrap().last().unwrap().clone();
     assert_eq!(last["role"], "user");
     let blocks = last["content"].as_array().unwrap();

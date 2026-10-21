@@ -252,7 +252,7 @@ fn a_continuation_waits_out_the_settle_window_so_a_burst_makes_one_turn() {
         "one turn hears the burst"
     );
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request)["messages"].to_string();
+    let sent = provider_body(chain, &request)["messages"].to_string();
     assert!(
         sent.contains("first part") && sent.contains("second part"),
         "{sent}"

@@ -99,7 +99,7 @@ fn the_agents_text_is_put_as_a_part_and_an_egress_request_names_it_as_its_body()
     } } });
     ran(chain, 5, &[("c1", "network_call", request)]);
     let [row] = assigned(chain, PODS).try_into().expect("one pods request");
-    assert_eq!(body(chain, &row), spec);
+    assert_eq!(provider_body(chain, &row), spec);
     let Request::Http { head, body, .. } = &row.request else {
         panic!("pods is asked over http");
     };

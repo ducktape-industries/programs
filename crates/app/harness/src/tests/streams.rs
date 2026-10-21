@@ -6,6 +6,7 @@ fn node(chain: &MockChain, op: &egress::Op) -> Result<Vec<u8>, Error> {
 }
 
 fn stream(chain: &MockChain, request: &RequestRow, events: &[Vec<u8>], seqs: &[u64]) {
+    let events = adapted::adapted(events);
     for &seq in seqs {
         let event = egress::Event {
             id: request.id,
@@ -17,6 +18,7 @@ fn stream(chain: &MockChain, request: &RequestRow, events: &[Vec<u8>], seqs: &[u
 }
 
 fn handed(chain: &MockChain, thread: u64, request: &RequestRow, events: &[Vec<u8>], seqs: &[u64]) {
+    let events = adapted::adapted(events);
     for &seq in seqs {
         let event = egress::Event {
             id: request.id,
@@ -73,10 +75,10 @@ fn a_turn_asks_for_a_streamed_reply_delivered_as_its_threads_streamed_op() {
             deliver: streamed_as(thread)
         }
     );
-    assert_eq!(body(&world.chain, &request)["stream"], true);
+    assert_eq!(provider_body(&world.chain, &request)["stream"], true);
     assert_eq!(
         partial(&world.chain, thread),
-        Some(Partial::new(Wire::AnthropicMessages))
+        Some(Partial::new(Wire::Harness))
     );
 }
 
@@ -209,7 +211,7 @@ fn an_error_event_is_noticed_once_and_the_next_input_asks_again() {
     assert_eq!(thread_row(chain, thread).asking, Asking::Idle);
     world.mention("m2", "again");
     let (_, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
+    assert_eq!(path(&head), model_wire::TURN);
 }
 
 #[test]
@@ -248,10 +250,7 @@ fn only_the_egress_role_streams_and_only_into_a_thread_waiting_on_its_model() {
         .submit(Origin::Program(files::PROGRAM.into()), PROGRAM, &forged)
         .unwrap_err();
     assert_eq!(from_files.code, code::UNAUTHORIZED);
-    assert_eq!(
-        partial(chain, thread),
-        Some(Partial::new(Wire::AnthropicMessages))
-    );
+    assert_eq!(partial(chain, thread), Some(Partial::new(Wire::Harness)));
     let elsewhere = Op::Streamed {
         thread: thread + 1,
         event,
@@ -367,9 +366,5 @@ fn a_reply_that_ran_server_tools_measures_its_context_from_its_last_pass() {
         Context::Measured(18182 + 212),
         "the last pass's input and output, not the sum over both passes"
     );
-    assert_eq!(
-        beta(&head),
-        Some(wire::anthropic::COMPACTION_BETA),
-        "every turn asks for the usage of each pass"
-    );
+    assert_eq!(path(&head), model_wire::TURN);
 }

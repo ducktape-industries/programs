@@ -32,7 +32,7 @@ fn each_model_call_reads_the_configuration_at_the_head_and_its_turn_names_that_s
     let first = head(chain);
     let thread = world.opened("m1", "hello", Some(WINDOW));
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request);
+    let sent = provider_body(chain, &request);
     assert_eq!(sent["max_tokens"], 1024);
     assert_eq!(sent["system"][0]["text"], "Keep notes in /shared.");
 
@@ -56,7 +56,7 @@ fn each_model_call_reads_the_configuration_at_the_head_and_its_turn_names_that_s
 
     world.mention("m2", "again");
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request);
+    let sent = provider_body(chain, &request);
     assert_eq!(
         sent["max_tokens"], 2048,
         "the edit holds from the next call"
@@ -121,7 +121,7 @@ fn a_missing_or_malformed_configuration_or_an_unknown_model_is_noticed_once_and_
     commit(chain, ADA, path, &md(&scout()));
     world.mention("m4", "now?");
     let (_, asked) = open_request(chain);
-    assert_eq!(super::path(&asked), "/v1/models/claude-test");
+    assert_eq!(super::path(&asked), model_wire::model_path(MODEL));
     assert_eq!(notices(chain, thread).len(), 3);
 }
 
@@ -155,7 +155,7 @@ fn the_agent_query_resolves_what_harness_runs_an_account_with() {
     assert_eq!(config, scout());
     let ccs = [RouteService {
         service: SERVICE.into(),
-        wire: Wire::AnthropicMessages,
+        wire: Wire::Harness,
     }];
     assert_eq!((provider.as_str(), route.as_slice()), (PROVIDER, &ccs[..]));
     assert_eq!(setup(chain, world.bo), None, "a user is no agent");

@@ -2,6 +2,7 @@
 //! wake and valset seated: what an agent hears reaches it, its model's node answers as the model
 //! would, whole or streamed, and every tool call runs as the agent once its relay comes back.
 mod accounts;
+mod adapted;
 mod blob_put;
 mod budget;
 mod chat_channels;
@@ -54,6 +55,7 @@ use serde_json::{Value, json};
 use valset::{Genesis, Member, Valset};
 
 use crate::*;
+use adapted::provider_body;
 
 const NODE: [u8; 32] = [1; 32];
 const WINDOW: u64 = 200_000;
@@ -336,7 +338,7 @@ fn world_as(id: &str) -> World {
         name: "Scout".into(),
     };
     let agent = number(identity_op(&chain, ADA, create).unwrap());
-    let ccs = set_route(&[(SERVICE, Wire::AnthropicMessages)]);
+    let ccs = set_route(&[(SERVICE, Wire::Harness)]);
     chain.submit(signed(ADA), id, &ccs).unwrap();
     commit(&chain, ADA, CONFIG, &md(&scout()));
     list(&chain, ADA, CONFIG, ::program::Ownership::Owner);
@@ -465,13 +467,26 @@ fn learn(chain: &MockChain, window: Option<u64>) {
     let (request, head) = open_request(chain);
     assert_eq!(
         (head.method, path(&head)),
-        (http::Method::Get, "/v1/models/claude-test")
+        (http::Method::Get, model_wire::model_path(MODEL).as_str())
     );
     let info = json!({ "type": "model", "id": "claude-test", "max_input_tokens": window });
     answer(chain, request.id, Answer::Output(response(200, info)));
 }
 
 fn answer(chain: &MockChain, id: u64, answer: Answer) {
+    let answer = match answer {
+        Answer::Output(output) => match adapted::adapt(chain, id, output) {
+            adapted::Adapted::Whole(output) => Answer::Output(output),
+            adapted::Adapted::Streamed { events, headers } => {
+                return adapted::stream_whole(chain, id, events, headers);
+            }
+        },
+        other => other,
+    };
+    answer_raw(chain, id, answer);
+}
+
+fn answer_raw(chain: &MockChain, id: u64, answer: Answer) {
     let op = egress::Op::Answer { id, answer };
     chain
         .submit(Origin::Signed(NODE.to_vec()), egress::PROGRAM, &op)
@@ -484,7 +499,7 @@ fn model_says(chain: &MockChain, content: Value, stop: &str) {
 
 fn model_says_after(chain: &MockChain, content: Value, stop: &str, input_tokens: u64) {
     let (request, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
+    assert_eq!(path(&head), model_wire::TURN);
     let said = reply(content, stop, input_tokens);
     answer(chain, request.id, Answer::Output(said));
 }
@@ -570,7 +585,7 @@ fn a_heard_post_names_the_client_its_poster_signed_from() {
     chain.at(2, 0);
     learn(chain, Some(WINDOW));
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request);
+    let sent = provider_body(chain, &request);
     let text = sent["messages"][0]["content"][0]["text"].as_str().unwrap();
     assert!(
         text.starts_with(&format!(
@@ -613,7 +628,7 @@ fn a_chat_that_answers_no_clients_still_wakes_the_agent_naming_none() {
     chain.at(2, 0);
     learn(chain, Some(WINDOW));
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request);
+    let sent = provider_body(chain, &request);
     let text = sent["messages"][0]["content"][0]["text"].as_str().unwrap();
     assert!(
         text.starts_with(&format!(
@@ -632,10 +647,10 @@ fn a_mention_by_its_manager_asks_the_model_in_the_agents_conversation() {
     let (request, head) = open_request(chain);
     assert_eq!(
         (head.method, path(&head)),
-        (http::Method::Post, "/v1/messages")
+        (http::Method::Post, model_wire::TURN)
     );
     head.check_path().unwrap();
-    let sent = body(chain, &request);
+    let sent = provider_body(chain, &request);
     assert_eq!(sent["model"], "claude-test");
     let system = sent["system"].as_array().unwrap();
     assert_eq!(system.len(), 2, "{system:?}");
@@ -1017,7 +1032,7 @@ fn every_tool_call_runs_a_block_later_and_the_model_is_asked_once_all_results_ar
     assert_eq!(thread_row(chain, thread).open_calls, 0);
 
     let [next] = assigned(chain, SERVICE).try_into().unwrap();
-    let sent = body(chain, &next);
+    let sent = provider_body(chain, &next);
     let messages = sent["messages"].as_array().unwrap();
     assert_eq!(messages.len(), 3);
     assert_eq!(messages[1]["content"][1]["type"], "tool_use");
@@ -1056,7 +1071,7 @@ fn input_that_arrives_while_a_call_runs_is_held_and_follows_its_result() {
     chain.at(4, 0);
     relay_back(chain, "toolu_l");
     let [again] = assigned(chain, SERVICE).try_into().unwrap();
-    let sent = body(chain, &again);
+    let sent = provider_body(chain, &again);
     let last = sent["messages"].as_array().unwrap().last().unwrap().clone();
     assert_eq!(last["role"], "user");
     assert_eq!(last["content"][0]["type"], "tool_result");
@@ -1347,7 +1362,7 @@ fn a_failed_model_call_is_noticed_once_and_the_next_input_asks_again() {
     );
     world.mention("m2", "again");
     let (_, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
+    assert_eq!(path(&head), model_wire::TURN);
 }
 
 #[test]
@@ -1362,7 +1377,7 @@ fn a_model_call_waits_the_blocks_its_configuration_names_then_ends_with_the_expi
     commit(chain, ADA, CONFIG, &md(&waits));
     let thread = world.opened("m1", "hello", Some(WINDOW));
     let (request, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
+    assert_eq!(path(&head), model_wire::TURN);
     chain.at(request.made + WAIT, 0);
     assert!(notices(chain, thread).is_empty());
     chain.at(request.made + WAIT + 1, 0);
@@ -1384,14 +1399,7 @@ fn a_model_call_waits_the_blocks_its_configuration_names_then_ends_with_the_expi
     assert_eq!(refused.code, code::NOT_FOUND);
     world.mention("m2", "again");
     let (_, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
-}
-
-fn beta(head: &http::Head) -> Option<&str> {
-    head.headers
-        .iter()
-        .find(|(name, _)| name == "anthropic-beta")
-        .map(|(_, value)| value.as_str())
+    assert_eq!(path(&head), model_wire::TURN);
 }
 
 fn too_long() -> Vec<u8> {
@@ -1413,7 +1421,7 @@ fn refused_as_too_long(chain: &MockChain) {
 
 fn sent_messages(chain: &MockChain) -> Vec<Value> {
     let (request, _) = open_request(chain);
-    body(chain, &request)["messages"]
+    provider_body(chain, &request)["messages"]
         .as_array()
         .unwrap()
         .clone()
@@ -1421,7 +1429,7 @@ fn sent_messages(chain: &MockChain) -> Vec<Value> {
 
 fn summarized(chain: &MockChain, summary: &str) {
     let (request, head) = open_request(chain);
-    assert_eq!(beta(&head), Some(wire::anthropic::COMPACTION_BETA));
+    assert_eq!(path(&head), model_wire::SUMMARY);
     let body = json!({
         "type": "message",
         "role": "assistant",
@@ -1561,8 +1569,8 @@ fn a_thread_whose_next_answer_would_not_fit_the_window_is_summarized_first() {
     );
     world.mention("m2", "and now?");
     let (request, head) = open_request(chain);
-    assert_eq!(beta(&head), Some(wire::anthropic::COMPACTION_BETA));
-    let sent = body(chain, &request);
+    assert_eq!(path(&head), model_wire::SUMMARY);
+    let sent = provider_body(chain, &request);
     assert_eq!(sent["compaction"], json!({ "type": "summarize" }));
     let messages = sent["messages"].as_array().unwrap();
     assert_eq!(messages.len(), 1, "the summary covers what the model saw");
@@ -1587,9 +1595,8 @@ fn a_thread_whose_next_answer_would_not_fit_the_window_is_summarized_first() {
         Body::Compaction { block, .. } if block.contains("Ada set out the plan.")
     ));
     let (request, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
-    assert_eq!(beta(&head), Some(wire::anthropic::COMPACTION_BETA));
-    let sent = body(chain, &request);
+    assert_eq!(path(&head), model_wire::TURN);
+    let sent = provider_body(chain, &request);
     assert!(sent.get("compaction").is_none());
     let messages = sent["messages"].as_array().unwrap();
     assert_eq!(
@@ -1619,7 +1626,7 @@ fn a_thread_whose_next_answer_would_not_fit_the_window_is_summarized_first() {
     );
     world.mention("m3", "once more");
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request);
+    let sent = provider_body(chain, &request);
     let messages = sent["messages"].as_array().unwrap();
     assert_eq!(
         messages[0]["content"][0]["type"], "compaction",
@@ -1642,9 +1649,9 @@ fn a_request_the_model_finds_too_long_is_summarized_even_with_no_window_known() 
     );
     world.mention("m2", "second");
     let (request, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
+    assert_eq!(path(&head), model_wire::TURN);
     assert!(
-        body(chain, &request).get("compaction").is_none(),
+        provider_body(chain, &request).get("compaction").is_none(),
         "no window, no early summary"
     );
     chain.at(4, 0);
@@ -1652,7 +1659,7 @@ fn a_request_the_model_finds_too_long_is_summarized_even_with_no_window_known() 
     assert_eq!(thread_row(chain, thread).context, Context::Overflowed);
     let (request, _) = open_request(chain);
     assert_eq!(
-        body(chain, &request)["compaction"],
+        provider_body(chain, &request)["compaction"],
         json!({ "type": "summarize" })
     );
     chain.at(5, 0);
@@ -1703,7 +1710,7 @@ fn a_request_the_model_finds_too_long_is_summarized_even_with_no_window_known() 
     );
     world.mention("m3", "third");
     let (_, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
+    assert_eq!(path(&head), model_wire::TURN);
     let messages = sent_messages(chain);
     let last = &messages[messages.len() - 1];
     assert!(

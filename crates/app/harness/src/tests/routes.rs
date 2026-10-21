@@ -31,7 +31,7 @@ fn configured(chain: &MockChain, agent: AccountNumber) -> Configured {
 fn an_agent_naming_its_provider_is_reached_through_that_route_with_no_model_record() {
     let world = world();
     let chain = &world.chain;
-    routed(chain, "anthropic", &[(SERVICE, Wire::AnthropicMessages)]).unwrap();
+    routed(chain, "anthropic", &[(SERVICE, Wire::Harness)]).unwrap();
     provided(chain, "anthropic");
     let unasked = configured(chain, world.agent);
     let routed_so = matches!(
@@ -42,7 +42,7 @@ fn an_agent_naming_its_provider_is_reached_through_that_route_with_no_model_reco
     assert!(routed_so, "{unasked:?}");
     let thread = world.opened("m1", "hello", Some(WINDOW));
     let (request, _) = open_request(chain);
-    assert_eq!(body(chain, &request)["model"], MODEL);
+    assert_eq!(provider_body(chain, &request)["model"], MODEL);
     let learnt = configured(chain, world.agent);
     let windowed = matches!(
         learnt,

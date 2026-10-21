@@ -17,7 +17,7 @@ fn summarizes_next(world: &World) -> bool {
     assert_eq!(thread_row(chain, thread).context, Context::Measured(1008));
     world.mention("m2", "and now?");
     let (request, _) = open_request(chain);
-    body(chain, &request)["compaction"] == json!({ "type": "summarize" })
+    provider_body(chain, &request)["compaction"] == json!({ "type": "summarize" })
 }
 
 #[test]

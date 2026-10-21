@@ -155,7 +155,11 @@ fn every_person_and_every_place_continue_the_agents_canonical_conversation() {
         Some(thread)
     );
     let (request, _) = open_request(chain);
-    let said = texts(body(chain, &request)["messages"].as_array().unwrap());
+    let said = texts(
+        provider_body(chain, &request)["messages"]
+            .as_array()
+            .unwrap(),
+    );
     let ada = format!(
         "Ada (account {}) wrote to you directly in chat channel {room}",
         world.ada
@@ -170,7 +174,7 @@ fn every_person_and_every_place_continue_the_agents_canonical_conversation() {
         waiting.iter().any(|text| text.starts_with(&bo)),
         "{waiting:?}"
     );
-    let manual = body(chain, &request)["system"][1]["text"]
+    let manual = provider_body(chain, &request)["system"][1]["text"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -288,7 +292,11 @@ fn a_fork_begins_from_the_current_conversations_context() {
 
     world.mention("m2", "what was the word?");
     let (request, _) = open_request(chain);
-    let said = texts(body(chain, &request)["messages"].as_array().unwrap());
+    let said = texts(
+        provider_body(chain, &request)["messages"]
+            .as_array()
+            .unwrap(),
+    );
     assert!(said[0].ends_with("the code word is heron"), "{said:?}");
     assert_eq!(said[1], "Noted.");
     assert!(said[2].ends_with("what was the word?"), "{said:?}");
@@ -360,7 +368,7 @@ fn topic(chain: &MockChain, thread: u64) -> Option<String> {
 
 fn manual(chain: &MockChain) -> String {
     let (request, _) = open_request(chain);
-    body(chain, &request)["system"][1]["text"]
+    provider_body(chain, &request)["system"][1]["text"]
         .as_str()
         .unwrap()
         .to_owned()
@@ -456,7 +464,7 @@ fn two_bound_conversations_run_at_once_and_keep_their_inputs_calls_and_context_a
         "both conversations ask at once"
     );
     let (to_a, to_b) = (asked_for(chain, a), asked_for(chain, b));
-    let manual = body(chain, &to_a)["system"][1]["text"]
+    let manual = provider_body(chain, &to_a)["system"][1]["text"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -470,7 +478,7 @@ fn two_bound_conversations_run_at_once_and_keep_their_inputs_calls_and_context_a
         manual.contains("Answer there: chat_post to channel j-a"),
         "{manual}"
     );
-    let to_b_said = texts(body(chain, &to_b)["messages"].as_array().unwrap());
+    let to_b_said = texts(provider_body(chain, &to_b)["messages"].as_array().unwrap());
     assert!(
         to_b_said.iter().all(|text| !text.contains("list the root")),
         "{to_b_said:?}"
@@ -498,7 +506,7 @@ fn two_bound_conversations_run_at_once_and_keep_their_inputs_calls_and_context_a
     chain.at(5, 0);
     relay_back(chain, "toolu_a");
     let again = asked_for(chain, a);
-    let said = texts(body(chain, &again)["messages"].as_array().unwrap());
+    let said = texts(provider_body(chain, &again)["messages"].as_array().unwrap());
     assert!(said[0].ends_with("list the root"), "{said:?}");
     assert!(said.iter().all(|text| !text.contains("say hi")), "{said:?}");
     let [heard_a] = &posts(chain, a)[..] else {
@@ -633,7 +641,7 @@ fn a_message_to_one_running_conversation_is_held_there_and_the_other_never_sees_
         Answer::Output(reply(says("On a."), "end_turn", 10)),
     );
     let next = asked_for(chain, a);
-    let said = texts(body(chain, &next)["messages"].as_array().unwrap());
+    let said = texts(provider_body(chain, &next)["messages"].as_array().unwrap());
     assert!(
         said.last().unwrap().ends_with("STEER: change course"),
         "{said:?}"

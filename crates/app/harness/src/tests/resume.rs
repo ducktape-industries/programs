@@ -107,7 +107,7 @@ fn a_call_the_model_refused_is_not_asked_again_and_held_input_asks_next() {
     let [told]: [String; 1] = notices(chain, thread).try_into().unwrap();
     assert!(!told.contains("asks the model again"), "{told}");
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request)["messages"].to_string();
+    let sent = provider_body(chain, &request)["messages"].to_string();
     assert!(sent.contains("and this"), "{sent}");
 }
 
@@ -148,7 +148,7 @@ fn a_swap_mid_reply_records_what_streamed_whole_and_its_call_runs_once() {
     let thread = world.opened("m1", "hello", Some(WINDOW));
     chain.at(3, 0);
     let (request, _) = open_request(chain);
-    for (seq, data) in (0u64..).zip(read_tool()) {
+    for (seq, data) in (0u64..).zip(adapted::adapted(&read_tool())) {
         let id = request.id;
         let event = egress::Event { id, seq, data };
         let op = egress::Op::Events(vec![event]);
@@ -171,7 +171,7 @@ fn a_swap_mid_reply_records_what_streamed_whole_and_its_call_runs_once() {
         .count();
     assert_eq!(results, 1);
     let (_, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
+    assert_eq!(path(&head), model_wire::TURN);
 }
 
 #[test]
@@ -412,7 +412,7 @@ fn a_resume_someone_sends_asks_again_about_the_input_a_turn_gave_up_on() {
     let resume = Op::Resume { thread };
     chain.submit(signed(ADA), PROGRAM, &resume).unwrap();
     let (request, _) = open_request(chain);
-    let sent = body(chain, &request)["messages"].to_string();
+    let sent = provider_body(chain, &request)["messages"].to_string();
     assert!(sent.contains("hello"), "{sent}");
     let told = notices(chain, thread);
     let last = told.last().unwrap();

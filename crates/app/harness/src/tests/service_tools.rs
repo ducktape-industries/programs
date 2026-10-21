@@ -100,7 +100,7 @@ fn a_service_step_asks_as_the_agent_leaves_an_absent_optional_input_out_and_bind
     let chain = &world.chain;
     let thread = world.opened("m1", "read it", Some(WINDOW));
     let (model, _) = open_request(chain);
-    let offered = body(chain, &model);
+    let offered = provider_body(chain, &model);
     let tools = offered["tools"].as_array().unwrap();
     let read = tools.iter().find(|tool| tool["name"] == "read").unwrap();
     assert_eq!(read["input_schema"]["required"], json!(["path"]));
@@ -160,7 +160,7 @@ fn a_refusal_reads_in_the_services_words_or_by_its_status_and_media_type() {
     turn(chain, 3, &calls);
     chain.at(5, 0);
     for row in asked(chain) {
-        let refused = match body(chain, &row)["path"].as_str().unwrap() {
+        let refused = match provider_body(chain, &row)["path"].as_str().unwrap() {
             "/nope" => Answer::Output(response(404, json!({ "error": "no file /nope" }))),
             "/off" => raw(530, "text/html; charset=UTF-8", b"<html>error 1033</html>"),
             _ => raw(502, "text/plain", b""),
@@ -209,7 +209,10 @@ fn a_streamed_step_answers_at_once_and_wakes_its_conversation_with_the_streams_e
     );
     let every = ("every".to_owned(), "32".to_owned());
     assert!(head_of(&row).headers.contains(&every), "{row:?}");
-    assert_eq!(body(chain, &row), json!({ "command": "cargo test" }));
+    assert_eq!(
+        provider_body(chain, &row),
+        json!({ "command": "cargo test" })
+    );
     assert_eq!(sender(chain, row.id), Some(world.agent));
     event(chain, &row, 0, "event: alive\ndata: {}");
     event(chain, &row, 1, ": ping");

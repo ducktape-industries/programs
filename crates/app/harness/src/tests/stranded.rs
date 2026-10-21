@@ -62,8 +62,8 @@ fn pods_request(chain: &MockChain) -> RequestRow {
 
 fn sent(chain: &MockChain) -> String {
     let (request, head) = open_request(chain);
-    assert_eq!(path(&head), "/v1/messages");
-    body(chain, &request)["messages"].to_string()
+    assert_eq!(path(&head), model_wire::TURN);
+    provider_body(chain, &request)["messages"].to_string()
 }
 
 fn told(chain: &MockChain, thread: u64) -> Vec<String> {
@@ -302,7 +302,7 @@ fn a_stream_whose_end_an_update_cut_off_wakes_its_conversation_once_egress_no_lo
 }
 
 fn reply_streams(chain: &MockChain, request: &RequestRow, fixture: &str) {
-    for (seq, data) in (0u64..).zip(events(fixture)) {
+    for (seq, data) in (0u64..).zip(adapted::adapted(&events(fixture))) {
         let event = egress::Event {
             id: request.id,
             seq,
