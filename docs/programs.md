@@ -878,8 +878,8 @@ or query that only grew at its end is safe, anything marked `!` breaks the
 bytes clients and stored ops already hold.
 
 A program added to a running network goes through the programs role instead
-(`ducktape blob put --kind program --wait`, then `Schedule` at a height; [roles.md](roles.md), "Updating a
-program"): its `init` runs with the scheduled params when the height comes.
+(`ducktape blob put --kind program --wait`, then `ScheduleOver` at a height with
+`expected: None`; [roles.md](roles.md), "Updating a program"): its `init` runs with the scheduled params when the height comes.
 A program that fills a role is scheduled as `Change::Publish` with its
 roles, which only the validators' vote may do.
 
