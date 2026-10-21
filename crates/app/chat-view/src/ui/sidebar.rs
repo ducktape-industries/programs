@@ -184,7 +184,7 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     });
     // a left press on a channel or folder row holds it; dragged onto another row of its level and
     // let go, it takes that row's place
-    let drawn: std::rc::Rc<[chat::Entry]> = plain.iter().map(Line::entry).collect();
+    let drawn: std::rc::Rc<[crate::room_list::Entry]> = plain.iter().map(Line::entry).collect();
     let (held, over) = (drawn.clone(), drawn);
     let hold =
         cx.listener(move |chat, event: &MouseDownEvent, _, _| chat.hold_row(event.position, &held));
@@ -560,7 +560,11 @@ fn folder_row(
     }
     let row = match folder.more {
         true => row,
-        false => placed(row, chat::Entry::Folder(folder.path.clone()), cx),
+        false => placed(
+            row,
+            crate::room_list::Entry::Folder(folder.path.clone()),
+            cx,
+        ),
     };
     let row = row.child(glyph);
     let row = match own {
@@ -665,7 +669,11 @@ fn channel_button(
         );
     }
     let row = super::room_menu::row(row, &info.channel.id, chat, cx);
-    let row = placed(row, chat::Entry::Room(info.channel.id.clone()), cx);
+    let row = placed(
+        row,
+        crate::room_list::Entry::Room(info.channel.id.clone()),
+        cx,
+    );
     design::item(row, Role::ListBoxOption, active).into_any_element()
 }
 
@@ -787,12 +795,12 @@ pub(crate) fn lands(row: Stateful<Div>, after: bool, theme: &Theme) -> Stateful<
 // `row` tells the view where layout put it, so a drag finds the row under the pointer.
 pub(crate) fn placed(
     row: Stateful<Div>,
-    entry: chat::Entry,
+    entry: crate::room_list::Entry,
     cx: &mut Context<Chat>,
 ) -> Stateful<Div> {
     let id = match &entry {
-        chat::Entry::Room(room) => format!("chat-sidebar-bounds-{room}"),
-        chat::Entry::Folder(path) => format!("chat-sidebar-bounds-folder-{path}"),
+        crate::room_list::Entry::Room(room) => format!("chat-sidebar-bounds-{room}"),
+        crate::room_list::Entry::Folder(path) => format!("chat-sidebar-bounds-folder-{path}"),
     };
     let heard = cx.listener(move |chat, bounds: &Bounds<Pixels>, _, _| {
         chat.drawn_row(entry.clone(), *bounds)

@@ -28,12 +28,14 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
   is that folder's row, and a closed folder counts the unread rooms inside.
   Only the first `/` makes a folder (`a/b/c` is `b/c` under **a/**). Each
   level (the top, and inside a folder) lists what the reader's own order
-  (chat's `RoomOrder`) leaves out first, as chat lists it, then what it names,
-  in its order. A row moves only within its level: Alt+↑/↓ on the active row,
+  (kept on this device under `reads/<signer>/order`, never on chain) leaves
+  out first, as chat lists it, then what it names, in its order. A row moves only within its level: Alt+↑/↓ on the active row,
   Move up/down in a room's menu, a drag on the desktop, a long press then the
   finger on the phone (the host relays the held finger's moves and lift), or a
   phone row's Move up/down actions for a screen reader; each move writes the
-  whole order in one `SetRoomOrder`. In the
+  whole order there, the level as drawn set among the places the order gives
+  rooms not listed yet, so a move made before every room landed drops none.
+  Rows move once the kept order has been read. In the
   new-channel form, the text before the first `/` typed becomes one chip at
   the field's start (a token whose id starts `wire::CHIP`); Backspace right
   after it makes it text again, and the whole text is the channel's name.
@@ -99,7 +101,8 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
 One struct, `Chat` (`state.rs`), with a field per pane: `room` (its messages,
 members, thread), `details`, `menu`, `search`, `create`, `dm_pick`, `layout`,
 `reads` (unread cursors, kept in the view store), `closed_folders` (the room
-list's closed folders, kept in the view store under `folders`), `drafts` (the
+list's closed folders, kept in the view store under `folders`), `order` (the
+reader's order of the lists, kept under `reads/<signer>/order`), `drafts` (the
 composers).
 The session keeps each room it opened and left in `visited` (`Visited`): its
 newest page of rows (`Chat::screenful`: the tallest pane placed this session,

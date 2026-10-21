@@ -36,7 +36,6 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::Watch { .. }
         | Op::Drafting { .. }
         | Op::Undraft { .. }
-        | Op::SetRoomOrder { .. }
         | Op::ChooseForMany { .. }
         | Op::Notify { .. }
         | Op::NotifyBy { .. }

@@ -10,7 +10,9 @@ use crate::Chat;
 use crate::room_list::{DmEntry, FolderLine, Line, label};
 use crate::ui::sidebar::{lands, placed};
 use crate::words;
-use chat::{ChannelInfo, Entry, Principal};
+use chat::{ChannelInfo, Principal};
+
+use crate::room_list::Entry;
 use view::design::Ladder;
 
 const DOT: Pixels = px(8.);

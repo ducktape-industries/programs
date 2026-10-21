@@ -1,11 +1,13 @@
-//! The reader's own order of the sidebar, chat's (`RoomOrder`): at each level what it leaves out
+//! The reader's own order of the sidebar, kept on the device: at each level what it leaves out
 //! first, in chat's order, then what it names, in its order; Alt+↑/↓ and the room menu's Move up
 //! and Move down write it whole. The rooms the reader wrote in (`PostedIn`) are theirs.
 use super::context_menus::right_press;
 use super::room::claims;
 use super::*;
+use crate::room_list::Entry;
 use crate::room_list::Spot;
-use chat::Entry;
+
+const ORDER: &str = "reads/0102/order";
 
 // Eddy's rooms, all his: General, Random, three jobs under jobs/, Design.
 fn rooms() -> Vec<ChannelInfo> {
@@ -19,7 +21,6 @@ fn rooms() -> Vec<ChannelInfo> {
     ]
 }
 
-// The view over `rooms`, chat holding `order` as eddy's until he writes another.
 fn desk(order: Vec<Entry>) -> (TestAppContext, Entity<Chat>) {
     opened(order, false)
 }
@@ -32,23 +33,15 @@ fn phone(order: Vec<Entry>) -> (TestAppContext, Entity<Chat>) {
 fn opened(order: Vec<Entry>, touch: bool) -> (TestAppContext, Entity<Chat>) {
     let mut cx = TestAppContext::new();
     configure(&mut cx);
-    let held = std::rc::Rc::new(std::cell::RefCell::new(order));
-    let kept = held.clone();
-    cx.host()
-        .handle::<view::methods::Submit<::chat::Chat>>(move |op| {
-            if let chat::Op::SetRoomOrder { order } = &op {
-                *kept.borrow_mut() = order.clone();
-            }
-            Ok(view::testing::applied(Vec::new()))
-        });
-    cx.host()
-        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
-            Ok(match query {
-                Query::Channels { .. } => Reply::Channels(page(rooms())),
-                Query::RoomOrder { .. } => Reply::RoomOrder(held.borrow().clone()),
-                query => chat_reply(query),
-            })
-        }));
+    if !order.is_empty() {
+        cx.host().keep(ORDER, &order);
+    }
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
+        Ok(match query {
+            Query::Channels { .. } => Reply::Channels(page(rooms())),
+            query => chat_reply(query),
+        })
+    }));
     let view = cx.open::<Chat>();
     if touch {
         cx.simulate_touch(true);
@@ -78,12 +71,11 @@ fn drawn(view: &Entity<Chat>) -> Vec<String> {
 }
 
 fn orders(cx: &TestAppContext) -> Vec<Vec<Entry>> {
-    let sent = cx.host().requests::<view::methods::Submit<::chat::Chat>>();
-    sent.into_iter()
-        .filter_map(|op| match op {
-            chat::Op::SetRoomOrder { order } => Some(order),
-            _ => None,
-        })
+    let sets = cx.host().requests::<view::methods::StoreSet>();
+    sets.into_iter()
+        .filter(|(key, _)| key == ORDER)
+        .filter_map(|(_, value)| value)
+        .map(|value| view::methods::decode(&value).unwrap())
         .collect()
 }
 
@@ -149,48 +141,49 @@ fn alt_down_moves_the_active_row_down_its_level_and_writes_the_order_whole() {
 }
 
 #[test]
-fn a_refused_order_puts_the_rows_back_and_says_why() {
+fn a_move_is_kept_on_the_device_sends_no_frame_and_comes_back_after_a_restart() {
     let (mut cx, view) = desk(Vec::new());
-    cx.host()
-        .handle::<view::methods::Submit<::chat::Chat>>(|_| {
-            Ok(view::methods::Submitted::Refused {
-                frame: [0; 32],
-                until: 9,
-                refusal: view::host::Error::new("unauthorized", "no account holds this key"),
-            })
-        });
     cx.update(&view, |chat, _, cx| chat.step(&room("general"), false, cx));
     cx.run_until_parked();
-    assert_eq!(orders(&cx).len(), 1, "the move was sent");
+    let sent = cx.host().requests::<view::methods::Submit<::chat::Chat>>();
+    assert!(sent.is_empty(), "no frame: {sent:?}");
+    let kept: Option<Vec<Entry>> = cx.host().kept(ORDER);
+    let order = vec![
+        room("random"),
+        room("general"),
+        Entry::Folder("jobs".into()),
+        room("design"),
+    ];
+    assert_eq!(kept, Some(order.clone()));
+    let (_again, again) = desk(order);
     assert_eq!(
-        drawn(&view),
-        ["general", "random", "jobs/", "j-1", "j-2", "j-3", "design"],
-        "put back as it was"
+        drawn(&again),
+        ["random", "general", "jobs/", "j-1", "j-2", "j-3", "design"],
+        "a restart draws the order kept"
     );
-    view.read(|chat| assert!(!chat.notice.is_empty(), "the banner says why"));
 }
 
 #[test]
-fn two_refused_moves_in_a_row_leave_the_order_chat_holds() {
-    let (mut cx, view) = desk(Vec::new());
-    cx.host()
-        .handle::<view::methods::Submit<::chat::Chat>>(|_| {
-            Ok(view::methods::Submitted::Refused {
-                frame: [0; 32],
-                until: 9,
-                refusal: view::host::Error::new("unauthorized", "no account holds this key"),
-            })
-        });
-    cx.update(&view, |chat, _, cx| {
-        chat.step(&room("general"), false, cx);
-        chat.step(&room("general"), false, cx);
-    });
+fn a_move_before_a_room_is_listed_writes_its_level_around_it() {
+    let stored = vec![
+        room("general"),
+        room("idea"),
+        room("random"),
+        Entry::Folder("jobs".into()),
+        room("design"),
+    ];
+    let (mut cx, view) = desk(stored);
+    cx.update(&view, |chat, _, cx| chat.step(&room("design"), true, cx));
     cx.run_until_parked();
-    assert_eq!(orders(&cx).len(), 2, "both moves were sent");
     assert_eq!(
-        drawn(&view),
-        ["general", "random", "jobs/", "j-1", "j-2", "j-3", "design"],
-        "chat took neither"
+        orders(&cx),
+        [vec![
+            room("general"),
+            room("idea"),
+            room("random"),
+            room("design"),
+            Entry::Folder("jobs".into()),
+        ]]
     );
 }
 
@@ -488,4 +481,32 @@ fn a_screen_reader_moves_a_phone_row_with_its_own_actions() {
         ["random", "jobs/", "j-1", "j-2", "j-3", "general", "design"]
     );
     assert_eq!(orders(&cx).len(), 2);
+}
+
+#[test]
+fn a_move_keeps_the_rooms_its_level_has_not_drawn_yet_in_their_places() {
+    let stored = [
+        room("general"),
+        room("idea"),
+        room("random"),
+        Entry::Folder("jobs".into()),
+        room("design"),
+    ];
+    let drawn = [
+        room("general"),
+        room("random"),
+        Entry::Folder("jobs".into()),
+        room("design"),
+    ];
+    assert_eq!(
+        crate::room_list::moved(&stored, &drawn, 3, 0),
+        [
+            room("design"),
+            room("general"),
+            room("idea"),
+            room("random"),
+            Entry::Folder("jobs".into()),
+        ],
+        "idea, not listed yet, stays between general and random"
+    );
 }

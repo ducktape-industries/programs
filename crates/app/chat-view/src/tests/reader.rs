@@ -160,7 +160,6 @@ fn a_peers_name_gained_later_replaces_its_numeric_fallback() {
                 }
                 Query::Members { .. } => Reply::Members(page(Vec::new())),
                 Query::PostedIn { .. } => Reply::PostedIn(page(Vec::new())),
-                Query::RoomOrder { .. } => Reply::RoomOrder(Vec::new()),
                 Query::Listening { .. } => Reply::Listening(page(Vec::new())),
                 query => panic!("unexpected chat query: {query:?}"),
             })
@@ -223,7 +222,6 @@ fn the_roster_is_read_past_its_first_page() {
             }
             Query::Channels { .. } => Reply::Channels(page(Vec::new())),
             Query::PostedIn { .. } => Reply::PostedIn(page(Vec::new())),
-            Query::RoomOrder { .. } => Reply::RoomOrder(Vec::new()),
             Query::Listening { .. } => Reply::Listening(page(Vec::new())),
             query => panic!("unexpected chat query: {query:?}"),
         })

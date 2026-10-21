@@ -218,11 +218,6 @@ pub(crate) async fn seated(
     .await
 }
 
-// The order `account` put its rooms and folders in.
-pub(crate) async fn room_order(host: Host, account: u64) -> Result<Vec<chat::Entry>, Error> {
-    host.query(ask::RoomOrder { account }).await
-}
-
 pub(crate) async fn members(host: Host, channel_id: String) -> Result<Vec<MemberRow>, Error> {
     host.query_all(|after| ask::Members {
         channel_id: channel_id.clone(),

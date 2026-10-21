@@ -4,7 +4,8 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
-use chat::{ChannelInfo, Entry, Principal};
+use borsh::{BorshDeserialize, BorshSerialize};
+use chat::{ChannelInfo, Principal};
 use view::Point;
 use view::prelude::*;
 use view::wire;
@@ -12,6 +13,12 @@ use view::wire;
 use crate::Chat;
 use crate::names::dm_peer_of;
 use crate::queries;
+
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Entry {
+    Room(String),
+    Folder(String),
+}
 
 // A job's room (`j-…`, under folders too: `jobs/j-097`) or a program's own
 // (a change's review): what `#` offers only once something is typed.
@@ -378,18 +385,31 @@ impl<'a> Tree<'a> {
     }
 }
 
-// The reader's `order` once `level`'s entry at `from` moved to `to`: the level as drawn, written
-// whole after what the order says of every other level.
 pub(crate) fn moved(order: &[Entry], level: &[Entry], from: usize, to: usize) -> Vec<Entry> {
-    let mut level = level.to_vec();
-    let entry = level.remove(from);
-    level.insert(to.min(level.len()), entry);
-    let mut order: Vec<Entry> = order
+    let mut order = order.to_vec();
+    let unnamed: Vec<Entry> = level
         .iter()
-        .filter(|entry| !level.contains(entry))
+        .filter(|entry| !order.contains(entry))
         .cloned()
         .collect();
-    order.extend(level);
+    let first = order
+        .iter()
+        .position(|entry| level.contains(entry))
+        .unwrap_or(order.len());
+    order.splice(first..first, unnamed);
+    let mut drawn = level.to_vec();
+    let entry = drawn.remove(from);
+    drawn.insert(to.min(drawn.len()), entry.clone());
+    order.retain(|held| *held != entry);
+    let neighbour = match to.checked_sub(1) {
+        Some(before) => drawn.get(before).map(|held| (held, 1)),
+        None => drawn.get(1).map(|held| (held, 0)),
+    };
+    let at = neighbour.and_then(|(held, past)| {
+        let at = order.iter().position(|listed| listed == held);
+        at.map(|at| at + past)
+    });
+    order.insert(at.unwrap_or(order.len()), entry);
     order
 }
 
@@ -488,6 +508,12 @@ impl Chat {
 
     // The entries of the level of the lists that holds `entry`, as drawn: none for a direct room.
     pub(crate) fn level(&self, entry: &Entry) -> Option<Vec<Entry>> {
+        let landed = self
+            .order_key()
+            .is_some_and(|key| self.order_kept.as_ref() == Some(&key));
+        if !landed {
+            return None;
+        }
         let list = self.held_rooms();
         let mut tree = Tree::of(&list.channels);
         tree.arrange(&self.order);
@@ -533,9 +559,7 @@ impl Chat {
         }
         self.order = moved(&self.order, &level, from, to);
         cx.notify();
-        let order = self.order.clone();
-        let reread = |chat: &mut Chat, cx: &mut Context<Chat>| chat.load_order(cx);
-        self.submit_or(chat::Op::SetRoomOrder { order }, reread, cx);
+        self.save_order(cx);
     }
 
     // The row under `at`, of the rows `drawn` now.

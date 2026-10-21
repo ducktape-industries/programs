@@ -4,8 +4,8 @@
 use view::Point;
 use view::prelude::*;
 
+use crate::room_list::Entry;
 use crate::{Chat, RoomMenu, links, words};
-use chat::Entry;
 
 pub(crate) const ROOM_MENU: &str = "chat-room-menu";
 const ROOMS_LIST: &str = "chat-sidebar-rooms-list";

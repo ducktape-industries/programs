@@ -155,12 +155,8 @@ or drafted in by someone else: the watcher reads `Busy` again.
 
 ## Each reader's own lists
 
-An account puts its rooms and folders in its own order with `Op::SetRoomOrder { order }`: a list
-of `Entry::Room(channel_id)` and `Entry::Folder(name)`, a folder being the text before a channel
-name's first `/`. The op writes the sender's own order whole, and an empty list takes it off.
-`Query::RoomOrder { account }` answers it, empty for an account that set none. chat gives the
-order no meaning of its own: chat-view lists, at each level, what the order leaves out first in
-chat's order, then what it names in its order, so the reader's lists follow it across devices.
+chat keeps no reader's order of their lists: chat-view keeps it on the device. `SetRoomOrder`
+(op tag 23) and `RoomOrder` (query and reply tag 20) are retired, their tags refused.
 
 `Query::PostedIn { account, page }` answers the channels an account wrote in the timeline of, kept
 as each post is noted (beside `Followed`'s room seq). It starts from the code that keeps it: posts

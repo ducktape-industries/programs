@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use describe::{Description, Field, Value, field};
 
-use crate::{Entry, Notices, Op, PostPolicy, Principal, dm_peers, notice_text, plain_text};
+use crate::{Notices, Op, PostPolicy, Principal, dm_peers, notice_text, plain_text};
 
 fn noticed(
     channel_id: &str,
@@ -199,16 +199,6 @@ pub fn describe(op: &Op) -> Description {
             ("Answering", channel_id, fields)
         }
         Op::Undraft { channel_id } => ("Stop answering", channel_id, vec![]),
-        Op::SetRoomOrder { order } => {
-            let entries = order.iter().map(|entry| match entry {
-                Entry::Room(channel_id) => Value::Text(room_title(channel_id)),
-                Entry::Folder(name) => Value::text(format!("{name}/")),
-            });
-            return Description {
-                title: "Order your rooms".into(),
-                fields: vec![field("order", Value::List(entries.collect()))],
-            };
-        }
         Op::ChooseForMany {
             accounts,
             channel_id,

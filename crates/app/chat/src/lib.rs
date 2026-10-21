@@ -69,7 +69,7 @@ pub use text::{
 pub mod tables {
     pub use crate::state::{
         ANSWERED, CHANNEL_META, CHANNELS, DRAFT_PIECES, DRAFTS, HEADS, LEASES, LISTENERS,
-        LISTENING, MEMBERS, MENTIONED, MESSAGE_IDS, MESSAGES, NOTICES, ORDERS, PARTICIPANTS,
+        LISTENING, MEMBERS, MENTIONED, MESSAGE_IDS, MESSAGES, NOTICES, PARTICIPANTS,
         PLACE_WATCHERS, POSTED, POSTED_IN, REACTIONS, REPLIES, ROOTS,
     };
 }
@@ -197,10 +197,6 @@ pub enum Op {
     },
     #[tool_op(description = "Take down your draft in a channel.", example = examples::undraft)]
     Undraft { channel_id: String },
-    // the sender's own order of its rooms and folders in the lists, written whole: an empty order
-    // goes back to chat's
-    #[tool_op(description = "Put your rooms and folders in your own order in the lists: a room by its channel id, a folder by its name (the text before a channel name's first '/'). Writes your whole order; an empty list goes back to chat's order.", example = examples::room_order)]
-    SetRoomOrder { order: Vec<Entry> },
     // `PostMessage` with its blocks parsed here from `text` (`parse_message`), for a writer that
     // has text in hand
     #[tool_op(description = "Post text in a channel, or reply in a thread when thread is its root's seq or a reply's in it, which lands under the root. text is markdown as chat's composer writes it: **bold**, *italic*, `code`, fenced code, > quotes, --- dividers, links, and <@N> to mention account N; each line is its own paragraph. message_id is yours to choose, unique across chat, no '/'; a second post with it is refused. Posting needs the room open to you and not archived.", example = examples::post_text)]
@@ -209,7 +205,7 @@ pub enum Op {
         message_id: String,
         text: String,
         thread: Option<u64>,
-    },
+    } = 24,
     #[tool_op(description = "Choose for several accounts at once what a channel tells them: listening true hears every message, else notices cuts it as SetNotices does (null: chat's default). Each account is you or one you manage in identity; all are written or none, and listening with notices set is refused.", example = examples::choose_for_many)]
     ChooseForMany {
         accounts: Vec<AccountNumber>,
@@ -421,11 +417,6 @@ pub enum Query {
     #[reads(state::CHANNELS)]
     #[tool_query(description = "The names of the channels ids names, each as (id, name) and nothing else of the channel; an id no channel has is left out.", example = examples::names)]
     Names { ids: Vec<String> },
-    // the order `account` put its rooms and folders in (`Op::SetRoomOrder`): empty for none
-    #[ask(Reply::RoomOrder(Vec<Entry>))]
-    #[reads(state::ORDERS)]
-    #[tool_query(description = "The order an account put its rooms and folders in, or an empty list.", example = examples::room_order_of)]
-    RoomOrder { account: AccountNumber },
     // the channels `account` wrote in the timeline of
     #[ask(Reply::PostedIn(PageResponse<String>))]
     #[reads(state::POSTED_IN)]
@@ -433,7 +424,7 @@ pub enum Query {
     PostedIn {
         account: AccountNumber,
         page: PageRequest,
-    },
+    } = 21,
     #[ask(Reply::ChosenBy(Vec<AccountChoice>))]
     #[reads(state::LISTENING, state::NOTICES)]
     #[tool_query(description = "What each of several accounts chose for a channel, in the order asked: whether it listens, and what still tells it when cut.", example = examples::chosen_by)]
@@ -531,8 +522,7 @@ pub enum Reply {
     },
     Drafts(Vec<Draft>),
     Names(Vec<(String, String)>),
-    RoomOrder(Vec<Entry>),
-    PostedIn(PageResponse<String>),
+    PostedIn(PageResponse<String>) = 21,
     ChosenBy(Vec<AccountChoice>),
     Unread(Vec<UnreadCount>),
     TextHits(PageResponse<MsgRow>),
@@ -560,26 +550,6 @@ pub struct UnreadCount {
     pub channel_id: String,
     pub to: u64,
     pub meant: u64,
-}
-
-// One place in an account's own order of its lists (`Op::SetRoomOrder`): a room by its channel id,
-// or a folder by its name, the text before a channel name's first `/`.
-#[derive(
-    BorshSerialize,
-    BorshDeserialize,
-    BorshSchema,
-    Serialize,
-    Deserialize,
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-)]
-pub enum Entry {
-    Room(String),
-    Folder(String),
 }
 
 #[derive(
@@ -973,7 +943,7 @@ fn op_variants_only_append() {
             "Watch",
             "Drafting",
             "Undraft",
-            "SetRoomOrder",
+            "-",
             "Post",
             "ChooseForMany",
             "Notify",

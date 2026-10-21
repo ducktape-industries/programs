@@ -3,9 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::message::Status;
-use crate::{
-    Block, Entry, Mark, Notice, Notices, Op, PageRequest, PostPolicy, Principal, Query, Span,
-};
+use crate::{Block, Mark, Notice, Notices, Op, PageRequest, PostPolicy, Principal, Query, Span};
 
 const ROOM: &str = "design";
 
@@ -313,16 +311,6 @@ pub(crate) fn drafts() -> Query {
 
 pub(crate) fn names() -> Query {
     Query::Names { ids: vec![room()] }
-}
-
-pub(crate) fn room_order() -> Op {
-    Op::SetRoomOrder {
-        order: vec![Entry::Folder("jobs".into()), Entry::Room(room())],
-    }
-}
-
-pub(crate) fn room_order_of() -> Query {
-    Query::RoomOrder { account: 21 }
 }
 
 pub(crate) fn posted_in() -> Query {

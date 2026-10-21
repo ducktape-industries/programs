@@ -7,10 +7,12 @@ use view::prelude::*;
 use view::store;
 
 use crate::Chat;
+use crate::room_list::Entry;
 
 const EMOJI: &str = "emoji";
 const OPENED: &str = "opened";
 const FOLDERS: &str = "folders";
+const ORDER: &str = "order";
 
 impl Chat {
     fn reads_key(&self) -> Option<String> {
@@ -19,6 +21,7 @@ impl Chat {
 
     pub(crate) fn load_kept(&mut self, cx: &mut Context<Self>) {
         self.reads.kept = None;
+        self.load_order(cx);
         let Some(key) = self.reads_key() else {
             return;
         };
@@ -49,6 +52,39 @@ impl Chat {
         self.load_opened(cx);
         self.load_typed(cx);
         self.load_reads(key, cx);
+    }
+
+    pub(crate) fn order_key(&self) -> Option<String> {
+        self.reads_key().map(|key| format!("{key}/{ORDER}"))
+    }
+
+    fn load_order(&mut self, cx: &mut Context<Self>) {
+        self.order.clear();
+        self.order_kept = None;
+        let Some(key) = self.order_key() else {
+            return;
+        };
+        let order = store::get::<Vec<Entry>>(&cx.host(), &key);
+        cx.land(order, move |chat, order, cx| {
+            if chat.order_key().as_ref() != Some(&key) {
+                return;
+            }
+            match order {
+                Ok(order) => {
+                    chat.order = order.unwrap_or_default();
+                    chat.order_kept = Some(key);
+                    cx.notify();
+                }
+                Err(refusal) => cx.log_refused("the order of the rooms", &refusal),
+            }
+        })
+        .detach();
+    }
+
+    pub(crate) fn save_order(&self, cx: &mut Context<Self>) {
+        if let Some(key) = &self.order_kept {
+            store::set(&cx.host(), key, Some(&self.order));
+        }
     }
 
     fn opened_key(&self) -> Option<String> {

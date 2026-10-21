@@ -3,7 +3,7 @@ use borsh::schema::Definition;
 
 use super::*;
 
-const LIVE_OPS: [(&str, i64); 29] = [
+const LIVE_OPS: [(&str, i64); 28] = [
     ("CreateChannel", 0),
     ("CreateDmChannel", 1),
     ("RenameChannel", 2),
@@ -23,7 +23,6 @@ const LIVE_OPS: [(&str, i64); 29] = [
     ("Watch", 20),
     ("Drafting", 21),
     ("Undraft", 22),
-    ("SetRoomOrder", 23),
     ("Post", 24),
     ("ChooseForMany", 25),
     ("Notify", 26),
@@ -35,7 +34,7 @@ const LIVE_OPS: [(&str, i64); 29] = [
     ("NotifyBy", 32),
 ];
 
-const LIVE_QUERIES: [(&str, i64); 28] = [
+const LIVE_QUERIES: [(&str, i64); 27] = [
     ("Channels", 0),
     ("Channel", 1),
     ("MessageById", 2),
@@ -54,7 +53,6 @@ const LIVE_QUERIES: [(&str, i64); 28] = [
     ("Chosen", 17),
     ("Drafts", 18),
     ("Names", 19),
-    ("RoomOrder", 20),
     ("PostedIn", 21),
     ("ChosenBy", 22),
     ("Unread", 23),
@@ -66,7 +64,7 @@ const LIVE_QUERIES: [(&str, i64); 28] = [
     ("Repliers", 29),
 ];
 
-const LIVE_REPLIES: [(&str, i64); 28] = [
+const LIVE_REPLIES: [(&str, i64); 27] = [
     ("Channels", 0),
     ("Channel", 1),
     ("Message", 2),
@@ -85,7 +83,6 @@ const LIVE_REPLIES: [(&str, i64); 28] = [
     ("Chosen", 17),
     ("Drafts", 18),
     ("Names", 19),
-    ("RoomOrder", 20),
     ("PostedIn", 21),
     ("ChosenBy", 22),
     ("Unread", 23),
@@ -105,6 +102,8 @@ const UNMIGRATED_TAG: u8 = 12;
 const LISTEN_FOR_TAG: u8 = 18;
 const SET_NOTICES_FOR_TAG: u8 = 19;
 const SEARCH_TAG: u8 = 8;
+const SET_ROOM_ORDER_TAG: u8 = 23;
+const ROOM_ORDER_TAG: u8 = 20;
 
 fn encoded<T: BorshSerialize>(value: &T) -> Vec<u8> {
     borsh::to_vec(value).unwrap()
@@ -257,6 +256,27 @@ fn a_search_tag_is_no_query() {
     );
     let asked = ::program::query::<crate::Chat>(&chat.reads(), &search);
     let refused = asked.unwrap_err();
+    assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
+    let undecoded = refused.message.starts_with("chat: Query did not decode: ");
+    assert!(undecoded, "{refused}");
+}
+
+#[test]
+fn a_set_room_order_tag_is_refused_and_a_room_order_tag_is_no_query() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    let before = chat.store.borrow().state.clone();
+    let order = tagged(SET_ROOM_ORDER_TAG, &[encoded(&Vec::<String>::new())]);
+    let ctx = chat.next(&BO);
+    let outcome = chat
+        .store
+        .attempt(|| ::program::execute::<crate::Chat>(&ctx, &order));
+    assert_eq!(chat.store.borrow().state, before, "{outcome:?}");
+    let refused = outcome.unwrap_err();
+    assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
+    let undecoded = refused.message.starts_with("chat: Op did not decode: ");
+    assert!(undecoded, "{refused}");
+    let asked = tagged(ROOM_ORDER_TAG, &[encoded(&2u64)]);
+    let refused = ::program::query::<crate::Chat>(&chat.reads(), &asked).unwrap_err();
     assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
     let undecoded = refused.message.starts_with("chat: Query did not decode: ");
     assert!(undecoded, "{refused}");

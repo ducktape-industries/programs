@@ -41,7 +41,6 @@ impl Chat {
             }
             self.listening.clear();
             self.posted.clear();
-            self.order.clear();
             self.seated = None;
             self.seated_asked.clear();
             self.listening_asked = false;
@@ -50,6 +49,8 @@ impl Chat {
             }
         }
         if reader_changed {
+            self.order.clear();
+            self.order_kept = None;
             self.typing = Default::default();
             self.load_names(cx);
             self.load_avatars(cx);
@@ -156,8 +157,6 @@ impl Chat {
         self.listening_asked = false;
     }
 
-    // The rooms the reader listens to and wrote in, which both lists hold as theirs and `#`
-    // offers, and the order the reader put them in.
     pub(crate) fn load_listening(&mut self, cx: &mut Context<Self>) {
         let Some(me) = self.my_account() else {
             return;
@@ -187,27 +186,6 @@ impl Chat {
                 }
             }
             Err(refusal) => cx.log_refused("the rooms written in", &refusal),
-        })
-        .detach();
-        self.load_order(cx);
-    }
-
-    pub(crate) fn load_order(&mut self, cx: &mut Context<Self>) {
-        let Some(me) = self.my_account() else {
-            self.order = Vec::new();
-            cx.notify();
-            return;
-        };
-        let order = crate::queries::room_order(cx.host(), me);
-        cx.land(order, move |chat, read, cx| match read {
-            _ if chat.my_account() != Some(me) => {}
-            Ok(order) => {
-                if order != chat.order {
-                    chat.order = order;
-                    cx.notify();
-                }
-            }
-            Err(refusal) => cx.log_refused("the order of the rooms", &refusal),
         })
         .detach();
     }

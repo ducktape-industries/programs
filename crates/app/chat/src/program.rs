@@ -110,7 +110,6 @@ impl Program for Chat {
                 doing,
             } => drafting(ctx, &sender, &channel_id, thread, text, anew, doing),
             Op::Undraft { channel_id } => undraft(ctx, &sender, &channel_id),
-            Op::SetRoomOrder { order } => crate::order::set_order(ctx, order),
             Op::Post {
                 channel_id,
                 message_id,
@@ -247,9 +246,6 @@ impl Program for Chat {
             } => (chosen(ctx, account, &channel_id)?, vec![]),
             Query::Drafts { channel_id } => (Reply::Drafts(drafts(ctx, &channel_id)?), vec![]),
             Query::Names { ids } => (Reply::Names(names(ctx, &ids)?), vec![]),
-            Query::RoomOrder { account } => {
-                (Reply::RoomOrder(crate::order::order(ctx, account)?), vec![])
-            }
             Query::PostedIn { account, page } => (
                 Reply::PostedIn(crate::order::posted_in(ctx, account, &page)?),
                 vec![],
