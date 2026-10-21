@@ -105,6 +105,8 @@ line breaks.
 - `conditions`: No `&&` or `||` chained in an `if` or `else if` condition (let chains included).
   Name each piece first, then branch on the names (`let is_ducktape_network = …;`, then
   `if is_ducktape_network`); `&&` inside a closure or a `let` binding is fine.
+- `self-id`: A program names itself by `ctx.env().program`, never by its `PROGRAM` literal, so it
+  runs under whatever id a network gives it. Guarded: `crates/app/harness`.
 - `timers`: Nothing in the UI is timer-based, only event-driven: no timers, sleeps, intervals,
   timeouts, debounces or throttles in a crate that depends on gpui, gpui-kit or the view SDK. A
   state changes because an event arrived, never because time passed (orthory, mobile QA 72).
