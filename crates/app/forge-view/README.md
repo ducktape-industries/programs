@@ -17,7 +17,9 @@ wire and the rules), and `ownership` and `policy-view` for who can edit.
 - Who can edit (`policies.rs`): a repository's Settings tab (both designs) and a
   change's details (the desktop sidebar, the phone's Details tab) carry
   policy-view's "Who can edit" row for its `CUSTODY` and `AUTHORSHIP` keys, and
-  its owner relinks or transfers it from the row's sheet.
+  its owner relinks or transfers it from the row's sheet. A repository whose
+  settings have a record of their own (`SETTINGS_CUSTODY`, kind `forge.settings`)
+  also carries a "Who can change settings" row for it on the Settings tab.
 
 ## State
 - `state.rs`: `Forge`, what the screen shows and what the reader typed; a
@@ -28,7 +30,9 @@ wire and the rules), and `ownership` and `policy-view` for who can edit.
 - `navigate.rs`, `actions.rs`, `review.rs`, `tree.rs`: what an event changes.
 - What the reader may do: `may_write` (connected, with an account); for an item
   ownership has on record, its policy's answer (`may_change_repo` for merge and
-  closing another's change, `may_configure` for the settings, `may_edit_change`);
+  closing another's change, `may_configure` for the settings, by the settings'
+  own record where there is one, else the repository's once the settings are
+  read to have none, `may_edit_change`);
   for one with none, the rule from before policies (the owner and access's
   writers, the owner, the author). An author closes their own change, as forge
   lets them. The access list itself (Grant, Revoke) stays its owner's to set.

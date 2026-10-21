@@ -8,6 +8,10 @@ fn custody() -> Vec<u8> {
     forge::tables::CUSTODY.key(&"project".to_owned())
 }
 
+fn settings_row_key() -> Vec<u8> {
+    forge::tables::SETTINGS_CUSTODY.key(&"project".to_owned())
+}
+
 fn authorship() -> Vec<u8> {
     forge::tables::AUTHORSHIP.key(&("project".to_owned(), 1u64))
 }
@@ -403,6 +407,72 @@ fn the_writers_row_lists_only_whom_both_the_policy_and_access_list() {
     assert!(
         cx.find("forge-writer-acct-2").is_none(),
         "access leaves Rae out: {:?}",
+        cx.texts()
+    );
+}
+
+#[test]
+fn settings_with_a_record_of_their_own_follow_it_and_their_owner_relinks_them() {
+    let team = a_policy(5, 1, "Team", Writers::Listed(vec![account(2)]));
+    let mine = a_policy(4, 1, "Only me", Writers::Owner);
+    let records = || {
+        vec![
+            (custody(), 1, team.clone()),
+            (settings_row_key(), 1, mine.clone()),
+        ]
+    };
+    let policies = || vec![mine.clone(), team.clone()];
+    let (cx, _) = change_open(2, records(), policies());
+    assert!(
+        !disabled(&cx, "forge-merge"),
+        "the repository's policy admits Rae"
+    );
+    let (mut cx, view) = opened_open(2, records(), policies());
+    settings(&mut cx);
+    assert!(
+        disabled(&cx, "forge-settings-save"),
+        "the settings' own policy leaves Rae out"
+    );
+    assert!(
+        cx.find("forge-settings-policy").is_some(),
+        "{:?}",
+        cx.texts()
+    );
+    cx.update(&view, |forge, _, cx| {
+        forge.settings_policy.standing = Default::default();
+        cx.notify();
+    });
+    cx.run_until_parked();
+    assert!(
+        disabled(&cx, "forge-settings-save"),
+        "until the settings are read, the owner rule holds, not the repository's policy"
+    );
+    let (mut cx, _) = opened_open(1, records(), policies());
+    settings(&mut cx);
+    assert!(cx.has_text("Who can change settings"), "{:?}", cx.texts());
+    assert!(!disabled(&cx, "forge-settings-save"));
+    cx.simulate_click("forge-settings-policy");
+    cx.run_until_parked();
+    cx.simulate_click("forge-settings-policy/relink");
+    cx.run_until_parked();
+    cx.simulate_click("forge-settings-policy/relink/5");
+    cx.run_until_parked();
+    let sent = cx.host().requests::<Submit<ownership::Ownership>>();
+    assert!(
+        matches!(sent.as_slice(), [Owned::Relink { key, policy: 5, .. }] if *key == settings_row_key()),
+        "{sent:?}"
+    );
+}
+
+#[test]
+fn settings_with_no_record_of_their_own_follow_the_repository_and_show_no_row() {
+    let team = a_policy(5, 1, "Team", Writers::Listed(vec![account(2)]));
+    let (mut cx, _) = opened_open(2, vec![(custody(), 1, team.clone())], vec![team]);
+    settings(&mut cx);
+    assert!(!disabled(&cx, "forge-settings-save"));
+    assert!(
+        cx.find("forge-settings-policy").is_none(),
+        "{:?}",
         cx.texts()
     );
 }

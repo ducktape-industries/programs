@@ -71,6 +71,7 @@ pub(crate) fn render(
         )
         .child(group("forge-settings-access-title", "Access", theme))
         .children(crate::policies::repo_row(forge, cx, ladder, theme))
+        .children(crate::policies::settings_row(forge, cx, ladder, theme))
         .child(access_row(
             "owner",
             forge.principal_name(&repo.repo.owner),

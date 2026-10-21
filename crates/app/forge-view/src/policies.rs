@@ -1,6 +1,6 @@
-//! Who can edit the open repository and the open change, as the ownership program says (through
-//! `policy_view::item`), and what the reader may do by it. An item with no record keeps the rule
-//! it had before policies (J-011 Q8).
+//! Who can edit the open repository, its settings and the open change, as the ownership program
+//! says (through `policy_view::item`), and what the reader may do by it. An item with no record
+//! keeps the rule it had before policies (J-011 Q8); settings with none follow the repository's.
 use ownership::{Ownership, Party};
 use policy_view::{Editing, Item, item};
 use view::design::Ladder;
@@ -12,6 +12,8 @@ use crate::Forge;
 
 const REPO: &str = "forge-repo-policy";
 const CHANGE: &str = "forge-change-policy";
+const SETTINGS: &str = "forge-settings-policy";
+const SETTINGS_WHO: &str = "Who can change settings";
 
 pub(crate) fn repo_policy(forge: &mut Forge) -> &mut Editing {
     &mut forge.repo_policy
@@ -19,6 +21,10 @@ pub(crate) fn repo_policy(forge: &mut Forge) -> &mut Editing {
 
 pub(crate) fn change_policy(forge: &mut Forge) -> &mut Editing {
     &mut forge.change_policy
+}
+
+pub(crate) fn settings_policy(forge: &mut Forge) -> &mut Editing {
+    &mut forge.settings_policy
 }
 
 impl Forge {
@@ -32,6 +38,15 @@ impl Forge {
             program: forge::PROGRAM.to_owned(),
             key: forge::tables::CUSTODY.key(&name),
             label: name,
+        })
+    }
+
+    fn settings_item(&self) -> Option<Item> {
+        let name = self.nav.repo.clone()?;
+        Some(Item {
+            program: forge::PROGRAM.to_owned(),
+            key: forge::tables::SETTINGS_CUSTODY.key(&name),
+            label: format!("{name}'s settings"),
         })
     }
 
@@ -49,6 +64,10 @@ impl Forge {
         match self.repo_item() {
             Some(repo) => item::hold(self, repo_policy, repo, reader.clone(), cx),
             None => item::let_go(self, repo_policy),
+        }
+        match self.settings_item() {
+            Some(settings) => item::hold(self, settings_policy, settings, reader.clone(), cx),
+            None => item::let_go(self, settings_policy),
         }
         match self.change_item() {
             Some(change) => item::hold(self, change_policy, change, reader, cx),
@@ -72,9 +91,16 @@ impl Forge {
     }
 
     pub(crate) fn may_configure(&self) -> bool {
-        let read = self
-            .repo_item()
-            .and_then(|repo| self.repo_policy.admits(&repo));
+        let settings = self.settings_policy.standing.ready();
+        let read = match settings.map(|standing| standing.record.is_some()) {
+            Some(true) => self
+                .settings_item()
+                .and_then(|settings| self.settings_policy.admits(&settings)),
+            Some(false) => self
+                .repo_item()
+                .and_then(|repo| self.repo_policy.admits(&repo)),
+            None => None,
+        };
         self.by_policy(read, self.owns_repo())
     }
 
@@ -110,12 +136,15 @@ impl Forge {
     }
 
     pub(crate) fn policy_sheet_open(&self) -> bool {
-        self.change_policy.sheet.is_some() || self.repo_policy.sheet.is_some()
+        self.change_policy.sheet.is_some()
+            || self.repo_policy.sheet.is_some()
+            || self.settings_policy.sheet.is_some()
     }
 
     pub(crate) fn close_policy_sheet(&mut self, cx: &mut Context<Self>) {
         item::close_sheet(self, change_policy, cx);
         item::close_sheet(self, repo_policy, cx);
+        item::close_sheet(self, settings_policy, cx);
     }
 
     pub(crate) fn ownership_moved(&mut self, change: Option<Change>, cx: &mut Context<Self>) {
@@ -136,6 +165,7 @@ impl Forge {
         }
         item::moved(self, repo_policy, change.as_ref(), cx);
         item::moved(self, change_policy, change.as_ref(), cx);
+        item::moved(self, settings_policy, change.as_ref(), cx);
     }
 }
 
@@ -146,6 +176,25 @@ pub(crate) fn repo_row(
     theme: &Theme,
 ) -> Option<Stateful<Div>> {
     item::row(&forge.repo_policy, REPO, repo_policy, cx, ladder, theme)
+}
+
+pub(crate) fn settings_row(
+    forge: &Forge,
+    cx: &mut Context<Forge>,
+    ladder: &Ladder,
+    theme: &Theme,
+) -> Option<Stateful<Div>> {
+    let standing = forge.settings_policy.standing.ready()?;
+    standing.record.as_ref()?;
+    item::row_titled(
+        &forge.settings_policy,
+        SETTINGS,
+        SETTINGS_WHO,
+        settings_policy,
+        cx,
+        ladder,
+        theme,
+    )
 }
 
 pub(crate) fn change_row(
@@ -179,4 +228,14 @@ pub(crate) fn sheet(
         theme,
     )
     .or_else(|| item::sheet(&forge.repo_policy, REPO, repo_policy, cx, ladder, theme))
+    .or_else(|| {
+        item::sheet(
+            &forge.settings_policy,
+            SETTINGS,
+            settings_policy,
+            cx,
+            ladder,
+            theme,
+        )
+    })
 }

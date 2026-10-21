@@ -153,6 +153,8 @@ pub struct Forge {
     pub(crate) repo_policy: policy_view::Editing,
     #[serde(skip)]
     pub(crate) change_policy: policy_view::Editing,
+    #[serde(skip)]
+    pub(crate) settings_policy: policy_view::Editing,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

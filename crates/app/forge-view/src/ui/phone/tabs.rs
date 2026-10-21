@@ -846,6 +846,7 @@ fn settings(forge: &Forge, cx: &mut Context<Forge>, ladder: &Ladder, theme: &The
         ))
         .child(section("forge-settings-access", "Access"))
         .children(crate::policies::repo_row(forge, cx, ladder, theme))
+        .children(crate::policies::settings_row(forge, cx, ladder, theme))
         .child(
             Row::titled(id("forge-writer-owner"), "Owner")
                 .tail(

@@ -17,6 +17,7 @@ impl Forge {
         self.details = false;
         self.repo_policy.sheet = None;
         self.change_policy.sheet = None;
+        self.settings_policy.sheet = None;
         self.list_cursor = None;
         self.repos_cursor = None;
         self.rail_cursor = None;
