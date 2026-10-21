@@ -35,6 +35,8 @@ use ::program::{
 use abi::role::egress;
 use abi::role::identity::AccountNumber;
 use serde::de::DeserializeOwned;
+
+use crate::schema::Keeps;
 use serde_json::{Value, json};
 use store::PageRequest;
 
@@ -244,15 +246,15 @@ pub(crate) enum Resolved {
 // the tool `name` is for `agent`: harness's own, else the agent's tool file, else the shared one;
 // a tool file that does not load says why
 pub(crate) fn resolve(
-    ctx: &QueryCtx,
+    ctx: &dyn Keeps,
     agent: AccountNumber,
     name: &str,
 ) -> Result<Option<Resolved>, String> {
     if let Some(entry) = find(name) {
         return Ok(Some(Resolved::Native(entry)));
     }
-    let profile =
-        crate::agents::profile(ctx, agent).map_err(|error| crate::calls::refusal(&error))?;
+    let profile = crate::agents::profile(ctx.query_ctx(), agent)
+        .map_err(|error| crate::calls::refusal(&error))?;
     let Some(profile) = profile else {
         return Ok(None);
     };

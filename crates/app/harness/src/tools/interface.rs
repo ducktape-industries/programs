@@ -81,7 +81,7 @@ impl Tool for Schema {
 }
 
 // Every program that runs, each with what its code says it is for, or why that does not read.
-fn roster(ctx: &QueryCtx) -> Result<Value, Error> {
+fn roster(ctx: &ExecCtx) -> Result<Value, Error> {
     let told = running(ctx)?
         .into_iter()
         .map(|entry| {

@@ -123,3 +123,45 @@ fn a_program_without_a_readable_schema_says_why() {
         Some(code::UNKNOWN_PROGRAM.to_owned())
     );
 }
+
+#[test]
+fn an_interface_read_in_a_frame_is_kept_so_the_next_read_takes_nothing_from_the_code() {
+    let chain = chain();
+    let host = chain.host(crate::PROGRAM);
+    let ctx = host.exec(chain.env(crate::PROGRAM));
+    schema_of(&ctx, "chat").unwrap();
+    let read = host.borrow().work.blob_reads;
+    let again = schema_of(&ctx, "chat").unwrap();
+    assert_eq!(
+        host.borrow().work.blob_reads,
+        read,
+        "the second read went to the code blob"
+    );
+    assert_eq!(again.schema, interface::<chat::Chat>());
+}
+
+#[test]
+fn a_kept_interface_is_read_again_from_new_code() {
+    let chain = chain();
+    let host = chain.host(crate::PROGRAM);
+    let ctx = host.exec(chain.env(crate::PROGRAM));
+    schema_of(&ctx, "chat").unwrap();
+    let newer = code_with(&interface::<crate::Harness>());
+    let newer = chain.put_blob(programs::CODE_KIND, newer).unwrap();
+    let read = schema_in(&ctx, "chat", newer).unwrap();
+    assert_eq!(read.schema, interface::<crate::Harness>());
+}
+
+#[test]
+fn a_query_reads_the_code_and_keeps_nothing() {
+    let chain = chain();
+    let host = chain.host(crate::PROGRAM);
+    let ctx = host.query(chain.env(crate::PROGRAM));
+    schema_of(&ctx, "chat").unwrap();
+    let read = host.borrow().work.blob_reads;
+    schema_of(&ctx, "chat").unwrap();
+    assert!(
+        host.borrow().work.blob_reads > read,
+        "a query kept what it read"
+    );
+}

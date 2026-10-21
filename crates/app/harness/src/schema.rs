@@ -5,18 +5,75 @@
 pub(crate) mod tests;
 
 use ::program::schema::SECTION;
-use ::program::{BlobId, Error, QueryCtx, code, is_id, section, tools};
+use ::program::{BlobId, Ctx, Error, ExecCtx, QueryCtx, code, is_id, section, tools};
 use abi::role::programs as role;
 pub(crate) use borsh_json::Interface;
 use borsh_json::tools::Described;
 
-pub(crate) fn schema_of(ctx: &QueryCtx, program: &str) -> Result<Interface, Error> {
-    let code = code_of(ctx, program)?;
+use crate::state::{SECTIONS, SectionRow};
+
+pub(crate) trait Keeps {
+    fn query_ctx(&self) -> &QueryCtx;
+    fn keep(&self, key: &(String, String), row: &SectionRow);
+}
+
+impl Keeps for QueryCtx {
+    fn query_ctx(&self) -> &QueryCtx {
+        self
+    }
+
+    fn keep(&self, _: &(String, String), _: &SectionRow) {}
+}
+
+impl Keeps for ExecCtx {
+    fn query_ctx(&self) -> &QueryCtx {
+        self
+    }
+
+    fn keep(&self, key: &(String, String), row: &SectionRow) {
+        SECTIONS.put(self, key, row);
+    }
+}
+
+impl Keeps for Ctx {
+    fn query_ctx(&self) -> &QueryCtx {
+        self
+    }
+
+    fn keep(&self, key: &(String, String), row: &SectionRow) {
+        SECTIONS.put(self, key, row);
+    }
+}
+
+fn kept_section(
+    ctx: &dyn Keeps,
+    program: &str,
+    code: BlobId,
+    name: &str,
+) -> Result<Option<Vec<u8>>, Error> {
+    let key = (program.to_owned(), name.to_owned());
+    let kept = SECTIONS
+        .get(ctx.query_ctx(), &key)?
+        .filter(|row| row.code == code);
+    if let Some(row) = kept {
+        return Ok(row.section);
+    }
+    let section = section::read(ctx.query_ctx(), code, name)?;
+    let row = SectionRow {
+        code,
+        section: section.clone(),
+    };
+    ctx.keep(&key, &row);
+    Ok(section)
+}
+
+pub(crate) fn schema_of(ctx: &dyn Keeps, program: &str) -> Result<Interface, Error> {
+    let code = code_of(ctx.query_ctx(), program)?;
     schema_in(ctx, program, code)
 }
 
-pub(crate) fn schema_in(ctx: &QueryCtx, program: &str, code: BlobId) -> Result<Interface, Error> {
-    let Some(section) = section::read(ctx, code, SECTION)? else {
+pub(crate) fn schema_in(ctx: &dyn Keeps, program: &str, code: BlobId) -> Result<Interface, Error> {
+    let Some(section) = kept_section(ctx, program, code, SECTION)? else {
         return Err(Error::new(
             code::UNSUPPORTED,
             format!("program {program}'s code carries no {SECTION} section, so it has no schema"),
@@ -31,8 +88,8 @@ pub(crate) fn schema_in(ctx: &QueryCtx, program: &str, code: BlobId) -> Result<I
 }
 
 // What `program`'s code tells of its ops and queries; nothing where it carries no tools section.
-pub(crate) fn told_in(ctx: &QueryCtx, program: &str, code: BlobId) -> Result<Described, Error> {
-    let Some(section) = section::read(ctx, code, tools::SECTION)? else {
+pub(crate) fn told_in(ctx: &dyn Keeps, program: &str, code: BlobId) -> Result<Described, Error> {
+    let Some(section) = kept_section(ctx, program, code, tools::SECTION)? else {
         return Ok(Described::default());
     };
     borsh_json::tools::read(&section).map_err(|unreadable| {

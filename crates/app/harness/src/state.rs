@@ -108,6 +108,13 @@ pub const DRAFTING: Map<u64, Drafted> = Map::new("drafting/");
 pub const FINAL_ERRORS: Map<(AccountNumber, u64), FinalError> = Map::new("final-error/");
 pub const RUNS: Map<(AccountNumber, String), Run> = Map::new("mention-run/");
 pub const FLEET_RUNS: Set<(u64, u64)> = Set::new("fleet-run/");
+pub const SECTIONS: Map<(String, String), SectionRow> = Map::new("code-section/");
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct SectionRow {
+    pub code: BlobId,
+    pub section: Option<Vec<u8>>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Drafted {

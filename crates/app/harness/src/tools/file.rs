@@ -17,7 +17,7 @@ use crate::PART;
 use crate::agents::read;
 use crate::calls::refusal;
 use crate::pictures::{self, Format, Picture};
-use crate::schema::{Interface, schema_of};
+use crate::schema::{Interface, Keeps, schema_of};
 
 pub(crate) const SHARED: &str = "/shared/tools";
 
@@ -382,7 +382,7 @@ fn filled(
 struct Schemas(BTreeMap<String, Result<Interface, String>>);
 
 impl Schemas {
-    fn of(&mut self, ctx: &QueryCtx, program: &str) -> Result<Interface, String> {
+    fn of(&mut self, ctx: &dyn Keeps, program: &str) -> Result<Interface, String> {
         self.0
             .entry(program.to_owned())
             .or_insert_with(|| schema_of(ctx, program).map_err(|error| refusal(&error)))
@@ -426,13 +426,13 @@ fn parsed(text: &str) -> Result<Written, String> {
 }
 
 fn checked(
-    ctx: &QueryCtx,
+    ctx: &dyn Keeps,
     stem: &str,
     path: &str,
     at: Option<BlobId>,
     schemas: &mut Schemas,
 ) -> Result<FileTool, String> {
-    let (snapshot, bytes) = read(ctx, path, at).map_err(|error| refusal(&error))?;
+    let (snapshot, bytes) = read(ctx.query_ctx(), path, at).map_err(|error| refusal(&error))?;
     let text = String::from_utf8(bytes).map_err(|_| "the file is no UTF-8 text".to_owned())?;
     let written = parsed(&text)?;
     named(stem, &written.name)?;
@@ -529,7 +529,7 @@ fn service_sends(
 }
 
 fn step_checked(
-    ctx: &QueryCtx,
+    ctx: &dyn Keeps,
     n: usize,
     last: bool,
     step: Step,
@@ -656,13 +656,13 @@ pub(crate) struct Loaded {
 
 // every tool file `agent` gets, its own first: a file of its own takes the place of a shared one
 // of the same name
-pub(crate) fn load(ctx: &QueryCtx, agent: &str) -> Loaded {
+pub(crate) fn load(ctx: &dyn Keeps, agent: &str) -> Loaded {
     let mut loaded = Loaded::default();
     let mut schemas = Schemas::default();
     let mut at = None;
     let mut seen = BTreeSet::new();
     for folder in [home(agent), SHARED.to_owned()] {
-        let found = match listed(ctx, &folder, &mut at) {
+        let found = match listed(ctx.query_ctx(), &folder, &mut at) {
             Ok(found) => found,
             Err(error) => {
                 let problem = format!("{folder}: {}", refusal(&error));
@@ -691,7 +691,11 @@ pub(crate) fn left_out(problems: &[String]) -> Option<String> {
 }
 
 // the file tool `name` is for `agent`, as its file reads now; a file that no longer loads says why
-pub(crate) fn resolve(ctx: &QueryCtx, agent: &str, name: &str) -> Result<Option<FileTool>, String> {
+pub(crate) fn resolve(
+    ctx: &dyn Keeps,
+    agent: &str,
+    name: &str,
+) -> Result<Option<FileTool>, String> {
     if named(name, name).is_err() {
         return Ok(None);
     }
@@ -702,7 +706,7 @@ pub(crate) fn resolve(ctx: &QueryCtx, agent: &str, name: &str) -> Result<Option<
             path: path.clone(),
             at: None,
         };
-        let (snapshot, entry) = match ctx.query(files::PROGRAM, &asked) {
+        let (snapshot, entry) = match ctx.query_ctx().query(files::PROGRAM, &asked) {
             Ok(files::Reply::Stat { snapshot, entry }) => (snapshot, entry),
             Ok(other) => {
                 return Err(refusal(&unexpected_reply(files::PROGRAM, "Stat", &other)));
