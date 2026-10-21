@@ -7,7 +7,7 @@ use ::program::{
 };
 use abi::role::egress::{DEFAULT_WAIT, Delivery, Event, Op as Egress, Request, http};
 use abi::role::programs as role;
-use actions::{Asks, CheckRow, Output, PageRequest, State, bytes, millicores};
+use actions::{Asks, CheckRow, Output, PageRequest, State};
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde_json::{Value, json};
 use store::{Item, Map, Set};
@@ -430,6 +430,9 @@ async fn create_pod_with_quota(ctx: &Ctx, check: &CheckRow) -> Made {
         Ok(asks) => asks,
         Err(refused) => return Made::Refused(refused.message),
     };
+    if let Err(why) = kubernetes_quantities(&asks) {
+        return Made::Refused(why);
+    }
     let needed = match needed(ctx, check.id) {
         Ok(needed) => needed,
         Err(why) => return Made::Refused(why),
@@ -462,6 +465,70 @@ async fn create_pod_with_quota(ctx: &Ctx, check: &CheckRow) -> Made {
         Some(pod) => Made::Pod(pod.to_owned()),
         None => Made::Refused("the pods service named no pod".to_owned()),
     }
+}
+
+fn kubernetes_quantities(asks: &Asks) -> Result<(), String> {
+    let cpu_unread = asks.cpu.as_deref().filter(|cpu| millicores(cpu).is_none());
+    if let Some(cpu) = cpu_unread {
+        return Err(format!(
+            "the job's cpu is no Kubernetes quantity such as \"16\" or \"500m\": it reads {cpu:?}"
+        ));
+    }
+    let memory_unread = asks
+        .memory
+        .as_deref()
+        .filter(|memory| bytes(memory).is_none());
+    if let Some(memory) = memory_unread {
+        return Err(format!(
+            "the job's memory is no Kubernetes quantity such as \"40Gi\" or \"512Mi\": it reads {memory:?}"
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn millicores(quantity: &str) -> Option<u64> {
+    match quantity.strip_suffix('m') {
+        Some(milli) if digits(milli) => milli.parse().ok(),
+        Some(_) => None,
+        None => decimal_thousandths(quantity),
+    }
+}
+
+pub(crate) fn bytes(quantity: &str) -> Option<u64> {
+    const UNITS: [(&str, u64); 12] = [
+        ("Ki", 1 << 10),
+        ("Mi", 1 << 20),
+        ("Gi", 1 << 30),
+        ("Ti", 1 << 40),
+        ("Pi", 1 << 50),
+        ("Ei", 1 << 60),
+        ("k", 1_000),
+        ("M", 1_000_000),
+        ("G", 1_000_000_000),
+        ("T", 1_000_000_000_000),
+        ("P", 1_000_000_000_000_000),
+        ("E", 1_000_000_000_000_000_000),
+    ];
+    let (number, unit) = UNITS
+        .iter()
+        .find_map(|(suffix, unit)| quantity.strip_suffix(suffix).map(|number| (number, *unit)))
+        .unwrap_or((quantity, 1));
+    Some(decimal_thousandths(number)?.checked_mul(unit)? / 1000)
+}
+
+fn digits(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn decimal_thousandths(number: &str) -> Option<u64> {
+    let (whole, fraction) = number.split_once('.').unwrap_or((number, "0"));
+    let at_most_thousandths = digits(whole) && digits(fraction) && fraction.len() <= 3;
+    if !at_most_thousandths {
+        return None;
+    }
+    let whole: u64 = whole.parse().ok()?;
+    let fraction: u64 = format!("{fraction:0<3}").parse().ok()?;
+    whole.checked_mul(1000)?.checked_add(fraction)
 }
 
 fn request_exceeds_whole_quota(error: &str) -> Option<String> {

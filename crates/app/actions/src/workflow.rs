@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
 
-use crate::{Asks, Event, Input, Job, bytes, millicores};
+use crate::{Asks, Event, Input, Job};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -118,24 +118,6 @@ pub(crate) fn parse(text: &str) -> Result<Workflow, String> {
         if !ids.insert(job.id.clone()) {
             return Err(format!(
                 "two jobs are named {:?}: give each job a distinct name",
-                job.id
-            ));
-        }
-        let quantities = [
-            (
-                "cpu",
-                &job.cpu,
-                millicores(job.cpu.as_deref().unwrap_or("0")),
-            ),
-            (
-                "memory",
-                &job.memory,
-                bytes(job.memory.as_deref().unwrap_or("0")),
-            ),
-        ];
-        if let Some((key, Some(text), _)) = quantities.iter().find(|(_, _, read)| read.is_none()) {
-            return Err(format!(
-                "job {:?}: {key} takes a Kubernetes quantity such as \"16\" or \"40Gi\", not {text:?}",
                 job.id
             ));
         }

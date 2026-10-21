@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 use store::Item;
 use valset::{Genesis as Founding, Member, Valset};
 
+use crate::rules::{bytes, millicores};
 use crate::*;
 
 const ADA: [u8; 32] = [1; 32];
@@ -33,6 +34,7 @@ const SIXTEEN: u64 = 4;
 const NEEDY: u64 = 5;
 const ASTRAY: u64 = 6;
 const BUILT: u64 = 11;
+const LOTS: u64 = 13;
 const STRAYED: u64 = 12;
 
 const CLAIMED: Item<Vec<u64>> = Item::new("claimed");
@@ -114,9 +116,7 @@ impl Program for Stand {
                 };
                 Ok(actions::Reply::Checks(page))
             }
-            actions::Query::Asks { check } => {
-                Ok(actions::Reply::Asks((check == SIXTEEN).then(sixteen)))
-            }
+            actions::Query::Asks { check } => Ok(actions::Reply::Asks(asks_of(check))),
             actions::Query::Needs { check } => Ok(actions::Reply::Needs(needs_of(check))),
             actions::Query::Outputs { check } => Ok(actions::Reply::Outputs(outputs_of(check))),
             _ => Err(invalid("the stand-in answers checks")),
@@ -148,6 +148,18 @@ fn outputs_of(check: u64) -> Option<OutputsRow> {
         size: 7,
     }];
     Some(OutputsRow { by: 1, files })
+}
+
+fn asks_of(check: u64) -> Option<Asks> {
+    match check {
+        SIXTEEN => Some(sixteen()),
+        LOTS => Some(Asks {
+            cpu: Some("16".into()),
+            memory: Some("lots".into()),
+            scratch: Vec::new(),
+        }),
+        _ => None,
+    }
 }
 
 fn sixteen() -> Asks {
@@ -1047,6 +1059,32 @@ fn a_check_that_needs_a_job_has_its_outputs_placed_in_its_one_pod() {
     let placed = json!({"path": "/needs/build/dist/app.tar.gz", "blob": held});
     let inputs = node.body(&made)["inputs"].clone();
     assert_eq!(inputs[2], placed, "{inputs}");
+}
+
+#[test]
+fn a_quantity_reads_as_kubernetes_writes_it() {
+    let cpus = ["16", "1.5", "500m", "0.25"].map(millicores);
+    assert_eq!(cpus, [Some(16_000), Some(1_500), Some(500), Some(250)]);
+    let not = ["lots", "16.", "+5", "1.2345", "m", "5mm", ""].map(millicores);
+    assert!(not.iter().all(Option::is_none), "{not:?}");
+    let memory = ["40Gi", "512Mi", "1.5G", "1000", "124634176Ki"].map(bytes);
+    let expected: [u64; 5] = [40 << 30, 512 << 20, 1_500_000_000, 1000, 124_634_176 << 10];
+    assert_eq!(memory, expected.map(Some));
+    assert_eq!(["lots", "40GiB", "Gi", "5m"].map(bytes), [None; 4]);
+}
+
+#[test]
+fn a_job_asking_what_is_no_kubernetes_quantity_errs_its_check_naming_the_field_and_makes_no_pod() {
+    let mut node = node();
+    node.offer(LOTS).unwrap();
+    node.after(2_000);
+    node.after(0);
+    assert!(node.idle(), "no pod is asked for");
+    let why = "the job's memory is no Kubernetes quantity such as \"40Gi\" or \"512Mi\": it reads \"lots\"";
+    assert_eq!(
+        node.reports(),
+        [(LOTS, State::Errored, why.to_owned(), None)]
+    );
 }
 
 #[test]

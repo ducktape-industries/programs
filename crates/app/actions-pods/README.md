@@ -17,3 +17,10 @@ Shapes: `src/lib.rs`; checks: `src/rules.rs`.
 `SetConcurrent { most }` sets how many pods this runner holds at once (unset: 1; 0 is refused). A check offered past it waits, as one the quota had no room for does, until one of this runner's pods ends.
 
 Every query is answered for anyone.
+
+## What a job asks
+
+A check's `Asks` (actions `Query::Asks`) become its pod's requests: `cpu` and `memory` as
+Kubernetes quantities (`"16"`, `"500m"`, `"40Gi"`), `scratch` as memory-backed paths, and cargo
+runs as many jobs as the CPUs asked. A `cpu` or `memory` that is no Kubernetes quantity errs the
+check, naming the field and what it read, and makes no pod.

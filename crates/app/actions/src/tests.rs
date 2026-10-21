@@ -580,7 +580,7 @@ fn a_check_is_claimed_once_reported_once_and_rerun_as_its_next_attempt() {
 }
 
 #[test]
-fn a_job_that_states_what_its_pod_asks_keeps_it_for_every_attempt_and_a_bad_quantity_says_why() {
+fn a_job_that_states_what_its_runner_asks_keeps_it_as_written_for_every_attempt() {
     let mut world = world();
     let root = world.commit(&[], &[("sixteen.toml", SIXTEEN)]);
     world.push(None, root, "main");
@@ -604,11 +604,7 @@ fn a_job_that_states_what_its_pod_asks_keeps_it_for_every_attempt_and_a_bad_quan
     let lots = SIXTEEN.replace("memory = \"40Gi\"", "memory = \"lots\"");
     let other = world.commit(&[root], &[("sixteen.toml", lots.as_str())]);
     world.push(Some(root), other, "main");
-    let error = world.run(2).error.unwrap();
-    assert!(
-        error.contains("memory takes a Kubernetes quantity"),
-        "{error}"
-    );
+    assert_eq!(world.run(2).error, None, "actions reads no quantity");
 }
 
 #[test]

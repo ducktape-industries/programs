@@ -20,6 +20,12 @@ commit's status. Shapes: `src/lib.rs`; checks: `src/rules.rs`.
 
 Every query is answered for anyone.
 
+## What a job asks of its runner
+
+A job's `cpu`, `memory` and `scratch` keys are kept as written and answered by `Query::Asks`
+for every attempt of its check. actions reads none of them: what they mean is the runner's
+(actions-pods reads `cpu` and `memory` as Kubernetes quantities).
+
 ## What it tells chat
 
 A check of a push or dispatch run that ends failed or errored, in a workflow whose file names
