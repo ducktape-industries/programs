@@ -382,6 +382,10 @@ impl Forge {
             return wanted;
         };
         wanted.extend(self.compare_query());
+        let talking = self.touch || self.nav.change_tab == ChangeTab::Conversation;
+        if talking {
+            wanted.extend(self.check_reads());
+        }
         if self.nav.change_tab == ChangeTab::Commits {
             wanted.extend(self.shown_log());
             let open = self.nav.commit.as_deref();

@@ -3,11 +3,13 @@
 use view::prelude::*;
 
 use crate::Forge;
-use crate::select::{ChangeEvent, Picture};
+use crate::Stage;
+use crate::select::{ChangeEvent, CheckGroup, CheckedOn, Picture};
 use crate::state::verdict_verb;
 use crate::ui::components::{badge, button, empty_state, id, quiet};
 use crate::ui::scroller;
 use crate::words;
+use forge::{CheckState, CommitStatus, Reply};
 use view::design::Ladder;
 
 /// A review's body and comments start under its author's name, past the
@@ -41,6 +43,9 @@ pub(crate) fn render(
                     &crate::markdown::links(Vec::new(), cx),
                 )),
         );
+    }
+    if let Some(checks) = checks(forge, theme, ladder) {
+        column = column.child(checks);
     }
     // Until chat answers, the reviews stand on their own; once it has, each
     // sits in the timeline where forge posted its line.
@@ -300,4 +305,123 @@ fn composer(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladd
                 .enabled(forge.may_write() && !forge.reply.is_blank() && !replying),
         )
         .into_any_element()
+}
+
+fn checks(forge: &Forge, theme: &Theme, ladder: &Ladder) -> Option<AnyElement> {
+    let groups = forge.check_groups();
+    if groups.is_empty() {
+        return None;
+    }
+    let mut block = div()
+        .id(id("forge-checks"))
+        .flex()
+        .flex_col()
+        .gap(design::space::SM)
+        .pb(design::space::LG)
+        .border_b_1()
+        .border_color(theme.border)
+        .child(
+            div()
+                .text_size(design::text::SECONDARY)
+                .text_color(theme.foreground)
+                .child(words::CHECKS),
+        );
+    for group in &groups {
+        block = block.child(check_group(forge, group, theme, ladder));
+    }
+    Some(block.into_any_element())
+}
+
+fn check_group(forge: &Forge, group: &CheckGroup, theme: &Theme, ladder: &Ladder) -> AnyElement {
+    let key = group.on.key();
+    let stale = group.on == CheckedOn::Preview { stale: true };
+    let mut head = div()
+        .id(id(format!("forge-checks-{key}")))
+        .flex()
+        .items_center()
+        .gap(design::space::SM)
+        .child(
+            design::mono(words::checked_on(group.on, &group.commit))
+                .text_size(design::text::CAPTION)
+                .text_color(theme.muted),
+        );
+    if stale {
+        head = head.child(badge(
+            id("forge-checks-preview-stale"),
+            words::STALE,
+            ladder,
+            theme.warning,
+            theme.warning_soft,
+        ));
+    }
+    let mut column = div().flex().flex_col().gap(design::space::XS).child(head);
+    if stale {
+        column = column.child(
+            div()
+                .id(id("forge-checks-preview-stale-why"))
+                .text_size(design::text::SECONDARY)
+                .text_color(theme.warning)
+                .child(words::STALE_PREVIEW),
+        );
+    }
+    let Some(query) = forge.statuses_query(&group.commit) else {
+        return column.into_any_element();
+    };
+    let rows: Vec<AnyElement> = match forge.stage(&query) {
+        Stage::Loading => vec![quiet(words::READING_CHECKS, theme)],
+        Stage::Failed(refusal) => vec![quiet(design::sentence(refusal), theme)],
+        Stage::Ready(Reply::Statuses { page, .. }) if page.items.is_empty() => {
+            vec![quiet(words::NO_CHECKS, theme)]
+        }
+        Stage::Ready(Reply::Statuses { page, .. }) => page
+            .items
+            .iter()
+            .map(|status| check_row(forge, key, status, theme, ladder))
+            .collect(),
+        Stage::Ready(_) => Vec::new(),
+    };
+    column.children(rows).into_any_element()
+}
+
+fn check_row(
+    forge: &Forge,
+    key: &str,
+    status: &CommitStatus,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    let (foreground, background) = check_colours(status.state, theme);
+    let reporter = forge.principal_name(&status.reporter);
+    let row_id = format!("forge-check-{key}-{reporter}-{}", status.context);
+    div()
+        .id(id(row_id.clone()))
+        .flex()
+        .items_center()
+        .gap(design::space::SM)
+        .child(badge(
+            id(format!("{row_id}-state")),
+            status.state.word(),
+            ladder,
+            foreground,
+            background,
+        ))
+        .child(
+            div()
+                .text_size(design::text::SECONDARY)
+                .child(words::reported(&reporter, &status.context)),
+        )
+        .children(status.url.clone().map(|url| {
+            design::mono(url)
+                .text_size(design::text::CAPTION)
+                .text_color(theme.muted)
+        }))
+        .into_any_element()
+}
+
+fn check_colours(state: CheckState, theme: &Theme) -> (Hsla, Hsla) {
+    match state {
+        CheckState::Passed => (theme.success, theme.success_soft),
+        CheckState::Pending => (theme.muted, theme.surface_raised),
+        CheckState::Failed | CheckState::Errored => (theme.danger, theme.danger_soft),
+    }
 }

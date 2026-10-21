@@ -1407,3 +1407,74 @@ fn a_change_in_a_job_room_reads_the_same_from_notices_as_from_forge_code_lines()
         .collect();
     assert_eq!((in_j7, count), read("job"));
 }
+
+fn shows(cx: &view::testing::TestAppContext, said: &str) -> bool {
+    cx.texts().iter().any(|text| text.contains(said))
+}
+
+#[test]
+fn a_change_shows_the_checks_on_its_head_and_on_its_merge_preview() {
+    let (cx, _view) = change_screen("default", ChangeTab::Conversation);
+    assert!(cx.find("forge-checks-head").is_some(), "{:?}", cx.texts());
+    assert!(
+        cx.find("forge-checks-preview").is_some(),
+        "{:?}",
+        cx.texts()
+    );
+    for said in [
+        "Checks",
+        "Ada / build.sh#lane",
+        "Rae / check.toml#check",
+        "Rae / ci.toml#ci",
+        "desktop:20261021-081734-1",
+        "passed",
+        "pending",
+        "failed",
+        "errored",
+    ] {
+        assert!(shows(&cx, said), "{said}: {:?}", cx.texts());
+    }
+    assert!(cx.find("forge-checks-preview-stale").is_none());
+}
+
+#[test]
+fn a_preview_made_before_the_head_moved_is_marked_stale() {
+    let (cx, _view) = change_screen("outdated", ChangeTab::Conversation);
+    assert!(
+        cx.find("forge-checks-preview-stale").is_some(),
+        "{:?}",
+        cx.texts()
+    );
+    assert!(cx.find("forge-checks-preview-stale-why").is_some());
+}
+
+#[test]
+fn a_preview_made_before_the_target_moved_is_marked_stale() {
+    let (cx, _view) = change_screen("target-moved", ChangeTab::Conversation);
+    assert!(
+        cx.find("forge-checks-preview-stale").is_some(),
+        "{:?}",
+        cx.texts()
+    );
+    assert!(cx.find("forge-checks-preview-stale-why").is_some());
+}
+
+#[test]
+fn a_change_nobody_previewed_shows_only_its_head_checks() {
+    let (cx, _view) = change_screen("unpreviewed", ChangeTab::Conversation);
+    assert!(cx.find("forge-checks-head").is_some(), "{:?}", cx.texts());
+    assert!(cx.find("forge-checks-preview").is_none());
+}
+
+#[test]
+fn a_merged_change_shows_its_head_checks_and_asks_no_preview() {
+    let (cx, _view) = change_screen("merged", ChangeTab::Conversation);
+    assert!(cx.find("forge-checks-head").is_some(), "{:?}", cx.texts());
+    let previews = cx
+        .host()
+        .requests::<Ask>()
+        .into_iter()
+        .filter(|query| matches!(query, Query::Preview { .. }))
+        .count();
+    assert_eq!(previews, 0);
+}

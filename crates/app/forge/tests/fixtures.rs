@@ -618,6 +618,81 @@ fn replay(tape: &mut Tape) {
             page: PageRequest::first(2),
         },
     );
+    let mut checked = Rig::start(bounds, HashKind::Sha1);
+    let story = Story::pushed(&mut checked);
+    checked.execute(&story.open("Checked change")).unwrap();
+    checked.advance();
+    let previewed = Query::Preview {
+        repo: REPO.into(),
+        n: 1,
+    };
+    tape.capture(&checked, "preview-none", previewed.clone());
+    let OpReply::Previewed { oid: merge, .. } = tape.output(
+        &mut checked,
+        "op-preview",
+        Op::Preview {
+            repo: REPO.into(),
+            n: 1,
+        },
+    ) else {
+        panic!();
+    };
+    let reviewer: &[u8] = b"reviewer";
+    for (actor, commit, context, state, url) in [
+        (
+            TESTER,
+            &story.feature,
+            "build.sh#lane",
+            CheckState::Passed,
+            Some("desktop:20261021-081734-1"),
+        ),
+        (
+            reviewer,
+            &story.feature,
+            "check.toml#check",
+            CheckState::Pending,
+            None,
+        ),
+        (
+            TESTER,
+            &merge,
+            "build.sh#lane",
+            CheckState::Failed,
+            Some("desktop:20261021-081734-2"),
+        ),
+        (reviewer, &merge, "ci.toml#ci", CheckState::Errored, None),
+    ] {
+        checked.actor = actor.to_vec();
+        checked
+            .execute(&Op::Status {
+                repo: REPO.into(),
+                commit: commit.clone(),
+                context: context.into(),
+                state,
+                url: url.map(Into::into),
+            })
+            .unwrap();
+    }
+    checked.advance();
+    tape.capture(&checked, "preview", previewed);
+    tape.capture(
+        &checked,
+        "statuses",
+        Query::Statuses {
+            repo: REPO.into(),
+            commit: story.feature.clone(),
+            page: PageRequest::first(128),
+        },
+    );
+    tape.capture(
+        &checked,
+        "statuses-merge",
+        Query::Statuses {
+            repo: REPO.into(),
+            commit: merge,
+            page: PageRequest::first(128),
+        },
+    );
 }
 
 #[test]

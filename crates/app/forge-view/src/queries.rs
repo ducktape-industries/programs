@@ -119,6 +119,7 @@ fn extend(into: &mut Reply, more: Reply) {
             absorb(reviews, more)
         }
         (Reply::Judgment { page, .. }, Reply::Judgment { page: more, .. }) => absorb(page, more),
+        (Reply::Statuses { page, .. }, Reply::Statuses { page: more, .. }) => absorb(page, more),
         _ => {}
     }
 }

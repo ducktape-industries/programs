@@ -84,3 +84,8 @@ fixtures`; without the variable the test must reproduce the committed bytes.
 | `archived` | `Query` → `Reply` | `Archived` once `Archive` archived it. |
 | `archived-repos` | `Query` → `Reply` | `ArchivedRepos`: the archived repository. |
 | `repos-archived` | `Query` → `Reply` | `Repos` with the archived repository left out. |
+| `preview-none` | `Query` → `Reply` | `Preview` of an open change nobody has previewed: null. |
+| `op-preview` | `Op` → `OpReply` | `Previewed`: the squash change 1 would land, under `refs/changes/1/merge`. |
+| `preview` | `Query` → `Reply` | The change's latest Preview: the heads it read and its squash. |
+| `statuses` | `Query` → `Reply` | The change head's statuses: passed with a url, pending without, by two reporters. |
+| `statuses-merge` | `Query` → `Reply` | The Preview squash's statuses: failed with a url, errored without. |

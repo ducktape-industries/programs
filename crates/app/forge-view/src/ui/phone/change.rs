@@ -15,14 +15,17 @@ use view::{Div, FontWeight, Stateful};
 use super::parts::{self, Row, Tint, Tone};
 use super::tabs;
 use crate::Forge;
+use crate::Stage;
 use crate::actions::MergeBlock;
 use crate::id;
 use crate::markdown;
-use crate::select::{ChangeEvent, Standings};
+use crate::select::{ChangeEvent, CheckedOn, Standings};
 use crate::state::{ChangeTab, Sheet, change_key, verdict_label};
 use crate::words::{self, path_text};
 use ::markdown::phone as document;
-use forge::{Change, ChangeState, Content, FileDiff, Principal, Reply, Review, Verdict};
+use forge::{
+    Change, ChangeState, CheckState, Content, FileDiff, Principal, Reply, Review, Verdict,
+};
 use view::design::short_hex;
 
 pub(super) fn render(
@@ -304,6 +307,7 @@ fn timeline(
         .flex_col()
         .pb(design::space::BLOCK)
         .children(body)
+        .children(checks(forge, ladder, theme))
         .children(events(forge, change, cx, ladder, theme))
         .child(section_aside(
             "forge-reviews-head",
@@ -1236,4 +1240,108 @@ fn close_for_good(cx: &mut Context<Forge>, ladder: &Ladder, theme: &Theme) -> Di
             theme,
             cancel,
         ))
+}
+
+fn checks(forge: &Forge, ladder: &Ladder, theme: &Theme) -> Vec<AnyElement> {
+    let groups = forge.check_groups();
+    if groups.is_empty() {
+        return Vec::new();
+    }
+    let mut drawn = vec![
+        design::section_head(
+            id("forge-checks-title"),
+            words::CHECKS.to_owned(),
+            ladder,
+            theme,
+        )
+        .into_any_element(),
+    ];
+    for group in &groups {
+        let key = group.on.key();
+        let stale = group.on == CheckedOn::Preview { stale: true };
+        let flag = stale.then(|| {
+            parts::badge(
+                id("forge-checks-preview-stale"),
+                words::STALE,
+                Tint::Warn,
+                ladder,
+                theme,
+            )
+        });
+        let head = div()
+            .id(id(format!("forge-checks-{key}")))
+            .flex()
+            .items_center()
+            .gap(design::space::SM)
+            .px(design::space::BLOCK)
+            .pt(design::space::MD)
+            .child(
+                parts::caption(words::checked_on(group.on, &group.commit), ladder, theme)
+                    .font_family(design::fonts::FAMILY_MONO),
+            )
+            .children(flag);
+        drawn.push(head.into_any_element());
+        if stale {
+            let why = parts::notice(
+                id("forge-checks-preview-stale-why"),
+                words::STALE_PREVIEW,
+                Tone::Warning,
+                ladder,
+                theme,
+            );
+            drawn.push(why.into_any_element());
+        }
+        let Some(query) = forge.statuses_query(&group.commit) else {
+            continue;
+        };
+        let said = |suffix: &str, text: String| {
+            parts::quiet(
+                id(format!("forge-checks-{key}-{suffix}")),
+                text,
+                ladder,
+                theme,
+            )
+            .into_any_element()
+        };
+        match forge.stage(&query) {
+            Stage::Loading => drawn.push(said("loading", words::READING_CHECKS.to_owned())),
+            Stage::Failed(refusal) => drawn.push(said("refused", design::sentence(refusal))),
+            Stage::Ready(Reply::Statuses { page, .. }) if page.items.is_empty() => {
+                drawn.push(said("none", words::NO_CHECKS.to_owned()))
+            }
+            Stage::Ready(Reply::Statuses { page, .. }) => {
+                drawn.extend(page.items.iter().map(|status| {
+                    let reporter = forge.principal_name(&status.reporter);
+                    let row_id = format!("forge-check-{key}-{reporter}-{}", status.context);
+                    let state = parts::badge(
+                        id(format!("{row_id}-state")),
+                        status.state.word(),
+                        check_tint(status.state),
+                        ladder,
+                        theme,
+                    );
+                    let row = Row::titled(id(row_id), words::reported(&reporter, &status.context))
+                        .tail(state);
+                    let row = match &status.url {
+                        Some(url) => row.caption(
+                            parts::caption(url.clone(), ladder, theme)
+                                .font_family(design::fonts::FAMILY_MONO),
+                        ),
+                        None => row,
+                    };
+                    row.draw(ladder, theme).into_any_element()
+                }))
+            }
+            Stage::Ready(_) => {}
+        }
+    }
+    drawn
+}
+
+fn check_tint(state: CheckState) -> Tint {
+    match state {
+        CheckState::Passed => Tint::Ok,
+        CheckState::Pending => Tint::Plain,
+        CheckState::Failed | CheckState::Errored => Tint::Danger,
+    }
 }

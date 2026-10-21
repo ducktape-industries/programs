@@ -1334,3 +1334,24 @@ fn an_archived_repository_wears_its_badge_on_the_phone() {
     press(&mut cx, "forge-repo-project");
     assert!(cx.find("forge-repo-archived").is_none());
 }
+
+#[test]
+fn a_change_lists_its_checks_under_its_body() {
+    let cx = change("default");
+    assert!(cx.find("forge-checks-head").is_some(), "{:?}", cx.texts());
+    assert!(
+        cx.find("forge-checks-preview").is_some(),
+        "{:?}",
+        cx.texts()
+    );
+    assert!(cx.has_text("passed"), "{:?}", cx.texts());
+    assert!(cx.find("forge-checks-preview-stale").is_none());
+    for moved in ["outdated", "target-moved"] {
+        let cx = change(moved);
+        assert!(
+            cx.find("forge-checks-preview-stale").is_some(),
+            "{moved}: {:?}",
+            cx.texts()
+        );
+    }
+}

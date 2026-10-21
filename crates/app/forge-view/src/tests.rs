@@ -102,10 +102,14 @@ fn answer(query: &Query, mode: &str) -> Reply {
         Query::Change {
             page: PageRequest { after: None, .. },
             ..
-        } => in_job_room(mode, reply(change_fixture(mode))),
+        } => in_job_room(mode, moved_target(mode, reply(change_fixture(mode)))),
         Query::Change { .. } => in_job_room(mode, reply("change-reviews-next")),
         Query::Judgment { .. } if mode == "judgment-empty" => reply("judgment-empty"),
         Query::Judgment { .. } => reply("judgment"),
+        Query::Preview { .. } if mode == "unpreviewed" => reply("preview-none"),
+        Query::Preview { .. } => reply("preview"),
+        Query::Statuses { commit, .. } if *commit == previewed_merge() => reply("statuses-merge"),
+        Query::Statuses { .. } => reply("statuses"),
         other => panic!("no fixture for {other:?}"),
     }
 }
@@ -122,6 +126,26 @@ fn in_job_room(mode: &str, mut read: Reply) -> Reply {
         change.channel = room.into();
     }
     read
+}
+
+fn moved_target(mode: &str, mut read: Reply) -> Reply {
+    if mode != "target-moved" {
+        return read;
+    }
+    if let Reply::Change { target_head, .. } = &mut read {
+        *target_head = Some("f".repeat(40));
+    }
+    read
+}
+
+fn previewed_merge() -> String {
+    match reply("preview") {
+        Reply::Preview {
+            preview: Some(made),
+            ..
+        } => made.merge,
+        other => panic!("the preview fixture holds one: {other:?}"),
+    }
 }
 
 /// The changes of a repository with a long past: the first one listed,

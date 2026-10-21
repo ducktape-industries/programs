@@ -44,7 +44,10 @@ writers list) and ownership (who can edit what is held). Out of sight
 (`HostVisible` false) it reads nothing, and shows again by reading what is on
 screen once. A refused read stays on screen, saying why, until a block writes a
 table it reads or the reader retries. The Refs tab reads every branch's
-standing in one `Compares`.
+standing in one `Compares`. A change's conversation carries its checks: forge's
+`Statuses` of its head, and, while it is open, of its latest `Preview`'s squash,
+marked stale when either head that Preview read (the change's or its target's)
+has since moved, as forge's merge gate then refuses it.
 
 ## Links
 `HostRoute` hands the view a link's tail, `duck://<chain>/forge/<route>`:
