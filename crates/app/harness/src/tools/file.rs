@@ -860,7 +860,7 @@ fn walk(ctx: &ExecCtx, mut walk: Walk) -> Result<Run, Error> {
                     head,
                     body: parts,
                 };
-                let writes = super::pods::whole(ctx, request)?;
+                let writes = super::service::whole(ctx, request)?;
                 let step = label.clone();
                 let then = move |ctx: &ExecCtx, output: &[u8]| {
                     let answer =
@@ -916,7 +916,7 @@ fn served(service: &str, output: &[u8]) -> Result<Served, Error> {
         None => format!(" with a {media} body, not JSON"),
     };
     Err(Error::new(
-        super::pods::refused_as(status),
+        super::service::refused_as(status),
         format!("{service} answered {status}{why}"),
     ))
 }
@@ -1044,7 +1044,7 @@ fn shown(
 }
 
 pub(crate) fn heard(data: &[u8]) -> Option<Value> {
-    let (name, data) = super::pods::event(data);
+    let (name, data) = super::service::event(data);
     let said = serde_json::from_str(&data).unwrap_or_else(|_| json!(data));
     match name.as_str() {
         "ended" => Some(said),

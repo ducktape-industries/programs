@@ -1,5 +1,5 @@
-//! The `wake` program: an account arms a wake on one event (a block's height, a pod's end, a forge
-//! ref or change, a files path, a program's code, a clear chat place), and the first time it happens
+//! The `wake` program: an account arms a wake on one event (a block's height, a forge ref or
+//! change, a files path, a program's code, a clear chat place), and the first time it happens
 //! wake tells that account, through attribution, as a `Result` on its object `wake/<id>` (`rules.rs`).
 mod examples;
 mod program;
@@ -145,19 +145,19 @@ pub struct Ended {
     Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
 )]
 #[tool_about(
-    "Wakes an account once on one event: a block's height, a pod of the pods service ending, a forge ref moving, a forge change moving, being reviewed, closing or merging, a files path changing, a program's code changing, or a chat place clearing of everyone else's hold and draft. When it happens the account is told through attribution, as a Result on the object wake/<id>, which ChangesTo reads back."
+    "Wakes an account once on one event: a block's height, a forge ref moving, a forge change moving, being reviewed, closing or merging, a files path changing, a program's code changing, or a chat place clearing of everyone else's hold and draft. When it happens the account is told through attribution, as a Result on the object wake/<id>, which ChangesTo reads back."
 )]
 pub enum Op {
-    #[tool_op(description = "Arm a wake for your account on a height, a pod's end, a forge change or ref, a files path, a change settling as until says, a program's next scheduled code change (refused while none is scheduled), or a chat place (a channel's foot, or a thread by its root's seq) holding no one else's hold or draft, not counting those whose holder waits there too (at once when it already is). A chat message is refused: attribution already tells you each message for you. Returns the wake's id.", returns = u64, example = crate::examples::wake_on)]
+    #[tool_op(description = "Arm a wake for your account on a height, a forge change or ref, a files path, a change settling as until says, a program's next scheduled code change (refused while none is scheduled), or a chat place (a channel's foot, or a thread by its root's seq) holding no one else's hold or draft, not counting those whose holder waits there too (at once when it already is). A chat message is refused: attribution already tells you each message for you. A pod is refused: wait with the pods service's own wait stream. Returns the wake's id.", returns = u64, example = crate::examples::wake_on)]
     WakeOn { event: WaitFor },
     #[tool_op(description = "Cancel an open wake. Its account only.", example = crate::examples::cancel)]
     Cancel { id: u64 },
     #[tool_op(description = "This program's own scheduled entry only: a wake's block has come.")]
     Due,
-    #[tool_op(description = "This program's own scheduled entry follows a pod a wake is open on, the block after it is armed; anyone may send it to restart following an open pod wake from the next block.", example = crate::examples::pod_wait)]
+    #[tool_op(description = "Ends wake id if it is a pod wake still open from when wake followed pods. Anyone may send it.", example = crate::examples::pod_wait)]
     PodWait { id: u64 },
     #[tool_op(
-        description = "From the program bound to the egress role only: one event of a pod wake's stream."
+        description = "From the program bound to the egress role only: an event of a pod wake's stream, which ends that wake."
     )]
     PodEvent { id: u64, event: Event },
     #[tool_op(
@@ -233,8 +233,8 @@ pub fn describe(op: &Op) -> describe::Description {
         Op::WakeOn { event } => (format!("Wake on {}", rules::what(event)), Vec::new()),
         Op::Cancel { id } => (format!("Cancel wake {id}"), vec![wake(id)]),
         Op::Due => ("A wake's block has come".to_owned(), Vec::new()),
-        Op::PodWait { id } => (format!("Follow wake {id}'s pod"), vec![wake(id)]),
-        Op::PodEvent { id, .. } => (format!("Hear wake {id}'s pod"), vec![wake(id)]),
+        Op::PodWait { id } => (format!("End wake {id}, a pod wake"), vec![wake(id)]),
+        Op::PodEvent { id, .. } => (format!("End wake {id}, a pod wake"), vec![wake(id)]),
         Op::Forged(_) => ("Hear a ref or a change forge moved".to_owned(), Vec::new()),
         Op::Filed(_) => ("Hear a files commit".to_owned(), Vec::new()),
         Op::Fan { firing } => (format!("End the next wake up to {}", firing.hi), Vec::new()),

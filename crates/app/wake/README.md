@@ -6,7 +6,7 @@ Wakes an account once on one event, wherever it runs: a harness agent, a bridge 
 | `WaitFor` | Heard from | Told |
 |---|---|---|
 | `Height { height }` | its own `Due`, scheduled at that height through the scheduler role | `block H has come` |
-| `Pod { name }` | its own `PodWait` the block after: a whole `GET /v1/pods/<name>` to the pods service through egress, then `GET /v1/pods/<name>/wait?every=<s>` as events (`PodEvent`), `every` half of what a request lasts (`DEFAULT_WAIT` blocks at the block time measured between arming and `PodWait`) in whole seconds. A stream that ends without `event: ended` is followed again from the next block | the pods service's `ended` line; `the pods service knows no pod <name>` on a 404 |
+| `Pod { name }` | refused: wake no longer follows pods, so a pod is waited on with the pods service's own wait stream (a tool file such as pod_wait). A pod wake still open from before ends on its next `PodWait` or `PodEvent`, and each `WakeOn` and `Due` ends one more of those left, oldest first | `wake no longer follows pods, so it stopped waiting on pod <name>: …` |
 | `Change { repo, n }` | forge's watchers (`Forged`): its source ref's moves, its close, its merge, forge taking it out of a merge queue (`LeftQueue`), and a review filed on it (`Reviewed`). An already closed or merged change is refused | `change N in <repo>: its source <ref> moved from … to … by …`, `change N in <repo> was closed by …`, `… was merged by … as <oid>`, `… left the merge queue of <branch>: <why>`, `… was reviewed by … (review <id>: approved)` (or `requested changes`, `commented`) |
 | `Ref { repo, reference }` | forge's watchers: that ref's moves (a bare branch name is `refs/heads/<name>`). A repository forge doesn't hold is refused | `<ref> in <repo> moved from … to … by …`, `was made at …`, `was deleted by …` |
 | `File { path }` | files' watchers (`Filed`): a commit that changes, makes or removes the path or anything below it, or removes or moves a folder above it. wake reads the commit's changed paths (files' `Diff` from its parent, or `Find` for a first commit) and looks up only the wakes on those paths, their folders and, for a folder, the paths below it (`path/`). A path whose node (files' `Stat` at the commit) is the one the wake was armed with, a rewrite of the same bytes, tells nothing | `<path> changed in files snapshot <id> by … ("<message>")`, `was made`, `was removed` |
@@ -29,9 +29,9 @@ wake hears forge (`Watch { deliver: [5] }`) only while a forge wake is open, and
 | `WakeOn { event }` | any account, for itself (`sender_account`). Returns the wake's id |
 | `Cancel { id }` | the wake's account; anyone else is refused `unauthorized`. A cancelled wake is gone, and its scheduler entry is cancelled |
 | `Due` | wake's own scheduled entry alone (`Cause::Scheduled`, sent by wake) |
-| `PodWait { id }` | wake's own scheduled entry runs it; from anyone else it restarts following an open pod wake from the next block. Each start takes a new stream token, and a stream whose token is no longer current re-arms nothing when it ends, so a restart leaves one stream |
+| `PodWait { id }` | anyone: ends wake id if it is a pod wake still open |
 | `Fan { firing }` | wake's own scheduled entry alone |
-| `PodEvent { id, event }` | the program bound to the egress role alone |
+| `PodEvent { id, event }` | the program bound to the egress role alone: ends wake id if it is a pod wake still open |
 | `Forged(Watched)` | forge alone (`sent_by`) |
 | `Filed(SnapshotRow)` | files alone (`sent_by`) |
 | `Placed(PlaceEvent)` | chat alone (`sent_by`) |
@@ -50,7 +50,7 @@ Answered for anyone: `Wake { id }` (the row, `null` for a cancelled or unknown w
 | `account/` | (account, id) | index: an account's wakes |
 | `last` | | the last id |
 | `entry/`, `scheduled/` | scheduler entry ↔ id | a height or program wake's booked `Due` |
-| `pod/` | id | a pod wake's measuring block and time, its booked `PodWait` until it runs, and its stream token |
+| `pod/` | id | a pod wake still open from when wake followed pods: removed as it ends, never written |
 | `ref/`, `wake-ref/` | (repo, ref, id) ↔ id | ref and change wakes by the ref they follow |
 | `change/` | (repo, n, id) | change and settled wakes |
 | `forge-count`, `file-count` | | how many forge and file wakes are open |

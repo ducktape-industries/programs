@@ -27,7 +27,6 @@ mod notices;
 mod oversize;
 mod owned;
 mod pictures;
-mod pods;
 mod reads;
 mod resume;
 mod routes;

@@ -285,27 +285,6 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             ],
         ),
         (
-            "pod_exec",
-            vec![
-                json!({ "pod": "duckpond-7", "script": "cargo test", "stream": true }),
-                json!({ "pod": "duckpond-19154", "command": ["sh", "-c", "echo \"it's\" | sed 's/\\x27/\\\\/g'"] }),
-                json!({ "pod": "duckpond-19154", "script": CODE, "container": "out", "every": 20 }),
-                json!({ "pod": "duckpond-19154", "command": [], "script": null, "every": null }),
-            ],
-        ),
-        (
-            "pod_read",
-            vec![
-                json!({ "pod": "duckpond-19154", "path": "/out/it's \"x\".log", "offset": 0, "length": 4096, "container": null }),
-            ],
-        ),
-        (
-            "pod_push",
-            vec![
-                json!({ "pod": "duckpond-19154", "path": "/work/programs", "repo": "programs", "branch": "j-066/catalog-test", "ref": "HEAD", "container": "run", "allow_stack": false }),
-            ],
-        ),
-        (
             "thread_search",
             vec![json!({ "pattern": "\"op\": \"{\\\"Repo\\\"", "frame": 3, "around": 80 })],
         ),
@@ -332,7 +311,6 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             "wait_for",
             vec![
                 json!({ "event": { "height": 106505 } }),
-                json!({ "event": { "pod": { "name": "duckpond-32359" } } }),
                 json!({ "event": { "message": { "channel": "j-051", "from": 17, "mentions_me": true } } }),
                 json!({ "event": { "message": { "channel": "j-051" } } }),
                 json!({ "event": { "change": { "repo": "programs", "n": 88 } } }),

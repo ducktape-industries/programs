@@ -1,19 +1,15 @@
-//! Tool calls that wake their conversation later: a tool whose run streams (`Run::Stream`, or
-//! `Run::Measured` at a measured heartbeat) is answered at once, harness's own scheduled run
-//! (`Op::Watch`) sends the stream's request, each event is `Op::Heard`, the conversation hears once.
+//! Tool calls that wake their conversation later: a tool file whose last step streams (`Run::Paced`)
+//! is answered at once, harness's own scheduled run (`Op::Watch`) sends the stream's request at a
+//! heartbeat it measures, each event is `Op::Heard`, and the conversation hears once.
 use ::program::{Cause, Ctx, Error, ExecCtx, HashKind, unauthorized};
 use abi::role::egress::{self, DEFAULT_WAIT, Event, http};
 use serde_json::{Value, json};
 
 use crate::bookings::tell;
 use crate::calls::refusal;
-use crate::state::{
-    CLOCK, Clock, HEARTBEATS, Heartbeat, MEASURES, Measure, Tick, WATCH_COUNT, WATCHES, Watching,
-};
+use crate::state::{CLOCK, Clock, HEARTBEATS, Heartbeat, Tick, WATCH_COUNT, WATCHES, Watching};
 use crate::turns::bound;
 use crate::{Op, PART, ThreadRow, heard_as, tools};
-
-pub(crate) const PODS: &str = "pods";
 
 fn alive_every(ctx: &ExecCtx, opened: Tick) -> Result<Option<u64>, String> {
     let clock = clock(ctx, opened).map_err(|error| refusal(&error))?;
@@ -85,36 +81,6 @@ pub(crate) async fn open(
     }))
 }
 
-pub(crate) async fn open_measured(
-    ctx: &Ctx,
-    thread: &ThreadRow,
-    call: &str,
-    tool: &str,
-    (pod, target, body): (String, String, Value),
-    about: String,
-) -> Result<Value, Error> {
-    let head = http::Head {
-        method: http::Method::Post,
-        target,
-        headers: Vec::new(),
-    };
-    let unsent = egress::Request::Http {
-        service: PODS.to_owned(),
-        head,
-        body: Vec::new(),
-    };
-    let opened = open(ctx, thread, call, tool, unsent, about).await?;
-    let watch = WATCH_COUNT.get(ctx)?.unwrap_or(0);
-    let measure = Measure {
-        height: ctx.env().height,
-        time: ctx.env().time,
-        pod,
-        body: body.to_string(),
-    };
-    MEASURES.put(ctx, &watch, &measure);
-    Ok(opened)
-}
-
 pub(crate) async fn open_paced(
     ctx: &Ctx,
     thread: &ThreadRow,
@@ -167,58 +133,6 @@ fn paced(
     }))
 }
 
-async fn measured(
-    ctx: &Ctx,
-    row: &Watching,
-    measure: &Measure,
-) -> Result<Option<egress::Request>, String> {
-    let opened = Tick {
-        height: measure.height,
-        time: measure.time,
-    };
-    let Some(every) = alive_every(ctx, opened)? else {
-        return Ok(None);
-    };
-    let egress::Request::Http { head, .. } = &row.request else {
-        return Err("a measured stream is an HTTP request".to_owned());
-    };
-    let target = head.target.clone();
-    let read = http::Head {
-        method: http::Method::Get,
-        target: format!("/v1/pods/{}", measure.pod),
-        headers: Vec::new(),
-    };
-    let op = egress::Op::Request {
-        request: egress::Request::Http {
-            service: PODS.to_owned(),
-            head: read,
-            body: Vec::new(),
-        },
-        delivery: egress::Delivery::Whole,
-        wait: None,
-    };
-    let egress = bound(ctx).map_err(|error| refusal(&error))?;
-    let answered = ctx
-        .call_raw_as(row.agent, egress, abi::encode(&op))
-        .await
-        .map_err(|error| format!("the pod was not read: {}", refusal(&error)))?;
-    let response: http::Response = abi::decode(&answered)
-        .map_err(|fault| format!("the pod's read is no HTTP response: {}", fault.sentence))?;
-    if response.status != 200 {
-        let said = String::from_utf8_lossy(&response.body);
-        return Err(format!(
-            "the pod's read answered {}: {said}",
-            response.status
-        ));
-    }
-    let mut body: Value = serde_json::from_str(&measure.body).map_err(|error| error.to_string())?;
-    body["every"] = json!(every);
-    let held = tools::held_for(row.thread, &row.call);
-    crate::tools::pods::posted(ctx, held, target, &body)
-        .map(Some)
-        .map_err(|error| refusal(&error))
-}
-
 pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
     let env = ctx.env();
     let scheduled = matches!(env.cause, Cause::Scheduled { .. });
@@ -234,38 +148,6 @@ pub(crate) async fn watch(ctx: Ctx, watch: u64) -> Result<(), Error> {
         return Ok(());
     };
     crate::resume::listening(&ctx, row.thread, watch).await;
-    let row = match MEASURES.get(&ctx, &watch)? {
-        None => row,
-        Some(measure) => {
-            MEASURES.remove(&ctx, &watch);
-            match measured(&ctx, &row, &measure).await {
-                Ok(None) => {
-                    let env = ctx.env();
-                    let later = Measure {
-                        height: env.height,
-                        time: env.time,
-                        ..measure
-                    };
-                    MEASURES.put(&ctx, &watch, &later);
-                    return next_block(&ctx, row.thread, watch).await;
-                }
-                Ok(Some(request)) => {
-                    let row = Watching { request, ..row };
-                    WATCHES.put(&ctx, &watch, &row);
-                    row
-                }
-                Err(why) => {
-                    WATCHES.remove(&ctx, &watch);
-                    ctx.blob_release_lines(tools::held_for(row.thread, &row.call));
-                    let text = format!(
-                        "{} call {} ({}) did not start: {why}",
-                        row.tool, row.call, row.about
-                    );
-                    return woken(&ctx, &row, text).await;
-                }
-            }
-        }
-    };
     let row = match HEARTBEATS.get(&ctx, &watch)? {
         None => row,
         Some(beat) => {
@@ -328,17 +210,11 @@ async fn next_block(ctx: &Ctx, thread: u64, watch: u64) -> Result<(), Error> {
     Ok(())
 }
 
-const LOST: &str = "this is not its result: what it ran may still be running, so re-attach with \
-                    build.sh wait <run> (a build.sh run keeps its status on the pod's disk), or look \
-                    at the pod, before running it again";
-
 pub(crate) fn lost(row: &Watching) -> String {
-    match (tools::find(&row.tool), &row.request) {
-        (None, egress::Request::Http { service, .. }) => format!(
-            "this is not its result: what it ran may still be running on {service}, so check there before running it again"
-        ),
-        _ => LOST.to_owned(),
-    }
+    format!(
+        "this is not its result: what it ran may still be running on {}, so check there before running it again",
+        row.request.service()
+    )
 }
 
 fn unheard(answered: Result<Vec<u8>, Error>, lost: &str) -> String {
@@ -382,11 +258,7 @@ pub(crate) async fn heard(ctx: &Ctx, watch: u64, event: Event) -> Result<(), Err
         return Ok(());
     };
     crate::resume::stream_moved(ctx, row.thread, watch)?;
-    let said = match tools::find(&row.tool) {
-        Some(entry) => (entry.heard)(&event.data)?,
-        None => tools::file::heard(&event.data),
-    };
-    let Some(said) = said else {
+    let Some(said) = tools::file::heard(&event.data) else {
         return Ok(());
     };
     WATCHES.remove(ctx, &watch);

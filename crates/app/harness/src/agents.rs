@@ -301,14 +301,11 @@ pub(crate) fn manual(agent: &Agent, title: &str, bound: Option<&Place>) -> Strin
          hear from it, and again when they change; follow them there.\n\
          - Forge: forge_commit commits files to a git repository and pushes them as account \
          {number}, creating the repository if it does not exist.\n\
-         - Pods: pod_exec runs a command in a pod (with every, it answers at once and this \
-         conversation hears when the command ends), pod_read reads a file out of a pod, and \
-         pod_push pushes a commit a pod made to forge as account {number}.\n\
          - Programs: network_schema lists the programs that run, a program's ops and queries, \
          and one of them with an example to edit; network_query asks a program a query and \
          network_call sends it an op as account {number}.\n\
          - Images: an image a message carries comes with it, and image_view shows you an \
-         image file of files (copy one from a pod to files first).",
+         image file of files (copy one into files first).",
         name = agent.name,
         number = agent.number,
         manager = agent.manager,

@@ -7,7 +7,6 @@ use crate::schema::tests::{code_with, listed, module};
 use crate::wire::tests::{TEXT, events};
 
 const PODS: &str = "pods";
-const POD: &str = "duckpond-7";
 const AGAIN: &str = "It may have run: check, and run it again if it is still needed";
 
 fn listed_world() -> World {
@@ -122,13 +121,52 @@ fn a_whole_network_call_an_update_cut_off_fails_past_egress_deadline_and_the_mod
     assert!(assigned(chain, PODS).is_empty(), "nothing is sent again");
 }
 
+const RUN: &str = r#"name = "run"
+description = "Run a command in the pod."
+
+[input]
+command = { type = "array", description = "the command and its arguments" }
+
+[[step]]
+service = "pods"
+target = "/v1/pods/duckpond-7/exec"
+body = { command = "$command" }
+as = "ran"
+"#;
+
+const STREAM: &str = r#"name = "stream"
+description = "Run a command in the pod, waking the conversation when it ends."
+
+[input]
+command = { type = "array", description = "the command and its arguments" }
+
+[[step]]
+service = "pods"
+target = "/v1/pods/duckpond-7/exec"
+body = { command = "$command" }
+stream = true
+"#;
+
+fn tooled() -> World {
+    let world = listed_world();
+    for (name, text) in [("run", RUN), ("stream", STREAM)] {
+        commit(
+            &world.chain,
+            ADA,
+            &format!("/home/Scout/tools/{name}.toml"),
+            text,
+        );
+    }
+    world
+}
+
 #[test]
 fn an_exec_an_update_cut_off_fails_once_a_resume_comes_and_is_not_run_again() {
-    let world = listed_world();
+    let world = tooled();
     let chain = &world.chain;
     let thread = world.opened("m1", "deploy it", Some(WINDOW));
-    let input = json!({ "pod": POD, "command": ["make", "deploy"] });
-    turn(chain, 3, "x1", "pod_exec", input);
+    let input = json!({ "command": ["make", "deploy"] });
+    turn(chain, 3, "x1", "run", input);
     assert_eq!(state(chain, thread, "x1"), CallState::Writing);
     let request = pods_request(chain);
     updated(chain, 6);
@@ -144,7 +182,7 @@ fn an_exec_an_update_cut_off_fails_once_a_resume_comes_and_is_not_run_again() {
         "harness was updated while this call awaited the answer to what it sent at block {}",
         request.made
     );
-    assert!(text.starts_with(&why), "{text}");
+    assert!(text.contains(&why), "{text}");
     assert!(text.ends_with(AGAIN), "{text}");
     let messages = sent(chain);
     assert!(messages.contains(&why), "{messages}");
@@ -162,11 +200,11 @@ fn an_exec_an_update_cut_off_fails_once_a_resume_comes_and_is_not_run_again() {
 
 #[test]
 fn an_answer_after_its_call_was_reported_lost_is_a_notice_and_no_second_result() {
-    let world = listed_world();
+    let world = tooled();
     let chain = &world.chain;
     let thread = world.opened("m1", "deploy it", Some(WINDOW));
-    let input = json!({ "pod": POD, "command": ["make", "deploy"] });
-    turn(chain, 3, "x1", "pod_exec", input);
+    let input = json!({ "command": ["make", "deploy"] });
+    turn(chain, 3, "x1", "run", input);
     let request = pods_request(chain);
     updated(chain, 6);
     chain
@@ -187,24 +225,24 @@ fn an_answer_after_its_call_was_reported_lost_is_a_notice_and_no_second_result()
 fn streaming(world: &World) -> (u64, RequestRow) {
     let chain = &world.chain;
     let thread = world.opened("m1", "build it", Some(WINDOW));
-    let input = json!({ "pod": POD, "script": "cargo test", "every": 20 });
-    turn(chain, 3, "s1", "pod_exec", input);
+    let input = json!({ "command": ["cargo", "test"] });
+    turn(chain, 3, "s1", "stream", input);
     let (streams, failed) = result_of(chain, thread, "s1");
     assert!(
         !failed && streams.contains("\"streaming\":true"),
         "{streams}"
     );
-    chain.at(5, 0);
+    chain.at(5, 1000);
     let waiting = json!([{ "type": "text", "text": "waiting" }]);
     model_says(chain, waiting, "end_turn");
-    chain.at(6, 0);
-    chain.at(7, 0);
+    chain.at(6, 2000);
+    chain.at(7, 3000);
     (thread, pods_request(chain))
 }
 
 #[test]
 fn a_streamed_exec_still_wakes_its_conversation_once_after_an_update() {
-    let world = listed_world();
+    let world = tooled();
     let chain = &world.chain;
     let (thread, row) = streaming(&world);
     updated(chain, 8);
@@ -213,7 +251,7 @@ fn a_streamed_exec_still_wakes_its_conversation_once_after_an_update() {
 data: {"exit_code": 0, "stdout": "test result: ok", "stderr": ""}"#;
     event(chain, &row, 0, ended);
     let [woke]: [String; 1] = told(chain, thread).try_into().unwrap();
-    let from = "pod_exec call s1 (pod duckpond-7: sh -c cargo test) ended: ";
+    let from = "stream call s1 (pods /v1/pods/duckpond-7/exec) ended: ";
     assert!(woke.starts_with(from), "{woke}");
     chain.at(9, 0);
     let done = json!([{ "type": "text", "text": "green" }]);
@@ -232,7 +270,7 @@ fn resumed(chain: &MockChain, thread: u64) {
 
 #[test]
 fn a_stream_whose_end_an_update_cut_off_wakes_its_conversation_once_egress_no_longer_holds_it() {
-    let world = listed_world();
+    let world = tooled();
     let chain = &world.chain;
     let (thread, row) = streaming(&world);
     updated(chain, 8);
@@ -254,35 +292,13 @@ fn a_stream_whose_end_an_update_cut_off_wakes_its_conversation_once_egress_no_lo
     chain.at(10, 0);
     resumed(chain, thread);
     let [woke]: [String; 1] = told(chain, thread).try_into().unwrap();
-    let unheard = "pod_exec call s1 (pod duckpond-7: sh -c cargo test) ended unheard: egress no longer holds its stream";
+    let unheard = "stream call s1 (pods /v1/pods/duckpond-7/exec) ended unheard: egress no longer holds its stream";
     assert!(woke.starts_with(unheard), "{woke}");
     assert!(woke.contains("this is not its result"), "{woke}");
+    assert!(woke.contains("still be running on pods"), "{woke}");
     assert!(assigned(chain, PODS).is_empty(), "nothing runs again");
     chain.at(8 + egress::DEFAULT_WAIT + 2, 0);
     assert_eq!(told(chain, thread).len(), 1, "it wakes once");
-}
-
-#[test]
-fn a_measured_stream_an_update_cut_off_before_its_stream_opened_wakes_its_conversation_at_once() {
-    let world = listed_world();
-    let chain = &world.chain;
-    let thread = world.opened("m1", "build it", Some(WINDOW));
-    let input = json!({ "pod": POD, "script": "cargo test", "stream": true });
-    turn(chain, 3, "s1", "pod_exec", input);
-    chain.at(5, 1000);
-    chain.at(6, 2000);
-    updated(chain, 7);
-    chain.cancel_parked(PROGRAM);
-    resumed(chain, thread);
-    let [woke]: [String; 1] = told(chain, thread).try_into().unwrap();
-    let unheard = "pod_exec call s1 (pod duckpond-7: sh -c cargo test) ended unheard: egress no longer holds its stream";
-    assert!(woke.starts_with(unheard), "{woke}");
-    assert!(
-        !assigned(chain, PODS)
-            .iter()
-            .any(|row| matches!(row.delivery, egress::Delivery::Events { .. })),
-        "no exec is sent"
-    );
 }
 
 fn reply_streams(chain: &MockChain, request: &RequestRow, fixture: &str) {

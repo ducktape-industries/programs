@@ -11,9 +11,9 @@ mod image;
 pub(crate) mod interface;
 mod lines;
 mod network;
-pub(crate) mod pods;
 pub(crate) mod prefix;
 mod schedule;
+mod service;
 mod symbols;
 mod thread;
 mod wait;
@@ -61,9 +61,6 @@ pub(crate) type Reading = Box<dyn FnOnce(&[u8]) -> Result<Value, Error>>;
 
 pub(crate) type Following = Box<dyn FnOnce(&ExecCtx, &[u8]) -> Result<Run, Error>>;
 
-// what a call does: answer at once, write and read the last write's output, write and choose the
-// next run from it (as a step a refusal names), or answer that it streams and wake its
-// conversation when the stream ends, at a heartbeat it gives or one harness measures
 pub(crate) enum Run {
     Done(Value),
     Write(Vec<Write>),
@@ -79,16 +76,6 @@ pub(crate) enum Run {
         step: String,
         writes: Vec<Write>,
         then: Following,
-    },
-    Stream {
-        request: egress::Request,
-        about: String,
-    },
-    Measured {
-        pod: String,
-        target: String,
-        body: Value,
-        about: String,
     },
     Paced {
         request: egress::Request,
@@ -132,11 +119,6 @@ pub(crate) trait Tool {
     fn void(_ctx: &ExecCtx, _seat: &Seat) -> Result<Undo, Error> {
         Ok(Undo::Stays)
     }
-    // what one event of the call's stream says once it says the stream's end; a heartbeat says
-    // nothing
-    fn heard(_data: &[u8]) -> Result<Option<Value>, Error> {
-        Ok(None)
-    }
 }
 
 pub(crate) struct Entry {
@@ -149,7 +131,6 @@ pub(crate) struct Entry {
     pub render: fn(&[u8]) -> Result<Value, Error>,
     pub show: fn(&ExecCtx, &Seat, &str) -> Result<Show, Error>,
     pub void: fn(&ExecCtx, &Seat) -> Result<Undo, Error>,
-    pub heard: fn(&[u8]) -> Result<Option<Value>, Error>,
 }
 
 fn check<T: Tool>(input: &Value) -> Result<(), String> {
@@ -174,7 +155,6 @@ const fn entry<T: Tool>() -> Entry {
         render: T::render,
         show: T::show,
         void: T::void,
-        heard: T::heard,
     }
 }
 
@@ -215,9 +195,6 @@ pub(crate) const CATALOG: &[Entry] = &[
     entry::<interface::Query>(),
     entry::<interface::Call>(),
     entry::<blob::Put>(),
-    entry::<pods::Exec>(),
-    entry::<pods::Read>(),
-    entry::<pods::Push>(),
     entry::<thread::Search>(),
     entry::<thread::Read>(),
     entry::<thread::Topic>(),

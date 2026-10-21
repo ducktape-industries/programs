@@ -113,7 +113,7 @@ pub enum Op {
         description = "From the program bound to the egress role only: one event of a watched tool call's stream."
     )]
     Heard { watch: u64, event: Event },
-    #[tool_op(description = "As an agent harness runs: wake thread once when the event happens (a height, a pod ending, a chat message, a forge change or ref, a files path, a chat place clearing); each but a chat message is a wake harness arms as the agent. Returns the wait's id.", returns = u64)]
+    #[tool_op(description = "As an agent harness runs: wake thread once when the event happens (a height, a chat message, a forge change or ref, a files path, a chat place clearing); each but a chat message is a wake harness arms as the agent. Returns the wait's id.", returns = u64)]
     Wait { thread: u64, event: WaitFor } = 18,
     #[tool_op(description = "Cancel an open wait. The agent that made it.", example = examples::unwait)]
     Unwait { wait: u64 },

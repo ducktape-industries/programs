@@ -72,7 +72,6 @@ pub const PACES: Map<String, Pace> = Map::new("pace/");
 pub const COUNT: Item<u64> = Item::new("count");
 pub const WATCHES: Map<u64, Watching> = Map::new("watch/");
 pub const WATCH_COUNT: Item<u64> = Item::new("watch-count");
-pub const MEASURES: Map<u64, Measure> = Map::new("watch-measure/");
 pub const HEARTBEATS: Map<u64, Heartbeat> = Map::new("watch-heartbeat/");
 pub const CLOCK: Item<Clock> = Item::new("clock");
 pub const WAITS: Map<u64, WaitRow> = Map::new("wait/");
@@ -200,16 +199,6 @@ pub struct Watching {
     pub tool: String,
     pub about: String,
     pub request: abi::role::egress::Request,
-}
-
-// a streamed call whose heartbeat harness measures before its stream opens: the block and time
-// it was made at, the pod whose read measures the trip, and the JSON body its `every` goes in
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub struct Measure {
-    pub height: u64,
-    pub time: u64,
-    pub pod: String,
-    pub body: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]

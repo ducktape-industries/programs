@@ -3,7 +3,6 @@
 //! type, an absent optional input left out, and an image answer kept in files and shown.
 use base64::Engine;
 
-use super::pods::{event, json_result, refusal, target, told, turn};
 use super::*;
 
 const LOCAL: &str = "local-harness";
@@ -581,4 +580,118 @@ fn a_lost_service_stream_says_what_it_ran_may_still_be_running_on_that_service()
         !woke.contains("build.sh") && !woke.contains("pod"),
         "{woke}"
     );
+}
+
+fn turn(chain: &MockChain, height: u64, calls: &[(&str, &str, Value)]) {
+    chain.at(height, 0);
+    let uses: Vec<Value> = calls
+        .iter()
+        .map(|(id, tool, input)| tool_use(id, tool, input.clone()))
+        .collect();
+    model_says(chain, Value::Array(uses), "tool_use");
+    chain.at(height + 1, 0);
+    for (id, _, _) in calls {
+        relay_back(chain, id);
+    }
+}
+
+fn json_result(chain: &MockChain, thread: u64, call: &str) -> Value {
+    let (text, failed) = result_of(chain, thread, call);
+    assert!(!failed, "{call}: {text}");
+    serde_json::from_str(&text).unwrap()
+}
+
+fn refusal(chain: &MockChain, thread: u64, call: &str) -> String {
+    let (text, failed) = result_of(chain, thread, call);
+    assert!(failed, "{call}: {text}");
+    text
+}
+
+fn target(row: &RequestRow) -> String {
+    match &row.request {
+        Request::Http { head, .. } => head.target.clone(),
+        Request::Relay { .. } => String::new(),
+    }
+}
+
+fn told(chain: &MockChain, thread: u64) -> Vec<String> {
+    frames(chain, thread)
+        .into_iter()
+        .chain(held(chain, thread))
+        .filter_map(|body| match body {
+            Body::Post {
+                author: Principal::Root,
+                text,
+            } => Some(text),
+            _ => None,
+        })
+        .collect()
+}
+
+fn event(chain: &MockChain, row: &RequestRow, seq: u64, data: &str) {
+    let event = egress::Event {
+        id: row.id,
+        seq,
+        data: data.as_bytes().to_vec(),
+    };
+    let op = egress::Op::Events(vec![event]);
+    chain.submit(signed(&NODE), egress::PROGRAM, &op).unwrap();
+}
+
+fn on_its_line(chain: &MockChain, thread: u64, call: &str) -> Option<BlobId> {
+    let line = [
+        thread.to_be_bytes().as_slice(),
+        b"/tool/",
+        call.as_bytes(),
+        b"/",
+    ]
+    .concat();
+    let host = chain.host(PROGRAM).borrow();
+    host.lines
+        .iter()
+        .find(|((holder, at), _)| holder == PROGRAM && *at == line)
+        .map(|(_, id)| *id)
+}
+
+fn body_part(row: &RequestRow) -> BlobId {
+    match &row.request {
+        Request::Http { body, .. } => body[0],
+        Request::Relay { .. } => panic!("an HTTP request"),
+    }
+}
+
+#[test]
+fn a_service_steps_request_body_is_held_on_its_call_line_until_its_answer_comes_back() {
+    let world = local(world());
+    let chain = &world.chain;
+    let thread = world.opened("m1", "read it", Some(WINDOW));
+    turn(chain, 3, &[("h1", "read", json!({ "path": "/etc/hosts" }))]);
+    chain.at(5, 0);
+    let [row]: [RequestRow; 1] = asked(chain).try_into().unwrap();
+    assert_eq!(on_its_line(chain, thread, "h1"), Some(body_part(&row)));
+    let out = json!({ "text": "1\tlocalhost" });
+    answer(chain, row.id, Answer::Output(response(200, out.clone())));
+    assert_eq!(json_result(chain, thread, "h1")["read"], out);
+    assert_eq!(on_its_line(chain, thread, "h1"), None);
+}
+
+#[test]
+fn a_streamed_steps_request_body_is_held_until_its_stream_ends() {
+    let world = local(world());
+    let chain = &world.chain;
+    let thread = world.opened("m1", "build it", Some(WINDOW));
+    turn(
+        chain,
+        3,
+        &[("b1", "bash", json!({ "command": "cargo test" }))],
+    );
+    chain.at(5, 1000);
+    chain.at(6, 2000);
+    chain.at(7, 3000);
+    let [row]: [RequestRow; 1] = asked(chain).try_into().unwrap();
+    assert_eq!(on_its_line(chain, thread, "b1"), Some(body_part(&row)));
+    event(chain, &row, 0, "event: alive\ndata: {}");
+    assert_eq!(on_its_line(chain, thread, "b1"), Some(body_part(&row)));
+    event(chain, &row, 1, "event: ended\ndata: {\"exit_code\": 0}");
+    assert_eq!(on_its_line(chain, thread, "b1"), None);
 }

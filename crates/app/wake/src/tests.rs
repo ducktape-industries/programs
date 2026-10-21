@@ -5,10 +5,9 @@ use ::program::{
     BlobId, Error, ExecCtx, HashKind, MockChain, MockHost, Origin, Principal, Program, QueryCtx,
     Scheme, code, invalid, not_found,
 };
-use abi::role::egress::{Answer, Event, Op as Egress, Request, RequestRow, StreamEnd, http};
+use abi::role::egress::{Event, Op as Egress, RequestRow};
 use abi::role::programs::Entry;
 use borsh::{BorshDeserialize, BorshSerialize};
-use serde_json::{Value, json};
 use store::Item;
 use valset::{Genesis, Member, Valset};
 
@@ -444,68 +443,6 @@ impl World {
         };
         rows
     }
-
-    fn pending(&self) -> RequestRow {
-        let [row] = self.open().try_into().expect("one request in flight");
-        row
-    }
-
-    fn node(&self, op: &Egress) {
-        self.chain
-            .submit(signed(&NODE), egress::PROGRAM, op)
-            .unwrap();
-    }
-
-    fn answer(&mut self, ms: u64, status: u16, body: Value) -> String {
-        self.after(ms);
-        let row = self.pending();
-        self.reply(&row, status, body);
-        target(&row)
-    }
-
-    fn reply(&self, row: &RequestRow, status: u16, body: Value) {
-        let response = http::Response {
-            status,
-            headers: vec![("content-type".into(), "application/json".into())],
-            body: serde_json::to_vec(&body).unwrap(),
-        };
-        let answer = Egress::Answer {
-            id: row.id,
-            answer: Answer::Output(abi::encode(&response)),
-        };
-        self.node(&answer);
-    }
-
-    fn streams(&self) -> Vec<RequestRow> {
-        let open = self.open().into_iter();
-        open.filter(|row| target(row).contains("/wait?")).collect()
-    }
-
-    fn reads(&self) -> Vec<RequestRow> {
-        let read = format!("/v1/pods/{POD}");
-        let open = self.open().into_iter();
-        open.filter(|row| target(row) == read).collect()
-    }
-
-    fn end_stream(&mut self, stream: &RequestRow, events: u64) {
-        let end = StreamEnd::Complete {
-            status: 200,
-            headers: vec![("content-type".into(), "text/event-stream".into())],
-        };
-        let finished = Egress::EndStream {
-            id: stream.id,
-            events,
-            end,
-        };
-        self.node(&finished);
-    }
-}
-
-fn target(row: &RequestRow) -> String {
-    let Request::Http { head, .. } = &row.request else {
-        panic!("an http request");
-    };
-    head.target.clone()
 }
 
 fn entry(program: &str, code: u8) -> Entry {
@@ -918,108 +855,78 @@ fn a_program_wake_whose_change_was_cancelled_follows_the_next_or_says_none_is_le
     assert_eq!(world.told(world.bo), [words]);
 }
 
-fn armed_on_pod(world: &mut World) -> u64 {
-    let pod = WaitFor::Pod { name: POD.into() };
-    let id = world.wake_on(ADA, pod).unwrap();
-    world.after(2_000);
-    world.after(0);
+fn left_open_on_a_pod(world: &World, name: &str) -> u64 {
+    let host = world.chain.host(PROGRAM);
+    let ctx = host.exec(world.chain.env(PROGRAM));
+    let id = crate::state::LAST.get(&ctx).unwrap().unwrap_or(0) + 1;
+    crate::state::LAST.put(&ctx, &id);
+    let row = WakeRow {
+        id,
+        account: world.ada,
+        made: world.height,
+        event: WaitFor::Pod { name: name.into() },
+        ended: None,
+    };
+    crate::state::WAKES.put(&ctx, &id, &row);
+    crate::state::BY_ACCOUNT.insert(&ctx, &(world.ada, id));
+    let watch = crate::state::PodWatch {
+        height: world.height,
+        time: world.time,
+        entry: None,
+        token: 0,
+    };
+    crate::state::PODS.put(&ctx, &id, &watch);
     id
 }
 
+fn moved(id: u64, name: &str) -> String {
+    format!(
+        "Wake {id} is over: wake no longer follows pods, so it stopped waiting on pod {name}: wait with the pods service's own wait stream, such as the pod_wait tool where a network offers one."
+    )
+}
+
 #[test]
-fn a_pod_wake_is_told_the_ended_line_of_its_pods_wait_stream() {
-    let mut world = world();
-    let id = armed_on_pod(&mut world);
-    let read = world.answer(500, 200, json!({"pod": {"name": POD}}));
-    assert_eq!(read, format!("/v1/pods/{POD}"));
-    let stream = world.pending();
-    assert_eq!(target(&stream), format!("/v1/pods/{POD}/wait?every=64"));
-    world.after(1_000);
-    let alive = Event {
-        id: stream.id,
+fn a_pod_wake_is_refused_pointing_at_the_pods_services_own_wait() {
+    let world = world();
+    let pod = WaitFor::Pod { name: POD.into() };
+    let refused = world.wake_on(ADA, pod).unwrap_err();
+    assert_eq!(refused.code, code::UNSUPPORTED, "{refused:?}");
+    assert!(refused.message.contains("pod_wait"), "{}", refused.message);
+    assert!(world.open().is_empty(), "nothing asks the pods service");
+}
+
+#[test]
+fn a_pod_wake_left_open_ends_on_its_next_pod_wait_or_event_saying_wake_no_longer_follows_pods() {
+    let world = world();
+    let by_run = left_open_on_a_pod(&world, POD);
+    let by_event = left_open_on_a_pod(&world, "duckpond-8");
+    world.act(BO, &Op::PodWait { id: by_run }).unwrap();
+    let event = Event {
+        id: 1,
         seq: 0,
         data: b"event: alive\ndata: {}".to_vec(),
     };
-    world.node(&Egress::Events(vec![alive]));
-    assert!(
-        world.told(world.ada).is_empty(),
-        "an alive beat tells nothing"
-    );
-    let line = format!("pod {POD} ended: exit code 0 (Completed)");
-    let ended = json!({"line": line, "exit_code": 0, "pod": {"name": POD}});
-    let ended = Event {
-        id: stream.id,
-        seq: 1,
-        data: format!("event: ended\ndata: {ended}").into_bytes(),
+    let from_egress = Origin::Program(egress::PROGRAM.into());
+    let heard = Op::PodEvent {
+        id: by_event,
+        event,
     };
-    world.node(&Egress::Events(vec![ended]));
-    world.end_stream(&stream, 2);
-    assert_eq!(
-        world.told(world.ada),
-        [format!("Wake {id} is over: {line}.")]
-    );
+    world.chain.submit(from_egress, PROGRAM, &heard).unwrap();
+    let both = [moved(by_run, POD), moved(by_event, "duckpond-8")];
+    assert_eq!(world.told(world.ada), both);
     assert!(world.open().is_empty());
 }
 
 #[test]
-fn a_pod_the_service_does_not_know_ends_its_wake_saying_so() {
+fn a_pod_wake_whose_stream_died_unheard_ends_when_wake_next_runs() {
     let mut world = world();
-    let id = armed_on_pod(&mut world);
-    world.answer(500, 404, json!({"error": "no such pod"}));
-    let words = format!("Wake {id} is over: the pods service knows no pod {POD}.");
-    assert_eq!(world.told(world.ada), [words]);
-    assert!(world.open().is_empty());
-}
-
-#[test]
-fn a_pod_stream_cut_before_its_end_is_followed_again() {
-    let mut world = world();
-    let id = armed_on_pod(&mut world);
-    world.answer(500, 200, json!({"pod": {"name": POD}}));
-    let stream = world.pending();
-    world.after(1_000);
-    world.end_stream(&stream, 0);
-    assert!(world.told(world.ada).is_empty());
-    assert!(world.open().is_empty());
-    world.after(1_000);
-    world.after(0);
-    let again = world.pending();
-    assert_eq!(target(&again), format!("/v1/pods/{POD}"));
-    assert!(world.row(id).unwrap().ended.is_none());
-}
-
-#[test]
-fn an_outsiders_pod_wait_leaves_one_stream_however_often_it_is_cut() {
-    let mut world = world();
-    let id = armed_on_pod(&mut world);
-    let pod = json!({"pod": {"name": POD}});
-    world.answer(500, 200, pod.clone());
-    assert_eq!(world.streams().len(), 1);
-    world.act(BO, &Op::PodWait { id }).unwrap();
-    world.after(1_000);
-    world.after(0);
-    let [read]: [RequestRow; 1] = world.reads().try_into().expect("the outsider's run reads");
-    world.after(500);
-    world.reply(&read, 200, pod.clone());
-    assert_eq!(world.streams().len(), 2, "the first stream is still open");
-    for _ in 0..3 {
-        let streams = world.streams();
-        world.after(1_000);
-        for stream in &streams {
-            world.end_stream(stream, 0);
-        }
-        world.after(1_000);
-        world.after(0);
-        let [read]: [RequestRow; 1] = world.reads().try_into().expect("one run reads again");
-        world.after(500);
-        world.reply(&read, 200, pod.clone());
-        assert_eq!(
-            world.streams().len(),
-            1,
-            "only the current stream follows on"
-        );
-    }
-    assert!(world.row(id).unwrap().ended.is_none());
+    let left = left_open_on_a_pod(&world, POD);
+    world.wake_on(BO, WaitFor::Height { height: 9 }).unwrap();
+    assert_eq!(world.told(world.ada), [moved(left, POD)]);
+    let second = left_open_on_a_pod(&world, "duckpond-8");
+    world.to(10);
+    let both = [moved(left, POD), moved(second, "duckpond-8")];
+    assert_eq!(world.told(world.ada), both);
 }
 
 #[test]

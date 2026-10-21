@@ -5,13 +5,11 @@ use std::collections::BTreeSet;
 
 use ::program::{
     BlobId, Cause, Ctx, Error, ExecCtx, MessageId, Outcome, Principal, QueryCtx, Range,
-    Reply as Wanted, code, corrupt, decoded, invalid, not_found, unauthorized, unexpected_reply,
+    Reply as Wanted, code, corrupt, invalid, not_found, unauthorized, unexpected_reply,
     wrong_state,
 };
-use abi::role::egress::{DEFAULT_WAIT, Delivery, Event, Request, http};
 use abi::role::programs::Entry;
 use attribution::{Actor, Object, Reason, Relation, Update};
-use serde_json::Value;
 
 use crate::state::{
     BY_ACCOUNT, CHANGE_WAKES, CLEAR_BY, CLEAR_COUNT, CLEAR_WAKES, ENTRIES, FILE_COUNT, FILE_WAKES,
@@ -20,10 +18,10 @@ use crate::state::{
 };
 use crate::{
     AccountNumber, Ended, Fired, Firing, KIND, Key, Op, PROGRAM, PageRequest, PageResponse, Until,
-    WaitFor, WakeRow, filed_as, forged_as, placed_as, pod_event_as,
+    WaitFor, WakeRow, filed_as, forged_as, placed_as,
 };
 
-const PODS_SERVICE: &str = "pods";
+const INSTEAD: &str = "wait with the pods service's own wait stream, such as the pod_wait tool where a network offers one";
 
 pub(crate) fn what(event: &WaitFor) -> String {
     match event {
@@ -93,7 +91,14 @@ pub(crate) async fn wake_on(ctx: &Ctx, event: WaitFor) -> Result<(), Error> {
             "{PROGRAM} hears no chat message: attribution already tells account {account} each message for it, in {channel} as anywhere, so read ChangesTo"
         )));
     }
+    if let WaitFor::Pod { name } = &event {
+        return Err(Error::new(
+            code::UNSUPPORTED,
+            format!("{PROGRAM} no longer follows pods, so it waits on no pod {name}: {INSTEAD}"),
+        ));
+    }
     let event = normalized(event)?;
+    pods_left(ctx)?;
     let id = LAST
         .get(ctx)?
         .unwrap_or(0)
@@ -102,11 +107,7 @@ pub(crate) async fn wake_on(ctx: &Ctx, event: WaitFor) -> Result<(), Error> {
     LAST.put(ctx, &id);
     match &event {
         WaitFor::Height { height } => book(ctx, id, *height).await?,
-        WaitFor::Pod { name } => {
-            named_pod(name)?;
-            watch_from_next_block(ctx, id).await?;
-        }
-        WaitFor::Message { .. } => {}
+        WaitFor::Pod { .. } | WaitFor::Message { .. } => {}
         WaitFor::Change { repo, n } => {
             if let Some(source) = open_change(ctx, repo, *n)? {
                 watch_ref(ctx, id, repo, source);
@@ -293,6 +294,7 @@ pub(crate) async fn due(ctx: &Ctx) -> Result<(), Error> {
             "a wake's block is due only as {PROGRAM}'s own scheduled entry, at that block"
         )));
     };
+    pods_left(ctx)?;
     let Some(id) = ENTRIES.get(ctx, &entry)? else {
         return Ok(());
     };
@@ -932,163 +934,31 @@ pub(crate) fn placed(ctx: &ExecCtx, event: chat::PlaceEvent) -> Result<(), Error
     settle_place(ctx, channel_id, thread)
 }
 
-fn named_pod(name: &str) -> Result<(), Error> {
-    let fits = !name.is_empty()
-        && name.bytes().all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"-.".contains(&byte)
-        });
-    match fits {
-        true => Ok(()),
-        false => Err(invalid(format!(
-            "{name:?} is no pod's name: lowercase letters, digits, - and ."
-        ))),
-    }
-}
-
-async fn ask_pods(ctx: &Ctx, target: String, delivery: Delivery) -> Result<http::Response, Error> {
-    let head = http::Head {
-        method: http::Method::Get,
-        target,
-        headers: Vec::new(),
+fn pods_left(ctx: &ExecCtx) -> Result<(), Error> {
+    let Some((id, _)) = PODS.batch(ctx, None, 1)?.rows.into_iter().next() else {
+        return Ok(());
     };
-    let request = Request::Http {
-        service: PODS_SERVICE.to_owned(),
-        head,
-        body: Vec::new(),
-    };
-    let op = abi::role::egress::Op::Request {
-        request,
-        delivery,
-        wait: None,
-    };
-    let egress = ctx.env().role(abi::role::EGRESS)?.clone();
-    let answer = ctx.call_raw(egress, abi::encode(&op)).await?;
-    decoded(PROGRAM, "http::Response", &answer)
+    pod_wake_moved(ctx, id)
 }
 
-fn refused_by_pods(answer: &http::Response) -> String {
-    let error = serde_json::from_slice::<Value>(&answer.body)
-        .ok()
-        .and_then(|body| body["error"].as_str().map(str::to_owned))
-        .unwrap_or_else(|| String::from_utf8_lossy(&answer.body).into_owned());
-    format!("the pods service answered {}: {error}", answer.status)
-}
-
-fn alive_every(block_ms: u64) -> Result<u64, String> {
-    let lasts = DEFAULT_WAIT.saturating_mul(block_ms);
-    if lasts < 2000 {
-        return Err(format!(
-            "a request lasts {lasts} ms ({DEFAULT_WAIT} blocks of {block_ms} ms), under the 2 s two whole-second beats need"
-        ));
-    }
-    Ok(lasts / 2 / 1000)
-}
-
-async fn watch_from_next_block(ctx: &Ctx, id: u64) -> Result<(), Error> {
-    let height = ctx.env().height;
-    let token = PODS
-        .get(ctx, &id)?
-        .map_or(0, |watch| watch.token.wrapping_add(1));
-    let entry = ctx
-        .schedule(height + 1, PROGRAM, &Op::PodWait { id })
-        .await?;
-    let watch = PodWatch {
-        height,
-        time: ctx.env().time,
-        entry: Some(entry),
-        token,
-    };
-    PODS.put(ctx, &id, &watch);
-    Ok(())
-}
-
-pub(crate) async fn pod_wait(ctx: &Ctx, id: u64) -> Result<(), Error> {
+fn pod_wake_moved(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
+    PODS.remove(ctx, &id);
     let Some(row) = open(ctx, id)? else {
-        return Err(wrong_state(format!("wake {id} is not open")));
+        return Ok(());
     };
     let WaitFor::Pod { name } = &row.event else {
-        return Err(invalid(format!("wake {id} waits for no pod")));
-    };
-    let Some(watch) = PODS.get(ctx, &id)? else {
-        let key = PODS.key(&id);
-        return Err(corrupt("pod wake", &key, "an open pod wake has no watch"));
-    };
-    match its_own_run(ctx) {
-        Some(entry) if watch.entry == Some(entry) => {}
-        Some(_) => return Ok(()),
-        None => {
-            if let Some(entry) = watch.entry {
-                ctx.cancel(entry).await?;
-            }
-            return watch_from_next_block(ctx, id).await;
-        }
-    }
-    let env = ctx.env();
-    let blocks = env.height.saturating_sub(watch.height).max(1);
-    let block_ms = env.time.saturating_sub(watch.time) / blocks;
-    let streaming = PodWatch {
-        entry: None,
-        ..watch
-    };
-    PODS.put(ctx, &id, &streaming);
-    let read = ask_pods(ctx, format!("/v1/pods/{name}"), Delivery::Whole).await;
-    if !current(ctx, id, watch.token)? {
         return Ok(());
-    }
-    if let Some(over) = unwatchable(name, read) {
-        return end(ctx, id, over);
-    }
-    let every = match alive_every(block_ms) {
-        Ok(every) => every,
-        Err(why) => {
-            return end(
-                ctx,
-                id,
-                format!("{PROGRAM} can't wait on pod {name}: {why}"),
-            );
-        }
     };
-    let target = format!("/v1/pods/{name}/wait?every={every}");
-    let events = Delivery::Events {
-        deliver: pod_event_as(id),
-    };
-    let streamed = ask_pods(ctx, target, events).await;
-    if !current(ctx, id, watch.token)? {
-        return Ok(());
-    }
-    match streamed {
-        Ok(answer) if answer.status != 200 => {
-            let over = unwatchable(name, Ok(answer)).unwrap_or_default();
-            end(ctx, id, over)
-        }
-        Ok(_) | Err(_) => watch_from_next_block(ctx, id).await,
-    }
+    let words =
+        format!("{PROGRAM} no longer follows pods, so it stopped waiting on pod {name}: {INSTEAD}");
+    end(ctx, id, words)
 }
 
-fn current(ctx: &QueryCtx, id: u64, token: u64) -> Result<bool, Error> {
-    let open = open(ctx, id)?.is_some();
-    let ours = PODS
-        .get(ctx, &id)?
-        .is_some_and(|watch| watch.token == token && watch.entry.is_none());
-    Ok(open && ours)
+pub(crate) fn pod_wait(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
+    pod_wake_moved(ctx, id)
 }
 
-fn unwatchable(name: &str, answer: Result<http::Response, Error>) -> Option<String> {
-    match answer {
-        Ok(answer) if answer.status == 200 => None,
-        Ok(answer) if answer.status == 404 => Some(format!("the pods service knows no pod {name}")),
-        Ok(answer) => Some(format!(
-            "{PROGRAM} can't wait on pod {name}: {}",
-            refused_by_pods(&answer)
-        )),
-        Err(error) => Some(format!(
-            "{PROGRAM} couldn't reach the pods service to wait on pod {name}: {}: {}",
-            error.code, error.message
-        )),
-    }
-}
-
-pub(crate) fn pod_event(ctx: &ExecCtx, id: u64, event: Event) -> Result<(), Error> {
+pub(crate) fn pod_event(ctx: &ExecCtx, id: u64) -> Result<(), Error> {
     let egress = ctx.env().role(abi::role::EGRESS)?.clone();
     let from_egress = ctx
         .env()
@@ -1099,33 +969,7 @@ pub(crate) fn pod_event(ctx: &ExecCtx, id: u64, event: Event) -> Result<(), Erro
             "only the program bound to the egress role hands {PROGRAM} a pod's wait events"
         )));
     }
-    let Some(row) = open(ctx, id)? else {
-        return Ok(());
-    };
-    let WaitFor::Pod { name } = &row.event else {
-        return Ok(());
-    };
-    let Some(line) = ended_line(&event.data, name) else {
-        return Ok(());
-    };
-    end(ctx, id, line)
-}
-
-fn ended_line(raw: &[u8], name: &str) -> Option<String> {
-    let text = String::from_utf8_lossy(raw);
-    let is_ended = text.lines().any(|line| line.trim_end() == "event: ended");
-    if !is_ended {
-        return None;
-    }
-    let data = text
-        .lines()
-        .find_map(|line| line.strip_prefix("data:"))
-        .and_then(|data| serde_json::from_str::<Value>(data.trim()).ok());
-    let line = data.as_ref().and_then(|data| data["line"].as_str());
-    Some(match line {
-        Some(line) => line.to_owned(),
-        None => format!("pod {name} ended"),
-    })
+    pod_wake_moved(ctx, id)
 }
 
 pub(crate) fn wakes(

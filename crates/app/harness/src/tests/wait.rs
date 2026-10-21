@@ -45,10 +45,6 @@ fn height(height: u64) -> Value {
     json!({ "event": { "height": height } })
 }
 
-fn pod(name: &str) -> Value {
-    json!({ "event": { "pod": { "name": name } } })
-}
-
 #[test]
 fn a_wait_for_a_height_ends_the_turn_and_wakes_its_conversation_once_at_its_block() {
     waits_for_a_height(schemed());
@@ -209,126 +205,17 @@ fn only_the_waiting_agent_waits_in_its_conversation_or_cancels() {
     assert_eq!(armed(chain, thread), [wait]);
 }
 
-pub(super) fn pods(world: &World) {
-    let chain = &world.chain;
-    let register = egress::Op::Register {
-        service: crate::watches::PODS.into(),
-    };
-    let assign = egress::Op::Assign {
-        service: crate::watches::PODS.into(),
-        nodes: vec![NODE.to_vec()],
-    };
-    for op in [register, assign] {
-        chain.submit(signed(ADA), egress::PROGRAM, &op).unwrap();
-    }
-    let serve = egress::Op::Serve {
-        services: vec![SERVICE.into(), RELAY.into(), crate::watches::PODS.into()],
-    };
-    chain
-        .submit(signed(&NODE), egress::PROGRAM, &serve)
-        .unwrap();
-}
-
-fn pod_request(chain: &MockChain) -> (RequestRow, String) {
-    let [row] = assigned(chain, crate::watches::PODS)
-        .try_into()
-        .expect("one request to the pods service open");
-    let Request::Http { head, .. } = &row.request else {
-        panic!("the pods service is asked over http")
-    };
-    let target = head.target.clone();
-    (row, target)
-}
-
-fn pod_event(chain: &MockChain, row: &RequestRow, seq: u64, data: &str) {
-    let event = egress::Event {
-        id: row.id,
-        seq,
-        data: data.as_bytes().to_vec(),
-    };
-    let events = egress::Op::Events(vec![event]);
-    chain
-        .submit(signed(&NODE), egress::PROGRAM, &events)
-        .unwrap();
-}
-
-pub(super) fn stream_ends(chain: &MockChain, row: &RequestRow, events: u64) {
-    let ended = egress::Op::EndStream {
-        id: row.id,
-        events,
-        end: egress::StreamEnd::Complete {
-            status: 200,
-            headers: vec![("content-type".into(), "text/event-stream".into())],
-        },
-    };
-    chain
-        .submit(signed(&NODE), egress::PROGRAM, &ended)
-        .unwrap();
-}
-
-const ENDED: &str = "event: ended\ndata: {\"line\": \"pod duckpond-7 ended: exit code 0 (Completed)\", \"exit_code\": 0, \"pod\": \"duckpond-7\"}";
-
-fn streaming(world: &World, thread: u64) -> (u64, RequestRow) {
-    let chain = &world.chain;
-    turn(world, 3, &[("w1", "wait_for", pod("duckpond-7"))]);
-    let wait = waited(chain, thread, "w1");
-    assert_eq!(asking(chain), 0, "the turn that armed a wait ends");
-    assert!(assigned(chain, crate::watches::PODS).is_empty());
-    chain.at(5, 1000);
-    chain.at(6, 2000);
-    chain.at(7, 3000);
-    let (read, target) = pod_request(chain);
-    assert_eq!(target, "/v1/pods/duckpond-7");
-    answer(chain, read.id, Answer::Output(response(200, json!({}))));
-    let (stream, target) = pod_request(chain);
-    assert_eq!(target, "/v1/pods/duckpond-7/wait?every=32");
-    let pod_event = egress::Delivery::Events {
-        deliver: wake::pod_event_as(1),
-    };
-    assert_eq!(stream.delivery, pod_event, "wake follows wait {wait}'s pod");
-    chain.at(8, 4000);
-    (wait, stream)
-}
-
 #[test]
-fn a_wait_for_a_pod_hears_its_stream_and_wakes_once_when_it_ends() {
+fn a_wait_for_a_pod_is_refused_pointing_at_the_pods_services_own_wait() {
     let world = schemed();
-    pods(&world);
     let chain = &world.chain;
     let thread = world.opened("m1", "wait for my pod", Some(WINDOW));
-    let (wait, stream) = streaming(&world, thread);
-    pod_event(chain, &stream, 0, "event: alive\ndata: {}");
-    assert!(wakes(chain, thread).is_empty(), "alive wakes nothing");
-    pod_event(chain, &stream, 1, ENDED);
-    let [wake] = wakes(chain, thread).try_into().expect("one wake");
-    let line = "pod duckpond-7 ended: exit code 0 (Completed)";
-    assert_eq!(wake, format!("Wait {wait} is over: {line}."));
-    assert_eq!(asking(chain), 1, "the wake asks the model");
-    stream_ends(chain, &stream, 2);
-    chain.at(20, 4000);
-    assert_eq!(wakes(chain, thread).len(), 1, "it wakes once");
-    assert!(assigned(chain, crate::watches::PODS).is_empty());
-}
-
-#[test]
-fn a_pod_stream_that_ends_without_its_end_opens_again_and_an_unknown_pod_ends_the_wait() {
-    let world = schemed();
-    pods(&world);
-    let chain = &world.chain;
-    let thread = world.opened("m1", "wait for my pod", Some(WINDOW));
-    let (wait, stream) = streaming(&world, thread);
-    stream_ends(chain, &stream, 0);
-    assert!(wakes(chain, thread).is_empty());
-    assert_eq!(armed(chain, thread), [wait], "the wait stays");
-    chain.at(9, 5000);
-    chain.at(10, 6000);
-    let (read, target) = pod_request(chain);
-    assert_eq!(target, "/v1/pods/duckpond-7", "the pod is read again");
-    let gone = json!({ "error": "no pod duckpond-7" });
-    answer(chain, read.id, Answer::Output(response(404, gone)));
-    let [wake] = wakes(chain, thread).try_into().expect("one wake");
-    let words = format!("Wait {wait} is over: the pods service knows no pod duckpond-7.");
-    assert_eq!(wake, words);
+    let pod = json!({ "event": { "pod": { "name": "duckpond-7" } } });
+    turn(&world, 3, &[("w1", "wait_for", pod)]);
+    let text = refused(chain, thread, "w1");
+    let pointed = text.starts_with(code::UNSUPPORTED) && text.contains("pod_wait");
+    assert!(pointed, "{text}");
+    assert!(armed(chain, thread).is_empty());
 }
 
 fn channel(world: &World, id: &str) {

@@ -660,27 +660,6 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
     loop {
         let (writes, after, step) = match next {
             Ok(Run::Done(value)) => return Ok((value.to_string(), false)),
-            Ok(Run::Stream { request, about }) => {
-                let opened = watches::open(ctx, &owner, call, &row.tool, request, about).await;
-                return Ok(match opened {
-                    Ok(value) => (value.to_string(), false),
-                    Err(error) => (refusal(&error), true),
-                });
-            }
-            Ok(Run::Measured {
-                pod,
-                target,
-                body,
-                about,
-            }) => {
-                let measured = (pod, target, body);
-                let opened =
-                    watches::open_measured(ctx, &owner, call, &row.tool, measured, about).await;
-                return Ok(match opened {
-                    Ok(value) => (value.to_string(), false),
-                    Err(error) => (refusal(&error), true),
-                });
-            }
             Ok(Run::Paced {
                 request,
                 body,

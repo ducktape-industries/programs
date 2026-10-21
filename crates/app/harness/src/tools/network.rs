@@ -6,7 +6,7 @@ use abi::role::identity::{self as role, Category, Kind, Profile, Standing};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::pods::whole;
+use super::service::whole;
 use super::{Run, Seat, Tool, cursor_schema, next, object, page, unexpected};
 use crate::PART;
 

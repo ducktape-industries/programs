@@ -20,7 +20,7 @@ pub(crate) struct View;
 
 impl Tool for View {
     const NAME: &'static str = "image_view";
-    const DESCRIPTION: &'static str = "Look at an image file of the network's filesystem (png, jpeg, gif or webp): the result names it, and the image itself comes with it. It stays in your context until the conversation is summarized, or until the model refuses a request over its images, after which it reads as words. To see an image in a pod, such as a screenshot, copy it to files first (the pods service's POST /v1/pods/NAME/file with path and to), then view it here.";
+    const DESCRIPTION: &'static str = "Look at an image file of the network's filesystem (png, jpeg, gif or webp): the result names it, and the image itself comes with it. It stays in your context until the conversation is summarized, or until the model refuses a request over its images, after which it reads as words. An image kept elsewhere, such as a screenshot, is copied into files first, then viewed here.";
     type Args = ViewArgs;
 
     fn schema() -> Value {
