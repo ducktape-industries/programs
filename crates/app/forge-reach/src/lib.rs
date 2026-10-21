@@ -60,7 +60,7 @@ pub struct PreviewVerdict {
 pub enum Op {
     #[tool_op(description = "What forge tells a watcher; forge alone sends it. A Previewed event makes forge-reach report, on the new Preview, every result reported for the change's head or for the Preview itself.", example = crate::examples::watched)]
     Watched(forge::Watched),
-    #[tool_op(description = "Report your check's result for a commit (its full hex id) in a context, with the paths in the repository the check read (\"\" is the whole tree) and a url to its log; saying it again replaces it. With change, forge-reach reports on that change's latest Preview at once. Anyone may; it is recorded as yours, and the status it carries is `<your account>/<context>`.", example = crate::examples::report)]
+    #[tool_op(description = "Report your check's result for a commit (its full hex id) in a context, with the paths in the repository the check read (\"\" is the whole tree) and a url to its log; saying it again replaces it. With change, forge-reach reports on that change's latest Preview at once; without it, on the latest Preview of every open change whose head or Preview commit is that commit. Anyone may; it is recorded as yours, and the status it carries is `<your account>/<context>`.", example = crate::examples::report)]
     Report {
         repo: String,
         commit: String,
