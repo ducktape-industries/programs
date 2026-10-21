@@ -246,6 +246,12 @@ async fn lost_writes(ctx: &Ctx, id: u64) -> Result<(), Error> {
             continue;
         };
         AWAITED.remove(ctx, &(id, call.clone()));
+        let arm = crate::woken::Call {
+            agent: thread(ctx, id)?.agent,
+            thread: id,
+            call: &call,
+        };
+        crate::woken::ended(ctx, &arm)?;
         let text = format!(
             "{why}, so its answer was lost. It may have run: check, and run it again if it is still needed"
         );

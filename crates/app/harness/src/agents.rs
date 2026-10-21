@@ -515,6 +515,10 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
             "only attribution delivers a change, and harness one it held back",
         ));
     }
+    if crate::woken::from_wake(&change) {
+        let woke = crate::woken::told(ctx, &change)?;
+        return Ok(Hearing { told: None, woke });
+    }
     let added = change.kind == Changed::Added;
     let Actor::Account(actor) = change.actor else {
         return Ok(Hearing::default());

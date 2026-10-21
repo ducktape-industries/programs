@@ -730,7 +730,17 @@ async fn perform(ctx: &Ctx, id: u64, call: &str) -> Result<(String, bool), Error
         };
         mark(ctx, id, call, CallState::Writing)?;
         crate::resume::awaiting(ctx, id, call, &writes).await;
-        let output = match (written(ctx, owner.agent, writes).await, step) {
+        let arming = crate::woken::arming(&writes);
+        let arm = crate::woken::Call {
+            agent: owner.agent,
+            thread: id,
+            call,
+        };
+        crate::woken::sending(ctx, &arm, &arming);
+        let wrote = written(ctx, owner.agent, writes).await;
+        let output = wrote.as_ref().ok().map(Vec::as_slice);
+        crate::woken::sent(ctx, &arm, arming, output)?;
+        let output = match (wrote, step) {
             (Ok(output), _) => output,
             (Err(error), None) => return Ok((refusal(&error), true)),
             (Err(error), Some(step)) => return Ok((format!("{step}: {}", refusal(&error)), true)),

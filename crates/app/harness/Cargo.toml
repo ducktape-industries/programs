@@ -32,6 +32,8 @@ chat = { workspace = true }
 ducklink = { workspace = true }
 files = { workspace = true }
 forge = { workspace = true }
+# a wake's end is heard in the conversation whose turn armed it
+wake = { workspace = true }
 # `forge_commit` builds a commit's git objects and pack
 gitcore = { workspace = true }
 # network_query and network_call: JSON to a program's borsh and back

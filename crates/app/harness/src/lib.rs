@@ -37,6 +37,7 @@ mod waits;
 mod wakes;
 mod watches;
 mod wire;
+mod woken;
 
 pub use ::program::{BlobId, Principal};
 pub use abi::role::egress::Event;
