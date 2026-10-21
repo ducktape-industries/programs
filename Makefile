@@ -39,7 +39,7 @@ NOTIFIERS := $(filter $(VIEWS),$(call crates_with,^notifier = \[))
 # any program's contract: `programs`'s signing deps are dev-only, and `-e
 # normal` below is what says so. Every program crate is linked with `program`
 # off, which is what a plain `-p` build below checks.
-VIEW_LINKABLE := ducklink program view-wire view design store policy-view markdown settings-view $(PROGRAMS)
+VIEW_LINKABLE := telegram-view ducklink program view-wire view design store policy-view markdown settings-view $(PROGRAMS)
 VIEW_FORBIDDEN := blst commonware-cryptography wasm-bindgen js-sys web-sys
 
 # Cargo uses this directory for both workspaces.
@@ -71,7 +71,9 @@ SYSROOT := $(shell rustc --print sysroot)
 # names std's sources by their place under the sysroot, not by /rustc/<commit>
 # as it does without it. The last matching remap wins: both read /rustc/<commit>.
 RUSTC_COMMIT := $(shell rustc -vV | sed -n 's/^commit-hash: //p')
-WASM_RUSTFLAGS := --remap-path-prefix=$(CURDIR)=/build --remap-path-prefix=$(CARGO_HOME_DIR)=/cargo --remap-path-prefix=$(SYSROOT)=/rustc --remap-path-prefix=$(SYSROOT)/lib/rustlib/src/rust=/rustc/$(RUSTC_COMMIT)
+# Telegram alone links getrandom 0.4; all wasm entry points select its
+# device-seeded backend here (plain cargo also has .cargo/config.toml).
+WASM_RUSTFLAGS := --remap-path-prefix=$(CURDIR)=/build --remap-path-prefix=$(CARGO_HOME_DIR)=/cargo --remap-path-prefix=$(SYSROOT)=/rustc --remap-path-prefix=$(SYSROOT)/lib/rustlib/src/rust=/rustc/$(RUSTC_COMMIT) --cfg getrandom_backend=\"custom\"
 WASM_CARGO := RUSTFLAGS="$(WASM_RUSTFLAGS)" $(CARGO) build --target wasm32-unknown-unknown
 WASM_BUILD = $(WASM_CARGO) --profile $(WASM_PROFILE)
 # The view gate: wasm-opt, then the ABI check; `--fast` skips wasm-opt for
@@ -299,6 +301,14 @@ wasm-reproducible:
 	  if strings $$f | grep -qE "$(CURDIR)|$(HOME)|/rustc/lib/"; then echo "$$f embeds a path of this machine"; strings $$f | grep -E "$(CURDIR)|$(HOME)|/rustc/lib/" | head -3; exit 1; fi; \
 	done; echo "no program or view embeds a path of this checkout, home or toolchain"
 
+# Telegram is deployed later by SetView, outside VIEWS and genesis. Its random
+# backend cfg is shared by all wasm build entry points above; view-gate keeps
+# the backend symbol internal before applying the five-export ABI gate.
+.PHONY: wasm-telegram-view
+wasm-telegram-view:
+	@$(WASM_BUILD) --locked --target-dir $(BUILD_TARGET) -p telegram-view
+	@$(VIEW_GATE) telegram-view $(WASM_OUT)/telegram_view.wasm
+
 ## builds every view for wasm32 under $(WASM_OUT)/, optimized (the bytes
 ## before wasm-opt stay beside it as <name>.wasm.unoptimized; a fast build
 ## is not optimized), ABI-checked and its size printed: `name  bytes`.
@@ -355,3 +365,4 @@ view-wasm-check:
 	  echo "view-linkable crates reach a forbidden dependency:$$reached"; \
 	  exit 1; \
 	fi
+	+@$(MAKE) --no-print-directory wasm-telegram-view
