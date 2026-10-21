@@ -209,16 +209,23 @@ impl Chat {
         };
         let fetched = room.messages.ready().into_iter().flatten();
         match pane {
-            Pane::Timeline => Box::new(
-                fetched
-                    .chain(&room.pending)
-                    .filter(|row| row.thread.is_none()),
-            ),
+            Pane::Timeline => match &room.filter {
+                Some(filter) => Box::new(filter.rows.iter()),
+                None => Box::new(
+                    fetched
+                        .chain(&room.pending)
+                        .filter(|row| row.thread.is_none()),
+                ),
+            },
             Pane::Thread => {
                 let Some(thread) = &room.thread else {
                     return Box::new(std::iter::empty());
                 };
-                let root = fetched.filter(move |row| row.seq == thread.root).take(1);
+                let tagged = room.filter.iter().flat_map(|filter| &filter.rows);
+                let root = fetched
+                    .chain(tagged)
+                    .filter(move |row| row.seq == thread.root)
+                    .take(1);
                 let replies = thread.replies.ready().into_iter().flatten();
                 let pending = room
                     .pending

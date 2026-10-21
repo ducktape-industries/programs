@@ -49,6 +49,7 @@ conventions its readers share.
 | `category` | a section name | nobody now: chat-view files rooms by the `/` in their names, and leaves the value as it is |
 | `widget.header`, `widget.pinned`, `widget.side` | a widget file's path | chat-view ([widgets.md](../../../docs/widgets.md)) |
 | `rules` (`chat::RULES`) | how to talk in the room | everyone who talks there |
+| `filters` | tags, separated by commas (`node,app,mobile`) | chat-view: "All" and a chip per tag over the timeline, each showing the room's posts carrying that tag (`TagSearch`) |
 | `listed` (`chat::LISTED`) | `involved` (`chat::INVOLVED`) | chat, which seats whoever posts there (root or reply) and every account a message posted or edited there mentions, while the room is open to every poster; chat-view, which lists the room only for someone seated there or its owner |
 
 ### `listed = involved`

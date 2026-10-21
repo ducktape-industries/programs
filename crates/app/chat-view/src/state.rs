@@ -357,6 +357,7 @@ pub enum Shape {
     Tail,
     Landed,
     Thread,
+    Tagged,
 }
 
 pub struct Folded {
@@ -434,6 +435,8 @@ pub struct Room {
     pub(crate) frozen: Vec<(chat::Draft, Option<u64>)>,
     #[serde(skip)]
     pub(crate) became: BTreeMap<String, String>,
+    #[serde(skip)]
+    pub(crate) filter: Option<crate::filters::Filter>,
 }
 
 #[derive(Default)]

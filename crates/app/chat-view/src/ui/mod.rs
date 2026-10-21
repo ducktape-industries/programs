@@ -4,6 +4,7 @@
 pub(crate) mod answering;
 pub(crate) mod attachment;
 pub mod dialogs;
+pub(crate) mod filters;
 pub mod menu;
 pub mod message;
 pub(crate) mod notices;

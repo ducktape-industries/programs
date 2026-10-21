@@ -33,6 +33,9 @@ pub(super) fn list(
     let Some(room) = &chat.room else {
         return frame.into_any_element();
     };
+    if let Some(state) = filtered_state(chat, pane, cx, theme, ladder) {
+        return frame.child(state).into_any_element();
+    }
     let read = match pane {
         Pane::Timeline => Some(&room.messages),
         Pane::Thread => room.thread.as_ref().map(|thread| &thread.replies),
@@ -58,7 +61,7 @@ pub(super) fn list(
     }
     let timeline = pane == Pane::Timeline;
     frame
-        .when(timeline && room.older_loading, |frame| {
+        .when(timeline && chat.older_loading(), |frame| {
             frame.child(quiet(
                 "chat-load-older",
                 words::LOADING_OLDER,
@@ -80,10 +83,48 @@ pub(super) fn list(
             },
         )
         .child(rows(chat, pane, cx, theme, ladder))
-        .when(timeline && (room.landed || !room.at_tail), |frame| {
-            frame.child(latest(cx, theme, ladder))
-        })
+        .when(
+            timeline && room.filter.is_none() && (room.landed || !room.at_tail),
+            |frame| frame.child(latest(cx, theme, ladder)),
+        )
         .into_any_element()
+}
+
+fn filtered_state(
+    chat: &Chat,
+    pane: Pane,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Option<AnyElement> {
+    let filter = chat
+        .filtered()
+        .filter(|filter| pane == Pane::Timeline && filter.rows.is_empty())?;
+    if filter.loading {
+        let held = crate::ui::placeholders::phone_messages(pane, theme, ladder);
+        return Some(held.into_any_element());
+    }
+    if let Some(refusal) = &filter.failed {
+        let retry = cx.listener(|chat, _: &ClickEvent, _window, cx| {
+            cx.notify();
+            chat.reread_filter(None, cx);
+        });
+        let refused = design::refused(
+            "chat-filter",
+            design::sentence(refusal),
+            ladder,
+            theme,
+            retry,
+        );
+        return Some(refused.into_any_element());
+    }
+    let none = quiet(
+        "chat-filter-empty",
+        words::no_tagged(&filter.tag),
+        theme,
+        ladder,
+    );
+    Some(none.into_any_element())
 }
 
 fn rows(

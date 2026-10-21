@@ -573,6 +573,7 @@ impl Chat {
         {
             self.load_choices(cx);
         }
+        self.reread_filter(change, cx);
         self.refresh_room(change, cx);
         // the rooms the reader listens to and wrote in, which both lists hold as theirs, and
         // their order
@@ -1019,6 +1020,10 @@ impl Chat {
 
     /// One older page before the oldest row on screen.
     pub(crate) fn load_older(&mut self, cx: &mut Context<Self>) {
+        if self.filtered().is_some() {
+            self.filter_more(cx);
+            return;
+        }
         match self.room.as_ref().is_some_and(|room| room.landed) {
             true => self.page_landed(Side::Older, cx),
             false => self.page_roots(cx),
@@ -1161,6 +1166,9 @@ impl Chat {
         match pane {
             Pane::Timeline => {
                 let Some(room) = &mut self.room else { return };
+                if room.filter.is_some() {
+                    return;
+                }
                 let route = room.id.clone();
                 let at_tail = event.is_following_tail || event.visible_range.end >= event.count;
                 if room.at_tail != at_tail {
@@ -1297,9 +1305,14 @@ impl Chat {
     pub(crate) fn before_first(&self, pane: Pane, at: usize) -> bool {
         let Some(room) = &self.room else { return false };
         match pane {
-            Pane::Timeline => {
-                at == 0 && room.has_older && !room.older_loading && room.older_failed.is_none()
-            }
+            Pane::Timeline => match &room.filter {
+                Some(filter) => {
+                    at == 0 && filter.more && !filter.more_out && filter.failed.is_none()
+                }
+                None => {
+                    at == 0 && room.has_older && !room.older_loading && room.older_failed.is_none()
+                }
+            },
             Pane::Thread => {
                 let thread = room.thread.as_ref();
                 at == 1 && thread.is_some_and(|thread| thread.earlier && thread.paging.is_none())

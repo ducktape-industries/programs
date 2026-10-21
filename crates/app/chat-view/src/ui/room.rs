@@ -43,6 +43,9 @@ pub fn render(
         .children(notice(chat, cx, theme, ladder))
         .children(confirmation(chat, cx, theme, ladder))
         .children(super::widget::pinned(chat, cx, theme, ladder))
+        .children(
+            super::filters::chips(chat, cx, theme, ladder).filter(|_| chat.search.query.is_empty()),
+        )
         .child(body)
         .child(compose(chat, room, cx, theme, ladder))
 }

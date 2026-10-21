@@ -24,6 +24,8 @@ mod composer;
 #[cfg(not(feature = "notifier"))]
 mod emoji;
 #[cfg(not(feature = "notifier"))]
+mod filters;
+#[cfg(not(feature = "notifier"))]
 mod kept;
 mod links;
 #[cfg(not(feature = "notifier"))]

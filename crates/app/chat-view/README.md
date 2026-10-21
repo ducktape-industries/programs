@@ -69,6 +69,16 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
   again when a files block moves it. The details show them (the desktop's also
   set and clear them), and a faint "This room has rules" over the composer
   opens the details.
+- Filters: a channel's `filters` meta (`filters.rs`, `ui/filters.rs`), tags
+  separated by commas (a leading `#` and repeats dropped). The room draws "All"
+  and a chip per tag over its timeline (the SDK's `segmented`), `#tag` under a
+  pointer and the bare tag on a phone, whose chips share the row. A chip shows
+  only the room's posts carrying its tag, newest at the foot, read through
+  chat's `TagSearch` a screenful a page (the SDK's `Paged`); the first row in
+  view reads the page after, and a block that writes the room's messages or
+  reactions reads it again. All is the room's live timeline. A room without
+  the meta draws no chips. The pick is the session's: another room, or a swap,
+  opens on All.
 - Dialogs: new channel, new direct message (`ui/dialogs.rs`, phone pages).
 - Who can edit (`policies.rs`, through `policy-view`'s `item`): a row in the
   channel's details, and "Who can edit" in a message's menu, each opening a

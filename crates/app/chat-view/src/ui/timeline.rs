@@ -6,6 +6,7 @@ use std::rc::Rc;
 use view::list as gpui_list;
 use view::prelude::*;
 
+use crate::filters::Filter;
 use crate::listing::{Listing, listing};
 use crate::message::{ChatMessage, new_day};
 use crate::ui::room::selection_bar;
@@ -72,6 +73,9 @@ pub fn list(
 
 fn nothing_yet(chat: &Chat, pane: Pane, theme: &Theme) -> Option<AnyElement> {
     let room = chat.room.as_ref()?;
+    if let Some(filter) = room.filter.as_ref().filter(|_| pane == Pane::Timeline) {
+        return Some(filtered_nothing(filter, pane, theme));
+    }
     let rows = match pane {
         Pane::Timeline => Some(&room.messages),
         Pane::Thread => room.thread.as_ref().map(|thread| &thread.replies),
@@ -93,7 +97,9 @@ fn nothing_yet(chat: &Chat, pane: Pane, theme: &Theme) -> Option<AnyElement> {
 }
 
 fn older(chat: &Chat, theme: &Theme) -> Option<AnyElement> {
-    chat.room.as_ref().filter(|room| room.older_loading)?;
+    if !chat.older_loading() {
+        return None;
+    }
     let row = div()
         .id("chat-load-older")
         .flex()
@@ -338,6 +344,9 @@ fn jump_to_latest(
     ladder: &Ladder,
 ) -> Option<AnyElement> {
     let room = chat.room.as_ref()?;
+    if room.filter.is_some() {
+        return None;
+    }
     if !room.landed && room.at_tail {
         return None;
     }
@@ -399,6 +408,20 @@ fn intro(text: &str, theme: &Theme) -> impl IntoElement {
         .text_size(design::text::SECONDARY)
         .text_color(theme.muted)
         .child(text.to_owned())
+}
+
+fn filtered_nothing(filter: &Filter, pane: Pane, theme: &Theme) -> AnyElement {
+    if filter.loading {
+        return super::placeholders::messages(pane, theme).into_any_element();
+    }
+    let said = match &filter.failed {
+        Some(refusal) => design::sentence(refusal),
+        None => words::no_tagged(&filter.tag),
+    };
+    quiet(said, theme)
+        .id("chat-filter-empty")
+        .p_4()
+        .into_any_element()
 }
 
 fn no_replies(theme: &Theme) -> impl IntoElement {

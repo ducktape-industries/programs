@@ -370,3 +370,10 @@ pub(crate) fn checked(item: &str, done: bool) -> String {
         false => format!("{item}, not done"),
     }
 }
+
+pub(crate) const ALL: &str = "All";
+pub(crate) const ROOM_FILTER: &str = "Room filter";
+
+pub(crate) fn no_tagged(tag: &str) -> String {
+    format!("No #{tag} posts yet")
+}

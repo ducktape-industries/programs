@@ -39,6 +39,7 @@ pub(super) fn screen(
         .children(parts::room_notice(chat, cx, theme, ladder))
         .children(crate::ui::widget::line(chat, theme, ladder))
         .children(crate::ui::widget::pinned(chat, cx, theme, ladder))
+        .children(crate::ui::filters::chips(chat, cx, theme, ladder))
         .child(timeline::list(chat, Pane::Timeline, cx, theme, ladder))
         .children(
             crate::ui::rules::line(chat, cx, theme, ladder)

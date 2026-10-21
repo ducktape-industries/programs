@@ -273,6 +273,25 @@ pub(crate) async fn search_hits(
     Ok((found.items, found.next))
 }
 
+pub(crate) async fn tagged(
+    host: Host,
+    tag: String,
+    channel_id: String,
+    viewer: Vec<Principal>,
+    after: Option<Vec<u8>>,
+    screenful: usize,
+) -> Result<(Vec<MsgRow>, Option<Vec<u8>>), Error> {
+    let found = host
+        .query(ask::TagSearch {
+            tag,
+            viewer,
+            channel_id: Some(channel_id),
+            page: page(after, screenful),
+        })
+        .await?;
+    Ok((found.items, found.next))
+}
+
 // Who is answering in a room right now: each draft, with its text so far.
 pub(crate) async fn answering(host: Host, channel_id: String) -> Result<Vec<chat::Draft>, Error> {
     host.query(ask::Drafts { channel_id }).await

@@ -20,6 +20,7 @@ mod context_menus;
 mod cost;
 mod dms;
 mod faces;
+mod filters;
 mod folders;
 mod held;
 mod history;

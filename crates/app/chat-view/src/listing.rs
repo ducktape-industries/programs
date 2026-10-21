@@ -14,11 +14,14 @@ pub(crate) const OVERDRAW: f32 = 600.;
 
 impl Shape {
     fn of(chat: &Chat, pane: Pane) -> Self {
-        let landed = chat.room.as_ref().is_some_and(|room| room.landed);
-        match (pane, landed) {
-            (Pane::Thread, _) => Self::Thread,
-            (Pane::Timeline, true) => Self::Landed,
-            (Pane::Timeline, false) => Self::Tail,
+        let room = chat.room.as_ref();
+        let landed = room.is_some_and(|room| room.landed);
+        let tagged = room.is_some_and(|room| room.filter.is_some());
+        match (pane, tagged, landed) {
+            (Pane::Thread, _, _) => Self::Thread,
+            (Pane::Timeline, true, _) => Self::Tagged,
+            (Pane::Timeline, false, true) => Self::Landed,
+            (Pane::Timeline, false, false) => Self::Tail,
         }
     }
     pub(crate) fn id(self) -> &'static str {
@@ -26,17 +29,18 @@ impl Shape {
             Self::Tail => "chat-message-rows",
             Self::Landed => "chat-landed-rows",
             Self::Thread => "chat-thread-rows",
+            Self::Tagged => "chat-tagged-rows",
         }
     }
     fn alignment(self) -> ListAlignment {
         match self {
-            Self::Tail => ListAlignment::Bottom,
+            Self::Tail | Self::Tagged => ListAlignment::Bottom,
             Self::Landed | Self::Thread => ListAlignment::Top,
         }
     }
     fn follow(self, whole: bool) -> FollowMode {
         match (self, whole) {
-            (Self::Tail, _) | (Self::Thread, true) => FollowMode::Tail,
+            (Self::Tail | Self::Tagged, _) | (Self::Thread, true) => FollowMode::Tail,
             (Self::Landed, _) | (Self::Thread, false) => FollowMode::Normal,
         }
     }
@@ -62,7 +66,8 @@ pub(crate) fn listing(
 ) -> Listing {
     let room = chat.room.as_ref();
     let shape = Shape::of(chat, pane);
-    let lead = pane == Pane::Timeline && room.is_some_and(|room| !room.has_older);
+    let lead =
+        pane == Pane::Timeline && room.is_some_and(|room| !room.has_older && room.filter.is_none());
     let intro = lead.then(|| chat.intro()).flatten();
     let bare = pane == Pane::Thread
         && messages.len() == 1
@@ -85,7 +90,7 @@ pub(crate) fn listing(
     let landing = || match shape {
         Shape::Landed => Some(landing(chat, messages) + usize::from(lead)),
         Shape::Thread => thread_landing(chat, messages),
-        Shape::Tail => None,
+        Shape::Tail | Shape::Tagged => None,
     };
     let whole = room
         .and_then(|room| room.thread.as_ref())
@@ -214,7 +219,10 @@ fn restore(drawn: &mut Drawn, state: &ListState, keys: &[String]) {
 pub(crate) fn first_row(chat: &Chat, pane: Pane) -> String {
     let room = chat.room.as_ref();
     let oldest = match pane {
-        Pane::Timeline => room.and_then(|room| room.messages.ready()?.first()),
+        Pane::Timeline => room.and_then(|room| match &room.filter {
+            Some(filter) => filter.rows.first(),
+            None => room.messages.ready()?.first(),
+        }),
         Pane::Thread => room.and_then(|room| room.thread.as_ref()?.replies.ready()?.first()),
     };
     format!("chat-first-row-{}", oldest.map_or(0, |row| row.seq))
