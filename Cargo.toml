@@ -42,7 +42,7 @@ members = [
 # Third-party crates taken whole (crates/vendor/<crate>/README.ducktape.md
 # says from where and what differs). Path dependencies, not members: the
 # workspace's lints and gates are not theirs.
-exclude = ["crates/vendor"]
+exclude = ["crates/vendor", "examples"]
 
 [workspace.package]
 edition = "2024"

@@ -1,0 +1,13 @@
+[package]
+name = "tally-view"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde = { workspace = true }
+tally = { workspace = true }
+view = { workspace = true }

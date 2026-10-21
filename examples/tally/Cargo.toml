@@ -1,0 +1,21 @@
+[package]
+name = "tally"
+edition.workspace = true
+version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+program = []
+describe = []
+
+[dependencies]
+borsh = { workspace = true }
+describe = { workspace = true }
+program = { workspace = true }
+store = { workspace = true }
+
+[dev-dependencies]
+borsh-json = { workspace = true }
