@@ -845,6 +845,26 @@ fn person(number: u64, name: &str) -> identity::Profile {
 
 type Answers = std::rc::Rc<std::cell::RefCell<identity::Ownership>>;
 
+fn listing(profiles: &[identity::Profile]) -> identity::Reply {
+    let control = |kind: &identity::Kind| match kind {
+        identity::Kind::System(program) => identity::Control::System {
+            program: program.clone(),
+        },
+        identity::Kind::User | identity::Kind::Program { .. } => {
+            identity::Control::User { keys: Vec::new() }
+        }
+    };
+    let items = profiles
+        .iter()
+        .map(|profile| account(profile.number, &profile.name, control(&profile.kind)))
+        .collect();
+    identity::Reply::Accounts(identity::PageResponse {
+        height: 42,
+        items,
+        next: None,
+    })
+}
+
 fn listed(numbers: &[u64]) -> identity::Ownership {
     identity::Ownership::Listed(
         numbers
@@ -882,6 +902,7 @@ fn answering(ownership: identity::Ownership) -> (TestAppContext, Answers) {
             identity::Query::Profile { number } => {
                 identity::Reply::Profile(directory.iter().find(|p| p.number == number).cloned())
             }
+            identity::Query::List { .. } => listing(&directory),
             identity::Query::Profiles { after: None, .. } => identity::Reply::Profiles {
                 profiles: directory[..3].to_vec(),
                 next: Some(9),
@@ -999,6 +1020,64 @@ fn an_agent_reads_as_answering_its_manager_some_people_or_anyone() {
     assert_eq!(picked(&cx), ["anyone"]);
     assert!(cx.has_text(WARNING), "{:?}", cx.texts());
     assert!(cx.find("settings/agents/12/answers/people").is_none());
+}
+
+#[test]
+fn the_people_every_agent_answers_are_named_by_one_read() {
+    let mut cx = fixture("ready", false);
+    let relay = account(
+        13,
+        "Relay",
+        identity::Control::Program {
+            script: None,
+            manager: 7,
+            category: identity::Category::Agent,
+            life: identity::Life::Active { keys: Vec::new() },
+        },
+    );
+    let asked = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let log = asked.clone();
+    cx.host().handle::<Query<Identity>>(move |q| {
+        Ok(match q {
+            identity::Query::Get { number } => {
+                identity::Reply::Account(Some(maya(number, "Laptop key")))
+            }
+            identity::Query::Managed { by: 7, .. } => {
+                log.borrow_mut().push("managed");
+                identity::Reply::Accounts(identity::PageResponse {
+                    height: 42,
+                    items: vec![scout(), relay.clone()],
+                    next: None,
+                })
+            }
+            identity::Query::Narrowed { .. } => identity::Reply::Narrowed(identity::PageResponse {
+                height: 42,
+                items: vec![(12, listed(&[8])), (13, listed(&[8, 9]))],
+                next: None,
+            }),
+            identity::Query::List { .. } => {
+                log.borrow_mut().push("list");
+                listing(&[person(8, "Bob"), person(9, "Eve")])
+            }
+            q => panic!("unexpected query: {q:?}"),
+        })
+    });
+    let heads = cx.host().stream::<Changes<Identity>>();
+    heads.send(Some(Change {
+        height: 43,
+        keys: Vec::new(),
+    }));
+    cx.simulate_click("settings/nav/agents");
+    cx.run_until_parked();
+    for text in ["Bob", "Eve", "account 9"] {
+        assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
+    }
+    let asked = asked.borrow();
+    assert!(!asked.is_empty());
+    assert!(
+        asked.chunks(2).all(|read| read == ["managed", "list"]),
+        "each read of two agents names their people in one List: {asked:?}"
+    );
 }
 
 #[test]

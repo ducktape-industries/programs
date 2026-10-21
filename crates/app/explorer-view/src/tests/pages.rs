@@ -573,7 +573,7 @@ fn accounts_say_what_each_is_as_members_does() {
     cx.run_until_parked();
     for text in [
         "User",
-        "Agent · managed by Ada · suspended",
+        "Agent · external · managed by Ada · suspended",
         "Program · forge",
     ] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
@@ -581,7 +581,7 @@ fn accounts_say_what_each_is_as_members_does() {
     cx.simulate_click("explorer-account-5");
     cx.run_until_parked();
     assert!(
-        cx.has_text("account 5   Agent · managed by Ada · suspended   0 devices"),
+        cx.has_text("account 5   Agent · external · managed by Ada · suspended   0 devices"),
         "{:?}",
         cx.texts()
     );

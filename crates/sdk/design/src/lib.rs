@@ -617,6 +617,34 @@ pub fn badge(
     }
 }
 
+pub fn runs(kind: &abi::role::identity::Kind) -> Option<String> {
+    use abi::role::identity::{Category, Kind};
+    match kind {
+        Kind::Program {
+            category: Category::Agent,
+            script,
+            ..
+        } => Some(match script {
+            Some(script) => script.calls.clone(),
+            None => "external".into(),
+        }),
+        Kind::User | Kind::System(_) => None,
+    }
+}
+
+pub fn runner_badge(
+    kind: &abi::role::identity::Kind,
+    name_of: impl FnOnce(abi::role::identity::AccountNumber) -> String,
+) -> Option<String> {
+    use abi::role::identity::Kind;
+    match (runs(kind), kind) {
+        (Some(runs), Kind::Program { manager, .. }) => {
+            Some(format!("Agent · {runs} · managed by {}", name_of(*manager)))
+        }
+        _ => badge(kind, name_of),
+    }
+}
+
 // Why an account does not act, noted beside its name: "suspended" or
 // "revoked". `None` while it acts.
 pub fn note(kind: &abi::role::identity::Kind) -> Option<&'static str> {
@@ -697,6 +725,42 @@ mod tests {
         assert_eq!(note(&agent(Standing::Suspended)), Some("suspended"));
         assert_eq!(note(&agent(Standing::Revoked)), Some("revoked"));
         assert_eq!(note(&Kind::User), None);
+    }
+    #[test]
+    fn an_agent_says_who_runs_it() {
+        use abi::role::identity::{Category, Kind, Script, Standing};
+        let agent = |script| Kind::Program {
+            manager: 7,
+            category: Category::Agent,
+            standing: Standing::Active,
+            script,
+        };
+        let harness = agent(Some(Script {
+            calls: "harness".into(),
+            config: "/home/maya/agents/scout.md".into(),
+        }));
+        let named = |number: u64| format!("#{number}");
+        assert_eq!(runs(&harness).as_deref(), Some("harness"));
+        assert_eq!(runs(&agent(None)).as_deref(), Some("external"));
+        assert_eq!(runs(&Kind::User), None);
+        assert_eq!(runs(&Kind::System("chat".into())), None);
+        assert_eq!(
+            runner_badge(&harness, named).as_deref(),
+            Some("Agent · harness · managed by #7")
+        );
+        assert_eq!(
+            runner_badge(&agent(None), named).as_deref(),
+            Some("Agent · external · managed by #7")
+        );
+        assert_eq!(
+            runner_badge(&Kind::System("chat".into()), named).as_deref(),
+            Some("Program · chat")
+        );
+        assert_eq!(runner_badge(&Kind::User, named), None);
+        assert_eq!(
+            badge(&harness, named).as_deref(),
+            Some("Agent · managed by #7")
+        );
     }
     #[test]
     fn a_fingerprint_is_the_first_four_bytes_of_the_keys_sha256() {

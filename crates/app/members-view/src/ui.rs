@@ -318,8 +318,7 @@ fn member_row(
         ))
         .child(
             div()
-                .flex_1()
-                .min_w(px(0.))
+                .flex_shrink_0()
                 .flex()
                 .items_center()
                 .gap(space::XS)
@@ -340,7 +339,10 @@ fn member_row(
         )
         .child(
             div()
-                .flex_shrink_0()
+                .flex_1()
+                .min_w(px(0.))
+                .truncate()
+                .text_right()
                 .text_size(text::CAPTION)
                 .text_color(theme.muted)
                 .child(kind),

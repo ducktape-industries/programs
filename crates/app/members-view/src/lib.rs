@@ -246,7 +246,10 @@ impl Row {
     fn kind_word(&self) -> String {
         match &self.kind {
             identity::Kind::User => words::USER.into(),
-            identity::Kind::Program { .. } => words::AGENT.into(),
+            kind @ identity::Kind::Program { .. } => match design::runs(kind) {
+                Some(runs) => format!("{} · {runs}", words::AGENT),
+                None => words::AGENT.into(),
+            },
             identity::Kind::System(program) if *program == self.name => words::PROGRAM.into(),
             identity::Kind::System(program) => format!("{} · {program}", words::PROGRAM),
         }

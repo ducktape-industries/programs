@@ -132,8 +132,10 @@ The role's queries, which views and other programs ask too, are
 `Account(key)`, `OfProgram(program)`, `Profile(number)`,
 `Profiles { after, limit }` and `Runs { program, account }`. A `Profile` is
 `{ number, name, kind }`, where `Kind` is `User`,
-`Program { manager, category, standing, script }` or `System(id)`. `design::badge` and `design::note` turn it into what a view
-shows beside a name ("Agent · managed by Dev", "Program · chat", "suspended"),
+`Program { manager, category, standing, script }` or `System(id)`. `design::badge`, `design::runner_badge` and `design::note` turn it into what a view
+shows beside a name ("Agent · managed by Dev" in chat; "Agent · harness · managed by Dev"
+in members and explorer, where `design::runs` names the program an agent's script calls,
+or `external` for an agent with no script; "Program · chat"; "suspended"),
 the one place that happens.
 
 Beyond the role's, identity answers `Answers { account }`: whom a program

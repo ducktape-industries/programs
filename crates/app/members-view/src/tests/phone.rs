@@ -99,7 +99,11 @@ fn the_phone_roster_groups_people_agents_and_programs_and_says_what_each_is() {
     ] {
         assert!(cx.has_text(text), "{text}: {texts:?}");
     }
-    for gone in ["5 accounts", "Choose a member", "Agent · managed by eddy"] {
+    for gone in [
+        "5 accounts",
+        "Choose a member",
+        "Agent · external · managed by eddy",
+    ] {
         assert!(!texts.iter().any(|t| t == gone), "{gone}");
     }
     assert_eq!(cx.back_handler(), None);
@@ -279,7 +283,7 @@ fn an_agent_opens_over_its_manager_and_its_manager_over_that() {
     cx.simulate_click("members-manages-9");
     cx.run_until_parked();
     for text in [
-        "account 9 · Agent · managed by ",
+        "account 9 · Agent · external · managed by ",
         "eddy",
         " · 1 device",
         "active",
@@ -291,7 +295,7 @@ fn an_agent_opens_over_its_manager_and_its_manager_over_that() {
     cx.run_until_parked();
     assert!(cx.has_text("account 7 · User · 1 device"));
     cx.simulate_back();
-    assert!(cx.has_text("account 9 · Agent · managed by "));
+    assert!(cx.has_text("account 9 · Agent · external · managed by "));
     cx.simulate_back();
     assert!(cx.has_text("account 7 · User · 1 device"));
 }

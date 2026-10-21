@@ -31,7 +31,10 @@ fn an_identity_head_re_reads_the_accounts() {
     }));
     cx.run_until_parked();
     assert!(cx.has_text("Program · chess"), "{:?}", cx.texts());
-    assert!(cx.has_text("Agent · managed by Ada · suspended"), "kept");
+    assert!(
+        cx.has_text("Agent · external · managed by Ada · suspended"),
+        "kept"
+    );
     assert_eq!(cx.host().requests::<Query<Identity>>().len(), asked + 1);
 }
 

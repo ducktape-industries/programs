@@ -3,7 +3,7 @@
 //! what the programs said; they are worded only when drawn.
 use identity::{Kind, Ownership, PageRequest, Party, Reference, Standing};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use view::host::malformed;
 use view::prelude::*;
 
@@ -178,7 +178,6 @@ async fn agents(host: &Host, manager: u64) -> Result<Vec<Agent>, Error> {
         };
         let number = agent.number;
         let ownership = narrowed.get(&number).cloned().unwrap_or(Ownership::Anyone);
-        let names = names(host, &ownership).await?;
         agents.push(Agent {
             number,
             keys: agent.keys().len(),
@@ -187,20 +186,33 @@ async fn agents(host: &Host, manager: u64) -> Result<Vec<Agent>, Error> {
             bio: agent.card.bio,
             kind,
             ownership,
-            names,
+            names: BTreeMap::new(),
         });
     }
-    Ok(agents)
-}
-
-async fn names(host: &Host, ownership: &Ownership) -> Result<BTreeMap<u64, String>, Error> {
-    let mut names = BTreeMap::new();
-    for number in ownership.accounts() {
-        if let Some(profile) = host.query(identity::ask::Profile { number }).await? {
-            names.insert(number, profile.name);
-        }
+    let named: BTreeSet<u64> = agents
+        .iter()
+        .flat_map(|agent| agent.ownership.accounts())
+        .collect();
+    if named.is_empty() {
+        return Ok(agents);
     }
-    Ok(names)
+    let names: BTreeMap<u64, String> = host
+        .query_all(|after| identity::ask::List {
+            page: PageRequest { after, limit: None },
+        })
+        .await?
+        .into_iter()
+        .filter(|account| named.contains(&account.number))
+        .map(|account| (account.number, account.card.name))
+        .collect();
+    for agent in &mut agents {
+        agent.names = agent
+            .ownership
+            .accounts()
+            .filter_map(|number| Some((number, names.get(&number)?.clone())))
+            .collect();
+    }
+    Ok(agents)
 }
 
 pub(crate) enum Found {

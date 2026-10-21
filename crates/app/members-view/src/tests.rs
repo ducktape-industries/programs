@@ -247,8 +247,8 @@ fn the_list_groups_people_then_agents_then_programs_and_chooses_no_one() {
         "you",
         "User",
         "Program",
-        "Agent · managed by eddy",
-        "Agent · managed by eddy · revoked",
+        "Agent · external · managed by eddy",
+        "Agent · external · managed by eddy · revoked",
         "Choose a member",
     ] {
         assert!(cx.has_text(text), "{text}: {texts:?}");
@@ -311,7 +311,7 @@ fn an_agent_names_its_manager_its_standing_and_its_devices() {
     cx.run_until_parked();
     for text in [
         "account 9",
-        "Agent · managed by",
+        "Agent · external · managed by",
         "eddy",
         "active",
         "1 device",
@@ -676,7 +676,7 @@ fn a_row_is_named_by_the_member_not_the_avatar() {
     for (number, name, description) in [
         (7, "eddy", "you · User"),
         (11, "ada", "User"),
-        (10, "relay", "Agent · managed by eddy · revoked"),
+        (10, "relay", "Agent · external · managed by eddy · revoked"),
         (8, "chat", "Program"),
     ] {
         let row = aria(&format!("members-row-{number}"));
