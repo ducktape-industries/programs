@@ -245,15 +245,14 @@ impl Net {
 
     async fn block(&mut self, submissions: Vec<Submission>) -> Applied {
         self.height += 1;
-        self.host
-            .apply(Block {
-                height: self.height,
-                id: block_id(self.height),
-                time: self.time(),
-                submissions,
-            })
-            .await
-            .unwrap()
+        Box::pin(self.host.apply(Block {
+            height: self.height,
+            id: block_id(self.height),
+            time: self.time(),
+            submissions,
+        }))
+        .await
+        .unwrap()
     }
 
     async fn tick(&mut self) -> Applied {
@@ -407,32 +406,29 @@ impl Net {
     }
 
     async fn refused<Q: BorshSerialize>(&self, program: &str, query: &Q) -> abi::Refusal {
-        self.host
-            .query(
-                Layer::Confirmed,
-                self.time(),
-                Origin::External(public(1)),
-                program,
-                abi::encode(query),
-            )
-            .await
-            .unwrap()
-            .unwrap_err()
+        Box::pin(self.host.query(
+            Layer::Confirmed,
+            self.time(),
+            Origin::External(public(1)),
+            program,
+            abi::encode(query),
+        ))
+        .await
+        .unwrap()
+        .unwrap_err()
     }
 
     async fn ask<Q: BorshSerialize, R: BorshDeserialize>(&self, program: &str, query: &Q) -> R {
-        let answer = self
-            .host
-            .query(
-                Layer::Confirmed,
-                self.time(),
-                Origin::External(public(1)),
-                program,
-                abi::encode(query),
-            )
-            .await
-            .unwrap()
-            .unwrap();
+        let answer = Box::pin(self.host.query(
+            Layer::Confirmed,
+            self.time(),
+            Origin::External(public(1)),
+            program,
+            abi::encode(query),
+        ))
+        .await
+        .unwrap()
+        .unwrap();
         abi::decode(&answer).unwrap()
     }
 

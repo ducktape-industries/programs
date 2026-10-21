@@ -38,7 +38,7 @@ impl Described for Ops {
             ),
             told(
                 "Vote",
-                "Vote for a motion, as a validator's node key or as the account that manages the active program account a validator's node key sits on (each validator it manages votes). A motion passes once more than two thirds of the seated validators voted for it (n - (n - 1) / 3 of n), and is enacted at once: Promote a resident, Demote or Remove a member but never the last validator, open or close the Door, or send a Role's program op as the vote. Answers how it stands: counted with votes and needed, or enacted.",
+                "Vote for a motion, as a validator's node key or as the account that manages the active program account a validator's node key sits on (each validator it manages votes). A motion passes once more than two thirds of the seated validators voted for it (n - (n - 1) / 3 of n), and is enacted at once: Promote a resident, Demote or Remove a member but never the last validator, open or close the Door, set which Queries the network answers (Signed or Open; a motion naming the current policy is refused), or send a Role's program op as the vote. Answers how it stands: counted with votes and needed, or enacted.",
                 Op::Vote(Motion::Door { open: true }),
             ),
             told(
@@ -78,4 +78,8 @@ pub(crate) fn motions() -> Query {
 
 pub(crate) fn voices() -> Query {
     Query::Voices { key: KEY.to_vec() }
+}
+
+pub(crate) fn query_policy() -> Query {
+    Query::QueryPolicy
 }

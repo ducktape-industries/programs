@@ -104,6 +104,13 @@ impl Described for Ops {
                 "egress's own scheduled run alone: a request unanswered when its wait runs out ends, refused to its caller.",
                 Op::Expire { id: 1 },
             ),
+            op(
+                "Unregister",
+                "Take a registered service off egress by name. Not served yet: egress refuses it as unsupported.",
+                Op::Unregister {
+                    service: "pods".into(),
+                },
+            ),
         ]
     }
 }

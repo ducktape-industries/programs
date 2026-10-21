@@ -79,6 +79,7 @@ pub enum Query {
     #[tool_query(description = "The validators a frame signed by key votes for: key itself when it is one, else the validators whose node keys sit on active program accounts that key's account manages. Empty: key does not vote.", example = crate::tools::voices)]
     Voices { key: Vec<u8> },
     #[ask(Reply::QueryPolicy(QueryPolicy))]
+    #[tool_query(description = "Which queries the network answers: Signed, only queries signed by a key, or Open, unsigned ones too; a network founded before the policy existed answers Signed.", example = crate::tools::query_policy)]
     QueryPolicy,
 }
 
