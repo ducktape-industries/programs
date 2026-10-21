@@ -4,13 +4,7 @@ use borsh_json::{Interface, decode, encode, variants};
 
 // Programs whose ops and queries are not described yet. Each leaves the list as its enums derive
 // `Described`, and from then on every op and query it has is held to its schema.
-const UNDESCRIBED: &[&str] = &[
-    "blobs",
-    "awaits",
-    "ownership",
-    "attribution",
-    "actions-pods",
-];
+const UNDESCRIBED: &[&str] = &["blobs", "awaits", "ownership", "attribution"];
 
 fn every() -> impl Iterator<Item = &'static str> {
     founding::PROGRAMS

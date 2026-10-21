@@ -1,4 +1,5 @@
 //! The program: it registers with actions in `init`, then awaits egress as each check runs.
+use ::program::tools::Tools;
 use ::program::{Awaiting, Ctx, Error, ExecCtx, Program, QueryCtx, Reply as Wanted, decoded};
 
 use crate::rules::{
@@ -13,6 +14,10 @@ impl Program for ActionsPods {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+
+    fn tools() -> Tools {
+        Tools::of::<Op, Query>()
+    }
 
     fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
         let config: Config = decoded(PROGRAM, "Config", params)?;
