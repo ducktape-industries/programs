@@ -1,7 +1,6 @@
-# The programs CI, minimal but mechanical (orthory, #engineering 912/913): rustfmt, the agents
-# lint, clippy -D warnings on the workspace and on the feature sets crates build; no tests, which
-# wait for a release cut. gates.sh (GATES=check) from the forge repo tools at its main head runs
-# them in one pod, cloned from the forge this repository's own clone came from (J-033, J-062).
+# The programs CI, minimal but mechanical (orthory, #engineering 912/913): rustfmt, the agents lint, clippy -D warnings on the
+# workspace and on the feature sets crates build, then core's build against this checkout (tools' cross-pin.sh); no tests, which
+# wait for a release cut. Both scripts come from the forge repo tools at its main head, in one pod.
 name = "gates"
 
 [on]
@@ -17,16 +16,19 @@ id = "gates"
 runs-on = ["pods"]
 # What the pod asks: the quota queues a check that does not fit, and cargo runs as many jobs as
 # CPUs. The target dir is memory-backed scratch (gates.sh puts it at /var/tmp/target), so the
-# build never writes the node's disk; memory covers that target and the compile: a check run's
-# pod peaked at 3.4 GiB (its target 1.3 GiB) in CI.
+# build never writes the node's disk; memory covers that target and the compile: the pod peaks at
+# 11.14 GiB in CI, and core's cross-pin build peaks below gates in the same pod. gates' target goes
+# before cross-pin builds core in the same scratch, so the two targets never add up.
 cpu = "16"
-memory = "4Gi"
+memory = "12Gi"
 scratch = ["/var/tmp/target"]
-image = "localhost:5000/toolchain:f8ff9f00de3f@sha256:bbdcb20bbddd8035fd9a9fc0acf03330e0b4f5d00b05292bed7fd8279306b25c"
+image = "localhost:5000/toolchain:7f9624172067@sha256:f531db41e1e29d000e80a8f7c59c31a7d4a8f6859f87abdc13dd22e7a0f64ba8"
 steps = [
     "git config --global --add safe.directory '*'",
     "git clone -q \"$(git remote get-url origin | sed 's#/forge/programs$#/forge/tools#')\" /var/tmp/tools",
     "sh /var/tmp/tools/gates.sh /work/programs",
+    "rm -rf /var/tmp/target/*",
+    "sh /var/tmp/tools/cross-pin.sh /work/programs",
 ]
 
 [jobs.env]
