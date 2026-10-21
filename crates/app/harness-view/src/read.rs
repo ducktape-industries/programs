@@ -305,15 +305,17 @@ pub(crate) async fn detail(host: Host, agent: u64, rooms: Rooms) -> Result<Detai
         }
         None => None,
     };
-    let threads = host
-        .query_all(|after| harness::ask::Threads {
+    let conversations = host
+        .query_all(|after| harness::ask::Conversations {
             agent,
             page: page(after),
         })
         .await?;
     let listen = setup.as_ref().and_then(|setup| setup.configured.config());
     let listen = listen.map_or(&[][..], |(_, config)| &config.listen[..]);
-    let places = threads.iter().filter_map(|thread| room_of(&thread.place));
+    let places = conversations
+        .iter()
+        .filter_map(|conversation| room_of(&conversation.row.place));
     let channels = places.chain(listen.iter().map(String::as_str));
     name_rooms(&host, &rooms, channels.collect()).await?;
     let bound = host
@@ -332,12 +334,12 @@ pub(crate) async fn detail(host: Host, agent: u64, rooms: Rooms) -> Result<Detai
         .collect();
     let mut used = Vec::new();
     let mut topics = HashMap::new();
-    for thread in threads {
-        let usage = tally(&host, thread.id).await?.usage;
-        if let Some(topic) = topic(&host, thread.id).await? {
-            topics.insert(thread.id, topic);
+    for conversation in conversations {
+        if let Some(topic) = conversation.topic {
+            topics.insert(conversation.row.id, topic);
         }
-        used.push((thread, usage));
+        let usage = conversation.tally.map(|tally| tally.usage);
+        used.push((conversation.row, usage.unwrap_or_default()));
     }
     let tools = host.query(harness::ask::Tools).await?;
     Ok(Detail {

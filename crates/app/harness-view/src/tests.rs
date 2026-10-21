@@ -637,6 +637,28 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             harness::Query::ProviderRoutes { .. } => {
                 harness::Reply::ProviderRoutes(page(net.routes.clone()))
             }
+            harness::Query::Conversations { agent, .. } => {
+                let mut threads: Vec<ThreadRow> = net
+                    .threads
+                    .iter()
+                    .filter(|thread| thread.agent == agent)
+                    .cloned()
+                    .collect();
+                threads.sort_by_key(|thread| u64::MAX - thread.id);
+                let conversations = threads.into_iter().map(|row| {
+                    let mut tally = harness::Tally::default();
+                    for (_, frame) in net.frames.iter().filter(|(id, _)| *id == row.id) {
+                        tally.count(&frame.body);
+                    }
+                    let topic = net.topics.iter().find(|(id, _)| *id == row.id);
+                    harness::Conversation {
+                        topic: topic.map(|(_, topic)| topic.clone()),
+                        row,
+                        tally: Some(tally),
+                    }
+                });
+                harness::Reply::Conversations(page(conversations.collect()))
+            }
             harness::Query::FinalErrors { agent, .. } => harness::Reply::FinalErrors(page(
                 net.failing
                     .iter()

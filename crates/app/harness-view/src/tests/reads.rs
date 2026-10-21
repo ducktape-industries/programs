@@ -66,10 +66,23 @@ fn the_agent_screen_adds_up_its_usage_from_tallies_and_reads_no_frames() {
     let frames = frames_asked(&cx);
     assert!(frames.is_empty(), "{frames:?}");
     let asked = cx.host().requests::<Query<harness::Harness>>();
-    for thread in [7, 3] {
-        let tally = harness::Query::Tally { thread };
-        assert!(asked.contains(&tally), "{asked:?}");
-    }
+    let listed = asked
+        .iter()
+        .filter(|query| matches!(query, harness::Query::Conversations { agent: SCOUT, .. }));
+    assert!(listed.count() > 0, "{asked:?}");
+    let each = asked.iter().filter(|query| {
+        matches!(
+            query,
+            harness::Query::Threads { .. }
+                | harness::Query::Tally { .. }
+                | harness::Query::Topic { .. }
+        )
+    });
+    assert_eq!(
+        each.count(),
+        0,
+        "one read, never one per conversation: {asked:?}"
+    );
 }
 
 #[test]

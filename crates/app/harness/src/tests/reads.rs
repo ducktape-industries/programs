@@ -16,6 +16,24 @@ fn added_up(chain: &MockChain, thread: u64) -> Tally {
     tally
 }
 
+fn topic_of(chain: &MockChain, thread: u64) -> Option<String> {
+    let Reply::Topic(topic) = chain.query(PROGRAM, &Query::Topic { thread }).unwrap() else {
+        panic!()
+    };
+    topic
+}
+
+fn conversations(world: &World) -> Vec<Conversation> {
+    let asked = Query::Conversations {
+        agent: world.agent,
+        page: PageRequest::default(),
+    };
+    let Reply::Conversations(page) = world.chain.query(PROGRAM, &asked).unwrap() else {
+        panic!()
+    };
+    page.items
+}
+
 fn span(chain: &MockChain, thread: u64, from: u64, page: PageRequest) -> PageResponse<Frame> {
     let asked = Query::FramesFrom { thread, from, page };
     let Reply::Frames(span) = chain.query(PROGRAM, &asked).unwrap() else {
@@ -50,6 +68,129 @@ fn a_tally_keeps_what_the_turns_used_and_each_summary_as_they_are_recorded() {
     let two = tally(chain, thread);
     assert_eq!((two.usage, two.summaries), (one.usage, 1));
     assert_eq!(two, added_up(chain, thread));
+}
+
+#[test]
+fn conversations_answers_each_row_with_its_topic_and_tally_in_the_order_threads_does() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "remember the plan", Some(WINDOW));
+    chain.at(3, 0);
+    let call = tool_use("toolu_t", "thread_topic", json!({ "topic": "the plan" }));
+    model_says(chain, json!([call]), "tool_use");
+    chain.at(4, 0);
+    relay_back(chain, "toolu_t");
+    chain.at(5, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Noted." }]),
+        "end_turn",
+    );
+    let fork = Op::ForkThread { agent: world.agent };
+    let output = chain.submit(signed(ADA), PROGRAM, &fork).unwrap();
+    let forked: u64 = abi::decode(&output).unwrap();
+    let read = conversations(&world);
+    let rows: Vec<ThreadRow> = read.iter().map(|each| each.row.clone()).collect();
+    let ids: Vec<u64> = rows.iter().map(|row| row.id).collect();
+    assert_eq!(ids, [forked, thread]);
+    assert_eq!(rows, world.threads());
+    for each in &read {
+        let id = each.row.id;
+        assert_eq!(each.tally, Some(tally(chain, id)), "conversation {id}");
+        assert_eq!(each.topic, topic_of(chain, id), "conversation {id}");
+    }
+    let first = &read[1];
+    assert_eq!(first.topic.as_deref(), Some("the plan"));
+    let kept = first.tally.expect("a conversation that turned is tallied");
+    assert!(kept.usage.input > 0, "{kept:?}");
+}
+
+fn adopt_tallies(chain: &MockChain, after: Option<Vec<u8>>, limit: u64) -> Option<Vec<u8>> {
+    let adopt = Op::AdoptTallies { after, limit };
+    abi::decode(&chain.submit(signed(BO), PROGRAM, &adopt).unwrap()).unwrap()
+}
+
+#[test]
+fn adopt_tallies_tallies_each_untallied_conversation_once_and_conversations_reads_rows_alone() {
+    let world = world();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "hello", Some(WINDOW));
+    chain.at(3, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Hi." }]),
+        "end_turn",
+    );
+    let fork = Op::ForkThread { agent: world.agent };
+    let output = chain.submit(signed(ADA), PROGRAM, &fork).unwrap();
+    let forked: u64 = abi::decode(&output).unwrap();
+    let kept: Vec<Option<Tally>> = conversations(&world)
+        .into_iter()
+        .map(|each| each.tally)
+        .collect();
+    assert_eq!(
+        kept,
+        [Some(tally(chain, forked)), Some(tally(chain, thread))],
+        "a fork is tallied as it copies"
+    );
+    for id in [forked, thread] {
+        chain
+            .host(PROGRAM)
+            .borrow_mut()
+            .state
+            .remove(&TALLIES.key(&id));
+    }
+    let untallied: Vec<Option<Tally>> = conversations(&world)
+        .into_iter()
+        .map(|each| each.tally)
+        .collect();
+    assert_eq!(
+        untallied,
+        [None, None],
+        "an untallied conversation adds up no frames"
+    );
+    let mut after = adopt_tallies(chain, None, 10);
+    let one_run: Vec<bool> = conversations(&world)
+        .into_iter()
+        .map(|each| each.tally.is_some())
+        .collect();
+    assert_eq!(
+        one_run,
+        [false, true],
+        "a run tallies one conversation, the oldest, however many it may walk"
+    );
+    assert!(after.is_some(), "it resumes after the one it tallied");
+    let mut runs = 1;
+    while after.is_some() {
+        after = adopt_tallies(chain, after, 10);
+        runs += 1;
+    }
+    assert_eq!(runs, 3, "one run each, then one that finds none left");
+    let adopted: Vec<Option<Tally>> = conversations(&world)
+        .into_iter()
+        .map(|each| each.tally)
+        .collect();
+    let added = [Some(added_up(chain, forked)), Some(added_up(chain, thread))];
+    assert_eq!(adopted, added);
+    let marked = Tally {
+        summaries: 7,
+        ..Tally::default()
+    };
+    chain
+        .host(PROGRAM)
+        .borrow_mut()
+        .state
+        .insert(TALLIES.key(&thread), abi::encode(&marked));
+    assert_eq!(adopt_tallies(chain, None, 10), None);
+    let again: Vec<Option<Tally>> = conversations(&world)
+        .into_iter()
+        .map(|each| each.tally)
+        .collect();
+    let kept = [Some(added_up(chain, forked)), Some(marked)];
+    assert_eq!(
+        again, kept,
+        "a second backfill leaves every kept row as it is"
+    );
 }
 
 #[test]

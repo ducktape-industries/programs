@@ -198,6 +198,7 @@ pub(crate) fn fork_thread(ctx: &ExecCtx, number: AccountNumber) -> Result<(), Er
     let opening = Opening::Fork { from: from.id };
     let mut row = open(ctx, &agent, from.place.clone(), &opening)?;
     copied(ctx, &from, &mut row)?;
+    crate::tallies::kept(ctx, row.id)?;
     THREADS.put(ctx, &row.id, &row);
     retire(ctx, from.id)?;
     ctx.set_return_data(abi::encode(&row.id));

@@ -162,6 +162,8 @@ pub enum Op {
     },
     #[tool_op(description = "Remove a provider's route. Its owner, or whom the owner lists.", example = examples::remove_route)]
     RemoveRoute { provider: String },
+    #[tool_op(description = "One-time backfill of tallies: walks at most limit conversations after the cursor and tallies the first one that has none, added up from its frames, so a run reads one transcript at most, as Tally and ForkThread do. Anyone may; a run that finds every conversation tallied writes nothing. Returns the key to resume after, or null when done.", returns = Option<Vec<u8>>, example = examples::adopt_tallies)]
+    AdoptTallies { after: Option<Vec<u8>>, limit: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -631,6 +633,13 @@ pub struct ThreadRow {
     pub compact_before: Option<u64>,
     pub last_height: u64,
     pub last_time: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Conversation {
+    pub row: ThreadRow,
+    pub topic: Option<String>,
+    pub tally: Option<Tally>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1136,6 +1145,13 @@ pub enum Query {
     #[reads(state::THREADS, state::RUNS)]
     #[tool_query(description = "The posts a conversation's agent goes on hearing after a mention, one run per chat room: whose posts, the message that mentioned the agent, and the last post heard since. A post by anyone else ends a run.", example = examples::runs)]
     Runs { thread: u64 },
+    #[ask(Reply::Conversations(PageResponse<Conversation>))]
+    #[reads(state::BY_AGENT, state::THREADS, state::TOPICS, state::TALLIES)]
+    #[tool_query(description = "An agent's conversations, newest first, each with its topic and its token and cost tally as harness keeps it, in one read; a conversation not tallied yet answers null, and AdoptTallies tallies those.", example = examples::conversations)]
+    Conversations {
+        agent: AccountNumber,
+        page: PageRequest,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1172,6 +1188,7 @@ pub enum Reply {
     ProviderRoutes(PageResponse<ProviderRouteRow>),
     FinalErrors(PageResponse<FinalError>),
     Runs(Vec<RunRow>),
+    Conversations(PageResponse<Conversation>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -1406,6 +1423,10 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Remove provider {provider}'s route"),
             vec![field("provider", Value::text(provider))],
         ),
+        Op::AdoptTallies { limit, .. } => (
+            "Tally the conversations that have no tally yet".to_owned(),
+            vec![field("limit", Value::count(*limit))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -1448,6 +1469,7 @@ fn op_variants_only_append() {
             "Filed",
             "SetRoute",
             "RemoveRoute",
+            "AdoptTallies",
         ]
     );
 }
@@ -1493,7 +1515,8 @@ fn query_variants_only_append() {
             "ProviderRoute",
             "ProviderRoutes",
             "FinalErrors",
-            "Runs"
+            "Runs",
+            "Conversations"
         ]
     );
 }

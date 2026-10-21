@@ -308,3 +308,17 @@ pub(crate) fn final_errors() -> Query {
 pub(crate) fn runs() -> Query {
     Query::Runs { thread: 144 }
 }
+
+pub(crate) fn conversations() -> Query {
+    Query::Conversations {
+        agent: 21,
+        page: page(),
+    }
+}
+
+pub(crate) fn adopt_tallies() -> Op {
+    Op::AdoptTallies {
+        after: None,
+        limit: 100,
+    }
+}

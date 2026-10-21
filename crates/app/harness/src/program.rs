@@ -105,6 +105,9 @@ impl Program for Harness {
                 crate::failures::of_agent(ctx, agent, &page)?,
             )),
             Query::Runs { thread } => Ok(Reply::Runs(crate::runs::runs(ctx, thread)?)),
+            Query::Conversations { agent, page } => Ok(Reply::Conversations(
+                queries::conversations(ctx, agent, &page)?,
+            )),
         }
     }
 }
@@ -152,6 +155,7 @@ impl Awaiting for Harness {
                 crate::providers::set_route(&ctx, provider, services)
             }
             Op::RemoveRoute { provider } => crate::providers::remove_route(&ctx, provider),
+            Op::AdoptTallies { after, limit } => tallies::adopt(&ctx, after, limit),
         }
     }
 }

@@ -1,14 +1,14 @@
-//! Every read: an agent, a thread, an agent's threads and bound conversations, a transcript or a
-//! span of it from a frame on, held input, tool calls or one call, the tool catalog, a place's
-//! last thread, withheld frames with their size, a streaming reply and a topic.
+//! Every read: an agent, a thread, an agent's threads (alone or with topic and tally) and bound
+//! ones, a transcript or a span of it from a frame on, held input, tool calls or one call, the tool
+//! catalog, a place's last thread, withheld frames with their size, a streaming reply and a topic.
 use ::program::{Error, QueryCtx, corrupt};
 use abi::role::identity::AccountNumber;
 use store::{PageRequest, PageResponse};
 
 use crate::state::{
-    BOUND, BY_AGENT, CALLS, FRAMES, HELD, PLACES, SETTLING, THREADS, TOPICS, WITHHELD,
+    BOUND, BY_AGENT, CALLS, FRAMES, HELD, PLACES, SETTLING, TALLIES, THREADS, TOPICS, WITHHELD,
 };
-use crate::{Body, CallRow, Frame, Partial, SettleWindow, ThreadRow, WithheldFrame};
+use crate::{Body, CallRow, Conversation, Frame, Partial, SettleWindow, ThreadRow, WithheldFrame};
 
 pub(crate) fn partial(ctx: &QueryCtx, thread: u64) -> Result<Option<Partial>, Error> {
     crate::replies::read(ctx, thread)
@@ -49,6 +49,22 @@ pub(crate) fn threads(
     BY_AGENT
         .range_of(ctx, &agent, page)?
         .try_map(|(_, key)| named(ctx, u64::MAX - key, "an agent names a thread that is gone"))
+}
+
+pub(crate) fn conversations(
+    ctx: &QueryCtx,
+    agent: AccountNumber,
+    page: &PageRequest,
+) -> Result<PageResponse<Conversation>, Error> {
+    BY_AGENT.range_of(ctx, &agent, page)?.try_map(|(_, key)| {
+        let id = u64::MAX - key;
+        let row = named(ctx, id, "an agent names a thread that is gone")?;
+        Ok(Conversation {
+            row,
+            topic: TOPICS.get(ctx, &id)?,
+            tally: TALLIES.get(ctx, &id)?,
+        })
+    })
 }
 
 pub(crate) fn bound(
