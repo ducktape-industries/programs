@@ -363,5 +363,5 @@ it leaves out is dropped. A client names the height it asks about:
 `ProgramsAt`, `ViewsAt` and `HooksAt { at_height }` answer the lists at block
 `at_height` (0 is genesis, not now), and `Roster` answers at the query's own
 height. `At` and `Hooks` are the kernel's role queries and answer the same;
-`Views(height)` is retired for `ViewsAt` and still answers. A refusal of validators' `Members` stops the
-node.
+`Views(height)` is retired: its tag answers no query, and `ViewsAt` lists the
+view-only entries. A refusal of validators' `Members` stops the node.

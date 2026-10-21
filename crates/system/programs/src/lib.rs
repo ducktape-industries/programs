@@ -143,6 +143,8 @@ pub enum Op {
     ::program::Described,
 )]
 #[ask(Programs)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Query {
     #[ask(Reply::Programs(Vec<Entry>))]
     #[tool_query(description = "The programs that run at block height, each with its code and params: 0 is genesis, not now.", example = crate::examples::at)]
@@ -155,14 +157,9 @@ pub enum Query {
     #[ask(Reply::Program { height: u64, entry: Option<Entry> })]
     #[tool_query(description = "One program that runs now, with its code and params, or null; and the query's height.", example = crate::examples::program)]
     Program(ProgramId),
-    // Retired for `ViewsAt`, which names its height; still answered. The view-only entries at a
-    // height, by name.
-    #[ask(Reply::Views(Vec<View>))]
-    #[tool_query(description = "Retired for ViewsAt, which names its height; still answered: the view-only entries at block height.", example = crate::examples::views)]
-    Views(u64),
     #[ask(Reply::Roles(abi::Roles))]
     #[tool_query(description = "Which program fills each role now.", example = crate::examples::roles)]
-    Roles,
+    Roles = 4,
     #[ask(Reply::Hooks(Vec<ProgramId>))]
     #[tool_query(description = "The hooks at block height.", example = crate::examples::hooks)]
     Hooks(u64),

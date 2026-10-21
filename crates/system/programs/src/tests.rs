@@ -343,7 +343,7 @@ fn the_schedule_pages_in_height_order_and_a_cancel_removes_one_change() {
 fn views(store: &MockHost, height: u64) -> Vec<(String, BlobId)> {
     match Programs::query(
         &store.query(env(height, Origin::Root)),
-        Query::Views(height),
+        Query::ViewsAt { at_height: height },
     )
     .unwrap()
     {
@@ -720,7 +720,6 @@ fn a_list_at_a_named_height_answers_as_the_kernels_queries_do() {
     for at_height in [0, 4, 5, 6] {
         let pairs = [
             (Query::ProgramsAt { at_height }, Query::At(at_height)),
-            (Query::ViewsAt { at_height }, Query::Views(at_height)),
             (Query::HooksAt { at_height }, Query::Hooks(at_height)),
         ];
         for (named, unnamed) in pairs {
@@ -732,4 +731,24 @@ fn a_list_at_a_named_height_answers_as_the_kernels_queries_do() {
         ask(Query::ViewsAt { at_height: 7 }),
         "0 is genesis, not the query's own height"
     );
+}
+
+#[test]
+fn the_retired_views_tag_is_no_query_and_the_live_ones_keep_theirs() {
+    let (store, _) = founded();
+    let retired = [&[3u8][..], &borsh::to_vec(&7u64).unwrap()].concat();
+    let refused =
+        ::program::query::<Programs>(&store.query(env(7, Origin::Root)), &retired).unwrap_err();
+    assert_eq!(refused.code, code::INVALID_INPUT, "{refused:?}");
+    let undecoded = refused
+        .message
+        .starts_with(&format!("{}: Query did not decode: ", crate::PROGRAM));
+    assert!(undecoded, "{refused:?}");
+    let tag = |query: &Query| borsh::to_vec(query).unwrap()[0];
+    let live = [
+        tag(&Query::Roles),
+        tag(&Query::ViewsAt { at_height: 7 }),
+        tag(&Query::HooksAt { at_height: 7 }),
+    ];
+    assert_eq!(live, [4, 10, 11]);
 }

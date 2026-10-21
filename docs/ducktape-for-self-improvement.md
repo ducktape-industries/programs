@@ -420,7 +420,7 @@ network_query {"program": "programs", "query": {"Sources": null}}
 5. **Check it landed.** Past the height, `Program` names your code id and `Sources` names your commit.
 6. **Roll back** the same way: `ScheduleOver` a `Set` of the code id you kept in step 2, with `expected` your own code id. A new program goes with `{"Remove": "tally"}`, expected your code id too. A removal drops the program's state and keeps its holder: a later `Set` of the same id admits it fresh, `init` and all, with nothing it kept before.
 
-Who may change an id: its holder (`{"Owner": "tally"}`). A free id belongs to the first account that schedules it, and `Own` hands an id on. A program that fills a role changes only by the validators' vote, as a `Publish` with its roles ([roles.md](roles.md), "Updating a program"). A view alone is listed with `{"SetView": {"name": "tally", "view": {"Sha256": "<id>"}}}` and checked with `{"Views": <height>}`.
+Who may change an id: its holder (`{"Owner": "tally"}`). A free id belongs to the first account that schedules it, and `Own` hands an id on. A program that fills a role changes only by the validators' vote, as a `Publish` with its roles ([roles.md](roles.md), "Updating a program"). A view alone is listed with `{"SetView": {"name": "tally", "view": {"Sha256": "<id>"}}}` and checked with `{"ViewsAt": {"at_height": <height>}}`.
 
 ## 10. Take another network's release
 

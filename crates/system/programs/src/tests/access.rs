@@ -124,7 +124,7 @@ fn code_at(store: &MockHost, height: u64, program: &str) -> Option<BlobId> {
 fn views_at(store: &MockHost, height: u64) -> Vec<String> {
     match Programs::query(
         &store.query(env(height, Origin::Root)),
-        Query::Views(height),
+        Query::ViewsAt { at_height: height },
     )
     .unwrap()
     {

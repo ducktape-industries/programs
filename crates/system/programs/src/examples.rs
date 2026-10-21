@@ -61,10 +61,6 @@ pub(crate) fn program() -> Query {
     Query::Program(chat())
 }
 
-pub(crate) fn views() -> Query {
-    Query::Views(AT)
-}
-
 pub(crate) fn roles() -> Query {
     Query::Roles
 }

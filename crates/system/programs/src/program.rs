@@ -46,9 +46,7 @@ impl Program for Programs {
             Query::At(height) | Query::ProgramsAt { at_height: height } => {
                 Reply::Programs(at(ctx, height)?)
             }
-            Query::Views(height) | Query::ViewsAt { at_height: height } => {
-                Reply::Views(views_at(ctx, height)?)
-            }
+            Query::ViewsAt { at_height: height } => Reply::Views(views_at(ctx, height)?),
             Query::Scheduled { page } => {
                 let PageResponse {
                     height,
