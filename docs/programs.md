@@ -507,8 +507,13 @@ a one-time open op, `AdoptOwners { kind, after, limit }`, that records them
 (J-011 ⑥): anyone sends it, it answers where the next batch starts and sends
 the program the same op, and that run sends the ownership role `Adopt` with
 each row's owner (from the row's own stored fields) and the policy matching
-what the access program enforces for it today. A record already there is
-left as it is, so running it again changes nothing. egress's services wait
+what the access program enforces for it today. In chat and forge that run
+also books the next batch for the next block through the scheduler, so one
+call walks the kind to its end. A record already there is left as it is,
+unless it still sits on its owner's built-in Open policy, where the guard's
+old fallback linked every claim made with no default: then it moves to the
+policy access enforces, so no row is wider than access kept it. Running it
+again changes nothing. egress's services wait
 for access's own removal (its `Op` is the kernel's).
 
 ## 6. Talking to other programs

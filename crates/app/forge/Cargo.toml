@@ -30,6 +30,7 @@ store = { path = "../../sdk/store" }
 [dev-dependencies]
 criterion = "=0.8.2"
 access = { path = "../../system/access" }
+scheduler = { path = "../../system/scheduler" }
 sha2 = { version = "0.10", default-features = false }
 
 [[bench]]

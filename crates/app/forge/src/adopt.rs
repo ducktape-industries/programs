@@ -1,8 +1,8 @@
-//! One-time (J-011 ⑥): `AdoptOwners` records an owner for each owned row forge kept before the
-//! ownership role was seated, linked to the policy matching what the access program enforces for
-//! it today. Goes once duckpond has run it.
+//! One-time: `AdoptOwners` links each owned row forge keeps with no owner record, or on its
+//! owner's built-in Open, to the policy matching what the access program enforces for it now, one
+//! page a block until the last. Goes once duckpond has run it.
 use ::program::{Error, ExecCtx, Reply, invalid};
-use ownership::{Adopted, Rule, adopt, by_itself, owner_of, rule_of, writers_of};
+use ownership::{Adopted, Rule, adopt, again_next_block, by_itself, owner_of, rule_of, writers_of};
 
 use crate::PROGRAM;
 use crate::contract::{Op, change_key, repo_key};
@@ -34,9 +34,10 @@ pub(crate) fn adopt_owners(
     }
     let today = |key: &str| writers_of(ctx, PROGRAM, key, |at| resource(ctx, at));
     let mut items = Vec::new();
-    match kind {
+    let next = match kind {
         "forge.review" => {
-            for (row, review) in REVIEWS.batch(ctx, at, limit)?.rows {
+            let page = REVIEWS.batch(ctx, at, limit)?;
+            for (row, review) in page.rows {
                 items.push(Adopted {
                     key: REVIEWS.key(&row),
                     owner: owner_of(&review.author, PROGRAM),
@@ -44,9 +45,11 @@ pub(crate) fn adopt_owners(
                     rule: Rule::Open,
                 });
             }
+            page.next
         }
         "forge.change" => {
-            for ((repo, n), change) in CHANGES.batch(ctx, at, limit)?.rows {
+            let page = CHANGES.batch(ctx, at, limit)?;
+            for ((repo, n), change) in page.rows {
                 let row = (repo.clone(), n);
                 if !AUTHORSHIP.has(ctx, &row) {
                     let author = change.author.clone();
@@ -61,9 +64,11 @@ pub(crate) fn adopt_owners(
                     rule,
                 });
             }
+            page.next
         }
         "forge.repo" => {
-            for (name, repo) in REPOS.batch(ctx, at, limit)?.rows {
+            let page = REPOS.batch(ctx, at, limit)?;
+            for (name, repo) in page.rows {
                 if !CUSTODY.has(ctx, &name) {
                     let owner = repo.owner.clone();
                     CUSTODY.put(ctx, &name, &Custody { owner, rev: 0 });
@@ -77,8 +82,18 @@ pub(crate) fn adopt_owners(
                     rule,
                 });
             }
+            page.next
         }
         other => return Err(invalid(format!("forge keeps no owned kind {other}"))),
-    }
-    adopt(ctx, items)
+    };
+    adopt(ctx, items)?;
+    let Some(after) = next else {
+        return Ok(());
+    };
+    let again = Op::AdoptOwners {
+        kind: kind.to_owned(),
+        after: Some(after),
+        limit,
+    };
+    again_next_block(ctx, &again)
 }

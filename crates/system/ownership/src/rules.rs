@@ -491,18 +491,19 @@ pub(crate) fn only_me_of(ctx: &QueryCtx, owner: &Party) -> Result<Option<PolicyI
     ONLY_ME_POLICIES.get(ctx, &key(owner))
 }
 
-// One-time (J-011 ⑥): the sending program's rows from before the guard, each recorded as its
-// owner's and linked by its rule. A row recorded already is left as it is, unless the program
-// itself holds it (a row it wrote for the migration); so run again, it changes nothing.
 pub(crate) fn adopt(ctx: &ExecCtx, items: Vec<Adopted>) -> Result<(), Error> {
     let program = ctx.env().sending_program()?;
     let itself = Party::Program(program.clone());
     for item in items {
         let at = (program.clone(), item.key);
-        let stale = match RECORDS.get(ctx, &at)? {
-            Some(record) if !is(ctx, &itself, &record.owner)? => continue,
-            stale => stale,
+        let stale = RECORDS.get(ctx, &at)?;
+        let kept = match &stale {
+            Some(record) => !adopts_again(ctx, &itself, record, &item.owner)?,
+            None => false,
         };
+        if kept {
+            continue;
+        }
         let policy = match item.rule {
             Rule::Open => open_of(ctx, &item.owner)?,
             Rule::OwnerOnly => only_me(ctx, &item.owner)?,
@@ -512,19 +513,35 @@ pub(crate) fn adopt(ctx: &ExecCtx, items: Vec<Adopted>) -> Result<(), Error> {
                 by,
             } => converted(ctx, &program, listed, write, &by)?,
         };
-        let (program, key) = at.clone();
-        if let Some(stale) = stale {
-            LINKED.remove(ctx, &(stale.policy, program.clone(), key.clone()));
-        }
-        LINKED.insert(ctx, &(policy, program, key));
         let record = Record {
             owner: item.owner,
             policy,
             kind: item.kind,
         };
+        if stale.as_ref() == Some(&record) {
+            continue;
+        }
+        let (program, key) = at.clone();
+        if let Some(stale) = stale {
+            LINKED.remove(ctx, &(stale.policy, program.clone(), key.clone()));
+        }
+        LINKED.insert(ctx, &(policy, program, key));
         RECORDS.put(ctx, &at, &record);
     }
     Ok(())
+}
+
+fn adopts_again(
+    ctx: &QueryCtx,
+    itself: &Party,
+    record: &Record,
+    owner: &Party,
+) -> Result<bool, Error> {
+    if is(ctx, itself, &record.owner)? {
+        return Ok(true);
+    }
+    let left_open = OPEN.get(ctx, &key(&record.owner))? == Some(record.policy);
+    Ok(left_open && record.owner == *owner)
 }
 
 fn only_me(ctx: &ExecCtx, owner: &Party) -> Result<PolicyId, Error> {

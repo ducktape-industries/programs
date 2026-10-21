@@ -169,8 +169,7 @@ pub enum Op {
         channel_id: String,
         notices: Option<Notices>,
     } = 16,
-    // one-time (J-011 ⑥): records owners for chat's owned rows from before the guard
-    #[tool_op(description = "One-time backfill of owners for chat's rows written before ownership was recorded, a page at a time; returns the key to resume after, or null when done.", returns = Option<Vec<u8>>, example = examples::adopt)]
+    #[tool_op(description = "One-time backfill of owners for chat's rows with no owner record, or left on their owner's built-in Open, linked as the access program enforces them now. It walks on by itself, one page a block from after; returns the key the next page starts after, or null when that was the last.", returns = Option<Vec<u8>>, example = examples::adopt)]
     AdoptOwners {
         kind: String,
         after: Option<Vec<u8>>,

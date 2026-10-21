@@ -192,8 +192,7 @@ pub enum Op {
     },
     #[tool_op(description = "Take change n out of its target's merge queue. Whoever the repository's policy admits.", example = crate::examples::dequeue)]
     Dequeue { repo: String, n: u64 },
-    // one-time (J-011 ⑥): records owners for forge's owned rows from before the guard
-    #[tool_op(description = "One-time backfill of owners for forge's rows from before ownership was recorded, a page at a time; returns the key to resume after, or null when done.", returns = Option<Vec<u8>>, example = crate::examples::adopt)]
+    #[tool_op(description = "One-time backfill of owners for forge's rows with no owner record, or left on their owner's built-in Open, linked as the access program enforces them now. It walks on by itself, one page a block from after; returns the key the next page starts after, or null when that was the last.", returns = Option<Vec<u8>>, example = crate::examples::adopt)]
     AdoptOwners {
         kind: String,
         after: Option<Vec<u8>>,

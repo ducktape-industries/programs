@@ -120,3 +120,15 @@ pub fn adopt(ctx: &ExecCtx, items: Vec<Adopted>) -> Result<(), Error> {
     ctx.emit(role, &Op::Adopt { items }, Reply::None);
     Ok(())
 }
+
+pub fn again_next_block(ctx: &ExecCtx, op: &impl BorshSerialize) -> Result<(), Error> {
+    let env = ctx.env();
+    let scheduler = env.role(abi::role::SCHEDULER)?.clone();
+    let next = abi::role::scheduler::Op::Schedule {
+        height: env.height.saturating_add(1),
+        target: env.program.clone(),
+        payload: abi::encode(op),
+    };
+    ctx.emit(scheduler, &next, Reply::None);
+    Ok(())
+}

@@ -311,6 +311,9 @@ fn adopt_owners_records_forges_rows_from_before_the_guard_as_access_enforces_the
     sandbox
         .chain
         .seat::<ownership::Ownership>(ownership::PROGRAM);
+    sandbox
+        .chain
+        .seat::<scheduler::Scheduler>(scheduler::PROGRAM);
     let adopt = |kind: &str, after: Option<Vec<u8>>, limit| -> Option<Vec<u8>> {
         let op = Op::AdoptOwners {
             kind: kind.into(),

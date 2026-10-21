@@ -12,7 +12,7 @@ use std::fmt;
 
 use ::program::{AccountNumber, ProgramId};
 use abi::role::ownership::Guard;
-pub use adopt::{Adopted, Rule, adopt, by_itself, owner_of, rule_of, writers_of};
+pub use adopt::{Adopted, Rule, adopt, again_next_block, by_itself, owner_of, rule_of, writers_of};
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 pub use program::Ownership;
 use rules::{DEFAULTS, LINKED, ONLY_ME_POLICIES, OPEN, OWNED, POLICIES, RECORDS};

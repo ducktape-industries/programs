@@ -622,3 +622,87 @@ fn todays_access_answer_reads_as_a_rule() {
         }
     );
 }
+
+#[test]
+fn a_record_left_on_its_owners_open_policy_moves_to_todays_rule_and_no_other_record_does() {
+    let chain = adopting();
+    send(
+        &chain,
+        &Adopting::Adopt(vec![item("n/seed", ADA, Rule::Open)]),
+    )
+    .unwrap();
+    let Reply::Open(Some(open)) = ask(&chain, Query::Open { owner: ADA }) else {
+        panic!("an open row makes its owner's open policy");
+    };
+    default(&chain, "ada", Scope::Global, Some(open));
+    let keys = [
+        "n/fallback",
+        "n/kept",
+        "n/listed",
+        "n/narrowed",
+        "n/given",
+        "n/claimed",
+    ];
+    for key in keys {
+        send(&chain, &Adopting::Write(key.into())).unwrap();
+        assert_eq!(adopted(&chain, key).0.policy, open, "{key}");
+    }
+    default(&chain, "ada", Scope::Global, None);
+    let mine = made(&chain, "ada", "mine", Writers::Owner);
+    let relink = Op::Relink {
+        program: "adopter".into(),
+        key: b"n/narrowed".to_vec(),
+        policy: mine,
+    };
+    act(&chain, "ada", &relink).unwrap();
+    let transfer = Op::Transfer {
+        program: "adopter".into(),
+        key: b"n/given".to_vec(),
+        to: BOB,
+    };
+    act(&chain, "ada", &transfer).unwrap();
+    let room = Rule::List {
+        at: "room".into(),
+        write: Writers::Listed(vec![BOB]),
+        by: ADA,
+    };
+    let items = vec![
+        item("n/fallback", ADA, Rule::OwnerOnly),
+        item("n/kept", ADA, Rule::Open),
+        item("n/listed", ADA, room),
+        item("n/narrowed", ADA, Rule::Open),
+        item("n/given", BOB, Rule::OwnerOnly),
+        item("n/claimed", BOB, Rule::OwnerOnly),
+    ];
+    let others = ["n/kept", "n/narrowed", "n/given", "n/claimed"];
+    let untouched = others.map(|key| adopted(&chain, key).0);
+    send(&chain, &Adopting::Adopt(items.clone())).unwrap();
+    let Reply::OnlyMe(Some(only)) = ask(&chain, Query::OnlyMe { owner: ADA }) else {
+        panic!("moving a row to Only me makes it");
+    };
+    let fallback = Record {
+        owner: ADA,
+        policy: only,
+        kind: Some("test.old".into()),
+    };
+    assert_eq!(adopted(&chain, "n/fallback").0, fallback);
+    let listed = adopted(&chain, "n/listed").1;
+    assert_eq!(
+        (listed.name.as_str(), &listed.write),
+        ("adopter room (as before)", &Writers::Listed(vec![BOB]))
+    );
+    assert_eq!(others.map(|key| adopted(&chain, key).0), untouched);
+    let write = Adopting::Write("n/fallback".into());
+    let refused = chain.submit(by("bob"), "adopter", &write).unwrap_err();
+    assert_eq!(refused.code, code::UNAUTHORIZED);
+    let page = PageRequest::default();
+    let Reply::Linked(linked) = ask(&chain, Query::Linked { policy: open, page }) else {
+        panic!("Linked answers its items");
+    };
+    let left: Vec<Vec<u8>> = linked.items.into_iter().map(|item| item.key).collect();
+    let expected = ["n/claimed", "n/given", "n/kept", "n/seed"].map(|key| key.as_bytes().to_vec());
+    assert_eq!(left, expected);
+    let settled = keys.map(|key| adopted(&chain, key).0);
+    send(&chain, &Adopting::Adopt(items)).unwrap();
+    assert_eq!(keys.map(|key| adopted(&chain, key).0), settled);
+}

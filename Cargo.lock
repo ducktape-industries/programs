@@ -714,6 +714,7 @@ dependencies = [
  "ownership",
  "program",
  "proptest",
+ "scheduler",
  "serde",
  "store",
  "unicode-normalization",
@@ -2277,6 +2278,7 @@ dependencies = [
  "gitcore",
  "ownership",
  "program",
+ "scheduler",
  "sha2 0.10.9",
  "store",
 ]
