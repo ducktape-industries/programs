@@ -503,6 +503,9 @@ impl Chat {
     /// program declares it; `None`, a reopened node link, reads everything
     /// again.
     pub(crate) fn changed(&mut self, change: Option<&Change>, cx: &mut Context<Self>) {
+        if self.names.failed().is_some() {
+            self.load_names(cx);
+        }
         // the rooms it wrote the row, head or meta of, each read alone; `None`, every room
         self.moved_channels.heard(change);
         self.visited_heard(change);

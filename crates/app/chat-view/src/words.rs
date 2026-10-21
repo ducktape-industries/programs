@@ -124,6 +124,10 @@ pub(crate) fn unreadable_room(why: &str) -> String {
     format!("Couldn’t read this room: {why}")
 }
 
+pub(crate) fn unreadable_names(why: &str) -> String {
+    format!("Couldn’t read who’s who, so people show as account numbers: {why}")
+}
+
 pub(crate) const MESSAGE_DELETED: &str = "Message deleted";
 
 #[cfg(not(feature = "notifier"))]

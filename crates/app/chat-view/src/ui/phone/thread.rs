@@ -34,7 +34,8 @@ pub(super) fn screen(
     let Some(root) = room.thread.as_ref().map(|thread| thread.root) else {
         return page.into_any_element();
     };
-    page.children(parts::room_notice(chat, cx, theme, ladder))
+    page.children(parts::names_notice(chat, theme, ladder))
+        .children(parts::room_notice(chat, cx, theme, ladder))
         .child(timeline::list(chat, Pane::Thread, cx, theme, ladder))
         .child(composer::band(
             chat,

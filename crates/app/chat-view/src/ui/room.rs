@@ -39,11 +39,28 @@ pub fn render(
         false => search_results(chat, cx, theme, ladder).into_any_element(),
     };
     pane.child(header(chat, room, cx, theme, ladder))
+        .children(names_unread(chat, theme))
         .children(notice(chat, cx, theme, ladder))
         .children(confirmation(chat, cx, theme, ladder))
         .children(super::widget::pinned(chat, cx, theme, ladder))
         .child(body)
         .child(compose(chat, room, cx, theme, ladder))
+}
+
+fn names_unread(chat: &Chat, theme: &Theme) -> Option<impl IntoElement> {
+    let refusal = chat.names.failed()?;
+    Some(
+        div()
+            .id("chat-names-unread")
+            .mx_3()
+            .my_2()
+            .p_2()
+            .bg(theme.warning_soft)
+            .text_color(theme.warning)
+            .role(Role::Status)
+            .aria_live(view::accesskit::Live::Polite)
+            .child(words::unreadable_names(&design::sentence(refusal))),
+    )
 }
 
 fn notice(

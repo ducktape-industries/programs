@@ -147,6 +147,23 @@ pub(super) fn small_button(
         )
 }
 
+pub(super) fn names_notice(chat: &Chat, theme: &Theme, ladder: &Ladder) -> Option<AnyElement> {
+    let refusal = chat.names.failed()?;
+    let words = words::unreadable_names(&design::sentence(refusal));
+    Some(
+        notice(
+            "chat-names-unread",
+            NoticeKind::Warning,
+            None,
+            words,
+            None,
+            theme,
+            ladder,
+        )
+        .into_any_element(),
+    )
+}
+
 pub(super) fn room_notice(
     chat: &Chat,
     cx: &mut Context<Chat>,

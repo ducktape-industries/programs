@@ -236,3 +236,47 @@ fn the_roster_is_read_past_its_first_page() {
         assert_eq!(names.name(&Principal::Account(600)), Some("user600"));
     });
 }
+
+#[test]
+fn a_roster_that_would_not_read_says_so_where_names_show_and_reads_again_on_the_next_block() {
+    for touch in [false, true] {
+        let design = if touch { "phone" } else { "desktop" };
+        let mut cx = TestAppContext::new();
+        configure(&mut cx);
+        let refused = std::rc::Rc::new(std::cell::Cell::new(true));
+        let refusing = refused.clone();
+        cx.host()
+            .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| match query {
+                Query::Accounts { .. } if refusing.get() => {
+                    Err(view::host::Error::new("refused", "the node is busy"))
+                }
+                query => Ok(chat_reply(query)),
+            }));
+        let changes = cx.host().stream::<Changes<::chat::Chat>>();
+        cx.open::<Chat>();
+        if touch {
+            cx.simulate_touch(true);
+            cx.simulate_resize(390., 844.);
+        }
+        cx.run_until_parked();
+        seat(&mut cx);
+        cx.simulate_click(match touch {
+            true => "chat-rooms-channel-general",
+            false => "chat-sidebar-channel-general",
+        });
+        cx.run_until_parked();
+        assert!(cx.has_text("account 7"), "{design}: {:?}", cx.texts());
+        assert!(
+            cx.find("chat-names-unread").is_some(),
+            "{design}: names fell back to account numbers and nothing said why"
+        );
+        refused.set(false);
+        changes.send(block(4, posted("general")));
+        cx.run_until_parked();
+        assert!(
+            cx.find("chat-names-unread").is_none(),
+            "{design}: the roster read again on the next block"
+        );
+        assert!(cx.has_text("eddy"), "{design}: {:?}", cx.texts());
+    }
+}

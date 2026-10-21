@@ -35,7 +35,8 @@ pub(super) fn screen(
             None => page,
         },
     };
-    page.children(parts::room_notice(chat, cx, theme, ladder))
+    page.children(parts::names_notice(chat, theme, ladder))
+        .children(parts::room_notice(chat, cx, theme, ladder))
         .children(crate::ui::widget::line(chat, theme, ladder))
         .children(crate::ui::widget::pinned(chat, cx, theme, ladder))
         .child(timeline::list(chat, Pane::Timeline, cx, theme, ladder))
