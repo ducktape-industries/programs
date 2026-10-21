@@ -187,12 +187,7 @@ fn search_needs_every_word_and_tags_page_newest_first() {
     assert_eq!(chat.search("hello there"), [2]);
     let empty = crate::Chat::query(
         &chat.reads(),
-        Query::Search {
-            text: " \t ".into(),
-            viewer: vec![],
-            channel_id: None,
-            page: PageRequest::default(),
-        },
+        text_search(" \t ", None, PageRequest::default()),
     );
     assert_eq!(empty.unwrap_err().code, code::INVALID_INPUT);
     assert_eq!(tagged(&chat, "#WORLD"), [2, 1]);
@@ -344,19 +339,15 @@ fn hits(
     channel: Option<&str>,
     limit: Option<u64>,
 ) -> (Vec<(String, u64)>, bool) {
-    let Reply::Hits(found) = chat.ask(Query::Search {
-        text: text.into(),
-        viewer: vec![],
-        channel_id: channel.map(str::to_owned),
-        page: PageRequest { after: None, limit },
-    }) else {
-        panic!("a search answers hits");
+    let page = PageRequest { after: None, limit };
+    let Reply::TextHits(found) = chat.ask(text_search(text, channel, page)) else {
+        panic!("a text search answers a page of hits");
     };
     let at = found
-        .hits
+        .items
         .iter()
         .map(|row| (row.channel_id.clone(), row.seq));
-    (at.collect(), found.capped)
+    (at.collect(), found.next.is_some())
 }
 
 fn tag_search(tag: &str, channel: Option<&str>, page: PageRequest) -> Query {

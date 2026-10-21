@@ -14,8 +14,8 @@ use crate::ops::{
     set_archived, set_membership, set_meta, undraft,
 };
 use crate::queries::{
-    around, attention, by_id, channel, channels, drafts, names, reactors, roots, search, seen_by,
-    tagged, text_search, thread,
+    around, attention, by_id, channel, channels, drafts, names, reactors, roots, seen_by, tagged,
+    text_search, thread,
 };
 use crate::state::MEMBERS;
 use crate::{Op, Query, Reply};
@@ -194,12 +194,6 @@ impl Program for Chat {
                 let members = MEMBERS.range_of(ctx, &channel_id, &page)?;
                 (Reply::Members(members.map(|(_, member)| member)), vec![])
             }
-            Query::Search {
-                text,
-                viewer,
-                channel_id,
-                page,
-            } => (Reply::Hits(search(ctx, &text, channel_id, &page)?), viewer),
             Query::TagSearch {
                 tag,
                 viewer,

@@ -317,18 +317,6 @@ pub enum Query {
         channel_id: String,
         page: PageRequest,
     },
-    // The messages holding every whitespace-separated term of `text` as
-    // a substring (NFC, case folded), newest first, at most `page.limit`
-    // hits. Answered by walking the messages: chat keeps no search index.
-    #[ask(Reply::Hits(MessageHits))]
-    #[reads(state::HEADS, state::MESSAGES, state::REACTIONS)]
-    #[tool_query(description = "Messages holding every word of text (case folded), newest first, in one channel or all; capped says the walk stopped at page.limit hits.", example = examples::search)]
-    Search {
-        text: String,
-        viewer: Vec<Principal>,
-        channel_id: Option<String>,
-        page: PageRequest,
-    },
     // One page of the messages whose `#tags` hold `tag`, newest first.
     // Answered by walking the messages: chat keeps no tag index.
     #[ask(Reply::TagHits(PageResponse<MsgRow>))]
@@ -339,7 +327,7 @@ pub enum Query {
         viewer: Vec<Principal>,
         channel_id: Option<String>,
         page: PageRequest,
-    },
+    } = 9,
     /// Every account's profile, ascending by number, a page at a time:
     /// the program asks the identity role, so a view links one program. It
     /// reads nothing of chat's: it moves with identity's blocks, which a
@@ -454,8 +442,6 @@ pub enum Query {
         account: AccountNumber,
         rooms: Vec<(String, u64)>,
     },
-    // One page of the messages holding every whitespace-separated term of `text` as a substring
-    // (NFC, case folded), newest first: `Search` with a cursor. Answered by walking the messages.
     #[ask(Reply::TextHits(PageResponse<MsgRow>))]
     #[reads(state::HEADS, state::MESSAGES, state::REACTIONS)]
     #[tool_query(description = "Messages holding every word of text (case folded), newest first, in one channel or all, a page at a time.", example = examples::text_search)]
@@ -498,8 +484,7 @@ pub enum Reply {
         replies: PageResponse<MsgRow>,
     },
     Members(PageResponse<MemberRow>),
-    Hits(MessageHits),
-    TagHits(PageResponse<MsgRow>),
+    TagHits(PageResponse<MsgRow>) = 9,
     Accounts(PageResponse<Profile>),
     Reactors(Vec<ReactedBy>),
     Listening(PageResponse<String>) = 13,
@@ -814,22 +799,6 @@ pub struct ReactedBy {
     pub seq: u64,
     pub emoji: String,
     pub by: Vec<Principal>,
-}
-
-#[derive(
-    BorshSerialize,
-    BorshDeserialize,
-    BorshSchema,
-    Serialize,
-    Deserialize,
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-)]
-pub struct MessageHits {
-    pub hits: Vec<MsgRow>,
-    pub capped: bool,
 }
 
 // Someone answering in a room before they post (`Op::Drafting`): the thread root it answers

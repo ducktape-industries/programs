@@ -33,7 +33,7 @@ const LIVE_OPS: [(&str, i64); 27] = [
     ("Break", 30),
 ];
 
-const LIVE_QUERIES: [(&str, i64); 26] = [
+const LIVE_QUERIES: [(&str, i64); 25] = [
     ("Channels", 0),
     ("Channel", 1),
     ("MessageById", 2),
@@ -42,7 +42,6 @@ const LIVE_QUERIES: [(&str, i64); 26] = [
     ("MessagesAround", 5),
     ("Thread", 6),
     ("Members", 7),
-    ("Search", 8),
     ("TagSearch", 9),
     ("Accounts", 10),
     ("Reactors", 11),
@@ -62,7 +61,7 @@ const LIVE_QUERIES: [(&str, i64); 26] = [
     ("Holders", 26),
 ];
 
-const LIVE_REPLIES: [(&str, i64); 26] = [
+const LIVE_REPLIES: [(&str, i64); 25] = [
     ("Channels", 0),
     ("Channel", 1),
     ("Message", 2),
@@ -71,7 +70,6 @@ const LIVE_REPLIES: [(&str, i64); 26] = [
     ("Messages", 5),
     ("Thread", 6),
     ("Members", 7),
-    ("Hits", 8),
     ("TagHits", 9),
     ("Accounts", 10),
     ("Reactors", 11),
@@ -98,6 +96,7 @@ const SET_NOTICES_TAG: u8 = 16;
 const UNMIGRATED_TAG: u8 = 12;
 const LISTEN_FOR_TAG: u8 = 18;
 const SET_NOTICES_FOR_TAG: u8 = 19;
+const SEARCH_TAG: u8 = 8;
 
 fn encoded<T: BorshSerialize>(value: &T) -> Vec<u8> {
     borsh::to_vec(value).unwrap()
@@ -232,4 +231,25 @@ fn a_listen_for_or_set_notices_for_tag_is_refused_and_writes_nothing() {
         let undecoded = refused.message.starts_with("chat: Op did not decode: ");
         assert!(undecoded, "{refused}");
     }
+}
+
+#[test]
+fn a_search_tag_is_no_query() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    chat.post(&ADA, "g1", "alpha", None);
+    let no_channel: Option<String> = None;
+    let search = tagged(
+        SEARCH_TAG,
+        &[
+            encoded(&"alpha".to_owned()),
+            encoded(&Vec::<Principal>::new()),
+            encoded(&no_channel),
+            encoded(&PageRequest::default()),
+        ],
+    );
+    let asked = ::program::query::<crate::Chat>(&chat.reads(), &search);
+    let refused = asked.unwrap_err();
+    assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
+    let undecoded = refused.message.starts_with("chat: Query did not decode: ");
+    assert!(undecoded, "{refused}");
 }

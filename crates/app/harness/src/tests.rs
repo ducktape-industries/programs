@@ -8,6 +8,7 @@ mod accounts;
 mod blob_put;
 mod budget;
 mod chat_channels;
+mod chat_search;
 mod compact_at;
 mod config;
 mod continued;

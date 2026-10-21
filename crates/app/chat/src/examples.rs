@@ -230,15 +230,6 @@ pub(crate) fn members() -> Query {
     }
 }
 
-pub(crate) fn search() -> Query {
-    Query::Search {
-        text: "deploy".into(),
-        viewer: me(),
-        channel_id: None,
-        page: twenty(),
-    }
-}
-
 pub(crate) fn tagged() -> Query {
     Query::TagSearch {
         tag: "release".into(),

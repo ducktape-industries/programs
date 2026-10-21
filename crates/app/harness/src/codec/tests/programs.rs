@@ -46,7 +46,7 @@ fn chat_round_trips() {
         principal: Principal::Account(3),
         member: true,
     });
-    let asked = chat.query(&chat::Query::Search {
+    let asked = chat.query(&chat::Query::TextSearch {
         text: "hi".into(),
         viewer: vec![Principal::Account(3), Principal::Root],
         channel_id: None,
@@ -54,7 +54,7 @@ fn chat_round_trips() {
     });
     assert_eq!(
         asked,
-        json!({ "Search": {
+        json!({ "TextSearch": {
             "text": "hi",
             "viewer": [{ "Account": 3 }, "Root"],
             "channel_id": null,

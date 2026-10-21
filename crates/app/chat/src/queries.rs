@@ -11,8 +11,7 @@ use crate::state::{
 };
 use crate::text::{fold, tag_label};
 use crate::{
-    ChannelInfo, ChannelRow, Draft, MessageHits, MsgRow, Principal, ReactedBy, Reply, plain_text,
-    tags,
+    ChannelInfo, ChannelRow, Draft, MsgRow, Principal, ReactedBy, Reply, plain_text, tags,
 };
 
 pub(crate) fn seen_by(
@@ -139,30 +138,6 @@ pub(crate) fn around(
     let (lo, hi) = (seq.saturating_sub(half), seq.saturating_add(half + 1));
     let rows = stored_between(ctx, &channel_id, lo, hi)?;
     Ok(rows.into_iter().map(Stored::row).collect())
-}
-
-pub(crate) fn search(
-    ctx: &QueryCtx,
-    text: &str,
-    channel_id: Option<String>,
-    page: &PageRequest,
-) -> Result<MessageHits, Error> {
-    let terms = terms(text)?;
-    let holds_every_term = |row: &Stored| holds_every(&terms, row);
-    let limit = usize::try_from(page.limit()).unwrap_or(usize::MAX);
-    let mut hits = newest(
-        ctx,
-        channel_id,
-        None,
-        limit.saturating_add(1),
-        holds_every_term,
-    )?;
-    let capped = hits.len() > limit;
-    hits.truncate(limit);
-    Ok(MessageHits {
-        hits: hits.into_iter().map(Stored::row).collect(),
-        capped,
-    })
 }
 
 pub(crate) fn text_search(
@@ -355,9 +330,7 @@ fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
         Reply::Roots(page) | Reply::TagHits(page) | Reply::TextHits(page) => {
             page.items.iter_mut().collect()
         }
-        Reply::Messages(rows) | Reply::Hits(MessageHits { hits: rows, .. }) => {
-            rows.iter_mut().collect()
-        }
+        Reply::Messages(rows) => rows.iter_mut().collect(),
         Reply::Thread { root, replies } => root.iter_mut().chain(&mut replies.items).collect(),
         Reply::Message(row) | Reply::Attention(row) => row.iter_mut().collect(),
         Reply::Channels(_)

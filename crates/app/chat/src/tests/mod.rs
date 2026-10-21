@@ -157,15 +157,6 @@ impl Chat {
     }
 
     fn search(&self, text: &str) -> Vec<u64> {
-        let Reply::Hits(hits) = self.ask(Query::Search {
-            text: text.into(),
-            viewer: vec![],
-            channel_id: None,
-            page: PageRequest::default(),
-        }) else {
-            panic!("a search answers hits");
-        };
-        let seqs: Vec<u64> = hits.hits.iter().map(|row| row.seq).collect();
         let Reply::TextHits(page) = self.ask(Query::TextSearch {
             text: text.into(),
             viewer: vec![],
@@ -174,9 +165,7 @@ impl Chat {
         }) else {
             panic!("a text search answers a page of hits");
         };
-        let paged: Vec<u64> = page.items.iter().map(|row| row.seq).collect();
-        assert_eq!(paged, seqs, "TextSearch finds what Search does");
-        seqs
+        page.items.iter().map(|row| row.seq).collect()
     }
 }
 

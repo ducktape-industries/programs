@@ -227,18 +227,15 @@ impl Tool for Search {
     }
 
     fn run(ctx: &ExecCtx, seat: &Seat, args: SearchArgs) -> Result<Run, Error> {
-        let asked = Query::Search {
+        let asked = Query::TextSearch {
             text: args.text,
             viewer: vec![agent(seat)],
             channel_id: args.channel,
             page: page(&args.cursor)?,
         };
         match ask(ctx, asked)? {
-            Reply::Hits(hits) => Ok(Run::Done(json!({
-                "messages": hits.hits.iter().map(message).collect::<Vec<_>>(),
-                "capped": hits.capped,
-            }))),
-            other => Err(unexpected(chat::PROGRAM, "Search", &other)),
+            Reply::TextHits(rows) => Ok(Run::Done(messages(&rows))),
+            other => Err(unexpected(chat::PROGRAM, "TextSearch", &other)),
         }
     }
 }
