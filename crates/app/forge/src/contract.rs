@@ -209,6 +209,8 @@ pub enum Op {
         payload: Vec<u8>,
         at: Revision,
     },
+    #[tool_op(description = "One-time: give each change room forge opened before rooms were listed for who takes part the listing a new one gets (chat meta listed = involved, its author and reviewers seated), one change a block from after, walking on by itself. Anyone may; a room already listed, or one a change only talks in, is left as it is. Returns the key the next change starts after, or null when that was the last.", returns = Option<Vec<u8>>, example = crate::examples::list_involved)]
+    ListInvolved { after: Option<Vec<u8>> },
 }
 
 impl Op {
@@ -235,7 +237,7 @@ impl Op {
             | Op::Dequeue { repo, .. }
             | Op::Archive { repo, .. }
             | Op::Dispatch { repo, .. } => Some(repo),
-            Op::Watch { .. } | Op::AdoptOwners { .. } => None,
+            Op::Watch { .. } | Op::AdoptOwners { .. } | Op::ListInvolved { .. } => None,
         }
     }
 }

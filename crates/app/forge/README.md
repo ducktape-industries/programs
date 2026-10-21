@@ -38,7 +38,8 @@ only.
   involvement, authored reviews) and the counters. A remove path takes its index
   rows with it. Git objects are the one exception: an object is the blob whose
   id is its oid, with no table between them (`src/objects.rs`).
-- Forge emits chat creation for `forge:<repo>:<n>`, named `pr/<repo>#<n> <title>`, and a
+- Forge emits chat creation for `forge:<repo>:<n>`, named `pr/<repo>#<n> <title>` and
+  listed for who takes part (see "Who a change's room is listed for"), and a
   notice (chat `NotifyBy` naming the account that acted) for opening, closing, merging and
   submitting a review, told only to
   the accounts it concerns (see "A change's notices"). Chat owns all conversation replies.
@@ -432,6 +433,23 @@ the lists. Whenever forge posts a notice into a change's own room after it opene
 the room's name from chat and renames it (`RenameChannel`, its answer absorbed) when it
 differs: a room named before this, or a change whose title was edited, takes the name at its
 next notice.
+
+### Who a change's room is listed for
+
+A change's own room opens with chat meta `listed = involved` (chat `CreateChannelWithMeta`),
+so a reader's sidebar lists it only once they sit in it (chat's README, "`listed = involved`").
+In the same frame forge seats its author and each reviewer asked (`SetMembership`). A
+`ChangeEdit` that asks a new reviewer seats them, and a review seats its reviewer, asked or not;
+each is seated only where chat's `Seated` says they are not yet, so a seat keeps the block that
+first gave it, and chat's answer is absorbed. chat itself seats whoever posts in the room or is
+mentioned there. The repository's owner is not seated: they are told of a change no one was asked
+to review, and a post seats them. A change that talks in another room never touches that room.
+
+`ListInvolved { after }` is one-time: for rooms opened before this, it takes one change a block
+(every change, ended ones too), and where the change's own room is held by chat and names no
+`listed`, sets `listed = involved` and seats its author and reviewers as above; a room already
+listed is left as it is, so a second walk writes nothing. It returns the key the next change
+starts after and books its own next run at the next block while one is left. Anyone may send it.
 
 ### Watchers
 

@@ -206,6 +206,10 @@ pub(crate) fn adopt() -> Op {
     }
 }
 
+pub(crate) fn list_involved() -> Op {
+    Op::ListInvolved { after: None }
+}
+
 pub(crate) fn archive() -> Op {
     Op::Archive {
         repo: repo(),

@@ -1,5 +1,6 @@
 //! A change's conversation at forge's interface: ChangeOpen opens the change's own room, its
 //! notices land there and its end archives it; a change whose channel is another room keeps it.
+//! Its own room is listed for who takes part: its author, the reviewers asked and who reviews.
 mod common;
 use common::*;
 
@@ -8,6 +9,7 @@ const FEATURE: &str = "refs/heads/feature";
 const JOB_NAMED: &str = "refs/heads/j-7/teach-a";
 const OWN: &str = "forge:project:1";
 const ELSEWHERE: &str = "elsewhere";
+const SECOND: &str = "forge:project:2";
 
 fn seeded() -> (MemorySandbox, Oid, Oid) {
     let mut store = MemoryObjects::new(Hash::Sha1);
@@ -246,4 +248,125 @@ fn a_change_whose_other_room_was_archived_still_merges() {
     assert_eq!(change_of(&sandbox, n).state, forge::ChangeState::Merged);
     assert!(lines(&sandbox, ELSEWHERE).is_empty());
     assert_eq!(pending(&sandbox), (0, 0));
+}
+
+fn listed(sandbox: &MemorySandbox, room: &str) -> Option<String> {
+    let query = chat::Query::Channel {
+        channel_id: room.into(),
+    };
+    match sandbox.chat_query(query).unwrap() {
+        chat::Reply::Channel(info) => info.and_then(|info| info.meta.get(chat::LISTED).cloned()),
+        other => panic!("{other:?}"),
+    }
+}
+
+fn seats(sandbox: &MemorySandbox, room: &str) -> BTreeMap<u64, u64> {
+    let ctx = sandbox.chat.exec(MockHost::env("chat"));
+    let rows = chat::tables::MEMBERS.all(&ctx).unwrap();
+    rows.into_iter()
+        .filter(|((id, _), _)| id == room)
+        .filter_map(|((_, principal), row)| {
+            principal.account().map(|account| (account, row.height))
+        })
+        .filter(|(account, _)| sandbox::program_of(*account).is_none())
+        .collect()
+}
+
+fn seated(sandbox: &MemorySandbox, room: &str) -> BTreeSet<u64> {
+    seats(sandbox, room).into_keys().collect()
+}
+
+fn unseat(sandbox: &MemorySandbox, room: &str, account: u64) {
+    let ctx = sandbox.chat.exec(MockHost::env("chat"));
+    chat::tables::MEMBERS.remove(&ctx, &(room.to_owned(), Principal::Account(account)));
+}
+
+fn as_opened_before_listing(sandbox: &MemorySandbox, room: &str) {
+    for account in seated(sandbox, room) {
+        unseat(sandbox, room, account);
+    }
+    let ctx = sandbox.chat.exec(MockHost::env("chat"));
+    chat::tables::CHANNEL_META.remove(&ctx, &room.to_owned());
+}
+
+fn review_as(sandbox: &MemorySandbox, key: &[u8], height: u64, n: u64, ahead: Oid) {
+    let op = Op::ReviewSubmit {
+        repo: "project".into(),
+        n,
+        review: forge::ReviewDraft {
+            commit_oid: ahead.to_hex(),
+            base_oid: None,
+            verdict: forge::Verdict::Comment,
+            body: "A thought.".into(),
+            comments: Vec::new(),
+        },
+    };
+    signed_op(sandbox, key, height, &op).unwrap();
+}
+
+#[test]
+fn its_room_is_listed_for_who_takes_part_seating_its_author_and_the_reviewers_asked() {
+    let (sandbox, _, _) = seeded();
+    opened(&sandbox, FEATURE);
+    assert_eq!(listed(&sandbox, OWN).as_deref(), Some(chat::INVOLVED));
+    assert_eq!(seated(&sandbox, OWN), BTreeSet::from([12, 13]));
+}
+
+#[test]
+fn a_reviewer_asked_later_or_one_who_reviews_unasked_is_seated_and_a_seat_held_keeps_its_block() {
+    let (sandbox, _, ahead) = seeded();
+    sandbox.hold(b"fourth-key", 14);
+    let n = opened(&sandbox, FEATURE);
+    let ask = Op::ChangeEdit {
+        repo: "project".into(),
+        n,
+        title: None,
+        body: None,
+        reviewers: Some(vec![person(STRANGER), person(OWNER)]),
+    };
+    signed_op(&sandbox, WRITER, 3, &ask).unwrap();
+    assert_eq!(seated(&sandbox, OWN), BTreeSet::from([11, 12, 13]));
+    review_as(&sandbox, b"fourth-key", 4, n, ahead);
+    review_as(&sandbox, STRANGER, 5, n, ahead);
+    assert_eq!(
+        seats(&sandbox, OWN),
+        BTreeMap::from([(11, 3), (12, 1), (13, 1), (14, 4)]),
+        "each seat keeps the block that first seated it"
+    );
+}
+
+#[test]
+fn list_involved_lists_each_room_opened_before_and_leaves_a_listed_or_other_room_as_it_is() {
+    let (mut sandbox, root, ahead) = seeded();
+    sandbox
+        .chain
+        .seat::<scheduler::Scheduler>(scheduler::PROGRAM);
+    let merged = opened(&sandbox, FEATURE);
+    squash(&sandbox, FEATURE, root, ahead, merged);
+    opened(&sandbox, JOB_NAMED);
+    let third = opened(&sandbox, FEATURE);
+    talking_elsewhere(&sandbox, third);
+    as_opened_before_listing(&sandbox, OWN);
+    unseat(&sandbox, SECOND, 13);
+    assert_eq!(listed(&sandbox, OWN), None);
+    let walk = Op::ListInvolved { after: None };
+    let next: Option<Vec<u8>> =
+        abi::decode(&signed_op(&sandbox, STRANGER, 2, &walk).unwrap()).unwrap();
+    assert!(next.is_some(), "one change a block, the rest to come");
+    sandbox.chain.at(10, TIME);
+    assert_eq!(listed(&sandbox, OWN).as_deref(), Some(chat::INVOLVED));
+    assert_eq!(seated(&sandbox, OWN), BTreeSet::from([12, 13]));
+    assert_eq!(
+        seated(&sandbox, SECOND),
+        BTreeSet::from([12]),
+        "a room listed already is left as it is"
+    );
+    assert_eq!(listed(&sandbox, ELSEWHERE), None);
+    assert!(seated(&sandbox, ELSEWHERE).is_empty());
+    let again: Option<Vec<u8>> =
+        abi::decode(&signed_op(&sandbox, STRANGER, 11, &walk).unwrap()).unwrap();
+    assert!(again.is_some());
+    sandbox.chain.at(20, TIME);
+    assert_eq!(seated(&sandbox, OWN), BTreeSet::from([12, 13]));
+    assert_eq!(seated(&sandbox, SECOND), BTreeSet::from([12]));
 }

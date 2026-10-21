@@ -210,6 +210,7 @@ impl Program for Forge {
             Op::AdoptOwners { kind, after, limit } => {
                 crate::adopt::adopt_owners(ctx, &kind, after, limit).map(|()| None)
             }
+            Op::ListInvolved { after } => crate::involved::list_involved(ctx, after).map(|()| None),
             Op::Archive { repo, archived } => {
                 crate::ops::archive(ctx, &repo, archived).map(|()| None)
             }

@@ -149,10 +149,11 @@ pub fn talks_elsewhere(repo: &str, change: &Change) -> bool {
 pub fn create(ctx: &ExecCtx, repo: &str, change: &Change) {
     emit(
         ctx,
-        Op::CreateChannel {
+        Op::CreateChannelWithMeta {
             channel_id: change.channel.clone(),
             name: room_name(repo, change),
             post_policy: PostPolicy::Open,
+            meta: crate::involved::meta(),
         },
     );
 }

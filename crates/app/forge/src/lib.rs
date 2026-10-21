@@ -33,6 +33,7 @@ mod description;
 mod diffs;
 mod discussion;
 mod examples;
+mod involved;
 mod objects;
 mod ops;
 mod queries;
@@ -91,6 +92,7 @@ fn op_variants_only_append() {
             "AdoptOwners",
             "Archive",
             "Dispatch",
+            "ListInvolved",
         ]
     );
 }

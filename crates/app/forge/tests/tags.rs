@@ -5,7 +5,7 @@ use common::*;
 
 const REPO: &str = "project";
 
-const LIVE_OPS: [(&str, i64); 22] = [
+const LIVE_OPS: [(&str, i64); 24] = [
     ("Create", 0),
     ("Configure", 1),
     ("Push", 4),
@@ -28,6 +28,8 @@ const LIVE_OPS: [(&str, i64); 22] = [
     ("Dequeue", 22),
     ("AdoptOwners", 23),
     ("Archive", 24),
+    ("Dispatch", 25),
+    ("ListInvolved", 26),
 ];
 
 const GRANT_TAG: u8 = 2;

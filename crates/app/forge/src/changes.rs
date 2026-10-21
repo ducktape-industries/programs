@@ -85,6 +85,7 @@ pub(crate) fn open(
     };
     AUTHORSHIP.put(ctx, &(repo.to_owned(), n), &authorship);
     discussion::create(ctx, repo, &change);
+    crate::involved::seat_opened(ctx, &change);
     discussion::post(ctx, repo, &change, message, Event::Opened, Some(actor))?;
     let opened = Watched::Opened {
         repo: repo.to_owned(),
@@ -133,6 +134,7 @@ pub(crate) fn edit(ctx: &ExecCtx, repo: &str, n: u64, fields: Edit) -> Result<Op
     enforce_record_size(ctx, &change)?;
     save_change(ctx, repo, &change)?;
     crate::state::reshaped(ctx, repo, n)?;
+    crate::involved::seat(ctx, repo, &change, asked.iter().cloned())?;
     discussion::requested(ctx, repo, &change, asked)?;
     Ok(OpReply::Change {
         height: env.height,
@@ -213,6 +215,7 @@ pub(crate) fn submit_review(
         verdict: review.draft.verdict,
     };
     discussion::post(ctx, repo, &change, message, reviewed, Some(actor))?;
+    crate::involved::seat(ctx, repo, &change, [actor.clone()])?;
     let told = Watched::Reviewed {
         repo: repo.to_owned(),
         n,

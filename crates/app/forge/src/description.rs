@@ -236,6 +236,12 @@ pub fn describe(op: &Op) -> Description {
                 fields: vec![field("kind", Value::text(kind))],
             };
         }
+        Op::ListInvolved { .. } => {
+            return Description {
+                title: "List change rooms for who takes part in them".into(),
+                fields: Vec::new(),
+            };
+        }
         Op::ReviewSubmit { repo, n, review } => (
             "Review",
             repo,
