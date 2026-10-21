@@ -102,6 +102,11 @@ pub enum Fired {
         channel_id: String,
         thread: Option<u64>,
     },
+    LeftQueue {
+        repo: String,
+        n: u64,
+        how: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]

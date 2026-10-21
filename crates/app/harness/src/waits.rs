@@ -553,12 +553,12 @@ fn moved_words((old, new): (&Option<String>, &Option<String>), by: Option<&Princ
     }
 }
 
-fn change_ended(
+fn change_waits_over(
     ctx: &QueryCtx,
     repo: &str,
     n: u64,
     how: &str,
-    ending: Until,
+    ending: Option<Until>,
 ) -> Result<Vec<(u64, String)>, Error> {
     let key = (repo.to_owned(), n);
     let mut ended = Vec::new();
@@ -567,8 +567,8 @@ fn change_ended(
             continue;
         };
         let words = format!("change {n} in {repo} {how}");
-        let what = match row.event {
-            WaitFor::Settled { until, .. } => settled_words(until, ending, words),
+        let what = match (row.event, ending) {
+            (WaitFor::Settled { until, .. }, Some(ending)) => settled_words(until, ending, words),
             _ => words,
         };
         ended.push((wait, what));
@@ -617,15 +617,21 @@ pub(crate) async fn forged(ctx: &Ctx, event: forge::Watched) -> Result<(), Error
         forge::Watched::Opened { .. }
         | forge::Watched::Previewed { .. }
         | forge::Watched::Reviewed { .. }
-        | forge::Watched::LeftQueue { .. }
         | forge::Watched::Dispatched { .. } => Vec::new(),
         forge::Watched::Closed { repo, n, by } => {
             let how = format!("was closed by {}", who(Some(by)));
-            change_ended(ctx, repo, *n, &how, Until::Closed)?
+            change_waits_over(ctx, repo, *n, &how, Some(Until::Closed))?
         }
         forge::Watched::Merged { repo, n, oid, by } => {
             let how = format!("was merged by {} as {oid}", who(Some(by)));
-            change_ended(ctx, repo, *n, &how, Until::Merged)?
+            change_waits_over(ctx, repo, *n, &how, Some(Until::Merged))?
+        }
+        forge::Watched::LeftQueue {
+            repo, n, into, why, ..
+        } => {
+            let into = String::from_utf8_lossy(into);
+            let how = format!("left the merge queue of {into}: {why}");
+            change_waits_over(ctx, repo, *n, &how, None)?
         }
     };
     let mut woken = Vec::new();

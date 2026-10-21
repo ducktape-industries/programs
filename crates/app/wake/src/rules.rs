@@ -522,8 +522,18 @@ pub(crate) fn forged(ctx: &ExecCtx, event: forge::Watched) -> Result<(), Error> 
         forge::Watched::Opened { .. }
         | forge::Watched::Previewed { .. }
         | forge::Watched::Reviewed { .. }
-        | forge::Watched::LeftQueue { .. }
         | forge::Watched::Dispatched { .. } => Ok(()),
+        forge::Watched::LeftQueue {
+            repo, n, into, why, ..
+        } => {
+            let into = String::from_utf8_lossy(&into).into_owned();
+            let how = format!("left the merge queue of {into}: {why}");
+            let key = Key::Change {
+                repo: repo.clone(),
+                n,
+            };
+            fire(ctx, key, Fired::LeftQueue { repo, n, how })
+        }
         forge::Watched::Closed { repo, n, by } => {
             let how = format!("was closed by {}", who(Some(&by)));
             ended_change(ctx, repo, n, how, Until::Closed)
@@ -772,6 +782,7 @@ fn fired_words(ctx: &QueryCtx, row: &WakeRow, fired: &Fired) -> Result<String, E
         Fired::Cleared { channel_id, thread } => {
             format!("{} is clear", place_words(channel_id, *thread))
         }
+        Fired::LeftQueue { repo, n, how } => format!("change {n} in {repo} {how}"),
     })
 }
 
