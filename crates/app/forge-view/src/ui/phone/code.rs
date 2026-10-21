@@ -46,6 +46,12 @@ pub(super) fn missing(
     ladder: &Ladder,
     theme: &Theme,
 ) -> AnyElement {
+    let gone = crate::ui::code::gone(forge, cx, theme, ladder);
+    if let (Some((_, path)), Some(gone)) = (forge.nav().gone.clone(), gone) {
+        return file_page("forge-page-missing", &path, forge, nav, cx, (ladder, theme))
+            .child(gone)
+            .into_any_element();
+    }
     let path = forge.nav().missing.clone().unwrap_or_default();
     file_page(
         "forge-page-missing",
@@ -73,7 +79,10 @@ pub(super) fn landing(
     ladder: &Ladder,
     theme: &Theme,
 ) -> AnyElement {
-    let path = forge.nav().goto.clone().unwrap_or_default();
+    let path = match &forge.nav().linked {
+        Some(segments) => segments.join("/").into_bytes(),
+        None => forge.nav().goto.clone().unwrap_or_default(),
+    };
     let dir = forge.nav().folder.clone().unwrap_or_default();
     let reading = match forge.tree_query(dir) {
         Some(tree) => parts::stage(
@@ -119,8 +128,9 @@ fn file_page(
     let repo = forge.repo_name();
     let folder = if dir.is_empty() { repo.as_str() } else { dir };
     let caption = format!("{folder} · {}", ref_label(&forge.head_name()));
+    let route = forge.blob_route(path);
     let segments: Vec<&str> = std::iter::once(repo.as_str())
-        .chain(path.split('/'))
+        .chain(route.iter().map(String::as_str))
         .collect();
     let link = forge.link(forge::PROGRAM, &segments);
     design::page(key, name.to_owned(), nav, ladder, theme)

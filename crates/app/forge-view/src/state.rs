@@ -182,6 +182,10 @@ pub(crate) struct Nav {
     /// `code/[...path].tsx`), the desktop in its notice
     #[serde(skip)]
     pub missing: Option<Vec<u8>>,
+    #[serde(skip)]
+    pub linked: Option<Vec<String>>,
+    #[serde(skip)]
+    pub gone: Option<(String, String)>,
     pub commit: Option<String>,
     pub change: Option<u64>,
     pub change_tab: ChangeTab,
@@ -196,7 +200,11 @@ pub(crate) struct Nav {
 
 impl Nav {
     pub fn revision(&self, head: &[u8]) -> Revision {
-        Revision::Ref(self.rev.clone().unwrap_or_else(|| head.to_vec()))
+        let rev = self.rev.clone().unwrap_or_else(|| head.to_vec());
+        match rev.starts_with(b"refs/") {
+            true => Revision::Ref(rev),
+            false => Revision::Oid(String::from_utf8_lossy(&rev).into_owned()),
+        }
     }
 
     /// The page stack this record projects to, root first: `Nav` is the one
@@ -229,11 +237,13 @@ impl Nav {
                     .as_ref()
                     .map_or(0, |path| path.split(|byte| *byte == b'/').count());
                 pages.extend(std::iter::repeat_n(Page::Folder, levels));
+                let lost = self.missing.is_some() || self.gone.is_some();
+                let landing = self.goto.is_some() || self.linked.is_some();
                 if self.blob.is_some() {
                     pages.push(Page::Blob);
-                } else if self.missing.is_some() {
+                } else if lost {
                     pages.push(Page::Missing);
-                } else if self.goto.is_some() {
+                } else if landing {
                     pages.push(Page::Landing);
                 }
             }

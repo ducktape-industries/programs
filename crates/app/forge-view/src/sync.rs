@@ -249,6 +249,7 @@ impl Forge {
         if self.hidden {
             return;
         }
+        self.land_link(cx);
         self.land_goto();
         self.land_reveal();
         let needed = self.needed();

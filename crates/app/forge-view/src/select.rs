@@ -380,6 +380,9 @@ impl Forge {
     /// The commit the browsed ref points at, once refs have landed.
     pub(crate) fn head_oid(&self) -> Option<String> {
         let name = self.head_name();
+        if !name.starts_with(b"refs/") {
+            return Some(String::from_utf8_lossy(&name).into_owned());
+        }
         self.refs()?
             .iter()
             .find(|info| info.name == name)

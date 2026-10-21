@@ -13,6 +13,7 @@ use forge::Reply;
 impl Forge {
     fn moved(&mut self, cx: &mut Context<Self>) {
         self.notice.clear();
+        self.nav.gone = None;
         self.sheet = None;
         self.details = false;
         self.repo_policy.sheet = None;
@@ -78,6 +79,7 @@ impl Forge {
             Page::Blob | Page::Missing => self.nav_close_blob(cx),
             Page::Landing => {
                 self.nav.goto = None;
+                self.nav.linked = None;
                 self.moved(cx);
             }
         }
@@ -101,11 +103,109 @@ impl Forge {
                 self.open_repo((*name).to_owned(), cx);
                 self.open_change(ducklink::number(n), cx);
             }
+            [name, "blob" | "tree", first, rest @ ..] if !name.is_empty() => {
+                self.open_repo((*name).to_owned(), cx);
+                self.nav.tab = RepoTab::Code;
+                let segments = std::iter::once(first).chain(rest);
+                self.nav.linked = Some(segments.map(|segment| (*segment).to_owned()).collect());
+                cx.notify();
+                self.sync(cx);
+            }
             [name, path @ ..] if !name.is_empty() && !path.is_empty() => {
                 self.open_repo((*name).to_owned(), cx);
                 self.open_path(path.join("/").into_bytes(), cx);
             }
             _ => self.open_repos(cx),
+        }
+    }
+
+    pub(crate) fn land_link(&mut self, cx: &mut Context<Self>) {
+        let Some(segments) = self.nav.linked.clone() else {
+            return;
+        };
+        let refs = match self.stage(&self.refs_query()) {
+            Stage::Loading => return,
+            Stage::Failed(refusal) => Err(design::sentence(refusal)),
+            Stage::Ready(Reply::Refs { page, .. }) => Ok(page.items.clone()),
+            Stage::Ready(_) => return,
+        };
+        let hash = match self.stage(&self.repo_query()) {
+            Stage::Loading => return,
+            Stage::Failed(refusal) => Err(design::sentence(refusal)),
+            Stage::Ready(Reply::Repo { repo, .. }) => Ok(repo.repo.hash),
+            Stage::Ready(_) => return,
+        };
+        let (refs, hash) = match (refs, hash) {
+            (Ok(refs), Ok(hash)) => (refs, hash),
+            (Err(said), _) | (_, Err(said)) => {
+                self.nav.linked = None;
+                self.notice = said;
+                cx.notify();
+                return;
+            }
+        };
+        if let Some((rev, path)) = linked(&segments, &refs, oid_hex(hash)) {
+            self.nav.linked = None;
+            self.nav.rev = Some(rev);
+            return self.land_path(path, cx);
+        }
+        let names: Vec<Vec<u8>> = match self.tree_query(Vec::new()) {
+            None => Vec::new(),
+            Some(root) => match self.stage(&root) {
+                Stage::Loading => return,
+                Stage::Ready(Reply::Tree { page, .. }) => {
+                    page.items.iter().map(|entry| entry.name.clone()).collect()
+                }
+                Stage::Failed(_) | Stage::Ready(_) => Vec::new(),
+            },
+        };
+        let at = (1..segments.len())
+            .find(|at| names.iter().any(|name| name == segments[*at].as_bytes()))
+            .unwrap_or(1)
+            .min(segments.len());
+        self.nav.linked = None;
+        self.open_tab(RepoTab::Code, cx);
+        self.nav.gone = Some((segments[..at].join("/"), segments[at..].join("/")));
+        cx.notify();
+    }
+
+    pub(crate) fn open_gone(&mut self, cx: &mut Context<Self>) {
+        let Some((_, path)) = self.nav.gone.take() else {
+            return;
+        };
+        self.nav.rev = None;
+        self.land_path(path, cx);
+    }
+
+    pub(crate) fn blob_route(&self, path: &str) -> Vec<String> {
+        let path: Vec<String> = path.split('/').map(str::to_owned).collect();
+        let rev = self.head_name();
+        if rev == self.default_head() {
+            return path;
+        }
+        let named: Vec<String> = words::ref_label(&rev)
+            .split('/')
+            .map(str::to_owned)
+            .collect();
+        let whole: Vec<String> = named.iter().chain(&path).cloned().collect();
+        let refs = self.refs().unwrap_or_default();
+        let hex = self.repo().map_or(40, |(info, _)| oid_hex(info.repo.hash));
+        let back = linked(&whole, refs, hex);
+        let round = back == Some((rev, path.join("/")));
+        let first = match (round, self.head_oid()) {
+            (false, Some(oid)) => vec![oid],
+            _ => named,
+        };
+        std::iter::once("blob".to_owned())
+            .chain(first)
+            .chain(path)
+            .collect()
+    }
+
+    fn land_path(&mut self, path: String, cx: &mut Context<Self>) {
+        match path.is_empty() {
+            true => self.open_tab(RepoTab::Code, cx),
+            false => self.open_path(path.into_bytes(), cx),
         }
     }
 
@@ -320,6 +420,7 @@ impl Forge {
     pub(crate) fn nav_close_blob(&mut self, cx: &mut Context<Self>) {
         self.nav.blob = None;
         self.nav.missing = None;
+        self.nav.gone = None;
         self.moved(cx);
     }
 
@@ -439,5 +540,31 @@ impl Forge {
             change_key(self.nav().repo.as_deref()?, self.nav().change?),
             String::from_utf8_lossy(path)
         ))
+    }
+}
+
+fn linked(segments: &[String], refs: &[forge::RefInfo], hex: usize) -> Option<(Vec<u8>, String)> {
+    let named = (1..=segments.len()).rev().find_map(|at| {
+        let name = segments[..at].join("/");
+        ["refs/heads/", "refs/tags/"]
+            .iter()
+            .map(|kind| format!("{kind}{name}").into_bytes())
+            .find(|full| refs.iter().any(|info| info.name == *full))
+            .map(|full| (full, segments[at..].join("/")))
+    });
+    named.or_else(|| {
+        let first = segments.first()?;
+        let commit = first.len() == hex
+            && first
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'));
+        commit.then(|| (first.clone().into_bytes(), segments[1..].join("/")))
+    })
+}
+
+fn oid_hex(hash: abi::HashKind) -> usize {
+    match hash {
+        abi::HashKind::Sha1 => 40,
+        abi::HashKind::Sha256 => 64,
     }
 }

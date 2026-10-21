@@ -269,7 +269,45 @@ pub(crate) fn no_commits(forge: &Forge, theme: &Theme, ladder: &Ladder) -> AnyEl
     .into_any_element()
 }
 
+pub(crate) fn gone(
+    forge: &Forge,
+    cx: &mut Context<Forge>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Option<AnyElement> {
+    let (name, _) = forge.nav().gone.clone()?;
+    let open = cx.listener(|forge, _: &ClickEvent, _, cx| forge.open_gone(cx));
+    let default = words::ref_label(&forge.default_head());
+    let button = button(
+        id("forge-gone-open"),
+        words::open_on(&default),
+        ladder,
+        theme,
+        open,
+    );
+    let state = empty_state(
+        id("forge-gone"),
+        "git-branch",
+        words::ref_gone(&name),
+        words::GONE_DETAIL,
+        ladder,
+        theme,
+    );
+    Some(
+        state
+            .child(div().mt(space::SM).child(button.small()))
+            .into_any_element(),
+    )
+}
+
 fn body(forge: &Forge, cx: &mut Context<Forge>, theme: &Theme, ladder: &Ladder) -> AnyElement {
+    if let Some(gone) = gone(forge, cx, theme, ladder) {
+        return div()
+            .id(id("forge-code-gone"))
+            .flex_1()
+            .child(gone)
+            .into_any_element();
+    }
     let Some((path, oid)) = forge.nav().blob.clone() else {
         return div()
             .id(id("forge-code-blank"))

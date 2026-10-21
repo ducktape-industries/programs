@@ -46,6 +46,18 @@ screen once. A refused read stays on screen, saying why, until a block writes a
 table it reads or the reader retries. The Refs tab reads every branch's
 standing in one `Compares`.
 
+## Links
+`HostRoute` hands the view a link's tail, `duck://<chain>/forge/<route>`:
+`<repo>`, `<repo>/<n>` (change n), `<repo>/<path>` on the default branch, or
+`<repo>/blob/<ref>/<path>` and `<repo>/tree/<ref>/<path>` on a branch, a tag or a
+commit. A ref with `/` in it is read against the refs the repository page reads
+whole: the longest run of whole segments that names a branch (else a tag) wins,
+and a first segment of the repository's oid length in lowercase hex is a commit.
+A ref that names nothing says the branch doesn't exist (it may have merged) and
+offers the same path on the default branch, split where the default branch's
+root holds the path's first name. A file's Copy link mints `<repo>/<path>` on the
+default branch and `<repo>/blob/<ref>/<path>` on any other.
+
 ## Tests
 `tests.rs` replays the forge program's own reply bytes
 (`crates/app/forge/fixtures/replies.bin`); its `configure` answers chat, access

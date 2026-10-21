@@ -1942,6 +1942,9 @@ mod policies_tests;
 #[path = "faces_tests.rs"]
 mod faces_tests;
 
+#[path = "link_tests.rs"]
+mod link_tests;
+
 #[test]
 fn copy_puts_the_address_on_the_clipboard_without_opening_the_repository() {
     let (mut cx, view) = booted("default");

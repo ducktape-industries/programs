@@ -118,6 +118,15 @@ pub(crate) fn no_path(path: &[u8]) -> String {
 }
 pub(crate) const NOT_ON_THIS_REF: &str = "The Code tab has this ref's files.";
 
+pub(crate) fn ref_gone(name: &str) -> String {
+    format!("Branch {name} doesn’t exist; it may have merged.")
+}
+pub(crate) const GONE_DETAIL: &str = "The same path may be on the default branch.";
+
+pub(crate) fn open_on(name: &str) -> String {
+    format!("Open on {name}")
+}
+
 pub(crate) fn not_text(size: u64) -> String {
     format!("{size} bytes. Nothing here reads as text.")
 }
