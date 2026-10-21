@@ -58,6 +58,11 @@ pub(crate) fn render(
     for review in reviews.items.iter().filter(|review| !placed(review)) {
         column = column.child(review_card(forge, review, cx, theme, ladder));
     }
+    if let Some(room) = forge.talked_elsewhere() {
+        return column
+            .child(elsewhere(forge, room, cx, theme))
+            .into_any_element();
+    }
     column = column.child(messages(forge, cx, theme, ladder));
     // a reply on its way, or one that did not land, over the box
     let reply = forge.reply_scope();
@@ -66,6 +71,24 @@ pub(crate) fn render(
     }
     column
         .child(composer(forge, cx, theme, ladder))
+        .into_any_element()
+}
+
+fn elsewhere(forge: &Forge, room: &str, cx: &mut Context<Forge>, theme: &Theme) -> AnyElement {
+    let link = forge.link(chat::PROGRAM, &[room]);
+    let open = cx.listener(move |_, _: &ClickEvent, _, cx| {
+        if let Some(link) = &link {
+            cx.host().open_link(link);
+        }
+    });
+    div()
+        .id(id("forge-conversation-elsewhere"))
+        .text_size(design::text::SECONDARY)
+        .text_color(theme.muted)
+        .role(Role::Link)
+        .focusable()
+        .on_click(open)
+        .child(words::talked_in(room))
         .into_any_element()
 }
 

@@ -668,7 +668,13 @@ impl Forge {
     // Where the open change's conversation is read ([`Talk`]).
     pub(crate) fn talk(&self) -> Option<Talk> {
         let (change, ..) = self.change()?;
-        Some(Talk::of(self.nav.repo.as_deref()?, change))
+        Talk::of(change)
+    }
+
+    pub(crate) fn talked_elsewhere(&self) -> Option<&str> {
+        let (change, ..) = self.change()?;
+        let elsewhere = Talk::of(change).is_none();
+        elsewhere.then_some(change.channel.as_str())
     }
 
     // The open change's conversation to read: on its tab, and on every tab on the phone, whose
@@ -722,23 +728,12 @@ impl Forge {
         }
     }
 
-    // forge's own line, in the change's own room or a job's: written by the account the roster
-    // names forge's.
     pub(crate) fn is_forge_line(&self, row: &chat::MsgRow) -> bool {
         let program = self
             .names
             .ready()
             .and_then(|names| names.program(&row.author));
         program == Some(forge::PROGRAM)
-    }
-
-    // In a job's room, the open change's opening line: the thread its replies go in.
-    pub(crate) fn opening_thread(&self) -> Option<u64> {
-        self.talk()?.named.as_ref()?;
-        let rows = self.conversation()?;
-        rows.iter()
-            .find(|row| self.is_forge_line(row))
-            .map(|row| row.seq)
     }
 
     /// What `row` of the open change's room is: a reader's reply, or

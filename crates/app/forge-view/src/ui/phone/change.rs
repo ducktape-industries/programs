@@ -257,7 +257,7 @@ fn conversation(
         .child(timeline(forge, change, cx, ladder, theme))
         .children(open.then(|| merge_gate(forge, ladder, theme)).flatten())
         .children(open.then(|| review_bar(forge, cx, ladder, theme)))
-        .child(composer(forge, cx, ladder, theme))
+        .children(forge.talk().map(|_| composer(forge, cx, ladder, theme)))
         .into_any_element()
 }
 
@@ -514,6 +514,17 @@ fn replies(
     ladder: &Ladder,
     theme: &Theme,
 ) -> Vec<AnyElement> {
+    if let Some(room) = forge.talked_elsewhere() {
+        return vec![
+            parts::quiet(
+                id("forge-conversation-elsewhere"),
+                words::talked_in(room),
+                ladder,
+                theme,
+            )
+            .into_any_element(),
+        ];
+    }
     if let Some(Loadable::Failed(refusal)) = forge.talk_rows() {
         let retry = cx.listener(|forge, _: &ClickEvent, _, cx| forge.retry_conversation(cx));
         return vec![

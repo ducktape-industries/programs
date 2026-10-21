@@ -10,21 +10,17 @@ use view::prelude::*;
 
 use forge::{CommitInfo, LineComment, Query, Reply, Revision, Side, Verdict};
 
-// Where a change's conversation is read: the whole of its own room, or, in a job's room
-// (`j-NNN`), forge's lines there that end `<repo> <n>` and the replies under its opening line.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Talk {
     pub(crate) channel: String,
-    pub(crate) named: Option<String>,
 }
 
 impl Talk {
-    pub(crate) fn of(repo: &str, change: &forge::Change) -> Self {
+    pub(crate) fn of(change: &forge::Change) -> Option<Self> {
         let own = chat::namespace::program(&change.channel) == Some(forge::PROGRAM);
-        Talk {
+        own.then(|| Talk {
             channel: change.channel.clone(),
-            named: (!own).then(|| format!("{repo} {}", change.n)),
-        }
+        })
     }
 }
 

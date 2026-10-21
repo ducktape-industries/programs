@@ -42,6 +42,10 @@ pub(crate) fn channel(id: &str) -> String {
     format!("# {id}")
 }
 
+pub(crate) fn talked_in(room: &str) -> String {
+    format!("This change talked in # {room}.")
+}
+
 pub(crate) fn hash_kind(hash: abi::HashKind) -> &'static str {
     match hash {
         abi::HashKind::Sha1 => "sha1",

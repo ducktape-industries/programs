@@ -36,7 +36,7 @@ fn refusal(name: &str) -> view::host::Error {
 
 fn change_fixture(mode: &str) -> &'static str {
     match mode {
-        "reviewed" | "job" | "job-notices" => "change-reviewed",
+        "reviewed" | "job" => "change-reviewed",
         "merged" => "change-merged",
         "closed" => "change-closed",
         "outdated" => "change-outdated",
@@ -114,16 +114,12 @@ fn answer(query: &Query, mode: &str) -> Reply {
     }
 }
 
-// In mode `job`, change 1 as forge holds it once opened from a `j-7/…` branch while chat held
-// room `j-7` open: it talks there.
 fn in_job_room(mode: &str, mut read: Reply) -> Reply {
-    let room = match mode {
-        "job" => "j-7",
-        "job-notices" => "j-8",
-        _ => return read,
-    };
+    if mode != "job" {
+        return read;
+    }
     if let Reply::Change { change, .. } = &mut read {
-        change.channel = room.into();
+        change.channel = "j-7".into();
     }
     read
 }
@@ -288,74 +284,11 @@ fn forge_lines() -> Vec<chat::MsgRow> {
     rows
 }
 
-// Room `j-7`, where changes 1 and 2 of `project` both talk: someone's word to the room, then
-// forge's lines, each a `forge` block ending `<repo> <n>`: change 1's opening (answered once,
-// in its thread), change 2's, and change 1's reviews.
 fn job_room() -> Vec<chat::MsgRow> {
-    let reviews = ["change-reviewed", "change-reviews-next"]
-        .into_iter()
-        .flat_map(|name| match reply(name) {
-            Reply::Change { reviews, .. } => reviews.items,
-            _ => panic!("{name} is a change"),
-        });
-    let line = |seq: u64, message_id: String, code: String| chat::MsgRow {
+    vec![chat::MsgRow {
         channel_id: "j-7".into(),
-        message_id,
-        blocks: vec![chat::Block::Code {
-            lang: Some(forge::PROGRAM.into()),
-            text: code,
-        }],
-        ..message(seq, forge::Principal::Account(FORGE), "")
-    };
-    let mut rows = vec![
-        chat::MsgRow {
-            channel_id: "j-7".into(),
-            ..message(1, forge::Principal::Account(9), "Morning, all")
-        },
-        chat::MsgRow {
-            reply_count: 1,
-            ..line(
-                2,
-                "forge:0000000000000001".into(),
-                "opened project 1".into(),
-            )
-        },
-        line(
-            3,
-            "forge:0000000000000002".into(),
-            "opened project 2".into(),
-        ),
-    ];
-    for review in reviews {
-        let code = format!("review {} project 1", review.id);
-        rows.push(line(rows.len() as u64 + 1, review.message_id, code));
-    }
-    rows
-}
-
-fn job_room_notices() -> Vec<chat::MsgRow> {
-    job_room()
-        .into_iter()
-        .map(|row| {
-            let blocks = match row.blocks.as_slice() {
-                [chat::Block::Code { text, .. }] => vec![chat::Block::Notice(chat::Notice {
-                    kind: "change".into(),
-                    group: text.clone(),
-                    subject: "project #1: Teach a".into(),
-                    link: None,
-                    status: chat::message::Status::Note,
-                    detail: String::new(),
-                    concerns: Vec::new(),
-                })],
-                _ => row.blocks.clone(),
-            };
-            chat::MsgRow {
-                channel_id: "j-8".into(),
-                blocks,
-                ..row
-            }
-        })
-        .collect()
+        ..message(1, forge::Principal::Account(9), "Morning, all")
+    }]
 }
 
 /// Chat's answers: the roster, and each change channel's rows.
@@ -374,27 +307,10 @@ fn chat_answer(query: chat::Query) -> chat::Reply {
                     })
                     .collect(),
                 "j-7" => job_room(),
-                "j-8" => job_room_notices(),
                 _ => Vec::new(),
             },
             next: None,
         }),
-        chat::Query::Thread {
-            channel_id,
-            root_seq: 2,
-            ..
-        } if channel_id == "j-7" || channel_id == "j-8" => chat::Reply::Thread {
-            root: None,
-            replies: PageResponse {
-                height: 1,
-                items: vec![chat::MsgRow {
-                    channel_id,
-                    thread: Some(2),
-                    ..message(7, forge::Principal::Account(2), "Reading it now")
-                }],
-                next: None,
-            },
-        },
         other => panic!("unexpected chat query: {other:?}"),
     }
 }

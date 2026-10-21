@@ -302,6 +302,17 @@ fn the_strip_counts_every_tab_whichever_is_open() {
 }
 
 #[test]
+fn a_change_that_talked_in_another_room_links_there_and_offers_no_reply_box() {
+    let cx = change("job");
+    assert!(
+        cx.has_text("This change talked in # j-7."),
+        "{:?}",
+        cx.texts()
+    );
+    assert!(cx.find("forge-reply").is_none(), "no reply box");
+}
+
+#[test]
 fn the_conversation_lists_the_reviews_as_advisory_and_the_replies() {
     let cx = change("reviewed");
     assert!(cx.has_text("Reviews"));

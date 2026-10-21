@@ -452,10 +452,6 @@ impl Forge {
 
     // ------------------------------------------------------ conversation
 
-    // A reply in the change's conversation: in a job's room, under the change's opening line.
-    // Chat owns every reply; forge owns only the change's own body. It is a write like forge's,
-    // its row under [`Forge::reply_scope`]; the box keeps its text until the write lands, so a
-    // failure loses nothing, and Send waits while one is out (Expo `change.tsx` `Composer`).
     pub(crate) fn post_reply(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let text = self.reply.text().trim().to_owned();
         let Some(scope) = self.reply_scope() else {
@@ -464,11 +460,10 @@ impl Forge {
         if text.is_empty() || self.busy(&scope) {
             return;
         }
-        let Some((change, _, _, _)) = self.change() else {
+        let Some(talk) = self.talk() else {
             return;
         };
-        let channel = change.channel.clone();
-        let thread = self.opening_thread();
+        let channel = talk.channel;
         let id = self.issue(scope, words::REPLYING, cx);
         let host = cx.host();
         let sent = text.clone();
@@ -478,7 +473,7 @@ impl Forge {
                 channel_id: channel,
                 message_id,
                 blocks: chat::parse_message(&text),
-                thread,
+                thread: None,
             })
             .await
         };

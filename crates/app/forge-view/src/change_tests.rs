@@ -1360,52 +1360,32 @@ fn a_gutter_comment_button_is_at_least_24_px_each_way() {
     }
 }
 
-// A change from a job's branch talks in the job's room: its tab holds forge's lines about it and
-// the replies under its opening line, never the room's other talk or another change's lines,
-// and a reply goes under its opening line.
 #[test]
-fn a_change_in_a_job_room_shows_its_own_lines_and_their_thread() {
-    let (mut cx, view) = change_screen("job", ChangeTab::Conversation);
-    assert!(cx.has_text("opened this change"), "{:?}", cx.texts());
-    assert!(cx.has_text("Reading it now"), "{:?}", cx.texts());
-    assert!(!cx.has_text("Morning, all"), "{:?}", cx.texts());
-    // the opening, three reviews and the one reply
-    view.read(|forge| {
-        assert_eq!(forge.change_tab_count(ChangeTab::Conversation), Some(5));
-    });
-    cx.update(&view, |forge, _, cx| {
-        forge.reply = view::TextField::new("on it");
-        cx.notify();
-    });
-    cx.run_until_parked();
-    cx.simulate_click("forge-reply-send");
-    cx.run_until_parked();
+fn a_change_that_talked_in_another_room_links_there_and_reads_none_of_it() {
+    let (cx, view) = change_screen("job", ChangeTab::Conversation);
     assert!(
-        cx.host()
-            .requests::<Submit<::chat::Chat>>()
-            .iter()
-            .any(|op| matches!(
-                op,
-                chat::Op::PostMessage { channel_id, thread: Some(2), .. } if channel_id == "j-7"
-            )),
-        "the reply goes under the opening line"
+        cx.has_text("This change talked in # j-7."),
+        "{:?}",
+        cx.texts()
     );
+    assert!(!cx.has_text("Morning, all"), "{:?}", cx.texts());
+    assert!(!cx.has_text("opened this change"), "{:?}", cx.texts());
+    assert!(cx.find("forge-reply").is_none(), "no reply box");
+    view.read(|forge| assert!(forge.messages.is_empty()));
 }
 
 #[test]
-fn a_change_in_a_job_room_reads_the_same_from_notices_as_from_forge_code_lines() {
-    let read = |mode| {
-        let (cx, view) = change_screen(mode, ChangeTab::Conversation);
-        let count = view.read(|forge| forge.change_tab_count(ChangeTab::Conversation));
-        (cx.texts(), count)
-    };
-    let (texts, count) = read("job-notices");
-    assert_eq!(count, Some(5), "{texts:?}");
-    let in_j7: Vec<String> = texts
-        .iter()
-        .map(|text| text.replace("# j-8", "# j-7"))
-        .collect();
-    assert_eq!((in_j7, count), read("job"));
+fn a_reply_to_a_change_that_talked_in_another_room_posts_nothing() {
+    let (mut cx, view) = change_screen("job", ChangeTab::Conversation);
+    cx.update(&view, |forge, window, cx| {
+        forge.reply = view::TextField::new("on it");
+        forge.post_reply(window, cx);
+    });
+    cx.run_until_parked();
+    assert!(
+        cx.host().requests::<Submit<::chat::Chat>>().is_empty(),
+        "nothing is posted into a room the view does not read"
+    );
 }
 
 fn shows(cx: &view::testing::TestAppContext, said: &str) -> bool {

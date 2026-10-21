@@ -1,5 +1,5 @@
-//! Chat owns conversations: forge opens a change's channel, or talks in its job's room, posts
-//! its notices there, and asks chat about the replies a review drew.
+//! Chat owns conversations: forge opens a change's own room, posts its notices there, and asks
+//! chat about the replies a review drew.
 
 use std::collections::BTreeSet;
 
@@ -9,7 +9,7 @@ use chat::message::Status;
 use chat::{MsgRow, Notice, Op, PostPolicy, Query, Reply};
 
 use crate::Change;
-use crate::contract::{Revision, Verdict};
+use crate::contract::Verdict;
 use crate::state::{
     ARCHIVING, LOGGING, OPEN_CHANGES_BY_SOURCE, channel_id, load_change, load_repo, next_message,
 };
@@ -140,43 +140,7 @@ fn room_name(repo: &str, change: &Change) -> String {
     format!("pr/{repo}#{} {}", change.n, change.title)
 }
 
-// Change `n`'s room: the job room `j-NNN` its `j-NNN/…` branch names while chat holds that room
-// unarchived and open to post, so forge's lines there are not refused as it opens; else its own
-// `forge:<repo>:<n>`. The change keeps the room it opened in.
-pub fn room(ctx: &QueryCtx, repo: &str, n: u64, from: &Revision) -> Result<String, Error> {
-    let Some(job) = job_of(from) else {
-        return Ok(channel_id(repo, n));
-    };
-    let query = Query::Channel {
-        channel_id: job.clone(),
-    };
-    let open = match ctx.query::<Query, Reply>(chat::PROGRAM, &query)? {
-        Reply::Channel(info) => {
-            info.is_some_and(|info| !info.channel.archived && !info.channel.members_only())
-        }
-        other => return Err(unexpected_reply(chat::PROGRAM, "Channel", &other)),
-    };
-    Ok(match open {
-        true => job,
-        false => channel_id(repo, n),
-    })
-}
-
-// The job a branch is for: `j-<digits>`, the first segment of a `refs/heads/` name with more
-// after it (`refs/heads/j-101/folders`).
-fn job_of(from: &Revision) -> Option<String> {
-    let Revision::Ref(name) = from else {
-        return None;
-    };
-    let name = std::str::from_utf8(name.strip_prefix(b"refs/heads/")?).ok()?;
-    let (job, _) = name.split_once('/')?;
-    let digits = job.strip_prefix("j-")?;
-    let numbered = !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit());
-    numbered.then(|| job.to_owned())
-}
-
-// Whether the change talks in its job's room rather than a room of its own.
-pub fn in_job_room(repo: &str, change: &Change) -> bool {
+pub fn talks_elsewhere(repo: &str, change: &Change) -> bool {
     change.channel != channel_id(repo, change.n)
 }
 
@@ -201,7 +165,7 @@ pub fn post(
     event: Event,
     actor: Option<&Principal>,
 ) -> Result<(), Error> {
-    let job_room = in_job_room(repo, change);
+    let elsewhere = talks_elsewhere(repo, change);
     let notice = Notice {
         kind: NOTICE.into(),
         group: format!("{} {repo} {}", event.word(), change.n),
@@ -217,10 +181,13 @@ pub fn post(
         thread: None,
         notice,
     };
-    if !job_room && !matches!(event, Event::Opened | Event::ArchiveRefused(_)) {
+    let renames_its_room = !elsewhere && !matches!(event, Event::Opened | Event::ArchiveRefused(_));
+    if renames_its_room {
         named(ctx, repo, change)?;
     }
-    if job_room || matches!(event, Event::ArchiveRefused(_) | Event::LeftQueue { .. }) {
+    let absorbs_the_answer =
+        elsewhere || matches!(event, Event::ArchiveRefused(_) | Event::LeftQueue { .. });
+    if absorbs_the_answer {
         let posted = ctx.emit(chat::PROGRAM, &line, ::program::Reply::Wanted);
         LOGGING.insert(ctx, &posted.seq);
         return Ok(());
@@ -288,10 +255,8 @@ fn named(ctx: &ExecCtx, repo: &str, change: &Change) -> Result<(), Error> {
     Ok(())
 }
 
-// Archives the change's channel. chat's answer comes back to `replied`, so its refusal never
-// fails the op that ended the change. A job room outlives its changes: it is left as it is.
 pub fn archive(ctx: &ExecCtx, repo: &str, change: &Change) {
-    if in_job_room(repo, change) {
+    if talks_elsewhere(repo, change) {
         return;
     }
     let archive = Op::SetChannelArchived {
@@ -302,9 +267,6 @@ pub fn archive(ctx: &ExecCtx, repo: &str, change: &Change) {
     ARCHIVING.put(ctx, &id.seq, &(repo.to_owned(), change.n));
 }
 
-// The answer to a message forge asked one of. chat's refusal of an archive is absorbed and said
-// in the change's channel; chat's answer to that line, or to any line in a job room, is absorbed
-// whatever it is (the room may be gone or archived); and a watcher's answer is absorbed.
 pub fn replied(ctx: &ExecCtx, id: &MessageId, outcome: &Outcome) -> Result<(), Error> {
     if LOGGING.has(ctx, &id.seq) {
         LOGGING.remove(ctx, &id.seq);

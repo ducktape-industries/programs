@@ -118,8 +118,7 @@ fn review_owed_by_principal(
         && latest
             .as_ref()
             .is_none_or(|review| source.as_ref() != Some(&review.draft.commit_oid));
-    // a job room's threads are the job's talk: there only the change's review lines count
-    let started = match discussion::in_job_room(repo, change) {
+    let started = match discussion::talks_elsewhere(repo, change) {
         true => None,
         false => discussion::attention(ctx, &change.channel, principal)?,
     };

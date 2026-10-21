@@ -52,7 +52,7 @@ pub(crate) fn open(
         draft.from = Revision::Oid(source.to_hex());
     }
     let n = next_number(ctx, repo)?;
-    let channel = discussion::room(ctx, repo, n, &draft.from)?;
+    let channel = crate::state::channel_id(repo, n);
     let change = Change {
         n,
         from: draft.from,
@@ -84,9 +84,7 @@ pub(crate) fn open(
         rev: 0,
     };
     AUTHORSHIP.put(ctx, &(repo.to_owned(), n), &authorship);
-    if !discussion::in_job_room(repo, &change) {
-        discussion::create(ctx, repo, &change);
-    }
+    discussion::create(ctx, repo, &change);
     discussion::post(ctx, repo, &change, message, Event::Opened, Some(actor))?;
     let opened = Watched::Opened {
         repo: repo.to_owned(),

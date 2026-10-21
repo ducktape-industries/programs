@@ -140,80 +140,15 @@ pub(crate) async fn writers(host: Host, repo: String) -> Result<Option<Ownership
     })
 }
 
-// A change's conversation ([`Talk`]), oldest first: the whole of its own room, or, in a job's
-// room, forge's lines about it there and the replies under its opening line.
 pub(crate) async fn conversation(
     host: Host,
     talk: Talk,
     viewer: Vec<forge::Principal>,
 ) -> Result<Vec<chat::MsgRow>, Error> {
-    let roots = {
-        let host = host.clone();
-        move |ask| host.query(ask)
-    };
-    let channel_id = talk.channel;
-    let (rows, _) = chat::view::roots(
-        roots,
-        channel_id.clone(),
-        viewer.clone(),
-        None,
-        usize::MAX,
-        u64::MAX,
-    )
-    .await?;
-    let Some(named) = talk.named else {
-        return Ok(rows);
-    };
-    let mut rows: Vec<chat::MsgRow> = rows.into_iter().filter(|row| about(row, &named)).collect();
-    let opening = format!("opened {named}");
-    let root = rows
-        .iter()
-        .find(|row| forge_code(row) == Some(opening.as_str()))
-        .filter(|row| row.reply_count > 0)
-        .map(|row| row.seq);
-    let Some(root_seq) = root else {
-        return Ok(rows);
-    };
-    let mut after = None;
-    loop {
-        let (_, replies) = host
-            .query(chat::ask::Thread {
-                channel_id: channel_id.clone(),
-                root_seq,
-                viewer: viewer.clone(),
-                page: PageRequest { after, limit: None },
-            })
-            .await?;
-        rows.extend(replies.items);
-        after = replies.next;
-        if after.is_none() {
-            break;
-        }
-    }
-    rows.sort_by_key(|row| row.seq);
+    let roots = move |ask| host.query(ask);
+    let (rows, _) =
+        chat::view::roots(roots, talk.channel, viewer, None, usize::MAX, u64::MAX).await?;
     Ok(rows)
-}
-
-fn forge_code(row: &chat::MsgRow) -> Option<&str> {
-    if let Some(notice) = row.notice() {
-        return (notice.kind == forge::NOTICE).then_some(notice.group.as_str());
-    }
-    match row.blocks.as_slice() {
-        [
-            chat::Block::Code {
-                lang: Some(lang),
-                text,
-            },
-        ] if lang == forge::PROGRAM => Some(text),
-        _ => None,
-    }
-}
-
-// Whether `row` is a forge line about the change `named` (`<repo> <n>`): its code ends so.
-fn about(row: &chat::MsgRow, named: &str) -> bool {
-    forge_code(row)
-        .and_then(|code| code.strip_suffix(named))
-        .is_some_and(|event| event.ends_with(' '))
 }
 
 /// Every account's profile, folded into [`Names`](chat::view::Names).

@@ -41,12 +41,11 @@ only.
 - Forge emits chat creation for `forge:<repo>:<n>`, named `pr/<repo>#<n> <title>`, and a
   notice (chat `Notify`) for opening, closing, merging and submitting a review, told only to
   the accounts it concerns (see "A change's notices"). Chat owns all conversation replies.
-  A change from a `j-NNN/…` branch talks in its job's room `j-NNN` instead, while chat
-  holds that room unarchived and open to post as it opens (see "A job's room").
   The kernel runs each emission once the handler returns Ok, in the same frame,
   so the record and its channel land in one block or not at all.
 - A change that ends (`Merge` or `SquashMerge` naming it, `ChangeClose`) has its
-  own channel archived (a job room is left as it is): forge sends chat `SetChannelArchived` as itself, and a refusal
+  own channel archived (a channel that isn't its own is left as it is, see "A change in
+  another room"): forge sends chat `SetChannelArchived` as itself, and a refusal
   never fails the op (see "Archiving a change's channel").
 - A review is owned by its author (`Owned<Review>`, kind `forge.review`): the
   ownership role records it as theirs. A review is one immutable operation: verdict, body, pinned head and base, and
@@ -450,21 +449,15 @@ write. An empty `deliver` stops it. Each event names who acted.
 | `Reviewed { n, id, verdict, by }` | `ReviewSubmit` |
 | `LeftQueue { n, into, why, queued_by }` | forge took the change out of a merge queue for the reason it names (its head moved, it no longer previews, a required check went red); `queued_by` queued it |
 
-### A job's room
+### A change in another room
 
-`ChangeOpen` from a branch whose name under `refs/heads/` starts with a `j-<digits>/`
-segment (`refs/heads/j-101/folders`) asks chat for the room `j-<digits>`. While chat
-holds it unarchived and open to post (not members-only), the change talks there: its
-`channel` is `j-101`, forge creates no `forge:<repo>:<n>` channel, and its notices go
-there. Otherwise (another branch, a room chat
-does not hold, an archived or members-only one) the change gets its own channel as
-above. The room is decided once, at open, and kept on the change.
-
-forge posts into a job room with `Reply::Wanted` and absorbs chat's answer, so a room
-archived after the change opened never fails a review, a merge or a close: the notice is
-just not there. forge never archives a job room: an ending change leaves it.
-`Judgment` counts only the replies to the change's own review
-notices in a job room, never the room's other threads.
+Every change `ChangeOpen` opens talks in its own `forge:<repo>:<n>`, whatever its branch
+is named. A change an earlier forge opened in another room keeps that room as its
+`channel`: forge posts its notices there with `Reply::Wanted` and absorbs chat's answer,
+so a room archived since never fails a review, a merge or a close (the notice is just not
+there). forge never archives or renames such a room, and `Judgment` counts only the replies to the change's own review notices there, never the
+room's other threads. A network that wants change events told in rooms of its own choosing
+runs forge-review-chat beside forge (`crates/app/forge-review-chat`).
 
 Review OIDs and anchors receive syntactic validation, not object reads in
 consensus. Paths must be relative, lines positive, bodies nonblank, and anchors

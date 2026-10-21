@@ -92,7 +92,7 @@ pub enum Op {
         result: String,
         change: Option<u64>,
     },
-    #[tool_op(description = "Open a change (a pull request) from a branch or commit into a branch, with reviewers. Anyone may; it opens a chat channel forge:<repo>:<n> for its conversation, or, from a j-NNN/… branch while chat holds room j-NNN unarchived and open to post, talks in that job room. Returns the change's number.", returns = OpReply, example = crate::examples::open)]
+    #[tool_op(description = "Open a change (a pull request) from a branch or commit into a branch, with reviewers. Anyone may; it opens a chat channel forge:<repo>:<n> for its conversation. Returns the change's number.", returns = OpReply, example = crate::examples::open)]
     ChangeOpen {
         repo: String,
         from: Revision,
