@@ -6,7 +6,7 @@ use borsh::schema::{BorshSchemaContainer, Declaration};
 use program::schema::{returned, roots};
 use serde_json::{Value, json};
 
-use crate::{Fault, decode, encode, fits, shape, spelled, variant};
+use crate::{Fault, declared_at, decode, encode, fits, shape, spelled, variant};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Interface {
@@ -90,6 +90,10 @@ impl Interface {
 
     pub fn decode_reply(&self, reply: &[u8]) -> Result<Value, Fault> {
         decode(&self.schema, &self.reply, "reply", reply)
+    }
+
+    pub fn reply_at(&self, path: &str) -> Result<Declaration, Fault> {
+        declared_at(&self.schema, &self.reply, "reply", path)
     }
 
     // The shapes of the op, the query, the reply and (where the schema names them) what each op

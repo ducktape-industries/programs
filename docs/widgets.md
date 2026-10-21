@@ -134,6 +134,14 @@ failed says which: "Reading board’s code: …" (its entry or its code, for the
 board: …" (the query). A `cursor` whose reply has no `next` beside its rows says so rather than
 stop after one page.
 
+Before it asks anything, a widget is held to its program's schema, and one that doesn't fit says
+"The widget doesn’t fit board’s schema: …" with the path and what the schema has there:
+- the query fits the program's `Query` (a string holding `{me}` or `{room}` stands for any value);
+- `rows` is a path of the program's `Reply`;
+- with a `cursor`, the query with the cursor put in is still one query of the program, and `next`
+  beside `rows` is a path of the reply. A cursor is a path in the query, so it starts at the query's
+  own variant: a query renamed without its cursor fails here, on the first page, not on the second.
+
 ## Which programs a widget can read
 
 Any program. Since J-054 a view names no programs: the app host answers a view's

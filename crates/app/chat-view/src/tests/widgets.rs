@@ -252,7 +252,30 @@ fn a_cursor_whose_reply_has_no_next_beside_its_rows_says_so() {
     );
     let held = held(&[(ROOMS, &nested)]);
     let (cx, _) = desk(rooms(&[("widget.pinned", ROOMS)]), held);
-    let said = "The reply doesn’t read: there is no `Channels.items.0.next`";
+    let said = "The widget doesn’t fit chat’s schema: there is no `Channels.items.0.next`";
+    assert!(said_starting(&cx, said), "{:?}", cx.texts());
+}
+
+#[test]
+fn a_cursor_naming_another_query_than_the_one_asked_says_so_before_any_page() {
+    let stale = LISTED.replace(
+        "cursor = \"Channels.page.after\"",
+        "cursor = \"Accounts.page.after\"",
+    );
+    assert_ne!(stale, LISTED, "the cursor names another query");
+    let held = held(&[(ROOMS, &stale)]);
+    let (cx, _) = desk(rooms(&[("widget.pinned", ROOMS)]), held);
+    let said = "The widget doesn’t fit chat’s schema: `cursor` is a path in the query, from the query’s own variant: at query: expected";
+    assert!(said_starting(&cx, said), "{:?}", cx.texts());
+    assert!(!cx.has_text("#General at 3"), "{:?}", cx.texts());
+}
+
+#[test]
+fn rows_naming_no_part_of_the_reply_say_which_parts_there_are() {
+    let wrong = LISTED.replace("rows = \"Channels.items\"", "rows = \"Channels.rows\"");
+    let held = held(&[(ROOMS, &wrong)]);
+    let (cx, _) = desk(rooms(&[("widget.pinned", ROOMS)]), held);
+    let said = "The widget doesn’t fit chat’s schema: `rows` names no part of the reply: at reply.channels: there is no field rows; the fields are ";
     assert!(said_starting(&cx, said), "{:?}", cx.texts());
 }
 

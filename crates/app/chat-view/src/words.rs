@@ -344,6 +344,18 @@ pub(crate) fn widget_no_next(path: &str) -> String {
     )
 }
 
+pub(crate) fn widget_misfit(program: &str, why: &str) -> String {
+    format!("The widget doesn’t fit {program}’s schema: {why}")
+}
+
+pub(crate) fn widget_rows_misfit(why: &str) -> String {
+    format!("`rows` names no part of the reply: {why}")
+}
+
+pub(crate) fn widget_cursor_misfit(why: &str) -> String {
+    format!("`cursor` is a path in the query, from the query’s own variant: {why}")
+}
+
 // the file a widget reads beside its source, not there
 pub(crate) fn widget_no_text(path: &str) -> String {
     format!("Nothing at {path} yet.")

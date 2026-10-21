@@ -2,6 +2,7 @@
 //! `widget.side`), drawn from one read-only query of any program (`docs/widgets.md`). This is the
 //! file read, its templates and its filters; `widget/live.rs` is the data path.
 mod live;
+mod schema;
 
 use std::collections::BTreeMap;
 
@@ -14,6 +15,7 @@ use view::{Hsla, Theme};
 #[cfg(test)]
 pub(crate) use live::module_with;
 pub(crate) use live::{Shown, Text, Widgets, file_bytes};
+pub(crate) use schema::check;
 
 // Where a channel shows a widget: the meta key that names its file.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -361,6 +363,13 @@ pub(crate) fn put(query: &mut Value, path: &str, value: Value) -> Result<(), Str
             .or_insert_with(|| Value::Object(Default::default()));
     }
     Err("the cursor names no field".into())
+}
+
+pub(crate) fn next_beside(rows: &str) -> String {
+    match rows.rsplit_once('.') {
+        Some((list, _)) => format!("{list}.next"),
+        None => "next".to_owned(),
+    }
 }
 
 // Whether every field the filter names holds one of its values, each

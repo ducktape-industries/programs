@@ -119,3 +119,49 @@ fn a_value_with_holes_is_checked_everywhere_but_at_its_holes() {
     );
     assert!(read.encode_op(&json!({ "count": { "by": "$n" } })).is_err());
 }
+
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema)]
+struct Listed {
+    items: Vec<Row>,
+    next: Option<Vec<u8>>,
+}
+
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema)]
+struct Row {
+    id: u32,
+    tags: Vec<String>,
+}
+
+#[derive(BorshSerialize, BorshDeserialize, BorshSchema)]
+enum Answer {
+    Jobs(Listed),
+    Job(Option<Row>),
+    Gone,
+}
+
+#[test]
+fn a_path_reaches_the_type_decode_writes_there() {
+    let schema = BorshSchemaContainer::for_type::<Answer>();
+    let at = |path: &str| declared_at(&schema, "Answer", "reply", path);
+    assert_eq!(at(""), Ok("Answer".to_owned()));
+    assert_eq!(at("Jobs.items"), Ok("Vec<Row>".to_owned()));
+    assert_eq!(at("jobs.next"), Ok("Option<Vec<u8>>".to_owned()));
+    assert_eq!(at("Jobs.items.0.tags.2"), Ok("String".to_owned()));
+    assert_eq!(at("Job.id"), Ok("u32".to_owned()));
+    let field = at("Jobs.after").unwrap_err().to_string();
+    assert_eq!(
+        field,
+        "at reply.jobs: there is no field after; the fields are items, next"
+    );
+    let variant = at("Shown.items").unwrap_err().to_string();
+    assert_eq!(
+        variant,
+        "at reply: there is no variant named Shown; the variants are jobs, job, gone"
+    );
+    let index = at("Jobs.items.first").unwrap_err().to_string();
+    assert_eq!(
+        index,
+        "at reply.jobs.items: expected an index, got the step first"
+    );
+    assert!(at("Gone.since").is_err());
+}

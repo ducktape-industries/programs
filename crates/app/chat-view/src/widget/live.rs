@@ -12,7 +12,10 @@ use view::methods::{BlobGet, Call, NamedChanges, NamedQuery};
 use view::prelude::*;
 use view::{Host, Task, store};
 
-use super::{Scope, Shape, Slot, TextSource, Widget, at, fill, parse, put, with_me, with_room};
+use super::{
+    Scope, Shape, Slot, TextSource, Widget, at, check, fill, next_beside, parse, put, with_me,
+    with_room,
+};
 use crate::{Chat, words};
 
 // Every widget the open room names, by file path, and what they read.
@@ -355,7 +358,11 @@ async fn read(
     let program = &widget.source.program;
     let (shown, follows) = match interface(host, program, schemas).await {
         Ok(interface) => {
-            let shown = match source(host, &interface, &widget, reader).await {
+            let asked = match check(&widget, &interface) {
+                Ok(()) => source(host, &interface, &widget, reader).await,
+                Err(why) => Err(words::widget_misfit(program, &why)),
+            };
+            let shown = match asked {
                 Ok((reply, rows)) => {
                     let text = match &widget.source.text {
                         Some(source) => beside(host, source, &rows, reader).await,
@@ -495,10 +502,7 @@ async fn source(
         let rows = rows_of(&reply, &source.rows).map_err(|why| words::widget_reply(&why))?;
         return Ok((reply, rows));
     };
-    let next = match source.rows.rsplit_once('.') {
-        Some((list, _)) => format!("{list}.next"),
-        None => "next".to_owned(),
-    };
+    let next = next_beside(&source.rows);
     let first: Rc<RefCell<Option<Value>>> = Rc::default();
     let pages = view::host::all_pages(|after: Option<Vec<u8>>| {
         let (host, interface, first) = (host.clone(), interface.clone(), first.clone());

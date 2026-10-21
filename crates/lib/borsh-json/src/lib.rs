@@ -6,6 +6,7 @@ pub mod discover;
 mod encode;
 mod example;
 mod interface;
+mod path;
 mod shape;
 mod spoken;
 #[cfg(test)]
@@ -22,6 +23,7 @@ pub use decode::decode;
 pub use encode::{encode, fits};
 pub use example::{example, examples, variant_example};
 pub use interface::{Interface, Unreadable, unread};
+pub use path::declared_at;
 pub use program::schema::SECTION;
 pub use shape::{shape, variant_shape};
 pub use spoken::{spoken, unquoted};
