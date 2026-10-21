@@ -339,7 +339,8 @@ pub(crate) fn message_waits(
 fn unwatch(ctx: &ExecCtx, agent: AccountNumber, channel: &str, watched: bool) -> Result<(), Error> {
     let needed = message_waits(ctx, agent)?
         .iter()
-        .any(|(waited, _)| waited == channel);
+        .any(|(waited, _)| waited == channel)
+        || crate::runs::open_in(ctx, agent, channel)?;
     if needed {
         return Ok(());
     }

@@ -9,6 +9,7 @@ mod phone;
 mod policies;
 mod reads;
 mod routes;
+mod runs;
 mod server_tools;
 mod setup;
 mod thinking;
@@ -305,6 +306,7 @@ struct Net {
     budget: harness::BudgetReport,
     // the open thread's armed waits
     armed: Vec<harness::WaitRow>,
+    runs: Vec<(u64, harness::RunRow)>,
     // configuration files by path where one is not its setup's configuration as `write` puts it
     files: Vec<(String, String)>,
     failing: Vec<harness::FinalError>,
@@ -454,6 +456,7 @@ impl Default for Net {
             settling: Vec::new(),
             budget: harness::BudgetReport::default(),
             armed: Vec::new(),
+            runs: Vec::new(),
             files: Vec::new(),
             failing: Vec::new(),
         }
@@ -610,6 +613,13 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                     .cloned()
                     .collect(),
             )),
+            harness::Query::Runs { thread } => harness::Reply::Runs(
+                net.runs
+                    .iter()
+                    .filter(|(id, _)| *id == thread)
+                    .map(|(_, row)| row.clone())
+                    .collect(),
+            ),
             harness::Query::Wait { .. } => harness::Reply::Wait(None),
             harness::Query::Wakes { .. } => harness::Reply::Wakes(Vec::new()),
             harness::Query::Services { .. } => harness::Reply::Services(None),

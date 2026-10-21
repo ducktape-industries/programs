@@ -23,6 +23,7 @@ mod replies;
 mod resume;
 mod room_rules;
 mod routes;
+mod runs;
 mod schema;
 mod state;
 mod streams;
@@ -918,6 +919,14 @@ pub struct WaitRow {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct RunRow {
+    pub channel: String,
+    pub author: AccountNumber,
+    pub mentioned: u64,
+    pub last: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Ended {
     pub height: u64,
     pub text: String,
@@ -1123,6 +1132,10 @@ pub enum Query {
         agent: AccountNumber,
         page: PageRequest,
     },
+    #[ask(Reply::Runs(Vec<RunRow>))]
+    #[reads(state::THREADS, state::RUNS)]
+    #[tool_query(description = "The posts a conversation's agent goes on hearing after a mention, one run per chat room: whose posts, the message that mentioned the agent, and the last post heard since. A post by anyone else ends a run.", example = examples::runs)]
+    Runs { thread: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1158,6 +1171,7 @@ pub enum Reply {
     ProviderRoute(Option<ProviderRouteRow>),
     ProviderRoutes(PageResponse<ProviderRouteRow>),
     FinalErrors(PageResponse<FinalError>),
+    Runs(Vec<RunRow>),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -1478,7 +1492,8 @@ fn query_variants_only_append() {
             "Cards",
             "ProviderRoute",
             "ProviderRoutes",
-            "FinalErrors"
+            "FinalErrors",
+            "Runs"
         ]
     );
 }

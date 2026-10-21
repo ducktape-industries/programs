@@ -304,3 +304,7 @@ pub(crate) fn final_errors() -> Query {
         page: page(),
     }
 }
+
+pub(crate) fn runs() -> Query {
+    Query::Runs { thread: 144 }
+}

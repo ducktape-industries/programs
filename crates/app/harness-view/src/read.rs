@@ -8,7 +8,7 @@ use std::rc::Rc;
 use egress::{RELAY, ServiceRow};
 use harness::{
     AgentSetup, Asking, Awaited, BlobId, Body, CallRow, FinalError, Frame, Partial,
-    ProviderRouteRow, SettleWindow, Spoken, Tally, ThreadRow, ToolInfo, Usage, WaitRow,
+    ProviderRouteRow, RunRow, SettleWindow, Spoken, Tally, ThreadRow, ToolInfo, Usage, WaitRow,
     WithheldFrame,
 };
 use identity::{Category, Kind, Ownership, PageRequest};
@@ -394,6 +394,7 @@ pub(crate) struct Transcript {
     // what its agent waits for (`wait_for`), each until it is over
     pub armed: Vec<WaitRow>,
     pub failing: Option<FinalError>,
+    pub runs: Vec<RunRow>,
 }
 
 impl Transcript {
@@ -464,6 +465,9 @@ impl Transcript {
         }
         if let Some(armed) = delta.armed {
             self.armed = armed;
+        }
+        if let Some(runs) = delta.runs {
+            self.runs = runs;
         }
         if let Some(failing) = delta.failing {
             self.failing = failing;
@@ -551,6 +555,7 @@ pub(crate) async fn transcript(
     let waits = waits(&host, &thread).await?;
     let armed = armed(&host, id).await?;
     let failing = failing_of(&host, &thread).await?;
+    let runs = host.query(harness::ask::Runs { thread: id }).await?;
     Ok(Some(Transcript {
         thread,
         frames,
@@ -569,6 +574,7 @@ pub(crate) async fn transcript(
         settling,
         armed,
         failing,
+        runs,
     }))
 }
 
@@ -596,6 +602,7 @@ pub(crate) struct Touched {
     pub setup: bool,
     pub armed: bool,
     pub failing: bool,
+    pub runs: bool,
 }
 
 impl Touched {
@@ -612,6 +619,7 @@ impl Touched {
             || self.setup
             || self.armed
             || self.failing
+            || self.runs
     }
 
     pub fn add(&mut self, more: Touched) {
@@ -627,6 +635,7 @@ impl Touched {
         self.setup |= more.setup;
         self.armed |= more.armed;
         self.failing |= more.failing;
+        self.runs |= more.runs;
     }
 }
 
@@ -645,6 +654,7 @@ pub(crate) struct Delta {
     pub waits: Option<Vec<Wait>>,
     pub armed: Option<Vec<WaitRow>>,
     pub failing: Option<Option<FinalError>>,
+    pub runs: Option<Vec<RunRow>>,
 }
 
 pub(crate) async fn delta(
@@ -703,6 +713,10 @@ pub(crate) async fn delta(
         (Some(row), true) => Some(failing_of(&host, row).await?),
         _ => None,
     };
+    let runs = match touched.runs {
+        true => Some(host.query(harness::ask::Runs { thread: id }).await?),
+        false => None,
+    };
     Ok(Delta {
         thread,
         frames,
@@ -717,6 +731,7 @@ pub(crate) async fn delta(
         waits,
         armed,
         failing,
+        runs,
     })
 }
 

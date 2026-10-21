@@ -448,7 +448,7 @@ fn a_wait_for_a_message_wakes_once_on_the_first_that_matches_whoever_writes_it()
     assert!(watches(chain, world.agent, "random"), "chat tells harness");
 
     chain.at(5, 0);
-    world.post(ADA, "general", "g1", "elsewhere");
+    world.post(BO, "general", "g1", "elsewhere");
     world.post(ADA, "random", "r1", "not Bo");
     assert!(wakes(chain, thread).is_empty(), "nothing else ends it");
     assert_eq!(

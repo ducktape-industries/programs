@@ -781,6 +781,10 @@ fn finish(
     ran(&mut row);
     CALLS.put(ctx, &key, &row);
     let mut owner = thread(ctx, id)?;
+    let answered = tools::posts(&row.tool) && !failed;
+    if answered {
+        crate::runs::answered(ctx, owner.agent, id)?;
+    }
     match owner.asking {
         Asking::Asked { .. } => {
             let live = Live {

@@ -15,8 +15,8 @@ use crate::timeline::{self, Entry};
 use crate::ui::{closed_badge, meter, state_badge, thread_gone, timeline as drawn, waiting};
 use crate::words::{
     all_tokens, armed_words, asking_lower, closes, context_words, conversation_label, first_line,
-    frame_meta, full, held_author, mentions, no_node_words, open_label, quoted, snapshot_words,
-    status, usage_words, waiting_words, work_meta,
+    frame_meta, full, held_author, mentions, no_node_words, open_label, quoted, runs_words,
+    snapshot_words, status, usage_words, waiting_words, work_meta,
 };
 use crate::{Agents, Arm, Screen, Sheet, State, links, thread_state};
 
@@ -144,6 +144,7 @@ fn thread(
         .children(
             armed_words(shown).map(|words| notice("thread-armed", words, false, theme, ladder)),
         )
+        .children(runs_words(shown).map(|words| notice("thread-runs", words, false, theme, ladder)))
         .when(stuck, |page| {
             page.child(notice("thread-stuck", STUCK, false, theme, ladder))
         })

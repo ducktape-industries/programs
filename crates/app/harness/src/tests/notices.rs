@@ -81,7 +81,7 @@ fn talk(world: &World, choice: Choice) {
     };
     world
         .chain
-        .submit(signed(ADA), chat::PROGRAM, &reply)
+        .submit(signed(BO), chat::PROGRAM, &reply)
         .unwrap();
 }
 

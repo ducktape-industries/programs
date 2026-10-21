@@ -213,7 +213,8 @@ fn moves_detail(detail: &Loadable<Detail>, agent: u64, wrote: &Written) -> bool 
         | Written::Partial(_)
         | Written::Settling(_)
         | Written::Budget
-        | Written::Armed(_) => false,
+        | Written::Armed(_)
+        | Written::Runs(_) => false,
         Written::FinalError { agent: number, .. } => *number == agent,
     }
 }
@@ -239,6 +240,7 @@ fn touched_of(thread: u64, agent: Option<u64>, written: &[Written]) -> Touched {
             Written::Route => touched.setup = true,
             Written::Budget => {}
             Written::Armed(id) => touched.armed |= *id == thread,
+            Written::Runs(number) => touched.runs |= agent == Some(*number),
             Written::FinalError { thread: id, .. } => touched.failing |= *id == thread,
         }
     }

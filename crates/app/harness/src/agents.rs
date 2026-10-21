@@ -291,7 +291,9 @@ pub(crate) fn manual(agent: &Agent, title: &str, bound: Option<&Place>) -> Strin
          - Hearing: what reaches you from each chat room is what you chose there, in chat as \
          yourself: Listen (every message), SetNotices with no notices (mentions and replies in \
          your threads, the default), Mentions (mentions only) or Off (nothing). Direct messages \
-         always reach you, and a message wait still ends with its message.\n\
+         always reach you, and a message wait still ends with its message. After a post that \
+         mentions you, its author's very next posts in that room reach you too, until anyone \
+         else posts there, you included.\n\
          - Rules: a chat room's rules (its rules meta) reach you ahead of the first message you \
          hear from it, and again when they change; follow them there.\n\
          - Forge: forge_commit commits files to a git repository and pushes them as account \
@@ -338,6 +340,7 @@ enum Heard {
     // a message a wait listened for, quoted as the wake
     Waited,
     Notice,
+    Continued { mentioned: u64 },
 }
 
 impl Heard {
@@ -345,7 +348,7 @@ impl Heard {
     fn direct(self) -> bool {
         match self {
             Heard::Mention | Heard::Direct | Heard::Waited | Heard::Notice => true,
-            Heard::Thread | Heard::Listen | Heard::Watch => false,
+            Heard::Thread | Heard::Listen | Heard::Watch | Heard::Continued { .. } => false,
         }
     }
 }
@@ -425,6 +428,7 @@ fn designation(
         Heard::Direct => "wrote to you directly",
         Heard::Thread => "continued a thread with you",
         Heard::Notice => "sent you a notice",
+        Heard::Continued { .. } => "went on",
         Heard::Listen | Heard::Watch | Heard::Waited => "wrote",
     };
     let listened = match heard {
@@ -434,14 +438,25 @@ fn designation(
         | Heard::Thread
         | Heard::Watch
         | Heard::Waited
-        | Heard::Notice => "",
+        | Heard::Notice
+        | Heard::Continued { .. } => "",
+    };
+    let after = match heard {
+        Heard::Continued { mentioned } => format!(", after mentioning you in message {mentioned}"),
+        Heard::Mention
+        | Heard::Direct
+        | Heard::Thread
+        | Heard::Listen
+        | Heard::Watch
+        | Heard::Waited
+        | Heard::Notice => String::new(),
     };
     let in_thread = match row.thread {
         Some(root) => format!(", in the thread of message {root} (reply_to {root})"),
         None => format!(" (reply_to {} to answer in its thread)", row.seq),
     };
     let text = format!(
-        "{who} {verb} in chat channel {channel}{listened}, message {seq}{in_thread}:\n{body}",
+        "{who} {verb} in chat channel {channel}{listened}, message {seq}{after}{in_thread}:\n{body}",
         channel = row.channel_id,
         seq = row.seq,
         body = row.text,
@@ -512,6 +527,11 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
     let Some(agent) = running(ctx, change.recipient)? else {
         return Ok(Hearing::default());
     };
+    let posted = posted(ctx, &change)?;
+    let why = match &posted {
+        Some(row) => continued(ctx, &agent, row, actor, why)?,
+        None => why,
+    };
     let woke = waited(ctx, &agent, &change, actor, why)?;
     let seen = (change.source.clone(), change.revision);
     // what the agent chose not to hear is never delivered: nothing of it is written, so another
@@ -539,6 +559,20 @@ fn heard(ctx: &ExecCtx, change: Change) -> Result<Hearing, Error> {
     } = designation(ctx, &change, actor, why)?;
     let (mut thread, reached) = route(ctx, &agent, &places, place)?;
     PLACES.put(ctx, &(agent.number, reached), &thread.id);
+    if let Some(row) = &posted {
+        match why {
+            Heard::Mention => crate::runs::open(ctx, agent.number, row, actor, thread.id)?,
+            Heard::Continued { .. } => {
+                crate::runs::reached(ctx, agent.number, &row.channel_id, thread.id)?
+            }
+            Heard::Direct
+            | Heard::Thread
+            | Heard::Listen
+            | Heard::Watch
+            | Heard::Waited
+            | Heard::Notice => {}
+        }
+    }
     // the wake that conversation heard already quotes the message
     if woke == Some(thread.id) {
         return Ok(Hearing { told: None, woke });
@@ -571,7 +605,7 @@ struct Hearing {
     woke: Option<u64>,
 }
 
-fn message_channel(ctx: &QueryCtx, change: &Change) -> Result<Option<String>, Error> {
+fn posted(ctx: &QueryCtx, change: &Change) -> Result<Option<chat::MsgRow>, Error> {
     let from_chat = change.source.program == chat::PROGRAM
         && change.source.object.kind == chat::attributed::MESSAGE;
     if !from_chat {
@@ -581,9 +615,28 @@ fn message_channel(ctx: &QueryCtx, change: &Change) -> Result<Option<String>, Er
         message_id: change.source.object.id.clone(),
     };
     match ctx.query(chat::PROGRAM, &asked)? {
-        chat::Reply::Message(row) => Ok(row.map(|row| row.channel_id)),
+        chat::Reply::Message(row) => Ok(row),
         other => Err(unexpected_reply(chat::PROGRAM, "MessageById", &other)),
     }
+}
+
+fn message_channel(ctx: &QueryCtx, change: &Change) -> Result<Option<String>, Error> {
+    Ok(posted(ctx, change)?.map(|row| row.channel_id))
+}
+
+fn continued(
+    ctx: &ExecCtx,
+    agent: &Agent,
+    row: &chat::MsgRow,
+    actor: AccountNumber,
+    why: Heard,
+) -> Result<Heard, Error> {
+    let listened = matches!(why, Heard::Listen);
+    let run = crate::runs::step(ctx, agent.number, row, actor, listened)?;
+    Ok(match (run, why) {
+        (Some(mentioned), Heard::Watch | Heard::Thread) => Heard::Continued { mentioned },
+        _ => why,
+    })
 }
 
 // whether a chat message reaches the agent, by what it chose for the message's room in chat:
@@ -604,11 +657,16 @@ fn chooses(ctx: &QueryCtx, agent: &Agent, change: &Change, why: Heard) -> Result
         (true, _) => true,
         (false, None) => matches!(
             why,
-            Heard::Mention | Heard::Direct | Heard::Thread | Heard::Notice
+            Heard::Mention
+                | Heard::Direct
+                | Heard::Thread
+                | Heard::Notice
+                | Heard::Continued { .. }
         ),
-        (false, Some(chat::Notices::Mentions)) => {
-            matches!(why, Heard::Mention | Heard::Direct | Heard::Notice)
-        }
+        (false, Some(chat::Notices::Mentions)) => matches!(
+            why,
+            Heard::Mention | Heard::Direct | Heard::Notice | Heard::Continued { .. }
+        ),
         (false, Some(chat::Notices::Off)) => false,
     })
 }
@@ -674,6 +732,7 @@ fn dropped(
         Heard::Direct => "a direct message",
         Heard::Thread => "a thread reply",
         Heard::Notice => "a notice",
+        Heard::Continued { .. } => "a mention's continuation",
         // a channel it listens to is talk around the agent, not to it: what it does not answer
         // there is left without a notice, or each such message would add one
         Heard::Listen | Heard::Watch | Heard::Waited => return Ok(()),

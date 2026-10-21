@@ -26,6 +26,10 @@ pub(crate) fn posting(tool: &str, input: &str) -> Option<(String, Option<u64>, S
     posts.then(|| chat::posting_at(input)).flatten()
 }
 
+pub(crate) fn posts(tool: &str) -> bool {
+    tool == <chat::Post as Tool>::NAME
+}
+
 use ::program::{
     BlobId, Error, ExecCtx, Principal, ProgramId, QueryCtx, invalid, unexpected_reply,
 };

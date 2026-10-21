@@ -200,7 +200,7 @@ fn the_agents_own_posts_and_other_channels_reach_nothing_and_listen_seeds_the_ro
         panic!()
     };
     assert!(page.items.is_empty(), "{:?}", page.items);
-    world.post(ADA, "general", "g9", "after it stopped");
+    world.post(BO, "general", "g9", "after it stopped");
     assert_eq!(posts(chain, thread).len(), 3);
     assert!(assigned(chain, SERVICE).is_empty());
 }

@@ -10,6 +10,7 @@ mod budget;
 mod chat_channels;
 mod compact_at;
 mod config;
+mod continued;
 mod conversations;
 mod file_tools;
 mod final_errors;

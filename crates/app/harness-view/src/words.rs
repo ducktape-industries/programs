@@ -893,6 +893,24 @@ pub(crate) fn armed_words(shown: &Transcript) -> Option<String> {
     Some(format!("Waits for {}", each.join(" · ")))
 }
 
+pub(crate) fn runs_words(shown: &Transcript) -> Option<String> {
+    let none = shown.thread.closed || shown.runs.is_empty();
+    if none {
+        return None;
+    }
+    let each: Vec<String> = shown
+        .runs
+        .iter()
+        .map(|run| {
+            format!(
+                "account {} in chat channel {} since message {} (last {})",
+                run.author, run.channel, run.mentioned, run.last
+            )
+        })
+        .collect();
+    Some(format!("Hears the rest of a mention: {}", each.join(" · ")))
+}
+
 pub(crate) fn call_wait(call: &CallRow, waits: &[Wait]) -> Option<String> {
     if call.state != CallState::Relaying {
         return None;

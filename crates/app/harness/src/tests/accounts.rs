@@ -286,7 +286,7 @@ fn agent_on(
 }
 
 fn mention_of(world: &World, agent: AccountNumber, id: &str, text: &str) -> u64 {
-    world.post(ADA, "general", id, &format!("<@{agent}> {text}"));
+    world.post(BO, "general", id, &format!("<@{agent}> {text}"));
     let asked = Query::Threads {
         agent,
         page: PageRequest::default(),

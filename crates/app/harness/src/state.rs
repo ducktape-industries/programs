@@ -120,6 +120,7 @@ pub const SEALED_FOR: Map<u64, (String, Option<String>)> = Map::new("sealed-for/
 // what the draft says the turn is doing (`drafts.rs`)
 pub const DRAFTING: Map<u64, Drafted> = Map::new("drafting/");
 pub const FINAL_ERRORS: Map<(AccountNumber, u64), FinalError> = Map::new("final-error/");
+pub const RUNS: Map<(AccountNumber, String), Run> = Map::new("mention-run/");
 
 // a wait for a files path: the path, and its node when the wait was armed (none: nothing there)
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -144,6 +145,14 @@ pub struct Lane {
 pub struct Live {
     pub call: String,
     pub outcome: Option<Body>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Run {
+    pub author: AccountNumber,
+    pub mentioned: u64,
+    pub last: u64,
+    pub thread: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -322,6 +331,7 @@ pub enum Written {
     Budget,
     Armed(u64),
     FinalError { agent: AccountNumber, thread: u64 },
+    Runs(AccountNumber),
 }
 
 impl Written {
@@ -338,7 +348,7 @@ impl Written {
             | Written::Frame { thread, .. }
             | Written::Call { thread, .. }
             | Written::FinalError { thread, .. } => Some(*thread),
-            Written::Agent(_) | Written::Route | Written::Budget => None,
+            Written::Agent(_) | Written::Route | Written::Budget | Written::Runs(_) => None,
         }
     }
 
@@ -359,6 +369,7 @@ impl Written {
             Written::Budget => BUDGETS.key(&()),
             Written::Armed(thread) => ARMED.key(thread),
             Written::FinalError { agent, thread } => FINAL_ERRORS.key(&(*agent, *thread)),
+            Written::Runs(agent) => RUNS.key(&(*agent, String::new())),
         }
     }
 }
@@ -396,6 +407,9 @@ pub fn written(key: &[u8]) -> Option<Written> {
         if let Some(thread) = under::<u64>(&prefix, key) {
             return Some(wrote(thread));
         }
+    }
+    if let Some(agent) = under::<AccountNumber>(&RUNS.key(&()), key) {
+        return Some(Written::Runs(agent));
     }
     let agents = [
         CURRENT.key(&()),
