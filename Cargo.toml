@@ -53,16 +53,16 @@ gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpu
 
 # ---- the kernel ABI a program and the host share: ducktape's own
 # `crates/kernel/abi`, at the rev the host below is pinned to
-abi = { git = "https://github.com/ducktape-industries/ducktape", rev = "b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e" }
+abi = { git = "https://github.com/ducktape-industries/ducktape", rev = "58b5d91e97d2f0b0e22a5374b6e2a70037b98f14" }
 
 # ---- the blobs contract the blobs program records and the programs that read
 # held blobs ask it by; the host the founding suite runs the boot set on and
 # the key schemes it signs with, and the probe fixture it seats
 # (dev-dependencies only)
-host = { git = "https://github.com/ducktape-industries/ducktape", rev = "b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e" }
-blob = { git = "https://github.com/ducktape-industries/ducktape", rev = "b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e" }
-keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e" }
-fixture-wasm = { git = "https://github.com/ducktape-industries/ducktape", rev = "b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e" }
+host = { git = "https://github.com/ducktape-industries/ducktape", rev = "58b5d91e97d2f0b0e22a5374b6e2a70037b98f14" }
+blob = { git = "https://github.com/ducktape-industries/ducktape", rev = "58b5d91e97d2f0b0e22a5374b6e2a70037b98f14" }
+keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "58b5d91e97d2f0b0e22a5374b6e2a70037b98f14" }
+fixture-wasm = { git = "https://github.com/ducktape-industries/ducktape", rev = "58b5d91e97d2f0b0e22a5374b6e2a70037b98f14" }
 commonware-cryptography = "2026.9.0"
 commonware-runtime = "2026.9.0"
 
@@ -190,5 +190,5 @@ strip = "debuginfo"
 [patch.crates-io]
 # core's state crate builds on its vendored commonware-storage (an owned reader of the QMDB log),
 # so every build that links it takes the same copy
-commonware-storage = { git = "https://github.com/ducktape-industries/ducktape", rev = "b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e" }
+commonware-storage = { git = "https://github.com/ducktape-industries/ducktape", rev = "58b5d91e97d2f0b0e22a5374b6e2a70037b98f14" }
 gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "eef11e96c9fcf7e0389d31f125013370a1b02d92" }
