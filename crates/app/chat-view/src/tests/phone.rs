@@ -1330,6 +1330,33 @@ fn the_owner_removes_a_member_from_their_sheet() {
 }
 
 #[test]
+fn the_owner_removes_themselves_from_their_own_row() {
+    let (mut cx, view) = in_general();
+    cx.update(&view, |chat, _, cx| {
+        chat.room.as_mut().unwrap().members = Loadable::Ready(vec![::chat::MemberRow {
+            principal: Principal::Account(7),
+            height: 1,
+            time: 0,
+        }]);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    cx.simulate_click("Channel details");
+    cx.simulate_click("chat-details-member-<@7>");
+    assert!(cx.has_text("Remove from this channel"), "{:?}", cx.texts());
+    cx.simulate_click("chat-details-remove");
+    cx.run_until_parked();
+    assert!(matches!(
+        submitted(&cx).pop(),
+        Some(Op::SetMembership {
+            principal: Principal::Account(7),
+            member: false,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn every_screen_and_sheet_fits_a_phone() {
     let (mut cx, view) = phone();
     testing::sweep(&mut cx, |cx| {

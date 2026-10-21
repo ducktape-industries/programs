@@ -256,7 +256,7 @@ fn member_row(
         .ready()
         .is_some_and(|names| crate::message::agent(names, &principal));
     let removable = match &principal {
-        Principal::Account(account) if changes && Some(&principal) != me.as_ref() => Some(*account),
+        Principal::Account(account) if changes => Some(*account),
         _ => None,
     };
     let id = format!(
