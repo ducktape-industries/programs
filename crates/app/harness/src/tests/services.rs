@@ -223,11 +223,28 @@ fn a_429_on_the_threads_account_asks_again_next_block_naming_none_and_the_thread
     assert_eq!(
         rows,
         [
-            (SERVICE.to_owned(), Some("a".to_owned()), false),
+            (SERVICE.to_owned(), Some("b".to_owned()), false),
             (SERVICE.to_owned(), Some("b".to_owned()), true),
-            (SERVICE.to_owned(), Some("b".to_owned()), false)
+            (SERVICE.to_owned(), Some("a".to_owned()), false)
         ]
     );
+    let read = |page: PageRequest| {
+        let asked = Query::Answerers { thread, page };
+        let Reply::Answerers(page) = chain.query(PROGRAM, &asked).unwrap() else {
+            panic!("answerers answer as a page")
+        };
+        let rows: Vec<(Option<String>, bool)> = page
+            .items
+            .into_iter()
+            .map(|row| (row.account, row.moved))
+            .collect();
+        (rows, page.next)
+    };
+    let (newest, next) = read(PageRequest::first(2));
+    let b = |moved| (Some("b".to_owned()), moved);
+    assert_eq!(newest, [b(false), b(true)]);
+    let (oldest, last) = read(PageRequest::resume(next, 2));
+    assert_eq!((oldest, last), (vec![(Some("a".to_owned()), false)], None));
     assert_eq!(cache_writes(chain, thread), [1000, 1200, 0]);
 }
 

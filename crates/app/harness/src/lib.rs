@@ -1089,7 +1089,7 @@ pub enum Query {
     Routes { page: PageRequest },
     #[ask(Reply::Answerers(PageResponse<Answerer>))]
     #[reads(state::ANSWERED)]
-    #[tool_query(description = "Which service and account answered each turn and summary of a conversation, and whether it moved there.", example = examples::answerers)]
+    #[tool_query(description = "Which service and account answered each turn and summary of a conversation, newest first, and whether it moved there.", example = examples::answerers)]
     Answerers { thread: u64, page: PageRequest },
     // what will wake a conversation again; none when nothing will
     #[ask(Reply::Wakes(Vec<Wake>))]

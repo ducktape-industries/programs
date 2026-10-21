@@ -1,7 +1,7 @@
 //! Which model service and account answers a thread's next call: the account its prompt cache sits
 //! on, as its service named it in its last answer, then each service with no account named, so the
 //! service picks; a call that failed on one is passed over to the next for that call alone.
-use ::program::{Error, ExecCtx, QueryCtx};
+use ::program::{Error, ExecCtx, QueryCtx, Range};
 use abi::role::egress::http;
 use store::{PageRequest, PageResponse};
 
@@ -30,9 +30,28 @@ pub(crate) fn answerers(
     thread: u64,
     page: &PageRequest,
 ) -> Result<PageResponse<Answerer>, Error> {
-    Ok(ANSWERED
-        .range_of(ctx, &thread, page)?
-        .map(|(_, answerer)| answerer))
+    let scope = ANSWERED.key(&thread);
+    let whole = ANSWERED.prefix_of(&thread);
+    let below = page.open(&scope)?.map(|cursor| cursor.after);
+    let end = [below, whole.end].into_iter().flatten().min();
+    let limit = page.limit();
+    let newest = Range::new(whole.start, end).reverse();
+    let mut rows = ANSWERED.scan(ctx, newest.limit(limit.saturating_add(1)))?;
+    let more = rows.len() as u64 > limit;
+    rows.truncate(limit as usize);
+    let height = ctx.env().height;
+    let next = rows.last().filter(|_| more).map(|(key, _)| {
+        abi::encode(&store::Cursor {
+            height,
+            scope: scope.clone(),
+            after: ANSWERED.key(key),
+        })
+    });
+    Ok(PageResponse {
+        height,
+        items: rows.into_iter().map(|(_, answerer)| answerer).collect(),
+        next,
+    })
 }
 
 fn key(service: &str, account: Option<&str>) -> (String, String) {

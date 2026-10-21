@@ -457,7 +457,7 @@ fn a_conversation_stays_on_the_account_that_answered_it_and_asks_unpinned_once_t
     assert_eq!(routes_now(chain), [routed]);
     assert_eq!(
         answerers_now(chain, thread),
-        [by("a", false), by("b", true)]
+        [by("b", true), by("a", false)]
     );
     let accounts = budget_now(chain).accounts.into_iter();
     let used: Vec<(String, u64)> = accounts
