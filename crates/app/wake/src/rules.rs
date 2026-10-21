@@ -4,8 +4,9 @@
 use std::collections::BTreeSet;
 
 use ::program::{
-    BlobId, Cause, Ctx, Error, ExecCtx, MessageId, Outcome, Principal, QueryCtx, Reply as Wanted,
-    code, corrupt, decoded, invalid, not_found, unauthorized, unexpected_reply, wrong_state,
+    BlobId, Cause, Ctx, Error, ExecCtx, MessageId, Outcome, Principal, QueryCtx, Range,
+    Reply as Wanted, code, corrupt, decoded, invalid, not_found, unauthorized, unexpected_reply,
+    wrong_state,
 };
 use abi::role::egress::{DEFAULT_WAIT, Delivery, Event, Request, http};
 use abi::role::programs::Entry;
@@ -587,11 +588,48 @@ pub(crate) fn filed(ctx: &ExecCtx, row: files::SnapshotRow) -> Result<(), Error>
     let mut touched = BTreeSet::new();
     for path in changed_paths(ctx, &row)? {
         touched.extend(ancestors(&path));
+        touched.extend(watched_below(ctx, &path)?);
     }
     for path in touched {
-        fire(ctx, Key::Path { path }, Fired::Filed(row.clone()))?;
+        if node_changed(ctx, &path, &row)? {
+            fire(ctx, Key::Path { path }, Fired::Filed(row.clone()))?;
+        }
     }
     Ok(())
+}
+
+fn watched_below(ctx: &QueryCtx, path: &str) -> Result<BTreeSet<String>, Error> {
+    let folder = format!("{}/", path.trim_end_matches('/'));
+    let key = PATH_WAKES.key(&folder);
+    let under = key.strip_suffix(&[0, 0][..]).unwrap_or(&key);
+    let watched = PATH_WAKES.scan(ctx, Range::prefix(under))?;
+    Ok(watched.into_iter().map(|(path, _)| path).collect())
+}
+
+fn node_changed(ctx: &QueryCtx, path: &str, row: &files::SnapshotRow) -> Result<bool, Error> {
+    let key = Key::Path {
+        path: path.to_owned(),
+    };
+    let lo = FIRED.get(ctx, &abi::encode(&key))?.unwrap_or(0);
+    let hi = LAST.get(ctx)?.unwrap_or(0);
+    let Some(id) = first_in(ctx, &key, lo, hi)? else {
+        return Ok(false);
+    };
+    let Some(watch) = FILE_WAKES.get(ctx, &id)? else {
+        return Ok(true);
+    };
+    Ok(node_then(ctx, path, row)? != watch.node)
+}
+
+fn node_then(
+    ctx: &QueryCtx,
+    path: &str,
+    row: &files::SnapshotRow,
+) -> Result<Option<files::Node>, Error> {
+    match node_at(ctx, path, Some(row.id)) {
+        Err(error) if error.code == code::NOT_FOUND => node_at(ctx, path, None),
+        other => other,
+    }
 }
 
 fn changed_paths(ctx: &QueryCtx, row: &files::SnapshotRow) -> Result<Vec<String>, Error> {
@@ -728,7 +766,7 @@ fn fired_words(ctx: &QueryCtx, row: &WakeRow, fired: &Fired) -> Result<String, E
                     "an open file wake keeps no path",
                 ));
             };
-            let there = node_at(ctx, &watch.path, Some(snapshot.id))?.is_some();
+            let there = node_then(ctx, &watch.path, snapshot)?.is_some();
             filed_words(&watch, there, snapshot)
         }
         Fired::Cleared { channel_id, thread } => {

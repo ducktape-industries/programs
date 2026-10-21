@@ -273,3 +273,10 @@ pub(crate) fn adopt_tallies() -> Op {
         limit: 100,
     }
 }
+
+pub(crate) fn move_waits() -> Op {
+    Op::MoveWaits {
+        after: None,
+        limit: 100,
+    }
+}

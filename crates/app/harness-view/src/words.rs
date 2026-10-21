@@ -876,6 +876,9 @@ pub(crate) fn armed_words(shown: &Transcript) -> Option<String> {
                 harness::WaitFor::Ref { repo, reference } => format!("{reference} in {repo}"),
                 harness::WaitFor::File { path } => format!("{path} in files"),
                 harness::WaitFor::Settled { repo, n, .. } => format!("change {n} in {repo}"),
+                harness::WaitFor::Clear { channel, .. } => {
+                    format!("chat channel {channel} to clear")
+                }
             };
             format!("{what} (since block {})", design::grouped(row.made))
         })

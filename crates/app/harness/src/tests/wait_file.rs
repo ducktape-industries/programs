@@ -34,7 +34,7 @@ fn watching(chain: &MockChain) -> bool {
         .any(|key| key.starts_with(b"watchers/"))
 }
 
-fn remove(chain: &MockChain, key: &[u8], path: &str) -> BlobId {
+pub(super) fn remove(chain: &MockChain, key: &[u8], path: &str) -> BlobId {
     let base = match chain.query(files::PROGRAM, &files::Query::Head).unwrap() {
         files::Reply::Head(head) => head.map(|row| row.id),
         other => panic!("{other:?}"),

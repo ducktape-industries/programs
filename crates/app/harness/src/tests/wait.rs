@@ -250,7 +250,7 @@ fn an_agent_hands_harness_no_wait_event_itself() {
     }
 }
 
-fn pods(world: &World) {
+pub(super) fn pods(world: &World) {
     let chain = &world.chain;
     let register = egress::Op::Register {
         service: crate::waits::PODS.into(),
@@ -293,7 +293,7 @@ fn pod_event(chain: &MockChain, row: &RequestRow, seq: u64, data: &str) {
         .unwrap();
 }
 
-fn stream_ends(chain: &MockChain, row: &RequestRow, events: u64) {
+pub(super) fn stream_ends(chain: &MockChain, row: &RequestRow, events: u64) {
     let ended = egress::Op::EndStream {
         id: row.id,
         events,
@@ -324,9 +324,9 @@ fn streaming(world: &World, thread: u64) -> (u64, RequestRow) {
     let (stream, target) = pod_request(chain);
     assert_eq!(target, "/v1/pods/duckpond-7/wait?every=32");
     let pod_event = egress::Delivery::Events {
-        deliver: pod_event_as(wait),
+        deliver: wake::pod_event_as(1),
     };
-    assert_eq!(stream.delivery, pod_event);
+    assert_eq!(stream.delivery, pod_event, "wake follows wait {wait}'s pod");
     chain.at(8, 4000);
     (wait, stream)
 }

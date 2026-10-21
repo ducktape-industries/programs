@@ -1,6 +1,6 @@
-//! Waits: one event an agent names (a block's height, a pod's end, a chat message, a forge ref or
-//! change, a files path) wakes the conversation that waits for it once, and the turn that armed it
-//! ends. harness hears it from the scheduler, the pods wait stream, chat, or forge's or files' watchers.
+//! Waits: one event an agent names wakes the conversation that waits for it once, and the turn that
+//! armed it ends. Each but a chat message's is a wake armed as the agent (`arm`), its end heard back
+//! through attribution (`woken`); one armed before that is heard from harness's own watchers.
 use ::program::{
     BlobId, Cause, Ctx, Error, ExecCtx, Principal, QueryCtx, corrupt, decoded, invalid, not_found,
     unauthorized, unexpected_reply, wrong_state,
@@ -18,12 +18,13 @@ use crate::pictures::Picture;
 use crate::state::{
     ARMED, CHANGE_WAITS, CLOCK, Clock, ENDING, FILE_WAIT_COUNT, FILE_WAITS, FORGE_WAITS, FileWatch,
     MESSAGE_WAITS, POD_WAITS, PodWatch, REF_WAITS, SCHEDULED, THREADS, Tick, WAIT_COUNT,
-    WAIT_ENTRIES, WAIT_REFS, WAITING, WAITS, WATCHED,
+    WAIT_ENTRIES, WAIT_REFS, WAIT_WAKES, WAITING, WAITS, WAKE_WAITS, WATCHED,
 };
 use crate::turns::{bound, converse, request, say_from};
+use crate::woken::{self, Arming, Call};
 use crate::{
-    Asking, Body, Ended, Op, PROGRAM, ThreadRow, Until, WaitFor, WaitRow, filed_as, forged_as,
-    listening, pod_event_as,
+    Asking, Body, Ended, Op, PROGRAM, Place, ThreadRow, Until, WaitFor, WaitRow, filed_as,
+    forged_as, listening, pod_event_as,
 };
 
 pub(crate) const PODS: &str = "pods";
@@ -55,6 +56,18 @@ pub(crate) fn what(event: &WaitFor) -> String {
                 Until::Either => "be merged or closed",
             };
             format!("change {n} in {repo} to {how}")
+        }
+        WaitFor::Clear { channel, thread } => {
+            let place = match thread {
+                Some(root) => Place::Thread {
+                    channel: channel.clone(),
+                    root: *root,
+                },
+                None => Place::Channel {
+                    channel: channel.clone(),
+                },
+            };
+            format!("{} to clear", place.words())
         }
     }
 }
@@ -107,6 +120,78 @@ fn normalized(event: WaitFor) -> WaitFor {
     }
 }
 
+fn waking(event: &WaitFor) -> Option<wake::WaitFor> {
+    let until = |until: &Until| match until {
+        Until::Merged => wake::Until::Merged,
+        Until::Closed => wake::Until::Closed,
+        Until::Either => wake::Until::Either,
+    };
+    Some(match event {
+        WaitFor::Height { height } => wake::WaitFor::Height { height: *height },
+        WaitFor::Pod { name } => wake::WaitFor::Pod { name: name.clone() },
+        WaitFor::Message { .. } => return None,
+        WaitFor::Change { repo, n } => wake::WaitFor::Change {
+            repo: repo.clone(),
+            n: *n,
+        },
+        WaitFor::Ref { repo, reference } => wake::WaitFor::Ref {
+            repo: repo.clone(),
+            reference: reference.clone(),
+        },
+        WaitFor::File { path } => wake::WaitFor::File { path: path.clone() },
+        WaitFor::Settled {
+            repo,
+            n,
+            until: how,
+        } => wake::WaitFor::Settled {
+            repo: repo.clone(),
+            n: *n,
+            until: until(how),
+        },
+        WaitFor::Clear { channel, thread } => wake::WaitFor::Clear {
+            channel_id: channel.clone(),
+            thread: *thread,
+        },
+    })
+}
+
+async fn arm(ctx: &Ctx, row: &WaitRow, event: wake::WaitFor) -> Result<(), Error> {
+    let call = format!("wait {}", row.id);
+    let arming = Call {
+        agent: row.agent,
+        thread: row.thread,
+        call: &call,
+    };
+    woken::sending(ctx, &arming, &Some(Arming::On));
+    let on = wake::Op::WakeOn { event };
+    let armed = ctx
+        .call_raw_as(row.agent, wake::PROGRAM, abi::encode(&on))
+        .await;
+    let woke = armed.and_then(|output| {
+        abi::decode::<u64>(&output)
+            .map_err(|fault| unexpected_reply(wake::PROGRAM, "WakeOn", &fault.sentence))
+    });
+    if let Ok(woke) = &woke {
+        WAIT_WAKES.put(ctx, &row.id, woke);
+        WAKE_WAITS.put(ctx, woke, &row.id);
+    }
+    woken::ended(ctx, &arming)?;
+    woke.map(|_| ())
+}
+
+fn listen_for(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
+    let WaitFor::Message { channel, .. } = &row.event else {
+        return Ok(());
+    };
+    if !listening::exists(ctx, channel)? {
+        return Err(not_found(format!("chat holds no channel {channel}")));
+    }
+    MESSAGE_WAITS.insert(ctx, &(row.agent, (channel.clone(), row.id)));
+    WATCHED.insert(ctx, &row.id);
+    listening::watch(ctx, row.agent, channel, true);
+    Ok(())
+}
+
 pub(crate) async fn wait(ctx: &Ctx, thread_id: u64, event: WaitFor) -> Result<(), Error> {
     let agent = ctx.sender_account()?;
     let row = thread(ctx, thread_id)?;
@@ -123,51 +208,6 @@ pub(crate) async fn wait(ctx: &Ctx, thread_id: u64, event: WaitFor) -> Result<()
     let event = normalized(event);
     let id = WAIT_COUNT.get(ctx)?.unwrap_or(0) + 1;
     WAIT_COUNT.put(ctx, &id);
-    match &event {
-        WaitFor::Height { height } => {
-            let entry = schedule(ctx, *height, &Op::WaitDue).await?;
-            WAIT_ENTRIES.put(ctx, &entry, &id);
-            SCHEDULED.put(ctx, &id, &entry);
-        }
-        WaitFor::Pod { name } => {
-            named_pod(name)?;
-            watch_from_next_block(ctx, id).await?;
-        }
-        WaitFor::Message { channel, .. } => {
-            if !listening::exists(ctx, channel)? {
-                return Err(not_found(format!("chat holds no channel {channel}")));
-            }
-            MESSAGE_WAITS.insert(ctx, &(agent, (channel.clone(), id)));
-            WATCHED.insert(ctx, &id);
-            listening::watch(ctx, agent, channel, true);
-        }
-        WaitFor::Change { repo, n } => {
-            if let Some(source) = open_change(ctx, repo, *n)? {
-                watch_ref(ctx, id, repo, source);
-            }
-            CHANGE_WAITS.insert(ctx, &((repo.clone(), *n), id));
-            forge_waits(ctx, true)?;
-        }
-        WaitFor::Settled { repo, n, .. } => {
-            open_change(ctx, repo, *n)?;
-            CHANGE_WAITS.insert(ctx, &((repo.clone(), *n), id));
-            forge_waits(ctx, true)?;
-        }
-        WaitFor::Ref { repo, reference } => {
-            known_repo(ctx, repo)?;
-            watch_ref(ctx, id, repo, reference.clone());
-            forge_waits(ctx, true)?;
-        }
-        WaitFor::File { path } => {
-            let node = node_at(ctx, path, None)?;
-            let watch = FileWatch {
-                path: path.clone(),
-                node,
-            };
-            FILE_WAITS.put(ctx, &id, &watch);
-            files_waits(ctx, true)?;
-        }
-    }
     let waiting = WaitRow {
         id,
         agent,
@@ -179,6 +219,10 @@ pub(crate) async fn wait(ctx: &Ctx, thread_id: u64, event: WaitFor) -> Result<()
     WAITS.put(ctx, &id, &waiting);
     WAITING.insert(ctx, &(agent, id));
     ARMED.insert(ctx, &(thread_id, id));
+    match waking(&waiting.event) {
+        Some(event) => arm(ctx, &waiting, event).await?,
+        None => listen_for(ctx, &waiting)?,
+    }
     let in_turn = thread(ctx, thread_id)?.asking != Asking::Idle;
     if in_turn {
         ENDING.insert(ctx, &thread_id);
@@ -202,6 +246,19 @@ pub(crate) async fn unwait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
             ended.height
         )));
     }
+    if let Some(woke) = WAIT_WAKES.get(ctx, &wait)? {
+        match wake_row(ctx, woke)? {
+            Some(wake::WakeRow { ended: None, .. }) => {
+                let cancel = wake::Op::Cancel { id: woke };
+                ctx.call_raw_as(row.agent, wake::PROGRAM, abi::encode(&cancel))
+                    .await?;
+            }
+            Some(wake::WakeRow {
+                ended: Some(ended), ..
+            }) => return fire(ctx, wait, ended.text).await,
+            None => {}
+        }
+    }
     if let Some(entry) = SCHEDULED.get(ctx, &wait)? {
         unschedule(ctx, entry).await?;
     }
@@ -217,8 +274,25 @@ pub(crate) async fn unwait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
     Ok(())
 }
 
+fn wake_row(ctx: &QueryCtx, woke: u64) -> Result<Option<wake::WakeRow>, Error> {
+    let asked = wake::Query::Wake { id: woke };
+    match ctx.query(wake::PROGRAM, &asked)? {
+        wake::Reply::Wake(row) => Ok(row),
+        other => Err(unexpected_reply(wake::PROGRAM, "Wake", &other)),
+    }
+}
+
 fn disarm(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
     ARMED.remove(ctx, &(row.thread, row.id));
+    if let Some(woke) = WAIT_WAKES.get(ctx, &row.id)? {
+        WAIT_WAKES.remove(ctx, &row.id);
+        WAKE_WAITS.remove(ctx, &woke);
+        return Ok(());
+    }
+    unwatched(ctx, row)
+}
+
+fn unwatched(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
     if let Some(entry) = SCHEDULED.get(ctx, &row.id)? {
         WAIT_ENTRIES.remove(ctx, &entry);
         SCHEDULED.remove(ctx, &row.id);
@@ -229,7 +303,7 @@ fn disarm(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
         WAIT_REFS.remove(ctx, &row.id);
     }
     match &row.event {
-        WaitFor::Height { .. } | WaitFor::Pod { .. } => {}
+        WaitFor::Height { .. } | WaitFor::Pod { .. } | WaitFor::Clear { .. } => {}
         WaitFor::Message { channel, .. } => {
             MESSAGE_WAITS.remove(ctx, &(row.agent, (channel.clone(), row.id)));
             let watched = WATCHED.has(ctx, &row.id);
@@ -301,6 +375,87 @@ fn ended(
     Ok(Some(told.id))
 }
 
+pub(crate) fn woken(
+    ctx: &ExecCtx,
+    woke: u64,
+    wait: u64,
+    change: &attribution::Change,
+) -> Result<Option<u64>, Error> {
+    if change.kind != attribution::Kind::Added {
+        return Ok(None);
+    }
+    let asked = wake::Query::Wake { id: woke };
+    let what = match ctx.query(wake::PROGRAM, &asked)? {
+        wake::Reply::Wake(Some(wake::WakeRow {
+            ended: Some(ended), ..
+        })) => ended.text,
+        wake::Reply::Wake(_) => String::from_utf8_lossy(&change.detail).into_owned(),
+        other => return Err(unexpected_reply(wake::PROGRAM, "Wake", &other)),
+    };
+    end(ctx, wait, what)
+}
+
+pub(crate) fn cancelled(ctx: &ExecCtx, woke: u64) -> Result<(), Error> {
+    let Some(wait) = WAKE_WAITS.get(ctx, &woke)? else {
+        return Ok(());
+    };
+    let Some(row) = open(ctx, wait)? else {
+        return Ok(());
+    };
+    disarm(ctx, &row)?;
+    WAITS.remove(ctx, &wait);
+    WAITING.remove(ctx, &(row.agent, wait));
+    Ok(())
+}
+
+pub(crate) async fn move_waits(ctx: &Ctx, after: Option<Vec<u8>>, limit: u64) -> Result<(), Error> {
+    let batch = WAITS.batch(ctx, after.as_deref(), limit)?;
+    let unmoved = batch.rows.into_iter().find_map(|(id, row)| {
+        let open = row.ended.is_none() && !WAIT_WAKES.has(ctx, &id);
+        waking(&row.event)
+            .filter(|_| open)
+            .map(|event| (row, event))
+    });
+    let next = match unmoved {
+        Some((row, event)) => {
+            moved(ctx, &row, event).await?;
+            Some(WAITS.key(&row.id))
+        }
+        None => batch.next,
+    };
+    if let Some(after) = &next {
+        let again = Op::MoveWaits {
+            after: Some(after.clone()),
+            limit,
+        };
+        let env = ctx.env();
+        ctx.schedule(env.height + 1, &env.program, &again).await?;
+    }
+    ctx.set_return_data(abi::encode(&next));
+    Ok(())
+}
+
+async fn moved(ctx: &Ctx, row: &WaitRow, event: wake::WaitFor) -> Result<(), Error> {
+    if let Err(error) = arm(ctx, row, event).await {
+        let over = format!("wake refused to watch it: {}", refusal(&error));
+        if let Some(thread) = end(ctx, row.id, over)? {
+            let resume = Op::Resume { thread };
+            ctx.emit(&ctx.env().program, &resume, ::program::Reply::None);
+        }
+        return Ok(());
+    }
+    if let Some(entry) = SCHEDULED.get(ctx, &row.id)? {
+        unschedule(ctx, entry).await?;
+    }
+    if let Some(PodWatch {
+        entry: Some(entry), ..
+    }) = POD_WAITS.get(ctx, &row.id)?
+    {
+        unschedule(ctx, entry).await?;
+    }
+    unwatched(ctx, row)
+}
+
 async fn fire(ctx: &Ctx, wait: u64, what: String) -> Result<(), Error> {
     if let Some(thread) = end(ctx, wait, what)? {
         converse(ctx, thread).await;
@@ -362,47 +517,6 @@ fn unwatch(ctx: &ExecCtx, agent: AccountNumber, channel: &str, watched: bool) ->
         listening::tell(ctx, agent, channel, false);
     }
     Ok(())
-}
-
-fn open_change(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<String>, Error> {
-    let asked = forge::Query::Change {
-        repo: repo.to_owned(),
-        n,
-        page: PageRequest::first(1),
-    };
-    let change = match ctx.query(forge::PROGRAM, &asked)? {
-        forge::Reply::Change { change, .. } => change,
-        other => return Err(unexpected_reply(forge::PROGRAM, "Change", &other)),
-    };
-    let ended = match change.state {
-        forge::ChangeState::Open => {
-            return Ok(match change.from {
-                forge::Revision::Ref(name) => Some(String::from_utf8_lossy(&name).into_owned()),
-                forge::Revision::Oid(_) => None,
-            });
-        }
-        forge::ChangeState::Closed => "closed",
-        forge::ChangeState::Merged => "merged",
-    };
-    Err(wrong_state(format!(
-        "change {n} in {repo} is already {ended}: read the change's final state or wait on an open change"
-    )))
-}
-
-fn known_repo(ctx: &QueryCtx, repo: &str) -> Result<(), Error> {
-    let asked = forge::Query::Repo {
-        repo: repo.to_owned(),
-    };
-    match ctx.query(forge::PROGRAM, &asked)? {
-        forge::Reply::Repo { .. } => Ok(()),
-        other => Err(unexpected_reply(forge::PROGRAM, "Repo", &other)),
-    }
-}
-
-fn watch_ref(ctx: &ExecCtx, wait: u64, repo: &str, reference: String) {
-    let key = (repo.to_owned(), reference);
-    REF_WAITS.insert(ctx, &(key.clone(), wait));
-    WAIT_REFS.put(ctx, &wait, &key);
 }
 
 fn forge_waits(ctx: &ExecCtx, opened: bool) -> Result<(), Error> {
@@ -595,19 +709,6 @@ fn filed_words(watch: &FileWatch, there: bool, row: &files::SnapshotRow) -> Stri
     )
 }
 
-fn named_pod(name: &str) -> Result<(), Error> {
-    let fits = !name.is_empty()
-        && name.bytes().all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"-.".contains(&byte)
-        });
-    match fits {
-        true => Ok(()),
-        false => Err(invalid(format!(
-            "{name:?} is no pod's name: lowercase letters, digits, - and ."
-        ))),
-    }
-}
-
 async fn ask_pods(ctx: &Ctx, target: String, delivery: Delivery) -> Result<http::Response, Error> {
     let head = http::Head {
         method: http::Method::Get,
@@ -690,6 +791,11 @@ pub(crate) async fn pod_wait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
     let WaitFor::Pod { name } = &row.event else {
         return Err(invalid(format!("wait {wait} waits for no pod")));
     };
+    if let Some(woke) = WAIT_WAKES.get(ctx, &wait)? {
+        return Err(wrong_state(format!(
+            "wake {woke} follows wait {wait}'s pod: harness follows none of it"
+        )));
+    }
     let Some(watch) = POD_WAITS.get(ctx, &wait)? else {
         let key = POD_WAITS.key(&wait);
         return Err(corrupt("pod wait", &key, "an open pod wait has no watch"));
@@ -723,6 +829,9 @@ pub(crate) async fn pod_wait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
     };
     POD_WAITS.put(ctx, &wait, &streaming);
     let read = ask_pods(ctx, format!("/v1/pods/{name}"), Delivery::Whole).await;
+    if moved_off(ctx, wait)? {
+        return Ok(());
+    }
     if let Some(over) = unwatchable(name, read) {
         return fire(ctx, wait, over).await;
     }
@@ -741,7 +850,8 @@ pub(crate) async fn pod_wait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
     let opened_again = POD_WAITS
         .get(ctx, &wait)?
         .is_some_and(|watch| watch.entry.is_some());
-    if open(ctx, wait)?.is_none() || opened_again {
+    let done = open(ctx, wait)?.is_none() || opened_again || moved_off(ctx, wait)?;
+    if done {
         return Ok(());
     }
     match streamed {
@@ -751,6 +861,10 @@ pub(crate) async fn pod_wait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
         }
         Ok(_) | Err(_) => watch_from_next_block(ctx, wait).await,
     }
+}
+
+fn moved_off(ctx: &QueryCtx, wait: u64) -> Result<bool, Error> {
+    Ok(WAIT_WAKES.has(ctx, &wait) || POD_WAITS.get(ctx, &wait)?.is_none())
 }
 
 fn unwatchable(name: &str, answer: Result<http::Response, Error>) -> Option<String> {
@@ -785,6 +899,9 @@ pub(crate) async fn pod_event(ctx: &Ctx, wait: u64, event: Event) -> Result<(), 
     let WaitFor::Pod { name } = &row.event else {
         return Ok(());
     };
+    if !POD_WAITS.has(ctx, &wait) {
+        return Ok(());
+    }
     let Some(line) = ended_line(&event.data, name) else {
         return Ok(());
     };

@@ -1,13 +1,13 @@
-//! A wake's end, heard: wake tells an agent a wake is over as a `Result` on `wake/<id>`; the
-//! conversation whose turn armed it hears it, even when it ends inside its own `WakeOn`; one closed
-//! since is told it was not delivered, and a wake harness never saw armed reaches the canonical one.
+//! A wake's end, heard: wake tells an agent a wake is over as a `Result` on `wake/<id>`. One that backs
+//! a wait ends it (`waits::woken`); another reaches the conversation whose turn armed it, even inside
+//! its own `WakeOn`, a closed one is told it was not delivered, and one never seen armed the canonical.
 use ::program::{Error, ExecCtx};
 use abi::role::identity::AccountNumber;
 use attribution::{Change, Kind, Reason};
 
 use crate::agents::{hear_again, running};
 use crate::bookings::note;
-use crate::state::{ARMING, UNCLAIMED, WAKE_THREADS};
+use crate::state::{ARMING, UNCLAIMED, WAKE_THREADS, WAKE_WAITS};
 use crate::tools::Write;
 
 pub(crate) enum Arming {
@@ -53,6 +53,9 @@ pub(crate) fn sent(
         Some(Arming::On) => {}
         Some(Arming::Off(id)) => {
             WAKE_THREADS.remove(ctx, &id);
+            if output.is_some() {
+                crate::waits::cancelled(ctx, id)?;
+            }
             return Ok(());
         }
         None => return Ok(()),
@@ -116,6 +119,9 @@ pub(crate) fn told(ctx: &ExecCtx, change: &Change) -> Result<Option<u64>, Error>
     let Ok(id) = change.source.object.id.parse::<u64>() else {
         return Ok(None);
     };
+    if let Some(wait) = WAKE_WAITS.get(ctx, &id)? {
+        return crate::waits::woken(ctx, id, wait, change);
+    }
     let thread = WAKE_THREADS.get(ctx, &id)?;
     WAKE_THREADS.remove(ctx, &id);
     let agent = change.recipient;

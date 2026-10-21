@@ -132,6 +132,13 @@ pub(crate) async fn run_booked(ctx: &Ctx) -> Result<(), Error> {
         }
         Err(refused) => Err(refused),
     };
+    let sent_wake = match (&sent, booking.target == wake::PROGRAM) {
+        (Ok(_), true) => abi::decode::<wake::Op>(&booking.payload).ok(),
+        _ => None,
+    };
+    if let Some(wake::Op::Cancel { id }) = sent_wake {
+        crate::waits::cancelled(ctx, id)?;
+    }
     let height = ctx.env().height;
     let ran = match sent {
         Ok(output) => Ran {

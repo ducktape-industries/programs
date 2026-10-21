@@ -1,9 +1,6 @@
-//! The agents on a `MockChain` with identity, attribution, awaits, scheduler, chat, files, egress
-//! and valset seated: an agent is a program account whose script calls harness and names its
-//! configuration in files; a mention, a direct message or a reply in a chat thread it took part
-//! in reaches it, the node serving its model's egress service answers as the model would, whole
-//! or one streamed event at a time, and every tool call runs once its relay comes back, as the
-//! agent.
+//! The agents on a `MockChain` with identity, attribution, awaits, scheduler, chat, files, egress,
+//! wake and valset seated: what an agent hears reaches it, its model's node answers as the model
+//! would, whole or streamed, and every tool call runs as the agent once its relay comes back.
 mod accounts;
 mod blob_put;
 mod budget;
@@ -45,6 +42,7 @@ mod thinking;
 mod wait;
 mod wait_file;
 mod wait_forge;
+mod wait_wake;
 mod wakes;
 mod woken;
 mod workspace;
@@ -275,6 +273,7 @@ fn world_as(id: &str) -> World {
     chain.seat_awaiting::<Egress>(egress::PROGRAM);
     chain.seat::<attribution::Attribution>(attribution::PROGRAM);
     chain.seat_awaiting::<Harness>(id);
+    chain.seat_awaiting::<wake::Wake>(wake::PROGRAM);
     chain.seat::<files::Files>(files::PROGRAM);
     chain.seat::<chat::Chat>(chat::PROGRAM);
     chain.seat::<access::Access>("access");
@@ -287,6 +286,7 @@ fn world_as(id: &str) -> World {
         id,
         files::PROGRAM,
         chat::PROGRAM,
+        wake::PROGRAM,
     ] {
         let register = identity::Op::RegisterProgram {
             program: program.into(),

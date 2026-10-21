@@ -27,17 +27,9 @@ fn codes(harness_code: Vec<u8>) -> Vec<(&'static str, Vec<u8>)> {
     ]
 }
 
-fn waking() -> World {
+pub(super) fn waking() -> World {
     let mut world = world();
     world.chain.seat::<Programs>(programs::PROGRAM);
-    world.chain.seat_awaiting::<wake::Wake>(wake::PROGRAM);
-    let register = identity::Op::RegisterProgram {
-        program: wake::PROGRAM.into(),
-    };
-    world
-        .chain
-        .submit(Origin::Root, identity::PROGRAM, &register)
-        .unwrap();
     listed(&world.chain, &codes(code_with(&interface::<Harness>())));
     world
 }

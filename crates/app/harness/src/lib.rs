@@ -112,7 +112,7 @@ pub enum Op {
         description = "From the program bound to the egress role only: one event of a watched tool call's stream."
     )]
     Heard { watch: u64, event: Event },
-    #[tool_op(description = "As an agent harness runs: wake thread once when the event happens (a height, a pod ending, a chat message, a forge change or ref, a files path). Returns the wait's id.", returns = u64)]
+    #[tool_op(description = "As an agent harness runs: wake thread once when the event happens (a height, a pod ending, a chat message, a forge change or ref, a files path, a chat place clearing); each but a chat message is a wake harness arms as the agent. Returns the wait's id.", returns = u64)]
     Wait { thread: u64, event: WaitFor } = 18,
     #[tool_op(description = "Cancel an open wait. The agent that made it.", example = examples::unwait)]
     Unwait { wait: u64 },
@@ -149,6 +149,8 @@ pub enum Op {
     RemoveRoute { provider: String },
     #[tool_op(description = "One-time backfill of tallies: walks at most limit conversations after the cursor and tallies the first one that has none, added up from its frames, so a run reads one transcript at most, as Tally and ForkThread do. While a conversation may be left, it books itself again for the next block after that one, so one call tallies every conversation, one a block. Anyone may; a conversation already tallied is left as it is, so chains started together never tally one twice. Returns the key it resumes after, or null when done.", returns = Option<Vec<u8>>, example = examples::adopt_tallies)]
     AdoptTallies { after: Option<Vec<u8>>, limit: u64 },
+    #[tool_op(description = "One-time move of the open waits harness watched itself onto wake: walks at most limit waits after the cursor and arms the first open one with no wake yet as a wake for its agent, under the wait's own number, then drops harness's own watch of it; a chat message wait stays harness's, and a wait wake refuses to watch ends at once with the reason. While a wait may be left, it books itself again for the next block, so one call moves every wait, one a block. Anyone may. Returns the key it resumes after, or null when done.", returns = Option<Vec<u8>>, example = examples::move_waits)]
+    MoveWaits { after: Option<Vec<u8>>, limit: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -836,9 +838,6 @@ pub struct Ran {
     pub text: String,
 }
 
-// what a wait (`wait_for`) waits for: a block's height, a pod of the pods service to end, a chat
-// message, a forge change to move, close or merge, a forge ref to move, a files path to change, or
-// a forge change to end as `until` says, its source's moves heard by nothing
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum WaitFor {
     Height {
@@ -867,6 +866,10 @@ pub enum WaitFor {
         repo: String,
         n: u64,
         until: Until,
+    },
+    Clear {
+        channel: String,
+        thread: Option<u64>,
     },
 }
 
@@ -1331,6 +1334,10 @@ pub fn describe(op: &Op) -> describe::Description {
             "Tally the conversations that have no tally yet, one a block".to_owned(),
             vec![field("limit", Value::count(*limit))],
         ),
+        Op::MoveWaits { limit, .. } => (
+            "Move the waits harness watches itself onto wake, one a block".to_owned(),
+            vec![field("limit", Value::count(*limit))],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -1374,6 +1381,7 @@ fn op_variants_only_append() {
             "SetRoute",
             "RemoveRoute",
             "AdoptTallies",
+            "MoveWaits",
         ]
     );
 }
@@ -1422,6 +1430,16 @@ fn query_variants_only_append() {
             "Runs",
             "Conversations",
             "BudgetFacts"
+        ]
+    );
+}
+
+#[test]
+fn wait_for_variants_only_append() {
+    assert_eq!(
+        describe::variants::<WaitFor>(),
+        [
+            "Height", "Pod", "Message", "Change", "Ref", "File", "Settled", "Clear"
         ]
     );
 }

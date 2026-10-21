@@ -409,6 +409,27 @@ impl World {
         abi::decode(&made).unwrap()
     }
 
+    fn change(&self, key: &[u8], changes: Vec<files::Change>) -> BlobId {
+        let base = match self
+            .chain
+            .query(files::PROGRAM, &files::Query::Head)
+            .unwrap()
+        {
+            files::Reply::Head(head) => head.map(|row| row.id),
+            other => panic!("{other:?}"),
+        };
+        let commit = files::Op::Commit {
+            base,
+            message: "tidy".into(),
+            changes,
+        };
+        let made = self
+            .chain
+            .submit(signed(key), files::PROGRAM, &commit)
+            .unwrap();
+        abi::decode(&made).unwrap()
+    }
+
     fn plan(&self, plan: Plan) {
         self.chain
             .submit(Origin::Root, programs::PROGRAM, &plan)
@@ -655,6 +676,70 @@ fn a_file_wake_is_told_on_a_commit_to_its_path_and_files_is_heard_only_while_one
         "the last file wake over, files is heard no more"
     );
     world.commit(BO, "/shared/tools/warm-pod", "duckpond-3\n");
+    assert_eq!(world.told(world.ada).len(), 1);
+}
+
+#[test]
+fn a_file_wake_is_told_when_a_folder_above_its_path_is_removed_or_moved() {
+    let mut world = world();
+    world.commit(ADA, "/shared/tree/leaf", "x");
+    world.commit(ADA, "/shared/kept/leaf", "y");
+    let file = |path: &str| WaitFor::File { path: path.into() };
+    let gone = world.wake_on(ADA, file("/shared/tree/leaf")).unwrap();
+    let moved = world.wake_on(ADA, file("/shared/kept/leaf")).unwrap();
+    let landed = world.wake_on(ADA, file("/shared/there/leaf")).unwrap();
+    world.after(1_000);
+    let removed = world.change(
+        BO,
+        vec![files::Change::Remove {
+            path: "/shared/tree".into(),
+        }],
+    );
+    world.after(1_000);
+    let shifted = world.change(
+        BO,
+        vec![files::Change::Move {
+            from: "/shared/kept".into(),
+            to: "/shared/there".into(),
+        }],
+    );
+    world.after(1_000);
+    let says = |id: u64, path: &str, how: &str, snapshot: BlobId| {
+        format!(
+            "Wake {id} is over: {path} {how} in files snapshot {} by account {} (\"tidy\").",
+            abi::hex(snapshot.digest()),
+            world.bo
+        )
+    };
+    let mut told = world.told(world.ada);
+    told.sort();
+    let mut expected = vec![
+        says(gone, "/shared/tree/leaf", "was removed", removed),
+        says(moved, "/shared/kept/leaf", "was removed", shifted),
+        says(landed, "/shared/there/leaf", "was made", shifted),
+    ];
+    expected.sort();
+    assert_eq!(told, expected);
+}
+
+#[test]
+fn a_file_wake_stays_open_through_a_rewrite_of_the_same_bytes() {
+    let mut world = world();
+    world.commit(ADA, "/shared/a", "x");
+    let file = WaitFor::File {
+        path: "/shared/a".into(),
+    };
+    let id = world.wake_on(ADA, file).unwrap();
+    world.after(1_000);
+    world.commit(BO, "/shared/a", "x");
+    world.after(1_000);
+    assert!(
+        world.told(world.ada).is_empty(),
+        "the same bytes change nothing"
+    );
+    assert_eq!(world.row(id).unwrap().ended, None);
+    world.commit(BO, "/shared/a", "y");
+    world.after(1_000);
     assert_eq!(world.told(world.ada).len(), 1);
 }
 

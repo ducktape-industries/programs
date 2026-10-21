@@ -147,8 +147,14 @@ fn a_change_merged_ends_its_wait_and_only_forge_tells_it() {
     let error = chain.submit(signed(ADA), PROGRAM, &merged).unwrap_err();
     assert_eq!(error.code, code::UNAUTHORIZED, "{error:?}");
     assert!(wakes(chain, thread).is_empty());
+    let heard = wake::Op::Forged(forge::Watched::Merged {
+        repo: "notes".into(),
+        n: 1,
+        oid: "abc123".into(),
+        by: Principal::Account(world.ada),
+    });
     let by_forge = Origin::Program(forge::PROGRAM.into());
-    chain.submit(by_forge, PROGRAM, &merged).unwrap();
+    chain.submit(by_forge, wake::PROGRAM, &heard).unwrap();
     let [wake] = wakes(chain, thread).try_into().expect("one wake");
     let words = format!(
         "Wait {wait} is over: change 1 in notes was merged by account {} as abc123.",
@@ -196,15 +202,20 @@ fn a_wait_until_merged_hears_no_push_and_ends_when_the_change_merges() {
     );
 
     chain.at(16, TIME_MS);
-    let merge = Op::Forged(forge::Watched::Merged {
+    let merge = wake::Op::Forged(forge::Watched::Merged {
         repo: "notes".into(),
         n: 1,
         oid: "abc123".into(),
         by: Principal::Account(world.ada),
     });
     chain
-        .submit(Origin::Program(forge::PROGRAM.into()), PROGRAM, &merge)
+        .submit(
+            Origin::Program(forge::PROGRAM.into()),
+            wake::PROGRAM,
+            &merge,
+        )
         .unwrap();
+    chain.at(18, TIME_MS);
     let told = wakes(chain, thread);
     let ada = world.ada;
     let by_merge =

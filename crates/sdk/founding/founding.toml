@@ -83,6 +83,10 @@ id = "attribution"
 code = "attribution.wasm"
 
 [[programs]]
+id = "wake"
+code = "wake.wasm"
+
+[[programs]]
 id = "harness"
 code = "harness.wasm"
 
