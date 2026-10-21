@@ -183,6 +183,17 @@ pub struct Chat {
     // what each file a message carries is, once read, by path and snapshot
     #[serde(skip)]
     pub(crate) shown_files: BTreeMap<(String, [u8; 32]), crate::attach::Shown>,
+    #[serde(skip)]
+    pub(crate) unread_files:
+        BTreeMap<crate::attach::FileKey, (chat::message::Attachment, crate::attach::Unread)>,
+    #[serde(skip)]
+    pub(crate) files_moved: Option<view::Task<()>>,
+    #[serde(skip)]
+    pub(crate) files_seen: Option<files::BlobId>,
+    #[serde(skip)]
+    pub(crate) files_diffing: bool,
+    #[serde(skip)]
+    pub(crate) files_diff_again: bool,
     // the picture a click opened whole over the room
     #[serde(skip)]
     pub(crate) enlarged: Option<chat::message::Attachment>,

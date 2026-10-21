@@ -1,6 +1,6 @@
-//! A draft's files as they go up (picked, pasted or dropped; put, then
-//! committed to files under the draft's message), and the files messages
-//! carry as the room reads them: each one's chunks to save, its picture.
+//! A draft's files as they go up (picked, pasted or dropped; put, then committed to files under the
+//! draft's message, landed once a block holds them), and the files messages carry, read from files
+//! alone, by the path and snapshot the message names: each one's chunks to save, its picture.
 use std::sync::Arc;
 
 use chat::Block;
@@ -16,6 +16,23 @@ use crate::{Chat, Pane, words};
 pub(crate) struct Shown {
     pub(crate) chunks: Option<Vec<[u8; 32]>>,
     pub(crate) picture: Option<Picture>,
+}
+
+pub(crate) type FileKey = (String, [u8; 32]);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Unread {
+    Absent,
+    Failed,
+    Reading,
+    ReadingAgain,
+    Retrying,
+    Refused,
+}
+
+enum Found {
+    Shown(Shown),
+    Absent(Option<BlobId>),
 }
 
 #[derive(Clone)]
@@ -264,17 +281,33 @@ impl Chat {
         let ask = cx.host().ask::<Submit<files::Files>>(op);
         let on = target.clone();
         cx.spawn(async move |this, cx| {
+            let host = cx.host();
+            let mut moved = host.subscribe::<Changes<files::Files>>(());
             let landed = async {
                 let answer = ask.await;
-                if let Some(why) = design::failure(&answer) {
-                    return Err(words::not_up_because(&why, &path));
-                }
-                let Ok(view::methods::Submitted::Applied { output, .. }) = answer else {
-                    return Err(words::NO_SNAPSHOT.to_owned());
+                let until = match &answer {
+                    Ok(
+                        view::methods::Submitted::Applied { until, .. }
+                        | view::methods::Submitted::InDoubt { until, .. },
+                    ) => *until,
+                    _ => {
+                        let why = design::failure(&answer).unwrap_or_default();
+                        return Err(words::not_up_because(&why, &path));
+                    }
                 };
-                match abi::decode::<BlobId>(&output) {
-                    Ok(BlobId::Sha256(snapshot)) => Ok(snapshot),
-                    _ => Err(words::NO_SNAPSHOT.to_owned()),
+                let mut past = false;
+                loop {
+                    if let Some(snapshot) = held_at(&host, &path).await? {
+                        return Ok(snapshot);
+                    }
+                    if past {
+                        return Err(words::NOT_LANDED.to_owned());
+                    }
+                    past = match moved.next().await {
+                        Some(Ok(change)) => change.is_some_and(|change| change.height > until),
+                        Some(Err(refusal)) => return Err(design::sentence(&refusal)),
+                        None => true,
+                    };
                 }
             }
             .await;
@@ -403,24 +436,191 @@ impl Chat {
                 continue;
             };
             let key = (file.path.clone(), file.snapshot);
-            if !self.shown_files.contains_key(&key) && !unread.contains(file) {
+            let known = self.shown_files.contains_key(&key) || self.unread_files.contains_key(&key);
+            let wanted = !known && !unread.contains(file);
+            if wanted {
                 unread.push(file.clone());
             }
         }
         for file in unread {
+            self.read_file(file, cx);
+        }
+        self.follow_unread(cx);
+    }
+
+    fn read_file(&mut self, file: Attachment, cx: &mut Context<Self>) {
+        let key = (file.path.clone(), file.snapshot);
+        self.unread_files
+            .insert(key.clone(), (file.clone(), Unread::Reading));
+        let host = cx.host();
+        cx.spawn(async move |this, cx| {
+            let found = read_attachment(host, &file).await;
+            let _ = this.update(cx, |chat, cx| chat.file_read(key, found, cx));
+        })
+        .detach();
+    }
+
+    fn file_read(&mut self, key: FileKey, found: Result<Found, Error>, cx: &mut Context<Self>) {
+        let Some((file, was)) = self.unread_files.remove(&key) else {
+            return;
+        };
+        let now = match found {
+            Ok(Found::Shown(shown)) => {
+                self.shown_files.insert(key.clone(), shown);
+                None
+            }
+            Ok(Found::Absent(at)) => {
+                if self.files_seen.is_none() {
+                    self.files_seen = at;
+                }
+                Some(Unread::Absent)
+            }
+            Err(_) => Some(match was {
+                Unread::Retrying => Unread::Refused,
+                _ => Unread::Failed,
+            }),
+        };
+        match (now, was) {
+            (Some(_), Unread::ReadingAgain) => self.read_file(file, cx),
+            (Some(now), _) => {
+                self.unread_files.insert(key, (file, now));
+            }
+            (None, _) => {}
+        }
+        self.follow_unread(cx);
+        cx.notify();
+    }
+
+    fn follow_unread(&mut self, cx: &mut Context<Self>) {
+        if self.unread_files.is_empty() {
+            self.files_moved = None;
+            self.files_seen = None;
+            return;
+        }
+        if self.files_moved.is_some() {
+            return;
+        }
+        let follow = cx.follow::<Changes<files::Files>>((), |chat, change, cx| match change {
+            Ok(Some(_)) => chat.files_block(cx),
+            Ok(None) => chat.files_reopened(cx),
+            Err(refusal) => cx.log_refused(words::FILES_MOVED, &refusal),
+        });
+        self.files_moved = Some(follow);
+    }
+
+    fn files_block(&mut self, cx: &mut Context<Self>) {
+        let failed: Vec<Attachment> = self
+            .unread_files
+            .values()
+            .filter(|(_, unread)| *unread == Unread::Failed)
+            .map(|(file, _)| file.clone())
+            .collect();
+        for file in failed {
             let key = (file.path.clone(), file.snapshot);
-            self.shown_files.insert(key.clone(), Shown::default());
-            let host = cx.host();
-            cx.spawn(async move |this, cx| {
-                let shown = read_attachment_snapshot(host, &file)
-                    .await
-                    .unwrap_or_default();
-                let _ = this.update(cx, |chat, cx| {
-                    chat.shown_files.insert(key, shown);
-                    cx.notify();
-                });
+            self.read_file(file, cx);
+            if let Some((_, unread)) = self.unread_files.get_mut(&key) {
+                *unread = Unread::Retrying;
+            }
+        }
+        if self.files_seen.is_none() {
+            return self.read_again(false, cx);
+        }
+        match self.files_diffing {
+            true => self.files_diff_again = true,
+            false => self.diff_unread(cx),
+        }
+    }
+
+    fn files_reopened(&mut self, cx: &mut Context<Self>) {
+        self.read_again(true, cx);
+    }
+
+    fn read_again(&mut self, refused_too: bool, cx: &mut Context<Self>) {
+        let again: Vec<Attachment> = self
+            .unread_files
+            .values_mut()
+            .filter_map(|(file, unread)| match *unread {
+                Unread::Reading | Unread::ReadingAgain => {
+                    *unread = Unread::ReadingAgain;
+                    None
+                }
+                Unread::Retrying if refused_too => {
+                    *unread = Unread::ReadingAgain;
+                    None
+                }
+                Unread::Absent => Some(file.clone()),
+                Unread::Failed | Unread::Refused if refused_too => Some(file.clone()),
+                Unread::Retrying | Unread::Failed | Unread::Refused => None,
             })
-            .detach();
+            .collect();
+        for file in again {
+            self.read_file(file, cx);
+        }
+    }
+
+    fn diff_unread(&mut self, cx: &mut Context<Self>) {
+        let Some(from) = self.files_seen else {
+            return;
+        };
+        let waiting: Vec<&str> = self
+            .unread_files
+            .iter()
+            .filter(|(_, (_, unread))| !matches!(unread, Unread::Failed | Unread::Refused))
+            .map(|((path, _), _)| path.as_str())
+            .collect();
+        if waiting.is_empty() {
+            return;
+        }
+        let prefix = folder_of(&waiting);
+        self.files_diffing = true;
+        let host = cx.host();
+        cx.spawn(async move |this, cx| {
+            let touched = async {
+                let Some(head) = host.query(files::ask::Head).await? else {
+                    return Ok((from, Vec::new()));
+                };
+                let diff = files::ask::Diff {
+                    from,
+                    to: head.id,
+                    prefix,
+                };
+                let written = host.query(diff).await?;
+                let paths = written.into_iter().map(|entry| entry.path).collect();
+                Ok::<_, Error>((head.id, paths))
+            }
+            .await;
+            let _ = this.update(cx, |chat, cx| chat.diffed(touched, cx));
+        })
+        .detach();
+    }
+
+    fn diffed(&mut self, touched: Result<(BlobId, Vec<String>), Error>, cx: &mut Context<Self>) {
+        self.files_diffing = false;
+        match touched {
+            Ok((head, paths)) => {
+                self.files_seen = Some(head);
+                let mut again = Vec::new();
+                for ((path, _), (file, unread)) in self.unread_files.iter_mut() {
+                    if !paths.contains(path) {
+                        continue;
+                    }
+                    match *unread {
+                        Unread::Reading => *unread = Unread::ReadingAgain,
+                        Unread::Absent => again.push(file.clone()),
+                        Unread::ReadingAgain
+                        | Unread::Failed
+                        | Unread::Retrying
+                        | Unread::Refused => {}
+                    }
+                }
+                for file in again {
+                    self.read_file(file, cx);
+                }
+            }
+            Err(refusal) => cx.log_refused(words::FILES_MOVED, &refusal),
+        }
+        if std::mem::take(&mut self.files_diff_again) {
+            self.diff_unread(cx);
         }
     }
 
@@ -460,15 +660,43 @@ impl Chat {
     }
 }
 
-async fn read_attachment_snapshot(host: Host, file: &Attachment) -> Result<Shown, Error> {
-    let at: Option<BlobId> = None;
+async fn held_at(host: &Host, path: &str) -> Result<Option<[u8; 32]>, String> {
+    let stat = files::ask::Stat {
+        path: path.to_owned(),
+        at: None,
+    };
+    let answer = host.query(stat).await;
+    let (snapshot, entry) = answer.map_err(|refusal| design::sentence(&refusal))?;
+    match (snapshot, entry.map(|entry| entry.node)) {
+        (Some(BlobId::Sha256(snapshot)), Some(files::Node::File { .. })) => Ok(Some(snapshot)),
+        _ => Ok(None),
+    }
+}
+
+fn folder_of(paths: &[&str]) -> String {
+    let mut folder: &str = paths.first().copied().unwrap_or_default();
+    for path in paths {
+        let shared = folder
+            .bytes()
+            .zip(path.bytes())
+            .take_while(|(one, other)| one == other)
+            .count();
+        let cut = folder.as_bytes()[..shared]
+            .iter()
+            .rposition(|byte| *byte == b'/');
+        folder = &folder[..cut.map_or(0, |at| at + 1)];
+    }
+    folder.to_owned()
+}
+
+async fn read_attachment(host: Host, file: &Attachment) -> Result<Found, Error> {
     let stat = files::ask::Stat {
         path: file.path.clone(),
-        at,
+        at: None,
     };
-    let (_, entry) = host.query(stat).await?;
+    let (at, entry) = host.query(stat).await?;
     let Some(files::Node::File { file: object, .. }) = entry.map(|entry| entry.node) else {
-        return Err(view::host::malformed(words::NOT_THERE.into()));
+        return Ok(Found::Absent(at));
     };
     let id = format!("sha256:{}", abi::hex(object.digest()));
     let bytes = host
@@ -487,13 +715,13 @@ async fn read_attachment_snapshot(host: Host, file: &Attachment) -> Result<Shown
         .collect();
     let drawn = file.content_type.starts_with("image/");
     let picture = match drawn {
-        true => picture(&host, file, at).await?,
+        true => picture(&host, file, None).await?,
         false => None,
     };
-    Ok(Shown {
+    Ok(Found::Shown(Shown {
         chunks: Some(chunks),
         picture,
-    })
+    }))
 }
 
 async fn picture(

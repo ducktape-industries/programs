@@ -32,7 +32,7 @@ fn picked(name: &str, size: u64, file: u64) -> Picked {
 fn files_host(cx: &mut TestAppContext) {
     cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
     cx.host()
-        .handle::<Submit<files::Files>>(|_| Ok(committed()));
+        .handle::<Submit<files::Files>>(|_| Ok(view::testing::applied(Vec::new())));
     cx.host()
         .handle::<Ask<files::Files>>(|query| Ok(files_reply(query)));
     let object = files::FileObj {
@@ -42,11 +42,6 @@ fn files_host(cx: &mut TestAppContext) {
     };
     cx.host()
         .handle::<BlobGet>(move |_| Ok(Some(abi::encode(&object))));
-}
-
-// what files answers a commit: the snapshot it made
-fn committed() -> view::methods::Submitted {
-    view::testing::applied(abi::encode(&BlobId::Sha256(SNAPSHOT)))
 }
 
 fn holds_puts(cx: &mut TestAppContext) {
@@ -615,7 +610,7 @@ fn a_name_filed_under_the_message_stays_taken_after_its_chip_is_gone() {
                 frame: [0; 32],
                 until: 9,
             },
-            false => committed(),
+            false => view::testing::applied(Vec::new()),
         })
     });
     cx.simulate_file_drop("draft-general/drop", vec![picked("image.png", 3, 1)]);
@@ -659,53 +654,260 @@ fn a_long_refusal_shows_whole_on_the_files_chip() {
     );
 }
 
-// The node may answer a commit before the layer views read holds it: a file's chip lands on the
-// commit's own snapshot, nothing reads the file's path once its chunks are held, and the chips
-// leave with the post that carries them.
+const PREDICTED: [u8; 32] = [4; 32];
+
+type There = std::rc::Rc<std::cell::Cell<bool>>;
+type Touched = std::rc::Rc<std::cell::RefCell<Vec<String>>>;
+
+fn files_until(cx: &TestAppContext, there: There, touched: Touched) {
+    cx.host()
+        .handle::<Ask<files::Files>>(move |query| match query {
+            files::Query::Stat { .. } if !there.get() => Ok(files::Reply::Stat {
+                snapshot: Some(BlobId::Sha256(PREDICTED)),
+                entry: None,
+            }),
+            files::Query::Diff { .. } => {
+                let written = touched.borrow();
+                let entries = written.iter().map(|path| files::DiffEntry {
+                    path: path.clone(),
+                    kind: files::DiffKind::Modified,
+                });
+                Ok(files::Reply::Diff(entries.collect()))
+            }
+            query => Ok(files_reply(query)),
+        });
+}
+
+fn applied_until(until: u64) -> view::methods::Submitted {
+    view::methods::Submitted::Applied {
+        frame: [0; 32],
+        until,
+        output: abi::encode(&BlobId::Sha256(PREDICTED)),
+    }
+}
+
+fn chip(view: &Entity<Chat>) -> (bool, Option<String>) {
+    view.read(|chat| {
+        let file = &chat.drafts["draft-general"].attachments[0];
+        (
+            file.landed().is_some(),
+            file.failed().map(|why| why.to_string()),
+        )
+    })
+}
+
 #[test]
-fn a_file_lands_on_its_commits_snapshot_and_its_path_is_never_read_again() {
+fn a_chip_waits_through_other_files_blocks_and_says_so_once_its_frame_has_lapsed() {
     let (mut cx, view) = opened();
     files_host(&mut cx);
     holds_puts(&mut cx);
-    cx.host().handle::<Ask<files::Files>>(|query| match query {
-        files::Query::Stat { .. } => Ok(files::Reply::Stat {
-            snapshot: Some(BlobId::Sha256(SNAPSHOT)),
-            entry: None,
-        }),
-        query => Ok(files_reply(query)),
-    });
-    cx.host().handle::<ClipboardFiles>(|()| {
-        Ok(Pasted {
-            files: vec![picked("image.png", 3, 1), picked("image.png", 3, 2)],
-            text: String::new(),
+    cx.host()
+        .handle::<Submit<files::Files>>(|_| Ok(applied_until(9)));
+    let there = There::default();
+    files_until(&cx, there.clone(), Touched::default());
+    let moved = cx.host().stream::<Changes<files::Files>>();
+    cx.host()
+        .handle::<FilePick>(|_| Ok(vec![picked("image.png", 3, 1)]));
+    cx.simulate_click("draft-general/attach");
+    cx.run_until_parked();
+    moved.send(block(5, Vec::new()));
+    cx.run_until_parked();
+    assert_eq!(chip(&view), (false, None), "another's block: still waiting");
+    moved.send(block(10, Vec::new()));
+    cx.run_until_parked();
+    let lapsed = Some(crate::words::NOT_LANDED.to_owned());
+    assert_eq!(chip(&view), (false, lapsed), "past its frame's last height");
+}
+
+#[test]
+fn a_commit_whose_answer_was_lost_lands_once_files_holds_it() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    holds_puts(&mut cx);
+    cx.host().handle::<Submit<files::Files>>(|_| {
+        Ok(view::methods::Submitted::InDoubt {
+            frame: [0; 32],
+            until: 9,
         })
     });
-    cx.simulate_focus("draft-general/editor");
-    cx.simulate_field_key("draft-general/editor", "cmd-v");
+    let there = There::default();
+    files_until(&cx, there.clone(), Touched::default());
+    let moved = cx.host().stream::<Changes<files::Files>>();
+    cx.host()
+        .handle::<FilePick>(|_| Ok(vec![picked("image.png", 3, 1)]));
+    cx.simulate_click("draft-general/attach");
+    cx.run_until_parked();
+    assert_eq!(chip(&view), (false, None), "waiting, not failed");
+    there.set(true);
+    moved.send(block(6, Vec::new()));
+    cx.run_until_parked();
+    assert_eq!(chip(&view), (true, None), "landed");
+}
+
+#[test]
+fn a_file_lands_on_the_snapshot_its_block_minted_and_the_post_waits_for_that_block() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    holds_puts(&mut cx);
+    let predicted = BlobId::Sha256(PREDICTED);
+    cx.host().handle::<Submit<files::Files>>(move |_| {
+        Ok(view::testing::applied(abi::encode(&predicted)))
+    });
+    let there = There::default();
+    files_until(&cx, there.clone(), Touched::default());
+    let moved = cx.host().stream::<Changes<files::Files>>();
+    cx.host()
+        .handle::<FilePick>(|_| Ok(vec![picked("image.png", 3, 1)]));
+    cx.simulate_click("draft-general/attach");
     cx.run_until_parked();
     assert!(!cx.has_text(crate::words::NOT_THERE), "{:?}", cx.texts());
-    let asked = cx.host().requests::<Ask<files::Files>>();
-    let stat = asked
-        .iter()
-        .any(|query| matches!(query, files::Query::Stat { .. }));
-    assert!(!stat, "no path is read once the chunks are held: {asked:?}");
-    cx.simulate_input("draft-general/editor", "two pictures");
+    cx.simulate_focus("draft-general/editor");
+    cx.simulate_input("draft-general/editor", "look");
     cx.simulate_field_key("draft-general/editor", "enter");
     cx.run_until_parked();
-    let posted = posts_of(&cx);
+    let posts = |cx: &TestAppContext| posts_of(cx);
+    assert!(posts(&cx).is_empty(), "the post waits for the block");
+    there.set(true);
+    moved.send(block(5, Vec::new()));
+    cx.run_until_parked();
+    let posted = posts(&cx);
     let [Op::PostMessage { blocks, .. }] = posted.as_slice() else {
         panic!("one post: {posted:?}")
     };
-    let folder = "/chat/general/message-1";
-    let both = [
-        format!("{folder}/image.png"),
-        format!("{folder}/image (2).png"),
-    ];
-    assert_eq!(carried(blocks), [both[0].as_str(), both[1].as_str()]);
-    view.read(|chat| {
-        let left = &chat.drafts["draft-general"].attachments;
-        assert!(left.is_empty(), "the chips leave with the post: {left:?}");
+    let named: Vec<[u8; 32]> = blocks
+        .iter()
+        .filter_map(|block| match block {
+            chat::Block::Attachment(file) => Some(file.snapshot),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(named, [SNAPSHOT], "the snapshot files holds it at");
+    view.read(|chat| assert!(chat.drafts["draft-general"].attachments.is_empty()));
+}
+
+const M3: &str = "/chat/general/m3/tape.png";
+
+fn lands_a_picture(cx: &TestAppContext) {
+    let picture = chat::Block::Attachment(chat::message::Attachment {
+        path: M3.into(),
+        snapshot: SNAPSHOT,
+        name: "tape.png".into(),
+        size: 3,
+        content_type: "image/png".into(),
     });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                    blocks: vec![picture.clone()],
+                    ..row(3, 8, "")
+                }])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(4, posted("general")));
+}
+
+fn drawn(view: &Entity<Chat>) -> bool {
+    view.read(|chat| {
+        let key = (M3.to_owned(), SNAPSHOT);
+        chat.shown_files
+            .get(&key)
+            .is_some_and(|shown| shown.picture.is_some())
+    })
+}
+
+fn stats(cx: &TestAppContext) -> usize {
+    let asked = cx.host().requests::<Ask<files::Files>>();
+    asked
+        .iter()
+        .filter(|query| matches!(query, files::Query::Stat { .. }))
+        .count()
+}
+
+#[test]
+fn a_picture_files_holds_nothing_at_yet_is_read_again_once_a_block_writes_its_path() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    let there = There::default();
+    let touched = Touched::default();
+    files_until(&cx, there.clone(), touched.clone());
+    let moved = cx.host().stream::<Changes<files::Files>>();
+    lands_a_picture(&cx);
+    cx.run_until_parked();
+    assert!(!drawn(&view), "files holds nothing there yet");
+    assert!(cx.find("chat-message-m3-block-0/picture").is_none());
+    let asked = stats(&cx);
+    touched
+        .borrow_mut()
+        .push("/chat/general/m9/other.png".into());
+    moved.send(block(5, Vec::new()));
+    cx.run_until_parked();
+    assert_eq!(
+        stats(&cx),
+        asked,
+        "a block that wrote elsewhere reads nothing again"
+    );
+    there.set(true);
+    touched.borrow_mut().push(M3.into());
+    moved.send(block(6, Vec::new()));
+    cx.run_until_parked();
+    assert!(drawn(&view), "read again on the block that wrote it");
+    assert!(cx.find("chat-message-m3-block-0/picture").is_some());
+}
+
+#[test]
+fn a_picture_whose_read_failed_is_read_again_on_the_next_files_block() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    let failing = There::default();
+    failing.set(true);
+    let object = files::FileObj {
+        size: 3,
+        chunks: vec![BlobId::Sha256(CHUNK)],
+        meta: Default::default(),
+    };
+    let fails = failing.clone();
+    cx.host().handle::<BlobGet>(move |_| match fails.get() {
+        true => Err(view::host::Error::new(
+            "unavailable",
+            "the read was dropped",
+        )),
+        false => Ok(Some(abi::encode(&object))),
+    });
+    let moved = cx.host().stream::<Changes<files::Files>>();
+    lands_a_picture(&cx);
+    cx.run_until_parked();
+    assert!(!drawn(&view), "its read failed");
+    failing.set(false);
+    moved.send(block(5, Vec::new()));
+    cx.run_until_parked();
+    assert!(drawn(&view), "read again on the next files block");
+}
+
+#[test]
+fn a_block_that_lands_a_file_while_it_is_read_again_is_heard() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    let there = There::default();
+    let touched = Touched::default();
+    files_until(&cx, there.clone(), touched.clone());
+    let moved = cx.host().stream::<Changes<files::Files>>();
+    lands_a_picture(&cx);
+    cx.run_until_parked();
+    touched.borrow_mut().push(M3.into());
+    cx.host().never::<Ask<files::Files>>();
+    moved.send(block(5, Vec::new()));
+    cx.run_until_parked();
+    assert!(moved.subscribed(), "followed while its read is out");
+    there.set(true);
+    moved.send(block(6, Vec::new()));
+    files_until(&cx, there.clone(), touched.clone());
+    cx.host().answer_held::<Ask<files::Files>>();
+    cx.run_until_parked();
+    assert!(drawn(&view), "the landing block was heard");
 }
 
 fn posts_of(cx: &TestAppContext) -> Vec<Op> {
@@ -714,4 +916,31 @@ fn posts_of(cx: &TestAppContext) -> Vec<Op> {
         .into_iter()
         .filter(|op| matches!(op, Op::PostMessage { .. }));
     posts.collect()
+}
+
+#[test]
+fn a_read_that_keeps_failing_is_read_again_once_then_waits_for_a_reopen() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    cx.host().handle::<BlobGet>(|_| {
+        Err(view::host::Error::new(
+            "unavailable",
+            "the read was dropped",
+        ))
+    });
+    let moved = cx.host().stream::<Changes<files::Files>>();
+    lands_a_picture(&cx);
+    cx.run_until_parked();
+    let gets = |cx: &TestAppContext| cx.host().requests::<BlobGet>().len();
+    assert_eq!(gets(&cx), 1, "read once");
+    moved.send(block(5, Vec::new()));
+    cx.run_until_parked();
+    assert_eq!(gets(&cx), 2, "read again on the next files block");
+    moved.send(block(6, Vec::new()));
+    cx.run_until_parked();
+    assert_eq!(gets(&cx), 2, "then on no files block");
+    moved.send(None);
+    cx.run_until_parked();
+    assert_eq!(gets(&cx), 3, "read again once the link reopens");
+    assert!(!drawn(&view));
 }

@@ -107,6 +107,18 @@ and edit only where the reader may write (`may_write`, chat's `writable`),
 delete by `may_delete` alone, archived or not; edit only where `editable` (no
 notice), and none of the three on a deleted message.
 
+A file is drawn from files alone, never from the device: the composer reads a
+picked file only to put its chunks, its chip shows progress with no picture, and
+it lands once a block holds it in files, on the snapshot files minted there (the
+commit's own answer is the node's prediction, and files mints its id in the
+block). Every message, the reader's own as anyone else's, draws its files by the
+path and snapshot it names, read at files' newest. A file files holds nothing at
+yet is read again once a files block writes its path (one `Head` and one `Diff`
+a block under the folder the waiting files share, however many wait); a read
+that failed is read again on the next files block and, failing again, once the
+node's link reopens or the view comes back on screen; and files' blocks stay
+followed while any such file is out being read.
+
 ## Follows
 The session, routes, visibility, the chain's heads, and the live heads of
 chat, identity and ownership (`watch.rs`); a chat block re-reads only
