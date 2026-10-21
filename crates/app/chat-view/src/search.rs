@@ -20,6 +20,7 @@ impl Chat {
         let (text, viewer) = (self.search.query.clone(), self.viewer());
         let host = cx.host();
         let screenful = self.screenful();
+        self.search.paging = None;
         self.search.hits = Loadable::Idle;
         cx.load(
             self,
@@ -40,16 +41,15 @@ impl Chat {
         let Some(after) = self.search.hits.ready().and_then(|h| h.next_after.clone()) else {
             return;
         };
-        if self.search.more_loading {
+        if self.search.paging.is_some() {
             return;
         }
-        self.search.more_loading = true;
         let (text, viewer) = (self.search.query.clone(), self.viewer());
         let screenful = self.screenful();
         let more = search_hits(cx.host(), text, None, viewer, Some(after), screenful);
-        cx.land(more, |chat, result, cx| {
+        self.search.paging = Some(cx.land(more, |chat, result, cx| {
             cx.notify();
-            chat.search.more_loading = false;
+            chat.search.paging = None;
             let (rows, next_after) = match result {
                 Ok(page) => page,
                 Err(refusal) => {
@@ -71,8 +71,7 @@ impl Chat {
                 hits.has_more = next_after.is_some();
                 hits.next_after = next_after;
             }
-        })
-        .detach();
+        }));
     }
 
     // The rooms whose names hold what was searched (a leading `#` aside), in the program's order:

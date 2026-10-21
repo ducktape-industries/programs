@@ -49,6 +49,38 @@ fn more_results_on_the_desktop_reads_the_next_page_and_goes_at_the_last() {
 }
 
 #[test]
+fn more_results_out_when_a_new_search_is_made_land_in_none_of_its_hits() {
+    let (mut cx, view) = opened();
+    two_pages(&cx);
+    cx.simulate_input("chat-sidebar-search", "hello");
+    cx.simulate_submit("chat-sidebar-search");
+    cx.run_until_parked();
+    assert_eq!(shown(&cx), [3, 2]);
+    cx.host().never::<Ask<::chat::Chat>>();
+    cx.simulate_click("chat-search-more");
+    cx.run_until_parked();
+    cx.host().handle::<Ask<::chat::Chat>>(rooms_alone(|query| {
+        Ok(match query {
+            Query::TextSearch { page: asked, .. } if asked.after.is_some() => {
+                Reply::TextHits(page(vec![row(1, 7, "hello")]))
+            }
+            Query::TextSearch { .. } => Reply::TextHits(page(vec![row(5, 7, "bye")])),
+            query => chat_reply(query),
+        })
+    }));
+    cx.simulate_input("chat-sidebar-search", "bye");
+    cx.simulate_submit("chat-sidebar-search");
+    cx.run_until_parked();
+    cx.host().answer_held::<Ask<::chat::Chat>>();
+    cx.run_until_parked();
+    let hits = view.read(|chat| {
+        let hits = chat.search.hits.ready().expect("the new search landed");
+        hits.rows.iter().map(|row| row.seq).collect::<Vec<_>>()
+    });
+    assert_eq!(hits, [5], "the old search's page stays out");
+}
+
+#[test]
 fn more_results_on_the_phone_reads_the_next_page_and_goes_at_the_last() {
     let (mut cx, _) = phone();
     two_pages(&cx);

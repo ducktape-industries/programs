@@ -481,7 +481,7 @@ pub struct Search {
     pub(crate) query: String,
     pub(crate) hits: Loadable<Hits>,
     #[serde(skip)]
-    pub(crate) more_loading: bool,
+    pub(crate) paging: Option<view::Task<()>>,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq)]
