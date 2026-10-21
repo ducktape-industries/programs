@@ -84,7 +84,6 @@ pub enum OnLoss {
     Park,
 }
 
-// Who is told when a run ends: a chat channel, or a program as `deliver ++ borsh(Ended)`.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum Notify {
     Chat {
@@ -206,7 +205,7 @@ pub struct MachineView {
 
 // What a `Notify::Program` hears when a run ends or is lost.
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
-pub struct Ended {
+pub struct RunEnd {
     pub run: u64,
     pub attempt: u32,
     pub state: State,

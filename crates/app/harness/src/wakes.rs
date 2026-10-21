@@ -3,7 +3,7 @@
 use ::program::{Error, QueryCtx};
 
 use crate::agents::thread;
-use crate::state::{ARMED, BOOKED, BOOKINGS, FLIGHTS, RETRIES, SETTLING, STREAMING};
+use crate::state::{ARMED, BOOKED, BOOKINGS, FLEET_RUNS, FLIGHTS, RETRIES, SETTLING, STREAMING};
 use crate::{Asking, Wake};
 
 pub(crate) fn wakes(ctx: &QueryCtx, id: u64) -> Result<Vec<Wake>, Error> {
@@ -42,6 +42,9 @@ pub(crate) fn wakes(ctx: &QueryCtx, id: u64) -> Result<Vec<Wake>, Error> {
     }
     for ((_, watch), _) in STREAMING.scan(ctx, STREAMING.prefix_of(&id))? {
         wakes.push(Wake::Stream { watch });
+    }
+    for (_, run) in FLEET_RUNS.scan(ctx, FLEET_RUNS.prefix_of(&id))? {
+        wakes.push(Wake::Run { run });
     }
     for (_, entry) in BOOKED.scan(ctx, BOOKED.prefix_of(&row.agent))? {
         let pending = BOOKINGS

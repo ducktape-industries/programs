@@ -330,5 +330,29 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             ],
         ),
         ("wait_cancel", vec![json!({ "wait": 3 })]),
+        (
+            "fleet_run",
+            vec![
+                json!({ "command": ["sh", "/var/tmp/warm/build.sh", "programs", COMMIT, "lane"], "on": { "labels": ["warm"] } }),
+                json!({
+                    "script": "echo 'it\'s' \"done\" > \"$OUT/a\"\n",
+                    "command": null,
+                    "image": null,
+                    "env": { "NOTE": PROSE },
+                    "workdir": "/work/it's",
+                    "inputs": [
+                        { "forge": { "path": "/work/programs", "repo": "programs", "commit": COMMIT } },
+                        { "files": { "path": "/in/a.md", "files": "/shared/a.md", "snapshot": SNAPSHOT } },
+                        { "files": { "path": "/in/b.md", "files": "/shared/b.md", "snapshot": null } },
+                        { "blob": { "path": "/in/c", "blob": SNAPSHOT } },
+                        { "scratch": { "path": "/scratch", "memory": true, "size": "8Gi" } },
+                    ],
+                    "asks": { "cpu": "2", "memory": null },
+                    "on": { "machine": { "account": 23, "name": "warm" } },
+                    "out": null,
+                    "on_loss": "park",
+                }),
+            ],
+        ),
     ]
 }

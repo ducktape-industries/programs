@@ -22,7 +22,7 @@ const B_ACCOUNT: u64 = 22;
 const WATCHER: &str = "watcher";
 const WORKER: &str = "worker";
 const WORKER_ACCOUNT: u64 = 31;
-const HEARD: Item<Vec<Ended>> = Item::new("heard");
+const HEARD: Item<Vec<RunEnd>> = Item::new("heard");
 const NODE: [u8; 32] = [7; 32];
 const PODS: &str = "pods";
 const FLEET_ACCOUNT: u64 = 903;
@@ -30,7 +30,7 @@ const FLEET_ACCOUNT: u64 = 903;
 // A program told of each run's end, as harness or actions would be.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 enum Told {
-    Ended(Ended),
+    RunEnd(RunEnd),
 }
 
 struct Watcher;
@@ -39,18 +39,18 @@ impl Program for Watcher {
     const NAME: &'static str = WATCHER;
     type Op = Told;
     type Query = ();
-    type Reply = Vec<Ended>;
+    type Reply = Vec<RunEnd>;
 
     fn execute(ctx: &ExecCtx, op: Told) -> Result<(), Error> {
         ctx.env().sent_by(PROGRAM)?;
-        let Told::Ended(ended) = op;
+        let Told::RunEnd(ended) = op;
         let mut heard = HEARD.get(ctx)?.unwrap_or_default();
         heard.push(ended);
         HEARD.put(ctx, &heard);
         Ok(())
     }
 
-    fn query(ctx: &QueryCtx, (): ()) -> Result<Vec<Ended>, Error> {
+    fn query(ctx: &QueryCtx, (): ()) -> Result<Vec<RunEnd>, Error> {
         Ok(HEARD.get(ctx)?.unwrap_or_default())
     }
 }
@@ -275,7 +275,7 @@ impl World {
         page.items.into_iter().map(|run| run.id).collect()
     }
 
-    fn heard(&self) -> Vec<Ended> {
+    fn heard(&self) -> Vec<RunEnd> {
         self.chain.query(WATCHER, &()).unwrap()
     }
 
@@ -387,7 +387,7 @@ fn a_run_goes_to_the_machine_free_longest_and_ends_as_its_machine_reports() {
     let ended = world.run(run);
     assert_eq!((ended.state, ended.finished), (State::Passed, Some(6)));
     assert_eq!(ended.out.map(|out| out.snapshot), Some(snapshot));
-    let told = Ended {
+    let told = RunEnd {
         run,
         attempt: 1,
         state: State::Passed,
@@ -619,7 +619,7 @@ fn a_silent_machine_loses_its_runs_and_a_parked_run_waits_for_it() {
     let a = machine(A_ACCOUNT, "a");
     assert_eq!(world.placed(retry), (State::Queued, None, 1));
     assert_eq!(world.placed(parked), (State::Lost, Some(a.clone()), 1));
-    let lost = Ended {
+    let lost = RunEnd {
         run: parked,
         attempt: 1,
         state: State::Lost,
@@ -804,7 +804,7 @@ fn a_run_being_stopped_whose_machine_goes_silent_ends_cancelled_and_goes_nowhere
     }
     assert!(world.holds(machine(B_ACCOUNT, "b")).is_empty());
     assert!(world.queued().is_empty());
-    let told = |run| Ended {
+    let told = |run| RunEnd {
         run,
         attempt: 1,
         state: State::Cancelled,

@@ -13,9 +13,9 @@ use crate::state::{
     TOLD, WORKLOADS,
 };
 use crate::{
-    AccountNumber, Affinity, Ended, Event, Kind, MachineId, MachineRow, MachineView, Notify,
-    OnLoss, Op, Out, PageRequest, PageResponse, Piece, PieceRow, ProgramId, Request, RunRow,
-    STAMPED, Serves, Spec, State, Workload,
+    AccountNumber, Affinity, Event, Kind, MachineId, MachineRow, MachineView, Notify, OnLoss, Op,
+    Out, PageRequest, PageResponse, Piece, PieceRow, ProgramId, Request, RunEnd, RunRow, STAMPED,
+    Serves, Spec, State, Workload,
 };
 
 type Key = (AccountNumber, String);
@@ -701,7 +701,7 @@ fn tell(ctx: &ExecCtx, workload: &Workload, run: &RunRow) -> Result<(), Error> {
     let sent = match &workload.spec.notify {
         None => return Ok(()),
         Some(Notify::Program { program, deliver }) => {
-            let ended = Ended {
+            let ended = RunEnd {
                 run: run.id,
                 attempt: run.attempt,
                 state: run.state,

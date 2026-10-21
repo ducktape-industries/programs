@@ -108,6 +108,7 @@ pub const SEALED_FOR: Map<u64, (String, Option<String>)> = Map::new("sealed-for/
 pub const DRAFTING: Map<u64, Drafted> = Map::new("drafting/");
 pub const FINAL_ERRORS: Map<(AccountNumber, u64), FinalError> = Map::new("final-error/");
 pub const RUNS: Map<(AccountNumber, String), Run> = Map::new("mention-run/");
+pub const FLEET_RUNS: Set<(u64, u64)> = Set::new("fleet-run/");
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Drafted {

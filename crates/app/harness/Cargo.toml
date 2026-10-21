@@ -35,6 +35,8 @@ files = { path = "../files" }
 forge = { path = "../forge" }
 # a wake's end is heard in the conversation whose turn armed it
 wake = { path = "../wake" }
+# a run an agent asks fleet for tells harness when it ends
+fleet = { path = "../fleet" }
 # `forge_commit` builds a commit's git objects and pack
 gitcore = { path = "../../lib/gitcore" }
 # network_query and network_call: JSON to a program's borsh and back

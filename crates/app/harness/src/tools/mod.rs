@@ -6,6 +6,7 @@ mod chat;
 mod edits;
 pub(crate) mod file;
 pub(crate) mod files;
+mod fleet;
 mod forge;
 mod image;
 pub(crate) mod interface;
@@ -204,6 +205,7 @@ pub(crate) const CATALOG: &[Entry] = &[
     entry::<wait::For>(),
     entry::<wait::List>(),
     entry::<wait::Cancel>(),
+    entry::<fleet::Ask>(),
 ];
 
 pub(crate) fn find(name: &str) -> Option<&'static Entry> {

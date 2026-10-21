@@ -13,6 +13,7 @@ mod conversations;
 mod drafts;
 mod examples;
 mod failures;
+mod fleet_runs;
 mod gate;
 mod listening;
 mod pictures;
@@ -137,6 +138,10 @@ pub enum Op {
     AdoptTallies { after: Option<Vec<u8>>, limit: u64 },
     #[tool_op(description = "One-time: put every part an open conversation sealed before harness held sealed parts on lines on its thread's line, and let a closed idle conversation go of its sealed parts, one thread a block from harness's own scheduled run until none is left. Anyone may start it; a start while it runs is refused.", example = examples::hold_sealed)]
     HoldSealed = 33,
+    #[tool_op(
+        description = "From fleet only: a run an agent asked for with the fleet_run tool ended or was lost; the conversation that asked is told, when the run's asker is that conversation's agent."
+    )]
+    RunEnded { thread: u64, ended: fleet::RunEnd },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -907,6 +912,7 @@ pub enum Wake {
     Stream { watch: u64 },
     Booking { entry: u64 },
     RetryAfter { at: u64, until: u64 },
+    Run { run: u64 },
 }
 
 #[derive(
@@ -1155,6 +1161,18 @@ pub fn heard_as(watch: u64) -> Vec<u8> {
     deliver
 }
 
+pub fn run_ended_as(thread: u64) -> Vec<u8> {
+    let ended = fleet::RunEnd {
+        run: 0,
+        attempt: 0,
+        state: fleet::State::Queued,
+    };
+    let tail = abi::encode(&ended).len();
+    let mut deliver = abi::encode(&Op::RunEnded { thread, ended });
+    deliver.truncate(deliver.len() - tail);
+    deliver
+}
+
 // what one of harness's own egress requests waits for, read back from the request alone: a
 // turn's streamed reply, a model's window, a thread's summary, a tool call's relay
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1292,6 +1310,17 @@ pub fn describe(op: &Op) -> describe::Description {
             "Hold sealed parts on their threads' lines".to_owned(),
             Vec::new(),
         ),
+        Op::RunEnded { thread, ended } => (
+            format!(
+                "Tell thread {thread} that run {} is {}",
+                ended.run,
+                ended.state.word()
+            ),
+            vec![
+                field("thread", Value::count(*thread)),
+                field("run", Value::count(ended.run)),
+            ],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -1337,6 +1366,7 @@ fn op_variants_only_append() {
             "AdoptTallies",
             "-",
             "HoldSealed",
+            "RunEnded",
         ]
     );
 }
@@ -1449,5 +1479,20 @@ fn the_stream_prefix_decodes_as_streamed() {
     assert_eq!(
         abi::decode::<Op>(&event.payload(&streamed_as(9))).unwrap(),
         Op::Streamed { thread: 9, event }
+    );
+}
+
+#[test]
+fn the_run_end_prefix_decodes_as_run_ended() {
+    let ended = fleet::RunEnd {
+        run: 7,
+        attempt: 2,
+        state: fleet::State::Passed,
+    };
+    let mut told = run_ended_as(9);
+    told.extend(abi::encode(&ended));
+    assert_eq!(
+        abi::decode::<Op>(&told).unwrap(),
+        Op::RunEnded { thread: 9, ended }
     );
 }

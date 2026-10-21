@@ -163,7 +163,7 @@ pub(crate) fn relayable(ctx: &QueryCtx, target: &str, payload: &[u8]) -> Result<
     } else if target == attribution::PROGRAM {
         "attribution would take it as harness's own registration or attribution"
     } else if an_op_of_harness_itself {
-        "harness takes this op only from attribution, egress or the scheduler"
+        "harness takes this op only from attribution, egress, fleet or the scheduler"
     } else if target == forge::PROGRAM && watches(payload) {
         "forge would take it as harness's own watcher: wait for a ref or a change with wait_for"
     } else if target == files::PROGRAM && files_watches(payload) {
@@ -185,7 +185,8 @@ fn harness_own(payload: &[u8]) -> bool {
             | Op::Streamed { .. }
             | Op::RunBooked
             | Op::Watch { .. }
-            | Op::Heard { .. })
+            | Op::Heard { .. }
+            | Op::RunEnded { .. })
     )
 }
 
