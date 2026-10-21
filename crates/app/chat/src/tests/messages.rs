@@ -71,6 +71,23 @@ fn a_message_id_is_unique_and_a_colon_id_is_its_programs_alone() {
 }
 
 #[test]
+fn an_id_chat_refuses_is_refused_saying_what_is_wrong_with_it() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    let mut words = |op: Op| {
+        let ctx = chat.next(&BO);
+        chat.store
+            .refused(|| crate::Chat::execute(&ctx, op))
+            .message
+    };
+    let slashed = words(post("general", "board/92/7/4", "hi", None));
+    assert_eq!(slashed, "message_id holds a '/'");
+    let empty = words(post("general", "", "hi", None));
+    assert_eq!(empty, "message_id is empty");
+    let room = words(create("a/b", PostPolicy::Open));
+    assert_eq!(room, "channel_id holds a '/'");
+}
+
+#[test]
 fn a_reply_joins_its_root_and_the_authors_attention() {
     let mut chat = Chat::with_channel(PostPolicy::Open);
     chat.post(&ADA, "m1", "question", None);

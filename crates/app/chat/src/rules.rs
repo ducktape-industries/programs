@@ -6,8 +6,11 @@ use crate::state::MEMBERS;
 use crate::{Block, ChannelRow, MsgRow, Notice, Principal, dm_peers};
 
 pub(crate) fn id(what: &str, id: &str) -> Result<(), Error> {
-    if id.is_empty() || id.contains('/') {
-        return Err(invalid(format!("{what} is not empty and has no '/'")));
+    if id.is_empty() {
+        return Err(invalid(format!("{what} is empty")));
+    }
+    if id.contains('/') {
+        return Err(invalid(format!("{what} holds a '/'")));
     }
     Ok(())
 }
