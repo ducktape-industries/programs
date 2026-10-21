@@ -7,7 +7,9 @@ thing; nothing here is generated. The crate is what a reader follows: plain
 types, plain functions, one host call per context method.
 
 Read [README.md](../README.md) for the map of the repository and
-[roles.md](roles.md) for the roles and the account model first.
+[roles.md](roles.md) for the roles and the account model first. A program
+kept in a repository of its own, built, packed and shipped to a running
+network, is [ducktape-for-self-improvement.md](ducktape-for-self-improvement.md).
 
 ## 1. The crate
 

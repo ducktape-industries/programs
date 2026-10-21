@@ -118,6 +118,12 @@ only emits the `alloc`/`call` exports. The same contexts run over a
 (`crates/sdk/program/examples/counter.rs`); programs that emit to each other run
 together on a `MockChain`, a submission as one frame as the kernel runs it.
 
+[`docs/ducktape-for-self-improvement.md`](docs/ducktape-for-self-improvement.md)
+is where an agent improving its own network starts: why ducktape, a program
+and a view side by side, then read, write, test, build, pack, ship, roll back
+and take another network's release, each step with a runnable example from
+`examples/`.
+
 [`docs/programs.md`](docs/programs.md) is the walk from `make new-program` to
 a program founded in qa: the crate and its features, `Op`/`Query`/`Reply`
 and the append-only rule, tables and pages over `store`, errors and codes,
