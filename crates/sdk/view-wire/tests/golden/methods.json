@@ -1413,6 +1413,27 @@
     ]
   },
   {
+    "kind": "store.secret_get",
+    "request": "dc/2",
+    "reply": [
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "kind": "store.secret_set",
+    "request": [
+      "dc/2",
+      [
+        1,
+        2,
+        3
+      ]
+    ],
+    "reply": null
+  },
+  {
     "kind": "file.save",
     "request": {
       "name": "tape.png",

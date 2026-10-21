@@ -6,7 +6,7 @@ use std::future::Future;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::host::{Error, Host, malformed};
-use crate::methods::{self, StoreGet, StoreList, StoreSet};
+use crate::methods::{self, StoreGet, StoreList, StoreSecretGet, StoreSecretSet, StoreSet};
 
 /// The value kept under `key`, or `None` where nothing is.
 pub fn get<T: BorshDeserialize>(
@@ -42,6 +42,27 @@ pub fn list(
     host.ask::<StoreList>(prefix.to_owned())
 }
 
+pub fn secret_get<T: BorshDeserialize>(
+    host: &Host,
+    key: &str,
+) -> impl Future<Output = Result<Option<T>, Error>> + 'static + use<T> {
+    let asked = host.ask::<StoreSecretGet>(key.to_owned());
+    async move {
+        asked
+            .await?
+            .map(|bytes| methods::decode(&bytes).map_err(malformed))
+            .transpose()
+    }
+}
+
+pub fn secret_set<T: BorshSerialize>(
+    host: &Host,
+    key: &str,
+    value: Option<&T>,
+) -> impl Future<Output = Result<(), Error>> + 'static + use<T> {
+    host.ask::<StoreSecretSet>((key.to_owned(), value.map(methods::encode)))
+}
+
 // The view's store, as `cx.store()` hands it: the functions above, on the
 // view's host.
 #[derive(Clone)]
@@ -68,5 +89,20 @@ impl Store {
         prefix: &str,
     ) -> impl Future<Output = Result<Vec<String>, Error>> + 'static + use<> {
         list(&self.0, prefix)
+    }
+
+    pub fn secret_get<T: BorshDeserialize>(
+        &self,
+        key: &str,
+    ) -> impl Future<Output = Result<Option<T>, Error>> + 'static + use<T> {
+        secret_get(&self.0, key)
+    }
+
+    pub fn secret_set<T: BorshSerialize>(
+        &self,
+        key: &str,
+        value: Option<&T>,
+    ) -> impl Future<Output = Result<(), Error>> + 'static + use<T> {
+        secret_set(&self.0, key, value)
     }
 }

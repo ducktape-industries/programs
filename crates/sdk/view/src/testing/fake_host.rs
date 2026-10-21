@@ -29,6 +29,7 @@ struct State {
     declared: Option<&'static [methods::Capability]>,
     pieces: Vec<Piece>,
     kept: BTreeMap<String, Vec<u8>>,
+    secrets: BTreeMap<String, Vec<u8>>,
 }
 
 struct Piece {
@@ -178,6 +179,16 @@ impl FakeHost {
     pub fn kept<T: borsh::BorshDeserialize>(&self, key: &str) -> Option<T> {
         let bytes = self.0.borrow().kept.get(key).cloned()?;
         Some(methods::decode(&bytes).expect("a kept value reads as the type asked"))
+    }
+
+    pub fn keep_secret<T: borsh::BorshSerialize>(&self, key: &str, value: &T) {
+        let bytes = methods::encode(value);
+        self.0.borrow_mut().secrets.insert(key.to_owned(), bytes);
+    }
+
+    pub fn secret<T: borsh::BorshDeserialize>(&self, key: &str) -> Option<T> {
+        let bytes = self.0.borrow().secrets.get(key).cloned()?;
+        Some(methods::decode(&bytes).expect("a secret reads as the type asked"))
     }
     #[cfg(feature = "rig")]
     pub(crate) fn answer_with(
@@ -357,14 +368,14 @@ impl FakeHost {
             let event = match host.shape(request.id) {
                 Shape::Notify => match find(&mut state.asks, kind, target) {
                     Some(answer) => answer(request),
-                    None => kept(&mut state.kept, request),
+                    None => kept(&mut state, request),
                 },
                 Shape::Ask => {
                     if let Some(answer) = find(&mut state.asks, kind, target) {
                         let answered = answer(request);
                         held = answered.is_none();
                         answered
-                    } else if let Some(answer) = kept(&mut state.kept, request) {
+                    } else if let Some(answer) = kept(&mut state, request) {
                         Some(answer)
                     } else if find(&mut state.streams, kind, target).is_some() {
                         panic!(
@@ -443,8 +454,10 @@ fn answer<C: Method>(
     })
 }
 
-fn kept(kept: &mut BTreeMap<String, Vec<u8>>, request: &Request) -> Option<Event> {
-    use methods::{StoreGet, StoreList, StoreSet};
+fn kept(state: &mut State, request: &Request) -> Option<Event> {
+    use methods::{StoreGet, StoreList, StoreSecretGet, StoreSecretSet, StoreSet};
+    let kept = &mut state.kept;
+    let secrets = &mut state.secrets;
     let named = |key: &str| match key.is_empty() {
         true => Err(Error::new(
             methods::refusal::MALFORMED_REQUEST,
@@ -486,6 +499,24 @@ fn kept(kept: &mut BTreeMap<String, Vec<u8>>, request: &Request) -> Option<Event
                     .cloned()
                     .collect();
                 StoreList::encode_reply(&keys)
+            })
+    } else if request.kind == StoreSecretGet::KIND {
+        StoreSecretGet::decode_request(payload)
+            .map_err(malformed)
+            .and_then(|key| {
+                named(&key)?;
+                Ok(StoreSecretGet::encode_reply(&secrets.get(&key).cloned()))
+            })
+    } else if request.kind == StoreSecretSet::KIND {
+        StoreSecretSet::decode_request(payload)
+            .map_err(malformed)
+            .and_then(|(key, value)| {
+                named(&key)?;
+                match value {
+                    Some(value) => secrets.insert(key, value),
+                    None => secrets.remove(&key),
+                };
+                Ok(StoreSecretSet::encode_reply(&()))
             })
     } else {
         return None;
@@ -799,6 +830,31 @@ mod tests {
         assert_eq!(host.kept::<u8>("emoji"), None);
         assert_eq!(host.kept::<u64>("rooms/seen"), Some(3));
         assert_eq!(host.requests::<methods::StoreSet>().len(), 3);
+    }
+
+    #[test]
+    fn a_secret_nothing_handles_is_kept_apart_from_the_store() {
+        use crate::store;
+        use futures::executor::block_on;
+        let host = FakeHost::default();
+        let channel = crate::host::Host::default();
+        host.keep("dc/2", &1u8);
+        host.keep_secret("dc/4", &4u8);
+        let kept = store::secret_set(&channel, "dc/2", Some(&7u8));
+        let read = store::secret_get::<u8>(&channel, "dc/2");
+        let stored = store::get::<u8>(&channel, "dc/2");
+        let dropped = store::secret_set::<u8>(&channel, "dc/4", None);
+        let unnamed = store::secret_get::<u8>(&channel, "");
+        answered(&host, &channel);
+        assert_eq!(block_on(kept), Ok(()));
+        assert_eq!(block_on(read), Ok(Some(7)));
+        assert_eq!(block_on(stored), Ok(Some(1)));
+        assert_eq!(block_on(dropped), Ok(()));
+        let refused = block_on(unnamed).unwrap_err();
+        assert_eq!(refused.code, methods::refusal::MALFORMED_REQUEST);
+        assert_eq!(host.secret::<u8>("dc/2"), Some(7));
+        assert_eq!(host.secret::<u8>("dc/4"), None);
+        assert_eq!(host.kept::<u8>("dc/2"), Some(1));
     }
 
     #[test]

@@ -590,6 +590,8 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
             (),
         ),
         exchange::<methods::HostRandom>(4, vec![9, 8, 7, 6]),
+        exchange::<methods::StoreSecretGet>("dc/2".into(), Some(vec![1, 2, 3])),
+        exchange::<methods::StoreSecretSet>(("dc/2".into(), Some(vec![1, 2, 3])), ()),
         exchange::<FileSave>(
             SaveFile {
                 name: "tape.png".into(),

@@ -53,6 +53,8 @@ socket.send None SocketSend -> ()
 store.changes None () -> String
 store.get None String -> Option<Vec<u8>>
 store.list None String -> Vec<String>
+store.secret_get None String -> Option<Vec<u8>>
+store.secret_set None (String, Option<Vec<u8>>) -> ()
 store.set None (String, Option<Vec<u8>>) -> ()
 
 # borsh: every definition the methods reach

@@ -330,6 +330,27 @@ store.remove("rooms/collapsed");
 let keys = store.list("rooms/");
 ```
 
+A secret (a sign-in's key, anything that acts as the person somewhere
+else) never goes in that file. `store.secret_get` and `store.secret_set`
+keep it in the OS's key store instead: the Keychain on macOS and iOS
+(this device only, never synced), Secret Service on Linux, and on
+Android a file sealed by a Keystore key. Each
+secret is scoped as the store is, per program, network and seated key,
+and both calls answer once the key store has:
+
+```rust
+store.secret_set("dc/2", Some(&key)).await?;
+let key = store.secret_get::<DcKey>("dc/2").await?;
+store.secret_set::<DcKey>("dc/2", None).await?;
+```
+
+With no key seated they are refused `session_locked`. On a device with no
+key store they are refused `no_secret_store`, and when the key store says
+no (locked, a prompt dismissed) `secret_store_refused`, each with the
+OS's own words. A host from before them refuses `unknown_request`. A view
+that can't keep a secret holds it in memory for this run and says so; it
+never falls back to `store.set`.
+
 A value is the view's own borsh bytes (`view::store` has the same calls
 over a `Host`). The host keeps them on this device and never on the
 network, apart per program (its panes and its notifier share them, and
@@ -591,7 +612,8 @@ view took the last; refused `undeclared_host` for any other url,
 `consent_refused` when the person says no to the one-time ask that names
 every listed host), `socket.send` (one binary message onto an open
 socket), `host.random` (bytes from the system's secure random source,
-under `host`) and the manifest's hosts line. What a host answers is
+under `host`), the manifest's hosts line, and `store.secret_get` and
+`store.secret_set` ("Keeping things on the device"). What a host answers is
 `host.methods` (`methods::Hosted`): `cx.host().hosted()` asks it once, and
 `Hosted::has("link.window")` says whether to offer what needs it. A host
 before J-085 refuses `host.methods`, and `hosted()` answers `None`: ask the
@@ -640,7 +662,9 @@ notifies too (`HostLog`, `LinkOpen`, `HostWidget`). The store is the one
 ask answered with no handler: a `store.get`, `store.set` or `store.list`
 nothing handles reads and writes the host's own store in memory, as the
 app's file does (`keep(key, &value)` seeds it, `kept::<T>(key)` reads it),
-and a test's own `handle::<StoreGet>` still answers in its place. Then
+and a test's own `handle::<StoreGet>` still answers in its place. A
+secret nothing handles is kept the same way, in a map apart from the
+store's (`keep_secret(key, &value)`, `secret::<T>(key)`). Then
 `simulate_click`, `simulate_input`, `simulate_event` and a typed
 `simulate_*` per event; `texts`, `find`, `node(key).style()`/`.text()`/
 `.children()`, `interactivity`, `last_frame`, and a `TickReport` per tick

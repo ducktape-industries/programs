@@ -1335,6 +1335,8 @@ methods! {
     SocketConnect, "socket.open", SocketOpen, SocketItem;
     SocketSendMessage, "socket.send", SocketSend, ();
     HostRandom, "host.random", u32, Vec<u8>;
+    StoreSecretGet, "store.secret_get", String, Option<Vec<u8>>;
+    StoreSecretSet, "store.secret_set", (String, Option<Vec<u8>>), ();
 }
 
 // The `<capability>` half of every kind in [`ALL`]: what a view's manifest
@@ -1486,7 +1488,6 @@ pub mod refusal {
     pub const NOT_CONNECTED: &str = "not_connected";
     /// The node connection changed while the request waited.
     pub const STALE_CONNECTION: &str = "stale_connection";
-    /// The method signs, and no key is unlocked in this session.
     pub const SESSION_LOCKED: &str = "session_locked";
     /// Nothing reached the node: safe to send again.
     pub const RPC_CLIENT: &str = "rpc_client";
@@ -1536,10 +1537,12 @@ pub mod refusal {
     /// room's program took the publisher's grant back.
     pub const PUBLISHER_GONE: &str = "publisher_gone";
     pub const UNDECLARED_HOST: &str = "undeclared_host";
+    pub const NO_SECRET_STORE: &str = "no_secret_store";
+    pub const SECRET_STORE_REFUSED: &str = "secret_store_refused";
 
     /// Every code above: what a view tells apart from a node's or a
     /// program's refusal (`design::failure` words these as the host's).
-    pub const ALL: [&str; 27] = [
+    pub const ALL: [&str; 29] = [
         UNKNOWN_REQUEST,
         UNDECLARED_CAPABILITY,
         UNDECLARED_TARGET,
@@ -1567,6 +1570,8 @@ pub mod refusal {
         TRACK_ENDED,
         PUBLISHER_GONE,
         UNDECLARED_HOST,
+        NO_SECRET_STORE,
+        SECRET_STORE_REFUSED,
     ];
 }
 
@@ -1696,6 +1701,8 @@ mod tests {
             (TRACK_ENDED, "track_ended"),
             (PUBLISHER_GONE, "publisher_gone"),
             (UNDECLARED_HOST, "undeclared_host"),
+            (NO_SECRET_STORE, "no_secret_store"),
+            (SECRET_STORE_REFUSED, "secret_store_refused"),
         ];
         for (code, wire) in codes {
             assert_eq!(code, wire);
