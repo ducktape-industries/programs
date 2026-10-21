@@ -163,9 +163,10 @@ fn forge_round_trips() {
         repo: "core".into(),
         hash: abi::HashKind::Sha1,
     });
-    forge.op(&forge::Op::Grant {
+    forge.op(&forge::Op::Push {
         repo: "core".into(),
-        principal: Principal::Account(2),
+        request: Vec::new(),
+        pack: None,
     });
     forge.query(&forge::Query::Repos { page: first() });
     forge.query(&forge::Query::Blob {

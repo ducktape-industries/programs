@@ -4,8 +4,7 @@
 
 use ::program::{AccountNumber, BlobId, Error, HashKind, Need, Party, Resource};
 use ::program::{
-    ExecCtx, QueryCtx, already_exists, capacity, decoded, invalid, not_found, stale, unauthorized,
-    wrong_state,
+    ExecCtx, QueryCtx, already_exists, capacity, decoded, invalid, not_found, stale, wrong_state,
 };
 use std::collections::BTreeMap;
 
@@ -114,12 +113,6 @@ pub(crate) fn writable(ctx: &QueryCtx, op: &Op) -> Result<(), Error> {
     }
 }
 
-pub(crate) fn retired() -> Error {
-    unauthorized(
-        "a repository's writers are its list in the access program: set it there, as the owner",
-    )
-}
-
 pub(crate) fn governed<'o>(ctx: &QueryCtx, op: &'o Op) -> Option<&'o str> {
     match op {
         Op::Configure { repo, .. }
@@ -142,8 +135,6 @@ pub(crate) fn governed<'o>(ctx: &QueryCtx, op: &'o Op) -> Option<&'o str> {
             (!authored).then_some(repo.as_str())
         }
         Op::Create { .. }
-        | Op::Grant { .. }
-        | Op::Revoke { .. }
         | Op::ChangeOpen { .. }
         | Op::ChangeEdit { .. }
         | Op::ChangeRepoint { .. }
@@ -197,8 +188,6 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
             needs
         }
         Op::Create { .. }
-        | Op::Grant { .. }
-        | Op::Revoke { .. }
         | Op::ChangeOpen { .. }
         | Op::ReviewSubmit { .. }
         | Op::Watch { .. }

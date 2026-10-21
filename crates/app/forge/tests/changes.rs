@@ -105,13 +105,8 @@ fn configure_follows_the_repositorys_writers_and_takes_a_ref_for_head() {
 }
 
 #[test]
-fn grant_and_revoke_are_retired_and_the_owner_lists_writers_in_access() {
+fn the_owner_lists_writers_in_access_and_a_listed_writer_configures() {
     let (mut rig, _) = story();
-    let grant = Op::Grant {
-        repo: REPO.into(),
-        principal: person(WRITER),
-    };
-    assert_eq!(rig.refused(&grant).code, code::UNAUTHORIZED);
     let configure = Op::Configure {
         repo: REPO.into(),
         settings: Settings::default(),

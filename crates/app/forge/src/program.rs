@@ -14,7 +14,7 @@ use crate::changes::{
 use crate::checks::{Report, preview_of, require, required, status, statuses};
 use crate::contract::*;
 use crate::ops::{
-    configure, create, delete_branch, init, needs, protect, push, resource, retired, stage, touch,
+    configure, create, delete_branch, init, needs, protect, push, resource, stage, touch,
 };
 use crate::queries::{
     advertise, closure, history, listing, protected_branches, ref_names, refs, repos, shallow,
@@ -76,7 +76,6 @@ impl Program for Forge {
             Op::Watch { deliver } => return watch(ctx, deliver),
             Op::Create { repo, hash } => create(ctx, actor, &repo, hash).map(|()| None),
             Op::Configure { repo, settings } => configure(ctx, &repo, settings).map(|()| None),
-            Op::Grant { .. } | Op::Revoke { .. } => Err(retired()),
             Op::Push {
                 repo,
                 request,

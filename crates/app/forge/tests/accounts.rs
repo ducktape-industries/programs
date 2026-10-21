@@ -147,14 +147,6 @@ fn a_key_writes_only_once_it_holds_an_account() {
             repo: REPO.into(),
             settings: Settings::default(),
         },
-        Op::Grant {
-            repo: REPO.into(),
-            principal: Principal::Account(3),
-        },
-        Op::Revoke {
-            repo: REPO.into(),
-            principal: Principal::Account(3),
-        },
         story.open("From a key with no account"),
         Op::ChangeEdit {
             repo: REPO.into(),

@@ -68,21 +68,19 @@ pub struct Repo {
 #[tool_about(
     "Git repositories on the network: refs, commits, trees and blobs to read, pushes, changes (pull requests) with reviews, squash merges, rebases, required checks and merge queues. Refs, paths and git names are bytes: write them as hex or {\"utf8\": text}; oids are full lowercase hex. Clone and push with git over duck:// as well."
 )]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Op {
     #[tool_op(description = "Create a repository you own, with sha1 or sha256 objects. Its name is unique and every op names it.", example = crate::examples::create)]
     Create { repo: String, hash: HashKind },
     #[tool_op(description = "Set a repository's settings: its head branch and whether pushes may force or delete refs. Whoever its policy admits (its owner by default).", example = crate::examples::configure)]
     Configure { repo: String, settings: Settings },
-    #[tool_op(description = "Retired: a repository's writers are its list in the access program, which its owner sets.", example = crate::examples::grant)]
-    Grant { repo: String, principal: Principal },
-    #[tool_op(description = "Retired with Grant.", example = crate::examples::revoke)]
-    Revoke { repo: String, principal: Principal },
     #[tool_op(description = "A git receive-pack: request is its pkt-lines (`<old> <new> <ref>\\0report-status`, then 0000) and pack a blob of the pack. Objects land once the pack unpacks; each ref moves where the repository's policy admits you, its settings allow it and it fast-forwards unless force is allowed. Returns git's report.", example = crate::examples::push)]
     Push {
         repo: String,
         request: Vec<u8>,
         pack: Option<BlobId>,
-    },
+    } = 4,
     /// The client publishes immutable objects first. Consensus only checks both heads.
     #[tool_op(description = "Move into to a result commit you built and published, with both heads checked against expected_into and expected_from, and mark change merged when one is named. Whoever the repository's policy admits; review verdicts are not enforced. Returns Merged.", returns = OpReply, example = crate::examples::merge)]
     Merge {
@@ -227,8 +225,6 @@ impl Op {
         match self {
             Op::Create { repo, .. }
             | Op::Configure { repo, .. }
-            | Op::Grant { repo, .. }
-            | Op::Revoke { repo, .. }
             | Op::Push { repo, .. }
             | Op::Merge { repo, .. }
             | Op::ChangeOpen { repo, .. }

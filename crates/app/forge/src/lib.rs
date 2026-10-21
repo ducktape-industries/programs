@@ -67,8 +67,8 @@ fn op_variants_only_append() {
         [
             "Create",
             "Configure",
-            "Grant",
-            "Revoke",
+            "-",
+            "-",
             "Push",
             "Merge",
             "ChangeOpen",

@@ -241,7 +241,6 @@ Closing is terminal; there is no reopen operation.
 | --- | --- |
 | `Create { repo: r, hash: HashKind::Sha1 }` | actor owns a new repo; empty output |
 | `Configure { repo: r, settings: Settings::default() }` | owner configures default ref and force/delete policy; empty output |
-| `Grant { repo: r, principal: writer }`, `Revoke { .. }` | always refused: a repository's writers are its list in the access program |
 | `Push { repo: r, request: receive_pack_commands, pack: Some(pack) }` | Git receive-pack: the ref commands in `request`, the objects in the held `pack`; Git's report |
 | `Stage { repo: r, pack }` | stores the held pack's objects and moves no ref; empty output |
 | `ChangeOpen { repo: r, from: feature, into: b"refs/heads/main".to_vec(), title: "Fix parser".into(), body: "Why this changes".into(), reviewers: vec![reviewer] }` | assigns `n`, stores body, queues channel/opened notice; `OpReply::Change { height, n }` |

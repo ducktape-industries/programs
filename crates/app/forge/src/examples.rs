@@ -44,20 +44,6 @@ pub(crate) fn configure() -> Op {
     }
 }
 
-pub(crate) fn grant() -> Op {
-    Op::Grant {
-        repo: repo(),
-        principal: Principal::Account(21),
-    }
-}
-
-pub(crate) fn revoke() -> Op {
-    Op::Revoke {
-        repo: repo(),
-        principal: Principal::Account(21),
-    }
-}
-
 pub(crate) fn push() -> Op {
     Op::Push {
         repo: repo(),

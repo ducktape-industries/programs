@@ -38,14 +38,6 @@ pub fn describe(op: &Op) -> Description {
                 ),
             ],
         ),
-        Op::Grant {
-            repo,
-            principal: who,
-        } => ("Grant writer", repo, vec![field("writer", principal(who))]),
-        Op::Revoke {
-            repo,
-            principal: who,
-        } => ("Revoke writer", repo, vec![field("writer", principal(who))]),
         Op::Push {
             repo,
             request,
