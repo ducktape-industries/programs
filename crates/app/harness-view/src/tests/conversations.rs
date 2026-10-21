@@ -162,7 +162,7 @@ fn a_write_in_flight_says_what_it_does_until_its_block() {
     cx.host().never::<Submit<Identity>>();
     cx.simulate_click("agent-12");
     cx.run_until_parked();
-    cx.simulate_click("agent-remove");
+    from_menu(&mut cx, "remove");
     cx.run_until_parked();
     cx.simulate_click("agent-remove-confirm");
     cx.run_until_parked();

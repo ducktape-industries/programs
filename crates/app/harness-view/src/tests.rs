@@ -708,7 +708,7 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                     .map(|account| identity::Profile {
                         number,
                         name: account.card.name.clone(),
-                        kind: identity::Kind::User,
+                        kind: account.kind(),
                     }),
             ),
             identity::Query::Answers { account } => identity::Reply::Answers(Some(
@@ -864,8 +864,6 @@ fn the_list_shows_each_agent_with_its_state() {
         "1 open · 1 closed",
         // the newest block came five minutes after the threads last moved
         "5m ago",
-        "Pager",
-        "Not handed to harness",
         "Other agents",
         "Atlas",
         "Idle",
@@ -873,6 +871,9 @@ fn the_list_shows_each_agent_with_its_state() {
         "1 relay node",
     ] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
+    }
+    for gone in ["Pager", "Not handed to harness", "Continue"] {
+        assert!(!cx.has_text(gone), "{gone}: {:?}", cx.texts());
     }
 }
 
@@ -1153,7 +1154,7 @@ fn close_and_take_back_are_the_managers_alone() {
     cx.simulate_click("agent-12");
     cx.run_until_parked();
     assert!(cx.has_text("Scout"), "{:?}", cx.texts());
-    assert!(cx.find("agent-remove").is_none());
+    assert!(cx.find("agent-more").is_none());
     assert!(cx.find("agent-edit").is_none());
     cx.simulate_click("thread-7");
     cx.run_until_parked();
@@ -1179,7 +1180,7 @@ fn close_and_take_back_are_the_managers_alone() {
     cx.run_until_parked();
     cx.simulate_click("thread-back");
     cx.run_until_parked();
-    cx.simulate_click("agent-remove");
+    from_menu(&mut cx, "remove");
     cx.run_until_parked();
     assert!(
         cx.has_text(
@@ -1219,6 +1220,19 @@ fn identity_takes(cx: &TestAppContext) {
         identity::Op::CreateAgent { .. } => Ok(applied(view::methods::encode(&ROVER))),
         _ => Ok(applied(Vec::new())),
     });
+}
+
+fn from_menu(cx: &mut TestAppContext, item: &str) {
+    open_menu(cx);
+    cx.simulate_click(&format!("agent-menu/{item}"));
+    cx.run_until_parked();
+}
+
+fn open_menu(cx: &mut TestAppContext) {
+    cx.simulate_click("agent-more");
+    cx.run_until_parked();
+    cx.simulate_bounds("agent-menu-anchor", (20., 100.), (80., 32.));
+    cx.run_until_parked();
 }
 
 fn files_take(cx: &TestAppContext) {
@@ -1509,11 +1523,13 @@ fn a_create_with_no_answer_says_the_account_may_exist() {
 }
 
 #[test]
-fn an_unscripted_agent_continues_at_its_configuration() {
+fn a_create_link_continues_an_agent_at_its_configuration() {
     let (mut cx, _) = seated(Net::default(), EDDY);
     identity_takes(&cx);
     files_take(&cx);
-    cx.simulate_click(&format!("unscripted-{PAGER}-continue"));
+    cx.host()
+        .stream::<HostRoute>()
+        .send(format!("create/{PAGER}"));
     cx.run_until_parked();
     assert!(cx.has_text("Account 19 created"), "{:?}", cx.texts());
     fill(&mut cx);
@@ -1792,6 +1808,115 @@ fn an_agent_whose_configuration_harness_cannot_run_says_what_is_wrong() {
         view::design::day(post(1, "").time)
     );
     assert!(cx.has_text(&opened), "{opened}: {:?}", cx.texts());
+}
+
+#[test]
+fn a_create_link_to_an_agent_harness_runs_opens_the_agent() {
+    let mut cx = seated(Net::default(), EDDY).0;
+    cx.host()
+        .stream::<HostRoute>()
+        .send(format!("create/{SCOUT}"));
+    cx.run_until_parked();
+    assert!(cx.find("create-next").is_none(), "{:?}", cx.texts());
+    assert!(cx.find("agent-head").is_some(), "{:?}", cx.texts());
+}
+
+#[test]
+fn a_create_link_continues_only_the_readers_own_scriptless_agent() {
+    let mut net = Net::default();
+    net.accounts.push(agent(40, "Echo", ADA, false));
+    let mut cx = seated(net, EDDY).0;
+    for (number, name) in [(ADA, "Ada"), (40, "Echo")] {
+        cx.host()
+            .stream::<HostRoute>()
+            .send(format!("create/{number}"));
+        cx.run_until_parked();
+        assert!(
+            cx.find("create-next").is_none(),
+            "{number}: {:?}",
+            cx.texts()
+        );
+        let refused = format!("{name} isn't an agent of yours waiting for harness.");
+        assert!(cx.has_text(&refused), "{refused}: {:?}", cx.texts());
+    }
+    assert!(cx.host().requests::<Submit<Identity>>().is_empty());
+}
+
+#[test]
+fn a_manager_renames_suspends_and_revokes_its_agent_on_its_page() {
+    let (mut cx, _) = seated(Net::default(), EDDY);
+    identity_takes(&cx);
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    cx.simulate_click("agent-rename");
+    cx.run_until_parked();
+    assert!(cx.has_text("Rename Scout"), "{:?}", cx.texts());
+    cx.simulate_input("agent-rename-name", "  ");
+    cx.simulate_click("agent-rename-save");
+    cx.run_until_parked();
+    assert!(cx.has_text("Name the agent."), "{:?}", cx.texts());
+    cx.simulate_input("agent-rename-name", "Scout II");
+    cx.simulate_click("agent-rename-save");
+    cx.run_until_parked();
+    assert!(cx.find("agent-renaming").is_none(), "{:?}", cx.texts());
+    from_menu(&mut cx, "suspend");
+    from_menu(&mut cx, "revoke");
+    assert!(cx.has_text(&words::revokes("Scout")), "{:?}", cx.texts());
+    cx.simulate_click("agent-revoke-confirm");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.host().requests::<Submit<Identity>>(),
+        [
+            identity::Op::SetName {
+                account: SCOUT,
+                name: "Scout II".into()
+            },
+            identity::Op::Suspend { account: SCOUT },
+            identity::Op::Revoke { account: SCOUT },
+        ]
+    );
+}
+
+#[test]
+fn a_suspended_agent_resumes_and_a_revoked_one_takes_no_standing_action() {
+    let mut net = Net::default();
+    net.setups[0].standing = Standing::Suspended;
+    let (mut cx, shared) = seated(net, EDDY);
+    identity_takes(&cx);
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    open_menu(&mut cx);
+    assert!(cx.find("agent-menu/suspend").is_none(), "{:?}", cx.texts());
+    cx.simulate_click("agent-menu/resume");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.host().requests::<Submit<Identity>>(),
+        [identity::Op::Resume { account: SCOUT }]
+    );
+    shared.borrow_mut().setups[0].standing = Standing::Revoked;
+    cx.host().stream::<Changes<Identity>>().send(Some(Change {
+        height: 9011,
+        keys: Vec::new(),
+    }));
+    cx.run_until_parked();
+    assert!(cx.find("agent-rename").is_none(), "{:?}", cx.texts());
+    open_menu(&mut cx);
+    assert!(cx.find("agent-menu/remove").is_some(), "{:?}", cx.texts());
+    for gone in [
+        "agent-menu/suspend",
+        "agent-menu/resume",
+        "agent-menu/revoke",
+    ] {
+        assert!(cx.find(gone).is_none(), "{gone}: {:?}", cx.texts());
+    }
+    assert!(cx.find("agent-edit").is_some(), "{:?}", cx.texts());
+
+    let (mut cx, _) = seated(Net::default(), ADA);
+    cx.simulate_click("agent-12");
+    cx.run_until_parked();
+    for gone in ["agent-rename", "agent-more"] {
+        assert!(cx.find(gone).is_none(), "{gone}: {:?}", cx.texts());
+    }
 }
 
 #[test]

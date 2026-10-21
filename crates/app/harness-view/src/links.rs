@@ -12,6 +12,10 @@ pub fn route_target(route: &str) -> Option<(u64, Option<String>)> {
     Some((agent.parse().ok()?, place.filter(|place| !place.is_empty())))
 }
 
+pub fn create_target(route: &str) -> Option<u64> {
+    route.strip_prefix("create/")?.parse().ok()
+}
+
 /// Where a place is shown by the program it names: `chat/general` is
 /// `duck://<chain>/chat/general`. None without a chain.
 pub fn place_link(chain: &str, place: &str) -> Option<(String, String)> {
@@ -49,6 +53,10 @@ mod tests {
         );
         assert_eq!(route_target("12"), Some((12, None)));
         assert_eq!(route_target("scout/chat/general"), None);
+        assert_eq!(create_target("create/19"), Some(19));
+        assert_eq!(create_target("19"), None);
+        assert_eq!(create_target("create/scout"), None);
+        assert_eq!(route_target("create/19"), None);
     }
 
     #[test]

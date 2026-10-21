@@ -6,7 +6,7 @@ use view::prelude::*;
 use view::{FontWeight, Stateful};
 
 use super::{agent_face, caption, state_badge, waiting};
-use crate::read::{Card, Roster, Unscripted};
+use crate::read::{Card, Roster};
 use crate::words::{agent_sentence_topic, ago, last_moved};
 use crate::{Agents, Picture, Screen, agent_state};
 
@@ -79,7 +79,7 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
     let Some(roster) = view.roster.ready() else {
         return div().into_any_element();
     };
-    if roster.agents.is_empty() && roster.unscripted.is_empty() {
+    if roster.agents.is_empty() {
         let create = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.start_create(cx));
         return design::empty_state(
             "agents-empty",
@@ -102,38 +102,25 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
         .iter()
         .partition(|card| Some(card.setup.manager) == view.me);
     let mut list = div().flex().flex_col().gap(space::BLOCK);
-    if !mine.is_empty() || !roster.unscripted.is_empty() {
+    if !mine.is_empty() {
         list = list.child(
-            group(
-                "agents-mine",
-                "My agents",
-                mine.len() + roster.unscripted.len(),
-                theme,
-            )
-            .children(mine.iter().map(|card| {
-                row(
-                    card,
-                    view.picture(card.setup.agent, cx),
-                    roster,
-                    view.me,
-                    cx,
-                    theme,
-                    ladder,
-                )
-            }))
-            .children(roster.unscripted.iter().map(|unscripted| {
-                unscripted_row(
-                    unscripted,
-                    view.picture(unscripted.number, cx),
-                    cx,
-                    theme,
-                    ladder,
-                )
-            })),
+            group("agents-mine", "My agents", mine.len(), theme).children(mine.iter().map(
+                |card| {
+                    row(
+                        card,
+                        view.picture(card.setup.agent, cx),
+                        roster,
+                        view.me,
+                        cx,
+                        theme,
+                        ladder,
+                    )
+                },
+            )),
         );
     }
     if !others.is_empty() {
-        let label = match mine.is_empty() && roster.unscripted.is_empty() {
+        let label = match mine.is_empty() {
             true => "Agents",
             false => "Other agents",
         };
@@ -285,54 +272,4 @@ fn row(
                 .text_right(),
         )
         .child(design::chevron(ladder, theme))
-}
-
-fn unscripted_row(
-    unscripted: &Unscripted,
-    picture: Picture,
-    cx: &mut Context<Agents>,
-    theme: &Theme,
-    ladder: &Ladder,
-) -> impl IntoElement + use<> {
-    let (agent, name) = (unscripted.number, unscripted.name.clone());
-    let resumed = name.clone();
-    div()
-        .id(SharedString::from(format!("unscripted-{agent}")))
-        .flex()
-        .items_center()
-        .gap(space::LG)
-        .min_h(ROW)
-        .px(space::SM)
-        .py(space::XS)
-        .border_b_1()
-        .border_color(theme.border)
-        .child(who(name, picture, format!("account {agent}"), theme))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .items_center()
-                .gap(space::SM)
-                .child(design::badge(
-                    format!("unscripted-{agent}-state"),
-                    "Not handed to harness",
-                    ladder,
-                    theme.muted,
-                    theme.surface_raised,
-                ))
-                .child(caption("Continue to configure it", theme)),
-        )
-        .child(
-            design::button(
-                SharedString::from(format!("unscripted-{agent}-continue")),
-                "Continue",
-                ladder,
-                theme,
-                cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
-                    view.resume(agent, &resumed, cx)
-                }),
-            )
-            .kind(design::Kind::Outline),
-        )
 }

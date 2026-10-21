@@ -4,7 +4,7 @@ use view::design::Ladder;
 use view::prelude::*;
 
 use super::parts::{badged, glyph, opening_row, scroller, section};
-use crate::read::{Card, Roster, Unscripted};
+use crate::read::{Card, Roster};
 use crate::ui::{agent_face, state_badge, waiting};
 use crate::words::{agent_sentence_topic, last_moved, network};
 use crate::{Agents, Picture, Screen, agent_state};
@@ -42,7 +42,7 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
     let Some(roster) = view.roster.ready() else {
         return div().into_any_element();
     };
-    if roster.agents.is_empty() && roster.unscripted.is_empty() {
+    if roster.agents.is_empty() {
         let create = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.start_create(cx));
         return design::empty_state(
             "agents-empty",
@@ -66,8 +66,8 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
         .iter()
         .partition(|card| Some(card.setup.manager) == view.me);
     let mut list = div().flex().flex_col();
-    if !mine.is_empty() || !roster.unscripted.is_empty() {
-        let count = mine.len() + roster.unscripted.len();
+    if !mine.is_empty() {
+        let count = mine.len();
         list = list
             .child(section("agents-mine", "My agents", count, theme, ladder))
             .children(mine.iter().map(|card| {
@@ -79,19 +79,10 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
                     theme,
                     ladder,
                 )
-            }))
-            .children(roster.unscripted.iter().map(|unscripted| {
-                unscripted_row(
-                    unscripted,
-                    view.picture(unscripted.number, cx),
-                    cx,
-                    theme,
-                    ladder,
-                )
             }));
     }
     if !others.is_empty() {
-        let label = match mine.is_empty() && roster.unscripted.is_empty() {
+        let label = match mine.is_empty() {
             true => "Agents",
             false => "Other agents",
         };
@@ -151,42 +142,6 @@ fn row(
         agent_face(&card.name, picture, ladder.avatar, theme),
         words,
         moved,
-        theme,
-        ladder,
-        open,
-    )
-}
-
-fn unscripted_row(
-    unscripted: &Unscripted,
-    picture: Picture,
-    cx: &mut Context<Agents>,
-    theme: &Theme,
-    ladder: &Ladder,
-) -> impl IntoElement + use<> {
-    let (agent, name) = (unscripted.number, unscripted.name.clone());
-    let resume = name.clone();
-    let open = cx
-        .listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.resume(agent, &resume, cx));
-    let badge = design::badge(
-        format!("unscripted-{agent}-state"),
-        "Not handed to harness",
-        ladder,
-        theme.muted,
-        theme.surface_raised,
-    );
-    let words = badged(
-        design::row_title(name.clone(), ladder, theme),
-        Some(badge),
-        Some("Continue to configure it".to_owned()),
-        theme,
-        ladder,
-    );
-    opening_row(
-        format!("unscripted-{agent}"),
-        agent_face(&name, picture, ladder.avatar, theme),
-        words,
-        None,
         theme,
         ladder,
         open,

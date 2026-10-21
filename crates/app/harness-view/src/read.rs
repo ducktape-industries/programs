@@ -11,7 +11,7 @@ use harness::{
     ProviderRouteRow, RunRow, SettleWindow, Spoken, Tally, ThreadRow, ToolInfo, Usage, WaitRow,
     WithheldFrame,
 };
-use identity::{Category, Kind, Ownership, PageRequest};
+use identity::{Ownership, PageRequest};
 use policy_view::link;
 use program::Writers;
 use view::prelude::*;
@@ -23,8 +23,6 @@ fn page(after: Option<Vec<u8>>) -> PageRequest {
 #[derive(PartialEq)]
 pub(crate) struct Roster {
     pub agents: Vec<Card>,
-    /// the reader's agent accounts that no script hands to harness yet
-    pub unscripted: Vec<Unscripted>,
     pub names: HashMap<u64, String>,
     // each account's picture by its number, as its card holds it
     pub avatars: HashMap<u64, BlobId>,
@@ -55,12 +53,6 @@ pub(crate) struct Card {
     pub note: Option<&'static str>,
 }
 
-#[derive(PartialEq)]
-pub(crate) struct Unscripted {
-    pub number: u64,
-    pub name: String,
-}
-
 impl Roster {
     pub fn name(&self, number: u64) -> String {
         self.names
@@ -71,18 +63,6 @@ impl Roster {
 
     pub fn card(&self, agent: u64) -> Option<&Card> {
         self.agents.iter().find(|card| card.setup.agent == agent)
-    }
-}
-
-fn unscripted_of(kind: &Kind, me: Option<u64>) -> bool {
-    match kind {
-        Kind::Program {
-            manager,
-            category: Category::Agent,
-            script: None,
-            ..
-        } => Some(*manager) == me,
-        Kind::User | Kind::Program { .. } | Kind::System(_) => false,
     }
 }
 
@@ -138,15 +118,7 @@ pub(crate) async fn every_room(host: Host, rooms: Rooms) -> Result<(), Error> {
     Ok(())
 }
 
-// the list: harness's card of each agent it runs, the accounts (names, pictures, the reader's
-// agents no script hands to harness yet), the nodes serving relay and the rooms the cards name;
-// its time is the newest head's
-pub(crate) async fn roster(
-    host: Host,
-    me: Option<u64>,
-    rooms: Rooms,
-    now: Rc<Cell<u64>>,
-) -> Result<Roster, Error> {
+pub(crate) async fn roster(host: Host, rooms: Rooms, now: Rc<Cell<u64>>) -> Result<Roster, Error> {
     let accounts = host
         .query_all(|after| identity::ask::List { page: page(after) })
         .await?;
@@ -180,17 +152,8 @@ pub(crate) async fn roster(
             }
         })
         .collect();
-    let unscripted = accounts
-        .iter()
-        .filter(|account| unscripted_of(&account.kind(), me))
-        .map(|account| Unscripted {
-            number: account.number,
-            name: account.card.name.clone(),
-        })
-        .collect();
     Ok(Roster {
         agents,
-        unscripted,
         avatars: accounts
             .iter()
             .filter_map(|account| Some((account.number, account.card.avatar?)))

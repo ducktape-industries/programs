@@ -510,6 +510,16 @@ pub(crate) fn removes(name: &str) -> String {
     )
 }
 
+pub(crate) fn renames(name: &str) -> String {
+    format!("Rename {name}")
+}
+
+pub(crate) fn revokes(name: &str) -> String {
+    format!(
+        "Revoke {name}? It stops acting for good, and no one can resume it. Its conversations and its configuration file stay."
+    )
+}
+
 pub(crate) fn thread_words(thread: &harness::ThreadRow) -> Option<String> {
     match (thread.closed, thread_state(thread)) {
         (true, _) => Some(format!(

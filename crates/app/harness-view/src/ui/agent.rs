@@ -7,6 +7,7 @@ use view::design::Ladder;
 use view::design::{space, text};
 use view::prelude::*;
 
+use super::create::input;
 use super::list::{ROW, pressable};
 use super::setup::editor;
 use super::{
@@ -19,11 +20,13 @@ use crate::setup::Press;
 use crate::words::{
     PROBLEM_CAPTION, about, agent_sentence, ago, answers, compacts_words, context_short,
     conversation_label, file_link, full, may_change, model_more, prompt, prompt_words, quoted,
-    reach, read_at, removes, starts, thinking_words, thread_words, threshold_source, tools_words,
-    upper_first, usage_total, usage_words, wait_words, window_words,
+    reach, read_at, removes, renames, revokes, starts, thinking_words, thread_words,
+    threshold_source, tools_words, upper_first, usage_total, usage_words, wait_words, window_words,
 };
 use crate::words::{configured_words, listen_words, server_tools_words, settle_words};
-use crate::{Agents, Arm, Screen, State, agent_state, thread_state};
+use crate::{
+    AGENT_MENU, AgentMenu, Agents, Arm, Screen, State, agent_state, standing_toggle, thread_state,
+};
 
 pub(super) fn render(
     view: &Agents,
@@ -67,10 +70,9 @@ fn detail(
     let edit_name = name.clone();
     let edit =
         cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.edit(&edit_name, cx));
-    let arm = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
-        view.arming = Some(Arm::Remove(agent));
-        cx.notify();
-    });
+    let acts = setup.standing != identity::Standing::Revoked;
+    let rename =
+        cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.begin_rename(agent, cx));
     let opens = |id: &'static str, label: &'static str, link: Option<String>| {
         link.map(|link| {
             design::button(id, label, ladder, theme, move |_, _, cx: &mut App| {
@@ -116,14 +118,17 @@ fn detail(
                 .children(opens("agent-dm", "Send a DM", reach.dm))
                 .when(manages, |actions| {
                     actions
+                        .when(acts, |actions| {
+                            actions.child(
+                                design::button("agent-rename", "Rename…", ladder, theme, rename)
+                                    .kind(design::Kind::Outline),
+                            )
+                        })
                         .child(
                             design::button("agent-edit", "Edit…", ladder, theme, edit)
                                 .kind(design::Kind::Outline),
                         )
-                        .child(
-                            design::button("agent-remove", "Take back…", ladder, theme, arm)
-                                .kind(design::Kind::Quiet),
-                        )
+                        .child(more(view, agent, cx, theme, ladder))
                 }),
         );
     let window = setup
@@ -136,6 +141,8 @@ fn detail(
         .gap(space::BLOCK)
         .child(head)
         .children(removing(view, &name, agent, cx, theme, ladder))
+        .children(renaming(view, &name, agent, cx, theme, ladder))
+        .children(revoking(view, &name, agent, cx, theme, ladder))
         .children(problem(&setup, theme))
         .children(setup.configured.reached().and_then(|reached| {
             no_node(
@@ -383,6 +390,168 @@ fn removing(
                     )
                     .child(
                         design::button("agent-remove-confirm", "Take back", ladder, theme, confirm)
+                            .kind(design::Kind::Primary)
+                            .enabled(view.acting.is_none()),
+                    ),
+            ),
+    )
+}
+
+fn more(
+    view: &Agents,
+    agent: u64,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> impl IntoElement + use<> {
+    let open =
+        cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.open_menu(agent, cx));
+    let waits = view
+        .menu
+        .is_some_and(|menu| menu.agent == agent && menu.at.is_none());
+    let placed = cx.listener(|view: &mut Agents, bounds: &Bounds<Pixels>, window, cx| {
+        view.place_menu(*bounds, window, cx)
+    });
+    div()
+        .relative()
+        .child(
+            design::button("agent-more", "More…", ladder, theme, open).kind(design::Kind::Outline),
+        )
+        .when(waits, |more| {
+            more.child(
+                sensor("agent-menu-anchor", div().size_full())
+                    .absolute()
+                    .inset_0()
+                    .on_bounds(placed),
+            )
+        })
+}
+
+pub(super) fn over(
+    view: &Agents,
+    screen: AnyElement,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    let menu = view
+        .menu
+        .and_then(|menu| popup(view, menu, cx, theme, ladder));
+    let close = cx.listener(|view: &mut Agents, _: &(), window, cx| view.close_menu(window, cx));
+    modal_overlay("agent-menu-overlay", "Agent actions", screen, menu)
+        .on_dismiss(close)
+        .into_any_element()
+}
+
+fn popup(
+    view: &Agents,
+    menu: AgentMenu,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Option<design::Menu> {
+    let at = menu.at?;
+    let standing = view.detail.ready()?.setup.as_ref()?.standing;
+    let agent = menu.agent;
+    let acts = standing != identity::Standing::Revoked;
+    let mut items = Vec::new();
+    if acts {
+        let (slug, word, toggled) = standing_toggle(agent, standing);
+        items.push((slug, word, toggled, false));
+    }
+    items.push(("remove", "Take back…", Arm::Remove(agent), true));
+    if acts {
+        items.push(("revoke", "Revoke…", Arm::Revoke(agent), true));
+    }
+    let moved = cx.processor(|view: &mut Agents, index: usize, _, cx| view.move_in_menu(index, cx));
+    let popup = design::menu(AGENT_MENU, "Agent actions", at, theme)
+        .active(menu.active)
+        .on_move(moved);
+    Some(
+        items
+            .into_iter()
+            .fold(popup, |popup, (slug, word, arm, danger)| {
+                let run = cx.listener(move |view: &mut Agents, _: &ClickEvent, window, cx| {
+                    view.run_menu(arm, window, cx)
+                });
+                let item =
+                    design::menu_item(format!("{AGENT_MENU}/{slug}"), word, ladder, theme, run);
+                popup.item(item.when(danger, |item| item.danger()))
+            }),
+    )
+}
+
+fn renaming(
+    view: &Agents,
+    name: &str,
+    agent: u64,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Option<impl IntoElement + use<>> {
+    if view.arming != Some(Arm::Rename(agent)) {
+        return None;
+    }
+    let save = cx
+        .listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.act(Arm::Rename(agent), cx));
+    let cancel = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| {
+        view.arming = None;
+        cx.notify();
+    });
+    Some(
+        panel("agent-renaming", theme.surface, theme)
+            .child(renames(name))
+            .child(input(
+                Input::new("agent-rename-name", &view.rename, "New name"),
+                theme,
+            ))
+            .child(
+                div()
+                    .flex()
+                    .gap(space::SM)
+                    .child(
+                        design::button("agent-rename-cancel", "Cancel", ladder, theme, cancel)
+                            .kind(design::Kind::Outline),
+                    )
+                    .child(
+                        design::button("agent-rename-save", "Save", ladder, theme, save)
+                            .kind(design::Kind::Primary)
+                            .enabled(view.acting.is_none()),
+                    ),
+            ),
+    )
+}
+
+fn revoking(
+    view: &Agents,
+    name: &str,
+    agent: u64,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Option<impl IntoElement + use<>> {
+    if view.arming != Some(Arm::Revoke(agent)) {
+        return None;
+    }
+    let confirm = cx
+        .listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.act(Arm::Revoke(agent), cx));
+    let cancel = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| {
+        view.arming = None;
+        cx.notify();
+    });
+    Some(
+        panel("agent-revoking", theme.danger_soft, theme)
+            .child(revokes(name))
+            .child(
+                div()
+                    .flex()
+                    .gap(space::SM)
+                    .child(
+                        design::button("agent-revoke-cancel", "Cancel", ladder, theme, cancel)
+                            .kind(design::Kind::Outline),
+                    )
+                    .child(
+                        design::button("agent-revoke-confirm", "Revoke", ladder, theme, confirm)
                             .kind(design::Kind::Primary)
                             .enabled(view.acting.is_none()),
                     ),

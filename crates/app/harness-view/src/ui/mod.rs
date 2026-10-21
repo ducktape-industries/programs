@@ -32,7 +32,7 @@ pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
         Screen::Thread(id) | Screen::Usage(id) => thread::render(view, id, cx, &theme, ladder),
         Screen::Routes | Screen::SetRoute => routes::render(view, cx, &theme, ladder),
     };
-    div()
+    let root = div()
         .id("agents")
         .size_full()
         .overflow_y_scroll()
@@ -54,8 +54,8 @@ pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
                 .child(caption("sent · waiting for the block", &theme))
         }))
         .child(screen)
-        .children(crate::policies::sheet(view, cx, ladder, &theme))
-        .into_any_element()
+        .children(crate::policies::sheet(view, cx, ladder, &theme));
+    agent::over(view, root.into_any_element(), cx, &theme, ladder)
 }
 
 pub(crate) fn waiting<T>(

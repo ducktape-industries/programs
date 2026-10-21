@@ -18,11 +18,11 @@ use crate::ui::{
 use crate::words::{
     PROBLEM_CAPTION, agent_sentence, answers, compacts_line, conversation_label, file_link, lower,
     may_change, model_more, no_node_words, prompt, prompt_words, quoted, reach, read_at, removes,
-    starts, thinking_words, thread_words, tools_words, upper_first, usage_total, usage_words,
-    wait_words, window_words,
+    renames, revokes, starts, thinking_words, thread_words, tools_words, upper_first, usage_total,
+    usage_words, wait_words, window_words,
 };
 use crate::words::{configured_words, listen_words, server_tools_words, settle_words};
-use crate::{Agents, Arm, Part, Screen, Sheet, State, agent_state, thread_state};
+use crate::{Agents, Arm, Part, Screen, Sheet, State, agent_state, standing_toggle, thread_state};
 
 pub(super) fn page(
     view: &Agents,
@@ -682,9 +682,17 @@ pub(super) fn sheet(
                         }),
                 ),
         );
-    let body = match view.arming == Some(Arm::Remove(agent)) {
-        true => removing(view, &name, agent, cx, theme, ladder).into_any_element(),
-        false => {
+    let body = match view.arming {
+        Some(Arm::Remove(armed)) if armed == agent => {
+            removing(view, &name, agent, cx, theme, ladder).into_any_element()
+        }
+        Some(Arm::Rename(armed)) if armed == agent => {
+            renaming(view, &name, agent, cx, theme, ladder).into_any_element()
+        }
+        Some(Arm::Revoke(armed)) if armed == agent => {
+            revoking(view, &name, agent, cx, theme, ladder).into_any_element()
+        }
+        _ => {
             let edit_name = name.clone();
             let edit = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
                 view.edit(&edit_name, cx)
@@ -704,6 +712,17 @@ pub(super) fn sheet(
             let claim = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
                 view.converse(harness::Op::ClaimConversations { agent }, cx)
             });
+            let acts = setup.standing != identity::Standing::Revoked;
+            let rename = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
+                view.begin_rename(agent, cx)
+            });
+            let (slug, word, toggled) = standing_toggle(agent, setup.standing);
+            let toggle =
+                cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.act(toggled, cx));
+            let revoke = cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| {
+                view.arming = Some(Arm::Revoke(agent));
+                cx.notify();
+            });
             div()
                 .flex()
                 .flex_col()
@@ -718,6 +737,22 @@ pub(super) fn sheet(
                         )
                         .icon("pencil"),
                     )
+                })
+                .when(manages && acts, |rows| {
+                    rows.child(design::sheet_row(
+                        "agent-sheet-rename",
+                        "Rename",
+                        ladder,
+                        theme,
+                        rename,
+                    ))
+                    .child(design::sheet_row(
+                        SharedString::from(format!("agent-sheet-{slug}")),
+                        word,
+                        ladder,
+                        theme,
+                        toggle,
+                    ))
                 })
                 .when(claims, |rows| {
                     rows.child(
@@ -760,6 +795,13 @@ pub(super) fn sheet(
                         .danger(),
                     )
                 })
+                .when(manages && acts, |rows| {
+                    rows.child(
+                        design::sheet_row("agent-sheet-revoke", "Revoke", ladder, theme, revoke)
+                            .hint("second press confirms")
+                            .danger(),
+                    )
+                })
                 .into_any_element()
         }
     };
@@ -799,6 +841,72 @@ fn removing(
             design::button("agent-remove-cancel", "Cancel", ladder, theme, cancel)
                 .kind(design::Kind::Quiet),
             design::button("agent-remove-confirm", "Take back", ladder, theme, confirm)
+                .kind(design::Kind::Primary)
+                .busy(view.acting.is_some()),
+        ),
+        theme,
+        ladder,
+    )
+}
+
+fn renaming(
+    view: &Agents,
+    name: &str,
+    agent: u64,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> impl IntoElement + use<> {
+    let save = cx
+        .listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.act(Arm::Rename(agent), cx));
+    let cancel = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| {
+        view.arming = None;
+        cx.notify();
+    });
+    div()
+        .id("agent-renaming")
+        .flex()
+        .flex_col()
+        .gap(space::LG)
+        .p(design::SHEET_INSET)
+        .child(
+            design::field(
+                Input::new("agent-rename-name", &view.rename, "New name"),
+                ladder,
+                theme,
+            )
+            .label(renames(name)),
+        )
+        .child(design::form_verbs(
+            design::button("agent-rename-cancel", "Cancel", ladder, theme, cancel)
+                .kind(design::Kind::Quiet),
+            design::button("agent-rename-save", "Save", ladder, theme, save)
+                .kind(design::Kind::Primary)
+                .busy(view.acting.is_some()),
+        ))
+}
+
+fn revoking(
+    view: &Agents,
+    name: &str,
+    agent: u64,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> impl IntoElement + use<> {
+    let confirm = cx
+        .listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.act(Arm::Revoke(agent), cx));
+    let cancel = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| {
+        view.arming = None;
+        cx.notify();
+    });
+    confirm_card(
+        "agent-revoking",
+        revokes(name),
+        design::form_verbs(
+            design::button("agent-revoke-cancel", "Cancel", ladder, theme, cancel)
+                .kind(design::Kind::Quiet),
+            design::button("agent-revoke-confirm", "Revoke", ladder, theme, confirm)
                 .kind(design::Kind::Primary)
                 .busy(view.acting.is_some()),
         ),

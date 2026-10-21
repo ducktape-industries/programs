@@ -36,6 +36,10 @@ pub struct Agents {
     #[serde(default)]
     setup_draft: SetupDraft,
     arming: Option<Arm>,
+    #[serde(default)]
+    rename: TextField,
+    #[serde(skip)]
+    menu: Option<AgentMenu>,
     open: BTreeSet<String>,
     sheet: Option<Sheet>,
     #[serde(skip)]
@@ -147,6 +151,31 @@ impl Screen {
 pub(crate) enum Arm {
     Remove(u64),
     Close(u64),
+    Rename(u64),
+    Suspend(u64),
+    Resume(u64),
+    Revoke(u64),
+}
+
+pub(crate) const AGENT_MENU: &str = "agent-menu";
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct AgentMenu {
+    pub agent: u64,
+    pub at: Option<view::Point<Pixels>>,
+    pub active: usize,
+}
+
+pub(crate) fn standing_toggle(
+    agent: u64,
+    standing: identity::Standing,
+) -> (&'static str, &'static str, Arm) {
+    match standing {
+        identity::Standing::Suspended => ("resume", "Resume", Arm::Resume(agent)),
+        identity::Standing::Active | identity::Standing::Revoked => {
+            ("suspend", "Suspend", Arm::Suspend(agent))
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -428,7 +457,7 @@ impl Agents {
         cx.reread(
             self,
             |view| &mut view.roster,
-            |view, cx| read::roster(cx.host(), view.me, view.rooms.clone(), view.now.clone()),
+            |view, cx| read::roster(cx.host(), view.rooms.clone(), view.now.clone()),
             Self::read_roster,
         );
     }
@@ -642,6 +671,7 @@ impl Agents {
         }
         self.screen = screen;
         self.arming = None;
+        self.menu = None;
         self.sheet = None;
         self.conversations_policy.sheet = None;
         self.route_policy.sheet = None;
@@ -697,6 +727,9 @@ impl Agents {
     }
 
     fn open_route(&mut self, route: &str, cx: &mut Context<Self>) {
+        if let Some(agent) = links::create_target(route) {
+            return self.continue_create(agent, cx);
+        }
         let Some((agent, place)) = links::route_target(route) else {
             self.notice = Some(format!(
                 "This view opens no link like “{route}”: open a harness conversation link"
@@ -731,30 +764,138 @@ impl Agents {
         }));
     }
 
+    fn continue_create(&mut self, agent: u64, cx: &mut Context<Self>) {
+        let host = cx.host();
+        let named = async move { host.query(identity::ask::Profile { number: agent }).await };
+        self.routing = Some(cx.land(named, move |view, profile, cx| {
+            view.routing = None;
+            match profile {
+                Ok(Some(profile)) => match &profile.kind {
+                    identity::Kind::Program {
+                        script: Some(script),
+                        ..
+                    } if script.calls == harness::PROGRAM => view.go(Screen::Agent(agent), cx),
+                    identity::Kind::Program {
+                        manager,
+                        category: identity::Category::Agent,
+                        script: None,
+                        ..
+                    } if Some(*manager) == view.me => view.resume(agent, &profile.name, cx),
+                    _ => {
+                        view.notice = Some(format!(
+                            "{} isn't an agent of yours waiting for harness.",
+                            profile.name
+                        ));
+                        cx.notify();
+                    }
+                },
+                Ok(None) => {
+                    view.notice = Some(format!("No account {agent} to hand to harness."));
+                    cx.notify();
+                }
+                Err(refusal) => {
+                    view.notice = Some(format!(
+                        "Couldn’t open the link: {}",
+                        design::sentence(&refusal)
+                    ));
+                    cx.notify();
+                }
+            }
+        }));
+    }
+
+    pub(crate) fn begin_rename(&mut self, agent: u64, cx: &mut Context<Self>) {
+        self.rename = TextField::new(self.agent_name(agent));
+        self.arming = Some(Arm::Rename(agent));
+        cx.notify();
+    }
+
+    pub(crate) fn open_menu(&mut self, agent: u64, cx: &mut Context<Self>) {
+        self.menu = Some(AgentMenu {
+            agent,
+            at: None,
+            active: 0,
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn place_menu(
+        &mut self,
+        button: Bounds<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(menu) = &mut self.menu else {
+            return;
+        };
+        if menu.at.is_none() {
+            menu.at = Some(button.bottom_left());
+            window.focus(AGENT_MENU);
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn move_in_menu(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(menu) = &mut self.menu {
+            menu.active = index;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn close_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.menu.take().is_some() {
+            window.focus("agent-more");
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn run_menu(&mut self, arm: Arm, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_menu(window, cx);
+        match arm {
+            Arm::Suspend(_) | Arm::Resume(_) => self.act(arm, cx),
+            Arm::Remove(_) | Arm::Revoke(_) | Arm::Rename(_) | Arm::Close(_) => {
+                self.arming = Some(arm);
+                cx.notify();
+            }
+        }
+    }
+
     pub(crate) fn act(&mut self, arm: Arm, cx: &mut Context<Self>) {
         if self.acting.is_some() {
             return;
         }
+        let name = self.rename.text().trim().to_owned();
+        let unnamed = matches!(arm, Arm::Rename(_)) && name.is_empty();
+        if unnamed {
+            self.notice = Some("Name the agent.".to_owned());
+            return cx.notify();
+        }
         self.doing = Some(match arm {
             Arm::Remove(agent) => format!("Taking {} back", self.agent_name(agent)),
             Arm::Close(_) => "Closing the conversation".to_owned(),
+            Arm::Rename(agent) => format!("Renaming {}", self.agent_name(agent)),
+            Arm::Suspend(agent) => format!("Suspending {}", self.agent_name(agent)),
+            Arm::Resume(agent) => format!("Resuming {}", self.agent_name(agent)),
+            Arm::Revoke(agent) => format!("Revoking {}", self.agent_name(agent)),
         });
         let acted =
             move |view: &mut Self, answer, cx: &mut Context<Self>| view.acted(arm, answer, cx);
-        let task = match arm {
-            Arm::Remove(account) => {
-                let op = identity::Op::SetScript {
-                    account,
-                    script: None,
-                };
-                cx.land(cx.host().ask::<Submit<Identity>>(op), acted)
-            }
+        let op = match arm {
             Arm::Close(thread) => {
                 let op = harness::Op::Close { thread };
-                cx.land(cx.host().ask::<Submit<harness::Harness>>(op), acted)
+                self.acting = Some(cx.land(cx.host().ask::<Submit<harness::Harness>>(op), acted));
+                return cx.notify();
             }
+            Arm::Remove(account) => identity::Op::SetScript {
+                account,
+                script: None,
+            },
+            Arm::Rename(account) => identity::Op::SetName { account, name },
+            Arm::Suspend(account) => identity::Op::Suspend { account },
+            Arm::Resume(account) => identity::Op::Resume { account },
+            Arm::Revoke(account) => identity::Op::Revoke { account },
         };
-        self.acting = Some(task);
+        self.acting = Some(cx.land(cx.host().ask::<Submit<Identity>>(op), acted));
         cx.notify();
     }
 
@@ -792,7 +933,10 @@ impl Agents {
         self.sheet = None;
         match (applied(answer), arm) {
             (Ok(_), Arm::Remove(_)) => self.go(Screen::List, cx),
-            (Ok(_), Arm::Close(_)) => self.read_screen(cx),
+            (
+                Ok(_),
+                Arm::Close(_) | Arm::Rename(_) | Arm::Suspend(_) | Arm::Resume(_) | Arm::Revoke(_),
+            ) => self.read_screen(cx),
             (Err(problem), _) => self.notice = Some(problem),
         }
         self.read_roster(cx);

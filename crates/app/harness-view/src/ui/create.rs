@@ -147,7 +147,7 @@ fn labelled(
         .child(caption(hint, theme))
 }
 
-fn input(field: Input, theme: &Theme) -> Input {
+pub(super) fn input(field: Input, theme: &Theme) -> Input {
     field
         .h(size::CONTROL)
         .w_full()

@@ -38,10 +38,6 @@ fn read_once(cx: &TestAppContext, accounts: &[u64]) {
 fn an_accounts_picture_is_its_face_in_the_list_the_agent_and_the_conversation() {
     let (mut cx, _) = seated(pictured(), EDDY);
     assert!(pictured_at(&cx, "agent-12"), "{:?}", cx.texts());
-    assert!(
-        pictured_at(&cx, "unscripted-19"),
-        "Pager, not handed to harness yet"
-    );
     assert!(!pictured_at(&cx, "agent-24"), "Atlas keeps its initial");
     cx.simulate_click("agent-12");
     cx.run_until_parked();
@@ -50,7 +46,7 @@ fn an_accounts_picture_is_its_face_in_the_list_the_agent_and_the_conversation() 
     cx.run_until_parked();
     assert!(pictured_at(&cx, "entry-1"), "Ada's post");
     assert!(pictured_at(&cx, "entry-2"), "Scout's work");
-    read_once(&cx, &[ADA, SCOUT, PAGER]);
+    read_once(&cx, &[ADA, SCOUT]);
 }
 
 #[test]
@@ -69,7 +65,7 @@ fn on_a_phone_the_root_leads_with_the_readers_picture_and_waiting_input_with_its
     cx.simulate_resize(390., 844.);
     cx.run_until_parked();
     assert!(pictured_at(&cx, "agents-page-account"), "{:?}", cx.texts());
-    assert!(pictured_at(&cx, "agent-12") && pictured_at(&cx, "unscripted-19"));
+    assert!(pictured_at(&cx, "agent-12"));
     assert!(!pictured_at(&cx, "agent-24"), "Atlas keeps its initial");
     cx.simulate_click("agent-12");
     cx.run_until_parked();
@@ -78,5 +74,5 @@ fn on_a_phone_the_root_leads_with_the_readers_picture_and_waiting_input_with_its
     cx.run_until_parked();
     assert!(pictured_at(&cx, "held-0"), "{:?}", cx.texts());
     assert!(pictured_at(&cx, "entry-2"), "Scout's work");
-    read_once(&cx, &[EDDY, ADA, SCOUT, PAGER]);
+    read_once(&cx, &[EDDY, ADA, SCOUT]);
 }

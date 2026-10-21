@@ -51,8 +51,6 @@ fn the_root_lists_the_agents_with_their_state_then_what_else_the_view_holds() {
         "Working",
         "in #general · waiting for the model",
         "5m",
-        "Pager",
-        "Not handed to harness",
         "Other agents",
         "Atlas",
         "More",
@@ -202,6 +200,35 @@ fn the_managers_sheet_edits_starts_forks_and_takes_back_on_a_second_press() {
     let (mut cx, _) = phone(Net::default(), ADA);
     tap(&mut cx, &["agent-12"]);
     assert!(cx.find("agent-actions").is_none());
+}
+
+#[test]
+fn the_agent_sheet_renames_suspends_and_revokes_for_its_manager() {
+    let (mut cx, _) = phone(Net::default(), EDDY);
+    identity_takes(&cx);
+    tap(
+        &mut cx,
+        &["agent-12", "agent-actions", "agent-sheet-rename"],
+    );
+    assert!(cx.has_text("Rename Scout"), "{:?}", cx.texts());
+    cx.simulate_input("agent-rename-name", "Scout II");
+    tap(&mut cx, &["agent-rename-save"]);
+    tap(&mut cx, &["agent-actions", "agent-sheet-suspend"]);
+    tap(&mut cx, &["agent-actions", "agent-sheet-revoke"]);
+    assert!(cx.has_text(&words::revokes("Scout")), "{:?}", cx.texts());
+    assert_eq!(cx.host().requests::<Submit<Identity>>().len(), 2);
+    tap(&mut cx, &["agent-revoke-confirm"]);
+    assert_eq!(
+        cx.host().requests::<Submit<Identity>>(),
+        [
+            identity::Op::SetName {
+                account: SCOUT,
+                name: "Scout II".into()
+            },
+            identity::Op::Suspend { account: SCOUT },
+            identity::Op::Revoke { account: SCOUT },
+        ]
+    );
 }
 
 #[test]
