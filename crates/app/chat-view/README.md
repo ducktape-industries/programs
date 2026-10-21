@@ -121,7 +121,10 @@ yet is read again once a files block writes its path (one `Head` and one `Diff`
 a block under the folder the waiting files share, however many wait); a read
 that failed is read again on the next files block and, failing again, once the
 node's link reopens or the view comes back on screen; and files' blocks stay
-followed while any such file is out being read.
+followed while any such file is out being read. Until a file is read, its row
+says so where its size goes: "Reading…" while a read is out, "Couldn’t read the
+file" once one failed, and "Missing from files" while files holds nothing at its
+path; its Save stays faint until then.
 
 ## Follows
 The session, routes, visibility, the chain's heads, and the live heads of

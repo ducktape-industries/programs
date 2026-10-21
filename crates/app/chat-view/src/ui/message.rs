@@ -39,8 +39,14 @@ pub(crate) struct Seen {
     ranged: bool,
     pointed: bool,
     reactors: Option<std::collections::BTreeMap<String, Vec<Principal>>>,
-    files: Vec<Option<(Option<usize>, bool)>>,
+    files: Vec<FileSeen>,
     answering: Vec<String>,
+}
+
+#[derive(PartialEq)]
+struct FileSeen {
+    shown: Option<(Option<usize>, bool)>,
+    unread: Option<crate::attach::Unread>,
 }
 
 impl Seen {
@@ -66,13 +72,15 @@ impl Seen {
                     _ => None,
                 })
                 .map(|file| {
-                    let shown = chat.shown_files.get(&(file.path.clone(), file.snapshot));
-                    shown.map(|shown| {
+                    let key = (file.path.clone(), file.snapshot);
+                    let shown = chat.shown_files.get(&key).map(|shown| {
                         let picture = shown.picture.as_ref();
                         let picture =
                             picture.map(|picture| std::sync::Arc::as_ptr(&picture.image) as usize);
                         (picture, shown.chunks.is_some())
-                    })
+                    });
+                    let unread = chat.unread_files.get(&key).map(|(_, unread)| *unread);
+                    FileSeen { shown, unread }
                 })
                 .collect(),
             answering: answering_under(chat, pane, seq),

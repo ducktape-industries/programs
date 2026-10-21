@@ -1162,3 +1162,78 @@ fn a_read_that_keeps_failing_is_read_again_once_then_waits_for_a_reopen() {
     assert_eq!(gets(&cx), 3, "read again once the link reopens");
     assert!(!drawn(&view));
 }
+
+fn card_says(cx: &TestAppContext, key: &str) -> Option<String> {
+    let status = cx.find(&format!("{key}/status"))?;
+    let said = status.children().iter().filter_map(|node| match node {
+        wire::Node::Text(text) => Some(text.content.to_string()),
+        _ => None,
+    });
+    Some(said.collect())
+}
+
+#[test]
+fn a_files_card_says_it_is_reading_while_its_read_is_out() {
+    let (mut cx, _view) = opened();
+    files_host(&mut cx);
+    cx.host().never::<BlobGet>();
+    let _moved = cx.host().stream::<Changes<files::Files>>();
+    lands_a_picture(&cx);
+    cx.run_until_parked();
+    let card = "chat-message-m3-block-0";
+    assert_eq!(card_says(&cx, card).as_deref(), Some("Reading…"));
+}
+
+#[test]
+fn a_files_card_says_its_read_failed() {
+    let (mut cx, _view) = opened();
+    files_host(&mut cx);
+    cx.host()
+        .refuse::<BlobGet>("unavailable", "the read was dropped");
+    let _moved = cx.host().stream::<Changes<files::Files>>();
+    lands_a_picture(&cx);
+    cx.run_until_parked();
+    let said = card_says(&cx, "chat-message-m3-block-0");
+    assert_eq!(said.as_deref(), Some("Couldn’t read the file"));
+}
+
+#[test]
+fn a_files_card_says_files_holds_nothing_at_its_path() {
+    let (mut cx, _view) = opened();
+    files_host(&mut cx);
+    files_until(&cx, There::default(), Touched::default());
+    let _moved = cx.host().stream::<Changes<files::Files>>();
+    lands_a_picture(&cx);
+    cx.run_until_parked();
+    let said = card_says(&cx, "chat-message-m3-block-0");
+    assert_eq!(said.as_deref(), Some("Missing from files"));
+}
+
+#[test]
+fn a_files_card_read_whole_says_its_size() {
+    let (mut cx, _view) = opened();
+    files_host(&mut cx);
+    let pdf = chat::Block::Attachment(chat::message::Attachment {
+        path: "/chat/general/m3/plan.pdf".into(),
+        snapshot: SNAPSHOT,
+        name: "plan.pdf".into(),
+        size: 3,
+        content_type: "application/pdf".into(),
+    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                    blocks: vec![pdf.clone()],
+                    ..row(3, 8, "")
+                }])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(4, posted("general")));
+    cx.run_until_parked();
+    let card = "chat-message-m3-block-0";
+    assert_eq!(card_says(&cx, card), Some(crate::words::size(3)));
+}

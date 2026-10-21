@@ -1,6 +1,6 @@
-//! A file a message carries, as both designs draw it: the picture itself
-//! (a click opens it whole over the room, a phone's tap in the system's
-//! viewer), else a row with its name, size and Save (`file.save`).
+//! A file a message carries, as both designs draw it: the picture itself (a click opens it whole
+//! over the room, a phone's tap in the system's viewer), else a row with its name, Save
+//! (`file.save`) and its size once read, else whether its read is out, failed or found nothing.
 use chat::message::Attachment;
 use view::Img;
 use view::design::Ladder;
@@ -8,7 +8,7 @@ use view::prelude::*;
 
 use super::button;
 use super::dialogs::INSET;
-use crate::attach::Picture;
+use crate::attach::{Picture, Unread};
 use crate::{Chat, words};
 
 const FILE_W: Pixels = px(360.);
@@ -33,7 +33,8 @@ pub(crate) fn view(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
-    let shown = chat.shown_files.get(&(file.path.clone(), file.snapshot));
+    let key = (file.path.clone(), file.snapshot);
+    let shown = chat.shown_files.get(&key);
     if let Some(picture) = shown.and_then(|shown| shown.picture.as_ref()) {
         let (name, theme) = (file.name.clone(), *theme);
         let touch = ladder.touch;
@@ -77,6 +78,17 @@ pub(crate) fn view(
         true => "image",
         false => "file",
     };
+    let unread = chat.unread_files.get(&key).map(|(_, unread)| *unread);
+    let (said, tone) = match (shown, unread) {
+        (Some(_), _) => (words::size(file.size), theme.muted),
+        (None, Some(Unread::Absent)) => (words::FILE_MISSING.to_owned(), theme.danger),
+        (None, Some(Unread::Failed | Unread::Refused)) => {
+            (words::FILE_FAILED.to_owned(), theme.danger)
+        }
+        (None, None | Some(Unread::Reading | Unread::ReadingAgain | Unread::Retrying)) => {
+            (words::FILE_READING.to_owned(), theme.muted)
+        }
+    };
     let named = div()
         .flex_1()
         .min_w(px(0.))
@@ -90,9 +102,10 @@ pub(crate) fn view(
         )
         .child(
             div()
+                .id(ElementId::Name(format!("{id}/status").into()))
                 .text_type(ladder.caption)
-                .text_color(theme.muted)
-                .child(words::size(file.size)),
+                .text_color(tone)
+                .child(said),
         );
     div()
         .id(id)
