@@ -105,7 +105,7 @@ fn configure_follows_the_repositorys_writers_and_takes_a_ref_for_head() {
 }
 
 #[test]
-fn the_owner_lists_writers_in_access_and_a_listed_writer_configures() {
+fn the_owner_lists_writers_in_access_and_a_writer_listed_on_its_settings_configures() {
     let (mut rig, _) = story();
     let configure = Op::Configure {
         repo: REPO.into(),
@@ -114,7 +114,10 @@ fn the_owner_lists_writers_in_access_and_a_listed_writer_configures() {
     rig.sandbox
         .list_writers(TESTER, REPO, &[person(WRITER)])
         .unwrap();
-    signed(&mut rig, WRITER, &configure).expect("a writer configures as it pushes");
+    rig.sandbox
+        .list_on(TESTER, &forge::settings_key(REPO), &[person(WRITER)])
+        .unwrap();
+    signed(&mut rig, WRITER, &configure).expect("a writer listed on the settings configures");
     assert_eq!(
         rig.sandbox
             .list_writers(WRITER, REPO, &[person(STRANGER)])

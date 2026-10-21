@@ -19,9 +19,9 @@ use crate::contract::{
 };
 use crate::objects::{ObjectWriter, object_not_held};
 use crate::state::{
-    ARCHIVED, PROTECTED, delete_ref, load_bounds, load_change, load_ref, load_repo, parse_oid,
-    protected, ref_key, repo_exists, repo_hash, save_bounds, save_repo, set_ref, sourced_by,
-    storage,
+    ARCHIVED, PROTECTED, REPOS_DEFAULTING_TO_OWNER, delete_ref, load_bounds, load_change, load_ref,
+    load_repo, parse_oid, protected, ref_key, repo_exists, repo_hash, save_bounds, save_repo,
+    set_ref, sourced_by, storage,
 };
 
 pub const PROGRAM: &str = "forge";
@@ -78,6 +78,7 @@ pub(crate) fn create(
         rev: 0,
     };
     crate::state::CUSTODY.put(ctx, &name.to_owned(), &custody);
+    REPOS_DEFAULTING_TO_OWNER.insert(ctx, &name.to_owned());
     save_repo(ctx, name, &repo)
 }
 
@@ -201,14 +202,20 @@ pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
     if let Some((repo, n)) = change_of(key) {
         return change_resource(ctx, repo, n);
     }
-    let (name, default) = match key.strip_suffix("/settings") {
-        Some(name) => (name, None),
-        None => (key, Some(::program::Ownership::Anyone)),
+    let (name, is_settings_key) = match key.strip_suffix("/settings") {
+        Some(name) => (name, true),
+        None => (key, false),
     };
     if !repo_exists(ctx, name) {
         return Ok(Resource::default());
     }
     let owner = load_repo(ctx, name)?.owner.account().map(Party::Account);
+    let defaults_to_owner = REPOS_DEFAULTING_TO_OWNER.has(ctx, &name.to_owned());
+    let default = match (defaults_to_owner, is_settings_key) {
+        (true, _) => Some(::program::Ownership::Owner),
+        (false, true) => None,
+        (false, false) => Some(::program::Ownership::Anyone),
+    };
     Ok(Resource { owner, default })
 }
 

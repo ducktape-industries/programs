@@ -107,6 +107,17 @@ impl MemorySandbox {
             .map(drop)
     }
 
+    pub fn open_to_anyone(&self, owner: &[u8], repo: &str) -> Result<(), Error> {
+        let set = access::Op::Set {
+            program: "forge".into(),
+            key: forge::repo_key(repo),
+            list: Some(program::Ownership::Anyone),
+        };
+        self.chain
+            .submit(Origin::Signed(owner.to_vec()), "access", &set)
+            .map(drop)
+    }
+
     /// Seats `key` in `account`, as identity would.
     pub fn hold(&self, key: &[u8], account: u64) {
         self.chain.hold(key, account);

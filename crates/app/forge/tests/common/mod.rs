@@ -100,6 +100,11 @@ pub fn create(sandbox: &MemorySandbox, name: &str, hash: HashKind) {
     .unwrap();
 }
 
+pub fn predates_owner_default(sandbox: &MemorySandbox, repo: &str) {
+    let key = forge::tables::REPOS_DEFAULTING_TO_OWNER.key(&repo.to_owned());
+    sandbox.forge.borrow_mut().state.remove(&key);
+}
+
 pub fn signature(time: i64) -> Signature {
     Signature {
         name: b"Ada".to_vec(),

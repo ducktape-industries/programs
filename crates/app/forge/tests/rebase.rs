@@ -13,6 +13,7 @@ fn branch(name: &str) -> forge::Revision {
 fn seeded(store: &MemoryObjects, branches: &[(&str, Oid)]) -> MemorySandbox {
     let sandbox = founded();
     create(&sandbox, "project", HashKind::Sha1);
+    sandbox.open_to_anyone(OWNER, "project").unwrap();
     let zero = Hash::Sha1.zero();
     let refs: Vec<(Oid, Oid, &str)> = branches
         .iter()

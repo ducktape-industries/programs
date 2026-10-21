@@ -195,8 +195,9 @@ fn a_key_writes_only_once_it_holds_an_account() {
 }
 
 #[test]
-fn any_account_writes_a_repository_whose_owner_set_no_list() {
+fn any_account_writes_a_repository_from_before_the_owner_default_whose_owner_set_no_list() {
     let (mut rig, story) = story();
+    predates_owner_default(&rig.sandbox, REPO);
     let n = opened(&mut rig, &story);
     rig.sandbox.hold(b"loose", 5);
     rig.actor = b"loose".to_vec();

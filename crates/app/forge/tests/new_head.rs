@@ -61,6 +61,9 @@ fn a_push_to_a_changes_branch_tells_its_reviewers_and_never_the_pusher() {
     let tip = story.push_follow_up(&mut rig, "more.txt", b"more\n");
     let first = (vec![2, 4], format!("new head {tip}"));
     assert_eq!(notices(&rig, n, "head"), std::slice::from_ref(&first));
+    rig.sandbox
+        .list_writers(TESTER, REPO, &[Principal::Account(2)])
+        .unwrap();
     rig.actor = b"reviewer".to_vec();
     let next = story.push_follow_up(&mut rig, "again.txt", b"again\n");
     let second = (vec![4], format!("new head {next}"));

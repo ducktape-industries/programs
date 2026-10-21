@@ -228,11 +228,13 @@ or whoever the change's list at `forge::change_key(repo, n)` in the access
 program allows, and so re-points it (`ChangeRepoint`); a `Rebase` needs the
 change's key and the repository's; the author, or a repository writer, closes; repository writers merge.
 A repository's writers are whoever its list in the access program allows, at
-`forge::repo_key(repo)`: anyone unless the owner sets a list there
-(`access::Op::Set`). `Push`, `Merge`, `SquashMerge`, `Stage`, `DeleteBranch` and
+`forge::repo_key(repo)`: its owner alone unless the owner sets a list there
+(`access::Op::Set`). A repository created before forge kept that default (it has no row in
+`REPOS_DEFAULTING_TO_OWNER`, `d/`) takes anyone's writes until its owner sets a list. `Push`, `Merge`, `SquashMerge`, `Stage`, `DeleteBranch` and
 a `ChangeClose` by anyone but the change's author need that key; `Configure`,
-`Protect`, `RequireChecks` and `Archive` need `forge::settings_key(repo)`, which follows the same list unless the
-owner sets one of its own. `Preview` and `Status` need no key: anyone previews an open
+`Protect`, `RequireChecks` and `Archive` need `forge::settings_key(repo)`: its owner alone unless
+the owner sets a list there; on a repository from before the default it follows the
+repository's list unless the owner sets one of its own. `Preview` and `Status` need no key: anyone previews an open
 change, and anyone reports a status, under their own account.
 Reviews remain appendable on closed/merged changes.
 Closing is terminal; there is no reopen operation.

@@ -193,7 +193,7 @@ fn an_agent_commits_to_a_repository_it_creates_and_then_on_top_of_its_commit() {
 }
 
 #[test]
-fn a_repository_someone_else_owns_takes_the_agents_commit_while_it_has_no_list_or_its_list_allows_harness()
+fn a_repository_someone_else_owns_takes_the_agents_commit_while_its_list_lets_anyone_or_allows_harness()
  {
     let world = forged(10_000);
     let chain = &world.chain;
@@ -202,6 +202,13 @@ fn a_repository_someone_else_owns_takes_the_agents_commit_while_it_has_no_list_o
         hash: ::program::HashKind::Sha1,
     };
     chain.submit(signed(ADA), forge::PROGRAM, &create).unwrap();
+    set_list(
+        chain,
+        ADA,
+        forge::PROGRAM,
+        forge::repo_key("ada"),
+        Ownership::Anyone,
+    );
     let thread = world.opened("m1", "write to ada", Some(WINDOW));
     let commit = |message: &str| json!({ "repo": "ada", "files": [file("notes.md", message)], "message": message });
     turn(chain, 3, &[("c1", commit("open"))]);

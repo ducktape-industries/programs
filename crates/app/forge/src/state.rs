@@ -81,6 +81,7 @@ pub const QUEUED: Map<(String, u64), (Vec<u8>, u64)> = Map::new("g/");
 pub const QUEUE_SEQ: Item<u64> = Item::new("queue-seq");
 // The archived repositories, by name. `ACTIVITY` holds none of them, so `Repos` lists none.
 pub const ARCHIVED: Set<String> = Set::new("h/");
+pub const REPOS_DEFAULTING_TO_OWNER: Set<String> = Set::new("d/");
 
 pub(crate) fn storage(sentence: impl Into<String>) -> Error {
     Error::new(code::CORRUPT, sentence)

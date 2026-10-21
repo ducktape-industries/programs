@@ -1,7 +1,7 @@
 mod common;
 use common::*;
 
-use forge::tables::{AUTHORSHIP, CUSTODY, REPOS, REVIEWS};
+use forge::tables::{AUTHORSHIP, CUSTODY, REPOS, REPOS_DEFAULTING_TO_OWNER, REVIEWS};
 
 fn reviewed() -> (MemorySandbox, u64, Oid) {
     let mut sandbox = founded();
@@ -9,6 +9,7 @@ fn reviewed() -> (MemorySandbox, u64, Oid) {
         .chain
         .seat::<ownership::Ownership>(ownership::PROGRAM);
     create(&sandbox, "project", HashKind::Sha1);
+    sandbox.open_to_anyone(OWNER, "project").unwrap();
     let mut store = MemoryObjects::new(Hash::Sha1);
     let main = file_commit(&mut store, &[], 1, &[("a", b"1\n")]);
     let feature = file_commit(&mut store, &[main], 2, &[("a", b"2\n")]);
@@ -273,7 +274,8 @@ fn adopt_owners_records_forges_rows_from_before_the_guard_as_access_enforces_the
     act(&sandbox, OWNER, &review(1, feature)).unwrap();
     let change = AUTHORSHIP.key(&("project".to_owned(), 1u64));
     let repo = CUSTODY.key(&"project".to_owned());
-    for key in [&change, &repo] {
+    let defaulting = REPOS_DEFAULTING_TO_OWNER.key(&"project".to_owned());
+    for key in [&change, &repo, &defaulting] {
         sandbox.forge.borrow_mut().state.remove(key);
     }
     sandbox
