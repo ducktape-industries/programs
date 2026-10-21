@@ -1,33 +1,23 @@
 //! Waits: one event an agent names wakes the conversation that waits for it once, and the turn that
 //! armed it ends. Each but a chat message's is a wake armed as the agent (`arm`), its end heard back
-//! through attribution (`woken`); one armed before that is heard from harness's own watchers.
+//! through attribution (`woken`); a chat message's is a filter on what harness hears from chat.
 use ::program::{
-    BlobId, Cause, Ctx, Error, ExecCtx, Principal, QueryCtx, corrupt, decoded, invalid, not_found,
-    unauthorized, unexpected_reply, wrong_state,
+    Ctx, Error, ExecCtx, Principal, QueryCtx, corrupt, invalid, not_found, unauthorized,
+    unexpected_reply, wrong_state,
 };
-use abi::role::egress::{DEFAULT_WAIT, Delivery, Event, Request, http};
 use abi::role::identity::AccountNumber;
-use abi::role::scheduler;
-use serde_json::Value;
 use store::{PageRequest, PageResponse};
 
 use crate::agents::{configured, harnessed_agent, thread};
-use crate::calls::refusal;
 use crate::conversations::current;
 use crate::pictures::Picture;
 use crate::state::{
-    ARMED, CHANGE_WAITS, CLOCK, Clock, ENDING, FILE_WAIT_COUNT, FILE_WAITS, FORGE_WAITS, FileWatch,
-    MESSAGE_WAITS, POD_WAITS, PodWatch, REF_WAITS, SCHEDULED, THREADS, Tick, WAIT_COUNT,
-    WAIT_ENTRIES, WAIT_REFS, WAIT_WAKES, WAITING, WAITS, WAKE_WAITS, WATCHED,
+    ARMED, ENDING, MESSAGE_WAITS, THREADS, WAIT_COUNT, WAIT_WAKES, WAITING, WAITS, WAKE_WAITS,
+    WATCHED,
 };
-use crate::turns::{bound, converse, request, say_from};
+use crate::turns::{converse, say_from};
 use crate::woken::{self, Arming, Call};
-use crate::{
-    Asking, Body, Ended, Op, PROGRAM, Place, ThreadRow, Until, WaitFor, WaitRow, filed_as,
-    forged_as, listening, pod_event_as,
-};
-
-pub(crate) const PODS: &str = "pods";
+use crate::{Asking, Body, Ended, Place, ThreadRow, Until, WaitFor, WaitRow, listening};
 
 pub(crate) fn what(event: &WaitFor) -> String {
     match event {
@@ -80,34 +70,6 @@ fn kept(ctx: &QueryCtx, wait: u64) -> Result<WaitRow, Error> {
 
 fn open(ctx: &QueryCtx, wait: u64) -> Result<Option<WaitRow>, Error> {
     Ok(WAITS.get(ctx, &wait)?.filter(|row| row.ended.is_none()))
-}
-
-fn by_harness(ctx: &QueryCtx) -> bool {
-    ctx.env()
-        .sending_program()
-        .is_ok_and(|program| program == ctx.env().program)
-}
-
-fn scheduler_of(ctx: &QueryCtx) -> Result<String, Error> {
-    Ok(ctx.env().role(abi::role::SCHEDULER)?.clone())
-}
-
-async fn schedule(ctx: &Ctx, height: u64, op: &Op) -> Result<u64, Error> {
-    let schedule = scheduler::Op::Schedule {
-        height,
-        target: ctx.env().program.clone(),
-        payload: abi::encode(op),
-    };
-    let bound = scheduler_of(ctx)?;
-    let answer = ctx.call_raw(bound.clone(), abi::encode(&schedule)).await?;
-    abi::decode(&answer).map_err(|fault| unexpected_reply(&bound, "Schedule", &fault.sentence))
-}
-
-async fn unschedule(ctx: &Ctx, entry: u64) -> Result<(), Error> {
-    let cancel = scheduler::Op::Cancel { entry };
-    ctx.call_raw(scheduler_of(ctx)?, abi::encode(&cancel))
-        .await?;
-    Ok(())
 }
 
 fn normalized(event: WaitFor) -> WaitFor {
@@ -259,15 +221,6 @@ pub(crate) async fn unwait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
             None => {}
         }
     }
-    if let Some(entry) = SCHEDULED.get(ctx, &wait)? {
-        unschedule(ctx, entry).await?;
-    }
-    if let Some(PodWatch {
-        entry: Some(entry), ..
-    }) = POD_WAITS.get(ctx, &wait)?
-    {
-        unschedule(ctx, entry).await?;
-    }
     disarm(ctx, &row)?;
     WAITS.remove(ctx, &wait);
     WAITING.remove(ctx, &(row.agent, wait));
@@ -289,38 +242,13 @@ fn disarm(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
         WAKE_WAITS.remove(ctx, &woke);
         return Ok(());
     }
-    unwatched(ctx, row)
-}
-
-fn unwatched(ctx: &ExecCtx, row: &WaitRow) -> Result<(), Error> {
-    if let Some(entry) = SCHEDULED.get(ctx, &row.id)? {
-        WAIT_ENTRIES.remove(ctx, &entry);
-        SCHEDULED.remove(ctx, &row.id);
-    }
-    POD_WAITS.remove(ctx, &row.id);
-    if let Some(key) = WAIT_REFS.get(ctx, &row.id)? {
-        REF_WAITS.remove(ctx, &(key, row.id));
-        WAIT_REFS.remove(ctx, &row.id);
-    }
-    match &row.event {
-        WaitFor::Height { .. } | WaitFor::Pod { .. } | WaitFor::Clear { .. } => {}
-        WaitFor::Message { channel, .. } => {
-            MESSAGE_WAITS.remove(ctx, &(row.agent, (channel.clone(), row.id)));
-            let watched = WATCHED.has(ctx, &row.id);
-            WATCHED.remove(ctx, &row.id);
-            unwatch(ctx, row.agent, channel, watched)?;
-        }
-        WaitFor::Change { repo, n } | WaitFor::Settled { repo, n, .. } => {
-            CHANGE_WAITS.remove(ctx, &((repo.clone(), *n), row.id));
-            forge_waits(ctx, false)?;
-        }
-        WaitFor::Ref { .. } => forge_waits(ctx, false)?,
-        WaitFor::File { .. } => {
-            FILE_WAITS.remove(ctx, &row.id);
-            files_waits(ctx, false)?;
-        }
-    }
-    Ok(())
+    let WaitFor::Message { channel, .. } = &row.event else {
+        return Ok(());
+    };
+    MESSAGE_WAITS.remove(ctx, &(row.agent, (channel.clone(), row.id)));
+    let watched = WATCHED.has(ctx, &row.id);
+    WATCHED.remove(ctx, &row.id);
+    unwatch(ctx, row.agent, channel, watched)
 }
 
 pub(crate) fn end(ctx: &ExecCtx, wait: u64, what: String) -> Result<Option<u64>, Error> {
@@ -408,54 +336,6 @@ pub(crate) fn cancelled(ctx: &ExecCtx, woke: u64) -> Result<(), Error> {
     Ok(())
 }
 
-pub(crate) async fn move_waits(ctx: &Ctx, after: Option<Vec<u8>>, limit: u64) -> Result<(), Error> {
-    let batch = WAITS.batch(ctx, after.as_deref(), limit)?;
-    let unmoved = batch.rows.into_iter().find_map(|(id, row)| {
-        let open = row.ended.is_none() && !WAIT_WAKES.has(ctx, &id);
-        waking(&row.event)
-            .filter(|_| open)
-            .map(|event| (row, event))
-    });
-    let next = match unmoved {
-        Some((row, event)) => {
-            moved(ctx, &row, event).await?;
-            Some(WAITS.key(&row.id))
-        }
-        None => batch.next,
-    };
-    if let Some(after) = &next {
-        let again = Op::MoveWaits {
-            after: Some(after.clone()),
-            limit,
-        };
-        let env = ctx.env();
-        ctx.schedule(env.height + 1, &env.program, &again).await?;
-    }
-    ctx.set_return_data(abi::encode(&next));
-    Ok(())
-}
-
-async fn moved(ctx: &Ctx, row: &WaitRow, event: wake::WaitFor) -> Result<(), Error> {
-    if let Err(error) = arm(ctx, row, event).await {
-        let over = format!("wake refused to watch it: {}", refusal(&error));
-        if let Some(thread) = end(ctx, row.id, over)? {
-            let resume = Op::Resume { thread };
-            ctx.emit(&ctx.env().program, &resume, ::program::Reply::None);
-        }
-        return Ok(());
-    }
-    if let Some(entry) = SCHEDULED.get(ctx, &row.id)? {
-        unschedule(ctx, entry).await?;
-    }
-    if let Some(PodWatch {
-        entry: Some(entry), ..
-    }) = POD_WAITS.get(ctx, &row.id)?
-    {
-        unschedule(ctx, entry).await?;
-    }
-    unwatched(ctx, row)
-}
-
 async fn fire(ctx: &Ctx, wait: u64, what: String) -> Result<(), Error> {
     if let Some(thread) = end(ctx, wait, what)? {
         converse(ctx, thread).await;
@@ -468,19 +348,6 @@ fn told(ctx: &QueryCtx, row: &WaitRow) -> Result<Option<ThreadRow>, Error> {
         Some(told) => Ok(Some(told)),
         None => current(ctx, row.agent),
     }
-}
-
-pub(crate) async fn wait_due(ctx: &Ctx) -> Result<(), Error> {
-    let (Cause::Scheduled { entry }, true) = (ctx.env().cause.clone(), by_harness(ctx)) else {
-        return Err(unauthorized(
-            "a wait for a height is due only as harness's own scheduled entry, at its block",
-        ));
-    };
-    let Some(wait) = WAIT_ENTRIES.get(ctx, &entry)? else {
-        return Ok(());
-    };
-    let height = ctx.env().height;
-    fire(ctx, wait, format!("block {height} has come")).await
 }
 
 pub(crate) fn message_waits(
@@ -517,418 +384,6 @@ fn unwatch(ctx: &ExecCtx, agent: AccountNumber, channel: &str, watched: bool) ->
         listening::tell(ctx, agent, channel, false);
     }
     Ok(())
-}
-
-fn forge_waits(ctx: &ExecCtx, opened: bool) -> Result<(), Error> {
-    let before = FORGE_WAITS.get(ctx)?.unwrap_or(0);
-    let after = match opened {
-        true => before + 1,
-        false => before.saturating_sub(1),
-    };
-    FORGE_WAITS.put(ctx, &after);
-    let deliver = match (before, after) {
-        (0, 1) => forged_as(),
-        (1, 0) => Vec::new(),
-        _ => return Ok(()),
-    };
-    let watch = forge::Op::Watch { deliver };
-    ctx.emit(forge::PROGRAM, &watch, ::program::Reply::None);
-    Ok(())
-}
-
-fn who(by: Option<&Principal>) -> String {
-    match by {
-        Some(Principal::Account(number)) => format!("account {number}"),
-        Some(Principal::Root) => "the network".to_owned(),
-        None => "someone".to_owned(),
-    }
-}
-
-fn moved_words((old, new): (&Option<String>, &Option<String>), by: Option<&Principal>) -> String {
-    let by = who(by);
-    match (old, new) {
-        (Some(old), Some(new)) => format!("moved from {old} to {new} by {by}"),
-        (None, Some(new)) => format!("was made at {new} by {by}"),
-        (_, None) => format!("was deleted by {by}"),
-    }
-}
-
-fn change_waits_over(
-    ctx: &QueryCtx,
-    repo: &str,
-    n: u64,
-    how: &str,
-    ending: Option<Until>,
-) -> Result<Vec<(u64, String)>, Error> {
-    let key = (repo.to_owned(), n);
-    let mut ended = Vec::new();
-    for (_, wait) in CHANGE_WAITS.scan(ctx, CHANGE_WAITS.prefix_of(&key))? {
-        let Some(row) = open(ctx, wait)? else {
-            continue;
-        };
-        let words = format!("change {n} in {repo} {how}");
-        let what = match (row.event, ending) {
-            (WaitFor::Settled { until, .. }, Some(ending)) => settled_words(until, ending, words),
-            _ => words,
-        };
-        ended.push((wait, what));
-    }
-    Ok(ended)
-}
-
-// a change ended as `ending`: the words for a wait until `until`, saying where it can no longer
-// end as asked
-fn settled_words(until: Until, ending: Until, words: String) -> String {
-    match (until, ending) {
-        (Until::Merged, Until::Closed) => format!("{words}, so it will not be merged"),
-        (Until::Closed, Until::Merged) => format!("{words}, so it will not be closed"),
-        _ => words,
-    }
-}
-
-pub(crate) async fn forged(ctx: &Ctx, event: forge::Watched) -> Result<(), Error> {
-    ctx.env().sent_by(forge::PROGRAM)?;
-    let ended = match &event {
-        forge::Watched::Moved {
-            repo,
-            reference,
-            old,
-            new,
-            by,
-        } => {
-            let reference = String::from_utf8_lossy(reference).into_owned();
-            let moved = moved_words((old, new), by.as_ref());
-            let key = (repo.clone(), reference.clone());
-            let mut ended = Vec::new();
-            for (_, wait) in REF_WAITS.scan(ctx, REF_WAITS.prefix_of(&key))? {
-                let Some(row) = open(ctx, wait)? else {
-                    continue;
-                };
-                let what = match row.event {
-                    WaitFor::Change { n, .. } => {
-                        format!("change {n} in {repo}: its source {reference} {moved}")
-                    }
-                    _ => format!("{reference} in {repo} {moved}"),
-                };
-                ended.push((wait, what));
-            }
-            ended
-        }
-        forge::Watched::Opened { .. }
-        | forge::Watched::Previewed { .. }
-        | forge::Watched::Reviewed { .. }
-        | forge::Watched::Dispatched { .. } => Vec::new(),
-        forge::Watched::Closed { repo, n, by } => {
-            let how = format!("was closed by {}", who(Some(by)));
-            change_waits_over(ctx, repo, *n, &how, Some(Until::Closed))?
-        }
-        forge::Watched::Merged { repo, n, oid, by } => {
-            let how = format!("was merged by {} as {oid}", who(Some(by)));
-            change_waits_over(ctx, repo, *n, &how, Some(Until::Merged))?
-        }
-        forge::Watched::LeftQueue {
-            repo, n, into, why, ..
-        } => {
-            let into = String::from_utf8_lossy(into);
-            let how = format!("left the merge queue of {into}: {why}");
-            change_waits_over(ctx, repo, *n, &how, None)?
-        }
-    };
-    let mut woken = Vec::new();
-    for (wait, what) in ended {
-        if let Some(thread) = end(ctx, wait, what)?
-            && !woken.contains(&thread)
-        {
-            woken.push(thread);
-        }
-    }
-    for thread in woken {
-        converse(ctx, thread).await;
-    }
-    Ok(())
-}
-
-fn node_at(ctx: &QueryCtx, path: &str, at: Option<BlobId>) -> Result<Option<files::Node>, Error> {
-    let asked = files::Query::Stat {
-        path: path.to_owned(),
-        at,
-    };
-    match ctx.query(files::PROGRAM, &asked)? {
-        files::Reply::Stat { entry, .. } => Ok(entry.map(|entry| entry.node)),
-        other => Err(unexpected_reply(files::PROGRAM, "Stat", &other)),
-    }
-}
-
-fn files_waits(ctx: &ExecCtx, opened: bool) -> Result<(), Error> {
-    let before = FILE_WAIT_COUNT.get(ctx)?.unwrap_or(0);
-    let after = match opened {
-        true => before + 1,
-        false => before.saturating_sub(1),
-    };
-    FILE_WAIT_COUNT.put(ctx, &after);
-    let deliver = match (before, after) {
-        (0, 1) => filed_as(),
-        (1, 0) => Vec::new(),
-        _ => return Ok(()),
-    };
-    let watch = files::Op::Watch { deliver };
-    ctx.emit(files::PROGRAM, &watch, ::program::Reply::None);
-    Ok(())
-}
-
-pub(crate) async fn filed(ctx: &Ctx, row: files::SnapshotRow) -> Result<(), Error> {
-    ctx.env().sent_by(files::PROGRAM)?;
-    let mut woken = Vec::new();
-    for (wait, watch) in FILE_WAITS.all(ctx)? {
-        let now = node_at(ctx, &watch.path, Some(row.id))?;
-        if now == watch.node {
-            continue;
-        }
-        let what = filed_words(&watch, now.is_some(), &row);
-        if let Some(thread) = end(ctx, wait, what)?
-            && !woken.contains(&thread)
-        {
-            woken.push(thread);
-        }
-    }
-    for thread in woken {
-        converse(ctx, thread).await;
-    }
-    Ok(())
-}
-
-fn filed_words(watch: &FileWatch, there: bool, row: &files::SnapshotRow) -> String {
-    let how = match (watch.node.is_some(), there) {
-        (false, _) => "was made",
-        (true, false) => "was removed",
-        (true, true) => "changed",
-    };
-    let snapshot = abi::hex(row.id.digest());
-    let by = who(Some(&row.author));
-    let said = match row.message.trim() {
-        "" => String::new(),
-        message => format!(" (\"{message}\")"),
-    };
-    format!(
-        "{} {how} in files snapshot {snapshot} by {by}{said}",
-        watch.path
-    )
-}
-
-async fn ask_pods(ctx: &Ctx, target: String, delivery: Delivery) -> Result<http::Response, Error> {
-    let head = http::Head {
-        method: http::Method::Get,
-        target,
-        headers: Vec::new(),
-    };
-    let asked = Request::Http {
-        service: PODS.to_owned(),
-        head,
-        body: Vec::new(),
-    };
-    let answer = request(ctx, asked, delivery, None).await?;
-    decoded(PROGRAM, "http::Response", &answer)
-}
-
-fn refused_by_pods(what: &str, answer: &http::Response) -> String {
-    let error = serde_json::from_slice::<Value>(&answer.body)
-        .ok()
-        .and_then(|body| body["error"].as_str().map(str::to_owned))
-        .unwrap_or_else(|| String::from_utf8_lossy(&answer.body).into_owned());
-    format!("{what} answered {}: {error}", answer.status)
-}
-
-pub(crate) fn alive_every(ctx: &ExecCtx, opened: Tick) -> Result<Option<u64>, String> {
-    let clock = clock(ctx, opened).map_err(|error| refusal(&error))?;
-    let spanned = opened.height.saturating_sub(clock.older.height);
-    if spanned == 0 {
-        return Ok(None);
-    }
-    let steady = opened.time.saturating_sub(clock.older.time) / spanned;
-    let env = ctx.env();
-    let blocks = env.height.saturating_sub(opened.height).max(1);
-    let block_ms = (env.time.saturating_sub(opened.time) / blocks).min(steady);
-    let lasts = DEFAULT_WAIT.saturating_mul(block_ms);
-    if lasts < 2000 {
-        return Err(format!(
-            "a request lasts {lasts} ms ({DEFAULT_WAIT} blocks of {block_ms} ms), under the 2 s two whole-second beats need"
-        ));
-    }
-    Ok(Some(lasts / 2 / 1000))
-}
-
-fn clock(ctx: &ExecCtx, opened: Tick) -> Result<Clock, Error> {
-    let env = ctx.env();
-    let now = Tick {
-        height: env.height,
-        time: env.time,
-    };
-    let clock = match CLOCK.get(ctx)? {
-        None => Clock {
-            older: opened,
-            newer: now,
-        },
-        Some(clock) if now.height.saturating_sub(clock.newer.height) >= DEFAULT_WAIT => Clock {
-            older: clock.newer,
-            newer: now,
-        },
-        Some(clock) => return Ok(clock),
-    };
-    CLOCK.put(ctx, &clock);
-    Ok(clock)
-}
-
-async fn watch_from_next_block(ctx: &Ctx, wait: u64) -> Result<(), Error> {
-    let height = ctx.env().height;
-    let entry = schedule(ctx, height + 1, &Op::PodWait { wait }).await?;
-    let watch = PodWatch {
-        height,
-        time: ctx.env().time,
-        entry: Some(entry),
-    };
-    POD_WAITS.put(ctx, &wait, &watch);
-    Ok(())
-}
-
-pub(crate) async fn pod_wait(ctx: &Ctx, wait: u64) -> Result<(), Error> {
-    let Some(row) = open(ctx, wait)? else {
-        return Err(wrong_state(format!("wait {wait} is not open")));
-    };
-    let WaitFor::Pod { name } = &row.event else {
-        return Err(invalid(format!("wait {wait} waits for no pod")));
-    };
-    if let Some(woke) = WAIT_WAKES.get(ctx, &wait)? {
-        return Err(wrong_state(format!(
-            "wake {woke} follows wait {wait}'s pod: harness follows none of it"
-        )));
-    }
-    let Some(watch) = POD_WAITS.get(ctx, &wait)? else {
-        let key = POD_WAITS.key(&wait);
-        return Err(corrupt("pod wait", &key, "an open pod wait has no watch"));
-    };
-    let scheduled = match ctx.env().cause {
-        Cause::Scheduled { entry } => Some(entry),
-        _ => None,
-    };
-    match (by_harness(ctx), scheduled) {
-        (true, Some(entry)) if watch.entry == Some(entry) => {}
-        (true, Some(_)) => return Ok(()),
-        _ => {
-            if let Some(entry) = watch.entry {
-                unschedule(ctx, entry).await?;
-            }
-            return watch_from_next_block(ctx, wait).await;
-        }
-    }
-    let opened = Tick {
-        height: watch.height,
-        time: watch.time,
-    };
-    let paced = match alive_every(ctx, opened) {
-        Ok(None) => return watch_from_next_block(ctx, wait).await,
-        Ok(Some(every)) => Ok(every),
-        Err(why) => Err(why),
-    };
-    let streaming = PodWatch {
-        entry: None,
-        ..watch
-    };
-    POD_WAITS.put(ctx, &wait, &streaming);
-    let read = ask_pods(ctx, format!("/v1/pods/{name}"), Delivery::Whole).await;
-    if moved_off(ctx, wait)? {
-        return Ok(());
-    }
-    if let Some(over) = unwatchable(name, read) {
-        return fire(ctx, wait, over).await;
-    }
-    let every = match paced {
-        Ok(every) => every,
-        Err(why) => {
-            let over = format!("harness can't wait on pod {name}: {why}");
-            return fire(ctx, wait, over).await;
-        }
-    };
-    let target = format!("/v1/pods/{name}/wait?every={every}");
-    let events = Delivery::Events {
-        deliver: pod_event_as(wait),
-    };
-    let streamed = ask_pods(ctx, target, events).await;
-    let opened_again = POD_WAITS
-        .get(ctx, &wait)?
-        .is_some_and(|watch| watch.entry.is_some());
-    let done = open(ctx, wait)?.is_none() || opened_again || moved_off(ctx, wait)?;
-    if done {
-        return Ok(());
-    }
-    match streamed {
-        Ok(answer) if answer.status != 200 => {
-            let over = unwatchable(name, Ok(answer)).unwrap_or_default();
-            fire(ctx, wait, over).await
-        }
-        Ok(_) | Err(_) => watch_from_next_block(ctx, wait).await,
-    }
-}
-
-fn moved_off(ctx: &QueryCtx, wait: u64) -> Result<bool, Error> {
-    Ok(WAIT_WAKES.has(ctx, &wait) || POD_WAITS.get(ctx, &wait)?.is_none())
-}
-
-fn unwatchable(name: &str, answer: Result<http::Response, Error>) -> Option<String> {
-    match answer {
-        Ok(answer) if answer.status == 200 => None,
-        Ok(answer) if answer.status == 404 => Some(format!("the pods service knows no pod {name}")),
-        Ok(answer) => Some(format!(
-            "harness can't wait on pod {name}: {}",
-            refused_by_pods("the pods service", &answer)
-        )),
-        Err(error) => Some(format!(
-            "harness couldn't reach the pods service to wait on pod {name}: {}",
-            refusal(&error)
-        )),
-    }
-}
-
-pub(crate) async fn pod_event(ctx: &Ctx, wait: u64, event: Event) -> Result<(), Error> {
-    let egress = bound(ctx)?;
-    let from_egress = ctx
-        .env()
-        .sending_program()
-        .is_ok_and(|program| program == egress);
-    if !from_egress {
-        return Err(unauthorized(
-            "only the program bound to the egress role hands harness a pod's wait events",
-        ));
-    }
-    let Some(row) = open(ctx, wait)? else {
-        return Ok(());
-    };
-    let WaitFor::Pod { name } = &row.event else {
-        return Ok(());
-    };
-    if !POD_WAITS.has(ctx, &wait) {
-        return Ok(());
-    }
-    let Some(line) = ended_line(&event.data, name) else {
-        return Ok(());
-    };
-    fire(ctx, wait, line).await
-}
-
-fn ended_line(raw: &[u8], name: &str) -> Option<String> {
-    let text = String::from_utf8_lossy(raw);
-    let is_ended = text.lines().any(|line| line.trim_end() == "event: ended");
-    if !is_ended {
-        return None;
-    }
-    let data = text
-        .lines()
-        .find_map(|line| line.strip_prefix("data:"))
-        .and_then(|data| serde_json::from_str::<Value>(data.trim()).ok());
-    let line = data.as_ref().and_then(|data| data["line"].as_str());
-    Some(match line {
-        Some(line) => line.to_owned(),
-        None => format!("pod {name} ended"),
-    })
 }
 
 pub(crate) fn still_armed(ctx: &QueryCtx, thread: u64) -> Result<String, Error> {

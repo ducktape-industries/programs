@@ -117,20 +117,8 @@ pub enum Op {
     Wait { thread: u64, event: WaitFor } = 18,
     #[tool_op(description = "Cancel an open wait. The agent that made it.", example = examples::unwait)]
     Unwait { wait: u64 },
-    #[tool_op(description = "Harness's own scheduled entry only: a wait for a height comes due.")]
-    WaitDue,
-    #[tool_op(description = "Harness's own scheduled entry: follows a pod a wait is open on.")]
-    PodWait { wait: u64 },
-    #[tool_op(
-        description = "From the program bound to the egress role only: one event of a pod wait's stream."
-    )]
-    PodEvent { wait: u64, event: Event },
-    #[tool_op(
-        description = "From forge only: a ref moved or a change opened, for the waits on it."
-    )]
-    Forged(forge::Watched),
     #[tool_op(description = "Claim who may start an agent's conversations: the ownership role records the row as yours, and its policy decides each later NewThread and ForkThread. The agent's manager only.", example = examples::claim)]
-    ClaimConversations { agent: AccountNumber },
+    ClaimConversations { agent: AccountNumber } = 24,
     // one-time (J-011 ⑥): records owners for harness's owned rows from before the guard
     #[tool_op(description = "One-time backfill of owners for harness's rows from before ownership was recorded, a page at a time; returns the key to resume after, or null when done.", returns = Option<Vec<u8>>, example = examples::adopt)]
     AdoptOwners {
@@ -138,22 +126,17 @@ pub enum Op {
         after: Option<Vec<u8>>,
         limit: u64,
     },
-    // a commit files made, told to harness while a wait for a files path is open
-    #[tool_op(description = "From files only: a commit, for the waits on a files path.")]
-    Filed(files::SnapshotRow) = 28,
     #[tool_op(description = "Set every egress service, in order and each with the wire it speaks, that reaches a provider's models: an agent whose configuration names the provider (provider = \"anthropic\") is reached through them. The first account to set a provider's route owns it; after that its owner, or whom the owner lists.", example = examples::set_route)]
     SetRoute {
         provider: String,
         services: Vec<RouteService>,
-    },
+    } = 29,
     #[tool_op(description = "Remove a provider's route. Its owner, or whom the owner lists.", example = examples::remove_route)]
     RemoveRoute { provider: String },
     #[tool_op(description = "One-time backfill of tallies: walks at most limit conversations after the cursor and tallies the first one that has none, added up from its frames, so a run reads one transcript at most, as Tally and ForkThread do. While a conversation may be left, it books itself again for the next block after that one, so one call tallies every conversation, one a block. Anyone may; a conversation already tallied is left as it is, so chains started together never tally one twice. Returns the key it resumes after, or null when done.", returns = Option<Vec<u8>>, example = examples::adopt_tallies)]
     AdoptTallies { after: Option<Vec<u8>>, limit: u64 },
-    #[tool_op(description = "One-time move of the open waits harness watched itself onto wake: walks at most limit waits after the cursor and arms the first open one with no wake yet as a wake for its agent, under the wait's own number, then drops harness's own watch of it; a chat message wait stays harness's, and a wait wake refuses to watch ends at once with the reason. While a wait may be left, it books itself again for the next block, so one call moves every wait, one a block. Anyone may. Returns the key it resumes after, or null when done.", returns = Option<Vec<u8>>, example = examples::move_waits)]
-    MoveWaits { after: Option<Vec<u8>>, limit: u64 },
     #[tool_op(description = "One-time: put every part an open conversation sealed before harness held sealed parts on lines on its thread's line, and let a closed idle conversation go of its sealed parts, one thread a block from harness's own scheduled run until none is left. Anyone may start it; a start while it runs is refused.", example = examples::hold_sealed)]
-    HoldSealed,
+    HoldSealed = 33,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1172,24 +1155,6 @@ pub fn heard_as(watch: u64) -> Vec<u8> {
     deliver
 }
 
-// the prefix forge's watchers tell harness each event under, read as `Op::Forged`
-pub fn forged_as() -> Vec<u8> {
-    vec![23]
-}
-
-// the prefix files tells harness each commit under while a wait for a files path is open, read
-// as `Op::Filed`
-pub fn filed_as() -> Vec<u8> {
-    vec![28]
-}
-
-// the prefix egress hands each event of a pod's wait stream under, read as `Op::PodEvent`
-pub fn pod_event_as(wait: u64) -> Vec<u8> {
-    let mut deliver = vec![22];
-    deliver.extend(wait.to_le_bytes());
-    deliver
-}
-
 // what one of harness's own egress requests waits for, read back from the request alone: a
 // turn's streamed reply, a model's window, a thread's summary, a tool call's relay
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1294,16 +1259,6 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Cancel wait {wait}"),
             vec![field("wait", Value::count(*wait))],
         ),
-        Op::WaitDue => ("A wait's block has come".to_owned(), Vec::new()),
-        Op::PodWait { wait } => (
-            format!("Hear wait {wait}'s pod end"),
-            vec![field("wait", Value::count(*wait))],
-        ),
-        Op::PodEvent { wait, event } => (
-            format!("Event {} of wait {wait}'s pod stream", event.seq),
-            vec![field("data", Value::count(event.data.len() as u64))],
-        ),
-        Op::Forged(_) => ("Hear a ref or a change forge moved".to_owned(), Vec::new()),
         Op::ClaimConversations { agent } => (
             format!("Claim who starts agent {agent}'s conversations"),
             vec![field("agent", Value::count(*agent))],
@@ -1311,10 +1266,6 @@ pub fn describe(op: &Op) -> describe::Description {
         Op::AdoptOwners { kind, .. } => (
             format!("Record the owners of {kind} items"),
             vec![field("kind", Value::text(kind))],
-        ),
-        Op::Filed(row) => (
-            format!("Hear files' commit {}", row.seq),
-            vec![field("message", Value::text(&row.message))],
         ),
         Op::SetRoute { provider, services } => {
             let listed: Vec<String> = services
@@ -1335,10 +1286,6 @@ pub fn describe(op: &Op) -> describe::Description {
         ),
         Op::AdoptTallies { limit, .. } => (
             "Tally the conversations that have no tally yet, one a block".to_owned(),
-            vec![field("limit", Value::count(*limit))],
-        ),
-        Op::MoveWaits { limit, .. } => (
-            "Move the waits harness watches itself onto wake, one a block".to_owned(),
             vec![field("limit", Value::count(*limit))],
         ),
         Op::HoldSealed => (
@@ -1376,19 +1323,19 @@ fn op_variants_only_append() {
             "-",
             "Wait",
             "Unwait",
-            "WaitDue",
-            "PodWait",
-            "PodEvent",
-            "Forged",
+            "-",
+            "-",
+            "-",
+            "-",
             "ClaimConversations",
             "AdoptOwners",
             "-",
             "-",
-            "Filed",
+            "-",
             "SetRoute",
             "RemoveRoute",
             "AdoptTallies",
-            "MoveWaits",
+            "-",
             "HoldSealed",
         ]
     );

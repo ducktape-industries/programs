@@ -79,25 +79,11 @@ pub const WAITS: Map<u64, WaitRow> = Map::new("wait/");
 pub const WAITING: Set<(AccountNumber, u64)> = Set::new("waiting/");
 // each conversation's waits not over yet
 pub const ARMED: Set<(u64, u64)> = Set::new("armed/");
-// a wait for a height by its scheduler entry, and the entry by its wait
-pub const WAIT_ENTRIES: Map<EntryId, u64> = Map::new("wait-entry/");
-pub const SCHEDULED: Map<u64, EntryId> = Map::new("wait-scheduled/");
-pub const POD_WAITS: Map<u64, PodWatch> = Map::new("pod-wait/");
 // threads whose turn armed a wait: it ends once its calls are back
 pub const ENDING: Set<u64> = Set::new("ending/");
 pub const WAIT_COUNT: Item<u64> = Item::new("wait-count");
 // each agent's open message waits, by channel
 pub const MESSAGE_WAITS: Set<(AccountNumber, (String, u64))> = Set::new("wait-message/");
-// open waits on a forge ref (a ref's own, or a change's source), and each one's ref
-pub const REF_WAITS: Set<((String, String), u64)> = Set::new("wait-ref/");
-pub const WAIT_REFS: Map<u64, (String, String)> = Map::new("wait-refs/");
-pub const CHANGE_WAITS: Set<((String, u64), u64)> = Set::new("wait-change/");
-// how many forge waits are open: harness watches forge while any is
-pub const FORGE_WAITS: Item<u64> = Item::new("wait-forge");
-// each open wait on a files path, with the path's node when it was armed
-pub const FILE_WAITS: Map<u64, FileWatch> = Map::new("wait-file/");
-// how many file waits are open: harness hears files' commits while any is
-pub const FILE_WAIT_COUNT: Item<u64> = Item::new("wait-files");
 // each tool call whose write awaits its answer, and each stream a watch listens to, by thread:
 // what tells a later run that the frame awaiting it is gone
 pub const AWAITED: Map<(u64, String), Awaited> = Map::new("awaited/");
@@ -123,13 +109,6 @@ pub const SEALED_FOR: Map<u64, (String, Option<String>)> = Map::new("sealed-for/
 pub const DRAFTING: Map<u64, Drafted> = Map::new("drafting/");
 pub const FINAL_ERRORS: Map<(AccountNumber, u64), FinalError> = Map::new("final-error/");
 pub const RUNS: Map<(AccountNumber, String), Run> = Map::new("mention-run/");
-
-// a wait for a files path: the path, and its node when the wait was armed (none: nothing there)
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub struct FileWatch {
-    pub path: String,
-    pub node: Option<files::Node>,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Drafted {
@@ -296,15 +275,6 @@ pub struct Pace {
     pub minute: u64,
     pub calls: u64,
     pub before: u64,
-}
-
-// a pod wait's stream: the block and time its run was scheduled from, which measure the block
-// time, and the scheduled run, until it runs
-#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
-pub struct PodWatch {
-    pub height: u64,
-    pub time: u64,
-    pub entry: Option<EntryId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]

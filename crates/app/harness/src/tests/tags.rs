@@ -3,7 +3,7 @@ use borsh::schema::Definition;
 
 use super::*;
 
-const LIVE_OPS: [(&str, i64); 28] = [
+const LIVE_OPS: [(&str, i64); 22] = [
     ("Close", 0),
     ("Attributed", 1),
     ("Streamed", 4),
@@ -20,17 +20,11 @@ const LIVE_OPS: [(&str, i64); 28] = [
     ("Heard", 15),
     ("Wait", 18),
     ("Unwait", 19),
-    ("WaitDue", 20),
-    ("PodWait", 21),
-    ("PodEvent", 22),
-    ("Forged", 23),
     ("ClaimConversations", 24),
     ("AdoptOwners", 25),
-    ("Filed", 28),
     ("SetRoute", 29),
     ("RemoveRoute", 30),
     ("AdoptTallies", 31),
-    ("MoveWaits", 32),
     ("HoldSealed", 33),
 ];
 
@@ -214,5 +208,57 @@ fn a_retired_model_or_services_query_tag_is_no_query() {
             .message
             .starts_with("harness: Query did not decode: ");
         assert!(undecoded, "{refused}");
+    }
+}
+
+const WAIT_DUE_TAG: u8 = 20;
+const POD_WAIT_TAG: u8 = 21;
+const POD_EVENT_TAG: u8 = 22;
+const FORGED_TAG: u8 = 23;
+const FILED_TAG: u8 = 28;
+const MOVE_WAITS_TAG: u8 = 32;
+
+fn retired_wait_ops(chain: &MockChain) -> [Vec<u8>; 6] {
+    commit(chain, ADA, "/shared/a.md", "a");
+    let files::Reply::Head(Some(head)) = chain.query(files::PROGRAM, &files::Query::Head).unwrap()
+    else {
+        panic!("files holds a head")
+    };
+    let event = egress::Event {
+        id: 0,
+        seq: 0,
+        data: b"event: ended\ndata: {}".to_vec(),
+    };
+    let closed = forge::Watched::Closed {
+        repo: "notes".into(),
+        n: 1,
+        by: Principal::Account(9),
+    };
+    [
+        tagged(WAIT_DUE_TAG, &[]),
+        tagged(POD_WAIT_TAG, &[encoded(&1u64)]),
+        tagged(POD_EVENT_TAG, &[encoded(&1u64), encoded(&event)]),
+        tagged(FORGED_TAG, &[encoded(&closed)]),
+        tagged(FILED_TAG, &[encoded(&head)]),
+        tagged(MOVE_WAITS_TAG, &[encoded(&None::<Vec<u8>>), encoded(&1u64)]),
+    ]
+}
+
+#[test]
+fn a_retired_wait_watcher_op_tag_is_refused_as_no_op() {
+    let world = world();
+    for bytes in retired_wait_ops(&world.chain) {
+        let refused = match world.chain.submit_raw(signed(ADA), harness(), &bytes) {
+            Ok(_) => panic!("tag {} ran as an op", bytes[0]),
+            Err(refused) => refused,
+        };
+        assert_eq!(
+            refused.code,
+            code::INVALID_INPUT,
+            "tag {}: {refused}",
+            bytes[0]
+        );
+        let undecoded = refused.message.starts_with("harness: Op did not decode: ");
+        assert!(undecoded, "tag {}: {refused}", bytes[0]);
     }
 }

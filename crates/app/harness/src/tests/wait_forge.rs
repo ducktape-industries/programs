@@ -127,7 +127,7 @@ fn a_wait_for_a_change_wakes_when_its_source_moves_and_when_it_closes_and_an_end
 }
 
 #[test]
-fn a_change_merged_ends_its_wait_and_only_forge_tells_it() {
+fn a_change_merged_ends_its_wait_once_forge_tells_wake() {
     let world = world();
     let chain = &world.chain;
     let thread = world.opened("m1", "watch my change", Some(WINDOW));
@@ -137,15 +137,7 @@ fn a_change_merged_ends_its_wait_and_only_forge_tells_it() {
     let change = json!({ "event": { "change": { "repo": "notes", "n": 1 } } });
     turn(chain, 9, &[("w1", "wait_for", change)]);
     let wait = waited(chain, thread, "w1");
-    let merged = Op::Forged(forge::Watched::Merged {
-        repo: "notes".into(),
-        n: 1,
-        oid: "abc123".into(),
-        by: Principal::Account(world.ada),
-    });
     chain.at(11, TIME_MS);
-    let error = chain.submit(signed(ADA), PROGRAM, &merged).unwrap_err();
-    assert_eq!(error.code, code::UNAUTHORIZED, "{error:?}");
     assert!(wakes(chain, thread).is_empty());
     let heard = wake::Op::Forged(forge::Watched::Merged {
         repo: "notes".into(),

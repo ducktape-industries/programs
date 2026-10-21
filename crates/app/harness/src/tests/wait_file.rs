@@ -1,6 +1,6 @@
 //! Waits on a files path: a commit that changes the path (or anything below a directory), makes it
-//! or removes it wakes the conversation once; a commit elsewhere wakes nothing, and harness hears
-//! files' commits only while such a wait is open, and only from files.
+//! or removes it wakes the conversation once; a commit elsewhere wakes nothing, and files is watched
+//! only while such a wait is open.
 use super::schedule::{answered, refused, schemed, turn};
 use super::*;
 
@@ -174,36 +174,13 @@ fn a_removed_path_wakes_its_wait_and_a_cancelled_one_leaves_harness_hearing_file
 }
 
 #[test]
-fn only_files_tells_harness_of_a_commit_and_an_agent_moves_no_files_watcher() {
+fn an_agent_moves_no_files_watcher() {
     let world = schemed();
     let chain = &world.chain;
-    commit(chain, ADA, "/shared/a.md", "a");
-    let thread = world.opened("m1", "forge a commit", Some(WINDOW));
+    let thread = world.opened("m1", "move files' watcher", Some(WINDOW));
     let watch = json!({ "program": "files", "op": { "Watch": { "deliver": "" } } });
     turn(&world, 3, &[("f1", "network_call", watch)]);
     let text = refused(chain, thread, "f1");
     let refusal = text.starts_with(code::UNAUTHORIZED) && text.contains("does not send");
     assert!(refusal, "{text}");
-    let files::Reply::Head(Some(row)) = chain.query(files::PROGRAM, &files::Query::Head).unwrap()
-    else {
-        panic!("files holds a head")
-    };
-    let error = chain
-        .submit(signed(ADA), PROGRAM, &Op::Filed(row))
-        .unwrap_err();
-    assert_eq!(error.code, code::UNAUTHORIZED, "{error:?}");
-}
-
-#[test]
-fn the_files_prefix_decodes_as_filed() {
-    let world = schemed();
-    let chain = &world.chain;
-    commit(chain, ADA, "/shared/a.md", "a");
-    let files::Reply::Head(Some(row)) = chain.query(files::PROGRAM, &files::Query::Head).unwrap()
-    else {
-        panic!("files holds a head")
-    };
-    let mut delivered = filed_as();
-    delivered.extend(abi::encode(&row));
-    assert_eq!(abi::decode::<Op>(&delivered).unwrap(), Op::Filed(row));
 }

@@ -10,7 +10,7 @@ use crate::bookings::{book, run_booked, unbook};
 use crate::conversations::{fork_thread, new_thread, open_thread};
 use crate::streams::streamed;
 use crate::waiting::due;
-use crate::waits::{pod_event, pod_wait, unwait, wait, wait_due};
+use crate::waits::{unwait, wait};
 use crate::{
     Op, PROGRAM, Query, Reply, attributed_as, bookings, budget, queries, resume, tallies, tools,
     waits,
@@ -133,21 +133,15 @@ impl Awaiting for Harness {
             Op::Heard { watch, event } => crate::watches::heard(&ctx, watch, event).await,
             Op::Wait { thread, event } => wait(&ctx, thread, event).await,
             Op::Unwait { wait } => unwait(&ctx, wait).await,
-            Op::WaitDue => wait_due(&ctx).await,
-            Op::PodWait { wait } => pod_wait(&ctx, wait).await,
-            Op::PodEvent { wait, event } => pod_event(&ctx, wait, event).await,
-            Op::Forged(event) => waits::forged(&ctx, event).await,
             Op::ClaimConversations { agent } => crate::conversations::claim(&ctx, agent),
             Op::AdoptOwners { kind, after, limit } => {
                 crate::adopt::adopt_owners(&ctx, &kind, after, limit)
             }
-            Op::Filed(row) => waits::filed(&ctx, row).await,
             Op::SetRoute { provider, services } => {
                 crate::providers::set_route(&ctx, provider, services)
             }
             Op::RemoveRoute { provider } => crate::providers::remove_route(&ctx, provider),
             Op::AdoptTallies { after, limit } => tallies::adopt(&ctx, after, limit).await,
-            Op::MoveWaits { after, limit } => waits::move_waits(&ctx, after, limit).await,
             Op::HoldSealed => crate::relined::hold_sealed(&ctx).await,
         }
     }

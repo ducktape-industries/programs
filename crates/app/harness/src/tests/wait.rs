@@ -191,7 +191,7 @@ fn the_agent_lists_its_waits_and_cancels_one_which_then_never_wakes() {
 }
 
 #[test]
-fn only_the_waiting_agent_waits_in_its_conversation_or_cancels_and_only_harness_makes_one_due() {
+fn only_the_waiting_agent_waits_in_its_conversation_or_cancels() {
     let world = schemed();
     let chain = &world.chain;
     let thread = world.opened("m1", "wait", Some(WINDOW));
@@ -206,64 +206,23 @@ fn only_the_waiting_agent_waits_in_its_conversation_or_cancels_and_only_harness_
     let unwait = Op::Unwait { wait };
     let error = chain.submit(signed(ADA), PROGRAM, &unwait).unwrap_err();
     assert_eq!(error.code, code::UNAUTHORIZED, "{error:?}");
-    for origin in [signed(ADA), Origin::Program(PROGRAM.into())] {
-        let error = chain.submit(origin, PROGRAM, &Op::WaitDue).unwrap_err();
-        assert_eq!(error.code, code::UNAUTHORIZED, "{error:?}");
-    }
-    let event = egress::Event {
-        id: 0,
-        seq: 0,
-        data: b"event: ended\ndata: {}".to_vec(),
-    };
-    let forged = Op::PodEvent { wait, event };
-    let error = chain.submit(signed(ADA), PROGRAM, &forged).unwrap_err();
-    assert_eq!(error.code, code::UNAUTHORIZED, "{error:?}");
     assert_eq!(armed(chain, thread), [wait]);
-}
-
-#[test]
-fn an_agent_hands_harness_no_wait_event_itself() {
-    let world = schemed();
-    let chain = &world.chain;
-    let thread = world.opened("m1", "forge a wake", Some(WINDOW));
-    let event = json!({ "PodEvent": {
-        "wait": 1,
-        "event": { "id": 0, "seq": 0, "data": "" },
-    } });
-    let calls = [
-        (
-            "f1",
-            "network_call",
-            json!({ "program": PROGRAM, "op": "WaitDue" }),
-        ),
-        (
-            "f2",
-            "network_call",
-            json!({ "program": PROGRAM, "op": event }),
-        ),
-    ];
-    turn(&world, 3, &calls);
-    for call in ["f1", "f2"] {
-        let text = refused(chain, thread, call);
-        let refusal = text.starts_with(code::UNAUTHORIZED) && text.contains("does not send");
-        assert!(refusal, "{text}");
-    }
 }
 
 pub(super) fn pods(world: &World) {
     let chain = &world.chain;
     let register = egress::Op::Register {
-        service: crate::waits::PODS.into(),
+        service: crate::watches::PODS.into(),
     };
     let assign = egress::Op::Assign {
-        service: crate::waits::PODS.into(),
+        service: crate::watches::PODS.into(),
         nodes: vec![NODE.to_vec()],
     };
     for op in [register, assign] {
         chain.submit(signed(ADA), egress::PROGRAM, &op).unwrap();
     }
     let serve = egress::Op::Serve {
-        services: vec![SERVICE.into(), RELAY.into(), crate::waits::PODS.into()],
+        services: vec![SERVICE.into(), RELAY.into(), crate::watches::PODS.into()],
     };
     chain
         .submit(signed(&NODE), egress::PROGRAM, &serve)
@@ -271,7 +230,7 @@ pub(super) fn pods(world: &World) {
 }
 
 fn pod_request(chain: &MockChain) -> (RequestRow, String) {
-    let [row] = assigned(chain, crate::waits::PODS)
+    let [row] = assigned(chain, crate::watches::PODS)
         .try_into()
         .expect("one request to the pods service open");
     let Request::Http { head, .. } = &row.request else {
@@ -314,7 +273,7 @@ fn streaming(world: &World, thread: u64) -> (u64, RequestRow) {
     turn(world, 3, &[("w1", "wait_for", pod("duckpond-7"))]);
     let wait = waited(chain, thread, "w1");
     assert_eq!(asking(chain), 0, "the turn that armed a wait ends");
-    assert!(assigned(chain, crate::waits::PODS).is_empty());
+    assert!(assigned(chain, crate::watches::PODS).is_empty());
     chain.at(5, 1000);
     chain.at(6, 2000);
     chain.at(7, 3000);
@@ -348,7 +307,7 @@ fn a_wait_for_a_pod_hears_its_stream_and_wakes_once_when_it_ends() {
     stream_ends(chain, &stream, 2);
     chain.at(20, 4000);
     assert_eq!(wakes(chain, thread).len(), 1, "it wakes once");
-    assert!(assigned(chain, crate::waits::PODS).is_empty());
+    assert!(assigned(chain, crate::watches::PODS).is_empty());
 }
 
 #[test]
@@ -370,19 +329,6 @@ fn a_pod_stream_that_ends_without_its_end_opens_again_and_an_unknown_pod_ends_th
     let [wake] = wakes(chain, thread).try_into().expect("one wake");
     let words = format!("Wait {wait} is over: the pods service knows no pod duckpond-7.");
     assert_eq!(wake, words);
-}
-
-#[test]
-fn the_pod_event_prefix_decodes_as_a_pod_event() {
-    let event = egress::Event {
-        id: 3,
-        seq: 2,
-        data: b"event: alive".to_vec(),
-    };
-    assert_eq!(
-        abi::decode::<Op>(&event.payload(&pod_event_as(9))).unwrap(),
-        Op::PodEvent { wait: 9, event }
-    );
 }
 
 fn channel(world: &World, id: &str) {
@@ -542,50 +488,15 @@ fn a_cancelled_message_wait_stops_watching_and_an_unknown_channel_is_refused() {
 }
 
 #[test]
-fn an_agent_neither_hands_harness_a_forge_event_nor_moves_its_forge_watcher() {
+fn an_agent_moves_no_forge_watcher() {
     let world = schemed();
     let chain = &world.chain;
-    let thread = world.opened("m1", "forge a wake", Some(WINDOW));
-    let closed = json!({ "Forged": { "Closed": { "repo": "notes", "n": 1, "by": { "Account": world.ada } } } });
-    let calls = [
-        (
-            "f1",
-            "network_call",
-            json!({ "program": PROGRAM, "op": closed }),
-        ),
-        (
-            "f2",
-            "network_call",
-            json!({ "program": "forge", "op": { "Watch": { "deliver": "" } } }),
-        ),
-    ];
-    turn(&world, 3, &calls);
-    for call in ["f1", "f2"] {
-        let text = refused(chain, thread, call);
-        let refusal = text.starts_with(code::UNAUTHORIZED) && text.contains("does not send");
-        assert!(refusal, "{text}");
-    }
-    let event = forge::Watched::Closed {
-        repo: "notes".into(),
-        n: 1,
-        by: Principal::Account(world.ada),
-    };
-    let error = chain
-        .submit(signed(ADA), PROGRAM, &Op::Forged(event))
-        .unwrap_err();
-    assert_eq!(error.code, code::UNAUTHORIZED, "{error:?}");
-}
-
-#[test]
-fn the_forge_prefix_decodes_as_forged() {
-    let event = forge::Watched::Closed {
-        repo: "notes".into(),
-        n: 4,
-        by: Principal::Account(9),
-    };
-    let mut delivered = forged_as();
-    delivered.extend(abi::encode(&event));
-    assert_eq!(abi::decode::<Op>(&delivered).unwrap(), Op::Forged(event));
+    let thread = world.opened("m1", "move forge's watcher", Some(WINDOW));
+    let watch = json!({ "program": "forge", "op": { "Watch": { "deliver": "" } } });
+    turn(&world, 3, &[("f1", "network_call", watch)]);
+    let text = refused(chain, thread, "f1");
+    let refusal = text.starts_with(code::UNAUTHORIZED) && text.contains("does not send");
+    assert!(refusal, "{text}");
 }
 
 #[test]

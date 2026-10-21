@@ -44,17 +44,11 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::Heard { .. }
         | Op::Wait { .. }
         | Op::Unwait { .. }
-        | Op::WaitDue
-        | Op::PodWait { .. }
-        | Op::PodEvent { .. }
-        | Op::Forged(_)
         | Op::ClaimConversations { .. }
         | Op::AdoptOwners { .. }
-        | Op::Filed(_)
         | Op::SetRoute { .. }
         | Op::RemoveRoute { .. }
         | Op::AdoptTallies { .. }
-        | Op::MoveWaits { .. }
         | Op::HoldSealed => Vec::new(),
     })
 }

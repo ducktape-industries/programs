@@ -2,16 +2,58 @@
 //! `Run::Measured` at a measured heartbeat) is answered at once, harness's own scheduled run
 //! (`Op::Watch`) sends the stream's request, each event is `Op::Heard`, the conversation hears once.
 use ::program::{Cause, Ctx, Error, ExecCtx, HashKind, unauthorized};
-use abi::role::egress::{self, Event, http};
+use abi::role::egress::{self, DEFAULT_WAIT, Event, http};
 use serde_json::{Value, json};
 
 use crate::bookings::tell;
 use crate::calls::refusal;
 use crate::state::{
-    HEARTBEATS, Heartbeat, MEASURES, Measure, Tick, WATCH_COUNT, WATCHES, Watching,
+    CLOCK, Clock, HEARTBEATS, Heartbeat, MEASURES, Measure, Tick, WATCH_COUNT, WATCHES, Watching,
 };
 use crate::turns::bound;
 use crate::{Op, PART, ThreadRow, heard_as, tools};
+
+pub(crate) const PODS: &str = "pods";
+
+fn alive_every(ctx: &ExecCtx, opened: Tick) -> Result<Option<u64>, String> {
+    let clock = clock(ctx, opened).map_err(|error| refusal(&error))?;
+    let spanned = opened.height.saturating_sub(clock.older.height);
+    if spanned == 0 {
+        return Ok(None);
+    }
+    let steady = opened.time.saturating_sub(clock.older.time) / spanned;
+    let env = ctx.env();
+    let blocks = env.height.saturating_sub(opened.height).max(1);
+    let block_ms = (env.time.saturating_sub(opened.time) / blocks).min(steady);
+    let lasts = DEFAULT_WAIT.saturating_mul(block_ms);
+    if lasts < 2000 {
+        return Err(format!(
+            "a request lasts {lasts} ms ({DEFAULT_WAIT} blocks of {block_ms} ms), under the 2 s two whole-second beats need"
+        ));
+    }
+    Ok(Some(lasts / 2 / 1000))
+}
+
+fn clock(ctx: &ExecCtx, opened: Tick) -> Result<Clock, Error> {
+    let env = ctx.env();
+    let now = Tick {
+        height: env.height,
+        time: env.time,
+    };
+    let clock = match CLOCK.get(ctx)? {
+        None => Clock {
+            older: opened,
+            newer: now,
+        },
+        Some(clock) if now.height.saturating_sub(clock.newer.height) >= DEFAULT_WAIT => Clock {
+            older: clock.newer,
+            newer: now,
+        },
+        Some(clock) => return Ok(clock),
+    };
+    CLOCK.put(ctx, &clock);
+    Ok(clock)
+}
 
 pub(crate) async fn open(
     ctx: &Ctx,
@@ -57,7 +99,7 @@ pub(crate) async fn open_measured(
         headers: Vec::new(),
     };
     let unsent = egress::Request::Http {
-        service: crate::waits::PODS.to_owned(),
+        service: PODS.to_owned(),
         head,
         body: Vec::new(),
     };
@@ -102,7 +144,7 @@ fn paced(
         height: beat.height,
         time: beat.time,
     };
-    let Some(every) = crate::waits::alive_every(ctx, opened)? else {
+    let Some(every) = alive_every(ctx, opened)? else {
         return Ok(None);
     };
     let egress::Request::Http { service, head, .. } = &row.request else {
@@ -134,7 +176,7 @@ async fn measured(
         height: measure.height,
         time: measure.time,
     };
-    let Some(every) = crate::waits::alive_every(ctx, opened)? else {
+    let Some(every) = alive_every(ctx, opened)? else {
         return Ok(None);
     };
     let egress::Request::Http { head, .. } = &row.request else {
@@ -148,7 +190,7 @@ async fn measured(
     };
     let op = egress::Op::Request {
         request: egress::Request::Http {
-            service: crate::waits::PODS.to_owned(),
+            service: PODS.to_owned(),
             head: read,
             body: Vec::new(),
         },
