@@ -142,7 +142,7 @@ fn a_tool_file_is_a_tool_on_the_next_model_call_and_one_that_does_not_load_says_
 }
 
 #[test]
-fn forge_merge_reads_a_change_and_squash_merges_it_against_the_heads_it_read() {
+fn forge_merge_squash_merges_a_change_and_forge_change_names_the_commit_it_made() {
     let world = tooled();
     let chain = &world.chain;
     commit(chain, ADA, "/shared/tools/forge_merge.toml", MERGE);
@@ -175,8 +175,13 @@ fn forge_merge_reads_a_change_and_squash_merges_it_against_the_heads_it_read() {
     };
     assert_eq!(change.state, forge::ChangeState::Merged);
     assert_eq!(change.merged_by, Some(Principal::Account(world.agent)));
+    let read = json!({ "repo": "notes", "number": 1 });
+    turn(chain, 11, &[("c1", "forge_change", read)]);
+    let shown = answered(chain, thread, "c1");
+    assert_eq!(shown["merged_as"], json!(main));
+    assert_ne!(shown["target_head"], json!(main));
 
-    turn(chain, 11, &[("f2", "forge_merge", merge)]);
+    turn(chain, 13, &[("f2", "forge_merge", merge)]);
     let again = refusal(chain, thread, "f2");
     assert!(again.starts_with("step 2 (op forge): "), "{again}");
     assert_eq!(head(chain, "notes", "main"), main);

@@ -622,8 +622,7 @@ pub(crate) struct Change;
 
 impl Tool for Change {
     const NAME: &'static str = "forge_change";
-    const DESCRIPTION: &'static str =
-        "Read one change of a repository: its title, description, branches, heads and reviews.";
+    const DESCRIPTION: &'static str = "Read one change of a repository: its title, description, branches, heads and reviews. A merged change's target_head is the target as the merge found it; merged_as is the commit the merge made.";
     type Args = ChangeArgs;
 
     fn schema() -> Value {
@@ -668,6 +667,7 @@ impl Tool for Change {
                     "into": String::from_utf8_lossy(&change.into),
                     "source_head": source_head,
                     "target_head": target_head,
+                    "merged_as": change.merge_oid,
                     "reviews": reviews,
                 })))
             }
