@@ -64,6 +64,10 @@ impl Awaiting for Egress {
             Op::Events(given) => events(&ctx, given).await,
             Op::EndStream { id, events, end } => end_stream(&ctx, id, events, end).await,
             Op::Expire { id } => expire(&ctx, id),
+            Op::Unregister { .. } => Err(Error::new(
+                ::program::code::UNSUPPORTED,
+                "egress does not support Unregister yet",
+            )),
         }
     }
 }

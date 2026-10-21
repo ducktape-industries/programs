@@ -301,6 +301,14 @@ pub(crate) fn words(motion: &Motion, roster: &[Entry]) -> String {
             Err(_) => "A lane change this screen can't read".into(),
         },
         Motion::Role { role, .. } => format!("An op for the {role} role"),
+        Motion::Queries { policy } => queries_words(*policy).into(),
+    }
+}
+
+fn queries_words(policy: valset::QueryPolicy) -> &'static str {
+    match policy {
+        valset::QueryPolicy::Signed => "Answer signed queries only",
+        valset::QueryPolicy::Open => "Answer unsigned queries too",
     }
 }
 

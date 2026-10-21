@@ -9,17 +9,21 @@ use ::program::{
 use abi::role::identity::{self, Kind, Standing};
 use store::{Item, Map, PageRequest, Set};
 
-use crate::{Genesis, INVITE_NAMESPACE, Invite, Membership, Motion, Op, Pending, Role, Voted};
+use crate::{
+    Genesis, INVITE_NAMESPACE, Invite, Membership, Motion, Op, Pending, QueryPolicy, Role, Voted,
+};
 
 pub(crate) const MEMBERS: Map<Vec<u8>, Membership> = Map::new("m/");
 const CAP: Item<u32> = Item::new("cap");
 const DOOR: Item<bool> = Item::new("door");
+const QUERIES: Item<QueryPolicy> = Item::new("queries");
 const SPENT: Set<Vec<u8>> = Set::new("spent/");
 const VOTES: Map<Vec<u8>, Vec<Vec<u8>>> = Map::new("votes/");
 const KEY_LEN: usize = 32;
 
 pub(crate) fn init(ctx: &ExecCtx, genesis: Genesis) -> Result<(), Error> {
     CAP.put(ctx, &genesis.member_cap);
+    QUERIES.put(ctx, &genesis.queries);
     for member in genesis.validators {
         registered(&member.halo)?;
         let membership = Membership {
@@ -282,6 +286,7 @@ fn admissible(ctx: &QueryCtx, motion: &Motion) -> Result<(), Error> {
         Motion::Remove { key } => removable(ctx, key),
         Motion::Door { open } => door_moves(ctx, *open),
         Motion::Role { role, .. } => ctx.env().role(role).map(drop),
+        Motion::Queries { policy } => queries_move(ctx, *policy),
     }
 }
 
@@ -299,6 +304,10 @@ fn enact(ctx: &ExecCtx, motion: Motion) -> Result<(), Error> {
         }
         Motion::Role { role, op } => {
             ctx.emit_raw(ctx.env().role(&role)?.clone(), op, Reply::Wanted);
+            Ok(())
+        }
+        Motion::Queries { policy } => {
+            QUERIES.put(ctx, &policy);
             Ok(())
         }
     }
@@ -387,6 +396,20 @@ fn room(ctx: &QueryCtx) -> Result<(), Error> {
     if MEMBERS.all(ctx)?.len() >= cap as usize {
         return Err(capacity(format!(
             "the network is full: it holds at most {cap} members"
+        )));
+    }
+    Ok(())
+}
+
+pub(crate) fn query_policy(ctx: &QueryCtx) -> Result<QueryPolicy, Error> {
+    Ok(QUERIES.get(ctx)?.unwrap_or(QueryPolicy::Signed))
+}
+
+fn queries_move(ctx: &QueryCtx, policy: QueryPolicy) -> Result<(), Error> {
+    let unchanged = query_policy(ctx)? == policy;
+    if unchanged {
+        return Err(wrong_state(format!(
+            "the network already answers with query policy {policy:?}"
         )));
     }
     Ok(())

@@ -53,16 +53,16 @@ gpui = { package = "gpui-pre", git = "https://github.com/ducktape-industries/gpu
 
 # ---- the kernel ABI a program and the host share: ducktape's own
 # `crates/kernel/abi`, at the rev the host below is pinned to
-abi = { git = "https://github.com/ducktape-industries/ducktape", rev = "6ead346a0958905110ecce2f9f80f5ceaad7ea43" }
+abi = { git = "https://github.com/ducktape-industries/ducktape", rev = "f32719405a10519306b12dab96f6bee62b3292f1" }
 
 # ---- the blobs contract the blobs program records and the programs that read
 # held blobs ask it by; the host the founding suite runs the boot set on and
 # the key schemes it signs with, and the probe fixture it seats
 # (dev-dependencies only)
-host = { git = "https://github.com/ducktape-industries/ducktape", rev = "6ead346a0958905110ecce2f9f80f5ceaad7ea43" }
-blob = { git = "https://github.com/ducktape-industries/ducktape", rev = "6ead346a0958905110ecce2f9f80f5ceaad7ea43" }
-keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "6ead346a0958905110ecce2f9f80f5ceaad7ea43" }
-fixture-wasm = { git = "https://github.com/ducktape-industries/ducktape", rev = "6ead346a0958905110ecce2f9f80f5ceaad7ea43" }
+host = { git = "https://github.com/ducktape-industries/ducktape", rev = "f32719405a10519306b12dab96f6bee62b3292f1" }
+blob = { git = "https://github.com/ducktape-industries/ducktape", rev = "f32719405a10519306b12dab96f6bee62b3292f1" }
+keyscheme = { git = "https://github.com/ducktape-industries/ducktape", rev = "f32719405a10519306b12dab96f6bee62b3292f1" }
+fixture-wasm = { git = "https://github.com/ducktape-industries/ducktape", rev = "f32719405a10519306b12dab96f6bee62b3292f1" }
 commonware-cryptography = "2026.9.0"
 commonware-runtime = "2026.9.0"
 
@@ -188,4 +188,7 @@ inherits = "release"
 strip = "debuginfo"
 
 [patch.crates-io]
+# core's state crate builds on its vendored commonware-storage (an owned reader of the QMDB log),
+# so every build that links it takes the same copy
+commonware-storage = { git = "https://github.com/ducktape-industries/ducktape", rev = "f32719405a10519306b12dab96f6bee62b3292f1" }
 gpui-pre-scheduler = { git = "https://github.com/ducktape-industries/gpui-pre", rev = "eef11e96c9fcf7e0389d31f125013370a1b02d92" }

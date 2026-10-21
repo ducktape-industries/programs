@@ -17,6 +17,14 @@ A reply's `thread` is its thread's root. Every op that names a thread (`PostMess
 reply's seq stands for its root, so a reply to a reply lands under the root, and the root counts
 it once. The queries (`Thread`, `Busy`, `Holders`) take the root's seq.
 
+## Clients
+
+A post keeps the client its poster's frame names (`ctx.client()`: the signer's own word for the
+software it signed with, such as `ducktape-app/0.1.0+437f749 (linux; cef)`), in `client/` by
+channel and seq, and keeps none when the frame names none. `Clients { channel_id, seqs }` answers
+each seq with its client or null; messages posted before clients were kept have none. It is for
+showing, and for choosing what to show, never for deciding who may act.
+
 ## Channel meta
 
 A channel's meta is a map of text keys to text values. Whoever may rename the channel sets a key

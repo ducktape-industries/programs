@@ -510,6 +510,24 @@ impl MockChain {
         self.submit_raw(origin, program, abi::encode(op))
     }
 
+    pub fn submit_from<O: BorshSerialize>(
+        &self,
+        client: &str,
+        origin: Origin,
+        program: impl Into<ProgramId>,
+        op: &O,
+    ) -> Result<Vec<u8>, Error> {
+        let named = |client: Option<String>| {
+            for seat in self.seats.values() {
+                seat.host.borrow_mut().client = client.clone();
+            }
+        };
+        named(Some(client.to_owned()));
+        let submitted = self.submit(origin, program, op);
+        named(None);
+        submitted
+    }
+
     /// [`submit`](MockChain::submit) with the payload's bytes as they are.
     pub fn submit_raw(
         &self,

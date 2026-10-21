@@ -209,6 +209,10 @@ impl Program for Chat {
             Query::Reactors { channel_id, seqs } => {
                 (Reply::Reactors(reactors(ctx, channel_id, &seqs)?), vec![])
             }
+            Query::Clients { channel_id, seqs } => (
+                Reply::Clients(crate::queries::clients(ctx, &channel_id, &seqs)?),
+                vec![],
+            ),
             Query::Listening { account, page } => {
                 (Reply::Listening(listened(ctx, account, &page)?), vec![])
             }

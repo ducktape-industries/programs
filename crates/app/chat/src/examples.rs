@@ -250,6 +250,13 @@ pub(crate) fn reactors() -> Query {
     }
 }
 
+pub(crate) fn clients() -> Query {
+    Query::Clients {
+        channel_id: room(),
+        seqs: vec![4, 5],
+    }
+}
+
 pub(crate) fn listening() -> Query {
     Query::Listening {
         account: 21,

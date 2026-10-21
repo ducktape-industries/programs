@@ -162,6 +162,22 @@ fn keys_of(account: &Account) -> Vec<Vec<u8>> {
 }
 
 #[test]
+fn the_empty_key_of_an_unsigned_query_holds_no_account() {
+    let store = memory();
+    assert_eq!(create(&store, ALICE, "Alice"), 1);
+    let unsigned = env(Origin::Signed(Vec::new()), None, 100);
+    let create = Op::Create {
+        name: "Nobody".into(),
+        scheme: Scheme::Ed25519,
+    };
+    assert_eq!(refused(&store, &unsigned, create).code, code::UNAUTHORIZED);
+    assert_eq!(
+        query(&store, Query::OfKey { key: Vec::new() }),
+        Reply::Number(None)
+    );
+}
+
+#[test]
 fn accounts_are_numbered_from_one_and_a_key_holds_one_account() {
     let store = memory();
     assert_eq!(create(&store, ALICE, "  Alice "), 1);

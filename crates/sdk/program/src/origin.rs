@@ -20,6 +20,9 @@ impl Env {
     /// The signing key of a signed frame; any other origin is refused.
     pub fn signer(&self) -> Result<Vec<u8>, Error> {
         match &self.origin {
+            Origin::Signed(key) if key.is_empty() => Err(unauthorized(
+                "an unsigned query holds no key: only a signed frame may do this",
+            )),
             Origin::Signed(key) => Ok(key.clone()),
             other => Err(unauthorized(format!(
                 "only a signed frame may do this, not {other:?}"
@@ -96,6 +99,12 @@ mod tests {
         assert_eq!(root.sending_program().unwrap_err().code, code::UNAUTHORIZED);
         assert!(program.sent_by("gov").is_ok() && root.sent_by("gov").is_ok());
         assert!(program.sent_by("other").is_err() && signed.sent_by("gov").is_err());
+    }
+
+    #[test]
+    fn an_unsigned_query_holds_no_signer() {
+        let unsigned = env(Origin::Signed(Vec::new()));
+        assert_eq!(unsigned.signer().unwrap_err().code, code::UNAUTHORIZED);
     }
 
     #[test]

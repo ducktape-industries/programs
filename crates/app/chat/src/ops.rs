@@ -229,6 +229,9 @@ fn write(
         None => ROOTS.insert(ctx, &(channel_id.clone(), newest_first(seq))),
     }
     put_message(ctx, &row)?;
+    if let Some(client) = ctx.client() {
+        crate::state::CLIENTS.put(ctx, &(channel_id.clone(), seq), &client);
+    }
     note(ctx, &row);
     report(ctx, sender, None, &row)?;
     MESSAGE_IDS.put(ctx, &message_id, &(channel_id.clone(), seq));

@@ -211,6 +211,7 @@ impl Programs {
                 halo: "validator.example.org:9100".into(),
             }],
             member_cap: 4,
+            queries: abi::role::validators::QueryPolicy::Signed,
         };
         valset::Valset::init(
             &valset.exec(conformance::root("valset", 0)),

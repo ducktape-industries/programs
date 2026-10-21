@@ -467,6 +467,10 @@ pub enum Query {
         thread: Option<u64>,
         page: PageRequest,
     },
+    #[ask(Reply::Clients(Vec<(u64, Option<String>)>))]
+    #[reads(state::CLIENTS)]
+    #[tool_query(description = "The software each message at seqs was posted from, as its poster's signed frame named it (such as ducktape-app/0.1.0+437f749 (linux; cef)), or null where the frame named none: for showing, never for deciding who may act.", example = examples::clients)]
+    Clients { channel_id: String, seqs: Vec<u64> },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -504,6 +508,7 @@ pub enum Reply {
     TextHits(PageResponse<MsgRow>),
     Busy(Option<Holder>),
     Holders(PageResponse<Holder>),
+    Clients(Vec<(u64, Option<String>)>),
 }
 
 // One room's count ([`Query::Unread`]): what came after the cursor asked, up to `to`, meant for

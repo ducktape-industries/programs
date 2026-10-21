@@ -34,6 +34,7 @@ pub const MESSAGES: Map<(ChannelId, Seq), Stored> = Map::new("stored/");
 // delete writes the tombstone there and the channel's row, never the author's id.
 pub const MESSAGE_IDS: Map<String, Owned<(ChannelId, Seq), Authored>> = Map::new("message-id/");
 pub const MEMBERS: Map<(ChannelId, Principal), MemberRow> = Map::new("member/");
+pub const CLIENTS: Map<(ChannelId, Seq), String> = Map::new("client/");
 /// Who chose which emoji: `(channel, seq, emoji, principal)`.
 pub const REACTIONS: Set<(ChannelId, Seq, String, Principal)> = Set::new("reaction/");
 

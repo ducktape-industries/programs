@@ -33,7 +33,7 @@ const LIVE_OPS: [(&str, i64); 27] = [
     ("Break", 30),
 ];
 
-const LIVE_QUERIES: [(&str, i64); 25] = [
+const LIVE_QUERIES: [(&str, i64); 26] = [
     ("Channels", 0),
     ("Channel", 1),
     ("MessageById", 2),
@@ -59,9 +59,10 @@ const LIVE_QUERIES: [(&str, i64); 25] = [
     ("TextSearch", 24),
     ("Busy", 25),
     ("Holders", 26),
+    ("Clients", 27),
 ];
 
-const LIVE_REPLIES: [(&str, i64); 25] = [
+const LIVE_REPLIES: [(&str, i64); 26] = [
     ("Channels", 0),
     ("Channel", 1),
     ("Message", 2),
@@ -87,6 +88,7 @@ const LIVE_REPLIES: [(&str, i64); 25] = [
     ("TextHits", 24),
     ("Busy", 25),
     ("Holders", 26),
+    ("Clients", 27),
 ];
 
 const MIGRATE_TAG: u8 = 13;

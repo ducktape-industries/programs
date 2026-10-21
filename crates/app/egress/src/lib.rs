@@ -161,6 +161,7 @@ pub fn describe(op: &Op) -> describe::Description {
             )
         }
         Op::Expire { id } => (format!("Expire request {id}"), Vec::new()),
+        Op::Unregister { service } => (format!("Unregister service {service}"), Vec::new()),
     };
     describe::Description { title, fields }
 }
@@ -225,7 +226,8 @@ fn op_variants_follow_the_roles_order() {
             "Answer",
             "Events",
             "EndStream",
-            "Expire"
+            "Expire",
+            "Unregister"
         ]
     );
 }

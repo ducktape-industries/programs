@@ -82,7 +82,8 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::Answer { .. }
         | Op::Events(_)
         | Op::EndStream { .. }
-        | Op::Expire { .. } => Vec::new(),
+        | Op::Expire { .. }
+        | Op::Unregister { .. } => Vec::new(),
     }
 }
 

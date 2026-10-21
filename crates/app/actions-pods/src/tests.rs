@@ -243,6 +243,7 @@ fn node() -> Node {
     let genesis = Founding {
         validators: members.to_vec(),
         member_cap: 8,
+        queries: abi::role::validators::QueryPolicy::Signed,
     };
     chain.init("valset", &genesis).unwrap();
     let create = identity::Op::Create {

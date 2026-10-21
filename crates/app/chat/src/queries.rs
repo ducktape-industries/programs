@@ -305,6 +305,19 @@ pub(crate) fn reactors(
     Ok(reactors)
 }
 
+pub(crate) fn clients(
+    ctx: &QueryCtx,
+    channel_id: &str,
+    seqs: &[u64],
+) -> Result<Vec<(u64, Option<String>)>, Error> {
+    seqs.iter()
+        .map(|&seq| {
+            let client = crate::state::CLIENTS.get(ctx, &(channel_id.to_owned(), seq))?;
+            Ok((seq, client))
+        })
+        .collect()
+}
+
 // who is answering in `channel_id`, each draft's pieces folded into its text
 pub(crate) fn drafts(ctx: &QueryCtx, channel_id: &str) -> Result<Vec<Draft>, Error> {
     let held = DRAFTS.scan(ctx, DRAFTS.prefix_of(&channel_id.to_owned()))?;
@@ -338,6 +351,7 @@ fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
         | Reply::Members(_)
         | Reply::Accounts(_)
         | Reply::Reactors(_)
+        | Reply::Clients(_)
         | Reply::Listening(_)
         | Reply::Notices(_)
         | Reply::Followed(_)

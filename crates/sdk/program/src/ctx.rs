@@ -21,6 +21,8 @@ pub(crate) struct Frame {
     env: RefCell<Rc<Env>>,
     #[cfg(not(target_arch = "wasm32"))]
     host: crate::MockHost,
+    #[cfg(not(target_arch = "wasm32"))]
+    in_op: bool,
 }
 
 impl Frame {
@@ -36,7 +38,7 @@ impl Frame {
         #[cfg(target_arch = "wasm32")]
         return ffi::host(&op);
         #[cfg(not(target_arch = "wasm32"))]
-        return self.host.serve(&self.env(), op);
+        return self.host.serve(&self.env(), self.in_op, op);
     }
 }
 
@@ -117,9 +119,13 @@ impl ExecCtx {
 #[cfg(not(target_arch = "wasm32"))]
 impl QueryCtx {
     pub(crate) fn over(host: crate::MockHost, env: Env) -> QueryCtx {
+        QueryCtx::framed(host, env, false)
+    }
+
+    fn framed(host: crate::MockHost, env: Env, in_op: bool) -> QueryCtx {
         let env = RefCell::new(Rc::new(env));
         QueryCtx {
-            frame: Rc::new(Frame { env, host }),
+            frame: Rc::new(Frame { env, host, in_op }),
         }
     }
 }
@@ -128,7 +134,7 @@ impl QueryCtx {
 impl ExecCtx {
     pub(crate) fn over(host: crate::MockHost, env: Env) -> ExecCtx {
         ExecCtx {
-            reads: QueryCtx::over(host, env),
+            reads: QueryCtx::framed(host, env, true),
         }
     }
 }
@@ -233,6 +239,13 @@ impl QueryCtx {
         match self.host(HostOp::BlobRead { id, offset, len }) {
             HostReply::Value(bytes) => bytes,
             other => protocol("value", other),
+        }
+    }
+
+    pub fn client(&self) -> Option<String> {
+        match self.host(HostOp::Client) {
+            HostReply::Client(client) => client,
+            other => protocol("client", other),
         }
     }
 

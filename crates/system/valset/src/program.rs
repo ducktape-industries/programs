@@ -3,7 +3,9 @@
 use ::program::tools::Tools;
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx, decoded};
 
-use crate::rules::{MEMBERS, account_of, execute, init, memberships, motions, validators, voices};
+use crate::rules::{
+    MEMBERS, account_of, execute, init, memberships, motions, query_policy, validators, voices,
+};
 use crate::{Genesis, Membership, Op, PROGRAM, Query, Reply};
 
 pub struct Valset;
@@ -48,6 +50,7 @@ impl Program for Valset {
                 let voices = voices(ctx, &validators(ctx)?, &key, || account_of(ctx, &key))?;
                 Reply::Voices(voices)
             }
+            Query::QueryPolicy => Reply::QueryPolicy(query_policy(ctx)?),
         })
     }
 }

@@ -22,6 +22,7 @@ fn seated(validators: &[u8]) -> MockHost {
             })
             .collect(),
         member_cap: 16,
+        queries: abi::role::validators::QueryPolicy::Signed,
     };
     Valset::init(
         &valset.exec(MockHost::env(valset::PROGRAM).root()),

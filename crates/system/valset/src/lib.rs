@@ -15,7 +15,7 @@ use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 pub use store::{PageRequest, PageResponse};
 
 pub use abi::role::validators::{
-    Genesis, Grant, INVITE_NAMESPACE, Invite, Member, Motion, Op, Voted,
+    Genesis, Grant, INVITE_NAMESPACE, Invite, Member, Motion, Op, QueryPolicy, Voted,
 };
 
 pub const PROGRAM: &str = "valset";
@@ -78,6 +78,8 @@ pub enum Query {
     #[ask(Reply::Voices(Vec<Vec<u8>>))]
     #[tool_query(description = "The validators a frame signed by key votes for: key itself when it is one, else the validators whose node keys sit on active program accounts that key's account manages. Empty: key does not vote.", example = crate::tools::voices)]
     Voices { key: Vec<u8> },
+    #[ask(Reply::QueryPolicy(QueryPolicy))]
+    QueryPolicy,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -91,6 +93,7 @@ pub enum Reply {
         page: PageResponse<Pending>,
     },
     Voices(Vec<Vec<u8>>),
+    QueryPolicy(QueryPolicy),
 }
 
 /// A motion waiting for votes, and the validators that cast one: only
@@ -153,11 +156,19 @@ pub fn describe(op: &Op) -> describe::Description {
                 Motion::Door { open: true } => ("open the door".into(), vec![]),
                 Motion::Door { open: false } => ("close the door".into(), vec![]),
                 Motion::Role { role, op } => described_op(role, op),
+                Motion::Queries { policy } => (queries_word(*policy).into(), vec![]),
             };
             (format!("Vote · {verb}"), fields)
         }
     };
     describe::Description { title, fields }
+}
+
+fn queries_word(policy: QueryPolicy) -> &'static str {
+    match policy {
+        QueryPolicy::Signed => "answer signed queries only",
+        QueryPolicy::Open => "answer unsigned queries too",
+    }
 }
 
 fn described_op(role: &str, op: &[u8]) -> (String, Vec<describe::Field>) {

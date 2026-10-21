@@ -467,3 +467,20 @@ fn a_post_of_text_is_the_post_of_its_parsed_blocks() {
     let again = chat.refused(&CY, as_text("t1", None));
     assert_eq!(again, code::ALREADY_EXISTS);
 }
+
+#[test]
+fn a_post_keeps_the_client_its_frame_names_and_one_naming_none_keeps_none() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    chat.store.borrow_mut().client = Some("ducktape-app/1 (linux; cef)".into());
+    chat.post(&BO, "m1", "from the app", None);
+    chat.store.borrow_mut().client = None;
+    chat.post(&BO, "m2", "from software that names none", None);
+    let Reply::Clients(clients) = chat.ask(Query::Clients {
+        channel_id: "general".into(),
+        seqs: vec![2, 1, 3],
+    }) else {
+        panic!("clients answer clients");
+    };
+    let app = Some("ducktape-app/1 (linux; cef)".to_owned());
+    assert_eq!(clients, vec![(2, None), (1, app), (3, None)]);
+}

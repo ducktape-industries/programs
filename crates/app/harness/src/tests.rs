@@ -301,6 +301,7 @@ fn world_as(id: &str) -> World {
             halo: "node.example.org:9100".into(),
         }],
         member_cap: 8,
+        queries: abi::role::validators::QueryPolicy::Signed,
     };
     chain.init("valset", &genesis).unwrap();
     chain.init(id, &()).unwrap();
@@ -544,6 +545,81 @@ fn thread_row(chain: &MockChain, thread: u64) -> ThreadRow {
 
 fn tool_use(id: &str, name: &str, input: Value) -> Value {
     json!({ "type": "tool_use", "id": id, "name": name, "input": input })
+}
+
+#[test]
+fn a_heard_post_names_the_client_its_poster_signed_from() {
+    let world = world();
+    let chain = &world.chain;
+    let op = chat::Op::PostMessage {
+        channel_id: "general".into(),
+        message_id: "m1".into(),
+        blocks: chat::parse_message(&format!("<@{}> from the app", world.agent)),
+        thread: None,
+    };
+    chain
+        .submit_from(
+            "ducktape-app/1 (linux; cef)",
+            signed(ADA),
+            chat::PROGRAM,
+            &op,
+        )
+        .unwrap();
+    chain.at(2, 0);
+    learn(chain, Some(WINDOW));
+    let (request, _) = open_request(chain);
+    let sent = body(chain, &request);
+    let text = sent["messages"][0]["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.starts_with(&format!(
+            "Ada (account {}) from ducktape-app/1 (linux; cef) mentioned you in chat channel general",
+            world.ada
+        )),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_chat_that_answers_no_clients_still_wakes_the_agent_naming_none() {
+    let world = world();
+    let chain = &world.chain;
+    let host = chain.host(PROGRAM);
+    let chat_id = ::program::ProgramId::from(chat::PROGRAM);
+    let current = host.borrow_mut().siblings.remove(&chat_id).unwrap();
+    let older: ::program::Sibling =
+        Box::new(
+            move |env, request| match abi::decode::<chat::Query>(request) {
+                Ok(chat::Query::Clients { .. }) => current(env, &[u8::MAX]),
+                _ => current(env, request),
+            },
+        );
+    host.borrow_mut().siblings.insert(chat_id, older);
+    let op = chat::Op::PostMessage {
+        channel_id: "general".into(),
+        message_id: "m1".into(),
+        blocks: chat::parse_message(&format!("<@{}> from the app", world.agent)),
+        thread: None,
+    };
+    chain
+        .submit_from(
+            "ducktape-app/1 (linux; cef)",
+            signed(ADA),
+            chat::PROGRAM,
+            &op,
+        )
+        .unwrap();
+    chain.at(2, 0);
+    learn(chain, Some(WINDOW));
+    let (request, _) = open_request(chain);
+    let sent = body(chain, &request);
+    let text = sent["messages"][0]["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.starts_with(&format!(
+            "Ada (account {}) mentioned you in chat channel general",
+            world.ada
+        )),
+        "{text}"
+    );
 }
 
 #[test]

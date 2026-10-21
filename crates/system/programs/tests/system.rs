@@ -223,6 +223,7 @@ impl Net {
             epoch_length: EPOCH_LENGTH,
             time: TIME,
             member_cap,
+            queries: abi::role::validators::QueryPolicy::Signed,
         };
         let (host, applied) = Host::found(context, "net", dir, block_id(0), genesis)
             .await
@@ -275,6 +276,7 @@ impl Net {
             salt: None,
             target: target.to_owned(),
             payload,
+            client: None,
         }
     }
 

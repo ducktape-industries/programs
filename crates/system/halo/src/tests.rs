@@ -35,6 +35,7 @@ fn chain() -> MockChain {
     let seated = valset::Genesis {
         validators,
         member_cap: 8,
+        queries: abi::role::validators::QueryPolicy::Signed,
     };
     chain.init(valset::PROGRAM, &seated).unwrap();
     let lanes = Genesis {

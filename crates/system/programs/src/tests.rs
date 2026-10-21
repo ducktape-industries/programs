@@ -32,6 +32,7 @@ fn blobs_role(store: &MockHost) -> MockHost {
             halo: "validator.example.org:9100".into(),
         }],
         member_cap: 4,
+        queries: abi::role::validators::QueryPolicy::Signed,
     };
     valset::Valset::init(
         &valset.exec(MockHost::env(valset::PROGRAM).root()),

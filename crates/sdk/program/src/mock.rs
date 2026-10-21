@@ -98,6 +98,7 @@ pub struct MockState {
     pub owners: BTreeMap<ProgramId, Owners>,
     pub verifier: Option<Verifier>,
     pub work: Work,
+    pub client: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -307,7 +308,7 @@ impl MockHost {
         (mock.calls, mock.deferred, mock.resumes) = written.waits;
     }
 
-    pub(crate) fn serve(&self, env: &Env, op: HostOp) -> HostReply {
+    pub(crate) fn serve(&self, env: &Env, in_op: bool, op: HostOp) -> HostReply {
         if let HostOp::Resource { program, key } = op {
             let owners = self.borrow_mut().owners.remove(&program);
             return HostReply::Query(match owners {
@@ -379,6 +380,7 @@ impl MockHost {
                 }))
             }
             HostOp::Root(_) => HostReply::Root(None),
+            HostOp::Client => HostReply::Client(mock.client.clone().filter(|_| in_op)),
             HostOp::Crypto(CryptoOp::Sha256(bytes)) => {
                 HostReply::Crypto(CryptoReply::Digest(sha2::Sha256::digest(bytes).into()))
             }
@@ -672,6 +674,15 @@ mod tests {
         assert_eq!(host.exec(MockHost::env("m")).sender_account().unwrap(), 1);
         let chain = host.exec(MockHost::env("m").root());
         assert_eq!(chain.sender_account().unwrap_err().code, code::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn an_op_reads_its_frames_client_and_a_query_reads_none_as_on_the_host() {
+        let host = MockHost::default();
+        host.borrow_mut().client = Some("ducktape-app/1".into());
+        let op = host.exec(MockHost::env("m"));
+        assert_eq!(op.client().as_deref(), Some("ducktape-app/1"));
+        assert_eq!(host.query(MockHost::env("m")).client(), None);
     }
 
     #[test]

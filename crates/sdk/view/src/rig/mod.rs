@@ -179,6 +179,7 @@ impl Network {
                         halo: "dev.example.org:9100".into(),
                     }],
                     member_cap: 8,
+                    queries: abi::role::validators::QueryPolicy::Signed,
                 },
             )
             .expect("valset founds with the dev validator");

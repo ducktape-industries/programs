@@ -7,7 +7,7 @@ use store::PageRequest;
 
 use crate::{
     Genesis, Grant, INVITE_NAMESPACE, Invite, Member, Membership, Motion, Op, Pending, Query,
-    Reply, Role, Valset, Voted,
+    QueryPolicy, Reply, Role, Valset, Voted,
 };
 
 const NETWORK: &[u8] = b"net";
@@ -57,6 +57,7 @@ fn found(validators: &[u8], member_cap: u32) -> Result<MockHost, Error> {
     let genesis = abi::encode(&Genesis {
         validators: validators.iter().rev().map(|n| member(*n)).collect(),
         member_cap,
+        queries: abi::role::validators::QueryPolicy::Signed,
     });
     Valset::init(&store.exec(env(Origin::Root)), &genesis)?;
     Ok(store)
@@ -169,6 +170,7 @@ fn founding_a_validator_at_a_halo_address_no_member_dials_is_refused() {
                 },
             ],
             member_cap: 8,
+            queries: abi::role::validators::QueryPolicy::Signed,
         });
         let store = MockHost::default();
         let refused = Valset::init(&store.exec(env(Origin::Root)), &genesis).unwrap_err();
@@ -262,6 +264,43 @@ fn an_open_door_admits_without_an_invite() {
     assert_eq!(again.code, code::WRONG_STATE);
     pass(&store, &[1, 2], Motion::Door { open: false });
     assert_eq!(refused(&store, 4, enroll(4, None)), code::UNAUTHORIZED);
+}
+
+fn queries(store: &MockHost) -> QueryPolicy {
+    match ask(store, Query::QueryPolicy) {
+        Reply::QueryPolicy(policy) => policy,
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn the_vote_sets_which_queries_the_network_answers() {
+    let store = founded();
+    assert_eq!(queries(&store), QueryPolicy::Signed);
+    let open = || Motion::Queries {
+        policy: QueryPolicy::Open,
+    };
+    pass(&store, &[1, 2], open());
+    assert_eq!(queries(&store), QueryPolicy::Open);
+    let again = vote(&store, 1, open()).unwrap_err();
+    assert_eq!(again.code, code::WRONG_STATE);
+    let signed = Motion::Queries {
+        policy: QueryPolicy::Signed,
+    };
+    pass(&store, &[1, 2], signed);
+    assert_eq!(queries(&store), QueryPolicy::Signed);
+}
+
+#[test]
+fn a_network_founded_before_the_query_policy_answers_signed_queries_only() {
+    let store = founded();
+    let open = Motion::Queries {
+        policy: QueryPolicy::Open,
+    };
+    pass(&store, &[1, 2], open);
+    let held = store.borrow_mut().state.remove(b"queries".as_slice());
+    assert!(held.is_some(), "the policy is the row `queries`");
+    assert_eq!(queries(&store), QueryPolicy::Signed);
 }
 
 #[test]

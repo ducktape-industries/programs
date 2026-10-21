@@ -78,9 +78,10 @@ manager gives it a script that calls the program (the fixture's `script`),
 then answers it and the profile's script names the program; another
 program, a user's account and a revoked one are refused.
 
-**validators**: the role's `Query` and `Reply` are the first variants;
+**validators**: the role's `Query` and `Reply` read as the program's own,
+`Validators` and `Members` at tags 0 and 1 and `QueryPolicy` at tag 6;
 init with the role's `Genesis` seats exactly its validators, each a member
-at its address; every key is 32 bytes and every validator a member;
+at its address, and `QueryPolicy` answers its `queries`; every key is 32 bytes and every validator a member;
 seating and unseating (the fixture's `seat`/`unseat`) change the answers.
 
 **programs**: `Query::At` and `Reply::Programs` are the program's at tag

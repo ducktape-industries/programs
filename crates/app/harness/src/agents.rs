@@ -425,6 +425,18 @@ fn designation(
             room: None,
         });
     };
+    let asked = chat::Query::Clients {
+        channel_id: row.channel_id.clone(),
+        seqs: vec![row.seq],
+    };
+    let client = match ctx.query(chat::PROGRAM, &asked) {
+        Ok(chat::Reply::Clients(clients)) => clients.into_iter().find_map(|(_, client)| client),
+        Ok(other) => return Err(unexpected_reply(chat::PROGRAM, "Clients", &other)),
+        Err(_) => None,
+    };
+    let from = client
+        .map(|client| format!(" from {client}"))
+        .unwrap_or_default();
     let verb = match heard {
         Heard::Mention => "mentioned you",
         Heard::Direct => "wrote to you directly",
@@ -458,7 +470,7 @@ fn designation(
         None => format!(" (reply_to {} to answer in its thread)", row.seq),
     };
     let text = format!(
-        "{who} {verb} in chat channel {channel}{listened}, message {seq}{after}{in_thread}:\n{body}",
+        "{who}{from} {verb} in chat channel {channel}{listened}, message {seq}{after}{in_thread}:\n{body}",
         channel = row.channel_id,
         seq = row.seq,
         body = row.text,

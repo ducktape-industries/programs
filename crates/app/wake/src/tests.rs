@@ -250,6 +250,7 @@ fn world() -> World {
             halo: "node.example.org:9100".into(),
         }],
         member_cap: 8,
+        queries: abi::role::validators::QueryPolicy::Signed,
     };
     chain.init("valset", &genesis).unwrap();
     let person = |key: &[u8], name: &str| {

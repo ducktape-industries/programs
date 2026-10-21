@@ -1,7 +1,7 @@
 //! The validators role: the consensus set the kernel seats each epoch.
 //! [`run`] checks every rule below.
 
-use abi::role::validators::{Genesis, Member, Query, Reply};
+use abi::role::validators::{Genesis, Member, Query, QueryPolicy, Reply};
 use program::{Error, MockHost, Program};
 
 use crate::{ask, init, same_bytes};
@@ -20,8 +20,9 @@ pub trait Fixture {
 
 /// Every validators rule, each on a fresh host.
 pub fn run(fixture: &impl Fixture) {
-    the_role_is_the_first_variants(fixture);
+    the_role_reads_as_the_programs_own(fixture);
     genesis_seats_the_given_set(fixture);
+    genesis_sets_the_query_policy(fixture);
     an_update_changes_the_answer(fixture);
     the_cap_bounds_the_members(fixture);
 }
@@ -43,6 +44,7 @@ fn founded_with_two_validators<F: Fixture>() -> MockHost {
     let genesis = Genesis {
         validators: vec![member(2), member(1)],
         member_cap: 3,
+        queries: abi::role::validators::QueryPolicy::Signed,
     };
     init::<F::Program>(&host, &program(), &genesis);
     host
@@ -71,17 +73,16 @@ fn answers<F: Fixture>(host: &MockHost) -> (Vec<Vec<u8>>, Vec<Member>) {
     (validators, members)
 }
 
-/// The role's queries and replies are the program's first variants, byte
-/// for byte.
-pub fn the_role_is_the_first_variants<F: Fixture>(_: &F) {
+pub fn the_role_reads_as_the_programs_own<F: Fixture>(_: &F) {
     type M<F> = <F as Fixture>::Program;
     let m = program();
-    for query in [Query::Validators, Query::Members] {
+    for query in [Query::Validators, Query::Members, Query::QueryPolicy] {
         same_bytes::<<M<F> as Program>::Query>(&m, "Query", &query);
     }
     for reply in [
         Reply::Validators(vec![vec![1; 32]]),
         Reply::Members(vec![member(1)]),
+        Reply::QueryPolicy(QueryPolicy::Open),
     ] {
         same_bytes::<<M<F> as Program>::Reply>(&m, "Reply", &reply);
     }
@@ -101,6 +102,23 @@ pub fn genesis_seats_the_given_set<F: Fixture>(_: &F) {
         assert!(
             members.contains(&seated),
             "validators: genesis member {seated:?} is among the Members"
+        );
+    }
+}
+
+pub fn genesis_sets_the_query_policy<F: Fixture>(_: &F) {
+    for policy in [QueryPolicy::Signed, QueryPolicy::Open] {
+        let host = MockHost::default();
+        let genesis = Genesis {
+            validators: vec![member(1)],
+            member_cap: 3,
+            queries: policy,
+        };
+        init::<F::Program>(&host, &program(), &genesis);
+        let answered = ask::<F::Program, Reply>(&host, &program(), 1, &Query::QueryPolicy);
+        assert!(
+            matches!(answered, Ok(Reply::QueryPolicy(held)) if held == policy),
+            "validators: QueryPolicy answers the founding policy {policy:?}, not {answered:?}"
         );
     }
 }
