@@ -111,12 +111,12 @@ fn the_section_writes_each_example_as_json_and_each_return_as_its_shape() {
         value["ops"]["Open"],
         json!({
             "description": "Open a poll with its choices.",
-            "example": { "Open": { "id": "lunch", "choices": ["noodles", "rice"] } },
+            "example": { "open": { "id": "lunch", "choices": ["noodles", "rice"] } },
             "returns": { "returns": "u64", "types": {} },
         })
     );
-    assert_eq!(value["ops"]["Close"]["example"], json!({ "Close": 3 }));
-    assert_eq!(value["queries"]["Polls"], json!({ "example": "Polls" }));
+    assert_eq!(value["ops"]["Close"]["example"], json!({ "close": 3 }));
+    assert_eq!(value["queries"]["Polls"], json!({ "example": "polls" }));
     assert_eq!(
         check(&poll(), &read(&written).unwrap()),
         [
@@ -140,7 +140,7 @@ fn a_query_returns_the_reply_variant_its_ask_names() {
     let reply = crate::variant_shape(&poll().schema, &poll().reply, "Poll").unwrap();
     assert_eq!(
         reply,
-        json!({ "returns": { "Poll": { "option": "u64" } }, "types": {} })
+        json!({ "returns": { "poll": { "option": "u64" } }, "types": {} })
     );
 }
 
@@ -212,8 +212,8 @@ fn one_variant_is_named_and_made_alone() {
     assert_eq!(ops, ["Open", "Close", "Vote"]);
     assert!(crate::variants(&poll.schema, "u64").is_empty());
     let made = |name: &str| crate::variant_example(&poll.schema, &poll.op, name).unwrap();
-    assert_eq!(made("Close"), Some(json!({ "Close": 0 })));
-    assert_eq!(made("Vote"), Some(json!("Vote")));
+    assert_eq!(made("Close"), Some(json!({ "close": 0 })));
+    assert_eq!(made("Vote"), Some(json!("vote")));
     assert_eq!(made("Shut"), None);
 }
 
@@ -252,10 +252,10 @@ fn the_index_and_an_unfolded_op_read_the_section_and_the_schema_together() {
     let listed = index("poll", &poll, &told);
     assert_eq!(listed["about"], json!("Polls anyone opens and closes."));
     assert_eq!(
-        listed["ops"]["Open"],
+        listed["ops"]["open"],
         json!("Open a poll with its choices.")
     );
-    assert_eq!(listed["queries"]["Polls"], serde_json::Value::Null);
+    assert_eq!(listed["queries"]["polls"], serde_json::Value::Null);
     assert!(listed.get("note").is_none(), "{listed}");
     let silent = index("poll", &poll, &Described::default());
     assert!(silent["note"].as_str().unwrap().contains("describes none"));
@@ -263,22 +263,22 @@ fn the_index_and_an_unfolded_op_read_the_section_and_the_schema_together() {
     let open = unfold("poll", &poll, &told, Side::Op, "Open").unwrap();
     assert_eq!(
         open["example"],
-        json!({ "Open": { "id": "lunch", "choices": ["noodles", "rice"] } })
+        json!({ "open": { "id": "lunch", "choices": ["noodles", "rice"] } })
     );
     assert_eq!(open["returns"], json!("u64"));
     assert_eq!(
         open["shape"],
-        json!({ "Open": { "struct": { "id": "string", "choices": { "vec": "string" } } } })
+        json!({ "open": { "struct": { "id": "string", "choices": { "vec": "string" } } } })
     );
     let made = unfold("poll", &poll, &Described::default(), Side::Op, "Close").unwrap();
-    assert_eq!(made["example"], json!({ "Close": 0 }));
+    assert_eq!(made["example"], json!({ "close": 0 }));
     assert!(made.get("description").is_none(), "{made}");
     let Err(Refusal::Asked(why)) = unfold("poll", &poll, &told, Side::Query, "Open") else {
         panic!("a query poll lacks is refused")
     };
     assert_eq!(
         why,
-        "program poll has no query Open; its queries are Poll, Polls"
+        "program poll has no query Open; its queries are poll, polls"
     );
 
     let rows = roster(vec![
@@ -314,5 +314,45 @@ fn an_http_answer_reads_as_its_status_headers_and_body() {
             .as_str()
             .unwrap()
             .starts_with("the answer is no HTTP response")
+    );
+}
+
+#[test]
+fn an_unfolded_variant_is_asked_and_answered_in_snake_case_over_a_section_packed_before_it() {
+    use crate::discover::{Refusal, Side, index, unfold};
+    let poll = poll();
+    let packed = json!({
+        "about": "Polls.",
+        "ops": { "Open": {
+            "description": "Open.",
+            "example": { "Open": { "id": "x", "choices": [] } },
+        } },
+        "queries": { "Poll": {
+            "description": "One.",
+            "returns": { "returns": { "Poll": { "option": "u64" } }, "types": {} },
+        } },
+    });
+    let told = read(packed.to_string().as_bytes()).unwrap();
+    assert_eq!(index("poll", &poll, &told)["ops"]["open"], json!("Open."));
+    for asked in ["open", "Open"] {
+        let open = unfold("poll", &poll, &told, Side::Op, asked).unwrap();
+        assert_eq!(open["op"], json!("open"));
+        assert_eq!(
+            open["example"],
+            json!({ "open": { "id": "x", "choices": [] } })
+        );
+        assert_eq!(
+            open["shape"],
+            json!({ "open": { "struct": { "id": "string", "choices": { "vec": "string" } } } })
+        );
+    }
+    let asked = unfold("poll", &poll, &told, Side::Query, "poll").unwrap();
+    assert_eq!(asked["returns"], json!({ "poll": { "option": "u64" } }));
+    let Err(Refusal::Asked(why)) = unfold("poll", &poll, &told, Side::Query, "open") else {
+        panic!("a query poll lacks is refused")
+    };
+    assert_eq!(
+        why,
+        "program poll has no query open; its queries are poll, polls"
     );
 }

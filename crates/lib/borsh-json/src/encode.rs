@@ -3,7 +3,9 @@
 use borsh::schema::{BorshSchemaContainer, Declaration, Fields};
 use serde_json::{Map, Value};
 
-use super::{At, Fault, Kind, Length, Variants, kind, payload, unit_variant};
+use super::{
+    At, Fault, Kind, Length, Variants, kind, named, payload, spelled, spelled_all, unit_variant,
+};
 
 pub fn encode(
     schema: &BorshSchemaContainer,
@@ -149,9 +151,9 @@ impl<'s> Writer<'s> {
         self.out.push(1);
         let nested = kind(self.schema, inner)?.nullable();
         let some = match nested {
-            true => {
-                single(value, "Some").ok_or_else(|| got(at, value, "null or {\"Some\": value}"))?
-            }
+            true => single(value, "some")
+                .or_else(|| single(value, "Some"))
+                .ok_or_else(|| got(at, value, "null or {\"some\": value}"))?,
             false => value,
         };
         self.value(inner, some, at)
@@ -255,16 +257,15 @@ impl<'s> Writer<'s> {
             Value::Object(object) => one_key(object).ok_or_else(|| got(at, value, VARIANT))?,
             _ => return Err(got(at, value, VARIANT)),
         };
-        let (tag, variant_name, declaration) = variants
-            .iter()
-            .find(|(_, variant, _)| variant == name)
-            .ok_or_else(|| Fault::UnknownVariant {
+        let (tag, variant_name, declaration) =
+            named(variants, name).ok_or_else(|| Fault::UnknownVariant {
                 at: at.render(),
                 variant: name.to_owned(),
-                known: variants.iter().map(|(_, known, _)| known.clone()).collect(),
+                known: spelled_all(variants),
             })?;
         self.tag(tag_width, *tag, at)?;
-        let here = at.field(variant_name);
+        let written = spelled(variant_name);
+        let here = at.field(&written);
         let fields = payload(self.schema, declaration);
         let unit = unit_variant(fields);
         match (fields, body) {
@@ -272,7 +273,7 @@ impl<'s> Writer<'s> {
             (None, Some(body)) => self.value(declaration, body, &here),
             (_, None) => match unit {
                 true => Ok(()),
-                false => Err(got(&here, value, format!("{{\"{variant_name}\": value}}"))),
+                false => Err(got(&here, value, format!("{{\"{written}\": value}}"))),
             },
         }
     }
@@ -329,7 +330,7 @@ fn got(at: &At, value: &Value, expected: impl Into<String>) -> Fault {
     }
 }
 
-const VARIANT: &str = "\"Variant\" or {\"Variant\": value}";
+const VARIANT: &str = "\"variant\" or {\"variant\": value}";
 
 fn unit(value: &Value, at: &At) -> Result<(), Fault> {
     match value {

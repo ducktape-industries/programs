@@ -11,7 +11,7 @@ use super::files::{snapshot, snapshot_schema};
 use super::{Run, Seat, Tool, object};
 use crate::agents::read;
 
-const HELD: &str = "on the network from this call on: the run that put it is recorded on the chain, so any later op may name it, and egress takes it as a request's body part. To make it code the network may run (kind program), send the blobs program {\"Put\": {\"blobs\": [entry]}} with this answer's entry as it is: its len is the framed length the blobs program records, and a Put whose len is wrong is never held. Until a Put of it is held, the blobs program's Held query answers null for it.";
+const HELD: &str = "on the network from this call on: the run that put it is recorded on the chain, so any later op may name it, and egress takes it as a request's body part. To make it code the network may run (kind program), send the blobs program {\"put\": {\"blobs\": [entry]}} with this answer's entry as it is: its len is the framed length the blobs program records, and a Put whose len is wrong is never held. Until a Put of it is held, the blobs program's Held query answers null for it.";
 
 #[derive(Clone, Copy, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -92,18 +92,18 @@ impl TryFrom<Given> for PutArgs {
 
 fn named(id: &BlobId) -> (String, Value) {
     let digest = abi::hex(id.digest());
-    let (scheme, variant) = match id.kind() {
-        HashKind::Sha256 => ("sha256", "Sha256"),
-        HashKind::Sha1 => ("sha1", "Sha1"),
+    let scheme = match id.kind() {
+        HashKind::Sha256 => "sha256",
+        HashKind::Sha1 => "sha1",
     };
-    (format!("{scheme}:{digest}"), json!({ variant: digest }))
+    (format!("{scheme}:{digest}"), json!({ scheme: digest }))
 }
 
 pub(crate) struct Put;
 
 impl Tool for Put {
     const NAME: &'static str = "blob_put";
-    const DESCRIPTION: &'static str = "Put a blob of any kind on the network, in this call's own run: content as its UTF-8 bytes, or source, a file of the network's filesystem read whole at snapshot or the newest. It answers the blob's id as `blob` and as `in_network_call`, the form a network_call op names it in: the body of an egress request (kind part), a pods input, a files chunk. It also answers `entry`, the blob as a blobs-program Put names it (id, kind and len, the framed length), to send as it is in blobs {\"Put\": {\"blobs\": [entry]}}. The blob is on the network from this call on, so any later op may name it; until a Put of that entry is held, the blobs program's Held query answers null for it. A blob has no size bound of its own: the run's memory and fuel, which the network sets, limit what one call carries, and past them the call fails. Split a large body into several part blobs: egress sends a request's body parts joined in order.";
+    const DESCRIPTION: &'static str = "Put a blob of any kind on the network, in this call's own run: content as its UTF-8 bytes, or source, a file of the network's filesystem read whole at snapshot or the newest. It answers the blob's id as `blob` and as `in_network_call`, the form a network_call op names it in: the body of an egress request (kind part), a pods input, a files chunk. It also answers `entry`, the blob as a blobs-program Put names it (id, kind and len, the framed length), to send as it is in blobs {\"put\": {\"blobs\": [entry]}}. The blob is on the network from this call on, so any later op may name it; until a Put of that entry is held, the blobs program's Held query answers null for it. A blob has no size bound of its own: the run's memory and fuel, which the network sets, limit what one call carries, and past them the call fails. Split a large body into several part blobs: egress sends a request's body parts joined in order.";
     const WRITES: bool = true;
     type Args = PutArgs;
 

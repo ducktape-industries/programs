@@ -122,7 +122,7 @@ fn a_tool_file_is_a_tool_on_the_next_model_call_and_one_that_does_not_load_says_
     assert_eq!(named(&tools, "files_read").len(), 1);
     let left_out = [
         "- File tools left out: ",
-        "tool broken: step 2 (op forge): at op.SquashMerge: there is no field number",
+        "tool broken: step 2 (op forge): at op.squash_merge: there is no field number",
         "tool typo: step 2 (op forge): $chnge.Change.source_head names no input and no earlier step's `as`",
         "tool files_read: files_read is harness's own tool, which a file does not take the place of",
     ];
@@ -261,7 +261,7 @@ fn an_agents_own_tool_file_takes_the_place_of_a_shared_one_and_its_query_answers
         json!({
             "ok": true,
             "unsaid": "returns: $found.Channel has no channel: it is null",
-            "steps": { "found": { "Channel": null } },
+            "steps": { "found": { "channel": null } },
         })
     );
 }

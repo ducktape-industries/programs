@@ -234,7 +234,7 @@ pub(crate) fn at<'v>(value: &'v Value, path: &str) -> Option<&'v Value> {
         return Some(value);
     }
     path.split('.').try_fold(value, |value, step| match value {
-        Value::Object(fields) => fields.get(step),
+        Value::Object(fields) => borsh_json::entry(fields, step),
         Value::Array(items) => items.get(step.parse::<usize>().ok()?),
         _ => None,
     })

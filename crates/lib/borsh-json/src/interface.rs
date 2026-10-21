@@ -6,7 +6,7 @@ use borsh::schema::{BorshSchemaContainer, Declaration};
 use program::schema::{returned, roots};
 use serde_json::{Value, json};
 
-use crate::{Fault, decode, encode, fits, shape, variant};
+use crate::{Fault, decode, encode, fits, shape, spelled, variant};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Interface {
@@ -115,7 +115,7 @@ impl Interface {
         }
         let op = variant(&self.schema, &self.op, payload);
         let named = match &op {
-            Some(op) => format!("its op {op}"),
+            Some(op) => format!("its op {}", spelled(op)),
             None => "this op".to_owned(),
         };
         let declared = match (&self.returns, &op) {

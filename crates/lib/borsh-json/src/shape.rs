@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use borsh::schema::{BorshSchemaContainer, Fields};
 use serde_json::{Map, Value, json};
 
-use super::{Fault, Kind, Length, Variants, kind, payload, unit_variant};
+use super::{
+    Fault, Kind, Length, Variants, kind, named, payload, spelled, spelled_all, unit_variant,
+};
 
 // Under `returns` (when given), each op that names what it returns, and that type's shape.
 pub fn shape(
@@ -21,7 +23,7 @@ pub fn shape(
     if let Some(returns) = returns {
         let mut returned = Map::new();
         for (op, declaration) in returns {
-            returned.insert((*op).to_owned(), shaper.expr(declaration)?);
+            returned.insert(spelled(op), shaper.expr(declaration)?);
         }
         out.insert("returns".to_owned(), Value::Object(returned));
     }
@@ -41,19 +43,20 @@ pub fn variant_shape<'s>(
             declaration: format!("{declaration}::{name}"),
         });
     };
-    let Some((_, _, body)) = variants.iter().find(|(_, variant, _)| variant == name) else {
+    let Some((_, variant, body)) = named(variants, name) else {
         return Err(Fault::UnknownVariant {
             at: declaration.to_owned(),
             variant: name.to_owned(),
-            known: variants.iter().map(|(_, known, _)| known.clone()).collect(),
+            known: spelled_all(variants),
         });
     };
+    let written = spelled(variant);
     let mut shaper = Shaper::new(schema);
     let fields = payload(schema, body);
     let shaped = match (unit_variant(fields), fields) {
-        (true, _) => json!(name),
-        (false, Some(fields)) => one(name, shaper.fields(fields)?),
-        (false, None) => one(name, shaper.expr(body)?),
+        (true, _) => json!(written),
+        (false, Some(fields)) => one(&written, shaper.fields(fields)?),
+        (false, None) => one(&written, shaper.expr(body)?),
     };
     Ok(json!({ "returns": shaped, "types": shaper.finish()? }))
 }
@@ -176,7 +179,7 @@ impl<'s> Shaper<'s> {
                 (false, Some(fields)) => self.fields(fields)?,
                 (false, None) => self.expr(declaration)?,
             };
-            object.insert(name.clone(), body);
+            object.insert(spelled(name), body);
         }
         Ok(json!({ "enum": object }))
     }

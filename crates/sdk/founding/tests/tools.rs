@@ -77,3 +77,23 @@ fn every_example_network_schema_shows_encodes_and_reads_back_as_itself() {
     }
     assert!(broken.is_empty(), "{broken:#?}");
 }
+
+#[test]
+fn no_enum_of_any_program_has_two_variants_spelled_the_same() {
+    let mut clashes = Vec::new();
+    for program in every() {
+        let schema = founding::schema(program).unwrap();
+        for (declaration, definition) in schema.definitions() {
+            let borsh::schema::Definition::Enum { variants, .. } = definition else {
+                continue;
+            };
+            let mut seen = std::collections::BTreeSet::new();
+            for (_, name, _) in variants {
+                if !seen.insert(borsh_json::spelled(name)) {
+                    clashes.push(format!("{program} {declaration}: {name}"));
+                }
+            }
+        }
+    }
+    assert!(clashes.is_empty(), "{clashes:#?}");
+}

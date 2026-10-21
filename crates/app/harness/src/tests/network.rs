@@ -92,12 +92,12 @@ fn the_model_reads_a_programs_shapes_asks_its_queries_and_reads_the_replies() {
         (
             "q_chat",
             "network_query",
-            json!({ "program": "chat", "query": { "Channel": { "channel_id": "general" } } }),
+            json!({ "program": "chat", "query": { "channel": { "channel_id": "general" } } }),
         ),
         (
             "q_files",
             "network_query",
-            json!({ "program": "files", "query": { "Stat": { "path": CONFIG } } }),
+            json!({ "program": "files", "query": { "stat": { "path": CONFIG } } }),
         ),
     ];
     let thread = called(&world, &calls);
@@ -118,20 +118,20 @@ fn the_model_reads_a_programs_shapes_asks_its_queries_and_reads_the_replies() {
         )
     );
     assert_eq!(
-        shape["types"]["Op"]["enum"]["PostMessage"]["struct"]["thread"],
+        shape["types"]["Op"]["enum"]["post_message"]["struct"]["thread"],
         json!({ "option": "u64" })
     );
     let files_shape = json_result(chain, thread, "s_files");
-    assert_eq!(files_shape["types"]["Query"]["enum"]["Head"], json!(null));
+    assert_eq!(files_shape["types"]["Query"]["enum"]["head"], json!(null));
 
     let channel = json_result(chain, thread, "q_chat");
-    let info = &channel["reply"]["Channel"];
+    let info = &channel["reply"]["channel"];
     assert_eq!(info["channel"]["name"], "general");
     let stat = json_result(chain, thread, "q_files");
-    let snapshot = &stat["reply"]["Stat"]["snapshot"];
+    let snapshot = &stat["reply"]["stat"]["snapshot"];
     assert_eq!(
         *snapshot,
-        json!({ "Sha256": abi::hex(head(chain).digest()) })
+        json!({ "sha256": abi::hex(head(chain).digest()) })
     );
 }
 
@@ -139,20 +139,20 @@ fn the_model_reads_a_programs_shapes_asks_its_queries_and_reads_the_replies() {
 fn an_op_is_the_agents_and_the_program_allows_or_refuses_it() {
     let world = schemed();
     let chain = &world.chain;
-    let base = json!({ "Sha256": abi::hex(head(chain).digest()) });
+    let base = json!({ "sha256": abi::hex(head(chain).digest()) });
     let post = |channel: &str, id: &str| {
-        json!({ "program": "chat", "op": { "PostMessage": {
+        json!({ "program": "chat", "op": { "post_message": {
             "channel_id": channel,
             "message_id": id,
-            "blocks": [{ "Paragraph": [{ "text": "hello", "marks": [] }] }],
+            "blocks": [{ "paragraph": [{ "text": "hello", "marks": [] }] }],
             "thread": null,
         } } })
     };
     let commit = |path: &str| {
-        json!({ "program": "files", "op": { "Commit": {
+        json!({ "program": "files", "op": { "commit": {
             "base": base,
             "message": "notes",
-            "changes": [{ "Mkdir": { "path": path } }],
+            "changes": [{ "mkdir": { "path": path } }],
         } } })
     };
     let calls = [
@@ -176,7 +176,7 @@ fn an_op_is_the_agents_and_the_program_allows_or_refuses_it() {
     assert!(closed.starts_with(code::UNAUTHORIZED), "{closed}");
 
     let home = json_result(chain, thread, "c_home");
-    let snapshot = json!({ "Sha256": abi::hex(head(chain).digest()) });
+    let snapshot = json!({ "sha256": abi::hex(head(chain).digest()) });
     assert_eq!(home, json!({ "ok": true, "returned": snapshot }));
     let root = refusal(chain, thread, "c_root");
     assert!(root.starts_with(code::UNAUTHORIZED), "{root}");
@@ -201,17 +201,17 @@ fn an_unknown_program_or_input_that_fits_no_shape_fails_with_its_reason() {
         (
             "m_variant",
             "network_query",
-            json!({ "program": "chat", "query": { "Shout": {} } }),
+            json!({ "program": "chat", "query": { "shout": {} } }),
         ),
         (
             "m_field",
             "network_call",
-            json!({ "program": "chat", "op": { "AddReaction": { "channel_id": "general", "seq": "first", "emoji": "+1" } } }),
+            json!({ "program": "chat", "op": { "add_reaction": { "channel_id": "general", "seq": "first", "emoji": "+1" } } }),
         ),
         (
             "m_missing",
             "network_call",
-            json!({ "program": "files", "op": { "Pin": { "name": "v1" } } }),
+            json!({ "program": "files", "op": { "pin": { "name": "v1" } } }),
         ),
     ];
     let thread = called(&world, &calls);
@@ -224,11 +224,11 @@ fn an_unknown_program_or_input_that_fits_no_shape_fails_with_its_reason() {
     assert!(plain.starts_with(code::UNSUPPORTED), "{plain}");
     let variant = refusal(chain, thread, "m_variant");
     assert!(
-        variant.starts_with(code::INVALID_INPUT) && variant.contains("Shout"),
+        variant.starts_with(code::INVALID_INPUT) && variant.contains("shout"),
         "{variant}"
     );
     let field = refusal(chain, thread, "m_field");
-    assert!(field.contains("op.AddReaction.seq"), "{field}");
+    assert!(field.contains("op.add_reaction.seq"), "{field}");
     let missing = refusal(chain, thread, "m_missing");
     assert!(missing.contains("snapshot"), "{missing}");
 }
@@ -313,11 +313,11 @@ impl Program for Misread {
 }
 
 pub(super) fn notes(chain: &MockChain) -> Value {
-    let base = json!({ "Sha256": abi::hex(head(chain).digest()) });
-    json!({ "program": "files", "op": { "Commit": {
+    let base = json!({ "sha256": abi::hex(head(chain).digest()) });
+    json!({ "program": "files", "op": { "commit": {
         "base": base,
         "message": "notes",
-        "changes": [{ "Mkdir": { "path": "/home/Scout/notes" } }],
+        "changes": [{ "mkdir": { "path": "/home/Scout/notes" } }],
     } } })
 }
 
@@ -362,7 +362,7 @@ fn an_op_whose_program_names_no_return_for_it_answers_hex_and_names_the_op() {
     assert_eq!(returned_bytes(&answer), head);
     let unread = answer["unread"].as_str().unwrap();
     assert!(
-        unread.contains("names no type for what its op Commit returns"),
+        unread.contains("names no type for what its op commit returns"),
         "{unread}"
     );
     assert_eq!(shape["returns"], json!({}));
@@ -373,12 +373,12 @@ fn an_output_that_does_not_read_as_its_declared_type_falls_back_to_hex_and_says_
     let (answer, shape, head) = committed(code_with(&interface::<Misread>()));
     assert_eq!(returned_bytes(&answer), head);
     let unread = answer["unread"].as_str().unwrap();
-    let why = "the output does not read as u8, the type the schema of program files names for its op Commit: ";
+    let why = "the output does not read as u8, the type the schema of program files names for its op commit: ";
     assert!(
         unread.starts_with(why) && unread.ends_with("bytes are left after the value"),
         "{unread}"
     );
-    assert_eq!(shape["returns"], json!({ "Commit": "u8" }));
+    assert_eq!(shape["returns"], json!({ "commit": "u8" }));
 }
 
 fn branch_oids(chain: &MockChain, branch: &str) -> Vec<String> {
@@ -415,20 +415,20 @@ fn a_forge_merge_reads_back_as_the_reply_forges_schema_names_for_it() {
         .into_iter()
         .find(|oid| *oid != main)
         .unwrap();
-    let merge = json!({ "program": "forge", "op": { "Merge": {
+    let merge = json!({ "program": "forge", "op": { "merge": {
         "repo": "notes",
         "into": abi::hex(b"refs/heads/main"),
-        "from": { "Ref": abi::hex(b"refs/heads/side") },
+        "from": { "ref": abi::hex(b"refs/heads/side") },
         "expected_into": main,
         "expected_from": side,
         "result": side,
         "change": null,
     } } });
     let log = |branch: &str| {
-        let from = json!({ "Ref": { "utf8": format!("refs/heads/{branch}") } });
+        let from = json!({ "ref": { "utf8": format!("refs/heads/{branch}") } });
         let page = json!({ "after": null, "limit": 1 });
         let log = json!({ "repo": "notes", "from": from, "exclude": null, "page": page });
-        json!({ "program": "forge", "query": { "Log": log } })
+        json!({ "program": "forge", "query": { "log": log } })
     };
     let calls = [
         ("c_merge", "network_call", merge),
@@ -443,12 +443,12 @@ fn a_forge_merge_reads_back_as_the_reply_forges_schema_names_for_it() {
     turn(chain, 7, &calls);
     // a ref written as text inside an enum reads as its bytes, and one forge lacks is named
     let read = json_result(chain, thread, "q_side");
-    assert_eq!(read["reply"]["Log"]["tip"], json!(side), "{read}");
+    assert_eq!(read["reply"]["log"]["tip"], json!(side), "{read}");
     let gone = refusal(chain, thread, "q_gone");
     assert!(gone.contains("no ref refs/heads/gone"), "{gone}");
 
     let merged = json_result(chain, thread, "c_merge");
-    let reply = &merged["returned"]["Merged"];
+    let reply = &merged["returned"]["merged"];
     assert_eq!(reply["oid"], json!(side), "{merged}");
     assert_eq!(reply["change"], json!(null), "{merged}");
     assert!(reply["height"].is_u64(), "{merged}");
@@ -459,9 +459,9 @@ fn a_forge_merge_reads_back_as_the_reply_forges_schema_names_for_it() {
         "{merged_main:?}"
     );
     let shape = json_result(chain, thread, "s_forge");
-    assert_eq!(shape["returns"]["Merge"], json!("OpReply"));
-    assert!(shape["returns"].get("Push").is_none(), "{shape}");
-    let reply_shape = &shape["types"]["OpReply"]["enum"]["Merged"];
+    assert_eq!(shape["returns"]["merge"], json!("OpReply"));
+    assert!(shape["returns"].get("push").is_none(), "{shape}");
+    let reply_shape = &shape["types"]["OpReply"]["enum"]["merged"];
     assert!(reply_shape.is_object(), "{shape}");
 }
 
@@ -487,8 +487,8 @@ pub(super) fn served(chain: &MockChain) {
 }
 
 pub(super) fn pods_get(target: &str) -> Value {
-    json!({ "program": "egress", "op": { "Request": {
-        "request": { "Http": {
+    json!({ "program": "egress", "op": { "request": {
+        "request": { "http": {
             "service": PODS,
             "head": { "method": "Get", "target": target, "headers": [] },
             "body": [],
@@ -578,11 +578,11 @@ fn an_http_answer_egress_delivers_whole_reads_as_its_status_headers_and_body() {
 fn an_op_or_query_written_as_json_text_is_read_as_the_json_it_holds() {
     let world = schemed();
     let chain = &world.chain;
-    let query = json!({ "Channel": { "channel_id": "general" } }).to_string();
-    let op = json!({ "PostMessage": {
+    let query = json!({ "channel": { "channel_id": "general" } }).to_string();
+    let op = json!({ "post_message": {
         "channel_id": "general",
         "message_id": "net-text",
-        "blocks": [{ "Paragraph": [{ "text": "hello", "marks": [] }] }],
+        "blocks": [{ "paragraph": [{ "text": "hello", "marks": [] }] }],
         "thread": null,
     } })
     .to_string();
@@ -606,7 +606,7 @@ fn an_op_or_query_written_as_json_text_is_read_as_the_json_it_holds() {
     let thread = called(&world, &calls);
 
     let channel = json_result(chain, thread, "q_text");
-    assert_eq!(channel["reply"]["Channel"]["channel"]["name"], "general");
+    assert_eq!(channel["reply"]["channel"]["channel"]["name"], "general");
     assert_eq!(json_result(chain, thread, "c_text"), json!({ "ok": true }));
     let asked = chat::Query::MessageById {
         message_id: "net-text".into(),
@@ -616,7 +616,7 @@ fn an_op_or_query_written_as_json_text_is_read_as_the_json_it_holds() {
     };
     assert_eq!(posted.text, "hello");
     let head = json_result(chain, thread, "q_unit");
-    assert!(head["reply"]["Head"].is_object(), "{head}");
+    assert!(head["reply"]["head"].is_object(), "{head}");
 }
 
 // A world whose chat code tells of its ops and queries as founding packs it, beside files' code,
@@ -691,20 +691,20 @@ fn the_model_finds_a_program_unfolds_one_op_and_sends_its_example_edited() {
 
     let index = json_result(chain, thread, "d_chat");
     assert_eq!(index["about"], json!(told.about));
-    assert_eq!(index["ops"]["PostMessage"], json!(post));
-    assert!(index["queries"]["Roots"].is_string(), "{index}");
+    assert_eq!(index["ops"]["post_message"], json!(post));
+    assert!(index["queries"]["roots"].is_string(), "{index}");
     assert!(
         index.get("note").is_none() && index.get("types").is_none(),
         "{index}"
     );
     let plain = json_result(chain, thread, "d_files");
-    assert_eq!(plain["ops"]["Commit"], Value::Null, "{plain}");
+    assert_eq!(plain["ops"]["commit"], Value::Null, "{plain}");
     let note = plain["note"].as_str().unwrap();
     assert!(note.contains("describes none of its ops"), "{note}");
 
     let unfolded = json_result(chain, thread, "d_post");
     assert_eq!(unfolded["description"], json!(post));
-    let thread_field = &unfolded["shape"]["PostMessage"]["struct"]["thread"];
+    let thread_field = &unfolded["shape"]["post_message"]["struct"]["thread"];
     assert_eq!(*thread_field, json!({ "option": "u64" }), "{unfolded}");
     let types = unfolded["types"].as_object().unwrap();
     assert!(
@@ -714,17 +714,17 @@ fn the_model_finds_a_program_unfolds_one_op_and_sends_its_example_edited() {
     assert!(unfolded.get("returns").is_none(), "{unfolded}");
     let roots = json_result(chain, thread, "d_roots");
     assert!(roots["description"].is_string(), "{roots}");
-    assert!(roots["example"]["Roots"].is_object(), "{roots}");
+    assert!(roots["example"]["roots"].is_object(), "{roots}");
     assert!(roots["returns"].is_object(), "{roots}");
     let commit = json_result(chain, thread, "d_commit");
     assert!(commit.get("description").is_none(), "{commit}");
-    assert!(commit["example"]["Commit"].is_object(), "{commit}");
+    assert!(commit["example"]["commit"].is_object(), "{commit}");
     let returned = commit["returns"].as_str().unwrap();
     assert!(commit["types"][returned].is_object(), "{commit}");
 
     let mut example = unfolded["example"].clone();
-    example["PostMessage"]["channel_id"] = json!("general");
-    example["PostMessage"]["message_id"] = json!("from-example");
+    example["post_message"]["channel_id"] = json!("general");
+    example["post_message"]["message_id"] = json!("from-example");
     let send = json!({ "program": "chat", "op": example });
     turn(chain, 5, &[("c_example", "network_call", send)]);
     assert_eq!(
@@ -768,7 +768,7 @@ fn a_variant_the_program_lacks_or_a_mixed_ask_is_refused_with_what_there_is() {
     assert!(
         variant.starts_with(code::INVALID_INPUT)
             && variant.contains("program chat has no op Shout; its ops are ")
-            && variant.contains("PostMessage"),
+            && variant.contains("post_message"),
         "{variant}"
     );
     let side = refusal(chain, thread, "r_side");

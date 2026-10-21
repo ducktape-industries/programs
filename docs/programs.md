@@ -91,8 +91,11 @@ harness's `network_schema`, `network_query` and `network_call` speak any
 program's ops and queries as JSON through it. A byte field (`Vec<u8>`,
 `[u8; N]`) reads back as hex; an op or a query may write it as hex or as
 `{"utf8": "text"}`, the text's bytes, so a ref name or a path is written as
-itself (`{"Ref": {"utf8": "refs/heads/dev"}}`). A refusal names every field
-that is unknown, missing or wrong at once.
+itself (`{"ref": {"utf8": "refs/heads/dev"}}`). A refusal names every field
+that is unknown, missing or wrong at once. A variant is written by its name in
+snake_case (`RemoveChannelMeta` is `{"remove_channel_meta": …}`, the same
+bytes); while callers move over, an op or a query may still name one as Rust
+does, and a tool file's or a widget's path may name a reply's variant either way.
 
 **Each op that returns something says what.** An op's output
 (`ctx.set_return_data`) is bytes no type ties down, so `impl Program` names

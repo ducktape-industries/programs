@@ -34,8 +34,8 @@ fn chat_round_trips() {
         blocks: chat::parse_message("hi **all** <@3>\n\n- one\n- two"),
         thread: Some(4),
     });
-    assert_eq!(posted["PostMessage"]["channel_id"], "general");
-    assert_eq!(posted["PostMessage"]["thread"], 4);
+    assert_eq!(posted["post_message"]["channel_id"], "general");
+    assert_eq!(posted["post_message"]["thread"], 4);
     chat.op(&chat::Op::CreateChannel {
         channel_id: "c".into(),
         name: "c".into(),
@@ -54,9 +54,9 @@ fn chat_round_trips() {
     });
     assert_eq!(
         asked,
-        json!({ "TextSearch": {
+        json!({ "text_search": {
             "text": "hi",
-            "viewer": [{ "Account": 3 }, "Root"],
+            "viewer": [{ "account": 3 }, "root"],
             "channel_id": null,
             "page": { "after": null, "limit": 20 },
         } })
@@ -91,8 +91,8 @@ fn access_round_trips() {
         ])),
     });
     assert_eq!(
-        set["Set"]["list"],
-        json!({ "Listed": [{ "Account": 2 }, { "Program": "harness" }] })
+        set["set"]["list"],
+        json!({ "listed": [{ "account": 2 }, { "program": "harness" }] })
     );
     access.op(&access::Op::Set {
         program: "harness".into(),
@@ -132,15 +132,15 @@ fn files_round_trips() {
         ],
     });
     assert_eq!(
-        commit["Commit"]["base"],
-        json!({ "Sha256": "07".repeat(32) })
+        commit["commit"]["base"],
+        json!({ "sha256": "07".repeat(32) })
     );
     assert_eq!(
-        commit["Commit"]["changes"][0]["Put"]["meta"],
+        commit["commit"]["changes"][0]["put"]["meta"],
         json!([["mime", "text/markdown"]])
     );
     assert_eq!(
-        commit["Commit"]["changes"][1]["Mkdir"]["path"],
+        commit["commit"]["changes"][1]["mkdir"]["path"],
         json!("/shared/b")
     );
     files.op(&files::Op::Unpin { name: "v1".into() });
@@ -239,7 +239,7 @@ fn programs_round_trips() {
         height: 5,
         holder: Some(::programs::Holder::Vote),
     });
-    assert_eq!(programs.query(&::programs::Query::Roster), json!("Roster"));
+    assert_eq!(programs.query(&::programs::Query::Roster), json!("roster"));
     programs.query(&::programs::Query::Program("chat".into()));
     programs.reply(&::programs::Reply::Roles(::program::MockHost::roles()));
     programs.reply(&::programs::Reply::Roster {
@@ -488,7 +488,7 @@ fn harness_round_trips() {
     });
     let tools = harness.reply(&crate::Reply::Tools(crate::tools::infos()));
     assert_eq!(
-        tools["Tools"].as_array().map(Vec::len),
+        tools["tools"].as_array().map(Vec::len),
         Some(crate::tools::CATALOG.len())
     );
     harness.shapes();

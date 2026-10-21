@@ -4,7 +4,7 @@
 use borsh::schema::{BorshSchemaContainer, Declaration, Fields};
 use serde_json::{Map, Value, json};
 
-use super::{Fault, Kind, Length, Variants, kind, payload, unit_variant};
+use super::{Fault, Kind, Length, Variants, kind, named, payload, spelled, unit_variant};
 
 pub fn example<'s>(schema: &'s BorshSchemaContainer, declaration: &'s str) -> Result<Value, Fault> {
     let mut maker = Maker {
@@ -47,14 +47,16 @@ pub fn variant_example<'s>(
     let Kind::Enum { variants, .. } = kind(schema, declaration)? else {
         return Ok(None);
     };
-    let Some((_, _, body)) = variants.iter().find(|(_, variant, _)| variant == name) else {
+    let Some((_, variant, body)) = named(variants, name) else {
         return Ok(None);
     };
     let mut maker = Maker {
         schema,
         open: vec![declaration],
     };
-    let made = maker.variant(name, body).map_err(|stop| stop.fault(body))?;
+    let made = maker
+        .variant(variant, body)
+        .map_err(|stop| stop.fault(body))?;
     Ok(Some(made))
 }
 
@@ -168,14 +170,14 @@ impl<'s> Maker<'s> {
     fn variant(&mut self, name: &str, body: &'s str) -> Result<Value, Stop> {
         let fields = payload(self.schema, body);
         if unit_variant(fields) {
-            return Ok(json!(name));
+            return Ok(json!(spelled(name)));
         }
         let made = match fields {
             Some(fields) => self.fields(fields)?,
             None => self.value(body)?,
         };
         let mut object = Map::new();
-        object.insert(name.to_owned(), made);
+        object.insert(spelled(name), made);
         Ok(Value::Object(object))
     }
 }

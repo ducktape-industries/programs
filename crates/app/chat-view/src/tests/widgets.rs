@@ -1055,3 +1055,10 @@ fn export_job_pane_screens() {
     let listed = serde_json::to_vec_pretty(&manifest).unwrap();
     std::fs::write(out.join("pane-manifest.json"), listed).unwrap();
 }
+
+#[test]
+fn a_reply_path_names_a_variant_by_its_rust_name_or_in_snake_case() {
+    let reply = json!({ "jobs": { "items": [1, 2] } });
+    assert_eq!(widget::at(&reply, "Jobs.items"), Some(&json!([1, 2])));
+    assert_eq!(widget::at(&reply, "jobs.items"), Some(&json!([1, 2])));
+}

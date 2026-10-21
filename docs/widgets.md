@@ -23,9 +23,9 @@ title = "Board"                       # the card's or pane's heading, the side p
 
 [source]                              # one read-only query, asked as the reader
 program = "board"                     # a program's name
-query = { Jobs = { page = {} } }      # the query in the JSON shape network_schema gives
-rows = "Jobs.items"                   # the path in the reply of the list drawn ("" = the reply)
-cursor = "Jobs.page.after"            # optional: read every page, putting each reply's `next`
+query = { jobs = { page = {} } }      # the query in the JSON shape network_schema gives
+rows = "jobs.items"                   # the path in the reply of the list drawn ("" = the reply)
+cursor = "jobs.page.after"            # optional: read every page, putting each reply's `next`
                                       # (the field beside `rows`' list) at this path of the query
 
 [view]
@@ -68,7 +68,7 @@ channel id, opened in chat. No widget ever sends an op.
 ## The room, one row, and a file beside the source
 
 `{room}` is the open room's id, in templates and in the source query's strings, so one widget file
-named by many rooms asks about each room's own thing (`query = { JobIn = { channel = "{room}" } }`).
+named by many rooms asks about each room's own thing (`query = { job_in = { channel = "{room}" } }`).
 `rows` may name an object, which is one row, or null, which is none, as well as a list.
 
 ```toml

@@ -75,17 +75,17 @@ fn the_agents_text_is_put_as_a_part_and_an_egress_request_names_it_as_its_body()
     assert_eq!(put["blob"], format!("sha256:{digest}"));
     assert_eq!(put["size"], text.len());
     assert_eq!(put["kind"], "part");
-    assert_eq!(put["in_network_call"], json!({ "Sha256": digest }));
+    assert_eq!(put["in_network_call"], json!({ "sha256": digest }));
     let framed = ::blob::frame(PART, text.as_bytes()).unwrap();
     let recorded = ::blob::contract::Entry::of(&framed).unwrap();
-    let entry = json!({ "id": { "Sha256": digest }, "kind": PART, "len": recorded.len });
+    let entry = json!({ "id": { "sha256": digest }, "kind": PART, "len": recorded.len });
     assert_eq!(put["entry"], entry);
     assert_eq!(recorded.id, id);
     let held = chain.host(egress::PROGRAM).borrow().blobs[&id].clone();
     assert_eq!((held.kind.as_str(), held.body), (PART, text.into_bytes()));
 
-    let request = json!({ "program": "egress", "op": { "Request": {
-        "request": { "Http": {
+    let request = json!({ "program": "egress", "op": { "request": {
+        "request": { "http": {
             "service": PODS,
             "head": {
                 "method": "Post",
@@ -213,7 +213,7 @@ fn content_or_source_is_given_alone_and_the_hash_and_the_kind_are_the_networks()
     let git = "ce013625030ba8dba906f756967f9e9ca394464a";
     let sha1 = json_of(chain, thread, "p_sha1");
     assert_eq!(sha1["blob"], format!("sha1:{git}"));
-    assert_eq!(sha1["in_network_call"], json!({ "Sha1": git }));
+    assert_eq!(sha1["in_network_call"], json!({ "sha1": git }));
     let (words, failed) = result_of(chain, thread, "p_words");
     assert!(failed && words.starts_with(code::INVALID_INPUT), "{words}");
 }

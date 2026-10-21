@@ -161,22 +161,22 @@ Each one is an assumption from somewhere else, why it's wrong here, and what it 
 network_schema {}
 network_schema {"program": "tally"}
 network_schema {"program": "tally", "op": "Add"}
-network_query  {"program": "programs", "query": {"Sources": null}}
-network_query  {"program": "programs", "query": {"Program": "tally"}}
+network_query  {"program": "programs", "query": {"sources": null}}
+network_query  {"program": "programs", "query": {"program": "tally"}}
 ```
 
 What they answer for the example program, deployed under the id `probe-tally` (ids abridged):
 
 ```json
 {"about": "One count anyone adds to, kept per account and in total.",
- "ops": {"Add": "Add to the count as your own account. Any account may. Returns the new total."},
+ "ops": {"add": "Add to the count as your own account. Any account may. Returns the new total."},
  "program": "probe-tally",
- "queries": {"Added": "What one account has added in all.", "Total": "The total of every Add."}}
+ "queries": {"added": "What one account has added in all.", "total": "The total of every Add."}}
 
-{"Program": {"entry": {"code": {"Sha256": "a017908453ac…"}, "params": "", "program": "probe-tally"}, "height": 276734}}
+{"program": {"entry": {"code": {"sha256": "a017908453ac…"}, "params": "", "program": "probe-tally"}, "height": 276734}}
 
-{"code": {"Sha256": "a017908453ac…"}, "program": "probe-tally",
- "source": {"Commit": {"commit": "1ef9fbb4…", "repo": "programs"}}}
+{"code": {"sha256": "a017908453ac…"}, "program": "probe-tally",
+ "source": {"commit": {"commit": "1ef9fbb4…", "repo": "programs"}}}
 ```
 
 - `network_schema` with no program lists every program that runs, with what each is for. With a program, it gives each op and query and what it does. With an op or query, it gives the shape, an example, and the shape of what it returns. Those come from the `ducktape.schema` and `ducktape.tools` sections of the code that runs ([programs.md](programs.md) §2, "Describe").
@@ -360,7 +360,7 @@ by = { type = "integer", description = "how much to add" }
 
 [[step]]
 op = "tally"
-body = { Add = { by = "$by" } }
+body = { add = { by = "$by" } }
 as = "total"
 
 [returns]
@@ -407,27 +407,27 @@ ducktape blob put tally.wasm --kind program --wait
 ```
 
 ```json
-network_query {"program": "programs", "query": {"Program": "tally"}}
-network_call  {"program": "programs", "op": {"ScheduleOver": {"expected": {"Sha256": "<the code Program named>"}, "scheduled": {"height": <past tip + programs::NOTICE>, "change": {"Set": {"program": "tally", "code": {"Sha256": "<code id>"}, "params": ""}}}}}}
-network_query {"program": "programs", "query": {"Program": "tally"}}
-network_query {"program": "programs", "query": {"Sources": null}}
+network_query {"program": "programs", "query": {"program": "tally"}}
+network_call  {"program": "programs", "op": {"schedule_over": {"expected": {"sha256": "<the code Program named>"}, "scheduled": {"height": <past tip + programs::NOTICE>, "change": {"set": {"program": "tally", "code": {"sha256": "<code id>"}, "params": ""}}}}}}
+network_query {"program": "programs", "query": {"program": "tally"}}
+network_query {"program": "programs", "query": {"sources": null}}
 ```
 
-1. **Put the code.** `ducktape blob put --kind program --wait` uploads it, and returns once two thirds of the validators hold it. The programs role schedules only code the blobs role holds, of kind `program` ([roles.md](roles.md), "Updating a program"). An agent on harness puts the file with `blob_put` (kind `program`), which answers `entry`: the blob as a blobs Put names it, `{"id": {"Sha256": "<code id>"}, "kind": "program", "len": <framed length>}`. It sends blobs `{"Put": {"blobs": [<entry>]}}` with that entry as it is, and waits until blobs `{"Held": {"blob": ..}}` answers. `len` is the framed length, the code's size plus `program <size>` and its NUL, never the file's size: a bundle whose `len` is wrong is accepted and never held. For a 953,758-byte code, `len` is 953,773; the bundle was held within a block.
+1. **Put the code.** `ducktape blob put --kind program --wait` uploads it, and returns once two thirds of the validators hold it. The programs role schedules only code the blobs role holds, of kind `program` ([roles.md](roles.md), "Updating a program"). An agent on harness puts the file with `blob_put` (kind `program`), which answers `entry`: the blob as a blobs Put names it, `{"id": {"sha256": "<code id>"}, "kind": "program", "len": <framed length>}`. It sends blobs `{"put": {"blobs": [<entry>]}}` with that entry as it is, and waits until blobs `{"held": {"blob": ..}}` answers. `len` is the framed length, the code's size plus `program <size>` and its NUL, never the file's size: a bundle whose `len` is wrong is accepted and never held. For a 953,758-byte code, `len` is 953,773; the bundle was held within a block.
 2. **Read what runs.** `Program` names the code under the id now. Keep it: it is your way back.
 3. **Compare the interfaces.** `cargo run -p founding --bin schema-diff -- OLD NEW`, in the programs checkout, with OLD the running code (§10 fetches it) and NEW yours. `+` is an append that old bytes read the same, and `!` breaks what clients and stored ops hold. Stop at any `!`. ([README](../README.md), "Loop")
 4. **Schedule over what runs.** `ScheduleOver { expected, scheduled }` takes the change only while `expected` names what is under the id, both just before its height and once every change already waiting for that id has landed: the code step 2 read, or `null` for a new id. So two agents shipping one program from the same base can't both land: the second is refused `wrong_state`, naming what is really there or waiting. Stop and read when that happens, and never retry blindly. Plain `Schedule` (the same `Scheduled`, no `expected`) is the fallback only on a network whose programs role doesn't know `ScheduleOver` yet. A change lands no earlier than `programs::NOTICE` blocks after the block that carries the op, and a refusal names the first block it would take. Under an id that already runs, the code is swapped and the state, the account and the id stay. Under a new id, the program is admitted, its `init` gets `params`, and identity registers its account.
 5. **Check it landed.** Past the height, `Program` names your code id and `Sources` names your commit.
-6. **Roll back** the same way: `ScheduleOver` a `Set` of the code id you kept in step 2, with `expected` your own code id. A new program goes with `{"Remove": "tally"}`, expected your code id too. A removal drops the program's state and keeps its holder: a later `Set` of the same id admits it fresh, `init` and all, with nothing it kept before.
+6. **Roll back** the same way: `ScheduleOver` a `Set` of the code id you kept in step 2, with `expected` your own code id. A new program goes with `{"remove": "tally"}`, expected your code id too. A removal drops the program's state and keeps its holder: a later `Set` of the same id admits it fresh, `init` and all, with nothing it kept before.
 
-Who may change an id: its holder (`{"Owner": "tally"}`). A free id belongs to the first account that schedules it, and `Own` hands an id on. A program that fills a role changes only by the validators' vote, as a `Publish` with its roles ([roles.md](roles.md), "Updating a program"). A view alone is listed with `{"SetView": {"name": "tally", "view": {"Sha256": "<id>"}}}` and checked with `{"ViewsAt": {"at_height": <height>}}`.
+Who may change an id: its holder (`{"owner": "tally"}`). A free id belongs to the first account that schedules it, and `Own` hands an id on. A program that fills a role changes only by the validators' vote, as a `Publish` with its roles ([roles.md](roles.md), "Updating a program"). A view alone is listed with `{"set_view": {"name": "tally", "view": {"sha256": "<id>"}}}` and checked with `{"views_at": {"at_height": <height>}}`.
 
 ## 10. Take another network's release
 
 Another network may already run the fix you want. Its code is a blob anyone can read, and its id is its proof:
 
 ```sh
-ducktape --node <their node> query programs '{"Program": "forge"}'
+ducktape --node <their node> query programs '{"program": "forge"}'
 ducktape --node <their node> blob get <their code id> > forge.framed
 sha256sum forge.framed
 python3 -c 'import sys; b = sys.stdin.buffer.read(); sys.stdout.buffer.write(b[b.index(0) + 1:])' < forge.framed > forge.wasm
@@ -514,8 +514,8 @@ REPO=<repo> sh programs/tools/pack.sh --view <view crate> <program crate> OUT.wa
 cargo run -p founding --bin schema-diff -- OLD NEW               # in programs: + appends, ! breaks
 ducktape blob put OUT.wasm --kind program --wait                 # put, held
 ducktape blob get <id>                                           # framed bytes, from any node
-ducktape query programs '{"Program": "<id>"}'                    # what runs
-ducktape op programs '{"ScheduleOver": {"expected": .., "scheduled": {..}}}' --land   # swap at a height, over what runs
+ducktape query programs '{"program": "<id>"}'                    # what runs
+ducktape op programs '{"schedule_over": {"expected": .., "scheduled": {..}}}' --land   # swap at a height, over what runs
 ```
 
 ## 14. Traps

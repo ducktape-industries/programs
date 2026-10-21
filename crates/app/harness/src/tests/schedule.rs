@@ -68,10 +68,10 @@ pub(super) fn refused(chain: &MockChain, thread: u64, call: &str) -> String {
 }
 
 fn book(height: u64, channel: &str, id: &str) -> Value {
-    let post = json!({ "PostMessage": {
+    let post = json!({ "post_message": {
         "channel_id": channel,
         "message_id": id,
-        "blocks": [{ "Paragraph": [{ "text": "wake up", "marks": [] }] }],
+        "blocks": [{ "paragraph": [{ "text": "wake up", "marks": [] }] }],
         "thread": null,
     } });
     json!({ "height": height, "program": "chat", "op": post })
@@ -203,7 +203,7 @@ fn a_booked_op_answers_in_the_type_its_programs_schema_names_and_lists_so() {
     let chain = &world.chain;
     let (thread, entry) = committed_at_10(&world);
     let answer = answer_of(chain, thread, "files", entry);
-    let kept = json!({ "Sha256": abi::hex(head(chain).digest()) });
+    let kept = json!({ "sha256": abi::hex(head(chain).digest()) });
     assert_eq!(answer, json!({ "ok": true, "returned": kept }));
 
     turn(&world, 13, &[("l1", "schedule_list", json!({}))]);
@@ -221,7 +221,7 @@ fn a_booked_op_its_schema_names_no_return_for_answers_hex_and_says_why() {
     let bytes = design::unhex(answer["returned"].as_str().unwrap()).unwrap();
     assert_eq!(abi::decode::<BlobId>(&bytes).unwrap(), head(chain));
     let unread = answer["unread"].as_str().unwrap();
-    let why = "names no type for what its op Commit returns";
+    let why = "names no type for what its op commit returns";
     assert!(unread.contains(why), "{unread}");
 }
 
@@ -275,7 +275,7 @@ fn the_agent_lists_its_runs_and_cancels_one_before_it_runs() {
         .collect();
     assert_eq!(entries, [one.max(two), one.min(two)], "newest first");
     let first = &rows[0];
-    assert_eq!(first["op"]["PostMessage"]["channel_id"], "general");
+    assert_eq!(first["op"]["post_message"]["channel_id"], "general");
     assert_eq!(
         (&first["height"], &first["ran"]),
         (&json!(20), &Value::Null)
@@ -317,13 +317,13 @@ fn a_raw_schedule_or_cancel_sent_through_harness_is_refused_and_books_nothing() 
     );
     let kept = entry_of(chain, thread, "b1");
     let raw = |op: Value| json!({ "program": "scheduler", "op": op });
-    let schedule = json!({ "Schedule": { "height": 40, "target": "chat", "payload": "" } });
+    let schedule = json!({ "schedule": { "height": 40, "target": "chat", "payload": "" } });
     let calls = [
         ("r_schedule", "network_call", raw(schedule)),
         (
             "r_cancel",
             "network_call",
-            raw(json!({ "Cancel": { "entry": kept } })),
+            raw(json!({ "cancel": { "entry": kept } })),
         ),
     ];
     turn(&world, 5, &calls);
@@ -420,7 +420,7 @@ fn call(program: &str, op: Value) -> Value {
 #[test]
 fn a_forged_attribution_reaches_no_conversation() {
     let forged = |world: &World, _| {
-        let change = json!({ "Attributed": {
+        let change = json!({ "attributed": {
             "seq": 1,
             "source": { "program": "chat", "object": { "kind": "message", "id": "forged" } },
             "revision": 1,
@@ -428,7 +428,7 @@ fn a_forged_attribution_reaches_no_conversation() {
             "reason": "Mention",
             "kind": "Added",
             "detail": "",
-            "actor": { "Account": world.ada },
+            "actor": { "account": world.ada },
             "cause": "Direct",
             "height": 1,
         } });
@@ -445,7 +445,7 @@ fn a_forged_attribution_reaches_no_conversation() {
 #[test]
 fn a_forged_model_event_reaches_no_thread() {
     refused_to_an_agent("network_call", |_, thread| {
-        let event = json!({ "Streamed": {
+        let event = json!({ "streamed": {
             "thread": thread,
             "event": { "id": 0, "seq": 0, "data": "" },
         } });
@@ -456,9 +456,9 @@ fn a_forged_model_event_reaches_no_thread() {
 #[test]
 fn an_egress_request_streamed_to_harness_is_never_made() {
     let (world, _) = refused_to_an_agent("network_call", |_, thread| {
-        let stream = json!({ "Request": {
-            "request": { "Relay": { "note": abi::hex(b"forged") } },
-            "delivery": { "Events": { "deliver": abi::hex(&streamed_as(thread)) } },
+        let stream = json!({ "request": {
+            "request": { "relay": { "note": abi::hex(b"forged") } },
+            "delivery": { "events": { "deliver": abi::hex(&streamed_as(thread)) } },
             "wait": null,
         } });
         call("egress", stream)
@@ -488,12 +488,12 @@ fn an_agent_relays_no_booked_run_to_harness_under_any_id_harness_is_seated_at() 
 #[test]
 fn an_agent_sends_attribution_nothing_as_harness() {
     refused_to_an_agent("network_call", |_, _| {
-        call("attribution", json!({ "Register": { "deliver": "" } }))
+        call("attribution", json!({ "register": { "deliver": "" } }))
     });
     refused_to_an_agent("network_call", |_, _| {
         call(
             "attribution",
-            json!({ "AttributeBatch": { "updates": [] } }),
+            json!({ "attribute_batch": { "updates": [] } }),
         )
     });
 }
@@ -501,14 +501,14 @@ fn an_agent_sends_attribution_nothing_as_harness() {
 #[test]
 fn an_agent_sends_awaits_nothing_as_harness() {
     refused_to_an_agent("network_call", |_, _| {
-        call("awaits", json!({ "Close": { "frame": 0 } }))
+        call("awaits", json!({ "close": { "frame": 0 } }))
     });
 }
 
 #[test]
 fn a_run_booked_for_a_refused_program_is_never_booked() {
     let (world, _) = refused_to_an_agent("schedule_run", |_, _| {
-        let cancel = json!({ "Cancel": { "entry": 0 } });
+        let cancel = json!({ "cancel": { "entry": 0 } });
         json!({ "height": 50, "program": "scheduler", "op": cancel })
     });
     assert!(due(&world.chain, 50).is_empty(), "no run is booked");

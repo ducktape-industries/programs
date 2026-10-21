@@ -16,6 +16,7 @@ use std::fmt;
 use std::ops::RangeInclusive;
 
 use borsh::schema::{BorshSchemaContainer, Declaration, Definition, Fields};
+use serde_json::{Map, Value};
 
 pub use decode::decode;
 pub use encode::{encode, fits};
@@ -401,4 +402,54 @@ pub fn variants(schema: &BorshSchemaContainer, declaration: &str) -> Vec<String>
         }
         _ => Vec::new(),
     }
+}
+
+pub fn spelled(variant: &str) -> String {
+    let letters: Vec<char> = variant.chars().collect();
+    let mut written = String::new();
+    for (at, letter) in letters.iter().enumerate() {
+        let before = at
+            .checked_sub(1)
+            .and_then(|before| letters.get(before).copied());
+        if starts_word(before, *letter, letters.get(at + 1).copied()) {
+            written.push('_');
+        }
+        written.push(letter.to_ascii_lowercase());
+    }
+    written
+}
+
+fn starts_word(before: Option<char>, letter: char, after: Option<char>) -> bool {
+    let upper = letter.is_ascii_uppercase();
+    let lower_after = after.is_some_and(|after| after.is_ascii_lowercase());
+    match before {
+        Some(before) if before.is_ascii_lowercase() => upper,
+        Some(before) if before.is_ascii_digit() => upper,
+        Some(before) if before.is_ascii_uppercase() => upper & lower_after,
+        _ => false,
+    }
+}
+
+fn named<'v>(variants: &'v Variants, given: &str) -> Option<&'v (i64, String, Declaration)> {
+    let written = variants.iter().find(|(_, name, _)| spelled(name) == given);
+    written.or_else(|| variants.iter().find(|(_, name, _)| name == given))
+}
+
+fn spelled_all(variants: &Variants) -> Vec<String> {
+    variants.iter().map(|(_, name, _)| spelled(name)).collect()
+}
+
+pub fn variant_named(
+    schema: &BorshSchemaContainer,
+    declaration: &str,
+    given: &str,
+) -> Option<String> {
+    match kind(schema, declaration) {
+        Ok(Kind::Enum { variants, .. }) => named(variants, given).map(|(_, name, _)| name.clone()),
+        _ => None,
+    }
+}
+
+pub fn entry<'v>(fields: &'v Map<String, Value>, step: &str) -> Option<&'v Value> {
+    fields.get(step).or_else(|| fields.get(&spelled(step)))
 }

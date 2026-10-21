@@ -94,35 +94,35 @@ fn a_struct_is_an_object_a_newtype_its_value_a_tuple_struct_an_array_and_a_unit_
 
 #[test]
 fn an_enum_is_its_variants_name_alone_or_an_object_of_one_key() {
-    assert_eq!(json_of(&Shape::Empty), json!("Empty"));
+    assert_eq!(json_of(&Shape::Empty), json!("empty"));
     assert_eq!(
         json_of(&Shape::Point { x: -1, y: 2 }),
-        json!({ "Point": { "x": -1, "y": 2 } })
+        json!({ "point": { "x": -1, "y": 2 } })
     );
     assert_eq!(
         json_of(&Shape::Tagged("t".into())),
-        json!({ "Tagged": "t" })
+        json!({ "tagged": "t" })
     );
-    assert_eq!(json_of(&Shape::Both(1, 2)), json!({ "Both": [1, 2] }));
-    assert_eq!(json_of(&Sparse::First), json!("First"));
-    assert_eq!(json_of(&Sparse::Fifth(3)), json!({ "Fifth": 3 }));
-    assert_eq!(bytes_of::<Sparse>(json!({ "Fifth": 3 })).unwrap(), [5, 3]);
-    assert_eq!(bytes_of::<Shape>(json!({ "Empty": null })).unwrap(), [0]);
+    assert_eq!(json_of(&Shape::Both(1, 2)), json!({ "both": [1, 2] }));
+    assert_eq!(json_of(&Sparse::First), json!("first"));
+    assert_eq!(json_of(&Sparse::Fifth(3)), json!({ "fifth": 3 }));
+    assert_eq!(bytes_of::<Sparse>(json!({ "fifth": 3 })).unwrap(), [5, 3]);
+    assert_eq!(bytes_of::<Shape>(json!({ "empty": null })).unwrap(), [0]);
 }
 
 #[test]
 fn a_retired_tag_is_a_gap_that_neither_reads_nor_writes_and_the_tags_after_it_hold() {
     let open = Retiring::Open { name: "a".into() };
-    assert_eq!(json_of(&open), json!({ "Open": { "name": "a" } }));
+    assert_eq!(json_of(&open), json!({ "open": { "name": "a" } }));
     let push = Retiring::Push {
         repo: "r".into(),
         at: 7,
     };
-    assert_eq!(json_of(&push), json!({ "Push": { "repo": "r", "at": 7 } }));
+    assert_eq!(json_of(&push), json!({ "push": { "repo": "r", "at": 7 } }));
     assert_eq!(borsh::to_vec(&push).unwrap()[0], 3);
-    assert_eq!(json_of(&Retiring::Merge(9)), json!({ "Merge": 9 }));
+    assert_eq!(json_of(&Retiring::Merge(9)), json!({ "merge": 9 }));
     assert_eq!(
-        bytes_of::<Retiring>(json!({ "Merge": 9 })).unwrap(),
+        bytes_of::<Retiring>(json!({ "merge": 9 })).unwrap(),
         [4, 9, 0, 0, 0, 0, 0, 0, 0]
     );
     let schema = schema_of::<Retiring>();
@@ -135,7 +135,7 @@ fn a_retired_tag_is_a_gap_that_neither_reads_nor_writes_and_the_tags_after_it_ho
         matches!(retired, Err(Fault::Tag { tag: 1, .. })),
         "{retired:?}"
     );
-    let named = bytes_of::<Retiring>(json!({ "Grant": { "who": 1 } }));
+    let named = bytes_of::<Retiring>(json!({ "grant": { "who": 1 } }));
     assert!(
         matches!(named, Err(Fault::UnknownVariant { .. })),
         "{named:?}"
@@ -203,13 +203,13 @@ fn an_option_is_null_or_its_value_and_an_option_of_an_option_names_some() {
     assert_eq!(json_of(&Nested { maybe: None }), json!({ "maybe": null }));
     assert_eq!(
         json_of(&Nested { maybe: Some(None) }),
-        json!({ "maybe": { "Some": null } })
+        json!({ "maybe": { "some": null } })
     );
     assert_eq!(
         json_of(&Nested {
             maybe: Some(Some(4))
         }),
-        json!({ "maybe": { "Some": 4 } })
+        json!({ "maybe": { "some": 4 } })
     );
     let left_out = json!({ "count": 1, "label": "x" });
     assert!(bytes_of::<Named>(left_out).is_ok());
@@ -220,7 +220,7 @@ fn a_recursive_type_reads_to_any_depth_its_data_has() {
     let tree = Tree::Node(vec![Tree::Leaf(1), Tree::Node(vec![Tree::Leaf(2)])]);
     assert_eq!(
         json_of(&tree),
-        json!({ "Node": [{ "Leaf": 1 }, { "Node": [{ "Leaf": 2 }] }] })
+        json!({ "node": [{ "leaf": 1 }, { "node": [{ "leaf": 2 }] }] })
     );
 }
 
@@ -250,25 +250,25 @@ fn json_that_does_not_fit_the_schema_says_where_and_why() {
         })
     );
     assert_eq!(
-        bytes_of::<Shape>(json!("Circle")),
+        bytes_of::<Shape>(json!("circle")),
         Err(Fault::UnknownVariant {
             at: at("value"),
-            variant: "Circle".into(),
+            variant: "circle".into(),
             known: vec![
-                "Empty".into(),
-                "Point".into(),
-                "Tagged".into(),
-                "Both".into()
+                "empty".into(),
+                "point".into(),
+                "tagged".into(),
+                "both".into()
             ],
         })
     );
     assert!(matches!(
-        bytes_of::<Shape>(json!("Point")),
-        Err(Fault::Mismatch { at, .. }) if at == "value.Point"
+        bytes_of::<Shape>(json!("point")),
+        Err(Fault::Mismatch { at, .. }) if at == "value.point"
     ));
     assert!(matches!(
-        bytes_of::<Shape>(json!({ "Point": { "x": 1, "y": "two" } })),
-        Err(Fault::Mismatch { at, .. }) if at == "value.Point.y"
+        bytes_of::<Shape>(json!({ "point": { "x": 1, "y": "two" } })),
+        Err(Fault::Mismatch { at, .. }) if at == "value.point.y"
     ));
     assert_eq!(
         bytes_of::<Raw>(json!({
@@ -361,10 +361,10 @@ fn a_shape_names_structs_and_enums_and_writes_the_rest_inline() {
     assert_eq!(
         shape(&schema, &[("value", schema.declaration())], None).unwrap()["types"]["Shape"],
         json!({ "enum": {
-            "Empty": null,
-            "Point": { "struct": { "x": "i32", "y": "i32" } },
-            "Tagged": "string",
-            "Both": { "tuple": ["u8", "u8"] },
+            "empty": null,
+            "point": { "struct": { "x": "i32", "y": "i32" } },
+            "tagged": "string",
+            "both": { "tuple": ["u8", "u8"] },
         } })
     );
     let schema = schema_of::<Raw>();
@@ -383,7 +383,7 @@ fn a_shape_names_structs_and_enums_and_writes_the_rest_inline() {
     let schema = schema_of::<Tree>();
     assert_eq!(
         shape(&schema, &[("value", schema.declaration())], None).unwrap()["types"]["Tree"],
-        json!({ "enum": { "Leaf": "u8", "Node": { "vec": "Tree" } } })
+        json!({ "enum": { "leaf": "u8", "node": { "vec": "Tree" } } })
     );
 }
 
@@ -463,10 +463,10 @@ struct Deep {
 #[test]
 fn bytes_written_as_utf8_text_read_so_wherever_they_nest() {
     let by_text = json!({
-        "from": { "Name": { "utf8": "refs/heads/dev" } },
+        "from": { "name": { "utf8": "refs/heads/dev" } },
         "all": [
-            { "Id": "c1" },
-            { "Both": { "name": { "utf8": "it's \"x\"" }, "at": { "utf8": "main" } } },
+            { "id": "c1" },
+            { "both": { "name": { "utf8": "it's \"x\"" }, "at": { "utf8": "main" } } },
         ],
         "maybe": { "utf8": "🦆" },
         "pairs": [[{ "utf8": "a/b" }, { "utf8": "ok" }]],
@@ -504,8 +504,8 @@ fn an_example_is_a_value_the_codec_writes_and_reads_back_the_same() {
         written_back::<Named>(),
         json!({ "count": 0, "label": "", "note": null })
     );
-    assert_eq!(written_back::<Shape>(), json!("Empty"));
-    assert_eq!(written_back::<Sparse>(), json!("First"));
+    assert_eq!(written_back::<Shape>(), json!("empty"));
+    assert_eq!(written_back::<Sparse>(), json!("first"));
     assert_eq!(
         written_back::<Wide>(),
         json!({ "big": "0", "small": 0, "signed": "0", "ratio": 0.0 })
@@ -523,7 +523,7 @@ fn an_example_is_a_value_the_codec_writes_and_reads_back_the_same() {
         })
     );
     assert_eq!(written_back::<Nested>(), json!({ "maybe": null }));
-    assert_eq!(written_back::<Tree>(), json!({ "Leaf": 0 }));
+    assert_eq!(written_back::<Tree>(), json!({ "leaf": 0 }));
     written_back::<Deep>();
 }
 
@@ -533,15 +533,15 @@ fn every_variant_of_an_enum_has_an_example_and_one_that_holds_itself_holds_none(
     assert_eq!(
         examples(&schema, schema.declaration()).unwrap(),
         vec![
-            ("Empty".to_owned(), json!("Empty")),
-            ("Point".to_owned(), json!({ "Point": { "x": 0, "y": 0 } })),
-            ("Tagged".to_owned(), json!({ "Tagged": "" })),
-            ("Both".to_owned(), json!({ "Both": [0, 0] })),
+            ("Empty".to_owned(), json!("empty")),
+            ("Point".to_owned(), json!({ "point": { "x": 0, "y": 0 } })),
+            ("Tagged".to_owned(), json!({ "tagged": "" })),
+            ("Both".to_owned(), json!({ "both": [0, 0] })),
         ]
     );
     let schema = schema_of::<Tree>();
     let made = examples(&schema, schema.declaration()).unwrap();
-    assert_eq!(made[1], ("Node".to_owned(), json!({ "Node": [] })));
+    assert_eq!(made[1], ("Node".to_owned(), json!({ "node": [] })));
     for (_, value) in &made {
         encode(&schema, schema.declaration(), "value", value).unwrap();
     }
@@ -568,31 +568,31 @@ fn a_sequence_that_holds_itself_is_empty_in_an_example() {
 fn a_refusal_names_what_exists_and_what_was_given() {
     let said = |fault: Result<Vec<u8>, Fault>| fault.unwrap_err().to_string();
     assert_eq!(
-        said(bytes_of::<Shape>(json!("Circle"))),
-        "at value: there is no variant named Circle; the variants are Empty, Point, Tagged, Both"
+        said(bytes_of::<Shape>(json!("circle"))),
+        "at value: there is no variant named circle; the variants are empty, point, tagged, both"
     );
     let extra = json!({ "count": 1, "label": "x", "extra": 2 });
     assert_eq!(
         said(bytes_of::<Named>(extra)),
         "at value: there is no field extra; the fields are count, label, note"
     );
-    let point = json!({ "Point": { "x": 1, "y": "two" } });
+    let point = json!({ "point": { "x": 1, "y": "two" } });
     assert_eq!(
         said(bytes_of::<Shape>(point)),
-        "at value.Point.y: expected an integer, got the string \"two\""
+        "at value.point.y: expected an integer, got the string \"two\""
     );
     assert_eq!(
-        said(bytes_of::<Shape>(json!("Point"))),
-        "at value.Point: expected {\"Point\": value}, got the string \"Point\""
+        said(bytes_of::<Shape>(json!("point"))),
+        "at value.point: expected {\"point\": value}, got the string \"point\""
     );
     assert_eq!(
         said(bytes_of::<Named>(json!([1, "x"]))),
         "at value: expected an object, got an array of length 2"
     );
-    let two = json!({ "Point": 1, "Both": 2 });
+    let two = json!({ "point": 1, "both": 2 });
     assert_eq!(
         said(bytes_of::<Shape>(two)),
-        "at value: expected \"Variant\" or {\"Variant\": value}, got an object with keys Both, Point"
+        "at value: expected \"variant\" or {\"variant\": value}, got an object with keys both, point"
     );
 }
 
@@ -607,9 +607,9 @@ fn every_wrong_element_of_a_list_is_named_in_one_refusal() {
 
 #[test]
 fn json_written_out_as_a_string_reads_as_the_json_it_holds() {
-    let op = json!({ "Point": { "x": 1, "y": 2 } });
+    let op = json!({ "point": { "x": 1, "y": 2 } });
     assert_eq!(spoken(&json!(op.to_string())), op);
-    assert_eq!(spoken(&json!("Empty")), json!("Empty"));
+    assert_eq!(spoken(&json!("empty")), json!("empty"));
     assert_eq!(spoken(&json!(7)), json!(7));
     assert_eq!(unquoted(&json!("[1,2]")), Some(json!([1, 2])));
     assert_eq!(unquoted(&json!("7")), None);

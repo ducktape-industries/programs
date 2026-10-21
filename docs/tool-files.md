@@ -26,16 +26,16 @@ number = { type = "integer", description = "the change's number" }
 
 [[step]]                              # the steps run in order, as the calling agent
 query = "forge"                       # a query of program forge; `op = "forge"` sends an op
-body = { Change = { repo = "$repo", n = "$number", page = {} } }
+body = { change = { repo = "$repo", n = "$number", page = {} } }
 as = "change"                         # what later steps and `returns` call its answer
 
 [[step]]
 op = "forge"
-body = { SquashMerge = { repo = "$repo", change = "$number", from = "$change.Change.change.from", into = "$change.Change.change.into", expected_from = "$change.Change.source_head", expected_into = "$change.Change.target_head" } }
+body = { squash_merge = { repo = "$repo", change = "$number", from = "$change.change.change.from", into = "$change.change.change.into", expected_from = "$change.change.source_head", expected_into = "$change.change.target_head" } }
 as = "merged"
 
 [returns]                             # optional: the call's result
-text = "Merged #$number → $merged.Merged.oid"
+text = "Merged #$number → $merged.merged.oid"
 ```
 
 - `type` is a JSON Schema type: `string`, `integer`, `number`, `boolean`, `object` or `array`.
@@ -46,7 +46,7 @@ text = "Merged #$number → $merged.Merged.oid"
   `network_schema` gives. TOML has no null: leave an option field out.
 - A step's `as` holds a query's reply as `network_query` reads it, or what an op returns as
   `network_call` reads its `returned` (null when it returns nothing). Nothing is unwrapped: the
-  variant is part of the path (`$change.Change.source_head`).
+  variant is part of the path (`$change.change.source_head`).
 - With no `[returns]`, the result is every step's `as` as JSON.
 
 ## A step that calls an egress service
@@ -85,7 +85,7 @@ as = "read"
 
 ## `$`, the only thing harness fills in
 
-A string that is one reference alone (`"$number"`, `"$change.Change.source_head"`) becomes that
+A string that is one reference alone (`"$number"`, `"$change.change.source_head"`) becomes that
 value with its own JSON type, so an integer input stays an integer. A reference inside other text is
 written into it (a string as it is, anything else as JSON). A path walks object keys and array
 indexes (`$found.items.0.name`). `$$` is a dollar sign. There are no expressions, conditions or

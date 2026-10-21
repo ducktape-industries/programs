@@ -272,7 +272,7 @@ fn lookup<'b>(path: &[&str], bound: &'b Map<String, Value>) -> Result<&'b Value,
         .ok_or_else(|| format!("${} is not set", path[0]))?;
     for (depth, segment) in path.iter().enumerate().skip(1) {
         let below = match value {
-            Value::Object(fields) => fields.get(*segment),
+            Value::Object(fields) => borsh_json::entry(fields, segment),
             Value::Array(items) => segment.parse::<usize>().ok().and_then(|at| items.get(at)),
             _ => None,
         };

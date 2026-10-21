@@ -88,3 +88,14 @@ fn an_absent_optional_input_leaves_its_key_out_and_is_refused_inside_text_or_a_l
     let listed = filled(&json!(["$offset"]), &bound(), &absent).unwrap_err();
     assert_eq!(listed, "$offset is not set");
 }
+
+#[test]
+fn a_path_names_a_variant_by_its_rust_name_or_in_snake_case() {
+    let Value::Object(bound) = json!({ "merged": { "merged": { "oid": "ab" } } }) else {
+        unreachable!()
+    };
+    for path in ["$merged.Merged.oid", "$merged.merged.oid"] {
+        let said = filled(&json!(path), &bound, &BTreeSet::new()).unwrap();
+        assert_eq!(said, json!("ab"), "{path}");
+    }
+}

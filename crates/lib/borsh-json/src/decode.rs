@@ -2,7 +2,7 @@
 use borsh::schema::{BorshSchemaContainer, Declaration, Fields};
 use serde_json::{Map, Number, Value, json};
 
-use super::{At, Fault, Kind, Length, Variants, kind, payload, unit_variant};
+use super::{At, Fault, Kind, Length, Variants, kind, payload, spelled, unit_variant};
 
 pub fn decode(
     schema: &BorshSchemaContainer,
@@ -148,7 +148,7 @@ impl<'s> Reader<'s, '_> {
         let value = self.value(inner, at)?;
         let nested = kind(self.schema, inner)?.nullable();
         match nested {
-            true => Ok(json!({ "Some": value })),
+            true => Ok(json!({ "some": value })),
             false => Ok(value),
         }
     }
@@ -199,17 +199,18 @@ impl<'s> Reader<'s, '_> {
                 tag,
             });
         };
-        let here = at.field(name);
+        let written = spelled(name);
         let fields = payload(self.schema, declaration);
         if unit_variant(fields) {
-            return Ok(Value::String(name.clone()));
+            return Ok(Value::String(written));
         }
+        let here = at.field(&written);
         let body = match fields {
             Some(fields) => self.fields(fields, &here)?,
             None => self.value(declaration, &here)?,
         };
         let mut object = Map::new();
-        object.insert(name.clone(), body);
+        object.insert(written, body);
         Ok(Value::Object(object))
     }
 }

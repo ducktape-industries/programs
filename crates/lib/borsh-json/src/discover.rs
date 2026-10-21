@@ -4,16 +4,20 @@
 use std::collections::BTreeMap;
 
 use abi::role::egress::{self, http};
+use borsh::schema::BorshSchemaContainer;
 use serde_json::{Map, Value, json};
 
 use crate::tools::{Described, Told};
-use crate::{Fault, Interface, shape, variant_example, variant_shape, variants};
+use crate::{
+    Fault, Interface, decode, encode, shape, spelled, variant_example, variant_named,
+    variant_shape, variants,
+};
 
 pub const SCHEMA: &str = "network_schema";
 pub const QUERY: &str = "network_query";
 pub const CALL: &str = "network_call";
 
-pub const SCHEMA_DESCRIPTION: &str = "What a program's ops and queries are and how to write them, from the code it runs. With no program: every program that runs, each with what it is for (`about`). With a program alone: its index, `about` and each op and query by name with what it does. With a program and an `op` (or a `query`), a variant's name: what it does (`description`), an `example` to edit and send with network_call (or network_query), its `shape`, the shape of what it `returns` (what network_call reads an op's output as, a query's reply), and each type those name under `types`. With `whole`: every shape of the program at once (`op`, `query`, `reply`, `returns` and `types`). A shape is a type name; \"null\"; \"bool\"; \"string\"; an integer type such as \"u64\", written as a JSON number (u128 and i128 as decimal strings); \"hex\", bytes as hex ({\"hex\": N}: exactly N bytes), which an op or a query may also write as {\"utf8\": text} for bytes that are text, such as forge's ref names and paths (a reply always reads as hex); {\"option\": shape}, null or the value; {\"vec\": shape}, an array (with \"len\", exactly that many), and a map is a vec of [key, value] tuples; {\"tuple\": [shapes]}, an array; {\"struct\": {field: shape}}, an object, where a field that is an option may be left out; {\"enum\": {Variant: shape}}, one variant, written \"Variant\" when its shape is null and {\"Variant\": value} otherwise.";
+pub const SCHEMA_DESCRIPTION: &str = "What a program's ops and queries are and how to write them, from the code it runs. With no program: every program that runs, each with what it is for (`about`). With a program alone: its index, `about` and each op and query by name with what it does. With a program and an `op` (or a `query`), a variant's name: what it does (`description`), an `example` to edit and send with network_call (or network_query), its `shape`, the shape of what it `returns` (what network_call reads an op's output as, a query's reply), and each type those name under `types`. With `whole`: every shape of the program at once (`op`, `query`, `reply`, `returns` and `types`). A shape is a type name; \"null\"; \"bool\"; \"string\"; an integer type such as \"u64\", written as a JSON number (u128 and i128 as decimal strings); \"hex\", bytes as hex ({\"hex\": N}: exactly N bytes), which an op or a query may also write as {\"utf8\": text} for bytes that are text, such as forge's ref names and paths (a reply always reads as hex); {\"option\": shape}, null or the value; {\"vec\": shape}, an array (with \"len\", exactly that many), and a map is a vec of [key, value] tuples; {\"tuple\": [shapes]}, an array; {\"struct\": {field: shape}}, an object, where a field that is an option may be left out; {\"enum\": {variant: shape}}, one variant by its name in snake_case, written \"variant\" when its shape is null and {\"variant\": value} otherwise.";
 
 pub const QUERY_DESCRIPTION: &str = "Ask a program a query, written in the query shape network_schema gives for it (network_schema with the program and the query's name gives an example to edit), and read its reply in its reply shape. A query changes nothing. An answer that is not the program's reply comes back as its bytes in hex, with why it did not read.";
 
@@ -36,11 +40,11 @@ pub fn schema_input() -> Value {
             },
             "op": {
                 "type": "string",
-                "description": "one op of the program, by its variant's name, such as PostMessage"
+                "description": "one op of the program, by its variant's name, such as post_message"
             },
             "query": {
                 "type": "string",
-                "description": "one query of the program, by its variant's name, such as Roots"
+                "description": "one query of the program, by its variant's name, such as roots"
             },
             "whole": {
                 "type": "boolean",
@@ -183,7 +187,7 @@ pub fn index(program: &str, interface: &Interface, told: &Described) -> Value {
                 let description = group
                     .get(&name)
                     .map_or(Value::Null, |one| said(&one.description));
-                (name, description)
+                (spelled(&name), description)
             });
         Value::Object(each.collect())
     };
@@ -212,34 +216,40 @@ pub fn unfold(
 ) -> Result<Value, Refusal> {
     let schema = &interface.schema;
     let declaration = side.declaration(interface);
-    let known = variants(schema, declaration);
-    if !known.iter().any(|known| known == name) {
+    let Some(variant) = variant_named(schema, declaration, name) else {
+        let known: Vec<String> = variants(schema, declaration)
+            .iter()
+            .map(String::as_str)
+            .map(spelled)
+            .collect();
         return Err(Refusal::Asked(format!(
             "program {program} has no {} {name}; its {} are {}",
             side.word(),
             side.plural(),
             known.join(", ")
         )));
-    }
-    let told = side.told(told).get(name);
-    let (shape, mut types) = apart(variant_shape(schema, declaration, name).map_err(corrupt)?);
+    };
+    let told = side.told(told).get(&variant);
+    let (shape, mut types) = apart(variant_shape(schema, declaration, &variant).map_err(corrupt)?);
     let mut answer = Map::new();
     answer.insert("program".into(), json!(program));
-    answer.insert(side.word().into(), json!(name));
+    answer.insert(side.word().into(), json!(spelled(&variant)));
     if let Some(told) = told.filter(|told| !told.description.trim().is_empty()) {
         answer.insert("description".into(), json!(told.description));
     }
     let example = match told.and_then(|told| told.example.clone()) {
-        Some(example) => Some(example),
-        None => variant_example(schema, declaration, name).map_err(corrupt)?,
+        Some(example) => Some(respelled(schema, declaration, side.word(), example)),
+        None => variant_example(schema, declaration, &variant).map_err(corrupt)?,
     };
     if let Some(example) = example {
         answer.insert("example".into(), example);
     }
     answer.insert("shape".into(), shape);
     let returns = match side {
-        Side::Op => returned_by(interface, name)?,
-        Side::Query => told.and_then(|told| told.returns.clone()),
+        Side::Op => returned_by(interface, &variant)?,
+        Side::Query => told
+            .and_then(|told| told.returns.clone())
+            .map(|stored| reshaped(interface, stored)),
     };
     if let Some(returns) = returns {
         let (returns, reached) = apart(returns);
@@ -248,6 +258,28 @@ pub fn unfold(
     }
     answer.insert("types".into(), Value::Object(types));
     Ok(Value::Object(answer))
+}
+
+fn respelled(
+    schema: &BorshSchemaContainer,
+    declaration: &str,
+    root: &str,
+    example: Value,
+) -> Value {
+    let read = encode(schema, declaration, root, &example)
+        .and_then(|bytes| decode(schema, declaration, root, &bytes));
+    read.unwrap_or(example)
+}
+
+fn reshaped(interface: &Interface, stored: Value) -> Value {
+    let named = match &stored["returns"] {
+        Value::String(name) => Some(name.clone()),
+        Value::Object(one) if one.len() == 1 => one.keys().next().cloned(),
+        _ => None,
+    };
+    let fresh =
+        named.and_then(|name| variant_shape(&interface.schema, &interface.reply, &name).ok());
+    fresh.unwrap_or(stored)
 }
 
 fn returned_by(interface: &Interface, op: &str) -> Result<Option<Value>, Refusal> {

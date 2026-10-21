@@ -583,11 +583,11 @@ fn an_agent_queries_and_calls_a_program_through_the_schema_its_code_carries() {
         let (shape, failed) = result("toolu_s");
         assert!(!failed, "{shape}");
         let shape: Value = serde_json::from_str(&shape).unwrap();
-        assert_eq!(shape["types"]["Op"]["enum"]["PostMessage"]["struct"]["thread"], json!({ "option": "u64" }));
+        assert_eq!(shape["types"]["Op"]["enum"]["post_message"]["struct"]["thread"], json!({ "option": "u64" }));
         let (channel, failed) = result("toolu_q");
         assert!(!failed, "{channel}");
         let channel: Value = serde_json::from_str(&channel).unwrap();
-        assert_eq!(channel["reply"]["Channel"]["channel"]["name"], "general");
+        assert_eq!(channel["reply"]["channel"]["channel"]["name"], "general");
         let (posted, failed) = result("toolu_c");
         assert!(!failed, "{posted}");
         let asked = chat::Query::MessageById {
