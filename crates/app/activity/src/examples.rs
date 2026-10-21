@@ -1,6 +1,14 @@
-//! A working value of each activity query, as `#[tool_query]` names them: what an agent edits
-//! rather than build one from the schema.
-use crate::{PageRequest, Query};
+//! A working value of each activity op and query, as `#[tool_op]` and `#[tool_query]` name them:
+//! what an agent edits rather than build one from the schema.
+use crate::{Op, PageRequest, Query};
+
+pub(crate) fn migrate() -> Op {
+    Op::Migrate {
+        height: 300_000,
+        first: Some((21, "chat".into())),
+        last: None,
+    }
+}
 
 fn page() -> PageRequest {
     PageRequest {

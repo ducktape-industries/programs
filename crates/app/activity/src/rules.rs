@@ -33,6 +33,32 @@ pub(crate) fn keep(ctx: &ExecCtx, record: hook::Record) -> Result<(), Error> {
     Ok(())
 }
 
+pub(crate) fn migrate(
+    ctx: &ExecCtx,
+    height: u64,
+    first: Option<(AccountNumber, ProgramId)>,
+    last: Option<(AccountNumber, ProgramId)>,
+) -> Result<(), Error> {
+    let renamed = ctx.renames(height)?;
+    let mut range = USED.prefix_of(&());
+    if let Some(first) = first {
+        range.start = USED.key(&first);
+    }
+    if let Some(last) = last {
+        range.end = Some([USED.key(&last), vec![0]].concat());
+    }
+    for ((account, program), frames) in USED.scan(ctx, range)? {
+        let Some(to) = renamed.moved(&program) else {
+            continue;
+        };
+        let moved = (account, to.clone());
+        USED.remove(ctx, &(account, program));
+        let counted_since = USED.get(ctx, &moved)?.unwrap_or(0);
+        USED.put(ctx, &moved, &(counted_since + frames));
+    }
+    Ok(())
+}
+
 pub(crate) fn unkept(what: &str) -> Error {
     Error::new(
         code::UNSUPPORTED,

@@ -304,7 +304,11 @@ traps, runs out of fuel or emits a message keeps none of its writes, and
 the block goes on. `activity` (`crates/app/activity`) is the hook this
 repo founds: it keeps the frames each account acted in, newest first, and
 how many each account sent each program. Every frame, and every frame by
-signing key, is the node's to list (`/v1/blocks`, `/v1/activity`).
+signing key, is the node's to list (`/v1/blocks`, `/v1/activity`). Its
+one op, `Migrate { height, first, last }`, is anyone's: it moves each
+renamed program's counts to its new id by the programs role's
+`Renames(height)` ("Renaming a program"), and each frame's record keeps the
+id it called.
 
 Who may schedule or cancel (putting a blob is open to any account):
 

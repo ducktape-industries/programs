@@ -16,7 +16,20 @@ use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
 pub const PROGRAM: &str = "activity";
 
-pub type Op = ();
+#[derive(
+    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
+)]
+#[tool_about(
+    "The frames each account acted in, newest first, and how many it sent each program, as the kernel tells it. Every frame, and every frame by signing key, is the node's to list (/v1/blocks, /v1/activity). Its one op follows a program rename."
+)]
+pub enum Op {
+    #[tool_op(description = "Move each renamed program's frame counts (the programs role's Renames at height) to its new id, added to what it has counted there since, over the counts first..=last (each [account, program]; null: from the first, or to the last). Each frame's own record keeps the id it called. Anyone: it reads the renames from the programs role, never from its sender, so running it again changes nothing.", example = examples::migrate)]
+    Migrate {
+        height: u64,
+        first: Option<(AccountNumber, ProgramId)>,
+        last: Option<(AccountNumber, ProgramId)>,
+    },
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Frame {
@@ -46,9 +59,6 @@ pub struct Used {
     ::program::Ask,
     ::program::Described,
 )]
-#[tool_about(
-    "The frames each account acted in, newest first, and how many it sent each program, as the kernel tells it. Every frame, and every frame by signing key, is the node's to list (/v1/blocks, /v1/activity). It takes no op."
-)]
 #[ask(Activity)]
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
@@ -73,11 +83,33 @@ pub enum Reply {
     Used(PageResponse<Used>),
 }
 
-pub fn describe(_op: &Op) -> describe::Description {
-    describe::Description {
-        title: "Nothing: activity takes no op".into(),
-        fields: Vec::new(),
+pub fn describe(op: &Op) -> describe::Description {
+    use describe::{Value, field};
+    match op {
+        Op::Migrate {
+            height,
+            first,
+            last,
+        } => {
+            let bound = |bound: &Option<(AccountNumber, ProgramId)>, open: &str| match bound {
+                Some((account, program)) => Value::Text(format!("{account} {program}")),
+                None => Value::Text(open.into()),
+            };
+            describe::Description {
+                title: "Migrate".into(),
+                fields: vec![
+                    field("height", Value::Text(height.to_string())),
+                    field("first", bound(first, "the first")),
+                    field("last", bound(last, "the last")),
+                ],
+            }
+        }
     }
 }
 
 describe::export!(Op, describe);
+
+#[test]
+fn op_variants_only_append() {
+    assert_eq!(describe::variants::<Op>(), ["Migrate"]);
+}

@@ -1,8 +1,8 @@
 //! The program: every frame the kernel tells it of, and every query, each handed to its rule.
 
-use ::program::{Error, ExecCtx, Program, QueryCtx, code, hook};
+use ::program::{Error, ExecCtx, Program, QueryCtx, hook};
 
-use crate::rules::{acted, keep, unkept, used};
+use crate::rules::{acted, keep, migrate, unkept, used};
 use crate::{Op, PROGRAM, Query, Reply};
 
 pub struct Activity;
@@ -17,11 +17,14 @@ impl Program for Activity {
         ::program::tools::Tools::of::<Op, Query>()
     }
 
-    fn execute(_ctx: &ExecCtx, (): Op) -> Result<(), Error> {
-        Err(Error::new(
-            code::UNSUPPORTED,
-            "activity takes no op: the kernel tells it of each frame",
-        ))
+    fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
+        match op {
+            Op::Migrate {
+                height,
+                first,
+                last,
+            } => migrate(ctx, height, first, last),
+        }
     }
 
     fn hook(ctx: &ExecCtx, record: hook::Record) -> Result<(), Error> {
