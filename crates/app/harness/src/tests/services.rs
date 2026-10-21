@@ -493,29 +493,6 @@ fn a_route_lists_its_services_in_order_once_each() {
 }
 
 #[test]
-fn reading_a_services_status_is_retired_and_always_refused() {
-    let world = world();
-    let chain = &world.chain;
-    two_services(&world);
-    let one = Op::ReadBudget {
-        service: SERVICE.into(),
-    };
-    for op in [one, Op::ReadBudgets] {
-        let error = chain.submit(signed(BO), PROGRAM, &op).unwrap_err();
-        assert_eq!(error.code, code::INVALID_INPUT, "{op:?}");
-        let said = "an idle account's windows are its service's own page";
-        assert!(error.message.contains(said), "{}", error.message);
-        assert!(describe(&op).title.starts_with("Retired, always refused: "));
-    }
-    for service in [SERVICE, TWO] {
-        assert!(
-            assigned(chain, service).is_empty(),
-            "nothing asks {service}"
-        );
-    }
-}
-
-#[test]
 fn a_pin_reads_from_the_front_matter_and_leaves_the_config_as_it_was() {
     let text = md(&scout()).replace(
         "max_tokens = 1024\n",

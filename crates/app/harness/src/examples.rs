@@ -2,8 +2,6 @@
 //! `#[tool_query]` name them; the ops other programs deliver take the example the schema makes.
 use crate::{Op, PageRequest, Place, Query, Wire};
 
-const MODEL: &str = "claude-opus-5-5";
-
 fn page() -> PageRequest {
     PageRequest {
         after: None,
@@ -13,19 +11,6 @@ fn page() -> PageRequest {
 
 pub(crate) fn close() -> Op {
     Op::Close { thread: 144 }
-}
-
-pub(crate) fn set_model() -> Op {
-    Op::SetModel {
-        id: MODEL.into(),
-        wire: Wire::AnthropicMessages,
-        service: "anthropic".into(),
-        name: MODEL.into(),
-    }
-}
-
-pub(crate) fn remove_model() -> Op {
-    Op::RemoveModel { id: MODEL.into() }
 }
 
 pub(crate) fn new_thread() -> Op {
@@ -62,19 +47,6 @@ pub(crate) fn resume() -> Op {
     Op::Resume { thread: 144 }
 }
 
-pub(crate) fn set_compact_at() -> Op {
-    Op::SetCompactAt {
-        id: MODEL.into(),
-        compact_at: Some(650000),
-    }
-}
-
-pub(crate) fn read_budget() -> Op {
-    Op::ReadBudget {
-        service: "anthropic".into(),
-    }
-}
-
 pub(crate) fn unwait() -> Op {
     Op::Unwait { wait: 42 }
 }
@@ -89,17 +61,6 @@ pub(crate) fn adopt() -> Op {
         after: None,
         limit: 100,
     }
-}
-
-pub(crate) fn set_services() -> Op {
-    Op::SetServices {
-        id: MODEL.into(),
-        services: vec!["anthropic".into()],
-    }
-}
-
-pub(crate) fn read_budgets() -> Op {
-    Op::ReadBudgets
 }
 
 pub(crate) fn agent() -> Query {
@@ -144,14 +105,6 @@ pub(crate) fn thread_at() -> Query {
         agent: 21,
         place: "chat/j-111".into(),
     }
-}
-
-pub(crate) fn model() -> Query {
-    Query::Model { id: MODEL.into() }
-}
-
-pub(crate) fn models() -> Query {
-    Query::Models { page: page() }
 }
 
 pub(crate) fn withheld() -> Query {
@@ -237,12 +190,6 @@ pub(crate) fn armed() -> Query {
 
 pub(crate) fn card() -> Query {
     Query::Card { agent: 21 }
-}
-
-pub(crate) fn services() -> Query {
-    Query::Services {
-        model: MODEL.into(),
-    }
 }
 
 pub(crate) fn route() -> Query {

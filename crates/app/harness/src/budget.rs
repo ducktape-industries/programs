@@ -1,7 +1,7 @@
 //! The model budget: each model account's usage windows, from its answers, how often harness
 //! called each service in the last whole minute, and when each window runs out at the pace it
 //! climbed at.
-use ::program::{Error, ExecCtx, QueryCtx, invalid};
+use ::program::{Error, ExecCtx, QueryCtx};
 use abi::role::egress::http;
 use model_wire::budget as harness_words;
 
@@ -36,12 +36,6 @@ pub(crate) fn millionths(text: &str) -> Option<u64> {
         used += u64::from(byte - b'0') * unit;
     }
     Some(used)
-}
-
-pub(crate) fn status_reads_retired() -> Error {
-    invalid(
-        "reading a service's status is retired: each model answer names its account's usage windows, and an idle account's windows are its service's own page",
-    )
 }
 
 fn named<'a>(response: &'a http::Response, name: &str) -> Option<&'a str> {

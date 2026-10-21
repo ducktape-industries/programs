@@ -327,8 +327,6 @@ pub(crate) fn read_at(configured: &Configured) -> String {
     match configured {
         Configured::Unreadable { .. } => "read at each model call".to_owned(),
         Configured::Malformed { snapshot, .. }
-        | Configured::UnknownModel { snapshot, .. }
-        | Configured::Ready { snapshot, .. }
         | Configured::Routed { snapshot, .. }
         | Configured::NoRoute { snapshot, .. }
         | Configured::Unprovided { snapshot, .. } => {
@@ -365,7 +363,7 @@ pub(crate) fn wait_words(wait: Option<u64>) -> String {
 
 pub(crate) fn configured_words(configured: &Configured) -> String {
     match configured {
-        Configured::Ready { .. } | Configured::Routed { .. } => "Ready".to_owned(),
+        Configured::Routed { .. } => "Ready".to_owned(),
         Configured::Unprovided { .. } => {
             "No provider: it names none, so harness asks no model; pick one in its front matter"
                 .to_owned()
@@ -373,10 +371,6 @@ pub(crate) fn configured_words(configured: &Configured) -> String {
         Configured::NoRoute { provider, .. } => {
             format!("No route: it names provider {provider}, which harness keeps no route for")
         }
-        Configured::UnknownModel { config, .. } => format!(
-            "Unknown model: it names {}, which harness keeps no record of",
-            config.model
-        ),
         Configured::Malformed { malformed, .. } => format!("Malformed: {malformed}"),
         Configured::Unreadable { reason } => format!("Unreadable: {reason}"),
     }
@@ -440,9 +434,7 @@ pub(crate) fn prompt_words(configured: &Configured) -> String {
 
 pub(crate) fn prompt(configured: &Configured) -> Result<&str, &'static str> {
     match configured {
-        Configured::Ready { config, .. }
-        | Configured::UnknownModel { config, .. }
-        | Configured::Routed { config, .. }
+        Configured::Routed { config, .. }
         | Configured::NoRoute { config, .. }
         | Configured::Unprovided { config, .. } => Ok(&config.system),
         Configured::Unreadable { .. } | Configured::Malformed { .. } => {

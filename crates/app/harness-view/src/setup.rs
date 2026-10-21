@@ -156,8 +156,6 @@ fn provider_of(configured: &Configured) -> Option<String> {
         }
         Configured::Unreadable { .. }
         | Configured::Malformed { .. }
-        | Configured::UnknownModel { .. }
-        | Configured::Ready { .. }
         | Configured::Unprovided { .. } => None,
     }
 }

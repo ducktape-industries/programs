@@ -22,15 +22,6 @@ pub(crate) fn settling(ctx: &QueryCtx, thread: u64) -> Result<Option<SettleWindo
     SETTLING.get(ctx, &thread)
 }
 
-// a page of nothing, for a retired listing
-pub(crate) fn none<T>(ctx: &QueryCtx) -> PageResponse<T> {
-    PageResponse {
-        height: ctx.env().height,
-        items: Vec::new(),
-        next: None,
-    }
-}
-
 pub(crate) fn thread(ctx: &QueryCtx, id: u64) -> Result<Option<ThreadRow>, Error> {
     THREADS.get(ctx, &id)
 }

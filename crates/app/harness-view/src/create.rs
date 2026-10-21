@@ -347,8 +347,6 @@ pub(crate) fn base_of(configured: &Configured) -> Option<[u8; 32]> {
     let snapshot = match configured {
         Configured::Unreadable { .. } => None,
         Configured::Malformed { snapshot, .. }
-        | Configured::UnknownModel { snapshot, .. }
-        | Configured::Ready { snapshot, .. }
         | Configured::Routed { snapshot, .. }
         | Configured::NoRoute { snapshot, .. }
         | Configured::Unprovided { snapshot, .. } => Some(*snapshot),

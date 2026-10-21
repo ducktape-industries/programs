@@ -113,9 +113,3 @@ pub(crate) fn remove_route(ctx: &ExecCtx, provider: String) -> Result<(), Error>
     PROVIDER_ROUTES.remove(ctx, &provider);
     Ok(())
 }
-
-pub(crate) fn retired() -> Error {
-    invalid(
-        "model records are retired: an agent's configuration names its vendor's model and its provider (model = \"claude-opus-5-5\" and provider = \"anthropic\"), and the provider's route (SetRoute) names the services that reach it",
-    )
-}

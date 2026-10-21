@@ -66,6 +66,8 @@ pub const PART: &str = "part";
 #[tool_about(
     "Agents that consensus runs: each agent's conversations (threads) with its model, the routes harness reaches each provider's models through egress by, the runs agents book, and the waits that wake them. An agent is a program account whose script calls harness and names its configuration file in files."
 )]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Op {
     #[tool_op(description = "Close a conversation; it stays readable. Its agent's manager, or whom the manager lists; a conversation bound to a place (OpenThread) anyone may close. Closing one already closed is refused as wrong_state, whoever asks.", example = examples::close)]
     Close { thread: u64 },
@@ -73,19 +75,10 @@ pub enum Op {
         description = "From attribution only (and harness itself for one it held back): a change about an agent, such as a mention, a direct message or a reply in its thread, which reaches its conversation when the agent's list allows the author."
     )]
     Attributed(Box<Change>),
-    #[tool_op(description = "Retired: an agent's configuration names its vendor's model and its provider, and SetRoute names the services that reach the provider, so it is always refused.", example = examples::set_model)]
-    SetModel {
-        id: String,
-        wire: Wire,
-        service: String,
-        name: String,
-    },
-    #[tool_op(description = "Retired with SetModel: always refused.", example = examples::remove_model)]
-    RemoveModel { id: String },
     #[tool_op(
         description = "From the program bound to the egress role only: one event of a model's streamed reply for a conversation waiting on it."
     )]
-    Streamed { thread: u64, event: Event },
+    Streamed { thread: u64, event: Event } = 4,
     #[tool_op(description = "Start a fresh conversation for an agent, which becomes its current one. Its manager, or whom its conversation list allows. Returns the conversation's id.", returns = u64, example = examples::new_thread)]
     NewThread { agent: AccountNumber },
     #[tool_op(description = "Start a conversation that begins from the agent's current one (its frames, summary included), which becomes current. Its manager, or whom its conversation list allows. Returns the conversation's id.", returns = u64, example = examples::fork_thread)]
@@ -119,12 +112,8 @@ pub enum Op {
         description = "From the program bound to the egress role only: one event of a watched tool call's stream."
     )]
     Heard { watch: u64, event: Event },
-    #[tool_op(description = "Retired with SetModel: an agent's configuration names its own compact_at, so it is always refused.", example = examples::set_compact_at)]
-    SetCompactAt { id: String, compact_at: Option<u64> },
-    #[tool_op(description = "Retired: an idle account's windows are its service's own page; always refused.", example = examples::read_budget)]
-    ReadBudget { service: String },
     #[tool_op(description = "As an agent harness runs: wake thread once when the event happens (a height, a pod ending, a chat message, a forge change or ref, a files path). Returns the wait's id.", returns = u64)]
-    Wait { thread: u64, event: WaitFor },
+    Wait { thread: u64, event: WaitFor } = 18,
     #[tool_op(description = "Cancel an open wait. The agent that made it.", example = examples::unwait)]
     Unwait { wait: u64 },
     #[tool_op(description = "Harness's own scheduled entry only: a wait for a height comes due.")]
@@ -148,13 +137,9 @@ pub enum Op {
         after: Option<Vec<u8>>,
         limit: u64,
     },
-    #[tool_op(description = "Retired with SetModel: SetRoute names the services that reach a provider, so it is always refused.", example = examples::set_services)]
-    SetServices { id: String, services: Vec<String> },
-    #[tool_op(description = "Retired: an idle account's windows are its service's own page; always refused.", example = examples::read_budgets)]
-    ReadBudgets,
     // a commit files made, told to harness while a wait for a files path is open
     #[tool_op(description = "From files only: a commit, for the waits on a files path.")]
-    Filed(files::SnapshotRow),
+    Filed(files::SnapshotRow) = 28,
     #[tool_op(description = "Set every egress service, in order and each with the wire it speaks, that reaches a provider's models: an agent whose configuration names the provider (provider = \"anthropic\") is reached through them. The first account to set a provider's route owns it; after that its owner, or whom the owner lists.", example = examples::set_route)]
     SetRoute {
         provider: String,
@@ -230,17 +215,6 @@ impl Window {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
-pub struct ModelRow {
-    pub id: String,
-    pub owner: AccountNumber,
-    pub wire: Wire,
-    pub service: String,
-    pub name: String,
-    pub window: Window,
-    pub compact_at: Option<u64>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct RouteService {
     pub service: String,
     pub wire: Wire,
@@ -295,6 +269,8 @@ pub struct Spoken {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Configured {
     Unreadable {
         reason: String,
@@ -303,22 +279,13 @@ pub enum Configured {
         snapshot: BlobId,
         malformed: Malformed,
     },
-    UnknownModel {
-        snapshot: BlobId,
-        config: Config,
-    },
-    Ready {
-        snapshot: BlobId,
-        config: Config,
-        model: ModelRow,
-    },
     Routed {
         snapshot: BlobId,
         config: Config,
         provider: String,
         route: Vec<RouteService>,
         window: Window,
-    },
+    } = 4,
     NoRoute {
         snapshot: BlobId,
         config: Config,
@@ -339,27 +306,19 @@ impl Configured {
             Configured::Malformed { malformed, .. } => Some(format!(
                 "the agent's configuration {path} is malformed: {malformed}"
             )),
-            Configured::UnknownModel { config, .. } => Some(format!(
-                "the agent's configuration {path} names model {}, which harness has no record of",
-                config.model
-            )),
             Configured::NoRoute { provider, .. } => Some(format!(
                 "the agent's configuration {path} names provider {provider}, which harness has no route for"
             )),
             Configured::Unprovided { .. } => Some(format!(
                 "the agent's configuration {path} names no provider: add a line like provider = \"anthropic\", whose route reaches its model"
             )),
-            Configured::Ready { .. } | Configured::Routed { .. } => None,
+            Configured::Routed { .. } => None,
         }
     }
 
     pub fn config(&self) -> Option<(BlobId, &Config)> {
         match self {
-            Configured::UnknownModel { snapshot, config }
-            | Configured::Ready {
-                snapshot, config, ..
-            }
-            | Configured::Routed {
+            Configured::Routed {
                 snapshot, config, ..
             }
             | Configured::NoRoute {
@@ -973,6 +932,8 @@ pub enum Wake {
     ::program::Described,
 )]
 #[ask(Harness)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Query {
     #[ask(Reply::Agent(Option<AgentSetup>))]
     #[tool_query(description = "What harness resolves for an agent: its manager, standing, config path, the config and its model or what is wrong with them, and its current conversation.", example = examples::agent)]
@@ -1007,16 +968,10 @@ pub enum Query {
     #[reads(state::PLACES, state::THREADS)]
     #[tool_query(description = "The conversation an agent's input from a place (chat/<channel> or chat/<channel>/<root>) last reached.", example = examples::thread_at)]
     ThreadAt { agent: AccountNumber, place: String },
-    #[ask(Reply::Model(Option<ModelRow>))]
-    #[tool_query(description = "Retired with SetModel: answers null.", example = examples::model)]
-    Model { id: String },
-    #[ask(Reply::Models(PageResponse<ModelRow>))]
-    #[tool_query(description = "Retired with SetModel: answers no record.", example = examples::models)]
-    Models { page: PageRequest },
     #[ask(Reply::Withheld(Vec<WithheldFrame>))]
     #[reads(state::WITHHELD, state::FRAMES)]
     #[tool_query(description = "The inputs left out of a conversation's model view because the request was too long, by frame.", example = examples::withheld)]
-    Withheld { thread: u64 },
+    Withheld { thread: u64 } = 10,
     #[ask(Reply::Partial(Option<Partial>))]
     #[reads(state::PARTIALS, state::PIECES)]
     #[tool_query(description = "The reply a model is streaming into a conversation now, or null.", example = examples::partial)]
@@ -1092,13 +1047,10 @@ pub enum Query {
     #[ask(Reply::Agent(Option<AgentSetup>))]
     #[tool_query(description = "Agent, with the system prompt left out: what a list of agents needs of each.", example = examples::card)]
     Card { agent: AccountNumber },
-    #[ask(Reply::Services(Option<Vec<String>>))]
-    #[tool_query(description = "Retired with SetModel: answers null; ProviderRoute names a provider's services.", example = examples::services)]
-    Services { model: String },
     #[ask(Reply::Route(Option<Route>))]
     #[reads(state::ROUTES)]
     #[tool_query(description = "The service and account a conversation's model calls go to, or null.", example = examples::route)]
-    Route { thread: u64 },
+    Route { thread: u64 } = 27,
     #[ask(Reply::Routes(PageResponse<Routed>))]
     #[reads(state::ROUTES)]
     #[tool_query(description = "Every conversation's route.", example = examples::routes)]
@@ -1161,6 +1113,8 @@ pub enum Query {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Reply {
     Agent(Option<AgentSetup>),
     Thread(Option<ThreadRow>),
@@ -1169,9 +1123,7 @@ pub enum Reply {
     Held(Vec<Body>),
     Calls(PageResponse<CallRow>),
     Tools(Vec<ToolInfo>),
-    Model(Option<ModelRow>),
-    Models(PageResponse<ModelRow>),
-    Withheld(Vec<WithheldFrame>),
+    Withheld(Vec<WithheldFrame>) = 9,
     Partial(Option<Partial>),
     Topic(Option<String>),
     Tally(Tally),
@@ -1183,8 +1135,7 @@ pub enum Reply {
     Budget(BudgetReport),
     Waits(PageResponse<WaitRow>),
     Wait(Option<WaitRow>),
-    Services(Option<Vec<String>>),
-    Route(Option<Route>),
+    Route(Option<Route>) = 22,
     Routes(PageResponse<Routed>),
     Answerers(PageResponse<Answerer>),
     Wakes(Vec<Wake>),
@@ -1270,24 +1221,6 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Account {} is related to an object", change.recipient),
             vec![field("change", Value::count(change.seq))],
         ),
-        Op::SetModel {
-            id,
-            wire,
-            service,
-            name,
-        } => (
-            format!("Retired, always refused: set model · {id}"),
-            vec![
-                field("model", Value::text(id)),
-                field("wire", Value::text(wire.label())),
-                field("service", Value::text(service)),
-                field("vendor's name", Value::text(name)),
-            ],
-        ),
-        Op::RemoveModel { id } => (
-            format!("Retired, always refused: remove model · {id}"),
-            vec![field("model", Value::text(id))],
-        ),
         Op::NewThread { agent } => (
             format!("Start agent {agent}'s canonical conversation afresh"),
             vec![field("agent", Value::count(*agent))],
@@ -1344,23 +1277,6 @@ pub fn describe(op: &Op) -> describe::Description {
             format!("Event {} of watched call {watch}'s stream", event.seq),
             vec![field("data", Value::count(event.data.len() as u64))],
         ),
-        Op::SetCompactAt { id, compact_at } => {
-            let at = match compact_at {
-                Some(tokens) => format!("{tokens} tokens"),
-                None => "when the window fills".to_owned(),
-            };
-            (
-                format!("Retired, always refused: set when model {id} starts compacting"),
-                vec![
-                    field("model", Value::text(id)),
-                    field("compacts at", Value::text(at)),
-                ],
-            )
-        }
-        Op::ReadBudget { service } => (
-            format!("Retired, always refused: read {service}'s status of every model account it holds"),
-            vec![field("service", Value::text(service))],
-        ),
         Op::Wait { thread, event } => (
             format!(
                 "Wake conversation {thread} when it is time for {}",
@@ -1393,18 +1309,6 @@ pub fn describe(op: &Op) -> describe::Description {
         Op::Filed(row) => (
             format!("Hear files' commit {}", row.seq),
             vec![field("message", Value::text(&row.message))],
-        ),
-        Op::SetServices { id, services } => (
-            format!("Retired, always refused: set the services that reach model {id}"),
-            vec![
-                field("model", Value::text(id)),
-                field("services", Value::text(services.join(", "))),
-            ],
-        ),
-        Op::ReadBudgets => (
-            "Retired, always refused: read every model service's status of the model accounts it holds"
-                .to_owned(),
-            Vec::new(),
         ),
         Op::SetRoute { provider, services } => {
             let listed: Vec<String> = services
@@ -1440,8 +1344,8 @@ fn op_variants_only_append() {
         [
             "Close",
             "Attributed",
-            "SetModel",
-            "RemoveModel",
+            "-",
+            "-",
             "Streamed",
             "NewThread",
             "ForkThread",
@@ -1454,8 +1358,8 @@ fn op_variants_only_append() {
             "Settle",
             "Watch",
             "Heard",
-            "SetCompactAt",
-            "ReadBudget",
+            "-",
+            "-",
             "Wait",
             "Unwait",
             "WaitDue",
@@ -1464,8 +1368,8 @@ fn op_variants_only_append() {
             "Forged",
             "ClaimConversations",
             "AdoptOwners",
-            "SetServices",
-            "ReadBudgets",
+            "-",
+            "-",
             "Filed",
             "SetRoute",
             "RemoveRoute",
@@ -1487,8 +1391,8 @@ fn query_variants_only_append() {
             "Calls",
             "Tools",
             "ThreadAt",
-            "Model",
-            "Models",
+            "-",
+            "-",
             "Withheld",
             "Partial",
             "Topic",
@@ -1505,7 +1409,7 @@ fn query_variants_only_append() {
             "Wait",
             "Armed",
             "Card",
-            "Services",
+            "-",
             "Route",
             "Routes",
             "Answerers",

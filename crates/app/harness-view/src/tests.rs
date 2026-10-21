@@ -505,8 +505,6 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                     .cloned()
                     .map(card),
             ),
-            harness::Query::Models { .. } => harness::Reply::Models(page(Vec::new())),
-            harness::Query::Model { .. } => harness::Reply::Model(None),
             harness::Query::Threads { agent, .. } => {
                 let mut threads: Vec<ThreadRow> = net
                     .threads
@@ -630,7 +628,6 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             ),
             harness::Query::Wait { .. } => harness::Reply::Wait(None),
             harness::Query::Wakes { .. } => harness::Reply::Wakes(Vec::new()),
-            harness::Query::Services { .. } => harness::Reply::Services(None),
             harness::Query::Route { .. } => harness::Reply::Route(None),
             harness::Query::Routes { .. } => harness::Reply::Routes(page(Vec::new())),
             harness::Query::Answerers { .. } => harness::Reply::Answerers(page(Vec::new())),

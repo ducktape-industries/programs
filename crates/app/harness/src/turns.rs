@@ -695,8 +695,6 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
         }
         unready @ (Configured::Unreadable { .. }
         | Configured::Malformed { .. }
-        | Configured::UnknownModel { .. }
-        | Configured::Ready { .. }
         | Configured::NoRoute { .. }
         | Configured::Unprovided { .. }) => {
             let text = unready.problem(&agent.path).unwrap_or_default();

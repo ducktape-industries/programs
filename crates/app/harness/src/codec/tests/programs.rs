@@ -466,11 +466,12 @@ fn attribution_round_trips() {
 #[test]
 fn harness_round_trips() {
     let harness = roots(interface::<crate::Harness>());
-    harness.op(&crate::Op::SetModel {
-        id: "claude".into(),
-        wire: crate::Wire::AnthropicMessages,
-        service: "ccs".into(),
-        name: "claude-test".into(),
+    harness.op(&crate::Op::SetRoute {
+        provider: "anthropic".into(),
+        services: vec![crate::RouteService {
+            service: "ccs".into(),
+            wire: crate::Wire::AnthropicMessages,
+        }],
     });
     harness.op(&crate::Op::Streamed {
         thread: 1,

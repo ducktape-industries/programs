@@ -31,11 +31,7 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
             Some(_) => vec![Need::write(conversation_key(*agent))],
             None => Vec::new(),
         },
-        Op::SetModel { .. }
-        | Op::RemoveModel { .. }
-        | Op::SetCompactAt { .. }
-        | Op::SetServices { .. }
-        | Op::Attributed(_)
+        Op::Attributed(_)
         | Op::Streamed { .. }
         | Op::OpenThread { .. }
         | Op::Book { .. }
@@ -46,7 +42,6 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::Settle { .. }
         | Op::Watch { .. }
         | Op::Heard { .. }
-        | Op::ReadBudget { .. }
         | Op::Wait { .. }
         | Op::Unwait { .. }
         | Op::WaitDue
@@ -55,7 +50,6 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::Forged(_)
         | Op::ClaimConversations { .. }
         | Op::AdoptOwners { .. }
-        | Op::ReadBudgets
         | Op::Filed(_)
         | Op::SetRoute { .. }
         | Op::RemoveRoute { .. }
