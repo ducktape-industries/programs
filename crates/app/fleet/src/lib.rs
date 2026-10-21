@@ -262,9 +262,6 @@ pub enum Op {
     ::program::Ask,
     ::program::Described,
 )]
-#[tool_about(
-    "What fleet holds: each workload as asked, each run's state, the queue and the machines."
-)]
 #[ask(Fleet)]
 pub enum Query {
     #[ask(Reply::Workload(Option<Workload>))]

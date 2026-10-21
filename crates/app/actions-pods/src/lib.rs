@@ -86,9 +86,6 @@ pub struct PodRow {
     ::program::Ask,
     ::program::Described,
 )]
-#[tool_about(
-    "The pods this runner holds, the checks waiting for room, its concurrent limit, and how each check it ran went."
-)]
 #[ask(ActionsPods)]
 pub enum Query {
     #[ask(Reply::Run(Option<RunRow>))]

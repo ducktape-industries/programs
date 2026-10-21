@@ -210,9 +210,6 @@ pub struct Offer {
     ::program::Ask,
     ::program::Described,
 )]
-#[tool_about(
-    "The checks, runs and runners of forge's CI: a check by id, a commit's checks, the queue, a repository's runs of one event, and what a check asks of its pod, needs and produced."
-)]
 #[ask(Actions)]
 pub enum Query {
     #[ask(Reply::Check(Option<CheckRow>))]

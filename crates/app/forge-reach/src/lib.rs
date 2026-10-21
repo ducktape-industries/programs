@@ -83,9 +83,6 @@ pub enum Op {
     ::program::Ask,
     ::program::Described,
 )]
-#[tool_about(
-    "What forge-reach holds: each result reported for a commit with its reach, and how they stand on a change's latest Preview."
-)]
 #[ask(ForgeReach)]
 pub enum Query {
     #[ask(Reply::Reports(PageResponse<Report>))]

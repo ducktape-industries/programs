@@ -171,7 +171,6 @@ pub enum Op {
     ::program::Ask,
     ::program::Described,
 )]
-#[tool_about("Every wake and how it ended, by id or by account.")]
 #[ask(Wake)]
 pub enum Query {
     #[ask(Reply::Wake(Option<WakeRow>))]

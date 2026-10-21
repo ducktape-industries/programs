@@ -56,9 +56,6 @@ pub enum Op {
     ::program::Ask,
     ::program::Described,
 )]
-#[tool_about(
-    "The network's rules, the room each open change is mirrored into, and every open mirrored change."
-)]
 #[ask(ForgeReviewChat)]
 pub enum Query {
     #[ask(Reply::Rules(Vec<Rule>))]
