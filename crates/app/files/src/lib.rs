@@ -258,7 +258,7 @@ pub enum Query {
     },
     #[ask(Reply::Hits { snapshot: Option<BlobId>, hits: PageResponse<Hit> })]
     #[reads(state::HEAD, state::HISTORY, state::SNAPSHOTS)]
-    #[tool_query(description = "Each line holding pattern as literal text, with its path and line number, under prefix. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans.", example = examples::grep)]
+    #[tool_query(description = "Each line holding pattern as literal text, with its path and line number, under prefix. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans. A page ends once it holds its limit of hits or has read files' chunk size (1 MiB) of file bytes, and next goes on from there, inside a file if need be: a rare pattern over a large tree answers pages with few hits or none, each with next.", example = examples::grep)]
     Grep {
         pattern: String,
         prefix: String,

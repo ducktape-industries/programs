@@ -825,3 +825,73 @@ fn a_pattern_holding_a_newline_finds_a_call_split_across_lines() {
     );
     assert_eq!(grep("run(first"), [flat]);
 }
+
+#[test]
+fn a_rare_pattern_over_more_bytes_than_a_page_reads_answers_partial_pages_that_resume_inside_a_file()
+ {
+    let host = host();
+    let hay = "hay hay hay hay\n";
+    let lines_a_chunk = CHUNK_SIZE as usize / hay.len();
+    let mut big = hay.repeat(lines_a_chunk - 2);
+    big.push_str(&format!("{:>31}\n", "alpha"));
+    big.push_str("beta\n");
+    big.push_str(&hay.repeat(1000));
+    big.push_str("a needle past the first chunk\n");
+    big.push_str(&hay.repeat(lines_a_chunk));
+    big.push_str("needle\n");
+    let small = "one needle\n".to_owned();
+    let mut last = hay.repeat(lines_a_chunk + 7);
+    last.push_str("the needle at the end");
+    let files = [
+        ("/shared/big/a", &big),
+        ("/shared/big/b", &small),
+        ("/shared/big/c", &last),
+    ];
+    let changes = files
+        .iter()
+        .map(|(path, text)| put(&host, path, text))
+        .collect();
+    commit(&host, ada(), None, changes).unwrap();
+    for pattern in ["needle", "alpha\nbeta"] {
+        let span = pattern.split('\n').count();
+        let mut expected = Vec::new();
+        for (path, text) in files {
+            let lines: Vec<&str> = text.split('\n').collect();
+            for (index, window) in lines.windows(span).enumerate() {
+                let joined = window.join("\n");
+                if joined.contains(pattern) {
+                    expected.push((path.to_owned(), index as u64 + 1, joined));
+                }
+            }
+        }
+        let mut found = Vec::new();
+        let mut pages = Vec::new();
+        let mut page = PageRequest::first(50);
+        loop {
+            let query = Query::Grep {
+                pattern: pattern.into(),
+                prefix: "/shared/big/".into(),
+                at: None,
+                page,
+            };
+            let Reply::Hits { hits, .. } = ask(&host, query).unwrap() else {
+                panic!("a grep answers Hits")
+            };
+            pages.push(hits.items.len());
+            found.extend(
+                hits.items
+                    .into_iter()
+                    .map(|hit| (hit.path, hit.line, hit.text)),
+            );
+            let Some(next) = hits.next else {
+                break;
+            };
+            page = PageRequest::resume(Some(next), 50);
+        }
+        assert!(
+            pages.len() > 2 && pages[0] < expected.len(),
+            "{pattern:?}: pages of {pages:?} hits"
+        );
+        assert_eq!(found, expected, "{pattern:?}");
+    }
+}

@@ -325,7 +325,7 @@ pub(crate) struct Grep;
 
 impl Tool for Grep {
     const NAME: &'static str = "files_grep";
-    const DESCRIPTION: &'static str = "Search the text of the network's files for a literal string: each matching line with its path and line number. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans.";
+    const DESCRIPTION: &'static str = "Search the text of the network's files for a literal string: each matching line with its path and line number. A pattern holding newlines matches across lines (CRLF counts as one newline): its hit is the line it starts on, with every line it spans. It reads the files under prefix, at most 1 MiB of them a page, so a page may hold few hits or none and still have next: go on with cursor while next is there. A narrow prefix reads less.";
     type Args = GrepArgs;
 
     fn schema() -> Value {

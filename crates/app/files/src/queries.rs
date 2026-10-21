@@ -2,7 +2,7 @@
 //! newer put let go answers pruned. A list, find or grep answers a page whose cursor stays on the
 //! snapshot it walked. A diff folds the changes each commit recorded.
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use ::program::{BlobId, Error, QueryCtx, corrupt, invalid, not_found};
 
@@ -14,8 +14,8 @@ use crate::state::{
 };
 use crate::tree::node_at;
 use crate::{
-    Contents, DiffEntry, DiffKind, EntryInfo, Hit, Node, PageRequest, PageResponse, PinRow,
-    SnapshotRow,
+    CHUNK_SIZE, Contents, DiffEntry, DiffKind, EntryInfo, Hit, Node, PageRequest, PageResponse,
+    PinRow, SnapshotRow,
 };
 
 pub(crate) fn head(ctx: &QueryCtx) -> Result<Option<SnapshotRow>, Error> {
@@ -277,16 +277,67 @@ fn find_in(ctx: &QueryCtx, dir: &BlobId, base: &str, finding: &mut Finding) -> R
     Ok(())
 }
 
+pub(crate) const GREP_BYTES: u64 = CHUNK_SIZE;
+
+#[derive(Clone, Copy)]
+struct Place {
+    offset: u64,
+    line: u64,
+}
+
+const START: Place = Place { offset: 0, line: 1 };
+
 struct Grepping<'a> {
     pattern: &'a str,
     prefix: &'a str,
     after: Option<&'a str>,
+    inside: Option<Place>,
     limit: usize,
     at: At,
     hits: Vec<Hit>,
+    read: u64,
     scanned: Option<String>,
     next: Option<String>,
     done: bool,
+}
+
+impl Grepping<'_> {
+    fn spent(&self) -> bool {
+        self.read >= GREP_BYTES || self.hits.len() >= self.limit
+    }
+
+    fn start_of(&self, path: &str) -> Option<Place> {
+        if !path.starts_with(self.prefix) {
+            return None;
+        }
+        if after(path, self.after) {
+            return Some(START);
+        }
+        self.inside.filter(|_| self.after == Some(path))
+    }
+
+    fn stop(&mut self, next: Option<String>) {
+        self.next = next;
+        self.done = true;
+    }
+}
+
+fn resumed(cursor: Option<&str>) -> Result<(Option<&str>, Option<Place>), Error> {
+    let Some(cursor) = cursor else {
+        return Ok((None, None));
+    };
+    let unread = || invalid("a grep cursor does not decode");
+    let mut parts = cursor.split('\0');
+    let path = parts.next().unwrap_or(cursor);
+    let place = match (parts.next(), parts.next(), parts.next()) {
+        (None, None, None) => None,
+        (Some(offset), Some(line), None) => Some(Place {
+            offset: offset.parse().map_err(|_| unread())?,
+            line: line.parse().map_err(|_| unread())?,
+        }),
+        _ => return Err(unread()),
+    };
+    Ok((Some(path), place))
 }
 
 pub(crate) fn grep(
@@ -305,13 +356,16 @@ pub(crate) fn grep(
     let Some(row) = row else {
         return Ok((snapshot, walk.page(Vec::new(), None)));
     };
+    let (after, inside) = resumed(walk.after.as_deref())?;
     let mut grepping = Grepping {
         pattern,
         prefix,
-        after: walk.after.as_deref(),
+        after,
+        inside,
         limit: walk.limit,
         at: age(ctx, &row)?,
         hits: Vec::new(),
+        read: 0,
         scanned: None,
         next: None,
         done: false,
@@ -329,9 +383,8 @@ fn grep_in(ctx: &QueryCtx, dir: &BlobId, base: &str, grepping: &mut Grepping) ->
         let path = format!("{base}/{name}");
         match node {
             Node::File { file: id, size, .. } => {
-                let candidate = path.starts_with(grepping.prefix) && after(&path, grepping.after);
-                if candidate {
-                    grep_file(ctx, path, &id, size, grepping)?;
+                if let Some(from) = grepping.start_of(&path) {
+                    grep_file(ctx, path, &id, size, from, grepping)?;
                 }
             }
             Node::Symlink { .. } => {}
@@ -352,28 +405,98 @@ fn grep_file(
     path: String,
     id: &BlobId,
     size: u64,
+    from: Place,
     grepping: &mut Grepping,
 ) -> Result<(), Error> {
-    let page_full = grepping.hits.len() >= grepping.limit;
-    if page_full {
-        grepping.next = grepping.scanned.clone();
-        grepping.done = true;
+    if grepping.spent() {
+        let next = grepping.scanned.clone();
+        grepping.stop(next);
         return Ok(());
     }
-    let bytes = read_file(ctx, &file_at(ctx, id, grepping.at)?, 0, size)?;
-    let mut spans = crate::grep::Spans::new(grepping.pattern);
-    for (index, line) in bytes.split(|&byte| byte == b'\n').enumerate() {
-        let text = String::from_utf8_lossy(line);
-        if let Some((line, text)) = spans.line(index as u64 + 1, &text) {
+    let file = file_at(ctx, id, grepping.at)?;
+    let mut reading = Reading {
+        spans: crate::grep::Spans::new(grepping.pattern),
+        kept: grepping.pattern.split('\n').count() - 1,
+        recent: VecDeque::new(),
+        carried: Vec::new(),
+        line: from.line,
+    };
+    let mut at = from.offset;
+    while at < size {
+        let resume = reading.resume(at);
+        let stops = grepping.spent() && resume.offset > from.offset;
+        if stops {
+            let next = format!("{path}\0{}\0{}", resume.offset, resume.line);
+            grepping.stop(Some(next));
+            return Ok(());
+        }
+        let take = (size - at).min(CHUNK_SIZE - at % CHUNK_SIZE);
+        let piece = read_file(ctx, &file, at, take)?;
+        grepping.read += take;
+        at += take;
+        reading.carried.extend_from_slice(&piece);
+        reading.lines(&path, at, grepping);
+    }
+    reading.last(&path, at, grepping);
+    grepping.scanned = Some(path);
+    Ok(())
+}
+
+struct Reading<'a> {
+    spans: crate::grep::Spans<'a, u64>,
+    kept: usize,
+    recent: VecDeque<Place>,
+    carried: Vec<u8>,
+    line: u64,
+}
+
+impl Reading<'_> {
+    fn resume(&self, at: u64) -> Place {
+        let partial = Place {
+            offset: at - self.carried.len() as u64,
+            line: self.line,
+        };
+        self.recent.front().copied().unwrap_or(partial)
+    }
+
+    fn lines(&mut self, path: &str, at: u64, grepping: &mut Grepping) {
+        let carried = std::mem::take(&mut self.carried);
+        let mut offset = at - carried.len() as u64;
+        let mut rest = carried.as_slice();
+        while let Some(end) = rest.iter().position(|&byte| byte == b'\n') {
+            self.see(path, offset, &rest[..end], grepping);
+            offset += end as u64 + 1;
+            rest = &rest[end + 1..];
+        }
+        self.carried = rest.to_vec();
+    }
+
+    fn last(&mut self, path: &str, at: u64, grepping: &mut Grepping) {
+        let carried = std::mem::take(&mut self.carried);
+        self.see(path, at - carried.len() as u64, &carried, grepping);
+    }
+
+    fn see(&mut self, path: &str, offset: u64, bytes: &[u8], grepping: &mut Grepping) {
+        let place = Place {
+            offset,
+            line: self.line,
+        };
+        self.line += 1;
+        if self.kept > 0 {
+            self.recent.push_back(place);
+            if self.recent.len() > self.kept {
+                self.recent.pop_front();
+            }
+        }
+        let text = String::from_utf8_lossy(bytes);
+        if let Some((line, text)) = self.spans.line(place.line, &text) {
             grepping.hits.push(Hit {
-                path: path.clone(),
+                path: path.to_owned(),
                 line,
                 text,
             });
         }
     }
-    grepping.scanned = Some(path);
-    Ok(())
 }
 
 pub(crate) fn diff(
