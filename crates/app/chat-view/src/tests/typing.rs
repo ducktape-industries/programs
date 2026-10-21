@@ -361,7 +361,8 @@ fn a_drafting_holder_is_drawn_once_its_row_saying_since_when_without_break_for_a
     seat(&mut cx);
     cx.update(&view, |chat, _, cx| chat.choose("general".into(), cx));
     cx.run_until_parked();
-    assert_eq!(drawn(&cx, "is answering…"), 1, "{:?}", cx.texts());
+    assert_eq!(drawn(&cx, "typing…"), 1, "{:?}", cx.texts());
+    assert!(!cx.has_text("is answering…"), "said once: {:?}", cx.texts());
     assert!(cx.has_text("since block 9"), "{:?}", cx.texts());
     assert!(!cx.has_text("reviewer is answering here since block 9"));
     assert!(cx.find("chat-busy-timeline").is_some());

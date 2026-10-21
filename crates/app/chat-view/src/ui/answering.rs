@@ -48,8 +48,11 @@ pub(crate) fn row(
     held: Option<Stateful<Div>>,
 ) -> AnyElement {
     let name = name(chat, &draft.author);
-    let head = words::answering(&name);
-    let doing = (!draft.doing.is_empty()).then(|| words::doing(&draft.doing));
+    let doing = match draft.doing.is_empty() {
+        true => words::ANSWERING.to_owned(),
+        false => words::doing(&draft.doing),
+    };
+    let label = format!("{name} {doing}");
     let key = format!("chat-{}", answering_key(draft));
     let body = match draft.text.is_empty() {
         true => Vec::new(),
@@ -73,7 +76,7 @@ pub(crate) fn row(
                 .font_weight(FontWeight::MEDIUM)
                 .child(name),
         )
-        .child(muted(words::ANSWERING.to_owned()));
+        .child(muted(doing));
     let column = div()
         .flex_1()
         .min_w(px(0.))
@@ -81,7 +84,6 @@ pub(crate) fn row(
         .flex_col()
         .gap(design::space::XXS)
         .child(author)
-        .children(doing.map(muted))
         .children(said)
         .children(held);
     let row = div()
@@ -92,7 +94,7 @@ pub(crate) fn row(
         .py(design::space::SM)
         .role(Role::Status)
         .aria_live(view::accesskit::Live::Polite)
-        .aria_label(head);
+        .aria_label(label);
     frame(row).child(face).child(column).into_any_element()
 }
 
