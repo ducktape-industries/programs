@@ -3,7 +3,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use store::{Item, Kind, Map, Owned, Set};
 
-use crate::{AccountNumber, MachineId, MachineRow, RunRow, Workload};
+use crate::{AccountNumber, MachineId, MachineRow, Piece, RunRow, Workload};
 
 // Who may move a run along (claim, cancel, requeue it): each run's claim row is created by its
 // Ask, so its asker owns it, and their policy for `fleet.claim` decides who else writes it.
@@ -37,3 +37,5 @@ pub const LAST: Item<u64> = Item::new("last");
 pub const TELLING: Map<u64, (u64, u32)> = Map::new("t/");
 // How many ends were told in chat, which gives each line a message id of its own.
 pub const TOLD: Item<u64> = Item::new("told");
+pub const CALLS: Map<(u64, u32, u64), u64> = Map::new("n/");
+pub const PIECES: Map<(u64, u32, u64, u64), Piece> = Map::new("p/");

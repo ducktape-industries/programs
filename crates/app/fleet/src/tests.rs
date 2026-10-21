@@ -4,7 +4,7 @@
 use std::cell::Cell;
 
 use ::program::{Error, ExecCtx, MockChain, Origin, Program, QueryCtx, code};
-use abi::role::egress::DEFAULT_WAIT;
+use abi::role::egress::{Answer, DEFAULT_WAIT, Op as Egress, RequestRow, StreamEnd, http};
 use borsh::{BorshDeserialize, BorshSerialize};
 use store::Item;
 
@@ -23,6 +23,9 @@ const WATCHER: &str = "watcher";
 const WORKER: &str = "worker";
 const WORKER_ACCOUNT: u64 = 31;
 const HEARD: Item<Vec<Ended>> = Item::new("heard");
+const NODE: [u8; 32] = [7; 32];
+const PODS: &str = "pods";
+const FLEET_ACCOUNT: u64 = 903;
 
 // A program told of each run's end, as harness or actions would be.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
@@ -59,7 +62,7 @@ struct World {
 
 fn world() -> World {
     let mut chain = MockChain::default();
-    chain.seat::<Fleet>(PROGRAM);
+    chain.seat_awaiting::<Fleet>(PROGRAM);
     chain.seat::<Watcher>(WATCHER);
     chain.seat::<chat::Chat>(chat::PROGRAM);
     chain.seat::<::scheduler::Scheduler>(::scheduler::PROGRAM);
@@ -88,11 +91,60 @@ fn world() -> World {
             .submit(Origin::Signed(asker.to_vec()), ownership::PROGRAM, &default)
             .unwrap();
     }
-    chain.register(PROGRAM, 903);
+    chain.register(PROGRAM, FLEET_ACCOUNT);
     chain.register(WATCHER, 904);
     World {
         chain,
         height: Cell::new(1),
+    }
+}
+
+fn egressed() -> World {
+    let mut world = world();
+    let chain = &mut world.chain;
+    chain.seat::<valset::Valset>("valset");
+    chain.seat::<awaits::Awaits>(awaits::PROGRAM);
+    chain.seat::<access::Access>("access");
+    chain.seat_awaiting::<egress::Egress>(egress::PROGRAM);
+    let node = valset::Member {
+        key: NODE.to_vec(),
+        address: None,
+        halo: "node.example.org:9100".into(),
+    };
+    let genesis = valset::Genesis {
+        validators: vec![node],
+        member_cap: 8,
+        queries: abi::role::validators::QueryPolicy::Signed,
+    };
+    chain.init("valset", &genesis).unwrap();
+    let owner = Origin::Signed(ADA.to_vec());
+    let register = Egress::Register {
+        service: PODS.into(),
+    };
+    let assign = Egress::Assign {
+        service: PODS.into(),
+        nodes: vec![NODE.to_vec()],
+    };
+    chain
+        .submit(owner.clone(), egress::PROGRAM, &register)
+        .unwrap();
+    chain.submit(owner, egress::PROGRAM, &assign).unwrap();
+    let serve = Egress::Serve {
+        services: vec![PODS.into()],
+    };
+    world.node(&serve);
+    world
+}
+
+fn pods_get(service: &str, target: &str) -> Request {
+    Request::Http {
+        service: service.into(),
+        head: http::Head {
+            method: http::Method::Get,
+            target: target.into(),
+            headers: Vec::new(),
+        },
+        body: Vec::new(),
     }
 }
 
@@ -227,6 +279,73 @@ impl World {
         self.chain.query(WATCHER, &()).unwrap()
     }
 
+    fn call(
+        &self,
+        key: &[u8],
+        run: u64,
+        attempt: u32,
+        call: u64,
+        stream: bool,
+    ) -> Result<Vec<u8>, Error> {
+        self.call_to(key, run, attempt, call, stream, PODS)
+    }
+
+    fn call_to(
+        &self,
+        key: &[u8],
+        run: u64,
+        attempt: u32,
+        call: u64,
+        stream: bool,
+        service: &str,
+    ) -> Result<Vec<u8>, Error> {
+        let call = Op::Call {
+            run,
+            attempt,
+            call,
+            request: pods_get(service, &format!("/v1/pods/p-{call}")),
+            stream,
+            wait: None,
+        };
+        self.act(key, &call)
+    }
+
+    fn node(&self, op: &Egress) {
+        let node = Origin::Signed(NODE.to_vec());
+        self.chain.submit(node, egress::PROGRAM, op).unwrap();
+    }
+
+    fn open(&self) -> Vec<RequestRow> {
+        let asked = egress::Query::Assigned { key: NODE.to_vec() };
+        let egress::Reply::Requests(rows) = self.chain.query(egress::PROGRAM, &asked).unwrap()
+        else {
+            panic!("Assigned answers requests");
+        };
+        rows
+    }
+
+    fn sender(&self, id: u64) -> Option<u64> {
+        let asked = egress::Query::Sender { id };
+        let egress::Reply::Sender(sender) = self.chain.query(egress::PROGRAM, &asked).unwrap()
+        else {
+            panic!("Sender answers an account");
+        };
+        sender
+    }
+
+    fn pieces(&self, run: u64, attempt: u32, call: u64) -> Vec<PieceRow> {
+        let asked = Query::Pieces {
+            run,
+            attempt,
+            call,
+            page: PageRequest::default(),
+        };
+        let Reply::Pieces(page) = self.chain.query(PROGRAM, &asked).unwrap() else {
+            panic!("Pieces answers pieces");
+        };
+        page.items
+    }
+
     // Every block up to `height` ends, and what fleet booked for them runs.
     fn to(&self, height: u64) {
         self.height.set(height);
@@ -279,6 +398,140 @@ fn a_run_goes_to_the_machine_free_longest_and_ends_as_its_machine_reports() {
     // b has been free since block 3, a only since 6
     let next = world.ask(job());
     assert_eq!(world.placed(next).1, Some(machine(B_ACCOUNT, "b")));
+}
+
+#[test]
+fn only_the_machine_running_an_attempt_calls_through_fleet_and_every_piece_lands_under_the_run() {
+    let world = egressed();
+    world.to(2);
+    world.ready(A, "a", &[], 1);
+    world.to(3);
+    world.ready(B, "b", &[], 1);
+    let run = world.ask(job());
+    let unclaimed = world.call(A, run, 1, 1, false).unwrap_err();
+    assert_eq!(unclaimed.code, code::WRONG_STATE);
+    world.claim(A, run, 1).unwrap();
+    let stranger = world.call(B, run, 1, 1, false).unwrap_err();
+    assert_eq!(stranger.code, code::UNAUTHORIZED);
+    let stale = world.call(A, run, 2, 1, false).unwrap_err();
+    assert_eq!(stale.code, code::WRONG_STATE);
+    let other = world.ask_as(BO, job());
+    assert_eq!(world.placed(other).1, Some(machine(B_ACCOUNT, "b")));
+    world.claim(B, other, 1).unwrap();
+    let not_its_run = world.call(B, run, 1, 1, false).unwrap_err();
+    assert_eq!(not_its_run.code, code::UNAUTHORIZED);
+    let relay = Op::Call {
+        run,
+        attempt: 1,
+        call: 1,
+        request: Request::Relay { note: Vec::new() },
+        stream: false,
+        wait: None,
+    };
+    assert_eq!(world.act(A, &relay).unwrap_err().code, code::INVALID_INPUT);
+    assert!(world.open().is_empty());
+    let mut forged = pods_get(PODS, "/v1/pods/p-1");
+    if let Request::Http { head, .. } = &mut forged {
+        head.headers = vec![
+            ("accept".into(), "application/json".into()),
+            ("Fleet-Asker".into(), BO_ACCOUNT.to_string()),
+            ("fleet-run".into(), other.to_string()),
+        ];
+    }
+    let forging = Op::Call {
+        run,
+        attempt: 1,
+        call: 1,
+        request: forged,
+        stream: false,
+        wait: None,
+    };
+    world.act(A, &forging).unwrap();
+    world.call(A, run, 1, 2, true).unwrap();
+    let twice = world.call(A, run, 1, 1, false).unwrap_err();
+    assert_eq!(twice.code, code::WRONG_STATE);
+    let [whole, streamed] = world.open().try_into().expect("two calls sent");
+    let fleet: ProgramId = PROGRAM.into();
+    assert_eq!(whole.requester, fleet);
+    let Request::Http { head, .. } = &whole.request else {
+        panic!("fleet relays Http");
+    };
+    let stamped = [
+        ("accept", "application/json".to_string()),
+        (STAMPED[0], run.to_string()),
+        (STAMPED[1], "1".to_string()),
+        (STAMPED[2], ADA_ACCOUNT.to_string()),
+        (STAMPED[3], A_ACCOUNT.to_string()),
+    ]
+    .map(|(name, value)| (name.to_string(), value));
+    assert_eq!(head.headers, stamped);
+    assert_eq!(world.sender(whole.id), Some(FLEET_ACCOUNT));
+    assert!(world.pieces(run, 1, 1).is_empty());
+    world.to(world.height.get() + 1);
+    let created = http::Response {
+        status: 200,
+        headers: Vec::new(),
+        body: br#"{"pod":{"name":"p-1"}}"#.to_vec(),
+    };
+    let answer = Egress::Answer {
+        id: whole.id,
+        answer: Answer::Output(abi::encode(&created)),
+    };
+    world.node(&answer);
+    let event = |seq, data: &[u8]| Event {
+        id: streamed.id,
+        seq,
+        data: data.to_vec(),
+    };
+    world.node(&Egress::Events(vec![event(0, b"one"), event(1, b"two")]));
+    let end = Egress::EndStream {
+        id: streamed.id,
+        events: 2,
+        end: StreamEnd::Complete {
+            status: 200,
+            headers: Vec::new(),
+        },
+    };
+    world.node(&end);
+    let row = |n, piece| PieceRow { n, piece };
+    assert_eq!(
+        world.pieces(run, 1, 1),
+        [row(0, Piece::Answer(abi::encode(&created)))]
+    );
+    let ended = http::Response {
+        status: 200,
+        headers: Vec::new(),
+        body: Vec::new(),
+    };
+    let streamed_piece = |seq, data: &[u8]| Piece::Event {
+        seq,
+        data: data.to_vec(),
+    };
+    assert_eq!(
+        world.pieces(run, 1, 2),
+        [
+            row(0, streamed_piece(0, b"one")),
+            row(1, streamed_piece(1, b"two")),
+            row(2, Piece::Answer(abi::encode(&ended))),
+        ]
+    );
+    let forged = Op::Heard {
+        run,
+        attempt: 1,
+        call: 2,
+        event: event(2, b"forged"),
+    };
+    assert_eq!(world.act(A, &forged).unwrap_err().code, code::UNAUTHORIZED);
+    assert_eq!(world.pieces(run, 1, 2).len(), 3);
+    world.call_to(A, run, 1, 3, false, "nowhere").unwrap();
+    let [refused] = world.pieces(run, 1, 3).try_into().expect("one piece");
+    assert!(matches!(refused.piece, Piece::Failed(_)), "{refused:?}");
+    world.call(A, run, 1, 4, false).unwrap();
+    world.to(world.height.get() + DEFAULT_WAIT + 1);
+    let [expired] = world.pieces(run, 1, 4).try_into().expect("one piece");
+    assert!(matches!(expired.piece, Piece::Failed(_)), "{expired:?}");
+    let stale = world.report(A, run, 1, State::Passed).unwrap_err();
+    assert_eq!(stale.code, code::WRONG_STATE);
 }
 
 #[test]

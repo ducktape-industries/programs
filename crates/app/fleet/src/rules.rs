@@ -2,18 +2,20 @@
 //! slot takes the queued runs it covers, and a run goes from assigned to running to how its
 //! machine says it ended; a machine silent for the egress wait loses its runs.
 use ::program::{
-    Error, ExecCtx, MessageId, Outcome, QueryCtx, Reply as Wanted, code, invalid, not_found,
-    unexpected_reply, wrong_state,
+    Ctx, Error, ExecCtx, MessageId, Outcome, QueryCtx, Reply as Wanted, code, invalid, not_found,
+    unauthorized, unexpected_reply, wrong_state,
 };
-use abi::role::egress::DEFAULT_WAIT;
+use abi::role::egress::{DEFAULT_WAIT, Delivery, Op as Egress};
 use abi::role::identity;
 
 use crate::state::{
-    BEATS, CLAIMS, Claim, DECLINED, HOLDS, LAST, MACHINES, QUEUED, RUNS, TELLING, TOLD, WORKLOADS,
+    BEATS, CALLS, CLAIMS, Claim, DECLINED, HOLDS, LAST, MACHINES, PIECES, QUEUED, RUNS, TELLING,
+    TOLD, WORKLOADS,
 };
 use crate::{
-    AccountNumber, Affinity, Ended, Kind, MachineId, MachineRow, MachineView, Notify, OnLoss, Op,
-    Out, PageRequest, PageResponse, ProgramId, RunRow, Serves, Spec, State, Workload,
+    AccountNumber, Affinity, Ended, Event, Kind, MachineId, MachineRow, MachineView, Notify,
+    OnLoss, Op, Out, PageRequest, PageResponse, Piece, PieceRow, ProgramId, Request, RunRow,
+    STAMPED, Serves, Spec, State, Workload,
 };
 
 type Key = (AccountNumber, String);
@@ -324,6 +326,152 @@ pub(crate) fn unclaimed(ctx: &ExecCtx, id: u64, attempt: u32) -> Result<(), Erro
     MACHINES.put(ctx, &key(&machine), &row);
     run.summary = format!("{} did not claim it", machine.name);
     requeued(ctx, &mut run)
+}
+
+pub(crate) async fn relay(
+    ctx: &Ctx,
+    id: u64,
+    attempt: u32,
+    call: u64,
+    request: Request,
+    stream: bool,
+    wait: Option<u64>,
+) -> Result<(), Error> {
+    let sender = ctx.sender_account()?;
+    let run = load(ctx, id)?;
+    let holder = run.machine.as_ref().map(|machine| machine.account);
+    if holder != Some(sender) {
+        return Err(unauthorized(format!(
+            "run {id} is not held by a machine of account {sender}: only the machine holding a run calls for it"
+        )));
+    }
+    let running = held_now(&run) && run.attempt == attempt;
+    if !running {
+        return Err(wrong_state(format!(
+            "run {id} is {} at attempt {}, not running at attempt {attempt}: call only for the attempt your machine runs",
+            run.state.word(),
+            run.attempt
+        )));
+    }
+    let at = (id, attempt, call);
+    if CALLS.has(ctx, &at) {
+        return Err(wrong_state(format!(
+            "call {call} of run {id} at attempt {attempt} was sent already: give each call of an attempt its own number"
+        )));
+    }
+    let asker = workload(ctx, id)?.by;
+    let request = stamped(request, id, attempt, asker, sender)?;
+    CALLS.put(ctx, &at, &0);
+    let delivery = if stream {
+        Delivery::Events {
+            deliver: heard_as(id, attempt, call),
+        }
+    } else {
+        Delivery::Whole
+    };
+    let egress = ctx.env().role(abi::role::EGRESS)?.clone();
+    let asked = Egress::Request {
+        request,
+        delivery,
+        wait,
+    };
+    let piece = match ctx.call_raw(egress, abi::encode(&asked)).await {
+        Ok(output) => Piece::Answer(output),
+        Err(refused) => Piece::Failed(refused.message),
+    };
+    landed(ctx, at, piece)
+}
+
+fn stamped(
+    request: Request,
+    run: u64,
+    attempt: u32,
+    asker: AccountNumber,
+    machine: AccountNumber,
+) -> Result<Request, Error> {
+    let Request::Http {
+        service,
+        mut head,
+        body,
+    } = request
+    else {
+        return Err(invalid(
+            "fleet relays an Http request only: the service learns the run from the headers fleet sets on it",
+        ));
+    };
+    let ours = |name: &str| STAMPED.iter().any(|stamp| name.eq_ignore_ascii_case(stamp));
+    head.headers.retain(|(name, _)| !ours(name));
+    let values = [
+        run.to_string(),
+        attempt.to_string(),
+        asker.to_string(),
+        machine.to_string(),
+    ];
+    let stamps = STAMPED.iter().zip(values);
+    head.headers
+        .extend(stamps.map(|(name, value)| (name.to_string(), value)));
+    Ok(Request::Http {
+        service,
+        head,
+        body,
+    })
+}
+
+fn heard_as(run: u64, attempt: u32, call: u64) -> Vec<u8> {
+    let empty = Event {
+        id: 0,
+        seq: 0,
+        data: Vec::new(),
+    };
+    let tail = abi::encode(&empty).len();
+    let heard = Op::Heard {
+        run,
+        attempt,
+        call,
+        event: empty,
+    };
+    let mut deliver = abi::encode(&heard);
+    deliver.truncate(deliver.len() - tail);
+    deliver
+}
+
+pub(crate) fn hear(
+    ctx: &ExecCtx,
+    run: u64,
+    attempt: u32,
+    call: u64,
+    event: Event,
+) -> Result<(), Error> {
+    let egress = ctx.env().role(abi::role::EGRESS)?.clone();
+    let from_egress = ctx
+        .env()
+        .sending_program()
+        .is_ok_and(|program| program == egress);
+    if !from_egress {
+        return Err(unauthorized(
+            "only the program bound to the egress role hands fleet a call's events",
+        ));
+    }
+    let at = (run, attempt, call);
+    if !CALLS.has(ctx, &at) {
+        return Ok(());
+    }
+    let piece = Piece::Event {
+        seq: event.seq,
+        data: event.data,
+    };
+    landed(ctx, at, piece)
+}
+
+fn landed(ctx: &ExecCtx, at: (u64, u32, u64), piece: Piece) -> Result<(), Error> {
+    let n = CALLS.get(ctx, &at)?.unwrap_or(0);
+    let (run, attempt, call) = at;
+    PIECES.put(ctx, &(run, attempt, call, n), &piece);
+    let next = n
+        .checked_add(1)
+        .ok_or_else(|| Error::new(code::EXHAUSTED, "a call's pieces are exhausted"))?;
+    CALLS.put(ctx, &at, &next);
+    Ok(())
 }
 
 // Whether a run sits in its machine's holds as claimed: running, or being stopped.
@@ -694,6 +842,17 @@ pub(crate) fn machines(
     MACHINES
         .range(ctx, page)?
         .try_map(|(_, row)| view(ctx, row))
+}
+
+pub(crate) fn pieces(
+    ctx: &QueryCtx,
+    run: u64,
+    attempt: u32,
+    call: u64,
+    page: &PageRequest,
+) -> Result<PageResponse<PieceRow>, Error> {
+    let rows = PIECES.range_of(ctx, &(run, attempt, call), page)?;
+    Ok(rows.map(|((_, _, _, n), piece)| PieceRow { n, piece }))
 }
 
 pub(crate) fn holds(

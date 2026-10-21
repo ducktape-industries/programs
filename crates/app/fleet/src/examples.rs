@@ -1,8 +1,10 @@
 //! A working value of each fleet op and query, as `#[tool_op]` and `#[tool_query]` name them:
 //! what an agent edits rather than build one from the schema.
+use abi::role::egress::http;
+
 use crate::{
-    Affinity, Asks, Input, Kind, MachineId, Notify, OnLoss, Op, Out, PageRequest, Query, Serves,
-    Spec, State,
+    Affinity, Asks, Event, Input, Kind, MachineId, Notify, OnLoss, Op, Out, PageRequest, Query,
+    Request, Serves, Spec, State,
 };
 
 fn page() -> PageRequest {
@@ -108,6 +110,39 @@ pub(crate) fn place() -> Op {
     Op::Place { run: 7 }
 }
 
+pub(crate) fn call() -> Op {
+    let head = http::Head {
+        method: http::Method::Get,
+        target: "/v1/pods/duckpond-7/wait?every=30".into(),
+        headers: Vec::new(),
+    };
+    Op::Call {
+        run: 7,
+        attempt: 1,
+        call: 2,
+        request: Request::Http {
+            service: "pods".into(),
+            head,
+            body: Vec::new(),
+        },
+        stream: true,
+        wait: None,
+    }
+}
+
+pub(crate) fn heard() -> Op {
+    Op::Heard {
+        run: 7,
+        attempt: 1,
+        call: 2,
+        event: Event {
+            id: 40,
+            seq: 0,
+            data: b"{}".to_vec(),
+        },
+    }
+}
+
 pub(crate) fn workload() -> Query {
     Query::Workload { id: 7 }
 }
@@ -131,6 +166,15 @@ pub(crate) fn machines() -> Query {
 pub(crate) fn holds() -> Query {
     Query::Holds {
         machine: desktop(),
+        page: page(),
+    }
+}
+
+pub(crate) fn pieces() -> Query {
+    Query::Pieces {
+        run: 7,
+        attempt: 1,
+        call: 2,
         page: page(),
     }
 }

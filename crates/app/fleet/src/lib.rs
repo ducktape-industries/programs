@@ -9,12 +9,15 @@ mod state;
 mod tests;
 
 pub use ::program::{AccountNumber, BlobId, ProgramId};
+pub use abi::role::egress::{Event, Request};
+
+pub const STAMPED: [&str; 4] = ["fleet-run", "fleet-attempt", "fleet-asker", "fleet-machine"];
 pub use program::Fleet;
 pub use store::{PageRequest, PageResponse};
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
-use crate::state::{HOLDS, MACHINES, QUEUED, RUNS, WORKLOADS};
+use crate::state::{HOLDS, MACHINES, PIECES, QUEUED, RUNS, WORKLOADS};
 
 pub const PROGRAM: &str = "fleet";
 
@@ -209,6 +212,19 @@ pub struct Ended {
     pub state: State,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum Piece {
+    Event { seq: u64, data: Vec<u8> },
+    Answer(Vec<u8>),
+    Failed(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct PieceRow {
+    pub n: u64,
+    pub piece: Piece,
+}
+
 #[derive(
     Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
 )]
@@ -249,6 +265,22 @@ pub enum Op {
     Unclaimed { run: u64, attempt: u32 },
     #[tool_op(description = "Place a queued run on the machine free longest that may take it. fleet books this for the block after an Ask, once the run's claim row has its owner's policy; anyone may send it.", example = crate::examples::place)]
     Place { run: u64 },
+    #[tool_op(description = "As the machine running a run at this attempt, have fleet send one egress request for it, as fleet, under a call number of your own for that attempt: a backend's way to a service only a program reaches, such as the pods service. fleet sets the headers fleet-run, fleet-attempt, fleet-asker and fleet-machine on it, replacing any you sent under those names, so the service knows which run the call is for. Every piece of the answer lands as a row under the run (read them with Pieces): each event of a streamed answer in order, then the answer or why it failed.", example = crate::examples::call)]
+    Call {
+        run: u64,
+        attempt: u32,
+        call: u64,
+        request: Request,
+        stream: bool,
+        wait: Option<u64>,
+    },
+    #[tool_op(description = "An event of a streamed call's answer, as the egress role hands it to fleet; only that role sends it.", example = crate::examples::heard)]
+    Heard {
+        run: u64,
+        attempt: u32,
+        call: u64,
+        event: Event,
+    },
 }
 
 #[derive(
@@ -291,6 +323,15 @@ pub enum Query {
         machine: MachineId,
         page: PageRequest,
     },
+    #[ask(Reply::Pieces(PageResponse<PieceRow>))]
+    #[reads(PIECES)]
+    #[tool_query(description = "What came back for a call a run's machine sent through fleet, in order: each event of a streamed answer, then the answer or why it failed.", example = crate::examples::pieces)]
+    Pieces {
+        run: u64,
+        attempt: u32,
+        call: u64,
+        page: PageRequest,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -300,6 +341,7 @@ pub enum Reply {
     Runs(PageResponse<RunRow>),
     Machine(Option<MachineView>),
     Machines(PageResponse<MachineView>),
+    Pieces(PageResponse<PieceRow>),
 }
 
 pub fn describe(op: &Op) -> describe::Description {
@@ -348,6 +390,27 @@ pub fn describe(op: &Op) -> describe::Description {
         Op::Lapse { machine } => (format!("Check machine {}", machine.name), Vec::new()),
         Op::Unclaimed { run: id, .. } => (format!("Check run {id} was claimed"), vec![run(id)]),
         Op::Place { run: id } => (format!("Place run {id}"), vec![run(id)]),
+        Op::Call {
+            run: id,
+            call,
+            request,
+            ..
+        } => (
+            format!("Call {} for run {id}", request.service()),
+            vec![run(id), field("call", Value::count(*call))],
+        ),
+        Op::Heard {
+            run: id,
+            call,
+            event,
+            ..
+        } => (
+            format!("Hear call {call} of run {id}"),
+            vec![
+                run(id),
+                field("data", Value::count(event.data.len() as u64)),
+            ],
+        ),
     };
     describe::Description { title, fields }
 }
@@ -369,7 +432,9 @@ fn op_variants_only_append() {
             "Requeue",
             "Lapse",
             "Unclaimed",
-            "Place"
+            "Place",
+            "Call",
+            "Heard"
         ]
     );
 }

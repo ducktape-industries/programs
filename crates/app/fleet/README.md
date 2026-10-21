@@ -16,6 +16,8 @@ The network's default way to run workloads (J-129). A program keeps the canonica
 | `last` | | the last run id |
 | `t/` | message seq | an end told and not answered yet: its run and attempt |
 | `told` | | how many ends were told in chat |
+| `n/` | (run, attempt, call) | a call its machine sent through fleet: the number of its next piece |
+| `p/` | (run, attempt, call, n) | `Piece`: an event of a streamed answer (with egress's `seq`), then the answer (`Answer`, the bytes egress resolved the call with) or why it failed (`Failed`) |
 
 ## Ops
 - `Ask { spec }`: anyone. Queues run 1 and returns its id. fleet places it in its own run the block after (`Place`), because the guard records the claim row's owner and policy only once the Ask returns, and placement reads that policy.
@@ -30,6 +32,8 @@ The network's default way to run workloads (J-129). A program keeps the canonica
   - A machine holding a running run that hasn't beaten for `DEFAULT_WAIT` blocks (egress's silence bound) loses its runs. `OnLoss::Retry` queues each one again. `OnLoss::Park` makes a job `Lost`. Any other run its machine was stopping (`Stopping`) ends `Cancelled` instead of being queued again.
   - An assignment unclaimed for `DEFAULT_WAIT` blocks marks its machine gone and queues the run again.
   - A queued run is placed.
+- `Call { run, attempt, call, request, stream, wait }`: the account of the machine running the run (`Running` or `Stopping`) at that attempt; any other account is refused `unauthorized`, and another attempt or state `wrong_state`. `call` is the machine's own number for the call, once per attempt. fleet sends egress `Request` as itself, `Delivery::Events` when `stream`, else `Whole`, so a backend reaches a service only a program may call (the pods service); egress's `Sender` for it is fleet's own account, since fleet runs no machine's account. Only an `Http` request is relayed (a relay is refused `invalid_input`), and fleet sets its headers `fleet-run`, `fleet-attempt`, `fleet-asker` (the workload's `by`) and `fleet-machine` (the machine's account) on it (`STAMPED`), replacing any the machine sent under those names in any case: a service authorizes a relayed call, and names its requester, from those headers alone. The frame waits on egress: each event lands as a `p/` row as it comes, and the end lands as the last one. This is the machine's `pods` backend's way to pods.
+- `Heard { run, attempt, call, event }`: only the program bound to the egress role, with the events of a streamed `Call`.
 
 ## Placement
 A queued run goes to the ready machine that has been free longest (`idle_since`, then the machine id) and that:
@@ -45,7 +49,7 @@ A freed slot takes the oldest queued run it covers in the same frame.
 `Spec.notify`: `Chat { channel }` gets one chat notice (`Notify`) per end, each with a message id of its own (`fleet-run-<run>-<attempt>-<n>`), so a lost job's late end is told too: kind `run`, group and subject `run <run>`, status Passed, Failed (failed, errored, lost) or Note (cancelled), detail `<state> (attempt <n>)[: <summary>]`, link the run's out folder as `files/<path>` on the reader's chain, and concerns the asker (`Workload.by`) alone, so the room's listeners aren't told. `Program { program, deliver }` hears `deliver ++ borsh(Ended { run, attempt, state })` when a run ends or is lost. A refusal leaves the run as it ended, and is added to its summary (`not told: …`) while the run is still at that attempt.
 
 ## Queries
-`Workload { id }`, `Run { id }`, `Queued { page }`, `Machine { machine }`, `Machines { page }`, `Holds { machine, page }`.
+`Workload { id }`, `Run { id }`, `Queued { page }`, `Machine { machine }`, `Machines { page }`, `Holds { machine, page }`, `Pieces { run, attempt, call, page }` (a call's pieces in order).
 
 ## Interface
 `Op`, `Query` and `Reply` only grow at their end. `Spec` rides in `Op::Ask`, so a new field means a new `Ask` variant, not a changed `Spec`.

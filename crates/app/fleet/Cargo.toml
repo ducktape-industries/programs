@@ -29,4 +29,8 @@ ducklink = { path = "../../sdk/ducklink" }
 ownership = { path = "../../system/ownership" }
 
 [dev-dependencies]
+access = { path = "../../system/access" }
+awaits = { path = "../../system/awaits" }
+egress = { path = "../egress" }
 scheduler = { path = "../../system/scheduler" }
+valset = { path = "../../system/valset" }
