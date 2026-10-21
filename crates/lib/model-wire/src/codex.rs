@@ -470,11 +470,23 @@ pub fn refused(status: u16, headers: &[(String, String)], body: &[u8], now: u64)
     let code = error["code"].as_str().or_else(|| error["type"].as_str());
     let said = error["message"]
         .as_str()
+        .or_else(|| error.as_str())
+        .or_else(|| value["message"].as_str())
         .or_else(|| value["detail"].as_str())
         .or_else(|| value["detail"]["message"].as_str());
+    let keys: Vec<&str> = value
+        .as_object()
+        .into_iter()
+        .flat_map(|fields| fields.keys().map(String::as_str))
+        .collect();
     let message = match (code, said) {
         (Some(code), Some(said)) => format!("the model answered {status}, {code}: {said}"),
         (None, Some(said)) => format!("the model answered {status}: {said}"),
+        (Some(code), None) => format!("the model answered {status}, {code}"),
+        _ if !keys.is_empty() => {
+            let keys = keys.join(", ");
+            format!("the model answered {status} in JSON of keys {keys}")
+        }
         _ => match crate::page_words(body) {
             Some(page) if value.is_null() => format!("the model answered {status}: {page}"),
             _ => format!("the model answered {status}"),

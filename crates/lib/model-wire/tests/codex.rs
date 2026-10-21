@@ -470,3 +470,30 @@ fn a_refusal_that_is_no_json_names_its_page() {
         "the model answered 403"
     );
 }
+
+#[test]
+fn a_refusal_in_another_json_shape_reads_its_words_or_names_its_keys() {
+    let refused = |body: &str| codex::refused(403, &[], body.as_bytes(), 0).message;
+    assert_eq!(
+        refused(r#"{"error":"forbidden"}"#),
+        "the model answered 403: forbidden"
+    );
+    assert_eq!(
+        refused(r#"{"message":"not allowed here"}"#),
+        "the model answered 403: not allowed here"
+    );
+    assert_eq!(
+        refused(r#"{"detail":{"code":"x"},"status":403}"#),
+        "the model answered 403 in JSON of keys detail, status"
+    );
+    assert_eq!(
+        refused(r#"{"error":{"code":"blocked","message":"no"}}"#),
+        "the model answered 403, blocked: no"
+    );
+    assert_eq!(
+        refused(r#"{"error":{"code":"blocked"}}"#),
+        "the model answered 403, blocked"
+    );
+    assert_eq!(refused("{}"), "the model answered 403");
+    assert_eq!(refused("[1,2]"), "the model answered 403");
+}
