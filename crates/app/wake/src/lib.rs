@@ -82,6 +82,10 @@ pub enum Key {
         channel_id: String,
         thread: Option<u64>,
     },
+    Review {
+        repo: String,
+        n: u64,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -103,6 +107,11 @@ pub enum Fired {
         thread: Option<u64>,
     },
     LeftQueue {
+        repo: String,
+        n: u64,
+        how: String,
+    },
+    Reviewed {
         repo: String,
         n: u64,
         how: String,
@@ -136,7 +145,7 @@ pub struct Ended {
     Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
 )]
 #[tool_about(
-    "Wakes an account once on one event: a block's height, a pod of the pods service ending, a forge ref moving, a forge change moving, closing or merging, a files path changing, a program's code changing, or a chat place clearing of everyone else's hold and draft. When it happens the account is told through attribution, as a Result on the object wake/<id>, which ChangesTo reads back."
+    "Wakes an account once on one event: a block's height, a pod of the pods service ending, a forge ref moving, a forge change moving, being reviewed, closing or merging, a files path changing, a program's code changing, or a chat place clearing of everyone else's hold and draft. When it happens the account is told through attribution, as a Result on the object wake/<id>, which ChangesTo reads back."
 )]
 pub enum Op {
     #[tool_op(description = "Arm a wake for your account on a height, a pod's end, a forge change or ref, a files path, a change settling as until says, a program's next scheduled code change (refused while none is scheduled), or a chat place (a channel's foot, or a thread by its root's seq) holding no one else's hold or draft, not counting those whose holder waits there too (at once when it already is). A chat message is refused: attribution already tells you each message for you. Returns the wake's id.", returns = u64, example = crate::examples::wake_on)]
@@ -151,7 +160,9 @@ pub enum Op {
         description = "From the program bound to the egress role only: one event of a pod wake's stream."
     )]
     PodEvent { id: u64, event: Event },
-    #[tool_op(description = "From forge only: a ref moved, or a change opened, closed or merged.")]
+    #[tool_op(
+        description = "From forge only: a ref moved, or a change opened, was reviewed, closed, merged or left a merge queue."
+    )]
     Forged(forge::Watched),
     #[tool_op(description = "From files only: a commit, for the wakes on a files path.")]
     Filed(files::SnapshotRow),

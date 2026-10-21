@@ -1270,3 +1270,60 @@ fn a_change_forge_takes_out_of_its_merge_queue_ends_its_wakes_saying_why() {
     ];
     assert_eq!(world.told(ada), told);
 }
+
+#[test]
+fn a_review_ends_a_change_wake_and_leaves_a_settled_one_to_its_merge() {
+    let mut world = world();
+    let create = forge::Op::Create {
+        repo: "notes".into(),
+        hash: HashKind::Sha1,
+    };
+    world.forge_op(&create);
+    let open = forge::Op::ChangeOpen {
+        repo: "notes".into(),
+        from: forge::Revision::Ref(b"refs/heads/dev".to_vec()),
+        into: b"refs/heads/main".to_vec(),
+        title: "dev".into(),
+        body: String::new(),
+        reviewers: Vec::new(),
+    };
+    world.forge_op(&open);
+    let settled = WaitFor::Settled {
+        repo: "notes".into(),
+        n: 1,
+        until: Until::Merged,
+    };
+    let merged = world.wake_on(ADA, settled).unwrap();
+    let change = WaitFor::Change {
+        repo: "notes".into(),
+        n: 1,
+    };
+    let reviewed = world.wake_on(ADA, change).unwrap();
+    let (ada, bo) = (world.ada, world.bo);
+    let review = forge::Watched::Reviewed {
+        repo: "notes".into(),
+        n: 1,
+        id: 3,
+        verdict: forge::Verdict::Approve,
+        by: Principal::Account(bo),
+    };
+    world.forged(review);
+    world.after(1_000);
+    world.after(0);
+    let review_words = format!(
+        "Wake {reviewed} is over: change 1 in notes was reviewed by account {bo} (review 3: approved)."
+    );
+    assert_eq!(world.told(ada), std::slice::from_ref(&review_words));
+    let merge = forge::Watched::Merged {
+        repo: "notes".into(),
+        n: 1,
+        oid: "abc123".into(),
+        by: Principal::Account(ada),
+    };
+    world.forged(merge);
+    world.after(1_000);
+    world.after(0);
+    let merge_words =
+        format!("Wake {merged} is over: change 1 in notes was merged by account {ada} as abc123.");
+    assert_eq!(world.told(ada), [review_words, merge_words]);
+}

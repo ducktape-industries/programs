@@ -30,7 +30,9 @@ pub(crate) fn what(event: &WaitFor) -> String {
         WaitFor::Height { height } => format!("block {height}"),
         WaitFor::Pod { name } => format!("pod {name} to end"),
         WaitFor::Message { channel, .. } => format!("a message in chat channel {channel}"),
-        WaitFor::Change { repo, n } => format!("change {n} in {repo} to move, close or merge"),
+        WaitFor::Change { repo, n } => {
+            format!("change {n} in {repo} to move, be reviewed, close or merge")
+        }
         WaitFor::Ref { repo, reference } => format!("{reference} in {repo} to move"),
         WaitFor::File { path } => format!("{path} to change in files"),
         WaitFor::Settled { repo, n, until } => {
@@ -521,8 +523,26 @@ pub(crate) fn forged(ctx: &ExecCtx, event: forge::Watched) -> Result<(), Error> 
         }
         forge::Watched::Opened { .. }
         | forge::Watched::Previewed { .. }
-        | forge::Watched::Reviewed { .. }
         | forge::Watched::Dispatched { .. } => Ok(()),
+        forge::Watched::Reviewed {
+            repo,
+            n,
+            id,
+            verdict,
+            by,
+        } => {
+            let said = match verdict {
+                forge::Verdict::Approve => "approved",
+                forge::Verdict::RequestChanges => "requested changes",
+                forge::Verdict::Comment => "commented",
+            };
+            let how = format!("was reviewed by {} (review {id}: {said})", who(Some(&by)));
+            let key = Key::Review {
+                repo: repo.clone(),
+                n,
+            };
+            fire(ctx, key, Fired::Reviewed { repo, n, how })
+        }
         forge::Watched::LeftQueue {
             repo, n, into, why, ..
         } => {
@@ -716,7 +736,7 @@ fn first_in(ctx: &QueryCtx, key: &Key, lo: u64, hi: u64) -> Result<Option<u64>, 
                 .limit(1);
             REF_WAKES.scan(ctx, range)?.first().map(|(_, id)| *id)
         }
-        Key::Change { repo, n } => {
+        Key::Change { repo, n } | Key::Review { repo, n } => {
             let head = (repo.clone(), *n);
             let range = CHANGE_WAKES
                 .prefix_of(&head)
@@ -782,15 +802,29 @@ fn fired_words(ctx: &QueryCtx, row: &WakeRow, fired: &Fired) -> Result<String, E
         Fired::Cleared { channel_id, thread } => {
             format!("{} is clear", place_words(channel_id, *thread))
         }
-        Fired::LeftQueue { repo, n, how } => format!("change {n} in {repo} {how}"),
+        Fired::LeftQueue { repo, n, how } | Fired::Reviewed { repo, n, how } => {
+            format!("change {n} in {repo} {how}")
+        }
     })
+}
+
+fn hears(row: &WakeRow, fired: &Fired) -> bool {
+    match fired {
+        Fired::Reviewed { .. } => matches!(row.event, WaitFor::Change { .. }),
+        Fired::Moved { .. }
+        | Fired::Ended { .. }
+        | Fired::Filed(_)
+        | Fired::Cleared { .. }
+        | Fired::LeftQueue { .. } => true,
+    }
 }
 
 fn fan(ctx: &ExecCtx, firing: Firing) -> Result<(), Error> {
     let Some(id) = first_in(ctx, &firing.key, firing.lo, firing.hi)? else {
         return Ok(());
     };
-    if let Some(row) = open(ctx, id)? {
+    let heard = open(ctx, id)?.filter(|row| hears(row, &firing.fired));
+    if let Some(row) = heard {
         let what = fired_words(ctx, &row, &firing.fired)?;
         end(ctx, id, what)?;
     }

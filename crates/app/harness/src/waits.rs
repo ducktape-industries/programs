@@ -36,7 +36,9 @@ pub(crate) fn what(event: &WaitFor) -> String {
             };
             format!("a message{to_you} from {who} in chat channel {channel}")
         }
-        WaitFor::Change { repo, n } => format!("change {n} in {repo} to move, close or merge"),
+        WaitFor::Change { repo, n } => {
+            format!("change {n} in {repo} to move, be reviewed, close or merge")
+        }
         WaitFor::Ref { repo, reference } => format!("{reference} in {repo} to move"),
         WaitFor::File { path } => format!("{path} to change in files"),
         WaitFor::Settled { repo, n, until } => {
