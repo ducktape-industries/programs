@@ -316,6 +316,10 @@ pub(crate) fn conversations() -> Query {
     }
 }
 
+pub(crate) fn budget_facts() -> Query {
+    Query::BudgetFacts
+}
+
 pub(crate) fn adopt_tallies() -> Op {
     Op::AdoptTallies {
         after: None,

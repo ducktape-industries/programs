@@ -10,6 +10,10 @@ fn budget(chain: &MockChain) -> BudgetReport {
 }
 
 fn answered(chain: &MockChain, account: &str, used: &str, reset: &str) {
+    answered_with(chain, account, used, reset, &[]);
+}
+
+fn answered_with(chain: &MockChain, account: &str, used: &str, reset: &str, more: &[(&str, &str)]) {
     let (request, _) = open_request(chain);
     let body = json!({
         "id": "msg_1",
@@ -20,13 +24,14 @@ fn answered(chain: &MockChain, account: &str, used: &str, reset: &str) {
         "stop_reason": "end_turn",
         "usage": { "input_tokens": 10, "output_tokens": 5 },
     });
-    let headers = [
+    let mut headers = vec![
         ("x-harness-account", account),
         ("x-harness-window-5h-used", used),
         ("x-harness-window-5h-reset", reset),
         ("x-harness-window-5h-status", "allowed"),
         ("x-harness-status", "allowed"),
     ];
+    headers.extend_from_slice(more);
     let response = http::Response {
         status: 200,
         headers: headers
@@ -121,4 +126,80 @@ fn each_account_keeps_one_row_with_its_pace_and_when_it_runs_out() {
         (100_000, 1_010_000, None)
     );
     assert_eq!(written(&Written::Budget.key()), Some(Written::Budget));
+}
+
+fn facts(chain: &MockChain) -> crate::BudgetFactsReport {
+    let Reply::BudgetFacts(report) = chain.query(PROGRAM, &Query::BudgetFacts).unwrap() else {
+        panic!("the budget's facts answer as one")
+    };
+    report
+}
+
+fn fact_of(report: &crate::BudgetFactsReport, account: &str) -> crate::BudgetFact {
+    let found = report.facts.iter().find(|fact| fact.account == account);
+    found.expect("the account has its facts").clone()
+}
+
+#[test]
+fn each_account_keeps_its_provider_and_the_login_its_gate_names_with_the_one_before() {
+    let world = world();
+    let chain = &world.chain;
+    world.opened("m1", "hello", Some(WINDOW));
+    chain.at(3, 60_000);
+    let first = [("x-harness-identity", "login-1")];
+    answered_with(chain, "a", "0.2", "1000", &first);
+    let heard = facts(chain);
+    assert_eq!(
+        heard.budget,
+        budget(chain),
+        "the same report beside its facts"
+    );
+    let a = fact_of(&heard, "a");
+    assert_eq!(
+        (
+            a.service.as_str(),
+            a.provider.as_deref(),
+            a.identity.as_deref()
+        ),
+        (SERVICE, Some(PROVIDER), Some("login-1"))
+    );
+    assert_eq!((a.previous, a.changed), (None, None));
+    chain.at(4, 100_000);
+    world.mention("m2", "again");
+    chain.at(5, 120_000);
+    answered_with(chain, "a", "0.3", "1000", &first);
+    let same = fact_of(&facts(chain), "a");
+    assert_eq!((same.previous, same.changed), (None, None), "no swap");
+    chain.at(6, 150_000);
+    world.mention("m3", "and again");
+    chain.at(7, 180_000);
+    answered_with(
+        chain,
+        "a",
+        "0.4",
+        "1000",
+        &[("x-harness-identity", "login-2")],
+    );
+    let swapped = fact_of(&facts(chain), "a");
+    assert_eq!(
+        (
+            swapped.identity.as_deref(),
+            swapped.previous.as_deref(),
+            swapped.changed
+        ),
+        (Some("login-2"), Some("login-1"), Some(180_000))
+    );
+    chain.at(8, 200_000);
+    world.mention("m4", "once more");
+    chain.at(9, 210_000);
+    answered(chain, "a", "0.5", "1000");
+    let unnamed = fact_of(&facts(chain), "a");
+    assert_eq!(
+        unnamed, swapped,
+        "an answer naming no login keeps what was heard"
+    );
+    assert_eq!(
+        written(&crate::state::BUDGET_FACTS.key(&(SERVICE.to_owned(), "a".to_owned()))),
+        Some(Written::Budget)
+    );
 }

@@ -1,9 +1,10 @@
-//! The budget strip: one row per account from its freshest read, each window's bar with its share
-//! and the time to its reset, the account's state, and the budget read again on every budget write.
+//! The budget strip: one row per account from its freshest read, grouped by provider with its gate's
+//! login, each window's bar with its share and time to reset, the account's state, and the budget
+//! read again on every budget write.
 use super::*;
-use harness::{AccountBudget, BudgetReport, ServicePace, WindowOutlook};
+use harness::{AccountBudget, BudgetFact, BudgetReport, ServicePace, WindowOutlook};
 
-use crate::ui::budget::{AccountState, Level, account_state, answering, freshest, level};
+use crate::ui::budget::{AccountState, Level, account_state, answering, freshest, grouped, level};
 use crate::words::span;
 
 const MINUTE: u64 = 60_000;
@@ -326,4 +327,114 @@ fn the_strip_names_no_service_error_and_asks_its_service_for_nothing() {
     assert!(!named_the_error, "{shown:?}");
     assert!(!cx.has_text("Refresh"), "{shown:?}");
     assert!(cx.host().requests::<Submit<harness::Harness>>().is_empty());
+}
+
+fn fact(service: &str, account: &str, provider: Option<&str>) -> BudgetFact {
+    BudgetFact {
+        service: service.into(),
+        account: account.into(),
+        provider: provider.map(str::to_owned),
+        identity: None,
+        previous: None,
+        changed: None,
+    }
+}
+
+#[test]
+fn rows_group_by_the_provider_their_calls_were_for_and_the_rest_under_other() {
+    let budget = report(vec![
+        row(
+            "models",
+            "work",
+            NOW,
+            vec![outlook("5h", 100_000, at(60), None)],
+        ),
+        row(
+            "codex",
+            "gpt",
+            NOW,
+            vec![outlook("7d", 100_000, at(60), None)],
+        ),
+        row(
+            "zk-claude",
+            "old",
+            NOW,
+            vec![outlook("7d", 100_000, at(60), None)],
+        ),
+        row(
+            "models",
+            "home",
+            NOW,
+            vec![outlook("5h", 100_000, at(60), None)],
+        ),
+    ]);
+    let facts = vec![
+        fact("models", "work", Some("anthropic")),
+        fact("models", "home", Some("anthropic")),
+        fact("codex", "gpt", Some("openai")),
+        fact("zk-claude", "old", None),
+    ];
+    let kept = freshest(&budget.accounts);
+    let found = grouped(&kept, &facts);
+    let groups: Vec<(Option<&str>, Vec<&str>)> = found
+        .iter()
+        .map(|(provider, rows)| {
+            let named = rows.iter().map(|row| row.account.as_str()).collect();
+            (provider.as_deref(), named)
+        })
+        .collect();
+    assert_eq!(
+        groups,
+        [
+            (Some("anthropic"), vec!["home", "work"]),
+            (Some("openai"), vec!["gpt"]),
+            (None, vec!["old"]),
+        ]
+    );
+    let net = Net {
+        budget,
+        facts,
+        ..Net::default()
+    };
+    let (cx, _) = seated(net, EDDY);
+    for text in ["Anthropic", "Openai", "Other"] {
+        assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
+    }
+}
+
+#[test]
+fn the_login_a_gate_names_shows_under_its_account_and_a_swap_says_what_it_was() {
+    let budget = report(vec![
+        row(
+            "models",
+            "work",
+            NOW,
+            vec![outlook("5h", 100_000, at(60), None)],
+        ),
+        row(
+            "models",
+            "home",
+            NOW,
+            vec![outlook("5h", 100_000, at(60), None)],
+        ),
+    ]);
+    let swapped = BudgetFact {
+        identity: Some("acct-7f3a".into()),
+        previous: Some("acct-12c9".into()),
+        changed: Some(NOW - 40 * MINUTE),
+        ..fact("models", "work", Some("anthropic"))
+    };
+    let net = Net {
+        budget,
+        facts: vec![swapped, fact("models", "home", Some("anthropic"))],
+        ..Net::default()
+    };
+    let (cx, _) = seated(net, EDDY);
+    let shown = cx.texts();
+    assert!(cx.has_text("acct-7f3a · via models"), "{shown:?}");
+    assert!(cx.has_text("via models"), "no login named: {shown:?}");
+    let was = shown
+        .iter()
+        .filter(|text| text.starts_with("was acct-12c9 until "));
+    assert_eq!(was.count(), 1, "{shown:?}");
 }

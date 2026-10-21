@@ -45,7 +45,7 @@ pub struct Agents {
     #[serde(skip)]
     roster: Reread<Roster>,
     #[serde(skip)]
-    budget: Reread<harness::BudgetReport>,
+    budget: Reread<harness::BudgetFactsReport>,
     #[serde(skip)]
     detail: Reread<Detail>,
     #[serde(skip)]

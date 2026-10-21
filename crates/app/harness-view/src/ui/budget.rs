@@ -1,7 +1,7 @@
-//! The model budget atop the agents: one row per model account from its freshest read, a bar per
-//! usage window (amber from 80%, red from 95%) with the time to its reset, and whether the account
-//! is the one its service answers with, usable or spent.
-use harness::{AccountBudget, WHOLE_WINDOW, WindowOutlook};
+//! The model budget atop the agents: one row per model account from its freshest read, grouped by the
+//! provider its calls were for, with the login its gate names, a bar per usage window (amber from
+//! 80%, red from 95%) and the time to its reset, and whether it answers, has room or is spent.
+use harness::{AccountBudget, BudgetFact, WHOLE_WINDOW, WindowOutlook};
 use view::design::{Ladder, space, text};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
@@ -9,8 +9,8 @@ use view::{Div, FontWeight, Stateful};
 use super::caption;
 use crate::Agents;
 use crate::words::{
-    budget_calls, budget_left, budget_name, budget_percent, budget_runs_out, budget_via,
-    budget_window_label,
+    budget_calls, budget_left, budget_name, budget_percent, budget_provider, budget_runs_out,
+    budget_swapped, budget_via, budget_window_label,
 };
 
 const NAME: f32 = 200.;
@@ -96,6 +96,29 @@ pub(crate) fn answering<'a>(rows: &[&'a AccountBudget], now: u64) -> Vec<&'a str
     active
 }
 
+pub(crate) fn fact<'a>(facts: &'a [BudgetFact], row: &AccountBudget) -> Option<&'a BudgetFact> {
+    let mut found = facts.iter();
+    found.find(|fact| fact.service == row.service && fact.account == row.account)
+}
+
+pub(crate) type Group<'a> = (Option<String>, Vec<&'a AccountBudget>);
+
+pub(crate) fn grouped<'a>(rows: &[&'a AccountBudget], facts: &[BudgetFact]) -> Vec<Group<'a>> {
+    let mut groups: Vec<Group<'a>> = Vec::new();
+    for row in rows {
+        let provider = fact(facts, row).and_then(|fact| fact.provider.clone());
+        match groups.iter_mut().find(|(held, _)| *held == provider) {
+            Some((_, members)) => members.push(row),
+            None => groups.push((provider, vec![row])),
+        }
+    }
+    groups.sort_by_key(|(provider, _)| (provider.is_none(), provider.clone()));
+    for (_, members) in &mut groups {
+        members.sort_by(|a, b| a.account.cmp(&b.account));
+    }
+    groups
+}
+
 pub(crate) fn ordered(row: &AccountBudget) -> Vec<&WindowOutlook> {
     let mut windows: Vec<&WindowOutlook> = row.windows.iter().collect();
     windows.sort_by_key(|window| match window.name.as_str() {
@@ -107,7 +130,8 @@ pub(crate) fn ordered(row: &AccountBudget) -> Vec<&WindowOutlook> {
 }
 
 pub(crate) fn strip(view: &Agents, theme: &Theme, ladder: &Ladder) -> Option<Stateful<Div>> {
-    let report = view.budget.ready()?;
+    let read = view.budget.ready()?;
+    let report = &read.budget;
     let now = view
         .roster
         .ready()
@@ -123,29 +147,55 @@ pub(crate) fn strip(view: &Agents, theme: &Theme, ladder: &Ladder) -> Option<Sta
     let none = "No model answer has named its usage windows yet.";
     Some(match rows.is_empty() {
         true => strip.child(caption(none, theme)),
-        false => strip.child(accounts(&rows, now, theme, ladder)),
+        false => strip.children(groups(&rows, &read.facts, now, theme, ladder)),
     })
 }
 
-fn accounts(rows: &[&AccountBudget], now: u64, theme: &Theme, ladder: &Ladder) -> Div {
+fn groups(
+    rows: &[&AccountBudget],
+    facts: &[BudgetFact],
+    now: u64,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Vec<Div> {
     let active = answering(rows, now);
-    let mut named = rows.to_vec();
-    named.sort_by(|a, b| a.account.cmp(&b.account));
-    let shown = named.into_iter().map(|row| {
-        let answers = active.contains(&row.account.as_str());
-        let state = account_state(row, answers, now);
-        account(row, state, now, theme, ladder)
+    let shown = grouped(rows, facts).into_iter().map(|(provider, members)| {
+        let named = provider.as_deref().unwrap_or("other");
+        let head = div()
+            .id(SharedString::from(format!("budget-provider-{named}")))
+            .flex()
+            .items_baseline()
+            .gap(space::SM)
+            .pt(space::XS)
+            .pb(space::XS)
+            .role(Role::Heading)
+            .aria_level(3)
+            .child(
+                div()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(budget_provider(provider.as_deref())),
+            )
+            .child(caption(members.len().to_string(), theme));
+        let rows = members.into_iter().map(|row| {
+            let answers = active.contains(&row.account.as_str());
+            let state = account_state(row, answers, now);
+            account(row, fact(facts, row), state, now, theme, ladder)
+        });
+        div().flex().flex_col().child(head).child(
+            div()
+                .flex()
+                .flex_col()
+                .border_t_1()
+                .border_color(theme.border)
+                .children(rows),
+        )
     });
-    div()
-        .flex()
-        .flex_col()
-        .border_t_1()
-        .border_color(theme.border)
-        .children(shown)
+    shown.collect()
 }
 
 fn account(
     row: &AccountBudget,
+    fact: Option<&BudgetFact>,
     state: AccountState,
     now: u64,
     theme: &Theme,
@@ -162,7 +212,11 @@ fn account(
                 .font_weight(FontWeight::MEDIUM)
                 .child(budget_name(row)),
         )
-        .child(caption(budget_via(row), theme).truncate());
+        .child(caption(budget_via(row, fact), theme).truncate())
+        .children(
+            fact.and_then(|fact| budget_swapped(fact, now))
+                .map(|words| caption(words, theme).text_color(theme.warning).truncate()),
+        );
     let windows = div().flex_1().min_w_0().flex().gap(space::LG).children(
         ordered(row)
             .into_iter()

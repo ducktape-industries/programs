@@ -1,7 +1,7 @@
 //! The words both trees read a screen by: a state, a place, a conversation, an agent's setup,
 //! a context and its usage. Each takes what the reads hold and gives a sentence or a few words;
 //! the screens decide where they go.
-use harness::{AccountBudget, Awaited, BudgetReport, WHOLE_WINDOW, WindowOutlook};
+use harness::{AccountBudget, Awaited, BudgetFact, BudgetReport, WHOLE_WINDOW, WindowOutlook};
 use harness::{
     AgentSetup, Asking, Body, CallRow, CallState, Configured, Flow, Frame, Partial, ServerTool,
     Spoken, Stop, Thinking, ThreadRow, Usage, Window,
@@ -960,8 +960,32 @@ pub(crate) fn budget_name(row: &AccountBudget) -> String {
     }
 }
 
-pub(crate) fn budget_via(row: &AccountBudget) -> String {
-    format!("via {}", row.service)
+pub(crate) fn budget_via(row: &AccountBudget, fact: Option<&BudgetFact>) -> String {
+    match fact.and_then(|fact| fact.identity.as_deref()) {
+        Some(identity) => format!("{identity} · via {}", row.service),
+        None => format!("via {}", row.service),
+    }
+}
+
+fn clock_from(now: u64, then: u64) -> String {
+    match design::day(now) == design::day(then) {
+        true => design::clock(then),
+        false => format!("{}, {}", design::day(then), design::clock(then)),
+    }
+}
+
+pub(crate) fn budget_swapped(fact: &BudgetFact, now: u64) -> Option<String> {
+    let previous = fact.previous.as_deref()?;
+    let changed = fact.changed?;
+    Some(format!("was {previous} until {}", clock_from(now, changed)))
+}
+
+pub(crate) fn budget_provider(provider: Option<&str>) -> String {
+    let mut letters = provider.unwrap_or_default().chars();
+    match letters.next() {
+        Some(first) => first.to_uppercase().chain(letters).collect(),
+        None => "Other".to_owned(),
+    }
 }
 
 pub(crate) fn budget_calls(report: &BudgetReport, accounts: usize) -> String {

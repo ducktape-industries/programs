@@ -138,8 +138,8 @@ pub(crate) fn header<'a>(response: &'a http::Response, name: &str) -> Option<&'a
     found.map(|(_, value)| value.trim())
 }
 
-pub(crate) fn window_seen(ctx: &ExecCtx, service: &str, response: &http::Response) {
-    crate::budget::seen(ctx, service, response);
+pub(crate) fn window_seen(ctx: &ExecCtx, service: &str, provider: &str, response: &http::Response) {
+    crate::budget::seen(ctx, service, provider, response);
     let utilization = header(response, UTILIZATION);
     let reset = header(response, RESET).and_then(|value| value.parse().ok());
     let (Some(utilization), Some(reset)) = (utilization, reset) else {

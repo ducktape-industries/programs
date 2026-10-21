@@ -21,7 +21,9 @@ the provider's own headers (its rate-limit windows) passed back as they came.
 Every answer also carries the budget in harness's own words (`budget`): for each usage window
 `x-harness-window-<name>-used` (the share used, a fraction), `-reset` (seconds since the epoch) and
 `-status`, then `x-harness-status` and `x-harness-account`: the account that answered, by the name
-a `pinned` target gives it where the service names its accounts, else the provider's own id for it.
+a `pinned` target gives it where the service names its accounts, else the provider's own id for it,
+and `x-harness-identity` where the gate names the login that answers under that account (a provider
+account id or a short label the gate's owner picks, never an email), so a swap behind a name shows.
 A window is named by its length (`5h`, `7d`), so every provider's windows read alike.
 There is no version anywhere: the vocabulary changes with harness, and this crate's tests hold both
 sides to it.

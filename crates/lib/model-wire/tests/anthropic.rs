@@ -571,6 +571,7 @@ fn the_unified_windows_read_as_the_harness_budget() {
         ],
         status: Some("allowed_warning".into()),
         account: Some("org-a".into()),
+        identity: None,
     };
     assert_eq!(budget, expected);
     assert_eq!(Budget::read(&budget.headers()), expected);

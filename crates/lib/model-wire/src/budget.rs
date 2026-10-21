@@ -1,9 +1,10 @@
 //! The model budget in harness's own words, on every answer the adapter gives beside the provider's
-//! own headers: each usage window's share used (a fraction), its reset (seconds since the epoch)
-//! and status, the account's status, and the provider's own id for the account.
+//! own headers: each window's share used (a fraction), its reset (seconds since the epoch) and
+//! status, the account's status and the provider's own id for it, and the login a gate names.
 pub const WINDOW: &str = "x-harness-window-";
 pub const STATUS: &str = "x-harness-status";
 pub const ACCOUNT: &str = "x-harness-account";
+pub const IDENTITY: &str = "x-harness-identity";
 const USED: &str = "-used";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -19,6 +20,7 @@ pub struct Budget {
     pub windows: Vec<Window>,
     pub status: Option<String>,
     pub account: Option<String>,
+    pub identity: Option<String>,
 }
 
 pub(crate) fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
@@ -46,6 +48,8 @@ impl Budget {
         headers.extend(status);
         let account = self.account.iter();
         headers.extend(account.map(|account| (ACCOUNT.to_owned(), account.clone())));
+        let identity = self.identity.iter();
+        headers.extend(identity.map(|identity| (IDENTITY.to_owned(), identity.clone())));
         headers
     }
 
@@ -76,6 +80,7 @@ impl Budget {
             windows,
             status: header(headers, STATUS).map(str::to_owned),
             account: header(headers, ACCOUNT).map(str::to_owned),
+            identity: header(headers, IDENTITY).map(str::to_owned),
         }
     }
 }

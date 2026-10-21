@@ -29,6 +29,7 @@ use crate::{
 
 struct Asked {
     wire: Wire,
+    provider: String,
     service: String,
     account: Option<String>,
     thread: u64,
@@ -239,7 +240,7 @@ async fn call_model(
     let bytes = answer.map_err(|error| Failure::unreached(&error))?;
     let response: http::Response = abi::decode(&bytes)
         .map_err(|_| Failure::last("the egress answer is not an HTTP response"))?;
-    resume::window_seen(ctx, &asked.service, &response);
+    resume::window_seen(ctx, &asked.service, &asked.provider, &response);
     routes::heard(ctx, asked.thread, &response);
     let answered_a_prompt = prompted && response.status == 200;
     if answered_a_prompt {
@@ -720,6 +721,7 @@ fn plan(ctx: &ExecCtx, thread: &mut ThreadRow, agent: &Agent) -> Result<Option<S
     };
     let asked = Asked {
         wire: spoken,
+        provider: model.provider.clone(),
         service: pick.service,
         account: pick.account,
         thread: thread.id,

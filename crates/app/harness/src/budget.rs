@@ -6,8 +6,13 @@ use abi::role::egress::http;
 use model_wire::budget as harness_words;
 
 use crate::resume::header;
-use crate::state::{BUDGETS, Budget, BudgetWindow, FLIGHTS, PACES, Pace, Seen};
-use crate::{AccountBudget, BudgetReport, ServicePace, WHOLE_WINDOW as WHOLE, WindowOutlook};
+use crate::state::{
+    BUDGET_FACTS, BUDGETS, Budget, BudgetFacts, BudgetWindow, FLIGHTS, PACES, Pace, Seen,
+};
+use crate::{
+    AccountBudget, BudgetFact, BudgetFactsReport, BudgetReport, ServicePace, WHOLE_WINDOW as WHOLE,
+    WindowOutlook,
+};
 
 const PREFIX: &str = "anthropic-ratelimit-unified-";
 const UTILIZATION: &str = "-utilization";
@@ -128,7 +133,37 @@ fn merge_budget_windows(
     windows
 }
 
-pub(crate) fn seen(ctx: &ExecCtx, service: &str, response: &http::Response) {
+pub(crate) fn learned(
+    held: BudgetFacts,
+    provider: &str,
+    identity: Option<&str>,
+    time: u64,
+) -> BudgetFacts {
+    let provider = Some(provider.to_owned());
+    let Some(identity) = identity else {
+        return BudgetFacts { provider, ..held };
+    };
+    let swapped = held
+        .identity
+        .as_deref()
+        .is_some_and(|before| before != identity);
+    let identity = Some(identity.to_owned());
+    match swapped {
+        true => BudgetFacts {
+            provider,
+            identity,
+            previous: held.identity,
+            changed: Some(time),
+        },
+        false => BudgetFacts {
+            provider,
+            identity,
+            ..held
+        },
+    }
+}
+
+pub(crate) fn seen(ctx: &ExecCtx, service: &str, provider: &str, response: &http::Response) {
     let env = ctx.env();
     paced(ctx, service, env.time);
     let windows = windows(response, env.time);
@@ -144,6 +179,7 @@ pub(crate) fn seen(ctx: &ExecCtx, service: &str, response: &http::Response) {
         let unnamed = (service.to_owned(), organization.to_owned());
         if unnamed != key {
             BUDGETS.remove(ctx, &unnamed);
+            BUDGET_FACTS.remove(ctx, &unnamed);
         }
     }
     let anthropic_status = format!("{PREFIX}status");
@@ -160,6 +196,13 @@ pub(crate) fn seen(ctx: &ExecCtx, service: &str, response: &http::Response) {
         time: env.time,
     };
     BUDGETS.put(ctx, &key, &row);
+    let identity = named(response, harness_words::IDENTITY);
+    let held = BUDGET_FACTS
+        .get(ctx, &key)
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    BUDGET_FACTS.put(ctx, &key, &learned(held, provider, identity, env.time));
 }
 
 fn paced(ctx: &ExecCtx, service: &str, time: u64) {
@@ -232,6 +275,23 @@ pub(crate) fn report(ctx: &QueryCtx) -> Result<BudgetReport, Error> {
         accounts,
         reads: Vec::new(),
     })
+}
+
+pub(crate) fn facts(ctx: &QueryCtx) -> Result<BudgetFactsReport, Error> {
+    let budget = report(ctx)?;
+    let facts = BUDGET_FACTS
+        .all(ctx)?
+        .into_iter()
+        .map(|((service, account), held)| BudgetFact {
+            service,
+            account,
+            provider: held.provider,
+            identity: held.identity,
+            previous: held.previous,
+            changed: held.changed,
+        })
+        .collect();
+    Ok(BudgetFactsReport { budget, facts })
 }
 
 fn outlook(service: String, account: String, row: Budget, time: u64) -> AccountBudget {

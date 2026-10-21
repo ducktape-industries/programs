@@ -819,6 +819,22 @@ pub struct WindowOutlook {
     pub runs_out: Option<u64>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct BudgetFactsReport {
+    pub budget: BudgetReport,
+    pub facts: Vec<BudgetFact>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct BudgetFact {
+    pub service: String,
+    pub account: String,
+    pub provider: Option<String>,
+    pub identity: Option<String>,
+    pub previous: Option<String>,
+    pub changed: Option<u64>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Route {
     pub service: String,
@@ -1138,6 +1154,10 @@ pub enum Query {
         agent: AccountNumber,
         page: PageRequest,
     },
+    #[ask(Reply::BudgetFacts(BudgetFactsReport))]
+    #[reads(state::BUDGETS, state::PACES, state::FLIGHTS, state::BUDGET_FACTS)]
+    #[tool_query(description = "Budget, with what harness learned of each service account: the provider its calls were for, the login its gate names behind it, and the login before that with when it changed.", example = examples::budget_facts)]
+    BudgetFacts,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -1175,6 +1195,7 @@ pub enum Reply {
     FinalErrors(PageResponse<FinalError>),
     Runs(Vec<RunRow>),
     Conversations(PageResponse<Conversation>),
+    BudgetFacts(BudgetFactsReport),
 }
 
 pub fn attributed_as() -> Vec<u8> {
@@ -1495,7 +1516,8 @@ fn query_variants_only_append() {
             "ProviderRoutes",
             "FinalErrors",
             "Runs",
-            "Conversations"
+            "Conversations",
+            "BudgetFacts"
         ]
     );
 }

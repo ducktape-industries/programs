@@ -108,6 +108,7 @@ impl Program for Harness {
             Query::Conversations { agent, page } => Ok(Reply::Conversations(
                 queries::conversations(ctx, agent, &page)?,
             )),
+            Query::BudgetFacts => Ok(Reply::BudgetFacts(budget::facts(ctx)?)),
         }
     }
 }

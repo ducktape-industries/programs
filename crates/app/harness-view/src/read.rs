@@ -206,8 +206,8 @@ pub(crate) async fn roster(
 }
 
 // the model budget, as harness keeps it
-pub(crate) async fn budget(host: &Host) -> Result<harness::BudgetReport, Error> {
-    host.query(harness::ask::Budget).await
+pub(crate) async fn budget(host: &Host) -> Result<harness::BudgetFactsReport, Error> {
+    host.query(harness::ask::BudgetFacts).await
 }
 
 /// How many member nodes the chain would elect for `service` now.

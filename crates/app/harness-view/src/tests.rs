@@ -304,6 +304,7 @@ struct Net {
     // each thread's open settle window
     settling: Vec<(u64, harness::SettleWindow)>,
     budget: harness::BudgetReport,
+    facts: Vec<harness::BudgetFact>,
     // the open thread's armed waits
     armed: Vec<harness::WaitRow>,
     runs: Vec<(u64, harness::RunRow)>,
@@ -455,6 +456,7 @@ impl Default for Net {
             requests: vec![turn_request(41, 7, 9001)],
             settling: Vec::new(),
             budget: harness::BudgetReport::default(),
+            facts: Vec::new(),
             armed: Vec::new(),
             runs: Vec::new(),
             files: Vec::new(),
@@ -605,6 +607,12 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
             harness::Query::Booking { .. } => harness::Reply::Booking(None),
             harness::Query::UsageWindow { .. } => harness::Reply::UsageWindow(None),
             harness::Query::Budget => harness::Reply::Budget(net.budget.clone()),
+            harness::Query::BudgetFacts => {
+                harness::Reply::BudgetFacts(harness::BudgetFactsReport {
+                    budget: net.budget.clone(),
+                    facts: net.facts.clone(),
+                })
+            }
             harness::Query::Waits { .. } => harness::Reply::Waits(page(Vec::new())),
             harness::Query::Armed { thread, .. } => harness::Reply::Waits(page(
                 net.armed
@@ -1851,6 +1859,17 @@ fn answered() -> Net {
     net
 }
 
+fn budget_fact(service: &str, account: &str, identity: Option<&str>) -> harness::BudgetFact {
+    harness::BudgetFact {
+        service: service.into(),
+        account: account.into(),
+        provider: Some("anthropic".into()),
+        identity: identity.map(str::to_owned),
+        previous: None,
+        changed: None,
+    }
+}
+
 fn budgeted() -> Net {
     fn window(name: &str, used: u64, hours: u64, runs_out: Option<u64>) -> harness::WindowOutlook {
         let status = if used >= 1_000_000 {
@@ -1971,6 +1990,16 @@ fn budgeted() -> Net {
             accounts,
             reads: Vec::new(),
         },
+        facts: vec![
+            budget_fact("models", "anthropic1-eph", Some("org-01de")),
+            budget_fact("models", "anthropic3-eph", Some("org-29bc")),
+            budget_fact("models", "jesse.claude.ext.5", Some("org-41c3")),
+            harness::BudgetFact {
+                previous: Some("acct-12c9".into()),
+                changed: Some(NOW - 40 * 60_000),
+                ..budget_fact("zk-claude", "zk-dev", Some("acct-7f3a"))
+            },
+        ],
         ..Net::default()
     }
 }

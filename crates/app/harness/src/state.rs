@@ -65,6 +65,7 @@ pub const USAGE: Map<String, UsageWindow> = Map::new("usage/");
 // a thread whose general input waits out its agent's `settle`, and the wake-up that ends it
 pub const SETTLING: Map<u64, SettleWindow> = Map::new("settling/");
 pub const BUDGETS: Map<(String, String), Budget> = Map::new("budget/");
+pub const BUDGET_FACTS: Map<(String, String), BudgetFacts> = Map::new("budget-facts/");
 pub const PACES: Map<String, Pace> = Map::new("pace/");
 pub const COUNT: Item<u64> = Item::new("count");
 pub const WATCHES: Map<u64, Watching> = Map::new("watch/");
@@ -273,6 +274,14 @@ pub struct BudgetWindow {
     pub since: Seen,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct BudgetFacts {
+    pub provider: Option<String>,
+    pub identity: Option<String>,
+    pub previous: Option<String>,
+    pub changed: Option<u64>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Seen {
     pub used: u64,
@@ -418,7 +427,12 @@ pub fn written(key: &[u8]) -> Option<Written> {
             return Some(Written::Agent(agent));
         }
     }
-    let budget = [BUDGETS.key(&()), PACES.key(&()), FLIGHTS.key(&())];
+    let budget = [
+        BUDGETS.key(&()),
+        BUDGET_FACTS.key(&()),
+        PACES.key(&()),
+        FLIGHTS.key(&()),
+    ];
     if budget.iter().any(|prefix| key.starts_with(prefix)) {
         return Some(Written::Budget);
     }
