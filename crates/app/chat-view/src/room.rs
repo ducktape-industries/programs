@@ -255,6 +255,79 @@ impl Chat {
         self.open_at(id, 0, cx);
     }
 
+    pub(crate) fn jump_to_newest(&mut self, cx: &mut Context<Self>) {
+        let viewer = self.viewer();
+        let screenful = self.screenful() as u64;
+        let Some(room) = self.room.as_ref() else {
+            return;
+        };
+        let id = room.id.clone();
+        let landed = room.landed;
+        let newest_held = edge(room, Side::Newer);
+        let reading = room.newer_loading;
+        let head = self
+            .channels
+            .ready()
+            .and_then(|list| list.iter().find(|info| info.channel.id == id))
+            .map(|info| info.head_seq);
+        self.drawn(Pane::Timeline).borrow_mut().follow = true;
+        cx.notify();
+        if !landed {
+            room_of(self).at_tail = true;
+            return;
+        }
+        let (Some(newest_held), Some(head)) = (newest_held, head) else {
+            self.open(id, cx);
+            return;
+        };
+        if newest_held >= head {
+            self.reached_head(cx);
+            return;
+        }
+        if reading {
+            return;
+        }
+        room_of(self).newer_loading = true;
+        let joins_the_held_rows = head - newest_held <= screenful;
+        let read_past = match joins_the_held_rows {
+            true => newest_held,
+            false => head - screenful,
+        };
+        let newer = queries::newer(cx.host(), id.clone(), (read_past, head), viewer);
+        cx.land(newer, move |chat, result, cx| {
+            cx.notify();
+            let Some(room) = chat.room.as_mut() else {
+                return;
+            };
+            let beside =
+                room.id == id && room.landed && edge(room, Side::Newer) == Some(newest_held);
+            if !beside {
+                return;
+            }
+            room.newer_loading = false;
+            match result {
+                Ok(newer) => {
+                    let seqs = reacted(&newer);
+                    match joins_the_held_rows {
+                        true => room.extend(Side::Newer, newer),
+                        false => {
+                            room.messages = Loadable::Ready(newer);
+                            room.has_older = true;
+                            room.settle();
+                        }
+                    }
+                    room.read_reactors_of(seqs, cx);
+                    chat.drawn(Pane::Timeline).borrow_mut().follow = true;
+                    chat.reached_head(cx);
+                }
+                Err(refusal) => {
+                    chat.notice = words::unreadable_room(&design::sentence(&refusal));
+                }
+            }
+        })
+        .detach();
+    }
+
     /// The room at its live tail (`land` 0) or around a landing seq.
     pub(crate) fn open_at(&mut self, id: String, land: u64, cx: &mut Context<Self>) {
         let viewer = self.viewer();

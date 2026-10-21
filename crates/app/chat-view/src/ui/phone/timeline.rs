@@ -81,7 +81,7 @@ pub(super) fn list(
         )
         .child(rows(chat, pane, cx, theme, ladder))
         .when(timeline && (room.landed || !room.at_tail), |frame| {
-            frame.child(latest(room.id.clone(), cx, theme, ladder))
+            frame.child(latest(cx, theme, ladder))
         })
         .into_any_element()
 }
@@ -267,11 +267,8 @@ fn replies(root: &ChatMessage, theme: &Theme, ladder: &Ladder) -> AnyElement {
         .into_any_element()
 }
 
-fn latest(room: String, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> AnyElement {
-    let open = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
-        cx.notify();
-        chat.open(room.clone(), cx)
-    });
+fn latest(cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> AnyElement {
+    let open = cx.listener(move |chat, _: &ClickEvent, _window, cx| chat.jump_to_newest(cx));
     div()
         .absolute()
         .left_0()

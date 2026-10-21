@@ -156,6 +156,25 @@ pub(crate) async fn span(
     Ok(sorted(rows.into_iter().filter(held).collect()))
 }
 
+pub(crate) async fn newer(
+    host: Host,
+    channel_id: String,
+    (newest_held, head): (u64, u64),
+    viewer: Vec<Principal>,
+) -> Result<Vec<MsgRow>, Error> {
+    let missing = head.saturating_sub(newest_held);
+    let rows = host
+        .query(ask::MessagesAround {
+            channel_id,
+            seq: newest_held + 1 + missing / 2,
+            viewer,
+            page: page(None, usize::try_from(missing).unwrap_or(usize::MAX)),
+        })
+        .await?;
+    let past = |row: &MsgRow| row.seq > newest_held;
+    Ok(sorted(rows.into_iter().filter(past).collect()))
+}
+
 pub(crate) fn sorted(mut rows: Vec<MsgRow>) -> Vec<MsgRow> {
     rows.sort_by_key(|row| row.seq);
     rows

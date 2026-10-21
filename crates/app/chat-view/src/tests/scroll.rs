@@ -377,6 +377,117 @@ fn a_landed_room_opens_on_its_message_and_pages_both_ways() {
     assert!(cx.find("chat-jump-latest").is_none());
 }
 
+fn message_reads(cx: &TestAppContext) -> Vec<Query> {
+    let asked = cx.host().requests::<Ask<::chat::Chat>>().into_iter();
+    asked
+        .filter(|query| {
+            matches!(
+                query,
+                Query::Roots { .. } | Query::MessagesAround { .. } | Query::Thread { .. }
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn latest_in_a_landed_room_reads_only_the_rows_past_the_newest_it_holds() {
+    let (mut cx, view) = long_room(Rc::new(Cell::new(600)));
+    open_link(&mut cx, 500);
+    assert_eq!(seqs(&view), (436, 564, 129));
+    let before = message_reads(&cx).len();
+    cx.simulate_click("chat-jump-latest-button");
+    cx.run_until_parked();
+    let asked = message_reads(&cx).split_off(before);
+    let [Query::MessagesAround { seq, page, .. }] = asked.as_slice() else {
+        panic!("one read of the rows past 564, not the room again: {asked:?}")
+    };
+    let half = page.limit() / 2;
+    assert_eq!(seq - half, 565, "no row the view holds is read again");
+    assert!(seq + half >= 600, "the rows up to the head are read");
+    assert_eq!(
+        seqs(&view),
+        (436, 600, 165),
+        "the held rows stay and the newer ones join them"
+    );
+    view.read(|chat| {
+        let room = chat.room.as_ref().unwrap();
+        assert!(!room.landed && room.at_tail, "the room is live at its end");
+    });
+    let (id, _, _) = window(&cx);
+    assert_eq!(id, "chat-message-rows");
+    assert!(cx.find("chat-jump-latest").is_none());
+}
+
+#[test]
+fn latest_past_more_than_a_screenful_reads_the_newest_screenful_alone_and_lands_at_the_head() {
+    let (mut cx, view) = long_room(Rc::new(Cell::new(1_000)));
+    open_link(&mut cx, 100);
+    assert_eq!(
+        seqs(&view),
+        (36, 164, 129),
+        "a screenful of 64 either side of 100"
+    );
+    let before = message_reads(&cx).len();
+    cx.simulate_click("chat-jump-latest-button");
+    cx.run_until_parked();
+    let asked = message_reads(&cx).split_off(before);
+    let [Query::MessagesAround { page, .. }] = asked.as_slice() else {
+        panic!("one read: {asked:?}")
+    };
+    assert!(
+        page.limit() <= 64,
+        "no read past a screenful of the gap: {page:?}"
+    );
+    let (first, last, held) = seqs(&view);
+    assert_eq!(last, 1_000, "the room lands at its head");
+    assert!(
+        first > 164 && held <= 65,
+        "the gap stays unread: {first}..{last}, {held} rows"
+    );
+    view.read(|chat| {
+        let room = chat.room.as_ref().unwrap();
+        assert!(!room.landed && room.at_tail && room.has_older);
+    });
+    assert!(cx.find("chat-jump-latest").is_none());
+}
+
+#[test]
+fn latest_in_a_live_room_scrolled_up_reads_nothing_and_goes_to_its_end() {
+    let (mut cx, view) = full_room(Rc::new(Cell::new(ROOM_ROWS as u64)));
+    let wire::Node::List {
+        scroll_handler: Some(handler),
+        item_count,
+        ..
+    } = timeline(&cx)
+    else {
+        panic!("the timeline hears its scroll")
+    };
+    cx.simulate_event(wire::Event::ListScroll {
+        handler,
+        event: wire::ListScroll {
+            visible_start: 100,
+            visible_end: 130,
+            count: item_count,
+            is_scrolled: true,
+            is_following_tail: false,
+            offset: wire::ListOffset::default(),
+        },
+    });
+    assert!(cx.find("chat-jump-latest").is_some(), "scrolled up");
+    let held = seqs(&view);
+    let before = message_reads(&cx).len();
+    cx.simulate_click("chat-jump-latest-button");
+    cx.run_until_parked();
+    let asked = message_reads(&cx).split_off(before);
+    assert!(
+        asked.is_empty(),
+        "the view holds the newest rows, and read {asked:?}"
+    );
+    assert_eq!(seqs(&view), held, "the rows it holds stay");
+    view.read(|chat| assert!(chat.room.as_ref().unwrap().at_tail));
+    assert!(cx.find("chat-jump-latest").is_none());
+}
+
 const SEEDED_HEAD: u64 = 49;
 
 fn seeded_room(listed: Option<u64>) -> (TestAppContext, Entity<Chat>) {

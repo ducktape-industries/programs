@@ -341,11 +341,7 @@ fn jump_to_latest(
     if !room.landed && room.at_tail {
         return None;
     }
-    let id = room.id.clone();
-    let latest = cx.listener(move |chat, _: &ClickEvent, _, cx| {
-        cx.notify();
-        chat.open(id.clone(), cx)
-    });
+    let latest = cx.listener(move |chat, _: &ClickEvent, _, cx| chat.jump_to_newest(cx));
     let jump = div()
         .id("chat-jump-latest")
         .absolute()
