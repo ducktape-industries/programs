@@ -1,34 +1,6 @@
-//! the `duck://` link: one grammar for naming a thing on a ducktape network,
-//! read in one place.
-//!
-//! ```text
-//! duck://<label>-<salt>/<program>/<tail…>
-//! duck://dognet-b5b6ea90/chat/general/42
-//! ```
-//!
-//! THE AUTHORITY IS THE CHAIN ID. The workspace registry keys a network
-//! `<label>#<salt>` (the salt being hex digits of the genesis digest: 8 today,
-//! any even count from 8 to 64 reads), and `#` starts a URL fragment, so a link
-//! writes the same pair with `-`. The salt is the match key; the label is
-//! display. Whether a label AGREES with the registry is the reader's question,
-//! not this crate's: it reads nothing.
-//!
-//! THE FIRST PATH SEGMENT NAMES A PROGRAM. This crate does not know which
-//! programs exist — the `programs` program's roster does — so it checks only the
-//! spelling (`program::is_name`: `1..=64` of `[a-z0-9_-]`) and keeps the tail as decoded segments,
-//! interpreting none of it. What a tail MEANS is the program's to say, and a
-//! view that names one copies that rule beside itself.
-//!
-//! THE TAIL CARRIES ANY NAME, IN EXACTLY ONE SPELLING. A segment may hold any
-//! text but `/`, NUL, `.` and `..`. [`Link::tail`] holds it decoded; `Display`
-//! writes a byte literally iff it is RFC 3986 unreserved (`A-Z a-z 0-9 - . _
-//! ~`) and every other byte as `%XX` in uppercase hex; `parse` refuses every
-//! other spelling of the same name instead of normalising it. Two spellings of
-//! one link would be two cache keys and two registry lookups.
-//!
-//! The chain id and the program segment are lowercase and never encoded, and
-//! nothing here case-folds anything: `A` and `a` in a tail segment are two
-//! names.
+//! the `duck://` link: `duck://<label>-<salt>/<program>/<tail…>`, `<program>` a bare id or
+//! `@<owner>/<name>`, read in one place by spelling alone (it reads no roster). The rules and
+//! examples: README.md.
 use abi::reason::INVALID_INPUT;
 
 const SCHEME: &str = "duck://";
@@ -149,14 +121,14 @@ impl Link {
         if path.split('/').any(str::is_empty) {
             return Err(empty(text));
         }
-        let (program, rest) = path.split_once('/').unwrap_or((path, ""));
-        program_segment(program)?;
+        let (program, rest) = read_program(path);
+        program_segment(&program)?;
         Ok(Link {
             chain,
-            program: program.to_string(),
+            program,
             tail: match rest {
-                "" => Vec::new(),
-                rest => tail(rest)?,
+                None => Vec::new(),
+                Some(rest) => tail(rest)?,
             },
         })
     }
@@ -187,7 +159,7 @@ impl std::fmt::Display for Link {
             formatter,
             "{SCHEME}{}/{}",
             self.chain.authority(),
-            self.program
+            written(&self.program)
         )?;
         for segment in &self.tail {
             write!(formatter, "/{}", encode(segment))?;
@@ -208,7 +180,7 @@ pub fn mint(chain: &str, program: &str, tail: &[&str]) -> Option<String> {
 
 pub fn path(program: &str, tail: &[&str]) -> Option<String> {
     program_segment(program).ok()?;
-    let mut spelled = program.to_owned();
+    let mut spelled = written(program);
     for segment in tail {
         let encoded = encode(segment);
         let named = !segment.is_empty() && validate_segment_name(segment, &encoded).is_ok();
@@ -222,11 +194,12 @@ pub fn path(program: &str, tail: &[&str]) -> Option<String> {
 }
 
 pub fn on_chain(chain: &str, path: &str) -> Option<String> {
-    let (program, segments) = match path.split_once('/') {
-        Some((program, rest)) => (program, tail(rest).ok()?),
-        None => (path, Vec::new()),
+    let (program, rest) = read_program(path);
+    let segments = match rest {
+        Some(rest) => tail(rest).ok()?,
+        None => Vec::new(),
     };
-    Link::new(chain.parse().ok()?, program, segments)
+    Link::new(chain.parse().ok()?, &program, segments)
         .ok()
         .map(|link| link.to_string())
 }
@@ -261,14 +234,41 @@ pub fn number(segment: &str) -> Option<u64> {
 }
 
 fn program_segment(program: &str) -> Result<(), Refused> {
-    match program::is_name(program) {
+    match program::is_id(program) {
         true => Ok(()),
         false => Err(Refused::new(
             INVALID_INPUT,
             format!(
-                "A duck:// program segment is a program id, 1..=64 of [a-z0-9_-], and `{program}` is not one."
+                "A duck:// link names its program as a bare id or `@<owner>/<name>`, each name 1..=64 of [a-z0-9_-], and `{}` is not one.",
+                written(program)
             ),
         )),
+    }
+}
+
+fn written(program: &str) -> String {
+    match program.contains('/') {
+        true => format!("@{program}"),
+        false => program.to_owned(),
+    }
+}
+
+fn first_segment(path: &str) -> (&str, Option<&str>) {
+    match path.split_once('/') {
+        Some((first, rest)) => (first, Some(rest)),
+        None => (path, None),
+    }
+}
+
+fn read_program(path: &str) -> (String, Option<&str>) {
+    let (first, rest) = first_segment(path);
+    match (first.strip_prefix('@'), rest) {
+        (Some(owner), Some(rest)) => {
+            let (name, rest) = first_segment(rest);
+            (format!("{owner}/{name}"), rest)
+        }
+        (Some(owner), None) => (format!("{owner}/"), None),
+        (None, rest) => (first.to_owned(), rest),
     }
 }
 
@@ -509,6 +509,53 @@ mod tests {
         ] {
             assert!(Link::parse(text).is_err(), "{text}");
         }
+    }
+
+    #[test]
+    fn an_owned_program_is_written_after_an_at_and_a_bare_one_as_before() {
+        let text = "duck://dognet-b5b6ea90/@ducktape-industries/chat/general/42";
+        let link = Link::parse(text).expect("parses");
+        assert_eq!(link.program, "ducktape-industries/chat");
+        assert_eq!(link.tail, ["general", "42"]);
+        assert_eq!(link.to_string(), text);
+        let bare = Link::parse("duck://dognet-b5b6ea90/chat/general/42").expect("parses");
+        assert_eq!(bare.program, "chat");
+        assert_eq!(bare.tail, ["general", "42"]);
+        let owned = Link::parse("duck://dognet-b5b6ea90/@o/forge").expect("parses");
+        assert_eq!((owned.program.as_str(), owned.tail.len()), ("o/forge", 0));
+        let minted = Link::new(chain(), "ducktape-industries/chat", vec!["general".into()]);
+        assert_eq!(
+            minted.unwrap().to_string(),
+            "duck://dognet-b5b6ea90/@ducktape-industries/chat/general"
+        );
+        assert_eq!(
+            path("o/forge", &["programs", "213"]).as_deref(),
+            Some("@o/forge/programs/213")
+        );
+        let chain_text = "net#0a1b2c3d";
+        assert_eq!(
+            on_chain(chain_text, "@o/forge/programs/213"),
+            mint(chain_text, "o/forge", &["programs", "213"])
+        );
+        for text in [
+            "duck://dognet-b5b6ea90/@chat",
+            "duck://dognet-b5b6ea90/@/chat",
+            "duck://dognet-b5b6ea90/@Owner/chat",
+            "duck://dognet-b5b6ea90/@o@p/chat",
+            "duck://dognet-b5b6ea90/o@p/chat",
+            "duck://dognet-b5b6ea90/@@o/chat",
+        ] {
+            let refused = Link::parse(text).expect_err(text).sentence;
+            assert!(refused.contains("`@<owner>/<name>`"), "{text}: {refused}");
+        }
+        for program in ["@o/forge", "a/b/c", "o/", "/n"] {
+            assert!(
+                Link::new(chain(), program, Vec::new()).is_err(),
+                "{program}"
+            );
+        }
+        assert_eq!(on_chain(chain_text, "@o"), None);
+        assert_eq!(on_chain(chain_text, "@o/"), None);
     }
 
     #[test]

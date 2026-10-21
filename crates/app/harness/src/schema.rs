@@ -5,7 +5,7 @@
 pub(crate) mod tests;
 
 use ::program::schema::SECTION;
-use ::program::{BlobId, Error, QueryCtx, code, is_name, section, tools};
+use ::program::{BlobId, Error, QueryCtx, code, is_id, section, tools};
 use abi::role::programs as role;
 pub(crate) use borsh_json::Interface;
 use borsh_json::tools::Described;
@@ -50,7 +50,7 @@ pub(crate) fn code_of(ctx: &QueryCtx, program: &str) -> Result<BlobId, Error> {
             format!("no program named {program} runs on this network"),
         )
     };
-    if !is_name(program) {
+    if !is_id(program) {
         return Err(unknown());
     }
     running(ctx)?

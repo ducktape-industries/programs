@@ -80,7 +80,9 @@ pub use mock::{
 };
 #[cfg(target_arch = "wasm32")]
 pub use program::exports;
-pub use program::{Ask, Program, Reads, access, execute, hook, is_name, query, resource};
+pub use program::{
+    Ask, Program, Reads, access, execute, hook, is_id, is_name, query, resource, slug,
+};
 pub use program_derive::{Ask, Described};
 pub use refuse::{
     already_exists, capacity, corrupt, decoded, invalid, not_found, stale, unauthorized,

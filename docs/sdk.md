@@ -31,6 +31,12 @@ than writing it twice.
   (`short_hex`, `fingerprint`, `day`, `plural`, `initial`).
 - `view-wire`: every method a view may ask of the host (`view_wire::methods`).
 - `policy-view`: "Who can edit" on an item, and a policy, a party and a scope in words.
-- `ducklink`: the `duck://` link's one grammar, and a path on the reader's own chain (`path`, `on_chain`) for a program, which can't name its chain.
+- `ducklink`: the `duck://` link's one grammar (`duck://<chain>/<id>/<tail>`, an `owner/name` id
+  written `@<owner>/<name>`), and a path on the reader's own chain (`path`, `on_chain`) for a
+  program, which can't name its chain. Its [README](../crates/sdk/ducklink/README.md) is its
+  contract.
+- `program::is_id` and `program::slug`: a program id's one spelling (a name, or `owner/name`, each
+  name `1..=64` of `[a-z0-9_-]`), and the id written as one segment (`/` as `-`) where a channel
+  id names its program.
 - chat-view's widgets ([widgets.md](widgets.md)): any program's query drawn as a list, columns, a
   table, a stat or a checklist from a TOML file, with no view code.

@@ -111,11 +111,6 @@ pub trait Reads {
     fn touched_by(&self, program: &str, keys: &[Vec<u8>]) -> bool;
 }
 
-// Whether `name` is a program id as the network spells one: `1..=64`
-// bytes of lowercase ASCII letters, digits, `-` and `_`. One spelling per
-// id, so no id reads as another (no capital, no look-alike letter, no
-// bidi control). The one rule for a host's `Call.target` and an id the
-// programs role lands.
 pub const fn is_name(name: &str) -> bool {
     let bytes = name.as_bytes();
     if bytes.is_empty() || bytes.len() > 64 {
@@ -129,6 +124,17 @@ pub const fn is_name(name: &str) -> bool {
         i += 1;
     }
     true
+}
+
+pub fn is_id(id: &str) -> bool {
+    match id.split_once('/') {
+        Some((owner, name)) => is_name(owner) && is_name(name),
+        None => is_name(id),
+    }
+}
+
+pub fn slug(id: &str) -> String {
+    id.replace('/', "-")
 }
 
 /// An execute's payload decoded as `M::Op` (refused as invalid input when it
@@ -268,6 +274,30 @@ mod tests {
             assert!(!is_name(name), "{name:?}");
         }
         assert!(is_name(&"x".repeat(64)) && !is_name(&"x".repeat(65)));
+    }
+
+    #[test]
+    fn an_id_is_a_name_or_an_owner_and_a_name() {
+        for id in ["chat", "ducktape-industries/chat", "a/b"] {
+            assert!(is_id(id), "{id:?}");
+        }
+        for id in [
+            "", "/", "a/", "/a", "a/b/c", "a//b", "A/b", "a/B", "a@1", "o/a@1",
+        ] {
+            assert!(!is_id(id), "{id:?}");
+        }
+        assert!(is_id(&format!("{}/{}", "o".repeat(64), "n".repeat(64))));
+        assert!(!is_id(&format!("{}/n", "o".repeat(65))));
+    }
+
+    #[test]
+    fn a_slug_writes_the_owners_slash_as_a_dash() {
+        assert_eq!(
+            slug("ducktape-industries/forge"),
+            "ducktape-industries-forge"
+        );
+        assert_eq!(slug("forge"), "forge");
+        assert_eq!(slug("a-b/c"), slug("a/b-c"));
     }
 
     struct Asker;
