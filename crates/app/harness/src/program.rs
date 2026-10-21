@@ -155,7 +155,7 @@ impl Awaiting for Harness {
                 crate::providers::set_route(&ctx, provider, services)
             }
             Op::RemoveRoute { provider } => crate::providers::remove_route(&ctx, provider),
-            Op::AdoptTallies { after, limit } => tallies::adopt(&ctx, after, limit),
+            Op::AdoptTallies { after, limit } => tallies::adopt(&ctx, after, limit).await,
         }
     }
 }

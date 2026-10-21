@@ -193,6 +193,111 @@ fn adopt_tallies_tallies_each_untallied_conversation_once_and_conversations_read
     );
 }
 
+fn adopting(chain: &MockChain, height: u64) -> usize {
+    let asked = scheduler::Query::Due {
+        height,
+        after: None,
+        limit: None,
+    };
+    let scheduler::Reply::Due { entries, .. } = chain.query(scheduler::PROGRAM, &asked).unwrap()
+    else {
+        panic!("the scheduler answers what is due")
+    };
+    entries
+        .iter()
+        .filter(|entry| {
+            matches!(
+                abi::decode::<Op>(&entry.payload),
+                Ok(Op::AdoptTallies { .. })
+            )
+        })
+        .count()
+}
+
+fn chained(chains: usize) -> (Vec<u64>, u64) {
+    let world = world();
+    let chain = &world.chain;
+    world.opened("m1", "hello", Some(WINDOW));
+    chain.at(3, 0);
+    model_says(
+        chain,
+        json!([{ "type": "text", "text": "Hi." }]),
+        "end_turn",
+    );
+    for _ in 0..2 {
+        let fork = Op::ForkThread { agent: world.agent };
+        chain.submit(signed(ADA), PROGRAM, &fork).unwrap();
+    }
+    let mut ids: Vec<u64> = world.threads().iter().map(|row| row.id).collect();
+    ids.sort();
+    assert_eq!(ids.len(), 3);
+    for id in &ids {
+        chain
+            .host(PROGRAM)
+            .borrow_mut()
+            .state
+            .remove(&TALLIES.key(id));
+    }
+    for _ in 0..chains {
+        let next = adopt_tallies(chain, None, 10);
+        assert!(next.is_some(), "a run that tallied one goes on after it");
+    }
+    let mut height = chain.env(PROGRAM).height;
+    let mut blocks = 0;
+    let mut marked: std::collections::BTreeMap<u64, Tally> = Default::default();
+    loop {
+        for each in conversations(&world) {
+            let id = each.row.id;
+            let Some(kept) = each.tally else {
+                continue;
+            };
+            if let Some(mark) = marked.get(&id) {
+                assert_eq!(kept, *mark, "conversation {id} was tallied again");
+                continue;
+            }
+            assert_eq!(kept, added_up(chain, id), "conversation {id}");
+            let mark = Tally {
+                summaries: kept.summaries + 100,
+                ..kept
+            };
+            chain
+                .host(PROGRAM)
+                .borrow_mut()
+                .state
+                .insert(TALLIES.key(&id), abi::encode(&mark));
+            marked.insert(id, mark);
+        }
+        height += 1;
+        if adopting(chain, height) == 0 {
+            break;
+        }
+        chain.at(height + 1, 0);
+        blocks += 1;
+    }
+    let tallied: Vec<u64> = marked.keys().copied().collect();
+    assert_eq!(tallied, ids, "every conversation is tallied");
+    (ids, blocks)
+}
+
+#[test]
+fn one_adopt_tallies_call_books_its_own_runs_and_tallies_every_conversation_one_a_block() {
+    let (ids, blocks) = chained(1);
+    assert_eq!(
+        blocks,
+        ids.len() as u64,
+        "one more block per conversation after the call's own, the last finding none left"
+    );
+}
+
+#[test]
+fn two_adopt_tallies_chains_started_together_never_tally_a_conversation_twice() {
+    let (ids, blocks) = chained(2);
+    assert!(
+        blocks < ids.len() as u64,
+        "two chains share the work: {blocks}"
+    );
+}
+
 #[test]
 fn a_fork_tallies_the_frames_it_copied_by_adding_them_up() {
     let world = world();

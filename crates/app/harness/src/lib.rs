@@ -162,7 +162,7 @@ pub enum Op {
     },
     #[tool_op(description = "Remove a provider's route. Its owner, or whom the owner lists.", example = examples::remove_route)]
     RemoveRoute { provider: String },
-    #[tool_op(description = "One-time backfill of tallies: walks at most limit conversations after the cursor and tallies the first one that has none, added up from its frames, so a run reads one transcript at most, as Tally and ForkThread do. Anyone may; a run that finds every conversation tallied writes nothing. Returns the key to resume after, or null when done.", returns = Option<Vec<u8>>, example = examples::adopt_tallies)]
+    #[tool_op(description = "One-time backfill of tallies: walks at most limit conversations after the cursor and tallies the first one that has none, added up from its frames, so a run reads one transcript at most, as Tally and ForkThread do. While a conversation may be left, it books itself again for the next block after that one, so one call tallies every conversation, one a block. Anyone may; a conversation already tallied is left as it is, so chains started together never tally one twice. Returns the key it resumes after, or null when done.", returns = Option<Vec<u8>>, example = examples::adopt_tallies)]
     AdoptTallies { after: Option<Vec<u8>>, limit: u64 },
 }
 
@@ -1424,7 +1424,7 @@ pub fn describe(op: &Op) -> describe::Description {
             vec![field("provider", Value::text(provider))],
         ),
         Op::AdoptTallies { limit, .. } => (
-            "Tally the conversations that have no tally yet".to_owned(),
+            "Tally the conversations that have no tally yet, one a block".to_owned(),
             vec![field("limit", Value::count(*limit))],
         ),
     };
