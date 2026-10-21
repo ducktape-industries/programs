@@ -8,6 +8,7 @@ mod program;
 mod rules;
 #[cfg(test)]
 mod tests;
+mod tools;
 
 pub use abi::role::halo::{Class, Founded, Genesis, Lane, LaneId, MAX_NAME, Op, Query, Reply};
 pub use program::Halo;

@@ -1,5 +1,6 @@
 //! The program: every op and every query, each handed to its rule.
 
+use ::program::tools::Tools;
 use ::program::{Error, ExecCtx, Program, QueryCtx, decoded};
 
 use crate::rules::{close, init, lane, lanes, open, set};
@@ -12,6 +13,10 @@ impl Program for Halo {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+
+    fn tools() -> Tools {
+        Tools::of::<crate::tools::Ops, crate::tools::Queries>()
+    }
 
     fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
         init(ctx, decoded::<Genesis>(PROGRAM, "Genesis", params)?)

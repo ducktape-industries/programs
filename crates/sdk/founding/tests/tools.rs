@@ -7,7 +7,6 @@ use borsh_json::{Interface, decode, encode, variants};
 const UNDESCRIBED: &[&str] = &[
     "blobs",
     "awaits",
-    "halo",
     "ownership",
     "attribution",
     "actions-pods",
