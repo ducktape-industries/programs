@@ -11,7 +11,7 @@ use crate::objects::{FileObj, SnapshotObj, check_chunks, digest, put_file, put_s
 use crate::paths::{beneath_the_roots, change_path, join};
 use crate::state::{COUNT, HEAD, HISTORY, SNAPSHOTS, minted, newest_first};
 use crate::tree::{TreeEdit, node_at};
-use crate::{Change, Content, Node, SnapshotRow, carried};
+use crate::{Change, Content, Node, SnapshotRow};
 
 enum Step {
     Put {
@@ -127,9 +127,7 @@ fn plan(ctx: &QueryCtx, changes: Vec<Change>) -> Result<Vec<Step>, Error> {
                 let segments = change_path(&path)?;
                 touch(&segments)?;
                 check_meta(&meta)?;
-                let Content::Chunks { size, chunks } = content else {
-                    return Err(carried());
-                };
+                let Content::Chunks { size, chunks } = content;
                 check_chunks(ctx, size, &chunks)?;
                 Step::Put {
                     segments,

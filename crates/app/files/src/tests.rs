@@ -9,6 +9,7 @@ use crate::*;
 
 mod guards;
 mod lists;
+mod tags;
 mod watchers;
 
 fn profile(number: u64, name: &str) -> Profile {
@@ -415,33 +416,6 @@ fn a_large_file_names_its_chunks_and_reads_across_them() {
     };
     assert!(matches!(entry.node, Node::File { size: s, exec: true, .. } if s == size));
     assert_eq!(entry.meta["type"], "bytes");
-}
-
-#[test]
-fn file_bytes_in_a_transaction_are_refused() {
-    let host = host();
-    let staged = refused(
-        &host,
-        ada(),
-        Op::Stage {
-            bytes: b"x".to_vec(),
-        },
-    );
-    let inline = Op::Commit {
-        base: None,
-        message: String::new(),
-        changes: vec![Change::Put {
-            path: "/shared/x".into(),
-            exec: false,
-            meta: BTreeMap::new(),
-            content: Content::Inline(b"x".to_vec()),
-        }],
-    };
-    let inlined = refused(&host, ada(), inline);
-    for refusal in [staged, inlined] {
-        assert_eq!(refusal, carried());
-    }
-    assert!(names(&host, "/shared", None).is_empty());
 }
 
 #[test]

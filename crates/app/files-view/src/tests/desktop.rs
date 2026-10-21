@@ -827,28 +827,6 @@ fn sends(
     Sends { puts, ops }
 }
 
-fn carries_bytes(op: &files::Op) -> bool {
-    match op {
-        files::Op::Stage { .. } => true,
-        files::Op::Commit { changes, .. } => changes.iter().any(|change| {
-            matches!(
-                change,
-                Change::Put {
-                    content: Content::Inline(_),
-                    ..
-                }
-            )
-        }),
-        files::Op::Pin { .. }
-        | files::Op::Unpin { .. }
-        | files::Op::Watch { .. }
-        | files::Op::Guard { .. }
-        | files::Op::Unguard { .. }
-        | files::Op::AdoptOwners { .. }
-        | files::Op::Vacate { .. } => false,
-    }
-}
-
 #[test]
 fn an_uploaded_picture_is_committed_and_opens_as_itself() {
     let net = seeded();
@@ -898,7 +876,6 @@ fn an_upload_puts_each_file_from_the_device_then_commits_only_their_ids() {
     );
     let ops = sends.ops.borrow();
     assert_eq!(ops.len(), 1, "one commit");
-    assert!(!ops.iter().any(carries_bytes), "{ops:?}");
     assert!(
         shows(&cx, &words::uploads(&["film.mov", "note.txt"])),
         "{:?}",

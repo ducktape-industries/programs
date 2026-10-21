@@ -7,7 +7,7 @@ use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 use crate::commit::commit;
 use crate::ops::{pin, unpin};
 use crate::queries;
-use crate::{Op, Query, Reply, carried};
+use crate::{Op, Query, Reply};
 
 pub struct Files;
 
@@ -24,7 +24,6 @@ impl Program for Files {
         }
         let writer = ctx.sender()?;
         match op {
-            Op::Stage { .. } => Err(carried()),
             Op::Commit {
                 base,
                 message,

@@ -44,18 +44,15 @@ pub const CHUNK_SIZE: u64 = 1 << 20;
 #[tool_about(
     "The network's versioned filesystem: every commit is a snapshot. A path's writers are the policy of its nearest guard at or above it in the ownership program, else anyone. /home, /shared and each /home/<name> are the network's: write inside them."
 )]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Op {
-    /// Retired: file bytes never ride in a transaction ([`carried`]), so
-    /// it is always refused. It stays so the ops of older blocks still read
-    /// (`op_variants_only_append`).
-    #[tool_op(description = "Retired: file bytes never ride in a transaction, so it is always refused. Put them as chunk blobs and name them in a Commit.", example = examples::stage)]
-    Stage { bytes: Vec<u8> },
     #[tool_op(description = "Make one snapshot of changes: Put (a file's chunks, each a 1 MiB blob of kind chunk put through the node's blob upload first, the last shorter), Mkdir, Remove, Move, Symlink. With base the snapshot you read, it is refused as stale if a path it touches changed since; with base null it only creates, refused if anything is at a path it touches. Each path is written where its write list admits you. SetOwnership is retired: a write list is set in the access program. Returns the new snapshot's id.", returns = BlobId, example = examples::commit)]
     Commit {
         base: Option<BlobId>,
         message: String,
         changes: Vec<Change>,
-    },
+    } = 1,
     #[tool_op(description = "Name a snapshot, so it stays findable by that name. The name is not empty, has no control characters, and is not taken. Anyone may pin; the pin is yours.", example = examples::pin)]
     Pin { name: String, snapshot: BlobId },
     #[tool_op(description = "Drop a pin. Its owner, or whom the owner lists.", example = examples::unpin)]
@@ -120,21 +117,13 @@ impl Change {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Content {
-    /// Retired as [`Op::Stage`] is: always refused, kept so older commits
-    /// still read.
-    Inline(Vec<u8>),
     /// `size` bytes in `chunks`, in order: blobs of kind [`CHUNK`] the
     /// network holds, each [`CHUNK_SIZE`] but the last. Their bytes go up
     /// through the node's blob upload, apart from any transaction.
-    Chunks { size: u64, chunks: Vec<BlobId> },
-}
-
-pub(crate) fn carried() -> ::program::Error {
-    ::program::invalid(
-        "file bytes never ride in a transaction: put them as chunk blobs through the \
-         node's blob upload and name them in Content::Chunks",
-    )
+    Chunks { size: u64, chunks: Vec<BlobId> } = 1,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -328,10 +317,6 @@ pub fn describe(op: &Op) -> describe::Description {
     use describe::{Value, field};
     let hash = |id: &BlobId| Value::Hash(id.digest().to_vec());
     let (title, fields) = match op {
-        Op::Stage { bytes } => (
-            "Stage a chunk".to_owned(),
-            vec![field("bytes", Value::count(bytes.len() as u64))],
-        ),
         Op::Commit {
             base,
             message,
@@ -411,7 +396,7 @@ fn op_variants_only_append() {
     assert_eq!(
         describe::variants::<Op>(),
         [
-            "Stage",
+            "-",
             "Commit",
             "Pin",
             "Unpin",

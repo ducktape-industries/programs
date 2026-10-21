@@ -17,10 +17,6 @@ fn every() -> PageRequest {
 
 const README: &str = "/shared/tools/README.md";
 
-pub(crate) fn stage() -> Op {
-    Op::Stage { bytes: Vec::new() }
-}
-
 pub(crate) fn commit() -> Op {
     let put = Change::Put {
         path: "/home/tech/notes.md".into(),

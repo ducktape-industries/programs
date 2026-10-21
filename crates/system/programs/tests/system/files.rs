@@ -88,19 +88,6 @@ fn files_names_held_chunks_and_never_takes_bytes_in_a_transaction() {
             net.refuse(&ada, files::PROGRAM, &refused).await,
             reason::NOT_FOUND
         );
-        let staged = Op::Stage {
-            bytes: b"bytes".to_vec(),
-        };
-        let inline = commit(
-            Some(snapshot),
-            vec![put("/shared/new", Content::Inline(b"bytes".to_vec()))],
-        );
-        for op in [staged, inline] {
-            assert_eq!(
-                net.refuse(&ada, files::PROGRAM, &op).await,
-                reason::INVALID_INPUT
-            );
-        }
         let x = net.chunks(b"x").await;
         let under_a_file = commit(Some(snapshot), vec![put("/shared/a/under-a-file", x)]);
         assert_eq!(
