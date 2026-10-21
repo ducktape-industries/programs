@@ -4,7 +4,7 @@ use ::program::schema::{Return, returns};
 use ::program::tools::Tools;
 use ::program::{EntryId, Error, ExecCtx, Program, QueryCtx};
 
-use crate::rules::{cancel, due, entry, ran, schedule};
+use crate::rules::{cancel, due, entry, migrate, ran, schedule};
 use crate::{Op, PROGRAM, Query, Reply};
 
 pub struct Scheduler;
@@ -29,6 +29,11 @@ impl Program for Scheduler {
             } => schedule(ctx, height, target, payload),
             Op::Cancel { entry: id } => cancel(ctx, id),
             Op::Ran { entry: id, receipt } => ran(ctx, id, receipt),
+            Op::Migrate {
+                height,
+                first,
+                last,
+            } => migrate(ctx, height, first, last),
         }
     }
 

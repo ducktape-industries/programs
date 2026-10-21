@@ -1,5 +1,5 @@
-//! What the scheduler tells an agent of its ops and queries. Both enums are the scheduler role's,
-//! defined in abi, so markers carry each variant's words and a working value of it.
+//! What the scheduler tells an agent of its ops and queries. Its `Op` meets the scheduler role's at
+//! each tag and its `Query` is the role's, so markers carry each variant's words and a working value.
 use ::program::tools::{Described, Tool, example};
 use abi::{Outcome, Receipt};
 
@@ -55,6 +55,16 @@ impl Described for Ops {
                         events: Vec::new(),
                         nested: Vec::new(),
                     },
+                },
+                "",
+            ),
+            told(
+                "Migrate",
+                "Rewrite the program ids the scheduler stores by the programs role's Renames at height: each entry not yet run, its scheduler and its target, so it runs and is cancelled under the new ids, over the due entries first..=last (each [height, entry]; null: from the first, or to the last). An entry that ran keeps the ids it ran with. Anyone: it reads the renames from the programs role, never from its sender, so running it again changes nothing.",
+                Op::Migrate {
+                    height: 300_000,
+                    first: None,
+                    last: None,
                 },
                 "",
             ),

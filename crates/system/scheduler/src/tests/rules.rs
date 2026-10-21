@@ -136,3 +136,101 @@ fn due_pages_one_height_in_the_order_entries_were_made_and_no_limit_is_every_row
     assert_eq!(due(&chain, 5, Some(2), Some(2)), (vec![3], None));
     assert_eq!(due(&chain, 6, None, None), (Vec::new(), None));
 }
+
+#[test]
+fn migrate_moves_the_ids_of_entries_not_run_and_leaves_a_run_entry_as_it_ran() {
+    let mut chain = chain(true);
+    chain.seat::<program::Renamer>("programs");
+    for height in [3, 3, 4] {
+        chain
+            .submit(by("planner"), PROGRAM, &schedule(height))
+            .unwrap();
+    }
+    let ran = Op::Ran {
+        entry: 0,
+        receipt: receipt(),
+    };
+    chain.submit(Origin::Root, PROGRAM, &ran).unwrap();
+    let renames = vec![
+        ("planner".to_owned(), "o/planner".to_owned()),
+        ("mark".to_owned(), "o/mark".to_owned()),
+    ];
+    chain.submit(by("planner"), "programs", &renames).unwrap();
+    chain.at(2, 0);
+    let migrate = |first, last| Op::Migrate {
+        height: 2,
+        first,
+        last,
+    };
+    chain
+        .submit(by("other"), PROGRAM, &migrate(Some((4, 2)), None))
+        .unwrap();
+    let ids = |id| {
+        let kept = entry(&chain, id).unwrap();
+        (kept.scheduler, kept.target)
+    };
+    assert_eq!(ids(1), ("planner".into(), "mark".into()));
+    assert_eq!(ids(2), ("o/planner".into(), "o/mark".into()));
+    chain
+        .submit(by("other"), PROGRAM, &migrate(None, None))
+        .unwrap();
+    assert_eq!(ids(1), ("o/planner".into(), "o/mark".into()));
+    assert_eq!(
+        ids(0),
+        ("planner".into(), "mark".into()),
+        "it ran as it was"
+    );
+    assert_eq!(due(&chain, 3, None, None).0, [1]);
+    let before = chain.host(PROGRAM).borrow().state.clone();
+    chain
+        .submit(by("other"), PROGRAM, &migrate(None, None))
+        .unwrap();
+    assert_eq!(
+        chain.host(PROGRAM).borrow().state,
+        before,
+        "a second run writes nothing"
+    );
+    let theirs = chain.submit(by("planner"), PROGRAM, &Op::Cancel { entry: 1 });
+    assert_eq!(theirs.unwrap_err().code, code::UNAUTHORIZED);
+    chain
+        .submit(by("o/planner"), PROGRAM, &Op::Cancel { entry: 1 })
+        .unwrap();
+}
+
+#[test]
+fn every_op_the_kernel_and_programs_send_meets_the_schedulers_own_at_one_tag() {
+    use abi::role::scheduler as role;
+    let in_the_role = |op: &role::Op| match op {
+        role::Op::Schedule { .. } | role::Op::Cancel { .. } | role::Op::Ran { .. } => {}
+    };
+    let ops = [
+        (
+            role::Op::Schedule {
+                height: 3,
+                target: "mark".into(),
+                payload: b"p".to_vec(),
+            },
+            Op::Schedule {
+                height: 3,
+                target: "mark".into(),
+                payload: b"p".to_vec(),
+            },
+        ),
+        (role::Op::Cancel { entry: 1 }, Op::Cancel { entry: 1 }),
+        (
+            role::Op::Ran {
+                entry: 1,
+                receipt: receipt(),
+            },
+            Op::Ran {
+                entry: 1,
+                receipt: receipt(),
+            },
+        ),
+    ];
+    for (sent, own) in ops {
+        in_the_role(&sent);
+        assert_eq!(abi::decode::<Op>(&abi::encode(&sent)).unwrap(), own);
+        assert_eq!(abi::decode::<role::Op>(&abi::encode(&own)).unwrap(), sent);
+    }
+}

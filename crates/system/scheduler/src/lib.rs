@@ -8,10 +8,32 @@ mod state;
 mod tests;
 mod tools;
 
-pub use abi::role::scheduler::{Entry, EntryId, Op, Query, Reply};
+pub use abi::role::scheduler::{Entry, EntryId, Query, Reply};
+use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 pub use program::Scheduler;
 
 pub const PROGRAM: &str = "scheduler";
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum Op {
+    Schedule {
+        height: u64,
+        target: ::program::ProgramId,
+        payload: Vec<u8>,
+    },
+    Cancel {
+        entry: EntryId,
+    },
+    Ran {
+        entry: EntryId,
+        receipt: abi::Receipt,
+    },
+    Migrate {
+        height: u64,
+        first: Option<(u64, EntryId)>,
+        last: Option<(u64, EntryId)>,
+    },
+}
 
 pub fn describe(op: &Op) -> describe::Description {
     use describe::{Value, field};
@@ -36,6 +58,24 @@ pub fn describe(op: &Op) -> describe::Description {
                 Value::Text(matches!(receipt.outcome, abi::Outcome::Applied { .. }).to_string()),
             )],
         ),
+        Op::Migrate {
+            height,
+            first,
+            last,
+        } => {
+            let bound = |bound: &Option<(u64, EntryId)>, open: &str| match bound {
+                Some((height, entry)) => Value::Text(format!("entry {entry} at {height}")),
+                None => Value::Text(open.into()),
+            };
+            (
+                "Migrate".to_owned(),
+                vec![
+                    field("height", text(*height)),
+                    field("first", bound(first, "the first")),
+                    field("last", bound(last, "the last")),
+                ],
+            )
+        }
     };
     describe::Description { title, fields }
 }
@@ -44,5 +84,8 @@ describe::export!(Op, describe);
 
 #[test]
 fn op_variants_only_append() {
-    assert_eq!(describe::variants::<Op>(), ["Schedule", "Cancel", "Ran"]);
+    assert_eq!(
+        describe::variants::<Op>(),
+        ["Schedule", "Cancel", "Ran", "Migrate"]
+    );
 }

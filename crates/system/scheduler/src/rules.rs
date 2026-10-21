@@ -99,6 +99,34 @@ pub(crate) fn due(
     Ok(Reply::Due { entries, next })
 }
 
+pub(crate) fn migrate(
+    ctx: &ExecCtx,
+    height: u64,
+    first: Option<(u64, EntryId)>,
+    last: Option<(u64, EntryId)>,
+) -> Result<(), Error> {
+    let renamed = ctx.renames(height)?;
+    let mut range = DUE.prefix_of(&());
+    if let Some(first) = first {
+        range.start = DUE.key(&first);
+    }
+    if let Some(last) = last {
+        range.end = Some([DUE.key(&last), vec![0]].concat());
+    }
+    for (_, id) in DUE.scan(ctx, range)? {
+        let entry = kept(ctx, id)?;
+        let moved = Entry {
+            scheduler: renamed.id(&entry.scheduler),
+            target: renamed.id(&entry.target),
+            ..entry.clone()
+        };
+        if moved != entry {
+            ENTRIES.put(ctx, &id, &moved);
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn entry(ctx: &QueryCtx, id: EntryId) -> Result<Option<Entry>, Error> {
     ENTRIES.get(ctx, &id)
 }
