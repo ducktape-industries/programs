@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::interface::encoded;
-use super::{Run, Seat, Tool, cursor_schema, object, write};
+use super::{LISTED, Run, Seat, Tool, cursor_schema, object, write};
 use crate::bookings::newest;
 use crate::schema::schema_of;
 use crate::{Booking, Op, PROGRAM, Ran};
@@ -62,8 +62,6 @@ pub(crate) struct ListArgs {
     pending_only: Option<bool>,
     cursor: Option<String>,
 }
-
-const LISTED: u64 = 20;
 
 fn below(cursor: &str) -> Result<u64, Error> {
     let bytes = design::unhex(cursor).and_then(|bytes| <[u8; 8]>::try_from(bytes).ok());

@@ -9,7 +9,8 @@ use store::PageRequest;
 
 use super::prefix::prefix;
 use super::{
-    Run, Seat, Show, Tool, Undo, Write, cursor_schema, next, object, page, principal, unexpected,
+    LISTED, Run, Seat, Show, Tool, Undo, Write, cursor_schema, next, object, page, principal,
+    unexpected,
 };
 use crate::Place;
 use crate::state::HELD_AT;
@@ -133,14 +134,14 @@ pub(crate) struct Messages;
 
 impl Tool for Messages {
     const NAME: &'static str = "chat_messages";
-    const DESCRIPTION: &'static str = "Read a chat channel's messages, newest first, without their thread replies (chat_thread reads those). With limit, only the newest that many, and `next` reads on from there.";
+    const DESCRIPTION: &'static str = "Read a chat channel's messages, newest first, without their thread replies (chat_thread reads those): the newest limit of them (20 if omitted), and `next` reads the older ones.";
     type Args = MessagesArgs;
 
     fn schema() -> Value {
         object(
             json!({
                 "channel": channel_schema(),
-                "limit": { "type": "integer", "minimum": 1, "description": "at most this many messages, the newest; every message if omitted" },
+                "limit": { "type": "integer", "minimum": 1, "description": "at most this many messages, the newest; 20 if omitted" },
                 "cursor": cursor_schema(),
             }),
             &["channel"],
@@ -148,8 +149,12 @@ impl Tool for Messages {
     }
 
     fn run(ctx: &ExecCtx, seat: &Seat, args: MessagesArgs) -> Result<Run, Error> {
+        let limit = args.limit.unwrap_or(LISTED);
+        if limit == 0 {
+            return Err(::program::invalid("a limit is a number of messages from 1"));
+        }
         let mut page = page(&args.cursor)?;
-        page.limit = args.limit;
+        page.limit = Some(limit);
         let asked = Query::Roots {
             channel_id: args.channel,
             viewer: vec![agent(seat)],

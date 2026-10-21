@@ -324,6 +324,8 @@ pub(crate) fn object(properties: Value, required: &[&str]) -> Value {
     json!({ "type": "object", "properties": properties, "required": required })
 }
 
+pub(crate) const LISTED: u64 = 20;
+
 pub(crate) fn cursor_schema() -> Value {
     json!({ "type": "string", "description": "the `next` of the previous page, to read the page after it" })
 }
