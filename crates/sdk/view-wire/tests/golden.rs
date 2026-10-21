@@ -662,6 +662,21 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
         exchange::<StoreSet>(("reads/alice".into(), None), ()),
         exchange::<StoreSet>(("reads/alice".into(), Some(vec![1, 2])), ()),
         exchange::<NotifySeen>("#design".into(), ()),
+        exchange::<NotifyNeeds>(
+            Needs {
+                items: vec![Need {
+                    key: "ask/57".into(),
+                    title: "tech asks: Which cache size?".into(),
+                    body: "Going with 128 MB unless you pick".into(),
+                    link: "duck://local/chat/j-212/12".into(),
+                    opened_at: 1_700_000_000,
+                    waits_on: Some(21),
+                    also_closes: vec![17],
+                }],
+            },
+            (),
+        ),
+        exchange::<NotifyNeeds>(Needs::default(), ()),
         exchange::<StoreChanges>((), "reads/alice".into()),
         exchange::<StoreList>("rooms/".into(), vec!["rooms/collapsed".into()]),
         exchange::<HostShowing>("general".into(), ()),

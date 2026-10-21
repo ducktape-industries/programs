@@ -1649,6 +1649,32 @@
     "reply": null
   },
   {
+    "kind": "notify.needs",
+    "request": {
+      "items": [
+        {
+          "key": "ask/57",
+          "title": "tech asks: Which cache size?",
+          "body": "Going with 128 MB unless you pick",
+          "link": "duck://local/chat/j-212/12",
+          "opened_at": 1700000000,
+          "waits_on": 21,
+          "also_closes": [
+            17
+          ]
+        }
+      ]
+    },
+    "reply": null
+  },
+  {
+    "kind": "notify.needs",
+    "request": {
+      "items": []
+    },
+    "reply": null
+  },
+  {
     "kind": "store.changes",
     "request": null,
     "reply": "reads/alice"

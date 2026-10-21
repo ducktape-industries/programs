@@ -41,6 +41,7 @@ live.subscribe None LiveSubscribe -> LiveItem
 live.tracks None String -> Watching
 microphone.chime None Option<String> -> ()
 microphone.devices None () -> AudioDevices
+notify.needs None Needs -> ()
 notify.post None Notification -> Delivery
 notify.seen None String -> ()
 op.put None PutBlobs -> Putting
@@ -137,6 +138,8 @@ LiveTrack = Struct { fields: NamedFields([("room", "String"), ("name", "String")
 Located = Struct { fields: NamedFields([("height", "u64"), ("position", "u32"), ("time", "u64"), ("tx", "Tx")]) }
 Manifest = Struct { fields: NamedFields([("wire_id", "String"), ("name", "String"), ("description", "String"), ("capabilities", "Vec<Capability>"), ("min_width", "u32"), ("targets", "Vec<String>"), ("icon", "String"), ("tint", "Tint"), ("width", "Option<u32>")]) }
 Manifested = Struct { fields: NamedFields([("size", "u64"), ("view", "Option<CarriedView>")]) }
+Need = Struct { fields: NamedFields([("key", "String"), ("title", "String"), ("body", "String"), ("link", "String"), ("opened_at", "u64"), ("waits_on", "Option<u64>"), ("also_closes", "Vec<u64>")]) }
+Needs = Struct { fields: NamedFields([("items", "Vec<Need>")]) }
 NetworkStatus = Struct { fields: NamedFields([("height", "u64"), ("members", "Vec<Peer>")]) }
 NewBlob = Struct { fields: NamedFields([("kind", "String"), ("body", "BlobBody")]) }
 NodeStatus = Struct { fields: NamedFields([("chain_id", "String"), ("time", "u64"), ("block_time_ms", "u64"), ("epoch_length", "u64"), ("height", "u64"), ("tip", "[u8; 32]"), ("root", "[u8; 32]"), ("epoch", "u64"), ("identity", "Vec<u8>"), ("contract", "u32")]) }
@@ -229,6 +232,7 @@ Vec<CameraDevice> = Sequence { length_width: 4, length_range: 0..=4294967295, el
 Vec<Capability> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Capability" }
 Vec<Error> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Error" }
 Vec<Field> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Field" }
+Vec<Need> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Need" }
 Vec<NewBlob> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "NewBlob" }
 Vec<Peer> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Peer" }
 Vec<Picked> = Sequence { length_width: 4, length_range: 0..=4294967295, elements: "Picked" }

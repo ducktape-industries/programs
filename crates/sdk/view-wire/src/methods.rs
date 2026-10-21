@@ -764,6 +764,31 @@ pub enum NoticeKind {
     /// `end_link` is opened when the system's call screen ends it.
     Call,
 }
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+/// What `notify.needs` hands the host: every item the program has open for the reader now, in
+/// place of the list it handed before; an empty list clears them.
+pub struct Needs {
+    pub items: Vec<Need>,
+}
+#[derive(
+    Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
+)]
+#[cfg_attr(feature = "schema", derive(borsh::BorshSchema))]
+/// One open item of [`Needs`]: `key` the program's own stable id for it; `title` what is needed and
+/// `body` one more line (or empty); `link` the `duck://` link where it is resolved; `opened_at` unix
+/// seconds, chain time (`Notification::until`'s unit); `waits_on` the account waiting; `also_closes` others any of whom closes it.
+pub struct Need {
+    pub key: String,
+    pub title: String,
+    pub body: String,
+    pub link: String,
+    pub opened_at: u64,
+    pub waits_on: Option<u64>,
+    pub also_closes: Vec<u64>,
+}
 /// What the host did with a [`Notification`].
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
@@ -1362,6 +1387,7 @@ methods! {
     HostRandom, "host.random", u32, Vec<u8>;
     StoreSecretGet, "store.secret_get", String, Option<Vec<u8>>;
     StoreSecretSet, "store.secret_set", (String, Option<Vec<u8>>), ();
+    NotifyNeeds, "notify.needs", Needs, ();
 }
 
 // The `<capability>` half of every kind in [`ALL`]: what a view's manifest
