@@ -497,3 +497,97 @@ fn a_refusal_in_another_json_shape_reads_its_words_or_names_its_keys() {
     assert_eq!(refused("{}"), "the model answered 403");
     assert_eq!(refused("[1,2]"), "the model answered 403");
 }
+
+#[test]
+fn calls_whose_arguments_come_only_whole_stream_them_before_each_ends() {
+    let call = |n: u64, call: &str, path: &str, arguments: &str| {
+        json!({
+            "type": "function_call", "id": format!("fc_{n}"), "call_id": call, "name": "files_read",
+            "arguments": arguments.replace("PATH", path), "status": "completed",
+        })
+    };
+    let both = [
+        (
+            "call_ca2730a7fcd64d959188234363d81508",
+            "/shared/notes/hello.txt",
+        ),
+        (
+            "call_921ad19d7621476c9b70559fad54b4bd",
+            "/shared/notes/world.txt",
+        ),
+    ];
+    let mut stream = vec![created()];
+    for (n, (id, path)) in both.iter().enumerate() {
+        let n = n as u64;
+        let whole = call(n, id, path, r#"{"path": "PATH"}"#);
+        stream.push(json!({ "type": "response.output_item.added", "output_index": n, "item": call(n, id, path, "") }));
+        stream.push(json!({
+            "type": "response.function_call_arguments.done", "output_index": n,
+            "item_id": format!("fc_{n}"), "arguments": whole["arguments"],
+        }));
+        stream
+            .push(json!({ "type": "response.output_item.done", "output_index": n, "item": whole }));
+    }
+    let output: Vec<Value> = (0..2)
+        .map(|n| {
+            call(
+                n,
+                both[n as usize].0,
+                both[n as usize].1,
+                r#"{"path": "PATH"}"#,
+            )
+        })
+        .collect();
+    stream.push(completed(json!(output), usage(121, 0, 59)));
+
+    let mut streamed = vec![String::new(); 2];
+    let mut ended = Vec::new();
+    let mut said = Vec::new();
+    for event in folded(&stream) {
+        match event {
+            Event::Delta { index, text } => streamed[index as usize].push_str(&text),
+            Event::End { index } => ended.push((index, streamed[index as usize].clone())),
+            Event::Reply(reply) => said = reply.said,
+            _ => {}
+        }
+    }
+    let inputs: Vec<String> = said
+        .iter()
+        .filter_map(|block| match block {
+            Block::ToolUse { input, .. } => Some(input.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        inputs,
+        [
+            r#"{"path": "/shared/notes/hello.txt"}"#,
+            r#"{"path": "/shared/notes/world.txt"}"#
+        ]
+    );
+    assert_eq!(
+        ended,
+        [(0, inputs[0].clone()), (1, inputs[1].clone())],
+        "each call's arguments are streamed whole before its block ends, as the reply says them"
+    );
+}
+
+#[test]
+fn text_streamed_in_full_gets_nothing_more_at_its_end() {
+    let stream = [
+        created(),
+        json!({ "type": "response.output_item.added", "output_index": 0, "item": message_item("") }),
+        json!({ "type": "response.output_text.delta", "output_index": 0, "delta": "Hel" }),
+        json!({ "type": "response.output_text.delta", "output_index": 0, "delta": "lo" }),
+        json!({ "type": "response.output_item.done", "output_index": 0, "item": message_item("Hello") }),
+        completed(json!([message_item("Hello")]), usage(1, 0, 1)),
+    ];
+    let deltas: Vec<String> = folded(&stream)
+        .into_iter()
+        .filter_map(|event| match event {
+            Event::Delta { text, .. } => Some(text),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(deltas, ["Hel", "lo"]);
+}

@@ -201,6 +201,14 @@ fn read_item(item: &Value) -> Option<Block> {
     }
 }
 
+fn streamable(block: &Block) -> Option<&str> {
+    match block {
+        Block::Text { text, .. } | Block::Reasoning { text, .. } => Some(text),
+        Block::ToolUse { input, .. } => Some(input),
+        _ => None,
+    }
+}
+
 fn refuses(item: &Value) -> bool {
     let mut parts = item["content"].as_array().into_iter().flatten();
     parts.any(|part| part["type"] == "refusal")
@@ -231,6 +239,7 @@ pub struct Fold {
     asked: String,
     model: String,
     places: BTreeMap<u64, u64>,
+    streamed: BTreeMap<u64, String>,
     done: BTreeMap<u64, Block>,
     summaries: BTreeMap<u64, u64>,
     events: u64,
@@ -244,6 +253,7 @@ impl Fold {
             asked: asked.to_owned(),
             model: String::new(),
             places: BTreeMap::new(),
+            streamed: BTreeMap::new(),
             done: BTreeMap::new(),
             summaries: BTreeMap::new(),
             events: 0,
@@ -326,11 +336,12 @@ impl Fold {
         vec![Event::Block { index, block }]
     }
 
-    fn delta(&self, output: u64, delta: &Value) -> Vec<Event> {
+    fn delta(&mut self, output: u64, delta: &Value) -> Vec<Event> {
         let Some(index) = self.places.get(&output).copied() else {
             return Vec::new();
         };
         let text = delta.as_str().unwrap_or_default().to_owned();
+        self.streamed.entry(index).or_default().push_str(&text);
         vec![Event::Delta { index, text }]
     }
 
@@ -340,8 +351,16 @@ impl Fold {
             return Vec::new();
         };
         self.refused |= refuses(item);
+        let streamed = self.streamed.remove(&index).unwrap_or_default();
+        let rest = streamable(&block)
+            .and_then(|whole| whole.strip_prefix(streamed.as_str()))
+            .filter(|rest| !rest.is_empty())
+            .map(|rest| Event::Delta {
+                index,
+                text: rest.to_owned(),
+            });
         self.done.insert(index, block);
-        vec![Event::End { index }]
+        rest.into_iter().chain([Event::End { index }]).collect()
     }
 
     fn said(&mut self) -> Vec<Block> {
