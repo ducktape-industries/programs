@@ -173,3 +173,18 @@ pub(crate) fn managed() -> Query {
         },
     }
 }
+
+pub(crate) fn rename_program() -> Op {
+    Op::RenameProgram {
+        from: "chat".into(),
+        to: "ducktape-industries/chat".into(),
+    }
+}
+
+pub(crate) fn migrate() -> Op {
+    Op::Migrate {
+        height: 300_000,
+        first: None,
+        last: None,
+    }
+}

@@ -6,8 +6,9 @@ use ::program::{Error, ExecCtx, Program, QueryCtx};
 
 use crate::rules::{
     ACCOUNTS, ANSWERS, MANAGED, OF_PROGRAM, account, add_key, answers, create, create_agent,
-    generation, hears, needs, of_key, profiles, register_program, remove_key, resolve, resource,
-    resume, revoke, runs, set_name, set_ownership, set_profile, set_script, suspend,
+    generation, hears, migrate, needs, of_key, profiles, register_program, remove_key,
+    rename_program, resolve, resource, resume, revoke, runs, set_name, set_ownership, set_profile,
+    set_script, suspend,
 };
 use crate::{Op, Query, Reply};
 
@@ -46,6 +47,12 @@ impl Program for Identity {
             Op::Revoke { account } => revoke(ctx, account),
             Op::SetOwnership { account, ownership } => set_ownership(ctx, account, ownership),
             Op::SetScript { account, script } => set_script(ctx, account, script),
+            Op::RenameProgram { from, to } => rename_program(ctx, from, to),
+            Op::Migrate {
+                height,
+                first,
+                last,
+            } => migrate(ctx, height, first, last),
         }
     }
 

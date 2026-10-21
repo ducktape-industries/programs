@@ -1,5 +1,7 @@
 // The program natively over `program::MockHost`: what the founding suite checks on the host, without the host.
 
+mod renames;
+
 use ::program::{Env, Origin, Principal, Scheme, code};
 use ::program::{MockHost, Program};
 use store::PageRequest;

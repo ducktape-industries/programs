@@ -221,6 +221,14 @@ pub enum Op {
         account: AccountNumber,
         script: Option<Script>,
     },
+    #[tool_op(description = "The system alone (the identity role), as the kernel renames a program in place: the program's account moves from its old id to its new one, and so does its card's name while that is still the old id. A move already made answers ok.", example = examples::rename_program)]
+    RenameProgram { from: ProgramId, to: ProgramId },
+    #[tool_op(description = "Rewrite the program ids identity stores by the programs role's Renames at height: each script that calls a renamed program, and each renamed program an account answers, over the accounts first..=last (null: from the first, or to the last). Anyone: it reads the renames from the programs role, never from its sender, so running it again changes nothing.", example = examples::migrate)]
+    Migrate {
+        height: u64,
+        first: Option<AccountNumber>,
+        last: Option<AccountNumber>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -430,6 +438,30 @@ pub fn describe(op: &Op) -> describe::Description {
                 None => vec![account(number), field("script", Value::text("—"))],
             },
         ),
+        Op::RenameProgram { from, to } => (
+            format!("Rename program · {from}"),
+            vec![
+                field("program", Value::Program(from.clone())),
+                field("to", Value::Program(to.clone())),
+            ],
+        ),
+        Op::Migrate {
+            height,
+            first,
+            last,
+        } => {
+            let bound = |bound: &Option<AccountNumber>, open: &str| {
+                bound.map_or_else(|| Value::text(open), Value::Account)
+            };
+            (
+                "Migrate".into(),
+                vec![
+                    field("height", Value::Text(height.to_string())),
+                    field("first", bound(first, "the first")),
+                    field("last", bound(last, "the last")),
+                ],
+            )
+        }
     };
     describe::Description { title, fields }
 }
@@ -453,6 +485,8 @@ fn op_variants_only_append() {
             "Revoke",
             "SetOwnership",
             "SetScript",
+            "RenameProgram",
+            "Migrate",
         ]
     );
 }

@@ -1,8 +1,10 @@
 // The rules: who acts as an account, then the ops and queries.
 
+use std::collections::BTreeMap;
+
 use ::program::{
     Error, ExecCtx, Need, Origin, Ownership, Party, ProgramId, QueryCtx, Resource, Scheme,
-    already_exists, invalid, not_found, unauthorized, wrong_state,
+    already_exists, invalid, not_found, unauthorized, unexpected_reply, wrong_state,
 };
 use store::{Item, Map, Set};
 
@@ -137,6 +139,89 @@ pub(crate) fn register_program(ctx: &ExecCtx, program: ProgramId) -> Result<(), 
     };
     ACCOUNTS.put(ctx, &number, &account);
     OF_PROGRAM.put(ctx, &program, &number);
+    Ok(())
+}
+
+pub(crate) fn rename_program(ctx: &ExecCtx, from: ProgramId, to: ProgramId) -> Result<(), Error> {
+    if ctx.env().origin != Origin::Root {
+        return Err(unauthorized("only the system renames a program"));
+    }
+    let number = match (OF_PROGRAM.get(ctx, &from)?, OF_PROGRAM.get(ctx, &to)?) {
+        (None, Some(_)) => return Ok(()),
+        (None, None) => return Err(not_found(format!("program {from} has no account"))),
+        (Some(_), Some(other)) => {
+            return Err(already_exists(format!(
+                "program {to} already has account {other}"
+            )));
+        }
+        (Some(number), None) => number,
+    };
+    let mut account = account(ctx, number)?;
+    account.control = Control::System {
+        program: to.clone(),
+    };
+    if account.card.name == from {
+        account.card.name = to.clone();
+    }
+    save(ctx, account);
+    OF_PROGRAM.remove(ctx, &from);
+    OF_PROGRAM.put(ctx, &to, &number);
+    Ok(())
+}
+
+fn renames(ctx: &QueryCtx, height: u64) -> Result<BTreeMap<ProgramId, ProgramId>, Error> {
+    use abi::role::programs;
+    let role = ctx.env().role(abi::role::PROGRAMS)?.clone();
+    match ctx.query(role.clone(), &programs::Query::Renames(height))? {
+        programs::Reply::Renames(renames) => Ok(renames.into_iter().collect()),
+        other => Err(unexpected_reply(&role, "Renames", &other)),
+    }
+}
+
+pub(crate) fn migrate(
+    ctx: &ExecCtx,
+    height: u64,
+    first: Option<AccountNumber>,
+    last: Option<AccountNumber>,
+) -> Result<(), Error> {
+    let renamed = renames(ctx, height)?;
+    let mut range = ACCOUNTS.prefix_of(&());
+    if let Some(first) = first {
+        range.start = ACCOUNTS.key(&first);
+    }
+    if let Some(last) = last {
+        range.end = Some([ACCOUNTS.key(&last), vec![0]].concat());
+    }
+    let moved = |program: &ProgramId| renamed.get(program).cloned();
+    for (number, mut account) in ACCOUNTS.scan(ctx, range)? {
+        let script = match &mut account.control {
+            Control::Program {
+                script: Some(script),
+                ..
+            } => Some(script),
+            Control::User { .. } | Control::Program { .. } | Control::System { .. } => None,
+        };
+        let renamed_script = script.and_then(|script| moved(&script.calls).map(|to| (script, to)));
+        if let Some((script, to)) = renamed_script {
+            script.calls = to;
+            ACCOUNTS.put(ctx, &number, &account);
+        }
+        let Some(Ownership::Listed(parties)) = ANSWERS.get(ctx, &number)? else {
+            continue;
+        };
+        let renamed_parties: Vec<Party> = parties
+            .iter()
+            .map(|party| match party {
+                Party::Program(program) => {
+                    Party::Program(moved(program).unwrap_or_else(|| program.clone()))
+                }
+                Party::Account(_) => party.clone(),
+            })
+            .collect();
+        if renamed_parties != parties {
+            ANSWERS.put(ctx, &number, &Ownership::Listed(renamed_parties));
+        }
+    }
     Ok(())
 }
 
@@ -414,6 +499,8 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::SetScript { account, .. }
         | Op::SetOwnership { account, .. } => vec![Need::write(account_key(*account))],
         Op::RegisterProgram { .. }
+        | Op::RenameProgram { .. }
+        | Op::Migrate { .. }
         | Op::Create { .. }
         | Op::CreateAgent { .. }
         | Op::AddKey { .. }
