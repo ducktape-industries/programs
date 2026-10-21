@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "abi"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=f32719405a10519306b12dab96f6bee62b3292f1#f32719405a10519306b12dab96f6bee62b3292f1"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e#b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e"
 dependencies = [
  "borsh",
 ]
@@ -521,14 +521,17 @@ dependencies = [
 [[package]]
 name = "blob"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=f32719405a10519306b12dab96f6bee62b3292f1#f32719405a10519306b12dab96f6bee62b3292f1"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e#b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e"
 dependencies = [
  "abi",
  "borsh",
+ "crc32fast",
  "rustix",
  "sha1-checked",
  "sha2 0.10.9",
  "thiserror 2.0.20",
+ "tracing",
+ "zstd",
 ]
 
 [[package]]
@@ -1036,7 +1039,7 @@ dependencies = [
 [[package]]
 name = "commonware-storage"
 version = "2026.9.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=f32719405a10519306b12dab96f6bee62b3292f1#f32719405a10519306b12dab96f6bee62b3292f1"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e#b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e"
 dependencies = [
  "ahash",
  "anyhow",
@@ -2158,7 +2161,7 @@ checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 [[package]]
 name = "fixture-wasm"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=f32719405a10519306b12dab96f6bee62b3292f1#f32719405a10519306b12dab96f6bee62b3292f1"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e#b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e"
 dependencies = [
  "serde",
  "serde_json",
@@ -3073,7 +3076,7 @@ dependencies = [
 [[package]]
 name = "host"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=f32719405a10519306b12dab96f6bee62b3292f1#f32719405a10519306b12dab96f6bee62b3292f1"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e#b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e"
 dependencies = [
  "abi",
  "async-trait",
@@ -3531,7 +3534,7 @@ dependencies = [
 [[package]]
 name = "keyscheme"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=f32719405a10519306b12dab96f6bee62b3292f1#f32719405a10519306b12dab96f6bee62b3292f1"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e#b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e"
 dependencies = [
  "abi",
  "base64 0.22.1",
@@ -5185,7 +5188,7 @@ dependencies = [
 [[package]]
 name = "runtime"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=f32719405a10519306b12dab96f6bee62b3292f1#f32719405a10519306b12dab96f6bee62b3292f1"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e#b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e"
 dependencies = [
  "abi",
  "async-trait",
@@ -5730,7 +5733,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 [[package]]
 name = "state"
 version = "0.1.0"
-source = "git+https://github.com/ducktape-industries/ducktape?rev=f32719405a10519306b12dab96f6bee62b3292f1#f32719405a10519306b12dab96f6bee62b3292f1"
+source = "git+https://github.com/ducktape-industries/ducktape?rev=b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e#b22fe86c58ba05bb4c0fd81a2a40e02dba2b0a0e"
 dependencies = [
  "abi",
  "borsh",
