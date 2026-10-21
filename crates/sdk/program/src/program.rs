@@ -207,6 +207,10 @@ pub mod exports {
             ProgramCall::Access(payload) => access::<M>(&QueryCtx::new(env), &payload),
             ProgramCall::Resource(key) => resource::<M>(&QueryCtx::new(env), &key),
             ProgramCall::Hook(record) => hook::<M>(&ExecCtx::new(env), record),
+            ProgramCall::Hooks(_) => Err(crate::Error::new(
+                crate::code::UNSUPPORTED,
+                "this program takes each frame's hook record alone: it exports no hooks batch",
+            )),
             ProgramCall::Resume { .. } => Err(crate::Error::new(
                 crate::code::UNSUPPORTED,
                 "this program awaits nothing",

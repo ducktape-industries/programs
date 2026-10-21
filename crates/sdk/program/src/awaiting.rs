@@ -284,6 +284,10 @@ pub mod exports {
             ProgramCall::Access(payload) => access::<A>(&QueryCtx::new(env), &payload),
             ProgramCall::Resource(key) => resource::<A>(&QueryCtx::new(env), &key),
             ProgramCall::Hook(record) => hook::<A>(&ExecCtx::new(env), record),
+            ProgramCall::Hooks(_) => Err(Error::new(
+                code::UNSUPPORTED,
+                "this program takes each frame's hook record alone: it exports no hooks batch",
+            )),
         };
         reply.map_err(crate::kernel::refusal_from)
     }
