@@ -364,7 +364,8 @@ fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
         | Reply::ChosenBy(_)
         | Reply::Unread(_)
         | Reply::Busy(_)
-        | Reply::Holders(_) => vec![],
+        | Reply::Holders(_)
+        | Reply::Seated(_) => vec![],
     }
 }
 

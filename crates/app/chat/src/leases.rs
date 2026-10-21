@@ -122,6 +122,26 @@ pub(crate) fn vacate(
     Ok(())
 }
 
+pub(crate) fn vacate_shut_out(ctx: &ExecCtx, channel: &crate::ChannelRow) -> Result<(), Error> {
+    let room = channel.id.clone();
+    let mut there: Vec<Principal> = Vec::new();
+    let leases = LEASES.scan(ctx, LEASES.prefix_of(&room))?;
+    let holders = leases.into_iter().map(|(_, lease)| lease.holder);
+    let drafts = DRAFTS.scan(ctx, DRAFTS.prefix_of(&room))?;
+    let authors = drafts.into_iter().map(|((_, author), _)| author);
+    for who in holders.chain(authors) {
+        if !there.contains(&who) {
+            there.push(who);
+        }
+    }
+    for who in there {
+        if crate::rules::writable(ctx, channel, &who).is_err() {
+            vacate(ctx, &room, Some(&who))?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn busy(
     ctx: &QueryCtx,
     channel_id: &str,

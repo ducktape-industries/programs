@@ -25,6 +25,17 @@ channel and seq, and keeps none when the frame names none. `Clients { channel_id
 each seq with its client or null; messages posted before clients were kept have none. It is for
 showing, and for choosing what to show, never for deciding who may act.
 
+## Members-only rooms
+
+A room's post policy says who posts there: `Open` lets anyone, `MembersOnly` its owner and the
+principals seated with `SetMembership`. `SetPostPolicy { channel_id, post_policy }` changes it after
+`CreateChannel`, for whoever may rename the room, never a direct room. Going members-only ends the
+holds and drafts of everyone it shuts out, in the same op, as an unseat does.
+`Query::Seated { principal, channel_ids }` answers which of `channel_ids` the principal holds a
+seat in, in the order asked, so a reader that lists its rooms learns its seats in one read. A
+room's owner posts there seated or not, so whether someone may post is `ChannelRow::admits` with
+what `Seated` says.
+
 ## Channel meta
 
 A channel's meta is a map of text keys to text values. Whoever may rename the channel sets a key
@@ -108,8 +119,9 @@ A hold ends on an event, never on a timer, and every end is told to watchers:
   every draft open there; whoever may rename the channel may send it (the channel's write policy);
 - an op that takes away the holder's right to post there, in the same op: `SetChannelArchived`
   archiving the room ends every hold and draft in it, and `SetMembership` unseating someone from a
-  members-only room ends their holds and their draft there. Bringing the room back or seating them
-  again brings nothing back.
+  members-only room ends their holds and their draft there, and `SetPostPolicy` making a room
+  members-only ends those of everyone it shuts out. Bringing the room back or seating them again
+  brings nothing back.
 
 `Query::Busy { channel_id, thread, for_account }` answers who else is in the place: its holder
 (`Holding::Lease`), else an open draft there (`Holding::Draft`), by anyone but `for_account`, as a

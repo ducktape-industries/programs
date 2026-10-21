@@ -17,7 +17,8 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::SetMembership { channel_id, .. }
         | Op::SetChannelMeta { channel_id, .. }
         | Op::RemoveChannelMeta { channel_id, .. }
-        | Op::Break { channel_id, .. } => vec![Need::write(channel_id.clone())],
+        | Op::Break { channel_id, .. }
+        | Op::SetPostPolicy { channel_id, .. } => vec![Need::write(channel_id.clone())],
         Op::EditMessage {
             channel_id, seq, ..
         } => vec![Need::write(message_key(channel_id, *seq))],

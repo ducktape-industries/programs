@@ -142,6 +142,10 @@ impl Program for Chat {
             Op::Break { channel_id, thread } => {
                 crate::leases::break_place(ctx, &channel_id, thread)
             }
+            Op::SetPostPolicy {
+                channel_id,
+                post_policy,
+            } => crate::ops::set_post_policy(ctx, &channel_id, post_policy),
         }
     }
 
@@ -276,6 +280,16 @@ impl Program for Chat {
             } => {
                 let holders = crate::leases::holders(ctx, &channel_id, thread, &page)?;
                 (Reply::Holders(holders), vec![])
+            }
+            Query::Seated {
+                principal,
+                channel_ids,
+            } => {
+                let seated = channel_ids
+                    .into_iter()
+                    .filter(|id| MEMBERS.has(ctx, &(id.clone(), principal.clone())))
+                    .collect();
+                (Reply::Seated(seated), vec![])
             }
         };
         seen_by(ctx, reply, viewer)

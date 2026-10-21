@@ -102,6 +102,18 @@ pub(crate) fn set_archived(ctx: &ExecCtx, id: &str, archived: bool) -> Result<()
     }
 }
 
+pub(crate) fn set_post_policy(
+    ctx: &ExecCtx,
+    id: &str,
+    post_policy: PostPolicy,
+) -> Result<(), Error> {
+    let mut channel = channel(ctx, id)?;
+    rules::not_dm(&channel)?;
+    channel.post_policy = post_policy;
+    CHANNELS.put(ctx, &channel.id, &channel);
+    crate::leases::vacate_shut_out(ctx, &channel)
+}
+
 pub(crate) fn touch_channel_for_policy(ctx: &ExecCtx, channel: &ChannelRow) {
     CHANNELS.put(ctx, &channel.id, channel);
 }

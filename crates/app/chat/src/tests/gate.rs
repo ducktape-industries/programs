@@ -155,6 +155,32 @@ fn a_channels_meta_is_set_and_removed_and_its_places_cleared_by_whoever_may_rena
 }
 
 #[test]
+fn a_channels_posting_is_set_by_whoever_may_rename_it() {
+    let chain = chain();
+    let unauthorized = Err(code::UNAUTHORIZED.to_owned());
+    let posting = |post_policy| Op::SetPostPolicy {
+        channel_id: "general".into(),
+        post_policy,
+    };
+    let hello = |id: &str| Op::PostMessage {
+        channel_id: "general".into(),
+        message_id: id.into(),
+        blocks: crate::parse_message("hello"),
+        thread: None,
+    };
+    assert_eq!(
+        run(&chain, BO, &posting(PostPolicy::MembersOnly)),
+        unauthorized
+    );
+    run(&chain, ADA, &posting(PostPolicy::MembersOnly)).unwrap();
+    assert_eq!(run(&chain, CY, &hello("m1")), unauthorized);
+    let bo = Ownership::Listed(vec![Party::Account(2)]);
+    list(&chain, ADA, "general".into(), bo).unwrap();
+    run(&chain, BO, &posting(PostPolicy::Open)).unwrap();
+    run(&chain, CY, &hello("m2")).unwrap();
+}
+
+#[test]
 fn a_message_is_its_authors_and_the_channels_owner_deletes_it() {
     let chain = chain();
     post(&chain, BO, "m1");

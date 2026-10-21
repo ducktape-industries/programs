@@ -236,6 +236,11 @@ pub enum Op {
         channel_id: String,
         thread: Option<u64>,
     },
+    #[tool_op(description = "Set who may post in a channel: Open lets anyone, MembersOnly its owner and its seated members. Going members-only ends the holds and drafts of everyone it shuts out. Whoever may rename the channel; never a direct room.", example = examples::set_post_policy)]
+    SetPostPolicy {
+        channel_id: String,
+        post_policy: PostPolicy,
+    },
 }
 
 /// A read. `viewer` is the reader's principals: they decide
@@ -472,6 +477,13 @@ pub enum Query {
     #[reads(state::CLIENTS)]
     #[tool_query(description = "The software each message at seqs was posted from, as its poster's signed frame named it (such as ducktape-app/0.1.0+437f749 (linux; cef)), or null where the frame named none: for showing, never for deciding who may act.", example = examples::clients)]
     Clients { channel_id: String, seqs: Vec<u64> },
+    #[ask(Reply::Seated(Vec<String>))]
+    #[reads(state::MEMBERS)]
+    #[tool_query(description = "Which of channel_ids principal holds a member seat in, in the order asked; an id no seat names is left out. A room's owner posts there seated or not.", example = examples::seated)]
+    Seated {
+        principal: Principal,
+        channel_ids: Vec<String>,
+    },
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
@@ -510,6 +522,7 @@ pub enum Reply {
     Busy(Option<Holder>),
     Holders(PageResponse<Holder>),
     Clients(Vec<(u64, Option<String>)>),
+    Seated(Vec<String>),
 }
 
 // One room's count ([`Query::Unread`]): what came after the cursor asked, up to `to`, meant for
@@ -950,6 +963,7 @@ fn op_variants_only_append() {
             "Release",
             "WatchPlaces",
             "Break",
+            "SetPostPolicy",
         ]
     );
 }

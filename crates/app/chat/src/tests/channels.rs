@@ -437,3 +437,123 @@ impl Chat {
 fn is_member(chat: &Chat, channel: &str, principal: Principal) -> bool {
     crate::state::MEMBERS.has(&chat.reads(), &(channel.to_owned(), principal))
 }
+
+fn posting(post_policy: PostPolicy) -> Op {
+    Op::SetPostPolicy {
+        channel_id: "general".into(),
+        post_policy,
+    }
+}
+
+fn drafting_here(thread: Option<u64>) -> Op {
+    Op::Drafting {
+        channel_id: "general".into(),
+        thread,
+        text: "x".into(),
+        anew: false,
+        doing: None,
+    }
+}
+
+fn there(chat: &Chat, thread: Option<u64>) -> Vec<Principal> {
+    let Reply::Holders(holders) = chat.ask(Query::Holders {
+        channel_id: "general".into(),
+        thread,
+        page: PageRequest::default(),
+    }) else {
+        panic!("holders answer holders");
+    };
+    holders
+        .items
+        .into_iter()
+        .map(|holder| holder.principal)
+        .collect()
+}
+
+#[test]
+fn a_room_gone_members_only_shuts_out_who_is_not_seated_and_ends_their_holds_and_drafts() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    chat.post(&ADA, "m1", "root", None);
+    chat.post(&ADA, "m1b", "another root", None);
+    chat.ok(
+        &ADA,
+        Op::Take {
+            channel_id: "general".into(),
+            thread: Some(2),
+        },
+    );
+    chat.ok(&ADA, membership(BO, true));
+    chat.ok(&BO, drafting_here(None));
+    chat.ok(&CY, drafting_here(Some(1)));
+    chat.ok(
+        &CY,
+        Op::Take {
+            channel_id: "general".into(),
+            thread: Some(1),
+        },
+    );
+    chat.ok(&ADA, posting(PostPolicy::MembersOnly));
+    assert!(chat.channel().members_only());
+    assert_eq!(there(&chat, None), [BO], "the seated member's draft stays");
+    assert_eq!(there(&chat, Some(1)), Vec::<Principal>::new());
+    assert_eq!(
+        there(&chat, Some(2)),
+        [ADA],
+        "the owner, seated or not, keeps its hold"
+    );
+    assert_eq!(
+        chat.refused(&CY, post("general", "m2", "hi", None)),
+        code::UNAUTHORIZED
+    );
+    chat.post(&BO, "m3", "still here", None);
+    chat.post(&ADA, "m4", "and the owner", None);
+    chat.ok(&ADA, posting(PostPolicy::Open));
+    assert!(!chat.channel().members_only());
+    chat.post(&CY, "m5", "back", None);
+}
+
+#[test]
+fn no_direct_room_changes_its_posting() {
+    let mut chat = Chat::default();
+    chat.ok(&ADA, open_dm(2));
+    let dm = Op::SetPostPolicy {
+        channel_id: dm_channel_id(1, 2),
+        post_policy: PostPolicy::Open,
+    };
+    assert_eq!(chat.refused(&ADA, dm), code::UNAUTHORIZED);
+    let nowhere = Op::SetPostPolicy {
+        channel_id: "nowhere".into(),
+        post_policy: PostPolicy::Open,
+    };
+    assert_eq!(chat.refused(&ADA, nowhere), code::NOT_FOUND);
+}
+
+#[test]
+fn seated_answers_the_rooms_of_those_asked_an_account_holds_a_seat_in_in_the_order_asked() {
+    let mut chat = Chat::with_channel(PostPolicy::MembersOnly);
+    chat.ok(&ADA, create("team", PostPolicy::MembersOnly));
+    chat.ok(&ADA, create("open", PostPolicy::Open));
+    chat.ok(&ADA, membership(BO, true));
+    chat.ok(
+        &ADA,
+        Op::SetMembership {
+            channel_id: "team".into(),
+            principal: BO,
+            member: true,
+        },
+    );
+    chat.ok(&ADA, open_dm(2));
+    let dm = dm_channel_id(1, 2);
+    let asked = Query::Seated {
+        principal: BO,
+        channel_ids: vec![
+            "team".into(),
+            "open".into(),
+            "nowhere".into(),
+            dm.clone(),
+            "general".into(),
+        ],
+    };
+    let seated = vec!["team".to_owned(), dm, "general".to_owned()];
+    assert_eq!(chat.ask(asked), Reply::Seated(seated));
+}

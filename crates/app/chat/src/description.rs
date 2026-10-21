@@ -236,6 +236,14 @@ pub fn describe(op: &Op) -> Description {
         Op::Take { channel_id, thread } => ("Hold place", channel_id, vec![under(*thread)]),
         Op::Release { channel_id, thread } => ("Let go of place", channel_id, vec![under(*thread)]),
         Op::Break { channel_id, thread } => ("Clear place", channel_id, vec![under(*thread)]),
+        Op::SetPostPolicy {
+            channel_id,
+            post_policy,
+        } => (
+            "Set posting",
+            channel_id,
+            vec![field("posting", Value::text(posting(post_policy)))],
+        ),
         Op::WatchPlaces { deliver } => {
             let title = match deliver.is_empty() {
                 true => "Stop hearing when places clear",
@@ -282,14 +290,17 @@ fn posted(channel_id: &str, message_id: &str, text: String, thread: &Option<u64>
     }
 }
 
-fn created(name: &str, post_policy: &PostPolicy) -> Vec<Field> {
-    let posting = match post_policy {
+fn posting(post_policy: &PostPolicy) -> &'static str {
+    match post_policy {
         PostPolicy::Open => "open",
         PostPolicy::MembersOnly => "members only",
-    };
+    }
+}
+
+fn created(name: &str, post_policy: &PostPolicy) -> Vec<Field> {
     vec![
         field("name", Value::text(name)),
-        field("posting", Value::text(posting)),
+        field("posting", Value::text(posting(post_policy))),
     ]
 }
 

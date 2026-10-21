@@ -3,7 +3,7 @@ use borsh::schema::Definition;
 
 use super::*;
 
-const LIVE_OPS: [(&str, i64); 27] = [
+const LIVE_OPS: [(&str, i64); 28] = [
     ("CreateChannel", 0),
     ("CreateDmChannel", 1),
     ("RenameChannel", 2),
@@ -31,9 +31,10 @@ const LIVE_OPS: [(&str, i64); 27] = [
     ("Release", 28),
     ("WatchPlaces", 29),
     ("Break", 30),
+    ("SetPostPolicy", 31),
 ];
 
-const LIVE_QUERIES: [(&str, i64); 26] = [
+const LIVE_QUERIES: [(&str, i64); 27] = [
     ("Channels", 0),
     ("Channel", 1),
     ("MessageById", 2),
@@ -60,9 +61,10 @@ const LIVE_QUERIES: [(&str, i64); 26] = [
     ("Busy", 25),
     ("Holders", 26),
     ("Clients", 27),
+    ("Seated", 28),
 ];
 
-const LIVE_REPLIES: [(&str, i64); 26] = [
+const LIVE_REPLIES: [(&str, i64); 27] = [
     ("Channels", 0),
     ("Channel", 1),
     ("Message", 2),
@@ -89,6 +91,7 @@ const LIVE_REPLIES: [(&str, i64); 26] = [
     ("Busy", 25),
     ("Holders", 26),
     ("Clients", 27),
+    ("Seated", 28),
 ];
 
 const MIGRATE_TAG: u8 = 13;

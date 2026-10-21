@@ -421,3 +421,17 @@ pub(crate) fn break_place() -> Op {
         thread: Some(4),
     }
 }
+
+pub(crate) fn set_post_policy() -> Op {
+    Op::SetPostPolicy {
+        channel_id: room(),
+        post_policy: PostPolicy::MembersOnly,
+    }
+}
+
+pub(crate) fn seated() -> Query {
+    Query::Seated {
+        principal: Principal::Account(21),
+        channel_ids: vec![room(), "general".into()],
+    }
+}
