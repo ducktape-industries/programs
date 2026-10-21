@@ -56,10 +56,10 @@ fn a_change_over_the_code_it_expects_lands_and_one_over_any_other_is_refused_nam
 #[test]
 fn a_first_set_expects_nothing_under_its_name() {
     let (store, code) = founded();
-    let set = Change::Set(entry("new", code));
+    let set = Change::Set(entry("o/new", code));
     let taken = over(&store, 5, set.clone(), Some(BlobId::Sha256([1; 32]))).unwrap_err();
     assert_eq!(taken.code, code::WRONG_STATE, "{}", taken.message);
     assert!(taken.message.contains("nothing"), "{}", taken.message);
     over(&store, 5, set, None).unwrap();
-    assert_eq!(runs(&store, 5, "new"), Some(code));
+    assert_eq!(runs(&store, 5, "o/new"), Some(code));
 }

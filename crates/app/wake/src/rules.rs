@@ -384,6 +384,7 @@ fn changes_code(change: &programs::Change, program: &str) -> bool {
             entry.program == program
         }
         programs::Change::Remove(removed) => removed == program,
+        programs::Change::Rename { from, to } => from == program || to == program,
         programs::Change::SetView(_)
         | programs::Change::RemoveView(_)
         | programs::Change::SetHook(_)

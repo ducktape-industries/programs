@@ -92,3 +92,7 @@ pub(crate) fn views_at() -> Query {
 pub(crate) fn hooks_at() -> Query {
     Query::HooksAt { at_height: AT }
 }
+
+pub(crate) fn renames() -> Query {
+    Query::Renames(AT)
+}

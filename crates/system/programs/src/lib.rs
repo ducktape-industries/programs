@@ -65,6 +65,10 @@ pub enum Change {
         entry: Entry,
         roles: Vec<String>,
     },
+    Rename {
+        from: ProgramId,
+        to: ProgramId,
+    },
 }
 
 impl Change {
@@ -78,6 +82,7 @@ impl Change {
             Change::SetHook(_) => "Set hook",
             Change::RemoveHook(_) => "Remove hook",
             Change::Publish { .. } => "Publish",
+            Change::Rename { .. } => "Rename",
         }
     }
 
@@ -89,7 +94,8 @@ impl Change {
             Change::Remove(_)
             | Change::RemoveView(_)
             | Change::SetHook(_)
-            | Change::RemoveHook(_) => None,
+            | Change::RemoveHook(_)
+            | Change::Rename { .. } => None,
         }
     }
 
@@ -101,6 +107,19 @@ impl Change {
             | Change::RemoveView(program)
             | Change::SetHook(program)
             | Change::RemoveHook(program) => program,
+            Change::Rename { from, .. } => from,
+        }
+    }
+
+    pub fn lands(&self) -> Option<&str> {
+        match self {
+            Change::Set(entry) | Change::Publish { entry, .. } => Some(&entry.program),
+            Change::SetView(view) => Some(&view.name),
+            Change::Rename { to, .. } => Some(to),
+            Change::Remove(_)
+            | Change::RemoveView(_)
+            | Change::SetHook(_)
+            | Change::RemoveHook(_) => None,
         }
     }
 }
@@ -118,7 +137,7 @@ pub struct Scheduled {
     "The roster of programs and views a network runs, and the changes scheduled to it: by the validators' vote, or by the account that holds a name, at least 60 blocks ahead."
 )]
 pub enum Op {
-    #[tool_op(description = "Schedule a change for a later height: Set or Remove a program (a Set's code a held blob of kind program), SetView or RemoveView a view with no program behind it; SetHook, RemoveHook and a Publish that declares roles are the validators' vote's. An account's change lands at least 60 blocks after the block that carries it, only for a name it holds or a free one, which it then holds; a program that fills a role changes only by the vote.", example = crate::examples::schedule)]
+    #[tool_op(description = "Schedule a change for a later height: Set or Remove a program (a Set's code a held blob of kind program), SetView or RemoveView a view with no program behind it, Rename a program or view to a new owner/name id with its state, account, roles, hook and holder; SetHook, RemoveHook and a Publish that declares roles are the validators' vote's. An account's change lands at least 60 blocks after the block that carries it, only for a name it holds or a free one, which it then holds (a new id is owner/name, and no two ids write the same with / as -); a program that fills a role changes only by the vote.", example = crate::examples::schedule)]
     Schedule(Scheduled),
     #[tool_op(description = "Take back the change scheduled for program at height, before it lands: an account's change by the name's holder, the vote's by the vote.", example = crate::examples::cancel)]
     Cancel { height: u64, program: ProgramId },
@@ -192,6 +211,9 @@ pub enum Query {
     #[ask(Reply::Hooks(Vec<ProgramId>))]
     #[tool_query(description = "The hooks at block at_height, as the kernel's Hooks answers.", example = crate::examples::hooks_at)]
     HooksAt { at_height: u64 },
+    #[ask(Reply::Renames(Vec<(ProgramId, ProgramId)>))]
+    #[tool_query(description = "The renames that hold at block height: each (from, to) landed by then whose new id the roster lists there and whose old id it does not. The kernel renames by it, and each program's Migrate rewrites its stored ids by it.", example = crate::examples::renames)]
+    Renames(u64) = 12,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -218,6 +240,7 @@ pub enum Reply {
         height: u64,
         holder: Option<Holder>,
     },
+    Renames(Vec<(ProgramId, ProgramId)>),
 }
 
 // A program that runs, its code, and what that code says it was built from.
@@ -263,6 +286,7 @@ fn scheduled_fields(scheduled: &Scheduled) -> (String, Vec<describe::Field>) {
                 Value::List(roles.iter().map(Value::text).collect()),
             ));
         }
+        Change::Rename { to, .. } => fields.push(field("to", Value::Program(to.clone()))),
         Change::Remove(_)
         | Change::SetView(_)
         | Change::RemoveView(_)
@@ -326,5 +350,22 @@ fn op_variants_only_append() {
     assert_eq!(
         describe::variants::<Op>(),
         ["Schedule", "Cancel", "Own", "ScheduleOver"]
+    );
+}
+
+#[test]
+fn change_variants_only_append() {
+    assert_eq!(
+        describe::variants::<Change>(),
+        [
+            "Set",
+            "Remove",
+            "SetView",
+            "RemoveView",
+            "SetHook",
+            "RemoveHook",
+            "Publish",
+            "Rename"
+        ]
     );
 }

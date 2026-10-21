@@ -5,8 +5,8 @@ use ::program::tools::Tools;
 use ::program::{Error, ExecCtx, Program, QueryCtx, decoded};
 
 use crate::rules::{
-    BY, Roster, at, cancel, fold, holder_of, hooks_at, init, own, roles_at, roster, schedule,
-    schedule_over, sources, to_land, views_at,
+    BY, Roster, at, cancel, fold, holder_of, hooks_at, init, own, renames_at, roles_at, roster,
+    schedule, schedule_over, sources, to_land, views_at,
 };
 use crate::{Genesis, Op, PROGRAM, PageResponse, Pending, Query, Reply};
 
@@ -98,6 +98,7 @@ impl Program for Programs {
                 height,
                 holder: holder_of(ctx, &program)?,
             },
+            Query::Renames(height) => Reply::Renames(renames_at(ctx, height)?),
         })
     }
 }

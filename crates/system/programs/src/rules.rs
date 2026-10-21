@@ -29,6 +29,7 @@ type At = (u64, ProgramId);
 pub(crate) const SCHEDULE: Map<At, Change> = Map::new("s/");
 const FOLDED: Item<u64> = Item::new("folded");
 pub(crate) const BY: Map<At, AccountNumber> = Map::new("b/");
+pub(crate) const RENAMED: Map<At, ProgramId> = Map::new("n/");
 
 pub(crate) fn init(ctx: &ExecCtx, genesis: Genesis) {
     for entry in genesis.programs {
@@ -225,13 +226,22 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
         held_code(ctx, code)?;
     }
     let name = scheduled.change.program();
-    let lands = matches!(
-        scheduled.change,
-        Change::Set(_) | Change::SetView(_) | Change::Publish { .. }
-    );
-    if lands && !::program::is_name(name) {
+    let landing = scheduled.change.lands();
+    if let Some(id) = landing.filter(|id| !::program::is_id(id)) {
         return Err(invalid(format!(
-            "{name:?} is not a program id: 1..=64 of [a-z0-9_-]"
+            "{id:?} is not a program id: a name or owner/name, each name 1..=64 of [a-z0-9_-]"
+        )));
+    }
+    let free = match landing {
+        Some(id) => holder_of(ctx, id)?.is_none(),
+        None => false,
+    };
+    let names_no_owner = landing.is_some_and(|id| !id.contains('/'));
+    let a_new_id_without_its_owner = free && names_no_owner;
+    if a_new_id_without_its_owner {
+        let id = landing.unwrap_or_default();
+        return Err(invalid(format!(
+            "{id} is a new id, and a new id names its owner: <owner>/{id}"
         )));
     }
     if let Change::Publish { roles, .. } = &scheduled.change {
@@ -241,6 +251,19 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
     let mut after = before.clone();
     apply(&mut after, scheduled.change.clone());
     fillable(&after)?;
+    if let Some(id) = landing.filter(|id| !lists(&before, id)) {
+        let renamed_from = match &scheduled.change {
+            Change::Rename { from, .. } => Some(from.as_str()),
+            _ => None,
+        };
+        let clash = slug_clash(ctx, id, renamed_from, &after)?;
+        if let Some(other) = clash {
+            return Err(already_exists(format!(
+                "{id} writes as {:?} in a channel id, as {other} does: choose an id no other id writes the same",
+                ::program::slug(id)
+            )));
+        }
+    }
     let Roster {
         programs,
         views,
@@ -251,6 +274,7 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
         && matches!(scheduled.change, Change::Remove(_) | Change::RemoveView(_))
         && !programs.contains_key(name)
         && !views.contains_key(name);
+    let listed = programs.contains_key(name) || views.contains_key(name);
     let clash = match &scheduled.change {
         Change::Set(_) | Change::Publish { .. } => {
             views.contains_key(name)
@@ -261,6 +285,22 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
                 || matching_change_waits(ctx, name, &changes, |c| {
                     matches!(c, Change::Set(_) | Change::Publish { .. })
                 })?
+        }
+        Change::Rename { .. } if !listed => {
+            return Err(not_found(format!(
+                "no program or view {name} is listed at {}",
+                scheduled.height
+            )));
+        }
+        Change::Rename { to, .. } => {
+            let taken = holder_of(ctx, to)?.is_some()
+                || matching_change_waits(ctx, to, &changes, |_| true)?;
+            if taken {
+                return Err(already_exists(format!(
+                    "{to} is held or has a change waiting: a rename lands on a free id"
+                )));
+            }
+            false
         }
         _ if gone => false,
         Change::Remove(_) | Change::SetHook(_) if !programs.contains_key(name) => {
@@ -312,6 +352,10 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
     }
     if !OWNERS.has(ctx, &key.1) {
         OWNERS.put(ctx, &key.1, &by.map_or(Holder::Vote, Holder::Account));
+    }
+    if let Change::Rename { to, .. } = &scheduled.change {
+        let holder = holder_of(ctx, &key.1)?.unwrap_or(Holder::Vote);
+        OWNERS.put(ctx, to, &holder);
     }
     SCHEDULE.put(ctx, &key, &scheduled.change);
     if let Some(account) = by {
@@ -409,7 +453,8 @@ pub(crate) fn cancel(ctx: &ExecCtx, height: u64, program: ProgramId) -> Result<(
         | Change::SetView(_)
         | Change::SetHook(_)
         | Change::RemoveHook(_)
-        | Change::Publish { .. } => None,
+        | Change::Publish { .. }
+        | Change::Rename { .. } => None,
     };
     if let Some(other) = reinstated
         && matching_change_waits(ctx, &key.1, &[], other)?
@@ -437,6 +482,9 @@ pub(crate) fn fold(ctx: &ExecCtx, height: u64) -> Result<(), Error> {
     let before = stored(ctx)?;
     let mut after = before.clone();
     for (key, change) in due {
+        if let Change::Rename { to, .. } = &change {
+            RENAMED.put(ctx, &key, to);
+        }
         apply(&mut after, change);
         remove_change_and_maker(ctx, &key);
     }
@@ -618,6 +666,23 @@ fn apply(roster: &mut Roster, change: Change) {
         Change::RemoveHook(program) => {
             roster.hooks.remove(&program);
         }
+        Change::Rename { from, to } => {
+            if let Some(mut entry) = roster.programs.remove(&from) {
+                entry.program = to.clone();
+                roster.programs.entry(to.clone()).or_insert(entry);
+            }
+            if let Some(mut view) = roster.views.remove(&from) {
+                view.name = to.clone();
+                roster.views.entry(to.clone()).or_insert(view);
+            }
+            if roster.hooks.remove(&from) {
+                roster.hooks.insert(to.clone());
+            }
+            let bound = roster.roles.values_mut();
+            for filled in bound.filter(|filled| **filled == from) {
+                *filled = to.clone();
+            }
+        }
     }
 }
 
@@ -641,4 +706,57 @@ fn matching_change_waits(
         .all(ctx)?
         .into_iter()
         .any(|(at, change)| at.1 == name && !overruled.contains(&at) && this(&change)))
+}
+
+fn lists(roster: &Roster, id: &str) -> bool {
+    roster.programs.contains_key(id) || roster.views.contains_key(id)
+}
+
+fn slug_clash(
+    ctx: &QueryCtx,
+    id: &str,
+    renamed_from: Option<&str>,
+    after: &Roster,
+) -> Result<Option<ProgramId>, Error> {
+    let slug = ::program::slug(id);
+    let listed = after.programs.keys().chain(after.views.keys()).cloned();
+    let waiting = SCHEDULE.all(ctx)?.into_iter();
+    let landing = waiting.filter_map(|(_, change)| change.lands().map(str::to_owned));
+    let held = OWNERS.all(ctx)?.into_iter().map(|(name, _)| name);
+    let itself = |other: &str| other == id || Some(other) == renamed_from;
+    Ok(listed
+        .chain(landing)
+        .chain(held)
+        .find(|other| !itself(other) && ::program::slug(other) == slug))
+}
+
+pub(crate) fn renames_at(
+    ctx: &QueryCtx,
+    height: u64,
+) -> Result<Vec<(ProgramId, ProgramId)>, Error> {
+    let roster = roster(ctx, height, &[])?;
+    let landed = RENAMED.scan(ctx, RENAMED.below(&(height + 1)))?;
+    let due = due(ctx, height)?;
+    let due = due.into_iter().filter_map(|(at, change)| match change {
+        Change::Rename { to, .. } => Some((at, to)),
+        _ => None,
+    });
+    let hops: Vec<(ProgramId, ProgramId)> = landed
+        .into_iter()
+        .chain(due)
+        .map(|((_, from), to)| (from, to))
+        .collect();
+    let through_later_hops = |at: usize, to: &ProgramId| {
+        let later = hops[at + 1..].iter();
+        later.fold(to.clone(), |id, (from, to)| match *from == id {
+            true => to.clone(),
+            false => id,
+        })
+    };
+    Ok(hops
+        .iter()
+        .enumerate()
+        .map(|(at, (from, to))| (from.clone(), through_later_hops(at, to)))
+        .filter(|(from, to)| lists(&roster, to) && !lists(&roster, from))
+        .collect())
 }

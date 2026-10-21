@@ -219,14 +219,14 @@ fn an_account_changes_a_name_it_holds_but_never_a_role_or_a_hook() {
     )
     .unwrap();
     run(&store, by(CAROL), at(EARLIEST + 1, set("chat", code))).unwrap();
-    run(&store, by(DAN), at(EARLIEST, set("trade", code))).unwrap();
+    run(&store, by(DAN), at(EARLIEST, set("o/trade", code))).unwrap();
     run(
         &store,
         by(DAN),
         at(
             EARLIEST + 1,
             Change::Publish {
-                entry: entry("board", code),
+                entry: entry("o/board", code),
                 roles: Vec::new(),
             },
         ),
@@ -239,14 +239,14 @@ fn an_account_changes_a_name_it_holds_but_never_a_role_or_a_hook() {
         [
             (EARLIEST, "activity".into(), Some(EVE)),
             (EARLIEST, "forge".into(), Some(DAN)),
-            (EARLIEST, "trade".into(), Some(DAN)),
-            (EARLIEST + 1, "board".into(), Some(DAN)),
+            (EARLIEST, "o/trade".into(), Some(DAN)),
             (EARLIEST + 1, "chat".into(), Some(CAROL)),
+            (EARLIEST + 1, "o/board".into(), Some(DAN)),
             (EARLIEST + 2, "chat".into(), Some(CAROL)),
         ]
     );
     fold_to(&store, EARLIEST + 2);
-    assert_eq!(code_at(&store, EARLIEST + 2, "trade"), Some(code));
+    assert_eq!(code_at(&store, EARLIEST + 2, "o/trade"), Some(code));
     assert_eq!(code_at(&store, EARLIEST + 2, "chat"), Some(code));
     assert_eq!(code_at(&store, EARLIEST + 2, "forge"), None);
 }
@@ -280,37 +280,37 @@ fn a_stranger_is_refused_by_name_of_the_holder_and_how_it_hands_a_name_on() {
 #[test]
 fn the_first_account_to_set_a_free_name_holds_it_through_its_removal() {
     let (store, code) = seated();
-    assert_eq!(owner(&store, "trade"), None);
-    run(&store, by(DAN), at(EARLIEST, set("trade", code))).unwrap();
+    assert_eq!(owner(&store, "o/trade"), None);
+    run(&store, by(DAN), at(EARLIEST, set("o/trade", code))).unwrap();
     assert_eq!(
-        owner(&store, "trade"),
+        owner(&store, "o/trade"),
         Some(Holder::Account(DAN)),
         "held from its schedule, before it lands"
     );
     assert_eq!(
-        refused(&store, by(EVE), at(EARLIEST + 1, set("trade", code))),
+        refused(&store, by(EVE), at(EARLIEST + 1, set("o/trade", code))),
         code::UNAUTHORIZED,
         "a second account within the notice"
     );
-    run(&store, by(EVE), at(EARLIEST, view_of("market", code))).unwrap();
-    assert_eq!(owner(&store, "market"), Some(Holder::Account(EVE)));
+    run(&store, by(EVE), at(EARLIEST, view_of("o/market", code))).unwrap();
+    assert_eq!(owner(&store, "o/market"), Some(Holder::Account(EVE)));
     let then = |height: u64, account| Env {
         height,
         ..by(account)
     };
     let removed = EARLIEST + 1 + NOTICE;
-    let removal = at(removed, Change::Remove("trade".into()));
+    let removal = at(removed, Change::Remove("o/trade".into()));
     run(&store, then(EARLIEST + 1, DAN), removal).unwrap();
     fold_to(&store, removed);
-    assert_eq!(code_at(&store, removed, "trade"), None);
+    assert_eq!(code_at(&store, removed, "o/trade"), None);
     fold_to(&store, removed + 1);
-    let again = at(removed + 1 + NOTICE, set("trade", code));
+    let again = at(removed + 1 + NOTICE, set("o/trade", code));
     assert_eq!(
         refused(&store, then(removed + 1, EVE), again.clone()),
         code::UNAUTHORIZED,
         "a removal keeps the holder"
     );
-    assert_eq!(owner(&store, "trade"), Some(Holder::Account(DAN)));
+    assert_eq!(owner(&store, "o/trade"), Some(Holder::Account(DAN)));
     run(&store, then(removed + 1, DAN), again).unwrap();
 }
 
@@ -348,14 +348,14 @@ fn a_founded_name_is_the_votes_and_its_holder_or_the_vote_hands_it_on() {
     );
     run(&store, vote(), own("files", Holder::Account(CAROL))).unwrap();
     assert_eq!(owner(&store, "files"), Some(Holder::Account(CAROL)));
-    run(&store, vote(), at(5_000, set("new", code))).unwrap();
+    run(&store, vote(), at(5_000, set("o/new", code))).unwrap();
     assert_eq!(
-        owner(&store, "new"),
+        owner(&store, "o/new"),
         Some(Holder::Vote),
         "the vote's first set"
     );
     assert_eq!(
-        refused(&store, by(EVE), at(EARLIEST, set("new", code))),
+        refused(&store, by(EVE), at(EARLIEST, set("o/new", code))),
         code::UNAUTHORIZED
     );
 }
@@ -363,12 +363,12 @@ fn a_founded_name_is_the_votes_and_its_holder_or_the_vote_hands_it_on() {
 #[test]
 fn a_name_with_no_record_that_runs_is_listed_or_waits_is_the_votes() {
     let (store, code) = seated();
-    run(&store, by(DAN), at(EARLIEST, set("trade", code))).unwrap();
+    run(&store, by(DAN), at(EARLIEST, set("o/trade", code))).unwrap();
     let ctx = store.exec(env(TIP, Origin::Root));
-    for name in ["chat", "lens", "trade"] {
+    for name in ["chat", "lens", "o/trade"] {
         OWNERS.remove(&ctx, &name.to_owned());
     }
-    for name in ["chat", "lens", "trade"] {
+    for name in ["chat", "lens", "o/trade"] {
         assert_eq!(owner(&store, name), Some(Holder::Vote), "{name}");
     }
     assert_eq!(owner(&store, "ghost"), None);
@@ -377,7 +377,7 @@ fn a_name_with_no_record_that_runs_is_listed_or_waits_is_the_votes() {
         code::UNAUTHORIZED
     );
     assert_eq!(
-        refused(&store, by(DAN), at(EARLIEST + 1, set("trade", code))),
+        refused(&store, by(DAN), at(EARLIEST + 1, set("o/trade", code))),
         code::UNAUTHORIZED
     );
     run(&store, vote(), own("chat", Holder::Account(CAROL))).unwrap();
@@ -476,8 +476,8 @@ fn the_votes_change_takes_every_change_an_account_made_to_its_name_along() {
     run(&store, by(CAROL), at(EARLIEST + 5, set("chat", code))).unwrap();
     run(&store, by(CAROL), at(EARLIEST + 9, set("chat", code))).unwrap();
     run(&store, by(DAN), at(EARLIEST + 5, set("forge", code))).unwrap();
-    run(&store, by(EVE), at(EARLIEST, view_of("trade", code))).unwrap();
-    run(&store, by(EVE), at(EARLIEST, set("board", code))).unwrap();
+    run(&store, by(EVE), at(EARLIEST, view_of("o/trade", code))).unwrap();
+    run(&store, by(EVE), at(EARLIEST, set("o/board", code))).unwrap();
     run(&store, by(CAROL), at(EARLIEST, view_of("lens", code))).unwrap();
     run(&store, vote(), at(EARLIEST + 5, set("chat", code))).unwrap();
     run(
@@ -486,8 +486,8 @@ fn the_votes_change_takes_every_change_an_account_made_to_its_name_along() {
         at(EARLIEST + 5, Change::Remove("forge".into())),
     )
     .unwrap();
-    run(&store, vote(), at(EARLIEST + 1, set("trade", code))).unwrap();
-    run(&store, vote(), at(EARLIEST + 1, view_of("board", code))).unwrap();
+    run(&store, vote(), at(EARLIEST + 1, set("o/trade", code))).unwrap();
+    run(&store, vote(), at(EARLIEST + 1, view_of("o/board", code))).unwrap();
     run(
         &store,
         vote(),
@@ -497,9 +497,9 @@ fn the_votes_change_takes_every_change_an_account_made_to_its_name_along() {
     assert_eq!(
         waiting(&store),
         [
-            (EARLIEST + 1, "board".into(), None),
             (EARLIEST + 1, "lens".into(), None),
-            (EARLIEST + 1, "trade".into(), None),
+            (EARLIEST + 1, "o/board".into(), None),
+            (EARLIEST + 1, "o/trade".into(), None),
             (EARLIEST + 5, "chat".into(), None),
             (EARLIEST + 5, "forge".into(), None),
         ]
@@ -533,18 +533,18 @@ fn the_votes_change_over_an_accounts_removal_meets_what_runs() {
 #[test]
 fn the_votes_removal_of_what_only_an_account_would_add_leaves_nothing_waiting() {
     let (store, code) = seated();
-    run(&store, by(CAROL), at(EARLIEST, set("trade", code))).unwrap();
-    run(&store, by(DAN), at(EARLIEST, view_of("board", code))).unwrap();
+    run(&store, by(CAROL), at(EARLIEST, set("o/trade", code))).unwrap();
+    run(&store, by(DAN), at(EARLIEST, view_of("o/board", code))).unwrap();
     run(
         &store,
         vote(),
-        at(EARLIEST + 10, Change::Remove("trade".into())),
+        at(EARLIEST + 10, Change::Remove("o/trade".into())),
     )
     .unwrap();
     run(
         &store,
         vote(),
-        at(EARLIEST + 10, Change::RemoveView("board".into())),
+        at(EARLIEST + 10, Change::RemoveView("o/board".into())),
     )
     .unwrap();
     assert!(waiting(&store).is_empty());

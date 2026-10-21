@@ -17,7 +17,7 @@ fills none, no write is guarded.
 
 | Role | Filled here by | What the kernel does with it |
 |---|---|---|
-| `programs` | `programs` | at founding, writes its params (`role::programs::Genesis`: every founding program and view, the founding hooks and the role table the founding programs declare, `roles`); at each block, before any frame, asks `At(height)` and admits, swaps or drops programs to match the answer, then asks `Hooks(height)` for the programs it tells of each frame the block carries ("Hooks", below). Whenever the roster changes it asks `Roles` and keeps the answer as the network's role table, which every `Env.roles` carries; it refuses an answer that leaves a required role unfilled or names a program that is not running, and keeps the table it had |
+| `programs` | `programs` | at founding, writes its params (`role::programs::Genesis`: every founding program and view, the founding hooks and the role table the founding programs declare, `roles`); at each block, before any frame, asks `At(height)` and admits, swaps or drops programs to match the answer, then asks `Hooks(height)` for the programs it tells of each frame the block carries ("Hooks", below). Before it admits, it asks `Renames(height)` and renames in place each `(from, to)` while `from` runs, `to` does not, and `At` lists `to` and not `from` ("Renaming a program", below). Whenever the roster changes it asks `Roles` and keeps the answer as the network's role table, which every `Env.roles` carries; it refuses an answer that leaves a required role unfilled or names a program that is not running, and keeps the table it had |
 | `validators` | `valset` | at founding, writes its params (`role::validators::Genesis`: the founding validators and the member cap, the most members it may ever hold, 1 to `MAX_MEMBERS` = 128); at founding and on the last block of each epoch, asks `Validators` and `Members`: it seats the Validators for the next epoch and tracks the Members (a Resident follows the chain but never votes or proposes); a Members answer past the cap halts the network there. `Genesis.queries` is whether the network answers unsigned queries (`QueryPolicy::Signed` or `Open`); each node asks `QueryPolicy` before it answers one, runs it as the empty key (`abi::Origin::unsigned()`), and refuses it unless the answer is `Open`. A network founded before the policy holds no row and answers `Signed`. The node (`ducktape join`, `invite`, `vote`, `halo`, `leave`) signs the role's `Op` with its identity key. Each member registers the halo address other members dial it at (`Member.halo`, host:port): `Enroll` and `SetHalo` refuse an unspecified or loopback host as `invalid_input` |
 | `identity` | `identity` | as it admits a program (at founding, and later off the programs role), executes `RegisterProgram { program }` with the `System` origin; for each signed frame asks `Account(key)`; for each message and reply asks `OfProgram(sender)`, and for a message a program sends as another account asks `Runs { program, account }` |
 | `awaits` | `awaits` | when a frame parks waiting on calls, sends `Park { frame, program, calls }` with the `System` origin, and `Close { frame }` when the frame finishes or the programs role changes its code; the role opens a ticket per call, and a `Resolve { ticket, answer }` from the called program makes it hand the frame its answer through the host's `Resume`; a ticket has no deadline. A refusal of `Park` fails the frame |
@@ -254,6 +254,34 @@ once per change. No scheduled change may leave a role in
 entry runs at that height. Only the validators' vote publishes with roles,
 and a program that fills any role is changed only by the vote.
 
+## Renaming a program
+
+A program id is a name, or an owner and a name (`owner/name`), each name 1
+to 64 of `[a-z0-9_-]` (`program::is_id`). A new id, one with no holder and
+nothing under it, is `owner/name`; an id that runs, is listed or is held
+keeps its bare name. No two ids a change brings in or the roster lists
+write the same with `/` as `-` (`program::slug`, how a channel id names its
+program), so a `Set`, `SetView`, `Publish` or `Rename` that would is refused
+`already_exists`.
+
+`Change::Rename { from, to }` moves a program or a view-only entry to a new
+id at its height. It is scheduled under `from`, by whoever may `Set` it
+(`from`'s holder, or the vote for a program that fills a role), and `to`
+must be free. The rename claims `to` for `from`'s holder as it is
+scheduled, and `from` stays held, so nobody takes the old name. From its
+height `At` lists `from`'s entry under `to`, its roles and its hook follow,
+and a `Set` of `to` at the same height lands its code under `to` whichever
+of the two the fold applies first. The kernel keeps the program's state,
+its account and its storage place (it tells identity `RenameProgram`
+first), and swaps the code if `to`'s differs, with no `init`. Nothing
+answers to `from` after it.
+
+`Renames(height)` (tag 12, answered at tag 9) lists each landed rename that
+still holds at `height`: its `to` listed and its `from` not. The kernel asks
+it at every block, so a rename identity refused is tried again at the next
+one, and each program's `Migrate` rewrites the ids it stores by it. A
+programs role that refuses it renames nothing.
+
 ## Hooks
 
 A hook is a program the kernel tells of every frame a block carries. The
@@ -364,4 +392,5 @@ it leaves out is dropped. A client names the height it asks about:
 `at_height` (0 is genesis, not now), and `Roster` answers at the query's own
 height. `At` and `Hooks` are the kernel's role queries and answer the same;
 `Views(height)` is retired: its tag answers no query, and `ViewsAt` lists the
-view-only entries. A refusal of validators' `Members` stops the node.
+view-only entries. `Renames(height)` is the kernel's too, and a filler may
+refuse it: that reads as no renames. A refusal of validators' `Members` stops the node.

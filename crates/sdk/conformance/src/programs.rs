@@ -191,7 +191,7 @@ pub fn a_set_lands_at_its_height_and_not_before<F: Fixture>(fixture: &F) {
     let code = fixture
         .hold(&host, b"new code")
         .unwrap_or_else(|e| panic!("programs: holding code: {e:?}"));
-    for program in ["new", "a"] {
+    for program in ["o/new", "a"] {
         fixture
             .set(&host, 1, 5, entry(program, code))
             .unwrap_or_else(|e| panic!("programs: scheduling {program} at 5: {e:?}"));
@@ -210,7 +210,7 @@ pub fn a_set_lands_at_its_height_and_not_before<F: Fixture>(fixture: &F) {
             [
                 entry("a", code),
                 entry("b", BlobId::Sha256([2; 32])),
-                entry("new", code)
+                entry("o/new", code)
             ],
             "programs: at {height}, the set scheduled at 5 runs"
         );
@@ -238,7 +238,7 @@ pub fn a_remove_drops_at_its_height<F: Fixture>(fixture: &F) {
         .hold(&host, b"later")
         .unwrap_or_else(|e| panic!("programs: holding code: {e:?}"));
     fixture
-        .set(&host, 7, 9, entry("c", later))
+        .set(&host, 7, 9, entry("o/c", later))
         .unwrap_or_else(|e| panic!("programs: scheduling c at 9 from 7: {e:?}"));
     assert_eq!(
         programs::<F>(&host, 7),

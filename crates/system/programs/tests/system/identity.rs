@@ -217,7 +217,7 @@ fn every_program_has_its_account_from_its_admission() {
         let code = net.hold(programs::CODE_KIND, PROBE).await;
         let lands_at = net.height + 3;
         let entry = programs::Entry {
-            program: "late".into(),
+            program: "o/late".into(),
             code,
             params: abi::encode(&Vec::<Step>::new()),
         };
@@ -228,10 +228,10 @@ fn every_program_has_its_account_from_its_admission() {
             }))
             .await;
         output_of(&scheduled);
-        assert_eq!(net.of_program("late").await, None);
+        assert_eq!(net.of_program("o/late").await, None);
         net.ticks(lands_at - net.height).await;
-        let late = net.of_program("late").await.expect("late has an account");
-        assert_eq!(net.account(late).await.card.name, "late");
+        let late = net.of_program("o/late").await.expect("late has an account");
+        assert_eq!(net.account(late).await.card.name, "o/late");
 
         let alice = net.create(1, "Alice").await;
         let probe = net.of_program("probe").await.unwrap();

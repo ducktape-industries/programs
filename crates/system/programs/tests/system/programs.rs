@@ -11,7 +11,7 @@ fn a_schedule_is_refused_until_a_quorum_of_validators_holds_the_code() {
         let schedule = programs::Op::Schedule(programs::Scheduled {
             height: net.height + 10,
             change: programs::Change::Set(programs::Entry {
-                program: "identity2".into(),
+                program: "o/identity2".into(),
                 code: id,
                 params: Vec::new(),
             }),
@@ -50,7 +50,7 @@ fn a_held_program_is_scheduled_by_the_validators_vote_and_seated_at_its_height()
         let mut net = Net::found(context, dir.path()).await;
         let code = net.hold(programs::CODE_KIND, &program("identity")).await;
         let entry = programs::Entry {
-            program: "identity2".into(),
+            program: "o/identity2".into(),
             code,
             params: Vec::new(),
         };
@@ -81,7 +81,7 @@ fn a_held_program_is_scheduled_by_the_validators_vote_and_seated_at_its_height()
         let taken = net
             .govern(&programs::Op::Schedule(programs::Scheduled {
                 height: lands_at,
-                change: programs::Change::Remove("identity2".into()),
+                change: programs::Change::Remove("o/identity2".into()),
             }))
             .await;
         assert_eq!(refusal_of(&taken), reason::ALREADY_EXISTS);
@@ -108,7 +108,7 @@ fn a_held_program_is_scheduled_by_the_validators_vote_and_seated_at_its_height()
         else {
             panic!()
         };
-        assert!(later.iter().any(|entry| entry.program == "identity2"));
+        assert!(later.iter().any(|entry| entry.program == "o/identity2"));
         while net.height + 1 < lands_at {
             let applied = net.tick().await;
             assert!(applied.admissions.is_empty());
@@ -120,8 +120,8 @@ fn a_held_program_is_scheduled_by_the_validators_vote_and_seated_at_its_height()
             .iter()
             .map(|receipt| receipt.program.as_str())
             .collect();
-        assert_eq!(admitted, [identity::PROGRAM, "identity2"]);
-        assert!(net.host.programs().unwrap().contains_key("identity2"));
+        assert_eq!(admitted, [identity::PROGRAM, "o/identity2"]);
+        assert!(net.host.programs().unwrap().contains_key("o/identity2"));
         let programs::Reply::Roster {
             height, programs, ..
         } = net.ask(programs::PROGRAM, &programs::Query::Roster).await
@@ -129,10 +129,10 @@ fn a_held_program_is_scheduled_by_the_validators_vote_and_seated_at_its_height()
             panic!()
         };
         assert_eq!(height, net.height);
-        assert!(programs.iter().any(|entry| entry.program == "identity2"));
+        assert!(programs.iter().any(|entry| entry.program == "o/identity2"));
         net.apply(
             &public(7),
-            "identity2",
+            "o/identity2",
             &identity::Op::Create {
                 name: "Seven".into(),
                 scheme: Scheme::Ed25519,
@@ -145,7 +145,7 @@ fn a_held_program_is_scheduled_by_the_validators_vote_and_seated_at_its_height()
         } = net
             .ask(
                 programs::PROGRAM,
-                &programs::Query::Program("identity2".into()),
+                &programs::Query::Program("o/identity2".into()),
             )
             .await
         else {
@@ -157,29 +157,29 @@ fn a_held_program_is_scheduled_by_the_validators_vote_and_seated_at_its_height()
         let removal = net
             .govern(&programs::Op::Schedule(programs::Scheduled {
                 height: removal_at,
-                change: programs::Change::Remove("identity2".into()),
+                change: programs::Change::Remove("o/identity2".into()),
             }))
             .await;
         output_of(&removal);
         let cancelled = net
             .govern(&programs::Op::Cancel {
                 height: removal_at,
-                program: "identity2".into(),
+                program: "o/identity2".into(),
             })
             .await;
         output_of(&cancelled);
         net.ticks(3).await;
-        assert!(net.host.programs().unwrap().contains_key("identity2"));
+        assert!(net.host.programs().unwrap().contains_key("o/identity2"));
         let removal_at = net.height + 3;
         let removal = net
             .govern(&programs::Op::Schedule(programs::Scheduled {
                 height: removal_at,
-                change: programs::Change::Remove("identity2".into()),
+                change: programs::Change::Remove("o/identity2".into()),
             }))
             .await;
         output_of(&removal);
         net.ticks(2).await;
-        assert!(!net.host.programs().unwrap().contains_key("identity2"));
+        assert!(!net.host.programs().unwrap().contains_key("o/identity2"));
     });
 }
 
@@ -189,7 +189,7 @@ fn schedule_pages_and_missing_programs_report_the_answering_height() {
         let dir = tempfile::tempdir().unwrap();
         let mut net = Net::found(context, dir.path()).await;
         let code = net.hold(programs::CODE_KIND, &program("identity")).await;
-        for program in ["z", "a", "m"] {
+        for program in ["o/z", "o/a", "o/m"] {
             let receipt = net
                 .govern(&programs::Op::Schedule(programs::Scheduled {
                     height: 100,
@@ -230,7 +230,7 @@ fn schedule_pages_and_missing_programs_report_the_answering_height() {
                 break;
             }
         }
-        assert_eq!(programs, ["a", "m", "z"]);
+        assert_eq!(programs, ["o/a", "o/m", "o/z"]);
         let reply: programs::Reply = net
             .ask(
                 programs::PROGRAM,
@@ -256,7 +256,7 @@ fn a_schedule_from_a_key_with_no_account_or_under_the_notice_is_refused() {
         let schedule = programs::Op::Schedule(programs::Scheduled {
             height: net.height + 5,
             change: programs::Change::Set(programs::Entry {
-                program: "identity2".into(),
+                program: "o/identity2".into(),
                 code,
                 params: Vec::new(),
             }),
