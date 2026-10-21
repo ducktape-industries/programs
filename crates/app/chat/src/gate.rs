@@ -29,8 +29,6 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::Post { .. }
         | Op::AddReaction { .. }
         | Op::RemoveReaction { .. }
-        | Op::Migrate { .. }
-        | Op::MigrateSome { .. }
         | Op::Listen { .. }
         | Op::SetNotices { .. }
         | Op::AdoptOwners { .. }

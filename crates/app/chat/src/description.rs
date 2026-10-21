@@ -128,13 +128,6 @@ pub fn describe(op: &Op) -> Description {
             channel_id,
             vec![field("key", Value::text(key))],
         ),
-        Op::Migrate { channel_id } => ("Migrate channel", channel_id, vec![]),
-        Op::MigrateSome { limit } => {
-            return Description {
-                title: "Migrate channels".into(),
-                fields: vec![field("at most", Value::text(limit.to_string()))],
-            };
-        }
         Op::Listen {
             channel_id,
             listening,

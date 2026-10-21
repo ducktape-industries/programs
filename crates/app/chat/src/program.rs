@@ -87,12 +87,10 @@ impl Program for Chat {
                 value,
             } => set_meta(ctx, &channel_id, key, value),
             Op::RemoveChannelMeta { channel_id, key } => remove_meta(ctx, &channel_id, &key),
-            Op::Migrate { channel_id } => crate::state::channel(ctx, &channel_id).map(drop),
             Op::Listen {
                 channel_id,
                 listening,
             } => listen(ctx, ctx.sender_account()?, &channel_id, listening),
-            Op::MigrateSome { .. } => Ok(()),
             Op::SetNotices {
                 channel_id,
                 notices,
@@ -232,14 +230,6 @@ impl Program for Chat {
             }
             Query::Reactors { channel_id, seqs } => {
                 (Reply::Reactors(reactors(ctx, channel_id, &seqs)?), vec![])
-            }
-            Query::Unmigrated { .. } => {
-                let none = crate::PageResponse {
-                    height: ctx.env().height,
-                    items: Vec::new(),
-                    next: None,
-                };
-                (Reply::ChannelIds(none), vec![])
             }
             Query::Listening { account, page } => {
                 (Reply::Listening(listened(ctx, account, &page)?), vec![])

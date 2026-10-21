@@ -365,7 +365,6 @@ fn rows_in(reply: &mut Reply) -> Vec<&mut MsgRow> {
         | Reply::Members(_)
         | Reply::Accounts(_)
         | Reply::Reactors(_)
-        | Reply::ChannelIds(_)
         | Reply::Listening(_)
         | Reply::Notices(_)
         | Reply::Followed(_)

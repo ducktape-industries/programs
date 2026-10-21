@@ -85,6 +85,8 @@ pub const RULES: &str = "rules";
 #[tool_about(
     "Channels, direct rooms, messages, threads, reactions and who hears each room. A message is markdown blocks; read one back as `text`."
 )]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Op {
     #[tool_op(description = "Open a channel you own. channel_id has no '/', and an id with ':' belongs to the program its prefix names; `dm-` ids open only through CreateDmChannel. Open lets anyone post; MembersOnly lets you and its members.", example = examples::create)]
     CreateChannel {
@@ -155,16 +157,8 @@ pub enum Op {
     },
     #[tool_op(description = "Remove one meta key. Whoever may rename the channel.", example = examples::remove_meta)]
     RemoveChannelMeta { channel_id: String, key: String },
-    // moved `channel_id`'s messages off the layout chat kept before `Stored`; every channel has
-    // moved, so it writes nothing now, and refuses only a channel that does not exist
-    #[tool_op(description = "Retired: every channel has moved to the current layout, so it writes nothing and refuses only a channel that does not exist.", example = examples::migrate)]
-    Migrate { channel_id: String },
     #[tool_op(description = "Hear every new message of a channel (or stop). Listening takes off what SetNotices cut there.", example = examples::listen)]
-    Listen { channel_id: String, listening: bool },
-    // migrated the first `limit` channels `Query::Unmigrated` listed; none is left, so it writes
-    // nothing
-    #[tool_op(description = "Retired with Migrate: none is left to migrate, so it writes nothing.", example = examples::migrate_some)]
-    MigrateSome { limit: u64 },
+    Listen { channel_id: String, listening: bool } = 14,
     /// What of `channel_id` still tells the sender (`None`: what chat tells
     /// by default). It stops their listening there, as `Listen` takes this
     /// off: the two are one choice.
@@ -172,7 +166,7 @@ pub enum Op {
     SetNotices {
         channel_id: String,
         notices: Option<Notices>,
-    },
+    } = 16,
     // one-time (J-011 ⑥): records owners for chat's owned rows from before the guard
     #[tool_op(description = "One-time backfill of owners for chat's rows written before ownership was recorded, a page at a time; returns the key to resume after, or null when done.", returns = Option<Vec<u8>>, example = examples::adopt)]
     AdoptOwners {
@@ -276,6 +270,8 @@ pub enum Op {
     ::program::Described,
 )]
 #[ask(Chat)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Query {
     #[ask(Reply::Channels(PageResponse<ChannelInfo>))]
     #[reads(state::CHANNELS, state::HEADS, state::CHANNEL_META)]
@@ -371,18 +367,13 @@ pub enum Query {
     #[reads(state::REACTIONS)]
     #[tool_query(description = "Who chose each reaction on the messages at seqs: one entry per message and emoji.", example = examples::reactors)]
     Reactors { channel_id: String, seqs: Vec<u64> },
-    // the channels whose messages were not all migrated yet (`Op::Migrate`): every channel has
-    // moved, so it answers none
-    #[ask(Reply::ChannelIds(PageResponse<String>))]
-    #[tool_query(description = "Retired with Migrate: answers no channel.", example = examples::unmigrated)]
-    Unmigrated { page: PageRequest },
     #[ask(Reply::Listening(PageResponse<String>))]
     #[reads(state::LISTENING)]
     #[tool_query(description = "The channels an account listens to.", example = examples::listening)]
     Listening {
         account: AccountNumber,
         page: PageRequest,
-    },
+    } = 13,
     /// Where `account` is in `channel_id`, for its notices: the seq it came
     /// into the room at, and into each thread of `roots` it is in.
     #[ask(Reply::Followed(Followed))]
@@ -507,6 +498,8 @@ pub enum Query {
 }
 
 #[derive(BorshSerialize, BorshDeserialize, BorshSchema, Debug, Clone, PartialEq, Eq)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum Reply {
     Channels(PageResponse<ChannelInfo>),
     Channel(Option<ChannelInfo>),
@@ -523,8 +516,7 @@ pub enum Reply {
     TagHits(PageResponse<MsgRow>),
     Accounts(PageResponse<Profile>),
     Reactors(Vec<ReactedBy>),
-    ChannelIds(PageResponse<String>),
-    Listening(PageResponse<String>),
+    Listening(PageResponse<String>) = 13,
     Notices(PageResponse<(String, Notices)>),
     Followed(Followed),
     Watching(PageResponse<String>),
@@ -979,9 +971,9 @@ fn op_variants_only_append() {
             "CreateChannelWithMeta",
             "SetChannelMeta",
             "RemoveChannelMeta",
-            "Migrate",
+            "-",
             "Listen",
-            "MigrateSome",
+            "-",
             "SetNotices",
             "AdoptOwners",
             "ListenFor",

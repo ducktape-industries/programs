@@ -13,7 +13,6 @@ mod channels;
 mod drafts;
 mod gate;
 mod leases;
-mod legacy;
 mod mentions;
 mod messages;
 mod order;
@@ -22,6 +21,7 @@ mod owned;
 mod properties;
 mod reactions;
 mod rooms;
+mod tags;
 
 const ADA: Principal = Principal::Account(1);
 const BO: Principal = Principal::Account(2);

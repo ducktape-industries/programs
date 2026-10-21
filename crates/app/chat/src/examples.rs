@@ -138,19 +138,11 @@ pub(crate) fn remove_meta() -> Op {
     }
 }
 
-pub(crate) fn migrate() -> Op {
-    Op::Migrate { channel_id: room() }
-}
-
 pub(crate) fn listen() -> Op {
     Op::Listen {
         channel_id: room(),
         listening: true,
     }
-}
-
-pub(crate) fn migrate_some() -> Op {
-    Op::MigrateSome { limit: 1 }
 }
 
 pub(crate) fn notices() -> Op {
@@ -281,10 +273,6 @@ pub(crate) fn reactors() -> Query {
         channel_id: room(),
         seqs: vec![4, 5],
     }
-}
-
-pub(crate) fn unmigrated() -> Query {
-    Query::Unmigrated { page: every() }
 }
 
 pub(crate) fn listening() -> Query {
