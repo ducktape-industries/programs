@@ -1,6 +1,7 @@
 //! The `programs` program: the roster of programs a network runs and the changes scheduled to
 //! it, by the validators' vote or by the account that holds a name (`Query::Owner`), whose change
 //! lands at least [`NOTICE`] blocks after it is made. What the kernel asks of it: the README.
+mod examples;
 mod program;
 mod rules;
 #[cfg(test)]
@@ -110,56 +111,84 @@ pub struct Scheduled {
     pub change: Change,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
+)]
+#[tool_about(
+    "The roster of programs and views a network runs, and the changes scheduled to it: by the validators' vote, or by the account that holds a name, at least 60 blocks ahead."
+)]
 pub enum Op {
+    #[tool_op(description = "Schedule a change for a later height: Set or Remove a program (a Set's code a held blob of kind program), SetView or RemoveView a view with no program behind it; SetHook, RemoveHook and a Publish that declares roles are the validators' vote's. An account's change lands at least 60 blocks after the block that carries it, only for a name it holds or a free one, which it then holds; a program that fills a role changes only by the vote.", example = crate::examples::schedule)]
     Schedule(Scheduled),
+    #[tool_op(description = "Take back the change scheduled for program at height, before it lands: an account's change by the name's holder, the vote's by the vote.", example = crate::examples::cancel)]
     Cancel { height: u64, program: ProgramId },
+    #[tool_op(description = "Hand a name on: to an account, to several accounts any of which acts as its holder, or to the validators' vote. Its holder or the vote.", example = crate::examples::own)]
     Own { program: ProgramId, holder: Holder },
 }
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Ask,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    ::program::Ask,
+    ::program::Described,
 )]
 #[ask(Programs)]
 pub enum Query {
     #[ask(Reply::Programs(Vec<Entry>))]
+    #[tool_query(description = "The programs that run at block height, each with its code and params: 0 is genesis, not now.", example = crate::examples::at)]
     At(u64),
     // The changes still to land, in height order: those above the query's own height. One at or
     // below it has landed, whether or not an op has folded it since.
     #[ask(Reply::Scheduled(PageResponse<Pending>))]
+    #[tool_query(description = "The changes still to land, in height order, each with the account that scheduled it (null for the vote), a page at a time.", example = crate::examples::scheduled)]
     Scheduled { page: PageRequest },
     #[ask(Reply::Program { height: u64, entry: Option<Entry> })]
+    #[tool_query(description = "One program that runs now, with its code and params, or null; and the query's height.", example = crate::examples::program)]
     Program(ProgramId),
     // Retired for `ViewsAt`, which names its height; still answered. The view-only entries at a
     // height, by name.
     #[ask(Reply::Views(Vec<View>))]
+    #[tool_query(description = "Retired for ViewsAt, which names its height; still answered: the view-only entries at block height.", example = crate::examples::views)]
     Views(u64),
     #[ask(Reply::Roles(abi::Roles))]
+    #[tool_query(description = "Which program fills each role now.", example = crate::examples::roles)]
     Roles,
     #[ask(Reply::Hooks(Vec<ProgramId>))]
+    #[tool_query(description = "The hooks at block height.", example = crate::examples::hooks)]
     Hooks(u64),
     /// What runs and what is listed now: the programs and the view-only
     /// entries at the query's own height, by name, and that height. A change
     /// lands at its height whether or not an op has run here since.
     #[ask(Reply::Roster { height: u64, programs: Vec<Entry>, views: Vec<View> })]
+    #[tool_query(description = "Every program that runs and every view-only entry now, by name, with the query's height.", example = crate::examples::roster)]
     Roster,
     // What each program that runs now was built from, as its code says, and the query's own
     // height.
     #[ask(Reply::Sources { height: u64, programs: Vec<Built> })]
+    #[tool_query(description = "What each program that runs now was built from, as its code's ducktape.source section says: a repository and commit, Unstamped, or why it did not read.", example = crate::examples::sources)]
     Sources,
     // Who holds a name at the query's own height: its record, else the vote for a name that runs,
     // is listed or has a change waiting, else none (free: an account's first set claims it).
     #[ask(Reply::Owner { height: u64, holder: Option<Holder> })]
+    #[tool_query(description = "Who holds a name: an account, several accounts or the validators' vote; null while it is free, and then the first account to set it holds it.", example = crate::examples::owner)]
     Owner(ProgramId),
     // The programs that run at block `at_height`, as the kernel's `At` answers: 0 is genesis, not
     // now. `Roster` answers at the query's own height.
     #[ask(Reply::Programs(Vec<Entry>))]
+    #[tool_query(description = "The programs that run at block at_height, as the kernel's At answers: 0 is genesis, not now.", example = crate::examples::programs_at)]
     ProgramsAt { at_height: u64 },
     // The view-only entries listed at block `at_height`, by name.
     #[ask(Reply::Views(Vec<View>))]
+    #[tool_query(description = "The view-only entries listed at block at_height, by name.", example = crate::examples::views_at)]
     ViewsAt { at_height: u64 },
     // The hooks at block `at_height`, as the kernel's `Hooks` answers.
     #[ask(Reply::Hooks(Vec<ProgramId>))]
+    #[tool_query(description = "The hooks at block at_height, as the kernel's Hooks answers.", example = crate::examples::hooks_at)]
     HooksAt { at_height: u64 },
 }
 

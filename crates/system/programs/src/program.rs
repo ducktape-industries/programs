@@ -1,6 +1,7 @@
 //! The program: the schedule folded at each block, then every op and every
 //! query, each handed to its rule.
 
+use ::program::tools::Tools;
 use ::program::{Error, ExecCtx, Program, QueryCtx, decoded};
 
 use crate::rules::{
@@ -16,6 +17,10 @@ impl Program for Programs {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+
+    fn tools() -> Tools {
+        Tools::of::<Op, Query>()
+    }
 
     fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
         init(ctx, decoded::<Genesis>(PROGRAM, "Genesis", params)?);
