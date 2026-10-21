@@ -281,7 +281,8 @@ fn rows(
                     &ladder,
                 )
             });
-            crate::listing::edged(chat, pane, at, &id, drawn.into_any_element(), cx)
+            let drawn = chat.keyed(&id, drawn.into_any_element());
+            crate::listing::edged(chat, pane, at, &id, drawn, cx)
         }),
     )
     .with_sizing_behavior(ListSizingBehavior::Auto)

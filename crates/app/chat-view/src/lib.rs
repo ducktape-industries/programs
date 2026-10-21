@@ -145,6 +145,7 @@ impl Render for Chat {
         self.settle_showing(cx);
         self.settle_dm_heads(cx);
         self.settle_files(cx);
+        self.settle_became();
         self.settle_widgets(cx);
         self.settle_rules(cx);
         self.settle_policies(cx);

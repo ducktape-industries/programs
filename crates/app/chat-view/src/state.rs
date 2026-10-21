@@ -418,6 +418,14 @@ pub struct Room {
     pub(crate) answering: Loadable<Vec<chat::Draft>>,
     #[serde(skip)]
     pub(crate) busy: Reread<Option<chat::Holder>>,
+    #[serde(skip)]
+    pub(crate) answering_read: Option<view::Task<()>>,
+    #[serde(skip)]
+    pub(crate) posted_since_read: Vec<Option<u64>>,
+    #[serde(skip)]
+    pub(crate) frozen: Vec<(chat::Draft, Option<u64>)>,
+    #[serde(skip)]
+    pub(crate) became: BTreeMap<String, String>,
 }
 
 #[derive(Default)]

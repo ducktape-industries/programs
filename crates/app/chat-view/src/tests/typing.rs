@@ -250,8 +250,8 @@ fn the_readers_own_draft_is_never_drawn_back_to_them() {
     seat(&mut cx);
     cx.simulate_click("chat-sidebar-channel-general");
     cx.run_until_parked();
-    assert!(cx.find("chat-answering-8").is_some(), "{:?}", cx.texts());
-    assert!(cx.find("chat-answering-7").is_none(), "{:?}", cx.texts());
+    assert!(cx.find("chat-answering-8-3").is_some(), "{:?}", cx.texts());
+    assert!(cx.find("chat-answering-7-3").is_none(), "{:?}", cx.texts());
 }
 
 fn holder(principal: u64, kind: chat::Holding, height: u64) -> chat::Holder {

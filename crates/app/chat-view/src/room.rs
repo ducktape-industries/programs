@@ -15,6 +15,20 @@ enum Reread {
     Span(u64, u64),
 }
 
+fn posted_places(written: &Written) -> Vec<Option<u64>> {
+    let replies = written.replies.iter().map(|(root, _)| Some(*root));
+    replies.chain(written.roots.then_some(None)).collect()
+}
+
+fn place_rows(room: &Room, thread: Option<u64>) -> Option<&Vec<MsgRow>> {
+    match thread {
+        None => room.messages.ready(),
+        Some(root) => (room.thread.as_ref())
+            .filter(|open| open.root == root)
+            .and_then(|open| open.replies.ready()),
+    }
+}
+
 impl Chat {
     /// The composer's placeholder: who or where a message goes
     /// (`Message #general`, `Message Priya Nair`).
@@ -33,22 +47,122 @@ impl Chat {
             (Pane::Thread, Some(thread)) if !thread.has_more => Some(thread.root),
             (Pane::Timeline | Pane::Thread, _) => return Vec::new(),
         };
-        let drafts = room.answering.ready().into_iter().flatten();
-        drafts
+        self.drafts_drawn()
+            .into_iter()
             .filter(|draft| draft.thread == under)
             .filter(|draft| !self.wrote_it(draft))
             .cloned()
             .collect()
     }
 
-    // who is answering under the root `seq` of the open room, by name: its reply row in the
-    // channel says so, while the draft itself is drawn in the thread
-    pub(crate) fn answering_under(&self, seq: u64) -> Vec<String> {
+    fn drafts_drawn(&self) -> Vec<&chat::Draft> {
         let Some(room) = &self.room else {
             return Vec::new();
         };
-        let drafts = room.answering.ready().into_iter().flatten();
+        let became: BTreeSet<&String> = room.became.values().collect();
+        let frozen = room.frozen.iter().map(|(draft, _)| draft);
+        let drafts = room.answering.ready().into_iter().flatten().chain(frozen);
         drafts
+            .filter(|draft| !became.contains(&crate::listing::answering_key(draft)))
+            .collect()
+    }
+
+    pub(crate) fn key_of(&self, id: &str) -> String {
+        let became = self.room.as_ref().and_then(|room| room.became.get(id));
+        became.cloned().unwrap_or_else(|| id.to_owned())
+    }
+
+    pub(crate) fn keyed(&self, id: &str, row: AnyElement) -> AnyElement {
+        let became = self.room.as_ref().and_then(|room| room.became.get(id));
+        match became {
+            Some(key) => div()
+                .id(format!("chat-{key}"))
+                .w_full()
+                .child(row)
+                .into_any_element(),
+            None => row,
+        }
+    }
+
+    pub(crate) fn settle_became(&mut self) {
+        let Some(room) = &mut self.room else {
+            return;
+        };
+        let frozen = room.frozen.iter().map(|(draft, _)| draft);
+        let drafts: Vec<chat::Draft> = (room.answering.ready().into_iter().flatten())
+            .chain(frozen)
+            .cloned()
+            .collect();
+        for draft in drafts {
+            let key = crate::listing::answering_key(&draft);
+            if room.became.values().any(|held| *held == key) {
+                continue;
+            }
+            let rows = place_rows(room, draft.thread).into_iter().flatten();
+            let row = rows
+                .filter(|row| row.author == draft.author && row.height >= draft.height)
+                .find(|row| !row.deleted && !room.became.contains_key(&row.message_id))
+                .map(|row| row.message_id.clone());
+            if let Some(row) = row {
+                room.became.insert(row, key.clone());
+            }
+        }
+        let became: BTreeSet<String> = room.became.values().cloned().collect();
+        let newest =
+            |room: &Room, thread: Option<u64>| place_rows(room, thread)?.last().map(|row| row.seq);
+        let kept: Vec<(chat::Draft, Option<u64>)> = std::mem::take(&mut room.frozen)
+            .into_iter()
+            .filter(|(draft, at)| {
+                !became.contains(&crate::listing::answering_key(draft))
+                    && newest(room, draft.thread) == *at
+            })
+            .collect();
+        room.frozen = kept;
+    }
+
+    fn answering_landed(
+        &mut self,
+        answering: Result<Vec<chat::Draft>, view::host::Error>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(room) = &mut self.room else {
+            return;
+        };
+        let answering = match answering {
+            Ok(answering) => answering,
+            Err(refusal) => return cx.log_refused(words::ANSWERING_READ, &refusal),
+        };
+        let wrote = std::mem::take(&mut room.posted_since_read);
+        let keys: BTreeSet<String> = answering
+            .iter()
+            .map(crate::listing::answering_key)
+            .collect();
+        let held = room.answering.ready().cloned().unwrap_or_default();
+        let gone: Vec<chat::Draft> = held
+            .into_iter()
+            .filter(|draft| {
+                !keys.contains(&crate::listing::answering_key(draft))
+                    && wrote.contains(&draft.thread)
+            })
+            .collect();
+        for draft in gone {
+            let Some(rows) = place_rows(room, draft.thread) else {
+                continue;
+            };
+            let at = rows.last().map(|row| row.seq);
+            room.frozen.push((draft, at));
+        }
+        room.frozen
+            .retain(|(draft, _)| !keys.contains(&crate::listing::answering_key(draft)));
+        if room.answering.ready() != Some(&answering) {
+            room.answering = Loadable::Ready(answering);
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn answering_under(&self, seq: u64) -> Vec<String> {
+        self.drafts_drawn()
+            .into_iter()
             .filter(|draft| draft.thread == Some(seq))
             .filter(|draft| !self.wrote_it(draft))
             .map(|draft| crate::ui::answering::name(self, &draft.author))
@@ -481,8 +595,15 @@ impl Chat {
         if touched(&ask::Drafts {
             channel_id: id.clone(),
         }) {
+            let wrote = written.as_ref().map(posted_places).unwrap_or_default();
             let answering = queries::answering(cx.host(), id.clone());
-            cx.load(self, answering, |chat| &mut room_of(chat).answering);
+            let read = cx.land(answering, |chat, answering, cx| {
+                chat.answering_landed(answering, cx)
+            });
+            if let Some(room) = &mut self.room {
+                room.posted_since_read.extend(wrote);
+                room.answering_read = Some(read);
+            }
         }
         let busy_moved = self.my_account().is_some_and(|me| {
             touched(&ask::Busy {

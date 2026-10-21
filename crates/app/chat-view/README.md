@@ -131,6 +131,12 @@ The session, routes, visibility, the chain's heads, and the live heads of
 chat, identity and ownership (`watch.rs`); a chat block re-reads only
 what its `#[reads]` say it wrote.
 
+An agent's draft (chat's `Drafting`) is a row at the foot of the list it
+answers in, keyed by its author and opening block. When the block that posts
+takes it down, the row stays as it last was until the post's row lands, and that
+row is drawn inside the draft's node: one node carries from the draft to the
+message, whichever read lands first.
+
 ## Tests
 `src/tests/` drives the view against the SDK's fake host. `tests/mod.rs`
 `configure` answers chat (`chat_reply`: three rooms, two rows in #general,

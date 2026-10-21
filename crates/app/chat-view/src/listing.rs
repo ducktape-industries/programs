@@ -77,7 +77,7 @@ pub(crate) fn listing(
     let keys = lead
         .then_some("intro".to_owned())
         .into_iter()
-        .chain(messages.iter().map(|message| message.id.clone()))
+        .chain(messages.iter().map(|message| chat.key_of(&message.id)))
         .chain(bare.then_some("no-replies".to_owned()))
         .chain(answering.iter().map(answering_key))
         .chain(busy.as_ref().map(|_| "busy".to_owned()))
@@ -118,11 +118,11 @@ fn drawn_in(answering: &[chat::Draft], holder: &chat::Holder) -> bool {
             .any(|draft| draft.author == holder.principal)
 }
 
-// a draft's row key, by its author: one draft per author in a room
 pub(crate) fn answering_key(draft: &chat::Draft) -> String {
+    let height = draft.height;
     match &draft.author {
-        chat::Principal::Account(number) => format!("answering-{number}"),
-        chat::Principal::Root => "answering-system".to_owned(),
+        chat::Principal::Account(number) => format!("answering-{number}-{height}"),
+        chat::Principal::Root => format!("answering-system-{height}"),
     }
 }
 

@@ -174,6 +174,7 @@ fn rows(
                     .children(count)
                     .into_any_element(),
             };
+            let row = chat.keyed(&message.id, row);
             crate::listing::edged(chat, pane, at, &message.id, row, cx)
         }),
     )
