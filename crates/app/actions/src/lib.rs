@@ -1,6 +1,7 @@
 //! The `actions` program, forge's CI: it hears forge's ref moves and changes opened, reads the
 //! workflows at that commit (`workflow.rs`), queues a check per job, offers each to the runners
 //! whose labels cover it (`rules.rs`), and records how the runner that claimed it says it ended.
+mod examples;
 mod program;
 mod rules;
 mod state;
@@ -66,45 +67,37 @@ fn decimal_thousandths(number: &str) -> Option<u64> {
     whole.checked_mul(1000)?.checked_add(fraction)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
+)]
+#[tool_about(
+    "forge's CI: on a push, a change's Preview, a dispatch or a hand trigger it reads the repository's workflows in .forge/workflows at that commit, queues a check per job, offers each to the runners whose labels cover its runs-on, and records how the runner that claimed it says it ended, as a forge commit status."
+)]
 pub enum Op {
-    // What forge tells a watcher (`forge::Op::Watch`); forge alone sends it.
+    #[tool_op(description = "From forge only: one event it tells its watchers. A push starts the workflows that run on it and supersedes the branch's earlier runs; a change opened or moved has its Preview built the block after; a merge or close supersedes the change's Preview runs.", example = crate::examples::watched)]
     Watched(forge::Watched),
-    /// Every workflow at `commit` but those with `on.trigger = false`.
-    Trigger {
-        repo: String,
-        commit: String,
-    },
-    // The sender runs the checks whose `runs-on` its labels cover. A program that registers
-    // hears each as `deliver ++ borsh(Offer)`; no labels takes the runner off.
+    #[tool_op(description = "Run every workflow of repo at commit but those whose on.trigger is false, as a Manual run by the sender.", example = crate::examples::trigger)]
+    Trigger { repo: String, commit: String },
+    #[tool_op(description = "Run checks: the sender takes the checks whose runs-on its labels all cover, and replaces what it registered before. A program that registers is offered each queued check it may run, now and as they queue, as deliver followed by the borsh of an Offer; an account leaves deliver empty and reads Queued. No labels takes the runner off.", example = crate::examples::register)]
     Register {
         labels: Vec<String>,
         deliver: Vec<u8>,
     },
-    Claim {
-        check: u64,
-    },
+    #[tool_op(description = "Take a queued check to run it: it turns running, with the sender as its claimant. Refused for a check that is not queued, or whose job names its runners and not the sender.", example = crate::examples::claim)]
+    Claim { check: u64 },
+    #[tool_op(description = "Say how a check ended: passed, failed, errored or superseded, with a summary and a log (a files path or a URL). A running check is its claimant's to report; a queued one may be reported errored or superseded by an account allowed to run it. Jobs that wait on it are queued or skipped, and a push run's failed or errored check is told in its workflow's notify room.", example = crate::examples::report)]
     Report {
         check: u64,
         state: State,
         summary: String,
         log: Option<String>,
     },
-    Rerun {
-        check: u64,
-    },
-    // forge builds change `n`'s Preview, and its checks run on it: what actions sends itself the
-    // block after a change opens or a head moves, so the Preview starts a frame of its own.
-    Preview {
-        repo: String,
-        n: u64,
-    },
-    // The files running check `check` produced, by blob, as its runner says; saying it again
-    // replaces them. A check that needs its job places them from here (`Query::Outputs`).
-    Outputs {
-        check: u64,
-        files: Vec<Output>,
-    },
+    #[tool_op(description = "Queue a check's job again as its next attempt, with what it asked, needed and named. Refused while the check is still queued or waiting.", example = crate::examples::rerun)]
+    Rerun { check: u64 },
+    #[tool_op(description = "Have forge build change n's Preview, the squash a merge would land, and run the workflows that run on it: what actions sends itself the block after a change opens or its head moves, so the Preview starts a frame of its own. A Preview forge refuses records an errored run saying why.", example = crate::examples::preview)]
+    Preview { repo: String, n: u64 },
+    #[tool_op(description = "Record the files a running check produced, each by the blob that holds it, as its claimant says; saying it again replaces them. A check that needs its job reads them with the Outputs query to place them.", example = crate::examples::outputs)]
+    Outputs { check: u64, files: Vec<Output> },
 }
 
 // What forge puts before each event it tells actions: `Op::Watched`'s tag.
@@ -255,15 +248,28 @@ pub struct Offer {
 }
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Ask,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    ::program::Ask,
+    ::program::Described,
+)]
+#[tool_about(
+    "The checks, runs and runners of forge's CI: a check by id, a commit's checks, the queue, a repository's runs of one event, and what a check asks of its pod, needs and produced."
 )]
 #[ask(Actions)]
 pub enum Query {
     #[ask(Reply::Check(Option<CheckRow>))]
     #[reads(CHECKS)]
+    #[tool_query(description = "One check: its job, attempt, state, claimant and reporter, the heights it queued, started and finished at, its summary and log; or null.", example = crate::examples::check)]
     Check { id: u64 },
     #[ask(Reply::Checks(PageResponse<CheckRow>))]
     #[reads(CHECKS, BY_COMMIT)]
+    #[tool_query(description = "A page of the checks run on commit of repo, every attempt of every workflow's jobs.", example = crate::examples::checks)]
     Checks {
         repo: String,
         commit: String,
@@ -271,29 +277,31 @@ pub enum Query {
     },
     #[ask(Reply::Queued(PageResponse<CheckRow>))]
     #[reads(CHECKS, QUEUED)]
+    #[tool_query(description = "A page of the checks queued for a runner to claim, oldest first: what an account runner reads to find work.", example = crate::examples::queued)]
     Queued { page: PageRequest },
     #[ask(Reply::Run(Option<RunRow>))]
     #[reads(RUNS)]
+    #[tool_query(description = "One run, a workflow file run for one event: its repository, commit, event, who started it, the chat room it notifies, and why it ran no job if it did not; or null.", example = crate::examples::run)]
     Run { id: u64 },
     #[ask(Reply::Runners(PageResponse<RunnerRow>))]
     #[reads(RUNNERS)]
+    #[tool_query(description = "A page of the registered runners, by account: each one's labels, and the program and deliver prefix a program runner is offered checks with.", example = crate::examples::runners)]
     Runners { page: PageRequest },
-    // What a check's job asks of its pod; None for a job that states nothing.
     #[ask(Reply::Asks(Option<Asks>))]
     #[reads(ASKS)]
+    #[tool_query(description = "What a check's job asks of the pod a runner makes for it: CPUs and memory as Kubernetes quantities and the memory-backed scratch paths; null for a job that states nothing.", example = crate::examples::asks)]
     Asks { check: u64 },
-    // The jobs a check needs, each with the passed check that met it once all have passed.
     #[ask(Reply::Needs(Vec<Need>))]
     #[reads(NEEDS, MET)]
+    #[tool_query(description = "The jobs a check needs, each with the passed check that met it once all of them have passed: whose outputs a runner places for it.", example = crate::examples::needs)]
     Needs { check: u64 },
-    // What a check produced, once its runner said.
     #[ask(Reply::Outputs(Option<OutputsRow>))]
     #[reads(OUTPUTS)]
+    #[tool_query(description = "The files a check produced and the account that said so, once its claimant recorded them; or null.", example = crate::examples::outputs_of)]
     Outputs { check: u64 },
-    // A repository's runs of one event, oldest first: a branch's pushes (`Push`), a change's
-    // Previews (`Preview`), or the runs triggered by hand (`Manual`).
     #[ask(Reply::Runs(PageResponse<RunRow>))]
     #[reads(RUNS, BY_EVENT)]
+    #[tool_query(description = "A page of a repository's runs of one event, oldest first: a branch's pushes (Push with its full ref), a change's Previews (Preview), the runs triggered by hand (Manual), or a dispatch's (Dispatch).", example = crate::examples::runs)]
     Runs {
         repo: String,
         event: Event,

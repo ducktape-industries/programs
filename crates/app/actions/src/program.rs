@@ -1,5 +1,6 @@
 //! The program: forge watched from `init`, then one match over every op and one over every
 //! query, each handed to its rule.
+use ::program::tools::Tools;
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx, Reply as Wanted};
 
 use crate::rules::{
@@ -15,6 +16,10 @@ impl Program for Actions {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+
+    fn tools() -> Tools {
+        Tools::of::<Op, Query>()
+    }
 
     fn init(ctx: &ExecCtx, _params: &[u8]) -> Result<(), Error> {
         let watch = forge::Op::Watch {
