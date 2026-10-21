@@ -99,13 +99,16 @@ fn ada() -> TestAppContext {
 }
 
 fn upgrade(height: u64) -> programs::Op {
-    programs::Op::Schedule(programs::Scheduled {
-        height,
-        change: Change::Set(programs::Entry {
-            code: BlobId::Sha256(CODE),
-            ..entry("chat", 0xab)
-        }),
-    })
+    programs::Op::ScheduleOver {
+        scheduled: programs::Scheduled {
+            height,
+            change: Change::Set(programs::Entry {
+                code: BlobId::Sha256(CODE),
+                ..entry("chat", 0xab)
+            }),
+        },
+        expected: Some(entry("chat", 0xab).code),
+    }
 }
 
 #[test]
@@ -233,10 +236,13 @@ fn a_hook_is_upgraded_by_any_account_and_removed_only_by_vote() {
     assert!(cx.has_text("Propose remove · chat"), "{:?}", cx.texts());
     cx.simulate_click("explorer-form-submit");
     cx.run_until_parked();
-    let op = abi::encode(&programs::Op::Schedule(programs::Scheduled {
-        height: 12 + 600,
-        change: Change::Remove("chat".into()),
-    }));
+    let op = abi::encode(&programs::Op::ScheduleOver {
+        scheduled: programs::Scheduled {
+            height: 12 + 600,
+            change: Change::Remove("chat".into()),
+        },
+        expected: Some(entry("chat", 0xab).code),
+    });
     assert_eq!(
         cx.host().requests::<Submit<Valset>>(),
         [valset::Op::Vote(Motion::Role {
@@ -388,16 +394,101 @@ fn a_form_builds_its_op_or_says_why_not() {
     let added = acting::built(&form(Edit::Add, &code, "1000"), &network, 12).unwrap();
     assert_eq!(
         added,
-        programs::Op::Schedule(programs::Scheduled {
-            height: 1000,
-            change: Change::Set(programs::Entry {
-                program: "trade".into(),
-                code: BlobId::Sha256(CODE),
-                params: vec![10, 11],
-            }),
-        })
+        programs::Op::ScheduleOver {
+            scheduled: programs::Scheduled {
+                height: 1000,
+                change: Change::Set(programs::Entry {
+                    program: "trade".into(),
+                    code: BlobId::Sha256(CODE),
+                    params: vec![10, 11],
+                }),
+            },
+            expected: None,
+        }
     );
     assert_eq!(acting::default_height(Path::Account, 12, 1000), 102);
     assert_eq!(acting::default_height(Path::Vote, 12, 1000), 612);
     assert_eq!(acting::default_height(Path::Vote, 12, 2000), 312);
+}
+
+#[test]
+fn a_change_expects_the_code_the_page_shows_under_its_name() {
+    let shown = BlobId::Sha256([0xef; 32]);
+    let network = Network {
+        programs: vec![entry("chat", 0xab)],
+        views: vec![programs::View {
+            name: "explorer".into(),
+            view: shown,
+        }],
+        ..Network::default()
+    };
+    let form = |edit: Edit| Form {
+        edit,
+        path: Path::Account,
+        code: TextField::new(abi::hex(&CODE)),
+        height: TextField::new("1000"),
+        name: TextField::new("trade"),
+        params: TextField::new(""),
+        view: false,
+        problem: None,
+    };
+    let over = |change: Change, expected: Option<BlobId>| programs::Op::ScheduleOver {
+        scheduled: programs::Scheduled {
+            height: 1000,
+            change,
+        },
+        expected,
+    };
+    let built =
+        |edit: Edit| acting::built(&form(edit), &network, 12).map_err(|problem| problem.sentence);
+    let chat = entry("chat", 0xab).code;
+    assert_eq!(
+        built(Edit::Remove {
+            name: "chat".into(),
+            view: false,
+        }),
+        Ok(over(Change::Remove("chat".into()), Some(chat)))
+    );
+    assert_eq!(
+        built(Edit::Upgrade {
+            name: "explorer".into(),
+            view: true,
+        }),
+        Ok(over(
+            Change::SetView(programs::View {
+                name: "explorer".into(),
+                view: BlobId::Sha256(CODE),
+            }),
+            Some(shown)
+        ))
+    );
+    assert_eq!(
+        built(Edit::Remove {
+            name: "explorer".into(),
+            view: true,
+        }),
+        Ok(over(Change::RemoveView("explorer".into()), Some(shown)))
+    );
+    assert_eq!(
+        built(Edit::Remove {
+            name: "gone".into(),
+            view: false,
+        }),
+        Err("gone no longer runs here.".to_owned())
+    );
+    for edit in [
+        Edit::Upgrade {
+            name: "gone".into(),
+            view: true,
+        },
+        Edit::Remove {
+            name: "gone".into(),
+            view: true,
+        },
+    ] {
+        assert_eq!(
+            built(edit),
+            Err("gone is no longer listed here.".to_owned())
+        );
+    }
 }

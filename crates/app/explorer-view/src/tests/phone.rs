@@ -911,14 +911,17 @@ fn the_add_form_asks_what_it_adds_and_lands_its_schedule() {
     cx.simulate_input("explorer-form-code", CHAT_CODE);
     cx.simulate_input("explorer-form-params", "0x0102");
     click(&mut cx, "explorer-form-submit");
-    let added = programs::Op::Schedule(programs::Scheduled {
-        height: 12 + programs::NOTICE + 30,
-        change: programs::Change::Set(programs::Entry {
-            program: "trade".into(),
-            code: BlobId::Sha256([0xab; 32]),
-            params: vec![1, 2],
-        }),
-    });
+    let added = programs::Op::ScheduleOver {
+        scheduled: programs::Scheduled {
+            height: 12 + programs::NOTICE + 30,
+            change: programs::Change::Set(programs::Entry {
+                program: "trade".into(),
+                code: BlobId::Sha256([0xab; 32]),
+                params: vec![1, 2],
+            }),
+        },
+        expected: None,
+    };
     assert_eq!(cx.host().requests::<Submit<Programs>>(), [added]);
     assert!(cx.find("explorer-form-sheet").is_none(), "the form closes");
     shows(&cx, "Sent to the programs role: Schedule · trade.");

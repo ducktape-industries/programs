@@ -499,34 +499,57 @@ pub(crate) fn earliest(tip: u64) -> u64 {
 }
 
 pub(crate) fn built(form: &Form, network: &Network, tip: u64) -> Result<programs::Op, Problem> {
-    let at = |height: u64, change: Change| programs::Op::Schedule(Scheduled { height, change });
+    let over =
+        |height: u64, change: Change, expected: Option<abi::BlobId>| programs::Op::ScheduleOver {
+            scheduled: Scheduled { height, change },
+            expected,
+        };
+    let running = |name: &str| {
+        network
+            .programs
+            .iter()
+            .find(|entry| entry.program == name)
+            .ok_or_else(|| Problem::whole(format!("{name} no longer runs here.")))
+    };
+    let listed = |name: &str| {
+        network
+            .views
+            .iter()
+            .find(|view| view.name == name)
+            .map(|view| view.view)
+            .ok_or_else(|| Problem::whole(format!("{name} is no longer listed here.")))
+    };
     Ok(match &form.edit {
         Edit::Upgrade { name, view: false } => {
-            let current = network
-                .programs
-                .iter()
-                .find(|entry| &entry.program == name)
-                .ok_or_else(|| Problem::whole(format!("{name} no longer runs here.")))?;
+            let current = running(name.as_str())?;
             let entry = programs::Entry {
                 code: release_code_id(form)?,
                 ..current.clone()
             };
-            at(height_after_tip(form, tip)?, Change::Set(entry))
+            let height = height_after_tip(form, tip)?;
+            over(height, Change::Set(entry), Some(current.code))
         }
         Edit::Upgrade { name, view: true } => {
+            let shown = listed(name.as_str())?;
             let view = programs::View {
                 name: name.clone(),
                 view: release_code_id(form)?,
             };
-            at(height_after_tip(form, tip)?, Change::SetView(view))
+            over(
+                height_after_tip(form, tip)?,
+                Change::SetView(view),
+                Some(shown),
+            )
         }
-        Edit::Remove { name, view } => {
-            let change = if *view {
-                Change::RemoveView(name.clone())
-            } else {
-                Change::Remove(name.clone())
-            };
-            at(height_after_tip(form, tip)?, change)
+        Edit::Remove { name, view: true } => {
+            let shown = listed(name.as_str())?;
+            let change = Change::RemoveView(name.clone());
+            over(height_after_tip(form, tip)?, change, Some(shown))
+        }
+        Edit::Remove { name, view: false } => {
+            let shown = running(name.as_str())?.code;
+            let change = Change::Remove(name.clone());
+            over(height_after_tip(form, tip)?, change, Some(shown))
         }
         Edit::Add => {
             let name = form.name.text().trim().to_owned();
@@ -548,7 +571,7 @@ pub(crate) fn built(form: &Form, network: &Network, tip: u64) -> Result<programs
                     params,
                 })
             };
-            at(height_after_tip(form, tip)?, change)
+            over(height_after_tip(form, tip)?, change, None)
         }
     })
 }
