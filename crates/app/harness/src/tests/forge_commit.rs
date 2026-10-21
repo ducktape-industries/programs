@@ -27,12 +27,13 @@ pub(super) fn bounds(max_objects: u64) -> Bounds {
 }
 
 pub(super) fn forged(max_objects: u64) -> World {
+    seated(&bounds(max_objects))
+}
+
+fn seated(with: &Bounds) -> World {
     let mut world = world();
     world.chain.seat::<forge::Forge>(forge::PROGRAM);
-    world
-        .chain
-        .init(forge::PROGRAM, &bounds(max_objects))
-        .unwrap();
+    world.chain.init(forge::PROGRAM, with).unwrap();
     world
 }
 
@@ -70,12 +71,7 @@ pub(super) fn log(chain: &MockChain, repo: &str) -> Vec<CommitInfo> {
     page.items
 }
 
-pub(super) fn names(
-    chain: &MockChain,
-    repo: &str,
-    at: &str,
-    path: &str,
-) -> Vec<(String, forge::EntryKind)> {
+fn entries(chain: &MockChain, repo: &str, at: &str, path: &str) -> Vec<TreeInfo> {
     let asked = forge::Query::Tree {
         repo: repo.into(),
         at: at.into(),
@@ -86,9 +82,31 @@ pub(super) fn names(
         panic!("a tree answers Tree")
     };
     page.items
+}
+
+pub(super) fn names(
+    chain: &MockChain,
+    repo: &str,
+    at: &str,
+    path: &str,
+) -> Vec<(String, forge::EntryKind)> {
+    entries(chain, repo, at, path)
         .into_iter()
         .map(|TreeInfo { name, kind, .. }| (String::from_utf8(name).unwrap(), kind))
         .collect()
+}
+
+fn oid_of(chain: &MockChain, repo: &str, at: &str, name: &str) -> String {
+    entries(chain, repo, at, "")
+        .into_iter()
+        .find(|entry| entry.name == name.as_bytes())
+        .unwrap()
+        .oid
+}
+
+fn committed(text: &str) -> String {
+    let said: Value = serde_json::from_str(text).unwrap();
+    said["commit"].as_str().unwrap().to_owned()
 }
 
 #[test]
@@ -284,4 +302,84 @@ fn a_first_commit_over_forges_bounds_fails_and_leaves_its_new_repository_empty()
         (repo.repo.owner, repo.repo.refs_count),
         (Principal::Account(world.agent), 0)
     );
+}
+
+#[test]
+fn an_edit_reaches_a_file_larger_than_forge_serves_in_one_read() {
+    let world = seated(&Bounds {
+        blob_bytes: 64,
+        ..bounds(10_000)
+    });
+    let chain = &world.chain;
+    let thread = world.opened("m1", "edit a long file", Some(WINDOW));
+    let long: String = (0..40).map(|n| format!("line {n}\n")).collect();
+    let start = json!({ "repo": "notes", "files": [file("long.md", &long)], "message": "long" });
+    turn(chain, 3, &[("c1", start)]);
+    let (text, failed) = result_of(chain, thread, "c1");
+    assert!(!failed, "{text}");
+    let started = committed(&text);
+    let edit = |id: &str, from: &str, to: &str| {
+        (
+            id.to_owned(),
+            json!({
+                "repo": "notes",
+                "files": [{ "path": "long.md", "edits": [{ "replace": from, "with": to }] }],
+                "message": id,
+            }),
+        )
+    };
+    let (id, input) = edit("c2", "line 37\n", "line thirty-seven\n");
+    turn(chain, 5, &[(&id, input)]);
+    let (text, failed) = result_of(chain, thread, "c2");
+    assert!(!failed, "{text}");
+    let edited = committed(&text);
+    let (id, input) = edit("c3", "line 37\n", "again\n");
+    turn(chain, 7, &[(&id, input)]);
+    let (text, failed) = result_of(chain, thread, "c3");
+    assert!(failed, "the first edit replaced the span: {text}");
+    let (id, input) = edit("c4", "line thirty-seven\n", "line 37\n");
+    turn(chain, 9, &[(&id, input)]);
+    let (text, failed) = result_of(chain, thread, "c4");
+    assert!(!failed, "{text}");
+    let restored = committed(&text);
+    assert_eq!(log(chain, "notes").len(), 3);
+    let long_at = |at: &str| oid_of(chain, "notes", at, "long.md");
+    assert_ne!(long_at(&edited), long_at(&started));
+    assert_eq!(long_at(&restored), long_at(&started));
+}
+
+#[test]
+fn an_edit_of_a_large_file_with_a_binary_range_is_refused_and_the_branch_stays() {
+    let world = seated(&Bounds {
+        blob_bytes: 64,
+        ..bounds(10_000)
+    });
+    let chain = &world.chain;
+    let thread = world.opened("m1", "edit a mixed file", Some(WINDOW));
+    let head: String = (0..10).map(|n| format!("line {n}\n")).collect();
+    let mixed = format!("{head}\0tail\n");
+    let start = json!({ "repo": "notes", "files": [file("mixed.md", &mixed)], "message": "mixed" });
+    turn(chain, 3, &[("c1", start)]);
+    let (text, failed) = result_of(chain, thread, "c1");
+    assert!(!failed, "{text}");
+    let started = committed(&text);
+    let edit = json!({
+        "repo": "notes",
+        "files": [{ "path": "mixed.md", "edits": [{ "replace": "line 1\n", "with": "line one\n" }] }],
+        "message": "edit",
+    });
+    turn(chain, 5, &[("c2", edit)]);
+    let (text, failed) = result_of(chain, thread, "c2");
+    assert!(failed, "{text}");
+    assert!(
+        text.contains(
+            "mixed.md is binary in bytes 64..76: it can't be edited by span; write it whole"
+        ),
+        "{text}"
+    );
+    let heads: Vec<String> = log(chain, "notes")
+        .into_iter()
+        .map(|commit| commit.oid)
+        .collect();
+    assert_eq!(heads, [started]);
 }

@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use ::program::{BlobId, Error, ExecCtx, HashKind, capacity, code, invalid, not_found, stale};
 use abi::role::identity::AccountNumber;
 use files::{EntryInfo, Node};
-use forge::Content;
 use forge::{Bounds, EntryKind, Query, Reply, Repo, Settings};
 use gitcore::wire::pktline::{self, Pkt};
 use gitcore::{Hash, Kind, Mode, Object, Oid, Signature, Tree, TreeEntry, pack};
@@ -119,25 +118,8 @@ impl Reading<'_> {
     }
 
     fn text(&self, id: Oid, path: &str) -> Result<String, Error> {
-        let asked = Query::Blob {
-            repo: self.repo.into(),
-            oid: id.to_hex(),
-            range: None,
-        };
-        let blob = match ask(self.ctx, asked)? {
-            Reply::Blob { blob, .. } => blob,
-            other => return Err(unexpected(forge::PROGRAM, "Blob", &other)),
-        };
-        match blob.content {
-            Content::Text if blob.bytes.len() as u64 == blob.size => {
-                String::from_utf8(blob.bytes).map_err(|_| invalid(format!("{path} is not text")))
-            }
-            Content::Text | Content::Oversize => Err(capacity(format!(
-                "{path} is {} bytes, more than forge serves in one read, so it can't be edited by span; write it whole",
-                blob.size
-            ))),
-            Content::Binary | Content::Gitlink => Err(invalid(format!("{path} is not text"))),
-        }
+        let advice = "it can't be edited by span; write it whole";
+        super::text_of(self.ctx, self.repo, &id.to_hex(), path, advice)
     }
 }
 

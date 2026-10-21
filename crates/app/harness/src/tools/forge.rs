@@ -188,7 +188,7 @@ fn served(ctx: &ExecCtx, repo: &str) -> Result<u64, Error> {
     }
 }
 
-fn text_of(ctx: &ExecCtx, repo: &str, id: &str, path: &str) -> Result<String, Error> {
+fn text_of(ctx: &ExecCtx, repo: &str, id: &str, path: &str, advice: &str) -> Result<String, Error> {
     let blob = blob_of(ctx, repo, id, None)?;
     let bytes = match blob.content {
         Content::Text => blob.bytes,
@@ -205,7 +205,7 @@ fn text_of(ctx: &ExecCtx, repo: &str, id: &str, path: &str) -> Result<String, Er
                 if part.content != Content::Text || part.bytes.is_empty() {
                     let end = at + part.range.len;
                     return Err(invalid(format!(
-                        "{path} is binary in bytes {at}..{end}: read the bytes as a blob or choose a text range"
+                        "{path} is binary in bytes {at}..{end}: {advice}"
                     )));
                 }
                 bytes.extend(part.bytes);
@@ -467,7 +467,8 @@ impl Tool for Read {
                 "symbol and symbols read Rust, and {shown} is no .rs file: read it by lines, or a markdown file by heading"
             )));
         }
-        let text = || text_of(ctx, &args.repo, &id, &shown);
+        let advice = "read the bytes as a blob or choose a text range";
+        let text = || text_of(ctx, &args.repo, &id, &shown, advice);
         if outline {
             let text = text()?;
             let listed: Vec<Value> = symbols::items(&text)
