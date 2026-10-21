@@ -101,7 +101,10 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
         ),
         (
             "chat_messages",
-            vec![json!({ "channel": "channel-18df9127f1a3eef4-1792310773949584", "cursor": null })],
+            vec![
+                json!({ "channel": "channel-18df9127f1a3eef4-1792310773949584", "cursor": null }),
+                json!({ "channel": "j-111", "limit": 20, "cursor": "00ff" }),
+            ],
         ),
         (
             "chat_thread",

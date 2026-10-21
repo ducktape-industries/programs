@@ -127,6 +127,7 @@ impl Tool for Channels {
 #[derive(Deserialize)]
 pub(crate) struct MessagesArgs {
     channel: String,
+    limit: Option<u64>,
     cursor: Option<String>,
 }
 
@@ -134,21 +135,27 @@ pub(crate) struct Messages;
 
 impl Tool for Messages {
     const NAME: &'static str = "chat_messages";
-    const DESCRIPTION: &'static str = "Read a chat channel's messages, newest first, without their thread replies (chat_thread reads those).";
+    const DESCRIPTION: &'static str = "Read a chat channel's messages, newest first, without their thread replies (chat_thread reads those). With limit, only the newest that many, and `next` reads on from there.";
     type Args = MessagesArgs;
 
     fn schema() -> Value {
         object(
-            json!({ "channel": channel_schema(), "cursor": cursor_schema() }),
+            json!({
+                "channel": channel_schema(),
+                "limit": { "type": "integer", "minimum": 1, "description": "at most this many messages, the newest; every message if omitted" },
+                "cursor": cursor_schema(),
+            }),
             &["channel"],
         )
     }
 
     fn run(ctx: &ExecCtx, seat: &Seat, args: MessagesArgs) -> Result<Run, Error> {
+        let mut page = page(&args.cursor)?;
+        page.limit = args.limit;
         let asked = Query::Roots {
             channel_id: args.channel,
             viewer: vec![agent(seat)],
-            page: page(&args.cursor)?,
+            page,
         };
         match ask(ctx, asked)? {
             Reply::Roots(rows) => Ok(Run::Done(messages(&rows))),
