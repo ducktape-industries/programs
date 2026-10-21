@@ -1,7 +1,7 @@
-//! The model budget atop the agents: one row per model account from its freshest read, grouped by the
-//! provider its calls were for, with the login its gate names, a bar per usage window (amber from
-//! 80%, red from 95%) and the time to its reset, and whether it answers, has room or is spent.
-use harness::{AccountBudget, BudgetFact, WHOLE_WINDOW, WindowOutlook};
+//! The model budget atop the agents: one row per model account from its freshest read, grouped by its
+//! provider (learned, else its service's route), with the login its gate names, a bar per usage
+//! window (amber from 80%, red from 95%) with the time to its reset, and whether it can answer.
+use harness::{AccountBudget, BudgetFact, ProviderRouteRow, WHOLE_WINDOW, WindowOutlook};
 use view::design::{Ladder, space, text};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
@@ -15,6 +15,7 @@ use crate::words::{
 
 const NAME: f32 = 200.;
 const STATE: f32 = 72.;
+const BAR: f32 = 240.;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Level {
@@ -103,10 +104,29 @@ pub(crate) fn fact<'a>(facts: &'a [BudgetFact], row: &AccountBudget) -> Option<&
 
 pub(crate) type Group<'a> = (Option<String>, Vec<&'a AccountBudget>);
 
-pub(crate) fn grouped<'a>(rows: &[&'a AccountBudget], facts: &[BudgetFact]) -> Vec<Group<'a>> {
+pub(crate) fn provider_of(
+    row: &AccountBudget,
+    facts: &[BudgetFact],
+    routes: &[ProviderRouteRow],
+) -> Option<String> {
+    let learned = fact(facts, row).and_then(|fact| fact.provider.clone());
+    learned.or_else(|| {
+        let routed = routes.iter().find(|route| {
+            let mut services = route.services.iter();
+            services.any(|named| named.service == row.service)
+        });
+        routed.map(|route| route.provider.clone())
+    })
+}
+
+pub(crate) fn grouped<'a>(
+    rows: &[&'a AccountBudget],
+    facts: &[BudgetFact],
+    routes: &[ProviderRouteRow],
+) -> Vec<Group<'a>> {
     let mut groups: Vec<Group<'a>> = Vec::new();
     for row in rows {
-        let provider = fact(facts, row).and_then(|fact| fact.provider.clone());
+        let provider = provider_of(row, facts, routes);
         match groups.iter_mut().find(|(held, _)| *held == provider) {
             Some((_, members)) => members.push(row),
             None => groups.push((provider, vec![row])),
@@ -131,7 +151,7 @@ pub(crate) fn ordered(row: &AccountBudget) -> Vec<&WindowOutlook> {
 
 pub(crate) fn strip(view: &Agents, theme: &Theme, ladder: &Ladder) -> Option<Stateful<Div>> {
     let read = view.budget.ready()?;
-    let report = &read.budget;
+    let report = &read.report.budget;
     let now = view
         .roster
         .ready()
@@ -147,19 +167,29 @@ pub(crate) fn strip(view: &Agents, theme: &Theme, ladder: &Ladder) -> Option<Sta
     let none = "No model answer has named its usage windows yet.";
     Some(match rows.is_empty() {
         true => strip.child(caption(none, theme)),
-        false => strip.children(groups(&rows, &read.facts, now, theme, ladder)),
+        false => strip.children(groups(&rows, read, now, theme, ladder)),
     })
+}
+
+fn widest(rows: &[&AccountBudget]) -> Pixels {
+    let windows = rows.iter().map(|row| row.windows.len()).max().unwrap_or(1);
+    let windows = windows.max(1) as f32;
+    let bars = px(BAR) * windows + space::LG * (windows - 1.);
+    px(NAME + STATE) + space::LG * 2. + bars
 }
 
 fn groups(
     rows: &[&AccountBudget],
-    facts: &[BudgetFact],
+    read: &crate::read::Budgeted,
     now: u64,
     theme: &Theme,
     ladder: &Ladder,
 ) -> Vec<Div> {
+    let facts = &read.report.facts;
     let active = answering(rows, now);
-    let shown = grouped(rows, facts).into_iter().map(|(provider, members)| {
+    let widest = widest(rows);
+    let found = grouped(rows, facts, &read.routes);
+    let shown = found.into_iter().map(|(provider, members)| {
         let named = provider.as_deref().unwrap_or("other");
         let head = div()
             .id(SharedString::from(format!("budget-provider-{named}")))
@@ -181,7 +211,11 @@ fn groups(
             let state = account_state(row, answers, now);
             account(row, fact(facts, row), state, now, theme, ladder)
         });
-        div().flex().flex_col().child(head).child(
+        let group = div()
+            .flex()
+            .flex_col()
+            .when(!ladder.touch, |group| group.w_full().max_w(widest));
+        group.child(head).child(
             div()
                 .flex()
                 .flex_col()

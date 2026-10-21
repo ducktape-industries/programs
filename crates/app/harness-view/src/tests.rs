@@ -1997,7 +1997,21 @@ fn budgeted() -> Net {
                 changed: Some(NOW - 40 * 60_000),
                 ..budget_fact("zk-claude", "zk-dev", Some("acct-7f3a"))
             },
+            harness::BudgetFact {
+                provider: Some("openai".into()),
+                ..budget_fact("zk-claude", "zk-dev-codex", None)
+            },
         ],
+        routes: vec![ProviderRouteRow {
+            provider: "anthropic".into(),
+            owner: ADA,
+            services: ["models", "zk-claude"]
+                .map(|service| RouteService {
+                    service: service.into(),
+                    wire: Wire::Harness,
+                })
+                .into(),
+        }],
         ..Net::default()
     }
 }
@@ -2062,10 +2076,18 @@ fn screens() -> Vec<(&'static str, TestAppContext, (u32, u32))> {
         cx.run_until_parked();
         cx
     };
+    let wide = |width: u32| {
+        let mut cx = open(budgeted(), false, &[]);
+        cx.simulate_resize(width as f32, DESK.1 as f32);
+        cx.run_until_parked();
+        cx
+    };
     vec![
         ("D1-list", open(Net::default(), false, &[]), DESK),
         ("D1-visitor", visitor, DESK),
         ("D1-budget", open(budgeted(), false, &[]), DESK),
+        ("D1-budget-1280", wide(1280), (1280, DESK.1)),
+        ("D1-budget-2400", wide(2400), (2400, DESK.1)),
         ("D2-agent", open(Net::default(), false, &["agent-12"]), DESK),
         (
             "D3-working",

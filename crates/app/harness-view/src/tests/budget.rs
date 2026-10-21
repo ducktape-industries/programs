@@ -4,7 +4,9 @@
 use super::*;
 use harness::{AccountBudget, BudgetFact, BudgetReport, ServicePace, WindowOutlook};
 
-use crate::ui::budget::{AccountState, Level, account_state, answering, freshest, grouped, level};
+use crate::ui::budget::{
+    AccountState, Level, account_state, answering, freshest, grouped, level, provider_of,
+};
 use crate::words::span;
 
 const MINUTE: u64 = 60_000;
@@ -375,7 +377,7 @@ fn rows_group_by_the_provider_their_calls_were_for_and_the_rest_under_other() {
         fact("zk-claude", "old", None),
     ];
     let kept = freshest(&budget.accounts);
-    let found = grouped(&kept, &facts);
+    let found = grouped(&kept, &facts, &[route_row()]);
     let groups: Vec<(Option<&str>, Vec<&str>)> = found
         .iter()
         .map(|(provider, rows)| {
@@ -397,7 +399,7 @@ fn rows_group_by_the_provider_their_calls_were_for_and_the_rest_under_other() {
         ..Net::default()
     };
     let (cx, _) = seated(net, EDDY);
-    for text in ["Anthropic", "Openai", "Other"] {
+    for text in ["Anthropic", "OpenAI", "Other"] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
     }
 }
@@ -437,4 +439,127 @@ fn the_login_a_gate_names_shows_under_its_account_and_a_swap_says_what_it_was() 
         .iter()
         .filter(|text| text.starts_with("was acct-12c9 until "));
     assert_eq!(was.count(), 1, "{shown:?}");
+}
+
+fn routed(provider: &str, services: &[&str]) -> ProviderRouteRow {
+    ProviderRouteRow {
+        provider: provider.into(),
+        owner: ADA,
+        services: services
+            .iter()
+            .map(|service| RouteService {
+                service: (*service).into(),
+                wire: Wire::Harness,
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn a_row_groups_by_the_provider_it_learned_and_by_its_services_route_until_it_learns_one() {
+    let budget = report(vec![
+        row(
+            "models",
+            "quiet",
+            NOW,
+            vec![outlook("7d", 100_000, at(60), None)],
+        ),
+        row(
+            "zk-claude",
+            "zk-dev-codex",
+            NOW,
+            vec![outlook("7d", 100_000, at(60), None)],
+        ),
+        row(
+            "codex",
+            "gpt",
+            NOW,
+            vec![outlook("7d", 100_000, at(60), None)],
+        ),
+        row(
+            "gone",
+            "old",
+            NOW,
+            vec![outlook("7d", 100_000, at(60), None)],
+        ),
+    ]);
+    let facts = vec![
+        fact("zk-claude", "zk-dev-codex", Some("openai")),
+        fact("codex", "gpt", Some("openai")),
+    ];
+    let routes = vec![routed("anthropic", &["models", "zk-claude"])];
+    let provider = |account: &str| {
+        let found = budget.accounts.iter().find(|row| row.account == account);
+        provider_of(found.unwrap(), &facts, &routes)
+    };
+    assert_eq!(
+        provider("quiet").as_deref(),
+        Some("anthropic"),
+        "no fact yet"
+    );
+    let codex = provider("zk-dev-codex");
+    assert_eq!(
+        codex.as_deref(),
+        Some("openai"),
+        "its own, though its service is on anthropic's route"
+    );
+    assert_eq!(
+        provider("gpt").as_deref(),
+        Some("openai"),
+        "no route names it"
+    );
+    assert_eq!(provider("old"), None);
+    let net = Net {
+        budget,
+        facts,
+        routes,
+        ..Net::default()
+    };
+    let (cx, _) = seated(net, EDDY);
+    for text in ["Anthropic", "OpenAI", "Other"] {
+        assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
+    }
+}
+
+#[test]
+fn a_route_write_reads_the_budget_again_and_regroups_it() {
+    let budget = report(vec![row(
+        "models",
+        "quiet",
+        NOW,
+        vec![outlook("7d", 100_000, at(60), None)],
+    )]);
+    let net = Net {
+        budget,
+        routes: Vec::new(),
+        ..Net::default()
+    };
+    let (mut cx, shared) = seated(net, EDDY);
+    assert!(cx.has_text("Other"), "{:?}", cx.texts());
+    shared.borrow_mut().routes = vec![routed("anthropic", &["models"])];
+    let changes = cx.host().stream::<Changes<harness::Harness>>();
+    changes.send(Some(Change {
+        height: 10,
+        keys: vec![Written::Route.key()],
+    }));
+    cx.run_until_parked();
+    assert!(cx.has_text("Anthropic"), "{:?}", cx.texts());
+    assert!(!cx.has_text("Other"), "{:?}", cx.texts());
+}
+
+#[test]
+fn a_provider_reads_in_its_own_spelling_and_any_other_as_given() {
+    let read = [
+        (Some("anthropic"), "Anthropic"),
+        (Some("openai"), "OpenAI"),
+        (Some("mistral"), "mistral"),
+        (None, "Other"),
+    ];
+    for (provider, shown) in read {
+        assert_eq!(
+            crate::words::budget_provider(provider),
+            shown,
+            "{provider:?}"
+        );
+    }
 }

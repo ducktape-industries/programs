@@ -45,7 +45,7 @@ pub struct Agents {
     #[serde(skip)]
     roster: Reread<Roster>,
     #[serde(skip)]
-    budget: Reread<harness::BudgetFactsReport>,
+    budget: Reread<read::Budgeted>,
     #[serde(skip)]
     detail: Reread<Detail>,
     #[serde(skip)]
@@ -365,7 +365,10 @@ impl Agents {
         if roster {
             self.read_roster(cx);
         }
-        if written.contains(&Written::Budget) {
+        let budget = written
+            .iter()
+            .any(|wrote| matches!(wrote, Written::Budget | Written::Route));
+        if budget {
             self.read_budget(cx);
         }
         match self.screen {

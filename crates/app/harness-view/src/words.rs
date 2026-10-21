@@ -973,9 +973,10 @@ pub(crate) fn budget_swapped(fact: &BudgetFact, now: u64) -> Option<String> {
 }
 
 pub(crate) fn budget_provider(provider: Option<&str>) -> String {
-    let mut letters = provider.unwrap_or_default().chars();
-    match letters.next() {
-        Some(first) => first.to_uppercase().chain(letters).collect(),
+    match provider {
+        Some("anthropic") => "Anthropic".to_owned(),
+        Some("openai") => "OpenAI".to_owned(),
+        Some(other) => other.to_owned(),
         None => "Other".to_owned(),
     }
 }
