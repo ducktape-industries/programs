@@ -1990,3 +1990,151 @@ fn a_dispatched_run_that_errs_before_it_queues_says_so_in_the_workflow_channel()
         )
     );
 }
+
+fn two_changes_into_main(world: &mut World) -> (Oid, [Oid; 2]) {
+    let root = world.commit(&[], &[("pair.toml", PAIR)]);
+    world.push(None, root, "main");
+    let mut heads = Vec::new();
+    for branch in ["one", "two"] {
+        let head = world.commit(&[root], &[("pair.toml", PAIR)]);
+        world.push(None, head, branch);
+        let open = forge::Op::ChangeOpen {
+            repo: REPO.into(),
+            from: forge::Revision::Ref(format!("refs/heads/{branch}").into_bytes()),
+            into: b"refs/heads/main".to_vec(),
+            title: branch.into(),
+            body: String::new(),
+            reviewers: Vec::new(),
+        };
+        world.forge(&open).unwrap();
+        heads.push(head);
+    }
+    (root, [heads[0], heads[1]])
+}
+
+fn require_pair_on_main(world: &World) {
+    let require = forge::Op::RequireChecks {
+        repo: REPO.into(),
+        branch: b"refs/heads/main".to_vec(),
+        required: Some(forge::Required {
+            reporter: forge::Principal::Account(903),
+            contexts: vec!["pair.toml#review".into(), "pair.toml#lint".into()],
+        }),
+    };
+    world.forge(&require).unwrap();
+}
+
+fn enqueue(world: &World, n: u64, head: Oid) {
+    let enqueue = forge::Op::Enqueue {
+        repo: REPO.into(),
+        n,
+        expected_head: head.to_hex(),
+    };
+    world.forge(&enqueue).unwrap();
+}
+
+fn pass_every_check(world: &World, commit: Oid) {
+    for check in world.checks(commit) {
+        if check.state == State::Queued {
+            world.act(&Op::Claim { check: check.id }).unwrap();
+        }
+        let passed = Op::Report {
+            check: check.id,
+            state: State::Passed,
+            summary: "exit code 0".into(),
+            log: None,
+        };
+        world.act(&passed).unwrap();
+    }
+}
+
+fn of_job(checks: &[CheckRow], job: &str) -> CheckRow {
+    checks
+        .iter()
+        .find(|check| check.job.id == job)
+        .cloned()
+        .unwrap_or_else(|| panic!("no {job} check in {checks:?}"))
+}
+
+#[test]
+fn a_queue_merge_supersedes_the_unstarted_checks_of_previews_built_on_the_old_tip() {
+    let mut world = world();
+    let (_, [one, _]) = two_changes_into_main(&mut world);
+    require_pair_on_main(&world);
+    let first = world.preview(1);
+    let stale = world.preview(2);
+    let lint = of_job(&world.checks(stale), "lint");
+    world.act(&Op::Claim { check: lint.id }).unwrap();
+    enqueue(&world, 1, one);
+    pass_every_check(&world, first);
+    let merged = world.preview(2);
+    assert_eq!(
+        merged, stale,
+        "change 2 is in no queue: nothing previews it again"
+    );
+    let checks = world.checks(stale);
+    let review = of_job(&checks, "review");
+    assert_eq!(review.state, State::Superseded, "{checks:?}");
+    assert!(
+        review.summary.starts_with("superseded: main moved to "),
+        "{}",
+        review.summary
+    );
+    assert!(
+        review
+            .summary
+            .ends_with(", past the tip this Preview was built on"),
+        "{}",
+        review.summary
+    );
+    assert_eq!(
+        of_job(&checks, "lint").state,
+        State::Running,
+        "a started check runs on"
+    );
+    let told = world.statuses(stale);
+    let errored = ("pair.toml#review".to_owned(), forge::CheckState::Errored);
+    assert!(told.contains(&errored), "{told:?}");
+}
+
+#[test]
+fn a_queue_merge_leaves_the_checks_of_the_next_fronts_fresh_preview_queued() {
+    let mut world = world();
+    let (_, [one, two]) = two_changes_into_main(&mut world);
+    require_pair_on_main(&world);
+    let first = world.preview(1);
+    let stale = world.preview(2);
+    enqueue(&world, 1, one);
+    enqueue(&world, 2, two);
+    pass_every_check(&world, first);
+    let fresh = world.preview(2);
+    assert_ne!(
+        fresh, stale,
+        "the queue previewed change 2 on main's new tip"
+    );
+    assert_eq!(states(&world.checks(fresh)), [State::Queued, State::Queued]);
+    let checks = world.checks(stale);
+    assert!(
+        checks.iter().all(|check| check.state == State::Superseded),
+        "{checks:?}"
+    );
+}
+
+#[test]
+fn a_merge_into_a_branch_with_no_required_checks_leaves_previews_on_its_old_tip_queued() {
+    let mut world = world();
+    let (root, [one, _]) = two_changes_into_main(&mut world);
+    world.preview(1);
+    let stale = world.preview(2);
+    let merge = forge::Op::SquashMerge {
+        repo: REPO.into(),
+        into: b"refs/heads/main".to_vec(),
+        from: forge::Revision::Ref(b"refs/heads/one".to_vec()),
+        expected_into: root.to_hex(),
+        expected_from: one.to_hex(),
+        message: None,
+        change: Some(1),
+    };
+    world.forge(&merge).unwrap();
+    assert_eq!(states(&world.checks(stale)), [State::Queued, State::Queued]);
+}

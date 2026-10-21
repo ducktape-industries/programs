@@ -28,7 +28,7 @@ pub const WORKFLOWS: &str = ".forge/workflows";
     "forge's CI: on a push, a change's Preview, a dispatch or a hand trigger it reads the repository's workflows in .forge/workflows at that commit, queues a check per job, offers each to the runners whose labels cover its runs-on, and records how the runner that claimed it says it ended, as a forge commit status."
 )]
 pub enum Op {
-    #[tool_op(description = "From forge only: one event it tells its watchers. A push starts the workflows that run on it and supersedes the branch's earlier runs; a change opened or moved has its Preview built the block after; a merge or close supersedes the change's Preview runs.", example = crate::examples::watched)]
+    #[tool_op(description = "From forge only: one event it tells its watchers. A push starts the workflows that run on it and supersedes the branch's earlier runs, and on a branch with required checks the unstarted checks of its changes' Previews built on an older tip; a change opened or moved has its Preview built the block after; a merge or close supersedes the change's Preview runs.", example = crate::examples::watched)]
     Watched(forge::Watched),
     #[tool_op(description = "Run every workflow of repo at commit but those whose on.trigger is false, as a Manual run by the sender.", example = crate::examples::trigger)]
     Trigger { repo: String, commit: String },

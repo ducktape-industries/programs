@@ -50,3 +50,11 @@ a change's checks say how it did on the target head its Preview was built on (fo
 `Query::Preview`'s `into_head`, the Preview commit's parent). A merge queue checks the change
 again on the target's tip before it lands, and the target's own `on.push` workflows check each
 landing.
+
+On a target with required checks (forge `RequireChecks`), a Preview built on an older tip can
+never land: forge merges only a Preview of the target's current tip. So when such a target moves,
+every check of a Preview of an open change into it, built on another tip, that has not started
+yet ends superseded (`superseded: <branch> moved to <commit>, past the tip this Preview was built
+on`), leaving the runners to checks a merge can use. A started check runs on. The queue previews
+its front again on the new tip, and a change that moves is previewed again as before. A target
+with no required checks keeps every Preview's checks, as nothing previews them again.

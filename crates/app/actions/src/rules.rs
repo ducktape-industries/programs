@@ -52,6 +52,7 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
                 branch(&reference)
             );
             supersede_earlier_runs(ctx, &repo, &reference, &why)?;
+            supersede_previews_on_an_old_tip(ctx, &repo, &reference, &commit)?;
             start_matching_workflows(ctx, &started(&repo, &commit, Event::Push { reference }, by))
         }
         Watched::Moved { new: None, .. } => Ok(()),
@@ -727,6 +728,112 @@ fn supersede_earlier_runs(ctx: &ExecCtx, repo: &str, line: &[u8], why: &str) -> 
         LINES.remove(ctx, &(repo.to_owned(), line.to_vec(), run));
     }
     Ok(())
+}
+
+fn supersede_previews_on_an_old_tip(
+    ctx: &ExecCtx,
+    repo: &str,
+    branch_ref: &[u8],
+    tip: &str,
+) -> Result<(), Error> {
+    if !requires_checks(ctx, repo, branch_ref)? {
+        return Ok(());
+    }
+    let why = format!(
+        "superseded: {} moved to {}, past the tip this Preview was built on",
+        branch(branch_ref),
+        short(tip)
+    );
+    for (_, line, run) in LINES.scan(ctx, LINES.prefix_of(&repo.to_owned()))? {
+        let Some(n) = previewed_change(&line) else {
+            continue;
+        };
+        if change_target(ctx, repo, n)?.as_deref() != Some(branch_ref) {
+            continue;
+        }
+        let Some(row) = RUNS.get(ctx, &run)? else {
+            continue;
+        };
+        if built_on(ctx, repo, n, &row.commit)?.as_deref() == Some(tip) {
+            continue;
+        }
+        for (_, id) in BY_RUN.scan(ctx, BY_RUN.prefix_of(&run))? {
+            let mut check = load(ctx, id)?;
+            if !matches!(check.state, State::Queued | State::Waiting) {
+                continue;
+            }
+            check.state = State::Superseded;
+            check.finished = Some(ctx.env().height);
+            check.summary = why.clone();
+            QUEUED.remove(ctx, &id);
+            CHECKS.put(ctx, &id, &check);
+            report_commit_status(ctx, &check);
+        }
+    }
+    Ok(())
+}
+
+fn requires_checks(ctx: &QueryCtx, repo: &str, branch_ref: &[u8]) -> Result<bool, Error> {
+    let mut page = PageRequest::default();
+    loop {
+        let asked = forge::Query::Required {
+            repo: repo.to_owned(),
+            page,
+        };
+        let answered = match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)? {
+            forge::Reply::Required { page, .. } => page,
+            other => return Err(unexpected_reply(forge::PROGRAM, "Required", &other)),
+        };
+        if answered.items.iter().any(|row| row.branch == branch_ref) {
+            return Ok(true);
+        }
+        let Some(next) = answered.next else {
+            return Ok(false);
+        };
+        page = PageRequest {
+            after: Some(next),
+            limit: None,
+        };
+    }
+}
+
+fn previewed_change(line: &[u8]) -> Option<u64> {
+    std::str::from_utf8(line)
+        .ok()?
+        .strip_prefix("refs/changes/")?
+        .strip_suffix("/merge")?
+        .parse()
+        .ok()
+}
+
+fn change_target(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Vec<u8>>, Error> {
+    let asked = forge::Query::Change {
+        repo: repo.to_owned(),
+        n,
+        page: PageRequest::first(1),
+    };
+    match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked) {
+        Ok(forge::Reply::Change { change, .. }) => {
+            let open = change.state == ChangeState::Open;
+            Ok(open.then_some(change.into))
+        }
+        Ok(other) => Err(unexpected_reply(forge::PROGRAM, "Change", &other)),
+        Err(refused) if refused.code == code::NOT_FOUND => Ok(None),
+        Err(refused) => Err(refused),
+    }
+}
+
+fn built_on(ctx: &QueryCtx, repo: &str, n: u64, merge: &str) -> Result<Option<String>, Error> {
+    let asked = forge::Query::Preview {
+        repo: repo.to_owned(),
+        n,
+    };
+    match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)? {
+        forge::Reply::Preview { preview, .. } => Ok(preview
+            .filter(|preview| preview.merge == merge)
+            .map(|preview| preview.into_head)),
+        other => Err(unexpected_reply(forge::PROGRAM, "Preview", &other)),
+    }
 }
 
 fn superseding_ref(event: &Event) -> Option<Vec<u8>> {
