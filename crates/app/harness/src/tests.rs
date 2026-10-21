@@ -24,6 +24,7 @@ mod listen;
 mod network;
 mod node_activity;
 mod notices;
+mod oversize;
 mod owned;
 mod pictures;
 mod pods;
@@ -1740,7 +1741,7 @@ fn a_result_that_alone_overflows_the_window_is_left_out_and_the_model_searches_a
     let (text, failed) = result_of(chain, thread, "toolu_l");
     assert!(!failed, "the transcript keeps the result as it came");
     let note = format!(
-        "left out of your context: frame 3 is {} bytes in 1 lines, too large for your context window alone. Find lines in it with thread_search (frame 3) and read parts of it with thread_read (frame 3, an offset and a length).",
+        "left out of your context: frame 3 is {} bytes in 1 lines, too large for the model to take whole. Find lines in it with thread_search (frame 3) and read parts of it with thread_read (frame 3, an offset and a length).",
         text.len()
     );
     assert_eq!(result["content"], note);

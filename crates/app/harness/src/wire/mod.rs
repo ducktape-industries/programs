@@ -29,11 +29,14 @@ pub(crate) struct Reply {
     pub usage: Usage,
 }
 
+pub(crate) const TOO_LARGE: u16 = 413;
+
 pub(crate) enum Answered {
     Reply(Reply),
     Overflow,
     Pictures(String),
     Failed(String),
+    TooLarge(String),
 }
 
 pub(crate) struct Summary {
@@ -46,6 +49,7 @@ pub(crate) enum Summarized {
     Overflow,
     Pictures(String),
     Failed(String),
+    TooLarge(String),
 }
 
 pub(crate) struct Learned {

@@ -60,6 +60,58 @@ fn every_recorded_stream_reads_through_the_adapter_as_anthropics_own_wire_reads_
 }
 
 #[test]
+fn a_413_reads_as_too_large_through_the_adapter_and_from_anthropic_and_an_image_refusal_as_pictures()
+ {
+    let adapter = model_wire::Failure::new(
+        model_wire::Class::Pictures,
+        "the request's body is larger than the 33554432 bytes this instance's provider takes",
+    );
+    let through = Response {
+        status: 413,
+        headers: Vec::new(),
+        body: serde_json::to_vec(&adapter).unwrap(),
+    };
+    let error = json!({
+        "type": "error",
+        "error": { "type": "request_too_large", "message": "Request exceeds the maximum allowed number of bytes." },
+    });
+    let own = Response {
+        status: 413,
+        headers: Vec::new(),
+        body: error.to_string().into_bytes(),
+    };
+    assert!(matches!(
+        answered(Wire::Harness, &through),
+        Answered::TooLarge(_)
+    ));
+    assert!(matches!(
+        summarized(Wire::Harness, &through),
+        Summarized::TooLarge(_)
+    ));
+    assert!(matches!(
+        answered(Wire::AnthropicMessages, &own),
+        Answered::TooLarge(_)
+    ));
+    assert!(matches!(
+        summarized(Wire::AnthropicMessages, &own),
+        Summarized::TooLarge(_)
+    ));
+    let image = json!({
+        "type": "error",
+        "error": { "type": "invalid_request_error", "message": "messages.0.content.2.image: too large" },
+    });
+    let image = Response {
+        status: 400,
+        headers: Vec::new(),
+        body: image.to_string().into_bytes(),
+    };
+    assert!(matches!(
+        answered(Wire::AnthropicMessages, &image),
+        Answered::Pictures(_)
+    ));
+}
+
+#[test]
 fn a_stream_cut_short_fails_through_the_adapter() {
     let cut: String = TEXT
         .lines()

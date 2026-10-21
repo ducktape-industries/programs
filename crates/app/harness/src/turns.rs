@@ -360,7 +360,7 @@ fn opens(thread: &ThreadRow) -> bool {
 fn left_out(seq: u64, body: &Body) -> String {
     let text = body.text();
     format!(
-        "left out of your context: frame {seq} is {} bytes in {} lines, too large for your context window alone. Find lines in it with thread_search (frame {seq}) and read parts of it with thread_read (frame {seq}, an offset and a length).",
+        "left out of your context: frame {seq} is {} bytes in {} lines, too large for the model to take whole. Find lines in it with thread_search (frame {seq}) and read parts of it with thread_read (frame {seq}, an offset and a length).",
         text.len(),
         text.split('\n').count()
     )
@@ -835,20 +835,24 @@ fn plan_without_largest(
         return Ok(None);
     };
     WITHHELD.insert(ctx, &(thread.id, frame.seq));
-    let what = match &frame.body {
-        Body::Result { call, tool, .. } | Body::Refused { call, tool, .. } => {
-            format!("the result of {tool} call {call}")
-        }
-        Body::Post { .. } | Body::Turn { .. } | Body::Notice { .. } | Body::Compaction { .. } => {
-            format!("message {}", frame.seq)
-        }
-    };
+    let what = named(&frame);
     let text = format!(
         "{what} alone does not fit {}'s context window, so the model reads it in parts: use thread_search and thread_read to inspect the omitted content",
         turn.model
     );
     append(ctx, thread, Body::Notice { text });
     plan_turn(ctx, thread, turn)
+}
+
+fn named(frame: &Frame) -> String {
+    match &frame.body {
+        Body::Result { call, tool, .. } | Body::Refused { call, tool, .. } => {
+            format!("the result of {tool} call {call}")
+        }
+        Body::Post { .. } | Body::Turn { .. } | Body::Notice { .. } | Body::Compaction { .. } => {
+            format!("message {}", frame.seq)
+        }
+    }
 }
 
 fn largest_unseen(ctx: &ExecCtx, thread: &ThreadRow, wire: Wire) -> Result<Option<Frame>, Error> {
@@ -955,6 +959,10 @@ async fn compact(
         Ok((Summarized::Failed(text), response)) => {
             failed(ctx, &mut thread, Failure::answered(text, &response))?
         }
+        Ok((Summarized::TooLarge(text), response)) => match lightened(ctx, &mut thread, &text)? {
+            true => None,
+            false => failed(ctx, &mut thread, Failure::answered(text, &response))?,
+        },
         Err(failure) => failed(ctx, &mut thread, failure)?,
     };
     settle(ctx, &mut thread)?;
@@ -1049,6 +1057,7 @@ enum Ending {
     Overflow,
     Pictures(String),
     Failed(Failure),
+    TooLarge(String),
 }
 
 fn ending(closed: bool, answered: Result<Answered, Failure>) -> Ending {
@@ -1058,6 +1067,7 @@ fn ending(closed: bool, answered: Result<Answered, Failure>) -> Ending {
         (false, Ok(Answered::Overflow)) => Ending::Overflow,
         (false, Ok(Answered::Pictures(text))) => Ending::Pictures(text),
         (false, Ok(Answered::Failed(text))) => Ending::Failed(Failure::last(text)),
+        (false, Ok(Answered::TooLarge(text))) => Ending::TooLarge(text),
         (false, Err(failure)) => Ending::Failed(failure),
     }
 }
@@ -1120,6 +1130,12 @@ fn turned(
             }
             Vec::new()
         }
+        Ending::TooLarge(text) => {
+            if !lightened(ctx, &mut thread, &text)? {
+                again = failed(ctx, &mut thread, Failure::last(text))?;
+            }
+            Vec::new()
+        }
         Ending::Failed(failure) => match dispatched(ctx, id, partial)? {
             Some(reply) => {
                 let calls = record(ctx, &mut thread, upto, config, reply)?;
@@ -1165,6 +1181,36 @@ fn unpictured(ctx: &ExecCtx, thread: &mut ThreadRow, text: &str) -> Result<bool,
     );
     append(ctx, thread, Body::Notice { text });
     Ok(true)
+}
+
+fn lightened(ctx: &ExecCtx, thread: &mut ThreadRow, text: &str) -> Result<bool, Error> {
+    if unpictured(ctx, thread, text)? {
+        return Ok(true);
+    }
+    let Some(frame) = largest_input(ctx, thread)? else {
+        return Ok(false);
+    };
+    WITHHELD.insert(ctx, &(thread.id, frame.seq));
+    if frame.seq < thread.tail_from {
+        unseal(ctx, thread)?;
+    }
+    let text = format!(
+        "{} makes the request larger than the model's service takes ({text}), so the model reads it in parts: use thread_search and thread_read to inspect the omitted content",
+        named(&frame)
+    );
+    append(ctx, thread, Body::Notice { text });
+    Ok(true)
+}
+
+fn largest_input(ctx: &ExecCtx, thread: &ThreadRow) -> Result<Option<Frame>, Error> {
+    let whole = FRAMES.prefix_of(&thread.id);
+    let range = Range::new(FRAMES.key(&(thread.id, thread.base)), whole.end);
+    let frames = FRAMES.scan(ctx, range)?.into_iter().map(|(_, frame)| frame);
+    let kept = frames.filter(|frame| {
+        let input = frame.body.role() == Some(Role::User);
+        input && !WITHHELD.has(ctx, &(thread.id, frame.seq))
+    });
+    Ok(kept.max_by_key(|frame| frame.body.text().len()))
 }
 
 fn record(

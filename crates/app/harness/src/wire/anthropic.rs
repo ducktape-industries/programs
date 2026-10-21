@@ -598,12 +598,15 @@ fn refused_pictures(response: &Response) -> bool {
     let image = value["error"]["message"]
         .as_str()
         .is_some_and(|message| message.to_lowercase().contains("image"));
-    (response.status == 400 && invalid && image) || response.status == 413
+    response.status == 400 && invalid && image
 }
 
 pub(crate) fn answered(response: &Response) -> Answered {
     if response.status != 200 {
         let text = failure(response.status, &response.body);
+        if response.status == super::TOO_LARGE {
+            return Answered::TooLarge(text);
+        }
         return match (overflowed(response), refused_pictures(response)) {
             (true, _) => Answered::Overflow,
             (false, true) => Answered::Pictures(text),
@@ -626,6 +629,9 @@ pub(crate) fn answered(response: &Response) -> Answered {
 pub(crate) fn summarized(response: &Response) -> Summarized {
     if overflowed(response) {
         return Summarized::Overflow;
+    }
+    if response.status == super::TOO_LARGE {
+        return Summarized::TooLarge(failure(response.status, &response.body));
     }
     if refused_pictures(response) {
         return Summarized::Pictures(failure(response.status, &response.body));

@@ -308,6 +308,9 @@ pub(crate) fn answered(response: &Response) -> Answered {
         );
     }
     let failure = failure(response);
+    if response.status == super::TOO_LARGE {
+        return Answered::TooLarge(failure.message);
+    }
     match failure.class {
         Class::Overflow => Answered::Overflow,
         Class::Pictures => Answered::Pictures(failure.message),
@@ -320,6 +323,9 @@ pub(crate) fn answered(response: &Response) -> Answered {
 pub(crate) fn summarized(response: &Response) -> Summarized {
     if response.status != 200 {
         let failure = failure(response);
+        if response.status == super::TOO_LARGE {
+            return Summarized::TooLarge(failure.message);
+        }
         return match failure.class {
             Class::Overflow => Summarized::Overflow,
             Class::Pictures => Summarized::Pictures(failure.message),
