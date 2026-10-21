@@ -149,6 +149,52 @@ fn alt_down_moves_the_active_row_down_its_level_and_writes_the_order_whole() {
 }
 
 #[test]
+fn a_refused_order_puts_the_rows_back_and_says_why() {
+    let (mut cx, view) = desk(Vec::new());
+    cx.host()
+        .handle::<view::methods::Submit<::chat::Chat>>(|_| {
+            Ok(view::methods::Submitted::Refused {
+                frame: [0; 32],
+                until: 9,
+                refusal: view::host::Error::new("unauthorized", "no account holds this key"),
+            })
+        });
+    cx.update(&view, |chat, _, cx| chat.step(&room("general"), false, cx));
+    cx.run_until_parked();
+    assert_eq!(orders(&cx).len(), 1, "the move was sent");
+    assert_eq!(
+        drawn(&view),
+        ["general", "random", "jobs/", "j-1", "j-2", "j-3", "design"],
+        "put back as it was"
+    );
+    view.read(|chat| assert!(!chat.notice.is_empty(), "the banner says why"));
+}
+
+#[test]
+fn two_refused_moves_in_a_row_leave_the_order_chat_holds() {
+    let (mut cx, view) = desk(Vec::new());
+    cx.host()
+        .handle::<view::methods::Submit<::chat::Chat>>(|_| {
+            Ok(view::methods::Submitted::Refused {
+                frame: [0; 32],
+                until: 9,
+                refusal: view::host::Error::new("unauthorized", "no account holds this key"),
+            })
+        });
+    cx.update(&view, |chat, _, cx| {
+        chat.step(&room("general"), false, cx);
+        chat.step(&room("general"), false, cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(orders(&cx).len(), 2, "both moves were sent");
+    assert_eq!(
+        drawn(&view),
+        ["general", "random", "jobs/", "j-1", "j-2", "j-3", "design"],
+        "chat took neither"
+    );
+}
+
+#[test]
 fn a_room_moves_only_inside_its_folder() {
     let (mut cx, view) = desk(Vec::new());
     cx.update(&view, |chat, _, cx| {

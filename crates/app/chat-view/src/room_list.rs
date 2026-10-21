@@ -523,7 +523,8 @@ impl Chat {
         self.order = moved(&self.order, &level, from, to);
         cx.notify();
         let order = self.order.clone();
-        self.submit(chat::Op::SetRoomOrder { order }, cx);
+        let reread = |chat: &mut Chat, cx: &mut Context<Chat>| chat.load_order(cx);
+        self.submit_or(chat::Op::SetRoomOrder { order }, reread, cx);
     }
 
     // The row under `at`, of the rows `drawn` now.

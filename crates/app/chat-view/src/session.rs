@@ -179,6 +179,15 @@ impl Chat {
             Err(refusal) => cx.log_refused("the rooms written in", &refusal),
         })
         .detach();
+        self.load_order(cx);
+    }
+
+    pub(crate) fn load_order(&mut self, cx: &mut Context<Self>) {
+        let Some(me) = self.my_account() else {
+            self.order = Vec::new();
+            cx.notify();
+            return;
+        };
         let order = crate::queries::room_order(cx.host(), me);
         cx.land(order, move |chat, read, cx| match read {
             _ if chat.my_account() != Some(me) => {}

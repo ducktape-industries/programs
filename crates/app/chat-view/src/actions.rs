@@ -671,13 +671,25 @@ impl Chat {
 
     /// One op to the chat program; a refusal lands in the banner.
     pub(crate) fn submit(&mut self, op: Op, cx: &mut Context<Self>) {
+        self.submit_or(op, |_, _| {}, cx);
+    }
+
+    pub(crate) fn submit_or(
+        &mut self,
+        op: Op,
+        undo: impl FnOnce(&mut Chat, &mut Context<Chat>) + 'static,
+        cx: &mut Context<Self>,
+    ) {
         self.notice.clear();
         let submit = cx.host().ask::<Submit<::chat::Chat>>(op);
         cx.land(submit, |chat, result, cx| {
             cx.notify();
             match design::failure(&result) {
                 None => chat.refresh(cx),
-                Some(said) => chat.notice = said,
+                Some(said) => {
+                    chat.notice = said;
+                    undo(chat, cx);
+                }
             }
         })
         .detach();
