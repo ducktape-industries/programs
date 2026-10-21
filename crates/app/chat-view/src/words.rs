@@ -247,6 +247,7 @@ pub(crate) const UPLOADING: &str = "Uploading…";
 pub(crate) const PUT_CLOSED: &str = "The upload stopped before the network held the file";
 pub(crate) const NOT_THERE: &str = "The file isn’t there";
 pub(crate) const FILE_READING: &str = "Reading…";
+pub(crate) const OPENING: &str = "Opening…";
 pub(crate) const FILE_FAILED: &str = "Couldn’t read the file";
 pub(crate) const FILE_MISSING: &str = "Missing from files";
 pub(crate) const NOT_LANDED: &str =

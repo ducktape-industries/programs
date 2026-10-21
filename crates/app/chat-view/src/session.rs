@@ -73,6 +73,9 @@ impl Chat {
     }
 
     pub(crate) fn visibility_changed(&mut self, visible: bool, cx: &mut Context<Self>) {
+        if !visible {
+            self.opening = None;
+        }
         if !visible && self.create.take().is_some() {
             cx.notify();
         }

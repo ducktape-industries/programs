@@ -47,6 +47,7 @@ pub(crate) struct Seen {
 struct FileSeen {
     shown: Option<(Option<usize>, bool)>,
     unread: Option<crate::attach::Unread>,
+    opening: bool,
 }
 
 impl Seen {
@@ -80,7 +81,15 @@ impl Seen {
                         (picture, shown.chunks.is_some())
                     });
                     let unread = chat.unread_files.get(&key).map(|(_, unread)| *unread);
-                    FileSeen { shown, unread }
+                    let opening = chat
+                        .opening
+                        .as_ref()
+                        .is_some_and(|opening| opening.key == key);
+                    FileSeen {
+                        shown,
+                        unread,
+                        opening,
+                    }
                 })
                 .collect(),
             answering: answering_under(chat, pane, seq),

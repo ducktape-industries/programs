@@ -197,6 +197,8 @@ pub struct Chat {
     // the picture a click opened whole over the room
     #[serde(skip)]
     pub(crate) enlarged: Option<crate::attach::Enlarged>,
+    #[serde(skip)]
+    pub(crate) opening: Option<crate::attach::Opening>,
     // the rooms opened this session and left, by id
     #[serde(skip)]
     pub(crate) visited: BTreeMap<String, Visited>,

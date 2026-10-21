@@ -10,7 +10,7 @@ use futures::StreamExt;
 use view::prelude::*;
 
 use crate::composer::{Target, Upload, attachments, editor_id};
-use crate::{Chat, Pane, words};
+use crate::{Chat, Page, Pane, words};
 
 #[derive(Clone, Default)]
 pub(crate) struct Shown {
@@ -40,6 +40,14 @@ pub(crate) struct Picture {
     pub(crate) image: Arc<Image>,
     pub(crate) size: (u32, u32),
 }
+
+pub(crate) struct Opening {
+    pub(crate) key: FileKey,
+    at: Spot,
+    _asked: view::Task<()>,
+}
+
+type Spot = (Page, Option<String>, Option<u64>);
 
 #[derive(Clone)]
 pub(crate) enum Enlarged {
@@ -642,24 +650,79 @@ impl Chat {
     }
 
     pub(crate) fn save_file(&mut self, file: &Attachment, cx: &mut Context<Self>) {
-        let shown = self.shown_files.get(&(file.path.clone(), file.snapshot));
-        let Some(blobs) = shown.and_then(|shown| shown.chunks.clone()) else {
+        if let Some(saving) = self.saving(file, cx) {
+            saving.detach();
+        }
+    }
+
+    pub(crate) fn open_on_device(&mut self, file: &Attachment, cx: &mut Context<Self>) {
+        let key = (file.path.clone(), file.snapshot);
+        let again = self
+            .opening
+            .as_ref()
+            .is_some_and(|opening| opening.key == key);
+        if again {
+            return;
+        }
+        let Some(asked) = self.saving(file, cx) else {
             return;
         };
+        let at = self.spot();
+        self.opening = Some(Opening {
+            key,
+            at,
+            _asked: asked,
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn settle_opening(&mut self) {
+        let here = self.spot();
+        let left = self
+            .opening
+            .as_ref()
+            .is_some_and(|opening| opening.at != here);
+        if left {
+            self.opening = None;
+        }
+    }
+
+    fn spot(&self) -> Spot {
+        let room = self.room.as_ref();
+        let thread = room.and_then(|room| room.thread.as_ref());
+        (
+            *self.pages().top(),
+            room.map(|room| room.id.clone()),
+            thread.map(|thread| thread.root),
+        )
+    }
+
+    fn saving(&mut self, file: &Attachment, cx: &mut Context<Self>) -> Option<view::Task<()>> {
+        let key = (file.path.clone(), file.snapshot);
+        let shown = self.shown_files.get(&key);
+        let blobs = shown.and_then(|shown| shown.chunks.clone())?;
         let save = SaveFile {
             name: file.name.clone(),
             blobs,
         };
         let ask = cx.host().ask::<FileSave>(save);
-        cx.spawn(async move |this, cx| {
-            if let Err(refusal) = ask.await {
-                let _ = this.update(cx, |chat, cx| {
+        let saving = cx.spawn(async move |this, cx| {
+            let answer = ask.await;
+            let _ = this.update(cx, |chat, cx| {
+                let opened = chat
+                    .opening
+                    .as_ref()
+                    .is_some_and(|opening| opening.key == key);
+                if opened {
+                    chat.opening = None;
+                }
+                if let Err(refusal) = answer {
                     chat.notice = design::sentence(&refusal);
-                    cx.notify();
-                });
-            }
-        })
-        .detach();
+                }
+                cx.notify();
+            });
+        });
+        Some(saving)
     }
 
     pub(crate) fn enlarge(&mut self, file: &Attachment, cx: &mut Context<Self>) {

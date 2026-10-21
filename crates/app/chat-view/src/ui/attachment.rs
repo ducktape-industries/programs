@@ -38,26 +38,50 @@ pub(crate) fn view(
     if let Some(picture) = shown.and_then(|shown| shown.picture.as_ref()) {
         let (name, theme) = (file.name.clone(), *theme);
         let touch = ladder.touch;
+        let opening = chat
+            .opening
+            .as_ref()
+            .is_some_and(|opening| opening.key == key);
         let open = {
             let file = file.clone();
             cx.listener(move |chat, _: &ClickEvent, _, cx| match touch {
-                true => chat.save_file(&file, cx),
+                true => chat.open_on_device(&file, cx),
                 false => chat.enlarge(&file, cx),
             })
         };
+        let note = opening.then(|| {
+            let said = div()
+                .px(design::space::SM)
+                .py(design::space::XS)
+                .bg(theme.surface)
+                .text_color(theme.foreground)
+                .text_type(ladder.caption)
+                .child(words::OPENING);
+            div()
+                .id(format!("{id}/opening"))
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(said)
+        });
         let picture = fitted(picture, (FILE_W.into(), PICTURE_H.into()))
             .max_w_full()
             .with_fallback(move || design::quiet(name.clone(), &theme).into_any_element())
             .id(format!("{id}/picture"));
         return div()
             .id(id)
+            .relative()
             .self_start()
             .max_w_full()
             .role(Role::Button)
             .aria_label(words::open(&file.name))
+            .when(opening, |button| button.aria_busy(true))
             .focusable()
             .on_click(open)
             .child(picture)
+            .children(note)
             .into_any_element();
     }
     let saves = shown.is_some_and(|shown| shown.chunks.is_some());

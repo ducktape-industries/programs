@@ -353,6 +353,96 @@ fn a_tap_on_a_picture_on_a_phone_hands_it_to_the_host_to_open() {
     assert_eq!(cx.host().requests::<FileSave>(), [opened]);
 }
 
+const OPENING: &str = "chat-message-m3-block-0/opening";
+
+fn tapped_on_a_phone() -> (TestAppContext, Entity<Chat>) {
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    let view = cx.open::<Chat>();
+    cx.simulate_touch(true);
+    cx.simulate_resize(390., 844.);
+    cx.run_until_parked();
+    seat(&mut cx);
+    files_host(&mut cx);
+    cx.host().never::<FileSave>();
+    let picture = chat::Block::Attachment(chat::message::Attachment {
+        path: "/chat/general/m3/tape.png".into(),
+        snapshot: SNAPSHOT,
+        name: "tape.png".into(),
+        size: 3,
+        content_type: "image/png".into(),
+    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                    blocks: vec![picture.clone()],
+                    ..row(3, 8, "")
+                }])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.simulate_click("chat-rooms-channel-general");
+    cx.run_until_parked();
+    assert!(
+        cx.find(OPENING).is_none(),
+        "nothing is opening before the tap"
+    );
+    let handler = cx
+        .interactivity("chat-message-m3-block-0")
+        .on_click
+        .expect("the picture takes a tap");
+    cx.simulate_event(wire::Event::Click {
+        handler,
+        event: wire::click::Click::Touch {
+            position: Default::default(),
+            tap_count: 1,
+            long_press: false,
+        },
+    });
+    view.read(|chat| assert!(chat.menu.is_none(), "a touch on the picture opens no menu"));
+    (cx, view)
+}
+
+#[test]
+fn a_tapped_picture_says_at_once_that_it_is_opening_until_the_host_has_opened_it() {
+    let (mut cx, _view) = tapped_on_a_phone();
+    assert!(
+        cx.find(OPENING).is_some(),
+        "the tap says at once that the picture is opening"
+    );
+    cx.host().handle::<FileSave>(|_| Ok(true));
+    cx.host().answer_held::<FileSave>();
+    cx.run_until_parked();
+    assert!(cx.find(OPENING).is_none(), "the note goes once it opened");
+    assert_eq!(cx.host().requests::<FileSave>().len(), 1);
+}
+
+#[test]
+fn a_picture_left_before_the_host_opens_it_is_never_opened() {
+    let (mut cx, _view) = tapped_on_a_phone();
+    assert_eq!(
+        cx.host().requests::<FileSave>().len(),
+        1,
+        "the tap asked the host to open it"
+    );
+    let shown_late = std::rc::Rc::new(std::cell::Cell::new(0));
+    let shows = shown_late.clone();
+    cx.host().handle::<FileSave>(move |_| {
+        shows.set(shows.get() + 1);
+        Ok(true)
+    });
+    cx.simulate_back();
+    cx.run_until_parked();
+    cx.host().answer_held::<FileSave>();
+    cx.run_until_parked();
+    assert_eq!(
+        shown_late.get(),
+        0,
+        "the host never opens a picture the reader left"
+    );
+}
+
 #[test]
 fn a_picture_is_read_where_it_stands_whatever_snapshot_its_message_names() {
     const HEAD: [u8; 32] = [7; 32];
