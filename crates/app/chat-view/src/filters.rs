@@ -86,6 +86,19 @@ impl Chat {
         cx.notify();
     }
 
+    pub(crate) fn settle_filter(&mut self, cx: &mut Context<Self>) {
+        let Some(tag) = self.filtered().map(|filter| filter.tag.clone()) else {
+            return;
+        };
+        if self.room_filters().contains(&tag) {
+            return;
+        }
+        if let Some(room) = &mut self.room {
+            room.filter = None;
+        }
+        cx.notify();
+    }
+
     pub(crate) fn filter_more(&mut self, cx: &mut Context<Self>) {
         let Some(filter) = self.room.as_mut().and_then(|room| room.filter.as_mut()) else {
             return;

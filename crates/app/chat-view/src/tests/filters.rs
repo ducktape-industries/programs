@@ -174,3 +174,20 @@ fn the_phone_draws_the_chips_over_its_room_and_filters_by_them() {
     pick(&mut cx, "chat-filter-app");
     assert!(cx.has_text("No #app posts yet"), "{:?}", cx.texts());
 }
+
+#[test]
+fn a_picked_tag_the_meta_drops_goes_back_to_all() {
+    let (mut cx, view) = desk();
+    pick(&mut cx, "chat-filter-app");
+    assert!(view.read(|chat| chat.filtered().is_some()));
+    let mut general = channel("general", "General", 3);
+    general.meta.insert("filters".into(), "node".into());
+    cx.update(&view, |chat, _, cx| {
+        chat.channels_arrived(vec![general, channel("dm-7-8", "dm", 1)], cx)
+    });
+    cx.run_until_parked();
+    assert!(view.read(|chat| chat.filtered().is_none()));
+    assert!(cx.find("chat-filter-app").is_none());
+    assert_eq!(shown(&view), [1, 2], "the room's own timeline");
+    assert!(cx.has_text("hello"), "{:?}", cx.texts());
+}

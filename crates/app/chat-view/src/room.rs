@@ -1506,6 +1506,7 @@ impl Chat {
             self.channels = Loadable::Ready(channels);
             cx.notify();
         }
+        self.settle_filter(cx);
         if let Some(room) = read {
             self.read_notices(&room, cx);
         }

@@ -78,7 +78,7 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
   view reads the page after, and a block that writes the room's messages or
   reactions reads it again. All is the room's live timeline. A room without
   the meta draws no chips. The pick is the session's: another room, or a swap,
-  opens on All.
+  opens on All, and so does a meta that no longer names the picked tag.
 - Dialogs: new channel, new direct message (`ui/dialogs.rs`, phone pages).
 - Who can edit (`policies.rs`, through `policy-view`'s `item`): a row in the
   channel's details, and "Who can edit" in a message's menu, each opening a
