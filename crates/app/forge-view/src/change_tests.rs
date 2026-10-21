@@ -1379,6 +1379,7 @@ fn a_reply_to_a_change_that_talked_in_another_room_posts_nothing() {
     let (mut cx, view) = change_screen("job", ChangeTab::Conversation);
     cx.update(&view, |forge, window, cx| {
         forge.reply = view::TextField::new("on it");
+        cx.notify();
         forge.post_reply(window, cx);
     });
     cx.run_until_parked();
