@@ -670,7 +670,10 @@ pub fn refused(status: u16, headers: &[(String, String)], body: &[u8], now: u64)
     let said = value["error"]["message"].as_str();
     let message = match (kind, said) {
         (Some(kind), Some(said)) => format!("the model answered {status}, {kind}: {said}"),
-        _ => format!("the model answered {status}"),
+        _ => match crate::page_words(body) {
+            Some(page) if value.is_null() => format!("the model answered {status}: {page}"),
+            _ => format!("the model answered {status}"),
+        },
     };
     let invalid = kind == Some("invalid_request_error");
     let lower = said.unwrap_or_default().to_lowercase();

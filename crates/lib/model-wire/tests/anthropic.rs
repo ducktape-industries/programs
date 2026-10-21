@@ -579,3 +579,23 @@ fn the_unified_windows_read_as_the_harness_budget() {
         expected
     );
 }
+
+#[test]
+fn a_refusal_that_is_no_json_names_its_page() {
+    let page = b"<!DOCTYPE html>\n<html><head>\n<title>Just a\n  moment...</title></head><body>challenge</body></html>";
+    let failure = anthropic::refused(403, &[], page, 0);
+    assert_eq!(failure.message, "the model answered 403: Just a moment...");
+    let plain = anthropic::refused(502, &[], b"\n  upstream connect error\nmore", 0);
+    assert_eq!(plain.message, "the model answered 502");
+    let long = format!("<html><body>{}</body></html>", "x".repeat(1 << 20));
+    let long = anthropic::refused(403, &[], long.as_bytes(), 0);
+    assert_eq!(long.message, "the model answered 403");
+    assert_eq!(
+        anthropic::refused(403, &[], b"", 0).message,
+        "the model answered 403"
+    );
+    assert_eq!(
+        anthropic::refused(403, &[], b"{}", 0).message,
+        "the model answered 403"
+    );
+}

@@ -475,7 +475,10 @@ pub fn refused(status: u16, headers: &[(String, String)], body: &[u8], now: u64)
     let message = match (code, said) {
         (Some(code), Some(said)) => format!("the model answered {status}, {code}: {said}"),
         (None, Some(said)) => format!("the model answered {status}: {said}"),
-        _ => format!("the model answered {status}"),
+        _ => match crate::page_words(body) {
+            Some(page) if value.is_null() => format!("the model answered {status}: {page}"),
+            _ => format!("the model answered {status}"),
+        },
     };
     let class = match (status, code) {
         (_, Some(code)) if class_of(code) != Class::Provider => class_of(code),

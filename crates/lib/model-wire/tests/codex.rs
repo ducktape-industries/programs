@@ -450,3 +450,23 @@ fn the_codex_windows_read_as_the_harness_budget() {
     assert_eq!(budget, expected);
     assert_eq!(Budget::read(&budget.headers()), expected);
 }
+
+#[test]
+fn a_refusal_that_is_no_json_names_its_page() {
+    let page = b"<!DOCTYPE html>\n<html><head>\n<title>Just a\n  moment...</title></head><body>challenge</body></html>";
+    let failure = codex::refused(403, &[], page, 0);
+    assert_eq!(failure.message, "the model answered 403: Just a moment...");
+    let plain = codex::refused(502, &[], b"\n  upstream connect error\nmore", 0);
+    assert_eq!(plain.message, "the model answered 502");
+    let long = format!("<html><body>{}</body></html>", "x".repeat(1 << 20));
+    let long = codex::refused(403, &[], long.as_bytes(), 0);
+    assert_eq!(long.message, "the model answered 403");
+    assert_eq!(
+        codex::refused(403, &[], b"", 0).message,
+        "the model answered 403"
+    );
+    assert_eq!(
+        codex::refused(403, &[], b"{}", 0).message,
+        "the model answered 403"
+    );
+}

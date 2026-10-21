@@ -302,6 +302,22 @@ pub struct Summarized {
     pub tokens: u64,
 }
 
+pub fn page_words(body: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(body);
+    let lower = text.to_ascii_lowercase();
+    let titled = lower.find("<title").and_then(|open| {
+        let start = open + lower[open..].find('>')? + 1;
+        let end = start + lower[start..].find("</title")?;
+        Some(
+            text[start..end]
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" "),
+        )
+    });
+    titled.filter(|title| !title.is_empty())
+}
+
 pub fn event_data(event: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(event);
     let data: Vec<&str> = text
