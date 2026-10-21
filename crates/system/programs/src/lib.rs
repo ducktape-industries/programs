@@ -124,6 +124,11 @@ pub enum Op {
     Cancel { height: u64, program: ProgramId },
     #[tool_op(description = "Hand a name on: to an account, to several accounts any of which acts as its holder, or to the validators' vote. Its holder or the vote.", example = crate::examples::own)]
     Own { program: ProgramId, holder: Holder },
+    #[tool_op(description = "Schedule a change as Schedule does, refused unless expected names what is under its name both just before its height and once every change already waiting for that name has landed: a code, or null for nothing. A deploy's rollback code is its expected, so two deploys of one program never both land.", example = crate::examples::schedule_over)]
+    ScheduleOver {
+        scheduled: Scheduled,
+        expected: Option<abi::BlobId>,
+    },
 }
 
 #[derive(
@@ -239,37 +244,53 @@ pub enum Provenance {
 
 /// An op as a person reads it: a title and its fields. The source of the
 /// `ducktape.describe` module this program ships (`make wasm-describes`).
+fn scheduled_fields(scheduled: &Scheduled) -> (String, Vec<describe::Field>) {
+    use describe::{Value, field};
+    let Scheduled { height, change } = scheduled;
+    let mut fields = vec![
+        field("change", Value::text(change.verb())),
+        field("program", Value::Program(change.program().into())),
+        field("height", Value::Text(height.to_string())),
+    ];
+    fields.extend(
+        change
+            .code()
+            .map(|code| field("code", Value::Hash(code.digest().to_vec()))),
+    );
+    match change {
+        Change::Set(entry) => fields.push(field("params", Value::bytes(&entry.params))),
+        Change::Publish { entry, roles } => {
+            fields.push(field("params", Value::bytes(&entry.params)));
+            fields.push(field(
+                "roles",
+                Value::List(roles.iter().map(Value::text).collect()),
+            ));
+        }
+        Change::Remove(_)
+        | Change::SetView(_)
+        | Change::RemoveView(_)
+        | Change::SetHook(_)
+        | Change::RemoveHook(_) => {}
+    }
+    (format!("Schedule · {}", change.program()), fields)
+}
+
 pub fn describe(op: &Op) -> describe::Description {
     use describe::{Value, field};
     let height = |height: &u64| field("height", Value::Text(height.to_string()));
     let (title, fields) = match op {
-        Op::Schedule(Scheduled { height: at, change }) => {
-            let mut fields = vec![
-                field("change", Value::text(change.verb())),
-                field("program", Value::Program(change.program().into())),
-                height(at),
-            ];
-            fields.extend(
-                change
-                    .code()
-                    .map(|code| field("code", Value::Hash(code.digest().to_vec()))),
-            );
-            match change {
-                Change::Set(entry) => fields.push(field("params", Value::bytes(&entry.params))),
-                Change::Publish { entry, roles } => {
-                    fields.push(field("params", Value::bytes(&entry.params)));
-                    fields.push(field(
-                        "roles",
-                        Value::List(roles.iter().map(Value::text).collect()),
-                    ));
-                }
-                Change::Remove(_)
-                | Change::SetView(_)
-                | Change::RemoveView(_)
-                | Change::SetHook(_)
-                | Change::RemoveHook(_) => {}
-            }
-            (format!("Schedule · {}", change.program()), fields)
+        Op::Schedule(scheduled) => scheduled_fields(scheduled),
+        Op::ScheduleOver {
+            scheduled,
+            expected,
+        } => {
+            let (title, mut fields) = scheduled_fields(scheduled);
+            let expected = match expected {
+                Some(code) => Value::Hash(code.digest().to_vec()),
+                None => Value::text("nothing"),
+            };
+            fields.push(field("expected", expected));
+            (title, fields)
         }
         Op::Cancel {
             height: at,
@@ -305,5 +326,8 @@ describe::export!(Op, describe);
 
 #[test]
 fn op_variants_only_append() {
-    assert_eq!(describe::variants::<Op>(), ["Schedule", "Cancel", "Own"]);
+    assert_eq!(
+        describe::variants::<Op>(),
+        ["Schedule", "Cancel", "Own", "ScheduleOver"]
+    );
 }

@@ -8,15 +8,26 @@ fn chat() -> String {
     "chat".into()
 }
 
-pub(crate) fn schedule() -> Op {
-    Op::Schedule(Scheduled {
+fn set_chat() -> Scheduled {
+    Scheduled {
         height: AT,
         change: Change::Set(Entry {
             program: chat(),
             code: abi::BlobId::Sha256([0; 32]),
             params: Vec::new(),
         }),
-    })
+    }
+}
+
+pub(crate) fn schedule() -> Op {
+    Op::Schedule(set_chat())
+}
+
+pub(crate) fn schedule_over() -> Op {
+    Op::ScheduleOver {
+        scheduled: set_chat(),
+        expected: Some(abi::BlobId::Sha256([1; 32])),
+    }
 }
 
 pub(crate) fn cancel() -> Op {

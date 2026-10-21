@@ -266,9 +266,9 @@ pub(crate) fn words(motion: &Motion, roster: &[Entry]) -> String {
             format!("{}: {}", door.label, door.meaning)
         }
         Motion::Role { role, op } if role == abi::role::PROGRAMS => match abi::decode(op) {
-            Ok(programs::Op::Schedule(scheduled)) => {
-                scheduled_words(scheduled.height, &scheduled.change, roster)
-            }
+            Ok(
+                programs::Op::Schedule(scheduled) | programs::Op::ScheduleOver { scheduled, .. },
+            ) => scheduled_words(scheduled.height, &scheduled.change, roster),
             Ok(programs::Op::Cancel { height, program }) => format!(
                 "Cancel {program}'s change at block {}",
                 design::grouped(height)

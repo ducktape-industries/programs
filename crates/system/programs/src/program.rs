@@ -6,7 +6,7 @@ use ::program::{Error, ExecCtx, Program, QueryCtx, decoded};
 
 use crate::rules::{
     BY, Roster, at, cancel, fold, holder_of, hooks_at, init, own, roles_at, roster, schedule,
-    sources, to_land, views_at,
+    schedule_over, sources, to_land, views_at,
 };
 use crate::{Genesis, Op, PROGRAM, PageResponse, Pending, Query, Reply};
 
@@ -33,6 +33,10 @@ impl Program for Programs {
             Op::Schedule(scheduled) => schedule(ctx, scheduled),
             Op::Cancel { height, program } => cancel(ctx, height, program),
             Op::Own { program, holder } => own(ctx, program, holder),
+            Op::ScheduleOver {
+                scheduled,
+                expected,
+            } => schedule_over(ctx, scheduled, expected),
         }
     }
 

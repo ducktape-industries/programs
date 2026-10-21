@@ -214,7 +214,11 @@ keys and valset's votes.
    the blobs role does not hold, and a held blob of any kind but
    `"program"`.
 2. `Schedule(Scheduled { height, change: Change::Set(Entry { program, code, params }) })`
-   lands it at a later height.
+   lands it at a later height. `ScheduleOver { scheduled, expected }` schedules the same
+   change over the code it expects: it is refused `wrong_state`, naming what is there,
+   unless `expected` is what is under the name both just before `height` and once every
+   change already waiting for that name has landed (`None`: nothing is). A deploy sends
+   it with its rollback code as `expected`, so two deploys of one program never both land.
 3. At that height the kernel's `At(height)` sees the new code. Under an id
    already running, the code is swapped: the state, the account and the id
    stay, and `init` does not run again. Under a new id, the program is

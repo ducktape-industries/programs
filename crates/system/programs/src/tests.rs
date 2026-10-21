@@ -2,6 +2,7 @@
 // Who may change the programs role is `tests/access.rs`.
 
 mod access;
+mod over;
 mod sources;
 
 use ::program::{BlobId, Env, MockHost, Origin, Program, code};

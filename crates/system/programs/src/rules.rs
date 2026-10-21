@@ -320,6 +320,49 @@ pub(crate) fn schedule(ctx: &ExecCtx, scheduled: Scheduled) -> Result<(), Error>
     Ok(())
 }
 
+fn code_under(roster: &Roster, name: &str) -> Option<BlobId> {
+    let program = roster.programs.get(name).map(|entry| entry.code);
+    program.or_else(|| roster.views.get(name).map(|view| view.view))
+}
+
+fn named(code: Option<BlobId>) -> String {
+    code.map_or_else(|| "nothing".into(), |code| format!("code {code:?}"))
+}
+
+pub(crate) fn schedule_over(
+    ctx: &ExecCtx,
+    scheduled: Scheduled,
+    expected: Option<BlobId>,
+) -> Result<(), Error> {
+    let name = scheduled.change.program().to_owned();
+    let overruled = match actor(&ctx.env(), &name)? {
+        Some(_) => Vec::new(),
+        None => overruled(ctx, &name)?,
+    };
+    let before = code_under(&roster(ctx, scheduled.height, &overruled)?, &name);
+    let mut last = stored(ctx)?;
+    let waiting = SCHEDULE.all(ctx)?.into_iter();
+    for (_, change) in waiting.filter(|(at, _)| !overruled.contains(at)) {
+        apply(&mut last, change);
+    }
+    let after = code_under(&last, &name);
+    let found = [
+        (before, format!("just before block {}", scheduled.height)),
+        (
+            after,
+            "once every change waiting for it has landed".to_owned(),
+        ),
+    ];
+    if let Some((code, when)) = found.into_iter().find(|(code, _)| *code != expected) {
+        return Err(wrong_state(format!(
+            "{name} has {} {when}, not the expected {}: read Program and Scheduled again",
+            named(code),
+            named(expected)
+        )));
+    }
+    schedule(ctx, scheduled)
+}
+
 fn overruled(ctx: &QueryCtx, name: &str) -> Result<Vec<At>, Error> {
     Ok(BY
         .all(ctx)?
