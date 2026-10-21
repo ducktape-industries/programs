@@ -170,6 +170,10 @@ fn a_folder_named_as_a_channel_opens_it_and_its_chevron_folds() {
     );
     let row = cx.interactivity("chat-sidebar-folder-engineering");
     assert_eq!(row.aria.selected, Some(true));
+    assert!(
+        row.consumes_click,
+        "its press is the row's, so the host starts no selection under a drag"
+    );
     let fold = cx.interactivity("chat-sidebar-folder-engineering-fold");
     assert_eq!(fold.role, Some(view::Role::Button));
     assert_eq!(fold.aria.expanded, Some(true));

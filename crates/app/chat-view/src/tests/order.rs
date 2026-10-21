@@ -367,6 +367,42 @@ fn a_room_dragged_inside_its_folder_lands_above_a_row_it_came_up_to() {
     );
 }
 
+#[test]
+fn a_press_on_a_room_or_folder_row_is_the_rows_and_selects_no_text() {
+    let (cx, _view) = desk(Vec::new());
+    for row in [
+        "chat-sidebar-channel-general",
+        "chat-sidebar-channel-j-1",
+        "chat-sidebar-folder-jobs",
+    ] {
+        assert!(
+            cx.interactivity(row).consumes_click,
+            "{row} consumes its click, so the host starts no selection under the drag"
+        );
+    }
+}
+
+#[test]
+fn a_row_clicked_and_left_is_put_down_by_the_next_move() {
+    let (mut cx, view) = desk(Vec::new());
+    let at = laid_out(&mut cx);
+    cx.simulate_mouse_down("chat-sidebar-channel-general", press(at(0)));
+    cx.simulate_click("chat-sidebar-channel-general");
+    let hovered = view::MouseMoveEvent {
+        position: at(1),
+        pressed_button: None,
+        modifiers: Default::default(),
+    };
+    cx.simulate_mouse_move("chat-sidebar-channel-random", hovered);
+    cx.run_until_parked();
+    assert!(
+        view.read(|chat| chat.drag.is_none()),
+        "no row follows the pointer"
+    );
+    assert_eq!(view.read(|chat| chat.landing(&room("random"))), None);
+    assert!(orders(&cx).is_empty());
+}
+
 // A finger held at `position` on the phone's rooms list until it long-presses.
 fn long_press(cx: &mut TestAppContext, position: view::Point<view::Pixels>) {
     let handler = cx

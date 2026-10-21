@@ -188,9 +188,12 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     let (held, over) = (drawn.clone(), drawn);
     let hold =
         cx.listener(move |chat, event: &MouseDownEvent, _, _| chat.hold_row(event.position, &held));
-    let drag = cx.listener(move |chat, event: &MouseMoveEvent, _, cx| {
-        chat.drag_row(event.position, &over, cx)
-    });
+    let drag = cx.listener(
+        move |chat, event: &MouseMoveEvent, _, cx| match event.pressed_button {
+            Some(MouseButton::Left) => chat.drag_row(event.position, &over, cx),
+            _ => chat.put_down(cx),
+        },
+    );
     let land = cx.listener(|chat, _: &MouseUpEvent, _, cx| chat.drop_row(cx));
     let mut box_ = design::composite("chat-sidebar-rooms-list", Role::ListBox, "Rooms")
         .active(at, spots.len())
@@ -498,7 +501,9 @@ fn folder_row(
                 .on_click(toggle)
                 .consumes_click();
             (
-                row.aria_label(folder.name.to_owned()).on_click(choose),
+                row.aria_label(folder.name.to_owned())
+                    .on_click(choose)
+                    .consumes_click(),
                 fold,
             )
         }
@@ -506,7 +511,8 @@ fn folder_row(
             let row = row
                 .aria_label(words::folder(folder.name))
                 .aria_expanded(folder.open)
-                .on_click(toggle);
+                .on_click(toggle)
+                .consumes_click();
             (row, glyph)
         }
     };
@@ -624,6 +630,7 @@ fn channel_button(
         .when(active && !selected, |row| row.bg(theme.sidebar_raised))
         .aria_selected(selected)
         .on_click(click)
+        .consumes_click()
         .when_some(landing, |row, after| lands(row, after, theme))
         .children((0..depth).map(|_| design::lead(div())))
         .child(design::lead(

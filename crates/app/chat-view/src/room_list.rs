@@ -565,6 +565,12 @@ impl Chat {
         }
     }
 
+    pub(crate) fn put_down(&mut self, cx: &mut Context<Self>) {
+        if self.drag.take().is_some() {
+            cx.notify();
+        }
+    }
+
     // The sidebar row of `entry` was laid out at `bounds`.
     pub(crate) fn drawn_row(&mut self, entry: Entry, bounds: Bounds<Pixels>) {
         self.drawn_rows.insert(entry, bounds);
