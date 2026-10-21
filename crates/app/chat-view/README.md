@@ -112,7 +112,11 @@ picked file only to put its chunks, its chip shows progress with no picture, and
 it lands once a block holds it in files, on the snapshot files minted there (the
 commit's own answer is the node's prediction, and files mints its id in the
 block). Every message, the reader's own as anyone else's, draws its files by the
-path and snapshot it names, read at files' newest. A file files holds nothing at
+path and snapshot it names, read at that snapshot. A read there that answers
+`not_found` (files minted no such snapshot, as for a post that recorded the node's
+prediction, or this node pruned it) is read at files' newest instead, once. A
+picture's bytes are read by the chunk blobs its file object names, each a blob of
+its own, so no commit landing mid-read prunes them under it. A file files holds nothing at
 yet is read again once a files block writes its path (one `Head` and one `Diff`
 a block under the folder the waiting files share, however many wait); a read
 that failed is read again on the next files block and, failing again, once the

@@ -35,13 +35,21 @@ fn files_host(cx: &mut TestAppContext) {
         .handle::<Submit<files::Files>>(|_| Ok(view::testing::applied(Vec::new())));
     cx.host()
         .handle::<Ask<files::Files>>(|query| Ok(files_reply(query)));
+    cx.host()
+        .handle::<BlobGet>(|id| Ok(stored(&id, png(96, 96))));
+}
+
+fn stored(id: &str, picture: Vec<u8>) -> Option<Vec<u8>> {
     let object = files::FileObj {
         size: 3,
         chunks: vec![BlobId::Sha256(CHUNK)],
         meta: Default::default(),
     };
-    cx.host()
-        .handle::<BlobGet>(move |_| Ok(Some(abi::encode(&object))));
+    let named = format!("sha256:{}", abi::hex(&OBJECT[..]));
+    Some(match id == named {
+        true => abi::encode(&object),
+        false => picture,
+    })
 }
 
 fn holds_puts(cx: &mut TestAppContext) {
@@ -347,13 +355,29 @@ fn a_tap_on_a_picture_on_a_phone_hands_it_to_the_host_to_open() {
 
 #[test]
 fn a_picture_is_read_where_it_stands_whatever_snapshot_its_message_names() {
+    const HEAD: [u8; 32] = [7; 32];
     let (mut cx, view) = opened();
     files_host(&mut cx);
-    cx.host().handle::<Ask<files::Files>>(|query| match &query {
-        files::Query::Stat { at: Some(_), .. } | files::Query::Read { at: Some(_), .. } => Err(
-            view::host::Error::new("not_found", "files minted no snapshot"),
-        ),
-        _ => Ok(files_reply(query)),
+    cx.host().handle::<Ask<files::Files>>(|query| match query {
+        files::Query::Stat {
+            at: Some(BlobId::Sha256(SNAPSHOT)),
+            ..
+        }
+        | files::Query::Read {
+            at: Some(BlobId::Sha256(SNAPSHOT)),
+            ..
+        } => Err(view::host::Error::new(
+            "not_found",
+            "files minted no snapshot",
+        )),
+        files::Query::Stat { at: None, .. } => match files_reply(query) {
+            files::Reply::Stat { entry, .. } => Ok(files::Reply::Stat {
+                snapshot: Some(BlobId::Sha256(HEAD)),
+                entry,
+            }),
+            reply => Ok(reply),
+        },
+        query => Ok(files_reply(query)),
     });
     let picture = chat::Block::Attachment(chat::message::Attachment {
         path: "/chat/general/m3/image.png".into(),
@@ -382,6 +406,188 @@ fn a_picture_is_read_where_it_stands_whatever_snapshot_its_message_names() {
         assert!(shown.picture.is_some(), "drawn");
         assert_eq!(shown.chunks.as_deref(), Some(&[CHUNK][..]), "and saved");
     });
+}
+
+#[test]
+fn a_picture_is_read_at_the_snapshot_its_message_names() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    cx.host().handle::<Ask<files::Files>>(|query| match &query {
+        files::Query::Stat { at: None, .. } => Ok(files::Reply::Stat {
+            snapshot: Some(BlobId::Sha256(OBJECT)),
+            entry: None,
+        }),
+        _ => Ok(files_reply(query)),
+    });
+    let picture = chat::Block::Attachment(chat::message::Attachment {
+        path: "/chat/general/m3/image.png".into(),
+        snapshot: SNAPSHOT,
+        name: "image.png".into(),
+        size: 3,
+        content_type: "image/png".into(),
+    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                    blocks: vec![picture.clone()],
+                    ..row(3, 8, "")
+                }])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(4, posted("general")));
+    cx.run_until_parked();
+    let key = ("/chat/general/m3/image.png".to_owned(), SNAPSHOT);
+    let drawn = view.read(|chat| {
+        let shown = chat.shown_files.get(&key);
+        shown.is_some_and(|shown| shown.picture.is_some())
+    });
+    assert!(
+        drawn,
+        "drawn as its message recorded it, though the path moved since"
+    );
+    let asked = cx.host().requests::<Ask<files::Files>>();
+    let recorded = Some(BlobId::Sha256(SNAPSHOT));
+    let at_recorded = asked.iter().all(|query| match query {
+        files::Query::Stat { at, .. } | files::Query::Read { at, .. } => *at == recorded,
+        _ => true,
+    });
+    assert!(at_recorded, "{asked:?}");
+}
+
+#[test]
+fn a_picture_is_read_by_its_chunk_blobs_with_no_snapshot_a_commit_can_prune() {
+    const HEAD: [u8; 32] = [7; 32];
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    cx.host().handle::<Ask<files::Files>>(|query| match query {
+        files::Query::Read {
+            at: Some(BlobId::Sha256(SNAPSHOT)),
+            ..
+        } => Err(view::host::Error::new(
+            "not_found",
+            "the snapshot is pruned on this node; an archival node keeps history",
+        )),
+        files::Query::Stat { at: None, .. } => match files_reply(query) {
+            files::Reply::Stat { entry, .. } => Ok(files::Reply::Stat {
+                snapshot: Some(BlobId::Sha256(HEAD)),
+                entry,
+            }),
+            reply => Ok(reply),
+        },
+        query => Ok(files_reply(query)),
+    });
+    let picture = chat::Block::Attachment(chat::message::Attachment {
+        path: "/chat/general/m3/image.png".into(),
+        snapshot: SNAPSHOT,
+        name: "image.png".into(),
+        size: 3,
+        content_type: "image/png".into(),
+    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                    blocks: vec![picture.clone()],
+                    ..row(3, 8, "")
+                }])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(4, posted("general")));
+    cx.run_until_parked();
+    let key = ("/chat/general/m3/image.png".to_owned(), SNAPSHOT);
+    let drawn = view.read(|chat| {
+        let shown = chat.shown_files.get(&key);
+        shown.is_some_and(|shown| shown.picture.is_some())
+    });
+    assert!(drawn, "drawn though its snapshot is pruned");
+    let asked = cx.host().requests::<Ask<files::Files>>();
+    let paged = asked
+        .iter()
+        .any(|query| matches!(query, files::Query::Read { .. }));
+    assert!(!paged, "no page read at a snapshot: {asked:?}");
+    let chunk = format!("sha256:{}", abi::hex(&CHUNK[..]));
+    assert!(cx.host().requests::<BlobGet>().contains(&chunk));
+}
+
+fn read_once_restarted(
+    answer_at_head: fn(files::Query) -> Result<files::Reply, view::host::Error>,
+) -> (Option<crate::attach::Unread>, Vec<Option<BlobId>>) {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    cx.host()
+        .handle::<Ask<files::Files>>(move |query| match query {
+            files::Query::Stat { at: None, .. } => answer_at_head(query),
+            files::Query::Stat { .. } | files::Query::Read { .. } => Err(view::host::Error::new(
+                "not_found",
+                "the snapshot is pruned on this node; an archival node keeps history",
+            )),
+            query => Ok(files_reply(query)),
+        });
+    let picture = chat::Block::Attachment(chat::message::Attachment {
+        path: "/chat/general/m3/image.png".into(),
+        snapshot: SNAPSHOT,
+        name: "image.png".into(),
+        size: 3,
+        content_type: "image/png".into(),
+    });
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                    blocks: vec![picture.clone()],
+                    ..row(3, 8, "")
+                }])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(4, posted("general")));
+    cx.run_until_parked();
+    let key = ("/chat/general/m3/image.png".to_owned(), SNAPSHOT);
+    let unread = view.read(|chat| chat.unread_files.get(&key).map(|(_, unread)| *unread));
+    let stats = cx
+        .host()
+        .requests::<Ask<files::Files>>()
+        .into_iter()
+        .filter_map(|query| match query {
+            files::Query::Stat { at, .. } => Some(at),
+            _ => None,
+        })
+        .collect();
+    (unread, stats)
+}
+
+#[test]
+fn a_file_removed_since_its_pruned_snapshot_is_missing_after_one_restart() {
+    let (unread, stats) = read_once_restarted(|query| match files_reply(query) {
+        files::Reply::Stat { .. } => Ok(files::Reply::Stat {
+            snapshot: Some(BlobId::Sha256([7; 32])),
+            entry: None,
+        }),
+        reply => Ok(reply),
+    });
+    assert_eq!(unread, Some(crate::attach::Unread::Absent));
+    assert_eq!(stats, [Some(BlobId::Sha256(SNAPSHOT)), None], "one restart");
+}
+
+#[test]
+fn a_not_found_at_the_head_fails_the_read_and_never_restarts_it() {
+    let (unread, stats) = read_once_restarted(|_| {
+        Err(view::host::Error::new(
+            "not_found",
+            "nothing is at the path",
+        ))
+    });
+    assert_eq!(unread, Some(crate::attach::Unread::Failed));
+    assert_eq!(stats, [Some(BlobId::Sha256(SNAPSHOT)), None], "one restart");
 }
 
 #[test]
@@ -454,12 +660,8 @@ fn contents(bytes: Vec<u8>) -> files::Reply {
 
 fn picture_room(cx: &mut TestAppContext, size: (u32, u32)) {
     files_host(cx);
-    cx.host().handle::<Ask<files::Files>>(move |query| {
-        Ok(match query {
-            files::Query::Read { .. } => contents(png(size.0, size.1)),
-            query => files_reply(query),
-        })
-    });
+    cx.host()
+        .handle::<BlobGet>(move |id| Ok(stored(&id, png(size.0, size.1))));
     let picture = chat::Block::Attachment(chat::message::Attachment {
         path: "/chat/general/m3/tape.png".into(),
         snapshot: SNAPSHOT,
@@ -885,18 +1087,13 @@ fn a_picture_whose_read_failed_is_read_again_on_the_next_files_block() {
     files_host(&mut cx);
     let failing = There::default();
     failing.set(true);
-    let object = files::FileObj {
-        size: 3,
-        chunks: vec![BlobId::Sha256(CHUNK)],
-        meta: Default::default(),
-    };
     let fails = failing.clone();
-    cx.host().handle::<BlobGet>(move |_| match fails.get() {
+    cx.host().handle::<BlobGet>(move |id| match fails.get() {
         true => Err(view::host::Error::new(
             "unavailable",
             "the read was dropped",
         )),
-        false => Ok(Some(abi::encode(&object))),
+        false => Ok(stored(&id, png(96, 96))),
     });
     let moved = cx.host().stream::<Changes<files::Files>>();
     lands_a_picture(&cx);

@@ -692,21 +692,20 @@ fn folder_of(paths: &[&str]) -> String {
 }
 
 async fn read_attachment(host: Host, file: &Attachment) -> Result<Found, Error> {
-    let stat = files::ask::Stat {
+    let stat = |at| files::ask::Stat {
         path: file.path.clone(),
-        at: None,
+        at,
     };
-    let (at, entry) = host.query(stat).await?;
+    let recorded = Some(BlobId::Sha256(file.snapshot));
+    let (at, entry) = match host.query(stat(recorded)).await {
+        Err(refusal) if refusal.code == program::code::NOT_FOUND => host.query(stat(None)).await?,
+        answer => answer?,
+    };
     let Some(files::Node::File { file: object, .. }) = entry.map(|entry| entry.node) else {
         return Ok(Found::Absent(at));
     };
-    let id = format!("sha256:{}", abi::hex(object.digest()));
-    let bytes = host
-        .ask::<BlobGet>(id)
-        .await?
-        .ok_or_else(|| view::host::malformed(words::NOT_THERE.into()))?;
-    let object: files::FileObj =
-        abi::decode(&bytes).map_err(|refusal| view::host::malformed(refusal.sentence))?;
+    let object: files::FileObj = abi::decode(&blob(&host, &object).await?)
+        .map_err(|refusal| view::host::malformed(refusal.sentence))?;
     let chunks = object
         .chunks
         .iter()
@@ -717,7 +716,7 @@ async fn read_attachment(host: Host, file: &Attachment) -> Result<Found, Error> 
         .collect();
     let drawn = file.content_type.starts_with("image/");
     let picture = match drawn {
-        true => picture(&host, file, None).await?,
+        true => picture(&host, &object.chunks).await?,
         false => None,
     };
     Ok(Found::Shown(Shown {
@@ -726,27 +725,20 @@ async fn read_attachment(host: Host, file: &Attachment) -> Result<Found, Error> 
     }))
 }
 
-async fn picture(
-    host: &Host,
-    file: &Attachment,
-    at: Option<BlobId>,
-) -> Result<Option<Picture>, Error> {
+async fn blob(host: &Host, id: &BlobId) -> Result<Vec<u8>, Error> {
+    let hash = match id {
+        BlobId::Sha256(_) => "sha256",
+        BlobId::Sha1(_) => "sha1",
+    };
+    let id = format!("{hash}:{}", abi::hex(id.digest()));
+    let bytes = host.ask::<BlobGet>(id).await?;
+    bytes.ok_or_else(|| view::host::malformed(words::NOT_THERE.into()))
+}
+
+async fn picture(host: &Host, chunks: &[BlobId]) -> Result<Option<Picture>, Error> {
     let mut bytes = Vec::new();
-    loop {
-        let read = files::ask::Read {
-            path: file.path.clone(),
-            at,
-            offset: bytes.len() as u64,
-            len: files::CHUNK_SIZE,
-        };
-        let contents = host.query(read).await?;
-        if contents.bytes.is_empty() && !contents.eof {
-            return Err(view::host::malformed(words::NOT_THERE.into()));
-        }
-        bytes.extend(contents.bytes);
-        if contents.eof {
-            break;
-        }
+    for chunk in chunks {
+        bytes.extend(blob(host, chunk).await?);
     }
     let format = view::picture::picture_format(&bytes);
     let size = view::picture::picture_size(&bytes);
