@@ -1,5 +1,6 @@
 //! How one program interface differs from another: each place where the new op, query, reply or
-//! returns read old bytes otherwise than the old did, and each enum that only grew at its end.
+//! returns read old bytes otherwise than the old did, each enum that grew at its end, and each
+//! variant retired with its tag kept.
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -11,6 +12,8 @@ use program::schema::{Roots, returned, roots};
 pub enum Change {
     // old bytes read the same: a variant added at an enum's end, an op that now names its return
     Appended,
+    /// A variant deleted while a later tag stays: its tag is still taken, so no other bytes move.
+    Retired,
     // old bytes read otherwise, or not at all, or an agent's JSON names it otherwise
     Breaking,
 }
@@ -26,6 +29,7 @@ impl fmt::Display for Difference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mark = match self.change {
             Change::Appended => '+',
+            Change::Retired => '-',
             Change::Breaking => '!',
         };
         write!(f, "{mark} {}: {}", self.at, self.what)
@@ -167,23 +171,46 @@ impl Walk<'_> {
     }
 
     fn variants(&mut self, at: &str, old: &[Variant], new: &[Variant]) {
-        for ((old_tag, old_name, old_type), (new_tag, new_name, new_type)) in old.iter().zip(new) {
-            if old_tag != new_tag {
-                let what = format!("variant {old_name} was tag {old_tag}, is tag {new_tag}");
-                self.note(at, Change::Breaking, what);
-            } else if old_name != new_name {
+        let old_last = old.iter().map(|(tag, _, _)| *tag).max();
+        let new_last = new.iter().map(|(tag, _, _)| *tag).max();
+        for (old_tag, old_name, old_type) in old {
+            let kept = new.iter().find(|(new_tag, _, _)| new_tag == old_tag);
+            let Some((_, new_name, new_type)) = kept else {
+                let tag_still_held = new_last.is_some_and(|last| last > *old_tag);
+                if tag_still_held {
+                    let what = format!("variant {old_tag} {old_name} retired, its tag kept");
+                    self.note(at, Change::Retired, what);
+                } else {
+                    let what = format!(
+                        "variant {old_tag} {old_name} is gone from the end, where the next variant appended would take its tag"
+                    );
+                    self.note(at, Change::Breaking, what);
+                }
+                continue;
+            };
+            if old_name != new_name {
                 let what = format!("variant {old_tag} was {old_name}, is {new_name}");
                 self.note(at, Change::Breaking, what);
             }
             self.types(&format!("{at}::{new_name}"), old_type, new_type);
         }
-        for (tag, name, _) in new.iter().skip(old.len()) {
-            let what = format!("variant {tag} {name} added at the end");
-            self.note(at, Change::Appended, what);
-        }
-        for (tag, name, _) in old.iter().skip(new.len()) {
-            let what = format!("variant {tag} {name} is gone");
-            self.note(at, Change::Breaking, what);
+        for (tag, name, _) in new {
+            let known = old.iter().any(|(old_tag, _, _)| old_tag == tag);
+            if known {
+                continue;
+            }
+            match old_last {
+                Some(last) if *tag <= last => {
+                    let what = format!(
+                        "variant {tag} {name} takes a tag at or below {last}, the old last: a tag never means two things"
+                    );
+                    self.note(at, Change::Breaking, what);
+                }
+                _ => {
+                    let what = format!("variant {tag} {name} added at the end");
+                    self.note(at, Change::Appended, what);
+                }
+            }
         }
     }
 

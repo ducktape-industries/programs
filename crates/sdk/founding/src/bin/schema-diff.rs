@@ -1,6 +1,6 @@
 //! `schema-diff OLD NEW`: how NEW's interface differs from OLD's, each a program's code (by its
 //! `ducktape.schema` section) or a `.schema` file, and what each code says it was built from.
-//! Exits 0 when the two read old bytes the same, 1 when any difference breaks them, 2 on an error.
+//! Exits 0 when NEW reads each old byte it still knows as OLD did, 1 when one breaks, 2 on an error.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -40,7 +40,9 @@ fn compare(old: &Path, new: &Path) -> founding::Result<bool> {
         .count();
     let summary = match (found.len(), breaking) {
         (0, _) => "the interfaces are the same".to_owned(),
-        (all, 0) => format!("{all} differences, each appended: old bytes read the same"),
+        (all, 0) => format!(
+            "{all} differences, each appended or retired: old bytes of every variant still there read the same"
+        ),
         (all, breaking) => {
             format!("{all} differences, {breaking} of them (!) read old bytes otherwise")
         }

@@ -55,3 +55,56 @@ pub fn decoded<T: BorshDeserialize>(program: &str, shape: &str, bytes: &[u8]) ->
         ))
     })
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use borsh::{BorshDeserialize, BorshSerialize};
+
+    use super::*;
+
+    #[derive(BorshSerialize)]
+    enum Before {
+        Open { name: String },
+        Grant { who: u64 },
+        Revoke { who: u64 },
+        Push { repo: String, at: u64 },
+        Merge(u64),
+    }
+
+    #[derive(Debug, PartialEq, BorshDeserialize)]
+    #[borsh(use_discriminant = true)]
+    #[repr(u8)]
+    enum After {
+        Open { name: String },
+        Push { repo: String, at: u64 } = 3,
+        Merge(u64),
+    }
+
+    fn read(op: &Before) -> Result<After, Error> {
+        decoded::<After>("forge", "Op", &borsh::to_vec(op).unwrap())
+    }
+
+    #[test]
+    fn an_op_sent_before_a_retirement_reads_the_same_and_a_retired_one_is_refused_as_invalid() {
+        let open = read(&Before::Open { name: "a".into() }).unwrap();
+        assert_eq!(open, After::Open { name: "a".into() });
+        let push = Before::Push {
+            repo: "r".into(),
+            at: 7,
+        };
+        let pushed = After::Push {
+            repo: "r".into(),
+            at: 7,
+        };
+        assert_eq!(read(&push).unwrap(), pushed);
+        assert_eq!(read(&Before::Merge(9)).unwrap(), After::Merge(9));
+        for retired in [Before::Grant { who: 1 }, Before::Revoke { who: 1 }] {
+            let refused = read(&retired).unwrap_err();
+            assert_eq!(refused.code, code::INVALID_INPUT);
+            assert!(
+                refused.message.starts_with("forge: Op did not decode: "),
+                "{refused}"
+            );
+        }
+    }
+}

@@ -47,6 +47,51 @@ mod appended {
     }
 }
 
+mod retired {
+    use borsh::BorshSchema;
+
+    #[derive(BorshSchema)]
+    #[borsh(use_discriminant = true)]
+    #[repr(u8)]
+    pub enum Op {
+        Post { channel: String, text: String },
+        React { seq: u64, emoji: String } = 2,
+    }
+}
+
+mod retired_then_appended {
+    use borsh::BorshSchema;
+
+    #[derive(BorshSchema)]
+    #[borsh(use_discriminant = true)]
+    #[repr(u8)]
+    pub enum Op {
+        Post { channel: String, text: String },
+        React { seq: u64, emoji: String } = 2,
+        Pin(u64),
+    }
+}
+
+mod reused {
+    use borsh::BorshSchema;
+
+    #[derive(BorshSchema)]
+    pub enum Op {
+        Post { channel: String, text: String },
+        Pin(u64),
+        React { seq: u64, emoji: String },
+    }
+}
+
+mod first_only {
+    use borsh::BorshSchema;
+
+    #[derive(BorshSchema)]
+    pub enum Op {
+        Post { channel: String, text: String },
+    }
+}
+
 mod broken {
     use borsh::BorshSchema;
 
@@ -81,7 +126,46 @@ fn a_variant_added_at_the_end_reads_old_bytes_the_same() {
     assert_eq!(diff(&old, &new), ["+ op: variant 2 React added at the end"]);
     let found = founding::differences(&new, &old).unwrap();
     assert_eq!(found[0].change, Change::Breaking);
-    assert_eq!(found[0].to_string(), "! op: variant 2 React is gone");
+    assert_eq!(
+        found[0].to_string(),
+        "! op: variant 2 React is gone from the end, where the next variant appended would take its tag"
+    );
+}
+
+#[test]
+fn a_variant_deleted_with_its_tag_kept_is_retired_and_the_next_append_counts_on_past_it() {
+    let old = of::<appended::Op, before::Query, u8>();
+    let gapped = of::<retired::Op, before::Query, u8>();
+    assert_eq!(
+        diff(&old, &gapped),
+        ["- op: variant 1 Delete retired, its tag kept"]
+    );
+    let found = founding::differences(&old, &gapped).unwrap();
+    assert_eq!(found[0].change, Change::Retired);
+    let grown = of::<retired_then_appended::Op, before::Query, u8>();
+    assert_eq!(
+        diff(&gapped, &grown),
+        ["+ op: variant 3 Pin added at the end"]
+    );
+}
+
+#[test]
+fn a_retired_tag_taken_again_or_the_last_variant_dropped_breaks_old_bytes() {
+    let gapped = of::<retired::Op, before::Query, u8>();
+    let reused = of::<reused::Op, before::Query, u8>();
+    assert_eq!(
+        diff(&gapped, &reused),
+        [
+            "! op: variant 1 Pin takes a tag at or below 2, the old last: a tag never means two things"
+        ]
+    );
+    let shrunk = of::<first_only::Op, before::Query, u8>();
+    let found = founding::differences(&gapped, &shrunk).unwrap();
+    assert_eq!(found[0].change, Change::Breaking);
+    assert_eq!(
+        found[0].to_string(),
+        "! op: variant 2 React is gone from the end, where the next variant appended would take its tag"
+    );
 }
 
 #[test]

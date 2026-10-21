@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, BorshSerialize, BorshDeserialize, BorshSchema)]
 enum Op {
     Say(String),
     Pay { to: u64, amount: u128 },
@@ -93,9 +93,48 @@ fn a_description_nests_lists_only_so_deep() {
     assert_eq!(Description::decode(&borsh::to_vec(&ok).unwrap()), Some(ok));
 }
 
+#[allow(dead_code)]
+#[derive(BorshSchema)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
+enum Retired {
+    Say(String),
+    Pay { to: u64, amount: u128 } = 2,
+    Tip(u64),
+}
+
+#[allow(dead_code)]
+#[derive(BorshSchema)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
+enum KindWithItsFirstTagRetired {
+    Later = 1,
+}
+
+#[allow(dead_code)]
+#[derive(BorshSchema)]
+enum CarriesAKindWithTagZeroRetired {
+    Plain,
+    Kinded(KindWithItsFirstTagRetired),
+    Last { kind: KindWithItsFirstTagRetired },
+}
+
 #[test]
 fn variants_read_in_tag_order() {
     assert_eq!(variants::<Op>(), ["Say", "Pay"]);
+}
+
+#[test]
+fn a_retired_tag_reads_as_a_dash_between_the_variants_around_it() {
+    assert_eq!(variants::<Retired>(), ["Say", "-", "Pay", "Tip"]);
+}
+
+#[test]
+fn a_live_variant_carrying_an_enum_whose_tag_zero_is_retired_still_reads_by_name() {
+    assert_eq!(
+        variants::<CarriesAKindWithTagZeroRetired>(),
+        ["Plain", "Kinded", "Last"]
+    );
 }
 
 fn engine() -> wasmtime::Engine {

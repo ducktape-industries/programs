@@ -38,6 +38,15 @@ enum Sparse {
 }
 
 #[derive(BorshSerialize, BorshSchema)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
+enum Retiring {
+    Open { name: String },
+    Push { repo: String, at: u64 } = 3,
+    Merge(u64),
+}
+
+#[derive(BorshSerialize, BorshSchema)]
 struct Wide {
     big: u128,
     small: i8,
@@ -99,6 +108,38 @@ fn an_enum_is_its_variants_name_alone_or_an_object_of_one_key() {
     assert_eq!(json_of(&Sparse::Fifth(3)), json!({ "Fifth": 3 }));
     assert_eq!(bytes_of::<Sparse>(json!({ "Fifth": 3 })).unwrap(), [5, 3]);
     assert_eq!(bytes_of::<Shape>(json!({ "Empty": null })).unwrap(), [0]);
+}
+
+#[test]
+fn a_retired_tag_is_a_gap_that_neither_reads_nor_writes_and_the_tags_after_it_hold() {
+    let open = Retiring::Open { name: "a".into() };
+    assert_eq!(json_of(&open), json!({ "Open": { "name": "a" } }));
+    let push = Retiring::Push {
+        repo: "r".into(),
+        at: 7,
+    };
+    assert_eq!(json_of(&push), json!({ "Push": { "repo": "r", "at": 7 } }));
+    assert_eq!(borsh::to_vec(&push).unwrap()[0], 3);
+    assert_eq!(json_of(&Retiring::Merge(9)), json!({ "Merge": 9 }));
+    assert_eq!(
+        bytes_of::<Retiring>(json!({ "Merge": 9 })).unwrap(),
+        [4, 9, 0, 0, 0, 0, 0, 0, 0]
+    );
+    let schema = schema_of::<Retiring>();
+    assert_eq!(
+        crate::variants(&schema, schema.declaration()),
+        ["Open", "Push", "Merge"]
+    );
+    let retired = crate::decode(&schema, schema.declaration(), "value", &[1, 0, 0, 0, 0]);
+    assert!(
+        matches!(retired, Err(Fault::Tag { tag: 1, .. })),
+        "{retired:?}"
+    );
+    let named = bytes_of::<Retiring>(json!({ "Grant": { "who": 1 } }));
+    assert!(
+        matches!(named, Err(Fault::UnknownVariant { .. })),
+        "{named:?}"
+    );
 }
 
 #[test]

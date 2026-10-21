@@ -139,8 +139,8 @@ for every program here (`UNDESCRIBED` lists the ones not described yet; a
 program leaves it as its enums derive `Described`). An op enum a program takes
 from elsewhere, such as a role's in abi (egress's), is described by a marker
 the program implements `Described` for by hand, gathered as
-`Tools::of::<Ops, Query>()`. A retired variant says it is retired and what
-replaced it.
+`Tools::of::<Ops, Query>()`. A retired variant is deleted (below), so
+neither section lists it.
 
 harness's `network_schema` reads both sections of the code a program runs.
 With no program it lists every program that runs with its `about`; with a
@@ -149,10 +149,11 @@ program, its index (each op and query by name with its description); with an
 section's, else one `borsh_json::variant_example` makes), its shape, the shape
 of what it returns and each type those name; with `whole`, every shape at once.
 
-**The append-only rule.** Borsh encodes a variant by its index, and a host
-describes an op that landed at any height with the program's *current*
-code. So `Op` only grows at its end: append a variant, never insert,
-remove or reorder one. The scaffold's test holds you to it:
+**The append-only rule.** Borsh encodes a variant by its tag, which is its
+position unless the enum names it, and a host describes an op that landed
+at any height with the program's *current* code. So `Op` only grows at its
+end: append a variant, never insert or reorder one, and never give a tag a
+second meaning. The scaffold's test holds you to it:
 
 ```rust
 #[test]
@@ -161,19 +162,43 @@ fn op_variants_only_append() {
 }
 ```
 
-**Retire, never delete.** A variant you no longer want stays where it is:
-its op is refused as retired, and its reply goes unused, so every variant
-after it keeps its tag. Deleting `programs`' `Query::Grants` (#478) moved
-`Roster` from tag 7 to 6, and every app built before the move could not
-list views on a network that ran it.
+**Retire by deleting, keep the tag.** A variant you no longer want is
+deleted, and its tag stays taken: the enum takes its tags from Rust's
+discriminants (`#[borsh(use_discriminant = true)]` with `#[repr(u8)]`), and
+the first variant after the gap names its own, so every later one keeps
+its tag:
+
+```rust
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
+pub enum Op {
+    Open { title: String },
+    Vote { poll: u64, choice: u8 } = 2,
+    Close { poll: u64 },
+}
+```
+
+Tag 1 (a retired `Rename`) is then in no schema, `network_schema`, tools
+section or `describe`; bytes that carry it no longer decode and are refused
+as invalid input. The variants list shows the gap as `"-"`
+(`["Open", "-", "Vote", "Close"]`). A tag never means two things: a new
+variant goes past the highest. The last variant can't be retired until
+something is appended after it, since the next schema would no longer show
+its tag as taken. A variant a stored row may hold stays, or that row stops
+decoding. Moving tags is what breaks clients: deleting `programs`'
+`Query::Grants` (#478) without keeping its tag moved `Roster` from tag 7
+to 6, and every app built before the move could not list views on a
+network that ran it.
 
 The test above lives in the crate it guards, so the change that edits the
 enum can edit the list too. The gate a change can't edit is the tools
 repo's `interfaces` (`build.sh gates`, and `gates.sh` in CI). It reads each
 program's `crates/sdk/founding/interfaces/<program>.schema` at the change's
 merge base with dev and at the change, and fails on any difference
-`schema-diff` marks `!` (a variant or field removed, moved or retyped, in
-`Op`, `Query` or `Reply`), or on a program's file that goes. founding's
+`schema-diff` marks `!` (a field added, removed or retyped, a variant
+renamed, retyped or dropped from the end, or a tag taken again, in `Op`,
+`Query` or `Reply`), or on a program's file that goes. A variant retired
+with its tag kept is marked `-` and passes. founding's
 `the_committed_interfaces_are_the_built_ones` holds the files to the
 crates: a change that grows an interface writes them again with
 `INTERFACES_WRITE=1 cargo test -p founding --test schema`.

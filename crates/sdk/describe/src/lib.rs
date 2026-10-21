@@ -1,30 +1,8 @@
-//! What an op means to a person, as the program that runs it says.
-//!
-//! A program ships a standalone wasm module in the custom section
-//! [`SECTION`] of its code blob, beside `ducktape.view`; the kernel ignores
-//! both. The module has NO imports and exports one pure function:
-//!
-//! ```text
-//! export memory
-//! export alloc(len: u32) -> u32
-//! export describe(ptr: u32, len: u32) -> u64   // (ptr << 32) | len
-//! ```
-//!
-//! `describe` reads the borsh op bytes the host wrote into an `alloc`ed
-//! buffer and answers a borsh [`Description`]; `0` (an empty answer) when
-//! the bytes are no op of its. A program writes `describe(&Op) ->
-//! Description` and one [`export!`] line; its `describe` feature builds the
-//! module (`make wasm-describes`).
-//!
-//! [`Value`] is a small vocabulary, so a reader (Explorer) can show an
-//! account as a name, a program as a link, a hash short.
-//!
-//! VERSIONS: a host describes with the program's CURRENT code, whatever
-//! height the op landed at. Old op bytes therefore have to read the same
-//! under new code: an `Op` enum only grows at its end, which each
-//! program's test holds over [`variants`]. An op the module cannot read
-//! is `None`, and the reader falls back to its bytes.
-use borsh::{BorshDeserialize, BorshSerialize};
+//! What an op means to a person, as the program that runs it says: a standalone wasm module in
+//! the code blob's [`SECTION`] reads op bytes and answers a [`Description`]. README.md has the
+//! module's exports and the version rule [`variants`] holds.
+use borsh::schema::{BorshSchemaContainer, Definition};
+use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
 /// The custom section of a program's code blob that carries the module.
 pub const SECTION: &str = "ducktape.describe";
@@ -218,24 +196,25 @@ macro_rules! export {
     };
 }
 
-/// THE VERSION RULE, as a test reads it: an op enum's variant names in tag
-/// order. Each variant is decoded from its tag and zero bytes (an empty
-/// string, a zero, `None`, the first variant), and named by its `Debug`. A
-/// program commits this list; a variant inserted, removed or moved changes
-/// a committed name, and only an append passes.
-pub fn variants<T: BorshDeserialize + std::fmt::Debug>() -> Vec<String> {
-    let zeros = [0u8; 256];
-    (0..=u8::MAX)
-        .map_while(|tag| {
-            let bytes = [&[tag][..], &zeros].concat();
-            let op = T::deserialize(&mut &bytes[..]).ok()?;
-            let debug = format!("{op:?}");
-            debug
-                .split(|c: char| !c.is_alphanumeric() && c != '_')
-                .next()
-                .map(str::to_owned)
-        })
-        .collect()
+const RETIRED_TAG: &str = "-";
+
+pub fn variants<T: BorshSchema>() -> Vec<String> {
+    let schema = BorshSchemaContainer::for_type::<T>();
+    let Some(Definition::Enum { variants, .. }) = schema.get_definition(schema.declaration())
+    else {
+        return Vec::new();
+    };
+    let mut named: Vec<String> = Vec::new();
+    for (tag, name, _) in variants {
+        let Ok(at) = usize::try_from(*tag) else {
+            continue;
+        };
+        if named.len() <= at {
+            named.resize(at + 1, RETIRED_TAG.to_owned());
+        }
+        named[at] = name.clone();
+    }
+    named
 }
 
 /// The payload of the describe section of a program's code blob, if it has
