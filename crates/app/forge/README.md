@@ -234,7 +234,12 @@ A repository's writers are whoever its list in the access program allows, at
 a `ChangeClose` by anyone but the change's author need that key; `Configure`,
 `Protect`, `RequireChecks` and `Archive` need `forge::settings_key(repo)`: its owner alone unless
 the owner sets a list there; on a repository from before the default it follows the
-repository's list unless the owner sets one of its own. `Preview` and `Status` need no key: anyone previews an open
+repository's list unless the owner sets one of its own. While the ownership role is bound
+beside access, a write needs both: the access list and the policy of the owned row it writes (the
+repository's custody row, or a change's authorship row), which with no default of its owner's is
+their "Only me". So a list set with `access::Op::Set` alone admits no one new to a repository made
+since; its owner also links the row to a policy that lets those writers in (`Create` then
+`Relink`, or a `SetDefault` before the repository is made), as forge-view's Grant does. `Preview` and `Status` need no key: anyone previews an open
 change, and anyone reports a status, under their own account.
 Reviews remain appendable on closed/merged changes.
 Closing is terminal; there is no reopen operation.

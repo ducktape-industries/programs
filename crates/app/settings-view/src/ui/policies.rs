@@ -129,12 +129,13 @@ fn policy_row(
 ) -> Stateful<Div> {
     let id = policy.id;
     let open = holdings.open == Some(id);
-    let title = match open {
+    let built_in = open || holdings.only_me == Some(id);
+    let title = match built_in {
         true => format!("{} (built in)", policy.name),
         false => policy.name.clone(),
     };
     let who = holdings.writers(policy);
-    let caption = match (open, policy.switched_to) {
+    let caption = match (built_in, policy.switched_to) {
         (true, _) => format!("{who} · never changes"),
         (false, Some(to)) => format!("Removed · its items are on {}", name_of(holdings, Some(to))),
         (false, None) if policy.retired => format!("{who} · removed, its items keep it"),
@@ -152,7 +153,8 @@ fn policy_row(
                 .child(design::row_caption(caption, ladder, theme)),
         )
         .when(policy.retired, |row| row.opacity(0.6));
-    if open || policy.switched_to.is_some() {
+    let settled = built_in || policy.switched_to.is_some();
+    if settled {
         return row;
     }
     let press = cx.listener(move |v: &mut Settings, _: &ClickEvent, _, cx| {
@@ -223,7 +225,7 @@ fn default_row(
 
 fn name_of(holdings: &Holdings, id: Option<PolicyId>) -> String {
     match id {
-        None => ownership::OPEN_POLICY.to_owned(),
+        None => ownership::ONLY_ME.to_owned(),
         Some(id) => holdings
             .policy(id)
             .map_or_else(|| format!("#{id}"), |policy| policy.name.clone()),

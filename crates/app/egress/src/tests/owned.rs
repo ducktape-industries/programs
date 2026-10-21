@@ -52,6 +52,27 @@ fn a_service_is_its_registrants_and_its_policy_decides_who_assigns() {
     chain
         .submit(Origin::Signed(OWNER.to_vec()), "access", &anyone)
         .unwrap();
+    let refused = submit(&chain, OTHER, &assign(&[BO])).unwrap_err();
+    assert_eq!(refused.code, code::UNAUTHORIZED, "its registrant's alone");
+    let open = ownership::Op::Create {
+        name: "open".into(),
+        write: ownership::Writers::Anyone,
+    };
+    let opened = chain
+        .submit(Origin::Signed(OWNER.to_vec()), ownership::PROGRAM, &open)
+        .unwrap();
+    let relink_open = ownership::Op::Relink {
+        program: PROGRAM.into(),
+        key: SERVICES.key(&SERVICE.to_owned()),
+        policy: abi::decode(&opened).unwrap(),
+    };
+    chain
+        .submit(
+            Origin::Signed(OWNER.to_vec()),
+            ownership::PROGRAM,
+            &relink_open,
+        )
+        .unwrap();
     submit(&chain, OTHER, &assign(&[BO])).unwrap();
     let strict = ownership::Op::Create {
         name: "mine".into(),

@@ -41,11 +41,15 @@ pub(super) fn owning(cx: &TestAppContext) {
                 ownership::Reply::Policies(page(vec![
                     policy(1, ownership::OPEN_POLICY, Writers::Anyone),
                     policy(2, "Team", team),
+                    policy(3, ownership::ONLY_ME, Writers::Owner),
                 ]))
             }
             ownership::Query::Open {
                 owner: Party::Account(7),
             } => ownership::Reply::Open(Some(1)),
+            ownership::Query::OnlyMe {
+                owner: Party::Account(7),
+            } => ownership::Reply::OnlyMe(Some(3)),
             ownership::Query::Defaults {
                 owner: Party::Account(7),
                 ..
@@ -95,6 +99,7 @@ fn the_pane_says_each_policy_in_words_and_what_new_items_use() {
     for text in [
         "Open (built in)",
         "Anyone · never changes",
+        "Only me (built in)",
         "Team",
         "You, Ada and board",
         "Everything",
@@ -103,11 +108,12 @@ fn the_pane_says_each_policy_in_words_and_what_new_items_use() {
         "Chat messages",
         "Egress services",
         "Agents' conversations",
-        "Inherit · Open",
+        "Inherit · Only me",
     ] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
     }
     assert!(cx.interactivity("settings/policies/1").on_click.is_none());
+    assert!(cx.interactivity("settings/policies/3").on_click.is_none());
     assert!(cx.interactivity("settings/policies/2").on_click.is_some());
     for scope in [
         "all",

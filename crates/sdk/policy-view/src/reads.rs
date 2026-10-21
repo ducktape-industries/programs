@@ -16,6 +16,7 @@ pub struct Holdings {
     pub owner: Party,
     // the owner's open policy, once ownership made it (the first item that needs it does)
     pub open: Option<PolicyId>,
+    pub only_me: Option<PolicyId>,
     #[serde(with = "view::borsh_bytes")]
     pub policies: Vec<Policy>,
     #[serde(with = "view::borsh_bytes")]
@@ -42,9 +43,6 @@ impl Holdings {
             .map(|default| default.policy)
     }
 
-    // What new items in `scope` use with no choice of its own, as the guard falls back: the next
-    // wider scope's (a kind's program, then everything), else the open policy (`None` until
-    // ownership makes it).
     pub fn inherited(&self, scope: &Scope) -> Option<PolicyId> {
         let wider: Vec<Scope> = match scope {
             Scope::Kind(name) => kind(name)
@@ -58,7 +56,7 @@ impl Holdings {
         wider
             .iter()
             .find_map(|scope| self.default_of(scope))
-            .or(self.open)
+            .or(self.only_me)
     }
 
     // Who may write the items on `policy`, said to its owner (`crate::writers`).
@@ -80,6 +78,11 @@ pub async fn holdings(host: Host, owner: Party) -> Result<Holdings, Error> {
             owner: owner.clone(),
         })
         .await?;
+    let only_me = host
+        .query(ownership::ask::OnlyMe {
+            owner: owner.clone(),
+        })
+        .await?;
     let defaults = host
         .query_all(|after| ownership::ask::Defaults {
             owner: owner.clone(),
@@ -95,6 +98,7 @@ pub async fn holdings(host: Host, owner: Party) -> Result<Holdings, Error> {
     Ok(Holdings {
         owner,
         open,
+        only_me,
         policies,
         defaults,
         names,

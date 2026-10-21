@@ -72,6 +72,22 @@ fn world() -> World {
     ] {
         chain.hold(key, account);
     }
+    for asker in [ADA, BO] {
+        let anyone = ownership::Op::Create {
+            name: "any machine".into(),
+            write: ownership::Writers::Anyone,
+        };
+        let made = chain
+            .submit(Origin::Signed(asker.to_vec()), ownership::PROGRAM, &anyone)
+            .unwrap();
+        let default = ownership::Op::SetDefault {
+            scope: ownership::Scope::Kind("fleet.claim".into()),
+            policy: Some(abi::decode(&made).unwrap()),
+        };
+        chain
+            .submit(Origin::Signed(asker.to_vec()), ownership::PROGRAM, &default)
+            .unwrap();
+    }
     chain.register(PROGRAM, 903);
     chain.register(WATCHER, 904);
     World {
@@ -437,6 +453,17 @@ fn a_declined_run_never_goes_back_to_that_machine() {
     );
     assert!(world.holds(machine(A_ACCOUNT, "a")).is_empty());
     assert_eq!(world.holds(machine(B_ACCOUNT, "b")), [run]);
+}
+
+#[test]
+fn with_no_claim_default_only_the_askers_own_machines_take_their_runs() {
+    let world = world();
+    world.to(2);
+    world.ready(B, "b", &[], 1);
+    world.to(3);
+    world.ready(A, "a", &[], 1);
+    let own = world.ask_as(A, job());
+    assert_eq!(world.placed(own).1, Some(machine(A_ACCOUNT, "a")));
 }
 
 #[test]

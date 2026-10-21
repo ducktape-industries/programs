@@ -127,31 +127,39 @@ fn notes(chain: &MockChain, key: &str) -> Option<Vec<u8>> {
 }
 
 #[test]
-fn a_new_key_is_its_writers_and_links_to_their_open_policy() {
+fn a_new_key_is_its_writers_and_only_theirs_until_they_choose() {
     let chain = chain();
     note(&chain, "ada", "n/a", Some("hers")).unwrap();
-    let Reply::Open(Some(open)) = ask(&chain, Query::Open { owner: ADA }) else {
-        panic!("ada's open policy was made")
-    };
+    let policy = effective(&chain, "n/a").unwrap();
     let kind = Some("test.note".to_owned());
     assert_eq!(
         record(&chain, "n/a"),
         Some(Record {
             owner: ADA,
-            policy: open,
+            policy: policy.id,
             kind
         })
     );
-    let policy = effective(&chain, "n/a").unwrap();
     assert_eq!(
         (policy.name.as_str(), &policy.write, &policy.owner),
-        (OPEN_POLICY, &Writers::Anyone, &ADA)
+        (ONLY_ME, &Writers::Owner, &ADA)
     );
-    note(&chain, "bob", "n/a", Some("his")).unwrap();
-    assert_eq!(record(&chain, "n/a").unwrap().owner, ADA);
+    let Reply::OnlyMe(only_me) = ask(&chain, Query::OnlyMe { owner: ADA }) else {
+        panic!("OnlyMe answers OnlyMe")
+    };
+    assert_eq!(only_me, Some(policy.id));
+    let refused = note(&chain, "bob", "n/a", Some("his")).unwrap_err();
+    assert_eq!(refused.code, code::UNAUTHORIZED);
+    assert_eq!(notes(&chain, "n/a"), Some(b"hers".to_vec()));
     assert_eq!(record(&chain, "c/count"), None, "a shared key has no owner");
     let page = PageRequest::default();
-    let Reply::Linked(linked) = ask(&chain, Query::Linked { policy: open, page }) else {
+    let Reply::Linked(linked) = ask(
+        &chain,
+        Query::Linked {
+            policy: policy.id,
+            page,
+        },
+    ) else {
         panic!()
     };
     let item = Linked {
@@ -295,23 +303,6 @@ fn a_retired_policy_still_protects_until_its_items_are_switched() {
         act(&chain, "ada", &switch).unwrap_err().code,
         code::WRONG_STATE
     );
-    let Reply::Open(Some(open)) = ask(&chain, Query::Open { owner: ADA }) else {
-        panic!("made when ada's first item was")
-    };
-    for op in [
-        Op::Retire { policy: open },
-        Op::Switch {
-            from: open,
-            to: loose,
-        },
-        Op::Edit {
-            policy: open,
-            name: "closed".into(),
-            write: Writers::Owner,
-        },
-    ] {
-        assert_eq!(act(&chain, "ada", &op).unwrap_err().code, code::WRONG_STATE);
-    }
 }
 
 #[test]
@@ -498,9 +489,27 @@ fn a_program_records_owners_from_before_the_guard_once_and_on_todays_rule() {
     );
     assert_eq!(
         (only.name.as_str(), &only.write, &only.owner),
-        (AS_BEFORE, &Writers::Owner, &ADA)
+        (ONLY_ME, &Writers::Owner, &ADA)
     );
-    assert_eq!(adopted(&chain, "n/open").1.name, OPEN_POLICY);
+    let open = adopted(&chain, "n/open").1;
+    assert_eq!(open.name, OPEN_POLICY);
+    for (built_in, other) in [(open.id, only.id), (only.id, open.id)] {
+        for op in [
+            Op::Retire { policy: built_in },
+            Op::Switch {
+                from: built_in,
+                to: other,
+            },
+            Op::Edit {
+                policy: built_in,
+                name: "changed".into(),
+                write: Writers::Listed(vec![BOB]),
+            },
+        ] {
+            let refused = act(&chain, "ada", &op).unwrap_err();
+            assert_eq!(refused.code, code::WRONG_STATE, "{op:?}");
+        }
+    }
     let (first, listed) = adopted(&chain, "n/room-1");
     let (second, _) = adopted(&chain, "n/room-2");
     assert_eq!(first.policy, second.policy, "one policy per list");
@@ -514,6 +523,11 @@ fn a_program_records_owners_from_before_the_guard_once_and_on_todays_rule() {
         adopted(&chain, "n/written").0.owner,
         Party::Account(1),
         "ada's frame wrote it"
+    );
+    assert_eq!(
+        adopted(&chain, "n/written").0.policy,
+        only.id,
+        "one Only me per owner, adopted or new"
     );
     let ours = chain.submit(
         Origin::Program("adopter".into()),

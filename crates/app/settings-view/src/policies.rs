@@ -49,7 +49,10 @@ impl Settings {
                     owner: owner.clone(),
                     page: ownership::PageRequest::default(),
                 },
-                ownership::Query::Open { owner },
+                ownership::Query::Open {
+                    owner: owner.clone(),
+                },
+                ownership::Query::OnlyMe { owner },
             ]
             .iter()
             .any(|query| change.touches::<Ownership, _>(query)),

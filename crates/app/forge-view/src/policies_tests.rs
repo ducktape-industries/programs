@@ -60,6 +60,7 @@ fn owned(cx: &TestAppContext, records: Vec<Held>, policies: Vec<ownership::Polic
                         next: None,
                     })
                 }
+                ownership::Query::OnlyMe { .. } => ownership::Reply::OnlyMe(None),
                 ownership::Query::Open { .. } => {
                     ownership::Reply::Open(policies.first().map(|policy| policy.id))
                 }

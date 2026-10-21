@@ -53,6 +53,7 @@ impl Program for Ownership {
                 Reply::Defaults(rules::defaults(ctx, &owner, &page)?)
             }
             Query::Open { owner } => Reply::Open(rules::open(ctx, &owner)?),
+            Query::OnlyMe { owner } => Reply::OnlyMe(rules::only_me_of(ctx, &owner)?),
         })
     }
 }

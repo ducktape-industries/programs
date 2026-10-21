@@ -743,6 +743,7 @@ fn seated(net: Net, me: u64) -> (TestAppContext, Shared) {
                 }
                 ownership::Query::Policies { .. } => ownership::Reply::Policies(page(Vec::new())),
                 ownership::Query::Defaults { .. } => ownership::Reply::Defaults(page(Vec::new())),
+                ownership::Query::OnlyMe { .. } => ownership::Reply::OnlyMe(None),
                 ownership::Query::Open { .. } => ownership::Reply::Open(None),
                 query => panic!("unexpected ownership query: {query:?}"),
             })

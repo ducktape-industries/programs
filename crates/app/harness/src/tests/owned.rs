@@ -108,6 +108,23 @@ fn an_agents_manager_claims_who_starts_its_conversations_and_its_policy_decides(
     };
     chain.submit(signed(ADA), "access", &anyone).unwrap();
     let new = Op::NewThread { agent };
+    let refused = chain.submit(signed(BO), PROGRAM, &new).unwrap_err();
+    assert_eq!(refused.code, code::UNAUTHORIZED, "its manager's alone");
+    let open = ownership::Op::Create {
+        name: "open".into(),
+        write: ownership::Writers::Anyone,
+    };
+    let opened = chain
+        .submit(signed(ADA), ownership::PROGRAM, &open)
+        .unwrap();
+    let relink_open = ownership::Op::Relink {
+        program: PROGRAM.into(),
+        key: CONVERSATIONS.key(&agent),
+        policy: abi::decode(&opened).unwrap(),
+    };
+    chain
+        .submit(signed(ADA), ownership::PROGRAM, &relink_open)
+        .unwrap();
     chain.submit(signed(BO), PROGRAM, &new).unwrap();
     let strict = ownership::Op::Create {
         name: "mine".into(),
@@ -178,7 +195,7 @@ fn adopts_owners(mut world: World) {
     };
     assert_eq!(
         (conversations.name.as_str(), &conversations.owner),
-        (ownership::AS_BEFORE, &ownership::Party::Account(world.ada))
+        (ownership::ONLY_ME, &ownership::Party::Account(world.ada))
     );
     let new = Op::NewThread { agent: world.agent };
     let refused = chain.submit(signed(BO), &id, &new).unwrap_err();

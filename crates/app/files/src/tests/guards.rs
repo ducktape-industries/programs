@@ -157,6 +157,26 @@ fn the_nearest_guards_policy_decides_each_write_beneath_it() {
     guard(&chain, ADA, "/docs").unwrap();
     assert_eq!(
         write(&chain, BO, "/docs/b"),
+        Err(code::UNAUTHORIZED.to_string()),
+        "a guard is its owner's alone until they open it"
+    );
+    let open = ownership::Op::Create {
+        name: "open".into(),
+        write: ownership::Writers::Anyone,
+    };
+    let opened = chain
+        .submit(signed(ADA), ownership::PROGRAM, &open)
+        .unwrap();
+    let relink_open = ownership::Op::Relink {
+        program: PROGRAM.into(),
+        key: guard_key("/docs"),
+        policy: abi::decode(&opened).unwrap(),
+    };
+    chain
+        .submit(signed(ADA), ownership::PROGRAM, &relink_open)
+        .unwrap();
+    assert_eq!(
+        write(&chain, BO, "/docs/b"),
         Ok(()),
         "an open guard admits anyone"
     );
@@ -289,12 +309,12 @@ fn adoption_guards_each_listed_path_and_chat_attachment_as_before() {
     for path in ["/docs/a", "/chat/general/m1/pic.png"] {
         let owned = record(&chain, path).expect("adopted");
         assert_eq!(owned.owner, ownership::Party::Account(1), "{path}");
-        assert_eq!(policy_name(&chain, path), ownership::AS_BEFORE, "{path}");
+        assert_eq!(policy_name(&chain, path), ownership::ONLY_ME, "{path}");
     }
     assert_eq!(guarded(&chain, "/docs/a"), Some("/docs/a".into()));
     let again = chain.submit(signed(BO), PROGRAM, &adopt).unwrap();
     assert_eq!(abi::decode::<Option<Vec<u8>>>(&again).unwrap(), None);
-    assert_eq!(policy_name(&chain, "/docs/a"), ownership::AS_BEFORE);
+    assert_eq!(policy_name(&chain, "/docs/a"), ownership::ONLY_ME);
 }
 
 #[test]

@@ -3,12 +3,33 @@ use common::*;
 
 use forge::tables::{AUTHORSHIP, CUSTODY, REPOS, REPOS_DEFAULTING_TO_OWNER, REVIEWS};
 
+fn relink_open(sandbox: &MemorySandbox, who: &[u8], key: Vec<u8>) {
+    let open = ownership::Op::Create {
+        name: "open".into(),
+        write: ownership::Writers::Anyone,
+    };
+    let made = sandbox
+        .chain
+        .submit(Origin::Signed(who.to_vec()), ownership::PROGRAM, &open)
+        .unwrap();
+    let relink = ownership::Op::Relink {
+        program: forge::PROGRAM.into(),
+        key,
+        policy: abi::decode(&made).unwrap(),
+    };
+    sandbox
+        .chain
+        .submit(Origin::Signed(who.to_vec()), ownership::PROGRAM, &relink)
+        .unwrap();
+}
+
 fn reviewed() -> (MemorySandbox, u64, Oid) {
     let mut sandbox = founded();
     sandbox
         .chain
         .seat::<ownership::Ownership>(ownership::PROGRAM);
     create(&sandbox, "project", HashKind::Sha1);
+    relink_open(&sandbox, OWNER, CUSTODY.key(&"project".to_owned()));
     sandbox.open_to_anyone(OWNER, "project").unwrap();
     let mut store = MemoryObjects::new(Hash::Sha1);
     let main = file_commit(&mut store, &[], 1, &[("a", b"1\n")]);
@@ -136,6 +157,12 @@ fn a_changes_policy_decides_its_authors_side_and_others_still_review_and_close()
         body: None,
         reviewers: None,
     };
+    assert_eq!(
+        refused(&sandbox, STRANGER, &retitle("Their title")).code,
+        code::UNAUTHORIZED,
+        "its author's alone until they open it"
+    );
+    relink_open(&sandbox, WRITER, at.clone());
     act(&sandbox, STRANGER, &retitle("Their title")).unwrap();
     let strict = ownership::Op::Create {
         name: "mine".into(),
@@ -309,7 +336,7 @@ fn adopt_owners_records_forges_rows_from_before_the_guard_as_access_enforces_the
     };
     let owner = |key: &[u8]| record_at(&sandbox, key).unwrap().owner;
     assert_eq!(owner(&change), ownership::Party::Account(12));
-    assert_eq!(policy(&change).name, ownership::AS_BEFORE);
+    assert_eq!(policy(&change).name, ownership::ONLY_ME);
     assert_eq!(owner(&repo), ownership::Party::Account(11));
     assert_eq!(policy(&repo).name, ownership::OPEN_POLICY);
     let review = REVIEWS.key(&("project".to_owned(), 1u64, 1u64));

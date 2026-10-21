@@ -46,6 +46,7 @@ fn owned(cx: &TestAppContext, records: Vec<Held>, policies: Vec<ownership::Polic
                     ownership::Reply::Policies(page(policies.clone()))
                 }
                 ownership::Query::Defaults { .. } => ownership::Reply::Defaults(page(Vec::new())),
+                ownership::Query::OnlyMe { .. } => ownership::Reply::OnlyMe(None),
                 ownership::Query::Open { .. } => {
                     ownership::Reply::Open(policies.first().map(|policy| policy.id))
                 }

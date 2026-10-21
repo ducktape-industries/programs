@@ -10,7 +10,7 @@ use abi::role::{self, identity, ownership::Guard};
 use store::{Item, Map, PageRequest, PageResponse, Set};
 
 use crate::{
-    AS_BEFORE, Adopted, Linked, OPEN_POLICY, Party, Policy, PolicyId, Record, Rule, Scope,
+    Adopted, Linked, ONLY_ME, OPEN_POLICY, Party, Policy, PolicyId, Record, Rule, Scope,
     ScopeDefault, Writers,
 };
 
@@ -23,9 +23,7 @@ pub(crate) const LINKED: Set<(PolicyId, ProgramId, Vec<u8>)> = Set::new("linked/
 // (owner's borsh, scope's borsh) → the policy a new item there links to
 pub(crate) const DEFAULTS: Map<(Vec<u8>, Vec<u8>), PolicyId> = Map::new("default/");
 pub(crate) const NEXT: Item<PolicyId> = Item::new("next");
-// one-time (J-011 ⑥): each owner's "Only me (as before)", and each converted access list's
-// policy, by (program, the key it was set at)
-pub(crate) const MIGRATED: Map<Vec<u8>, PolicyId> = Map::new("migrated/");
+pub(crate) const ONLY_ME_POLICIES: Map<Vec<u8>, PolicyId> = Map::new("migrated/");
 pub(crate) const CONVERTED: Map<(ProgramId, String), PolicyId> = Map::new("converted/");
 
 fn key(party: &Party) -> Vec<u8> {
@@ -168,8 +166,6 @@ fn exists(ctx: &QueryCtx, party: &Party) -> Result<bool, Error> {
     }
 }
 
-// Decision 2a: the owner's default for the kind, then for the program, then for everything,
-// then their open policy.
 fn default_for(
     ctx: &ExecCtx,
     owner: &Party,
@@ -185,7 +181,7 @@ fn default_for(
             return Ok(id);
         }
     }
-    open_of(ctx, owner)
+    only_me(ctx, owner)
 }
 
 // The owner's open policy, made the first time it is needed (Q2: never edited or retired).
@@ -213,8 +209,10 @@ fn made(ctx: &ExecCtx, owner: &Party, name: String, write: Writers) -> Result<Po
     Ok(id)
 }
 
-fn is_open(ctx: &QueryCtx, policy: &Policy) -> Result<bool, Error> {
-    Ok(OPEN.get(ctx, &key(&policy.owner))? == Some(policy.id))
+fn is_built_in(ctx: &QueryCtx, policy: &Policy) -> Result<bool, Error> {
+    let owner = key(&policy.owner);
+    Ok(OPEN.get(ctx, &owner)? == Some(policy.id)
+        || ONLY_ME_POLICIES.get(ctx, &owner)? == Some(policy.id))
 }
 
 // `id`, which `me` must own.
@@ -231,10 +229,10 @@ fn mine(ctx: &ExecCtx, id: PolicyId, me: &Party) -> Result<Policy, Error> {
 
 fn changeable(ctx: &ExecCtx, id: PolicyId, me: &Party) -> Result<Policy, Error> {
     let policy = mine(ctx, id, me)?;
-    if is_open(ctx, &policy)? {
+    if is_built_in(ctx, &policy)? {
         return Err(wrong_state(format!(
-            "#{id} is {}'s open policy, which never changes",
-            policy.owner
+            "#{id} is {}'s built-in policy {}, which never changes",
+            policy.owner, policy.name
         )));
     }
     Ok(policy)
@@ -489,6 +487,10 @@ pub(crate) fn open(ctx: &QueryCtx, owner: &Party) -> Result<Option<PolicyId>, Er
     OPEN.get(ctx, &key(owner))
 }
 
+pub(crate) fn only_me_of(ctx: &QueryCtx, owner: &Party) -> Result<Option<PolicyId>, Error> {
+    ONLY_ME_POLICIES.get(ctx, &key(owner))
+}
+
 // One-time (J-011 ⑥): the sending program's rows from before the guard, each recorded as its
 // owner's and linked by its rule. A row recorded already is left as it is, unless the program
 // itself holds it (a row it wrote for the migration); so run again, it changes nothing.
@@ -503,7 +505,7 @@ pub(crate) fn adopt(ctx: &ExecCtx, items: Vec<Adopted>) -> Result<(), Error> {
         };
         let policy = match item.rule {
             Rule::Open => open_of(ctx, &item.owner)?,
-            Rule::OwnerOnly => as_before(ctx, &item.owner)?,
+            Rule::OwnerOnly => only_me(ctx, &item.owner)?,
             Rule::List {
                 at: listed,
                 write,
@@ -525,12 +527,12 @@ pub(crate) fn adopt(ctx: &ExecCtx, items: Vec<Adopted>) -> Result<(), Error> {
     Ok(())
 }
 
-fn as_before(ctx: &ExecCtx, owner: &Party) -> Result<PolicyId, Error> {
-    if let Some(id) = MIGRATED.get(ctx, &key(owner))? {
+fn only_me(ctx: &ExecCtx, owner: &Party) -> Result<PolicyId, Error> {
+    if let Some(id) = ONLY_ME_POLICIES.get(ctx, &key(owner))? {
         return Ok(id);
     }
-    let id = made(ctx, owner, AS_BEFORE.into(), Writers::Owner)?;
-    MIGRATED.put(ctx, &key(owner), &id);
+    let id = made(ctx, owner, ONLY_ME.into(), Writers::Owner)?;
+    ONLY_ME_POLICIES.put(ctx, &key(owner), &id);
     Ok(id)
 }
 

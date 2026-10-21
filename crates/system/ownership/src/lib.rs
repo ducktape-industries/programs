@@ -14,14 +14,12 @@ use abi::role::ownership::Guard;
 pub use adopt::{Adopted, Rule, adopt, by_itself, owner_of, rule_of, writers_of};
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 pub use program::Ownership;
-use rules::{DEFAULTS, LINKED, OPEN, OWNED, POLICIES, RECORDS};
+use rules::{DEFAULTS, LINKED, ONLY_ME_POLICIES, OPEN, OWNED, POLICIES, RECORDS};
 pub use store::{PageRequest, PageResponse};
 
 pub const PROGRAM: &str = "ownership";
-// what an owner's open policy, the one every item links to until they choose, is named
 pub const OPEN_POLICY: &str = "Open";
-// what the policy an owner's items from before the guard keep, when only they wrote them, is named
-pub const AS_BEFORE: &str = "Only me (as before)";
+pub const ONLY_ME: &str = "Only me";
 
 pub type PolicyId = u64;
 
@@ -167,6 +165,9 @@ pub enum Query {
     #[ask(Reply::Open(Option<PolicyId>))]
     #[reads(OPEN)]
     Open { owner: Party },
+    #[ask(Reply::OnlyMe(Option<PolicyId>))]
+    #[reads(ONLY_ME_POLICIES)]
+    OnlyMe { owner: Party },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -177,6 +178,7 @@ pub enum Reply {
     Linked(PageResponse<Linked>),
     Defaults(PageResponse<ScopeDefault>),
     Open(Option<PolicyId>),
+    OnlyMe(Option<PolicyId>),
 }
 
 pub fn describe(op: &Op) -> describe::Description {

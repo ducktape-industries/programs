@@ -344,7 +344,7 @@ fn export_details_screens() {
         let mut cx = TestAppContext::new();
         configure(&mut cx);
         eddys_agents(&cx);
-        let only = a_policy(4, 7, ownership::AS_BEFORE, ownership::Writers::Owner);
+        let only = a_policy(4, 7, ownership::ONLY_ME, ownership::Writers::Owner);
         let general = chat::tables::CHANNELS.key(&"general".to_owned());
         owned(&cx, general, 7, only.clone(), vec![only]);
         cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));

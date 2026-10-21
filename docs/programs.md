@@ -413,7 +413,14 @@ never the owner, an empty list being `Owner`. The lists live in the access
 program, never in the program whose keys they cover: a key's owner, or the
 program itself, sets one with `access::Op::Set`, and a program never copies
 an owner into it. A list holds account numbers and program ids, never
-names, so renaming an account changes nothing it allows. A program that
+names, so renaming an account changes nothing it allows. While the
+ownership role is bound beside access, a write to a key a program claims as
+owned needs both: the access list and the key's ownership policy, which with
+no default of its owner's is their "Only me". So a list set with
+`access::Op::Set` alone opens no claimed key; its owner also links the key to
+a policy that lets those writers in (`Create` then `Relink`, or a
+`SetDefault` before the key is made), as forge-view's Grant and harness's
+`files_set_list` do. A program that
 reads a list for a rule of its own asks the access program. Whom an agent
 answers is no access list: it is identity's (`SetOwnership`, `Answers`,
 `Hears`; [roles.md](roles.md)).

@@ -61,8 +61,9 @@ fn a_scope_with_no_default_inherits_the_next_wider_one() {
     };
     let holdings = Holdings {
         owner: Party::Account(7),
-        open: Some(1),
-        policies: vec![policy(1, "Open"), policy(2, "Team"), policy(3, "Close")],
+        open: None,
+        only_me: Some(1),
+        policies: vec![policy(1, "Only me"), policy(2, "Team"), policy(3, "Close")],
         defaults: vec![
             ScopeDefault {
                 scope: Scope::Program("chat".into()),

@@ -100,6 +100,27 @@ fn a_channels_policy_decides_every_op_that_reshapes_it_and_posting_stays_open() 
         list: Some(Ownership::Anyone),
     };
     chain.submit(signed(ADA), "access", &anyone).unwrap();
+    let rename = &reshapes(1)[0];
+    assert_eq!(
+        run(&chain, BO, rename),
+        Err(code::UNAUTHORIZED.to_string()),
+        "only its owner until they open it: {rename:?}"
+    );
+    let open = ownership::Op::Create {
+        name: "open".into(),
+        write: ownership::Writers::Anyone,
+    };
+    let opened = chain
+        .submit(signed(ADA), ownership::PROGRAM, &open)
+        .unwrap();
+    let relink_open = ownership::Op::Relink {
+        program: crate::PROGRAM.into(),
+        key: CHANNELS.key(&"general".to_owned()),
+        policy: abi::decode(&opened).unwrap(),
+    };
+    chain
+        .submit(signed(ADA), ownership::PROGRAM, &relink_open)
+        .unwrap();
     for op in reshapes(1) {
         assert_eq!(run(&chain, BO, &op), Ok(()), "{op:?}");
     }
@@ -322,7 +343,7 @@ fn adopt_owners_records_chats_rows_from_before_the_guard_as_access_enforces_them
     let general = effective(CHANNELS.key(&"general".to_owned()));
     assert_eq!(
         (general.name.as_str(), &general.owner),
-        (ownership::AS_BEFORE, &ownership::Party::Account(1))
+        (ownership::ONLY_ME, &ownership::Party::Account(1))
     );
     let listed = effective(CHANNELS.key(&"j-1".to_owned()));
     assert_eq!(listed.name, "chat j-1 (as before)");
@@ -331,6 +352,6 @@ fn adopt_owners_records_chats_rows_from_before_the_guard_as_access_enforces_them
     let message = effective(MESSAGE_IDS.key(&"bo-1".to_owned()));
     assert_eq!(
         (message.name.as_str(), &message.owner),
-        (ownership::AS_BEFORE, &ownership::Party::Account(2))
+        (ownership::ONLY_ME, &ownership::Party::Account(2))
     );
 }

@@ -17,10 +17,11 @@ with `program` off, and `view`; its writes are the item sheets' `Relink` and `Tr
   owner, "Only Maya" to anyone else. `party(party, names)` and `scope(scope)`
   ("Everything", "Everything in chat", "Chat messages") likewise.
 - `holdings(host, owner)`: one owner's side read whole (every page of
-  `Policies` and `Defaults`, `Open`, and identity's name for each account a
-  policy lists), as `Holdings`, whose `default_of(scope)` is the owner's own
-  choice there and `inherited(scope)` what the guard falls back to without one
-  (a kind's program, then everything, then the open policy).
+  `Policies` and `Defaults`, `Open`, `OnlyMe`, and identity's name for each
+  account a policy lists), as `Holdings`, whose `default_of(scope)` is the
+  owner's own choice there and `inherited(scope)` what the guard falls back to
+  without one (a kind's program, then everything, then the owner's "Only me",
+  `None` until ownership makes it).
 - `items(host, policy)`: how many items are on a policy. ownership keeps no
   count, so this reads every page of `Linked`; a screen asks it once, when a
   sheet that needs the number opens, never for a list.
