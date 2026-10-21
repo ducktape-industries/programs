@@ -1,5 +1,5 @@
-//! What awaits tells an agent of its ops and queries. Both enums are the awaits role's, defined
-//! in abi, so markers carry each variant's words and a working value of it.
+//! What awaits tells an agent of its ops and queries. Its `Op` meets the awaits role's at each tag
+//! and its `Query` is the role's, so markers carry each variant's words and a working value of it.
 use ::program::tools::{Described, Tool, example};
 
 use crate::{Call, Op, Query};
@@ -60,6 +60,15 @@ impl Described for Ops {
                 "Close",
                 "The kernel's alone, when a frame finishes: close every ticket it still holds.",
                 Op::Close { frame: 1 },
+            ),
+            op(
+                "Migrate",
+                "Rewrite the program ids awaits stores by the programs role's Renames at height: each open ticket's caller and target, so a renamed target still resolves what it owes, over the tickets first..=last (null: from the first, or to the last). Anyone: it reads the renames from the programs role, never from its sender, so running it again changes nothing.",
+                Op::Migrate {
+                    height: 300_000,
+                    first: None,
+                    last: None,
+                },
             ),
         ]
     }

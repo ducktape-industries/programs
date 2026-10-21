@@ -78,6 +78,34 @@ pub(crate) fn close(ctx: &ExecCtx, frame: FrameId) -> Result<(), Error> {
     Ok(())
 }
 
+pub(crate) fn migrate(
+    ctx: &ExecCtx,
+    height: u64,
+    first: Option<Ticket>,
+    last: Option<Ticket>,
+) -> Result<(), Error> {
+    let renamed = ctx.renames(height)?;
+    let mut range = TICKETS.prefix_of(&());
+    if let Some(first) = first {
+        range.start = TICKETS.key(&first);
+    }
+    if let Some(last) = last {
+        range.end = Some([TICKETS.key(&last), vec![0]].concat());
+    }
+    for (_, row) in TICKETS.scan(ctx, range)? {
+        let moved = TicketRow {
+            caller: renamed.id(&row.caller),
+            target: renamed.id(&row.target),
+            ..row.clone()
+        };
+        if moved != row {
+            shut(ctx, &row);
+            open(ctx, &moved);
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn ticket(ctx: &QueryCtx, ticket: Ticket) -> Result<Option<TicketRow>, Error> {
     TICKETS.get(ctx, &ticket)
 }

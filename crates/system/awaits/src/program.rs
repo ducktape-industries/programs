@@ -3,7 +3,7 @@
 use ::program::tools::Tools;
 use ::program::{Error, ExecCtx, Program, QueryCtx};
 
-use crate::rules::{close, owed, park, resolve, ticket};
+use crate::rules::{close, migrate, owed, park, resolve, ticket};
 use crate::{Op, PROGRAM, Query, Reply};
 
 pub struct Awaits;
@@ -27,6 +27,11 @@ impl Program for Awaits {
             } => park(ctx, frame, program, calls),
             Op::Resolve { ticket, answer } => resolve(ctx, ticket, answer),
             Op::Close { frame } => close(ctx, frame),
+            Op::Migrate {
+                height,
+                first,
+                last,
+            } => migrate(ctx, height, first, last),
         }
     }
 

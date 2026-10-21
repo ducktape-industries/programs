@@ -299,3 +299,59 @@ fn a_rejected_resume_keeps_what_earlier_submissions_wrote() {
     assert_eq!(answers(&chain, "asker"), vec![Ok(b"A".to_vec())]);
     assert_eq!(chain.frames(), 0);
 }
+
+#[test]
+fn migrate_moves_open_tickets_to_renamed_ids_and_the_new_target_resolves_them() {
+    let mut chain = chain();
+    chain.seat::<Teller>("o/teller");
+    chain.seat::<program::Renamer>("programs");
+    for _ in 0..2 {
+        chain
+            .submit(ada(), "asker", &plan("teller", vec![Tell::Later], false))
+            .unwrap();
+    }
+    let renames = vec![
+        ("asker".to_owned(), "o/asker".to_owned()),
+        ("teller".to_owned(), "o/teller".to_owned()),
+    ];
+    chain.submit(ada(), "programs", &renames).unwrap();
+    chain.at(3, 30);
+    let migrate = |first, last| crate::Op::Migrate {
+        height: 3,
+        first,
+        last,
+    };
+    chain
+        .submit(ada(), PROGRAM, &migrate(Some(1), Some(1)))
+        .unwrap();
+    let ids = |at| {
+        let row = ticket(&chain, at).unwrap();
+        (row.caller, row.target)
+    };
+    assert_eq!(ids(0), ("asker".into(), "teller".into()));
+    assert_eq!(ids(1), ("o/asker".into(), "o/teller".into()));
+    chain.submit(ada(), PROGRAM, &migrate(None, None)).unwrap();
+    assert_eq!(ids(0), ("o/asker".into(), "o/teller".into()));
+    let owed = |target: &str| {
+        let asked = Query::Owed {
+            target: target.into(),
+            after: None,
+            limit: 9,
+        };
+        tickets(&chain, asked)
+    };
+    assert_eq!((owed("teller"), owed("o/teller")), (vec![], vec![0, 1]));
+    let before = chain.host(PROGRAM).borrow().state.clone();
+    chain.submit(ada(), PROGRAM, &migrate(None, None)).unwrap();
+    assert_eq!(
+        chain.host(PROGRAM).borrow().state,
+        before,
+        "a second run writes nothing"
+    );
+    let by_new_id = Tell::Answer {
+        ticket: 0,
+        bytes: b"A".to_vec(),
+    };
+    chain.submit(ada(), "o/teller", &by_new_id).unwrap();
+    assert_eq!(answers(&chain, "asker"), vec![Ok(b"A".to_vec())]);
+}
