@@ -445,11 +445,9 @@ first gave it, and chat's answer is absorbed. chat itself seats whoever posts in
 mentioned there. The repository's owner is not seated: they are told of a change no one was asked
 to review, and a post seats them. A change that talks in another room never touches that room.
 
-`ListInvolved { after }` is one-time: for rooms opened before this, it takes one change a block
-(every change, ended ones too), and where the change's own room is held by chat and names no
-`listed`, sets `listed = involved` and seats its author and reviewers as above; a room already
-listed is left as it is, so a second walk writes nothing. It returns the key the next change
-starts after and books its own next run at the next block while one is left. Anyone may send it.
+`ListInvolved` (tag 26) gave the rooms opened before this the same listing, one change a block,
+and is retired now that its walk has run: it is refused, and the variant goes, its tag kept, with
+forge's next append.
 
 ### Watchers
 

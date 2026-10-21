@@ -209,7 +209,7 @@ pub enum Op {
         payload: Vec<u8>,
         at: Revision,
     },
-    #[tool_op(description = "One-time: give each change room forge opened before rooms were listed for who takes part the listing a new one gets (chat meta listed = involved, its author and reviewers seated), one change a block from after, walking on by itself. Anyone may; a room already listed, or one a change only talks in, is left as it is. Returns the key the next change starts after, or null when that was the last.", returns = Option<Vec<u8>>, example = crate::examples::list_involved)]
+    #[tool_op(description = "Retired, and refused: its one walk listing the change rooms opened before rooms were listed for who takes part has run. It goes, its tag kept, with forge's next append.", returns = Option<Vec<u8>>, example = crate::examples::list_involved)]
     ListInvolved { after: Option<Vec<u8>> },
 }
 

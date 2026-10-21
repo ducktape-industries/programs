@@ -9,7 +9,6 @@ const FEATURE: &str = "refs/heads/feature";
 const JOB_NAMED: &str = "refs/heads/j-7/teach-a";
 const OWN: &str = "forge:project:1";
 const ELSEWHERE: &str = "elsewhere";
-const SECOND: &str = "forge:project:2";
 
 fn seeded() -> (MemorySandbox, Oid, Oid) {
     let mut store = MemoryObjects::new(Hash::Sha1);
@@ -336,37 +335,19 @@ fn a_reviewer_asked_later_or_one_who_reviews_unasked_is_seated_and_a_seat_held_k
 }
 
 #[test]
-fn list_involved_lists_each_room_opened_before_and_leaves_a_listed_or_other_room_as_it_is() {
-    let (mut sandbox, root, ahead) = seeded();
+fn list_involved_is_retired_refused_and_lists_nothing() {
+    let (mut sandbox, _, _) = seeded();
     sandbox
         .chain
         .seat::<scheduler::Scheduler>(scheduler::PROGRAM);
-    let merged = opened(&sandbox, FEATURE);
-    squash(&sandbox, FEATURE, root, ahead, merged);
-    opened(&sandbox, JOB_NAMED);
-    let third = opened(&sandbox, FEATURE);
-    talking_elsewhere(&sandbox, third);
+    opened(&sandbox, FEATURE);
     as_opened_before_listing(&sandbox, OWN);
-    unseat(&sandbox, SECOND, 13);
-    assert_eq!(listed(&sandbox, OWN), None);
     let walk = Op::ListInvolved { after: None };
-    let next: Option<Vec<u8>> =
-        abi::decode(&signed_op(&sandbox, STRANGER, 2, &walk).unwrap()).unwrap();
-    assert!(next.is_some(), "one change a block, the rest to come");
+    let refused = sandbox
+        .forge
+        .refused(|| signed_op(&sandbox, STRANGER, 2, &walk));
+    assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
     sandbox.chain.at(10, TIME);
-    assert_eq!(listed(&sandbox, OWN).as_deref(), Some(chat::INVOLVED));
-    assert_eq!(seated(&sandbox, OWN), BTreeSet::from([12, 13]));
-    assert_eq!(
-        seated(&sandbox, SECOND),
-        BTreeSet::from([12]),
-        "a room listed already is left as it is"
-    );
-    assert_eq!(listed(&sandbox, ELSEWHERE), None);
-    assert!(seated(&sandbox, ELSEWHERE).is_empty());
-    let again: Option<Vec<u8>> =
-        abi::decode(&signed_op(&sandbox, STRANGER, 11, &walk).unwrap()).unwrap();
-    assert!(again.is_some());
-    sandbox.chain.at(20, TIME);
-    assert_eq!(seated(&sandbox, OWN), BTreeSet::from([12, 13]));
-    assert_eq!(seated(&sandbox, SECOND), BTreeSet::from([12]));
+    assert_eq!(listed(&sandbox, OWN), None);
+    assert!(seated(&sandbox, OWN).is_empty());
 }
