@@ -8,8 +8,8 @@ use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::change_queries::{change, changes, judgment};
 use crate::changes::{
-    Draft, Edit, MergeRequest, RebaseRequest, SquashRequest, archive_ended, close, edit,
-    merge_heads, open, preview, rebase, repoint, squash, submit_review,
+    Draft, Edit, MergeRequest, RebaseRequest, SquashRequest, close, edit, merge_heads, open,
+    preview, rebase, repoint, squash, submit_review,
 };
 use crate::checks::{Report, preview_of, require, required, status, statuses};
 use crate::contract::*;
@@ -179,9 +179,6 @@ impl Program for Forge {
                 branch,
                 protected,
             } => protect(ctx, &repo, &branch, protected).map(|()| None),
-            Op::ArchiveEnded { repo, after, limit } => {
-                archive_ended(ctx, &repo, after, limit).map(Some)
-            }
             Op::Preview { repo, n } => preview(ctx, actor, &repo, n).map(Some),
             Op::Status {
                 repo,

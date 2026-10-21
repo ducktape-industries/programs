@@ -216,6 +216,12 @@ impl Walk<'_> {
 
     fn returns(&mut self, was: &Roots<'_>, is: &Roots<'_>) {
         let (old, new) = (self.old, self.new);
+        let live: BTreeSet<&str> = match new.get_definition(is.op) {
+            Some(Definition::Enum { variants, .. }) => {
+                variants.iter().map(|(_, name, _)| name.as_str()).collect()
+            }
+            _ => BTreeSet::new(),
+        };
         let old = was
             .returns
             .and_then(|r| returned(old, r))
@@ -234,9 +240,18 @@ impl Walk<'_> {
             }
         }
         for (op, of) in &old {
-            if !new.iter().any(|(returning, _)| returning == op) {
-                let what = format!("op {op} no longer says it returns {of}");
-                self.note("returns", Change::Breaking, what);
+            if new.iter().any(|(returning, _)| returning == op) {
+                continue;
+            }
+            match live.contains(op) {
+                true => {
+                    let what = format!("op {op} no longer says it returns {of}");
+                    self.note("returns", Change::Breaking, what);
+                }
+                false => {
+                    let what = format!("op {op} is gone, and what it returned with it");
+                    self.note("returns", Change::Retired, what);
+                }
             }
         }
     }

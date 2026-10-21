@@ -160,14 +160,6 @@ pub(crate) fn watch() -> Op {
     Op::Watch { deliver: vec![0] }
 }
 
-pub(crate) fn archive_ended() -> Op {
-    Op::ArchiveEnded {
-        repo: repo(),
-        after: None,
-        limit: 50,
-    }
-}
-
 pub(crate) fn preview() -> Op {
     Op::Preview { repo: repo(), n: 1 }
 }

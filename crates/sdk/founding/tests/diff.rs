@@ -16,6 +16,31 @@ fn of<O: BorshSchema, Q: BorshSchema, R: BorshSchema>() -> BorshSchemaContainer 
     BorshSchemaContainer::for_type::<Interface<O, Q, R>>()
 }
 
+#[derive(BorshSchema)]
+struct Returning<O, T> {
+    op: O,
+    query: before::Query,
+    reply: u8,
+    returns: T,
+}
+
+fn returning<O: BorshSchema, T: BorshSchema>() -> BorshSchemaContainer {
+    BorshSchemaContainer::for_type::<Returning<O, T>>()
+}
+
+mod returns {
+    use borsh::BorshSchema;
+
+    #[derive(BorshSchema)]
+    #[allow(non_snake_case)]
+    pub struct Deleted {
+        pub Delete: u64,
+    }
+
+    #[derive(BorshSchema)]
+    pub struct Nothing;
+}
+
 mod before {
     use borsh::BorshSchema;
 
@@ -195,4 +220,22 @@ fn two_programs_differ_and_a_bare_type_is_no_interface() {
     );
     let unnamed = BorshSchemaContainer::for_type::<u64>();
     assert!(founding::differences(&unnamed, &chat).is_err());
+}
+
+#[test]
+fn a_retired_op_takes_its_return_with_it_and_a_live_op_that_drops_its_return_breaks() {
+    let old = returning::<appended::Op, returns::Deleted>();
+    let gapped = returning::<retired::Op, returns::Nothing>();
+    assert_eq!(
+        diff(&old, &gapped),
+        [
+            "- op: variant 1 Delete retired, its tag kept",
+            "- returns: op Delete is gone, and what it returned with it",
+        ]
+    );
+    let kept = returning::<appended::Op, returns::Nothing>();
+    assert_eq!(
+        diff(&old, &kept),
+        ["! returns: op Delete no longer says it returns u64"]
+    );
 }

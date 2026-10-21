@@ -302,17 +302,6 @@ pub fn archive(ctx: &ExecCtx, repo: &str, change: &Change) {
     ARCHIVING.put(ctx, &id.seq, &(repo.to_owned(), change.n));
 }
 
-// Whether chat holds the change's channel and shows it unarchived.
-pub fn unarchived(ctx: &QueryCtx, change: &Change) -> Result<bool, Error> {
-    let query = Query::Channel {
-        channel_id: change.channel.clone(),
-    };
-    match ctx.query::<Query, Reply>(chat::PROGRAM, &query)? {
-        Reply::Channel(info) => Ok(info.is_some_and(|info| !info.channel.archived)),
-        other => Err(unexpected_reply(chat::PROGRAM, "Channel", &other)),
-    }
-}
-
 // The answer to a message forge asked one of. chat's refusal of an archive is absorbed and said
 // in the change's channel; chat's answer to that line, or to any line in a job room, is absorbed
 // whatever it is (the room may be gone or archived); and a watcher's answer is absorbed.

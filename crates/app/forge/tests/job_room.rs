@@ -251,24 +251,6 @@ fn another_branch_talks_in_its_own_room() {
 }
 
 #[test]
-fn archive_ended_leaves_a_job_room() {
-    let (sandbox, _, _) = seeded();
-    job_room(&sandbox, chat::PostPolicy::Open);
-    let n = opened(&sandbox, JOB);
-    close(&sandbox, n);
-    let op = Op::ArchiveEnded {
-        repo: "project".into(),
-        after: None,
-        limit: 8,
-    };
-    match abi::decode(&act(&sandbox, STRANGER, &op).unwrap()).unwrap() {
-        forge::OpReply::ArchivedEnded { archived, .. } => assert!(archived.is_empty()),
-        other => panic!("{other:?}"),
-    }
-    assert!(!channel(&sandbox, ROOM).unwrap().archived);
-}
-
-#[test]
 fn in_a_job_room_only_a_review_line_answered_is_owed() {
     let (sandbox, _, ahead) = seeded();
     job_room(&sandbox, chat::PostPolicy::Open);

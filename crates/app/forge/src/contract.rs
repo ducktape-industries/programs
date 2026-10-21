@@ -161,18 +161,10 @@ pub enum Op {
     },
     #[tool_op(description = "From a program only: be told of every ref forge moves and every change it opens, reviews, closes, merges or takes out of a merge queue, each as deliver followed by the borsh of what happened. An empty deliver stops it.", example = crate::examples::watch)]
     Watch { deliver: Vec<u8> },
-    // Archives the channels of `repo`'s merged and closed changes numbered above `after`,
-    // `limit` numbers of them, that chat still shows unarchived; open to anyone.
-    #[tool_op(description = "Archive the chat channels of a repository's merged and closed changes numbered after after, limit numbers of them; a job room a change talked in is left. Anyone may. Returns where to resume.", returns = OpReply, example = crate::examples::archive_ended)]
-    ArchiveEnded {
-        repo: String,
-        after: Option<u64>,
-        limit: u64,
-    },
     // forge builds change `n`'s squash on its target's head, as `SquashMerge` would land it, and
     // points `refs/changes/<n>/merge` at it: the commit a gated merge's checks run on.
     #[tool_op(description = "Build, without moving the target, the squash change n would land on its target's current head, and point refs/changes/<n>/merge at it: the commit required checks run on. Anyone may. Returns the preview.", returns = OpReply, example = crate::examples::preview)]
-    Preview { repo: String, n: u64 },
+    Preview { repo: String, n: u64 } = 18,
     // The sender's status of a commit in one context (e.g. `gates.toml#gates`).
     #[tool_op(description = "Report your status of a commit in one context (such as gates.toml#gates): Pending, Passed, Failed or Errored, with an optional url. Recorded as yours; anyone may report.", example = crate::examples::status)]
     Status {
@@ -237,7 +229,6 @@ impl Op {
             | Op::ChangeRepoint { repo, .. }
             | Op::DeleteBranch { repo, .. }
             | Op::Protect { repo, .. }
-            | Op::ArchiveEnded { repo, .. }
             | Op::Preview { repo, .. }
             | Op::Status { repo, .. }
             | Op::RequireChecks { repo, .. }
@@ -921,6 +912,8 @@ pub enum ObjectKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+#[borsh(use_discriminant = true)]
+#[repr(u8)]
 pub enum OpReply {
     Change {
         height: u64,
@@ -941,17 +934,11 @@ pub enum OpReply {
         n: u64,
         oid: String,
     },
-    // What `ArchiveEnded` archived, and the number to pass as `after` when more follow.
-    ArchivedEnded {
-        height: u64,
-        archived: Vec<u64>,
-        next: Option<u64>,
-    },
     Previewed {
         height: u64,
         n: u64,
         oid: String,
-    },
+    } = 5,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]

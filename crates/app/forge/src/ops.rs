@@ -140,7 +140,6 @@ pub(crate) fn governed<'o>(ctx: &QueryCtx, op: &'o Op) -> Option<&'o str> {
         | Op::ChangeRepoint { .. }
         | Op::ReviewSubmit { .. }
         | Op::Watch { .. }
-        | Op::ArchiveEnded { .. }
         | Op::Preview { .. }
         | Op::Status { .. }
         | Op::AdoptOwners { .. } => None,
@@ -191,7 +190,6 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::ChangeOpen { .. }
         | Op::ReviewSubmit { .. }
         | Op::Watch { .. }
-        | Op::ArchiveEnded { .. }
         | Op::Preview { .. }
         | Op::Status { .. }
         | Op::AdoptOwners { .. } => Vec::new(),

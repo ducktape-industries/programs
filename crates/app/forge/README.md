@@ -223,7 +223,7 @@ requested changes never block that CAS.
 Authors are always the account the frame acts as (`ctx.sender_account()`), never
 the payload: a signed frame's key's account, a program's own, or the agent a
 program sends the op for (harness, for the agents it runs); the chain itself and a key
-that holds no account are refused. Any account may open/review and run `ArchiveEnded`. The author edits title/body/review requests,
+that holds no account are refused. Any account may open/review. The author edits title/body/review requests,
 or whoever the change's list at `forge::change_key(repo, n)` in the access
 program allows, and so re-points it (`ChangeRepoint`); a `Rebase` needs the
 change's key and the repository's; the author, or a repository writer, closes; repository writers merge.
@@ -258,7 +258,6 @@ Closing is terminal; there is no reopen operation.
 | `RequireChecks { repo: r, branch: b"refs/heads/dev".to_vec(), required: Some(Required { reporter, contexts }) }` | the branch moves only by a gated merge (`None` drops it); empty output |
 | `Enqueue { repo: r, n: 1, expected_head: b }` | change 1 joins its target's merge queue; empty output |
 | `Dequeue { repo: r, n: 1 }` | change 1 leaves its queue; empty output |
-| `ArchiveEnded { repo: r, after: None, limit: 20 }` | archives the channels of ended changes numbered above `after`, `limit` numbers of them; `OpReply::ArchivedEnded { height, archived, next }` |
 | `Archive { repo: r, archived: true }` | archives the repository (`false`: restores it); empty output |
 
 A push's objects never ride inside its frame. The client puts git's pack as a
@@ -391,16 +390,6 @@ forge posts an `archive refused` notice (detail `archive refused: <reason>: <sen
 into the channel; that notice's own refusal (a channel that is gone) is absorbed too. Closing
 is terminal, so nothing un-archives a channel.
 
-`ArchiveEnded { repo, after, limit }` clears the channels changes left open before
-forge archived them. Anyone may run it. It looks at the change numbers above
-`after` (`None`: from the first), `limit` of them (`1..=Bounds.page_size`, else
-`invalid`), and archives the channel of each merged or closed one that chat holds
-and shows unarchived; open changes, archived channels and missing ones are left.
-`archived` lists the numbers it archived and `next` is the `after` of the next
-run, `None` once it reached the repository's last number. It takes its own
-`after`, not a listing cursor, because a cursor is pinned to forge's write count
-and the op is a write. A second run archives nothing.
-
 ### A change's notices
 
 Each thing that happens to a change is one chat notice (`Notify`, a `Block::Notice`) in the
@@ -463,8 +452,8 @@ above. The room is decided once, at open, and kept on the change.
 
 forge posts into a job room with `Reply::Wanted` and absorbs chat's answer, so a room
 archived after the change opened never fails a review, a merge or a close: the notice is
-just not there. forge never archives a job room: an ending change leaves it, and
-`ArchiveEnded` skips it. `Judgment` counts only the replies to the change's own review
+just not there. forge never archives a job room: an ending change leaves it.
+`Judgment` counts only the replies to the change's own review
 notices in a job room, never the room's other threads.
 
 Review OIDs and anchors receive syntactic validation, not object reads in

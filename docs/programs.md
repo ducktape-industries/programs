@@ -180,7 +180,7 @@ pub enum Op {
 
 Tag 1 (a retired `Rename`) is then in no schema, `network_schema`, tools
 section or `describe`; bytes that carry it no longer decode and are refused
-as invalid input. The variants list shows the gap as `"-"`
+as invalid input; what a retired op returned leaves `returns` with it. The variants list shows the gap as `"-"`
 (`["Open", "-", "Vote", "Close"]`). A tag never means two things: a new
 variant goes past the highest. The last variant can't be retired until
 something is appended after it, since the next schema would no longer show

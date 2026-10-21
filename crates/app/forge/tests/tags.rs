@@ -5,7 +5,7 @@ use common::*;
 
 const REPO: &str = "project";
 
-const LIVE_OPS: [(&str, i64); 23] = [
+const LIVE_OPS: [(&str, i64); 22] = [
     ("Create", 0),
     ("Configure", 1),
     ("Push", 4),
@@ -21,7 +21,6 @@ const LIVE_OPS: [(&str, i64); 23] = [
     ("DeleteBranch", 14),
     ("Protect", 15),
     ("Watch", 16),
-    ("ArchiveEnded", 17),
     ("Preview", 18),
     ("Status", 19),
     ("RequireChecks", 20),
@@ -33,6 +32,7 @@ const LIVE_OPS: [(&str, i64); 23] = [
 
 const GRANT_TAG: u8 = 2;
 const REVOKE_TAG: u8 = 3;
+const ARCHIVE_ENDED_TAG: u8 = 17;
 
 fn encoded<T: BorshSerialize>(value: &T) -> Vec<u8> {
     borsh::to_vec(value).unwrap()
@@ -125,5 +125,26 @@ fn a_grant_or_revoke_tag_is_refused_and_writes_nothing() {
         let undecoded = refused.message.starts_with("forge: Op did not decode: ");
         assert!(undecoded, "{refused}");
     }
+    assert_eq!(repo_read(&sandbox), before);
+}
+
+#[test]
+fn an_archive_ended_tag_is_refused_and_writes_nothing() {
+    let sandbox = founded();
+    create(&sandbox, REPO, HashKind::Sha1);
+    let before = repo_read(&sandbox);
+    let no_after: Option<u64> = None;
+    let fields = [
+        encoded(&REPO.to_owned()),
+        encoded(&no_after),
+        encoded(&8u64),
+    ];
+    let bytes = op_bytes(ARCHIVE_ENDED_TAG, &fields);
+    let refused = sandbox
+        .forge
+        .refused(|| sent_as_bytes(&sandbox, STRANGER, &bytes));
+    assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
+    let undecoded = refused.message.starts_with("forge: Op did not decode: ");
+    assert!(undecoded, "{refused}");
     assert_eq!(repo_read(&sandbox), before);
 }

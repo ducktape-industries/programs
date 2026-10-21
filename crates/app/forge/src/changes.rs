@@ -16,9 +16,9 @@ use crate::discussion::{self, Event};
 use crate::objects::{ObjectWriter, object_not_held};
 use crate::ops::{cap, refusal_of, require_named};
 use crate::state::{
-    AUTHORSHIP, Authorship, CHANGES, NUMBERS, load_bounds, load_change, load_ref, load_repo, next,
-    next_message, next_number, parse_oid, peek_message, protected, repo_hash, resolve, save_change,
-    save_review, set_ref,
+    AUTHORSHIP, Authorship, load_bounds, load_change, load_ref, load_repo, next, next_message,
+    next_number, parse_oid, peek_message, protected, repo_hash, resolve, save_change, save_review,
+    set_ref,
 };
 
 pub(crate) struct Draft {
@@ -667,46 +667,6 @@ pub(crate) fn repoint(ctx: &ExecCtx, repo: &str, n: u64, from: Revision) -> Resu
     Ok(OpReply::Change {
         height: env.height,
         n,
-    })
-}
-
-// The channels left unarchived before forge archived them as their changes ended: each merged
-// or closed change of `repo` numbered above `after`, `limit` numbers of them, has its channel
-// archived unless chat shows it archived already or holds none; a job room is left as it is. Run
-// again, it archives nothing.
-pub(crate) fn archive_ended(
-    ctx: &ExecCtx,
-    repo: &str,
-    after: Option<u64>,
-    limit: u64,
-) -> Result<OpReply, Error> {
-    let env = ctx.env();
-    load_repo(ctx, repo)?;
-    let page_size = u64::from(load_bounds(ctx)?.page_size);
-    if !(1..=page_size).contains(&limit) {
-        return Err(invalid(format!(
-            "limit is 1..={page_size} (Bounds.page_size)"
-        )));
-    }
-    let last = NUMBERS.get(ctx, &repo.to_owned())?.unwrap_or(0);
-    let first = after.unwrap_or(0).saturating_add(1);
-    let end = first.saturating_add(limit - 1).min(last);
-    let mut archived = Vec::new();
-    for n in first..=end {
-        let Some(change) = CHANGES.get(ctx, &(repo.to_owned(), n))? else {
-            continue;
-        };
-        let ended = change.state != ChangeState::Open;
-        let own_room = !discussion::in_job_room(repo, &change);
-        if ended && own_room && discussion::unarchived(ctx, &change)? {
-            discussion::archive(ctx, repo, &change);
-            archived.push(n);
-        }
-    }
-    Ok(OpReply::ArchivedEnded {
-        height: env.height,
-        archived,
-        next: (end < last).then_some(end),
     })
 }
 

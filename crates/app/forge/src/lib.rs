@@ -82,7 +82,7 @@ fn op_variants_only_append() {
             "DeleteBranch",
             "Protect",
             "Watch",
-            "ArchiveEnded",
+            "-",
             "Preview",
             "Status",
             "RequireChecks",
