@@ -91,11 +91,11 @@ fn a_renamed_id_renamed_again_answers_each_old_id_with_the_one_that_runs() {
     schedule(&store, 5, rename("boot", "o/boot")).unwrap();
     fold_to(&store, 5);
     schedule(&store, 10, rename("o/boot", "o/boot2")).unwrap();
+    assert_eq!(renames(&store, 7), [renamed("boot", "o/boot")]);
     let both = [renamed("boot", "o/boot2"), renamed("o/boot", "o/boot2")];
     assert_eq!(renames(&store, 10), both, "the second rename still due");
     fold_to(&store, 10);
     assert_eq!(renames(&store, 10), both);
-    assert_eq!(renames(&store, 7), [renamed("boot", "o/boot")]);
 }
 
 #[test]

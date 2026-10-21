@@ -8,3 +8,12 @@ harness-view
 members-view
 node-view
 settings-view
+access
+awaits
+blobs
+halo
+identity
+ownership
+programs
+scheduler
+valset
