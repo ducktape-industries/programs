@@ -818,6 +818,8 @@ fn every_method() -> Vec<(Exchange, serde_json::Value)> {
                 up: true,
             }),
         ),
+        exchange::<Watch<Golden>>((7, "q".into()), Some(vec![1, 2, 3])),
+        exchange::<Watch<Golden>>((7, "q".into()), None),
     ]
     .into_iter()
     .chain(

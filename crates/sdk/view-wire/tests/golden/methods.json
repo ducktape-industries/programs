@@ -2071,6 +2071,26 @@
     }
   },
   {
+    "kind": "program.watch",
+    "request": [
+      7,
+      "q"
+    ],
+    "reply": [
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "kind": "program.watch",
+    "request": [
+      7,
+      "q"
+    ],
+    "reply": null
+  },
+  {
     "kind": "blob.manifest",
     "request": "sha256:00",
     "reply": {

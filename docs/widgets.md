@@ -137,7 +137,7 @@ stop after one page.
 ## Which programs a widget can read
 
 Any program. Since J-054 a view names no programs: the app host answers a view's
-`program.query` and `program.changes` for whatever program it names, and each program decides
+`program.query`, `program.watch` and `program.changes` for whatever program it names, and each program decides
 what it answers. An app host from before J-054 still refuses a program the view's manifest
 doesn't list, and refuses a chat-view built since J-054 outright (its manifest lists none).
 

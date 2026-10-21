@@ -483,7 +483,7 @@ tile), `CAPABILITIES` (the `methods::Capability`
 halves of the kinds it asks through, `&[]` by default: a method whose
 capability is not listed is refused `undeclared_capability`; a view lists no
 programs: it addresses any one by its `Program`'s `NAME` with `op.submit`,
-`program.query` and `program.changes`, and each program decides what it
+`program.query`, `program.watch` and `program.changes`, and each program decides what it
 answers and admits), `MIN_WINDOW_WIDTH` (the narrowest pointer window in px it works at,
 default 480, at least 1 or it does not compile: on a desk the app never
 lays it out narrower, and a narrower window scrolls it sideways; a touch

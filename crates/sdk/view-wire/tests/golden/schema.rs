@@ -405,6 +405,7 @@ pub(super) fn shapes() -> (BTreeMap<&'static str, Shape>, Definitions) {
         borsh::<Submit<P>>(d),
         borsh::<Changes<P>>(d),
         tree_method::<HostWidget>(),
+        borsh::<Watch<P>>(d),
     ]
     .into();
     each_listed(&mut Borsh {

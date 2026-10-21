@@ -325,6 +325,31 @@ impl Method for NamedChanges {
     }
 }
 
+/// `program.watch`: a standing query to `P`, one item per answer the node pushes, `None` to read it again.
+pub struct Watch<P>(std::marker::PhantomData<P>);
+impl<P: Program> sealed::Sealed for Watch<P> {}
+impl<P: Program> Method for Watch<P> {
+    const KIND: &'static str = "program.watch";
+    const TARGET: Option<&'static str> = Some(P::NAME);
+    type Request = P::Query;
+    type Reply = Option<P::Reply>;
+    fn encode_request(request: &P::Query) -> Vec<u8> {
+        encode(&Call {
+            target: P::NAME.into(),
+            body: encode(request),
+        })
+    }
+    fn decode_request(bytes: &[u8]) -> Result<P::Query, String> {
+        decode_call(bytes, P::NAME)
+    }
+    fn encode_reply(reply: &Option<P::Reply>) -> Vec<u8> {
+        encode(reply)
+    }
+    fn decode_reply(bytes: &[u8]) -> Result<Option<P::Reply>, String> {
+        decode(bytes)
+    }
+}
+
 #[derive(
     Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, BorshSerialize, BorshDeserialize,
 )]
@@ -1077,7 +1102,7 @@ pub struct SocketSend {
     pub body: Vec<u8>,
 }
 methods! {
-    also: ["program.query", "op.submit", "program.changes", HostWidget::KIND];
+    also: ["program.query", "op.submit", "program.changes", HostWidget::KIND, "program.watch"];
     /// `chain.status`: the connected node's status.
     ChainStatus, "chain.status", (), NodeStatus;
     /// `chain.network`: every member as the connected node sees it.

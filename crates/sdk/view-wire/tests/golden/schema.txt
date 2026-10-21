@@ -48,6 +48,7 @@ op.submit Some("P") ProgramOp -> Submitted
 program.changes Some("P") () -> Option<Change>
 program.describe None (String, Vec<u8>) -> Option<Description>
 program.query Some("P") ProgramQuery -> ProgramReply
+program.watch Some("P") ProgramQuery -> Option<ProgramReply>
 socket.open None SocketOpen -> SocketItem
 socket.send None SocketSend -> ()
 store.changes None () -> String
@@ -150,6 +151,7 @@ Option<Description> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "So
 Option<Located> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "Located")] }
 Option<Manifest> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "Manifest")] }
 Option<Manifested> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "Manifested")] }
+Option<ProgramReply> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "ProgramReply")] }
 Option<Receipt> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "Receipt")] }
 Option<String> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "String")] }
 Option<Vec<u8>> = Enum { tag_width: 1, variants: [(0, "None", "()"), (1, "Some", "Vec<u8>")] }
