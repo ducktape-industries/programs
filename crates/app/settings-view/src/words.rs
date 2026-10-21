@@ -72,7 +72,10 @@ pub(crate) const CREATE_ACCOUNT_WHY: &str =
     "Your key isn't linked to an account yet. An account gives you a name others see.";
 pub(crate) const AGENTS_HELP: &str =
     "Agents act as accounts you manage. You answer for what they do.";
-pub(crate) const CREATE_AGENT_TITLE: &str = "Create an agent";
+pub(crate) const CREATE_AGENT_TITLE: &str = "Connect an external agent";
+pub(crate) const CONNECT_WHY: &str = "An agent another machine runs with its own key. To have this network run one, create it in Agents.";
+pub(crate) const ADD_A_KEY: &str = "Add a key…";
+pub(crate) const RUN_ON_HARNESS: &str = "Run it on harness…";
 pub(crate) const ADD_KEY_TITLE: &str = "Add a key to an agent";
 pub(crate) const ADD_KEY_WHY: &str = "Paste the key request the agent's device shows.";
 pub(crate) const WHO_IT_ANSWERS: &str = "Who it answers";
@@ -95,6 +98,24 @@ pub(crate) const PHOTO_HELP: &str = "Drag the picture to place it in the circle.
 pub(crate) const PHOTO_FRAME: &str = "Move the picture in the circle";
 pub(crate) const ZOOM: &str = "Zoom";
 pub(crate) const SAVE: &str = "Save";
+
+pub(crate) fn open_in(program: &str) -> String {
+    format!("Open in {program}")
+}
+
+pub(crate) fn runs_badge(kind: &Kind) -> Option<String> {
+    view::design::runs(kind)
+}
+
+pub(crate) fn key_for(number: u64, created: bool) -> String {
+    let asks = format!(
+        "On the agent's machine, sign a key request for account {number}, then paste it here."
+    );
+    match created {
+        true => format!("Created account {number}. {asks}"),
+        false => asks,
+    }
+}
 
 pub(crate) fn who_answers(agent: &str) -> String {
     format!("Who {agent} answers")

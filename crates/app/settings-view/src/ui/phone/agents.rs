@@ -19,6 +19,7 @@ use super::parts::{
     column, mono, muted_icon, name_input, name_line, named, note, problem_of, quiet,
 };
 use crate::Settings;
+use crate::queries::HARNESS;
 use crate::queries::{Agent, Seat};
 use crate::state::{Choice, Form, Sheet};
 use crate::ui::shared::{agent_face, ownership_choices};
@@ -46,8 +47,6 @@ pub(super) fn pane(
         v.open_sheet(Sheet::CreateAgent, cx);
         window.focus(CREATE_NAME);
     });
-    let add_key =
-        cx.listener(|v: &mut Settings, _: &ClickEvent, _, cx| v.open_sheet(Sheet::AddKey, cx));
     column("settings/agents")
         .child(quiet(
             "settings/agents/help",
@@ -70,17 +69,8 @@ pub(super) fn pane(
             "settings/agents/create/open",
             "plus",
             words::CREATE_AGENT_TITLE,
-            "Name it; it holds no key yet.",
+            words::CONNECT_WHY,
             create,
-            ladder,
-            theme,
-        ))
-        .child(add_row(
-            "settings/agents/key/open",
-            "key-round",
-            words::ADD_KEY_TITLE,
-            words::ADD_KEY_WHY,
-            add_key,
             ladder,
             theme,
         ))
@@ -119,10 +109,9 @@ fn agent_row(
     let number = agent.number;
     let revoked = agent.standing() == Standing::Revoked;
     let keys = words::account_keys(number, agent.keys);
-    let about = if revoked {
-        keys
-    } else {
-        format!("{keys} · answers {}", words::answers(&agent.ownership))
+    let about = match revoked || agent.harnessed().is_some() {
+        true => keys,
+        false => format!("{keys} · answers {}", words::answers(&agent.ownership)),
     };
     let tone = if revoked {
         theme.faint
@@ -145,6 +134,15 @@ fn agent_row(
             )
             .child(design::row_caption(about, ladder, theme)),
         )
+        .children(words::runs_badge(&agent.kind).map(|runs| {
+            design::badge(
+                format!("settings/agents/{number}/runs"),
+                runs,
+                ladder,
+                theme.muted,
+                theme.surface_raised,
+            )
+        }))
         .child(standing_badge(agent, ladder, theme))
         .child(design::chevron(ladder, theme))
 }
@@ -309,6 +307,46 @@ fn actions(
                 ladder,
             ))
         });
+    let chain = view.session.chain_id.clone();
+    let agent_id = number.to_string();
+    let opens = |id: String, label: String, link: Option<String>, glyph: &'static str| {
+        link.map(|link| {
+            let pressed =
+                move |_: &ClickEvent, _: &mut Window, cx: &mut App| cx.host().open_link(&link);
+            design::sheet_row(id, label, ladder, theme, pressed).icon(glyph)
+        })
+    };
+    if let Some(script) = agent.harnessed() {
+        let link = ducklink::mint(&chain, &script.calls, &[agent_id.as_str()]);
+        return column(format!("settings/agents/{number}/actions"))
+            .children(change)
+            .children(remove)
+            .children(opens(
+                format!("settings/agents/{number}/open"),
+                words::open_in(&script.calls),
+                link,
+                "bot",
+            ))
+            .children(photo_refused)
+            .into_any_element();
+    }
+    let keyed = cx
+        .listener(move |v: &mut Settings, _: &ClickEvent, _, cx| v.open_key_for(number, true, cx));
+    let key = design::sheet_row(
+        format!("settings/agents/{number}/key/open"),
+        words::ADD_A_KEY,
+        ladder,
+        theme,
+        keyed,
+    )
+    .icon("key-round");
+    let harness = opens(
+        format!("settings/agents/{number}/harness"),
+        words::RUN_ON_HARNESS.to_owned(),
+        ducklink::mint(&chain, HARNESS, &["create", agent_id.as_str()])
+            .filter(|_| agent.script().is_none()),
+        "bot",
+    );
     column(format!("settings/agents/{number}/actions"))
         .child(
             design::sheet_row(
@@ -322,6 +360,8 @@ fn actions(
         )
         .children(change)
         .children(remove)
+        .child(key)
+        .children(harness)
         .child(
             design::sheet_row(
                 format!("settings/agents/{number}/answers/open"),
@@ -642,6 +682,10 @@ fn add_key(
         design::field(request, ladder, theme)
             .mono()
             .label(words::KEY_REQUEST)
+            .caption(view.key_for.map_or_else(
+                || words::ADD_KEY_WHY.to_owned(),
+                |(n, made)| words::key_for(n, made),
+            ))
             .when_some(
                 problem_of(form, words::ADD_KEY.empty),
                 design::Field::problem,

@@ -56,7 +56,8 @@ fn sweep() {
         cx.simulate_dismiss("settings/agents/12/sheet");
         cx.simulate_click("settings/agents/create/open");
         cx.simulate_click("settings/agents/create/cancel");
-        cx.simulate_click("settings/agents/key/open");
+        cx.simulate_click("settings/agents/12");
+        cx.simulate_click("settings/agents/12/key/open");
         cx.simulate_back();
         cx.simulate_click("settings/strip/policies");
         cx.run_until_parked();
@@ -260,10 +261,12 @@ fn a_person_reads_each_agent_and_whom_it_answers() {
             "Scout",
             "active",
             "account 12 · 0 keys · answers only me",
-            "Create an agent",
-            "Add a key to an agent",
+            "external",
+            "Connect an external agent",
+            "An agent another machine runs with its own key. To have this network run one, create it in Agents.",
         ],
     );
+    assert!(!cx.has_text("Add a key to an agent"), "{:?}", cx.texts());
 }
 
 #[test]
@@ -490,7 +493,8 @@ fn a_refused_create_keeps_its_sheet_and_says_why() {
 #[test]
 fn an_added_key_closes_its_sheet() {
     let mut cx = agents();
-    cx.simulate_click("settings/agents/key/open");
+    cx.simulate_click("settings/agents/12");
+    cx.simulate_click("settings/agents/12/key/open");
     cx.simulate_input("settings/agents/key/request", "zz");
     cx.simulate_click("settings/agents/key/submit");
     assert!(cx.has_text("That isn’t a key request for one of your agents."));
@@ -532,23 +536,43 @@ fn a_landing_leaves_a_sheet_opened_meanwhile() {
 }
 
 #[test]
-fn a_create_landing_leaves_the_add_key_sheet_open() {
+fn a_create_landing_leaves_an_agents_sheet_open() {
     let mut cx = agents();
     cx.simulate_click("settings/agents/create/open");
     cx.simulate_input("settings/agents/create/name", "Bot");
     cx.host()
-        .handle::<Submit<Identity>>(|_| Ok(view::testing::applied(Vec::new())));
+        .handle::<Submit<Identity>>(|_| Ok(view::testing::applied(view::methods::encode(&31u64))));
     let create = press(&cx, "settings/agents/create/submit");
     let cancel = press(&cx, "settings/agents/create/cancel");
-    let key = press(&cx, "settings/agents/key/open");
-    cx.tick(vec![create, cancel, key]);
-    assert!(cx.find("settings/agents/key/sheet").is_some());
+    let agent = press(&cx, "settings/agents/12");
+    cx.tick(vec![create, cancel, agent]);
+    assert!(cx.find("settings/agents/12/sheet").is_some());
     cx.run_until_parked();
     assert!(
-        cx.find("settings/agents/key/sheet").is_some(),
-        "the create's landing closed the add-key sheet: {:?}",
+        cx.find("settings/agents/12/sheet").is_some(),
+        "the create's landing closed Scout's sheet: {:?}",
         cx.texts()
     );
+}
+
+#[test]
+fn a_connected_agent_goes_on_to_its_key_sheet() {
+    let mut cx = agents();
+    cx.simulate_click("settings/agents/create/open");
+    cx.simulate_input("settings/agents/create/name", "Pager");
+    cx.host()
+        .handle::<Submit<Identity>>(|_| Ok(view::testing::applied(view::methods::encode(&31u64))));
+    cx.simulate_click("settings/agents/create/submit");
+    cx.run_until_parked();
+    assert!(cx.find("settings/agents/create/sheet").is_none());
+    assert!(
+        cx.find("settings/agents/key/sheet").is_some(),
+        "{:?}",
+        cx.texts()
+    );
+    let asks = "Created account 31. On the agent's machine, sign a key request for account 31, then paste it here.";
+    assert!(cx.has_text(asks), "{:?}", cx.texts());
+    assert!(cx.find("settings/agents/key/open").is_none());
 }
 
 #[test]
@@ -569,7 +593,8 @@ fn a_closed_sheet_forgets_what_was_not_sent() {
     cx.simulate_click("settings/agents/create/open");
     cx.simulate_input("settings/agents/create/name", "Half");
     cx.simulate_back();
-    cx.simulate_click("settings/agents/key/open");
+    cx.simulate_click("settings/agents/12");
+    cx.simulate_click("settings/agents/12/key/open");
     cx.simulate_input("settings/agents/key/request", "zz");
     cx.simulate_click("settings/agents/key/submit");
     assert!(cx.has_text("That isn’t a key request for one of your agents."));
@@ -580,7 +605,8 @@ fn a_closed_sheet_forgets_what_was_not_sent() {
     };
     assert_eq!(value, "");
     cx.simulate_back();
-    cx.simulate_click("settings/agents/key/open");
+    cx.simulate_click("settings/agents/12");
+    cx.simulate_click("settings/agents/12/key/open");
     assert!(!cx.has_text("That isn’t a key request for one of your agents."));
 }
 
@@ -739,7 +765,8 @@ fn the_phones_fields_carry_their_keyboard_hints() {
     assert_eq!(name.autocapitalize, wire::Autocapitalize::Sentences);
 
     let mut cx = agents();
-    cx.simulate_click("settings/agents/key/open");
+    cx.simulate_click("settings/agents/12");
+    cx.simulate_click("settings/agents/12/key/open");
     let request = hints(&cx, "settings/agents/key/request");
     assert!(!request.autocorrect && !request.suggestions);
     assert_eq!(request.autocapitalize, wire::Autocapitalize::None);

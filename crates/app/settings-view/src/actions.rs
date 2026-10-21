@@ -47,8 +47,14 @@ impl Settings {
                     unsent(&mut answering.form);
                 }
             }
-            Some(Sheet::CreateAgent) => unsent(&mut self.create_agent),
-            Some(Sheet::AddKey) => unsent(&mut self.agent_key),
+            Some(Sheet::CreateAgent) => {
+                unsent(&mut self.create_agent);
+                self.key_for = None;
+            }
+            Some(Sheet::AddKey) => {
+                unsent(&mut self.agent_key);
+                self.key_for = None;
+            }
             None => {}
         }
         cx.notify();
@@ -143,6 +149,7 @@ impl Settings {
             op,
             move |v| v.rename_agent.entry(number).or_default(),
             from,
+            |_, _| {},
             cx,
         );
     }
@@ -310,6 +317,7 @@ impl Settings {
             move |v| which(v.answering.entry(number).or_default()),
             from,
             Some(number),
+            |_, _| {},
             cx,
         );
     }
@@ -322,7 +330,25 @@ impl Settings {
             return;
         }
         let op = identity::Op::CreateAgent { name };
-        self.submit_agent_op(op, |v| &mut v.create_agent, self.sheet, cx);
+        self.submit_agent_op(op, |v| &mut v.create_agent, self.sheet, Self::created, cx);
+    }
+
+    fn created(&mut self, output: &[u8]) {
+        let Ok(number) = view::methods::decode::<u64>(output) else {
+            return;
+        };
+        self.key_for = Some((number, true));
+        if self.sheet == Some(Sheet::CreateAgent) {
+            self.sheet = Some(Sheet::AddKey);
+        }
+    }
+
+    pub(crate) fn open_key_for(&mut self, number: u64, sheet: bool, cx: &mut Context<Self>) {
+        self.key_for = Some((number, false));
+        if sheet {
+            self.sheet = Some(Sheet::AddKey);
+        }
+        cx.notify();
     }
 
     pub(crate) fn submit_agent_key(&mut self, cx: &mut Context<Self>) {
@@ -342,11 +368,17 @@ impl Settings {
             cx.notify();
             return;
         };
-        self.submit_agent_op(op, |v| &mut v.agent_key, self.sheet, cx);
+        self.submit_agent_op(
+            op,
+            |v| &mut v.agent_key,
+            self.sheet,
+            |v, _| v.key_for = None,
+            cx,
+        );
     }
 
     pub(crate) fn set_standing(&mut self, op: identity::Op, cx: &mut Context<Self>) {
-        self.submit_agent_op(op, |v| &mut v.agent_standing, self.sheet, cx);
+        self.submit_agent_op(op, |v| &mut v.agent_standing, self.sheet, |_, _| {}, cx);
     }
 
     fn submit_agent_op(
@@ -354,6 +386,7 @@ impl Settings {
         op: identity::Op,
         form: impl Fn(&mut Settings) -> &mut Form + 'static,
         from: Option<Sheet>,
+        then: fn(&mut Settings, &[u8]),
         cx: &mut Context<Self>,
     ) {
         self.land_agent_op(
@@ -361,6 +394,7 @@ impl Settings {
             form,
             from,
             None,
+            then,
             cx,
         );
     }
@@ -371,6 +405,7 @@ impl Settings {
         form: impl Fn(&mut Settings) -> &mut Form + 'static,
         from: Option<Sheet>,
         answered: Option<u64>,
+        then: fn(&mut Settings, &[u8]),
         cx: &mut Context<Self>,
     ) where
         Asked: Future<Output = Result<Submitted, view::host::Error>> + 'static,
@@ -400,6 +435,9 @@ impl Settings {
                 .and_then(|number| view.answering.get_mut(&number))
             {
                 answering.form.text.reset("");
+            }
+            if let Ok(Submitted::Applied { output, .. }) = &result {
+                then(view, output);
             }
             if landed && view.sheet == from {
                 view.sheet = from.and_then(Sheet::after_landing);

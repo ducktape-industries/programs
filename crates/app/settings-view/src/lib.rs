@@ -29,6 +29,7 @@ impl View for Settings {
         Capability::Clipboard,
         Capability::File,
         Capability::Blob,
+        Capability::Link,
     ];
     const MIN_WINDOW_WIDTH: u32 = 560;
 

@@ -1,11 +1,13 @@
 //! Typed reads: who the seated key is and whom each of its agents answers (identity), the
 //! account a typed name or number is, and whether each of its keys validates (valset). Rows keep
 //! what the programs said; they are worded only when drawn.
-use identity::{Kind, Ownership, PageRequest, Party, Reference, Standing};
+use identity::{Kind, Ownership, PageRequest, Party, Reference, Script, Standing};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use view::host::malformed;
 use view::prelude::*;
+
+pub(crate) const HARNESS: &str = "harness";
 
 /// Who the seated key is.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -75,6 +77,17 @@ impl Agent {
         }
     }
 
+    pub fn script(&self) -> Option<&Script> {
+        match &self.kind {
+            Kind::Program { script, .. } => script.as_ref(),
+            Kind::User | Kind::System(_) => None,
+        }
+    }
+
+    pub fn harnessed(&self) -> Option<&Script> {
+        self.script().filter(|script| script.calls == HARNESS)
+    }
+
     pub fn party_name(&self, party: &Party) -> String {
         match party {
             Party::Account(person) => match self.names.get(person) {
@@ -109,7 +122,7 @@ pub(crate) async fn account(
         // the host resolves no account for a suspended agent's key, which
         // identity still holds (and so refuses to create an account with)
         let held = held_by(&host, &key).await?;
-        let key = read_key(&host, key, None).await?;
+        let key = key_of(&validators(&host).await?, key, None);
         return Ok(Some(match held {
             Some((name, note)) => Seat::Stopped {
                 key,
@@ -122,10 +135,12 @@ pub(crate) async fn account(
     let Some(account) = host.query(identity::ask::Get { number }).await? else {
         return Ok(None);
     };
-    let mut keys = Vec::new();
-    for key in account.keys() {
-        keys.push(read_key(&host, key.key.clone(), key.label.clone()).await?);
-    }
+    let validators = validators(&host).await?;
+    let keys = account
+        .keys()
+        .iter()
+        .map(|key| key_of(&validators, key.key.clone(), key.label.clone()))
+        .collect();
     let agents = agents(&host, number).await?;
     Ok(Some(Seat::Account(Account {
         number,
@@ -232,23 +247,18 @@ pub(crate) async fn find(host: Host, typed: String) -> Result<Found, Error> {
         });
     }
     let wanted = typed.to_lowercase();
-    let mut matched = Vec::new();
-    let mut after = None;
-    loop {
-        let (profiles, next) = host
-            .query(identity::ask::Profiles { after, limit: 100 })
-            .await?;
-        let named = profiles
-            .into_iter()
-            .filter(|profile| profile.name.to_lowercase() == wanted)
-            .map(|profile| match profile.kind {
-                Kind::System(program) => Party::Program(program),
-                Kind::User | Kind::Program { .. } => Party::Account(profile.number),
-            });
-        matched.extend(named);
-        let Some(next) = next else { break };
-        after = Some(next);
-    }
+    let matched: Vec<Party> = host
+        .query_all(|after| identity::ask::List {
+            page: PageRequest { after, limit: None },
+        })
+        .await?
+        .into_iter()
+        .filter(|account| account.card.name.to_lowercase() == wanted)
+        .map(|account| match account.kind() {
+            Kind::System(program) => Party::Program(program),
+            Kind::User | Kind::Program { .. } => Party::Account(account.number),
+        })
+        .collect();
     Ok(match matched.as_slice() {
         [party] => Found::Party(party.clone()),
         [] => Found::Nobody,
@@ -256,13 +266,23 @@ pub(crate) async fn find(host: Host, typed: String) -> Result<Found, Error> {
     })
 }
 
-async fn read_key(host: &Host, key: Vec<u8>, label: Option<String>) -> Result<Key, Error> {
-    let membership = host
-        .query(valset::ask::Membership { key: key.clone() })
+async fn validators(host: &Host) -> Result<BTreeSet<Vec<u8>>, Error> {
+    let members = host
+        .query_all(|after| valset::ask::Memberships {
+            page: valset::PageRequest { after, limit: None },
+        })
         .await?;
-    Ok(Key {
+    Ok(members
+        .into_iter()
+        .filter(|member| member.role == valset::Role::Validator)
+        .map(|member| member.key)
+        .collect())
+}
+
+fn key_of(validators: &BTreeSet<Vec<u8>>, key: Vec<u8>, label: Option<String>) -> Key {
+    Key {
         label,
+        validator: validators.contains(&key),
         key,
-        validator: membership.is_some_and(|m| m.role == valset::Role::Validator),
-    })
+    }
 }

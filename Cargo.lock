@@ -5471,6 +5471,7 @@ name = "settings-view"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "ducklink",
  "identity",
  "image",
  "ownership",

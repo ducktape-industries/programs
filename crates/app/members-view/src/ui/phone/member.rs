@@ -51,7 +51,7 @@ pub(super) fn page(
         body = body.children(activity(view, ladder, theme));
     }
     if row.group() == Group::Agents {
-        let note = words::MANAGED_IN_SETTINGS;
+        let note = words::managed_where(&row.kind);
         body = body.child(quiet("members-managed-in-settings", note, ladder, theme));
     }
     design::page(

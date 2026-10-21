@@ -2,7 +2,7 @@
 //! form that gives a bare key an account, and a person's agents with what
 //! their manager does to them.
 use super::*;
-use crate::queries::{Account, Agent, Key};
+use crate::queries::{Account, Agent, HARNESS, Key};
 use crate::state::{Answering, Choice};
 use identity::{Ownership, Standing};
 use view::design::Ladder;
@@ -304,7 +304,7 @@ fn agents(
         .child(design::setting_row(
             "settings/agents/create",
             words::CREATE_AGENT_TITLE,
-            "A new account you manage. Give it a key next.",
+            words::CONNECT_WHY,
             create_control,
             ladder,
             theme,
@@ -318,7 +318,10 @@ fn agents(
         .child(design::setting_row(
             "settings/agents/key",
             words::ADD_KEY_TITLE,
-            words::ADD_KEY_WHY,
+            view.key_for.map_or_else(
+                || words::ADD_KEY_WHY.to_owned(),
+                |(n, made)| words::key_for(n, made),
+            ),
             key_control,
             ladder,
             theme,
@@ -392,6 +395,15 @@ fn agent(
                         foreground,
                         background,
                     ))
+                    .children(words::runs_badge(&agent.kind).map(|runs| {
+                        design::badge(
+                            format!("settings/agents/{number}/runs"),
+                            runs,
+                            ladder,
+                            theme.muted,
+                            theme.surface_raised,
+                        )
+                    }))
                 }),
         )
         .child(
@@ -429,7 +441,8 @@ fn agent(
     let photo_refused = view
         .photo_stopped(number)
         .and_then(|form| problem(&format!("agents/{number}/photo"), form, "", theme));
-    let answers = (!revoked).then(|| answers(view, agent, cx, theme, ladder));
+    let external = agent.harnessed().is_none();
+    let answers = (!revoked && external).then(|| answers(view, agent, cx, theme, ladder));
     div()
         .id(format!("settings/agents/{number}/card"))
         .flex()
@@ -623,7 +636,7 @@ fn actions(
     renaming: Option<&Form>,
     cx: &mut Context<Settings>,
     theme: &Theme,
-) -> impl IntoElement {
+) -> AnyElement {
     let number = agent.number;
     let (toggle, toggle_label, toggle_op) = agent.standing_toggle();
     let toggled = cx.listener(move |v: &mut Settings, _: &ClickEvent, _, cx| {
@@ -665,6 +678,49 @@ fn actions(
             pressed,
         )
     });
+    let chain = view.session.chain_id.clone();
+    let opens = move |id: String, label: String, link: Option<String>| {
+        link.map(|link| {
+            button(id, label, theme).on_click(
+                move |_: &ClickEvent, _: &mut Window, cx: &mut App| cx.host().open_link(&link),
+            )
+        })
+    };
+    if let Some(script) = agent.harnessed() {
+        let agent_id = number.to_string();
+        let link = ducklink::mint(&chain, &script.calls, &[agent_id.as_str()]);
+        return div()
+            .id(format!("settings/agents/{number}/actions"))
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(design::space::SM)
+            .children(change)
+            .children(remove)
+            .children(opens(
+                format!("settings/agents/{number}/open"),
+                words::open_in(&script.calls),
+                link,
+            ))
+            .into_any_element();
+    }
+    let agent_id = number.to_string();
+    let harness = opens(
+        format!("settings/agents/{number}/harness"),
+        words::RUN_ON_HARNESS.to_owned(),
+        ducklink::mint(&chain, HARNESS, &["create", agent_id.as_str()])
+            .filter(|_| agent.script().is_none()),
+    );
+    let keyed = cx.listener(move |v: &mut Settings, _: &ClickEvent, window, cx| {
+        v.open_key_for(number, false, cx);
+        window.focus("settings/agents/key/request");
+    });
+    let key = button(
+        format!("settings/agents/{number}/key/open"),
+        words::ADD_A_KEY,
+        theme,
+    )
+    .on_click(keyed);
     let busy = view.agent_standing.busy;
     div()
         .id(format!("settings/agents/{number}/actions"))
@@ -699,6 +755,8 @@ fn actions(
         })
         .children(change)
         .children(remove)
+        .child(key)
+        .children(harness)
         .child(submit(
             &format!("settings/agents/{number}/{toggle}"),
             toggle_label,
@@ -721,4 +779,5 @@ fn actions(
             .text_color(theme.danger)
             .border_color(theme.background),
         )
+        .into_any_element()
 }

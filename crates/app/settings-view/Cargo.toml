@@ -14,6 +14,8 @@ ownership = { path = "../../system/ownership" }
 policy-view = { path = "../../sdk/policy-view" }
 identity = { path = "../../system/identity" }
 valset = { path = "../../system/valset" }
+# mints the `duck://<chain>/harness/...` links an agent's row opens
+ducklink = { path = "../../sdk/ducklink" }
 serde.workspace = true
 # the picked picture decoded, cut and saved as the avatar's JPEG: the one
 # gpui-pre already links into every view

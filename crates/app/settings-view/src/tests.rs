@@ -121,14 +121,16 @@ fn respond(cx: &TestAppContext) {
     policies::owning(cx);
     cx.host().handle::<Query<Valset>>(|q| {
         Ok(match q {
-            valset::Query::Membership { key } => {
-                valset::Reply::Membership(Some(valset::Membership {
-                    key,
+            valset::Query::Memberships { .. } => valset::Reply::Memberships(valset::PageResponse {
+                height: 42,
+                items: vec![valset::Membership {
+                    key: vec![0xab, 0xcd],
                     address: Some("127.0.0.1:19001".into()),
                     halo: "node.example.org:9100".into(),
                     role: valset::Role::Validator,
-                }))
-            }
+                }],
+                next: None,
+            }),
             q => panic!("unexpected query: {q:?}"),
         })
     });
@@ -605,7 +607,11 @@ fn long_host_key_is_truncated_and_non_validator_standing_is_quiet() {
     let long_hex = abi::hex(&long_key);
     cx.host().handle::<Query<Valset>>(|q| {
         Ok(match q {
-            valset::Query::Membership { .. } => valset::Reply::Membership(None),
+            valset::Query::Memberships { .. } => valset::Reply::Memberships(valset::PageResponse {
+                height: 1,
+                items: Vec::new(),
+                next: None,
+            }),
             q => panic!("unexpected query: {q:?}"),
         })
     });
@@ -668,6 +674,164 @@ fn a_person_creates_an_agent_and_adds_its_key() {
     cx.run_until_parked();
     assert_eq!(cx.host().requests::<Submit<Identity>>().len(), 2);
     assert!(!cx.has_text("That isn’t a key request for one of your agents."));
+}
+
+fn scripted(calls: &str) -> identity::Account {
+    let identity::Control::Program {
+        manager,
+        category,
+        life,
+        ..
+    } = scout().control
+    else {
+        panic!()
+    };
+    identity::Account {
+        control: identity::Control::Program {
+            script: Some(identity::Script {
+                calls: calls.into(),
+                config: "/home/maya/agents/scout.md".into(),
+            }),
+            manager,
+            category,
+            life,
+        },
+        ..scout()
+    }
+}
+
+fn with_scout(state: &str, agent: identity::Account) -> TestAppContext {
+    let (mut cx, props) = seated(state, false);
+    let listed = agent.clone();
+    cx.host().handle::<Query<Identity>>(move |q| {
+        Ok(match q {
+            identity::Query::Get { number } => {
+                identity::Reply::Account(Some(maya(number, "Laptop key")))
+            }
+            identity::Query::Managed { by: 7, .. } => {
+                identity::Reply::Accounts(identity::PageResponse {
+                    height: 42,
+                    items: vec![listed.clone()],
+                    next: None,
+                })
+            }
+            identity::Query::Narrowed { .. } => identity::Reply::Narrowed(identity::PageResponse {
+                height: 42,
+                items: vec![(12, identity::Ownership::Owner)],
+                next: None,
+            }),
+            q => panic!("unexpected query: {q:?}"),
+        })
+    });
+    props.send(Session {
+        signer: "abcd".into(),
+        account: Some(7),
+        chain_id: "garage#0a1b2c3d".into(),
+        endpoint: "http://127.0.0.1:19001".into(),
+        ..Session::default()
+    });
+    cx.run_until_parked();
+    cx.simulate_click("settings/nav/agents");
+    cx.run_until_parked();
+    cx
+}
+
+#[test]
+fn a_harness_agent_keeps_its_photo_and_opens_in_agents() {
+    let mut cx = with_scout("ready", scripted("harness"));
+    assert!(cx.has_text("harness"), "{:?}", cx.texts());
+    for gone in [
+        "settings/agents/12/rename",
+        "settings/agents/12/suspend",
+        "settings/agents/12/revoke",
+        "settings/agents/12/answering",
+        "settings/agents/12/key/open",
+        "settings/agents/12/harness",
+    ] {
+        assert!(cx.find(gone).is_none(), "{gone}: {:?}", cx.texts());
+    }
+    assert!(cx.has_text("Open in harness"), "{:?}", cx.texts());
+    cx.simulate_click("settings/agents/12/open");
+    assert_eq!(
+        cx.host().requests::<view::methods::LinkOpen>(),
+        ["duck://garage-0a1b2c3d/harness/12".to_owned()]
+    );
+}
+
+#[test]
+fn an_external_agent_takes_a_key_and_runs_on_harness_from_its_row() {
+    let mut cx = with_scout("ready", scout());
+    for text in [
+        "external",
+        "Add a key…",
+        "Run it on harness…",
+        "Who it answers",
+    ] {
+        assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
+    }
+    cx.simulate_click("settings/agents/12/harness");
+    assert_eq!(
+        cx.host().requests::<view::methods::LinkOpen>(),
+        ["duck://garage-0a1b2c3d/harness/create/12".to_owned()]
+    );
+    cx.simulate_click("settings/agents/12/key/open");
+    cx.run_until_parked();
+    let asks = "On the agent's machine, sign a key request for account 12, then paste it here.";
+    assert!(cx.has_text(asks), "{:?}", cx.texts());
+    assert!(
+        !cx.texts()
+            .iter()
+            .any(|text| text.contains("Created account")),
+        "an agent that already existed: {:?}",
+        cx.texts()
+    );
+}
+
+#[test]
+fn an_agent_another_program_runs_keeps_every_action_in_account() {
+    let cx = with_scout("ready", scripted("forge"));
+    assert!(cx.has_text("forge"), "{:?}", cx.texts());
+    for kept in [
+        "settings/agents/12/rename",
+        "settings/agents/12/suspend",
+        "settings/agents/12/revoke",
+        "settings/agents/12/answering",
+        "settings/agents/12/key/open",
+    ] {
+        assert!(cx.find(kept).is_some(), "{kept}: {:?}", cx.texts());
+    }
+    for gone in ["settings/agents/12/open", "settings/agents/12/harness"] {
+        assert!(cx.find(gone).is_none(), "{gone}: {:?}", cx.texts());
+    }
+}
+
+#[test]
+fn a_connected_agent_asks_for_its_key_next() {
+    let mut cx = fixture("ready", false);
+    cx.simulate_click("settings/nav/agents");
+    cx.run_until_parked();
+    assert!(cx.has_text("Connect an external agent"), "{:?}", cx.texts());
+    cx.host()
+        .handle::<Submit<Identity>>(|_| Ok(view::testing::applied(view::methods::encode(&31u64))));
+    cx.simulate_input("settings/agents/create/name", "Pager");
+    cx.simulate_click("settings/agents/create/submit");
+    cx.run_until_parked();
+    let asks = "Created account 31. On the agent's machine, sign a key request for account 31, then paste it here.";
+    assert!(cx.has_text(asks), "{:?}", cx.texts());
+}
+
+#[test]
+fn every_key_is_judged_by_one_membership_read() {
+    let cx = fixture("ready", false);
+    let asked = cx.host().requests::<Query<Valset>>();
+    assert!(!asked.is_empty());
+    assert!(
+        asked
+            .iter()
+            .all(|q| matches!(q, valset::Query::Memberships { .. })),
+        "{asked:?}"
+    );
+    assert!(cx.has_text("Validator"), "{:?}", cx.texts());
 }
 
 #[test]
@@ -903,14 +1067,6 @@ fn answering(ownership: identity::Ownership) -> (TestAppContext, Answers) {
                 identity::Reply::Profile(directory.iter().find(|p| p.number == number).cloned())
             }
             identity::Query::List { .. } => listing(&directory),
-            identity::Query::Profiles { after: None, .. } => identity::Reply::Profiles {
-                profiles: directory[..3].to_vec(),
-                next: Some(9),
-            },
-            identity::Query::Profiles { after: Some(9), .. } => identity::Reply::Profiles {
-                profiles: directory[3..].to_vec(),
-                next: None,
-            },
             identity::Query::Resolve { references } => identity::Reply::Resolved(
                 references
                     .iter()

@@ -20,6 +20,8 @@ pub struct Settings {
     pub(crate) create_account: Form,
     pub(crate) create_agent: Form,
     pub(crate) agent_key: Form,
+    #[serde(default)]
+    pub(crate) key_for: Option<(u64, bool)>,
     pub(crate) rename_agent: BTreeMap<u64, Form>,
     pub(crate) agent_standing: Form,
     pub(crate) answering: BTreeMap<u64, Answering>,

@@ -39,6 +39,18 @@ pub(crate) const CLOSE: &str = "Close";
 pub(crate) const NEWEST_FIRST: &str = "newest first";
 pub(crate) const MANAGED_IN_SETTINGS: &str =
     "Suspend, revoke, rename and keys live in Account → Agents, for the manager.";
+pub(crate) const MANAGED_IN_AGENTS: &str =
+    "Rename, suspend and revoke live in Agents, for the manager; its photo in Account → Agents.";
+
+pub(crate) fn managed_where(kind: &identity::Kind) -> &'static str {
+    match kind {
+        identity::Kind::Program {
+            script: Some(script),
+            ..
+        } if script.calls == "harness" => MANAGED_IN_AGENTS,
+        _ => MANAGED_IN_SETTINGS,
+    }
+}
 
 pub(crate) fn no_match(needle: &str, only: Option<&str>) -> String {
     match (needle, only) {

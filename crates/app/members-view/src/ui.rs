@@ -409,7 +409,7 @@ fn detail(
                 .pt(space::LG)
                 .text_size(text::SECONDARY)
                 .text_color(theme.muted)
-                .child(words::MANAGED_IN_SETTINGS),
+                .child(words::managed_where(&row.kind)),
         );
     }
     detail.into_any_element()
