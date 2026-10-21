@@ -1,9 +1,7 @@
 //! The words both trees read a screen by: a state, a place, a conversation, an agent's setup,
 //! a context and its usage. Each takes what the reads hold and gives a sentence or a few words;
 //! the screens decide where they go.
-use harness::{
-    AccountBudget, Awaited, BudgetReport, StatusOutcome, StatusRead, WHOLE_WINDOW, WindowOutlook,
-};
+use harness::{AccountBudget, Awaited, BudgetReport, WHOLE_WINDOW, WindowOutlook};
 use harness::{
     AgentSetup, Asking, Body, CallRow, CallState, Configured, Flow, Frame, Partial, ServerTool,
     Spoken, Stop, Thinking, ThreadRow, Usage, Window,
@@ -976,27 +974,6 @@ pub(crate) fn budget_state(row: &AccountBudget) -> Option<String> {
     match (status, fallback) {
         (Some(status), Some(fallback)) => Some(format!("{status} · {fallback}")),
         (status, fallback) => status.or(fallback),
-    }
-}
-
-pub(crate) fn budget_error(row: &AccountBudget) -> Option<String> {
-    let error = row.error.as_deref()?;
-    Some(format!(
-        "ccs could not read this account: {}",
-        spaced(error)
-    ))
-}
-
-pub(crate) fn budget_read(read: &StatusRead, now: u64) -> String {
-    let service = &read.service;
-    match &read.outcome {
-        StatusOutcome::Read { accounts } => format!(
-            "{service} status read at {} · {}",
-            clock_from(now, read.time),
-            design::plural(*accounts, "account", "accounts")
-        ),
-        StatusOutcome::Unavailable => format!("{service} status unavailable"),
-        StatusOutcome::Failed(why) => format!("Couldn’t read {service}’s status: {why}"),
     }
 }
 

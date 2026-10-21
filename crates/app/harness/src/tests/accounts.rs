@@ -11,12 +11,12 @@ type Window = (String, String, u64, u64, u64);
 type Row = (String, String, Option<String>, u64, u64, Vec<Window>);
 type By = (String, Option<String>, bool);
 
-fn harness_wired(world: &World) {
+pub(super) fn harness_wired(world: &World) {
     let route = set_route(&[(SERVICE, Wire::Harness)]);
     world.chain.submit(signed(ADA), PROGRAM, &route).unwrap();
 }
 
-fn from_node(chain: &MockChain, op: &egress::Op) {
+pub(super) fn from_node(chain: &MockChain, op: &egress::Op) {
     chain.submit(signed(&NODE), egress::PROGRAM, op).unwrap();
 }
 
@@ -65,52 +65,67 @@ fn turn_open_on(chain: &MockChain, service: &str, thread: u64) -> (RequestRow, O
     let Ok([row]) = <[RequestRow; 1]>::try_from(open) else {
         panic!("{count} turns open for conversation {thread}");
     };
-    let pinned = pinned_to(&row);
+    let pinned = pinned_to(chain, &row);
     (row, pinned)
 }
 
-fn pinned_to(row: &RequestRow) -> Option<String> {
+pub(super) fn pinned_to(chain: &MockChain, row: &RequestRow) -> Option<String> {
     let Request::Http { head, .. } = &row.request else {
         return None;
     };
-    let named = head.headers.iter().find(|(key, _)| key == "x-ccs-account");
-    named.map(|(_, account)| account.clone())
+    let unnamed = head.headers.iter().all(|(key, _)| key == "content-type");
+    assert!(
+        unnamed,
+        "a call names its account only in its body: {:?}",
+        head.headers
+    );
+    if row.request.parts().is_empty() {
+        return None;
+    }
+    let target = body(chain, row)["target"].clone();
+    match target["kind"].as_str() {
+        Some("pinned") => {
+            assert_eq!(target["service"], row.request.service(), "{target}");
+            target["account"].as_str().map(str::to_owned)
+        }
+        Some("unpinned") => None,
+        _ => panic!("a call's body names where it goes: {target}"),
+    }
 }
 
-fn answer_headers(account: &str, used: &str, status: &str) -> Vec<(String, String)> {
+pub(super) fn answer_headers(account: &str, used: &str, status: &str) -> Vec<(String, String)> {
     let reset = FAR.to_string();
     let headers = [
-        ("x-ccs-account", account),
-        ("anthropic-ratelimit-unified-5h-utilization", used),
-        ("anthropic-ratelimit-unified-5h-reset", reset.as_str()),
-        ("anthropic-ratelimit-unified-5h-status", status),
-        ("anthropic-ratelimit-unified-status", status),
+        ("x-harness-account", account),
+        ("x-harness-window-5h-used", used),
+        ("x-harness-window-5h-reset", reset.as_str()),
+        ("x-harness-window-5h-status", status),
+        ("x-harness-status", status),
     ];
     let each = headers.iter();
     each.map(|(key, value)| (key.to_string(), value.to_string()))
         .collect()
 }
 
-fn says_as(chain: &MockChain, thread: u64, account: &str, used: &str) {
-    says_on(chain, SERVICE, thread, account, used);
+pub(super) fn limited_headers(account: &str) -> Vec<(String, String)> {
+    let mut headers = answer_headers(account, "1", "rejected");
+    headers.push(("retry-after".to_owned(), FAR.to_string()));
+    headers
 }
 
-fn says_on(chain: &MockChain, service: &str, thread: u64, account: &str, used: &str) {
-    let (request, _) = turn_open_on(chain, service, thread);
+pub(super) fn replied(
+    chain: &MockChain,
+    request: &RequestRow,
+    said: Vec<Block>,
+    usage: model_wire::Usage,
+    headers: Vec<(String, String)>,
+) {
     let reply = model_wire::Reply {
         model: MODEL.into(),
         lane: Lane::of(PROVIDER, MODEL),
-        said: vec![Block::Text {
-            text: "hello back".into(),
-            citations: Vec::new(),
-        }],
+        said,
         stop: Stop::EndTurn,
-        usage: model_wire::Usage {
-            input: 10,
-            output: 5,
-            cache_read: 0,
-            cache_write: 0,
-        },
+        usage,
         prompt: None,
         context: None,
     };
@@ -122,7 +137,7 @@ fn says_on(chain: &MockChain, service: &str, thread: u64, account: &str, used: &
     from_node(chain, &egress::Op::Events(vec![event]));
     let end = egress::StreamEnd::Complete {
         status: 200,
-        headers: answer_headers(account, used, "allowed"),
+        headers,
     };
     let ended = egress::Op::EndStream {
         id: request.id,
@@ -130,6 +145,26 @@ fn says_on(chain: &MockChain, service: &str, thread: u64, account: &str, used: &
         end,
     };
     from_node(chain, &ended);
+}
+
+fn says_as(chain: &MockChain, thread: u64, account: &str, used: &str) {
+    says_on(chain, SERVICE, thread, account, used);
+}
+
+fn says_on(chain: &MockChain, service: &str, thread: u64, account: &str, used: &str) {
+    let (request, _) = turn_open_on(chain, service, thread);
+    let said = vec![Block::Text {
+        text: "hello back".into(),
+        citations: Vec::new(),
+    }];
+    let usage = model_wire::Usage {
+        input: 10,
+        output: 5,
+        cache_read: 0,
+        cache_write: 0,
+    };
+    let headers = answer_headers(account, used, "allowed");
+    replied(chain, &request, said, usage, headers);
 }
 
 fn limited_as(chain: &MockChain, thread: u64, account: &str) {
@@ -145,7 +180,7 @@ fn limited_on(chain: &MockChain, service: &str, thread: u64, account: &str) {
     };
     let limited = http::Response {
         status: 429,
-        headers: answer_headers(account, "1", "rejected"),
+        headers: limited_headers(account),
         body: serde_json::to_vec(&failure).unwrap(),
     };
     answer(chain, request.id, Answer::Output(abi::encode(&limited)));
@@ -321,8 +356,7 @@ fn each_answer_writes_the_budget_row_of_the_account_its_service_names() {
     world.mention("m2", "again");
     chain.at(4, 120_000);
     says_as(chain, first, "a", "0.5");
-    let fresh = Op::NewThread { agent: world.agent };
-    chain.submit(signed(ADA), PROGRAM, &fresh).unwrap();
+    new_thread_retiring_the_current_one(&world);
     let second = world.mention("m3", "a new one");
     assert_ne!(second, first);
     chain.at(5, 150_000);

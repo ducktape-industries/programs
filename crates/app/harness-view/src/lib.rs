@@ -63,8 +63,6 @@ pub struct Agents {
     #[serde(skip)]
     routing: Option<Task<()>>,
     #[serde(skip)]
-    reading: Option<Task<()>>,
-    #[serde(skip)]
     title: Option<String>,
     // the rooms named so far this session, and the newest head's time
     #[serde(skip)]
@@ -754,31 +752,6 @@ impl Agents {
             }
         };
         self.acting = Some(task);
-        cx.notify();
-    }
-
-    pub(crate) fn read_status(&mut self, cx: &mut Context<Self>) {
-        if self.reading.is_some() {
-            return;
-        }
-        let services = self.budget.ready().map(ui::budget::services);
-        let host = cx.host();
-        let reads = async move {
-            for service in services.into_iter().flatten() {
-                let op = harness::Op::ReadBudget { service };
-                if let Err(problem) = applied(host.ask::<Submit<harness::Harness>>(op).await) {
-                    return Ok::<_, Error>(Some(problem));
-                }
-            }
-            Ok(None)
-        };
-        self.reading = Some(cx.land(reads, |view, read, cx| {
-            view.reading = None;
-            if let Ok(Some(problem)) = read {
-                view.notice = Some(problem);
-            }
-            cx.notify();
-        }));
         cx.notify();
     }
 

@@ -33,15 +33,6 @@ pub fn answers(provider: &str, sealed: &str) -> Option<String> {
     }
 }
 
-pub fn ccs_provider(word: &str) -> Option<&'static str> {
-    let known = [
-        (anthropic::CCS_PROVIDER, anthropic::PROVIDER),
-        (codex::CCS_PROVIDER, codex::PROVIDER),
-    ];
-    let found = known.into_iter().find(|(ccs, _)| *ccs == word);
-    found.map(|(_, provider)| provider)
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Request {
     pub model: String,

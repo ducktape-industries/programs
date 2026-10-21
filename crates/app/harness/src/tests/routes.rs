@@ -133,6 +133,6 @@ fn a_service_that_answers_for_another_provider_than_its_route_asks_no_turn() {
     let told = notices(chain, thread);
     let said = told
         .iter()
-        .any(|text| text.starts_with("service ccs answers for provider openai, not anthropic"));
+        .any(|text| text.starts_with("service models answers for provider openai, not anthropic"));
     assert!(said, "{told:?}");
 }

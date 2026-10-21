@@ -167,7 +167,7 @@ fn request(wire: Wire, header: &Header) -> String {
             last,
         ));
     }
-    text.push_str(close(wire));
+    text.push_str(&close(wire, &model_wire::Target::Unpinned));
     text
 }
 

@@ -1,14 +1,14 @@
 use super::*;
 
-fn with_ccs() -> Net {
+fn with_a_second_service() -> Net {
     let mut net = Net::default();
     net.services.push(egress::ServiceRow {
-        name: "ccs-b".into(),
+        name: "models-b".into(),
         owner: ADA,
         nodes: vec![vec![3]],
         registered: 6,
     });
-    net.serving.push(("ccs-b".into(), 1));
+    net.serving.push(("models-b".into(), 1));
     net
 }
 
@@ -79,7 +79,7 @@ fn the_routes_page_lists_each_providers_route_and_sets_one_after_a_yes() {
 
 #[test]
 fn an_edit_sends_the_whole_route_in_its_new_order_after_a_yes() {
-    let (mut cx, _) = seated(with_ccs(), EDDY);
+    let (mut cx, _) = seated(with_a_second_service(), EDDY);
     takes(&cx);
     open_anthropic(&mut cx);
     for text in ["Edit anthropic's route", "first · Anthropic Messages"] {
@@ -89,11 +89,10 @@ fn an_edit_sends_the_whole_route_in_its_new_order_after_a_yes() {
         cx.find("route-provider").is_none(),
         "a route keeps its provider"
     );
-    cx.simulate_click("service-ccs-b");
+    cx.simulate_click("service-models-b");
     cx.simulate_click("route-next");
     cx.run_until_parked();
-    let reach =
-        "Reach its models through anthropic (Anthropic Messages), then ccs-b (Anthropic Messages)";
+    let reach = "Reach its models through anthropic (Anthropic Messages), then models-b (Anthropic Messages)";
     for text in ["Save anthropic's route", reach] {
         assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
     }
@@ -102,7 +101,7 @@ fn an_edit_sends_the_whole_route_in_its_new_order_after_a_yes() {
     cx.run_until_parked();
     let set = harness::Op::SetRoute {
         provider: ANTHROPIC.into(),
-        services: reached(&["anthropic", "ccs-b"]),
+        services: reached(&["anthropic", "models-b"]),
     };
     assert_eq!(sent(&cx), [set]);
     assert!(cx.find("route-next").is_none(), "{:?}", cx.texts());
@@ -144,12 +143,12 @@ fn removing_asks_once_and_names_the_agents_that_name_the_provider() {
 
 #[test]
 fn a_refusal_shows_harnesss_sentence_and_keeps_the_form() {
-    let (mut cx, _) = seated(with_ccs(), EDDY);
+    let (mut cx, _) = seated(with_a_second_service(), EDDY);
     let refusal = "account 7 may not write provider-route/anthropic: its owner is account 8";
     cx.host()
         .refuse::<Submit<harness::Harness>>("unauthorized", refusal);
     open_anthropic(&mut cx);
-    cx.simulate_click("service-ccs-b");
+    cx.simulate_click("service-models-b");
     cx.simulate_click("route-next");
     cx.run_until_parked();
     cx.simulate_click("route-set");

@@ -2,11 +2,11 @@
 
 The harness wire: the one vocabulary harness speaks to a model, and an adapter per provider that
 translates it to that provider's own wire and back. harness (on chain) writes requests and reads
-events in it; the adapter service (`harness-model-adapter/` in forge's `services`, beside ccs) runs the
+events in it; the adapter service (`harness-model-adapter/` in forge's `services`) runs the
 adapters. A provider's field names appear only in its adapter's module: `anthropic` (Messages,
-through ccs's `/v1/`) and `codex` (OpenAI's Responses on the Codex surface a ChatGPT plan opens,
-through ccs's `/backend-api/`: the system prompt rides as the developer's message, no
-`max_output_tokens`, `store: false`).
+`/v1/`) and `codex` (OpenAI's Responses on the Codex surface a ChatGPT plan opens,
+`/backend-api/`: the system prompt rides as the developer's message, no `max_output_tokens`,
+`store: false`).
 
 ## Endpoints the adapter service answers
 
@@ -15,13 +15,13 @@ through ccs's `/backend-api/`: the system prompt rides as the developer's messag
 | `POST /turn` | a `Request` | server-sent events, each `data:` one `Event`; the stream ends with exactly one `reply` or `failed`. A comment line (`: <name>`) carries no `Event`: the adapter sends one for each provider event that makes none, so egress hears a model that thinks in silence |
 | `POST /summary` | a `Request` | a `Summarized` (200), else a `Failure` |
 | `GET /models/{name}` | | a `Model` (200), else a `Failure` |
-| `GET /ccs/status` | | ccs's own status, passed through |
 
 An answer that is no reply carries a `Failure` as its body, under the provider's own status, with
-the provider's own headers (rate-limit windows, ccs's `x-ccs-account`) passed back as they came.
+the provider's own headers (its rate-limit windows) passed back as they came.
 Every answer also carries the budget in harness's own words (`budget`): for each usage window
 `x-harness-window-<name>-used` (the share used, a fraction), `-reset` (seconds since the epoch) and
-`-status`, then `x-harness-status` and `x-harness-account` (the provider's own id for the account).
+`-status`, then `x-harness-status` and `x-harness-account`: the account that answered, by the name
+a `pinned` target gives it where the service names its accounts, else the provider's own id for it.
 A window is named by its length (`5h`, `7d`), so every provider's windows read alike.
 There is no version anywhere: the vocabulary changes with harness, and this crate's tests hold both
 sides to it.
@@ -30,7 +30,8 @@ sides to it.
 
 - `Request`: model, max_tokens, thinking, system, tools (name, description, JSON schema), server
   tools, messages, the `target` the call goes to (`pinned` to a service and account, `unpinned`, or
-  `unnamed` from a harness that names none), and a `cache_key` the conversation's calls share. A
+  `unnamed` from a harness that names none; harness names `pinned` for a conversation whose last
+  answer named its account, else `unpinned`), and a `cache_key` the conversation's calls share. A
   user message holds text, images and tool results; an assistant message holds `Block`s and the
   `Lane` that wrote it: provider, model, and the egress service and account that answered.
 - `Model`: the provider, the context window, and the picture limits where the provider states them.

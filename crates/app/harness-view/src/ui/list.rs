@@ -70,7 +70,7 @@ pub(super) fn render(
         .flex_col()
         .gap(space::BLOCK)
         .child(head)
-        .children(super::budget::strip(view, cx, theme, ladder))
+        .children(super::budget::strip(view, theme, ladder))
         .child(body)
         .into_any_element()
 }

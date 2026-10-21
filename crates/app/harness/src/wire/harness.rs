@@ -9,12 +9,14 @@ use serde_json::{Map, Value, json};
 
 use super::{Answered, Foreign, Header, Summarized, Summary, anthropic};
 use crate::pictures::{Look, Looks};
-use crate::state::Lane;
 use crate::{Body, Flow, Forming, Frame, Partial, Role, Said, tools};
 
-pub(crate) const CLOSE: &str = "]}";
+pub(crate) type Lanes = BTreeMap<u64, model_wire::Lane>;
 
-pub(crate) type Lanes = BTreeMap<u64, Lane>;
+pub(crate) fn close(target: &model_wire::Target) -> String {
+    let target = serde_json::to_string(target).expect("a target is JSON");
+    format!("],\"target\":{target}}}")
+}
 
 fn json_head(method: Method, target: String) -> Head {
     let headers = match method {
@@ -197,10 +199,6 @@ fn untyped(tool: &str, input: String) -> String {
     }
 }
 
-fn wire_lane(lane: &Lane) -> model_wire::Lane {
-    model_wire::Lane::of(&lane.provider, &lane.model)
-}
-
 fn plain(said: &Said) -> Option<Block> {
     match said {
         Said::ServerToolUse { .. } | Said::ServerToolResult(_) | Said::Cited { .. } => {
@@ -239,18 +237,14 @@ pub(crate) fn message(
                 let Body::Turn { said, model, .. } = &frame.body else {
                     return None;
                 };
-                let lane = lanes.get(&frame.seq).cloned().unwrap_or(Lane {
-                    provider: model_wire::anthropic::PROVIDER.into(),
-                    model: model.clone(),
+                let lane = lanes.get(&frame.seq).cloned().unwrap_or_else(|| {
+                    model_wire::Lane::of(model_wire::anthropic::PROVIDER, model)
                 });
                 let blocks = match foreign.contains(&frame.seq) {
                     true => said.iter().filter_map(plain).collect(),
                     false => said.iter().map(block).collect(),
                 };
-                Some(Message::Assistant {
-                    lane: wire_lane(&lane),
-                    blocks,
-                })
+                Some(Message::Assistant { lane, blocks })
             })
             .collect(),
     };

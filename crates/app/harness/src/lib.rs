@@ -120,7 +120,7 @@ pub enum Op {
     Heard { watch: u64, event: Event },
     #[tool_op(description = "Retired with SetModel: an agent's configuration names its own compact_at, so it is always refused.", example = examples::set_compact_at)]
     SetCompactAt { id: String, compact_at: Option<u64> },
-    #[tool_op(description = "Read a service's usage windows from its ccs status into harness's budget rows. Anyone may.", example = examples::read_budget)]
+    #[tool_op(description = "Retired: an idle account's windows are its service's own page; always refused.", example = examples::read_budget)]
     ReadBudget { service: String },
     #[tool_op(description = "As an agent harness runs: wake thread once when the event happens (a height, a pod ending, a chat message, a forge change or ref, a files path). Returns the wait's id.", returns = u64)]
     Wait { thread: u64, event: WaitFor },
@@ -149,7 +149,7 @@ pub enum Op {
     },
     #[tool_op(description = "Retired with SetModel: SetRoute names the services that reach a provider, so it is always refused.", example = examples::set_services)]
     SetServices { id: String, services: Vec<String> },
-    #[tool_op(description = "ReadBudget for every service any model lists. Anyone may.", example = examples::read_budgets)]
+    #[tool_op(description = "Retired: an idle account's windows are its service's own page; always refused.", example = examples::read_budgets)]
     ReadBudgets,
     // a commit files made, told to harness while a wait for a files path is open
     #[tool_op(description = "From files only: a commit, for the waits on a files path.")]
@@ -756,9 +756,6 @@ pub struct UsageWindow {
 // a whole usage window, in the millionths `WindowOutlook::used` counts
 pub const WHOLE_WINDOW: u64 = 1_000_000;
 
-// the model budget: each model account's windows, each service's calls in the last whole minute
-// and in this one so far, the turns with a model call or relays out, each service's last status
-// reading, and `time`, the newest block's (ms)
 #[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct BudgetReport {
     pub time: u64,
@@ -768,8 +765,6 @@ pub struct BudgetReport {
     pub reads: Vec<StatusRead>,
 }
 
-// the last time `ReadBudget` read a service's status of every account it holds (ccs's
-// `/ccs/status`), and what came of it
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct StatusRead {
     pub service: String,
@@ -795,10 +790,6 @@ pub struct ServicePace {
     pub this_minute: u64,
 }
 
-// one model account as its last answer or status reading put it: `account` is ccs's name for it
-// (`label`) once ccs names it, else the model's id for it (`organization`), empty when neither
-// is known; `status` and `fallback` are the model's words for it, `error` ccs's when it could
-// not read the account
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct AccountBudget {
     pub service: String,
@@ -827,8 +818,6 @@ pub struct WindowOutlook {
     pub runs_out: Option<u64>,
 }
 
-// the service and ccs account a thread's prompt cache was last written on (none: the service
-// chose), the summary the prompt it wrote began with, and the block it answered at
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Route {
     pub service: String,
@@ -843,9 +832,6 @@ pub struct Routed {
     pub route: Route,
 }
 
-// who answered a thread's turn or summary at frame `seq`: the service, ccs's name for the account
-// and the model's id for it, and whether the thread moved there from the account before, which
-// re-wrote its prompt cache (the turn's `usage.cache_write` says how much)
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub struct Answerer {
     pub seq: u64,
@@ -1066,7 +1052,7 @@ pub enum Query {
     #[tool_query(description = "A conversation's settle window, or null.", example = examples::settling)]
     Settling { thread: u64 },
     #[ask(Reply::Budget(BudgetReport))]
-    #[reads(state::BUDGETS, state::PACES, state::FLIGHTS, state::READS)]
+    #[reads(state::BUDGETS, state::PACES, state::FLIGHTS)]
     #[tool_query(description = "Every model service account's usage windows, calls per minute and when it runs out.", example = examples::budget)]
     Budget,
     #[ask(Reply::Waits(PageResponse<WaitRow>))]
@@ -1250,16 +1236,8 @@ pub fn awaited(
             let thread = u64::from_le_bytes(bytes);
             (streamed_as(thread) == *deliver).then_some(Awaited::Reply { thread })
         }
-        (Request::Http { head, .. }, Delivery::Whole) => wire::awaited(&unpinned(head)),
+        (Request::Http { head, .. }, Delivery::Whole) => wire::awaited(head),
     }
-}
-
-// a whole request's head without the account harness pinned it to, which says nothing of what it asks
-fn unpinned(head: &abi::role::egress::http::Head) -> abi::role::egress::http::Head {
-    let mut head = head.clone();
-    head.headers
-        .retain(|(key, _)| !key.eq_ignore_ascii_case(budget::CCS_ACCOUNT));
-    head
 }
 
 pub fn describe(op: &Op) -> describe::Description {
@@ -1358,7 +1336,7 @@ pub fn describe(op: &Op) -> describe::Description {
             )
         }
         Op::ReadBudget { service } => (
-            format!("Read {service}'s status of every model account it holds"),
+            format!("Retired, always refused: read {service}'s status of every model account it holds"),
             vec![field("service", Value::text(service))],
         ),
         Op::Wait { thread, event } => (
@@ -1402,7 +1380,8 @@ pub fn describe(op: &Op) -> describe::Description {
             ],
         ),
         Op::ReadBudgets => (
-            "Read every model service's status of the model accounts it holds".to_owned(),
+            "Retired, always refused: read every model service's status of the model accounts it holds"
+                .to_owned(),
             Vec::new(),
         ),
         Op::SetRoute { provider, services } => {

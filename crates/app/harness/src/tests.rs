@@ -63,7 +63,7 @@ thread_local! {
 fn harness() -> String {
     SEATED.with(|seated| seated.borrow().clone())
 }
-const SERVICE: &str = "ccs";
+const SERVICE: &str = "models";
 const ADA: &[u8] = b"ada-key";
 const BO: &[u8] = b"bo-key";
 const MODEL: &str = "claude-test";
@@ -337,6 +337,11 @@ fn answering(world: &World, ownership: ::program::Ownership) {
 
 fn manager_only(world: &World) {
     answering(world, ::program::Ownership::Owner);
+}
+
+fn new_thread_retiring_the_current_one(world: &World) {
+    let fresh = Op::NewThread { agent: world.agent };
+    world.chain.submit(signed(ADA), PROGRAM, &fresh).unwrap();
 }
 
 fn assigned(chain: &MockChain, service: &str) -> Vec<RequestRow> {

@@ -1,23 +1,17 @@
-//! The model budget: each model account's usage windows, from its answers and from its service's
-//! own status, how often harness called each service in the last whole minute, and when each
-//! window runs out at the pace it climbed at.
-use ::program::{Ctx, Error, ExecCtx, QueryCtx, all};
-use abi::role::egress::{self, http};
-use serde::Deserialize;
+//! The model budget: each model account's usage windows, from its answers, how often harness
+//! called each service in the last whole minute, and when each window runs out at the pace it
+//! climbed at.
+use ::program::{Error, ExecCtx, QueryCtx, invalid};
+use abi::role::egress::http;
+use model_wire::budget as harness_words;
 
-use crate::calls::refusal;
 use crate::resume::header;
-use crate::state::{BUDGETS, Budget, BudgetWindow, FLIGHTS, PACES, Pace, READS, Seen};
-use crate::{
-    AccountBudget, BudgetReport, ServicePace, StatusOutcome, StatusRead, WHOLE_WINDOW as WHOLE,
-    WindowOutlook,
-};
+use crate::state::{BUDGETS, Budget, BudgetWindow, FLIGHTS, PACES, Pace, Seen};
+use crate::{AccountBudget, BudgetReport, ServicePace, WHOLE_WINDOW as WHOLE, WindowOutlook};
 
 const PREFIX: &str = "anthropic-ratelimit-unified-";
 const UTILIZATION: &str = "-utilization";
 pub(crate) const ORGANIZATION: &str = "anthropic-organization-id";
-pub(crate) const CCS_ACCOUNT: &str = "x-ccs-account";
-const STATUS: &str = "/ccs/status";
 const MINUTE: u64 = 60_000;
 
 pub(crate) fn millionths(text: &str) -> Option<u64> {
@@ -39,94 +33,33 @@ pub(crate) fn millionths(text: &str) -> Option<u64> {
     Some(used)
 }
 
-fn percent_to_millionths(text: &str) -> Option<u64> {
-    millionths(text).map(|hundredths| hundredths / 100)
+pub(crate) fn status_reads_retired() -> Error {
+    invalid(
+        "reading a service's status is retired: each model answer names its account's usage windows, and an idle account's windows are its service's own page",
+    )
 }
 
-fn utilization_decimal(used: u64) -> String {
-    let (whole, part) = (used / WHOLE, used % WHOLE);
-    match part {
-        0 => whole.to_string(),
-        _ => format!("{whole}.{part:06}")
-            .trim_end_matches('0')
-            .to_owned(),
-    }
+fn named<'a>(response: &'a http::Response, name: &str) -> Option<&'a str> {
+    header(response, name).filter(|value| !value.is_empty())
 }
 
-fn digits(text: &str, from: usize, len: usize) -> Option<i64> {
-    let part = text.get(from..from + len)?;
-    match part.bytes().all(|byte| byte.is_ascii_digit()) {
-        true => part.parse().ok(),
-        false => None,
-    }
+fn harness_windows(response: &http::Response, time: u64) -> Vec<BudgetWindow> {
+    let budget = harness_words::Budget::read(&response.headers);
+    let windows = budget.windows.into_iter().filter_map(|window| {
+        let used = millionths(&window.used)?;
+        Some(BudgetWindow {
+            name: window.name,
+            utilization: window.used,
+            used,
+            reset: window.reset,
+            status: window.status,
+            since: Seen { used, time },
+        })
+    });
+    windows.collect()
 }
 
-fn days_in(year: i64, month: i64) -> i64 {
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-    match month {
-        2 if leap => 29,
-        2 => 28,
-        4 | 6 | 9 | 11 => 30,
-        _ => 31,
-    }
-}
-
-fn days_since_unix_epoch(year: i64, month: i64, day: i64) -> i64 {
-    let year = if month <= 2 { year - 1 } else { year };
-    let era = year.div_euclid(400);
-    let of_era = year - era * 400;
-    let of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
-    let of_cycle = of_era * 365 + of_era / 4 - of_era / 100 + of_year;
-    era * 146_097 + of_cycle - 719_468
-}
-
-pub(crate) fn epoch_seconds(text: &str) -> Option<u64> {
-    let bytes = text.as_bytes();
-    let at = |index: usize, byte: u8| bytes.get(index) == Some(&byte);
-    let parted = at(4, b'-') && at(7, b'-') && at(13, b':') && at(16, b':');
-    if !parted || !matches!(bytes.get(10), Some(b'T' | b't' | b' ')) {
-        return None;
-    }
-    let (year, month, day) = (
-        digits(text, 0, 4)?,
-        digits(text, 5, 2)?,
-        digits(text, 8, 2)?,
-    );
-    let (hour, minute) = (digits(text, 11, 2)?, digits(text, 14, 2)?);
-    let second = digits(text, 17, 2)?;
-    let dated = (1..=12).contains(&month) && (1..=days_in(year, month)).contains(&day);
-    if !dated || hour > 23 || minute > 59 || second > 60 {
-        return None;
-    }
-    let mut rest = text.get(19..)?;
-    if let Some(fraction) = rest.strip_prefix('.') {
-        let read = fraction.bytes().take_while(u8::is_ascii_digit).count();
-        if read == 0 {
-            return None;
-        }
-        rest = &fraction[read..];
-    }
-    let offset = match rest {
-        "Z" | "z" => 0,
-        _ => {
-            let sign = match rest.as_bytes().first() {
-                Some(b'+') => 1,
-                Some(b'-') => -1,
-                _ => return None,
-            };
-            let (hours, minutes) = (digits(rest, 1, 2)?, digits(rest, 4, 2)?);
-            if rest.len() != 6 || !rest[3..].starts_with(':') || hours > 23 || minutes > 59 {
-                return None;
-            }
-            sign * (hours * 3_600 + minutes * 60)
-        }
-    };
-    let days = days_since_unix_epoch(year, month, day);
-    let seconds = days * 86_400 + hour * 3_600 + minute * 60 + second - offset;
-    u64::try_from(seconds).ok()
-}
-
-fn windows(response: &http::Response, time: u64) -> Vec<BudgetWindow> {
+fn anthropic_windows(response: &http::Response, time: u64) -> Vec<BudgetWindow> {
     let mut found: Vec<BudgetWindow> = Vec::new();
     for (key, value) in &response.headers {
         let key = key.to_ascii_lowercase();
@@ -154,6 +87,17 @@ fn windows(response: &http::Response, time: u64) -> Vec<BudgetWindow> {
             status: status.map(str::to_owned),
             since: Seen { used, time },
         });
+    }
+    found
+}
+
+fn windows(response: &http::Response, time: u64) -> Vec<BudgetWindow> {
+    let mut found = harness_windows(response, time);
+    for window in anthropic_windows(response, time) {
+        let named_already = found.iter().any(|held| held.name == window.name);
+        if !named_already {
+            found.push(window);
+        }
     }
     found
 }
@@ -191,8 +135,8 @@ pub(crate) fn seen(ctx: &ExecCtx, service: &str, response: &http::Response) {
     if windows.is_empty() {
         return;
     }
-    let organization = header(response, ORGANIZATION).filter(|id| !id.is_empty());
-    let label = header(response, CCS_ACCOUNT).filter(|label| !label.is_empty());
+    let organization = named(response, ORGANIZATION);
+    let label = named(response, harness_words::ACCOUNT);
     let account = label.or(organization).unwrap_or_default();
     let key = (service.to_owned(), account.to_owned());
     let before = BUDGETS.get(ctx, &key).ok().flatten();
@@ -202,10 +146,13 @@ pub(crate) fn seen(ctx: &ExecCtx, service: &str, response: &http::Response) {
             BUDGETS.remove(ctx, &unnamed);
         }
     }
+    let anthropic_status = format!("{PREFIX}status");
+    let status =
+        named(response, harness_words::STATUS).or_else(|| named(response, &anthropic_status));
     let row = Budget {
         label: label.map(str::to_owned),
         organization: organization.map(str::to_owned),
-        status: header(response, &format!("{PREFIX}status")).map(str::to_owned),
+        status: status.map(str::to_owned),
         fallback: header(response, &format!("{PREFIX}fallback")).map(str::to_owned),
         error: None,
         windows: merge_budget_windows(before.as_ref(), windows, env.time),
@@ -213,184 +160,6 @@ pub(crate) fn seen(ctx: &ExecCtx, service: &str, response: &http::Response) {
         time: env.time,
     };
     BUDGETS.put(ctx, &key, &row);
-}
-
-pub(crate) async fn read(ctx: Ctx, service: String) -> Result<(), Error> {
-    read_one(&ctx, service).await;
-    Ok(())
-}
-
-pub(crate) async fn read_all(ctx: Ctx) -> Result<(), Error> {
-    let mut services: Vec<String> = Vec::new();
-    for (_, route) in crate::state::PROVIDER_ROUTES.all(&ctx)? {
-        for entry in route.services {
-            if !services.contains(&entry.service) {
-                services.push(entry.service);
-            }
-        }
-    }
-    all(services.into_iter().map(|service| read_one(&ctx, service))).await;
-    Ok(())
-}
-
-async fn read_one(ctx: &Ctx, service: String) {
-    let head = http::Head {
-        method: http::Method::Get,
-        target: STATUS.to_owned(),
-        headers: Vec::new(),
-    };
-    let request = egress::Request::Http {
-        service: service.clone(),
-        head,
-        body: Vec::new(),
-    };
-    let answer = crate::turns::request(ctx, request, egress::Delivery::Whole, None).await;
-    let (outcome, room) = match answer {
-        Err(error) => (StatusOutcome::Failed(refusal(&error)), Vec::new()),
-        Ok(bytes) => match abi::decode::<http::Response>(&bytes) {
-            Ok(response) => status_read(ctx, &service, &response),
-            Err(_) => {
-                let why = "the egress answer is not an HTTP response";
-                (StatusOutcome::Failed(why.into()), Vec::new())
-            }
-        },
-    };
-    if !room.is_empty() {
-        crate::resume::room(ctx, &service, &room).await;
-    }
-    let env = ctx.env();
-    let read = StatusRead {
-        service,
-        height: env.height,
-        time: env.time,
-        outcome,
-    };
-    READS.put(ctx, &read.service, &read);
-}
-
-#[derive(Deserialize)]
-struct Status {
-    accounts: Vec<Reading>,
-}
-
-#[derive(Deserialize)]
-struct Reading {
-    label: String,
-    provider: Option<String>,
-    five_hour: Option<Usage>,
-    weekly: Option<Usage>,
-    models: Option<Vec<ModelUsage>>,
-    error: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct Usage {
-    percent: Option<serde_json::Number>,
-    resets_at: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct ModelUsage {
-    model: String,
-    kind: Option<String>,
-    #[serde(flatten)]
-    usage: Usage,
-}
-
-fn status_read(
-    ctx: &ExecCtx,
-    service: &str,
-    response: &http::Response,
-) -> (StatusOutcome, Vec<String>) {
-    let failed = |why: String| (StatusOutcome::Failed(why), Vec::new());
-    match response.status {
-        200 => {}
-        404 => return (StatusOutcome::Unavailable, Vec::new()),
-        status => return failed(format!("the service answered HTTP {status}")),
-    }
-    let Ok(status) = serde_json::from_slice::<Status>(&response.body) else {
-        return failed("the answer is not ccs's status".into());
-    };
-    let Ok(held) = BUDGETS.scan(ctx, BUDGETS.prefix_of(&service.to_owned())) else {
-        return failed("harness could not read the service's rows".into());
-    };
-    for (key, _) in &held {
-        BUDGETS.remove(ctx, key);
-    }
-    let env = ctx.env();
-    let mut room: Vec<String> = Vec::new();
-    for reading in &status.accounts {
-        let key = (service.to_owned(), reading.label.clone());
-        let before = held
-            .iter()
-            .find(|(held, _)| *held == key)
-            .map(|(_, row)| row.clone());
-        let windows =
-            merge_budget_windows(before.as_ref(), read_windows(reading, env.time), env.time);
-        let spared = reading.error.is_none() && spare(&windows);
-        let provider = reading
-            .provider
-            .as_deref()
-            .and_then(model_wire::ccs_provider);
-        let provider = provider.filter(|_| spared).map(str::to_owned);
-        if let Some(provider) = provider.filter(|provider| !room.contains(provider)) {
-            room.push(provider);
-        }
-        let row = Budget {
-            label: Some(reading.label.clone()),
-            error: reading.error.clone(),
-            windows,
-            height: env.height,
-            time: env.time,
-            ..before.unwrap_or_default()
-        };
-        BUDGETS.put(ctx, &key, &row);
-    }
-    let accounts = status.accounts.len() as u64;
-    (StatusOutcome::Read { accounts }, room)
-}
-
-fn spare(windows: &[BudgetWindow]) -> bool {
-    let full = |name: &str| {
-        let named = |window: &&BudgetWindow| window.name == name;
-        windows
-            .iter()
-            .filter(named)
-            .any(|window| window.used >= WHOLE)
-    };
-    !full("5h") && !full("7d")
-}
-
-fn read_windows(reading: &Reading, time: u64) -> Vec<BudgetWindow> {
-    let named = [("5h", &reading.five_hour), ("7d", &reading.weekly)];
-    let mut found: Vec<BudgetWindow> = named
-        .into_iter()
-        .filter_map(|(name, usage)| window_of(name.to_owned(), usage.as_ref()?, time))
-        .collect();
-    for model in reading.models.iter().flatten() {
-        let name = match model.kind.as_deref() {
-            Some(kind) if !kind.is_empty() => format!("{} {kind}", model.model),
-            _ => model.model.clone(),
-        };
-        if found.iter().any(|window| window.name == name) {
-            continue;
-        }
-        found.extend(window_of(name, &model.usage, time));
-    }
-    found
-}
-
-fn window_of(name: String, usage: &Usage, time: u64) -> Option<BudgetWindow> {
-    let used = percent_to_millionths(&usage.percent.as_ref()?.to_string())?;
-    let reset = epoch_seconds(usage.resets_at.as_deref()?)?;
-    Some(BudgetWindow {
-        name,
-        utilization: utilization_decimal(used),
-        used,
-        reset,
-        status: None,
-        since: Seen { used, time },
-    })
 }
 
 fn paced(ctx: &ExecCtx, service: &str, time: u64) {
@@ -456,13 +225,12 @@ pub(crate) fn report(ctx: &QueryCtx) -> Result<BudgetReport, Error> {
         .into_iter()
         .map(|((service, account), row)| outlook(service, account, row, time))
         .collect();
-    let reads = READS.all(ctx)?.into_iter().map(|(_, read)| read).collect();
     Ok(BudgetReport {
         time,
         turns: FLIGHTS.all(ctx)?.len() as u64,
         services,
         accounts,
-        reads,
+        reads: Vec::new(),
     })
 }
 
@@ -545,47 +313,6 @@ mod tests {
     }
 
     #[test]
-    fn a_percent_reads_in_millionths_and_writes_back_as_a_fraction() {
-        let read = [
-            ("53", Some(530_000)),
-            ("53.5", Some(535_000)),
-            ("100", Some(WHOLE)),
-            ("0", Some(0)),
-            ("5.3e1", None),
-            ("-1", None),
-        ];
-        for (text, used) in read {
-            assert_eq!(percent_to_millionths(text), used, "{text}");
-        }
-        let written = [(535_000, "0.535"), (WHOLE, "1"), (0, "0"), (1, "0.000001")];
-        for (used, text) in written {
-            assert_eq!(utilization_decimal(used), text, "{used}");
-        }
-    }
-
-    #[test]
-    fn an_rfc_3339_time_reads_in_seconds_since_the_epoch() {
-        let read = [
-            ("1970-01-01T00:00:00Z", Some(0)),
-            ("2000-03-01T00:00:00Z", Some(951_868_800)),
-            ("2000-03-01t00:00:00z", Some(951_868_800)),
-            ("2000-03-01 02:00:00+02:00", Some(951_868_800)),
-            ("2000-02-29T23:00:00.999-01:00", Some(951_868_800)),
-            ("2000-02-30T00:00:00Z", None),
-            ("1900-02-29T00:00:00Z", None),
-            ("2000-03-01T24:00:00Z", None),
-            ("2000-03-01T00:00:00", None),
-            ("2000-03-01T00:00:00.Z", None),
-            ("2000-03-01T00:00:00+0200", None),
-            ("1969-12-31T23:59:59Z", None),
-            ("tomorrow", None),
-        ];
-        for (text, seconds) in read {
-            assert_eq!(epoch_seconds(text), seconds, "{text}");
-        }
-    }
-
-    #[test]
     fn every_named_window_reads_and_a_malformed_one_is_left_out() {
         let heard = answer(&[
             ("anthropic-ratelimit-unified-5h-utilization", "0.53"),
@@ -620,6 +347,36 @@ mod tests {
             }
         );
         assert!(windows(&answer(&[]), 9).is_empty());
+    }
+
+    #[test]
+    fn the_harness_words_name_each_window_and_the_providers_own_fill_in_only_what_they_leave_out() {
+        let heard = answer(&[
+            ("x-harness-window-5h-used", "0.25"),
+            ("x-harness-window-5h-reset", "1792362000"),
+            ("x-harness-window-5h-status", "allowed"),
+            ("anthropic-ratelimit-unified-5h-utilization", "0.9"),
+            ("anthropic-ratelimit-unified-5h-reset", "1792362000"),
+            ("anthropic-ratelimit-unified-7d-utilization", "0.44"),
+            ("anthropic-ratelimit-unified-7d-reset", "1792580400"),
+            ("x-harness-window-1d-used", "half"),
+            ("x-harness-window-1d-reset", "1792362000"),
+        ]);
+        let found = merge_budget_windows(None, windows(&heard, 9), 9);
+        let read: Vec<_> = found
+            .iter()
+            .map(|w| {
+                let shown = (w.utilization.as_str(), w.used);
+                (w.name.as_str(), shown, w.status.as_deref())
+            })
+            .collect();
+        assert_eq!(
+            read,
+            [
+                ("5h", ("0.25", 250_000), Some("allowed")),
+                ("7d", ("0.44", 440_000), None)
+            ]
+        );
     }
 
     #[test]
@@ -687,24 +444,5 @@ mod tests {
         assert_eq!(calls_in_adjacent_minutes(&pace, 11 * MINUTE), (4, 0));
         assert_eq!(calls_in_adjacent_minutes(&pace, 12 * MINUTE), (0, 0));
         assert_eq!(calls_in_adjacent_minutes(&pace, 9 * MINUTE), (0, 0));
-    }
-
-    #[test]
-    fn ccs_live_status_reads_into_windows() {
-        let live = r#"{"accounts":[{"error":null,"five_hour":{"percent":100.0,"resets_at":"2026-10-18T22:19:59.703348+00:00"},"label":"anthropic3-eph","models":[{"kind":"weekly_scoped","model":"Fable","percent":0.0,"resets_at":"2026-10-21T11:00:00+00:00"}],"provider":"claude","read_at":"2026-10-18T21:24:39.83298049Z","weekly":{"percent":57.0,"resets_at":"2026-10-21T10:59:59.703379+00:00"}}]}"#;
-        let status: Status = serde_json::from_str(live).unwrap();
-        let read: Vec<_> = read_windows(&status.accounts[0], 9)
-            .into_iter()
-            .map(|w| (w.name, w.utilization, w.used, w.reset))
-            .collect();
-        let named = |name: &str, fraction: &str, used, reset| {
-            (name.to_owned(), fraction.to_owned(), used, reset)
-        };
-        let windows = [
-            named("5h", "1", WHOLE, 1792361999),
-            named("7d", "0.57", 570_000, 1792580399),
-            named("Fable weekly_scoped", "0", 0, 1792580400),
-        ];
-        assert_eq!(read, windows);
     }
 }

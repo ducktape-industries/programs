@@ -1,11 +1,11 @@
-//! Which model service and ccs account answers a thread's next call: the account its prompt cache
-//! sits on, as ccs named it in its last answer, then each service with no account named, so ccs
-//! picks; a call that failed on one is passed over to the next for that call alone.
+//! Which model service and account answers a thread's next call: the account its prompt cache sits
+//! on, as its service named it in its last answer, then each service with no account named, so the
+//! service picks; a call that failed on one is passed over to the next for that call alone.
 use ::program::{Error, ExecCtx, QueryCtx};
 use abi::role::egress::http;
 use store::{PageRequest, PageResponse};
 
-use crate::budget::{CCS_ACCOUNT, ORGANIZATION};
+use crate::budget::ORGANIZATION;
 use crate::config::Pin;
 use crate::providers::Reach;
 use crate::resume::header;
@@ -120,7 +120,7 @@ pub(crate) fn heard(ctx: &ExecCtx, thread: u64, response: &http::Response) {
         let value = header(response, name).filter(|value| !value.is_empty());
         value.map(str::to_owned)
     };
-    pick.label = named(CCS_ACCOUNT);
+    pick.label = named(model_wire::budget::ACCOUNT);
     pick.organization = named(ORGANIZATION);
     PICKS.put(ctx, &thread, &pick);
 }

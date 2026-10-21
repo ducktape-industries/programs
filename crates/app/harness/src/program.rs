@@ -120,6 +120,7 @@ impl Awaiting for Harness {
             Op::SetModel { .. } | Op::RemoveModel { .. } | Op::SetCompactAt { .. } => {
                 Err(retired())
             }
+            Op::ReadBudget { .. } | Op::ReadBudgets => Err(budget::status_reads_retired()),
             Op::Streamed { thread, event } => streamed(&ctx, thread, event).await,
             Op::NewThread { agent } => new_thread(&ctx, agent),
             Op::ForkThread { agent } => fork_thread(&ctx, agent),
@@ -137,7 +138,6 @@ impl Awaiting for Harness {
             Op::Settle { thread } => due(ctx, thread).await,
             Op::Watch { watch } => crate::watches::watch(ctx, watch).await,
             Op::Heard { watch, event } => crate::watches::heard(&ctx, watch, event).await,
-            Op::ReadBudget { service } => budget::read(ctx, service).await,
             Op::Wait { thread, event } => wait(&ctx, thread, event).await,
             Op::Unwait { wait } => unwait(&ctx, wait).await,
             Op::WaitDue => wait_due(&ctx).await,
@@ -150,7 +150,6 @@ impl Awaiting for Harness {
             }
             Op::Filed(row) => waits::filed(&ctx, row).await,
             Op::SetServices { .. } => Err(retired()),
-            Op::ReadBudgets => budget::read_all(ctx).await,
             Op::SetRoute { provider, services } => {
                 crate::providers::set_route(&ctx, provider, services)
             }

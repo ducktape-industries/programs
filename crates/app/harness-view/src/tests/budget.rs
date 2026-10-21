@@ -1,5 +1,7 @@
+//! The budget strip: each account's windows as bars with their reset and outlook, its own status,
+//! and the budget read again on every budget write.
 use super::*;
-use harness::{AccountBudget, BudgetReport, ServicePace, StatusOutcome, StatusRead, WindowOutlook};
+use harness::{AccountBudget, BudgetReport, ServicePace, WindowOutlook};
 
 use crate::ui::budget::{Level, level};
 
@@ -126,19 +128,9 @@ fn a_budget_write_reads_the_budget_again_on_the_phone_too() {
     assert_eq!(fill(&cx, "5h"), Some(view::Theme::default().danger));
 }
 
-fn read(outcome: StatusOutcome) -> StatusRead {
-    StatusRead {
-        service: "anthropic".into(),
-        height: 9001,
-        time: NOW,
-        outcome,
-    }
-}
-
 #[test]
-fn a_status_with_none_to_read_is_said_quietly_and_an_account_ccs_could_not_read_says_so() {
+fn the_strip_says_each_accounts_own_status_and_asks_its_service_for_nothing() {
     let mut budget = report(Vec::new());
-    budget.reads = vec![read(StatusOutcome::Unavailable)];
     budget.accounts[0].fallback = Some("available".into());
     budget.accounts[0].error = Some("signed_out".into());
     let net = Net {
@@ -146,47 +138,15 @@ fn a_status_with_none_to_read_is_said_quietly_and_an_account_ccs_could_not_read_
         ..Net::default()
     };
     let (cx, _) = seated(net, EDDY);
-    for text in [
-        "anthropic status unavailable",
-        "Status allowed · fallback available",
-        "ccs could not read this account: signed out",
-    ] {
-        assert!(cx.has_text(text), "{text}: {:?}", cx.texts());
-    }
-    let mut budget = report(Vec::new());
-    budget.reads = vec![read(StatusOutcome::Read { accounts: 2 })];
-    let net = Net {
-        budget,
-        ..Net::default()
-    };
-    let (cx, _) = seated(net, EDDY);
-    assert!(starts(&cx, "anthropic status read at "), "{:?}", cx.texts());
-}
-
-#[test]
-fn a_refresh_press_reads_each_services_status_and_nothing_reads_it_unasked() {
-    let (mut cx, _) = seated(
-        Net {
-            budget: report(Vec::new()),
-            ..Net::default()
-        },
-        EDDY,
-    );
     cx.host()
         .handle::<Submit<harness::Harness>>(|_| Ok(applied(Vec::new())));
-    assert!(cx.host().requests::<Submit<harness::Harness>>().is_empty());
-    cx.simulate_click("budget-refresh");
-    cx.run_until_parked();
-    assert_eq!(
-        cx.host().requests::<Submit<harness::Harness>>(),
-        [harness::Op::ReadBudget {
-            service: "anthropic".into()
-        }]
-    );
-    let (cx, _) = seated(Net::default(), EDDY);
+    let shown = cx.texts();
     assert!(
-        !cx.has_text("Refresh"),
-        "no service named yet: {:?}",
-        cx.texts()
+        cx.has_text("Status allowed · fallback available"),
+        "{shown:?}"
     );
+    let named_the_error = shown.iter().any(|text| text.contains("signed out"));
+    assert!(!named_the_error, "{shown:?}");
+    assert!(!cx.has_text("Refresh"), "{shown:?}");
+    assert!(cx.host().requests::<Submit<harness::Harness>>().is_empty());
 }

@@ -1,4 +1,4 @@
-//! OpenAI's Responses API on the Codex surface a ChatGPT plan opens (ccs's `/backend-api/`) as the
+//! OpenAI's Responses API on the Codex surface a ChatGPT plan opens (`/backend-api/`) as the
 //! harness wire: a request's body under that surface's rules, its server-sent events folded into
 //! harness events, an answer that is no reply read as a failure, and a model's window.
 use std::collections::BTreeMap;
@@ -12,7 +12,6 @@ use crate::{
 };
 
 pub const PROVIDER: &str = "openai";
-pub const CCS_PROVIDER: &str = "codex";
 pub const INSTRUCTIONS: &str = "The developer message that opens this conversation, when there is one, carries your instructions.";
 pub const RESPONSES: &str = "/backend-api/codex/responses";
 const RETRY_AFTER: &str = "retry-after";

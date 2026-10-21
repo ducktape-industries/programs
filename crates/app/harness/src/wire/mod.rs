@@ -98,17 +98,17 @@ pub(crate) fn image_side(wire: Wire, width: u32, height: u32) -> Result<(), Stri
     }
 }
 
-pub(crate) fn close(wire: Wire) -> &'static str {
+pub(crate) fn close(wire: Wire, target: &model_wire::Target) -> String {
     match wire {
-        Wire::AnthropicMessages => anthropic::CLOSE,
-        Wire::Harness => harness::CLOSE,
+        Wire::AnthropicMessages => anthropic::CLOSE.to_owned(),
+        Wire::Harness => harness::close(target),
     }
 }
 
-pub(crate) fn summarize(wire: Wire) -> &'static str {
+pub(crate) fn summarize(wire: Wire, target: &model_wire::Target) -> String {
     match wire {
-        Wire::AnthropicMessages => anthropic::SUMMARIZE,
-        Wire::Harness => harness::CLOSE,
+        Wire::AnthropicMessages => anthropic::SUMMARIZE.to_owned(),
+        Wire::Harness => harness::close(target),
     }
 }
 

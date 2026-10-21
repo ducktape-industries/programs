@@ -8,7 +8,6 @@ use ::program::{
 use abi::role::egress::{self, http};
 
 use crate::agents::{Agent, configured_pinned, hear_again, manual, running, thread};
-use crate::budget::CCS_ACCOUNT;
 use crate::calls::{Placed, place, refusal, run_call, take_back_showing};
 use crate::conversations::{binding, retire};
 use crate::listening::seed;
@@ -35,6 +34,18 @@ struct Asked {
     thread: u64,
     wait: Option<u64>,
     config: BlobId,
+}
+
+impl Asked {
+    fn target(&self) -> model_wire::Target {
+        match &self.account {
+            Some(account) => model_wire::Target::Pinned {
+                service: self.service.clone(),
+                account: account.clone(),
+            },
+            None => model_wire::Target::Unpinned,
+        }
+    }
 }
 
 struct Turn {
@@ -214,13 +225,10 @@ pub(crate) async fn request(
 async fn call_model(
     ctx: &Ctx,
     asked: &Asked,
-    mut head: http::Head,
+    head: http::Head,
     parts: Vec<BlobId>,
     delivery: egress::Delivery,
 ) -> Result<http::Response, Failure> {
-    if let Some(account) = &asked.account {
-        head.headers.push((CCS_ACCOUNT.into(), account.clone()));
-    }
     let prompted = !parts.is_empty();
     let request_ = egress::Request::Http {
         service: asked.service.clone(),
@@ -304,9 +312,21 @@ fn lanes(ctx: &ExecCtx, thread: u64, wire: Wire, frames: &[Frame]) -> Result<Lan
         .iter()
         .filter(|frame| frame.body.role() == Some(Role::Assistant))
     {
-        if let Some(lane) = LANES.get(ctx, &(thread, frame.seq))? {
-            lanes.insert(frame.seq, lane);
-        }
+        let Some(lane) = LANES.get(ctx, &(thread, frame.seq))? else {
+            continue;
+        };
+        let answerer = ANSWERED.get(ctx, &(thread, frame.seq))?;
+        let (service, account) = match answerer {
+            Some(by) => (Some(by.service), by.account),
+            None => (None, None),
+        };
+        let lane = model_wire::Lane {
+            provider: lane.provider,
+            model: lane.model,
+            service,
+            account,
+        };
+        lanes.insert(frame.seq, lane);
     }
     Ok(lanes)
 }
@@ -495,7 +515,7 @@ fn turn_parts(ctx: &ExecCtx, thread: &mut ThreadRow, turn: &Turn) -> Result<Vec<
     let shown = (&looks, &foreign);
     let last = wire::message(wire, role, &frames, shown, &lanes, opens(thread), true);
     parts.push(put_on(ctx, thread.id, b"last", last)?);
-    parts.push(put_part(ctx, wire::close(wire).into())?);
+    parts.push(put_part(ctx, wire::close(wire, &turn.asked.target()))?);
     Ok(parts)
 }
 
@@ -530,7 +550,7 @@ fn summarize_parts(
     };
     let mut parts = opening(ctx, thread, turn)?;
     parts.extend(covered.iter().map(|sealed| sealed.part));
-    parts.push(put_part(ctx, wire::summarize(wire).into())?);
+    parts.push(put_part(ctx, wire::summarize(wire, &turn.asked.target()))?);
     Ok(Some((through, parts)))
 }
 

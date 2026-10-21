@@ -1,18 +1,13 @@
 //! The model budget atop the agents: each model account's usage windows as bars, amber from 80%
-//! and red from 95%, with when each resets and runs out, and a press that reads ccs's status.
-use std::collections::BTreeSet;
-
-use harness::{AccountBudget, BudgetReport, WHOLE_WINDOW, WindowOutlook};
-use view::design::{self, Ladder, space};
+//! and red from 95%, with when each resets and runs out.
+use harness::{AccountBudget, WHOLE_WINDOW, WindowOutlook};
+use view::design::{Ladder, space};
 use view::prelude::*;
 use view::{Div, FontWeight, Stateful};
 
 use super::caption;
 use crate::Agents;
-use crate::words::{
-    budget_account, budget_calls, budget_error, budget_outlook, budget_read, budget_state,
-    budget_used,
-};
+use crate::words::{budget_account, budget_calls, budget_outlook, budget_state, budget_used};
 
 const BAR: f32 = 240.;
 
@@ -35,52 +30,25 @@ pub(crate) fn ended(window: &WindowOutlook, now: u64) -> bool {
     now >= window.reset.saturating_mul(1000)
 }
 
-pub(crate) fn services(report: &BudgetReport) -> BTreeSet<String> {
-    let paced = report.services.iter().map(|pace| &pace.service);
-    let held = report.accounts.iter().map(|row| &row.service);
-    let read = report.reads.iter().map(|read| &read.service);
-    paced.chain(held).chain(read).cloned().collect()
-}
-
-pub(crate) fn strip(
-    view: &Agents,
-    cx: &mut Context<Agents>,
-    theme: &Theme,
-    ladder: &Ladder,
-) -> Option<Stateful<Div>> {
+pub(crate) fn strip(view: &Agents, theme: &Theme, ladder: &Ladder) -> Option<Stateful<Div>> {
     let report = view.budget.ready()?;
     let now = view
         .roster
         .ready()
         .map_or(report.time, |roster| roster.now.max(report.time));
-    let label = match view.reading.is_some() {
-        true => "Refreshing…",
-        false => "Refresh",
-    };
-    let refresh = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.read_status(cx));
-    let refresh = (!services(report).is_empty()).then(|| {
-        design::button("budget-refresh", label, ladder, theme, refresh).kind(design::Kind::Outline)
-    });
     let head = div()
         .flex()
         .flex_wrap()
         .items_center()
         .gap(space::SM)
-        .child(caption(budget_calls(report), theme))
-        .children(refresh);
+        .child(caption(budget_calls(report), theme));
     let strip = div()
         .id("budget")
         .flex()
         .flex_col()
         .gap(space::SM)
         .when(ladder.touch, |strip| strip.p(space::BLOCK))
-        .child(head)
-        .children(
-            report
-                .reads
-                .iter()
-                .map(|read| caption(budget_read(read, now), theme)),
-        );
+        .child(head);
     let none = "No model answer has named its usage windows yet.";
     Some(match report.accounts.is_empty() {
         true => strip.child(caption(none, theme)),
@@ -105,7 +73,6 @@ fn account(row: &AccountBudget, now: u64, theme: &Theme) -> Div {
                 .child(budget_account(row)),
         )
         .children(budget_state(row).map(|words| caption(words, theme)))
-        .children(budget_error(row).map(|words| caption(words, theme)))
         .children(
             row.windows
                 .iter()

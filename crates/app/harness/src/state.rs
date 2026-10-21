@@ -63,7 +63,6 @@ pub const USAGE: Map<String, UsageWindow> = Map::new("usage/");
 pub const SETTLING: Map<u64, SettleWindow> = Map::new("settling/");
 pub const BUDGETS: Map<(String, String), Budget> = Map::new("budget/");
 pub const PACES: Map<String, Pace> = Map::new("pace/");
-pub const READS: Map<String, crate::StatusRead> = Map::new("status/");
 pub const COUNT: Item<u64> = Item::new("count");
 pub const WATCHES: Map<u64, Watching> = Map::new("watch/");
 pub const WATCH_COUNT: Item<u64> = Item::new("watch-count");
@@ -99,7 +98,6 @@ pub const AWAITED: Map<(u64, String), Awaited> = Map::new("awaited/");
 pub const STREAMING: Map<(u64, u64), Flight> = Map::new("streaming/");
 // the harness code that runs, and the block harness first ran it at (`resume::switched`)
 pub const RUNNING: Item<(BlobId, u64)> = Item::new("running");
-// the service and ccs account each thread's calls go to first, where its prompt cache was written
 pub const ROUTES: Map<u64, crate::Route> = Map::new("route/");
 // the account each thread's latest model call went to, and who answered it
 pub const PICKS: Map<u64, Pick> = Map::new("pick/");
@@ -113,8 +111,6 @@ pub const SEEDED: Set<(AccountNumber, String)> = Set::new("seeded/");
 pub const WATCHED: Set<u64> = Set::new("wait-watched/");
 // what each conversation was last told of each chat room's rules (`room_rules.rs`)
 pub const RULES_TOLD: Map<(u64, String), crate::room_rules::Told> = Map::new("rules-told/");
-// the service and ccs account each thread's sealed parts were written for: a server tool's blocks
-// minted on one account reach another only as plain text, so a move writes them again
 pub const SEALED_FOR: Map<u64, (String, Option<String>)> = Map::new("sealed-for/");
 // the chat place each conversation's turn keeps its live draft in, where its forming post goes, and
 // what the draft says the turn is doing (`drafts.rs`)
@@ -250,8 +246,6 @@ pub struct Tick {
     pub time: u64,
 }
 
-// one model account's usage windows, as its last answer or status reading named them, at
-// (service, ccs's name for the account, else the model's id for it)
 #[derive(Clone, Debug, Default, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Budget {
     pub label: Option<String>,
@@ -299,8 +293,6 @@ pub struct PodWatch {
     pub entry: Option<EntryId>,
 }
 
-// the service and ccs account a thread's call went to (none: the service chooses), the summary its
-// prompt began with, every pair it could have gone to, and the account and model id that answered
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct Pick {
     pub service: String,
@@ -423,12 +415,7 @@ pub fn written(key: &[u8]) -> Option<Written> {
             return Some(Written::Agent(agent));
         }
     }
-    let budget = [
-        BUDGETS.key(&()),
-        PACES.key(&()),
-        FLIGHTS.key(&()),
-        READS.key(&()),
-    ];
+    let budget = [BUDGETS.key(&()), PACES.key(&()), FLIGHTS.key(&())];
     if budget.iter().any(|prefix| key.starts_with(prefix)) {
         return Some(Written::Budget);
     }

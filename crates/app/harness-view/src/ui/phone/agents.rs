@@ -32,7 +32,7 @@ pub(super) fn page(
         .caption(caption)
         .child(
             scroller("agents-list")
-                .children(crate::ui::budget::strip(view, cx, theme, ladder))
+                .children(crate::ui::budget::strip(view, theme, ladder))
                 .child(body),
         )
         .into_any_element()
