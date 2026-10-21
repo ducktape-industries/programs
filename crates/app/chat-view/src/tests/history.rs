@@ -770,3 +770,44 @@ fn a_room_left_above_its_newest_page_lands_where_the_reader_stood() {
         assert_eq!(room.target, 583);
     });
 }
+
+#[test]
+fn leaving_a_thread_puts_the_room_back_where_the_reader_stood() {
+    for touch in [true, false] {
+        let design = if touch { "phone" } else { "desktop" };
+        let (mut cx, view) = paged(Rc::new(Cell::new(600)), 40);
+        if touch {
+            cx.simulate_touch(true);
+            cx.run_until_parked();
+            open(&mut cx, "chat-rooms-channel-general");
+        } else {
+            open(&mut cx, "chat-sidebar-channel-general");
+        }
+        stood(&mut cx, "chat-message-rows", 3, 12.);
+        thread_open(&mut cx, &view, 595);
+        if touch {
+            cx.simulate_back();
+            cx.run_until_parked();
+        } else {
+            open(&mut cx, "chat-thread-close");
+        }
+        view.read(|chat| {
+            assert!(
+                chat.room.as_ref().unwrap().thread.is_none(),
+                "{design}: the thread is left"
+            )
+        });
+        let Some(wire::Node::List { commands, .. }) = list_named(cx.root(), "chat-message-rows")
+        else {
+            panic!("{design}: the room's list is drawn again");
+        };
+        let stood_at = wire::ListCommand::ScrollTo(wire::ListOffset {
+            item_ix: 3,
+            offset_in_item: 12.,
+        });
+        assert!(
+            commands.contains(&stood_at),
+            "{design}: the room is put back on the row the reader left it at, and was told {commands:?}"
+        );
+    }
+}

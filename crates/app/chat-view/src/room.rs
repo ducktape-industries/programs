@@ -1275,7 +1275,11 @@ impl Chat {
     }
 
     pub(crate) fn close_thread(&mut self) {
+        let stood = self.anchor(Pane::Timeline);
         self.keep_thread();
+        if let Some(stood) = stood {
+            self.timeline_drawn.borrow_mut().restore = Some((stood.id, stood.offset));
+        }
         if self
             .menu
             .as_ref()
