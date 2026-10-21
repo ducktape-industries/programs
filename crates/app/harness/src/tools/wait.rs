@@ -5,7 +5,7 @@ use ::program::{Error, ExecCtx, unexpected_reply};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{Run, Seat, Tool, cursor_schema, next, object, page, write};
+use super::{Run, Seat, Tool, ahead, cursor_schema, next, object, page, write};
 use crate::waits::{armed, waits, what};
 use crate::{Op, PROGRAM, Until, WaitFor, WaitRow};
 
@@ -13,6 +13,7 @@ use crate::{Op, PROGRAM, Until, WaitFor, WaitRow};
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 enum EventArgs {
     Height(u64),
+    In(u64),
     Pod {
         name: String,
     },
@@ -62,39 +63,41 @@ impl From<UntilArgs> for Until {
     }
 }
 
-impl From<EventArgs> for WaitFor {
-    fn from(event: EventArgs) -> WaitFor {
-        match event {
-            EventArgs::Height(height) => WaitFor::Height { height },
-            EventArgs::Pod { name } => WaitFor::Pod { name },
-            EventArgs::Message {
-                channel,
-                from,
-                mentions_me,
-            } => WaitFor::Message {
-                channel,
-                from,
-                mentions_me,
-            },
-            EventArgs::Change {
-                repo,
-                n,
-                until: None,
-            } => WaitFor::Change { repo, n },
-            EventArgs::Change {
-                repo,
-                n,
-                until: Some(until),
-            } => WaitFor::Settled {
-                repo,
-                n,
-                until: until.into(),
-            },
-            EventArgs::Ref { repo, reference } => WaitFor::Ref { repo, reference },
-            EventArgs::File { path } => WaitFor::File { path },
-            EventArgs::Clear { channel, thread } => WaitFor::Clear { channel, thread },
-        }
-    }
+fn waited(ctx: &ExecCtx, event: EventArgs) -> Result<WaitFor, Error> {
+    let event = match event {
+        EventArgs::Height(height) => WaitFor::Height { height },
+        EventArgs::In(blocks) => WaitFor::Height {
+            height: ahead(ctx, blocks)?,
+        },
+        EventArgs::Pod { name } => WaitFor::Pod { name },
+        EventArgs::Message {
+            channel,
+            from,
+            mentions_me,
+        } => WaitFor::Message {
+            channel,
+            from,
+            mentions_me,
+        },
+        EventArgs::Change {
+            repo,
+            n,
+            until: None,
+        } => WaitFor::Change { repo, n },
+        EventArgs::Change {
+            repo,
+            n,
+            until: Some(until),
+        } => WaitFor::Settled {
+            repo,
+            n,
+            until: until.into(),
+        },
+        EventArgs::Ref { repo, reference } => WaitFor::Ref { repo, reference },
+        EventArgs::File { path } => WaitFor::File { path },
+        EventArgs::Clear { channel, thread } => WaitFor::Clear { channel, thread },
+    };
+    Ok(event)
 }
 
 #[derive(Deserialize)]
@@ -110,7 +113,7 @@ fn repo_schema() -> Value {
 
 impl Tool for For {
     const NAME: &'static str = "wait_for";
-    const DESCRIPTION: &'static str = "Wake this conversation once when an event happens, and end this turn meanwhile: once this reply's tool calls are back, you are not asked again until the event, or any other message, arrives. The event comes as one message saying what happened. Events: a `message` in a chat channel (only from one account with `from`, only one that mentions you or writes to you directly with `mentions_me`; whoever writes it, even someone you don't otherwise hear); a forge `change` whose source branch moves, that is reviewed, or that is closed or merged (one already closed or merged is refused), or with `until` only once it is merged, closed or either, its pushes heard by nothing (a change that ends the other way still ends the wait, saying so), and either kind ends when forge takes the change out of a merge queue, saying why; a forge `ref` that moves (a branch's name alone is its refs/heads/ ref); a block's `height` (later than the current one); a `file` of files that a commit changes (a file's bytes, mode or meta; anything below a directory; or the path being made or removed); or a chat place to `clear` (a channel's foot, or a thread by its root message's seq) of everyone else's hold and draft, not counting those who wait there too (at once when it already is). A message that arrives first wakes you as usual, and the wait stays. Answers the wait's number, which wait_list shows and wait_cancel takes.";
+    const DESCRIPTION: &'static str = "Wake this conversation once when an event happens, and end this turn meanwhile: once this reply's tool calls are back, you are not asked again until the event, or any other message, arrives. The event comes as one message saying what happened. Events: a `message` in a chat channel (only from one account with `from`, only one that mentions you or writes to you directly with `mentions_me`; whoever writes it, even someone you don't otherwise hear); a forge `change` whose source branch moves, that is reviewed, or that is closed or merged (one already closed or merged is refused), or with `until` only once it is merged, closed or either, its pushes heard by nothing (a change that ends the other way still ends the wait, saying so), and either kind ends when forge takes the change out of a merge queue, saying why; a forge `ref` that moves (a branch's name alone is its refs/heads/ ref); a block's `height` (later than the current one), or `in`, a number of blocks counted from the block this call runs in, which stays right however long the reply that makes the call took to come; a `file` of files that a commit changes (a file's bytes, mode or meta; anything below a directory; or the path being made or removed); or a chat place to `clear` (a channel's foot, or a thread by its root message's seq) of everyone else's hold and draft, not counting those who wait there too (at once when it already is). A message that arrives first wakes you as usual, and the wait stays. Answers the wait's number, which wait_list shows and wait_cancel takes.";
     const WRITES: bool = true;
     type Args = ForArgs;
 
@@ -157,6 +160,7 @@ impl Tool for For {
                 "change": change,
                 "ref": reference,
                 "height": { "type": "integer", "description": "the block to wake at, later than the current one" },
+                "in": { "type": "integer", "minimum": 1, "description": "instead of height: how many blocks to wait, counted from the block this call runs in" },
                 "file": file,
                 "clear": clear,
             },
@@ -169,7 +173,7 @@ impl Tool for For {
     fn run(ctx: &ExecCtx, seat: &Seat, args: ForArgs) -> Result<Run, Error> {
         let wait = Op::Wait {
             thread: seat.thread,
-            event: args.event.into(),
+            event: waited(ctx, args.event)?,
         };
         Ok(write(ctx.env().program.clone(), abi::encode(&wait)))
     }

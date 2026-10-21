@@ -42,14 +42,18 @@ fn seated_with(id: &str, files_code: Vec<u8>) -> World {
 }
 
 pub(super) fn turn(world: &World, at: u64, calls: &[(&str, &str, Value)]) {
+    turn_timed(world, at, 0, calls);
+}
+
+pub(super) fn turn_timed(world: &World, at: u64, time: u64, calls: &[(&str, &str, Value)]) {
     let chain = &world.chain;
-    chain.at(at, 0);
+    chain.at(at, time);
     let uses: Vec<Value> = calls
         .iter()
         .map(|(id, tool, input)| tool_use(id, tool, input.clone()))
         .collect();
     model_says(chain, Value::Array(uses), "tool_use");
-    chain.at(at + 1, 0);
+    chain.at(at + 1, time);
     for (id, _, _) in calls {
         relay_back(chain, id);
     }
@@ -573,4 +577,78 @@ fn the_list_is_newest_first_a_page_at_a_time_and_leaves_out_what_ran_when_asked(
     let third = answered(chain, thread, "l3");
     assert_eq!(entries(&third), pending);
     assert_eq!(third["next"], Value::Null);
+}
+
+pub(super) fn asked_after_a_long_wait(chain: &MockChain) {
+    chain.at(3, 1_000_000);
+    super::resume::limited_until(chain, "1100");
+    chain.at(4, 1_010_000);
+    assert!(
+        assigned(chain, SERVICE).is_empty(),
+        "the model waits out its limit"
+    );
+    chain.at(13, 1_100_000);
+    chain.at(14, 1_100_000);
+    assert_eq!(
+        assigned(chain, SERVICE).len(),
+        1,
+        "asked again at the reset"
+    );
+}
+
+fn within(blocks: u64, mut run: Value) -> Value {
+    let fields = run.as_object_mut().unwrap();
+    fields.remove("height");
+    fields.insert("in".into(), json!(blocks));
+    run
+}
+
+#[test]
+fn a_run_booked_in_blocks_counts_them_from_the_block_its_call_runs_in_after_a_long_wait() {
+    let world = schemed();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "wake yourself in 5 blocks", Some(WINDOW));
+    asked_after_a_long_wait(chain);
+    let calls = [
+        ("s1", "schedule_run", book(8, "general", "stale")),
+        ("b1", "schedule_run", within(5, book(8, "general", "fresh"))),
+    ];
+    turn_timed(&world, 15, 1_110_000, &calls);
+    refused(chain, thread, "s1");
+    let entry = entry_of(chain, thread, "b1");
+    let waiting = booking(chain, entry).expect("the run is booked");
+    assert!(
+        waiting.booked > 8,
+        "the call ran after the model's wait: {}",
+        waiting.booked
+    );
+    assert_eq!(
+        waiting.height,
+        waiting.booked + 5,
+        "five blocks from the block the call ran in"
+    );
+    chain.at(waiting.height - 1, 1_200_000);
+    assert_eq!(
+        author(chain, "fresh"),
+        None,
+        "nothing runs before its block"
+    );
+    chain.at(waiting.height + 1, 1_210_000);
+    let agent = Principal::Account(world.agent);
+    assert_eq!(author(chain, "fresh"), Some(agent));
+    assert_eq!(author(chain, "stale"), None);
+}
+
+#[test]
+fn a_run_booked_at_a_height_and_in_blocks_at_once_is_refused_and_books_nothing() {
+    let world = schemed();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "book it twice over", Some(WINDOW));
+    let mut both = book(20, "general", "both");
+    both["in"] = json!(5);
+    turn(&world, 3, &[("b1", "schedule_run", both)]);
+    let text = refused(chain, thread, "b1");
+    assert!(text.starts_with(code::INVALID_INPUT), "{text}");
+    assert!(due(chain, 20).is_empty(), "nothing is booked at its height");
+    assert!(due(chain, 9).is_empty(), "nor in its blocks");
 }

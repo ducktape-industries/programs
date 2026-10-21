@@ -300,6 +300,7 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             "schedule_run",
             vec![
                 json!({ "height": 106505, "program": "forge", "op": { "ChangeClose": { "repo": "tech-wake", "n": 999999 } } }),
+                json!({ "in": 60, "program": "forge", "op": { "ChangeClose": { "repo": "tech-wake", "n": 999999 } } }),
                 json!({ "height": 1, "program": "files", "op": { "Commit": {
                 "base": null, "message": PROSE, "changes": [{ "Remove": { "path": "/x" } }],
             } } }),
@@ -311,6 +312,7 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
             "wait_for",
             vec![
                 json!({ "event": { "height": 106505 } }),
+                json!({ "event": { "in": 60 } }),
                 json!({ "event": { "message": { "channel": "j-051", "from": 17, "mentions_me": true } } }),
                 json!({ "event": { "message": { "channel": "j-051" } } }),
                 json!({ "event": { "change": { "repo": "programs", "n": 88 } } }),

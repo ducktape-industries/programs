@@ -305,6 +305,15 @@ pub(crate) fn object(properties: Value, required: &[&str]) -> Value {
 
 pub(crate) const LISTED: u64 = 20;
 
+pub(crate) fn ahead(ctx: &ExecCtx, blocks: u64) -> Result<u64, Error> {
+    let now = ctx.env().height;
+    now.checked_add(blocks).ok_or_else(|| {
+        invalid(format!(
+            "{blocks} blocks after block {now} is past the last height a block can have"
+        ))
+    })
+}
+
 pub(crate) fn cursor_schema() -> Value {
     json!({ "type": "string", "description": "the `next` of the previous page, to read the page after it" })
 }

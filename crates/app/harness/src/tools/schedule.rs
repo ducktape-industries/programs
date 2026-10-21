@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::interface::encoded;
-use super::{LISTED, Run, Seat, Tool, cursor_schema, object, write};
+use super::{LISTED, Run, Seat, Tool, ahead, cursor_schema, object, write};
 use crate::bookings::newest;
 use crate::schema::schema_of;
 use crate::{Booking, Op, PROGRAM, Ran};
@@ -14,34 +14,51 @@ use borsh_json::discover::program_input as program_schema;
 
 #[derive(Deserialize)]
 pub(crate) struct BookArgs {
-    height: u64,
+    height: Option<u64>,
+    #[serde(rename = "in")]
+    blocks: Option<u64>,
     program: String,
     op: Value,
 }
 
 pub(crate) struct Book;
 
+fn when(ctx: &ExecCtx, height: Option<u64>, blocks: Option<u64>) -> Result<u64, Error> {
+    match (height, blocks) {
+        (Some(height), None) => Ok(height),
+        (None, Some(blocks)) => ahead(ctx, blocks),
+        (Some(_), Some(_)) => Err(invalid(
+            "a run is booked at a height or in a number of blocks, not both: give height or in",
+        )),
+        (None, None) => Err(invalid(
+            "a run needs its block: a height, or in, a number of blocks from the block the call runs in",
+        )),
+    }
+}
+
 impl Tool for Book {
     const NAME: &'static str = "schedule_run";
-    const DESCRIPTION: &'static str = "Book an op to run as your own account at a later block: a program and an op as network_call takes them, and the block's height. As that block ends, harness sends the op as you, and what it did, or why it was refused, arrives in this conversation as a message, so a run booked for a block wakes you then. What it did reads as network_call's answer does: an HTTP request the program bound to the egress role answers whole as `status`, `headers` and `body`, any other output in `returned` in the shape network_schema's `returns` gives for the op, else as hex with `unread` saying why. A refused run is not tried again. Answers the run's entry number, which schedule_list shows and schedule_cancel takes.";
+    const DESCRIPTION: &'static str = "Book an op to run as your own account at a later block: a program and an op as network_call takes them, and its block: a `height`, or `in`, a number of blocks counted from the block the call runs in, which stays right however long the reply that makes the call took to come. As that block ends, harness sends the op as you, and what it did, or why it was refused, arrives in this conversation as a message, so a run booked for a block wakes you then. What it did reads as network_call's answer does: an HTTP request the program bound to the egress role answers whole as `status`, `headers` and `body`, any other output in `returned` in the shape network_schema's `returns` gives for the op, else as hex with `unread` saying why. A refused run is not tried again. Answers the run's entry number, which schedule_list shows and schedule_cancel takes.";
     const WRITES: bool = true;
     type Args = BookArgs;
 
     fn schema() -> Value {
         object(
             json!({
-                "height": { "type": "integer", "description": "the block to run at, later than the current one" },
+                "height": { "type": "integer", "description": "the block to run at, later than the current one; give this or in" },
+                "in": { "type": "integer", "minimum": 1, "description": "instead of height: how many blocks after the block this call runs in, counted when it runs" },
                 "program": program_schema(),
                 "op": { "description": "the op, in the program's op shape" },
             }),
-            &["height", "program", "op"],
+            &["program", "op"],
         )
     }
 
     fn run(ctx: &ExecCtx, seat: &Seat, args: BookArgs) -> Result<Run, Error> {
+        let height = when(ctx, args.height, args.blocks)?;
         let payload = encoded(ctx, &args.program, &args.op)?;
         let book = Op::Book {
-            height: args.height,
+            height,
             target: args.program,
             payload,
             thread: Some(seat.thread),

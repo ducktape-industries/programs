@@ -311,7 +311,7 @@ fn a_mention_from_someone_the_agent_does_not_answer_leaves_a_notice() {
     assert!(assigned(chain, SERVICE).is_empty(), "a notice asks nothing");
 }
 
-fn limited_until(chain: &MockChain, reset: &str) {
+pub(super) fn limited_until(chain: &MockChain, reset: &str) {
     let (request, _) = open_request(chain);
     let limited =
         json!({ "type": "error", "error": { "type": "rate_limit_error", "message": "Slow down" } });

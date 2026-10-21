@@ -1,7 +1,7 @@
 //! Waits as wakes: a wait for anything but a chat message is a wake harness arms as the agent under
 //! the wait's own number; the wake's end ends the wait in the conversation that armed it, and
 //! cancelling the wait cancels the wake.
-use super::schedule::{answered, refused, turn};
+use super::schedule::{answered, asked_after_a_long_wait, refused, turn, turn_timed};
 use super::woken::waking;
 use super::*;
 
@@ -231,4 +231,19 @@ fn wait_cancel_keeps_the_wait_when_its_wake_cannot_be_read() {
     assert!(text.contains(wake::PROGRAM), "{text}");
     let kept = wait_row(chain, wait).expect("the wait stays");
     assert_eq!(kept.ended, None);
+}
+
+#[test]
+fn a_wait_in_blocks_counts_them_from_the_block_its_call_runs_in_after_a_long_wait() {
+    let world = waking();
+    let chain = &world.chain;
+    let thread = world.opened("m1", "wake me in 5 blocks", Some(WINDOW));
+    asked_after_a_long_wait(chain);
+    let ahead = json!({ "event": { "in": 5 } });
+    turn_timed(&world, 15, 1_110_000, &[("w1", "wait_for", ahead)]);
+    let wait = waited(chain, thread, "w1");
+    let made = wait_row(chain, wait).expect("the wait is armed").made;
+    assert!(made > 8, "the call ran after the model's wait: {made}");
+    let row = only_wake(chain, world.agent);
+    assert_eq!(row.event, wake::WaitFor::Height { height: made + 5 });
 }
