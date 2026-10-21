@@ -1,6 +1,7 @@
 //! The program: every op and every query, each handed to its rule.
 
 use ::program::schema::{Return, returns};
+use ::program::tools::Tools;
 use ::program::{Error, ExecCtx, Program, QueryCtx};
 
 use crate::rules::{self, create, edit, relink, retire, set_default, switch, transfer};
@@ -14,6 +15,10 @@ impl Program for Ownership {
     type Query = Query;
     type Reply = Reply;
     const RETURNS: &'static [Return] = &[returns::<PolicyId>("Create")];
+
+    fn tools() -> Tools {
+        Tools::of::<Op, Query>()
+    }
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         match op {
