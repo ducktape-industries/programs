@@ -13,7 +13,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use store::{PageRequest, PageResponse};
 
-use super::{Run, Seat, Tool, cursor_schema, lines, next, object, page, principal, unexpected};
+use super::{
+    Run, Seat, Tool, cursor_schema, lines, next, object, page, principal, symbols, unexpected,
+};
 
 fn range(offset: Option<u64>, length: Option<u64>) -> Result<Option<forge::ByteRange>, Error> {
     match (offset, length) {
@@ -397,13 +399,16 @@ pub(crate) struct ReadArgs {
     offset: Option<u64>,
     length: Option<u64>,
     lines: Option<(u64, u64)>,
+    symbol: Option<String>,
+    symbols: Option<bool>,
+    heading: Option<String>,
 }
 
 pub(crate) struct Read;
 
 impl Tool for Read {
     const NAME: &'static str = "forge_read";
-    const DESCRIPTION: &'static str = "Read a file of a repository as text, by its path at a branch or commit, or by its object id (from forge_tree): the whole file, some of its lines, or a byte range of it. Forge refuses a range longer than it serves at once; a file larger than that reads by lines or by ranges, and as oversize whole. Such a file's range is judged on its own bytes: \"binary in this range\".";
+    const DESCRIPTION: &'static str = "Read a file of a repository as text, by its path at a branch or commit, or by its object id (from forge_tree): the whole file, some of its lines, one Rust item by name (symbol: a fn, struct, enum, union, trait, type, const, static, mod, macro_rules! or impl, at the top, in an inline mod or in an impl or trait, like main, Config::new or impl Display for Config, generics left out, from its attributes and doc comment to its end; found by a token scan, so an item a macro makes or one inside a fn body is not), the file's Rust items with their lines (symbols), the section a markdown heading opens, or a byte range of it. A name several items share is refused naming each with its lines; a name no item has is refused naming the items whose last part it is, or, when there are none, pointing to symbols. Forge refuses a range longer than it serves at once; a file larger than that reads by lines or by ranges, and as oversize whole. Such a file's range is judged on its own bytes: \"binary in this range\".";
     type Args = ReadArgs;
 
     fn schema() -> Value {
@@ -416,6 +421,9 @@ impl Tool for Read {
                 "lines": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "minItems": 2, "maxItems": 2, "description": "[from, to]: these lines only, counted from 1, both included" },
                 "offset": { "type": "integer", "minimum": 0, "description": "the first byte to read; give a length with it" },
                 "length": { "type": "integer", "minimum": 1, "description": "how many bytes; the whole file if both are omitted" },
+                "symbol": { "type": "string", "description": "instead of lines: one Rust item by name, like main, Config::new or impl Display for Config" },
+                "symbols": { "type": "boolean", "description": "instead of the text: each Rust item of the file, by the name symbol takes, with its lines" },
+                "heading": { "type": "string", "description": "instead of lines: a markdown heading line of the file, like \"## Step 2\"; reads from it to the next heading of its level or a higher one, fenced code skipped" },
             }),
             &["repo"],
         )
@@ -440,17 +448,63 @@ impl Tool for Read {
             }
             _ => return Err(invalid("give path or id, one of them")),
         };
-        if let Some((from, to)) = args.lines {
-            if args.offset.is_some() || args.length.is_some() {
-                return Err(invalid("lines or a byte range, not both"));
-            }
-            let shown = path.clone().unwrap_or_else(|| id.clone());
-            let text = text_of(ctx, &args.repo, &id, &shown)?;
-            let picked = lines::range(&text, from, to)?;
+        let shown = path.clone().unwrap_or_else(|| id.clone());
+        let outline = args.symbols.unwrap_or(false);
+        let alone = [args.symbol.is_some(), args.heading.is_some(), outline];
+        let picks = alone.into_iter().filter(|&on| on).count();
+        let narrowed = args.lines.is_some() || args.offset.is_some() || args.length.is_some();
+        let not_alone = picks > 1 || (picks == 1 && narrowed);
+        if not_alone {
+            return Err(invalid(
+                "symbol, symbols and heading each go alone, without lines or a byte range",
+            ));
+        }
+        let rust = path.as_deref().is_none_or(|path| path.ends_with(".rs"));
+        let rust_asked = args.symbol.is_some() || outline;
+        let rust_asked_of_other = rust_asked && !rust;
+        if rust_asked_of_other {
+            return Err(invalid(format!(
+                "symbol and symbols read Rust, and {shown} is no .rs file: read it by lines, or a markdown file by heading"
+            )));
+        }
+        let text = || text_of(ctx, &args.repo, &id, &shown);
+        if outline {
+            let text = text()?;
+            let listed: Vec<Value> = symbols::items(&text)
+                .into_iter()
+                .map(|item| json!({ "name": item.name, "lines": [item.first, item.last] }))
+                .collect();
             return Ok(Run::Done(json!({
                 "id": id,
                 "path": path,
-                "size": text.len(),
+                "total_lines": text.split_inclusive('\n').count(),
+                "symbols": listed,
+            })));
+        }
+        let ranged = args.offset.is_some() || args.length.is_some();
+        let picked = match (args.lines, &args.symbol, &args.heading) {
+            (Some(_), _, _) if ranged => {
+                return Err(invalid("lines or a byte range, not both"));
+            }
+            (Some((from, to)), _, _) => {
+                let text = text()?;
+                Some((text.len(), lines::range(&text, from, to)?))
+            }
+            (None, Some(symbol), _) => {
+                let text = text()?;
+                Some((text.len(), symbols::item(&text, symbol)?))
+            }
+            (None, None, Some(heading)) => {
+                let text = text()?;
+                Some((text.len(), lines::section(&text, heading)?))
+            }
+            (None, None, None) => None,
+        };
+        if let Some((size, picked)) = picked {
+            return Ok(Run::Done(json!({
+                "id": id,
+                "path": path,
+                "size": size,
                 "lines": [picked.first, picked.last],
                 "total_lines": picked.total,
                 "text": picked.text,

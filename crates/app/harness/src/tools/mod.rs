@@ -14,6 +14,7 @@ mod network;
 pub(crate) mod pods;
 pub(crate) mod prefix;
 mod schedule;
+mod symbols;
 mod thread;
 mod wait;
 
