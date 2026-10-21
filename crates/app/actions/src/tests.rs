@@ -1933,3 +1933,94 @@ fn a_payload_that_is_not_text_errs_only_the_workflows_that_name_its_event() {
     let told = ("nightly.toml".to_owned(), forge::CheckState::Errored);
     assert_eq!(world.statuses(root), [told]);
 }
+
+const LOUD_NIGHTLY: &str = r#"
+[on]
+dispatch = ["nightly"]
+trigger = false
+
+[notify]
+channel = "engineering"
+
+[[jobs]]
+id = "build"
+runs-on = ["pods"]
+image = "toolchain"
+steps = ["make build"]
+"#;
+
+fn loud_nightly() -> (World, Oid) {
+    let mut world = world();
+    let create = chat::Op::CreateChannel {
+        channel_id: "engineering".into(),
+        name: "engineering".into(),
+        post_policy: chat::PostPolicy::Open,
+    };
+    let owner = Origin::Signed(OWNER.to_vec());
+    world.chain.submit(owner, chat::PROGRAM, &create).unwrap();
+    let root = world.commit(&[], &[("nightly.toml", LOUD_NIGHTLY)]);
+    world.push(None, root, "dev");
+    (world, root)
+}
+
+fn told_notice(world: &World, message_id: String) -> chat::Notice {
+    let told = chat::Query::MessageById { message_id };
+    let chat::Reply::Message(Some(row)) = world.chain.query(chat::PROGRAM, &told).unwrap() else {
+        panic!("the red dispatched run is told in engineering");
+    };
+    row.notice()
+        .expect("the red dispatched run is a notice")
+        .clone()
+}
+
+#[test]
+fn a_dispatched_run_whose_check_ends_red_says_so_in_the_workflow_channel() {
+    let (world, root) = loud_nightly();
+    world.forge(&dispatch("dev", b"")).unwrap();
+    let build = job_check(&world, root, "build").id;
+    world.act(&Op::Claim { check: build }).unwrap();
+    let failed = Op::Report {
+        check: build,
+        state: State::Failed,
+        summary: "the dist build failed".into(),
+        log: None,
+    };
+    world.act(&failed).unwrap();
+    let notice = told_notice(&world, format!("actions-check-{build}"));
+    assert_eq!(notice.subject, "nightly.toml on project dispatch nightly");
+    assert_eq!(notice.group, format!("check {build}"));
+    assert_eq!(notice.status, chat::message::Status::Failed);
+    assert_eq!(notice.concerns, [OWNER_ACCOUNT], "the dispatcher alone");
+    let short = &root.to_hex()[..12];
+    assert_eq!(
+        notice.detail,
+        format!("failed at {short}: check {build} (job build, attempt 1). the dist build failed")
+    );
+}
+
+#[test]
+fn a_dispatched_run_that_errs_before_it_queues_says_so_in_the_workflow_channel() {
+    let (world, root) = loud_nightly();
+    world.forge(&dispatch("dev", &[0xff])).unwrap();
+    let runs = dispatched_runs(&world);
+    let errored = runs.last().unwrap();
+    let why = errored.error.clone().expect("the payload is not text");
+    assert!(
+        world.checks(root).is_empty(),
+        "an errored run queues nothing"
+    );
+    let notice = told_notice(&world, format!("actions-run-{}", errored.id));
+    assert_eq!(notice.subject, "nightly.toml on project dispatch nightly");
+    assert_eq!(notice.group, format!("run {}", errored.id));
+    assert_eq!(notice.status, chat::message::Status::Failed);
+    assert_eq!(notice.concerns, [OWNER_ACCOUNT], "the dispatcher alone");
+    assert_eq!(notice.link, None);
+    let short = &root.to_hex()[..12];
+    assert_eq!(
+        notice.detail,
+        format!(
+            "errored at {short}: run {}, before it queued a check. {why}",
+            errored.id
+        )
+    );
+}

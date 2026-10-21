@@ -22,13 +22,18 @@ Every query is answered for anyone.
 
 ## What it tells chat
 
-A check of a push run that ends failed or errored, in a workflow whose file names
+A check of a push or dispatch run that ends failed or errored, in a workflow whose file names
 `notify.channel`, is one chat notice (`Notify`) in that channel, message id
 `actions-check-<check>`: kind `check`, group `check <check>`, subject
-`<workflow> on <repo> <branch>`, status Failed, detail `<failed|errored> at <commit>: check
-<check> (job <job>, attempt <n>). <summary>`, link the check's log (a whole link as it is, a
-files path as `files/<path>` on the reader's chain), and concerns the account that pushed,
-so only the pusher is told. A channel that refuses it leaves the report standing.
+`<workflow> on <repo> <branch>` (a dispatch: `<workflow> on <repo> dispatch <event type>`),
+status Failed, detail `<failed|errored> at <commit>: check <check> (job <job>, attempt <n>).
+<summary>`, link the check's log (a whole link as it is, a files path as `files/<path>` on the
+reader's chain), and concerns the account that pushed or dispatched, so only they are told.
+Such a run that errs before it queues any check (a dispatch payload that is not text) is the
+same notice as `actions-run-<run>`, group `run <run>`, detail
+`errored at <commit>: run <run>, before it queued a check. <why>`, with no link. A workflow file
+that does not parse (jobs that need each other in a loop among them) names no channel, so its errored run tells nobody; its errored forge status
+is what says so. A channel that refuses a notice leaves the report standing.
 
 ## When a change's checks run
 

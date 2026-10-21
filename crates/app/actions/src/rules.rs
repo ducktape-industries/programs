@@ -201,9 +201,7 @@ fn refused_offer(ctx: &ExecCtx, id: u64, runner: &str, why: &str) -> Result<(), 
     let run = RUNS
         .get(ctx, &check.run)?
         .ok_or_else(|| corrupt("r/", &check.run.to_be_bytes(), "a check's run is missing"))?;
-    if let (Event::Push { reference }, Some(channel)) = (&run.event, &run.notify) {
-        notify_failed_push(ctx, &run, &check, reference, channel);
-    }
+    notify_failed(ctx, &run, &check);
     Ok(())
 }
 
@@ -415,7 +413,7 @@ fn record(
             KEEP_STARTED.insert(ctx, &id);
         }
     }
-    if run.error.is_some() {
+    if let Some(error) = &run.error {
         let op = forge::Op::Status {
             repo: run.repo.clone(),
             commit: run.commit.clone(),
@@ -424,6 +422,7 @@ fn record(
             url: None,
         };
         ctx.emit(forge::PROGRAM, &op, Reply::Wanted);
+        notify_errored_run(ctx, &run, error);
     }
     Ok(run)
 }
@@ -695,9 +694,7 @@ pub(crate) fn report(
         let run = RUNS
             .get(ctx, &check.run)?
             .ok_or_else(|| corrupt("r/", &check.run.to_be_bytes(), "a check's run is missing"))?;
-        if let (Event::Push { reference }, Some(channel)) = (&run.event, &run.notify) {
-            notify_failed_push(ctx, &run, &check, reference, channel);
-        }
+        notify_failed(ctx, &run, &check);
     }
     Ok(())
 }
@@ -761,25 +758,57 @@ fn branch(reference: &[u8]) -> String {
         .to_owned()
 }
 
-fn notify_failed_push(
-    ctx: &ExecCtx,
-    run: &RunRow,
-    check: &CheckRow,
-    reference: &[u8],
-    channel: &str,
-) {
-    let branch = branch(reference);
+struct Red<'a> {
+    word: &'a str,
+    about: String,
+    summary: &'a str,
+    log: Option<&'a str>,
+    message_id: String,
+    group: String,
+}
+
+fn notify_failed(ctx: &ExecCtx, run: &RunRow, check: &CheckRow) {
+    let red = Red {
+        word: check.state.word(),
+        about: format!(
+            "check {} (job {}, attempt {})",
+            check.id, check.job.id, check.attempt
+        ),
+        summary: &check.summary,
+        log: check.log.as_deref(),
+        message_id: format!("actions-check-{}", check.id),
+        group: format!("check {}", check.id),
+    };
+    tell_red(ctx, run, red);
+}
+
+fn notify_errored_run(ctx: &ExecCtx, run: &RunRow, error: &str) {
+    let red = Red {
+        word: State::Errored.word(),
+        about: format!("run {}, before it queued a check", run.id),
+        summary: error,
+        log: None,
+        message_id: format!("actions-run-{}", run.id),
+        group: format!("run {}", run.id),
+    };
+    tell_red(ctx, run, red);
+}
+
+fn tell_red(ctx: &ExecCtx, run: &RunRow, red: Red) {
+    let Some(channel) = &run.notify else {
+        return;
+    };
+    let place = match &run.event {
+        Event::Push { reference } => branch(reference),
+        Event::Dispatch { event_type } => format!("dispatch {event_type}"),
+        Event::Opened { .. } | Event::Updated { .. } | Event::Preview { .. } | Event::Manual => {
+            return;
+        }
+    };
     let workflow = run.name.as_deref().unwrap_or(&run.workflow);
-    let mut detail = format!(
-        "{} at {}: check {} (job {}, attempt {})",
-        check.state.word(),
-        short(&check.commit),
-        check.id,
-        check.job.id,
-        check.attempt
-    );
-    if !check.summary.is_empty() {
-        detail.push_str(&format!(". {}", check.summary));
+    let mut detail = format!("{} at {}: {}", red.word, short(&run.commit), red.about);
+    if !red.summary.is_empty() {
+        detail.push_str(&format!(". {}", red.summary));
     }
     let concerns = match &run.by {
         Some(Principal::Account(account)) => vec![*account],
@@ -787,13 +816,13 @@ fn notify_failed_push(
     };
     let post = chat::Op::Notify {
         channel_id: channel.to_owned(),
-        message_id: format!("actions-check-{}", check.id),
+        message_id: red.message_id,
         thread: None,
         notice: chat::Notice {
             kind: "check".into(),
-            group: format!("check {}", check.id),
-            subject: format!("{workflow} on {} {branch}", run.repo),
-            link: check.log.as_deref().and_then(log_link),
+            group: red.group,
+            subject: format!("{workflow} on {} {place}", run.repo),
+            link: red.log.and_then(log_link),
             status: chat::message::Status::Failed,
             detail,
             concerns,
