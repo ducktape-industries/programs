@@ -54,6 +54,33 @@ fn attached(path: &str, at: BlobId, content_type: &str, size: usize) -> chat::Bl
     })
 }
 
+fn let_go_of_its_root(chain: &MockChain, snapshot: BlobId) {
+    let asked = files::Query::History {
+        page: Default::default(),
+    };
+    let rows = match chain.query(files::PROGRAM, &asked).unwrap() {
+        files::Reply::History(history) => history.items,
+        other => panic!("{other:?}"),
+    };
+    let root = rows.iter().find(|row| row.id == snapshot).unwrap().root;
+    let seated = [
+        identity::PROGRAM,
+        "valset",
+        awaits::PROGRAM,
+        scheduler::PROGRAM,
+        egress::PROGRAM,
+        attribution::PROGRAM,
+        PROGRAM,
+        files::PROGRAM,
+        chat::PROGRAM,
+        "access",
+        programs::PROGRAM,
+    ];
+    for program in seated {
+        chain.host(program).borrow_mut().blobs.remove(&root);
+    }
+}
+
 fn mentioned(world: &World, files: Vec<chat::Block>) -> u64 {
     let mut blocks = chat::parse_message(&format!("<@{}> look at this", world.agent));
     blocks.extend(files);
@@ -150,6 +177,76 @@ fn a_png_a_message_carries_reaches_the_model_beside_its_text_and_another_file_st
         panic!("the image stays in the conversation: {first:?}");
     };
     assert_eq!(decoded(again), bytes);
+}
+
+#[test]
+fn an_image_whose_snapshot_a_later_commit_pruned_is_read_at_the_head() {
+    let world = world();
+    let chain = &world.chain;
+    let bytes = png(640, 480, 14 * 1024);
+    let shot = put(chain, SHOT, &bytes);
+    mentioned(&world, vec![attached(SHOT, shot, "image/png", bytes.len())]);
+    assert_eq!(images(&last_content(chain)).len(), 1);
+    put(
+        chain,
+        NOTES,
+        b"a later commit lets the attached snapshot go",
+    );
+    let_go_of_its_root(chain, shot);
+
+    chain.at(3, 0);
+    let said = json!([{ "type": "text", "text": "Seen." }]);
+    model_says(chain, said, "end_turn");
+    chain.at(4, 0);
+    world.mention("m2", "and now?");
+    let messages = sent_messages(chain);
+    let first = messages[0]["content"].as_array().unwrap();
+    let [again] = images(first)[..] else {
+        panic!("the image stays once its snapshot is pruned: {first:?}");
+    };
+    assert_eq!(decoded(again), bytes);
+    let words = texts(first);
+    assert!(
+        words
+            .iter()
+            .any(|line| line.ends_with("640×480 px, read at the head as that snapshot is pruned")),
+        "{words:?}"
+    );
+}
+
+#[test]
+fn an_image_gone_from_files_once_its_snapshot_is_pruned_is_a_line_saying_so() {
+    let world = world();
+    let chain = &world.chain;
+    let bytes = png(640, 480, 1024);
+    let shot = put(chain, SHOT, &bytes);
+    mentioned(&world, vec![attached(SHOT, shot, "image/png", bytes.len())]);
+    let head = match chain.query(files::PROGRAM, &files::Query::Head).unwrap() {
+        files::Reply::Head(head) => head.map(|row| row.id),
+        other => panic!("{other:?}"),
+    };
+    let commit = files::Op::Commit {
+        base: head,
+        message: "remove".into(),
+        changes: vec![files::Change::Remove { path: SHOT.into() }],
+    };
+    chain.submit(signed(ADA), files::PROGRAM, &commit).unwrap();
+    let_go_of_its_root(chain, shot);
+
+    chain.at(3, 0);
+    let said = json!([{ "type": "text", "text": "Seen." }]);
+    model_says(chain, said, "end_turn");
+    chain.at(4, 0);
+    world.mention("m2", "and now?");
+    let messages = sent_messages(chain);
+    let first = messages[0]["content"].as_array().unwrap();
+    assert!(images(first).is_empty(), "{first:?}");
+    let words = texts(first);
+    assert!(
+        words.iter().any(|line| line.starts_with("shot.png")
+            && line.ends_with(": not shown, it is no longer in files")),
+        "{words:?}"
+    );
 }
 
 #[test]

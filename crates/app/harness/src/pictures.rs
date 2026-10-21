@@ -3,14 +3,14 @@
 //! shown to the model as the image or, where the model can't take it, as a sentence saying why.
 use std::collections::BTreeMap;
 
-use ::program::{BlobId, Error, ExecCtx};
+use ::program::{BlobId, Error, ExecCtx, code};
 use base64::Engine;
 use borsh::{BorshDeserialize, BorshSerialize};
 use files::{EntryInfo, Node};
 
 use crate::calls::refusal;
 use crate::state::{CALL_PICTURES, HELD_PICTURES, HIDDEN, PICTURES, WITHHELD};
-use crate::tools::files::{read_all, stat};
+use crate::tools::files::{read_all, resolved, stat};
 use crate::{Frame, Wire, wire};
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
@@ -281,7 +281,11 @@ fn look(ctx: &ExecCtx, wire: Wire, picture: &Picture, hidden: Option<&Hidden>) -
                 None => String::new(),
             };
             let media = image.format.media();
-            let label = format!("{label}: {media}, {}{side}", amount(image.size));
+            let read = match image.read_at_head {
+                true => ", read at the head as that snapshot is pruned",
+                false => "",
+            };
+            let label = format!("{label}: {media}, {}{side}{read}", amount(image.size));
             Look::Image {
                 label,
                 media,
@@ -297,21 +301,34 @@ struct Image {
     size: u64,
     side: Option<(u32, u32)>,
     data: String,
+    read_at_head: bool,
 }
 
 fn image(ctx: &ExecCtx, wire: Wire, picture: &Picture) -> Result<Image, String> {
-    let at = Some(&picture.snapshot);
     let unread = |error: Error| format!("files answered {}", refusal(&error));
-    let found = stat(ctx, &picture.path, at).map_err(unread)?;
+    let pinned = stat(ctx, &picture.path, Some(&picture.snapshot));
+    let read_at_head = matches!(&pinned, Err(pruned) if pruned.code == code::NOT_FOUND);
+    let (at, found) = match read_at_head {
+        false => (Some(picture.snapshot), pinned.map_err(unread)?),
+        true => {
+            let head = resolved(ctx, None).map_err(unread)?;
+            let found = stat(ctx, &picture.path, head.as_ref()).map_err(unread)?;
+            (head, found)
+        }
+    };
     let Some(EntryInfo {
         node: Node::File { size, .. },
         ..
     }) = found
     else {
-        return Err("files holds no file there at that snapshot".to_owned());
+        let missing = match read_at_head {
+            true => "it is no longer in files",
+            false => "files holds no file there at that snapshot",
+        };
+        return Err(missing.to_owned());
     };
     wire::image_size(wire, size).map_err(|why| format!("{}, {why}", amount(size)))?;
-    let bytes = read_all(ctx, &picture.path, at).map_err(unread)?;
+    let bytes = read_all(ctx, &picture.path, at.as_ref()).map_err(unread)?;
     let format = format(&bytes).ok_or("it is not a png, jpeg, gif or webp image")?;
     let side = dimensions(&bytes, format);
     if let Some((width, height)) = side {
@@ -323,6 +340,7 @@ fn image(ctx: &ExecCtx, wire: Wire, picture: &Picture) -> Result<Image, String> 
         size,
         side,
         data,
+        read_at_head,
     })
 }
 
