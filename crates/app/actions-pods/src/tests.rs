@@ -580,7 +580,7 @@ fn ran_to_its_end(exit_code: Value) -> Node {
 #[test]
 fn an_offered_check_runs_in_a_pod_and_passes_when_its_steps_do() {
     let node = ran_to_its_end(json!(0));
-    let log = format!("/shared/actions/programs/{COMMIT}/gates/gates-1/log");
+    let log = format!("/home/actions-pods/checks/programs/{COMMIT}/gates/gates-1/log");
     let line = "pod duckpond-7 ended: exit code 0 (Completed)";
     assert_eq!(
         node.reports(),
@@ -721,7 +721,7 @@ fn a_pod_that_outlives_its_wait_is_read_and_waited_on_again_at_the_beat_its_bloc
     node.ended(&again, 0, json!(0));
     copied_and_deleted(&mut node);
     let line = "pod duckpond-7 ended: exit code 0 (Completed)";
-    let log = format!("/shared/actions/programs/{COMMIT}/gates/gates-1/log");
+    let log = format!("/home/actions-pods/checks/programs/{COMMIT}/gates/gates-1/log");
     assert_eq!(
         node.reports(),
         [(1, State::Passed, line.to_owned(), Some(log))]
@@ -739,7 +739,7 @@ fn a_pod_that_ended_while_its_wait_was_broken_reports_how_it_ended() {
     assert_eq!(read, sent("GET", "/v1/pods/duckpond-7"));
     copied_and_deleted(&mut node);
     let line = "pod duckpond-7 ended: exit code 2 (Error)".to_owned();
-    let log = format!("/shared/actions/programs/{COMMIT}/gates/gates-1/log");
+    let log = format!("/home/actions-pods/checks/programs/{COMMIT}/gates/gates-1/log");
     assert_eq!(node.reports(), [(1, State::Failed, line, Some(log))]);
 }
 
@@ -880,7 +880,7 @@ fn a_run_an_update_cut_off_is_taken_up_by_a_sweep_and_reports_how_its_pod_ended(
     node.ended(&again, 0, json!(0));
     copied_and_deleted(&mut node);
     let line = "pod duckpond-7 ended: exit code 0 (Completed)";
-    let log = format!("/shared/actions/programs/{COMMIT}/gates/gates-1/log");
+    let log = format!("/home/actions-pods/checks/programs/{COMMIT}/gates/gates-1/log");
     assert_eq!(
         node.reports(),
         [(1, State::Passed, line.to_owned(), Some(log))]

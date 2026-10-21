@@ -18,6 +18,16 @@ Shapes: `src/lib.rs`; checks: `src/rules.rs`.
 
 Every query is answered for anyone.
 
+## Where a check's log goes
+
+A check's `/out/log` is copied into files at
+`/home/<this program's id>/checks/<repo>/<commit>/<workflow>/<job>-<attempt>/log`, the
+runner's own home on any network with files, and the report names that path. The pods service
+writes it, as its own account, through `/v1/pods/<pod>/file`: a write list set on that home that
+leaves the pods service out refuses the copy, and the check's summary then says the log was not
+kept. Every other file in `/out` is put as a blob of kind `output` and recorded with actions
+`Outputs`.
+
 ## What a job asks
 
 A check's `Asks` (actions `Query::Asks`) become its pod's requests: `cpu` and `memory` as

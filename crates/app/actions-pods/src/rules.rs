@@ -715,14 +715,15 @@ const OUTPUT_KIND: &str = "output";
 // A check's log, which the report links.
 const LOG: &str = "/out/log";
 
-// The pod's `/out` kept in two requests: its log copied into files, under
-// `/shared/actions/<repo>/<commit>/<workflow>/<job>-<attempt>/log`, and every other file put as a
-// blob and recorded as the check's outputs (`record`). Where the log is, and what was not kept.
 async fn kept_out(ctx: &Ctx, check: &CheckRow, pod: &str) -> (Option<String>, Option<String>) {
     let workflow = check.workflow.trim_end_matches(".toml");
     let dir = format!(
-        "/shared/actions/{}/{}/{workflow}/{}-{}",
-        check.repo, check.commit, check.job.id, check.attempt
+        "/home/{}/checks/{}/{}/{workflow}/{}-{}",
+        ctx.env().program,
+        check.repo,
+        check.commit,
+        check.job.id,
+        check.attempt
     );
     let find = json!({"command": ["find", "/out", "-type", "f"], "container": "out"});
     let listed = match post(ctx, format!("/v1/pods/{pod}/exec"), &find).await {
