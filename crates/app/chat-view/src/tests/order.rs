@@ -63,8 +63,6 @@ fn drawn(view: &Entity<Chat>) -> Vec<String> {
             .map(|line| match line.spot() {
                 Spot::Room(room) => room,
                 Spot::Folder { path, .. } => format!("{path}/"),
-                Spot::More => "more".to_owned(),
-                Spot::MoreFolder { path, .. } => format!("more/{path}/"),
             })
             .collect()
     })

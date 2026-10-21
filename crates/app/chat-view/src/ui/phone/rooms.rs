@@ -1,6 +1,6 @@
 //! The rooms, the chat's first page (Expo `app/(tabs)/chat/index.tsx`, boards 10-12): the title
-//! row, the channels the reader is in, in their folders, and a row unfolding the rest into theirs,
-//! then their direct rooms newest first; a long press lifts a channel or folder row to move it.
+//! row, every channel its room's rules list for the reader, in their folders, then their direct
+//! rooms newest first; a long press lifts a channel or folder row to move it.
 use view::prelude::*;
 use view::wire::{Action, ActionData};
 use view::{Div, Stateful};
@@ -96,8 +96,6 @@ fn caption(chat: &Chat) -> String {
         .join(" · ")
 }
 
-// The channels the reader is in (their loading line, the empty state, or where the rest are, under
-// them), then Direct messages always.
 fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
     // which rooms are the reader's waits on who reads
     if !chat.session_heard {
@@ -120,10 +118,9 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     let loading = matches!(chat.channels, Loadable::Idle | Loadable::Loading(_));
     // the empty state says the network holds no channel: keyed on every room, the ones left out
     // of the list too
-    let none = list.channels.is_empty() && list.left_out == 0;
+    let mut every = chat.channels.ready().into_iter().flatten();
+    let none = every.all(|info| chat::dm_peers(&info.channel.id).is_some());
     let empty = (!loading && none).then(|| no_rooms(chat, cx, theme, ladder));
-    let elsewhere = (list.channels.is_empty() && list.left_out > 0)
-        .then(|| quiet("chat-rooms-none-held", words::NONE_HELD, theme, ladder));
     let lines = chat.lines(&list.channels);
     // a long press lifts the channel or folder row under it; the finger dragged onto another row
     // of its level and lifted, it takes that row's place
@@ -138,12 +135,6 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     });
     let land = cx.listener(|chat, _: &MouseUpEvent, _, cx| chat.drop_row(cx));
     let mine = rows(chat, lines, cx, theme, ladder);
-    let more =
-        (!list.others.is_empty()).then(|| more_row(chat, list.others.len(), cx, theme, ladder));
-    let unfolded: Vec<AnyElement> = match chat.others_open {
-        true => rows(chat, chat.more_lines(&list.others), cx, theme, ladder),
-        false => Vec::new(),
-    };
     let mut dms = Vec::new();
     for dm in &list.dms {
         dms.push(dm_row(chat, dm, cx, theme, ladder));
@@ -169,9 +160,6 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
             rooms.child(crate::ui::placeholders::phone_rooms(theme, ladder))
         })
         .children(empty)
-        .children(elsewhere)
-        .children(more)
-        .children(unfolded)
         .child(
             design::section_head("chat-rooms-dms-head", words::DIRECT_MESSAGES, ladder, theme)
                 .children(count(list.dms.len()))
@@ -250,36 +238,6 @@ fn channel_row(
         .into_any_element()
 }
 
-// The row at the channels' end: how many channels the reader is not in, which a press lists under
-// it.
-fn more_row(
-    chat: &Chat,
-    count: usize,
-    cx: &mut Context<Chat>,
-    theme: &Theme,
-    ladder: &Ladder,
-) -> AnyElement {
-    let toggle = cx.listener(|chat, _: &ClickEvent, _window, cx| {
-        chat.fold_others(!chat.others_open);
-        cx.notify();
-    });
-    let shape = match chat.others_open {
-        true => "chevron-down",
-        false => "chevron-right",
-    };
-    let chevron = design::lead(design::icon(shape, ladder.icon_row).text_color(theme.muted));
-    let text = words::more_channels(count);
-    design::row("chat-rooms-more".to_owned(), ladder, theme)
-        .role(Role::Button)
-        .aria_label(text.clone())
-        .aria_expanded(chat.others_open)
-        .focusable()
-        .on_click(toggle)
-        .child(chevron)
-        .child(title(text, theme, ladder).text_color(theme.muted))
-        .into_any_element()
-}
-
 fn indent(depth: usize) -> Pixels {
     design::space::BLOCK + design::space::XL * depth as f32
 }
@@ -291,16 +249,10 @@ fn folder_row(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
-    let id = match folder.more {
-        true => format!("chat-rooms-more-folder-{}", folder.path),
-        false => format!("chat-rooms-folder-{}", folder.path),
-    };
-    let (path, more) = (folder.path.clone(), folder.more);
+    let id = format!("chat-rooms-folder-{}", folder.path);
+    let path = folder.path.clone();
     let toggle = cx.listener(move |chat, _: &ClickEvent, _window, cx| {
-        match more {
-            true => chat.toggle_more_folder(&path),
-            false => chat.toggle_folder(&path, cx),
-        }
+        chat.toggle_folder(&path, cx);
         cx.notify();
     });
     let shape = if folder.open {
@@ -328,13 +280,10 @@ fn folder_row(
     let counted = (folder.unread > 0).then(|| words::unread_rooms(folder.unread));
     let entry = Entry::Folder(folder.path.clone());
     let line = design::row(id.clone(), ladder, theme).pl(indent(folder.depth));
-    let line = match folder.more {
-        true => line,
-        false => movable(line, entry.clone(), chat, cx, theme),
-    };
+    let line = movable(line, entry.clone(), chat, cx, theme);
     let name = title(folder.name.to_owned(), theme, ladder);
     let Some(own) = folder.own else {
-        return steps_unless(folder.more, line, entry, chat, cx)
+        return steps(line, entry, chat, cx)
             .role(Role::Button)
             .aria_label(words::folder(folder.name))
             .aria_expanded(folder.open)
@@ -374,7 +323,7 @@ fn folder_row(
         .on_click(choose)
         .child(name)
         .child(tail);
-    let opens = steps_unless(folder.more, opens, entry, chat, cx);
+    let opens = steps(opens, entry, chat, cx);
     line.child(fold).child(opens).into_any_element()
 }
 
@@ -392,19 +341,6 @@ fn movable(
     placed(row, entry, cx)
         .when(lifted, |row| row.bg(theme.accent_soft))
         .when_some(landing, |row, after| lands(row, after, theme))
-}
-
-fn steps_unless(
-    more: bool,
-    row: Stateful<Div>,
-    entry: Entry,
-    chat: &Chat,
-    cx: &mut Context<Chat>,
-) -> Stateful<Div> {
-    match more {
-        true => row,
-        false => steps(row, entry, chat, cx),
-    }
 }
 
 // A screen reader's way to move `entry`: Move up and Move down, where its level has room.

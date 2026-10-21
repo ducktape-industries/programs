@@ -89,7 +89,8 @@ fn direct_messages_hold_only_the_rooms_the_reader_has() {
             "{who} has no row"
         );
     }
-    assert_eq!(listed(&view), ["general".to_owned(), dm_id(8)]);
+    let review = "forge:web:3".to_owned();
+    assert_eq!(listed(&view), ["general".to_owned(), review, dm_id(8)]);
 }
 
 #[test]

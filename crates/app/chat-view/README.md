@@ -9,13 +9,12 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
 
 ## Panes and screens
 - Rooms: the desktop sidebar (`ui/sidebar.rs`) and the phone's rooms page
-  (`ui/phone/rooms.rs`) list the same rooms (`Chat::room_list`): the channels
-  the reader is in (opened on this device, listened to, owned, or written in:
-  chat's `PostedIn`), then their direct rooms. The channels they are not in,
-  a change's or a job's too, wait under the channels' last row, "N more
-  channels", which a press unfolds, by name, into the folders their names give
-  (`jobs/`, `pr/`, …), each closed until opened there and apart from the
-  reader's own folder of that name (archived rooms never). A members-only
+  (`ui/phone/rooms.rs`) list the same rooms (`Chat::room_list`) as one tree:
+  every channel its room's own rules list for the reader, then their direct
+  rooms. Whether the reader opened, listens to or wrote in a room decides
+  nothing there (only `#` reads it, `Chat::is_in`), and no "N more" row
+  holds the rest: a folder (`jobs/`, `pr/`, …) is drawn once, with every
+  listed room its name files there. Archived rooms leave both lists. A members-only
   room is listed only where the reader may post (seated, or its owner), and a
   room whose meta says `listed = involved` (a job's, a change's) only once the
   reader sits in it or owns it: chat seats whoever posts or is mentioned

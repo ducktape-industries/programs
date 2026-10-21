@@ -609,8 +609,11 @@ fn an_arrow_and_enter_on_the_rooms_opens_the_next_room() {
     );
     cx.simulate_focus("chat-sidebar-rooms-list");
     cx.simulate_key_down("chat-sidebar-rooms-list", "down");
-    let more = cx.interactivity("chat-sidebar-more");
-    assert!(more.aria.active_descendant, "the channels' last row");
+    let review = cx.interactivity("chat-sidebar-channel-forge:web:3");
+    assert!(
+        review.aria.active_descendant,
+        "the review room, as any room"
+    );
     cx.simulate_key_down("chat-sidebar-rooms-list", "down");
     let dm = cx.interactivity("chat-sidebar-dm-8");
     assert_eq!(dm.role, Some(view::Role::ListBoxOption));

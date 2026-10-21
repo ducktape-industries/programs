@@ -518,8 +518,8 @@ fn opened() -> (TestAppContext, Entity<Chat>) {
     assert!(cx.has_text("No channel open"));
     assert!(cx.has_text("Channels"));
     assert!(
-        !cx.has_text("Review web#3"),
-        "a program's rooms stay out of the channel list"
+        cx.has_text("Review web#3"),
+        "a program's room is listed as any room is"
     );
     cx.simulate_click("chat-sidebar-channel-general");
     cx.run_until_parked();

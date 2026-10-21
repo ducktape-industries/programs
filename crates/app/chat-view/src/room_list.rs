@@ -1,6 +1,6 @@
-//! The rooms the reader is in, as both lists draw them: their channels (opened here, listened to,
-//! written in or owned) under the folders a `/` in a name files, in the reader's order, then their
-//! direct rooms newest first; the rest unfold under the last row, in the folders their names give.
+//! The rooms both lists draw, as one tree: every channel its room's rules list for the reader,
+//! under the folders a `/` in a name files, in the reader's order, then their direct rooms newest
+//! first.
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -36,11 +36,6 @@ pub(crate) struct DmEntry<'a> {
 pub(crate) struct RoomList<'a> {
     pub channels: Vec<&'a ChannelInfo>,
     pub dms: Vec<DmEntry<'a>>,
-    // the channels left out, archived or not the reader's: what tells a network with no channel
-    // from a reader in none yet
-    pub left_out: usize,
-    // the channels not the reader's and not archived, by name: what the list's last row unfolds
-    pub others: Vec<&'a ChannelInfo>,
 }
 
 // A row of the desktop's list the arrows stand on: a room, or a folder,
@@ -48,26 +43,14 @@ pub(crate) struct RoomList<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Spot {
     Room(String),
-    Folder {
-        path: String,
-        own: Option<String>,
-    },
-    // the row at the channels' end that unfolds the ones the reader is not in
-    More,
-    /// A folder among the rooms that row unfolds, with the channel named as it.
-    MoreFolder {
-        path: String,
-        own: Option<String>,
-    },
+    Folder { path: String, own: Option<String> },
 }
 
 impl Spot {
-    // what the reader's order names the row by: none for the last row
-    pub(crate) fn entry(&self) -> Option<Entry> {
+    pub(crate) fn entry(&self) -> Entry {
         match self {
-            Spot::Room(room) => Some(Entry::Room(room.clone())),
-            Spot::Folder { path, .. } => Some(Entry::Folder(path.clone())),
-            Spot::More | Spot::MoreFolder { .. } => None,
+            Spot::Room(room) => Entry::Room(room.clone()),
+            Spot::Folder { path, .. } => Entry::Folder(path.clone()),
         }
     }
 
@@ -75,8 +58,7 @@ impl Spot {
     pub(crate) fn room(&self) -> Option<&str> {
         match self {
             Spot::Room(room) => Some(room),
-            Spot::Folder { own, .. } | Spot::MoreFolder { own, .. } => own.as_deref(),
-            Spot::More => None,
+            Spot::Folder { own, .. } => own.as_deref(),
         }
     }
 }
@@ -85,12 +67,6 @@ fn folder_at(spots: &[Spot], path: &str) -> Option<usize> {
     spots
         .iter()
         .position(|spot| matches!(spot, Spot::Folder { path: held, .. } if held == path))
-}
-
-fn more_folder_at(spots: &[Spot], path: &str) -> Option<usize> {
-    spots
-        .iter()
-        .position(|spot| matches!(spot, Spot::MoreFolder { path: held, .. } if held == path))
 }
 
 // A line of the channel list as drawn: a channel, or a folder's row.
@@ -111,10 +87,6 @@ impl Line<'_> {
     pub(crate) fn spot(&self) -> Spot {
         match self {
             Line::Room { info, .. } => Spot::Room(info.channel.id.clone()),
-            Line::Folder(folder) if folder.more => Spot::MoreFolder {
-                path: folder.path.clone(),
-                own: folder.own.map(|own| own.channel.id.clone()),
-            },
             Line::Folder(folder) => Spot::Folder {
                 path: folder.path.clone(),
                 own: folder.own.map(|own| own.channel.id.clone()),
@@ -133,7 +105,6 @@ pub(crate) struct FolderLine<'a> {
     pub depth: usize,
     pub open: bool,
     pub unread: usize,
-    pub more: bool,
 }
 
 // A channel's name in parts: the folder before its first `/` and the name after it, each trimmed,
@@ -360,7 +331,6 @@ impl<'a> Tree<'a> {
                 depth,
                 open: opened,
                 unread: hidden,
-                more: false,
             }));
             if opened {
                 self.lines(&folder.nodes, depth + 1, open, unread, lines);
@@ -489,20 +459,6 @@ impl Chat {
         let unread = |info: &ChannelInfo| self.unread(info);
         let open = |path: &str| !self.closed_folders.contains(path);
         tree.lines(&tree.top, 0, &open, &unread, &mut lines);
-        lines
-    }
-
-    pub(crate) fn more_lines<'a>(&self, others: &[&'a ChannelInfo]) -> Vec<Line<'a>> {
-        let tree = Tree::of(others);
-        let mut lines = Vec::new();
-        let unread = |info: &ChannelInfo| self.unread(info);
-        let open = |path: &str| self.more_open.contains(path);
-        tree.lines(&tree.top, 0, &open, &unread, &mut lines);
-        for line in &mut lines {
-            if let Line::Folder(folder) = line {
-                folder.more = true;
-            }
-        }
         lines
     }
 
@@ -652,23 +608,6 @@ impl Chat {
         self.fold(path, open, cx);
     }
 
-    // The channels the reader is not in listed under the last row, or folded away.
-    pub(crate) fn fold_others(&mut self, open: bool) {
-        self.others_open = open;
-    }
-
-    pub(crate) fn fold_more(&mut self, path: &str, open: bool) {
-        match open {
-            true => self.more_open.insert(path.to_owned()),
-            false => self.more_open.remove(path),
-        };
-    }
-
-    pub(crate) fn toggle_more_folder(&mut self, path: &str) {
-        let open = !self.more_open.contains(path);
-        self.fold_more(path, open);
-    }
-
     // A press on the row at `spot`: its room opens, or a folder alone opens
     // or closes.
     pub(crate) fn press_spot(&mut self, spot: &Spot, cx: &mut Context<Self>) {
@@ -678,11 +617,6 @@ impl Chat {
                 own: Some(room), ..
             }
             | Spot::Room(room) => self.choose(room.clone(), cx),
-            Spot::More => self.fold_others(!self.others_open),
-            Spot::MoreFolder {
-                own: Some(room), ..
-            } => self.choose(room.clone(), cx),
-            Spot::MoreFolder { path, own: None } => self.toggle_more_folder(path),
         }
     }
 
@@ -694,29 +628,17 @@ impl Chat {
             .unwrap_or(created)
     }
 
-    // The rooms both lists hold: the channels the reader is in and their direct rooms, and the
-    // channels they are not in, a change's or a job's too, for the last row to unfold. An archived
-    // room leaves the lists as it is archived; a link, search or the open room still reaches it.
     fn held_rooms(&self) -> RoomList<'_> {
         let mine = self.my_account();
         let mut list = RoomList {
             channels: Vec::new(),
             dms: Vec::new(),
-            left_out: 0,
-            others: Vec::new(),
         };
         for info in self.channels.ready().into_iter().flatten() {
             let id = info.channel.id.as_str();
             let direct = chat::dm_peers(id).is_some();
-            let listed = direct || self.listed_for_me(info);
+            let listed = (direct || self.listed_for_me(info)) && !info.channel.archived;
             if !listed {
-                continue;
-            }
-            if info.channel.archived || !(direct || self.is_in(info)) {
-                list.left_out += usize::from(!direct);
-                if !direct && !info.channel.archived {
-                    list.others.push(info);
-                }
                 continue;
             }
             if !direct {
@@ -728,8 +650,6 @@ impl Chat {
                     .map(|peer| DmEntry { info, peer }),
             );
         }
-        list.others
-            .sort_by_cached_key(|info| info.channel.name.to_lowercase());
         list
     }
 
@@ -828,8 +748,6 @@ impl Chat {
         let at = |room: &str| spots.iter().position(|listed| listed.room() == Some(room));
         let row = match spot {
             Spot::Folder { path, .. } => folder_at(spots, path),
-            Spot::MoreFolder { path, .. } => more_folder_at(spots, path),
-            Spot::More => spots.iter().position(|listed| listed == spot),
             // a room a closed folder hides hands its row to that folder
             Spot::Room(id) => at(id)
                 .or_else(|| self.folding(id, spots))
@@ -843,7 +761,7 @@ impl Chat {
         let parts = segments(&self.info(id)?.channel.name);
         (1..parts.len()).rev().find_map(|end| {
             let path = parts[..end].join("/");
-            folder_at(spots, &path).or_else(|| more_folder_at(spots, &path))
+            folder_at(spots, &path)
         })
     }
 

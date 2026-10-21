@@ -120,28 +120,13 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     }
     let open = chat.room.as_ref().map(|room| room.id.as_str());
     let room_list = chat.room_list();
-    if room_list.channels.is_empty() && room_list.left_out > 0 {
-        list = list.child(quiet("chat-sidebar-none-held", words::NONE_HELD, theme));
-    }
     let plain = chat.lines(&room_list.channels);
     // one Tab stop under the header: ↑ ↓ walk the channels, their folders
     // and the direct messages, Enter opens the active room or folder, → and
     // ← open and close the active folder
-    let others = match chat.others_open {
-        true => chat.more_lines(&room_list.others),
-        false => Vec::new(),
-    };
-    let more = (!room_list.others.is_empty()).then_some(Spot::More);
-    let unfolded = others.iter().map(Line::spot);
     let dms = room_list.dms.iter();
     let dms = dms.map(|dm| Spot::Room(dm.info.channel.id.clone()));
-    let spots: Vec<Spot> = plain
-        .iter()
-        .map(Line::spot)
-        .chain(more)
-        .chain(unfolded)
-        .chain(dms)
-        .collect();
+    let spots: Vec<Spot> = plain.iter().map(Line::spot).chain(dms).collect();
     let at = chat.rooms_at(&spots);
     let picked = spots.clone();
     // the Menu key or Shift+F10 opens the active room's menu, under its row
@@ -162,9 +147,9 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
             _ => None,
         };
         let alt = up.filter(|_| event.keystroke.modifiers.alt);
-        if let (Some(up), Some(entry)) = (alt, spot.entry()) {
+        if let Some(up) = alt {
             chat.rooms_cursor = Some(spot.clone());
-            return chat.step(&entry, up, cx);
+            return chat.step(&spot.entry(), up, cx);
         }
         let open = match event.keystroke.key.as_str() {
             "right" => true,
@@ -176,8 +161,6 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
         }
         match spot {
             Spot::Folder { path, .. } => chat.fold(path, open, cx),
-            Spot::More => chat.fold_others(open),
-            Spot::MoreFolder { path, .. } => chat.fold_more(path, open),
             Spot::Room(_) => return,
         }
         cx.notify();
@@ -216,23 +199,6 @@ fn rooms(chat: &Chat, cx: &mut Context<Chat>, theme: &Theme, ladder: &Ladder) ->
     let mut index = 0;
     for line in &plain {
         box_ = box_.child(line_row(chat, line, open, index == at, cx, theme, ladder));
-        index += 1;
-    }
-    if !room_list.others.is_empty() {
-        let count = room_list.others.len();
-        box_ = box_.child(more_row(chat, count, index == at, cx, theme));
-        index += 1;
-    }
-    for line in &others {
-        let active = index == at;
-        let row = match line {
-            Line::Room { info, depth } => {
-                let selected = open == Some(info.channel.id.as_str());
-                channel_row(chat, info, *depth, selected, active, None, cx, theme)
-            }
-            Line::Folder(folder) => folder_row(chat, folder, open, active, None, cx, theme, ladder),
-        };
-        box_ = box_.child(row);
         index += 1;
     }
     box_ = box_.child(section_header(
@@ -378,52 +344,6 @@ fn line_row(
     }
 }
 
-// The row at the channels' end: how many channels the reader is not in, which a press lists under
-// it, and its chevron.
-fn more_row(
-    chat: &Chat,
-    count: usize,
-    active: bool,
-    cx: &mut Context<Chat>,
-    theme: &Theme,
-) -> AnyElement {
-    let toggle = cx.listener(|chat, _: &ClickEvent, _, cx| {
-        chat.fold_others(!chat.others_open);
-        cx.notify();
-    });
-    let open = chat.others_open;
-    let text = words::more_channels(count);
-    let row = div()
-        .id("chat-sidebar-more")
-        .flex()
-        .w_full()
-        .items_center()
-        .gap_1()
-        .min_h(design::size::CONTROL)
-        .px_1()
-        .bg(theme.sidebar)
-        .cursor_pointer()
-        .hover(|s| s.bg(theme.sidebar_raised))
-        .when(active, |row| row.bg(theme.sidebar_raised))
-        .aria_label(text.clone())
-        .aria_expanded(open)
-        .aria_selected(false)
-        .on_click(toggle)
-        .child(design::lead(
-            div()
-                .text_color(theme.sidebar_muted)
-                .child(if open { "▾" } else { "▸" }),
-        ))
-        .child(
-            div()
-                .flex_1()
-                .truncate()
-                .text_color(theme.sidebar_muted)
-                .child(text),
-        );
-    design::item(row, Role::ListBoxOption, active).into_any_element()
-}
-
 // A folder's chevron, the smallest box a pointer presses (the door's AX-017).
 const FOLD: Pixels = px(24.);
 
@@ -441,16 +361,10 @@ fn folder_row(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
-    let id = match folder.more {
-        true => format!("chat-sidebar-more-folder-{}", folder.path),
-        false => format!("chat-sidebar-folder-{}", folder.path),
-    };
-    let (path, more) = (folder.path.clone(), folder.more);
+    let id = format!("chat-sidebar-folder-{}", folder.path);
+    let path = folder.path.clone();
     let toggle = cx.listener(move |chat, _: &ClickEvent, _, cx| {
-        match more {
-            true => chat.toggle_more_folder(&path),
-            false => chat.toggle_folder(&path, cx),
-        }
+        chat.toggle_folder(&path, cx);
         cx.notify();
     });
     let own = folder.own;
@@ -558,14 +472,11 @@ fn folder_row(
                 .bg(theme.accent),
         );
     }
-    let row = match folder.more {
-        true => row,
-        false => placed(
-            row,
-            crate::room_list::Entry::Folder(folder.path.clone()),
-            cx,
-        ),
-    };
+    let row = placed(
+        row,
+        crate::room_list::Entry::Folder(folder.path.clone()),
+        cx,
+    );
     let row = row.child(glyph);
     let row = match own {
         Some(own) => super::room_menu::row(row, &own.channel.id, chat, cx),

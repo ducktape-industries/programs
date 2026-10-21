@@ -107,8 +107,8 @@ fn the_rooms_page_lists_channels_and_direct_messages_with_their_counts() {
         "no People section"
     );
     assert!(
-        !cx.has_text("Review web#3"),
-        "a program's rooms stay out of the list"
+        cx.has_text("Review web#3"),
+        "a program's room is listed as any room is"
     );
     assert_eq!(
         cx.back_handler(),
