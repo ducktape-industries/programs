@@ -67,7 +67,7 @@ pub const PART: &str = "part";
     "Agents that consensus runs: each agent's conversations (threads) with its model, the routes harness reaches each provider's models through egress by, the runs agents book, and the waits that wake them. An agent is a program account whose script calls harness and names its configuration file in files."
 )]
 pub enum Op {
-    #[tool_op(description = "Close a conversation; it stays readable. Its agent's manager, or whom the manager lists; a conversation bound to a place (OpenThread) anyone may close.", example = examples::close)]
+    #[tool_op(description = "Close a conversation; it stays readable. Its agent's manager, or whom the manager lists; a conversation bound to a place (OpenThread) anyone may close. Closing one already closed is refused as wrong_state, whoever asks.", example = examples::close)]
     Close { thread: u64 },
     #[tool_op(
         description = "From attribution only (and harness itself for one it held back): a change about an agent, such as a mention, a direct message or a reply in its thread, which reaches its conversation when the agent's list allows the author."

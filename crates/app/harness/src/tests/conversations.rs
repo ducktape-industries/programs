@@ -736,3 +736,29 @@ fn anyone_closes_a_bound_conversation_but_only_the_manager_the_canonical_one() {
         .unwrap();
     assert!(thread_row(chain, canonical).closed);
 }
+
+#[test]
+fn closing_a_conversation_closed_already_is_refused_as_closed_for_anyone() {
+    let world = world();
+    let chain = &world.chain;
+    let canonical = answered(&world, "m1", "hello");
+    room(&world, "j-a");
+    let a = bind(&world, ADA, in_room("j-a")).unwrap();
+    chain
+        .submit(signed(BO), PROGRAM, &Op::Close { thread: a })
+        .unwrap();
+    chain
+        .submit(signed(ADA), PROGRAM, &Op::Close { thread: canonical })
+        .unwrap();
+    for (who, thread) in [(BO, a), (ADA, a), (BO, canonical), (ADA, canonical)] {
+        let refused = chain
+            .submit(signed(who), PROGRAM, &Op::Close { thread })
+            .unwrap_err();
+        assert_eq!(
+            refused.code,
+            code::WRONG_STATE,
+            "{thread}: {}",
+            refused.message
+        );
+    }
+}

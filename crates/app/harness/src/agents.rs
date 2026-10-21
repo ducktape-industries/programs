@@ -3,6 +3,7 @@
 //! channel, else its canonical one; anyone closes a bound one, its manager the canonical one.
 use ::program::{
     BlobId, Ctx, Error, ExecCtx, Principal, QueryCtx, not_found, unauthorized, unexpected_reply,
+    wrong_state,
 };
 use abi::role::identity::{AccountNumber, Category, Kind, Profile, Standing};
 use attribution::{Actor, Change, Kind as Changed, Reason, Source};
@@ -235,6 +236,9 @@ pub(crate) fn thread(ctx: &QueryCtx, id: u64) -> Result<ThreadRow, Error> {
 // answer comes back
 pub(crate) async fn close(ctx: &Ctx, id: u64) -> Result<(), Error> {
     let mut thread = thread(ctx, id)?;
+    if thread.closed {
+        return Err(wrong_state(format!("conversation {id} is closed already")));
+    }
     let bound = binding(ctx, &thread)?.is_some();
     if bound {
         BOUND.remove(ctx, &(thread.agent, thread.place.clone()));
