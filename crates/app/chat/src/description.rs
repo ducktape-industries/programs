@@ -7,6 +7,24 @@ use describe::{Description, Field, Value, field};
 
 use crate::{Entry, Notices, Op, PostPolicy, Principal, dm_peers, notice_text, plain_text};
 
+fn noticed(
+    channel_id: &str,
+    message_id: &str,
+    thread: &Option<u64>,
+    notice: &crate::Notice,
+) -> Description {
+    let mut described = posted(channel_id, message_id, notice_text(notice), thread);
+    described.title = format!("Notice in {}", room_title(channel_id));
+    let concerns = notice
+        .concerns
+        .iter()
+        .map(|account| Value::Account(*account));
+    described
+        .fields
+        .push(field("for", Value::List(concerns.collect())));
+    described
+}
+
 pub fn describe(op: &Op) -> Description {
     let seq = |seq: &u64| field("seq", Value::text(seq.to_string()));
     let (title, channel, fields) = match op {
@@ -221,16 +239,18 @@ pub fn describe(op: &Op) -> Description {
             message_id,
             thread,
             notice,
+        } => return noticed(channel_id, message_id, thread, notice),
+        Op::NotifyBy {
+            channel_id,
+            message_id,
+            thread,
+            notice,
+            by,
         } => {
-            let mut described = posted(channel_id, message_id, notice_text(notice), thread);
-            described.title = format!("Notice in {}", room_title(channel_id));
-            let concerns = notice
-                .concerns
-                .iter()
-                .map(|account| Value::Account(*account));
+            let mut described = noticed(channel_id, message_id, thread, notice);
             described
                 .fields
-                .push(field("for", Value::List(concerns.collect())));
+                .push(field("by", principal_description(by)));
             return described;
         }
         Op::Take { channel_id, thread } => ("Hold place", channel_id, vec![under(*thread)]),

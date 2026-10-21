@@ -241,6 +241,14 @@ pub enum Op {
         channel_id: String,
         post_policy: PostPolicy,
     },
+    #[tool_op(description = "Notify, for a line about something by did (an account that exists; never root): by then follows the line's thread as if it had replied there, so it hears the replies under it by chat's own rule, and it is not told of the notice itself (concerns says who is). It reaches no one a mention in a reply could not: allowed where Notify is.", example = examples::notify_by)]
+    NotifyBy {
+        channel_id: String,
+        message_id: String,
+        thread: Option<u64>,
+        notice: Notice,
+        by: Principal,
+    },
 }
 
 /// A read. `viewer` is the reader's principals: they decide
@@ -964,6 +972,7 @@ fn op_variants_only_append() {
             "WatchPlaces",
             "Break",
             "SetPostPolicy",
+            "NotifyBy",
         ]
     );
 }

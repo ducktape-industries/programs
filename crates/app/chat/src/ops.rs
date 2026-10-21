@@ -207,6 +207,38 @@ pub(crate) fn notify(
     write(ctx, sender, channel_id, message_id, blocks, thread)
 }
 
+pub(crate) fn notify_by(
+    ctx: &ExecCtx,
+    sender: &Principal,
+    channel_id: String,
+    message_id: String,
+    thread: Option<u64>,
+    notice: Notice,
+    by: Principal,
+) -> Result<(), Error> {
+    match &by {
+        Principal::Account(account) => ctx.require_account(*account)?,
+        Principal::Root => return Err(invalid("by names who acted: an account, never root")),
+    }
+    notify(
+        ctx,
+        sender,
+        channel_id.clone(),
+        message_id.clone(),
+        thread,
+        notice,
+    )?;
+    let Some((_, seq)) = MESSAGE_IDS.get(ctx, &message_id)? else {
+        return Err(wrong_state(format!("notice {message_id} was not written")));
+    };
+    let root = message(ctx, &channel_id, seq)?.thread.unwrap_or(seq);
+    let following = (channel_id, root, by);
+    if !PARTICIPANTS.has(ctx, &following) {
+        PARTICIPANTS.put(ctx, &following, &seq);
+    }
+    Ok(())
+}
+
 fn write(
     ctx: &ExecCtx,
     sender: &Principal,

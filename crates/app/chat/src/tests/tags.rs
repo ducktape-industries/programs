@@ -3,7 +3,7 @@ use borsh::schema::Definition;
 
 use super::*;
 
-const LIVE_OPS: [(&str, i64); 28] = [
+const LIVE_OPS: [(&str, i64); 29] = [
     ("CreateChannel", 0),
     ("CreateDmChannel", 1),
     ("RenameChannel", 2),
@@ -32,6 +32,7 @@ const LIVE_OPS: [(&str, i64); 28] = [
     ("WatchPlaces", 29),
     ("Break", 30),
     ("SetPostPolicy", 31),
+    ("NotifyBy", 32),
 ];
 
 const LIVE_QUERIES: [(&str, i64); 27] = [

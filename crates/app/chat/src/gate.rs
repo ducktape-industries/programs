@@ -39,6 +39,7 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::SetRoomOrder { .. }
         | Op::ChooseForMany { .. }
         | Op::Notify { .. }
+        | Op::NotifyBy { .. }
         | Op::Take { .. }
         | Op::Release { .. }
         | Op::WatchPlaces { .. } => Vec::new(),

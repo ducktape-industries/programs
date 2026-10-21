@@ -13,7 +13,7 @@ the posted message is the one `PostMessage` with `parse_message(text)` makes.
 ## Threads
 
 A reply's `thread` is its thread's root. Every op that names a thread (`PostMessage`, `Post`,
-`Notify`, `Drafting`, `Take`, `Release`, `Break`) may name the root or any reply under it: a
+`Notify`, `NotifyBy`, `Drafting`, `Take`, `Release`, `Break`) may name the root or any reply under it: a
 reply's seq stands for its root, so a reply to a reply lands under the root, and the root counts
 it once. The queries (`Thread`, `Busy`, `Holders`) take the root's seq.
 
@@ -183,9 +183,16 @@ room details offer the reader's own choice, then a row for each active agent the
 A module's status line (a pod ended, a check failed, a change merged) is a notice: `Notify {
 channel_id, message_id, thread, notice }` posts a message whose one block is `Block::Notice(Notice
 { kind, group, subject, link, status, detail, concerns })`, where the room lets the sender post, as
-`PostMessage` does. Only `Notify` writes one: `PostMessage`, `Post` and `EditMessage` refuse a
-`Notice` block, and a notice is never edited. A later state of the same thing (a run's start, then
-its end) is the next notice under the same `group`.
+`PostMessage` does. Only `Notify` and `NotifyBy` write one: `PostMessage`, `Post` and
+`EditMessage` refuse a `Notice` block, and a notice is never edited. A later state of the same thing
+(a run's start, then its end) is the next notice under the same `group`.
+
+`NotifyBy { …, by }` is `Notify` for a line about something `by` did (a review, a merge); `by` is a
+`Principal`, an account that exists, never `Root`:
+`by` follows the line's thread as if it had replied there, so the replies under the line reach it
+by the thread rule (`Why::Thread`, attribution's `THREAD`), while the line itself is told only to
+`concerns`, which leaves out whoever acted. It reaches no one a mention in a reply could not, so it
+is allowed wherever `Notify` is.
 
 chat tells attribution a notice only for the accounts in `concerns` (`attributed::NOTICE`) and for
 a wait watching the room (`WATCH`), never for the room's listeners, a mention or a thread's

@@ -146,6 +146,13 @@ impl Program for Chat {
                 channel_id,
                 post_policy,
             } => crate::ops::set_post_policy(ctx, &channel_id, post_policy),
+            Op::NotifyBy {
+                channel_id,
+                message_id,
+                thread,
+                notice,
+                by,
+            } => crate::ops::notify_by(ctx, &sender, channel_id, message_id, thread, notice, by),
         }
     }
 

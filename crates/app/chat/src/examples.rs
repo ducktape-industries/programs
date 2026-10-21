@@ -369,15 +369,29 @@ pub(crate) fn notify() -> Op {
         channel_id: room(),
         message_id: "pods-builds-1-ended".into(),
         thread: None,
-        notice: Notice {
-            kind: "pod".into(),
-            group: "builds-1".into(),
-            subject: "pod builds-1".into(),
-            link: None,
-            status: Status::Failed,
-            detail: "exit code 1".into(),
-            concerns: vec![21],
-        },
+        notice: ended(),
+    }
+}
+
+pub(crate) fn notify_by() -> Op {
+    Op::NotifyBy {
+        channel_id: room(),
+        message_id: "pods-builds-1-ended".into(),
+        thread: None,
+        notice: ended(),
+        by: Principal::Account(15),
+    }
+}
+
+fn ended() -> Notice {
+    Notice {
+        kind: "pod".into(),
+        group: "builds-1".into(),
+        subject: "pod builds-1".into(),
+        link: None,
+        status: Status::Failed,
+        detail: "exit code 1".into(),
+        concerns: vec![21],
     }
 }
 

@@ -761,3 +761,66 @@ fn a_notice_is_told_to_the_accounts_it_concerns_and_to_no_listener() {
         "a notice concerns accounts that exist"
     );
 }
+
+#[test]
+fn notify_by_makes_its_account_follow_the_lines_thread_and_tells_it_nothing_of_the_line() {
+    let chain = chain();
+    open_general(&chain);
+    chain.at(2, 0);
+    let notice = crate::Notice {
+        kind: "change".into(),
+        group: "merged project 1".into(),
+        subject: "project #1".into(),
+        link: None,
+        status: crate::message::Status::Passed,
+        detail: "merged into main".into(),
+        concerns: vec![2],
+    };
+    let line = crate::Op::NotifyBy {
+        channel_id: "general".into(),
+        message_id: "merged".into(),
+        thread: None,
+        notice,
+        by: crate::Principal::Account(3),
+    };
+    chain.submit(signed(ADA), crate::PROGRAM, &line).unwrap();
+    let noticed = Reason::Defined(NOTICE.into());
+    assert_eq!(held(&chain, chat_source("merged")), [(2, noticed)]);
+    let general = |head, meant| vec![("general".to_owned(), head, meant)];
+    assert_eq!(unread(&chain, 3, &[("general", 0)]), general(1, 0));
+    post_in(&chain, BO, "general", "why", "why this way?", Some(1));
+    assert_eq!(
+        held(&chain, chat_source("why")),
+        [(1, in_thread()), (3, in_thread())]
+    );
+    assert_eq!(unread(&chain, 3, &[("general", 0)]), general(2, 1));
+    let by_whom = |message_id: &str, by| crate::Op::NotifyBy {
+        channel_id: "general".into(),
+        message_id: message_id.into(),
+        thread: None,
+        notice: crate::Notice {
+            kind: "change".into(),
+            group: "g".into(),
+            subject: "s".into(),
+            link: None,
+            status: crate::message::Status::Note,
+            detail: String::new(),
+            concerns: Vec::new(),
+        },
+        by,
+    };
+    let unknown = by_whom("nobody", crate::Principal::Account(99));
+    let refused = chain
+        .submit(signed(ADA), crate::PROGRAM, &unknown)
+        .unwrap_err();
+    assert_eq!(
+        refused.code,
+        code::INVALID_INPUT,
+        "by is an account that exists"
+    );
+    let root = by_whom("root", crate::Principal::Root);
+    let refused = chain
+        .submit(signed(ADA), crate::PROGRAM, &root)
+        .unwrap_err();
+    assert_eq!(refused.code, code::INVALID_INPUT, "by is never root");
+}
