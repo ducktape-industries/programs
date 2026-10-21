@@ -115,6 +115,42 @@ fn change_owned(
     (cx, view)
 }
 
+fn access_anyone(cx: &TestAppContext) {
+    cx.host().handle::<ProgramQuery<access::Access>>(|query| {
+        Ok(match query {
+            access::Query::Writers { .. } => access::Reply::Writers(program::Writers::Anyone),
+            access::Query::List { .. } => access::Reply::List(None),
+            other => panic!("unexpected access query: {other:?}"),
+        })
+    });
+}
+
+fn opened_open(
+    account: u64,
+    records: Vec<Held>,
+    policies: Vec<ownership::Policy>,
+) -> (TestAppContext, Entity<Forge>) {
+    let (mut cx, view) = booted_as("default", account);
+    owned(&cx, records, policies);
+    access_anyone(&cx);
+    cx.simulate_click("forge-repo-project-open");
+    cx.run_until_parked();
+    (cx, view)
+}
+
+fn change_open(
+    account: u64,
+    records: Vec<Held>,
+    policies: Vec<ownership::Policy>,
+) -> (TestAppContext, Entity<Forge>) {
+    let (mut cx, view) = opened_open(account, records, policies);
+    cx.simulate_click("forge-tab-changes");
+    cx.run_until_parked();
+    cx.simulate_click("forge-change-1");
+    cx.run_until_parked();
+    (cx, view)
+}
+
 fn settings(cx: &mut TestAppContext) {
     cx.simulate_click("forge-tab-settings");
     cx.run_until_parked();
@@ -148,26 +184,26 @@ fn the_settings_say_who_can_edit_the_repository_and_its_owner_relinks_it() {
 }
 
 #[test]
-fn the_repository_policy_decides_merge_and_settings_over_the_access_list() {
+fn the_repository_policy_decides_merge_and_settings_over_an_open_access_list() {
     let team = a_policy(5, 1, "Team", Writers::Listed(vec![account(2)]));
     let records = || vec![(custody(), 1, team.clone())];
-    let (cx, _) = change_owned(2, records(), vec![team.clone()]);
+    let (cx, _) = change_open(2, records(), vec![team.clone()]);
     assert!(!disabled(&cx, "forge-merge"), "the policy admits Rae");
-    let (mut cx, _) = opened_owned(2, records(), vec![team.clone()]);
+    let (mut cx, _) = opened_open(2, records(), vec![team.clone()]);
     settings(&mut cx);
     assert!(!disabled(&cx, "forge-settings-save"));
     assert!(
         disabled(&cx, "forge-settings-grant"),
         "access's list stays its owner's to set"
     );
-    let (cx, _) = change_owned(9, records(), vec![team]);
+    let (cx, _) = change_open(9, records(), vec![team]);
     assert!(disabled(&cx, "forge-merge"), "the policy leaves Wren out");
 }
 
 #[test]
 fn the_change_details_say_who_can_edit_it_and_its_policy_decides_edit() {
     let open = a_policy(3, 1, "Open", Writers::Anyone);
-    let (cx, _) = change_owned(2, vec![(authorship(), 1, open.clone())], vec![open]);
+    let (cx, _) = change_open(2, vec![(authorship(), 1, open.clone())], vec![open]);
     assert!(cx.find("forge-change-policy").is_some());
     assert!(cx.has_text("Anyone"), "{:?}", cx.texts());
     assert!(
@@ -347,4 +383,26 @@ fn an_access_list_narrower_than_the_policy_is_what_the_writers_row_and_merge_fol
     cx.simulate_click("forge-change-1");
     cx.run_until_parked();
     assert!(disabled(&cx, "forge-merge"), "access refuses Rae's merge");
+}
+
+#[test]
+fn the_writers_row_lists_only_whom_both_the_policy_and_access_list() {
+    let both = a_policy(
+        6,
+        1,
+        "Rae and Wren",
+        Writers::Listed(vec![account(2), account(9)]),
+    );
+    let (mut cx, _) = opened_owned(1, vec![(custody(), 1, both.clone())], vec![both]);
+    settings(&mut cx);
+    assert!(
+        cx.find("forge-writer-acct-9").is_some(),
+        "both list Wren: {:?}",
+        cx.texts()
+    );
+    assert!(
+        cx.find("forge-writer-acct-2").is_none(),
+        "access leaves Rae out: {:?}",
+        cx.texts()
+    );
 }

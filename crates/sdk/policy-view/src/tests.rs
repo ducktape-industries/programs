@@ -156,3 +156,17 @@ fn an_item_says_whose_it_is_and_whether_its_policy_admits_the_reader() {
     };
     assert_eq!(editing.admits(&other), None, "another item is not read");
 }
+
+#[test]
+fn the_narrower_of_two_lists_lets_write_only_whom_both_let() {
+    use crate::link::narrower;
+    use ::program::{Ownership as List, Party as Listed};
+    let listed =
+        |numbers: &[u64]| List::Listed(numbers.iter().copied().map(Listed::Account).collect());
+    assert_eq!(narrower(List::Anyone, listed(&[2])), listed(&[2]));
+    assert_eq!(narrower(listed(&[2]), List::Anyone), listed(&[2]));
+    assert_eq!(narrower(List::Owner, listed(&[2])), List::Owner);
+    assert_eq!(narrower(listed(&[2]), List::Owner), List::Owner);
+    assert_eq!(narrower(listed(&[2, 3]), listed(&[3, 4])), listed(&[3]));
+    assert_eq!(narrower(listed(&[2]), listed(&[4])), List::Owner);
+}
