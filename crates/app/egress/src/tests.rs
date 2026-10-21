@@ -15,6 +15,7 @@ use crate::*;
 
 mod order;
 mod owned;
+mod unregister;
 
 const ADA: [u8; 32] = [1; 32];
 const BO: [u8; 32] = [2; 32];

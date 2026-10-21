@@ -1,4 +1,4 @@
-//! Everything egress keeps: each registered service with its owner and assigned nodes, which
+//! Everything egress keeps: each registered service with its owner and assigned nodes, each unregistered name's last owner, which
 //! node serves which service, each service's next turn in the election, every open request with
 //! its ticket, wait, expiry, node and the account it was sent as, and an events request's stream.
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -17,8 +17,6 @@ pub struct Stored {
     pub wait: u64,
 }
 
-// The kind of a registered service (`egress.service`): each is its registrant's. Only `Register`
-// creates one and only `Assign` rewrites it; no op deletes one.
 pub struct Service;
 
 impl Kind for Service {
@@ -26,6 +24,7 @@ impl Kind for Service {
 }
 
 pub const SERVICES: Map<String, Owned<ServiceRow, Service>> = Map::new("service/");
+pub const RETIRED: Map<String, AccountNumber> = Map::new("retired/");
 pub const NODES: Map<Vec<u8>, NodeRow> = Map::new("node/");
 pub const SERVING: Set<(String, Vec<u8>)> = Set::new("serving/");
 pub const TURNS: Map<String, u64> = Map::new("turn/");

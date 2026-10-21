@@ -9,8 +9,8 @@ use abi::role::validators;
 use store::{PageRequest, PageResponse};
 
 use crate::state::{
-    ASSIGNED, COUNT, EARLY, EXPIRIES, Ending, NODES, REQUESTS, SENDERS, SERVICES, SERVING, STREAMS,
-    Stored, Stream, TURNS,
+    ASSIGNED, COUNT, EARLY, EXPIRIES, Ending, NODES, REQUESTS, RETIRED, SENDERS, SERVICES, SERVING,
+    STREAMS, Stored, Stream, TURNS,
 };
 use crate::{
     AccountNumber, Answer, DEFAULT_WAIT, Delivery, Event, HTTP, NodeRow, Op, PROGRAM, RELAY,
@@ -49,7 +49,18 @@ fn registered(ctx: &QueryCtx, name: &str) -> Result<ServiceRow, Error> {
 }
 
 pub(crate) fn register(ctx: &ExecCtx, name: String) -> Result<(), Error> {
-    let owner = ctx.sender_account()?;
+    let retired = RETIRED.get(ctx, &name)?;
+    let voted = ctx.env().authority().is_ok();
+    let owner = match (retired, voted) {
+        (Some(owner), true) => owner,
+        _ => ctx.sender_account()?,
+    };
+    let taken = retired.is_some_and(|previous| previous != owner);
+    if taken {
+        return Err(unauthorized(format!(
+            "service {name} stays reserved to its last owner: only that owner or the validators' vote may register it again"
+        )));
+    }
     service_name(&name)?;
     if RESERVED.contains(&name.as_str()) {
         return Err(invalid(format!(
@@ -66,6 +77,19 @@ pub(crate) fn register(ctx: &ExecCtx, name: String) -> Result<(), Error> {
         registered: ctx.env().height,
     };
     SERVICES.put(ctx, &name, &row);
+    RETIRED.remove(ctx, &name);
+    Ok(())
+}
+
+pub(crate) fn unregister(ctx: &ExecCtx, name: String) -> Result<(), Error> {
+    let row = registered(ctx, &name)?;
+    if !row.nodes.is_empty() {
+        return Err(wrong_state(format!(
+            "service {name} has nodes assigned: assign it no nodes first"
+        )));
+    }
+    RETIRED.put(ctx, &name, &row.owner);
+    SERVICES.remove(ctx, &name);
     Ok(())
 }
 
@@ -73,18 +97,22 @@ pub fn service_key(name: &str) -> String {
     format!("services/{name}")
 }
 
-pub(crate) fn needs(op: &Op) -> Vec<Need> {
-    match op {
-        Op::Assign { service, .. } => vec![Need::write(service_key(service))],
+pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
+    if let Op::Unregister { service } = op {
+        registered(ctx, service)?;
+    }
+    Ok(match op {
+        Op::Assign { service, .. } | Op::Unregister { service } => {
+            vec![Need::write(service_key(service))]
+        }
         Op::Register { .. }
         | Op::Serve { .. }
         | Op::Request { .. }
         | Op::Answer { .. }
         | Op::Events(_)
         | Op::EndStream { .. }
-        | Op::Expire { .. }
-        | Op::Unregister { .. } => Vec::new(),
-    }
+        | Op::Expire { .. } => Vec::new(),
+    })
 }
 
 pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {

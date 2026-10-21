@@ -33,7 +33,7 @@ impl Described for Ops {
         vec![
             op(
                 "Register",
-                "Register a service by name (lowercase letters, digits, -, _ and .), owned by your account. http and relay are egress's own and never registered; a name taken is refused.",
+                "Register a service by name (lowercase letters, digits, -, _ and .), owned by your account. http and relay are egress's own and never registered; a name taken is refused. An unregistered name stays reserved to its last owner; that owner or the validators' vote may register it again, retaining that owner.",
                 Op::Register {
                     service: "pods".into(),
                 },
@@ -106,7 +106,7 @@ impl Described for Ops {
             ),
             op(
                 "Unregister",
-                "Take a registered service off egress by name. Not served yet: egress refuses it as unsupported.",
+                "Take a registered service off egress by name: its owner, or whom the service's policy admits. Refused while nodes are assigned: assign it no nodes first. The name stays reserved to its last owner. Open requests do not block it and remain answerable by their elected node until they expire; new requests are refused.",
                 Op::Unregister {
                     service: "pods".into(),
                 },

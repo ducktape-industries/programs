@@ -4,7 +4,7 @@ use ::program::{Awaiting, Ctx, Error, ExecCtx, MessageId, Outcome, Program, Quer
 
 use crate::rules::{
     answer, assign, assigned, end_stream, events, expire, node, nodes, register, request,
-    request_row, sender, serve, service, services, serving,
+    request_row, sender, serve, service, services, serving, unregister,
 };
 use crate::{Op, PROGRAM, Query, Reply};
 
@@ -20,8 +20,8 @@ impl Program for Egress {
         Tools::of::<crate::tools::Ops, Query>()
     }
 
-    fn access(_: &QueryCtx, op: &Op) -> Result<Vec<::program::Need>, Error> {
-        Ok(crate::rules::needs(op))
+    fn access(ctx: &QueryCtx, op: &Op) -> Result<Vec<::program::Need>, Error> {
+        crate::rules::needs(ctx, op)
     }
 
     fn resource(ctx: &QueryCtx, key: &str) -> Result<::program::Resource, Error> {
@@ -64,10 +64,7 @@ impl Awaiting for Egress {
             Op::Events(given) => events(&ctx, given).await,
             Op::EndStream { id, events, end } => end_stream(&ctx, id, events, end).await,
             Op::Expire { id } => expire(&ctx, id),
-            Op::Unregister { .. } => Err(Error::new(
-                ::program::code::UNSUPPORTED,
-                "egress does not support Unregister yet",
-            )),
+            Op::Unregister { service: name } => unregister(&ctx, name),
         }
     }
 }
