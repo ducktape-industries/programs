@@ -11,7 +11,8 @@ use crate::mentions::resolve_typed;
 use crate::rules;
 use crate::state::{
     ANSWERED, CHANNEL_META, CHANNELS, DRAFT_PIECES, DRAFTS, Drafted, HEADS, MEMBERS, MESSAGE_IDS,
-    PARTICIPANTS, REACTIONS, REPLIES, ROOTS, channel, message, newest_first, put_message, toggle,
+    PARTICIPANTS, REACTIONS, REPLIES, ROOTS, channel, message, newest_first, put_message, rooted,
+    toggle,
 };
 use crate::{
     AccountNumber, Block, ChannelRow, MemberRow, MsgRow, Notice, PostPolicy, Principal, Reaction,
@@ -210,6 +211,7 @@ fn write(
             "message {message_id} exists: choose a new message id"
         )));
     }
+    let thread = rooted(ctx, &channel_id, thread)?;
     let blocks = resolve_typed(ctx, blocks)?;
     let seq = HEADS.get(ctx, &channel_id)?.unwrap_or(0) + 1;
     let row = MsgRow {
@@ -243,9 +245,6 @@ fn answer(
     sender: &Principal,
 ) -> Result<(), Error> {
     let mut row = message(ctx, channel_id, root)?;
-    if row.thread.is_some() {
-        return Err(invalid("a reply cannot be a thread root"));
-    }
     forget_answer(ctx, &row);
     let channel_id = channel_id.to_owned();
     let answered = (channel_id.clone(), row.author.clone(), newest_first(seq));
@@ -397,14 +396,10 @@ pub(crate) fn drafting(
     doing: Option<String>,
 ) -> Result<(), Error> {
     rules::writable(ctx, &channel(ctx, channel_id)?, sender)?;
+    let thread = rooted(ctx, channel_id, thread)?;
     let key = (channel_id.to_owned(), sender.clone());
     let held = DRAFTS.get(ctx, &key)?;
     let moved = held.as_ref().is_none_or(|held| held.thread != thread);
-    if let Some(root) = thread.filter(|_| moved)
-        && message(ctx, channel_id, root)?.thread.is_some()
-    {
-        return Err(invalid("a draft answers under a thread's root"));
-    }
     let left = (held.as_ref().map(|held| held.thread)).filter(|left| *left != thread);
     if let Some(left) = left {
         crate::leases::cleared(ctx, channel_id, left)?;

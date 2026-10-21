@@ -154,11 +154,7 @@ fn a_hold_is_taken_where_its_taker_may_post_under_a_threads_root() {
     assert_eq!(chat.refused(&BO, take("general", None)), code::UNAUTHORIZED);
     chat.post(&ADA, "a1", "root", None);
     chat.post(&ADA, "a2", "reply", Some(1));
-    assert_eq!(
-        chat.refused(&ADA, take("general", Some(2))),
-        code::INVALID_INPUT
-    );
-    chat.ok(&ADA, take("general", Some(1)));
+    chat.ok(&ADA, take("general", Some(2)));
     assert_eq!(
         chat.busy("general", Some(1), &BO),
         Some((ADA, Holding::Lease))
@@ -167,6 +163,9 @@ fn a_hold_is_taken_where_its_taker_may_post_under_a_threads_root() {
     assert_eq!(own, None, "the holder is not busy for itself");
     let foot = chat.busy("general", None, &BO);
     assert_eq!(foot, None, "a thread is not its channel's foot");
+    chat.ok(&ADA, release("general", Some(2)));
+    let let_go = chat.busy("general", Some(1), &BO);
+    assert_eq!(let_go, None, "a release under a reply lets go of its root");
 }
 
 #[test]

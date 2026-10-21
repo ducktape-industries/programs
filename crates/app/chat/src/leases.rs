@@ -3,11 +3,11 @@
 //! it, `Busy` names who else is there and `Holders` everyone, and each end is told to watchers.
 use std::collections::BTreeSet;
 
-use ::program::{Error, ExecCtx, QueryCtx, Reply, invalid, wrong_state};
+use ::program::{Error, ExecCtx, QueryCtx, Reply, wrong_state};
 
 use crate::ops::{drop_pieces, touch_channel_for_policy};
 use crate::rules;
-use crate::state::{DRAFTS, LEASES, Lease, PLACE_WATCHERS, channel, message};
+use crate::state::{DRAFTS, LEASES, Lease, PLACE_WATCHERS, channel, rooted};
 use crate::{Holder, Holding, PageRequest, PageResponse, PlaceEvent, Principal};
 
 fn place(channel_id: &str, thread: Option<u64>) -> (String, Option<u64>) {
@@ -21,13 +21,7 @@ pub(crate) fn take(
     thread: Option<u64>,
 ) -> Result<(), Error> {
     rules::writable(ctx, &channel(ctx, channel_id)?, sender)?;
-    let under_a_reply = match thread {
-        Some(root) => message(ctx, channel_id, root)?.thread.is_some(),
-        None => false,
-    };
-    if under_a_reply {
-        return Err(invalid("a hold answers under a thread's root"));
-    }
+    let thread = rooted(ctx, channel_id, thread)?;
     let key = place(channel_id, thread);
     let held_by_sender = (LEASES.get(ctx, &key)?).is_some_and(|lease| lease.holder == *sender);
     if held_by_sender {
@@ -63,6 +57,7 @@ pub(crate) fn release(
     channel_id: &str,
     thread: Option<u64>,
 ) -> Result<(), Error> {
+    let thread = rooted(ctx, channel_id, thread)?;
     let key = place(channel_id, thread);
     let held = LEASES.get(ctx, &key)?;
     if held.is_none_or(|lease| lease.holder != *sender) {
@@ -79,6 +74,7 @@ pub(crate) fn break_place(
 ) -> Result<(), Error> {
     let room = channel(ctx, channel_id)?;
     touch_channel_for_policy(ctx, &room);
+    let thread = rooted(ctx, channel_id, thread)?;
     let key = place(channel_id, thread);
     let held = LEASES.has(ctx, &key);
     if held {

@@ -75,9 +75,13 @@ fn a_draft_is_written_where_its_author_may_post_under_a_threads_root() {
         anew: false,
         doing: None,
     };
-    assert_eq!(chat.refused(&ADA, under(2)), code::INVALID_INPUT);
-    chat.ok(&ADA, under(1));
-    assert_eq!(chat.drafts()[0].thread, Some(1));
+    chat.ok(&ADA, under(2));
+    let drafted = chat.drafts()[0].thread;
+    assert_eq!(
+        drafted,
+        Some(1),
+        "a draft under a reply answers under its root"
+    );
     chat.ok(&ADA, drafting("there", false, None));
     let [moved] = chat.drafts().try_into().unwrap();
     assert_eq!((moved.thread, moved.text.as_str()), (None, "there"));

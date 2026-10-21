@@ -105,7 +105,7 @@ pub enum Op {
     #[tool_op(description = "Archive a channel (no one posts there) or bring it back. Archiving ends every hold and draft in it. Its owner, or whom the owner lists; never a direct room.", example = examples::archive)]
     SetChannelArchived { channel_id: String, archived: bool },
     /// `thread` names the root this message replies to.
-    #[tool_op(description = "Post in a channel, or reply in a thread when thread is its root's seq. message_id is yours to choose, unique across chat, no '/'; a second post with it is refused. blocks are markdown as Paragraph spans with marks (Bold, Italic, Code, Link, Mention), Quote, Code, Divider. Posting needs the room open to you and not archived.", example = examples::post)]
+    #[tool_op(description = "Post in a channel, or reply in a thread when thread is its root's seq or a reply's in it, which lands under the root. message_id is yours to choose, unique across chat, no '/'; a second post with it is refused. blocks are markdown as Paragraph spans with marks (Bold, Italic, Code, Link, Mention), Quote, Code, Divider. Posting needs the room open to you and not archived.", example = examples::post)]
     PostMessage {
         channel_id: String,
         message_id: String,
@@ -201,7 +201,7 @@ pub enum Op {
     // the sender answering in a room before it posts: `text` joins its draft there (`anew`: in
     // place of the text so far), `doing` (when given) replaces what it says it is doing, and
     // `thread` is the root it answers under
-    #[tool_op(description = "Show that you are answering in a channel before you post: text joins your draft there (anew: in place of the text so far), doing (when given) replaces the line on what you are doing, and thread is the root you answer under. Your post in the channel takes the draft's place. Allowed where you may post; nobody is told.", example = examples::drafting)]
+    #[tool_op(description = "Show that you are answering in a channel before you post: text joins your draft there (anew: in place of the text so far), doing (when given) replaces the line on what you are doing, and thread is the thread you answer under (its root's seq, or a reply's, which stands for its root). Your post in the channel takes the draft's place. Allowed where you may post; nobody is told.", example = examples::drafting)]
     Drafting {
         channel_id: String,
         thread: Option<u64>,
@@ -217,7 +217,7 @@ pub enum Op {
     SetRoomOrder { order: Vec<Entry> },
     // `PostMessage` with its blocks parsed here from `text` (`parse_message`), for a writer that
     // has text in hand
-    #[tool_op(description = "Post text in a channel, or reply in a thread when thread is its root's seq. text is markdown as chat's composer writes it: **bold**, *italic*, `code`, fenced code, > quotes, --- dividers, links, and <@N> to mention account N; each line is its own paragraph. message_id is yours to choose, unique across chat, no '/'; a second post with it is refused. Posting needs the room open to you and not archived.", example = examples::post_text)]
+    #[tool_op(description = "Post text in a channel, or reply in a thread when thread is its root's seq or a reply's in it, which lands under the root. text is markdown as chat's composer writes it: **bold**, *italic*, `code`, fenced code, > quotes, --- dividers, links, and <@N> to mention account N; each line is its own paragraph. message_id is yours to choose, unique across chat, no '/'; a second post with it is refused. Posting needs the room open to you and not archived.", example = examples::post_text)]
     Post {
         channel_id: String,
         message_id: String,
@@ -238,19 +238,19 @@ pub enum Op {
         thread: Option<u64>,
         notice: Notice,
     },
-    #[tool_op(description = "Hold a place: a channel's foot, or a thread when thread is its root's seq. Granted while no one else holds that exact place or has a draft open there; taking one you already hold is ok, and one anyone else holds is refused busy, naming who. Allowed where you may post. Your post there, Release, Break, an archive of the room or an unseat that takes your posting there ends it, and it never stops anyone posting.", example = examples::take)]
+    #[tool_op(description = "Hold a place: a channel's foot, or a thread when thread is its root's seq (a reply's stands for its root). Granted while no one else holds that exact place or has a draft open there; taking one you already hold is ok, and one anyone else holds is refused busy, naming who. Allowed where you may post. Your post there, Release, Break, an archive of the room or an unseat that takes your posting there ends it, and it never stops anyone posting.", example = examples::take)]
     Take {
         channel_id: String,
         thread: Option<u64>,
     },
-    #[tool_op(description = "Let go of a place you hold: a channel's foot, or a thread when thread is its root's seq. Letting go of one you do not hold does nothing.", example = examples::release)]
+    #[tool_op(description = "Let go of a place you hold: a channel's foot, or a thread when thread is its root's seq (a reply's stands for its root). Letting go of one you do not hold does nothing.", example = examples::release)]
     Release {
         channel_id: String,
         thread: Option<u64>,
     },
     #[tool_op(description = "From a program only: be told each time a hold or a draft ends in any place (a Release, a Break, an archive or an unseat that ends them, an Undraft, a post that ends its author's hold or draft there, a draft moving to another thread), each as a message of deliver followed by PlaceEvent::Cleared { channel_id, thread } in borsh. An empty deliver stops it.", example = examples::watch_places)]
     WatchPlaces { deliver: Vec<u8> },
-    #[tool_op(description = "End whatever holds a place, a channel's foot or a thread when thread is its root's seq: its hold, whoever took it, and every draft open there. Whoever may rename the channel.", example = examples::break_place)]
+    #[tool_op(description = "End whatever holds a place, a channel's foot or a thread when thread is its root's seq (a reply's stands for its root): its hold, whoever took it, and every draft open there. Whoever may rename the channel.", example = examples::break_place)]
     Break {
         channel_id: String,
         thread: Option<u64>,

@@ -10,6 +10,13 @@ parsed in chat from `text` by `parse_message`, the composer's own markdown (each
 paragraph, `<@N>` a mention). A writer with text in hand, an agent or a script, sends it as it is;
 the posted message is the one `PostMessage` with `parse_message(text)` makes.
 
+## Threads
+
+A reply's `thread` is its thread's root. Every op that names a thread (`PostMessage`, `Post`,
+`Notify`, `Drafting`, `Take`, `Release`, `Break`) may name the root or any reply under it: a
+reply's seq stands for its root, so a reply to a reply lands under the root, and the root counts
+it once. The queries (`Thread`, `Busy`, `Holders`) take the root's seq.
+
 ## Channel meta
 
 A channel's meta is a map of text keys to text values. Whoever may rename the channel sets a key
@@ -61,8 +68,8 @@ tool reads it.
 Someone answering in a room before they post keeps a draft there (`Op::Drafting`): its text, a
 piece at a time, what they say they are doing (`doing`, such as `writing an answer`), and the
 thread root it answers under, if any. `anew` starts the text over and keeps the block the draft
-opened at. Drafting is allowed where the author may post, and a draft under a thread names that
-thread's root. The author's post in the room takes their draft there down, and so does
+opened at. Drafting is allowed where the author may post, and a draft under a reply answers under
+that reply's root. The author's post in the room takes their draft there down, and so does
 `Op::Undraft`. A draft tells nobody: it never reaches attribution. `Query::Drafts { channel_id }`
 answers who is answering in the room, each draft with its text folded from its pieces (a growing
 draft adds a row per piece and never rewrites one). An author has one draft per room: drafting
@@ -73,7 +80,8 @@ chat-view draws each at the foot of the list it answers in ("tech is answeringâ€
 
 ## Holding a place
 
-An account about to answer in a place, a channel's foot or one thread (`thread` its root's seq),
+An account about to answer in a place, a channel's foot or one thread (`thread` its root's seq, or
+a reply's, which stands for its root),
 takes it first with `Op::Take { channel_id, thread }`. chat grants it while no one else holds that
 place or has a draft open there (a place is exact: a thread is not its channel's foot, and a draft
 counts only under the thread it answers in). Taking one you already hold is ok, whoever drafts there

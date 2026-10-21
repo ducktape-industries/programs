@@ -89,10 +89,38 @@ fn a_reply_joins_its_root_and_the_authors_attention() {
     assert_eq!((root.unwrap().seq, seqs(&replies.items)), (1, vec![2, 3]));
     assert_eq!(attention(&chat, ADA).map(|row| row.seq), Some(1));
     assert_eq!(attention(&chat, BO), None);
-    let nested = chat.refused(&CY, post("general", "m4", "deeper", Some(2)));
-    assert_eq!(nested, code::INVALID_INPUT);
     let orphan = chat.refused(&CY, post("general", "m4", "nowhere", Some(99)));
     assert_eq!(orphan, code::NOT_FOUND);
+}
+
+#[test]
+fn a_reply_to_a_reply_lands_under_its_root_and_counts_there_once() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    chat.post(&ADA, "m1", "question", None);
+    chat.post(&BO, "m2", "answer", Some(1));
+    let before = chat.message(1).reply_count;
+    chat.post(&CY, "m3", "to the answer", Some(2));
+    assert_eq!(chat.message(3).thread, Some(1), "it threads under the root");
+    let root = chat.message(1);
+    assert_eq!(
+        (root.reply_count, root.last_reply_seq),
+        (before + 1, Some(3))
+    );
+    let named = chat.message(2);
+    assert_eq!(
+        (named.reply_count, named.last_reply_seq),
+        (0, None),
+        "the reply it named opens no thread"
+    );
+    let Reply::Thread { replies, .. } = chat.ask(Query::Thread {
+        channel_id: "general".into(),
+        root_seq: 1,
+        viewer: vec![],
+        page: PageRequest::default(),
+    }) else {
+        panic!("a thread answers a thread");
+    };
+    assert_eq!(seqs(&replies.items), [2, 3]);
 }
 
 #[test]

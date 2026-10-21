@@ -142,6 +142,17 @@ pub(crate) fn message(ctx: &QueryCtx, channel_id: &str, seq: Seq) -> Result<MsgR
         .ok_or_else(|| not_found(format!("no message {channel_id}/{seq}")))
 }
 
+pub(crate) fn rooted(
+    ctx: &QueryCtx,
+    channel_id: &str,
+    thread: Option<Seq>,
+) -> Result<Option<Seq>, Error> {
+    let Some(seq) = thread else {
+        return Ok(None);
+    };
+    Ok(Some(message(ctx, channel_id, seq)?.thread.unwrap_or(seq)))
+}
+
 pub(crate) fn messages(
     ctx: &QueryCtx,
     at: impl IntoIterator<Item = (ChannelId, Seq)>,
