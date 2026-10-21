@@ -177,7 +177,7 @@ fn post(
             kind: forge::NOTICE.into(),
             group: format!("{} {repo} {}", line.word, change.n),
             subject: format!("{repo} #{}: {}", change.n, change.title),
-            link: None,
+            link: forge::notice_link(repo, change.n),
             status: line.status,
             detail: line.detail,
             concerns: Vec::new(),

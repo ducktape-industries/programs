@@ -281,6 +281,13 @@ fn a_changes_notices_concern_its_people_but_never_the_one_who_acted() {
     assert_eq!(notices[0].kind, forge::NOTICE);
     assert_eq!(notices[0].subject, format!("{REPO} #{n}: Feature"));
     assert_eq!(notices[1].detail, "review 1: approved");
+    let link = format!("forge/{REPO}/{n}");
+    assert!(
+        notices
+            .iter()
+            .all(|notice| notice.link.as_deref() == Some(link.as_str())),
+        "{notices:#?}"
+    );
 }
 
 fn opened(rig: &mut Rig, story: &Story) -> u64 {

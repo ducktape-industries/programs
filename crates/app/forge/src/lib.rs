@@ -45,7 +45,7 @@ mod queue;
 
 pub use contract::*;
 pub use description::describe;
-pub use discussion::NOTICE;
+pub use discussion::{NOTICE, notice_link};
 pub use objects::{blob_id_of, hash_of};
 pub use ops::PROGRAM;
 pub use program::Forge;

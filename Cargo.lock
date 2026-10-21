@@ -2248,6 +2248,7 @@ dependencies = [
  "chat",
  "criterion",
  "describe",
+ "ducklink",
  "gitcore",
  "ownership",
  "program",

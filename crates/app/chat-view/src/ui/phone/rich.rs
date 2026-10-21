@@ -102,7 +102,7 @@ fn block_view(
             )
             .child(div().flex_1().min_w(px(0.)).child(runs(
                 id.into(),
-                &crate::message::notice_spans(notice),
+                &crate::message::notice_spans(notice, &chat.session.chain_id),
                 names,
                 cx,
                 theme,

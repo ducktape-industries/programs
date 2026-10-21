@@ -8,7 +8,7 @@ Posts forge's change events into chat rooms a network chooses. forge gives every
 The room is decided once, as the change opens: the change is mirrored only while chat holds the room unarchived and open to post (not members-only), and its later events go to the same room. A room archived after that refuses the notice; the refusal is absorbed and never retried.
 
 ## Notices
-Each notice is a chat `Notify` in the room, at top level, with the kind `change` (`forge::NOTICE`), the subject `<repo> #<n>: <title>`, no link, and no account told (`concerns` empty): forge's own notice in the change's room already tells the accounts the event concerns.
+Each notice is a chat `Notify` in the room, at top level, with the kind `change` (`forge::NOTICE`), the subject `<repo> #<n>: <title>`, the link `forge/<repo>/<n>` (`forge::notice_link`, a path on the reader's chain), and no account told (`concerns` empty): forge's own notice in the change's room already tells the accounts the event concerns.
 
 | forge event (`Watched`) | group | status | detail |
 |---|---|---|---|

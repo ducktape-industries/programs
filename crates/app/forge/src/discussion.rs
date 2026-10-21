@@ -14,6 +14,10 @@ use crate::state::{ARCHIVING, LOGGING, channel_id, load_change, load_repo, next_
 
 pub const NOTICE: &str = "change";
 
+pub fn notice_link(repo: &str, n: u64) -> Option<String> {
+    ducklink::path(crate::PROGRAM, &[repo, &n.to_string()])
+}
+
 pub enum Event {
     Opened,
     Closed,
@@ -187,7 +191,7 @@ pub fn post(
         kind: NOTICE.into(),
         group: format!("{} {repo} {}", event.word(), change.n),
         subject: format!("{repo} #{}: {}", change.n, change.title),
-        link: None,
+        link: notice_link(repo, change.n),
         status: event.status(),
         detail: event.detail(change),
         concerns: accounts(event.concerns(ctx, repo, change)?, actor),

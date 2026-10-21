@@ -169,6 +169,13 @@ pub fn pressed_link(link: String, chain: &str) -> Option<String> {
     }
 }
 
+pub(crate) fn notice_link(chain: &str, link: &str) -> Option<String> {
+    match link.contains("://") {
+        true => Some(link.to_owned()),
+        false => ducklink::on_chain(chain, link),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,5 +283,20 @@ mod tests {
             route_target("forge:web:3/7"),
             Some(("forge:web:3".into(), 7))
         );
+    }
+
+    #[test]
+    fn a_notice_link_takes_the_sessions_chain_or_stands_whole() {
+        let chain = "testnet#0a1b2c3d";
+        assert_eq!(
+            notice_link(chain, "forge/programs/213").as_deref(),
+            Some("duck://testnet-0a1b2c3d/forge/programs/213")
+        );
+        assert_eq!(notice_link("", "forge/programs/213"), None);
+        assert_eq!(
+            notice_link(chain, "https://pods.example/builds-1").as_deref(),
+            Some("https://pods.example/builds-1")
+        );
+        assert_eq!(notice_link(chain, "forge:x/1"), None);
     }
 }

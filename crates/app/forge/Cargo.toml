@@ -22,6 +22,7 @@ describe = { workspace = true }
 program = { workspace = true, features = ["serde"] }
 borsh = { workspace = true }
 chat = { workspace = true }
+ducklink = { workspace = true }
 gitcore = { workspace = true }
 # `#[derive(program::Ask)]` on `Query`: which tables each question reads
 store = { workspace = true }

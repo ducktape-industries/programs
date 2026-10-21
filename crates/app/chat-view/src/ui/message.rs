@@ -886,9 +886,15 @@ fn block_view(
                     .child(words::NOTICE_MARK),
             )
             .child(
-                rich_line(id, &crate::message::notice_spans(notice), names, cx, theme)
-                    .flex_1()
-                    .min_w(px(0.)),
+                rich_line(
+                    id,
+                    &crate::message::notice_spans(notice, &chat.session.chain_id),
+                    names,
+                    cx,
+                    theme,
+                )
+                .flex_1()
+                .min_w(px(0.)),
             )
             .into_any_element(),
         Block::Paragraph(spans) => match chat::list_item(spans) {

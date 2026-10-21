@@ -168,10 +168,11 @@ pub fn agent(names: &Names, principal: &chat::Principal) -> bool {
     )
 }
 
-pub(crate) fn notice_spans(notice: &Notice) -> Vec<Span> {
+pub(crate) fn notice_spans(notice: &Notice, chain: &str) -> Vec<Span> {
+    let link = (notice.link.as_deref()).and_then(|link| crate::links::notice_link(chain, link));
     let subject = Span {
         text: notice.subject.clone(),
-        marks: notice.link.iter().cloned().map(Mark::Link).collect(),
+        marks: link.into_iter().map(Mark::Link).collect(),
     };
     let status = Span {
         text: notice.status.word().to_owned(),

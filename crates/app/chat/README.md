@@ -165,3 +165,8 @@ participants, so harness wakes the agents it concerns and nobody else. `notice::
 the room `Off`; a cut to `Mentions` keeps it. Its `text` (`notice_text`) is one line: the subject,
 the status word, the detail and the link. chat-view draws it as one quiet line: a mark in the
 status's tone, the subject (a link when it has one), the status, the detail, and whom it is for.
+
+A notice's `link` is either a whole link (`duck://…`, `https://…`) or a path on the reader's own
+chain, `<program>/<tail…>` (`ducklink::path`), which is how a program links, since it can't name
+its network's chain. A reader puts its own session's chain in front (`ducklink::on_chain`) and
+never takes a chain from the path, so a path can't point at another network.

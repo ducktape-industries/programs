@@ -477,3 +477,44 @@ fn a_notice_draws_as_one_line_naming_whom_it_is_for() {
         ]
     );
 }
+
+#[test]
+fn a_notices_path_link_opens_on_the_sessions_own_chain() {
+    let (mut cx, view) = opened();
+    let notice = chat::Notice {
+        kind: "change".into(),
+        group: "merged programs 213".into(),
+        subject: "programs #213: Fix".into(),
+        link: Some("forge/programs/213".into()),
+        status: chat::message::Status::Passed,
+        detail: "merged into dev".into(),
+        concerns: vec![8],
+    };
+    cx.update(&view, |chat, _, cx| {
+        let room = chat.room.as_mut().unwrap();
+        room.messages.ready_mut().unwrap().push(MsgRow {
+            channel_id: "general".into(),
+            seq: 3,
+            message_id: "notice".into(),
+            height: 2,
+            blocks: vec![chat::Block::Notice(notice)],
+            ..MsgRow::by(Principal::Account(9))
+        });
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let key = "chat-message-notice-block-0";
+    let Some(wire::Node::RichText {
+        clickable_ranges, ..
+    }) = cx.find(key)
+    else {
+        panic!("the notice is one rich text node");
+    };
+    assert_eq!(clickable_ranges.len(), 2);
+    cx.simulate_rich_click(key, 0);
+    let opened = cx.host().requests::<view::methods::LinkOpen>();
+    assert_eq!(
+        opened[opened.len().saturating_sub(1)..],
+        ["duck://testnet-0a1b2c3d/forge/programs/213"]
+    );
+}

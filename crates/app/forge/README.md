@@ -417,8 +417,8 @@ review's card finds its notice by `Review.message_id`, and replies hang under it
 | a refused archive | `archive refused <repo> <n>` | Failed | `archive refused: <reason>: <sentence>` | whoever closed or merged it |
 | a merge queue's leave | `left queue <repo> <n>` | Failed | `left the merge queue of <branch>: <why>` | whoever queued it |
 
-Every notice's kind is `change` (`forge::NOTICE`) and its subject `<repo> #<n>: <title>`;
-it carries no link. The account that acted is never among its concerns, nor is the chain
+Every notice's kind is `change` (`forge::NOTICE`), its subject `<repo> #<n>: <title>`, and
+its link the change's path on the reader's chain, `forge/<repo>/<n>` (`forge::notice_link`). The account that acted is never among its concerns, nor is the chain
 (`Root`): only the accounts it concerns are told, and everyone else in the room sees it.
 
 A change's own room opens named `pr/<repo>#<n> <title>`, so change rooms group under `pr` in

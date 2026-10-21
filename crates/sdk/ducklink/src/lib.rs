@@ -206,6 +206,31 @@ pub fn mint(chain: &str, program: &str, tail: &[&str]) -> Option<String> {
         .map(|link| link.to_string())
 }
 
+pub fn path(program: &str, tail: &[&str]) -> Option<String> {
+    program_segment(program).ok()?;
+    let mut spelled = program.to_owned();
+    for segment in tail {
+        let encoded = encode(segment);
+        let named = !segment.is_empty() && validate_segment_name(segment, &encoded).is_ok();
+        if !named {
+            return None;
+        }
+        spelled.push('/');
+        spelled.push_str(&encoded);
+    }
+    Some(spelled)
+}
+
+pub fn on_chain(chain: &str, path: &str) -> Option<String> {
+    let (program, segments) = match path.split_once('/') {
+        Some((program, rest)) => (program, tail(rest).ok()?),
+        None => (path, Vec::new()),
+    };
+    Link::new(chain.parse().ok()?, program, segments)
+        .ok()
+        .map(|link| link.to_string())
+}
+
 /// a `/`-separated path of tail segments, each read from its one spelling
 /// (`forge%3Aweb%3A3/42` → `["forge:web:3", "42"]`): the reading
 /// [`Link::parse`] gives a link's tail, for a reader holding the path alone.
@@ -582,5 +607,41 @@ mod tests {
         assert_eq!(Link::parse(&link).unwrap().tail, ["design", "7"]);
         assert_eq!(mint("", "chat", &["design"]), None, "no chain yet");
         assert_eq!(mint(&chain, "chat", &[""]), None, "an empty segment");
+    }
+
+    #[test]
+    fn a_path_takes_the_readers_chain_and_never_names_one() {
+        let chain = "net#0a1b2c3d";
+        let cases: [(&str, &[&str]); 3] = [
+            ("forge", &["programs", "213"]),
+            ("chat", &["forge:web:3", "보고서 #1"]),
+            ("chat", &[]),
+        ];
+        for (program, tail) in cases {
+            let spelled = path(program, tail).unwrap();
+            assert_eq!(
+                on_chain(chain, &spelled),
+                mint(chain, program, tail),
+                "{spelled}"
+            );
+        }
+        assert_eq!(
+            path("forge", &["programs", "213"]).as_deref(),
+            Some("forge/programs/213")
+        );
+        assert_eq!(path("Forge", &["x"]), None);
+        assert_eq!(path("forge", &[""]), None);
+        assert_eq!(path("forge", &[".."]), None);
+        assert_eq!(on_chain("", "forge/programs/213"), None, "no chain yet");
+        for named in [
+            "duck://other-00ff00ff/forge/programs/213",
+            "https://x.example/a",
+            "forge/",
+            "forge//1",
+            "/forge/1",
+            "forge/%2F",
+        ] {
+            assert_eq!(on_chain(chain, named), None, "{named}");
+        }
     }
 }

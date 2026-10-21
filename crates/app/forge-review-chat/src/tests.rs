@@ -274,7 +274,7 @@ fn a_change_from_a_branch_a_rule_matches_tells_each_event_in_its_room() {
         told.iter()
             .all(|notice| notice.subject == "project #1: Teach 1"
                 && notice.kind == forge::NOTICE
-                && notice.link.is_none()
+                && notice.link.as_deref() == Some("forge/project/1")
                 && notice.concerns.is_empty()),
         "{told:#?}"
     );
