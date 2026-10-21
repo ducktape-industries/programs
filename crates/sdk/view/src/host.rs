@@ -91,6 +91,7 @@ pub(crate) async fn walk<T, F: Future<Output = Result<Page<T>, Error>>>(
 #[derive(Default)]
 struct Slot {
     stream: bool,
+    kind: String,
     answers: VecDeque<Answer>,
     closed: bool,
     waker: Option<Waker>,
@@ -103,6 +104,9 @@ struct Registry {
     pending: HashMap<u64, Rc<RefCell<Slot>>>,
     cancels: Vec<u64>,
     diagnostics: HashMap<u64, String>,
+    hosted: Option<Vec<String>>,
+    asked_hosted: bool,
+    unknown: std::collections::BTreeSet<String>,
 }
 
 impl Registry {
@@ -124,7 +128,10 @@ pub struct Host(Rc<RefCell<Registry>>);
 
 impl Host {
     fn open(&self, kind: &str, payload: &[u8]) -> (u64, Rc<RefCell<Slot>>) {
-        let slot = Rc::new(RefCell::new(Slot::default()));
+        let slot = Rc::new(RefCell::new(Slot {
+            kind: kind.to_owned(),
+            ..Slot::default()
+        }));
         let mut registry = self.0.borrow_mut();
         let id = registry.ask(kind, payload);
         registry.pending.insert(id, slot.clone());
@@ -260,6 +267,30 @@ impl Host {
     pub fn hosted(&self) -> impl Future<Output = Option<methods::Hosted>> + 'static + use<> {
         let asked = self.ask::<methods::HostMethods>(());
         async move { asked.await.ok() }
+    }
+    pub(crate) fn learn(&self, hosted: methods::Hosted) {
+        self.0.borrow_mut().hosted = Some(hosted.kinds);
+    }
+    pub(crate) fn wants_hosted(&self) -> bool {
+        let mut registry = self.0.borrow_mut();
+        let refused = registry
+            .unknown
+            .contains(<methods::HostMethods as Method>::KIND);
+        let wanted = !registry.unknown.is_empty()
+            && registry.hosted.is_none()
+            && !registry.asked_hosted
+            && !refused;
+        registry.asked_hosted |= wanted;
+        wanted
+    }
+    pub(crate) fn lacks(&self) -> bool {
+        let registry = self.0.borrow();
+        match &registry.hosted {
+            Some(kinds) => registry.unknown.iter().any(|kind| !kinds.contains(kind)),
+            None => registry
+                .unknown
+                .contains(<methods::HostMethods as Method>::KIND),
+        }
     }
     pub fn log(&self, message: impl AsRef<str>) {
         self.notify::<methods::HostLog>(message.as_ref().to_owned());
@@ -407,6 +438,12 @@ impl Host {
         };
         if let Some(slot) = slot {
             let mut slot = slot.borrow_mut();
+            let unknown = answer
+                .as_ref()
+                .is_err_and(|refusal| refusal.code == methods::refusal::UNKNOWN_REQUEST);
+            if unknown {
+                self.0.borrow_mut().unknown.insert(slot.kind.clone());
+            }
             slot.answers.push_back(answer);
             slot.closed |= done;
             if let Some(waker) = slot.waker.take() {

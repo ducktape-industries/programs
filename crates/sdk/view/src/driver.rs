@@ -10,6 +10,7 @@ pub(crate) struct Driver<V: View> {
     pub(crate) busy: bool,
     pub(crate) renders: u64,
     pub(crate) spent: Spent,
+    pub(crate) lacking: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -74,6 +75,7 @@ impl<V: View> Driver<V> {
             busy: false,
             renders: 0,
             spent: Spent::default(),
+            lacking: false,
         }
     }
     pub fn entity(&self) -> Entity<V> {
@@ -127,6 +129,24 @@ impl<V: View> Driver<V> {
             }
         }
         self.settle();
+        let host = self.app.host();
+        if host.wants_hosted() {
+            let asked = host.ask::<crate::methods::HostMethods>(());
+            let learning = host.clone();
+            self.app
+                .spawn(async move |_| {
+                    if let Ok(hosted) = asked.await {
+                        learning.learn(hosted);
+                    }
+                })
+                .detach();
+        }
+        let lacking = host.lacks();
+        if lacking != self.lacking {
+            self.lacking = lacking;
+            self.app.inner.memos.borrow_mut().forget();
+            self.app.notify();
+        }
         self.frame()
     }
 
@@ -404,7 +424,7 @@ impl<V: View> Driver<V> {
         slots::begin_frame(&self.app.inner.slots);
         self.app.inner.memos.borrow_mut().begin_frame();
         self.app.inner.uniform_lists.begin_frame();
-        let (entity, spent) = (&self.entity, &mut self.spent);
+        let (entity, spent, lacking) = (&self.entity, &mut self.spent, self.lacking);
         let root = self.app.update(|app| {
             let mut window = app.window();
             let started = Clock::now();
@@ -417,7 +437,11 @@ impl<V: View> Driver<V> {
                 view.as_mut()
                     .expect("entity initialized")
                     .render(&mut window, &mut cx)
-                    .into_element()
+                    .into_any_element()
+            };
+            let element = match lacking {
+                true => older_host(element, app.global::<Theme>()),
+                false => element,
             };
             spent.render += started.elapsed();
             let started = Clock::now();
@@ -485,6 +509,31 @@ impl<V: View> Driver<V> {
     fn settle(&mut self) {
         self.busy |= self.app.settle();
     }
+}
+
+const OLDER_HOST: &str = "This app is older than this view. Update the app to see everything.";
+
+fn older_host(view: crate::AnyElement, theme: &Theme) -> crate::AnyElement {
+    use crate::prelude::*;
+    let line = div()
+        .id("older-host")
+        .flex_none()
+        .px(design::space::BLOCK)
+        .py(design::space::SM)
+        .bg(theme.warning_soft)
+        .text_color(theme.foreground)
+        .text_size(design::text::SECONDARY)
+        .role(Role::Status)
+        .aria_live(crate::accesskit::Live::Polite)
+        .aria_label(OLDER_HOST)
+        .child(OLDER_HOST);
+    div()
+        .size_full()
+        .flex()
+        .flex_col()
+        .child(line)
+        .child(div().flex_1().min_h_0().flex().flex_col().child(view))
+        .into_any_element()
 }
 
 #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]

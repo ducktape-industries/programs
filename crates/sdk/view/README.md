@@ -634,6 +634,15 @@ under `host`), the manifest's hosts line, and `store.secret_get` and
 before J-085 refuses `host.methods`, and `hosted()` answers `None`: ask the
 kind, and fall back on `unknown_request`.
 
+The first time the host refuses a request `unknown_request`, the SDK asks
+`host.methods` once. When the host refuses that too (a host before J-085),
+or does not list the refused kind, the view has asked for something the
+host lacks, and from then on the SDK draws one line above the view's root:
+"This app is older than this view. Update the app to see everything." A
+refusal of a kind the host lists is that request's own (no reader's account
+to show), and a host whose level is below the view's says nothing while the
+view asks for nothing it lacks. A view no host refused asks nothing more.
+
 What still needs a new app: a new ability of the host's own (a method it
 answers, a node it draws, a style it applies, an event it makes). The view
 runs on an older app all the same, without it.
