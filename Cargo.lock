@@ -41,6 +41,7 @@ dependencies = [
  "borsh",
  "chat",
  "describe",
+ "ducklink",
  "forge",
  "gitcore",
  "ownership",

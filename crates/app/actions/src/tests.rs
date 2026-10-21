@@ -704,16 +704,18 @@ fn a_push_whose_check_ends_red_says_so_in_the_workflow_channel() {
     let chat::Reply::Message(Some(row)) = world.chain.query(chat::PROGRAM, &told).unwrap() else {
         panic!("the red check is told in engineering");
     };
-    let marks: Vec<&chat::Mark> = row
-        .blocks
-        .iter()
-        .flat_map(spans)
-        .flat_map(|span| &span.marks)
-        .collect();
-    assert!(marks.contains(&&chat::Mark::Mention(Principal::Account(OWNER_ACCOUNT))));
-    let text = chat::plain_text(&row.blocks);
-    assert!(text.contains("failed on project main"), "{text}");
-    assert!(text.contains("GATES FAIL: clippy"), "{text}");
+    let notice = row.notice().expect("the red check is a notice");
+    assert_eq!(notice.kind, "check");
+    assert_eq!(notice.group, "check 1");
+    assert_eq!(notice.subject, "loud.toml on project main");
+    assert_eq!(notice.status, chat::message::Status::Failed);
+    assert_eq!(notice.concerns, [OWNER_ACCOUNT], "the pusher alone");
+    assert_eq!(notice.link.as_deref(), Some("files/shared/actions/log"));
+    let short = &root.to_hex()[..12];
+    assert_eq!(
+        notice.detail,
+        format!("failed at {short}: check 1 (job gates, attempt 1). GATES FAIL: clippy")
+    );
     world.act(&Op::Rerun { check: 1 }).unwrap();
     world.act(&Op::Claim { check: 2 }).unwrap();
     world.act(&report(2, State::Passed)).unwrap();
@@ -746,13 +748,6 @@ fn a_channel_that_refuses_the_line_leaves_the_report_standing() {
         State::Errored,
         "no channel engineering exists"
     );
-}
-
-fn spans(block: &chat::Block) -> &[chat::Span] {
-    match block {
-        chat::Block::Paragraph(spans) | chat::Block::Quote(spans) => spans,
-        _ => &[],
-    }
 }
 
 #[test]

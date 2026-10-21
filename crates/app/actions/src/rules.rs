@@ -770,31 +770,44 @@ fn notify_failed_push(
 ) {
     let branch = branch(reference);
     let workflow = run.name.as_deref().unwrap_or(&run.workflow);
-    let commit = short(&check.commit);
-    let mut line = format!(
-        "**{workflow} {} on {} `{branch}`** at `{commit}`: check {} (job `{}`, attempt {})",
+    let mut detail = format!(
+        "{} at {}: check {} (job {}, attempt {})",
         check.state.word(),
-        run.repo,
+        short(&check.commit),
         check.id,
         check.job.id,
         check.attempt
     );
-    if let Some(Principal::Account(account)) = &run.by {
-        line.push_str(&format!(", pushed by <@{account}>"));
-    }
     if !check.summary.is_empty() {
-        line.push_str(&format!(". {}", check.summary));
+        detail.push_str(&format!(". {}", check.summary));
     }
-    if let Some(log) = &check.log {
-        line.push_str(&format!(". Log: `{log}`"));
-    }
-    let post = chat::Op::PostMessage {
+    let concerns = match &run.by {
+        Some(Principal::Account(account)) => vec![*account],
+        _ => Vec::new(),
+    };
+    let post = chat::Op::Notify {
         channel_id: channel.to_owned(),
         message_id: format!("actions-check-{}", check.id),
-        blocks: chat::parse_message(&line),
         thread: None,
+        notice: chat::Notice {
+            kind: "check".into(),
+            group: format!("check {}", check.id),
+            subject: format!("{workflow} on {} {branch}", run.repo),
+            link: check.log.as_deref().and_then(log_link),
+            status: chat::message::Status::Failed,
+            detail,
+            concerns,
+        },
     };
     ctx.emit(chat::PROGRAM, &post, Reply::Wanted);
+}
+
+fn log_link(log: &str) -> Option<String> {
+    if log.contains("://") {
+        return Some(log.to_owned());
+    }
+    let path: Vec<&str> = log.split('/').filter(|part| !part.is_empty()).collect();
+    ducklink::path("files", &path)
 }
 
 pub(crate) fn rerun(ctx: &ExecCtx, id: u64) -> Result<(), Error> {

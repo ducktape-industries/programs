@@ -20,6 +20,16 @@ commit's status. Shapes: `src/lib.rs`; checks: `src/rules.rs`.
 
 Every query is answered for anyone.
 
+## What it tells chat
+
+A check of a push run that ends failed or errored, in a workflow whose file names
+`notify.channel`, is one chat notice (`Notify`) in that channel, message id
+`actions-check-<check>`: kind `check`, group `check <check>`, subject
+`<workflow> on <repo> <branch>`, status Failed, detail `<failed|errored> at <commit>: check
+<check> (job <job>, attempt <n>). <summary>`, link the check's log (a whole link as it is, a
+files path as `files/<path>` on the reader's chain), and concerns the account that pushed,
+so only the pusher is told. A channel that refuses it leaves the report standing.
+
 ## When a change's checks run
 
 A workflow whose `on.change` names `opened` or `updated` runs on each Preview of a change: actions
