@@ -1,5 +1,6 @@
 //! The program: every op and every query, each handed to its rule.
 
+use ::program::tools::Tools;
 use ::program::{Error, ExecCtx, MessageId, Outcome, Program, QueryCtx, decoded};
 
 use crate::rules::{MEMBERS, account_of, execute, init, memberships, motions, validators, voices};
@@ -12,6 +13,10 @@ impl Program for Valset {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+
+    fn tools() -> Tools {
+        Tools::of::<crate::tools::Ops, Query>()
+    }
 
     fn init(ctx: &ExecCtx, params: &[u8]) -> Result<(), Error> {
         init(ctx, decoded::<Genesis>(PROGRAM, "Genesis", params)?)

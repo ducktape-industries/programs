@@ -7,6 +7,7 @@ mod program;
 mod rules;
 #[cfg(test)]
 mod tests;
+mod tools;
 
 pub use program::Valset;
 
@@ -44,27 +45,38 @@ impl Membership {
 }
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Ask,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    BorshSchema,
+    ::program::Ask,
+    ::program::Described,
+)]
+#[tool_about(
+    "The network's members and their roles, the motions waiting for votes, and whom a key votes for."
 )]
 #[ask(Valset)]
 pub enum Query {
     #[ask(Reply::Validators(Vec<Vec<u8>>))]
+    #[tool_query(description = "The seated validators' node keys, in key order.", example = crate::tools::validators)]
     Validators,
     #[ask(Reply::Members(Vec<Member>))]
+    #[tool_query(description = "Every member, validator or resident, with its key, address and halo.", example = crate::tools::members)]
     Members,
     #[ask(Reply::Memberships(PageResponse<Membership>))]
+    #[tool_query(description = "A page of the members, in key order, each with its role.", example = crate::tools::memberships)]
     Memberships { page: PageRequest },
     #[ask(Reply::Membership(Option<Membership>))]
+    #[tool_query(description = "One key's membership: its address, halo and role; null for a key that is not a member.", example = crate::tools::membership)]
     Membership { key: Vec<u8> },
-    /// The motions waiting for votes, in their bytes' order, and how many
-    /// votes pass one now. A program change that can no longer land (its
-    /// height at or below the tip) is left out.
     #[ask(Reply::Motions { needed: u64, page: PageResponse<Pending> })]
+    #[tool_query(description = "A page of the motions waiting for votes, in their bytes' order, each with the seated validators that voted for it, and how many votes pass one now.", example = crate::tools::motions)]
     Motions { page: PageRequest },
-    /// The validators a frame signed by `key` votes for: `key` itself when
-    /// it is one, else the validators whose node keys sit on agents that
-    /// `key`'s account manages and keeps active. Empty: `key` does not vote.
     #[ask(Reply::Voices(Vec<Vec<u8>>))]
+    #[tool_query(description = "The validators a frame signed by key votes for: key itself when it is one, else the validators whose node keys sit on active program accounts that key's account manages. Empty: key does not vote.", example = crate::tools::voices)]
     Voices { key: Vec<u8> },
 }
 
