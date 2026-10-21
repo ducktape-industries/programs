@@ -189,7 +189,6 @@ fn reactors(seqs: Vec<u64>) -> Reply {
 }
 
 fn quiet_methods(cx: &mut TestAppContext) {
-    cx.host().handle::<view::methods::StoreGet>(|_| Ok(None));
     cx.host().handle::<Ask<Identity>>(|query| match query {
         identity::Query::List { .. } => Ok(no_cards()),
         identity::Query::Narrowed { .. } => Ok(none_narrowed()),

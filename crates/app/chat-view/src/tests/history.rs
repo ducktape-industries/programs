@@ -817,10 +817,7 @@ fn stored(cx: &TestAppContext) -> Option<view::scroll::Anchor> {
 }
 
 fn kept_place(cx: &TestAppContext, anchor: &view::scroll::Anchor) {
-    let kept = view::methods::encode(anchor);
-    let key = view::scroll::key("general");
-    cx.host()
-        .handle::<view::methods::StoreGet>(move |asked| Ok((asked == key).then(|| kept.clone())));
+    cx.host().keep(&view::scroll::key("general"), anchor);
 }
 
 fn standing(view: &Entity<Chat>) -> (String, f32) {
@@ -916,7 +913,6 @@ fn a_swap_opens_the_room_where_the_reader_stood() {
     stood(&mut cx, "chat-message-rows", 3, 12.);
     cx.run_until_parked();
     let anchor = stored(&cx).expect("kept as the list settled");
-    kept_place(&cx, &anchor);
     let bytes = cx.snapshot().unwrap();
     let view = cx.restore::<Chat>(&bytes).unwrap();
     cx.run_until_parked();
@@ -936,7 +932,6 @@ fn a_swap_landing_where_the_reader_stood_keeps_the_thread_open_beside_it() {
     cx.run_until_parked();
     let anchor = stored(&cx).expect("where the room stood is kept");
     thread_open(&mut cx, &view, 595);
-    kept_place(&cx, &anchor);
     let bytes = cx.snapshot().unwrap();
     let view = cx.restore::<Chat>(&bytes).unwrap();
     cx.run_until_parked();
