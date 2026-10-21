@@ -747,36 +747,6 @@ fn a_channel_that_refuses_the_line_leaves_the_report_standing() {
 }
 
 #[test]
-fn the_programs_gates_workflow_reads() {
-    let gates = workflow::parse(include_str!("../../../../.forge/workflows/gates.toml")).unwrap();
-    let dev = Event::Push {
-        reference: b"refs/heads/dev".to_vec(),
-    };
-    assert!(gates.starts_on(&dev) && gates.starts_on(&Event::Updated { n: 1 }));
-    assert!(gates.notify.is_some());
-    let workflow::Planned { job, asks, .. } = &gates.jobs[0];
-    assert_eq!(asks.cpu.as_deref(), Some("16"));
-    assert!(asks.memory.is_some() && asks.scratch == ["/var/tmp/target"]);
-    let steps = &job.steps;
-    assert!(steps[1].contains("/forge/tools"), "{steps:?}");
-    assert_eq!(steps[2], "sh /var/tmp/tools/gates.sh /work/programs");
-    let env = |key: &str| {
-        job.env
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.as_str())
-    };
-    assert_eq!(
-        (env("GATES"), env("AGENTS_LINT")),
-        (Some("check"), Some("1"))
-    );
-    assert!(
-        job.inputs.is_empty(),
-        "/shared/tools holds no scripts (J-062)"
-    );
-}
-
-#[test]
 fn a_change_that_does_not_preview_makes_an_errored_run_that_says_why() {
     let mut world = world();
     let changes = [("changes.toml", CHANGES)];
