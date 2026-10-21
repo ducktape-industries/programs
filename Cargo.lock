@@ -2160,6 +2160,7 @@ dependencies = [
  "borsh",
  "chat",
  "describe",
+ "ducklink",
  "ownership",
  "program",
  "scheduler",

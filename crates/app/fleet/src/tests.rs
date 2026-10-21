@@ -116,14 +116,14 @@ impl World {
             .submit(Origin::Program(program.into()), PROGRAM, op)
     }
 
-    fn line(&self, message_id: &str) -> Option<String> {
+    fn notice(&self, message_id: &str) -> Option<chat::Notice> {
         let asked = chat::Query::MessageById {
             message_id: message_id.into(),
         };
         let chat::Reply::Message(row) = self.chain.query(chat::PROGRAM, &asked).unwrap() else {
             panic!("MessageById answers a message");
         };
-        row.map(|row| chat::plain_text(&row.blocks))
+        row.and_then(|row| row.notice().cloned())
     }
 
     // The run asked for, and the block after it ended, where fleet places it.
@@ -599,10 +599,27 @@ fn a_parked_jobs_late_end_is_told_in_chat_after_its_loss() {
     assert_eq!(world.run(parked).state, State::Lost);
     world.act(A, &Op::Beat { name: "a".into() }).unwrap();
     world.report(A, parked, 1, State::Passed).unwrap();
-    let lost = world.line(&format!("fleet-run-{parked}-1-1")).unwrap();
-    assert!(lost.contains(&format!("run {parked} lost")), "{lost}");
-    let passed = world.line(&format!("fleet-run-{parked}-1-2")).unwrap();
-    assert!(passed.contains(&format!("run {parked} passed")), "{passed}");
+    use chat::message::Status;
+    let lost = world.notice(&format!("fleet-run-{parked}-1-1")).unwrap();
+    let passed = world.notice(&format!("fleet-run-{parked}-1-2")).unwrap();
+    for notice in [&lost, &passed] {
+        assert_eq!(notice.kind, "run");
+        assert_eq!(notice.group, format!("run {parked}"));
+        assert_eq!(notice.subject, format!("run {parked}"));
+        assert_eq!(notice.concerns, [ADA_ACCOUNT], "the asker alone");
+    }
+    assert_eq!(
+        (lost.status, lost.detail.as_str()),
+        (
+            Status::Failed,
+            "lost (attempt 1): a went silent after block 4"
+        )
+    );
+    assert_eq!(passed.status, Status::Passed);
+    assert!(
+        passed.detail.starts_with("passed (attempt 1)"),
+        "{passed:?}"
+    );
     let ended = world.run(parked);
     assert_eq!(ended.state, State::Passed);
     assert!(!ended.summary.contains("not told"), "{}", ended.summary);

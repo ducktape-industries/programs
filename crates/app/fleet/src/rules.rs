@@ -569,24 +569,39 @@ fn tell(ctx: &ExecCtx, workload: &Workload, run: &RunRow) -> Result<(), Error> {
                 .checked_add(1)
                 .ok_or_else(|| Error::new(code::EXHAUSTED, "told ends are exhausted"))?;
             TOLD.put(ctx, &told);
-            let mut line = format!(
-                "**run {} {}** (attempt {}), asked by <@{}>",
-                run.id,
-                run.state.word(),
-                run.attempt,
-                workload.by
-            );
+            let mut detail = format!("{} (attempt {})", run.state.word(), run.attempt);
             if !run.summary.is_empty() {
-                line.push_str(&format!(": {}", run.summary));
+                detail.push_str(&format!(": {}", run.summary));
             }
-            if let Some(out) = &run.out {
-                line.push_str(&format!(". Out: `{}`", out.path));
-            }
-            let post = chat::Op::PostMessage {
+            let out = run.out.as_ref().map(|out| {
+                let path: Vec<&str> = out
+                    .path
+                    .split('/')
+                    .filter(|part| !part.is_empty())
+                    .collect();
+                ducklink::path("files", &path)
+            });
+            let status = match run.state {
+                State::Passed => chat::message::Status::Passed,
+                State::Cancelled => chat::message::Status::Note,
+                State::Lost | State::Failed | State::Errored => chat::message::Status::Failed,
+                State::Queued | State::Assigned | State::Running | State::Stopping => {
+                    chat::message::Status::Running
+                }
+            };
+            let post = chat::Op::Notify {
                 channel_id: channel.clone(),
                 message_id: format!("fleet-run-{}-{}-{told}", run.id, run.attempt),
-                blocks: chat::parse_message(&line),
                 thread: None,
+                notice: chat::Notice {
+                    kind: "run".into(),
+                    group: format!("run {}", run.id),
+                    subject: format!("run {}", run.id),
+                    link: out.flatten(),
+                    status,
+                    detail,
+                    concerns: vec![workload.by],
+                },
             };
             ctx.emit(chat::PROGRAM, &post, Wanted::Wanted)
         }

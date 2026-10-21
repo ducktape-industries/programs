@@ -42,7 +42,7 @@ A queued run goes to the ready machine that has been free longest (`idle_since`,
 A freed slot takes the oldest queued run it covers in the same frame.
 
 ## Who is told
-`Spec.notify`: `Chat { channel }` gets one line per end, each with a message id of its own (`fleet-run-<run>-<attempt>-<n>`), so a lost job's late end is told too. `Program { program, deliver }` hears `deliver ++ borsh(Ended { run, attempt, state })` when a run ends or is lost. A refusal leaves the run as it ended, and is added to its summary (`not told: …`) while the run is still at that attempt.
+`Spec.notify`: `Chat { channel }` gets one chat notice (`Notify`) per end, each with a message id of its own (`fleet-run-<run>-<attempt>-<n>`), so a lost job's late end is told too: kind `run`, group and subject `run <run>`, status Passed, Failed (failed, errored, lost) or Note (cancelled), detail `<state> (attempt <n>)[: <summary>]`, link the run's out folder as `files/<path>` on the reader's chain, and concerns the asker (`Workload.by`) alone, so the room's listeners aren't told. `Program { program, deliver }` hears `deliver ++ borsh(Ended { run, attempt, state })` when a run ends or is lost. A refusal leaves the run as it ended, and is added to its summary (`not told: …`) while the run is still at that attempt.
 
 ## Queries
 `Workload { id }`, `Run { id }`, `Queued { page }`, `Machine { machine }`, `Machines { page }`, `Holds { machine, page }`.
