@@ -1197,6 +1197,85 @@ fn a_files_card_says_its_read_failed() {
     assert_eq!(said.as_deref(), Some("Couldn’t read the file"));
 }
 
+fn card_state(view: &Entity<Chat>) -> Option<crate::attach::Unread> {
+    let key = (M3.to_owned(), SNAPSHOT);
+    view.read(|chat| chat.unread_files.get(&key).map(|(_, unread)| *unread))
+}
+
+#[test]
+fn a_files_card_read_again_after_a_failure_says_it_is_reading() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    cx.host()
+        .refuse::<BlobGet>("unavailable", "the read was dropped");
+    let moved = cx.host().stream::<Changes<files::Files>>();
+    lands_a_picture(&cx);
+    cx.run_until_parked();
+    cx.host().never::<BlobGet>();
+    moved.send(block(5, Vec::new()));
+    cx.run_until_parked();
+    assert_eq!(card_state(&view), Some(crate::attach::Unread::Retrying));
+    let said = card_says(&cx, "chat-message-m3-block-0");
+    assert_eq!(said.as_deref(), Some("Reading…"));
+}
+
+#[test]
+fn a_files_card_whose_read_failed_again_says_it_failed() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    cx.host()
+        .refuse::<BlobGet>("unavailable", "the read was dropped");
+    let moved = cx.host().stream::<Changes<files::Files>>();
+    lands_a_picture(&cx);
+    cx.run_until_parked();
+    moved.send(block(5, Vec::new()));
+    cx.run_until_parked();
+    assert_eq!(card_state(&view), Some(crate::attach::Unread::Refused));
+    let said = card_says(&cx, "chat-message-m3-block-0");
+    assert_eq!(said.as_deref(), Some("Couldn’t read the file"));
+}
+
+#[test]
+fn a_missing_files_card_read_again_once_a_block_writes_its_path_says_it_is_reading() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    let there = There::default();
+    let touched = Touched::default();
+    files_until(&cx, there.clone(), touched.clone());
+    let moved = cx.host().stream::<Changes<files::Files>>();
+    lands_a_picture(&cx);
+    cx.run_until_parked();
+    assert_eq!(card_state(&view), Some(crate::attach::Unread::Absent));
+    cx.host().never::<BlobGet>();
+    there.set(true);
+    touched.borrow_mut().push(M3.into());
+    moved.send(block(5, Vec::new()));
+    cx.run_until_parked();
+    assert_eq!(card_state(&view), Some(crate::attach::Unread::Reading));
+    let said = card_says(&cx, "chat-message-m3-block-0");
+    assert_eq!(said.as_deref(), Some("Reading…"));
+}
+
+#[test]
+fn a_failed_files_card_read_again_on_a_reopen_says_it_is_reading() {
+    let (mut cx, view) = opened();
+    files_host(&mut cx);
+    cx.host()
+        .refuse::<BlobGet>("unavailable", "the read was dropped");
+    let moved = cx.host().stream::<Changes<files::Files>>();
+    lands_a_picture(&cx);
+    cx.run_until_parked();
+    moved.send(block(5, Vec::new()));
+    cx.run_until_parked();
+    assert_eq!(card_state(&view), Some(crate::attach::Unread::Refused));
+    cx.host().never::<BlobGet>();
+    moved.send(None);
+    cx.run_until_parked();
+    assert_eq!(card_state(&view), Some(crate::attach::Unread::Reading));
+    let said = card_says(&cx, "chat-message-m3-block-0");
+    assert_eq!(said.as_deref(), Some("Reading…"));
+}
+
 #[test]
 fn a_files_card_says_files_holds_nothing_at_its_path() {
     let (mut cx, _view) = opened();

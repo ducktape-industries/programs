@@ -517,6 +517,9 @@ impl Chat {
             .filter(|(_, unread)| *unread == Unread::Failed)
             .map(|(file, _)| file.clone())
             .collect();
+        if !failed.is_empty() {
+            cx.notify();
+        }
         for file in failed {
             let key = (file.path.clone(), file.snapshot);
             self.read_file(file, cx);
@@ -555,6 +558,9 @@ impl Chat {
                 Unread::Retrying | Unread::Failed | Unread::Refused => None,
             })
             .collect();
+        if !again.is_empty() {
+            cx.notify();
+        }
         for file in again {
             self.read_file(file, cx);
         }
@@ -614,6 +620,9 @@ impl Chat {
                         | Unread::Retrying
                         | Unread::Refused => {}
                     }
+                }
+                if !again.is_empty() {
+                    cx.notify();
                 }
                 for file in again {
                     self.read_file(file, cx);
