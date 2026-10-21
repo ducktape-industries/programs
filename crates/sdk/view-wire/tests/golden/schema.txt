@@ -17,6 +17,7 @@ file.read None ReadFile -> Vec<u8>
 file.release None Vec<u64> -> ()
 file.save None SaveFile -> bool
 host.badge None i64 -> ()
+host.debug None () -> bool
 host.float None Float -> Placement
 host.id None String -> String
 host.log None String -> ()

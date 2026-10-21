@@ -1434,6 +1434,11 @@
     "reply": null
   },
   {
+    "kind": "host.debug",
+    "request": null,
+    "reply": true
+  },
+  {
     "kind": "file.save",
     "request": {
       "name": "tape.png",

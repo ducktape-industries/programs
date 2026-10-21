@@ -628,7 +628,11 @@ view took the last; refused `undeclared_host` for any other url,
 every listed host), `socket.send` (one binary message onto an open
 socket), `host.random` (bytes from the system's secure random source,
 under `host`), the manifest's hosts line, and `store.secret_get` and
-`store.secret_set` ("Keeping things on the device"). What a host answers is
+`store.secret_set` ("Keeping things on the device"); level 5,
+`program.watch`, `notify.needs` and `host.debug` (a subscription to whether the
+person turned the app's Debug mode on, the first item at subscribe and one
+per change; a view shows its debugging details only while it is true, and
+reads a host's `unknown_request` as off). What a host answers is
 `host.methods` (`methods::Hosted`): `cx.host().hosted()` asks it once, and
 `Hosted::has("link.window")` says whether to offer what needs it. A host
 before J-085 refuses `host.methods`, and `hosted()` answers `None`: ask the

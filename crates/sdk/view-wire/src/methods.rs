@@ -1388,6 +1388,7 @@ methods! {
     StoreSecretGet, "store.secret_get", String, Option<Vec<u8>>;
     StoreSecretSet, "store.secret_set", (String, Option<Vec<u8>>), ();
     NotifyNeeds, "notify.needs", Needs, ();
+    HostDebug, "host.debug", (), bool;
 }
 
 // The `<capability>` half of every kind in [`ALL`]: what a view's manifest
