@@ -7,7 +7,7 @@ with `program` off, and `view`; its writes are the item sheets' `Relink` and `Tr
 `Create`, `Relink` and access `Set`.
 
 - `KINDS`: every kind of owned item (`chat.channel`, `chat.message`,
-  `forge.repo`, `forge.change`, `forge.review`, `harness.route`,
+  `forge.repo`, `forge.settings`, `forge.change`, `forge.review`, `harness.route`,
   `harness.agent-conversation`, `egress.service`), the program that keeps it
   and what a person calls it; `PROGRAMS`, the programs that keep them, each
   once; `kind(name)`. A test holds `KINDS` to the kinds the programs' owned

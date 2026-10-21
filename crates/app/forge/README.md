@@ -26,9 +26,12 @@ only.
   policy decides them, while reviews, closes and merges write only the shared record.
   A repository's custody is its own owned row (`k/`, kind `forge.repo`), its creator's
   from `Create`: every op the repository's policy decides (a push, a merge, a staged
-  pack, a branch deleted, protected or given required checks, `Configure`, the merge
-  queue, a rebase, and closing someone else's change) writes it, while the shared
-  record (`p/`) takes every op's activity.
+  pack, a branch deleted, the merge queue, a rebase, and closing someone else's change)
+  writes it, while the shared record (`p/`) takes every op's activity. Its settings are a
+  second owned row (`f/`, kind `forge.settings`), its creator's from `Create`:
+  `Configure`, `Protect`, `RequireChecks` and `Archive` write that row, so the settings'
+  own policy decides them. A repository created before the settings row has none, and
+  those four write its custody row as the other ops do.
   A repository's number counter allocates the shared future issue/change number space.
 - Every table is declared once in `src/state.rs` as a typed `store::Map`/`Set`/`Item`:
   records (repos, refs, changes, reviews), the indexes over them (activity,

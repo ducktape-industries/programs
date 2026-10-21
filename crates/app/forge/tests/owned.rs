@@ -1,7 +1,9 @@
 mod common;
 use common::*;
 
-use forge::tables::{AUTHORSHIP, CUSTODY, REPOS, REPOS_DEFAULTING_TO_OWNER, REVIEWS};
+use forge::tables::{
+    AUTHORSHIP, CUSTODY, REPOS, REPOS_DEFAULTING_TO_OWNER, REVIEWS, SETTINGS_CUSTODY,
+};
 
 fn relink_open(sandbox: &MemorySandbox, who: &[u8], key: Vec<u8>) {
     let open = ownership::Op::Create {
@@ -88,6 +90,7 @@ fn forge_claims_its_reviews_changes_and_repositories() {
     assert_eq!(REVIEWS.kind(), Some("forge.review"));
     assert_eq!(AUTHORSHIP.kind(), Some("forge.change"));
     assert_eq!(CUSTODY.kind(), Some("forge.repo"));
+    assert_eq!(SETTINGS_CUSTODY.kind(), Some("forge.settings"));
     assert_eq!(REPOS.kind(), None);
 }
 
@@ -362,4 +365,119 @@ fn record_at(sandbox: &MemorySandbox, key: &[u8]) -> Option<ownership::Record> {
         panic!("Record answers a record");
     };
     record
+}
+
+#[test]
+fn a_new_repositorys_settings_follow_their_own_default_not_its_custodys() {
+    let mut sandbox = founded();
+    sandbox
+        .chain
+        .seat::<ownership::Ownership>(ownership::PROGRAM);
+    let as_owner = |op: &ownership::Op| {
+        sandbox
+            .chain
+            .submit(Origin::Signed(OWNER.to_vec()), ownership::PROGRAM, op)
+            .unwrap()
+    };
+    let made = |name: &str, write| -> ownership::PolicyId {
+        let create = ownership::Op::Create {
+            name: name.into(),
+            write,
+        };
+        abi::decode(&as_owner(&create)).unwrap()
+    };
+    let open = made("open", ownership::Writers::Anyone);
+    let strict = made("strict", ownership::Writers::Owner);
+    for (kind, policy) in [("forge.settings", open), ("forge.repo", strict)] {
+        as_owner(&ownership::Op::SetDefault {
+            scope: ownership::Scope::Kind(kind.into()),
+            policy: Some(policy),
+        });
+    }
+    create(&sandbox, "project", HashKind::Sha1);
+    sandbox.open_to_anyone(OWNER, "project").unwrap();
+    let anyone = access::Op::Set {
+        program: forge::PROGRAM.into(),
+        key: forge::settings_key("project"),
+        list: Some(program::Ownership::Anyone),
+    };
+    sandbox
+        .chain
+        .submit(Origin::Signed(OWNER.to_vec()), "access", &anyone)
+        .unwrap();
+    let configure = Op::Configure {
+        repo: "project".into(),
+        settings: Settings::default(),
+    };
+    act(&sandbox, STRANGER, &configure).unwrap();
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let tip = file_commit(
+        &mut store,
+        &[],
+        1,
+        &[(
+            "a", b"1
+",
+        )],
+    );
+    let pack = pack_of(&store, &all_ids(&store));
+    let side = [(Hash::Sha1.zero(), tip, "refs/heads/side")];
+    let pushed = push(&sandbox, STRANGER, "project", &side, &pack);
+    assert_eq!(
+        pushed.unwrap_err().code,
+        code::UNAUTHORIZED,
+        "the custody's own policy"
+    );
+}
+
+#[test]
+fn a_repositorys_settings_have_a_policy_of_their_own_and_an_older_one_follows_its_custody() {
+    let (sandbox, n, _) = reviewed();
+    let settings_row = SETTINGS_CUSTODY.key(&"project".to_owned());
+    let owned = record_at(&sandbox, &settings_row).expect("the guard recorded the settings");
+    assert_eq!(owned.owner, ownership::Party::Account(11));
+    assert_eq!(owned.kind.as_deref(), Some("forge.settings"));
+    let anyone = access::Op::Set {
+        program: forge::PROGRAM.into(),
+        key: forge::settings_key("project"),
+        list: Some(program::Ownership::Anyone),
+    };
+    sandbox
+        .chain
+        .submit(Origin::Signed(OWNER.to_vec()), "access", &anyone)
+        .unwrap();
+    let strict = ownership::Op::Create {
+        name: "settings".into(),
+        write: ownership::Writers::Owner,
+    };
+    let made = sandbox
+        .chain
+        .submit(Origin::Signed(OWNER.to_vec()), ownership::PROGRAM, &strict)
+        .unwrap();
+    let relink = ownership::Op::Relink {
+        program: forge::PROGRAM.into(),
+        key: settings_row.clone(),
+        policy: abi::decode(&made).unwrap(),
+    };
+    sandbox
+        .chain
+        .submit(Origin::Signed(OWNER.to_vec()), ownership::PROGRAM, &relink)
+        .unwrap();
+    let configure = Op::Configure {
+        repo: "project".into(),
+        settings: Settings::default(),
+    };
+    assert_eq!(
+        refused(&sandbox, STRANGER, &configure).code,
+        code::UNAUTHORIZED,
+        "the settings' own policy"
+    );
+    act(&sandbox, OWNER, &configure).unwrap();
+    sandbox.forge.borrow_mut().state.remove(&settings_row);
+    act(&sandbox, STRANGER, &configure).unwrap();
+    let close = Op::ChangeClose {
+        repo: "project".into(),
+        n,
+    };
+    act(&sandbox, STRANGER, &close).unwrap();
 }

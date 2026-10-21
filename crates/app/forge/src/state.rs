@@ -48,6 +48,7 @@ pub const AUTHORSHIP: Map<(String, u64), Owned<Authorship>> = Map::new("o/");
 // change) writes this row too. A repository created before this row existed has none until a
 // migration writes it.
 pub const CUSTODY: Map<String, Owned<Custody>> = Map::new("k/");
+pub const SETTINGS_CUSTODY: Map<String, Owned<SettingsCustody>> = Map::new("f/");
 /// Index: the reviews one principal submitted on one change, oldest first.
 pub const AUTHORED: Set<(String, u64, Principal, u64)> = Set::new("u/");
 /// Index: the changes a principal authored, is asked to review, or reviewed.
@@ -418,9 +419,27 @@ impl Kind for Custody {
     const KIND: &'static str = "forge.repo";
 }
 
-// The custody of `repo`, written again: a no-op for a repository that has none.
-pub fn kept(ctx: &ExecCtx, repo: &str) -> Result<(), Error> {
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct SettingsCustody {
+    pub owner: Principal,
+    pub rev: u64,
+}
+
+impl Kind for SettingsCustody {
+    const KIND: &'static str = "forge.settings";
+}
+
+pub fn kept(ctx: &ExecCtx, repo: &str, changes_settings: bool) -> Result<(), Error> {
     let at = repo.to_owned();
+    let settings = match changes_settings {
+        true => SETTINGS_CUSTODY.get(ctx, &at)?,
+        false => None,
+    };
+    if let Some(mut custody) = settings {
+        custody.rev += 1;
+        SETTINGS_CUSTODY.put(ctx, &at, &custody);
+        return Ok(());
+    }
     if let Some(mut custody) = CUSTODY.get(ctx, &at)? {
         custody.rev += 1;
         CUSTODY.put(ctx, &at, &custody);

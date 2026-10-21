@@ -71,6 +71,7 @@ impl Program for Forge {
         );
         let actor = &Principal::Account(ctx.sender_account()?);
         let governed = crate::ops::governed(ctx, &op).map(str::to_owned);
+        let changes_settings = crate::ops::changes_settings(&op);
         crate::ops::writable(ctx, &op)?;
         let reply = match op {
             Op::Watch { deliver } => return watch(ctx, deliver),
@@ -221,7 +222,7 @@ impl Program for Forge {
                 .map(|()| None),
         }?;
         if let Some(repo) = &governed {
-            crate::state::kept(ctx, repo)?;
+            crate::state::kept(ctx, repo, changes_settings)?;
         }
         if settles && let Some(repo) = &repo {
             settle(ctx, repo)?;

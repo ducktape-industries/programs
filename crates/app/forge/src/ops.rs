@@ -78,6 +78,11 @@ pub(crate) fn create(
         rev: 0,
     };
     crate::state::CUSTODY.put(ctx, &name.to_owned(), &custody);
+    let settings = crate::state::SettingsCustody {
+        owner: actor.clone(),
+        rev: 0,
+    };
+    crate::state::SETTINGS_CUSTODY.put(ctx, &name.to_owned(), &settings);
     REPOS_DEFAULTING_TO_OWNER.insert(ctx, &name.to_owned());
     save_repo(ctx, name, &repo)
 }
@@ -112,6 +117,13 @@ pub(crate) fn writable(ctx: &QueryCtx, op: &Op) -> Result<(), Error> {
         ))),
         _ => Ok(()),
     }
+}
+
+pub(crate) fn changes_settings(op: &Op) -> bool {
+    matches!(
+        op,
+        Op::Configure { .. } | Op::Protect { .. } | Op::RequireChecks { .. } | Op::Archive { .. }
+    )
 }
 
 pub(crate) fn governed<'o>(ctx: &QueryCtx, op: &'o Op) -> Option<&'o str> {

@@ -17,10 +17,11 @@ const fn of(name: &'static str, program: &'static str, label: &'static str) -> K
     }
 }
 
-pub static KINDS: [Kind; 10] = [
+pub static KINDS: [Kind; 11] = [
     of("chat.channel", "chat", "Chat channels"),
     of("chat.message", "chat", "Chat messages"),
     of("forge.repo", "forge", "Forge repositories"),
+    of("forge.settings", "forge", "Forge repository settings"),
     of("forge.change", "forge", "Forge changes"),
     of("forge.review", "forge", "Forge reviews"),
     of("harness.route", "harness", "Harness provider routes"),
