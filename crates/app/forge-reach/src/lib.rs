@@ -15,7 +15,7 @@ pub use store::{PageRequest, PageResponse};
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
-use crate::state::{HEADS, REACH, REPORTS};
+use crate::state::{HEADS, REACH, REPORTS, WANTED};
 
 pub const PROGRAM: &str = "forge-reach";
 
@@ -51,6 +51,14 @@ pub struct PreviewVerdict {
     pub carried: Vec<Carried>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Rerun {
+    pub repo: String,
+    pub n: u64,
+    pub commit: String,
+    pub context: String,
+}
+
 #[derive(
     Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
 )]
@@ -58,7 +66,7 @@ pub struct PreviewVerdict {
     "A check's result carried to a change's Preview when nothing it read changed. A reporter (a lane, a CI runner) reports its result for a commit with the paths its check read; on each Preview forge makes, forge-reach compares those paths between the reported commit and the Preview, and reports forge the status `<reporter>/<context>` on the Preview: the reported state when every path is the same, Pending when one differs. A branch requires it by naming forge-reach's account as RequireChecks' reporter."
 )]
 pub enum Op {
-    #[tool_op(description = "What forge tells a watcher; forge alone sends it. A Previewed event makes forge-reach report, on the new Preview, every result reported for the change's head or for the Preview itself, and for a reporter with none there its newest result on an earlier head or Preview of the change whose patch is the same.", example = crate::examples::watched)]
+    #[tool_op(description = "What forge tells a watcher; forge alone sends it. A Previewed event makes forge-reach report, on the new Preview, every result reported for the change's head or for the Preview itself, and for a reporter with none there its newest result on an earlier head or Preview of the change whose patch is the same. A Merged event previews, at the next block, each other open change into that branch whose results in every context the branch requires of forge-reach passed.", example = crate::examples::watched)]
     Watched(forge::Watched),
     #[tool_op(description = "Report your check's result for a commit (its full hex id) in a context, with the paths in the repository the check read (\"\" is the whole tree) and a url to its log; saying it again replaces it. With change, forge-reach keeps the commit as one of that change's heads and reports on its latest Preview at once; without it, on the latest Preview of every open change whose head or Preview commit is that commit. Anyone may; it is recorded as yours, and the status it carries is `<your account>/<context>`.", example = crate::examples::report)]
     Report {
@@ -98,12 +106,20 @@ pub enum Query {
     #[reads(forge::Forge: forge::tables::PREVIEWS, forge::tables::REPOS)]
     #[tool_query(description = "How each result reported for change n's head, or on an earlier head of it for a reporter with none on the head, stands on its latest Preview: carried with its state, or Pending with the paths that differ there (a reached path, or a path the patch of an earlier head and the Preview's patch change differently). Null while the change has no Preview.", example = crate::examples::verdict)]
     Verdict { repo: String, n: u64 },
+    #[ask(Reply::Wanted(PageResponse<Rerun>))]
+    #[reads(WANTED)]
+    #[tool_query(description = "The Previews that ask reporter's result again: a result that passed went Pending on the change's latest Preview because a path it read differs there, the branch requires it of forge-reach, and every other context the branch requires passed there. Each names the repository, change, Preview commit and context; reporting that commit in that context ends it.", example = crate::examples::wanted)]
+    Wanted {
+        reporter: AccountNumber,
+        page: PageRequest,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
 pub enum Reply {
     Reports(PageResponse<Report>),
     Verdict(Option<PreviewVerdict>),
+    Wanted(PageResponse<Rerun>),
 }
 
 pub fn describe(op: &Op) -> describe::Description {

@@ -16,6 +16,9 @@ const LANE_ACCOUNT: u64 = 23;
 const REACH_ACCOUNT: u64 = 903;
 const REPO: &str = "project";
 const CONTEXT: &str = "build.sh#lane";
+const REVIEWER: &[u8] = b"reviewer-key";
+const REVIEWER_ACCOUNT: u64 = 56;
+const REVIEW: &str = "review";
 
 fn bounds() -> forge::Bounds {
     forge::Bounds {
@@ -48,8 +51,10 @@ fn world() -> World {
     chain.seat::<chat::Chat>("chat");
     chain.seat::<access::Access>("access");
     chain.seat::<ForgeReach>(PROGRAM);
+    chain.seat::<::scheduler::Scheduler>(::scheduler::PROGRAM);
     chain.hold(OWNER, OWNER_ACCOUNT);
     chain.hold(LANE, LANE_ACCOUNT);
+    chain.hold(REVIEWER, REVIEWER_ACCOUNT);
     let programs = [
         (forge::PROGRAM, 900),
         ("chat", 901),
@@ -160,9 +165,13 @@ impl World {
     }
 
     fn open(&self) {
+        self.open_from("feature");
+    }
+
+    fn open_from(&self, branch: &str) {
         let open = forge::Op::ChangeOpen {
             repo: REPO.into(),
-            from: forge::Revision::Ref(b"refs/heads/feature".to_vec()),
+            from: forge::Revision::Ref(format!("refs/heads/{branch}").into_bytes()),
             into: b"refs/heads/main".to_vec(),
             title: "Feature".into(),
             body: String::new(),
@@ -188,6 +197,70 @@ impl World {
         };
         self.chain
             .submit(Origin::Signed(LANE.to_vec()), PROGRAM, &report)
+    }
+
+    fn say(
+        &self,
+        key: &[u8],
+        commit: Oid,
+        context: &str,
+        state: CheckState,
+        reach: &[&str],
+    ) -> Result<Vec<u8>, ::program::Error> {
+        let report = Op::Report {
+            repo: REPO.into(),
+            commit: commit.to_hex(),
+            context: context.into(),
+            state,
+            url: Some("lane.log".into()),
+            reach: reach.iter().map(|path| path.to_string()).collect(),
+            change: None,
+        };
+        self.chain
+            .submit(Origin::Signed(key.to_vec()), PROGRAM, &report)
+    }
+
+    fn require(&self) {
+        let require = forge::Op::RequireChecks {
+            repo: REPO.into(),
+            branch: b"refs/heads/main".to_vec(),
+            required: Some(forge::Required {
+                reporter: forge::Principal::Account(REACH_ACCOUNT),
+                contexts: vec![review_context(), lane_context()],
+            }),
+        };
+        self.forge(&require).unwrap();
+    }
+
+    fn wanted(&self, reporter: u64) -> Vec<Rerun> {
+        let asked = Query::Wanted {
+            reporter,
+            page: PageRequest::first(16),
+        };
+        let Reply::Wanted(page) = self.chain.query(PROGRAM, &asked).unwrap() else {
+            panic!("wanted answers Wanted");
+        };
+        page.items
+    }
+
+    fn previewed(&self, n: u64) {
+        let preview = forge::Op::Preview {
+            repo: REPO.into(),
+            n,
+        };
+        self.forge(&preview).unwrap();
+    }
+
+    fn preview_of(&self, n: u64) -> Option<String> {
+        let asked = forge::Query::Preview {
+            repo: REPO.into(),
+            n,
+        };
+        let reply = self.chain.query(forge::PROGRAM, &asked).unwrap();
+        let forge::Reply::Preview { preview, .. } = reply else {
+            panic!("a preview answers Preview: {reply:?}");
+        };
+        preview.map(|preview| preview.merge)
     }
 
     fn preview(&self) -> Oid {
@@ -254,9 +327,10 @@ fn opened(world: &mut World) -> (Oid, Oid) {
     (base, feature)
 }
 
-fn dev_moves(world: &mut World, base: Oid, files: Files) {
+fn dev_moves(world: &mut World, base: Oid, files: Files) -> Oid {
     let moved = world.commit(&[base], files);
     world.push(Some(base), moved, "main");
+    moved
 }
 
 #[test]
@@ -623,4 +697,217 @@ fn a_result_on_an_earlier_head_is_pending_when_the_patch_grew() {
         [(lane_context(), CheckState::Pending, None)]
     );
     assert_eq!(world.verdict().unwrap().carried[0].differs, ["c.md"]);
+}
+
+fn review_context() -> String {
+    format!("{REVIEWER_ACCOUNT}/{REVIEW}")
+}
+
+const LOCK_MOVED: Files = &[
+    ("Cargo.lock", "lock 2\n"),
+    ("a/x.rs", "1\n2\n3\n4\n5\n6\n7\n8\n"),
+    ("b/y.rs", "y 1\n"),
+];
+const LANE_REACH: &[&str] = &["a", "b", "Cargo.lock"];
+
+impl World {
+    fn unrequire(&self) {
+        let unrequire = forge::Op::RequireChecks {
+            repo: REPO.into(),
+            branch: b"refs/heads/main".to_vec(),
+            required: None,
+        };
+        self.forge(&unrequire).unwrap();
+    }
+}
+
+fn reviewed(world: &World, head: Oid) {
+    let review = world.say(REVIEWER, head, REVIEW, CheckState::Passed, &["a"]);
+    review.unwrap();
+}
+
+fn rerun_of(n: u64, commit: Oid) -> Rerun {
+    Rerun {
+        repo: REPO.into(),
+        n,
+        commit: commit.to_hex(),
+        context: CONTEXT.into(),
+    }
+}
+
+#[test]
+fn a_reviewed_lane_gone_stale_on_a_moved_target_is_wanted_until_it_reports_there() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    reviewed(&world, feature);
+    world.report(feature, LANE_REACH, None).unwrap();
+    dev_moves(&mut world, base, LOCK_MOVED);
+    world.require();
+    let merge = world.preview();
+    assert_eq!(world.wanted(LANE_ACCOUNT), [rerun_of(1, merge)]);
+    assert!(world.wanted(REVIEWER_ACCOUNT).is_empty());
+    world.report(merge, LANE_REACH, None).unwrap();
+    assert!(world.wanted(LANE_ACCOUNT).is_empty());
+    let lane = (lane_context(), CheckState::Passed, Some("lane.log".into()));
+    assert!(world.statuses(merge).contains(&lane));
+}
+
+#[test]
+fn a_stale_lane_is_not_wanted_before_every_other_required_context_passed() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    world.report(feature, LANE_REACH, None).unwrap();
+    dev_moves(&mut world, base, LOCK_MOVED);
+    world.require();
+    world.preview();
+    assert_eq!(
+        world.verdict().unwrap().carried[0].state,
+        CheckState::Pending
+    );
+    assert!(world.wanted(LANE_ACCOUNT).is_empty(), "no review yet");
+}
+
+#[test]
+fn a_failed_lane_is_not_wanted_again() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    reviewed(&world, feature);
+    let failed = world.say(LANE, feature, CONTEXT, CheckState::Failed, LANE_REACH);
+    failed.unwrap();
+    dev_moves(&mut world, base, LOCK_MOVED);
+    world.require();
+    world.preview();
+    assert!(world.wanted(LANE_ACCOUNT).is_empty());
+}
+
+#[test]
+fn a_branch_that_does_not_require_forge_reach_wants_nothing_again() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    reviewed(&world, feature);
+    world.report(feature, LANE_REACH, None).unwrap();
+    dev_moves(&mut world, base, LOCK_MOVED);
+    let merge = world.preview();
+    let lane = (lane_context(), CheckState::Pending, None);
+    assert!(world.statuses(merge).contains(&lane));
+    assert!(world.wanted(LANE_ACCOUNT).is_empty());
+}
+
+#[test]
+fn a_review_gone_stale_beside_the_lane_wants_no_lane_again() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    reviewed(&world, feature);
+    world.report(feature, LANE_REACH, None).unwrap();
+    dev_moves(
+        &mut world,
+        base,
+        &[
+            ("Cargo.lock", "lock 1\n"),
+            ("a/x.rs", "1\n2\n3\n4\n5\n6\n7\neight\n"),
+            ("b/y.rs", "y 1\n"),
+        ],
+    );
+    world.require();
+    world.preview();
+    assert!(world.wanted(LANE_ACCOUNT).is_empty());
+}
+
+#[test]
+fn a_newer_preview_asks_again_on_its_own_commit_only() {
+    let mut world = world();
+    let (base, feature) = opened(&mut world);
+    reviewed(&world, feature);
+    world.report(feature, LANE_REACH, None).unwrap();
+    let moved = dev_moves(&mut world, base, LOCK_MOVED);
+    world.require();
+    let first = world.preview();
+    assert_eq!(world.wanted(LANE_ACCOUNT), [rerun_of(1, first)]);
+    world.unrequire();
+    dev_moves(
+        &mut world,
+        moved,
+        &[
+            ("Cargo.lock", "lock 3\n"),
+            ("a/x.rs", "1\n2\n3\n4\n5\n6\n7\n8\n"),
+            ("b/y.rs", "y 1\n"),
+        ],
+    );
+    world.require();
+    let second = world.preview();
+    assert_ne!(first, second);
+    assert_eq!(world.wanted(LANE_ACCOUNT), [rerun_of(1, second)]);
+}
+
+const LOCKED_FEATURE: Files = &[
+    ("Cargo.lock", "lock 2\n"),
+    ("a/x.rs", "one\n2\n3\n4\n5\n6\n7\n8\n"),
+    ("b/y.rs", "y 1\n"),
+];
+const OTHER: Files = &[
+    ("Cargo.lock", "lock 1\n"),
+    ("a/x.rs", "1\n2\n3\n4\n5\n6\n7\n8\n"),
+    ("b/y.rs", "y other\n"),
+];
+
+fn merged_beside(world: &mut World, review_other: bool) -> String {
+    let base = world.commit(&[], BASE);
+    let feature = world.commit(&[base], LOCKED_FEATURE);
+    let other = world.commit(&[base], OTHER);
+    world.push(None, base, "main");
+    world.push(None, feature, "feature");
+    world.push(None, other, "other");
+    world.open();
+    world.open_from("other");
+    world.require();
+    let review = world.say(
+        REVIEWER,
+        feature,
+        REVIEW,
+        CheckState::Passed,
+        &["a", "Cargo.lock"],
+    );
+    review.unwrap();
+    if review_other {
+        let review = world.say(REVIEWER, other, REVIEW, CheckState::Passed, &["b"]);
+        review.unwrap();
+    }
+    for head in [feature, other] {
+        world.report(head, LANE_REACH, None).unwrap();
+    }
+    world.previewed(2);
+    let before = world.preview_of(2).expect("change 2 has a Preview");
+    world.previewed(1);
+    let merge = forge::Op::SquashMerge {
+        repo: REPO.into(),
+        into: b"refs/heads/main".to_vec(),
+        from: forge::Revision::Ref(b"refs/heads/feature".to_vec()),
+        expected_into: base.to_hex(),
+        expected_from: feature.to_hex(),
+        message: None,
+        change: Some(1),
+    };
+    world.forge(&merge).unwrap();
+    let still = world.preview_of(2);
+    assert_eq!(still.as_ref(), Some(&before), "the next block previews");
+    world.chain.at(3, 0);
+    before
+}
+
+#[test]
+fn a_merge_previews_each_other_reviewed_change_and_its_stale_lane_is_wanted() {
+    let mut world = world();
+    let before = merged_beside(&mut world, true);
+    let after = world.preview_of(2).expect("change 2 has a Preview");
+    assert_ne!(after, before, "previewed again on the moved branch");
+    let after = Oid::from_hex(Hash::Sha1, &after).unwrap();
+    assert_eq!(world.wanted(LANE_ACCOUNT), [rerun_of(2, after)]);
+}
+
+#[test]
+fn a_merge_leaves_a_change_with_a_required_context_unpassed_as_it_was() {
+    let mut world = world();
+    let before = merged_beside(&mut world, false);
+    assert_eq!(world.preview_of(2), Some(before));
+    assert!(world.wanted(LANE_ACCOUNT).is_empty());
 }

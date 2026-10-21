@@ -44,3 +44,13 @@ pub(crate) fn verdict() -> Query {
         n: 12,
     }
 }
+
+pub(crate) fn wanted() -> Query {
+    Query::Wanted {
+        reporter: 23,
+        page: PageRequest {
+            after: None,
+            limit: Some(20),
+        },
+    }
+}

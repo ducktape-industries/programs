@@ -2304,6 +2304,7 @@ dependencies = [
  "forge",
  "gitcore",
  "program",
+ "scheduler",
  "store",
 ]
 

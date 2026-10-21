@@ -1,13 +1,19 @@
 //! What each op checks and writes: a reported result kept with its reach, and on each Preview
 //! every result reported for the change's head, or for an earlier head with the same patch,
-//! compared path by path and told forge as a status.
+//! compared path by path, told forge as a status, and asked for again where the target moved.
 use std::collections::{BTreeMap, BTreeSet};
 
 use ::program::{Error, ExecCtx, QueryCtx, Reply as Wanted, code, invalid, unexpected_reply};
-use forge::{CheckState, EntryKind, FileStatus, PreviewInfo, Revision, Watched};
+use forge::{
+    CheckState, EntryKind, FileStatus, PreviewInfo, Principal, Required, Revision, Watched,
+};
 
-use crate::state::{HEADS, Kept, PREVIEWED, PREVIEWING, REACH, REPORTS, Reporting};
-use crate::{AccountNumber, Carried, PROGRAM, PageRequest, PageResponse, PreviewVerdict, Report};
+use crate::state::{
+    HEADS, Kept, PREVIEWED, PREVIEWING, REACH, REPORTS, Reporting, WANTED, WANTING,
+};
+use crate::{
+    AccountNumber, Carried, PROGRAM, PageRequest, PageResponse, PreviewVerdict, Report, Rerun,
+};
 
 pub(crate) struct Reported {
     pub repo: String,
@@ -26,7 +32,12 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             heard_preview(ctx, &repo, n)?;
             tell(ctx, &repo, n)
         }
-        Watched::Merged { repo, n, .. } | Watched::Closed { repo, n, .. } => {
+        Watched::Merged { repo, n, .. } => {
+            forget_preview(ctx, &repo, n)?;
+            forget_heads(ctx, &repo, n)?;
+            preview_the_rest(ctx, &repo, n)
+        }
+        Watched::Closed { repo, n, .. } => {
             forget_preview(ctx, &repo, n)?;
             forget_heads(ctx, &repo, n)
         }
@@ -53,6 +64,7 @@ fn forget_preview(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
     let Some((head, merge)) = PREVIEWED.get(ctx, &key)? else {
         return Ok(());
     };
+    forget_wanted(ctx, repo, &merge)?;
     for commit in [head, merge] {
         let row = (repo.to_owned(), commit, n);
         if PREVIEWING.has(ctx, &row) {
@@ -60,6 +72,16 @@ fn forget_preview(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
         }
     }
     PREVIEWED.remove(ctx, &key);
+    Ok(())
+}
+
+fn forget_wanted(ctx: &ExecCtx, repo: &str, merge: &str) -> Result<(), Error> {
+    let preview = (repo.to_owned(), merge.to_owned());
+    for (repo, commit, reporter, context) in WANTING.scan(ctx, WANTING.prefix_of(&preview))? {
+        let row = (reporter, repo.clone(), commit.clone(), context.clone());
+        WANTED.remove(ctx, &row);
+        WANTING.remove(ctx, &(repo, commit, reporter, context));
+    }
     Ok(())
 }
 
@@ -150,25 +172,25 @@ fn check_path(path: &str) -> Result<(), Error> {
 }
 
 fn tell(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
-    let Some(verdict) = verdict(ctx, repo, n)? else {
+    let Some((preview, judged)) = judge(ctx, repo, n)? else {
         return Ok(());
     };
     let link = verdict_link(ctx, repo, n);
-    for carried in verdict.carried {
-        let url = match carried.differs.is_empty() {
-            true => carried.url,
+    for result in &judged {
+        let url = match result.differs.is_empty() {
+            true => result.kept.url.clone(),
             false => link.clone(),
         };
         let status = forge::Op::Status {
             repo: repo.to_owned(),
-            commit: verdict.merge.clone(),
-            context: carried.context,
-            state: carried.state,
+            commit: preview.merge.clone(),
+            context: result.status_context(),
+            state: result.state,
             url,
         };
         ctx.emit(forge::PROGRAM, &status, Wanted::None);
     }
-    Ok(())
+    want_again(ctx, repo, n, &preview.merge, &judged)
 }
 
 fn verdict_link(ctx: &QueryCtx, repo: &str, n: u64) -> Option<String> {
@@ -177,27 +199,44 @@ fn verdict_link(ctx: &QueryCtx, repo: &str, n: u64) -> Option<String> {
     ducklink::mint(&chain, PROGRAM, &[repo, number.as_str()])
 }
 
-pub(crate) fn verdict(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<PreviewVerdict>, Error> {
+struct Judged {
+    reporter: AccountNumber,
+    context: String,
+    gated: String,
+    kept: Kept,
+    state: CheckState,
+    differs: Vec<String>,
+}
+
+impl Judged {
+    fn status_context(&self) -> String {
+        format!("{}/{}", self.reporter, self.context)
+    }
+
+    fn gone_stale(&self) -> bool {
+        let passed = self.kept.state == CheckState::Passed;
+        passed && !self.differs.is_empty()
+    }
+
+    fn passes(&self, context: &str) -> bool {
+        let named = self.status_context() == context;
+        named && self.state == CheckState::Passed
+    }
+}
+
+type Judgement = (PreviewInfo, Vec<Judged>);
+
+fn judge(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Judgement>, Error> {
     let Some(preview) = latest_preview(ctx, repo, n)? else {
         return Ok(None);
     };
-    let mut reported: BTreeMap<(AccountNumber, String), (String, Kept, bool)> =
-        reported_earlier(ctx, repo, n, &preview)?
-            .into_iter()
-            .map(|(key, (commit, kept))| (key, (commit, kept, true)))
-            .collect();
-    for commit in [&preview.from_head, &preview.merge] {
-        let head = (repo.to_owned(), commit.clone());
-        for ((_, _, reporter, context), kept) in REPORTS.scan(ctx, REPORTS.prefix_of(&head))? {
-            reported.insert((reporter, context), (commit.clone(), kept, false));
-        }
-    }
+    let reported = results(ctx, repo, n, &preview.from_head, &preview.merge)?;
     let any_earlier = reported.values().any(|(_, _, earlier)| *earlier);
     let ours = match any_earlier {
         true => changed(ctx, repo, &preview.into_head, &preview.merge),
         false => None,
     };
-    let mut carried = Vec::new();
+    let mut judged = Vec::new();
     for ((reporter, context), (gated, kept, earlier)) in reported {
         let key: Reporting = (repo.to_owned(), gated.clone(), reporter, context.clone());
         let mut differs = differing_paths(ctx, repo, &key, &preview.merge)?;
@@ -210,15 +249,33 @@ pub(crate) fn verdict(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Previ
             true => kept.state,
             false => CheckState::Pending,
         };
-        carried.push(Carried {
-            context: format!("{reporter}/{context}"),
+        judged.push(Judged {
+            reporter,
+            context,
             gated,
-            reported: kept.state,
+            kept,
             state,
-            url: kept.url,
             differs,
         });
     }
+    Ok(Some((preview, judged)))
+}
+
+pub(crate) fn verdict(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<PreviewVerdict>, Error> {
+    let Some((preview, judged)) = judge(ctx, repo, n)? else {
+        return Ok(None);
+    };
+    let carried = judged
+        .into_iter()
+        .map(|result| Carried {
+            context: result.status_context(),
+            gated: result.gated,
+            reported: result.kept.state,
+            state: result.state,
+            url: result.kept.url,
+            differs: result.differs,
+        })
+        .collect();
     Ok(Some(PreviewVerdict {
         n,
         head: preview.from_head,
@@ -227,23 +284,195 @@ pub(crate) fn verdict(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Previ
     }))
 }
 
+fn want_again(
+    ctx: &ExecCtx,
+    repo: &str,
+    n: u64,
+    merge: &str,
+    judged: &[Judged],
+) -> Result<(), Error> {
+    let stale = judged.iter().any(Judged::gone_stale);
+    let required = match stale {
+        true => required_of_change(ctx, repo, n)?,
+        false => None,
+    };
+    for result in judged {
+        let again = required
+            .as_deref()
+            .is_some_and(|contexts| asked_again(result, judged, contexts));
+        let row = (
+            result.reporter,
+            repo.to_owned(),
+            merge.to_owned(),
+            result.context.clone(),
+        );
+        let index = (
+            repo.to_owned(),
+            merge.to_owned(),
+            result.reporter,
+            result.context.clone(),
+        );
+        match again {
+            true => {
+                WANTED.put(ctx, &row, &n);
+                WANTING.insert(ctx, &index);
+            }
+            false => {
+                if WANTING.has(ctx, &index) {
+                    WANTED.remove(ctx, &row);
+                    WANTING.remove(ctx, &index);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn asked_again(result: &Judged, judged: &[Judged], required: &[String]) -> bool {
+    let context = result.status_context();
+    let candidate = result.gone_stale() && required.contains(&context);
+    if !candidate {
+        return false;
+    }
+    required
+        .iter()
+        .filter(|other| **other != context)
+        .all(|other| judged.iter().any(|each| each.passes(other)))
+}
+
+fn preview_the_rest(ctx: &ExecCtx, repo: &str, merged: u64) -> Result<(), Error> {
+    let Some(into) = target_of(ctx, repo, merged)? else {
+        return Ok(());
+    };
+    let Some(required) = required_by_us(ctx, repo, &into)? else {
+        return Ok(());
+    };
+    let env = ctx.env();
+    let scheduler = env.role(abi::role::SCHEDULER)?.clone();
+    let open = PREVIEWED.scan(ctx, PREVIEWED.prefix_of(&repo.to_owned()))?;
+    for ((_, n), (head, merge)) in open {
+        let passed: BTreeSet<String> = results(ctx, repo, n, &head, &merge)?
+            .into_iter()
+            .filter(|(_, (_, kept, _))| kept.state == CheckState::Passed)
+            .map(|((reporter, context), _)| format!("{reporter}/{context}"))
+            .collect();
+        let all_passed = required.iter().all(|context| passed.contains(context));
+        if !all_passed {
+            continue;
+        }
+        let same_target = target_of(ctx, repo, n)?.is_some_and(|target| target == into);
+        if !same_target {
+            continue;
+        }
+        let preview = forge::Op::Preview {
+            repo: repo.to_owned(),
+            n,
+        };
+        let next = abi::role::scheduler::Op::Schedule {
+            height: env.height.saturating_add(1),
+            target: forge::PROGRAM.to_owned(),
+            payload: abi::encode(&preview),
+        };
+        ctx.emit(scheduler.clone(), &next, Wanted::None);
+    }
+    Ok(())
+}
+
+fn required_of_change(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Vec<String>>, Error> {
+    let Some(into) = target_of(ctx, repo, n)? else {
+        return Ok(None);
+    };
+    required_by_us(ctx, repo, &into)
+}
+
+fn target_of(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Vec<u8>>, Error> {
+    let asked = forge::Query::Change {
+        repo: repo.to_owned(),
+        n,
+        page: PageRequest::first(1),
+    };
+    match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked) {
+        Ok(forge::Reply::Change { change, .. }) => Ok(Some(change.into)),
+        Ok(other) => Err(unexpected_reply(forge::PROGRAM, "Change", &other)),
+        Err(refused) if refused.code == code::NOT_FOUND => Ok(None),
+        Err(refused) => Err(refused),
+    }
+}
+
+fn required_by_us(ctx: &QueryCtx, repo: &str, branch: &[u8]) -> Result<Option<Vec<String>>, Error> {
+    let mut after = None;
+    loop {
+        let asked = forge::Query::Required {
+            repo: repo.to_owned(),
+            page: PageRequest { after, limit: None },
+        };
+        let page = match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)? {
+            forge::Reply::Required { page, .. } => page,
+            other => return Err(unexpected_reply(forge::PROGRAM, "Required", &other)),
+        };
+        let found = page.items.into_iter().find(|each| each.branch == branch);
+        if let Some(found) = found {
+            return ours_to_carry(ctx, found.required);
+        }
+        match page.next {
+            Some(next) => after = Some(next),
+            None => return Ok(None),
+        }
+    }
+}
+
+fn ours_to_carry(ctx: &QueryCtx, required: Required) -> Result<Option<Vec<String>>, Error> {
+    let Some(account) = own_account(ctx)? else {
+        return Ok(None);
+    };
+    let ours = required.reporter == Principal::Account(account);
+    Ok(ours.then_some(required.contexts))
+}
+
+fn own_account(ctx: &QueryCtx) -> Result<Option<AccountNumber>, Error> {
+    use abi::role::identity::{Query, Reply};
+    let identity = &ctx.env().role(abi::role::IDENTITY)?.clone();
+    let asked = Query::OfProgram(ctx.env().program.clone());
+    match ctx.query::<Query, Reply>(identity, &asked)? {
+        Reply::Account(account) => Ok(account),
+        other => Err(unexpected_reply(identity, "OfProgram", &other)),
+    }
+}
+
+type Results = BTreeMap<(AccountNumber, String), (String, Kept, bool)>;
+
+fn results(ctx: &QueryCtx, repo: &str, n: u64, head: &str, merge: &str) -> Result<Results, Error> {
+    let mut reported: Results = reported_earlier(ctx, repo, n, head, merge)?
+        .into_iter()
+        .map(|(key, (commit, kept))| (key, (commit, kept, true)))
+        .collect();
+    for commit in [head, merge] {
+        let at = (repo.to_owned(), commit.to_owned());
+        for ((_, _, reporter, context), kept) in REPORTS.scan(ctx, REPORTS.prefix_of(&at))? {
+            reported.insert((reporter, context), (commit.to_owned(), kept, false));
+        }
+    }
+    Ok(reported)
+}
+
 type Gated = BTreeMap<(AccountNumber, String), (String, Kept)>;
 
 fn reported_earlier(
     ctx: &QueryCtx,
     repo: &str,
     n: u64,
-    preview: &PreviewInfo,
+    head: &str,
+    merge: &str,
 ) -> Result<Gated, Error> {
     let mut earlier = Gated::new();
     let change = (repo.to_owned(), n);
     for (_, _, commit) in HEADS.scan(ctx, HEADS.prefix_of(&change))? {
-        let previewed = commit == preview.from_head || commit == preview.merge;
+        let previewed = commit == head || commit == merge;
         if previewed {
             continue;
         }
-        let head = (repo.to_owned(), commit.clone());
-        for ((_, _, reporter, context), kept) in REPORTS.scan(ctx, REPORTS.prefix_of(&head))? {
+        let at = (repo.to_owned(), commit.clone());
+        for ((_, _, reporter, context), kept) in REPORTS.scan(ctx, REPORTS.prefix_of(&at))? {
             let key = (reporter, context);
             let newer = earlier
                 .get(&key)
@@ -427,4 +656,21 @@ pub(crate) fn reports(
             reach,
         })
     })
+}
+
+pub(crate) fn wanted(
+    ctx: &QueryCtx,
+    reporter: AccountNumber,
+    page: &PageRequest,
+) -> Result<PageResponse<Rerun>, Error> {
+    WANTED
+        .range_of(ctx, &reporter, page)?
+        .try_map(|((_, repo, commit, context), n)| {
+            Ok(Rerun {
+                repo,
+                n,
+                commit,
+                context,
+            })
+        })
 }
