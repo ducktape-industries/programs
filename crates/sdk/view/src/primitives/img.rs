@@ -1,3 +1,5 @@
+//! The image element: a picture the view holds, lowered once per content
+//! hash, or one the host reads from the network's blobs (`blob_img`).
 use crate::interactivity::{
     InteractiveElement, Interactivity, Stateful, StatefulInteractiveElement,
 };
@@ -47,9 +49,14 @@ pub trait StyledImage: Sized {
     }
 }
 
+enum Source {
+    Held(ImageSource),
+    Blobs(Vec<String>),
+}
+
 pub struct Img {
     pub(crate) interactivity: Box<Interactivity>,
-    source: ImageSource,
+    source: Source,
     image_style: ImageStyle,
 }
 
@@ -57,7 +64,16 @@ pub struct Img {
 pub fn img(source: impl Into<ImageSource>) -> Img {
     Img {
         interactivity: Box::default(),
-        source: source.into(),
+        source: Source::Held(source.into()),
+        image_style: ImageStyle::default(),
+    }
+}
+
+#[track_caller]
+pub fn blob_img(ids: Vec<String>) -> Img {
+    Img {
+        interactivity: Box::default(),
+        source: Source::Blobs(ids),
         image_style: ImageStyle::default(),
     }
 }
@@ -112,7 +128,10 @@ impl Element for Img {
             .map(ToString::to_string);
         let id = interactivity.id.as_ref().map(|_| lowering.own_id());
         let interactivity = interactivity.into_wire(lowering);
-        let (hash, data) = image_data(source, lowering);
+        let (hash, data) = match source {
+            Source::Held(source) => image_data(source, lowering),
+            Source::Blobs(ids) => blobs_data(ids, lowering),
+        };
         let loading = image_style.loading.is_some();
         let fallback = image_style.fallback.is_some();
         let mut state_children = Vec::with_capacity(usize::from(loading) + usize::from(fallback));
@@ -163,6 +182,11 @@ fn image_data(source: ImageSource, lowering: &Lowering<'_>) -> (u64, Option<wire
             refusal("custom image loader cannot cross the view boundary".into())
         }
     }
+}
+
+fn blobs_data(ids: Vec<String>, lowering: &Lowering<'_>) -> (u64, Option<wire::ImageData>) {
+    let (hash, first) = lowering.picture(format!("blobs\n{}", ids.join("\n")));
+    (hash, first.map(|_| wire::ImageData::Blobs(ids)))
 }
 
 fn render_image_data(

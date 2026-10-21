@@ -676,6 +676,7 @@ ImageData enum
     pixels: Bytes
   2 Resource: NewType(Str)
   3 Refusal: NewType(Str)
+  4 Blobs: NewType(Seq(Str))
 ImageObjectFit enum
   0 Fill: Unit
   1 Contain: Unit

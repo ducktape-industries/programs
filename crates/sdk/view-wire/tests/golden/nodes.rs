@@ -687,6 +687,24 @@ fn full_nodes() -> Vec<Node> {
             style: style(),
             interactivity: Default::default(),
         },
+        Node::Image {
+            id: None,
+            hash: 46,
+            data: Some(ImageData::Blobs(vec![
+                format!("sha256:{}", "0f".repeat(32)),
+                format!("sha256:{}", "a5".repeat(32)),
+            ])),
+            label: Some("a picture in two blobs".into()),
+            image_style: ImageStyle {
+                grayscale: false,
+                object_fit: ImageObjectFit::Contain,
+            },
+            loading: true,
+            fallback: true,
+            state_children: vec![text("reading"), text("unread")],
+            style: style(),
+            interactivity: Default::default(),
+        },
         Node::Svg {
             id: Some(ElementIdWire::Path(b"a/b".to_vec())),
             source: SvgSource::Data {

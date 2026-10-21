@@ -1,4 +1,49 @@
+//! How primitive elements lower onto the wire, frame after frame.
 use super::*;
+
+#[test]
+fn a_blob_picture_crosses_as_its_ids_and_the_host_keeps_only_sha256_ones() {
+    #[derive(Default, Serialize, Deserialize)]
+    struct Blobbed;
+    impl View for Blobbed {
+        const NAME: &'static str = "Blobbed";
+        fn new(_: &mut Window, _: &mut Context<Self>) -> Self {
+            Self
+        }
+    }
+    impl Render for Blobbed {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .id("blobbed")
+                .child(blob_img(vec![format!("sha256:{}", "ab".repeat(32))]))
+                .child(blob_img(vec!["sha256:not-hex".into()]))
+        }
+    }
+    let mut driver = Driver::<Blobbed>::new();
+    let first = driver.tick_with(vec![], wire::Frame::clone);
+    let mut taken = wire::Frame {
+        root: first.root.clone(),
+        styles: first.styles.clone(),
+        ..Default::default()
+    };
+    wire::sanitize(&mut taken, &mut wire::Styles::default()).expect("the host takes the frame");
+    let mut sent = Vec::new();
+    taken.root.expect("a whole tree").for_each_mut(&mut |node| {
+        if let wire::Node::Image { data, .. } = node {
+            sent.push(data.clone());
+        }
+    });
+    assert_eq!(
+        sent,
+        [
+            Some(wire::ImageData::Blobs(vec![format!(
+                "sha256:{}",
+                "ab".repeat(32)
+            )])),
+            None,
+        ]
+    );
+}
 
 #[test]
 fn patches_reconstruct_the_rendered_tree_and_picture_bytes_are_not_retained() {

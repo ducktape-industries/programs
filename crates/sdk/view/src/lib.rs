@@ -50,7 +50,7 @@ pub use media::{
 };
 pub use primitives::{
     Anchored, Canvas, Deferred, ImageSource, ImageStyle, Img, StyledImage, Svg, Transformation,
-    anchored, canvas, deferred, img, svg,
+    anchored, blob_img, canvas, deferred, img, svg,
 };
 pub use rich_text::{InteractiveText, StyledText};
 pub use view_element::{AnyView, ViewElement};
@@ -83,10 +83,10 @@ pub mod prelude {
         RenderOnce, Reread, Role, ScrollHandle, ScrollStrategy, ScrollWheelEvent, SharedString,
         Standing, StatefulInteractiveElement, Styled, StyledImage, StyledText, Subscription, Task,
         TextField, TextInputAction, Textarea, Theme, Tint, TrackState, UniformListScrollHandle,
-        View, VirtualKeyboard, WebHandle, WebState, Window, anchored, artifact, camera, canvas,
-        deferred, design, div, export_notifier, export_view, hsla, img, list, memo, microphone,
-        modal_overlay, px, remote_audio, remote_video, rems, resize_handle, rgb, sensor, sheet,
-        svg, uniform_list, web,
+        View, VirtualKeyboard, WebHandle, WebState, Window, anchored, artifact, blob_img, camera,
+        canvas, deferred, design, div, export_notifier, export_view, hsla, img, list, memo,
+        microphone, modal_overlay, px, remote_audio, remote_video, rems, resize_handle, rgb,
+        sensor, sheet, svg, uniform_list, web,
     };
 }
 mod text;

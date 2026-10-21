@@ -1,3 +1,5 @@
+//! An image node's picture on the wire: its bytes, its pixels, a host key,
+//! a refusal, or the network's blobs the host reads it from.
 use serde::{Deserialize, Serialize};
 
 /// Copied raster data or an opaque host image resource. Native allocations never cross.
@@ -24,6 +26,12 @@ pub enum ImageData {
     Resource(String),
     /// A visible refusal produced before a native resource can be accessed.
     Refusal(String),
+    Blobs(Vec<String>),
+}
+
+fn blob_id(id: &str) -> bool {
+    id.strip_prefix("sha256:")
+        .is_some_and(|hex| hex.len() == 64 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()))
 }
 
 impl ImageData {
@@ -32,6 +40,7 @@ impl ImageData {
             Self::Resource(key) | Self::Refusal(key) => key.len(),
             Self::Encoded(bytes) => bytes.len(),
             Self::Rgba { pixels, .. } => pixels.len(),
+            Self::Blobs(ids) => ids.iter().map(String::len).sum(),
         }
     }
 
@@ -39,6 +48,7 @@ impl ImageData {
         match self {
             Self::Resource(key) | Self::Refusal(key) => !key.is_empty() && !key.contains('\0'),
             Self::Encoded(_) => true,
+            Self::Blobs(ids) => !ids.is_empty() && ids.iter().all(|id| blob_id(id)),
             Self::Rgba {
                 width,
                 height,
@@ -83,5 +93,23 @@ mod tests {
         });
         ImageData::sanitize(&mut valid);
         assert!(valid.is_some());
+    }
+
+    #[test]
+    fn blobs_are_kept_only_as_sha256_ids() {
+        let id = format!("sha256:{}", "ab".repeat(32));
+        let mut kept = Some(ImageData::Blobs(vec![id.clone(), id.clone()]));
+        ImageData::sanitize(&mut kept);
+        assert_eq!(kept, Some(ImageData::Blobs(vec![id.clone(), id.clone()])));
+        for ids in [
+            vec![],
+            vec![id.clone(), "sha256:ab".into()],
+            vec![format!("sha1:{}", "ab".repeat(20))],
+            vec![format!("sha256:{}", "zz".repeat(32))],
+        ] {
+            let mut dropped = Some(ImageData::Blobs(ids.clone()));
+            ImageData::sanitize(&mut dropped);
+            assert_eq!(dropped, None, "{ids:?}");
+        }
     }
 }

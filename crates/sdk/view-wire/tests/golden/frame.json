@@ -1345,6 +1345,49 @@
             }
           },
           {
+            "Image": {
+              "id": null,
+              "hash": 46,
+              "data": {
+                "Blobs": [
+                  "sha256:0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+                  "sha256:a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5"
+                ]
+              },
+              "label": "a picture in two blobs",
+              "image_style": {
+                "grayscale": false,
+                "object_fit": "Contain"
+              },
+              "loading": true,
+              "fallback": true,
+              "state_children": [
+                {
+                  "Text": {
+                    "id": {
+                      "Name": "reading"
+                    },
+                    "style": 0,
+                    "content": "reading",
+                    "transform": null
+                  }
+                },
+                {
+                  "Text": {
+                    "id": {
+                      "Name": "unread"
+                    },
+                    "style": 0,
+                    "content": "unread",
+                    "transform": null
+                  }
+                }
+              ],
+              "style": 0,
+              "interactivity": {}
+            }
+          },
+          {
             "Svg": {
               "id": {
                 "Path": [

@@ -310,6 +310,15 @@ notifies then, and `design::avatar_with(name, picture, size, theme)` draws
 it round, with the initial in its place until then and where it is no
 picture the app draws. `design::avatar` is the initial alone.
 
+A picture the network holds as blobs (a file's chunks, in order) is
+`blob_img(ids)`, each id `sha256:<hex>`: the view hands the host the ids,
+never the bytes, and the host reads them in one request, decodes the
+picture and draws it at no more than the window's pixels. Until it lands
+the image draws its `with_loading` child, and its `with_fallback` child
+where the read or the decode fails. The view's memory holds the ids
+alone, whatever the picture's size; its width and height for layout come
+from the first blob's header (`picture::picture_size`).
+
 `Session` (`methods.rs`, `cx.follow::<HostSession>`) is what every view is handed:
 `connected`, `chain_id`, `signer` (the seated key, hex), `account` (its
 account number, `None` until the host resolves one), `endpoint`; an item per
