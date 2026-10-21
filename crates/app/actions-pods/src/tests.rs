@@ -36,6 +36,9 @@ const ASTRAY: u64 = 6;
 const BUILT: u64 = 11;
 const LOTS: u64 = 13;
 const STRAYED: u64 = 12;
+const QUEUE_HEAD: u64 = 14;
+const QUEUE_PREVIEW: &str = "2222222222222222222222222222222222222222";
+const QUEUED_CHANGE: u64 = 7;
 
 const CLAIMED: Item<Vec<u64>> = Item::new("claimed");
 const REPORTS: Item<Vec<Report>> = Item::new("reports");
@@ -124,6 +127,66 @@ impl Program for Stand {
     }
 }
 
+struct Forged;
+
+impl Program for Forged {
+    const NAME: &'static str = forge::PROGRAM;
+    type Op = forge::Op;
+    type Query = forge::Query;
+    type Reply = forge::Reply;
+
+    fn execute(_: &ExecCtx, _: forge::Op) -> Result<(), Error> {
+        Err(invalid("the stand-in for forge takes no op"))
+    }
+
+    fn query(ctx: &QueryCtx, query: forge::Query) -> Result<forge::Reply, Error> {
+        let height = ctx.env().height;
+        match query {
+            forge::Query::Required { .. } => {
+                let required = forge::Required {
+                    reporter: forge::Principal::Account(37),
+                    contexts: vec!["check.toml#check".into()],
+                };
+                let items = vec![forge::RequiredBranch {
+                    branch: b"refs/heads/dev".to_vec(),
+                    required,
+                }];
+                let page = PageResponse {
+                    height,
+                    items,
+                    next: None,
+                };
+                Ok(forge::Reply::Required { height, page })
+            }
+            forge::Query::Queue { .. } => {
+                let items = vec![forge::QueueEntry {
+                    n: QUEUED_CHANGE,
+                    head: COMMIT.into(),
+                    by: forge::Principal::Account(17),
+                    height,
+                }];
+                let page = PageResponse {
+                    height,
+                    items,
+                    next: None,
+                };
+                Ok(forge::Reply::Queue { height, page })
+            }
+            forge::Query::Preview { n, .. } => {
+                let preview = (n == QUEUED_CHANGE).then(|| forge::PreviewInfo {
+                    n,
+                    into_head: COMMIT.into(),
+                    from_head: COMMIT.into(),
+                    merge: QUEUE_PREVIEW.into(),
+                    height,
+                });
+                Ok(forge::Reply::Preview { height, preview })
+            }
+            _ => Err(invalid("the stand-in for forge answers merge queues")),
+        }
+    }
+}
+
 fn needs_of(check: u64) -> Vec<Need> {
     let met = match check {
         NEEDY => BUILT,
@@ -194,7 +257,12 @@ fn check_row(id: u64) -> CheckRow {
         id,
         run: 1,
         repo: "programs".into(),
-        commit: COMMIT.into(),
+        commit: if id == QUEUE_HEAD {
+            QUEUE_PREVIEW
+        } else {
+            COMMIT
+        }
+        .into(),
         workflow: "gates.toml".into(),
         attempt: if id == AGAIN { 2 } else { 1 },
         job: Job {
@@ -820,6 +888,29 @@ fn a_check_offered_while_an_older_one_waits_runs_after_it() {
     node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
     assert_eq!(node.held(), [2], "the older check takes the pod");
     assert_eq!(node.waiting(), [3]);
+}
+
+#[test]
+fn the_check_a_merge_queue_waits_on_takes_free_room_before_older_waiting_checks() {
+    let mut node = node();
+    node.chain.seat::<Forged>(forge::PROGRAM);
+    let wait = waiting_on_its_pod(&mut node);
+    node.offer(2).unwrap();
+    node.offer(QUEUE_HEAD).unwrap();
+    node.after(1_000);
+    node.after(0);
+    assert_eq!(node.waiting(), [2, QUEUE_HEAD]);
+    node.ended(&wait, 0, json!(0));
+    copied_and_deleted(&mut node);
+    node.after(1_000);
+    node.after(0);
+    node.answer_to(500, "POST", "/v1/pods", 201, pod("duckpond-8"));
+    assert_eq!(
+        node.held(),
+        [QUEUE_HEAD],
+        "the check on the merge queue front's Preview takes the pod"
+    );
+    assert_eq!(node.waiting(), [2]);
 }
 
 #[test]

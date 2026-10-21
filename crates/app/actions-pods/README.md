@@ -16,7 +16,7 @@ Shapes: `src/lib.rs`; checks: `src/rules.rs`.
 
 `SetConcurrent { most }` sets how many pods this runner holds at once (unset: 1; 0 is refused). A check offered past it waits, as one the quota had no room for does, until one of this runner's pods ends.
 
-Waiting checks take free room oldest first, in the order actions queued them, and a check offered later never takes room an older waiting check is owed. Whenever room frees, the waiting checks run again the block after. Room frees when a pod ends, when a claim is refused, when a pod's creation errs the check, or when a sweep deletes the pod of a check that no longer runs. A newer check that finds room only because an older one waits on a pod the cluster did not make books a `Sweep`.
+Waiting checks take free room oldest first, in the order actions queued them, and a check offered later never takes room an older waiting check is owed, with one exception: a check on the Preview a merge queue's front waits on goes before every other. Its repo and commit are those of forge's latest `Preview` of the change at the front of the `Queue` of a branch that forge `Required` lists for that repo. A forge that doesn't answer makes no check go first. Whenever room frees, the waiting checks run again the block after. Room frees when a pod ends, when a claim is refused, when a pod's creation errs the check, or when a sweep deletes the pod of a check that no longer runs. A newer check that finds room only because an older one waits on a pod the cluster did not make books a `Sweep`.
 
 Every query is answered for anyone.
 

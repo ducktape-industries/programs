@@ -23,6 +23,8 @@ program = { path = "../../sdk/program" }
 store = { path = "../../sdk/store" }
 # the checks it claims and reports, and the requests egress keeps for it
 actions = { path = "../actions" }
+# the merge queues, whose front's Preview a waiting check may be
+forge = { path = "../forge" }
 egress = { path = "../egress" }
 serde_json = { workspace = true }
 # who holds this program's name, which decides SetConcurrent
