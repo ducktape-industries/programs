@@ -925,3 +925,54 @@ fn a_request_names_the_account_it_was_sent_as_until_it_closes() {
     assert_eq!(sender(&chain, 1), None);
     assert!(request_row(&chain, 1).is_none());
 }
+
+fn heard_by(chain: &MockChain, program: &str) -> Vec<Event> {
+    chain
+        .query::<_, (Answers, Vec<Event>)>(program, &())
+        .unwrap()
+        .1
+}
+
+#[test]
+fn migrate_moves_an_open_requests_requester_and_its_events_reach_the_new_id() {
+    let mut chain = chain();
+    chain.seat_awaiting::<Asker>("o/asker");
+    chain.seat::<::program::Renamer>("programs");
+    serve(&chain, ADA, &[HTTP]).unwrap();
+    for _ in 0..2 {
+        stream(&chain, http_request(HTTP, MESSAGES, Vec::new()), None);
+    }
+    let renames = vec![(ASKER.to_owned(), "o/asker".to_owned())];
+    chain
+        .submit(Origin::Signed(STRANGER.to_vec()), "programs", &renames)
+        .unwrap();
+    chain.at(3, 0);
+    let migrate = |first, last| Op::Migrate {
+        height: 3,
+        first,
+        last,
+    };
+    submit(&chain, &STRANGER, &migrate(Some(2), Some(2))).unwrap();
+    let requester = |id| request_row(&chain, id).unwrap().requester;
+    assert_eq!(
+        (requester(1), requester(2)),
+        (ASKER.into(), "o/asker".into())
+    );
+    submit(&chain, &STRANGER, &migrate(None, None)).unwrap();
+    assert_eq!(requester(1), "o/asker");
+    let before = chain.host(PROGRAM).borrow().state.clone();
+    submit(&chain, &STRANGER, &migrate(None, None)).unwrap();
+    assert_eq!(
+        chain.host(PROGRAM).borrow().state,
+        before,
+        "a second run writes nothing"
+    );
+    let event = Event {
+        id: 1,
+        seq: 0,
+        data: b"data: one".to_vec(),
+    };
+    submit(&chain, &ADA, &Op::Events(vec![event.clone()])).unwrap();
+    assert_eq!(heard_by(&chain, "o/asker"), [event]);
+    assert!(heard(&chain).is_empty());
+}

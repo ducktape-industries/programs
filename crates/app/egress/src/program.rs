@@ -3,7 +3,7 @@ use ::program::tools::Tools;
 use ::program::{Awaiting, Ctx, Error, ExecCtx, MessageId, Outcome, Program, QueryCtx};
 
 use crate::rules::{
-    answer, assign, assigned, end_stream, events, expire, node, nodes, register, request,
+    answer, assign, assigned, end_stream, events, expire, migrate, node, nodes, register, request,
     request_row, sender, serve, service, services, serving, unregister,
 };
 use crate::{Op, PROGRAM, Query, Reply};
@@ -65,6 +65,11 @@ impl Awaiting for Egress {
             Op::EndStream { id, events, end } => end_stream(&ctx, id, events, end).await,
             Op::Expire { id } => expire(&ctx, id),
             Op::Unregister { service: name } => unregister(&ctx, name),
+            Op::Migrate {
+                height,
+                first,
+                last,
+            } => migrate(&ctx, height, first, last),
         }
     }
 }

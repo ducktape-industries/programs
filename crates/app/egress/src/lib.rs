@@ -10,7 +10,7 @@ mod tools;
 
 pub use ::program::{BlobId, ProgramId};
 pub use abi::role::egress::{
-    Answer, DEFAULT_WAIT, Delivery, Event, HTTP, NodeRow, Op, RELAY, RESERVED, Request, RequestRow,
+    Answer, DEFAULT_WAIT, Delivery, Event, HTTP, NodeRow, RELAY, RESERVED, Request, RequestRow,
     ServiceRow, StreamEnd, http,
 };
 pub use abi::role::identity::AccountNumber;
@@ -26,6 +26,46 @@ pub mod tables {
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
 pub const PROGRAM: &str = "egress";
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum Op {
+    Register {
+        service: String,
+    },
+    Assign {
+        service: String,
+        nodes: Vec<Vec<u8>>,
+    },
+    Serve {
+        services: Vec<String>,
+    },
+    Request {
+        request: Request,
+        delivery: Delivery,
+        wait: Option<u64>,
+    },
+    Answer {
+        id: u64,
+        answer: Answer,
+    },
+    Events(Vec<Event>),
+    EndStream {
+        id: u64,
+        events: u64,
+        end: StreamEnd,
+    },
+    Expire {
+        id: u64,
+    },
+    Unregister {
+        service: String,
+    },
+    Migrate {
+        height: u64,
+        first: Option<u64>,
+        last: Option<u64>,
+    },
+}
 
 #[derive(
     Clone,
@@ -162,6 +202,23 @@ pub fn describe(op: &Op) -> describe::Description {
         }
         Op::Expire { id } => (format!("Expire request {id}"), Vec::new()),
         Op::Unregister { service } => (format!("Unregister service {service}"), Vec::new()),
+        Op::Migrate {
+            height,
+            first,
+            last,
+        } => {
+            let bound = |bound: &Option<u64>, open: &str| {
+                bound.map_or_else(|| Value::text(open), Value::count)
+            };
+            (
+                "Migrate".to_owned(),
+                vec![
+                    field("height", Value::count(*height)),
+                    field("first", bound(first, "the first")),
+                    field("last", bound(last, "the last")),
+                ],
+            )
+        }
     };
     describe::Description { title, fields }
 }
@@ -227,7 +284,115 @@ fn op_variants_follow_the_roles_order() {
             "Events",
             "EndStream",
             "Expire",
-            "Unregister"
+            "Unregister",
+            "Migrate"
         ]
     );
+}
+
+#[test]
+fn every_op_of_the_egress_role_meets_egresss_own_at_one_tag() {
+    use abi::role::egress as role;
+    let in_the_role = |op: &role::Op| match op {
+        role::Op::Register { .. }
+        | role::Op::Assign { .. }
+        | role::Op::Serve { .. }
+        | role::Op::Request { .. }
+        | role::Op::Answer { .. }
+        | role::Op::Events(_)
+        | role::Op::EndStream { .. }
+        | role::Op::Expire { .. }
+        | role::Op::Unregister { .. } => {}
+    };
+    let request = Request::Relay {
+        note: b"ping".to_vec(),
+    };
+    let end = StreamEnd::Cut {
+        reason: "gone".into(),
+    };
+    let event = Event {
+        id: 1,
+        seq: 0,
+        data: b"data".to_vec(),
+    };
+    let ops = [
+        (
+            role::Op::Register {
+                service: "s".into(),
+            },
+            Op::Register {
+                service: "s".into(),
+            },
+        ),
+        (
+            role::Op::Assign {
+                service: "s".into(),
+                nodes: vec![vec![7]],
+            },
+            Op::Assign {
+                service: "s".into(),
+                nodes: vec![vec![7]],
+            },
+        ),
+        (
+            role::Op::Serve {
+                services: vec!["s".into()],
+            },
+            Op::Serve {
+                services: vec!["s".into()],
+            },
+        ),
+        (
+            role::Op::Request {
+                request: request.clone(),
+                delivery: Delivery::Whole,
+                wait: Some(3),
+            },
+            Op::Request {
+                request,
+                delivery: Delivery::Whole,
+                wait: Some(3),
+            },
+        ),
+        (
+            role::Op::Answer {
+                id: 1,
+                answer: Answer::Output(b"pong".to_vec()),
+            },
+            Op::Answer {
+                id: 1,
+                answer: Answer::Output(b"pong".to_vec()),
+            },
+        ),
+        (
+            role::Op::Events(vec![event.clone()]),
+            Op::Events(vec![event]),
+        ),
+        (
+            role::Op::EndStream {
+                id: 1,
+                events: 2,
+                end: end.clone(),
+            },
+            Op::EndStream {
+                id: 1,
+                events: 2,
+                end,
+            },
+        ),
+        (role::Op::Expire { id: 1 }, Op::Expire { id: 1 }),
+        (
+            role::Op::Unregister {
+                service: "s".into(),
+            },
+            Op::Unregister {
+                service: "s".into(),
+            },
+        ),
+    ];
+    for (sent, own) in ops {
+        in_the_role(&sent);
+        assert_eq!(abi::decode::<Op>(&abi::encode(&sent)).unwrap(), own);
+        assert_eq!(abi::decode::<role::Op>(&abi::encode(&own)).unwrap(), sent);
+    }
 }

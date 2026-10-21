@@ -1,4 +1,4 @@
-//! What egress tells an agent of its ops and queries. Its `Op` is the egress role's, defined in abi,
+//! What egress tells an agent of its ops and queries. Its `Op` meets the egress role's at each tag,
 //! so a marker carries the ops' words and a working value of each; `Query` derives its own.
 use ::program::tools::{Described, Tool, example};
 
@@ -109,6 +109,15 @@ impl Described for Ops {
                 "Take a registered service off egress by name: its owner, or whom the service's policy admits. Refused while nodes are assigned: assign it no nodes first. The name stays reserved to its last owner. Open requests do not block it and remain answerable by their elected node until they expire; new requests are refused.",
                 Op::Unregister {
                     service: "pods".into(),
+                },
+            ),
+            op(
+                "Migrate",
+                "Rewrite the program ids egress stores by the programs role's Renames at height: each open request's requester, so its events and stream reach the program under its new id, over the requests first..=last (by id; null: from the first, or to the last). Anyone: it reads the renames from the programs role, never from its sender, so running it again changes nothing.",
+                Op::Migrate {
+                    height: 300_000,
+                    first: None,
+                    last: None,
                 },
             ),
         ]

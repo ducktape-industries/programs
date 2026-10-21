@@ -93,6 +93,30 @@ pub(crate) fn unregister(ctx: &ExecCtx, name: String) -> Result<(), Error> {
     Ok(())
 }
 
+pub(crate) fn migrate(
+    ctx: &ExecCtx,
+    height: u64,
+    first: Option<u64>,
+    last: Option<u64>,
+) -> Result<(), Error> {
+    let renamed = ctx.renames(height)?;
+    let mut range = REQUESTS.prefix_of(&());
+    if let Some(first) = first {
+        range.start = REQUESTS.key(&first);
+    }
+    if let Some(last) = last {
+        range.end = Some([REQUESTS.key(&last), vec![0]].concat());
+    }
+    for (id, mut stored) in REQUESTS.scan(ctx, range)? {
+        let Some(to) = renamed.moved(&stored.row.requester) else {
+            continue;
+        };
+        stored.row.requester = to.clone();
+        REQUESTS.put(ctx, &id, &stored);
+    }
+    Ok(())
+}
+
 pub fn service_key(name: &str) -> String {
     format!("services/{name}")
 }
@@ -111,7 +135,8 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::Answer { .. }
         | Op::Events(_)
         | Op::EndStream { .. }
-        | Op::Expire { .. } => Vec::new(),
+        | Op::Expire { .. }
+        | Op::Migrate { .. } => Vec::new(),
     })
 }
 

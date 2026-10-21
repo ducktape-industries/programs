@@ -14,6 +14,7 @@ them, whole or as events. Shapes: `src/lib.rs`; checks: `src/rules.rs`.
 | `Request { request, delivery, wait }` | programs only: a call from another program (`Cause::Call`), which awaits the answer. An account's own frame is refused, so an account off the chain reaches a service only through a program (agents through harness). It needs a scheduler role on the network |
 | `Answer`, `Events`, `EndStream` | the key the request was elected to, signed by it, in a later block than the request |
 | `Expire { id }` | egress's own scheduled run for that request |
+| `Migrate { height, first, last }` | anyone: rewrites each open request's `requester` by the programs role's `Renames(height)` (a height already reached), over the requests `first..=last` by id. Its renames come from the role, never from the sender, so a second run changes nothing |
 | `Unregister { service }` | the same service-key write as `Assign`: its owner, or whom its policy admits. Refused while nodes are assigned: assign it no nodes first. Removes it from `Service`/`Services`, keeping its last owner under `retired/<name>`. Open requests do not block it and remain answerable by their elected node until they expire; new requests are refused |
 
 Every query is answered for anyone. `Sender { id }` answers the account an open
