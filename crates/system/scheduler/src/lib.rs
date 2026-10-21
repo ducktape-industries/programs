@@ -6,6 +6,7 @@ mod rules;
 mod state;
 #[cfg(test)]
 mod tests;
+mod tools;
 
 pub use abi::role::scheduler::{Entry, EntryId, Op, Query, Reply};
 pub use program::Scheduler;
