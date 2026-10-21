@@ -242,14 +242,15 @@ pub enum Op {
         channel_id: String,
         post_policy: PostPolicy,
     },
-    #[tool_op(description = "Notify, for a line about something by did (an account that exists; never root): by then follows the line's thread as if it had replied there, so it hears the replies under it by chat's own rule, and it is not told of the notice itself (concerns says who is). It reaches no one a mention in a reply could not: allowed where Notify is.", example = examples::notify_by)]
-    NotifyBy {
+    #[tool_op(description = "Post a notice as Notify does, with what a person wrote under its line and who acted. text is markdown as Post takes it, written as the blocks after the notice's own (null or blank: the notice alone); a mention in it tells no one, since a notice is told only to its concerns. by, when given, names the account that did what the line reports (an account that exists; never root): it then follows the line's thread as if it had replied there, so it hears the replies under it by chat's own rule, and it is not told of the notice itself. It reaches no one a mention in a reply could not: allowed where Notify is.", example = examples::notify_with)]
+    NotifyWith {
         channel_id: String,
         message_id: String,
         thread: Option<u64>,
         notice: Notice,
-        by: Principal,
-    },
+        by: Option<Principal>,
+        text: Option<String>,
+    } = 35,
 }
 
 /// A read. `viewer` is the reader's principals: they decide
@@ -765,7 +766,7 @@ impl MsgRow {
 
     pub fn notice(&self) -> Option<&Notice> {
         match self.blocks.as_slice() {
-            [Block::Notice(notice)] => Some(notice),
+            [Block::Notice(notice), ..] => Some(notice),
             _ => None,
         }
     }
@@ -952,7 +953,10 @@ fn op_variants_only_append() {
             "WatchPlaces",
             "Break",
             "SetPostPolicy",
-            "NotifyBy",
+            "-",
+            "-",
+            "-",
+            "NotifyWith",
         ]
     );
 }

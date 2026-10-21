@@ -213,6 +213,7 @@ pub(crate) fn submit_review(
     let reviewed = Event::Reviewed {
         id,
         verdict: review.draft.verdict,
+        text: discussion::review_text(&review.draft),
     };
     discussion::post(ctx, repo, &change, message, reviewed, Some(actor))?;
     crate::involved::seat(ctx, repo, &change, [actor.clone()])?;

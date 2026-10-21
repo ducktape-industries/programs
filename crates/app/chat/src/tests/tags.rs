@@ -31,7 +31,7 @@ const LIVE_OPS: [(&str, i64); 28] = [
     ("WatchPlaces", 29),
     ("Break", 30),
     ("SetPostPolicy", 31),
-    ("NotifyBy", 32),
+    ("NotifyWith", 35),
 ];
 
 const LIVE_QUERIES: [(&str, i64); 27] = [
@@ -104,6 +104,7 @@ const SET_NOTICES_FOR_TAG: u8 = 19;
 const SEARCH_TAG: u8 = 8;
 const SET_ROOM_ORDER_TAG: u8 = 23;
 const ROOM_ORDER_TAG: u8 = 20;
+const NOTIFY_BY_TAG: u8 = 32;
 
 fn encoded<T: BorshSerialize>(value: &T) -> Vec<u8> {
     borsh::to_vec(value).unwrap()
@@ -279,5 +280,39 @@ fn a_set_room_order_tag_is_refused_and_a_room_order_tag_is_no_query() {
     let refused = ::program::query::<crate::Chat>(&chat.reads(), &asked).unwrap_err();
     assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
     let undecoded = refused.message.starts_with("chat: Query did not decode: ");
+    assert!(undecoded, "{refused}");
+}
+
+#[test]
+fn a_notify_by_tag_is_refused_and_writes_nothing() {
+    let mut chat = Chat::with_channel(PostPolicy::Open);
+    let before = chat.store.borrow().state.clone();
+    let notice = crate::Notice {
+        kind: "pod".into(),
+        group: "p".into(),
+        subject: "pod p".into(),
+        link: None,
+        status: crate::message::Status::Note,
+        detail: String::new(),
+        concerns: Vec::new(),
+    };
+    let notify_by = tagged(
+        NOTIFY_BY_TAG,
+        &[
+            encoded(&"general".to_owned()),
+            encoded(&"n".to_owned()),
+            encoded(&None::<u64>),
+            encoded(&notice),
+            encoded(&BO),
+        ],
+    );
+    let ctx = chat.next(&ADA);
+    let outcome = chat
+        .store
+        .attempt(|| ::program::execute::<crate::Chat>(&ctx, &notify_by));
+    assert_eq!(chat.store.borrow().state, before, "{outcome:?}");
+    let refused = outcome.unwrap_err();
+    assert_eq!(refused.code, code::INVALID_INPUT, "{refused}");
+    let undecoded = refused.message.starts_with("chat: Op did not decode: ");
     assert!(undecoded, "{refused}");
 }

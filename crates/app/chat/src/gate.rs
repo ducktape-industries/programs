@@ -38,7 +38,7 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::Undraft { .. }
         | Op::ChooseForMany { .. }
         | Op::Notify { .. }
-        | Op::NotifyBy { .. }
+        | Op::NotifyWith { .. }
         | Op::Take { .. }
         | Op::Release { .. }
         | Op::WatchPlaces { .. } => Vec::new(),

@@ -361,13 +361,14 @@ pub(crate) fn notify() -> Op {
     }
 }
 
-pub(crate) fn notify_by() -> Op {
-    Op::NotifyBy {
+pub(crate) fn notify_with() -> Op {
+    Op::NotifyWith {
         channel_id: room(),
         message_id: "pods-builds-1-ended".into(),
         thread: None,
         notice: ended(),
-        by: Principal::Account(15),
+        by: Some(Principal::Account(15)),
+        text: Some("The log stops at `make check`.".into()),
     }
 }
 

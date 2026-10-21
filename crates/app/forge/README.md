@@ -40,7 +40,7 @@ only.
   id is its oid, with no table between them (`src/objects.rs`).
 - Forge emits chat creation for `forge:<repo>:<n>`, named `pr/<repo>#<n> <title>` and
   listed for who takes part (see "Who a change's room is listed for"), and a
-  notice (chat `NotifyBy` naming the account that acted) for opening, closing, merging and
+  notice (chat `NotifyWith` naming the account that acted, and a review's words under it) for opening, closing, merging and
   submitting a review, told only to
   the accounts it concerns (see "A change's notices"). Chat owns all conversation replies.
   The kernel runs each emission once the handler returns Ok, in the same frame,
@@ -401,7 +401,7 @@ is terminal, so nothing un-archives a channel.
 
 ### A change's notices
 
-Each thing that happens to a change is one chat notice (`NotifyBy`, a `Block::Notice`) in the
+Each thing that happens to a change is one chat notice (`NotifyWith`, a message whose first block is a `Block::Notice`) in the
 change's room, a root and never a thread reply, under the message id forge gives it: a
 review's card finds its notice by `Review.message_id`, and replies hang under it.
 
@@ -416,10 +416,14 @@ review's card finds its notice by `Review.message_id`, and replies hang under it
 | a refused archive | `archive refused <repo> <n>` | Failed | `archive refused: <reason>: <sentence>` | whoever closed or merged it |
 | a merge queue's leave | `left queue <repo> <n>` | Failed | `left the merge queue of <branch>: <why>` | whoever queued it |
 
+A review's line carries the review under it as `NotifyWith`'s `text`: its body, then each line
+comment as `` `<path>:<line>` `` (` (old)` after it on the old side) with the comment's words on the
+lines below; a review with neither, and every other line, is the notice alone.
+
 Every notice's kind is `change` (`forge::NOTICE`), its subject `<repo> #<n>: <title>`, and
 its link the change's path on the reader's chain, `forge/<repo>/<n>` (`forge::notice_link`). The account that acted is never among its concerns, nor is the chain
 (`Root`): only the accounts it concerns are told, and everyone else in the room sees it. The
-line names that account as chat's `NotifyBy { by }` (a plain `Notify` when the chain acted), so it
+line names that account as chat's `NotifyWith { by }` (`by: null` when the chain acted), so it
 follows the line's thread and hears the replies under it by chat's own rule. A
 new head and a request are posted only when they concern someone besides that account, so a
 change nobody else is asked to review moves without a line. forge finds the open changes a

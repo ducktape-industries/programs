@@ -351,3 +351,62 @@ fn list_involved_is_retired_refused_and_lists_nothing() {
     assert_eq!(listed(&sandbox, OWN), None);
     assert!(seated(&sandbox, OWN).is_empty());
 }
+
+fn line(sandbox: &MemorySandbox, room: &str, group: &str) -> chat::MsgRow {
+    let query = chat::Query::Roots {
+        channel_id: room.into(),
+        page: PageRequest::first(64),
+        viewer: Vec::new(),
+    };
+    let chat::Reply::Roots(page) = sandbox.chat_query(query).unwrap() else {
+        panic!("roots");
+    };
+    let mut rows = page.items.into_iter();
+    rows.find(|row| row.notice().is_some_and(|notice| notice.group == group))
+        .unwrap_or_else(|| panic!("no line {group}"))
+}
+
+fn reviewed(sandbox: &MemorySandbox, n: u64, ahead: Oid, review: (forge::Verdict, &str)) {
+    let (verdict, body) = review;
+    let comments = match body.is_empty() {
+        true => Vec::new(),
+        false => vec![forge::LineComment {
+            path: b"a".to_vec(),
+            side: forge::Side::New,
+            line: 1,
+            body: "Why 2?".into(),
+        }],
+    };
+    let op = Op::ReviewSubmit {
+        repo: "project".into(),
+        n,
+        review: forge::ReviewDraft {
+            commit_oid: ahead.to_hex(),
+            base_oid: None,
+            verdict,
+            body: body.into(),
+            comments,
+        },
+    };
+    act(sandbox, STRANGER, &op).unwrap();
+}
+
+#[test]
+fn a_review_says_its_body_and_line_comments_under_its_line_and_other_lines_stay_one_line() {
+    let (sandbox, _, ahead) = seeded();
+    let n = opened(&sandbox, FEATURE);
+    reviewed(
+        &sandbox,
+        n,
+        ahead,
+        (forge::Verdict::Comment, "Name the **reason**."),
+    );
+    let row = line(&sandbox, OWN, "review 1 project 1");
+    let notice = row.notice().expect("a review's line is a notice");
+    assert_eq!(notice.detail, "review 1: commented");
+    let body = chat::parse_message("Name the **reason**.\n`a:1`\nWhy 2?");
+    assert_eq!(row.blocks[1..], body[..]);
+    reviewed(&sandbox, n, ahead, (forge::Verdict::Approve, ""));
+    assert_eq!(line(&sandbox, OWN, "review 2 project 1").blocks.len(), 1);
+    assert_eq!(line(&sandbox, OWN, "opened project 1").blocks.len(), 1);
+}

@@ -169,12 +169,13 @@ fn a_notice_by_someone_asked_hides_none_of_their_answer() {
     };
     chat.ok(
         &BO,
-        Op::NotifyBy {
+        Op::NotifyWith {
             channel_id: "general".into(),
             message_id: "built".into(),
             thread: Some(1),
             notice,
-            by: CY,
+            by: Some(CY),
+            text: None,
         },
     );
     chat.post(&CY, "answer", "a", Some(1));

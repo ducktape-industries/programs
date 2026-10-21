@@ -763,7 +763,7 @@ fn a_notice_is_told_to_the_accounts_it_concerns_and_to_no_listener() {
 }
 
 #[test]
-fn notify_by_makes_its_account_follow_the_lines_thread_and_tells_it_nothing_of_the_line() {
+fn notify_with_by_makes_its_account_follow_the_lines_thread_and_tells_it_nothing_of_the_line() {
     let chain = chain();
     open_general(&chain);
     chain.at(2, 0);
@@ -776,12 +776,13 @@ fn notify_by_makes_its_account_follow_the_lines_thread_and_tells_it_nothing_of_t
         detail: "merged into main".into(),
         concerns: vec![2],
     };
-    let line = crate::Op::NotifyBy {
+    let line = crate::Op::NotifyWith {
         channel_id: "general".into(),
         message_id: "merged".into(),
         thread: None,
         notice,
-        by: crate::Principal::Account(3),
+        by: Some(crate::Principal::Account(3)),
+        text: None,
     };
     chain.submit(signed(ADA), crate::PROGRAM, &line).unwrap();
     let noticed = Reason::Defined(NOTICE.into());
@@ -794,7 +795,7 @@ fn notify_by_makes_its_account_follow_the_lines_thread_and_tells_it_nothing_of_t
         [(1, in_thread()), (3, in_thread())]
     );
     assert_eq!(unread(&chain, 3, &[("general", 0)]), general(2, 1));
-    let by_whom = |message_id: &str, by| crate::Op::NotifyBy {
+    let by_whom = |message_id: &str, by| crate::Op::NotifyWith {
         channel_id: "general".into(),
         message_id: message_id.into(),
         thread: None,
@@ -807,7 +808,8 @@ fn notify_by_makes_its_account_follow_the_lines_thread_and_tells_it_nothing_of_t
             detail: String::new(),
             concerns: Vec::new(),
         },
-        by,
+        by: Some(by),
+        text: None,
     };
     let unknown = by_whom("nobody", crate::Principal::Account(99));
     let refused = chain
@@ -823,4 +825,72 @@ fn notify_by_makes_its_account_follow_the_lines_thread_and_tells_it_nothing_of_t
         .submit(signed(ADA), crate::PROGRAM, &root)
         .unwrap_err();
     assert_eq!(refused.code, code::INVALID_INPUT, "by is never root");
+}
+
+#[test]
+fn notify_with_text_writes_it_under_the_notice_and_tells_only_its_concerns() {
+    let chain = chain();
+    open_general(&chain);
+    chain.at(2, 0);
+    let notice = || crate::Notice {
+        kind: "change".into(),
+        group: "review 1 project 1".into(),
+        subject: "project #1".into(),
+        link: None,
+        status: crate::message::Status::Note,
+        detail: "review 1: commented".into(),
+        concerns: vec![2],
+    };
+    let said = |message_id: &str, text: Option<&str>| crate::Op::NotifyWith {
+        channel_id: "general".into(),
+        message_id: message_id.into(),
+        thread: None,
+        notice: notice(),
+        by: Some(crate::Principal::Account(3)),
+        text: text.map(str::to_owned),
+    };
+    let row_of = |message_id: &str| {
+        let asked = crate::Query::MessageById {
+            message_id: message_id.into(),
+        };
+        let crate::Reply::Message(Some(row)) = chain.query(crate::PROGRAM, &asked).unwrap() else {
+            panic!("{message_id} was written")
+        };
+        row
+    };
+    let text = "Name the **reason**, <@3>.\n`a:1`\nWhy 2?";
+    let reviewed = said("reviewed", Some(text));
+    chain
+        .submit(signed(ADA), crate::PROGRAM, &reviewed)
+        .unwrap();
+    let row = row_of("reviewed");
+    let mut blocks = vec![crate::Block::Notice(notice())];
+    blocks.extend(crate::parse_message(text));
+    assert_eq!(row.blocks, blocks);
+    assert_eq!(row.notice(), Some(&notice()));
+    assert_eq!(
+        held(&chain, chat_source("reviewed")),
+        [(2, Reason::Defined(NOTICE.into()))],
+        "a mention in a notice's text tells no one"
+    );
+    for (id, nothing) in [("bare", None), ("blank", Some(" \n "))] {
+        chain
+            .submit(signed(ADA), crate::PROGRAM, &said(id, nothing))
+            .unwrap();
+        assert_eq!(row_of(id).blocks, [crate::Block::Notice(notice())]);
+    }
+    let edit = crate::Op::EditMessage {
+        channel_id: "general".into(),
+        seq: row.seq,
+        blocks: crate::parse_message("changed"),
+        base_rev: Some(0),
+    };
+    let refused = chain
+        .submit(signed(ADA), crate::PROGRAM, &edit)
+        .unwrap_err();
+    assert_eq!(
+        refused.code,
+        code::WRONG_STATE,
+        "a notice with text is never edited"
+    );
 }

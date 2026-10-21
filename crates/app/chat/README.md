@@ -13,7 +13,7 @@ the posted message is the one `PostMessage` with `parse_message(text)` makes.
 ## Threads
 
 A reply's `thread` is its thread's root. Every op that names a thread (`PostMessage`, `Post`,
-`Notify`, `NotifyBy`, `Drafting`, `Take`, `Release`, `Break`) may name the root or any reply under it: a
+`Notify`, `NotifyWith`, `Drafting`, `Take`, `Release`, `Break`) may name the root or any reply under it: a
 reply's seq stands for its root, so a reply to a reply lands under the root, and the root counts
 it once. The queries (`Thread`, `Busy`, `Holders`) take the root's seq.
 
@@ -209,24 +209,31 @@ deleted), so a reader learns who has answered which asks, and in what words, in 
 A module's status line (a pod ended, a check failed, a change merged) is a notice: `Notify {
 channel_id, message_id, thread, notice }` posts a message whose one block is `Block::Notice(Notice
 { kind, group, subject, link, status, detail, concerns })`, where the room lets the sender post, as
-`PostMessage` does. Only `Notify` and `NotifyBy` write one: `PostMessage`, `Post` and
+`PostMessage` does. Only `Notify` and `NotifyWith` write one: `PostMessage`, `Post` and
 `EditMessage` refuse a `Notice` block, and a notice is never edited. A later state of the same thing
 (a run's start, then its end) is the next notice under the same `group`.
 
-`NotifyBy { …, by }` is `Notify` for a line about something `by` did (a review, a merge); `by` is a
-`Principal`, an account that exists, never `Root`:
-`by` follows the line's thread as if it had replied there, so the replies under the line reach it
-by the thread rule (`Why::Thread`, attribution's `THREAD`), while the line itself is told only to
-`concerns`, which leaves out whoever acted. It reaches no one a mention in a reply could not, so it
-is allowed wherever `Notify` is.
+`NotifyWith { …, by, text }` is `Notify` with what a person wrote under the line and who acted.
+`text`, when it holds anything, is markdown as `Post` takes it (`parse_message`), written as the
+blocks after the notice's own, so a line whose event has words of its own (a review's body and line
+comments) shows them under it. A notice is a message whose first block is the `Notice`
+(`MsgRow::notice`), and a mention in its text tells no one, since a notice is told only to its
+`concerns`. `by`, when given, names who did what the line reports (a review, a merge), a
+`Principal`, an account that exists, never `Root`: `by` follows the line's thread as if it had
+replied there, so the replies under the line reach it by the thread rule (`Why::Thread`,
+attribution's `THREAD`), while the line itself is told only to `concerns`, which leaves out whoever
+acted. It reaches no one a mention in a reply could not, so it is allowed wherever `Notify` is.
+`NotifyBy` (tag 32) is retired: `NotifyWith` with `text: null` does what it did.
 
 chat tells attribution a notice only for the accounts in `concerns` (`attributed::NOTICE`) and for
 a wait watching the room (`WATCH`), never for the room's listeners, a mention or a thread's
 participants, so harness wakes the agents it concerns and nobody else. `notice::why`
 (`Why::Notice`) and `Query::Unread` count it only for the accounts it concerns, unless they turned
-the room `Off`; a cut to `Mentions` keeps it. Its `text` (`notice_text`) is one line: the subject,
-the status word, the detail and the link. chat-view draws it as one quiet line: a mark in the
-status's tone, the subject (a link when it has one), the status, the detail, and whom it is for.
+the room `Off`; a cut to `Mentions` keeps it. The notice's own text (`notice_text`) is one line:
+the subject, the status word, the detail and the link, and a row's `text` follows it with its
+body's. chat-view draws the notice as one quiet line: a mark in the status's tone, the subject (a
+link when it has one), the status, the detail, and whom it is for, with its body under it as any
+message's blocks are drawn.
 
 A notice's `link` is either a whole link (`duck://…`, `https://…`) or a path on the reader's own
 chain, `<program>/<tail…>` (`ducklink::path`), which is how a program links, since it can't name

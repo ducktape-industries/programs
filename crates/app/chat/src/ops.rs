@@ -221,32 +221,49 @@ pub(crate) fn notify(
     thread: Option<u64>,
     notice: Notice,
 ) -> Result<(), Error> {
-    rules::notice(ctx, &notice)?;
-    let blocks = vec![Block::Notice(notice)];
+    let blocks = noticed(ctx, notice, None)?;
     write(ctx, sender, channel_id, message_id, blocks, thread)
 }
 
-pub(crate) fn notify_by(
+pub(crate) fn noticed(
+    ctx: &ExecCtx,
+    notice: Notice,
+    text: Option<String>,
+) -> Result<Vec<Block>, Error> {
+    rules::notice(ctx, &notice)?;
+    let said = text.filter(|text| !text.trim().is_empty());
+    let body = said.map(|text| crate::parse_message(&text));
+    let blocks = std::iter::once(Block::Notice(notice)).chain(body.into_iter().flatten());
+    Ok(blocks.collect())
+}
+
+pub(crate) fn notify_with(
     ctx: &ExecCtx,
     sender: &Principal,
     channel_id: String,
     message_id: String,
     thread: Option<u64>,
-    notice: Notice,
-    by: Principal,
+    blocks: Vec<Block>,
+    by: Option<Principal>,
 ) -> Result<(), Error> {
     match &by {
-        Principal::Account(account) => ctx.require_account(*account)?,
-        Principal::Root => return Err(invalid("by names who acted: an account, never root")),
+        Some(Principal::Account(account)) => ctx.require_account(*account)?,
+        Some(Principal::Root) => {
+            return Err(invalid("by names who acted: an account, never root"));
+        }
+        None => {}
     }
-    notify(
+    write(
         ctx,
         sender,
         channel_id.clone(),
         message_id.clone(),
+        blocks,
         thread,
-        notice,
     )?;
+    let Some(by) = by else {
+        return Ok(());
+    };
     let Some((_, seq)) = MESSAGE_IDS.get(ctx, &message_id)? else {
         return Err(wrong_state(format!("notice {message_id} was not written")));
     };

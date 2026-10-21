@@ -9,7 +9,7 @@ use chat::message::Status;
 use chat::{Notice, Op, PostPolicy, Query, Reply};
 
 use crate::Change;
-use crate::contract::Verdict;
+use crate::contract::{ReviewDraft, Side, Verdict};
 use crate::state::{
     ARCHIVING, LOGGING, OPEN_CHANGES_BY_SOURCE, channel_id, load_change, load_repo, next_message,
 };
@@ -27,6 +27,7 @@ pub enum Event {
     Reviewed {
         id: u64,
         verdict: Verdict,
+        text: Option<String>,
     },
     ArchiveRefused(String),
     LeftQueue {
@@ -56,6 +57,19 @@ impl Event {
         }
     }
 
+    fn text(&self) -> Option<String> {
+        match self {
+            Event::Reviewed { text, .. } => text.clone(),
+            Event::Opened
+            | Event::Closed
+            | Event::Merged
+            | Event::ArchiveRefused(_)
+            | Event::LeftQueue { .. }
+            | Event::NewHead { .. }
+            | Event::Requested { .. } => None,
+        }
+    }
+
     fn status(&self) -> Status {
         match self {
             Event::Opened => Status::Running,
@@ -76,7 +90,7 @@ impl Event {
             Event::Opened => "opened".into(),
             Event::Closed => "closed".into(),
             Event::Merged => format!("merged into {}", branch(&change.into)),
-            Event::Reviewed { id, verdict } => {
+            Event::Reviewed { id, verdict, .. } => {
                 let said = match verdict {
                     Verdict::Approve => "approved",
                     Verdict::RequestChanges => "changes requested",
@@ -119,6 +133,21 @@ impl Event {
             Event::Requested { reviewers } => reviewers.clone(),
         })
     }
+}
+
+pub fn review_text(draft: &ReviewDraft) -> Option<String> {
+    let body = draft.body.trim();
+    let said = (!body.is_empty()).then(|| body.to_owned());
+    let comments = draft.comments.iter().map(|comment| {
+        let side = match comment.side {
+            Side::New => "",
+            Side::Old => " (old)",
+        };
+        let path = String::from_utf8_lossy(&comment.path);
+        format!("`{path}:{}`{side}\n{}", comment.line, comment.body.trim())
+    });
+    let parts: Vec<String> = said.into_iter().chain(comments).collect();
+    (!parts.is_empty()).then(|| parts.join("\n"))
 }
 
 fn branch(name: &[u8]) -> String {
@@ -177,20 +206,14 @@ pub fn post(
         concerns: accounts(event.concerns(ctx, repo, change)?, actor),
     };
     let channel_id = change.channel.clone();
-    let line = match actor {
-        Some(by @ Principal::Account(_)) => Op::NotifyBy {
-            channel_id,
-            message_id,
-            thread: None,
-            notice,
-            by: by.clone(),
-        },
-        Some(Principal::Root) | None => Op::Notify {
-            channel_id,
-            message_id,
-            thread: None,
-            notice,
-        },
+    let by = actor.filter(|actor| matches!(actor, Principal::Account(_)));
+    let line = Op::NotifyWith {
+        channel_id,
+        message_id,
+        thread: None,
+        notice,
+        by: by.cloned(),
+        text: event.text(),
     };
     let renames_its_room = !elsewhere && !matches!(event, Event::Opened | Event::ArchiveRefused(_));
     if renames_its_room {

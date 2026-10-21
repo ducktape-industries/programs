@@ -12,8 +12,16 @@ fn noticed(
     message_id: &str,
     thread: &Option<u64>,
     notice: &crate::Notice,
+    text: Option<&str>,
 ) -> Description {
-    let mut described = posted(channel_id, message_id, notice_text(notice), thread);
+    let body = text
+        .map(|text| plain_text(&crate::parse_message(text)))
+        .filter(|body| !body.is_empty());
+    let said = match body {
+        Some(body) => format!("{} {body}", notice_text(notice)),
+        None => notice_text(notice),
+    };
+    let mut described = posted(channel_id, message_id, said, thread);
     described.title = format!("Notice in {}", room_title(channel_id));
     let concerns = notice
         .concerns
@@ -229,18 +237,21 @@ pub fn describe(op: &Op) -> Description {
             message_id,
             thread,
             notice,
-        } => return noticed(channel_id, message_id, thread, notice),
-        Op::NotifyBy {
+        } => return noticed(channel_id, message_id, thread, notice, None),
+        Op::NotifyWith {
             channel_id,
             message_id,
             thread,
             notice,
             by,
+            text,
         } => {
-            let mut described = noticed(channel_id, message_id, thread, notice);
-            described
-                .fields
-                .push(field("by", principal_description(by)));
+            let mut described = noticed(channel_id, message_id, thread, notice, text.as_deref());
+            if let Some(by) = by {
+                described
+                    .fields
+                    .push(field("by", principal_description(by)));
+            }
             return described;
         }
         Op::Take { channel_id, thread } => ("Hold place", channel_id, vec![under(*thread)]),
