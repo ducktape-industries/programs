@@ -36,9 +36,7 @@ pub(super) fn render(
     ladder: &Ladder,
 ) -> AnyElement {
     let back = back("agent-back", "Agents".into(), cx, theme, ladder);
-    let body = waiting("agent", &view.detail, cx, theme, ladder)
-        .or_else(|| waiting("agent-roster", &view.roster, cx, theme, ladder))
-        .unwrap_or_else(|| detail(view, agent, cx, theme, ladder));
+    let body = body(view, agent, cx, theme, ladder);
     div()
         .flex()
         .flex_col()
@@ -46,6 +44,18 @@ pub(super) fn render(
         .child(div().flex().child(back))
         .child(body)
         .into_any_element()
+}
+
+pub(super) fn body(
+    view: &Agents,
+    agent: u64,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    waiting("agent", &view.detail, cx, theme, ladder)
+        .or_else(|| waiting("agent-roster", &view.roster, cx, theme, ladder))
+        .unwrap_or_else(|| detail(view, agent, cx, theme, ladder))
 }
 
 fn detail(

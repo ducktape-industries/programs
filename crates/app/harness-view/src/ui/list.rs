@@ -1,5 +1,6 @@
 //! The agents: the reader's, then the rest of the network's, each a row that says what it is
-//! doing now, who manages it and when it last moved.
+//! doing now, who manages it and when it last moved; docked beside a wide window's side pane, each
+//! row its name, state, topic and last move, the chosen one marked.
 use view::design::Ladder;
 use view::design::{space, text};
 use view::prelude::*;
@@ -12,6 +13,12 @@ use crate::{Agents, Picture, Screen, agent_state};
 
 pub(super) const ROW: Pixels = px(44.);
 
+#[derive(Clone, Copy)]
+enum Layout {
+    Wide(Option<u64>),
+    Docked(Option<u64>),
+}
+
 const AVATAR: f32 = 32.;
 
 pub(super) fn render(
@@ -20,10 +27,48 @@ pub(super) fn render(
     theme: &Theme,
     ladder: &Ladder,
 ) -> AnyElement {
+    let body = match waiting("agents", &view.roster, cx, theme, ladder) {
+        Some(shown) => shown,
+        None => rows(view, Layout::Wide(view.me), cx, theme, ladder),
+    };
+    div()
+        .flex()
+        .flex_col()
+        .gap(space::BLOCK)
+        .child(head(view, cx, theme, ladder))
+        .children(super::budget::strip(view, theme, ladder))
+        .child(body)
+        .into_any_element()
+}
+
+pub(super) fn pane(
+    view: &Agents,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    let chosen = match view.screen {
+        Screen::Agent(agent) => Some(agent),
+        _ => None,
+    };
+    let body = match waiting("agents", &view.roster, cx, theme, ladder) {
+        Some(shown) => shown,
+        None => rows(view, Layout::Docked(chosen), cx, theme, ladder),
+    };
+    div()
+        .flex()
+        .flex_col()
+        .gap(space::BLOCK)
+        .child(head(view, cx, theme, ladder))
+        .child(body)
+        .into_any_element()
+}
+
+fn head(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder) -> view::Div {
     let create = cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.start_create(cx));
     let routes =
         cx.listener(|view: &mut Agents, _: &ClickEvent, _, cx| view.go(Screen::Routes, cx));
-    let head = div()
+    div()
         .flex()
         .flex_wrap()
         .items_start()
@@ -60,22 +105,16 @@ pub(super) fn render(
                     design::button("agents-create", "Create an agent…", ladder, theme, create)
                         .kind(design::Kind::Primary)
                 })),
-        );
-    let body = match waiting("agents", &view.roster, cx, theme, ladder) {
-        Some(shown) => shown,
-        None => rows(view, cx, theme, ladder),
-    };
-    div()
-        .flex()
-        .flex_col()
-        .gap(space::BLOCK)
-        .child(head)
-        .children(super::budget::strip(view, theme, ladder))
-        .child(body)
-        .into_any_element()
+        )
 }
 
-fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder) -> AnyElement {
+fn rows(
+    view: &Agents,
+    layout: Layout,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
     let Some(roster) = view.roster.ready() else {
         return div().into_any_element();
     };
@@ -107,10 +146,10 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
             group("agents-mine", "My agents", mine.len(), theme).children(mine.iter().map(
                 |card| {
                     row(
+                        layout,
                         card,
                         view.picture(card.setup.agent, cx),
                         roster,
-                        view.me,
                         cx,
                         theme,
                         ladder,
@@ -127,10 +166,10 @@ fn rows(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder)
         list = list.child(group("agents-others", label, others.len(), theme).children(
             others.iter().map(|card| {
                 row(
+                    layout,
                     card,
                     view.picture(card.setup.agent, cx),
                     roster,
-                    view.me,
                     cx,
                     theme,
                     ladder,
@@ -204,15 +243,72 @@ fn who(name: String, picture: Picture, below: String, theme: &Theme) -> impl Int
         )
 }
 
-fn row(
+fn docked_row(
     card: &Card,
     picture: Picture,
     roster: &Roster,
-    me: Option<u64>,
+    chosen: bool,
     cx: &mut Context<Agents>,
     theme: &Theme,
     ladder: &Ladder,
-) -> impl IntoElement + use<> {
+) -> AnyElement {
+    let agent = card.setup.agent;
+    let moved = last_moved(card).map(|time| ago(roster.now, time));
+    let goes = match chosen {
+        true => Screen::List,
+        false => Screen::Agent(agent),
+    };
+    let named = div()
+        .flex()
+        .items_center()
+        .gap(space::SM)
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .font_weight(FontWeight::MEDIUM)
+                .child(card.name.clone()),
+        )
+        .child(state_badge(
+            format!("agent-{agent}-state"),
+            agent_state(card, roster),
+            theme,
+            ladder,
+        ));
+    pressable(format!("agent-{agent}"), theme)
+        .aria_toggled(chosen.into())
+        .when(chosen, |row| row.bg(theme.surface_raised))
+        .on_click(cx.listener(move |view: &mut Agents, _: &ClickEvent, _, cx| view.go(goes, cx)))
+        .child(agent_face(&card.name, picture, px(AVATAR), theme))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .child(named)
+                .child(caption(agent_sentence_topic(card, roster), theme).truncate()),
+        )
+        .child(caption(moved.unwrap_or_default(), theme).flex_none())
+        .into_any_element()
+}
+
+fn row(
+    layout: Layout,
+    card: &Card,
+    picture: Picture,
+    roster: &Roster,
+    cx: &mut Context<Agents>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    let me = match layout {
+        Layout::Wide(me) => me,
+        Layout::Docked(chosen) => {
+            let chosen = chosen == Some(card.setup.agent);
+            return docked_row(card, picture, roster, chosen, cx, theme, ladder);
+        }
+    };
     let agent = card.setup.agent;
     let (open, closed) = (card.open, card.closed);
     let counts = match closed {
@@ -272,4 +368,5 @@ fn row(
                 .text_right(),
         )
         .child(design::chevron(ladder, theme))
+        .into_any_element()
 }

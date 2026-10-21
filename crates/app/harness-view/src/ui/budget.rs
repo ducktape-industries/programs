@@ -16,6 +16,7 @@ use crate::words::{
 const NAME: f32 = 200.;
 const STATE: f32 = 72.;
 const BAR: f32 = 240.;
+pub(crate) const SESSION_WEEKLY_SCOPED: f32 = 3.;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Level {
@@ -171,11 +172,14 @@ pub(crate) fn strip(view: &Agents, theme: &Theme, ladder: &Ladder) -> Option<Sta
     })
 }
 
-fn widest(rows: &[&AccountBudget]) -> Pixels {
-    let windows = rows.iter().map(|row| row.windows.len()).max().unwrap_or(1);
-    let windows = windows.max(1) as f32;
+pub(crate) fn full(windows: f32) -> Pixels {
     let bars = px(BAR) * windows + space::LG * (windows - 1.);
     px(NAME + STATE) + space::LG * 2. + bars
+}
+
+fn widest(rows: &[&AccountBudget]) -> Pixels {
+    let windows = rows.iter().map(|row| row.windows.len()).max().unwrap_or(1);
+    full(windows.max(1) as f32)
 }
 
 fn groups(

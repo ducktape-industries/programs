@@ -20,10 +20,56 @@ use view::{Div, FontWeight, Stateful};
 use crate::words::{thinking_short, thinking_words};
 use crate::{Agents, Picture, Screen, State};
 
+const LIST: f32 = 400.;
+
+pub(crate) fn docked(view: &Agents) -> bool {
+    let opens = matches!(view.screen, Screen::List | Screen::Agent(_));
+    let keeps = LIST + f32::from(space::BLOCK) * 3.;
+    let side = f32::from(budget::full(budget::SESSION_WEEKLY_SCOPED));
+    opens && design::docks(view.width, keeps, side)
+}
+
+fn split(view: &Agents, cx: &mut Context<Agents>, theme: &Theme, ladder: &Ladder) -> AnyElement {
+    let side = match view.screen {
+        Screen::Agent(agent) => agent::body(view, agent, cx, theme, ladder),
+        _ => budget::strip(view, theme, ladder)
+            .map(|strip| strip.into_any_element())
+            .or_else(|| waiting("budget", &view.budget, cx, theme, ladder))
+            .unwrap_or_else(|| div().into_any_element()),
+    };
+    div()
+        .flex_1()
+        .min_h_0()
+        .flex()
+        .gap(space::BLOCK)
+        .child(
+            div()
+                .id("agents-list-pane")
+                .w(px(LIST))
+                .flex_none()
+                .overflow_y_scroll()
+                .pr(space::BLOCK)
+                .border_r_1()
+                .border_color(theme.border)
+                .child(list::pane(view, cx, theme, ladder)),
+        )
+        .child(
+            div()
+                .id("agents-side")
+                .flex_1()
+                .min_w_0()
+                .overflow_y_scroll()
+                .child(side),
+        )
+        .into_any_element()
+}
+
 pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
     let theme = *cx.global::<Theme>();
     let ladder = &design::POINTER;
+    let docked = docked(view);
     let screen = match view.screen {
+        _ if docked => split(view, cx, &theme, ladder),
         Screen::List => list::render(view, cx, &theme, ladder),
         Screen::Create => create::render(view, cx, &theme, ladder),
         Screen::Agent(agent) | Screen::Part(agent, _) => {
@@ -35,7 +81,7 @@ pub(crate) fn render(view: &Agents, cx: &mut Context<Agents>) -> AnyElement {
     let root = div()
         .id("agents")
         .size_full()
-        .overflow_y_scroll()
+        .when(!docked, |root| root.overflow_y_scroll())
         .flex()
         .flex_col()
         .gap(space::BLOCK)

@@ -86,6 +86,8 @@ pub struct Agents {
     #[serde(skip)]
     rows: RefCell<Option<(u64, ListState)>>,
     #[serde(skip)]
+    width: f32,
+    #[serde(skip)]
     conversations_policy: policy_view::Editing,
     #[serde(skip)]
     route_policy: policy_view::Editing,
@@ -363,6 +365,7 @@ impl View for Agents {
 
 impl Render for Agents {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.width = window.viewport_size().width.into();
         self.settle_title(cx);
         self.settle_policies(cx);
         match window.touch() {
