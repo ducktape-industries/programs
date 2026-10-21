@@ -10,7 +10,9 @@ use chat::{MsgRow, Notice, Op, PostPolicy, Query, Reply};
 
 use crate::Change;
 use crate::contract::{Revision, Verdict};
-use crate::state::{ARCHIVING, LOGGING, channel_id, load_change, load_repo, next_message};
+use crate::state::{
+    ARCHIVING, LOGGING, OPEN_CHANGES_BY_SOURCE, channel_id, load_change, load_repo, next_message,
+};
 
 pub const NOTICE: &str = "change";
 
@@ -32,6 +34,12 @@ pub enum Event {
         why: String,
         by: Principal,
     },
+    NewHead {
+        head: String,
+    },
+    Requested {
+        reviewers: Vec<Principal>,
+    },
 }
 
 impl Event {
@@ -43,6 +51,8 @@ impl Event {
             Event::Reviewed { id, .. } => format!("review {id}"),
             Event::ArchiveRefused(_) => "archive refused".into(),
             Event::LeftQueue { .. } => "left queue".into(),
+            Event::NewHead { .. } => "head".into(),
+            Event::Requested { .. } => "requested".into(),
         }
     }
 
@@ -57,6 +67,7 @@ impl Event {
                 Verdict::Comment => Status::Note,
             },
             Event::ArchiveRefused(_) | Event::LeftQueue { .. } => Status::Failed,
+            Event::NewHead { .. } | Event::Requested { .. } => Status::Running,
         }
     }
 
@@ -77,6 +88,8 @@ impl Event {
             Event::LeftQueue { into, why, .. } => {
                 format!("left the merge queue of {}: {why}", branch(into))
             }
+            Event::NewHead { head } => format!("new head {head}"),
+            Event::Requested { .. } => "review requested".into(),
         }
     }
 
@@ -102,6 +115,8 @@ impl Event {
                 .cloned()
                 .collect(),
             Event::LeftQueue { by, .. } => vec![by.clone()],
+            Event::NewHead { .. } => change.reviewers.clone(),
+            Event::Requested { reviewers } => reviewers.clone(),
         })
     }
 }
@@ -212,6 +227,46 @@ pub fn post(
     }
     emit(ctx, line);
     Ok(())
+}
+
+pub fn heads_moved(ctx: &ExecCtx, repo: &str, branch: &[u8], head: &str) -> Result<(), Error> {
+    crate::state::index_open_changes_by_source_once(ctx, repo)?;
+    let sourced = OPEN_CHANGES_BY_SOURCE.prefix_of(&(repo.to_owned(), branch.to_vec()));
+    for (_, _, n) in OPEN_CHANGES_BY_SOURCE.scan(ctx, sourced)? {
+        let change = load_change(ctx, repo, n)?;
+        head_moved(ctx, repo, &change, head)?;
+    }
+    Ok(())
+}
+
+pub fn head_moved(ctx: &ExecCtx, repo: &str, change: &Change, head: &str) -> Result<(), Error> {
+    let event = Event::NewHead {
+        head: head.to_owned(),
+    };
+    post_if_it_concerns_anyone(ctx, repo, change, event)
+}
+
+pub fn requested(
+    ctx: &ExecCtx,
+    repo: &str,
+    change: &Change,
+    reviewers: Vec<Principal>,
+) -> Result<(), Error> {
+    post_if_it_concerns_anyone(ctx, repo, change, Event::Requested { reviewers })
+}
+
+fn post_if_it_concerns_anyone(
+    ctx: &ExecCtx,
+    repo: &str,
+    change: &Change,
+    event: Event,
+) -> Result<(), Error> {
+    let actor = ctx.env().sender.clone();
+    let told = accounts(event.concerns(ctx, repo, change)?, actor.as_ref());
+    if told.is_empty() {
+        return Ok(());
+    }
+    post(ctx, repo, change, next_message(ctx)?, event, actor.as_ref())
 }
 
 fn named(ctx: &ExecCtx, repo: &str, change: &Change) -> Result<(), Error> {

@@ -52,6 +52,8 @@ pub const CUSTODY: Map<String, Owned<Custody>> = Map::new("k/");
 pub const AUTHORED: Set<(String, u64, Principal, u64)> = Set::new("u/");
 /// Index: the changes a principal authored, is asked to review, or reviewed.
 pub const INVOLVED: Set<(Principal, String, u64)> = Set::new("i/");
+pub const OPEN_CHANGES_BY_SOURCE: Set<(String, Vec<u8>, u64)> = Set::new("j/");
+pub const REPOS_WITH_OPEN_CHANGES_INDEXED: Set<String> = Set::new("t/");
 /// The last system message id forge posted into chat.
 pub const MESSAGES: Item<u64> = Item::new("system-message-seq");
 // Each repository's protected branches besides its head, which always is: no rebase moves
@@ -173,8 +175,13 @@ pub fn load_ref(
 pub fn set_ref(ctx: &ExecCtx, name: &str, reference: &[u8], target: &Oid) -> Result<(), Error> {
     let key = ref_key(name, reference);
     let old = REFS.get(ctx, &key)?;
+    let head_moved = old.as_deref() != Some(target.as_bytes());
     REFS.put(ctx, &key, &target.as_bytes().to_vec());
-    moved(ctx, name, reference, old, Some(target.to_hex()))
+    moved(ctx, name, reference, old, Some(target.to_hex()))?;
+    if head_moved {
+        crate::discussion::heads_moved(ctx, name, reference, &target.to_hex())?;
+    }
+    Ok(())
 }
 
 pub fn delete_ref(ctx: &ExecCtx, name: &str, reference: &[u8]) -> Result<(), Error> {
@@ -296,7 +303,14 @@ pub fn load_change(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Change, Error> 
 /// stays involved only if they reviewed it. A new change claims its number.
 pub fn save_change(ctx: &ExecCtx, repo: &str, change: &Change) -> Result<(), Error> {
     let row = (repo.to_owned(), change.n);
-    match CHANGES.get(ctx, &row)? {
+    let old = CHANGES.get(ctx, &row)?;
+    if let Some(branch) = old.as_ref().and_then(open_source_branch) {
+        OPEN_CHANGES_BY_SOURCE.remove(ctx, &(repo.to_owned(), branch.to_vec(), change.n));
+    }
+    if let Some(branch) = open_source_branch(change) {
+        OPEN_CHANGES_BY_SOURCE.insert(ctx, &(repo.to_owned(), branch.to_vec(), change.n));
+    }
+    match old {
         None => NUMBERS.put(ctx, &repo.to_owned(), &change.n),
         Some(old) => {
             let dropped: Vec<Principal> = old
@@ -318,6 +332,28 @@ pub fn save_change(ctx: &ExecCtx, repo: &str, change: &Change) -> Result<(), Err
     }
     CHANGES.put(ctx, &row, change);
     Ok(())
+}
+
+pub fn index_open_changes_by_source_once(ctx: &ExecCtx, repo: &str) -> Result<(), Error> {
+    let name = repo.to_owned();
+    if REPOS_WITH_OPEN_CHANGES_INDEXED.has(ctx, &name) {
+        return Ok(());
+    }
+    for ((_, n), change) in CHANGES.scan(ctx, CHANGES.prefix_of(&name))? {
+        if let Some(branch) = open_source_branch(&change) {
+            OPEN_CHANGES_BY_SOURCE.insert(ctx, &(name.clone(), branch.to_vec(), n));
+        }
+    }
+    REPOS_WITH_OPEN_CHANGES_INDEXED.insert(ctx, &name);
+    Ok(())
+}
+
+fn open_source_branch(change: &Change) -> Option<&[u8]> {
+    let open = change.state == ChangeState::Open;
+    match &change.from {
+        Revision::Ref(branch) if open => Some(branch),
+        _ => None,
+    }
 }
 
 pub fn involve(ctx: &ExecCtx, principal: &Principal, repo: &str, n: u64) {

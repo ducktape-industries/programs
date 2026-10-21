@@ -411,6 +411,8 @@ review's card finds its notice by `Review.message_id`, and replies hang under it
 | event | group | status | detail | concerns |
 |---|---|---|---|---|
 | `ChangeOpen` | `opened <repo> <n>` | Running | `opened` | the reviewers, or the repository's owner when none is asked |
+| a new head: a push or a merge moving its source branch, `Rebase`, `ChangeRepoint` to another commit | `head <repo> <n>` | Running | `new head <oid>` | the reviewers |
+| `ChangeEdit` asking reviewers | `requested <repo> <n>` | Running | `review requested` | the reviewers it adds |
 | `ReviewSubmit` | `review <id> <repo> <n>` | Passed (approve), Failed (request changes), Note (comment) | `review <id>: approved`, `changes requested` or `commented` | the author and the reviewers |
 | a merge naming the change | `merged <repo> <n>` | Passed | `merged into <branch>` | the author and the reviewers |
 | `ChangeClose` | `closed <repo> <n>` | Note | `closed` | the author and the reviewers |
@@ -419,7 +421,13 @@ review's card finds its notice by `Review.message_id`, and replies hang under it
 
 Every notice's kind is `change` (`forge::NOTICE`), its subject `<repo> #<n>: <title>`, and
 its link the change's path on the reader's chain, `forge/<repo>/<n>` (`forge::notice_link`). The account that acted is never among its concerns, nor is the chain
-(`Root`): only the accounts it concerns are told, and everyone else in the room sees it.
+(`Root`): only the accounts it concerns are told, and everyone else in the room sees it. A
+new head and a request are posted only when they concern someone besides that account, so a
+change nobody else is asked to review moves without a line. forge finds the open changes a
+moved branch is the source of in an index of open changes by source branch, kept as each change
+is saved. The first time a branch of a repository moves under a forge that keeps the index, forge
+indexes that repository's open changes once, so a change opened before the index existed is told
+its new heads too.
 
 A change's own room opens named `pr/<repo>#<n> <title>`, so change rooms group under `pr` in
 the lists. Whenever forge posts a notice into a change's own room after it opened, it reads

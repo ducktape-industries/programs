@@ -16,6 +16,7 @@ mod file_tools;
 mod final_errors;
 mod forge_commit;
 mod forge_copy;
+mod forge_review;
 mod forge_symbols;
 mod forge_tools;
 mod listen;

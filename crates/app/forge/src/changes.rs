@@ -121,14 +121,21 @@ pub(crate) fn edit(ctx: &ExecCtx, repo: &str, n: u64, fields: Edit) -> Result<Op
     if let Some(body) = fields.body {
         change.body = body;
     }
+    let mut asked = Vec::new();
     if let Some(reviewers) = fields.reviewers {
         check_reviewers(ctx, &reviewers)?;
+        asked = reviewers
+            .iter()
+            .filter(|reviewer| !change.reviewers.contains(reviewer))
+            .cloned()
+            .collect();
         change.reviewers = reviewers;
     }
     touched(&mut change, &env);
     enforce_record_size(ctx, &change)?;
     save_change(ctx, repo, &change)?;
     crate::state::reshaped(ctx, repo, n)?;
+    discussion::requested(ctx, repo, &change, asked)?;
     Ok(OpReply::Change {
         height: env.height,
         n,
@@ -611,6 +618,9 @@ pub(crate) fn rebase(
     enforce_record_size(ctx, &change)?;
     save_change(ctx, repo, &change)?;
     crate::state::reshaped(ctx, repo, request.n)?;
+    if let Revision::Oid(_) = &change.from {
+        discussion::head_moved(ctx, repo, &change, &id.to_hex())?;
+    }
     Ok(OpReply::Rebased {
         height: env.height,
         n: request.n,
@@ -642,6 +652,7 @@ pub(crate) fn repoint(ctx: &ExecCtx, repo: &str, n: u64, from: Revision) -> Resu
             "source and target already agree: choose a source with changes absent from the target",
         ));
     }
+    let old_head = resolve(ctx, repo, &change.from, hash).ok();
     change.from = match from {
         Revision::Oid(_) => Revision::Oid(source.to_hex()),
         from => from,
@@ -650,6 +661,9 @@ pub(crate) fn repoint(ctx: &ExecCtx, repo: &str, n: u64, from: Revision) -> Resu
     enforce_record_size(ctx, &change)?;
     save_change(ctx, repo, &change)?;
     crate::state::reshaped(ctx, repo, n)?;
+    if old_head.as_ref() != Some(&source) {
+        discussion::head_moved(ctx, repo, &change, &source.to_hex())?;
+    }
     Ok(OpReply::Change {
         height: env.height,
         n,
