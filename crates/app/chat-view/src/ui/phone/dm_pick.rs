@@ -1,5 +1,5 @@
-//! New message, a page of its own: the search, then each person and agent a direct message
-//! may go to (`Chat::dm_choices`). Reads the picker and the roster; a row, or the keyboard's
+//! New message, a page of its own: the search, then every account but the reader's, which a
+//! direct message may go to (`Chat::dm_choices`). Reads the picker and the roster; a row, or the keyboard's
 //! return on the first match, opens their room in this page's place.
 use view::prelude::*;
 

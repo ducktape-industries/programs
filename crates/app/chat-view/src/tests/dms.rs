@@ -136,14 +136,14 @@ fn direct_messages_offers_new_message_with_no_room_under_it() {
 }
 
 #[test]
-fn new_message_lists_people_and_agents_but_no_program_account_or_the_reader() {
+fn new_message_lists_every_account_but_the_reader() {
     let (mut cx, view) = opened();
     cx.simulate_click("chat-sidebar-new-dm");
     assert!(cx.find("chat-dm-pick-card").is_some(), "the picker is open");
     assert!(cx.find("chat-dm-pick-8").is_some(), "the agent");
     assert!(cx.find("chat-dm-pick-8-agent").is_some(), "wears Agent");
     assert!(cx.find("chat-dm-pick-10").is_some(), "ada");
-    assert!(cx.find("chat-dm-pick-9").is_none(), "forge's own account");
+    assert!(cx.find("chat-dm-pick-9").is_some(), "forge's own account");
     assert!(cx.find("chat-dm-pick-7").is_none(), "the reader");
     search(&mut cx, &view, "AD");
     assert!(cx.find("chat-dm-pick-10").is_some(), "by name");
@@ -152,6 +152,8 @@ fn new_message_lists_people_and_agents_but_no_program_account_or_the_reader() {
     assert!(cx.find("chat-dm-pick-8").is_some(), "by number");
     assert!(cx.find("chat-dm-pick-10").is_none());
     search(&mut cx, &view, "forge");
+    assert!(cx.find("chat-dm-pick-9").is_some(), "by name");
+    search(&mut cx, &view, "zz");
     assert!(cx.find("chat-dm-pick-none").is_some(), "nobody matches");
     cx.simulate_click("chat-dm-pick-cancel");
     view.read(|chat| assert!(chat.dm_pick.is_none(), "Cancel closes it"));
@@ -258,7 +260,7 @@ fn a_phone_offers_new_message_with_no_direct_room_under_it() {
 }
 
 #[test]
-fn a_phones_new_message_page_lists_people_and_agents_but_no_program_account_or_the_reader() {
+fn a_phones_new_message_page_lists_every_account_but_the_reader() {
     let (mut cx, view) = hand(held(), Vec::new());
     cx.simulate_click("chat-rooms-new-dm");
     assert!(cx.find("chat-dm-pick-page").is_some(), "a page of its own");
@@ -271,12 +273,14 @@ fn a_phones_new_message_page_lists_people_and_agents_but_no_program_account_or_t
     assert!(cx.find("chat-dm-pick-8").is_some(), "the agent");
     assert!(cx.find("chat-dm-pick-8-agent").is_some(), "wears Agent");
     assert!(cx.find("chat-dm-pick-10").is_some(), "ada");
-    assert!(cx.find("chat-dm-pick-9").is_none(), "forge's own account");
+    assert!(cx.find("chat-dm-pick-9").is_some(), "forge's own account");
     assert!(cx.find("chat-dm-pick-7").is_none(), "the reader");
     search(&mut cx, &view, "AD");
     assert!(cx.find("chat-dm-pick-10").is_some(), "by name");
     assert!(cx.find("chat-dm-pick-8").is_none());
     search(&mut cx, &view, "forge");
+    assert!(cx.find("chat-dm-pick-9").is_some(), "by name");
+    search(&mut cx, &view, "zz");
     assert!(cx.find("chat-dm-pick-none").is_some(), "nobody matches");
 }
 

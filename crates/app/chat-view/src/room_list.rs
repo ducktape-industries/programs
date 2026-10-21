@@ -4,8 +4,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
-use chat::view::Names;
-use chat::{Category, ChannelInfo, Entry, Kind, Principal};
+use chat::{ChannelInfo, Entry, Principal};
 use view::Point;
 use view::prelude::*;
 use view::wire;
@@ -418,19 +417,6 @@ impl DmChoice {
     }
 }
 
-fn person_or_agent(names: &Names, peer: u64) -> bool {
-    matches!(
-        names.kind(&Principal::Account(peer)),
-        Some(
-            Kind::User
-                | Kind::Program {
-                    category: Category::Agent,
-                    ..
-                }
-        )
-    )
-}
-
 impl Chat {
     pub(crate) fn room_list(&self) -> RoomList<'_> {
         let mut list = self.held_rooms();
@@ -734,7 +720,7 @@ impl Chat {
         let query = query.trim().to_lowercase();
         let mut choices: Vec<DmChoice> = names
             .people()
-            .filter(|peer| *peer != mine && person_or_agent(names, *peer))
+            .filter(|peer| *peer != mine)
             .map(|peer| {
                 let principal = Principal::Account(peer);
                 DmChoice {
