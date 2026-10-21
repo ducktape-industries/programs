@@ -17,6 +17,7 @@ pub struct PushRequest<'a> {
     pub commands: Vec<RefCommand>,
     pub capabilities: Vec<Vec<u8>>,
     pub pack: &'a [u8],
+    pub shallow: Vec<Oid>,
 }
 
 impl PushRequest<'_> {
@@ -29,8 +30,14 @@ pub fn parse_request(bytes: &[u8], hash: Hash) -> Result<PushRequest<'_>> {
     let mut reader = pktline::Reader::new(bytes);
     let mut commands = Vec::new();
     let mut capabilities = Vec::new();
+    let mut shallow = Vec::new();
     while let Some(line) = pktline::read_data(&mut reader)? {
         let first = commands.is_empty();
+        let boundary = line.strip_prefix(b"shallow ").filter(|_| first);
+        if let Some(boundary) = boundary {
+            shallow.push(Oid::from_hex(hash, boundary)?);
+            continue;
+        }
         let (command, caps) = match line.iter().position(|byte| *byte == 0) {
             Some(nul) if first => (&line[..nul], Some(&line[nul + 1..])),
             Some(_) => return Err(Error::BadRequest),
@@ -64,6 +71,7 @@ pub fn parse_request(bytes: &[u8], hash: Hash) -> Result<PushRequest<'_>> {
         commands,
         capabilities,
         pack: reader.rest(),
+        shallow,
     })
 }
 

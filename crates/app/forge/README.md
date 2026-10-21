@@ -274,7 +274,9 @@ blob of kind `pack` (`forge::PACK_KIND`) with `ducktape blob put FILE --kind
 pack --wait`, which returns once two thirds of the current validators hold it,
 then submits the op naming the blob. `request` holds only git's ref commands
 and capabilities, through their flush; a request with bytes after the flush is
-refused. forge reads the pack, checks it as git's receive-pack does, and puts
+refused. A shallow clone's `shallow <oid>` lines, which git sends before the
+commands, are read past: forge takes the push as from a full clone, and a pack
+whose objects reach past what forge stores is refused as any missing object is. forge reads the pack, checks it as git's receive-pack does, and puts
 each object. A pack the blobs role does not hold is `not_found`; a held blob
 of another kind is `invalid`.
 

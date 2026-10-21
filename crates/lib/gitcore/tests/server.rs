@@ -474,3 +474,37 @@ fn full_push_flow_against_memory_objects() {
         Err(Error::BadPktLine)
     );
 }
+
+#[test]
+fn a_push_from_a_shallow_clone_moves_the_ref() {
+    let hash = Hash::Sha1;
+    let mut store = base_store();
+    let base = oid_text(fixture!("base.oid"), hash);
+    let tip = oid_text(fixture!("tip.oid"), hash);
+    let refs = BTreeMap::from([(b"refs/heads/main".to_vec(), base)]);
+    let mut request = Vec::new();
+    pktline::push(&mut request, format!("shallow {base}\n").as_bytes());
+    request.extend_from_slice(&push_request(
+        &[(base, tip, "refs/heads/main")],
+        "report-status",
+    ));
+    let outcome = push(
+        &mut store,
+        &refs,
+        &request,
+        fixture!("thin.pack"),
+        hash,
+        &Limits::generous(),
+        &Policy::default(),
+        1000,
+    )
+    .unwrap();
+    assert_eq!(
+        outcome.moves,
+        vec![(b"refs/heads/main".to_vec(), RefUpdate::Set(tip))]
+    );
+    assert_eq!(
+        report_lines(&outcome.report, false),
+        ["unpack ok", "ok refs/heads/main", "Flush"]
+    );
+}

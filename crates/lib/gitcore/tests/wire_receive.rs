@@ -106,6 +106,7 @@ fn parse_push_request_with_capabilities_and_pack() {
     assert!(parsed.has_capability(b"side-band-64k"));
     assert!(!parsed.has_capability(b"quiet"));
     assert_eq!(parsed.pack, b"PACK...");
+    assert!(parsed.shallow.is_empty());
 
     let empty = parse_request(b"0000", Hash::Sha1).unwrap();
     assert!(empty.commands.is_empty());
@@ -127,6 +128,32 @@ fn parse_push_request_with_capabilities_and_pack() {
     let mut bad = Vec::new();
     pktline::push(&mut bad, b"not a command");
     assert_eq!(parse_request(&bad, Hash::Sha1), Err(Error::BadRequest));
+}
+
+#[test]
+fn parse_push_request_after_a_shallow_clones_boundary() {
+    let a = sha1("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    let b = sha1("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    let s = sha1("cccccccccccccccccccccccccccccccccccccccc");
+    let mut request = Vec::new();
+    pktline::push(&mut request, format!("shallow {s}\n").as_bytes());
+    let first = format!("{a} {b} refs/heads/main\0report-status object-format=sha1");
+    pktline::push(&mut request, first.as_bytes());
+    request.extend_from_slice(pktline::flush());
+    let parsed = parse_request(&request, Hash::Sha1).unwrap();
+    assert_eq!(parsed.commands.len(), 1);
+    assert_eq!(parsed.commands[0].name, b"refs/heads/main");
+    assert_eq!(parsed.commands[0].old, a);
+    assert_eq!(parsed.commands[0].new, b);
+    assert!(parsed.has_capability(b"report-status"));
+    assert!(parsed.pack.is_empty());
+    assert_eq!(parsed.shallow, [s]);
+
+    let mut late = Vec::new();
+    pktline::push(&mut late, first.as_bytes());
+    pktline::push(&mut late, format!("shallow {s}\n").as_bytes());
+    late.extend_from_slice(pktline::flush());
+    assert_eq!(parse_request(&late, Hash::Sha1), Err(Error::BadRequest));
 }
 
 #[test]
