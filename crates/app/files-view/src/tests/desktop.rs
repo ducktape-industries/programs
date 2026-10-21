@@ -1539,3 +1539,78 @@ fn export_markdown_screen() {
     let out = std::path::Path::new(&dir).join("desktop.json");
     std::fs::write(out, serde_json::to_vec(&cx.whole_frame()).unwrap()).unwrap();
 }
+
+#[test]
+fn a_file_whose_snapshot_was_pruned_between_two_reads_is_read_again_at_the_head() {
+    let net = seeded();
+    let mut cx = desktop(&net);
+    let pinned = Rc::new(Cell::new(0));
+    let counted = pinned.clone();
+    let chain = net.clone();
+    cx.host()
+        .handle::<Ask<files::Files>>(move |query| match query {
+            files::Query::Read { at: Some(_), .. } => {
+                counted.set(counted.get() + 1);
+                match counted.get() {
+                    1 => Err(Error::new(
+                        files::code::NOT_FOUND,
+                        "tree 00 is pruned on this node; an archival node keeps history",
+                    )),
+                    _ => chain.query(files::PROGRAM, &query),
+                }
+            }
+            query => chain.query(files::PROGRAM, &query),
+        });
+    open_notes(&mut cx);
+    assert!(cx.has_text(NOTES), "{:?}", cx.texts());
+    assert!(cx.find("files-file-refused").is_none());
+    assert_eq!(pinned.get(), 2, "the pruned read, then one at the new head");
+}
+
+#[test]
+fn a_folder_whose_snapshot_was_pruned_between_two_pages_is_read_again_at_the_head() {
+    let net = seeded();
+    let mut cx = desktop(&net);
+    let lists = Rc::new(RefCell::new(Vec::new()));
+    let seen = lists.clone();
+    let chain = net.clone();
+    cx.host().handle::<Ask<files::Files>>(move |query| {
+        let files::Query::List { path, at, .. } = &query else {
+            return chain.query(files::PROGRAM, &query);
+        };
+        if path != "/home/dev" {
+            return chain.query(files::PROGRAM, &query);
+        }
+        let asked = {
+            let mut seen = seen.borrow_mut();
+            seen.push(at.is_some());
+            seen.len()
+        };
+        match asked {
+            1 => match chain.query(files::PROGRAM, &query)? {
+                files::Reply::Listing {
+                    snapshot,
+                    mut entries,
+                } => {
+                    entries.items.truncate(1);
+                    entries.next = Some(vec![0]);
+                    Ok(files::Reply::Listing { snapshot, entries })
+                }
+                other => Ok(other),
+            },
+            2 => Err(Error::new(
+                files::code::NOT_FOUND,
+                "tree 00 is pruned on this node; an archival node keeps history",
+            )),
+            _ => chain.query(files::PROGRAM, &query),
+        }
+    });
+    open_home(&mut cx);
+    assert!(
+        shows(&cx, "docs") && shows(&cx, "notes.txt"),
+        "{:?}",
+        cx.texts()
+    );
+    assert!(cx.find("files-folder-refused").is_none());
+    assert_eq!(lists.borrow()[..3], [false, true, false]);
+}

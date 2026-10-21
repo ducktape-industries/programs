@@ -23,7 +23,8 @@ pub(crate) fn needs(op: &Op) -> Vec<Need> {
         | Op::Guard { .. }
         | Op::Unguard { .. }
         | Op::AdoptOwners { .. }
-        | Op::Vacate { .. } => Vec::new(),
+        | Op::Vacate { .. }
+        | Op::HoldHead { .. } => Vec::new(),
     }
 }
 

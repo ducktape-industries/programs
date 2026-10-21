@@ -1,15 +1,17 @@
-//! Every read: the head or a minted snapshot resolved first, then its trees walked.
-//! A list, find or grep answers a page whose cursor stays on the snapshot it walked; an
-//! ownership read answers a path's creator, its write list and who writes it.
+//! Every read: the head or a minted snapshot resolved first, then its trees walked; an object a
+//! newer put let go answers pruned. A list, find or grep answers a page whose cursor stays on the
+//! snapshot it walked. A diff folds the changes each commit recorded.
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use ::program::{BlobId, Error, QueryCtx, invalid, not_found};
+use ::program::{BlobId, Error, QueryCtx, corrupt, invalid, not_found};
 
 use crate::cursor::Walk;
-use crate::objects::{digest, file, read as read_file, tree};
+use crate::objects::{At, digest, file_at, read as read_file, tree_at};
 use crate::paths::{Roots, join, segments};
-use crate::state::{HEAD, HISTORY, PINS, SNAPSHOTS, newest_first, resolve};
+use crate::state::{
+    DIFFS, HEAD, HISTORY, PINS, RECORDED_FROM, SNAPSHOTS, minted, newest_first, resolve,
+};
 use crate::tree::node_at;
 use crate::{
     Contents, DiffEntry, DiffKind, EntryInfo, Hit, Node, PageRequest, PageResponse, PinRow,
@@ -45,16 +47,24 @@ pub(crate) fn pin(ctx: &QueryCtx, name: &str) -> Result<Option<PinRow>, Error> {
     PINS.get(ctx, &name.to_owned())
 }
 
-fn info(ctx: &QueryCtx, path: String, node: Node) -> Result<EntryInfo, Error> {
+fn age(ctx: &QueryCtx, row: &SnapshotRow) -> Result<At, Error> {
+    let head = HEAD.get(ctx)?.map(|head| head.id);
+    Ok(match head == Some(row.id) {
+        true => At::Head,
+        false => At::Older,
+    })
+}
+
+fn info(ctx: &QueryCtx, path: String, node: Node, at: At) -> Result<EntryInfo, Error> {
     let meta = match &node {
-        Node::File { file: id, .. } => file(ctx, id)?.meta,
+        Node::File { file: id, .. } => file_at(ctx, id, at)?.meta,
         Node::Dir { .. } | Node::Symlink { .. } => BTreeMap::new(),
     };
     Ok(EntryInfo { path, node, meta })
 }
 
-fn root_node(ctx: &QueryCtx, root: &BlobId) -> Result<Node, Error> {
-    let entries = tree(ctx, root)?.entries.len() as u64;
+fn root_node(ctx: &QueryCtx, root: &BlobId, at: At) -> Result<Node, Error> {
+    let entries = tree_at(ctx, root, at)?.entries.len() as u64;
     Ok(Node::Dir {
         tree: *root,
         entries,
@@ -70,12 +80,13 @@ pub(crate) fn stat(
     let Some(row) = resolve(ctx, at)? else {
         return Ok((None, None));
     };
+    let at = age(ctx, &row)?;
     let node = match segments.is_empty() {
-        true => Some(root_node(ctx, &row.root)?),
-        false => node_at(ctx, &row.root, &segments)?,
+        true => Some(root_node(ctx, &row.root, at)?),
+        false => node_at(ctx, &row.root, &segments, at)?,
     };
     let entry = node
-        .map(|node| info(ctx, join(&segments), node))
+        .map(|node| info(ctx, join(&segments), node, at))
         .transpose()?;
     Ok((Some(row.id), entry))
 }
@@ -90,11 +101,14 @@ pub(crate) fn list(
     let row = resolve(ctx, at)?;
     let snapshot = row.as_ref().map(|row| row.id);
     let walk = Walk::open(ctx, page, &("list", &segments, snapshot))?;
-    let dir = match &row {
-        Some(row) => directory(ctx, &row.root, &segments)?,
+    let found = match &row {
+        Some(row) => {
+            let at = age(ctx, row)?;
+            directory(ctx, &row.root, &segments, at)?.map(|dir| (dir, at))
+        }
         None => None,
     };
-    let Some(dir) = dir else {
+    let Some((dir, at)) = found else {
         let empty_root_is_listable =
             segments.is_empty() || Roots::read(ctx)?.is_namespace_root(&segments);
         if !empty_root_is_listable {
@@ -102,7 +116,7 @@ pub(crate) fn list(
         }
         return Ok((snapshot, walk.page(Vec::new(), None)));
     };
-    let mut rest = tree(ctx, &dir)?
+    let mut rest = tree_at(ctx, &dir, at)?
         .entries
         .into_iter()
         .filter(|(name, _)| walk.after.as_ref().is_none_or(|after| name > after));
@@ -111,18 +125,23 @@ pub(crate) fn list(
     for (name, node) in rest.by_ref().take(walk.limit) {
         let mut child = segments.clone();
         child.push(name.clone());
-        items.push(info(ctx, join(&child), node)?);
+        items.push(info(ctx, join(&child), node, at)?);
         last = Some(name);
     }
     let next = rest.next().and(last);
     Ok((snapshot, walk.page(items, next)))
 }
 
-fn directory(ctx: &QueryCtx, root: &BlobId, segments: &[String]) -> Result<Option<BlobId>, Error> {
+fn directory(
+    ctx: &QueryCtx,
+    root: &BlobId,
+    segments: &[String],
+    at: At,
+) -> Result<Option<BlobId>, Error> {
     if segments.is_empty() {
         return Ok(Some(*root));
     }
-    match node_at(ctx, root, segments)? {
+    match node_at(ctx, root, segments, at)? {
         Some(Node::Dir { tree, .. }) => Ok(Some(tree)),
         Some(other) => Err(invalid(format!(
             "{} is a {}, not a directory",
@@ -146,10 +165,13 @@ pub(crate) fn read(
     if segments.is_empty() {
         return Err(invalid("/ is a directory, not a file"));
     }
-    let node = node_at(ctx, &row.root, &segments)?
+    let at = age(ctx, &row)?;
+    let node = node_at(ctx, &row.root, &segments, at)?
         .ok_or_else(|| not_found(format!("nothing is at {path}")))?;
     let (size, bytes) = match node {
-        Node::File { file: id, size, .. } => (size, read_file(ctx, &file(ctx, &id)?, offset, len)?),
+        Node::File { file: id, size, .. } => {
+            (size, read_file(ctx, &file_at(ctx, &id, at)?, offset, len)?)
+        }
         Node::Symlink { target } => {
             let bytes = target.as_bytes();
             let start = (offset as usize).min(bytes.len());
@@ -194,6 +216,7 @@ struct Finding<'a> {
     prefix: &'a str,
     after: Option<&'a str>,
     limit: usize,
+    at: At,
     found: Vec<EntryInfo>,
     more: bool,
 }
@@ -214,6 +237,7 @@ pub(crate) fn find(
         prefix,
         after: walk.after.as_deref(),
         limit: walk.limit,
+        at: age(ctx, &row)?,
         found: Vec::new(),
         more: false,
     };
@@ -226,7 +250,7 @@ pub(crate) fn find(
 }
 
 fn find_in(ctx: &QueryCtx, dir: &BlobId, base: &str, finding: &mut Finding) -> Result<(), Error> {
-    for (name, node) in tree(ctx, dir)?.entries {
+    for (name, node) in tree_at(ctx, dir, finding.at)?.entries {
         if finding.more {
             return Ok(());
         }
@@ -237,7 +261,9 @@ fn find_in(ctx: &QueryCtx, dir: &BlobId, base: &str, finding: &mut Finding) -> R
                 finding.more = true;
                 return Ok(());
             }
-            finding.found.push(info(ctx, path.clone(), node.clone())?);
+            finding
+                .found
+                .push(info(ctx, path.clone(), node.clone(), finding.at)?);
         }
         let Node::Dir { tree: child, .. } = node else {
             continue;
@@ -256,6 +282,7 @@ struct Grepping<'a> {
     prefix: &'a str,
     after: Option<&'a str>,
     limit: usize,
+    at: At,
     hits: Vec<Hit>,
     scanned: Option<String>,
     next: Option<String>,
@@ -283,6 +310,7 @@ pub(crate) fn grep(
         prefix,
         after: walk.after.as_deref(),
         limit: walk.limit,
+        at: age(ctx, &row)?,
         hits: Vec::new(),
         scanned: None,
         next: None,
@@ -294,7 +322,7 @@ pub(crate) fn grep(
 }
 
 fn grep_in(ctx: &QueryCtx, dir: &BlobId, base: &str, grepping: &mut Grepping) -> Result<(), Error> {
-    for (name, node) in tree(ctx, dir)?.entries {
+    for (name, node) in tree_at(ctx, dir, grepping.at)?.entries {
         if grepping.done {
             return Ok(());
         }
@@ -332,7 +360,7 @@ fn grep_file(
         grepping.done = true;
         return Ok(());
     }
-    let bytes = read_file(ctx, &file(ctx, id)?, 0, size)?;
+    let bytes = read_file(ctx, &file_at(ctx, id, grepping.at)?, 0, size)?;
     let mut spans = crate::grep::Spans::new(grepping.pattern);
     for (index, line) in bytes.split(|&byte| byte == b'\n').enumerate() {
         let text = String::from_utf8_lossy(line);
@@ -354,11 +382,70 @@ pub(crate) fn diff(
     to: &BlobId,
     prefix: &str,
 ) -> Result<Vec<DiffEntry>, Error> {
-    let from = crate::state::minted(ctx, from)?.root;
-    let to = crate::state::minted(ctx, to)?.root;
+    let from = minted(ctx, from)?;
+    let to = minted(ctx, to)?;
+    let (older, newer, flip) = match from.seq <= to.seq {
+        true => (&from, &to, false),
+        false => (&to, &from, true),
+    };
+    let recorded = RECORDED_FROM
+        .get(ctx)?
+        .is_some_and(|first| older.seq + 1 >= first);
+    if !recorded {
+        let ages = (age(ctx, &from)?, age(ctx, &to)?);
+        let mut out = Vec::new();
+        diff_trees(ctx, &from.root, &to.root, "", prefix, ages, &mut out)?;
+        return Ok(out);
+    }
+    let mut folded = BTreeMap::new();
+    for seq in older.seq + 1..=newer.seq {
+        let entries = DIFFS.get(ctx, &seq)?.ok_or_else(|| {
+            corrupt(
+                "diff/",
+                &seq.to_be_bytes(),
+                "files recorded no changes for this commit",
+            )
+        })?;
+        for entry in entries {
+            fold(&mut folded, segments(&entry.path)?, entry.kind);
+        }
+    }
     let mut out = Vec::new();
-    diff_trees(ctx, &from, &to, "", prefix, &mut out)?;
+    for (segments, (first, last)) in folded {
+        let Some(kind) = net(first, last) else {
+            continue;
+        };
+        let kind = match (flip, kind) {
+            (true, DiffKind::Added) => DiffKind::Removed,
+            (true, DiffKind::Removed) => DiffKind::Added,
+            (_, kind) => kind,
+        };
+        push(&mut out, &join(&segments), kind, prefix);
+    }
     Ok(out)
+}
+
+fn fold(
+    folded: &mut BTreeMap<Vec<String>, (DiffKind, DiffKind)>,
+    segments: Vec<String>,
+    kind: DiffKind,
+) {
+    if kind == DiffKind::Removed {
+        folded.retain(|path, _| !(path.len() > segments.len() && path.starts_with(&segments)));
+    }
+    folded
+        .entry(segments)
+        .and_modify(|(_, last)| *last = kind)
+        .or_insert((kind, kind));
+}
+
+fn net(first: DiffKind, last: DiffKind) -> Option<DiffKind> {
+    match (first, last) {
+        (DiffKind::Added, DiffKind::Removed) => None,
+        (DiffKind::Added, _) => Some(DiffKind::Added),
+        (_, DiffKind::Removed) => Some(DiffKind::Removed),
+        _ => Some(DiffKind::Modified),
+    }
 }
 
 fn diff_trees(
@@ -367,13 +454,14 @@ fn diff_trees(
     to: &BlobId,
     base: &str,
     prefix: &str,
+    ages: (At, At),
     out: &mut Vec<DiffEntry>,
 ) -> Result<(), Error> {
     if from == to {
         return Ok(());
     }
-    let mut from = tree(ctx, from)?.entries;
-    let mut to = tree(ctx, to)?.entries;
+    let mut from = tree_at(ctx, from, ages.0)?.entries;
+    let mut to = tree_at(ctx, to, ages.1)?.entries;
     let mut names: Vec<String> = from.keys().chain(to.keys()).cloned().collect();
     names.sort();
     names.dedup();
@@ -383,16 +471,16 @@ fn diff_trees(
             continue;
         }
         match (from.remove(&name), to.remove(&name)) {
-            (Some(old), None) => side(ctx, &path, &old, DiffKind::Removed, prefix, out)?,
-            (None, Some(new)) => side(ctx, &path, &new, DiffKind::Added, prefix, out)?,
+            (Some(old), None) => side(ctx, &path, &old, DiffKind::Removed, prefix, ages.0, out)?,
+            (None, Some(new)) => side(ctx, &path, &new, DiffKind::Added, prefix, ages.1, out)?,
             (Some(old), Some(new)) if old == new => {}
             (Some(Node::Dir { tree: old, .. }), Some(Node::Dir { tree: new, .. })) => {
-                diff_trees(ctx, &old, &new, &path, prefix, out)?
+                diff_trees(ctx, &old, &new, &path, prefix, ages, out)?
             }
             (Some(old), Some(new)) => {
                 push(out, &path, DiffKind::Modified, prefix);
-                children(ctx, &path, &old, DiffKind::Removed, prefix, out)?;
-                children(ctx, &path, &new, DiffKind::Added, prefix, out)?;
+                children(ctx, &path, &old, DiffKind::Removed, prefix, ages.0, out)?;
+                children(ctx, &path, &new, DiffKind::Added, prefix, ages.1, out)?;
             }
             (None, None) => unreachable!("every name came from one side"),
         }
@@ -406,10 +494,11 @@ fn side(
     node: &Node,
     kind: DiffKind,
     prefix: &str,
+    at: At,
     out: &mut Vec<DiffEntry>,
 ) -> Result<(), Error> {
     push(out, path, kind, prefix);
-    children(ctx, path, node, kind, prefix, out)
+    children(ctx, path, node, kind, prefix, at, out)
 }
 
 fn children(
@@ -418,15 +507,16 @@ fn children(
     node: &Node,
     kind: DiffKind,
     prefix: &str,
+    at: At,
     out: &mut Vec<DiffEntry>,
 ) -> Result<(), Error> {
     let Node::Dir { tree: dir, .. } = node else {
         return Ok(());
     };
-    for (name, child) in tree(ctx, dir)?.entries {
+    for (name, child) in tree_at(ctx, dir, at)?.entries {
         let path = format!("{base}/{name}");
         if may_hold(&path, prefix) {
-            side(ctx, &path, &child, kind, prefix, out)?;
+            side(ctx, &path, &child, kind, prefix, at, out)?;
         }
     }
     Ok(())

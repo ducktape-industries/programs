@@ -367,7 +367,7 @@ fn an_edit_whose_span_is_missing_or_ambiguous_is_refused_and_commits_nothing() {
 }
 
 #[test]
-fn an_edit_reads_at_its_base_and_is_refused_once_the_file_moved_on() {
+fn an_edit_reads_the_head_and_is_refused_once_the_file_moved_on_since_its_base() {
     let world = world();
     let chain = &world.chain;
     let old = put(chain, "/shared/notes.md", "one\n", false, &[]);

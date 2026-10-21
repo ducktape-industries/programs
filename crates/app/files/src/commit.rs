@@ -1,17 +1,21 @@
-//! One commit: every change checked, every touched path compared between base and head, then the
-//! head's tree edited change by change and named by a new snapshot. Each change rewrites the
-//! nearest guard at or above its path (`guards.rs`); a move carries the guards and lists beneath it.
+//! One commit: each change checked against the `changed/` and `touched/` rows written since its
+//! base, the head's tree edited change by change with every object on its path's line, then a new
+//! snapshot that records its diff. A change rewrites its nearest guard; a move carries its guards.
 use std::collections::{BTreeMap, BTreeSet};
 
 use ::program::{
     AccountNumber, BlobId, Error, ExecCtx, Need, Principal, QueryCtx, Reply, invalid, stale,
 };
 
-use crate::objects::{FileObj, SnapshotObj, check_chunks, digest, put_file, put_snapshot};
+use crate::objects::{
+    At, FILE, FileObj, SnapshotObj, check_chunks, digest, line, put_on, put_snapshot, under,
+};
 use crate::paths::{Roots, change_path, join};
-use crate::state::{COUNT, HEAD, HISTORY, SNAPSHOTS, minted, newest_first};
+use crate::state::{
+    CHANGED, COUNT, DIFFS, HEAD, HISTORY, RECORDED_FROM, SNAPSHOTS, TOUCHED, minted, newest_first,
+};
 use crate::tree::{TreeEdit, node_at};
-use crate::{Change, Content, Node, SnapshotRow};
+use crate::{Change, Content, DiffEntry, DiffKind, Node, SnapshotRow};
 
 enum Step {
     Put {
@@ -69,26 +73,28 @@ pub(crate) fn commit(
     if changes.is_empty() {
         return Err(invalid("a commit carries at least one change"));
     }
-    let base_root = base
+    let base = base
         .as_ref()
         .map(|id| minted(ctx, id))
         .transpose()?
-        .map(|row| row.root);
+        .map(|row| row.seq);
     let head = HEAD.get(ctx)?;
-    let head_root = head.as_ref().map(|row| row.root);
     let steps = plan(ctx, changes)?;
     let alone = steps.len() == 1;
     let by = author.account();
     let roots = Roots::read(ctx)?;
-    let mut edit = TreeEdit::over(head_root);
+    let mut edit = TreeEdit::over(head.as_ref().map(|row| row.root));
+    let mut named = BTreeSet::new();
+    let mut entries = Vec::new();
     for step in steps {
         if by.is_some() {
             for segments in step.paths() {
                 roots.beneath(segments)?;
             }
         }
-        unchanged_since_base(ctx, base_root, head_root, &step.paths())?;
-        apply(ctx, by, alone, &roots, &mut edit, step)?;
+        unchanged_since_base(ctx, base, head.as_ref(), &step.paths())?;
+        named.extend(step.paths().into_iter().map(<[String]>::to_vec));
+        apply(ctx, by, alone, &roots, &mut edit, &mut entries, step)?;
     }
     let (root, _) = edit.build(ctx)?;
     let snapshot = SnapshotObj {
@@ -100,7 +106,7 @@ pub(crate) fn commit(
         message,
     };
     let id = put_snapshot(ctx, &snapshot)?;
-    let row = record(ctx, id, snapshot)?;
+    let row = record(ctx, id, snapshot, &named, entries)?;
     crate::watchers::tell(ctx, &row)?;
     ctx.set_return_data(abi::encode(&id));
     Ok(())
@@ -183,28 +189,60 @@ fn check_meta(meta: &BTreeMap<String, String>) -> Result<(), Error> {
     Ok(())
 }
 
+fn changed_since(segments: &[String]) -> Error {
+    stale(format!(
+        "{} changed since the base snapshot: read it again and retry",
+        join(segments)
+    ))
+}
+
 fn unchanged_since_base(
     ctx: &QueryCtx,
-    base: Option<BlobId>,
-    head: Option<BlobId>,
+    base: Option<u64>,
+    head: Option<&SnapshotRow>,
     touched: &[&[String]],
 ) -> Result<(), Error> {
-    if base == head {
+    let Some(head) = head else {
+        return Ok(());
+    };
+    let Some(base) = base else {
+        for segments in touched {
+            if node_at(ctx, &head.root, segments, At::Head)?.is_some() {
+                return Err(changed_since(segments));
+            }
+        }
+        return Ok(());
+    };
+    if base == head.seq {
         return Ok(());
     }
-    let node = |root: Option<BlobId>, segments: &[String]| match root {
-        Some(root) => node_at(ctx, &root, segments),
-        None => Ok(None),
-    };
+    let recorded = RECORDED_FROM
+        .get(ctx)?
+        .is_some_and(|first| base + 1 >= first);
+    if !recorded {
+        return Err(stale(
+            "the base snapshot is older than the changes files records: read again and retry",
+        ));
+    }
+    let after = |seq: Option<u64>| seq.is_some_and(|seq| seq > base);
     for segments in touched {
-        if node(base, segments)? != node(head, segments)? {
-            return Err(stale(format!(
-                "{} changed since the base snapshot: read it again and retry",
-                join(segments)
-            )));
+        if after(CHANGED.get(ctx, &join(segments))?) {
+            return Err(changed_since(segments));
+        }
+        for len in 1..segments.len() {
+            if after(TOUCHED.get(ctx, &join(&segments[..len]))?) {
+                return Err(changed_since(segments));
+            }
         }
     }
     Ok(())
+}
+
+fn entry(segments: &[String], kind: DiffKind) -> DiffEntry {
+    DiffEntry {
+        path: join(segments),
+        kind,
+    }
 }
 
 fn apply(
@@ -213,6 +251,7 @@ fn apply(
     alone: bool,
     roots: &Roots,
     edit: &mut TreeEdit,
+    entries: &mut Vec<DiffEntry>,
     step: Step,
 ) -> Result<(), Error> {
     match &step {
@@ -239,13 +278,30 @@ fn apply(
             size,
             chunks,
         } => {
-            let file = put_file(ctx, &FileObj { size, chunks, meta })?;
-            edit.put(ctx, &segments, Node::File { file, size, exec }, by, roots)
+            let kind = written(ctx, edit, &segments)?;
+            ctx.blob_release_lines(under(&segments));
+            let body = abi::encode(&FileObj { size, chunks, meta });
+            let file = put_on(ctx, FILE, body.clone(), line(&segments))?;
+            edit.keep(file, body);
+            edit.put(ctx, &segments, Node::File { file, size, exec }, by, roots)?;
+            made(edit, entries);
+            entries.push(entry(&segments, kind));
         }
-        Step::Mkdir(segments) => edit.mkdir(ctx, &segments, by, roots),
-        Step::Remove(segments) => edit.remove(ctx, &segments),
+        Step::Mkdir(segments) => {
+            edit.mkdir(ctx, &segments, by, roots)?;
+            made(edit, entries);
+            entries.push(entry(&segments, DiffKind::Added));
+        }
+        Step::Remove(segments) => {
+            edit.remove(ctx, &segments)?;
+            ctx.blob_release_lines(under(&segments));
+            entries.push(entry(&segments, DiffKind::Removed));
+        }
         Step::Rename { from, to } => {
             edit.rename(ctx, &from, &to)?;
+            ctx.blob_release_lines(under(&from));
+            entries.push(entry(&from, DiffKind::Removed));
+            entries.push(entry(&to, DiffKind::Added));
             let carried = access::Op::Move {
                 program: crate::PROGRAM.into(),
                 from: join(&from),
@@ -253,15 +309,38 @@ fn apply(
             };
             let checker = ctx.env().role(abi::role::ACCESS)?.clone();
             ctx.emit(checker, &carried, Reply::None);
-            Ok(())
         }
         Step::Symlink { segments, target } => {
-            edit.put(ctx, &segments, Node::Symlink { target }, by, roots)
+            let kind = written(ctx, edit, &segments)?;
+            ctx.blob_release_lines(under(&segments));
+            edit.put(ctx, &segments, Node::Symlink { target }, by, roots)?;
+            made(edit, entries);
+            entries.push(entry(&segments, kind));
         }
+    }
+    Ok(())
+}
+
+fn written(ctx: &QueryCtx, edit: &TreeEdit, segments: &[String]) -> Result<DiffKind, Error> {
+    Ok(match edit.holds(ctx, segments)? {
+        true => DiffKind::Modified,
+        false => DiffKind::Added,
+    })
+}
+
+fn made(edit: &mut TreeEdit, entries: &mut Vec<DiffEntry>) {
+    for dir in edit.made() {
+        entries.push(entry(&dir, DiffKind::Added));
     }
 }
 
-fn record(ctx: &ExecCtx, id: BlobId, snapshot: SnapshotObj) -> Result<SnapshotRow, Error> {
+fn record(
+    ctx: &ExecCtx,
+    id: BlobId,
+    snapshot: SnapshotObj,
+    named: &BTreeSet<Vec<String>>,
+    entries: Vec<DiffEntry>,
+) -> Result<SnapshotRow, Error> {
     let seq = COUNT.get(ctx)?.unwrap_or(0) + 1;
     let row = SnapshotRow {
         id,
@@ -277,5 +356,17 @@ fn record(ctx: &ExecCtx, id: BlobId, snapshot: SnapshotObj) -> Result<SnapshotRo
     HISTORY.put(ctx, &newest_first(seq), &row);
     SNAPSHOTS.put(ctx, &digest(&id)?, &seq);
     HEAD.put(ctx, &row);
+    let mut changed = BTreeSet::new();
+    for segments in named {
+        TOUCHED.put(ctx, &join(segments), &seq);
+        changed.extend((1..=segments.len()).map(|len| join(&segments[..len])));
+    }
+    for path in changed {
+        CHANGED.put(ctx, &path, &seq);
+    }
+    DIFFS.put(ctx, &seq, &entries);
+    if RECORDED_FROM.get(ctx)?.is_none() {
+        RECORDED_FROM.put(ctx, &seq);
+    }
     Ok(row)
 }

@@ -139,3 +139,65 @@ fn a_path_shows_its_files_content_and_reads_it_again_once_it_moves() {
     cx.run_until_parked();
     assert!(cx.has_text("Be briefer."), "{:?}", cx.texts());
 }
+
+#[test]
+fn a_files_content_read_across_a_commit_that_prunes_its_snapshot_is_read_again_at_the_head() {
+    let mut cx = TestAppContext::new();
+    configure(&mut cx);
+    answer(&cx, general_with(Some(FILE)));
+    let before = "Write long, and loud.";
+    let text = "Be brief, and kind.";
+    let snapshot = BlobId::Sha256([9; 32]);
+    let reads = Rc::new(RefCell::new(Vec::new()));
+    let seen = reads.clone();
+    cx.host()
+        .handle::<Ask<files::Files>>(move |query| match query {
+            files::Query::Stat { path, .. } => Ok(files::Reply::Stat {
+                snapshot: Some(snapshot),
+                entry: (path == FILE).then(|| files::EntryInfo {
+                    path: path.clone(),
+                    node: files::Node::File {
+                        file: BlobId::Sha256([1; 32]),
+                        size: text.len() as u64,
+                        exec: false,
+                    },
+                    meta: Default::default(),
+                }),
+            }),
+            files::Query::Read { at, offset, .. } => {
+                seen.borrow_mut().push((at, offset));
+                let (bytes, eof) = match (at, offset) {
+                    (Some(_), 0) => (before.as_bytes()[..6].to_vec(), false),
+                    (Some(_), _) => {
+                        return Err(view::host::Error::new(
+                            files::code::NOT_FOUND,
+                            "tree 09 is pruned on this node; an archival node keeps history",
+                        ));
+                    }
+                    (None, offset) => (text.as_bytes()[offset as usize..].to_vec(), true),
+                };
+                Ok(files::Reply::Contents(files::Contents {
+                    snapshot,
+                    size: text.len() as u64,
+                    offset,
+                    bytes,
+                    eof,
+                }))
+            }
+            query => panic!("unexpected files query: {query:?}"),
+        });
+    let _view = desk(&mut cx);
+    cx.simulate_click("chat-room-details");
+    cx.run_until_parked();
+    assert!(cx.has_text(text), "{:?}", cx.texts());
+    assert!(
+        !cx.has_text("Write l"),
+        "no stale first read: {:?}",
+        cx.texts()
+    );
+    let asked = reads.borrow();
+    assert!(
+        asked.ends_with(&[(Some(snapshot), 0), (Some(snapshot), 6), (None, 0)]),
+        "{asked:?}"
+    );
+}

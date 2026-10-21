@@ -393,12 +393,12 @@ async fn contents(host: &Host, path: &str, at: Option<BlobId>) -> Result<String,
     String::from_utf8(bytes).map_err(|_| words::WIDGET_NOT_TEXT.into())
 }
 
-// The file's bytes at `snapshot`, read a chunk at a time.
 pub(crate) async fn file_bytes(
     host: &Host,
     path: &str,
     at: Option<BlobId>,
 ) -> Result<Vec<u8>, String> {
+    let mut at = at;
     let mut bytes = Vec::new();
     loop {
         let read = files::ask::Read {
@@ -407,14 +407,22 @@ pub(crate) async fn file_bytes(
             offset: bytes.len() as u64,
             len: files::CHUNK_SIZE,
         };
-        let contents = host
-            .query(read)
-            .await
-            .map_err(|refusal| design::sentence(&refusal))?;
+        let answered = host.query(read).await;
+        let not_found = answered
+            .as_ref()
+            .is_err_and(|refusal| refusal.code == files::code::NOT_FOUND);
+        let read_at_a_pruned_snapshot = at.is_some() && not_found;
+        if read_at_a_pruned_snapshot {
+            at = None;
+            bytes.clear();
+            continue;
+        }
+        let contents = answered.map_err(|refusal| design::sentence(&refusal))?;
         // a read short of the size it states would never end
         if contents.bytes.is_empty() && !contents.eof {
             return Err(words::NOT_THERE.into());
         }
+        at = Some(contents.snapshot);
         bytes.extend(contents.bytes);
         if contents.eof {
             return Ok(bytes);

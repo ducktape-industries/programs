@@ -1,5 +1,5 @@
-//! The program natively over `MockHost`: commits, reads at the head and at older
-//! snapshots, chunked files, paging, diffs and pins.
+//! The program natively over `MockHost`: commits, reads at the head and pruned answers at
+//! older snapshots, chunked files, paging, diffs and pins.
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
@@ -9,6 +9,7 @@ use abi::role::identity::{Kind, Profile};
 use crate::*;
 
 mod guards;
+mod lines;
 mod lists;
 mod tags;
 mod watchers;
@@ -520,7 +521,7 @@ fn a_large_file_names_its_chunks_and_reads_across_them() {
 }
 
 #[test]
-fn an_older_snapshot_keeps_its_tree_and_history_lists_newest_first() {
+fn an_older_snapshot_answers_pruned_and_history_lists_newest_first() {
     let host = host();
     let first = commit(&host, ada(), None, vec![put(&host, "/shared/x", "old")]).unwrap();
     let second = commit(
@@ -530,7 +531,10 @@ fn an_older_snapshot_keeps_its_tree_and_history_lists_newest_first() {
         vec![put(&host, "/shared/x", "new")],
     )
     .unwrap();
-    assert_eq!(text(&host, "/shared/x", Some(first)).unwrap(), "old");
+    assert_eq!(
+        text(&host, "/shared/x", Some(first)).unwrap_err().code,
+        code::NOT_FOUND
+    );
     assert_eq!(text(&host, "/shared/x", None).unwrap(), "new");
     let Reply::History(page) = ask(
         &host,
@@ -690,7 +694,6 @@ fn a_diff_names_what_was_added_removed_and_modified_under_a_prefix() {
         [
             ("/shared/edit", DiffKind::Modified),
             ("/shared/gone", DiffKind::Removed),
-            ("/shared/gone/x", DiffKind::Removed),
             ("/shared/new", DiffKind::Added),
         ]
     );

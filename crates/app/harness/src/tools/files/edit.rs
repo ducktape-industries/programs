@@ -1,6 +1,6 @@
-//! `files_edit`: change part of a text file without re-sending the rest. The file is read whole
-//! at one snapshot, the edits apply in order, and the new text commits based on that snapshot, so
-//! a file changed since is refused stale, never overwritten. The file keeps its mode and meta.
+//! `files_edit`: change part of a text file without re-sending the rest. The file is read whole at
+//! the head, the edits apply in order, and the new text commits on the base, so a file changed
+//! since the base is refused stale, never overwritten. The file keeps its mode and meta.
 use ::program::{Error, ExecCtx, invalid, not_found};
 use files::{Change, EntryInfo, Node};
 use serde::Deserialize;
@@ -31,7 +31,7 @@ impl Tool for Edit {
             json!({
                 "path": { "type": "string", "description": "an absolute path of a text file that exists; files_write makes a new one" },
                 "edits": { "type": "array", "items": edit_schema(), "description": "the edits, applied in order" },
-                "base": { "type": "string", "description": "the snapshot to read the file at and base the commit on, from a read; the edit is refused if the file changed since. Omitted, the newest" },
+                "base": { "type": "string", "description": "the snapshot the edit is based on, from a read; the edit is refused if the file changed since. Omitted, the newest" },
                 "message": message_schema(),
             }),
             &["path", "edits"],
@@ -44,7 +44,7 @@ impl Tool for Edit {
         }
         let steps = steps(args.edits)?;
         let base = resolved(ctx, snapshot(&args.base)?)?;
-        let (exec, meta) = match stat(ctx, &args.path, base.as_ref())? {
+        let (exec, meta) = match stat(ctx, &args.path, None)? {
             Some(EntryInfo {
                 node: Node::File { exec, .. },
                 meta,
@@ -58,7 +58,7 @@ impl Tool for Edit {
                 )));
             }
         };
-        let text = String::from_utf8(read_all(ctx, &args.path, base.as_ref())?)
+        let text = String::from_utf8(read_all(ctx, &args.path, None)?)
             .map_err(|_| invalid(format!("{} is not text", args.path)))?;
         let text = applied(text, steps, &args.path)?;
         let put = Change::Put {

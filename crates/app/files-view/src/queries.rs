@@ -1,6 +1,6 @@
 //! Typed reads of `files`, its roots (its entry's params in the programs role), ownership and
-//! identity. A folder or file is read at one snapshot, the one its first answer names, for every
-//! later page and read of one screen, so a commit in between never mixes two trees on a page.
+//! identity. A folder or file is read at the snapshot its first answer names, so a commit in
+//! between never mixes two trees on a page; a later read answering it pruned restarts at the head.
 use std::sync::Arc;
 
 use files::{BlobId, PageRequest};
@@ -13,24 +13,11 @@ use crate::state::{
 };
 
 pub(crate) async fn folder(host: Host, path: String, reader: Option<u64>) -> Result<Folder, Error> {
-    let mut snapshot = None;
-    let mut entries = Vec::new();
-    let mut after = None;
-    loop {
-        let (at, page) = host
-            .query(files::ask::List {
-                path: path.clone(),
-                at: snapshot,
-                page: PageRequest { after, limit: None },
-            })
-            .await?;
-        snapshot = at;
-        entries.extend(page.items);
-        match page.next {
-            Some(next) => after = Some(next),
-            None => break,
+    let (snapshot, mut entries) = loop {
+        if let Ok(read) = listing(&host, &path).await? {
+            break read;
         }
-    }
+    };
     entries.sort_by_key(|entry| !matches!(entry.node, files::Node::Dir { .. }));
     let guard = guard(&host, &path, reader).await?;
     Ok(Folder {
@@ -39,6 +26,62 @@ pub(crate) async fn folder(host: Host, path: String, reader: Option<u64>) -> Res
         entries,
         guard,
     })
+}
+
+struct Pruned;
+
+type Listed = (Option<BlobId>, Vec<files::EntryInfo>);
+
+async fn listing(host: &Host, path: &str) -> Result<Result<Listed, Pruned>, Error> {
+    let mut snapshot = None;
+    let mut entries = Vec::new();
+    let mut after = None;
+    loop {
+        let asked = host
+            .query(files::ask::List {
+                path: path.to_owned(),
+                at: snapshot,
+                page: PageRequest { after, limit: None },
+            })
+            .await;
+        let read_at_a_pruned_snapshot = snapshot.is_some() && asked.as_ref().is_err_and(pruned);
+        if read_at_a_pruned_snapshot {
+            return Ok(Err(Pruned));
+        }
+        let (at, page) = asked?;
+        snapshot = at;
+        entries.extend(page.items);
+        match page.next {
+            Some(next) => after = Some(next),
+            None => return Ok(Ok((snapshot, entries))),
+        }
+    }
+}
+
+fn pruned(refusal: &Error) -> bool {
+    refusal.code == files::code::NOT_FOUND
+}
+
+async fn read_at(
+    host: &Host,
+    path: &str,
+    at: Option<BlobId>,
+    offset: u64,
+    len: u64,
+) -> Result<Result<files::Contents, Pruned>, Error> {
+    let asked = host
+        .query(files::ask::Read {
+            path: path.to_owned(),
+            at,
+            offset,
+            len,
+        })
+        .await;
+    let read_at_a_pruned_snapshot = at.is_some() && asked.as_ref().is_err_and(pruned);
+    if read_at_a_pruned_snapshot {
+        return Ok(Err(Pruned));
+    }
+    asked.map(Ok)
 }
 
 async fn guard(host: &Host, path: &str, reader: Option<u64>) -> Result<Option<Guard>, Error> {
@@ -77,27 +120,39 @@ pub(crate) async fn file(
     reader: Option<u64>,
     kept: Option<(BlobId, Arc<Image>)>,
 ) -> Result<Opened, Error> {
+    loop {
+        if let Ok(opened) = open_file(&host, &path, reader, kept.clone()).await? {
+            return Ok(opened);
+        }
+    }
+}
+
+async fn open_file(
+    host: &Host,
+    path: &str,
+    reader: Option<u64>,
+    kept: Option<(BlobId, Arc<Image>)>,
+) -> Result<Result<Opened, Pruned>, Error> {
     let (snapshot, entry) = host
         .query(files::ask::Stat {
-            path: path.clone(),
+            path: path.to_owned(),
             at: None,
         })
         .await?;
     let (bytes, whole, picture) = match entry.as_ref().map(|entry| &entry.node) {
         None | Some(files::Node::Dir { .. }) => (Vec::new(), true, None),
         Some(node) => {
-            let contents = host
-                .query(files::ask::Read {
-                    path: path.clone(),
-                    at: snapshot,
-                    offset: 0,
-                    len: PREVIEW,
-                })
-                .await?;
+            let Ok(contents) = read_at(host, path, snapshot, 0, PREVIEW).await? else {
+                return Ok(Err(Pruned));
+            };
             let picture = match (node, kept) {
                 (files::Node::File { file, .. }, Some((was, kept))) if *file == was => Some(kept),
                 (files::Node::File { .. }, _) => {
-                    read_picture_at_snapshot(&host, &path, snapshot, &contents).await?
+                    let read = read_picture_at_snapshot(host, path, snapshot, &contents).await?;
+                    let Ok(picture) = read else {
+                        return Ok(Err(Pruned));
+                    };
+                    picture
                 }
                 (_, _) => None,
             };
@@ -105,11 +160,11 @@ pub(crate) async fn file(
         }
     };
     let guard = match entry {
-        Some(_) => guard(&host, &path, reader).await?,
+        Some(_) => guard(host, path, reader).await?,
         None => None,
     };
     let mut opened = Opened {
-        path,
+        path: path.to_owned(),
         snapshot,
         entry,
         bytes,
@@ -119,7 +174,7 @@ pub(crate) async fn file(
         doc: None,
     };
     opened.doc = opened.parsed();
-    Ok(opened)
+    Ok(Ok(opened))
 }
 
 async fn read_picture_at_snapshot(
@@ -127,20 +182,16 @@ async fn read_picture_at_snapshot(
     path: &str,
     at: Option<BlobId>,
     first: &files::Contents,
-) -> Result<Option<Arc<Image>>, Error> {
+) -> Result<Result<Option<Arc<Image>>, Pruned>, Error> {
     let Some(format) = picture_format(&first.bytes) else {
-        return Ok(None);
+        return Ok(Ok(None));
     };
     let mut bytes = first.bytes.clone();
     while (bytes.len() as u64) < first.size {
-        let next = host
-            .query(files::ask::Read {
-                path: path.to_owned(),
-                at,
-                offset: bytes.len() as u64,
-                len: files::CHUNK_SIZE,
-            })
-            .await?;
+        let offset = bytes.len() as u64;
+        let Ok(next) = read_at(host, path, at, offset, files::CHUNK_SIZE).await? else {
+            return Ok(Err(Pruned));
+        };
         if next.bytes.is_empty() {
             return Err(view::host::malformed(format!(
                 "{path} ends at {} of its {} bytes",
@@ -150,7 +201,7 @@ async fn read_picture_at_snapshot(
         }
         bytes.extend(next.bytes);
     }
-    Ok(Some(Arc::new(Image::from_bytes(format, bytes))))
+    Ok(Ok(Some(Arc::new(Image::from_bytes(format, bytes)))))
 }
 
 pub(crate) async fn history(host: Host) -> Result<History, Error> {

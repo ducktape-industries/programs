@@ -830,8 +830,8 @@ pub(crate) async fn offers(host: Host) -> Result<Vec<Offer>, Error> {
     Ok(offers)
 }
 
-// the bytes of the file at `path` as snapshot `at` holds them, read a chunk at a time
 pub(crate) async fn file(host: &Host, path: &str, at: Option<BlobId>) -> Result<Vec<u8>, String> {
+    let mut at = at;
     let mut bytes = Vec::new();
     loop {
         let asked = files::ask::Read {
@@ -840,14 +840,22 @@ pub(crate) async fn file(host: &Host, path: &str, at: Option<BlobId>) -> Result<
             offset: bytes.len() as u64,
             len: files::CHUNK_SIZE,
         };
-        let contents = host
-            .query(asked)
-            .await
-            .map_err(|refusal| design::sentence(&refusal))?;
+        let answered = host.query(asked).await;
+        let not_found = answered
+            .as_ref()
+            .is_err_and(|refusal| refusal.code == files::code::NOT_FOUND);
+        let read_at_a_pruned_snapshot = at.is_some() && not_found;
+        if read_at_a_pruned_snapshot {
+            at = None;
+            bytes.clear();
+            continue;
+        }
+        let contents = answered.map_err(|refusal| design::sentence(&refusal))?;
         // a read short of the size it states would never end
         if contents.bytes.is_empty() && !contents.eof {
             return Err(format!("{path} ended before the size files gives it."));
         }
+        at = Some(contents.snapshot);
         bytes.extend(contents.bytes);
         if contents.eof {
             return Ok(bytes);

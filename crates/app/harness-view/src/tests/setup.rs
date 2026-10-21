@@ -174,3 +174,65 @@ fn an_agent_whose_file_names_no_provider_opens_its_setup_to_pick_one() {
     let written = "+++\nmodel = \"claude-sonnet-5-5\"\nmax_tokens = 4096\nprovider = \"anthropic\"\n+++\n\nYou are Scout.\n";
     assert_eq!(commits(&cx), [commit_of(&path_of(EDDY, "Scout"), written)]);
 }
+
+#[test]
+fn a_save_whose_snapshot_was_pruned_between_two_reads_reads_the_file_again_at_the_head() {
+    const BEFORE: &str = "+++\nmodel = \"claude-older-model\"\n+++\n\nYou were Scout.\n";
+    const FIRST: usize = 24;
+    let (mut cx, _) = seated(pinned(), EDDY);
+    files_take(&cx);
+    let scout = path_of(EDDY, "Scout");
+    cx.host()
+        .handle::<Query<files::Files>>(move |query| match query {
+            files::Query::Guarded { path } => {
+                Ok(files::Reply::Guarded((path == scout).then_some(path)))
+            }
+            files::Query::Read { at, offset, .. } => {
+                let (bytes, eof) = match (at, offset) {
+                    (Some(_), 0) => (BEFORE.as_bytes()[..FIRST].to_vec(), false),
+                    (Some(_), _) => {
+                        return Err(view::host::Error::new(
+                            files::code::NOT_FOUND,
+                            "tree 00 is pruned on this node; an archival node keeps history",
+                        ));
+                    }
+                    (None, offset) => (PINNED.as_bytes()[offset as usize..].to_vec(), true),
+                };
+                Ok(files::Reply::Contents(files::Contents {
+                    snapshot: SNAPSHOT,
+                    size: PINNED.len() as u64,
+                    offset,
+                    bytes,
+                    eof,
+                }))
+            }
+            other => panic!("unexpected query: {other:?}"),
+        });
+    open_setup(&mut cx);
+    cx.simulate_click("setup-save");
+    cx.run_until_parked();
+    assert_eq!(commits(&cx).len(), 1, "{:?}", cx.texts());
+    let reads: Vec<(Option<BlobId>, u64)> = cx
+        .host()
+        .requests::<Query<files::Files>>()
+        .into_iter()
+        .filter_map(|query| match query {
+            files::Query::Read { at, offset, .. } => Some((at, offset)),
+            _ => None,
+        })
+        .collect();
+    let restarted_at_the_head_from_its_start = [
+        (Some(SNAPSHOT), 0),
+        (Some(SNAPSHOT), FIRST as u64),
+        (None, 0),
+    ];
+    assert!(
+        reads.ends_with(&restarted_at_the_head_from_its_start),
+        "{reads:?}"
+    );
+    assert_eq!(
+        commits(&cx),
+        [commit_of(&path_of(EDDY, "Scout"), PINNED)],
+        "the head's text whole, none of the pruned read's first chunk"
+    );
+}

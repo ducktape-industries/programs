@@ -8,6 +8,7 @@ mod examples;
 mod gate;
 pub mod grep;
 mod guards;
+mod hold;
 mod objects;
 mod ops;
 pub mod paths;
@@ -23,7 +24,7 @@ use std::collections::BTreeMap;
 
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
-pub use ::program::{AccountNumber, BlobId, Ownership, Party, Principal};
+pub use ::program::{AccountNumber, BlobId, Ownership, Party, Principal, code};
 pub use gate::pin_key;
 pub use objects::{Access, CHUNK, FILE, FileObj, SNAPSHOT, SnapshotObj, TREE, Tree};
 pub use program::Files;
@@ -42,7 +43,7 @@ pub const CHUNK_SIZE: u64 = 1 << 20;
     Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
 )]
 #[tool_about(
-    "The network's versioned filesystem: every commit is a snapshot. A path's writers are the policy of its nearest guard at or above it in the ownership program, else anyone. The namespace roots files' params name are written by the chain alone: write beneath them."
+    "The network's versioned filesystem: every commit is a snapshot. A path's writers are the policy of its nearest guard at or above it in the ownership program, else anyone. The namespace roots files' params name are written by the chain alone: write beneath them. Only the head is kept whole: a read at an older snapshot answers not_found (pruned on this node) once a newer commit let its objects go."
 )]
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
@@ -73,6 +74,8 @@ pub enum Op {
     },
     #[tool_op(description = "From files itself only: drop the guards a move carried away from their old paths, once ownership moved their records.", example = examples::vacate)]
     Vacate { paths: Vec<String> },
+    #[tool_op(description = "Hold one folder of the head on its lines: the first folder after `after` in path order (the root and the snapshot when null), its tree and each file object in it, put again with the same bytes, then book the next call a block later. A one-time step for objects put before files held them on lines; open to anyone, and a second chain changes nothing. Returns the folder it held, or null once none is left.", returns = Option<String>, example = examples::hold_head)]
+    HoldHead { after: Option<String> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -263,8 +266,8 @@ pub enum Query {
         page: PageRequest,
     },
     #[ask(Reply::Diff(Vec<DiffEntry>))]
-    #[reads(state::HISTORY, state::SNAPSHOTS)]
-    #[tool_query(description = "The paths under prefix that were added, removed or modified between two snapshots.", example = examples::diff)]
+    #[reads(state::HISTORY, state::SNAPSHOTS, state::DIFFS, state::RECORDED_FROM)]
+    #[tool_query(description = "The paths under prefix that were added, removed or modified between two snapshots, folded from what each commit recorded: a removed or moved folder is one entry.", example = examples::diff)]
     Diff {
         from: BlobId,
         to: BlobId,
@@ -349,6 +352,10 @@ pub fn describe(op: &Op) -> describe::Description {
         Op::Guard { path } => (format!("Guard {path}"), Vec::new()),
         Op::Unguard { path } => (format!("Unguard {path}"), Vec::new()),
         Op::AdoptOwners { kind, .. } => (format!("Record owners · {kind}"), Vec::new()),
+        Op::HoldHead { .. } => (
+            "Hold a folder of the head on its lines".to_owned(),
+            Vec::new(),
+        ),
         Op::Vacate { paths } => (
             "Drop moved guards".to_owned(),
             vec![field(
@@ -404,7 +411,8 @@ fn op_variants_only_append() {
             "Guard",
             "Unguard",
             "AdoptOwners",
-            "Vacate"
+            "Vacate",
+            "HoldHead"
         ]
     );
 }

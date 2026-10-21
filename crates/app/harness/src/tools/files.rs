@@ -709,7 +709,7 @@ impl Tool for Write {
     // rewrite changes the bytes, not what the file carries.
     fn run(ctx: &ExecCtx, seat: &Seat, args: WriteArgs) -> Result<Run, Error> {
         let base = resolved(ctx, snapshot(&args.base)?)?;
-        let (exec, meta) = match stat(ctx, &args.path, base.as_ref())? {
+        let (exec, meta) = match stat(ctx, &args.path, None)? {
             Some(EntryInfo {
                 node: Node::File { exec, .. },
                 meta,

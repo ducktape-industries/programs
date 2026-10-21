@@ -22,6 +22,9 @@ impl Program for Files {
         if let Op::Watch { deliver } = op {
             return crate::watchers::watch(ctx, deliver);
         }
+        if let Op::HoldHead { after } = op {
+            return crate::hold::hold_head(ctx, after);
+        }
         let writer = ctx.sender()?;
         match op {
             Op::Commit {
@@ -38,6 +41,7 @@ impl Program for Files {
                 crate::adopt::adopt_owners(ctx, &kind, after, limit)
             }
             Op::Vacate { paths } => crate::guards::vacate(ctx, paths),
+            Op::HoldHead { .. } => Ok(()),
         }
     }
 

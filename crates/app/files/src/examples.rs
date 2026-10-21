@@ -164,3 +164,7 @@ pub(crate) fn owner() -> Query {
         path: "/home/tech/notes".into(),
     }
 }
+
+pub(crate) fn hold_head() -> Op {
+    Op::HoldHead { after: None }
+}
