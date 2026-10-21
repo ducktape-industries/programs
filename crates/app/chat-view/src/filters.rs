@@ -136,14 +136,13 @@ impl Chat {
             let more = pages.count() > pages.rows().len();
             (rows, more, pages.is_loading(), pages.failed().cloned())
         });
-        let reacted = rows.iter().filter(|row| !row.reactions.is_empty());
-        let seqs: Vec<u64> = reacted.map(|row| row.seq).collect();
+        let marks = crate::room::marked(&rows);
         filter.rows = rows;
         filter.more = more;
         filter.loading = loading;
         filter.failed = failed;
         filter.more_out = false;
-        room.read_reactors_of(seqs, cx);
+        room.read_marks_of(marks, cx);
         cx.notify();
     }
 }

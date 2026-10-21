@@ -7,9 +7,10 @@ use view::{FontWeight, HighlightStyle, UnderlineStyle};
 
 use super::parts::{HAIRLINE, face};
 use super::rich;
+use crate::asks::Shown;
 use crate::message::{ChatMessage, SystemLine};
 use crate::words;
-use crate::{Chat, Mode, Pane};
+use crate::{Chat, Control, Mode, Pane};
 use chat::Reaction;
 use view::design::Ladder;
 
@@ -21,6 +22,7 @@ const CHIP_PLUS: Pixels = px(14.);
 const THREAD_BUTTON: Pixels = px(32.);
 const THREAD_ICON: Pixels = px(16.);
 const ACTIONS: i32 = 1;
+const ASK_HEIGHT: Pixels = px(design::height::touch::SMALL as f32);
 
 pub(super) fn row(
     chat: &Chat,
@@ -150,9 +152,104 @@ fn content(
         .gap(design::space::XXS)
         .children(message.show_author.then(|| byline(message, theme, ladder)))
         .child(body(chat, message, cx, theme, ladder))
+        .children(ask_controls(chat, message, pane, cx, theme, ladder))
         .children(reacted.then(|| reactions(chat, message, pane, cx, theme, ladder)))
         .children(threaded.then(|| thread_button(message, cx, theme, ladder)))
         .children(mark)
+}
+
+fn ask_controls(
+    chat: &Chat,
+    message: &ChatMessage,
+    pane: Pane,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Option<AnyElement> {
+    let id = format!("chat-message-{}-ask", message.id);
+    let ask = match chat.ask_shown(message)? {
+        Shown::Open(ask) => ask,
+        Shown::Answered(option) => {
+            let said = div()
+                .id(id)
+                .text_type(ladder.caption)
+                .text_color(theme.muted)
+                .child(words::answered(option.as_deref()));
+            return Some(said.into_any_element());
+        }
+    };
+    let (seq, rev) = (message.seq, message.rev);
+    let mut presses: Vec<AnyElement> = Vec::new();
+    for (at, choice) in ask.options.iter().enumerate() {
+        let default = at == ask.default;
+        let kind = match default {
+            true => design::Kind::Primary,
+            false => design::Kind::Outline,
+        };
+        let click = crate::ui::message::acts(pane, seq, rev, Control::Pick(at), cx);
+        let label = words::ask_option(&choice.label, default);
+        let pick = format!("{id}-{}", at + 1);
+        presses.push(ask_chip(pick, label, kind, click, theme, ladder));
+    }
+    let click = crate::ui::message::acts(pane, seq, rev, Control::Other, cx);
+    let other = words::OTHER_ANSWER.to_owned();
+    let quiet = design::Kind::Quiet;
+    presses.push(ask_chip(
+        format!("{id}-other"),
+        other,
+        quiet,
+        click,
+        theme,
+        ladder,
+    ));
+    let row = div()
+        .id(id)
+        .flex()
+        .flex_wrap()
+        .gap(design::space::SM)
+        .mt(design::space::XXS)
+        .children(presses);
+    Some(row.into_any_element())
+}
+
+fn ask_chip(
+    id: String,
+    label: String,
+    kind: design::Kind,
+    click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> AnyElement {
+    let (ground, edge, tone) = match kind {
+        design::Kind::Primary => (Some(theme.primary), theme.primary, theme.primary_foreground),
+        design::Kind::Quiet => (None, theme.border, theme.muted),
+        design::Kind::Plain | design::Kind::Outline => {
+            (None, theme.border_strong, theme.foreground)
+        }
+    };
+    let hit = design::hit(id, ladder.hit, ASK_HEIGHT, HAIRLINE, ladder)
+        .role(Role::Button)
+        .aria_label(label.clone())
+        .focusable()
+        .on_click(click)
+        .consumes_click();
+    div()
+        .relative()
+        .h(ASK_HEIGHT)
+        .min_w(ladder.hit)
+        .px(design::space::LG)
+        .flex()
+        .items_center()
+        .justify_center()
+        .border_1()
+        .border_color(edge)
+        .when_some(ground, |chip, ground| chip.bg(ground))
+        .text_color(tone)
+        .text_type(ladder.secondary)
+        .font_weight(FontWeight::MEDIUM)
+        .child(label)
+        .child(hit)
+        .into_any_element()
 }
 
 fn byline(message: &ChatMessage, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {

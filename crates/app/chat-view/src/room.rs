@@ -307,7 +307,7 @@ impl Chat {
             room.newer_loading = false;
             match result {
                 Ok(newer) => {
-                    let seqs = reacted(&newer);
+                    let marks = marked(&newer);
                     match joins_the_held_rows {
                         true => room.extend(Side::Newer, newer),
                         false => {
@@ -316,7 +316,7 @@ impl Chat {
                             room.settle();
                         }
                     }
-                    room.read_reactors_of(seqs, cx);
+                    room.read_marks_of(marks, cx);
                     chat.drawn(Pane::Timeline).borrow_mut().follow = true;
                     chat.reached_head(cx);
                 }
@@ -381,7 +381,9 @@ impl Chat {
         if !same {
             self.read_foot_busy(cx);
         }
+        let reader = self.my_account();
         let room = self.room.get_or_insert_default();
+        room.reader = reader;
         room.landed = land > 0;
         room.target = land;
         room.at_tail = land == 0;
@@ -425,7 +427,7 @@ impl Chat {
                 }
                 room.messages = result.into();
                 room.settle();
-                room.read_reactors(cx);
+                room.read_marks(cx);
                 // the thread's root is its list's first row
                 chat.seek(cx);
                 if chat
@@ -441,6 +443,7 @@ impl Chat {
             room.messages = Loadable::Ready(kept.rows);
             room.reactors = kept.reactors;
             room.settle();
+            room.read_answers(cx);
             let members = (!kept.members_moved).then_some(kept.members);
             let held = members.is_some();
             if let Some(members) = members {
@@ -489,7 +492,7 @@ impl Chat {
                     Err(refusal) => Err(refusal),
                 };
                 chat.rows_arrived(result);
-                room_of(chat).read_reactors(cx);
+                room_of(chat).read_marks(cx);
             }));
         }
         cx.load(self, queries::members(cx.host(), members_id), |chat| {
@@ -793,7 +796,7 @@ impl Chat {
             };
             match replies {
                 Ok((fresh, next)) => {
-                    let seqs = reacted(&fresh);
+                    let marks = marked(&fresh);
                     let replies: Vec<MsgRow> = match newest {
                         Some(newest) => {
                             let held = thread.replies.ready().into_iter().flatten().cloned();
@@ -811,7 +814,7 @@ impl Chat {
                         thread.has_more = next.is_some();
                         thread.next = next;
                     }
-                    room.landed_some(moved, seqs, cx);
+                    room.landed_some(moved, marks, cx);
                 }
                 Err(refusal) => cx.log_refused("the thread", &refusal),
             }
@@ -1059,7 +1062,7 @@ impl Chat {
             room.older_loading = false;
             match result {
                 Ok((older, has_older)) => {
-                    let seqs = reacted(&older);
+                    let marks = marked(&older);
                     room.has_older = has_older;
                     room.older_failed = None;
                     if let Some(rows) = room.messages.ready_mut() {
@@ -1068,7 +1071,7 @@ impl Chat {
                         *rows = all;
                     }
                     room.settle();
-                    room.read_reactors_of(seqs, cx);
+                    room.read_marks_of(marks, cx);
                 }
                 Err(refusal) => room.older_failed = Some(design::sentence(&refusal)),
             }
@@ -1137,9 +1140,9 @@ impl Chat {
                     return;
                 }
             }
-            let seqs = reacted(&page);
+            let marks = marked(&page);
             room.extend(side, page);
-            room.read_reactors_of(seqs, cx);
+            room.read_marks_of(marks, cx);
         })
         .detach();
     }
@@ -1244,12 +1247,12 @@ impl Chat {
                 }
                 match result {
                     Ok((replies, next)) => {
-                        let seqs = reacted(&replies);
+                        let marks = marked(&replies);
                         thread.replies = Loadable::Ready(replies);
                         thread.has_more = next.is_some();
                         thread.next = next;
                         room_of(chat).settle();
-                        room_of(chat).read_reactors_of(seqs, cx);
+                        room_of(chat).read_marks_of(marks, cx);
                         chat.thread_drawn.borrow_mut().follow |= target == 0;
                         chat.seek(cx);
                         if reply {
@@ -1347,7 +1350,7 @@ impl Chat {
             thread.paging = None;
             match result {
                 Ok((mut every, next)) => {
-                    let seqs = reacted(&every);
+                    let marks = marked(&every);
                     let newest = every.last().map_or(0, |reply| reply.seq);
                     if next.is_none() {
                         let shown = thread.replies.ready().into_iter().flatten();
@@ -1358,7 +1361,7 @@ impl Chat {
                     thread.has_more = next.is_some();
                     thread.next = next;
                     room_of(chat).settle();
-                    room_of(chat).read_reactors_of(seqs, cx);
+                    room_of(chat).read_marks_of(marks, cx);
                 }
                 Err(refusal) => {
                     chat.notice =
@@ -1390,14 +1393,14 @@ impl Chat {
             match result {
                 Ok((more, next)) => {
                     let seeking = !thread.reached();
-                    let seqs = reacted(&more);
+                    let marks = marked(&more);
                     thread.has_more = next.is_some();
                     thread.next = next;
                     if let Some(rows) = thread.replies.ready_mut() {
                         rows.extend(more);
                     }
                     room_of(chat).settle();
-                    room_of(chat).read_reactors_of(seqs, cx);
+                    room_of(chat).read_marks_of(marks, cx);
                     if seeking {
                         chat.seek(cx);
                     }
@@ -1738,7 +1741,7 @@ impl Room {
                     .unwrap_or(row),
             })
             .collect();
-        let seqs = reacted(&fresh);
+        let marks = marked(&fresh);
         let from = fresh.first().map_or(u64::MAX, |row| row.seq);
         let reaches = !has_older || rows.last().is_some_and(|row| row.seq >= from);
         let mut merged: Vec<MsgRow> = match reaches {
@@ -1756,7 +1759,7 @@ impl Room {
             (false, older) => older,
         };
         self.has_older = older;
-        self.landed_some(moved, seqs, cx);
+        self.landed_some(moved, marks, cx);
     }
 
     // Rows read again by seq: each one held, in the room or its thread,
@@ -1778,23 +1781,58 @@ impl Room {
                 }
             }
         }
-        self.landed_some(moved, reacted(&fresh), cx);
+        self.landed_some(moved, marked(&fresh), cx);
     }
 
-    // Some rows landed: drops the sends they show, draws if they `moved` or
-    // a send left, and reads who reacted to `seqs` alone.
-    fn landed_some(&mut self, moved: bool, seqs: Vec<u64>, cx: &mut Context<Chat>) {
+    fn landed_some(&mut self, moved: bool, marks: Marked, cx: &mut Context<Chat>) {
         let pending = self.pending.len();
         self.settle();
         if moved || self.pending.len() != pending {
             cx.notify();
         }
-        self.read_reactors_of(seqs, cx);
+        self.read_marks_of(marks, cx);
+    }
+
+    pub(crate) fn read_marks_of(&mut self, marks: Marked, cx: &mut Context<Chat>) {
+        let roots = crate::asks::put_to(marks.asked, self.reader);
+        self.read_answers_of(roots, cx);
+        self.read_reactors_of(marks.reacted, cx);
+    }
+
+    fn read_answers_of(&mut self, roots: Vec<u64>, cx: &mut Context<Chat>) {
+        if roots.is_empty() {
+            return;
+        }
+        let id = self.id.clone();
+        let read = queries::answers(cx.host(), id.clone(), roots);
+        cx.land(read, move |chat, read, cx| {
+            let Some(room) = chat.room.as_mut().filter(|room| room.id == id) else {
+                return;
+            };
+            match read {
+                Ok(read) => {
+                    let mut answers = room.answers.clone();
+                    answers.extend(read);
+                    if answers != room.answers {
+                        room.answers = answers;
+                        cx.notify();
+                    }
+                }
+                Err(refusal) => cx.log_refused("who answered", &refusal),
+            }
+        })
+        .detach();
+    }
+
+    pub(crate) fn read_answers(&mut self, cx: &mut Context<Chat>) {
+        let asked = crate::asks::asked(self.messages.ready().into_iter().flatten());
+        let roots = crate::asks::put_to(asked, self.reader);
+        self.read_answers_of(roots, cx);
     }
 
     // Who chose the reactions on `seqs` alone, put over what the room holds
     // of them: the rows that landed, not the whole window again.
-    pub(crate) fn read_reactors_of(&mut self, seqs: Vec<u64>, cx: &mut Context<Chat>) {
+    fn read_reactors_of(&mut self, seqs: Vec<u64>, cx: &mut Context<Chat>) {
         if seqs.is_empty() {
             return;
         }
@@ -1833,12 +1871,17 @@ impl Room {
         // a reaction one dropped and another chose in one block moves no
         // count: the rows land as they were, and who chose them is read
         // again all the same
+        self.read_marks(cx);
+    }
+
+    pub(crate) fn read_marks(&mut self, cx: &mut Context<Chat>) {
+        self.read_answers(cx);
         self.read_reactors(cx);
     }
 
     // Who chose each reaction on the rows shown, room and thread: read
     // again each time rows land, kept until the next read lands.
-    pub(crate) fn read_reactors(&mut self, cx: &mut Context<Chat>) {
+    fn read_reactors(&mut self, cx: &mut Context<Chat>) {
         let replies = self
             .thread
             .as_ref()
@@ -1873,6 +1916,19 @@ fn edge(room: &Room, side: Side) -> Option<u64> {
     match side {
         Side::Older => rows.first().map(|row| row.seq),
         Side::Newer => rows.last().map(|row| row.seq.max(room.read_to)),
+    }
+}
+
+/// The rows that landed, as what of them is read again: who reacted, and who answered an ask.
+pub(crate) struct Marked {
+    reacted: Vec<u64>,
+    asked: Vec<crate::asks::AskRow>,
+}
+
+pub(crate) fn marked(rows: &[MsgRow]) -> Marked {
+    Marked {
+        reacted: reacted(rows),
+        asked: crate::asks::asked(rows),
     }
 }
 

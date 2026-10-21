@@ -6,7 +6,7 @@ use identity::Ownership;
 use std::collections::BTreeMap;
 use view::prelude::*;
 
-use crate::Reactors;
+use crate::{Answers, Reactors};
 
 fn page(after: Option<Vec<u8>>, limit: usize) -> PageRequest {
     PageRequest {
@@ -62,6 +62,15 @@ pub(crate) async fn reactors(
             .insert(chosen.emoji, chosen.by);
     }
     Ok(reactors)
+}
+
+pub(crate) async fn answers(
+    host: Host,
+    channel_id: String,
+    roots: Vec<u64>,
+) -> Result<Answers, Error> {
+    let threads = host.query(ask::Repliers { channel_id, roots }).await?;
+    Ok(threads.into_iter().collect())
 }
 
 // A screenful on each side of `seq`: the pane fills wherever the row is drawn in it.

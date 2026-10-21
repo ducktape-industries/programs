@@ -191,7 +191,8 @@ impl Chat {
                 self.open_menu(pane, seq, rev, Mode::Reactions, window, cx)
             }
             Control::More => self.open_menu(pane, seq, rev, Mode::More, window, cx),
-            Control::Replies | Control::Thread => self.reply_in_thread(seq, cx),
+            Control::Replies | Control::Thread | Control::Other => self.reply_in_thread(seq, cx),
+            Control::Pick(at) => self.pick(pane, seq, at, cx),
         }
     }
 

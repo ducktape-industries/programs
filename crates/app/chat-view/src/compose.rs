@@ -2,7 +2,7 @@
 //! sends it makes, and which drafts are kept.
 use crate::composer::{Draft, Event, MentionChoice, Outcome, Send, Target, pending_row};
 use crate::names::mention_token;
-use crate::{Chat, Mode, words};
+use crate::{Chat, Mode, Pane, words};
 use chat::MsgRow;
 use chat::message::Attachment;
 use std::cmp::Reverse;
@@ -157,6 +157,24 @@ impl Chat {
             seq: menu.seq,
             base_rev: menu.rev,
         })
+    }
+
+    pub(crate) fn pick(&mut self, pane: Pane, seq: u64, at: usize, cx: &mut Context<Self>) {
+        let Some(label) = self.option_of(pane, seq, at) else {
+            return;
+        };
+        let target = Target::Post {
+            channel: self.room_id(),
+            thread: Some(seq),
+        };
+        let key = target.key();
+        let draft = self.drafts.entry(key.clone()).or_default();
+        if !draft.in_flight.is_empty() {
+            return;
+        }
+        let send = Send { body: label };
+        draft.in_flight.push(send.clone());
+        self.send(key, send, Vec::new(), None, target, cx);
     }
 
     // A send waits while a file of its draft is still going up: it is

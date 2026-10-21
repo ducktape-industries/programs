@@ -201,7 +201,8 @@ it asks, the question in bold and `#ask`; one numbered line per option (`N. labe
 ahead unless someone picks. A reader that draws no buttons shows it as text, and an answer is a
 reply in its thread, typed or pressed. `asking::read` finds an ask in any message of that form, one
 typed by hand included, and `asking::answer` reads a reply's words as an option: its label, case
-folded, or its number. `asking::check` refuses what `read` could not read back.
+folded, or its number. `asking::check` refuses what `read` could not read back. chat-view draws
+an ask put to its reader as buttons, one per option and Other, and its answer once given.
 
 `Query::Repliers { channel_id, roots }` answers, for each root asked and in the order asked, the
 first reply each account wrote in its thread that is no notice, in reply order (a deleted one included, marked

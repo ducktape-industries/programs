@@ -4,6 +4,7 @@ use view::accesskit::Action;
 use view::prelude::*;
 use view::{Div, FontStyle, FontWeight, HighlightStyle, Stateful, UnderlineStyle};
 
+use crate::asks::Shown;
 use crate::message::{ChatMessage, SpanStyle, SystemLine};
 use crate::ui::badge;
 use crate::{Chat, Control, Mode, Pane};
@@ -41,6 +42,7 @@ pub(crate) struct Seen {
     reactors: Option<std::collections::BTreeMap<String, Vec<Principal>>>,
     files: Vec<FileSeen>,
     answering: Vec<String>,
+    ask: Option<Shown>,
 }
 
 #[derive(PartialEq)]
@@ -93,6 +95,7 @@ impl Seen {
                 })
                 .collect(),
             answering: answering_under(chat, pane, seq),
+            ask: chat.ask_shown(message),
         }
     }
 }
@@ -279,7 +282,7 @@ fn gap(message: &ChatMessage) -> Pixels {
     }
 }
 
-fn acts(
+pub(crate) fn acts(
     pane: Pane,
     seq: u64,
     rev: u32,
@@ -543,6 +546,7 @@ fn content(
         false => None,
     };
     let blocks = blocks(chat, &message, cells, cx, theme);
+    let ask = ask_controls(chat, &message, pane, cells, cx, theme, ladder);
     let reactions = match message.reactions.is_empty() {
         true => None,
         false => Some(reactions(chat, &message, pane, cells, cx, theme)),
@@ -559,9 +563,61 @@ fn content(
         .children(header)
         .children(blocks)
         .children(edited_mark(&message, theme))
+        .children(ask)
         .children(reactions)
         .children(replies)
         .into_any_element()
+}
+
+fn ask_controls(
+    chat: &Chat,
+    message: &ChatMessage,
+    pane: Pane,
+    cells: &mut Cells,
+    cx: &mut Context<Chat>,
+    theme: &Theme,
+    ladder: &Ladder,
+) -> Option<AnyElement> {
+    let id = format!("chat-message-{}-ask", message.id);
+    let ask = match chat.ask_shown(message)? {
+        Shown::Open(ask) => ask,
+        Shown::Answered(option) => {
+            let said = div()
+                .id(id)
+                .text_size(design::text::CAPTION)
+                .text_color(theme.muted)
+                .child(words::answered(option.as_deref()));
+            return Some(said.into_any_element());
+        }
+    };
+    let (seq, rev) = (message.seq, message.rev);
+    let mut row = div().id(id.clone()).flex().flex_wrap().gap_1().pt_1();
+    for (at, choice) in ask.options.iter().enumerate() {
+        let default = at == ask.default;
+        let control = Control::Pick(at);
+        let active = cells.push(control.clone());
+        let pick = format!("{id}-{}", at + 1);
+        let kind = match default {
+            true => design::Kind::Primary,
+            false => design::Kind::Outline,
+        };
+        let label = words::ask_option(&choice.label, default);
+        let click = acts(pane, seq, rev, control, cx);
+        let button = design::button(pick.clone(), label, ladder, theme, click)
+            .kind(kind)
+            .small()
+            .item(active);
+        row = row.child(cell(&pick, true, button));
+    }
+    let active = cells.push(Control::Other);
+    let other = format!("{id}-other");
+    let click = acts(pane, seq, rev, Control::Other, cx);
+    let button = design::button(other.clone(), words::OTHER_ANSWER, ladder, theme, click)
+        .kind(design::Kind::Quiet)
+        .small()
+        .item(active);
+    row = row.child(cell(&other, true, button));
+    Some(row.into_any_element())
 }
 
 fn blocks(

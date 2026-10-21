@@ -62,6 +62,17 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
   `reads/<signer>/typing`, each until its `Undraft` lands, and each start takes
   it down in every room kept there but one typed in this session. A switch of
   account leaves the old account's typing up until it next starts here.
+- Asks (`asks.rs`): a top-level message `chat::asking::read` reads as an ask
+  put to the reader, in a room they may write in, draws a button per option
+  (the default's says so) and **Other…** under its blocks, on the desktop and
+  the phone. A button posts its option's label as a reply in the ask's thread
+  (`Chat::pick`, through the reply composer's send, with no files), and Other
+  opens the thread with its reply field taking the keys. Whether an addressee
+  has answered is chat's `Repliers`, read for the asks put to the reader among
+  the rows each time rows land, beside who reacted (`Room::read_marks`), and a reply of the
+  reader's own still in flight counts too: the buttons then give way to
+  "Answered: <option>", or "Answered in the thread" for words of their own.
+  Anyone else reads the ask as its text.
 - Beside the room (desktop) or as a page (phone): the thread, the channel's
   details (`ui/side.rs::details`, `ui/phone/details.rs`) and a widget.
 - Rules: a channel's `rules` meta (`rules.rs`, `ui/rules.rs`), the text or the

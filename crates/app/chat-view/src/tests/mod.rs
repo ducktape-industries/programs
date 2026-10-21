@@ -15,6 +15,7 @@ use view::methods::{Changes, HostId, HostSession, HostVisible, Session, Submit};
 mod agents;
 mod answering;
 mod archived;
+mod asks;
 mod attachments;
 mod context_menus;
 mod cost;
@@ -367,6 +368,9 @@ fn chat_reply(query: Query) -> Reply {
             ]))
         }
         Query::Reactors { seqs, .. } => reactors(seqs),
+        Query::Repliers { roots, .. } => {
+            Reply::Repliers(roots.into_iter().map(|root| (root, Vec::new())).collect())
+        }
         Query::Listening { .. } => Reply::Listening(page(Vec::new())),
         Query::Notices { .. } => Reply::Notices(page(Vec::new())),
         // eddy wrote in no room and keeps chat's order

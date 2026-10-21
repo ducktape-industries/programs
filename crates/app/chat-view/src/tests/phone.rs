@@ -707,7 +707,7 @@ fn a_long_press_on_a_reaction_names_who_chose_it_and_not_the_rows_actions() {
     }];
     rows_are(&mut cx, &view, vec![liked]);
     cx.update(&view, |chat, _, cx| {
-        chat.room.as_mut().expect("open").read_reactors(cx);
+        chat.room.as_mut().expect("open").read_marks(cx);
     });
     cx.run_until_parked();
     long_press(&mut cx, "chat-message-m1-reaction-👍");

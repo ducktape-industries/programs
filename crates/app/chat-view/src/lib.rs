@@ -16,6 +16,8 @@
 #[cfg(not(feature = "notifier"))]
 mod actions;
 #[cfg(not(feature = "notifier"))]
+mod asks;
+#[cfg(not(feature = "notifier"))]
 mod attach;
 #[cfg(not(feature = "notifier"))]
 mod compose;

@@ -196,7 +196,7 @@ fn a_reaction_chip_names_who_chose_it() {
                 count: 2,
                 reacted_by_me: true,
             });
-        room.read_reactors(cx);
+        room.read_marks(cx);
         cx.notify();
     });
     cx.run_until_parked();

@@ -45,6 +45,21 @@ pub(crate) const LOADING_CHANNELS: &str = "Loading channels…";
 pub(crate) const SEARCH_MESSAGES: &str = "Search messages";
 pub(crate) const MORE_RESULTS: &str = "More results";
 pub(crate) const AGENT: &str = "Agent";
+pub(crate) const OTHER_ANSWER: &str = "Other…";
+
+pub(crate) fn ask_option(label: &str, default: bool) -> String {
+    match default {
+        true => format!("{label} (default)"),
+        false => label.to_owned(),
+    }
+}
+
+pub(crate) fn answered(option: Option<&str>) -> String {
+    match option {
+        Some(label) => format!("Answered: {label}"),
+        None => "Answered in the thread".to_owned(),
+    }
+}
 
 // someone answering in a room before they post: who, and what they say they are doing
 pub(crate) const ANSWERING: &str = "is answering…";

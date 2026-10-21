@@ -406,6 +406,10 @@ pub struct Room {
     #[serde(skip)]
     pub(crate) reading_reactors: Option<view::Task<()>>,
     #[serde(skip)]
+    pub(crate) answers: Answers,
+    #[serde(default)]
+    pub(crate) reader: Option<u64>,
+    #[serde(skip)]
     pub(crate) kept_thread: Option<KeptThread>,
     // the reads of what blocks wrote still out, and what they read again
     #[serde(skip)]
@@ -474,6 +478,9 @@ pub use view::scroll::Anchor;
 
 // Who chose each reaction, by message seq and emoji.
 pub(crate) type Reactors = BTreeMap<u64, BTreeMap<String, Vec<Principal>>>;
+
+/// Who answered each ask the room shows, by its seq: the first reply each account wrote under it.
+pub(crate) type Answers = BTreeMap<u64, Vec<MsgRow>>;
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Thread {
@@ -775,6 +782,10 @@ pub enum Control {
     ThumbsUp,
     React,
     More,
+    /// an ask's option, by its place among them: its label posted in the ask's thread
+    Pick(usize),
+    /// an ask's Other: its thread, the reply field taking the keys
+    Other,
 }
 
 impl Chat {

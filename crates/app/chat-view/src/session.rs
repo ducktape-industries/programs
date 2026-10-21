@@ -34,6 +34,11 @@ impl Chat {
             || self.session.chain_id != prev.chain_id;
         let account_changed = self.session.account != prev.account;
         if reader_changed || account_changed {
+            let account = self.session.account;
+            if let Some(room) = &mut self.room {
+                room.reader = account;
+                room.answers.clear();
+            }
             self.listening.clear();
             self.posted.clear();
             self.order.clear();
