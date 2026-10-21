@@ -172,6 +172,8 @@ pub struct Chat {
     /// the channel list read again while the one on screen stays
     #[serde(skip)]
     pub(crate) rereading_channels: Option<view::Task<()>>,
+    #[serde(skip)]
+    pub(crate) catch_ups_asked: u64,
     // what chat blocks moved of the channel list since that read (`notifier::Moved`)
     #[serde(skip)]
     pub(crate) moved_channels: crate::notifier::Moved,
@@ -392,6 +394,10 @@ pub struct Room {
     pub(crate) unsettled: chat::view::Written,
     #[serde(skip)]
     pub(crate) unread: chat::view::Written,
+    #[serde(skip)]
+    pub(crate) row_read_at: BTreeMap<u64, u64>,
+    #[serde(skip)]
+    pub(crate) tail_read_at: u64,
     // the whole window read again, until it lands
     #[serde(skip)]
     pub(crate) rereading_all: bool,

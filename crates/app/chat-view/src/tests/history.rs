@@ -369,6 +369,87 @@ fn a_refused_catch_up_read_is_read_again_when_the_room_opens_again() {
     assert!(asked_row(&cx, 2) > refused, "asked again as the room opens");
 }
 
+#[test]
+fn a_catch_up_read_answered_late_never_lands_over_a_newer_one() {
+    let (mut cx, view) = opened();
+    let changes = cx.host().stream::<Changes<::chat::Chat>>();
+    let edited = chat::tables::MESSAGES.key(&("general".to_owned(), 2u64));
+    cx.host().never::<Ask<::chat::Chat>>();
+    changes.send(block(4, vec![edited.clone()]));
+    cx.run_until_parked();
+    let said = Rc::new(Cell::new("the newer edit"));
+    let says = said.clone();
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::MessagesAround { channel_id, .. } if channel_id == "general" => {
+                    Reply::Messages(vec![row(2, 8, says.get())])
+                }
+                query => chat_reply(query),
+            })
+        }));
+    changes.send(block(5, vec![edited]));
+    cx.run_until_parked();
+    said.set("the older edit");
+    cx.host().answer_held::<Ask<::chat::Chat>>();
+    cx.run_until_parked();
+    let shown = view.read(|chat| {
+        let rows = chat.room.as_ref().unwrap().messages.ready().unwrap();
+        rows.iter().find(|row| row.seq == 2).unwrap().text.clone()
+    });
+    assert_eq!(
+        shown, "the newer edit",
+        "the read answered last was asked first"
+    );
+}
+
+#[test]
+fn a_catch_up_read_of_an_ended_visit_never_lands_over_the_new_visits() {
+    let (mut cx, view) = opened();
+    let changes = cx.host().stream::<Changes<::chat::Chat>>();
+    let edited = chat::tables::MESSAGES.key(&("general".to_owned(), 2u64));
+    cx.host().never::<Ask<::chat::Chat>>();
+    changes.send(block(4, vec![edited]));
+    cx.run_until_parked();
+    let said = Rc::new(Cell::new("the newer edit"));
+    let says = said.clone();
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::MessagesAround { channel_id, .. } if channel_id == "general" => {
+                    Reply::Messages(vec![row(2, 8, says.get())])
+                }
+                query => chat_reply(query),
+            })
+        }));
+    for room in ["dm-7-8", "general"] {
+        cx.update(&view, |chat, _, cx| {
+            cx.notify();
+            chat.choose(room.into(), cx)
+        });
+        cx.run_until_parked();
+    }
+    let shown = |view: &Entity<Chat>| {
+        view.read(|chat| {
+            let rows = chat.room.as_ref().unwrap().messages.ready().unwrap();
+            rows.iter().find(|row| row.seq == 2).unwrap().text.clone()
+        })
+    };
+    assert_eq!(
+        shown(&view),
+        "the newer edit",
+        "the new visit read it again"
+    );
+    said.set("the older edit");
+    cx.host().answer_held::<Ask<::chat::Chat>>();
+    cx.run_until_parked();
+    assert_eq!(
+        shown(&view),
+        "the newer edit",
+        "the first visit's read came last"
+    );
+}
+
 fn list_named<'a>(node: &'a wire::Node, name: &str) -> Option<&'a wire::Node> {
     if let wire::Node::List {
         id: wire::ElementIdWire::Name(id),

@@ -603,6 +603,8 @@ impl Chat {
         let newer = written.roots || written.seqs.iter().any(past);
         let again: Vec<u64> = written.seqs.intersection(&held).copied().collect();
         room.unsettled.merge(written);
+        self.catch_ups_asked += 1;
+        let asked = self.catch_ups_asked;
         let id = room.id.clone();
         if newer {
             room.reading += 1;
@@ -612,14 +614,14 @@ impl Chat {
                 let Some(room) = chat.room.as_mut().filter(|room| room.id == room_id) else {
                     return;
                 };
-                room.settled();
                 match rows {
-                    Ok((fresh, has_older)) => room.tail_landed(fresh, has_older, cx),
+                    Ok((fresh, has_older)) => room.tail_landed(fresh, has_older, asked, cx),
                     Err(refusal) => {
                         room.unread.roots = true;
                         cx.log_refused("the room", &refusal)
                     }
                 }
+                room.settled();
             })
             .detach();
         }
@@ -631,14 +633,14 @@ impl Chat {
                 let Some(room) = chat.room.as_mut().filter(|room| room.id == room_id) else {
                     return;
                 };
-                room.settled();
                 match rows {
-                    Ok(fresh) => room.rows_landed(fresh, cx),
+                    Ok(fresh) => room.rows_landed(fresh, asked, cx),
                     Err(refusal) => {
                         room.unread.seqs.extend(span.0..=span.1);
                         cx.log_refused("the room", &refusal)
                     }
                 }
+                room.settled();
             })
             .detach();
         }
@@ -1413,13 +1415,51 @@ impl Room {
         }
     }
 
+    fn newest_reads(&mut self, fresh: Vec<MsgRow>, asked: u64) -> Vec<MsgRow> {
+        let row_read_at = &mut self.row_read_at;
+        fresh
+            .into_iter()
+            .filter(|row| {
+                let read_later = row_read_at.get(&row.seq).is_some_and(|at| *at > asked);
+                if !read_later {
+                    row_read_at.insert(row.seq, asked);
+                }
+                !read_later
+            })
+            .collect()
+    }
+
     // The newest page landed over the rows held: the rows from its oldest on
     // are its, the older ones stay. A page that does not reach the rows held
     // starts the room over from it; what lies between pages in on scroll.
-    fn tail_landed(&mut self, fresh: Vec<MsgRow>, has_older: bool, cx: &mut Context<Chat>) {
+    fn tail_landed(
+        &mut self,
+        fresh: Vec<MsgRow>,
+        has_older: bool,
+        asked: u64,
+        cx: &mut Context<Chat>,
+    ) {
+        if asked < self.tail_read_at {
+            return;
+        }
+        self.tail_read_at = asked;
+        let shown: Vec<u64> = fresh.iter().map(|row| row.seq).collect();
+        let newest = self.newest_reads(fresh.clone(), asked);
         let Some(rows) = self.messages.ready_mut() else {
             return;
         };
+        let fresh: Vec<MsgRow> = fresh
+            .into_iter()
+            .zip(shown)
+            .map(|(row, seq)| match newest.iter().any(|new| new.seq == seq) {
+                true => row,
+                false => rows
+                    .iter()
+                    .find(|held| held.seq == seq)
+                    .cloned()
+                    .unwrap_or(row),
+            })
+            .collect();
         let seqs = reacted(&fresh);
         let from = fresh.first().map_or(u64::MAX, |row| row.seq);
         let reaches = !has_older || rows.last().is_some_and(|row| row.seq >= from);
@@ -1443,7 +1483,8 @@ impl Room {
 
     // Rows read again by seq: each one held, in the room or its thread,
     // takes its fresh copy.
-    fn rows_landed(&mut self, fresh: Vec<MsgRow>, cx: &mut Context<Chat>) {
+    fn rows_landed(&mut self, fresh: Vec<MsgRow>, asked: u64, cx: &mut Context<Chat>) {
+        let fresh = self.newest_reads(fresh, asked);
         let mut moved = false;
         let replies = self
             .thread
