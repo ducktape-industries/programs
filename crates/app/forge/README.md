@@ -39,7 +39,8 @@ only.
   rows with it. Git objects are the one exception: an object is the blob whose
   id is its oid, with no table between them (`src/objects.rs`).
 - Forge emits chat creation for `forge:<repo>:<n>`, named `pr/<repo>#<n> <title>`, and a
-  notice (chat `Notify`) for opening, closing, merging and submitting a review, told only to
+  notice (chat `NotifyBy` naming the account that acted) for opening, closing, merging and
+  submitting a review, told only to
   the accounts it concerns (see "A change's notices"). Chat owns all conversation replies.
   The kernel runs each emission once the handler returns Ok, in the same frame,
   so the record and its channel land in one block or not at all.
@@ -400,7 +401,7 @@ is terminal, so nothing un-archives a channel.
 
 ### A change's notices
 
-Each thing that happens to a change is one chat notice (`Notify`, a `Block::Notice`) in the
+Each thing that happens to a change is one chat notice (`NotifyBy`, a `Block::Notice`) in the
 change's room, a root and never a thread reply, under the message id forge gives it: a
 review's card finds its notice by `Review.message_id`, and replies hang under it.
 
@@ -417,7 +418,9 @@ review's card finds its notice by `Review.message_id`, and replies hang under it
 
 Every notice's kind is `change` (`forge::NOTICE`), its subject `<repo> #<n>: <title>`, and
 its link the change's path on the reader's chain, `forge/<repo>/<n>` (`forge::notice_link`). The account that acted is never among its concerns, nor is the chain
-(`Root`): only the accounts it concerns are told, and everyone else in the room sees it. A
+(`Root`): only the accounts it concerns are told, and everyone else in the room sees it. The
+line names that account as chat's `NotifyBy { by }` (a plain `Notify` when the chain acted), so it
+follows the line's thread and hears the replies under it by chat's own rule. A
 new head and a request are posted only when they concern someone besides that account, so a
 change nobody else is asked to review moves without a line. forge finds the open changes a
 moved branch is the source of in an index of open changes by source branch, kept as each change

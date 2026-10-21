@@ -175,11 +175,21 @@ pub fn post(
         detail: event.detail(change),
         concerns: accounts(event.concerns(ctx, repo, change)?, actor),
     };
-    let line = Op::Notify {
-        channel_id: change.channel.clone(),
-        message_id,
-        thread: None,
-        notice,
+    let channel_id = change.channel.clone();
+    let line = match actor {
+        Some(by @ Principal::Account(_)) => Op::NotifyBy {
+            channel_id,
+            message_id,
+            thread: None,
+            notice,
+            by: by.clone(),
+        },
+        Some(Principal::Root) | None => Op::Notify {
+            channel_id,
+            message_id,
+            thread: None,
+            notice,
+        },
     };
     let renames_its_room = !elsewhere && !matches!(event, Event::Opened | Event::ArchiveRefused(_));
     if renames_its_room {
