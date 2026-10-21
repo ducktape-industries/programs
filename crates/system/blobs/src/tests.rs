@@ -1,6 +1,6 @@
 // The program natively over `program::MockHost`, with a real valset seated as the validators role.
 
-use ::program::{Env, Error, MockHost, Origin, Program, code};
+use ::program::{Env, Error, HashKind, MockHost, Origin, Program, code};
 use abi::BlobId;
 use valset::{Genesis, Member, Valset};
 
@@ -168,6 +168,42 @@ fn a_blob_put_twice_is_held_by_whichever_bundle_reached_its_quorum() {
         Some(later)
     );
     assert!(!bundle(&host, lone).unwrap().held());
+}
+
+#[test]
+fn a_put_naming_a_blob_a_program_put_with_another_kind_or_length_is_refused() {
+    let host = host(&[1]);
+    let wasm = b"\0asm".to_vec();
+    let put_by_a_program = host.exec(at(4));
+    let id = put_by_a_program
+        .blob_put(HashKind::Sha256, "program", wasm.clone())
+        .unwrap();
+    let named = entry("program", &wasm);
+    assert_eq!(named.id, id);
+    let unframed = Entry {
+        len: wasm.len() as u64,
+        ..named.clone()
+    };
+    let other_kind = Entry {
+        kind: "part".into(),
+        ..named.clone()
+    };
+    for wrong in [unframed, other_kind] {
+        let refused = host.refused(|| {
+            Blobs::execute(
+                &host.exec(at(5)),
+                Op::Put {
+                    blobs: vec![named.clone(), wrong],
+                },
+            )
+        });
+        assert_eq!(refused.code, code::INVALID_INPUT);
+        assert!(refused.message.contains("never be held"), "{refused:?}");
+    }
+    assert_eq!(bundle(&host, 0), None);
+    assert_eq!(put(&host, vec![named.clone()]), Ok(0));
+    let uploaded = entry("pack", b"NOT PUT BY A PROGRAM");
+    assert_eq!(put(&host, vec![uploaded]), Ok(1));
 }
 
 #[test]

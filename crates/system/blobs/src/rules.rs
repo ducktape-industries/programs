@@ -21,6 +21,9 @@ pub(crate) fn put(ctx: &ExecCtx, blobs: Vec<Entry>) -> Result<(), Error> {
     if blobs.is_empty() {
         return Err(invalid("a put names at least one blob"));
     }
+    for entry in &blobs {
+        named_as_put(ctx, entry)?;
+    }
     let n: u64 = ctx.record(NEXT)?.unwrap_or(0);
     for entry in &blobs {
         ctx.set(index_key(&entry.id, n), Vec::new());
@@ -35,6 +38,23 @@ pub(crate) fn put(ctx: &ExecCtx, blobs: Vec<Entry>) -> Result<(), Error> {
     ctx.put(NEXT, &(n + 1));
     ctx.set_return_data(abi::encode(&n));
     Ok(())
+}
+
+fn named_as_put(ctx: &QueryCtx, entry: &Entry) -> Result<(), Error> {
+    let Some(header) = ctx.blob_stat(entry.id) else {
+        return Ok(());
+    };
+    let framed_len = blob::header(&header.kind, header.len).len() as u64 + header.len;
+    let same_kind = header.kind == entry.kind;
+    let same_len = framed_len == entry.len;
+    let named_as_put = same_kind && same_len;
+    if named_as_put {
+        return Ok(());
+    }
+    Err(invalid(format!(
+        "{:?} is a {} blob of {framed_len} framed bytes, and this entry names a {} blob of {} framed bytes: no validator would receipt it, so the bundle would never be held",
+        entry.id, header.kind, entry.kind, entry.len
+    )))
 }
 
 pub(crate) fn receipt(ctx: &ExecCtx, n: u64) -> Result<(), Error> {
