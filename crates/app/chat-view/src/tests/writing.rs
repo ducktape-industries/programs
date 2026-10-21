@@ -721,6 +721,34 @@ fn a_message_of_files_alone_opens_its_edit_and_the_save_keeps_its_files() {
 }
 
 #[test]
+fn an_edit_saved_unchanged_keeps_italic_beside_a_letter_and_code_holding_backticks() {
+    let (mut cx, view) = opened();
+    cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
+    let source = "a*b*c, `` `tick `` and ``x ` y``, **_both_** and *it*";
+    let marked = parsed_row(1, 7, source);
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![marked.clone()])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(4, posted("general")));
+    cx.run_until_parked();
+    edit(&mut cx, &view, 1);
+    cx.simulate_focus("edit-general-1/editor");
+    cx.simulate_field_key("edit-general-1/editor", "enter");
+    cx.run_until_parked();
+    let sent = cx.host().requests::<Submit<::chat::Chat>>();
+    let Some(Op::EditMessage { blocks, .. }) = sent.last() else {
+        panic!("an edit: {sent:?}")
+    };
+    assert_eq!(blocks, &chat::parse_message(source), "saved as it was");
+}
+
+#[test]
 fn a_notice_of_the_readers_own_offers_no_edit_and_opens_none() {
     let (mut cx, view) = opened();
     with_menu_on(&mut cx, &view, notice_row(3, 7));

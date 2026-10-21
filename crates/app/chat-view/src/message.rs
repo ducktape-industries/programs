@@ -321,18 +321,45 @@ fn draft_spans(spans: &[Span]) -> String {
                 _ => None,
             });
             let mut text = mention.unwrap_or_else(|| span.text.clone());
-            for mark in &span.marks {
+            let bold = span.marks.contains(&Mark::Bold);
+            let mut marks: Vec<&Mark> = span.marks.iter().collect();
+            marks.sort_by_key(|mark| matches!(mark, Mark::Bold));
+            for mark in marks {
                 text = match mark {
                     Mark::Bold => format!("**{text}**"),
-                    Mark::Italic => format!("_{text}_"),
+                    Mark::Italic => italic(&text, bold),
                     Mark::Link(url) => format!("[{text}]({url})"),
                     Mark::Mention(_) => text,
-                    Mark::Code => format!("`{text}`"),
+                    Mark::Code => code(&text),
                 };
             }
             text
         })
         .collect()
+}
+
+fn italic(text: &str, bold: bool) -> String {
+    let underscore = bold || text.contains('*');
+    match underscore {
+        true => format!("_{text}_"),
+        false => format!("*{text}*"),
+    }
+}
+
+fn code(text: &str) -> String {
+    let mut longest = 0;
+    let mut run = 0;
+    for c in text.chars() {
+        run = if c == '`' { run + 1 } else { 0 };
+        longest = longest.max(run);
+    }
+    let fence = "`".repeat(longest + 1);
+    let spaced = text.starts_with(' ') && text.ends_with(' ') && !text.trim().is_empty();
+    let ticked = text.starts_with('`') || text.ends_with('`');
+    match spaced || ticked {
+        true => format!("{fence} {text} {fence}"),
+        false => format!("{fence}{text}{fence}"),
+    }
 }
 
 /// A paragraph's or quote's spans as the runs the frame styles; empty when
