@@ -680,6 +680,7 @@ mod lifecycle;
 mod memo;
 mod phone;
 mod pictures;
+mod presses;
 mod primitive_tests;
 mod style_table;
 mod tick_alloc;

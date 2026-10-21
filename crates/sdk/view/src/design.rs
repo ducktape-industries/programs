@@ -1535,7 +1535,7 @@ fn takes_press(
     item_of: Option<bool>,
     click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
-    let element = element.on_click(click);
+    let element = element.on_click(click).consumes_click();
     match item_of {
         Some(active) => item(element, Role::Button, active),
         None => element.focusable(),

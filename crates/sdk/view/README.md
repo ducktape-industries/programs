@@ -101,7 +101,7 @@ with these; the rest of this page is reference.
 | `TextField` and `Input::new(id, &self.field, label)` | 5/6 | A text field bound to the view's state ("What is gpui and what is ours"). |
 | `.focusable()`, `.role(..)`, `.aria_disabled(..)` | 5/6 | What a pressable `div` owes the keyboard and a screen reader; the test host fails a frame that lacks one. |
 | `cx.processor(\|view, item, window, cx\| ..)` | 5/6 | `cx.listener` for a callback that returns a value: a list's row builder. gpui's. |
-| `design::button(id, label, &ladder, &theme, click).enabled(..)` | 3/6 | A button with its role, Tab stop and disabled state done; `.busy(..)` while its write is in flight, `.small()` for the Expo kit's small one. |
+| `design::button(id, label, &ladder, &theme, click).enabled(..)` | 3/6 | A button with its role, Tab stop and disabled state done, whose press is its own: a pressable row around it does not hear it. `.busy(..)` while its write is in flight, `.small()` for the Expo kit's small one. |
 | `cx.new(..)`, child entities | 1/6 | State and a render of its own inside a view ("Child entities"). |
 | `design::menu(id, label, at, &theme)` of `design::menu_item(..)`s, the modal of a `modal_overlay(..).on_dismiss(..)` | 1/6 | A menu at the pointer: a right press's (`on_mouse_down(MouseButton::Right, ..)`, its `position`), or the Menu key's or Shift+F10's on a focused row (`design::asks_for_menu`). |
 

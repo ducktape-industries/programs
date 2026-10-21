@@ -22,7 +22,6 @@ const CHIP_PLUS: Pixels = px(14.);
 const THREAD_BUTTON: Pixels = px(32.);
 const THREAD_ICON: Pixels = px(16.);
 const ACTIONS: i32 = 1;
-const ASK_HEIGHT: Pixels = px(design::height::touch::SMALL as f32);
 
 pub(super) fn row(
     chat: &Chat,
@@ -189,19 +188,17 @@ fn ask_controls(
         let click = crate::ui::message::acts(pane, seq, rev, Control::Pick(at), cx);
         let label = words::ask_option(&choice.label, default);
         let pick = format!("{id}-{}", at + 1);
-        presses.push(ask_chip(pick, label, kind, click, theme, ladder));
+        let button = design::button(pick, label, ladder, theme, click)
+            .kind(kind)
+            .small();
+        presses.push(button.into_any_element());
     }
     let click = crate::ui::message::acts(pane, seq, rev, Control::Other, cx);
-    let other = words::OTHER_ANSWER.to_owned();
-    let quiet = design::Kind::Quiet;
-    presses.push(ask_chip(
-        format!("{id}-other"),
-        other,
-        quiet,
-        click,
-        theme,
-        ladder,
-    ));
+    let other = format!("{id}-other");
+    let other = design::button(other, words::OTHER_ANSWER, ladder, theme, click)
+        .kind(design::Kind::Quiet)
+        .small();
+    presses.push(other.into_any_element());
     let row = div()
         .id(id)
         .flex()
@@ -210,46 +207,6 @@ fn ask_controls(
         .mt(design::space::XXS)
         .children(presses);
     Some(row.into_any_element())
-}
-
-fn ask_chip(
-    id: String,
-    label: String,
-    kind: design::Kind,
-    click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    theme: &Theme,
-    ladder: &Ladder,
-) -> AnyElement {
-    let (ground, edge, tone) = match kind {
-        design::Kind::Primary => (Some(theme.primary), theme.primary, theme.primary_foreground),
-        design::Kind::Quiet => (None, theme.border, theme.muted),
-        design::Kind::Plain | design::Kind::Outline => {
-            (None, theme.border_strong, theme.foreground)
-        }
-    };
-    let hit = design::hit(id, ladder.hit, ASK_HEIGHT, HAIRLINE, ladder)
-        .role(Role::Button)
-        .aria_label(label.clone())
-        .focusable()
-        .on_click(click)
-        .consumes_click();
-    div()
-        .relative()
-        .h(ASK_HEIGHT)
-        .min_w(ladder.hit)
-        .px(design::space::LG)
-        .flex()
-        .items_center()
-        .justify_center()
-        .border_1()
-        .border_color(edge)
-        .when_some(ground, |chip, ground| chip.bg(ground))
-        .text_color(tone)
-        .text_type(ladder.secondary)
-        .font_weight(FontWeight::MEDIUM)
-        .child(label)
-        .child(hit)
-        .into_any_element()
 }
 
 fn byline(message: &ChatMessage, theme: &Theme, ladder: &Ladder) -> Stateful<Div> {
