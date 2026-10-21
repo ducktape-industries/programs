@@ -329,3 +329,90 @@ fn a_watcher_hears_a_change_forge_takes_out_of_a_merge_queue() {
     );
     assert!(why.contains("gates failed"), "{why}");
 }
+
+#[test]
+fn a_watcher_hears_a_dispatch_at_the_commit_its_ref_names_and_one_forge_cannot_place_is_refused() {
+    let sandbox = watched();
+    let mut source = MemoryObjects::new(Hash::Sha1);
+    let root = file_commit(&mut source, &[], 1, &[("a", b"1\n")]);
+    let zero = Hash::Sha1.zero();
+    let pack = pack_of(&source, &all_ids(&source));
+    push(
+        &sandbox,
+        OWNER,
+        "project",
+        &[(zero, root, "refs/heads/main")],
+        &pack,
+    )
+    .unwrap();
+    let dispatch = |event_type: &str, at: Revision| Op::Dispatch {
+        repo: "project".into(),
+        event_type: event_type.into(),
+        payload: b"{}".to_vec(),
+        at,
+    };
+    act(&sandbox, OWNER, &dispatch("nightly", branch("main"))).unwrap();
+    let heard_one = Watched::Dispatched {
+        repo: "project".into(),
+        event_type: "nightly".into(),
+        payload: b"{}".to_vec(),
+        commit: root.to_hex(),
+        by: person(OWNER),
+    };
+    assert_eq!(heard(&sandbox).last(), Some(&heard_one));
+    let full = Revision::Oid(root.to_hex());
+    act(&sandbox, OWNER, &dispatch("nightly", full)).unwrap();
+    assert_eq!(heard(&sandbox).len(), 3);
+    let refusals = [
+        (dispatch("nightly", branch("nope")), code::NOT_FOUND),
+        (
+            dispatch("nightly", Revision::Oid(root.to_hex()[..12].into())),
+            code::INVALID_INPUT,
+        ),
+        (
+            dispatch("nightly", Revision::Oid("ab".repeat(20))),
+            code::NOT_FOUND,
+        ),
+        (dispatch("", branch("main")), code::INVALID_INPUT),
+    ];
+    for (op, expected) in refusals {
+        let refusal = refused(&sandbox, OWNER, &op);
+        assert_eq!(refusal.code, expected, "{}", refusal.message);
+    }
+    assert_eq!(heard(&sandbox).len(), 3, "a refused dispatch tells no one");
+}
+
+#[test]
+fn a_dispatch_at_a_ref_that_is_no_branch_is_refused() {
+    let sandbox = watched();
+    let mut source = MemoryObjects::new(Hash::Sha1);
+    let root = file_commit(&mut source, &[], 1, &[("a", b"1\n")]);
+    let zero = Hash::Sha1.zero();
+    let pack = pack_of(&source, &all_ids(&source));
+    let made = [
+        (zero, root, "refs/heads/main"),
+        (zero, root, "refs/tags/v1"),
+    ];
+    push(&sandbox, OWNER, "project", &made, &pack).unwrap();
+    let told = heard(&sandbox).len();
+    for reference in ["refs/tags/v1", "refs/changes/1/merge"] {
+        let dispatch = Op::Dispatch {
+            repo: "project".into(),
+            event_type: "nightly".into(),
+            payload: Vec::new(),
+            at: Revision::Ref(reference.as_bytes().to_vec()),
+        };
+        let refusal = refused(&sandbox, OWNER, &dispatch);
+        assert_eq!(
+            refusal.code,
+            code::INVALID_INPUT,
+            "{reference}: {}",
+            refusal.message
+        );
+    }
+    assert_eq!(
+        heard(&sandbox).len(),
+        told,
+        "a refused dispatch tells no one"
+    );
+}

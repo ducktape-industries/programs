@@ -238,6 +238,13 @@ pub fn describe(op: &Op) -> Description {
             vec![change(n), field("head", Value::text(expected_head))],
         ),
         Op::Dequeue { repo, n } => ("Take change out of the queue", repo, vec![change(n)]),
+        Op::Dispatch {
+            repo, event_type, ..
+        } => (
+            "Dispatch",
+            repo,
+            vec![field("event", Value::text(event_type))],
+        ),
         Op::Archive { repo, archived } => {
             let verb = match archived {
                 true => "Archive repository",

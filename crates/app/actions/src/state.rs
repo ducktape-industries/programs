@@ -41,3 +41,4 @@ pub const OUTPUTS: Map<u64, OutputsRow> = Map::new("outputs/");
 // change's Previews or the runs triggered by hand list in one query. Runs recorded before this
 // index was kept are not in it.
 pub const BY_EVENT: Set<(String, Vec<u8>, u64)> = Set::new("e/");
+pub const KEEP_STARTED: Set<u64> = Set::new("keep/");

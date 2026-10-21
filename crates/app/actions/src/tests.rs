@@ -106,6 +106,7 @@ enum Runs {
     Register(Vec<String>),
     Offer(Offer),
     Refuse,
+    Act(AccountNumber, Vec<u8>),
 }
 
 struct Runner;
@@ -126,6 +127,9 @@ impl Program for Runner {
                 ctx.emit(PROGRAM, &register, Wanted::None);
             }
             Runs::Refuse => REFUSING.put(ctx, &true),
+            Runs::Act(account, payload) => {
+                ctx.emit_raw_as(account, forge::PROGRAM, payload, Wanted::None);
+            }
             Runs::Offer(offer) => {
                 ctx.env().sent_by(PROGRAM)?;
                 if REFUSING.get(ctx)?.unwrap_or(false) {
@@ -169,6 +173,10 @@ struct World {
 }
 
 fn world() -> World {
+    world_with(|_| {})
+}
+
+fn world_with(before: impl FnOnce(&mut MockChain)) -> World {
     let mut chain = MockChain::default();
     chain.seat::<forge::Forge>(forge::PROGRAM);
     chain.seat::<chat::Chat>("chat");
@@ -190,6 +198,7 @@ fn world() -> World {
     }
     chain.init(forge::PROGRAM, &bounds()).unwrap();
     chain.init(PROGRAM, &()).unwrap();
+    before(&mut chain);
     let create = forge::Op::Create {
         repo: REPO.into(),
         hash: HashKind::Sha1,
@@ -1509,4 +1518,423 @@ fn a_rerun_that_passes_brings_back_the_jobs_its_failure_skipped() {
     );
     end(&world, 6, State::Passed);
     assert_eq!(world.checks(root).len(), 6, "nothing more comes back");
+}
+
+const KEEPING: &str = r#"
+[on]
+push = ["main", "dev"]
+change = ["opened", "updated"]
+supersede = "unstarted"
+
+[[jobs]]
+id = "build"
+runs-on = ["pods"]
+image = "toolchain"
+steps = ["make build"]
+
+[[jobs]]
+id = "publish"
+runs-on = ["pods"]
+image = "toolchain"
+needs = ["build"]
+steps = ["make publish"]
+"#;
+
+const NIGHTLY: &str = r#"
+[on]
+dispatch = ["nightly"]
+trigger = false
+supersede = "unstarted"
+
+[[jobs]]
+id = "build"
+runs-on = ["pods"]
+image = "toolchain"
+steps = ["make build"]
+
+[[jobs]]
+id = "publish"
+runs-on = ["pods"]
+image = "toolchain"
+needs = ["build"]
+steps = ["make publish"]
+"#;
+
+const AGENT_ACCOUNT: u64 = 905;
+
+fn job_check(world: &World, commit: Oid, job: &str) -> CheckRow {
+    world
+        .checks(commit)
+        .into_iter()
+        .find(|check| check.job.id == job)
+        .expect("the job has a check at the commit")
+}
+
+fn states(checks: &[CheckRow]) -> Vec<State> {
+    checks.iter().map(|check| check.state).collect()
+}
+
+fn dispatch(branch: &str, payload: &[u8]) -> forge::Op {
+    dispatch_of("nightly", branch, payload)
+}
+
+fn dispatch_of(event_type: &str, branch: &str, payload: &[u8]) -> forge::Op {
+    forge::Op::Dispatch {
+        repo: REPO.into(),
+        event_type: event_type.into(),
+        payload: payload.to_vec(),
+        at: forge::Revision::Ref(format!("refs/heads/{branch}").into_bytes()),
+    }
+}
+
+fn dispatched_runs(world: &World) -> Vec<RunRow> {
+    let nightly = Event::Dispatch {
+        event_type: "nightly".into(),
+    };
+    world.runs(nightly, PageRequest::default()).items
+}
+
+#[derive(Debug)]
+enum Who {
+    Writer,
+    Stranger,
+    Agent,
+}
+
+fn forge_by(world: &World, who: &Who, op: &forge::Op) -> Result<Vec<u8>, Error> {
+    let signed = |key: &[u8]| Origin::Signed(key.to_vec());
+    match who {
+        Who::Writer => world.chain.submit(signed(OWNER), forge::PROGRAM, op),
+        Who::Stranger => world.chain.submit(signed(STRANGER), forge::PROGRAM, op),
+        Who::Agent => {
+            let relayed = Runs::Act(AGENT_ACCOUNT, abi::encode(op));
+            world.chain.submit(signed(OWNER), RUNNER, &relayed)
+        }
+    }
+}
+
+fn has_ref(world: &World, name: &str) -> bool {
+    let asked = forge::Query::RefNames {
+        repo: REPO.into(),
+        prefix: name.into(),
+        page: PageRequest::default(),
+    };
+    let reply = world.chain.query(forge::PROGRAM, &asked).unwrap();
+    let forge::Reply::RefNames { page, .. } = reply else {
+        panic!("RefNames answers RefNames: {reply:?}");
+    };
+    !page.items.is_empty()
+}
+
+fn probe(world: &World, name: &str, at: Oid) -> forge::Op {
+    let objects: Vec<Object> = world
+        .store
+        .ids()
+        .map(|id| world.store.get(id).unwrap().unwrap())
+        .collect();
+    let pack = pack::write(objects, Hash::Sha1).unwrap();
+    let pack = world.chain.put_blob(forge::PACK_KIND, pack).unwrap();
+    let mut request = Vec::new();
+    let line = format!("{} {at} {name}\0report-status", Hash::Sha1.zero());
+    pktline::push(&mut request, line.as_bytes());
+    request.extend_from_slice(pktline::flush());
+    forge::Op::Push {
+        repo: REPO.into(),
+        request,
+        pack: Some(pack),
+    }
+}
+
+#[test]
+fn a_claimed_run_of_a_keeping_workflow_runs_on_past_newer_pushes_while_every_other_run_gives_way() {
+    let mut world = world();
+    let files = [("loud.toml", LOUD), ("keeping.toml", KEEPING)];
+    let root = world.commit(&[], &files);
+    world.push(None, root, "main");
+    let gates = job_check(&world, root, "gates").id;
+    let build = job_check(&world, root, "build").id;
+    world.act(&Op::Claim { check: gates }).unwrap();
+    world.act(&Op::Claim { check: build }).unwrap();
+    let next = world.commit(&[root], &files);
+    world.push(Some(root), next, "main");
+    assert_eq!(
+        world.check(gates).state,
+        State::Superseded,
+        "a workflow that says nothing of supersede keeps today's rule"
+    );
+    assert_eq!(world.check(build).state, State::Running);
+    assert_eq!(job_check(&world, root, "publish").state, State::Waiting);
+    let last = world.commit(&[next], &files);
+    world.push(Some(next), last, "main");
+    assert_eq!(
+        states(&world.checks(next)),
+        [State::Superseded; 3],
+        "a keeping run no runner took gives way"
+    );
+    assert_eq!(world.check(build).state, State::Running);
+    let passed = Op::Report {
+        check: build,
+        state: State::Passed,
+        summary: String::new(),
+        log: None,
+    };
+    world.act(&passed).unwrap();
+    assert_eq!(
+        job_check(&world, root, "publish").state,
+        State::Queued,
+        "the taken run goes on to its end"
+    );
+}
+
+#[test]
+fn a_keeping_run_whose_build_passed_keeps_its_queued_publish_past_a_newer_push() {
+    let mut world = world();
+    let files = [("keeping.toml", KEEPING)];
+    let root = world.commit(&[], &files);
+    world.push(None, root, "main");
+    let build = job_check(&world, root, "build").id;
+    end(&world, build, State::Passed);
+    assert_eq!(job_check(&world, root, "publish").state, State::Queued);
+    let next = world.commit(&[root], &files);
+    world.push(Some(root), next, "main");
+    assert_eq!(
+        job_check(&world, root, "publish").state,
+        State::Queued,
+        "publish of a taken run was superseded"
+    );
+}
+
+#[test]
+fn a_keeping_run_gives_way_only_on_its_own_line_and_a_changes_end_supersedes_its_untaken_preview() {
+    let mut world = world();
+    let files = [("keeping.toml", KEEPING)];
+    let root = world.commit(&[], &files);
+    world.push(None, root, "main");
+    let dev = world.commit(&[root], &files);
+    world.push(None, dev, "dev");
+    let untaken = [State::Queued, State::Waiting];
+    assert_eq!(
+        states(&world.checks(root)),
+        untaken,
+        "a push to dev leaves main's untaken run"
+    );
+    for branch in ["one", "two"] {
+        let head = world.commit(&[root], &files);
+        world.push(None, head, branch);
+        let open = forge::Op::ChangeOpen {
+            repo: REPO.into(),
+            from: forge::Revision::Ref(format!("refs/heads/{branch}").into_bytes()),
+            into: b"refs/heads/main".to_vec(),
+            title: branch.into(),
+            body: String::new(),
+            reviewers: Vec::new(),
+        };
+        world.forge(&open).unwrap();
+    }
+    let first = world.preview(1);
+    let second = world.preview(2);
+    assert_eq!(
+        states(&world.checks(first)),
+        untaken,
+        "another change's Preview leaves this one's"
+    );
+    let close = forge::Op::ChangeClose {
+        repo: REPO.into(),
+        n: 1,
+    };
+    world.forge(&close).unwrap();
+    assert_eq!(
+        ends(&world.checks(first)),
+        [(State::Superseded, "change #1 closed"); 2]
+    );
+    assert_eq!(states(&world.checks(second)), untaken);
+}
+
+fn seat_agent(chain: &MockChain) {
+    use abi::role::identity::{Category, Kind, Profile, Script, Standing};
+    chain.profile(Profile {
+        number: AGENT_ACCOUNT,
+        name: "agent".into(),
+        kind: Kind::Program {
+            manager: OWNER_ACCOUNT,
+            category: Category::Agent,
+            standing: Standing::Active,
+            script: Some(Script {
+                calls: RUNNER.into(),
+                config: String::new(),
+            }),
+        },
+    });
+}
+
+fn verdicts(world: &mut World) -> Vec<(bool, bool)> {
+    let root = world.commit(&[], &[("nightly.toml", NIGHTLY)]);
+    world.push(None, root, "main");
+    let mut verdicts = Vec::new();
+    for who in [Who::Writer, Who::Stranger, Who::Agent] {
+        let name = format!("refs/heads/probe-{who:?}");
+        let _ = forge_by(world, &who, &probe(world, &name, root));
+        let pushed = has_ref(world, &name);
+        let before = dispatched_runs(world).len();
+        let _ = forge_by(world, &who, &dispatch("main", b"from the test"));
+        let ran = dispatched_runs(world).len() > before;
+        verdicts.push((pushed, ran));
+    }
+    verdicts
+}
+
+fn access_list(world: &World, list: ::program::Ownership) {
+    let set = access::Op::Set {
+        program: forge::PROGRAM.into(),
+        key: REPO.into(),
+        list: Some(list),
+    };
+    let owner = Origin::Signed(OWNER.to_vec());
+    world.chain.submit(owner, "access", &set).unwrap();
+}
+
+#[test]
+fn a_dispatch_meets_the_very_gate_a_push_meets_for_a_writer_a_stranger_and_an_agent() {
+    let refused = (false, false);
+    let admitted = (true, true);
+    let mut owned = world_with(|chain| {
+        chain.seat::<ownership::Ownership>(ownership::PROGRAM);
+        let owner = || Origin::Signed(OWNER.to_vec());
+        let mine = ownership::Op::Create {
+            name: "mine".into(),
+            write: ownership::Writers::Owner,
+        };
+        let made = chain.submit(owner(), ownership::PROGRAM, &mine).unwrap();
+        let policy: ownership::PolicyId = abi::decode(&made).unwrap();
+        let default = ownership::Op::SetDefault {
+            scope: ownership::Scope::Kind("forge.repo".into()),
+            policy: Some(policy),
+        };
+        chain.submit(owner(), ownership::PROGRAM, &default).unwrap();
+        seat_agent(chain);
+    });
+    assert_eq!(
+        verdicts(&mut owned),
+        [admitted, refused, refused],
+        "an owner-only ownership policy"
+    );
+    let mut relayed = world_with(|chain| seat_agent(chain));
+    let through_runner = ::program::Party::Program(RUNNER.into());
+    access_list(&relayed, ::program::Ownership::Listed(vec![through_runner]));
+    assert_eq!(
+        verdicts(&mut relayed),
+        [admitted, refused, admitted],
+        "an access list naming the program the agent writes through"
+    );
+    let mut alone = world_with(|chain| seat_agent(chain));
+    access_list(&alone, ::program::Ownership::Owner);
+    assert_eq!(
+        verdicts(&mut alone),
+        [admitted, refused, refused],
+        "an owner-only access list"
+    );
+    let refusal = forge_by(&alone, &Who::Stranger, &dispatch("main", b"")).unwrap_err();
+    assert_eq!(refusal.code, code::UNAUTHORIZED, "{}", refusal.message);
+}
+
+#[test]
+fn a_dispatch_starts_only_the_workflows_whose_on_dispatch_names_its_event() {
+    let mut world = world();
+    let files = [("changes.toml", CHANGES), ("nightly.toml", NIGHTLY)];
+    let root = world.commit(&[], &files);
+    world.push(None, root, "main");
+    world.forge(&dispatch("main", b"from the test")).unwrap();
+    let runs = dispatched_runs(&world);
+    let run = &runs[0];
+    assert_eq!(
+        (run.workflow.as_str(), run.by.clone()),
+        ("nightly.toml", Some(Principal::Account(OWNER_ACCOUNT)))
+    );
+    let checks = world.checks(root);
+    let started = [("build", State::Queued), ("publish", State::Waiting)];
+    assert_eq!(jobs(&checks), started, "changes.toml names no dispatch");
+    let payload = ("DISPATCH_PAYLOAD".to_owned(), "from the test".to_owned());
+    assert!(
+        checks[0].job.env.contains(&payload),
+        "{:?}",
+        checks[0].job.env
+    );
+}
+#[test]
+fn a_newer_dispatch_replaces_an_untaken_run_and_trigger_passes_over_a_workflow_that_says_trigger_false()
+ {
+    let mut world = world();
+    let root = world.commit(&[], &[("changes.toml", CHANGES), ("nightly.toml", NIGHTLY)]);
+    world.push(None, root, "dev");
+    let trigger = Op::Trigger {
+        repo: REPO.into(),
+        commit: root.to_hex(),
+    };
+    world.act(&trigger).unwrap();
+    assert_eq!(jobs(&world.checks(root)), [("review", State::Queued)]);
+    world.forge(&dispatch("dev", b"one")).unwrap();
+    world.forge(&dispatch("dev", b"two")).unwrap();
+    let replaced = [
+        State::Queued,
+        State::Superseded,
+        State::Superseded,
+        State::Queued,
+        State::Waiting,
+    ];
+    assert_eq!(
+        states(&world.checks(root)),
+        replaced,
+        "the newer dispatch replaces the untaken run"
+    );
+    world.act(&Op::Claim { check: 4 }).unwrap();
+    world.forge(&dispatch("dev", b"three")).unwrap();
+    let kept = [
+        State::Queued,
+        State::Superseded,
+        State::Superseded,
+        State::Running,
+        State::Waiting,
+        State::Queued,
+        State::Waiting,
+    ];
+    assert_eq!(
+        states(&world.checks(root)),
+        kept,
+        "a dispatch never replaces a run a runner took"
+    );
+}
+
+#[test]
+fn a_payload_that_is_not_text_errs_only_the_workflows_that_name_its_event() {
+    let mut world = world();
+    let root = world.commit(&[], &[("changes.toml", CHANGES), ("nightly.toml", NIGHTLY)]);
+    world.push(None, root, "dev");
+    world.forge(&dispatch_of("deploy", "dev", &[0xff])).unwrap();
+    let elsewhere = Event::Dispatch {
+        event_type: "deploy".into(),
+    };
+    assert!(
+        world
+            .runs(elsewhere, PageRequest::default())
+            .items
+            .is_empty()
+    );
+    assert!(
+        world.statuses(root).is_empty(),
+        "a dispatch no workflow names leaves the commit's status alone"
+    );
+    world.forge(&dispatch("dev", &[0xff])).unwrap();
+    let why = "the dispatch's payload is not UTF-8 text, which DISPATCH_PAYLOAD hands its jobs";
+    let runs = dispatched_runs(&world);
+    let errored = runs.last().unwrap();
+    assert_eq!(
+        (errored.workflow.as_str(), errored.error.as_deref()),
+        ("nightly.toml", Some(why))
+    );
+    assert!(
+        world.checks(root).is_empty(),
+        "an errored run queues nothing"
+    );
+    let told = ("nightly.toml".to_owned(), forge::CheckState::Errored);
+    assert_eq!(world.statuses(root), [told]);
 }

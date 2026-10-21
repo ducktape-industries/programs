@@ -108,7 +108,7 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             ROOMS.remove(ctx, &(repo, n));
             Ok(())
         }
-        Watched::Moved { .. } | Watched::Previewed { .. } => Ok(()),
+        Watched::Moved { .. } | Watched::Previewed { .. } | Watched::Dispatched { .. } => Ok(()),
     }
 }
 

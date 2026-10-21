@@ -1,6 +1,6 @@
 //! A workflow file, `.forge/workflows/<name>.toml`: the events that run it (`on.push` branches,
-//! `on.change` "opened"/"updated": each Preview), its jobs, each one check (`needs`, `image`, `cpu`,
-//! `memory` and `scratch` for a runner that makes a pod, `runners`), and `notify.channel`.
+//! `on.change` "opened"/"updated", `on.dispatch`; `on.trigger`, `on.supersede`), its jobs, each one
+//! check (`needs`, `image`, `cpu`, `memory`, `scratch`, `runners`), and `notify.channel`.
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
@@ -29,6 +29,15 @@ struct On {
     push: Vec<String>,
     #[serde(default)]
     change: Vec<String>,
+    #[serde(default = "by_trigger")]
+    trigger: bool,
+    supersede: Option<String>,
+    #[serde(default)]
+    dispatch: Vec<String>,
+}
+
+fn by_trigger() -> bool {
+    true
 }
 
 #[derive(Deserialize)]
@@ -67,6 +76,9 @@ pub(crate) struct Workflow {
     push: Vec<String>,
     opened: bool,
     updated: bool,
+    trigger: bool,
+    dispatch: Vec<String>,
+    pub(crate) keeps_started: bool,
     pub(crate) jobs: Vec<Planned>,
 }
 
@@ -93,6 +105,13 @@ pub(crate) fn parse(text: &str) -> Result<Workflow, String> {
             "on.change takes \"opened\" and \"updated\", not {unknown:?}"
         ));
     }
+    let keeps_started = match file.on.supersede.as_deref() {
+        None => false,
+        Some("unstarted") => true,
+        Some(other) => {
+            return Err(format!("on.supersede takes \"unstarted\", not {other:?}"));
+        }
+    };
     let mut ids = BTreeSet::new();
     let mut jobs = Vec::new();
     for job in file.jobs {
@@ -174,6 +193,9 @@ pub(crate) fn parse(text: &str) -> Result<Workflow, String> {
         notify: file.notify.map(|notify| notify.channel),
         opened: names("opened"),
         updated: names("updated"),
+        trigger: file.on.trigger,
+        dispatch: file.on.dispatch,
+        keeps_started,
         push: file.on.push,
         jobs,
     })
@@ -218,7 +240,8 @@ impl Workflow {
             Event::Opened { .. } => self.opened,
             Event::Updated { .. } => self.updated,
             Event::Preview { .. } => self.opened || self.updated,
-            Event::Manual => true,
+            Event::Manual => self.trigger,
+            Event::Dispatch { event_type } => self.dispatch.contains(event_type),
         }
     }
 }

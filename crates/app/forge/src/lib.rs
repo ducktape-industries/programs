@@ -90,6 +90,7 @@ fn op_variants_only_append() {
             "Dequeue",
             "AdoptOwners",
             "Archive",
+            "Dispatch",
         ]
     );
 }
@@ -106,6 +107,7 @@ fn watched_variants_only_append() {
             "Merged",
             "Reviewed",
             "LeftQueue",
+            "Dispatched",
         ]
     );
 }

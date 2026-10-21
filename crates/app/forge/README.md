@@ -358,6 +358,14 @@ is refused (a conflict names its paths), or when its head moves; a change that m
 closed otherwise just leaves. Each op that moves a ref, ends or re-points a change,
 reports a status or changes what a branch requires moves the repository's queues on.
 
+`Dispatch { event_type, payload, at }` tells every watcher (`Watched::Dispatched`) that a
+writer dispatched `event_type` at the commit `at` resolves to: a branch ref goes to its head,
+and an oid must be a full commit id forge holds; any other `at`, and an empty `event_type`,
+is refused, telling no one. It answers to the gate a `Push` answers to (the same access
+need on the repository, and its custody written again for the ownership guard), so whoever
+may push may dispatch and nobody else. `payload` reaches the watchers as given; actions runs
+the workflows whose `on.dispatch` names `event_type` at that commit.
+
 ### Archiving a repository
 
 `Archive { repo, archived: true }` archives a repository; the repository's policy

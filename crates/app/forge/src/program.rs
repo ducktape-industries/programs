@@ -216,6 +216,13 @@ impl Program for Forge {
             Op::Archive { repo, archived } => {
                 crate::ops::archive(ctx, &repo, archived).map(|()| None)
             }
+            Op::Dispatch {
+                repo,
+                event_type,
+                payload,
+                at,
+            } => crate::watchers::dispatch(ctx, actor, &repo, event_type, payload, &at)
+                .map(|()| None),
         }?;
         if let Some(repo) = &governed {
             crate::state::kept(ctx, repo)?;

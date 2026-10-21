@@ -213,6 +213,13 @@ pub enum Op {
     // every read and clone; `archived: false` restores it.
     #[tool_op(description = "Archive a repository (it leaves Repos and refuses every op but this one, while every read and clone still answers) or restore it with archived false. Whoever its policy admits.", example = crate::examples::archive)]
     Archive { repo: String, archived: bool },
+    #[tool_op(description = "Tell the repository's watchers (actions among them) that event_type was dispatched at at, with payload as given: a branch ref resolves to its head, an oid must be a full commit id forge holds, anything else is refused. Whoever may push to the repository, by the very gate a Push answers to.", example = crate::examples::dispatch)]
+    Dispatch {
+        repo: String,
+        event_type: String,
+        payload: Vec<u8>,
+        at: Revision,
+    },
 }
 
 impl Op {
@@ -240,7 +247,8 @@ impl Op {
             | Op::RequireChecks { repo, .. }
             | Op::Enqueue { repo, .. }
             | Op::Dequeue { repo, .. }
-            | Op::Archive { repo, .. } => Some(repo),
+            | Op::Archive { repo, .. }
+            | Op::Dispatch { repo, .. } => Some(repo),
             Op::Watch { .. } | Op::AdoptOwners { .. } => None,
         }
     }
@@ -998,6 +1006,13 @@ pub enum Watched {
         into: Vec<u8>,
         why: String,
         queued_by: Principal,
+    },
+    Dispatched {
+        repo: String,
+        event_type: String,
+        payload: Vec<u8>,
+        commit: String,
+        by: Principal,
     },
 }
 

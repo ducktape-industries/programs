@@ -70,7 +70,7 @@ fn decimal_thousandths(number: &str) -> Option<u64> {
 pub enum Op {
     // What forge tells a watcher (`forge::Op::Watch`); forge alone sends it.
     Watched(forge::Watched),
-    // Every workflow at `commit`, run whatever events it names.
+    /// Every workflow at `commit` but those with `on.trigger = false`.
     Trigger {
         repo: String,
         commit: String,
@@ -201,6 +201,7 @@ pub enum Event {
     Manual,
     // change `n`'s Preview: the squash a merge would land, built by forge
     Preview { n: u64 },
+    Dispatch { event_type: String },
 }
 
 // One workflow file run for one event; `error` says why it ran no job, and `notify` is the chat
@@ -335,6 +336,12 @@ pub fn describe(op: &Op) -> describe::Description {
         Op::Watched(forge::Watched::Previewed { repo, n, .. }) => {
             (format!("Hear change {repo}#{n} previewed"), Vec::new())
         }
+        Op::Watched(forge::Watched::Dispatched {
+            repo, event_type, ..
+        }) => (
+            format!("Hear {event_type} dispatched in {repo}"),
+            Vec::new(),
+        ),
         Op::Watched(forge::Watched::Reviewed { repo, n, .. }) => {
             (format!("Hear change {repo}#{n} reviewed"), Vec::new())
         }

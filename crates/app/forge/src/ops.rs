@@ -133,7 +133,8 @@ pub(crate) fn governed<'o>(ctx: &QueryCtx, op: &'o Op) -> Option<&'o str> {
         | Op::Enqueue { repo, .. }
         | Op::Dequeue { repo, .. }
         | Op::Rebase { repo, .. }
-        | Op::Archive { repo, .. } => Some(repo),
+        | Op::Archive { repo, .. }
+        | Op::Dispatch { repo, .. } => Some(repo),
         Op::ChangeClose { repo, n } => {
             let sender = ctx.env().sender.clone();
             let authored = load_change(ctx, repo, *n)
@@ -169,7 +170,8 @@ pub(crate) fn needs(ctx: &QueryCtx, op: &Op) -> Result<Vec<Need>, Error> {
         | Op::SquashMerge { repo, .. }
         | Op::DeleteBranch { repo, .. }
         | Op::Enqueue { repo, .. }
-        | Op::Dequeue { repo, .. } => {
+        | Op::Dequeue { repo, .. }
+        | Op::Dispatch { repo, .. } => {
             vec![Need::write(repo_key(repo))]
         }
         Op::ChangeClose { repo, n } => {

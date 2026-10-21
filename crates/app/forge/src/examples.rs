@@ -235,6 +235,15 @@ pub(crate) fn archive() -> Op {
     }
 }
 
+pub(crate) fn dispatch() -> Op {
+    Op::Dispatch {
+        repo: repo(),
+        event_type: "nightly".into(),
+        payload: Vec::new(),
+        at: Revision::Ref(main()),
+    }
+}
+
 pub(crate) fn repos() -> Query {
     Query::Repos { page: page() }
 }

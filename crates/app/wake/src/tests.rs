@@ -1104,3 +1104,35 @@ fn only_chat_tells_a_place_cleared() {
     let refused = world.act(ADA, &Op::Placed(cleared)).unwrap_err();
     assert_eq!(refused.code, code::UNAUTHORIZED);
 }
+
+#[test]
+fn a_dispatch_ends_no_wake_and_forge_stays_heard() {
+    let world = world();
+    let create = forge::Op::Create {
+        repo: "notes".into(),
+        hash: HashKind::Sha1,
+    };
+    world.forge_op(&create);
+    let main = WaitFor::Ref {
+        repo: "notes".into(),
+        reference: "main".into(),
+    };
+    world.wake_on(ADA, main).unwrap();
+    let dispatched = forge::Watched::Dispatched {
+        repo: "notes".into(),
+        event_type: "nightly".into(),
+        payload: Vec::new(),
+        commit: "a1".repeat(20),
+        by: Principal::Account(world.bo),
+    };
+    world.forged(dispatched);
+    assert!(
+        world.told(world.ada).is_empty(),
+        "a dispatch is no ref moving"
+    );
+    assert_eq!(
+        world.forge_watch(),
+        forged_as(),
+        "the ref wake is still open"
+    );
+}

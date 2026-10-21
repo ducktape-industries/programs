@@ -442,3 +442,19 @@ fn every_open_mirrored_change_is_listed_with_its_room_until_it_ends() {
     tell(&chain, closed).unwrap();
     assert_eq!(mirrored(&chain), [mirror(4, "j-7")]);
 }
+
+#[test]
+fn a_dispatch_tells_no_room_and_leaves_the_change_it_mirrors_where_it_was() {
+    let chain = world();
+    tell(&chain, opened(1, branch("j-7/teach"))).unwrap();
+    let dispatched = Watched::Dispatched {
+        repo: "project".into(),
+        event_type: "nightly".into(),
+        payload: b"{}".to_vec(),
+        commit: "1".repeat(40),
+        by: Principal::Account(ADA_ACCOUNT),
+    };
+    tell(&chain, dispatched).unwrap();
+    assert_eq!(notices(&chain, "j-7").len(), 1, "only the opening");
+    assert_eq!(room(&chain, 1).as_deref(), Some("j-7"));
+}

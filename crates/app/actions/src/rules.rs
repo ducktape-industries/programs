@@ -9,8 +9,8 @@ use forge::{ChangeState, CheckState, Content, EntryKind, Revision, Watched};
 use store::Item;
 
 use crate::state::{
-    ASKS, BY_COMMIT, BY_EVENT, BY_RUN, CHECKS, LAST_CHECK, LAST_RUN, LINES, MET, NAMED, NEEDS,
-    OFFERING, OUTPUTS, PREVIEWING, QUEUED, RUNNERS, RUNS, SOURCES,
+    ASKS, BY_COMMIT, BY_EVENT, BY_RUN, CHECKS, KEEP_STARTED, LAST_CHECK, LAST_RUN, LINES, MET,
+    NAMED, NEEDS, OFFERING, OUTPUTS, PREVIEWING, QUEUED, RUNNERS, RUNS, SOURCES,
 };
 use crate::workflow::{self, Planned};
 use crate::{
@@ -23,7 +23,10 @@ struct Started<'a> {
     commit: &'a str,
     event: Event,
     by: Option<Principal>,
+    payload: Option<Vec<u8>>,
 }
+
+const DISPATCH_PAYLOAD: &str = "DISPATCH_PAYLOAD";
 
 pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
     ctx.env().sent_by(forge::PROGRAM)?;
@@ -75,7 +78,37 @@ pub(crate) fn watched(ctx: &ExecCtx, event: Watched) -> Result<(), Error> {
             start_matching_workflows(ctx, &started(&repo, &merge, Event::Preview { n }, Some(by)))
         }
         Watched::Reviewed { .. } | Watched::LeftQueue { .. } => Ok(()),
+        Watched::Dispatched {
+            repo,
+            event_type,
+            payload,
+            commit,
+            by,
+        } => dispatched(ctx, &repo, event_type, payload, &commit, by),
     }
+}
+
+fn dispatched(
+    ctx: &ExecCtx,
+    repo: &str,
+    event_type: String,
+    payload: Vec<u8>,
+    commit: &str,
+    by: Principal,
+) -> Result<(), Error> {
+    let event = Event::Dispatch {
+        event_type: event_type.clone(),
+    };
+    let why = format!(
+        "superseded by a dispatch of {event_type} at {}",
+        short(commit)
+    );
+    supersede_earlier_runs(ctx, repo, &dispatch_line(&event_type), &why)?;
+    let started = Started {
+        payload: Some(payload),
+        ..started(repo, commit, event, Some(by))
+    };
+    start_matching_workflows(ctx, &started)
 }
 
 fn schedule_preview_next_block(ctx: &ExecCtx, repo: &str, n: u64) -> Result<(), Error> {
@@ -217,6 +250,7 @@ fn started<'a>(repo: &'a str, commit: &'a str, event: Event, by: Option<Principa
         commit,
         event,
         by,
+        payload: None,
     }
 }
 
@@ -262,9 +296,28 @@ fn start_matching_workflows(ctx: &ExecCtx, started: &Started) -> Result<(), Erro
                 let named = Named {
                     name: workflow.name,
                     notify: workflow.notify,
+                    keeps_started: workflow.keeps_started,
+                };
+                let handed = match &started.payload {
+                    None => Ok(None),
+                    Some(payload) => String::from_utf8(payload.clone()).map(Some),
+                };
+                let Ok(handed) = handed else {
+                    let why = format!(
+                        "the dispatch's payload is not UTF-8 text, which {DISPATCH_PAYLOAD} hands its jobs"
+                    );
+                    record(ctx, started, &file, named, Some(why))?;
+                    continue;
                 };
                 let run = record(ctx, started, &file, named, None)?;
-                for planned in workflow.jobs {
+                for mut planned in workflow.jobs {
+                    if let Some(text) = &handed {
+                        planned.job.env.retain(|(name, _)| name != DISPATCH_PAYLOAD);
+                        planned
+                            .job
+                            .env
+                            .push((DISPATCH_PAYLOAD.to_owned(), text.clone()));
+                    }
                     queue(ctx, &run, planned, 1)?;
                 }
             }
@@ -331,6 +384,7 @@ fn text_of(ctx: &QueryCtx, repo: &str, oid: &str) -> Result<Result<String, Strin
 struct Named {
     name: Option<String>,
     notify: Option<String>,
+    keeps_started: bool,
 }
 
 fn record(
@@ -357,6 +411,9 @@ fn record(
     BY_EVENT.insert(ctx, &(run.repo.clone(), abi::encode(&run.event), id));
     if let Some(line) = superseding_ref(&run.event) {
         LINES.insert(ctx, &(run.repo.clone(), line, id));
+        if named.keeps_started {
+            KEEP_STARTED.insert(ctx, &id);
+        }
     }
     if run.error.is_some() {
         let op = forge::Op::Status {
@@ -648,6 +705,16 @@ pub(crate) fn report(
 fn supersede_earlier_runs(ctx: &ExecCtx, repo: &str, line: &[u8], why: &str) -> Result<(), Error> {
     let on = (repo.to_owned(), line.to_vec());
     for (_, _, run) in LINES.scan(ctx, LINES.prefix_of(&on))? {
+        if KEEP_STARTED.has(ctx, &run) {
+            KEEP_STARTED.remove(ctx, &run);
+            let claimed = of_run(ctx, run)?
+                .iter()
+                .any(|check| check.started.is_some());
+            if claimed {
+                LINES.remove(ctx, &(repo.to_owned(), line.to_vec(), run));
+                continue;
+            }
+        }
         for (_, id) in BY_RUN.scan(ctx, BY_RUN.prefix_of(&run))? {
             let mut check = load(ctx, id)?;
             if !matches!(check.state, State::Queued | State::Running | State::Waiting) {
@@ -669,8 +736,13 @@ fn superseding_ref(event: &Event) -> Option<Vec<u8>> {
     match event {
         Event::Push { reference } => Some(reference.clone()),
         Event::Preview { n } => Some(preview_ref(*n).into_bytes()),
+        Event::Dispatch { event_type } => Some(dispatch_line(event_type)),
         Event::Opened { .. } | Event::Updated { .. } | Event::Manual => None,
     }
+}
+
+fn dispatch_line(event_type: &str) -> Vec<u8> {
+    format!("dispatch/{event_type}").into_bytes()
 }
 
 fn preview_ref(n: u64) -> String {

@@ -502,7 +502,8 @@ pub(crate) async fn forged(ctx: &Ctx, event: forge::Watched) -> Result<(), Error
         forge::Watched::Opened { .. }
         | forge::Watched::Previewed { .. }
         | forge::Watched::Reviewed { .. }
-        | forge::Watched::LeftQueue { .. } => Vec::new(),
+        | forge::Watched::LeftQueue { .. }
+        | forge::Watched::Dispatched { .. } => Vec::new(),
         forge::Watched::Closed { repo, n, by } => {
             let how = format!("was closed by {}", who(Some(by)));
             change_ended(ctx, repo, *n, &how, Until::Closed)?

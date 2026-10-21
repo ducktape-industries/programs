@@ -43,6 +43,7 @@ dependencies = [
  "describe",
  "forge",
  "gitcore",
+ "ownership",
  "program",
  "scheduler",
  "serde",
