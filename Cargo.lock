@@ -2123,6 +2123,7 @@ dependencies = [
  "describe",
  "ownership",
  "program",
+ "programs",
  "store",
  "unicode-normalization",
 ]
@@ -2139,6 +2140,7 @@ dependencies = [
  "markdown",
  "ownership",
  "policy-view",
+ "programs",
  "serde",
  "serde_json",
  "view",

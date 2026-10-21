@@ -1,10 +1,105 @@
-//! Paths as files spells them (NFC, absolute, `/`-separated), and the namespace roots the chain
-//! alone writes: `/home`, `/shared`, each `/home/<name>`, and `/chat` with each channel and message
-//! folder in it, which chat owns. Who else writes a path is its write list in the access program.
-use ::program::{Error, invalid, unauthorized};
+//! Paths as files spells them (NFC, absolute, `/`-separated), and the namespace roots a network
+//! names in files' params: each a top folder and the folders `depth` levels beneath it, which the
+//! chain alone writes, owned by the account each is named after or by one program.
+use ::program::{Error, QueryCtx, invalid, unauthorized, unexpected_reply};
+use borsh::{BorshDeserialize, BorshSerialize};
 use unicode_normalization::UnicodeNormalization;
 
-pub const CHAT: &str = "chat";
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct Root {
+    pub name: String,
+    pub depth: u8,
+    pub owner: Option<Owner>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub enum Owner {
+    Named,
+    Program(String),
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Roots(Vec<Root>);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Keeper<'r> {
+    Named(&'r str),
+    Program(&'r str),
+}
+
+impl Roots {
+    pub fn new(roots: Vec<Root>) -> Roots {
+        Roots(roots)
+    }
+
+    pub fn of(params: &[u8]) -> Result<Roots, Error> {
+        if params.is_empty() {
+            return Ok(Roots::default());
+        }
+        abi::decode(params).map(Roots).map_err(|_| {
+            invalid("files' params do not read as its roots: a borsh Vec of Root { name, depth, owner }")
+        })
+    }
+
+    pub fn read(ctx: &QueryCtx) -> Result<Roots, Error> {
+        let role = ctx.env().role(abi::role::PROGRAMS)?.clone();
+        let asked = programs::Query::Program(ctx.env().program.clone());
+        match ctx.query::<programs::Query, programs::Reply>(&role, &asked)? {
+            programs::Reply::Program { entry, .. } => match entry {
+                Some(entry) => Roots::of(&entry.params),
+                None => Ok(Roots::default()),
+            },
+            other => Err(unexpected_reply(&role, "Program", &other)),
+        }
+    }
+
+    fn root(&self, segments: &[String]) -> Option<(&Root, usize)> {
+        let (top, below) = segments.split_first()?;
+        let root = self.0.iter().find(|root| root.name == *top)?;
+        Some((root, below.len()))
+    }
+
+    pub fn is_namespace_root(&self, segments: &[String]) -> bool {
+        self.root(segments)
+            .is_some_and(|(root, below)| below <= usize::from(root.depth))
+    }
+
+    pub fn holds_namespace_roots(&self, folder: &[String]) -> bool {
+        self.root(folder)
+            .is_some_and(|(root, below)| below < usize::from(root.depth))
+    }
+
+    pub fn keeper<'s>(&'s self, segments: &'s [String]) -> Option<Keeper<'s>> {
+        let (root, below) = self.root(segments)?;
+        let chained = below <= usize::from(root.depth);
+        let named = below == 1;
+        match (&root.owner, chained) {
+            (Some(Owner::Named), true) => segments
+                .last()
+                .filter(|_| named)
+                .map(|name| Keeper::Named(name.as_str())),
+            (Some(Owner::Program(program)), true) => Some(Keeper::Program(program)),
+            (Some(Owner::Named | Owner::Program(_)) | None, _) => None,
+        }
+    }
+
+    pub fn carried(&self, segments: &[String]) -> bool {
+        self.root(segments).is_some_and(|(root, below)| {
+            let kept = matches!(root.owner, Some(Owner::Program(_)));
+            kept && below > usize::from(root.depth)
+        })
+    }
+
+    pub(crate) fn beneath(&self, segments: &[String]) -> Result<(), Error> {
+        if !self.is_namespace_root(segments) {
+            return Ok(());
+        }
+        Err(unauthorized(format!(
+            "{} is a namespace root, which files' params name and the chain alone writes; anyone writes beneath it where no write list says otherwise: write beneath it instead",
+            join(segments)
+        )))
+    }
+}
 
 pub fn segments(path: &str) -> Result<Vec<String>, Error> {
     if !path.starts_with('/') {
@@ -35,45 +130,6 @@ pub fn segments(path: &str) -> Result<Vec<String>, Error> {
 
 pub fn join(segments: &[String]) -> String {
     format!("/{}", segments.join("/"))
-}
-
-pub fn is_namespace_root(segments: &[String]) -> bool {
-    match segments {
-        [root] => root == "home" || root == "shared" || root == CHAT,
-        [folder @ .., _] => holds_namespace_roots(folder),
-        [] => false,
-    }
-}
-
-pub fn holds_namespace_roots(folder: &[String]) -> bool {
-    match folder {
-        [root] => root == "home" || root == CHAT,
-        [root, _] => root == CHAT,
-        _ => false,
-    }
-}
-
-pub fn is_chat_folder(segments: &[String]) -> bool {
-    segments.first().is_some_and(|root| root == CHAT) && is_namespace_root(segments)
-}
-
-pub(crate) fn beneath_the_roots(segments: &[String]) -> Result<(), Error> {
-    if !is_namespace_root(segments) {
-        return Ok(());
-    }
-    Err(unauthorized(format!(
-        "{} is a namespace root: /home, /shared, each /home/<name>, and /chat with its channel \
-         and message folders are written by the chain alone, and anyone writes beneath them \
-         where no write list says otherwise: write beneath the namespace root instead",
-        join(segments)
-    )))
-}
-
-pub fn is_home(segments: &[String]) -> Option<&str> {
-    match segments {
-        [root, name] if root == "home" => Some(name),
-        _ => None,
-    }
 }
 
 pub fn change_path(path: &str) -> Result<Vec<String>, Error> {

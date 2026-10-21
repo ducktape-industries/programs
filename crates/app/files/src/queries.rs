@@ -8,7 +8,7 @@ use ::program::{BlobId, Error, QueryCtx, invalid, not_found};
 
 use crate::cursor::Walk;
 use crate::objects::{digest, file, read as read_file, tree};
-use crate::paths::{is_namespace_root, join, segments};
+use crate::paths::{Roots, join, segments};
 use crate::state::{HEAD, HISTORY, PINS, SNAPSHOTS, newest_first, resolve};
 use crate::tree::node_at;
 use crate::{
@@ -94,8 +94,9 @@ pub(crate) fn list(
         Some(row) => directory(ctx, &row.root, &segments)?,
         None => None,
     };
-    let empty_root_is_listable = segments.is_empty() || is_namespace_root(&segments);
     let Some(dir) = dir else {
+        let empty_root_is_listable =
+            segments.is_empty() || Roots::read(ctx)?.is_namespace_root(&segments);
         if !empty_root_is_listable {
             return Err(not_found(format!("no directory {}", join(&segments))));
         }
@@ -128,8 +129,7 @@ fn directory(ctx: &QueryCtx, root: &BlobId, segments: &[String]) -> Result<Optio
             join(segments),
             other.kind()
         ))),
-        None if is_namespace_root(segments) => Ok(None),
-        None => Err(not_found(format!("no directory {}", join(segments)))),
+        None => Ok(None),
     }
 }
 

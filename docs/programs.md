@@ -867,6 +867,12 @@ program"): its `init` runs with the scheduled params when the height comes.
 A program that fills a role is scheduled as `Change::Publish` with its
 roles, which only the validators' vote may do.
 
+A `Set` over a program that runs swaps its code and runs no `init`, so params
+a program needs at every run are read at the run, never kept from `init`: it
+asks the programs role `Program(<its own id>)` and decodes the entry's params,
+as files reads its namespace roots (`files::paths::Roots::read`). A `Set` that
+names other params changes them from the next run on.
+
 A program kept in a repository of its own packs the same way, with
 `tools/pack.sh` (the README's Building): the same sections, embedded in the
 same order by the same `founding::pack_parts`, so its code reads as a

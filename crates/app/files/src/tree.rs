@@ -10,7 +10,7 @@ use ::program::{
 
 use crate::Node;
 use crate::objects::{Access, put_tree, tree};
-use crate::paths::{is_namespace_root, join};
+use crate::paths::{Roots, join};
 
 pub(crate) fn node_at(
     ctx: &QueryCtx,
@@ -85,11 +85,12 @@ impl TreeEdit {
         segments: &[String],
         node: Node,
         by: Option<AccountNumber>,
+        roots: &Roots,
     ) -> Result<(), Error> {
         let (name, dirs) = split(segments)?;
-        let parent = open_dir(&mut self.root, ctx, dirs, Create::Missing(by))?;
+        let parent = open_dir(&mut self.root, ctx, dirs, Create::Missing(by, roots))?;
         parent.children.insert(name.clone(), Slot::Kept(node));
-        created(parent, segments, by);
+        created(parent, segments, by, roots);
         Ok(())
     }
 
@@ -98,16 +99,17 @@ impl TreeEdit {
         ctx: &QueryCtx,
         segments: &[String],
         by: Option<AccountNumber>,
+        roots: &Roots,
     ) -> Result<(), Error> {
         let (name, dirs) = split(segments)?;
-        let parent = open_dir(&mut self.root, ctx, dirs, Create::Missing(by))?;
+        let parent = open_dir(&mut self.root, ctx, dirs, Create::Missing(by, roots))?;
         if parent.children.contains_key(name) {
             return Err(already_exists(format!("{} exists", join(segments))));
         }
         parent
             .children
             .insert(name.clone(), Slot::Open(Dir::default()));
-        created(parent, segments, by);
+        created(parent, segments, by, roots);
         Ok(())
     }
 
@@ -201,14 +203,14 @@ fn stored<'e>(
     Ok((dir.access.remove(name), next))
 }
 
-fn created(dir: &mut Dir, segments: &[String], by: Option<AccountNumber>) {
+fn created(dir: &mut Dir, segments: &[String], by: Option<AccountNumber>, roots: &Roots) {
     let Some(creator) = by else {
         return;
     };
     let Some(name) = segments.last() else {
         return;
     };
-    if is_namespace_root(segments) {
+    if roots.is_namespace_root(segments) {
         return;
     }
     dir.access.entry(name.clone()).or_insert(Access {
@@ -218,8 +220,8 @@ fn created(dir: &mut Dir, segments: &[String], by: Option<AccountNumber>) {
 }
 
 #[derive(Clone, Copy)]
-enum Create {
-    Missing(Option<AccountNumber>),
+enum Create<'r> {
+    Missing(Option<AccountNumber>, &'r Roots),
     Never,
 }
 
@@ -257,7 +259,7 @@ fn open_dir<'e>(
     root: &'e mut Slot,
     ctx: &QueryCtx,
     dirs: &[String],
-    create: Create,
+    create: Create<'_>,
 ) -> Result<&'e mut Dir, Error> {
     let mut slot = root;
     for (depth, name) in dirs.iter().enumerate() {
@@ -267,12 +269,12 @@ fn open_dir<'e>(
         };
         let missing = !dir.children.contains_key(name);
         if missing {
-            let Create::Missing(by) = create else {
+            let Create::Missing(by, roots) = create else {
                 return Err(not_found(format!("no directory {}", join(&dirs[..=depth]))));
             };
             dir.children
                 .insert(name.clone(), Slot::Open(Dir::default()));
-            created(dir, &dirs[..=depth], by);
+            created(dir, &dirs[..=depth], by, roots);
         }
         slot = dir
             .children

@@ -167,6 +167,16 @@ fn the_bundle_names_every_file_it_holds_and_packs_each_program_with_its_own_view
         abi::decode::<forge::Bounds>(&params).unwrap(),
         founding::forge_bounds()
     );
+    let params = fs::read(out.path().join("files.params")).unwrap();
+    let roots = files::paths::Roots::of(&params).unwrap();
+    assert_eq!(roots, files::paths::Roots::new(founding::files_roots()));
+    let hex: String = params.iter().map(|byte| format!("{byte:02x}")).collect();
+    assert_eq!(
+        hex,
+        "0300000004000000686f6d6501010006000000736861726564000004000000636861740201010400000063686174"
+    );
+    let home = ["home".to_owned(), "ada".to_owned()];
+    assert!(roots.is_namespace_root(&home));
     let params = fs::read(out.path().join("halo.params")).unwrap();
     let lanes = abi::decode::<abi::role::halo::Genesis>(&params).unwrap();
     assert_eq!(lanes, founding::halo_lanes());

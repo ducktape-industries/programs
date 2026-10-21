@@ -1,6 +1,6 @@
-//! Typed reads of `files`, ownership and identity. A folder or a file is read at one snapshot,
-//! the one its first answer names, for every later page and read of the same screen, so a commit
-//! landing in between never mixes two trees on one page.
+//! Typed reads of `files`, its roots (its entry's params in the programs role), ownership and
+//! identity. A folder or file is read at one snapshot, the one its first answer names, for every
+//! later page and read of one screen, so a commit in between never mixes two trees on a page.
 use std::sync::Arc;
 
 use files::{BlobId, PageRequest};
@@ -205,4 +205,12 @@ pub(crate) async fn names(host: Host) -> Result<Names, Error> {
         .map(|account| (account.number, account.card.name))
         .collect();
     Ok(Names(names))
+}
+
+pub(crate) async fn roots(host: Host) -> Result<files::paths::Roots, Error> {
+    let (_, entry) = host
+        .query(programs::ask::Program(files::PROGRAM.into()))
+        .await?;
+    let params = entry.map(|entry| entry.params).unwrap_or_default();
+    files::paths::Roots::of(&params).map_err(|refusal| view::host::malformed(refusal.message))
 }

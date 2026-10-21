@@ -19,6 +19,7 @@ fn bare() -> MockChain {
     let mut chain = MockChain::default();
     chain.seat::<Files>(PROGRAM);
     chain.seat::<access::Access>("access");
+    chain.seat::<Roster>(programs::PROGRAM);
     for (program, number) in [(PROGRAM, 900), ("access", 901)] {
         chain.register(program, number);
     }

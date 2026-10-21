@@ -7,7 +7,7 @@ use ::program::{
 };
 
 use crate::gate::resource;
-use crate::paths::{CHAT, change_path, join};
+use crate::paths::{Roots, change_path, join};
 use crate::state::{GUARDED, PathGuard};
 use crate::{Op, PROGRAM};
 
@@ -48,13 +48,14 @@ pub(crate) fn at_or_beneath(
     Ok(rows)
 }
 
-pub(crate) fn carried(segments: &[String]) -> bool {
-    segments.len() > 3 && segments[0] == CHAT
-}
-
-pub(crate) fn claim_carried(ctx: &ExecCtx, segments: &[String]) -> Result<(), Error> {
+pub(crate) fn claim_carried(
+    ctx: &ExecCtx,
+    roots: &Roots,
+    segments: &[String],
+) -> Result<(), Error> {
     let path = join(segments);
-    if carried(segments) && !GUARDED.has(ctx, &path) {
+    let unclaimed = roots.carried(segments) && !GUARDED.has(ctx, &path);
+    if unclaimed {
         GUARDED.put(ctx, &path, &PathGuard { rev: 0 });
     }
     Ok(())

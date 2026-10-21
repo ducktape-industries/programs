@@ -8,11 +8,12 @@ use view::ImageFormat;
 use view::TextField;
 use view::prelude::Loadable;
 
+use crate::Files;
 use crate::state::{
     Folder, Guard, Holds, Opened, Reader, child_of, holds_by_name, name_of, parent_of,
     picture_format,
 };
-use crate::tests::{PNG, file};
+use crate::tests::{PNG, file, founded_roots};
 use crate::ui::Layout;
 use crate::upload::{puts, sent, uploads};
 use crate::words;
@@ -100,10 +101,16 @@ fn what_is_made_where_no_guard_covers_is_anyones_to_write() {
 }
 
 #[test]
-fn only_the_folder_of_homes_holds_namespace_roots() {
-    assert!(folder("/home", None).holds_namespace_roots());
-    for path in ["/", "/shared", "/home/ada", "/home/ada/docs"] {
-        assert!(!folder(path, None).holds_namespace_roots(), "{path}");
+fn only_a_root_with_folders_beneath_it_holds_namespace_roots() {
+    let mut files = Files::default();
+    assert!(
+        files.holds_roots(&folder("/elsewhere", None)),
+        "roots not read yet offer nothing"
+    );
+    files.roots = Loadable::Ready(founded_roots());
+    assert!(files.holds_roots(&folder("/home", None)));
+    for path in ["/", "/shared", "/home/ada", "/home/ada/docs", "/elsewhere"] {
+        assert!(!files.holds_roots(&folder(path, None)), "{path}");
     }
 }
 

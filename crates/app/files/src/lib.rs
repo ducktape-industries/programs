@@ -42,7 +42,7 @@ pub const CHUNK_SIZE: u64 = 1 << 20;
     Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema, ::program::Described,
 )]
 #[tool_about(
-    "The network's versioned filesystem: every commit is a snapshot. A path's writers are the policy of its nearest guard at or above it in the ownership program, else anyone. /home, /shared and each /home/<name> are the network's: write inside them."
+    "The network's versioned filesystem: every commit is a snapshot. A path's writers are the policy of its nearest guard at or above it in the ownership program, else anyone. The namespace roots files' params name are written by the chain alone: write beneath them."
 )]
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
@@ -61,7 +61,7 @@ pub enum Op {
     // `deliver` stops it.
     #[tool_op(description = "From a program only: be told of every commit, each as a message of deliver followed by the snapshot's row in borsh. An empty deliver stops it.", example = examples::watch)]
     Watch { deliver: Vec<u8> },
-    #[tool_op(description = "Guard a path: from then on the ownership program's policy for it decides who writes it and everything beneath it that keeps no guard of its own. Its owner alone guards it: the account that made it, the account named <name> for /home/<name>, chat for its folders. The guard starts on the owner's default policy for files.path; change it with ownership Relink.", example = examples::guard)]
+    #[tool_op(description = "Guard a path: from then on the ownership program's policy for it decides who writes it and everything beneath it that keeps no guard of its own. Its owner alone guards it: the account that made it, for a namespace root's folders the account or program files' params name. The guard starts on the owner's default policy for files.path; change it with ownership Relink.", example = examples::guard)]
     Guard { path: String },
     #[tool_op(description = "Drop a path's guard, so the guard above it decides again, else anyone. Whom the guard's policy admits.", example = examples::unguard)]
     Unguard { path: String },
@@ -284,7 +284,7 @@ pub enum Query {
     Guarded { path: String },
     #[ask(Reply::Owner(Option<Party>))]
     #[reads(state::HEAD, state::HISTORY, state::SNAPSHOTS)]
-    #[tool_query(description = "Who owns path by files' rule, and so alone may guard it: the account that made it, the account named <name> for /home/<name>, chat for its folders; null where nothing owns it.", example = examples::owner)]
+    #[tool_query(description = "Who owns path by files' rule, and so alone may guard it: the account that made it, for a namespace root's folders the account or program files' params name; null where nothing owns it.", example = examples::owner)]
     Owner { path: String },
 }
 

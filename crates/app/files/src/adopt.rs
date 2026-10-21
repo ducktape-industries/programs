@@ -8,8 +8,7 @@ use ownership::{Adopted, adopt, by_itself, owner_of, rule_of, writers_of};
 use store::PageRequest;
 
 use crate::gate::{pin_key, resource};
-use crate::guards::carried;
-use crate::paths::change_path;
+use crate::paths::{Roots, change_path};
 use crate::state::{GUARDED, PINS, PathGuard};
 use crate::{Op, PROGRAM};
 
@@ -121,12 +120,13 @@ fn listed(ctx: &QueryCtx) -> Result<Vec<String>, Error> {
 }
 
 fn attached(ctx: &QueryCtx) -> Result<Vec<String>, Error> {
+    let roots = Roots::read(ctx)?;
     let mut paths = Vec::new();
     let mut page = PageRequest::default();
     loop {
         let (_, found) = crate::queries::find(ctx, "/chat/", None, &page)?;
         let beneath = found.items.into_iter().map(|entry| entry.path);
-        paths.extend(beneath.filter(|path| change_path(path).is_ok_and(|at| carried(&at))));
+        paths.extend(beneath.filter(|path| change_path(path).is_ok_and(|at| roots.carried(&at))));
         let Some(after) = found.next else {
             return Ok(paths);
         };

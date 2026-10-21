@@ -66,9 +66,35 @@ pub(crate) fn commit(
     abi::decode(&output).expect("a commit answers its snapshot")
 }
 
+fn founded() -> Vec<files::paths::Root> {
+    use files::paths::{Owner, Root};
+    vec![
+        Root {
+            name: "home".into(),
+            depth: 1,
+            owner: Some(Owner::Named),
+        },
+        Root {
+            name: "shared".into(),
+            depth: 0,
+            owner: None,
+        },
+        Root {
+            name: "chat".into(),
+            depth: 2,
+            owner: Some(Owner::Program("chat".into())),
+        },
+    ]
+}
+
+pub(crate) fn founded_roots() -> files::paths::Roots {
+    files::paths::Roots::new(founded())
+}
+
 pub(crate) fn seeded() -> Network {
     let net = Network::new();
     net.seat::<files::Files>(files::PROGRAM);
+    net.params(files::PROGRAM, abi::encode(&founded()));
     net.seat::<access::Access>(access::PROGRAM);
     net.seat::<ownership::Ownership>(ownership::PROGRAM);
     let dev = net.me();

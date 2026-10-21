@@ -25,6 +25,10 @@ impl Files {
         {
             self.read_history(cx);
         }
+        if matches!(self.roots, Loadable::Idle | Loadable::Failed(_)) {
+            let read = queries::roots(cx.host());
+            cx.load(self, read, |view| &mut view.roots);
+        }
         match page {
             Route::Places | Route::History => {}
             Route::Folder(path) => self.read_folder(path, !all, cx),

@@ -71,6 +71,7 @@ code = "activity.wasm"
 [[programs]]
 id = "files"
 code = "files.wasm"
+params = "files.params"
 
 [[programs]]
 id = "egress"

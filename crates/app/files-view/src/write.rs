@@ -18,7 +18,7 @@ use policy_view::link;
 use view::methods::{BlobBody, FileRelease, NewBlob, PutBlobs, Submitted};
 use view::prelude::*;
 
-use crate::state::{Note, Route, Sheet, child_of, is_namespace_root, parent_of};
+use crate::state::{Note, Route, Sheet, child_of, parent_of};
 use crate::upload::{self, Upload};
 use crate::{Files, words};
 
@@ -231,7 +231,8 @@ impl Files {
         let Some(listed) = self.folder_at(folder) else {
             return Vec::new();
         };
-        if !self.reader.writes(&listed.children()) || listed.holds_namespace_roots() {
+        let closed = !self.reader.writes(&listed.children()) || self.holds_roots(listed);
+        if closed {
             return Vec::new();
         }
         let folder = folder.to_owned();
@@ -251,7 +252,8 @@ impl Files {
             let (Some(entry), Some(own)) = (file.file(), &file.guard) else {
                 return Vec::new();
             };
-            if !self.reader.writes(own) || is_namespace_root(path) {
+            let closed = !self.reader.writes(own) || self.is_root(path);
+            if closed {
                 return Vec::new();
             }
             let mut writes = Vec::new();
@@ -268,7 +270,7 @@ impl Files {
         if let Some(folder) = self.folder_at(path) {
             let own = folder.guard.as_ref();
             let moves = own.is_some_and(|own| self.reader.writes(own));
-            return match moves && !is_namespace_root(path) {
+            return match moves && !self.is_root(path) {
                 true => moved(path, true),
                 false => Vec::new(),
             };
@@ -279,7 +281,7 @@ impl Files {
         let Some(entry) = listed.entries.iter().find(|entry| entry.path == path) else {
             return Vec::new();
         };
-        match self.reader.writes(&listed.children()) && !is_namespace_root(path) {
+        match self.reader.writes(&listed.children()) && !self.is_root(path) {
             true => moved(path, matches!(entry.node, Node::Dir { .. })),
             false => Vec::new(),
         }

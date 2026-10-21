@@ -8,7 +8,7 @@ use ::program::{
 };
 
 use crate::objects::{FileObj, SnapshotObj, check_chunks, digest, put_file, put_snapshot};
-use crate::paths::{beneath_the_roots, change_path, join};
+use crate::paths::{Roots, change_path, join};
 use crate::state::{COUNT, HEAD, HISTORY, SNAPSHOTS, minted, newest_first};
 use crate::tree::{TreeEdit, node_at};
 use crate::{Change, Content, Node, SnapshotRow};
@@ -79,13 +79,16 @@ pub(crate) fn commit(
     let steps = plan(ctx, changes)?;
     let alone = steps.len() == 1;
     let by = author.account();
+    let roots = Roots::read(ctx)?;
     let mut edit = TreeEdit::over(head_root);
     for step in steps {
         if by.is_some() {
-            step.paths().into_iter().try_for_each(beneath_the_roots)?;
+            for segments in step.paths() {
+                roots.beneath(segments)?;
+            }
         }
         unchanged_since_base(ctx, base_root, head_root, &step.paths())?;
-        apply(ctx, by, alone, &mut edit, step)?;
+        apply(ctx, by, alone, &roots, &mut edit, step)?;
     }
     let (root, _) = edit.build(ctx)?;
     let snapshot = SnapshotObj {
@@ -208,6 +211,7 @@ fn apply(
     ctx: &ExecCtx,
     by: Option<AccountNumber>,
     alone: bool,
+    roots: &Roots,
     edit: &mut TreeEdit,
     step: Step,
 ) -> Result<(), Error> {
@@ -215,13 +219,13 @@ fn apply(
         Step::Put { segments, .. } | Step::Symlink { segments, .. } => {
             crate::guards::replace(ctx, segments)?;
             if by.is_some() {
-                crate::guards::claim_carried(ctx, segments)?;
+                crate::guards::claim_carried(ctx, roots, segments)?;
             }
         }
         Step::Mkdir(segments) => {
             crate::guards::touch(ctx, segments)?;
             if by.is_some() {
-                crate::guards::claim_carried(ctx, segments)?;
+                crate::guards::claim_carried(ctx, roots, segments)?;
             }
         }
         Step::Remove(segments) => crate::guards::remove(ctx, segments)?,
@@ -236,9 +240,9 @@ fn apply(
             chunks,
         } => {
             let file = put_file(ctx, &FileObj { size, chunks, meta })?;
-            edit.put(ctx, &segments, Node::File { file, size, exec }, by)
+            edit.put(ctx, &segments, Node::File { file, size, exec }, by, roots)
         }
-        Step::Mkdir(segments) => edit.mkdir(ctx, &segments, by),
+        Step::Mkdir(segments) => edit.mkdir(ctx, &segments, by, roots),
         Step::Remove(segments) => edit.remove(ctx, &segments),
         Step::Rename { from, to } => {
             edit.rename(ctx, &from, &to)?;
@@ -252,7 +256,7 @@ fn apply(
             Ok(())
         }
         Step::Symlink { segments, target } => {
-            edit.put(ctx, &segments, Node::Symlink { target }, by)
+            edit.put(ctx, &segments, Node::Symlink { target }, by, roots)
         }
     }
 }

@@ -83,6 +83,7 @@ struct State {
     device: Vec<(String, Vec<u8>)>,
     pick: Vec<(u64, Vec<u8>)>,
     handles: u64,
+    params: BTreeMap<ProgramId, Vec<u8>>,
 }
 
 /// The fake node: shared, single-threaded.
@@ -157,6 +158,7 @@ impl Network {
             device: Vec::new(),
             pick: Vec::new(),
             handles: 0,
+            params: BTreeMap::new(),
         })));
         let identity = net.seat::<identity::Identity>(identity::PROGRAM);
         identity.borrow_mut().verifier = Some(Box::new(verify));
@@ -203,6 +205,13 @@ impl Network {
             )
             .expect("identity registers a seated program");
         host
+    }
+
+    pub fn params(&self, program: &str, params: Vec<u8>) {
+        self.0
+            .borrow_mut()
+            .params
+            .insert(program.to_owned(), params);
     }
 
     /// Seats `M` as `program` and lists it among the roster's hooks: each
@@ -866,7 +875,7 @@ impl Network {
                         b"live-code",
                         name.as_bytes(),
                     ]))),
-                params: Vec::new(),
+                params: state.params.get(name).cloned().unwrap_or_default(),
             })
             .collect();
         let views = state

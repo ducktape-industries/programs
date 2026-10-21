@@ -1,11 +1,11 @@
 //! What each files op needs of the access program, and who owns each key: a path by the account
-//! that created it, alone beneath a chat message, each `/home/<name>` by the account named
-//! `<name>`, each `/chat` folder by chat, and a pin (`pins/<name>`) by its maker, alone unless listed.
+//! that created it (alone beneath a program's root), a root's folders as files' params name them
+//! (`paths.rs`), and a pin (`pins/<name>`) by its maker, alone unless listed.
 use ::program::{Error, Need, Ownership, Party, QueryCtx, Resource};
 use store::PageRequest;
 
 use crate::commit::needs as commit_needs;
-use crate::paths::{CHAT, change_path, is_chat_folder, is_home};
+use crate::paths::{Keeper, Roots, change_path};
 use crate::state::{HEAD, PINS};
 use crate::tree::TreeEdit;
 use crate::{AccountNumber, Op};
@@ -40,12 +40,13 @@ pub(crate) fn resource(ctx: &QueryCtx, key: &str) -> Result<Resource, Error> {
     let Ok(segments) = change_path(key) else {
         return Ok(Resource::default());
     };
-    let owner = match is_home(&segments) {
-        Some(name) => named(ctx, name)?.map(Party::Account),
-        None if is_chat_folder(&segments) => Some(Party::Program(CHAT.into())),
+    let roots = Roots::read(ctx)?;
+    let owner = match roots.keeper(&segments) {
+        Some(Keeper::Named(name)) => named(ctx, name)?.map(Party::Account),
+        Some(Keeper::Program(program)) => Some(Party::Program(program.into())),
         None => created(ctx, &segments)?.map(Party::Account),
     };
-    let carried = segments.len() > 3 && segments[0] == CHAT && owner.is_some();
+    let carried = roots.carried(&segments) && owner.is_some();
     Ok(Resource {
         owner,
         default: carried.then_some(Ownership::Owner),

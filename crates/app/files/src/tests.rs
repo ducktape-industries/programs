@@ -1,8 +1,9 @@
 //! The program natively over `MockHost`: commits, reads at the head and at older
 //! snapshots, chunked files, paging, diffs and pins.
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 
-use ::program::{BlobId, Env, Error, HashKind, MockHost, Program, code};
+use ::program::{BlobId, Env, Error, ExecCtx, HashKind, MockHost, Program, QueryCtx, code};
 use abi::role::identity::{Kind, Profile};
 
 use crate::*;
@@ -20,10 +21,110 @@ fn profile(number: u64, name: &str) -> Profile {
     }
 }
 
+thread_local! {
+    static ROOTS: RefCell<Vec<paths::Root>> = RefCell::new(founded());
+    static ASKED: Cell<u64> = const { Cell::new(0) };
+}
+
+fn founded() -> Vec<paths::Root> {
+    use paths::{Owner, Root};
+    vec![
+        Root {
+            name: "home".into(),
+            depth: 1,
+            owner: Some(Owner::Named),
+        },
+        Root {
+            name: "shared".into(),
+            depth: 0,
+            owner: None,
+        },
+        Root {
+            name: "chat".into(),
+            depth: 2,
+            owner: Some(Owner::Program("chat".into())),
+        },
+    ]
+}
+
+pub(crate) struct Roster;
+
+impl Program for Roster {
+    const NAME: &'static str = programs::PROGRAM;
+    type Op = programs::Op;
+    type Query = programs::Query;
+    type Reply = programs::Reply;
+
+    fn execute(_: &ExecCtx, _: programs::Op) -> Result<(), Error> {
+        Err(::program::invalid("the roster stand-in takes no op"))
+    }
+
+    fn query(ctx: &QueryCtx, query: programs::Query) -> Result<programs::Reply, Error> {
+        let programs::Query::Program(program) = query else {
+            return Err(::program::invalid(
+                "the roster stand-in answers Program alone",
+            ));
+        };
+        ASKED.with(|asked| asked.set(asked.get() + 1));
+        let params = ROOTS.with(|roots| abi::encode(&*roots.borrow()));
+        let entry = programs::Entry {
+            program,
+            code: BlobId::Sha256([0; 32]),
+            params,
+        };
+        Ok(programs::Reply::Program {
+            height: ctx.env().height,
+            entry: Some(entry),
+        })
+    }
+}
+
 fn host() -> MockHost {
     let host = MockHost::default();
     host.identity(vec![profile(1, "ada"), profile(2, "bo")]);
+    host.sibling::<Roster>(programs::PROGRAM, &MockHost::default());
     host
+}
+
+#[test]
+fn a_commit_asks_the_programs_role_for_files_params_once() {
+    let host = host();
+    let changes = vec![
+        put(&host, "/home/ada/a", "a"),
+        put(&host, "/shared/b", "b"),
+        Change::Mkdir {
+            path: "/docs".into(),
+        },
+    ];
+    ASKED.with(|asked| asked.set(0));
+    commit(&host, ada(), None, changes).unwrap();
+    assert_eq!(ASKED.with(Cell::get), 1);
+}
+
+#[test]
+fn the_namespace_roots_are_the_ones_files_params_name() {
+    ROOTS.with(|roots| {
+        *roots.borrow_mut() = vec![paths::Root {
+            name: "srv".into(),
+            depth: 1,
+            owner: Some(paths::Owner::Program("forge".into())),
+        }]
+    });
+    let host = host();
+    for path in ["/srv", "/srv/site"] {
+        let op = Op::Commit {
+            base: None,
+            message: "work".into(),
+            changes: vec![put(&host, path, "x")],
+        };
+        assert_eq!(refused(&host, ada(), op).code, code::UNAUTHORIZED, "{path}");
+    }
+    let changes = vec![
+        put(&host, "/srv/site/index.html", "x"),
+        put(&host, "/home", "x"),
+        put(&host, "/chat", "x"),
+    ];
+    commit(&host, ada(), None, changes).unwrap();
 }
 
 fn ada() -> Env {

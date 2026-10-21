@@ -17,5 +17,6 @@ borsh = { workspace = true }
 describe = { path = "../../sdk/describe" }
 ownership = { path = "../../system/ownership" }
 program = { path = "../../sdk/program" }
+programs = { path = "../../system/programs" }
 store = { path = "../../sdk/store" }
 unicode-normalization = { workspace = true }

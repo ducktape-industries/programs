@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use files::paths::Roots;
 use files::{BlobId, DiffEntry, EntryInfo, Node, Party, PinRow, SnapshotRow};
 use serde::{Deserialize, Serialize};
 use view::borsh_bytes;
@@ -207,10 +208,6 @@ impl Folder {
     pub fn children(&self) -> Guard {
         self.guard.clone().unwrap_or_default()
     }
-
-    pub fn holds_namespace_roots(&self) -> bool {
-        files::paths::holds_namespace_roots(&segments_of(&self.path))
-    }
 }
 
 /// How much of a file is read to show it, and the most a file may hold
@@ -393,6 +390,8 @@ pub struct Files {
     pub(crate) history: Reread<History>,
     pub(crate) snapshot: Loadable<Snapshot>,
     pub(crate) names: Reread<Names>,
+    #[serde(skip)]
+    pub(crate) roots: Loadable<Roots>,
     pub(crate) chain: String,
     pub(crate) note: Option<Note>,
     #[serde(skip)]
@@ -417,6 +416,7 @@ impl Default for Files {
             history: Reread::default(),
             snapshot: Loadable::Idle,
             names: Reread::default(),
+            roots: Loadable::Idle,
             chain: String::new(),
             note: None,
             sheet: None,
@@ -431,6 +431,18 @@ impl Default for Files {
 impl Files {
     pub(crate) fn page(&self) -> &Route {
         self.pages.top()
+    }
+
+    pub(crate) fn is_root(&self, path: &str) -> bool {
+        self.roots
+            .ready()
+            .is_none_or(|roots| roots.is_namespace_root(&segments_of(path)))
+    }
+
+    pub(crate) fn holds_roots(&self, folder: &Folder) -> bool {
+        self.roots
+            .ready()
+            .is_none_or(|roots| roots.holds_namespace_roots(&segments_of(&folder.path)))
     }
 
     pub(crate) fn folder_at(&self, path: &str) -> Option<&Folder> {
@@ -490,8 +502,4 @@ pub fn segments_of(path: &str) -> Vec<String> {
         .filter(|segment| !segment.is_empty())
         .map(str::to_owned)
         .collect()
-}
-
-pub fn is_namespace_root(path: &str) -> bool {
-    files::paths::is_namespace_root(&segments_of(path))
 }

@@ -11,7 +11,24 @@ const BO_KEY: u64 = 12;
 const CY_KEY: u64 = 13;
 
 fn apps() -> Vec<Founding> {
-    vec![founding(files::PROGRAM, &program("files"))]
+    use files::paths::{Owner, Root};
+    let roots = vec![
+        Root {
+            name: "home".into(),
+            depth: 1,
+            owner: Some(Owner::Named),
+        },
+        Root {
+            name: "shared".into(),
+            depth: 0,
+            owner: None,
+        },
+    ];
+    let founded = founding(files::PROGRAM, &program("files"));
+    vec![Founding {
+        params: abi::encode(&roots),
+        ..founded
+    }]
 }
 
 fn put(path: &str, content: Content) -> Change {

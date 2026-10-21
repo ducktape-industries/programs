@@ -1,6 +1,6 @@
 //! Packs what `make wasm-modules` builds into a founding: each program with its describe module,
-//! its schema, any view and any notifier embedded, forge's and halo's params, and a founding file
-//! `ducktape init` reads.
+//! its schema, any view and any notifier embedded, forge's, halo's and files' params, and a
+//! founding file `ducktape init` reads.
 
 #[cfg(test)]
 mod derive;
@@ -55,6 +55,27 @@ pub fn forge_bounds() -> forge::Bounds {
     }
 }
 
+pub fn files_roots() -> Vec<files::paths::Root> {
+    use files::paths::{Owner, Root};
+    vec![
+        Root {
+            name: "home".into(),
+            depth: 1,
+            owner: Some(Owner::Named),
+        },
+        Root {
+            name: "shared".into(),
+            depth: 0,
+            owner: None,
+        },
+        Root {
+            name: "chat".into(),
+            depth: 2,
+            owner: Some(Owner::Program("chat".into())),
+        },
+    ]
+}
+
 /// The lanes halo serves from the first block, given ids in order from 0. blobs' lane is
 /// `Critical`: a node that lags fetches the blobs a block names at that class before it can
 /// apply the block, and it is pinned, so no vote pauses or closes it: a node cut off from
@@ -91,6 +112,7 @@ pub fn bundle(release: &Path, out: &Path, source: Option<&Source>) -> Result<()>
     }
     fs::write(out.join("forge.params"), abi::encode(&forge_bounds()))?;
     fs::write(out.join("halo.params"), abi::encode(&halo_lanes()))?;
+    fs::write(out.join("files.params"), abi::encode(&files_roots()))?;
     fs::write(out.join("founding.toml"), FOUNDING)?;
     Ok(())
 }

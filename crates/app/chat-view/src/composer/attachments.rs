@@ -193,7 +193,7 @@ pub fn content_type(name: &str) -> &'static str {
 }
 
 pub fn path(channel: &str, message: &str, name: &str) -> String {
-    format!("/{}/{channel}/{message}/{name}", files::paths::CHAT)
+    format!("/{}/{channel}/{message}/{name}", chat::PROGRAM)
 }
 
 // What the file's put says of where it came from.

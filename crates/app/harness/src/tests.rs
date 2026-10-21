@@ -204,6 +204,62 @@ fn scripted(chain: &MockChain, agent: AccountNumber, path: &str) {
     identity_op(chain, ADA, script).unwrap();
 }
 
+pub(crate) fn files_params() -> Vec<u8> {
+    use files::paths::{Owner, Root};
+    abi::encode(&vec![
+        Root {
+            name: "home".into(),
+            depth: 1,
+            owner: Some(Owner::Named),
+        },
+        Root {
+            name: "shared".into(),
+            depth: 0,
+            owner: None,
+        },
+        Root {
+            name: "chat".into(),
+            depth: 2,
+            owner: Some(Owner::Program(chat::PROGRAM.into())),
+        },
+    ])
+}
+
+struct Roster;
+
+impl ::program::Program for Roster {
+    const NAME: &'static str = programs::PROGRAM;
+    type Op = programs::Op;
+    type Query = programs::Query;
+    type Reply = programs::Reply;
+
+    fn execute(_: &::program::ExecCtx, _: programs::Op) -> Result<(), ::program::Error> {
+        Err(::program::invalid("the roster stand-in takes no op"))
+    }
+
+    fn query(
+        ctx: &::program::QueryCtx,
+        query: programs::Query,
+    ) -> Result<programs::Reply, ::program::Error> {
+        match query {
+            programs::Query::Program(program) if program == files::PROGRAM => {
+                Ok(programs::Reply::Program {
+                    height: ctx.env().height,
+                    entry: Some(programs::Entry {
+                        program,
+                        code: ::program::BlobId::Sha256([0; 32]),
+                        params: files_params(),
+                    }),
+                })
+            }
+            _ => Err(::program::Error::new(
+                ::program::code::UNKNOWN_PROGRAM,
+                programs::PROGRAM,
+            )),
+        }
+    }
+}
+
 fn world() -> World {
     world_as(PROGRAM)
 }
@@ -221,6 +277,7 @@ fn world_as(id: &str) -> World {
     chain.seat::<files::Files>(files::PROGRAM);
     chain.seat::<chat::Chat>(chat::PROGRAM);
     chain.seat::<access::Access>("access");
+    chain.seat::<Roster>(programs::PROGRAM);
     for program in [
         "access",
         "valset",

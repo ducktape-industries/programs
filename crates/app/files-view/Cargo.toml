@@ -17,6 +17,7 @@ view = { path = "../../sdk/view" }
 serde.workspace = true
 # the program this view draws: its ops, its asks and its path rule
 files = { path = "../files" }
+programs = { path = "../../system/programs" }
 # who writes a path: its guard's policy, read and set as every view does
 ownership = { path = "../../system/ownership" }
 policy-view = { path = "../../sdk/policy-view" }
