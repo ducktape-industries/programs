@@ -2,12 +2,51 @@
 //! declares: what the gate lets through, what a list allows, who sets one, and what a delete drops.
 
 use ::program::{
-    Error, ExecCtx, MockChain, Need, Origin, Ownership, Party, Program, QueryCtx, Reply as Wait,
-    Resource, Writers, code,
+    Error, ExecCtx, MockChain, MockHost, Need, Origin, Ownership, Party, Program, ProgramId,
+    QueryCtx, Renamer, Reply as Wait, Resource, Writers, code,
 };
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use crate::{Access, Listed, Op, PROGRAM, PageRequest, Query, Reply};
+
+fn renamed(chain: &mut MockChain, renames: &[(&str, &str)]) {
+    chain.seat::<Renamer>("programs");
+    chain.at(7, 0);
+    let renames: Vec<(ProgramId, ProgramId)> = renames
+        .iter()
+        .map(|(from, to)| ((*from).to_owned(), (*to).to_owned()))
+        .collect();
+    chain.submit(signed(ADA), "programs", &renames).unwrap();
+}
+
+fn migrate(first: Option<(&str, &str)>, last: Option<(&str, &str)>) -> Op {
+    migrate_at(7, first, last)
+}
+
+fn migrate_at(height: u64, first: Option<(&str, &str)>, last: Option<(&str, &str)>) -> Op {
+    let bound = |bound: Option<(&str, &str)>| -> Option<(ProgramId, String)> {
+        bound.map(|(program, key)| (program.to_owned(), key.to_owned()))
+    };
+    Op::Migrate {
+        height,
+        first: bound(first),
+        last: bound(last),
+    }
+}
+
+fn lists_of(chain: &MockChain, program: &str) -> Vec<(String, Ownership)> {
+    let asked = Query::Lists {
+        program: program.into(),
+        page: PageRequest::first(10),
+    };
+    let Reply::Lists(page) = chain.query(PROGRAM, &asked).unwrap() else {
+        panic!("lists");
+    };
+    page.items
+        .into_iter()
+        .map(|listed| (listed.key, listed.list))
+        .collect()
+}
 
 #[derive(Clone, Debug, BorshSerialize, BorshDeserialize)]
 enum Note {
@@ -354,4 +393,117 @@ fn only_the_program_moves_the_lists_at_and_below_a_key() {
         .map(|listed| listed.key.as_str())
         .collect();
     assert_eq!(keys, ["ab", "z", "z/b"]);
+}
+
+#[test]
+fn migrate_moves_a_renamed_programs_lists_and_renames_the_programs_lists_name() {
+    let mut chain = chain();
+    for (program, number) in [("relay", 902), ("keep", 903), ("o/notes", 904), ("p", 905)] {
+        chain.seat::<Notes>(program);
+        chain.register(program, number);
+    }
+    let relay = || Party::Program("relay".into());
+    own(&chain, ADA, "docs", None);
+    own(&chain, ADA, "post", None);
+    set(&chain, ADA, "docs", Some(Ownership::Listed(vec![relay()]))).unwrap();
+    set(&chain, ADA, "post", Some(Ownership::Owner)).unwrap();
+    let kept_owner = Note::Own {
+        key: "docs".into(),
+        default: None,
+    };
+    chain.submit(signed(ADA), "keep", &kept_owner).unwrap();
+    let kept = Op::Set {
+        program: "keep".into(),
+        key: "docs".into(),
+        list: Some(Ownership::Listed(vec![
+            relay(),
+            Party::Program("p".into()),
+            Party::Account(BEA),
+        ])),
+    };
+    chain.submit(signed(ADA), PROGRAM, &kept).unwrap();
+    let set_since = Op::Set {
+        program: "o/notes".into(),
+        key: "post".into(),
+        list: Some(Ownership::Anyone),
+    };
+    chain
+        .submit(Origin::Program("o/notes".into()), PROGRAM, &set_since)
+        .unwrap();
+    renamed(&mut chain, &[("notes", "o/notes"), ("relay", "o/relay")]);
+    chain
+        .submit(signed(CY), PROGRAM, &migrate(None, None))
+        .unwrap();
+    let o_relay = || Party::Program("o/relay".into());
+    assert!(lists_of(&chain, "notes").is_empty());
+    assert_eq!(
+        lists_of(&chain, "o/notes"),
+        [
+            ("docs".to_owned(), Ownership::Listed(vec![o_relay()])),
+            ("post".to_owned(), Ownership::Anyone),
+        ]
+    );
+    assert_eq!(
+        lists_of(&chain, "keep"),
+        [(
+            "docs".to_owned(),
+            Ownership::Listed(vec![
+                Party::Account(BEA),
+                o_relay(),
+                Party::Program("p".into()),
+            ])
+        )],
+        "a list stays settled: sorted, each party once"
+    );
+    let access = chain.host(PROGRAM).clone();
+    access.sibling::<Renamer>("programs", chain.host("programs"));
+    let at_seven = ::program::Env {
+        height: 7,
+        ..MockHost::env(PROGRAM)
+    };
+    Access::execute(&access.exec(at_seven), migrate(None, None)).unwrap();
+    assert!(
+        access.borrow().touched.is_empty(),
+        "a second run writes nothing"
+    );
+}
+
+#[test]
+fn migrate_rewrites_only_the_lists_inside_its_range() {
+    let mut chain = chain();
+    for key in ["a", "b", "c"] {
+        own(&chain, ADA, key, None);
+        set(&chain, ADA, key, Some(Ownership::Owner)).unwrap();
+    }
+    renamed(&mut chain, &[("notes", "o/notes")]);
+    let only_b = migrate(Some(("notes", "b")), Some(("notes", "b")));
+    chain.submit(signed(CY), PROGRAM, &only_b).unwrap();
+    let keys = |program| {
+        lists_of(&chain, program)
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(keys("notes"), ["a", "c"]);
+    assert_eq!(keys("o/notes"), ["b"]);
+    chain
+        .submit(signed(CY), PROGRAM, &migrate(None, None))
+        .unwrap();
+    assert!(keys("notes").is_empty());
+    assert_eq!(keys("o/notes"), ["a", "b", "c"]);
+}
+
+#[test]
+fn migrate_refuses_a_height_not_reached_and_leaves_a_rename_not_landed_alone() {
+    let mut chain = chain();
+    own(&chain, ADA, "docs", None);
+    set(&chain, ADA, "docs", Some(Ownership::Owner)).unwrap();
+    renamed(&mut chain, &[("notes", "o/notes")]);
+    let ahead = migrate_at(8, None, None);
+    assert_eq!(
+        refused(chain.submit(signed(CY), PROGRAM, &ahead)),
+        code::INVALID_INPUT
+    );
+    assert_eq!(lists_of(&chain, "notes").len(), 1);
+    assert!(lists_of(&chain, "o/notes").is_empty());
 }

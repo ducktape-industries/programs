@@ -182,6 +182,7 @@ ids, never names, so renaming an account changes nothing it allows.
 | `Check { program, actor, needs }` | the kernel alone (`Root`); judges each need and refuses the first it does not allow |
 | `Set { program, key, list }` | the key's owner, or `program` itself for its own keys. `Some(list)` sets the key's list (each listed account and program must exist in identity), `None` clears it |
 | `Move { program, from, to }` | `program` alone: moves every list at and below `from` to the same place under `to`, when a path is renamed |
+| `Migrate { height, first, last }` | anyone: rewrites the program ids it stores by the programs role's `Renames(height)` ("Renaming a program"), over the lists `first..=last` (each a `(program, key)`, either end open; a `height` past the current one is refused): a renamed program's lists move to its new id, a list already set there is kept, and each renamed `Party::Program` a list names follows. Its renames come from the role, never from the sender, so a second run changes nothing |
 
 Its queries: `List { program, key }` (the list set on the key, if any),
 `Resource { program, key }` (the program's answer for the key),

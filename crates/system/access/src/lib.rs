@@ -40,6 +40,12 @@ pub enum Op {
         from: String,
         to: String,
     },
+    #[tool_op(description = "Rewrite the program ids access stores by the programs role's Renames at height: each list a renamed program's keys carry moves to its new id (a list already set there is kept), and each renamed program a list names follows, over the lists first..=last (each [program, key]; null: from the first, or to the last). Anyone: it reads the renames from the programs role, never from its sender, so running it again changes nothing.", example = examples::migrate)]
+    Migrate {
+        height: u64,
+        first: Option<(ProgramId, String)>,
+        last: Option<(ProgramId, String)>,
+    },
 }
 
 #[derive(
@@ -109,6 +115,24 @@ pub fn describe(op: &Op) -> describe::Description {
                 field("to", Value::text(to)),
             ],
         ),
+        Op::Migrate {
+            height,
+            first,
+            last,
+        } => {
+            let bound = |bound: &Option<(ProgramId, String)>, open: &str| match bound {
+                Some((program, key)) => Value::Text(format!("{program} {key}")),
+                None => Value::Text(open.into()),
+            };
+            (
+                "Migrate".into(),
+                vec![
+                    field("height", Value::Text(height.to_string())),
+                    field("first", bound(first, "the first")),
+                    field("last", bound(last, "the last")),
+                ],
+            )
+        }
     };
     describe::Description { title, fields }
 }
@@ -134,5 +158,8 @@ describe::export!(Op, describe);
 
 #[test]
 fn op_variants_only_append() {
-    assert_eq!(describe::variants::<Op>(), ["Check", "Set", "Move"]);
+    assert_eq!(
+        describe::variants::<Op>(),
+        ["Check", "Set", "Move", "Migrate"]
+    );
 }

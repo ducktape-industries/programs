@@ -60,6 +60,38 @@ pub fn identity_role(roster: &Roster, request: &[u8]) -> Result<Vec<u8>, Error> 
     };
     Ok(abi::encode(&reply))
 }
+
+/// The programs role as a native test of a program's `Migrate` reads it: its op sets the renames.
+pub struct Renamer;
+
+const RENAMES: &[u8] = b"renames";
+
+impl Program for Renamer {
+    const NAME: &'static str = "programs";
+    type Op = Vec<(ProgramId, ProgramId)>;
+    type Query = role::programs::Query;
+    type Reply = role::programs::Reply;
+
+    fn execute(ctx: &ExecCtx, renames: Vec<(ProgramId, ProgramId)>) -> Result<(), Error> {
+        ctx.set(RENAMES, abi::encode(&renames));
+        Ok(())
+    }
+
+    fn query(ctx: &QueryCtx, query: role::programs::Query) -> Result<role::programs::Reply, Error> {
+        let role::programs::Query::Renames(_) = query else {
+            return Err(Error::new(
+                code::UNSUPPORTED,
+                format!("the test's programs role answers only Renames, not {query:?}"),
+            ));
+        };
+        let renames = match ctx.get(RENAMES) {
+            Some(bytes) => abi::decode(&bytes).map_err(crate::kernel::error_from)?,
+            None => Vec::new(),
+        };
+        Ok(role::programs::Reply::Renames(renames))
+    }
+}
+
 pub type Verifier = Box<dyn Fn(Scheme, &[u8], &[u8], &[u8], &[u8]) -> bool>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]

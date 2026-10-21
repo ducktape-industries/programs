@@ -392,6 +392,18 @@ counterpart, forge's reviewers. Ask a role at the program that fills it,
 themselves (`abi::role::identity::{Profile, Kind, Standing}`) are what a
 view shows beside a name.
 
+The **programs role** says which program ids were renamed.
+`ctx.renames(height)` asks it (`Renames(height)`), for a height already
+reached (a later one is refused, since a rename only scheduled may yet be
+cancelled), and answers a `Renames`:
+`moved(id)` is an old id's new one, and `id`, `party` and `ownership` give
+back a stored id, party or list with each renamed program followed (a
+list settled again: sorted, each party once). A
+program that stores other programs' ids rewrites them by it in a `Migrate`
+op that anyone may send ([roles.md](roles.md), "Renaming a program"). A
+native test seats `program::Renamer` at the programs role: its op sets the
+renames it answers.
+
 Who may write something an account owns is the access program's to decide
 ([roles.md](roles.md), "Who may write a key"); a program answers it two
 questions. `Program::access(ctx, op)` names what an op needs: a

@@ -148,6 +148,37 @@ pub(crate) fn moved(ctx: &ExecCtx, program: ProgramId, from: &str, to: &str) -> 
     Ok(())
 }
 
+pub(crate) fn migrate(
+    ctx: &ExecCtx,
+    height: u64,
+    first: Option<(ProgramId, String)>,
+    last: Option<(ProgramId, String)>,
+) -> Result<(), Error> {
+    let renamed = ctx.renames(height)?;
+    let mut range = LISTS.prefix_of(&());
+    if let Some(first) = first {
+        range.start = LISTS.key(&first);
+    }
+    if let Some(last) = last {
+        range.end = Some([LISTS.key(&last), vec![0]].concat());
+    }
+    for (row, list) in LISTS.scan(ctx, range)? {
+        let followed = renamed.ownership(&list);
+        let Some(to) = renamed.moved(&row.0) else {
+            if followed != list {
+                LISTS.put(ctx, &row, &followed);
+            }
+            continue;
+        };
+        LISTS.remove(ctx, &row);
+        let moved = (to.clone(), row.1);
+        if !LISTS.has(ctx, &moved) {
+            LISTS.put(ctx, &moved, &followed);
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn set(
     ctx: &ExecCtx,
     program: ProgramId,

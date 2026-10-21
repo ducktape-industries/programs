@@ -1,33 +1,9 @@
 // A program renamed in place: the kernel moves its account to the new id, and Migrate rewrites the
 // ids identity stores (scripts, whom an account answers) by the programs role's renames.
 
-use ::program::{Error, ExecCtx, QueryCtx};
-use abi::role::programs;
+use ::program::Renamer;
 
 use super::*;
-
-struct Renamer;
-
-impl Program for Renamer {
-    const NAME: &'static str = "programs";
-    type Op = u64;
-    type Query = programs::Query;
-    type Reply = programs::Reply;
-
-    fn execute(_: &ExecCtx, _: u64) -> Result<(), Error> {
-        Err(Error::new(code::INVALID_INPUT, "the renamer takes no op"))
-    }
-
-    fn query(_: &QueryCtx, query: programs::Query) -> Result<programs::Reply, Error> {
-        match query {
-            programs::Query::Renames(_) => Ok(programs::Reply::Renames(vec![(
-                "harness".into(),
-                "o/harness".into(),
-            )])),
-            other => Err(Error::new(code::INVALID_INPUT, format!("{other:?}"))),
-        }
-    }
-}
 
 fn register(store: &MockHost, program: &str) {
     let op = Op::RegisterProgram {
@@ -100,6 +76,8 @@ fn migrate_rewrites_scripts_and_parties_by_the_programs_roles_renames() {
     let store = memory();
     let renamer = MockHost::default();
     store.sibling::<Renamer>(MockHost::role(abi::role::PROGRAMS), &renamer);
+    let renames = vec![("harness".into(), "o/harness".into())];
+    Renamer::execute(&renamer.exec(MockHost::env("programs")), renames).unwrap();
     create(&store, ALICE, "Alice");
     register(&store, "harness");
     let scout = create_agent(&store, ALICE, "Scout");
@@ -124,6 +102,12 @@ fn migrate_rewrites_scripts_and_parties_by_the_programs_roles_renames() {
         last,
     };
     let anyone = env(Origin::Signed(b"nobody".to_vec()), None, 100);
+    let ahead = Op::Migrate {
+        height: 8,
+        first: None,
+        last: None,
+    };
+    assert_eq!(refused(&store, &anyone, ahead).code, code::INVALID_INPUT);
     run(&store, &anyone, migrate(Some(scout), Some(scout))).unwrap();
     let calls = |agent| match get(&store, agent).control {
         Control::Program { script, .. } => script.map(|script| script.calls),

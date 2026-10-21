@@ -2,7 +2,7 @@
 
 use ::program::{Error, ExecCtx, Need, Program, QueryCtx, Resource};
 
-use crate::rules::{check, list, lists, moved, resource_of, set, writers_of};
+use crate::rules::{check, list, lists, migrate, moved, resource_of, set, writers_of};
 use crate::{Op, PROGRAM, Query, Reply};
 
 pub struct Access;
@@ -30,6 +30,11 @@ impl Program for Access {
             } => check(ctx, program, actor, needs),
             Op::Set { program, key, list } => set(ctx, program, key, list),
             Op::Move { program, from, to } => moved(ctx, program, &from, &to),
+            Op::Migrate {
+                height,
+                first,
+                last,
+            } => migrate(ctx, height, first, last),
         }
     }
 

@@ -34,6 +34,14 @@ pub(crate) fn moved() -> Op {
     }
 }
 
+pub(crate) fn migrate() -> Op {
+    Op::Migrate {
+        height: 300_000,
+        first: Some((files(), "/home".into())),
+        last: Some((files(), "/shared".into())),
+    }
+}
+
 pub(crate) fn list() -> Query {
     Query::List {
         program: files(),

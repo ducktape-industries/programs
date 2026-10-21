@@ -55,6 +55,7 @@ mod mock;
 mod origin;
 mod program;
 pub mod refuse;
+mod renames;
 pub mod schema;
 pub mod section;
 pub mod source;
@@ -76,7 +77,8 @@ pub use kernel::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use mock::{
-    Called, MockHost, MockState, Resumed, Sibling, Touch, Verifier, Work, blob_id, identity_role,
+    Called, MockHost, MockState, Renamer, Resumed, Sibling, Touch, Verifier, Work, blob_id,
+    identity_role,
 };
 #[cfg(target_arch = "wasm32")]
 pub use program::exports;
@@ -88,3 +90,4 @@ pub use refuse::{
     already_exists, capacity, corrupt, decoded, invalid, not_found, stale, unauthorized,
     unexpected_reply, wrong_state,
 };
+pub use renames::Renames;
