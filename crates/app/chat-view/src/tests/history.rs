@@ -811,3 +811,140 @@ fn leaving_a_thread_puts_the_room_back_where_the_reader_stood() {
         );
     }
 }
+
+fn stored(cx: &TestAppContext) -> Option<view::scroll::Anchor> {
+    cx.host().kept(&view::scroll::key("general"))
+}
+
+fn kept_place(cx: &TestAppContext, anchor: &view::scroll::Anchor) {
+    let kept = view::methods::encode(anchor);
+    let key = view::scroll::key("general");
+    cx.host()
+        .handle::<view::methods::StoreGet>(move |asked| Ok((asked == key).then(|| kept.clone())));
+}
+
+fn standing(view: &Entity<Chat>) -> (String, f32) {
+    view.read(|chat| {
+        let drawn = chat.drawn(Pane::Timeline).borrow();
+        let (_, list) = drawn.list.as_ref().expect("the timeline is drawn");
+        let top = list.logical_scroll_top();
+        (
+            drawn.keys[top.item_ix].clone(),
+            f32::from(top.offset_in_item),
+        )
+    })
+}
+
+fn at_newest(cx: &mut TestAppContext, name: &str) {
+    let Some(wire::Node::List {
+        scroll_handler: Some(handler),
+        item_count,
+        ..
+    }) = list_named(cx.root(), name).cloned()
+    else {
+        panic!("no list {name} that hears its scroll");
+    };
+    cx.simulate_event(wire::Event::ListScroll {
+        handler,
+        event: wire::ListScroll {
+            visible_start: item_count.saturating_sub(5),
+            visible_end: item_count,
+            count: item_count,
+            is_scrolled: false,
+            is_following_tail: true,
+            offset: wire::ListOffset {
+                item_ix: item_count,
+                offset_in_item: 0.,
+            },
+        },
+    });
+}
+
+#[test]
+fn a_room_opens_where_the_reader_stood_on_the_last_run() {
+    let (mut cx, _) = history(Rc::new(Cell::new(600)));
+    open(&mut cx, "chat-sidebar-channel-general");
+    stood(&mut cx, "chat-message-rows", 3, 12.);
+    cx.run_until_parked();
+    let anchor = stored(&cx).expect("where the room stood is kept");
+    let (mut again, view) = history(Rc::new(Cell::new(600)));
+    kept_place(&again, &anchor);
+    open(&mut again, "chat-sidebar-channel-general");
+    view.read(|chat| {
+        let room = chat.room.as_ref().unwrap();
+        assert!(!room.landed, "its row is on the newest page: no landing");
+    });
+    assert_eq!(standing(&view), (anchor.id, 12.));
+}
+
+#[test]
+fn a_room_left_far_up_on_the_last_run_lands_where_the_reader_stood() {
+    let (mut cx, view) = history(Rc::new(Cell::new(600)));
+    open(&mut cx, "chat-sidebar-channel-general");
+    reach_first(&mut cx, &view);
+    stood(&mut cx, "chat-message-rows", 4, 5.);
+    cx.run_until_parked();
+    let anchor = stored(&cx).expect("where the room stood is kept");
+    assert_eq!(anchor.seq, 583);
+    let (mut again, view) = history(Rc::new(Cell::new(600)));
+    kept_place(&again, &anchor);
+    open(&mut again, "chat-sidebar-channel-general");
+    view.read(|chat| {
+        let room = chat.room.as_ref().unwrap();
+        assert!(room.landed, "above the newest page: it lands");
+        assert_eq!(room.target, 583);
+    });
+    assert_eq!(standing(&view), (anchor.id, 5.));
+}
+
+#[test]
+fn a_room_back_at_its_newest_keeps_no_place() {
+    let (mut cx, _) = history(Rc::new(Cell::new(600)));
+    open(&mut cx, "chat-sidebar-channel-general");
+    stood(&mut cx, "chat-message-rows", 3, 12.);
+    cx.run_until_parked();
+    assert!(stored(&cx).is_some(), "where the room stood is kept");
+    at_newest(&mut cx, "chat-message-rows");
+    cx.run_until_parked();
+    assert_eq!(stored(&cx), None, "at its newest it opens there anyway");
+}
+
+#[test]
+fn a_swap_opens_the_room_where_the_reader_stood() {
+    let (mut cx, _) = history(Rc::new(Cell::new(600)));
+    open(&mut cx, "chat-sidebar-channel-general");
+    stood(&mut cx, "chat-message-rows", 3, 12.);
+    cx.run_until_parked();
+    let anchor = stored(&cx).expect("kept as the list settled");
+    kept_place(&cx, &anchor);
+    let bytes = cx.snapshot().unwrap();
+    let view = cx.restore::<Chat>(&bytes).unwrap();
+    cx.run_until_parked();
+    assert_eq!(
+        standing(&view),
+        (anchor.id, 12.),
+        "read from the store: the snapshot keeps no place"
+    );
+}
+
+#[test]
+fn a_swap_landing_where_the_reader_stood_keeps_the_thread_open_beside_it() {
+    let (mut cx, view) = paged(Rc::new(Cell::new(600)), 40);
+    open(&mut cx, "chat-sidebar-channel-general");
+    reach_first(&mut cx, &view);
+    stood(&mut cx, "chat-message-rows", 4, 5.);
+    cx.run_until_parked();
+    let anchor = stored(&cx).expect("where the room stood is kept");
+    thread_open(&mut cx, &view, 595);
+    kept_place(&cx, &anchor);
+    let bytes = cx.snapshot().unwrap();
+    let view = cx.restore::<Chat>(&bytes).unwrap();
+    cx.run_until_parked();
+    view.read(|chat| {
+        let room = chat.room.as_ref().unwrap();
+        assert!(room.landed, "above the newest page: it lands");
+        assert_eq!(room.target, anchor.seq);
+        let root = room.thread.as_ref().map(|thread| thread.root);
+        assert_eq!(root, Some(595), "the thread stays open beside the room");
+    });
+}

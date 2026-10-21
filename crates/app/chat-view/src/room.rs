@@ -333,6 +333,7 @@ impl Chat {
         let viewer = self.viewer();
         let first = self.screenful();
         let same = self.room.as_ref().is_some_and(|room| room.id == id);
+        let stood = !same || self.timeline_drawn.borrow().list.is_none();
         if !same {
             self.keep_room();
             self.reads.boundary = 0;
@@ -467,9 +468,26 @@ impl Chat {
                 return;
             }
         } else {
-            let rows = queries::roots(cx.host(), id, viewer, None, first);
-            room.messages = Loadable::Loading(cx.land(rows, |chat, result, cx| {
+            let rows = queries::roots(cx.host(), id.clone(), viewer, None, first);
+            let stored = stood.then(|| view::scroll::get(&cx.host(), &id));
+            let read = async move {
+                let stored = match stored {
+                    Some(stored) => stored.await,
+                    None => Ok(None),
+                };
+                rows.await.map(|rows| (stored, rows))
+            };
+            room.messages = Loadable::Loading(cx.land(read, move |chat, read, cx| {
                 cx.notify();
+                let result = match read {
+                    Ok((stored, rows)) => {
+                        if chat.lands_where_it_stood(id, stored, &rows.0, cx) {
+                            return;
+                        }
+                        Ok(rows)
+                    }
+                    Err(refusal) => Err(refusal),
+                };
                 chat.rows_arrived(result);
                 room_of(chat).read_reactors(cx);
             }));
@@ -490,6 +508,38 @@ impl Chat {
             }
             Err(refusal) => room.messages = Loadable::Failed(refusal),
         }
+    }
+
+    fn lands_where_it_stood(
+        &mut self,
+        id: String,
+        stored: Result<Option<Anchor>, Error>,
+        rows: &[MsgRow],
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let stored = match stored {
+            Ok(stored) => stored,
+            Err(refusal) => {
+                cx.log_refused("where the room stood", &refusal);
+                return false;
+            }
+        };
+        self.standing.known(&id, stored.clone());
+        let Some(anchor) = stored else {
+            return false;
+        };
+        let held = rows.iter().any(|row| row.message_id == anchor.id);
+        if !held {
+            let thread = self.room.as_mut().and_then(|room| room.thread.take());
+            let details = self.details.take();
+            self.open_at(id, anchor.seq, cx);
+            if let Some(room) = &mut self.room {
+                room.thread = thread;
+            }
+            self.details = details;
+        }
+        self.timeline_drawn.borrow_mut().restore = Some((anchor.id, anchor.offset));
+        !held
     }
 
     /// Everything chat shows, read again: the channel list and the open
@@ -1111,6 +1161,7 @@ impl Chat {
         match pane {
             Pane::Timeline => {
                 let Some(room) = &mut self.room else { return };
+                let route = room.id.clone();
                 let at_tail = event.is_following_tail || event.visible_range.end >= event.count;
                 if room.at_tail != at_tail {
                     room.at_tail = at_tail;
@@ -1121,6 +1172,11 @@ impl Chat {
                 }
                 if room.landed && at_foot {
                     self.page_landed(Side::Newer, cx);
+                }
+                let drawn = self.timeline_drawn.borrow().list.is_some();
+                if drawn {
+                    let anchor = self.anchor(Pane::Timeline);
+                    self.standing.keep(cx, &route, anchor);
                 }
             }
             Pane::Thread => {

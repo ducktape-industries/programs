@@ -374,6 +374,21 @@ set rewrites the program's whole file, so what changes often stays small.
 `unknown_request`, and a view reads that as nothing kept and goes on with
 its defaults. The test host keeps a store of its own (see Testing).
 
+Where a list stood is kept the same way, through `view::scroll`: an
+`Anchor` (the id and seq of the row at the list's top, and how far into
+that row in pixels) under `scroll/<route>`, the route being what names the
+list's place to the view (chat's timeline uses the room's id).
+`scroll::get(host, route)` reads it as the list opens. A `Keeper` writes
+it from the list's scroll handler (`ListState::set_scroll_handler`, which
+hears each settled move), `None` while the list follows its tail, which
+removes the key. One write is out at a time; when it lands, the newest
+anchor of each route that moved meanwhile goes next, and
+`known(route, anchor)` records what a read found, so an anchor the store
+already holds is not written again. The store trails the list by one write
+at most, so nothing waits for the app to go to the background or quit,
+which a view never hears. The offset is within the anchor's row: rows that
+measure differently above it on the next run don't move it.
+
 ## Live tracks
 
 A view that declares `Capability::Live` publishes and subscribes to tracks

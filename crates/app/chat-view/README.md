@@ -81,9 +81,15 @@ newest page of rows (`Chat::screenful`: the tallest pane placed this session,
 or before any the window's viewport, over the shortest row), the thread open beside it with its newest page of
 replies, and where each list stood (`Anchor`: a row's id and how far into it).
 Pages read further up are never kept, so a room costs one page however far it
-was read, and nothing of it outlives the session. Opening it again draws that
+was read, and nothing of it but where the timeline stood outlives the session. Opening it again draws that
 at once and reads only what blocks wrote since; a reader who stood above the
-kept page lands where they stood. A room opens at its newest row and a thread
+kept page lands where they stood. Where the timeline stood is also kept in the
+view store under `scroll/<room id>` (`view::scroll`, written by `standing` as the
+list settles, one write out at a time, removed while it follows its newest
+row), so a room opened with no `Visited` (a new run, or after a swap, whose
+snapshot keeps no `visited`) reads it beside its first page and opens on that
+row, landing on its seq when the page lacks it. A thread's place lasts the
+session only. Otherwise a room opens at its newest row and a thread
 at its newest reply. Every read of rows is a screenful, and a link lands on a
 screenful each side of its message; an open room keeps every page read in it
 (the reader's scroll bounds it), and its list draws only the rows in view. Rooms,

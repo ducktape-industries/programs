@@ -26,7 +26,7 @@ than writing it twice.
 ## Elsewhere in the SDK
 
 - `view`: the runtime a view is written against (elements, lists, text fields, pictures, the host
-  methods), and `view::design`: the palette, the type ladders (`POINTER`, `TOUCH`), spacing,
+  methods, and where a list stood kept on the device: `view::scroll`), and `view::design`: the palette, the type ladders (`POINTER`, `TOUCH`), spacing,
   `divider`, `eyebrow`, `segmented`, and how keys, bytes, times and accounts read to a person
   (`short_hex`, `fingerprint`, `day`, `plural`, `initial`).
 - `view-wire`: every method a view may ask of the host (`view_wire::methods`).

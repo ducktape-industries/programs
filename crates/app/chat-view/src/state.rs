@@ -206,6 +206,8 @@ pub struct Chat {
     // the rooms opened this session and left, by id
     #[serde(skip)]
     pub(crate) visited: BTreeMap<String, Visited>,
+    #[serde(skip)]
+    pub(crate) standing: view::scroll::Keeper,
     // the widgets the open room names, what they show and what they read
     #[serde(skip)]
     pub(crate) widgets: crate::widget::Widgets,
@@ -465,12 +467,7 @@ impl Visited {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Anchor {
-    pub(crate) id: String,
-    pub(crate) seq: u64,
-    pub(crate) offset: f32,
-}
+pub use view::scroll::Anchor;
 
 // Who chose each reaction, by message seq and emoji.
 pub(crate) type Reactors = BTreeMap<u64, BTreeMap<String, Vec<Principal>>>;

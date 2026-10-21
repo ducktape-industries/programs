@@ -99,6 +99,7 @@ pub mod picture;
 pub mod pictures;
 #[cfg(feature = "rig")]
 pub mod rig;
+pub mod scroll;
 pub mod store;
 pub mod testing;
 mod window;
