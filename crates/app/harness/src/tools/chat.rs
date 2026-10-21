@@ -209,15 +209,30 @@ impl Tool for Thread {
 pub(crate) struct SearchArgs {
     text: String,
     channel: Option<String>,
+    around: Option<usize>,
     cursor: Option<String>,
+}
+
+fn hit(row: &MsgRow, terms: &[String], around: Option<usize>) -> Value {
+    let snippets = match around {
+        Some(bytes) => chat::around_matches(&row.text, terms, bytes),
+        None => chat::sentences_holding(&row.text, terms),
+    };
+    json!({
+        "channel": row.channel_id,
+        "seq": row.seq,
+        "author": principal(&row.author),
+        "time": row.time,
+        "reply_to": row.thread,
+        "snippets": snippets,
+    })
 }
 
 pub(crate) struct Search;
 
 impl Tool for Search {
     const NAME: &'static str = "chat_search";
-    const DESCRIPTION: &'static str =
-        "Search chat messages for words, across every channel or in one.";
+    const DESCRIPTION: &'static str = "Search chat messages for words, across every channel or in one: each hit's channel, seq, author and time, and the sentences of it that hold a word (with around, the bytes around each match instead). chat_thread or chat_messages reads a message whole.";
     type Args = SearchArgs;
 
     fn schema() -> Value {
@@ -225,6 +240,7 @@ impl Tool for Search {
             json!({
                 "text": { "type": "string", "description": "the words to find" },
                 "channel": channel_schema(),
+                "around": { "type": "integer", "minimum": 0, "description": "instead of the sentences: this many bytes on each side of each match" },
                 "cursor": cursor_schema(),
             }),
             &["text"],
@@ -232,6 +248,7 @@ impl Tool for Search {
     }
 
     fn run(ctx: &ExecCtx, seat: &Seat, args: SearchArgs) -> Result<Run, Error> {
+        let terms = chat::search_terms(&args.text);
         let asked = Query::TextSearch {
             text: args.text,
             viewer: vec![agent(seat)],
@@ -239,7 +256,10 @@ impl Tool for Search {
             page: page(&args.cursor)?,
         };
         match ask(ctx, asked)? {
-            Reply::TextHits(rows) => Ok(Run::Done(messages(&rows))),
+            Reply::TextHits(rows) => Ok(Run::Done(json!({
+                "hits": rows.items.iter().map(|row| hit(row, &terms, args.around)).collect::<Vec<_>>(),
+                "next": next(&rows.next),
+            }))),
             other => Err(unexpected(chat::PROGRAM, "TextSearch", &other)),
         }
     }

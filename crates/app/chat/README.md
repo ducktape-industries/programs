@@ -68,7 +68,10 @@ left out.
 every whitespace-separated term of `text` as a substring (NFC, case folded), newest first, in one
 channel or all; `next` resumes it. `Query::TagSearch` pages the messages whose `#tags` hold a tag
 the same way. Both walk the messages: chat keeps no search index. Harness's `chat_search` tool
-reads `TextSearch`.
+reads `TextSearch` and shows each hit through `search_terms`, `sentences_holding` (the sentences of
+its text that hold a term, a sentence ending at `.`, `?` or `!` before whitespace) and
+`around_matches` (the bytes on each side of each match, overlapping windows joined), so a search
+answers what it found rather than whole messages.
 
 ## Drafts
 

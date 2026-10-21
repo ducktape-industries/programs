@@ -112,7 +112,10 @@ pub(super) fn all() -> Vec<(&'static str, Vec<Value>)> {
         ),
         (
             "chat_search",
-            vec![json!({ "text": "won't \"quote\"", "channel": null })],
+            vec![
+                json!({ "text": "won't \"quote\"", "channel": null }),
+                json!({ "text": "ferry", "channel": "j-066", "around": 40, "cursor": null }),
+            ],
         ),
         (
             "chat_post",

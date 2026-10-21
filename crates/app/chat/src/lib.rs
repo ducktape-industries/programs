@@ -59,7 +59,9 @@ pub use message::{Block, ListMarker, Mark, Notice, Span, list_item, parse_messag
 pub use program::Chat;
 pub use queries::{replies_after, roots_below};
 pub use store::{Cursor, PageRequest, PageResponse};
-pub use text::{notice_text, plain_text, tag_ranges, tags};
+pub use text::{
+    around_matches, notice_text, plain_text, search_terms, sentences_holding, tag_ranges, tags,
+};
 
 /// Every table chat keeps, as a block's writes name them: what a follower
 /// of `program.changes` plays back in a test to say which a block touched.

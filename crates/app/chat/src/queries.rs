@@ -9,7 +9,7 @@ use crate::state::{
     ANSWERED, CHANNEL_META, CHANNELS, DRAFT_PIECES, DRAFTS, HEADS, MESSAGE_IDS, REACTIONS, REPLIES,
     ROOTS, Stored, message, messages, newest_first, stored, stored_between,
 };
-use crate::text::{fold, tag_label};
+use crate::text::{fold, search_terms, tag_label};
 use crate::{
     ChannelInfo, ChannelRow, Draft, MsgRow, Principal, ReactedBy, Reply, plain_text, tags,
 };
@@ -166,7 +166,7 @@ pub(crate) fn tagged(
 
 // The whitespace-separated terms of `text`, folded as a message's text is.
 fn terms(text: &str) -> Result<Vec<String>, Error> {
-    let terms: Vec<String> = fold(text).split_whitespace().map(str::to_owned).collect();
+    let terms = search_terms(text);
     match terms.is_empty() {
         true => Err(invalid("nothing to search for")),
         false => Ok(terms),
