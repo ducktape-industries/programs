@@ -1,5 +1,6 @@
 //! The program: every op and every query, each handed to its rule.
 
+use ::program::tools::Tools;
 use ::program::{Error, ExecCtx, Program, QueryCtx};
 
 use crate::rules::{close, owed, park, resolve, ticket};
@@ -12,6 +13,10 @@ impl Program for Awaits {
     type Op = Op;
     type Query = Query;
     type Reply = Reply;
+
+    fn tools() -> Tools {
+        Tools::of::<crate::tools::Ops, crate::tools::Queries>()
+    }
 
     fn execute(ctx: &ExecCtx, op: Op) -> Result<(), Error> {
         match op {

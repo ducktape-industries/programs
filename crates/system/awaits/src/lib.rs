@@ -4,6 +4,7 @@ mod program;
 mod rules;
 #[cfg(test)]
 mod tests;
+mod tools;
 
 pub use abi::role::awaits::{Call, Op, Query, Reply, TicketRow, cancelled};
 pub use program::Awaits;
