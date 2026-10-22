@@ -700,3 +700,36 @@ fn a_streamed_steps_request_body_is_held_until_its_stream_ends() {
     event(chain, &row, 1, "event: ended\ndata: {\"exit_code\": 0}");
     assert_eq!(on_its_line(chain, thread, "b1"), None);
 }
+
+#[test]
+fn a_note_on_a_stream_is_told_to_its_conversation_and_the_stream_goes_on_to_its_end() {
+    let world = local(world());
+    let chain = &world.chain;
+    let thread = world.opened("m1", "build it", Some(WINDOW));
+    turn(
+        chain,
+        3,
+        &[("b1", "bash", json!({ "command": "cargo test" }))],
+    );
+    chain.at(5, 1000);
+    chain.at(6, 2000);
+    chain.at(7, 3000);
+    let [row]: [RequestRow; 1] = asked(chain).try_into().unwrap();
+    let line = "pod duckpond-7 is pending, waiting to be placed: 0/1 nodes are available";
+    let note = format!("event: note\ndata: {{\"line\": \"{line}\"}}");
+    event(chain, &row, 0, &note);
+    let noted = told(chain, thread);
+    assert_eq!(noted.len(), 1, "{noted:?}");
+    let still = "bash call b1 (local-harness /v1/bash) is still running and notes: ";
+    assert!(
+        noted[0].starts_with(still) && noted[0].contains(line),
+        "{noted:?}"
+    );
+    assert_eq!(on_its_line(chain, thread, "b1"), Some(body_part(&row)));
+    event(chain, &row, 1, "event: ended\ndata: {\"exit_code\": 0}");
+    let woke = told(chain, thread);
+    assert_eq!(woke.len(), 2, "{woke:?}");
+    let ended = "bash call b1 (local-harness /v1/bash) ended: ";
+    assert!(woke[1].starts_with(ended), "{woke:?}");
+    assert_eq!(on_its_line(chain, thread, "b1"), None);
+}

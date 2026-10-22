@@ -73,8 +73,10 @@ as = "read"
   path is the call's own, so a call run again (a relay rerun after a harness update) finds it: the
   same bytes keep the file already there, other bytes are written over it.
 - `stream = true`, on the last step only: the call answers at once that it streams, and the
-  conversation hears once, when the service's `text/event-stream` says `ended` (its data is the
-  call's result) or `refused` (its failure). harness puts the heartbeat it wants in the request
+  conversation hears its end once, when the service's `text/event-stream` says `ended` (its data is the
+  call's result) or `refused` (its failure). A `note` event before then is told to the
+  conversation as it arrives, its data as it is (the pods service notes a pod its wait or exec
+  stream sees the scheduler can't place yet), and the stream goes on. harness puts the heartbeat it wants in the request
   header `every` (seconds: half of egress's wait at the block time it measures, the smaller of
   the block the stream was opened over and harness's average up to the block the call was made
   in, so one slow block, a halt included, counts in only one of them; until harness holds a block

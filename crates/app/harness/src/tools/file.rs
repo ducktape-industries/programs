@@ -1057,6 +1057,11 @@ pub(crate) fn heard(data: &[u8]) -> Option<Value> {
     }
 }
 
+pub(crate) fn noted(data: &[u8]) -> Option<Value> {
+    let (name, data) = super::service::event(data);
+    (name == "note").then(|| serde_json::from_str(&data).unwrap_or_else(|_| json!(data)))
+}
+
 fn bind(bound: &mut Map<String, Value>, name: Option<String>, value: Value) {
     if let Some(name) = name {
         bound.insert(name, value);

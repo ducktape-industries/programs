@@ -1,6 +1,6 @@
 //! Tool calls that wake their conversation later: a tool file whose last step streams (`Run::Paced`)
 //! is answered at once, harness's own scheduled run (`Op::Watch`) sends the stream's request at a
-//! heartbeat it measures, each event is `Op::Heard`, and the conversation hears once.
+//! heartbeat it measures, each event is `Op::Heard`, and the conversation hears each note and the end.
 use ::program::{Cause, Ctx, Error, ExecCtx, HashKind, unauthorized};
 use abi::role::egress::{self, DEFAULT_WAIT, Event, http};
 use serde_json::{Value, json};
@@ -77,7 +77,7 @@ pub(crate) async fn open(
         "streaming": true,
         "watch": watch,
         "about": about,
-        "wakes": "this conversation gets one message when it ends",
+        "wakes": "this conversation gets a message for each note the stream sends, then one when it ends",
     }))
 }
 
@@ -258,6 +258,13 @@ pub(crate) async fn heard(ctx: &Ctx, watch: u64, event: Event) -> Result<(), Err
         return Ok(());
     };
     crate::resume::stream_moved(ctx, row.thread, watch)?;
+    if let Some(said) = tools::file::noted(&event.data) {
+        let text = format!(
+            "{} call {} ({}) is still running and notes: {said}",
+            row.tool, row.call, row.about
+        );
+        return woken(ctx, &row, text).await;
+    }
     let Some(said) = tools::file::heard(&event.data) else {
         return Ok(());
     };
