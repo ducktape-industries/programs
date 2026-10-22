@@ -366,8 +366,8 @@ fn a_post_by_a_user_of_another_network_crosspond_has_no_name_for_reads_as_their_
         .submit_foreign(unheard, chat::PROGRAM, &from_there)
         .unwrap();
     assert_eq!(assigned(chain, SERVICE).len(), 1, "the post woke the agent");
-    let heard = "19@there wrote in chat channel general, which you listen to, \\
-                 message 2 (reply_to 2 to answer in its thread):\\nhello from someone";
+    let heard = "19@there wrote in chat channel general, which you listen to, \
+                 message 2 (reply_to 2 to answer in its thread):\nhello from someone";
     assert!(last_said(chain).ends_with(heard), "{}", last_said(chain));
     let authors: Vec<Principal> = (frames(chain, thread).into_iter())
         .filter_map(|body| match body {
