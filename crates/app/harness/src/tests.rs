@@ -1369,6 +1369,68 @@ fn an_agent_writes_a_file_and_lists_who_else_writes_it() {
     assert_eq!(refused.unwrap_err().code, code::UNAUTHORIZED);
 }
 
+#[test]
+fn an_agent_guards_a_file_in_one_write_where_no_program_fills_the_access_role() {
+    let unbound: ::program::Roles = ::program::MockHost::roles()
+        .iter()
+        .filter(|(role, _)| *role != abi::role::ACCESS)
+        .map(|(role, program)| (role.to_owned(), program.clone()))
+        .collect();
+    let mut world = world_founded(PROGRAM, unbound);
+    world.chain.seat::<ownership::Ownership>(ownership::PROGRAM);
+    let chain = &world.chain;
+    let thread = world.opened("m1", "write", Some(WINDOW));
+    chain.at(3, 0);
+    let calls = json!([
+        tool_use(
+            "toolu_o",
+            "files_write",
+            json!({ "path": "/shared/mine.md", "content": "a", "write": { "who": "creator" } })
+        ),
+        tool_use(
+            "toolu_p",
+            "files_set_list",
+            json!({ "path": "/shared/open.md" })
+        ),
+    ]);
+    model_says(chain, calls, "tool_use");
+    chain.at(4, 0);
+    for call in ["toolu_o", "toolu_p"] {
+        relay_back(chain, call);
+    }
+    for call in ["toolu_o", "toolu_p"] {
+        let (text, failed) = result_of(chain, thread, call);
+        assert!(!failed, "{call}: {text}");
+    }
+    let asked = ownership::Query::Effective {
+        program: files::PROGRAM.into(),
+        key: files::guard_key("/shared/mine.md"),
+    };
+    let ownership::Reply::Policy(Some(policy)) = chain.query(ownership::PROGRAM, &asked).unwrap()
+    else {
+        panic!("/shared/mine.md is guarded");
+    };
+    assert_eq!(
+        (policy.owner, policy.write),
+        (
+            ownership::Party::Account(world.agent),
+            ownership::Writers::Owner
+        )
+    );
+    let files::Reply::Head(head) = chain.query(files::PROGRAM, &files::Query::Head).unwrap() else {
+        panic!("files answers its head");
+    };
+    let by_ada = files::Op::Commit {
+        base: head.map(|row| row.id),
+        message: "ada".into(),
+        changes: vec![files::Change::Remove {
+            path: "/shared/mine.md".into(),
+        }],
+    };
+    let refused = chain.submit(signed(ADA), files::PROGRAM, &by_ada);
+    assert_eq!(refused.unwrap_err().code, code::UNAUTHORIZED);
+}
+
 fn notices(chain: &MockChain, thread: u64) -> Vec<String> {
     frames(chain, thread)
         .into_iter()

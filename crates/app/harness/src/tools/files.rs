@@ -459,15 +459,15 @@ fn committing(
     }
 }
 
-// the access program's op that sets, or with no list clears, the write list on `path`
-fn list_set(ctx: &ExecCtx, path: String, list: Option<WriteList>) -> Result<super::Write, Error> {
+fn list_set(ctx: &ExecCtx, path: String, list: Option<WriteList>) -> Option<super::Write> {
+    let checker = ::program::access_checker(&ctx.env().roles)?.clone();
     let set = access::Op::Set {
         program: files::PROGRAM.into(),
         key: path,
         list: list.map(Ownership::from),
     };
-    Ok(super::Write {
-        target: ctx.env().role(abi::role::ACCESS)?.clone(),
+    Some(super::Write {
+        target: checker,
         payload: abi::encode(&set),
     })
 }
@@ -557,7 +557,7 @@ fn set_list(
 ) -> Result<Run, Error> {
     let write = list.as_ref().map(writers);
     let guarded = guarded_at(ctx, &path)?;
-    let mut writes = vec![list_set(ctx, path.clone(), list)?];
+    let mut writes: Vec<super::Write> = list_set(ctx, path.clone(), list).into_iter().collect();
     let files_op = |op: files::Op| super::Write {
         target: files::PROGRAM.into(),
         payload: abi::encode(&op),
@@ -565,6 +565,9 @@ fn set_list(
     let Some(write) = write else {
         if guarded {
             writes.push(files_op(files::Op::Unguard { path }));
+        }
+        if writes.is_empty() {
+            return Ok(Run::Done(answer));
         }
         return Ok(answered(writes, answer));
     };
@@ -674,7 +677,7 @@ pub(crate) struct SetList;
 
 impl Tool for SetList {
     const NAME: &'static str = "files_set_list";
-    const DESCRIPTION: &'static str = "Set who may write a path of the network's filesystem and everything beneath it that keeps no guard of its own, or clear it with no `write`. Only the path's owner sets it: the account that made it, or for /home/<name> the account named so. It guards the path in files and links the guard to a policy of yours in the ownership program with those writers (one is made if you have none), and sets the same write list in the access program, which still gates files.";
+    const DESCRIPTION: &'static str = "Set who may write a path of the network's filesystem and everything beneath it that keeps no guard of its own, or clear it with no `write`. Only the path's owner sets it: the account that made it, or for /home/<name> the account named so. It guards the path in files and links the guard to a policy of yours in the ownership program with those writers (one is made if you have none), and, while a program fills the network's access role, sets the same write list there, since that program gates files too.";
     const WRITES: bool = true;
     type Args = SetListArgs;
 
