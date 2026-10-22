@@ -179,7 +179,8 @@ what its `#[reads]` say it wrote.
 While a room is open it stands its questions on the node (`program.watch`,
 `questions.rs`): its rows (the newest roots, as many as it holds and at least a
 screenful, or the span a landing holds), the open thread, who is answering, its
-members, who holds it busy, who reacted, and the rooms the reader listens to
+members, who holds it busy, who reacted, who answered the asks put to the
+reader, and the rooms the reader listens to
 and wrote in. Each answer lands where its read would, so the
 answers a block moves land in one frame: a draft that becomes its post hands its
 node to the post's row. A block then reads again only what no answered question

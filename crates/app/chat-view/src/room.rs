@@ -1894,8 +1894,11 @@ impl Room {
     }
 
     pub(crate) fn read_marks_of(&mut self, marks: Marked, cx: &mut Context<Chat>) {
-        let roots = crate::asks::put_to(marks.asked, self.reader);
-        self.read_answers_of(roots, cx);
+        let answered = relied_on(&self.answers_question);
+        if !answered {
+            let roots = crate::asks::put_to(marks.asked, self.reader);
+            self.read_answers_of(roots, cx);
+        }
         self.read_reactors_of(marks.reacted, cx);
     }
 
@@ -1978,7 +1981,10 @@ impl Room {
     }
 
     pub(crate) fn read_marks(&mut self, cx: &mut Context<Chat>) {
-        self.read_answers(cx);
+        let answered = relied_on(&self.answers_question);
+        if !answered {
+            self.read_answers(cx);
+        }
         self.read_reactors(cx);
     }
 

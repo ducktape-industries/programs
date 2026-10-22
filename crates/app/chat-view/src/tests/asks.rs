@@ -45,6 +45,11 @@ fn land(cx: &mut TestAppContext, height: u64) {
 }
 
 fn serve(cx: &mut TestAppContext, ask: MsgRow, replies: Replies) {
+    answer_with(cx, ask, replies);
+    land(cx, 4);
+}
+
+fn answer_with(cx: &mut TestAppContext, ask: MsgRow, replies: Replies) {
     cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
     cx.host()
         .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
@@ -52,7 +57,10 @@ fn serve(cx: &mut TestAppContext, ask: MsgRow, replies: Replies) {
                 Query::Roots { .. } => Reply::Roots(page(vec![
                     row(1, 7, "hello"),
                     row(2, 8, "**hi** there"),
-                    ask.clone(),
+                    MsgRow {
+                        reply_count: replies.borrow().len() as u64,
+                        ..ask.clone()
+                    },
                 ])),
                 Query::Repliers { roots, .. } => Reply::Repliers(
                     roots
@@ -63,7 +71,6 @@ fn serve(cx: &mut TestAppContext, ask: MsgRow, replies: Replies) {
                 query => chat_reply(query),
             })
         }));
-    land(cx, 4);
 }
 
 fn asked(ask: MsgRow, replies: Replies) -> (TestAppContext, Entity<Chat>) {
@@ -178,6 +185,31 @@ fn an_addressees_reply_takes_the_buttons_and_says_what_it_chose() {
     replies.borrow_mut()[1] = reply(5, 10, "let us measure first");
     land(&mut cx, 6);
     assert!(cx.has_text("Answered in the thread"), "{:?}", cx.texts());
+}
+
+#[test]
+fn an_answer_lands_from_the_standing_question_with_no_read() {
+    let mut cx = TestAppContext::new();
+    let standings = cx.host().stand::<::chat::Chat>();
+    configure(&mut cx);
+    let replies = Replies::default();
+    answer_with(&mut cx, ask_row(vec![7]), replies.clone());
+    let _view = cx.open::<Chat>();
+    seat(&mut cx);
+    cx.simulate_click("chat-sidebar-channel-general");
+    cx.run_until_parked();
+    assert!(
+        cx.find("chat-message-m3-ask-1").is_some(),
+        "{:?}",
+        cx.texts()
+    );
+    let asked = cx.host().requests::<Ask<::chat::Chat>>().len();
+    replies.borrow_mut().push(reply(4, 7, "64 MB"));
+    standings.moved();
+    cx.run_until_parked();
+    assert!(cx.has_text("Answered: 64 MB"), "{:?}", cx.texts());
+    let read_after = cx.host().requests::<Ask<::chat::Chat>>().split_off(asked);
+    assert!(read_after.is_empty(), "{read_after:?}");
 }
 
 #[test]

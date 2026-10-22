@@ -76,6 +76,7 @@ impl Chat {
         self.stand_rows(cx);
         self.stand_thread(cx);
         self.stand_reactors(cx);
+        self.stand_answers(cx);
         self.stand_lists(cx);
     }
 
@@ -368,6 +369,54 @@ impl Chat {
         let reactors = queries::reactors_of(chosen);
         if reactors != room.reactors {
             room.reactors = reactors;
+            cx.notify();
+        }
+    }
+
+    fn stand_answers(&mut self, cx: &mut Context<Self>) {
+        let relied = self.questions_answered;
+        let Some(room) = &mut self.room else { return };
+        let asked = crate::asks::asked(room.messages.ready().into_iter().flatten());
+        let roots = crate::asks::put_to(asked, room.reader);
+        if roots.is_empty() {
+            room.answers_question = None;
+            return;
+        }
+        let id = room.id.clone();
+        let repliers = || ask::Repliers {
+            channel_id: id.clone(),
+            roots: roots.clone(),
+        };
+        let held = room.answers_question.as_ref();
+        let standing = held.is_some_and(|held| held.asks(repliers()));
+        if standing {
+            return;
+        }
+        let landing = id.clone();
+        let question = stand(
+            cx,
+            repliers(),
+            relied,
+            "who answered",
+            move |chat, threads, cx| chat.answers_answered(&landing, threads, cx),
+            |chat, cx| room_of(chat).read_answers(cx),
+        );
+        room_of(self).answers_question = Some(question);
+    }
+
+    fn answers_answered(
+        &mut self,
+        id: &str,
+        threads: Vec<(u64, Vec<MsgRow>)>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(room) = self.room.as_mut().filter(|room| room.id == id) else {
+            return;
+        };
+        let mut answers = room.answers.clone();
+        answers.extend(threads);
+        if answers != room.answers {
+            room.answers = answers;
             cx.notify();
         }
     }

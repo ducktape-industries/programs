@@ -451,6 +451,8 @@ pub struct Room {
     #[serde(skip)]
     pub(crate) reactors_question: Option<crate::questions::Question>,
     #[serde(skip)]
+    pub(crate) answers_question: Option<crate::questions::Question>,
+    #[serde(skip)]
     pub(crate) drafts_left: Vec<chat::Draft>,
 }
 
