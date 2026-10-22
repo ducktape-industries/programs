@@ -395,3 +395,36 @@ fn owner_names_who_alone_may_guard_a_path() {
     assert_eq!(owner("/home/bo"), Some(::program::Party::Account(2)));
     assert_eq!(owner("/shared/nobody.txt"), None);
 }
+
+#[test]
+fn a_guarded_folder_moves_where_no_program_fills_the_access_role() {
+    let unbound: ::program::Roles = ::program::MockHost::roles()
+        .iter()
+        .filter(|(role, _)| *role != abi::role::ACCESS)
+        .map(|(role, program)| (role.to_owned(), program.clone()))
+        .collect();
+    let mut chain = MockChain::founded(unbound);
+    chain.seat::<Files>(PROGRAM);
+    chain.seat::<ownership::Ownership>(ownership::PROGRAM);
+    chain.seat::<Roster>(programs::PROGRAM);
+    chain.register(PROGRAM, 900);
+    for (key, number, name) in [(ADA, 1, "ada"), (BO, 2, "bo")] {
+        chain.hold(key, number);
+        chain.profile(profile(number, name));
+    }
+    write(&chain, ADA, "/docs/sub/a").unwrap();
+    guard(&chain, ADA, "/docs/sub").unwrap();
+    let strict = only_me(&chain, ADA, "/docs/sub");
+    let moved = Change::Move {
+        from: "/docs".into(),
+        to: "/moved".into(),
+    };
+    commit(&chain, ADA, vec![moved]).unwrap();
+    let landed = record(&chain, "/moved/sub").expect("the record moved with its path");
+    assert_eq!(landed.policy, strict);
+    assert_eq!(guarded(&chain, "/moved/sub/a"), Some("/moved/sub".into()));
+    assert_eq!(
+        write(&chain, BO, "/moved/sub/b"),
+        Err(code::UNAUTHORIZED.to_string())
+    );
+}

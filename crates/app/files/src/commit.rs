@@ -302,13 +302,14 @@ fn apply(
             ctx.blob_release_lines(under(&from));
             entries.push(entry(&from, DiffKind::Removed));
             entries.push(entry(&to, DiffKind::Added));
-            let carried = access::Op::Move {
-                program: crate::PROGRAM.into(),
-                from: join(&from),
-                to: join(&to),
-            };
-            let checker = ctx.env().role(abi::role::ACCESS)?.clone();
-            ctx.emit(checker, &carried, Reply::None);
+            if let Some(checker) = ::program::access_checker(&ctx.env().roles).cloned() {
+                let carried = access::Op::Move {
+                    program: crate::PROGRAM.into(),
+                    from: join(&from),
+                    to: join(&to),
+                };
+                ctx.emit(checker, &carried, Reply::None);
+            }
         }
         Step::Symlink { segments, target } => {
             let kind = written(ctx, edit, &segments)?;
