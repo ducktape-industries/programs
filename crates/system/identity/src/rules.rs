@@ -753,12 +753,13 @@ pub(crate) fn set_manager(
             settled => ANSWERS.put(ctx, &number, &settled),
         }
     }
-    let cleared = access::Op::Set {
-        program: ctx.env().program.clone(),
-        key: account_key(number),
-        list: None,
-    };
-    let checker = ctx.env().role(abi::role::ACCESS)?.clone();
-    ctx.emit(checker, &cleared, ::program::Reply::None);
+    if let Some(checker) = ::program::access_checker(&ctx.env().roles).cloned() {
+        let cleared = access::Op::Set {
+            program: ctx.env().program.clone(),
+            key: account_key(number),
+            list: None,
+        };
+        ctx.emit(checker, &cleared, ::program::Reply::None);
+    }
     Ok(())
 }

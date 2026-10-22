@@ -282,3 +282,28 @@ fn an_agent_that_manages_itself_runs_its_day_and_only_the_vote_changes_its_stand
     .unwrap();
     assert_eq!(design::note(&get(&store, agent).kind()), Some("suspended"));
 }
+
+#[test]
+fn a_move_sends_access_nothing_where_no_program_fills_the_access_role() {
+    let store = memory();
+    let alice = create(&store, ALICE, "Alice");
+    let bob = create(&store, BOB, "Bob");
+    let agent = create_agent(&store, ALICE, "Scout");
+    let unbound: ::program::Roles = MockHost::roles()
+        .iter()
+        .filter(|(role, _)| *role != abi::role::ACCESS)
+        .map(|(role, program)| (role.to_owned(), program.clone()))
+        .collect();
+    let by_alice = ::program::Env {
+        roles: unbound,
+        ..signed(&store, ALICE)
+    };
+    run(&store, &by_alice, hand(agent, bob)).unwrap();
+    assert!(
+        store.take_emissions().is_empty(),
+        "no access program to tell"
+    );
+    assert_eq!(manager_of(&store, agent), bob);
+    assert!(managed_by(&store, alice).is_empty());
+    assert_eq!(managed_by(&store, bob), [agent]);
+}

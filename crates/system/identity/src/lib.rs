@@ -229,7 +229,7 @@ pub enum Op {
         first: Option<AccountNumber>,
         last: Option<AccountNumber>,
     },
-    #[tool_op(description = "Move a program account to a new manager at once, and clear the list on its key in the access program. Its manager sends it; for an account that manages itself, only the validators' vote. Naming the account itself makes it manage itself: it then runs its own name, profile, script and whom it answers, and only the validators' vote suspends, resumes, revokes, adds a key to or moves it. Not a user's, a system account's or a revoked one's, and never to a revoked account.", example = examples::set_manager)]
+    #[tool_op(description = "Move a program account to a new manager at once, and, while a program fills the access role, clear the list on its key there. Its manager sends it; for an account that manages itself, only the validators' vote. Naming the account itself makes it manage itself: it then runs its own name, profile, script and whom it answers, and only the validators' vote suspends, resumes, revokes, adds a key to or moves it. Not a user's, a system account's or a revoked one's, and never to a revoked account.", example = examples::set_manager)]
     SetManager {
         account: AccountNumber,
         manager: AccountNumber,
