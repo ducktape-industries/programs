@@ -45,6 +45,8 @@ const CLAIMED: Item<Vec<u64>> = Item::new("claimed");
 const REPORTS: Item<Vec<Report>> = Item::new("reports");
 const RERUN: Item<bool> = Item::new("rerun");
 const OUTS: Item<Vec<(u64, Vec<Output>)>> = Item::new("outs");
+const TIME_LIMIT_REPLY: Item<actions::Reply> = Item::new("time-limit-reply");
+const TIME_LIMIT_ERROR: Item<String> = Item::new("time-limit-error");
 
 struct Stand;
 
@@ -124,6 +126,12 @@ impl Program for Stand {
             actions::Query::Needs { check } => Ok(actions::Reply::Needs(needs_of(check))),
             actions::Query::Outputs { check } => Ok(actions::Reply::Outputs(outputs_of(check))),
             actions::Query::TimeLimit { check } => {
+                if let Some(why) = TIME_LIMIT_ERROR.get(ctx)? {
+                    return Err(invalid(why));
+                }
+                if let Some(reply) = TIME_LIMIT_REPLY.get(ctx)? {
+                    return Ok(reply);
+                }
                 Ok(actions::Reply::TimeLimit((check == LIMITED).then_some(2)))
             }
             _ => Err(invalid("the stand-in answers checks")),
@@ -1645,4 +1653,554 @@ fn each_beat_of_a_running_checks_pod_keeps_its_logs_size_and_last_line_until_the
     node.ended(&wait, 4, json!(0));
     copied_and_deleted(&mut node);
     assert_eq!(progress(&node, 1), None, "a check let go keeps no progress");
+}
+
+fn waiting_on_check(node: &mut Node, check: u64) -> RequestRow {
+    node.offer(check).unwrap();
+    node.after(2_000);
+    node.after(0);
+    node.answer(500, 201, pod("duckpond-7"));
+    node.pending()
+}
+
+fn cut_wait(node: &Node, wait: &RequestRow) {
+    node.node(&Egress::EndStream {
+        id: wait.id,
+        events: 0,
+        end: StreamEnd::Cut {
+            reason: "connection lost".into(),
+        },
+    });
+}
+
+fn timed_out_wait(node: &mut Node) {
+    let wait = waiting_on_check(node, LIMITED);
+    node.after(120_000);
+    cut_wait(node, &wait);
+    node.answer(0, 200, run_status("running", Value::Null));
+    assert_eq!(
+        aimed(&node.pending()),
+        sent("POST", "/v1/pods/duckpond-7/exec")
+    );
+}
+
+#[test]
+fn a_check_reaches_its_time_limit_at_the_exact_millisecond() {
+    let mut node = node();
+    let wait = waiting_on_check(&mut node, LIMITED);
+    node.after(119_999);
+    cut_wait(&node, &wait);
+    node.answer(0, 200, run_status("running", Value::Null));
+    let wait = node.pending();
+    assert_eq!(aimed(&wait).0, "GET");
+    assert!(aimed(&wait).1.contains("/wait?every="));
+    node.after(1);
+    cut_wait(&node, &wait);
+    node.answer(0, 200, run_status("running", Value::Null));
+    let tail = node.pending();
+    assert_eq!(aimed(&tail), sent("POST", "/v1/pods/duckpond-7/exec"));
+    node.answer(0, 200, json!({"exit_code": 0, "stdout": "last line\n"}));
+    copied_and_deleted(&mut node);
+    assert_eq!(node.reports()[0].1, State::Failed);
+    assert_eq!(
+        node.reports()[0].2,
+        "ran 120 s, past the job's time limit (timeout-minutes = 2); the log ends:\nlast line"
+    );
+}
+
+#[test]
+fn a_resumed_check_keeps_its_claim_time_for_its_time_limit() {
+    let mut node = node();
+    node.chain.seat::<Programs>(programs::PROGRAM);
+    listed(&node.chain, b"1");
+    let cut = waiting_on_check(&mut node, LIMITED);
+    node.after(70_000);
+    listed(&node.chain, b"2");
+    node.chain.cancel_parked(PROGRAM);
+    beat(&mut node, &cut, 0, json!({}));
+    let again = taken_up_with_no_sweep(&mut node, &cut);
+    node.after(50_000);
+    cut_wait(&node, &again);
+    node.answer_to(
+        0,
+        "GET",
+        "/v1/pods/duckpond-7",
+        200,
+        run_status("running", Value::Null),
+    );
+    node.pending_to("POST", "/v1/pods/duckpond-7/exec");
+    node.answer_to(
+        0,
+        "POST",
+        "/v1/pods/duckpond-7/exec",
+        200,
+        json!({"exit_code": 0, "stdout": "timed out"}),
+    );
+    let listed = json!({"exit_code": 0, "stdout": ""});
+    node.answer_to(0, "POST", "/v1/pods/duckpond-7/exec", 200, listed);
+    node.answer_to(0, "DELETE", "/v1/pods/duckpond-7", 200, json!({}));
+    assert_eq!(node.reports()[0].1, State::Failed);
+    assert!(node.reports()[0].2.starts_with("ran 123 s, "));
+}
+
+#[test]
+fn an_adopted_pod_without_a_start_gets_one_that_survives_another_update() {
+    let mut node = node();
+    node.chain.seat::<Programs>(programs::PROGRAM);
+    listed(&node.chain, b"1");
+    let first = waiting_on_check(&mut node, LIMITED);
+    let host = node.chain.host(PROGRAM);
+    let write = host.exec(MockHost::env(PROGRAM));
+    crate::rules::STARTED.remove(&write, &LIMITED);
+    node.after(1_000_000);
+    listed(&node.chain, b"2");
+    node.chain.cancel_parked(PROGRAM);
+    beat(&mut node, &first, 0, json!({}));
+    let second = taken_up_with_no_sweep(&mut node, &first);
+    let started = node.time;
+    cut_wait(&node, &second);
+    node.answer_to(
+        1_000,
+        "GET",
+        "/v1/pods/duckpond-7",
+        200,
+        run_status("running", Value::Null),
+    );
+    let waits: Vec<_> = node
+        .open()
+        .into_iter()
+        .filter(|row| row.id > second.id)
+        .collect();
+    let [third]: [RequestRow; 1] = waits.try_into().unwrap();
+    assert!(aimed(&third).1.contains("/wait?every="));
+    node.after(70_000);
+    listed(&node.chain, b"3");
+    node.chain.cancel_parked(PROGRAM);
+    beat(&mut node, &third, 0, json!({}));
+    node.after(2_000);
+    node.after(0);
+    let resumed: Vec<_> = node
+        .open()
+        .into_iter()
+        .filter(|row| row.id > third.id)
+        .collect();
+    let [resumed]: [RequestRow; 1] = resumed.try_into().unwrap();
+    node.after(started + 120_000 - node.time);
+    cut_wait(&node, &resumed);
+    node.answer_to(
+        0,
+        "GET",
+        "/v1/pods/duckpond-7",
+        200,
+        run_status("running", Value::Null),
+    );
+    node.pending_to("POST", "/v1/pods/duckpond-7/exec");
+}
+
+#[test]
+fn a_time_limit_that_overflows_milliseconds_does_not_wrap_into_a_short_limit() {
+    let mut node = node();
+    let stand = node.chain.host(actions::PROGRAM);
+    let write = stand.exec(MockHost::env(actions::PROGRAM));
+    TIME_LIMIT_REPLY.put(
+        &write,
+        &actions::Reply::TimeLimit(Some(u64::MAX / 60_000 + 1)),
+    );
+    let wait = waiting_on_check(&mut node, LIMITED);
+    node.after(120_000);
+    cut_wait(&node, &wait);
+    node.answer(0, 200, run_status("running", Value::Null));
+    let wait = node.pending();
+    assert!(aimed(&wait).1.contains("/wait?every="));
+    assert!(node.reports().is_empty());
+    node.ended(&wait, 0, json!(0));
+    copied_and_deleted(&mut node);
+    assert_eq!(node.reports()[0].1, State::Passed);
+}
+
+#[test]
+fn a_refused_or_wrong_time_limit_reply_errs_the_check_and_deletes_its_pod() {
+    for reply in [
+        Ok(actions::Reply::Asks(None)),
+        Err("time limits unavailable".to_owned()),
+    ] {
+        let mut node = node();
+        let stand = node.chain.host(actions::PROGRAM);
+        let write = stand.exec(MockHost::env(actions::PROGRAM));
+        let why = match reply {
+            Ok(reply) => {
+                TIME_LIMIT_REPLY.put(&write, &reply);
+                "TimeLimit"
+            }
+            Err(why) => {
+                TIME_LIMIT_ERROR.put(&write, &why);
+                "time limits unavailable"
+            }
+        };
+        let delete = waiting_on_check(&mut node, LIMITED);
+        assert_eq!(aimed(&delete), sent("DELETE", "/v1/pods/duckpond-7"));
+        node.answer(0, 200, json!({}));
+        assert!(node.idle());
+        let reports = node.reports();
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].1, State::Errored);
+        assert!(reports[0].2.contains(why), "{}", reports[0].2);
+        assert!(node.held().is_empty());
+    }
+}
+
+#[test]
+fn a_timeout_keeps_a_tail_read_failure_and_an_output_copy_failure_in_its_report() {
+    let mut node = node();
+    timed_out_wait(&mut node);
+    node.answer(
+        0,
+        200,
+        json!({"exit_code": 7, "stdout": "ignored", "stderr": "  no log\n"}),
+    );
+    node.answer(0, 200, json!({"exit_code": 0, "stdout": "/out/log\n"}));
+    node.answer(0, 503, json!({"error": "copy unavailable"}));
+    node.answer(0, 200, json!({"deleted": "duckpond-7"}));
+    let reports = node.reports();
+    assert_eq!(reports[0].1, State::Failed);
+    assert_eq!(reports[0].3, None);
+    assert_eq!(
+        reports[0].2,
+        "ran 120 s, past the job's time limit (timeout-minutes = 2); not kept: /out/log: /v1/pods/duckpond-7/file answered 503: copy unavailable; the log's last lines were not read: tail exited 7: no log"
+    );
+    assert!(node.held().is_empty());
+}
+
+#[test]
+fn a_timeout_keeps_leading_whitespace_in_its_log_tail() {
+    let mut node = node();
+    timed_out_wait(&mut node);
+    node.answer(
+        0,
+        200,
+        json!({"exit_code": 0, "stdout": "  indented output\n\n"}),
+    );
+    copied_and_deleted(&mut node);
+    assert_eq!(
+        node.reports()[0].2,
+        "ran 120 s, past the job's time limit (timeout-minutes = 2); the log ends:\n  indented output"
+    );
+}
+
+fn assert_no_pod_rows(node: &Node, check: u64) {
+    assert!(!node.held().contains(&check));
+    assert_eq!(progress(node, check), None);
+    let host = node.chain.host(PROGRAM);
+    let read = host.query(MockHost::env(PROGRAM));
+    assert_eq!(crate::rules::STARTED.get(&read, &check).unwrap(), None);
+    assert_eq!(
+        crate::rules::ENDED
+            .get(&read, &"duckpond-7".to_owned())
+            .unwrap(),
+        None
+    );
+}
+
+fn keep_end_before_releasing_pod(node: &mut Node, wait: &RequestRow) {
+    beat(
+        node,
+        wait,
+        0,
+        json!({"log": {"bytes": 7, "line": "running"}}),
+    );
+    let event = Event {
+        id: wait.id,
+        seq: 1,
+        data: b"event: ended\ndata: {\"exit_code\":0,\"line\":\"done\"}".to_vec(),
+    };
+    node.node(&Egress::Events(vec![event]));
+}
+
+#[test]
+fn sweeping_a_finished_check_removes_its_start_progress_and_kept_end() {
+    let mut node = node();
+    let wait = waiting_on_its_pod(&mut node);
+    keep_end_before_releasing_pod(&mut node, &wait);
+    let report = actions::Op::Report {
+        check: 1,
+        state: State::Passed,
+        summary: "finished elsewhere".into(),
+        log: None,
+    };
+    node.chain
+        .submit(Origin::Signed(OWNER.to_vec()), actions::PROGRAM, &report)
+        .unwrap();
+    node.sweep();
+    node.answer_to(0, "DELETE", "/v1/pods/duckpond-7", 200, json!({}));
+    assert_no_pod_rows(&node, 1);
+}
+
+#[test]
+fn superseding_a_check_removes_its_start_progress_and_kept_end() {
+    let mut node = node();
+    let wait = waiting_on_its_pod(&mut node);
+    keep_end_before_releasing_pod(&mut node, &wait);
+    node.chain
+        .submit(
+            Origin::Signed(OWNER.to_vec()),
+            actions::PROGRAM,
+            &actions::Op::Rerun { check: 1 },
+        )
+        .unwrap();
+    node.offer(AGAIN).unwrap();
+    node.after(1_000);
+    node.after(0);
+    node.answer_to(0, "DELETE", "/v1/pods/duckpond-7", 200, json!({}));
+    assert_no_pod_rows(&node, 1);
+    assert_eq!(node.reports()[0].1, State::Superseded);
+}
+
+#[test]
+fn completing_a_check_removes_its_start_progress_and_kept_end() {
+    let mut node = node();
+    let cut = cut_off_by_an_update(&mut node);
+    beat(
+        &mut node,
+        &cut,
+        0,
+        json!({"log": {"bytes": 7, "line": "running"}}),
+    );
+    let again = taken_up_with_no_sweep(&mut node, &cut);
+    node.ended(&again, 0, json!(0));
+    node.ended(&cut, 1, json!(0));
+    copied_and_deleted(&mut node);
+    assert_no_pod_rows(&node, 1);
+}
+
+#[test]
+fn several_events_before_resume_book_only_one_recovery() {
+    let mut node = node();
+    let cut = cut_off_by_an_update(&mut node);
+    let events = (0..3)
+        .map(|seq| Event {
+            id: cut.id,
+            seq,
+            data: b"event: alive\ndata: {}".to_vec(),
+        })
+        .collect();
+    node.after(1_000);
+    node.node(&Egress::Events(events));
+    let asked = ::scheduler::Query::Due {
+        height: node.height + 1,
+        after: None,
+        limit: None,
+    };
+    let ::scheduler::Reply::Due { entries, .. } =
+        node.chain.query(::scheduler::PROGRAM, &asked).unwrap()
+    else {
+        panic!("due answers Due");
+    };
+    let resume = abi::encode(&Op::Resume { check: 1 });
+    let booked: Vec<_> = entries
+        .into_iter()
+        .filter(|entry| entry.payload == resume)
+        .collect();
+    assert_eq!(booked.len(), 1);
+    assert_eq!(booked[0].height, node.height + 1);
+    let again = taken_up_with_no_sweep(&mut node, &cut);
+    node.ended(&again, 0, json!(0));
+    node.answer_to(
+        0,
+        "POST",
+        "/v1/pods/duckpond-7/exec",
+        200,
+        json!({"exit_code": 0, "stdout": ""}),
+    );
+    node.answer_to(0, "DELETE", "/v1/pods/duckpond-7", 200, json!({}));
+    assert_eq!(node.reports().len(), 1);
+}
+
+#[test]
+fn events_for_a_released_pod_are_accepted_without_retaining_progress_or_an_end() {
+    let mut node = node();
+    let cut = cut_off_by_an_update(&mut node);
+    beat(&mut node, &cut, 0, json!({}));
+    let again = taken_up_with_no_sweep(&mut node, &cut);
+    node.ended(&again, 0, json!(0));
+    node.answer_to(
+        0,
+        "POST",
+        "/v1/pods/duckpond-7/exec",
+        200,
+        json!({"exit_code": 0, "stdout": ""}),
+    );
+    node.answer_to(0, "DELETE", "/v1/pods/duckpond-7", 200, json!({}));
+    for data in [
+        b"event: alive\ndata: {\"log\":{\"bytes\":10,\"line\":\"late\"}}".to_vec(),
+        b"event: ended\ndata: {\"exit_code\":1}".to_vec(),
+    ] {
+        let event = Event {
+            id: cut.id,
+            seq: 1,
+            data,
+        };
+        node.chain
+            .submit(
+                Origin::Program(egress::PROGRAM.into()),
+                PROGRAM,
+                &Op::Heard(event),
+            )
+            .unwrap();
+        assert_no_pod_rows(&node, 1);
+    }
+}
+
+#[test]
+fn json_requests_have_content_type_and_empty_wait_requests_only_have_the_log_header() {
+    let mut node = node();
+    node.offer(1).unwrap();
+    node.after(2_000);
+    node.after(0);
+    let made = node.pending();
+    let Request::Http { head, .. } = made.request else {
+        panic!("an HTTP request");
+    };
+    assert_eq!(
+        head.headers,
+        [("content-type".into(), "application/json".into())]
+    );
+    node.answer(500, 201, pod("duckpond-7"));
+    let wait = node.pending();
+    let Request::Http { head, body, .. } = wait.request else {
+        panic!("an HTTP request");
+    };
+    assert!(body.is_empty());
+    assert_eq!(head.headers, [("log".into(), "/out/log".into())]);
+}
+
+#[test]
+fn invalid_or_non_alive_progress_frames_preserve_the_last_read() {
+    let mut node = node();
+    let wait = waiting_on_its_pod(&mut node);
+    beat(
+        &mut node,
+        &wait,
+        0,
+        json!({"log": {"bytes": 10, "line": "kept"}}),
+    );
+    let kept = progress(&node, 1);
+    let frames = [
+        b"event: other\ndata: {\"log\":{\"bytes\":11,\"line\":\"other\"}}".to_vec(),
+        b"event: alive\ndata: {\"log\":{\"line\":\"no bytes\"}}".to_vec(),
+        b"event: alive\ndata: {\"log\":{\"bytes\":-1,\"line\":\"negative\"}}".to_vec(),
+        b"event: alive\ndata: {\"log\":{\"bytes\":\"12\",\"line\":\"string\"}}".to_vec(),
+        b"event: alive\ndata: {\"log\":{\"bytes\":12}}".to_vec(),
+        b"event: alive\ndata: {\"log\":{\"bytes\":12,\"line\":3}}".to_vec(),
+        b"event: alive\ndata: not JSON".to_vec(),
+        b"event: alive\nnot-data: {}".to_vec(),
+        b"event: alive\ndata: {\"other\":{}}".to_vec(),
+        b"\xff\nevent: alive\ndata: {\"log\":{\"bytes\":13,\"line\":\"invalid UTF-8\"}}".to_vec(),
+    ];
+    for (seq, data) in frames.into_iter().enumerate() {
+        node.after(1_000);
+        let event = Event {
+            id: wait.id,
+            seq: seq as u64 + 1,
+            data,
+        };
+        node.node(&Egress::Events(vec![event]));
+        assert_eq!(progress(&node, 1), kept, "frame {seq}");
+    }
+}
+
+#[test]
+fn an_explicit_log_read_error_takes_precedence_over_bytes_and_a_line() {
+    let mut node = node();
+    let wait = waiting_on_its_pod(&mut node);
+    let said = json!({"log": {"error": "read failed", "bytes": 10, "line": "partial"}});
+    beat(&mut node, &wait, 0, said);
+    assert_eq!(
+        progress(&node, 1),
+        read_now(&node, LogRead::Unread("read failed".into()))
+    );
+}
+
+#[test]
+fn a_progress_read_can_have_zero_bytes_an_empty_line_or_more_bytes_than_a_signed_integer() {
+    let mut node = node();
+    let wait = waiting_on_its_pod(&mut node);
+    for (seq, bytes) in [0, u64::MAX].into_iter().enumerate() {
+        beat(
+            &mut node,
+            &wait,
+            seq as u64,
+            json!({"log": {"bytes": bytes, "line": ""}}),
+        );
+        assert_eq!(
+            progress(&node, 1),
+            read_now(
+                &node,
+                LogRead::Read {
+                    bytes,
+                    line: String::new()
+                }
+            )
+        );
+    }
+}
+
+#[test]
+fn a_timeout_reports_a_failed_http_log_tail_read_and_still_releases_its_pod() {
+    let mut node = node();
+    timed_out_wait(&mut node);
+    node.answer(0, 503, json!({"error": "pod unavailable"}));
+    copied_and_deleted(&mut node);
+    assert_eq!(node.reports()[0].1, State::Failed);
+    assert!(node.reports()[0].2.ends_with(
+        "the log's last lines were not read: /v1/pods/duckpond-7/exec answered 503: pod unavailable"
+    ));
+    assert!(node.reports()[0].3.is_some());
+    assert_no_pod_rows(&node, LIMITED);
+}
+
+#[test]
+fn retiring_an_earlier_attempt_does_not_move_the_new_attempts_claim_time() {
+    let mut node = node();
+    node.held_by_owner();
+    node.concurrent(2).unwrap();
+    node.offer(1).unwrap();
+    node.after(2_000);
+    node.after(0);
+    let first = node.pending();
+    node.chain
+        .submit(
+            Origin::Signed(OWNER.to_vec()),
+            actions::PROGRAM,
+            &actions::Op::Rerun { check: 1 },
+        )
+        .unwrap();
+    node.offer(AGAIN).unwrap();
+    node.after(1_000);
+    node.after(0);
+    let later: Vec<_> = node
+        .open()
+        .into_iter()
+        .filter(|row| row.id != first.id)
+        .collect();
+    let [later]: [RequestRow; 1] = later.try_into().unwrap();
+    node.after(500);
+    node.reply(&first, 201, pod("duckpond-7"));
+    let stand = node.chain.host(actions::PROGRAM);
+    let write = stand.exec(MockHost::env(actions::PROGRAM));
+    TIME_LIMIT_REPLY.put(&write, &actions::Reply::TimeLimit(Some(2)));
+    node.after(500);
+    node.reply(&later, 201, pod("duckpond-8"));
+    node.after(120_000);
+    node.answer_to(0, "DELETE", "/v1/pods/duckpond-7", 200, json!({}));
+    let wait = node.pending_to("GET", "/v1/pods/duckpond-8/wait?every=32");
+    node.after(0);
+    cut_wait(&node, &wait);
+    node.answer_to(
+        0,
+        "GET",
+        "/v1/pods/duckpond-8",
+        200,
+        run_status("running", Value::Null),
+    );
+    node.pending_to("POST", "/v1/pods/duckpond-8/exec");
 }
