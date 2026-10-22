@@ -56,10 +56,21 @@ a change's checks say how it did on the target head its Preview was built on (fo
 again on the target's tip before it lands, and the target's own `on.push` workflows check each
 landing.
 
-On a target with required checks (forge `RequireChecks`), a Preview built on an older tip can
-never land: forge merges only a Preview of the target's current tip. So when such a target moves,
-every check of a Preview of an open change into it, built on another tip, that has not started
-yet ends superseded (`superseded: <branch> moved to <commit>, past the tip this Preview was built
-on`), leaving the runners to checks a merge can use. A started check runs on. The queue previews
-its front again on the new tip, and a change that moves is previewed again as before. A target
-with no required checks keeps every Preview's checks, as nothing previews them again.
+A check of a Preview built on an older tip of its target can decide nothing: a merge lands the
+change on the target's current tip, and a merge queue (forge `RequireChecks`) merges only a Preview
+of that tip. So when a target moves, in any repository and whether or not
+it requires checks, every check of the current Preview of an open change into it, built on another
+tip (forge `Query::Preview`'s `into_head`), that has not started yet ends superseded (`superseded:
+<branch> moved to <commit>, past the tip this Preview was built on`), leaving the runners to checks
+a merge can use. A started check runs on. A Preview built on the new tip keeps its checks, and a
+run on a Preview forge has since replaced is left to that newer Preview, whose `Previewed` ends it. This is
+decided on forge's `Moved` of the target, never by polling: actions reads its own runs first and
+asks forge `Change` and `Preview` only for a run with a check not yet started.
+
+Each change whose checks it ends is told once, in the change's room (forge's `Change.channel`), by
+one chat notice (`Notify`), message id `actions-superseded-<first check>`: kind `check`, group
+`check <first check>`, subject `Preview checks of <repo>#<n>`, status Note, detail `<checks N and
+M> superseded: <branch> moved to <commit>, past the tip this Preview was built on. The change's
+next push, rebase or turn at the front of a merge queue previews it again.`, no link, and concerns
+the change's author. The queue previews its front again on the new tip, and a change that moves is
+previewed again as before.

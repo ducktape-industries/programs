@@ -6,6 +6,7 @@ use ::program::{
     not_found, unauthorized, unexpected_reply, wrong_state,
 };
 use forge::{ChangeState, CheckState, Content, EntryKind, Revision, Watched};
+use std::collections::BTreeMap;
 use store::Item;
 
 use crate::state::{
@@ -740,64 +741,92 @@ fn supersede_previews_on_an_old_tip(
     branch_ref: &[u8],
     tip: &str,
 ) -> Result<(), Error> {
-    if !requires_checks(ctx, repo, branch_ref)? {
-        return Ok(());
-    }
     let why = format!(
         "superseded: {} moved to {}, past the tip this Preview was built on",
         branch(branch_ref),
         short(tip)
     );
+    let mut told: BTreeMap<u64, (forge::Change, Vec<u64>)> = BTreeMap::new();
     for (_, line, run) in LINES.scan(ctx, LINES.prefix_of(&repo.to_owned()))? {
         let Some(n) = previewed_change(&line) else {
             continue;
         };
-        if change_target(ctx, repo, n)?.as_deref() != Some(branch_ref) {
+        let unstarted: Vec<CheckRow> = of_run(ctx, run)?
+            .into_iter()
+            .filter(|check| matches!(check.state, State::Queued | State::Waiting))
+            .collect();
+        if unstarted.is_empty() {
+            continue;
+        }
+        let Some(change) = open_change(ctx, repo, n)? else {
+            continue;
+        };
+        if change.into != branch_ref {
             continue;
         }
         let Some(row) = RUNS.get(ctx, &run)? else {
             continue;
         };
-        if built_on(ctx, repo, n, &row.commit)?.as_deref() == Some(tip) {
+        let Some(on) = built_on(ctx, repo, n, &row.commit)? else {
+            continue;
+        };
+        if on == tip {
             continue;
         }
-        for (_, id) in BY_RUN.scan(ctx, BY_RUN.prefix_of(&run))? {
-            let mut check = load(ctx, id)?;
-            if !matches!(check.state, State::Queued | State::Waiting) {
-                continue;
-            }
+        let ids = &mut told.entry(n).or_insert_with(|| (change, Vec::new())).1;
+        for mut check in unstarted {
             check.state = State::Superseded;
             check.finished = Some(ctx.env().height);
             check.summary = why.clone();
-            QUEUED.remove(ctx, &id);
-            CHECKS.put(ctx, &id, &check);
+            QUEUED.remove(ctx, &check.id);
+            CHECKS.put(ctx, &check.id, &check);
             report_commit_status(ctx, &check);
+            ids.push(check.id);
         }
+    }
+    for (n, (change, ids)) in told {
+        tell_superseded_in_room(ctx, repo, n, &change, &ids, &why);
     }
     Ok(())
 }
 
-fn requires_checks(ctx: &QueryCtx, repo: &str, branch_ref: &[u8]) -> Result<bool, Error> {
-    let mut page = PageRequest::default();
-    loop {
-        let asked = forge::Query::Required {
-            repo: repo.to_owned(),
-            page,
-        };
-        let answered = match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked)? {
-            forge::Reply::Required { page, .. } => page,
-            other => return Err(unexpected_reply(forge::PROGRAM, "Required", &other)),
-        };
-        if answered.items.iter().any(|row| row.branch == branch_ref) {
-            return Ok(true);
-        }
-        let Some(next) = answered.next else {
-            return Ok(false);
-        };
-        page = PageRequest {
-            after: Some(next),
-            limit: None,
-        };
+fn tell_superseded_in_room(
+    ctx: &ExecCtx,
+    repo: &str,
+    n: u64,
+    change: &forge::Change,
+    ids: &[u64],
+    why: &str,
+) {
+    let Some(first) = ids.first() else {
+        return;
+    };
+    let post = chat::Op::Notify {
+        channel_id: change.channel.clone(),
+        message_id: format!("actions-superseded-{first}"),
+        thread: None,
+        notice: chat::Notice {
+            kind: "check".into(),
+            group: format!("check {first}"),
+            subject: format!("Preview checks of {repo}#{n}"),
+            link: None,
+            status: chat::message::Status::Note,
+            detail: format!(
+                "{} {why}. The change's next push, rebase or turn at the front of a merge queue previews it again.",
+                checks_named(ids)
+            ),
+            concerns: change.author.account().into_iter().collect(),
+        },
+    };
+    ctx.emit(chat::PROGRAM, &post, Reply::Wanted);
+}
+
+fn checks_named(ids: &[u64]) -> String {
+    let words: Vec<String> = ids.iter().map(u64::to_string).collect();
+    match words.as_slice() {
+        [one] => format!("check {one}"),
+        [before @ .., last] => format!("checks {} and {last}", before.join(", ")),
+        [] => String::new(),
     }
 }
 
@@ -810,7 +839,7 @@ fn previewed_change(line: &[u8]) -> Option<u64> {
         .ok()
 }
 
-fn change_target(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Vec<u8>>, Error> {
+fn open_change(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<forge::Change>, Error> {
     let asked = forge::Query::Change {
         repo: repo.to_owned(),
         n,
@@ -819,7 +848,7 @@ fn change_target(ctx: &QueryCtx, repo: &str, n: u64) -> Result<Option<Vec<u8>>, 
     match ctx.query::<forge::Query, forge::Reply>(forge::PROGRAM, &asked) {
         Ok(forge::Reply::Change { change, .. }) => {
             let open = change.state == ChangeState::Open;
-            Ok(open.then_some(change.into))
+            Ok(open.then_some(change))
         }
         Ok(other) => Err(unexpected_reply(forge::PROGRAM, "Change", &other)),
         Err(refused) if refused.code == code::NOT_FOUND => Ok(None),
