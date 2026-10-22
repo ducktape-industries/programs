@@ -1780,3 +1780,230 @@ fn a_page_another_network_sends_draws_as_its_card_and_ours_as_the_page() {
         Some(crate::words::size(3))
     );
 }
+
+fn zip_of(names: &[&str], comment: &str) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut entries = Vec::new();
+    for name in names {
+        let at = bytes.len() as u32;
+        let len = name.len() as u16;
+        bytes.extend([0x50, 0x4b, 0x03, 0x04]);
+        bytes.extend([0; 22]);
+        bytes.extend(len.to_le_bytes());
+        bytes.extend(0u16.to_le_bytes());
+        bytes.extend(name.as_bytes());
+        entries.extend([0x50, 0x4b, 0x01, 0x02]);
+        entries.extend([0; 24]);
+        entries.extend(len.to_le_bytes());
+        entries.extend([0; 12]);
+        entries.extend(at.to_le_bytes());
+        entries.extend(name.as_bytes());
+    }
+    let offset = bytes.len() as u32;
+    let size = entries.len() as u32;
+    let count = names.len() as u16;
+    bytes.extend(entries);
+    bytes.extend([0x50, 0x4b, 0x05, 0x06]);
+    bytes.extend([0; 4]);
+    bytes.extend(count.to_le_bytes());
+    bytes.extend(count.to_le_bytes());
+    bytes.extend(size.to_le_bytes());
+    bytes.extend(offset.to_le_bytes());
+    bytes.extend((comment.len() as u16).to_le_bytes());
+    bytes.extend(comment.as_bytes());
+    bytes
+}
+
+fn zips_host(cx: &mut TestAppContext, site: Vec<u8>, archive: Vec<u8>) {
+    cx.host().handle::<HostId>(|kind| Ok(format!("{kind}-1")));
+    cx.host()
+        .handle::<BlobGet>(|id| Ok(stored(&id, png(96, 96))));
+    cx.host().handle::<Ask<files::Files>>(move |query| {
+        Ok(match query {
+            files::Query::Read {
+                path, offset, len, ..
+            } => {
+                let bytes = match path.ends_with("site.zip") {
+                    true => &site,
+                    false => &archive,
+                };
+                let from = (offset as usize).min(bytes.len());
+                let to = from.saturating_add(len as usize).min(bytes.len());
+                files::Reply::Contents(files::Contents {
+                    snapshot: BlobId::Sha256(SNAPSHOT),
+                    size: bytes.len() as u64,
+                    offset,
+                    bytes: bytes[from..to].to_vec(),
+                    eof: to == bytes.len(),
+                })
+            }
+            query => files_reply(query),
+        })
+    });
+}
+
+fn zip_file(seq: u64, name: &str, size: u64) -> chat::Block {
+    chat::Block::Attachment(chat::message::Attachment {
+        path: format!("/chat/general/m{seq}/{name}"),
+        snapshot: SNAPSHOT,
+        name: name.into(),
+        size,
+        content_type: "application/zip".into(),
+    })
+}
+
+fn page_at(cx: &TestAppContext, id: &str) -> Option<String> {
+    match cx.find(id) {
+        Some(wire::Node::Artifact { link, .. }) => Some(link.clone()),
+        _ => None,
+    }
+}
+
+#[test]
+fn a_zip_keeps_its_card_and_draws_its_page_under_it_only_when_it_holds_an_index_page() {
+    let (mut cx, _view) = opened();
+    let site = zip_of(&["index.html", "assets/app.js"], "made by a design tool");
+    let archive = zip_of(&["photos/one.jpg", "docs/index.html"], "");
+    let (site_size, archive_size) = (site.len() as u64, archive.len() as u64);
+    zips_host(&mut cx, site, archive);
+    let blocks = vec![
+        zip_file(3, "site.zip", site_size),
+        zip_file(3, "photos.zip", archive_size),
+    ];
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                    blocks: blocks.clone(),
+                    ..row(3, 8, "")
+                }])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(4, posted("general")));
+    cx.run_until_parked();
+    assert_eq!(
+        (
+            card_says(&cx, "chat-message-m3-block-0"),
+            card_says(&cx, "chat-message-m3-block-1")
+        ),
+        (
+            Some(crate::words::size(site_size)),
+            Some(crate::words::size(archive_size))
+        ),
+        "every zip keeps its card"
+    );
+    assert_eq!(
+        (
+            page_at(&cx, "chat-message-m3-block-0-page"),
+            page_at(&cx, "chat-message-m3-block-1-page")
+        ),
+        (
+            Some("duck://testnet-0a1b2c3d/files/chat/general/m3/site.zip/index.html".to_owned()),
+            None
+        ),
+        "only the zip with an index.html at its root draws a page"
+    );
+}
+
+#[test]
+fn a_site_zip_another_network_sends_keeps_its_card_and_draws_no_page() {
+    let (mut cx, _view) = opened();
+    let site = zip_of(&["index.html"], "");
+    let size = site.len() as u64;
+    zips_host(&mut cx, site, Vec::new());
+    let ours = MsgRow {
+        blocks: vec![zip_file(3, "site.zip", size)],
+        ..row(3, 8, "")
+    };
+    let theirs = MsgRow {
+        blocks: vec![zip_file(4, "site.zip", size)],
+        author: Principal::Foreign(chat::Foreign {
+            network: [0x22; 32],
+            account: 8,
+        }),
+        ..row(4, 8, "")
+    };
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![ours.clone(), theirs.clone()])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(5, posted("general")));
+    cx.run_until_parked();
+    assert_eq!(
+        page_at(&cx, "chat-message-m3-block-0-page"),
+        Some("duck://testnet-0a1b2c3d/files/chat/general/m3/site.zip/index.html".to_owned()),
+        "our own site zip draws its page"
+    );
+    assert_eq!(
+        (
+            card_says(&cx, "chat-message-m4-block-0"),
+            page_at(&cx, "chat-message-m4-block-0-page")
+        ),
+        (Some(crate::words::size(size)), None),
+        "another network's keeps its card and draws no page"
+    );
+}
+
+#[test]
+fn a_zip_whose_directory_read_is_refused_keeps_its_card_and_draws_no_page() {
+    let (mut cx, _view) = opened();
+    let site = zip_of(&["index.html"], "");
+    let size = site.len() as u64;
+    zips_host(&mut cx, Vec::new(), Vec::new());
+    cx.host()
+        .handle::<Ask<files::Files>>(move |query| match query {
+            files::Query::Read { offset, len, .. } if offset + len < size => Err(
+                view::host::Error::new("too_large", "the answer is past what one query carries"),
+            ),
+            files::Query::Read { offset, len, .. } => {
+                let from = offset as usize;
+                let to = (from + len as usize).min(site.len());
+                Ok(files::Reply::Contents(files::Contents {
+                    snapshot: BlobId::Sha256(SNAPSHOT),
+                    size,
+                    offset,
+                    bytes: site[from..to].to_vec(),
+                    eof: to == site.len(),
+                }))
+            }
+            query => Ok(files_reply(query)),
+        });
+    let blocks = vec![zip_file(3, "site.zip", size)];
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                    blocks: blocks.clone(),
+                    ..row(3, 8, "")
+                }])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(4, posted("general")));
+    cx.run_until_parked();
+    let reads = cx
+        .host()
+        .requests::<Ask<files::Files>>()
+        .into_iter()
+        .filter(|query| matches!(query, files::Query::Read { .. }))
+        .count();
+    assert_eq!(reads, 2, "the end record, then the refused directory");
+    assert_eq!(
+        (
+            card_says(&cx, "chat-message-m3-block-0"),
+            page_at(&cx, "chat-message-m3-block-0-page")
+        ),
+        (Some(crate::words::size(size)), None),
+        "a refused probe reads as no site and leaves the card as it was"
+    );
+}

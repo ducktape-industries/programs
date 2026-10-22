@@ -50,9 +50,14 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
   file changes, or the link alone where it has no web view; a link inside a
   sentence stays a link; a file a message carries whose name ends `.html` or
   `.htm` draws the same way, in place of its card: the page at its files path,
-  live like any artifact, so an edit to that path reloads it. A message from
-  another network (a linked room's foreign author) draws neither as a page:
-  its link stays a link and its file its card;
+  live like any artifact, so an edit to that path reloads it; one whose name
+  ends `.zip` keeps its card, and when the zip holds an `index.html` at its
+  root (read from its central directory: the end record, then the directory,
+  at the snapshot the message names; a zip64 archive reads as no site) that
+  page draws under the card (`duck://<chain>/files/<path>/index.html`, which
+  the app reads out of the zip in place), so a site exported as a zip runs as
+  posted. A message from another network (a linked room's foreign author)
+  draws none of these as a page: its link stays a link and its file its card;
   code blocks, tables and headings draw through the SDK's `markdown` crate,
   coloured by a block's language, with no parser linked.
 - Answering (`ui/answering.rs`): at the foot of the room and of an open

@@ -14,7 +14,13 @@ use crate::{Chat, Page, Pane, words};
 pub(crate) struct Shown {
     pub(crate) chunks: Option<Vec<[u8; 32]>>,
     pub(crate) picture: Option<Picture>,
+    pub(crate) site: bool,
 }
+
+const END_RECORD: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+const DIRECTORY_ENTRY: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
+const END_RECORD_BYTES: u64 = 22;
+const COMMENT_MOST: u64 = u16::MAX as u64;
 
 pub(crate) type FileKey = (String, [u8; 32]);
 
@@ -765,6 +771,12 @@ impl Chat {
         Some(saving)
     }
 
+    pub(crate) fn holds_a_site(&self, file: &Attachment) -> bool {
+        self.shown_files
+            .get(&(file.path.clone(), file.snapshot))
+            .is_some_and(|shown| shown.site)
+    }
+
     pub(crate) fn enlarge(&mut self, file: &Attachment, cx: &mut Context<Self>) {
         self.enlarged = Some(Enlarged::File(file.clone()));
         cx.notify();
@@ -843,10 +855,80 @@ async fn read_attachment(host: Host, file: &Attachment) -> Result<Found, Error> 
         true => picture(&host, &object.chunks).await?,
         false => None,
     };
+    let zipped = file.name.to_ascii_lowercase().ends_with(".zip");
+    let site = match zipped {
+        true => holds_a_site(&host, file, at).await.unwrap_or(false),
+        false => false,
+    };
     Ok(Found::Shown(Shown {
         chunks: Some(chunks),
         picture,
+        site,
     }))
+}
+
+async fn range(
+    host: &Host,
+    file: &Attachment,
+    at: Option<BlobId>,
+    offset: u64,
+    len: u64,
+) -> Result<Vec<u8>, Error> {
+    let read = files::ask::Read {
+        path: file.path.clone(),
+        at,
+        offset,
+        len,
+    };
+    Ok(host.query(read).await?.bytes)
+}
+
+async fn holds_a_site(host: &Host, file: &Attachment, at: Option<BlobId>) -> Result<bool, Error> {
+    let Some(last) = file.size.checked_sub(END_RECORD_BYTES) else {
+        return Ok(false);
+    };
+    let mut tail = range(host, file, at, last, END_RECORD_BYTES).await?;
+    if end_record(&tail).is_none() {
+        let from = file.size.saturating_sub(END_RECORD_BYTES + COMMENT_MOST);
+        tail = range(host, file, at, from, file.size - from).await?;
+    }
+    let Some((offset, size)) = end_record(&tail).and_then(directory) else {
+        return Ok(false);
+    };
+    let entries = range(host, file, at, offset, size).await?;
+    Ok(names_an_index_page(&entries))
+}
+
+fn end_record(tail: &[u8]) -> Option<&[u8]> {
+    (0..tail.len().checked_sub(21)?).rev().find_map(|at| {
+        let record = &tail[at..];
+        let comment = usize::from(u16::from_le_bytes([record[20], record[21]]));
+        let ends_the_file = record.starts_with(&END_RECORD) && record.len() == 22 + comment;
+        ends_the_file.then_some(record)
+    })
+}
+
+fn directory(record: &[u8]) -> Option<(u64, u64)> {
+    let size = u32::from_le_bytes(record.get(12..16)?.try_into().ok()?);
+    let offset = u32::from_le_bytes(record.get(16..20)?.try_into().ok()?);
+    let zip64 = size == u32::MAX || offset == u32::MAX;
+    (!zip64).then_some((u64::from(offset), u64::from(size)))
+}
+
+fn names_an_index_page(entries: &[u8]) -> bool {
+    let mut rest = entries;
+    while rest.starts_with(&DIRECTORY_ENTRY) {
+        let field = |at: usize| {
+            rest.get(at..at + 2)
+                .map_or(0, |two| usize::from(u16::from_le_bytes([two[0], two[1]])))
+        };
+        let (name, extra, comment) = (field(28), field(30), field(32));
+        if rest.get(46..46 + name) == Some(b"index.html".as_slice()) {
+            return true;
+        }
+        rest = rest.get(46 + name + extra + comment..).unwrap_or_default();
+    }
+    false
 }
 
 fn blob_name(id: &BlobId) -> String {

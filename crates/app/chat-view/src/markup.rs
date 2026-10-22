@@ -3,6 +3,7 @@
 //! one block per line; a view reads these at display time, as it reads list items.
 use std::rc::Rc;
 
+use chat::message::Attachment;
 use chat::view::Names;
 use chat::{Block, Mark, Principal, Span};
 use markdown::{Marks, OnLink, Text};
@@ -16,6 +17,7 @@ pub(crate) enum Piece<'a> {
     Chat(&'a Block),
     Markdown(markdown::Block),
     Artifact(String),
+    Site(String),
 }
 
 pub(crate) fn pieces<'a>(
@@ -23,6 +25,7 @@ pub(crate) fn pieces<'a>(
     names: &Names,
     chain: &str,
     author: Option<&Principal>,
+    sites: &dyn Fn(&Attachment) -> bool,
 ) -> Vec<(usize, Piece<'a>)> {
     let pages = !matches!(author, Some(Principal::Foreign(_)));
     let mut out = Vec::new();
@@ -41,6 +44,8 @@ pub(crate) fn pieces<'a>(
             },
         };
         out.push((at, piece));
+        let site = site_page(&blocks[at], chain, sites).filter(|_| pages);
+        out.extend(site.map(|link| (at, Piece::Site(link))));
         at += 1;
     }
     out
@@ -87,6 +92,15 @@ fn artifact(block: &Block, chain: &str) -> Option<String> {
         _ => false,
     };
     page.then(|| url.clone())
+}
+
+fn site_page(block: &Block, chain: &str, sites: &dyn Fn(&Attachment) -> bool) -> Option<String> {
+    let Block::Attachment(file) = block else {
+        return None;
+    };
+    sites(file)
+        .then(|| crate::links::file_link(chain, &format!("{}/index.html", file.path)))
+        .flatten()
 }
 
 fn names_a_page(name: &str) -> bool {
@@ -264,7 +278,7 @@ mod tests {
     #[test]
     fn a_posted_table_reads_as_one_table_its_marks_kept() {
         let blocks = j131_message_15();
-        let pieces = pieces(&blocks, &Names::empty(), "", None);
+        let pieces = pieces(&blocks, &Names::empty(), "", None, &|_| false);
         let opens: Vec<usize> = pieces.iter().map(|(at, _)| *at).collect();
         assert_eq!(opens, [0, 1, 11, 12], "the table takes blocks 1 to 10");
         let (_, Piece::Markdown(markdown::Block::Table(rows))) = &pieces[1] else {
@@ -301,7 +315,7 @@ mod tests {
     #[test]
     fn pipes_without_a_separator_under_them_stay_paragraphs() {
         let blocks = vec![plain("| a | b |"), plain("| 1 | 2 |"), plain("|---|")];
-        let pieces = pieces(&blocks, &Names::empty(), "", None);
+        let pieces = pieces(&blocks, &Names::empty(), "", None, &|_| false);
         assert_eq!(pieces.len(), 3);
         assert!(
             pieces
@@ -313,7 +327,7 @@ mod tests {
     #[test]
     fn an_escaped_pipe_stays_in_its_cell_and_a_short_row_is_padded() {
         let blocks = vec![plain("| a \\| b | c |"), plain("|:--|--:|"), plain("| 1")];
-        let pieces = pieces(&blocks, &Names::empty(), "", None);
+        let pieces = pieces(&blocks, &Names::empty(), "", None, &|_| false);
         let [(_, Piece::Markdown(markdown::Block::Table(rows)))] = &pieces[..] else {
             panic!("one table");
         };
@@ -329,7 +343,7 @@ mod tests {
             plain("####### seven"),
             plain("#"),
         ];
-        let pieces = pieces(&blocks, &Names::empty(), "", None);
+        let pieces = pieces(&blocks, &Names::empty(), "", None, &|_| false);
         let (_, Piece::Markdown(markdown::Block::Heading(2, text))) = &pieces[0] else {
             panic!("a level-2 heading");
         };
@@ -354,7 +368,7 @@ mod tests {
             ]),
             plain("|---|"),
         ];
-        let pieces = pieces(&blocks, &Names::empty(), "", None);
+        let pieces = pieces(&blocks, &Names::empty(), "", None, &|_| false);
         let [(_, Piece::Markdown(markdown::Block::Table(rows)))] = &pieces[..] else {
             panic!("one table");
         };

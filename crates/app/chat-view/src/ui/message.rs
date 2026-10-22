@@ -649,11 +649,15 @@ pub(super) fn drawn(
 ) -> Vec<AnyElement> {
     let empty = Names::empty();
     let names = chat.names.ready().unwrap_or(&empty);
-    pieces(blocks, names, &chat.session.chain_id, author)
+    let sites = |file: &chat::message::Attachment| chat.holds_a_site(file);
+    pieces(blocks, names, &chat.session.chain_id, author, &sites)
         .into_iter()
         .map(|(index, piece)| match piece {
             Piece::Chat(block) => block_view(chat, key, index, block, names, cx, theme),
             Piece::Artifact(link) => artifact(format!("{key}-block-{index}"), link)
+                .w_full()
+                .into_any_element(),
+            Piece::Site(link) => artifact(format!("{key}-block-{index}-page"), link)
                 .w_full()
                 .into_any_element(),
             Piece::Markdown(block) => {
