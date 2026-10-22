@@ -1,0 +1,13 @@
+[package]
+name = "resources"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+borsh = { workspace = true }
+ownership = { path = "../../system/ownership" }
+program = { path = "../../sdk/program" }
+store = { path = "../../sdk/store" }
+
+[dev-dependencies]
+describe = { path = "../../sdk/describe" }
