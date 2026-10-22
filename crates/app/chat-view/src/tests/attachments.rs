@@ -1406,3 +1406,58 @@ fn a_files_card_read_whole_says_its_size() {
     let card = "chat-message-m3-block-0";
     assert_eq!(card_says(&cx, card), Some(crate::words::size(3)));
 }
+
+#[test]
+fn a_page_a_message_carries_draws_as_the_page_and_any_other_file_as_its_card() {
+    let (mut cx, _view) = opened();
+    files_host(&mut cx);
+    let file = |name: &str, content_type: &str| {
+        chat::Block::Attachment(chat::message::Attachment {
+            path: format!("/chat/general/m3/{name}"),
+            snapshot: SNAPSHOT,
+            name: name.into(),
+            size: 3,
+            content_type: content_type.into(),
+        })
+    };
+    let blocks = vec![
+        file("plan.html", "text/html"),
+        file("Old-Notes.HTM", "text/html"),
+        file("plan.pdf", "application/pdf"),
+    ];
+    cx.host()
+        .handle::<Ask<::chat::Chat>>(rooms_alone(move |query| {
+            Ok(match query {
+                Query::Roots { .. } => Reply::Roots(page(vec![MsgRow {
+                    blocks: blocks.clone(),
+                    ..row(3, 8, "")
+                }])),
+                query => chat_reply(query),
+            })
+        }));
+    cx.host()
+        .stream::<Changes<::chat::Chat>>()
+        .send(block(4, posted("general")));
+    cx.run_until_parked();
+    let drawn: Vec<Option<String>> = (0..3)
+        .map(
+            |index| match cx.find(&format!("chat-message-m3-block-{index}")) {
+                Some(wire::Node::Artifact { link, .. }) => Some(link.clone()),
+                Some(_) => None,
+                None => panic!("block {index} is not drawn"),
+            },
+        )
+        .collect();
+    assert_eq!(
+        drawn,
+        [
+            Some("duck://testnet-0a1b2c3d/files/chat/general/m3/plan.html".to_owned()),
+            Some("duck://testnet-0a1b2c3d/files/chat/general/m3/Old-Notes.HTM".to_owned()),
+            None,
+        ]
+    );
+    assert_eq!(
+        card_says(&cx, "chat-message-m3-block-2"),
+        Some(crate::words::size(3))
+    );
+}

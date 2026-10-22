@@ -54,8 +54,12 @@ pub(crate) fn opens(cx: &mut Context<Chat>) -> OnLink {
 }
 
 fn artifact(block: &Block, chain: &str) -> Option<String> {
-    let Block::Paragraph(spans) = block else {
-        return None;
+    let spans = match block {
+        Block::Paragraph(spans) => spans,
+        Block::Attachment(file) if file.path.rsplit('/').next().is_some_and(names_a_page) => {
+            return crate::links::file_link(chain, &file.path);
+        }
+        _ => return None,
     };
     let mut url = None;
     for span in spans {
@@ -76,14 +80,16 @@ fn artifact(block: &Block, chain: &str) -> Option<String> {
         return None;
     }
     let page = match (link.program.as_str(), link.tail.as_slice()) {
-        (::files::PROGRAM, [.., name]) => {
-            let name = name.to_ascii_lowercase();
-            name.ends_with(".html") || name.ends_with(".htm")
-        }
+        (::files::PROGRAM, [.., name]) => names_a_page(name),
         ("blobs", [hex]) => hex.len() == 64 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()),
         _ => false,
     };
     page.then(|| url.clone())
+}
+
+fn names_a_page(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.ends_with(".html") || name.ends_with(".htm")
 }
 
 // The table the blocks open with, GFM's: a row, a separator row of as many

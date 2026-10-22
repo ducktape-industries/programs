@@ -48,7 +48,9 @@ NOTIFIER (`notifier.rs`) alone, in place of the view.
   as the artifact it names (the SDK's `artifact`, so the manifest declares
   `artifact`): the app draws the page as tall as it is and reloads it when the
   file changes, or the link alone where it has no web view; a link inside a
-  sentence stays a link;
+  sentence stays a link; a file a message carries whose name ends `.html` or
+  `.htm` draws the same way, in place of its card: the page at its files path,
+  live like any artifact, so an edit to that path reloads it;
   code blocks, tables and headings draw through the SDK's `markdown` crate,
   coloured by a block's language, with no parser linked.
 - Answering (`ui/answering.rs`): at the foot of the room and of an open
