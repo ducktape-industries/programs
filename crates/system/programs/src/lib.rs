@@ -148,6 +148,12 @@ pub enum Op {
         scheduled: Scheduled,
         expected: Option<abi::BlobId>,
     },
+    #[tool_op(description = "Schedule a change as ScheduleOver does, at the block that lies blocks after the one carrying this op, so its height can't go stale while the op waits to land: an account's change needs blocks of at least 60 and is refused naming that floor below it, the vote's at least 1.", example = crate::examples::schedule_over_in)]
+    ScheduleOverIn {
+        blocks: u64,
+        change: Change,
+        expected: Option<abi::BlobId>,
+    },
 }
 
 #[derive(
@@ -265,12 +271,16 @@ pub enum Provenance {
 /// An op as a person reads it: a title and its fields. The source of the
 /// `ducktape.describe` module this program ships (`make wasm-describes`).
 fn scheduled_fields(scheduled: &Scheduled) -> (String, Vec<describe::Field>) {
+    let height = describe::Value::Text(scheduled.height.to_string());
+    change_fields(&scheduled.change, describe::field("height", height))
+}
+
+fn change_fields(change: &Change, when: describe::Field) -> (String, Vec<describe::Field>) {
     use describe::{Value, field};
-    let Scheduled { height, change } = scheduled;
     let mut fields = vec![
         field("change", Value::text(change.verb())),
         field("program", Value::Program(change.program().into())),
-        field("height", Value::Text(height.to_string())),
+        when,
     ];
     fields.extend(
         change
@@ -296,6 +306,13 @@ fn scheduled_fields(scheduled: &Scheduled) -> (String, Vec<describe::Field>) {
     (format!("Schedule · {}", change.program()), fields)
 }
 
+fn expected_value(expected: Option<abi::BlobId>) -> describe::Value {
+    match expected {
+        Some(code) => describe::Value::Hash(code.digest().to_vec()),
+        None => describe::Value::text("nothing"),
+    }
+}
+
 pub fn describe(op: &Op) -> describe::Description {
     use describe::{Value, field};
     let height = |height: &u64| field("height", Value::Text(height.to_string()));
@@ -305,11 +322,17 @@ pub fn describe(op: &Op) -> describe::Description {
             expected,
         } => {
             let (title, mut fields) = scheduled_fields(scheduled);
-            let expected = match expected {
-                Some(code) => Value::Hash(code.digest().to_vec()),
-                None => Value::text("nothing"),
-            };
-            fields.push(field("expected", expected));
+            fields.push(field("expected", expected_value(*expected)));
+            (title, fields)
+        }
+        Op::ScheduleOverIn {
+            blocks,
+            change,
+            expected,
+        } => {
+            let when = field("in", Value::Text(format!("{blocks} blocks")));
+            let (title, mut fields) = change_fields(change, when);
+            fields.push(field("expected", expected_value(*expected)));
             (title, fields)
         }
         Op::Cancel {
@@ -348,7 +371,7 @@ describe::export!(Op, describe);
 fn op_variants_only_append() {
     assert_eq!(
         describe::variants::<Op>(),
-        ["-", "Cancel", "Own", "ScheduleOver"]
+        ["-", "Cancel", "Own", "ScheduleOver", "ScheduleOverIn"]
     );
 }
 

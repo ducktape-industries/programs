@@ -269,6 +269,10 @@ pub(crate) fn words(motion: &Motion, roster: &[Entry]) -> String {
             Ok(programs::Op::ScheduleOver { scheduled, .. }) => {
                 scheduled_words(scheduled.height, &scheduled.change, roster)
             }
+            Ok(programs::Op::ScheduleOverIn { blocks, change, .. }) => {
+                let when = format!("{} blocks after the vote passes", design::grouped(blocks));
+                change_words(&when, &change, roster)
+            }
             Ok(programs::Op::Cancel { height, program }) => format!(
                 "Cancel {program}'s change at block {}",
                 design::grouped(height)
@@ -324,27 +328,31 @@ fn params_words(entry: &Entry, roster: &[Entry]) -> &'static str {
 }
 
 pub(crate) fn scheduled_words(height: u64, change: &Change, roster: &[Entry]) -> String {
-    let at = design::grouped(height);
+    let at = format!("at block {}", design::grouped(height));
+    change_words(&at, change, roster)
+}
+
+fn change_words(when: &str, change: &Change, roster: &[Entry]) -> String {
     match change {
         Change::Set(entry) => format!(
-            "Set {} to code {} at block {at} · {}",
+            "Set {} to code {} {when} · {}",
             entry.program,
             code_words(&entry.code),
             params_words(entry, roster)
         ),
         Change::Publish { entry, roles } if roles.is_empty() => format!(
-            "Publish {} at code {} at block {at} · {} · no role",
+            "Publish {} at code {} {when} · {} · no role",
             entry.program,
             code_words(&entry.code),
             params_words(entry, roster)
         ),
         Change::Publish { entry, roles } => format!(
-            "Publish {} at code {} at block {at} · {} · fills {}",
+            "Publish {} at code {} {when} · {} · fills {}",
             entry.program,
             code_words(&entry.code),
             params_words(entry, roster),
             roles.join(", ")
         ),
-        change => format!("{} {} at block {at}", change.verb(), change.program()),
+        change => format!("{} {} {when}", change.verb(), change.program()),
     }
 }

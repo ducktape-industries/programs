@@ -26,6 +26,14 @@ pub(crate) fn schedule_over() -> Op {
     }
 }
 
+pub(crate) fn schedule_over_in() -> Op {
+    Op::ScheduleOverIn {
+        blocks: crate::NOTICE,
+        change: set_chat().change,
+        expected: Some(abi::BlobId::Sha256([1; 32])),
+    }
+}
+
 pub(crate) fn cancel() -> Op {
     Op::Cancel {
         height: AT,

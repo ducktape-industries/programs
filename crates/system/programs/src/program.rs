@@ -6,7 +6,7 @@ use ::program::{Error, ExecCtx, Program, QueryCtx, decoded};
 
 use crate::rules::{
     BY, Roster, at, cancel, fold, holder_of, hooks_at, init, own, renames_at, roles_at, roster,
-    schedule_over, sources, to_land, views_at,
+    schedule_over, schedule_over_in, sources, to_land, views_at,
 };
 use crate::{Genesis, Op, PROGRAM, PageResponse, Pending, Query, Reply};
 
@@ -36,6 +36,11 @@ impl Program for Programs {
                 scheduled,
                 expected,
             } => schedule_over(ctx, scheduled, expected),
+            Op::ScheduleOverIn {
+                blocks,
+                change,
+                expected,
+            } => schedule_over_in(ctx, blocks, change, expected),
         }
     }
 

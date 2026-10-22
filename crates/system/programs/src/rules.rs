@@ -171,7 +171,7 @@ fn by_account(ctx: &QueryCtx, scheduled: &Scheduled, account: AccountNumber) -> 
     if earliest.is_none_or(|earliest| scheduled.height < earliest) {
         let min = earliest.map_or_else(|| "past the last".into(), |h| h.to_string());
         return Err(invalid(format!(
-            "a change by an account lands at block {min} or later"
+            "a change by an account lands at least {NOTICE} blocks after the block that carries it: at block {min} or later"
         )));
     }
     if let Some(height) = pending_vote_height(ctx, name)? {
@@ -413,6 +413,21 @@ pub(crate) fn schedule_over(
         )));
     }
     schedule(ctx, scheduled)
+}
+
+pub(crate) fn schedule_over_in(
+    ctx: &ExecCtx,
+    blocks: u64,
+    change: Change,
+    expected: Option<BlobId>,
+) -> Result<(), Error> {
+    let now = ctx.env().height;
+    let Some(height) = now.checked_add(blocks) else {
+        return Err(invalid(format!(
+            "in {blocks} blocks from {now} is past the last block"
+        )));
+    };
+    schedule_over(ctx, Scheduled { height, change }, expected)
 }
 
 fn overruled(ctx: &QueryCtx, name: &str) -> Result<Vec<At>, Error> {
