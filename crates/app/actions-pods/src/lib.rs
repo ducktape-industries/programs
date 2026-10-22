@@ -13,7 +13,7 @@ pub use program::ActionsPods;
 use ::program::BlobId;
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 
-use crate::rules::{CONCURRENT, PODS, RUNS, WAITING};
+use crate::rules::{CONCURRENT, PODS, PROGRESS, RUNS, WAITING};
 
 pub const PROGRAM: &str = "actions-pods";
 // The egress service the pods run through.
@@ -75,6 +75,19 @@ pub struct PodRow {
     pub code: Option<BlobId>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub struct Progress {
+    pub height: u64,
+    pub time: u64,
+    pub log: LogRead,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
+pub enum LogRead {
+    Read { bytes: u64, line: String },
+    Unread(String),
+}
+
 #[derive(
     Clone,
     Debug,
@@ -104,6 +117,10 @@ pub enum Query {
     #[reads(CONCURRENT)]
     #[tool_query(description = "How many pods this runner holds at once: 1 until SetConcurrent says otherwise.", example = crate::examples::concurrent)]
     Concurrent,
+    #[ask(Reply::Progress(Option<Progress>))]
+    #[reads(PROGRESS)]
+    #[tool_query(description = "How far a running check got, as its pod's latest alive beat said: the block height and time the beat was heard, and its /out/log's size in bytes and last line, or why the pods service could not read them; null before the first beat that reads the log, and once the check ends.", example = crate::examples::progress)]
+    Progress { check: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize, BorshSchema)]
@@ -112,6 +129,7 @@ pub enum Reply {
     Pods(Vec<(u64, PodRow)>),
     Waiting(Vec<u64>),
     Concurrent(u64),
+    Progress(Option<Progress>),
 }
 
 pub fn describe(op: &Op) -> describe::Description {

@@ -47,3 +47,7 @@ pub(crate) fn waiting() -> Query {
 pub(crate) fn concurrent() -> Query {
     Query::Concurrent
 }
+
+pub(crate) fn progress() -> Query {
+    Query::Progress { check: CHECK }
+}

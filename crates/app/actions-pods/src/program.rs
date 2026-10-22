@@ -3,7 +3,8 @@ use ::program::tools::Tools;
 use ::program::{Awaiting, Ctx, Error, ExecCtx, Program, QueryCtx, Reply as Wanted, decoded};
 
 use crate::rules::{
-    PODS, RUNS, concurrent, heard, offered, resume, run, set_concurrent, still_waiting, sweep,
+    PODS, PROGRESS, RUNS, concurrent, heard, offered, resume, run, set_concurrent, still_waiting,
+    sweep,
 };
 use crate::{Config, Op, PROGRAM, Query, Reply};
 
@@ -35,6 +36,7 @@ impl Program for ActionsPods {
             Query::Pods => Ok(Reply::Pods(PODS.all(ctx)?)),
             Query::Waiting => Ok(Reply::Waiting(still_waiting(ctx)?)),
             Query::Concurrent => Ok(Reply::Concurrent(concurrent(ctx)?)),
+            Query::Progress { check } => Ok(Reply::Progress(PROGRESS.get(ctx, &check)?)),
         }
     }
 }

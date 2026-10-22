@@ -41,6 +41,18 @@ leaves the pods service out refuses the copy, and the check's summary then says 
 kept. Every other file in `/out` is put as a blob of kind `output` and recorded with actions
 `Outputs`.
 
+## How far a running check got
+
+The wait on a check's pod names its log, `/out/log`, in the wait's `log` header, so each alive beat
+the pods service sends while the pod runs carries the log's size in bytes and its last line (from
+the log's last 2048 bytes), or why the service could not read them. Each such beat is kept as the
+check's `Query::Progress`, with the block height and time it was heard, until the check ends. A
+beat comes every `every` seconds (half an egress wait), so a read time that stops moving while the
+check still runs says its wait is lost, and a pod that is gone ends the check. A beat that names no
+log, from a pods service that reads none, leaves the last read as it was. A header carries the log,
+not a query word, because a pods service that reads no log ignores a header it doesn't know and
+refuses a word.
+
 ## What a job asks
 
 A check's `Asks` (actions `Query::Asks`) become its pod's requests: `cpu` and `memory` as

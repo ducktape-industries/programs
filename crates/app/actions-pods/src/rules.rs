@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use store::{Item, Map, Set};
 
-use crate::{Op, PROGRAM, PodRow, RunRow, SERVICE};
+use crate::{LogRead, Op, PROGRAM, PodRow, Progress, RunRow, SERVICE};
 
 pub(crate) const OFFERED: Map<u64, u64> = Map::new("o/");
 pub(crate) const ENDED: Map<String, Vec<u8>> = Map::new("e/");
@@ -26,6 +26,7 @@ pub(crate) const CONCURRENT: Item<u64> = Item::new("concurrent");
 pub(crate) const ADOPTING: Map<u64, Adopting> = Map::new("a/");
 pub(crate) const SWEEP_AT: Item<u64> = Item::new("sweep-at");
 pub(crate) const STARTED: Map<u64, u64> = Map::new("started/");
+pub(crate) const PROGRESS: Map<u64, Progress> = Map::new("progress/");
 
 #[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub(crate) struct Adopting {
@@ -466,6 +467,7 @@ async fn finish_pod_and_retry_waiting(
 fn let_go(ctx: &Ctx, check: u64, pod: &str) {
     PODS.remove(ctx, &check);
     STARTED.remove(ctx, &check);
+    PROGRESS.remove(ctx, &check);
     ENDED.remove(ctx, &pod.to_owned());
 }
 
@@ -715,7 +717,8 @@ async fn wait_for_pod_and_copy_outputs(
         let events = Delivery::Events {
             deliver: crate::heard_as(),
         };
-        let waited = ask(ctx, http::Method::Get, wait, Vec::new(), events).await;
+        let reads = vec![("log".to_owned(), LOG.to_owned())];
+        let waited = ask_with(ctx, http::Method::Get, wait, reads, Vec::new(), events).await;
         if let Some(ended) = ENDED
             .get(ctx, &pod.to_owned())
             .map_err(|refused| refused.message)?
@@ -1091,11 +1094,21 @@ async fn ask(
     body: Vec<BlobId>,
     delivery: Delivery,
 ) -> Result<http::Response, Error> {
+    ask_with(ctx, method, target, Vec::new(), body, delivery).await
+}
+
+async fn ask_with(
+    ctx: &Ctx,
+    method: http::Method,
+    target: String,
+    mut headers: Vec<(String, String)>,
+    body: Vec<BlobId>,
+    delivery: Delivery,
+) -> Result<http::Response, Error> {
     let egress = ctx.env().role(abi::role::EGRESS)?.clone();
-    let headers = match body.is_empty() {
-        true => Vec::new(),
-        false => vec![("content-type".to_owned(), "application/json".to_owned())],
-    };
+    if !body.is_empty() {
+        headers.push(("content-type".to_owned(), "application/json".to_owned()));
+    }
     let head = http::Head {
         method,
         target,
@@ -1138,6 +1151,10 @@ pub(crate) async fn heard(ctx: &Ctx, event: Event) -> Result<(), Error> {
     if let Some(data) = ended_event_data(&event.data) {
         ENDED.put(ctx, &pod, &data);
     }
+    if let Some(log) = alive_event_log(&event.data) {
+        let (height, time) = (ctx.env().height, ctx.env().time);
+        PROGRESS.put(ctx, &check, &Progress { height, time, log });
+    }
     take_up_if_cut_off(ctx, check, &held, code_at_current_height(ctx)).await;
     Ok(())
 }
@@ -1149,6 +1166,22 @@ fn ended_event_data(raw: &[u8]) -> Option<Vec<u8>> {
     ended
         .then(|| data.map(|data| data.as_bytes().to_vec()))
         .flatten()
+}
+
+fn alive_event_log(raw: &[u8]) -> Option<LogRead> {
+    let text = std::str::from_utf8(raw).ok()?;
+    text.lines()
+        .any(|line| line == "event: alive")
+        .then_some(())?;
+    let data = text.lines().find_map(|line| line.strip_prefix("data: "))?;
+    let said: Value = serde_json::from_str(data).ok()?;
+    let log = said.get("log")?;
+    if let Some(why) = log["error"].as_str() {
+        return Some(LogRead::Unread(why.to_owned()));
+    }
+    let bytes = log["bytes"].as_u64()?;
+    let line = log["line"].as_str()?.to_owned();
+    Some(LogRead::Read { bytes, line })
 }
 
 fn pod_named_by_wait(ctx: &QueryCtx, egress: &ProgramId, id: u64) -> Result<String, Error> {

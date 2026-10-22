@@ -1576,3 +1576,73 @@ fn a_check_past_its_time_limit_ends_failed_naming_the_limit_and_the_last_lines_o
     );
     assert!(node.held().is_empty(), "its pod is let go");
 }
+
+fn beat(node: &mut Node, wait: &RequestRow, seq: u64, said: Value) {
+    node.after(1_000);
+    let alive = Event {
+        id: wait.id,
+        seq,
+        data: format!("event: alive\ndata: {said}").into_bytes(),
+    };
+    node.node(&Egress::Events(vec![alive]));
+}
+
+fn progress(node: &Node, check: u64) -> Option<Progress> {
+    let asked = Query::Progress { check };
+    let Reply::Progress(row) = node.chain.query(PROGRAM, &asked).unwrap() else {
+        panic!("progress answers Progress");
+    };
+    row
+}
+
+fn read_now(node: &Node, log: LogRead) -> Option<Progress> {
+    Some(Progress {
+        height: node.height,
+        time: node.time,
+        log,
+    })
+}
+
+#[test]
+fn each_beat_of_a_running_checks_pod_keeps_its_logs_size_and_last_line_until_the_check_ends() {
+    let mut node = node();
+    let wait = waiting_on_its_pod(&mut node);
+    assert_eq!(progress(&node, 1), None, "no beat heard yet");
+    let said = json!({"log": {"bytes": 120, "line": "$ make check"}});
+    beat(&mut node, &wait, 0, said);
+    let first = LogRead::Read {
+        bytes: 120,
+        line: "$ make check".into(),
+    };
+    let first = read_now(&node, first);
+    assert_eq!(progress(&node, 1), first);
+    beat(&mut node, &wait, 1, json!({}));
+    assert_eq!(
+        progress(&node, 1),
+        first,
+        "a beat that names no log leaves the last read"
+    );
+    let said = json!({"log": {"bytes": 4096, "line": "test words ... ok"}});
+    beat(&mut node, &wait, 2, said);
+    let second = LogRead::Read {
+        bytes: 4096,
+        line: "test words ... ok".into(),
+    };
+    assert_eq!(progress(&node, 1), read_now(&node, second));
+    let why = "pod duckpond-7 was not reached";
+    beat(&mut node, &wait, 3, json!({"log": {"error": why}}));
+    let unread = read_now(&node, LogRead::Unread(why.into()));
+    assert_eq!(progress(&node, 1), unread);
+    let Request::Http { head, .. } = &wait.request else {
+        panic!("an http request");
+    };
+    let reads = ("log".to_owned(), "/out/log".to_owned());
+    assert!(
+        head.headers.contains(&reads),
+        "the wait names the log its beats read: {:?}",
+        head.headers
+    );
+    node.ended(&wait, 4, json!(0));
+    copied_and_deleted(&mut node);
+    assert_eq!(progress(&node, 1), None, "a check let go keeps no progress");
+}
