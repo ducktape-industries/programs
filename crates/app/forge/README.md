@@ -294,9 +294,15 @@ publishing it first (e.g. push a prepared result ref). `change: None` changes on
 the target ref.
 
 `SquashMerge` makes the result itself, with the same CAS, endpoint and change
-checks. From the merge base of both heads (`log_walk` bounds the walk; no base is
-refused, `wrong_state`), gitcore's 3-way merge takes each path changed on one
-side from that side and merges a file changed on both line by line, held to
+checks. Its base is the merge base of both heads (`log_walk` bounds the walk; no
+base is refused, `wrong_state`), unless the source's first-parent line, walked from
+its head down to that merge base, holds a commit whose tree a commit on the target's
+first-parent line since the merge base also has: then the newest such source commit
+is the base, provided the target doesn't already hold it and the source doesn't hold
+that target commit (else the merge base stays). So a change stacked on another that has since squash-landed merges only
+its own edits, as `git rebase` replays them, and a source whose own tree has landed
+is refused as not advancing the target. From that base, gitcore's 3-way merge takes
+each path changed on one side from that side and merges a file changed on both line by line, held to
 `merge_cost` per file. Edits of the two sides that overlap or touch (adjacent
 lines, two insertions at one point), a binary file or a mode both changed, a
 change against a delete and a file against another kind are conflicts: the op
@@ -309,7 +315,7 @@ committer (the caller is both without a change), each by their identity name at
 commit id.
 
 `Rebase` rebuilds an open change on `onto` (a branch or a commit, usually the
-change's target) with `SquashMerge`'s machinery: from the merge base of the
+change's target) with `SquashMerge`'s machinery: from `SquashMerge`'s base for the
 change's head and `onto`, what the change's side changed is merged onto `onto`'s
 tree, held to `merge_cost` per file, and a conflict is refused `wrong_state`,
 naming every path, writing nothing. The result is one commit whose one parent is
@@ -336,7 +342,7 @@ the deletions a git push asks for. The branch's objects stay, so it can be pushe
 again.
 
 `Preview { n }` builds open change `n`'s squash on its target's current head with
-`SquashMerge`'s machinery (the same merge base, 3-way merge, `merge_cost`, message,
+`SquashMerge`'s machinery (the same base, 3-way merge, `merge_cost`, message,
 author and committer), points `refs/changes/<n>/merge` at it and records the two
 heads it read (`Query::Preview`); a conflict is refused `wrong_state`, naming every
 path, writing nothing. While both heads stay where they were, it answers the same

@@ -377,7 +377,7 @@ pub(crate) fn squash(
     let bounds = load_bounds(ctx)?;
     let objects = ObjectWriter::new(ctx, hash);
     let walk = cap(bounds.log_walk);
-    let base = gitcore::walk::merge_base(&objects, &expected_from, &expected_into, walk)
+    let base = gitcore::walk::squash_base(&objects, &expected_from, &expected_into, walk)
         .map_err(refusal_of)?
         .ok_or_else(|| {
             wrong_state("the branches share no history: no merge base to squash from")
@@ -504,7 +504,7 @@ pub(crate) fn previewed(
     let bounds = load_bounds(ctx)?;
     let objects = ObjectWriter::new(ctx, hash);
     let walk = cap(bounds.log_walk);
-    let base = gitcore::walk::merge_base(&objects, &from, &into, walk)
+    let base = gitcore::walk::squash_base(&objects, &from, &into, walk)
         .map_err(refusal_of)?
         .ok_or_else(|| wrong_state("the change and its target share no history: no merge base"))?;
     if base == from {
@@ -585,7 +585,7 @@ pub(crate) fn rebase(
     let bounds = load_bounds(ctx)?;
     let objects = ObjectWriter::new(ctx, hash);
     let walk = cap(bounds.log_walk);
-    let base = gitcore::walk::merge_base(&objects, &head, &onto, walk)
+    let base = gitcore::walk::squash_base(&objects, &head, &onto, walk)
         .map_err(refusal_of)?
         .ok_or_else(|| wrong_state("the change and onto share no history: no merge base"))?;
     if base == head {

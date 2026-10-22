@@ -1208,3 +1208,48 @@ pub fn merge_base<S: Objects + ?Sized>(
     }
     Ok(best.into_iter().min())
 }
+
+pub fn squash_base<S: Objects + ?Sized>(
+    store: &S,
+    from: &Oid,
+    into: &Oid,
+    cap: usize,
+) -> Result<Option<Oid>> {
+    let Some(base) = merge_base(store, from, into, cap)? else {
+        return Ok(None);
+    };
+    let mut landed = BTreeMap::new();
+    for (id, tree) in first_parents(store, into, &base, cap)? {
+        landed.entry(tree).or_insert(id);
+    }
+    let source = first_parents(store, from, &base, cap)?;
+    let matched = source
+        .into_iter()
+        .find_map(|(id, tree)| landed.get(&tree).map(|target| (id, *target)));
+    let Some((id, target)) = matched else {
+        return Ok(Some(base));
+    };
+    let source_only = is_ancestor(store, &id, into, cap)? == Verdict::No;
+    let target_only = is_ancestor(store, &target, from, cap)? == Verdict::No;
+    let squashed = source_only && target_only;
+    Ok(Some(if squashed { id } else { base }))
+}
+
+fn first_parents<S: Objects + ?Sized>(
+    store: &S,
+    tip: &Oid,
+    stop: &Oid,
+    cap: usize,
+) -> Result<Vec<(Oid, Oid)>> {
+    let mut line = Vec::new();
+    let mut at = Some(*tip);
+    while let Some(id) = at.filter(|id| id != stop) {
+        if line.len() >= cap {
+            break;
+        }
+        let commit = commit_of(store, &id)?;
+        line.push((id, commit.tree));
+        at = commit.parents.first().copied();
+    }
+    Ok(line)
+}

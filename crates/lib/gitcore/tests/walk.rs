@@ -8,7 +8,7 @@ mod common;
 use common::{blob, commit, file_tree, git_binary, signature, temp_dir, tree};
 use gitcore::walk::{
     Listing, ShallowListing, Trees, Verdict, Walk, closure, commits, history as walked_history,
-    is_ancestor, shallow_history, tree_at_path,
+    is_ancestor, merge_base, shallow_history, squash_base, tree_at_path,
 };
 use gitcore::{Commit, Error, Hash, Kind, MemoryObjects, Mode, Objects as _, Oid, Tag, Tree};
 use std::collections::{BTreeMap, BTreeSet};
@@ -950,4 +950,73 @@ fn objects_in(git_path: &Path, dir: &Path) -> BTreeSet<Oid> {
 
 fn shallow_file(dir: &Path) -> BTreeSet<Oid> {
     ids(&std::fs::read(dir.join("shallow")).unwrap_or_default())
+}
+
+#[test]
+fn a_squash_base_is_the_newest_source_commit_whose_tree_landed() {
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let t0 = file_tree(&mut store, &[("f", "0\n")]);
+    let t1 = file_tree(&mut store, &[("f", "1\n")]);
+    let t2 = file_tree(&mut store, &[("f", "2\n")]);
+    let t3 = file_tree(&mut store, &[("f", "1\n"), ("g", "g\n")]);
+    let t4 = file_tree(&mut store, &[("f", "4\n")]);
+    let root = commit(&mut store, t0, &[], 100, "root");
+    let lower = commit(&mut store, t1, &[root], 200, "lower");
+    let upper = commit(&mut store, t2, &[lower], 300, "upper");
+    let squashed = commit(&mut store, t1, &[root], 400, "lower (change 1)");
+    let main = commit(&mut store, t3, &[squashed], 500, "main moves on");
+    assert_eq!(merge_base(&store, &upper, &main, 100).unwrap(), Some(root));
+    assert_eq!(
+        squash_base(&store, &upper, &main, 100).unwrap(),
+        Some(lower)
+    );
+    assert_eq!(
+        squash_base(&store, &lower, &main, 100).unwrap(),
+        Some(lower)
+    );
+    let amended = commit(&mut store, t4, &[root], 250, "lower, amended");
+    let restacked = commit(&mut store, t2, &[amended], 350, "upper");
+    assert_eq!(
+        squash_base(&store, &restacked, &main, 100).unwrap(),
+        Some(root)
+    );
+    let other = commit(&mut store, t0, &[], 50, "other");
+    assert_eq!(squash_base(&store, &other, &main, 100).unwrap(), None);
+}
+
+#[test]
+fn a_squash_base_is_never_a_commit_the_target_already_holds() {
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let tx = file_tree(&mut store, &[("f", "x\n")]);
+    let tb = file_tree(&mut store, &[("f", "x\n"), ("g", "b\n")]);
+    let tf = file_tree(&mut store, &[("f", "f\n")]);
+    let tm = file_tree(&mut store, &[("f", "f\n"), ("g", "b\n")]);
+    let x = commit(&mut store, tx, &[], 100, "x");
+    let b = commit(&mut store, tb, &[x], 200, "b");
+    let revert = commit(&mut store, tx, &[b], 300, "revert b");
+    let f = commit(&mut store, tf, &[x], 250, "f");
+    let merged = commit(&mut store, tm, &[f, b], 350, "merge b");
+    assert_eq!(merge_base(&store, &merged, &revert, 100).unwrap(), Some(b));
+    assert_eq!(squash_base(&store, &merged, &revert, 100).unwrap(), Some(b));
+}
+
+#[test]
+fn a_squash_base_matches_only_a_target_commit_the_source_lacks() {
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let t0 = file_tree(&mut store, &[("f", "0\n")]);
+    let t1 = file_tree(&mut store, &[("f", "1\n")]);
+    let t2 = file_tree(&mut store, &[("f", "2\n")]);
+    let t3 = file_tree(&mut store, &[("f", "3\n")]);
+    let t4 = file_tree(&mut store, &[("f", "4\n")]);
+    let root = commit(&mut store, t0, &[], 100, "root");
+    let side = commit(&mut store, t1, &[root], 200, "side");
+    let p = commit(&mut store, t2, &[root], 210, "p");
+    let target = commit(&mut store, t3, &[p, side], 300, "merge side");
+    let back = commit(&mut store, t0, &[side], 310, "back to root's tree");
+    let head = commit(&mut store, t4, &[back], 320, "head");
+    assert_eq!(merge_base(&store, &head, &target, 100).unwrap(), Some(side));
+    assert_eq!(
+        squash_base(&store, &head, &target, 100).unwrap(),
+        Some(side)
+    );
 }

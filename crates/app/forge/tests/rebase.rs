@@ -347,3 +347,21 @@ fn the_head_and_protected_branches_are_not_deleted() {
     assert!(!refs.contains_key(DEV));
     assert_eq!(refs[MAIN], main.to_hex());
 }
+
+#[test]
+fn a_change_stacked_on_a_squashed_change_rebases_with_only_its_own_edits() {
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let root = file_commit(&mut store, &[], 1, &[("a", b"1\n2\n3\n")]);
+    let lower = file_commit(&mut store, &[root], 2, &[("a", b"1\nlow\n3\n")]);
+    let upper = file_commit(&mut store, &[lower], 3, &[("a", b"1\nlow up\n3\n")]);
+    let squashed = file_commit(&mut store, &[root], 4, &[("a", b"1\nlow\n3\n")]);
+    let files: &[(&str, &[u8])] = &[("a", b"1\nlow\n3\n"), ("b", b"1\n")];
+    let main = file_commit(&mut store, &[squashed], 5, files);
+    let sandbox = seeded(&store, &[(MAIN, main), (FEATURE, upper)]);
+    let n = opened(&sandbox, FEATURE);
+    let output = act(&sandbox, WRITER, &rebase(n, MAIN, upper)).unwrap();
+    let (_, commit) = rebased(&sandbox, &output);
+    assert_eq!(commit.parents, [main]);
+    let files: &[(&str, &[u8])] = &[("a", b"1\nlow up\n3\n"), ("b", b"1\n")];
+    assert_eq!(commit.tree, tree_with(&mut store, files));
+}

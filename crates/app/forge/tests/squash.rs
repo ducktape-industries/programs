@@ -205,3 +205,40 @@ fn unrelated_histories_are_refused() {
     let error = refused(&sandbox, OWNER, &squash((main, feature), Some("x"), None));
     assert_eq!(error.code, code::WRONG_STATE);
 }
+
+fn stacked(store: &mut MemoryObjects, main_a: &[u8]) -> (Oid, Oid) {
+    let root = file_commit(store, &[], 1, &[("a", b"1\n2\n3\n")]);
+    let lower = file_commit(store, &[root], 2, &[("a", b"1\nlow\n3\n")]);
+    let upper = file_commit(store, &[lower], 3, &[("a", b"1\nlow up\n3\n")]);
+    let squashed = file_commit(store, &[root], 4, &[("a", b"1\nlow\n3\n")]);
+    let main = file_commit(store, &[squashed], 5, &[("a", main_a), ("b", b"1\n")]);
+    (main, upper)
+}
+
+#[test]
+fn a_change_stacked_on_a_squashed_change_lands_with_only_its_own_edits() {
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let (main, upper) = stacked(&mut store, b"1\nlow\n3\n");
+    let sandbox = seeded(&store, main, upper);
+    let n = opened(&sandbox);
+    let preview = Op::Preview {
+        repo: "project".into(),
+        n,
+    };
+    act(&sandbox, OWNER, &preview).unwrap();
+    let output = act(&sandbox, OWNER, &squash((main, upper), None, Some(n))).unwrap();
+    let (_, commit) = squashed(&sandbox, &output);
+    assert_eq!(commit.parents, [main]);
+    let files: &[(&str, &[u8])] = &[("a", b"1\nlow up\n3\n"), ("b", b"1\n")];
+    assert_eq!(commit.tree, tree_with(&mut store, files));
+}
+
+#[test]
+fn a_stacked_change_still_conflicts_with_a_divergent_edit_on_the_target() {
+    let mut store = MemoryObjects::new(Hash::Sha1);
+    let (main, upper) = stacked(&mut store, b"1\nlow main\n3\n");
+    let sandbox = seeded(&store, main, upper);
+    let error = refused(&sandbox, OWNER, &squash((main, upper), Some("x"), None));
+    assert_eq!(error.code, code::WRONG_STATE);
+    assert!(error.message.contains("a (both sides"), "{}", error.message);
+}
